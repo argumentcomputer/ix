@@ -45,7 +45,7 @@ def blake3 := ⟦
     Some([[U8; 4]; 8])
   }
 
-  fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
+  #[group=cold] fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
     blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
   }
@@ -53,7 +53,7 @@ def blake3 := ⟦
   -- Hash `bytes` and assert the digest equals `expected`. Used by every
   -- IOBuffer-load path that verifies the pre-image of a content-addressed
   -- pointer matches the bytes the prover supplied.
-  fn verify_bytes_against(bytes: ByteStream, expected: [U8; 32]) {
+  #[group=cold] fn verify_bytes_against(bytes: ByteStream, expected: [U8; 32]) {
     let h = blake3(bytes);
     assert_eq!(
       [h[0][0], h[0][1], h[0][2], h[0][3],
@@ -71,7 +71,7 @@ def blake3 := ⟦
   -- the canonical content-addressed `Addr` shape (`&[U8;32]`). Used by every
   -- site that synthesises an address from raw bytes (e.g. `expr_addr`,
   -- `leaf_hash`, `node_hash`, `cprj_content_addr`).
-  fn bytes_to_addr(bytes: ByteStream) -> &[U8; 32] {
+  #[group=cold] fn bytes_to_addr(bytes: ByteStream) -> &[U8; 32] {
     let h = blake3(bytes);
     store([h[0][0], h[0][1], h[0][2], h[0][3],
            h[1][0], h[1][1], h[1][2], h[1][3],
@@ -83,7 +83,7 @@ def blake3 := ⟦
            h[7][0], h[7][1], h[7][2], h[7][3]])
   }
 
-  fn blake3_next_layer(layer: Layer, digest: [[U8; 4]; 8], root: G) -> (MaybeDigest, Layer) {
+  #[group=cold] fn blake3_next_layer(layer: Layer, digest: [[U8; 4]; 8], root: G) -> (MaybeDigest, Layer) {
     match layer {
       Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
       Layer.Push(layer, other) =>
@@ -111,7 +111,7 @@ def blake3 := ⟦
     }
   }
 
-  fn blake3_compress_layer(layer: Layer) -> [[U8; 4]; 8] {
+  #[group=cold] fn blake3_compress_layer(layer: Layer) -> [[U8; 4]; 8] {
     let Layer.Push(rest, digest) = layer;
     match load(rest) {
       Layer.Nil => digest,
@@ -239,7 +239,7 @@ def blake3 := ⟦
   -- Cold finalize circuit for `blake3_compress_chunks`: input is exhausted, so
   -- emit the trailing layer node. Quarantines the `blake3_compress` call and
   -- the partial-block materialization out of the hot chunk loop.
-  fn blake3_finish(
+  #[group=cold] fn blake3_finish(
     byte_acc: ByteStream,
     block_index: G,
     chunk_index: G,
@@ -269,7 +269,7 @@ def blake3 := ⟦
   -- Cold continuation of `blake3_compress_chunks`: runs once per filled 64-byte
   -- block. Materializes the byte accumulator, runs `blake3_compress`, pushes the
   -- digest, and resets the accumulator for the next block.
-  fn blake3_compress_block(
+  #[group=cold] fn blake3_compress_block(
     input: ByteStream,
     byte_acc: ByteStream,
     chunk_index: G,

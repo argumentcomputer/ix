@@ -64,7 +64,7 @@ def subst := ⟦
   -- Cold-extracted Let arm: 3 recursive expr_lbr calls is the widest arm,
   -- charged on every row of `expr_lbr` even though Let is rare in most
   -- expressions. Its own circuit costs only the Let-arm rows.
-  fn expr_lbr_let(ty: KExpr, val: KExpr, body: KExpr) -> G {
+  #[group=cold] fn expr_lbr_let(ty: KExpr, val: KExpr, body: KExpr) -> G {
     lbr_max(lbr_max(expr_lbr(ty), expr_lbr(val)),
             lbr_dec(expr_lbr(body)))
   }
@@ -108,7 +108,7 @@ def subst := ⟦
   -- (Rust opens field/domain binders as fvars; Aiur keeps de Bruijn, so
   -- the same references appear as loose BVars below the depth).
   -- ============================================================================
-  fn has_bvar_in_range(e: KExpr, lo: G, hi: G) -> G {
+  #[group=cold] fn has_bvar_in_range(e: KExpr, lo: G, hi: G) -> G {
     match load(e) {
       KExprNode.BVar(i) =>
         match u32_less_than(i, lo) {
@@ -132,14 +132,14 @@ def subst := ⟦
 
   -- Cold-extracted binder arm (same pattern as `expr_lbr_let`): the
   -- two-call arm would otherwise widen every row of the hot walk.
-  fn has_bvar_in_range_binder(ty: KExpr, body: KExpr, lo: G, hi: G) -> G {
+  #[group=cold] fn has_bvar_in_range_binder(ty: KExpr, body: KExpr, lo: G, hi: G) -> G {
     match has_bvar_in_range(ty, lo, hi) {
       1 => 1,
       0 => has_bvar_in_range(body, lo + 1, hi + 1),
     }
   }
 
-  fn has_bvar_in_range_let(ty: KExpr, val: KExpr, body: KExpr, lo: G, hi: G) -> G {
+  #[group=cold] fn has_bvar_in_range_let(ty: KExpr, val: KExpr, body: KExpr, lo: G, hi: G) -> G {
     match has_bvar_in_range(ty, lo, hi) {
       1 => 1,
       0 =>
@@ -263,7 +263,7 @@ def subst := ⟦
   -- convention every flat consumer assumes. Mirrors the depth-stability
   -- Rust gets for free by opening field binders as fvars.
   -- ============================================================================
-  fn expr_lower(e: KExpr, shift: G, cutoff: G) -> KExpr {
+  #[group=cold] fn expr_lower(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match shift {
       0 => e,
       _ =>
@@ -275,7 +275,7 @@ def subst := ⟦
     }
   }
 
-  fn expr_lower_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
+  #[group=cold] fn expr_lower_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) =>
         let lt = u32_less_than(i, cutoff);

@@ -45,7 +45,7 @@ def ingress := ⟦
 
   -- Load a constant from IOBuffer by address (ch 2), verify blake3,
   -- deserialize.
-  fn load_verified_constant(addr: Addr) -> Constant {
+  #[group=cold] fn load_verified_constant(addr: Addr) -> Constant {
     let raw = load(addr);
     let (idx, len) = io_get_info(2, raw);
     let bytes = #read_byte_stream(2, idx, len);
@@ -57,7 +57,7 @@ def ingress := ⟦
 
   -- Load a blob from IOBuffer by address (ch 5), verify blake3, return
   -- raw bytes.
-  fn load_verified_blob(addr: Addr) -> ByteStream {
+  #[group=cold] fn load_verified_blob(addr: Addr) -> ByteStream {
     let raw = load(addr);
     let (idx, len) = io_get_info(5, raw);
     let bytes = #read_byte_stream(5, idx, len);
@@ -72,7 +72,7 @@ def ingress := ⟦
   -- is only the (rare) limb-0-match rows; Aiur charges a function's full width
   -- on every one of its rows, so a nested match in `address_eq` would not save
   -- anything — the split must be a function boundary.
-  fn address_eq_tail(a: Addr, b: Addr) -> G {
+  #[group=cold] fn address_eq_tail(a: Addr, b: Addr) -> G {
     let [_, a1, a2, a3, a4, a5, a6, a7,
          a8, a9, a10, a11, a12, a13, a14, a15,
          a16, a17, a18, a19, a20, a21, a22, a23,
@@ -135,11 +135,11 @@ def ingress := ⟦
   -- Sentinel value stored in `addr_pos_map` for addresses known to be
   -- blob refs (not constants). Beyond any honest `pos+1` so it cannot
   -- collide with a real const-position encoding.
-  fn sentinel_blob_ref() -> G { 4294967295 }
+  #[group=cold] fn sentinel_blob_ref() -> G { 4294967295 }
 
   -- Extract the Muts block address from a projection ConstantInfo.
   -- Returns [0; 32] for non-projection constants.
-  fn get_proj_block_addr(info: ConstantInfo) -> Addr {
+  #[group=cold] fn get_proj_block_addr(info: ConstantInfo) -> Addr {
     match info {
       ConstantInfo.IPrj(prj) =>
         match prj { InductiveProj.Mk(_, addr) => addr, },
@@ -171,7 +171,7 @@ def ingress := ⟦
   -- Indc: 1 (inductive) + num_ctors
   -- Recr: 1
   -- Defn: 1
-  fn member_kernel_size(mc: MutConst) -> G {
+  #[group=cold] fn member_kernel_size(mc: MutConst) -> G {
     match mc {
       MutConst.Indc(ind) =>
         match ind {
@@ -184,7 +184,7 @@ def ingress := ⟦
   }
 
   -- Count total kernel entries for an entire List‹MutConst›
-  fn block_kernel_size(members: List‹MutConst›) -> G {
+  #[group=cold] fn block_kernel_size(members: List‹MutConst›) -> G {
     match load(members) {
       ListNode.Nil => 0,
       ListNode.Cons(mc, rest) =>
@@ -194,7 +194,7 @@ def ingress := ⟦
 
   -- Compute the offset of member at member_idx within a block's expansion.
   -- Members before member_idx each contribute member_kernel_size entries.
-  fn member_offset(members: List‹MutConst›, target_idx: G) -> G {
+  #[group=cold] fn member_offset(members: List‹MutConst›, target_idx: G) -> G {
     match target_idx {
       0 => 0,
       _ =>
@@ -209,7 +209,7 @@ def ingress := ⟦
   -- SENTINEL (4294967295) → blob ref → 0; else → const at `hit-1`.
   -- Panic-on-miss `rbtree_map_lookup` asserts presence; see
   -- `build_addr_pos_map` for why a miss is rejected, not recovered.
-  fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›) -> G {
+  #[group=cold] fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›) -> G {
     let hit = rbtree_map_lookup(ptr_val(target), load(addr_pos_map));
     match hit {
       4294967295 => 0,
@@ -227,7 +227,7 @@ def ingress := ⟦
   -- witness may de-intern (same content at several pointers) — so consumers
   -- probe with panic-on-miss `rbtree_map_lookup`: a de-intern miss is rejected,
   -- and honest provers always hit (they intern; every ref/head address is keyed).
-  fn build_addr_pos_map(all_addrs: List‹Addr›, pos_map: List‹G›) -> RBTreeMap‹G› {
+  #[group=cold] fn build_addr_pos_map(all_addrs: List‹Addr›, pos_map: List‹G›) -> RBTreeMap‹G› {
     match load(all_addrs) {
       ListNode.Nil => RBTreeMap.Nil,
       ListNode.Cons(addr, rest_addrs) =>
@@ -249,7 +249,7 @@ def ingress := ⟦
   -- inserts; the probe-before-insert prevents overwriting a const's
   -- pos+1 entry. The walk is O(R log N) where R = total refs in the
   -- shard's closure, N = #consts + #unique-blob-refs.
-  fn augment_with_blob_refs(consts: List‹&Constant›, m: RBTreeMap‹G›) -> RBTreeMap‹G› {
+  #[group=cold] fn augment_with_blob_refs(consts: List‹&Constant›, m: RBTreeMap‹G›) -> RBTreeMap‹G› {
     match load(consts) {
       ListNode.Nil => m,
       ListNode.Cons(&c, rest) =>
@@ -287,11 +287,11 @@ def ingress := ⟦
   -- `block_addr` would miss and silently resolve the projection to the wrong
   -- slot. Honest provers always hit (the block is loaded and keyed; interning
   -- makes the lookup pointer equal the keyed pointer).
-  fn build_block_start_map(block_addrs: List‹Addr›, block_starts: List‹G›) -> RBTreeMap‹G› {
+  #[group=cold] fn build_block_start_map(block_addrs: List‹Addr›, block_starts: List‹G›) -> RBTreeMap‹G› {
     build_block_start_map_walk(block_addrs, block_starts, RBTreeMap.Nil)
   }
 
-  fn build_block_start_map_walk(block_addrs: List‹Addr›, block_starts: List‹G›,
+  #[group=cold] fn build_block_start_map_walk(block_addrs: List‹Addr›, block_starts: List‹G›,
                                  acc: RBTreeMap‹G›) -> RBTreeMap‹G› {
     match load(block_addrs) {
       ListNode.Nil => acc,
@@ -305,7 +305,7 @@ def ingress := ⟦
   }
 
   -- Panic-on-miss asserts presence; see `build_block_start_map`.
-  fn lookup_block_start(target: Addr, block_start_map: &RBTreeMap‹G›) -> G {
+  #[group=cold] fn lookup_block_start(target: Addr, block_start_map: &RBTreeMap‹G›) -> G {
     rbtree_map_lookup(ptr_val(target), load(block_start_map))
   }
 
@@ -314,7 +314,7 @@ def ingress := ⟦
   -- ============================================================================
 
   -- Returns 1 if `mptr` is in the seen list.
-  fn is_mptr_seen(mptr: G, seen: List‹G›) -> G {
+  #[group=cold] fn is_mptr_seen(mptr: G, seen: List‹G›) -> G {
     match load(seen) {
       ListNode.Nil => 0,
       ListNode.Cons(s, rest) =>
@@ -334,7 +334,7 @@ def ingress := ⟦
   --
   -- Multi-member Muts (true mutual blocks) and non-singleton variants are
   -- not deduped (extract_muts_members_ptr returns 0 for them).
-  fn extract_dedup_mptr(c: Constant) -> G {
+  #[group=cold] fn extract_dedup_mptr(c: Constant) -> G {
     -- Dedup singleton-Indc Muts wrappers (Lean's per-constant canonical
     -- encoding). Key = full Constant.Mk ptr — Aiur store dedupes
     -- structurally identical Constants, so two wrapper aliases for the
@@ -358,7 +358,7 @@ def ingress := ⟦
     }
   }
 
-  fn is_singleton_indc(members: List‹MutConst›) -> G {
+  #[group=cold] fn is_singleton_indc(members: List‹MutConst›) -> G {
     match load(members) {
       ListNode.Cons(m, rest) =>
         match load(rest) {
@@ -376,7 +376,7 @@ def ingress := ⟦
   -- Lookup canonical (first-occurrence) pos for an mptr in parallel
   -- (seen_mptrs, seen_poses) lists. Returns 0 if not found (caller
   -- guards via is_mptr_seen first).
-  fn first_pos_for_mptr(mptr: G, seen_mptrs: List‹G›, seen_poses: List‹G›) -> G {
+  #[group=cold] fn first_pos_for_mptr(mptr: G, seen_mptrs: List‹G›, seen_poses: List‹G›) -> G {
     match load(seen_mptrs) {
       ListNode.Nil => 0,
       ListNode.Cons(s, rest_m) =>
@@ -390,7 +390,7 @@ def ingress := ⟦
     }
   }
 
-  fn compute_layout(
+  #[group=cold] fn compute_layout(
     consts: List‹&Constant›,
     addrs: List‹Addr›,
     pos: G
@@ -398,7 +398,7 @@ def ingress := ⟦
     compute_layout_walk(consts, addrs, pos, store(ListNode.Nil), store(ListNode.Nil))
   }
 
-  fn compute_layout_walk(
+  #[group=cold] fn compute_layout_walk(
     consts: List‹&Constant›,
     addrs: List‹Addr›,
     pos: G,
@@ -472,7 +472,7 @@ def ingress := ⟦
   -- Position map pass: build a List‹G› parallel to all_addrs
   -- ============================================================================
 
-  fn build_pos_map(
+  #[group=cold] fn build_pos_map(
     consts: List‹&Constant›,
     addrs: List‹Addr›,
     block_start_map: &RBTreeMap‹G›,
@@ -482,7 +482,7 @@ def ingress := ⟦
                        store(ListNode.Nil), store(ListNode.Nil))
   }
 
-  fn build_pos_map_walk(
+  #[group=cold] fn build_pos_map_walk(
     consts: List‹&Constant›,
     addrs: List‹Addr›,
     block_start_map: &RBTreeMap‹G›,
@@ -631,7 +631,7 @@ def ingress := ⟦
   -- dedupes structurally identical lists, so two Muts wrappers with the
   -- same member content (e.g. `[Indc(Nat)]`) share a Ptr regardless of the
   -- outer Constant.Mk wrapper's refs / sharing / univs differences.
-  fn extract_muts_members_ptr(c: &Constant) -> G {
+  #[group=cold] fn extract_muts_members_ptr(c: &Constant) -> G {
     -- Same dedup semantic as extract_dedup_mptr: singleton-Indc Muts only,
     -- keyed on full Constant ptr (so wrappers around different logical
     -- Indcs that happen to share IXON-canonical Indc.Mk content stay
@@ -649,7 +649,7 @@ def ingress := ⟦
     }
   }
 
-  fn find_canon_pos_for_mptr(mptr: G, seen_mptrs: List‹G›,
+  #[group=cold] fn find_canon_pos_for_mptr(mptr: G, seen_mptrs: List‹G›,
                               seen_poses: List‹G›, default_pos: G) -> G {
     match load(seen_mptrs) {
       ListNode.Nil => default_pos,
@@ -664,7 +664,7 @@ def ingress := ⟦
     }
   }
 
-  fn canonicalize_pos_map_walk(consts: List‹&Constant›, pos_map: List‹G›,
+  #[group=cold] fn canonicalize_pos_map_walk(consts: List‹&Constant›, pos_map: List‹G›,
                                 seen_mptrs: List‹G›, seen_poses: List‹G›) -> List‹G› {
     match load(consts) {
       ListNode.Nil => store(ListNode.Nil),
@@ -690,7 +690,7 @@ def ingress := ⟦
     }
   }
 
-  fn canonicalize_pos_map(consts: List‹&Constant›, pos_map: List‹G›) -> List‹G› {
+  #[group=cold] fn canonicalize_pos_map(consts: List‹&Constant›, pos_map: List‹G›) -> List‹G› {
     canonicalize_pos_map_walk(consts, pos_map, store(ListNode.Nil), store(ListNode.Nil))
   }
 
@@ -726,7 +726,7 @@ def ingress := ⟦
   -- pointer: a positive ptr_val match implies content equality. A miss
   -- conservatively returns the target (the existing semantics for
   -- non-deduped addresses).
-  fn build_canon_addr_map_walk(addrs: List‹Addr›, consts: List‹&Constant›,
+  #[group=cold] fn build_canon_addr_map_walk(addrs: List‹Addr›, consts: List‹&Constant›,
                                 seen_mptrs: List‹G›,
                                 seen_addrs: List‹Addr›,
                                 acc: RBTreeMap‹Addr›) -> RBTreeMap‹Addr› {
@@ -749,13 +749,13 @@ def ingress := ⟦
     }
   }
 
-  fn build_canon_addr_map(addrs: List‹Addr›, consts: List‹&Constant›) -> RBTreeMap‹Addr› {
+  #[group=cold] fn build_canon_addr_map(addrs: List‹Addr›, consts: List‹&Constant›) -> RBTreeMap‹Addr› {
     build_canon_addr_map_walk(addrs, consts, store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil)
   }
 
   -- O(log N) canon-addr probe. Miss returns target unchanged (the
   -- non-deduped case is the common one).
-  fn lookup_canon_addr(target: Addr, canon_addr_map: &RBTreeMap‹Addr›) -> Addr {
+  #[group=cold] fn lookup_canon_addr(target: Addr, canon_addr_map: &RBTreeMap‹Addr›) -> Addr {
     match load(canon_addr_map) {
       RBTreeMap.Nil => target,
       _ =>
@@ -766,11 +766,11 @@ def ingress := ⟦
 
   -- Build kernel positions of each member's Indc within the block expansion.
   -- pos[i] = block_start + sum(member_kernel_size(members[0..i])).
-  fn build_recur_idxs(members: List‹MutConst›, block_start: G, _member_idx: G) -> List‹G› {
+  #[group=cold] fn build_recur_idxs(members: List‹MutConst›, block_start: G, _member_idx: G) -> List‹G› {
     build_recur_idxs_walk(members, block_start)
   }
 
-  fn build_recur_idxs_walk(members: List‹MutConst›, cur_pos: G) -> List‹G› {
+  #[group=cold] fn build_recur_idxs_walk(members: List‹MutConst›, cur_pos: G) -> List‹G› {
     match load(members) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(mc, rest) =>
@@ -779,7 +779,7 @@ def ingress := ⟦
     }
   }
 
-  fn build_ctor_idxs(num_ctors: G, induct_pos: G, cidx: G) -> List‹G› {
+  #[group=cold] fn build_ctor_idxs(num_ctors: G, induct_pos: G, cidx: G) -> List‹G› {
     match num_ctors {
       0 => store(ListNode.Nil),
       _ =>
@@ -788,11 +788,11 @@ def ingress := ⟦
     }
   }
 
-  fn build_rule_ctor_idxs(members: List‹MutConst›, block_start: G, _member_idx: G) -> List‹G› {
+  #[group=cold] fn build_rule_ctor_idxs(members: List‹MutConst›, block_start: G, _member_idx: G) -> List‹G› {
     build_rule_ctor_idxs_walk(members, block_start)
   }
 
-  fn build_rule_ctor_idxs_walk(members: List‹MutConst›, cur_pos: G) -> List‹G› {
+  #[group=cold] fn build_rule_ctor_idxs_walk(members: List‹MutConst›, cur_pos: G) -> List‹G› {
     match load(members) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(mc, rest) =>
@@ -819,7 +819,7 @@ def ingress := ⟦
   -- ============================================================================
 
   -- Returns 1 if `members` contains at least one MutConst.Indc, else 0.
-  fn members_have_indc(members: List‹MutConst›) -> G {
+  #[group=cold] fn members_have_indc(members: List‹MutConst›) -> G {
     match load(members) {
       ListNode.Nil => 0,
       ListNode.Cons(mc, rest) =>
@@ -831,7 +831,7 @@ def ingress := ⟦
   }
 
   -- Deref Expr.Share via the constant's sharing list.
-  fn deref_share(e: Expr, sharing: List‹&Expr›) -> Expr {
+  #[group=cold] fn deref_share(e: Expr, sharing: List‹&Expr›) -> Expr {
     match e {
       Expr.Share(idx) =>
         let ListNode.Cons(e, _) = load(list_drop(sharing, flatten_u64(idx)));
@@ -841,7 +841,7 @@ def ingress := ⟦
   }
 
   -- Walk a recursor's typ skipping `n` leading Alls; return body Expr.
-  fn peel_n_alls_expr(e: Expr, n: G, sharing: List‹&Expr›) -> Expr {
+  #[group=cold] fn peel_n_alls_expr(e: Expr, n: G, sharing: List‹&Expr›) -> Expr {
     match n {
       0 => deref_share(e, sharing),
       _ =>
@@ -853,7 +853,7 @@ def ingress := ⟦
   }
 
   -- Take an App-spine expression's head.
-  fn collect_app_spine_expr_head(e: Expr, sharing: List‹&Expr›) -> Expr {
+  #[group=cold] fn collect_app_spine_expr_head(e: Expr, sharing: List‹&Expr›) -> Expr {
     match deref_share(e, sharing) {
       Expr.App(f_ref, _) => collect_app_spine_expr_head(load(f_ref), sharing),
       other => other,
@@ -865,7 +865,7 @@ def ingress := ⟦
   -- then takes the next forall's domain (major's type), peels the App-spine,
   -- and reads the head Ref's address from the recursor's `refs` list.
   -- Returns `[0;32]` if the head isn't a Ref (e.g. mutual self-rec via Rec).
-  fn rec_typ_to_inductive_addr(typ: Expr, n_skip: G, refs: List‹Addr›,
+  #[group=cold] fn rec_typ_to_inductive_addr(typ: Expr, n_skip: G, refs: List‹Addr›,
                                 sharing: List‹&Expr›) -> Addr {
     let after_skip = peel_n_alls_expr(typ, n_skip, sharing);
     match after_skip {
@@ -891,7 +891,7 @@ def ingress := ⟦
   -- already has block_addr in scope and discards the second component.
   -- Computing both together saves the standalone caller a redundant
   -- `rec_typ_to_inductive_addr` + `load_verified_constant` chain.
-  fn build_aux_recr_ctor_idxs(
+  #[group=cold] fn build_aux_recr_ctor_idxs(
     recr: Recursor,
     refs: List‹Addr›,
     sharing: List‹&Expr›,
@@ -931,12 +931,12 @@ def ingress := ⟦
   }
 
   -- Extract kernel ctor positions for member at `target_idx` in `members`.
-  fn extract_member_ctor_idxs(members: List‹MutConst›, block_start: G,
+  #[group=cold] fn extract_member_ctor_idxs(members: List‹MutConst›, block_start: G,
                               target_idx: G) -> List‹G› {
     extract_member_ctor_idxs_walk(members, block_start, target_idx, 0)
   }
 
-  fn extract_member_ctor_idxs_walk(members: List‹MutConst›, cur_pos: G,
+  #[group=cold] fn extract_member_ctor_idxs_walk(members: List‹MutConst›, cur_pos: G,
                                     target_idx: G, idx: G) -> List‹G› {
     match load(members) {
       ListNode.Nil => store(ListNode.Nil),
@@ -962,7 +962,7 @@ def ingress := ⟦
   -- For Indc: emits 1 Induct + N Ctors.
   -- For Recr: emits 1 Rec.
   -- For Defn: emits 1 Defn.
-  fn expand_member(
+  #[group=cold] fn expand_member(
     mc: MutConst,
     ctx: ConvertCtx,
     members: List‹MutConst›,
@@ -1006,7 +1006,7 @@ def ingress := ⟦
     }
   }
 
-  fn expand_ctors(ctors: List‹Constructor›, ctx: ConvertCtx, induct_pos: G) -> List‹&ConvertInput› {
+  #[group=cold] fn expand_ctors(ctors: List‹Constructor›, ctx: ConvertCtx, induct_pos: G) -> List‹&ConvertInput› {
     match load(ctors) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(ctor, rest) =>
@@ -1015,7 +1015,7 @@ def ingress := ⟦
     }
   }
 
-  fn expand_members(
+  #[group=cold] fn expand_members(
     members: List‹MutConst›,
     ctx: ConvertCtx,
     all_members: List‹MutConst›,
@@ -1042,13 +1042,13 @@ def ingress := ⟦
   -- Projections are skipped (handled via block expansion).
   -- Standalone constants are converted directly.
   -- Unpack head + tail of an addrs list (parallel walker for build_convert_inputs).
-  fn unpack_head_addr(addrs: List‹Addr›) -> (Addr, List‹Addr›) {
+  #[group=cold] fn unpack_head_addr(addrs: List‹Addr›) -> (Addr, List‹Addr›) {
     match load(addrs) {
       ListNode.Cons(a, r) => (a, r),
     }
   }
 
-  fn build_convert_inputs(
+  #[group=cold] fn build_convert_inputs(
     consts: List‹&Constant›,
     cur_addrs: List‹Addr›,
     all_addrs: List‹Addr›,
@@ -1071,7 +1071,7 @@ def ingress := ⟦
                               store(ListNode.Nil))
   }
 
-  fn build_convert_inputs_walk(
+  #[group=cold] fn build_convert_inputs_walk(
     consts: List‹&Constant›,
     cur_addrs: List‹Addr›,
     all_addrs: List‹Addr›,
@@ -1288,7 +1288,7 @@ def ingress := ⟦
   -- Returns 1 if `c` is a projection constant (IPrj/CPrj/RPrj/DPrj).
   -- Used to prioritize per-member primitive addresses over the parent
   -- Muts block's content-hash when both share the same kernel position.
-  fn is_proj_const(c: &Constant) -> G {
+  #[group=cold] fn is_proj_const(c: &Constant) -> G {
     match load(c) {
       Constant.Mk(info, _, _, _) =>
         match info {
@@ -1393,7 +1393,7 @@ def ingress := ⟦
     }
   }
 
-  fn build_addr_tree(all_addrs: List‹Addr›,
+  #[group=cold] fn build_addr_tree(all_addrs: List‹Addr›,
                      all_consts: List‹&Constant›,
                      pos_map: List‹G›) -> RBTreeMap‹Addr› {
     let t = build_addr_tree_walk(all_addrs, all_consts, pos_map, 0, RBTreeMap.Nil);
@@ -1402,7 +1402,7 @@ def ingress := ⟦
 
   -- Apply ctor overrides as tree updates. Each (pos, addr) in
   -- `overrides` replaces the entry at `pos`. O(K log N) for K overrides.
-  fn apply_ctor_overrides_tree(overrides: List‹(G, Addr)›,
+  #[group=cold] fn apply_ctor_overrides_tree(overrides: List‹(G, Addr)›,
                                tree: RBTreeMap‹Addr›) -> RBTreeMap‹Addr› {
     match load(overrides) {
       ListNode.Nil => tree,
@@ -1419,7 +1419,7 @@ def ingress := ⟦
   -- Positions absent from the tree map to `zero_addr` (matches the
   -- semantics of `find_best_addr_at_pos` which returned a zero addr
   -- for uncovered positions).
-  fn emit_addrs_from_tree(i: G, total: G, tree: RBTreeMap‹Addr›,
+  #[group=cold] fn emit_addrs_from_tree(i: G, total: G, tree: RBTreeMap‹Addr›,
                           zero_addr: Addr) -> List‹Addr› {
     match total - i {
       0 => store(ListNode.Nil),
@@ -1441,7 +1441,7 @@ def ingress := ⟦
   -- input (idx, block_addr, cidx) is either taken from a `load_verified_*`
   -- result or a deterministic loop counter, so the resulting addresses
   -- are derived from already-trusted data.
-  fn build_ctor_overrides(all_consts: List‹&Constant›, all_addrs: List‹Addr›,
+  #[group=cold] fn build_ctor_overrides(all_consts: List‹&Constant›, all_addrs: List‹Addr›,
                           block_start_map: &RBTreeMap‹G›)
                           -> List‹(G, Addr)› {
     match load(all_consts) {
@@ -1482,11 +1482,11 @@ def ingress := ⟦
 
   -- Number of constructors of the Inductive at `target_idx` within the
   -- given Muts members. Returns 0 if the indexed member isn't an Inductive.
-  fn inductive_ctor_count_at(members: List‹MutConst›, target_idx: G) -> G {
+  #[group=cold] fn inductive_ctor_count_at(members: List‹MutConst›, target_idx: G) -> G {
     inductive_ctor_count_walk(members, target_idx, 0)
   }
 
-  fn inductive_ctor_count_walk(members: List‹MutConst›, target_idx: G, i: G) -> G {
+  #[group=cold] fn inductive_ctor_count_walk(members: List‹MutConst›, target_idx: G, i: G) -> G {
     match load(members) {
       ListNode.Nil => 0,
       ListNode.Cons(mc, rest) =>
@@ -1505,7 +1505,7 @@ def ingress := ⟦
     }
   }
 
-  fn build_ctor_pairs_computed(idx: U64, block: Addr,
+  #[group=cold] fn build_ctor_pairs_computed(idx: U64, block: Addr,
                                 base_pos: G, n_ctors: G, cidx: G)
                                 -> List‹(G, Addr)› {
     match n_ctors - cidx {
@@ -1522,7 +1522,7 @@ def ingress := ⟦
   -- compile uses, serializing it in-Aiur, and hashing. No external trust
   -- needed — every input is derived from a `load_verified_*` result or a
   -- loop counter.
-  fn cprj_content_addr(idx: U64, cidx: G, block: Addr) -> Addr {
+  #[group=cold] fn cprj_content_addr(idx: U64, cidx: G, block: Addr) -> Addr {
     let prj = ConstructorProj.Mk(idx, [u8_from_field_unsafe(cidx), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], block);
     let info = ConstantInfo.CPrj(prj);
     let cnst = Constant.Mk(info, store(ListNode.Nil),
@@ -1533,7 +1533,7 @@ def ingress := ⟦
   }
 
 
-  fn ingress_with_primitives(target_addr: Addr) -> (List‹&KConstantInfo›, List‹Addr›) {
+  #[group=cold] fn ingress_with_primitives(target_addr: Addr) -> (List‹&KConstantInfo›, List‹Addr›) {
     let (all_addrs, all_consts) = load_with_deps(
       target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
     finish_ingress(all_addrs, all_consts)
@@ -1544,7 +1544,7 @@ def ingress := ⟦
   -- the initial worklist loads every leaf + its transitive deps; then the
   -- shared `finish_ingress` pipeline runs ONCE over the union, rather than
   -- being re-run per leaf as CheckEnv previously did.
-  fn ingress_env(leaves: List‹Addr›) -> (List‹&KConstantInfo›, List‹Addr›) {
+  #[group=cold] fn ingress_env(leaves: List‹Addr›) -> (List‹&KConstantInfo›, List‹Addr›) {
     match load(leaves) {
       ListNode.Nil => synthetic_primitive_entries(),
       ListNode.Cons(first, rest) =>
@@ -1555,7 +1555,7 @@ def ingress := ⟦
   }
 
   -- Shared post-load pipeline: layout, conversion, addr table, primitives.
-  fn finish_ingress(all_addrs: List‹Addr›, all_consts: List‹&Constant›)
+  #[group=cold] fn finish_ingress(all_addrs: List‹Addr›, all_consts: List‹&Constant›)
                     -> (List‹&KConstantInfo›, List‹Addr›) {
     let (block_addrs, block_starts, total) = compute_layout(all_consts, all_addrs, 0);
     let block_start_map = store(build_block_start_map(block_addrs, block_starts));
@@ -1601,7 +1601,7 @@ def ingress := ⟦
   -- target's transitive closure already loads a real primitive, that
   -- entry appears earlier in `addrs` and `find_addr_idx_safe` returns
   -- its true position; the stub is only consulted otherwise.
-  fn synthetic_primitive_entries() -> (List‹&KConstantInfo›, List‹Addr›) {
+  #[group=cold] fn synthetic_primitive_entries() -> (List‹&KConstantInfo›, List‹Addr›) {
     let addrs = synthetic_primitive_addrs();
     let stub_ty = store(KExprNode.Srt(store(KLevelNode.Zero)));
     let stub = store(KConstantInfo.Axiom(0, stub_ty, 0));
@@ -1609,7 +1609,7 @@ def ingress := ⟦
     (consts, addrs)
   }
 
-  fn synthetic_primitive_addrs() -> List‹Addr› {
+  #[group=cold] fn synthetic_primitive_addrs() -> List‹Addr› {
     store(ListNode.Cons(quot_type_addr(),
     store(ListNode.Cons(quot_ctor_addr(),
     store(ListNode.Cons(quot_lift_addr(),
@@ -1689,7 +1689,7 @@ def ingress := ⟦
     }
   }
 
-  fn list_repeat_stub(stub: &KConstantInfo, n: G) -> List‹&KConstantInfo› {
+  #[group=cold] fn list_repeat_stub(stub: &KConstantInfo, n: G) -> List‹&KConstantInfo› {
     match n {
       0 => store(ListNode.Nil),
       _ => store(ListNode.Cons(stub, list_repeat_stub(stub, n - 1))),

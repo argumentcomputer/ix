@@ -88,7 +88,7 @@ def check := ⟦
   -- Mirror: src/ix/kernel/check.rs:572-598 fn validate_univ_params_seen.
   -- Walks a KLevel asserting `Param(i)` has `i < bound`. Aiur's `store`/
   -- `load` deduplication subsumes Rust's seen-set.
-  fn validate_univ_params_seen(u: KLevel, bound: G) {
+  #[group=cold] fn validate_univ_params_seen(u: KLevel, bound: G) {
     match load(u) {
       KLevelNode.Zero => (),
       KLevelNode.Succ(inner) => validate_univ_params_seen(inner, bound),
@@ -166,7 +166,7 @@ def check := ⟦
     }
   }
 
-  fn validate_recr_rules(rules: List‹KRecRule›, bound: G,
+  #[group=cold] fn validate_recr_rules(rules: List‹KRecRule›, bound: G,
                           top: List‹&KConstantInfo›) {
     match load(rules) {
       ListNode.Nil => (),
@@ -182,7 +182,7 @@ def check := ⟦
   -- Mirror: src/ix/kernel/check.rs:678-720 fn check_eq_type.
   -- Asserts the Eq inductive in `top` has 1 universe param, 2 params, and
   -- exactly one ctor whose address matches `eq_refl_addr()`.
-  fn check_eq_type(top: List‹&KConstantInfo›, addrs: List‹Addr›) {
+  #[group=cold] fn check_eq_type(top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     let eq_idx = find_addr_idx(eq_addr(), addrs, 0);
     let eq_ci = load(list_lookup(top, eq_idx));
     match eq_ci {
@@ -301,7 +301,7 @@ def check := ⟦
   -- Mirror: src/ix/kernel/check.rs:606-675 fn check_quot.
   -- Validates quot variant consistency: address ↔ kind match, universe
   -- param count, and at-least-N forall binders for the type.
-  fn check_quot(self_addr: Addr, kind: QuotKind, num_lvls: G, ty: KExpr,
+  #[group=cold] fn check_quot(self_addr: Addr, kind: QuotKind, num_lvls: G, ty: KExpr,
                  top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     -- Address ↔ kind consistency + per-variant (lvls, foralls) expectations.
     -- Type/Ctor/Ind = 1 lvl; Lift = 2 lvls.
@@ -332,7 +332,7 @@ def check := ⟦
   }
 
   -- Returns 1 iff `ty` has at least `n` leading Foralls.
-  fn count_foralls_at_least(ty: KExpr, n: G, seen: G) -> G {
+  #[group=cold] fn count_foralls_at_least(ty: KExpr, n: G, seen: G) -> G {
     match n - seen {
       0 => 1,
       _ =>
@@ -343,7 +343,7 @@ def check := ⟦
     }
   }
 
-  fn check_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
+  #[group=cold] fn check_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     check_canonical_block_sort(top);
     check_all_iter(consts, top, addrs, 0)
   }

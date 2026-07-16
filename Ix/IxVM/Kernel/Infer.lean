@@ -264,12 +264,12 @@ def infer := ⟦
   -- path won't pay off, instead of unconditionally paying the parallel
   -- `infer_only` memo cost.
   -- ============================================================================
-  fn k_infer_only(e: KExpr, types: List‹KExpr›,
+  #[group=cold] fn k_infer_only(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     k_infer_only_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
   }
 
-  fn k_infer_only_core(e: KExpr, types: List‹KExpr›,
+  #[group=cold] fn k_infer_only_core(e: KExpr, types: List‹KExpr›,
                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
@@ -342,7 +342,7 @@ def infer := ⟦
     }
   }
 
-  fn k_ensure_sort_only(e: KExpr, types: List‹KExpr›,
+  #[group=cold] fn k_ensure_sort_only(e: KExpr, types: List‹KExpr›,
                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KLevel {
     let ty = k_infer_only(e, types, top, addrs);
     match load(ty) {
@@ -390,7 +390,7 @@ def infer := ⟦
 
   -- Mirror: peel n_params Foralls off ctor_ty, substituting each
   -- bound var with the corresponding `args[i]`. Used by infer_proj.
-  fn peel_params_subst(ty: KExpr, args: List‹KExpr›, n_params: G) -> KExpr {
+  #[group=cold] fn peel_params_subst(ty: KExpr, args: List‹KExpr›, n_params: G) -> KExpr {
     match n_params {
       0 => ty,
       _ =>
@@ -414,7 +414,7 @@ def infer := ⟦
   --   (a) preceding data field whose body depends on BVar(0) is forbidden
   --       (no projection past dependent data fields, mirror Rust line 433-444);
   --   (b) projected (target) field must itself be in Prop (mirror Rust line 418-427).
-  fn peel_field_loop(ty: KExpr, target_field: G, current: G,
+  #[group=cold] fn peel_field_loop(ty: KExpr, target_field: G, current: G,
                      struct_idx: G, val: KExpr, is_prop: G,
                      types: List‹KExpr›, top: List‹&KConstantInfo›,
                      addrs: List‹Addr›) -> KExpr {
@@ -438,7 +438,7 @@ def infer := ⟦
   -- For Prop structures: a preceding data field (sort != 0) whose body
   -- has any loose bvar (`body.lbr() > 0`) makes projection past it unsound.
   -- Matches Rust's `body.lbr() > 0` check exactly.
-  fn check_no_dep_data_field_if_prop(is_prop: G, dom: KExpr, body: KExpr,
+  #[group=cold] fn check_no_dep_data_field_if_prop(is_prop: G, dom: KExpr, body: KExpr,
                                        types: List‹KExpr›,
                                        top: List‹&KConstantInfo›,
                                        addrs: List‹Addr›) {
@@ -457,7 +457,7 @@ def infer := ⟦
   }
 
   -- Peel `n` Foralls, calling `whnf` on each step. Returns the whnf'd body.
-  fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›,
+  #[group=cold] fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›,
                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match n {
       0 => whnf(e, types, top, addrs),
@@ -474,7 +474,7 @@ def infer := ⟦
   -- Mirror: src/ix/kernel/infer.rs:488-520 inductive_app_is_prop.
   -- Returns 1 iff the inductive lives in Prop (peeled past params + indices,
   -- result sort = Zero).
-  fn is_inductive_prop(ind_ty: KExpr, lvls: List‹KLevel›, n_skip: G,
+  #[group=cold] fn is_inductive_prop(ind_ty: KExpr, lvls: List‹KLevel›, n_skip: G,
                        types: List‹KExpr›, top: List‹&KConstantInfo›,
                        addrs: List‹Addr›) -> G {
     let ind_ty_inst = expr_inst_levels(ind_ty, lvls);
@@ -488,7 +488,7 @@ def infer := ⟦
   -- Mirror: src/ix/kernel/infer.rs:418-427 Prop-projection guard. When
   -- projecting a field from a Prop-typed structure, the field MUST itself
   -- live in Prop. Otherwise projection violates proof irrelevance.
-  fn check_prop_field_if_prop(is_prop: G, dom: KExpr, types: List‹KExpr›,
+  #[group=cold] fn check_prop_field_if_prop(is_prop: G, dom: KExpr, types: List‹KExpr›,
                                top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match is_prop {
       0 => (),
@@ -502,19 +502,19 @@ def infer := ⟦
   -- Address-keyed literal-type lookup.
   -- Walks `addrs` to find the kernel position of Nat / String. Builds
   -- `Const(idx, [])` for the type of `Lit(Nat _)` / `Lit(Str _)`.
-  fn nat_const_type(addrs: List‹Addr›) -> KExpr {
+  #[group=cold] fn nat_const_type(addrs: List‹Addr›) -> KExpr {
     let idx = find_addr_idx(nat_addr(), addrs, 0);
     store(KExprNode.Const(idx, store(ListNode.Nil)))
   }
 
-  fn str_const_type(addrs: List‹Addr›) -> KExpr {
+  #[group=cold] fn str_const_type(addrs: List‹Addr›) -> KExpr {
     let idx = find_addr_idx(str_addr(), addrs, 0);
     store(KExprNode.Const(idx, store(ListNode.Nil)))
   }
 
   -- Find the position of `target` in `addrs`. Panics (no Nil arm) if
   -- not present — caller (literal typing) requires it.
-  fn find_addr_idx(target: Addr, addrs: List‹Addr›, i: G) -> G {
+  #[group=cold] fn find_addr_idx(target: Addr, addrs: List‹Addr›, i: G) -> G {
     match load(addrs) {
       ListNode.Cons(a, rest) =>
         match address_eq(target, a) {

@@ -6,7 +6,7 @@ public section
 namespace IxVM
 
 def ixonSerialize := ⟦
-  fn put_expr(expr: Expr, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_expr(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
       -- Srt: Tag4(0x0, univ_idx)
       Expr.Srt(univ_idx) => put_tag4(0x0, univ_idx, rest),
@@ -59,7 +59,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_u64_le(bs: U64, num_bytes: G, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_u64_le(bs: U64, num_bytes: G, rest: ByteStream) -> ByteStream {
     match num_bytes {
       0 => rest,
       _ =>
@@ -69,7 +69,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_tag0(bs: U64, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_tag0(bs: U64, rest: ByteStream) -> ByteStream {
     let byte_count = u64_byte_count(bs);
     let small = u8_less_than(bs[0], 128u8);
     match (byte_count, small) {
@@ -82,7 +82,7 @@ def ixonSerialize := ⟦
 
   -- Tag2: 2-bit flag, variable size
   -- Format: [flag:2][large:1][size:5] or [flag:2][large:1][size_bytes...]
-  fn put_tag2(flag: G, size: U64, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_tag2(flag: G, size: U64, rest: ByteStream) -> ByteStream {
     let byte_count = u64_byte_count(size);
     let small = u8_less_than(size[0], 32u8);
     match (byte_count, small) {
@@ -97,7 +97,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_tag4(flag: G, bs: U64, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_tag4(flag: G, bs: U64, rest: ByteStream) -> ByteStream {
     let byte_count = u64_byte_count(bs);
     let small = u8_less_than(bs[0], 8u8);
     match (byte_count, small) {
@@ -111,7 +111,7 @@ def ixonSerialize := ⟦
   }
 
   -- Serialize field list (each element as Tag0)
-  fn put_u64_list(list: List‹U64›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_u64_list(list: List‹U64›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(idx, rest_list) =>
@@ -120,7 +120,7 @@ def ixonSerialize := ⟦
   }
 
   -- Count nested App expressions
-  fn app_telescope_count(expr: Expr) -> U64 {
+  #[group=cold] fn app_telescope_count(expr: Expr) -> U64 {
     match expr {
       Expr.App(&func, _) => relaxed_u64_succ(app_telescope_count(func)),
       _ => [0u8; 8],
@@ -128,7 +128,7 @@ def ixonSerialize := ⟦
   }
 
   -- Count nested Lam expressions
-  fn lam_telescope_count(expr: Expr) -> U64 {
+  #[group=cold] fn lam_telescope_count(expr: Expr) -> U64 {
     match expr {
       Expr.Lam(_, &body) => relaxed_u64_succ(lam_telescope_count(body)),
       _ => [0u8; 8],
@@ -136,7 +136,7 @@ def ixonSerialize := ⟦
   }
 
   -- Count nested All expressions
-  fn all_telescope_count(expr: Expr) -> U64 {
+  #[group=cold] fn all_telescope_count(expr: Expr) -> U64 {
     match expr {
       Expr.All(_, &body) => relaxed_u64_succ(all_telescope_count(body)),
       _ => [0u8; 8],
@@ -144,7 +144,7 @@ def ixonSerialize := ⟦
   }
 
   -- Serialize App telescope body (function, then all args in order)
-  fn put_app_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_app_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
       Expr.App(&func, &arg) =>
         put_app_telescope(func, put_expr(arg, rest)),
@@ -153,7 +153,7 @@ def ixonSerialize := ⟦
   }
 
   -- Serialize Lam telescope body (all types, then body)
-  fn put_lam_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_lam_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
       Expr.Lam(&ty, &body) =>
         put_expr(ty, put_lam_telescope(body, rest)),
@@ -162,7 +162,7 @@ def ixonSerialize := ⟦
   }
 
   -- Serialize All telescope body (all types, then body)
-  fn put_all_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_all_telescope(expr: Expr, rest: ByteStream) -> ByteStream {
     match expr {
       Expr.All(&ty, &body) =>
         put_expr(ty, put_all_telescope(body, rest)),
@@ -171,7 +171,7 @@ def ixonSerialize := ⟦
   }
 
   -- Write a 32-byte address
-  fn put_address(a: Addr, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_address(a: Addr, rest: ByteStream) -> ByteStream {
     let arr = load(a);
     let list31 = store(ListNode.Cons(arr[31], rest));
     let list30 = store(ListNode.Cons(arr[30], list31));
@@ -208,7 +208,7 @@ def ixonSerialize := ⟦
   }
 
   -- Pack DefKind (2 bits) and DefinitionSafety (2 bits) into a single byte
-  fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> G {
+  #[group=cold] fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> G {
     match (kind, safety) {
       (DefKind.Definition, DefinitionSafety.Unsafe) => 0,
       (DefKind.Definition, DefinitionSafety.Safe) => 1,
@@ -227,7 +227,7 @@ def ixonSerialize := ⟦
   -- ============================================================================
 
   -- Count nested Succ universes for telescope compression
-  fn univ_succ_count(u: Univ) -> U64 {
+  #[group=cold] fn univ_succ_count(u: Univ) -> U64 {
     match u {
       Univ.Succ(&inner) => relaxed_u64_succ(univ_succ_count(inner)),
       _ => [0u8; 8],
@@ -235,14 +235,14 @@ def ixonSerialize := ⟦
   }
 
   -- Get the base (non-Succ) universe
-  fn univ_succ_base(u: Univ) -> Univ {
+  #[group=cold] fn univ_succ_base(u: Univ) -> Univ {
     match u {
       Univ.Succ(&inner) => univ_succ_base(inner),
       _ => u,
     }
   }
 
-  fn put_univ(u: Univ, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_univ(u: Univ, rest: ByteStream) -> ByteStream {
     match u {
       Univ.Zero =>
         -- Tag2(FLAG_ZERO_SUCC=0, size=0)
@@ -274,7 +274,7 @@ def ixonSerialize := ⟦
   -- List serialization
   -- ============================================================================
 
-  fn put_expr_list(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_expr_list(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(&expr, rest_list) =>
@@ -282,7 +282,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_univ_list(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_univ_list(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(&u, rest_list) =>
@@ -290,7 +290,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_address_list(list: List‹Addr›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_address_list(list: List‹Addr›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(addr, rest_list) =>
@@ -302,7 +302,7 @@ def ixonSerialize := ⟦
   -- Constant serialization
   -- ============================================================================
 
-  fn put_quot_kind(kind: QuotKind, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_quot_kind(kind: QuotKind, rest: ByteStream) -> ByteStream {
     match kind {
       QuotKind.Typ => store(ListNode.Cons(0u8, rest)),
       QuotKind.Ctor => store(ListNode.Cons(1u8, rest)),
@@ -311,7 +311,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_definition(defn: Definition, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_definition(defn: Definition, rest: ByteStream) -> ByteStream {
     match defn {
       Definition.Mk(kind, safety, lvls, &typ, &value) =>
         let packed = pack_def_kind_safety(kind, safety);
@@ -319,14 +319,14 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_recursor_rule(rule: RecursorRule, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_recursor_rule(rule: RecursorRule, rest: ByteStream) -> ByteStream {
     match rule {
       RecursorRule.Mk(fields, &rhs) =>
         put_tag0(fields, put_expr(rhs, rest)),
     }
   }
 
-  fn put_recursor_rule_list(list: List‹RecursorRule›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_recursor_rule_list(list: List‹RecursorRule›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(rule, rest_list) =>
@@ -334,7 +334,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_recursor(recr: Recursor, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_recursor(recr: Recursor, rest: ByteStream) -> ByteStream {
     match recr {
       Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, rules) =>
         let bools = k + 2 * is_unsafe;
@@ -351,21 +351,21 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_axiom(axim: Axiom, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_axiom(axim: Axiom, rest: ByteStream) -> ByteStream {
     match axim {
       Axiom.Mk(is_unsafe, lvls, &typ) =>
         store(ListNode.Cons(u8_from_field_unsafe(is_unsafe), put_tag0(lvls, put_expr(typ, rest)))),
     }
   }
 
-  fn put_quotient(quot: Quotient, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_quotient(quot: Quotient, rest: ByteStream) -> ByteStream {
     match quot {
       Quotient.Mk(kind, lvls, &typ) =>
         put_quot_kind(kind, put_tag0(lvls, put_expr(typ, rest))),
     }
   }
 
-  fn put_constructor(ctor: Constructor, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_constructor(ctor: Constructor, rest: ByteStream) -> ByteStream {
     match ctor {
       Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
         store(ListNode.Cons(u8_from_field_unsafe(is_unsafe),
@@ -377,7 +377,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_constructor_list(list: List‹Constructor›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_constructor_list(list: List‹Constructor›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(ctor, rest_list) =>
@@ -385,7 +385,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_inductive(indc: Inductive, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_inductive(indc: Inductive, rest: ByteStream) -> ByteStream {
     match indc {
       Inductive.Mk(is_unsafe, lvls, params, indices, &typ, ctors) =>
         let ctors_len = list_length_u64(ctors);
@@ -406,7 +406,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_constructor_proj(prj: ConstructorProj, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_constructor_proj(prj: ConstructorProj, rest: ByteStream) -> ByteStream {
     match prj {
       ConstructorProj.Mk(idx, cidx, block) =>
         put_tag0(idx, put_tag0(cidx, put_address(block, rest))),
@@ -420,14 +420,14 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_definition_proj(prj: DefinitionProj, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_definition_proj(prj: DefinitionProj, rest: ByteStream) -> ByteStream {
     match prj {
       DefinitionProj.Mk(idx, block) =>
         put_tag0(idx, put_address(block, rest)),
     }
   }
 
-  fn put_mut_const(mc: MutConst, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_mut_const(mc: MutConst, rest: ByteStream) -> ByteStream {
     match mc {
       MutConst.Defn(defn) =>
         store(ListNode.Cons(0u8, put_definition(defn, rest))),
@@ -438,7 +438,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_mut_const_list(list: List‹MutConst›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_mut_const_list(list: List‹MutConst›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(mc, rest_list) =>
@@ -446,7 +446,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_constant_info(info: ConstantInfo, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_constant_info(info: ConstantInfo, rest: ByteStream) -> ByteStream {
     match info {
       ConstantInfo.Defn(defn) => put_definition(defn, rest),
       ConstantInfo.Recr(recr) => put_recursor(recr, rest),
@@ -459,22 +459,22 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_sharing(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_sharing(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
     let len = list_length_u64(list);
     put_tag0(len, put_expr_list(list, rest))
   }
 
-  fn put_refs(list: List‹Addr›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_refs(list: List‹Addr›, rest: ByteStream) -> ByteStream {
     let len = list_length_u64(list);
     put_tag0(len, put_address_list(list, rest))
   }
 
-  fn put_univs(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_univs(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
     let len = list_length_u64(list);
     put_tag0(len, put_univ_list(list, rest))
   }
 
-  fn put_constant(cnst: Constant, rest: ByteStream) -> ByteStream {
+  #[group=cold] fn put_constant(cnst: Constant, rest: ByteStream) -> ByteStream {
     match cnst {
       Constant.Mk(info, sharing, refs, univs) =>
         let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, rest)));

@@ -44,7 +44,7 @@ def testEntrypoints := ⟦
     }
   }
 
-  fn level_cmp_tests() {
+  #[group=cold] fn level_cmp_tests() {
     let zero = store(KLevelNode.Zero);
     let p0 = store(KLevelNode.Param(0));
     let p1 = store(KLevelNode.Param(1));
