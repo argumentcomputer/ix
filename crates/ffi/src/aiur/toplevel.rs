@@ -2,12 +2,15 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 
 use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
 
+use crate::lean::LeanAiurCircuit;
 use crate::lean::LeanAiurFunction;
 
 use crate::lean::LeanAiurToplevel;
 use aiur::{
   FxIndexMap, G,
-  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
+  bytecode::{
+    Block, Circuit, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx,
+  },
 };
 
 use crate::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
@@ -258,19 +261,30 @@ fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
   let ctor = LeanAiurFunction::from_ctor(ctor);
   let body = decode_block(ctor.get_obj(0).as_ctor());
   let layout = decode_function_layout(ctor.get_obj(1).as_ctor());
+  // Object field 2 is the circuit-group tag (`Option String`), which the
+  // Rust side doesn't need: the partition arrives pre-built as `circuits`.
   let entry = ctor.get_num_8(0) != 0;
   let constrained = ctor.get_num_8(1) != 0;
   Function { body, layout, entry, constrained }
+}
+
+fn decode_circuit(ctor: LeanCtor<LeanBorrowed<'_>>) -> Circuit {
+  let ctor = LeanAiurCircuit::from_ctor(ctor);
+  // Object field 0 is the circuit's display name (`String`), unused here.
+  let members = ctor.get_obj(1).as_array().map(|x| lean_unbox_nat_as_usize(&x));
+  let layout = decode_function_layout(ctor.get_obj(2).as_ctor());
+  Circuit { members, layout }
 }
 
 pub(crate) fn decode_toplevel(
   obj: &LeanAiurToplevel<impl LeanRef>,
 ) -> Toplevel {
   let ctor = obj.as_ctor();
-  let [functions_obj, memory_sizes_obj] = ctor.objs::<2>();
+  let [functions_obj, memory_sizes_obj, circuits_obj] = ctor.objs::<3>();
   let functions =
     functions_obj.as_array().map(|o| decode_function(o.as_ctor()));
   let memory_sizes =
     memory_sizes_obj.as_array().map(|x| lean_unbox_nat_as_usize(&x));
-  Toplevel { functions, memory_sizes }
+  let circuits = circuits_obj.as_array().map(|o| decode_circuit(o.as_ctor()));
+  Toplevel { functions, memory_sizes, circuits }
 }

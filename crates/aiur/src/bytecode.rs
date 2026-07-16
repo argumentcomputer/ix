@@ -5,6 +5,22 @@ use super::G;
 pub struct Toplevel {
   pub functions: Vec<Function>,
   pub memory_sizes: Vec<usize>,
+  /// Circuit partition of the constrained functions, in first-occurrence
+  /// order. Computed by the Lean compiler; every constrained function
+  /// appears in exactly one circuit.
+  pub circuits: Vec<Circuit>,
+}
+
+/// A circuit of the proving system, backing one or more functions. Ungrouped
+/// functions get a singleton circuit; functions sharing a `#[group=...]` tag
+/// share one circuit whose branching selects the member function.
+///
+/// `layout` is the merged layout: max `input_size`, sum of `selectors`, max
+/// `auxiliaries` (which includes the single shared multiplicity column), max
+/// `lookups` (slot 0 is the shared return lookup).
+pub struct Circuit {
+  pub members: Vec<FunIdx>,
+  pub layout: FunctionLayout,
 }
 
 pub struct Function {

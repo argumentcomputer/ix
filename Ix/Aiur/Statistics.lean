@@ -42,21 +42,16 @@ def fftCost (w h : Nat) : Float :=
 def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount) :
     ExecutionStats :=
   let t := compiled.bytecode
-  -- Invert nameMap to get FunIdx → String
-  let reverseMap := compiled.nameMap.fold (init := (∅ : Std.HashMap Bytecode.FunIdx String))
-    fun acc global idx => if !acc.contains idx then acc.insert idx (toString global) else acc
   let nAllFuns := t.functions.size
-  let functionCircuits := Id.run do
-    let mut acc := #[]
-    for i in [:nAllFuns] do
-      if t.functions[i]!.constrained then
-        let w := t.functions[i]!.layout.totalWidth
-        let qc := queryCounts[i]!
-        let h := qc.uniqueRows
-        let hits := qc.totalHits - qc.uniqueRows
-        let name := reverseMap[i]?.getD s!"<fn {i}>"
-        acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
-    acc
+  -- One row per circuit: grouped circuits carry the group's name and
+  -- aggregate their members' query counts (`queryCounts` stays per-function).
+  let functionCircuits := t.circuits.map fun c =>
+    let w := c.layout.totalWidth
+    let (h, hits) := c.members.foldl (init := (0, 0)) fun (h, hits) i =>
+      let qc := queryCounts[i]!
+      (h + qc.uniqueRows, hits + (qc.totalHits - qc.uniqueRows))
+    { name := c.name, width := w, height := h, cacheHits := hits,
+      fftCost := fftCost w h : CircuitStats }
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
     let w := size + 11
     let qc := queryCounts[nAllFuns + i]!

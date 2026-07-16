@@ -12,13 +12,14 @@ use rayon::{
 
 use crate::{
   FxIndexMap, G,
-  bytecode::{Block, Ctrl, Function, Op, Toplevel},
+  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
   },
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
+  querymap::QueryRef,
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
   u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
   u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
@@ -40,15 +41,23 @@ struct ColumnMutSlice<'a> {
 type Degree = u8;
 
 impl<'a> ColumnMutSlice<'a> {
+  /// Slice a circuit row into the regions of one member function: the
+  /// member's inputs are a prefix of the circuit's input block, its selectors
+  /// a sub-range of the circuit's selector block at `sel_offset`, and the
+  /// auxiliary block is shared by all members.
   fn from_slice(
     function: &Function,
+    circuit_layout: &FunctionLayout,
+    sel_offset: usize,
     slice: &'a mut [G],
     lookups: &'a mut [Lookup<G>],
   ) -> Self {
-    let (inputs, slice) = slice.split_at_mut(function.layout.input_size);
-    let (selectors, slice) = slice.split_at_mut(function.layout.selectors);
-    let (auxiliaries, slice) = slice.split_at_mut(function.layout.auxiliaries);
-    assert!(slice.is_empty());
+    let (inputs, slice) = slice.split_at_mut(circuit_layout.input_size);
+    let (selectors, auxiliaries) = slice.split_at_mut(circuit_layout.selectors);
+    assert_eq!(auxiliaries.len(), circuit_layout.auxiliaries);
+    let inputs = &mut inputs[..function.layout.input_size];
+    let selectors =
+      &mut selectors[sel_offset..sel_offset + function.layout.selectors];
     Self { inputs, selectors, auxiliaries, lookups }
   }
 
@@ -72,47 +81,80 @@ struct TraceContext<'a> {
   query_record: &'a QueryRecord,
 }
 
+/// One row of a circuit trace: the member function it belongs to, the
+/// member's selector offset within the circuit, its function index, and the
+/// recorded query.
+struct RowMeta<'a> {
+  function: &'a Function,
+  sel_offset: usize,
+  function_index: G,
+  inputs: &'a [G],
+  result: QueryRef<'a>,
+}
+
 impl Toplevel {
   pub fn witness_data(
     &self,
-    function_index: usize,
+    circuit_index: usize,
     query_record: &QueryRecord,
     io_buffer: &IOBuffer,
   ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
-    let func = &self.functions[function_index];
-    let width = func.width();
-    let unfiltered_queries = &query_record.function_queries[function_index];
-    let queries = unfiltered_queries
-      .iter()
-      .filter(|(_, res)| !res.multiplicity.is_zero())
-      .collect::<Vec<_>>();
-    let height_no_padding = queries.len();
+    let circuit = &self.circuits[circuit_index];
+    let layout = &circuit.layout;
+    let width = layout.width();
+    // Concatenate the members' queried rows, in member order.
+    let mut rows_meta = Vec::new();
+    let mut sel_offset = 0;
+    for &member in &circuit.members {
+      let function = &self.functions[member];
+      let function_index = G::from_usize(member);
+      rows_meta.extend(
+        query_record.function_queries[member]
+          .iter()
+          .filter(|(_, res)| !res.multiplicity.is_zero())
+          .map(|(inputs, result)| RowMeta {
+            function,
+            sel_offset,
+            function_index,
+            inputs,
+            result,
+          }),
+      );
+      sel_offset += function.layout.selectors;
+    }
+    let height_no_padding = rows_meta.len();
     let height = height_no_padding.next_power_of_two();
     let mut rows = vec![G::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];
     let empty_lookup = Lookup::empty();
-    let mut lookups = vec![vec![empty_lookup; func.layout.lookups]; height];
+    let mut lookups = vec![vec![empty_lookup; layout.lookups]; height];
     let lookups_no_padding = &mut lookups[0..height_no_padding];
     rows_no_padding
       .par_chunks_mut(width)
       .zip(lookups_no_padding.par_iter_mut())
       .enumerate()
       .for_each(|(i, (row, lookups))| {
-        let (inputs, result) = queries[i];
+        let meta = &rows_meta[i];
         let index = &mut ColumnIndex {
           auxiliary: 0,
           // we skip the first lookup, which is reserved for return
           lookup: 1,
         };
-        let slice = &mut ColumnMutSlice::from_slice(func, row, lookups);
+        let slice = &mut ColumnMutSlice::from_slice(
+          meta.function,
+          layout,
+          meta.sel_offset,
+          row,
+          lookups,
+        );
         let context = TraceContext {
-          function_index: G::from_usize(function_index),
-          inputs,
-          multiplicity: result.multiplicity,
-          output: result.output,
+          function_index: meta.function_index,
+          inputs: meta.inputs,
+          multiplicity: meta.result.multiplicity,
+          output: meta.result.output,
           query_record,
         };
-        func.populate_row(index, slice, context, io_buffer);
+        meta.function.populate_row(index, slice, context, io_buffer);
       });
     let trace = RowMajorMatrix::new(rows, width);
     (trace, lookups)

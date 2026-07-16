@@ -81,7 +81,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     IO.println "aiur"
     match AiurTestEnv.build (pure toplevel) with
     | .error e => IO.eprintln s!"Aiur setup failed: {e}"; return 1
-    | .ok env => LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)),
+    | .ok env =>
+      LSpec.lspecEachIO (groupingStructureChecks env.compiled :: aiurTestCases.map env.runTestCase) pure),
   ("aiur-hashes", do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do

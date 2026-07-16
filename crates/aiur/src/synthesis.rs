@@ -94,13 +94,9 @@ impl AiurSystem {
     commitment_parameters: CommitmentParameters,
     fri_parameters: FriParameters,
   ) -> Self {
-    let function_circuits = (0..toplevel.functions.len()).filter_map(|i| {
-      if !toplevel.functions[i].constrained {
-        None
-      } else {
-        let (constraints, lookups) = toplevel.build_constraints(i);
-        Some(LookupAir::new(AiurCircuit::Function(constraints), lookups))
-      }
+    let function_circuits = (0..toplevel.circuits.len()).map(|i| {
+      let (constraints, lookups) = toplevel.build_constraints(i);
+      LookupAir::new(AiurCircuit::Function(constraints), lookups)
     });
     let memory_circuits = toplevel.memory_sizes.iter().map(|&width| {
       let (memory, lookups) = Memory::build(width);
@@ -143,14 +139,9 @@ impl AiurSystem {
 
     // Build the `SystemWitness`
     let _g = tracing::info_span!("aiur/witness").entered();
-    let functions =
-      (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
-        if self.toplevel.functions[idx].constrained {
-          Some(CircuitType::Function { idx })
-        } else {
-          None
-        }
-      });
+    let functions = (0..self.toplevel.circuits.len())
+      .into_par_iter()
+      .map(|idx| CircuitType::Function { idx });
     let memories = self
       .toplevel
       .memory_sizes
@@ -220,14 +211,9 @@ impl AiurSystem {
     drop(_g);
 
     let _g = tracing::info_span!("aiur/witness").entered();
-    let functions =
-      (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
-        if self.toplevel.functions[idx].constrained {
-          Some(CircuitType::Function { idx })
-        } else {
-          None
-        }
-      });
+    let functions = (0..self.toplevel.circuits.len())
+      .into_par_iter()
+      .map(|idx| CircuitType::Function { idx });
     let memories = self
       .toplevel
       .memory_sizes

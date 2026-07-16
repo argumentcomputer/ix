@@ -98,11 +98,40 @@ structure Function where
   layout: FunctionLayout
   entry : Bool
   constrained : Bool
+  /-- Circuit-group tag from the `#[group=...]` pragma. Functions sharing a
+  tag are proven by a single grouped circuit. Non-semantic: the bytecode
+  evaluator ignores it, and deduplication keeps differently-tagged functions
+  apart. Declared last so the FFI object-field indices of `body`/`layout`
+  stay 0/1. -/
+  group : Option String := none
   deriving Inhabited, Repr
+
+/-- A circuit of the proving system, backing one or more functions. Ungrouped
+functions get a singleton circuit named after the function; functions sharing
+a `#[group=...]` tag get one circuit named after the group, whose branching
+selects the member function. `layout` is the merged layout: max `inputSize`,
+sum of `selectors`, max `auxiliaries` (which includes the single shared
+multiplicity column), max `lookups` (slot 0 is the shared return lookup). -/
+structure Circuit where
+  name : String
+  members : Array FunIdx
+  layout : FunctionLayout
+  deriving Inhabited, Repr
+
+/-- Merged layout of a group of functions (see `Circuit`). -/
+def FunctionLayout.merge (a b : FunctionLayout) : FunctionLayout where
+  inputSize := a.inputSize.max b.inputSize
+  selectors := a.selectors + b.selectors
+  auxiliaries := a.auxiliaries.max b.auxiliaries
+  lookups := a.lookups.max b.lookups
 
 structure Toplevel where
   functions : Array Function
   memorySizes : Array Nat
+  /-- Circuit partition of the constrained functions, in first-occurrence
+  order. Built by `Source.Toplevel.compile` after deduplication; empty on a
+  freshly lowered toplevel. -/
+  circuits : Array Circuit := #[]
   deriving Repr
 
 end Bytecode

@@ -609,11 +609,12 @@ def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
       | .function function => do
         let (body, layoutMState) ← function.compile layout
         let nameMap := nameMap.insert function.name functions.size
-        let function := ⟨body, layoutMState.functionLayout, function.entry, false⟩
+        let function :=
+          ⟨body, layoutMState.functionLayout, function.entry, false, function.group⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
         pure (functions.push function, memSizes, nameMap)
       | _ => pure acc
-  pure (⟨functions, memSizes.toArray⟩, nameMap)
+  pure (⟨functions, memSizes.toArray, #[]⟩, nameMap)
 
 end Aiur
 

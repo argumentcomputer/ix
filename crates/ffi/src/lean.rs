@@ -253,8 +253,9 @@ lean_ffi::lean_inductive! {
 
   // --- Aiur types ---
 
-  LeanAiurToplevel [ { num_obj: 2 } ];
-  LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
+  LeanAiurToplevel [ { num_obj: 3 } ];
+  LeanAiurFunction [ { num_obj: 3, num_8: 2 } ];
+  LeanAiurCircuit  [ { num_obj: 3 } ];
 
   // --- Block / comparison types ---
 

@@ -108,6 +108,8 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
+  /-- Circuit-group tag from the `#[group=...]` pragma. -/
+  group : Option String := none
   deriving Repr
 
 inductive Declaration

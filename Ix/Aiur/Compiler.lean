@@ -90,6 +90,37 @@ decreasing_by
     | (apply Prod.Lex.left; exact Bytecode.Block.sizeOf_ctrl_lt'' _)
 end
 
+/-- Build the circuit partition of the constrained functions, in
+first-occurrence order: an ungrouped function becomes a singleton circuit
+named after it (via `nameOf`); the first constrained member of a group fixes
+the group circuit's position and name, and later members append to it,
+merging layouts per `Bytecode.FunctionLayout.merge`. Unconstrained functions
+get no circuit, so grouped functions that end up unconstrained are simply
+absent from their group. -/
+def Bytecode.Toplevel.buildCircuits (t : Bytecode.Toplevel)
+    (nameOf : Bytecode.FunIdx → String) : Array Bytecode.Circuit := Id.run do
+  let mut circuits : Array Bytecode.Circuit := #[]
+  let mut groupPos : Std.HashMap String Nat := {}
+  for h : i in [:t.functions.size] do
+    let f := t.functions[i]
+    if f.constrained then
+      match f.group with
+      | none =>
+        circuits := circuits.push
+          { name := nameOf i, members := #[i], layout := f.layout }
+      | some g =>
+        match groupPos[g]? with
+        | some pos =>
+          let c := circuits[pos]!
+          circuits := circuits.set! pos { c with
+            members := c.members.push i
+            layout := c.layout.merge f.layout }
+        | none =>
+          groupPos := groupPos.insert g circuits.size
+          circuits := circuits.push
+            { name := g, members := #[i], layout := f.layout }
+  pure circuits
+
 /-- Compute which functions need a circuit. A function needs a circuit iff it is
 reachable from an entry point through a chain of constrained call edges. -/
 def Bytecode.Toplevel.needsCircuit (t : Bytecode.Toplevel) : Array Bool := Id.run do
@@ -117,11 +148,16 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
   let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
   let (bytecodeDedup, remap) := bytecodeRaw.deduplicate
   let needs := bytecodeDedup.needsCircuit
-  let bytecode := { bytecodeDedup with
+  let bytecode : Bytecode.Toplevel := { bytecodeDedup with
     functions := bytecodeDedup.functions.mapIdx fun i f =>
       { f with constrained := needs[i]! } }
   let nameMap := preNameMap.fold (init := (∅ : Std.HashMap Global Bytecode.FunIdx))
     fun acc name idx => acc.insert name (remap idx)
+  -- Singleton circuits are labeled with (one of) the function's source names.
+  let reverseMap := nameMap.fold (init := (∅ : Std.HashMap Bytecode.FunIdx String))
+    fun acc global idx => if acc.contains idx then acc else acc.insert idx (toString global)
+  let bytecode := { bytecode with
+    circuits := bytecode.buildCircuits fun i => reverseMap[i]?.getD s!"<fn {i}>" }
   pure (CompiledToplevel.mk t bytecode nameMap)
 
 /-- Progress helper: given success of the three `Except`-returning stages,

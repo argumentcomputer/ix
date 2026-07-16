@@ -196,7 +196,9 @@ def deduplicate_newFunctions (functions : Array Function) (classes : Array Nat)
       if can then
         let entry := deduplicate_class_entry functions classes cls
         let body := rewriteBlock remapFn f.body
-        acc.push { body, layout := f.layout, entry, constrained := false }
+        acc.push
+          { body, layout := f.layout, entry, constrained := false,
+            group := f.group }
       else acc)
     #[]
 
@@ -209,8 +211,10 @@ def Toplevel.deduplicate (t : Toplevel) : Toplevel × (FunIdx → FunIdx) :=
   else
     -- Skeleton key includes full `FunctionLayout`: same-class functions share
     -- every layout field, so dedup's per-class `layout := f.layout`
-    -- (canonical rep's) matches every class member's layout.
-    let skeletons := functions.map fun f => (skeletonBlock f.body, f.layout)
+    -- (canonical rep's) matches every class member's layout. The circuit-group
+    -- tag is part of the key: identical functions in different groups stay
+    -- separate, so a group tag fully determines which circuit proves a call.
+    let skeletons := functions.map fun f => (skeletonBlock f.body, f.layout, f.group)
     let (initClasses, _) := assignClasses skeletons
     let callees := functions.map fun f => collectCalleesBlock f.body
     let classes := partitionRefine initClasses callees

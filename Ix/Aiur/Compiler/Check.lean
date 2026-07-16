@@ -50,6 +50,7 @@ inductive CheckError
   | unresolvedMVar : Nat → CheckError
   | u8LitOutOfRange : Nat → CheckError
   | entryHasPointer : Global → CheckError
+  | groupedEntry : Global → CheckError
   deriving Repr
 
 instance : ToString CheckError where
@@ -1046,12 +1047,15 @@ where
 
 /-- Check a function (infer + zonk). -/
 def checkFunction (function : Function) : CheckM Typed.Function := do
+  if function.entry && function.group.isSome then
+    throw $ .groupedEntry function.name
   let body ← inferTerm function.body
   unless body.escapes do
     unless ← unifyTyp body.typ function.output do
       throw $ .typeMismatch body.typ function.output
   let body ← zonkTypedTerm body
-  pure ⟨function.name, function.params, function.inputs, function.output, body, function.entry⟩
+  pure ⟨function.name, function.params, function.inputs, function.output, body,
+        function.entry, function.group⟩
 
 end Aiur
 

@@ -791,6 +791,51 @@ def toplevel := ⟦
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
     + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20 + r21
   }
+
+  ---------------------------------------------------------------------------
+  -- Grouped circuits: functions sharing a #[group=...] tag are proven by a
+  -- single circuit whose branching selects the member. Members differ in
+  -- arity, output and branch count, call each other (through the shared
+  -- circuit) and recurse.
+  ---------------------------------------------------------------------------
+  #[group=test_group] fn grouped_double(x: G) -> G {
+    x + x
+  }
+
+  -- Different arity, a match (two selectors), calls a fellow group member.
+  #[group=test_group] fn grouped_pick(t: G, a: G, b: G) -> G {
+    match t {
+      0 => grouped_double(a),
+      _ => b,
+    }
+  }
+
+  -- Recursive group member: self-calls route through the shared circuit.
+  #[group=test_group] fn grouped_sum_range(n: G) -> G {
+    match n {
+      0 => 0,
+      _ => n + grouped_sum_range(n - 1),
+    }
+  }
+
+  pub fn calls_grouped(t: G, a: G, b: G) -> G {
+    grouped_pick(t, a, b) + grouped_sum_range(a)
+  }
+
+  -- Identical bodies, different circuit placement: the group tag is part of
+  -- the dedup identity, so these stay two separate functions (one inside
+  -- `test_group`, one a singleton circuit).
+  #[group=test_group] fn grouped_id(x: G) -> G {
+    x
+  }
+
+  fn ungrouped_id(x: G) -> G {
+    x
+  }
+
+  pub fn calls_both_ids(x: G) -> G {
+    grouped_id(x) + ungrouped_id(x)
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [
@@ -948,6 +993,45 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Non-tail match: all patterns in one proof (incl. function-call scrutinee)
     .noIO `non_tail_match #[] #[2593],
+
+    -- Grouped circuits: t=0 → grouped_double(5) + Σ1..5 = 10 + 15 = 25;
+    -- t≠0 → b + Σ1..3 = 9 + 6 = 15.
+    { AiurTestCase.noIO `calls_grouped #[0, 5, 9] #[25]
+        with label := "calls_grouped(0,5,9)" },
+    { AiurTestCase.noIO `calls_grouped #[1, 3, 9] #[15]
+        with label := "calls_grouped(1,3,9)" },
+    -- Identical bodies split across circuits by the group tag
+    .noIO `calls_both_ids #[21] #[42],
   ]
+
+/-- Structural checks on the circuit partition: the grouped circuit exists,
+holds exactly its members, and its layout follows the merge rule (max inputs,
+summed selectors, max auxiliaries, max lookups). Also checks that every
+constrained function lands in exactly one circuit. -/
+def groupingStructureChecks (compiled : Aiur.CompiledToplevel) : TestSeq :=
+  let t := compiled.bytecode
+  let memberOf := fun (name : Lean.Name) => compiled.getFuncIdx name |>.get!
+  let expectedMembers := #[`grouped_double, `grouped_pick, `grouped_sum_range,
+    `grouped_id].map memberOf
+  match t.circuits.find? (·.name == "test_group") with
+  | none => test "test_group circuit exists" false
+  | some c =>
+    let layouts := c.members.map (t.functions[·]!.layout)
+    let expected := layouts.foldl (init := (⟨0, 0, 0, 0⟩ : Aiur.Bytecode.FunctionLayout))
+      Aiur.Bytecode.FunctionLayout.merge
+    let allCircuitMembers := t.circuits.flatMap (·.members)
+    let constrained := (Array.range t.functions.size).filter
+      (t.functions[·]!.constrained)
+    test "test_group circuit exists" true ++
+    test "test_group members" (c.members == expectedMembers) ++
+    test "test_group layout follows the merge rule"
+      (c.layout.inputSize == expected.inputSize &&
+       c.layout.selectors == expected.selectors &&
+       c.layout.auxiliaries == expected.auxiliaries &&
+       c.layout.lookups == expected.lookups) ++
+    test "grouped_id and ungrouped_id are distinct functions"
+      (memberOf `grouped_id != memberOf `ungrouped_id) ++
+    test "every constrained function is in exactly one circuit"
+      (allCircuitMembers.qsort (· < ·) == constrained)
 
 end

@@ -924,7 +924,8 @@ def concretizeDrainEntry (decls : Typed.Decls) (state : DrainState)
       let pending' := collectCalls decls p3 newBody
       let newFn : Typed.Function :=
         { name := concName, params := [], inputs := newInputs,
-          output := newOutput, body := newBody, entry := false }
+          output := newOutput, body := newBody, entry := false,
+          group := f.group }
       pure { pending := pending', seen := seen', mono := mono',
              newFunctions := state.newFunctions.push newFn,
              newDataTypes := state.newDataTypes }
@@ -1052,7 +1053,8 @@ def Typed.Decls.concretize (decls : Typed.Decls) :
       let output ← typToConcrete emptyMono f.output
       let body ← termToConcrete emptyMono f.body
       let concF : Concrete.Function :=
-        { name := f.name, inputs, output, body, entry := f.entry }
+        { name := f.name, inputs, output, body, entry := f.entry,
+          group := f.group }
       pure (acc.insert name (.function concF))
     | .dataType dt =>
       let ctors ← dt.constructors.mapM fun c => do
