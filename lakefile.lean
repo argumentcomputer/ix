@@ -126,6 +126,10 @@ lean_exe «bench-recursive-verifier» where
   root := `Benchmarks.RecursiveVerifier
   supportInterpreter := true
 
+lean_exe «bench-ix-recursion» where
+  root := `Benchmarks.IxRecursion
+  supportInterpreter := true
+
 end Benchmarks
 
 section IxApplications
