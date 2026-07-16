@@ -85,7 +85,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("aiur-hashes", do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
-        let t ← IxVM.core.merge IxVM.byteStream; t.merge IxVM.blake3)
+        let t ← IxVM.core.merge IxVM.byteStream
+        let t ← t.merge IxVM.blake3
+        t.merge IxVM.blake3Entrypoints)
       | IO.eprintln "Blake3 setup failed"; return 1
     let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
     let .ok sha256Env := AiurTestEnv.build (do

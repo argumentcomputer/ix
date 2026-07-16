@@ -6,28 +6,6 @@ public section
 namespace IxVM
 
 def blake3 := ⟦
-  /- # Test entrypoints -/
-
-  pub fn blake3_test() -> [[U8; 4]; 8] {
-    let (idx, len) = io_get_info(0, [0]);
-    let byte_stream = #read_byte_stream(0, idx, len);
-    blake3(byte_stream)
-  }
-
-  /- # Benchmark entrypoints -/
-
-  pub fn blake3_bench(num_hashes: G) -> G {
-    let num_hashes_pred = num_hashes - 1;
-    let key = [num_hashes_pred];
-    let (idx, len) = io_get_info(0, key);
-    let byte_stream = #read_byte_stream(0, idx, len);
-    blake3(byte_stream);
-    match num_hashes_pred {
-      0 => 0,
-      _ => blake3_bench(num_hashes_pred),
-    }
-  }
-
   /- # Implementation -/
 
   enum Layer {
@@ -645,6 +623,35 @@ def blake3 := ⟦
       [u8_xor(state[6][0], state[14][0]), u8_xor(state[6][1], state[14][1]), u8_xor(state[6][2], state[14][2]), u8_xor(state[6][3], state[14][3])],
       [u8_xor(state[7][0], state[15][0]), u8_xor(state[7][1], state[15][1]), u8_xor(state[7][2], state[15][2]), u8_xor(state[7][3], state[15][3])]
     ]
+  }
+⟧
+
+/-- Test/benchmark entrypoints for `blake3`, kept out of that toplevel because
+every `pub fn` adds a circuit to a compiled system, and the production systems
+that merge `blake3` (the IxVM kernel, the multi-stark verifier) should not
+carry test-only width. Merge this on top of `blake3` to call them (the
+`aiur-hashes` test env, `bench-blake3`). -/
+def blake3Entrypoints := ⟦
+  /- # Test entrypoints -/
+
+  pub fn blake3_test() -> [[U8; 4]; 8] {
+    let (idx, len) = io_get_info(0, [0]);
+    let byte_stream = #read_byte_stream(0, idx, len);
+    blake3(byte_stream)
+  }
+
+  /- # Benchmark entrypoints -/
+
+  pub fn blake3_bench(num_hashes: G) -> G {
+    let num_hashes_pred = num_hashes - 1;
+    let key = [num_hashes_pred];
+    let (idx, len) = io_get_info(0, key);
+    let byte_stream = #read_byte_stream(0, idx, len);
+    blake3(byte_stream);
+    match num_hashes_pred {
+      0 => 0,
+      _ => blake3_bench(num_hashes_pred),
+    }
   }
 ⟧
 
