@@ -8,7 +8,7 @@ module
 
 public import Blake3.Rust
 public import Std.Data.HashMap
-public import Batteries.Data.RBMap
+public import Std.Data.TreeMap
 public import Ix.Address
 
 public section
@@ -616,13 +616,10 @@ def Environment.toRaw (env : Environment) : RawEnvironment :=
 /-! ## Context Types for Compilation -/
 
 /-- Mutual context mapping Name to index within block. -/
-abbrev MutCtx := Batteries.RBMap Name Nat nameCompare
+abbrev MutCtx := Std.TreeMap Name Nat nameCompare
 
 instance : Ord MutCtx where
   compare a b := compare a.toList b.toList
-
-/-- Set of Names (for tracking constants in a block). -/
-abbrev NameSet := Batteries.RBSet Name nameCompare
 
 end Ix
 

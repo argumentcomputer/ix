@@ -297,6 +297,7 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
   checkToolchain
   let inputCtx := Parser.mkInputContext input filePath.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
+  unsafe enableInitializersExecution  -- required for `processHeader`'s `loadExts := true` import
   let (env, messages) ← processHeader header default messages inputCtx 0
   let env := env.setMainModule default
   let commandState := Command.mkState env messages default

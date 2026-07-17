@@ -35,6 +35,7 @@ def getFileEnv (path : FilePath) : IO Environment := do
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
+  unsafe enableInitializersExecution  -- required for `processHeaderCore`'s `loadExts := true` import
   let (env, messages) ← processHeaderCore
     (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
     (isModule := false) default messages inputCtx 0
@@ -79,7 +80,7 @@ def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
   let root := cwd.getD "."
   let manifest := root / "lake-manifest.json"
   let contents ← IO.FS.readFile manifest
-  if contents.containsSubstr "leanprover-community/mathlib4" then
+  if contents.contains "leanprover-community/mathlib4" then
     let mathlibBuild := root / ".lake" / "packages" / "mathlib" / ".lake" / "build"
     if ← mathlibBuild.pathExists then
       println! "Mathlib cache already present, skipping fetch."

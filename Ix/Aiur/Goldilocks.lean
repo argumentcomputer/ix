@@ -18,7 +18,7 @@ instance : OfNat G n := ⟨G.ofNat n⟩
   let u64 := u8.toUInt64
   have h : u64 < gSize := by
     have lt256 : u64 < 256 := by
-      simpa [UInt64.lt_iff_toNat_lt] using UInt8.toNat_lt _
+      simpa [u64, UInt64.lt_iff_toNat_lt, UInt8.toNat_toUInt64] using UInt8.toNat_lt _
     exact UInt64.lt_trans lt256 (by decide)
   ⟨u64, h⟩
 
