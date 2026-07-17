@@ -1,6 +1,5 @@
 module
 public import Lean.ToExpr
-public import Ix.ByteArray
 public import Ix.Common
 public import Blake3.Rust
 

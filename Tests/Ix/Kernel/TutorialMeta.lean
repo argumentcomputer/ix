@@ -194,7 +194,7 @@ def elabAndAddTestCaseDecl (name : TSyntax ``declId) (type value : Term) (outcom
     (declKind : ConstantKind) (skipTC := false) : CommandElabM Unit := liftTermElabM do
   let (declName, lparams) ← match name with
     | `(declId| $n:ident) => pure (n.getId, [])
-    | `(declId| $n:ident .{ $[$ls:ident],* }) => pure (n.getId, ls.toList.map (·.getId))
+    | `(declId| $n:ident.{ $[$ls:ident],* }) => pure (n.getId, ls.toList.map (·.getId))
     | _ => throwUnsupportedSyntax
   withLevelNames lparams do
     let typeExpr ← elabTermAndSynthesize type none
