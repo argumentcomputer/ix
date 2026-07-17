@@ -36,11 +36,12 @@
 #![allow(dead_code)]
 
 use multi_stark::{
+  baby_bear_blake3::{Commitment, Val},
   builder::symbolic::{Entry, SymbolicExpression, SymbolicVariable},
   lookup::{Lookup, LookupAir},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   system::{Circuit, System},
-  types::{Commitment, CommitmentParameters, FriParameters, Val},
+  types::{CommitmentParameters, FriParameters},
 };
 
 use crate::{

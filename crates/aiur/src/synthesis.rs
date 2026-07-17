@@ -1,13 +1,12 @@
 use multi_stark::{
+  baby_bear_blake3::{BabyBearBlake3Config, PcsError},
   lookup::LookupAir,
   p3_air::{Air, AirBuilder, BaseAir},
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{ProverKey, System, SystemWitness},
-  types::{
-    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
-  },
+  types::{CommitmentParameters, FriParameters},
   verifier::VerificationError,
 };
 use rayon::iter::{
@@ -25,7 +24,7 @@ use crate::{
 };
 
 /// The concrete STARK configuration Aiur instantiates multi-stark with.
-pub type AiurConfig = GoldilocksBlake3Config;
+pub type AiurConfig = BabyBearBlake3Config;
 /// A proof under [`AiurConfig`].
 pub type AiurProof = Proof<AiurConfig>;
 

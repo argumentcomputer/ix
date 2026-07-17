@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use rustc_hash::FxBuildHasher;
 
-pub type G = multi_stark::p3_goldilocks::Goldilocks;
+pub type G = multi_stark::p3_baby_bear::BabyBear;
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 #[inline]
