@@ -1744,14 +1744,12 @@ extern "C" fn rs_tmp_decode_const_map(
           .insert(entry.key().clone(), entry.value().addr.clone());
       }
       match decompile_env(&fresh_stt) {
-        Ok(dstt2) => {
-          match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
-            Ok(c) => failures += c.mismatches + c.missing,
-            Err(e) => {
-              eprintln!("[rust-compile] Phase 6 check FAILED: {e:?}");
-              failures += 1;
-            },
-          }
+        Ok(dstt2) => match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
+          Ok(c) => failures += c.mismatches + c.missing,
+          Err(e) => {
+            eprintln!("[rust-compile] Phase 6 check FAILED: {e:?}");
+            failures += 1;
+          },
         },
         Err(e) => {
           eprintln!("[rust-compile] Phase 6 re-decompile FAILED: {e:?}");
