@@ -314,11 +314,12 @@
             ];
           };
 
+          # TODO: Re-enable the zkVM shells once they build in CI.
           # Zisk shell for `zisk-guest/` (cargo-zisk, ziskemu, RISC-V toolchain).
           # Kept separate from `default`: merging cross-pollinates NIX_CFLAGS_COMPILE
           # between zisk.nix's and this flake's nixpkgs, which breaks bindgen on
           # `lean.h`.
-          devShells.zisk = zisk.devShells.${system}.default;
+          # devShells.zisk = zisk.devShells.${system}.default;
 
           # SP1 shell for `sp1/host` + `sp1/guest`: host Rust toolchain plus
           # cargo-prove and the succinct Rust toolchain (~/.sp1) from sp1.nix.
@@ -326,18 +327,18 @@
           # toolchain when `RUSTUP_TOOLCHAIN=succinct` (set by `sp1-build`); the
           # plain host rustc doesn't know `riscv64im-succinct-zkvm-elf`.
           # `sp1-prover-types`'s build script needs `protoc`.
-          devShells.sp1 = pkgs.mkShell {
-            name = "sp1";
-            inputsFrom = [ sp1.devShells.${system}.default ];
-            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-            packages = with pkgs; [
-              pkg-config
-              openssl
-              protobuf
-              clang
-              (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
-            ];
-          };
+          # devShells.sp1 = pkgs.mkShell {
+          #   name = "sp1";
+          #   inputsFrom = [ sp1.devShells.${system}.default ];
+          #   LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+          #   packages = with pkgs; [
+          #     pkg-config
+          #     openssl
+          #     protobuf
+          #     clang
+          #     (sp1.packages.${system}.rustup-shim.override { inherit rustToolchain; })
+          #   ];
+          # };
 
           formatter = pkgs.alejandra;
         };
