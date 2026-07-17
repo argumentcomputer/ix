@@ -322,56 +322,107 @@ def genKVMapEntry : Gen (Address × DataValue) :=
 def genKVMap : Gen KVMap :=
   genSmallArray genKVMapEntry
 
-/-- Generate an ExprMetaData node with arena indices bounded by arenaSize -/
-def genExprMetaData (arenaSize : Nat := 0) : Gen ExprMetaData :=
+/-- Generate a CallSiteEntry. `genIdx` bounds the arena-subtree index;
+    canonical/sharing indices are free u64s (serde does not validate them). -/
+def genCallSiteEntry (genIdx : Gen UInt64) : Gen CallSiteEntry :=
+  frequency [
+    (2, CallSiteEntry.kept <$> genUInt64Small <*> genIdx),
+    (1, CallSiteEntry.collapsed <$> genUInt64Small <*> genIdx),
+  ]
+
+/-- Generate an optional AuxLayout (nested-aux sidecar on `muts`). -/
+def genAuxLayout? : Gen (Option AuxLayout) :=
+  frequency [
+    (2, pure none),
+    (1, (fun p c => some { perm := p, sourceCtorCounts := c })
+      <$> genSmallArray genUInt64Small <*> genSmallArray genUInt64Small),
+  ]
+
+/-- Generate an ExprMetaData node with arena indices bounded by arenaSize.
+    `genAddr` supplies name addresses — pass a pool-constrained generator
+    when the value must serialize through a name index (env-level tests). -/
+def genExprMetaData (arenaSize : Nat := 0) (genAddr : Gen Address := genAddress)
+    : Gen ExprMetaData :=
   let genIdx : Gen UInt64 :=
     if arenaSize == 0 then pure 0
     else UInt64.ofNat <$> Gen.choose Nat 0 (arenaSize - 1)
   frequency [
     (20, pure .leaf),
     (15, ExprMetaData.app <$> genIdx <*> genIdx),
-    (15, ExprMetaData.binder <$> genAddress <*> genBinderInfo <*> genIdx <*> genIdx),
-    (10, ExprMetaData.letBinder <$> genAddress <*> genIdx <*> genIdx <*> genIdx),
-    (15, ExprMetaData.ref <$> genAddress),
-    (10, ExprMetaData.prj <$> genAddress <*> genIdx),
-    (5, ExprMetaData.mdata <$> genSmallArray genKVMap <*> genIdx),
+    (15, ExprMetaData.binder <$> genAddr <*> genBinderInfo <*> genIdx <*> genIdx),
+    (10, ExprMetaData.letBinder <$> genAddr <*> genIdx <*> genIdx <*> genIdx),
+    (15, ExprMetaData.ref <$> genAddr),
+    (10, ExprMetaData.prj <$> genAddr <*> genIdx),
+    (5, ExprMetaData.mdata <$> genSmallArray (genKVMapWith genAddr) <*> genIdx),
+    (5, ExprMetaData.callSite <$> genAddr
+      <*> genSmallArray (genCallSiteEntry genIdx)
+      <*> genSmallArray genIdx
+      <*> frequency [
+            (2, pure none),
+            (1, (fun a b => some (a, b)) <$> genUInt64Small <*> genIdx),
+          ]),
   ]
+where
+  /-- KVMap whose keys and `ofName` payloads draw from `genAddr` (they are
+      name-indexed on the wire); blob-addressed payloads stay raw. -/
+  genKVMapWith (genAddr : Gen Address) : Gen KVMap :=
+    genSmallArray (Prod.mk <$> genAddr <*> frequency [
+      (10, .ofString <$> genAddress),
+      (10, .ofBool <$> genBool),
+      (10, .ofName <$> genAddr),
+      (10, .ofNat <$> genAddress),
+      (10, .ofInt <$> genAddress),
+      (10, .ofSyntax <$> genAddress),
+    ])
 
 /-- Generate a valid ExprMetaArena by building nodes bottom-up
     so child indices always reference earlier entries. -/
-def genExprMetaArena : Gen ExprMetaArena := do
+def genExprMetaArena (genAddr : Gen Address := genAddress) : Gen ExprMetaArena := do
   let numNodes ← Gen.choose Nat 0 6
   let mut arena : ExprMetaArena := {}
   for _ in [:numNodes] do
-    let node ← genExprMetaData arena.nodes.size
+    let node ← genExprMetaData arena.nodes.size genAddr
     arena := { nodes := arena.nodes.push node }
   pure arena
 
-/-- Generate a ConstantMeta with all variants -/
-def genConstantMeta : Gen ConstantMeta := do
-  let arena ← genExprMetaArena
+/-- Generate a ConstantMetaInfo with all variants -/
+def genConstantMetaInfo (genAddr : Gen Address := genAddress) : Gen ConstantMetaInfo := do
+  let arena ← genExprMetaArena genAddr
   let genRoot : Gen UInt64 :=
     if arena.nodes.size == 0 then pure 0
     else UInt64.ofNat <$> Gen.choose Nat 0 (arena.nodes.size - 1)
   frequency [
     (10, pure .empty),
-    (15, ConstantMeta.defn <$> genAddress <*> genSmallArray genAddress
-      <*> genSmallArray genAddress <*> genSmallArray genAddress
+    (15, ConstantMetaInfo.defn <$> genAddr <*> genSmallArray genAddr
+      <*> genSmallArray genAddr <*> genSmallArray genAddr
       <*> pure arena <*> genRoot <*> genRoot),
-    (15, ConstantMeta.axio <$> genAddress <*> genSmallArray genAddress
+    (15, ConstantMetaInfo.axio <$> genAddr <*> genSmallArray genAddr
       <*> pure arena <*> genRoot),
-    (10, ConstantMeta.quot <$> genAddress <*> genSmallArray genAddress
+    (10, ConstantMetaInfo.quot <$> genAddr <*> genSmallArray genAddr
       <*> pure arena <*> genRoot),
-    (15, ConstantMeta.indc <$> genAddress <*> genSmallArray genAddress <*> genSmallArray genAddress
-      <*> genSmallArray genAddress <*> genSmallArray genAddress
+    (15, ConstantMetaInfo.indc <$> genAddr <*> genSmallArray genAddr <*> genSmallArray genAddr
+      <*> genSmallArray genAddr <*> genSmallArray genAddr
       <*> pure arena <*> genRoot),
-    (15, ConstantMeta.ctor <$> genAddress <*> genSmallArray genAddress <*> genAddress
+    (15, ConstantMetaInfo.ctor <$> genAddr <*> genSmallArray genAddr <*> genAddr
       <*> pure arena <*> genRoot),
-    (15, ConstantMeta.recr <$> genAddress <*> genSmallArray genAddress <*> genSmallArray genAddress
-      <*> genSmallArray genAddress <*> genSmallArray genAddress
+    (15, ConstantMetaInfo.recr <$> genAddr <*> genSmallArray genAddr <*> genSmallArray genAddr
+      <*> genSmallArray genAddr <*> genSmallArray genAddr
       <*> pure arena <*> genRoot <*> genSmallArray genRoot),
-    (5, ConstantMeta.muts <$> genSmallArray (genSmallArray genAddress)),
+    (5, ConstantMetaInfo.muts <$> genSmallArray (genSmallArray genAddr)
+      <*> genAuxLayout?),
   ]
+
+/-- Generate a ConstantMeta wrapper: variant payload + surgery extension
+    tables (sharing exprs / raw refs / univs — none are name-indexed). -/
+def genConstantMeta (genAddr : Gen Address := genAddress) : Gen ConstantMeta := do
+  let info ← genConstantMetaInfo genAddr
+  let metaSharing ← frequency [(2, pure #[]), (1, genSmallArray genExpr)]
+  let metaRefs ← frequency [(2, pure #[]), (1, genSmallArray genAddress)]
+  let metaUnivs ← frequency [(2, pure #[]), (1, genSmallArray genUniv)]
+  return { info, metaSharing, metaRefs, metaUnivs }
+
+instance : Shrinkable CallSiteEntry where shrink _ := []
+instance : Shrinkable AuxLayout where shrink _ := []
 
 instance : Shrinkable ExprMetaData where
   shrink em := match em with
@@ -381,14 +432,28 @@ instance : Shrinkable ExprMetaData where
 instance : Shrinkable ExprMetaArena where
   shrink arena := if arena.nodes.size > 0 then [{ nodes := arena.nodes.pop }] else []
 
-instance : Shrinkable ConstantMeta where
+instance : Shrinkable ConstantMetaInfo where
   shrink m := match m with
     | .empty => []
     | _ => [.empty]
 
+instance : Shrinkable ConstantMeta where
+  shrink m := match m.info with
+    | .empty =>
+      if m.hasExtensions then [{ m with metaSharing := #[], metaRefs := #[], metaUnivs := #[] }]
+      else []
+    | _ => [{ m with info := .empty }]
+
+instance : SampleableExt CallSiteEntry :=
+  SampleableExt.mkSelfContained (genCallSiteEntry genUInt64Small)
+instance : SampleableExt AuxLayout := SampleableExt.mkSelfContained do
+  match ← genAuxLayout? with
+  | some l => pure l
+  | none => pure {}
 instance : SampleableExt ExprMetaData := SampleableExt.mkSelfContained (genExprMetaData 5)
-instance : SampleableExt ExprMetaArena := SampleableExt.mkSelfContained genExprMetaArena
-instance : SampleableExt ConstantMeta := SampleableExt.mkSelfContained genConstantMeta
+instance : SampleableExt ExprMetaArena := SampleableExt.mkSelfContained (genExprMetaArena)
+instance : SampleableExt ConstantMetaInfo := SampleableExt.mkSelfContained (genConstantMetaInfo)
+instance : SampleableExt ConstantMeta := SampleableExt.mkSelfContained (genConstantMeta)
 
 /-- Generate a Named entry with proper metadata.
     Exercises both `none` and `some (addr, meta)` for the `original` field
@@ -411,7 +476,7 @@ def genCommNew : Gen Comm :=
   Comm.mk <$> genAddress <*> genAddress
 
 instance : Shrinkable Named where
-  shrink n := match n.constMeta with
+  shrink n := match n.constMeta.info with
     | .empty => []
     | _ => [{ n with constMeta := .empty }]
 
@@ -461,8 +526,10 @@ def genRawConst : Gen RawConst := do
     §5 keys the entry's constant by §2 rank and the writers reject
     out-of-consts references. `genRawEnv` generates env-consistent
     named entries itself. -/
-def genRawNamed : Gen RawNamed :=
-  RawNamed.mk <$> genIxName 3 <*> genAddress <*> pure .empty <*> pure none
+def genRawNamed : Gen RawNamed := do
+  let name ← genIxName 3
+  let addr ← genAddress
+  pure { name, addr, constMeta := .empty }
 
 /-- Generate a RawBlob whose `addr` is the canonical content hash of
     `bytes`. Readers verify `Address.blake3 bytes == addr` per entry
@@ -475,32 +542,93 @@ def genRawBlob : Gen RawBlob := do
 def genRawComm : Gen RawComm :=
   RawComm.mk <$> genAddress <*> genCommNew
 
-/-- Generate a RawNameEntry -/
-def genRawNameEntry : Gen RawNameEntry :=
-  RawNameEntry.mk <$> genAddress <*> genIxName 3
+/-- Generate a RawNameEntry. The names table is content-addressed
+    (`addr = name.getHash` — the component addresses ARE the parent-chain
+    linking structure), so the entry's address is canonical: `RawEnv.toEnv`
+    re-keys by `getHash` while the Rust FFI keeps the given address, and
+    the two writers only agree on canonical inputs. -/
+def genRawNameEntry : Gen RawNameEntry := do
+  let name ← genIxName 3
+  pure { addr := name.getHash, name }
+
+/-- Collect the parent-closure component addresses of a name (the
+    addresses its serialization will reference through the §4 index). -/
+partial def nameComponentAddrs (name : Ix.Name) (acc : Array Address := #[])
+    : Array Address :=
+  let acc := acc.push name.getHash
+  match name with
+  | .anonymous _ => acc
+  | .str parent _ _ => nameComponentAddrs parent acc
+  | .num parent _ _ => nameComponentAddrs parent acc
+
+/-- Collect canonical RawNameEntry rows for a name's full component chain
+    (excluding anonymous — both writers emit it implicitly). Real envs'
+    names tables are closed under parents: the compiler registers every
+    component, and a serialized §4 stores one row per component. The Lean
+    `RawEnv.toEnv` closes the table itself but the Rust FFI conversion does
+    not, so generated envs must carry the closure explicitly for the two
+    writers to see identical name sets. -/
+partial def nameComponentEntries (name : Ix.Name) (acc : Array RawNameEntry := #[])
+    : Array RawNameEntry :=
+  match name with
+  | .anonymous _ => acc
+  | .str parent _ _ | .num parent _ _ =>
+    nameComponentEntries parent (acc.push { addr := name.getHash, name })
 
 /-- Generate a RawEnv with small arrays to avoid memory issues. `main`
     (when present), named entries, and hint keys all reference
     generated consts — the writers reject `main`/`named.addr`/hint
     keys outside `consts` (§3/§5 are index-keyed). Assumptions stay
-    opaque addresses. -/
+    opaque addresses.
+
+    Named entries carry REAL metadata whose name addresses are drawn from
+    the env's §4 name pool (component closure of `names` + named leaf
+    names + anon): the Lean writer silently maps out-of-index addresses
+    to 0 while the Rust writer errors, so pool-constrained generation is
+    what lets the byte-parity property (`envBytesMatchRust`) cover
+    metadata. Named leaf names are ALSO emitted in `names`: the Rust
+    RawEnv path (unlike `RawEnv.toEnv`) does not auto-register name
+    components for named entries. -/
 def genRawEnv : Gen RawEnv := do
   let consts ← genSmallArray genRawConst
-  let named ←
-    if consts.size > 0 then
-      genSmallArray do
-        let name ← genIxName 3
-        let i ← Gen.choose Nat 0 (consts.size - 1)
-        let addr := (consts[i % consts.size]!).addr
-        let hints ← frequency [
-          (1, pure none),
-          (2, some <$> genReducibilityHints),
-        ]
-        pure ({ name, addr, constMeta := .empty, hints } : RawNamed)
-    else pure #[]
+  let nameEntries ← genSmallArray genRawNameEntry
+  let namedNames ←
+    if consts.size > 0 then genSmallArray (genIxName 3) else pure #[]
+  -- §4 name pool: anon + component closure of every name both writers
+  -- will place in the name index.
+  let mut pool : Array Address := #[Ix.Name.mkAnon.getHash]
+  for e in nameEntries do
+    pool := nameComponentAddrs e.name pool
+  for n in namedNames do
+    pool := nameComponentAddrs n pool
+  let genPoolAddr : Gen Address := SlimCheck.Gen.elements pool
+  let mut named : Array RawNamed := #[]
+  for name in namedNames do
+    let i ← Gen.choose Nat 0 (consts.size - 1)
+    let addr := (consts[i % consts.size]!).addr
+    let constMeta ← genConstantMeta genPoolAddr
+    -- `original` stays a raw address on the wire (may reference an
+    -- assumed constant), so it is unconstrained; its metadata is
+    -- name-indexed like the primary metadata.
+    let original ← frequency [
+      (3, pure none),
+      (1, (fun a m => some (a, m)) <$> genAddress <*> genConstantMeta genPoolAddr),
+    ]
+    let hints ← frequency [
+      (1, pure none),
+      (2, some <$> genReducibilityHints),
+    ]
+    named := named.push { name, addr, constMeta, original, hints }
   let blobs ← genSmallArray genRawBlob
   let comms ← genSmallArray genRawComm
-  let names ← genSmallArray genRawNameEntry
+  -- §4 carries the full component closure (see `nameComponentEntries`) —
+  -- named-entry names included, since the Rust RawEnv path does not
+  -- auto-register name components for named entries.
+  let mut names : Array RawNameEntry := #[]
+  for e in nameEntries do
+    names := nameComponentEntries e.name names
+  for n in namedNames do
+    names := nameComponentEntries n names
   let main ←
     if consts.size > 0 then
       frequency [
@@ -526,7 +654,7 @@ instance : Shrinkable RawConst where
   shrink rc := (fun c => { rc with const := c }) <$> Shrinkable.shrink rc.const
 
 instance : Shrinkable RawNamed where
-  shrink rn := match rn.constMeta with
+  shrink rn := match rn.constMeta.info with
     | .empty => []
     | _ => [{ rn with constMeta := .empty }]
 

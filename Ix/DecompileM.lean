@@ -376,6 +376,12 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
+  -- Call-site surgery replay (re-expanding collapsed arguments from the
+  -- metadata extension tables) is not implemented in the pure-Lean
+  -- decompiler — reject rather than silently dropping surgery names.
+  | .callSite .., _ =>
+    throw (.badConstantFormat
+      "call-site surgery metadata not supported by pure-Lean decompile")
   | _, .var idx =>
     pure (applyMdata (Ix.Expr.mkBVar idx.toNat) mdataLayers)
 
@@ -494,32 +500,37 @@ def toIxQuotKind : QuotKind → Lean.QuotKind
 
 /-! ## ConstantMeta Extraction Helpers -/
 
-def getNameAddr : ConstantMeta → Option Address
+def getNameAddr (cm : ConstantMeta) : Option Address :=
+  match cm.info with
   | .defn name .. => some name | .axio name .. => some name
   | .quot name .. => some name | .indc name .. => some name
   | .ctor name .. => some name | .recr name .. => some name
-  | .empty | .muts _ => none
+  | .empty | .muts _ _ => none
 
-def getLvlAddrs : ConstantMeta → Array Address
+def getLvlAddrs (cm : ConstantMeta) : Array Address :=
+  match cm.info with
   | .defn _ lvls .. => lvls | .axio _ lvls .. => lvls
   | .quot _ lvls .. => lvls | .indc _ lvls .. => lvls
   | .ctor _ lvls .. => lvls | .recr _ lvls .. => lvls
-  | .empty | .muts _ => #[]
+  | .empty | .muts _ _ => #[]
 
-def getArenaAndTypeRoot : ConstantMeta → ExprMetaArena × UInt64
+def getArenaAndTypeRoot (cm : ConstantMeta) : ExprMetaArena × UInt64 :=
+  match cm.info with
   | .defn _ _ _ _ arena typeRoot _ => (arena, typeRoot)
   | .axio _ _ arena typeRoot => (arena, typeRoot)
   | .quot _ _ arena typeRoot => (arena, typeRoot)
   | .indc _ _ _ _ _ arena typeRoot => (arena, typeRoot)
   | .ctor _ _ _ arena typeRoot => (arena, typeRoot)
   | .recr _ _ _ _ _ arena typeRoot _ => (arena, typeRoot)
-  | .empty | .muts _ => ({}, 0)
+  | .empty | .muts _ _ => ({}, 0)
 
-def getAllAddrs : ConstantMeta → Array Address
+def getAllAddrs (cm : ConstantMeta) : Array Address :=
+  match cm.info with
   | .defn _ _ all .. => all | .indc _ _ _ all .. => all
   | .recr _ _ _ all .. => all | _ => #[]
 
-def getCtxAddrs : ConstantMeta → Array Address
+def getCtxAddrs (cm : ConstantMeta) : Array Address :=
+  match cm.info with
   | .defn _ _ _ ctx .. => ctx | .indc _ _ _ _ ctx .. => ctx
   | .recr _ _ _ _ ctx .. => ctx | _ => #[]
 
@@ -571,7 +582,7 @@ def decompileDefinition (d : Ixon.Definition) (cnst : Constant) (cMeta : Constan
   let univParams ← decompileMetaLevels cMeta
   let allNames ← decompileMetaAll cMeta name
   let mutCtx ← decompileMetaCtx cMeta
-  let valueRoot := match cMeta with
+  let valueRoot := match cMeta.info with
     | .defn _ _ _ _ _ _ valueRoot => valueRoot
     | _ => (0 : UInt64)
   -- Hints live in `Env.anonHints`, keyed by the constant address the
@@ -628,7 +639,7 @@ def decompileRecursor (rec : Ixon.Recursor) (cnst : Constant) (cMeta : ConstantM
   let univParams ← decompileMetaLevels cMeta
   let allNames ← decompileMetaAll cMeta name
   let mutCtx ← decompileMetaCtx cMeta
-  let (ruleRoots, ruleAddrs) := match cMeta with
+  let (ruleRoots, ruleAddrs) := match cMeta.info with
     | .recr _ _ rules _ _ _ _ ruleRoots => (ruleRoots, rules)
     | _ => (#[], #[])
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
@@ -653,7 +664,7 @@ def decompileInductive (ind : Ixon.Inductive) (cnst : Constant) (cMeta : Constan
   let univParams ← decompileMetaLevels cMeta
   let allNames ← decompileMetaAll cMeta name
   let mutCtx ← decompileMetaCtx cMeta
-  let ctorNameAddrs := match cMeta with
+  let ctorNameAddrs := match cMeta.info with
     | .indc _ _ ctors .. => ctors | _ => #[]
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
   let typeExpr ← withFreshBlock cnst mutCtx univParams arena do

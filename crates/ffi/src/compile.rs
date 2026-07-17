@@ -80,9 +80,10 @@ fn build_raw_named(
   name: &Name,
   addr: &Address,
   meta: &ConstantMeta,
+  original: &Option<(Address, ConstantMeta)>,
   hints: Option<ReducibilityHints>,
 ) -> LeanIxonRawNamed<LeanOwned> {
-  LeanIxonRawNamed::build_from_parts(cache, name, addr, meta, hints)
+  LeanIxonRawNamed::build_from_parts(cache, name, addr, meta, original, hints)
 }
 
 /// Build RawBlob using type method.
@@ -402,7 +403,14 @@ pub extern "C" fn rs_compile_phases(
     for (i, (name, n)) in named.iter().enumerate() {
       named_arr.set(
         i,
-        build_raw_named(&mut cache, name, &n.addr, &n.meta(), n.hints()),
+        build_raw_named(
+          &mut cache,
+          name,
+          &n.addr,
+          &n.meta(),
+          &n.original().map(|(a, m)| (a, (*m).clone())),
+          n.hints(),
+        ),
       );
     }
 
@@ -505,7 +513,14 @@ pub extern "C" fn rs_compile_env_to_ixon(
     for (i, (name, n)) in named.iter().enumerate() {
       named_arr.set(
         i,
-        build_raw_named(&mut cache, name, &n.addr, &n.meta(), n.hints()),
+        build_raw_named(
+          &mut cache,
+          name,
+          &n.addr,
+          &n.meta(),
+          &n.original().map(|(a, m)| (a, (*m).clone())),
+          n.hints(),
+        ),
       );
     }
 

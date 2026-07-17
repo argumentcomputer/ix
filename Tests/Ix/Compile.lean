@@ -221,7 +221,7 @@ def testCrossImpl : TestSeq :=
               for i in [:arena.nodes.size] do
                 IO.println s!"    [{i}] {reprStr arena.nodes[i]!}"
             let dumpMeta (label : String) (cm : Ixon.ConstantMeta) : IO Unit := do
-              match cm with
+              match cm.info with
               | .defn _ _ _ _ arena typeRoot valueRoot => do
                 dumpArena label "arena" arena
                 IO.println s!"  {label} typeRoot={typeRoot} valueRoot={valueRoot}"
@@ -240,7 +240,7 @@ def testCrossImpl : TestSeq :=
               | .indc _ _ _ _ _ arena typeRoot => do
                 dumpArena label "arena" arena
                 IO.println s!"  {label} typeRoot={typeRoot}"
-              | .muts all => IO.println s!"  {label}: muts classes={all.size}"
+              | .muts all _ => IO.println s!"  {label}: muts classes={all.size}"
               | .empty => IO.println s!"  {label}: empty"
             dumpMeta "Lean" leanNamed.constMeta
             dumpMeta "Rust" rustNamed.constMeta
@@ -253,14 +253,14 @@ def testCrossImpl : TestSeq :=
           for (name, leanCM, rustCM) in result.fullMetaMismatches[:min 5 result.fullMetaMismatches.size] do
             IO.println s!"  {name}:"
             -- Compare variant tags
-            let leanTag := match leanCM with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr" | .muts .. => "muts"
-            let rustTag := match rustCM with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr" | .muts .. => "muts"
+            let leanTag := match leanCM.info with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr" | .muts .. => "muts"
+            let rustTag := match rustCM.info with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr" | .muts .. => "muts"
             if leanTag != rustTag then
               IO.println s!"    VARIANT DIFFERS: Lean={leanTag} Rust={rustTag}"
             else
               IO.println s!"    variant: {leanTag}"
               -- Field-by-field comparison for common variants
-              match leanCM, rustCM with
+              match leanCM.info, rustCM.info with
               | .defn ln ll la lc larena ltr lvr, .defn rn rl ra rc rarena rtr rvr => do
                 if ln != rn then IO.println s!"    name DIFFERS: Lean={ln} Rust={rn}"
                 if ll != rl then IO.println s!"    lvls DIFFERS: Lean={ll.size} Rust={rl.size}"
@@ -292,8 +292,9 @@ def testCrossImpl : TestSeq :=
                 if larena != rarena then IO.println s!"    arena DIFFERS: Lean={larena.nodes.size} Rust={rarena.nodes.size}"
                 if ltr != rtr then IO.println s!"    typeRoot DIFFERS: Lean={ltr} Rust={rtr}"
                 if lrr != rrr then IO.println s!"    ruleRoots DIFFERS: Lean={lrr} Rust={rrr}"
-              | .muts la, .muts ra => do
+              | .muts la lal, .muts ra ral => do
                 if la != ra then IO.println s!"    all DIFFERS: Lean={la} Rust={ra}"
+                if lal != ral then IO.println s!"    auxLayout DIFFERS: Lean={reprStr lal} Rust={reprStr ral}"
               | _, _ => IO.println s!"    (other variant - use repr for details)"
         else
           IO.println s!"[Step 3]   All full ConstantMeta match! ✓"

@@ -1,6 +1,7 @@
 import Tests.Aiur
 import Tests.ByteArray
 import Tests.Ix.Ixon
+import Tests.Ix.IxonCorpus
 import Tests.Ix.IxVM
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
@@ -82,6 +83,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   --("compile", Tests.Compile.compileSuiteIO),
   --("decompile", Tests.Decompile.decompileSuiteIO),
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
+  ("ixon-corpus", Tests.Ixon.Corpus.suite),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
   ("kernel-ixon-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),

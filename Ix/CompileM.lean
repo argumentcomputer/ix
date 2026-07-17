@@ -898,7 +898,7 @@ def compileDefinition (d : DefinitionVal) : CompileM (Ixon.Definition × Ixon.Co
       value := valueExpr
     }
     recordDefHints d.cnst.name d.hints
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
+    let constMeta := Ixon.ConstantMeta.new (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot)
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile a theorem to Ixon.Definition with metadata. -/
@@ -929,7 +929,7 @@ def compileTheorem (d : TheoremVal) : CompileM (Ixon.Definition × Ixon.Constant
       value := valueExpr
     }
     recordDefHints d.cnst.name .opaque
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
+    let constMeta := Ixon.ConstantMeta.new (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot)
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile an opaque to Ixon.Definition with metadata. -/
@@ -960,7 +960,7 @@ def compileOpaque (d : OpaqueVal) : CompileM (Ixon.Definition × Ixon.ConstantMe
       value := valueExpr
     }
     recordDefHints d.cnst.name .opaque
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
+    let constMeta := Ixon.ConstantMeta.new (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot)
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile an axiom to Ixon.Axiom with metadata. -/
@@ -983,7 +983,7 @@ def compileAxiom (a : AxiomVal) : CompileM (Ixon.Axiom × Ixon.ConstantMeta × I
       lvls := a.cnst.levelParams.size.toUInt64
       typ := typeExpr
     }
-    let constMeta := Ixon.ConstantMeta.axio nameAddr lvlAddrs arena typeRoot
+    let constMeta := Ixon.ConstantMeta.new (.axio nameAddr lvlAddrs arena typeRoot)
     pure (axio, constMeta, typeExpr)
 
 /-- Compile a quotient to Ixon.Quotient with metadata. -/
@@ -1011,7 +1011,7 @@ def compileQuotient (q : QuotVal) : CompileM (Ixon.Quotient × Ixon.ConstantMeta
       lvls := q.cnst.levelParams.size.toUInt64
       typ := typeExpr
     }
-    let constMeta := Ixon.ConstantMeta.quot nameAddr lvlAddrs arena typeRoot
+    let constMeta := Ixon.ConstantMeta.new (.quot nameAddr lvlAddrs arena typeRoot)
     pure (quot, constMeta, typeExpr)
 
 /-- Compile a recursor rule to Ixon, returning the ctor address and rhs expression. -/
@@ -1061,7 +1061,7 @@ def compileRecursor (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Constant
       typ := typeExpr
       rules := rules
     }
-    let constMeta := Ixon.ConstantMeta.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots
+    let constMeta := Ixon.ConstantMeta.new (.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots)
     pure (recursor, constMeta, typeExpr)
 
 /-- Compile a constructor to Ixon.Constructor with metadata (ConstantMeta.ctor). -/
@@ -1086,7 +1086,7 @@ def compileConstructor (c : ConstructorVal) : CompileM (Ixon.Constructor × Ixon
     fields := c.numFields.toUInt64
     typ := typeExpr
   }
-  let ctorMeta := Ixon.ConstantMeta.ctor nameAddr lvlAddrs c.induct.getHash arena typeRoot
+  let ctorMeta := Ixon.ConstantMeta.new (.ctor nameAddr lvlAddrs c.induct.getHash arena typeRoot)
   pure (ctor, ctorMeta, typeExpr)
 
 /-- Compile an inductive to Ixon.Inductive with metadata.
@@ -1130,7 +1130,7 @@ def compileInductive (i : InductiveVal) (ctorVals : Array ConstructorVal)
       typ := typeExpr
       ctors := ctors
     }
-    let constMeta := Ixon.ConstantMeta.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot
+    let constMeta := Ixon.ConstantMeta.new (.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot)
     pure (ind, constMeta, ctorMetaPairs, ctorExprs)
 
 /-! ## Internal compilation helpers for mutual blocks -/
@@ -1167,7 +1167,7 @@ def compileDefinitionData (d : Def) : CompileM (Ixon.Definition × Ixon.Constant
       | .thm => .opaque
       | .opaq => .opaque
     recordDefHints d.name hints
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
+    let constMeta := Ixon.ConstantMeta.new (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot)
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile inductive data for an Ind structure (from Mutual.lean).
@@ -1210,7 +1210,7 @@ def compileInductiveData (i : Ind)
       typ := typeExpr
       ctors := ctors
     }
-    let constMeta := Ixon.ConstantMeta.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot
+    let constMeta := Ixon.ConstantMeta.new (.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot)
     pure (ind, constMeta, ctorMetaPairs, ctorExprs)
 
 /-- Compile recursor data for a RecursorVal. -/
@@ -1254,7 +1254,7 @@ def compileRecursorData (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Cons
       typ := typeExpr
       rules := rules
     }
-    let constMeta := Ixon.ConstantMeta.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots
+    let constMeta := Ixon.ConstantMeta.new (.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots)
     pure (recursor, constMeta, typeExpr)
 
 /-! ## Mutual Block Compilation -/

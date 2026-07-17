@@ -48,7 +48,8 @@ lean_ffi::lean_inductive! {
   LeanIxonComm            [ { num_obj: 2 } ];
   LeanIxonConstant        [ { num_obj: 4 } ];
   LeanIxonRawConst        [ { num_obj: 2 } ];
-  LeanIxonRawNamed        [ { num_obj: 4 } ];
+  // name, addr, constMeta, original, hints
+  LeanIxonRawNamed        [ { num_obj: 5 } ];
   LeanIxonRawBlob         [ { num_obj: 2 } ];
   LeanIxonRawComm         [ { num_obj: 2 } ];
   LeanIxonRawNameEntry    [ { num_obj: 2 } ];
@@ -106,9 +107,19 @@ lean_ffi::lean_inductive! {
     { num_obj: 1 },                           // tag 4: ref
     { num_obj: 1, num_64: 1 },                // tag 5: prj
     { num_obj: 1, num_64: 1 },                // tag 6: mdata
+    // name, entries, canonMeta, origHead
+    { num_obj: 4 },                           // tag 7: callSite
   ];
 
-  LeanIxonConstantMeta [
+  LeanIxonCallSiteEntry [
+    { num_64: 2 },                            // tag 0: kept
+    { num_64: 2 },                            // tag 1: collapsed
+  ];
+
+  // perm, sourceCtorCounts (both Array UInt64)
+  LeanIxonAuxLayout       [ { num_obj: 2 } ];
+
+  LeanIxonConstantMetaInfo [
     { },                                      // tag 0: empty (scalar)
     { num_obj: 5, num_64: 2 },                // tag 1: defn
     { num_obj: 3, num_64: 1 },                // tag 2: axio
@@ -116,8 +127,11 @@ lean_ffi::lean_inductive! {
     { num_obj: 6, num_64: 1 },                // tag 4: indc
     { num_obj: 4, num_64: 1 },                // tag 5: ctor
     { num_obj: 7, num_64: 1 },                // tag 6: recr
-    { num_obj: 1 },                           // tag 7: muts
+    { num_obj: 2 },                           // tag 7: muts (all, auxLayout)
   ];
+
+  // Wrapper structure: info, metaSharing, metaRefs, metaUnivs
+  LeanIxonConstantMeta    [ { num_obj: 4 } ];
 
   LeanIxonDataValue [
     { num_obj: 1 },                           // tag 0: ofString
