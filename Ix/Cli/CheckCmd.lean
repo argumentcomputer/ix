@@ -1,6 +1,6 @@
 /-
   `ix check`: execute the IxVM Aiur kernel over a Lean or `.ixe`
-  environment, one constant at a time. Mirrors what `lake exe check` does.
+  environment, one constant at a time.
   The Rust kernel typechecker that used to live under this name is now `ix check-rs`.
 
   Usage shape:

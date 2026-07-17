@@ -802,7 +802,7 @@ def claim := ⟦
                         top: List‹&KConstantInfo›,
                         addrs: List‹Addr›,
                         asm_leaves: List‹Addr›) {
-    check_canonical_block_sort(top);
+    check_canonical_block_sort(top, addrs);
     -- Build the skip-set once (O(N log N)) instead of an O(N) linear scan per
     -- checked const.
     let skip_set = build_skip_set(asm_leaves, RBTreeMap.Nil);

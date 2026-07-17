@@ -9,6 +9,7 @@ import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
 import Ix.Cli.IngressCmd
+import Ix.Cli.NameOfCmd
 import Ix.Cli.PackCmd
 import Ix.Cli.ProfileCmd
 import Ix.Cli.ProveCmd
@@ -44,6 +45,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     codegenCmd;
     verifyCmd;
     addrOfCmd;
+    nameOfCmd;
     ingressCmd;
     validateCmd;
     serveCmd;

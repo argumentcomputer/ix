@@ -259,8 +259,13 @@ def check := ⟦
         -- lives in a ctor const. Mirror: check_inductive_member walks
         -- its ctors.
         check_inductive_shape(pos, top, addrs);
-        let block_idxs = derive_block_member_idxs(pos, top);
-        validate_block_auxes(block_idxs, top);
+        -- NOTE: stored Muts blocks never contain aux inductives — nested
+        -- auxes are discovered transiently (mirror: inductive.rs seeds every
+        -- stored member `is_aux: false`, rs:537, and flags auxes only on
+        -- detection, rs:755). A stored-aux validation pass here would have
+        -- nothing legitimate to match; smuggled extra members are rejected
+        -- by the recursor-vs-canonical-type equality, whose canonical types
+        -- are built over the detected flat block.
         -- The former H1 declared-vs-computed is_rec check is gone with the
         -- Ixon recr flag: there is no declared value to verify. is_rec is
         -- computed on demand (`computed_is_rec_ind`) wherever it matters
@@ -283,7 +288,8 @@ def check := ⟦
             check_param_agreement(ind_ty, ty, ind_n_params, top, addrs);
             check_ctor_return_type(ty, num_params, ind_n_indices, num_fields,
                                            induct_idx, ind_num_lvls, top);
-            let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices);
+            let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices,
+                                                  store(ListNode.Nil), top, addrs);
             check_field_universes(ty, num_params, ind_level,
                                           store(ListNode.Nil), top, addrs);
             check_positivity(ty, num_params, induct_idx, store(ListNode.Nil), top, addrs);
@@ -344,7 +350,7 @@ def check := ⟦
   }
 
   fn check_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
-    check_canonical_block_sort(top);
+    check_canonical_block_sort(top, addrs);
     check_all_iter(consts, top, addrs, 0)
   }
 
