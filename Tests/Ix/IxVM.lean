@@ -252,19 +252,15 @@ public def runParityCase (compiled : Aiur.CompiledToplevel)
           (bQC.zip cQC).all fun (b, c) =>
             b.uniqueRows == c.uniqueRows && b.totalHits == c.totalHits)
 
-/-- Parity fixtures: `kernel_unit_tests` covers the level primitives
-    end-to-end with zero IO, and every pinned `kernelCheckEntries`
-    constant runs a realistic workload (blake3, ingress, whnf, def-eq,
-    recursor gen) against the same IOBuffer under both engines. -/
+/-- Parity fixtures: every pinned `kernelCheckEntries` constant runs a
+    realistic workload (blake3, ingress, whnf, def-eq, recursor gen)
+    against the same IOBuffer under both engines. Test-only entrypoints
+    (e.g. `kernel_unit_tests`) cannot be parity fixtures: they live in
+    `ixVMTests`, and the codegen'd kernel is generated from the
+    production `ixVM` toplevel only. -/
 public def parityCases (env : Lean.Environment) : IO (List AiurTestCase) := do
-  let emptyIO : Aiur.IOBuffer := { data := ∅, map := ∅ }
-  let kunit : AiurTestCase :=
-    { functionName := `kernel_unit_tests, label := "kernel_unit_tests"
-      input := #[], inputIOBuffer := emptyIO
-      expectedIOBuffer := emptyIO, interpret := false, executionOnly := true }
-  let checks ← kernelCheckEntries.mapM fun (name, _) =>
+  kernelCheckEntries.mapM fun (name, _) =>
     kernelCheck (nameOfString name) env
-  pure (kunit :: checks)
 
 /-! ## Claim variant smoke tests
 

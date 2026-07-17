@@ -20,7 +20,7 @@ def friParameters : Aiur.FriParameters := {
 }
 
 def main : IO Unit := do
-  let .ok toplevel := IxVM.ixVM
+  let .ok toplevel := IxVM.ixVMTests
     | throw (IO.userError "Merging failed")
   let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation failed")
@@ -34,9 +34,10 @@ def main : IO Unit := do
 
   let _ ← bgroup "IxVM benchmarks" { oneShot := true } do
     throughput (.Elements n.toUInt64 "consts")
-    -- IxVM-native prove: routes execution through the codegen'd Rust
-    -- kernel (`execute_generated`) instead of the bytecode interpreter.
+    -- Bytecode-interpreter prove: `ixon_serde_blake3_bench` lives in the
+    -- `ixVMTests` toplevel, which the codegen'd Rust kernel (generated
+    -- from the production `ixVM`) doesn't cover.
     bench "serde/blake3 Nat.add_comm"
-      (aiurSystem.proveIxVM funIdx #[.ofNat n])
+      (aiurSystem.prove funIdx #[.ofNat n])
       ioBuffer
   return

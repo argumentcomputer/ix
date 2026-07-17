@@ -5,7 +5,10 @@ public section
 
 namespace IxVM
 
-def blake3 := ⟦
+/-- Blake3 test/benchmark entrypoints. Kept out of the `blake3` library
+toplevel so they only add circuits to systems that merge them explicitly
+(e.g. `ixVMTests`), never to the production `ixVM`. -/
+def blake3Tests := ⟦
   /- # Test entrypoints -/
 
   pub fn blake3_test() -> [[U8; 4]; 8] {
@@ -27,7 +30,9 @@ def blake3 := ⟦
       _ => blake3_bench(num_hashes_pred),
     }
   }
+⟧
 
+def blake3 := ⟦
   /- # Implementation -/
 
   enum Layer {

@@ -25,7 +25,8 @@ def friParameters : Aiur.FriParameters := {
 
 def mergedToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
   let tl ← IxVM.core.merge IxVM.byteStream
-  tl.merge IxVM.blake3
+  let tl ← tl.merge IxVM.blake3
+  tl.merge IxVM.blake3Tests
 
 def blake3Bench : IO $ Array BenchReport := do
   let .ok toplevel := mergedToplevel

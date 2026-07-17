@@ -26,7 +26,7 @@ public section
 
 namespace IxVM
 
-def entrypoints := ⟦
+def testEntrypoints := ⟦
   /- # Test entrypoints -/
 
   pub fn ixon_serde_test(n: G) {
@@ -157,8 +157,21 @@ def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge inductive_check
   let vm ← vm.merge canonicalCheck
   let vm ← vm.merge check
-  let vm ← vm.merge claim
-  vm.merge entrypoints
+  vm.merge claim
+
+/-- The IxVM toplevel extended with every test/benchmark entrypoint
+    (`ixon_serde_test`, `kernel_unit_tests`, `ixon_serde_blake3_bench`,
+    `blake3_test`/`blake3_bench`, `rbtree_map_test`, …). Test and bench
+    harnesses build their systems from this; the production `ixVM` stays
+    free of the extra entry circuits (and of whatever becomes reachable
+    only through them). NOTE: the codegen'd Rust kernel (`ix codegen`)
+    is generated from `ixVM`, so entrypoints that only exist here must
+    be executed via the bytecode interpreter, never `executeIxVM`. -/
+def ixVMTests : Except Aiur.Global Aiur.Source.Toplevel := do
+  let vm ← ixVM
+  let vm ← vm.merge blake3Tests
+  let vm ← vm.merge rbTreeMapTests
+  vm.merge testEntrypoints
 
 end IxVM
 

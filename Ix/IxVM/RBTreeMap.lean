@@ -127,7 +127,11 @@ def rbTreeMap := ⟦
         },
     }
   }
+⟧
 
+/-- RBTreeMap test entrypoint. Kept out of the `rbTreeMap` library
+toplevel so it only adds circuits to systems that merge it explicitly. -/
+def rbTreeMapTests := ⟦
   /- # Test entrypoints -/
 
   pub fn rbtree_map_test() -> [G; 22] {

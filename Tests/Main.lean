@@ -85,7 +85,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("aiur-hashes", do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
-        let t ← IxVM.core.merge IxVM.byteStream; t.merge IxVM.blake3)
+        let t ← IxVM.core.merge IxVM.byteStream
+        let t ← t.merge IxVM.blake3
+        t.merge IxVM.blake3Tests)
       | IO.eprintln "Blake3 setup failed"; return 1
     let r1 ← LSpec.lspecEachIO blake3TestCases fun tc => pure (blake3Env.runTestCase tc)
     let .ok sha256Env := AiurTestEnv.build (do
@@ -99,23 +101,32 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let kernelChecks ← kernelChecks env
     let claimSmokes ← claimSmokeTests env
     let parityCases ← parityCases env
-    let aiurTests := [kernelUnitTests, serdeNatAddCommTest]
-                     ++ kernelChecks ++ claimSmokes
+    -- Production entrypoints (verify_claim/verify_const) run against the
+    -- production `ixVM` toplevel — the same one `ix check`/`ix prove` and
+    -- the codegen'd kernel use. Test-only entrypoints (kernel_unit_tests,
+    -- ixon_serde_test) live in the extended `ixVMTests` toplevel and run
+    -- through the bytecode interpreter.
+    let prodTests := kernelChecks ++ claimSmokes
+    let testOnlyTests := [kernelUnitTests, serdeNatAddCommTest]
     -- The arena suite shares the compiled toplevel with the AiurTestCase
     -- runs above; build it once here and weave the resulting TestSeq in
     -- alongside `mkAiurTests`'s output.
-    match AiurTestEnv.build IxVM.ixVM with
-    | .error e => IO.eprintln s!"IxVM env build failed: {e}"; return 1
-    | .ok aiurEnv =>
+    match AiurTestEnv.build IxVM.ixVM, AiurTestEnv.build IxVM.ixVMTests with
+    | .error e, _ => IO.eprintln s!"IxVM env build failed: {e}"; return 1
+    | _, .error e => IO.eprintln s!"IxVM test env build failed: {e}"; return 1
+    | .ok aiurEnv, .ok testEnv =>
       let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env aiurEnv.compiled
-      let aiurSeq := aiurTests.foldl (init := .done) fun s tc =>
+      let aiurSeq := prodTests.foldl (init := .done) fun s tc =>
         s ++ aiurEnv.runTestCase tc
+      let testOnlySeq := testOnlyTests.foldl (init := .done) fun s tc =>
+        s ++ testEnv.runTestCase tc
       let paritySeq := parityCases.foldl (init := .done) fun s tc =>
         s ++ runParityCase aiurEnv.compiled tc
-      LSpec.lspecIO (.ofList [("ixvm", [aiurSeq, arenaSeq, paritySeq])]) []),
+      LSpec.lspecIO
+        (.ofList [("ixvm", [aiurSeq, testOnlySeq, arenaSeq, paritySeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
-    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
+    match AiurTestEnv.build (IxVM.rbTreeMap.merge IxVM.rbTreeMapTests) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
   -- Multi-STARK recursive verifier (formerly the `recursive-verifier` executable):
