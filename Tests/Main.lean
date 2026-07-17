@@ -29,6 +29,7 @@ import Tests.Ix.Tc.NodeAddr
 import Tests.Ix.Tc.AnonDiff
 import Tests.Ix.Tc.InitScale
 import Tests.Ix.Tc.TutorialTc
+import Tests.Ix.Tc.Roundtrip
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -65,7 +66,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
-    ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite),
+    ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
+    ++ Tests.Tc.Roundtrip.unitTests),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
@@ -93,6 +95,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-anon-diff", Tests.Tc.AnonDiff.suite),
   ("tc-init", Tests.Tc.InitScale.suite),
   ("tc-tutorial", Tests.Tc.TutorialTc.suite),
+  ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
   -- Tracked pure-Lean kernel divergences (EXPECTED to fail; see
   -- Tests.Tc.AnonDiff.knownDivergenceSuite).
   ("tc-known-divergence", Tests.Tc.AnonDiff.knownDivergence),

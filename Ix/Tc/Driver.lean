@@ -1,6 +1,7 @@
 module
 
 public import Ix.Tc.Ingress
+public import Ix.Tc.Egress
 public import Ix.Tc.Check
 
 /-!
@@ -185,6 +186,108 @@ def checkEnvAnon (ixonEnv : Ixon.Env) (cfg : CheckCfg := {}) :
       st := { st with env := st.env.clearReductionCaches }
       sinceClear := 0
   return results
+
+/-! ### Kernel ↔ Ixon roundtrip driver
+
+`Lean env → (Rust) compile → ixe → Ix.Tc ingress → Ix.Tc egress → canonical
+compare` — the anon analog of the Rust `kernel-ixon-roundtrip` test.
+Certifies ingress loses no information: every constant reconstructs
+structurally from kernel data alone (see `Ix.Tc.Egress` for the comparison
+contract). Each item runs against a **fresh** kernel env — egress needs no
+cross-item state, so memory stays bounded per item at any corpus size. -/
+
+/-- One address's roundtrip verdict. -/
+structure RoundtripResult where
+  addr : Address
+  err? : Option String
+  deriving Repr, Inhabited
+
+/-- Roundtrip one standalone constant: fresh ingress → egress → canonical
+    structural compare. -/
+def roundtripStandalone (ixonEnv : Ixon.Env) (addr : Address)
+    (verify : Bool := true) : RoundtripResult :=
+  let go : IngressM (Option String) := do
+    let some original ← IngressM.liftExcept
+        (getConstVerified ixonEnv addr verify)
+      | throw s!"missing constant {addr}"
+    let selfId ← ingressAnonStandalone ixonEnv addr original
+    let some kc := (← get).get? selfId
+      | throw s!"ingressed constant {addr} absent from kernel env"
+    let egressed ← IngressM.liftExcept (egressStandalone kc addr)
+    IngressM.liftExcept (roundtripCompare original egressed)
+  match go.run {} with
+  | .ok diff? _ => ⟨addr, diff?⟩
+  | .error e _ => ⟨addr, some e⟩
+
+/-- Roundtrip a Muts block: fresh ingress → block egress → canonical compare
+    of the block constant, plus byte-exact comparison of every regenerated
+    projection constant against its stored bytes. One row per `env.consts`
+    key covered (the block itself + every member/ctor projection). -/
+def roundtripBlock (ixonEnv : Ixon.Env) (blockAddr : Address)
+    (verify : Bool := true) : Array RoundtripResult := Id.run do
+  let go : IngressM
+      (Ixon.Constant × Ixon.Constant × Array (Address × Ixon.Constant)) := do
+    let some original ← IngressM.liftExcept
+        (getConstVerified ixonEnv blockAddr verify)
+      | throw s!"missing block {blockAddr}"
+    let _ ← ingressAnonBlock ixonEnv original blockAddr
+    let kenv ← get
+    let some flat := kenv.getBlock? ⟨blockAddr, ()⟩
+      | throw s!"block {blockAddr} not registered after ingress"
+    let mut entries : Array (KId .anon × KConst .anon) :=
+      Array.mkEmpty flat.size
+    for kid in flat do
+      let some kc := kenv.get? kid
+        | throw s!"block member {kid.addr} absent from kernel env"
+      entries := entries.push (kid, kc)
+    let (egressed, projs) ← IngressM.liftExcept (egressBlock entries)
+    return (original, egressed, projs)
+  match go.run {} with
+  | .error e _ => return #[⟨blockAddr, some e⟩]
+  | .ok (original, egressed, projs) _ =>
+    let mut rows : Array RoundtripResult := #[]
+    rows := rows.push <| match roundtripCompare original egressed with
+      | .ok diff? => ⟨blockAddr, diff?⟩
+      | .error e => ⟨blockAddr, some e⟩
+    for (projAddr, projConst) in projs do
+      let expected := Ixon.serConstant projConst
+      match ixonEnv.consts[projAddr]? with
+      | none =>
+        rows := rows.push
+          ⟨projAddr, some "projection address missing from env"⟩
+      | some lc =>
+        if lc.rawBytes == expected then
+          rows := rows.push ⟨projAddr, none⟩
+        else
+          rows := rows.push ⟨projAddr, some
+            s!"projection bytes differ: regenerated {expected.size} bytes vs stored {lc.rawBytes.size}"⟩
+    return rows
+
+/-- Roundtrip one work item (see `buildAnonWork` for the enumeration; its
+    `provenTargets` per item are exactly the addresses reported here). -/
+def roundtripWorkItem (ixonEnv : Ixon.Env) (item : AnonWorkItem)
+    (verify : Bool := true) : Array RoundtripResult :=
+  match item with
+  | .standalone addr => #[roundtripStandalone ixonEnv addr verify]
+  | .block blockAddr _ _ => roundtripBlock ixonEnv blockAddr verify
+
+/-- Chunk the work list into pure tasks for parallel roundtripping. Items
+    are fully independent — each runs against a fresh kernel env, and
+    `Ixon.Env` is an immutable value (`LazyConstant` windows re-parse per
+    materialization; no shared mutable state) — so chunks schedule freely
+    on the task pool (bounded by `LEAN_NUM_THREADS`). Join in chunk order
+    for deterministic reporting. -/
+def roundtripTasks (ixonEnv : Ixon.Env) (work : Array AnonWorkItem)
+    (chunkSize : Nat := 256) (verify : Bool := true) :
+    Array (Task (Array RoundtripResult)) := Id.run do
+  let mut out : Array (Task (Array RoundtripResult)) := #[]
+  let mut i := 0
+  while i < work.size do
+    let chunk := work.extract i (min (i + chunkSize) work.size)
+    out := out.push <| Task.spawn fun () =>
+      chunk.flatMap (fun item => roundtripWorkItem ixonEnv item verify)
+    i := i + chunkSize
+  return out
 
 /-- Read a serialized env (anon sections) and check it. -/
 def checkIxeBytesAnon (bytes : ByteArray) (cfg : CheckCfg := {}) :
