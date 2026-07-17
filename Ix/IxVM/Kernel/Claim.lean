@@ -106,7 +106,7 @@ def claim := ⟦
   -- `assumptions` slot, NOT the bitmask-gated reveal-fields form).
   --   [0x00]              → none
   --   [0x01][addr:32]     → some addr
-  #[group=cold] fn get_opt_addr(stream: ByteStream) -> (Option‹Addr›, ByteStream) {
+  #[group=cold2] fn get_opt_addr(stream: ByteStream) -> (Option‹Addr›, ByteStream) {
     let (tag, s) = read_byte(stream);
     match tag {
       0 => (Option.None, s),
@@ -117,7 +117,7 @@ def claim := ⟦
   }
 
   -- Bitmask-gated decoders for the per-field Reveal payloads.
-  #[group=cold] fn get_opt_u64_masked(mb: G, stream: ByteStream)
+  #[group=cold2] fn get_opt_u64_masked(mb: G, stream: ByteStream)
       -> (Option‹U64›, ByteStream) {
     match mb {
       0 => (Option.None, stream),
@@ -127,7 +127,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn get_opt_addr_masked(mb: G, stream: ByteStream)
+  #[group=cold1] fn get_opt_addr_masked(mb: G, stream: ByteStream)
       -> (Option‹Addr›, ByteStream) {
     match mb {
       0 => (Option.None, stream),
@@ -137,7 +137,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn get_opt_bool_masked(mb: G, stream: ByteStream)
+  #[group=cold1] fn get_opt_bool_masked(mb: G, stream: ByteStream)
       -> (Option‹G›, ByteStream) {
     match mb {
       0 => (Option.None, stream),
@@ -147,7 +147,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn get_opt_def_kind_masked(mb: G, stream: ByteStream)
+  #[group=cold2] fn get_opt_def_kind_masked(mb: G, stream: ByteStream)
       -> (Option‹DefKind›, ByteStream) {
     match mb {
       0 => (Option.None, stream),
@@ -175,7 +175,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn get_opt_quot_kind_masked(mb: G, stream: ByteStream)
+  #[group=cold2] fn get_opt_quot_kind_masked(mb: G, stream: ByteStream)
       -> (Option‹QuotKind›, ByteStream) {
     match mb {
       0 => (Option.None, stream),
@@ -201,7 +201,7 @@ def claim := ⟦
     (RevealRecursorRule.Mk(rule_idx, fields, rhs), s)
   }
 
-  #[group=cold] fn get_reveal_rule_list_inner(stream: ByteStream, count: U64)
+  #[group=cold5] fn get_reveal_rule_list_inner(stream: ByteStream, count: U64)
       -> (List‹RevealRecursorRule›, ByteStream) {
     match u64_is_zero(count) {
       1 => (store(ListNode.Nil), stream),
@@ -212,7 +212,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn get_opt_rule_list_masked(mb: G, stream: ByteStream)
+  #[group=cold3] fn get_opt_rule_list_masked(mb: G, stream: ByteStream)
       -> (Option‹List‹RevealRecursorRule››, ByteStream) {
     match mb {
       0 => (Option.None, stream),
@@ -226,7 +226,7 @@ def claim := ⟦
   -- ============================================================================
   -- RevealConstructorInfo parser. 6 optional fields, mask bits 0..5.
   -- ============================================================================
-  #[group=cold] fn get_reveal_ctor_info(stream: ByteStream)
+  #[group=cold6] fn get_reveal_ctor_info(stream: ByteStream)
       -> (RevealConstructorInfo, ByteStream) {
     let (mask, s) = get_tag0(stream);
     let mask_lo = u8_bit_decomposition(mask[0]);
@@ -240,14 +240,14 @@ def claim := ⟦
     (RevealConstructorInfo.Mk(is_unsafe, lvls, cidx, params, fields, typ), s)
   }
 
-  #[group=cold] fn get_ctor_entry(stream: ByteStream)
+  #[group=cold5] fn get_ctor_entry(stream: ByteStream)
       -> ((U64, RevealConstructorInfo), ByteStream) {
     let (idx, s) = get_tag0(stream);
     let (info, s) = get_reveal_ctor_info(s);
     ((idx, info), s)
   }
 
-  #[group=cold] fn get_ctor_entry_list_inner(stream: ByteStream, count: U64)
+  #[group=cold6] fn get_ctor_entry_list_inner(stream: ByteStream, count: U64)
       -> (List‹(U64, RevealConstructorInfo)›, ByteStream) {
     match u64_is_zero(count) {
       1 => (store(ListNode.Nil), stream),
@@ -258,7 +258,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn get_opt_ctor_entry_list_masked(mb: G, stream: ByteStream)
+  #[group=cold3] fn get_opt_ctor_entry_list_masked(mb: G, stream: ByteStream)
       -> (Option‹List‹(U64, RevealConstructorInfo)››, ByteStream) {
     match mb {
       0 => (Option.None, stream),
@@ -272,7 +272,7 @@ def claim := ⟦
   -- ============================================================================
   -- RevealMutConstInfo parser. variant + mask + per-bit fields.
   -- ============================================================================
-  #[group=cold] fn get_reveal_mut_const_info(stream: ByteStream)
+  #[group=cold7] fn get_reveal_mut_const_info(stream: ByteStream)
       -> (RevealMutConstInfo, ByteStream) {
     let (variant, s) = read_byte(stream);
     let (mask, s) = get_tag0(s);
@@ -312,14 +312,14 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn get_mut_entry(stream: ByteStream)
+  #[group=cold6] fn get_mut_entry(stream: ByteStream)
       -> ((U64, RevealMutConstInfo), ByteStream) {
     let (idx, s) = get_tag0(stream);
     let (info, s) = get_reveal_mut_const_info(s);
     ((idx, info), s)
   }
 
-  #[group=cold] fn get_mut_entry_list_inner(stream: ByteStream, count: U64)
+  #[group=cold7] fn get_mut_entry_list_inner(stream: ByteStream, count: U64)
       -> (List‹(U64, RevealMutConstInfo)›, ByteStream) {
     match u64_is_zero(count) {
       1 => (store(ListNode.Nil), stream),
@@ -333,7 +333,7 @@ def claim := ⟦
   -- ============================================================================
   -- RevealConstantInfo parser. `variant + mask:Tag0 + per-bit fields`.
   -- ============================================================================
-  #[group=cold] fn get_reveal_info(stream: ByteStream) -> (RevealConstantInfo, ByteStream) {
+  #[group=cold7] fn get_reveal_info(stream: ByteStream) -> (RevealConstantInfo, ByteStream) {
     let (variant, s) = read_byte(stream);
     let (mask, s) = get_tag0(s);
     let mask_lo = u8_bit_decomposition(mask[0]);
@@ -402,7 +402,7 @@ def claim := ⟦
   -- Claim parser. Parses Tag4(0xE, variant) wrapper + per-variant
   -- payload into the `Claim` ADT.
   -- ============================================================================
-  #[group=cold] fn get_claim(bytes: ByteStream) -> (Claim, ByteStream) {
+  #[group=cold6] fn get_claim(bytes: ByteStream) -> (Claim, ByteStream) {
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE);
@@ -437,7 +437,7 @@ def claim := ⟦
   -- equality, deserialize, assert no trailing data.
   -- Load + verify a claim from IOBuffer at `digest` (ch 0). Reads bytes,
   -- recomputes blake3, asserts equality, deserialises.
-  #[group=cold] fn load_verified_claim(digest: [U8; 32]) -> Claim {
+  #[group=cold7] fn load_verified_claim(digest: [U8; 32]) -> Claim {
     let (idx, len) = io_get_info(0, digest);
     let bytes = #read_byte_stream(0, idx, len);
     verify_bytes_against(bytes, digest);
@@ -451,7 +451,7 @@ def claim := ⟦
   -- docs/Ixon.md:970-971 — Reveal claim's `Option<Address>` Expr
   -- fields bind to this hash.
   -- ============================================================================
-  #[group=cold] fn expr_addr(e_ref: &Expr) -> Addr {
+  #[group=cold4] fn expr_addr(e_ref: &Expr) -> Addr {
     let bytes = put_expr(load(e_ref), store(ListNode.Nil));
     bytes_to_addr(bytes)
   }
@@ -468,7 +468,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn def_safety_tag(s: DefinitionSafety) -> G {
+  #[group=cold1] fn def_safety_tag(s: DefinitionSafety) -> G {
     match s {
       DefinitionSafety.Unsafe => 0,
       DefinitionSafety.Safe => 1,
@@ -476,7 +476,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn quot_kind_tag(k: QuotKind) -> G {
+  #[group=cold1] fn quot_kind_tag(k: QuotKind) -> G {
     match k {
       QuotKind.Typ => 0,
       QuotKind.Ctor => 1,
@@ -494,7 +494,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_def_safety(real: DefinitionSafety,
+  #[group=cold2] fn check_opt_def_safety(real: DefinitionSafety,
                           opt: Option‹DefinitionSafety›) {
     match opt {
       Option.None => (),
@@ -504,7 +504,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_quot_kind(real: QuotKind, opt: Option‹QuotKind›) {
+  #[group=cold2] fn check_opt_quot_kind(real: QuotKind, opt: Option‹QuotKind›) {
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
@@ -513,7 +513,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_bool(real: G, opt: Option‹G›) {
+  #[group=cold1] fn check_opt_bool(real: G, opt: Option‹G›) {
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
@@ -522,7 +522,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_u64(real: U64, opt: Option‹U64›) {
+  #[group=cold3] fn check_opt_u64(real: U64, opt: Option‹U64›) {
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
@@ -531,7 +531,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_addr(real: Addr, opt: Option‹Addr›) {
+  #[group=cold6] fn check_opt_addr(real: Addr, opt: Option‹Addr›) {
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
@@ -540,7 +540,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_expr_addr(real_e: &Expr, opt: Option‹Addr›) {
+  #[group=cold6] fn check_opt_expr_addr(real_e: &Expr, opt: Option‹Addr›) {
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
@@ -553,7 +553,7 @@ def claim := ⟦
   -- Walk both lists in lockstep: claimed (idx, fields, rhs_addr) per
   -- entry vs real (fields, rhs:&Expr) — positional `idx` is read but
   -- not asserted (matches `Ix.RevealRecursorRule.ruleIdx` semantics).
-  #[group=cold] fn check_recr_rules(real: List‹RecursorRule›,
+  #[group=cold4] fn check_recr_rules(real: List‹RecursorRule›,
                       claimed: List‹RevealRecursorRule›) {
     match load(claimed) {
       ListNode.Nil =>
@@ -576,7 +576,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_recr_rules(real: List‹RecursorRule›,
+  #[group=cold1] fn check_opt_recr_rules(real: List‹RecursorRule›,
                           opt: Option‹List‹RevealRecursorRule››) {
     match opt {
       Option.None => (),
@@ -586,7 +586,7 @@ def claim := ⟦
 
   -- Constructor revelation: compare the Constructor at position `idx`
   -- in the real list against the per-field Option‹…› bits.
-  #[group=cold] fn check_ctor_entry(real_list: List‹Constructor›,
+  #[group=cold7] fn check_ctor_entry(real_list: List‹Constructor›,
                       idx: U64,
                       info: RevealConstructorInfo) {
     let real_ctor = list_lookup_u64(real_list, idx);
@@ -605,7 +605,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_ctor_entries(real_list: List‹Constructor›,
+  #[group=cold6] fn check_ctor_entries(real_list: List‹Constructor›,
                         claimed: List‹(U64, RevealConstructorInfo)›) {
     match load(claimed) {
       ListNode.Nil => (),
@@ -618,7 +618,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_opt_ctor_entries(real_list: List‹Constructor›,
+  #[group=cold1] fn check_opt_ctor_entries(real_list: List‹Constructor›,
                             opt: Option‹List‹(U64, RevealConstructorInfo)››) {
     match opt {
       Option.None => (),
@@ -628,7 +628,7 @@ def claim := ⟦
 
   -- MutConst revelation: dispatch on the real variant vs the claimed
   -- variant; mismatched pairs fail.
-  #[group=cold] fn check_mut_const(real: MutConst, claimed: RevealMutConstInfo) {
+  #[group=cold7] fn check_mut_const(real: MutConst, claimed: RevealMutConstInfo) {
     match real {
       MutConst.Defn(d) =>
         match claimed {
@@ -681,7 +681,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn check_muts_components(real: List‹MutConst›,
+  #[group=cold7] fn check_muts_components(real: List‹MutConst›,
                            claimed: List‹(U64, RevealMutConstInfo)›) {
     match load(claimed) {
       ListNode.Nil => (),
@@ -698,13 +698,13 @@ def claim := ⟦
   -- ============================================================================
   -- Merkle leaf / node hash (Ix.Merkle.leafHash / nodeHash).
   -- ============================================================================
-  #[group=cold] fn leaf_hash(addr: Addr) -> Addr {
+  #[group=cold2] fn leaf_hash(addr: Addr) -> Addr {
     let tail = put_address(addr, store(ListNode.Nil));
     let bytes = store(ListNode.Cons(0u8, tail));
     bytes_to_addr(bytes)
   }
 
-  #[group=cold] fn node_hash(l: Addr, r: Addr) -> Addr {
+  #[group=cold2] fn node_hash(l: Addr, r: Addr) -> Addr {
     let tail = put_address(l, put_address(r, store(ListNode.Nil)));
     let bytes = store(ListNode.Cons(1u8, tail));
     bytes_to_addr(bytes)
@@ -714,7 +714,7 @@ def claim := ⟦
   -- Assumption-tree parser / loader. Same as constants: load bytes,
   -- recompute root via merkle fold, assert match.
   -- ============================================================================
-  #[group=cold] fn parse_atree_body(stream: ByteStream) -> (Addr, List‹Addr›, ByteStream) {
+  #[group=cold3] fn parse_atree_body(stream: ByteStream) -> (Addr, List‹Addr›, ByteStream) {
     let (tag, s) = read_byte(stream);
     match tag {
       0 =>
@@ -731,7 +731,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn load_assumption_tree(root: Addr) -> List‹Addr› {
+  #[group=cold7] fn load_assumption_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
     let (idx, len) = io_get_info(1, raw);
     let bytes = #read_byte_stream(1, idx, len);
@@ -746,7 +746,7 @@ def claim := ⟦
     leaves
   }
 
-  #[group=cold] fn addr_in_list(target: Addr, xs: List‹Addr›) -> G {
+  #[group=cold2] fn addr_in_list(target: Addr, xs: List‹Addr›) -> G {
     match load(xs) {
       ListNode.Nil => 0,
       ListNode.Cons(a, rest) =>
@@ -766,7 +766,7 @@ def claim := ⟦
   -- are harmless: a collision makes `addr_in_set`'s confirming `address_eq`
   -- fail, yielding a false negative (a frontier const gets rechecked) never a
   -- false positive (a wrong skip). See `build_skip_set`.
-  #[group=cold] fn addr_key(a: Addr) -> G {
+  #[group=cold4] fn addr_key(a: Addr) -> G {
     let arr = load(a);
     to_field(arr[0])
       + to_field(arr[1]) * 256
@@ -778,7 +778,7 @@ def claim := ⟦
   -- `addr_key`. Key collisions overwrite — sound because the only consequence is
   -- a missed skip (a frontier const gets rechecked, never wrongly trusted); the
   -- confirming `address_eq` in `addr_in_set` rules out false positives.
-  #[group=cold] fn build_skip_set(leaves: List‹Addr›, acc: RBTreeMap‹Addr›) -> RBTreeMap‹Addr› {
+  #[group=cold4] fn build_skip_set(leaves: List‹Addr›, acc: RBTreeMap‹Addr›) -> RBTreeMap‹Addr› {
     match load(leaves) {
       ListNode.Nil => acc,
       ListNode.Cons(a, rest) =>
@@ -789,7 +789,7 @@ def claim := ⟦
   -- Membership via one rbtree lookup (cheap u32 key compares) + one confirming
   -- full `address_eq`, replacing the O(N) linear `addr_in_list` scan that
   -- dominated address_eq cost on sharded checks.
-  #[group=cold] fn addr_in_set(target: Addr, skip_set: RBTreeMap‹Addr›) -> G {
+  #[group=cold3] fn addr_in_set(target: Addr, skip_set: RBTreeMap‹Addr›) -> G {
     let found = rbtree_map_lookup_or_default(addr_key(target), skip_set, store([0u8; 32]));
     address_eq(found, target)
   }
@@ -798,7 +798,7 @@ def claim := ⟦
   -- check_all variant that skips positions whose addr is in the
   -- supplied assumption-leaf list.
   -- ============================================================================
-  #[group=cold] fn check_all_skipping(consts: List‹&KConstantInfo›,
+  #[group=cold2] fn check_all_skipping(consts: List‹&KConstantInfo›,
                         top: List‹&KConstantInfo›,
                         addrs: List‹Addr›,
                         asm_leaves: List‹Addr›) {
@@ -809,7 +809,7 @@ def claim := ⟦
     check_all_skipping_iter(consts, top, addrs, skip_set, 0)
   }
 
-  #[group=cold] fn check_all_skipping_iter(consts: List‹&KConstantInfo›,
+  #[group=cold4] fn check_all_skipping_iter(consts: List‹&KConstantInfo›,
                              top: List‹&KConstantInfo›,
                              addrs: List‹Addr›,
                              skip_set: RBTreeMap‹Addr›,
@@ -831,7 +831,7 @@ def claim := ⟦
   -- ============================================================================
   -- Per-variant handlers. Each takes already-parsed claim fields.
   -- ============================================================================
-  #[group=cold] fn run_check(const_addr: Addr, asm: Option‹Addr›) {
+  #[group=cold2] fn run_check(const_addr: Addr, asm: Option‹Addr›) {
     let (k_consts, addrs) = ingress_with_primitives(const_addr);
     match asm {
       Option.None => check_all(k_consts, k_consts, addrs),
@@ -841,7 +841,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn run_contains(tree_root: Addr, target_addr: Addr) {
+  #[group=cold1] fn run_contains(tree_root: Addr, target_addr: Addr) {
     let leaves = load_assumption_tree(tree_root);
     assert_eq!(addr_in_list(target_addr, leaves), 1);
   }
@@ -853,7 +853,7 @@ def claim := ⟦
   -- soundness rides on that existing pattern; the union order is verified by
   -- the single `check_canonical_block_sort(top)` inside `check_all_skipping`
   -- (a stronger global order than the per-leaf closures it replaces).
-  #[group=cold] fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
+  #[group=cold2] fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
     let env_leaves = load_assumption_tree(env_root);
     let (k_consts, addrs) = ingress_env(env_leaves);
     match asm {
@@ -866,7 +866,7 @@ def claim := ⟦
 
   -- Reveal: real constant at `comm` must match the variant of `info`
   -- AND every Some-field's claimed value must equal the real field.
-  #[group=cold] fn run_reveal(comm_addr: Addr, info: RevealConstantInfo) {
+  #[group=cold7] fn run_reveal(comm_addr: Addr, info: RevealConstantInfo) {
     let c = load_verified_constant(comm_addr);
     match c {
       Constant.Mk(ci, _, _, _) =>
@@ -969,7 +969,7 @@ def claim := ⟦
     }
   }
 
-  #[group=cold] fn run_eval(input: Addr, output: Addr, asm: Option‹Addr›) {
+  #[group=cold1] fn run_eval(input: Addr, output: Addr, asm: Option‹Addr›) {
     -- Eval semantics undefined upstream; placeholder until Rust kernel
     -- pins them.
     assert_eq!(0, 1);

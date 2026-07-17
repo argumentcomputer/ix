@@ -25,7 +25,7 @@ def canonicalCheck := ⟦
   -- Tri-valued ordering combinators.
   -- 0 = lt, 1 = eq, 2 = gt.
   -- ============================================================================
-  #[group=cold] fn ord_cmp_g(a: G, b: G) -> G {
+  #[group=cold4] fn ord_cmp_g(a: G, b: G) -> G {
     match a - b {
       0 => 1,
       _ =>
@@ -37,7 +37,7 @@ def canonicalCheck := ⟦
   }
 
   -- Lexicographic chain: first non-eq wins.
-  #[group=cold] fn ord_then(a: G, b: G) -> G {
+  #[group=cold1] fn ord_then(a: G, b: G) -> G {
     match a {
       1 => b,
       _ => a,
@@ -51,14 +51,14 @@ def canonicalCheck := ⟦
   -- else is STRONG. validate_canonical_block_single_pass accepts strong-Less
   -- directly, falls back to validate_by_refinement on weak-Less.
   -- ============================================================================
-  #[group=cold] fn sord_lt_strong() -> (G, G) { (0, 1) }
+  #[group=cold1] fn sord_lt_strong() -> (G, G) { (0, 1) }
   fn sord_lt_weak() -> (G, G)   { (0, 0) }
-  #[group=cold] fn sord_eq_strong() -> (G, G) { (1, 1) }
+  #[group=cold1] fn sord_eq_strong() -> (G, G) { (1, 1) }
   fn sord_eq_weak() -> (G, G)   { (1, 0) }
-  #[group=cold] fn sord_gt_strong() -> (G, G) { (2, 1) }
+  #[group=cold1] fn sord_gt_strong() -> (G, G) { (2, 1) }
 
   -- Lex chain on SOrd: if a is Equal, take b's ordering and strong=a.strong*b.strong.
-  #[group=cold] fn sord_then(a: (G, G), b: (G, G)) -> (G, G) {
+  #[group=cold1] fn sord_then(a: (G, G), b: (G, G)) -> (G, G) {
     match a {
       (1, sa) =>
         match b {
@@ -69,13 +69,13 @@ def canonicalCheck := ⟦
   }
 
   -- Wrap a tri-valued G ord as strong SOrd.
-  #[group=cold] fn sord_of_g(o: G) -> (G, G) { (o, 1) }
+  #[group=cold1] fn sord_of_g(o: G) -> (G, G) { (o, 1) }
 
   -- ctx_class_idx: returns 1+pos if `idx` ∈ ctx (positional list), else 0.
   -- Mirror: KMutCtx::get(addr) → Option<class_idx>. We use kernel positions
   -- as both addresses and class indices (block members are consecutive in
   -- the kernel `top` layout for our supported block shapes).
-  #[group=cold] fn ctx_class_idx(idx: G, ctx: List‹G›, i: G) -> G {
+  #[group=cold2] fn ctx_class_idx(idx: G, ctx: List‹G›, i: G) -> G {
     match load(ctx) {
       ListNode.Nil => 0,
       ListNode.Cons(m, rest) =>
@@ -89,7 +89,7 @@ def canonicalCheck := ⟦
   -- Compare two Const idxs under a KMutCtx. Strong if both external or
   -- one block-local + one external; weak if both block-local.
   -- Mirror: canonical_check.rs:216-222.
-  #[group=cold] fn ctx_cmp_idx(xid: G, yid: G, ctx: List‹G›) -> (G, G) {
+  #[group=cold3] fn ctx_cmp_idx(xid: G, yid: G, ctx: List‹G›) -> (G, G) {
     let mx = ctx_class_idx(xid, ctx, 0);
     let my = ctx_class_idx(yid, ctx, 0);
     match mx {
@@ -112,7 +112,7 @@ def canonicalCheck := ⟦
   -- Mirror: canonical_check.rs:130-154. Variant order Zero < Succ < Max <
   -- IMax < Param.
   -- ============================================================================
-  #[group=cold] fn compare_kuniv(x: KLevel, y: KLevel) -> G {
+  #[group=cold4] fn compare_kuniv(x: KLevel, y: KLevel) -> G {
     match load(x) {
       KLevelNode.Zero =>
         match load(y) {
@@ -150,7 +150,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn compare_kuniv_list(xs: List‹KLevel›, ys: List‹KLevel›) -> G {
+  #[group=cold3] fn compare_kuniv_list(xs: List‹KLevel›, ys: List‹KLevel›) -> G {
     match load(xs) {
       ListNode.Nil =>
         match load(ys) {
@@ -167,7 +167,7 @@ def canonicalCheck := ⟦
   }
 
   -- SOrd-returning variant; universes are structural so always strong.
-  #[group=cold] fn compare_kuniv_list_sord(xs: List‹KLevel›, ys: List‹KLevel›) -> (G, G) {
+  #[group=cold1] fn compare_kuniv_list_sord(xs: List‹KLevel›, ys: List‹KLevel›) -> (G, G) {
     sord_of_g(compare_kuniv_list(xs, ys))
   }
 
@@ -178,14 +178,14 @@ def canonicalCheck := ⟦
   -- App < Lam < Forall < Let < Lit < Proj. Alpha-blind: binders' types
   -- compared, then bodies. (No fvars; Aiur kernel uses de Bruijn indices.)
   -- ============================================================================
-  #[group=cold] fn compare_kexpr(x: KExpr, y: KExpr) -> G {
+  #[group=cold3] fn compare_kexpr(x: KExpr, y: KExpr) -> G {
     match ptr_val(x) - ptr_val(y) {
       0 => 1,
       _ => compare_kexpr_node(load(x), load(y)),
     }
   }
 
-  #[group=cold] fn compare_kexpr_node(x: KExprNode, y: KExprNode) -> G {
+  #[group=cold6] fn compare_kexpr_node(x: KExprNode, y: KExprNode) -> G {
     match x {
       KExprNode.BVar(xi) =>
         match y {
@@ -271,14 +271,14 @@ def canonicalCheck := ⟦
   -- Const + Proj head ref use ctx_cmp_idx to resolve block-local refs.
   -- Other arms thread ctx into recursive calls.
   -- ============================================================================
-  #[group=cold] fn compare_kexpr_ctx(x: KExpr, y: KExpr, ctx: List‹G›) -> (G, G) {
+  #[group=cold3] fn compare_kexpr_ctx(x: KExpr, y: KExpr, ctx: List‹G›) -> (G, G) {
     match ptr_val(x) - ptr_val(y) {
       0 => sord_eq_strong(),
       _ => compare_kexpr_node_ctx(load(x), load(y), ctx),
     }
   }
 
-  #[group=cold] fn compare_kexpr_node_ctx(x: KExprNode, y: KExprNode, ctx: List‹G›) -> (G, G) {
+  #[group=cold6] fn compare_kexpr_node_ctx(x: KExprNode, y: KExprNode, ctx: List‹G›) -> (G, G) {
     match x {
       KExprNode.BVar(xi) =>
         match y {
@@ -365,7 +365,7 @@ def canonicalCheck := ⟦
   }
 
   -- KLiteral order: Nat < Str. Within each, lex on contents.
-  #[group=cold] fn compare_kliteral(x: KLiteral, y: KLiteral) -> G {
+  #[group=cold2] fn compare_kliteral(x: KLiteral, y: KLiteral) -> G {
     match x {
       KLiteral.Nat(xn) =>
         match y {
@@ -384,7 +384,7 @@ def canonicalCheck := ⟦
   -- list = larger value. Walk from tail (most significant); with same
   -- length, lex by limb. Simpler: post-normalize, compare lengths first,
   -- then lex the equal-length tails with most-significant first.
-  #[group=cold] fn compare_klimbs(x: KLimbs, y: KLimbs) -> G {
+  #[group=cold3] fn compare_klimbs(x: KLimbs, y: KLimbs) -> G {
     let xn = klimbs_normalize(x);
     let yn = klimbs_normalize(y);
     let lx = list_length(xn);
@@ -398,7 +398,7 @@ def canonicalCheck := ⟦
 
   -- Compare equal-length KLimbs lex from MOST significant. We have them
   -- LE, so reverse-walk: recurse first, compare current after.
-  #[group=cold] fn compare_klimbs_tail(x: KLimbs, y: KLimbs) -> G {
+  #[group=cold4] fn compare_klimbs_tail(x: KLimbs, y: KLimbs) -> G {
     match load(x) {
       ListNode.Nil => 1,
       ListNode.Cons(xh, xt) =>
@@ -411,7 +411,7 @@ def canonicalCheck := ⟦
   }
 
   -- Compare two u64 limbs as integers (little-endian byte order).
-  #[group=cold] fn compare_u64_lex(a: U64, b: U64) -> G {
+  #[group=cold6] fn compare_u64_lex(a: U64, b: U64) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     -- Most significant byte first.
@@ -425,7 +425,7 @@ def canonicalCheck := ⟦
                   ord_cmp_g(to_field(a0), to_field(b0)))))))))
   }
 
-  #[group=cold] fn compare_byte_stream(x: ByteStream, y: ByteStream) -> G {
+  #[group=cold3] fn compare_byte_stream(x: ByteStream, y: ByteStream) -> G {
     match load(x) {
       ListNode.Nil =>
         match load(y) {
@@ -474,7 +474,7 @@ def canonicalCheck := ⟦
   }
 
   -- ctx-aware variant: SOrd-returning, threads ctx into compare_kexpr.
-  #[group=cold] fn compare_krec_rule_ctx(x: KRecRule, y: KRecRule, ctx: List‹G›) -> (G, G) {
+  #[group=cold4] fn compare_krec_rule_ctx(x: KRecRule, y: KRecRule, ctx: List‹G›) -> (G, G) {
     match x {
       KRecRule.Mk(xc, xn, xr) =>
         match y {
@@ -486,7 +486,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn compare_krec_rule_list_ctx(xs: List‹KRecRule›, ys: List‹KRecRule›,
+  #[group=cold4] fn compare_krec_rule_list_ctx(xs: List‹KRecRule›, ys: List‹KRecRule›,
                                  ctx: List‹G›) -> (G, G) {
     match load(xs) {
       ListNode.Nil =>
@@ -531,7 +531,7 @@ def canonicalCheck := ⟦
   -- Defn=0, Indc=1, Recr=2, Ctor=3, Axio=4, Quot=5. (Thm/Opaque are
   -- Defn-flavored; reuse Defn's slot ordering — only Defn/Indc/Recr are
   -- block-eligible per Rust comment.)
-  #[group=cold] fn kconst_kind_ord(c: KConstantInfo) -> G {
+  #[group=cold3] fn kconst_kind_ord(c: KConstantInfo) -> G {
     match c {
       KConstantInfo.Defn(_, _, _, _, _) => 0,
       KConstantInfo.Thm(_, _, _) => 0,
@@ -628,7 +628,7 @@ def canonicalCheck := ⟦
 
 
   -- ctx-aware variant: SOrd-returning, threads ctx into compare_kexpr_ctx.
-  #[group=cold] fn compare_kconst_ctx(x: KConstantInfo, y: KConstantInfo,
+  #[group=cold4] fn compare_kconst_ctx(x: KConstantInfo, y: KConstantInfo,
                         ctx: List‹G›) -> (G, G) {
     let kx = kconst_kind_ord(x);
     let ky = kconst_kind_ord(y);
@@ -639,7 +639,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn compare_kconst_same_kind_ctx(x: KConstantInfo, y: KConstantInfo,
+  #[group=cold7] fn compare_kconst_same_kind_ctx(x: KConstantInfo, y: KConstantInfo,
                                    ctx: List‹G›) -> (G, G) {
     match x {
       KConstantInfo.Defn(xn, xt, xv, _xs, _xh) =>
@@ -732,7 +732,7 @@ def canonicalCheck := ⟦
   --   Ctor   → parent Induct's block_addr (via induct_idx lookup).
   --   Rec    → block_addr of the parent of its first rule's ctor.
   --   Other  → [0;32] (not part of a Muts block).
-  #[group=cold] fn check_canonical_block_sort(top: List‹&KConstantInfo›) {
+  #[group=cold1] fn check_canonical_block_sort(top: List‹&KConstantInfo›) {
     check_canonical_block_sort_walk(top, store([0u8; 32]), store(ListNode.Nil), 0, top)
   }
 
@@ -773,14 +773,14 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn init_block_members(ba: Addr, pos: G) -> List‹G› {
+  #[group=cold2] fn init_block_members(ba: Addr, pos: G) -> List‹G› {
     match address_eq(ba, store([0u8; 32])) {
       1 => store(ListNode.Nil),
       0 => store(ListNode.Cons(pos, store(ListNode.Nil))),
     }
   }
 
-  #[group=cold] fn validate_block_if_nonzero(ba: Addr, members: List‹G›,
+  #[group=cold3] fn validate_block_if_nonzero(ba: Addr, members: List‹G›,
                                 top: List‹&KConstantInfo›) {
     match address_eq(ba, store([0u8; 32])) {
       1 => (),
@@ -800,7 +800,7 @@ def canonicalCheck := ⟦
   -- Mirror Rust ingress.rs:2025-2048: validate canonical order for
   -- Indc subset only. Ctors share parent's block_addr in our walk but
   -- aren't actual block members per Rust's KConst::Indc.block field.
-  #[group=cold] fn validate_block_canonical(stored: List‹G›, top: List‹&KConstantInfo›) {
+  #[group=cold3] fn validate_block_canonical(stored: List‹G›, top: List‹&KConstantInfo›) {
     let stored_indcs = filter_indc_positions(stored, top);
     match list_length(stored_indcs) {
       0 => (),
@@ -816,7 +816,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn filter_indc_positions(positions: List‹G›,
+  #[group=cold4] fn filter_indc_positions(positions: List‹G›,
                            top: List‹&KConstantInfo›) -> List‹G› {
     match load(positions) {
       ListNode.Nil => store(ListNode.Nil),
@@ -830,7 +830,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn all_singleton_classes(classes: List‹List‹G››) -> G {
+  #[group=cold2] fn all_singleton_classes(classes: List‹List‹G››) -> G {
     match load(classes) {
       ListNode.Nil => 1,
       ListNode.Cons(c, rest) =>
@@ -841,7 +841,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn flatten_classes(classes: List‹List‹G››) -> List‹G› {
+  #[group=cold2] fn flatten_classes(classes: List‹List‹G››) -> List‹G› {
     match load(classes) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(c, rest) =>
@@ -849,7 +849,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn g_list_eq(xs: List‹G›, ys: List‹G›) -> G {
+  #[group=cold3] fn g_list_eq(xs: List‹G›, ys: List‹G›) -> G {
     match load(xs) {
       ListNode.Nil =>
         match load(ys) {
@@ -878,14 +878,14 @@ def canonicalCheck := ⟦
   --      group consecutive equals.
   --   3. If new partition equals previous: done.
   -- ============================================================================
-  #[group=cold] fn sort_kconsts(members: List‹G›, top: List‹&KConstantInfo›) -> List‹List‹G›› {
+  #[group=cold2] fn sort_kconsts(members: List‹G›, top: List‹&KConstantInfo›) -> List‹List‹G›› {
     -- Seed: single class with members in given order (kernel positions are
     -- already a stable seed key).
     let seed = store(ListNode.Cons(members, store(ListNode.Nil)));
     sort_kconsts_loop(seed, top, 32)
   }
 
-  #[group=cold] fn sort_kconsts_loop(classes: List‹List‹G››, top: List‹&KConstantInfo›,
+  #[group=cold3] fn sort_kconsts_loop(classes: List‹List‹G››, top: List‹&KConstantInfo›,
                         fuel: G) -> List‹List‹G›› {
     match fuel {
       0 => classes,
@@ -899,7 +899,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn refine_classes(classes: List‹List‹G››, ctx: List‹G›,
+  #[group=cold3] fn refine_classes(classes: List‹List‹G››, ctx: List‹G›,
                      top: List‹&KConstantInfo›) -> List‹List‹G›› {
     match load(classes) {
       ListNode.Nil => store(ListNode.Nil),
@@ -909,7 +909,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn refine_one_class(c: List‹G›, ctx: List‹G›,
+  #[group=cold2] fn refine_one_class(c: List‹G›, ctx: List‹G›,
                        top: List‹&KConstantInfo›) -> List‹List‹G›› {
     match list_length(c) {
       0 => store(ListNode.Nil),
@@ -920,7 +920,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn insertion_sort_class(xs: List‹G›, ctx: List‹G›,
+  #[group=cold2] fn insertion_sort_class(xs: List‹G›, ctx: List‹G›,
                            top: List‹&KConstantInfo›) -> List‹G› {
     match load(xs) {
       ListNode.Nil => store(ListNode.Nil),
@@ -929,7 +929,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn insert_sorted(x: G, sorted: List‹G›, ctx: List‹G›,
+  #[group=cold5] fn insert_sorted(x: G, sorted: List‹G›, ctx: List‹G›,
                     top: List‹&KConstantInfo›) -> List‹G› {
     match load(sorted) {
       ListNode.Nil => store(ListNode.Cons(x, store(ListNode.Nil))),
@@ -942,7 +942,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn group_consecutive_class(sorted: List‹G›, ctx: List‹G›,
+  #[group=cold3] fn group_consecutive_class(sorted: List‹G›, ctx: List‹G›,
                               top: List‹&KConstantInfo›) -> List‹List‹G›› {
     match load(sorted) {
       ListNode.Nil => store(ListNode.Nil),
@@ -952,7 +952,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn group_consecutive_walk(remaining: List‹G›, ctx: List‹G›,
+  #[group=cold6] fn group_consecutive_walk(remaining: List‹G›, ctx: List‹G›,
                              top: List‹&KConstantInfo›,
                              last: G, current_group: List‹G›) -> List‹List‹G›› {
     match load(remaining) {
@@ -970,7 +970,7 @@ def canonicalCheck := ⟦
     }
   }
 
-  #[group=cold] fn classes_eq(a: List‹List‹G››, b: List‹List‹G››) -> G {
+  #[group=cold3] fn classes_eq(a: List‹List‹G››, b: List‹List‹G››) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {

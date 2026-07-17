@@ -28,7 +28,7 @@ def inductive_check := ⟦
   --
   -- Failure path: `assert_eq!(0, 1)` panics the Aiur execution per the
   -- kernel's accept/reject convention.
-  #[group=cold] fn check_ctor_return_type(ctor_ty: KExpr,
+  #[group=cold4] fn check_ctor_return_type(ctor_ty: KExpr,
                             n_params: G, n_indices: G, n_fields: G,
                             ind_idx: G, ind_num_lvls: G,
                             top: List‹&KConstantInfo›) {
@@ -66,7 +66,7 @@ def inductive_check := ⟦
   -- succeeds syntactically even for unsound inductives. Aiur memoizes
   -- fn calls, so the closure-wide double coverage is cache hits.
   -- Cycle invariant (per Rust): never calls back into recursor checks.
-  #[group=cold] fn check_inductive_shape(ind_pos: G, top: List‹&KConstantInfo›,
+  #[group=cold3] fn check_inductive_shape(ind_pos: G, top: List‹&KConstantInfo›,
                            addrs: List‹Addr›) {
     let ci = load(list_lookup(top, ind_pos));
     match ci {
@@ -84,7 +84,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn check_inductive_shape_ctors(ctor_indices: List‹G›, ind_pos: G,
+  #[group=cold5] fn check_inductive_shape_ctors(ctor_indices: List‹G›, ind_pos: G,
                                  ind_ty: KExpr, num_lvls: G,
                                  n_params: G, n_indices: G,
                                  ind_level: KLevel, expected_cidx: G,
@@ -118,7 +118,7 @@ def inductive_check := ⟦
 
   -- Peel `n` Foralls off the head, return the body. Panics if fewer
   -- Foralls than requested.
-  #[group=cold] fn peel_n_foralls(e: KExpr, n: G) -> KExpr {
+  fn peel_n_foralls(e: KExpr, n: G) -> KExpr {
     match n {
       0 => e,
       _ =>
@@ -129,7 +129,7 @@ def inductive_check := ⟦
   }
 
   -- Each `lvls[i]` must be `Param(expected_start + i)` for i in 0..count.
-  #[group=cold] fn assert_lvls_are_params(lvls: List‹KLevel›, count: G, idx: G) {
+  #[group=cold2] fn assert_lvls_are_params(lvls: List‹KLevel›, count: G, idx: G) {
     match count {
       0 =>
         -- Mirror: src/ix/kernel/inductive.rs:2018: us.len() == ind_lvls.
@@ -154,7 +154,7 @@ def inductive_check := ⟦
   -- de Bruijn references to the param binders peeled off the ctor's
   -- type. The remaining args are the indices — those are unrestricted
   -- here (per Rust 2046+).
-  #[group=cold] fn assert_first_args_are_param_bvars(args: List‹KExpr›,
+  #[group=cold3] fn assert_first_args_are_param_bvars(args: List‹KExpr›,
                                         n_params: G, n_fields: G, i: G) {
     -- `n_params` is the TOTAL param count (constant across recursion);
     -- iterate i = 0..n_params. Expected j = (n_fields + n_params) - 1 - i
@@ -178,7 +178,7 @@ def inductive_check := ⟦
   -- Extract the inductive's result-sort level: peel `n` (params + indices)
   -- Foralls; the body must be `Srt(level)`. Returns the level value.
   -- Mirror: src/ix/kernel/inductive.rs::get_result_sort_level (line 2089+).
-  #[group=cold] fn get_result_sort_level(ind_ty: KExpr, n: G) -> KLevel {
+  fn get_result_sort_level(ind_ty: KExpr, n: G) -> KLevel {
     match n {
       0 =>
         match load(ind_ty) {
@@ -199,7 +199,7 @@ def inductive_check := ⟦
   -- threading the binder types into `types`. Then on each remaining
   -- Forall (a field), ensures `dom`'s sort level is ≤ ind_level via
   -- `k_ensure_sort` + `level_leq`.
-  #[group=cold] fn check_field_universes(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
+  #[group=cold2] fn check_field_universes(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
                            types: List‹KExpr›,
                            top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     -- Skip if inductive is Prop.
@@ -209,7 +209,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn check_field_universes_skip_params(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
+  #[group=cold3] fn check_field_universes_skip_params(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
                                         types: List‹KExpr›,
                                         top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match n_params {
@@ -223,7 +223,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn check_field_universes_inner(ty: KExpr, ind_level: KLevel,
+  #[group=cold3] fn check_field_universes_inner(ty: KExpr, ind_level: KLevel,
                                   types: List‹KExpr›,
                                   top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(ty) {
@@ -244,7 +244,7 @@ def inductive_check := ⟦
   -- For mutual blocks, the initial positivity context is the full set of
   -- peer inductive idxs (derived via block_addr). Nested inductives are
   -- handled by augment_block_idxs walking ctor bodies recursively.
-  #[group=cold] fn check_positivity(ctor_ty: KExpr, n_params: G, ind_idx: G,
+  #[group=cold2] fn check_positivity(ctor_ty: KExpr, n_params: G, ind_idx: G,
                       types: List‹KExpr›,
                       top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     let pair = peel_n_foralls_with_types(ctor_ty, n_params, types);
@@ -255,7 +255,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn peel_n_foralls_tolerant(e: KExpr, n: G) -> KExpr {
+  fn peel_n_foralls_tolerant(e: KExpr, n: G) -> KExpr {
     match n {
       0 => e,
       _ =>
@@ -268,7 +268,7 @@ def inductive_check := ⟦
 
   -- Like `peel_n_foralls_tolerant` but accumulates each binder's domain into
   -- the types context so subsequent WHNF calls have the right local context.
-  #[group=cold] fn peel_n_foralls_with_types(e: KExpr, n: G, types: List‹KExpr›) -> (KExpr, List‹KExpr›) {
+  #[group=cold3] fn peel_n_foralls_with_types(e: KExpr, n: G, types: List‹KExpr›) -> (KExpr, List‹KExpr›) {
     match n {
       0 => (e, types),
       _ =>
@@ -297,7 +297,7 @@ def inductive_check := ⟦
   -- ctor-field types written via reducible defs (e.g. `constType (n α) (n α)`,
   -- `id Sort`) collapse to their underlying inductive head before we
   -- classify them as block / nested / non-inductive.
-  #[group=cold] fn check_positivity_aug(dom: KExpr, block_idxs: List‹G›,
+  #[group=cold6] fn check_positivity_aug(dom: KExpr, block_idxs: List‹G›,
                            types: List‹KExpr›,
                            top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match expr_mentions_any_idx(dom, block_idxs) {
@@ -342,7 +342,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn list_contains_g(xs: List‹G›, target: G) -> G {
+  fn list_contains_g(xs: List‹G›, target: G) -> G {
     match load(xs) {
       ListNode.Nil => 0,
       ListNode.Cons(x, rest) =>
@@ -358,7 +358,7 @@ def inductive_check := ⟦
   -- structure. Aiur memoization is the is_rec_cache (keyed on induct_idx);
   -- no cycle-breaking needed because `compute_is_rec` is structural (no
   -- whnf), unlike the Rust version.
-  #[group=cold] fn computed_is_rec_ind(induct_idx: G, top: List‹&KConstantInfo›) -> G {
+  #[group=cold3] fn computed_is_rec_ind(induct_idx: G, top: List‹&KConstantInfo›) -> G {
     let ci = load(list_lookup(top, induct_idx));
     match ci {
       KConstantInfo.Induct(_, _, n_params, _, ctor_indices, _, _) =>
@@ -372,7 +372,7 @@ def inductive_check := ⟦
   -- Compute is_rec by scanning each ctor's field domains (post n_params
   -- peeling) for any reference to a block member's idx.
   -- Returns 1 iff at least one field domain mentions a block_idx.
-  #[group=cold] fn compute_is_rec(ctors: List‹G›, n_params: G, block_idxs: List‹G›,
+  #[group=cold4] fn compute_is_rec(ctors: List‹G›, n_params: G, block_idxs: List‹G›,
                     top: List‹&KConstantInfo›) -> G {
     match load(ctors) {
       ListNode.Nil => 0,
@@ -390,7 +390,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn scan_fields_for_block_ref(ty: KExpr, block_idxs: List‹G›) -> G {
+  #[group=cold2] fn scan_fields_for_block_ref(ty: KExpr, block_idxs: List‹G›) -> G {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         match expr_mentions_any_idx(dom, block_idxs) {
@@ -401,7 +401,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn expr_mentions_any_idx(e: KExpr, idxs: List‹G›) -> G {
+  fn expr_mentions_any_idx(e: KExpr, idxs: List‹G›) -> G {
     match load(e) {
       KExprNode.BVar(_) => 0,
       KExprNode.Srt(_) => 0,
@@ -440,7 +440,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn list_any_mentions(es: List‹KExpr›, idxs: List‹G›) -> G {
+  #[group=cold2] fn list_any_mentions(es: List‹KExpr›, idxs: List‹G›) -> G {
     match load(es) {
       ListNode.Nil => 0,
       ListNode.Cons(e, rest) =>
@@ -455,12 +455,12 @@ def inductive_check := ⟦
   -- Augment block_idxs with the indices of all Inducts in `top` that share
   -- `ext_block_addr` (so the ext Induct's own block becomes part of the
   -- positivity context).
-  #[group=cold] fn augment_block_idxs(block_idxs: List‹G›, ext_block_addr: Addr,
+  #[group=cold1] fn augment_block_idxs(block_idxs: List‹G›, ext_block_addr: Addr,
                          top: List‹&KConstantInfo›) -> List‹G› {
     augment_walk(block_idxs, ext_block_addr, top, 0)
   }
 
-  #[group=cold] fn augment_walk(block_idxs: List‹G›, ext_block_addr: Addr,
+  #[group=cold5] fn augment_walk(block_idxs: List‹G›, ext_block_addr: Addr,
                    consts: List‹&KConstantInfo›, idx: G) -> List‹G› {
     match load(consts) {
       ListNode.Nil => block_idxs,
@@ -491,7 +491,7 @@ def inductive_check := ⟦
   -- Simplification: walk ctor body fields directly; their refs to ext
   -- params correspond positionally to args[0..n_params] which are checked
   -- transitively when augmented. Sound for direct nested cases.
-  #[group=cold] fn check_ctors_positivity(ctor_indices: List‹G›, args: List‹KExpr›,
+  #[group=cold4] fn check_ctors_positivity(ctor_indices: List‹G›, args: List‹KExpr›,
                             aug: List‹G›, top: List‹&KConstantInfo›,
                             addrs: List‹Addr›) {
     match load(ctor_indices) {
@@ -511,7 +511,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn check_positivity_fields_aug(ty: KExpr, aug: List‹G›,
+  #[group=cold3] fn check_positivity_fields_aug(ty: KExpr, aug: List‹G›,
                                   types: List‹KExpr›,
                                   top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(ty) {
@@ -584,7 +584,7 @@ def inductive_check := ⟦
   --      must appear in return args; conservative when some field is
   --      Type-typed since we then return 0 = not large.)
   --   5. Otherwise (multiple ctors in Prop) → not large.
-  #[group=cold] fn is_large_eliminator(result_level: KLevel,
+  #[group=cold4] fn is_large_eliminator(result_level: KLevel,
                          ctor_indices: List‹G›,
                          top: List‹&KConstantInfo›,
                          addrs: List‹Addr›) -> G {
@@ -618,7 +618,7 @@ def inductive_check := ⟦
   -- (those whose domain has sort != 0). Body after walk is the ctor's return
   -- type; check each data field's BVar appears in the return-type's spine
   -- args. If all do → large eliminator.
-  #[group=cold] fn check_large_prop_ctor(ty: KExpr, n_params: G, n_fields: G,
+  #[group=cold3] fn check_large_prop_ctor(ty: KExpr, n_params: G, n_fields: G,
                            types: List‹KExpr›, top: List‹&KConstantInfo›,
                            addrs: List‹Addr›) -> G {
     match n_params {
@@ -638,7 +638,7 @@ def inductive_check := ⟦
   -- Walk `n_fields` Foralls, threading list of data-field BVars (de Bruijn
   -- indices in the post-walk ret context). After walk, collect ret spine
   -- args and verify every data BVar appears.
-  #[group=cold] fn check_large_walk_fields(ty: KExpr, n_fields: G, field_idx: G,
+  #[group=cold4] fn check_large_walk_fields(ty: KExpr, n_fields: G, field_idx: G,
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
                               addrs: List‹Addr›,
                               data_bvars: List‹G›) -> G {
@@ -667,7 +667,7 @@ def inductive_check := ⟦
 
   -- Returns 1 iff every BVar idx in `bvars` appears in `args` (as a syntactic
   -- BVar at the ret-binder depth).
-  #[group=cold] fn all_bvars_in_args(bvars: List‹G›, args: List‹KExpr›) -> G {
+  #[group=cold2] fn all_bvars_in_args(bvars: List‹G›, args: List‹KExpr›) -> G {
     match load(bvars) {
       ListNode.Nil => 1,
       ListNode.Cons(b, rest) =>
@@ -679,7 +679,7 @@ def inductive_check := ⟦
   }
 
   -- Returns 1 if any element of `args` is syntactically `BVar(target)`.
-  #[group=cold] fn args_contain_bvar(args: List‹KExpr›, target: G) -> G {
+  #[group=cold3] fn args_contain_bvar(args: List‹KExpr›, target: G) -> G {
     match load(args) {
       ListNode.Nil => 0,
       ListNode.Cons(a, rest) =>
@@ -702,7 +702,7 @@ def inductive_check := ⟦
   --   the rest with BVar(n_rec_params-1-j).
   -- Major: aux applies spec_params lifted by n_indices; non-aux applies
   -- recursor-param BVars.
-  #[group=cold] fn build_motive_type_flat(ind_idx: G, ind_ty: KExpr,
+  #[group=cold4] fn build_motive_type_flat(ind_idx: G, ind_ty: KExpr,
                             n_own_params: G, n_indices: G,
                             occurrence_us: List‹KLevel›,
                             elim_level: KLevel,
@@ -723,7 +723,7 @@ def inductive_check := ⟦
 
   -- For aux: apply spec_params (each lifted by depth=n_indices) to head.
   -- For non-aux: apply n_rec_params recursor-param BVars to head.
-  #[group=cold] fn build_major_args_for_member(head: KExpr, n_rec_params: G, depth: G,
+  #[group=cold2] fn build_major_args_for_member(head: KExpr, n_rec_params: G, depth: G,
                                   is_aux: G, spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
       0 => build_major_params(head, n_rec_params, depth, 0),
@@ -731,7 +731,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn apply_spec_params_lifted(head: KExpr, spec_params: List‹KExpr›,
+  #[group=cold3] fn apply_spec_params_lifted(head: KExpr, spec_params: List‹KExpr›,
                               depth: G) -> KExpr {
     match load(spec_params) {
       ListNode.Nil => head,
@@ -744,7 +744,7 @@ def inductive_check := ⟦
   -- Peel n Foralls; for each binder j substitute per is_aux:
   --   non-aux: BVar(n_rec_params - 1 - j).
   --   aux: spec_params[j] when j < |spec_params|, else BVar(n_rec_params - 1 - j).
-  #[group=cold] fn peel_motive_params_subst(ty: KExpr, n: G, n_rec_params: G,
+  #[group=cold3] fn peel_motive_params_subst(ty: KExpr, n: G, n_rec_params: G,
                         is_aux: G, spec_params: List‹KExpr›, j: G) -> KExpr {
     match n {
       0 => ty,
@@ -759,7 +759,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn subst_param_for(j: G, n_rec_params: G, is_aux: G,
+  #[group=cold4] fn subst_param_for(j: G, n_rec_params: G, is_aux: G,
                       spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
       0 => store(KExprNode.BVar((n_rec_params - 1) - j)),
@@ -775,7 +775,7 @@ def inductive_check := ⟦
 
   -- Peel ctor's leading own_params. Non-aux: plain peel. Aux: substitute
   -- each with spec_params[j] (or BVar fallback if beyond spec).
-  #[group=cold] fn peel_rule_ctor_params(ty: KExpr, n: G,
+  #[group=cold1] fn peel_rule_ctor_params(ty: KExpr, n: G,
                             is_aux: G, spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
       0 => peel_n_foralls(ty, n),
@@ -787,7 +787,7 @@ def inductive_check := ⟦
   }
 
   -- Look up Ctor.num_params from top.
-  #[group=cold] fn ctor_num_params_of(ctor_idx: G, top: List‹&KConstantInfo›) -> G {
+  #[group=cold3] fn ctor_num_params_of(ctor_idx: G, top: List‹&KConstantInfo›) -> G {
     let ci = load(list_lookup(top, ctor_idx));
     match ci {
       KConstantInfo.Ctor(_, _, _, _, num_params, _, _) => num_params,
@@ -800,7 +800,7 @@ def inductive_check := ⟦
   -- (binders between the recursor-param frame and the peel point — NOT
   -- `depth`, which counts the params themselves too) when j < |spec|;
   -- BVar(depth-1-j) otherwise.
-  #[group=cold] fn peel_ctor_params_subst(ty: KExpr, n: G, depth: G, spec_lift: G,
+  #[group=cold3] fn peel_ctor_params_subst(ty: KExpr, n: G, depth: G, spec_lift: G,
                              is_aux: G, spec_params: List‹KExpr›, j: G) -> KExpr {
     match n {
       0 => ty,
@@ -815,7 +815,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn ctor_subst_param_for(j: G, depth: G, spec_lift: G, is_aux: G,
+  #[group=cold4] fn ctor_subst_param_for(j: G, depth: G, spec_lift: G, is_aux: G,
                            spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
       0 => store(KExprNode.BVar((depth - 1) - j)),
@@ -831,7 +831,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
+  #[group=cold2] fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
     match n {
       0 => store(ListNode.Nil),
       _ =>
@@ -843,7 +843,7 @@ def inductive_check := ⟦
   }
 
   -- [Param(start), Param(start+1), ..., Param(start+count-1)] as List‹KLevel›.
-  #[group=cold] fn build_param_lvls_range(start: G, count: G, i: G) -> List‹KLevel› {
+  #[group=cold2] fn build_param_lvls_range(start: G, count: G, i: G) -> List‹KLevel› {
     match count - i {
       0 => store(ListNode.Nil),
       _ =>
@@ -856,7 +856,7 @@ def inductive_check := ⟦
   -- Apply head to recursor params: `App(... App(head, BVar(n_rec_params-1+depth)), ...)`.
   -- Each param j is at BVar(n_rec_params - 1 - j + depth) where depth is
   -- the index-binder count above the major position.
-  #[group=cold] fn build_major_params(head: KExpr, n_rec_params: G, depth: G, j: G) -> KExpr {
+  #[group=cold2] fn build_major_params(head: KExpr, n_rec_params: G, depth: G, j: G) -> KExpr {
     match n_rec_params - j {
       0 => head,
       _ =>
@@ -879,7 +879,7 @@ def inductive_check := ⟦
 
   -- Wrap body in foralls outside-in: doms = [d0, d1, ..., dM] →
   -- `forall (_ : d0), forall (_ : d1), ..., forall (_ : dM), body`.
-  #[group=cold] fn wrap_foralls(body: KExpr, doms: List‹KExpr›) -> KExpr {
+  fn wrap_foralls(body: KExpr, doms: List‹KExpr›) -> KExpr {
     match load(doms) {
       ListNode.Nil => body,
       ListNode.Cons(dom, rest) =>
@@ -902,7 +902,7 @@ def inductive_check := ⟦
   -- ind_idx: two aux entries can share the same base const idx with
   -- different spec_params, and an idx lookup would alias the second
   -- member's motive to the first's).
-  #[group=cold] fn build_minor_at_depth(ind_idx: G, ctor_idx: G, ctor_ty: KExpr,
+  #[group=cold6] fn build_minor_at_depth(ind_idx: G, ctor_idx: G, ctor_ty: KExpr,
                           is_aux: G, spec_params: List‹KExpr›,
                           occurrence_us: List‹KLevel›,
                           flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
@@ -966,7 +966,7 @@ def inductive_check := ⟦
   -- params (depth_now-1 down to depth_now-n_rec_params). Aux: spec_params
   -- lifted from the recursor-param frame by the binders below the params
   -- (depth_now counts the params themselves; subtract them).
-  #[group=cold] fn build_ctor_app_params(head: KExpr, n_own_params: G, n_rec_params: G,
+  #[group=cold2] fn build_ctor_app_params(head: KExpr, n_own_params: G, n_rec_params: G,
                            depth_now: G,
                            is_aux: G, spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
@@ -993,7 +993,7 @@ def inductive_check := ⟦
   -- A field is recursive (direct case) when its spine head is Const(ind_idx).
   -- Builds accumulators with O(1) cons (prepend) and reverses once at end —
   -- O(F) total vs O(F²) with snoc.
-  #[group=cold] fn walk_fields_classify(ty: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold4] fn walk_fields_classify(ty: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                           doms_acc: List‹KExpr›, rec_acc: List‹G›,
                           rec_mem_acc: List‹G›,
                           types: List‹KExpr›,
@@ -1022,7 +1022,7 @@ def inductive_check := ⟦
   -- Derive the list of block-member indices for a recursor's parent ind.
   -- Solo (ind's block_addr = [0;32]) → `[ind_idx]`. Otherwise walks `top`
   -- collecting all Inducts sharing the block_addr in positional order.
-  #[group=cold] fn derive_block_member_idxs(ind_idx: G, top: List‹&KConstantInfo›) -> List‹G› {
+  fn derive_block_member_idxs(ind_idx: G, top: List‹&KConstantInfo›) -> List‹G› {
     let ci = load(list_lookup(top, ind_idx));
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, block_addr) =>
@@ -1087,7 +1087,7 @@ def inductive_check := ⟦
   -- Mirror: Rust's explicit `spec_params_lift_by` (inductive.rs:2972,
   -- see the historical note there — guessing the lift from local depth
   -- breaks one of build_minor_at_depth / build_rule_rhs).
-  #[group=cold] fn is_rec_field(dom: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold4] fn is_rec_field(dom: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                    types: List‹KExpr›, top: List‹&KConstantInfo›,
                    addrs: List‹Addr›, spec_lift_by: G) -> (G, G) {
     match peel_leading_foralls(dom) {
@@ -1111,7 +1111,7 @@ def inductive_check := ⟦
   -- of the field's spine args. Original members have spec_params=[] so any
   -- field whose head is the original ind matches. Auxes carry their concrete
   -- occurrence, so only fields applied to that exact occurrence match.
-  #[group=cold] fn find_flat_member_match(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold3] fn find_flat_member_match(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                              head_idx: G, spine_args: List‹KExpr›,
                              i: G, spec_lift_by: G) -> (G, G) {
     match load(flat) {
@@ -1137,7 +1137,7 @@ def inductive_check := ⟦
   -- recursor-param frame to the caller's depth) is a prefix of
   -- `spine_args` under `kexpr_struct_eq`. Empty spec_params always
   -- matches.
-  #[group=cold] fn spine_prefix_eq(spine_args: List‹KExpr›, spec_params: List‹KExpr›,
+  #[group=cold3] fn spine_prefix_eq(spine_args: List‹KExpr›, spec_params: List‹KExpr›,
                      spec_lift_by: G) -> G {
     match load(spec_params) {
       ListNode.Nil => 1,
@@ -1165,7 +1165,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn peel_leading_foralls(ty: KExpr) -> (List‹KExpr›, KExpr) {
+  #[group=cold2] fn peel_leading_foralls(ty: KExpr) -> (List‹KExpr›, KExpr) {
     let pair = peel_leading_foralls_acc(ty, store(ListNode.Nil));
     match pair {
       (rev_acc, body) => (list_reverse(rev_acc), body),
@@ -1173,7 +1173,7 @@ def inductive_check := ⟦
   }
 
   -- Builds doms in reverse via O(1) cons; caller reverses once.
-  #[group=cold] fn peel_leading_foralls_acc(ty: KExpr, acc: List‹KExpr›) -> (List‹KExpr›, KExpr) {
+  #[group=cold2] fn peel_leading_foralls_acc(ty: KExpr, acc: List‹KExpr›) -> (List‹KExpr›, KExpr) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         peel_leading_foralls_acc(body, store(ListNode.Cons(dom, acc))),
@@ -1182,7 +1182,7 @@ def inductive_check := ⟦
   }
 
   -- Apply head to xs from outermost: x_0 = BVar(n_xs - 1), ..., x_{n-1} = BVar(0).
-  #[group=cold] fn build_apply_xs(head: KExpr, n_xs: G, i: G) -> KExpr {
+  #[group=cold2] fn build_apply_xs(head: KExpr, n_xs: G, i: G) -> KExpr {
     match n_xs - i {
       0 => head,
       _ =>
@@ -1191,7 +1191,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn list_lift_each(es: List‹KExpr›, shift: G, cutoff: G) -> List‹KExpr› {
+  #[group=cold3] fn list_lift_each(es: List‹KExpr›, shift: G, cutoff: G) -> List‹KExpr› {
     match load(es) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(e, rest) =>
@@ -1212,7 +1212,7 @@ def inductive_check := ⟦
   }
 
   -- Apply head to ctor fields: `App(... App(head, BVar(n_binders-1)), BVar(n_binders-2)), ...`
-  #[group=cold] fn build_apply_field_bvars(head: KExpr, n_fields: G, n_binders: G, i: G) -> KExpr {
+  #[group=cold2] fn build_apply_field_bvars(head: KExpr, n_fields: G, n_binders: G, i: G) -> KExpr {
     match n_fields - i {
       0 => head,
       _ =>
@@ -1230,14 +1230,14 @@ def inductive_check := ⟦
   -- Lift the field's dom by (n_fields - field_idx + k) so its BVars
   -- map into current scope. Then strip first n_rec_params spine args.
   -- Collect first n Forall doms; return (doms, remaining_body).
-  #[group=cold] fn collect_n_doms(ty: KExpr, n: G) -> (List‹KExpr›, KExpr) {
+  #[group=cold2] fn collect_n_doms(ty: KExpr, n: G) -> (List‹KExpr›, KExpr) {
     let pair = collect_n_doms_acc(ty, n, store(ListNode.Nil));
     match pair {
       (rev_acc, body) => (list_reverse(rev_acc), body),
     }
   }
 
-  #[group=cold] fn collect_n_doms_acc(ty: KExpr, n: G, acc: List‹KExpr›) -> (List‹KExpr›, KExpr) {
+  #[group=cold3] fn collect_n_doms_acc(ty: KExpr, n: G, acc: List‹KExpr›) -> (List‹KExpr›, KExpr) {
     match n {
       0 => (acc, ty),
       _ =>
@@ -1250,7 +1250,7 @@ def inductive_check := ⟦
 
   -- Apply head to indices in conclusion scope.
   -- Index i (0-indexed from outer) at BVar(n_indices - i).
-  #[group=cold] fn apply_indices_in_conclusion(head: KExpr, n_indices: G, i: G) -> KExpr {
+  #[group=cold2] fn apply_indices_in_conclusion(head: KExpr, n_indices: G, i: G) -> KExpr {
     match n_indices - i {
       0 => head,
       _ =>
@@ -1262,7 +1262,7 @@ def inductive_check := ⟦
   -- Build per-ctor minor type list. is_aux + spec_params + occ_us control
   -- how the ctor's leading own_params are substituted and what occurrence_us
   -- to use for the ctor head; flat_idxs is used for rec field detection.
-  #[group=cold] fn build_minor_doms(ctor_indices: List‹G›, ind_idx: G,
+  #[group=cold5] fn build_minor_doms(ctor_indices: List‹G›, ind_idx: G,
                       is_aux: G, spec_params: List‹KExpr›,
                       occurrence_us: List‹KLevel›,
                       flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
@@ -1299,7 +1299,7 @@ def inductive_check := ⟦
   -- with elim_level + univ_offset shared. Motive j (j>0) lifted by j to
   -- account for the j prior motives bound between params and motive j
   -- (mirror src/ix/kernel/inductive.rs:3074-3082).
-  #[group=cold] fn build_all_motives(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold2] fn build_all_motives(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                        n_params: G,
                        ind_lvls: G, elim_level: KLevel, univ_offset: G,
                        n_rec_params: G,
@@ -1308,7 +1308,7 @@ def inductive_check := ⟦
                             univ_offset, n_rec_params, top, 0)
   }
 
-  #[group=cold] fn build_all_motives_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold5] fn build_all_motives_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                              n_params: G,
                              ind_lvls: G, elim_level: KLevel, univ_offset: G,
                              n_rec_params: G,
@@ -1342,7 +1342,7 @@ def inductive_check := ⟦
   -- through so each minor's depth math is correct. flat carries (ind_idx,
   -- is_aux, spec_params) so aux ctors can substitute spec_params during
   -- their own-param peel.
-  #[group=cold] fn build_all_minors(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold2] fn build_all_minors(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                       flat_idxs: List‹G›, flat_own_params: List‹G›,
                       n_rec_params: G, n_motives: G,
                       ind_lvls: G, univ_offset: G, motive_base: G,
@@ -1358,7 +1358,7 @@ def inductive_check := ⟦
   -- shrinks as we iterate members. Bug guarded against: previously we passed
   -- the shrinking `flat` into `build_minor_doms`, which made later members'
   -- ctor-field classification blind to earlier members.
-  #[group=cold] fn build_all_minors_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold5] fn build_all_minors_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                            full_flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                            flat_idxs: List‹G›, flat_own_params: List‹G›,
                            n_rec_params: G, n_motives: G,
@@ -1421,7 +1421,7 @@ def inductive_check := ⟦
   -- `self_mem_pos` = self's POSITION in the flat block (signature-
   -- resolved by the caller); idx lookup would alias same-idx aux
   -- members.
-  #[group=cold] fn build_rec_type(ind_idx: G, ind_ty: KExpr, ctor_indices: List‹G›,
+  #[group=cold7] fn build_rec_type(ind_idx: G, ind_ty: KExpr, ctor_indices: List‹G›,
                     n_params: G, n_indices: G, ind_lvls: G,
                     self_own_params: G,
                     primary_ind_idx: G, self_mem_pos: G,
@@ -1507,7 +1507,7 @@ def inductive_check := ⟦
   -- field doms become concrete. For non-aux mutual: peer_recs maps each
   -- block member to its own recursor. No post-major args.
   -- ============================================================================
-  #[group=cold] fn build_rule_rhs(rec_idx: G, ind_idx: G, ctor_idx: G, ctor_ty: KExpr,
+  #[group=cold6] fn build_rule_rhs(rec_idx: G, ind_idx: G, ctor_idx: G, ctor_ty: KExpr,
                     ctor_minor_index: G,
                     n_params: G, n_motives: G, n_minors: G,
                     ind_lvls: G, univ_offset: G,
@@ -1569,7 +1569,7 @@ def inductive_check := ⟦
   }
 
   -- Recursor's univ params: [Param(0), ..., Param(total_lvls-1)].
-  #[group=cold] fn build_rec_lvls(total: G, i: G) -> List‹KLevel› {
+  #[group=cold2] fn build_rec_lvls(total: G, i: G) -> List‹KLevel› {
     match total - i {
       0 => store(ListNode.Nil),
       _ =>
@@ -1579,7 +1579,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn wrap_lams(body: KExpr, doms: List‹KExpr›) -> KExpr {
+  fn wrap_lams(body: KExpr, doms: List‹KExpr›) -> KExpr {
     match load(doms) {
       ListNode.Nil => body,
       ListNode.Cons(dom, rest) =>
@@ -1595,7 +1595,7 @@ def inductive_check := ⟦
   -- field's lifted dom and the inner body so the head/args reflect the
   -- true inductive occurrence (after reducing wrappers like
   -- `constType (n α) (n α)` → `n α`).
-  #[group=cold] fn apply_ihs(head: KExpr, rec_indices: List‹G›, rec_member_idxs: List‹G›,
+  #[group=cold7] fn apply_ihs(head: KExpr, rec_indices: List‹G›, rec_member_idxs: List‹G›,
                field_doms: List‹KExpr›,
                peer_recs: List‹G›, flat_own_params: List‹G›,
                n_params: G, n_motives: G, n_minors: G, n_fields: G,
@@ -1652,7 +1652,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn build_apply_minors(head: KExpr, n_minors: G, start: G, i: G) -> KExpr {
+  #[group=cold2] fn build_apply_minors(head: KExpr, n_minors: G, start: G, i: G) -> KExpr {
     match n_minors - i {
       0 => head,
       _ =>
@@ -1668,7 +1668,7 @@ def inductive_check := ⟦
   -- Recursors with NO rules (inductives with 0 ctors, e.g. False.rec /
   -- empty propositions): parse the recursor's type to extract the major's
   -- head Const(ind_idx). Mirrors `get_major_inductive_id` in Rust.
-  #[group=cold] fn rec_to_ind_idx_with_ty(rules: List‹KRecRule›, ty: KExpr,
+  fn rec_to_ind_idx_with_ty(rules: List‹KRecRule›, ty: KExpr,
                              n_params: G, n_motives: G, n_minors: G,
                              n_indices: G, top: List‹&KConstantInfo›) -> G {
     -- Derive ind_idx from the recursor's typ ONLY (walk past
@@ -1698,7 +1698,7 @@ def inductive_check := ⟦
   -- flat member's stored spec_params (both interned, so ptr comparison
   -- applies). Param args cannot reference index binders, so the lowering
   -- is capture-free for well-formed types.
-  #[group=cold] fn rec_declared_spec(ty: KExpr, n_p: G, n_mot: G, n_min: G, n_i: G,
+  #[group=cold4] fn rec_declared_spec(ty: KExpr, n_p: G, n_mot: G, n_min: G, n_i: G,
                        own: G) -> List‹KExpr› {
     let pre_major = peel_n_foralls_tolerant(ty, ((n_p + n_mot) + n_min) + n_i);
     match load(pre_major) {
@@ -1722,7 +1722,7 @@ def inductive_check := ⟦
   -- declared spec signature to equal `target_sp` — aux recursors over
   -- the same external inductive (rec_1/rec_2) differ only in their
   -- spec_params.
-  #[group=cold] fn find_rec_for_ind(target_ind_idx: G, want_spec_check: G,
+  #[group=cold2] fn find_rec_for_ind(target_ind_idx: G, want_spec_check: G,
                       target_sp: List‹KExpr›, own: G, rec_block: Addr,
                       top: List‹&KConstantInfo›) -> G {
     let in_block = find_rec_for_ind_walk(target_ind_idx, want_spec_check,
@@ -1734,7 +1734,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn find_rec_for_ind_walk(target_ind_idx: G, want_spec_check: G,
+  fn find_rec_for_ind_walk(target_ind_idx: G, want_spec_check: G,
                            target_sp: List‹KExpr›, own: G, rec_block: Addr,
                            require_block: G,
                            consts: List‹&KConstantInfo›,
@@ -1778,7 +1778,7 @@ def inductive_check := ⟦
   -- Build peer_recs[i] = rec_idx for flat[i], scoped to `rec_block`.
   -- Aux members select by (idx, spec signature) — idx alone aliases
   -- same-external-inductive auxes to the first peer recursor.
-  #[group=cold] fn build_peer_recs(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold4] fn build_peer_recs(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                      rec_block: Addr,
                      top: List‹&KConstantInfo›) -> List‹G› {
     match load(flat) {
@@ -1811,7 +1811,7 @@ def inductive_check := ⟦
   }
 
   -- Pairwise compare stored vs canonical KRecRule lists via k_is_def_eq.
-  #[group=cold] fn list_lift_indices(doms: List‹KExpr›, lift: G, i: G) -> List‹KExpr› {
+  #[group=cold3] fn list_lift_indices(doms: List‹KExpr›, lift: G, i: G) -> List‹KExpr› {
     match load(doms) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(d, rest) =>
@@ -1820,7 +1820,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn compare_rules(stored: List‹KRecRule›, canonical: List‹KRecRule›,
+  #[group=cold4] fn compare_rules(stored: List‹KRecRule›, canonical: List‹KRecRule›,
                    top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(stored) {
       ListNode.Nil =>
@@ -1858,7 +1858,7 @@ def inductive_check := ⟦
   -- Mirror: src/ix/kernel/inductive.rs check_ctor_against_inductive_member.
   -- Validates that the Ctor's (induct_idx, cidx) cross-references the
   -- parent Indc's ctor_indices: `ctor_indices[cidx] == this_ctor_idx`.
-  #[group=cold] fn check_ctor_against_inductive_member(ctor_idx: G, ci_ctor: KConstantInfo,
+  #[group=cold4] fn check_ctor_against_inductive_member(ctor_idx: G, ci_ctor: KConstantInfo,
                                           top: List‹&KConstantInfo›) {
     match ci_ctor {
       KConstantInfo.Ctor(_, _, induct_idx, cidx, _, _, _) =>
@@ -1875,7 +1875,7 @@ def inductive_check := ⟦
   -- Mirror: src/ix/kernel/inductive.rs:4451-4489 compute_k_target.
   -- K-target valid iff: solo block, result level == 0 (Prop), single ctor
   -- with zero non-param fields. Returns 1 if K-target, else 0.
-  #[group=cold] fn compute_k_target(ind_idx: G, top: List‹&KConstantInfo›) -> G {
+  #[group=cold6] fn compute_k_target(ind_idx: G, top: List‹&KConstantInfo›) -> G {
     let ind_ci = load(list_lookup(top, ind_idx));
     match ind_ci {
       KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
@@ -1908,7 +1908,7 @@ def inductive_check := ⟦
   -- aux member's spec_params in `is_rec_field`, where content-addressed exprs
   -- from the same block-flattening pass are guaranteed to be structurally
   -- comparable without WHNF.
-  #[group=cold] fn kexpr_struct_eq(a: KExpr, b: KExpr) -> G {
+  #[group=cold6] fn kexpr_struct_eq(a: KExpr, b: KExpr) -> G {
     match load(a) {
       KExprNode.BVar(ia) =>
         match load(b) {
@@ -1978,7 +1978,7 @@ def inductive_check := ⟦
   -- only mis-selects a candidate; the declared-vs-canonical assert
   -- still rejects. Mirror: the signature-based match in Rust
   -- check_recursor_member (inductive.rs:4181-4219).
-  #[group=cold] fn find_rec_self_pos(ty: KExpr, n_p: G, n_mot: G, n_min: G, n_i: G,
+  #[group=cold4] fn find_rec_self_pos(ty: KExpr, n_p: G, n_mot: G, n_min: G, n_i: G,
                        self_major: G,
                        flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                        top: List‹&KConstantInfo›) -> G {
@@ -1993,7 +1993,7 @@ def inductive_check := ⟦
 
   -- `first_any` = 1 + position of the first idx match seen (0 = none):
   -- the fallback when no spec_params signature matches.
-  #[group=cold] fn find_rec_self_pos_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold6] fn find_rec_self_pos_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                             target_idx: G, largs: List‹KExpr›,
                             i: G, first_any: G) -> G {
     match load(flat) {
@@ -2023,7 +2023,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn check_recursor_member(rec_idx: G, ci_rec: KConstantInfo,
+  #[group=cold7] fn check_recursor_member(rec_idx: G, ci_rec: KConstantInfo,
                            top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match ci_rec {
       KConstantInfo.Rec(_, ty, n_p, n_i, n_mot, n_min, rules, k_flag, _, rec_block) =>
@@ -2118,14 +2118,14 @@ def inductive_check := ⟦
   -- every discovered member's ctors for further nested occurrences; every
   -- newly-detected aux gets pushed onto the flat list AND its own ctors
   -- scanned in the next round.
-  #[group=cold] fn build_flat_block(block_member_idxs: List‹G›, univ_offset: G,
+  #[group=cold1] fn build_flat_block(block_member_idxs: List‹G›, univ_offset: G,
                       top: List‹&KConstantInfo›)
                       -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
     let originals = build_flat_originals(block_member_idxs, univ_offset, top);
     build_flat_block_iter(originals, 0, block_member_idxs, top)
   }
 
-  #[group=cold] fn build_flat_block_iter(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold5] fn build_flat_block_iter(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                            qi: G, block_member_idxs: List‹G›,
                            top: List‹&KConstantInfo›)
                            -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
@@ -2145,7 +2145,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn detect_nested_in_member(m_idx: G, is_aux: G,
+  #[group=cold4] fn detect_nested_in_member(m_idx: G, is_aux: G,
                              spec_params: List‹KExpr›,
                              occ_us: List‹KLevel›,
                              block_idxs: List‹G›,
@@ -2160,7 +2160,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn detect_nested_in_member_ctors(ctor_indices: List‹G›, n_params: G,
+  #[group=cold5] fn detect_nested_in_member_ctors(ctor_indices: List‹G›, n_params: G,
                                     is_aux: G, spec_params: List‹KExpr›,
                                     occ_us: List‹KLevel›,
                                     block_idxs: List‹G›,
@@ -2189,7 +2189,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn flat_append_new_auxes(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold4] fn flat_append_new_auxes(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                            new_triples: List‹(G, List‹KExpr›, List‹KLevel›)›)
                            -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
     match load(new_triples) {
@@ -2220,7 +2220,7 @@ def inductive_check := ⟦
   -- so equal content means equal ptr in honest traces; a de-interned
   -- malicious witness can only cause a dedup MISS (extra aux → flat
   -- count mismatch → reject), never a false collapse.
-  #[group=cold] fn flat_contains_aux(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold6] fn flat_contains_aux(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                        target_idx: G, target_sp: List‹KExpr›) -> G {
     match load(flat) {
       ListNode.Nil => 0,
@@ -2243,7 +2243,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn spec_params_ptr_eq(a: List‹KExpr›, b: List‹KExpr›) -> G {
+  #[group=cold3] fn spec_params_ptr_eq(a: List‹KExpr›, b: List‹KExpr›) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -2262,7 +2262,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn build_flat_originals(block_member_idxs: List‹G›, univ_offset: G,
+  #[group=cold4] fn build_flat_originals(block_member_idxs: List‹G›, univ_offset: G,
                           top: List‹&KConstantInfo›)
                           -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
     match load(block_member_idxs) {
@@ -2282,7 +2282,7 @@ def inductive_check := ⟦
   }
 
   -- Project per-member ind_idx from flat list.
-  #[group=cold] fn flat_ind_idxs(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›) -> List‹G› {
+  #[group=cold2] fn flat_ind_idxs(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›) -> List‹G› {
     match load(flat) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(m, rest) =>
@@ -2294,7 +2294,7 @@ def inductive_check := ⟦
   }
 
   -- Look up nth flat member.
-  #[group=cold] fn flat_member_at(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›, n: G)
+  #[group=cold3] fn flat_member_at(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›, n: G)
                     -> (G, G, List‹KExpr›, List‹KLevel›) {
     match load(flat) {
       ListNode.Nil => (0, 0, store(ListNode.Nil), store(ListNode.Nil)),
@@ -2311,7 +2311,7 @@ def inductive_check := ⟦
   -- lifted by `spec_lift` — the binders between the recursor-param frame
   -- and the major position (n_motives + n_minors + n_indices in the
   -- recursor type).
-  #[group=cold] fn build_major_args_for_self(head: KExpr, n_rec_params: G, start: G,
+  #[group=cold2] fn build_major_args_for_self(head: KExpr, n_rec_params: G, start: G,
                                 spec_lift: G,
                                 is_aux: G, spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
@@ -2321,7 +2321,7 @@ def inductive_check := ⟦
   }
 
   -- For each flat member, look up its own_params from top.
-  #[group=cold] fn flat_own_params_of(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+  #[group=cold4] fn flat_own_params_of(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                        top: List‹&KConstantInfo›) -> List‹G› {
     match load(flat) {
       ListNode.Nil => store(ListNode.Nil),
@@ -2343,7 +2343,7 @@ def inductive_check := ⟦
   -- Walk recs in `rec_block`; pick the first one whose major's `nested > 0`
   -- (= the original Indc whose ctors carry nested occurrences). Returns
   -- (found, ind_idx); on `found = 0` callers fall back to `self_major`.
-  #[group=cold] fn resolve_primary_ind_for_rec(self_major: G, rec_block: Addr,
+  #[group=cold2] fn resolve_primary_ind_for_rec(self_major: G, rec_block: Addr,
                                   top: List‹&KConstantInfo›) -> G {
     match address_eq(rec_block, store([0u8; 32])) {
       1 => self_major,
@@ -2362,7 +2362,7 @@ def inductive_check := ⟦
   -- original of a nested-emitting block detects non-empty; an aux (whose
   -- specialized ctors reference only block members) and a pure-mutual
   -- peer detect empty. Aiur memoization caches per (idx, block, top).
-  #[group=cold] fn member_has_nested(idx: G, block_idxs: List‹G›,
+  #[group=cold2] fn member_has_nested(idx: G, block_idxs: List‹G›,
                        top: List‹&KConstantInfo›) -> G {
     let nested = detect_nested_in_orig(idx, block_idxs, top);
     match load(nested) {
@@ -2371,7 +2371,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn any_member_has_nested(walk_idxs: List‹G›, block_idxs: List‹G›,
+  #[group=cold2] fn any_member_has_nested(walk_idxs: List‹G›, block_idxs: List‹G›,
                            top: List‹&KConstantInfo›) -> G {
     match load(walk_idxs) {
       ListNode.Nil => 0,
@@ -2384,7 +2384,7 @@ def inductive_check := ⟦
   }
 
   -- Returns 1 iff `ind_idx`'s block emits nested auxes.
-  #[group=cold] fn ind_has_nested(ind_idx: G, top: List‹&KConstantInfo›) -> G {
+  #[group=cold1] fn ind_has_nested(ind_idx: G, top: List‹&KConstantInfo›) -> G {
     let block_idxs = derive_block_member_idxs(ind_idx, top);
     any_member_has_nested(block_idxs, block_idxs, top)
   }
@@ -2417,7 +2417,7 @@ def inductive_check := ⟦
   }
 
   -- Sum of |ctors| over the first `target_pos` block members.
-  #[group=cold] fn ctors_before_pos(block_member_idxs: List‹G›, target_pos: G,
+  #[group=cold4] fn ctors_before_pos(block_member_idxs: List‹G›, target_pos: G,
                       top: List‹&KConstantInfo›, acc: G) -> G {
     match target_pos {
       0 => acc,
@@ -2441,7 +2441,7 @@ def inductive_check := ⟦
   -- occurrence AND some block member's do (i.e., the block is a
   -- nested-emitting block, not pure mutual). Structural — the Ixon
   -- `nested` count this used to read was dropped.
-  #[group=cold] fn is_aux_inductive(ci_idx: G, top: List‹&KConstantInfo›) -> G {
+  #[group=cold4] fn is_aux_inductive(ci_idx: G, top: List‹&KConstantInfo›) -> G {
     let ci = load(list_lookup(top, ci_idx));
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, this_block_addr) =>
@@ -2463,7 +2463,7 @@ def inductive_check := ⟦
   -- for each field's domain, peel leading Foralls + check spine head:
   -- if head is non-block Inductive AND first ext_n_params args mention
   -- block_idxs, record (ext_idx, spec_params).
-  #[group=cold] fn detect_nested_in_orig(orig_idx: G, block_idxs: List‹G›,
+  #[group=cold3] fn detect_nested_in_orig(orig_idx: G, block_idxs: List‹G›,
                            top: List‹&KConstantInfo›)
                            -> List‹(G, List‹KExpr›, List‹KLevel›)› {
     let orig_ci = load(list_lookup(top, orig_idx));
@@ -2474,7 +2474,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn detect_nested_in_ctors(ctor_indices: List‹G›, n_params: G,
+  #[group=cold4] fn detect_nested_in_ctors(ctor_indices: List‹G›, n_params: G,
                             block_idxs: List‹G›,
                             top: List‹&KConstantInfo›)
                             -> List‹(G, List‹KExpr›, List‹KLevel›)› {
@@ -2498,7 +2498,7 @@ def inductive_check := ⟦
   -- foralls peeled off the domain in `detect_nested_in_dom`). Both call
   -- paths (originals after `peel_n_foralls_tolerant`, auxes after
   -- `synth_aux_ctor_ty` substitution) start at 0.
-  #[group=cold] fn detect_nested_in_field_chain(ty: KExpr, block_idxs: List‹G›,
+  #[group=cold3] fn detect_nested_in_field_chain(ty: KExpr, block_idxs: List‹G›,
                                    top: List‹&KConstantInfo›, depth: G)
                                    -> List‹(G, List‹KExpr›, List‹KLevel›)› {
     match load(ty) {
@@ -2511,7 +2511,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn detect_nested_in_dom(dom: KExpr, block_idxs: List‹G›,
+  #[group=cold7] fn detect_nested_in_dom(dom: KExpr, block_idxs: List‹G›,
                           top: List‹&KConstantInfo›, depth: G)
                           -> List‹(G, List‹KExpr›, List‹KLevel›)› {
     match peel_leading_foralls(dom) {
@@ -2571,7 +2571,7 @@ def inductive_check := ⟦
   }
 
   -- 1 iff no spec_param references a binder below extraction depth `d`.
-  #[group=cold] fn spec_params_valid(sps: List‹KExpr›, d: G) -> G {
+  #[group=cold2] fn spec_params_valid(sps: List‹KExpr›, d: G) -> G {
     match load(sps) {
       ListNode.Nil => 1,
       ListNode.Cons(sp, rest) =>
@@ -2582,7 +2582,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn spec_params_lower(sps: List‹KExpr›, d: G) -> List‹KExpr› {
+  #[group=cold2] fn spec_params_lower(sps: List‹KExpr›, d: G) -> List‹KExpr› {
     match load(sps) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(sp, rest) =>
@@ -2596,14 +2596,14 @@ def inductive_check := ⟦
   -- Mechanism: peel ext's first ext_n_params Pi binders, substituting each
   -- with the corresponding spec_param. Result is the body (indices + sort)
   -- with α-substitution applied — ext's signature specialized at spec_params.
-  #[group=cold] fn synth_aux_ind_ty(ext_ind_ty: KExpr, ext_n_params: G,
+  #[group=cold1] fn synth_aux_ind_ty(ext_ind_ty: KExpr, ext_n_params: G,
                       spec_params: List‹KExpr›) -> KExpr {
     synth_aux_subst(ext_ind_ty, ext_n_params, spec_params, 0)
   }
 
   -- Walk first n Pi binders. For each, substitute the binder's BVar(0) with
   -- spec_params[k] (lifted appropriately).
-  #[group=cold] fn synth_aux_subst(ty: KExpr, n: G, spec_params: List‹KExpr›, k: G) -> KExpr {
+  #[group=cold3] fn synth_aux_subst(ty: KExpr, n: G, spec_params: List‹KExpr›, k: G) -> KExpr {
     match n {
       0 => ty,
       _ =>
@@ -2629,7 +2629,7 @@ def inductive_check := ⟦
   -- nested occurrence in some non-aux original's ctors and verify aux's
   -- ind_ty matches the synthesized canonical (ext.ind_ty with spec_params
   -- substituted).
-  #[group=cold] fn validate_block_auxes(block_idxs: List‹G›, top: List‹&KConstantInfo›) {
+  #[group=cold2] fn validate_block_auxes(block_idxs: List‹G›, top: List‹&KConstantInfo›) {
     let nested_list = gather_block_nested(block_idxs, block_idxs, top);
     -- Block_param_decls = first n_params Pi domains of first non-aux original.
     let bp_pair = block_param_decls(block_idxs, top);
@@ -2641,7 +2641,7 @@ def inductive_check := ⟦
   }
 
   -- Find first non-aux original; return (n_params, first n_params Pi domains).
-  #[group=cold] fn block_param_decls(walk_idxs: List‹G›,
+  #[group=cold4] fn block_param_decls(walk_idxs: List‹G›,
                        top: List‹&KConstantInfo›) -> (G, List‹KExpr›) {
     match load(walk_idxs) {
       ListNode.Nil => (0, store(ListNode.Nil)),
@@ -2663,7 +2663,7 @@ def inductive_check := ⟦
   }
 
   -- Collect detected nested occurrences across all non-aux originals in block.
-  #[group=cold] fn gather_block_nested(walk_idxs: List‹G›, all_block_idxs: List‹G›,
+  #[group=cold3] fn gather_block_nested(walk_idxs: List‹G›, all_block_idxs: List‹G›,
                          top: List‹&KConstantInfo›)
                          -> List‹(G, List‹KExpr›, List‹KLevel›)› {
     match load(walk_idxs) {
@@ -2680,7 +2680,7 @@ def inductive_check := ⟦
   }
 
   -- Walk auxes in block; for each, assert it matches some nested occurrence.
-  #[group=cold] fn validate_auxes_walk(walk_idxs: List‹G›,
+  #[group=cold4] fn validate_auxes_walk(walk_idxs: List‹G›,
                          nested_list: List‹(G, List‹KExpr›, List‹KLevel›)›,
                          n_block_params: G,
                          block_param_doms: List‹KExpr›,
@@ -2706,7 +2706,7 @@ def inductive_check := ⟦
 
   -- Returns 1 iff aux's ind_ty matches (block_params Pi → ext.ind_ty[α := spec_params])
   -- AND ctor count matches AND each ctor ty matches likewise.
-  #[group=cold] fn try_match_aux(aux_ind_ty: KExpr, aux_ctor_indices: List‹G›,
+  #[group=cold5] fn try_match_aux(aux_ind_ty: KExpr, aux_ctor_indices: List‹G›,
                    nested_list: List‹(G, List‹KExpr›, List‹KLevel›)›,
                    n_block_params: G,
                    block_param_doms: List‹KExpr›,
@@ -2750,7 +2750,7 @@ def inductive_check := ⟦
   }
 
   -- Pairwise compare aux ctors against ext ctors with spec_params substituted.
-  #[group=cold] fn compare_aux_ctors(aux_ctor_indices: List‹G›, ext_ctor_indices: List‹G›,
+  #[group=cold6] fn compare_aux_ctors(aux_ctor_indices: List‹G›, ext_ctor_indices: List‹G›,
                        ext_n_params: G, spec_params: List‹KExpr›,
                        block_param_doms: List‹KExpr›,
                        top: List‹&KConstantInfo›) -> G {
@@ -2785,7 +2785,7 @@ def inductive_check := ⟦
     }
   }
 
-  #[group=cold] fn populate_rules(rec_idx: G, ind_idx: G, ctor_indices: List‹G›,
+  #[group=cold5] fn populate_rules(rec_idx: G, ind_idx: G, ctor_indices: List‹G›,
                     n_params: G, n_motives: G, n_minors: G,
                     ind_lvls: G, univ_offset: G,
                     motive_doms: List‹KExpr›, minor_doms: List‹KExpr›,
@@ -2827,7 +2827,7 @@ def inductive_check := ⟦
   -- `constType (n α) (n α)`); we WHNF before peeling Foralls and before
   -- collecting the inner spine so the head/args reflect the *true*
   -- inductive occurrence rather than the surface alias.
-  #[group=cold] fn build_ih_doms(rec_indices: List‹G›, rec_member_idxs: List‹G›,
+  #[group=cold6] fn build_ih_doms(rec_indices: List‹G›, rec_member_idxs: List‹G›,
                    field_doms: List‹KExpr›,
                    flat_own_params: List‹G›,
                    motive_base: G, n_fields: G,
@@ -2871,7 +2871,7 @@ def inductive_check := ⟦
   -- Mirror: src/ix/kernel/inductive.rs:216-250 mutual peer-loop +
   -- 1660-1700 fn check_param_agreement.
   -- Solo (block_addr = [0;32]) is no-op.
-  #[group=cold] fn check_block_peer_param_agreement(self_pos: G, self_ty: KExpr,
+  #[group=cold2] fn check_block_peer_param_agreement(self_pos: G, self_ty: KExpr,
                                       self_n_params: G, self_n_indices: G,
                                       block_addr: Addr,
                                       top: List‹&KConstantInfo›,
@@ -2921,12 +2921,12 @@ def inductive_check := ⟦
 
   -- Walk first n Foralls of both types asserting domain def-eq under the
   -- accumulated param-binder context.
-  #[group=cold] fn check_param_agreement(ta: KExpr, tb: KExpr, n: G,
+  #[group=cold2] fn check_param_agreement(ta: KExpr, tb: KExpr, n: G,
                            top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     check_param_agreement_go(ta, tb, n, store(ListNode.Nil), top, addrs)
   }
 
-  #[group=cold] fn check_param_agreement_go(ta: KExpr, tb: KExpr, n: G,
+  #[group=cold4] fn check_param_agreement_go(ta: KExpr, tb: KExpr, n: G,
                               types: List‹KExpr›,
                               top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match n {

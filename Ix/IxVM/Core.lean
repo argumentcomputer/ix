@@ -30,7 +30,7 @@ def core := ⟦
     }
   }
 
-  #[group=cold] fn list_length_u64‹T›(list: List‹T›) -> U64 {
+  #[group=cold6] fn list_length_u64‹T›(list: List‹T›) -> U64 {
     match load(list) {
       ListNode.Nil => [0u8; 8],
       ListNode.Cons(_, rest) => relaxed_u64_succ(list_length_u64(rest)),
@@ -56,7 +56,7 @@ def core := ⟦
     v
   }
 
-  #[group=cold] fn list_lookup_u64‹T›(list: List‹T›, idx: U64) -> T {
+  fn list_lookup_u64‹T›(list: List‹T›, idx: U64) -> T {
     let ListNode.Cons(v, rest) = load(list);
     let z = u64_is_zero(idx);
     match z {
@@ -92,11 +92,11 @@ def core := ⟦
 
   -- O(N) reverse via accumulator. Used by hot-path builders that
   -- accumulate via cons (O(1)) then reverse once instead of O(N²) snoc.
-  #[group=cold] fn list_reverse‹T›(list: List‹T›) -> List‹T› {
+  fn list_reverse‹T›(list: List‹T›) -> List‹T› {
     list_reverse_acc(list, store(ListNode.Nil))
   }
 
-  #[group=cold] fn list_reverse_acc‹T›(list: List‹T›, acc: List‹T›) -> List‹T› {
+  #[group=cold2] fn list_reverse_acc‹T›(list: List‹T›, acc: List‹T›) -> List‹T› {
     match load(list) {
       ListNode.Nil => acc,
       ListNode.Cons(head, rest) =>

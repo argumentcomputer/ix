@@ -57,7 +57,7 @@ def convert := ⟦
   -- 5-variant enum, by-value passing taxes every row with the widest
   -- arm's columns. Mirror the `reference_aiur_pass_pointer_not_value`
   -- pattern already used for `convert_expr(e: &Expr)`.
-  #[group=cold] fn convert_univ(u: &Univ) -> KLevel {
+  fn convert_univ(u: &Univ) -> KLevel {
     match load(u) {
       Univ.Zero => store(KLevelNode.Zero),
       Univ.Succ(inner) => store(KLevelNode.Succ(convert_univ(inner))),
@@ -86,7 +86,7 @@ def convert := ⟦
   -- Convert a LE byte stream to KLimbs (list of U64, little-endian bignum).
   -- Reads 8 bytes per limb, zero-padding the last limb if needed.
   -- Strips trailing zero limbs for canonical form.
-  #[group=cold] fn bytes_to_limbs(bytes: ByteStream) -> KLimbs {
+  #[group=cold4] fn bytes_to_limbs(bytes: ByteStream) -> KLimbs {
     let limb = bytes_to_u64_limb(bytes, [0u8; 8], 0);
     let rest_bytes = skip_bytes(bytes, 8);
     match limb {
@@ -107,7 +107,7 @@ def convert := ⟦
   }
 
   -- Read up to 8 bytes into a U64 (LE), zero-padding.
-  #[group=cold] fn bytes_to_u64_limb(bytes: ByteStream, acc: U64, pos: G) -> U64 {
+  #[group=cold5] fn bytes_to_u64_limb(bytes: ByteStream, acc: U64, pos: G) -> U64 {
     match pos {
       8 => acc,
       _ =>
@@ -130,7 +130,7 @@ def convert := ⟦
   }
 
   -- Skip n bytes from a ByteStream
-  #[group=cold] fn skip_bytes(bytes: ByteStream, n: G) -> ByteStream {
+  #[group=cold2] fn skip_bytes(bytes: ByteStream, n: G) -> ByteStream {
     match n {
       0 => bytes,
       _ =>
@@ -218,7 +218,7 @@ def convert := ⟦
 
   -- Convert Ixon List‹RecursorRule› to List‹KRecRule›.
   -- rule_ctor_idxs provides the kernel constant index for each rule's constructor.
-  #[group=cold] fn convert_rules(
+  #[group=cold4] fn convert_rules(
     rules: List‹RecursorRule›,
     rule_ctor_idxs: List‹G›,
     ctx: ConvertCtx
@@ -247,7 +247,7 @@ def convert := ⟦
   -- Per-kind conversion
   -- ============================================================================
 
-  #[group=cold] fn convert_definition(d: Definition, ctx: ConvertCtx, hint: G) -> KConstantInfo {
+  fn convert_definition(d: Definition, ctx: ConvertCtx, hint: G) -> KConstantInfo {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match d {
@@ -271,7 +271,7 @@ def convert := ⟦
     }
   }
 
-  #[group=cold] fn convert_axiom(a: Axiom, ctx: ConvertCtx) -> KConstantInfo {
+  #[group=cold3] fn convert_axiom(a: Axiom, ctx: ConvertCtx) -> KConstantInfo {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match a {
@@ -282,7 +282,7 @@ def convert := ⟦
     }
   }
 
-  #[group=cold] fn convert_quotient(q: Quotient, ctx: ConvertCtx) -> KConstantInfo {
+  #[group=cold3] fn convert_quotient(q: Quotient, ctx: ConvertCtx) -> KConstantInfo {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match q {
@@ -293,7 +293,7 @@ def convert := ⟦
     }
   }
 
-  #[group=cold] fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›,
+  #[group=cold6] fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›,
                       block_addr: Addr) -> KConstantInfo {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
@@ -309,7 +309,7 @@ def convert := ⟦
     }
   }
 
-  #[group=cold] fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: List‹G›,
+  #[group=cold5] fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: List‹G›,
                        block_addr: Addr) -> KConstantInfo {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
@@ -323,7 +323,7 @@ def convert := ⟦
     }
   }
 
-  #[group=cold] fn convert_constructor(c: Constructor, ctx: ConvertCtx, induct_idx: G) -> KConstantInfo {
+  #[group=cold5] fn convert_constructor(c: Constructor, ctx: ConvertCtx, induct_idx: G) -> KConstantInfo {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match c {
@@ -343,7 +343,7 @@ def convert := ⟦
   -- Convert a single resolved input to a KConstantInfo. Takes &ConvertInput
   -- (pointer) so the per-row input width is one G column, not the full
   -- ConvertInput union width.
-  #[group=cold] fn convert_one(input: &ConvertInput) -> KConstantInfo {
+  fn convert_one(input: &ConvertInput) -> KConstantInfo {
     match load(input) {
       ConvertInput.Mk(ctx, kind) =>
         match kind {
@@ -359,7 +359,7 @@ def convert := ⟦
   }
 
   -- Convert a list of resolved inputs to a List‹&KConstantInfo›
-  #[group=cold] fn convert_all(inputs: List‹&ConvertInput›) -> List‹&KConstantInfo› {
+  fn convert_all(inputs: List‹&ConvertInput›) -> List‹&KConstantInfo› {
     match load(inputs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(input, rest) =>

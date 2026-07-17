@@ -23,7 +23,7 @@ def byteStream := ⟦
   -- Count bytes needed to represent a u64.
   -- Important: this implementation differs from the Lean and Rust ones, returning
   -- 1 for [0; 8] instead of 0.
-  #[group=cold] fn u64_byte_count(x: U64) -> U8 {
+  fn u64_byte_count(x: U64) -> U8 {
     match x {
       [_, 0, 0, 0, 0, 0, 0, 0] => 1u8,
       [_, _, 0, 0, 0, 0, 0, 0] => 2u8,
@@ -87,7 +87,7 @@ def byteStream := ⟦
   }
 
   -- Byte-by-byte `u64` equality
-  #[group=cold] fn u64_eq(a: U64, b: U64) -> G {
+  #[group=cold3] fn u64_eq(a: U64, b: U64) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     match [to_field(a0) - to_field(b0), to_field(a1) - to_field(b1),
@@ -101,7 +101,7 @@ def byteStream := ⟦
 
   -- `u64` addition with carry propagation (little-endian bytes).
   -- Returns the sum together with the final carry-out.
-  #[group=cold] fn u64_add(a: U64, b: U64) -> (U64, U8) {
+  #[group=cold6] fn u64_add(a: U64, b: U64) -> (U64, U8) {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     let (s0, c1) = u8_add(a0, b0);
@@ -146,7 +146,7 @@ def byteStream := ⟦
 
   -- Computes the successor of an `u64` assumed to be properly represented in
   -- little-endian bytes. If that's not the case, this implementation has UB.
-  #[group=cold] fn relaxed_u64_succ(bytes: U64) -> U64 {
+  #[group=cold2] fn relaxed_u64_succ(bytes: U64) -> U64 {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
     -- Incrementing a byte known to be `< 255` cannot overflow, so add as a
     -- cheap `G` and reinterpret (no `u8_add` lookup).

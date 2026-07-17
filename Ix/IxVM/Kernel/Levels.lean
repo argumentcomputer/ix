@@ -14,7 +14,7 @@ src/ix/kernel/expr.rs. Self-contained; new kernel modules
 -/
 
 def levels := ⟦
-  #[group=cold] fn level_is_not_zero(l: KLevel) -> G {
+  fn level_is_not_zero(l: KLevel) -> G {
     match load(l) {
       KLevelNode.Zero => 0,
       KLevelNode.Param(_) => 0,
@@ -87,7 +87,7 @@ def levels := ⟦
   }
 
   -- Lexicographic compare of sorted G-lists: 0 = eq, 1 = a < b, 2 = a > b.
-  #[group=cold] fn glist_cmp(a: List‹G›, b: List‹G›) -> G {
+  #[group=cold6] fn glist_cmp(a: List‹G›, b: List‹G›) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -111,7 +111,7 @@ def levels := ⟦
   }
 
   -- Sorted-list subset test.
-  #[group=cold] fn glist_subset(xs: List‹G›, ys: List‹G›) -> G {
+  #[group=cold6] fn glist_subset(xs: List‹G›, ys: List‹G›) -> G {
     match load(xs) {
       ListNode.Nil => 1,
       ListNode.Cons(x, xr) =>
@@ -130,7 +130,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn glist_eq_len(a: List‹G›, b: List‹G›) -> G {
+  #[group=cold3] fn glist_eq_len(a: List‹G›, b: List‹G›) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -147,7 +147,7 @@ def levels := ⟦
 
   -- Insert into a sorted G-list. Returns (1, new_list) on insert,
   -- (0, original) when already present. Mirrors level.rs ordered_insert.
-  #[group=cold] fn glist_ordered_insert(x: G, l: List‹G›) -> (G, List‹G›) {
+  #[group=cold6] fn glist_ordered_insert(x: G, l: List‹G›) -> (G, List‹G›) {
     match load(l) {
       ListNode.Nil => (1, store(ListNode.Cons(x, store(ListNode.Nil)))),
       ListNode.Cons(h, r) =>
@@ -167,7 +167,7 @@ def levels := ⟦
 
   -- Insert (idx, k) into an idx-sorted var list; on duplicate idx keep
   -- the max offset. Mirrors Node::add_var.
-  #[group=cold] fn nlvars_add(vars: List‹&NLVar›, idx: G, k: G) -> List‹&NLVar› {
+  #[group=cold7] fn nlvars_add(vars: List‹&NLVar›, idx: G, k: G) -> List‹&NLVar› {
     match load(vars) {
       ListNode.Nil =>
         store(ListNode.Cons(store(NLVar.Mk(idx, k)), store(ListNode.Nil))),
@@ -190,7 +190,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn nlvars_eq(a: List‹&NLVar›, b: List‹&NLVar›) -> G {
+  #[group=cold4] fn nlvars_eq(a: List‹&NLVar›, b: List‹&NLVar›) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -219,7 +219,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn nlvars_max_offset(vars: List‹&NLVar›) -> G {
+  #[group=cold4] fn nlvars_max_offset(vars: List‹&NLVar›) -> G {
     match load(vars) {
       ListNode.Nil => 0,
       ListNode.Cons(v, rest) =>
@@ -236,7 +236,7 @@ def levels := ⟦
 
   -- Keep x in xs unless ys has the same idx with offset >= x's.
   -- Mirrors level.rs subsume_vars (sorted merge walk).
-  #[group=cold] fn nlvars_subsume(xs: List‹&NLVar›, ys: List‹&NLVar›) -> List‹&NLVar› {
+  #[group=cold7] fn nlvars_subsume(xs: List‹&NLVar›, ys: List‹&NLVar›) -> List‹&NLVar› {
     match load(xs) {
       ListNode.Nil => xs,
       ListNode.Cons(x, xr) =>
@@ -269,7 +269,7 @@ def levels := ⟦
   -- insert). Mirrors norm_add_const incl. its skip rule: k = 0 never
   -- contributes; k = 1 only at the empty path (along a non-empty path
   -- all conditioning params are >= 1 so the branch value is >= 1 anyway).
-  #[group=cold] fn nl_add_const(acc: List‹&NLEntry›, path: List‹G›, k: G) -> List‹&NLEntry› {
+  #[group=cold2] fn nl_add_const(acc: List‹&NLEntry›, path: List‹G›, k: G) -> List‹&NLEntry› {
     match k {
       0 => acc,
       1 =>
@@ -281,7 +281,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn nl_add_const_go(acc: List‹&NLEntry›, path: List‹G›, k: G) -> List‹&NLEntry› {
+  #[group=cold5] fn nl_add_const_go(acc: List‹&NLEntry›, path: List‹G›, k: G) -> List‹&NLEntry› {
     match load(acc) {
       ListNode.Nil =>
         store(ListNode.Cons(
@@ -306,7 +306,7 @@ def levels := ⟦
   }
 
   -- Add var (idx, k) to the entry at `path` (path-sorted insert).
-  #[group=cold] fn nl_add_var(acc: List‹&NLEntry›, path: List‹G›, idx: G, k: G) -> List‹&NLEntry› {
+  #[group=cold4] fn nl_add_var(acc: List‹&NLEntry›, path: List‹G›, idx: G, k: G) -> List‹&NLEntry› {
     match load(acc) {
       ListNode.Nil =>
         store(ListNode.Cons(
@@ -335,7 +335,7 @@ def levels := ⟦
   -- (sorted param idxs), `k` = accumulated Succ offset. Mirrors
   -- normalize_aux; the IMax arm delegates to the dispatch (whose cases
   -- replicate the aux IMax-shape cases verbatim, as in level.rs).
-  #[group=cold] fn normalize_aux(l: KLevel, path: List‹G›, k: G,
+  #[group=cold3] fn normalize_aux(l: KLevel, path: List‹G›, k: G,
                    acc: List‹&NLEntry›) -> List‹&NLEntry› {
     match load(l) {
       KLevelNode.Zero => nl_add_const(acc, path, k),
@@ -358,7 +358,7 @@ def levels := ⟦
 
   -- imax(a, b) by b's shape: zero kills the branch; succ is never-zero so
   -- imax = max; max/imax distribute; param conditions the path.
-  #[group=cold] fn normalize_imax_dispatch(a: KLevel, b: KLevel, path: List‹G›, k: G,
+  #[group=cold4] fn normalize_imax_dispatch(a: KLevel, b: KLevel, path: List‹G›, k: G,
                              acc: List‹&NLEntry›) -> List‹&NLEntry› {
     match load(b) {
       KLevelNode.Zero => nl_add_const(acc, path, k),
@@ -393,7 +393,7 @@ def levels := ⟦
   -- Each entry folds over the ORIGINAL (snapshot) list, mirroring the
   -- Rust snapshot semantics. Callers seed `snapshot` with the same list
   -- they pass as `rem`.
-  #[group=cold] fn nl_subsumption_walk(rem: List‹&NLEntry›,
+  #[group=cold2] fn nl_subsumption_walk(rem: List‹&NLEntry›,
                          snapshot: List‹&NLEntry›) -> List‹&NLEntry› {
     match load(rem) {
       ListNode.Nil => rem,
@@ -404,7 +404,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn nl_subsume_entry(e: &NLEntry, snap: List‹&NLEntry›) -> &NLEntry {
+  #[group=cold7] fn nl_subsume_entry(e: &NLEntry, snap: List‹&NLEntry›) -> &NLEntry {
     match load(snap) {
       ListNode.Nil => e,
       ListNode.Cons(s, srest) =>
@@ -449,7 +449,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn nl_eq(a: List‹&NLEntry›, b: List‹&NLEntry›) -> G {
+  #[group=cold4] fn nl_eq(a: List‹&NLEntry›, b: List‹&NLEntry›) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -487,7 +487,7 @@ def levels := ⟦
   -- unconditionally in that branch; each var (idx, off) counts as
   -- >= off + 1 because idx IN p2 implies the param is >= 1 there.
   -- Mirrors level.rs covers_const (the fixed, split-search version).
-  #[group=cold] fn nl_covers_const(l2: List‹&NLEntry›, p1: List‹G›, c: G) -> G {
+  #[group=cold5] fn nl_covers_const(l2: List‹&NLEntry›, p1: List‹G›, c: G) -> G {
     match load(l2) {
       ListNode.Nil => 0,
       ListNode.Cons(e, rest) =>
@@ -510,7 +510,7 @@ def levels := ⟦
   }
 
   -- Any var with offset + 1 >= c?
-  #[group=cold] fn nlvars_any_offset_geq(vars: List‹&NLVar›, c: G) -> G {
+  #[group=cold4] fn nlvars_any_offset_geq(vars: List‹&NLVar›, c: G) -> G {
     match load(vars) {
       ListNode.Nil => 0,
       ListNode.Cons(v, rest) =>
@@ -526,7 +526,7 @@ def levels := ⟦
 
   -- Does some entry (p2, n2) in l2 with p2 SUBSET-OF p1 contain a var
   -- (w, off2) with off2 >= off? Mirrors level.rs covers_var.
-  #[group=cold] fn nl_covers_var(l2: List‹&NLEntry›, p1: List‹G›, w: G, off: G) -> G {
+  #[group=cold4] fn nl_covers_var(l2: List‹&NLEntry›, p1: List‹G›, w: G, off: G) -> G {
     match load(l2) {
       ListNode.Nil => 0,
       ListNode.Cons(e, rest) =>
@@ -544,7 +544,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn nlvars_dominates(vars: List‹&NLVar›, w: G, off: G) -> G {
+  #[group=cold5] fn nlvars_dominates(vars: List‹&NLVar›, w: G, off: G) -> G {
     match load(vars) {
       ListNode.Nil => 0,
       ListNode.Cons(v, rest) =>
@@ -566,7 +566,7 @@ def levels := ⟦
   -- its activation branch must be dominated by subset-path entries of l2.
   -- Mirrors level.rs norm_level_le (with its covers split, sound where
   -- Lean4Lean's single-entry search is incomplete).
-  #[group=cold] fn nl_le(l1: List‹&NLEntry›, l2: List‹&NLEntry›) -> G {
+  #[group=cold4] fn nl_le(l1: List‹&NLEntry›, l2: List‹&NLEntry›) -> G {
     match load(l1) {
       ListNode.Nil => 1,
       ListNode.Cons(e, rest) =>
@@ -588,7 +588,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn nl_le_vars(vars: List‹&NLVar›, l2: List‹&NLEntry›, p1: List‹G›) -> G {
+  #[group=cold3] fn nl_le_vars(vars: List‹&NLVar›, l2: List‹&NLEntry›, p1: List‹G›) -> G {
     match load(vars) {
       ListNode.Nil => 1,
       ListNode.Cons(v, rest) =>
@@ -604,7 +604,7 @@ def levels := ⟦
 
   -- Keyed on the level alone: each distinct level normalizes once per run.
   -- Seeded with the empty-path entry, mirroring normalize_level.
-  #[group=cold] fn level_normalize(l: KLevel) -> List‹&NLEntry› {
+  #[group=cold3] fn level_normalize(l: KLevel) -> List‹&NLEntry› {
     let seed = store(ListNode.Cons(
       store(NLEntry.Mk(store(ListNode.Nil), 0, store(ListNode.Nil))),
       store(ListNode.Nil)));
@@ -612,7 +612,7 @@ def levels := ⟦
     nl_subsumption_walk(raw, raw)
   }
 
-  #[group=cold] fn level_leq(a: KLevel, b: KLevel) -> G {
+  #[group=cold3] fn level_leq(a: KLevel, b: KLevel) -> G {
     match level_eq(a, b) {
       1 => 1,
       0 =>
@@ -627,14 +627,14 @@ def levels := ⟦
   -- univ_eq). The previous leq(a,b)*leq(b,a) did a two-way
   -- param-substitution split per Max/IMax-with-param -- exponential in
   -- params and the dominant record cost on instance-heavy checks.
-  #[group=cold] fn level_equal(a: KLevel, b: KLevel) -> G {
+  fn level_equal(a: KLevel, b: KLevel) -> G {
     match level_eq(a, b) {
       1 => 1,
       0 => nl_eq(level_normalize(a), level_normalize(b)),
     }
   }
 
-  #[group=cold] fn level_max(a: KLevel, b: KLevel) -> KLevel {
+  fn level_max(a: KLevel, b: KLevel) -> KLevel {
     match load(a) {
       KLevelNode.Zero => b,
       _ =>
@@ -680,7 +680,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn level_reduce(l: KLevel) -> KLevel {
+  #[group=cold3] fn level_reduce(l: KLevel) -> KLevel {
     match load(l) {
       KLevelNode.Zero => store(KLevelNode.Zero),
       KLevelNode.Param(i) => store(KLevelNode.Param(i)),
@@ -749,7 +749,7 @@ def levels := ⟦
   -- Literal equality
   -- ============================================================================
 
-  #[group=cold] fn klimbs_eq(a: KLimbs, b: KLimbs) -> G {
+  #[group=cold4] fn klimbs_eq(a: KLimbs, b: KLimbs) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -788,7 +788,7 @@ def levels := ⟦
     }
   }
 
-  #[group=cold] fn literal_eq(a: KLiteral, b: KLiteral) -> G {
+  #[group=cold2] fn literal_eq(a: KLiteral, b: KLiteral) -> G {
     match a {
       KLiteral.Nat(na) =>
         match b {
