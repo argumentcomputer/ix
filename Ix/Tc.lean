@@ -15,7 +15,9 @@ public import Ix.Tc.Monad
 public import Ix.Tc.Ingress
 public import Ix.Tc.IngressMeta
 public import Ix.Tc.Egress
+public import Ix.Tc.EgressLean
 public import Ix.Tc.Driver
+public import Ix.Tc.Validate
 public import Ix.Tc.Whnf
 public import Ix.Tc.Infer
 public import Ix.Tc.DefEq

@@ -30,8 +30,8 @@ The reserved-marker guard (Rust panics inside `KEnv::insert`) is enforced
 here in `insertEntries`, the only path feeding untrusted constants into the
 kernel env.
 
-Meta-mode ingress (arena parallel walk, name resolution, mdata layers) is
-deliberately not ported yet — anon ships first.
+Meta-mode ingress (arena parallel walk, name resolution, mdata layers)
+lives in `Ix.Tc.IngressMeta`.
 -/
 
 public section

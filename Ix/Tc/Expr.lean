@@ -58,6 +58,18 @@ structure ExprInfo (m : Mode) where
   hasFVars : Bool
   /-- Lean mdata annotations. Semantically transparent, erased in anon mode. -/
   mdata : m.F (Array MData)
+  /-- Metadata-AWARE content address (meta mode only): Blake3 over the
+      semantic `addr` plus this node's metadata (binder/const/prj names,
+      binder infos, mdata layers) plus the children's `metaAddr`s. The
+      semantic `addr` stays metadata-blind (anon/meta address parity is
+      load-bearing); `metaAddr` exists so meta-mode interning and egress
+      memoization key on FULL fidelity — a metadata-blind key would
+      collapse alpha-identical subtrees first-wins and lose per-occurrence
+      names/infos/mdata (the exact drift that forced Rust's roundtrip off
+      the direct `lean_egress` path). Checking never reads it: every
+      semantic cache keys by `addr`. Universe display names are excluded —
+      level egress resolves parameter names positionally. -/
+  metaAddr : m.F Address
 
 /-- Expression. Each variant carries its `ExprInfo m`. -/
 inductive KExpr (m : Mode) where
@@ -101,6 +113,17 @@ def info : KExpr m → ExprInfo m
 @[inline] def hasFVars (e : KExpr m) : Bool := e.info.hasFVars
 @[inline] def mdata (e : KExpr m) : m.F (Array MData) := e.info.mdata
 
+/-- The metadata-aware address as a plain `Address` (meta mode; `default`
+    is unreachable — every meta node carries one). -/
+@[inline] def metaAddrD (e : KExpr m) : Address :=
+  (Mode.get? e.info.metaAddr).getD default
+
+/-- Intern/memo key: metadata-blind in anon mode, metadata-aware in meta
+    mode (see `ExprInfo.metaAddr`). -/
+def internKey : {m : Mode} → KExpr m → Address
+  | .anon, e => e.addr
+  | .«meta», e => e.info.metaAddr
+
 /-- Content-addressed equality (Rust `hash_eq`). -/
 instance : BEq (KExpr m) where
   beq a b := a.addr == b.addr
@@ -115,7 +138,34 @@ instance : Hashable (KExpr m) where
 Each computes the Blake3 address per the module-doc contract and the derived
 `ExprInfo` invariants. Rust's hash-first/`*_with_addr` split (alloc avoidance
 for intern-table pre-checks) is intentionally not ported: construct, then
-intern. -/
+intern.
+
+The `metaAddr` thunks below only ever run in meta mode (`Mode.fieldWith`
+discards them unevaluated in anon mode), so the anon hot path pays
+nothing. -/
+
+/-- Fold a metadata name field into a hasher (meta-mode thunks only). -/
+@[inline] def hashFName {m : Mode} (h : Hasher) (n : m.F Name) : Hasher :=
+  h.update ((Mode.get? n).getD Ix.Name.mkAnon).getHash.hash
+
+/-- Fold a metadata binder-info field into a hasher. -/
+@[inline] def hashFBi {m : Mode} (h : Hasher) (bi : m.F Lean.BinderInfo) :
+    Hasher :=
+  h.update ⟨#[match (Mode.get? bi).getD .default with
+    | .default => 0 | .implicit => 1
+    | .strictImplicit => 2 | .instImplicit => 3]⟩
+
+/-- Fold mdata layers into a hasher. -/
+def hashFMData {m : Mode} (h : Hasher) (md : m.F (Array MData)) : Hasher :=
+  Id.run do
+    let layers := (Mode.get? md).getD #[]
+    let mut h := h.update layers.size.toUInt64.toLEBytes
+    for layer in layers do
+      h := h.update layer.size.toUInt64.toLEBytes
+      for (n, dv) in layer do
+        h := h.update n.getHash.hash
+        h := Ix.Expr.hashDataValue h dv
+    return h
 
 def mkVar (idx : UInt64) (name : m.F Name)
     (mdata : m.F (Array MData) := noMData) : KExpr m := Id.run do
@@ -123,9 +173,15 @@ def mkVar (idx : UInt64) (name : m.F Name)
   h := h.update ⟨#[Ix.TAG_EVAR]⟩
   h := h.update idx.toLEBytes
   let addr := Address.mk (h.finalizeWithLength 32).val
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFName mh name
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
   return .var idx name
     { addr, lbr := idx + 1, count0 := if idx == 0 then 1 else 0,
-      hasFVars := false, mdata }
+      hasFVars := false, mdata, metaAddr }
 
 def mkFVar (id : FVarId) (name : m.F Name)
     (mdata : m.F (Array MData) := noMData) : KExpr m := Id.run do
@@ -135,7 +191,14 @@ def mkFVar (id : FVarId) (name : m.F Name)
   let addr := Address.mk (h.finalizeWithLength 32).val
   -- FVars are leaves: no loose bvars, no var-0 occurrences; hasFVars is true
   -- since this node *is* an fvar.
-  return .fvar id name { addr, lbr := 0, count0 := 0, hasFVars := true, mdata }
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFName mh name
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
+  return .fvar id name
+    { addr, lbr := 0, count0 := 0, hasFVars := true, mdata, metaAddr }
 
 def mkSort (u : KUniv m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
   Id.run do
@@ -143,7 +206,13 @@ def mkSort (u : KUniv m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
     h := h.update ⟨#[Ix.TAG_ESORT]⟩
     h := h.update u.addr.hash
     let addr := Address.mk (h.finalizeWithLength 32).val
-    return .sort u { addr, lbr := 0, count0 := 0, hasFVars := false, mdata }
+    let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+      let mut mh := Hasher.init ()
+      mh := mh.update addr.hash
+      mh := hashFMData mh mdata
+      return Address.mk (mh.finalizeWithLength 32).val
+    return .sort u
+      { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
 
 /-- `id.addr` is the constant's content address — its identity. `id.name` is
     display-only and NOT hashed. -/
@@ -155,7 +224,14 @@ def mkConst (id : KId m) (us : Array (KUniv m))
   for u in us do
     h := h.update u.addr.hash
   let addr := Address.mk (h.finalizeWithLength 32).val
-  return .const id us { addr, lbr := 0, count0 := 0, hasFVars := false, mdata }
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFName mh id.name
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
+  return .const id us
+    { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
 
 def mkApp (f a : KExpr m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
   Id.run do
@@ -164,9 +240,16 @@ def mkApp (f a : KExpr m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
     h := h.update f.addr.hash
     h := h.update a.addr.hash
     let addr := Address.mk (h.finalizeWithLength 32).val
+    let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+      let mut mh := Hasher.init ()
+      mh := mh.update addr.hash
+      mh := mh.update f.metaAddrD.hash
+      mh := mh.update a.metaAddrD.hash
+      mh := hashFMData mh mdata
+      return Address.mk (mh.finalizeWithLength 32).val
     return .app f a
       { addr, lbr := max f.lbr a.lbr, count0 := f.count0 + a.count0,
-        hasFVars := f.hasFVars || a.hasFVars, mdata }
+        hasFVars := f.hasFVars || a.hasFVars, mdata, metaAddr }
 
 /-- Binder `name`/`bi` are display/elaboration metadata only: NOT hashed. -/
 def mkLam (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
@@ -176,9 +259,18 @@ def mkLam (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
   h := h.update ty.addr.hash
   h := h.update body.addr.hash
   let addr := Address.mk (h.finalizeWithLength 32).val
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFName mh name
+    mh := hashFBi mh bi
+    mh := mh.update ty.metaAddrD.hash
+    mh := mh.update body.metaAddrD.hash
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
   return .lam name bi ty body
     { addr, lbr := max ty.lbr body.lbr.sat1, count0 := ty.count0,
-      hasFVars := ty.hasFVars || body.hasFVars, mdata }
+      hasFVars := ty.hasFVars || body.hasFVars, mdata, metaAddr }
 
 /-- See `mkLam` — binder `name`/`bi` intentionally not hashed. -/
 def mkAll (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
@@ -188,9 +280,18 @@ def mkAll (name : m.F Name) (bi : m.F Lean.BinderInfo) (ty body : KExpr m)
   h := h.update ty.addr.hash
   h := h.update body.addr.hash
   let addr := Address.mk (h.finalizeWithLength 32).val
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFName mh name
+    mh := hashFBi mh bi
+    mh := mh.update ty.metaAddrD.hash
+    mh := mh.update body.metaAddrD.hash
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
   return .all name bi ty body
     { addr, lbr := max ty.lbr body.lbr.sat1, count0 := ty.count0,
-      hasFVars := ty.hasFVars || body.hasFVars, mdata }
+      hasFVars := ty.hasFVars || body.hasFVars, mdata, metaAddr }
 
 /-- Binder `name` not hashed; `nonDep` IS hashed (see module doc). -/
 def mkLet (name : m.F Name) (ty val body : KExpr m) (nonDep : Bool)
@@ -202,10 +303,20 @@ def mkLet (name : m.F Name) (ty val body : KExpr m) (nonDep : Bool)
   h := h.update body.addr.hash
   h := h.update ⟨#[if nonDep then 1 else 0]⟩
   let addr := Address.mk (h.finalizeWithLength 32).val
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFName mh name
+    mh := mh.update ty.metaAddrD.hash
+    mh := mh.update val.metaAddrD.hash
+    mh := mh.update body.metaAddrD.hash
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
   return .letE name ty val body nonDep
     { addr, lbr := max (max ty.lbr val.lbr) body.lbr.sat1,
       count0 := ty.count0 + val.count0,
-      hasFVars := ty.hasFVars || val.hasFVars || body.hasFVars, mdata }
+      hasFVars := ty.hasFVars || val.hasFVars || body.hasFVars, mdata,
+      metaAddr }
 
 /-- `id.name` is display-only and NOT hashed. -/
 def mkPrj (id : KId m) (field : UInt64) (val : KExpr m)
@@ -216,9 +327,16 @@ def mkPrj (id : KId m) (field : UInt64) (val : KExpr m)
   h := h.update field.toLEBytes
   h := h.update val.addr.hash
   let addr := Address.mk (h.finalizeWithLength 32).val
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFName mh id.name
+    mh := mh.update val.metaAddrD.hash
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
   return .prj id field val
     { addr, lbr := val.lbr, count0 := val.count0, hasFVars := val.hasFVars,
-      mdata }
+      mdata, metaAddr }
 
 /-- The literal value is NOT hashed — only the blob address is. -/
 def mkNat (val : Nat) (blob : Address)
@@ -227,7 +345,13 @@ def mkNat (val : Nat) (blob : Address)
   h := h.update ⟨#[Ix.TAG_ENAT]⟩
   h := h.update blob.hash
   let addr := Address.mk (h.finalizeWithLength 32).val
-  return .nat val blob { addr, lbr := 0, count0 := 0, hasFVars := false, mdata }
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
+  return .nat val blob
+    { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
 
 /-- The literal value is NOT hashed — only the blob address is. -/
 def mkStr (val : String) (blob : Address)
@@ -236,7 +360,13 @@ def mkStr (val : String) (blob : Address)
   h := h.update ⟨#[Ix.TAG_ESTR]⟩
   h := h.update blob.hash
   let addr := Address.mk (h.finalizeWithLength 32).val
-  return .str val blob { addr, lbr := 0, count0 := 0, hasFVars := false, mdata }
+  let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
+    let mut mh := Hasher.init ()
+    mh := mh.update addr.hash
+    mh := hashFMData mh mdata
+    return Address.mk (mh.finalizeWithLength 32).val
+  return .str val blob
+    { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
 
 instance : Inhabited (KExpr m) := ⟨mkSort .mkZero⟩
 

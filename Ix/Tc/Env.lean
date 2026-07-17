@@ -30,9 +30,15 @@ namespace Ix.Tc
 open Std (HashMap HashSet)
 
 /-- Hash-consing intern table for expressions and universes, owned by one
-    `KEnv`. Interning returns the first value stored for a hash, so equal
+    `KEnv`. Interning returns the first value stored for a key, so equal
     subtrees share representation (RSS only — no cache soundness depends on
-    it; all caches key by `Address`). -/
+    it; all semantic caches key by `Address`). Expression keys are
+    `KExpr.internKey`: the metadata-blind semantic address in anon mode,
+    the metadata-AWARE `metaAddr` in meta mode — a blind meta key would
+    collapse alpha-identical subtrees first-wins and lose per-occurrence
+    names/infos/mdata (see `ExprInfo.metaAddr`). Universe interning stays
+    semantic in both modes (level display names are positional at
+    egress). -/
 structure InternTable (m : Mode) where
   univs : HashMap Address (KUniv m) := {}
   exprs : HashMap Address (KExpr m) := {}
@@ -48,10 +54,11 @@ instance : Inhabited (InternTable m) := ⟨{}⟩
     Option (KUniv m) :=
   it.univs[addr]?
 
-/-- Read-only fast path counterpart for expressions. -/
-@[inline] def tryGetExpr (it : InternTable m) (addr : Address) :
+/-- Read-only fast path counterpart for expressions (keyed by
+    `KExpr.internKey`). -/
+@[inline] def tryGetExpr (it : InternTable m) (key : Address) :
     Option (KExpr m) :=
-  it.exprs[addr]?
+  it.exprs[key]?
 
 /-- Intern a universe: return the existing value for its hash if present,
     otherwise insert and return. -/
@@ -60,11 +67,13 @@ def internUniv (it : InternTable m) (u : KUniv m) : KUniv m × InternTable m :=
   | some canon => (canon, it)
   | none => (u, { it with univs := it.univs.insert u.addr u })
 
-/-- Intern an expression: same guarantee as `internUniv`. -/
+/-- Intern an expression: same guarantee as `internUniv`, keyed by
+    `KExpr.internKey` (metadata-aware in meta mode). -/
 def internExpr (it : InternTable m) (e : KExpr m) : KExpr m × InternTable m :=
-  match it.exprs[e.addr]? with
+  let key := e.internKey
+  match it.exprs[key]? with
   | some canon => (canon, it)
-  | none => (e, { it with exprs := it.exprs.insert e.addr e })
+  | none => (e, { it with exprs := it.exprs.insert key e })
 
 end InternTable
 
@@ -217,6 +226,20 @@ def insertBlock (env : KEnv m) (id : KId m) (members : Array (KId m)) :
     fvar counter). Preserves `recursorAuxOrder`. -/
 def clear (env : KEnv m) : KEnv m :=
   { recursorAuxOrder := env.recursorAuxOrder }
+
+/-- Merge two ingress-fresh envs (phase-parallel ingress: chunked local
+    envs → one shared env). Constants/blocks union — ingress conversion is
+    deterministic, so duplicate KIds (same work item converted twice)
+    carry identical entries and last-write-wins is benign. `nextFVarId`
+    takes the max. Intern tables and reduction caches are NOT merged:
+    interning is RSS-only (no cache soundness depends on it) and
+    ingress-fresh envs have empty reduction caches. -/
+def union (a b : KEnv m) : KEnv m :=
+  { a with
+    consts := b.consts.fold (init := a.consts) fun acc id c => acc.insert id c
+    blocks := b.blocks.fold (init := a.blocks) fun acc id ms =>
+      acc.insert id ms
+    nextFVarId := max a.nextFVarId b.nextFVarId }
 
 /-- Clear only the reduction-memo caches (whnf / infer / def-eq / unfold /
     is-prop / nat-succ-stuck). Structural caches (`consts`, `blocks`,

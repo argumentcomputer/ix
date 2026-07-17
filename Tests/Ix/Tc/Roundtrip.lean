@@ -3,6 +3,7 @@ module
 public import LSpec
 public import Ix.Tc
 public import Ix.CompileM
+public import Ix.CanonM
 public import Ix.Meta
 public import Ix.Common
 public import Tests.Ix.Tc.AnonDiff
@@ -11,18 +12,25 @@ public import Tests.Ix.Tc.IxonFixtures
 /-!
 Kernel ↔ Ixon roundtrip (`tc-roundtrip` ignored suite + `tc-unit` entries).
 
-The anon analog of the Rust `kernel-ixon-roundtrip` test: every constant of
-a Rust-compiler-produced env is ingressed into the pure-Lean kernel,
-egressed back to an `Ixon.Constant`, and compared **structurally** against
-the original (canonical forms — sharing expanded, tables renumbered,
-universes reduced; see `Ix.Tc.Egress`). Projections compare byte-exact.
+Two halves, mirroring the Rust `kernel-ixon-roundtrip`'s scope:
 
-"Anon": the v1 `Ix.Tc` kernel is anon-only, so metadata (names, binder
-info, mdata) never enters it — this roundtrip certifies exactly the
-kernel-held, hash-relevant structure. The metadata half of the pipeline is
-exercised by the Rust meta-mode `kernel-ixon-roundtrip` (which continues
-through `decompile` to Lean); the pure-Lean meta analog becomes possible
-once meta-mode ingress lands (post-v1).
+**Anon** (structural): every constant of a Rust-compiler-produced env is
+ingressed into the pure-Lean kernel, egressed back to an `Ixon.Constant`,
+and compared **structurally** against the original (canonical forms —
+sharing expanded, tables renumbered, universes reduced; see
+`Ix.Tc.Egress`). Projections compare byte-exact. Certifies exactly the
+kernel-held, hash-relevant structure.
+
+**Meta** (full fidelity): the whole env is meta-ingressed (phase-parallel:
+chunked local envs merged via `KEnv.union`), every named entry is egressed
+back to `Ix.ConstantInfo` (`Ix.Tc.EgressLean`), and compared against
+`CanonM.canonConst` of the source Lean constant with Rust `compare_envs`
+semantics — LEON content hashes are name/info/mdata-sensitive, so this
+certifies metadata fidelity too. Skipped with counts: aux-rewritten
+entries (`original.isSome` — decompile regenerates those) and
+altering-surgery entries (`metaHasAlteringSurgery` — only decompile's
+surgery replay can restore their source form); `notFound` (ixon names
+absent from the Lean env) is informational, as in Rust.
 
 Layers:
 - `unitTests` (runs in `tc-unit`, no FFI): hand-built fixture envs roundtrip
@@ -30,9 +38,9 @@ Layers:
   negatives — proves the canonical comparison can't be satisfied vacuously).
 - `suite` (`tc-roundtrip`, ignored): Rust-compiled seed closures with full
   coverage accounting, then the ENTIRE current Lean env (`get_env!`) —
-  matching the Rust roundtrip's input scope. Parallel over the task pool.
-  External `.ixe` files (e.g. `compilemathlib.ixe`) go through
-  `ix roundtrip-tc <path>` instead.
+  anon and meta. Parallel over the task pool. Arbitrary Lean files (and
+  external `.ixe` images) go through `ix validate-lean` instead, which
+  shares the same drivers (`Ix.Tc.Validate`).
 -/
 
 namespace Tests.Tc.Roundtrip
@@ -42,25 +50,10 @@ open Ix.Tc
 
 public section
 
-/-- Roundtrip every work item of an env (in parallel over the task pool).
-    Returns `(rows, firstFailure?)` where `rows` counts per-address
-    verdicts; full coverage means `rows == env.consts.size`. -/
-def roundtripAll (ixonEnv : Ixon.Env) : Nat × Option String := Id.run do
-  match buildAnonWork ixonEnv with
-  | .error e => return (0, some s!"work discovery failed: {e}")
-  | .ok work =>
-    let mut rows := 0
-    let mut firstErr : Option String := none
-    for t in roundtripTasks ixonEnv work do
-      for r in t.get do
-        rows := rows + 1
-        if firstErr.isNone then
-          if let some msg := r.err? then
-            firstErr := some s!"{r.addr}: {msg}"
-    if firstErr.isNone && rows != ixonEnv.consts.size then
-      firstErr := some
-        s!"coverage gap: {rows} roundtrip rows vs {ixonEnv.consts.size} env constants"
-    return (rows, firstErr)
+/-- Roundtrip every work item of an env (shared driver:
+    `Ix.Tc.anonRoundtripEnv`). -/
+def roundtripAll (ixonEnv : Ixon.Env) : Nat × Option String :=
+  anonRoundtripEnv ixonEnv
 
 /-! ### Fixture roundtrips + tamper negatives (`tc-unit`) -/
 
@@ -248,7 +241,68 @@ def wholeEnvSuite : TestSeq :=
       let (rows, err?) := roundtripAll ixonEnv
       return (err?.isNone, rows, 0, err?)) .done
 
-public def suite : List TestSeq := [closureSuite, wholeEnvSuite]
+/-! ### Meta roundtrip (kernel → Lean, `compare_envs` semantics)
+
+The full-fidelity half: pure-parse the Rust-compiled env, meta-ingress the
+WHOLE env into one shared kernel env (phase 1, parallel chunked local envs
+merged via `KEnv.union`), then egress every named entry back to
+`Ix.ConstantInfo` and compare content hashes against `CanonM.canonConst`
+of the source Lean constant (phase 2, parallel) — Rust
+`rs_kernel_roundtrip`/`compare_envs` semantics: type hash always, value
+hash for defn/thm/opaque, per-rule RHS for recursors; missing Lean-side
+names are informational `notFound`; aux-rewritten entries
+(`original.isSome`) are skipped with a count (their anon-structural
+fidelity is covered by the anon roundtrip above). -/
+
+/-- Compile `consts` through the Rust compiler and run the shared meta
+    roundtrip driver (`Ix.Tc.metaRoundtripEnv`) against `leanEnv`. -/
+def metaRoundtripOn (leanEnv : Lean.Environment) (label : String)
+    (consts : List (Lean.Name × Lean.ConstantInfo)) :
+    IO (Ix.Tc.MetaRoundtripReport × Option String) := do
+  let dir ← IO.FS.createTempDir
+  let path := dir / s!"tc-meta-roundtrip-{label}.ixe"
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString
+  let bytes ← IO.FS.readBinFile path
+  IO.FS.removeDirAll dir
+  let ixonEnv ← match Ixon.deEnv bytes with
+    | .ok env => pure env
+    | .error e => return ({}, some s!"pure deEnv failed: {e}")
+  match metaRoundtripEnv leanEnv ixonEnv with
+  | .error e => return ({}, some e)
+  | .ok report =>
+    if report.errorCount == 0 then
+      return (report, none)
+    else
+      let shown := report.errors.toSubarray 0 (min 5 report.errors.size)
+        |>.toArray
+      let msgs := shown.map fun (n, m) => s!"{n}: {m}"
+      return (report,
+        some s!"{report.errorCount} comparison error(s); first: \
+                {String.intercalate " | " msgs.toList}")
+
+def metaClosureSuite : TestSeq := Id.run do
+  let mut ts : TestSeq := .done
+  for (label, seeds) in seedSets do
+    ts := ts ++ .individualIO s!"meta roundtrip closure: {label}" none (do
+      let env ← get_env!
+      let consts := Tests.Tc.AnonDiff.closureOf env seeds
+      let (report, err?) ← metaRoundtripOn env label consts
+      return (err?.isNone, report.checked, 0, err?)) .done
+  return ts
+
+/-- The centerpiece: meta roundtrip of the WHOLE current Lean env. -/
+def metaWholeEnvSuite : TestSeq :=
+  .individualIO "meta roundtrip whole get_env environment" none (do
+    let leanEnv ← get_env!
+    let (report, err?) ←
+      metaRoundtripOn leanEnv "whole-env" leanEnv.constants.toList
+    IO.println s!"[tc-meta-roundtrip] checked {report.checked}, \
+                  notFound {report.notFound}, skippedAux {report.skippedAux}, \
+                  skippedSurgery {report.skippedSurgery}"
+    return (err?.isNone, report.checked, 0, err?)) .done
+
+public def suite : List TestSeq :=
+  [closureSuite, wholeEnvSuite, metaClosureSuite, metaWholeEnvSuite]
 
 end
 

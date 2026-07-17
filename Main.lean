@@ -5,7 +5,7 @@ import Ix.Cli.CheckCmd
 import Ix.Cli.CodegenCmd
 import Ix.Cli.CheckRsCmd
 import Ix.Cli.CheckTcCmd
-import Ix.Cli.RoundtripTcCmd
+import Ix.Cli.ValidateLeanCmd
 import Ix.Cli.ClaimCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
@@ -38,7 +38,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     checkCmd;
     checkRsCmd;
     checkTcCmd;
-    roundtripTcCmd;
+    validateLeanCmd;
     claimCmd;
     diffCmd;
     packCmd;
