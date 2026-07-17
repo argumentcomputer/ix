@@ -587,9 +587,10 @@ private def emitU8Sub (out : Nat) (i j : ValIdx) : Array RustStmt :=
     declVal (out + 1) (.field (.var "__b2_sub") "1")
   ]
 
-/-- `Op::U32LessThan`: mirror execute.rs lines 477-505. Pure
-    compare + 6-byte-pair range-check via
-    `bytes2_queries.bump_range_check` (constrained mode only). -/
+/-- `Op::U32LessThan`: mirror execute.rs. Pure compare + 10-byte-pair
+    range-check via `bytes2_queries.bump_range_check` (constrained mode
+    only), including the canonicity witnesses `u = p - 1 - w` that pin
+    the operands' byte decompositions (see `constraints.rs`). -/
 private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
     s!"\{ let __a_val = __v_{x}.as_canonical_u64();" ++
@@ -602,12 +603,19 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" let __z_bytes = __b_u32.to_le_bytes();" ++
     s!" let __c_u32 = __b_u32.wrapping_sub(__a_u32).wrapping_sub(1);" ++
     s!" let __y_bytes = __c_u32.to_le_bytes();" ++
+    s!" let __p = G::ORDER_U32;" ++
+    s!" let __ux_bytes = (__p - 1 - __a_u32).to_le_bytes();" ++
+    s!" let __uz_bytes = (__p - 1 - __b_u32).to_le_bytes();" ++
     s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[0]), &G::from_u8(__x_bytes[1]));" ++
     s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[2]), &G::from_u8(__x_bytes[3]));" ++
     s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[0]), &G::from_u8(__y_bytes[1]));" ++
     s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[2]), &G::from_u8(__y_bytes[3]));" ++
     s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[0]), &G::from_u8(__z_bytes[1]));" ++
     s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[2]), &G::from_u8(__z_bytes[3]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__ux_bytes[0]), &G::from_u8(__ux_bytes[1]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__ux_bytes[2]), &G::from_u8(__ux_bytes[3]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__uz_bytes[0]), &G::from_u8(__uz_bytes[1]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__uz_bytes[2]), &G::from_u8(__uz_bytes[3]));" ++
     s!" } __result }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
@@ -911,7 +919,7 @@ def emitPreludeHeader : String :=
    \x20\x20clippy::large_types_passed_by_value,\n\
    )]\n\
    \n\
-   use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\
+   use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField32, PrimeField64};\n\
    use aiur::G;\n"
 
 /-- The set of optional `aiur::execute` items the codegen
