@@ -4,7 +4,9 @@ public section
 
 namespace Aiur
 
-abbrev gSize : UInt64 := 1 - 2 ^ 32
+/-- The BabyBear prime `p = 15·2²⁷ + 1`. (This branch runs Aiur over BabyBear;
+the file keeps its historical name to avoid churning every import.) -/
+abbrev gSize : UInt64 := 2013265921
 abbrev G := { u : UInt64 // u < gSize }
 
 def G.ofNat (n : Nat) : G :=

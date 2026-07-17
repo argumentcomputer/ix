@@ -1,6 +1,6 @@
 use multi_stark::{
   lookup::Lookup,
-  p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
+  p3_field::{Field, PrimeCharacteristicRing, PrimeField32, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
 };
 use rayon::{
@@ -527,6 +527,15 @@ impl Op {
           slice.push_auxiliary(index, G::from_u8(byte));
         }
 
+        // Canonicity witnesses u = p - 1 - w (see constraints.rs); the
+        // operands are canonical, so the subtractions cannot underflow.
+        let p = G::ORDER_U32;
+        let ux_bytes: [u8; 4] = (p - 1 - a_u32).to_le_bytes();
+        let uz_bytes: [u8; 4] = (p - 1 - b_u32).to_le_bytes();
+        for &byte in ux_bytes.iter().chain(uz_bytes.iter()) {
+          slice.push_auxiliary(index, G::from_u8(byte));
+        }
+
         // Range-check byte pairs via Bytes2 lookups
         let rc_channel = u8_range_check_channel();
         for (i, j) in [
@@ -536,6 +545,10 @@ impl Op {
           (y_bytes[2], y_bytes[3]),
           (z_bytes[0], z_bytes[1]),
           (z_bytes[2], z_bytes[3]),
+          (ux_bytes[0], ux_bytes[1]),
+          (ux_bytes[2], ux_bytes[3]),
+          (uz_bytes[0], uz_bytes[1]),
+          (uz_bytes[2], uz_bytes[3]),
         ] {
           slice.push_lookup(
             index,

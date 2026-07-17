@@ -1,4 +1,6 @@
-use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use multi_stark::p3_field::{
+  PrimeCharacteristicRing, PrimeField32, PrimeField64,
+};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
@@ -501,6 +503,11 @@ impl Function {
             let z_bytes = b_u32.to_le_bytes();
             let c_u32 = b_u32.wrapping_sub(a_u32).wrapping_sub(1);
             let y_bytes = c_u32.to_le_bytes();
+            // Canonicity witnesses u = p - 1 - w (see constraints.rs); the
+            // operands are canonical, so the subtractions cannot underflow.
+            let p = G::ORDER_U32;
+            let ux_bytes = (p - 1 - a_u32).to_le_bytes();
+            let uz_bytes = (p - 1 - b_u32).to_le_bytes();
             // Bump range-check queries for byte pairs
             for (i, j) in [
               (x_bytes[0], x_bytes[1]),
@@ -509,6 +516,10 @@ impl Function {
               (y_bytes[2], y_bytes[3]),
               (z_bytes[0], z_bytes[1]),
               (z_bytes[2], z_bytes[3]),
+              (ux_bytes[0], ux_bytes[1]),
+              (ux_bytes[2], ux_bytes[3]),
+              (uz_bytes[0], uz_bytes[1]),
+              (uz_bytes[2], uz_bytes[3]),
             ] {
               record
                 .bytes2_queries

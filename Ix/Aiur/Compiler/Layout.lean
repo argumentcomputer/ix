@@ -200,7 +200,9 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u8Mul .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
   | .u8ChainRotr7 .. | .u8ChainRotr4 .. => do pushDegrees #[1, 1, 1]; bumpAuxiliaries 3; bumpLookups
   | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
-  | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
+  -- 12 decomposition bytes + 8 canonicity-witness bytes; 10 range-check
+  -- lookups (2 bytes each). See `Op::U32LessThan` in `constraints.rs`.
+  | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 20; bumpLookups 10
   -- Pure range-check lookup: no output columns/degrees, just one lookup.
   | .u8RangeCheck .. => bumpLookups
   -- Unconstrained hint: two fresh auxiliary witness columns (q_ptr, r_ptr).

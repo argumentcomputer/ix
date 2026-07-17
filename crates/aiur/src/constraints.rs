@@ -2,7 +2,7 @@ use multi_stark::{
   builder::symbolic::{SymbolicExpression, var},
   lookup::Lookup,
   p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
-  p3_field::{Field, PrimeCharacteristicRing},
+  p3_field::{Field, PrimeCharacteristicRing, PrimeField32},
 };
 use std::{array, ops::Range, sync::LazyLock};
 
@@ -609,11 +609,11 @@ impl Op {
         // where prev = 1 for k=0, prev = c_{k-1} for k>0.
         // Each c_k is constrained to be boolean (assert_bool).
         //
-        // All 12 bytes are range-checked via 6 Bytes2 range-check lookups
-        // (2 bytes per lookup).
+        // All bytes (including the canonicity witnesses below) are
+        // range-checked via Bytes2 range-check lookups (2 bytes each).
         //
-        // Resources: 12 auxiliaries, 6 lookups, 6 polynomial constraints
-        // (2 decomposition + 4 assert_bool).
+        // Resources: 20 auxiliaries, 10 lookups, 14 polynomial constraints
+        // (2 decomposition + 4 assert_bool + 2×4 canonicity).
         let a = state.map[*x_idx].0.clone();
         let b = state.map[*y_idx].0.clone();
 
@@ -656,6 +656,53 @@ impl Op {
           (&y_bytes[2], &y_bytes[3]),
           (&z_bytes[0], &z_bytes[1]),
           (&z_bytes[2], &z_bytes[3]),
+        ] {
+          let lookup = state.next_lookup();
+          combine_lookup_args(
+            lookup,
+            vec![
+              sel.clone() * rc_channel,
+              sel.clone() * pair.0.clone(),
+              sel.clone() * pair.1.clone(),
+            ],
+          );
+          lookup.multiplicity += sel.clone();
+        }
+
+        // Canonicity: pin a and b to their *canonical* byte decompositions.
+        // With p < 2^32 the decomposition constraints above are not
+        // injective — for any canonical value v, both v and v + p fit in 4
+        // bytes — so the prover could pick either decomposition and flip
+        // the comparison result. Force value < p with a second carry chain
+        // per operand, against the constant p: with a 4-byte witness u,
+        //     w + u + 1 = p + carry · 2^32,
+        // boolean intermediate carries and a vanishing final carry admit
+        // exactly u = p - 1 - w, which exists iff w ≤ p - 1.
+        let p_bytes = G::ORDER_U32.to_le_bytes();
+        let ux_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+        let uz_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+        for (w_bytes, u_bytes) in
+          [(&x_bytes, &ux_bytes), (&z_bytes, &uz_bytes)]
+        {
+          let mut c = Expr::ONE;
+          for k in 0..4 {
+            let sum = w_bytes[k].clone() + u_bytes[k].clone() + c;
+            c = (sum - Expr::Constant(G::from_u8(p_bytes[k]))) * *INV_256;
+            if k < 3 {
+              state
+                .constraints
+                .zeros
+                .push(sel.clone() * (c.clone() * (c.clone() - Expr::ONE)));
+            }
+          }
+          // Final carry must vanish: w + u + 1 = p exactly.
+          state.constraints.zeros.push(sel.clone() * c);
+        }
+        for pair in [
+          (&ux_bytes[0], &ux_bytes[1]),
+          (&ux_bytes[2], &ux_bytes[3]),
+          (&uz_bytes[0], &uz_bytes[1]),
+          (&uz_bytes[2], &uz_bytes[3]),
         ] {
           let lookup = state.next_lookup();
           combine_lookup_args(
