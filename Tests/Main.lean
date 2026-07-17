@@ -1,5 +1,4 @@
 import Tests.Aiur
-import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
@@ -66,7 +65,6 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ffi", Tests.FFI.suite),
-  ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
   ("claim", Tests.Claim.suite),

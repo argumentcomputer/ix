@@ -5,10 +5,10 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "d3c15b93a1dd4e7c8d5c0c3825c9555737e55c3e"
+  "https://github.com/argumentcomputer/LSpec" @ "e780f4188c9649aef988270f4d126651460ca9c4"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "c6db090374cb3c3c717691beb6cd18bb08936598"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "c9b2273fb9c2c33b94eba091dc4111163f5db2bc"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"

@@ -403,12 +403,12 @@ def linearize (norm : CNorm) : Univ := Id.run do
     for j in [0:order.length] do
       let p := order[j]!
       let mctx := (order.take j).mergeSort (· ≤ ·)
-      if (groups.find? mctx).any (fun sg => sg.atoms.find? p == some 0) then
+      if (groups.get? mctx).any (fun sg => sg.atoms.get? p == some 0) then
         consumed := (mctx, p) :: consumed
   -- Emission.
   let mut terms : List Univ := []
   let mut rootCAbsorbed := false
-  if let some top := groups.find? [] then
+  if let some top := groups.get? [] then
     for (i, k) in top.atoms.toList do
       if k == 0 && consumed.contains ([], i) then
         continue
