@@ -86,11 +86,17 @@ def plotTitle (workload measure : String) : String :=
     `ix-decompile` reuses the compile cell's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
     exactly — the decompile cell tracks only its own decompile-time /
-    throughput / peak-rss trends. -/
+    throughput / peak-rss trends. The aiur-recursive cell's plain
+    prove-time / proof-size / verify-time / peak-rss measure the INNER
+    toy-statement proof — tracked for the compare table, but the
+    dashboard trend that matters is the recursion layer's own
+    `recursive-*` series, so the inner metrics aren't plotted. -/
 def plotSkips : List (String × String) :=
   [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
    ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
-   ("ix-decompile", "file-size"), ("ix-decompile", "constants")]
+   ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
+   ("aiur-recursive", "prove-time"), ("aiur-recursive", "proof-size"),
+   ("aiur-recursive", "verify-time"), ("aiur-recursive", "peak-rss")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
