@@ -55,7 +55,7 @@ jobs:
   build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Pinned Rust toolchain + cargo cache (~/.cargo + target/, via the action's
       # built-in rust-cache), so `lake build`'s cargo step doesn't recompile the
       # Plonky3/multi-stark deps from scratch on every run.
@@ -77,7 +77,7 @@ jobs:
           lake build bench-typecheck bench-recursive-verifier
           cp .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
           chmod +x ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -97,8 +97,8 @@ jobs:
       bench-envs: ${{ steps.matrix.outputs.bench-envs }}
       zkvm-cells: ${{ steps.matrix.outputs.zkvm-cells }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache/restore@v5
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -147,8 +147,8 @@ jobs:
           - { env: FLT, cache_pkg: flt, mathlib: true }
           # - { env: FC, cache_pkg: formal_conjectures, mathlib: true }
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache/restore@v5
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -168,7 +168,7 @@ jobs:
           use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
       # FLT and FC take a few minutes to rebuild, so cache their build artifacts.
       - if: matrix.cache_pkg
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
@@ -209,7 +209,7 @@ jobs:
       # this key must list the SAME paths — actions/cache versions the entry
       # by its path list.
       - if: steps.benched.outputs.yes == 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: |
             ${{ matrix.env }}.ixe
@@ -270,8 +270,8 @@ jobs:
         bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
         mode: [execute, prove]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache/restore@v5
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -286,7 +286,7 @@ jobs:
           use-github-cache: false
       # Pull the `.ixe` the compile job built — do NOT recompile it here.
       # (The path list must match the compile job's save exactly.)
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: |
             ${{ matrix.bench }}.ixe
@@ -371,8 +371,8 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache/restore@v5
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -462,14 +462,14 @@ jobs:
         # `if: matrix.cell.backend == 'sp1'` install-sp1 step then.
         cell: ${{ fromJson(needs.plan.outputs.zkvm-cells) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.cell.backend }}
       - name: Install Zisk
         if: matrix.cell.backend == 'zisk'
         uses: ./.github/actions/install-zisk
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -483,7 +483,7 @@ jobs:
       # Pull the `.ixe` + the pre-cut closure-shard artifacts the compile job
       # built — `--ixe` means no recompile, and `ix bench run` skips
       # re-cutting shards it finds in zkshards-<env>/.
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: |
             ${{ matrix.cell.env }}.ixe
@@ -564,8 +564,8 @@ jobs:
       matrix:
         bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache/restore@v5
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -577,7 +577,7 @@ jobs:
           build: false
           use-github-cache: false
       # (The path list must match the compile job's save exactly.)
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: |
             ${{ matrix.bench }}.ixe
@@ -638,8 +638,8 @@ jobs:
       matrix:
         bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/cache/restore@v5
+      - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
@@ -651,7 +651,7 @@ jobs:
           build: false
           use-github-cache: false
       # (The path list must match the compile job's save exactly.)
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: |
             ${{ matrix.bench }}.ixe

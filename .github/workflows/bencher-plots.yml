@@ -27,12 +27,12 @@ jobs:
     # calls — cheap host is fine (same rationale as bench-main's plan job).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # The staged binaries from bench-main's build job: this main tip's
       # exact cache when bench-main has finished its build, else the newest
       # available (prefix match) — whose compiled-in registry may then lag
       # the checkout.
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
