@@ -1,8 +1,9 @@
 /-
   `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (testbed, measure) that bench-main.yml tracks,
-  with one line per benchmark row uploaded there, plus the cross-kernel
-  input-constants overlay. The spec derives from the registry
+  with one line per benchmark row uploaded there, plus two cross-cutting
+  plots: the shared input-constants trend and the Zisk-shards-per-heavy-
+  primary trend. The spec derives from the registry
   (`Ix.Cli.BenchCmd`) + `Vectors.csv`, so nothing is hand-listed, and
   every join is on the bencher SLUG (the row-key identity uploads use;
   display names are console-editable and never consulted).
@@ -12,8 +13,8 @@
   is re-asserted); a stale one is deleted and recreated (the plot PATCH
   endpoint only takes index/title/window, not dimensions). Unrecognized
   titles are untouched, so hand-pinned plots survive. A registry benchmark
-  bencher hasn't seen yet (first upload still pending) is skipped with a
-  warning and picked up on the next sync.
+  — or a whole testbed — bencher hasn't seen yet (first upload still
+  pending) is skipped with a warning and picked up on the next sync.
 
   The sync also asserts every measure's canonical units (`unitsFor`) —
   bencher auto-creates measures with placeholder units on first upload,
@@ -78,13 +79,14 @@ def plotTitle (workload measure : String) : String :=
 /-- Tracked but not plotted solo. The two aiur cells re-measure each
     other's deterministic Phase-1 numbers as a redundancy check — one
     trend line each is enough ("Aiur Execute Time" from the execute cell,
-    "Aiur FFT Cost" from the prove cell). Zisk `shards` is a PR-comment
-    column only ("Zisk Cycles" / max-shard-cycles carry the sharding
-    trend), and zisk `constants` charts on the cross-kernel overlay below
-    instead of alone. `ix-decompile` reuses the compile cell's `.ixe`, so
-    its `file-size` / `constants` duplicate "Ix Environment Size" / "Ix
-    Input Constants" exactly — the decompile cell tracks only its own
-    decompile-time / throughput / peak-rss trends. -/
+    "Aiur FFT Cost" from the prove cell). Zisk `shards` is charted below
+    over the heavy-tier primaries alone (light constants are pinned at a
+    single shard, a flat line at 1), not over the full set here; zisk
+    `constants` charts on the input-constants plot below instead of alone.
+    `ix-decompile` reuses the compile cell's `.ixe`, so its `file-size` /
+    `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
+    exactly — the decompile cell tracks only its own decompile-time /
+    throughput / peak-rss trends. -/
 def plotSkips : List (String × String) :=
   [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
    ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
@@ -124,8 +126,7 @@ def unitsFor (slug : String) : Option String :=
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
   ["ix-compile", "ix-decompile", "aiur-check-prove", "aiur-check-execute",
-   "aiur-check-recursive", "aiur-recursive", "zisk-check-execute",
-   "ooc-check"]
+   "aiur-recursive", "zisk-check-execute", "ooc-check"]
 
 structure PlotSpec where
   testbed : String
@@ -146,6 +147,9 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
     for (mode, testbed) in b.testbeds do
+      -- On-demand modes (e.g. aiur `recursive`) upload nothing, so there's
+      -- nothing to plot — the registry marks them explicitly.
+      if b.unscheduled.contains mode then continue
       let names : Array String := Id.run do
         if b.name == "compile" then
           return (BenchCmd.envSpecs.map (·.name)).toArray
@@ -272,7 +276,8 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   if !dryRun && (← IO.getEnv "BENCHER_API_KEY").isNone then
     p.printError "error: set BENCHER_API_KEY (or pass --dry-run)"
     return 2
-  let specs := plotSpecs (BenchCmd.parseVectorsCsv (← IO.FS.readFile csv))
+  let rows := BenchCmd.parseVectorsCsv (← IO.FS.readFile csv)
+  let specs := plotSpecs rows
 
   let branches ← fetchAll project "branch"
   let testbeds ← fetchAll project "testbed"
@@ -301,8 +306,13 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut desired : Array DesiredPlot := #[]
   for spec in specs do
     let workload := workloadOf spec.testbed
+    -- A registry testbed bencher hasn't seen yet (its bench-main cell isn't
+    -- scheduled — e.g. the aiur `recursive` mode, whose outer prove doesn't
+    -- fit the CI host, so nothing ever uploads to it) has no plots to sync:
+    -- warn and skip it, like a not-yet-uploaded benchmark, instead of
+    -- failing the whole run. Picked up on a later sync once data lands.
     let some testbedUuid := findUuid testbeds "slug" spec.testbed
-      | p.printError s!"error: no testbed slug '{spec.testbed}'"; return 1
+      | IO.eprintln s!"warn: testbed '{spec.testbed}' not on bencher yet — skipped"; continue
     -- Benchmark names → UUIDs, dropping the not-yet-uploaded ones loudly.
     let mut benchUuids : Array String := #[]
     for n in spec.benchmarks do
@@ -319,26 +329,45 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
         { title := plotTitle workload measure, testbeds := #[testbedUuid],
           benchmarks := benchUuids, measure := measureUuid }
 
-  -- Cross-kernel input-constants overlay: aiur and zisk both report the
-  -- named constants of the checked closure — the pre-shard input set,
-  -- unaffected by anon-work dedup or shard partitioning — so the paired
-  -- lines must coincide. Separation on this chart means the kernels'
-  -- counts drifted apart (a coverage bug tripwire), on top of the count
-  -- trend itself. Zisk lines render once its host uploads `constants`.
+  -- Input-constants trend over the primary set. aiur and zisk report the
+  -- SAME named-constant count for each checked closure (the pre-shard input
+  -- set, unaffected by anon-work dedup or shard partitioning), so the count
+  -- is shared: sourcing it from both testbeds drew every constant twice.
+  -- aiur-check-prove is the single source (it always uploads `constants`),
+  -- so each primary is one line.
   let overlay : Option DesiredPlot := do
     let aiurTb ← findUuid testbeds "slug" "aiur-check-prove-x64-32x"
-    let ziskTb ← findUuid testbeds "slug" "zisk-check-execute-x64-32x"
     let consts ← findUuid measures "slug" "constants"
     let primaries ← (specs.find? (·.testbed == "aiur-check-prove-x64-32x")).map
       (·.benchmarks.filterMap (findUuid benchmarks "name" ·))
     return { title := "Aiur/Zisk Input Constants",
-             testbeds := #[aiurTb, ziskTb], benchmarks := primaries,
+             testbeds := #[aiurTb], benchmarks := primaries,
              measure := consts }
   match overlay with
   | some d => desired := desired.push d
   | none => do
     IO.eprintln
-      "warn: input-constants overlay skipped (missing testbed or measure)"
+      "warn: input-constants plot skipped (missing testbed or measure)"
+
+  -- Zisk shards over time, one line per HEAVY-tier primary — the constants
+  -- whose closure is cut into a multi-shard partition. Light constants run
+  -- as a single shard (a flat line at 1), so they're left out; the full-set
+  -- `shards` plot stays in `plotSkips`.
+  let ziskShards : Option DesiredPlot := do
+    let ziskTb ← findUuid testbeds "slug" "zisk-check-execute-x64-32x"
+    let shardsM ← findUuid measures "slug" "shards"
+    let benched := (BenchCmd.envSpecs.filter (·.benched)).map (·.name)
+    let heavy := benched.foldl (init := (#[] : Array String)) fun acc env =>
+      acc ++ (BenchCmd.selectNames rows env "execute"
+        (full := false) (tier := "heavy") (shardOnly := false)).map (·.name)
+    return { title := "Zisk Shards", testbeds := #[ziskTb],
+             benchmarks := heavy.filterMap (findUuid benchmarks "name" ·),
+             measure := shardsM }
+  match ziskShards with
+  | some d => desired := desired.push d
+  | none => do
+    IO.eprintln
+      "warn: Zisk shards plot skipped (missing testbed or measure)"
 
   for d in desired do
     match ← syncPlot project dryRun window xAxis branchUuid plots idx d with
@@ -356,7 +385,7 @@ end Ix.Cli.BenchPlots
 open Ix.Cli.BenchPlots in
 def benchPlotsCmd : Cli.Cmd := `[Cli|
   plots VIA runPlotsCmd;
-  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (testbed, measure) plus the cross-kernel input-constants overlay. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
+  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (testbed, measure) plus the shared input-constants and Zisk heavy-shards plots. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
 
   FLAGS:
     "dry-run";         "Print the create/replace/keep decisions without writing (no key needed)"

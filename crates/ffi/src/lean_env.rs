@@ -1690,10 +1690,19 @@ extern "C" fn rs_tmp_decode_const_map(
     dstt.env.len()
   );
 
-  // Phase 3: Check roundtrip
+  // Phase 3: Check roundtrip. `failures` accumulates roundtrip breakage
+  // here and in Phase 6; the function returns it, so a non-zero total fails
+  // the Lean `rust-compile` test. (Fatal phase aborts above return `n`,
+  // which is likewise non-zero — an abort is also a failure.)
   eprintln!("[rust-compile] Phase 3: Checking decompile roundtrip...");
   let t2 = std::time::Instant::now();
-  let _ = check_decompile(env.as_ref(), &stt, &dstt);
+  let mut failures = match check_decompile(env.as_ref(), &stt, &dstt) {
+    Ok(c) => c.mismatches + c.missing,
+    Err(e) => {
+      eprintln!("[rust-compile] Phase 3 check FAILED: {e:?}");
+      1
+    },
+  };
   eprintln!(
     "[rust-compile] Phase 3 done in {:.2}s",
     t2.elapsed().as_secs_f32()
@@ -1735,8 +1744,12 @@ extern "C" fn rs_tmp_decode_const_map(
           .insert(entry.key().clone(), entry.value().addr.clone());
       }
       match decompile_env(&fresh_stt) {
-        Ok(dstt2) => {
-          let _ = check_decompile(env.as_ref(), &fresh_stt, &dstt2);
+        Ok(dstt2) => match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
+          Ok(c) => failures += c.mismatches + c.missing,
+          Err(e) => {
+            eprintln!("[rust-compile] Phase 6 check FAILED: {e:?}");
+            failures += 1;
+          },
         },
         Err(e) => {
           eprintln!("[rust-compile] Phase 6 re-decompile FAILED: {e:?}");
@@ -1755,10 +1768,10 @@ extern "C" fn rs_tmp_decode_const_map(
   );
 
   eprintln!(
-    "[rust-compile] All phases complete. Total: {:.2}s",
+    "[rust-compile] All phases complete. Total: {:.2}s ({failures} roundtrip failure(s))",
     t0.elapsed().as_secs_f32()
   );
-  n
+  failures
 }
 
 // ============================================================================

@@ -25,20 +25,24 @@
 # `aiur-recursive` runs the aiur-recursive toy (bench-recursive-verifier's
 # fixed configs — env-independent, so it always schedules exactly one cell
 # no matter what BENCH_ENVS says). The optional bare `execute` token flips
-# `aiur` to
-# execute-only (Phase 1, skipping the prove); bench-main runs both aiur
-# modes as separate cells on separate testbeds, so either kind of cell
-# fetches a cached main-side baseline from bencher. (aiur's third mode,
-# `recursive`, is local-only — `ix bench run --backend aiur --mode
-# recursive` — an IxVM-scale verifier execute needs >108 GB, beyond the
-# CI ceiling, so no comment token schedules it.)
+# `aiur` to execute-only (Phase 1, skipping the prove); bench-main runs
+# both aiur modes as separate cells on separate testbeds, so either kind
+# of cell fetches a cached main-side baseline from bencher. The bare
+# `recursive` token flips aiur to its recursive mode instead — an
+# unscheduled testbed with no bencher baseline (its main side is a base-SHA
+# run), and the verifier execute OOMs the standard CI host, so it's meant
+# for a bigger manual dispatch. The bare `fresh` token makes every cell
+# skip the bencher fetch and re-measure the main side with a base-SHA run
+# (nothing here uploads to bencher, so the canonical baseline is
+# untouched).
 #
 # Each matrix cell is one `ix bench run` per side, driven by the PR's `ix`
 # (`--repo` points it at the checkout to measure). main's numbers come from
 # bencher.dev (`ix bench fetch-main`); the workflow re-runs the base SHA
-# locally only when bencher can't supply them: the base SHA isn't ingested yet
+# locally only when bencher can't supply them — the base SHA isn't ingested yet
 # (freshly-pushed main whose CI is still running), or the PR's Vectors.csv
-# selects constants main was never benched on (constants the PR itself adds).
+# selects constants main was never benched on (constants the PR itself adds) —
+# or when the `fresh` token demands it.
 # Two-stage trigger: the issue_comment run only gates the commenter and
 # re-dispatches this same file as workflow_dispatch. GitHub classifies
 # issue_comment as a low-trust trigger with unconditionally READ-ONLY cache
@@ -127,6 +131,7 @@ jobs:
       envs: ${{ steps.parse.outputs.envs }}
       shard: ${{ steps.parse.outputs.shard }}
       full: ${{ steps.parse.outputs.full }}
+      fresh: ${{ steps.parse.outputs.fresh }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
       # Set (with the step failing) when the !benchmark command was
@@ -301,6 +306,7 @@ jobs:
       HEAD_SHA: ${{ inputs.head-sha }}
       SHARD: ${{ needs.build.outputs.shard }}
       FULL: ${{ needs.build.outputs.full }}
+      FRESH: ${{ needs.build.outputs.fresh }}
     steps:
       # PR checked out at the workspace root so the local install actions
       # resolve; base (bencher-miss fallback only) goes under base/.
@@ -430,6 +436,15 @@ jobs:
       - name: Fetch main from bencher
         id: bencher
         run: |
+          # The `fresh` token bypasses bencher entirely: same path as a full
+          # miss (exit 3) — no main.json, so the base run below supplies the
+          # whole main side. Nothing in this workflow uploads to bencher, so
+          # the canonical baseline is untouched.
+          if [ "$FRESH" = 1 ]; then
+            echo "source=base run @ ${BASE_SHA::7} (fresh — bencher bypassed)" >> "$GITHUB_OUTPUT"
+            echo "run-base=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # This cell's names = pr.json's row keys (empty when the PR run
           # produced nothing — fetch-main then exits 3 and the base run
           # supplies the whole main side).
@@ -673,13 +688,76 @@ jobs:
           name: comment-body
           path: comment-body.md
 
-  # Post the assembled body — or a red-X diagnostic when any stage failed
-  # (a rejected command or broken run must never end in silence on the
-  # PR). This is the ONLY job with access to the App token, and it runs
-  # no checkout and no repo-derived code — just an artifact download and
-  # two actions.
+  # Post the initial PR comment the instant the command is parsed: a red-X
+  # diagnostic if the parse/build failed (the same message the final comment
+  # would carry), otherwise a "running" placeholder so the commenter gets
+  # immediate feedback. The `comment` job edits THIS comment in place with
+  # the results at the end (its id is this job's output). Privileged (App
+  # token) like `comment`, and like it runs no checkout and no PR-derived
+  # code — only build's string outputs.
+  announce:
+    needs: build
+    if: always() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      comment-id: ${{ steps.post.outputs.comment-id }}
+    steps:
+      # PR-derived strings (parse-error, config-summary) arrive via env, not
+      # inline `${{ }}`; a quoted `echo "$VAR"` never re-evaluates the value,
+      # so a crafted summary can't inject shell (the rule the other jobs
+      # follow).
+      - name: Compose initial body
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
+          SUMMARY: ${{ needs.build.outputs.config-summary }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$BUILD_RESULT" != success ]; then
+            {
+              echo "## ❌ benchmark run failed"
+              if [ -n "$PARSE_ERROR" ]; then
+                echo
+                echo "> $PARSE_ERROR"
+              fi
+              echo
+              echo "[Workflow logs]($RUN_URL)"
+            } > comment-body.md
+          else
+            {
+              echo "## ⏳ Benchmark running…"
+              echo
+              if [ -n "$SUMMARY" ]; then
+                echo "> $SUMMARY"
+                echo
+              fi
+              echo "Benchmarking \`${HEAD_SHA:0:7}\` — this comment will be replaced with the results when the run finishes."
+              echo
+              echo "[Watch progress]($RUN_URL)"
+            } > comment-body.md
+          fi
+      - name: Generate token to write PR comment
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+      - name: Post initial comment
+        id: post
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          issue-number: ${{ inputs.pr }}
+          body-path: comment-body.md
+
+  # Edit the announce comment in place with the assembled body — or a red-X
+  # diagnostic when any stage failed (a rejected command or broken run must
+  # never end in silence on the PR). This job and `announce` are the only
+  # ones with the App token, and neither runs a checkout or repo-derived
+  # code — just an artifact download and two actions.
   comment:
-    needs: [build, compile, benchmark, assemble]
+    needs: [build, compile, benchmark, assemble, announce]
     if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -727,9 +805,15 @@ jobs:
           # takes either), so the existing secret works unchanged.
           client-id: ${{ secrets.TOKEN_APP_ID }}
           private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+      # `comment-id` edits the announce comment in place; `issue-number` is
+      # the fallback that creates a fresh comment if announce never posted
+      # one (empty id). `replace` overwrites the "running" placeholder rather
+      # than appending to it.
       - name: Post / update comment
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ inputs.pr }}
+          comment-id: ${{ needs.announce.outputs.comment-id }}
+          edit-mode: replace
           body-path: comment-body.md

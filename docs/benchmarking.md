@@ -96,7 +96,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | Aiur STARK check, one bench-main cell per mode on its own testbed: prove — the real-workload simulation (prove-time, proof-size, verify-time, peak-rss, plus fft-cost / execute-time from its own Phase 1) — and execute, the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss). `!benchmark aiur [execute]` picks the mode. A third mode, recursive (`bench-typecheck --recursive`), additionally executes AND proves the in-circuit multi-stark verifier over each fresh proof — the whole system runs under recursion-tuned FRI parameters, so its rows land on their own testbed (`aiur-check-recursive`) and are not comparable to the prove cell's. Local-only (`ix bench run --backend aiur --mode recursive`): an IxVM-scale verifier execute needs >108 GB, beyond the CI ceiling, so no CI job or comment token schedules it | `bench-typecheck` |
+| `aiur`    | Aiur STARK check, one bench-main cell per mode on its own testbed: prove — the real-workload simulation (prove-time, proof-size, verify-time, peak-rss, plus fft-cost / execute-time from its own Phase 1) — and execute, the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss). `!benchmark aiur [execute]` picks the mode. A third mode, recursive (`bench-typecheck --recursive`), additionally executes AND proves the in-circuit multi-stark verifier over each fresh proof — the whole system runs under recursion-tuned FRI parameters, so its rows land on their own testbed (`aiur-check-recursive`) and are not comparable to the prove cell's. Unscheduled (an IxVM-scale verifier execute needs >108 GB, beyond the CI ceiling, so no CI job runs it and nothing uploads to its testbed): run it locally (`ix bench run --backend aiur --mode recursive`) or request it on demand with `!benchmark aiur recursive` — on the standard CI host the OOM renders as an empty table, so the token is meant for a bigger manual dispatch | `bench-typecheck` |
 | `aiur-recursive` | the aiur-recursive toy: prove a fixed tiny statement per config, both at the ~100-query soundness level (`square-q100-b1`, the lighter trivial-statement end; `factorial-q100-b2`, the heavier recursive one), run the in-circuit multi-stark verifier over the proof (recursive-execute-time, recursive-fft-cost — the recursion-cost proxy), then prove that execution end-to-end (recursive-prove-time, recursive-peak-rss, recursive-proof-size, recursive-verify-time). Env-independent: fixed configs instead of `Vectors.csv` constants, no `.ixe`, always exactly one cell regardless of `BENCH_ENVS` | `bench-recursive-verifier` |
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (1 when unsharded) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
@@ -168,7 +168,7 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 
 ```
 !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] [aiur-recursive] | all)
-           [execute] [KEY=VALUE …]
+           [execute | recursive] [fresh] [KEY=VALUE …]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
                                # compile-only request may name any registry
                                # env (Lean, FLT compile fine, just unbenched)
@@ -189,7 +189,13 @@ input box can't hold newlines:
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
 (and no Python remains). Mode defaults per backend from the registry; the
-bare `execute` token flips `aiur` to Phase-1 only.
+bare `execute` token flips `aiur` to Phase-1 only, and `recursive` to its
+recursive mode (unscheduled testbed, so no bencher baseline; OOMs the
+standard CI host — meant for a bigger manual dispatch). The bare `fresh`
+token makes every cell bypass its bencher baseline and re-measure the main
+side with a base-SHA run — for when the published baseline is suspect. PR
+runs never upload to bencher, so the comparison prints in the comment and
+the canonical baseline is untouched.
 
 ## CI shape
 
