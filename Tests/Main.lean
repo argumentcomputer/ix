@@ -31,6 +31,7 @@ import Tests.Ix.Tc.AnonDiff
 import Tests.Ix.Tc.InitScale
 import Tests.Ix.Tc.TutorialTc
 import Tests.Ix.Tc.Roundtrip
+import Tests.Ix.Tc.IngressMetaTests
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -68,7 +69,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
     ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
-    ++ Tests.Tc.Roundtrip.unitTests),
+    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
@@ -98,6 +99,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-init", Tests.Tc.InitScale.suite),
   ("tc-tutorial", Tests.Tc.TutorialTc.suite),
   ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
+  ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
   -- Tracked pure-Lean kernel divergences (EXPECTED to fail; see
   -- Tests.Tc.AnonDiff.knownDivergenceSuite).
   ("tc-known-divergence", Tests.Tc.AnonDiff.knownDivergence),

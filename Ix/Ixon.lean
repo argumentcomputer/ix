@@ -561,6 +561,17 @@ def ConstantMeta.empty : ConstantMeta := {}
 def ConstantMeta.hasExtensions (cm : ConstantMeta) : Bool :=
   !cm.metaSharing.isEmpty || !cm.metaRefs.isEmpty || !cm.metaUnivs.isEmpty
 
+/-- Short kind name for diagnostics (mirrors Rust `kind_name`). -/
+def ConstantMetaInfo.kindName : ConstantMetaInfo → String
+  | .empty => "empty"
+  | .defn .. => "def"
+  | .axio .. => "axio"
+  | .quot .. => "quot"
+  | .indc .. => "indc"
+  | .ctor .. => "ctor"
+  | .recr .. => "rec"
+  | .muts .. => "muts"
+
 /-- Count total arena nodes in this ConstantMetaInfo. -/
 def ConstantMetaInfo.exprMetaCount : ConstantMetaInfo → Nat
   | .empty => 0
@@ -1828,6 +1839,171 @@ instance : Repr Env where
   reprPrec env _ := s!"Env({env.constCount} consts, {env.blobCount} blobs, {env.namedCount} named)"
 
 end Env
+
+/-! ## KVMap resolution (kernel ingress)
+
+Mirror of `crates/ixon/src/metadata.rs::resolve_kvmap` and its `deser_*`
+helpers: resolve an Ixon KVMap (address-based) to Lean-level MData
+(name/value pairs) against an `Env`. Kernel meta-mode ingress uses this to
+materialize `Expr.mdata` layers; it lives here (not the decompiler) because
+it only needs `Env` blob/name lookups.
+
+Rust semantics preserved exactly: entries whose names/blobs cannot be
+resolved are silently DROPPED (`filter_map` + `?` in Rust — `Option` here),
+never errors. -/
+
+/-- Byte cursor for deserializing syntax blobs (`Option`-valued to mirror
+    the Rust `deser_*` family). -/
+structure DeserCursor where
+  bytes : ByteArray
+  pos : Nat := 0
+
+namespace DeserCursor
+
+def u8? (c : DeserCursor) : Option (UInt8 × DeserCursor) :=
+  if h : c.pos < c.bytes.size then
+    some (c.bytes[c.pos], { c with pos := c.pos + 1 })
+  else none
+
+/-- Tag0 varint (same format as `getTag0`): head byte < 128 is the value;
+    otherwise `head % 128 + 1` little-endian extra bytes follow. -/
+def tag0? (c : DeserCursor) : Option (UInt64 × DeserCursor) := do
+  let (head, c) ← c.u8?
+  if head < 128 then
+    some (head.toUInt64, c)
+  else
+    let extra := (head % 128).toNat + 1
+    let mut val : UInt64 := 0
+    let mut cur := c
+    for i in [0:extra] do
+      let (b, c') ← cur.u8?
+      val := val ||| (b.toUInt64 <<< (i * 8).toUInt64)
+      cur := c'
+    some (val, cur)
+
+def addr? (c : DeserCursor) : Option (Address × DeserCursor) :=
+  if c.pos + 32 ≤ c.bytes.size then
+    some (⟨c.bytes.extract c.pos (c.pos + 32)⟩, { c with pos := c.pos + 32 })
+  else none
+
+end DeserCursor
+
+/-- Mirror of `metadata.rs::deser_int` (compile-side `OfInt` blob encoding). -/
+def deserIntBlob (bytes : ByteArray) : Option Ix.Int :=
+  if bytes.size == 0 then none
+  else
+    let rest := bytes.extract 1 bytes.size
+    match bytes[0]! with
+    | 0 => some (.ofNat (Nat.fromBytesLE rest.data))
+    | 1 => some (.negSucc (Nat.fromBytesLE rest.data))
+    | _ => none
+
+def deserSubstring (env : Env) (c : DeserCursor) :
+    Option (Ix.Substring × DeserCursor) := do
+  let (strAddr, c) ← c.addr?
+  let s ← (← env.getBlob? strAddr) |> String.fromUTF8?
+  let (startPos, c) ← c.tag0?
+  let (stopPos, c) ← c.tag0?
+  some (⟨s, startPos.toNat, stopPos.toNat⟩, c)
+
+def deserSourceInfo (env : Env) (c : DeserCursor) :
+    Option (Ix.SourceInfo × DeserCursor) := do
+  let (tag, c) ← c.u8?
+  match tag with
+  | 0 =>
+    let (leading, c) ← deserSubstring env c
+    let (leadingPos, c) ← c.tag0?
+    let (trailing, c) ← deserSubstring env c
+    let (trailingPos, c) ← c.tag0?
+    some (.original leading leadingPos.toNat trailing trailingPos.toNat, c)
+  | 1 =>
+    let (start, c) ← c.tag0?
+    let (stop, c) ← c.tag0?
+    let (canonical, c) ← c.u8?
+    some (.synthetic start.toNat stop.toNat (canonical != 0), c)
+  | 2 => some (.none, c)
+  | _ => none
+
+def deserPreresolved (env : Env) (c : DeserCursor) :
+    Option (Ix.SyntaxPreresolved × DeserCursor) := do
+  let (tag, c) ← c.u8?
+  match tag with
+  | 0 =>
+    let (nameAddr, c) ← c.addr?
+    let name ← env.names[nameAddr]?
+    some (.namespace name, c)
+  | 1 =>
+    let (nameAddr, c) ← c.addr?
+    let name ← env.names[nameAddr]?
+    let (count, c) ← c.tag0?
+    let mut fields : Array String := #[]
+    let mut cur := c
+    for _ in [0:count.toNat] do
+      let (fieldAddr, c') ← cur.addr?
+      let field ← (← env.getBlob? fieldAddr) |> String.fromUTF8?
+      fields := fields.push field
+      cur := c'
+    some (.decl name fields, cur)
+  | _ => none
+
+/-- Mirror of `metadata.rs::deser_syntax` (compile-side
+    `serialize_syntax_inner` encoding). -/
+partial def deserSyntax (env : Env) (c : DeserCursor) :
+    Option (Ix.Syntax × DeserCursor) := do
+  let (tag, c) ← c.u8?
+  match tag with
+  | 0 => some (.missing, c)
+  | 1 =>
+    let (info, c) ← deserSourceInfo env c
+    let (kindAddr, c) ← c.addr?
+    let kind ← env.names[kindAddr]?
+    let (argCount, c) ← c.tag0?
+    let mut args : Array Ix.Syntax := #[]
+    let mut cur := c
+    for _ in [0:argCount.toNat] do
+      let (arg, c') ← deserSyntax env cur
+      args := args.push arg
+      cur := c'
+    some (.node info kind args, cur)
+  | 2 =>
+    let (info, c) ← deserSourceInfo env c
+    let (valAddr, c) ← c.addr?
+    let val ← (← env.getBlob? valAddr) |> String.fromUTF8?
+    some (.atom info val, c)
+  | 3 =>
+    let (info, c) ← deserSourceInfo env c
+    let (rawVal, c) ← deserSubstring env c
+    let (valAddr, c) ← c.addr?
+    let val ← env.names[valAddr]?
+    let (prCount, c) ← c.tag0?
+    let mut preresolved : Array Ix.SyntaxPreresolved := #[]
+    let mut cur := c
+    for _ in [0:prCount.toNat] do
+      let (pr, c') ← deserPreresolved env cur
+      preresolved := preresolved.push pr
+      cur := c'
+    some (.ident info rawVal val preresolved, cur)
+  | _ => none
+
+/-- Resolve one address-based `DataValue` to its Lean-level form. -/
+def resolveDataValue (env : Env) : DataValue → Option Ix.DataValue
+  | .ofString a => do some (.ofString (← (← env.getBlob? a) |> String.fromUTF8?))
+  | .ofBool b => some (.ofBool b)
+  | .ofName a => do some (.ofName (← env.names[a]?))
+  | .ofNat a => do some (.ofNat (Nat.fromBytesLE (← env.getBlob? a).data))
+  | .ofInt a => do some (.ofInt (← deserIntBlob (← env.getBlob? a)))
+  | .ofSyntax a => do
+    let bytes ← env.getBlob? a
+    let (syn, _) ← deserSyntax env ⟨bytes, 0⟩
+    some (.ofSyntax syn)
+
+/-- Resolve an Ixon KVMap to Lean-level MData pairs. Unresolvable entries
+    are dropped (Rust `filter_map` parity). -/
+def resolveKVMap (env : Env) (kvm : KVMap) : Array (Ix.Name × Ix.DataValue) :=
+  kvm.filterMap fun (addr, dv) => do
+    let name ← env.names[addr]?
+    let resolved ← resolveDataValue env dv
+    some (name, resolved)
 
 /-! ## Raw FFI Types for Env -/
 

@@ -13,6 +13,7 @@ public import Ix.Tc.Subst
 public import Ix.Tc.Lctx
 public import Ix.Tc.Monad
 public import Ix.Tc.Ingress
+public import Ix.Tc.IngressMeta
 public import Ix.Tc.Egress
 public import Ix.Tc.Driver
 public import Ix.Tc.Whnf
