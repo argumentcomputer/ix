@@ -25,20 +25,24 @@
 # `aiur-recursive` runs the aiur-recursive toy (bench-recursive-verifier's
 # fixed configs — env-independent, so it always schedules exactly one cell
 # no matter what BENCH_ENVS says). The optional bare `execute` token flips
-# `aiur` to
-# execute-only (Phase 1, skipping the prove); bench-main runs both aiur
-# modes as separate cells on separate testbeds, so either kind of cell
-# fetches a cached main-side baseline from bencher. (aiur's third mode,
-# `recursive`, is local-only — `ix bench run --backend aiur --mode
-# recursive` — an IxVM-scale verifier execute needs >108 GB, beyond the
-# CI ceiling, so no comment token schedules it.)
+# `aiur` to execute-only (Phase 1, skipping the prove); bench-main runs
+# both aiur modes as separate cells on separate testbeds, so either kind
+# of cell fetches a cached main-side baseline from bencher. The bare
+# `recursive` token flips aiur to its recursive mode instead — an
+# unscheduled testbed with no bencher baseline (its main side is a base-SHA
+# run), and the verifier execute OOMs the standard CI host, so it's meant
+# for a bigger manual dispatch. The bare `fresh` token makes every cell
+# skip the bencher fetch and re-measure the main side with a base-SHA run
+# (nothing here uploads to bencher, so the canonical baseline is
+# untouched).
 #
 # Each matrix cell is one `ix bench run` per side, driven by the PR's `ix`
 # (`--repo` points it at the checkout to measure). main's numbers come from
 # bencher.dev (`ix bench fetch-main`); the workflow re-runs the base SHA
-# locally only when bencher can't supply them: the base SHA isn't ingested yet
+# locally only when bencher can't supply them — the base SHA isn't ingested yet
 # (freshly-pushed main whose CI is still running), or the PR's Vectors.csv
-# selects constants main was never benched on (constants the PR itself adds).
+# selects constants main was never benched on (constants the PR itself adds) —
+# or when the `fresh` token demands it.
 # Two-stage trigger: the issue_comment run only gates the commenter and
 # re-dispatches this same file as workflow_dispatch. GitHub classifies
 # issue_comment as a low-trust trigger with unconditionally READ-ONLY cache
@@ -127,6 +131,7 @@ jobs:
       envs: ${{ steps.parse.outputs.envs }}
       shard: ${{ steps.parse.outputs.shard }}
       full: ${{ steps.parse.outputs.full }}
+      fresh: ${{ steps.parse.outputs.fresh }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
       # Set (with the step failing) when the !benchmark command was
@@ -301,6 +306,7 @@ jobs:
       HEAD_SHA: ${{ inputs.head-sha }}
       SHARD: ${{ needs.build.outputs.shard }}
       FULL: ${{ needs.build.outputs.full }}
+      FRESH: ${{ needs.build.outputs.fresh }}
     steps:
       # PR checked out at the workspace root so the local install actions
       # resolve; base (bencher-miss fallback only) goes under base/.
@@ -430,6 +436,15 @@ jobs:
       - name: Fetch main from bencher
         id: bencher
         run: |
+          # The `fresh` token bypasses bencher entirely: same path as a full
+          # miss (exit 3) — no main.json, so the base run below supplies the
+          # whole main side. Nothing in this workflow uploads to bencher, so
+          # the canonical baseline is untouched.
+          if [ "$FRESH" = 1 ]; then
+            echo "source=base run @ ${BASE_SHA::7} (fresh — bencher bypassed)" >> "$GITHUB_OUTPUT"
+            echo "run-base=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # This cell's names = pr.json's row keys (empty when the PR run
           # produced nothing — fetch-main then exits 3 and the base run
           # supplies the whole main side).

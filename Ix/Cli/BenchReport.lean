@@ -616,7 +616,7 @@ def parseError (msg : String) : IO UInt32 := do
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
       !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
-                 [execute | recursive] [KEY=VALUE …]
+                 [execute | recursive] [fresh] [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd;
                                     compile-only requests may name any
                                     registry env, e.g. Lean or FLT)
@@ -643,7 +643,13 @@ def parseError (msg : String) : IO UInt32 := do
     `recursive` likewise flips aiur to its recursive mode; that testbed is
     `unscheduled`, so the cell has no bencher baseline (its main side comes
     from a base-SHA run) and the verifier execute OOMs on the 128 GB CI
-    host — reserved for a bigger manual dispatch. -/
+    host — reserved for a bigger manual dispatch.
+
+    The bare `fresh` token makes every cell bypass its bencher baseline and
+    re-measure the main side with a base-SHA run — for when the published
+    baseline is suspect (corrupted upload, stale toolchain). The comparison
+    prints in the comment only; PR runs never upload to bencher, so the
+    canonical baseline is untouched. -/
 def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let body ← match p.flag? "comment" with
     | some f => pure (f.as! String)
@@ -664,12 +670,16 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut executeFlag := false
   let mut recursiveFlag := false
+  let mut freshFlag := false
   for t in toks.map (·.toLower) do
     if t == "execute" then
       executeFlag := true
       continue
     if t == "recursive" then
       recursiveFlag := true
+      continue
+    if t == "fresh" then
+      freshFlag := true
       continue
     let requested := if t == "all"
       then Ix.Cli.BenchCmd.backendSpecs
@@ -681,7 +691,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       return ← parseError s!"unknown token `{t}` in the benchmark command \
         (expected a backend — \
         {", ".intercalate (Ix.Cli.BenchCmd.backendSpecs.map (·.name))} — \
-        or `all` / `execute` / `recursive`)"
+        or `all` / `execute` / `recursive` / `fresh`)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
@@ -779,6 +789,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
   let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate envs.toList}` · \
     set: `{if full == "1" then "full" else "primary"}` · shard: `{shard}`"
+  if freshFlag then
+    summary := summary ++ " · baseline: `fresh` (base-SHA run, bencher bypassed)"
   for b in skipped do
     summary := summary ++
       s!" · skipped `{b.name}` ({b.disabled.getD "disabled in the registry"})"
@@ -794,6 +806,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     h.putStr <| s!"matrix={(Json.arr cells).compress}\n"
       ++ s!"envs={(Json.arr (envs.map Json.str)).compress}\n"
       ++ s!"shard={shard}\nfull={full}\n"
+      ++ s!"fresh={if freshFlag then 1 else 0}\n"
       ++ s!"config-summary={summary}\n"
       ++ "passthrough-env<<PTENV\n"
       ++ "\n".intercalate passthrough.toList
