@@ -58,7 +58,9 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount) 
         acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
     acc
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
-    let w := size + 11
+    -- Stored values + 1 multiplicity + 1 selector + 1 pointer, plus the
+    -- stage-2 trace: (1 accumulator + 1 lookup) · extensionDegree.
+    let w := size + 3 + (1 + 1) * Bytecode.extensionDegree
     let qc := queryCounts[nAllFuns + i]!
     let h := qc.uniqueRows
     let hits := qc.totalHits - qc.uniqueRows
