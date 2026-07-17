@@ -300,11 +300,11 @@ def blake3 := ⟦
     x: [U8; 4],
     y: [U8; 4]
   ) -> [[U8; 4]; 4] {
-    let a = @u32_add(@u32_add(a, b), x);
+    let a = @u32_add3(a, b, x);
     let d = @u32_rotr16(@u32_xor(d, a));
     let c = @u32_add(c, d);
     let b = @u32_rotr12(@u32_xor(b, c));
-    let a = @u32_add(@u32_add(a, b), y);
+    let a = @u32_add3(a, b, y);
     let d = @u32_rotr8(@u32_xor(d, a));
     let c = @u32_add(c, d);
     let b = @u32_rotr7(@u32_xor(b, c));

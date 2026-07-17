@@ -70,6 +70,43 @@ def byteStream := ⟦
     [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
   }
 
+  -- Little-endian sum of three 32-bit words in one carry-propagation pass:
+  -- each byte column accumulates with chained `u8_add` (running partial stays
+  -- < 256) and the 0/1 carry bits fold into the next column with a free field
+  -- add. 11 `u8_add`s vs 14 for two chained `u32_add`s. Column carry is
+  -- floor(column_sum / 256) <= 2 (< 256), safe to feed back to `u8_add`.
+  fn u32_add3(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
+    let [a0, a1, a2, a3] = a;
+    let [b0, b1, b2, b3] = b;
+    let [c0, c1, c2, c3] = c;
+
+    -- Byte 0, no initial carry
+    let (sum0, overflow0a) = u8_add(a0, b0);
+    let (sum0, overflow0b) = u8_add(sum0, c0);
+    let carry1 = u8_from_field_unsafe(to_field(overflow0a) + to_field(overflow0b));
+
+    -- Byte 1
+    let (sum1, overflow1a) = u8_add(a1, b1);
+    let (sum1, overflow1b) = u8_add(sum1, c1);
+    let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
+    let carry2 = u8_from_field_unsafe(
+      to_field(overflow1a) + to_field(overflow1b) + to_field(carry1a));
+
+    -- Byte 2
+    let (sum2, overflow2a) = u8_add(a2, b2);
+    let (sum2, overflow2b) = u8_add(sum2, c2);
+    let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
+    let carry3 = u8_from_field_unsafe(
+      to_field(overflow2a) + to_field(overflow2b) + to_field(carry2a));
+
+    -- Byte 3
+    let (sum3, _x) = u8_add(a3, b3);
+    let (sum3, _x) = u8_add(sum3, c3);
+    let (sum3_with_carry, _x) = u8_add(sum3, carry3);
+
+    [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
+  }
+
   fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let c0 = u8_xor(a[0], b[0]);
     let c1 = u8_xor(a[1], b[1]);
