@@ -214,15 +214,8 @@ The Ix kernel typechecker has an SP1 guest at `sp1/guest/` driven by a host at
 serialized `Ixon.Env`, then feed that file to the SP1 host to either execute or
 prove the typecheck.
 
-**Nix users only:** enter the SP1 dev shell first to pick up `cargo-prove` and
-the succinct Rust toolchain:
-
-```
-nix develop .#sp1
-```
-
-Non-Nix users: install the SP1 toolchain manually per the
-[SP1 docs](https://docs.succinct.xyz/docs/sp1/getting-started/install).
+Install the SP1 toolchain (`cargo-prove` and the succinct Rust toolchain) per
+the [SP1 docs](https://docs.succinct.xyz/docs/sp1/getting-started/install).
 
 1. **Compile a `.ixe` from a Lean file.** `ix compile` takes the Lean source
    as a positional argument and writes the serialized `Ixon.Env`; `--out` sets
@@ -331,14 +324,8 @@ host at `zisk/host/`. The workflow mirrors the SP1 one — first compile a Lean
 program to a `.ixe`, then feed it to the Zisk host to either execute or prove
 the typecheck.
 
-**Nix users only:** enter the Zisk dev shell first to pick up `cargo-zisk`,
-`ziskemu`, and the RISC-V toolchain needed to build the guest:
-
-```
-nix develop .#zisk
-```
-
-Non-Nix users: install Zisk manually per the
+Install Zisk (`cargo-zisk`, `ziskemu`, and the RISC-V toolchain needed to
+build the guest) per the
 [Zisk install docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
 
 1. **Compile a `.ixe` from a Lean file.** Same as for SP1:
@@ -393,8 +380,7 @@ Non-Nix users: install Zisk manually per the
    ```
 
    Requires a CUDA-capable GPU and the matching CUDA runtime libraries
-   visible to the linker (`LD_LIBRARY_PATH`). The Nix `.#zisk` shell wires
-   these up automatically; for non-Nix setups follow the
+   visible to the linker (`LD_LIBRARY_PATH`); follow the
    [Zisk install docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
 
    **CUDA JIT cache (`CUDA_CACHE_MAXSIZE`).** The driver caches compiled
@@ -606,6 +592,6 @@ Non-Nix users: install Zisk manually per the
 
 Build and run the Ix CLI with `nix build` and `nix run`.
 
-This will prompt you to optionally enable the Garnix cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://cache.garnix.io`
+This will prompt you to optionally enable the Cachix binary cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://argumentcomputer.cachix.org`
 
 To build and run the test suite, run `nix build .#test` and `nix run .#test`.
