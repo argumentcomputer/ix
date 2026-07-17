@@ -1,0 +1,94 @@
+# CodeQL, advanced setup (replaces the default setup configured in the repo
+# settings — that must be DISABLED there, or these SARIF uploads are
+# rejected). Coverage stays main pushes + PRs, in two jobs rather than a
+# language matrix so each analysis runs only when its inputs changed:
+# the rust analysis re-extracts and type-checks the whole cargo
+# workspace — minutes of compute most pushes in this Lean-dominant repo
+# don't need — and the actions analysis scans the workflow/action YAML.
+# The gates are job-level `if`s rather than workflow-level `on.paths`
+# (or a dynamically-built matrix) deliberately: a required check that
+# never triggers sticks at "Expected", while a skipped job satisfies it.
+# When the rust analysis does run, it runs on a warp host (CodeQL scales
+# with cores; default setup pins it to a stock 4-core runner) with the
+# dependency extraction cached between runs.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      actions: ${{ steps.filter.outputs.actions }}
+    steps:
+      # paths-filter diffs the PR via the API on pull_request events, but
+      # needs a checkout to resolve the pushed commit range on push events.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/codeql.yml'
+            actions:
+              - '.github/**'
+
+  analyze-actions:
+    name: Analyze (actions)
+    needs: changes
+    if: needs.changes.outputs.actions == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          build-mode: none
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:actions"
+
+  analyze-rust:
+    name: Analyze (rust)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: warp-ubuntu-latest-x64-8x
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: rust
+          build-mode: none
+          dependency-caching: true
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:rust"
