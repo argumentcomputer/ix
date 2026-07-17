@@ -33,7 +33,7 @@ Top-level entry: `check_all` walks the kernel const list and calls
 def check := ⟦
   -- Mirror: each KConstantInfo's unsafe flag (Defn = DefinitionSafety,
   -- others = G). Returns 1 if unsafe, 0 if safe. Thm and Quot are always safe.
-  fn is_unsafe_ci(ci: KConstantInfo) -> G {
+  #[group=cold3] fn is_unsafe_ci(ci: KConstantInfo) -> G {
     match ci {
       KConstantInfo.Axiom(_, _, u) => u,
       KConstantInfo.Defn(_, _, _, s, _) =>
@@ -75,7 +75,7 @@ def check := ⟦
 
   -- Assert that a Safe-classified const has no unsafe refs in `e`.
   -- For unsafe-classified consts, this is a no-op.
-  fn assert_safety(self_unsafe: G, e: KExpr, top: List‹&KConstantInfo›) {
+  #[group=cold1] fn assert_safety(self_unsafe: G, e: KExpr, top: List‹&KConstantInfo›) {
     match self_unsafe {
       1 => (),
       0 =>
@@ -88,7 +88,7 @@ def check := ⟦
   -- Mirror: src/ix/kernel/check.rs:572-598 fn validate_univ_params_seen.
   -- Walks a KLevel asserting `Param(i)` has `i < bound`. Aiur's `store`/
   -- `load` deduplication subsumes Rust's seen-set.
-  fn validate_univ_params_seen(u: KLevel, bound: G) {
+  #[group=cold4] fn validate_univ_params_seen(u: KLevel, bound: G) {
     match load(u) {
       KLevelNode.Zero => (),
       KLevelNode.Succ(inner) => validate_univ_params_seen(inner, bound),
@@ -104,7 +104,7 @@ def check := ⟦
     }
   }
 
-  fn validate_univ_params_list(lvls: List‹KLevel›, bound: G) {
+  #[group=cold2] fn validate_univ_params_list(lvls: List‹KLevel›, bound: G) {
     match load(lvls) {
       ListNode.Nil => (),
       ListNode.Cons(u, rest) =>
@@ -149,7 +149,7 @@ def check := ⟦
 
   -- Mirror: src/ix/kernel/check.rs:422-478 fn validate_const_well_scoped.
   -- Validates type + variant-specific value/rules. Rec rules carry rhs each.
-  fn validate_const_well_scoped(ci: KConstantInfo, top: List‹&KConstantInfo›) {
+  #[group=cold4] fn validate_const_well_scoped(ci: KConstantInfo, top: List‹&KConstantInfo›) {
     let bound = const_num_lvls(ci);
     let ty = const_type_of(ci);
     validate_expr_well_scoped(ty, 0, bound, top);
@@ -348,7 +348,7 @@ def check := ⟦
     check_all_iter(consts, top, addrs, 0)
   }
 
-  fn check_all_iter(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›,
+  #[group=cold4] fn check_all_iter(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›,
                     addrs: List‹Addr›, pos: G) {
     match load(consts) {
       ListNode.Nil => (),

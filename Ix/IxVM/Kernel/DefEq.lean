@@ -129,7 +129,7 @@ def defEq := ⟦
   -- (no-delta) inputs because the handled shapes (Sort/Lam/All) don't
   -- depend on further reductions for their judgment. Returns 1 only
   -- when DEFINITELY def-eq; 0 = fall through.
-  fn k_is_def_eq_struct_safe(a: KExpr, b: KExpr, types: List‹KExpr›,
+  #[group=cold4] fn k_is_def_eq_struct_safe(a: KExpr, b: KExpr, types: List‹KExpr›,
                               top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match load(a) {
       KExprNode.Srt(la) =>
@@ -164,7 +164,7 @@ def defEq := ⟦
   }
 
   -- Mirror: src/ix/kernel/def_eq.rs:801-818 fn try_proof_irrel.
-  fn try_proof_irrel(a: KExpr, b: KExpr, types: List‹KExpr›,
+  #[group=cold3] fn try_proof_irrel(a: KExpr, b: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let a_ty = k_infer_only(a, types, top, addrs);
     match is_prop_type(a_ty, types, top, addrs) {
@@ -176,7 +176,7 @@ def defEq := ⟦
   }
 
   -- Returns 1 iff `whnf(infer(ty))` is `Sort 0`.
-  fn is_prop_type(ty: KExpr, types: List‹KExpr›,
+  #[group=cold3] fn is_prop_type(ty: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let sort = k_infer_only(ty, types, top, addrs);
     let sort_w = whnf(sort, types, top, addrs);
@@ -191,7 +191,7 @@ def defEq := ⟦
   }
 
   -- Mirror: src/ix/kernel/def_eq.rs:858-905 fn try_unit_like_eq.
-  fn try_unit_like(a: KExpr, b: KExpr, types: List‹KExpr›,
+  #[group=cold3] fn try_unit_like(a: KExpr, b: KExpr, types: List‹KExpr›,
                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let ta = k_infer_only(a, types, top, addrs);
     let ta_w = whnf(ta, types, top, addrs);
@@ -207,7 +207,7 @@ def defEq := ⟦
   -- (A 0-field ctor cannot reference the block, so an is_rec check would
   -- be redundant — mirror def_eq.rs try_unit_like, which dropped the flag
   -- when Ixon stopped storing it.)
-  fn is_unit_like_type(ty: KExpr, top: List‹&KConstantInfo›) -> G {
+  #[group=cold5] fn is_unit_like_type(ty: KExpr, top: List‹&KConstantInfo›) -> G {
     match collect_spine(ty) {
       (head, _) =>
         match load(head) {
@@ -238,7 +238,7 @@ def defEq := ⟦
 
   -- Mirror: src/ix/kernel/def_eq.rs:1007-1018 try_string_lit_expansion,
   -- attempted in both directions.
-  fn try_string_lit_pair(a: KExpr, b: KExpr, types: List‹KExpr›,
+  #[group=cold2] fn try_string_lit_pair(a: KExpr, b: KExpr, types: List‹KExpr›,
                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match try_string_lit_one(a, b, types, top, addrs) {
       1 => 1,
@@ -263,7 +263,7 @@ def defEq := ⟦
   }
 
   -- Mirror: src/ix/kernel/def_eq.rs:920-926 fn is_nat_zero.
-  fn is_nat_zero(e: KExpr, addrs: List‹Addr›) -> G {
+  #[group=cold3] fn is_nat_zero(e: KExpr, addrs: List‹Addr›) -> G {
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
@@ -286,7 +286,7 @@ def defEq := ⟦
   -- whnf exposes are peeled, but `Nat.add base (Lit m)` is read in O(1) — so a
   -- `succ^k(x)` chain (which whnf leaves as `succ(Nat.add x (Lit k-1))`)
   -- decomposes to `(x, k)` in O(1) instead of k unary steps.
-  fn nat_offset_of(e: KExpr, addrs: List‹Addr›) -> (G, KExpr, KLimbs) {
+  #[group=cold5] fn nat_offset_of(e: KExpr, addrs: List‹Addr›) -> (G, KExpr, KLimbs) {
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
@@ -336,7 +336,7 @@ def defEq := ⟦
   -- verdict is `base_a ≟ base_b`, sound because `+k` is injective); differing
   -- offsets or non-offset shapes fall back (matched=0) to the generic path.
   -- Collapses `succ^k(x) ≟ succ^k(x)` from k unary steps to one klimbs compare.
-  fn try_def_eq_nat(a: KExpr, b: KExpr, types: List‹KExpr›,
+  #[group=cold4] fn try_def_eq_nat(a: KExpr, b: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›,
                      addrs: List‹Addr›) -> (G, G) {
     let za = is_nat_zero(a, addrs);
@@ -366,7 +366,7 @@ def defEq := ⟦
   -- App-spine of `Const(ctor)` fully applied, induct is struct-like
   -- (non-rec, 0 indices, 1 ctor), and field-by-field `Proj(induct, i, t)
   -- ≡ s_args[num_params + i]`.
-  fn try_eta_struct(t: KExpr, s: KExpr, types: List‹KExpr›,
+  #[group=cold6] fn try_eta_struct(t: KExpr, s: KExpr, types: List‹KExpr›,
                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match collect_spine(s) {
       (s_head, s_args) =>
@@ -429,7 +429,7 @@ def defEq := ⟦
   -- Mirror: src/ix/kernel/def_eq.rs lambda-eta tier (both directions).
   -- Every non-Lam `a` paired with Lam `b` falls through to symmetric eta
   -- expansion (try_eta_expand swap), to accept `λx. axiom x ≡ axiom`.
-  fn k_is_def_eq_struct(a: KExpr, b: KExpr, types: List‹KExpr›,
+  #[group=cold6] fn k_is_def_eq_struct(a: KExpr, b: KExpr, types: List‹KExpr›,
                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match load(a) {
       KExprNode.Srt(la) =>
@@ -562,7 +562,7 @@ def defEq := ⟦
   -- ============================================================================
   -- Level list equality.
   -- ============================================================================
-  fn k_is_def_eq_levels(a: List‹KLevel›, b: List‹KLevel›) -> G {
+  #[group=cold3] fn k_is_def_eq_levels(a: List‹KLevel›, b: List‹KLevel›) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -626,7 +626,7 @@ def defEq := ⟦
     }
   }
 
-  fn is_def_eq_arg_list(aa: List‹KExpr›, bb: List‹KExpr›,
+  #[group=cold3] fn is_def_eq_arg_list(aa: List‹KExpr›, bb: List‹KExpr›,
                         types: List‹KExpr›, top: List‹&KConstantInfo›,
                         addrs: List‹Addr›) -> G {
     match load(aa) {
@@ -721,7 +721,7 @@ def defEq := ⟦
     }
   }
 
-  fn lazy_delta_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
+  #[group=cold5] fn lazy_delta_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
     match fuel {
       0 => (0, 0),

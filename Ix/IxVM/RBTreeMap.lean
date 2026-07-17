@@ -82,7 +82,7 @@ def rbTreeMap := ⟦
   }
 
   -- Public insert: inserts key-value pair, enforces black root
-  fn rbtree_map_insert‹V›(key: G, value: V, tree: RBTreeMap‹V›) -> RBTreeMap‹V› {
+  #[group=cold2] fn rbtree_map_insert‹V›(key: G, value: V, tree: RBTreeMap‹V›) -> RBTreeMap‹V› {
     let result = rbtree_map_ins(key, value, tree);
     match result {
       RBTreeMap.Node(_, k, v, left, right) => RBTreeMap.Node(1, k, v, left, right),

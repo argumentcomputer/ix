@@ -57,7 +57,7 @@ def convert := ⟦
   -- 5-variant enum, by-value passing taxes every row with the widest
   -- arm's columns. Mirror the `reference_aiur_pass_pointer_not_value`
   -- pattern already used for `convert_expr(e: &Expr)`.
-  fn convert_univ(u: &Univ) -> KLevel {
+  #[group=cold3] fn convert_univ(u: &Univ) -> KLevel {
     match load(u) {
       Univ.Zero => store(KLevelNode.Zero),
       Univ.Succ(inner) => store(KLevelNode.Succ(convert_univ(inner))),
@@ -68,7 +68,7 @@ def convert := ⟦
   }
 
   -- Resolve a list of universe indices to a List‹KLevel›
-  fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹KLevel› {
+  #[group=cold4] fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹KLevel› {
     match load(idxs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(idx, rest) =>
@@ -247,7 +247,7 @@ def convert := ⟦
   -- Per-kind conversion
   -- ============================================================================
 
-  fn convert_definition(d: Definition, ctx: ConvertCtx, hint: G) -> KConstantInfo {
+  #[group=cold4] fn convert_definition(d: Definition, ctx: ConvertCtx, hint: G) -> KConstantInfo {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match d {
@@ -343,7 +343,7 @@ def convert := ⟦
   -- Convert a single resolved input to a KConstantInfo. Takes &ConvertInput
   -- (pointer) so the per-row input width is one G column, not the full
   -- ConvertInput union width.
-  fn convert_one(input: &ConvertInput) -> KConstantInfo {
+  #[group=cold6] fn convert_one(input: &ConvertInput) -> KConstantInfo {
     match load(input) {
       ConvertInput.Mk(ctx, kind) =>
         match kind {
@@ -359,7 +359,7 @@ def convert := ⟦
   }
 
   -- Convert a list of resolved inputs to a List‹&KConstantInfo›
-  fn convert_all(inputs: List‹&ConvertInput›) -> List‹&KConstantInfo› {
+  #[group=cold4] fn convert_all(inputs: List‹&ConvertInput›) -> List‹&KConstantInfo› {
     match load(inputs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(input, rest) =>

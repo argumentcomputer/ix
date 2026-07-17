@@ -84,7 +84,7 @@ def whnf := ⟦
   -- telescope and substitute all consumed args in ONE `expr_inst_many` walk,
   -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
   -- stay on the cheap `expr_inst1` path (no list overhead).
-  fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
+  #[group=cold4] fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match peel_beta(lam, spine, store(ListNode.Nil)) {
       (deep, consumed, rest) =>
@@ -133,7 +133,7 @@ def whnf := ⟦
   }
 
   -- Proj-head WHNF dispatch, split out of `whnf_with_spine` (see its Proj arm).
-  fn whnf_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
+  #[group=cold5] fn whnf_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
                     types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let inner_whnf = whnf(inner, types, top, addrs);
     let inner_pair = collect_spine(inner_whnf);
@@ -173,7 +173,7 @@ def whnf := ⟦
   -- unfolds to k nested `Nat.div _ 2`, which now stay stuck. Thresholds: `add`
   -- keeps any nonzero n; `div`/`mod` keep n ≥ 2 (so `x/1 = x`, `x/0 = 0` still
   -- reduce). All magnitudes stay KLimbs. `(0, _)` = "not this shape".
-  fn try_nat_offset_stuck(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
+  #[group=cold6] fn try_nat_offset_stuck(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
                           top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     match load(head) {
       KExprNode.Const(idx, _) =>
@@ -215,7 +215,7 @@ def whnf := ⟦
   -- decidable, in order. Returns (1, reduced) on the first family that matches
   -- and reduces, else (0, _). Factored out so `prim_any_addr` can gate the
   -- whole chain for non-primitive heads in one shot.
-  fn try_address_primitives(head_addr: Addr, idx: G, lvls: List‹KLevel›,
+  #[group=cold4] fn try_address_primitives(head_addr: Addr, idx: G, lvls: List‹KLevel›,
                             spine: List‹KExpr›, types: List‹KExpr›,
                             top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     match try_nat_dispatch(head_addr, spine, types, top, addrs) {
@@ -324,7 +324,7 @@ def whnf := ⟦
     }
   }
 
-  fn whnf_nd_core(e: KExpr, types: List‹KExpr›,
+  #[group=cold2] fn whnf_nd_core(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let pair = collect_spine(e);
     match pair {
@@ -332,7 +332,7 @@ def whnf := ⟦
     }
   }
 
-  fn whnf_nd_with_spine(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
+  #[group=cold4] fn whnf_nd_with_spine(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(head) {
       KExprNode.App(f, a) =>
@@ -353,7 +353,7 @@ def whnf := ⟦
     }
   }
 
-  fn whnf_nd_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
+  #[group=cold4] fn whnf_nd_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match peel_beta(lam, spine, store(ListNode.Nil)) {
       (deep, consumed, rest) =>
@@ -369,7 +369,7 @@ def whnf := ⟦
     }
   }
 
-  fn whnf_nd_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
+  #[group=cold5] fn whnf_nd_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
                         types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let inner_whnf = whnf_nd(inner, types, top, addrs);
     let inner_pair = collect_spine(inner_whnf);
@@ -400,7 +400,7 @@ def whnf := ⟦
 
   -- The difference from `whnf_const_head`: Defn arm returns stuck instead of
   -- unfolding. Iota, quot, primitives, proj-defs still apply.
-  fn whnf_nd_const_head(idx: G, lvls: List‹KLevel›, head: KExpr, spine: List‹KExpr›,
+  #[group=cold5] fn whnf_nd_const_head(idx: G, lvls: List‹KLevel›, head: KExpr, spine: List‹KExpr›,
                          types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let head_addr = list_lookup(addrs, idx);
     let ci = load(list_lookup(top, idx));
@@ -456,7 +456,7 @@ def whnf := ⟦
     }
   }
 
-  fn whnf_core(e: KExpr, types: List‹KExpr›,
+  #[group=cold2] fn whnf_core(e: KExpr, types: List‹KExpr›,
                top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let pair = collect_spine(e);
     match pair {
@@ -467,7 +467,7 @@ def whnf := ⟦
   -- ============================================================================
   -- Iota (recursor on ctor)
   -- ============================================================================
-  fn try_iota(lvls: List‹KLevel›, spine: List‹KExpr›,
+  #[group=cold5] fn try_iota(lvls: List‹KLevel›, spine: List‹KExpr›,
               num_lvls: G, num_params: G, num_indices: G,
               num_motives: G, num_minors: G,
               rules: List‹KRecRule›, k_flag: G, types: List‹KExpr›,
@@ -492,7 +492,7 @@ def whnf := ⟦
   -- If `e` is `Nat.add base lit` with lit > 0, return one-layer-exposed
   -- `Nat.succ pred` where pred = base if lit == 1, else `Nat.add base (lit-1)`.
   -- Else returns `e` unchanged. Skips Nat literals (already evaluable).
-  fn cleanup_nat_offset_major(e: KExpr, addrs: List‹Addr›) -> KExpr {
+  #[group=cold4] fn cleanup_nat_offset_major(e: KExpr, addrs: List‹Addr›) -> KExpr {
     match load(e) {
       KExprNode.Lit(_) => e,
       _ =>
@@ -517,7 +517,7 @@ def whnf := ⟦
 
   -- If head is Const(nat_add) and args has length 2 and args[1] is Lit Nat,
   -- return (1, base, limbs). Else (0, _, _).
-  fn try_match_nat_add(head: KExpr, args: List‹KExpr›,
+  #[group=cold5] fn try_match_nat_add(head: KExpr, args: List‹KExpr›,
                        addrs: List‹Addr›) -> (G, KExpr, KLimbs) {
     match load(head) {
       KExprNode.Const(idx, _) =>
@@ -573,7 +573,7 @@ def whnf := ⟦
     }
   }
 
-  fn try_iota_with_major(lvls: List‹KLevel›, spine: List‹KExpr›,
+  #[group=cold7] fn try_iota_with_major(lvls: List‹KLevel›, spine: List‹KExpr›,
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›, k_flag: G,
                          types: List‹KExpr›,
@@ -664,7 +664,7 @@ def whnf := ⟦
   -- Detects `Nat.rec _ base step (Lit n)` with step = `λ _ ih => Nat.succ ih`
   -- and reduces directly to `Lit (base + n)`. Returns (1, result) on hit,
   -- (0, _) on miss.
-  fn try_nat_linear_rec(spine: List‹KExpr›, num_params: G, num_motives: G,
+  #[group=cold7] fn try_nat_linear_rec(spine: List‹KExpr›, num_params: G, num_motives: G,
                         num_minors: G, major_idx: G,
                         types: List‹KExpr›, top: List‹&KConstantInfo›,
                         addrs: List‹Addr›) -> (G, KExpr) {
@@ -751,7 +751,7 @@ def whnf := ⟦
   -- (1 ctor, 0 indices, non-recursive). Synthesizes ctor_app via field
   -- projections from the major. Refuses on Prop-typed structures (Rust
   -- whnf.rs:1283 H3 Prop guard via lean4lean toCtorWhenStruct:51).
-  fn try_struct_eta_iota(spine: List‹KExpr›,
+  #[group=cold6] fn try_struct_eta_iota(spine: List‹KExpr›,
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›,
                          lvls: List‹KLevel›, types: List‹KExpr›,
@@ -967,7 +967,7 @@ def whnf := ⟦
   -- ============================================================================
   -- Helpers
   -- ============================================================================
-  fn list_lookup_or_nil(list: List‹KExpr›, idx: G) -> KExpr {
+  #[group=cold2] fn list_lookup_or_nil(list: List‹KExpr›, idx: G) -> KExpr {
     match load(list) {
       ListNode.Nil => store(KExprNode.BVar(0)),
       ListNode.Cons(v, rest) =>
@@ -985,7 +985,7 @@ def whnf := ⟦
     }
   }
 
-  fn ensure_forall_post_whnf(e: KExpr) -> (G, KExpr, KExpr) {
+  #[group=cold2] fn ensure_forall_post_whnf(e: KExpr) -> (G, KExpr, KExpr) {
     match load(e) {
       KExprNode.Forall(ty, body) => (1, ty, body),
       _ => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),

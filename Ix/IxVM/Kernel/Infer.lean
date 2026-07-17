@@ -264,12 +264,12 @@ def infer := ⟦
   -- path won't pay off, instead of unconditionally paying the parallel
   -- `infer_only` memo cost.
   -- ============================================================================
-  fn k_infer_only(e: KExpr, types: List‹KExpr›,
+  #[group=cold2] fn k_infer_only(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     k_infer_only_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
   }
 
-  fn k_infer_only_core(e: KExpr, types: List‹KExpr›,
+  #[group=cold6] fn k_infer_only_core(e: KExpr, types: List‹KExpr›,
                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
@@ -361,7 +361,7 @@ def infer := ⟦
   -- ============================================================================
   -- Helpers: extract const declared type, Nat/Str literal types.
   -- ============================================================================
-  fn const_type_of(ci: KConstantInfo) -> KExpr {
+  #[group=cold3] fn const_type_of(ci: KConstantInfo) -> KExpr {
     match ci {
       KConstantInfo.Axiom(_, ty, _) => ty,
       KConstantInfo.Defn(_, ty, _, _, _) => ty,
@@ -375,7 +375,7 @@ def infer := ⟦
   }
 
   -- Mirror: each KConstantInfo carries num_lvls as its first G field.
-  fn const_num_lvls(ci: KConstantInfo) -> G {
+  #[group=cold3] fn const_num_lvls(ci: KConstantInfo) -> G {
     match ci {
       KConstantInfo.Axiom(n, _, _) => n,
       KConstantInfo.Defn(n, _, _, _, _) => n,
@@ -390,7 +390,7 @@ def infer := ⟦
 
   -- Mirror: peel n_params Foralls off ctor_ty, substituting each
   -- bound var with the corresponding `args[i]`. Used by infer_proj.
-  fn peel_params_subst(ty: KExpr, args: List‹KExpr›, n_params: G) -> KExpr {
+  #[group=cold3] fn peel_params_subst(ty: KExpr, args: List‹KExpr›, n_params: G) -> KExpr {
     match n_params {
       0 => ty,
       _ =>
@@ -457,7 +457,7 @@ def infer := ⟦
   }
 
   -- Peel `n` Foralls, calling `whnf` on each step. Returns the whnf'd body.
-  fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›,
+  #[group=cold3] fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›,
                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match n {
       0 => whnf(e, types, top, addrs),
@@ -514,7 +514,7 @@ def infer := ⟦
 
   -- Find the position of `target` in `addrs`. Panics (no Nil arm) if
   -- not present — caller (literal typing) requires it.
-  fn find_addr_idx(target: Addr, addrs: List‹Addr›, i: G) -> G {
+  #[group=cold2] fn find_addr_idx(target: Addr, addrs: List‹Addr›, i: G) -> G {
     match load(addrs) {
       ListNode.Cons(a, rest) =>
         match address_eq(target, a) {

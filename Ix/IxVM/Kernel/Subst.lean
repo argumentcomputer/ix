@@ -69,21 +69,21 @@ def subst := ⟦
             lbr_dec(expr_lbr(body)))
   }
 
-  fn lbr_max(a: G, b: G) -> G {
+  #[group=cold4] fn lbr_max(a: G, b: G) -> G {
     match u32_less_than(a, b) {
       1 => b,
       0 => a,
     }
   }
 
-  fn lbr_dec(n: G) -> G {
+  #[group=cold1] fn lbr_dec(n: G) -> G {
     match n {
       0 => 0,
       _ => n - 1,
     }
   }
 
-  fn lbr_min(a: G, b: G) -> G {
+  #[group=cold4] fn lbr_min(a: G, b: G) -> G {
     match u32_less_than(a, b) {
       1 => a,
       0 => b,
@@ -157,7 +157,7 @@ def subst := ⟦
   -- (tc.rs). Trimming `types` to this prefix canonicalizes the whnf/infer/
   -- def-eq memo key: a closed expr (base 0) keys to the empty context and
   -- shares across all binder depths. Memoized on (types, base).
-  fn ctx_reachable(types: List‹KExpr›, base: G) -> G {
+  #[group=cold2] fn ctx_reachable(types: List‹KExpr›, base: G) -> G {
     let len = list_length(types);
     ctx_reachable_fix(types, len, lbr_min(base, len))
   }

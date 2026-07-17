@@ -118,7 +118,7 @@ def inductive_check := ⟦
 
   -- Peel `n` Foralls off the head, return the body. Panics if fewer
   -- Foralls than requested.
-  fn peel_n_foralls(e: KExpr, n: G) -> KExpr {
+  #[group=cold2] fn peel_n_foralls(e: KExpr, n: G) -> KExpr {
     match n {
       0 => e,
       _ =>
@@ -178,7 +178,7 @@ def inductive_check := ⟦
   -- Extract the inductive's result-sort level: peel `n` (params + indices)
   -- Foralls; the body must be `Srt(level)`. Returns the level value.
   -- Mirror: src/ix/kernel/inductive.rs::get_result_sort_level (line 2089+).
-  fn get_result_sort_level(ind_ty: KExpr, n: G) -> KLevel {
+  #[group=cold2] fn get_result_sort_level(ind_ty: KExpr, n: G) -> KLevel {
     match n {
       0 =>
         match load(ind_ty) {
@@ -255,7 +255,7 @@ def inductive_check := ⟦
     }
   }
 
-  fn peel_n_foralls_tolerant(e: KExpr, n: G) -> KExpr {
+  #[group=cold2] fn peel_n_foralls_tolerant(e: KExpr, n: G) -> KExpr {
     match n {
       0 => e,
       _ =>
@@ -342,7 +342,7 @@ def inductive_check := ⟦
     }
   }
 
-  fn list_contains_g(xs: List‹G›, target: G) -> G {
+  #[group=cold2] fn list_contains_g(xs: List‹G›, target: G) -> G {
     match load(xs) {
       ListNode.Nil => 0,
       ListNode.Cons(x, rest) =>
@@ -401,7 +401,7 @@ def inductive_check := ⟦
     }
   }
 
-  fn expr_mentions_any_idx(e: KExpr, idxs: List‹G›) -> G {
+  #[group=cold4] fn expr_mentions_any_idx(e: KExpr, idxs: List‹G›) -> G {
     match load(e) {
       KExprNode.BVar(_) => 0,
       KExprNode.Srt(_) => 0,
@@ -879,7 +879,7 @@ def inductive_check := ⟦
 
   -- Wrap body in foralls outside-in: doms = [d0, d1, ..., dM] →
   -- `forall (_ : d0), forall (_ : d1), ..., forall (_ : dM), body`.
-  fn wrap_foralls(body: KExpr, doms: List‹KExpr›) -> KExpr {
+  #[group=cold2] fn wrap_foralls(body: KExpr, doms: List‹KExpr›) -> KExpr {
     match load(doms) {
       ListNode.Nil => body,
       ListNode.Cons(dom, rest) =>
@@ -1022,7 +1022,7 @@ def inductive_check := ⟦
   -- Derive the list of block-member indices for a recursor's parent ind.
   -- Solo (ind's block_addr = [0;32]) → `[ind_idx]`. Otherwise walks `top`
   -- collecting all Inducts sharing the block_addr in positional order.
-  fn derive_block_member_idxs(ind_idx: G, top: List‹&KConstantInfo›) -> List‹G› {
+  #[group=cold4] fn derive_block_member_idxs(ind_idx: G, top: List‹&KConstantInfo›) -> List‹G› {
     let ci = load(list_lookup(top, ind_idx));
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, block_addr) =>
@@ -1579,7 +1579,7 @@ def inductive_check := ⟦
     }
   }
 
-  fn wrap_lams(body: KExpr, doms: List‹KExpr›) -> KExpr {
+  #[group=cold2] fn wrap_lams(body: KExpr, doms: List‹KExpr›) -> KExpr {
     match load(doms) {
       ListNode.Nil => body,
       ListNode.Cons(dom, rest) =>
@@ -1668,7 +1668,7 @@ def inductive_check := ⟦
   -- Recursors with NO rules (inductives with 0 ctors, e.g. False.rec /
   -- empty propositions): parse the recursor's type to extract the major's
   -- head Const(ind_idx). Mirrors `get_major_inductive_id` in Rust.
-  fn rec_to_ind_idx_with_ty(rules: List‹KRecRule›, ty: KExpr,
+  #[group=cold4] fn rec_to_ind_idx_with_ty(rules: List‹KRecRule›, ty: KExpr,
                              n_params: G, n_motives: G, n_minors: G,
                              n_indices: G, top: List‹&KConstantInfo›) -> G {
     -- Derive ind_idx from the recursor's typ ONLY (walk past

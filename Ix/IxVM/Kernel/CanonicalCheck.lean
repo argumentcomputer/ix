@@ -736,7 +736,7 @@ def canonicalCheck := ⟦
     check_canonical_block_sort_walk(top, store([0u8; 32]), store(ListNode.Nil), 0, top)
   }
 
-  fn kconst_block_addr(ci: KConstantInfo, top: List‹&KConstantInfo›) -> Addr {
+  #[group=cold4] fn kconst_block_addr(ci: KConstantInfo, top: List‹&KConstantInfo›) -> Addr {
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, ba) => ba,
       KConstantInfo.Ctor(_, _, induct_idx, _, _, _, _) =>
@@ -752,7 +752,7 @@ def canonicalCheck := ⟦
 
   -- Walk top, group consecutive consts sharing a non-zero block_addr,
   -- and validate each block via iterative refinement.
-  fn check_canonical_block_sort_walk(consts: List‹&KConstantInfo›,
+  #[group=cold4] fn check_canonical_block_sort_walk(consts: List‹&KConstantInfo›,
                                      cur_ba: Addr,
                                      cur_members: List‹G›,
                                      pos: G,

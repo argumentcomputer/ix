@@ -23,7 +23,7 @@ def byteStream := ⟦
   -- Count bytes needed to represent a u64.
   -- Important: this implementation differs from the Lean and Rust ones, returning
   -- 1 for [0; 8] instead of 0.
-  fn u64_byte_count(x: U64) -> U8 {
+  #[group=cold7] fn u64_byte_count(x: U64) -> U8 {
     match x {
       [_, 0, 0, 0, 0, 0, 0, 0] => 1u8,
       [_, _, 0, 0, 0, 0, 0, 0] => 2u8,
@@ -36,7 +36,7 @@ def byteStream := ⟦
     }
   }
 
-  fn u64_is_zero(x: U64) -> G {
+  #[group=cold2] fn u64_is_zero(x: U64) -> G {
     match x {
       [0, 0, 0, 0, 0, 0, 0, 0] => 1,
       _ => 0,
@@ -220,7 +220,7 @@ def byteStream := ⟦
 
   -- Computes the predecessor of an `u64` assumed to be properly represented in
   -- little-endian bytes. If that's not the case, this implementation has UB.
-  fn relaxed_u64_pred(bytes: U64) -> U64 {
+  #[group=cold2] fn relaxed_u64_pred(bytes: U64) -> U64 {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
     -- Decrementing a byte known to be `> 0` cannot underflow, so subtract as a
     -- cheap `G` and reinterpret (no `u8_sub` lookup).
@@ -254,7 +254,7 @@ def byteStream := ⟦
   -- Flatten a [U8; 8] (U64 little-endian bytes) into a single G via
   -- b0 + 256 * b1 + ... + 256^6 * b6. The most significant byte (b7) must be zero;
   -- this is enforced by assert_eq!, limiting the range to 7 bytes (< 2^56).
-  fn flatten_u64(x: [U8; 8]) -> G {
+  #[group=cold1] fn flatten_u64(x: [U8; 8]) -> G {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = x;
     assert_eq!(to_field(b7), 0);
     to_field(b0) + 0x100 * to_field(b1) + 0x10000 * to_field(b2)

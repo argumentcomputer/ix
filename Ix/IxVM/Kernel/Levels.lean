@@ -14,7 +14,7 @@ src/ix/kernel/expr.rs. Self-contained; new kernel modules
 -/
 
 def levels := ⟦
-  fn level_is_not_zero(l: KLevel) -> G {
+  #[group=cold3] fn level_is_not_zero(l: KLevel) -> G {
     match load(l) {
       KLevelNode.Zero => 0,
       KLevelNode.Param(_) => 0,
@@ -27,7 +27,7 @@ def levels := ⟦
     }
   }
 
-  fn level_eq(a: KLevel, b: KLevel) -> G {
+  #[group=cold4] fn level_eq(a: KLevel, b: KLevel) -> G {
     match load(a) {
       KLevelNode.Zero =>
         match load(b) {
@@ -627,14 +627,14 @@ def levels := ⟦
   -- univ_eq). The previous leq(a,b)*leq(b,a) did a two-way
   -- param-substitution split per Max/IMax-with-param -- exponential in
   -- params and the dominant record cost on instance-heavy checks.
-  fn level_equal(a: KLevel, b: KLevel) -> G {
+  #[group=cold2] fn level_equal(a: KLevel, b: KLevel) -> G {
     match level_eq(a, b) {
       1 => 1,
       0 => nl_eq(level_normalize(a), level_normalize(b)),
     }
   }
 
-  fn level_max(a: KLevel, b: KLevel) -> KLevel {
+  #[group=cold4] fn level_max(a: KLevel, b: KLevel) -> KLevel {
     match load(a) {
       KLevelNode.Zero => b,
       _ =>
@@ -658,7 +658,7 @@ def levels := ⟦
     }
   }
 
-  fn level_imax(a: KLevel, b: KLevel) -> KLevel {
+  #[group=cold4] fn level_imax(a: KLevel, b: KLevel) -> KLevel {
     match load(b) {
       KLevelNode.Zero => store(KLevelNode.Zero),
       KLevelNode.Succ(_) => level_max(a, b),
@@ -690,7 +690,7 @@ def levels := ⟦
     }
   }
 
-  fn level_inst_params(l: KLevel, params: List‹KLevel›) -> KLevel {
+  #[group=cold3] fn level_inst_params(l: KLevel, params: List‹KLevel›) -> KLevel {
     match load(l) {
       KLevelNode.Zero => store(KLevelNode.Zero),
       KLevelNode.Succ(u) => store(KLevelNode.Succ(level_inst_params(u, params))),
@@ -702,7 +702,7 @@ def levels := ⟦
     }
   }
 
-  fn level_list_inst(lvls: List‹KLevel›, params: List‹KLevel›) -> List‹KLevel› {
+  #[group=cold2] fn level_list_inst(lvls: List‹KLevel›, params: List‹KLevel›) -> List‹KLevel› {
     match load(lvls) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(l, rest) =>

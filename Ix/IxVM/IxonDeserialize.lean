@@ -223,7 +223,7 @@ def ixonDeserialize := ⟦
     }
   }
 
-  fn get_univ(stream: ByteStream) -> (Univ, ByteStream) {
+  #[group=cold5] fn get_univ(stream: ByteStream) -> (Univ, ByteStream) {
     let (tag, s) = get_tag2(stream);
     let (flag, size) = tag;
     match flag {
@@ -330,7 +330,7 @@ def ixonDeserialize := ⟦
     }
   }
 
-  fn get_address_list(stream: ByteStream, count: U64) -> (List‹Addr›, ByteStream) {
+  #[group=cold4] fn get_address_list(stream: ByteStream, count: U64) -> (List‹Addr›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -345,17 +345,17 @@ def ixonDeserialize := ⟦
   -- Sharing, refs, univs table deserialization
   -- ============================================================================
 
-  fn get_sharing(stream: ByteStream) -> (List‹&Expr›, ByteStream) {
+  #[group=cold2] fn get_sharing(stream: ByteStream) -> (List‹&Expr›, ByteStream) {
     let (len, s) = get_tag0(stream);
     get_expr_list(s, len)
   }
 
-  fn get_refs(stream: ByteStream) -> (List‹Addr›, ByteStream) {
+  #[group=cold2] fn get_refs(stream: ByteStream) -> (List‹Addr›, ByteStream) {
     let (len, s) = get_tag0(stream);
     get_address_list(s, len)
   }
 
-  fn get_univs(stream: ByteStream) -> (List‹&Univ›, ByteStream) {
+  #[group=cold2] fn get_univs(stream: ByteStream) -> (List‹&Univ›, ByteStream) {
     let (len, s) = get_tag0(stream);
     get_univ_list(s, len)
   }
@@ -368,7 +368,7 @@ def ixonDeserialize := ⟦
   -- Encoding: kind * 4 + safety
   -- kind: Definition=0, Opaque=1, Theorem=2
   -- safety: Unsafe=0, Safe=1, Partial=2
-  fn unpack_def_kind_safety(byte: U8) -> (DefKind, DefinitionSafety) {
+  #[group=cold1] fn unpack_def_kind_safety(byte: U8) -> (DefKind, DefinitionSafety) {
     match byte {
       0 => (DefKind.Definition, DefinitionSafety.Unsafe),
       1 => (DefKind.Definition, DefinitionSafety.Safe),
@@ -383,7 +383,7 @@ def ixonDeserialize := ⟦
   }
 
   -- Definition: byte(packed_kind_safety) + Tag0(lvls) + expr(typ) + expr(value)
-  fn get_definition(stream: ByteStream) -> (Definition, ByteStream) {
+  #[group=cold6] fn get_definition(stream: ByteStream) -> (Definition, ByteStream) {
     let (packed, s) = read_byte(stream);
     let (kind, safety) = unpack_def_kind_safety(packed);
     let (lvls, s2) = get_tag0(s);
@@ -562,7 +562,7 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   -- Dispatch on variant number (0-7) to deserialize the appropriate ConstantInfo
-  fn get_constant_info_by_variant(variant: G, stream: ByteStream) -> (ConstantInfo, ByteStream) {
+  #[group=cold5] fn get_constant_info_by_variant(variant: G, stream: ByteStream) -> (ConstantInfo, ByteStream) {
     match variant {
       0 =>
         let (defn, s) = get_definition(stream);
@@ -592,7 +592,7 @@ def ixonDeserialize := ⟦
   }
 
   -- Parse ConstantInfo from flag (0xC for Muts, 0xD for non-Muts) and size
-  fn get_constant_info(flag: G, size: U64, stream: ByteStream) -> (ConstantInfo, ByteStream) {
+  #[group=cold6] fn get_constant_info(flag: G, size: U64, stream: ByteStream) -> (ConstantInfo, ByteStream) {
     match flag {
       -- Muts: flag=0xC, size is the entry count
       0xC =>
@@ -608,7 +608,7 @@ def ixonDeserialize := ⟦
   -- Top-level constant deserialization
   -- ============================================================================
 
-  fn get_constant(stream: ByteStream) -> (Constant, ByteStream) {
+  #[group=cold6] fn get_constant(stream: ByteStream) -> (Constant, ByteStream) {
     let (tag, s) = get_tag4(stream);
     let (flag, size) = tag;
     let (info, s2) = get_constant_info(flag, size, s);

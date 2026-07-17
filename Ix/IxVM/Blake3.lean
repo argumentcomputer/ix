@@ -45,7 +45,7 @@ def blake3 := ⟦
     Some([[U8; 4]; 8])
   }
 
-  fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
+  #[group=cold6] fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
     blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
   }
@@ -53,7 +53,7 @@ def blake3 := ⟦
   -- Hash `bytes` and assert the digest equals `expected`. Used by every
   -- IOBuffer-load path that verifies the pre-image of a content-addressed
   -- pointer matches the bytes the prover supplied.
-  fn verify_bytes_against(bytes: ByteStream, expected: [U8; 32]) {
+  #[group=cold6] fn verify_bytes_against(bytes: ByteStream, expected: [U8; 32]) {
     let h = blake3(bytes);
     assert_eq!(
       [h[0][0], h[0][1], h[0][2], h[0][3],
@@ -83,7 +83,7 @@ def blake3 := ⟦
            h[7][0], h[7][1], h[7][2], h[7][3]])
   }
 
-  #[group=cold7] fn blake3_next_layer(layer: Layer, digest: [[U8; 4]; 8], root: G) -> (MaybeDigest, Layer) {
+  #[group=cold8] fn blake3_next_layer(layer: Layer, digest: [[U8; 4]; 8], root: G) -> (MaybeDigest, Layer) {
     match layer {
       Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
       Layer.Push(layer, other) =>
