@@ -159,23 +159,54 @@ def subst := ⟦
   -- shares across all binder depths. Memoized on (types, base).
   fn ctx_reachable(types: List‹KExpr›, base: G) -> G {
     let len = list_length(types);
-    ctx_reachable_fix(types, len, lbr_min(base, len))
+    ctx_seek_cut(types, lbr_min(base, len))
   }
 
-  fn ctx_reachable_fix(types: List‹KExpr›, len: G, need: G) -> G {
-    let scanned = lbr_min(ctx_reachable_scan(types, need, 0, need), len);
-    match u32_less_than(need, scanned) {
-      1 => ctx_reachable_fix(types, len, scanned),
-      0 => need,
+  -- Valid-cut chain, materialized lazily in the memo table.
+  --
+  -- A cut `m ∈ [1, len]` is *valid* iff every kept frame `i < m` has
+  -- `(i + 1) + expr_lbr(types[i]) ≤ m` — i.e. the top `m` frames close
+  -- over their own loose ranges, so the fixpoint answer for `need` is
+  -- the smallest valid cut ≥ `need`. Valid cuts compose across suffixes:
+  -- `cuts(L) = {c1} ∪ (c1 + cuts(drop(L, c1)))` for `c1` the smallest,
+  -- because frames above an established cut never reach below it. So the
+  -- chain is walked by hopping `ctx_next_cut` links, and since each hop
+  -- is keyed on (essentially) one list pointer, the chain for a context
+  -- suffix is computed once and shared by every query and binder depth
+  -- that reaches it. Rust instead memoizes per (ctx_id, lbr) in
+  -- `ctx_addr_cache` (tc.rs); the answers agree.
+  --
+  -- Relies on frame well-formedness (a stored type's lbr never exceeds
+  -- the depth below it, so the bottom frame is closed and the chain
+  -- always terminates at cut `len`); the kernel maintains this and the
+  -- Rust mirror asserts the same invariant.
+
+  -- Smallest valid cut ≥ `need`. Requires `1 ≤ need ≤ len`.
+  fn ctx_seek_cut(types: List‹KExpr›, need: G) -> G {
+    let c = ctx_next_cut(types);
+    match u32_less_than(c, need) {
+      0 => c,
+      1 => c + ctx_seek_cut(list_drop(types, c), need - c),
     }
   }
 
-  fn ctx_reachable_scan(types: List‹KExpr›, limit: G, i: G, acc: G) -> G {
-    match u32_less_than(i, limit) {
-      0 => acc,
-      1 =>
-        let fi = (i + 1) + expr_lbr(list_lookup(types, i));
-        ctx_reachable_scan(types, limit, i + 1, lbr_max(acc, fi)),
+  -- Smallest valid cut ≥ 1 of the stack headed at `types` (nonempty).
+  fn ctx_next_cut(types: List‹KExpr›) -> G {
+    let ListNode.Cons(ty, rest) = load(types);
+    1 + ctx_close_cut(rest, expr_lbr(ty))
+  }
+
+  -- Smallest `c ≥ l` that is 0 or a valid cut of `rest`: the depth a
+  -- frame with loose range `l` forces its cut past.
+  fn ctx_close_cut(rest: List‹KExpr›, l: G) -> G {
+    match l {
+      0 => 0,
+      _ =>
+        let c = ctx_next_cut(rest);
+        match u32_less_than(c, l) {
+          0 => c,
+          1 => c + ctx_close_cut(list_drop(rest, c), l - c),
+        },
     }
   }
 
