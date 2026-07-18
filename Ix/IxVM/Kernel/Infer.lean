@@ -109,44 +109,60 @@ def infer := ⟦
         let u2 = k_ensure_sort(body, types2, top, addrs);
         store(KExprNode.Srt(level_imax(u1, u2))),
 
-      KExprNode.Let(ty, val, body) =>
-        k_ensure_sort(ty, types, top, addrs);
-        k_check(val, ty, types, top, addrs);
-        let body_substed = expr_inst1(body, val, 0);
-        k_infer(body_substed, types, top, addrs),
+      KExprNode.Let(ty, val, body) => k_infer_let(ty, val, body, types, top, addrs),
 
-      KExprNode.Lit(lit) =>
-        match lit {
-          KLiteral.Nat(_) => nat_const_type(addrs),
-          KLiteral.Str(_) => str_const_type(addrs),
-        },
+      KExprNode.Lit(lit) => k_infer_lit(lit, addrs),
 
-      -- Mirror: src/ix/kernel/infer.rs:331-450 infer_proj.
-      KExprNode.Proj(tidx, fidx, e1) =>
-        let val_ty = k_infer(e1, types, top, addrs);
-        let wty = whnf(val_ty, types, top, addrs);
-        let pair = collect_spine(wty);
-        match pair {
-          (head, args) =>
-            match load(head) {
-              KExprNode.Const(idx, lvls) =>
-                assert_eq!(idx, tidx);
-                let ind_ci = load(list_lookup(top, idx));
-                match ind_ci {
-                  KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
-                    -- Single-ctor structure required.
-                    assert_eq!(list_length(ctor_indices), 1);
-                    let is_prop = is_inductive_prop(ind_ty, lvls, n_params + n_indices,
-                                                     types, top, addrs);
-                    let ctor_idx = list_lookup(ctor_indices, 0);
-                    let ctor_ci = load(list_lookup(top, ctor_idx));
-                    match ctor_ci {
-                      KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
-                        let ctor_ty_inst = expr_inst_levels(ctor_ty, lvls);
-                        let after_params = peel_params_subst(ctor_ty_inst, args, n_params);
-                        peel_field_loop(after_params, fidx, 0, tidx, e1, is_prop,
-                                        types, top, addrs),
-                    },
+      KExprNode.Proj(tidx, fidx, e1) => k_infer_proj(tidx, fidx, e1, types, top, addrs),
+    }
+  }
+
+  -- Cold-extracted Let arm (same pattern as `expr_lbr_let`): four call
+  -- sites on a rare arm would otherwise widen every k_infer_core row.
+  fn k_infer_let(ty: KExpr, val: KExpr, body: KExpr, types: List‹KExpr›,
+                 top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    k_ensure_sort(ty, types, top, addrs);
+    k_check(val, ty, types, top, addrs);
+    let body_substed = expr_inst1(body, val, 0);
+    k_infer(body_substed, types, top, addrs)
+  }
+
+  -- Cold-extracted Lit arm.
+  fn k_infer_lit(lit: KLiteral, addrs: List‹Addr›) -> KExpr {
+    match lit {
+      KLiteral.Nat(_) => nat_const_type(addrs),
+      KLiteral.Str(_) => str_const_type(addrs),
+    }
+  }
+
+  -- Cold-extracted Proj arm: the widest arm of `k_infer_core` by far
+  -- (~10 call sites) on a rare node kind.
+  -- Mirror: src/ix/kernel/infer.rs:331-450 infer_proj.
+  fn k_infer_proj(tidx: G, fidx: G, e1: KExpr, types: List‹KExpr›,
+                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let val_ty = k_infer(e1, types, top, addrs);
+    let wty = whnf(val_ty, types, top, addrs);
+    let pair = collect_spine(wty);
+    match pair {
+      (head, args) =>
+        match load(head) {
+          KExprNode.Const(idx, lvls) =>
+            assert_eq!(idx, tidx);
+            let ind_ci = load(list_lookup(top, idx));
+            match ind_ci {
+              KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
+                -- Single-ctor structure required.
+                assert_eq!(list_length(ctor_indices), 1);
+                let is_prop = is_inductive_prop(ind_ty, lvls, n_params + n_indices,
+                                                 types, top, addrs);
+                let ctor_idx = list_lookup(ctor_indices, 0);
+                let ctor_ci = load(list_lookup(top, ctor_idx));
+                match ctor_ci {
+                  KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
+                    let ctor_ty_inst = expr_inst_levels(ctor_ty, lvls);
+                    let after_params = peel_params_subst(ctor_ty_inst, args, n_params);
+                    peel_field_loop(after_params, fidx, 0, tidx, e1, is_prop,
+                                    types, top, addrs),
                 },
             },
         },

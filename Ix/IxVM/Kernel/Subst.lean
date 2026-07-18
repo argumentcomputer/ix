@@ -442,15 +442,17 @@ def subst := ⟦
   -- hot App/Lam/… walk stays narrow (the `list_length` / `list_lookup` /
   -- `expr_lift` machinery only charges the BVar rows). Mirror the hot/cold
   -- split pattern used for `address_eq` / `whnf_with_spine`.
+  --
+  -- The walk invariant gives `lbr(BVar i) = i + 1 > depth`, i.e.
+  -- `i ≥ depth`, so the window test reduces to one comparison on the
+  -- offset. A sub-`depth` index (invariant violation) wraps in the field
+  -- and fails the u32 range decomposition — no silent path.
   fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
-    match u32_less_than(i, depth) {
-      1 => store(KExprNode.BVar(i)),
-      0 =>
-        let n = list_length(substs);
-        match u32_less_than(i, depth + n) {
-          1 => expr_lift(list_lookup(substs, i - depth), depth, 0),
-          0 => store(KExprNode.BVar(i - n)),
-        },
+    let n = list_length(substs);
+    let ofs = i - depth;
+    match u32_less_than(ofs, n) {
+      1 => expr_lift(list_lookup(substs, ofs), depth, 0),
+      0 => store(KExprNode.BVar(i - n)),
     }
   }
 
