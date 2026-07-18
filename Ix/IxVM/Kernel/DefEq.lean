@@ -49,8 +49,25 @@ def defEq := ⟦
     }
   }
 
+  -- Def-eq is symmetric (every tier below treats the sides symmetrically or
+  -- tries both directions), so canonicalize the pair by pointer order before
+  -- the tiered run: (a, b) and (b, a) share one ordered run, and — the
+  -- larger effect — the eta/structural recursion below issues its
+  -- `expr_inst1`/`expr_lift` traffic with a canonical orientation, deduping
+  -- instantiation work across mirrored queries. Sorting lives here rather
+  -- than in `k_is_def_eq`: this circuit runs once per unique pair, the entry
+  -- once per call, and the swap costs a second call-site's width. Pointer
+  -- values fit u32 for any feasible trace.
   fn k_is_def_eq_core(a: KExpr, b: KExpr, types: List‹KExpr›,
                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
+    match u32_less_than(ptr_val(a), ptr_val(b)) {
+      1 => k_is_def_eq_ordered(a, b, types, top, addrs),
+      0 => k_is_def_eq_ordered(b, a, types, top, addrs),
+    }
+  }
+
+  fn k_is_def_eq_ordered(a: KExpr, b: KExpr, types: List‹KExpr›,
+                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
         -- Tier 1.5: lazy-delta app-congruence pre-WHNF. Mirror:
         -- src/ix/kernel/def_eq.rs:1262-1287 try_def_eq_app. When both
         -- sides share Const(idx, lvls) head with same arg count, recurse
