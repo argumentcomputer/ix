@@ -10,6 +10,14 @@ def ixonDeserialize := ⟦
   -- Byte reading primitives
   -- ============================================================================
 
+  -- NOTE: hot readers (`get_u64_le`, the tag parsers, `get_address`) inline
+  -- the uncons as `let ListNode.Cons(byte, s) = load(stream)` instead of
+  -- calling this: a `load` is a memory-table lookup already paid by
+  -- `read_byte` itself, so inlining deletes one full dispatch row per byte
+  -- read. The behavioral difference is only on truncated input: `read_byte`
+  -- zero-pads at Nil, the inline uncons fails the prover (well-formed Ixon
+  -- never over-reads). Cold once-per-constant parsers keep the call for the
+  -- padding semantics and narrower circuits.
   fn read_byte(stream: ByteStream) -> (U8, ByteStream) {
     match load(stream) {
       ListNode.Cons(byte, rest) => (byte, rest),
@@ -22,7 +30,7 @@ def ixonDeserialize := ⟦
     match num_bytes {
       0 => ([0u8; 8], stream),
       _ =>
-        let (byte, s) = read_byte(stream);
+        let ListNode.Cons(byte, s) = load(stream);
         let (rest_bytes, s2) = get_u64_le(s, num_bytes - 1);
         let [r0, r1, r2, r3, r4, r5, r6, _] = rest_bytes;
         ([byte, r0, r1, r2, r3, r4, r5, r6], s2),
@@ -35,7 +43,7 @@ def ixonDeserialize := ⟦
 
   -- Tag0: [large:1][size:7]
   fn get_tag0(stream: ByteStream) -> (U64, ByteStream) {
-    let (byte, s) = read_byte(stream);
+    let ListNode.Cons(byte, s) = load(stream);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     let small_size = b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6;
@@ -50,7 +58,7 @@ def ixonDeserialize := ⟦
 
   -- Tag2: [flag:2][large:1][size:5]
   fn get_tag2(stream: ByteStream) -> ((G, U64), ByteStream) {
-    let (byte, s) = read_byte(stream);
+    let ListNode.Cons(byte, s) = load(stream);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     let flag = b6 + 2 * b7;
@@ -67,7 +75,7 @@ def ixonDeserialize := ⟦
 
   -- Tag4: [flag:4][large:1][size:3]
   fn get_tag4(stream: ByteStream) -> ((G, U64), ByteStream) {
-    let (byte, s) = read_byte(stream);
+    let ListNode.Cons(byte, s) = load(stream);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     let flag = b4 + 2 * b5 + 4 * b6 + 8 * b7;
@@ -259,38 +267,38 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   fn get_address(stream: ByteStream) -> (Addr, ByteStream) {
-    let (b0, s) = read_byte(stream);
-    let (b1, s) = read_byte(s);
-    let (b2, s) = read_byte(s);
-    let (b3, s) = read_byte(s);
-    let (b4, s) = read_byte(s);
-    let (b5, s) = read_byte(s);
-    let (b6, s) = read_byte(s);
-    let (b7, s) = read_byte(s);
-    let (b8, s) = read_byte(s);
-    let (b9, s) = read_byte(s);
-    let (b10, s) = read_byte(s);
-    let (b11, s) = read_byte(s);
-    let (b12, s) = read_byte(s);
-    let (b13, s) = read_byte(s);
-    let (b14, s) = read_byte(s);
-    let (b15, s) = read_byte(s);
-    let (b16, s) = read_byte(s);
-    let (b17, s) = read_byte(s);
-    let (b18, s) = read_byte(s);
-    let (b19, s) = read_byte(s);
-    let (b20, s) = read_byte(s);
-    let (b21, s) = read_byte(s);
-    let (b22, s) = read_byte(s);
-    let (b23, s) = read_byte(s);
-    let (b24, s) = read_byte(s);
-    let (b25, s) = read_byte(s);
-    let (b26, s) = read_byte(s);
-    let (b27, s) = read_byte(s);
-    let (b28, s) = read_byte(s);
-    let (b29, s) = read_byte(s);
-    let (b30, s) = read_byte(s);
-    let (b31, s) = read_byte(s);
+    let ListNode.Cons(b0, s) = load(stream);
+    let ListNode.Cons(b1, s) = load(s);
+    let ListNode.Cons(b2, s) = load(s);
+    let ListNode.Cons(b3, s) = load(s);
+    let ListNode.Cons(b4, s) = load(s);
+    let ListNode.Cons(b5, s) = load(s);
+    let ListNode.Cons(b6, s) = load(s);
+    let ListNode.Cons(b7, s) = load(s);
+    let ListNode.Cons(b8, s) = load(s);
+    let ListNode.Cons(b9, s) = load(s);
+    let ListNode.Cons(b10, s) = load(s);
+    let ListNode.Cons(b11, s) = load(s);
+    let ListNode.Cons(b12, s) = load(s);
+    let ListNode.Cons(b13, s) = load(s);
+    let ListNode.Cons(b14, s) = load(s);
+    let ListNode.Cons(b15, s) = load(s);
+    let ListNode.Cons(b16, s) = load(s);
+    let ListNode.Cons(b17, s) = load(s);
+    let ListNode.Cons(b18, s) = load(s);
+    let ListNode.Cons(b19, s) = load(s);
+    let ListNode.Cons(b20, s) = load(s);
+    let ListNode.Cons(b21, s) = load(s);
+    let ListNode.Cons(b22, s) = load(s);
+    let ListNode.Cons(b23, s) = load(s);
+    let ListNode.Cons(b24, s) = load(s);
+    let ListNode.Cons(b25, s) = load(s);
+    let ListNode.Cons(b26, s) = load(s);
+    let ListNode.Cons(b27, s) = load(s);
+    let ListNode.Cons(b28, s) = load(s);
+    let ListNode.Cons(b29, s) = load(s);
+    let ListNode.Cons(b30, s) = load(s);
+    let ListNode.Cons(b31, s) = load(s);
     (store([b0, b1, b2,
       b3, b4, b5,
       b6, b7, b8,
