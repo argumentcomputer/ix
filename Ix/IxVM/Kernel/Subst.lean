@@ -248,12 +248,7 @@ def subst := ⟦
 
   fn expr_lift_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, cutoff);
-        match lt {
-          1 => e,
-          0 => store(KExprNode.BVar(i + shift)),
-        },
+      KExprNode.BVar(i) => expr_lift_bvar(i, shift, cutoff),
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>
@@ -268,15 +263,33 @@ def subst := ⟦
         store(KExprNode.Forall(
           expr_lift(ty, shift, cutoff),
           expr_lift(body, shift, cutoff + 1))),
-      KExprNode.Let(ty, val, body) =>
-        store(KExprNode.Let(
-          expr_lift(ty, shift, cutoff),
-          expr_lift(val, shift, cutoff),
-          expr_lift(body, shift, cutoff + 1))),
+      KExprNode.Let(ty, val, body) => expr_lift_let(ty, val, body, shift, cutoff),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_lift(e1, shift, cutoff))),
     }
+  }
+
+  -- Cold BVar arm (mirror `expr_inst_many_bvar`): the compare/shift
+  -- machinery only charges the BVar rows, keeping the hot walk narrow.
+  -- `store(BVar(i))` content-dedups to the same pointer the inline arm
+  -- returned.
+  fn expr_lift_bvar(i: G, shift: G, cutoff: G) -> KExpr {
+    match u32_less_than(i, cutoff) {
+      1 => store(KExprNode.BVar(i)),
+      0 => store(KExprNode.BVar(i + shift)),
+    }
+  }
+
+  -- Cold-extracted Let arm (same pattern as `expr_lbr_let`): three
+  -- recursive calls is the widest arm, and Let nodes are rare, so keeping
+  -- it inline would charge its width on every row of the hot walk.
+  fn expr_lift_let(ty: KExpr, val: KExpr, body: KExpr, shift: G, cutoff: G)
+      -> KExpr {
+    store(KExprNode.Let(
+      expr_lift(ty, shift, cutoff),
+      expr_lift(val, shift, cutoff),
+      expr_lift(body, shift, cutoff + 1)))
   }
 
   -- ============================================================================
@@ -361,16 +374,7 @@ def subst := ⟦
 
   fn expr_inst1_walk(e: KExpr, arg: KExpr, depth: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, depth);
-        match lt {
-          1 => e,
-          0 =>
-            match i - depth {
-              0 => expr_lift(arg, depth, 0),
-              _ => store(KExprNode.BVar(i - 1)),
-            },
-        },
+      KExprNode.BVar(i) => expr_inst1_bvar(i, arg, depth),
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>
@@ -385,15 +389,35 @@ def subst := ⟦
         store(KExprNode.Forall(
           expr_inst1(ty, arg, depth),
           expr_inst1(body, arg, depth + 1))),
-      KExprNode.Let(ty, val, body) =>
-        store(KExprNode.Let(
-          expr_inst1(ty, arg, depth),
-          expr_inst1(val, arg, depth),
-          expr_inst1(body, arg, depth + 1))),
+      KExprNode.Let(ty, val, body) => expr_inst1_let(ty, val, body, arg, depth),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_inst1(e1, arg, depth))),
     }
+  }
+
+  -- Cold BVar arm (mirror `expr_inst_many_bvar`): the compare/subtract/
+  -- `expr_lift` machinery only charges the BVar rows, keeping the hot
+  -- walk narrow. `store(BVar(i))` content-dedups to the same pointer the
+  -- inline arm returned.
+  fn expr_inst1_bvar(i: G, arg: KExpr, depth: G) -> KExpr {
+    match u32_less_than(i, depth) {
+      1 => store(KExprNode.BVar(i)),
+      0 =>
+        match i - depth {
+          0 => expr_lift(arg, depth, 0),
+          _ => store(KExprNode.BVar(i - 1)),
+        },
+    }
+  }
+
+  -- Cold-extracted Let arm (same pattern as `expr_lbr_let`).
+  fn expr_inst1_let(ty: KExpr, val: KExpr, body: KExpr, arg: KExpr, depth: G)
+      -> KExpr {
+    store(KExprNode.Let(
+      expr_inst1(ty, arg, depth),
+      expr_inst1(val, arg, depth),
+      expr_inst1(body, arg, depth + 1)))
   }
 
   -- ============================================================================
@@ -448,14 +472,20 @@ def subst := ⟦
           expr_inst_many(ty, substs, depth),
           expr_inst_many(body, substs, depth + 1))),
       KExprNode.Let(ty, val, body) =>
-        store(KExprNode.Let(
-          expr_inst_many(ty, substs, depth),
-          expr_inst_many(val, substs, depth),
-          expr_inst_many(body, substs, depth + 1))),
+        expr_inst_many_let(ty, val, body, substs, depth),
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_inst_many(e1, substs, depth))),
     }
+  }
+
+  -- Cold-extracted Let arm (same pattern as `expr_lbr_let`).
+  fn expr_inst_many_let(ty: KExpr, val: KExpr, body: KExpr,
+      substs: List‹KExpr›, depth: G) -> KExpr {
+    store(KExprNode.Let(
+      expr_inst_many(ty, substs, depth),
+      expr_inst_many(val, substs, depth),
+      expr_inst_many(body, substs, depth + 1)))
   }
 ⟧
 
