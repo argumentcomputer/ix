@@ -112,19 +112,18 @@ def ixonDeserialize := ⟦
   -- App telescope: read count args, wrapping func in App nodes. `func` is passed
   -- by pointer (loaded only at the base case) so the recursion doesn't carry the
   -- wide `Expr` union by value on every row.
-  fn get_app_telescope(func: &Expr, stream: ByteStream, count: U64) -> (Expr, ByteStream) {
+  fn get_app_telescope(func: &Expr, stream: ByteStream, count: U64) -> (&Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (load(func), stream),
+      1 => (func, stream),
       0 =>
         let (arg, s) = get_expr(stream);
-        let app = Expr.App(func, store(arg));
-        get_app_telescope(store(app), s, relaxed_u64_pred(count)),
+        get_app_telescope(store(Expr.App(func, arg)), s, relaxed_u64_pred(count)),
     }
   }
 
   -- Lam telescope: read count types then body, wrap as nested Lams
-  fn get_lam_telescope(stream: ByteStream, count: U64) -> (Expr, ByteStream) {
+  fn get_lam_telescope(stream: ByteStream, count: U64) -> (&Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 =>
@@ -134,12 +133,12 @@ def ixonDeserialize := ⟦
         -- Read one type, recurse for remaining types + body
         let (ty, s) = get_expr(stream);
         let (inner, s2) = get_lam_telescope(s, relaxed_u64_pred(count));
-        (Expr.Lam(store(ty), store(inner)), s2),
+        (store(Expr.Lam(ty, inner)), s2),
     }
   }
 
   -- All telescope: read count types then body, wrap as nested Alls
-  fn get_all_telescope(stream: ByteStream, count: U64) -> (Expr, ByteStream) {
+  fn get_all_telescope(stream: ByteStream, count: U64) -> (&Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 =>
@@ -149,48 +148,48 @@ def ixonDeserialize := ⟦
         -- Read one type, recurse for remaining types + body
         let (ty, s) = get_expr(stream);
         let (inner, s2) = get_all_telescope(s, relaxed_u64_pred(count));
-        (Expr.All(store(ty), store(inner)), s2),
+        (store(Expr.All(ty, inner)), s2),
     }
   }
 
-  fn get_expr(stream: ByteStream) -> (Expr, ByteStream) {
+  fn get_expr(stream: ByteStream) -> (&Expr, ByteStream) {
     let (tag, s) = get_tag4(stream);
     let (flag, size) = tag;
     match flag {
       -- Srt: Tag4(0x0, univ_idx)
-      0x0 => (Expr.Srt(size), s),
+      0x0 => (store(Expr.Srt(size)), s),
 
       -- Var: Tag4(0x1, idx)
-      0x1 => (Expr.Var(size), s),
+      0x1 => (store(Expr.Var(size)), s),
 
       -- Ref: Tag4(0x2, len) + Tag0(ref_idx) + univ_list
       0x2 =>
         let (ref_idx, s2) = get_tag0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
-        (Expr.Ref(ref_idx, univ_list), s3),
+        (store(Expr.Ref(ref_idx, univ_list)), s3),
 
       -- Rec: Tag4(0x3, len) + Tag0(rec_idx) + univ_list
       0x3 =>
         let (rec_idx, s2) = get_tag0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
-        (Expr.Rec(rec_idx, univ_list), s3),
+        (store(Expr.Rec(rec_idx, univ_list)), s3),
 
       -- Prj: Tag4(0x4, field_idx) + Tag0(type_ref_idx) + expr(val)
       0x4 =>
         let (type_ref_idx, s2) = get_tag0(s);
         let (val, s3) = get_expr(s2);
-        (Expr.Prj(type_ref_idx, size, store(val)), s3),
+        (store(Expr.Prj(type_ref_idx, size, val)), s3),
 
       -- Str: Tag4(0x5, ref_idx)
-      0x5 => (Expr.Str(size), s),
+      0x5 => (store(Expr.Str(size)), s),
 
       -- Nat: Tag4(0x6, ref_idx)
-      0x6 => (Expr.Nat(size), s),
+      0x6 => (store(Expr.Nat(size)), s),
 
       -- App: Tag4(0x7, count) + func + args...
       0x7 =>
         let (func, s2) = get_expr(s);
-        get_app_telescope(store(func), s2, size),
+        get_app_telescope(func, s2, size),
 
       -- Lam: Tag4(0x8, count) + types... + body
       0x8 => get_lam_telescope(s, size),
@@ -202,17 +201,17 @@ def ixonDeserialize := ⟦
       0xA => get_expr_let(s, size),
 
       -- Share: Tag4(0xB, idx)
-      0xB => (Expr.Share(size), s),
+      0xB => (store(Expr.Share(size)), s),
     }
   }
 
   -- Let arm of get_expr, split out: three recursive `get_expr` calls make it the
   -- widest (and a rare) arm, so inlined it taxes every get_expr row.
-  fn get_expr_let(s: ByteStream, size: U64) -> (Expr, ByteStream) {
+  fn get_expr_let(s: ByteStream, size: U64) -> (&Expr, ByteStream) {
     let (ty, s2) = get_expr(s);
     let (val, s3) = get_expr(s2);
     let (body, s4) = get_expr(s3);
-    (Expr.Let(size, store(ty), store(val), store(body)), s4)
+    (store(Expr.Let(size, ty, val, body)), s4)
   }
 
 
@@ -323,7 +322,7 @@ def ixonDeserialize := ⟦
       0 =>
         let (expr, s) = get_expr(stream);
         let (rest, s2) = get_expr_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(store(expr), rest)), s2),
+        (store(ListNode.Cons(expr, rest)), s2),
     }
   }
 
@@ -397,14 +396,14 @@ def ixonDeserialize := ⟦
     let (lvls, s2) = get_tag0(s);
     let (typ, s3) = get_expr(s2);
     let (value, s4) = get_expr(s3);
-    (Definition.Mk(kind, safety, lvls, store(typ), store(value)), s4)
+    (Definition.Mk(kind, safety, lvls, typ, value), s4)
   }
 
   -- RecursorRule: Tag0(fields) + expr(rhs)
   fn get_recursor_rule(stream: ByteStream) -> (RecursorRule, ByteStream) {
     let (fields, s) = get_tag0(stream);
     let (rhs, s2) = get_expr(s);
-    (RecursorRule.Mk(fields, store(rhs)), s2)
+    (RecursorRule.Mk(fields, rhs), s2)
   }
 
   fn get_recursor_rule_list(stream: ByteStream, count: U64) -> (List‹RecursorRule›, ByteStream) {
@@ -433,7 +432,7 @@ def ixonDeserialize := ⟦
     let (typ, s7) = get_expr(s6);
     let (rules_len, s8) = get_tag0(s7);
     let (rules, s9) = get_recursor_rule_list(s8, rules_len);
-    (Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, store(typ), rules), s9)
+    (Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, typ, rules), s9)
   }
 
   -- Axiom: byte(is_unsafe) + Tag0(lvls) + expr(typ)
@@ -441,7 +440,7 @@ def ixonDeserialize := ⟦
     let (is_unsafe, s) = read_byte(stream);
     let (lvls, s2) = get_tag0(s);
     let (typ, s3) = get_expr(s2);
-    (Axiom.Mk(to_field(is_unsafe), lvls, store(typ)), s3)
+    (Axiom.Mk(to_field(is_unsafe), lvls, typ), s3)
   }
 
   -- QuotKind: byte(0=Typ, 1=Ctor, 2=Lift, 3=Ind)
@@ -460,7 +459,7 @@ def ixonDeserialize := ⟦
     let kind = get_quot_kind(kind_byte);
     let (lvls, s2) = get_tag0(s);
     let (typ, s3) = get_expr(s2);
-    (Quotient.Mk(kind, lvls, store(typ)), s3)
+    (Quotient.Mk(kind, lvls, typ), s3)
   }
 
   -- Constructor: byte(is_unsafe) + Tag0(lvls) + Tag0(cidx) + Tag0(params) +
@@ -472,7 +471,7 @@ def ixonDeserialize := ⟦
     let (params, s4) = get_tag0(s3);
     let (fields, s5) = get_tag0(s4);
     let (typ, s6) = get_expr(s5);
-    (Constructor.Mk(to_field(is_unsafe), lvls, cidx, params, fields, store(typ)), s6)
+    (Constructor.Mk(to_field(is_unsafe), lvls, cidx, params, fields, typ), s6)
   }
 
   fn get_constructor_list(stream: ByteStream, count: U64) -> (List‹Constructor›, ByteStream) {
@@ -498,7 +497,7 @@ def ixonDeserialize := ⟦
     let (typ, s5) = get_expr(s4);
     let (ctors_len, s6) = get_tag0(s5);
     let (ctors, s7) = get_constructor_list(s6, ctors_len);
-    (Inductive.Mk(is_unsafe, lvls, params, indices, store(typ), ctors), s7)
+    (Inductive.Mk(is_unsafe, lvls, params, indices, typ, ctors), s7)
   }
 
   -- ============================================================================
