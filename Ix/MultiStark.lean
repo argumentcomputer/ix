@@ -44,11 +44,14 @@ def entrypoints := ⟦
   -- docstring. One stream per channel (0 = proof, 1 = vk, 2 = claims), each
   -- registered under key `[0]` on its channel.
   pub fn verify_multi_stark_proof(system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4], num_queries: G, commit_pow_bits: G, log_blowup: G) {
-    -- Proof advice from IO channel 0: deserialize, assert fully consumed.
+    -- Proof advice from IO channel 0: deserialize directly from the IO arena
+    -- by byte offset (no materialized byte stream), assert fully consumed.
+    -- The byte FETCHES inside the readers are unconstrained (the proof is
+    -- advice — same trust model as the former `#read_byte_stream`); the
+    -- parse structure itself stays constrained.
     let (idx, len) = io_get_info(0, [0]);
-    let bytes = #read_byte_stream(0, idx, len);
-    let (proof, rest) = read_proof(bytes);
-    assert_eq!(load(rest), ListNode.Nil);
+    let (proof, stop) = read_proof(idx);
+    assert_eq!(stop, idx + len);
     -- Verifying key (`System<AiurCircuit>`) from IO channel 1: bind the bytes
     -- to the public Blake3 `system_digest`, then reconstruct the system.
     let (sidx, slen) = io_get_info(1, [0]);

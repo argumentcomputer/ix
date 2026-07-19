@@ -866,7 +866,16 @@ def verifier := ⟦
   }
   fn read_one_claim(stream: ByteStream) -> (List‹U64›, ByteStream) {
     let (m, s) = read_count(stream);
-    read_u64_vec_n(s, m)
+    read_claim_vals_n(s, m)
+  }
+  fn read_claim_vals_n(stream: ByteStream, n: G) -> (List‹U64›, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), stream),
+      _ =>
+        let (x, s) = read_u64(stream);
+        let (rest, s2) = read_claim_vals_n(s, n - 1);
+        (store(ListNode.Cons(x, rest)), s2),
+    }
   }
 ⟧
 

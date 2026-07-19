@@ -21,8 +21,23 @@ The wire format is bincode `standard().with_little_endian().with_fixed_int_encod
 * `ExtVal` (deg-2 ext)        : `[u64; 2]`, 16 bytes LE
 * Merkle digest               : `[u64; 4]`, 32 bytes LE
 
-`read_proof` builds a `Proof` object; `Ix/MultiStark.lean` hangs the entrypoint
-(and eventual verification logic) off it.
+The proof stream is pure non-deterministic advice on IO channel 0 (never
+hashed — see `Ix/MultiStark.lean`), so the `read_proof` family reads it
+**directly from the IO arena by index**: every reader threads a `(channel-0)
+byte offset `i : G` and pulls fixed-size chunks with `io_read` (1/8/16/32
+bytes — `io_read`'s length is static). No per-byte `ListNode` chain is ever
+materialized, which removes one memory store + one load per proof byte.
+Variable-length content loops a fixed-size read per element, exactly like
+the old stream readers looped `read_u8`.
+
+The byte-stream primitives (`read_u8`/`read_u64`/`read_count`/`read_digest`/
+`read_merkle_cap` over `ByteStream`) remain for the vk/claims streams, whose
+bytes are digest-bound and therefore flow through blake3 as materialized
+streams anyway (`read_system`, `read_claims`).
+
+`read_proof i` builds a `Proof` object and returns the end offset;
+`Ix/MultiStark.lean` hangs the entrypoint (and full-consumption assert)
+off it.
 -/
 
 public section
@@ -37,10 +52,8 @@ def deserialize := ⟦
   -- ==========================================================================
 
   -- `ExtVal = BinomialExtensionField<Goldilocks, 2> = 𝔽_p[X]/(X² - 7)`, stored
-  -- as its two Goldilocks coefficients `[c0, c1]` (= `c0 + c1·X`). Each coefficient
-  -- is a NON-NATIVE Goldilocks element (`[U8; 8]`, canonical LE bytes) so that the
-  -- composition-polynomial arithmetic is field-agnostic — it emulates Goldilocks
-  -- on bytes instead of using Aiur's native (outer) field. See `Goldilocks.lean`.
+  -- as its two Goldilocks coefficients `[c0, c1]` (= `c0 + c1·X`), each held as
+  -- canonical LE bytes (`[U8; 8]`) — the interface shape of `Goldilocks.lean`.
   type Ext = [[U8; 8]; 2]
 
   -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
@@ -109,7 +122,8 @@ def deserialize := ⟦
   }
 
   -- ==========================================================================
-  -- Byte-reading primitives. Every reader threads the remaining `ByteStream`.
+  -- Byte-stream primitives (vk/claims streams; digest-bound bytes that flow
+  -- through blake3 as materialized `ByteStream`s).
   -- ==========================================================================
 
   fn read_u8(stream: ByteStream) -> (U8, ByteStream) {
@@ -154,16 +168,6 @@ def deserialize := ⟦
       + 0x100000000000000 * to_field(b[7])
   }
 
-  -- `ExtVal` -> two `u64` limbs (no length prefix), each canonicalized into a
-  -- non-native Goldilocks element (`gl_reduce` maps a non-canonical wire repr,
-  -- e.g. `0` shipped as `p`, to its canonical `< p` bytes).
-  fn read_ext(stream: ByteStream) -> (Ext, ByteStream) {
-    let (a, s0) = read_u64(stream);
-    let (b, s1) = read_u64(s0);
-    ([gl_reduce(a), gl_reduce(b)], s1)
-  }
-
-
   -- Merkle digest -> `[u64; 4]`, no length prefix.
   fn read_digest(stream: ByteStream) -> (Digest, ByteStream) {
     let (a, s0) = read_u64(stream);
@@ -172,54 +176,6 @@ def deserialize := ⟦
     let (d, s3) = read_u64(s2);
     ([a, b, c, d], s3)
   }
-
-  -- ==========================================================================
-  -- Length-prefixed `Vec<T>` readers. First-order, so one pair per element
-  -- type: `read_T_vec` reads the `u64` length then loops `read_T_vec_n`.
-  -- ==========================================================================
-
-  fn read_u8_vec(stream: ByteStream) -> (List‹U8›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_u8_vec_n(s, n)
-  }
-  fn read_u8_vec_n(stream: ByteStream, n: G) -> (List‹U8›, ByteStream) {
-    match n {
-      0 => (store(ListNode.Nil), stream),
-      _ =>
-        let (x, s) = read_u8(stream);
-        let (rest, s2) = read_u8_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
-    }
-  }
-
-  fn read_u64_vec(stream: ByteStream) -> (List‹U64›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_u64_vec_n(s, n)
-  }
-  fn read_u64_vec_n(stream: ByteStream, n: G) -> (List‹U64›, ByteStream) {
-    match n {
-      0 => (store(ListNode.Nil), stream),
-      _ =>
-        let (x, s) = read_u64(stream);
-        let (rest, s2) = read_u64_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
-    }
-  }
-
-  fn read_ext_vec(stream: ByteStream) -> (List‹Ext›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_ext_vec_n(s, n)
-  }
-  fn read_ext_vec_n(stream: ByteStream, n: G) -> (List‹Ext›, ByteStream) {
-    match n {
-      0 => (store(ListNode.Nil), stream),
-      _ =>
-        let (x, s) = read_ext(stream);
-        let (rest, s2) = read_ext_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
-    }
-  }
-
   fn read_digest_vec(stream: ByteStream) -> (List‹Digest›, ByteStream) {
     let (n, s) = read_count(stream);
     read_digest_vec_n(s, n)
@@ -233,48 +189,156 @@ def deserialize := ⟦
         (store(ListNode.Cons(x, rest)), s2),
     }
   }
+  fn read_merkle_cap(stream: ByteStream) -> (MerkleCap, ByteStream) {
+    read_digest_vec(stream)
+  }
+
+  -- ==========================================================================
+  -- Indexed proof-stream primitives: read fixed-size chunks straight from the
+  -- IO arena of channel 0 at byte offset `i`, returning the advanced offset.
+  -- The cells come back as unconstrained field advice; `u8_from_field_unsafe`
+  -- reinterprets them exactly as the stream readers did (same trust model —
+  -- the proof is advice, and byte-ness is enforced downstream where needed).
+  -- ==========================================================================
+
+  fn read_u8_at(i: G) -> (U8, G) {
+    let [b] = io_read(0, i, 1);
+    (u8_from_field_unsafe(b), i + 1)
+  }
+
+  fn read_u64_at(i: G) -> (U64, G) {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = io_read(0, i, 8);
+    ([u8_from_field_unsafe(b0), u8_from_field_unsafe(b1),
+      u8_from_field_unsafe(b2), u8_from_field_unsafe(b3),
+      u8_from_field_unsafe(b4), u8_from_field_unsafe(b5),
+      u8_from_field_unsafe(b6), u8_from_field_unsafe(b7)], i + 8)
+  }
+
+  fn read_count_at(i: G) -> (G, G) {
+    let (val, j) = #read_u64_at(i);
+    (flatten_u64(val), j)
+  }
+
+  -- `ExtVal` -> two `u64` limbs (no length prefix), each canonicalized into a
+  -- Goldilocks element (`gl_reduce` maps a non-canonical wire repr, e.g. `0`
+  -- shipped as `p`, to its canonical `< p` bytes).
+  fn read_ext_at(i: G) -> (Ext, G) {
+    let (a, j0) = #read_u64_at(i);
+    let (b, j1) = #read_u64_at(j0);
+    ([gl_reduce(a), gl_reduce(b)], j1)
+  }
+
+  fn read_digest_at(i: G) -> (Digest, G) {
+    let (a, j0) = #read_u64_at(i);
+    let (b, j1) = #read_u64_at(j0);
+    let (c, j2) = #read_u64_at(j1);
+    let (d, j3) = #read_u64_at(j2);
+    ([a, b, c, d], j3)
+  }
+
+  -- ==========================================================================
+  -- Length-prefixed `Vec<T>` readers over the indexed proof stream.
+  -- First-order, so one pair per element type: `read_T_vec` reads the `u64`
+  -- length then loops `read_T_vec_n`.
+  -- ==========================================================================
+
+  fn read_u8_vec(i: G) -> (List‹U8›, G) {
+    let (n, j) = read_count_at(i);
+    read_u8_vec_n(j, n)
+  }
+  fn read_u8_vec_n(i: G, n: G) -> (List‹U8›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = #read_u8_at(i);
+        let (rest, j2) = read_u8_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_u64_vec(i: G) -> (List‹U64›, G) {
+    let (n, j) = read_count_at(i);
+    read_u64_vec_n(j, n)
+  }
+  fn read_u64_vec_n(i: G, n: G) -> (List‹U64›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = #read_u64_at(i);
+        let (rest, j2) = read_u64_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_ext_vec(i: G) -> (List‹Ext›, G) {
+    let (n, j) = read_count_at(i);
+    read_ext_vec_n(j, n)
+  }
+  fn read_ext_vec_n(i: G, n: G) -> (List‹Ext›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = read_ext_at(i);
+        let (rest, j2) = read_ext_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
+  fn read_digest_vec_at(i: G) -> (List‹Digest›, G) {
+    let (n, j) = read_count_at(i);
+    read_digest_vec_at_n(j, n)
+  }
+  fn read_digest_vec_at_n(i: G, n: G) -> (List‹Digest›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = read_digest_at(i);
+        let (rest, j2) = read_digest_vec_at_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
 
   -- `Vec<Vec<Val>>` for `BatchOpening.opened_values`.
-  fn read_u64_vec_vec(stream: ByteStream) -> (List‹List‹U64››, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_u64_vec_vec_n(s, n)
+  fn read_u64_vec_vec(i: G) -> (List‹List‹U64››, G) {
+    let (n, j) = read_count_at(i);
+    read_u64_vec_vec_n(j, n)
   }
-  fn read_u64_vec_vec_n(stream: ByteStream, n: G) -> (List‹List‹U64››, ByteStream) {
+  fn read_u64_vec_vec_n(i: G, n: G) -> (List‹List‹U64››, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_u64_vec(stream);
-        let (rest, s2) = read_u64_vec_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_u64_vec(i);
+        let (rest, j2) = read_u64_vec_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
   -- `OpenedRound = Vec<Vec<Vec<Ext>>>`, built bottom-up from `read_ext_vec`.
-  fn read_ext_vec_vec(stream: ByteStream) -> (List‹List‹Ext››, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_ext_vec_vec_n(s, n)
+  fn read_ext_vec_vec(i: G) -> (List‹List‹Ext››, G) {
+    let (n, j) = read_count_at(i);
+    read_ext_vec_vec_n(j, n)
   }
-  fn read_ext_vec_vec_n(stream: ByteStream, n: G) -> (List‹List‹Ext››, ByteStream) {
+  fn read_ext_vec_vec_n(i: G, n: G) -> (List‹List‹Ext››, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_ext_vec(stream);
-        let (rest, s2) = read_ext_vec_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_ext_vec(i);
+        let (rest, j2) = read_ext_vec_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_opened_round(stream: ByteStream) -> (OpenedRound, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_opened_round_n(s, n)
+  fn read_opened_round(i: G) -> (OpenedRound, G) {
+    let (n, j) = read_count_at(i);
+    read_opened_round_n(j, n)
   }
-  fn read_opened_round_n(stream: ByteStream, n: G) -> (OpenedRound, ByteStream) {
+  fn read_opened_round_n(i: G, n: G) -> (OpenedRound, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_ext_vec_vec(stream);
-        let (rest, s2) = read_opened_round_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_ext_vec_vec(i);
+        let (rest, j2) = read_opened_round_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
@@ -282,122 +346,124 @@ def deserialize := ⟦
   -- Struct readers (fields in declaration order, no framing).
   -- ==========================================================================
 
-  fn read_merkle_cap(stream: ByteStream) -> (MerkleCap, ByteStream) {
-    read_digest_vec(stream)
+  fn read_merkle_cap_at(i: G) -> (MerkleCap, G) {
+    read_digest_vec_at(i)
   }
-  fn read_merkle_cap_vec(stream: ByteStream) -> (List‹MerkleCap›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_merkle_cap_vec_n(s, n)
+  fn read_merkle_cap_vec(i: G) -> (List‹MerkleCap›, G) {
+    let (n, j) = read_count_at(i);
+    read_merkle_cap_vec_n(j, n)
   }
-  fn read_merkle_cap_vec_n(stream: ByteStream, n: G) -> (List‹MerkleCap›, ByteStream) {
+  fn read_merkle_cap_vec_n(i: G, n: G) -> (List‹MerkleCap›, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_merkle_cap(stream);
-        let (rest, s2) = read_merkle_cap_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_merkle_cap_at(i);
+        let (rest, j2) = read_merkle_cap_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_commitments(stream: ByteStream) -> (Commitments, ByteStream) {
-    let (stage_1_trace, s0) = read_merkle_cap(stream);
-    let (stage_2_trace, s1) = read_merkle_cap(s0);
-    let (quotient_chunks, s2) = read_merkle_cap(s1);
-    (Commitments.Mk(stage_1_trace, stage_2_trace, quotient_chunks), s2)
+  fn read_commitments(i: G) -> (Commitments, G) {
+    let (stage_1_trace, j0) = read_merkle_cap_at(i);
+    let (stage_2_trace, j1) = read_merkle_cap_at(j0);
+    let (quotient_chunks, j2) = read_merkle_cap_at(j1);
+    (Commitments.Mk(stage_1_trace, stage_2_trace, quotient_chunks), j2)
   }
 
-  fn read_batch_opening(stream: ByteStream) -> (BatchOpening, ByteStream) {
-    let (opened_values, s0) = read_u64_vec_vec(stream);
-    let (opening_proof, s1) = read_digest_vec(s0);
-    (BatchOpening.Mk(opened_values, opening_proof), s1)
+  fn read_batch_opening(i: G) -> (BatchOpening, G) {
+    let (opened_values, j0) = read_u64_vec_vec(i);
+    let (opening_proof, j1) = read_digest_vec_at(j0);
+    (BatchOpening.Mk(opened_values, opening_proof), j1)
   }
-  fn read_batch_opening_vec(stream: ByteStream) -> (List‹BatchOpening›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_batch_opening_vec_n(s, n)
+  fn read_batch_opening_vec(i: G) -> (List‹BatchOpening›, G) {
+    let (n, j) = read_count_at(i);
+    read_batch_opening_vec_n(j, n)
   }
-  fn read_batch_opening_vec_n(stream: ByteStream, n: G) -> (List‹BatchOpening›, ByteStream) {
+  fn read_batch_opening_vec_n(i: G, n: G) -> (List‹BatchOpening›, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_batch_opening(stream);
-        let (rest, s2) = read_batch_opening_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_batch_opening(i);
+        let (rest, j2) = read_batch_opening_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_commit_phase_step(stream: ByteStream) -> (CommitPhaseProofStep, ByteStream) {
-    let (log_arity, s0) = read_u8(stream);
-    let (sibling_values, s1) = read_ext_vec(s0);
-    let (opening_proof, s2) = read_digest_vec(s1);
-    (CommitPhaseProofStep.Mk(log_arity, sibling_values, opening_proof), s2)
+  fn read_commit_phase_step(i: G) -> (CommitPhaseProofStep, G) {
+    let (log_arity, j0) = #read_u8_at(i);
+    let (sibling_values, j1) = read_ext_vec(j0);
+    let (opening_proof, j2) = read_digest_vec_at(j1);
+    (CommitPhaseProofStep.Mk(log_arity, sibling_values, opening_proof), j2)
   }
-  fn read_commit_phase_step_vec(stream: ByteStream) -> (List‹CommitPhaseProofStep›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_commit_phase_step_vec_n(s, n)
+  fn read_commit_phase_step_vec(i: G) -> (List‹CommitPhaseProofStep›, G) {
+    let (n, j) = read_count_at(i);
+    read_commit_phase_step_vec_n(j, n)
   }
-  fn read_commit_phase_step_vec_n(stream: ByteStream, n: G) -> (List‹CommitPhaseProofStep›, ByteStream) {
+  fn read_commit_phase_step_vec_n(i: G, n: G) -> (List‹CommitPhaseProofStep›, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_commit_phase_step(stream);
-        let (rest, s2) = read_commit_phase_step_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_commit_phase_step(i);
+        let (rest, j2) = read_commit_phase_step_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_query_proof(stream: ByteStream) -> (QueryProof, ByteStream) {
-    let (input_proof, s0) = read_batch_opening_vec(stream);
-    let (commit_phase_openings, s1) = read_commit_phase_step_vec(s0);
-    (QueryProof.Mk(input_proof, commit_phase_openings), s1)
+  fn read_query_proof(i: G) -> (QueryProof, G) {
+    let (input_proof, j0) = read_batch_opening_vec(i);
+    let (commit_phase_openings, j1) = read_commit_phase_step_vec(j0);
+    (QueryProof.Mk(input_proof, commit_phase_openings), j1)
   }
-  fn read_query_proof_vec(stream: ByteStream) -> (List‹QueryProof›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_query_proof_vec_n(s, n)
+  fn read_query_proof_vec(i: G) -> (List‹QueryProof›, G) {
+    let (n, j) = read_count_at(i);
+    read_query_proof_vec_n(j, n)
   }
-  fn read_query_proof_vec_n(stream: ByteStream, n: G) -> (List‹QueryProof›, ByteStream) {
+  fn read_query_proof_vec_n(i: G, n: G) -> (List‹QueryProof›, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_query_proof(stream);
-        let (rest, s2) = read_query_proof_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_query_proof(i);
+        let (rest, j2) = read_query_proof_vec_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_fri_proof(stream: ByteStream) -> (FriProof, ByteStream) {
-    let (commit_phase_commits, s0) = read_merkle_cap_vec(stream);
-    let (commit_pow_witnesses, s1) = read_u64_vec(s0);
-    let (query_proofs, s2) = read_query_proof_vec(s1);
-    let (final_poly, s3) = read_ext_vec(s2);
-    let (query_pow_witness, s4) = read_u64(s3);
+  fn read_fri_proof(i: G) -> (FriProof, G) {
+    let (commit_phase_commits, j0) = read_merkle_cap_vec(i);
+    let (commit_pow_witnesses, j1) = read_u64_vec(j0);
+    let (query_proofs, j2) = read_query_proof_vec(j1);
+    let (final_poly, j3) = read_ext_vec(j2);
+    let (query_pow_witness, j4) = #read_u64_at(j3);
     (FriProof.Mk(commit_phase_commits, commit_pow_witnesses, query_proofs,
-                 final_poly, query_pow_witness), s4)
+                 final_poly, query_pow_witness), j4)
   }
 
   -- `Option<OpenedRound>`: 1 tag byte, then the value when `Some`.
-  fn read_preprocessed(stream: ByteStream) -> (PreprocessedOpt, ByteStream) {
-    let (tag, s) = read_u8(stream);
+  fn read_preprocessed(i: G) -> (PreprocessedOpt, G) {
+    let (tag, j) = #read_u8_at(i);
     match tag {
-      0 => (PreprocessedOpt.NoPreprocessed, s),
+      0 => (PreprocessedOpt.NoPreprocessed, j),
       _ =>
-        let (r, s2) = read_opened_round(s);
-        (PreprocessedOpt.SomePreprocessed(r), s2),
+        let (r, j2) = read_opened_round(j);
+        (PreprocessedOpt.SomePreprocessed(r), j2),
     }
   }
 
-  -- Full `Proof` in declaration order (see `manual_codec.rs::Reader::proof`).
-  fn read_proof(stream: ByteStream) -> (Proof, ByteStream) {
-    let (commitments, s0) = read_commitments(stream);
-    let (intermediate_accumulators, s1) = read_ext_vec(s0);
-    let (log_degrees, s2) = read_u8_vec(s1);
-    let (opening_proof, s3) = read_fri_proof(s2);
-    let (quotient_opened_values, s4) = read_opened_round(s3);
-    let (preprocessed_opened_values, s5) = read_preprocessed(s4);
-    let (stage_1_opened_values, s6) = read_opened_round(s5);
-    let (stage_2_opened_values, s7) = read_opened_round(s6);
+  -- Full `Proof` in declaration order (see `manual_codec.rs::Reader::proof`),
+  -- read from the channel-0 IO arena starting at byte offset `i`. Returns the
+  -- end offset; the entrypoint asserts it equals `idx + len` (fully consumed).
+  fn read_proof(i: G) -> (Proof, G) {
+    let (commitments, j0) = read_commitments(i);
+    let (intermediate_accumulators, j1) = read_ext_vec(j0);
+    let (log_degrees, j2) = read_u8_vec(j1);
+    let (opening_proof, j3) = read_fri_proof(j2);
+    let (quotient_opened_values, j4) = read_opened_round(j3);
+    let (preprocessed_opened_values, j5) = read_preprocessed(j4);
+    let (stage_1_opened_values, j6) = read_opened_round(j5);
+    let (stage_2_opened_values, j7) = read_opened_round(j6);
     (Proof.Mk(commitments, intermediate_accumulators, log_degrees, opening_proof,
               quotient_opened_values, preprocessed_opened_values,
-              stage_1_opened_values, stage_2_opened_values), s7)
+              stage_1_opened_values, stage_2_opened_values), j7)
   }
 ⟧
 
