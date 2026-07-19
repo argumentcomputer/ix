@@ -161,6 +161,95 @@ def pcs := ⟦
     }
   }
 
+  -- ==========================================================================
+  -- blake3 straight from an IO channel arena: 64-byte `io_read` blocks fed
+  -- directly to `blake3_compress` — no byte list is materialized, walked,
+  -- accumulated, or re-loaded. Same flag schedule as the byte driver; the
+  -- (cold, once-per-hash) ≤63-byte tail reuses `pad_block`/`bytes_to_block`.
+  -- Used for digest-binding large advice streams (the verifying key).
+  -- ==========================================================================
+
+  -- Reverse-ordered tail accumulator (head = last byte), the shape
+  -- `pad_block`/`bytes_to_block` expect. Reads one byte per step (io_read's
+  -- length is static); at most 63 steps, once per hash.
+  fn b3_io_tail_acc(ch: G, i: G, n: G, acc: ByteStream) -> ByteStream {
+    match n {
+      0 => acc,
+      _ =>
+        let [b] = io_read(ch, i, 1);
+        b3_io_tail_acc(ch, i + 1, n - 1,
+          store(ListNode.Cons(u8_from_field_unsafe(b), acc))),
+    }
+  }
+
+  fn b3_io_chunks(ch: G, i: G, remaining: G, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+    match u32_less_than(remaining, 64) {
+      0 =>
+        -- A full 64-byte block is available.
+        let [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
+             b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31,
+             b32, b33, b34, b35, b36, b37, b38, b39, b40, b41, b42, b43, b44, b45, b46, b47,
+             b48, b49, b50, b51, b52, b53, b54, b55, b56, b57, b58, b59, b60, b61, b62, b63] =
+          io_read(ch, i, 64);
+        let block = [
+          [u8_from_field_unsafe(b0), u8_from_field_unsafe(b1), u8_from_field_unsafe(b2), u8_from_field_unsafe(b3)],
+          [u8_from_field_unsafe(b4), u8_from_field_unsafe(b5), u8_from_field_unsafe(b6), u8_from_field_unsafe(b7)],
+          [u8_from_field_unsafe(b8), u8_from_field_unsafe(b9), u8_from_field_unsafe(b10), u8_from_field_unsafe(b11)],
+          [u8_from_field_unsafe(b12), u8_from_field_unsafe(b13), u8_from_field_unsafe(b14), u8_from_field_unsafe(b15)],
+          [u8_from_field_unsafe(b16), u8_from_field_unsafe(b17), u8_from_field_unsafe(b18), u8_from_field_unsafe(b19)],
+          [u8_from_field_unsafe(b20), u8_from_field_unsafe(b21), u8_from_field_unsafe(b22), u8_from_field_unsafe(b23)],
+          [u8_from_field_unsafe(b24), u8_from_field_unsafe(b25), u8_from_field_unsafe(b26), u8_from_field_unsafe(b27)],
+          [u8_from_field_unsafe(b28), u8_from_field_unsafe(b29), u8_from_field_unsafe(b30), u8_from_field_unsafe(b31)],
+          [u8_from_field_unsafe(b32), u8_from_field_unsafe(b33), u8_from_field_unsafe(b34), u8_from_field_unsafe(b35)],
+          [u8_from_field_unsafe(b36), u8_from_field_unsafe(b37), u8_from_field_unsafe(b38), u8_from_field_unsafe(b39)],
+          [u8_from_field_unsafe(b40), u8_from_field_unsafe(b41), u8_from_field_unsafe(b42), u8_from_field_unsafe(b43)],
+          [u8_from_field_unsafe(b44), u8_from_field_unsafe(b45), u8_from_field_unsafe(b46), u8_from_field_unsafe(b47)],
+          [u8_from_field_unsafe(b48), u8_from_field_unsafe(b49), u8_from_field_unsafe(b50), u8_from_field_unsafe(b51)],
+          [u8_from_field_unsafe(b52), u8_from_field_unsafe(b53), u8_from_field_unsafe(b54), u8_from_field_unsafe(b55)],
+          [u8_from_field_unsafe(b56), u8_from_field_unsafe(b57), u8_from_field_unsafe(b58), u8_from_field_unsafe(b59)],
+          [u8_from_field_unsafe(b60), u8_from_field_unsafe(b61), u8_from_field_unsafe(b62), u8_from_field_unsafe(b63)]];
+        let is_last = eq_zero(remaining - 64);
+        let at15 = eq_zero(block_no - 15);
+        let start_flag = eq_zero(block_no);
+        let end_flag = is_last + at15 - (is_last * at15);
+        let root_flag = is_last * u64_is_zero(load(chunk_count));
+        let flags = start_flag + 2 * end_flag + 8 * root_flag;
+        let digest = blake3_compress(load(cv), block, load(chunk_count), 64, flags);
+        match (is_last, at15) {
+          (1, _) => store(Layer.Push(layer, digest)),
+          (_, 1) =>
+            let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+            b3_io_chunks(ch, i + 64, remaining - 64, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+          (_, _) => b3_io_chunks(ch, i + 64, remaining - 64, block_no + 1, chunk_count, store(digest), layer),
+        },
+      _ =>
+        -- Partial tail (< 64 bytes): always the input's last block.
+        match remaining {
+          0 =>
+            -- Empty input from the very start. Mirror of `blake3_finish`'s
+            -- (0, 0) arm (any other path compresses before exhausting).
+            match load(chunk_count) {
+              [0, 0, 0, 0, 0, 0, 0, 0] =>
+                store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+              _ => layer,
+            },
+          _ =>
+            let block = bytes_to_block(pad_block(
+              b3_io_tail_acc(ch, i, remaining, store(ListNode.Nil)), 64 - remaining));
+            let start_flag = eq_zero(block_no);
+            let flags = start_flag + 2 + 8 * u64_is_zero(load(chunk_count));
+            store(Layer.Push(layer, blake3_compress(load(cv), block, load(chunk_count), remaining, flags))),
+        },
+    }
+  }
+
+  -- blake3 of `len` bytes at offset `idx` on IO channel `ch` (identical
+  -- output to `blake3` over those bytes — pinned by `io_hash_test`).
+  fn b3_io(ch: G, idx: G, len: G) -> [[U8; 4]; 8] {
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(load(b3_io_chunks(ch, idx, len, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+  }
+
   -- blake3 of a lane list (identical output to `blake3` over the lanes' LE
   -- bytes — pinned by the `lane_hash_test` differential self-test).
   fn b3_lanes(lanes: List‹U64›) -> [[U8; 4]; 8] {

@@ -314,6 +314,52 @@ def tests := ⟦
       * lane_hash_check(128) * lane_hash_check(129) * lane_hash_check(255)
       * lane_hash_check(500)
   }
+
+  -- Differential test for the IO-slice hasher: `b3_io` over the bytes the
+  -- test writes to a channel arena must agree with byte-granular `blake3`
+  -- over the same bytes, at the same structural boundaries as the lane test
+  -- (empty, partial/exact/over block, partial/exact/over chunk, multi-chunk
+  -- with layer fold). Uses `io_write` to populate channel 9 (unused by any
+  -- production stream), with each length's bytes at a distinct offset.
+  fn io_test_fill(n: G, off: G, b: G) -> G {
+    match n {
+      0 => off,
+      _ =>
+        -- `b` cycles 255 → 0 → 255 → …, so any length gets varied,
+        -- always-in-range bytes.
+        io_write(9, [b]);
+        let z = eq_zero(b);
+        io_test_fill(n - 1, off + 1, ((b - 1) * (1 - z)) + (255 * z)),
+    }
+  }
+  fn io_test_bytes(n: G, off: G) -> ByteStream {
+    match n {
+      0 => store(ListNode.Nil),
+      _ =>
+        let [b] = io_read(9, off, 1);
+        store(ListNode.Cons(u8_from_field_unsafe(b), io_test_bytes(n - 1, off + 1))),
+    }
+  }
+  fn io_hash_check(n: G, off: G) -> (G, G) {
+    let stop = io_test_fill(n, off, 173);
+    let a = b3_io(9, off, n);
+    let b = blake3(io_test_bytes(n, off));
+    (digest_eq(b3_to_digest(a), b3_to_digest(b)), stop)
+  }
+  pub fn io_hash_test() -> G {
+    let (r0, o0) = io_hash_check(0, 0);
+    let (r1, o1) = io_hash_check(1, o0);
+    let (r2, o2) = io_hash_check(7, o1);
+    let (r3, o3) = io_hash_check(8, o2);
+    let (r4, o4) = io_hash_check(63, o3);
+    let (r5, o5) = io_hash_check(64, o4);
+    let (r6, o6) = io_hash_check(65, o5);
+    let (r7, o7) = io_hash_check(1023, o6);
+    let (r8, o8) = io_hash_check(1024, o7);
+    let (r9, o9) = io_hash_check(1025, o8);
+    let (r10, _o10) = io_hash_check(2500, o9);
+    r0 * r1 * r2 * r3 * r4 * r5 * r6 * r7 * r8 * r9 * r10
+  }
 ⟧
 
 end MultiStark

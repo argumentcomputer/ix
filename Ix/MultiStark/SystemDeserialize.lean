@@ -20,8 +20,10 @@ channel. Same bincode wire format the Rust side validated against serde:
 * `MerkleCap`    : `Vec<[u64; 4]>`
 * Goldilocks `G` : raw `u64`, 8 bytes LE (reduced mod p on read)
 
-Reuses the proof deserializer's byte primitives (`read_u8`, `read_u64`,
-`read_count`, `read_merkle_cap`, `limb_to_field`, `Digest`, `MerkleCap`).
+The vk stream (IO channel 1) is read by byte offset with fixed-size
+`io_read` chunks (no materialized byte list; digest binding hashes the
+arena directly via `b3_io`). Shares the wire-level types (`Digest`,
+`MerkleCap`) and `limb_to_field`/`flatten_u64` with the proof deserializer.
 -/
 
 public section
@@ -94,145 +96,185 @@ def systemDeserialize := ⟦
   enum Sys { Mk(SysParams, List‹U64›, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
 
   -- ==========================================================================
-  -- Byte primitives specific to the VK format.
+  -- Indexed byte primitives over the vk stream (IO channel 1). The vk is
+  -- digest-bound via `b3_io` straight from the arena, so no byte list is ever
+  -- materialized for it; the readers thread a byte offset and pull fixed-size
+  -- chunks. The leaf fetches are unconstrained — the same trust boundary as
+  -- the proof readers: the digest binding is what makes the bytes meaningful,
+  -- and it reads the arena directly.
   -- ==========================================================================
 
-  -- A `u32` enum tag: 4 little-endian bytes folded into a field element.
-  fn read_u32(stream: ByteStream) -> (G, ByteStream) {
-    let (b0, s0) = read_u8(stream);
-    let (b1, s1) = read_u8(s0);
-    let (b2, s2) = read_u8(s1);
-    let (b3, s3) = read_u8(s2);
-    (to_field(b0) + 0x100 * to_field(b1) + 0x10000 * to_field(b2)
-       + 0x1000000 * to_field(b3), s3)
+  fn read_vk_u8(i: G) -> (U8, G) {
+    let [b] = io_read(1, i, 1);
+    (u8_from_field_unsafe(b), i + 1)
   }
 
-  -- A raw `u64` Goldilocks constant, canonicalized into non-native Goldilocks
-  -- bytes (`gl_reduce`) so it can feed the byte-emulated composition arithmetic.
-  fn read_field(stream: ByteStream) -> ([U8; 8], ByteStream) {
-    let (u, s) = read_u64(stream);
-    (gl_reduce(u), s)
+  fn read_vk_u64(i: G) -> (U64, G) {
+    let [b0, b1, b2, b3, b4, b5, b6, b7] = io_read(1, i, 8);
+    ([u8_from_field_unsafe(b0), u8_from_field_unsafe(b1),
+      u8_from_field_unsafe(b2), u8_from_field_unsafe(b3),
+      u8_from_field_unsafe(b4), u8_from_field_unsafe(b5),
+      u8_from_field_unsafe(b6), u8_from_field_unsafe(b7)], i + 8)
+  }
+
+  fn read_vk_count(i: G) -> (G, G) {
+    let (val, j) = #read_vk_u64(i);
+    (flatten_u64(val), j)
+  }
+
+  -- A `u32` enum tag: 4 little-endian bytes folded into a field element.
+  fn read_u32(i: G) -> (G, G) {
+    let [b0, b1, b2, b3] = io_read(1, i, 4);
+    (b0 + 0x100 * b1 + 0x10000 * b2 + 0x1000000 * b3, i + 4)
+  }
+
+  -- A raw `u64` Goldilocks constant, canonicalized into Goldilocks bytes
+  -- (`gl_reduce`) so it can feed the composition arithmetic.
+  fn read_field(i: G) -> ([U8; 8], G) {
+    let (u, j) = #read_vk_u64(i);
+    (gl_reduce(u), j)
+  }
+
+  fn read_vk_digest(i: G) -> (Digest, G) {
+    let (a, j0) = #read_vk_u64(i);
+    let (b, j1) = #read_vk_u64(j0);
+    let (c, j2) = #read_vk_u64(j1);
+    let (d, j3) = #read_vk_u64(j2);
+    ([a, b, c, d], j3)
+  }
+  fn read_vk_cap(i: G) -> (MerkleCap, G) {
+    let (n, j) = read_vk_count(i);
+    read_vk_cap_n(j, n)
+  }
+  fn read_vk_cap_n(i: G, n: G) -> (MerkleCap, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = read_vk_digest(i);
+        let (rest, j2) = read_vk_cap_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
   }
 
   -- ==========================================================================
   -- Recursive readers (mirror `vk_codec` reader-by-reader).
   -- ==========================================================================
 
-  fn read_sys_entry(stream: ByteStream) -> (SysEntry, ByteStream) {
-    let (tag, s) = read_u32(stream);
+  fn read_sys_entry(i: G) -> (SysEntry, G) {
+    let (tag, j) = #read_u32(i);
     match tag {
-      0 => let (o, s1) = read_count(s); (SysEntry.Preprocessed(o), s1),
-      1 => let (o, s1) = read_count(s); (SysEntry.Main(o), s1),
-      2 => let (o, s1) = read_count(s); (SysEntry.Stage2(o), s1),
-      3 => (SysEntry.Public, s),
-      4 => (SysEntry.Stage2Public, s),
-      _ => (SysEntry.Challenge, s),
+      0 => let (o, j1) = read_vk_count(j); (SysEntry.Preprocessed(o), j1),
+      1 => let (o, j1) = read_vk_count(j); (SysEntry.Main(o), j1),
+      2 => let (o, j1) = read_vk_count(j); (SysEntry.Stage2(o), j1),
+      3 => (SysEntry.Public, j),
+      4 => (SysEntry.Stage2Public, j),
+      _ => (SysEntry.Challenge, j),
     }
   }
 
-  fn read_sym_expr(stream: ByteStream) -> (SymExpr, ByteStream) {
-    let (tag, s) = read_u32(stream);
+  fn read_sym_expr(i: G) -> (SymExpr, G) {
+    let (tag, j) = #read_u32(i);
     match tag {
       0 =>
-        let (e, s1) = read_sys_entry(s);
-        let (i, s2) = read_count(s1);
-        (SymExpr.Var(e, i), s2),
-      1 => (SymExpr.IsFirstRow, s),
-      2 => (SymExpr.IsLastRow, s),
-      3 => (SymExpr.IsTransition, s),
-      4 => let (c, s1) = read_field(s); (SymExpr.Const(c), s1),
+        let (e, j1) = read_sys_entry(j);
+        let (x, j2) = read_vk_count(j1);
+        (SymExpr.Var(e, x), j2),
+      1 => (SymExpr.IsFirstRow, j),
+      2 => (SymExpr.IsLastRow, j),
+      3 => (SymExpr.IsTransition, j),
+      4 => let (c, j1) = #read_field(j); (SymExpr.Const(c), j1),
       5 =>
-        let (x, s1) = read_sym_expr(s);
-        let (y, s2) = read_sym_expr(s1);
-        let (d, s3) = read_count(s2);
-        (SymExpr.Add(store(x), store(y), d), s3),
+        let (x, j1) = read_sym_expr(j);
+        let (y, j2) = read_sym_expr(j1);
+        let (d, j3) = read_vk_count(j2);
+        (SymExpr.Add(store(x), store(y), d), j3),
       6 =>
-        let (x, s1) = read_sym_expr(s);
-        let (y, s2) = read_sym_expr(s1);
-        let (d, s3) = read_count(s2);
-        (SymExpr.Sub(store(x), store(y), d), s3),
+        let (x, j1) = read_sym_expr(j);
+        let (y, j2) = read_sym_expr(j1);
+        let (d, j3) = read_vk_count(j2);
+        (SymExpr.Sub(store(x), store(y), d), j3),
       7 =>
-        let (x, s1) = read_sym_expr(s);
-        let (d, s2) = read_count(s1);
-        (SymExpr.Neg(store(x), d), s2),
+        let (x, j1) = read_sym_expr(j);
+        let (d, j2) = read_vk_count(j1);
+        (SymExpr.Neg(store(x), d), j2),
       _ =>
-        let (x, s1) = read_sym_expr(s);
-        let (y, s2) = read_sym_expr(s1);
-        let (d, s3) = read_count(s2);
-        (SymExpr.Mul(store(x), store(y), d), s3),
+        let (x, j1) = read_sym_expr(j);
+        let (y, j2) = read_sym_expr(j1);
+        let (d, j3) = read_vk_count(j2);
+        (SymExpr.Mul(store(x), store(y), d), j3),
     }
   }
 
-  fn read_sym_exprs(stream: ByteStream) -> (List‹SymExpr›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_sym_exprs_n(s, n)
+  fn read_sym_exprs(i: G) -> (List‹SymExpr›, G) {
+    let (n, j) = read_vk_count(i);
+    read_sym_exprs_n(j, n)
   }
-  fn read_sym_exprs_n(stream: ByteStream, n: G) -> (List‹SymExpr›, ByteStream) {
+  fn read_sym_exprs_n(i: G, n: G) -> (List‹SymExpr›, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_sym_expr(stream);
-        let (rest, s2) = read_sym_exprs_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_sym_expr(i);
+        let (rest, j2) = read_sym_exprs_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_sys_lookup(stream: ByteStream) -> (SysLookup, ByteStream) {
-    let (m, s) = read_sym_expr(stream);
-    let (args, s2) = read_sym_exprs(s);
-    (SysLookup.Mk(m, args), s2)
+  fn read_sys_lookup(i: G) -> (SysLookup, G) {
+    let (m, j) = read_sym_expr(i);
+    let (args, j2) = read_sym_exprs(j);
+    (SysLookup.Mk(m, args), j2)
   }
-  fn read_sys_lookups(stream: ByteStream) -> (List‹SysLookup›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_sys_lookups_n(s, n)
+  fn read_sys_lookups(i: G) -> (List‹SysLookup›, G) {
+    let (n, j) = read_vk_count(i);
+    read_sys_lookups_n(j, n)
   }
-  fn read_sys_lookups_n(stream: ByteStream, n: G) -> (List‹SysLookup›, ByteStream) {
+  fn read_sys_lookups_n(i: G, n: G) -> (List‹SysLookup›, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_sys_lookup(stream);
-        let (rest, s2) = read_sys_lookups_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_sys_lookup(i);
+        let (rest, j2) = read_sys_lookups_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_sys_constraints(stream: ByteStream) -> (SysConstraints, ByteStream) {
-    let (zeros, s) = read_sym_exprs(stream);
-    let (sel_start, s1) = read_count(s);
-    let (sel_end, s2) = read_count(s1);
-    let (width, s3) = read_count(s2);
-    (SysConstraints.Mk(zeros, sel_start, sel_end, width), s3)
+  fn read_sys_constraints(i: G) -> (SysConstraints, G) {
+    let (zeros, j) = read_sym_exprs(i);
+    let (sel_start, j1) = read_vk_count(j);
+    let (sel_end, j2) = read_vk_count(j1);
+    let (width, j3) = read_vk_count(j2);
+    (SysConstraints.Mk(zeros, sel_start, sel_end, width), j3)
   }
 
-  fn read_sys_air(stream: ByteStream) -> (SysAir, ByteStream) {
-    let (tag, s) = read_u32(stream);
+  fn read_sys_air(i: G) -> (SysAir, G) {
+    let (tag, j) = #read_u32(i);
     match tag {
-      0 => let (c, s1) = read_sys_constraints(s); (SysAir.Function(c), s1),
-      1 => let (w, s1) = read_count(s); (SysAir.Memory(SysMemory.Mk(w)), s1),
-      2 => (SysAir.Bytes1, s),
-      _ => (SysAir.Bytes2, s),
+      0 => let (c, j1) = read_sys_constraints(j); (SysAir.Function(c), j1),
+      1 => let (w, j1) = read_vk_count(j); (SysAir.Memory(SysMemory.Mk(w)), j1),
+      2 => (SysAir.Bytes1, j),
+      _ => (SysAir.Bytes2, j),
     }
   }
 
-  fn read_sys_lookupair(stream: ByteStream) -> (SysLookupAir, ByteStream) {
-    let (inner, s) = read_sys_air(stream);
-    let (lookups, s1) = read_sys_lookups(s);
-    (SysLookupAir.Mk(inner, lookups), s1)
+  fn read_sys_lookupair(i: G) -> (SysLookupAir, G) {
+    let (inner, j) = read_sys_air(i);
+    let (lookups, j1) = read_sys_lookups(j);
+    (SysLookupAir.Mk(inner, lookups), j1)
   }
 
   -- Besides the parsed circuit, also returns its 6 metadata words as raw u64
   -- limbs — `observe_shape` feeds exactly these bytes into the challenger.
-  fn read_sys_circuit(stream: ByteStream) -> (SysCircuit, [U64; 6], ByteStream) {
-    let (air, s) = read_sys_lookupair(stream);
-    let (cc, s1) = read_u64(s);
-    let (md, s2) = read_u64(s1);
-    let (ph, s3) = read_u64(s2);
-    let (pw, s4) = read_u64(s3);
-    let (w1, s5) = read_u64(s4);
-    let (w2, s6) = read_u64(s5);
+  fn read_sys_circuit(i: G) -> (SysCircuit, [U64; 6], G) {
+    let (air, j) = read_sys_lookupair(i);
+    let (cc, j1) = #read_vk_u64(j);
+    let (md, j2) = #read_vk_u64(j1);
+    let (ph, j3) = #read_vk_u64(j2);
+    let (pw, j4) = #read_vk_u64(j3);
+    let (w1, j5) = #read_vk_u64(j4);
+    let (w2, j6) = #read_vk_u64(j5);
     (SysCircuit.Mk(air, flatten_u64(cc), flatten_u64(md), flatten_u64(ph),
                    flatten_u64(pw), flatten_u64(w1), flatten_u64(w2)),
-     [cc, md, ph, pw, w1, w2], s6)
+     [cc, md, ph, pw, w1, w2], j6)
   }
   fn cons_shape6(l: [U64; 6], tail: List‹U64›) -> List‹U64› {
     store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],
@@ -241,76 +283,78 @@ def systemDeserialize := ⟦
   }
   -- Returns the circuits plus their shape limbs (`observe_shape` order: the
   -- raw circuit-count word, then each circuit's 6 metadata words).
-  fn read_sys_circuits(stream: ByteStream) -> (List‹SysCircuit›, List‹U64›, ByteStream) {
-    let (nl, s) = read_u64(stream);
-    let (cs, limbs, s1) = read_sys_circuits_n(s, flatten_u64(nl));
-    (cs, store(ListNode.Cons(nl, limbs)), s1)
+  fn read_sys_circuits(i: G) -> (List‹SysCircuit›, List‹U64›, G) {
+    let (nl, j) = #read_vk_u64(i);
+    let (cs, limbs, j1) = read_sys_circuits_n(j, flatten_u64(nl));
+    (cs, store(ListNode.Cons(nl, limbs)), j1)
   }
-  fn read_sys_circuits_n(stream: ByteStream, n: G) -> (List‹SysCircuit›, List‹U64›, ByteStream) {
+  fn read_sys_circuits_n(i: G, n: G) -> (List‹SysCircuit›, List‹U64›, G) {
     match n {
-      0 => (store(ListNode.Nil), store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), store(ListNode.Nil), i),
       _ =>
-        let (x, xl, s) = read_sys_circuit(stream);
-        let (rest, lrest, s2) = read_sys_circuits_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), cons_shape6(xl, lrest), s2),
+        let (x, xl, j) = read_sys_circuit(i);
+        let (rest, lrest, j2) = read_sys_circuits_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), cons_shape6(xl, lrest), j2),
     }
   }
 
   -- `Option` tag is a single byte (bincode special-cases Option).
-  fn read_opt_commit(stream: ByteStream) -> (OptCommit, ByteStream) {
-    let (tag, s) = read_u8(stream);
+  fn read_opt_commit(i: G) -> (OptCommit, G) {
+    let (tag, j) = #read_vk_u8(i);
     match tag {
-      0 => (OptCommit.NoCommit, s),
-      _ => let (c, s1) = read_merkle_cap(s); (OptCommit.SomeCommit(c), s1),
+      0 => (OptCommit.NoCommit, j),
+      _ => let (c, j1) = read_vk_cap(j); (OptCommit.SomeCommit(c), j1),
     }
   }
-  fn read_opt_idx(stream: ByteStream) -> (OptIdx, ByteStream) {
-    let (tag, s) = read_u8(stream);
+  fn read_opt_idx(i: G) -> (OptIdx, G) {
+    let (tag, j) = #read_vk_u8(i);
     match tag {
-      0 => (OptIdx.NoIdx, s),
-      _ => let (i, s1) = read_count(s); (OptIdx.SomeIdx(i), s1),
+      0 => (OptIdx.NoIdx, j),
+      _ => let (x, j1) = read_vk_count(j); (OptIdx.SomeIdx(x), j1),
     }
   }
-  fn read_opt_idx_list(stream: ByteStream) -> (List‹OptIdx›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_opt_idx_list_n(s, n)
+  fn read_opt_idx_list(i: G) -> (List‹OptIdx›, G) {
+    let (n, j) = read_vk_count(i);
+    read_opt_idx_list_n(j, n)
   }
-  fn read_opt_idx_list_n(stream: ByteStream, n: G) -> (List‹OptIdx›, ByteStream) {
+  fn read_opt_idx_list_n(i: G, n: G) -> (List‹OptIdx›, G) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, s) = read_opt_idx(stream);
-        let (rest, s2) = read_opt_idx_list_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, j) = read_opt_idx(i);
+        let (rest, j2) = read_opt_idx_list_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
   -- The 7 protocol parameters, both as field counts (for the verifier logic)
   -- and as raw u64 limbs (their LE bytes seed the challenger).
-  fn read_sys_params(stream: ByteStream) -> (SysParams, List‹U64›, ByteStream) {
-    let (l0, s0) = read_u64(stream);
-    let (l1, s1) = read_u64(s0);
-    let (l2, s2) = read_u64(s1);
-    let (l3, s3) = read_u64(s2);
-    let (l4, s4) = read_u64(s3);
-    let (l5, s5) = read_u64(s4);
-    let (l6, s6) = read_u64(s5);
+  fn read_sys_params(i: G) -> (SysParams, List‹U64›, G) {
+    let (l0, j0) = #read_vk_u64(i);
+    let (l1, j1) = #read_vk_u64(j0);
+    let (l2, j2) = #read_vk_u64(j1);
+    let (l3, j3) = #read_vk_u64(j2);
+    let (l4, j4) = #read_vk_u64(j3);
+    let (l5, j5) = #read_vk_u64(j4);
+    let (l6, j6) = #read_vk_u64(j5);
     (SysParams.Mk(flatten_u64(l0), flatten_u64(l1), flatten_u64(l2),
                   flatten_u64(l3), flatten_u64(l4), flatten_u64(l5),
                   flatten_u64(l6)),
      store(ListNode.Cons(l0, store(ListNode.Cons(l1, store(ListNode.Cons(l2,
      store(ListNode.Cons(l3, store(ListNode.Cons(l4, store(ListNode.Cons(l5,
      store(ListNode.Cons(l6, store(ListNode.Nil))))))))))))))),
-     s6)
+     j6)
   }
 
-  -- Full `System<AiurCircuit>`.
-  fn read_system(stream: ByteStream) -> (Sys, ByteStream) {
-    let (params, plimbs, s) = read_sys_params(stream);
-    let (circuits, climbs, s1) = read_sys_circuits(s);
-    let (commit, s2) = read_opt_commit(s1);
-    let (indices, s3) = read_opt_idx_list(s2);
-    (Sys.Mk(params, list_concat(plimbs, climbs), circuits, commit, indices), s3)
+  -- Full `System<AiurCircuit>`, read from the channel-1 IO arena starting at
+  -- byte offset `i`. Returns the end offset; the entrypoint asserts full
+  -- consumption.
+  fn read_system(i: G) -> (Sys, G) {
+    let (params, plimbs, j) = read_sys_params(i);
+    let (circuits, climbs, j1) = read_sys_circuits(j);
+    let (commit, j2) = read_opt_commit(j1);
+    let (indices, j3) = read_opt_idx_list(j2);
+    (Sys.Mk(params, list_concat(plimbs, climbs), circuits, commit, indices), j3)
   }
 ⟧
 

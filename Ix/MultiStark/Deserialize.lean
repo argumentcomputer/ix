@@ -168,31 +168,6 @@ def deserialize := ⟦
       + 0x100000000000000 * to_field(b[7])
   }
 
-  -- Merkle digest -> `[u64; 4]`, no length prefix.
-  fn read_digest(stream: ByteStream) -> (Digest, ByteStream) {
-    let (a, s0) = read_u64(stream);
-    let (b, s1) = read_u64(s0);
-    let (c, s2) = read_u64(s1);
-    let (d, s3) = read_u64(s2);
-    ([a, b, c, d], s3)
-  }
-  fn read_digest_vec(stream: ByteStream) -> (List‹Digest›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_digest_vec_n(s, n)
-  }
-  fn read_digest_vec_n(stream: ByteStream, n: G) -> (List‹Digest›, ByteStream) {
-    match n {
-      0 => (store(ListNode.Nil), stream),
-      _ =>
-        let (x, s) = read_digest(stream);
-        let (rest, s2) = read_digest_vec_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
-    }
-  }
-  fn read_merkle_cap(stream: ByteStream) -> (MerkleCap, ByteStream) {
-    read_digest_vec(stream)
-  }
-
   -- ==========================================================================
   -- Indexed proof-stream primitives: read fixed-size chunks straight from the
   -- IO arena of channel 0 at byte offset `i`, returning the advanced offset.

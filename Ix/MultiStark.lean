@@ -53,12 +53,13 @@ def entrypoints := ⟦
     let (proof, stop) = read_proof(idx);
     assert_eq!(stop, idx + len);
     -- Verifying key (`System<AiurCircuit>`) from IO channel 1: bind the bytes
-    -- to the public Blake3 `system_digest`, then reconstruct the system.
+    -- to the public Blake3 `system_digest` (hashed straight from the IO arena
+    -- — no byte list), then reconstruct the system via indexed reads and
+    -- assert full consumption.
     let (sidx, slen) = io_get_info(1, [0]);
-    let sbytes = #read_byte_stream(1, sidx, slen);
-    assert_eq!(b3_to_digest(blake3(sbytes)), system_digest);
-    let (sys, srest) = read_system(sbytes);
-    assert_eq!(load(srest), ListNode.Nil);
+    assert_eq!(b3_to_digest(b3_io(1, sidx, slen)), system_digest);
+    let (sys, send) = read_system(sidx);
+    assert_eq!(send, sidx + slen);
     -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
     -- public Blake3 `claims_digest`, then deserialize. Binding them as a
     -- public input is what makes the lookup argument sound (a prover cannot
