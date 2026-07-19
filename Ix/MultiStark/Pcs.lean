@@ -71,9 +71,106 @@ def pcs := ⟦
      [h[4][0], h[4][1], h[4][2], h[4][3], h[5][0], h[5][1], h[5][2], h[5][3]],
      [h[6][0], h[6][1], h[6][2], h[6][3], h[7][0], h[7][1], h[7][2], h[7][3]]]
   }
+  -- ==========================================================================
+  -- Lane-granular blake3 for MMCS leaf rows. A leaf's input is a `List‹U64›`
+  -- of 8-byte lanes, so blocks (64 bytes = 8 lanes) can be assembled straight
+  -- from the lane values — one list `load` per lane — instead of serializing
+  -- to a byte list that `blake3` then walks, re-accumulates, and re-loads
+  -- (~4 memory ops per byte). Mirrors `blake3_compress_chunks`/`_block`/
+  -- `_finish` at block granularity with the identical flag schedule
+  -- (CHUNK_START = 1, CHUNK_END = 2, ROOT = 8; chunk = 16 blocks), reusing
+  -- `blake3_compress` and the `Layer` chunk-tree fold unchanged.
+  -- ==========================================================================
+
+  -- Pop up to 8 lanes (one block), zero-padding the tail. Returns the block's
+  -- lanes, its real byte length (8·k, so 64 for a full block), and the rest.
+  fn b3_lane_block(lanes: List‹U64›) -> ([U64; 8], G, List‹U64›) {
+    let z = [0u8; 8];
+    match load(lanes) {
+      ListNode.Nil => ([z; 8], 0, lanes),
+      ListNode.Cons(v0, r0) => match load(r0) {
+        ListNode.Nil => ([v0, z, z, z, z, z, z, z], 8, r0),
+        ListNode.Cons(v1, r1) => match load(r1) {
+          ListNode.Nil => ([v0, v1, z, z, z, z, z, z], 16, r1),
+          ListNode.Cons(v2, r2) => match load(r2) {
+            ListNode.Nil => ([v0, v1, v2, z, z, z, z, z], 24, r2),
+            ListNode.Cons(v3, r3) => match load(r3) {
+              ListNode.Nil => ([v0, v1, v2, v3, z, z, z, z], 32, r3),
+              ListNode.Cons(v4, r4) => match load(r4) {
+                ListNode.Nil => ([v0, v1, v2, v3, v4, z, z, z], 40, r4),
+                ListNode.Cons(v5, r5) => match load(r5) {
+                  ListNode.Nil => ([v0, v1, v2, v3, v4, v5, z, z], 48, r5),
+                  ListNode.Cons(v6, r6) => match load(r6) {
+                    ListNode.Nil => ([v0, v1, v2, v3, v4, v5, v6, z], 56, r6),
+                    ListNode.Cons(v7, r7) =>
+                      ([v0, v1, v2, v3, v4, v5, v6, v7], 64, r7),
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }
+  }
+
+  -- Block-granular chunk walk. `block_no` is the block index within the
+  -- current chunk (0..15); `cv` is the chaining value (IV at each chunk start);
+  -- chunk digests are pushed onto `layer` in order, exactly like the byte
+  -- driver, and folded by `blake3_compress_layer` at the end.
+  fn b3_lane_chunks(lanes: List‹U64›, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+    match load(lanes) {
+      -- Exhausted with no block to compress: only reachable for an empty
+      -- input (every other path detects exhaustion after compressing).
+      -- Mirror of `blake3_finish`'s (0, 0) arm.
+      ListNode.Nil =>
+        match load(chunk_count) {
+          [0, 0, 0, 0, 0, 0, 0, 0] =>
+            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+          _ => layer,
+        },
+      _ =>
+        let (v, nbytes, rest) = b3_lane_block(lanes);
+        let block = [
+          [v[0][0], v[0][1], v[0][2], v[0][3]], [v[0][4], v[0][5], v[0][6], v[0][7]],
+          [v[1][0], v[1][1], v[1][2], v[1][3]], [v[1][4], v[1][5], v[1][6], v[1][7]],
+          [v[2][0], v[2][1], v[2][2], v[2][3]], [v[2][4], v[2][5], v[2][6], v[2][7]],
+          [v[3][0], v[3][1], v[3][2], v[3][3]], [v[3][4], v[3][5], v[3][6], v[3][7]],
+          [v[4][0], v[4][1], v[4][2], v[4][3]], [v[4][4], v[4][5], v[4][6], v[4][7]],
+          [v[5][0], v[5][1], v[5][2], v[5][3]], [v[5][4], v[5][5], v[5][6], v[5][7]],
+          [v[6][0], v[6][1], v[6][2], v[6][3]], [v[6][4], v[6][5], v[6][6], v[6][7]],
+          [v[7][0], v[7][1], v[7][2], v[7][3]], [v[7][4], v[7][5], v[7][6], v[7][7]]];
+        let empty = match load(rest) { ListNode.Nil => 1, _ => 0, };
+        let at15 = eq_zero(block_no - 15);
+        -- CHUNK_START on the chunk's first block; CHUNK_END iff this is the
+        -- chunk's 16th block OR the input ends here; ROOT only for the last
+        -- block of a single-chunk input (multi-chunk roots come from the
+        -- layer fold's PARENT+ROOT, as in the byte driver).
+        let start_flag = eq_zero(block_no);
+        let end_flag = empty + at15 - (empty * at15);
+        let root_flag = empty * u64_is_zero(load(chunk_count));
+        let flags = start_flag + 2 * end_flag + 8 * root_flag;
+        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        match (empty, at15) {
+          (1, _) => store(Layer.Push(layer, digest)),
+          (_, 1) =>
+            let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+            b3_lane_chunks(rest, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+          (_, _) => b3_lane_chunks(rest, block_no + 1, chunk_count, store(digest), layer),
+        },
+    }
+  }
+
+  -- blake3 of a lane list (identical output to `blake3` over the lanes' LE
+  -- bytes — pinned by the `lane_hash_test` differential self-test).
+  fn b3_lanes(lanes: List‹U64›) -> [[U8; 4]; 8] {
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(load(b3_lane_chunks(lanes, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+  }
+
   -- The MMCS leaf hash of a row (`SerializingHasher<Blake3>`).
   fn mmcs_hash_row(row: List‹U64›) -> Digest {
-    b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil))))
+    b3_to_digest(b3_lanes(row))
   }
   -- The MMCS 2-to-1 compression (`CompressionFunctionFromHasher<Blake3, 2, 32>`).
   -- `a || b` is exactly 64 bytes = one blake3 block of a single chunk, so this

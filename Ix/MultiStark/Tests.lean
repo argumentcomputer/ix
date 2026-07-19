@@ -286,6 +286,34 @@ def tests := ⟦
     assert_eq!(mmcs_verify(cap, bad_rows, lhs, ibits, proof, 3), 0);
     1
   }
+
+  -- Differential test for the lane-granular leaf hasher: `b3_lanes` must
+  -- agree with byte-granular `blake3` over the lanes' LE bytes at every
+  -- structural boundary — empty input, partial block, exact block (8 lanes),
+  -- block + 1, exact chunk (128 lanes), chunk + 1, a 2-chunk input with
+  -- varied bytes, and a 4-chunk input (deeper layer fold). Lane bytes vary
+  -- with the index so lane- or word-order bugs change the digest.
+  fn lane_test_row(n: G) -> List‹U64› {
+    match n {
+      0 => store(ListNode.Nil),
+      _ =>
+        -- n mod 256, valid for n ≤ 511 (largest size used below is 500).
+        let lo = u8_from_field_unsafe(n - 256 * u32_less_than(255, n));
+        store(ListNode.Cons([lo, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8],
+                            lane_test_row(n - 1))),
+    }
+  }
+  fn lane_hash_check(n: G) -> G {
+    let row = lane_test_row(n);
+    digest_eq(b3_to_digest(b3_lanes(row)),
+              b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil)))))
+  }
+  pub fn lane_hash_test() -> G {
+    lane_hash_check(0) * lane_hash_check(1) * lane_hash_check(7)
+      * lane_hash_check(8) * lane_hash_check(9) * lane_hash_check(127)
+      * lane_hash_check(128) * lane_hash_check(129) * lane_hash_check(255)
+      * lane_hash_check(500)
+  }
 ⟧
 
 end MultiStark
