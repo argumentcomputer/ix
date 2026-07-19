@@ -234,13 +234,15 @@ def verifier := ⟦
   fn snoc_cap(input: ByteStream, cap: MerkleCap) -> ByteStream {
     list_concat(input, cap_onto(cap, store(ListNode.Nil)))
   }
-  -- Append (observe) the intermediate accumulators, in order — each an
-  -- `observe_algebra_element`: two canonical 8-LE-byte limbs. (`read_ext`
+  -- The intermediate accumulators as a prepend-built stream, in order — each
+  -- an `observe_algebra_element`: two canonical 8-LE-byte limbs. (`read_ext`
   -- reduced the limbs mod p, matching `as_canonical_u64` serialization.)
-  fn snoc_accs(input: ByteStream, accs: List‹Ext›) -> ByteStream {
+  -- Prepend-composed so observing all of them is one `list_concat`, not a
+  -- per-element re-walk of the input buffer.
+  fn accs_onto(accs: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(accs) {
-      ListNode.Nil => input,
-      ListNode.Cons(e, rest) => snoc_accs(snoc_b8(snoc_b8(input, e[0]), e[1]), rest),
+      ListNode.Nil => tail,
+      ListNode.Cons(e, rest) => b8_onto(e[0], b8_onto(e[1], accs_onto(rest, tail))),
     }
   }
 
@@ -362,7 +364,7 @@ def verifier := ⟦
     let input = snoc_cap(input, s2);
     -- observe the intermediate accumulators (public values entering the
     -- constraints; α and ζ must depend on them directly)
-    let input = snoc_accs(input, accs);
+    let input = list_concat(input, accs_onto(accs, store(ListNode.Nil)));
     -- sample constraint challenge α (not observed)
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
     -- observe quotient commitment

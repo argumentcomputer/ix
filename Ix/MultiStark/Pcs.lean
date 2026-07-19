@@ -413,29 +413,35 @@ def pcs := ⟦
   enum Bucket { Mk(G, Ext, Ext) }   -- log_height, alpha_pow, reduced_opening
 
   -- ── challenger: observe the opened values (observe_algebra_slice) ──────────
+  -- Built with the PREPEND helpers (`b8_onto` composition, O(1) per element),
+  -- front-to-back, so the whole observation batch costs one `list_concat` at
+  -- the end. Appending item-by-item onto the accumulated input (`snoc_b8`)
+  -- re-walks and rebuilds the entire buffer per observation — quadratic in
+  -- transcript size; at kernel scale the opened-values batch alone made that
+  -- billions of memory records.
   -- One ext element = its two base coordinates, each 8 LE bytes.
-  fn obs_ext_row(input: ByteStream, row: List‹Ext›) -> ByteStream {
+  fn ext_row_onto(row: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(row) {
-      ListNode.Nil => input,
-      ListNode.Cons(e, rest) => obs_ext_row(snoc_b8(snoc_b8(input, e[0]), e[1]), rest),
+      ListNode.Nil => tail,
+      ListNode.Cons(e, rest) => b8_onto(e[0], b8_onto(e[1], ext_row_onto(rest, tail))),
     }
   }
-  fn obs_points(input: ByteStream, pts: List‹List‹Ext››) -> ByteStream {
+  fn points_onto(pts: List‹List‹Ext››, tail: ByteStream) -> ByteStream {
     match load(pts) {
-      ListNode.Nil => input,
-      ListNode.Cons(row, rest) => obs_points(obs_ext_row(input, row), rest),
+      ListNode.Nil => tail,
+      ListNode.Cons(row, rest) => ext_row_onto(row, points_onto(rest, tail)),
     }
   }
-  fn obs_round(input: ByteStream, round: OpenedRound) -> ByteStream {
+  fn round_onto(round: OpenedRound, tail: ByteStream) -> ByteStream {
     match load(round) {
-      ListNode.Nil => input,
-      ListNode.Cons(mat, rest) => obs_round(obs_points(input, mat), rest),
+      ListNode.Nil => tail,
+      ListNode.Cons(mat, rest) => points_onto(mat, round_onto(rest, tail)),
     }
   }
-  fn obs_prep(input: ByteStream, prep_opt: PreprocessedOpt) -> ByteStream {
+  fn prep_onto(prep_opt: PreprocessedOpt, tail: ByteStream) -> ByteStream {
     match prep_opt {
-      PreprocessedOpt.NoPreprocessed => input,
-      PreprocessedOpt.SomePreprocessed(round) => obs_round(input, round),
+      PreprocessedOpt.NoPreprocessed => tail,
+      PreprocessedOpt.SomePreprocessed(round) => round_onto(round, tail),
     }
   }
   -- Observe one Val (= 1) per FRI round, the variable-arity schedule.
@@ -808,18 +814,19 @@ def pcs := ⟦
     assert_eq!(eq_zero(list_length(pw) - num_rounds), 1);
     assert_eq!(eq_zero(list_length(query_proofs) - num_queries), 1);
     assert_eq!(list_length(final_poly), 1);
-    -- challenger continuation: observe all opened values (coms_to_verify order)
-    let input = obs_round(post_zeta_input, stage1);
-    let input = obs_round(input, stage2);
-    let input = obs_round(input, q_opened);
-    let input = obs_prep(input, prep_opt);
+    -- challenger continuation: observe all opened values (coms_to_verify
+    -- order), built as one front-to-back suffix + a single concat (the input
+    -- is only ~32 bytes here — it collapses to the digest on every flush).
+    let obs = round_onto(stage1, round_onto(stage2, round_onto(q_opened,
+      prep_onto(prep_opt, store(ListNode.Nil)))));
+    let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
     let alpha = [gl_reduce(a0), gl_reduce(a1)];
     -- per-round FRI fold challenges β (with commit-phase PoW), then observe
     -- final_poly + the log-arity schedule.
     let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);
-    let input = obs_ext_row(input, final_poly);
+    let input = list_concat(input, ext_row_onto(final_poly, store(ListNode.Nil)));
     let input = obs_log_arities(input, commit_phase_commits);
     -- query indices + per-query verification (log_global_max_height = #rounds + log_blowup)
     let log_gmax = num_rounds + log_blowup;
