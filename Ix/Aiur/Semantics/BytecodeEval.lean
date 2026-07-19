@@ -303,6 +303,12 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     -- an explicit error rather than silently producing wrong values.
     let _ ← readIdx st a; let _ ← readIdx st b
     .error .unconstrainedBigUintDivModUnsupported
+  | .unconstrainedGToBytes idx => do
+    let g ← readIdx st idx
+    pure (appendMap st (Array.ofFn g.toLeBytes))
+  | .unconstrainedGInverse idx => do
+    let g ← readIdx st idx
+    pure (pushMap st g.inverse)
   | .debug _ _ => .ok st
 termination_by (fuel, sizeOf op, 0)
 decreasing_by all_goals first | decreasing_tactic | omega

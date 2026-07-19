@@ -333,6 +333,12 @@ def toIndex
     let a ← expectIdx layoutMap bindings a
     let b ← expectIdx layoutMap bindings b
     pushOp (.unconstrainedBigUintDivMod a b) 2
+  | .unconstrainedGToBytes _ _ a => do
+    let a ← expectIdx layoutMap bindings a
+    pushOp (.unconstrainedGToBytes a) 8
+  | .unconstrainedGInverse _ _ a => do
+    let a ← expectIdx layoutMap bindings a
+    pushOp (.unconstrainedGInverse a)
   | .debug _ _ label term ret => do
     let term ← match term with
       | none => pure none

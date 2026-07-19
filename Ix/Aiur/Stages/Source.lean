@@ -439,6 +439,18 @@ inductive Term
   div_rem; no constraints generated and no per-step memo growth. The
   caller must verify `q*b + r == a` and `r < b` in constrained code. -/
   | unconstrainedBigUintDivMod : (a : Term) → (b : Term) → Term
+  /-- Unconstrained hint: the 8 little-endian bytes of a field element's
+  canonical `u64` value, as a `[U8; 8]`. Computed natively by the Aiur
+  runtime; no constraints generated — the bytes are advice. The caller must
+  range-check each byte, assert they recompose to the input
+  (`Σ bᵢ·256ⁱ == x`), and assert canonicality (`< p`) in constrained code;
+  together these pin the unique canonical decomposition. -/
+  | unconstrainedGToBytes : Term → Term
+  /-- Unconstrained hint: the field inverse of a field element (`0 ↦ 0`).
+  Computed natively by the Aiur runtime; no constraints generated — the
+  caller must pin it, e.g. via `t = x·i − 1; assert x·t == 0;
+  assert i·t == 0` (forces `i = x⁻¹` when `x ≠ 0` and `i = 0` otherwise). -/
+  | unconstrainedGInverse : Term → Term
   /-- A `U8` literal in `[0, 256)`. Lowered to a plain field constant of type
   `u8` (no range-check lookup, since the value is statically in range). -/
   | u8Lit : Nat → Term

@@ -85,6 +85,27 @@ def G.u8BitDecomposition (a : G) : Fin 8 → G :=
 
 def G.u32LessThan (a b : G) : G := if a.n < b.n then 1 else 0
 
+/-- The 8 little-endian bytes of the canonical `u64` value. Semantic model of
+the `unconstrained_g_to_bytes` hint. -/
+def G.toLeBytes (a : G) : Fin 8 → G :=
+  fun i => G.ofUInt8 (a.val >>> (8 * i.val).toUInt64).toUInt8
+
+/-- Exponentiation by squaring. Fuel-structural (64 bits covers any `n < 2⁶⁴`
+exponent, in particular `p − 2`). -/
+def G.pow (x : G) (n : Nat) : G := go n 64 where
+  go (n fuel : Nat) : G := match fuel with
+    | 0 => 1
+    | fuel + 1 =>
+      if n == 0 then 1
+      else
+        let h := go (n / 2) fuel
+        let sq := h * h
+        if n % 2 == 0 then sq else sq * x
+
+/-- Fermat inverse `x^(p−2)`, with `0 ↦ 0`. Semantic model of the
+`unconstrained_g_inverse` hint. -/
+def G.inverse (x : G) : G := G.pow x (gSize.toNat - 2)
+
 theorem G.one_ne_zero : ¬(1 : G) = (0 : G) := by decide
 
 theorem G.add_comm (a b : G) : a + b = b + a := by

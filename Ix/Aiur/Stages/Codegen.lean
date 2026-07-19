@@ -352,6 +352,8 @@ def Op.outputCount : Op → Nat
   | .u32LessThan _ _ => 1
   | .u8RangeCheck _ _ => 0
   | .unconstrainedBigUintDivMod _ _ => 2
+  | .unconstrainedGToBytes _ => 8
+  | .unconstrainedGInverse _ => 1
   | .debug _ _ => 0
 
 private def emitConst (out : Nat) (c : Aiur.G) : Array RustStmt :=
@@ -635,6 +637,22 @@ private def emitUncBigUintDivMod (out : Nat) (a b : ValIdx) : Array RustStmt :=
     declVal (out + 1) (.field (.var "__bu_qr") "1")
   ]
 
+/-- `Op::UnconstrainedGToBytes`: 8 outputs — the LE bytes of the input's
+    canonical `u64` value, as unconstrained advice. -/
+private def emitUncGToBytes (out : Nat) (a : ValIdx) : Array RustStmt := Id.run do
+  let mut stmts : Array RustStmt :=
+    #[.letStmt false "__gb" (some "[u8; 8]")
+      (.lit s!"__v_{a}.as_canonical_u64().to_le_bytes()")]
+  for i in [0 : 8] do
+    stmts := stmts.push (declVal (out + i) (.lit s!"G::from_u8(__gb[{i}])"))
+  stmts
+
+/-- `Op::UnconstrainedGInverse`: 1 output — the field inverse (`0 ↦ 0`), as
+    unconstrained advice. Calls the shared `g_inverse_value` helper so the
+    interpreter and codegen produce identical values. -/
+private def emitUncGInverse (out : Nat) (a : ValIdx) : Array RustStmt :=
+  #[declVal out (.lit s!"g_inverse_value(__v_{a})")]
+
 /-- `Op::Debug`: 0 outputs; println side effect, mirroring the bytecode
     interpreter's `Op::Debug` arm (crates/aiur/src/execute.rs). Production
     kernels contain no `dbg!`, so this emits nothing there; when probing
@@ -683,6 +701,8 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .u32LessThan a b => emitU32LessThan out a b
   | .u8RangeCheck i j => emitU8RangeCheck i j
   | .unconstrainedBigUintDivMod a b => emitUncBigUintDivMod out a b
+  | .unconstrainedGToBytes a => emitUncGToBytes out a
+  | .unconstrainedGInverse a => emitUncGInverse out a
   | .debug label args => emitDebug label args
 
 /-! ## Ctrl emission -/
@@ -935,6 +955,7 @@ def optionalExecuteUses : Array (String × String) := #[
   ("bytes2_chain_rotr7_value", "bytes2_chain_rotr7_value"),
   ("bytes2_chain_rotr4_value", "bytes2_chain_rotr4_value"),
   ("unconstrained_big_uint_div_mod_helper", "unconstrained_big_uint_div_mod_helper"),
+  ("g_inverse_value", "g_inverse_value"),
   ("CodegenBytes1 as Bytes1", "Bytes1::"),
   ("CodegenBytes2 as Bytes2", "Bytes2::")
 ]

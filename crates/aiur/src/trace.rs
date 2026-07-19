@@ -15,6 +15,7 @@ use crate::{
   bytecode::{Block, Ctrl, Function, Op, Toplevel},
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
+    g_inverse_value,
   },
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
@@ -576,6 +577,21 @@ impl Op {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }
+      },
+      Op::UnconstrainedGToBytes(a) => {
+        // Recompute the deterministic hint (canonical LE bytes) and fill
+        // the 8 auxiliary columns the constraints allocate.
+        let bytes = map[*a].0.as_canonical_u64().to_le_bytes();
+        for b in bytes {
+          let f = G::from_u8(b);
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::UnconstrainedGInverse(a) => {
+        let f = g_inverse_value(map[*a].0);
+        map.push((f, 1));
+        slice.push_auxiliary(index, f);
       },
       Op::AssertEq(..)
       | Op::IOSetInfo(..)

@@ -1,4 +1,4 @@
-use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
@@ -584,6 +584,18 @@ impl Function {
           map.push(q_ptr);
           map.push(r_ptr);
         },
+        ExecEntry::Op(Op::UnconstrainedGToBytes(a_idx)) => {
+          // Unconstrained hint: the 8 LE bytes of the canonical u64 value.
+          // No record side effects — the caller pins the bytes with range
+          // checks + a recomposition assert + a canonicality assert.
+          let bytes = map[*a_idx].as_canonical_u64().to_le_bytes();
+          map.extend(bytes.iter().map(|b| G::from_u8(*b)));
+        },
+        ExecEntry::Op(Op::UnconstrainedGInverse(a_idx)) => {
+          // Unconstrained hint: the field inverse (`0 ↦ 0`). No record side
+          // effects — the caller pins it via multiply-and-assert.
+          map.push(g_inverse_value(map[*a_idx]));
+        },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
           None => println!("{label}"),
           Some(idxs) => {
@@ -816,6 +828,14 @@ pub fn bytes2_sub_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
 /// replaced the byte-op enum dispatch).
 pub use crate::gadgets::bytes1::Bytes1 as CodegenBytes1;
 pub use crate::gadgets::bytes2::Bytes2 as CodegenBytes2;
+
+/// The value of the `UnconstrainedGInverse` hint: the field inverse, with
+/// `0 ↦ 0`. Shared by the interpreter, the codegen'd kernels, and trace
+/// population so all three produce identical witness values.
+#[inline]
+pub fn g_inverse_value(x: G) -> G {
+  x.try_inverse().unwrap_or(G::ZERO)
+}
 
 /// Helper extracted for the codegen'd kernel: compute the unconstrained
 /// BigUint div-mod and return `(q_ptr, r_ptr)`. Same side effects on

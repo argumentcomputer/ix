@@ -60,6 +60,8 @@ inductive Term : Type where
   | u8ChainRotr4 (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u8RangeCheck (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | unconstrainedBigUintDivMod (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | unconstrainedGToBytes (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | unconstrainedGInverse (typ : Typ) (escapes : Bool) (a : Term) : Term
   | toField (typ : Typ) (escapes : Bool) (a : Term) : Term
   | u8FromFieldUnsafe (typ : Typ) (escapes : Bool) (a : Term) : Term
   | debug (typ : Typ) (escapes : Bool) (label : String) (t : Option Term) (r : Term) : Term
@@ -80,6 +82,7 @@ def Term.typ : Term → Typ
   | .u8And t _ _ _ | .u8Or t _ _ _ | .u8LessThan t _ _ _ | .u32LessThan t _ _ _
   | .u8ChainRotr7 t _ _ _ | .u8ChainRotr4 t _ _ _ | .u8RangeCheck t _ _ _
   | .unconstrainedBigUintDivMod t _ _ _
+  | .unconstrainedGToBytes t _ _ | .unconstrainedGInverse t _ _
   | .toField t _ _ | .u8FromFieldUnsafe t _ _
   | .debug t _ _ _ _ => t
 
@@ -98,6 +101,7 @@ def Term.escapes : Term → Bool
   | .u8And _ e _ _ | .u8Or _ e _ _ | .u8LessThan _ e _ _ | .u32LessThan _ e _ _
   | .u8ChainRotr7 _ e _ _ | .u8ChainRotr4 _ e _ _ | .u8RangeCheck _ e _ _
   | .unconstrainedBigUintDivMod _ e _ _
+  | .unconstrainedGToBytes _ e _ | .unconstrainedGInverse _ e _
   | .toField _ e _ | .u8FromFieldUnsafe _ e _
   | .debug _ e _ _ _ => e
 

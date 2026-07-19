@@ -136,6 +136,12 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
       let a' ← simplifyTypedTerm decls a
       let b' ← simplifyTypedTerm decls b
       pure (.unconstrainedBigUintDivMod τ e a' b')
+  | .unconstrainedGToBytes τ e a => do
+      let a' ← simplifyTypedTerm decls a
+      pure (.unconstrainedGToBytes τ e a')
+  | .unconstrainedGInverse τ e a => do
+      let a' ← simplifyTypedTerm decls a
+      pure (.unconstrainedGInverse τ e a')
   | .toField τ e a => do
       let a' ← simplifyTypedTerm decls a
       pure (.toField τ e a')

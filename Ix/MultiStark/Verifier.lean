@@ -168,12 +168,11 @@ def verifier := ⟦
   -- (the `log2_ceil(p) = 64` mask is a no-op for Goldilocks); if the raw value
   -- is ≥ p (probability ≈ 2⁻³²), DISCARD it and draw the next 8 bytes — a
   -- rejected draw consumes challenger bytes, shifting every later sample,
-  -- exactly as in the reference. `raw < p` ⟺ `sub8(raw, p)` borrows. The
-  -- accepted limb is canonical (< p) by construction.
+  -- exactly as in the reference. `gl_lt_p` decides `raw < p`; the accepted
+  -- limb is canonical (< p) by construction.
   fn ch_sample_field(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
     let (raw, i1, o1) = ch_sample8(input, output);
-    let (_d, borrow) = sub8(raw, gl_p());
-    match borrow {
+    match gl_lt_p(raw) {
       1 => (raw, i1, o1),
       _ => ch_sample_field(i1, o1),
     }
