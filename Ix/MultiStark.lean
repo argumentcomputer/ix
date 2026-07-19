@@ -77,10 +77,12 @@ def entrypoints := ⟦
   }
 ⟧
 
-/-- The standalone Multi-STARK verifier toplevel: `core` (lists/options) +
+/-- The FULL Multi-STARK verifier toplevel: `core` (lists/options) +
 `byteStream` (`U64`, `flatten_u64`, `read_byte_stream`, …) + the deserializer,
-the Blake3 hash, and the entrypoint. -/
-def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
+the Blake3 hash, and the entrypoint — unpruned, including entries inherited
+from the shared modules (`blake3_test`/`blake3_bench`). Only `multiStarkTests`
+builds on this; production uses `multiStark` (pruned). -/
+def multiStarkFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
   let t ← t.merge MultiStark.goldilocks
   let t ← t.merge deserialize
@@ -89,6 +91,15 @@ def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← t.merge pcs
   let t ← t.merge verifier
   t.merge entrypoints
+
+/-- The production Multi-STARK verifier toplevel: `multiStarkFull` pruned to
+`verify_multi_stark_proof`'s call closure. Every compiled function is a
+committed circuit whose openings pad every proof of the verifier's execution,
+so functions only reachable from unrelated entries (kernel-oriented helpers of
+the shared modules, test/bench entries) cost real proof bytes if kept. -/
+def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
+  let t ← multiStarkFull
+  pure (t.prune [`verify_multi_stark_proof])
 
 /-! ## Lean-side input assembly
 
@@ -142,12 +153,12 @@ def verifierInput (proofBytes vkBytes claimBytes : ByteArray)
   (pubInput, io)
 
 /-- The verifier toplevel PLUS its self-test entrypoints
-(`Ix/MultiStark/Tests.lean`). Kept separate from `multiStark` because every
-`pub fn` adds a circuit to the compiled system — the production verifier should
-not carry test-only width. Use this toplevel only to run the `*_test`
-entrypoints. -/
+(`Ix/MultiStark/Tests.lean`), unpruned. Kept separate from `multiStark`
+because every `pub fn` adds a circuit to the compiled system — the production
+verifier should not carry test-only width. Use this toplevel only to run the
+`*_test` entrypoints. -/
 def multiStarkTests : Except Aiur.Global Aiur.Source.Toplevel := do
-  let t ← multiStark
+  let t ← multiStarkFull
   t.merge tests
 
 end MultiStark

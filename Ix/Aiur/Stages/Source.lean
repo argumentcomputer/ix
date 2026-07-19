@@ -1047,6 +1047,71 @@ def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
     | some (_, body) => { f with body := body.hoistLets }
   pure { t with functions }
 
+/-- Every `Global` referenced by a term: function calls and constructor
+applications via `.app`, bare references via `.ref` (constants, nullary
+constructors), plus constructor names inside `let`/`match` patterns.
+Non-function references never match a function name, so callers can filter
+against the function table. -/
+partial def Term.collectGlobals (acc : Std.HashSet Global) : Term → Std.HashSet Global
+  | .unit | .var _ | .field _ | .u8Lit _ => acc
+  | .ref g => acc.insert g
+  | .tuple ts | .array ts => ts.foldl Term.collectGlobals acc
+  | .ret t | .eqZero t | .proj t _ | .get t _ | .slice t _ _ | .store t
+  | .load t | .ptrVal t | .ann _ t | .u8BitDecomposition t | .u8ShiftLeft t
+  | .u8ShiftRight t | .unconstrainedGToBytes t | .unconstrainedGInverse t
+  | .toField t | .u8FromFieldUnsafe t => t.collectGlobals acc
+  | .let p v b => b.collectGlobals (v.collectGlobals (patternGlobals acc p))
+  | .match s bs =>
+    bs.foldl (fun a (p, b) => b.collectGlobals (patternGlobals a p))
+      (s.collectGlobals acc)
+  | .app g args _ => args.foldl (fun a t => t.collectGlobals a) (acc.insert g)
+  | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8Add a b
+  | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b | .u8LessThan a b
+  | .u32LessThan a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
+  | .u8RangeCheck a b | .unconstrainedBigUintDivMod a b | .ioGetInfo a b =>
+    b.collectGlobals (a.collectGlobals acc)
+  | .set a _ v => v.collectGlobals (a.collectGlobals acc)
+  | .assertEq a b r | .ioWrite a b r =>
+    r.collectGlobals (b.collectGlobals (a.collectGlobals acc))
+  | .ioSetInfo c k i l r =>
+    r.collectGlobals (l.collectGlobals (i.collectGlobals
+      (k.collectGlobals (c.collectGlobals acc))))
+  | .ioRead c i _ => i.collectGlobals (c.collectGlobals acc)
+  | .debug _ t r =>
+    r.collectGlobals (match t with | none => acc | some t => t.collectGlobals acc)
+where
+  patternGlobals (acc : Std.HashSet Global) : Pattern → Std.HashSet Global
+    | .var _ | .wildcard | .field _ => acc
+    | .ref g ps => ps.foldl patternGlobals (acc.insert g)
+    | .tuple ps | .array ps => ps.foldl patternGlobals acc
+    | .or a b => patternGlobals (patternGlobals acc a) b
+    | .pointer p => patternGlobals acc p
+
+/-- Keep only the functions reachable from `roots` (entry-point names).
+Data types and type aliases are kept wholesale — only functions become
+circuits, so pruning functions is what shrinks the committed system (every
+compiled function is a committed matrix whose openings pad every proof,
+used or not). What gets dropped: `pub` entry points other than the roots
+(test/bench harness entries) and any function only they reach. Relative
+function order is preserved, so surviving indices stay deterministic. -/
+partial def Toplevel.prune (toplevel : Toplevel) (roots : List Lean.Name) : Toplevel :=
+  let byName : Std.HashMap Global Function :=
+    toplevel.functions.foldl (fun a f => a.insert f.name f) ∅
+  let rootGs := toplevel.functions.filterMap fun f =>
+    if roots.contains f.name.toName then some f.name else none
+  let rec go (todo : List Global) (seen : Std.HashSet Global) : Std.HashSet Global :=
+    match todo with
+    | [] => seen
+    | g :: rest =>
+      if seen.contains g then go rest seen
+      else match byName.get? g with
+        | none => go rest seen  -- constructor / datatype / alias reference
+        | some f =>
+          let refs := f.body.collectGlobals ∅
+          go (refs.toList ++ rest) (seen.insert g)
+  let keep := go rootGs.toList ∅
+  { toplevel with functions := toplevel.functions.filter (keep.contains ·.name) }
+
 inductive Declaration
   | function : Function → Declaration
   | dataType : DataType → Declaration
