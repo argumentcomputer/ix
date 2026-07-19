@@ -47,6 +47,7 @@ dashmap = "6.1.0"
 hashbrown = "0.15"
 indexmap = "2"
 itertools = "0.14.0"
+libc = "0.2"
 log = "0.4"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }

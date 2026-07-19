@@ -52,6 +52,7 @@ version = "0.1.0"
 dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
+ "libc",
  "multi-stark",
  "num-bigint",
  "rayon",
