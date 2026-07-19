@@ -71,19 +71,29 @@ def pcs := ⟦
      [h[4][0], h[4][1], h[4][2], h[4][3], h[5][0], h[5][1], h[5][2], h[5][3]],
      [h[6][0], h[6][1], h[6][2], h[6][3], h[7][0], h[7][1], h[7][2], h[7][3]]]
   }
-  -- The 32 bytes of a `Digest`.
-  fn b3_digest_bytes_onto(d: Digest, tail: ByteStream) -> ByteStream {
-    b3_u64_onto(d[0], b3_u64_onto(d[1], b3_u64_onto(d[2], b3_u64_onto(d[3], tail))))
-  }
-
   -- The MMCS leaf hash of a row (`SerializingHasher<Blake3>`).
   fn mmcs_hash_row(row: List‹U64›) -> Digest {
     b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil))))
   }
   -- The MMCS 2-to-1 compression (`CompressionFunctionFromHasher<Blake3, 2, 32>`).
+  -- `a || b` is exactly 64 bytes = one blake3 block of a single chunk, so this
+  -- is one direct `blake3_compress` with the same parameters that input takes
+  -- through `blake3_compress_chunks`: cv = IV, counter = 0, block_len = 64,
+  -- flags = CHUNK_START + CHUNK_END + ROOT (1 + 2 + 8). The block words are
+  -- assembled straight from the digest lanes (each `U64` lane = two LE 4-byte
+  -- words) — no byte list is built, walked, re-accumulated, or re-loaded.
   fn mmcs_compress(a: Digest, b: Digest) -> Digest {
-    b3_to_digest(blake3(b3_digest_bytes_onto(a,
-      b3_digest_bytes_onto(b, store(ListNode.Nil)))))
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    let block = [
+      [a[0][0], a[0][1], a[0][2], a[0][3]], [a[0][4], a[0][5], a[0][6], a[0][7]],
+      [a[1][0], a[1][1], a[1][2], a[1][3]], [a[1][4], a[1][5], a[1][6], a[1][7]],
+      [a[2][0], a[2][1], a[2][2], a[2][3]], [a[2][4], a[2][5], a[2][6], a[2][7]],
+      [a[3][0], a[3][1], a[3][2], a[3][3]], [a[3][4], a[3][5], a[3][6], a[3][7]],
+      [b[0][0], b[0][1], b[0][2], b[0][3]], [b[0][4], b[0][5], b[0][6], b[0][7]],
+      [b[1][0], b[1][1], b[1][2], b[1][3]], [b[1][4], b[1][5], b[1][6], b[1][7]],
+      [b[2][0], b[2][1], b[2][2], b[2][3]], [b[2][4], b[2][5], b[2][6], b[2][7]],
+      [b[3][0], b[3][1], b[3][2], b[3][3]], [b[3][4], b[3][5], b[3][6], b[3][7]]];
+    b3_to_digest(blake3_compress(IV, block, [0u8; 8], 64, 11))
   }
 
   -- ==========================================================================
