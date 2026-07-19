@@ -52,7 +52,7 @@ def systemDeserialize := ⟦
     IsFirstRow,
     IsLastRow,
     IsTransition,
-    Const([U8; 8]),             -- a non-native Goldilocks constant (canonical LE bytes)
+    Const(G),                   -- a native Goldilocks constant (reduced on read)
     Add(&SymExpr, &SymExpr, G),
     Sub(&SymExpr, &SymExpr, G),
     Neg(&SymExpr, G),
@@ -128,11 +128,11 @@ def systemDeserialize := ⟦
     (b0 + 0x100 * b1 + 0x10000 * b2 + 0x1000000 * b3, i + 4)
   }
 
-  -- A raw `u64` Goldilocks constant, canonicalized into Goldilocks bytes
-  -- (`gl_reduce`) so it can feed the composition arithmetic.
-  fn read_field(i: G) -> ([U8; 8], G) {
+  -- A raw `u64` Goldilocks constant, reduced into a native field value so it
+  -- can feed the composition arithmetic directly.
+  fn read_field(i: G) -> (G, G) {
     let (u, j) = #read_vk_u64(i);
-    (gl_reduce(u), j)
+    (gl_val(u), j)
   }
 
   fn read_vk_digest(i: G) -> (Digest, G) {

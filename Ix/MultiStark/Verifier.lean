@@ -242,7 +242,7 @@ def verifier := ⟦
   fn accs_onto(accs: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(accs) {
       ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(e[0], b8_onto(e[1], accs_onto(rest, tail))),
+      ListNode.Cons(e, rest) => b8_onto(gl_to_bytes(e[0]), b8_onto(gl_to_bytes(e[1]), accs_onto(rest, tail))),
     }
   }
 
@@ -269,7 +269,7 @@ def verifier := ⟦
   fn pcs_sample_ext(input: ByteStream, output: ByteStream)
       -> (Ext, ByteStream, ByteStream) {
     let (c0, c1, i1, o1) = ch_sample_ext(input, output);
-    ([gl_reduce(c0), gl_reduce(c1)], i1, o1)
+    ([gl_val(c0), gl_val(c1)], i1, o1)
   }
 
   -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.
@@ -371,10 +371,10 @@ def verifier := ⟦
     let input = snoc_cap(input, q);
     -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
     let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
-    ([gl_reduce(l0), gl_reduce(l1)],
-     [gl_reduce(f0), gl_reduce(f1)],
-     [gl_reduce(a0), gl_reduce(a1)],
-     [gl_reduce(z0), gl_reduce(z1)],
+    ([gl_val(l0), gl_val(l1)],
+     [gl_val(f0), gl_val(f1)],
+     [gl_val(a0), gl_val(a1)],
+     [gl_val(z0), gl_val(z1)],
      zinput)
   }
 
@@ -394,41 +394,41 @@ def verifier := ⟦
 
   -- `two_adic_generator(bits)` — a primitive 2^bits root of unity in Goldilocks
   -- (`Plonky3/goldilocks/src/goldilocks.rs::TWO_ADIC_GENERATORS`).
-  fn two_adic_gen(bits: G) -> [U8; 8] {
+  fn two_adic_gen(bits: G) -> Goldilocks {
     match bits {
-      0  => [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-      1  => [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8],
-      2  => [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8],
-      3  => [1u8, 0u8, 0u8, 255u8, 254u8, 255u8, 255u8, 255u8],
-      4  => [1u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 239u8],
-      5  => [0u8, 192u8, 255u8, 255u8, 255u8, 63u8, 0u8, 0u8],
-      6  => [0u8, 0u8, 0u8, 0u8, 128u8, 0u8, 0u8, 0u8],
-      7  => [1u8, 0u8, 0u8, 8u8, 255u8, 7u8, 0u8, 248u8],
-      8  => [102u8, 169u8, 12u8, 230u8, 60u8, 20u8, 121u8, 191u8],
-      9  => [78u8, 31u8, 65u8, 92u8, 42u8, 208u8, 5u8, 25u8],
-      10 => [114u8, 217u8, 254u8, 139u8, 215u8, 42u8, 143u8, 157u8],
-      11 => [207u8, 200u8, 161u8, 29u8, 128u8, 180u8, 83u8, 6u8],
-      12 => [182u8, 252u8, 157u8, 149u8, 153u8, 81u8, 195u8, 242u8],
-      13 => [151u8, 121u8, 209u8, 53u8, 35u8, 239u8, 68u8, 21u8],
-      14 => [226u8, 161u8, 187u8, 16u8, 147u8, 9u8, 238u8, 224u8],
-      15 => [172u8, 186u8, 6u8, 35u8, 254u8, 207u8, 178u8, 246u8],
-      16 => [14u8, 69u8, 121u8, 191u8, 48u8, 150u8, 223u8, 84u8],
-      17 => [14u8, 138u8, 61u8, 170u8, 232u8, 166u8, 208u8, 171u8],
-      18 => [172u8, 190u8, 249u8, 5u8, 123u8, 26u8, 40u8, 129u8],
-      19 => [2u8, 51u8, 170u8, 140u8, 107u8, 28u8, 212u8, 251u8],
-      20 => [109u8, 231u8, 147u8, 94u8, 205u8, 46u8, 186u8, 48u8],
-      21 => [84u8, 38u8, 50u8, 50u8, 245u8, 174u8, 2u8, 245u8],
-      22 => [181u8, 70u8, 114u8, 230u8, 173u8, 24u8, 42u8, 75u8],
-      23 => [139u8, 201u8, 251u8, 54u8, 19u8, 90u8, 157u8, 234u8],
-      24 => [113u8, 225u8, 7u8, 195u8, 49u8, 204u8, 205u8, 134u8],
-      25 => [216u8, 239u8, 207u8, 110u8, 151u8, 245u8, 186u8, 75u8],
-      26 => [134u8, 226u8, 214u8, 120u8, 91u8, 208u8, 65u8, 237u8],
-      27 => [29u8, 23u8, 90u8, 145u8, 216u8, 141u8, 215u8, 16u8],
-      28 => [133u8, 68u8, 74u8, 0u8, 0u8, 149u8, 4u8, 89u8],
-      29 => [102u8, 38u8, 109u8, 164u8, 59u8, 201u8, 168u8, 223u8],
-      30 => [69u8, 8u8, 106u8, 184u8, 9u8, 208u8, 155u8, 126u8],
-      31 => [89u8, 230u8, 136u8, 85u8, 117u8, 127u8, 10u8, 64u8],
-      _  => [140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8],
+      0  => 1,
+      1  => 18446744069414584320,
+      2  => 281474976710656,
+      3  => 18446744069397807105,
+      4  => 17293822564807737345,
+      5  => 70368744161280,
+      6  => 549755813888,
+      7  => 17870292113338400769,
+      8  => 13797081185216407910,
+      9  => 1803076106186727246,
+      10 => 11353340290879379826,
+      11 => 455906449640507599,
+      12 => 17492915097719143606,
+      13 => 1532612707718625687,
+      14 => 16207902636198568418,
+      15 => 17776499369601055404,
+      16 => 6115771955107415310,
+      17 => 12380578893860276750,
+      18 => 9306717745644682924,
+      19 => 18146160046829613826,
+      20 => 3511170319078647661,
+      21 => 17654865857378133588,
+      22 => 5416168637041100469,
+      23 => 16905767614792059275,
+      24 => 9713644485405565297,
+      25 => 5456943929260765144,
+      26 => 17096174751763063430,
+      27 => 1213594585890690845,
+      28 => 6414415596519834757,
+      29 => 16116352524544190054,
+      30 => 9123114210336311365,
+      31 => 4614640910117430873,
+      _  => 1753635133440165772,
     }
   }
 
@@ -672,9 +672,8 @@ def verifier := ⟦
   -- with `Z_{Dₖ}(x) = (x · shift_k⁻¹)^(2^L) - 1`.
   -- ==========================================================================
 
-  -- base-field power `base^e` (e small: the chunk index, < qd). `base` is a
-  -- non-native Goldilocks element; `e` is a native loop counter.
-  fn g_pow(base: [U8; 8], e: G) -> [U8; 8] {
+  -- base-field power `base^e` (e small: the chunk index, < qd).
+  fn g_pow(base: Goldilocks, e: G) -> Goldilocks {
     match e {
       0 => gl_one(),
       _ => gl_mul(base, g_pow(base, e - 1)),
@@ -682,12 +681,12 @@ def verifier := ⟦
   }
 
   -- `Z_{Dⱼ}(x) = (x · shift_j⁻¹)^(2^L) - 1`, evaluated at extension point `x`.
-  fn vanish_chunk(x: Ext, l: G, shiftinv: [U8; 8]) -> Ext {
+  fn vanish_chunk(x: Ext, l: G, shiftinv: Goldilocks) -> Ext {
     eg_sub(ext_exp_pow2(eg_mul(x, [shiftinv, gl_zero()]), l), [gl_one(), gl_zero()])
   }
 
   -- `zpsₜ = Πⱼ≠ₜ Z_{Dⱼ}(ζ) / Z_{Dⱼ}(shift_t)`. Iterates j over `[jidx, jidx+rem)`.
-  fn zps_prod(acc: Ext, zeta: Ext, l: G, g_q: [U8; 8], shift_t: [U8; 8], jidx: G, rem: G, t: G) -> Ext {
+  fn zps_prod(acc: Ext, zeta: Ext, l: G, g_q: Goldilocks, shift_t: Goldilocks, jidx: G, rem: G, t: G) -> Ext {
     match rem {
       0 => acc,
       _ =>
@@ -706,7 +705,7 @@ def verifier := ⟦
 
   -- `quotient(ζ) = Σₜ zpsₜ · from_ext_basis(chunkₜ)`, iterating the `qd` chunks
   -- (`q_opened[idx][0] = [c0, c1]`).
-  fn quotient_sum(acc: Ext, zeta: Ext, l: G, qd: G, g_q: [U8; 8],
+  fn quotient_sum(acc: Ext, zeta: Ext, l: G, qd: G, g_q: Goldilocks,
       q_opened: OpenedRound, idx: G, rem: G, t: G) -> Ext {
     match rem {
       0 => acc,
@@ -801,7 +800,7 @@ def verifier := ⟦
     match load(vals) {
       ListNode.Nil => [gl_zero(), gl_zero()],
       ListNode.Cons(v, rest) =>
-        eg_add([gl_reduce(v), gl_zero()], eg_mul(fch, fingerprint_vals(fch, rest))),
+        eg_add([gl_val(v), gl_zero()], eg_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 

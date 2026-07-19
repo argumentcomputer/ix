@@ -354,7 +354,7 @@ def pcs := ⟦
   fn canon_lanes(l: List‹U64›) -> List‹U64› {
     match load(l) {
       ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(gl_reduce(x), canon_lanes(rest))),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(gl_to_bytes(gl_val(x)), canon_lanes(rest))),
     }
   }
   -- The joint leaf hash of all matrices at log-height `target`.
@@ -431,8 +431,8 @@ def pcs := ⟦
   }
 
   -- base^(Σ bits_i · 2^i), bits LSB-first (square-and-multiply over the bits).
-  -- `base` is a non-native Goldilocks element; `bits` is a native bit list.
-  fn exp_by_bits(base: [U8; 8], bits: List‹G›) -> [U8; 8] {
+  -- `base` is a native Goldilocks element; `bits` is a native bit list.
+  fn exp_by_bits(base: Goldilocks, bits: List‹G›) -> Goldilocks {
     match load(bits) {
       ListNode.Nil => gl_one(),
       ListNode.Cons(b, rest) =>
@@ -470,12 +470,21 @@ def pcs := ⟦
 
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
-  fn ro_x(index_bits: List‹G›, log_height: G) -> [U8; 8] {
+  fn ro_x(index_bits: List‹G›, log_height: G) -> Goldilocks {
     gl_mul(gl_seven(), exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
   }
 
+  -- Raw wire rows (`U64` lanes, possibly non-canonical) to native Goldilocks
+  -- values for the reduced-opening arithmetic (`limb_to_field` reduces mod p).
+  fn lanes_to_gl(l: List‹U64›) -> List‹Goldilocks› {
+    match load(l) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(limb_to_field(x), lanes_to_gl(rest))),
+    }
+  }
+
   -- Accumulate one matrix-point's column contributions. `q = 1/(z − x)`.
-  fn ro_fold(p_x: List‹[U8; 8]›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
+  fn ro_fold(p_x: List‹Goldilocks›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
       -> (Ext, Ext) {
     match load(p_x) {
       ListNode.Nil => (ro, ap),
@@ -512,7 +521,7 @@ def pcs := ⟦
   fn ext_row_onto(row: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(row) {
       ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(e[0], b8_onto(e[1], ext_row_onto(rest, tail))),
+      ListNode.Cons(e, rest) => b8_onto(gl_to_bytes(e[0]), b8_onto(gl_to_bytes(e[1]), ext_row_onto(rest, tail))),
     }
   }
   fn points_onto(pts: List‹List‹Ext››, tail: ByteStream) -> ByteStream {
@@ -567,7 +576,7 @@ def pcs := ⟦
         let (i1, o1) = pcs_commit_pow(snoc_cap(input, c), w, bits);
         let (b0, b1, i2, _o) = ch_sample_ext(i1, o1);
         let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
-        (store(ListNode.Cons([gl_reduce(b0), gl_reduce(b1)], bs)), i3),
+        (store(ListNode.Cons([gl_val(b0), gl_val(b1)], bs)), i3),
     }
   }
 
@@ -603,7 +612,7 @@ def pcs := ⟦
   }
   -- Find the bucket at log-height `lh`, fold one matrix-point's columns into it
   -- (`ro_fold` threads its `alpha_pow`), and write it back.
-  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹[U8; 8]›, p_z: List‹Ext›,
+  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹Goldilocks›, p_z: List‹Ext›,
       q: Ext, alpha: Ext) -> List‹Bucket› {
     match load(buckets) {
       ListNode.Nil => store(ListNode.Nil),
@@ -641,7 +650,7 @@ def pcs := ⟦
   }
   -- Compute x = GENERATOR·g^{revbits} for this height and fold the contribution.
   fn ri_apply(buckets: List‹Bucket›, lh: G, idxbits: List‹G›, log_gmax: G,
-      z: Ext, p_x: List‹[U8; 8]›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
+      z: Ext, p_x: List‹Goldilocks›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
     -- the base opening and the ext opening at this point must have equal width
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
@@ -653,7 +662,7 @@ def pcs := ⟦
   -- A stage_1/stage_2/preprocessed-style matrix: two opening points
   -- (ζ, ζ·g) with the same base row `p_x`. `g` = trace subgroup generator.
   fn open_2pt_mat(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, lh: G,
-      ldeg: G, zeta: Ext, p_x: List‹[U8; 8]›, mat: List‹List‹Ext››, alpha: Ext)
+      ldeg: G, zeta: Ext, p_x: List‹Goldilocks›, mat: List‹List‹Ext››, alpha: Ext)
       -> List‹Bucket› {
     let pz0 = list_lookup(mat, 0);
     let pz1 = list_lookup(mat, 1);
@@ -669,7 +678,7 @@ def pcs := ⟦
       _ =>
         let ldeg = to_field(list_lookup(log_degrees, ci));
         let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                  list_lookup(base_rows, ci), list_lookup(opened, ci), alpha);
+                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(opened, ci), alpha);
         open_batch_2pt(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta,
                        base_rows, opened, alpha),
     }
@@ -683,7 +692,7 @@ def pcs := ⟦
       0 => (buckets, chunk),
       _ =>
         let b = ri_apply(buckets, lh, idxbits, log_gmax, zeta,
-                  list_lookup(base_rows, chunk), list_lookup(list_lookup(q_opened, chunk), 0), alpha);
+                  lanes_to_gl(list_lookup(base_rows, chunk)), list_lookup(list_lookup(q_opened, chunk), 0), alpha);
         open_q_chunks(b, idxbits, log_gmax, lh, chunk + 1, qrem - 1, zeta, base_rows, q_opened, alpha),
     }
   }
@@ -715,7 +724,7 @@ def pcs := ⟦
         OptIdx.SomeIdx(_j) =>
           let ldeg = to_field(list_lookup(log_degrees, ci));
           let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                    list_lookup(base_rows, k), list_lookup(prep_round, k), alpha);
+                    lanes_to_gl(list_lookup(base_rows, k)), list_lookup(prep_round, k), alpha);
           open_prep(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, k + 1, log_degrees,
                     prep_indices, zeta, base_rows, prep_round, alpha),
       },
@@ -777,8 +786,8 @@ def pcs := ⟦
   }
   -- Flatten two ext evals to the 4 base coords of the ExtensionMmcs leaf row.
   fn flatten2(e0: Ext, e1: Ext) -> List‹U64› {
-    store(ListNode.Cons(e0[0], store(ListNode.Cons(e0[1],
-      store(ListNode.Cons(e1[0], store(ListNode.Cons(e1[1], store(ListNode.Nil)))))))))
+    store(ListNode.Cons(gl_to_bytes(e0[0]), store(ListNode.Cons(gl_to_bytes(e0[1]),
+      store(ListNode.Cons(gl_to_bytes(e1[0]), store(ListNode.Cons(gl_to_bytes(e1[1]), store(ListNode.Nil)))))))))
   }
   -- Roll the next reduced opening into the folded eval when its height matches
   -- the new folded height: `folded += beta^(2^log_arity) · ro`  (log_arity = 1).
@@ -911,7 +920,7 @@ def pcs := ⟦
     let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
-    let alpha = [gl_reduce(a0), gl_reduce(a1)];
+    let alpha = [gl_val(a0), gl_val(a1)];
     -- per-round FRI fold challenges β (with commit-phase PoW), then observe
     -- final_poly + the log-arity schedule.
     let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);

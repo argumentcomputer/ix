@@ -52,9 +52,10 @@ def deserialize := ⟦
   -- ==========================================================================
 
   -- `ExtVal = BinomialExtensionField<Goldilocks, 2> = 𝔽_p[X]/(X² - 7)`, stored
-  -- as its two Goldilocks coefficients `[c0, c1]` (= `c0 + c1·X`), each held as
-  -- canonical LE bytes (`[U8; 8]`) — the interface shape of `Goldilocks.lean`.
-  type Ext = [[U8; 8]; 2]
+  -- as its two NATIVE Goldilocks coefficients `[c0, c1]` (= `c0 + c1·X`) —
+  -- Aiur's field is Goldilocks, so extension arithmetic runs natively; byte
+  -- form exists only at ingest/observation boundaries (`Goldilocks.lean`).
+  type Ext = [G; 2]
 
   -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
   type Digest = [U64; 4]
@@ -200,7 +201,7 @@ def deserialize := ⟦
   fn read_ext_at(i: G) -> (Ext, G) {
     let (a, j0) = #read_u64_at(i);
     let (b, j1) = #read_u64_at(j0);
-    ([gl_reduce(a), gl_reduce(b)], j1)
+    ([gl_val(a), gl_val(b)], j1)
   }
 
   fn read_digest_at(i: G) -> (Digest, G) {

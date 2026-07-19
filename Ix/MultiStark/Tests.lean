@@ -23,30 +23,25 @@ namespace MultiStark
 
 def tests := ⟦
   -- ==========================================================================
-  -- Non-native Goldilocks byte arithmetic (vs `gl_ops_ref`).
+  -- Native Goldilocks arithmetic (vs `gl_ops_ref`; reference vectors kept as
+  -- their canonical LE bytes and folded with `gl_val`, which is injective on
+  -- canonical bytes).
   -- ==========================================================================
   fn assert_g8(x: Goldilocks, e: Goldilocks) -> G {
-    assert_eq!(to_field(x[0]), to_field(e[0]));
-    assert_eq!(to_field(x[1]), to_field(e[1]));
-    assert_eq!(to_field(x[2]), to_field(e[2]));
-    assert_eq!(to_field(x[3]), to_field(e[3]));
-    assert_eq!(to_field(x[4]), to_field(e[4]));
-    assert_eq!(to_field(x[5]), to_field(e[5]));
-    assert_eq!(to_field(x[6]), to_field(e[6]));
-    assert_eq!(to_field(x[7]), to_field(e[7]));
+    assert_eq!(x, e);
     1
   }
   pub fn gl_addsub_test() -> G {
-    let a = [16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]; -- 0xFEDCBA9876543210
-    let b = [240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]; -- 0x123456789ABCDEF0
-    assert_eq!(assert_g8(gl_add(a, b), [255u8, 16u8, 17u8, 17u8, 18u8, 17u8, 17u8, 17u8]), 1);
-    assert_eq!(assert_g8(gl_sub(a, b), [32u8, 83u8, 151u8, 219u8, 31u8, 100u8, 168u8, 236u8]), 1);
-    assert_eq!(assert_g8(gl_sub(b, a), [225u8, 172u8, 104u8, 36u8, 223u8, 155u8, 87u8, 19u8]), 1);
+    let a = gl_val([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]); -- 0xFEDCBA9876543210
+    let b = gl_val([240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]); -- 0x123456789ABCDEF0
+    assert_eq!(assert_g8(gl_add(a, b), gl_val([255u8, 16u8, 17u8, 17u8, 18u8, 17u8, 17u8, 17u8])), 1);
+    assert_eq!(assert_g8(gl_sub(a, b), gl_val([32u8, 83u8, 151u8, 219u8, 31u8, 100u8, 168u8, 236u8])), 1);
+    assert_eq!(assert_g8(gl_sub(b, a), gl_val([225u8, 172u8, 104u8, 36u8, 223u8, 155u8, 87u8, 19u8])), 1);
     -- edge: (p-1) + 5 ≡ 4 ; 5 - (p-1) ≡ 6
-    let pm1 = [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]; -- 0xFFFFFFFF00000000
-    let five = [5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    assert_eq!(assert_g8(gl_add(pm1, five), [4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
-    assert_eq!(assert_g8(gl_sub(five, pm1), [6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), 1);
+    let pm1 = gl_val([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]); -- 0xFFFFFFFF00000000
+    let five = gl_val([5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    assert_eq!(assert_g8(gl_add(pm1, five), gl_val([4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])), 1);
+    assert_eq!(assert_g8(gl_sub(five, pm1), gl_val([6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])), 1);
     1
   }
 
@@ -56,15 +51,15 @@ def tests := ⟦
     1
   }
   pub fn gl_muldiv_test() -> G {
-    let a = [16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]; -- 0xFEDCBA9876543210
-    let b = [240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]; -- 0x123456789ABCDEF0
-    assert_eq!(assert_g8(gl_mul(a, b), [212u8, 186u8, 123u8, 108u8, 31u8, 253u8, 234u8, 250u8]), 1);
-    assert_eq!(assert_g8(gl_inverse(a), [97u8, 29u8, 109u8, 46u8, 183u8, 100u8, 8u8, 102u8]), 1);
-    assert_eq!(assert_g8(gl_div(a, b), [63u8, 59u8, 61u8, 54u8, 46u8, 255u8, 29u8, 186u8]), 1);
+    let a = gl_val([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]); -- 0xFEDCBA9876543210
+    let b = gl_val([240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]); -- 0x123456789ABCDEF0
+    assert_eq!(assert_g8(gl_mul(a, b), gl_val([212u8, 186u8, 123u8, 108u8, 31u8, 253u8, 234u8, 250u8])), 1);
+    assert_eq!(assert_g8(gl_inverse(a), gl_val([97u8, 29u8, 109u8, 46u8, 183u8, 100u8, 8u8, 102u8])), 1);
+    assert_eq!(assert_g8(gl_div(a, b), gl_val([63u8, 59u8, 61u8, 54u8, 46u8, 255u8, 29u8, 186u8])), 1);
     -- edge: (p-1)·5 ≡ p-5
-    let pm1 = [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8];
-    let five = [5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    assert_eq!(assert_g8(gl_mul(pm1, five), [252u8, 255u8, 255u8, 255u8, 254u8, 255u8, 255u8, 255u8]), 1);
+    let pm1 = gl_val([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]);
+    let five = gl_val([5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    assert_eq!(assert_g8(gl_mul(pm1, five), gl_val([252u8, 255u8, 255u8, 255u8, 254u8, 255u8, 255u8, 255u8])), 1);
     -- a·a⁻¹ = 1 and b·b⁻¹ = 1
     assert_eq!(assert_g8(gl_mul(a, gl_inverse(a)), gl_one()), 1);
     assert_eq!(assert_g8(gl_mul(b, gl_inverse(b)), gl_one()), 1);
@@ -72,22 +67,22 @@ def tests := ⟦
   }
   pub fn eg_ops_test() -> G {
     -- e0 = (0xFEDCBA9876543210, 0x0123456789ABCDEF), e1 = (0x1111111122222222, 0x3333333344444444)
-    let e0 = [[16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8],
-              [239u8, 205u8, 171u8, 137u8, 103u8, 69u8, 35u8, 1u8]];
-    let e1 = [[34u8, 34u8, 34u8, 34u8, 17u8, 17u8, 17u8, 17u8],
-              [68u8, 68u8, 68u8, 68u8, 51u8, 51u8, 51u8, 51u8]];
+    let e0 = [gl_val([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]),
+              gl_val([239u8, 205u8, 171u8, 137u8, 103u8, 69u8, 35u8, 1u8])];
+    let e1 = [gl_val([34u8, 34u8, 34u8, 34u8, 17u8, 17u8, 17u8, 17u8]),
+              gl_val([68u8, 68u8, 68u8, 68u8, 51u8, 51u8, 51u8, 51u8])];
     assert_eq!(assert_eg(eg_add(e0, e1),
-      [49u8, 84u8, 118u8, 152u8, 170u8, 203u8, 237u8, 15u8],
-      [51u8, 18u8, 240u8, 205u8, 154u8, 120u8, 86u8, 52u8]), 1);
+      gl_val([49u8, 84u8, 118u8, 152u8, 170u8, 203u8, 237u8, 15u8]),
+      gl_val([51u8, 18u8, 240u8, 205u8, 154u8, 120u8, 86u8, 52u8])), 1);
     assert_eq!(assert_eg(eg_mul(e0, e1),
-      [10u8, 238u8, 162u8, 36u8, 224u8, 127u8, 182u8, 134u8],
-      [215u8, 234u8, 152u8, 224u8, 219u8, 254u8, 32u8, 67u8]), 1);
+      gl_val([10u8, 238u8, 162u8, 36u8, 224u8, 127u8, 182u8, 134u8]),
+      gl_val([215u8, 234u8, 152u8, 224u8, 219u8, 254u8, 32u8, 67u8])), 1);
     assert_eq!(assert_eg(eg_inverse(e0),
-      [221u8, 238u8, 29u8, 131u8, 179u8, 89u8, 214u8, 216u8],
-      [114u8, 99u8, 206u8, 108u8, 15u8, 88u8, 161u8, 246u8]), 1);
+      gl_val([221u8, 238u8, 29u8, 131u8, 179u8, 89u8, 214u8, 216u8]),
+      gl_val([114u8, 99u8, 206u8, 108u8, 15u8, 88u8, 161u8, 246u8])), 1);
     assert_eq!(assert_eg(eg_div(e0, e1),
-      [42u8, 59u8, 64u8, 77u8, 226u8, 214u8, 95u8, 63u8],
-      [200u8, 46u8, 148u8, 147u8, 124u8, 180u8, 248u8, 140u8]), 1);
+      gl_val([42u8, 59u8, 64u8, 77u8, 226u8, 214u8, 95u8, 63u8]),
+      gl_val([200u8, 46u8, 148u8, 147u8, 124u8, 180u8, 248u8, 140u8])), 1);
     -- e0 · e0⁻¹ = 1
     assert_eq!(assert_eg(eg_mul(e0, eg_inverse(e0)), gl_one(), gl_zero()), 1);
     1
@@ -121,16 +116,16 @@ def tests := ⟦
     -- α_pcs (output empty ⇒ flush), then α_fri (CONSECUTIVE ⇒ thread output).
     let (apcs, input, o1) = pcs_sample_ext(input, store(ListNode.Nil));
     let (afri, input, o2) = pcs_sample_ext(input, o1);
-    assert_eq!(limb_to_field(apcs[0]), 17795849114622667264);
-    assert_eq!(limb_to_field(apcs[1]), 4116843485681689527);
-    assert_eq!(limb_to_field(afri[0]), 11768399386651893439);
-    assert_eq!(limb_to_field(afri[1]), 10948618071942561750);
+    assert_eq!(apcs[0], 17795849114622667264);
+    assert_eq!(apcs[1], 4116843485681689527);
+    assert_eq!(afri[0], 11768399386651893439);
+    assert_eq!(afri[1], 10948618071942561750);
     -- observe commit (clears output), sample β.
     let v2 = [239u8, 190u8, 173u8, 222u8, 0u8, 0u8, 0u8, 0u8]; -- 0x00000000deadbeef
     let (input, _oc) = ch_observe_val(input, v2);
     let (beta, input, _ob) = pcs_sample_ext(input, store(ListNode.Nil));
-    assert_eq!(limb_to_field(beta[0]), 12096272534537655203);
-    assert_eq!(limb_to_field(beta[1]), 11431251745744402868);
+    assert_eq!(beta[0], 12096272534537655203);
+    assert_eq!(beta[1], 11431251745744402868);
     -- observe final_poly coeff + log_arity (each a Val), then sample the index.
     let v3 = [4u8, 3u8, 2u8, 1u8, 13u8, 12u8, 11u8, 10u8]; -- 0x0a0b0c0d01020304
     let v4 = [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];     -- 0x0000000000000002
@@ -150,15 +145,15 @@ def tests := ⟦
   pub fn fri_fold_test() -> G {
     let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
                        store(ListNode.Cons(1, store(ListNode.Nil)))))));
-    let e0 = [[17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8],
-              [34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8]];
-    let e1 = [[51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8],
-              [68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8]];
-    let beta = [[85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8],
-                [102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8]];
+    let e0 = [gl_val([17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8]),
+              gl_val([34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8])];
+    let e1 = [gl_val([51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8]),
+              gl_val([68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8])];
+    let beta = [gl_val([85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8]),
+                gl_val([102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8])];
     let folded = fri_fold2(index_bits, 3, beta, e0, e1);
-    assert_eq!(limb_to_field(folded[0]), 9349172584842537206);
-    assert_eq!(limb_to_field(folded[1]), 984486879173118962);
+    assert_eq!(folded[0], 9349172584842537206);
+    assert_eq!(folded[1], 984486879173118962);
     1
   }
 
@@ -168,25 +163,25 @@ def tests := ⟦
     let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
                        store(ListNode.Cons(1, store(ListNode.Nil)))))));
     let x = ro_x(index_bits, 3);
-    assert_eq!(limb_to_field(x), 117440512);
-    let z = [[154u8, 120u8, 86u8, 52u8, 18u8, 0u8, 0u8, 0u8],
-             [1u8, 239u8, 205u8, 171u8, 0u8, 0u8, 0u8, 0u8]];
-    let alpha = [[17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8],
-                 [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
-    let px0 = [11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    let px1 = [22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    let px2 = [33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    assert_eq!(x, 117440512);
+    let z = [gl_val([154u8, 120u8, 86u8, 52u8, 18u8, 0u8, 0u8, 0u8]),
+             gl_val([1u8, 239u8, 205u8, 171u8, 0u8, 0u8, 0u8, 0u8])];
+    let alpha = [gl_val([17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8]),
+                 gl_val([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
+    let px0 = gl_val([11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let px1 = gl_val([22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let px2 = gl_val([33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
     let p_x = store(ListNode.Cons(px0, store(ListNode.Cons(px1,
                 store(ListNode.Cons(px2, store(ListNode.Nil)))))));
-    let pz0 = [[100u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
-    let pz1 = [[200u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
-    let pz2 = [[44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
+    let pz0 = [gl_val([100u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), gl_val([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
+    let pz1 = [gl_val([200u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), gl_val([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
+    let pz2 = [gl_val([44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), gl_val([3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
     let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
                 store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
     let q = eg_inverse(eg_sub(z, [x, gl_zero()]));
     let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [gl_zero(), gl_zero()], [gl_one(), gl_zero()]);
-    assert_eq!(limb_to_field(ro[0]), 7130765474285082575);
-    assert_eq!(limb_to_field(ro[1]), 12254464995725315436);
+    assert_eq!(ro[0], 7130765474285082575);
+    assert_eq!(ro[1], 12254464995725315436);
     1
   }
 
