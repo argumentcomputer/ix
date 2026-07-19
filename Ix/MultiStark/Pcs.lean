@@ -357,10 +357,105 @@ def pcs := ⟦
       ListNode.Cons(x, rest) => store(ListNode.Cons(gl_to_bytes(gl_val(x)), canon_lanes(rest))),
     }
   }
-  -- The joint leaf hash of all matrices at log-height `target`.
+  -- ==========================================================================
+  -- Rows-walking leaf hash: hash the selected rows' lanes directly, with
+  -- on-the-fly canonicalization — no concatenated lane list is ever
+  -- materialized (`concat_at` rebuilt every selected lane per query, and
+  -- `canon_lanes` copied the result again). Differentially pinned against
+  -- the concat + canon reference by `rows_hash_test`.
+  -- ==========================================================================
+
+  -- The rows at log-height `target`, dropped if empty (an empty row
+  -- contributes no bytes, and dropping it lets exhaustion be detected by
+  -- plain Nil checks in the block walker).
+  fn select_rows(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> List‹List‹U64›› {
+    match load(rows) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(r, rrest) =>
+        let &ListNode.Cons(lh, lrest) = lhs;
+        match eq_zero(lh - target) {
+          0 => select_rows(rrest, lrest, target),
+          _ => match load(r) {
+            ListNode.Nil => select_rows(rrest, lrest, target),
+            _ => store(ListNode.Cons(r, select_rows(rrest, lrest, target))),
+          },
+        },
+    }
+  }
+
+  -- Pop one canonicalized lane across row boundaries. `got = 0` iff both the
+  -- current row and the remaining rows are exhausted (selected rows are
+  -- non-empty, so advancing to the next row always yields a lane).
+  fn rows_pop(cur: List‹U64›, rows: List‹List‹U64››) -> (U64, List‹U64›, List‹List‹U64››, G) {
+    match load(cur) {
+      ListNode.Cons(x, rest) => (gl_to_bytes(gl_val(x)), rest, rows, 1),
+      ListNode.Nil => match load(rows) {
+        ListNode.Nil => ([0u8; 8], cur, rows, 0),
+        ListNode.Cons(r, rrest) => rows_pop(r, rrest),
+      },
+    }
+  }
+
+  -- Block-granular chunk walk over rows-of-lanes; mirrors `b3_lane_chunks`
+  -- (same flag schedule, same `Layer` fold), gathering each 64-byte block
+  -- with eight cross-row pops.
+  fn b3_rows_chunks(cur: List‹U64›, rows: List‹List‹U64››, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+    let (l0, c1, r1, g0) = rows_pop(cur, rows);
+    match g0 {
+      -- Exhausted with no block to compress: only reachable for an empty
+      -- input (every other path detects exhaustion after compressing).
+      0 =>
+        match load(chunk_count) {
+          [0, 0, 0, 0, 0, 0, 0, 0] =>
+            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+          _ => layer,
+        },
+      _ =>
+        let (l1, c2, r2, g1) = rows_pop(c1, r1);
+        let (l2, c3, r3, g2) = rows_pop(c2, r2);
+        let (l3, c4, r4, g3) = rows_pop(c3, r3);
+        let (l4, c5, r5, g4) = rows_pop(c4, r4);
+        let (l5, c6, r6, g5) = rows_pop(c5, r5);
+        let (l6, c7, r7, g6) = rows_pop(c6, r6);
+        let (l7, c8, r8, g7) = rows_pop(c7, r7);
+        let nbytes = 8 * (g0 + g1 + g2 + g3 + g4 + g5 + g6 + g7);
+        let block = [
+          [l0[0], l0[1], l0[2], l0[3]], [l0[4], l0[5], l0[6], l0[7]],
+          [l1[0], l1[1], l1[2], l1[3]], [l1[4], l1[5], l1[6], l1[7]],
+          [l2[0], l2[1], l2[2], l2[3]], [l2[4], l2[5], l2[6], l2[7]],
+          [l3[0], l3[1], l3[2], l3[3]], [l3[4], l3[5], l3[6], l3[7]],
+          [l4[0], l4[1], l4[2], l4[3]], [l4[4], l4[5], l4[6], l4[7]],
+          [l5[0], l5[1], l5[2], l5[3]], [l5[4], l5[5], l5[6], l5[7]],
+          [l6[0], l6[1], l6[2], l6[3]], [l6[4], l6[5], l6[6], l6[7]],
+          [l7[0], l7[1], l7[2], l7[3]], [l7[4], l7[5], l7[6], l7[7]]];
+        let empty = match load(c8) {
+          ListNode.Nil => match load(r8) { ListNode.Nil => 1, _ => 0, },
+          _ => 0,
+        };
+        let at15 = eq_zero(block_no - 15);
+        let start_flag = eq_zero(block_no);
+        let end_flag = empty + at15 - (empty * at15);
+        let root_flag = empty * u64_is_zero(load(chunk_count));
+        let flags = start_flag + 2 * end_flag + 8 * root_flag;
+        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        match (empty, at15) {
+          (1, _) => store(Layer.Push(layer, digest)),
+          (_, 1) =>
+            let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+            b3_rows_chunks(c8, r8, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+          (_, _) => b3_rows_chunks(c8, r8, block_no + 1, chunk_count, store(digest), layer),
+        },
+    }
+  }
+
+  fn b3_rows(rows: List‹List‹U64››) -> [[U8; 4]; 8] {
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(load(b3_rows_chunks(store(ListNode.Nil), rows, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+  }
+
+  -- The joint Blake3 leaf hash of all matrices at log-height `target`.
   fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> Digest {
-    -- The joint Blake3 leaf hash of all matrices at log-height `target`.
-    mmcs_hash_row(canon_lanes(concat_at(rows, lhs, target)))
+    b3_to_digest(b3_rows(select_rows(rows, lhs, target)))
   }
 
   -- Inject the leaf hash of any matrices at log-height `lh` (if present) via a

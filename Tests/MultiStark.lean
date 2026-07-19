@@ -64,6 +64,7 @@ def selfTests : List (Lean.Name × String) := [
   (`pcs_merkle_test, "Merkle verify_batch matches reference (root + tamper)"),
   (`lane_hash_test, "lane-granular leaf blake3 matches byte blake3 (blocks/chunks/fold)"),
   (`io_hash_test, "IO-slice blake3 matches byte blake3 (blocks/chunks/fold)"),
+  (`rows_hash_test, "rows-walking leaf hash matches concat+canon reference"),
   (`sample_bits_test, "challenger sample_bits matches reference"),
   (`pcs_challenger4_test, "PCS challenger continuation (α_pcs/α_fri/β/index) matches reference"),
   (`fri_fold_test, "FRI arity-2 fold_row matches reference"),

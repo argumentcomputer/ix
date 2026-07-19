@@ -310,6 +310,35 @@ def tests := ⟦
       * lane_hash_check(500)
   }
 
+  -- Differential test for the rows-walking leaf hasher: `b3_rows` over the
+  -- selected rows must agree with the concat + canon reference
+  -- (`mmcs_hash_row(canon_lanes(concat_at(...)))`) across shapes: all/none/
+  -- some rows selected, an empty row mixed in, exact-block totals, and a
+  -- multi-chunk total (layer fold). Rows reuse `lane_test_row`'s varied
+  -- bytes.
+  fn rows_test_rows(spec: List‹G›) -> List‹List‹U64›› {
+    match load(spec) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(n, rest) => store(ListNode.Cons(lane_test_row(n), rows_test_rows(rest))),
+    }
+  }
+  fn rows_hash_check(spec: List‹G›, lhs: List‹G›, target: G) -> G {
+    let rows = rows_test_rows(spec);
+    digest_eq(b3_to_digest(b3_rows(select_rows(rows, lhs, target))),
+              mmcs_hash_row(canon_lanes(concat_at(rows, lhs, target))))
+  }
+  fn g1(a: G) -> List‹G› { store(ListNode.Cons(a, store(ListNode.Nil))) }
+  fn g2(a: G, b: G) -> List‹G› { store(ListNode.Cons(a, g1(b))) }
+  fn g3(a: G, b: G, c: G) -> List‹G› { store(ListNode.Cons(a, g2(b, c))) }
+  pub fn rows_hash_test() -> G {
+    rows_hash_check(g3(3, 5, 2), g3(7, 7, 7), 7)
+      * rows_hash_check(g3(3, 5, 2), g3(7, 7, 7), 5)
+      * rows_hash_check(g3(3, 0, 5), g3(7, 7, 7), 7)
+      * rows_hash_check(g1(8), g1(4), 4)
+      * rows_hash_check(g2(130, 130), g2(9, 9), 9)
+      * rows_hash_check(g3(5, 9, 3), g3(2, 9, 2), 2)
+  }
+
   -- Differential test for the IO-slice hasher: `b3_io` over the bytes the
   -- test writes to a channel arena must agree with byte-granular `blake3`
   -- over the same bytes, at the same structural boundaries as the lane test
