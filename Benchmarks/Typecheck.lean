@@ -498,17 +498,25 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           IO.println s!"  [{i + 1}/{ordered.size}] recursively verifying {r.name} …"
           (← IO.getStdout).flush
           let claimBytes := MultiStark.serializeClaims #[claim]
-          let (pubInput, io) := MultiStark.verifierInput proofBytes
-            aiurSystem.vkBytes claimBytes commitParams friParams
+          let vkBytes := aiurSystem.vkBytes
+          let pubInput := MultiStark.verifierPubInput vkBytes claimBytes
+            commitParams friParams
+          -- Native path: the advice buffer is built in Rust from the raw
+          -- byte blobs and execution routes through the codegen'd verifier.
           let (rvRes, rvSec) ← timed fun _ =>
-            vCompiled.bytecode.execute vIdx pubInput io
+            vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes
+              vkBytes claimBytes
           match rvRes with
           | .error e =>
             IO.eprintln s!"  ❌ recursive verifier REJECTED {r.name}'s proof: {e}"
-          | .ok (_, _, qc) =>
+          | .ok (_, qc) =>
             let rvStats := Aiur.computeStats vCompiled qc
             IO.println s!"  {r.name}: recursive={rvSec}s \
               recursive-fft-cost={rvStats.totalFftCost}"
+            -- The per-circuit breakdown names where the verifier's cost
+            -- lives (deserialization vs blake3 vs FRI); texray-gated like
+            -- the other detailed diagnostics.
+            if useTexray then Aiur.printStats rvStats
             let (row, _) := ordered[i]!
             ordered := ordered.set! i
               ({ row with recursiveExecuteSec := some rvSec
@@ -520,8 +528,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             IO.println s!"  [{i + 1}/{ordered.size}] proving the verifier over {r.name} …"
             (← IO.getStdout).flush
             TracingTexray.resetPeakTreeRss
-            let ((rvClaim, rvProof, _), rvProveSec) ← timed fun _ =>
-              vSystem.prove vIdx pubInput io
+            let ((rvClaim, rvProof), rvProveSec) ← timed fun _ =>
+              vSystem.proveMultiStark vIdx pubInput proofBytes vkBytes
+                claimBytes
             let rvPeak ← TracingTexray.peakTreeRssBytes
             let rvProofBytes := Aiur.Proof.toBytes rvProof
             let (rvVerifyRes, rvVerifySec) ← timed fun _ =>

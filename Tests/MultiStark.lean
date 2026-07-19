@@ -175,7 +175,8 @@ def endToEndSuite : IO UInt32 := do
   -- ── negative-test inputs ────────────────────────────────────────────────────
   -- Tampered proof advice: flip byte 0 (the first stage_1-commitment limb) so the
   -- replayed Fiat-Shamir transcript diverges from the one the proof was made under.
-  let badProofGs := proofGs.set! 0 (Aiur.G.ofNat ((proofBytes.data[0]!.toNat + 1) % 256))
+  let badProofBytes :=
+    proofBytes.set! 0 (UInt8.ofNat ((proofBytes.data[0]!.toNat + 1) % 256))
   -- Tampered claim (with a matching keccak digest): 120 → 121. Feeds a different
   -- value into Fiat-Shamir (→ different ζ) and the lookup accumulator, so the
   -- composition/quotient identity no longer holds even though the binding passes.
@@ -187,14 +188,28 @@ def endToEndSuite : IO UInt32 := do
   -- ── run the (expensive) checks, then assert ─────────────────────────────────
   IO.println "recursive-verifier (proving + recursive verification, ~1.5 min)…"
   let innerVerify := facSystem.verify claim (.ofBytes proofBytes)
-  let honest := vCompiled.bytecode.execute vIdx pubInput (mkIO proofGs claimGs)
-  let tamperedProof := vCompiled.bytecode.execute vIdx pubInput (mkIO badProofGs claimGs)
+  -- Native path: Rust-built advice buffer + codegen'd verifier
+  -- (`crates/ixvm-codegen/src/aiur_multi_stark.rs`).
+  let honest :=
+    vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes vkBytes claimBytes
+  -- Interpreter over the Lean-built buffer: the parity reference for the
+  -- codegen'd verifier — same output, same per-circuit query counts.
+  let honestInterp := vCompiled.bytecode.execute vIdx pubInput (mkIO proofGs claimGs)
+  let parity : Bool := match honest, honestInterp with
+    | .ok (out, qc), .ok (outI, _, qcI) =>
+      out == outI && qc.size == qcI.size &&
+        (qc.zip qcI).all fun (a, b) =>
+          a.uniqueRows == b.uniqueRows && a.totalHits == b.totalHits
+    | _, _ => false
+  let tamperedProof :=
+    vCompiled.bytecode.executeMultiStark vIdx pubInput badProofBytes vkBytes claimBytes
   let tamperedClaim :=
-    vCompiled.bytecode.execute vIdx badClaimInput (mkIO proofGs (badClaimBytes.data.map .ofUInt8))
+    vCompiled.bytecode.executeMultiStark vIdx badClaimInput proofBytes vkBytes badClaimBytes
   lspecIO (.ofList [("recursive-verifier", [
     test "factorial(5) claim = #[functionChannel, facIdx, 5, 120]" (claim == expectedClaim),
     expectOk "inner factorial proof verifies" innerVerify,
     expectOk "verifier accepts honest proof (vk digest bound + OOD + FRI)" honest,
+    test "codegen'd verifier matches interpreter (output + query counts)" parity,
     expectErr "tampered proof advice rejected (verification checks)" tamperedProof,
     expectErr "tampered claim rejected (OOD/accumulator mismatch)" tamperedClaim,
   ])]) []

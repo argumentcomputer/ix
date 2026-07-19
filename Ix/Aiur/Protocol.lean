@@ -96,6 +96,29 @@ def proveIxVM (system : @& AiurSystem)
   let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
   (claim, proof, ⟨ioData, ioMap⟩)
 
+@[extern "rs_aiur_multi_stark_prove"]
+private opaque proveMultiStark' : @& AiurSystem →
+  @& Bytecode.FunIdx → @& Array G →
+  (proofBytes : @& ByteArray) → (vkBytes : @& ByteArray) →
+  (claimBytes : @& ByteArray) → Bool →
+    Array G × Proof
+
+/-- Prove the MultiStark recursive verifier over raw proof/vk/claims
+    byte blobs. The IO advice buffer is built natively in Rust (see
+    `Bytecode.Toplevel.executeMultiStark`); the execute step inside
+    the prove routes through the codegen'd verifier
+    (`crates/ixvm-codegen/src/aiur_multi_stark.rs`) unless
+    `useBytecode` is set. Only valid when `system` was built from the
+    production `MultiStark.multiStark` bytecode. Returns the claim
+    (`#[functionChannel, funIdx] ++ pubInput ++ output`) and the
+    `Proof`; the final buffer is not returned. -/
+def proveMultiStark (system : @& AiurSystem)
+  (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
+  (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
+    Array G × Proof :=
+  proveMultiStark' system funIdx pubInput proofBytes vkBytes claimBytes
+    useBytecode
+
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →

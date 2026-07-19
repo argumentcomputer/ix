@@ -108,18 +108,32 @@ def serializeClaims (claims : Array (Array Aiur.G)) : ByteArray := Id.run do
       out := out ++ u64le g.val.toNat
   return ⟨out⟩
 
+/-- Assemble `verify_multi_stark_proof`'s public input from the serialized vk
+(`AiurSystem.vkBytes`) and claims (`serializeClaims`): vk digest ++ claims
+digest ++ the variable FRI parameters. The proof/vk/claims advice itself goes
+through the natively-built IO buffer (`executeMultiStark` /
+`proveMultiStark`, which take the raw byte blobs directly), or through
+`verifierInput` on the Lean-buffer fallback path. -/
+def verifierPubInput (vkBytes claimBytes : ByteArray)
+    (commitParams : Aiur.CommitmentParameters) (friParams : Aiur.FriParameters) :
+    Array Aiur.G :=
+  let digestGs : ByteArray → Array Aiur.G :=
+    fun b => (Blake3.Rust.hash b).val.data.map .ofUInt8
+  digestGs vkBytes ++ digestGs claimBytes ++
+    #[.ofNat friParams.numQueries, .ofNat friParams.commitProofOfWorkBits,
+      .ofNat commitParams.logBlowup]
+
 /-- Assemble `verify_multi_stark_proof`'s inputs from the serialized proof, vk
-(`AiurSystem.vkBytes`), and claims (`serializeClaims`): the public input (vk
-digest ++ claims digest ++ the variable FRI parameters) and the IO buffer
-(channel 0 = proof advice, 1 = vk, 2 = claims, each under key `[0]`). -/
+(`AiurSystem.vkBytes`), and claims (`serializeClaims`): the public input
+(`verifierPubInput`) and the IO buffer (channel 0 = proof advice, 1 = vk,
+2 = claims, each under key `[0]`). The Lean-built buffer boxes every byte
+into a `G` and is marshalled across FFI — prefer the raw-bytes entrypoints
+(`executeMultiStark` / `proveMultiStark`) off the hot path. -/
 def verifierInput (proofBytes vkBytes claimBytes : ByteArray)
     (commitParams : Aiur.CommitmentParameters) (friParams : Aiur.FriParameters) :
     Array Aiur.G × Aiur.IOBuffer :=
   let gs := fun (b : ByteArray) => b.data.map Aiur.G.ofUInt8
-  let digestGs := fun (b : ByteArray) => gs (Blake3.Rust.hash b).val
-  let pubInput := digestGs vkBytes ++ digestGs claimBytes ++
-    #[.ofNat friParams.numQueries, .ofNat friParams.commitProofOfWorkBits,
-      .ofNat commitParams.logBlowup]
+  let pubInput := verifierPubInput vkBytes claimBytes commitParams friParams
   let io := (((default : Aiur.IOBuffer).extend 0 #[.ofNat 0] (gs proofBytes)).extend
     1 #[.ofNat 0] (gs vkBytes)).extend 2 #[.ofNat 0] (gs claimBytes)
   (pubInput, io)
