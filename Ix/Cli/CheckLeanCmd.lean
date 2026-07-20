@@ -26,6 +26,10 @@
   (0 disables). `--fail-out` streams failures in the check-rs FailureLog
   shape (bare name lines + `#` comments), so a meta-mode file feeds
   straight into `ix check-rs --consts-file` for differential bisects.
+  `--consts`/`--consts-file` narrow the check to named targets (matched
+  against the same labels fail-out writes, `«»`-insensitively) — the
+  fast iteration loop for single-constant repros: ingress still covers
+  the whole env, but checking touches only the requested blocks.
 
   Exit codes match check-rs: 0 all pass; 3 kernel rejection; 2 usage;
   1 infra (read/parse/ingress) error.
@@ -33,6 +37,7 @@
 module
 public import Cli
 public import Ix.Common
+public import Ix.Cli.ConstsFile
 public import Ix.Tc
 public import Ix.Benchmark.Results
 
@@ -63,10 +68,53 @@ def defaultWorkers : IO Nat := do
     return 8
   | .error _ => return 8
 
+/-- Narrow check work to the requested names (`--consts`/`--consts-file`;
+    empty = everything). Returns the kept items plus the requests that
+    matched nothing. Matching goes through `ConstsFile.normalizeName` on
+    both sides so fail-out files from either kernel resolve (Lean escapes
+    non-identifier components as `«…»`, Rust renders them bare); a leading
+    `#` on a request is dropped so anon `#hex` labels match bare hex too. -/
+def selectWork (work : Array (CheckWorkItem m)) (labelOf : KId m → String)
+    (only : Array String) :
+    Array (CheckWorkItem m) × Array String := Id.run do
+  if only.isEmpty then return (work, #[])
+  let key (s : String) : String :=
+    ConstsFile.normalizeName
+      (if s.startsWith "#" then (s.drop 1).toString else s)
+  let wanted : Std.HashSet String :=
+    only.foldl (fun acc n => acc.insert (key n)) {}
+  let mut seen : Std.HashSet String := {}
+  let mut kept : Array (CheckWorkItem m) := #[]
+  for it in work do
+    let mut hit := false
+    for t in it.targets do
+      let k := key (labelOf t)
+      if wanted.contains k then
+        hit := true
+        seen := seen.insert k
+    if hit then
+      kept := kept.push it
+  let unmatched := only.filter (fun n => !seen.contains (key n))
+  return (kept, unmatched)
+
+/-- Apply `selectWork` and report: unmatched-name warnings and, when a
+    filter is active, the narrowed item count. -/
+def selectWorkReporting (work : Array (CheckWorkItem m))
+    (labelOf : KId m → String) (only : Array String) :
+    IO (Array (CheckWorkItem m)) := do
+  let (kept, unmatched) := selectWork work labelOf only
+  for n in unmatched do
+    IO.eprintln s!"[check-lean] warning: --consts name matched nothing: {n}"
+  if !only.isEmpty then
+    IO.eprintln s!"[check-lean] filter: {only.size} name(s) → \
+                   {kept.size} work item(s)"
+  return kept
+
 /-- Meta path: full parse → parallel meta ingress → check work → parallel
     check. Returns `(report, workItems)` or an infra error. -/
 def runMetaCheck (bytes : ByteArray) (cfg : ParCheckCfg) (verify : Bool)
-    (max? : Option Nat) (failOut? : Option IO.FS.Handle) :
+    (max? : Option Nat) (only : Array String)
+    (failOut? : Option IO.FS.Handle) :
     IO (Except String (ParCheckReport × Nat)) := do
   let t0 ← IO.monoMsNow
   match Ixon.deEnv bytes with
@@ -81,7 +129,8 @@ def runMetaCheck (bytes : ByteArray) (cfg : ParCheckCfg) (verify : Bool)
       let t2 ← IO.monoMsNow
       IO.eprintln s!"[check-lean] ingress:     {t2 - t1}ms \
                      ({kenv.consts.size} kernel consts, {kenv.blocks.size} blocks)"
-      let workAll := buildCheckWork kenv
+      let workAll ← selectWorkReporting (buildCheckWork kenv)
+        (fun id => toString id.name) only
       let work := match max? with
         | some n => workAll.extract 0 (min n workAll.size)
         | none => workAll
@@ -98,7 +147,8 @@ def runMetaCheck (bytes : ByteArray) (cfg : ParCheckCfg) (verify : Bool)
 /-- Anon path: anon parse → parallel anon ingress → check work → parallel
     check. Same driver, `#<hex>` labels. -/
 def runAnonCheck (bytes : ByteArray) (cfg : ParCheckCfg) (verify : Bool)
-    (max? : Option Nat) (failOut? : Option IO.FS.Handle) :
+    (max? : Option Nat) (only : Array String)
+    (failOut? : Option IO.FS.Handle) :
     IO (Except String (ParCheckReport × Nat)) := do
   let t0 ← IO.monoMsNow
   match Ixon.deEnvAnon bytes with
@@ -116,7 +166,8 @@ def runAnonCheck (bytes : ByteArray) (cfg : ParCheckCfg) (verify : Bool)
         let t2 ← IO.monoMsNow
         IO.eprintln s!"[check-lean] ingress:     {t2 - t1}ms \
                        ({kenv.consts.size} kernel consts, {kenv.blocks.size} blocks)"
-        let workAll := buildCheckWork kenv
+        let workAll ← selectWorkReporting (buildCheckWork kenv)
+          (fun id => s!"#{id.addr}") only
         let work := match max? with
           | some n => workAll.extract 0 (min n workAll.size)
           | none => workAll
@@ -154,6 +205,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let verify := !(p.hasFlag "no-verify")
   let clearEvery := ((p.flag? "clear-every").map (·.as! Nat)).getD 50
   let max? := (p.flag? "max").map (·.as! Nat)
+  let only ← Ix.Cli.ConstsFile.gather p
   let failOutPath := ((p.flag? "fail-out").map (·.as! String)).getD ""
   let workers ← match (p.flag? "workers").map (·.as! Nat) with
     | some n => pure (max 1 n)
@@ -162,7 +214,12 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     workers, clearEvery, verbose
     progressMs := ← envNat ["IX_KERNEL_CHECK_PROGRESS_MS", "IX_PROGRESS_MS"] 2000
     slowMs := ← envNat ["IX_KERNEL_CHECK_SLOW_MS"] 7000
-    stuckMs := ← envNat ["IX_KERNEL_CHECK_ACTIVE_SLOW_MS"] 30000 }
+    stuckMs := ← envNat ["IX_KERNEL_CHECK_ACTIVE_SLOW_MS"] 30000
+    debugConst? := ← IO.getEnv "IX_TC_DEBUG_CONST"
+    stepTrace := (← envNat ["IX_TC_STEP_TRACE"] 0) != 0
+    stats := (← envNat ["IX_TC_STATS"] 0) != 0
+    maxRecFuel? := ((← IO.getEnv "IX_MAX_REC_FUEL").bind
+      (·.trimAscii.toString.toNat?)).map (·.toUInt64) }
 
   IO.println s!"Running Ix.Tc kernel check \
                 ({if anon then "anon" else "meta"} mode) on {envPath}"
@@ -177,8 +234,8 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     h.putStrLn s!"# env: {envPath}"
     pure (some h)
 
-  let result ← if anon then runAnonCheck bytes cfg verify max? failOut?
-    else runMetaCheck bytes cfg verify max? failOut?
+  let result ← if anon then runAnonCheck bytes cfg verify max? only failOut?
+    else runMetaCheck bytes cfg verify max? only failOut?
   match result with
   | .error e =>
     IO.eprintln s!"[check-lean] {e}"
@@ -219,6 +276,8 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
     anon;                   "Run in anon mode (metadata never reaches the kernel; `#hex` labels)"
     workers       : Nat;    "Parallel check workers (default: LEAN_NUM_THREADS, else core count)"
     "fail-out"    : String; "Stream failing constants to this path (check-rs consts-file format)"
+    consts        : String; "Check only these constants (comma-separated fail-out labels; meta names or anon #hex)"
+    "consts-file" : String; "Check only the constants listed in this file (consts-file grammar; e.g. a --fail-out file)"
     max           : Nat;    "Check only the first N work items (ingress still covers the whole env)"
     "clear-every" : Nat;    "Clear each worker's reduction caches every N work items (0 disables; default 50)"
     "no-verify";            "Skip blake3 integrity verification at constant materialization"

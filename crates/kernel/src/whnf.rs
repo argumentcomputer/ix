@@ -6,6 +6,8 @@ use std::sync::LazyLock;
 
 use rustc_hash::FxHashSet;
 
+use crate::def_eq::IX_STEP_TRACE;
+
 use ix_common::address::Address;
 use ixon::constant::DefKind;
 
@@ -249,6 +251,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       | ExprData::Str(..) => return Ok(e.clone()),
       ExprData::Var(i, _, _) if !self.is_let_var(*i) => return Ok(e.clone()),
       _ => {},
+    }
+    // Step journal (see `IX_STEP_TRACE` in def_eq.rs); placed after the
+    // quick exit to mirror the Lean kernel's `[whnf+]` site.
+    if *IX_STEP_TRACE {
+      eprintln!(
+        "[whnf+] {} {}",
+        self.fuel_used(),
+        &e.hash_key().to_hex()[..8]
+      );
     }
 
     // Context-aware cache: closed exprs use ptr only; open exprs include

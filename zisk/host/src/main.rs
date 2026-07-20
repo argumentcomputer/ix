@@ -832,10 +832,15 @@ async fn run_constant(
   // (`get_anon` discards `named`, so load the full env just for the lookup).
   let full =
     IxonEnv::get(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  // `«»`-insensitive match (Lean-escaped vs bare renderings; see
+  // `ix_common::env::normalize_displayed_name`).
+  let want = ix_common::env::normalize_displayed_name(name);
   let target: Address = full
     .named
     .iter()
-    .find(|e| e.key().to_string() == name)
+    .find(|e| {
+      ix_common::env::normalize_displayed_name(&e.key().to_string()) == want
+    })
     .map(|e| e.value().addr.clone())
     .ok_or_else(|| {
       anyhow::anyhow!("no constant named {name:?} in {}", plan.label)

@@ -53,6 +53,15 @@ static IX_PROJ_DELTA_TRACE: crate::EnvString =
 static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
+/// Step journal (`IX_STEP_TRACE=1`): one `[deq] <fuel> <a8> ~ <b8>` line
+/// per `is_def_eq` entry (plus `[whnf+]` lines in whnf.rs), mirroring the
+/// Lean kernel's `IX_TC_STEP_TRACE` journal (`Ix.Tc` / `TcM.stepTrace`).
+/// Diffing the two sequences localizes a behavioral divergence at the
+/// first fork (workflow in `Ix/Tc/ParCheck.lean`). Unscoped by design —
+/// pair with a seeded single-constant run (`--consts <name>`).
+pub(crate) static IX_STEP_TRACE: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_STEP_TRACE").is_ok());
+
 impl<M: KernelMode> TypeChecker<'_, M> {
   /// Check definitional equality of two expressions.
   pub fn is_def_eq(
@@ -67,6 +76,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
     }
     crate::profile::bump_def_eq();
+    if *IX_STEP_TRACE {
+      eprintln!(
+        "[deq] {} {} ~ {}",
+        self.fuel_used(),
+        &a.hash_key().to_hex()[..8],
+        &b.hash_key().to_hex()[..8],
+      );
+    }
     if a.ptr_eq(b) {
       return Ok(true);
     }

@@ -32,6 +32,7 @@ import Tests.Ix.Tc.InitScale
 import Tests.Ix.Tc.TutorialTc
 import Tests.Ix.Tc.Roundtrip
 import Tests.Ix.Tc.IngressMetaTests
+import Tests.Ix.Tc.Pins
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -159,6 +160,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- lean4lean dependency smoke: accept a real closure, reject an
   -- ill-typed decl (see Tests.Ix.Lean4Lean).
   ("lean4lean", Tests.Ix.Lean4Lean.run env),
+  -- Pure-Lean kernel regression pins against a real .ixe (needs
+  -- IX_PINS_IXE; skips cleanly otherwise — see Tests.Tc.Pins).
+  ("tc-pins", Tests.Tc.Pins.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

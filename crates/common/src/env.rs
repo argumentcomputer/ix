@@ -269,6 +269,22 @@ impl std::fmt::Display for Name {
   }
 }
 
+/// Canonical key for cross-kernel displayed-name matching: Lean's
+/// `Name.toString` wraps non-identifier components in `«»`
+/// (`_private.….«0».…`, `Lean.Order.«term_⊑_»`) while [`Name::pretty`]
+/// renders them bare, so a fail-out file written by one side misses a
+/// string-keyed lookup on the other. Stripping the guillemets from BOTH
+/// the request and the candidate collapses the two renderings onto one
+/// key, at the cost of the same flattening ambiguity `pretty` already
+/// has. Mirrors `Ix.Cli.ConstsFile.normalizeName` on the Lean side.
+pub fn normalize_displayed_name(s: &str) -> String {
+  if s.contains(['«', '»']) {
+    s.chars().filter(|c| !matches!(c, '«' | '»')).collect()
+  } else {
+    s.to_string()
+  }
+}
+
 /// A content-addressed universe level.
 ///
 /// Levels are interned via `Arc` and compared/hashed by their Blake3 digest.

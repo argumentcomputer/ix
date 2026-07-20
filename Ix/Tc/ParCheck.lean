@@ -30,6 +30,18 @@ for "interesting" outcomes) with Lean-native primitives:
   while checking (Lake-monitor pattern): workers only mutate shared state
   (`Std.Mutex` over slots/events + `IO.Ref` counters), so progress lines
   never interleave.
+
+Divergence-hunting workflow (found the 2026-07 kernel bugs): run the
+suspect constant seeded and journaled through BOTH kernels —
+`IX_TC_DEBUG_CONST=<label> IX_TC_STEP_TRACE=1 ix check-lean <env.ixe>
+--consts <label> --workers 1 2>lean.log` and the Rust side with
+`IX_STEP_TRACE=1 ix check-rs … --consts <label> 2>rs.log` — then
+canonicalize and `diff` the `[deq]`/`[whnf+]` sequences: the first fork
+names the diverging operation (`TcM.stepTrace` documents the line
+shape). `IX_TC_STATS=1` appends `fuel=/deq=/whnf=` counters to
+verbose/slow per-item lines for call-count comparisons against the Rust
+counters (`IX_DEF_EQ_COUNT_LOG`); `IX_MAX_REC_FUEL` overrides the
+per-constant fuel budget on both sides.
 -/
 
 public section
@@ -122,6 +134,19 @@ structure ParCheckCfg where
   /-- Suppress ALL live output (library/test callers); the report and any
       `failOut?` stream still carry everything. -/
   silent : Bool := false
+  /-- Set `debugLabel` on the item whose label (or fail-label) equals
+      this, scoping the step journal to one constant
+      (CLI: `IX_TC_DEBUG_CONST`). -/
+  debugConst? : Option String := none
+  /-- Emit the `[deq]`/`[whnf+]` step journal for the debug-target
+      constant (CLI: `IX_TC_STEP_TRACE=1`; see `TcM.stepTrace`). -/
+  stepTrace : Bool := false
+  /-- Count defeq/whnf calls+misses, appended to verbose/slow per-item
+      lines as `fuel=N deq=calls/misses whnf=calls/misses`
+      (CLI: `IX_TC_STATS=1`). -/
+  stats : Bool := false
+  /-- Override the per-constant fuel budget (CLI: `IX_MAX_REC_FUEL`). -/
+  maxRecFuel? : Option UInt64 := none
 
 /-- Whole-run verdict summary. `failures` carries one `(label, message)`
     row per failed TARGET (a failing block fans to every member), sorted
@@ -188,6 +213,11 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
   -- One worker: own TcState over the shared env; work-stealing loop.
   let worker (wi : Nat) : IO (Nat × Array (String × String)) := do
     let mut st := TcState.new kenv prims
+    st := { st with
+      stepTrace := cfg.stepTrace
+      stats := cfg.stats
+      fuelBudget := cfg.maxRecFuel?.getD st.fuelBudget
+      recFuel := cfg.maxRecFuel?.getD st.recFuel }
     let mut passed := 0
     let mut failures : Array (String × String) := #[]
     let mut sinceClear := 0
@@ -197,6 +227,12 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
       if h : idx < work.size then
         let item := work[idx]
         let lbl := labelOf item.primary
+        if cfg.debugConst?.isSome then
+          let isTarget := (cfg.debugConst? == some lbl
+            || cfg.debugConst? == some (failLabelOf item.primary))
+          st := { st with debugLabel := if isTarget then some lbl else none }
+        let (dc0, dm0, wc0, wm0) :=
+          (st.deqCalls, st.deqMisses, st.whnfCalls, st.whnfMisses)
         let t0 ← IO.monoMsNow
         if cfg.verbose && !cfg.silent then
           IO.eprint s!"  [{idx + 1}/{total}] {lbl} ... "
@@ -210,6 +246,10 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
         let t1 ← IO.monoMsNow
         let ms := t1 - t0
         let depth := st.defEqPeak
+        let stats := if !cfg.stats then "" else
+          s!" fuel={st.fuelBudget - st.recFuel} \
+             deq={st.deqCalls - dc0}/{st.deqMisses - dm0} \
+             whnf={st.whnfCalls - wc0}/{st.whnfMisses - wm0}"
         match err? with
         | none => passed := passed + item.targets.size
         | some msg =>
@@ -218,15 +258,17 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
         if cfg.verbose then
           if !cfg.silent then
             match err? with
-            | none => IO.eprintln s!"ok ({ms}ms, depth={depth})"
-            | some msg => IO.eprintln s!"FAIL ({ms}ms, depth={depth}): {msg}"
+            | none => IO.eprintln s!"ok ({ms}ms, depth={depth}{stats})"
+            | some msg =>
+              IO.eprintln s!"FAIL ({ms}ms, depth={depth}{stats}): {msg}"
         else
           let interesting? : Option String :=
             if cfg.silent then none else match err? with
-            | some msg => some s!"  ✗ {lbl}: FAIL ({ms}ms, depth={depth}): {msg}"
+            | some msg =>
+              some s!"  ✗ {lbl}: FAIL ({ms}ms, depth={depth}{stats}): {msg}"
             | none =>
               if cfg.slowMs != 0 && ms ≥ cfg.slowMs then
-                some s!"  {lbl} ok ({ms}ms, depth={depth}) [slow]"
+                some s!"  {lbl} ok ({ms}ms, depth={depth}{stats}) [slow]"
               else none
           progress.atomically fun ref => ref.modify fun s =>
             let s := { s with slots := s.slots.set! wi none }

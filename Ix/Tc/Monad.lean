@@ -91,6 +91,24 @@ structure TcState (m : Mode) where
   recFuel : UInt64 := maxRecFuel
   /-- Optional diagnostic label for the current top-level constant. -/
   debugLabel : Option String := none
+  /-- Initial fuel restored by `reset` for each constant check (the
+      `IX_MAX_REC_FUEL` override lands here via the driver). -/
+  fuelBudget : UInt64 := maxRecFuel
+  /-- Opt-in step journal (`IX_TC_STEP_TRACE`): `[deq]`/`[whnf+]` lines
+      for the `debugLabel`ed constant only. See `TcM.stepTrace`. -/
+  stepTrace : Bool := false
+  /-- Opt-in counters (`IX_TC_STATS`); when false each bump site costs
+      one state read + branch. -/
+  stats : Bool := false
+  /-- `isDefEq` calls (stats). -/
+  deqCalls : UInt64 := 0
+  /-- `isDefEq` calls that fell through every O(1) exit to structural
+      work (stats); cache-hit rate = 1 − misses/calls. -/
+  deqMisses : UInt64 := 0
+  /-- `whnf` calls past the non-reducing quick exit (stats). -/
+  whnfCalls : UInt64 := 0
+  /-- `whnf` calls that missed the cache and did real work (stats). -/
+  whnfMisses : UInt64 := 0
   /-- Memo for `ctxAddrForLbr`: pure in `(ctxId, lbr)`. -/
   ctxAddrCache : HashMap (Address × UInt64) Address := {}
   /-- Local context for fvar-based binder opening. -/
@@ -160,7 +178,33 @@ namespace TcM
 
 /-- Fuel consumed so far in the current check. -/
 def fuelUsed : TcM m UInt64 := do
-  return maxRecFuel - (← get).recFuel
+  let s ← get
+  return s.fuelBudget - s.recFuel
+
+/-! ### Opt-in instrumentation (`IX_TC_STEP_TRACE` / `IX_TC_STATS`) -/
+
+/-- First 8 hex chars of an address (step-journal rendering). -/
+def addr8 (a : Address) : String := ((toString a).take 8).toString
+
+/-- Emit one step-journal line — only when this constant is the debug
+    target (`debugLabel`, set by the driver from `IX_TC_DEBUG_CONST`)
+    and `stepTrace` is on (`IX_TC_STEP_TRACE=1`). `payload` is deferred,
+    so an off switch costs one state read + branch. Line shape
+    `[tag] <fuelUsed> <payload>` mirrors the Rust kernel's
+    `IX_STEP_TRACE` journal; diffing the two sequences localizes a
+    behavioral divergence at the first fork (workflow in
+    `Ix.Tc.ParCheck`). -/
+@[inline] def stepTrace (tag : String) (payload : Unit → String) :
+    TcM m Unit := do
+  let s ← get
+  if s.stepTrace && s.debugLabel.isSome then
+    let fuel := s.fuelBudget - s.recFuel
+    dbgTrace s!"[{tag}] {fuel} {payload ()}" fun _ => pure ()
+
+/-- Bump opt-in stats counters (no-op unless `stats`). -/
+@[inline] def bumpStats (f : TcState m → TcState m) : TcM m Unit := do
+  if (← get).stats then
+    modify f
 
 def freshFVarId : TcM m FVarId := fun s =>
   let (id, env) := s.env.freshFVarId
@@ -501,7 +545,7 @@ def reset : TcM m Unit := do
     eagerReduce := false
     defEqDepth := 0
     defEqPeak := 0
-    recFuel := maxRecFuel
+    recFuel := s.fuelBudget
     ctxAddrCache := {}
     lctx := {} }
 

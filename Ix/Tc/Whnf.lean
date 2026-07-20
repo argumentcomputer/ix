@@ -272,6 +272,8 @@ partial def whnfWithNatSuccMode (e : KExpr m) (natSuccMode : NatSuccMode) :
   | .var i _ _ =>
     if !(← TcM.isLetVar (m := m) i) then return e
   | _ => pure ()
+  TcM.stepTrace (m := m) "whnf+" fun _ => TcM.addr8 e.addr
+  TcM.bumpStats (m := m) fun s => { s with whnfCalls := s.whnfCalls + 1 }
   let key ← TcM.whnfKey e
   let useCache := natSuccMode == .collapse
   let transientNatWork ← isTransientNatLiteralWork e
@@ -279,6 +281,7 @@ partial def whnfWithNatSuccMode (e : KExpr m) (natSuccMode : NatSuccMode) :
     if let some cached := (← get).env.whnfCache[key]? then
       return cached
   -- Tick AFTER fast paths and cache: only consume fuel for actual work.
+  TcM.bumpStats (m := m) fun s => { s with whnfMisses := s.whnfMisses + 1 }
   TcM.tick (m := m)
   let mut cur := e
   let mut fuel := maxWhnfFuel

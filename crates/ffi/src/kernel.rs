@@ -51,7 +51,7 @@ use crate::lean::LeanIxCheckError;
 use crate::lean_env::{GlobalCache, decode_name};
 use crate::lean_env::{decode_env, decode_name_array};
 use ix_common::address::Address;
-use ix_common::env::{Name, NameData};
+use ix_common::env::{Name, NameData, normalize_displayed_name};
 use ix_compile::compile::{
   CompileOptions, CompileState, compile_env_with_options,
 };
@@ -1688,15 +1688,19 @@ fn load_anon_seed_context(
     let mut slice: &[u8] = &bytes;
     let full = IxonEnv::get(&mut slice)
       .map_err(|e| format!("{label}: failed to deserialize {path}: {e}"))?;
+    // Keyed through `normalize_displayed_name` on both sides so requests
+    // rendered by either kernel (Lean `«»`-escaped, Rust bare) resolve.
     let by_name: FxHashMap<String, Address> = full
       .named
       .iter()
-      .map(|e| (e.key().to_string(), e.value().addr.clone()))
+      .map(|e| {
+        (normalize_displayed_name(&e.key().to_string()), e.value().addr.clone())
+      })
       .collect();
     let mut addrs = Vec::with_capacity(names.len());
     let mut missing: Vec<&str> = Vec::new();
     for n in names {
-      match by_name.get(n) {
+      match by_name.get(&normalize_displayed_name(n)) {
         Some(a) => addrs.push(a.clone()),
         None => missing.push(n),
       }
@@ -2042,16 +2046,19 @@ pub extern "C" fn rs_env_extract(
     },
   };
   // Resolve displayed names → addresses through the full env's `named`
-  // metadata (the anon view discards it).
+  // metadata (the anon view discards it). Keys and requests both go
+  // through `normalize_displayed_name` (Lean `«»`-escaped ↔ Rust bare).
   let by_name: FxHashMap<String, Address> = full
     .named
     .iter()
-    .map(|e| (e.key().to_string(), e.value().addr.clone()))
+    .map(|e| {
+      (normalize_displayed_name(&e.key().to_string()), e.value().addr.clone())
+    })
     .collect();
   let mut resolved: Vec<Address> = Vec::with_capacity(names_vec.len());
   let mut missing: Vec<&str> = Vec::new();
   for n in &names_vec {
-    match by_name.get(n.as_str()) {
+    match by_name.get(&normalize_displayed_name(n)) {
       Some(a) => resolved.push(a.clone()),
       None => missing.push(n),
     }

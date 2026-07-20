@@ -58,6 +58,9 @@ mutual
 /-- Definitional equality entry point: fast paths, equiv-manager, caches
     (with cheap-mode routing), fuel/depth accounting, then the tiers. -/
 partial def isDefEq (a b : KExpr m) : RecM m Bool := do
+  TcM.stepTrace (m := m) "deq" fun _ =>
+    s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}"
+  TcM.bumpStats (m := m) fun s => { s with deqCalls := s.deqCalls + 1 }
   if a.addr == b.addr then
     -- Hashes are alpha-invariant in both modes; this is the only
     -- structural alpha-equivalence fast path needed.
@@ -125,6 +128,7 @@ partial def isDefEq (a b : KExpr m) : RecM m Bool := do
             equivManager := s.equivManager.addEquiv aKey bKey }
         return cached
   -- Charge fuel only after the O(1) exits.
+  TcM.bumpStats (m := m) fun s => { s with deqMisses := s.deqMisses + 1 }
   TcM.tick (m := m)
   modify fun s => { s with
     defEqDepth := s.defEqDepth + 1
