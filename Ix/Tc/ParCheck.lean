@@ -111,10 +111,12 @@ structure ParProgress where
 structure ParCheckCfg where
   /-- Worker count (≥ 1; the CLI resolves a machine default). -/
   workers : Nat := 8
-  /-- Clear each worker's reduction-memo caches every N items (0 off).
-      Default 0: with the subst/univ memo fix the transient-garbage
-      motivation is gone, and warm caches win ~20% whole-env wall
-      (62.1s vs 77.3s at 32 workers) for ~3 GB extra peak RSS. -/
+  /-- Renew each worker's private state (reduction caches AND the
+      worker's intern-table growth) every N items (0 off). Default 0:
+      warm caches win ~20% whole-env wall on InitStd/Lean-tier corpora
+      for a few GB of RSS. At Mathlib scale (630k+ work items) run with
+      50: unbounded per-worker intern growth otherwise adds tens of GB
+      within minutes. -/
   clearEvery : Nat := 0
   /-- Serial mode with one line per constant (forces one worker). -/
   verbose : Bool := false
@@ -299,7 +301,24 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
         doneRef.modify (· + 1)
         sinceClear := sinceClear + 1
         if cfg.clearEvery != 0 && sinceClear ≥ cfg.clearEvery then
-          st := { st with env := st.env.clearReductionCaches }
+          -- Renew the WHOLE worker state from the shared env (cheap:
+          -- persistent maps clone by reference). Clearing only the
+          -- reduction caches is not enough at Mathlib scale: the
+          -- worker's private INTERN-TABLE growth dominates RSS
+          -- (~73 GB across 24 workers in the first 10% of the corpus).
+          -- Counters and knobs carry over; block coordination is
+          -- per-item, so dropping blockCheckResults between items is
+          -- safe.
+          st := { TcState.new kenv prims with
+            stepTrace := st.stepTrace
+            stats := st.stats
+            noAccel := st.noAccel
+            fuelBudget := st.fuelBudget
+            recFuel := st.fuelBudget
+            deqCalls := st.deqCalls, deqMisses := st.deqMisses
+            whnfCalls := st.whnfCalls, whnfMisses := st.whnfMisses
+            kSynthAttempts := st.kSynthAttempts
+            kSynthRejects := st.kSynthRejects }
           sinceClear := 0
       else
         running := false
