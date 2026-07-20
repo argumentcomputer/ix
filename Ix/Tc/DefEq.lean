@@ -386,8 +386,14 @@ partial def isDefEqWhnf (a b : KExpr m) : RecM m Bool := do
         && (us1.zip us2).all (fun (u, v) => univEq u v) then
       return true
   | .app f1 a1 _, .app f2 a2 _ =>
-    if (← isDefEq f1 f2) && (← isDefEq a1 a2) then
-      return true
+    -- MUST short-circuit (Rust `&&` does; Lean's `(← _) && (← _)` runs
+    -- BOTH actions). For dependent apps the second component is often a
+    -- PROOF: comparing proof pairs whose value pair already failed forces
+    -- unbounded proof normalization (e.g. materializing `Nat.le`
+    -- derivations — the `minEntry!_eq_get!_minEntry?` OOM).
+    if (← isDefEq f1 f2) then
+      if (← isDefEq a1 a2) then
+        return true
   | .lam name bi ty1 body1 _, .lam _ _ ty2 body2 _ =>
     if (← quickBinder name bi ty1 body1 ty2 body2) then
       return true
@@ -396,17 +402,19 @@ partial def isDefEqWhnf (a b : KExpr m) : RecM m Bool := do
       return true
   | .letE name ty1 v1 body1 _ _, .letE _ ty2 v2 body2 _ _ =>
     -- Normally zeta-reduced before reaching here; push LDecl in case.
-    if (← isDefEq ty1 ty2) && (← isDefEq v1 v2) then
-      let saved := (← get).lctx.size
-      let fvId ← TcM.freshFVarId (m := m)
-      let fv ← TcM.intern (.mkFVar fvId name)
-      modify fun s => { s with lctx := s.lctx.push fvId (.ldecl name ty1 v1) }
-      let b1Open ← TcM.runIntern (instantiateRev body1 #[fv])
-      let b2Open ← TcM.runIntern (instantiateRev body2 #[fv])
-      let r ← isDefEq b1Open b2Open
-      modify fun s => { s with lctx := s.lctx.truncate saved }
-      if r then
-        return true
+    -- Short-circuit like the app case (Rust `&&` semantics).
+    if (← isDefEq ty1 ty2) then
+      if (← isDefEq v1 v2) then
+        let saved := (← get).lctx.size
+        let fvId ← TcM.freshFVarId (m := m)
+        let fv ← TcM.intern (.mkFVar fvId name)
+        modify fun s => { s with lctx := s.lctx.push fvId (.ldecl name ty1 v1) }
+        let b1Open ← TcM.runIntern (instantiateRev body1 #[fv])
+        let b2Open ← TcM.runIntern (instantiateRev body2 #[fv])
+        let r ← isDefEq b1Open b2Open
+        modify fun s => { s with lctx := s.lctx.truncate saved }
+        if r then
+          return true
   | .nat v1 _ _, .nat v2 _ _ => return v1 == v2
   | .str v1 _ _, .str v2 _ _ => return v1 == v2
   | _, _ => pure ()
