@@ -20,6 +20,18 @@ shift
 sudo -n loginctl enable-linger "${USER:-$(id -un)}" 2>/dev/null || true
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
+# Open MPI (linked into zisk-host via proofman) registers a
+# stacktrace-printing handler on fatal signals (opal default: ABRT,
+# BUS, FPE, SEGV). When the fault originates inside malloc — e.g. a
+# glibc heap-corruption abort — that handler allocates while the
+# corrupted arena lock is still held and deadlocks: the process wedges
+# at flat memory forever, the cgroup cap never fires, and the
+# orchestrator waits until the CI job timeout. Empty opal_signal skips
+# handler registration so fatal signals keep their default disposition
+# and the tool dies with 128+sig, which the orchestrator records as a
+# row. Harmless for tools that don't link Open MPI.
+export OMPI_MCA_opal_signal=
+
 # memory.oom.group=1: on breach the kernel kills the WHOLE scope (exit
 # 137 -> oom row), not just its biggest process. Without it, Zisk's ASM
 # service gets singled out and the surviving host converts the memory
