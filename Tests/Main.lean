@@ -33,6 +33,7 @@ import Tests.Ix.Tc.TutorialTc
 import Tests.Ix.Tc.Roundtrip
 import Tests.Ix.Tc.IngressMetaTests
 import Tests.Ix.Tc.Pins
+import Tests.Ix.Tc.AccelDiff
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -160,6 +161,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Pure-Lean kernel regression pins against a real .ixe (needs
   -- IX_PINS_IXE; skips cleanly otherwise — see Tests.Tc.Pins).
   ("tc-pins", Tests.Tc.Pins.run),
+  -- Accelerated-vs-pure reduction differentials (IX_PINS_IXE-gated;
+  -- see Tests.Tc.AccelDiff and TcState.noAccel).
+  ("tc-accel-diff", Tests.Tc.AccelDiff.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

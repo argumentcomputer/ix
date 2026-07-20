@@ -801,7 +801,14 @@ partial def synthCtorWhenK (major : KExpr m) (recId : KId m)
     ctorApp ← TcM.intern (KExpr.mkApp ctorApp arg)
   let some ctorTy ← try? (TcM.withInferOnly ((← read).infer ctorApp))
     | return none
+  TcM.bumpStats (m := m) fun s =>
+    { s with kSynthAttempts := s.kSynthAttempts + 1 }
   if !(← callIsDefEq majorTyW ctorTy) then
+    -- Silent fallback (the caller keeps the stuck major — `.getD major`;
+    -- Rust parity: `.unwrap_or_else`). Counted so reject totals can be
+    -- compared cross-kernel (IX_TC_STATS ↔ Rust IX_KSYNTH_LOG).
+    TcM.bumpStats (m := m) fun s =>
+      { s with kSynthRejects := s.kSynthRejects + 1 }
     return none
   return some ctorApp
 
@@ -828,6 +835,7 @@ partial def tryProjReduce (id : KId m) (field : UInt64) (wval : KExpr m) :
 partial def tryReduceFinValDecidableRec (id : KId m) (field : UInt64)
     (head : KExpr m) (args : Array (KExpr m)) :
     RecM m (Option (KExpr m)) := do
+  if (← get).noAccel then return none
   let p ← prims
   if id.addr != p.fin.addr || field != 0 then
     return none
@@ -1069,6 +1077,7 @@ partial def tryReduceNatPredicate (addr : Address) (args : Array (KExpr m)) :
     Int decidables get literal *normalization* only. `decLe false` falls to
     delta (needs the `False` primitive). -/
 partial def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  if (← get).noAccel then return none
   let (head, args) := e.collectSpine
   let .const id _ _ := head | return none
   let addr := id.addr
@@ -1332,6 +1341,7 @@ partial def tryReduceBitvecLtProp (prop : KExpr m) :
 /-- BitVec native reduction: `BitVec.toNat`, `BitVec.ult`, and
     `Decidable.decide (LT.lt (BitVec w) …)`. -/
 partial def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  if (← get).noAccel then return none
   let p ← prims
   let (head, args) := e.collectSpine
   let .const id _ _ := head | return none
@@ -1352,6 +1362,7 @@ partial def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
     `System.Platform.numBits ⇒ 64` (also the `Subtype.val (getNumBits ())`
     form), and the PUnit/Unit SizeOf singletons. -/
 partial def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  if (← get).noAccel then return none
   let (head, args) := e.collectSpine
   let .const id _ _ := head | return none
   let p ← prims

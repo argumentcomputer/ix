@@ -218,6 +218,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     debugConst? := ← IO.getEnv "IX_TC_DEBUG_CONST"
     stepTrace := (← envNat ["IX_TC_STEP_TRACE"] 0) != 0
     stats := (← envNat ["IX_TC_STATS"] 0) != 0
+    noAccel := (← envNat ["IX_TC_NO_ACCEL"] 0) != 0
     maxRecFuel? := ((← IO.getEnv "IX_MAX_REC_FUEL").bind
       (·.trimAscii.toString.toNat?)).map (·.toUInt64) }
 

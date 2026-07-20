@@ -109,6 +109,21 @@ structure TcState (m : Mode) where
   whnfCalls : UInt64 := 0
   /-- `whnf` calls that missed the cache and did real work (stats). -/
   whnfMisses : UInt64 := 0
+  /-- `synthCtorWhenK` candidates that reached the def-eq verify (stats). -/
+  kSynthAttempts : UInt64 := 0
+  /-- K-synthesis candidates the def-eq verify rejected — the silent
+      fallback (stats; cross-kernel comparand of Rust `IX_KSYNTH_LOG`). -/
+  kSynthRejects : UInt64 := 0
+  /-- Disable the Ix-specific semantic shortcuts that have COMPLETE pure
+      fallbacks — BitVec natives, Decidable natives, `Fin.val`-through-
+      `Decidable.rec`, `reduceBool`/`reduceNat` markers — so accelerated
+      and pure reduction can be differential-tested
+      (`IX_TC_NO_ACCEL=1`). Deliberately does NOT gate Nat-literal or
+      string-literal bridging: those are representation-level (the
+      official kernel computes them natively) and the pure path cannot
+      complete without them. Exponentially slow on large literals by
+      design — use only on small seeded fixtures. -/
+  noAccel : Bool := false
   /-- Memo for `ctxAddrForLbr`: pure in `(ctxId, lbr)`. -/
   ctxAddrCache : HashMap (Address × UInt64) Address := {}
   /-- Local context for fvar-based binder opening. -/

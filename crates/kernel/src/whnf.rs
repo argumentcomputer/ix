@@ -34,6 +34,13 @@ static NAT_EXPAND_COUNT: std::sync::atomic::AtomicUsize =
 static IX_NAT_IOTA_TRACE: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_NAT_IOTA_TRACE").is_ok());
 
+/// `IX_KSYNTH_LOG=1`: one `[ksynth-attempt]`/`[ksynth-reject]` line per
+/// `synth_ctor_when_k` candidate that reaches / fails the def-eq verify
+/// (the silent K-synthesis fallback). Cross-kernel comparand of the Lean
+/// kernel's `kSynthAttempts`/`kSynthRejects` IX_TC_STATS counters.
+static IX_KSYNTH_LOG: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_KSYNTH_LOG").is_ok());
+
 static NAT_IOTA_TRACE_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
@@ -1387,7 +1394,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(ty) => ty,
       Err(_) => return Ok(None),
     };
+    if *IX_KSYNTH_LOG {
+      eprintln!(
+        "[ksynth-attempt] {}",
+        &ctor_app.hash_key().to_hex()[..8]
+      );
+    }
     if !self.is_def_eq(&major_ty_w, &ctor_ty)? {
+      if *IX_KSYNTH_LOG {
+        eprintln!(
+          "[ksynth-reject] {}",
+          &ctor_app.hash_key().to_hex()[..8]
+        );
+      }
       return Ok(None);
     }
 

@@ -150,6 +150,9 @@ structure ParCheckCfg where
   stats : Bool := false
   /-- Override the per-constant fuel budget (CLI: `IX_MAX_REC_FUEL`). -/
   maxRecFuel? : Option UInt64 := none
+  /-- Disable Ix-specific semantic shortcuts (differential testing; see
+      `TcState.noAccel`; CLI: `IX_TC_NO_ACCEL=1`). -/
+  noAccel : Bool := false
 
 /-- Whole-run verdict summary. `failures` carries one `(label, message)`
     row per failed TARGET (a failing block fans to every member), sorted
@@ -219,6 +222,7 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
     st := { st with
       stepTrace := cfg.stepTrace
       stats := cfg.stats
+      noAccel := cfg.noAccel
       fuelBudget := cfg.maxRecFuel?.getD st.fuelBudget
       recFuel := cfg.maxRecFuel?.getD st.recFuel }
     let mut passed := 0
@@ -234,8 +238,9 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
           let isTarget := (cfg.debugConst? == some lbl
             || cfg.debugConst? == some (failLabelOf item.primary))
           st := { st with debugLabel := if isTarget then some lbl else none }
-        let (dc0, dm0, wc0, wm0) :=
-          (st.deqCalls, st.deqMisses, st.whnfCalls, st.whnfMisses)
+        let (dc0, dm0, wc0, wm0, ks0, kr0) :=
+          (st.deqCalls, st.deqMisses, st.whnfCalls, st.whnfMisses,
+           st.kSynthAttempts, st.kSynthRejects)
         let t0 ← IO.monoMsNow
         if cfg.verbose && !cfg.silent then
           IO.eprint s!"  [{idx + 1}/{total}] {lbl} ... "
@@ -252,7 +257,8 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
         let stats := if !cfg.stats then "" else
           s!" fuel={st.fuelBudget - st.recFuel} \
              deq={st.deqCalls - dc0}/{st.deqMisses - dm0} \
-             whnf={st.whnfCalls - wc0}/{st.whnfMisses - wm0}"
+             whnf={st.whnfCalls - wc0}/{st.whnfMisses - wm0} \
+             ksynth={st.kSynthAttempts - ks0}/{st.kSynthRejects - kr0}"
         match err? with
         | none => passed := passed + item.targets.size
         | some msg =>
@@ -297,6 +303,13 @@ def checkEnvParallel (kenv : KEnv m) (prims : Primitives m)
           sinceClear := 0
       else
         running := false
+    -- Whole-run counter totals, one line per worker (grep-and-sum for
+    -- cross-kernel count comparisons; ephemeral progress is separate).
+    if cfg.stats then
+      IO.eprintln s!"{cfg.tag} worker {wi} totals: \
+                     deq={st.deqCalls}/{st.deqMisses} \
+                     whnf={st.whnfCalls}/{st.whnfMisses} \
+                     ksynth={st.kSynthAttempts}/{st.kSynthRejects}"
     return (passed, failures)
 
   -- Reporter: sole terminal writer while checking. Drains interesting
