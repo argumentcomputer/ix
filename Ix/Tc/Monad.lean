@@ -124,6 +124,8 @@ structure TcState (m : Mode) where
       complete without them. Exponentially slow on large literals by
       design — use only on small seeded fixtures. -/
   noAccel : Bool := false
+  /-- Current knot-dispatch depth (see `maxDispatchDepth`). -/
+  dispatchDepth : UInt32 := 0
   /-- Memo for `ctxAddrForLbr`: pure in `(ctxId, lbr)`. -/
   ctxAddrCache : HashMap (Address × UInt64) Address := {}
   /-- Local context for fvar-based binder opening. -/
@@ -580,6 +582,7 @@ def reset : TcM m Unit := do
     eagerReduce := false
     defEqDepth := 0
     defEqPeak := 0
+    dispatchDepth := 0
     recFuel := s.fuelBudget
     ctxAddrCache := {}
     lctx := {} }
@@ -659,19 +662,53 @@ instance : Inhabited (Methods m) where
 /-- `TcM` with the recursion back-edges in scope. -/
 abbrev RecM (m : Mode) := ReaderT (Methods m) (TcM m)
 
+/-- Dispatch-depth ceiling across the four knot back-edges: a clean
+    rejection far before a would-be native stack overflow. Corpus-legal
+    depths are tiny (per-item `defEqPeak` ≤ ~54 across the InitStd and
+    Lean tiers); the pre-subst-fix pathologies were ~30k native frames;
+    the 256 MB worker stacks hold well past 200k dispatch frames. The
+    Rust mirror has no analogous guard (its stacks + fuel bound it) —
+    this is Lean-side hardening only, so the limit MUST stay far above
+    any legitimate depth to remain verdict-neutral; a trip is an
+    infra-style `.other` error, deliberately NOT `.maxRecDepth` (a
+    Rust-parity verdict). -/
+def maxDispatchDepth : UInt32 := 200_000
+
 namespace RecM
 
+/-- Enter one knot dispatch: bump the depth, trip past the ceiling.
+    Callers pair with `exitDispatch` via `try/finally` (balanced on
+    error unwinds). -/
+@[inline] def enterDispatch : TcM m Unit := do
+  let s ← get
+  let d := s.dispatchDepth + 1
+  if d > maxDispatchDepth then
+    throw (.other s!"dispatch depth exceeded {maxDispatchDepth} \
+                    (would overflow the worker stack)")
+  set { s with dispatchDepth := d }
+
+@[inline] def exitDispatch : TcM m Unit :=
+  modify fun s => { s with dispatchDepth := s.dispatchDepth - 1 }
+
 @[inline] def callWhnf (e : KExpr m) : RecM m (KExpr m) := do
-  (← read).whnf e
+  enterDispatch (m := m)
+  try (← read).whnf e
+  finally exitDispatch (m := m)
 
 @[inline] def callWhnfCore (e : KExpr m) : RecM m (KExpr m) := do
-  (← read).whnfCore e
+  enterDispatch (m := m)
+  try (← read).whnfCore e
+  finally exitDispatch (m := m)
 
 @[inline] def callInfer (e : KExpr m) : RecM m (KExpr m) := do
-  (← read).infer e
+  enterDispatch (m := m)
+  try (← read).infer e
+  finally exitDispatch (m := m)
 
 @[inline] def callIsDefEq (a b : KExpr m) : RecM m Bool := do
-  (← read).isDefEq a b
+  enterDispatch (m := m)
+  try (← read).isDefEq a b
+  finally exitDispatch (m := m)
 
 /-- WHNF, then ensure a `sort`; returns the universe. Fast path skips WHNF
     when the node is already a sort. -/
