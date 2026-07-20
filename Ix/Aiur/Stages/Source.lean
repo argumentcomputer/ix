@@ -689,6 +689,8 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .u8RangeCheck a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8RangeCheck a' b')
   | .toField a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .toField a')
   | .u8FromFieldUnsafe a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8FromFieldUnsafe a')
+  | .unconstrainedGToBytes a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .unconstrainedGToBytes a')
+  | .unconstrainedGInverse a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .unconstrainedGInverse a')
   | .debug s o a =>
     let (cnt, o') := match o with
       | none => (cnt, none)
@@ -738,7 +740,8 @@ def Term.inlineCallSites : Term → List (Global × Nat)
   | .ioRead a b _ => a.inlineCallSites ++ b.inlineCallSites
   | .ret a | .eqZero a | .proj a _ | .get a _ | .slice a _ _ | .store a | .load a
   | .ptrVal a | .ann _ a | .u8BitDecomposition a | .u8ShiftLeft a | .u8ShiftRight a
-  | .toField a | .u8FromFieldUnsafe a => a.inlineCallSites
+  | .toField a | .u8FromFieldUnsafe a
+  | .unconstrainedGToBytes a | .unconstrainedGInverse a => a.inlineCallSites
   | .debug _ o a => (match o with | none => [] | some x => x.inlineCallSites) ++ a.inlineCallSites
 termination_by t => sizeOf t
 decreasing_by
@@ -854,6 +857,8 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
   | .u8RangeCheck a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8RangeCheck a' b')
   | .toField a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .toField a')
   | .u8FromFieldUnsafe a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8FromFieldUnsafe a')
+  | .unconstrainedGToBytes a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGToBytes a')
+  | .unconstrainedGInverse a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGInverse a')
   | .debug s o a =>
     let (cnt, o') := match o with
       | none => (cnt, none)
@@ -951,6 +956,8 @@ def Term.hoistLets : Term → Term :=
   | .u8ShiftRight a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8ShiftRight c)
   | .toField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.toField c)
   | .u8FromFieldUnsafe a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8FromFieldUnsafe c)
+  | .unconstrainedGToBytes a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGToBytes c)
+  | .unconstrainedGInverse a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGInverse c)
   | .u8Xor a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                   match cs with | [a, b] => Term.wrapLets fs (.u8Xor a b) | _ => t
   | .u8Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
