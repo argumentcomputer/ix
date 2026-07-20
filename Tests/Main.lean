@@ -41,6 +41,7 @@ import Tests.MultiStark
 import Tests.Cli
 import Tests.ShardMap
 import Tests.Ix.EnvBody
+import Tests.Ix.Lean4Lean
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -155,6 +156,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("validate-aux", runCompileValidateAux env),
+  -- lean4lean dependency smoke: accept a real closure, reject an
+  -- ill-typed decl (see Tests.Ix.Lean4Lean).
+  ("lean4lean", Tests.Ix.Lean4Lean.run env),
 ]
 
 def main (args : List String) : IO UInt32 := do
