@@ -685,6 +685,21 @@ impl Op {
           state.map.push((col, 1));
         }
       },
+      Op::UnconstrainedGToBytes(_) => {
+        // Unconstrained hint bytes: 8 fresh auxiliary columns, no relation,
+        // no lookup. The caller pins them (range checks + recomposition +
+        // canonicality asserts) in constrained code.
+        for _ in 0..8 {
+          let col = state.next_auxiliary();
+          state.map.push((col, 1));
+        }
+      },
+      Op::UnconstrainedGInverse(_) => {
+        // Unconstrained hint inverse: one fresh auxiliary column, no
+        // relation. The caller pins it via multiply-and-assert.
+        let col = state.next_auxiliary();
+        state.map.push((col, 1));
+      },
     }
   }
 }

@@ -136,10 +136,13 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln "inner proof failed to verify"
     return 1
   -- Proof (advice, channel 0), vk (channel 1), claims (channel 2), plus the
-  -- Blake3-bound vk/claims digests and FRI params as public input.
+  -- Blake3-bound vk/claims digests and FRI params as public input. The
+  -- advice buffer is built natively in Rust from the raw byte blobs
+  -- (`executeMultiStark` / `proveMultiStark`).
   let claimBytes := MultiStark.serializeClaims #[claim]
-  let (pubInput, io) := MultiStark.verifierInput proofBytes facSystem.vkBytes
-    claimBytes recCommitParams innerFri
+  let vkBytes := facSystem.vkBytes
+  let pubInput := MultiStark.verifierPubInput vkBytes claimBytes
+    recCommitParams innerFri
   -- Compile the verifier toplevel and run it over the proof.
   let vTop ← match MultiStark.multiStark with
     | .ok t => pure t
@@ -149,10 +152,17 @@ def main (args : List String) : IO UInt32 := do
     | .error e => IO.eprintln s!"verifier compile failed: {e}"; return 1
   let vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof |>.get!
   IO.println "executing verify_multi_stark_proof…"
+  -- `--use-bytecode`: route through the generic Aiur interpreter instead of
+  -- the codegen'd verifier (same escape hatch as `ix check --use-bytecode`;
+  -- useful for iterating on `Ix/MultiStark/*.lean` without regenerating
+  -- `crates/ixvm-codegen/src/aiur_multi_stark.rs`, and for measuring the
+  -- interpreter ↔ codegen gap).
+  let useBytecode := args.contains "--use-bytecode"
   let e0 ← IO.monoNanosNow
-  match vCompiled.bytecode.execute vIdx pubInput io with
+  match vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes vkBytes
+    claimBytes useBytecode with
   | .error e => IO.eprintln s!"verifier execution REJECTED: {e}"; return 1
-  | .ok (_, _, qc) =>
+  | .ok (_, qc) =>
     let e1 ← IO.monoNanosNow
     let stats := Aiur.computeStats vCompiled qc
     IO.println s!"verifier accepted, execute {secs e0 e1} s"
@@ -178,7 +188,8 @@ def main (args : List String) : IO UInt32 := do
     let vSystem := AiurSystem.build vCompiled.bytecode recCommitParams innerFri
     TracingTexray.resetPeakTreeRss
     let t0 ← IO.monoNanosNow
-    let (vclaim, vproof, _) := vSystem.prove vIdx pubInput io
+    let (vclaim, vproof) := vSystem.proveMultiStark vIdx pubInput proofBytes
+      vkBytes claimBytes
     let nbytes := vproof.toBytes.size  -- force the (lazy, pure) prove to run
     let t1 ← IO.monoNanosNow
     let outerPeak ← TracingTexray.peakTreeRssBytes

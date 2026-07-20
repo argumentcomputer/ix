@@ -58,7 +58,13 @@ impl Memory {
     let queries = record.memory_queries.get(&size).expect("Invalid size");
     let width = Self::width(size);
     let height_no_padding = queries.len();
-    let height = height_no_padding.next_power_of_two();
+    // An unqueried memory table yields an EMPTY trace: the prover
+    // deactivates it, so it is neither committed nor opened.
+    let height = if height_no_padding == 0 {
+      0
+    } else {
+      height_no_padding.next_power_of_two()
+    };
 
     let mut rows = vec![G::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];

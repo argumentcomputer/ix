@@ -71,19 +71,215 @@ def pcs := ⟦
      [h[4][0], h[4][1], h[4][2], h[4][3], h[5][0], h[5][1], h[5][2], h[5][3]],
      [h[6][0], h[6][1], h[6][2], h[6][3], h[7][0], h[7][1], h[7][2], h[7][3]]]
   }
-  -- The 32 bytes of a `Digest`.
-  fn b3_digest_bytes_onto(d: Digest, tail: ByteStream) -> ByteStream {
-    b3_u64_onto(d[0], b3_u64_onto(d[1], b3_u64_onto(d[2], b3_u64_onto(d[3], tail))))
+  -- ==========================================================================
+  -- Lane-granular blake3 for MMCS leaf rows. A leaf's input is a `List‹U64›`
+  -- of 8-byte lanes, so blocks (64 bytes = 8 lanes) can be assembled straight
+  -- from the lane values — one list `load` per lane — instead of serializing
+  -- to a byte list that `blake3` then walks, re-accumulates, and re-loads
+  -- (~4 memory ops per byte). Mirrors `blake3_compress_chunks`/`_block`/
+  -- `_finish` at block granularity with the identical flag schedule
+  -- (CHUNK_START = 1, CHUNK_END = 2, ROOT = 8; chunk = 16 blocks), reusing
+  -- `blake3_compress` and the `Layer` chunk-tree fold unchanged.
+  -- ==========================================================================
+
+  -- Pop up to 8 lanes (one block), zero-padding the tail. Returns the block's
+  -- lanes, its real byte length (8·k, so 64 for a full block), and the rest.
+  fn b3_lane_block(lanes: List‹U64›) -> ([U64; 8], G, List‹U64›) {
+    let z = [0u8; 8];
+    match load(lanes) {
+      ListNode.Nil => ([z; 8], 0, lanes),
+      ListNode.Cons(v0, r0) => match load(r0) {
+        ListNode.Nil => ([v0, z, z, z, z, z, z, z], 8, r0),
+        ListNode.Cons(v1, r1) => match load(r1) {
+          ListNode.Nil => ([v0, v1, z, z, z, z, z, z], 16, r1),
+          ListNode.Cons(v2, r2) => match load(r2) {
+            ListNode.Nil => ([v0, v1, v2, z, z, z, z, z], 24, r2),
+            ListNode.Cons(v3, r3) => match load(r3) {
+              ListNode.Nil => ([v0, v1, v2, v3, z, z, z, z], 32, r3),
+              ListNode.Cons(v4, r4) => match load(r4) {
+                ListNode.Nil => ([v0, v1, v2, v3, v4, z, z, z], 40, r4),
+                ListNode.Cons(v5, r5) => match load(r5) {
+                  ListNode.Nil => ([v0, v1, v2, v3, v4, v5, z, z], 48, r5),
+                  ListNode.Cons(v6, r6) => match load(r6) {
+                    ListNode.Nil => ([v0, v1, v2, v3, v4, v5, v6, z], 56, r6),
+                    ListNode.Cons(v7, r7) =>
+                      ([v0, v1, v2, v3, v4, v5, v6, v7], 64, r7),
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }
+  }
+
+  -- Block-granular chunk walk. `block_no` is the block index within the
+  -- current chunk (0..15); `cv` is the chaining value (IV at each chunk start);
+  -- chunk digests are pushed onto `layer` in order, exactly like the byte
+  -- driver, and folded by `blake3_compress_layer` at the end.
+  fn b3_lane_chunks(lanes: List‹U64›, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+    match load(lanes) {
+      -- Exhausted with no block to compress: only reachable for an empty
+      -- input (every other path detects exhaustion after compressing).
+      -- Mirror of `blake3_finish`'s (0, 0) arm.
+      ListNode.Nil =>
+        match load(chunk_count) {
+          [0, 0, 0, 0, 0, 0, 0, 0] =>
+            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+          _ => layer,
+        },
+      _ =>
+        let (v, nbytes, rest) = b3_lane_block(lanes);
+        let block = [
+          [v[0][0], v[0][1], v[0][2], v[0][3]], [v[0][4], v[0][5], v[0][6], v[0][7]],
+          [v[1][0], v[1][1], v[1][2], v[1][3]], [v[1][4], v[1][5], v[1][6], v[1][7]],
+          [v[2][0], v[2][1], v[2][2], v[2][3]], [v[2][4], v[2][5], v[2][6], v[2][7]],
+          [v[3][0], v[3][1], v[3][2], v[3][3]], [v[3][4], v[3][5], v[3][6], v[3][7]],
+          [v[4][0], v[4][1], v[4][2], v[4][3]], [v[4][4], v[4][5], v[4][6], v[4][7]],
+          [v[5][0], v[5][1], v[5][2], v[5][3]], [v[5][4], v[5][5], v[5][6], v[5][7]],
+          [v[6][0], v[6][1], v[6][2], v[6][3]], [v[6][4], v[6][5], v[6][6], v[6][7]],
+          [v[7][0], v[7][1], v[7][2], v[7][3]], [v[7][4], v[7][5], v[7][6], v[7][7]]];
+        let empty = match load(rest) { ListNode.Nil => 1, _ => 0, };
+        let at15 = eq_zero(block_no - 15);
+        -- CHUNK_START on the chunk's first block; CHUNK_END iff this is the
+        -- chunk's 16th block OR the input ends here; ROOT only for the last
+        -- block of a single-chunk input (multi-chunk roots come from the
+        -- layer fold's PARENT+ROOT, as in the byte driver).
+        let start_flag = eq_zero(block_no);
+        let end_flag = empty + at15 - (empty * at15);
+        let root_flag = empty * u64_is_zero(load(chunk_count));
+        let flags = start_flag + 2 * end_flag + 8 * root_flag;
+        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        match (empty, at15) {
+          (1, _) => store(Layer.Push(layer, digest)),
+          (_, 1) =>
+            let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+            b3_lane_chunks(rest, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+          (_, _) => b3_lane_chunks(rest, block_no + 1, chunk_count, store(digest), layer),
+        },
+    }
+  }
+
+  -- ==========================================================================
+  -- blake3 straight from an IO channel arena: 64-byte `io_read` blocks fed
+  -- directly to `blake3_compress` — no byte list is materialized, walked,
+  -- accumulated, or re-loaded. Same flag schedule as the byte driver; the
+  -- (cold, once-per-hash) ≤63-byte tail reuses `pad_block`/`bytes_to_block`.
+  -- Used for digest-binding large advice streams (the verifying key).
+  -- ==========================================================================
+
+  -- Reverse-ordered tail accumulator (head = last byte), the shape
+  -- `pad_block`/`bytes_to_block` expect. Reads one byte per step (io_read's
+  -- length is static); at most 63 steps, once per hash.
+  fn b3_io_tail_acc(ch: G, i: G, n: G, acc: ByteStream) -> ByteStream {
+    match n {
+      0 => acc,
+      _ =>
+        let [b] = io_read(ch, i, 1);
+        b3_io_tail_acc(ch, i + 1, n - 1,
+          store(ListNode.Cons(u8_from_field_unsafe(b), acc))),
+    }
+  }
+
+  fn b3_io_chunks(ch: G, i: G, remaining: G, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+    match u32_less_than(remaining, 64) {
+      0 =>
+        -- A full 64-byte block is available.
+        let [b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
+             b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31,
+             b32, b33, b34, b35, b36, b37, b38, b39, b40, b41, b42, b43, b44, b45, b46, b47,
+             b48, b49, b50, b51, b52, b53, b54, b55, b56, b57, b58, b59, b60, b61, b62, b63] =
+          io_read(ch, i, 64);
+        let block = [
+          [u8_from_field_unsafe(b0), u8_from_field_unsafe(b1), u8_from_field_unsafe(b2), u8_from_field_unsafe(b3)],
+          [u8_from_field_unsafe(b4), u8_from_field_unsafe(b5), u8_from_field_unsafe(b6), u8_from_field_unsafe(b7)],
+          [u8_from_field_unsafe(b8), u8_from_field_unsafe(b9), u8_from_field_unsafe(b10), u8_from_field_unsafe(b11)],
+          [u8_from_field_unsafe(b12), u8_from_field_unsafe(b13), u8_from_field_unsafe(b14), u8_from_field_unsafe(b15)],
+          [u8_from_field_unsafe(b16), u8_from_field_unsafe(b17), u8_from_field_unsafe(b18), u8_from_field_unsafe(b19)],
+          [u8_from_field_unsafe(b20), u8_from_field_unsafe(b21), u8_from_field_unsafe(b22), u8_from_field_unsafe(b23)],
+          [u8_from_field_unsafe(b24), u8_from_field_unsafe(b25), u8_from_field_unsafe(b26), u8_from_field_unsafe(b27)],
+          [u8_from_field_unsafe(b28), u8_from_field_unsafe(b29), u8_from_field_unsafe(b30), u8_from_field_unsafe(b31)],
+          [u8_from_field_unsafe(b32), u8_from_field_unsafe(b33), u8_from_field_unsafe(b34), u8_from_field_unsafe(b35)],
+          [u8_from_field_unsafe(b36), u8_from_field_unsafe(b37), u8_from_field_unsafe(b38), u8_from_field_unsafe(b39)],
+          [u8_from_field_unsafe(b40), u8_from_field_unsafe(b41), u8_from_field_unsafe(b42), u8_from_field_unsafe(b43)],
+          [u8_from_field_unsafe(b44), u8_from_field_unsafe(b45), u8_from_field_unsafe(b46), u8_from_field_unsafe(b47)],
+          [u8_from_field_unsafe(b48), u8_from_field_unsafe(b49), u8_from_field_unsafe(b50), u8_from_field_unsafe(b51)],
+          [u8_from_field_unsafe(b52), u8_from_field_unsafe(b53), u8_from_field_unsafe(b54), u8_from_field_unsafe(b55)],
+          [u8_from_field_unsafe(b56), u8_from_field_unsafe(b57), u8_from_field_unsafe(b58), u8_from_field_unsafe(b59)],
+          [u8_from_field_unsafe(b60), u8_from_field_unsafe(b61), u8_from_field_unsafe(b62), u8_from_field_unsafe(b63)]];
+        let is_last = eq_zero(remaining - 64);
+        let at15 = eq_zero(block_no - 15);
+        let start_flag = eq_zero(block_no);
+        let end_flag = is_last + at15 - (is_last * at15);
+        let root_flag = is_last * u64_is_zero(load(chunk_count));
+        let flags = start_flag + 2 * end_flag + 8 * root_flag;
+        let digest = blake3_compress(load(cv), block, load(chunk_count), 64, flags);
+        match (is_last, at15) {
+          (1, _) => store(Layer.Push(layer, digest)),
+          (_, 1) =>
+            let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+            b3_io_chunks(ch, i + 64, remaining - 64, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+          (_, _) => b3_io_chunks(ch, i + 64, remaining - 64, block_no + 1, chunk_count, store(digest), layer),
+        },
+      _ =>
+        -- Partial tail (< 64 bytes): always the input's last block.
+        match remaining {
+          0 =>
+            -- Empty input from the very start. Mirror of `blake3_finish`'s
+            -- (0, 0) arm (any other path compresses before exhausting).
+            match load(chunk_count) {
+              [0, 0, 0, 0, 0, 0, 0, 0] =>
+                store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+              _ => layer,
+            },
+          _ =>
+            let block = bytes_to_block(pad_block(
+              b3_io_tail_acc(ch, i, remaining, store(ListNode.Nil)), 64 - remaining));
+            let start_flag = eq_zero(block_no);
+            let flags = start_flag + 2 + 8 * u64_is_zero(load(chunk_count));
+            store(Layer.Push(layer, blake3_compress(load(cv), block, load(chunk_count), remaining, flags))),
+        },
+    }
+  }
+
+  -- blake3 of `len` bytes at offset `idx` on IO channel `ch` (identical
+  -- output to `blake3` over those bytes — pinned by `io_hash_test`).
+  fn b3_io(ch: G, idx: G, len: G) -> [[U8; 4]; 8] {
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(load(b3_io_chunks(ch, idx, len, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+  }
+
+  -- blake3 of a lane list (identical output to `blake3` over the lanes' LE
+  -- bytes — pinned by the `lane_hash_test` differential self-test).
+  fn b3_lanes(lanes: List‹U64›) -> [[U8; 4]; 8] {
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(load(b3_lane_chunks(lanes, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
   }
 
   -- The MMCS leaf hash of a row (`SerializingHasher<Blake3>`).
   fn mmcs_hash_row(row: List‹U64›) -> Digest {
-    b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil))))
+    b3_to_digest(b3_lanes(row))
   }
   -- The MMCS 2-to-1 compression (`CompressionFunctionFromHasher<Blake3, 2, 32>`).
+  -- `a || b` is exactly 64 bytes = one blake3 block of a single chunk, so this
+  -- is one direct `blake3_compress` with the same parameters that input takes
+  -- through `blake3_compress_chunks`: cv = IV, counter = 0, block_len = 64,
+  -- flags = CHUNK_START + CHUNK_END + ROOT (1 + 2 + 8). The block words are
+  -- assembled straight from the digest lanes (each `U64` lane = two LE 4-byte
+  -- words) — no byte list is built, walked, re-accumulated, or re-loaded.
   fn mmcs_compress(a: Digest, b: Digest) -> Digest {
-    b3_to_digest(blake3(b3_digest_bytes_onto(a,
-      b3_digest_bytes_onto(b, store(ListNode.Nil)))))
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    let block = [
+      [a[0][0], a[0][1], a[0][2], a[0][3]], [a[0][4], a[0][5], a[0][6], a[0][7]],
+      [a[1][0], a[1][1], a[1][2], a[1][3]], [a[1][4], a[1][5], a[1][6], a[1][7]],
+      [a[2][0], a[2][1], a[2][2], a[2][3]], [a[2][4], a[2][5], a[2][6], a[2][7]],
+      [a[3][0], a[3][1], a[3][2], a[3][3]], [a[3][4], a[3][5], a[3][6], a[3][7]],
+      [b[0][0], b[0][1], b[0][2], b[0][3]], [b[0][4], b[0][5], b[0][6], b[0][7]],
+      [b[1][0], b[1][1], b[1][2], b[1][3]], [b[1][4], b[1][5], b[1][6], b[1][7]],
+      [b[2][0], b[2][1], b[2][2], b[2][3]], [b[2][4], b[2][5], b[2][6], b[2][7]],
+      [b[3][0], b[3][1], b[3][2], b[3][3]], [b[3][4], b[3][5], b[3][6], b[3][7]]];
+    b3_to_digest(blake3_compress(IV, block, [0u8; 8], 64, 11))
   }
 
   -- ==========================================================================
@@ -158,13 +354,108 @@ def pcs := ⟦
   fn canon_lanes(l: List‹U64›) -> List‹U64› {
     match load(l) {
       ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(gl_reduce(x), canon_lanes(rest))),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(gl_to_bytes(gl_val(x)), canon_lanes(rest))),
     }
   }
-  -- The joint leaf hash of all matrices at log-height `target`.
+  -- ==========================================================================
+  -- Rows-walking leaf hash: hash the selected rows' lanes directly, with
+  -- on-the-fly canonicalization — no concatenated lane list is ever
+  -- materialized (`concat_at` rebuilt every selected lane per query, and
+  -- `canon_lanes` copied the result again). Differentially pinned against
+  -- the concat + canon reference by `rows_hash_test`.
+  -- ==========================================================================
+
+  -- The rows at log-height `target`, dropped if empty (an empty row
+  -- contributes no bytes, and dropping it lets exhaustion be detected by
+  -- plain Nil checks in the block walker).
+  fn select_rows(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> List‹List‹U64›› {
+    match load(rows) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(r, rrest) =>
+        let &ListNode.Cons(lh, lrest) = lhs;
+        match eq_zero(lh - target) {
+          0 => select_rows(rrest, lrest, target),
+          _ => match load(r) {
+            ListNode.Nil => select_rows(rrest, lrest, target),
+            _ => store(ListNode.Cons(r, select_rows(rrest, lrest, target))),
+          },
+        },
+    }
+  }
+
+  -- Pop one canonicalized lane across row boundaries. `got = 0` iff both the
+  -- current row and the remaining rows are exhausted (selected rows are
+  -- non-empty, so advancing to the next row always yields a lane).
+  fn rows_pop(cur: List‹U64›, rows: List‹List‹U64››) -> (U64, List‹U64›, List‹List‹U64››, G) {
+    match load(cur) {
+      ListNode.Cons(x, rest) => (gl_to_bytes(gl_val(x)), rest, rows, 1),
+      ListNode.Nil => match load(rows) {
+        ListNode.Nil => ([0u8; 8], cur, rows, 0),
+        ListNode.Cons(r, rrest) => rows_pop(r, rrest),
+      },
+    }
+  }
+
+  -- Block-granular chunk walk over rows-of-lanes; mirrors `b3_lane_chunks`
+  -- (same flag schedule, same `Layer` fold), gathering each 64-byte block
+  -- with eight cross-row pops.
+  fn b3_rows_chunks(cur: List‹U64›, rows: List‹List‹U64››, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+    let (l0, c1, r1, g0) = rows_pop(cur, rows);
+    match g0 {
+      -- Exhausted with no block to compress: only reachable for an empty
+      -- input (every other path detects exhaustion after compressing).
+      0 =>
+        match load(chunk_count) {
+          [0, 0, 0, 0, 0, 0, 0, 0] =>
+            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+          _ => layer,
+        },
+      _ =>
+        let (l1, c2, r2, g1) = rows_pop(c1, r1);
+        let (l2, c3, r3, g2) = rows_pop(c2, r2);
+        let (l3, c4, r4, g3) = rows_pop(c3, r3);
+        let (l4, c5, r5, g4) = rows_pop(c4, r4);
+        let (l5, c6, r6, g5) = rows_pop(c5, r5);
+        let (l6, c7, r7, g6) = rows_pop(c6, r6);
+        let (l7, c8, r8, g7) = rows_pop(c7, r7);
+        let nbytes = 8 * (g0 + g1 + g2 + g3 + g4 + g5 + g6 + g7);
+        let block = [
+          [l0[0], l0[1], l0[2], l0[3]], [l0[4], l0[5], l0[6], l0[7]],
+          [l1[0], l1[1], l1[2], l1[3]], [l1[4], l1[5], l1[6], l1[7]],
+          [l2[0], l2[1], l2[2], l2[3]], [l2[4], l2[5], l2[6], l2[7]],
+          [l3[0], l3[1], l3[2], l3[3]], [l3[4], l3[5], l3[6], l3[7]],
+          [l4[0], l4[1], l4[2], l4[3]], [l4[4], l4[5], l4[6], l4[7]],
+          [l5[0], l5[1], l5[2], l5[3]], [l5[4], l5[5], l5[6], l5[7]],
+          [l6[0], l6[1], l6[2], l6[3]], [l6[4], l6[5], l6[6], l6[7]],
+          [l7[0], l7[1], l7[2], l7[3]], [l7[4], l7[5], l7[6], l7[7]]];
+        let empty = match load(c8) {
+          ListNode.Nil => match load(r8) { ListNode.Nil => 1, _ => 0, },
+          _ => 0,
+        };
+        let at15 = eq_zero(block_no - 15);
+        let start_flag = eq_zero(block_no);
+        let end_flag = empty + at15 - (empty * at15);
+        let root_flag = empty * u64_is_zero(load(chunk_count));
+        let flags = start_flag + 2 * end_flag + 8 * root_flag;
+        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        match (empty, at15) {
+          (1, _) => store(Layer.Push(layer, digest)),
+          (_, 1) =>
+            let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+            b3_rows_chunks(c8, r8, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+          (_, _) => b3_rows_chunks(c8, r8, block_no + 1, chunk_count, store(digest), layer),
+        },
+    }
+  }
+
+  fn b3_rows(rows: List‹List‹U64››) -> [[U8; 4]; 8] {
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(load(b3_rows_chunks(store(ListNode.Nil), rows, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+  }
+
+  -- The joint Blake3 leaf hash of all matrices at log-height `target`.
   fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> Digest {
-    -- The joint Blake3 leaf hash of all matrices at log-height `target`.
-    mmcs_hash_row(canon_lanes(concat_at(rows, lhs, target)))
+    b3_to_digest(b3_rows(select_rows(rows, lhs, target)))
   }
 
   -- Inject the leaf hash of any matrices at log-height `lh` (if present) via a
@@ -235,10 +526,10 @@ def pcs := ⟦
   }
 
   -- base^(Σ bits_i · 2^i), bits LSB-first (square-and-multiply over the bits).
-  -- `base` is a non-native Goldilocks element; `bits` is a native bit list.
-  fn exp_by_bits(base: [U8; 8], bits: List‹G›) -> [U8; 8] {
+  -- `base` is a native Goldilocks element; `bits` is a native bit list.
+  fn exp_by_bits(base: Goldilocks, bits: List‹G›) -> Goldilocks {
     match load(bits) {
-      ListNode.Nil => gl_one(),
+      ListNode.Nil => 1,
       ListNode.Cons(b, rest) =>
         let half = exp_by_bits(gl_sq(base), rest);
         match b {
@@ -254,8 +545,8 @@ def pcs := ⟦
     let g = two_adic_gen(log_height + 1);
     let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
     let two_s = gl_add(s, s);
-    let t1 = eg_div(eg_add(e0, e1), [gl_two(), gl_zero()]);
-    let t2 = eg_mul(beta, eg_div(eg_sub(e0, e1), [two_s, gl_zero()]));
+    let t1 = eg_div(eg_add(e0, e1), [2, 0]);
+    let t2 = eg_mul(beta, eg_div(eg_sub(e0, e1), [two_s, 0]));
     eg_add(t1, t2)
   }
 
@@ -274,18 +565,27 @@ def pcs := ⟦
 
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
-  fn ro_x(index_bits: List‹G›, log_height: G) -> [U8; 8] {
-    gl_mul(gl_seven(), exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
+  fn ro_x(index_bits: List‹G›, log_height: G) -> Goldilocks {
+    gl_mul(7, exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
+  }
+
+  -- Raw wire rows (`U64` lanes, possibly non-canonical) to native Goldilocks
+  -- values for the reduced-opening arithmetic (`limb_to_field` reduces mod p).
+  fn lanes_to_gl(l: List‹U64›) -> List‹Goldilocks› {
+    match load(l) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(limb_to_field(x), lanes_to_gl(rest))),
+    }
   }
 
   -- Accumulate one matrix-point's column contributions. `q = 1/(z − x)`.
-  fn ro_fold(p_x: List‹[U8; 8]›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
+  fn ro_fold(p_x: List‹Goldilocks›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
       -> (Ext, Ext) {
     match load(p_x) {
       ListNode.Nil => (ro, ap),
       ListNode.Cons(px, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = eg_mul(eg_mul(ap, eg_sub(pz, [px, gl_zero()])), q);
+        let term = eg_mul(eg_mul(ap, eg_sub(pz, [px, 0])), q);
         ro_fold(pxr, pzr, q, alpha, eg_add(ro, term), eg_mul(ap, alpha)),
     }
   }
@@ -306,29 +606,35 @@ def pcs := ⟦
   enum Bucket { Mk(G, Ext, Ext) }   -- log_height, alpha_pow, reduced_opening
 
   -- ── challenger: observe the opened values (observe_algebra_slice) ──────────
+  -- Built with the PREPEND helpers (`b8_onto` composition, O(1) per element),
+  -- front-to-back, so the whole observation batch costs one `list_concat` at
+  -- the end. Appending item-by-item onto the accumulated input (`snoc_b8`)
+  -- re-walks and rebuilds the entire buffer per observation — quadratic in
+  -- transcript size; at kernel scale the opened-values batch alone made that
+  -- billions of memory records.
   -- One ext element = its two base coordinates, each 8 LE bytes.
-  fn obs_ext_row(input: ByteStream, row: List‹Ext›) -> ByteStream {
+  fn ext_row_onto(row: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(row) {
-      ListNode.Nil => input,
-      ListNode.Cons(e, rest) => obs_ext_row(snoc_b8(snoc_b8(input, e[0]), e[1]), rest),
+      ListNode.Nil => tail,
+      ListNode.Cons(e, rest) => b8_onto(gl_to_bytes(e[0]), b8_onto(gl_to_bytes(e[1]), ext_row_onto(rest, tail))),
     }
   }
-  fn obs_points(input: ByteStream, pts: List‹List‹Ext››) -> ByteStream {
+  fn points_onto(pts: List‹List‹Ext››, tail: ByteStream) -> ByteStream {
     match load(pts) {
-      ListNode.Nil => input,
-      ListNode.Cons(row, rest) => obs_points(obs_ext_row(input, row), rest),
+      ListNode.Nil => tail,
+      ListNode.Cons(row, rest) => ext_row_onto(row, points_onto(rest, tail)),
     }
   }
-  fn obs_round(input: ByteStream, round: OpenedRound) -> ByteStream {
+  fn round_onto(round: OpenedRound, tail: ByteStream) -> ByteStream {
     match load(round) {
-      ListNode.Nil => input,
-      ListNode.Cons(mat, rest) => obs_round(obs_points(input, mat), rest),
+      ListNode.Nil => tail,
+      ListNode.Cons(mat, rest) => points_onto(mat, round_onto(rest, tail)),
     }
   }
-  fn obs_prep(input: ByteStream, prep_opt: PreprocessedOpt) -> ByteStream {
+  fn prep_onto(prep_opt: PreprocessedOpt, tail: ByteStream) -> ByteStream {
     match prep_opt {
-      PreprocessedOpt.NoPreprocessed => input,
-      PreprocessedOpt.SomePreprocessed(round) => obs_round(input, round),
+      PreprocessedOpt.NoPreprocessed => tail,
+      PreprocessedOpt.SomePreprocessed(round) => round_onto(round, tail),
     }
   }
   -- Observe one Val (= 1) per FRI round, the variable-arity schedule.
@@ -365,7 +671,7 @@ def pcs := ⟦
         let (i1, o1) = pcs_commit_pow(snoc_cap(input, c), w, bits);
         let (b0, b1, i2, _o) = ch_sample_ext(i1, o1);
         let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
-        (store(ListNode.Cons([gl_reduce(b0), gl_reduce(b1)], bs)), i3),
+        (store(ListNode.Cons([gl_val(b0), gl_val(b1)], bs)), i3),
     }
   }
 
@@ -394,14 +700,14 @@ def pcs := ⟦
       _ => match circ_has_height(log_degrees, log_blowup, num_circuits, 0, h) {
         0 => build_buckets(log_degrees, log_blowup, num_circuits, h - 1),
         _ => store(ListNode.Cons(
-               Bucket.Mk(h, [gl_one(), gl_zero()], [gl_zero(), gl_zero()]),
+               Bucket.Mk(h, [1, 0], [0, 0]),
                build_buckets(log_degrees, log_blowup, num_circuits, h - 1))),
       },
     }
   }
   -- Find the bucket at log-height `lh`, fold one matrix-point's columns into it
   -- (`ro_fold` threads its `alpha_pow`), and write it back.
-  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹[U8; 8]›, p_z: List‹Ext›,
+  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹Goldilocks›, p_z: List‹Ext›,
       q: Ext, alpha: Ext) -> List‹Bucket› {
     match load(buckets) {
       ListNode.Nil => store(ListNode.Nil),
@@ -424,7 +730,7 @@ def pcs := ⟦
       ListNode.Cons(b, rest) =>
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_blowup) {
-          1 => assert_eq!(eg_eq(ro, [gl_zero(), gl_zero()]), 1); 1,
+          1 => assert_eq!(eg_eq(ro, [0, 0]), 1); 1,
           _ => assert_blowup_zero(rest, log_blowup),
         },
     }
@@ -439,23 +745,23 @@ def pcs := ⟦
   }
   -- Compute x = GENERATOR·g^{revbits} for this height and fold the contribution.
   fn ri_apply(buckets: List‹Bucket›, lh: G, idxbits: List‹G›, log_gmax: G,
-      z: Ext, p_x: List‹[U8; 8]›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
+      z: Ext, p_x: List‹Goldilocks›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
     -- the base opening and the ext opening at this point must have equal width
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
     let x = ro_x(list_drop(idxbits, log_gmax - lh), lh);
-    let q = eg_inverse(eg_sub(z, [x, gl_zero()]));
+    let q = eg_inverse(eg_sub(z, [x, 0]));
     bucket_update(buckets, lh, p_x, p_z, q, alpha)
   }
 
   -- A stage_1/stage_2/preprocessed-style matrix: two opening points
   -- (ζ, ζ·g) with the same base row `p_x`. `g` = trace subgroup generator.
   fn open_2pt_mat(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, lh: G,
-      ldeg: G, zeta: Ext, p_x: List‹[U8; 8]›, mat: List‹List‹Ext››, alpha: Ext)
+      ldeg: G, zeta: Ext, p_x: List‹Goldilocks›, mat: List‹List‹Ext››, alpha: Ext)
       -> List‹Bucket› {
     let pz0 = list_lookup(mat, 0);
     let pz1 = list_lookup(mat, 1);
-    let zn = eg_mul(zeta, [two_adic_gen(ldeg), gl_zero()]);
+    let zn = eg_mul(zeta, [two_adic_gen(ldeg), 0]);
     let b1 = ri_apply(buckets, lh, idxbits, log_gmax, zeta, p_x, pz0, alpha);
     ri_apply(b1, lh, idxbits, log_gmax, zn, p_x, pz1, alpha)
   }
@@ -467,7 +773,7 @@ def pcs := ⟦
       _ =>
         let ldeg = to_field(list_lookup(log_degrees, ci));
         let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                  list_lookup(base_rows, ci), list_lookup(opened, ci), alpha);
+                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(opened, ci), alpha);
         open_batch_2pt(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta,
                        base_rows, opened, alpha),
     }
@@ -481,7 +787,7 @@ def pcs := ⟦
       0 => (buckets, chunk),
       _ =>
         let b = ri_apply(buckets, lh, idxbits, log_gmax, zeta,
-                  list_lookup(base_rows, chunk), list_lookup(list_lookup(q_opened, chunk), 0), alpha);
+                  lanes_to_gl(list_lookup(base_rows, chunk)), list_lookup(list_lookup(q_opened, chunk), 0), alpha);
         open_q_chunks(b, idxbits, log_gmax, lh, chunk + 1, qrem - 1, zeta, base_rows, q_opened, alpha),
     }
   }
@@ -513,7 +819,7 @@ def pcs := ⟦
         OptIdx.SomeIdx(_j) =>
           let ldeg = to_field(list_lookup(log_degrees, ci));
           let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                    list_lookup(base_rows, k), list_lookup(prep_round, k), alpha);
+                    lanes_to_gl(list_lookup(base_rows, k)), list_lookup(prep_round, k), alpha);
           open_prep(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, k + 1, log_degrees,
                     prep_indices, zeta, base_rows, prep_round, alpha),
       },
@@ -575,8 +881,8 @@ def pcs := ⟦
   }
   -- Flatten two ext evals to the 4 base coords of the ExtensionMmcs leaf row.
   fn flatten2(e0: Ext, e1: Ext) -> List‹U64› {
-    store(ListNode.Cons(e0[0], store(ListNode.Cons(e0[1],
-      store(ListNode.Cons(e1[0], store(ListNode.Cons(e1[1], store(ListNode.Nil)))))))))
+    store(ListNode.Cons(gl_to_bytes(e0[0]), store(ListNode.Cons(gl_to_bytes(e0[1]),
+      store(ListNode.Cons(gl_to_bytes(e1[0]), store(ListNode.Cons(gl_to_bytes(e1[1]), store(ListNode.Nil)))))))))
   }
   -- Roll the next reduced opening into the folded eval when its height matches
   -- the new folded height: `folded += beta^(2^log_arity) · ro`  (log_arity = 1).
@@ -701,18 +1007,19 @@ def pcs := ⟦
     assert_eq!(eq_zero(list_length(pw) - num_rounds), 1);
     assert_eq!(eq_zero(list_length(query_proofs) - num_queries), 1);
     assert_eq!(list_length(final_poly), 1);
-    -- challenger continuation: observe all opened values (coms_to_verify order)
-    let input = obs_round(post_zeta_input, stage1);
-    let input = obs_round(input, stage2);
-    let input = obs_round(input, q_opened);
-    let input = obs_prep(input, prep_opt);
+    -- challenger continuation: observe all opened values (coms_to_verify
+    -- order), built as one front-to-back suffix + a single concat (the input
+    -- is only ~32 bytes here — it collapses to the digest on every flush).
+    let obs = round_onto(stage1, round_onto(stage2, round_onto(q_opened,
+      prep_onto(prep_opt, store(ListNode.Nil)))));
+    let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
-    let alpha = [gl_reduce(a0), gl_reduce(a1)];
+    let alpha = [gl_val(a0), gl_val(a1)];
     -- per-round FRI fold challenges β (with commit-phase PoW), then observe
     -- final_poly + the log-arity schedule.
     let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);
-    let input = obs_ext_row(input, final_poly);
+    let input = list_concat(input, ext_row_onto(final_poly, store(ListNode.Nil)));
     let input = obs_log_arities(input, commit_phase_commits);
     -- query indices + per-query verification (log_global_max_height = #rounds + log_blowup)
     let log_gmax = num_rounds + log_blowup;

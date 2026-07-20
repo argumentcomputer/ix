@@ -56,6 +56,15 @@ inductive Op
   and `0 ≤ r < b` (when `b > 0`). No constraint relation emitted; caller
   must verify in constrained code. -/
   | unconstrainedBigUintDivMod : ValIdx → ValIdx → Op
+  /-- Unconstrained hint: the 8 LE bytes of a field element's canonical `u64`
+  value. 8 fresh auxiliary values, no constraint relation, no lookup; the
+  caller must range-check, recompose-assert, and canonicality-assert.
+  Appended last so the existing FFI tags don't shift (tag 29). -/
+  | unconstrainedGToBytes : ValIdx → Op
+  /-- Unconstrained hint: the field inverse of a value (`0 ↦ 0`). One fresh
+  auxiliary value, no constraint relation; the caller must pin it via
+  multiply-and-assert. Appended last (tag 30). -/
+  | unconstrainedGInverse : ValIdx → Op
   deriving Repr, BEq, Hashable
 
 mutual

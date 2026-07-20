@@ -73,6 +73,15 @@ pub enum Op {
   /// and no constraints generated. The caller is responsible for verifying
   /// the relation in constrained code.
   UnconstrainedBigUintDivMod(ValIdx, ValIdx),
+  /// Unconstrained hint: the 8 little-endian bytes of a field element's
+  /// canonical `u64` value. 8 fresh auxiliary values, no constraints, no
+  /// lookup; the caller must range-check the bytes, assert they recompose
+  /// to the input, and assert canonicality (`< p`) in constrained code.
+  UnconstrainedGToBytes(ValIdx),
+  /// Unconstrained hint: the field inverse of a value (`0 ↦ 0`). One fresh
+  /// auxiliary value, no constraints; the caller must pin it via
+  /// multiply-and-assert.
+  UnconstrainedGInverse(ValIdx),
 }
 
 pub enum Ctrl {

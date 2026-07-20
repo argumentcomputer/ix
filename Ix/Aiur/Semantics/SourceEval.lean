@@ -457,6 +457,21 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
         match interp decls fuel bindings t2 st1 with
         | .error e => .error e
         | .ok (_, _) => .error (.typeMismatch "unconstrainedBigUintDivMod")
+  | .unconstrainedGToBytes t =>
+      match interp decls fuel bindings t st with
+      | .error e => .error e
+      | .ok (v, st') =>
+        match v with
+        | .field g =>
+          .ok (.array (Array.ofFn fun i => .field (g.toLeBytes i)), st')
+        | _ => .error (.typeMismatch "unconstrainedGToBytes")
+  | .unconstrainedGInverse t =>
+      match interp decls fuel bindings t st with
+      | .error e => .error e
+      | .ok (v, st') =>
+        match v with
+        | .field g => .ok (.field g.inverse, st')
+        | _ => .error (.typeMismatch "unconstrainedGInverse")
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls fuel bindings t st
   | .u8Lit n => .ok (.field (G.ofNat n), st)

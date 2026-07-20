@@ -132,13 +132,13 @@ def entrypoints := ⟦
   }
 ⟧
 
-/-- Build the IxVM Aiur toplevel. The byte loaders inside `ingress`
-    recompute blake3 over every IOBuffer read and assert the digest
-    matches the address key — required for `verify_claim`'s soundness.
-    `verify_const` (the arena-test subject-only entrypoint) goes
-    through the same loaders since the IxVM kernel only has one
-    storage convention. -/
-def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
+/-- Build the FULL IxVM Aiur toplevel: every merged module, every entry
+    point — including the test/bench entries (`blake3_test`,
+    `sha256_bench`, `rbtree_map_test`, `kernel_unit_tests`,
+    `ixon_serde_blake3_bench`, …). Use this only for harnesses that run
+    those entries; production systems build from `ixVM` (pruned), so
+    test-only circuits never widen a committed kernel system. -/
+def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← core.merge byteStream
   let vm ← vm.merge blake3
   let vm ← vm.merge rbTreeMap
@@ -159,6 +159,19 @@ def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge check
   let vm ← vm.merge claim
   vm.merge entrypoints
+
+/-- The production IxVM kernel toplevel: `ixVMFull` pruned to the closure
+    of the two kernel entry points. The byte loaders inside `ingress`
+    recompute blake3 over every IOBuffer read and assert the digest
+    matches the address key — required for `verify_claim`'s soundness.
+    `verify_const` (the arena-test subject-only entrypoint) goes through
+    the same loaders since the IxVM kernel only has one storage
+    convention. Pruning drops the test/bench entries and their exclusive
+    call closures — every compiled function is a committed circuit whose
+    openings pad every proof, so dead entries cost real proof bytes. -/
+def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
+  let vm ← ixVMFull
+  pure (vm.prune [`verify_claim, `verify_const])
 
 end IxVM
 

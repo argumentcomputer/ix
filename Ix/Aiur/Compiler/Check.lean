@@ -801,6 +801,14 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let a' ← inferNoEscape a
     let b' ← checkNoEscape b a'.typ
     pure (Typed.Term.unconstrainedBigUintDivMod (.tuple #[a'.typ, a'.typ]) false a' b')
+  | .unconstrainedGToBytes a => do
+    -- The bytes are UNCONSTRAINED advice typed `u8`; the caller must
+    -- range-check them (see `Source.Term.unconstrainedGToBytes`).
+    let a' ← checkNoEscape a .field
+    pure (Typed.Term.unconstrainedGToBytes (.array .u8 8) false a')
+  | .unconstrainedGInverse a => do
+    let a' ← checkNoEscape a .field
+    pure (Typed.Term.unconstrainedGInverse .field false a')
   | .toField a => do
     let a' ← checkNoEscape a .u8
     pure (Typed.Term.toField .field false a')
@@ -981,6 +989,10 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
       pure (.u8RangeCheck (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .unconstrainedBigUintDivMod τ e a b => do
       pure (.unconstrainedBigUintDivMod (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .unconstrainedGToBytes τ e a => do
+      pure (.unconstrainedGToBytes (← zonkTyp τ) e (← zonkTypedTerm a))
+  | .unconstrainedGInverse τ e a => do
+      pure (.unconstrainedGInverse (← zonkTyp τ) e (← zonkTypedTerm a))
   | .toField τ e a => do pure (.toField (← zonkTyp τ) e (← zonkTypedTerm a))
   | .u8FromFieldUnsafe τ e a => do
       pure (.u8FromFieldUnsafe (← zonkTyp τ) e (← zonkTypedTerm a))

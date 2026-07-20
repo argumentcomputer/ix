@@ -15,6 +15,7 @@ use crate::{
   bytecode::{Block, Ctrl, Function, Op, Toplevel},
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
+    g_inverse_value,
   },
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
@@ -87,7 +88,13 @@ impl Toplevel {
       .filter(|(_, res)| !res.multiplicity.is_zero())
       .collect::<Vec<_>>();
     let height_no_padding = queries.len();
-    let height = height_no_padding.next_power_of_two();
+    // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
+    // the prover deactivates it, so it is neither committed nor opened.
+    let height = if height_no_padding == 0 {
+      0
+    } else {
+      height_no_padding.next_power_of_two()
+    };
     let mut rows = vec![G::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];
     let empty_lookup = Lookup::empty();
@@ -576,6 +583,21 @@ impl Op {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }
+      },
+      Op::UnconstrainedGToBytes(a) => {
+        // Recompute the deterministic hint (canonical LE bytes) and fill
+        // the 8 auxiliary columns the constraints allocate.
+        let bytes = map[*a].0.as_canonical_u64().to_le_bytes();
+        for b in bytes {
+          let f = G::from_u8(b);
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::UnconstrainedGInverse(a) => {
+        let f = g_inverse_value(map[*a].0);
+        map.push((f, 1));
+        slice.push_auxiliary(index, f);
       },
       Op::AssertEq(..)
       | Op::IOSetInfo(..)

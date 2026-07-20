@@ -158,6 +158,14 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::UnconstrainedBigUintDivMod(i, j)
     },
+    29 => {
+      let [a] = ctor.objs::<1>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::UnconstrainedGToBytes(a)
+    },
+    30 => {
+      let [a] = ctor.objs::<1>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::UnconstrainedGInverse(a)
+    },
     _ => unreachable!(),
   }
 }

@@ -102,20 +102,21 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let kernelChecks ← kernelChecks env
     let claimSmokes ← claimSmokeTests env
     let parityCases ← parityCases env
-    let aiurTests := [kernelUnitTests, serdeNatAddCommTest]
-                     ++ kernelChecks ++ claimSmokes
-    -- The arena suite shares the compiled toplevel with the AiurTestCase
-    -- runs above; build it once here and weave the resulting TestSeq in
-    -- alongside `mkAiurTests`'s output.
-    match AiurTestEnv.build IxVM.ixVM with
-    | .error e => IO.eprintln s!"IxVM env build failed: {e}"; return 1
-    | .ok aiurEnv =>
+    -- Test-only entrypoints (`kernel_unit_tests`, `ixon_serde_test`) exist
+    -- only in the FULL toplevel; everything codegen-coupled (kernel checks,
+    -- claim smokes, arena, parity) runs on the pruned production toplevel —
+    -- the one `ix codegen` mirrors.
+    match AiurTestEnv.build IxVM.ixVM, AiurTestEnv.build IxVM.ixVMFull with
+    | .error e, _ | _, .error e => IO.eprintln s!"IxVM env build failed: {e}"; return 1
+    | .ok aiurEnv, .ok fullEnv =>
       let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env aiurEnv.compiled
-      let aiurSeq := aiurTests.foldl (init := .done) fun s tc =>
+      let fullSeq := [kernelUnitTests, serdeNatAddCommTest].foldl (init := .done)
+        fun s tc => s ++ fullEnv.runTestCase tc
+      let aiurSeq := (kernelChecks ++ claimSmokes).foldl (init := .done) fun s tc =>
         s ++ aiurEnv.runTestCase tc
       let paritySeq := parityCases.foldl (init := .done) fun s tc =>
         s ++ runParityCase aiurEnv.compiled tc
-      LSpec.lspecIO (.ofList [("ixvm", [aiurSeq, arenaSeq, paritySeq])]) []),
+      LSpec.lspecIO (.ofList [("ixvm", [fullSeq, aiurSeq, arenaSeq, paritySeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with

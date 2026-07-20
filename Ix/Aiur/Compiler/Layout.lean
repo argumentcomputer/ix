@@ -207,6 +207,10 @@ def opLayout : Bytecode.Op → LayoutM Unit
   -- No constraint relation, no lookup. Mirrors `IORead` (aux only) — the Rust
   -- `constraints.rs` pushes exactly 2 auxiliaries and emits no relation.
   | .unconstrainedBigUintDivMod .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2
+  -- Unconstrained hints: fresh auxiliary witness columns only, no relation,
+  -- no lookup — same shape as `IORead`. The caller pins the values.
+  | .unconstrainedGToBytes _ => do pushDegrees $ .replicate 8 1; bumpAuxiliaries 8
+  | .unconstrainedGInverse _ => do pushDegree 1; bumpAuxiliaries
   | .debug .. => pure ()
 
 /-- Termination helper for blockLayout's Block/Ctrl traversal. -/

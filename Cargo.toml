@@ -47,10 +47,11 @@ dashmap = "6.1.0"
 hashbrown = "0.15"
 indexmap = "2"
 itertools = "0.14.0"
+libc = "0.2"
 log = "0.4"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2c019220cb43ce946efec6b9caf507f5a6bccd1c" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "6382036e970ab508e69b2db2b8ae5ad64672e34b" }
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"

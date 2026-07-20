@@ -417,6 +417,14 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let _ ← interp decls bindings t1
       let _ ← interp decls bindings t2
       throwErr "unconstrainedBigUintDivMod: not implemented in debug interpreter"
+  | .unconstrainedGToBytes t => do
+      match ← interp decls bindings t with
+      | .field g => return .array (Array.ofFn fun i => .field (g.toLeBytes i))
+      | _ => throwErr "unconstrainedGToBytes: expected field value"
+  | .unconstrainedGInverse t => do
+      match ← interp decls bindings t with
+      | .field g => return .field g.inverse
+      | _ => throwErr "unconstrainedGInverse: expected field value"
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls bindings t
   | .u8Lit n => return .field (G.ofNat n)
