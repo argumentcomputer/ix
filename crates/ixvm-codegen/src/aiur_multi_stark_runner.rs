@@ -51,6 +51,14 @@ pub fn execute_multi_stark(
 /// under key `[0]` on its channel (one stream per channel). Mirrors
 /// the layout of `MultiStark.verifierInput` (`Ix/MultiStark.lean`).
 pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
+  // Measurement hook: dump the raw advice blobs for offline analysis
+  // (vk encoding/activation studies) when IX_DUMP_RECURSION_IO is set
+  // to a directory.
+  if let Ok(dir) = std::env::var("IX_DUMP_RECURSION_IO") {
+    let _ = std::fs::write(format!("{dir}/proof.bin"), proof);
+    let _ = std::fs::write(format!("{dir}/vk.bin"), vk);
+    let _ = std::fs::write(format!("{dir}/claims.bin"), claims);
+  }
   let mut io =
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() };
   for (channel, bytes) in

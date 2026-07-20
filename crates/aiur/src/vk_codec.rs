@@ -9,28 +9,68 @@
 //! and so are *not* serialized.
 //!
 //! This is a **hand-written, serde-free** codec. `multi-stark` does not derive
-//! `serde` on its types, and we do not want to fork it just to add the derives,
-//! so the encoder and decoder are written by hand against the public fields of
-//! `System`, `Circuit`, `LookupAir`, `Lookup`, `SymbolicExpression`,
-//! `SymbolicVariable`, `Entry`, `CommitmentParameters`, `FriParameters` and
-//! the Ix `AiurCircuit`/`Constraints`/`Memory`. The wire format mirrors the
-//! `bincode standard().little_endian().fixed_int` layout the proof uses, so the
-//! Aiur port (`Ix/MultiStark/SystemDeserialize.lean`) can read it the same way.
+//! `serde` on its types, so the encoder and decoder are written by hand against
+//! the public fields of `System`, `Circuit`, `LookupAir`, `Lookup`,
+//! `SymbolicExpression`, `SymbolicVariable`, `Entry`, `CommitmentParameters`,
+//! `FriParameters` and the Ix `AiurCircuit`/`Constraints`/`Memory`. The Aiur
+//! port (`Ix/MultiStark/SystemDeserialize.lean`) reads the same bytes
+//! in-circuit; the two must stay mirror images.
 //!
-//! Wire format:
-//!   enum tag : u32 (4 bytes LE)       Option : 1 byte (0 = None / 1 = Some)
-//!   usize / u64 : 8 bytes LE          Vec : u64 length, then elements
-//!   struct : fields in declaration order      Range<usize> : start, end (u64)
-//!   Goldilocks `G` : canonical u64, 8 bytes LE (the Lean side reduces mod p on
-//!                    read; canonical and raw representations agree there)
-//!   MerkleCap : Vec<[u64; 4]>         PhantomData : 0 bytes
+//! # Split-streams wire format (v2)
 //!
-//! Goldilocks note: bincode/serde would write Goldilocks' *raw* internal `u64`,
-//! but that field is `pub(crate)` inside `p3_goldilocks` and unreachable here.
-//! We instead write `as_canonical_u64()` (the reduced value) and read it back
-//! with `from_u64`. The constants that appear in a verifying key are canonical,
-//! and the Lean reader reduces mod p regardless, so the two representations are
-//! interchangeable.
+//! The recursive verifier hashes every vk byte (digest binding) and reads them
+//! with fixed-size `io_read` chunks, so the format optimizes for (a) few bytes
+//! and (b) fixed-width fields only — no varints. Each field class lives in its
+//! own per-circuit byte segment with a single width:
+//!
+//! ```text
+//! GLOBAL HEADER
+//!   7 x u16 LE   commitment + FRI parameters (log_blowup, cap_height,
+//!                log_final_poly_len, max_log_arity, num_queries,
+//!                commit_proof_of_work_bits, query_proof_of_work_bits)
+//!   u16          circuit count
+//! PER-CIRCUIT RECORDS (circuit count times; each record is a contiguous
+//!                      byte range — a future Merkle leaf)
+//!   5 x u32 LE   segment lengths: TAGS, IDX, C2, C8, META
+//!   TAGS   1 byte per node: low nibble = kind, high nibble = aux
+//!   IDX    2 bytes per Variable: column index (u16 LE)
+//!   C2     2 bytes per small constant (canonical value < 2^16, u16 LE)
+//!   C8     8 bytes per large constant (canonical u64 LE)
+//!   META   4 bytes per count/metadata field (u32 LE)
+//! TRAILER
+//!   u8           preprocessed commit flag (0 = None / 1 = Some)
+//!   [u16 + 32-byte digests]   MerkleCap, if flag = 1
+//!   u16 x circuit count       preprocessed indices (0xFFFF = None)
+//! ```
+//!
+//! TAGS byte: kind 0 = Variable, 1 = IsFirstRow, 2 = IsLastRow,
+//! 3 = IsTransition, 4 = Constant, 5 = Add, 6 = Sub, 7 = Neg, 8 = Mul.
+//! Aux for Variable = entry kind (0 = Preprocessed, 1 = Main, 2 = Stage2,
+//! 3 = Public, 4 = Stage2Public, 5 = Challenge) + 8 * rotation offset (the
+//! rotation is only 0/1: current or next row). Aux for Constant = size class
+//! (0 -> C2, 1 -> C8). A record's first TAGS byte is the `AiurCircuit`
+//! variant tag (0 = Function, 1 = Memory, 2 = Bytes1, 3 = Bytes2), then
+//! expression nodes in preorder.
+//!
+//! Record content order (defines each segment's fill order):
+//! aircircuit tag; [Function: zeros count (META), zero exprs, selectors
+//! start/end + width (META) | Memory: width (META)]; lookups count (META);
+//! per lookup: multiplicity expr, args count (META), arg exprs; then the 6
+//! circuit metadata fields (constraint_count, max_constraint_degree,
+//! preprocessed_height, preprocessed_width, stage_1_width, stage_2_width)
+//! (META).
+//!
+//! `degree_multiple` is NOT serialized: it is fully derivable (variables by
+//! entry kind, add/sub = max of children, mul = sum, neg = child) and the
+//! decoder recomputes it via the library's own `degree_multiple()` on the
+//! reconstructed children. Dropping it, the u32 enum tags, and the u64
+//! fixed-width scaffolding shrinks the kernel vk ~7x, which directly cuts the
+//! recursive verifier's dominant blake3 cost.
+//!
+//! Goldilocks note: constants are written as `as_canonical_u64()` (the raw
+//! internal repr is `pub(crate)` in `p3_goldilocks`) and read back with
+//! `from_u64`; verifying-key constants are canonical so the round-trip is
+//! exact, and the Lean reader reduces mod p regardless.
 
 // The codec is exercised by tests and wired to the FFI / Aiur port.
 #![allow(dead_code)]
@@ -51,144 +91,126 @@ use crate::{
 
 type Expr = SymbolicExpression<Val>;
 
+/// Sentinel for `None` in the preprocessed-index trailer.
+const NO_PREP_INDEX: u16 = u16::MAX;
+
 // ════════════════════════════════════════════════════════════════════════════
 // Encoder — System<AiurCircuit> -> bytes
 // ════════════════════════════════════════════════════════════════════════════
 
-struct W {
-  buf: Vec<u8>,
+/// One circuit's five segments, filled in record-content order.
+#[derive(Default)]
+struct RecordBufs {
+  tags: Vec<u8>,
+  idx: Vec<u8>,
+  c2: Vec<u8>,
+  c8: Vec<u8>,
+  meta: Vec<u8>,
 }
 
-impl W {
-  fn u8(&mut self, v: u8) {
-    self.buf.push(v);
+impl RecordBufs {
+  fn tag(&mut self, kind: u8, aux: u8) {
+    debug_assert!(kind < 16 && aux < 16);
+    self.tags.push(kind | (aux << 4));
   }
-  fn u32(&mut self, v: u32) {
-    self.buf.extend_from_slice(&v.to_le_bytes());
+  fn index_u16(&mut self, v: usize) {
+    let v = u16::try_from(v).expect("variable column index exceeds u16");
+    self.idx.extend_from_slice(&v.to_le_bytes());
   }
-  fn u64(&mut self, v: u64) {
-    self.buf.extend_from_slice(&v.to_le_bytes());
+  fn meta_u32(&mut self, v: usize) {
+    let v = u32::try_from(v).expect("vk metadata field exceeds u32");
+    self.meta.extend_from_slice(&v.to_le_bytes());
   }
-  fn usize(&mut self, v: usize) {
-    self.u64(v as u64);
-  }
-  fn g(&mut self, v: Val) {
-    // Goldilocks' raw repr is unreachable; the canonical value round-trips.
-    self.u64(v.as_canonical_u64());
-  }
-  fn entry(&mut self, e: &Entry) {
-    match *e {
-      Entry::Preprocessed { offset } => {
-        self.u32(0);
-        self.usize(offset);
-      },
-      Entry::Main { offset } => {
-        self.u32(1);
-        self.usize(offset);
-      },
-      Entry::Stage2 { offset } => {
-        self.u32(2);
-        self.usize(offset);
-      },
-      Entry::Public => self.u32(3),
-      Entry::Stage2Public => self.u32(4),
-      Entry::Challenge => self.u32(5),
+  fn constant(&mut self, v: Val) {
+    let c = v.as_canonical_u64();
+    if c < (1 << 16) {
+      self.c2.extend_from_slice(&(c as u16).to_le_bytes());
+      self.tag(4, 0);
+    } else {
+      self.c8.extend_from_slice(&c.to_le_bytes());
+      self.tag(4, 1);
     }
+  }
+  fn variable(&mut self, v: &SymbolicVariable<Val>) {
+    let (kind, offset) = match v.entry {
+      Entry::Preprocessed { offset } => (0u8, offset),
+      Entry::Main { offset } => (1, offset),
+      Entry::Stage2 { offset } => (2, offset),
+      Entry::Public => (3, 0),
+      Entry::Stage2Public => (4, 0),
+      Entry::Challenge => (5, 0),
+    };
+    assert!(offset <= 1, "rotation offset {offset} not in {{0, 1}}");
+    self.tag(0, kind + 8 * offset as u8);
+    self.index_u16(v.index);
   }
   fn expr(&mut self, e: &Expr) {
     match e {
-      SymbolicExpression::Variable(v) => {
-        self.u32(0);
-        self.entry(&v.entry);
-        self.usize(v.index);
-      },
-      SymbolicExpression::IsFirstRow => self.u32(1),
-      SymbolicExpression::IsLastRow => self.u32(2),
-      SymbolicExpression::IsTransition => self.u32(3),
-      SymbolicExpression::Constant(c) => {
-        self.u32(4);
-        self.g(*c);
-      },
-      SymbolicExpression::Add { x, y, degree_multiple } => {
-        self.u32(5);
+      SymbolicExpression::Variable(v) => self.variable(v),
+      SymbolicExpression::IsFirstRow => self.tag(1, 0),
+      SymbolicExpression::IsLastRow => self.tag(2, 0),
+      SymbolicExpression::IsTransition => self.tag(3, 0),
+      SymbolicExpression::Constant(c) => self.constant(*c),
+      SymbolicExpression::Add { x, y, .. } => {
+        self.tag(5, 0);
         self.expr(x);
         self.expr(y);
-        self.usize(*degree_multiple);
       },
-      SymbolicExpression::Sub { x, y, degree_multiple } => {
-        self.u32(6);
+      SymbolicExpression::Sub { x, y, .. } => {
+        self.tag(6, 0);
         self.expr(x);
         self.expr(y);
-        self.usize(*degree_multiple);
       },
-      SymbolicExpression::Neg { x, degree_multiple } => {
-        self.u32(7);
+      SymbolicExpression::Neg { x, .. } => {
+        self.tag(7, 0);
         self.expr(x);
-        self.usize(*degree_multiple);
       },
-      SymbolicExpression::Mul { x, y, degree_multiple } => {
-        self.u32(8);
+      SymbolicExpression::Mul { x, y, .. } => {
+        self.tag(8, 0);
         self.expr(x);
         self.expr(y);
-        self.usize(*degree_multiple);
       },
-    }
-  }
-  fn vec<T>(&mut self, items: &[T], mut f: impl FnMut(&mut Self, &T)) {
-    self.usize(items.len());
-    for item in items {
-      f(self, item);
-    }
-  }
-  fn lookup(&mut self, l: &Lookup<Expr>) {
-    self.expr(&l.multiplicity);
-    self.vec(&l.args, Self::expr);
-  }
-  fn aircircuit(&mut self, c: &AiurCircuit) {
-    match c {
-      AiurCircuit::Function(Constraints { zeros, selectors, width }) => {
-        self.u32(0);
-        self.vec(zeros, Self::expr);
-        self.usize(selectors.start);
-        self.usize(selectors.end);
-        self.usize(*width);
-      },
-      AiurCircuit::Memory(Memory { width }) => {
-        self.u32(1);
-        self.usize(*width);
-      },
-      AiurCircuit::Bytes1 => self.u32(2),
-      AiurCircuit::Bytes2 => self.u32(3),
     }
   }
   fn circuit(&mut self, c: &Circuit<AiurCircuit, Val>) {
-    // LookupAir: inner_air, lookups (preprocessed is not serialized).
-    self.aircircuit(&c.air.inner_air);
-    self.vec(&c.air.lookups, Self::lookup);
-    self.usize(c.constraint_count);
-    self.usize(c.max_constraint_degree);
-    self.usize(c.preprocessed_height);
-    self.usize(c.preprocessed_width);
-    self.usize(c.stage_1_width);
-    self.usize(c.stage_2_width);
-  }
-  fn commitment(&mut self, c: &Commitment) {
-    // MerkleCap: Vec<[u8; 32]> Blake3 digests (raw bytes).
-    self.vec(c.roots(), |w, digest: &[u8; 32]| {
-      for &byte in digest {
-        w.u8(byte);
-      }
-    });
-  }
-  fn option<T>(&mut self, o: &Option<T>, f: impl FnOnce(&mut Self, &T)) {
-    match o {
-      None => self.u8(0),
-      Some(v) => {
-        self.u8(1);
-        f(self, v);
+    match &c.air.inner_air {
+      AiurCircuit::Function(Constraints { zeros, selectors, width }) => {
+        self.tag(0, 0);
+        self.meta_u32(zeros.len());
+        for z in zeros {
+          self.expr(z);
+        }
+        self.meta_u32(selectors.start);
+        self.meta_u32(selectors.end);
+        self.meta_u32(*width);
       },
+      AiurCircuit::Memory(Memory { width }) => {
+        self.tag(1, 0);
+        self.meta_u32(*width);
+      },
+      AiurCircuit::Bytes1 => self.tag(2, 0),
+      AiurCircuit::Bytes2 => self.tag(3, 0),
     }
+    self.meta_u32(c.air.lookups.len());
+    for l in &c.air.lookups {
+      self.expr(&l.multiplicity);
+      self.meta_u32(l.args.len());
+      for a in &l.args {
+        self.expr(a);
+      }
+    }
+    self.meta_u32(c.constraint_count);
+    self.meta_u32(c.max_constraint_degree);
+    self.meta_u32(c.preprocessed_height);
+    self.meta_u32(c.preprocessed_width);
+    self.meta_u32(c.stage_1_width);
+    self.meta_u32(c.stage_2_width);
   }
+}
+
+fn push_u16(buf: &mut Vec<u8>, v: usize) {
+  let v = u16::try_from(v).expect("vk header field exceeds u16");
+  buf.extend_from_slice(&v.to_le_bytes());
 }
 
 /// Serialize the verifying key `System<AiurCircuit>` (preprocessed traces are
@@ -200,20 +222,47 @@ pub(crate) fn to_bytes(
   commitment_parameters: CommitmentParameters,
   fri_parameters: FriParameters,
 ) -> Vec<u8> {
-  let mut w = W { buf: Vec::new() };
-  w.usize(commitment_parameters.log_blowup);
-  w.usize(commitment_parameters.cap_height);
-  w.usize(fri_parameters.log_final_poly_len);
-  w.usize(fri_parameters.max_log_arity);
-  w.usize(fri_parameters.num_queries);
-  w.usize(fri_parameters.commit_proof_of_work_bits);
-  w.usize(fri_parameters.query_proof_of_work_bits);
-  w.vec(&system.circuits, W::circuit);
-  w.option(&system.preprocessed_commit, W::commitment);
-  w.vec(&system.preprocessed_indices, |w, idx| {
-    w.option(idx, |w, &i| w.usize(i))
-  });
-  w.buf
+  let mut buf = Vec::new();
+  push_u16(&mut buf, commitment_parameters.log_blowup);
+  push_u16(&mut buf, commitment_parameters.cap_height);
+  push_u16(&mut buf, fri_parameters.log_final_poly_len);
+  push_u16(&mut buf, fri_parameters.max_log_arity);
+  push_u16(&mut buf, fri_parameters.num_queries);
+  push_u16(&mut buf, fri_parameters.commit_proof_of_work_bits);
+  push_u16(&mut buf, fri_parameters.query_proof_of_work_bits);
+  push_u16(&mut buf, system.circuits.len());
+  for c in &system.circuits {
+    let mut r = RecordBufs::default();
+    r.circuit(c);
+    for seg in [&r.tags, &r.idx, &r.c2, &r.c8, &r.meta] {
+      let len = u32::try_from(seg.len()).expect("vk segment exceeds u32");
+      buf.extend_from_slice(&len.to_le_bytes());
+    }
+    for seg in [&r.tags, &r.idx, &r.c2, &r.c8, &r.meta] {
+      buf.extend_from_slice(seg);
+    }
+  }
+  match &system.preprocessed_commit {
+    None => buf.push(0),
+    Some(c) => {
+      buf.push(1);
+      push_u16(&mut buf, c.roots().len());
+      for digest in c.roots() {
+        buf.extend_from_slice(digest);
+      }
+    },
+  }
+  for idx in &system.preprocessed_indices {
+    match idx {
+      None => buf.extend_from_slice(&NO_PREP_INDEX.to_le_bytes()),
+      Some(i) => {
+        let v = u16::try_from(*i).expect("preprocessed index exceeds u16");
+        assert!(v != NO_PREP_INDEX, "preprocessed index collides with sentinel");
+        buf.extend_from_slice(&v.to_le_bytes());
+      },
+    }
+  }
+  buf
 }
 
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
@@ -227,14 +276,16 @@ pub fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
 // A hand-written reader matching the bytes `to_bytes` produces, decoding
 // straight into the real `System<AiurCircuit>`. This is the reference
 // re-implemented in Aiur (`Ix/MultiStark/SystemDeserialize.lean`).
+// `degree_multiple` is recomputed from the reconstructed children.
 // ════════════════════════════════════════════════════════════════════════════
 
-struct R<'a> {
+/// Cursor over one byte region.
+struct Seg<'a> {
   buf: &'a [u8],
   pos: usize,
 }
 
-impl<'a> R<'a> {
+impl<'a> Seg<'a> {
   fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
     let end = self.pos.checked_add(n).ok_or("length overflow")?;
     if end > self.buf.len() {
@@ -247,156 +298,204 @@ impl<'a> R<'a> {
   fn u8(&mut self) -> Result<u8, String> {
     Ok(self.take(1)?[0])
   }
+  fn u16(&mut self) -> Result<u16, String> {
+    Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+  }
   fn u32(&mut self) -> Result<u32, String> {
     Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
   }
   fn u64(&mut self) -> Result<u64, String> {
     Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
   }
-  fn usize(&mut self) -> Result<usize, String> {
-    usize::try_from(self.u64()?).map_err(|e| format!("usize overflow: {e}"))
+  fn done(&self, what: &str) -> Result<(), String> {
+    if self.pos != self.buf.len() {
+      return Err(format!(
+        "{what}: consumed {} of {} bytes",
+        self.pos,
+        self.buf.len()
+      ));
+    }
+    Ok(())
   }
-  fn g(&mut self) -> Result<Val, String> {
-    Ok(Val::from_u64(self.u64()?))
-  }
-  fn entry(&mut self) -> Result<Entry, String> {
-    Ok(match self.u32()? {
-      0 => Entry::Preprocessed { offset: self.usize()? },
-      1 => Entry::Main { offset: self.usize()? },
-      2 => Entry::Stage2 { offset: self.usize()? },
-      3 => Entry::Public,
-      4 => Entry::Stage2Public,
-      5 => Entry::Challenge,
-      t => return Err(format!("bad Entry tag {t}")),
-    })
+}
+
+/// One record's five segment cursors.
+struct RecordReader<'a> {
+  tags: Seg<'a>,
+  idx: Seg<'a>,
+  c2: Seg<'a>,
+  c8: Seg<'a>,
+  meta: Seg<'a>,
+}
+
+impl<'a> RecordReader<'a> {
+  fn meta_usize(&mut self) -> Result<usize, String> {
+    Ok(self.meta.u32()? as usize)
   }
   fn expr(&mut self) -> Result<Expr, String> {
-    Ok(match self.u32()? {
-      0 => SymbolicExpression::Variable(SymbolicVariable::new(
-        self.entry()?,
-        self.usize()?,
-      )),
+    let byte = self.tags.u8()?;
+    let (kind, aux) = (byte & 0xF, byte >> 4);
+    Ok(match kind {
+      0 => {
+        let offset = (aux >> 3) as usize;
+        let entry = match aux & 0x7 {
+          0 => Entry::Preprocessed { offset },
+          1 => Entry::Main { offset },
+          2 => Entry::Stage2 { offset },
+          3 => Entry::Public,
+          4 => Entry::Stage2Public,
+          5 => Entry::Challenge,
+          k => return Err(format!("bad entry kind {k}")),
+        };
+        let index = self.idx.u16()? as usize;
+        SymbolicExpression::Variable(SymbolicVariable::new(entry, index))
+      },
       1 => SymbolicExpression::IsFirstRow,
       2 => SymbolicExpression::IsLastRow,
       3 => SymbolicExpression::IsTransition,
-      4 => SymbolicExpression::Constant(self.g()?),
+      4 => {
+        let c = match aux {
+          0 => self.c2.u16()? as u64,
+          1 => self.c8.u64()?,
+          a => return Err(format!("bad constant size class {a}")),
+        };
+        SymbolicExpression::Constant(Val::from_u64(c))
+      },
       5 => {
         let x = Box::new(self.expr()?);
         let y = Box::new(self.expr()?);
-        SymbolicExpression::Add { x, y, degree_multiple: self.usize()? }
+        let degree_multiple = x.degree_multiple().max(y.degree_multiple());
+        SymbolicExpression::Add { x, y, degree_multiple }
       },
       6 => {
         let x = Box::new(self.expr()?);
         let y = Box::new(self.expr()?);
-        SymbolicExpression::Sub { x, y, degree_multiple: self.usize()? }
+        let degree_multiple = x.degree_multiple().max(y.degree_multiple());
+        SymbolicExpression::Sub { x, y, degree_multiple }
       },
       7 => {
         let x = Box::new(self.expr()?);
-        SymbolicExpression::Neg { x, degree_multiple: self.usize()? }
+        let degree_multiple = x.degree_multiple();
+        SymbolicExpression::Neg { x, degree_multiple }
       },
       8 => {
         let x = Box::new(self.expr()?);
         let y = Box::new(self.expr()?);
-        SymbolicExpression::Mul { x, y, degree_multiple: self.usize()? }
+        let degree_multiple = x.degree_multiple() + y.degree_multiple();
+        SymbolicExpression::Mul { x, y, degree_multiple }
       },
-      t => return Err(format!("bad SymbolicExpression tag {t}")),
-    })
-  }
-  fn vec<T>(
-    &mut self,
-    mut f: impl FnMut(&mut Self) -> Result<T, String>,
-  ) -> Result<Vec<T>, String> {
-    let n = self.usize()?;
-    let mut v = Vec::with_capacity(n.min(1 << 16));
-    for _ in 0..n {
-      v.push(f(self)?);
-    }
-    Ok(v)
-  }
-  fn lookup(&mut self) -> Result<Lookup<Expr>, String> {
-    Ok(Lookup { multiplicity: self.expr()?, args: self.vec(Self::expr)? })
-  }
-  fn aircircuit(&mut self) -> Result<AiurCircuit, String> {
-    Ok(match self.u32()? {
-      0 => AiurCircuit::Function(Constraints {
-        zeros: self.vec(Self::expr)?,
-        selectors: self.usize()?..self.usize()?,
-        width: self.usize()?,
-      }),
-      1 => AiurCircuit::Memory(Memory { width: self.usize()? }),
-      2 => AiurCircuit::Bytes1,
-      3 => AiurCircuit::Bytes2,
-      t => return Err(format!("bad AiurCircuit tag {t}")),
+      t => return Err(format!("bad expr kind {t}")),
     })
   }
   fn circuit(&mut self) -> Result<Circuit<AiurCircuit, Val>, String> {
-    // LookupAir: inner_air, lookups (preprocessed is prover-only -> None).
-    let air = LookupAir {
-      inner_air: self.aircircuit()?,
-      lookups: self.vec(Self::lookup)?,
-      preprocessed: None,
+    let inner_air = match self.tags.u8()? {
+      0 => {
+        let n = self.meta_usize()?;
+        let mut zeros = Vec::with_capacity(n.min(1 << 16));
+        for _ in 0..n {
+          zeros.push(self.expr()?);
+        }
+        let start = self.meta_usize()?;
+        let end = self.meta_usize()?;
+        let width = self.meta_usize()?;
+        AiurCircuit::Function(Constraints { zeros, selectors: start..end, width })
+      },
+      1 => AiurCircuit::Memory(Memory { width: self.meta_usize()? }),
+      2 => AiurCircuit::Bytes1,
+      3 => AiurCircuit::Bytes2,
+      t => return Err(format!("bad aircircuit tag {t}")),
     };
-    Ok(Circuit {
-      air,
-      constraint_count: self.usize()?,
-      max_constraint_degree: self.usize()?,
-      preprocessed_height: self.usize()?,
-      preprocessed_width: self.usize()?,
-      stage_1_width: self.usize()?,
-      stage_2_width: self.usize()?,
-    })
-  }
-  fn commitment(&mut self) -> Result<Commitment, String> {
-    let caps = self.vec(|r| {
-      let mut d = [0u8; 32];
-      for b in d.iter_mut() {
-        *b = r.u8()?;
+    let n = self.meta_usize()?;
+    let mut lookups = Vec::with_capacity(n.min(1 << 16));
+    for _ in 0..n {
+      let multiplicity = self.expr()?;
+      let a = self.meta_usize()?;
+      let mut args = Vec::with_capacity(a.min(1 << 16));
+      for _ in 0..a {
+        args.push(self.expr()?);
       }
-      Ok(d)
-    })?;
-    Ok(Commitment::from(caps))
-  }
-  fn option<T>(
-    &mut self,
-    f: impl FnOnce(&mut Self) -> Result<T, String>,
-  ) -> Result<Option<T>, String> {
-    match self.u8()? {
-      0 => Ok(None),
-      1 => Ok(Some(f(self)?)),
-      t => Err(format!("bad Option tag {t}")),
+      lookups.push(Lookup { multiplicity, args });
     }
+    let air = LookupAir { inner_air, lookups, preprocessed: None };
+    let c = Circuit {
+      air,
+      constraint_count: self.meta_usize()?,
+      max_constraint_degree: self.meta_usize()?,
+      preprocessed_height: self.meta_usize()?,
+      preprocessed_width: self.meta_usize()?,
+      stage_1_width: self.meta_usize()?,
+      stage_2_width: self.meta_usize()?,
+    };
+    self.tags.done("TAGS segment")?;
+    self.idx.done("IDX segment")?;
+    self.c2.done("C2 segment")?;
+    self.c8.done("C8 segment")?;
+    self.meta.done("META segment")?;
+    Ok(c)
   }
 }
 
 /// Deserialize a `System<AiurCircuit>` from [`to_bytes`] output, requiring that
-/// every byte is consumed. Also returns the config's construction parameters,
-/// which the `System` itself doesn't expose.
+/// every byte (globally and within each record segment) is consumed. Also
+/// returns the config's construction parameters, which the `System` itself
+/// doesn't expose.
 pub(crate) fn from_bytes(
   bytes: &[u8],
 ) -> Result<
   (System<AiurConfig, AiurCircuit>, CommitmentParameters, FriParameters),
   String,
 > {
-  let mut r = R { buf: bytes, pos: 0 };
-  let commitment_parameters =
-    CommitmentParameters { log_blowup: r.usize()?, cap_height: r.usize()? };
-  let fri_parameters = FriParameters {
-    log_final_poly_len: r.usize()?,
-    max_log_arity: r.usize()?,
-    num_queries: r.usize()?,
-    commit_proof_of_work_bits: r.usize()?,
-    query_proof_of_work_bits: r.usize()?,
+  let mut r = Seg { buf: bytes, pos: 0 };
+  let commitment_parameters = CommitmentParameters {
+    log_blowup: r.u16()? as usize,
+    cap_height: r.u16()? as usize,
   };
-  let circuits = r.vec(R::circuit)?;
-  let preprocessed_commit = r.option(R::commitment)?;
-  let preprocessed_indices = r.vec(|r| r.option(R::usize))?;
-  if r.pos != bytes.len() {
-    return Err(format!(
-      "trailing data: consumed {} of {}",
-      r.pos,
-      bytes.len()
-    ));
+  let fri_parameters = FriParameters {
+    log_final_poly_len: r.u16()? as usize,
+    max_log_arity: r.u16()? as usize,
+    num_queries: r.u16()? as usize,
+    commit_proof_of_work_bits: r.u16()? as usize,
+    query_proof_of_work_bits: r.u16()? as usize,
+  };
+  let n_circuits = r.u16()? as usize;
+  let mut circuits = Vec::with_capacity(n_circuits);
+  for _ in 0..n_circuits {
+    let lens: [usize; 5] = [
+      r.u32()? as usize,
+      r.u32()? as usize,
+      r.u32()? as usize,
+      r.u32()? as usize,
+      r.u32()? as usize,
+    ];
+    let tags = Seg { buf: r.take(lens[0])?, pos: 0 };
+    let idx = Seg { buf: r.take(lens[1])?, pos: 0 };
+    let c2 = Seg { buf: r.take(lens[2])?, pos: 0 };
+    let c8 = Seg { buf: r.take(lens[3])?, pos: 0 };
+    let meta = Seg { buf: r.take(lens[4])?, pos: 0 };
+    let mut rec = RecordReader { tags, idx, c2, c8, meta };
+    circuits.push(rec.circuit()?);
   }
+  let preprocessed_commit = match r.u8()? {
+    0 => None,
+    1 => {
+      let n = r.u16()? as usize;
+      let mut caps = Vec::with_capacity(n.min(1 << 16));
+      for _ in 0..n {
+        let mut d = [0u8; 32];
+        d.copy_from_slice(r.take(32)?);
+        caps.push(d);
+      }
+      Some(Commitment::from(caps))
+    },
+    t => return Err(format!("bad Option tag {t}")),
+  };
+  let mut preprocessed_indices = Vec::with_capacity(n_circuits);
+  for _ in 0..n_circuits {
+    let v = r.u16()?;
+    preprocessed_indices
+      .push(if v == NO_PREP_INDEX { None } else { Some(v as usize) });
+  }
+  r.done("vk")?;
   let system = System {
     config: AiurConfig::new(commitment_parameters, fri_parameters),
     circuits,
@@ -424,11 +523,8 @@ mod tests {
     (cp, fp)
   }
 
-  /// Build a small real `System<AiurCircuit>` from the two byte gadgets and
-  /// check the verifying-key codec round-trips: decode(encode(x)) re-encodes to
-  /// the same bytes (a serialization fixpoint).
-  #[test]
-  fn system_vk_round_trips() {
+  fn test_system() -> (System<AiurConfig, AiurCircuit>, CommitmentParameters, FriParameters)
+  {
     let (cp, fp) = test_parameters();
     let (system, _key) = System::new(
       AiurConfig::new(cp, fp),
@@ -437,21 +533,84 @@ mod tests {
         LookupAir::new(AiurCircuit::Bytes2, Bytes2.lookups()),
       ],
     );
+    (system, cp, fp)
+  }
+
+  /// Structural equality of expressions INCLUDING the recomputed
+  /// `degree_multiple` — validates the decoder's degree reconstruction
+  /// node by node.
+  fn expr_eq(a: &Expr, b: &Expr) -> bool {
+    use SymbolicExpression as E;
+    if a.degree_multiple() != b.degree_multiple() {
+      return false;
+    }
+    match (a, b) {
+      (E::Variable(u), E::Variable(v)) => u.entry == v.entry && u.index == v.index,
+      (E::IsFirstRow, E::IsFirstRow)
+      | (E::IsLastRow, E::IsLastRow)
+      | (E::IsTransition, E::IsTransition) => true,
+      (E::Constant(c), E::Constant(d)) => c == d,
+      (E::Add { x: ax, y: ay, .. }, E::Add { x: bx, y: by, .. })
+      | (E::Sub { x: ax, y: ay, .. }, E::Sub { x: bx, y: by, .. })
+      | (E::Mul { x: ax, y: ay, .. }, E::Mul { x: bx, y: by, .. }) => {
+        expr_eq(ax, bx) && expr_eq(ay, by)
+      },
+      (E::Neg { x: ax, .. }, E::Neg { x: bx, .. }) => expr_eq(ax, bx),
+      _ => false,
+    }
+  }
+
+  /// Round-trip: decode(encode(x)) re-encodes to the same bytes AND every
+  /// expression (with its recomputed degrees) matches the original.
+  #[test]
+  fn system_vk_round_trips() {
+    let (system, cp, fp) = test_system();
     let bytes = to_bytes(&system, cp, fp);
     let (back, back_cp, back_fp) = from_bytes(&bytes).expect("decode");
     let reencoded = to_bytes(&back, back_cp, back_fp);
     assert_eq!(bytes, reencoded, "verifying-key codec round-trip mismatch");
+    assert_eq!(system.circuits.len(), back.circuits.len());
+    for (a, b) in system.circuits.iter().zip(&back.circuits) {
+      assert_eq!(a.air.lookups.len(), b.air.lookups.len());
+      for (la, lb) in a.air.lookups.iter().zip(&b.air.lookups) {
+        assert!(
+          expr_eq(&la.multiplicity, &lb.multiplicity),
+          "lookup multiplicity mismatch (degree recomputation?)"
+        );
+        assert_eq!(la.args.len(), lb.args.len());
+        for (ea, eb) in la.args.iter().zip(&lb.args) {
+          assert!(expr_eq(ea, eb), "lookup arg mismatch");
+        }
+      }
+      if let (AiurCircuit::Function(fa), AiurCircuit::Function(fb)) =
+        (&a.air.inner_air, &b.air.inner_air)
+      {
+        assert_eq!(fa.zeros.len(), fb.zeros.len());
+        for (ea, eb) in fa.zeros.iter().zip(&fb.zeros) {
+          assert!(expr_eq(ea, eb), "constraint mismatch");
+        }
+      }
+    }
   }
 
   #[test]
   fn rejects_trailing_bytes() {
-    let (cp, fp) = test_parameters();
-    let (system, _key) = System::new(
-      AiurConfig::new(cp, fp),
-      [LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups())],
-    );
+    let (system, cp, fp) = test_system();
     let mut bytes = to_bytes(&system, cp, fp);
     bytes.push(0);
     assert!(from_bytes(&bytes).is_err(), "should reject trailing data");
+  }
+
+  /// A tampered segment length must be rejected (the record readers enforce
+  /// exact per-segment consumption).
+  #[test]
+  fn rejects_bad_segment_length() {
+    let (system, cp, fp) = test_system();
+    let mut bytes = to_bytes(&system, cp, fp);
+    // First record header starts right after the 16-byte global header;
+    // bump the TAGS segment length by one.
+    let tags_len = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
+    bytes[16..20].copy_from_slice(&(tags_len + 1).to_le_bytes());
+    assert!(from_bytes(&bytes).is_err(), "should reject bad segment length");
   }
 }

@@ -551,10 +551,10 @@ def verifier := ⟦
       SymExpr.IsLastRow => [0, 0],
       SymExpr.IsTransition => [0, 0],
       SymExpr.Const(c) => [c, 0],
-      SymExpr.Add(x, y, _d) => eg_add(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
-      SymExpr.Sub(x, y, _d) => eg_sub(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
-      SymExpr.Neg(x, _d) => eg_neg(eval_sym(load(x), main, prep)),
-      SymExpr.Mul(x, y, _d) => eg_mul(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.Add(x, y) => eg_add(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.Sub(x, y) => eg_sub(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.Neg(x) => eg_neg(eval_sym(load(x), main, prep)),
+      SymExpr.Mul(x, y) => eg_mul(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
     }
   }
 
