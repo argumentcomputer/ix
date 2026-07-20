@@ -859,8 +859,10 @@ partial def canonicalAuxOrder (aux : Array (FlatBlockMember m))
   let mut auxSeedNames : Array Name := Array.mkEmpty aux.size
   for h : sourceIdx in [0:aux.size] do
     let member := aux[sourceIdx]
+    -- `Name.pretty` (bare, un-escaped), NOT `toString`: Rust seeds on
+    -- `name.pretty()`, and the seed string feeds the canonical sort.
     let extSeed := match Mode.get? member.id.name with
-      | some name => (toString name).replace "." "_"
+      | some name => name.pretty.replace "." "_"
       | none => toString member.id.addr
     let seedSuffix := s!"{extSeed}_{sourceIdx + 1}"
     let seedName := match nestedPrefix with
@@ -945,6 +947,31 @@ partial def canonicalAuxOrder (aux : Array (FlatBlockMember m))
         extCtorFields ctorTyp
       allCtorLookup := allCtorLookup.insert auxCtorAddr auxCtor
       auxCtorKids := auxCtorKids.push auxCtorKid
+    -- Synthetic trailing "identity marker" ctor carrying the aux's
+    -- nested-occurrence identity (`Ext spec_params`, pre-rewrite: NOT
+    -- passed through `replaceAuxRefsForSort`, or it would become the
+    -- self-reference and lose the distinction). Two nested occurrences
+    -- of one external inductive can instantiate to alpha-identical
+    -- views when the distinguishing spec param is phantom in the
+    -- external's constructors — the marker keeps them in distinct
+    -- classes and orders them by spec-param content, mirroring the
+    -- compile-side marker in `sort_aux_by_partition_refinement` and the
+    -- Rust kernel's `canonical_aux_order`. Omitting it mis-orders (or
+    -- collapses) the aux classes of e.g. `Lean.Json` / `Lean.Doc.Block`
+    -- / `Lean.Elab.InfoTree`, failing block recursor validation.
+    let mut markerTy ← TcM.intern (m := m) (.mkConst member.id member.occurrenceUs)
+    for sp in member.specParams do
+      markerTy ← TcM.intern (KExpr.mkApp markerTy sp)
+    let mut mh := Blake3.Rust.Hasher.init ()
+    mh := mh.update "AUX_MARKER_VIEW".toUTF8
+    mh := mh.update auxId.addr.hash
+    let markerAddr := Address.mk (mh.finalizeWithLength 32).val
+    let markerKid : KId m := ⟨markerAddr, Mode.field .mkAnon⟩
+    let markerCtor : KConst m := .ctor (Mode.field .mkAnon) Mode.F.mkDefault
+      false blockUs.size.toUInt64 auxId auxCtorKids.size.toUInt64 nBlockParams
+      0 markerTy
+    allCtorLookup := allCtorLookup.insert markerAddr markerCtor
+    auxCtorKids := auxCtorKids.push markerKid
     let auxIndc : KConst m := .indc (Mode.field seedName) Mode.F.mkDefault
       blockUs.size.toUInt64 nBlockParams extNIndices false syntheticBlock 0
       typ auxCtorKids Mode.F.mkDefault

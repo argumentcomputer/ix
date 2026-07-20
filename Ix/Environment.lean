@@ -111,6 +111,19 @@ partial def toStringAux : Name → String
 instance : ToString Name where
   toString := toStringAux
 
+/-- Dot-separated bare rendering — byte-for-byte mirror of the Rust
+    `Name::pretty` (str components verbatim, num components as plain
+    digits, NO `«»` escaping). The kernel's canonical aux ordering seeds
+    on this exact string (`Ix.Tc.canonicalAuxOrder` ↔ Rust
+    `canonical_aux_order`), so `toString` (which escapes nums as `«n»`)
+    must not be substituted there. -/
+partial def pretty : Name → String
+  | .anonymous _ => ""
+  | .str (.anonymous _) s _ => s
+  | .str parent s _ => s!"{pretty parent}.{s}"
+  | .num (.anonymous _) n _ => s!"{n}"
+  | .num parent n _ => s!"{pretty parent}.{n}"
+
 def fromLeanName : Lean.Name → Name
   | .anonymous => .mkAnon
   | .str pre s => .mkStr (.fromLeanName pre) s
