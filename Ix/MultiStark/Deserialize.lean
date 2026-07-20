@@ -109,8 +109,12 @@ def deserialize := ⟦
   }
 
   -- Mirror of `multi_stark::prover::Proof`, in serialization order.
+  -- `active` is the sparse-activation bitmap over the system's canonical
+  -- circuit set (one 0/1 field value per circuit); every other per-circuit
+  -- sequence in the proof is indexed by ACTIVE position.
   enum Proof {
     Mk(
+      List‹G›,            -- active
       Commitments,        -- commitments
       List‹Ext›,          -- intermediate_accumulators
       List‹U8›,           -- log_degrees
@@ -414,6 +418,22 @@ def deserialize := ⟦
                  final_poly, query_pow_witness), j4)
   }
 
+  -- The activation bitmap: `Vec<bool>` on the wire (u64 count, then one
+  -- 0/1 byte per circuit), kept as 0/1 field values.
+  fn read_active(i: G) -> (List‹G›, G) {
+    let (n, j) = read_count_at(i);
+    read_active_n(j, n)
+  }
+  fn read_active_n(i: G, n: G) -> (List‹G›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (b, j) = #read_u8_at(i);
+        let (rest, j2) = read_active_n(j, n - 1);
+        (store(ListNode.Cons(to_field(b), rest)), j2),
+    }
+  }
+
   -- `Option<OpenedRound>`: 1 tag byte, then the value when `Some`.
   fn read_preprocessed(i: G) -> (PreprocessedOpt, G) {
     let (tag, j) = #read_u8_at(i);
@@ -429,7 +449,8 @@ def deserialize := ⟦
   -- read from the channel-0 IO arena starting at byte offset `i`. Returns the
   -- end offset; the entrypoint asserts it equals `idx + len` (fully consumed).
   fn read_proof(i: G) -> (Proof, G) {
-    let (commitments, j0) = read_commitments(i);
+    let (active, ja) = read_active(i);
+    let (commitments, j0) = read_commitments(ja);
     let (intermediate_accumulators, j1) = read_ext_vec(j0);
     let (log_degrees, j2) = read_u8_vec(j1);
     let (opening_proof, j3) = read_fri_proof(j2);
@@ -437,8 +458,8 @@ def deserialize := ⟦
     let (preprocessed_opened_values, j5) = read_preprocessed(j4);
     let (stage_1_opened_values, j6) = read_opened_round(j5);
     let (stage_2_opened_values, j7) = read_opened_round(j6);
-    (Proof.Mk(commitments, intermediate_accumulators, log_degrees, opening_proof,
-              quotient_opened_values, preprocessed_opened_values,
+    (Proof.Mk(active, commitments, intermediate_accumulators, log_degrees,
+              opening_proof, quotient_opened_values, preprocessed_opened_values,
               stage_1_opened_values, stage_2_opened_values), j7)
   }
 ⟧

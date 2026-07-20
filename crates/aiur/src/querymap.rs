@@ -342,18 +342,18 @@ impl QueryMap {
     if i >= self.len() {
       return None;
     }
-    Some((self.keys.at(i), QueryRef {
-      output: self.outs.at(i),
-      multiplicity: self.mults.at(i)[0],
-    }))
+    Some((
+      self.keys.at(i),
+      QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+    ))
   }
 
   pub fn iter(&self) -> impl Iterator<Item = (&[G], QueryRef<'_>)> {
     (0..self.len()).map(|i| {
-      (self.keys.at(i), QueryRef {
-        output: self.outs.at(i),
-        multiplicity: self.mults.at(i)[0],
-      })
+      (
+        self.keys.at(i),
+        QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+      )
     })
   }
 }

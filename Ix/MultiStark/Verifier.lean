@@ -341,17 +341,28 @@ def verifier := ⟦
   -- (Phase 4+) continues observing into. The leftover `output` after the ζ
   -- sample is discarded — the next challenger op is an observe (of the opened
   -- values), which clears `output` anyway.
-  fn fiat_shamir(tlimbs: List‹U64›, prep: MerkleCap, s1: MerkleCap, s2: MerkleCap,
+  -- Each activation bit as an observed `Val` (8 LE bytes, 0 or 1).
+  fn active_onto(active: List‹G›, tail: ByteStream) -> ByteStream {
+    match load(active) {
+      ListNode.Nil => tail,
+      ListNode.Cons(b, rest) =>
+        b8_onto([u8_from_field_unsafe(b), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+                active_onto(rest, tail)),
+    }
+  }
+
+  fn fiat_shamir(tlimbs: List‹U64›, active: List‹G›, prep: MerkleCap, s1: MerkleCap, s2: MerkleCap,
       q: MerkleCap, lds: List‹U8›, claims: List‹List‹U64››, accs: List‹Ext›)
       -> (Ext, Ext, Ext, Ext, ByteStream) {
     -- Initial transcript, front-to-back: seed tag, parameter + shape words
-    -- (`tlimbs`, from the verifying key), prep, stage_1, log_degrees, claims.
-    -- Built inner-to-outer with the prepend helpers so the result is in
-    -- forward (observation) order.
+    -- (`tlimbs`, from the verifying key), the activation bitmap, prep,
+    -- stage_1, log_degrees, claims. Built inner-to-outer with the prepend
+    -- helpers so the result is in forward (observation) order.
     let input = claims_onto(claims, store(ListNode.Nil));
     let input = log_degrees_onto(lds, input);
     let input = cap_onto(s1, input);
     let input = cap_onto(prep, input);
+    let input = active_onto(active, input);
     let input = limbs_onto(tlimbs, input);
     let input = seed_tag_onto(input);
     -- sample lookup challenge, then observe it back (append)
@@ -463,7 +474,7 @@ def verifier := ⟦
   -- failed check, exactly as the Rust verifier returns `Err`.
   fn verify(proof: Proof) -> G {
     match proof {
-      Proof.Mk(_commitments, accs, _log_degrees, _opening,
+      Proof.Mk(_active, _commitments, accs, _log_degrees, _opening,
                _quotient, _preprocessed, stage_1, stage_2) =>
         -- Step 1 (shape, system-independent): the per-round opened-value lists
         -- and the accumulator list all have the same length = the circuit count.
@@ -834,18 +845,66 @@ def verifier := ⟦
     assert_eq!(eq_zero(vk_num_queries - num_queries), 1);
     assert_eq!(eq_zero(vk_commit_pow_bits - commit_pow_bits), 1);
     match proof {
-      Proof.Mk(commitments, accs, log_degrees, opening,
+      Proof.Mk(active, commitments, accs, log_degrees, opening,
                q_opened, prep_opt, stage1, stage2) =>
+        -- Sparse activation: the bitmap covers the canonical circuit set;
+        -- each bit must be boolean; every per-circuit proof sequence is
+        -- indexed by ACTIVE position, so the verifying key's circuit and
+        -- preprocessed-index lists are filtered to the active subset once
+        -- and everything downstream runs on the filtered lists. Soundness
+        -- of deactivation rests on the lookup accumulator: an inactive
+        -- circuit contributes no sends or receives, and dishonestly
+        -- deactivating a needed circuit leaves the final accumulator
+        -- nonzero (checked in `verify`).
+        assert_eq!(assert_bits(active), 1);
+        assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
+        let acirc = select_active_circuits(circuits, active);
+        let aprep = select_active_prep(prep_indices, active);
+        assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
         let Commitments.Mk(s1c, s2c, qc) = commitments;
         let prep_cap = opt_commit_cap(commit);
-        let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(tlimbs, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
+        let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
         let acc0 = claims_acc([gl_zero(), gl_zero()], claims, lch, fch);
-        -- Step 5: OOD composition/quotient identity for every circuit.
-        let _ood = ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
+        -- Step 5: OOD composition/quotient identity for every active circuit.
+        let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta);
         pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
-          s1c, s2c, qc, prep_cap, circuits, prep_indices, log_degrees, zeta,
-          list_length(circuits), log_blowup, num_queries, commit_pow_bits),
+          s1c, s2c, qc, prep_cap, acirc, aprep, log_degrees, zeta,
+          list_length(acirc), log_blowup, num_queries, commit_pow_bits),
+    }
+  }
+
+  -- 1 iff every element of `l` is boolean (0 or 1).
+  fn assert_bits(l: List‹G›) -> G {
+    match load(l) {
+      ListNode.Nil => 1,
+      ListNode.Cons(b, rest) =>
+        assert_eq!(b * (b - 1), 0);
+        assert_bits(rest),
+    }
+  }
+  -- The verifying key's circuits at active positions, in order.
+  fn select_active_circuits(circuits: List‹SysCircuit›, active: List‹G›) -> List‹SysCircuit› {
+    match load(circuits) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(c, crest) =>
+        let &ListNode.Cons(b, arest) = active;
+        match b {
+          0 => select_active_circuits(crest, arest),
+          _ => store(ListNode.Cons(c, select_active_circuits(crest, arest))),
+        },
+    }
+  }
+  -- The preprocessed-index entries at active positions, in order.
+  fn select_active_prep(prep_indices: List‹OptIdx›, active: List‹G›) -> List‹OptIdx› {
+    match load(prep_indices) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(p, prest) =>
+        let &ListNode.Cons(b, arest) = active;
+        match b {
+          0 => select_active_prep(prest, arest),
+          _ => store(ListNode.Cons(p, select_active_prep(prest, arest))),
+        },
     }
   }
 
