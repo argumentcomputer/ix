@@ -529,7 +529,7 @@ def pcs := ⟦
   -- `base` is a native Goldilocks element; `bits` is a native bit list.
   fn exp_by_bits(base: Goldilocks, bits: List‹G›) -> Goldilocks {
     match load(bits) {
-      ListNode.Nil => gl_one(),
+      ListNode.Nil => 1,
       ListNode.Cons(b, rest) =>
         let half = exp_by_bits(gl_sq(base), rest);
         match b {
@@ -545,8 +545,8 @@ def pcs := ⟦
     let g = two_adic_gen(log_height + 1);
     let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
     let two_s = gl_add(s, s);
-    let t1 = eg_div(eg_add(e0, e1), [gl_two(), gl_zero()]);
-    let t2 = eg_mul(beta, eg_div(eg_sub(e0, e1), [two_s, gl_zero()]));
+    let t1 = eg_div(eg_add(e0, e1), [2, 0]);
+    let t2 = eg_mul(beta, eg_div(eg_sub(e0, e1), [two_s, 0]));
     eg_add(t1, t2)
   }
 
@@ -566,7 +566,7 @@ def pcs := ⟦
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
   fn ro_x(index_bits: List‹G›, log_height: G) -> Goldilocks {
-    gl_mul(gl_seven(), exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
+    gl_mul(7, exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
   }
 
   -- Raw wire rows (`U64` lanes, possibly non-canonical) to native Goldilocks
@@ -585,7 +585,7 @@ def pcs := ⟦
       ListNode.Nil => (ro, ap),
       ListNode.Cons(px, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = eg_mul(eg_mul(ap, eg_sub(pz, [px, gl_zero()])), q);
+        let term = eg_mul(eg_mul(ap, eg_sub(pz, [px, 0])), q);
         ro_fold(pxr, pzr, q, alpha, eg_add(ro, term), eg_mul(ap, alpha)),
     }
   }
@@ -700,7 +700,7 @@ def pcs := ⟦
       _ => match circ_has_height(log_degrees, log_blowup, num_circuits, 0, h) {
         0 => build_buckets(log_degrees, log_blowup, num_circuits, h - 1),
         _ => store(ListNode.Cons(
-               Bucket.Mk(h, [gl_one(), gl_zero()], [gl_zero(), gl_zero()]),
+               Bucket.Mk(h, [1, 0], [0, 0]),
                build_buckets(log_degrees, log_blowup, num_circuits, h - 1))),
       },
     }
@@ -730,7 +730,7 @@ def pcs := ⟦
       ListNode.Cons(b, rest) =>
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_blowup) {
-          1 => assert_eq!(eg_eq(ro, [gl_zero(), gl_zero()]), 1); 1,
+          1 => assert_eq!(eg_eq(ro, [0, 0]), 1); 1,
           _ => assert_blowup_zero(rest, log_blowup),
         },
     }
@@ -750,7 +750,7 @@ def pcs := ⟦
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
     let x = ro_x(list_drop(idxbits, log_gmax - lh), lh);
-    let q = eg_inverse(eg_sub(z, [x, gl_zero()]));
+    let q = eg_inverse(eg_sub(z, [x, 0]));
     bucket_update(buckets, lh, p_x, p_z, q, alpha)
   }
 
@@ -761,7 +761,7 @@ def pcs := ⟦
       -> List‹Bucket› {
     let pz0 = list_lookup(mat, 0);
     let pz1 = list_lookup(mat, 1);
-    let zn = eg_mul(zeta, [two_adic_gen(ldeg), gl_zero()]);
+    let zn = eg_mul(zeta, [two_adic_gen(ldeg), 0]);
     let b1 = ri_apply(buckets, lh, idxbits, log_gmax, zeta, p_x, pz0, alpha);
     ri_apply(b1, lh, idxbits, log_gmax, zn, p_x, pz1, alpha)
   }

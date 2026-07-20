@@ -67,7 +67,7 @@ def verifier := ⟦
   -- An extension element `[c0, c1]` (`= c0 + c1·X`) is zero iff both Goldilocks
   -- coefficients are zero. (`read_ext` already reduced the limbs mod p.)
   fn ext_is_zero(e: Ext) -> G {
-    gl_is_zero(e[0]) * gl_is_zero(e[1])
+    eq_zero(e[0]) * eq_zero(e[1])
   }
 
   -- 1 iff the LAST element of the accumulator list is the zero extension
@@ -446,7 +446,7 @@ def verifier := ⟦
   -- Vanishing polynomial of the trace domain (shift = 1, size 2^L) at point ζ:
   -- `Z_H(ζ) = ζ^(2^L) - 1`.
   fn trace_vanishing(zeta: Ext, l: G) -> Ext {
-    eg_sub(ext_exp_pow2(zeta, l), [gl_one(), gl_zero()])
+    eg_sub(ext_exp_pow2(zeta, l), [1, 0])
   }
 
   -- Lagrange selectors at ζ for the trace domain (shift = 1), mirroring
@@ -459,9 +459,9 @@ def verifier := ⟦
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = trace_vanishing(zeta, l);
     let ginv = gl_inverse(two_adic_gen(l));
-    let is_first = eg_div(zh, eg_sub(zeta, [gl_one(), gl_zero()]));
-    let is_last = eg_div(zh, eg_sub(zeta, [ginv, gl_zero()]));
-    let is_trans = eg_sub(zeta, [ginv, gl_zero()]);
+    let is_first = eg_div(zh, eg_sub(zeta, [1, 0]));
+    let is_last = eg_div(zh, eg_sub(zeta, [ginv, 0]));
+    let is_trans = eg_sub(zeta, [ginv, 0]);
     let inv_van = eg_inverse(zh);
     (is_first, is_last, is_trans, inv_van)
   }
@@ -517,7 +517,7 @@ def verifier := ⟦
   -- Reconstruct an extension element from its two opened base coordinates,
   -- `from_ext_basis([c0, c1]) = c0 + c1·X` (the ExtVal basis is `[1, X]`).
   fn from_ext_basis(c0: Ext, c1: Ext) -> Ext {
-    eg_add(c0, eg_mul(c1, [gl_zero(), gl_one()]))
+    eg_add(c0, eg_mul(c1, [0, 1]))
   }
 
   -- A stage-2 / quotient opened row arrives as `stage_2_width·2` extension
@@ -542,15 +542,15 @@ def verifier := ⟦
         match entry {
           SysEntry.Main(_o) => list_lookup(main, idx),
           SysEntry.Preprocessed(_o) => list_lookup(prep, idx),
-          SysEntry.Stage2(_o) => [gl_zero(), gl_zero()],
-          SysEntry.Public => [gl_zero(), gl_zero()],
-          SysEntry.Stage2Public => [gl_zero(), gl_zero()],
-          SysEntry.Challenge => [gl_zero(), gl_zero()],
+          SysEntry.Stage2(_o) => [0, 0],
+          SysEntry.Public => [0, 0],
+          SysEntry.Stage2Public => [0, 0],
+          SysEntry.Challenge => [0, 0],
         },
-      SymExpr.IsFirstRow => [gl_zero(), gl_zero()],
-      SymExpr.IsLastRow => [gl_zero(), gl_zero()],
-      SymExpr.IsTransition => [gl_zero(), gl_zero()],
-      SymExpr.Const(c) => [c, gl_zero()],
+      SymExpr.IsFirstRow => [0, 0],
+      SymExpr.IsLastRow => [0, 0],
+      SymExpr.IsTransition => [0, 0],
+      SymExpr.Const(c) => [c, 0],
       SymExpr.Add(x, y, _d) => eg_add(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
       SymExpr.Sub(x, y, _d) => eg_sub(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
       SymExpr.Neg(x, _d) => eg_neg(eval_sym(load(x), main, prep)),
@@ -562,7 +562,7 @@ def verifier := ⟦
   -- `lookup.rs::fingerprint`).
   fn fingerprint_ext(r: Ext, args: List‹SymExpr›, main: List‹Ext›, prep: List‹Ext›) -> Ext {
     match load(args) {
-      ListNode.Nil => [gl_zero(), gl_zero()],
+      ListNode.Nil => [0, 0],
       ListNode.Cons(a, rest) =>
         eg_add(eval_sym(a, main, prep), eg_mul(r, fingerprint_ext(r, rest, main, prep))),
     }
@@ -585,7 +585,7 @@ def verifier := ⟦
       0 => acc,
       _ =>
         let x = list_lookup(main, idx);
-        let bc = eg_mul(x, eg_sub(x, [gl_one(), gl_zero()]));
+        let bc = eg_mul(x, eg_sub(x, [1, 0]));
         fold_sel_bools(ood_fold(acc, alpha, bc), alpha, main, idx + 1, count - 1),
     }
   }
@@ -607,7 +607,7 @@ def verifier := ⟦
         let mult = eval_sym(mult_e, main, prep);
         let fp = fingerprint_ext(fch, args, main, prep);
         let message = eg_add(lch, fp);
-        let c = eg_sub(eg_mul(message, minv), [gl_one(), gl_zero()]);
+        let c = eg_sub(eg_mul(message, minv), [1, 0]);
         let acc = ood_fold(acc, alpha, c);
         let acc_expr = eg_add(acc_expr, eg_mul(mult, minv));
         fold_lookups(acc, alpha, rest, k + 1, main, prep, s2row, lch, fch, acc_expr),
@@ -628,7 +628,7 @@ def verifier := ⟦
     match air {
       SysAir.Function(c) =>
         let SysConstraints.Mk(zeros, ss, se, _w) = c;
-        let acc = fold_zeros([gl_zero(), gl_zero()], alpha, zeros, main);
+        let acc = fold_zeros([0, 0], alpha, zeros, main);
         let acc = fold_sel_bools(acc, alpha, main, ss, se - ss);
         ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
       SysAir.Memory(m) =>
@@ -639,18 +639,18 @@ def verifier := ⟦
         let is_real_next = list_lookup(main_next, 1);
         let ptr_next = list_lookup(main_next, 2);
         -- assert_bool(is_real)
-        let acc = ood_fold([gl_zero(), gl_zero()], alpha, eg_mul(is_real, eg_sub(is_real, [gl_one(), gl_zero()])));
+        let acc = ood_fold([0, 0], alpha, eg_mul(is_real, eg_sub(is_real, [1, 0])));
         -- is_real_transition = is_real_next · is_transition
         let irt = eg_mul(is_real_next, ist);
         -- when(irt).assert_one(is_real) = irt·(is_real - 1)
-        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(is_real, [gl_one(), gl_zero()])));
+        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(is_real, [1, 0])));
         -- when(irt).assert_eq(ptr+1, ptr_next) = irt·(ptr + 1 - ptr_next)
-        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(eg_add(ptr, [gl_one(), gl_zero()]), ptr_next)));
+        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(eg_add(ptr, [1, 0]), ptr_next)));
         ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
       SysAir.Bytes1 =>
-        ood_comp_tail([gl_zero(), gl_zero()], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
       SysAir.Bytes2 =>
-        ood_comp_tail([gl_zero(), gl_zero()], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
     }
   }
 
@@ -686,14 +686,14 @@ def verifier := ⟦
   -- base-field power `base^e` (e small: the chunk index, < qd).
   fn g_pow(base: Goldilocks, e: G) -> Goldilocks {
     match e {
-      0 => gl_one(),
+      0 => 1,
       _ => gl_mul(base, g_pow(base, e - 1)),
     }
   }
 
   -- `Z_{Dⱼ}(x) = (x · shift_j⁻¹)^(2^L) - 1`, evaluated at extension point `x`.
   fn vanish_chunk(x: Ext, l: G, shiftinv: Goldilocks) -> Ext {
-    eg_sub(ext_exp_pow2(eg_mul(x, [shiftinv, gl_zero()]), l), [gl_one(), gl_zero()])
+    eg_sub(ext_exp_pow2(eg_mul(x, [shiftinv, 0]), l), [1, 0])
   }
 
   -- `zpsₜ = Πⱼ≠ₜ Z_{Dⱼ}(ζ) / Z_{Dⱼ}(shift_t)`. Iterates j over `[jidx, jidx+rem)`.
@@ -701,14 +701,14 @@ def verifier := ⟦
     match rem {
       0 => acc,
       _ =>
-        let shiftinv = gl_inverse(gl_mul(gl_seven(), g_pow(g_q, jidx)));
+        let shiftinv = gl_inverse(gl_mul(7, g_pow(g_q, jidx)));
         -- skip the j = t factor (the chunk's own domain); branch in tail
         -- position so the inner match is not a non-tail match.
         match eq_zero(jidx - t) {
           1 => zps_prod(acc, zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
           _ =>
             let factor = eg_mul(vanish_chunk(zeta, l, shiftinv),
-                                 eg_inverse(vanish_chunk([shift_t, gl_zero()], l, shiftinv)));
+                                 eg_inverse(vanish_chunk([shift_t, 0], l, shiftinv)));
             zps_prod(eg_mul(acc, factor), zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
         },
     }
@@ -721,8 +721,8 @@ def verifier := ⟦
     match rem {
       0 => acc,
       _ =>
-        let shift_t = gl_mul(gl_seven(), g_pow(g_q, t));
-        let zps_t = zps_prod([gl_one(), gl_zero()], zeta, l, g_q, shift_t, 0, qd, t);
+        let shift_t = gl_mul(7, g_pow(g_q, t));
+        let zps_t = zps_prod([1, 0], zeta, l, g_q, shift_t, 0, qd, t);
         let ch = list_lookup(q_opened, idx);
         let row = list_lookup(ch, 0);
         let qv = from_ext_basis(list_lookup(row, 0), list_lookup(row, 1));
@@ -798,7 +798,7 @@ def verifier := ⟦
         let comp = ood_composition(air, lookups, main, main_next, s2row, s2next,
                                    prep, isf, isl, ist, lch, fch, accp, naccp, alpha);
         let g_q = two_adic_gen(l + log_qd);
-        let quot = quotient_sum([gl_zero(), gl_zero()], zeta, l, qd, g_q, q_opened, lastq, qd, 0);
+        let quot = quotient_sum([0, 0], zeta, l, qd, g_q, q_opened, lastq, qd, 0);
         assert_eq!(eg_eq(eg_mul(comp, invv), quot), 1);
         ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
                  q_opened, i + 1, naccp, lastq + qd, lch, fch, alpha, zeta),
@@ -809,9 +809,9 @@ def verifier := ⟦
   -- its raw u64 limb to an extension element). Mirrors `lookup::fingerprint`.
   fn fingerprint_vals(fch: Ext, vals: List‹U64›) -> Ext {
     match load(vals) {
-      ListNode.Nil => [gl_zero(), gl_zero()],
+      ListNode.Nil => [0, 0],
       ListNode.Cons(v, rest) =>
-        eg_add([gl_val(v), gl_zero()], eg_mul(fch, fingerprint_vals(fch, rest))),
+        eg_add([gl_val(v), 0], eg_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 
@@ -864,7 +864,7 @@ def verifier := ⟦
         let Commitments.Mk(s1c, s2c, qc) = commitments;
         let prep_cap = opt_commit_cap(commit);
         let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
-        let acc0 = claims_acc([gl_zero(), gl_zero()], claims, lch, fch);
+        let acc0 = claims_acc([0, 0], claims, lch, fch);
         -- Step 5: OOD composition/quotient identity for every active circuit.
         let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta);
