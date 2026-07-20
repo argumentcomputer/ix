@@ -247,6 +247,39 @@ def lazyTests : TestSeq :=
       | .error (.other msg) _ => (msg.splitOn "integrity").length > 1
       | _ => false : Bool))
 
+/-! ### Forced verification of primitive addresses (`--no-verify` hole)
+
+Acceleration substitutes native semantics for the declarations at the
+hardcoded primitive addresses, so those must verify even when the caller
+skips integrity checking (`Ix/Tc/Primitive.lean` at `primAddrSet`). -/
+
+def primVerifyTests : TestSeq :=
+  test "prim-addressed constant is verified even under verify := false"
+    ((let base : Ixon.Env := {}
+      let tampered := { base with
+        consts := base.consts.insert PrimAddrs.canonical.natAdd
+          (.ofConstant axiomA) }
+      (match getConstVerified tampered PrimAddrs.canonical.natAdd
+          (verify := false) with
+        | .error e => (e.splitOn "integrity").length > 1
+        | _ => false) : Bool))
+  ++ test "non-prim mislabeled constant is admitted under verify := false"
+    ((let wrongAddr := Address.blake3 "c1-nonprim-wrong".toUTF8
+      let base : Ixon.Env := {}
+      let tampered := { base with
+        consts := base.consts.insert wrongAddr (.ofConstant axiomA) }
+      (match getConstVerified tampered wrongAddr (verify := false) with
+        | .ok (some _) => true
+        | _ => false) : Bool))
+  ++ test "prim-addressed tamper also rejected under default verify"
+    ((let base : Ixon.Env := {}
+      let tampered := { base with
+        consts := base.consts.insert PrimAddrs.canonical.natAdd
+          (.ofConstant axiomA) }
+      (match getConstVerified tampered PrimAddrs.canonical.natAdd with
+        | .error e => (e.splitOn "integrity").length > 1
+        | _ => false) : Bool))
+
 /-! ### P8: inductive validation (A1–A4, S3, cidx) -/
 
 def indPasses (block : Ixon.Constant) (extra : Ixon.Env := {}) : Bool := Id.run do
@@ -492,6 +525,6 @@ def parallelTests : TestSeq :=
 
 public def suite : List TestSeq :=
   [acceptRejectTests, wellScopedTests, safetyTests, quotTests, blockTests,
-   lazyTests, inductiveTests, recursorTests, parallelTests]
+   lazyTests, primVerifyTests, inductiveTests, recursorTests, parallelTests]
 
 end Tests.Tc.CheckTests

@@ -102,9 +102,6 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-tutorial", Tests.Tc.TutorialTc.suite),
   ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
   ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
-  -- Tracked pure-Lean kernel divergences (EXPECTED to fail; see
-  -- Tests.Tc.AnonDiff.knownDivergenceSuite).
-  ("tc-known-divergence", Tests.Tc.AnonDiff.knownDivergence),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/

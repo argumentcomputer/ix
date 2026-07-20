@@ -94,13 +94,19 @@ def anonCtorAddrs (blockAddr : Address) (indcIdx : UInt64)
 /-! ### Verified constant materialization -/
 
 /-- Materialize `addr` from the Ixon env, verifying (when `verify`) that the
-    stored bytes hash back to `addr`. `none` when absent. -/
+    stored bytes hash back to `addr`. `none` when absent.
+
+    Primitive and reserved-marker addresses (`primAddrSet`) are verified
+    UNCONDITIONALLY — `--no-verify` must not be able to bind them to
+    other content, because acceleration substitutes native semantics for
+    exactly these declarations (soundness argument in
+    `Ix/Tc/Primitive.lean` at `primAddrSet`). -/
 def getConstVerified (ixonEnv : Ixon.Env) (addr : Address)
     (verify : Bool := true) : Except IngressErr (Option Ixon.Constant) := do
   match ixonEnv.consts[addr]? with
   | none => return none
   | some lc =>
-    if verify then
+    if verify || primAddrSet.contains addr then
       let raw := lc.rawBytes
       let computed := Address.blake3 raw
       if computed != addr then

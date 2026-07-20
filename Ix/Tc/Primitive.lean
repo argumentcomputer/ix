@@ -341,6 +341,31 @@ def reservedMarkerName (addr : Address) : Option String :=
   PrimAddrs.reservedMarkerAddrs.findSome? fun (name, marker) =>
     if marker == addr then some name else none
 
+/-- Membership set over every hardcoded primitive and reserved-marker
+    address (built once at module init from `leanParityTable` +
+    `reservedMarkerAddrs`).
+
+    Soundness note: the kernel substitutes native/GMP semantics for the
+    declarations at these addresses (`tryReduceNat*`/`tryReduceDecidable`/
+    …), so its verdicts are sound only if address = content holds exactly
+    here — which the blake3 integrity check at materialization
+    establishes. Ingress therefore verifies prim-addressed constants
+    UNCONDITIONALLY, even under `--no-verify` (`getConstVerified`): for
+    every other constant, skipping verification merely risks checking a
+    mislabeled-but-still-checked declaration; a mislabeled primitive
+    would be silently trusted with the wrong semantics. The Rust mirror
+    has no analogous hole — its integrity check is unconditional at
+    deserialize (`crates/ixon/src/serialize.rs` `Env::get`/`get_anon`,
+    plus the anon merkle-root check). -/
+def primAddrSet : Std.HashSet Address := Id.run do
+  let mut s : Std.HashSet Address :=
+    Std.HashSet.emptyWithCapacity (PrimAddrs.leanParityTable.size + 4)
+  for (_, a) in PrimAddrs.leanParityTable do
+    s := s.insert a
+  for (_, a) in PrimAddrs.reservedMarkerAddrs do
+    s := s.insert a
+  return s
+
 /-- Well-known primitive KIds (mode-resolved). -/
 structure Primitives (m : Mode) where
   nat : KId m
