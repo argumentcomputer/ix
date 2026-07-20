@@ -123,8 +123,8 @@ impl RecordBufs {
   }
   fn constant(&mut self, v: Val) {
     let c = v.as_canonical_u64();
-    if c < (1 << 16) {
-      self.c2.extend_from_slice(&(c as u16).to_le_bytes());
+    if let Ok(c2) = u16::try_from(c) {
+      self.c2.extend_from_slice(&c2.to_le_bytes());
       self.tag(4, 0);
     } else {
       self.c8.extend_from_slice(&c.to_le_bytes());
@@ -140,8 +140,9 @@ impl RecordBufs {
       Entry::Stage2Public => (4, 0),
       Entry::Challenge => (5, 0),
     };
+    let offset = u8::try_from(offset).expect("rotation offset exceeds u8");
     assert!(offset <= 1, "rotation offset {offset} not in {{0, 1}}");
-    self.tag(0, kind + 8 * offset as u8);
+    self.tag(0, kind + 8 * offset);
     self.index_u16(v.index);
   }
   fn expr(&mut self, e: &Expr) {
@@ -257,7 +258,10 @@ pub(crate) fn to_bytes(
       None => buf.extend_from_slice(&NO_PREP_INDEX.to_le_bytes()),
       Some(i) => {
         let v = u16::try_from(*i).expect("preprocessed index exceeds u16");
-        assert!(v != NO_PREP_INDEX, "preprocessed index collides with sentinel");
+        assert!(
+          v != NO_PREP_INDEX,
+          "preprocessed index collides with sentinel"
+        );
         buf.extend_from_slice(&v.to_le_bytes());
       },
     }
@@ -355,7 +359,7 @@ impl<'a> RecordReader<'a> {
       3 => SymbolicExpression::IsTransition,
       4 => {
         let c = match aux {
-          0 => self.c2.u16()? as u64,
+          0 => u64::from(self.c2.u16()?),
           1 => self.c8.u64()?,
           a => return Err(format!("bad constant size class {a}")),
         };
@@ -398,7 +402,11 @@ impl<'a> RecordReader<'a> {
         let start = self.meta_usize()?;
         let end = self.meta_usize()?;
         let width = self.meta_usize()?;
-        AiurCircuit::Function(Constraints { zeros, selectors: start..end, width })
+        AiurCircuit::Function(Constraints {
+          zeros,
+          selectors: start..end,
+          width,
+        })
       },
       1 => AiurCircuit::Memory(Memory { width: self.meta_usize()? }),
       2 => AiurCircuit::Bytes1,
@@ -492,8 +500,11 @@ pub(crate) fn from_bytes(
   let mut preprocessed_indices = Vec::with_capacity(n_circuits);
   for _ in 0..n_circuits {
     let v = r.u16()?;
-    preprocessed_indices
-      .push(if v == NO_PREP_INDEX { None } else { Some(v as usize) });
+    preprocessed_indices.push(if v == NO_PREP_INDEX {
+      None
+    } else {
+      Some(v as usize)
+    });
   }
   r.done("vk")?;
   let system = System {
@@ -523,8 +534,8 @@ mod tests {
     (cp, fp)
   }
 
-  fn test_system() -> (System<AiurConfig, AiurCircuit>, CommitmentParameters, FriParameters)
-  {
+  fn test_system()
+  -> (System<AiurConfig, AiurCircuit>, CommitmentParameters, FriParameters) {
     let (cp, fp) = test_parameters();
     let (system, _key) = System::new(
       AiurConfig::new(cp, fp),
@@ -545,7 +556,9 @@ mod tests {
       return false;
     }
     match (a, b) {
-      (E::Variable(u), E::Variable(v)) => u.entry == v.entry && u.index == v.index,
+      (E::Variable(u), E::Variable(v)) => {
+        u.entry == v.entry && u.index == v.index
+      },
       (E::IsFirstRow, E::IsFirstRow)
       | (E::IsLastRow, E::IsLastRow)
       | (E::IsTransition, E::IsTransition) => true,
