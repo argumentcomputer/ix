@@ -945,6 +945,28 @@ type CheckRes = Result<(), (ErrKind, String)>;
 
 const KERNEL_CHECK_STACK_SIZE: usize = 256 * 1024 * 1024;
 
+unsafe extern "C" {
+  /// Lean runtime (`src/util/thread.cpp`): stack size, in bytes, for
+  /// subsequently spawned `lthread`s — dedicated task threads and new
+  /// task-pool workers. This is the knob behind `lean --tstack`.
+  fn lean_internal_set_thread_stack_size(size: usize);
+}
+
+/// `Ix.Tc.setLeanThreadStackSize : USize → BaseIO Unit`
+///
+/// ABI adapter: the runtime setter is a bare `void(size_t)`, so Lean can't
+/// `@[extern]` it directly. The pure-Lean parallel checker calls this before
+/// spawning its `.dedicated` workers so they get `KERNEL_CHECK_STACK_SIZE`-
+/// class stacks — deep recursor expansions overflow the default 8 MB
+/// `lthread` stack just like they would the Rust workers' (see above).
+#[unsafe(no_mangle)]
+extern "C" fn rs_lean_set_thread_stack_size(
+  size: usize,
+) -> LeanIOResult<LeanOwned> {
+  unsafe { lean_internal_set_thread_stack_size(size) };
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
 #[derive(Clone, Debug)]
 struct CheckWorkItem {
   primary: usize,

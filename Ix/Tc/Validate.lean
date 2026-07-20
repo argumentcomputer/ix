@@ -2,6 +2,7 @@ module
 
 public import Ix.Tc.Driver
 public import Ix.Tc.IngressMeta
+public import Ix.Tc.ParCheck
 public import Ix.Tc.EgressLean
 public import Ix.CanonM
 
@@ -128,24 +129,10 @@ structure MetaRoundtripReport where
     against `leanEnv` (the oracle). -/
 def metaRoundtripEnv (leanEnv : Lean.Environment) (ixonEnv : Ixon.Env)
     (chunkSize : Nat := 512) : Except String MetaRoundtripReport := do
-  -- Phase 1: parallel chunked ingress into local kernel envs, merged.
-  let work := buildMetaWork ixonEnv
-  let ingressTasks := Id.run do
-    let mut out : Array (Task (Except IngressErr MetaEnv)) := #[]
-    let mut i := 0
-    while i < work.size do
-      let chunk := work.extract i (min (i + chunkSize) work.size)
-      out := out.push <| Task.spawn fun () =>
-        match (chunk.forM fun item =>
-            ingressMetaWorkItem ixonEnv item).run {} with
-        | .ok _ env => .ok env
-        | .error e _ => .error e
-      i := i + chunkSize
-    return out
-  let mut kenv : MetaEnv := {}
-  for t in ingressTasks do
-    match t.get with
-    | .ok localEnv => kenv := kenv.union localEnv
+  -- Phase 1: parallel chunked ingress into local kernel envs, merged
+  -- (shared with `ix check-lean`'s meta path).
+  let kenv : MetaEnv ← match ingressMetaEnvParallel ixonEnv chunkSize with
+    | .ok env => pure env
     | .error e => throw s!"meta ingress failed: {e}"
   -- Source-side canonical map: Ix.Name → Lean.ConstantInfo.
   let canonMap : Std.HashMap Ix.Name Lean.ConstantInfo := Id.run do

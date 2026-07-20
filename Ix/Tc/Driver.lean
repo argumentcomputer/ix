@@ -114,6 +114,20 @@ def blockOfAddr (env : Ixon.Env) (addr : Address) : Address :=
     | _ => addr
   | none => addr
 
+/-- Eagerly ingress one anon work item into the kernel env. -/
+def ingressAnonWorkItem (ixonEnv : Ixon.Env) (item : AnonWorkItem)
+    (verify : Bool := true) : IngressM Unit := do
+  match item with
+  | .standalone addr =>
+    let some c ← IngressM.liftExcept (getConstVerified ixonEnv addr verify)
+      | throw s!"ingressAnonWorkItem: missing standalone {addr}"
+    let _ ← ingressAnonStandalone ixonEnv addr c
+  | .block blockAddr _ _ =>
+    let some c ← IngressM.liftExcept
+        (getConstVerified ixonEnv blockAddr verify)
+      | throw s!"ingressAnonWorkItem: missing block {blockAddr}"
+    let _ ← ingressAnonBlock ixonEnv c blockAddr
+
 /-- Eagerly ingress every work item into the kernel env (unit-test path; the
     production driver faults lazily). Returns the work list for the caller's
     check loop. -/
@@ -121,17 +135,43 @@ def ingressAll (ixonEnv : Ixon.Env) (verify : Bool := true) :
     IngressM (Array AnonWorkItem) := do
   let work ← IngressM.liftExcept (buildAnonWork ixonEnv)
   for item in work do
-    match item with
-    | .standalone addr =>
-      let some c ← IngressM.liftExcept (getConstVerified ixonEnv addr verify)
-        | throw s!"ingressAll: missing standalone {addr}"
-      let _ ← ingressAnonStandalone ixonEnv addr c
-    | .block blockAddr _ _ =>
-      let some c ← IngressM.liftExcept
-          (getConstVerified ixonEnv blockAddr verify)
-        | throw s!"ingressAll: missing block {blockAddr}"
-      let _ ← ingressAnonBlock ixonEnv c blockAddr
+    ingressAnonWorkItem ixonEnv item verify
   return work
+
+/-- Chunk `work` into pure tasks, each ingressing into a fresh local env,
+    then merge in chunk order with `KEnv.union` (deterministic conversion
+    makes duplicate keys benign). The shared shape behind the eager
+    whole-env parallel ingress drivers (anon here, meta in
+    `Ix.Tc.ParCheck`). Chunks schedule on the task pool (bounded by
+    `LEAN_NUM_THREADS`). -/
+def ingressEnvParallelWith (work : Array W)
+    (runItem : W → EStateM IngressErr (KEnv m) Unit)
+    (chunkSize : Nat := 512) : Except IngressErr (KEnv m) := Id.run do
+  let tasks := Id.run do
+    let mut out : Array (Task (Except IngressErr (KEnv m))) := #[]
+    let mut i := 0
+    while i < work.size do
+      let chunk := work.extract i (min (i + chunkSize) work.size)
+      out := out.push <| Task.spawn fun () =>
+        match (chunk.forM runItem).run {} with
+        | .ok _ env => .ok env
+        | .error e _ => .error e
+      i := i + chunkSize
+    return out
+  let mut kenv : KEnv m := {}
+  for t in tasks do
+    match t.get with
+    | .ok localEnv => kenv := kenv.union localEnv
+    | .error e => return .error e
+  return .ok kenv
+
+/-- Eager parallel whole-env anon ingress: chunked local envs merged into
+    one `AnonEnv`. The parallel analog of `ingressAll` (which stays for
+    monadic single-env callers). -/
+def ingressAnonEnvParallel (ixonEnv : Ixon.Env) (work : Array AnonWorkItem)
+    (chunkSize : Nat := 512) (verify : Bool := true) :
+    Except IngressErr AnonEnv :=
+  ingressEnvParallelWith work (ingressAnonWorkItem ixonEnv · verify) chunkSize
 
 /-! ### The anon check driver -/
 

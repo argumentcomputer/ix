@@ -17,6 +17,7 @@ public import Ix.Tc.IngressMeta
 public import Ix.Tc.Egress
 public import Ix.Tc.EgressLean
 public import Ix.Tc.Driver
+public import Ix.Tc.ParCheck
 public import Ix.Tc.Validate
 public import Ix.Tc.Whnf
 public import Ix.Tc.Infer

@@ -3,12 +3,15 @@ module
 public import LSpec
 public import Ix.Tc
 public import Tests.Ix.Tc.IxonFixtures
+public import Tests.Ix.Tc.IngressMetaTests
 
 /-!
 P7 tests: `checkConst` dispatch (axio/defn/theorem/quot paths),
 well-scopedness validation, the safety lattice, defn-block coordination with
-failure replay, and the lazy-fault driver end-to-end (`TcState.newLazyAnon`,
-`checkEnvAnon`).
+failure replay, the lazy-fault driver end-to-end (`TcState.newLazyAnon`,
+`checkEnvAnon`), and the parallel driver (`Ix.Tc.ParCheck`:
+`ingressAnonEnvParallel`/`ingressMetaEnvParallel` + `buildCheckWork` +
+`checkEnvParallel`) against the sequential verdicts.
 -/
 
 namespace Tests.Tc.CheckTests
@@ -382,8 +385,113 @@ def recursorTests : TestSeq :=
     ((let (ixon, recAddr) := recFixture false true
       failsContaining ixon recAddr "RHS mismatch" : Bool))
 
+/-! ### Parallel driver (`Ix.Tc.ParCheck`) -/
+
+/-- Env with two passing standalones (A, idA) and a passing inductive
+    block (B, B.mk) — 4 targets, mirrors the `checkEnvAnon` lazy test. -/
+def parFixtureEnv : Ixon.Env := Id.run do
+  let (ixon, aAddr) := envA
+  let idDefn : Ixon.Constant :=
+    ⟨.defn ⟨.defn, .safe, 0,
+      .all (.ref 0 #[]) (.ref 0 #[]), .lam (.ref 0 #[]) (.var 0)⟩,
+     #[], #[aAddr], #[]⟩
+  let (ixon, _) := storeConst ixon idDefn
+  let ind : Ixon.Inductive :=
+    ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩
+  let block : Ixon.Constant := ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+  let (ixon, _) := storeMutsWithProjs ixon block
+  return ixon
+
+/-- Env with A (passes) and an ill-typed mutual defn block (both members
+    must fail). Returns the block address for projection labels. -/
+def parTamperEnv : Ixon.Env × Address := Id.run do
+  let (ixon, aAddr) := envA
+  let f : Ixon.MutConst := .defn ⟨.defn, .safe, 0, .ref 0 #[], .recur 1 #[]⟩
+  let g : Ixon.MutConst := .defn ⟨.defn, .safe, 0, .ref 0 #[], .sort 1⟩
+  let block : Ixon.Constant :=
+    ⟨.muts #[f, g], #[], #[aAddr], #[.zero, .succ .zero]⟩
+  let (ixon, blockAddr) := storeMutsWithProjs ixon block
+  return (ixon, blockAddr)
+
+def quietCfg : ParCheckCfg :=
+  { workers := 4, silent := true, progressMs := 0, stuckMs := 0 }
+
+/-- Anon parallel pipeline: eager parallel ingress → check work →
+    parallel check (tiny chunks to exercise multi-chunk `KEnv.union`). -/
+def runParAnon (ixon : Ixon.Env) : IO (Except String ParCheckReport) := do
+  match buildAnonWork ixon with
+  | .error e => return .error s!"work: {e}"
+  | .ok work =>
+    match ingressAnonEnvParallel ixon work (chunkSize := 2) with
+    | .error e => return .error s!"ingress: {e}"
+    | .ok kenv =>
+      let report ← checkEnvParallel kenv .ofAnonAddrs (buildCheckWork kenv)
+        (labelOf := toString) (failLabelOf := fun id => s!"#{id.addr}")
+        quietCfg
+      return .ok report
+
+def parallelTests : TestSeq :=
+  .individualIO "parallel anon check matches sequential (all pass)" none (do
+    let ixon := parFixtureEnv
+    let seqOk := match checkEnvAnon ixon with
+      | .ok rs => rs.size == 4 && rs.all (·.err?.isNone)
+      | .error _ => false
+    match ← runParAnon ixon with
+    | .error e => return (false, 0, 0, some e)
+    | .ok report =>
+      let ok := seqOk && report.passed == 4 && report.targetsCovered == 4
+        && report.failures.isEmpty
+      return (ok, report.targetsCovered, 0, if ok then none else some
+        s!"seqOk={seqOk} passed={report.passed}/{report.targetsCovered} \
+           fails={report.failures.size}")) .done
+  ++ .individualIO "parallel anon check fans block failure like sequential" none (do
+    let (ixon, blockAddr) := parTamperEnv
+    let projF := defnProjAddr blockAddr 0
+    let projG := defnProjAddr blockAddr 1
+    let sortAddrs := fun (a : Array Address) =>
+      a.qsort fun x y => x.cmpBytes y == .lt
+    let seqOk := match checkEnvAnon ixon with
+      | .ok rs => rs.size == 3
+          && sortAddrs ((rs.filter (·.err?.isSome)).map (·.addr))
+             == sortAddrs #[projF, projG]
+      | .error _ => false
+    match ← runParAnon ixon with
+    | .error e => return (false, 0, 0, some e)
+    | .ok report =>
+      let expected := (#[s!"#{projF}", s!"#{projG}"]).qsort (· < ·)
+      let ok := seqOk && report.passed == 1 && report.targetsCovered == 3
+        && report.failures.map (·.1) == expected
+      return (ok, report.targetsCovered, 0, if ok then none else some
+        s!"seqOk={seqOk} passed={report.passed}/{report.targetsCovered} \
+           failLabels={report.failures.map (·.1)}")) .done
+  ++ .individualIO "parallel anon check reports deterministically" none (do
+    let (ixon, _) := parTamperEnv
+    match ← runParAnon ixon, ← runParAnon ixon with
+    | .ok r1, .ok r2 =>
+      let ok := r1.passed == r2.passed
+        && r1.targetsCovered == r2.targetsCovered
+        && r1.failures == r2.failures
+      return (ok, r1.targetsCovered, 0, if ok then none else some
+        s!"run1 passed={r1.passed} fails={r1.failures.size}; \
+           run2 passed={r2.passed} fails={r2.failures.size}")
+    | e1, e2 => return (false, 0, 0, some s!"{e1.isOk} {e2.isOk}")) .done
+  ++ .individualIO "parallel meta check over meta fixture env" none (do
+    let (env, _, _) := Tests.Tc.IngressMeta.envMetaDefn
+    match ingressMetaEnvParallel env (chunkSize := 1) with
+    | .error e => return (false, 0, 0, some s!"ingress: {e}")
+    | .ok kenv =>
+      let report ← checkEnvParallel kenv (.fromEnv kenv) (buildCheckWork kenv)
+        (labelOf := toString) (failLabelOf := fun id => toString id.name)
+        quietCfg
+      let ok := report.failures.isEmpty && report.passed > 0
+        && report.passed == report.targetsCovered
+        && report.targetsCovered == kenv.consts.size
+      return (ok, report.passed, 0, if ok then none else some
+        s!"passed={report.passed}/{report.targetsCovered} \
+           fails={report.failures.size} kenv={kenv.consts.size}")) .done
+
 public def suite : List TestSeq :=
   [acceptRejectTests, wellScopedTests, safetyTests, quotTests, blockTests,
-   lazyTests, inductiveTests, recursorTests]
+   lazyTests, inductiveTests, recursorTests, parallelTests]
 
 end Tests.Tc.CheckTests
