@@ -111,8 +111,11 @@ structure ParProgress where
 structure ParCheckCfg where
   /-- Worker count (≥ 1; the CLI resolves a machine default). -/
   workers : Nat := 8
-  /-- Clear each worker's reduction-memo caches every N items (0 off). -/
-  clearEvery : Nat := 50
+  /-- Clear each worker's reduction-memo caches every N items (0 off).
+      Default 0: with the subst/univ memo fix the transient-garbage
+      motivation is gone, and warm caches win ~20% whole-env wall
+      (62.1s vs 77.3s at 32 workers) for ~3 GB extra peak RSS. -/
+  clearEvery : Nat := 0
   /-- Serial mode with one line per constant (forces one worker). -/
   verbose : Bool := false
   /-- Periodic aggregate progress line cadence in ms; 0 disables. -/

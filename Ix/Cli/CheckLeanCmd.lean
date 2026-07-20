@@ -203,7 +203,7 @@ def runCheckLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let anon := p.hasFlag "anon"
   let verbose := p.hasFlag "verbose"
   let verify := !(p.hasFlag "no-verify")
-  let clearEvery := ((p.flag? "clear-every").map (·.as! Nat)).getD 50
+  let clearEvery := ((p.flag? "clear-every").map (·.as! Nat)).getD 0
   let max? := (p.flag? "max").map (·.as! Nat)
   let only ← Ix.Cli.ConstsFile.gather p
   let failOutPath := ((p.flag? "fail-out").map (·.as! String)).getD ""
@@ -279,7 +279,7 @@ def checkLeanCmd : Cli.Cmd := `[Cli|
     consts        : String; "Check only these constants (comma-separated fail-out labels; meta names or anon #hex)"
     "consts-file" : String; "Check only the constants listed in this file (consts-file grammar; e.g. a --fail-out file)"
     max           : Nat;    "Check only the first N work items (ingress still covers the whole env)"
-    "clear-every" : Nat;    "Clear each worker's reduction caches every N work items (0 disables; default 50)"
+    "clear-every" : Nat;    "Clear each worker's reduction caches every N work items (0 disables; default 0 — warm caches win ~20% wall for ~3GB RSS)"
     "no-verify";            "Skip blake3 integrity verification at constant materialization"
     verbose;                "Serial mode: one line per constant (forces --workers 1)"
 

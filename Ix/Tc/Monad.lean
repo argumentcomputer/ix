@@ -169,6 +169,22 @@ namespace TcM
 @[inline] def modifyEnv (f : KEnv m → KEnv m) : TcM m Unit :=
   modify fun s => { s with env := f s.env }
 
+/-- Run a mutating union-find operation on `equivManager` with unique
+    ownership: swap the manager out of the state (leaving `{}`) for the
+    duration so path-halving `Array.set!`s run in place. Extracting via
+    `(← get).equivManager` leaves the state's reference alive (RC ≥ 2)
+    and the `set!`s copy instead. Measured effect is small (the manager
+    is reset per constant and stays modest-sized) — this is hygiene, not
+    a hot-path win. `f` must be pure (must not throw) so the manager is
+    always restored. -/
+@[inline] def withEquiv (f : EquivManager → α × EquivManager) :
+    TcM m α := do
+  let em ← modifyGet fun s =>
+    (s.equivManager, { s with equivManager := {} })
+  let (a, em) := f em
+  modify fun s => { s with equivManager := em }
+  return a
+
 /-- Consume one unit of shared recursive fuel. -/
 @[inline] def tick : TcM m Unit := do
   let s ← get

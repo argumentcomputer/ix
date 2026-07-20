@@ -68,8 +68,7 @@ partial def isDefEq (a b : KExpr m) : RecM m Bool := do
   let eqCtx ← TcM.defEqCtxKey a b
   let aKey : EqKey := (a.addr, eqCtx)
   let bKey : EqKey := (b.addr, eqCtx)
-  let (isEq, em) := (← get).equivManager.isEquiv aKey bKey
-  modify fun s => { s with equivManager := em }
+  let isEq ← TcM.withEquiv (m := m) (·.isEquiv aKey bKey)
   if isEq then
     return true
   let (lo, hi) := canonicalPair a.addr b.addr
@@ -92,9 +91,10 @@ partial def isDefEq (a b : KExpr m) : RecM m Bool := do
           equivManager := s.equivManager.addEquiv aKey bKey }
       return cached
   -- Equiv-root second chance: probe (root a, root b).
-  let (aRoot?, em) := (← get).equivManager.findRootKey aKey
-  let (bRoot?, em) := em.findRootKey bKey
-  modify fun s => { s with equivManager := em }
+  let (aRoot?, bRoot?) ← TcM.withEquiv (m := m) fun em =>
+    let (aRoot?, em) := em.findRootKey aKey
+    let (bRoot?, em) := em.findRootKey bKey
+    ((aRoot?, bRoot?), em)
   if let (some aRoot, some bRoot) := (aRoot?, bRoot?) then
     if aRoot != aKey || bRoot != bKey then
       -- EqKey is (exprAddr, ctxAddr); canonicalize the expr components.
