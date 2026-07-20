@@ -44,10 +44,11 @@ def pins : List Pin := [
   { label := "_private.Init.Data.Char.Ordinal.«0».Char.succ?_eq._proof_1_8" },
   { label := "Std.DHashMap.Internal.Raw₀.insertMany_cons" },
   { label := "Std.Tactic.BVDecide.BVExpr.Cache.Inv_insert" },
-  -- Straggler under investigation: >25 min at last measurement vs 443ms in
-  -- the Rust kernel. Budget reflects "finishes at all"; tighten once fixed.
-  { label := "Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.denote_blastDivSubtractShift_q",
-    budgetMs := 600_000, slow := true },
+  -- Exponential-subst class: the `return`-skips-memo-tail bug in the
+  -- Subst.lean/instUnivInner cached walkers turned shared-DAG
+  -- instantiation into full tree walks (>25 min here pre-fix; ~0.6s
+  -- fixed — see the `pure`-not-`return` notes in `liftCached`).
+  { label := "Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.denote_blastDivSubtractShift_q" },
 ]
 
 /-- Check one pin subject-only over the shared ingressed env (fresh

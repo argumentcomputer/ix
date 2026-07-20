@@ -76,21 +76,27 @@ partial def liftCached (e : KExpr m) (shift cutoff : UInt64) :
       else do
         scratchInsert key e
         return e
+    -- Structural arms MUST `pure` into `result` (NOT `return`): in
+    -- do-notation `return` exits the whole function, skipping the
+    -- intern + `scratchInsert` tail below — the memo then never holds
+    -- interior nodes and shared-DAG walks go exponential (the
+    -- `denote_blastDivSubtractShift_q` hang). Same pitfall family as
+    -- Rust-`&&` vs `(← _) && (← _)`: type-correct, semantics off.
     | .app f x _ =>
-      return KExpr.mkApp (← liftCached f shift cutoff)
-        (← liftCached x shift cutoff)
+      pure (KExpr.mkApp (← liftCached f shift cutoff)
+        (← liftCached x shift cutoff))
     | .lam name bi ty body _ =>
-      return KExpr.mkLam name bi (← liftCached ty shift cutoff)
-        (← liftCached body shift (cutoff + 1))
+      pure (KExpr.mkLam name bi (← liftCached ty shift cutoff)
+        (← liftCached body shift (cutoff + 1)))
     | .all name bi ty body _ =>
-      return KExpr.mkAll name bi (← liftCached ty shift cutoff)
-        (← liftCached body shift (cutoff + 1))
+      pure (KExpr.mkAll name bi (← liftCached ty shift cutoff)
+        (← liftCached body shift (cutoff + 1)))
     | .letE name ty val body nd _ =>
-      return KExpr.mkLet name (← liftCached ty shift cutoff)
+      pure (KExpr.mkLet name (← liftCached ty shift cutoff)
         (← liftCached val shift cutoff)
-        (← liftCached body shift (cutoff + 1)) nd
+        (← liftCached body shift (cutoff + 1)) nd)
     | .prj id field val _ =>
-      return KExpr.mkPrj id field (← liftCached val shift cutoff)
+      pure (KExpr.mkPrj id field (← liftCached val shift cutoff))
     | _ => do
       -- FVar / Sort / Const / Nat / Str: closed atoms.
       scratchInsert key e
@@ -123,21 +129,22 @@ partial def substCached (body arg : KExpr m) (depth : UInt64) :
         -- Unreachable under the `lbr ≤ depth` guard; kept for clarity.
         scratchInsert key body
         return body
+    -- `pure`, not `return` — see the note in `liftCached`.
     | .app f x _ =>
-      return KExpr.mkApp (← substCached f arg depth)
-        (← substCached x arg depth)
+      pure (KExpr.mkApp (← substCached f arg depth)
+        (← substCached x arg depth))
     | .lam name bi ty inner _ =>
-      return KExpr.mkLam name bi (← substCached ty arg depth)
-        (← substCached inner arg (depth + 1))
+      pure (KExpr.mkLam name bi (← substCached ty arg depth)
+        (← substCached inner arg (depth + 1)))
     | .all name bi ty inner _ =>
-      return KExpr.mkAll name bi (← substCached ty arg depth)
-        (← substCached inner arg (depth + 1))
+      pure (KExpr.mkAll name bi (← substCached ty arg depth)
+        (← substCached inner arg (depth + 1)))
     | .letE name ty val inner nd _ =>
-      return KExpr.mkLet name (← substCached ty arg depth)
+      pure (KExpr.mkLet name (← substCached ty arg depth)
         (← substCached val arg depth)
-        (← substCached inner arg (depth + 1)) nd
+        (← substCached inner arg (depth + 1)) nd)
     | .prj id field val _ =>
-      return KExpr.mkPrj id field (← substCached val arg depth)
+      pure (KExpr.mkPrj id field (← substCached val arg depth))
     | _ => do
       scratchInsert key body
       return body
@@ -171,21 +178,22 @@ partial def simulSubstCached (body : KExpr m)
       else do
         scratchInsert key body
         return body
+    -- `pure`, not `return` — see the note in `liftCached`.
     | .app f x _ =>
-      return KExpr.mkApp (← simulSubstCached f substs depth)
-        (← simulSubstCached x substs depth)
+      pure (KExpr.mkApp (← simulSubstCached f substs depth)
+        (← simulSubstCached x substs depth))
     | .lam name bi ty inner _ =>
-      return KExpr.mkLam name bi (← simulSubstCached ty substs depth)
-        (← simulSubstCached inner substs (depth + 1))
+      pure (KExpr.mkLam name bi (← simulSubstCached ty substs depth)
+        (← simulSubstCached inner substs (depth + 1)))
     | .all name bi ty inner _ =>
-      return KExpr.mkAll name bi (← simulSubstCached ty substs depth)
-        (← simulSubstCached inner substs (depth + 1))
+      pure (KExpr.mkAll name bi (← simulSubstCached ty substs depth)
+        (← simulSubstCached inner substs (depth + 1)))
     | .letE name ty val inner nd _ =>
-      return KExpr.mkLet name (← simulSubstCached ty substs depth)
+      pure (KExpr.mkLet name (← simulSubstCached ty substs depth)
         (← simulSubstCached val substs depth)
-        (← simulSubstCached inner substs (depth + 1)) nd
+        (← simulSubstCached inner substs (depth + 1)) nd)
     | .prj id field val _ =>
-      return KExpr.mkPrj id field (← simulSubstCached val substs depth)
+      pure (KExpr.mkPrj id field (← simulSubstCached val substs depth))
     | _ => do
       scratchInsert key body
       return body
@@ -269,21 +277,22 @@ partial def instantiateRevCached (body : KExpr m)
       else do
         scratchInsert key body
         return body
+    -- `pure`, not `return` — see the note in `liftCached`.
     | .app f x _ =>
-      return KExpr.mkApp (← instantiateRevCached f fvars depth)
-        (← instantiateRevCached x fvars depth)
+      pure (KExpr.mkApp (← instantiateRevCached f fvars depth)
+        (← instantiateRevCached x fvars depth))
     | .lam name bi ty inner _ =>
-      return KExpr.mkLam name bi (← instantiateRevCached ty fvars depth)
-        (← instantiateRevCached inner fvars (depth + 1))
+      pure (KExpr.mkLam name bi (← instantiateRevCached ty fvars depth)
+        (← instantiateRevCached inner fvars (depth + 1)))
     | .all name bi ty inner _ =>
-      return KExpr.mkAll name bi (← instantiateRevCached ty fvars depth)
-        (← instantiateRevCached inner fvars (depth + 1))
+      pure (KExpr.mkAll name bi (← instantiateRevCached ty fvars depth)
+        (← instantiateRevCached inner fvars (depth + 1)))
     | .letE name ty val inner nd _ =>
-      return KExpr.mkLet name (← instantiateRevCached ty fvars depth)
+      pure (KExpr.mkLet name (← instantiateRevCached ty fvars depth)
         (← instantiateRevCached val fvars depth)
-        (← instantiateRevCached inner fvars (depth + 1)) nd
+        (← instantiateRevCached inner fvars (depth + 1)) nd)
     | .prj id field val _ =>
-      return KExpr.mkPrj id field (← instantiateRevCached val fvars depth)
+      pure (KExpr.mkPrj id field (← instantiateRevCached val fvars depth))
     | _ => do
       scratchInsert key body
       return body
@@ -328,21 +337,22 @@ partial def abstractFVarsCached (body : KExpr m)
       else do
         scratchInsert key body
         return body
+    -- `pure`, not `return` — see the note in `liftCached`.
     | .app f x _ =>
-      return KExpr.mkApp (← abstractFVarsCached f pos n depth)
-        (← abstractFVarsCached x pos n depth)
+      pure (KExpr.mkApp (← abstractFVarsCached f pos n depth)
+        (← abstractFVarsCached x pos n depth))
     | .lam name bi ty inner _ =>
-      return KExpr.mkLam name bi (← abstractFVarsCached ty pos n depth)
-        (← abstractFVarsCached inner pos n (depth + 1))
+      pure (KExpr.mkLam name bi (← abstractFVarsCached ty pos n depth)
+        (← abstractFVarsCached inner pos n (depth + 1)))
     | .all name bi ty inner _ =>
-      return KExpr.mkAll name bi (← abstractFVarsCached ty pos n depth)
-        (← abstractFVarsCached inner pos n (depth + 1))
+      pure (KExpr.mkAll name bi (← abstractFVarsCached ty pos n depth)
+        (← abstractFVarsCached inner pos n (depth + 1)))
     | .letE name ty val inner nd _ =>
-      return KExpr.mkLet name (← abstractFVarsCached ty pos n depth)
+      pure (KExpr.mkLet name (← abstractFVarsCached ty pos n depth)
         (← abstractFVarsCached val pos n depth)
-        (← abstractFVarsCached inner pos n (depth + 1)) nd
+        (← abstractFVarsCached inner pos n (depth + 1)) nd)
     | .prj id field val _ =>
-      return KExpr.mkPrj id field (← abstractFVarsCached val pos n depth)
+      pure (KExpr.mkPrj id field (← abstractFVarsCached val pos n depth))
     | _ => do
       scratchInsert key body
       return body

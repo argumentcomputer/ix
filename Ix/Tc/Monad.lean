@@ -493,26 +493,30 @@ partial def instUnivInner (e : KExpr m) (us : Array (KUniv m)) :
       -- No universe parameters; cache the pass-through.
       modify (·.insert key e)
       return e
+    -- `pure`, not `return`, in every rebuilding arm: `return` exits the
+    -- whole function, skipping the intern + memo-insert tail below, and
+    -- an interior-node-less memo turns shared-DAG walks exponential
+    -- (see the note in `Ix/Tc/Subst.lean` `liftCached`).
     | .sort u _ =>
-      return KExpr.mkSort (← TcM.ofExcept (substUniv u us))
+      pure (KExpr.mkSort (← TcM.ofExcept (substUniv u us)))
     | .const id curUs _ => do
       let mut newUs : Array (KUniv m) := Array.mkEmpty curUs.size
       for u in curUs do
         newUs := newUs.push (← TcM.ofExcept (substUniv u us))
       pure (KExpr.mkConst id newUs)
     | .app f a _ =>
-      return KExpr.mkApp (← instUnivInner f us) (← instUnivInner a us)
+      pure (KExpr.mkApp (← instUnivInner f us) (← instUnivInner a us))
     | .lam name bi ty body _ =>
-      return KExpr.mkLam name bi (← instUnivInner ty us)
-        (← instUnivInner body us)
+      pure (KExpr.mkLam name bi (← instUnivInner ty us)
+        (← instUnivInner body us))
     | .all name bi ty body _ =>
-      return KExpr.mkAll name bi (← instUnivInner ty us)
-        (← instUnivInner body us)
+      pure (KExpr.mkAll name bi (← instUnivInner ty us)
+        (← instUnivInner body us))
     | .letE name ty val body nd _ =>
-      return KExpr.mkLet name (← instUnivInner ty us)
-        (← instUnivInner val us) (← instUnivInner body us) nd
+      pure (KExpr.mkLet name (← instUnivInner ty us)
+        (← instUnivInner val us) (← instUnivInner body us) nd)
     | .prj id field val _ =>
-      return KExpr.mkPrj id field (← instUnivInner val us)
+      pure (KExpr.mkPrj id field (← instUnivInner val us))
   let interned ← TcM.intern result
   modify (·.insert key interned)
   return interned
