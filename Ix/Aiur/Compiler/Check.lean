@@ -622,7 +622,14 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     match typOpt with
     | some (typ, escapes) => pure (Typed.Term.match typ escapes term' branches')
     | none => throw .emptyMatch
-  | .app func args u => do
+  | .app func args mode => do
+    -- `.inlined` is eliminated by `Toplevel.inlineCalls` before checking;
+    -- reaching it here means the pass was skipped. Downstream stages carry
+    -- only the unconstrained flag.
+    let u : Bool ← match mode with
+      | .normal => pure false
+      | .unconstrained => pure true
+      | .inlined => throw (.cannotApply func)
     let ctx ← read
     -- Local function lookup (only for unqualified names); returns
     -- `some (.ok …)` on hit, `some (.error …)` on wrong-type local, `none` to

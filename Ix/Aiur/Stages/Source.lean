@@ -374,6 +374,21 @@ inductive Pattern
 
 namespace Source
 
+/-- How a function application is compiled.
+* `normal` — a constrained circuit call (its own circuit, a lookup, and
+  output columns at the call site).
+* `unconstrained` — a call whose callee is trusted (no lookup / circuit
+  constraint); the old `unconstrained := true`.
+* `inlined` — the callee's body is spliced into the caller at compile
+  time (no separate circuit, no interface columns). Eliminated by
+  `Toplevel.inlineCalls` before typechecking; forbidden for callees that
+  are (transitively) inline-recursive. -/
+inductive CallMode
+  | normal
+  | unconstrained
+  | inlined
+  deriving Repr, BEq, Hashable, Inhabited, DecidableEq
+
 /-- Stage 1 term language. `tuple` and `array` are direct constructors (no `Data`
 mutual child); cf. `Ix/Aiur/Term.lean` which nested them under `.data`. -/
 inductive Term
@@ -386,7 +401,7 @@ inductive Term
   | ret : Term → Term
   | let : Pattern → Term → Term → Term
   | match : Term → List (Pattern × Term) → Term
-  | app : Global → List Term → (unconstrained : Bool) → Term
+  | app : Global → List Term → (mode : CallMode) → Term
   | add : Term → Term → Term
   | sub : Term → Term → Term
   | mul : Term → Term → Term
@@ -538,6 +553,487 @@ where
         globals := globals.insert n
         result := result.push item
     pure (globals, result)
+
+/-- Rename every local bound in a pattern to a fresh `.str "inl#N"` name,
+extending `subst` for the pattern's scope and advancing the fresh counter.
+-/
+def Pattern.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
+    Pattern → Nat × Std.HashMap Local Local × Pattern
+  | .var x =>
+    let x' : Local := .str s!"inl#{cnt}"
+    (cnt + 1, subst.insert x x', .var x')
+  | .wildcard => (cnt, subst, .wildcard)
+  | .field g => (cnt, subst, .field g)
+  | .ref g ps =>
+    let (cnt, subst, ps') := ps.attach.foldl (init := (cnt, subst, ([] : List Pattern)))
+      fun (cnt, subst, acc) ⟨p, _⟩ =>
+        let (cnt, subst, p') := Pattern.freshen cnt subst p
+        (cnt, subst, acc ++ [p'])
+    (cnt, subst, .ref g ps')
+  | .tuple ps =>
+    let (cnt, subst, ps') := ps.attach.foldl (init := (cnt, subst, (#[] : Array Pattern)))
+      fun (cnt, subst, acc) ⟨p, _⟩ =>
+        let (cnt, subst, p') := Pattern.freshen cnt subst p
+        (cnt, subst, acc.push p')
+    (cnt, subst, .tuple ps')
+  | .array ps =>
+    let (cnt, subst, ps') := ps.attach.foldl (init := (cnt, subst, (#[] : Array Pattern)))
+      fun (cnt, subst, acc) ⟨p, _⟩ =>
+        let (cnt, subst, p') := Pattern.freshen cnt subst p
+        (cnt, subst, acc.push p')
+    (cnt, subst, .array ps')
+  | .or p q =>
+    let (cnt, subst, p') := Pattern.freshen cnt subst p
+    let (cnt, subst, q') := Pattern.freshen cnt subst q
+    (cnt, subst, .or p' q')
+  | .pointer p =>
+    let (cnt, subst, p') := Pattern.freshen cnt subst p
+    (cnt, subst, .pointer p')
+termination_by p => sizeOf p
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Consistently α-rename the locals bound inside `t` to fresh names,
+following `subst` for the currently-renamed variables. Used before
+splicing an inlined body so its locals cannot collide with the caller's
+(the `Simple` pass floats nested `let`s outward, which would otherwise
+capture reused names). Only bound occurrences are rewritten; free
+variables that are the callee's inputs are handled by `subst` seeded at
+the call site. -/
+def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
+    Term → Nat × Term :=
+  fun t =>
+  match t with
+  | .var x => (cnt, .var (subst.getD x x))
+  | .unit | .ref _ | .field _ | .u8Lit _ => (cnt, t)
+  | .let p v b =>
+    let (cnt, v') := Term.freshen cnt subst v
+    let (cnt, subst', p') := Pattern.freshen cnt subst p
+    let (cnt, b') := Term.freshen cnt subst' b
+    (cnt, .let p' v' b')
+  | .match s arms =>
+    let (cnt, s') := Term.freshen cnt subst s
+    let (cnt, arms') := arms.attach.foldl (init := (cnt, ([] : List (Pattern × Term))))
+      fun (cnt, acc) ⟨(p, a), _⟩ =>
+        let (cnt, subst', p') := Pattern.freshen cnt subst p
+        let (cnt, a') := Term.freshen cnt subst' a
+        (cnt, acc ++ [(p', a')])
+    (cnt, .match s' arms')
+  | .tuple ts =>
+    let (cnt, ts') := ts.attach.foldl (init := (cnt, #[])) fun (cnt, acc) ⟨x, _⟩ =>
+      let (cnt, x') := Term.freshen cnt subst x; (cnt, acc.push x')
+    (cnt, .tuple ts')
+  | .array ts =>
+    let (cnt, ts') := ts.attach.foldl (init := (cnt, #[])) fun (cnt, acc) ⟨x, _⟩ =>
+      let (cnt, x') := Term.freshen cnt subst x; (cnt, acc.push x')
+    (cnt, .array ts')
+  | .app g args mode =>
+    let (cnt, args') := args.attach.foldl (init := (cnt, ([] : List Term))) fun (cnt, acc) ⟨x, _⟩ =>
+      let (cnt, x') := Term.freshen cnt subst x; (cnt, acc ++ [x'])
+    (cnt, .app g args' mode)
+  | .ret a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .ret a')
+  | .add a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .add a' b')
+  | .sub a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .sub a' b')
+  | .mul a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .mul a' b')
+  | .eqZero a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .eqZero a')
+  | .proj a n => let (cnt, a') := Term.freshen cnt subst a; (cnt, .proj a' n)
+  | .get a n => let (cnt, a') := Term.freshen cnt subst a; (cnt, .get a' n)
+  | .slice a i j => let (cnt, a') := Term.freshen cnt subst a; (cnt, .slice a' i j)
+  | .set a n v => let (cnt, a') := Term.freshen cnt subst a; let (cnt, v') := Term.freshen cnt subst v; (cnt, .set a' n v')
+  | .store a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .store a')
+  | .load a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .load a')
+  | .ptrVal a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .ptrVal a')
+  | .ann τ a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .ann τ a')
+  | .assertEq a b c =>
+    let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; let (cnt, c') := Term.freshen cnt subst c
+    (cnt, .assertEq a' b' c')
+  | .ioGetInfo c k => let (cnt, c') := Term.freshen cnt subst c; let (cnt, k') := Term.freshen cnt subst k; (cnt, .ioGetInfo c' k')
+  | .ioSetInfo c k i l rv =>
+    let (cnt, c') := Term.freshen cnt subst c; let (cnt, k') := Term.freshen cnt subst k; let (cnt, i') := Term.freshen cnt subst i
+    let (cnt, l') := Term.freshen cnt subst l; let (cnt, rv') := Term.freshen cnt subst rv
+    (cnt, .ioSetInfo c' k' i' l' rv')
+  | .ioRead c i n => let (cnt, c') := Term.freshen cnt subst c; let (cnt, i') := Term.freshen cnt subst i; (cnt, .ioRead c' i' n)
+  | .ioWrite c d rv =>
+    let (cnt, c') := Term.freshen cnt subst c; let (cnt, d') := Term.freshen cnt subst d; let (cnt, rv') := Term.freshen cnt subst rv
+    (cnt, .ioWrite c' d' rv')
+  | .u8BitDecomposition a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8BitDecomposition a')
+  | .u8ShiftLeft a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8ShiftLeft a')
+  | .u8ShiftRight a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8ShiftRight a')
+  | .u8Xor a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Xor a' b')
+  | .u8Add a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Add a' b')
+  | .u8Mul a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Mul a' b')
+  | .u8Sub a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Sub a' b')
+  | .u8And a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8And a' b')
+  | .u8Or a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Or a' b')
+  | .u8LessThan a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8LessThan a' b')
+  | .u32LessThan a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u32LessThan a' b')
+  | .u8ChainRotr7 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr7 a' b')
+  | .u8ChainRotr4 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr4 a' b')
+  | .unconstrainedBigUintDivMod a b =>
+    let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .unconstrainedBigUintDivMod a' b')
+  | .u8RangeCheck a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8RangeCheck a' b')
+  | .toField a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .toField a')
+  | .u8FromFieldUnsafe a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8FromFieldUnsafe a')
+  | .debug s o a =>
+    let (cnt, o') := match o with
+      | none => (cnt, none)
+      | some x => let (cnt, x') := Term.freshen cnt subst x; (cnt, some x')
+    let (cnt, a') := Term.freshen cnt subst a
+    (cnt, .debug s o' a')
+termination_by t => sizeOf t
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Peel the leading `let` bindings off a term: returns the binding frames
+(outermost first) and the non-`let` core. -/
+def Term.peelLets : Term → List (Pattern × Term) × Term
+  | .let p v b => let (fs, c) := Term.peelLets b; ((p, v) :: fs, c)
+  | t => ([], t)
+
+/-- Wrap `body` in a chain of `let` frames (first frame outermost). -/
+def Term.wrapLets : List (Pattern × Term) → Term → Term
+  | [], body => body
+  | (p, v) :: fs, body => .let p v (Term.wrapLets fs body)
+
+/-- Every `.inlined` call site in `t`, as `(callee, argCount)` pairs. Drives
+both validation (callee exists, arity matches) and the inline-dependency
+graph the bottom-up expansion is ordered by. -/
+def Term.inlineCallSites : Term → List (Global × Nat)
+  | .app g args .inlined =>
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites) [(g, args.length)]
+  | .app _ args _ =>
+    args.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites) []
+  | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => []
+  | .tuple ts | .array ts =>
+    ts.attach.foldl (fun acc ⟨a, _⟩ => acc ++ a.inlineCallSites) []
+  | .match s arms =>
+    arms.attach.foldl (fun acc ⟨(_, a), _⟩ => acc ++ a.inlineCallSites) s.inlineCallSites
+  | .let _ v b => v.inlineCallSites ++ b.inlineCallSites
+  | .add a b | .sub a b | .mul a b | .set a _ b
+  | .u8Xor a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
+  | .u8LessThan a b | .u32LessThan a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
+  | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b | .ioGetInfo a b =>
+    a.inlineCallSites ++ b.inlineCallSites
+  | .assertEq a b c | .ioWrite a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
+  | .ioSetInfo c k i l rv =>
+    c.inlineCallSites ++ k.inlineCallSites ++ i.inlineCallSites ++ l.inlineCallSites ++ rv.inlineCallSites
+  | .ioRead a b _ => a.inlineCallSites ++ b.inlineCallSites
+  | .ret a | .eqZero a | .proj a _ | .get a _ | .slice a _ _ | .store a | .load a
+  | .ptrVal a | .ann _ a | .u8BitDecomposition a | .u8ShiftLeft a | .u8ShiftRight a
+  | .toField a | .u8FromFieldUnsafe a => a.inlineCallSites
+  | .debug _ o a => (match o with | none => [] | some x => x.inlineCallSites) ++ a.inlineCallSites
+termination_by t => sizeOf t
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Structurally splice every `.app g args .inlined` in `t`, given `done`,
+which maps each already-expanded callee to its input locals and its (already
+inline-free) body. At an inline site the callee's inputs and body are
+α-renamed to fresh `inl#N` names (`Term.freshen`, seeded with the inputs),
+then each fresh input is bound to its argument via a `let`. Freshening the
+inputs BEFORE binding the arguments is essential: arguments are caller terms,
+so a fresh input name cannot shadow a caller local an argument references (nor
+collide across copies).
+
+Bottom-up ordering (see `Toplevel.inlineCalls`) guarantees `done[g]` is
+already inline-free, so the spliced body is NOT re-traversed — the recursion
+is purely structural on `t` and needs no fuel. `cnt` threads the fresh-name
+counter. If `done` lacks `g` the site is left untouched; the ordering makes
+that unreachable. -/
+def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat) :
+    Term → Nat × Term := fun t => match t with
+  | .app g args .inlined =>
+    let (cnt, args') := args.attach.foldl (init := (cnt, ([] : List Term)))
+      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc ++ [a'])
+    match done[g]? with
+    | none => (cnt, .app g args' .inlined)
+    | some (ins, body) =>
+      let (cnt, subst, freshInputs) := ins.foldl
+        (init := (cnt, (∅ : Std.HashMap Local Local), ([] : List Local)))
+        fun (cnt, subst, acc) inp =>
+          let inp' : Local := .str s!"inl#{cnt}"
+          (cnt + 1, subst.insert inp inp', acc ++ [inp'])
+      let (cnt, freshBody) := Term.freshen cnt subst body
+      -- A branching callee ends in a `match`. In a strict argument position
+      -- the splice's leading lets hoist out (`Term.hoistLets`) but the match
+      -- core would stay put, which lowering rejects as a non-tail match in
+      -- arbitrary position. Bind the match to a fresh local so hoisting
+      -- leaves only a variable behind; in let-RHS/tail positions the extra
+      -- binding is harmless.
+      let (cnt, freshBody) :=
+        match Term.peelLets freshBody with
+        | (fs, core@(.match ..)) =>
+          let out : Local := .str s!"inl#{cnt}"
+          (cnt + 1, Term.wrapLets fs (.let (.var out) core (.var out)))
+        | _ => (cnt, freshBody)
+      (cnt, (freshInputs.zip args').foldr
+        (fun (input, arg) acc => Term.let (.var input) arg acc) freshBody)
+  | .app g args mode =>
+    let (cnt, args') := args.attach.foldl (init := (cnt, ([] : List Term)))
+      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc ++ [a'])
+    (cnt, .app g args' mode)
+  | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => (cnt, t)
+  | .tuple ts =>
+    let (cnt, ts') := ts.attach.foldl (init := (cnt, #[]))
+      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc.push a')
+    (cnt, .tuple ts')
+  | .array ts =>
+    let (cnt, ts') := ts.attach.foldl (init := (cnt, #[]))
+      fun (cnt, acc) ⟨a, _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc.push a')
+    (cnt, .array ts')
+  | .match s arms =>
+    let (cnt, s') := Term.expandOnce done cnt s
+    let (cnt, arms') := arms.attach.foldl (init := (cnt, ([] : List (Pattern × Term))))
+      fun (cnt, acc) ⟨(p, a), _⟩ => let (cnt, a') := Term.expandOnce done cnt a; (cnt, acc ++ [(p, a')])
+    (cnt, .match s' arms')
+  | .let p v b =>
+    let (cnt, v') := Term.expandOnce done cnt v
+    let (cnt, b') := Term.expandOnce done cnt b
+    (cnt, .let p v' b')
+  | .ret a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ret a')
+  | .add a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .add a' b')
+  | .sub a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .sub a' b')
+  | .mul a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .mul a' b')
+  | .eqZero a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .eqZero a')
+  | .proj a n => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .proj a' n)
+  | .get a n => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .get a' n)
+  | .slice a i j => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .slice a' i j)
+  | .set a n v => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, v') := Term.expandOnce done cnt v; (cnt, .set a' n v')
+  | .store a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .store a')
+  | .load a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .load a')
+  | .ptrVal a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ptrVal a')
+  | .ann τ a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ann τ a')
+  | .assertEq a b c =>
+    let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b
+    let (cnt, c') := Term.expandOnce done cnt c; (cnt, .assertEq a' b' c')
+  | .ioGetInfo c k => let (cnt, c') := Term.expandOnce done cnt c; let (cnt, k') := Term.expandOnce done cnt k; (cnt, .ioGetInfo c' k')
+  | .ioSetInfo c k i l rv =>
+    let (cnt, c') := Term.expandOnce done cnt c; let (cnt, k') := Term.expandOnce done cnt k
+    let (cnt, i') := Term.expandOnce done cnt i; let (cnt, l') := Term.expandOnce done cnt l
+    let (cnt, rv') := Term.expandOnce done cnt rv; (cnt, .ioSetInfo c' k' i' l' rv')
+  | .ioRead c i n => let (cnt, c') := Term.expandOnce done cnt c; let (cnt, i') := Term.expandOnce done cnt i; (cnt, .ioRead c' i' n)
+  | .ioWrite c d rv =>
+    let (cnt, c') := Term.expandOnce done cnt c; let (cnt, d') := Term.expandOnce done cnt d
+    let (cnt, rv') := Term.expandOnce done cnt rv; (cnt, .ioWrite c' d' rv')
+  | .u8BitDecomposition a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8BitDecomposition a')
+  | .u8ShiftLeft a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8ShiftLeft a')
+  | .u8ShiftRight a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8ShiftRight a')
+  | .u8Xor a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Xor a' b')
+  | .u8Add a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Add a' b')
+  | .u8Mul a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Mul a' b')
+  | .u8Sub a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Sub a' b')
+  | .u8And a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8And a' b')
+  | .u8Or a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Or a' b')
+  | .u8LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8LessThan a' b')
+  | .u32LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u32LessThan a' b')
+  | .u8ChainRotr7 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr7 a' b')
+  | .u8ChainRotr4 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr4 a' b')
+  | .unconstrainedBigUintDivMod a b =>
+    let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .unconstrainedBigUintDivMod a' b')
+  | .u8RangeCheck a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8RangeCheck a' b')
+  | .toField a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .toField a')
+  | .u8FromFieldUnsafe a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8FromFieldUnsafe a')
+  | .debug s o a =>
+    let (cnt, o') := match o with
+      | none => (cnt, none)
+      | some x => let (cnt, x') := Term.expandOnce done cnt x; (cnt, some x')
+    let (cnt, a') := Term.expandOnce done cnt a
+    (cnt, .debug s o' a')
+termination_by t => sizeOf t
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Peel leading lets off each of `ts` (already hoisted), collecting the
+frames left-to-right so evaluation order is preserved, and returning the
+frame chain plus the cores. -/
+def Term.peelListLets (ts : List Term) : List (Pattern × Term) × List Term :=
+  ts.foldr
+    (fun t (fs, cs) => let (f, c) := Term.peelLets t; (f ++ fs, c :: cs))
+    ([], [])
+
+def Term.peelArrayLets (ts : Array Term) : List (Pattern × Term) × Array Term :=
+  let (fs, cs) := Term.peelListLets ts.toList
+  (fs, cs.toArray)
+
+/-- Hoist every `let`-chain out of a strict argument position into a
+wrapping `let`. Inlining splices a callee body (a `let`-chain ending in a
+value) wherever the `@`-call appeared; in a `let`-RHS or tail position the
+`Simple` pass already floats those lets outward, but in an argument
+position (a `set`/array element, an operator operand, …) they would stay
+nested, which the lowering cannot handle. This normalizes all such
+positions. `let`-RHS, `match` arm bodies, and `ret`/`debug` continuations
+are already handled downstream, so their lets are left in place. -/
+def Term.hoistLets : Term → Term :=
+  fun t =>
+  -- Hoist a construct's argument terms: peel each arg's lets and wrap.
+  match t with
+  | .unit | .var _ | .ref _ | .field _ | .u8Lit _ => t
+  | .let p v b => .let p (Term.hoistLets v) (Term.hoistLets b)
+  | .match s arms =>
+    let (fs, sc) := Term.peelLets (Term.hoistLets s)
+    Term.wrapLets fs (.match sc (arms.attach.map fun ⟨(p, a), _⟩ => (p, Term.hoistLets a)))
+  | .ret a => .ret (Term.hoistLets a)
+  | .debug s o a =>
+    .debug s (match o with | none => none | some x => some (Term.hoistLets x)) (Term.hoistLets a)
+  | .tuple ts =>
+    let (fs, cs) := Term.peelArrayLets (ts.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
+    Term.wrapLets fs (.tuple cs)
+  | .array ts =>
+    let (fs, cs) := Term.peelArrayLets (ts.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
+    Term.wrapLets fs (.array cs)
+  | .app g args mode =>
+    let (fs, cs) := Term.peelListLets (args.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
+    Term.wrapLets fs (.app g cs mode)
+  | .assertEq a b c =>
+    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
+    match cs with
+    | [a, b, c] => Term.wrapLets fs (.assertEq a b c)
+    | _ => t
+  | .ioSetInfo a b c d e =>
+    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c, Term.hoistLets d, Term.hoistLets e]
+    match cs with
+    | [a, b, c, d, e] => Term.wrapLets fs (.ioSetInfo a b c d e)
+    | _ => t
+  | .ioWrite a b c =>
+    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
+    match cs with
+    | [a, b, c] => Term.wrapLets fs (.ioWrite a b c)
+    | _ => t
+  | .ioGetInfo a b =>
+    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+    match cs with | [a, b] => Term.wrapLets fs (.ioGetInfo a b) | _ => t
+  | .ioRead a b n =>
+    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+    match cs with | [a, b] => Term.wrapLets fs (.ioRead a b n) | _ => t
+  | .add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                match cs with | [a, b] => Term.wrapLets fs (.add a b) | _ => t
+  | .sub a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                match cs with | [a, b] => Term.wrapLets fs (.sub a b) | _ => t
+  | .mul a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                match cs with | [a, b] => Term.wrapLets fs (.mul a b) | _ => t
+  | .eqZero a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.eqZero c)
+  | .proj a n => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.proj c n)
+  | .get a n => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.get c n)
+  | .slice a i j => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.slice c i j)
+  | .set a n v =>
+    let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets v]
+    match cs with | [a, v] => Term.wrapLets fs (.set a n v) | _ => t
+  | .store a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.store c)
+  | .load a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.load c)
+  | .ptrVal a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.ptrVal c)
+  | .ann τ a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.ann τ c)
+  | .u8BitDecomposition a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8BitDecomposition c)
+  | .u8ShiftLeft a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8ShiftLeft c)
+  | .u8ShiftRight a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8ShiftRight c)
+  | .toField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.toField c)
+  | .u8FromFieldUnsafe a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8FromFieldUnsafe c)
+  | .u8Xor a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                  match cs with | [a, b] => Term.wrapLets fs (.u8Xor a b) | _ => t
+  | .u8Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                  match cs with | [a, b] => Term.wrapLets fs (.u8Add a b) | _ => t
+  | .u8Mul a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                  match cs with | [a, b] => Term.wrapLets fs (.u8Mul a b) | _ => t
+  | .u8Sub a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                  match cs with | [a, b] => Term.wrapLets fs (.u8Sub a b) | _ => t
+  | .u8And a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                  match cs with | [a, b] => Term.wrapLets fs (.u8And a b) | _ => t
+  | .u8Or a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                 match cs with | [a, b] => Term.wrapLets fs (.u8Or a b) | _ => t
+  | .u8LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                       match cs with | [a, b] => Term.wrapLets fs (.u8LessThan a b) | _ => t
+  | .u32LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                        match cs with | [a, b] => Term.wrapLets fs (.u32LessThan a b) | _ => t
+  | .u8ChainRotr7 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                         match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr7 a b) | _ => t
+  | .u8ChainRotr4 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                         match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr4 a b) | _ => t
+  | .unconstrainedBigUintDivMod a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                                       match cs with | [a, b] => Term.wrapLets fs (.unconstrainedBigUintDivMod a b) | _ => t
+  | .u8RangeCheck a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                         match cs with | [a, b] => Term.wrapLets fs (.u8RangeCheck a b) | _ => t
+termination_by t => sizeOf t
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
+/-- Kahn-style topological sort of the inline-dependency graph: each pass
+emits every function whose inline-callees are already emitted, so callees
+precede callers. `rounds` bounds the number of passes by the function count
+— a DAG on N nodes has depth < N, so N passes suffice — which is the honest
+structural termination measure (not an arbitrary fuel cap). A non-empty
+remaining set with no ready function is an inline cycle and is rejected. -/
+def inlineTopo (deps : Std.HashMap Global (List Global)) :
+    Nat → List Global → Std.HashSet Global → List Global → Except String (List Global)
+  | 0, remaining, _, acc =>
+    if remaining.isEmpty then pure acc
+    else throw "inline recursion: dependency graph did not converge"
+  | rounds + 1, remaining, emitted, acc =>
+    match remaining with
+    | [] => pure acc
+    | _ =>
+      let (ready, notReady) := remaining.partition fun g =>
+        (deps.getD g []).all emitted.contains
+      match ready with
+      | [] =>
+        throw s!"inline recursion among: {remaining.map Global.toName}"
+      | _ =>
+        let emitted := ready.foldl (fun s g => s.insert g) emitted
+        inlineTopo deps rounds notReady emitted (acc ++ ready)
+termination_by rounds _ _ _ => rounds
+
+/-- Inline-expand every function body in the toplevel, eliminating all
+`.inlined` applications. Run before typechecking.
+
+Bottom-up and fuel-free: `.inlined` calls form a DAG (cycles are rejected as
+inline recursion), so functions are expanded in topological order — every
+callee is fully expanded before any caller inlines it. Each body is therefore
+expanded exactly once (`Term.expandOnce`, structurally recursive on the term),
+and its already-inline-free result is memoized in `done` and spliced (with
+α-renaming) at every call site. -/
+def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
+  let funcs : Std.HashMap Global Function :=
+    t.functions.foldl (fun m f => m.insert f.name f) ∅
+  -- Inline dependencies per function, validating callee existence and arity.
+  let deps : Std.HashMap Global (List Global) ← t.functions.foldlM (init := ∅)
+    fun deps f => do
+      let gs ← f.body.inlineCallSites.foldlM (init := ([] : List Global))
+        fun acc (g, n) => do
+          let some callee := funcs[g]?
+            | throw s!"inline call to unknown function `{g.toName}`"
+          if n != callee.inputs.length then
+            throw s!"inline `{g.toName}`: got {n} args, expects {callee.inputs.length}"
+          pure (acc ++ [g])
+      pure (deps.insert f.name gs)
+  -- Topological order (callees first). `funcs.size` rounds bound the passes.
+  let names := t.functions.toList.map Function.name
+  let order ← inlineTopo deps names.length names ∅ []
+  -- Expand each body once, in order, memoizing the inline-free result.
+  let done : Std.HashMap Global (List Local × Term) := order.foldl (init := ∅)
+    fun done g =>
+      match funcs[g]? with
+      | none => done
+      | some f => done.insert g (f.inputs.map Prod.fst, (f.body.expandOnce done 0).2)
+  -- Rebuild each function with its expanded body, then hoist argument-position
+  -- lets that splicing may have introduced.
+  let functions := t.functions.map fun f =>
+    match done[f.name]? with
+    | none => f
+    | some (_, body) => { f with body := body.hoistLets }
+  pure { t with functions }
 
 inductive Declaration
   | function : Function → Declaration

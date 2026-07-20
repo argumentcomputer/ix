@@ -86,6 +86,35 @@ def byteStream := ⟦
     [c0, c1, c2, c3]
   }
 
+  -- Right-rotations of a little-endian word. rotr16 / rotr8 are pure byte
+  -- moves (free); rotr12 / rotr7 are a byte move composed with the chained
+  -- 4-/7-bit gadget (two lookups + two free field adds each).
+  fn u32_rotr16(w: [U8; 4]) -> [U8; 4] {
+    let [w0, w1, w2, w3] = w;
+    [w2, w3, w0, w1]
+  }
+
+  fn u32_rotr8(w: [U8; 4]) -> [U8; 4] {
+    let [w0, w1, w2, w3] = w;
+    [w1, w2, w3, w0]
+  }
+
+  fn u32_rotr12(w: [U8; 4]) -> [U8; 4] {
+    let [w0, w1, w2, w3] = w;
+    let (e0, e1, e2) = u8_chain_rotr4(w1, w2);
+    let (f0, f1, f2) = u8_chain_rotr4(w3, w0);
+    [e0, u8_from_field_unsafe(to_field(e1) + to_field(f2)), f0,
+     u8_from_field_unsafe(to_field(f1) + to_field(e2))]
+  }
+
+  fn u32_rotr7(w: [U8; 4]) -> [U8; 4] {
+    let [w0, w1, w2, w3] = w;
+    let (g0, g1, g2) = u8_chain_rotr7(w0, w1);
+    let (h0, h1, h2) = u8_chain_rotr7(w2, w3);
+    [g0, u8_from_field_unsafe(to_field(g1) + to_field(h2)), h0,
+     u8_from_field_unsafe(to_field(h1) + to_field(g2))]
+  }
+
   -- Byte-by-byte `u64` equality
   fn u64_eq(a: U64, b: U64) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;

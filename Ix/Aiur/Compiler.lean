@@ -112,6 +112,7 @@ def Bytecode.Toplevel.needsCircuit (t : Bytecode.Toplevel) : Array Bool := Id.ru
 
 /-- Full compilation pipeline. -/
 def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplevel := do
+  let t ← t.inlineCalls
   let typedDecls ← t.checkAndSimplify.mapError toString
   let concDecls ← typedDecls.concretize.mapError toString
   let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
@@ -129,13 +130,14 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
 `needsCircuit`, the field-setter `mapIdx`, the name-map `fold`, and the
 terminating `pure` — are all total). -/
 theorem Source.Toplevel.compile_ok_of_stages
-    {t : Source.Toplevel} {typedDecls concDecls bytecodeRaw preNameMap}
-    (hts : t.checkAndSimplify = .ok typedDecls)
+    {t inlined : Source.Toplevel} {typedDecls concDecls bytecodeRaw preNameMap}
+    (hinline : t.inlineCalls = .ok inlined)
+    (hts : inlined.checkAndSimplify = .ok typedDecls)
     (hconc : typedDecls.concretize = .ok concDecls)
     (hbc : concDecls.toBytecode = .ok (bytecodeRaw, preNameMap)) :
     ∃ ct, t.compile = .ok ct := by
-  simp only [Source.Toplevel.compile, hts, hconc, hbc, Except.mapError, bind,
-             Except.bind, pure, Except.pure]
+  simp only [Source.Toplevel.compile, hinline, hts, hconc, hbc, Except.mapError,
+             bind, Except.bind, pure, Except.pure]
   exact ⟨_, rfl⟩
 
 /-- Inverse of `compile_ok_of_stages`: unpack a successful `compile` into
@@ -144,27 +146,28 @@ lemmas through the composition. -/
 theorem Source.Toplevel.compile_stages_of_ok
     {t : Source.Toplevel} {ct : CompiledToplevel}
     (_hct : t.compile = .ok ct) :
-    ∃ typedDecls concDecls bytecodeRaw preNameMap,
-      t.checkAndSimplify = .ok typedDecls ∧
+    ∃ inlined typedDecls concDecls bytecodeRaw preNameMap,
+      t.inlineCalls = .ok inlined ∧
+      inlined.checkAndSimplify = .ok typedDecls ∧
       typedDecls.concretize = .ok concDecls ∧
       concDecls.toBytecode = .ok (bytecodeRaw, preNameMap) := by
   -- Case on each stage result; `mapError` on `.ok` is definitionally `.ok`.
-  cases hts : t.checkAndSimplify with
-  | error e => simp [Source.Toplevel.compile, hts, bind, Except.bind, Except.mapError] at _hct
-  | ok typedDecls =>
-    cases hconc : typedDecls.concretize with
-    | error e =>
-      simp [Source.Toplevel.compile, hts, hconc, bind, Except.bind, Except.mapError] at _hct
-    | ok concDecls =>
-      cases hbc : concDecls.toBytecode with
+  cases hinline : t.inlineCalls with
+  | error e => simp [Source.Toplevel.compile, hinline, bind, Except.bind] at _hct
+  | ok inlined =>
+    cases hts : inlined.checkAndSimplify with
+    | error e => simp [Source.Toplevel.compile, hinline, hts, bind, Except.bind, Except.mapError] at _hct
+    | ok typedDecls =>
+      cases hconc : typedDecls.concretize with
       | error e =>
-        simp [Source.Toplevel.compile, hts, hconc, hbc, bind, Except.bind, Except.mapError] at _hct
-      | ok bc =>
-        obtain ⟨bytecodeRaw, preNameMap⟩ := bc
-        -- `checkAndSimplify`/`concretize` are unfolded; `toBytecode` is not
-        -- (private module), so the first two equalities reduce to `rfl` but
-        -- the third still mentions `concDecls.toBytecode` — supply `hbc`.
-        exact ⟨typedDecls, concDecls, bytecodeRaw, preNameMap, rfl, hconc, hbc⟩
+        simp [Source.Toplevel.compile, hinline, hts, hconc, bind, Except.bind, Except.mapError] at _hct
+      | ok concDecls =>
+        cases hbc : concDecls.toBytecode with
+        | error e =>
+          simp [Source.Toplevel.compile, hinline, hts, hconc, hbc, bind, Except.bind, Except.mapError] at _hct
+        | ok bc =>
+          obtain ⟨bytecodeRaw, preNameMap⟩ := bc
+          exact ⟨inlined, typedDecls, concDecls, bytecodeRaw, preNameMap, rfl, hts, hconc, hbc⟩
 
 -- Compile post-conditions moved to `Proofs/StructCompatible.lean`.
 

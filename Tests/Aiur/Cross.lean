@@ -1072,6 +1072,41 @@ def toplevel : Source.Toplevel := ⟦
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
     + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20 + r21
   }
+
+  -- Inlined function calls (`@fn(args)`): both evaluators execute an
+  -- inlined call exactly like a normal one, so source/bytecode agreement
+  -- checks the splice (alpha-renaming, nesting, strict-position hoisting,
+  -- branching callees) preserved the semantics.
+  fn inl_sq(x: G) -> G { x * x }
+
+  fn inl_sq_plus(x: G, y: G) -> G { @inl_sq(x) + y }
+
+  fn inl_sign(x: G) -> G {
+    match x {
+      0 => 0,
+      _ => 1,
+    }
+  }
+
+  -- Single aggregate entry: every scenario in one agreement run.
+  pub fn inline_test() -> G {
+    -- Basic splice
+    let r1 = @inl_sq(5) + 1;                      -- 26
+    -- Nested splice (callee @-inlines another helper)
+    let r2 = @inl_sq_plus(3, 4);                  -- 13
+    -- Capture safety: caller local named like a callee binding, argument
+    -- mentions it
+    let t = 5;
+    let r3 = @inl_sq(t + 1) + t;                  -- 41
+    -- Strict positions: operator operands
+    let r4 = @inl_sq(3) + @inl_sq(4) * 100;       -- 1609
+    -- Branching callee in operand position, both paths (the spliced match
+    -- gets bound to a fresh local before hoisting)
+    let r5 = @inl_sign(0) + @inl_sign(7) * 100;   -- 100
+    -- Same callee inlined and normally called
+    let r6 = @inl_sq(3) + inl_sq(4);              -- 25
+    r1 + r2 + r3 + r4 + r5 + r6
+  }
 ⟧
 
 /-- Generic helper: run both evaluators on `entryName` with `inputs` as
@@ -1329,7 +1364,9 @@ def tests : TestSeq :=
   runAgreement "fibonacci(6)" "fibonacci" [6] ++
   -- End-to-end non-tail match entry aggregating many ntm_* helpers
   runAgreement "ntm_recursive_test" "ntm_recursive_test" [] ++
-  runAgreement "non_tail_match" "non_tail_match" []
+  runAgreement "non_tail_match" "non_tail_match" [] ++
+  -- Inlined function calls (`@fn(args)`): all scenarios in one entry
+  runAgreement "inline_test" "inline_test" []
 
 end AiurTests.Cross
 

@@ -791,6 +791,70 @@ def toplevel := ⟦
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
     + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20 + r21
   }
+
+  ---------------------------------------------------------------------------
+  -- Inlined function calls (`@fn(args)`)
+  --
+  -- An `@`-call splices the callee's body into the caller's circuit: no
+  -- separate circuit, no call interface. These cases cover the splice in
+  -- every position lowering treats specially (let-RHS, strict argument
+  -- slots), plus alpha-renaming, nesting, branching callees, gadget
+  -- lookups joining the caller, and mixing inlined with normal calls.
+  ---------------------------------------------------------------------------
+
+  fn inl_double(x: G) -> G {
+    let t = x + x;
+    t
+  }
+
+  fn inl_sq(x: G) -> G { x * x }
+
+  -- Callee that itself @-inlines another helper (nested splice)
+  fn inl_sq_plus(x: G, y: G) -> G { @inl_sq(x) + y }
+
+  -- Multi-output callee
+  fn inl_pair(x: G) -> (G, G) { (x + 1, x * 2) }
+
+  -- Branching callee: tail match spliced into a let-RHS position
+  fn inl_sign(x: G) -> G {
+    match x {
+      0 => 0,
+      _ => 1,
+    }
+  }
+
+  -- Gadget lookup inside the callee
+  fn inl_add8(a: U8, b: U8) -> (U8, U8) { u8_add(a, b) }
+
+  -- Single aggregate entry: every scenario in one circuit/proof.
+  pub fn inline_test() -> G {
+    -- Basic splice
+    let r1 = @inl_double(21);                     -- 42
+    -- Nested splice (callee @-inlines another helper)
+    let r2 = @inl_sq_plus(3, 4);                  -- 13
+    -- Capture safety: caller binds `t` (the callee's local name) and the
+    -- argument mentions it
+    let t = 5;
+    let r3 = @inl_double(t + 1) + t;              -- 17
+    -- Strict positions: array elements, operator operands, call argument
+    let arr = [@inl_double(3), @inl_sq(3)];       -- [6, 9]
+    let r4 = arr[0] + arr[1] * 100;               -- 906
+    let r5 = @inl_double(3) + @inl_sq(3);         -- 15
+    let r6 = id(@inl_double(7));                  -- 14
+    -- Multi-output callee
+    let (p1, p2) = @inl_pair(5);                  -- (6, 10)
+    let r7 = p1 + p2 * 100;                       -- 1006
+    -- Branching callee in operand position, both paths (the spliced match
+    -- gets bound to a fresh local before hoisting)
+    let r8 = @inl_sign(0) + @inl_sign(5) * 100;   -- 100
+    -- Same callee inlined and normally called: the normal call keeps its
+    -- own circuit + lookup, the inlined one joins this circuit
+    let r9 = @inl_sq(3) + inl_sq(4);              -- 25
+    -- Gadget lookup in the callee joins this circuit
+    let (s, c) = @inl_add8(200u8, 100u8);         -- (44, 1)
+    let r10 = to_field(s) + to_field(c) * 1000;   -- 1044
+    r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
+  }
 ⟧
 
 def aiurTestCases : List AiurTestCase := [
@@ -948,6 +1012,9 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Non-tail match: all patterns in one proof (incl. function-call scrutinee)
     .noIO `non_tail_match #[] #[2593],
+
+    -- Inlined function calls (`@fn(args)`): all scenarios in one proof
+    .noIO `inline_test #[] #[3182],
   ]
 
 end
