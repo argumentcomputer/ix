@@ -4,8 +4,9 @@
 #   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] [aiur-recursive] | all) [execute]
 #     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
 #      with a note in the config summary)
-#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive;
-#                                  #  compile-only requests may name any registry env, e.g. Lean/FLT)
+#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive; defaults to every
+#                                  #  registry env for compile/decompile, InitStd for the rest;
+#                                  #  env-keyed-only requests may name any registry env, e.g. Lean/FLT)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
@@ -19,24 +20,24 @@
 # `prove` — the real-workload simulation, whose report also carries the
 # Phase-1 columns `fft-cost` / `execute-time` measured en route; `zisk` /
 # `sp1` / `ooc` run `execute`; `compile` runs `ix compile <env>.lean →
-# <env>.ixe` (the same cell bench-main.yml uploads under testbed
+# <env>.ixe` (the same run bench-main.yml uploads under testbed
 # `ix-compile-*`); `decompile` runs `ix decompile <env>.ixe` over the
-# compile cell's fresh PR `.ixe` (testbed `ix-decompile-*`);
+# compile run's fresh PR `.ixe` (testbed `ix-decompile-*`);
 # `aiur-recursive` runs the aiur-recursive toy (bench-recursive-verifier's
-# fixed configs — env-independent, so it always schedules exactly one cell
+# fixed configs — env-independent, so it always schedules exactly one run
 # no matter what BENCH_ENVS says). The optional bare `execute` token flips
 # `aiur` to execute-only (Phase 1, skipping the prove); bench-main runs
-# both aiur modes as separate cells on separate testbeds, so either kind
-# of cell fetches a cached main-side baseline from bencher. The bare
+# both aiur modes as separate runs on separate testbeds, so either kind
+# of run fetches a cached main-side baseline from bencher. The bare
 # `recursive` token flips aiur to its recursive mode instead — an
 # unscheduled testbed with no bencher baseline (its main side is a base-SHA
 # run), and the verifier execute OOMs the standard CI host, so it's meant
-# for a bigger manual dispatch. The bare `fresh` token makes every cell
+# for a bigger manual dispatch. The bare `fresh` token makes every run
 # skip the bencher fetch and re-measure the main side with a base-SHA run
 # (nothing here uploads to bencher, so the canonical baseline is
 # untouched).
 #
-# Each matrix cell is one `ix bench run` per side, driven by the PR's `ix`
+# Each matrix entry is one `ix bench run` per side, driven by the PR's `ix`
 # (`--repo` points it at the checkout to measure). main's numbers come from
 # bencher.dev (`ix bench fetch-main`); the workflow re-runs the base SHA
 # locally only when bencher can't supply them — the base SHA isn't ingested yet
@@ -114,8 +115,8 @@ jobs:
   # Build the PR's `ix` + `bench-typecheck` + `bench-recursive-verifier`
   # once (they embed the IxVM kernel
   # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
-  # the matrix cells restore instead of re-running the full Lean build per
-  # cell, and re-running !benchmark on the same commit skips the build
+  # the matrix runs restore instead of re-running the full Lean build per
+  # run, and re-running !benchmark on the same commit skips the build
   # entirely. Built on warp, mirroring bench-main.yml's build job, so PR
   # binaries carry the same instruction-set provenance (uniform AVX-512
   # fleet) as the binaries behind bencher's main-side numbers — and every
@@ -195,16 +196,79 @@ jobs:
           COMMENT_BODY: ${{ inputs.comment-body }}
         run: ix bench ci parse
 
-  # ONE measured `ix compile` per requested env, before the cells: it
-  # publishes the `.ixe` the prover cells restore (no per-cell compile
-  # races), and its results row doubles as the compile cell's PR side —
+  # Post the initial PR comment the instant the command is parsed: a red-X
+  # diagnostic if the parse/build failed (the same message the final comment
+  # would carry), otherwise a "running" placeholder so the commenter gets
+  # immediate feedback. The `comment` job edits THIS comment in place with
+  # the results at the end (its id is this job's output). Privileged (App
+  # token) like `comment`, and like it runs no checkout and no PR-derived
+  # code — only build's string outputs.
+  announce:
+    needs: build
+    if: always() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      comment-id: ${{ steps.post.outputs.comment-id }}
+    steps:
+      # PR-derived strings (parse-error, config-summary) arrive via env, not
+      # inline `${{ }}`; a quoted `echo "$VAR"` never re-evaluates the value,
+      # so a crafted summary can't inject shell (the rule the other jobs
+      # follow).
+      - name: Compose initial body
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
+          SUMMARY: ${{ needs.build.outputs.config-summary }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$BUILD_RESULT" != success ]; then
+            {
+              echo "## ❌ benchmark run failed"
+              if [ -n "$PARSE_ERROR" ]; then
+                echo
+                echo "> $PARSE_ERROR"
+              fi
+              echo
+              echo "[Workflow logs]($RUN_URL)"
+            } > comment-body.md
+          else
+            {
+              echo "## ⏳ Benchmark running…"
+              echo
+              if [ -n "$SUMMARY" ]; then
+                echo "> $SUMMARY"
+                echo
+              fi
+              echo "Benchmarking \`${HEAD_SHA:0:7}\` — this comment will be replaced with the results when the run finishes."
+              echo
+              echo "[Watch progress]($RUN_URL)"
+            } > comment-body.md
+          fi
+      - name: Generate token to write PR comment
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+      - name: Post initial comment
+        id: post
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          issue-number: ${{ inputs.pr }}
+          body-path: comment-body.md
+
+  # ONE measured `ix compile` per requested env, before the runs: it
+  # publishes the `.ixe` the prover runs restore (no per-run compile
+  # races), and its results row doubles as the compile run's PR side —
   # requesting the compile backend never compiles the env twice.
   compile:
     name: compile-${{ matrix.env }}
     needs: build
     if: needs.build.outputs.envs != '[]'
     runs-on: warp-ubuntu-latest-x64-32x
-    timeout-minutes: 120
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -271,7 +335,7 @@ jobs:
         with:
           path: ${{ matrix.env }}.ixe
           key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
-      # The measured row: the compile cell reuses it as its PR side (same
+      # The measured row: the compile run reuses it as its PR side (same
       # runner class, same binaries, same command it would run itself).
       - name: Publish compile row
         if: steps.pr-ixe.outputs.cache-hit != 'true'
@@ -282,26 +346,26 @@ jobs:
 
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
-    # env, mode, runner, label); the label already is the cell id.
-    name: ${{ matrix.cell.label }}
+    # env, mode, runner, label); the label already is the run id.
+    name: ${{ matrix.params.label }}
     needs: [build, compile]
-    # A compile failure stops the cells (they would just re-fail the same
+    # A compile failure stops the runs (they would just re-fail the same
     # compile lazily); the skipped case can't arise (envs is never empty)
     # but is tolerated for robustness.
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.compile.result != 'failure' && needs.compile.result != 'cancelled' }}
-    runs-on: ${{ matrix.cell.runner }}
-    # Wide enough for the zisk cell's worst case: per-constant loop + PR-side
+    runs-on: ${{ matrix.params.runner }}
+    # Wide enough for the zisk run's worst case: per-constant loop + PR-side
     # `ix profile` when a heavy primary's closure shards must be cut fresh.
-    timeout-minutes: 180
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        cell: ${{ fromJSON(needs.build.outputs.matrix) }}
+        params: ${{ fromJSON(needs.build.outputs.matrix) }}
     env:
-      BACKEND: ${{ matrix.cell.backend }}
-      BENV: ${{ matrix.cell.env }}
-      MODE: ${{ matrix.cell.mode }}
-      LABEL: ${{ matrix.cell.label }}
+      BACKEND: ${{ matrix.params.backend }}
+      BENV: ${{ matrix.params.env }}
+      MODE: ${{ matrix.params.mode }}
+      LABEL: ${{ matrix.params.label }}
       BASE_SHA: ${{ inputs.base-sha }}
       HEAD_SHA: ${{ inputs.head-sha }}
       SHARD: ${{ needs.build.outputs.shard }}
@@ -343,11 +407,11 @@ jobs:
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       # Toolchain provisioning only (no package build, no mathlib cache):
       # the restored binaries link against the toolchain's libleanshared.
-      # Cells never compile an env: the `.ixe` and the compile row come
+      # Runs never compile an env: the `.ixe` and the compile row come
       # from the compile job, and their restores fail on a miss — both
       # were published moments ago in this same run, so a miss is an
       # infrastructure failure, not something to recompile around (and an
-      # in-cell compile couldn't rebuild the Mathlib env anyway: its
+      # in-run compile couldn't rebuild the Mathlib env anyway: its
       # oleans live only in the compile job's subpackage provisioning).
       - name: Provision Lean toolchain
         uses: leanprover/lean-action@v1
@@ -356,42 +420,42 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      # The compiled env is identical across every cell of the same PR commit —
-      # the compile job published it; cells pass it via `--ixe` instead of
+      # The compiled env is identical across every run of the same PR commit —
+      # the compile job published it; runs pass it via `--ixe` instead of
       # recompiling.
       - name: Restore PR .ixe
         uses: actions/cache/restore@v6
         with:
-          path: ${{ matrix.cell.env }}.ixe
-          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}-${{ hashFiles('ptenv.txt') }}
+          path: ${{ matrix.params.env }}.ixe
+          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.params.env }}-${{ hashFiles('ptenv.txt') }}
           fail-on-cache-miss: true
-      # Compile cells reuse the compile job's measured row as their PR side.
+      # Compile runs reuse the compile job's measured row as their PR side.
       - name: Restore compile row
-        if: matrix.cell.backend == 'compile'
+        if: matrix.params.backend == 'compile'
         uses: actions/cache/restore@v6
         with:
           path: compile.json
-          key: bench-pr-row-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}-${{ hashFiles('ptenv.txt') }}
+          key: bench-pr-row-${{ env.HEAD_SHA }}-${{ matrix.params.env }}-${{ hashFiles('ptenv.txt') }}
           fail-on-cache-miss: true
-      # zkVM cells additionally need the Rust toolchain + the backend's toolchain
+      # zkVM runs additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
-        if: matrix.cell.backend == 'zisk' || matrix.cell.backend == 'sp1'
+        if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          cache-workspaces: ${{ matrix.cell.backend }}
+          cache-workspaces: ${{ matrix.params.backend }}
       # sp1 is disabled in the registry (execute too slow for CI);
       # re-enable it there and uncomment this install step to restore it.
       # - name: Install SP1
-      #   if: matrix.cell.backend == 'sp1'
+      #   if: matrix.params.backend == 'sp1'
       #   uses: ./.github/actions/install-sp1
       - name: Install Zisk
-        if: matrix.cell.backend == 'zisk'
+        if: matrix.params.backend == 'zisk'
         uses: ./.github/actions/install-zisk
 
       # ---------- PR side ----------
       # The PR side runs FIRST: `ix bench run` does its own constant selection
-      # from Vectors.csv, so pr.json's row names are this cell's canonical
+      # from Vectors.csv, so pr.json's row names are this run's canonical
       # name list — the main-side bencher fetch below filters on them.
       - name: Run backend on PR → pr.json
         id: pr-run
@@ -425,7 +489,7 @@ jobs:
       # ingested yet) → fall back to a local base run; anything else (2 =
       # backend/mode has no main testbed — a registry /
       # bench-main.yml drift) is a permanent misconfiguration that a local
-      # rebuild can never fix, so fail the cell loudly instead of silently
+      # rebuild can never fix, so fail the run loudly instead of silently
       # paying the fallback on every future run.
       #
       # Partial miss (exit 0 + non-empty missing.txt): the PR's Vectors.csv
@@ -445,7 +509,7 @@ jobs:
             echo "run-base=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # This cell's names = pr.json's row keys (empty when the PR run
+          # This run's names = pr.json's row keys (empty when the PR run
           # produced nothing — fetch-main then exits 3 and the base run
           # supplies the whole main side).
           NAMES=$(jq -r 'keys | join(",")' "$GITHUB_WORKSPACE/pr.json" 2>/dev/null || true)
@@ -498,9 +562,9 @@ jobs:
           # versions entries by path list); the key suffix is the env name
           # (bench-main's matrix.env).
           path: |
-            ${{ matrix.cell.env }}.ixe
-            zkshards-${{ matrix.cell.env }}
-          key: bench-ixe-${{ env.BASE_SHA }}-${{ matrix.cell.env }}
+            ${{ matrix.params.env }}.ixe
+            zkshards-${{ matrix.params.env }}
+          key: bench-ixe-${{ env.BASE_SHA }}-${{ matrix.params.env }}
       # Cached base binaries are usable only when the two `lean-toolchain`
       # files are identical (plain `cmp`), and — for the mathlib env — only
       # when the `.ixe` was also restored (otherwise base's `ix compile` needs
@@ -535,19 +599,19 @@ jobs:
       # Base-side `ix compile` of a mathlib-importing env (Mathlib, FLT)
       # resolves imports from the base tree's Benchmarks/Compile subpackage —
       # mathlib lives there, not in the root workspace, so the cache fetch
-      # can't ride the build action above. Compile cells need this even with
+      # can't ride the build action above. Compile runs need this even with
       # cached binaries: the compile backend always compiles (`--ixe` is
-      # ignored by design), while a prover cell with cached binaries rides
+      # ignored by design), while a prover run with cached binaries rides
       # the restored `.ixe` and skips the compile entirely.
       - name: Fetch base Mathlib oleans
         if: >-
           steps.bencher.outputs.run-base == 'true' &&
-          (matrix.cell.env == 'Mathlib' || matrix.cell.env == 'FLT') &&
-          (matrix.cell.backend == 'compile' || steps.base-src.outputs.cached != 'true')
+          (matrix.params.env == 'Mathlib' || matrix.params.env == 'FLT') &&
+          (matrix.params.backend == 'compile' || steps.base-src.outputs.cached != 'true')
         working-directory: base/Benchmarks/Compile
         run: |
           lake exe cache get
-          lake build Compile${{ matrix.cell.env }}
+          lake build Compile${{ matrix.params.env }}
       # NOTE: the PR's `ix bench` orchestrates the base run (--repo base); the
       # MEASURED tools resolve from base/.lake/build/bin. When a PR changes
       # the benchmark CLIs themselves, the base tools may reject the new
@@ -557,16 +621,16 @@ jobs:
       # Partial bencher miss (missing.txt non-empty): the base side runs JUST
       # the uncovered names (passed via `--consts`) — typically constants the PR
       # itself adds to Vectors.csv, which base's Vectors.csv doesn't list, so
-      # `--csv` points at the PR's copy. Full miss: the whole cell runs on
+      # `--csv` points at the PR's copy. Full miss: the whole selection runs on
       # base with the normal CSV selection.
       - name: Run backend on base → merge into main.json
         if: steps.bencher.outputs.run-base == 'true'
         run: |
           if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
-            mv "${{ matrix.cell.env }}.ixe" "base/${{ matrix.cell.env }}.ixe"
+            mv "${{ matrix.params.env }}.ixe" "base/${{ matrix.params.env }}.ixe"
             # bench-main's pre-cut closure shards ride the same cache entry;
             # in place, `ix bench run` skips re-cutting them for the base tree.
-            mv "zkshards-${{ matrix.cell.env }}" "base/zkshards-${{ matrix.cell.env }}" 2>/dev/null || true
+            mv "zkshards-${{ matrix.params.env }}" "base/zkshards-${{ matrix.params.env }}" 2>/dev/null || true
           fi
           if [ "$BACKEND" = zisk ]; then
             sudo prlimit --pid $$ --memlock=unlimited:unlimited
@@ -577,7 +641,7 @@ jobs:
           if [ -s "$GITHUB_WORKSPACE/main.json" ] && [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
             flags="$flags --consts $(paste -sd, "$GITHUB_WORKSPACE/missing.txt")"
           fi
-          # A base-side rejection or empty run must not redden the PR's cell:
+          # A base-side rejection or empty run must not redden the PR's run:
           # whatever rows landed are merged and the table says the rest.
           set +e
           # Cached base .ixe when the restore above hit; else the base run
@@ -617,7 +681,7 @@ jobs:
 
       - name: Upload table
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: table-${{ env.LABEL }}
           path: out/table-${{ env.LABEL }}.md
@@ -631,7 +695,7 @@ jobs:
           echo "::error::ix bench run failed on the PR side (kernel rejection or empty run) — see the 'Run backend on PR' step"
           exit 1
 
-  # Assemble the comment body from the per-cell tables. Deliberately
+  # Assemble the comment body from the per-run tables. Deliberately
   # UNPRIVILEGED: this job checks out and executes PR-derived code (the
   # PR-built `ix bench report`), so it must never share a job with the App
   # token — the posting job below only downloads the finished body as an
@@ -639,7 +703,7 @@ jobs:
   # execution in a privileged workflow).
   assemble:
     needs: [build, benchmark]
-    # Assemble even when benchmark cells failed (the tables carry the ❌
+    # Assemble even when benchmark runs failed (the tables carry the ❌
     # rows); the build job must have produced the binaries.
     if: always() && needs.build.result == 'success'
     # `bench report` is a pure-Lean subcommand (AVX-512 lives only in the
@@ -667,7 +731,7 @@ jobs:
           build: false
           use-github-cache: false
       - name: Download tables
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           path: tables
           pattern: table-*
@@ -677,79 +741,16 @@ jobs:
           SUMMARY: ${{ needs.build.outputs.config-summary }}
           HEAD_SHA: ${{ inputs.head-sha }}
         run: |
-          mkdir -p tables   # absent when no cell uploaded a table
+          mkdir -p tables   # absent when no run uploaded a table
           ix bench report \
             --tables tables --summary "$SUMMARY" \
             --head "$HEAD_SHA" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
             --run-id "${{ github.run_id }}" --out comment-body.md
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: comment-body
           path: comment-body.md
-
-  # Post the initial PR comment the instant the command is parsed: a red-X
-  # diagnostic if the parse/build failed (the same message the final comment
-  # would carry), otherwise a "running" placeholder so the commenter gets
-  # immediate feedback. The `comment` job edits THIS comment in place with
-  # the results at the end (its id is this job's output). Privileged (App
-  # token) like `comment`, and like it runs no checkout and no PR-derived
-  # code — only build's string outputs.
-  announce:
-    needs: build
-    if: always() && github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      comment-id: ${{ steps.post.outputs.comment-id }}
-    steps:
-      # PR-derived strings (parse-error, config-summary) arrive via env, not
-      # inline `${{ }}`; a quoted `echo "$VAR"` never re-evaluates the value,
-      # so a crafted summary can't inject shell (the rule the other jobs
-      # follow).
-      - name: Compose initial body
-        env:
-          BUILD_RESULT: ${{ needs.build.result }}
-          PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
-          SUMMARY: ${{ needs.build.outputs.config-summary }}
-          HEAD_SHA: ${{ inputs.head-sha }}
-        run: |
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          if [ "$BUILD_RESULT" != success ]; then
-            {
-              echo "## ❌ benchmark run failed"
-              if [ -n "$PARSE_ERROR" ]; then
-                echo
-                echo "> $PARSE_ERROR"
-              fi
-              echo
-              echo "[Workflow logs]($RUN_URL)"
-            } > comment-body.md
-          else
-            {
-              echo "## ⏳ Benchmark running…"
-              echo
-              if [ -n "$SUMMARY" ]; then
-                echo "> $SUMMARY"
-                echo
-              fi
-              echo "Benchmarking \`${HEAD_SHA:0:7}\` — this comment will be replaced with the results when the run finishes."
-              echo
-              echo "[Watch progress]($RUN_URL)"
-            } > comment-body.md
-          fi
-      - name: Generate token to write PR comment
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ secrets.TOKEN_APP_ID }}
-          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
-      - name: Post initial comment
-        id: post
-        uses: peter-evans/create-or-update-comment@v5
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          issue-number: ${{ inputs.pr }}
-          body-path: comment-body.md
 
   # Edit the announce comment in place with the assembled body — or a red-X
   # diagnostic when any stage failed (a rejected command or broken run must
@@ -764,12 +765,12 @@ jobs:
       - name: Download comment body
         if: needs.assemble.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: comment-body
       # Any failed stage prepends a red-X header (quoting the parse error
       # when that's the cause) to the report — or replaces it when
-      # assemble produced none. A rejection-reddened cell still shows its
+      # assemble produced none. A rejection-reddened run still shows its
       # tables below the header.
       - name: Note failures
         if: contains(needs.*.result, 'failure') || needs.assemble.result != 'success'
