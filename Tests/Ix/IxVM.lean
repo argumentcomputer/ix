@@ -113,6 +113,31 @@ public inductive Bar1 (α : Type) where
 public inductive DepthM (α : Type) where
   | mk : Bar1 (DepthM α) → Nat → Bar1 (DepthM α) → DepthM α
 
+-- Canonical-aux-order marker driver (the Lean.Json.rec bug shape,
+-- verified failing on the pre-marker kernel): WrapC/WrapI are
+-- same-shaped wrappers over same-shaped containers with different
+-- payloads (Char vs Int). The wraps' aux views tie weak through
+-- sentinels; pre-marker they resolved by the containers' refinement-
+-- class order (payload address), which for this payload pair disagrees
+-- with the compile-side order. Only the trailing identity marker
+-- (ext applied to spec params, external consts by address) recovers
+-- compile order.
+public inductive CellC (α : Type) where
+  | mk : α → Char → CellC α
+
+public inductive CellI (α : Type) where
+  | mk : α → Int → CellI α
+
+public inductive WrapC (α : Type) where
+  | mk : CellC α → WrapC α
+
+public inductive WrapI (α : Type) where
+  | mk : CellI α → WrapI α
+
+public inductive AuxTie where
+  | c : WrapC AuxTie → AuxTie
+  | i : WrapI AuxTie → AuxTie
+
 end IxVMInd
 
 /-! ## Test runners -/
@@ -202,7 +227,7 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.Tree.rec",                                                   4_420_271),
   -- Aux dedup: distinct spec_params on one external inductive (3 motives).
   ("IxVMInd.DedupM",                                                     4_450_073),
-  ("IxVMInd.DedupM.rec",                                                 7_284_018),
+  ("IxVMInd.DedupM.rec",                                                 7_290_244),
   -- Aux dedup de-lift guard: equal spec_params at field depths 0 and 2.
   ("IxVMInd.DepthM",                                                     3_321_184),
   ("IxVMInd.DepthM.rec",                                                 5_739_958),
@@ -211,7 +236,14 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         949_420_819),
   -- Aux recursor with transitively-nested inductives (Syntax → Array Syntax
   -- → List Syntax); shard 53 regression driver.
-  ("Lean.Syntax.rec",                                                    655_636_606),
+  ("Lean.Syntax.rec",                                                    655_639_415),
+  -- Canonical aux order with structurally-distinct exts that tie weak
+  -- through sentinels: the trailing identity marker must decide by
+  -- external address, matching compile order (the Lean.Json.rec bug;
+  -- Json itself is ~68G FFT, far too heavy to pin here). AuxTie is
+  -- verified to fail on the pre-marker kernel.
+  ("IxVMInd.AuxTie",                                                     70_764_688),
+  ("IxVMInd.AuxTie.rec",                                                 79_623_363),
   -- Evaporated-aux canonicalization (Tests/Ix/Compile/Mutual.lean AuxDedup*):
   -- SCC splitting strands `rec_N` auxes whose spec-param inductives moved to
   -- other SCCs; their claims alias the external inductive's recursor

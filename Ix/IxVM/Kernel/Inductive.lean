@@ -14,6 +14,10 @@ validation, universe constraints, strict positivity, recursor synthesis).
 Structure-only validation, no name diagnostics.
 -/
 
+-- The Aiur quotation below is at the elaborator's default recursion
+-- limit; nested-statement chains (dbg!/sord_then continuations) push
+-- past it.
+set_option maxRecDepth 65536 in
 def inductive_check := ⟦
   -- Mirror: src/ix/kernel/inductive.rs:1968-2080 check_ctor_return_type.
   -- Validates that a ctor's declared type, after peeling
@@ -2669,17 +2673,38 @@ def inductive_check := ⟦
                                                     block_param_doms, sbase,
                                                     top, addrs),
                                     ctx, addrs),
-                          aux_view_ctors_cmp(ctors_a, np_a, sp_a, ou_a,
-                                             ctors_b, np_b, sp_b, ou_b,
-                                             aux, block_us, n_block_params,
-                                             block_param_doms, sbase, ctx,
-                                             top, addrs)))),
+                          sord_then(aux_view_ctors_cmp(ctors_a, np_a, sp_a, ou_a,
+                                                       ctors_b, np_b, sp_b, ou_b,
+                                                       aux, block_us, n_block_params,
+                                                       block_param_doms, sbase, ctx,
+                                                       top, addrs),
+                            -- Trailing identity marker (mirror
+                            -- inductive.rs canonical_aux_order): the ext
+                            -- applied to its occurrence universes and spec
+                            -- params, NOT sentinel-rewritten. Distinct exts
+                            -- (or phantom-distinct spec params over one
+                            -- ext) whose field views tie weak through
+                            -- sentinels are ordered strongly here —
+                            -- external consts by address, block-local refs
+                            -- by ctx class. Address-equal spec params still
+                            -- compare Equal and collapse.
+                            compare_kexpr_ctx(
+                              aux_marker_view(ext_a, ou_a, sp_a),
+                              aux_marker_view(ext_b, ou_b, sp_b),
+                              ctx, addrs))))),
                   _ => sord_eq_strong(),
                 },
               _ => sord_eq_strong(),
             },
         },
     }
+  }
+
+  -- The aux's nested-occurrence identity: `Ext spec_params` under the
+  -- occurrence's universe args. Mirror: the synthetic trailing marker
+  -- ctor in inductive.rs canonical_aux_order.
+  fn aux_marker_view(ext_idx: G, ou: List‹KLevel›, sp: List‹KExpr›) -> KExpr {
+    apply_spine(store(KExprNode.Const(ext_idx, ou)), sp)
   }
 
   fn aux_view_ind_ty(ext_ty: KExpr, ext_np: G, sp: List‹KExpr›,
