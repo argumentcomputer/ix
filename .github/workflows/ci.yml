@@ -86,9 +86,9 @@ jobs:
   # zkVM host build + execute gate: do the Zisk/SP1 hosts (and their guest
   # ELFs, via each workspace's build.rs) still compile AND run? rust-test
   # doesn't build these workspaces (special toolchains), and bench-main.yml's
-  # zkvm-execute job — which also runs real executions — tolerates per-constant
-  # failures by design (dropped rows, OOM sentinels), so it never turns red on
-  # a breakage. These jobs are the red-X signal: each builds its host, then
+  # zkVM runs — which also run real executions — tolerate per-constant
+  # failures by design (dropped rows, OOM sentinels), so they never turn red
+  # on a breakage. These jobs are the red-X signal: each builds its host, then
   # runs the guest in the VM over `nataddcomm.ixe` (a ~40-constant closure the
   # lean-test job compiles + caches). They run in parallel with lean-test, each
   # waiting for that cache entry before its execute step. Both hosts exit

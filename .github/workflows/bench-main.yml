@@ -2,34 +2,24 @@ name: Benchmark main
 
 # Benchmarks tracked on Bencher on every push to main, all reusing the one
 # compiled `.ixe` so the compiler runs once. Every measurement is a single
-# `ix bench run` cell (backend × env × mode) — the same orchestrator local
+# `ix bench run` invocation (backend × env × mode) — the same orchestrator local
 # runs and the !benchmark PR workflow use — converted for upload by
-# `ix bench bmf`:
-#   1. compile      — `ix bench run --backend compile`: serialize the Lean env
-#                     to a `.ixe` (compile-throughput metrics) and cache the
-#                     `.ixe`.
-#   2. prove        — restore that `.ixe` (no recompile) and STARK-check selected
-#                     constants over it via bench-typecheck (Aiur execute + prove).
-#   3. zkvm-execute — restore that `.ixe` and execute the same constants through
-#                     the zkVM hosts (deterministic cycle counts +
-#                     time/throughput/RAM; proving needs a GPU, so execute-only).
-#   4. ooc-check    — restore that `.ixe` and run the out-of-circuit Rust kernel
-#                     (the same kernel, out-of-circuit and parallel — far faster)
-#                     over the whole env, tracking throughput.
-#   5. decompile    — restore that `.ixe` and decompile it back to Lean constants
-#                     (the inverse of step 1); tracks decompile-time /
-#                     throughput / peak-rss.
-#   6. aiur-recursive — the aiur-recursive toy
-#                     (bench-recursive-verifier):
-#                     prove fixed tiny statements, run the in-circuit
-#                     multi-stark verifier over each proof, then prove THAT
-#                     execution — the end-to-end recursion cost. Env-independent
-#                     (no `.ixe`), so it needs only the staged binaries.
-# Each job reports to its own bencher testbed/workload so a threshold reset only
-# touches its own measures. `ix bench run` exits 3 when the kernel REJECTS a
-# constant — the red X lands on that step (no output scraping), while the clean
-# rows still upload (`ix bench bmf` drops every non-ok row, so a rejected or
-# OOM'd constant never becomes a bencher data point).
+# `ix bench bmf`. Three stages, mirroring bench-pr.yml:
+#   1. plan      — `ix bench ci matrix` emits the registry's parameter fan-out
+#                  (Ix/Cli/BenchCmd.lean), each combination carrying its testbed,
+#                  workload, and threshold flags.
+#   2. compile   — `ix bench run --backend compile` per env: serialize the
+#                  Lean env to a `.ixe` (compile-throughput metrics) and
+#                  cache the `.ixe` for the runs.
+#   3. benchmark — ONE job per remaining parameter combination: restore the
+#                  `.ixe` and drive its backend over it (aiur STARK-check, zkVM
+#                  execute, out-of-circuit check, decompile, the
+#                  aiur-recursive toy).
+# Each run reports to its own bencher testbed/workload so a threshold reset
+# only touches its own measures. `ix bench run` exits 3 when the kernel
+# REJECTS a constant — the red X lands on that step (no output scraping),
+# while the clean rows still upload (`ix bench bmf` drops every non-ok row,
+# so a rejected or OOM'd constant never becomes a bencher data point).
 
 on:
   push:
@@ -82,10 +72,10 @@ jobs:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
 
-  # Derive the job matrices from the registry (Ix/Cli/BenchCmd.lean)
-  # via `ix bench ci matrix`, so the benched-env / enabled-backend fan-out is
-  # single-sourced instead of hand-copied per job. Runs beside the compile
-  # job; only the downstream matrix jobs wait on it.
+  # Derive the benchmark matrix from the registry (Ix/Cli/BenchCmd.lean)
+  # via `ix bench ci matrix`, so the parameter fan-out and its upload metadata
+  # are single-sourced instead of hand-copied. Runs beside the compile
+  # job; only the benchmark job waits on it.
   plan:
     needs: build
     # `ci matrix` is a pure-Lean subcommand (AVX-512 lives only in the
@@ -94,8 +84,7 @@ jobs:
     # the FFI.
     runs-on: ubuntu-latest
     outputs:
-      bench-envs: ${{ steps.matrix.outputs.bench-envs }}
-      zkvm-cells: ${{ steps.matrix.outputs.zkvm-cells }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/cache/restore@v6
@@ -112,25 +101,27 @@ jobs:
           use-github-cache: false
       - id: matrix
         run: |
-          ix bench ci matrix --kind cells > cells.json
-          cat cells.json
-          # bench-envs: the benched env names — an env name (e.g. InitStd)
-          # is the single identifier: `ix bench run --env`, the `<env>.ixe`
-          # filename, the cache-key suffix, and the env-keyed bencher
-          # benchmark name.
-          # zkvm-cells: the zkVM subset of the cells (zisk today; sp1 comes
-          # back by re-enabling it in the registry).
-          echo "bench-envs=$(jq -c '[.[].env] | unique' cells.json)" >> "$GITHUB_OUTPUT"
-          echo "zkvm-cells=$(jq -c 'map(select(.backend == "zisk" or .backend == "sp1"))' cells.json)" >> "$GITHUB_OUTPUT"
+          ix bench ci matrix > matrix.json
+          cat matrix.json
+          # Every scheduled parameter combination (backend × env × mode), with its
+          # testbed / workload / threshold metadata from the registry. The
+          # compile runs get their own job below (the `.ixe` producers
+          # everything else restores — no intra-matrix ordering on GitHub),
+          # so the benchmark matrix takes the consumers. An env name (e.g.
+          # InitStd) is the single identifier: `ix bench run --env`, the
+          # `<env>.ixe` filename, the cache-key suffix, and the env-keyed
+          # bencher benchmark name.
+          echo "matrix=$(jq -c 'map(select(.backend == "compile" | not))' matrix.json)" >> "$GITHUB_OUTPUT"
 
   # Compile each library env to a `.ixe` and track compile throughput. Caches
-  # the `.ixe` (keyed by sha + env slug) for the prove job to consume.
+  # the `.ixe` (keyed by sha + env slug) for the benchmark runs to consume.
   compile:
     # Explicit names on the matrix jobs: the default would append every
     # matrix value (slugs, flags) to the job title.
     name: compile-${{ matrix.env }}
     needs: build
     runs-on: warp-ubuntu-latest-x64-32x
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -186,97 +177,112 @@ jobs:
           ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
           ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
-      # Gate for the two steps below: is this env benched (registry
-      # `benched: true`)? Derived from the registry via the in-job `ix`
-      # instead of hand-copying the env list into the conditionals.
-      - id: benched
-        name: Is this env benched?
+      # Registry reads for the steps below, all off the same parameter fan-out
+      # the benchmark matrix uses (no hand-copied env lists or upload
+      # metadata):
+      #   consumed — some downstream run restores this env's `.ixe`.
+      #   zkvm     — a zkVM run executes it, so pre-cut its closure shards.
+      #   testbed / workload / thresholds — this env's compile-run upload
+      #   metadata for the bencher-track step.
+      - id: gates
+        name: Read this env's registry metadata
         run: |
-          echo "yes=$(ix bench ci matrix --kind envs \
-            | jq 'index("${{ matrix.env }}") != null')" >> "$GITHUB_OUTPUT"
+          ix bench ci matrix > matrix.json
+          gate() { jq --arg env "${{ matrix.env }}" "[.[] | select($1).env] | index(\$env) >= 0" matrix.json; }
+          echo "consumed=$(gate '.backend == "compile" | not')" >> "$GITHUB_OUTPUT"
+          echo "zkvm=$(gate '.backend == "zisk" or .backend == "sp1"')" >> "$GITHUB_OUTPUT"
+          meta() { jq -r --arg env "${{ matrix.env }}" "first(.[] | select(.backend == \"compile\" and .env == \$env)).$1" matrix.json; }
+          echo "testbed=$(meta testbed)" >> "$GITHUB_OUTPUT"
+          echo "workload=$(meta workload)" >> "$GITHUB_OUTPUT"
+          { echo "thresholds<<EOF"; meta thresholds; echo "EOF"; } >> "$GITHUB_OUTPUT"
       # Pre-cut the zisk closure-shard artifacts for the heavy primaries
       # (`ix shard extract` → `ix profile` → `ix shard`, via `ix bench
-      # shard` — the same code path the zisk cells run lazily when the
+      # shard` — the same code path the zisk runs fall back to when the
       # artifacts are absent). Done here, next to the fresh `.ixe` with
-      # `ix` + the Lean toolchain on hand, so the zkvm job just restores the
-      # dir.
-      - if: steps.benched.outputs.yes == 'true'
+      # `ix` + the Lean toolchain on hand, so the zisk runs just restore
+      # the dir.
+      - if: steps.gates.outputs.zkvm == 'true'
         name: Cut closure shards for heavy primaries
         run: ix bench shard --env ${{ matrix.env }} --ixe ${{ matrix.env }}.ixe
-      # Cache the `.ixe` + closure-shard artifacts for the prove/zkvm jobs
-      # (reused, never regenerated there). Only the benched envs those
-      # consume, to stay under the repo cache limit. NB: every restore of
-      # this key must list the SAME paths — actions/cache versions the entry
-      # by its path list.
-      - if: steps.benched.outputs.yes == 'true'
+      # Cache the `.ixe` (+ closure-shard artifacts where the step above cut
+      # them) for every downstream consumer, reused never regenerated — for a
+      # decompile-only env (Lean/FLT) the `zkshards-*` dir is absent and
+      # simply not stored. NB: every restore of this key must list the SAME
+      # paths — actions/cache versions the entry by its path list.
+      - if: steps.gates.outputs.consumed == 'true'
         uses: actions/cache/save@v6
         with:
           path: |
             ${{ matrix.env }}.ixe
             zkshards-${{ matrix.env }}
           key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
-      # Upload compile metrics. Every measure shares the per-workload baseline
-      # window (data points since the ix-compile reset tag): constants is
-      # deterministic, pinned exactly (0/0); file-size wiggles slightly
-      # run-to-run (the serialized env is not byte-reproducible — worth its
-      # own investigation for a content-addressed store) so it rides a tight
-      # ±1% band instead of a pin; compile-time a 5% upper bound; throughput
-      # a 5% lower bound (its regression is a drop); peak-rss a 10% upper
-      # bound (allocator-noisy, same as the other cells).
+      # Upload compile metrics — testbed / workload / threshold flags all
+      # from its registry matrix entry (bound rationale lives beside `thresholds`
+      # in Ix/Cli/BenchCmd.lean). Every measure shares the per-workload
+      # baseline window (data points since the workload's reset tag).
       - uses: ./.github/actions/bencher-track
         with:
-          testbed: ix-compile-x64-32x
-          workload: ix-compile
+          testbed: ${{ steps.gates.outputs.testbed }}
+          workload: ${{ steps.gates.outputs.workload }}
           file: benchmark.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          thresholds: |
-            --threshold-measure compile-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
-            --threshold-lower-boundary _
-            --threshold-measure throughput --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
-            --threshold-lower-boundary 0.05
-            --threshold-measure file-size --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.01
-            --threshold-lower-boundary 0.01
-            --threshold-measure constants --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
-            --threshold-measure peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
+          thresholds: ${{ steps.gates.outputs.thresholds }}
 
-  # Restore each matrix job's `.ixe` from the cache and run the Aiur execute +
-  # Aiur benchmark over the primary constants, one cell per mode, each on
-  # its own testbed (they share measure names — peak-rss, throughput —
-  # that mean that mode's phase, and a `!benchmark aiur [execute]` PR cell
-  # always finds a cached baseline this way):
-  #   - `prove` — the real-workload simulation: the full STARK prove under
-  #     the RAM watchdog, with per-constant subprocess isolation and a
-  #     `status: oom` row (keeping any Phase-1 metrics flushed before the
-  #     kill) for a too-large prove.
-  #   - `execute` — the fast Phase-1-only signal (witness generation).
-  # No compiler run here: `--ixe` points at the cached
-  # `.ixe`.
-  aiur:
-    name: aiur-${{ matrix.bench }}-${{ matrix.mode }}
+  # ONE job per remaining parameter combination (backend × env × mode),
+  # mirroring bench-pr.yml's single benchmark job: each combination's label,
+  # testbed, workload, and threshold flags all ride in its matrix entry, so
+  # no backend has bespoke steps here beyond the zkVM toolchain installs.
+  # Restores the compile job's cached `.ixe` — no recompile. Backend notes:
+  #   - aiur prove is the real-workload simulation (full STARK prove under
+  #     the RAM watchdog, per-constant subprocess isolation, `status: oom`
+  #     rows for a too-large prove); aiur execute is the fast Phase-1-only
+  #     signal. Separate testbeds share measure names (peak-rss,
+  #     throughput) meaning that mode's phase, so a `!benchmark aiur
+  #     [execute]` PR run always finds a cached baseline.
+  #   - zisk executes the same constants through the zkVM host
+  #     (deterministic cycle counts; proving needs a GPU, so execute-only),
+  #     reusing the pre-cut zkshards-<env>/ artifacts; `ix bench run`
+  #     builds the Rust host itself.
+  #   - ooc runs the same kernel out-of-circuit and in parallel (far
+  #     faster), one whole-env row plus one full-closure row per primary.
+  #   - decompile is the inverse of compile; deep roundtrip fidelity is
+  #     gated by the canonical checks (`ix validate` / roundtrip tests),
+  #     not measured here.
+  #   - aiur-recursive proves fixed tiny statements and the in-circuit
+  #     multi-stark verifier over each proof, then proves THAT execution —
+  #     env-independent, its run env is only the (already-cached)
+  #     `.ixe`-restore key.
+  benchmark:
+    name: ${{ matrix.params.label }}
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
+    # `ix bench run` persists completed rows incrementally, so even a
+    # job-level timeout keeps them on disk, but the bencher upload needs
+    # the job alive.
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
-        mode: [execute, prove]
+        params: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
+      # The zkVM runs build their Rust host in-run; the rest run staged
+      # binaries only. (Restore an install-sp1 step here when sp1 is
+      # re-enabled in the registry.)
+      - if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-workspaces: ${{ matrix.params.backend }}
+      - name: Install Zisk
+        if: matrix.params.backend == 'zisk'
+        uses: ./.github/actions/install-zisk
       - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-      # Provision the toolchain so the bench-typecheck binary finds libleanshared
+      # Provision the toolchain so the staged binaries find libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and
       # parallel matrix jobs share a key and would race the cache save.
       - uses: leanprover/lean-action@v1
@@ -284,416 +290,49 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      # Pull the `.ixe` the compile job built — do NOT recompile it here.
-      # (The path list must match the compile job's save exactly.)
+      # Pull the `.ixe` (+ any pre-cut closure shards) the compile job
+      # built — do NOT recompile here. (The path list must match the
+      # compile job's save exactly.)
       - uses: actions/cache/restore@v6
         with:
           path: |
-            ${{ matrix.bench }}.ixe
-            zkshards-${{ matrix.bench }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
+            ${{ matrix.params.env }}.ixe
+            zkshards-${{ matrix.params.env }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.params.env }}
           fail-on-cache-miss: true
-      # Exit 3 = the kernel REJECTED a constant (a correctness regression, not
-      # a benchmark blip): the job reddens right here, with the rows on disk
-      # for the upload below.
-      - name: Run Aiur typecheck benchmark
-        run: |
-          ix bench run --backend aiur --env ${{ matrix.bench }} \
-            --mode ${{ matrix.mode }} --ixe ${{ matrix.bench }}.ixe --out bench.json
-      # Upload whatever clean rows exist even when the run step reddened the
-      # job — bmf drops every non-ok row, so a rejected or OOM'd constant
-      # never reaches bencher.
-      - name: Convert to Bencher Metric Format
-        id: bmf
-        if: ${{ !cancelled() }}
-        run: |
-          ix bench bmf --in bench.json --out aiur.json
-          cat aiur.json
-      # Upload Aiur metrics. Every measure shares the per-workload baseline
-      # window (data points since the workload's reset tag). constants is
-      # deterministic → pinned exactly (0/0). fft-cost is deterministic but
-      # only ever drops on a real Aiur win, so it rides an upper-only 5%
-      # bound (flag a regression, let wins through) rather than a hard pin.
-      # The wall-clock/RAM/rate measures ride percentage bounds; peak-rss
-      # and throughput are phase-scoped by the CELL (execute vs prove
-      # testbed), and prove-time/verify-time/proof-size exist only on the
-      # prove testbed — a threshold naming an absent measure just sits
-      # empty there. The per-phase `phase-<span>` measures (witness gen,
-      # stage commits, quotient, …) are uploaded for trend visibility but
-      # intentionally left un-thresholded (noisy and dynamically named;
-      # the PR-comment drill-down does the phase-level comparison).
-      - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
-        with:
-          testbed: aiur-check-${{ matrix.mode }}-x64-32x
-          workload: aiur-check-${{ matrix.mode }}
-          file: aiur.json
-          key: ${{ secrets.BENCHER_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          thresholds: |
-            --threshold-measure constants --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
-            --threshold-measure fft-cost --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
-            --threshold-lower-boundary _
-            --threshold-measure prove-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure verify-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure proof-size --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
-            --threshold-lower-boundary _
-            --threshold-measure execute-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure throughput --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
-            --threshold-lower-boundary 0.10
-
-  # The aiur-recursive toy cell (`ix bench run --backend
-  # aiur-recursive`):
-  # bench-recursive-verifier proves each fixed config's tiny statement, runs
-  # the in-circuit multi-stark verifier over the proof, then proves that
-  # execution — uploading the recursion-cost trend to its own testbed.
-  # Env-independent: no `.ixe`, no compile job — just the staged binaries
-  # and the toolchain (libleanshared). A config whose outer prove exceeds
-  # the watchdog ceiling lands as a `status: oom` row that bmf drops,
-  # keeping that row off bencher.
-  aiur-recursive:
-    name: aiur-recursive-prove
-    needs: build
-    runs-on: warp-ubuntu-latest-x64-32x
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/cache/restore@v6
-        with:
-          path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-          use-github-cache: false
-      - name: Run aiur-recursive benchmark
-        run: ix bench run --backend aiur-recursive --out bench.json
-      - name: Convert to Bencher Metric Format
-        id: bmf
-        if: ${{ !cancelled() }}
-        run: |
-          ix bench bmf --in bench.json --out aiur-recursive-bmf.json
-          cat aiur-recursive-bmf.json
-      # recursive-fft-cost drifts ~±15% run-to-run (the parallel prover
-      # emits byte-different valid proofs, so the verifier authenticates
-      # different Merkle paths), hence the loose 25% bound; the proof
-      # sizes are structural (fixed query count and path depth) and ride
-      # the tight 5% bound like aiur's; wall-clock/RAM ride the standard
-      # 10% percentage bounds.
-      - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
-        with:
-          testbed: aiur-recursive-x64-32x
-          workload: aiur-recursive
-          file: aiur-recursive-bmf.json
-          key: ${{ secrets.BENCHER_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          thresholds: |
-            --threshold-measure recursive-fft-cost --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.25
-            --threshold-lower-boundary _
-            --threshold-measure recursive-execute-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure recursive-prove-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure recursive-verify-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure recursive-peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure recursive-proof-size --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
-            --threshold-lower-boundary _
-            --threshold-measure prove-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure proof-size --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
-            --threshold-lower-boundary _
-            --threshold-measure verify-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-
-  # Execute the same constants through the zkVM hosts and track cycles /
-  # execute-time / throughput / peak-rss (and shards / max-shard-cycles
-  # for the closure-sharded heavy primaries). Reuses the compile job's cached
-  # `.ixe` + pre-cut zkshards-<env>/ artifacts; `ix bench run` builds the Rust
-  # host itself and runs each heavy primary as its shard-manifest partition
-  # when the artifacts are present. zkVM proving needs a GPU (absent here), so
-  # this is execute-only. `ix` orchestrates the cell, so the staged binaries +
-  # Lean toolchain (libleanshared) are restored here too.
-  zkvm-execute:
-    name: ${{ matrix.cell.backend }}-${{ matrix.cell.env }}-execute
-    needs: [compile, plan]
-    runs-on: warp-ubuntu-latest-x64-32x
-    # Per-constant loop (heavy primaries ride the RAM watchdog to OOM rows) —
-    # `ix bench run` persists completed rows incrementally, so even a job-level
-    # timeout would keep them on disk, but the bencher upload needs the job
-    # alive.
-    timeout-minutes: 150
-    strategy:
-      fail-fast: false
-      matrix:
-        # Enabled zkVM backends × benched envs, from the registry. sp1 is
-        # disabled in the registry (execute too slow for a per-push job);
-        # re-enabling it there restores its cells — also restore an
-        # `if: matrix.cell.backend == 'sp1'` install-sp1 step then.
-        cell: ${{ fromJson(needs.plan.outputs.zkvm-cells) }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          cache-workspaces: ${{ matrix.cell.backend }}
-      - name: Install Zisk
-        if: matrix.cell.backend == 'zisk'
-        uses: ./.github/actions/install-zisk
-      - uses: actions/cache/restore@v6
-        with:
-          path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-      # Provision the toolchain so `ix` finds libleanshared (no package build).
-      - uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-          use-github-cache: false
-      # Pull the `.ixe` + the pre-cut closure-shard artifacts the compile job
-      # built — `--ixe` means no recompile, and `ix bench run` skips
-      # re-cutting shards it finds in zkshards-<env>/.
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            ${{ matrix.cell.env }}.ixe
-            zkshards-${{ matrix.cell.env }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.cell.env }}
-          fail-on-cache-miss: true
-      # Exit 3 = kernel rejection → red X here; clean rows still upload below.
-      - name: Run ${{ matrix.cell.backend }} execute benchmark
+      # Exit 3 = the kernel REJECTED a constant (a correctness regression,
+      # not a benchmark blip): the job reddens right here, with the rows on
+      # disk for the upload below.
+      - name: Run ${{ matrix.params.label }} benchmark
         run: |
           # ZisK's ASM microservices mmap with MAP_LOCKED: raise the memlock
           # hard limit in this shell so the tools `ix bench run` spawns
           # inherit it.
-          if [ "${{ matrix.cell.backend }}" = zisk ]; then
+          if [ "${{ matrix.params.backend }}" = zisk ]; then
             sudo prlimit --pid $$ --memlock=unlimited:unlimited
           fi
-          ix bench run --backend ${{ matrix.cell.backend }} \
-            --env ${{ matrix.cell.env }} --mode execute \
-            --ixe ${{ matrix.cell.env }}.ixe --out bench.json
+          ix bench run --backend ${{ matrix.params.backend }} \
+            --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }} \
+            --ixe ${{ matrix.params.env }}.ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
-      # job — bmf drops every non-ok row.
+      # job — bmf drops every non-ok (rejected/oom) row, so those never
+      # reach bencher.
       - name: Convert to Bencher Metric Format
         id: bmf
         if: ${{ !cancelled() }}
         run: |
           ix bench bmf --in bench.json --out bench-bmf.json
           cat bench-bmf.json
-      # constants is deterministic and a drop means lost coverage → pinned
-      # (0/0), like the aiur/ooc/compile cells. cycles / shards /
-      # max-shard-cycles are deterministic per guest ELF, but a real guest /
-      # packer improvement legitimately drops them — upper-only 0% bound
-      # (flag regressions, let wins through), like `fft-cost` on the aiur
-      # job. execute-time / peak-rss / throughput are noisy wall-clock →
-      # percentage bounds (throughput's regression is a drop).
+      # Upload the run's metrics under its registry testbed/workload; the
+      # threshold flags (and their bound rationale) live beside the backend
+      # in Ix/Cli/BenchCmd.lean. Every measure shares the per-workload
+      # baseline window (data points since the workload's reset tag).
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
         with:
-          testbed: ${{ matrix.cell.backend }}-check-${{ matrix.cell.mode }}-x64-32x
-          workload: ${{ matrix.cell.backend }}-check-${{ matrix.cell.mode }}
+          testbed: ${{ matrix.params.testbed }}
+          workload: ${{ matrix.params.workload }}
           file: bench-bmf.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          thresholds: |
-            --threshold-measure constants --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
-            --threshold-measure cycles --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary _
-            --threshold-measure shards --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary _
-            --threshold-measure max-shard-cycles --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary _
-            --threshold-measure execute-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure throughput --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
-            --threshold-lower-boundary 0.10
-
-  # Out-of-circuit Rust kernel typecheck — the same kernel as the zkVM guest,
-  # but run out-of-circuit and in parallel, so far faster than proving.
-  # `ix bench run --backend ooc` checks the whole env (one row keyed by the
-  # env slug) plus one full-closure row per primary constant, for an
-  # apples-to-apples baseline next to the zkVM cells. Reuses the compile job's
-  # cached `.ixe` and the staged `ix` binary — no recompile.
-  ooc-check:
-    name: ooc-${{ matrix.bench }}
-    needs: [compile, plan]
-    runs-on: warp-ubuntu-latest-x64-32x
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/cache/restore@v6
-        with:
-          path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-      # Provision the toolchain so `ix` finds libleanshared (no package build).
-      - uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-          use-github-cache: false
-      # (The path list must match the compile job's save exactly.)
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            ${{ matrix.bench }}.ixe
-            zkshards-${{ matrix.bench }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
-          fail-on-cache-miss: true
-      # Exit 3 = kernel rejection → red X here; clean rows still upload below.
-      - name: Run out-of-circuit kernel check
-        run: |
-          ix bench run --backend ooc --env ${{ matrix.bench }} --mode execute \
-            --ixe ${{ matrix.bench }}.ixe --out bench.json
-      # Upload whatever clean rows exist even when the run step reddened the
-      # job — bmf drops every non-ok row.
-      - name: Convert to Bencher Metric Format
-        id: bmf
-        if: ${{ !cancelled() }}
-        run: |
-          ix bench bmf --in bench.json --out bench-bmf.json
-          cat bench-bmf.json
-      # constants is deterministic → pinned (0/0); check-time / throughput /
-      # peak-rss are noisy parallel wall-clock → percentage bounds.
-      - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
-        with:
-          testbed: ooc-check-x64-32x
-          workload: ooc-check
-          file: bench-bmf.json
-          key: ${{ secrets.BENCHER_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          thresholds: |
-            --threshold-measure constants --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
-            --threshold-measure check-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure throughput --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
-            --threshold-lower-boundary 0.10
-            --threshold-measure peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-
-  # Decompile — the inverse of compile. Restore the compile job's cached
-  # `.ixe` and decompile it back to Lean constants. One env-keyed row per
-  # benched env, mirroring the `compile` cell. A malformed decompile exits
-  # nonzero and reddens this step; deep roundtrip fidelity is gated by the
-  # canonical checks (`ix validate` / roundtrip tests), not measured here. No
-  # compiler or Lean toolchain build — `ix decompile` is a Rust FFI pass over
-  # the cached `.ixe`, so this reuses the staged `ix` binary like ooc-check.
-  decompile:
-    name: decompile-${{ matrix.bench }}
-    needs: [compile, plan]
-    runs-on: warp-ubuntu-latest-x64-32x
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/cache/restore@v6
-        with:
-          path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-      # Provision the toolchain so `ix` finds libleanshared (no package build).
-      - uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-          use-github-cache: false
-      # (The path list must match the compile job's save exactly.)
-      - uses: actions/cache/restore@v6
-        with:
-          path: |
-            ${{ matrix.bench }}.ixe
-            zkshards-${{ matrix.bench }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
-          fail-on-cache-miss: true
-      # A malformed decompile exits nonzero → red X here; a clean run's row
-      # uploads below.
-      - name: Run decompile benchmark
-        run: |
-          ix bench run --backend decompile --env ${{ matrix.bench }} --mode execute \
-            --ixe ${{ matrix.bench }}.ixe --out bench.json
-      # Upload whatever clean rows exist even when the run step reddened the
-      # job — bmf drops every non-ok (rejected/oom) row.
-      - name: Convert to Bencher Metric Format
-        id: bmf
-        if: ${{ !cancelled() }}
-        run: |
-          ix bench bmf --in bench.json --out bench-bmf.json
-          cat bench-bmf.json
-      # constants is deterministic → pinned (0/0); decompile-time / throughput
-      # / peak-rss are noisy wall-clock → percentage bounds. file-size (the
-      # input `.ixe`) duplicates the compile cell's, so it uploads for the
-      # row's completeness but rides no threshold here.
-      - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
-        with:
-          testbed: ix-decompile-x64-32x
-          workload: ix-decompile
-          file: bench-bmf.json
-          key: ${{ secrets.BENCHER_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          thresholds: |
-            --threshold-measure constants --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
-            --threshold-measure decompile-time --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
-            --threshold-measure throughput --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
-            --threshold-lower-boundary 0.10
-            --threshold-measure peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
+          thresholds: ${{ matrix.params.thresholds }}
