@@ -256,6 +256,20 @@ lean_ffi::lean_inductive! {
   LeanAiurToplevel [ { num_obj: 2 } ];
   LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
 
+  // Aiur FFI result structures (`Ix/Aiur/Semantics/BytecodeFfi.lean`,
+  // `Ix/Aiur/Protocol.lean`). `IOBuffer` hashmaps cross the boundary as
+  // flat `ioData`/`ioMap` arrays; Lean folds them back into hashmaps.
+  // idx, len
+  LeanAiurIOKeyInfo      [ { num_obj: 2 } ];
+  // uniqueRows, totalHits
+  LeanAiurQueryCount     [ { num_obj: 2 } ];
+  // output, ioData, ioMap, queryCounts
+  LeanAiurExecuteResult  [ { num_obj: 4 } ];
+  // claim, proof, ioData, ioMap
+  LeanAiurProveResult    [ { num_obj: 4 } ];
+  // claimBytes, proof, ioData, ioMap
+  LeanAiurProveEnvResult [ { num_obj: 4 } ];
+
   // --- Block / comparison types ---
 
   LeanIxBlockCompareResult [

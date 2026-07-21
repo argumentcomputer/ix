@@ -13,7 +13,9 @@ use lean_ffi::object::{
 use crate::{
   aiur::{lean_unbox_g, lean_unbox_nat_as_usize, toplevel::decode_toplevel},
   lean::{
-    LeanAiurCommitmentParameters, LeanAiurFriParameters, LeanAiurToplevel,
+    LeanAiurCommitmentParameters, LeanAiurExecuteResult, LeanAiurFriParameters,
+    LeanAiurIOKeyInfo, LeanAiurProveEnvResult, LeanAiurProveResult,
+    LeanAiurQueryCount, LeanAiurToplevel,
   },
 };
 use aiur::{
@@ -100,9 +102,7 @@ extern "C" fn rs_aiur_system_verify(
 }
 
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
-/// `Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array (Nat × Nat))`.
-/// The trailing `Array (Nat × Nat)` is one `(uniqueRows, totalHits)` pair per
-/// function circuit followed by one per memory size.
+/// `Except String ExecuteResult` (see `Ix/Aiur/Semantics/BytecodeFfi.lean`).
 /// On execution failure (e.g. assertion mismatch from a typechecker
 /// rejecting a constant), returns `Except.error msg` instead of panicking
 /// — letting Lean test runners (`KernelArena.lean`) classify failures.
@@ -127,48 +127,12 @@ extern "C" fn rs_aiur_toplevel_execute(
     Err(err) => return LeanExcept::error_string(&err.to_string()),
   };
 
-  // Build per-circuit (unique_rows, total_hits) pairs:
-  // one per function, then one per memory size. `unique_rows` is the trace
-  // height (number of distinct queries); `total_hits` is the sum of
-  // multiplicities (how often those rows were hit).
-  let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
-    query_record.function_queries.len() + toplevel.memory_sizes.len(),
-  );
-  let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
-    let mut rows = 0usize;
-    let mut hits = 0usize;
-    for (_, res) in q.iter() {
-      let m = usize::try_from(res.multiplicity.as_canonical_u64())
-        .expect("multiplicity exceeds usize");
-      if m != 0 {
-        rows += 1;
-        hits += m;
-      }
-    }
-    (rows, hits)
-  };
-  for queries in &query_record.function_queries {
-    query_counts.push(summarize(queries));
-  }
-  for size in &toplevel.memory_sizes {
-    let pair = query_record.memory_queries.get(size).map_or((0, 0), summarize);
-    query_counts.push(pair);
-  }
-  let lean_query_counts = {
-    let arr = LeanArray::alloc(query_counts.len());
-    for (i, &(rows, hits)) in query_counts.iter().enumerate() {
-      let pair =
-        LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
-      arr.set(i, pair);
-    }
-    arr
-  };
-
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  // (Array G, (Array G × Array (Array G × IOKeyInfo), Array (Nat × Nat)))
-  let io_counts = LeanProd::new(lean_io, lean_query_counts);
-  let result = LeanProd::new(build_g_array(&output), io_counts);
-  LeanExcept::ok(result)
+  LeanExcept::ok(build_execute_result(
+    &output,
+    &io_buffer,
+    &query_record,
+    &toplevel,
+  ))
 }
 
 /// `Bytecode.Toplevel.executeIxVM`: same shape as `rs_aiur_toplevel_execute`,
@@ -202,48 +166,16 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
       Err(err) => return LeanExcept::error_string(&err.to_string()),
     };
 
-  // Same query-count summarisation as `rs_aiur_toplevel_execute`.
-  let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
-    query_record.function_queries.len() + toplevel.memory_sizes.len(),
-  );
-  let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
-    let mut rows = 0usize;
-    let mut hits = 0usize;
-    for (_, res) in q.iter() {
-      let m = usize::try_from(res.multiplicity.as_canonical_u64())
-        .expect("multiplicity exceeds usize");
-      if m != 0 {
-        rows += 1;
-        hits += m;
-      }
-    }
-    (rows, hits)
-  };
-  for queries in &query_record.function_queries {
-    query_counts.push(summarize(queries));
-  }
-  for size in &toplevel.memory_sizes {
-    let pair = query_record.memory_queries.get(size).map_or((0, 0), summarize);
-    query_counts.push(pair);
-  }
-  let lean_query_counts = {
-    let arr = LeanArray::alloc(query_counts.len());
-    for (i, &(rows, hits)) in query_counts.iter().enumerate() {
-      let pair =
-        LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
-      arr.set(i, pair);
-    }
-    arr
-  };
-
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  let io_counts = LeanProd::new(lean_io, lean_query_counts);
-  let result = LeanProd::new(build_g_array(&output), io_counts);
-  LeanExcept::ok(result)
+  LeanExcept::ok(build_execute_result(
+    &output,
+    &io_buffer,
+    &query_record,
+    &toplevel,
+  ))
 }
 
-/// `AiurSystem.prove`: runs the prover and returns
-/// `Array G × Proof × Array G × Array (Array G × IOKeyInfo)`
+/// `AiurSystem.prove`: runs the prover and returns a `ProveResult`
+/// (see `Ix/Aiur/Protocol.lean`).
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -251,7 +183,7 @@ extern "C" fn rs_aiur_system_prove(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
-) -> LeanOwned {
+) -> LeanAiurProveResult<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let args = args.map(|x| lean_unbox_g(&x));
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
@@ -259,14 +191,7 @@ extern "C" fn rs_aiur_system_prove(
   let (claim, proof) =
     aiur_system_obj.get().prove(fun_idx, &args, &mut io_buffer);
 
-  let lean_proof: LeanOwned =
-    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  // Proof × Array G × Array (Array G × IOKeyInfo)
-  let proof_io_tuple = LeanProd::new(lean_proof, lean_io);
-  // Array G × Proof × Array G × Array (Array G × IOKeyInfo)
-  let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
-  result.into()
+  build_prove_result(&claim, proof, &io_buffer)
 }
 
 // =============================================================================
@@ -313,9 +238,9 @@ extern "C" fn rs_aiur_env_handle_from_bytes(
 }
 
 /// Helper: summarise one execute's `QueryRecord` into a Lean
-/// `Array (Nat × Nat)` of `(unique_rows, total_hits)` pairs, one per
-/// function circuit followed by one per memory size. Mirrors the
-/// summary code used by every check/prove FFI.
+/// `Array QueryCount` of `(uniqueRows, totalHits)` structures, one per
+/// function circuit followed by one per memory size. Used by every
+/// check/prove FFI.
 fn build_query_counts_array(
   query_record: &QueryRecord,
   toplevel: &aiur::bytecode::Toplevel,
@@ -345,11 +270,60 @@ fn build_query_counts_array(
   }
   let arr = LeanArray::alloc(query_counts.len());
   for (i, &(rows, hits)) in query_counts.iter().enumerate() {
-    let pair =
-      LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
-    arr.set(i, pair);
+    let qc = LeanAiurQueryCount::alloc(0);
+    qc.set_obj(0, LeanOwned::box_usize(rows));
+    qc.set_obj(1, LeanOwned::box_usize(hits));
+    arr.set(i, qc);
   }
   arr
+}
+
+/// Helper: build a Lean `ExecuteResult` (output, ioData, ioMap,
+/// queryCounts) — the return shape shared by every execute/check FFI.
+fn build_execute_result(
+  output: &[G],
+  io_buffer: &IOBuffer,
+  query_record: &QueryRecord,
+  toplevel: &aiur::bytecode::Toplevel,
+) -> LeanAiurExecuteResult<LeanOwned> {
+  let result = LeanAiurExecuteResult::alloc(0);
+  result.set_obj(0, build_g_array(output));
+  result.set_obj(1, build_lean_io_data(io_buffer));
+  result.set_obj(2, build_lean_io_map(io_buffer));
+  result.set_obj(3, build_query_counts_array(query_record, toplevel));
+  result
+}
+
+/// Helper: build a Lean `ProveResult` (claim, proof, ioData, ioMap).
+fn build_prove_result(
+  claim: &[G],
+  proof: AiurProof,
+  io_buffer: &IOBuffer,
+) -> LeanAiurProveResult<LeanOwned> {
+  let result = LeanAiurProveResult::alloc(0);
+  result.set_obj(0, build_g_array(claim));
+  result.set_obj(1, LeanExternal::alloc(&AIUR_PROOF_CLASS, proof));
+  result.set_obj(2, build_lean_io_data(io_buffer));
+  result.set_obj(3, build_lean_io_map(io_buffer));
+  result
+}
+
+/// Helper: build a Lean `ProveEnvResult` (claimBytes, proof, ioData,
+/// ioMap) — the claim's wire bytes are serialized via
+/// `ixon::Claim::put` so Lean can deserialize directly.
+fn build_prove_env_result(
+  claim: &ixon::proof::Claim,
+  proof: AiurProof,
+  io_buffer: &IOBuffer,
+) -> LeanAiurProveEnvResult<LeanOwned> {
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let result = LeanAiurProveEnvResult::alloc(0);
+  result.set_obj(0, LeanByteArray::from_bytes(&claim_bytes));
+  result.set_obj(1, LeanExternal::alloc(&AIUR_PROOF_CLASS, proof));
+  result.set_obj(2, build_lean_io_data(io_buffer));
+  result.set_obj(3, build_lean_io_map(io_buffer));
+  result
 }
 
 /// Helper: decode a 32-byte address from a `LeanByteArray`.
@@ -463,11 +437,12 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
     Err(e) => return LeanExcept::error_string(&e),
   };
 
-  let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  let io_counts = LeanProd::new(lean_io, lean_query_counts);
-  let result = LeanProd::new(build_g_array(&output), io_counts);
-  LeanExcept::ok(result)
+  LeanExcept::ok(build_execute_result(
+    &output,
+    &io_buffer,
+    &query_record,
+    &toplevel,
+  ))
 }
 
 /// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
@@ -513,18 +488,19 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
     Err(e) => return LeanExcept::error_string(&e),
   };
 
-  let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  let io_counts = LeanProd::new(lean_io, lean_query_counts);
-  let result = LeanProd::new(build_g_array(&output), io_counts);
-  LeanExcept::ok(result)
+  LeanExcept::ok(build_execute_result(
+    &output,
+    &io_buffer,
+    &query_record,
+    &toplevel,
+  ))
 }
 
 /// `AiurSystem.proveAddrWithEnv`: per-claim prove against a
-/// Rust-owned `EnvHandle`. Returns `(claim_bytes, proof, ioBuffer)`
-/// — the claim's wire bytes are serialized via `ixon::Claim::put`
-/// so Lean can deserialize directly into `Ix.Claim` without
-/// reconstructing it from the target addr.
+/// Rust-owned `EnvHandle`. Returns a `ProveEnvResult` — the claim's
+/// wire bytes are serialized via `ixon::Claim::put` so Lean can
+/// deserialize directly into `Ix.Claim` without reconstructing it
+/// from the target addr.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove_addr_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -558,20 +534,12 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
     ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
   );
 
-  let mut claim_bytes: Vec<u8> = Vec::new();
-  claim.put(&mut claim_bytes);
-  let lean_claim_bytes = LeanByteArray::from_bytes(&claim_bytes);
-  let lean_proof: LeanOwned =
-    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  let proof_io = LeanProd::new(lean_proof, lean_io);
-  let result = LeanProd::new(lean_claim_bytes, proof_io);
-  LeanExcept::ok(result)
+  LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
 }
 
 /// `AiurSystem.shardProveWithEnv`: per-shard prove against a
-/// Rust-owned `EnvHandle`. Same `(claim_bytes, proof, ioBuffer)`
-/// return shape as `proveAddrWithEnv`.
+/// Rust-owned `EnvHandle`. Same `ProveEnvResult` return shape as
+/// `proveAddrWithEnv`.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_shard_prove_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -606,15 +574,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
   );
 
-  let mut claim_bytes: Vec<u8> = Vec::new();
-  claim.put(&mut claim_bytes);
-  let lean_claim_bytes = LeanByteArray::from_bytes(&claim_bytes);
-  let lean_proof: LeanOwned =
-    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  let proof_io = LeanProd::new(lean_proof, lean_io);
-  let result = LeanProd::new(lean_claim_bytes, proof_io);
-  LeanExcept::ok(result)
+  LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
 }
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
@@ -629,7 +589,7 @@ extern "C" fn rs_aiur_system_prove_ixvm(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
-) -> LeanOwned {
+) -> LeanAiurProveResult<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let args = args.map(|x| lean_unbox_g(&x));
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
@@ -641,12 +601,7 @@ extern "C" fn rs_aiur_system_prove_ixvm(
     ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
   );
 
-  let lean_proof: LeanOwned =
-    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
-  let lean_io = build_lean_io_buffer(&io_buffer);
-  let proof_io_tuple = LeanProd::new(lean_proof, lean_io);
-  let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
-  result.into()
+  build_prove_result(&claim, proof, &io_buffer)
 }
 
 /// `Bytecode.Toplevel.executeMultiStark`: run the MultiStark recursive
@@ -764,38 +719,34 @@ fn decode_io_buffer(
   IOBuffer { data, map }
 }
 
-/// Build a Lean
-/// `Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)` from an
-/// `IOBuffer`. The first array enumerates per-channel data arenas;
-/// the second is the channel-keyed info map.
-fn build_lean_io_buffer(io_buffer: &IOBuffer) -> LeanOwned {
-  let lean_io_data = {
-    let arr = LeanArray::alloc(io_buffer.data.len());
-    for (i, (channel, arena)) in io_buffer.data.iter().enumerate() {
-      let channel_box = LeanOwned::box_u64(channel.as_canonical_u64());
-      let arena_arr = build_g_array(arena);
-      let elt = LeanProd::new(channel_box, arena_arr);
-      arr.set(i, elt);
-    }
-    arr
-  };
-  let lean_io_map = {
-    let arr = LeanArray::alloc(io_buffer.map.len());
-    for (i, ((channel, key), info)) in io_buffer.map.iter().enumerate() {
-      let channel_box = LeanOwned::box_u64(channel.as_canonical_u64());
-      let key_arr = build_g_array(key);
-      let channel_key = LeanProd::new(channel_box, key_arr);
-      let key_info = LeanProd::new(
-        LeanOwned::box_usize(info.idx),
-        LeanOwned::box_usize(info.len),
-      );
-      let map_elt = LeanProd::new(channel_key, key_info);
-      arr.set(i, map_elt);
-    }
-    arr
-  };
-  let io_tuple = LeanProd::new(lean_io_data, lean_io_map);
-  io_tuple.into()
+/// Build a Lean `Array (G × Array G)` enumerating the per-channel
+/// data arenas of an `IOBuffer`.
+fn build_lean_io_data(io_buffer: &IOBuffer) -> LeanArray<LeanOwned> {
+  let arr = LeanArray::alloc(io_buffer.data.len());
+  for (i, (channel, arena)) in io_buffer.data.iter().enumerate() {
+    let channel_box = LeanOwned::box_u64(channel.as_canonical_u64());
+    let arena_arr = build_g_array(arena);
+    let elt = LeanProd::new(channel_box, arena_arr);
+    arr.set(i, elt);
+  }
+  arr
+}
+
+/// Build a Lean `Array ((G × Array G) × IOKeyInfo)` enumerating the
+/// channel-keyed info map of an `IOBuffer`.
+fn build_lean_io_map(io_buffer: &IOBuffer) -> LeanArray<LeanOwned> {
+  let arr = LeanArray::alloc(io_buffer.map.len());
+  for (i, ((channel, key), info)) in io_buffer.map.iter().enumerate() {
+    let channel_box = LeanOwned::box_u64(channel.as_canonical_u64());
+    let key_arr = build_g_array(key);
+    let channel_key = LeanProd::new(channel_box, key_arr);
+    let key_info = LeanAiurIOKeyInfo::alloc(0);
+    key_info.set_obj(0, LeanOwned::box_usize(info.idx));
+    key_info.set_obj(1, LeanOwned::box_usize(info.len));
+    let map_elt = LeanProd::new(channel_key, key_info);
+    arr.set(i, map_elt);
+  }
+  arr
 }
 
 fn decode_commitment_parameters(

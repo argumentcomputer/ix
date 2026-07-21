@@ -47,6 +47,14 @@ def IOBuffer.extend (ioBuffer : IOBuffer) (channel : G) (key data : Array G) :
     data := ioBuffer.data.insert channel (arena ++ data)
     map := ioBuffer.map.insert (channel, key) { idx, len } }
 
+/-- Rebuild an `IOBuffer` from the flat arrays produced by the Rust FFI.
+Hashmaps don't cross the FFI boundary; Rust returns arrays and the
+hashmaps are populated here. -/
+def IOBuffer.ofArrays (data : Array (G × Array G))
+    (map : Array ((G × Array G) × IOKeyInfo)) : IOBuffer :=
+  ⟨data.foldl (fun acc (k, v) => acc.insert k v) ∅,
+   map.foldl (fun acc (k, v) => acc.insert k v) ∅⟩
+
 instance : BEq IOBuffer where
   beq x y :=
     @BEq.beq _ Std.HashMap.instBEq x.data y.data &&
@@ -66,6 +74,15 @@ structure QueryCount where
   uniqueRows : Nat
   totalHits : Nat
   deriving Inhabited
+
+/-- Result of an execution FFI call, built directly by Rust
+(`LeanAiurExecuteResult` in `crates/ffi/src/lean.rs`). `ioData`/`ioMap`
+are the flattened `IOBuffer`; see `IOBuffer.ofArrays`. -/
+structure ExecuteResult where
+  output : Array G
+  ioData : Array (G × Array G)
+  ioMap : Array ((G × Array G) × IOKeyInfo)
+  queryCounts : Array QueryCount
 
 -- ===========================================================================
 -- EnvHandle: Rust-owned `ixon::Env` exposed to Lean as an opaque handle.
@@ -105,9 +122,7 @@ private opaque execute' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
-    Except String (Array G ×
-      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
-      Array (Nat × Nat))
+    Except String ExecuteResult
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 returning the raw output of the function, the updated `IOBuffer`, and an array
@@ -117,24 +132,15 @@ callers can recover instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Except String (Array G × IOBuffer × Array QueryCount) :=
-  let ioData := ioBuffer.data.toArray
-  let ioMap := ioBuffer.map.toArray
-  match execute' toplevel funIdx args ioData ioMap with
-  | .error e => .error e
-  | .ok (output, (ioData, ioMap), queryCounts) =>
-    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
-    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+  (execute' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+    fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 @[extern "rs_aiur_toplevel_execute_ixvm"]
 private opaque executeIxVM' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
-    Except String (Array G ×
-      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
-      Array (Nat × Nat))
+    Except String ExecuteResult
 
 /-- IxVM-native execution: same shape as `execute`, but routes the
     function invocation through the codegen'd Rust kernel
@@ -147,22 +153,8 @@ private opaque executeIxVM' : @& Bytecode.Toplevel →
 def executeIxVM (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Except String (Array G × IOBuffer × Array QueryCount) :=
-  let ioData := ioBuffer.data.toArray
-  let ioMap := ioBuffer.map.toArray
-  match executeIxVM' toplevel funIdx args ioData ioMap with
-  | .error e => .error e
-  | .ok (output, (ioData, ioMap), queryCounts) =>
-    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
-    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
-
-@[extern "rs_aiur_multi_stark_execute"]
-private opaque executeMultiStark' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& Array G →
-  (proofBytes : @& ByteArray) → (vkBytes : @& ByteArray) →
-  (claimBytes : @& ByteArray) → Bool →
-    Except String (Array G × Array (Nat × Nat))
+  (executeIxVM' toplevel funIdx args ioBuffer.data.toArray ioBuffer.map.toArray).map
+    fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 /-- MultiStark-native execution of `verify_multi_stark_proof`: the IO
     advice buffer (channel 0 = proof, 1 = vk, 2 = claims, key `[0]`
@@ -176,15 +168,11 @@ private opaque executeMultiStark' : @& Bytecode.Toplevel →
     `useBytecode := true`. Returns the output and per-circuit query
     counts; the final buffer is not returned (the verifier only reads
     its advice). -/
-def executeMultiStark (toplevel : @& Bytecode.Toplevel)
+@[extern "rs_aiur_multi_stark_execute"]
+opaque executeMultiStark (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (pubInput : @& Array G)
   (proofBytes vkBytes claimBytes : @& ByteArray) (useBytecode : Bool := false) :
-    Except String (Array G × Array QueryCount) :=
-  match executeMultiStark' toplevel funIdx pubInput proofBytes vkBytes
-    claimBytes useBytecode with
-  | .error e => .error e
-  | .ok (output, queryCounts) =>
-    .ok (output, queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits })
+    Except String (Array G × Array QueryCount)
 
 -- (EnvHandle opaque type + constructors live above `namespace
 -- Bytecode.Toplevel`; see `Aiur.EnvHandle`. The with-env FFI
@@ -194,17 +182,12 @@ def executeMultiStark (toplevel : @& Bytecode.Toplevel)
 @[extern "rs_aiur_toplevel_check_addr_with_env"]
 private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
-    Except String (Array G ×
-      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
-      Array (Nat × Nat))
+    Except String ExecuteResult
 
 @[extern "rs_aiur_toplevel_shard_check_with_env"]
 private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
-    Except String (Array G ×
-      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
-      Array (Nat × Nat))
-
+    Except String ExecuteResult
 
 /-- Per-claim check against a Rust-owned `EnvHandle`. `useBytecode`
     selects the generic Aiur bytecode interpreter
@@ -216,13 +199,8 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (addrBytes : ByteArray) (useBytecode : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  match checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode with
-  | .error e => .error e
-  | .ok (output, (ioData, ioMap), queryCounts) =>
-    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
-    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+  (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode).map
+    fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 /-- Per-shard check against a Rust-owned `EnvHandle`. See
     `checkAddrWithEnv` for `useBytecode` semantics. -/
@@ -230,13 +208,8 @@ def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (useBytecode : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  match shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode with
-  | .error e => .error e
-  | .ok (output, (ioData, ioMap), queryCounts) =>
-    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
-    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode).map
+    fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 end Bytecode.Toplevel
 
