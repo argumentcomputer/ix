@@ -287,7 +287,17 @@ def leanDumpPatchesBlock (lo : Ix.Name) (all : Array Ix.Name)
       out := out ++ s!"patch {name.pretty} kind=belowIndc lvls={lps} params={ind.nParams} indices={ind.nIndices} reflexive={ind.isReflexive} unsafe={ind.isUnsafe} typ={exprAddr ind.typ}\n"
       for (ctor, i) in ind.ctors.zipIdx do
         out := out ++ s!"belowctor {name.pretty} {i} name={ctor.name.pretty} params={ctor.nParams} fields={ctor.nFields} typ={exprAddr ctor.typ}\n"
+    | some (.brecOnDef d) =>
+      let lps := ",".intercalate (d.levelParams.toList.map (·.pretty))
+      out := out ++ s!"patch {name.pretty} kind=brecOn lvls={lps} unsafe={d.isUnsafe} prop={d.isProp} typ={exprAddr d.typ} value={exprAddr d.value}\n"
     | _ => pure ()
+  -- Alias lines, sorted by (source pretty, target pretty) exactly as the
+  -- Rust endpoint sorts its `Vec<(String, String)>`.
+  let aliasPairs := ((auxOut.aliases.toList.map
+    fun (k, v) => (k.pretty, v.pretty)).toArray).qsort
+      (fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2))
+  for (k, v) in aliasPairs do
+    out := out ++ s!"alias {k} {v}\n"
   return out
 
 /-- Whole-env Lean patches dump (same block selection/order as Rust). -/
@@ -539,7 +549,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let rustPatchDump ← rsAuxGenDumpPatchesFFI filtered
   IO.println "[aux-gen-diff] A3: patches dump (Lean)..."
   let leanPatchDump := leanDumpPatches cenv condensed
-  let kinds := ["rec", "casesOn", "recOn", "belowDef", "belowIndc"]
+  let kinds := ["rec", "casesOn", "recOn", "belowDef", "belowIndc", "brecOn", "alias"]
   let patchesOk ← compareDumps (filterPatchDump rustPatchDump kinds)
     (filterPatchDump leanPatchDump kinds)
   let recCount := ((filterPatchDump rustPatchDump kinds).splitOn "\n").filter
