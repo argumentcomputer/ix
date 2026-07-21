@@ -1,13 +1,16 @@
 /-
   Ix.AuxGen.Patches: the `generate_aux_patches` orchestrator shell.
 
-  Port of `crates/compile/src/compile/aux_gen.rs:188-601` (Phase 1 —
+  Port of `crates/compile/src/compile/aux_gen.rs:188-660` (Phase 1 —
   canonical recursor generation with the expand/restore model — plus
-  Phase 1b `.casesOn` and Phase 1c `.recOn`). Phases 2 (`.below`),
-  3 (`.brecOn`) and the alias registration (aux_gen.rs:603-979) land with
-  their respective milestones; until then `patches` carries only
-  `kind=rec`/`kind=casesOn`/`kind=recOn` entries and `aliases` is empty —
-  the cross-compiler gate filters by kind accordingly.
+  Phase 1b `.casesOn`, Phase 1c `.recOn`, and Phase 2 `.below` with its
+  `is_below_shaped` guard). Phase 3 (`.brecOn`, incl. its
+  `populate_canon_kenv_with_below` prep, aux_gen.rs:665-712/:1017) and
+  the alias registration (aux_gen.rs:730-979) land with their respective
+  milestones; until then `patches` carries only
+  `kind=rec`/`casesOn`/`recOn`/`belowDef`/`belowIndc` entries and
+  `aliases` is empty — the cross-compiler gate filters by kind
+  accordingly.
 -/
 module
 public import Ix.Common
@@ -22,11 +25,34 @@ public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Recursor
 public import Ix.AuxGen.CasesOn
 public import Ix.AuxGen.RecOn
+public import Ix.AuxGen.Below
 public section
 
 namespace Ix.AuxGen
 
 open Ix.CompileM (CompileM CompileError)
+
+/-- Mirrors Rust `is_below_shaped` (aux_gen.rs:998).
+
+    Check whether a type expression is shaped like a `.below` auxiliary.
+
+    A genuine `.below` type is a forall telescope ending in `Sort _`:
+      `∀ {params} {motives} (indices) (major), Sort rlvl`
+
+    This distinguishes `.below` auxiliaries from coincidental name
+    collisions like structure field accessors (e.g.,
+    `NewDecl.below : NewDecl → LocalDecl`).
+
+    (Defined before `generateAuxPatches` — its only caller — instead of
+    at its Rust source position after it; no semantic difference.) -/
+def isBelowShaped (typ : Expr) : Bool := Id.run do
+  let mut cur := typ
+  repeat
+    match cur with
+    | .forallE _ _ body _ _ => cur := body
+    | .sort _ _ => return true
+    | _ => return false
+  return false -- unreachable: the loop always returns
 
 /-- Generate all canonical auxiliary patches for a collapsed inductive
     block. Called (eventually, from the compile_mutual mirror) after
@@ -69,7 +95,7 @@ def generateAuxPatches (sortedClasses : Array (Array Name))
     if let some (.inductInfo v) ← liftM (lookupConst? name : CompileM _) then
       if v.numNested > 0 then metadataHasNested := true
 
-  let (canonicalRecs, _isProp) ←
+  let (canonicalRecs, isProp) ←
     if metadataHasNested && structuralHasNested then do
       -- Canonicalize the aux tail; every downstream patch layout depends
       -- on this order (aux_gen.rs:280).
@@ -239,7 +265,35 @@ refusing to synthesize canonical-indexed _N names")
         | none => pure ()
     | _ => pure ()
 
-  -- Phases 2/3 + alias registration: later milestones.
+  -- Phase 2: Generate `.below` constants (if originals exist)
+  -- (aux_gen.rs:603-660).
+  let firstClassName := sortedClasses[0]![0]!
+  let belowName := Name.mkStr firstClassName "below"
+  -- Guard: the existing constant must actually be a `.below` auxiliary,
+  -- not a coincidental name collision (e.g., a structure field accessor
+  -- like `IndPredBelow.NewDecl.below : NewDecl → LocalDecl`). A genuine
+  -- `.below` type always ends in `Sort _` after peeling foralls.
+  let belowShaped ←
+    match ← liftM (lookupConst? belowName : CompileM _) with
+    | some ci => pure (isBelowShaped ci.getCnst.type)
+    | none => pure false
+  if belowShaped then
+    let belowConsts ← generateBelowConstants sortedClasses canonicalRecs
+      isProp maps
+    -- `Ix.AuxGen.Below` derives `.below_N` names and internal cross-aux
+    -- references from already-source-indexed rec names (see
+    -- `generateBelowConstants` → `auxRecSuffixIdx`), so there is no
+    -- canonical-indexed leftover to rewrite.
+    for bc in belowConsts do
+      match bc with
+      | .defn d => patches := patches.insert d.name (.belowDef d)
+      | .indc i => patches := patches.insert i.name (.belowIndc i)
+    -- `populate_canon_kenv_with_below` (aux_gen.rs:695/:1017) + Phase 3
+    -- `.brecOn` (aux_gen.rs:665-712): A6 milestone. The kenv population
+    -- only feeds Phase 3's canonical TC, so deferring it cannot change
+    -- any Phase ≤ 2 patch.
+
+  -- Alias registration: later milestone.
 
   return { patches, aliases, perm := capturedPerm,
            nClasses, nCanonicalAux := capturedNCanonicalAux,
