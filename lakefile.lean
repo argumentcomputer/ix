@@ -143,6 +143,18 @@ lean_exe «bench-lean4lean» where
 
 end Benchmarks
 
+section IxTcVerify
+
+/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec
+(see plans/tc-verify-roadmap.md). Non-default: `lake build ix` never
+touches it, and `build-all` (the lint driver) skips it by name while it
+carries `sorry`s — `lake lint -- --wfail` would otherwise fail on the
+WIP proof frontier. Dev loop: `lake build IxTcVerify`. -/
+lean_lib IxTcVerify where
+  globs := #[.submodules `Ix.Tc.Verify]
+
+end IxTcVerify
+
 section IxApplications
 
 lean_lib Apps
@@ -200,7 +212,9 @@ script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  let allNames := libNames ++ exeNames |>.toList
+  -- IxTcVerify is the WIP proofs lib: sorry-bearing by design while the
+  -- verification frontier is open, so it must not run under `--wfail`.
+  let allNames := (libNames ++ exeNames |>.toList).filter (· != "IxTcVerify")
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {

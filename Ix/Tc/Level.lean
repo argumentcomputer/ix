@@ -84,6 +84,25 @@ def offset : KUniv m → KUniv m × UInt64
   | .succ u _ => let (base, n) := u.offset; (base, n + 1)
   | u => (u, 0)
 
+/-- Constructor count, ignoring addresses and metadata. Termination measure
+    for the normalization family (`sizeOf` would drag `Address` byte noise
+    into the goals); also the induction measure for the Verify layer. -/
+def size : KUniv m → Nat
+  | .zero _ => 1
+  | .succ u _ => u.size + 1
+  | .max a b _ => a.size + b.size + 1
+  | .imax a b _ => a.size + b.size + 1
+  | .param _ _ _ => 1
+
+theorem size_pos (u : KUniv m) : 0 < u.size := by
+  cases u <;> simp [size]
+
+/-- The offset base is no larger than the level it was peeled from. -/
+theorem offset_fst_size_le (u : KUniv m) : u.offset.1.size ≤ u.size := by
+  induction u with
+  | succ u _ ih => exact Nat.le_trans ih (Nat.le_succ _)
+  | _ => exact Nat.le_refl _
+
 /-- `zero`, hashed as `blake3 [UZERO]`. -/
 def mkZero : KUniv m :=
   .zero <| Address.blake3 ⟨#[Ix.TAG_UZERO]⟩
@@ -178,18 +197,26 @@ def mkIMax (a b : KUniv m) : KUniv m :=
     else mkIMaxRaw a b
 
 /-- Meta mode shows names when available; anon mode shows positional
-    parameter indices. Diagnostics only. -/
-partial def render : KUniv m → String
+    parameter indices. Diagnostics only.
+
+    The `succ` arm inlines one `offset` step (`(succ u).offset =
+    (u.offset.1, u.offset.2 + 1)`) so the recursive call is on the strict
+    subterm's offset base and `offset_fst_size_le` closes termination. -/
+def render : KUniv m → String
   | .zero _ => "0"
-  | u@(.succ _ _) =>
-    let (base, n) := u.offset
-    if base.isZero then toString n.toNat
-    else s!"{base.render}+{n.toNat}"
+  | .succ u _ =>
+    let bn := u.offset
+    if bn.1.isZero then toString (bn.2 + 1).toNat
+    else s!"{bn.1.render}+{(bn.2 + 1).toNat}"
   | .max a b _ => s!"max({a.render}, {b.render})"
   | .imax a b _ => s!"imax({a.render}, {b.render})"
   | .param idx name _ =>
     if MetaDisplay.hasMeta name then MetaDisplay.metaFmt name
     else s!"u{idx.toNat}"
+termination_by u => u.size
+decreasing_by
+  · exact Nat.lt_succ_of_le (offset_fst_size_le u)
+  all_goals simp [size]; omega
 
 instance : ToString (KUniv m) := ⟨render⟩
 
@@ -259,12 +286,20 @@ def orderedInsert (a : UInt64) : Path → Option Path
     else if a == x then none
     else (x :: ·) <$> orderedInsert a xs
 
+/-!
+Termination for the normalization family: the mutual block recurses on
+structural pieces threaded as separate arguments (Rust avoids allocating
+fresh `imax` nodes, which would need fresh Blake3 addresses — so the
+default structural measure is blind here). The measure is
+`3·Σ KUniv.size + {0,1,2}`, where the constants order the equal-size hops
+`dispatch → imaxMax/imaxImax → dispatch` and every other edge strictly
+drops a constructor. -/
 mutual
 
 /-- Recursively flatten a level into canonical form, accumulating into `acc`.
     `path` tracks the imax-conditioning chain, `k` the accumulated succ offset.
     Mirrors level.rs `normalize_aux`. -/
-partial def normalizeAux (l : KUniv m) (path : Path) (k : UInt64)
+def normalizeAux (l : KUniv m) (path : Path) (k : UInt64)
     (acc : NormLevel) : NormLevel :=
   match l with
   | .zero _ => acc.addConst k path
@@ -292,19 +327,31 @@ partial def normalizeAux (l : KUniv m) (path : Path) (k : UInt64)
     match orderedInsert idx path with
     | some newPath => ((acc.addConst k path).addVar idx k newPath)
     | none => if k != 0 then acc.addVar idx k path else acc
+termination_by 3 * l.size
+decreasing_by all_goals simp [KUniv.size] <;> omega
 
 /-- `imax(u, max(v, w)) = max(imax(u, v), imax(u, w))`. -/
-partial def normalizeImaxMax (u v w : KUniv m) (path : Path) (k : UInt64)
+def normalizeImaxMax (u v w : KUniv m) (path : Path) (k : UInt64)
     (acc : NormLevel) : NormLevel :=
   normalizeImaxDispatch u w path k (normalizeImaxDispatch u v path k acc)
+termination_by 3 * (u.size + v.size + w.size) + 1
+decreasing_by
+  all_goals have hv := KUniv.size_pos v
+  all_goals have hw := KUniv.size_pos w
+  all_goals omega
 
 /-- `imax(u, imax(v, w)) = max(imax(u, w), imax(v, w))`. -/
-partial def normalizeImaxImax (u v w : KUniv m) (path : Path) (k : UInt64)
+def normalizeImaxImax (u v w : KUniv m) (path : Path) (k : UInt64)
     (acc : NormLevel) : NormLevel :=
   normalizeImaxDispatch v w path k (normalizeImaxDispatch u w path k acc)
+termination_by 3 * (u.size + v.size + w.size) + 1
+decreasing_by
+  all_goals have hu := KUniv.size_pos u
+  all_goals have hv := KUniv.size_pos v
+  all_goals omega
 
 /-- Dispatch `imax(a, b)` normalization based on `b`'s shape. -/
-partial def normalizeImaxDispatch (a b : KUniv m) (path : Path) (k : UInt64)
+def normalizeImaxDispatch (a b : KUniv m) (path : Path) (k : UInt64)
     (acc : NormLevel) : NormLevel :=
   match b with
   | .zero _ => acc.addConst k path
@@ -320,34 +367,37 @@ partial def normalizeImaxDispatch (a b : KUniv m) (path : Path) (k : UInt64)
     | none =>
       let acc := if k != 0 then acc.addVar idx k path else acc
       normalizeAux a path k acc
+termination_by 3 * (a.size + b.size) + 2
+decreasing_by all_goals simp [KUniv.size]; omega
 
 end
 
 /-! ### Subsumption (Phase 2) -/
 
 /-- Keep only the `xs` entries not dominated by a `ys` entry (merge-walk over
-    sorted var lists). Mirrors level.rs `subsume_vars`. -/
-def subsumeVars (xs ys : Array VarNode) : Array VarNode := Id.run do
-  let mut result : Array VarNode := #[]
-  let mut xi := 0
-  let mut yi := 0
-  while xi < xs.size do
-    if yi ≥ ys.size then
-      result := result ++ xs.extract xi xs.size
-      break
-    let x := xs[xi]!
-    let y := ys[yi]!
-    if x.idx < y.idx then
-      result := result.push x
-      xi := xi + 1
-    else if x.idx == y.idx then
-      if x.offset > y.offset then
-        result := result.push x
-      xi := xi + 1
-      yi := yi + 1
+    sorted var lists). Mirrors level.rs `subsume_vars`. Written as index
+    recursion (identical traversal to the Rust `while` loop) so it is total:
+    every step advances `xi` or `yi`. -/
+def subsumeVars (xs ys : Array VarNode) : Array VarNode :=
+  go 0 0 #[]
+where
+  go (xi yi : Nat) (result : Array VarNode) : Array VarNode :=
+    if _hx : xi < xs.size then
+      if _hy : yi ≥ ys.size then
+        result ++ xs.extract xi xs.size
+      else
+        let x := xs[xi]!
+        let y := ys[yi]!
+        if x.idx < y.idx then
+          go (xi + 1) yi (result.push x)
+        else if x.idx == y.idx then
+          go (xi + 1) (yi + 1) (if x.offset > y.offset then result.push x else result)
+        else
+          go xi (yi + 1) result
     else
-      yi := yi + 1
-  return result
+      result
+  termination_by (xs.size - xi) + (ys.size - yi)
+  decreasing_by all_goals omega
 
 /-- Sorted-list subset check. -/
 def isSubset : Path → Path → Bool

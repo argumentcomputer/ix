@@ -50,9 +50,13 @@ def maxWhnfFuel : UInt32 := 10_000
 /-- Maximum recursion depth for `isDefEq`. -/
 def maxDefEqDepth : UInt32 := 2_000
 
-/-- Shared recursive fuel budget, consumed by each call to
-    whnf/infer/isDefEq. See tc.rs for the sizing rationale (BVDecide-scale
-    proofs legitimately exceed a million recursive steps). -/
+/-- Shared recursive fuel budget. Ticked at exactly two sites: the `whnf`
+    cache-miss path (Whnf.lean) and the `isDefEq` entry (DefEq.lean) —
+    `infer`/`whnfCore` never tick, so fuel-exhaustion arguments need a
+    lexicographic (fuel, term-size) measure, not "every hop ticks"
+    (plans/tc-verify-roadmap.md F5). See tc.rs for the sizing rationale
+    (BVDecide-scale proofs legitimately exceed a million recursive
+    steps). -/
 def maxRecFuel : UInt64 := 10_000_000
 
 /-- Per-check type-checker state fused with the kernel environment. -/
