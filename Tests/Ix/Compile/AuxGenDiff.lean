@@ -27,6 +27,7 @@
 import Ix.CompileM
 import Ix.Commit
 import Ix.AuxGen.Nested
+import Ix.AuxGen.Patches
 import Tests.Ix.Compile.ValidateAux
 
 namespace Tests.Compile.AuxGenDiff
@@ -39,6 +40,14 @@ open Ix.CompileM (CompilePhases CompileEnv)
     for the format contract that `leanDumpExpand` below mirrors. -/
 @[extern "rs_aux_gen_dump_expand"]
 opaque rsAuxGenDumpExpandFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → IO String
+
+/-- FFI (test-ffi only): text dump of `generate_aux_patches` output per
+    inductive SCC block — the gate medium for the A3-A6 generator
+    milestones (`rs_aux_gen_dump_patches` in crates/ffi/src/compile.rs).
+    The Lean comparison filters by patch kind and widens per milestone. -/
+@[extern "rs_aux_gen_dump_patches"]
+opaque rsAuxGenDumpPatchesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO String
 
 /-- Aux-family name test, by last components (mirrors the Rust aux shapes:
@@ -221,6 +230,87 @@ def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
     out := out ++ s!"source {j} owner={owner.pretty} head={head.pretty} specs={specStrs}\n"
 
   return out
+
+/-- Lean half of the patches dump for one block: production inputs
+    (cs → sortConsts → classNames/originalAll) into `generateAuxPatches`
+    under a fresh bridge context (mirroring the Rust endpoint's fresh
+    `KernelCtx::new()` per block), rendered in the exact
+    `rs_aux_gen_dump_patches` line format. -/
+def leanDumpPatchesBlock (lo : Ix.Name) (all : Array Ix.Name)
+    : Ix.CompileM.CompileM String := do
+  let mut out := s!"block {lo.pretty}\n"
+  let mut cs : Array Ix.MutConst := #[]
+  for n in all do
+    match (← Ix.AuxGen.lookupConst? n) with
+    | none => pure ()
+    | some ci =>
+      match ci with
+      | .inductInfo val => cs := cs.push (← Ix.CompileM.MutConst.mkIndc val)
+      | .defnInfo val => cs := cs.push (Ix.MutConst.fromDefinitionVal val)
+      | .opaqueInfo val => cs := cs.push (Ix.MutConst.fromOpaqueVal val)
+      | .thmInfo val => cs := cs.push (Ix.MutConst.fromTheoremVal val)
+      | .recInfo val => cs := cs.push (.recr val)
+      | _ => pure ()
+  let sortedClasses ← Ix.CompileM.sortConsts cs.toList
+  let classNames : Array (Array Ix.Name) :=
+    (sortedClasses.map fun c => (c.map (·.name)).toArray).toArray
+  let originalAll : Array Ix.Name := Id.run do
+    for c in cs do
+      if let .indc ind := c then
+        return ind.all
+    return #[]
+  let cenv ← Ix.CompileM.getCompileEnv
+  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
+  let auxOut ← (Ix.AuxGen.generateAuxPatches classNames originalAll maps).run'
+    Ix.AuxGen.AuxKernelCtx.new
+  let patchNames := (auxOut.patches.toList.map (·.1)).toArray.qsort
+    (fun a b => a.pretty < b.pretty)
+  for name in patchNames do
+    match auxOut.patches.get? name with
+    | some (.recr rv) =>
+      let lps := ",".intercalate (rv.cnst.levelParams.toList.map (·.pretty))
+      let allStr := ",".intercalate (rv.all.toList.map (·.pretty))
+      out := out ++ s!"patch {name.pretty} kind=rec lvls={lps} k={rv.k} params={rv.numParams} indices={rv.numIndices} motives={rv.numMotives} minors={rv.numMinors} all={allStr} typ={exprAddr rv.cnst.type}\n"
+      for (rule, i) in rv.rules.zipIdx do
+        out := out ++ s!"rule {name.pretty} {i} ctor={rule.ctor.pretty} fields={rule.nfields} rhs={exprAddr rule.rhs}\n"
+    | _ => pure ()
+  return out
+
+/-- Whole-env Lean patches dump (same block selection/order as Rust). -/
+def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
+    : String := Id.run do
+  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
+  for (lo, members) in condensed.blocks do
+    let sortedAll := (members.toArray.map (·, ())).map (·.1)
+      |>.qsort (fun a b => a.pretty < b.pretty)
+    let hasInd := sortedAll.any fun n =>
+      match cenv.env.consts.get? n with
+      | some (.inductInfo _) => true
+      | _ => false
+    if hasInd then
+      blocks := blocks.push (lo.pretty, lo, sortedAll)
+  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+  let mut out := ""
+  for (_, lo, all) in blocks do
+    let blockEnv : Ix.CompileM.BlockEnv :=
+      { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    match Ix.CompileM.CompileM.run cenv blockEnv {} (leanDumpPatchesBlock lo all) with
+    | .ok (s, _) => out := out ++ s
+    | .error e => out := out ++ s!"block {lo.pretty}\nerror generate {e}\n"
+  return out
+
+/-- Keep only `block` headers plus patch/rule/error lines whose kind is in
+    the whitelist — the comparison scope widens per milestone (A3: rec;
+    A4: +casesOn/recOn; A5: +below*; A6: +brecOn+aliases). -/
+def filterPatchDump (dump : String) (kinds : List String) : String :=
+  let keep (l : String) : Bool :=
+    l.startsWith "block " || l.startsWith "error "
+    || (l.startsWith "patch "
+        && kinds.any (fun k => ((l ++ " ").splitOn (" kind=" ++ k ++ " ")).length > 1))
+    || (l.startsWith "rule " && kinds.contains "rec")
+    || (l.startsWith "belowctor " && kinds.contains "belowIndc")
+    || (l.startsWith "alias " && kinds.contains "alias")
+  String.intercalate "\n" ((dump.splitOn "\n").filter keep)
 
 /-- Whole-env Lean dump over the same block selection/order as the Rust
     endpoint (inductive-containing SCCs, sorted by lowlink pretty name,
@@ -429,14 +519,28 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let leanDump := leanDumpExpand cenv condensed
   let dumpOk ← compareDumps rustDump leanDump
   IO.println s!"[aux-gen-diff] expansion gate: {if dumpOk then "PASS" else "FAIL"} ({(rustDump.splitOn "\n").length} dump lines)"
+
+  -- A3+ gate: generated-patch parity, kind-filtered (widens per milestone).
+  IO.println "[aux-gen-diff] A3: patches dump (Rust)..."
+  let rustPatchDump ← rsAuxGenDumpPatchesFFI filtered
+  IO.println "[aux-gen-diff] A3: patches dump (Lean)..."
+  let leanPatchDump := leanDumpPatches cenv condensed
+  let kinds := ["rec"]
+  let patchesOk ← compareDumps (filterPatchDump rustPatchDump kinds)
+    (filterPatchDump leanPatchDump kinds)
+  let recCount := ((filterPatchDump rustPatchDump kinds).splitOn "\n").filter
+    (·.startsWith "patch ") |>.length
+  IO.println s!"[aux-gen-diff] patches gate ({", ".intercalate kinds}): {if patchesOk then "PASS" else "FAIL"} ({recCount} patches compared)"
   -- Optional dump save for inspection (IX_AUX_DUMP_OUT=<path-prefix>).
   match (← IO.getEnv "IX_AUX_DUMP_OUT") with
   | some pathPrefix =>
     IO.FS.writeFile (pathPrefix ++ ".rust.txt") rustDump
     IO.FS.writeFile (pathPrefix ++ ".lean.txt") leanDump
+    IO.FS.writeFile (pathPrefix ++ ".patches.rust.txt") rustPatchDump
+    IO.FS.writeFile (pathPrefix ++ ".patches.lean.txt") leanPatchDump
     IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
   | none => pure ()
 
-  return if gateOk && dumpOk then 0 else 1
+  return if gateOk && dumpOk && patchesOk then 0 else 1
 
 end Tests.Compile.AuxGenDiff
