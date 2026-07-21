@@ -45,7 +45,7 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      - uses: bencherdev/bencher@v0.6.8
+      - uses: bencherdev/bencher@v0.6.10
       # Plot create/delete needs those permissions on the ix project: a
       # user-scoped `bencher_user_*` key (the report-upload token the bench
       # workflows use may be run-scoped and unable to manage plots).
