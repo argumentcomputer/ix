@@ -9,6 +9,7 @@ import Tests.Ix.AssumptionTree
 import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
+import Tests.Ix.Compile.AuxGenDiff
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.Kernel.BuildPrimOrigs
@@ -155,6 +156,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("validate-aux", runCompileValidateAux env),
+  -- Cross-compiler differential over the same fixture corpus: pure-Lean
+  -- Ix.CompileM per-block vs Rust, root-cause classified (see
+  -- Tests.Ix.Compile.AuxGenDiff).
+  ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
   -- lean4lean dependency smoke: accept a real closure, reject an
   -- ill-typed decl (see Tests.Ix.Lean4Lean).
   ("lean4lean", Tests.Ix.Lean4Lean.run env),

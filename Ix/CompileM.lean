@@ -564,6 +564,147 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
 
   pure (result, root)
 
+/-! ## Table Preseeding
+
+Mirrors Rust `preseed_expr_tables` (crates/compile/src/compile.rs:576):
+before compiling a block, walk every expression the block will compile,
+collect all external refs (consts, nat/str literal blobs, proj type
+addresses) and all universes, then intern them into the block tables in
+CANONICAL SORTED order — refs by address bytes, univs by their serialized
+encoding (`univ_sort_key`, compile.rs:476). Table indices thereby become
+traversal-order-independent; the on-the-fly interning during actual
+compilation then always finds the preseeded entries. Without this pass,
+ref/univ indices depend on compile traversal order and every nontrivial
+constant's serialized form (hence address) diverges from Rust's. -/
+
+/-- Blake3 key over a univ-param context: hash of the concatenated
+    32-byte name hashes. Mirrors Rust `univ_params_key` (compile.rs:482). -/
+def univParamsKey (univParams : List Name) : Address := Id.run do
+  let mut buf := ByteArray.empty
+  for n in univParams do
+    buf := buf ++ n.getHash.hash
+  return Address.blake3 buf
+
+/-- Sort key for preseeded universes: the serialized encoding. Mirrors
+    Rust `univ_sort_key` (compile.rs:476). -/
+def univSortKey (u : Ixon.Univ) : ByteArray :=
+  Ixon.runPut (Ixon.putUniv u)
+
+/-- Byte-loop lexicographic ByteArray comparison (same convention as
+    `Address.cmpBytes`; Rust `Vec<u8>` `Ord`). -/
+def byteArrayCmp (x y : ByteArray) : Ordering := Id.run do
+  let n := min x.size y.size
+  for i in [0:n] do
+    let xi := x[i]!
+    let yi := y[i]!
+    if xi < yi then return .lt
+    if xi > yi then return .gt
+  return compare x.size y.size
+
+/-- Walk one expression collecting refs and univs for preseeding.
+    Mirrors Rust `collect_expr_tables` (compile.rs:490): iterative stack
+    walk, deduped by `(expr hash, univ-param-context key)`; nat/str
+    literal blobs are stored as a side effect (their addresses join the
+    refs), universes are compiled through the shared `univCache`. Must
+    run under the expression's own `univCtx` (Rust passes `univ_params`
+    explicitly). -/
+def collectExprTables (top : Expr) (ctxKey : Address)
+    (acc : Array Address × Array Ixon.Univ × Std.HashMap (Address × Address) Unit)
+    : CompileM (Array Address × Array Ixon.Univ × Std.HashMap (Address × Address) Unit) := do
+  let mutCtx := (← getBlockEnv).mutCtx
+  let mut (refs, univs, seen) := acc
+  let mut stack : Array Expr := #[top]
+  while !stack.isEmpty do
+    let e := stack.back!
+    stack := stack.pop
+    let key := (e.getHash, ctxKey)
+    if seen.contains key then continue
+    seen := seen.insert key ()
+    match e with
+    | .bvar .. => pure ()
+    | .sort lvl _ =>
+      univs := univs.push (← compileUniv lvl)
+    | .const name lvls _ =>
+      for lvl in lvls do
+        univs := univs.push (← compileUniv lvl)
+      if (mutCtx.find? name).isNone then
+        refs := refs.push (← lookupConstAddr name)
+    | .app func arg _ =>
+      stack := stack.push arg |>.push func
+    | .lam _ ty body _ _ =>
+      stack := stack.push body |>.push ty
+    | .forallE _ ty body _ _ =>
+      stack := stack.push body |>.push ty
+    | .letE _ ty val body _ _ =>
+      stack := stack.push body |>.push val |>.push ty
+    | .lit (.natVal n) _ =>
+      let bytes := ByteArray.mk (Nat.toBytesLE n)
+      let addr := Address.blake3 bytes
+      modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      refs := refs.push addr
+    | .lit (.strVal s) _ =>
+      let bytes := s.toUTF8
+      let addr := Address.blake3 bytes
+      modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
+      refs := refs.push addr
+    | .proj typeName _ struct _ =>
+      refs := refs.push (← lookupConstAddr typeName)
+      stack := stack.push struct
+    | .mdata _ inner _ =>
+      stack := stack.push inner
+    | .fvar .. => throw (.unsupportedExpr "free variable")
+    | .mvar .. => throw (.unsupportedExpr "metavariable")
+  pure (refs, univs, seen)
+
+/-- Preseed the block's ref/univ intern tables from the given
+    `(expr, levelParams)` list, in canonical sorted order. Mirrors Rust
+    `preseed_expr_tables` (compile.rs:576). Call sites mirror Rust's:
+    every singleton path in `compileConstantInfo` and the mutual path in
+    `compileMutualBlock`. -/
+def preseedExprTables (exprs : Array (Expr × List Name)) : CompileM Unit := do
+  let mut refs : Array Address := #[]
+  let mut univs : Array Ixon.Univ := #[]
+  let mut seen : Std.HashMap (Address × Address) Unit := {}
+  for (e, params) in exprs do
+    let (r, u, s) ←
+      withUnivCtx params (collectExprTables e (univParamsKey params) (refs, univs, seen))
+    refs := r
+    univs := u
+    seen := s
+  -- Refs: sort by address bytes, dedup, intern in order.
+  let sortedRefs := refs.qsort fun a b => a.cmpBytes b == .lt
+  let mut prevRef : Option Address := none
+  for a in sortedRefs do
+    if prevRef != some a then
+      discard <| internRef a
+      prevRef := some a
+  -- Univs: sort by serialized key, dedup by key, intern in order
+  -- (`put_univ` is injective, so key equality is univ equality).
+  let keyed := univs.map fun u => (univSortKey u, u)
+  let sortedUnivs := keyed.qsort fun (ka, _) (kb, _) => byteArrayCmp ka kb == .lt
+  let mut prevKey : Option ByteArray := none
+  for (k, u) in sortedUnivs do
+    if prevKey != some k then
+      discard <| internUniv u
+      prevKey := some k
+
+/-- The `(expr, levelParams)` list a MutConst contributes to preseeding.
+    Mirrors Rust `collect_mut_const_exprs` (compile.rs:618). -/
+def mutConstPreseedExprs (c : MutConst) : Array (Expr × List Name) :=
+  match c with
+  | .defn d =>
+    #[(d.type, d.levelParams.toList), (d.value, d.levelParams.toList)]
+  | .indc i => Id.run do
+    let mut exprs := #[(i.type, i.levelParams.toList)]
+    for ctor in i.ctors do
+      exprs := exprs.push (ctor.cnst.type, ctor.cnst.levelParams.toList)
+    return exprs
+  | .recr r => Id.run do
+    let mut exprs := #[(r.cnst.type, r.cnst.levelParams.toList)]
+    for rule in r.rules do
+      exprs := exprs.push (rule.rhs, r.cnst.levelParams.toList)
+    return exprs
+
 /-! ## Level Comparison -/
 
 /-- Compare two Ix levels for ordering. -/
@@ -1310,6 +1451,14 @@ def compileMutualBlock (classes : List (List MutConst))
     : CompileM BlockResult := do
   let mutCtx := MutConst.ctx classes
   withMutCtx mutCtx do
+    -- Preseed mirrors Rust compile_mutual (compile.rs:3763): collect over
+    -- every member (Rust iterates source order, we iterate sorted classes —
+    -- equivalent, since the tables are canonically re-sorted afterwards).
+    let mut preseedExprs : Array (Expr × List Name) := #[]
+    for cls in classes do
+      for c in cls do
+        preseedExprs := preseedExprs ++ mutConstPreseedExprs c
+    preseedExprTables preseedExprs
     let (mutConsts, allExprs, allMetas) ← compileMutConsts classes
     let cache ← getBlockState
     let block := buildConstantWithSharing (.muts mutConsts) allExprs cache.refs cache.univs
@@ -1374,36 +1523,48 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
   withMutCtx mutCtx do
     match const with
     | .defnInfo d =>
+      -- Preseed mirrors Rust compile_single_def (compile.rs:3492).
+      preseedExprTables
+        #[(d.cnst.type, d.cnst.levelParams.toList), (d.value, d.cnst.levelParams.toList)]
       let (defn, constMeta, tExpr, vExpr) ← compileDefinition d
       let cache ← getBlockState
       let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
       pure (BlockResult.mk' block constMeta)
 
     | .thmInfo d =>
+      preseedExprTables
+        #[(d.cnst.type, d.cnst.levelParams.toList), (d.value, d.cnst.levelParams.toList)]
       let (defn, constMeta, tExpr, vExpr) ← compileTheorem d
       let cache ← getBlockState
       let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
       pure (BlockResult.mk' block constMeta)
 
     | .opaqueInfo d =>
+      preseedExprTables
+        #[(d.cnst.type, d.cnst.levelParams.toList), (d.value, d.cnst.levelParams.toList)]
       let (defn, constMeta, tExpr, vExpr) ← compileOpaque d
       let cache ← getBlockState
       let block := buildConstantWithSharing (.defn defn) #[tExpr, vExpr] cache.refs cache.univs
       pure (BlockResult.mk' block constMeta)
 
     | .axiomInfo a =>
+      -- Preseed mirrors Rust compile_const_inner Axiom arm (compile.rs:3584).
+      preseedExprTables #[(a.cnst.type, a.cnst.levelParams.toList)]
       let (axio, constMeta, typeExpr) ← compileAxiom a
       let cache ← getBlockState
       let block := buildConstantWithSharing (.axio axio) #[typeExpr] cache.refs cache.univs
       pure (BlockResult.mk' block constMeta)
 
     | .quotInfo q =>
+      preseedExprTables #[(q.cnst.type, q.cnst.levelParams.toList)]
       let (quot, constMeta, typeExpr) ← compileQuotient q
       let cache ← getBlockState
       let block := buildConstantWithSharing (.quot quot) #[typeExpr] cache.refs cache.univs
       pure (BlockResult.mk' block constMeta)
 
     | .recInfo r =>
+      -- Preseed mirrors Rust compile_const_inner RecInfo arm (compile.rs:3656).
+      preseedExprTables (mutConstPreseedExprs (.recr r))
       let (recursor, constMeta, tExpr) ← compileRecursor r
       let mut allExprs : Array Ixon.Expr := #[tExpr]
       for rule in recursor.rules do
@@ -1423,6 +1584,10 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
       -- Build mutCtx with all names in the inductive family
       let indMutCtx := buildInductiveMutCtx i ctorVals
       withMutCtx indMutCtx do
+        -- Preseed mirrors Rust: singleton inductives route through
+        -- compile_mutual (compile.rs:3645), whose preseed collects the
+        -- inductive's type plus every constructor type (compile.rs:3763).
+        preseedExprTables (mutConstPreseedExprs (MutConst.fromInductiveVal i ctorVals))
         let (ind, indMeta, ctorMetaPairs, ctorExprs) ← compileInductive i ctorVals
         let cache ← getBlockState
         -- Wrap single inductive in muts for consistency
@@ -1457,6 +1622,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
         -- Build mutCtx with all names in the inductive family
         let indMutCtx := buildInductiveMutCtx i ctorVals
         withMutCtx indMutCtx do
+          preseedExprTables (mutConstPreseedExprs (MutConst.fromInductiveVal i ctorVals))
           let (ind, indMeta, ctorMetaPairs, ctorExprs) ← compileInductive i ctorVals
           let cache ← getBlockState
           let block := buildConstantWithSharing (.muts #[.indc ind]) ctorExprs cache.refs cache.univs
