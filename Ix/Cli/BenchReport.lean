@@ -625,6 +625,13 @@ def parseError (msg : String) : IO UInt32 := do
                                     for the rest; env-keyed-only requests
                                     may name any registry env, e.g. Lean
                                     or FLT)
+      BENCH_CONSTS=Mathlib.X,…     (bench exactly these constants on the
+                                    per-constant backends, overriding the
+                                    curated selection; each name's env
+                                    comes from its Vectors.csv row —
+                                    BENCH_ENVS is needed only to place a
+                                    name the CSV doesn't list, and then
+                                    must name a single env)
       BENCH_FULL=1                 (full curated set, not just primary)
       BENCH_SHARD=1                (only the multi-shard target constants)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
@@ -712,6 +719,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let benchedEnvNames :=
     (Ix.Cli.BenchCmd.envSpecs.filter (·.benched)).map (·.name)
   let mut envs : Array String := #[]
+  let mut consts : Array String := #[]
   let mut shard := "0"
   let mut full := "0"
   let mut passthrough : Array String := #[]
@@ -754,6 +762,9 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
             return ← parseError s!"unknown env `{tok}` in BENCH_ENVS \
               (registry: \
               {", ".intercalate (Ix.Cli.BenchCmd.envSpecs.map (·.name))})"
+      | "BENCH_CONSTS" =>
+        for tok in Ix.Cli.ConstsFile.parseCommaList val do
+          if !consts.contains tok then consts := consts.push tok
       | "BENCH_SHARD" => if val == "1" then shard := "1"
       | "BENCH_FULL" => if val == "1" then full := "1"
       | k =>
@@ -763,19 +774,56 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
-            benchmark command (expected BENCH_ENVS / BENCH_FULL / \
-            BENCH_SHARD, or passthrough: BENCH_PHASES, RUST_LOG, \
-            WITHOUT_VK_VERIFICATION, RUSTFLAGS, IX_COMPILE_EAGER, \
-            IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS)"
+            benchmark command (expected BENCH_ENVS / BENCH_CONSTS / \
+            BENCH_FULL / BENCH_SHARD, or passthrough: BENCH_PHASES, \
+            RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS, \
+            IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS)"
     | [] => continue
+
+  -- BENCH_CONSTS: bench exactly these constants on the per-constant
+  -- backends, overriding the curated selection (`ix bench run --consts`
+  -- downstream). Each name is attributed to the env(s) whose Vectors.csv
+  -- rows list it — `BENCH_CONSTS=Mathlib.X` alone schedules a Mathlib
+  -- entry scoped to it, no BENCH_ENVS needed. A name the CSV doesn't
+  -- list (a curated-set candidate being scouted) can't be attributed:
+  -- a single-env BENCH_ENVS adopts it, anything else rejects.
+  let mut constsByEnv : Array (String × Array String) := #[]
+  if !consts.isEmpty then
+    let csvPath := (p.flag? "csv").map (·.as! String)
+      |>.getD "Benchmarks/Vectors.csv"
+    let rows := Ix.Cli.BenchCmd.parseVectorsCsv
+      (← try IO.FS.readFile csvPath catch _ => pure "")
+    for n in consts do
+      let owners := ((rows.filter (·.name == n)).map (·.env)).toList.eraseDups
+      let owners := if !envs.isEmpty then owners.filter envs.contains else owners
+      let owners := if owners.isEmpty && envs.size == 1 then envs.toList else owners
+      if owners.isEmpty then
+        return ← parseError <| s!"BENCH_CONSTS: `{n}` has no row in {csvPath}" ++
+          (if envs.isEmpty then " — pass BENCH_ENVS with a single env to place it"
+           else s!" under BENCH_ENVS ({", ".intercalate envs.toList})")
+      for o in owners do
+        match constsByEnv.findIdx? (·.1 == o) with
+        | some i =>
+          constsByEnv := constsByEnv.set! i (o, constsByEnv[i]!.2.push n)
+        | none => constsByEnv := constsByEnv.push (o, #[n])
+  -- Registry order, so the entry order is stable.
+  let constEnvs := ((Ix.Cli.BenchCmd.envSpecs.map (·.name)).filter
+    (fun e => constsByEnv.any (·.1 == e))).toArray
+
   -- Env defaults, per backend, when BENCH_ENVS is absent: the env-keyed
   -- backends (`inputs := .perEnv` — compile, decompile) cover their full
   -- registry env set — their row IS the env, so a compiler PR sees every
   -- env's delta without asking — while the per-constant backends default
   -- to the light InitStd (a Mathlib prove is too heavy for an unasked-for
-  -- default). An explicit BENCH_ENVS applies to every requested backend.
+  -- default). An explicit BENCH_ENVS applies to every requested backend —
+  -- except under BENCH_CONSTS, where the per-constant backends fan over
+  -- exactly the envs owning a listed constant (no empty-selection
+  -- entries).
   let envsFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
-    if !envs.isEmpty then envs
+    if !consts.isEmpty
+        && (b.inputs == .perConstant || b.inputs == .perConstantWithEnv) then
+      constEnvs
+    else if !envs.isEmpty then envs
     else if b.inputs == .perEnv then b.envNames.toArray
     else #["InitStd"]
 
@@ -793,10 +841,19 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     let runEnvs := if b.inputs == .fixedConfigs then (envsFor b).take 1
       else envsFor b
     for e in runEnvs do
+      -- The entry's `--consts` override: the listed names this env owns,
+      -- on the per-constant backends only (env-keyed and fixed-config
+      -- backends measure regardless of constant selection).
+      let entryConsts :=
+        if b.inputs == .perConstant || b.inputs == .perConstantWithEnv then
+          ",".intercalate
+            (((constsByEnv.find? (·.1 == e)).map (·.2.toList)).getD [])
+        else ""
       entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
          ("mode", Json.str (modeFor b)),
          ("runner", Json.str ciRunner),
+         ("consts", Json.str entryConsts),
          ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
 
   -- The union of every backend's env set (first-seen order): the compile
@@ -812,6 +869,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
   let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}` · \
     set: `{if full == "1" then "full" else "primary"}` · shard: `{shard}`"
+  if !consts.isEmpty then
+    summary := summary ++ s!" · consts: `{",".intercalate consts.toList}`"
   if freshFlag then
     summary := summary ++ " · baseline: `fresh` (base-SHA run, bencher bypassed)"
   for b in skipped do
@@ -912,6 +971,7 @@ def benchCiParseCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     comment : String; "The command text (default: the COMMENT_BODY env var)"
+    csv     : String; "Vectors path for BENCH_CONSTS env attribution (default: Benchmarks/Vectors.csv)"
 ]
 
 def benchCiCmd : Cli.Cmd := `[Cli|
