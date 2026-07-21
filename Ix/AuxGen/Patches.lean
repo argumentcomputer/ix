@@ -1,12 +1,13 @@
 /-
   Ix.AuxGen.Patches: the `generate_aux_patches` orchestrator shell.
 
-  Port of `crates/compile/src/compile/aux_gen.rs:188-560` (Phase 1 —
-  canonical recursor generation with the expand/restore model). Phases 1b
-  (`.casesOn`), 1c (`.recOn`), 2 (`.below`), 3 (`.brecOn`) and the alias
-  registration (aux_gen.rs:560-979) land with their respective milestones;
-  until then `patches` carries only `kind=rec` entries and `aliases` is
-  empty — the cross-compiler gate filters by kind accordingly.
+  Port of `crates/compile/src/compile/aux_gen.rs:188-601` (Phase 1 —
+  canonical recursor generation with the expand/restore model — plus
+  Phase 1b `.casesOn` and Phase 1c `.recOn`). Phases 2 (`.below`),
+  3 (`.brecOn`) and the alias registration (aux_gen.rs:603-979) land with
+  their respective milestones; until then `patches` carries only
+  `kind=rec`/`kind=casesOn`/`kind=recOn` entries and `aliases` is empty —
+  the cross-compiler gate filters by kind accordingly.
 -/
 module
 public import Ix.Common
@@ -19,6 +20,8 @@ public import Ix.AuxGen.Levels
 public import Ix.AuxGen.Nested
 public import Ix.AuxGen.Kernel
 public import Ix.AuxGen.Recursor
+public import Ix.AuxGen.CasesOn
+public import Ix.AuxGen.RecOn
 public section
 
 namespace Ix.AuxGen
@@ -193,7 +196,50 @@ refusing to synthesize canonical-indexed _N names")
     if (← liftM (lookupConst? recName : CompileM _)).isSome then
       patches := patches.insert recName (.recr recVal)
 
-  -- Phases 1b/1c/2/3 + alias registration: later milestones.
+  -- Phase 1b: Generate `.casesOn` definitions (aux_gen.rs:560-583).
+  -- `.casesOn` is a definition that wraps `.rec`, stripping IH fields
+  -- from minors and replacing non-target motives with PUnit. Needed by
+  -- `.brecOn.eq` which uses casesOn-based proofs (via Lean's `cases`
+  -- tactic).
+  --
+  -- Only generate for original recursors (first `nClasses` entries of
+  -- `canonicalRecs`), not auxiliary `rec_N`. This is intentional: Lean
+  -- does NOT generate `casesOn_N` for nested auxiliary types (unlike
+  -- `below_N`/`brecOn_N` which ARE generated via BRecOn.lean).
+  for (recName, recVal) in canonicalRecs.toList.take nClasses do
+    -- Build casesOn name: recName is "I.rec", casesOn name is "I.casesOn"
+    -- (Rust matches `NameData::Str(parent, _, _)` — the suffix itself is
+    -- not inspected; non-Str names are skipped).
+    match recName with
+    | .str indName _ _ =>
+      let casesOnName := Name.mkStr indName "casesOn"
+      -- Only generate if the original env has this constant. Nested ifs:
+      -- the generator must only run when the env lookup succeeds
+      -- (mirrors Rust's short-circuiting `&&` let-chain).
+      if (← liftM (lookupConst? casesOnName : CompileM _)).isSome then
+        match ← liftM (generateCasesOn casesOnName recVal : CompileM _) with
+        | some auxDef =>
+          patches := patches.insert casesOnName (.casesOnDef auxDef)
+        | none => pure ()
+    | _ => pure ()
+
+  -- Phase 1c: Generate `.recOn` definitions (arg-reordered `.rec`
+  -- wrapper) (aux_gen.rs:585-601).
+  --
+  -- Only generate for original recursors (first `nClasses`), not
+  -- auxiliary `rec_N` — same intentional restriction as Phase 1b.
+  for (recName, recVal) in canonicalRecs.toList.take nClasses do
+    match recName with
+    | .str indName _ _ =>
+      let recOnName := Name.mkStr indName "recOn"
+      if (← liftM (lookupConst? recOnName : CompileM _)).isSome then
+        match generateRecOn recOnName recVal with
+        | some auxDef =>
+          patches := patches.insert recOnName (.recOnDef auxDef)
+        | none => pure ()
+    | _ => pure ()
+
+  -- Phases 2/3 + alias registration: later milestones.
 
   return { patches, aliases, perm := capturedPerm,
            nClasses, nCanonicalAux := capturedNCanonicalAux,

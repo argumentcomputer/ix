@@ -273,6 +273,12 @@ def leanDumpPatchesBlock (lo : Ix.Name) (all : Array Ix.Name)
       out := out ++ s!"patch {name.pretty} kind=rec lvls={lps} k={rv.k} params={rv.numParams} indices={rv.numIndices} motives={rv.numMotives} minors={rv.numMinors} all={allStr} typ={exprAddr rv.cnst.type}\n"
       for (rule, i) in rv.rules.zipIdx do
         out := out ++ s!"rule {name.pretty} {i} ctor={rule.ctor.pretty} fields={rule.nfields} rhs={exprAddr rule.rhs}\n"
+    | some (.casesOnDef d) =>
+      let lps := ",".intercalate (d.levelParams.toList.map (·.pretty))
+      out := out ++ s!"patch {name.pretty} kind=casesOn lvls={lps} unsafe={d.isUnsafe} typ={exprAddr d.typ} value={exprAddr d.value}\n"
+    | some (.recOnDef d) =>
+      let lps := ",".intercalate (d.levelParams.toList.map (·.pretty))
+      out := out ++ s!"patch {name.pretty} kind=recOn lvls={lps} unsafe={d.isUnsafe} typ={exprAddr d.typ} value={exprAddr d.value}\n"
     | _ => pure ()
   return out
 
@@ -525,7 +531,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let rustPatchDump ← rsAuxGenDumpPatchesFFI filtered
   IO.println "[aux-gen-diff] A3: patches dump (Lean)..."
   let leanPatchDump := leanDumpPatches cenv condensed
-  let kinds := ["rec"]
+  let kinds := ["rec", "casesOn", "recOn"]
   let patchesOk ← compareDumps (filterPatchDump rustPatchDump kinds)
     (filterPatchDump leanPatchDump kinds)
   let recCount := ((filterPatchDump rustPatchDump kinds).splitOn "\n").filter
