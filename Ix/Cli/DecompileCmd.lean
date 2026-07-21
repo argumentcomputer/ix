@@ -5,7 +5,7 @@
 
   With `--json` the run records one env-keyed results row (decompile-time,
   file-size, constants, throughput, peak-rss). A malformed decompile is a hard
-  error (nonzero exit → red cell). Deeper compile→decompile roundtrip fidelity
+  error (nonzero exit → red run). Deeper compile→decompile roundtrip fidelity
   is gated by the canonical roundtrip checks (`ix validate` / the roundtrip
   tests), which need the original Lean env a `.ixe` can't supply — so this
   performance tool does not reproduce them.

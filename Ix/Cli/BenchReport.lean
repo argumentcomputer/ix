@@ -3,12 +3,12 @@
   JSON (`Ix.Benchmark.Results`) and a human or bencher.dev:
 
     compare     two rows files → a Markdown main-vs-PR table. With no
-                explicit inputs, compares the cell's local baseline against
-                its previous run (`.lake/benches/<cell>.json` vs `.prev.json`), so
+                explicit inputs, compares the parameter combination's local baseline against
+                its previous run (`.lake/benches/<params>.json` vs `.prev.json`), so
                 a bare local rerun reports its own delta.
-    report      per-cell table files → one Markdown report (the PR comment)
+    report      per-combination table files → one Markdown report (the PR comment)
     bmf         rows JSON → Bencher Metric Format (status ≠ ok rows dropped)
-    fetch-main  base SHA + cell → rows JSON pulled from bencher.dev (curl)
+    fetch-main  base SHA + params → rows JSON pulled from bencher.dev (curl)
     ci …        CI adapters: parse (!benchmark comment → job matrix) and
                 matrix (registry → workflow job matrices)
 
@@ -54,7 +54,7 @@ def metricKind (metric : String) : String :=
     rendering differs. `file-size` is the serialized `.ixe` env — bencher
     plots it as "Environment Size"; `peak-rss` reads better as plain RAM,
     in every slug that embeds it (`recursive-peak-rss` → …-peak-ram);
-    `throughput` carries its unit here because the cells print bare
+    `throughput` carries its unit here because the runs print bare
     magnitudes (matching `unitsFor`'s "constants / second" on bencher). -/
 def metricLabel (metric : String) : String :=
   if metric == "file-size" then "env-size"
@@ -221,7 +221,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     if prStatus == "rejected" then failures := failures.push (n, "PR")
     let mut rowRegressed := false
     let mut rowImproved := false
-    let mut cells := #[s!"`{n}`"]
+    let mut cols := #[s!"`{n}`"]
     for m in a.metrics do
       let mv := rowNum a.mainRows n m
       let pv := rowNum a.prRows n m
@@ -245,13 +245,13 @@ def renderCompare (a : CompareArgs) : String := Id.run do
             delta := delta ++ " ⚠️"; rowRegressed := true
           else if bad < -a.threshold then
             delta := delta ++ " 🟢"; rowImproved := true
-      cells := cells ++ #[renderSide mainStatus mv, renderSide prStatus pv, delta]
+      cols := cols ++ #[renderSide mainStatus mv, renderSide prStatus pv, delta]
     -- Independent tallies: a row can regress on one metric and improve
     -- on another (compile-time up, peak-ram down), and the summary must
     -- not hide either side.
     if rowRegressed then regressed := regressed + 1
     if rowImproved then improved := improved + 1
-    lines := lines.push ("| " ++ " | ".intercalate cells.toList ++ " |")
+    lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
 
   let mut out := #[a.title, ""] ++ lines ++ #[""]
   -- Typecheck failures first and loud — a constant the kernel REJECTS is a
@@ -311,14 +311,14 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
   let mode := (p.flag? "mode").map (·.as! String)
     |>.getD (((Ix.Cli.BenchCmd.findBackend backend).map (·.defaultMode)).getD "execute")
-  let cell := s!"{backend}-{env}-{mode}"
+  let params := s!"{backend}-{env}-{mode}"
   -- Explicit paths win; otherwise the local baseline pair, so a bare
   -- `ix bench compare --backend …` after two runs reports the local delta.
   let benchDir ← Ix.Cli.BenchCmd.benchOutputDir
   let mainPath := (p.flag? "main").map (·.as! String)
-    |>.getD s!"{benchDir}/{cell}.prev.json"
+    |>.getD s!"{benchDir}/{params}.prev.json"
   let prPath := (p.flag? "pr").map (·.as! String)
-    |>.getD s!"{benchDir}/{cell}.json"
+    |>.getD s!"{benchDir}/{params}.json"
   let metrics :=
     let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
     if flagged.isEmpty then
@@ -357,8 +357,8 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
 
 /-! ## report -/
 
-/-- Assemble per-cell compare tables (`<dir>/table-*.md`) into one Markdown
-    report — run several cells locally, `--out table-<cell>.md` each, and
+/-- Assemble per-run compare tables (`<dir>/table-*.md`) into one Markdown
+    report — run several parameter combinations locally, `--out table-<params>.md` each, and
     read them as a single document. The link flags are optional garnish:
     with `--head`/`--repo-url`/`--run-id` (the PR workflow passes them) the
     header links the commit and a logs footer is appended. -/
@@ -464,7 +464,7 @@ def curlJson (url : String) : IO (Except String Json) := do
     load-bearing for the workflow: 3 = transient (no report at that hash
     yet, or the API failed) — the caller falls back to running main
     locally; 2 = config error (unknown backend/mode) — the caller fails
-    the cell loudly instead of paying the fallback forever. A PARTIAL miss
+    the run loudly instead of paying the fallback forever. A PARTIAL miss
     still exits 0: `--missing-out` lists the uncovered names so the caller
     measures just those against the base checkout and merges. -/
 def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -561,35 +561,37 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
 
 /-! ## matrix -/
 
-/-- Emit GitHub Actions matrix JSON from the registry, so workflow matrices
-    are generated instead of hand-copied. `--kind envs` lists the benched
-    env names; `--kind cells` fans enabled backends × benched envs. -/
-def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
-  let kind := (p.flag? "kind").map (·.as! String) |>.getD "envs"
-  let benched := (Ix.Cli.BenchCmd.envSpecs.filter (·.benched)).map (·.name)
-  match kind with
-  | "envs" =>
-    IO.println (Json.arr (benched.map Json.str).toArray).compress
-  | "cells" =>
-    let mut cells : Array Json := #[]
-    for b in Ix.Cli.BenchCmd.backendSpecs do
-      if b.disabled.isSome then continue
-      -- The aiur-recursive backend is env-independent (fixed toy
-      -- statements, no `.ixe`): one cell, not one per env.
-      let envsFor := if b.name == "aiur-recursive" then benched.take 1 else benched
-      for env in envsFor do
-        cells := cells.push <| Json.mkObj
+/-- Emit the benchmark matrix from the registry, so workflow matrices are
+    generated instead of hand-copied: each enabled backend fanned over its
+    env set (`BackendSpec.envNames`) × its scheduled modes — the one
+    fan-out every workflow matrix and gate derives from (any projection,
+    like an env list, is a jq away). Each entry carries the metadata its
+    job needs verbatim: the display label, the bencher testbed/workload
+    pair, and the rendered `--threshold-*` flags, so the workflow
+    hardcodes none of it. -/
+def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
+  let mut entries : Array Json := #[]
+  for b in Ix.Cli.BenchCmd.backendSpecs do
+    if b.disabled.isSome then continue
+    for (mode, testbed) in b.testbeds do
+      if b.unscheduled.contains mode then continue
+      for env in b.envNames do
+        -- The fixed-config backend's env is only its `.ixe`-restore key,
+        -- not what it measures — keep it out of the label.
+        let label := if b.inputs == .fixedConfigs then s!"{b.name}-{mode}"
+          else s!"{b.name}-{env}-{mode}"
+        entries := entries.push <| Json.mkObj
           [("backend", Json.str b.name), ("env", Json.str env),
-           ("mode", Json.str b.defaultMode)]
-    IO.println (Json.arr cells).compress
-  | other =>
-    p.printError s!"error: unknown --kind '{other}' (envs | cells)"
-    return exitUsage
+           ("mode", Json.str mode), ("label", Json.str label),
+           ("testbed", Json.str testbed),
+           ("workload", Json.str (Ix.Cli.BenchCmd.workloadOf testbed)),
+           ("thresholds", Json.str b.thresholdFlags)]
+  IO.println (Json.arr entries).compress
   return 0
 
 /-! ## parse -/
 
-/-- The runner every CI benchmark cell measures on — a `runs-on` field for
+/-- The runner every CI benchmark run measures on — a `runs-on` field for
     the workflows' job matrices, meaningless locally. -/
 def ciRunner : String := "warp-ubuntu-latest-x64-32x"
 
@@ -604,9 +606,9 @@ def parseError (msg : String) : IO UInt32 := do
     h.flush
   return 2
 
-/-- Parse a `!benchmark` command into the cells it schedules — locally a
+/-- Parse a `!benchmark` command into the runs it schedules — locally a
     dry-run preview (`ix bench ci parse --comment "!benchmark aiur"` prints
-    the summary and cell list), in CI the matrix generator. The text comes
+    the summary and run list), in CI the matrix generator. The text comes
     from `--comment`, else the `COMMENT_BODY` env var (how the PR workflow
     passes the comment without inline shell interpolation). When
     `$GITHUB_OUTPUT` is set, the machine outputs (matrix, flags, summary,
@@ -617,9 +619,12 @@ def parseError (msg : String) : IO UInt32 := do
 
       !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
                  [execute | recursive] [fresh] [KEY=VALUE …]
-      BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd;
-                                    compile-only requests may name any
-                                    registry env, e.g. Lean or FLT)
+      BENCH_ENVS=InitStd,Mathlib   (case-insensitive; defaults to every
+                                    registry env for the env-keyed
+                                    backends (compile, decompile), InitStd
+                                    for the rest; env-keyed-only requests
+                                    may name any registry env, e.g. Lean
+                                    or FLT)
       BENCH_FULL=1                 (full curated set, not just primary)
       BENCH_SHARD=1                (only the multi-shard target constants)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
@@ -639,13 +644,13 @@ def parseError (msg : String) : IO UInt32 := do
 
     The bare `execute` token flips a backend with an execute metrics entry
     to execute-only — a real switch only for aiur, whose modes store on
-    separate testbeds, so either kind of cell finds a cached baseline.
+    separate testbeds, so either kind of run finds a cached baseline.
     `recursive` likewise flips aiur to its recursive mode; that testbed is
-    `unscheduled`, so the cell has no bencher baseline (its main side comes
+    `unscheduled`, so the run has no bencher baseline (its main side comes
     from a base-SHA run) and the verifier execute OOMs on the 128 GB CI
     host — reserved for a bigger manual dispatch.
 
-    The bare `fresh` token makes every cell bypass its bencher baseline and
+    The bare `fresh` token makes every run bypass its bencher baseline and
     re-measure the main side with a base-SHA run — for when the published
     baseline is suspect (corrupted upload, stale toolchain). The comparison
     prints in the comment only; PR runs never upload to bencher, so the
@@ -733,14 +738,16 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           let tok := tok.trimAscii.toString
           match Ix.Cli.BenchCmd.findEnv tok with
           | some e =>
-            -- `compile` measures any registry env (its row is env-keyed;
-            -- no curated constants involved). Every other backend selects
-            -- constants from Vectors.csv, which only covers the benched
-            -- envs — so an unbenched env needs a compile-only request.
-            if !e.benched && backends.any (·.name != "compile") then
-              return ← parseError s!"env `{e.name}` is only available for a \
-                compile-only `!benchmark compile` (the other backends need \
-                curated constants; benched: \
+            -- The env-keyed backends (`inputs := .perEnv` — compile,
+            -- decompile) measure any registry env: their row is the env
+            -- itself, no curated constants involved. Every other backend
+            -- selects constants from Vectors.csv, which only covers the
+            -- benched envs — so an unbenched env needs an env-keyed-only
+            -- request.
+            if !e.benched && backends.any (·.inputs != .perEnv) then
+              return ← parseError s!"env `{e.name}` is only available for the \
+                env-keyed backends (compile, decompile); the others need \
+                curated constants (benched: \
                 {", ".intercalate benchedEnvNames})"
             if !envs.contains e.name then envs := envs.push e.name
           | none =>
@@ -761,33 +768,49 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
             WITHOUT_VK_VERIFICATION, RUSTFLAGS, IX_COMPILE_EAGER, \
             IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS)"
     | [] => continue
-  if envs.isEmpty then envs := #["InitStd"]
+  -- Env defaults, per backend, when BENCH_ENVS is absent: the env-keyed
+  -- backends (`inputs := .perEnv` — compile, decompile) cover their full
+  -- registry env set — their row IS the env, so a compiler PR sees every
+  -- env's delta without asking — while the per-constant backends default
+  -- to the light InitStd (a Mathlib prove is too heavy for an unasked-for
+  -- default). An explicit BENCH_ENVS applies to every requested backend.
+  let envsFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
+    if !envs.isEmpty then envs
+    else if b.inputs == .perEnv then b.envNames.toArray
+    else #["InitStd"]
 
   let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
     if recursiveFlag && !(b.metricsFor "recursive").isEmpty then "recursive"
     else if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
     else b.defaultMode
-  let mut cells : Array Json := #[]
+  let mut entries : Array Json := #[]
   for b in backends do
-    -- The aiur-recursive backend is env-independent (fixed toy
-    -- statements, no `.ixe`): one cell no matter how many envs BENCH_ENVS
-    -- lists. The env kept is the first requested one, so the cell's `.ixe`
-    -- restore (an unconditional workflow step) still finds a compiled
-    -- artifact.
-    let cellEnvs := if b.name == "aiur-recursive" then envs.take 1 else envs
-    for e in cellEnvs do
-      cells := cells.push <| Json.mkObj
+    -- The fixed-config backend (`inputs := .fixedConfigs` — aiur-recursive)
+    -- is env-independent (fixed toy statements, no `.ixe`): one run no
+    -- matter how many envs BENCH_ENVS lists. The env kept is the first
+    -- requested one, so the run's `.ixe` restore (an unconditional workflow
+    -- step) still finds a compiled artifact.
+    let runEnvs := if b.inputs == .fixedConfigs then (envsFor b).take 1
+      else envsFor b
+    for e in runEnvs do
+      entries := entries.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
          ("mode", Json.str (modeFor b)),
          ("runner", Json.str ciRunner),
          ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
+
+  -- The union of every backend's env set (first-seen order): the compile
+  -- stage's matrix — each env compiled exactly once — and the summary line.
+  let allEnvs := backends.foldl (init := #[]) fun acc b =>
+    (envsFor b).foldl (init := acc) fun acc e =>
+      if acc.contains e then acc else acc.push e
 
   -- Annotate the mode only where a mode CHOICE exists (aiur's
   -- execute/prove); `ooc=execute` for a single-mode backend is noise.
   let modes := " ".intercalate
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
-  let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate envs.toList}` · \
+  let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}` · \
     set: `{if full == "1" then "full" else "primary"}` · shard: `{shard}`"
   if freshFlag then
     summary := summary ++ " · baseline: `fresh` (base-SHA run, bencher bypassed)"
@@ -798,13 +821,13 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     summary := summary ++ " · env: `" ++ " ".intercalate passthrough.toList ++ "`"
 
   -- `envs` drives the workflow's compile stage: every requested env is
-  -- compiled exactly once — the `.ixe` artifact the prover cells restore,
-  -- AND the measured row the compile cell reuses as its PR side instead
+  -- compiled exactly once — the `.ixe` artifact the prover runs restore,
+  -- AND the measured row the compile run reuses as its PR side instead
   -- of compiling a second time.
   if let some outPath := ← IO.getEnv "GITHUB_OUTPUT" then
     let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
-    h.putStr <| s!"matrix={(Json.arr cells).compress}\n"
-      ++ s!"envs={(Json.arr (envs.map Json.str)).compress}\n"
+    h.putStr <| s!"matrix={(Json.arr entries).compress}\n"
+      ++ s!"envs={(Json.arr (allEnvs.map Json.str)).compress}\n"
       ++ s!"shard={shard}\nfull={full}\n"
       ++ s!"fresh={if freshFlag then 1 else 0}\n"
       ++ s!"config-summary={summary}\n"
@@ -813,7 +836,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       ++ (if passthrough.isEmpty then "" else "\n") ++ "PTENV\n"
     h.flush
   IO.println summary
-  IO.println (Json.arr cells).pretty
+  IO.println (Json.arr entries).pretty
   return 0
 
 end Ix.Cli.BenchReport
@@ -821,17 +844,17 @@ end Ix.Cli.BenchReport
 open Ix.Cli.BenchReport in
 def benchCompareCmd : Cli.Cmd := `[Cli|
   "compare" VIA runCompareCmd;
-  "Render a Markdown main-vs-PR table from two results rows files. Defaults to the cell's local baseline pair (<BENCH_OUTPUT_DIR or .lake/benches>/<cell>{.prev,}.json), so a bare rerun compares against the previous local run."
+  "Render a Markdown main-vs-PR table from two results rows files. Defaults to the parameter combination's local baseline pair (<BENCH_OUTPUT_DIR or .lake/benches>/<params>{.prev,}.json), so a bare rerun compares against the previous local run."
 
   FLAGS:
-    backend       : String; "Cell backend (metrics come from the registry)"
-    env           : String; "Cell env (default: InitStd)"
-    mode          : String; "Cell mode (default: the backend's default_mode)"
-    main          : String; "Main-side rows JSON (default: the cell baseline .prev.json)"
-    pr            : String; "PR-side rows JSON (default: the cell baseline .json)"
+    backend       : String; "Run backend (metrics come from the registry)"
+    env           : String; "Run env (default: InitStd)"
+    mode          : String; "Run mode (default: the backend's default_mode)"
+    main          : String; "Main-side rows JSON (default: the run baseline .prev.json)"
+    pr            : String; "PR-side rows JSON (default: the run baseline .json)"
     metric        : Array String; "Metric column(s), overriding the registry"
     threshold     : Nat;    "Flag |Δ| above this percentage (default: 3)"
-    title         : String; "Table title (default: derived from the cell)"
+    title         : String; "Table title (default: derived from the run)"
     "main-source" : String; "Where the main side came from, for the title"
     out           : String; "Write the table here instead of stdout"
 ]
@@ -839,7 +862,7 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchReport in
 def benchReportCmd : Cli.Cmd := `[Cli|
   "report" VIA runReportCmd;
-  "Assemble per-cell compare tables (<dir>/table-*.md) into one Markdown report. The link flags are optional: the PR workflow passes them to make the report a linkable comment body."
+  "Assemble per-run compare tables (<dir>/table-*.md) into one Markdown report. The link flags are optional: the PR workflow passes them to make the report a linkable comment body."
 
   FLAGS:
     tables     : String; "Directory of table-*.md files (default: tables)"
@@ -867,9 +890,9 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     sha           : String; "Base commit SHA to fetch reports for"
-    backend       : String; "Cell backend (testbed from the registry)"
-    env           : String; "Cell env — admits the env-keyed row past --names"
-    mode          : String; "Cell mode"
+    backend       : String; "Run backend (testbed from the registry)"
+    env           : String; "Run env — admits the env-keyed row past --names"
+    mode          : String; "Run mode"
     consts        : String; "Only fetch these comma-separated benchmark names"
     names         : String; "Additionally read names from a file (one per line); unions with --consts"
     "missing-out" : String; "Write the --names entries bencher lacked (the caller measures just these on the base checkout)"
@@ -879,16 +902,13 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchReport in
 def benchCiMatrixCmd : Cli.Cmd := `[Cli|
   "matrix" VIA runMatrixCmd;
-  "Emit GitHub Actions matrix JSON from the registry (--kind envs | cells)"
-
-  FLAGS:
-    kind   : String; "envs = benched env names; cells = enabled backends × benched envs"
+  "Emit the benchmark matrix from the registry: each enabled backend × its env set × scheduled modes, with per-entry testbed/workload/threshold metadata"
 ]
 
 open Ix.Cli.BenchReport in
 def benchCiParseCmd : Cli.Cmd := `[Cli|
   "parse" VIA runParseCmd;
-  "Parse a !benchmark command into the cells it schedules and write the job matrix to $GITHUB_OUTPUT (when set). Unknown tokens fall off the allowlist; --comment doubles as a local pre-flight of a comment before posting it."
+  "Parse a !benchmark command into the runs it schedules and write the job matrix to $GITHUB_OUTPUT (when set). Unknown tokens fall off the allowlist; --comment doubles as a local pre-flight of a comment before posting it."
 
   FLAGS:
     comment : String; "The command text (default: the COMMENT_BODY env var)"
@@ -905,7 +925,7 @@ def benchCiCmd : Cli.Cmd := `[Cli|
 
 def benchCmd : Cli.Cmd := `[Cli|
   bench NOOP;
-  "Benchmark cells: run, compare, and publish locally exactly what CI runs"
+  "Benchmark runs: run, compare, and publish locally exactly what CI runs"
 
   SUBCOMMANDS:
     benchRunCmd;
