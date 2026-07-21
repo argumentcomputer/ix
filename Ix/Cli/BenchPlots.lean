@@ -11,8 +11,10 @@
   Idempotent, keyed by title (the display names in `plotTitle`): a plot
   whose dimensions already match is left alone (only its dashboard index
   is re-asserted); a stale one is deleted and recreated (the plot PATCH
-  endpoint only takes index/title/window, not dimensions). Unrecognized
-  titles are untouched, so hand-pinned plots survive. A registry benchmark
+  endpoint only takes index/title/window, not dimensions). The registry
+  owns the dashboard: every plot whose title is not in the desired set is
+  deleted, so each sync converges to exactly the registry's plots — a
+  hand-created plot does not survive a sync. A registry benchmark
   — or a whole testbed — bencher hasn't seen yet (first upload still
   pending) is skipped with a warning and picked up on the next sync.
 
@@ -385,6 +387,20 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln
       "warn: Zisk shards plot skipped (missing testbed or measure)"
 
+  -- The registry owns the dashboard: delete every plot whose title isn't
+  -- in the desired set, so each sync converges to exactly the registry's
+  -- plots (a renamed or de-listed plot goes away instead of lingering
+  -- beside its replacement).
+  let desiredTitles := desired.map (·.title)
+  let mut removed := 0
+  for pl in plots do
+    if let some title := objStr pl "title" then
+      if !desiredTitles.contains title then
+        IO.println s!"remove:  {title}"
+        unless dryRun do
+          bencherRun #["plot", "delete", project, (objStr pl "uuid").getD ""]
+        removed := removed + 1
+
   for d in desired do
     match ← syncPlot project dryRun xAxis branchUuid plots idx d with
     | .created => created := created + 1
@@ -392,7 +408,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     | .kept => kept := kept + 1
     idx := idx + 1
 
-  IO.println s!"plots: {created} created, {replaced} replaced, {kept} kept \
+  IO.println s!"plots: {created} created, {replaced} replaced, {removed} removed, {kept} kept \
     → https://bencher.dev/console/projects/{project}/plots"
   return 0
 
