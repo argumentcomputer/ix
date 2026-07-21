@@ -28,6 +28,7 @@ import Ix.CompileM
 import Ix.Commit
 import Ix.AuxGen.Nested
 import Ix.AuxGen.Patches
+import Ix.AuxGen.CompileAux
 import Tests.Ix.Compile.ValidateAux
 
 namespace Tests.Compile.AuxGenDiff
@@ -48,6 +49,13 @@ opaque rsAuxGenDumpExpandFFI
     The Lean comparison filters by patch kind and widens per milestone. -/
 @[extern "rs_aux_gen_dump_patches"]
 opaque rsAuxGenDumpPatchesFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → IO String
+
+/-- FFI (test-ffi only): post-compile surgery plans + AuxLayouts + Muts
+    named entries (`rs_aux_gen_dump_plans` in crates/ffi/src/compile.rs) —
+    the A7 orchestration gate medium. -/
+@[extern "rs_aux_gen_dump_plans"]
+opaque rsAuxGenDumpPlansFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO String
 
 /-- Aux-family name test, by last components (mirrors the Rust aux shapes:
@@ -323,6 +331,137 @@ def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .error e => out := out ++ s!"block {lo.pretty}\nerror generate {e}\n"
   return out
 
+/-! ## A7 gate: orchestration plans/AuxLayout/Muts parity
+
+Mirrors `rs_aux_gen_dump_plans`: per qualifying block (mutual OR
+inductive-containing — Rust registers `Muts` entries for every
+`compile_mutual` invocation with `aux=true`), compile the primary block,
+run `compileMutualAuxTail`, and render the resulting call-site plans,
+brecOn/below plans, and `Muts` named entries (dedup by name, LAST wins —
+the layout re-registration overrides) in the endpoint's exact format. -/
+
+private def dumpBits (bits : Array Bool) : String :=
+  String.mk (bits.toList.map fun b => if b then '1' else '0')
+
+private def dumpNats (xs : Array Nat) : String :=
+  ",".intercalate (xs.toList.map fun x =>
+    if x == Ix.AuxGen.PERM_OUT_OF_SCC then "out" else toString x)
+
+private def dumpU64s (xs : Array UInt64) : String :=
+  ",".intercalate (xs.toList.map fun x =>
+    if x.toNat == Ix.AuxGen.PERM_OUT_OF_SCC then "out" else toString x.toNat)
+
+/-- Per-block Lean half of the plans dump. Returns accumulated
+    (plans, brecPlans, belowPlans, mutsLines-source). -/
+def leanDumpPlansBlock (lo : Ix.Name) (all : Array Ix.Name)
+    : Ix.CompileM.CompileM
+        (Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan
+          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan
+          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan
+          × Array (Ix.Name × Ixon.Named)) := do
+  let mut cs : Array Ix.MutConst := #[]
+  for n in all do
+    match (← Ix.AuxGen.lookupConst? n) with
+    | none => pure ()
+    | some ci =>
+      match ci with
+      | .inductInfo val => cs := cs.push (← Ix.CompileM.MutConst.mkIndc val)
+      | .defnInfo val => cs := cs.push (Ix.MutConst.fromDefinitionVal val)
+      | .opaqueInfo val => cs := cs.push (Ix.MutConst.fromOpaqueVal val)
+      | .thmInfo val => cs := cs.push (Ix.MutConst.fromTheoremVal val)
+      | .recInfo val => cs := cs.push (.recr val)
+      | _ => pure ()
+  let sortedClasses ← Ix.CompileM.sortConsts cs.toList
+  let blockResult ← Ix.CompileM.compileMutualBlock sortedClasses
+  let cenv ← Ix.CompileM.getCompileEnv
+  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
+  let (auxLayout?, plans, brecPlans, belowPlans) ←
+    (Ix.AuxGen.compileMutualAuxTail cs sortedClasses blockResult.blockAddr
+      maps).run' Ix.AuxGen.AuxKernelCtx.new
+  let _ := auxLayout?
+  let st ← Ix.CompileM.getBlockState
+  return (plans, brecPlans, belowPlans, st.auxNamed)
+
+/-- Whole-env Lean plans dump in `rs_aux_gen_dump_plans` format. -/
+def leanDumpPlans (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
+    : String := Id.run do
+  -- Block selection: every compile_mutual-with-aux invocation — mutual
+  -- blocks of any kind, plus singleton inductives.
+  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
+  for (lo, members) in condensed.blocks do
+    let sortedAll := (members.toArray.map (·, ())).map (·.1)
+      |>.qsort (fun a b => a.pretty < b.pretty)
+    let hasInd := sortedAll.any fun n =>
+      match cenv.env.consts.get? n with
+      | some (.inductInfo _) => true
+      | _ => false
+    -- Count only block-compilable kinds for the "mutual" test (ctors
+    -- are members of their parent's SCC but not MutConsts).
+    let mut nCompilable := 0
+    let mut allCompilableAux := true
+    for n in sortedAll do
+      match cenv.env.consts.get? n with
+      | some (.inductInfo _) | some (.defnInfo _) | some (.opaqueInfo _)
+      | some (.thmInfo _) | some (.recInfo _) =>
+        nCompilable := nCompilable + 1
+        if !isAuxFamily n then allCompilableAux := false
+      | _ => pure ()
+    -- Production's scheduler PROMOTES blocks whose members were already
+    -- compiled as aux constants by their parent inductive's pipeline
+    -- (env.rs:566-708) — compile_mutual never runs on them, so they get
+    -- no plans and their Muts entries come from the parent's
+    -- compileAuxBlock. Mirror: skip blocks whose every compilable member
+    -- is aux-family-named.
+    if (hasInd || nCompilable > 1) && !(nCompilable > 0 && allCompilableAux) then
+      blocks := blocks.push (lo.pretty, lo, sortedAll)
+  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+
+  let mut allPlans : Array (String × Ix.AuxGen.CallSitePlan) := #[]
+  let mut allBrec : Array (String × Ix.AuxGen.BRecOnCallSitePlan) := #[]
+  let mut allBelow : Array (String × Ix.AuxGen.BRecOnCallSitePlan) := #[]
+  let mut mutsEntries : Std.HashMap Ix.Name Ixon.Named := {}
+  for (_, lo, all) in blocks do
+    let blockEnv : Ix.CompileM.BlockEnv :=
+      { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    match Ix.CompileM.CompileM.run cenv blockEnv {}
+        (leanDumpPlansBlock lo all) with
+    | .ok ((plans, brecPlans, belowPlans, auxNamed), _) =>
+      for (n, p) in plans do
+        allPlans := allPlans.push (n.pretty, p)
+      for (n, p) in brecPlans do
+        allBrec := allBrec.push (n.pretty, p)
+      for (n, p) in belowPlans do
+        allBelow := allBelow.push (n.pretty, p)
+      for (n, named) in auxNamed do
+        if let .muts .. := named.constMeta.info then
+          mutsEntries := mutsEntries.insert n named
+    | .error _ =>
+      -- Errors surface in the patches gate already; keep plans quiet.
+      pure ()
+
+  let mut out := ""
+  for (name, p) in allPlans.qsort (fun a b => a.1 < b.1) do
+    let head := match p.headRewrite with
+      | some h => s!"{h.targetRec.pretty}@{h.targetMotivePos}"
+      | none => "none"
+    out := out ++ s!"plan {name} params={p.nParams} smotives={p.nSourceMotives} sminors={p.nSourceMinors} indices={p.nIndices} mkeep={dumpBits p.motiveKeep} nkeep={dumpBits p.minorKeep} m2c={dumpNats p.sourceToCanonMotive} n2c={dumpNats p.sourceToCanonMinor} inblock={dumpBits p.sourceInBlock} head={head}\n"
+  for (tag, arr) in [("bplan", allBrec), ("wplan", allBelow)] do
+    for (name, p) in arr.qsort (fun a b => a.1 < b.1) do
+      out := out ++ s!"{tag} {name} params={p.nParams} smotives={p.nSourceMotives} indices={p.nIndices} mkeep={dumpBits p.motiveKeep} m2c={dumpNats p.sourceToCanonMotive}\n"
+  let mutsSorted := (mutsEntries.toList.map fun (n, named) =>
+    (n.pretty, toString named.addr, named)).toArray.qsort
+      (fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1))
+  for (name, addrHex, named) in mutsSorted do
+    if let .muts allClasses auxLayout := named.constMeta.info then
+      let allStr := ";".intercalate (allClasses.toList.map fun cls =>
+        ",".intercalate (cls.toList.map toString))
+      let layoutStr := match auxLayout with
+        | some l =>
+          s!"{dumpU64s l.perm}/{",".intercalate (l.sourceCtorCounts.toList.map (fun (c : UInt64) => toString c.toNat))}"
+        | none => "none"
+      out := out ++ s!"muts {name} addr={addrHex} all={allStr} layout={layoutStr}\n"
+  return out
+
 /-- Keep only `block` headers plus patch/rule/error lines whose kind is in
     the whitelist — the comparison scope widens per milestone (A3: rec;
     A4: +casesOn/recOn; A5: +below*; A6: +brecOn+aliases). -/
@@ -555,6 +694,18 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let recCount := ((filterPatchDump rustPatchDump kinds).splitOn "\n").filter
     (·.startsWith "patch ") |>.length
   IO.println s!"[aux-gen-diff] patches gate ({", ".intercalate kinds}): {if patchesOk then "PASS" else "FAIL"} ({recCount} patches compared)"
+
+  -- A7 gate: orchestration plans / AuxLayout / Muts entries.
+  IO.println "[aux-gen-diff] A7: plans dump (Rust)..."
+  let rustPlansDump ← rsAuxGenDumpPlansFFI filtered
+  IO.println "[aux-gen-diff] A7: plans dump (Lean)..."
+  let leanPlansDump := leanDumpPlans cenv condensed
+  let plansOk ← compareDumps rustPlansDump leanPlansDump
+  let mutsCount := ((rustPlansDump.splitOn "\n").filter
+    (·.startsWith "muts ")).length
+  let planCount := ((rustPlansDump.splitOn "\n").filter
+    (·.startsWith "plan ")).length
+  IO.println s!"[aux-gen-diff] plans gate: {if plansOk then "PASS" else "FAIL"} ({planCount} plans, {mutsCount} muts entries)"
   -- Optional dump save for inspection (IX_AUX_DUMP_OUT=<path-prefix>).
   match (← IO.getEnv "IX_AUX_DUMP_OUT") with
   | some pathPrefix =>
@@ -562,9 +713,11 @@ def run (env : Lean.Environment) : IO UInt32 := do
     IO.FS.writeFile (pathPrefix ++ ".lean.txt") leanDump
     IO.FS.writeFile (pathPrefix ++ ".patches.rust.txt") rustPatchDump
     IO.FS.writeFile (pathPrefix ++ ".patches.lean.txt") leanPatchDump
+    IO.FS.writeFile (pathPrefix ++ ".plans.rust.txt") rustPlansDump
+    IO.FS.writeFile (pathPrefix ++ ".plans.lean.txt") leanPlansDump
     IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
   | none => pure ()
 
-  return if gateOk && dumpOk && patchesOk then 0 else 1
+  return if gateOk && dumpOk && patchesOk && plansOk then 0 else 1
 
 end Tests.Compile.AuxGenDiff

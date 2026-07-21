@@ -42,6 +42,10 @@ structure CompileEnv where
   blobs : Std.HashMap Address ByteArray
   /-- Total bytes of serialized constants (for profiling) -/
   totalBytes : Nat
+  /-- Aux-generated name→address view merged from previously compiled
+      blocks (Rust `stt.aux_name_to_addr`; scheduler-visible only after
+      the driver merges each block's registrations). -/
+  auxNameToAddr : Std.HashMap Name Address := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -90,6 +94,19 @@ structure BlockState where
   defHints : Std.HashMap Name Lean.ReducibilityHints := {}
   /-- Arena-based expression metadata for the current constant -/
   arena : Ixon.ExprMetaArena := {}
+  /-- Aux-generation outputs of the CURRENT block (Rust mutates
+      `stt.aux_name_to_addr` / `stt.env` globally; the pure model collects
+      per block and the driver merges). Within-block phases resolve
+      earlier phases' constants through `auxNameToAddr` via
+      `lookupConstAddr`'s fallback chain. -/
+  auxNameToAddr : Std.HashMap Name Address := {}
+  /-- `stt.env.store_const` calls (blocks + projections), in order. -/
+  auxConsts : Array (Address × Ixon.Constant) := #[]
+  /-- `stt.env.register_name` calls (incl. synthetic `Muts` entries), in
+      order; later entries for a name override earlier (DashMap insert). -/
+  auxNamed : Array (Name × Ixon.Named) := #[]
+  /-- `stt.aux_gen_extra_names` membership (Rust mutual.rs). -/
+  auxGenExtraNames : Std.HashSet Name := {}
   deriving Inhabited
 
 /-- Get or insert a reference into the refs table, returning its index. -/
@@ -267,12 +284,22 @@ def internRef (addr : Address) : CompileM UInt64 :=
     let (state', idx) := state.internRef addr
     (idx, state')
 
-/-- Look up a constant's address from the global compile environment. -/
+/-- Look up a constant's address: compiled names first, then the current
+    block's aux registrations, then previously merged aux names. Mirrors
+    Rust `stt.resolve_addr` (compile.rs:261-274 — `name_to_addr` with
+    `aux_name_to_addr` fallback; the block-local layer stands in for
+    Rust's global DashMap being visible mid-block). -/
 def lookupConstAddr (name : Name) : CompileM Address := do
   let env ← getCompileEnv
   match env.nameToNamed.get? name with
   | some named => pure named.addr
-  | none => throw (.missingConstant s!"{name}")
+  | none =>
+    match (← getBlockState).auxNameToAddr.get? name with
+    | some addr => pure addr
+    | none =>
+      match env.auxNameToAddr.get? name with
+      | some addr => pure addr
+      | none => throw (.missingConstant s!"{name}")
 
 /-- Find a constant in the Ix environment. -/
 def findConst (name : Name) : CompileM ConstantInfo := do
