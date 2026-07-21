@@ -26,11 +26,20 @@
 -/
 import Ix.CompileM
 import Ix.Commit
+import Ix.AuxGen.Nested
 import Tests.Ix.Compile.ValidateAux
 
 namespace Tests.Compile.AuxGenDiff
 
 open Ix.CompileM (CompilePhases CompileEnv)
+
+/-- FFI (test-ffi only): deterministic text dump of the Rust compiler's
+    nested-expansion/canonicity intermediates for every inductive SCC
+    block — see `rs_aux_gen_dump_expand` in `crates/ffi/src/compile.rs`
+    for the format contract that `leanDumpExpand` below mirrors. -/
+@[extern "rs_aux_gen_dump_expand"]
+opaque rsAuxGenDumpExpandFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → IO String
 
 /-- Aux-family name test, by last components (mirrors the Rust aux shapes:
     `.rec`, `.rec_N`, `.recOn`, `.casesOn`, `.below`, `.below_N`, `.brecOn`,
@@ -103,6 +112,163 @@ def firstDiff (a b : ByteArray) : Option Nat := Id.run do
     if a.get! i != b.get! i then return some i
   if a.size != b.size then return some (min a.size b.size)
   return none
+
+/-! ## A2 gate: expansion/canonicity dump parity
+
+`leanDumpExpand` reproduces — byte for byte — the text that
+`rs_aux_gen_dump_expand` emits from the Rust side, by running the
+pure-Lean `Ix.AuxGen` pipeline (`sortConsts` → `expandNestedBlock` →
+`sortAuxByPartitionRefinement` → `computeAuxPerm` →
+`sourceAuxOrderWithOwner`) per inductive SCC block. The gate is a line
+diff; the first diverging line pinpoints the phase. -/
+
+/-- Expr content hash as lowercase hex (mirrors Rust
+    `Address::from_blake3_hash(e.get_hash()).hex()`). -/
+private def exprAddr (e : Ix.Expr) : String := toString e.getHash
+
+/-- Per-block half of the Lean dump (runs in CompileM so `sortConsts` and
+    the expansion see the Rust-seeded `CompileEnv`). -/
+def leanDumpBlock (lo : Ix.Name) (all : Array Ix.Name)
+    : Ix.CompileM.CompileM String := do
+  let mut out := s!"block {lo.pretty}\n"
+
+  -- Mirror compile_mutual's cs construction over pretty-sorted members.
+  let mut cs : Array Ix.MutConst := #[]
+  for n in all do
+    match (← Ix.AuxGen.lookupConst? n) with
+    | none => return out ++ s!"error collect missing {n.pretty}\n"
+    | some ci =>
+      match ci with
+      | .inductInfo val =>
+        cs := cs.push (← Ix.CompileM.MutConst.mkIndc val)
+      | .defnInfo val => cs := cs.push (Ix.MutConst.fromDefinitionVal val)
+      | .opaqueInfo val => cs := cs.push (Ix.MutConst.fromOpaqueVal val)
+      | .thmInfo val => cs := cs.push (Ix.MutConst.fromTheoremVal val)
+      | .recInfo val => cs := cs.push (.recr val)
+      | _ => pure ()
+
+  let sortedClasses ← Ix.CompileM.sortConsts cs.toList
+
+  let orderedOriginals : Array Ix.Name :=
+    (sortedClasses.map fun c => (c.head!).name).toArray
+  let mut aliasToRep : Std.HashMap Ix.Name Ix.Name := {}
+  for cls in sortedClasses do
+    let rep := (cls.head!).name
+    for aliasConst in cls.drop 1 do
+      aliasToRep := aliasToRep.insert aliasConst.name rep
+  let originalAll : Array Ix.Name := Id.run do
+    for c in cs do
+      if let .indc ind := c then
+        return ind.all
+    return #[]
+
+  let mut metadataHasNested := false
+  for name in originalAll do
+    if let some (.inductInfo v) ← Ix.AuxGen.lookupConst? name then
+      if v.numNested > 0 then metadataHasNested := true
+
+  let expanded ← Ix.AuxGen.expandNestedBlock orderedOriginals aliasToRep
+  let structuralHasNested : Bool := expanded.types.size > expanded.nOriginals
+
+  out := out ++ s!"flags meta_nested={metadataHasNested} structural_nested={structuralHasNested} n_classes={sortedClasses.length}\n"
+  out := out ++ s!"levels {" ".intercalate (expanded.levelParams.toList.map (·.pretty))}\n"
+  for (n, i) in orderedOriginals.zipIdx do
+    out := out ++ s!"original {i} {n.pretty}\n"
+
+  for (mem, i) in expanded.types.zipIdx do
+    out := out ++ s!"pre {i} name={mem.name.pretty} owner={mem.sourceOwner.pretty} params={mem.nParams} indices={mem.nIndices} typ={exprAddr mem.typ}\n"
+    for (ctor, j) in mem.ctors.zipIdx do
+      out := out ++ s!"prector {i} {j} name={ctor.name.pretty} fields={ctor.nFields} typ={exprAddr ctor.typ}\n"
+  -- Keys are unique (map keys), so first-component ordering is total.
+  let nestedEntries := (expanded.auxToNested.toList.map
+    fun (n, e) => (n.pretty, exprAddr e)).toArray.qsort (fun a b => a.1 < b.1)
+  for (n, h) in nestedEntries do
+    out := out ++ s!"nested {n} {h}\n"
+  let auxctorEntries := (expanded.auxCtorMap.toList.map
+    fun (c, orig, ind) => (c.pretty, orig.pretty, ind.pretty)).toArray.qsort
+      (fun a b => a.1 < b.1)
+  for (c, o, i) in auxctorEntries do
+    out := out ++ s!"auxctor {c} {o} {i}\n"
+
+  if !(metadataHasNested && structuralHasNested) then
+    return out
+
+  let (expanded, sortperm) ← Ix.AuxGen.sortAuxByPartitionRefinement expanded
+  out := out ++ s!"sortperm {" ".intercalate (sortperm.toList.map toString)}\n"
+  for (mem, i) in expanded.types.zipIdx do
+    if i < expanded.nOriginals then
+      continue
+    out := out ++ s!"post {i} name={mem.name.pretty} owner={mem.sourceOwner.pretty} typ={exprAddr mem.typ}\n"
+    for (ctor, j) in mem.ctors.zipIdx do
+      out := out ++ s!"postctor {i} {j} name={ctor.name.pretty} typ={exprAddr ctor.typ}\n"
+
+  let mut origToCanonMap : Std.HashMap Ix.Name Ix.Name := {}
+  for cls in sortedClasses do
+    let rep := (cls.head!).name
+    for m in cls do
+      origToCanonMap := origToCanonMap.insert m.name rep
+  let cenv ← Ix.CompileM.getCompileEnv
+  let resolveAddr : Ix.Name → Option Address :=
+    fun n => (cenv.nameToNamed.get? n).map (·.addr)
+  let perm ← Ix.AuxGen.computeAuxPerm expanded originalAll origToCanonMap resolveAddr
+  let permStrs := perm.toList.map fun p =>
+    if p == Ix.AuxGen.PERM_OUT_OF_SCC then "out" else toString p
+  out := out ++ s!"perm {" ".intercalate permStrs}\n"
+
+  let sourceEntries ← Ix.AuxGen.sourceAuxOrderWithOwner originalAll
+  for ((owner, head, specs), j) in sourceEntries.zipIdx do
+    let specStrs := ",".intercalate (specs.toList.map exprAddr)
+    out := out ++ s!"source {j} owner={owner.pretty} head={head.pretty} specs={specStrs}\n"
+
+  return out
+
+/-- Whole-env Lean dump over the same block selection/order as the Rust
+    endpoint (inductive-containing SCCs, sorted by lowlink pretty name,
+    members pretty-sorted). CompileM errors surface as `error` lines so a
+    divergence shows in the diff instead of aborting. -/
+def leanDumpExpand (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
+    : String := Id.run do
+  let mut blocks : Array (String × Ix.Name × Array Ix.Name) := #[]
+  for (lo, members) in condensed.blocks do
+    let all := (members.toArray.map (·, ())).map (·.1)
+    let sortedAll := all.qsort (fun a b => a.pretty < b.pretty)
+    let hasInd := sortedAll.any fun n =>
+      match cenv.env.consts.get? n with
+      | some (.inductInfo _) => true
+      | _ => false
+    if hasInd then
+      blocks := blocks.push (lo.pretty, lo, sortedAll)
+  blocks := blocks.qsort (fun (a, _, _) (b, _, _) => a < b)
+
+  let mut out := ""
+  for (_, lo, all) in blocks do
+    let blockEnv : Ix.CompileM.BlockEnv :=
+      { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    match Ix.CompileM.CompileM.run cenv blockEnv {} (leanDumpBlock lo all) with
+    | .ok (s, _) => out := out ++ s
+    | .error e => out := out ++ s!"block {lo.pretty}\nerror compilem {e}\n"
+  return out
+
+/-- Compare the two dumps line-by-line; report the first divergence with
+    surrounding context. Returns true iff identical. -/
+def compareDumps (rust lean : String) : IO Bool := do
+  if rust == lean then
+    return true
+  let rustLines := rust.splitOn "\n" |>.toArray
+  let leanLines := lean.splitOn "\n" |>.toArray
+  let n := min rustLines.size leanLines.size
+  let mut firstDiff : Option Nat := none
+  for i in [0:n] do
+    if firstDiff.isNone && rustLines[i]! != leanLines[i]! then
+      firstDiff := some i
+  let diffAt := firstDiff.getD n
+  IO.println s!"[aux-gen-diff] DUMP DIVERGENCE at line {diffAt} (rust {rustLines.size} lines, lean {leanLines.size} lines)"
+  let lo := if diffAt ≥ 3 then diffAt - 3 else 0
+  for i in [lo:min (diffAt + 4) n] do
+    let marker := if i == diffAt then ">" else " "
+    IO.println s!"[aux-gen-diff] {marker} rust| {rustLines[i]!}"
+    IO.println s!"[aux-gen-diff] {marker} lean| {leanLines[i]!}"
+  return false
 
 def run (env : Lean.Environment) : IO UInt32 := do
   let debugConst? := (← IO.getEnv "IX_AUX_DIFF_DEBUG")
@@ -254,6 +420,23 @@ def run (env : Lean.Environment) : IO UInt32 := do
     && rep.adjError.isEmpty && rep.missingInRust.isEmpty
   IO.println ""
   IO.println s!"[aux-gen-diff] drift gate: {if gateOk then "PASS" else "FAIL"}"
-  return if gateOk then 0 else 1
+
+  -- A2 gate: expansion/canonicity dump parity (Rust intermediates vs the
+  -- pure-Lean Ix.AuxGen pipeline).
+  IO.println "[aux-gen-diff] A2: expansion dump (Rust)..."
+  let rustDump ← rsAuxGenDumpExpandFFI filtered
+  IO.println "[aux-gen-diff] A2: expansion dump (Lean)..."
+  let leanDump := leanDumpExpand cenv condensed
+  let dumpOk ← compareDumps rustDump leanDump
+  IO.println s!"[aux-gen-diff] expansion gate: {if dumpOk then "PASS" else "FAIL"} ({(rustDump.splitOn "\n").length} dump lines)"
+  -- Optional dump save for inspection (IX_AUX_DUMP_OUT=<path-prefix>).
+  match (← IO.getEnv "IX_AUX_DUMP_OUT") with
+  | some pathPrefix =>
+    IO.FS.writeFile (pathPrefix ++ ".rust.txt") rustDump
+    IO.FS.writeFile (pathPrefix ++ ".lean.txt") leanDump
+    IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
+  | none => pure ()
+
+  return if gateOk && dumpOk then 0 else 1
 
 end Tests.Compile.AuxGenDiff
