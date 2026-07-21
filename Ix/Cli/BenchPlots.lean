@@ -168,9 +168,18 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
 
 /-! ## bencher CLI plumbing -/
 
+/-- Spawn env for the bencher CLI: drop LD_LIBRARY_PATH. `lake exe`
+    prepends the Lean toolchain's lib dirs there (for libleanshared), and
+    the loader consults LD_LIBRARY_PATH before a binary's own RUNPATH — so
+    bencher would resolve the toolchain's bundled, older `libgcc_s.so.1`
+    and die on a missing GCC symbol version. bencher is self-contained;
+    it needs nothing from the Lean runtime. -/
+def bencherEnv : Array (String × Option String) :=
+  #[("LD_LIBRARY_PATH", none)]
+
 /-- Run the bencher CLI and parse its JSON stdout. -/
 def bencherJson (args : Array String) : IO Json := do
-  let r ← IO.Process.output { cmd := "bencher", args }
+  let r ← IO.Process.output { cmd := "bencher", args, env := bencherEnv }
   if r.exitCode != 0 then
     throw <| IO.userError
       s!"bencher {" ".intercalate args.toList} failed (exit {r.exitCode}):\n{r.stderr}"
@@ -182,7 +191,7 @@ def bencherJson (args : Array String) : IO Json := do
 
 /-- Run a bencher write call (create/update/delete), output discarded. -/
 def bencherRun (args : Array String) : IO Unit := do
-  let r ← IO.Process.output { cmd := "bencher", args }
+  let r ← IO.Process.output { cmd := "bencher", args, env := bencherEnv }
   if r.exitCode != 0 then
     throw <| IO.userError
       s!"bencher {" ".intercalate args.toList} failed (exit {r.exitCode}):\n{r.stderr}"
