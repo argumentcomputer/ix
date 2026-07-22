@@ -1619,10 +1619,10 @@ fn aux_dump_block(
   stt: &CompileState,
   out: &mut String,
 ) {
-  use ix_compile::compile::{BlockCache, mk_indc, sort_consts};
-  use ix_compile::compile::aux_gen::nested;
-  use ix_compile::mutual::{Def, MutConst};
   use ix_common::env::ConstantInfo as LeanCI;
+  use ix_compile::compile::aux_gen::nested;
+  use ix_compile::compile::{BlockCache, mk_indc, sort_consts};
+  use ix_compile::mutual::{Def, MutConst};
   use std::fmt::Write as _;
 
   let _ = writeln!(out, "block {}", lo.pretty());
@@ -1652,14 +1652,14 @@ fn aux_dump_block(
   }
 
   let mut cache = BlockCache::default();
-  let sorted_classes = match sort_consts(&cs.iter().collect::<Vec<_>>(), &mut cache, stt)
-  {
-    Ok(sc) => sc,
-    Err(e) => {
-      let _ = writeln!(out, "error sort_consts {e:?}");
-      return;
-    },
-  };
+  let sorted_classes =
+    match sort_consts(&cs.iter().collect::<Vec<_>>(), &mut cache, stt) {
+      Ok(sc) => sc,
+      Err(e) => {
+        let _ = writeln!(out, "error sort_consts {e:?}");
+        return;
+      },
+    };
 
   // generate_aux_patches Phase-1 inputs (aux_gen.rs:241-263).
   let ordered_originals: Vec<Name> =
@@ -1686,14 +1686,17 @@ fn aux_dump_block(
     )
   });
 
-  let mut expanded =
-    match nested::expand_nested_block(&ordered_originals, lean_env, &alias_to_rep) {
-      Ok(x) => x,
-      Err(e) => {
-        let _ = writeln!(out, "error expand {e:?}");
-        return;
-      },
-    };
+  let mut expanded = match nested::expand_nested_block(
+    &ordered_originals,
+    lean_env,
+    &alias_to_rep,
+  ) {
+    Ok(x) => x,
+    Err(e) => {
+      let _ = writeln!(out, "error expand {e:?}");
+      return;
+    },
+  };
   let structural_has_nested = expanded.types.len() > expanded.n_originals;
 
   let _ = writeln!(
@@ -1753,13 +1756,14 @@ fn aux_dump_block(
   }
 
   // Canonical sort of the aux tail (aux_gen.rs:280).
-  let sortperm = match nested::sort_aux_by_partition_refinement(&mut expanded, stt) {
-    Ok(p) => p,
-    Err(e) => {
-      let _ = writeln!(out, "error sortaux {e:?}");
-      return;
-    },
-  };
+  let sortperm =
+    match nested::sort_aux_by_partition_refinement(&mut expanded, stt) {
+      Ok(p) => p,
+      Err(e) => {
+        let _ = writeln!(out, "error sortaux {e:?}");
+        return;
+      },
+    };
   let sortperm_strs: Vec<String> =
     sortperm.iter().map(|p| p.to_string()).collect();
   let _ = writeln!(out, "sortperm {}", sortperm_strs.join(" "));
@@ -1800,7 +1804,11 @@ fn aux_dump_block(
       let perm_strs: Vec<String> = perm
         .iter()
         .map(|&p| {
-          if p == nested::PERM_OUT_OF_SCC { "out".to_string() } else { p.to_string() }
+          if p == nested::PERM_OUT_OF_SCC {
+            "out".to_string()
+          } else {
+            p.to_string()
+          }
         })
         .collect();
       let _ = writeln!(out, "perm {}", perm_strs.join(" "));
@@ -1929,7 +1937,8 @@ fn aux_dump_patch(
       }
     },
     PC::RecOn(d) | PC::CasesOn(d) => {
-      let kind = if matches!(patch, PC::RecOn(_)) { "recOn" } else { "casesOn" };
+      let kind =
+        if matches!(patch, PC::RecOn(_)) { "recOn" } else { "casesOn" };
       let lps: Vec<String> =
         d.level_params.iter().map(|n| n.pretty()).collect();
       let _ = writeln!(
@@ -2010,10 +2019,10 @@ fn aux_dump_patch(
 pub extern "C" fn rs_aux_gen_dump_patches(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
+  use ix_common::env::ConstantInfo as LeanCI;
   use ix_compile::compile::aux_gen;
   use ix_compile::compile::{BlockCache, mk_indc, sort_consts};
   use ix_compile::mutual::{Def, MutConst};
-  use ix_common::env::ConstantInfo as LeanCI;
   use std::fmt::Write as _;
 
   let rust_env = crate::lean_env::decode_env(env_consts_ptr);
@@ -2111,11 +2120,8 @@ pub extern "C" fn rs_aux_gen_dump_patches(
     for name in patch_names {
       aux_dump_patch(name, &aux_out.patches[name], &mut out);
     }
-    let mut aliases: Vec<(String, String)> = aux_out
-      .aliases
-      .iter()
-      .map(|(k, v)| (k.pretty(), v.pretty()))
-      .collect();
+    let mut aliases: Vec<(String, String)> =
+      aux_out.aliases.iter().map(|(k, v)| (k.pretty(), v.pretty())).collect();
     aliases.sort();
     for (k, v) in &aliases {
       let _ = writeln!(out, "alias {k} {v}");
@@ -2134,9 +2140,7 @@ fn aux_dump_bits(bits: &[bool]) -> String {
 #[cfg(feature = "test-ffi")]
 fn aux_dump_usizes(xs: &[usize]) -> String {
   xs.iter()
-    .map(|&x| {
-      if x == usize::MAX { "out".to_string() } else { x.to_string() }
-    })
+    .map(|&x| if x == usize::MAX { "out".to_string() } else { x.to_string() })
     .collect::<Vec<_>>()
     .join(",")
 }
@@ -2222,12 +2226,11 @@ pub extern "C" fn rs_aux_gen_dump_plans(
     }
   }
 
-  let mut layouts: Vec<(String, ix_compile::compile::surgery::AuxLayout)> =
-    stt
-      .aux_perms
-      .iter()
-      .map(|e| (e.key().pretty(), e.value().clone()))
-      .collect();
+  let mut layouts: Vec<(String, ix_compile::compile::surgery::AuxLayout)> = stt
+    .aux_perms
+    .iter()
+    .map(|e| (e.key().pretty(), e.value().clone()))
+    .collect();
   layouts.sort_by(|(a, _), (b, _)| a.cmp(b));
   for (name, l) in &layouts {
     let _ = writeln!(
@@ -2278,7 +2281,10 @@ pub extern "C" fn rs_aux_gen_dump_plans(
     .collect();
   muts.sort();
   for (name, addr, all_str, layout_str) in &muts {
-    let _ = writeln!(out, "muts {name} addr={addr} all={all_str} layout={layout_str}");
+    let _ = writeln!(
+      out,
+      "muts {name} addr={addr} all={all_str} layout={layout_str}"
+    );
   }
 
   LeanIOResult::ok(LeanString::new(&out))
