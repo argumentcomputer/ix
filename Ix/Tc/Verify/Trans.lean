@@ -1,6 +1,7 @@
 import Ix.Tc.Verify.Subst
 import Ix.Tc.Verify.VLCtx
 import Lean4Lean.Verify.Typing.Expr
+import Lean4Lean.Theory.Typing.Lemmas
 
 /-!
 # `TrKExpr` — the KExpr ↔ VExpr translation relation (M2)
@@ -179,5 +180,649 @@ theorem TrKExpr.eraseMeta {env : VEnv} {uvars : Nat}
   | str h =>
     rw [KExpr.eraseMeta]
     exact .str h
+
+/-! ### Weakening: `liftSpec` corresponds to `VExpr.liftN`
+
+Mirror of upstream `VLCtx.BVLift`/`TrExprS.weakBV`. The four-index
+split is the crux: `dn`/`dk` count context ENTRIES (KExpr de Bruijn
+indices see every binder, lets included — exactly `liftSpec`'s
+`shift`/`cutoff`), while `n`/`k` are the inserted DEPTH sums (`vlet`s
+are depth-0 on the `VExpr` side — exactly `VExpr.liftN`'s amounts).
+
+The master is stated at anon over the walker's `UInt64` arguments with
+a `Nat` bridge; the single bound `Δ'.bvars + e.size < UInt64.size`
+covers both the rebuilt-index no-wrap (via `find?_inl_lt` +
+`KBVLift.bvars_eq` + `dk_le_bvars`) and the binder-descent
+`cutoff + 1`. -/
+
+namespace KVLCtx
+
+@[simp] theorem liftVar_zero (v : Nat ⊕ FVarId) : liftVar 0 0 v = v := by
+  cases v <;> simp [liftVar]
+
+/-- `Δ'` is `Δ` with `dn` de Bruijn entries inserted at entry-position
+    `dk`; the `VExpr` side lifts by the inserted depth sum `n` at
+    position `k`. -/
+inductive KBVLift : KVLCtx → KVLCtx → Nat → Nat → Nat → Nat → Prop
+  | refl {Δ : KVLCtx} : KBVLift Δ Δ 0 0 0 0
+  | skip {Δ Δ' : KVLCtx} {dn n : Nat} (d : VLocalDecl) :
+    KBVLift Δ Δ' dn 0 n 0 →
+    KBVLift Δ ((none, d) :: Δ') (dn + 1) 0 (n + d.depth) 0
+  | cons {Δ Δ' : KVLCtx} {dn dk n k : Nat} (d : VLocalDecl) :
+    KBVLift Δ Δ' dn dk n k →
+    KBVLift ((none, d) :: Δ) ((none, d.liftN n k) :: Δ') dn (dk + 1) n
+      (k + d.depth)
+
+theorem KBVLift.toCtx {Δ Δ' : KVLCtx} {dn dk n k : Nat}
+    (W : KBVLift Δ Δ' dn dk n k) :
+    Lean4Lean.Ctx.LiftN n k Δ.toCtx Δ'.toCtx := by
+  induction W with
+  | refl => exact .zero []
+  | @skip _ Δ' _ _ d _ ih =>
+    match d with
+    | .vlet .. => exact ih
+    | .vlam A =>
+      generalize hΓ' : KVLCtx.toCtx Δ' = Γ' at ih
+      let .zero As eq := ih
+      simp [KVLCtx.toCtx, hΓ']
+      exact .zero (A :: As) (eq ▸ rfl)
+  | cons d _ ih =>
+    match d with
+    | .vlet .. => exact ih
+    | .vlam A => exact .succ ih
+
+theorem KBVLift.bvars_eq {Δ Δ' : KVLCtx} {dn dk n k : Nat}
+    (W : KBVLift Δ Δ' dn dk n k) : Δ'.bvars = Δ.bvars + dn := by
+  induction W with
+  | refl => rfl
+  | skip d _ ih => simp [KVLCtx.bvars, ih]; omega
+  | cons d _ ih => simp [KVLCtx.bvars, ih]; omega
+
+theorem KBVLift.dk_le_bvars {Δ Δ' : KVLCtx} {dn dk n k : Nat}
+    (W : KBVLift Δ Δ' dn dk n k) : dk ≤ Δ'.bvars := by
+  induction W with
+  | refl => exact Nat.zero_le _
+  | skip d _ ih => exact Nat.zero_le _
+  | cons d _ ih => simp [KVLCtx.bvars]; omega
+
+/-- A successful de Bruijn lookup is bounded by the entry count. -/
+theorem find?_inl_lt : ∀ {Δ : KVLCtx} {j : Nat} {x : VExpr × VExpr},
+    find? Δ (.inl j) = some x → j < Δ.bvars
+  | [], _, _, h => by simp [find?] at h
+  | (none, d) :: Δ, 0, _, _ => by simp [bvars]
+  | (none, d) :: Δ, j+1, x, h => by
+    simp only [find?, next, Option.bind_eq_bind] at h
+    have : ∃ y, find? Δ (.inl j) = some y := by
+      cases hf : find? Δ (.inl j) with
+      | none => rw [hf] at h; exact absurd h (by simp)
+      | some y => exact ⟨y, rfl⟩
+    obtain ⟨y, hy⟩ := this
+    have := find?_inl_lt hy
+    simp [bvars]
+    omega
+  | (some fv, d) :: Δ, j, x, h => by
+    simp only [find?, next, Option.bind_eq_bind] at h
+    have : ∃ y, find? Δ (.inl j) = some y := by
+      cases hf : find? Δ (.inl j) with
+      | none => rw [hf] at h; exact absurd h (by simp)
+      | some y => exact ⟨y, rfl⟩
+    obtain ⟨y, hy⟩ := this
+    have := find?_inl_lt hy
+    simp [bvars]
+    omega
+
+/-- Lookup transport across an insertion — upstream `BVLift.find?`. -/
+protected theorem KBVLift.find? {Δ Δ' : KVLCtx} {dn dk n k : Nat}
+    {v : Nat ⊕ FVarId} {e A : VExpr}
+    (W : KBVLift Δ Δ' dn dk n k) (H : find? Δ v = some (e, A)) :
+    find? Δ' (liftVar dn dk v) = some (e.liftN n k, A.liftN n k) := by
+  induction W generalizing v e A with
+  | refl => simp [H]
+  | @skip _ Δ' _ _ d _ ih =>
+    obtain v | fv := v <;> simp [find?, liftVar, next] <;>
+      exact ⟨_, _, ih H, by simp [Lean4Lean.VExpr.liftN_liftN]⟩
+  | cons d _ ih =>
+    obtain (_ | v) | fv := v <;> simp [liftVar] <;>
+      [ (simp [find?, next] at H ⊢; simp [← H]);
+        split <;> (
+          rename_i h
+          simp [Nat.add_right_comm _ 1, find?, next] at H ⊢
+          obtain ⟨e, A, H, rfl, rfl⟩ := H
+          have := ih H
+          simp [liftVar, h] at this
+          refine ⟨_, _, this, ?_⟩);
+        ( simp [find?, next] at H ⊢
+          obtain ⟨e, A, H, rfl, rfl⟩ := H
+          refine ⟨_, _, ih H, ?_⟩ )] <;>
+      open Lean4Lean.VLocalDecl in
+      cases d <;>
+        simp [Lean4Lean.VExpr.lift_liftN', liftN, value, type, depth,
+          Lean4Lean.VExpr.liftN]
+
+end KVLCtx
+
+/-- Closed literal encodings are `liftN`-invariant. -/
+private theorem liftN_natLit (v n k : Nat) :
+    (Lean4Lean.VExpr.natLit v).liftN n k = Lean4Lean.VExpr.natLit v := by
+  induction v with
+  | zero => rfl
+  | succ v ih =>
+    show Lean4Lean.VExpr.app _ _ = _
+    rw [show ((Lean4Lean.VExpr.natLit v).liftN n k)
+        = Lean4Lean.VExpr.natLit v from ih]
+    rfl
+
+private theorem liftN_listCharLit (s : List Char) (n k : Nat) :
+    (Lean4Lean.VExpr.listCharLit s).liftN n k
+      = Lean4Lean.VExpr.listCharLit s := by
+  induction s with
+  | nil => rfl
+  | cons c s ih =>
+    show Lean4Lean.VExpr.app (Lean4Lean.VExpr.app _ (Lean4Lean.VExpr.app _
+      ((Lean4Lean.VExpr.natLit c.toNat).liftN n k)))
+      ((Lean4Lean.VExpr.listCharLit s).liftN n k) = _
+    rw [liftN_natLit, ih]
+    rfl
+
+private theorem liftN_trLiteral (l : Lean.Literal) (n k : Nat) :
+    (Lean4Lean.VExpr.trLiteral l).liftN n k
+      = Lean4Lean.VExpr.trLiteral l := by
+  cases l with
+  | natVal v => exact liftN_natLit v n k
+  | strVal s =>
+    show Lean4Lean.VExpr.app _ ((Lean4Lean.VExpr.listCharLit _).liftN n k) = _
+    rw [liftN_listCharLit]
+    rfl
+
+/-- **Weakening** — `liftSpec` tracks the Theory's `VExpr.liftN` through
+    the translation. Upstream `TrExprS.weakBV`, restated over the
+    walker's `UInt64` arguments; `htp` is the trProj-weakening the
+    abstract projection parameter must satisfy (upstream `TrProj.weakN`'s
+    shape). -/
+theorem TrKExpr.weakBV {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    {Δ : KVLCtx} {e : KExpr .anon} {e' : VExpr}
+    (H : TrKExpr env uvars nameOf trProj Δ e e') :
+    ∀ {Δ' : KVLCtx} {dn dk n k : Nat} {shift cutoff : UInt64},
+      KVLCtx.KBVLift Δ Δ' dn dk n k →
+      shift.toNat = dn → cutoff.toNat = dk →
+      Δ'.bvars + e.size < UInt64.size →
+      TrKExpr env uvars nameOf trProj Δ'
+        (KExpr.liftSpec e shift cutoff) (e'.liftN n k) := by
+  induction H with
+  | @var Δ i nm md e A h =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    have hW := W.find? h
+    have hlt : i.toNat < Δ.bvars := KVLCtx.find?_inl_lt h
+    have hbv : Δ'.bvars = Δ.bvars + dn := W.bvars_eq
+    rw [KExpr.liftSpec]
+    by_cases hge : i ≥ cutoff
+    · have hnl : ¬ (i.toNat < dk) := by
+        have := UInt64.le_iff_toNat_le.mp hge
+        omega
+      rw [if_pos hge, KExpr.mkVar_shape]
+      refine .var (A := A.liftN n k) ?_
+      have htn : (i + shift).toNat = i.toNat + dn := by
+        rw [UInt64.toNat_add, hshift]
+        exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig)
+      rw [htn]
+      simpa [KVLCtx.liftVar, hnl] using hW
+    · have hl : i.toNat < dk := by
+        have : ¬ (cutoff.toNat ≤ i.toNat) := fun hh =>
+          hge (UInt64.le_iff_toNat_le.mpr hh)
+        omega
+      rw [if_neg hge]
+      refine .var (A := A.liftN n k) ?_
+      simpa [KVLCtx.liftVar, hl] using hW
+  | @fvar Δ fv nm md e A h =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    have hW := W.find? h
+    exact .fvar (A := A.liftN n k) (by simpa [KVLCtx.liftVar] using hW)
+  | @sort Δ u md h =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    exact .sort h
+  | @const Δ id us md c ci h1 h2 h3 h4 =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    exact .const h1 h2 h3 h4
+  | @app Δ f a md f' a' A B h1 h2 htf hta ihf iha =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    have hbig' : Δ'.bvars + (f.size + a.size + 1) < UInt64.size := hbig
+    rw [KExpr.liftSpec, KExpr.mkApp_shape]
+    exact .app (h1.weakN henv W.toCtx) (h2.weakN henv W.toCtx)
+      (ihf W hshift hcutoff (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (iha W hshift hcutoff (Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @lam Δ nm bi ty body md ty' body' h1 htty htbody ihty ihbody =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    have hbig' : Δ'.bvars + (ty.size + body.size + 1) < UInt64.size := hbig
+    have hdk : dk ≤ Δ'.bvars := W.dk_le_bvars
+    have hc1 : (cutoff + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hcutoff]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.liftSpec, KExpr.mkLam_shape]
+    exact .lam (h1.weakN henv W.toCtx)
+      (ihty W hshift hcutoff (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.cons (.vlam ty')) hshift hc1
+        (by show Δ'.bvars + 1 + body.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @all Δ nm bi ty body md ty' body' h1 h2 htty htbody ihty ihbody =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    have hbig' : Δ'.bvars + (ty.size + body.size + 1) < UInt64.size := hbig
+    have hdk : dk ≤ Δ'.bvars := W.dk_le_bvars
+    have hc1 : (cutoff + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hcutoff]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.liftSpec, KExpr.mkAll_shape]
+    exact .all (h1.weakN henv W.toCtx) (h2.weakN henv W.toCtx.succ)
+      (ihty W hshift hcutoff (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.cons (.vlam ty')) hshift hc1
+        (by show Δ'.bvars + 1 + body.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @letE Δ nm ty val body nd md ty' val' body' h1 htty htval htbody
+      ihty ihval ihbody =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    have hbig' :
+        Δ'.bvars + (ty.size + val.size + body.size + 1) < UInt64.size :=
+      hbig
+    have hdk : dk ≤ Δ'.bvars := W.dk_le_bvars
+    have hc1 : (cutoff + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hcutoff]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.liftSpec, KExpr.mkLet_shape]
+    exact .letE (h1.weakN henv W.toCtx)
+      (ihty W hshift hcutoff (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihval W hshift hcutoff (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.cons (.vlet ty' val')) hshift hc1
+        (by show Δ'.bvars + 1 + body.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @prj Δ sid field val md sName e' e'' h1 htval htrp ihval =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    have hbig' : Δ'.bvars + (val.size + 1) < UInt64.size := hbig
+    rw [KExpr.liftSpec, KExpr.mkPrj_shape]
+    exact .prj h1
+      (ihval W hshift hcutoff (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (htp W.toCtx htrp)
+  | @nat Δ v blob md h =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    rw [show (Lean4Lean.VExpr.natLit v).liftN n k
+        = Lean4Lean.VExpr.natLit v from liftN_natLit v n k]
+    exact .nat h
+  | @str Δ s blob md h =>
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hbig
+    rw [show (Lean4Lean.VExpr.trLiteral (.strVal s)).liftN n k
+        = Lean4Lean.VExpr.trLiteral (.strVal s) from
+      liftN_trLiteral (.strVal s) n k]
+    exact .str h
+
+/-! ### Instantiation: `substSpec` corresponds to `VExpr.inst`
+
+Mirror of upstream `VLCtx.InstN`/`TrExprS.instN`, with one structural
+simplification our formulation affords: upstream's variable transport
+accumulates the substituted argument's lift through per-stage
+single-entry weakenings, but `substSpec`'s hit arm produces
+`liftSpec arg depth 0` in ONE shot — so the hit discharges with a
+single `TrKExpr.weakBV` application through the `KInstN → KBVLift`
+bridge (`toKBVLift`), and the remaining branches are plain `find?`
+transports. -/
+
+namespace KVLCtx
+
+variable (Δ₀ : KVLCtx) (e₀ A₀ : VExpr) in
+/-- `Δ₁` is the context still carrying the `vlam A₀` being substituted
+    at entry-position `dk`; `Δ` is the result after instantiating it
+    with `e₀`; `k` is the VExpr-side position. -/
+inductive KInstN : Nat → Nat → KVLCtx → KVLCtx → Prop
+  | zero : KInstN 0 0 ((none, .vlam A₀) :: Δ₀) Δ₀
+  | succ {dk k : Nat} {Γ Γ' : KVLCtx} {d : VLocalDecl} :
+    KInstN dk k Γ Γ' →
+    KInstN (dk + 1) (k + d.depth) ((none, d) :: Γ)
+      ((none, d.inst e₀ k) :: Γ')
+
+private theorem depth_inst (d : VLocalDecl) (e₀ : VExpr) (k : Nat) :
+    (d.inst e₀ k).depth = d.depth := by
+  cases d <;> rfl
+
+protected theorem KInstN.toCtx {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    Lean4Lean.Ctx.InstN Δ₀.toCtx e₀ A₀ k Δ₁.toCtx Δ.toCtx := by
+  induction W with
+  | zero => exact .zero
+  | @succ dk k Γ Γ' d _ ih =>
+    match d with
+    | .vlet .. => exact ih
+    | .vlam A => exact .succ ih
+
+/-- The instantiated tail extends the base context by pure insertions —
+    the bridge that lets the hit case reuse `TrKExpr.weakBV`. -/
+theorem KInstN.toKBVLift {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
+    {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    KBVLift Δ₀ Δ dk 0 k 0 := by
+  induction W with
+  | zero => exact .refl
+  | @succ dk k Γ Γ' d _ ih =>
+    have := KBVLift.skip (d.inst e₀ k) ih
+    rwa [depth_inst] at this
+
+theorem KInstN.dk_le_bvars {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
+    {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) : dk ≤ Δ.bvars := by
+  induction W with
+  | zero => exact Nat.zero_le _
+  | succ _ ih =>
+    simp [KVLCtx.bvars]
+    omega
+
+/-- `liftN` by an entry's depth commutes with `inst` above it. -/
+private theorem liftN_depth_inst (d : VLocalDecl) (f e₀ : VExpr)
+    (k : Nat) :
+    (f.liftN d.depth).inst e₀ (k + d.depth)
+      = (f.inst e₀ k).liftN d.depth := by
+  cases d with
+  | vlam A =>
+    show (f.liftN 1).inst e₀ (k + 1) = (f.inst e₀ k).liftN 1
+    exact (Lean4Lean.VExpr.lift_instN_lo f e₀).symm
+  | vlet A v =>
+    show (f.liftN 0).inst e₀ (k + 0) = (f.inst e₀ k).liftN 0
+    simp
+
+/-- The hit: the entry at `dk` is the substituted `vlam`, whose stored
+    value instantiates to the argument lifted to the reference site. -/
+theorem KInstN.find?_hit {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
+    {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {e' A : VExpr}, find? Δ₁ (.inl dk) = some (e', A) →
+      e'.inst e₀ k = e₀.liftN k := by
+  induction W with
+  | zero =>
+    intro e' A H
+    simp [find?, next] at H
+    obtain ⟨rfl, rfl⟩ := H
+    rfl
+  | @succ dk k Γ Γ' d _ ih =>
+    intro e' A H
+    simp [find?, next] at H
+    obtain ⟨e, A', H, rfl, rfl⟩ := H
+    rw [liftN_depth_inst, ih H, Lean4Lean.VExpr.liftN_liftN]
+
+/-- Below the substitution site: indices are untouched and values
+    instantiate pointwise. -/
+theorem KInstN.find?_lt {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
+    {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {j : Nat} {e' A : VExpr}, j < dk →
+      find? Δ₁ (.inl j) = some (e', A) →
+      find? Δ (.inl j) = some (e'.inst e₀ k, A.inst e₀ k) := by
+  induction W with
+  | zero => omega
+  | @succ dk k Γ Γ' d _ ih =>
+    intro j e' A hj H
+    match j with
+    | 0 =>
+      simp [find?, next] at H ⊢
+      obtain ⟨rfl, rfl⟩ := H
+      constructor <;>
+        · cases d <;>
+            simp [Lean4Lean.VLocalDecl.inst, Lean4Lean.VLocalDecl.value,
+              Lean4Lean.VLocalDecl.type, Lean4Lean.VLocalDecl.depth,
+              Lean4Lean.VExpr.inst, Lean4Lean.VExpr.instVar,
+              Lean4Lean.VExpr.lift_instN_lo]
+    | j + 1 =>
+      simp [find?, next] at H ⊢
+      obtain ⟨e, A', H, rfl, rfl⟩ := H
+      refine ⟨_, _, ih (by omega) H, ?_, ?_⟩ <;>
+        rw [liftN_depth_inst, depth_inst]
+
+/-- Above the substitution site: indices shift down by one. -/
+theorem KInstN.find?_gt {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
+    {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {j : Nat} {e' A : VExpr}, dk < j →
+      find? Δ₁ (.inl j) = some (e', A) →
+      find? Δ (.inl (j - 1)) = some (e'.inst e₀ k, A.inst e₀ k) := by
+  induction W with
+  | zero =>
+    intro j e' A hj H
+    match j, hj with
+    | j + 1, _ =>
+      simp [find?, next] at H
+      obtain ⟨e, A', H, rfl, rfl⟩ := H
+      simp only [Nat.add_sub_cancel]
+      rw [show Lean4Lean.VLocalDecl.depth (.vlam A₀) = 1 from rfl,
+        Lean4Lean.VExpr.inst_liftN, Lean4Lean.VExpr.inst_liftN]
+      exact H
+  | @succ dk k Γ Γ' d _ ih =>
+    intro j e' A hj H
+    match j, hj with
+    | j' + 1, _ =>
+      simp [find?, next] at H
+      obtain ⟨e, A', H, rfl, rfl⟩ := H
+      have hj' : dk < j' := by omega
+      obtain ⟨j'', rfl⟩ : ∃ j'', j' = j'' + 1 := ⟨j' - 1, by omega⟩
+      have := ih hj' H
+      simp only [Nat.add_sub_cancel] at this ⊢
+      simp [find?, next]
+      refine ⟨_, _, this, ?_, ?_⟩ <;>
+        rw [liftN_depth_inst, depth_inst]
+
+/-- Fvar lookups are position-independent: values instantiate
+    pointwise. -/
+theorem KInstN.find?_fvar {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
+    {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {fv : FVarId} {e' A : VExpr},
+      find? Δ₁ (.inr fv) = some (e', A) →
+      find? Δ (.inr fv) = some (e'.inst e₀ k, A.inst e₀ k) := by
+  induction W with
+  | zero =>
+    intro fv e' A H
+    simp [find?, next] at H
+    obtain ⟨e, A', H, rfl, rfl⟩ := H
+    rw [show Lean4Lean.VLocalDecl.depth (.vlam A₀) = 1 from rfl,
+      Lean4Lean.VExpr.inst_liftN, Lean4Lean.VExpr.inst_liftN]
+    exact H
+  | @succ dk k Γ Γ' d _ ih =>
+    intro fv e' A H
+    simp [find?, next] at H ⊢
+    obtain ⟨e, A', H, rfl, rfl⟩ := H
+    refine ⟨_, _, ih H, ?_, ?_⟩ <;>
+      rw [liftN_depth_inst, depth_inst]
+
+end KVLCtx
+
+/-- Closed literal encodings are `inst`-invariant. -/
+private theorem inst_natLit (v : Nat) (e₀ : VExpr) (k : Nat) :
+    (Lean4Lean.VExpr.natLit v).inst e₀ k = Lean4Lean.VExpr.natLit v := by
+  induction v with
+  | zero => rfl
+  | succ v ih =>
+    show Lean4Lean.VExpr.app _ _ = _
+    rw [show ((Lean4Lean.VExpr.natLit v).inst e₀ k)
+        = Lean4Lean.VExpr.natLit v from ih]
+    rfl
+
+private theorem inst_listCharLit (s : List Char) (e₀ : VExpr) (k : Nat) :
+    (Lean4Lean.VExpr.listCharLit s).inst e₀ k
+      = Lean4Lean.VExpr.listCharLit s := by
+  induction s with
+  | nil => rfl
+  | cons c s ih =>
+    show Lean4Lean.VExpr.app (Lean4Lean.VExpr.app _ (Lean4Lean.VExpr.app _
+      ((Lean4Lean.VExpr.natLit c.toNat).inst e₀ k)))
+      ((Lean4Lean.VExpr.listCharLit s).inst e₀ k) = _
+    rw [inst_natLit, ih]
+    rfl
+
+private theorem inst_trLiteral (l : Lean.Literal) (e₀ : VExpr) (k : Nat) :
+    (Lean4Lean.VExpr.trLiteral l).inst e₀ k
+      = Lean4Lean.VExpr.trLiteral l := by
+  cases l with
+  | natVal v => exact inst_natLit v e₀ k
+  | strVal s =>
+    show Lean4Lean.VExpr.app _
+      ((Lean4Lean.VExpr.listCharLit _).inst e₀ k) = _
+    rw [inst_listCharLit]
+    rfl
+
+/-- **Instantiation** — `substSpec` tracks the Theory's `VExpr.inst`
+    through the translation. Upstream `TrExprS.instN`; `htp`/`htpI` are
+    the weakening/instantiation closure the abstract projection
+    parameter must satisfy (upstream's `TrProj.weakN`/`TrProj.instN`,
+    both sorried there). -/
+theorem TrKExpr.instN {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    (htpI : ∀ {Γ₀ : List VExpr} {e₀ A₀ : VExpr} {k : Nat}
+      {Γ₁ Γ : List VExpr} {s : Lean.Name} {i : Nat} {e e' : VExpr},
+      Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ → trProj Γ₁ s i e e' →
+      trProj Γ s i (e.inst e₀ k) (e'.inst e₀ k))
+    {Δ₀ : KVLCtx} {arg : KExpr .anon} {e₀' A₀ : VExpr}
+    (h₀ : TrKExpr env uvars nameOf trProj Δ₀ arg e₀')
+    (t₀ : env.HasType uvars Δ₀.toCtx e₀' A₀)
+    {Δ₁ : KVLCtx} {body : KExpr .anon} {body' : VExpr}
+    (H : TrKExpr env uvars nameOf trProj Δ₁ body body') :
+    ∀ {Δ : KVLCtx} {dk k : Nat} {depth : UInt64},
+      KVLCtx.KInstN Δ₀ e₀' A₀ dk k Δ₁ Δ →
+      depth.toNat = dk →
+      Δ.bvars + body.size + arg.size < UInt64.size →
+      TrKExpr env uvars nameOf trProj Δ
+        (KExpr.substSpec body arg depth) (body'.inst e₀' k) := by
+  induction H with
+  | @var Δ₁' i nm md e A h =>
+    intro Δ dk k depth W hdepth hbig
+    rw [KExpr.substSpec]
+    by_cases heq : (i == depth) = true
+    · have hik : i.toNat = dk := by rw [eq_of_beq heq]; exact hdepth
+      rw [if_pos heq]
+      rw [show e.inst e₀' k = e₀'.liftN k from
+        W.find?_hit (by rw [← hik]; exact h)]
+      exact TrKExpr.weakBV henv htp h₀ W.toKBVLift hdepth rfl
+        (Nat.lt_of_le_of_lt (by omega) hbig)
+    · by_cases hgt : i > depth
+      · have hik : dk < i.toNat := by
+          have := UInt64.lt_iff_toNat_lt.mp hgt
+          omega
+        rw [if_neg heq, if_pos hgt, KExpr.mkVar_shape]
+        refine .var (A := A.inst e₀' k) ?_
+        have h1i : (1 : UInt64) ≤ i :=
+          UInt64.le_iff_toNat_le.mpr (by
+            rw [show (1 : UInt64).toNat = 1 from rfl]; omega)
+        rw [UInt64.toNat_sub_of_le i 1 h1i,
+          show (1 : UInt64).toNat = 1 from rfl]
+        exact W.find?_gt hik h
+      · have hik : i.toNat < dk := by
+          have hne : i.toNat ≠ depth.toNat := fun hh =>
+            heq (beq_iff_eq.mpr (UInt64.toNat_inj.mp hh))
+          have hnlt : ¬ (depth.toNat < i.toNat) := fun hh =>
+            hgt (UInt64.lt_iff_toNat_lt.mpr hh)
+          omega
+        rw [if_neg heq, if_neg hgt]
+        exact .var (A := A.inst e₀' k) (W.find?_lt hik h)
+  | @fvar Δ₁' fv nm md e A h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .fvar (A := A.inst e₀' k) (W.find?_fvar h)
+  | @sort Δ₁' u md h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .sort h
+  | @const Δ₁' id us md c ci h1 h2 h3 h4 =>
+    intro Δ dk k depth W hdepth hbig
+    exact .const h1 h2 h3 h4
+  | @app Δ₁' f a md f' a' A B h1 h2 htf hta ihf iha =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (f.size + a.size + 1) + arg.size
+        < UInt64.size := hbig
+    rw [KExpr.substSpec, KExpr.mkApp_shape]
+    exact .app (h1.instN henv W.toCtx t₀) (h2.instN henv W.toCtx t₀)
+      (ihf W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (iha W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @lam Δ₁' nm bi ty body md ty' body' h1 htty htbody ihty ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (ty.size + body.size + 1) + arg.size
+        < UInt64.size := hbig
+    have hdk : dk ≤ Δ.bvars := W.dk_le_bvars
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkLam_shape]
+    exact .lam (h1.instN henv W.toCtx t₀)
+      (ihty W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.succ (d := .vlam ty')) hc1
+        (by show Δ.bvars + 1 + body.size + arg.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @all Δ₁' nm bi ty body md ty' body' h1 h2 htty htbody ihty ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (ty.size + body.size + 1) + arg.size
+        < UInt64.size := hbig
+    have hdk : dk ≤ Δ.bvars := W.dk_le_bvars
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkAll_shape]
+    exact .all (h1.instN henv W.toCtx t₀)
+      (h2.instN henv W.toCtx.succ t₀)
+      (ihty W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.succ (d := .vlam ty')) hc1
+        (by show Δ.bvars + 1 + body.size + arg.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @letE Δ₁' nm ty val body nd md ty' val' body' h1 htty htval htbody
+      ihty ihval ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' :
+        Δ.bvars + (ty.size + val.size + body.size + 1) + arg.size
+          < UInt64.size := hbig
+    have hdk : dk ≤ Δ.bvars := W.dk_le_bvars
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkLet_shape]
+    exact .letE (h1.instN henv W.toCtx t₀)
+      (ihty W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihval W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.succ (d := .vlet ty' val')) hc1
+        (by show Δ.bvars + 1 + body.size + arg.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @prj Δ₁' sid field val md sName e' e'' h1 htval htrp ihval =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (val.size + 1) + arg.size < UInt64.size :=
+      hbig
+    rw [KExpr.substSpec, KExpr.mkPrj_shape]
+    exact .prj h1
+      (ihval W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (htpI W.toCtx htrp)
+  | @nat Δ₁' v blob md h =>
+    intro Δ dk k depth W hdepth hbig
+    rw [show (Lean4Lean.VExpr.natLit v).inst e₀' k
+        = Lean4Lean.VExpr.natLit v from inst_natLit v e₀' k]
+    exact .nat h
+  | @str Δ₁' s blob md h =>
+    intro Δ dk k depth W hdepth hbig
+    rw [show (Lean4Lean.VExpr.trLiteral (.strVal s)).inst e₀' k
+        = Lean4Lean.VExpr.trLiteral (.strVal s) from
+      inst_trLiteral (.strVal s) e₀' k]
+    exact .str h
+
+/-- **Beta step at the API level**: substituting under one `vlam`.
+    Upstream `TrExprS.inst`. -/
+theorem TrKExpr.inst {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    (htpI : ∀ {Γ₀ : List VExpr} {e₀ A₀ : VExpr} {k : Nat}
+      {Γ₁ Γ : List VExpr} {s : Lean.Name} {i : Nat} {e e' : VExpr},
+      Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ → trProj Γ₁ s i e e' →
+      trProj Γ s i (e.inst e₀ k) (e'.inst e₀ k))
+    {Δ : KVLCtx} {arg body : KExpr .anon} {e₀' A₀ body' : VExpr}
+    (t₀ : env.HasType uvars Δ.toCtx e₀' A₀)
+    (H : TrKExpr env uvars nameOf trProj ((none, .vlam A₀) :: Δ) body body')
+    (h₀ : TrKExpr env uvars nameOf trProj Δ arg e₀')
+    (hbig : Δ.bvars + body.size + arg.size < UInt64.size) :
+    TrKExpr env uvars nameOf trProj Δ
+      (KExpr.substSpec body arg 0) (body'.inst e₀') :=
+  TrKExpr.instN henv htp htpI h₀ t₀ H .zero rfl hbig
 
 end Ix.Tc
