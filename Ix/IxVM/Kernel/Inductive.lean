@@ -1175,15 +1175,32 @@ def inductive_check := ⟦
   fn is_rec_field(dom: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                    types: List‹KExpr›, top: List‹&KConstantInfo›,
                    addrs: List‹Addr›, spec_lift_by: G) -> (G, G) {
-    match peel_leading_foralls(dom) {
-      (doms, body) =>
-        let inner_types = list_concat(list_reverse(doms), types);
-        let body_w = whnf(body, inner_types, top, addrs);
-        match collect_spine(body_w) {
+    -- Mirror inductive.rs is_rec_field's loop: whnf, peel ONE Forall,
+    -- repeat — WITHOUT pushing the peeled binder doms into a whnf
+    -- context. The body's loose BVars (field locals and the caller
+    -- frame's param refs) are stuck under whnf either way, and a
+    -- context built from local doms violates ctx-trim's frame
+    -- well-formedness (a param-referencing dom's lbr exceeds the depth
+    -- below it, running ctx_next_cut off the end of the list —
+    -- e.g. a Prop class `C (pat) where f (s t) : P pat s → ...`).
+    -- Per-peel whnf also exposes index binders hidden under
+    -- definitional wrappers, which the old peel-then-whnf missed.
+    let lift = spec_lift_by + list_length(types);
+    is_rec_field_peel(dom, flat, lift, top, addrs)
+  }
+
+  fn is_rec_field_peel(ty: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                       lift: G, top: List‹&KConstantInfo›,
+                       addrs: List‹Addr›) -> (G, G) {
+    let w = whnf(ty, store(ListNode.Nil), top, addrs);
+    match load(w) {
+      KExprNode.Forall(_, body) =>
+        is_rec_field_peel(body, flat, lift, top, addrs),
+      _ =>
+        match collect_spine(w) {
           (head, spine_args) =>
             match load(head) {
               KExprNode.Const(idx, _) =>
-                let lift = spec_lift_by + list_length(types);
                 find_flat_member_match(flat, idx, spine_args, 0, lift),
               _ => (0, 0),
             },
