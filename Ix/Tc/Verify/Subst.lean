@@ -316,7 +316,7 @@ theorem liftSpec_zero {e : KExpr .anon} (hcon : Constructed e)
     (cutoff : UInt64) : liftSpec e 0 cutoff = e := by
   induction hcon generalizing cutoff with
   | @var idx name md hidx =>
-    rw [mkVar_shape, liftSpec]
+    rw [mkVar_shape, KExpr.liftSpec]
     split
     · rw [UInt64.add_zero]
       exact mkVar_shape idx name md
@@ -4240,5 +4240,504 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
       (decide_eq_true (p := (KExpr.mkStr v blob md).lbr ≤ depth)
         UInt64.zero_le)
       hwf hsup hsc
+
+/-! ### `Constructed`-closure of the pure specs
+
+Walker outputs feed later walker calls (M5/M6 chain `subst` after `lift`
+after `instantiateRev` …) whose masters require `Constructed` inputs.
+Each spec preserves `Constructed` under a no-wrap budget for the indices
+it can create: an up-shifted `var` index is bounded through the input's
+`lbr`, and the `lbr + size + shift` budget is preserved under binder
+descent (`lbr` grows by at most one per binder via `sat1` while `size`
+shrinks by at least two). Down-shifts (`i - 1`, `i - n`) need no budget —
+they only lower the index. No cutoff/depth well-formedness is assumed
+beyond the budget: guards merely select arms, and every arm's output is
+`Constructed` under the budget (a semantically wrong arm selection is
+the masters' concern, not closure's). -/
+
+namespace KExpr
+
+theorem Constructed.liftSpec {e : KExpr .anon} (hcon : Constructed e) :
+    ∀ {shift cutoff : UInt64},
+      e.lbr.toNat + e.size + shift.toNat < UInt64.size →
+      Constructed (liftSpec e shift cutoff) := by
+  induction hcon with
+  | @var idx name md hidx =>
+    intro shift cutoff hb
+    rw [mkVar_lbr] at hb
+    have hb1 : (idx + 1).toNat = idx.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt hidx
+    have hsz := size_pos (mkVar idx name md)
+    rw [mkVar_shape, KExpr.liftSpec]
+    split
+    · refine .var ?_
+      have hns : (idx + shift).toNat = idx.toNat + shift.toNat := by
+        rw [UInt64.toNat_add]
+        exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+      omega
+    · rw [← mkVar_shape]
+      exact .var hidx
+  | fvar => intro _ _ _; exact .fvar
+  | sort => intro _ _ _; exact .sort
+  | const => intro _ _ _; exact .const
+  | @app f a md hf ha ihf iha =>
+    intro shift cutoff hb
+    rw [mkApp_lbr] at hb
+    rw [mkApp_shape, size] at hb
+    rw [toNat_max] at hb
+    have hszf := size_pos f
+    have hsza := size_pos a
+    rw [mkApp_shape, KExpr.liftSpec]
+    exact .app (ihf (by omega)) (iha (by omega))
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    intro shift cutoff hb
+    rw [mkLam_lbr] at hb
+    rw [mkLam_shape, size] at hb
+    rw [toNat_max] at hb
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hszty := size_pos ty
+    have hszbody := size_pos body
+    rw [mkLam_shape, KExpr.liftSpec]
+    exact .lam (ihty (by omega)) (ihbody (by omega))
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    intro shift cutoff hb
+    rw [mkAll_lbr] at hb
+    rw [mkAll_shape, size] at hb
+    rw [toNat_max] at hb
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hszty := size_pos ty
+    have hszbody := size_pos body
+    rw [mkAll_shape, KExpr.liftSpec]
+    exact .all (ihty (by omega)) (ihbody (by omega))
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    intro shift cutoff hb
+    rw [mkLet_lbr] at hb
+    rw [mkLet_shape, size] at hb
+    rw [toNat_max, toNat_max] at hb
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hszty := size_pos ty
+    have hszval := size_pos val
+    have hszbody := size_pos body
+    rw [mkLet_shape, KExpr.liftSpec]
+    exact .letE (ihty (by omega)) (ihval (by omega)) (ihbody (by omega))
+  | @prj id field val md hval ihval =>
+    intro shift cutoff hb
+    rw [mkPrj_lbr] at hb
+    rw [mkPrj_shape, size] at hb
+    have hszval := size_pos val
+    rw [mkPrj_shape, KExpr.liftSpec]
+    exact .prj (ihval (by omega))
+  | nat => intro _ _ _; exact .nat
+  | str => intro _ _ _; exact .str
+
+theorem Constructed.substSpec {body arg : KExpr .anon}
+    (hbody : Constructed body) (harg : Constructed arg) :
+    ∀ {depth : UInt64},
+      arg.lbr.toNat + arg.size + depth.toNat + body.size < UInt64.size →
+      Constructed (substSpec body arg depth) := by
+  induction hbody with
+  | @var idx name md hidx =>
+    intro depth hb
+    have hsz := size_pos (mkVar idx name md)
+    rw [mkVar_shape, KExpr.substSpec]
+    split
+    · exact harg.liftSpec (by omega)
+    · split
+      · next hgt =>
+        refine .var ?_
+        have hgt' := UInt64.lt_iff_toNat_lt.mp hgt
+        have hsub : (idx - 1).toNat = idx.toNat - 1 := by
+          rw [UInt64.toNat_sub_of_le idx 1 (UInt64.le_iff_toNat_le.mpr (by
+            rw [show (1 : UInt64).toNat = 1 from rfl]; omega))]
+          rfl
+        omega
+      · rw [← mkVar_shape]
+        exact .var hidx
+  | fvar => intro _ _; exact .fvar
+  | sort => intro _ _; exact .sort
+  | const => intro _ _; exact .const
+  | @app f a md hf ha ihf iha =>
+    intro depth hb
+    rw [mkApp_shape, size] at hb
+    have hszf := size_pos f
+    have hsza := size_pos a
+    rw [mkApp_shape, KExpr.substSpec]
+    exact .app (ihf (by omega)) (iha (by omega))
+  | @lam n bi ty inner md hty hinner ihty ihinner =>
+    intro depth hb
+    rw [mkLam_shape, size] at hb
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+    rw [mkLam_shape, KExpr.substSpec]
+    exact .lam (ihty (by omega)) (ihinner (by rw [hd1]; omega))
+  | @all n bi ty inner md hty hinner ihty ihinner =>
+    intro depth hb
+    rw [mkAll_shape, size] at hb
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+    rw [mkAll_shape, KExpr.substSpec]
+    exact .all (ihty (by omega)) (ihinner (by rw [hd1]; omega))
+  | @letE n ty val inner nd md hty hval hinner ihty ihval ihinner =>
+    intro depth hb
+    rw [mkLet_shape, size] at hb
+    have hszty := size_pos ty
+    have hszval := size_pos val
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+    rw [mkLet_shape, KExpr.substSpec]
+    exact .letE (ihty (by omega)) (ihval (by omega))
+      (ihinner (by rw [hd1]; omega))
+  | @prj id field val md hval ihval =>
+    intro depth hb
+    rw [mkPrj_shape, size] at hb
+    have hszval := size_pos val
+    rw [mkPrj_shape, KExpr.substSpec]
+    exact .prj (ihval (by omega))
+  | nat => intro _ _; exact .nat
+  | str => intro _ _; exact .str
+
+theorem Constructed.simulSubstSpec {body : KExpr .anon}
+    (hbody : Constructed body) {substs : Array (KExpr .anon)}
+    (hsub : ∀ k, k < substs.size → Constructed substs[k]!) :
+    ∀ {depth : UInt64},
+      depth.toNat + body.size + substs.size < UInt64.size →
+      (∀ k, k < substs.size →
+        substs[k]!.lbr.toNat + substs[k]!.size + depth.toNat + body.size
+          < UInt64.size) →
+      Constructed (simulSubstSpec body substs depth) := by
+  induction hbody with
+  | @var idx name md hidx =>
+    intro depth hw hbnd
+    have hsz := size_pos (mkVar idx name md)
+    have hszn : substs.size.toUInt64.toNat = substs.size := by
+      rw [toNat_toUInt64]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    have hdw : (depth + substs.size.toUInt64).toNat
+        = depth.toNat + substs.size := by
+      rw [UInt64.toNat_add, hszn]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkVar_shape, KExpr.simulSubstSpec]
+    split
+    · next hguard =>
+      obtain ⟨hge, hlt⟩ := Bool.and_eq_true_iff.mp hguard
+      have hge' : depth.toNat ≤ idx.toNat :=
+        UInt64.le_iff_toNat_le.mp (of_decide_eq_true hge)
+      have hlt' : idx.toNat < depth.toNat + substs.size := by
+        have h := UInt64.lt_iff_toNat_lt.mp (of_decide_eq_true hlt)
+        rwa [hdw] at h
+      have hsubt : (idx - depth).toNat = idx.toNat - depth.toNat :=
+        UInt64.toNat_sub_of_le idx depth (UInt64.le_iff_toNat_le.mpr hge')
+      have hk : (idx - depth).toNat < substs.size := by omega
+      exact (hsub _ hk).liftSpec (by have := hbnd _ hk; omega)
+    · split
+      · next hge2 =>
+        refine .var ?_
+        have hge2' : substs.size ≤ idx.toNat := by
+          have h := UInt64.le_iff_toNat_le.mp hge2
+          rw [hdw] at h
+          omega
+        have hsub2 : (idx - substs.size.toUInt64).toNat
+            = idx.toNat - substs.size := by
+          rw [UInt64.toNat_sub_of_le idx substs.size.toUInt64
+            (UInt64.le_iff_toNat_le.mpr (by rw [hszn]; omega)), hszn]
+        omega
+      · rw [← mkVar_shape]
+        exact .var hidx
+  | fvar => intro _ _ _; exact .fvar
+  | sort => intro _ _ _; exact .sort
+  | const => intro _ _ _; exact .const
+  | @app f a md hf ha ihf iha =>
+    intro depth hw hbnd
+    rw [mkApp_shape, size] at hw
+    have hszf := size_pos f
+    have hsza := size_pos a
+    rw [mkApp_shape, KExpr.simulSubstSpec]
+    exact .app
+      (ihf (by omega) (fun k hk => by
+        have h := hbnd k hk; rw [mkApp_shape, size] at h; omega))
+      (iha (by omega) (fun k hk => by
+        have h := hbnd k hk; rw [mkApp_shape, size] at h; omega))
+  | @lam n bi ty inner md hty hinner ihty ihinner =>
+    intro depth hw hbnd
+    rw [mkLam_shape, size] at hw
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkLam_shape, KExpr.simulSubstSpec]
+    exact .lam
+      (ihty (by omega) (fun k hk => by
+        have h := hbnd k hk; rw [mkLam_shape, size] at h; omega))
+      (ihinner (by rw [hd1]; omega)
+        (fun k hk => by
+          have h := hbnd k hk; rw [mkLam_shape, size] at h
+          rw [hd1]; omega))
+  | @all n bi ty inner md hty hinner ihty ihinner =>
+    intro depth hw hbnd
+    rw [mkAll_shape, size] at hw
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkAll_shape, KExpr.simulSubstSpec]
+    exact .all
+      (ihty (by omega) (fun k hk => by
+        have h := hbnd k hk; rw [mkAll_shape, size] at h; omega))
+      (ihinner (by rw [hd1]; omega)
+        (fun k hk => by
+          have h := hbnd k hk; rw [mkAll_shape, size] at h
+          rw [hd1]; omega))
+  | @letE n ty val inner nd md hty hval hinner ihty ihval ihinner =>
+    intro depth hw hbnd
+    rw [mkLet_shape, size] at hw
+    have hszty := size_pos ty
+    have hszval := size_pos val
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkLet_shape, KExpr.simulSubstSpec]
+    exact .letE
+      (ihty (by omega) (fun k hk => by
+        have h := hbnd k hk; rw [mkLet_shape, size] at h; omega))
+      (ihval (by omega) (fun k hk => by
+        have h := hbnd k hk; rw [mkLet_shape, size] at h; omega))
+      (ihinner (by rw [hd1]; omega)
+        (fun k hk => by
+          have h := hbnd k hk; rw [mkLet_shape, size] at h
+          rw [hd1]; omega))
+  | @prj id field val md hval ihval =>
+    intro depth hw hbnd
+    rw [mkPrj_shape, size] at hw
+    have hszval := size_pos val
+    rw [mkPrj_shape, KExpr.simulSubstSpec]
+    exact .prj
+      (ihval (by omega) (fun k hk => by
+        have h := hbnd k hk; rw [mkPrj_shape, size] at h; omega))
+  | nat => intro _ _ _; exact .nat
+  | str => intro _ _ _; exact .str
+
+theorem Constructed.instantiateRevSpec {body : KExpr .anon}
+    (hbody : Constructed body) {fvars : Array (KExpr .anon)}
+    (hfv : ∀ k, k < fvars.size → Constructed fvars[k]!) :
+    ∀ {depth : UInt64},
+      depth.toNat + body.size + fvars.size < UInt64.size →
+      Constructed (instantiateRevSpec body fvars depth) := by
+  induction hbody with
+  | @var idx name md hidx =>
+    intro depth hw
+    have hsz := size_pos (mkVar idx name md)
+    have hszn : fvars.size.toUInt64.toNat = fvars.size := by
+      rw [toNat_toUInt64]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    have hdw : (depth + fvars.size.toUInt64).toNat
+        = depth.toNat + fvars.size := by
+      rw [UInt64.toNat_add, hszn]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkVar_shape, KExpr.instantiateRevSpec]
+    split
+    · next hguard =>
+      obtain ⟨hge, hlt⟩ := Bool.and_eq_true_iff.mp hguard
+      have hge' : depth.toNat ≤ idx.toNat :=
+        UInt64.le_iff_toNat_le.mp (of_decide_eq_true hge)
+      have hlt' : idx.toNat < depth.toNat + fvars.size := by
+        have h := UInt64.lt_iff_toNat_lt.mp (of_decide_eq_true hlt)
+        rwa [hdw] at h
+      have hsubt : (idx - depth).toNat = idx.toNat - depth.toNat :=
+        UInt64.toNat_sub_of_le idx depth (UInt64.le_iff_toNat_le.mpr hge')
+      have h1s : (1 : UInt64) ≤ fvars.size.toUInt64 := by
+        rw [UInt64.le_iff_toNat_le, hszn,
+          show (1 : UInt64).toNat = 1 from rfl]
+        omega
+      have hs1 : (fvars.size.toUInt64 - 1).toNat = fvars.size - 1 := by
+        rw [UInt64.toNat_sub_of_le fvars.size.toUInt64 1 h1s, hszn]
+        rfl
+      have hle2 : idx - depth ≤ fvars.size.toUInt64 - 1 := by
+        rw [UInt64.le_iff_toNat_le, hsubt, hs1]
+        omega
+      have hfin : (fvars.size.toUInt64 - 1 - (idx - depth)).toNat
+          = fvars.size - 1 - (idx.toNat - depth.toNat) := by
+        rw [UInt64.toNat_sub_of_le (fvars.size.toUInt64 - 1) (idx - depth)
+          hle2, hs1, hsubt]
+      have hk : (fvars.size.toUInt64 - 1 - (idx - depth)).toNat
+          < fvars.size := by omega
+      exact hfv _ hk
+    · split
+      · next hge2 =>
+        refine .var ?_
+        have hsub2 : (idx - fvars.size.toUInt64).toNat
+            = idx.toNat - fvars.size := by
+          have h := UInt64.le_iff_toNat_le.mp hge2
+          rw [hdw] at h
+          rw [UInt64.toNat_sub_of_le idx fvars.size.toUInt64
+            (UInt64.le_iff_toNat_le.mpr (by rw [hszn]; omega)), hszn]
+        omega
+      · rw [← mkVar_shape]
+        exact .var hidx
+  | fvar => intro _ _; exact .fvar
+  | sort => intro _ _; exact .sort
+  | const => intro _ _; exact .const
+  | @app f a md hf ha ihf iha =>
+    intro depth hw
+    rw [mkApp_shape, size] at hw
+    have hszf := size_pos f
+    have hsza := size_pos a
+    rw [mkApp_shape, KExpr.instantiateRevSpec]
+    exact .app (ihf (by omega)) (iha (by omega))
+  | @lam n bi ty inner md hty hinner ihty ihinner =>
+    intro depth hw
+    rw [mkLam_shape, size] at hw
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkLam_shape, KExpr.instantiateRevSpec]
+    exact .lam (ihty (by omega)) (ihinner (by rw [hd1]; omega))
+  | @all n bi ty inner md hty hinner ihty ihinner =>
+    intro depth hw
+    rw [mkAll_shape, size] at hw
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkAll_shape, KExpr.instantiateRevSpec]
+    exact .all (ihty (by omega)) (ihinner (by rw [hd1]; omega))
+  | @letE n ty val inner nd md hty hval hinner ihty ihval ihinner =>
+    intro depth hw
+    rw [mkLet_shape, size] at hw
+    have hszty := size_pos ty
+    have hszval := size_pos val
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hw)
+    rw [mkLet_shape, KExpr.instantiateRevSpec]
+    exact .letE (ihty (by omega)) (ihval (by omega))
+      (ihinner (by rw [hd1]; omega))
+  | @prj id field val md hval ihval =>
+    intro depth hw
+    rw [mkPrj_shape, size] at hw
+    have hszval := size_pos val
+    rw [mkPrj_shape, KExpr.instantiateRevSpec]
+    exact .prj (ihval (by omega))
+  | nat => intro _ _; exact .nat
+  | str => intro _ _; exact .str
+
+theorem Constructed.abstractFVarsSpec {body : KExpr .anon}
+    (hbody : Constructed body) {pos : Std.HashMap FVarId UInt64}
+    {n : UInt64}
+    (hpos : ∀ (id : FVarId) (p : UInt64),
+      pos[id]? = some p → p.toNat < n.toNat) :
+    ∀ {depth : UInt64},
+      body.lbr.toNat + body.size + depth.toNat + n.toNat < UInt64.size →
+      Constructed (abstractFVarsSpec body pos n depth) := by
+  induction hbody with
+  | @fvar id name md =>
+    intro depth hb
+    have hsz := size_pos (mkFVar id name md)
+    rw [mkFVar_shape, KExpr.abstractFVarsSpec]
+    cases hp : pos[id]? with
+    | some p =>
+      refine .var ?_
+      have hpn := hpos _ _ hp
+      have hdp : (depth + p).toNat = depth.toNat + p.toNat := by
+        rw [UInt64.toNat_add]
+        exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+      omega
+    | none =>
+      rw [← mkFVar_shape]
+      exact .fvar
+  | @var idx name md hidx =>
+    intro depth hb
+    rw [mkVar_lbr] at hb
+    have hb1 : (idx + 1).toNat = idx.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt hidx
+    have hsz := size_pos (mkVar idx name md)
+    rw [mkVar_shape, KExpr.abstractFVarsSpec]
+    split
+    · refine .var ?_
+      have hin : (idx + n).toNat = idx.toNat + n.toNat := by
+        rw [UInt64.toNat_add]
+        exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+      omega
+    · rw [← mkVar_shape]
+      exact .var hidx
+  | sort => intro _ _; exact .sort
+  | const => intro _ _; exact .const
+  | @app f a md hf ha ihf iha =>
+    intro depth hb
+    rw [mkApp_lbr] at hb
+    rw [mkApp_shape, size] at hb
+    rw [toNat_max] at hb
+    have hszf := size_pos f
+    have hsza := size_pos a
+    rw [mkApp_shape, KExpr.abstractFVarsSpec]
+    exact .app (ihf (by omega)) (iha (by omega))
+  | @lam nm bi ty inner md hty hinner ihty ihinner =>
+    intro depth hb
+    rw [mkLam_lbr] at hb
+    rw [mkLam_shape, size] at hb
+    rw [toNat_max] at hb
+    have hsat := toNat_le_sat1_add_one inner.lbr
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+    rw [mkLam_shape, KExpr.abstractFVarsSpec]
+    exact .lam (ihty (by omega)) (ihinner (by rw [hd1]; omega))
+  | @all nm bi ty inner md hty hinner ihty ihinner =>
+    intro depth hb
+    rw [mkAll_lbr] at hb
+    rw [mkAll_shape, size] at hb
+    rw [toNat_max] at hb
+    have hsat := toNat_le_sat1_add_one inner.lbr
+    have hszty := size_pos ty
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+    rw [mkAll_shape, KExpr.abstractFVarsSpec]
+    exact .all (ihty (by omega)) (ihinner (by rw [hd1]; omega))
+  | @letE nm ty val inner nd md hty hval hinner ihty ihval ihinner =>
+    intro depth hb
+    rw [mkLet_lbr] at hb
+    rw [mkLet_shape, size] at hb
+    rw [toNat_max, toNat_max] at hb
+    have hsat := toNat_le_sat1_add_one inner.lbr
+    have hszty := size_pos ty
+    have hszval := size_pos val
+    have hszin := size_pos inner
+    have hd1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hb)
+    rw [mkLet_shape, KExpr.abstractFVarsSpec]
+    exact .letE (ihty (by omega)) (ihval (by omega))
+      (ihinner (by rw [hd1]; omega))
+  | @prj id field val md hval ihval =>
+    intro depth hb
+    rw [mkPrj_lbr] at hb
+    rw [mkPrj_shape, size] at hb
+    have hszval := size_pos val
+    rw [mkPrj_shape, KExpr.abstractFVarsSpec]
+    exact .prj (ihval (by omega))
+  | nat => intro _ _; exact .nat
+  | str => intro _ _; exact .str
+
+end KExpr
 
 end Ix.Tc

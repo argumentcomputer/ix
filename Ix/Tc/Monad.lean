@@ -519,7 +519,7 @@ def substUniv (u : KUniv m) (us : Array (KUniv m)) :
   | .imax a b _ => do
     return .mkIMax (← substUniv a us) (← substUniv b us)
 
-partial def instUnivInner (e : KExpr m) (us : Array (KUniv m)) :
+def instUnivInner (e : KExpr m) (us : Array (KUniv m)) :
     StateT (HashMap Address (KExpr m)) (TcM m) (KExpr m) := do
   -- Key by content hash only — `us` is fixed across the whole call.
   let key := e.addr
@@ -557,6 +557,7 @@ partial def instUnivInner (e : KExpr m) (us : Array (KUniv m)) :
   let interned ← TcM.intern result
   modify (·.insert key interned)
   return interned
+termination_by structural e
 
 /-- Substitute universe parameters throughout an expression, with per-call
     address-keyed memoization (universe substitution doesn't change binder
