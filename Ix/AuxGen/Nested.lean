@@ -706,11 +706,11 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
   -- Synthetic MutConst::Indc views for all members; aux members carry the
   -- trailing identity marker (nested.rs:656-725).
   let mut allMutConsts : Array MutConst := #[]
-  for h : mi in [0:expanded.types.size] do
+  for _h : mi in [0:expanded.types.size] do
     let mem := expanded.types[mi]!
     let mut ctorNames : Array Name := mem.ctors.map (·.name)
     let mut ctors : Array ConstructorVal := #[]
-    for h2 : ci in [0:mem.ctors.size] do
+    for _h2 : ci in [0:mem.ctors.size] do
       let c := mem.ctors[ci]!
       ctors := ctors.push {
         cnst := { name := c.name, levelParams, type := c.typ }

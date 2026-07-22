@@ -160,7 +160,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let rehydrateErrs : Array String := #[]
   -- Render in the plans-dump format and compare to the Rust endpoint.
   let dumpBits (bits : Array Bool) : String :=
-    String.mk (bits.toList.map fun b => if b then '1' else '0')
+    String.ofList (bits.toList.map fun b => if b then '1' else '0')
   let dumpNats (xs : Array Nat) : String :=
     ",".intercalate (xs.toList.map fun x =>
       if x == Ix.AuxGen.PERM_OUT_OF_SCC then "out" else toString x)

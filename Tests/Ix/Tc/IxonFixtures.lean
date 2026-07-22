@@ -151,7 +151,7 @@ def acceptTests : TestSeq :=
         | _ => false
       | _ => false : Bool))
   ++ test "anonHints override reaches the defn"
-    ((let (env, aAddr, idAddr) := envIdA
+    ((let (env, _aAddr, idAddr) := envIdA
       let env := { env with
         anonHints := env.anonHints.insert idAddr (.regular 7) }
       match runIngress (ingressAnonAddrShallow env idAddr) with

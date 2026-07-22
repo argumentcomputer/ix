@@ -342,7 +342,7 @@ brecOn/below plans, and `Muts` named entries (dedup by name, LAST wins —
 the layout re-registration overrides) in the endpoint's exact format. -/
 
 private def dumpBits (bits : Array Bool) : String :=
-  String.mk (bits.toList.map fun b => if b then '1' else '0')
+  String.ofList (bits.toList.map fun b => if b then '1' else '0')
 
 private def dumpNats (xs : Array Nat) : String :=
   ",".intercalate (xs.toList.map fun x =>
@@ -354,7 +354,7 @@ private def dumpU64s (xs : Array UInt64) : String :=
 
 /-- Per-block Lean half of the plans dump. Returns accumulated
     (plans, brecPlans, belowPlans, mutsLines-source). -/
-def leanDumpPlansBlock (lo : Ix.Name) (all : Array Ix.Name)
+def leanDumpPlansBlock (_lo : Ix.Name) (all : Array Ix.Name)
     : Ix.CompileM.CompileM
         (Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan
           × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan
