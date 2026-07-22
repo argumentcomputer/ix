@@ -1,5 +1,6 @@
 import Ix.Tc.Verify.Subst
 import Ix.Tc.Verify.Monad
+import Ix.Tc.Verify.Level
 
 /-!
 # `instantiateUnivParams` memo-soundness (M2)
@@ -33,6 +34,7 @@ namespace Ix.Tc
 
 open Std (HashMap)
 open EStateM (Result)
+open Lean4Lean (VLevel)
 
 /-! ### The pure spec -/
 
@@ -938,3 +940,280 @@ theorem TcM.instantiateUnivParams_wf {S : KExpr .anon → Prop}
         try rfl
       rw [hrun]
       exact ⟨⟨hwf', hsup'⟩, hframe⟩
+
+/-! ### `substUniv` Theory correspondence (level side)
+
+`substUniv` rebuilds with the SIMPLIFYING `mkMax`/`mkIMax` (Lean/Rust
+parity), so its correspondence with `VLevel.inst` is an equivalence
+`≈`, composed from the `toVLevel_mkMax`/`toVLevel_mkIMax` masters
+(Verify/Level.lean). Hypotheses follow the finite-support discipline:
+addr-faithfulness and no-wrap size bounds over `SubstUnivReach` — the
+subterm closure of the results of sub-calls, spec-determined and
+finite. The `VLevel.WF` transport needs neither (guard-free
+`mk*_cases`). Mode-generic: no interning is involved. -/
+
+namespace KUniv
+
+variable {m : Mode}
+
+/-- Reach set of `substUniv us` on `u`: everything under the result of
+    any sub-call. The `==`-branches of the simplifying constructors
+    compare exactly these. -/
+def SubstUnivReach (us : Array (KUniv m)) (u x : KUniv m) : Prop :=
+  ∃ w r, Sub w u ∧ TcM.substUniv w us = .ok r ∧ Sub x r
+
+theorem SubstUnivReach.mono {us : Array (KUniv m)} {u u' x : KUniv m}
+    (hu : Sub u u') (h : SubstUnivReach us u x) :
+    SubstUnivReach us u' x := by
+  obtain ⟨w, r, hw, hr, hx⟩ := h
+  exact ⟨w, r, hw.trans hu, hr, hx⟩
+
+end KUniv
+
+/-- **`substUniv` ↔ `VLevel.inst`** — the level-side Theory
+    correspondence for universe instantiation: on success, the
+    substituted level is `≈`-equivalent to the theory-side
+    instantiation of the translation. -/
+theorem TcM.substUniv_toVLevel {m : Mode} {us : Array (KUniv m)} :
+    ∀ {u v : KUniv m}, TcM.substUniv u us = .ok v →
+      (∀ x y, KUniv.SubstUnivReach us u x →
+        KUniv.SubstUnivReach us u y → x.AddrFaithful y) →
+      (∀ x, KUniv.SubstUnivReach us u x → x.size < UInt64.size) →
+      v.toVLevel
+        ≈ (KUniv.toVLevel u).inst (us.toList.map KUniv.toVLevel) := by
+  intro u
+  induction u with
+  | zero ad =>
+    intro v h hinj hsz
+    have hb : TcM.substUniv (KUniv.zero ad) us
+        = .ok (KUniv.zero (m := m) ad) := rfl
+    rw [hb] at h
+    cases h
+    exact VLevel.equiv_def.mpr fun ρ => rfl
+  | param idx nm ad =>
+    intro v h hinj hsz
+    have hb : TcM.substUniv (KUniv.param idx nm ad) us
+        = (match us[idx.toNat]? with
+           | some w => .ok w
+           | none => .error (.univParamOutOfRange idx us.size)) := rfl
+    rw [hb] at h
+    cases hus : us[idx.toNat]? with
+    | none =>
+      rw [hus] at h
+      cases h
+    | some w =>
+      rw [hus] at h
+      cases h
+      refine VLevel.equiv_def.mpr fun ρ => ?_
+      have hget : (us.toList.map KUniv.toVLevel).getD idx.toNat .zero
+          = KUniv.toVLevel v := by
+        simp [List.getD_eq_getElem?_getD, List.getElem?_map,
+          Array.getElem?_toList, hus]
+      show (KUniv.toVLevel v).eval ρ
+          = ((us.toList.map KUniv.toVLevel).getD idx.toNat .zero).eval ρ
+      rw [hget]
+  | succ inner ad ih =>
+    intro v h hinj hsz
+    have hb : TcM.substUniv (KUniv.succ inner ad) us
+        = (TcM.substUniv inner us >>= fun vi =>
+            pure (KUniv.mkSucc vi)) := rfl
+    rw [hb] at h
+    cases hs : TcM.substUniv inner us with
+    | error e =>
+      rw [hs] at h
+      cases h
+    | ok vi =>
+      rw [hs] at h
+      cases h
+      have ihh := ih hs
+        (fun x y hx hy => hinj x y (hx.mono (.succ .refl))
+          (hy.mono (.succ .refl)))
+        (fun x hx => hsz x (hx.mono (.succ .refl)))
+      refine VLevel.equiv_def.mpr fun ρ => ?_
+      have h2 := VLevel.equiv_def.mp ihh ρ
+      show (KUniv.mkSucc vi).toVLevel.eval ρ
+          = ((KUniv.toVLevel inner).inst
+              (us.toList.map KUniv.toVLevel)).eval ρ + 1
+      rw [KUniv.toVLevel_mkSucc]
+      show vi.toVLevel.eval ρ + 1 = _
+      rw [h2]
+  | max a b ad iha ihb =>
+    intro v h hinj hsz
+    have hb : TcM.substUniv (KUniv.max a b ad) us
+        = (TcM.substUniv a us >>= fun ra =>
+            TcM.substUniv b us >>= fun rb =>
+              pure (KUniv.mkMax ra rb)) := rfl
+    rw [hb] at h
+    cases hsa : TcM.substUniv a us with
+    | error e =>
+      rw [hsa] at h
+      cases h
+    | ok ra =>
+      cases hsb : TcM.substUniv b us with
+      | error e =>
+        rw [hsa, hsb] at h
+        cases h
+      | ok rb =>
+        rw [hsa, hsb] at h
+        cases h
+        have ihha := iha hsa
+          (fun x y hx hy => hinj x y (hx.mono (.max_l .refl))
+            (hy.mono (.max_l .refl)))
+          (fun x hx => hsz x (hx.mono (.max_l .refl)))
+        have ihhb := ihb hsb
+          (fun x y hx hy => hinj x y (hx.mono (.max_r .refl))
+            (hy.mono (.max_r .refl)))
+          (fun x hx => hsz x (hx.mono (.max_r .refl)))
+        have hmk := KUniv.toVLevel_mkMax (a := ra) (b := rb)
+          (fun x y hx hy => hinj x y
+            (hx.elim (fun hx => ⟨a, ra, .max_l .refl, hsa, hx⟩)
+              (fun hx => ⟨b, rb, .max_r .refl, hsb, hx⟩))
+            (hy.elim (fun hy => ⟨a, ra, .max_l .refl, hsa, hy⟩)
+              (fun hy => ⟨b, rb, .max_r .refl, hsb, hy⟩)))
+          (hsz ra ⟨a, ra, .max_l .refl, hsa, .refl⟩)
+          (hsz rb ⟨b, rb, .max_r .refl, hsb, .refl⟩)
+        refine VLevel.equiv_def.mpr fun ρ => ?_
+        have h1 := VLevel.equiv_def.mp hmk ρ
+        have h2 := VLevel.equiv_def.mp ihha ρ
+        have h3 := VLevel.equiv_def.mp ihhb ρ
+        rw [h1]
+        show Nat.max (ra.toVLevel.eval ρ) (rb.toVLevel.eval ρ)
+            = Nat.max
+                (((KUniv.toVLevel a).inst
+                  (us.toList.map KUniv.toVLevel)).eval ρ)
+                (((KUniv.toVLevel b).inst
+                  (us.toList.map KUniv.toVLevel)).eval ρ)
+        rw [h2, h3]
+  | imax a b ad iha ihb =>
+    intro v h hinj hsz
+    have hb : TcM.substUniv (KUniv.imax a b ad) us
+        = (TcM.substUniv a us >>= fun ra =>
+            TcM.substUniv b us >>= fun rb =>
+              pure (KUniv.mkIMax ra rb)) := rfl
+    rw [hb] at h
+    cases hsa : TcM.substUniv a us with
+    | error e =>
+      rw [hsa] at h
+      cases h
+    | ok ra =>
+      cases hsb : TcM.substUniv b us with
+      | error e =>
+        rw [hsa, hsb] at h
+        cases h
+      | ok rb =>
+        rw [hsa, hsb] at h
+        cases h
+        have ihha := iha hsa
+          (fun x y hx hy => hinj x y (hx.mono (.imax_l .refl))
+            (hy.mono (.imax_l .refl)))
+          (fun x hx => hsz x (hx.mono (.imax_l .refl)))
+        have ihhb := ihb hsb
+          (fun x y hx hy => hinj x y (hx.mono (.imax_r .refl))
+            (hy.mono (.imax_r .refl)))
+          (fun x hx => hsz x (hx.mono (.imax_r .refl)))
+        have hmk := KUniv.toVLevel_mkIMax (a := ra) (b := rb)
+          (fun x y hx hy => hinj x y
+            (hx.elim (fun hx => ⟨a, ra, .imax_l .refl, hsa, hx⟩)
+              (fun hx => ⟨b, rb, .imax_r .refl, hsb, hx⟩))
+            (hy.elim (fun hy => ⟨a, ra, .imax_l .refl, hsa, hy⟩)
+              (fun hy => ⟨b, rb, .imax_r .refl, hsb, hy⟩)))
+          (hsz ra ⟨a, ra, .imax_l .refl, hsa, .refl⟩)
+          (hsz rb ⟨b, rb, .imax_r .refl, hsb, .refl⟩)
+        refine VLevel.equiv_def.mpr fun ρ => ?_
+        have h1 := VLevel.equiv_def.mp hmk ρ
+        have h2 := VLevel.equiv_def.mp ihha ρ
+        have h3 := VLevel.equiv_def.mp ihhb ρ
+        rw [h1]
+        show Nat.imax (ra.toVLevel.eval ρ) (rb.toVLevel.eval ρ)
+            = Nat.imax
+                (((KUniv.toVLevel a).inst
+                  (us.toList.map KUniv.toVLevel)).eval ρ)
+                (((KUniv.toVLevel b).inst
+                  (us.toList.map KUniv.toVLevel)).eval ρ)
+        rw [h2, h3]
+
+/-- `VLevel.WF` transport for `substUniv`: if every element of `us`
+    translates well-formed at `n` parameters, so does the result — no
+    collision-freedom or size bounds needed (guard-free `mk*_cases`). -/
+theorem TcM.substUniv_wf {m : Mode} {us : Array (KUniv m)} {n : Nat}
+    (hus : ∀ w ∈ us, (KUniv.toVLevel w).WF n) :
+    ∀ {u v : KUniv m}, TcM.substUniv u us = .ok v →
+      (KUniv.toVLevel v).WF n := by
+  intro u
+  induction u with
+  | zero ad =>
+    intro v h
+    have hb : TcM.substUniv (KUniv.zero ad) us
+        = .ok (KUniv.zero (m := m) ad) := rfl
+    rw [hb] at h
+    cases h
+    trivial
+  | param idx nm ad =>
+    intro v h
+    have hb : TcM.substUniv (KUniv.param idx nm ad) us
+        = (match us[idx.toNat]? with
+           | some w => .ok w
+           | none => .error (.univParamOutOfRange idx us.size)) := rfl
+    rw [hb] at h
+    cases hget : us[idx.toNat]? with
+    | none =>
+      rw [hget] at h
+      cases h
+    | some w =>
+      rw [hget] at h
+      cases h
+      exact hus _ (Array.mem_of_getElem? hget)
+  | succ inner ad ih =>
+    intro v h
+    have hb : TcM.substUniv (KUniv.succ inner ad) us
+        = (TcM.substUniv inner us >>= fun vi =>
+            pure (KUniv.mkSucc vi)) := rfl
+    rw [hb] at h
+    cases hs : TcM.substUniv inner us with
+    | error e =>
+      rw [hs] at h
+      cases h
+    | ok vi =>
+      rw [hs] at h
+      cases h
+      exact KUniv.toVLevel_mkSucc_wf (ih hs)
+  | max a b ad iha ihb =>
+    intro v h
+    have hb : TcM.substUniv (KUniv.max a b ad) us
+        = (TcM.substUniv a us >>= fun ra =>
+            TcM.substUniv b us >>= fun rb =>
+              pure (KUniv.mkMax ra rb)) := rfl
+    rw [hb] at h
+    cases hsa : TcM.substUniv a us with
+    | error e =>
+      rw [hsa] at h
+      cases h
+    | ok ra =>
+      cases hsb : TcM.substUniv b us with
+      | error e =>
+        rw [hsa, hsb] at h
+        cases h
+      | ok rb =>
+        rw [hsa, hsb] at h
+        cases h
+        exact KUniv.toVLevel_mkMax_wf (iha hsa) (ihb hsb)
+  | imax a b ad iha ihb =>
+    intro v h
+    have hb : TcM.substUniv (KUniv.imax a b ad) us
+        = (TcM.substUniv a us >>= fun ra =>
+            TcM.substUniv b us >>= fun rb =>
+              pure (KUniv.mkIMax ra rb)) := rfl
+    rw [hb] at h
+    cases hsa : TcM.substUniv a us with
+    | error e =>
+      rw [hsa] at h
+      cases h
+    | ok ra =>
+      cases hsb : TcM.substUniv b us with
+      | error e =>
+        rw [hsa, hsb] at h
+        cases h
+      | ok rb =>
+        rw [hsa, hsb] at h
+        cases h
+        exact KUniv.toVLevel_mkIMax_wf (iha hsa) (ihb hsb)

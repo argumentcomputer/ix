@@ -4,7 +4,7 @@ import Lean4Lean.Verify.Typing.Expr
 import Lean4Lean.Theory.Typing.Lemmas
 
 /-!
-# `TrKExpr` — the KExpr ↔ VExpr translation relation (M2)
+# `TrKExprS` — the KExpr ↔ VExpr translation relation (M2)
 
 The Ix.Tc restatement of lean4lean's `TrExprS`, rule-for-rule where the
 source languages agree, with the divergences owned deliberately
@@ -34,7 +34,7 @@ source languages agree, with the divergences owned deliberately
   resolves from the `prj` node's `KId` through `nameOf`.
 - **No `mdata` rule.** Anon `KExpr` has no mdata constructor (metadata
   lives in `ExprInfo`); instead the relation is metadata-blind by
-  theorem (`TrKExpr.eraseMeta`), stated over a generic mode.
+  theorem (`TrKExprS.eraseMeta`), stated over a generic mode.
 - **`letE` inlines.** As upstream: the translation of a `letE` is the
   translation of its body in a `vlet`-extended context — `find?`
   substitutes let values at use sites, and the result `VExpr` has no
@@ -68,74 +68,74 @@ variable (env : VEnv) (uvars : Nat) (nameOf : Address → Option Lean.Name)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- Structural translation of a kernel expression into the Theory's
     `VExpr`, against a translation context `Δ`. Mode-generic: metadata
-    fields are ignored (see `TrKExpr.eraseMeta`). -/
-inductive TrKExpr {m : Mode} : KVLCtx → KExpr m → VExpr → Prop
+    fields are ignored (see `TrKExprS.eraseMeta`). -/
+inductive TrKExprS {m : Mode} : KVLCtx → KExpr m → VExpr → Prop
   | var {Δ : KVLCtx} {i : UInt64} {nm : m.F Name} {md : ExprInfo m}
       {e A : VExpr} :
     Δ.find? (.inl i.toNat) = some (e, A) →
-    TrKExpr Δ (.var i nm md) e
+    TrKExprS Δ (.var i nm md) e
   | fvar {Δ : KVLCtx} {fv : FVarId} {nm : m.F Name} {md : ExprInfo m}
       {e A : VExpr} :
     Δ.find? (.inr fv) = some (e, A) →
-    TrKExpr Δ (.fvar fv nm md) e
+    TrKExprS Δ (.fvar fv nm md) e
   | sort {Δ : KVLCtx} {u : KUniv m} {md : ExprInfo m} :
     (KUniv.toVLevel u).WF uvars →
-    TrKExpr Δ (.sort u md) (.sort u.toVLevel)
+    TrKExprS Δ (.sort u md) (.sort u.toVLevel)
   | const {Δ : KVLCtx} {id : KId m} {us : Array (KUniv m)}
       {md : ExprInfo m} {c : Lean.Name} {ci : VConstant} :
     nameOf id.addr = some c →
     env.constants c = some ci →
     (∀ u ∈ us, (KUniv.toVLevel u).WF uvars) →
     us.size = ci.uvars →
-    TrKExpr Δ (.const id us md) (.const c (us.toList.map KUniv.toVLevel))
+    TrKExprS Δ (.const id us md) (.const c (us.toList.map KUniv.toVLevel))
   | app {Δ : KVLCtx} {f a : KExpr m} {md : ExprInfo m}
       {f' a' A B : VExpr} :
     env.HasType uvars Δ.toCtx f' (.forallE A B) →
     env.HasType uvars Δ.toCtx a' A →
-    TrKExpr Δ f f' → TrKExpr Δ a a' →
-    TrKExpr Δ (.app f a md) (.app f' a')
+    TrKExprS Δ f f' → TrKExprS Δ a a' →
+    TrKExprS Δ (.app f a md) (.app f' a')
   | lam {Δ : KVLCtx} {nm : m.F Name} {bi : m.F Lean.BinderInfo}
       {ty body : KExpr m} {md : ExprInfo m} {ty' body' : VExpr} :
     env.IsType uvars Δ.toCtx ty' →
-    TrKExpr Δ ty ty' →
-    TrKExpr ((none, .vlam ty') :: Δ) body body' →
-    TrKExpr Δ (.lam nm bi ty body md) (.lam ty' body')
+    TrKExprS Δ ty ty' →
+    TrKExprS ((none, .vlam ty') :: Δ) body body' →
+    TrKExprS Δ (.lam nm bi ty body md) (.lam ty' body')
   | all {Δ : KVLCtx} {nm : m.F Name} {bi : m.F Lean.BinderInfo}
       {ty body : KExpr m} {md : ExprInfo m} {ty' body' : VExpr} :
     env.IsType uvars Δ.toCtx ty' →
     env.IsType uvars (ty' :: Δ.toCtx) body' →
-    TrKExpr Δ ty ty' →
-    TrKExpr ((none, .vlam ty') :: Δ) body body' →
-    TrKExpr Δ (.all nm bi ty body md) (.forallE ty' body')
+    TrKExprS Δ ty ty' →
+    TrKExprS ((none, .vlam ty') :: Δ) body body' →
+    TrKExprS Δ (.all nm bi ty body md) (.forallE ty' body')
   | letE {Δ : KVLCtx} {nm : m.F Name} {ty val body : KExpr m} {nd : Bool}
       {md : ExprInfo m} {ty' val' body' : VExpr} :
     env.HasType uvars Δ.toCtx val' ty' →
-    TrKExpr Δ ty ty' → TrKExpr Δ val val' →
-    TrKExpr ((none, .vlet ty' val') :: Δ) body body' →
-    TrKExpr Δ (.letE nm ty val body nd md) body'
+    TrKExprS Δ ty ty' → TrKExprS Δ val val' →
+    TrKExprS ((none, .vlet ty' val') :: Δ) body body' →
+    TrKExprS Δ (.letE nm ty val body nd md) body'
   | prj {Δ : KVLCtx} {sid : KId m} {field : UInt64} {val : KExpr m}
       {md : ExprInfo m} {sName : Lean.Name} {e' e'' : VExpr} :
     nameOf sid.addr = some sName →
-    TrKExpr Δ val e' →
+    TrKExprS Δ val e' →
     trProj Δ.toCtx sName field.toNat e' e'' →
-    TrKExpr Δ (.prj sid field val md) e''
+    TrKExprS Δ (.prj sid field val md) e''
   | nat {Δ : KVLCtx} {n : Nat} {blob : Address} {md : ExprInfo m} :
     env.ContainsLits (.natVal n) →
-    TrKExpr Δ (.nat n blob md) (.natLit n)
+    TrKExprS Δ (.nat n blob md) (.natLit n)
   | str {Δ : KVLCtx} {s : String} {blob : Address} {md : ExprInfo m} :
     env.ContainsLits (.strVal s) →
-    TrKExpr Δ (.str s blob md) (.trLiteral (.strVal s))
+    TrKExprS Δ (.str s blob md) (.trLiteral (.strVal s))
 
 /-- The translation is metadata-blind: erasing to the anon twin
     translates to the SAME `VExpr`. (With `KExpr.eraseMeta_anon` this
     also means anon statements subsume meta ones — the v1 checker's
     scope.) -/
-theorem TrKExpr.eraseMeta {env : VEnv} {uvars : Nat}
+theorem TrKExprS.eraseMeta {env : VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {m : Mode} {Δ : KVLCtx} {e : KExpr m} {e' : VExpr}
-    (h : TrKExpr env uvars nameOf trProj Δ e e') :
-    TrKExpr env uvars nameOf trProj Δ e.eraseMeta e' := by
+    (h : TrKExprS env uvars nameOf trProj Δ e e') :
+    TrKExprS env uvars nameOf trProj Δ e.eraseMeta e' := by
   induction h with
   | var h =>
     rw [KExpr.eraseMeta]
@@ -339,7 +339,7 @@ private theorem liftN_trLiteral (l : Lean.Literal) (n k : Nat) :
     walker's `UInt64` arguments; `htp` is the trProj-weakening the
     abstract projection parameter must satisfy (upstream `TrProj.weakN`'s
     shape). -/
-theorem TrKExpr.weakBV {env : Lean4Lean.VEnv} {uvars : Nat}
+theorem TrKExprS.weakBV {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (henv : env.Ordered)
@@ -347,12 +347,12 @@ theorem TrKExpr.weakBV {env : Lean4Lean.VEnv} {uvars : Nat}
       {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
       trProj Γ' s i (e.liftN n k) (e'.liftN n k))
     {Δ : KVLCtx} {e : KExpr .anon} {e' : VExpr}
-    (H : TrKExpr env uvars nameOf trProj Δ e e') :
+    (H : TrKExprS env uvars nameOf trProj Δ e e') :
     ∀ {Δ' : KVLCtx} {dn dk n k : Nat} {shift cutoff : UInt64},
       KVLCtx.KBVLift Δ Δ' dn dk n k →
       shift.toNat = dn → cutoff.toNat = dk →
       Δ'.bvars + e.size < UInt64.size →
-      TrKExpr env uvars nameOf trProj Δ'
+      TrKExprS env uvars nameOf trProj Δ'
         (KExpr.liftSpec e shift cutoff) (e'.liftN n k) := by
   induction H with
   | @var Δ i nm md e A h =>
@@ -465,7 +465,7 @@ simplification our formulation affords: upstream's variable transport
 accumulates the substituted argument's lift through per-stage
 single-entry weakenings, but `substSpec`'s hit arm produces
 `liftSpec arg depth 0` in ONE shot — so the hit discharges with a
-single `TrKExpr.weakBV` application through the `KInstN → KBVLift`
+single `TrKExprS.weakBV` application through the `KInstN → KBVLift`
 bridge (`toKBVLift`), and the remaining branches are plain `find?`
 transports. -/
 
@@ -497,7 +497,7 @@ protected theorem KInstN.toCtx {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
     | .vlam A => exact .succ ih
 
 /-- The instantiated tail extends the base context by pure insertions —
-    the bridge that lets the hit case reuse `TrKExpr.weakBV`. -/
+    the bridge that lets the hit case reuse `TrKExprS.weakBV`. -/
 theorem KInstN.toKBVLift {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
     {Δ₁ Δ : KVLCtx} (W : KInstN Δ₀ e₀ A₀ dk k Δ₁ Δ) :
     KBVLift Δ₀ Δ dk 0 k 0 := by
@@ -667,7 +667,7 @@ private theorem inst_trLiteral (l : Lean.Literal) (e₀ : VExpr) (k : Nat) :
     the weakening/instantiation closure the abstract projection
     parameter must satisfy (upstream's `TrProj.weakN`/`TrProj.instN`,
     both sorried there). -/
-theorem TrKExpr.instN {env : Lean4Lean.VEnv} {uvars : Nat}
+theorem TrKExprS.instN {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (henv : env.Ordered)
@@ -679,15 +679,15 @@ theorem TrKExpr.instN {env : Lean4Lean.VEnv} {uvars : Nat}
       Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ → trProj Γ₁ s i e e' →
       trProj Γ s i (e.inst e₀ k) (e'.inst e₀ k))
     {Δ₀ : KVLCtx} {arg : KExpr .anon} {e₀' A₀ : VExpr}
-    (h₀ : TrKExpr env uvars nameOf trProj Δ₀ arg e₀')
+    (h₀ : TrKExprS env uvars nameOf trProj Δ₀ arg e₀')
     (t₀ : env.HasType uvars Δ₀.toCtx e₀' A₀)
     {Δ₁ : KVLCtx} {body : KExpr .anon} {body' : VExpr}
-    (H : TrKExpr env uvars nameOf trProj Δ₁ body body') :
+    (H : TrKExprS env uvars nameOf trProj Δ₁ body body') :
     ∀ {Δ : KVLCtx} {dk k : Nat} {depth : UInt64},
       KVLCtx.KInstN Δ₀ e₀' A₀ dk k Δ₁ Δ →
       depth.toNat = dk →
       Δ.bvars + body.size + arg.size < UInt64.size →
-      TrKExpr env uvars nameOf trProj Δ
+      TrKExprS env uvars nameOf trProj Δ
         (KExpr.substSpec body arg depth) (body'.inst e₀' k) := by
   induction H with
   | @var Δ₁' i nm md e A h =>
@@ -698,7 +698,7 @@ theorem TrKExpr.instN {env : Lean4Lean.VEnv} {uvars : Nat}
       rw [if_pos heq]
       rw [show e.inst e₀' k = e₀'.liftN k from
         W.find?_hit (by rw [← hik]; exact h)]
-      exact TrKExpr.weakBV henv htp h₀ W.toKBVLift hdepth rfl
+      exact TrKExprS.weakBV henv htp h₀ W.toKBVLift hdepth rfl
         (Nat.lt_of_le_of_lt (by omega) hbig)
     · by_cases hgt : i > depth
       · have hik : dk < i.toNat := by
@@ -805,7 +805,7 @@ theorem TrKExpr.instN {env : Lean4Lean.VEnv} {uvars : Nat}
 
 /-- **Beta step at the API level**: substituting under one `vlam`.
     Upstream `TrExprS.inst`. -/
-theorem TrKExpr.inst {env : Lean4Lean.VEnv} {uvars : Nat}
+theorem TrKExprS.inst {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (henv : env.Ordered)
@@ -818,11 +818,148 @@ theorem TrKExpr.inst {env : Lean4Lean.VEnv} {uvars : Nat}
       trProj Γ s i (e.inst e₀ k) (e'.inst e₀ k))
     {Δ : KVLCtx} {arg body : KExpr .anon} {e₀' A₀ body' : VExpr}
     (t₀ : env.HasType uvars Δ.toCtx e₀' A₀)
-    (H : TrKExpr env uvars nameOf trProj ((none, .vlam A₀) :: Δ) body body')
-    (h₀ : TrKExpr env uvars nameOf trProj Δ arg e₀')
+    (H : TrKExprS env uvars nameOf trProj ((none, .vlam A₀) :: Δ) body body')
+    (h₀ : TrKExprS env uvars nameOf trProj Δ arg e₀')
     (hbig : Δ.bvars + body.size + arg.size < UInt64.size) :
-    TrKExpr env uvars nameOf trProj Δ
+    TrKExprS env uvars nameOf trProj Δ
       (KExpr.substSpec body arg 0) (body'.inst e₀') :=
-  TrKExpr.instN henv htp htpI h₀ t₀ H .zero rfl hbig
+  TrKExprS.instN henv htp htpI h₀ t₀ H .zero rfl hbig
+
+/-! ### Context typing kit (upstream `VLCtx.WF` lemma transfers) -/
+
+/-- `VLocalDecl.WF.hasType` re-keyed: the resolved (value, type) pair of
+    the head entry is typed in the extended bare context. -/
+theorem KVLCtx.vlocalDecl_wf_hasType {env : VEnv} {U : Nat} {Δ : KVLCtx}
+    {ofv} : ∀ {d}, VLocalDecl.WF env U Δ.toCtx d →
+    env.HasType U (KVLCtx.toCtx ((ofv, d) :: Δ)) d.value d.type
+  | .vlam _, _ => .bvar .zero
+  | .vlet .., hA => hA
+
+/-- `VLocalDecl.is_liftN` re-keyed: consing an entry lifts the bare
+    context by the entry's depth. -/
+theorem KVLCtx.is_liftN {Δ : KVLCtx} {ofv} :
+    ∀ {d}, Lean4Lean.Ctx.LiftN (VLocalDecl.depth d) 0 Δ.toCtx
+      (KVLCtx.toCtx ((ofv, d) :: Δ))
+  | .vlam _ => .one
+  | .vlet .. => .zero []
+
+/-- `VLCtx.WF.find?_wf` re-keyed: a successful variable resolution is
+    typed (the value against the type, both lifted to the use site). -/
+theorem KVLCtx.WF.find?_wf {env : VEnv} {U : Nat} (henv : env.Ordered) :
+    ∀ {Δ : KVLCtx}, KVLCtx.WF env U Δ → ∀ {v} {e A : VExpr},
+      Δ.find? v = some (e, A) → env.HasType U Δ.toCtx e A
+  | [], _, _, _, _, H => nomatch H
+  | (_, _) :: _, hΔ, _, _, _, H => by
+    unfold KVLCtx.find? at H
+    split at H
+    · cases H
+      exact KVLCtx.vlocalDecl_wf_hasType hΔ.2.2
+    · simp at H
+      obtain ⟨e'', A'', H, rfl, rfl⟩ := H
+      exact (KVLCtx.WF.find?_wf henv hΔ.1 H).weakN henv KVLCtx.is_liftN
+
+/-- `VLCtx.WF.toCtx` re-keyed: the bare context of a well-formed
+    translation context is `OnCtx`-well-formed. -/
+theorem KVLCtx.WF.toCtx {env : VEnv} {U : Nat} :
+    ∀ {Δ : KVLCtx}, KVLCtx.WF env U Δ →
+      Lean4Lean.OnCtx Δ.toCtx (env.IsType U)
+  | [], _ => ⟨⟩
+  | (_, .vlam _) :: _, ⟨hΔ, _, hA⟩ => ⟨hΔ.toCtx, hA⟩
+  | (_, .vlet ..) :: _, ⟨hΔ, _, _⟩ => hΔ.toCtx
+
+/-- A term well-formed in the empty context is well-formed anywhere
+    (closed-term weakening; the WF witness type is allowed to lift). -/
+private theorem wf_weak0 {env : VEnv} (henv : env.Ordered) {U : Nat}
+    {e : VExpr} (h : VExpr.WF env U [] e) (Γ : List VExpr) :
+    VExpr.WF env U Γ e := by
+  obtain ⟨A, hA⟩ := h
+  have W : Lean4Lean.Ctx.LiftN Γ.length 0 [] (Γ ++ []) := .zero Γ rfl
+  rw [List.append_nil] at W
+  have h2 := hA.weakN henv W
+  have hce : e.ClosedN 0 := (hA.closedN' henv.closed trivial).1
+  rw [hce.liftN_eq (Nat.le_refl 0)] at h2
+  exact ⟨_, h2⟩
+
+/-! ### Well-typedness and the defeq quotient -/
+
+/-- Every structural translate is well-typed (upstream `TrExprS.wf`).
+    Two owned divergences surface as hypotheses: the literal rules are
+    DIRECT (no `toConstructor` sub-derivation), so the typing of the
+    closed literal encodings enters as `hlit` (M8's primitive-env
+    invariant discharges it); the abstract `trProj` carries its own
+    WF-closure `htpwf` (upstream `TrProj.wf` is itself sorry). -/
+theorem TrKExprS.wf {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htpwf : ∀ {Γ s i e e'}, trProj Γ s i e e' →
+      VExpr.WF env uvars Γ e → VExpr.WF env uvars Γ e')
+    {m : Mode} {Δ : KVLCtx} {e : KExpr m} {e' : VExpr}
+    (H : TrKExprS env uvars nameOf trProj Δ e e')
+    (hΔ : KVLCtx.WF env uvars Δ) :
+    VExpr.WF env uvars Δ.toCtx e' := by
+  induction H with
+  | var h1 => exact ⟨_, hΔ.find?_wf henv h1⟩
+  | fvar h1 => exact ⟨_, hΔ.find?_wf henv h1⟩
+  | sort h1 => exact ⟨_, VEnv.HasType.sort h1⟩
+  | @const _ _ us _ _ ci h1 h2 h3 h4 =>
+    refine ⟨_, VEnv.HasType.const h2 ?_ ?_⟩
+    · intro l hl
+      obtain ⟨u, hu, rfl⟩ := List.mem_map.1 hl
+      exact h3 u (by simpa using hu)
+    · simpa using h4
+  | app h1 h2 => exact ⟨_, h1.app h2⟩
+  | @lam Δ' nm bi ty body md ty' body' h1 h2 h3 ihty ihbody =>
+    have ⟨_, h1'⟩ := h1
+    have ⟨_, h2'⟩ := ihbody ⟨hΔ, nofun, h1⟩
+    exact ⟨_, h1'.lam h2'⟩
+  | @all Δ' nm bi ty body md ty' body' h1 h2 h3 h4 ihty ihbody =>
+    obtain ⟨_, h1'⟩ := h1
+    obtain ⟨_, h2'⟩ := h2
+    exact ⟨_, h1'.forallE h2'⟩
+  | @letE Δ' nm ty val body nd md ty' val' body' h1 h2 h3 h4 ihty ihval
+      ihbody =>
+    exact ihbody ⟨hΔ, nofun, h1⟩
+  | @prj Δ' sid field val md sName e1 e2 h1 h2 h3 ihval =>
+    exact htpwf h3 (ihval hΔ)
+  | nat h1 => exact wf_weak0 henv (hlit _ h1) _
+  | str h1 => exact wf_weak0 henv (hlit _ h1) _
+
+variable (env : VEnv) (uvars : Nat) (nameOf : Address → Option Lean.Name)
+    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+/-- Defeq-quotiented translation (upstream `TrExpr`): some structural
+    translate, defeq to the target. The home of the M5/M6 congruence
+    API — needed already for `instL`, whose level simplifications are
+    only `≈`-sound. -/
+def TrKExpr {m : Mode} (Δ : KVLCtx) (e : KExpr m) (e' : VExpr) : Prop :=
+  ∃ e₂, TrKExprS env uvars nameOf trProj Δ e e₂ ∧
+    env.IsDefEqU uvars Δ.toCtx e₂ e'
+
+/-- Embed the structural relation into the quotient (upstream
+    `TrExprS.trExpr`) — the reflexive defeq is exactly well-typedness. -/
+theorem TrKExprS.trKExpr {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htpwf : ∀ {Γ s i e e'}, trProj Γ s i e e' →
+      VExpr.WF env uvars Γ e → VExpr.WF env uvars Γ e')
+    {m : Mode} {Δ : KVLCtx} {e : KExpr m} {e' : VExpr}
+    (H : TrKExprS env uvars nameOf trProj Δ e e')
+    (hΔ : KVLCtx.WF env uvars Δ) :
+    TrKExpr env uvars nameOf trProj Δ e e' :=
+  ⟨_, H, H.wf henv hlit htpwf hΔ⟩
+
+theorem TrKExpr.wf {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {m : Mode} {Δ : KVLCtx} {e : KExpr m} {e' : VExpr}
+    (H : TrKExpr env uvars nameOf trProj Δ e e') :
+    VExpr.WF env uvars Δ.toCtx e' :=
+  let ⟨_, _, _, h⟩ := H
+  ⟨_, h.hasType.2⟩
 
 end Ix.Tc

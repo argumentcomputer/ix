@@ -2421,4 +2421,503 @@ theorem univGeq_sound {u v : KUniv m} (hinj : u.AddrFaithful v)
   · rw [KUniv.toVLevel_of_isZero hzero]; exact VLevel.zero_le
   · exact normLevelLe_sound hv hu hle
 
+/-! ### Simplifying smart constructors: `mkMax`/`mkIMax` soundness
+
+`substUniv` (universe instantiation, `Ix/Tc/Monad.lean`) rebuilds with
+the SIMPLIFYING `mkMax`/`mkIMax` (Lean/Rust parity), so its Theory
+correspondence is an equivalence `≈`, never a syntactic equality. This
+block proves the two constructors sound wrt `VLevel.eval`, conditional
+on addr-faithfulness of the JOINT SUBTERM CLOSURE of the two arguments
+(unlike `univEq`'s top-level-only `==`, the absorption and same-base
+branches compare subterm addresses) and the usual UInt64 no-wrap size
+bounds (`offset` counts `succ`-depth in `UInt64`; on an adversarially
+deep chain the count wraps and the numeral branches would pick the
+wrong side). The guard-free `mk*_cases` lemmas carry structural
+transports (`VLevel.WF`) with NO hypotheses: every branch returns one
+of the inputs or the raw node. -/
+
+namespace KUniv
+
+/-- Reflexive subterm relation — the footprint vocabulary for the
+    `==`-soundness hypotheses of the simplifying constructors. -/
+inductive Sub (x : KUniv m) : KUniv m → Prop
+  | refl : Sub x x
+  | succ {v : KUniv m} {ad} : Sub x v → Sub x (.succ v ad)
+  | max_l {a b : KUniv m} {ad} : Sub x a → Sub x (.max a b ad)
+  | max_r {a b : KUniv m} {ad} : Sub x b → Sub x (.max a b ad)
+  | imax_l {a b : KUniv m} {ad} : Sub x a → Sub x (.imax a b ad)
+  | imax_r {a b : KUniv m} {ad} : Sub x b → Sub x (.imax a b ad)
+
+theorem Sub.trans {x y : KUniv m} (hxy : Sub x y) :
+    ∀ {z : KUniv m}, Sub y z → Sub x z := by
+  intro z hyz
+  induction hyz with
+  | refl => exact hxy
+  | succ _ ih => exact .succ ih
+  | max_l _ ih => exact .max_l ih
+  | max_r _ ih => exact .max_r ih
+  | imax_l _ ih => exact .imax_l ih
+  | imax_r _ ih => exact .imax_r ih
+
+/-- The offset base is a subterm. -/
+theorem offset_fst_sub : ∀ u : KUniv m, Sub u.offset.1 u
+  | .zero _ | .param .. | .max .. | .imax .. => Sub.refl
+  | .succ v _ => .succ (offset_fst_sub v)
+
+private theorem toNat_add_one {n : UInt64} (h : n.toNat + 1 < UInt64.size) :
+    (n + 1).toNat = n.toNat + 1 := by
+  rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+  exact Nat.mod_eq_of_lt h
+
+/-- Under the no-wrap bound the offset count is exact: it measures the
+    `succ`-depth down to the (strictly smaller) base. -/
+theorem offset_size : ∀ u : KUniv m, u.size < UInt64.size →
+    u.offset.2.toNat + u.offset.1.size = u.size
+  | .zero _, _ | .param .., _ | .max .., _ | .imax .., _ => Nat.zero_add _
+  | .succ v _, h => by
+    have hv : v.size < UInt64.size := by
+      simp only [size] at h; omega
+    have ih := offset_size v hv
+    have hpos := size_pos v.offset.1
+    show (v.offset.2 + 1).toNat + v.offset.1.size = v.size + 1
+    rw [toNat_add_one (by omega)]
+    omega
+
+/-- Eval decomposition through `offset`: `u = succ^n base` evaluates to
+    `⟦base⟧ + n`. -/
+theorem offset_eval (ρ : List Nat) : ∀ u : KUniv m,
+    u.size < UInt64.size →
+    (toVLevel u).eval ρ = (toVLevel u.offset.1).eval ρ + u.offset.2.toNat
+  | .zero _, _ | .param .., _ | .max .., _ | .imax .., _ => rfl
+  | .succ v _, h => by
+    have hv : v.size < UInt64.size := by
+      simp only [size] at h; omega
+    have ih := offset_eval ρ v hv
+    have hos := offset_size v hv
+    have hpos := size_pos v.offset.1
+    show (toVLevel v).eval ρ + 1
+        = (toVLevel v.offset.1).eval ρ + (v.offset.2 + 1).toNat
+    rw [toNat_add_one (by omega)]
+    omega
+
+/-- An explicit numeral's offset base is syntactic zero. -/
+theorem isExplicit_offset_isZero : ∀ {u : KUniv m},
+    u.isExplicit = true → u.offset.1.isZero = true
+  | .zero _, _ => rfl
+  | .succ v _, h =>
+    isExplicit_offset_isZero (u := v) (by simpa [isExplicit] using h)
+
+/-- `isNeverZero` is semantically sound: the eval is positive under
+    every assignment. -/
+theorem isNeverZero_eval (ρ : List Nat) : ∀ {u : KUniv m},
+    u.isNeverZero = true → 0 < (toVLevel u).eval ρ
+  | .succ _ _, _ => Nat.succ_pos _
+  | .max a b _, h => by
+    show 0 < Nat.max ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+    have h' : a.isNeverZero = true ∨ b.isNeverZero = true := by
+      simpa [isNeverZero] using h
+    rcases h' with ha | hb
+    · have := isNeverZero_eval ρ (u := a) ha
+      simp only [Nat.max_eq_max, Nat.max_def]
+      split <;> omega
+    · have := isNeverZero_eval ρ (u := b) hb
+      simp only [Nat.max_eq_max, Nat.max_def]
+      split <;> omega
+  | .imax a b _, h => by
+    have hb := isNeverZero_eval ρ (u := b) (by simpa [isNeverZero] using h)
+    show 0 < Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+    simp only [Nat.imax]
+    rw [if_neg (by omega)]
+    simp only [Nat.max_eq_max, Nat.max_def]
+    split <;> omega
+
+theorem toVLevel_mkIMaxRaw (a b : KUniv m) :
+    (mkIMaxRaw a b).toVLevel = .imax a.toVLevel b.toVLevel := rfl
+
+/-- **Eval-soundness of the simplifying `mkMax`** — conditional on
+    addr-faithfulness of the joint subterm closure and the no-wrap size
+    bounds. -/
+theorem toVLevel_mkMax {a b : KUniv m}
+    (hinj : ∀ x y, (Sub x a ∨ Sub x b) → (Sub y a ∨ Sub y b) →
+      x.AddrFaithful y)
+    (ha : a.size < UInt64.size) (hb : b.size < UInt64.size) :
+    (mkMax a b).toVLevel ≈ .max a.toVLevel b.toVLevel := by
+  rw [VLevel.equiv_def]
+  intro ρ
+  show (if a.isExplicit && b.isExplicit then
+          match a.offset, b.offset with
+          | (_, na), (_, nb) => if na ≥ nb then a else b
+        else if a == b then a
+        else if a.isZero then b
+        else if b.isZero then a
+        else if (match b with
+            | .max bl br _ => bl == a || br == a
+            | _ => false) then b
+        else if (match a with
+            | .max al ar _ => al == b || ar == b
+            | _ => false) then a
+        else
+          match a.offset, b.offset with
+          | (baseA, offA), (baseB, offB) =>
+            if baseA == baseB then
+              if offA ≥ offB then a else b
+            else mkMaxRaw a b).toVLevel.eval ρ
+      = Nat.max ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+  generalize hcB : (match b with
+    | .max bl br _ => bl == a || br == a
+    | _ => false) = cB
+  generalize hcA : (match a with
+    | .max al ar _ => al == b || ar == b
+    | _ => false) = cA
+  split
+  · -- both explicit numerals: pick the larger offset
+    next hexp =>
+    obtain ⟨hea, heb⟩ := Bool.and_eq_true_iff.mp hexp
+    split
+    rename_i xa xb ba na bb nb hoa hob
+    have hevala := offset_eval ρ a ha
+    have hevalb := offset_eval ρ b hb
+    rw [hoa] at hevala
+    rw [hob] at hevalb
+    simp only [] at hevala hevalb
+    have hza : (toVLevel ba).eval ρ = 0 := by
+      rw [toVLevel_of_isZero (by
+        have := isExplicit_offset_isZero hea
+        rw [hoa] at this
+        exact this)]
+      rfl
+    have hzb : (toVLevel bb).eval ρ = 0 := by
+      rw [toVLevel_of_isZero (by
+        have := isExplicit_offset_isZero heb
+        rw [hob] at this
+        exact this)]
+      rfl
+    split
+    · next hge =>
+      have := UInt64.le_iff_toNat_le.mp hge
+      simp only [Nat.max_eq_max, Nat.max_def]
+      repeat' split
+      all_goals omega
+    · next hge =>
+      have := UInt64.lt_iff_toNat_lt.mp (UInt64.not_le.mp hge)
+      simp only [Nat.max_eq_max, Nat.max_def]
+      repeat' split
+      all_goals omega
+  · split
+    · -- a == b (addresses)
+      next hbeq =>
+      rw [KUniv.beq_def] at hbeq
+      have heq := (hinj a b (.inl .refl) (.inr .refl)).toVLevel_eq hbeq
+      rw [heq]
+      simp only [Nat.max_eq_max, Nat.max_def]
+      repeat' split
+      all_goals omega
+    · split
+      · -- a is zero
+        next hz =>
+        rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
+        simp only [Nat.max_eq_max, Nat.max_def]
+        repeat' split
+        all_goals omega
+      · split
+        · -- b is zero
+          next hz =>
+          rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
+          simp only [Nat.max_eq_max, Nat.max_def]
+          repeat' split
+          all_goals omega
+        · split
+          · -- absorbB fired
+            next hcb =>
+            have hM := hcB.trans hcb
+            cases b with
+            | max bl br bad =>
+              show Nat.max ((toVLevel bl).eval ρ) ((toVLevel br).eval ρ)
+                  = Nat.max ((toVLevel a).eval ρ)
+                      (Nat.max ((toVLevel bl).eval ρ)
+                        ((toVLevel br).eval ρ))
+              have habs' : (bl == a) = true ∨ (br == a) = true := by
+                simpa using hM
+              rcases habs' with hbeq | hbeq
+              · rw [KUniv.beq_def] at hbeq
+                have heq := (hinj bl a (.inr (.max_l .refl))
+                  (.inl .refl)).toVLevel_eq hbeq
+                rw [← heq]
+                simp only [Nat.max_eq_max, Nat.max_def]
+                repeat' split
+                all_goals omega
+              · rw [KUniv.beq_def] at hbeq
+                have heq := (hinj br a (.inr (.max_r .refl))
+                  (.inl .refl)).toVLevel_eq hbeq
+                rw [← heq]
+                simp only [Nat.max_eq_max, Nat.max_def]
+                repeat' split
+                all_goals omega
+            | zero bad => exact (Bool.false_ne_true hM).elim
+            | succ bv bad => exact (Bool.false_ne_true hM).elim
+            | imax bl br bad => exact (Bool.false_ne_true hM).elim
+            | param bi bn bad => exact (Bool.false_ne_true hM).elim
+          · split
+            · -- absorbA fired
+              next hca =>
+              have hM := hcA.trans hca
+              cases a with
+              | max al ar aad =>
+                show Nat.max ((toVLevel al).eval ρ) ((toVLevel ar).eval ρ)
+                    = Nat.max
+                        (Nat.max ((toVLevel al).eval ρ)
+                          ((toVLevel ar).eval ρ))
+                        ((toVLevel b).eval ρ)
+                have habs' : (al == b) = true ∨ (ar == b) = true := by
+                  simpa using hM
+                rcases habs' with hbeq | hbeq
+                · rw [KUniv.beq_def] at hbeq
+                  have heq := (hinj al b (.inl (.max_l .refl))
+                    (.inr .refl)).toVLevel_eq hbeq
+                  rw [← heq]
+                  simp only [Nat.max_eq_max, Nat.max_def]
+                  repeat' split
+                  all_goals omega
+                · rw [KUniv.beq_def] at hbeq
+                  have heq := (hinj ar b (.inl (.max_r .refl))
+                    (.inr .refl)).toVLevel_eq hbeq
+                  rw [← heq]
+                  simp only [Nat.max_eq_max, Nat.max_def]
+                  repeat' split
+                  all_goals omega
+              | zero aad => exact (Bool.false_ne_true hM).elim
+              | succ av aad => exact (Bool.false_ne_true hM).elim
+              | imax al ar aad => exact (Bool.false_ne_true hM).elim
+              | param ai an aad => exact (Bool.false_ne_true hM).elim
+            · -- same offset base / raw fallthrough
+              split
+              rename_i xa xb baseA offA baseB offB hoa hob
+              have hevala := offset_eval ρ a ha
+              have hevalb := offset_eval ρ b hb
+              rw [hoa] at hevala
+              rw [hob] at hevalb
+              simp only [] at hevala hevalb
+              split
+              · next hbase =>
+                rw [KUniv.beq_def] at hbase
+                have hsa : Sub baseA a := by
+                  have := offset_fst_sub a
+                  rw [hoa] at this
+                  exact this
+                have hsb : Sub baseB b := by
+                  have := offset_fst_sub b
+                  rw [hob] at this
+                  exact this
+                have heq := (hinj baseA baseB (.inl hsa)
+                  (.inr hsb)).toVLevel_eq hbase
+                split
+                · next hge =>
+                  have := UInt64.le_iff_toNat_le.mp hge
+                  rw [heq] at hevala
+                  simp only [Nat.max_eq_max, Nat.max_def]
+                  repeat' split
+                  all_goals omega
+                · next hge =>
+                  have := UInt64.lt_iff_toNat_lt.mp (UInt64.not_le.mp hge)
+                  rw [heq] at hevala
+                  simp only [Nat.max_eq_max, Nat.max_def]
+                  repeat' split
+                  all_goals omega
+              · rw [toVLevel_mkMaxRaw]
+                rfl
+
+/-- **Eval-soundness of the simplifying `mkIMax`** — same hypothesis
+    shape as `toVLevel_mkMax` (whose soundness the `isNeverZero` branch
+    composes). -/
+theorem toVLevel_mkIMax {a b : KUniv m}
+    (hinj : ∀ x y, (Sub x a ∨ Sub x b) → (Sub y a ∨ Sub y b) →
+      x.AddrFaithful y)
+    (ha : a.size < UInt64.size) (hb : b.size < UInt64.size) :
+    (mkIMax a b).toVLevel ≈ .imax a.toVLevel b.toVLevel := by
+  rw [VLevel.equiv_def]
+  intro ρ
+  show (if b.isNeverZero then mkMax a b
+        else if b.isZero then b
+        else if a.isZero then b
+        else if (match a with
+            | .succ inner _ => inner.isZero
+            | _ => false) then b
+        else if a == b then a
+        else mkIMaxRaw a b).toVLevel.eval ρ
+      = Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+  generalize hc1 : (match a with
+    | .succ inner _ => inner.isZero
+    | _ => false) = aOne
+  split
+  · -- b never zero: imax = max, delegate to mkMax soundness
+    next hnz =>
+    have hmax := VLevel.equiv_def.mp (toVLevel_mkMax hinj ha hb) ρ
+    have hpos := isNeverZero_eval ρ (u := b) hnz
+    rw [hmax]
+    simp only [Nat.imax]
+    rw [if_neg (by omega)]
+    rfl
+  · split
+    · -- b is zero: imax _ 0 = 0
+      next hz =>
+      rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
+      simp [Nat.imax]
+    · split
+      · -- a is zero: imax 0 x = x
+        next hz =>
+        rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
+        simp only [Nat.imax]
+        split
+        · next h0 => omega
+        · simp only [Nat.max_eq_max, Nat.max_def]
+          repeat' split
+          all_goals omega
+      · split
+        · -- a is literally 1: imax 1 x = x
+          next hone =>
+          have hM := hc1.trans hone
+          cases a with
+          | succ inner aad =>
+            have hz : (toVLevel inner).eval ρ = 0 := by
+              rw [toVLevel_of_isZero (by simpa using hM)]
+              rfl
+            show (toVLevel b).eval ρ
+                = Nat.imax ((toVLevel inner).eval ρ + 1)
+                    ((toVLevel b).eval ρ)
+            simp only [Nat.imax]
+            split
+            · next h0 => omega
+            · simp only [Nat.max_eq_max, Nat.max_def]
+              repeat' split
+              all_goals omega
+          | zero aad => exact (Bool.false_ne_true hM).elim
+          | max al ar aad => exact (Bool.false_ne_true hM).elim
+          | imax al ar aad => exact (Bool.false_ne_true hM).elim
+          | param ai an aad => exact (Bool.false_ne_true hM).elim
+        · split
+          · -- a == b (addresses): imax x x = x
+            next hbeq =>
+            rw [KUniv.beq_def] at hbeq
+            have heq := (hinj a b (.inl .refl) (.inr .refl)).toVLevel_eq
+              hbeq
+            rw [heq]
+            simp only [Nat.imax]
+            split
+            · next h0 => omega
+            · simp only [Nat.max_eq_max, Nat.max_def]
+              repeat' split
+              all_goals omega
+          · rw [toVLevel_mkIMaxRaw]
+            rfl
+
+/-! #### Guard-free structural transports
+
+Every `mkMax`/`mkIMax` branch returns one of the inputs, the `mkMax`
+result, or the raw node — so structural properties (`VLevel.WF`)
+transfer with NO addr-faithfulness or size hypotheses. -/
+
+theorem mkMax_cases (a b : KUniv m) :
+    mkMax a b = a ∨ mkMax a b = b ∨ mkMax a b = mkMaxRaw a b := by
+  have hbody : mkMax a b
+      = (if a.isExplicit && b.isExplicit then
+          match a.offset, b.offset with
+          | (_, na), (_, nb) => if na ≥ nb then a else b
+        else if a == b then a
+        else if a.isZero then b
+        else if b.isZero then a
+        else if (match b with
+            | .max bl br _ => bl == a || br == a
+            | _ => false) then b
+        else if (match a with
+            | .max al ar _ => al == b || ar == b
+            | _ => false) then a
+        else
+          match a.offset, b.offset with
+          | (baseA, offA), (baseB, offB) =>
+            if baseA == baseB then
+              if offA ≥ offB then a else b
+            else mkMaxRaw a b) := rfl
+  rw [hbody]
+  generalize (match b with
+    | .max bl br _ => bl == a || br == a
+    | _ => false) = cB
+  generalize (match a with
+    | .max al ar _ => al == b || ar == b
+    | _ => false) = cA
+  split
+  · split
+    split
+    · exact .inl rfl
+    · exact .inr (.inl rfl)
+  · split
+    · exact .inl rfl
+    · split
+      · exact .inr (.inl rfl)
+      · split
+        · exact .inl rfl
+        · split
+          · exact .inr (.inl rfl)
+          · split
+            · exact .inl rfl
+            · split
+              split
+              · split
+                · exact .inl rfl
+                · exact .inr (.inl rfl)
+              · exact .inr (.inr rfl)
+
+theorem mkIMax_cases (a b : KUniv m) :
+    mkIMax a b = mkMax a b ∨ mkIMax a b = a ∨ mkIMax a b = b ∨
+      mkIMax a b = mkIMaxRaw a b := by
+  have hbody : mkIMax a b
+      = (if b.isNeverZero then mkMax a b
+        else if b.isZero then b
+        else if a.isZero then b
+        else if (match a with
+            | .succ inner _ => inner.isZero
+            | _ => false) then b
+        else if a == b then a
+        else mkIMaxRaw a b) := rfl
+  rw [hbody]
+  generalize (match a with
+    | .succ inner _ => inner.isZero
+    | _ => false) = aOne
+  split
+  · exact .inl rfl
+  · split
+    · exact .inr (.inr (.inl rfl))
+    · split
+      · exact .inr (.inr (.inl rfl))
+      · split
+        · exact .inr (.inr (.inl rfl))
+        · split
+          · exact .inr (.inl rfl)
+          · exact .inr (.inr (.inr rfl))
+
+theorem toVLevel_mkSucc_wf {n : Nat} {u : KUniv m}
+    (h : u.toVLevel.WF n) : (mkSucc u).toVLevel.WF n := by
+  rw [toVLevel_mkSucc]
+  exact h
+
+theorem toVLevel_mkMax_wf {n : Nat} {a b : KUniv m}
+    (hwa : a.toVLevel.WF n) (hwb : b.toVLevel.WF n) :
+    (mkMax a b).toVLevel.WF n := by
+  rcases mkMax_cases a b with h | h | h <;> rw [h]
+  · exact hwa
+  · exact hwb
+  · rw [toVLevel_mkMaxRaw]
+    exact ⟨hwa, hwb⟩
+
+theorem toVLevel_mkIMax_wf {n : Nat} {a b : KUniv m}
+    (hwa : a.toVLevel.WF n) (hwb : b.toVLevel.WF n) :
+    (mkIMax a b).toVLevel.WF n := by
+  rcases mkIMax_cases a b with h | h | h | h <;> rw [h]
+  · exact toVLevel_mkMax_wf hwa hwb
+  · exact hwa
+  · exact hwb
+  · rw [toVLevel_mkIMaxRaw]
+    exact ⟨hwa, hwb⟩
+
+end KUniv
+
 end Ix.Tc
