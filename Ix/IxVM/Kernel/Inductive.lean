@@ -1525,6 +1525,26 @@ def inductive_check := ⟦
   -- `self_mem_pos` = self's POSITION in the flat block (signature-
   -- resolved by the caller); idx lookup would alias same-idx aux
   -- members.
+  -- whnf-tolerant n-binder collector (mirror the Rust param peel):
+  -- whnf before each peel so binders hidden under definitional wrappers
+  -- expose, and stop without failing when the type runs out of Foralls.
+  fn collect_n_doms_whnf(ty: KExpr, n: G, top: List‹&KConstantInfo›,
+                         addrs: List‹Addr›) -> (List‹KExpr›, KExpr) {
+    match n {
+      0 => (store(ListNode.Nil), ty),
+      _ =>
+        let w = whnf(ty, store(ListNode.Nil), top, addrs);
+        match load(w) {
+          KExprNode.Forall(dom, body) =>
+            match collect_n_doms_whnf(body, n - 1, top, addrs) {
+              (rest_doms, rest) =>
+                (store(ListNode.Cons(dom, rest_doms)), rest),
+            },
+          _ => (store(ListNode.Nil), w),
+        },
+    }
+  }
+
   fn build_rec_type(ind_idx: G, ind_ty: KExpr, ctor_indices: List‹G›,
                     n_params: G, n_indices: G, ind_lvls: G,
                     self_own_params: G,
@@ -1545,13 +1565,20 @@ def inductive_check := ⟦
     let n_rec_params = n_params;
     let motive_base = n_rec_params;
 
-    -- Use self's concrete occurrence_us for ind_ty inst (so nested aux univ
-    -- args match what Lean stored).
-    let self_member0 = flat_member_at(flat, self_mem_pos);
-    let self_occ_us0 = match self_member0 { (_, _, _, ou) => ou, };
-    let ind_ty_inst = expr_inst_levels(ind_ty, self_occ_us0);
-
-    let params_walk = collect_n_doms(ind_ty_inst, n_params);
+    -- Params walk over the PRIMARY inductive's type under the first
+    -- inductive's univ_offset-shifted params, with a whnf-tolerant peel
+    -- (mirror inductive.rs build_rec_type: `ind_infos[0].4` +
+    -- `first_ind_univs`, whnf per step, break on non-Forall). Peeling
+    -- SELF's type with the primary's param count walks past the end for
+    -- aux-member recursors whose ext types have fewer binders.
+    let primary_ci0 = load(list_lookup(top, primary_ind_idx));
+    let params_walk = match primary_ci0 {
+      KConstantInfo.Induct(p_lvls, p_ty, _, _, _, _, _) =>
+        let p_us = build_param_lvls_range(univ_offset, p_lvls, 0);
+        collect_n_doms_whnf(expr_inst_levels(p_ty, p_us), n_params, top, addrs),
+      _ =>
+        collect_n_doms_whnf(ind_ty, n_params, top, addrs),
+    };
     match params_walk {
       (param_doms, after_params) =>
         let flat_own_params = flat_own_params_of(flat, top);
@@ -2294,7 +2321,15 @@ def inductive_check := ⟦
         match ctor_ci {
           KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
             let body = match is_aux {
-              0 => peel_n_foralls_tolerant(ctor_ty, n_params),
+              -- Instantiate the ctor's level params with the member's
+              -- occurrence universes BEFORE scanning (mirror inductive.rs
+              -- queue scan). For originals occ_us is the univ_offset-shifted
+              -- Param range, so occurrences found inside carry rec-frame
+              -- concrete levels — without this, aux members store raw
+              -- block-frame Params and every large-eliminator minor built
+              -- from them references the wrong universe (Param 0 where the
+              -- stored recursor has Param 1).
+              0 => peel_n_foralls_tolerant(expr_inst_levels(ctor_ty, occ_us), n_params),
               _ => synth_aux_ctor_ty(ctor_ty, n_params, spec_params, occ_us, top, addrs),
             };
             let from_this = detect_nested_in_field_chain(body, block_idxs, top, 0);
