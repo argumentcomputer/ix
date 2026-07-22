@@ -1,6 +1,7 @@
 import Ix.Tc.Verify.Subst
 import Ix.Tc.Verify.VLCtx
 import Lean4Lean.Verify.Typing.Expr
+import Lean4Lean.Verify.Typing.Lemmas
 import Lean4Lean.Theory.Typing.Lemmas
 
 /-!
@@ -961,5 +962,157 @@ theorem TrKExpr.wf {env : VEnv} {uvars : Nat}
     VExpr.WF env uvars Δ.toCtx e' :=
   let ⟨_, _, _, h⟩ := H
   ⟨_, h.hasType.2⟩
+
+/-! ### `instL` transport for the translation context
+
+Upstream `VLCtx.instL` lemma transfers, re-keyed (Lemmas.lean:524-547):
+universe instantiation of a context commutes with `toCtx`, `fvars`,
+`find?`, and preserves `WF` (re-basing the parameter count). -/
+
+namespace KVLCtx
+
+@[simp] theorem instL_fvars {ls : List VLevel} :
+    ∀ {Δ : KVLCtx}, (Δ.instL ls).fvars = Δ.fvars
+  | [] => rfl
+  | (none, _) :: (Δ : KVLCtx) => by
+    show fvars ((none, _) :: Δ.instL ls) = _
+    simp [instL_fvars (Δ := Δ)]
+  | (some fv, _) :: (Δ : KVLCtx) => by
+    show fvars ((some fv, _) :: Δ.instL ls) = _
+    simp [instL_fvars (Δ := Δ)]
+
+@[simp] theorem instL_toCtx {ls : List VLevel} :
+    ∀ {Δ : KVLCtx}, (Δ.instL ls).toCtx = Δ.toCtx.map (·.instL ls)
+  | [] => rfl
+  | (ofv, .vlam ty) :: (Δ : KVLCtx) => by
+    show KVLCtx.toCtx ((ofv, (VLocalDecl.vlam ty).instL ls) :: Δ.instL ls)
+        = _
+    rw [VLocalDecl.instL]
+    show ty.instL ls :: (Δ.instL ls).toCtx = _
+    rw [instL_toCtx (Δ := Δ)]
+    rfl
+  | (ofv, .vlet ty v) :: (Δ : KVLCtx) => by
+    show KVLCtx.toCtx ((ofv, (VLocalDecl.vlet ty v).instL ls) :: Δ.instL ls)
+        = _
+    rw [VLocalDecl.instL]
+    show (Δ.instL ls).toCtx = _
+    rw [instL_toCtx (Δ := Δ)]
+    rfl
+
+theorem find?_instL {ls : List VLevel} :
+    ∀ {Δ : KVLCtx} {v} {e A : VExpr}, Δ.find? v = some (e, A) →
+      (Δ.instL ls).find? v = some (e.instL ls, A.instL ls)
+  | [], _, _, _, h => nomatch h
+  | (ofv, d) :: (Δ : KVLCtx), v, e, A, h => by
+    show KVLCtx.find? ((ofv, d.instL ls) :: Δ.instL ls) v = _
+    unfold KVLCtx.find? at h ⊢
+    split at h
+    · cases h
+      cases d <;>
+        simp [VLocalDecl.instL, VLocalDecl.value, VLocalDecl.type,
+          VExpr.instL]
+    · simp at h ⊢
+      obtain ⟨e'', A'', h, rfl, rfl⟩ := h
+      refine ⟨_, _, find?_instL h, ?_, ?_⟩ <;>
+        cases d <;>
+          simp [VLocalDecl.instL, VLocalDecl.depth, VExpr.instL_liftN]
+
+protected theorem WF.instL {env : VEnv} {U : Nat} {ls : List VLevel}
+    (hls : ∀ l ∈ ls, l.WF U) :
+    ∀ {Δ : KVLCtx}, KVLCtx.WF env ls.length Δ →
+      KVLCtx.WF env U (Δ.instL ls)
+  | [], _ => trivial
+  | (ofv, d) :: (Δ : KVLCtx), ⟨h1, h2, h3⟩ => by
+    refine ⟨WF.instL hls h1, ?_, ?_⟩
+    · intro fv deps h
+      have := h2 fv deps h
+      simpa using this
+    · have := VLocalDecl.WF.instL (d := d) hls h3
+      rw [instL_toCtx]
+      exact this
+
+/-! ### Defeq contexts (upstream `VLCtx.IsDefEq`, re-keyed)
+
+Pairwise-defeq translation contexts — the transport vocabulary for
+`TrKExprS.uniq`/`defeqDFC` (which the binder-case congruence lemmas
+need: quotient slack in a binder type shifts the context the body's
+structural witness lives in). `VLocalDecl.IsDefEq` and its lemmas are
+`VExpr`-level and import directly from the dep. -/
+
+variable (env : VEnv) (U : Nat) in
+inductive IsDefEq : KVLCtx → KVLCtx → Prop
+  | nil : IsDefEq [] []
+  | cons {Δ₁ Δ₂ : KVLCtx} {ofv} {d₁ d₂ : VLocalDecl} :
+    IsDefEq Δ₁ Δ₂ →
+    (∀ fv deps, ofv = some (fv, deps) → fv ∉ Δ₁.fvars ∧ deps ⊆ Δ₁.fvars) →
+    Lean4Lean.VLocalDecl.IsDefEq env U Δ₁.toCtx d₁ d₂ →
+    IsDefEq ((ofv, d₁) :: Δ₁) ((ofv, d₂) :: Δ₂)
+
+theorem IsDefEq.refl {env : VEnv} {U : Nat} (henv : env.Ordered) :
+    ∀ {Δ : KVLCtx}, KVLCtx.WF env U Δ → IsDefEq env U Δ Δ
+  | [], _ => .nil
+  | (_, _) :: _, ⟨h1, h2, h3⟩ =>
+    .cons (IsDefEq.refl henv h1) h2
+      (Lean4Lean.VLocalDecl.IsDefEq.refl henv h1.toCtx h3)
+
+theorem IsDefEq.defeqCtx {env : VEnv} {U : Nat} {Δ₁ Δ₂ : KVLCtx} :
+    IsDefEq env U Δ₁ Δ₂ →
+      VEnv.IsDefEqCtx env U [] Δ₁.toCtx Δ₂.toCtx
+  | .nil => .zero
+  | .cons h1 _ (.vlam h2) => .succ h1.defeqCtx h2
+  | .cons h1 _ (.vlet ..) => h1.defeqCtx
+
+theorem IsDefEq.fvars_eq {env : VEnv} {U : Nat} {Δ₁ Δ₂ : KVLCtx} :
+    IsDefEq env U Δ₁ Δ₂ → Δ₁.fvars = Δ₂.fvars
+  | .nil => rfl
+  | .cons (ofv := none) h1 _ _ => by
+    simp only [KVLCtx.fvars_cons_none]
+    exact h1.fvars_eq
+  | .cons (ofv := some fv) h1 _ _ => by
+    simp only [KVLCtx.fvars_cons_some]
+    rw [h1.fvars_eq]
+
+theorem IsDefEq.wf {env : VEnv} {U : Nat} {Δ₁ Δ₂ : KVLCtx} :
+    IsDefEq env U Δ₁ Δ₂ → KVLCtx.WF env U Δ₁
+  | .nil => trivial
+  | .cons h1 h2 h3 => ⟨h1.wf, h2, h3.wf⟩
+
+theorem IsDefEq.symm {env : VEnv} {U : Nat} (henv : env.Ordered) :
+    ∀ {Δ₁ Δ₂ : KVLCtx}, IsDefEq env U Δ₁ Δ₂ → IsDefEq env U Δ₂ Δ₁
+  | _, _, .nil => .nil
+  | _, _, .cons h1 h2 h3 =>
+    .cons (h1.symm henv) (h1.fvars_eq ▸ h2)
+      (h3.symm.defeqDFC henv h1.defeqCtx)
+
+theorem IsDefEq.find?_uniq {env : VEnv} {U : Nat} (henv : VEnv.WF env) :
+    ∀ {Δ₁ Δ₂ : KVLCtx} {v} {e₁ A₁ e₂ A₂ : VExpr},
+      IsDefEq env U Δ₁ Δ₂ →
+      Δ₁.find? v = some (e₁, A₁) → Δ₂.find? v = some (e₂, A₂) →
+      env.IsDefEqU U Δ₁.toCtx A₁ A₂ ∧ env.IsDefEq U Δ₁.toCtx e₁ e₂ A₁ := by
+  intro Δ₁ Δ₂ v e₁ A₁ e₂ A₂ hΔ H1 H2
+  match hΔ with
+  | .cons hΔ h1 h2 =>
+    match h2 with
+    | .vlam (type₁ := B₁) (type₂ := B₂) h2 =>
+      revert H1 H2
+      unfold KVLCtx.find?
+      split
+      · rintro ⟨⟩ ⟨⟩
+        exact ⟨⟨_, h2.weak henv⟩, .bvar .zero⟩
+      · simp
+        rintro d₁' n₁' H1' rfl rfl d₂' n₂' H2' rfl rfl
+        obtain ⟨h3, h4⟩ := find?_uniq henv hΔ H1' H2'
+        exact ⟨h3.weakN henv .one, h4.weak henv⟩
+    | .vlet h3 h4 =>
+      revert H1 H2
+      unfold KVLCtx.find?
+      split
+      · rintro ⟨⟩ ⟨⟩
+        exact ⟨⟨_, h4⟩, h3⟩
+      · simp
+        rintro d₁' n₁' H1' rfl rfl d₂' n₂' H2' rfl rfl
+        simpa [Lean4Lean.VLocalDecl.depth] using find?_uniq henv hΔ H1' H2'
+
+end KVLCtx
 
 end Ix.Tc
