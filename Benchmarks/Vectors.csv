@@ -62,6 +62,7 @@ Char.ofOrdinal_le_of_le,InitStd,heavy,0,1
 Array.extract_append,InitStd,heavy,0,1
 Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual,InitStd,heavy,0,1
 Lean.Expr.replace,Lean,cheap
+Lean.Json,Lean,heavy,0,1
 List.Sorted,Mathlib,cheap
 Nat.choose,Mathlib,cheap
 Nat.factorial,Mathlib,cheap,0,1
