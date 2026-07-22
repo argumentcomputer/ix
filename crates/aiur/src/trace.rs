@@ -1,5 +1,5 @@
 use multi_stark::{
-  lookup::Lookup,
+  lookup::{LookupRowMut, LookupValues},
   p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
 };
@@ -31,20 +31,20 @@ struct ColumnIndex {
   lookup: usize,
 }
 
-struct ColumnMutSlice<'a> {
+struct ColumnMutSlice<'a, 'b> {
   inputs: &'a mut [G],
   selectors: &'a mut [G],
   auxiliaries: &'a mut [G],
-  lookups: &'a mut [Lookup<G>],
+  lookups: &'a mut LookupRowMut<'b, G>,
 }
 
 type Degree = u8;
 
-impl<'a> ColumnMutSlice<'a> {
+impl<'a, 'b> ColumnMutSlice<'a, 'b> {
   fn from_slice(
     function: &Function,
     slice: &'a mut [G],
-    lookups: &'a mut [Lookup<G>],
+    lookups: &'a mut LookupRowMut<'b, G>,
   ) -> Self {
     let (inputs, slice) = slice.split_at_mut(function.layout.input_size);
     let (selectors, slice) = slice.split_at_mut(function.layout.selectors);
@@ -58,8 +58,13 @@ impl<'a> ColumnMutSlice<'a> {
     index.auxiliary += 1;
   }
 
-  fn push_lookup(&mut self, index: &mut ColumnIndex, t: Lookup<G>) {
-    self.lookups[index.lookup] = t;
+  fn push_lookup(
+    &mut self,
+    index: &mut ColumnIndex,
+    multiplicity: G,
+    args: &[G],
+  ) {
+    self.lookups.push(index.lookup, multiplicity, args);
     index.lookup += 1;
   }
 }
@@ -79,7 +84,8 @@ impl Toplevel {
     function_index: usize,
     query_record: &QueryRecord,
     io_buffer: &IOBuffer,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+    slot_arg_widths: &[usize],
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
     let func = &self.functions[function_index];
     let width = func.width();
     let unfiltered_queries = &query_record.function_queries[function_index];
@@ -97,12 +103,13 @@ impl Toplevel {
     };
     let mut rows = vec![G::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];
-    let empty_lookup = Lookup::empty();
-    let mut lookups = vec![vec![empty_lookup; func.layout.lookups]; height];
-    let lookups_no_padding = &mut lookups[0..height_no_padding];
+    // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
+    // rows need no writes at all.
+    let mut builder = LookupValues::builder(height, slot_arg_widths);
+    let mut row_writers = builder.rows_mut();
     rows_no_padding
       .par_chunks_mut(width)
-      .zip(lookups_no_padding.par_iter_mut())
+      .zip(row_writers[..height_no_padding].par_iter_mut())
       .enumerate()
       .for_each(|(i, (row, lookups))| {
         let (inputs, result) = queries[i];
@@ -121,8 +128,9 @@ impl Toplevel {
         };
         func.populate_row(index, slice, context, io_buffer);
       });
+    drop(row_writers);
     let trace = RowMajorMatrix::new(rows, width);
-    (trace, lookups)
+    (trace, builder.finish())
   }
 }
 
@@ -134,7 +142,7 @@ impl Function {
   fn populate_row(
     &self,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_>,
+    slice: &mut ColumnMutSlice<'_, '_>,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
   ) {
@@ -166,7 +174,7 @@ impl Block {
     &self,
     map: &mut Vec<(G, Degree)>,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_>,
+    slice: &mut ColumnMutSlice<'_, '_>,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
   ) -> PopulateResult {
@@ -185,7 +193,7 @@ fn dispatch_branch<'a>(
   cases: &'a FxIndexMap<G, Block>,
   def: &'a Option<Box<Block>>,
   index: &mut ColumnIndex,
-  slice: &mut ColumnMutSlice<'_>,
+  slice: &mut ColumnMutSlice<'_, '_>,
 ) -> &'a Block {
   cases
     .get(&val)
@@ -204,20 +212,21 @@ impl Ctrl {
     &self,
     map: &mut Vec<(G, Degree)>,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_>,
+    slice: &mut ColumnMutSlice<'_, '_>,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
   ) -> PopulateResult {
     match self {
       Ctrl::Return(sel, _) => {
         slice.selectors[*sel] = G::ONE;
-        let lookup = function_lookup(
-          -context.multiplicity,
+        let args = function_lookup_args(
           context.function_index,
           context.inputs,
           context.output,
         );
-        slice.lookups[0] = lookup;
+        // The first lookup slot is reserved for the function return, which
+        // pulls the query claim with the query's multiplicity.
+        slice.lookups.pull(0, context.multiplicity, &args);
         None
       },
       Ctrl::Yield(sel, vals) => {
@@ -269,7 +278,7 @@ impl Op {
     &self,
     map: &mut Vec<(G, Degree)>,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_>,
+    slice: &mut ColumnMutSlice<'_, '_>,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
   ) {
@@ -322,13 +331,12 @@ impl Op {
           slice.push_auxiliary(index, *f);
         }
         if !op_unconstrained {
-          let lookup = function_lookup(
-            G::ONE,
+          let args = function_lookup_args(
             G::from_usize(*function_index),
             &inputs,
             result.output,
           );
-          slice.push_lookup(index, lookup);
+          slice.push_lookup(index, G::ONE, &args);
         }
       },
       Op::Store(values) => {
@@ -344,8 +352,8 @@ impl Op {
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
-        let lookup = Memory::lookup(G::ONE, G::from_usize(size), ptr, &values);
-        slice.push_lookup(index, lookup);
+        let args = Memory::lookup_args(G::from_usize(size), ptr, &values);
+        slice.push_lookup(index, G::ONE, &args);
       },
       Op::Load(size, ptr) => {
         let memory_queries = context
@@ -362,8 +370,8 @@ impl Op {
           map.push((*f, 1));
           slice.push_auxiliary(index, *f);
         }
-        let lookup = Memory::lookup(G::ONE, G::from_usize(*size), ptr, values);
-        slice.push_lookup(index, lookup);
+        let args = Memory::lookup_args(G::from_usize(*size), ptr, values);
+        slice.push_lookup(index, G::ONE, &args);
       },
       Op::IOGetInfo(channel, key) => {
         let channel = map[*channel].0;
@@ -400,23 +408,29 @@ impl Op {
         }
         let mut lookup_args = vec![u8_bit_decomposition_channel(), byte];
         lookup_args.extend(bits);
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(index, G::ONE, &lookup_args);
       },
       Op::U8ShiftLeft(byte) => {
         let (byte, _) = map[*byte];
         let byte_shifted = Bytes1::shift_left(&byte);
         map.push((byte_shifted, 1));
         slice.push_auxiliary(index, byte_shifted);
-        let lookup_args = vec![u8_shift_left_channel(), byte, byte_shifted];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_shift_left_channel(), byte, byte_shifted],
+        );
       },
       Op::U8ShiftRight(byte) => {
         let (byte, _) = map[*byte];
         let byte_shifted = Bytes1::shift_right(&byte);
         map.push((byte_shifted, 1));
         slice.push_auxiliary(index, byte_shifted);
-        let lookup_args = vec![u8_shift_right_channel(), byte, byte_shifted];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_shift_right_channel(), byte, byte_shifted],
+        );
       },
       Op::U8Xor(i, j) => {
         let (i, _) = map[*i];
@@ -424,8 +438,7 @@ impl Op {
         let xor = Bytes2::xor(&i, &j);
         map.push((xor, 1));
         slice.push_auxiliary(index, xor);
-        let lookup_args = vec![u8_xor_channel(), i, j, xor];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(index, G::ONE, &[u8_xor_channel(), i, j, xor]);
       },
       Op::U8Add(i, j) => {
         let (i, _) = map[*i];
@@ -437,8 +450,7 @@ impl Op {
         map.push((r, 1));
         map.push((o, 1));
         slice.push_auxiliary(index, r);
-        let lookup_args = vec![u8_add_channel(), i, j, r];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(index, G::ONE, &[u8_add_channel(), i, j, r]);
       },
       Op::U8Mul(i, j) => {
         let (i, _) = map[*i];
@@ -448,8 +460,7 @@ impl Op {
         map.push((hi, 1));
         slice.push_auxiliary(index, lo);
         slice.push_auxiliary(index, hi);
-        let lookup_args = vec![u8_mul_channel(), i, j, lo, hi];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(index, G::ONE, &[u8_mul_channel(), i, j, lo, hi]);
       },
       Op::U8Sub(i, j) => {
         let (i, _) = map[*i];
@@ -461,8 +472,7 @@ impl Op {
         map.push((r, 1));
         map.push((u, 1));
         slice.push_auxiliary(index, r);
-        let lookup_args = vec![u8_sub_channel(), i, j, r];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(index, G::ONE, &[u8_sub_channel(), i, j, r]);
       },
       Op::U8And(i, j) => {
         let (i, _) = map[*i];
@@ -470,8 +480,7 @@ impl Op {
         let and = Bytes2::and(&i, &j);
         map.push((and, 1));
         slice.push_auxiliary(index, and);
-        let lookup_args = vec![u8_and_channel(), i, j, and];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(index, G::ONE, &[u8_and_channel(), i, j, and]);
       },
       Op::U8Or(i, j) => {
         let (i, _) = map[*i];
@@ -479,8 +488,7 @@ impl Op {
         let or = Bytes2::or(&i, &j);
         map.push((or, 1));
         slice.push_auxiliary(index, or);
-        let lookup_args = vec![u8_or_channel(), i, j, or];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(index, G::ONE, &[u8_or_channel(), i, j, or]);
       },
       Op::U8LessThan(i, j) => {
         let (i, _) = map[*i];
@@ -488,8 +496,11 @@ impl Op {
         let less_than = Bytes2::less_than(&i, &j);
         map.push((less_than, 1));
         slice.push_auxiliary(index, less_than);
-        let lookup_args = vec![u8_less_than_channel(), i, j, less_than];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_less_than_channel(), i, j, less_than],
+        );
       },
       Op::U8ChainRotr7(i, j) => {
         let (i, _) = map[*i];
@@ -501,8 +512,11 @@ impl Op {
         slice.push_auxiliary(index, o0);
         slice.push_auxiliary(index, o1);
         slice.push_auxiliary(index, o2);
-        let lookup_args = vec![u8_chain_rotr7_channel(), i, j, o0, o1, o2];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_chain_rotr7_channel(), i, j, o0, o1, o2],
+        );
       },
       Op::U8ChainRotr4(i, j) => {
         let (i, _) = map[*i];
@@ -514,8 +528,11 @@ impl Op {
         slice.push_auxiliary(index, o0);
         slice.push_auxiliary(index, o1);
         slice.push_auxiliary(index, o2);
-        let lookup_args = vec![u8_chain_rotr4_channel(), i, j, o0, o1, o2];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_chain_rotr4_channel(), i, j, o0, o1, o2],
+        );
       },
       Op::U32LessThan(x_idx, y_idx) => {
         let (a, _) = map[*x_idx];
@@ -546,10 +563,8 @@ impl Op {
         ] {
           slice.push_lookup(
             index,
-            Lookup::push(
-              G::ONE,
-              vec![rc_channel, G::from_u8(i), G::from_u8(j)],
-            ),
+            G::ONE,
+            &[rc_channel, G::from_u8(i), G::from_u8(j)],
           );
         }
 
@@ -561,10 +576,8 @@ impl Op {
         // `(i, j)` pair from the byte-chip range-check table.
         slice.push_lookup(
           index,
-          Lookup::push(
-            G::ONE,
-            vec![u8_range_check_channel(), map[*i].0, map[*j].0],
-          ),
+          G::ONE,
+          &[u8_range_check_channel(), map[*i].0, map[*j].0],
         );
       },
       Op::UnconstrainedBigUintDivMod(a, b) => {
@@ -607,14 +620,13 @@ impl Op {
   }
 }
 
-fn function_lookup(
-  multiplicity: G,
+fn function_lookup_args(
   function_index: G,
   inputs: &[G],
   output: &[G],
-) -> Lookup<G> {
+) -> Vec<G> {
   let mut args = vec![function_channel(), function_index];
   args.extend(inputs);
   args.extend(output);
-  Lookup { multiplicity, args }
+  args
 }

@@ -11,7 +11,7 @@ use multi_stark::{
   verifier::VerificationError,
 };
 use rayon::iter::{
-  IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+  IndexedParallelIterator, IntoParallelIterator, ParallelIterator,
 };
 
 use crate::{
@@ -122,6 +122,36 @@ impl AiurSystem {
     AiurSystem { system, key, toplevel, commitment_parameters, fri_parameters }
   }
 
+  /// The circuit list in system order: constrained functions (ascending
+  /// index), then memories, then `Bytes1`, then `Bytes2`. This matches the
+  /// order the circuits were chained in [`AiurSystem::build`], so index `i`
+  /// of the returned `Vec` corresponds to `self.system.circuits[i]`.
+  fn circuit_types(&self) -> Vec<CircuitType> {
+    let functions = (0..self.toplevel.functions.len()).filter_map(|idx| {
+      self.toplevel.functions[idx]
+        .constrained
+        .then_some(CircuitType::Function { idx })
+    });
+    let memories = self
+      .toplevel
+      .memory_sizes
+      .iter()
+      .map(|&width| CircuitType::Memory { width });
+    let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2];
+    functions.chain(memories).chain(gadgets).collect()
+  }
+
+  /// The argument width of each lookup slot of circuit `circuit_idx`, taken
+  /// from its symbolic lookups so the witness layout always matches the AIR.
+  fn slot_arg_widths(&self, circuit_idx: usize) -> Vec<usize> {
+    self.system.circuits[circuit_idx]
+      .air
+      .lookups
+      .iter()
+      .map(|lookup| lookup.args.len())
+      .collect()
+  }
+
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
   pub fn prove(
     &self,
@@ -143,32 +173,29 @@ impl AiurSystem {
 
     // Build the `SystemWitness`
     let _g = tracing::info_span!("aiur/witness").entered();
-    let functions =
-      (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
-        if self.toplevel.functions[idx].constrained {
-          Some(CircuitType::Function { idx })
-        } else {
-          None
+    let circuit_types = self.circuit_types();
+    let witness_data = circuit_types
+      .into_par_iter()
+      .enumerate()
+      .map(|(circuit_idx, circuit_type)| {
+        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
+        match circuit_type {
+          CircuitType::Function { idx } => self.toplevel.witness_data(
+            idx,
+            &query_record,
+            io_buffer,
+            &slot_arg_widths,
+          ),
+          CircuitType::Memory { width } => {
+            Memory::witness_data(width, &query_record, &slot_arg_widths)
+          },
+          CircuitType::Bytes1 => {
+            Bytes1.witness_data(&query_record, &slot_arg_widths)
+          },
+          CircuitType::Bytes2 => {
+            Bytes2.witness_data(&query_record, &slot_arg_widths)
+          },
         }
-      });
-    let memories = self
-      .toplevel
-      .memory_sizes
-      .par_iter()
-      .map(|&width| CircuitType::Memory { width });
-    let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2].into_par_iter();
-    let witness_data = functions
-      .chain(memories)
-      .chain(gadgets)
-      .map(|circuit_type| match circuit_type {
-        CircuitType::Function { idx } => {
-          self.toplevel.witness_data(idx, &query_record, io_buffer)
-        },
-        CircuitType::Memory { width } => {
-          Memory::witness_data(width, &query_record)
-        },
-        CircuitType::Bytes1 => Bytes1.witness_data(&query_record),
-        CircuitType::Bytes2 => Bytes2.witness_data(&query_record),
       })
       .collect::<Vec<_>>();
     drop(query_record); // Early drop to free memory.
@@ -220,32 +247,29 @@ impl AiurSystem {
     drop(_g);
 
     let _g = tracing::info_span!("aiur/witness").entered();
-    let functions =
-      (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
-        if self.toplevel.functions[idx].constrained {
-          Some(CircuitType::Function { idx })
-        } else {
-          None
+    let circuit_types = self.circuit_types();
+    let witness_data = circuit_types
+      .into_par_iter()
+      .enumerate()
+      .map(|(circuit_idx, circuit_type)| {
+        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
+        match circuit_type {
+          CircuitType::Function { idx } => self.toplevel.witness_data(
+            idx,
+            &query_record,
+            io_buffer,
+            &slot_arg_widths,
+          ),
+          CircuitType::Memory { width } => {
+            Memory::witness_data(width, &query_record, &slot_arg_widths)
+          },
+          CircuitType::Bytes1 => {
+            Bytes1.witness_data(&query_record, &slot_arg_widths)
+          },
+          CircuitType::Bytes2 => {
+            Bytes2.witness_data(&query_record, &slot_arg_widths)
+          },
         }
-      });
-    let memories = self
-      .toplevel
-      .memory_sizes
-      .par_iter()
-      .map(|&width| CircuitType::Memory { width });
-    let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2].into_par_iter();
-    let witness_data = functions
-      .chain(memories)
-      .chain(gadgets)
-      .map(|circuit_type| match circuit_type {
-        CircuitType::Function { idx } => {
-          self.toplevel.witness_data(idx, &query_record, io_buffer)
-        },
-        CircuitType::Memory { width } => {
-          Memory::witness_data(width, &query_record)
-        },
-        CircuitType::Bytes1 => Bytes1.witness_data(&query_record),
-        CircuitType::Bytes2 => Bytes2.witness_data(&query_record),
       })
       .collect::<Vec<_>>();
     drop(query_record);

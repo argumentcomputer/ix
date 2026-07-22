@@ -2,7 +2,8 @@ pub(crate) mod bytes1;
 pub(crate) mod bytes2;
 
 use multi_stark::{
-  builder::symbolic::SymbolicExpression, lookup::Lookup,
+  builder::symbolic::SymbolicExpression,
+  lookup::{Lookup, LookupValues},
   p3_matrix::dense::RowMajorMatrix,
 };
 
@@ -36,12 +37,14 @@ pub(crate) trait AiurGadget {
   fn lookups(&self) -> Vec<Lookup<SymbolicExpression<G>>>;
 
   /// Returns the witness data for the prover, including a row-major trace matrix and
-  /// the lookup values, which also follow a row-major layout.
+  /// the flat lookup values.
   ///
-  /// The lookups must be fully padded. That is, every row must have the exact same number
-  /// of lookups, matching the number of lookups returned by the `lookups` method.
+  /// `slot_arg_widths[j]` must be the maximum number of arguments of lookup slot `j`,
+  /// derived from the symbolic lookups returned by the `lookups` method so the witness
+  /// layout always matches the AIR.
   fn witness_data(
     &self,
     record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>);
+    slot_arg_widths: &[usize],
+  ) -> (RowMajorMatrix<G>, LookupValues<G>);
 }
