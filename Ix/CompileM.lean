@@ -1996,6 +1996,40 @@ def compileMutualBlock (classes : List (List MutConst))
     preseedExprTables preseedExprs
     let (mutConsts, allExprs, allMetas) ← compileMutConsts classes
     let cache ← getBlockState
+
+    -- Singleton non-inductive representative: emit as a standalone
+    -- `Defn`/`Recr` Constant instead of wrapping in `Muts [one]`
+    -- (compile.rs:3815-3873). Covers both true singletons routed here
+    -- and multi-member blocks whose members all alpha-collapse into ONE
+    -- class (e.g. symmetric `partial def` `_unsafe_rec` witnesses).
+    -- Self-reference inside the body still uses `Expr.recur 0`, which
+    -- the kernel resolves the same way for a single-member block. Every
+    -- member of every class registers to the standalone address (via
+    -- the projections array — the driver stores the constant once,
+    -- content-addressed, and maps each name to it). No synthetic Muts
+    -- entry and no aux tail run for these blocks (Rust returns before
+    -- both).
+    let standaloneInfo? : Option Ixon.ConstantInfo :=
+      if mutConsts.size == 1 then
+        match mutConsts[0]! with
+        | .defn d => some (.defn d)
+        | .recr r => some (.recr r)
+        | .indc _ => none -- inductive projection scheme requires the block
+      else
+        none
+    if let some info := standaloneInfo? then
+      let block := buildConstantWithSharing info allExprs cache.refs cache.univs
+      let blockBytes := Ixon.ser block
+      let blockAddr := Address.blake3 blockBytes
+      let metaMap : Std.HashMap Name Ixon.ConstantMeta :=
+        allMetas.foldl (init := {}) fun m (n, cm) => m.insert n cm
+      let mut projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
+      for constClass in classes do
+        for const in constClass do
+          let n := const.name
+          projections := projections.push (n, block, metaMap.get? n |>.getD .empty)
+      return ⟨block, blockBytes, blockAddr, .empty, projections⟩
+
     let block := buildConstantWithSharing (.muts mutConsts) allExprs cache.refs cache.univs
 
     -- Serialize once and compute block address

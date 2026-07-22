@@ -374,6 +374,14 @@ def leanDumpPlansBlock (lo : Ix.Name) (all : Array Ix.Name)
       | _ => pure ()
   let sortedClasses ← Ix.CompileM.sortConsts cs.toList
   let blockResult ← Ix.CompileM.compileMutualBlock sortedClasses
+  -- Alpha-collapsed standalone (single non-inductive class): production
+  -- returns BEFORE the Muts registration and the aux tail
+  -- (compile.rs:3872) — no plans, no muts entry.
+  let isMuts := match blockResult.block.info with
+    | .muts _ => true
+    | _ => false
+  if !isMuts then
+    return ({}, {}, {}, #[])
   let cenv ← Ix.CompileM.getCompileEnv
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
   let (auxLayout?, plans, brecPlans, belowPlans) ←
@@ -813,6 +821,34 @@ def run (env : Lean.Environment) : IO UInt32 := do
         && anonHintsMism == 0 && serOk)
   IO.println s!"[aux-gen-diff] driver gate: {if driverOk then "PASS" else "FAIL"}"
 
-  return if gateOk && dumpOk && patchesOk && plansOk && driverOk then 0 else 1
+  -- A9: the PARALLEL aux-aware driver must produce the identical env
+  -- (wave workers + rustRef fail-fast — the InitStd gate vehicle).
+  IO.println "[aux-gen-diff] A9: parallel aux driver (compileEnvParallelAux)..."
+  let rustNameToAddr : Std.HashMap Ix.Name Address :=
+    rustEnv.named.fold (init := {}) fun m n named => m.insert n named.addr
+  let parOk ← do
+    match ← Ix.CompileM.compileEnvParallelAux rawEnv condensed
+        (rustRef := some rustNameToAddr) with
+    | .error e =>
+      IO.println s!"[aux-gen-diff]   parallel driver ERROR: {e}"
+      pure false
+    | .ok (parEnv, _, _) =>
+      match Ixon.serEnv parEnv, Ixon.serEnv rustEnv with
+      | .ok pb, .ok rb =>
+        if pb == rb then
+          IO.println s!"[aux-gen-diff]   parallel serialized env: {pb.size} bytes, IDENTICAL"
+          pure true
+        else
+          IO.println s!"[aux-gen-diff]   parallel serialized env DIFFERS: lean {pb.size}B rust {rb.size}B (first diff at {repr (firstDiff pb rb)})"
+          pure false
+      | .error e, _ =>
+        IO.println s!"[aux-gen-diff]   serEnv (parallel) failed: {e}"
+        pure false
+      | _, .error e =>
+        IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
+        pure false
+  IO.println s!"[aux-gen-diff] parallel driver gate: {if parOk then "PASS" else "FAIL"}"
+
+  return if gateOk && dumpOk && patchesOk && plansOk && driverOk && parOk then 0 else 1
 
 end Tests.Compile.AuxGenDiff

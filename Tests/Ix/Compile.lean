@@ -10,6 +10,7 @@ public import Ix.Address
 public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
+public import Ix.CompileDriver
 public import Ix.CondenseM
 public import Ix.GraphM
 public import Ix.Sharing
@@ -148,19 +149,19 @@ def testCrossImpl : TestSeq :=
     IO.println ""
 
     -- Step 2: Compile with Lean using Rust's rawEnv and condensed blocks
-    IO.println s!"[Step 2] Running Lean parallel compilation..."
+    -- (the aux-aware parallel driver: prereqs, aux tails, promotion +
+    -- no-aux originals — full production semantics).
+    IO.println s!"[Step 2] Running Lean parallel compilation (aux-aware)..."
     let leanStart ← IO.monoMsNow
 
-    match ← Ix.CompileM.compileEnvParallel phases.rawEnv phases.condensed (rustRef := none) (dbg := true) with
+    match ← Ix.CompileM.compileEnvParallelAux phases.rawEnv phases.condensed (dbg := true) with
     | .error err =>
       let leanTime := (← IO.monoMsNow) - leanStart
       IO.println s!"[Step 2] Compilation failed after {leanTime}ms"
-      if let some sysErr := err.systemError then
-        IO.println s!"[Error] {sysErr}"
-        return (false, 0, 0, some sysErr)
-      return (false, 0, 0, some "Compilation failed")
+      IO.println s!"[Error] {err}"
+      return (false, 0, 0, some err)
 
-    | .ok (leanIxonEnv, totalBytes) =>
+    | .ok (leanIxonEnv, totalBytes, _driverCenv) =>
       let leanTime := (← IO.monoMsNow) - leanStart
       IO.println s!"[Step 2]   Lean: {leanIxonEnv.constCount} constants, {fmtBytes totalBytes} in {leanTime}ms"
       IO.println ""

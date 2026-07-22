@@ -3,10 +3,13 @@
   against the Lean environment for any file — the `Ix.Tc` counterpart to
   `ix validate` (which drives the Rust implementation's 8-phase pipeline).
 
-  Phases (stubs marked — the pure-Lean compiler and decompiler are not
-  implemented yet, so those sections delegate or skip loudly):
+  Phases (stubs marked — the pure-Lean decompiler is not implemented
+  yet, so that section skips loudly):
 
-    1. Compile (Lean → Ixon)          [STUB: via the Rust FFI compiler]
+    1. Compile (Lean → Ixon)          — the full pure-Lean pipeline
+                                        (canon → graph → ground →
+                                        condense → aux-aware parallel
+                                        compile → serialize)
     2. Serde gate (pure)              — `deEnv` parses the compiled bytes,
                                         `serEnv` reproduces them byte-exactly
     3. Kernel anon roundtrip (pure)   — every constant ingressed, egressed
@@ -32,6 +35,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.CompileM
+public import Ix.CompileDriver
 public import Ix.Meta
 public import Ix.Tc
 public import Ix.Cli.ValidateCmd
@@ -102,18 +106,27 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
           IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
           pure closed
     IO.println s!"Total constants: {constList.length}"
-    -- Phase 1: compile. The pure-Lean compiler is stale, so this phase is
-    -- a stub that delegates to the Rust FFI compiler; it becomes a real
-    -- phase when `Ix.CompileM` is revived.
+    -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
+    -- ground → condense → aux-aware parallel compile → serialize).
     let t0 ← IO.monoMsNow
-    let dir ← IO.FS.createTempDir
-    let out := dir / "validate-lean.ixe"
-    let _ ← Ix.CompileM.rsCompileEnvBytesFFI constList out.toString
-    bytes ← IO.FS.readBinFile out
-    IO.FS.removeDirAll dir
-    let t1 ← IO.monoMsNow
-    phases := phases.push ("1 compile",
-      .stubbed s!"pure-Lean compiler not implemented — compiled via Rust FFI ({bytes.size} bytes, {t1 - t0}ms)")
+    match ← Ix.CompileM.compileLeanConsts constList with
+    | .error e =>
+      phases := phases.push ("1 compile",
+        .failed s!"pure-Lean pipeline: {e}")
+    | .ok out =>
+      bytes := out.bytes
+      let t1 ← IO.monoMsNow
+      if out.cenv.ungrounded.size > 0 then
+        let shown := out.cenv.ungrounded.toList.take 3
+        let msgs := shown.map fun (n, m) => s!"    ✗ {n.pretty}: {m.take 160}"
+        phases := phases.push ("1 compile",
+          .failed (s!"{out.cenv.ungrounded.size} per-block compile \
+failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
+            String.intercalate "\n" msgs))
+      else
+        phases := phases.push ("1 compile",
+          .passed s!"pure-Lean pipeline: {out.bytes.size} bytes, \
+{out.blockCount} blocks, {out.ungroundedCount} ungrounded ({t1 - t0}ms)")
   | none, none => unreachable!
 
   -- Phase 2: pure serde gate.

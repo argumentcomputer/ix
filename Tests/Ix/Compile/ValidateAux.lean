@@ -76,6 +76,11 @@ def validateAuxClosure (env : Lean.Environment)
     -- with distinct spec_params) that only otherwise compile under the
     -- full-env `rust-compile` runner.
     `IxVMInd,
+    -- Partial/WellFounded fixture families: `partial def` mutual blocks
+    -- whose opaques + `_unsafe_rec` witnesses form SCCs through the
+    -- implementation edges — the alpha-collapse shape testCrossImpl
+    -- caught diverging (Test.Ix.Fixtures.Partial.H._unsafe_rec, A9).
+    `Test.Ix.Fixtures,
     --`Init,
     --`_private.Init,
     --`State,
