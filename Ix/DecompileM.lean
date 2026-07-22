@@ -865,14 +865,22 @@ def decompileChunk (env : DecompileEnv) (ixonEnv : Ixon.Env)
     | .error err => errors := errors.push (ixName, err)
   (results, errors)
 
-/-- Decompile all constants in parallel using chunked pure Tasks. Returns Ix types. -/
+/-- Decompile all constants in parallel using chunked pure Tasks. Returns Ix types.
+
+    `skip` filters named entries out of the pass entirely — the Pass-1
+    driver passes the aux_gen skip (`named.original.isSome &&
+    isAuxGenSuffix name`, Rust `decompile_named_const`
+    decompile.rs:3595-3597); aux constants are regenerated/recovered by
+    Pass 2 instead. Default skips nothing (standalone whole-env use). -/
 def decompileAllParallel (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
+    (skip : Ix.Name → Ixon.Named → Bool := fun _ _ => false)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) := Id.run do
   let env : DecompileEnv := { ixonEnv }
   -- Collect all named entries into an array
   let mut allEntries : Array (Ix.Name × Ixon.Named) := #[]
   for (ixName, named) in ixonEnv.named do
-    allEntries := allEntries.push (ixName, named)
+    if !skip ixName named then
+      allEntries := allEntries.push (ixName, named)
   let total := allEntries.size
   let chunkSize := (total + numWorkers - 1) / numWorkers
   -- Spawn one task per chunk

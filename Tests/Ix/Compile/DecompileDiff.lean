@@ -63,14 +63,12 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let rustEnv := raw.compileEnv.toEnv
   IO.println s!"[decompile-diff] Rust: {rustEnv.named.size} named, {rustEnv.consts.size} consts"
 
-  IO.println "[decompile-diff] Lean decompile (parallel)..."
-  let (decompiledRaw, errors) ← Ix.DecompileM.decompileAllParallelIO rustEnv
-  -- Pass 1.5: Lean-faithful inductive flags (decompile.rs:5030-5058).
-  let decompiled ← match Ix.DecompileM.fixupInductiveFlags decompiledRaw with
-    | .ok d => pure d
-    | .error e =>
-      IO.println s!"[decompile-diff] Pass 1.5 FAILED: {e}"
-      pure decompiledRaw
+  IO.println "[decompile-diff] Lean decompile (full driver: Pass 1 → 1.5 → 2)..."
+  let t0 ← IO.monoMsNow
+  let origView : Std.HashMap Ix.Name Ix.ConstantInfo := rawEnv.consts
+  let (decompiled, errors, p2st) :=
+    Ix.DecompileM.decompileEnvFull rustEnv (some origView)
+  IO.println s!"[decompile-diff]   {decompiled.size} constants, {errors.size} errors in {(← IO.monoMsNow) - t0}ms"
 
   -- Error classification.
   let mut callSiteErrs : Array Ix.Name := #[]
@@ -150,48 +148,16 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println ""
   IO.println s!"[decompile-diff] D0+D1 gate (plain fidelity + callsite replay): {if gateOk then "PASS" else "FAIL"}"
 
-  -- D2 gate: plan REHYDRATION parity. Rebuild aux layouts + call-site
-  -- plans from the serialized env alone (Muts metadata, Named.original
-  -- grouping, decompiled constants) and compare against the FRESH
-  -- compile-side plans (the `rs_aux_gen_dump_plans` endpoint's
-  -- plan/bplan/wplan lines) — byte-exact line diff.
+  -- D2+D3 plan gate: the plans installed DURING Pass 2 (against the
+  -- evolving work env, exactly Rust's ordering) must now reproduce the
+  -- FRESH compile-side plans in full — nested and collapsed-member
+  -- lines included.
   IO.println ""
-  IO.println "[decompile-diff] D2: plan rehydration (Lean)..."
-  let mutsIndex := Ix.DecompileM.buildMutsPlanIndex rustEnv
-  let auxPerms := Ix.DecompileM.rehydrateAuxPerms rustEnv mutsIndex
-  let auxBlocks := Ix.DecompileM.collectAuxBlocks rustEnv decompiled
-  IO.println s!"[decompile-diff]   {mutsIndex.entries.size} muts entries, \
-{auxPerms.size} rehydrated layouts, {auxBlocks.size} aux blocks"
-  let mut csPlans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {}
-  let mut brecPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
-  let mut belowPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
-  let mut rehydrateErrs : Array String := #[]
-  let dbgFilter? ← IO.getEnv "IX_DECOMPILE_PLAN_DEBUG"
-  for (blockKey, (allNames, auxMembers)) in auxBlocks do
-    let auxMemberNames : Ix.Set Ix.Name :=
-      auxMembers.foldl (fun s (_, n) => s.insert n) {}
-    if let some filter := dbgFilter? then
-      if (blockKey.pretty.splitOn filter).length > 1 then
-        let stored := Ix.DecompileM.storedPlanBlocksForOriginalAll rustEnv
-          mutsIndex allNames
-        IO.println s!"[plan-debug] block {blockKey.pretty}: all={allNames.map (·.pretty)} auxMembers={auxMembers.size} stored={stored.size}"
-        for m in allNames do
-          let recName := Ix.Name.mkStr m "rec"
-          IO.println s!"[plan-debug]   view has {recName.pretty}? {decompiled.contains recName} (kind: {match decompiled.get? recName with | some (.recInfo _) => "rec" | some _ => "OTHER" | none => "-"})"
-        for b in stored do
-          IO.println s!"[plan-debug]   stored flat={b.flatNames.map (·.pretty)} classes={b.classNames.size} layout={b.auxLayout.isSome}"
-    let before := csPlans.size
-    match Ix.DecompileM.installDecompileCallSitePlans rustEnv mutsIndex
-        decompiled auxPerms allNames auxMemberNames
-        csPlans brecPlans belowPlans with
-    | .ok (cs, brec, below) =>
-      csPlans := cs; brecPlans := brec; belowPlans := below
-      if let some filter := dbgFilter? then
-        if (blockKey.pretty.splitOn filter).length > 1 then
-          IO.println s!"[plan-debug]   emitted {csPlans.size - before} plans"
-    | .error e => rehydrateErrs := rehydrateErrs.push e
-  for e in rehydrateErrs.toList.take 5 do
-    IO.println s!"[decompile-diff]   rehydrate error: {e.take 200}"
+  IO.println "[decompile-diff] D2+D3: Pass-2 plan parity..."
+  let csPlans := p2st.callSitePlans
+  let brecPlans := p2st.brecOnPlans
+  let belowPlans := p2st.belowPlans
+  let rehydrateErrs : Array String := #[]
   -- Render in the plans-dump format and compare to the Rust endpoint.
   let dumpBits (bits : Array Bool) : String :=
     String.mk (bits.toList.map fun b => if b then '1' else '0')
@@ -238,57 +204,38 @@ def run (env : Lean.Environment) : IO UInt32 := do
     IO.println s!"[decompile-diff]   missing e.g. {", ".intercalate (missingNames.toList.take 10)}"
     if !extraNames.isEmpty then
       IO.println s!"[decompile-diff]   extra e.g. {", ".intercalate (extraNames.toList.take 10)}"
-  -- D2 gate: FULL byte parity on the NON-NESTED universe. Rust's
-  -- `install_decompile_call_site_plans` runs inside the Pass-2 block
-  -- loop AFTER `.rec` regeneration (decompile.rs:4256→4320): nested
-  -- blocks' plans read the source-restored recursors' structural
-  -- numbers (`numMotives` includes `numNested`) and their `rec_N`
-  -- entries from the evolving work env — none of which exist before
-  -- D3. Non-nested blocks are env-insensitive (canonical regen arity ==
-  -- source arity when `numNested = 0`), so for them rehydration must
-  -- reproduce the fresh-compile plans EXACTLY, both directions.
-  let mut nestedMembers : Ix.Set String := {}
-  for (_, info) in decompiled do
-    if let .inductInfo ind := info then
-      if ind.numNested > 0 then
-        for m in ind.all do
-          nestedMembers := nestedMembers.insert m.pretty
-  let planLineKept (l : String) : Bool :=
-    match (l.splitOn " ")[1]? with
-    | some n =>
-      let parts := n.splitOn "."
-      let parent := ".".intercalate (parts.dropLast)
-      !nestedMembers.contains parent
-    | none => true
-  let filterLines (dump : String) : String :=
-    String.intercalate "\n"
-      ((dump.splitOn "\n").filter fun l => l != "" && planLineKept l)
-  let rustFiltered := filterLines rustPlanLines
-  let leanFiltered := filterLines renderedLines
-  let nRustNested := ((rustPlanLines.splitOn "\n").filter
-    (fun l => l != "" && !planLineKept l)).length
-  -- Among non-nested lines, everything we emit must byte-match a fresh
-  -- line; lines we can't emit yet are the collapsed-class members whose
-  -- source-named recursors only reappear via Pass-2 original recovery
-  -- (their Named entries carry the representative's metadata, so the
-  -- Pass-1 view lacks them — mirroring Rust, whose install runs against
-  -- the post-regeneration work env).
-  let rustFilteredLines := (rustFiltered.splitOn "\n").filter (· != "")
-  let leanFilteredLines := (leanFiltered.splitOn "\n").filter (· != "")
-  let rustFilteredSet : Ix.Set String :=
-    rustFilteredLines.foldl (fun s l => s.insert l) {}
-  let mut d2Bad : Array String := #[]
-  for l in leanFilteredLines do
-    if !rustFilteredSet.contains l then
-      d2Bad := d2Bad.push l
-  if !d2Bad.isEmpty then
-    IO.println s!"[decompile-diff]   diverged lines: {d2Bad.size}"
-    for l in d2Bad.toList.take 5 do
-      IO.println s!"[decompile-diff]     {l.take 220}"
-  let nDeferredMembers := rustFilteredLines.length - leanFilteredLines.length
-  let d2GateOk := d2Bad.isEmpty && rehydrateErrs.isEmpty
-  IO.println s!"[decompile-diff] D2 gate (plan rehydration subset parity): {if d2GateOk then "PASS" else "FAIL"} ({leanFilteredLines.length} lines byte-matched; deferred to D3: {nDeferredMembers} collapsed-member + {nRustNested} nested-block lines)"
+  -- Gate semantics: `plan` lines must match the fresh compile FULLY,
+  -- both directions. For derived `bplan`/`wplan` lines the fresh set
+  -- must be a byte-exact SUBSET of ours: the decompile-side install
+  -- derives additionally for EVAPORATED aux names (its existence guard
+  -- consults the work env, which contains their Pass-1-decompiled
+  -- surgered originals) — Rust's own decompile does the same
+  -- (decompile.rs:4058-4080 `env.contains_key`), so fresh-vs-decompile
+  -- extras there are inherent, not drift.
+  let splitByPrefix (dump : String) (pfx : String) : List String :=
+    (dump.splitOn "\n").filter (·.startsWith pfx)
+  let planOnly (dump : String) : String :=
+    String.intercalate "\n" (splitByPrefix dump "plan ")
+  let d2PlansOk ← Tests.Compile.AuxGenDiff.compareDumps
+    (planOnly rustPlanLines) (planOnly renderedLines)
+  let mut derivedOk := true
+  let mut nDerivedExtra := 0
+  for pfx in ["bplan ", "wplan "] do
+    let rustL := splitByPrefix rustPlanLines pfx
+    let mineL := splitByPrefix renderedLines pfx
+    let mineSet : Ix.Set String := mineL.foldl (fun s l => s.insert l) {}
+    for l in rustL do
+      if !mineSet.contains l then
+        derivedOk := false
+        IO.println s!"[decompile-diff]   fresh {pfx.trimAscii} line missing from Pass-2 plans: {l.take 200}"
+    nDerivedExtra := nDerivedExtra + (mineL.length - rustL.length)
+  let d2GateOk := d2PlansOk && derivedOk && rehydrateErrs.isEmpty
+  IO.println s!"[decompile-diff] D2+D3 plan gate: {if d2GateOk then "PASS" else "FAIL"} ({sortedCs.size} plans full-parity; {brecPlans.size} bplans, {belowPlans.size} wplans with {nDerivedExtra} evaporated-name extras)"
 
-  return if gateOk && d2GateOk then 0 else 1
+  -- D3 gate composition: aux-family fidelity must now be total.
+  let d3Ok := auxMismatch.isEmpty && auxErrs.isEmpty && missingAux.isEmpty
+  IO.println s!"[decompile-diff] D3 gate (aux fidelity): {if d3Ok then "PASS" else "FAIL"}"
+
+  return if gateOk && d2GateOk && d3Ok then 0 else 1
 
 end Tests.Compile.DecompileDiff

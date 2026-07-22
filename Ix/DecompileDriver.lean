@@ -22,6 +22,14 @@ public import Ix.DecompileM
 public import Ix.CompileM
 public import Ix.AuxGen.Nested
 public import Ix.AuxGen.Surgery
+public import Ix.AuxGen.Kernel
+public import Ix.AuxGen.Recursor
+public import Ix.AuxGen.CasesOn
+public import Ix.AuxGen.RecOn
+public import Ix.AuxGen.Below
+public import Ix.AuxGen.BRecOn
+public import Ix.AuxGen.Patches
+public import Ix.DecompileRoundtrip
 public section
 
 namespace Ix.DecompileM
@@ -346,5 +354,569 @@ def installDecompileCallSitePlans
       if !callSitePlans.contains name then
         callSitePlans := callSitePlans.insert name plan
   return (callSitePlans, brecOnPlans, belowPlans)
+
+/-! ## Pass 2 — aux regeneration + original recovery (D3)
+
+Mirror of `decompile_block_aux_gen` (decompile.rs:4128-4972) and the
+Pass-2 loop of `decompile_env` (decompile.rs:5060-5330), on top of the
+roundtrip substrate (`Ix.DecompileRoundtrip`) and the A3-A6 generators.
+
+Deliberate deviations, none output-visible:
+- The debug-track congruence check (decompile.rs:4938-4952,
+  `congruence::const_alpha_eq`) is not ported — the decompile-diff gate
+  compares every recovered constant against the source env by full
+  hash-equality, which is strictly stronger on the same track.
+- Topological order over aux blocks uses a deterministic Kahn queue
+  (sorted keys) instead of Rust's reversed Tarjan key iteration; both
+  satisfy the only requirement (dependency blocks first), and block
+  outputs touch disjoint names beyond that.
+- Rust's `KENV_CLEAR_ENTRIES` periodic kenv trim is a memory bound, not
+  an input (content-addressed cache) — not mirrored.
+- Env-var-gated progress/slow-block diagnostics are not ported. -/
+
+/-- Immutable context of a Pass-2 run. -/
+structure Pass2Ctx where
+  ixonEnv : Ixon.Env
+  mutsIndex : MutsPlanIndex
+  /-- `name → addr` view of `ixonEnv.named` (Rust `resolve_addr`'s
+      first hop on a deserialized state), precomputed once. -/
+  nameToAddr : Std.HashMap Ix.Name Address
+  /-- Debug-track source env (Rust `stt.lean_env`). -/
+  origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo)
+
+/-- Mutable state threaded through Pass 2. -/
+structure Pass2St where
+  /-- Generation-visible working env (Rust `work_env`), grows per block. -/
+  workEnv : Std.HashMap Ix.Name Ix.ConstantInfo
+  /-- Decompiled output env (Rust `dstt.env`). -/
+  dstt : Std.HashMap Ix.Name Ix.ConstantInfo
+  /-- Kernel bridge context, accumulated across blocks (cold start). -/
+  kctx : Ix.AuxGen.AuxKernelCtx
+  auxPerms : Std.HashMap Ix.Name Ixon.AuxLayout
+  callSitePlans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan := {}
+  brecOnPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
+  belowPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
+  ingressed : Ix.Set Ix.Name := {}
+  errors : Array (Ix.Name × String) := #[]
+
+/-- Synthetic `CompileEnv` over an env view, with resolution maps from
+    the serialized env (the deserialized-state mirror of `stt`). -/
+def Pass2Ctx.cenvFor (ctx : Pass2Ctx)
+    (view : Std.HashMap Ix.Name Ix.ConstantInfo) : Ix.CompileM.CompileEnv :=
+  { env := { consts := view }
+    nameToNamed := ctx.ixonEnv.named
+    nameToAddr := ctx.nameToAddr
+    constants := {}, blobs := {}, totalBytes := 0 }
+
+/-- Run a `KBridgeM` action over the CURRENT work env, threading the
+    kernel context. Returns the action result; the caller's state gets
+    the updated `kctx`. -/
+private def runK (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
+    (act : Ix.AuxGen.AddrMaps → Ix.AuxGen.KBridgeM α)
+    (view? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
+    : Except String (α × Ix.AuxGen.AuxKernelCtx) :=
+  let cenv := ctx.cenvFor (view?.getD st.workEnv)
+  let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
+  let blockEnv : Ix.CompileM.BlockEnv :=
+    { all := {}, current := lo, mutCtx := default, univCtx := [] }
+  match Ix.CompileM.CompileM.run cenv blockEnv {} ((act maps).run st.kctx) with
+  | .ok ((a, kctx'), _) => .ok (a, kctx')
+  | .error e => .error (toString e)
+
+/-- Run a plain `CompileM` action over the current work env. -/
+private def runC (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
+    (act : Ix.CompileM.CompileM α) : Except String α :=
+  let cenv := ctx.cenvFor st.workEnv
+  let blockEnv : Ix.CompileM.BlockEnv :=
+    { all := {}, current := lo, mutCtx := default, univCtx := [] }
+  match Ix.CompileM.CompileM.run cenv blockEnv {} act with
+  | .ok (a, _) => .ok a
+  | .error e => .error (toString e)
+
+/-- Insert roundtripped/recovered entries into the decompiled env. -/
+private def insertAll (st : Pass2St)
+    (entries : Std.HashMap Ix.Name Ix.ConstantInfo) : Pass2St := Id.run do
+  let mut st := st
+  for (n, ci) in entries do
+    st := { st with dstt := st.dstt.insert n ci }
+  return st
+
+/-- Recovery-or-fallback for a single aux name (the shared failure arm
+    of Phases 1b/1c/2/4: `recover_aux_from_original` then the generated
+    form — decompile.rs:4404-4412 et al.). -/
+private def recoverOr (ctx : Pass2Ctx) (st : Pass2St) (name : Ix.Name)
+    (generatedConsts : Std.HashMap Ix.Name Ix.ConstantInfo) : Pass2St := Id.run do
+  let mut st := st
+  match recoverAuxFromOriginal name ctx.ixonEnv st.workEnv ctx.origEnv? with
+  | some entries =>
+    for (n, ci) in entries do
+      st := { st with dstt := st.dstt.insert n ci }
+  | none =>
+    if let some ci := generatedConsts.get? name then
+      st := { st with dstt := st.dstt.insert name ci }
+  return st
+
+/-- Regenerate + roundtrip one aux block. Mirrors
+    `decompile_block_aux_gen` (decompile.rs:4128-4972) phase for phase. -/
+def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
+    (allNames : Array Ix.Name)
+    (auxMembers : Array (Ix.AuxGen.AuxKind × Ix.Name)) : Pass2St := Id.run do
+  let mut st := st₀
+  let lo := allNames[0]!
+  let recordErr (st : Pass2St) (n : Ix.Name) (msg : String) : Pass2St :=
+    { st with errors := st.errors.push (n, msg) }
+
+  let mut generatedConsts : Std.HashMap Ix.Name Ix.ConstantInfo := {}
+
+  -- Un-collapsed classes: each inductive in its own singleton class
+  -- (decompile.rs:4157-4163, documented divergence from compile's
+  -- sort-collapsed classes).
+  let classes : Array (Array Ix.Name) := allNames.map (#[·])
+
+  -- Ingress parents + their constructor-type references (:4166-4181).
+  let mut ingressNames : Array Ix.Name := allNames
+  for n in allNames do
+    if let some ci := st.workEnv.get? n then
+      let (refs, _) := Ix.GraphM.run { consts := st.workEnv } .init
+        (Ix.graphConst ci)
+      for r in refs do
+        ingressNames := ingressNames.push r
+  match runK ctx st lo (fun maps => do
+      for n in ingressNames do
+        Ix.AuxGen.ensureInKenvOf n maps) with
+  | .ok (_, kctx') => st := { st with kctx := kctx' }
+  | .error e => st := recordErr st lo s!"aux_gen ingress failed: {e}"
+
+  -- Needed kinds (:4184-4192).
+  let needsRec := auxMembers.any (·.1 == .recr)
+  let needsBelow := auxMembers.any (·.1 == .below)
+  let needsBelowRec := auxMembers.any (·.1 == .belowRec)
+  let needsCasesOn := auxMembers.any (·.1 == .casesOnAux)
+  let needsRecOn := auxMembers.any (·.1 == .recOnAux)
+  let needsBrecon := auxMembers.any fun (k, _) =>
+    k == .brecOn || k == .brecOnGo || k == .brecOnEq
+
+  -- Phase 1: canonical recursors in SOURCE-WALK order — aux_layout is
+  -- deliberately `none` so discovery order mirrors Lean's elaborator
+  -- (decompile.rs:4194-4249; the layout stays rehydrated for surgery).
+  let mut canonicalRecs : Array (Ix.Name × Ix.RecursorVal) := #[]
+  let mut isProp := false
+  if needsRec || needsRecOn || needsCasesOn || needsBelow
+      || needsBelowRec || needsBrecon then
+    match runK ctx st lo (fun maps =>
+        Ix.AuxGen.generateCanonicalRecursorsWithLayout classes none none maps
+          none none) with
+    | .ok ((recs, p), kctx') =>
+      canonicalRecs := recs
+      isProp := p
+      st := { st with kctx := kctx' }
+    | .error e =>
+      return recordErr st lo s!"aux_gen rec failed for {lo.pretty}: {e}"
+  for (n, rv) in canonicalRecs do
+    generatedConsts := generatedConsts.insert n (.recInfo rv)
+
+  -- Insert .rec constants via roundtrip (:4256-4298).
+  if needsRec then
+    let recMembers : Ix.Set Ix.Name := auxMembers.foldl (init := {})
+      fun s (k, n) => if k == .recr then s.insert n else s
+    let recMutConsts : List Ix.MutConst :=
+      (canonicalRecs.map fun (_, rv) => Ix.MutConst.recr rv).toList
+    match roundtripBlock recMutConsts generatedConsts ctx.origEnv?
+        st.workEnv ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+    | .ok roundtripped =>
+      for (n, ci) in roundtripped do
+        if recMembers.contains n || st.workEnv.contains n then
+          st := { st with dstt := st.dstt.insert n ci }
+    | .error e =>
+      for (n, rv) in canonicalRecs do
+        if recMembers.contains n then
+          st := { st with dstt := st.dstt.insert n (.recInfo rv) }
+      st := recordErr st lo s!"roundtrip_block .rec failed: {e}"
+
+  -- Sync generated constants into both envs (:4301-4317).
+  let sync (st : Pass2St)
+      (gen : Std.HashMap Ix.Name Ix.ConstantInfo) : Pass2St := Id.run do
+    let mut st := st
+    for (n, ci) in gen do
+      if !st.workEnv.contains n then
+        st := { st with workEnv := st.workEnv.insert n ci }
+      if !st.dstt.contains n then
+        st := { st with dstt := st.dstt.insert n ci }
+    return st
+  st := sync st generatedConsts
+
+  -- Install call-site plans against the post-rec work env (:4320-4327) —
+  -- this is where nested/collapsed-member plans become computable.
+  let auxMemberNames : Ix.Set Ix.Name :=
+    auxMembers.foldl (fun s (_, n) => s.insert n) {}
+  match installDecompileCallSitePlans ctx.ixonEnv ctx.mutsIndex st.workEnv
+      st.auxPerms allNames auxMemberNames
+      st.callSitePlans st.brecOnPlans st.belowPlans with
+  | .ok (cs, brec, below) =>
+    st := { st with callSitePlans := cs, brecOnPlans := brec, belowPlans := below }
+  | .error e => st := recordErr st lo e
+
+  -- Phases 1b/1c: .casesOn / .recOn wrappers (:4330-4520). Shared arm.
+  let wrapPhase (st₀ : Pass2St)
+      (baseGen : Std.HashMap Ix.Name Ix.ConstantInfo)
+      (kind : Ix.AuxGen.AuxKind)
+      (gen : Pass2St → Ix.Name → Ix.RecursorVal →
+        Except String (Option Ix.AuxGen.AuxDef))
+      : Pass2St × Std.HashMap Ix.Name Ix.ConstantInfo := Id.run do
+    let mut st := st₀
+    let mut newGen : Std.HashMap Ix.Name Ix.ConstantInfo := {}
+    for (k, wName) in auxMembers do
+      if k != kind then continue
+      let indName? : Option Ix.Name := match wName with
+        | .str parent _ _ => some parent
+        | _ => none
+      let some indName := indName? | continue
+      let recName := Ix.Name.mkStr indName "rec"
+      let recVal? : Option Ix.RecursorVal := match st.workEnv.get? recName with
+        | some (.recInfo rv) => some rv
+        | _ => match st.dstt.get? recName with
+          | some (.recInfo rv) => some rv
+          | _ => none
+      let some recVal := recVal? | continue
+      let mut auxDefOpt : Option Ix.AuxGen.AuxDef := none
+      match gen st wName recVal with
+      | .ok d => auxDefOpt := d
+      | .error e => st := recordErr st wName e
+      let some auxDef := auxDefOpt | continue
+      -- Safety propagation: unsafe `.rec` forces the wrapper unsafe.
+      let safetyL : Lean.DefinitionSafety :=
+        if recVal.isUnsafe then .unsafe else .safe
+      let asDefn : Ix.ConstantInfo := .defnInfo {
+        cnst := { name := auxDef.name, levelParams := auxDef.levelParams,
+                  type := auxDef.typ }
+        value := auxDef.value
+        hints := .abbrev
+        safety := safetyL
+        all := #[auxDef.name] }
+      newGen := newGen.insert auxDef.name asDefn
+      let mc : Ix.MutConst := .defn {
+        name := auxDef.name
+        levelParams := auxDef.levelParams
+        type := auxDef.typ
+        kind := .defn
+        value := auxDef.value
+        hints := .abbrev
+        safety := if recVal.isUnsafe then .unsaf else .safe
+        -- Lean emits `.casesOn`/`.recOn` as standalone defnDecls with
+        -- `all = [self]` — must mirror or the source-form hash differs.
+        all := #[auxDef.name] }
+      let allGen := baseGen.fold (fun m k v => m.insert k v) newGen
+      match roundtripBlock [mc] allGen ctx.origEnv? st.workEnv ctx.ixonEnv
+          st.callSitePlans st.brecOnPlans st.belowPlans with
+      | .ok roundtripped =>
+        if roundtripped.isEmpty then
+          st := recoverOr ctx st auxDef.name allGen
+        else
+          st := insertAll st roundtripped
+      | .error e =>
+        st := recoverOr ctx st auxDef.name allGen
+        st := recordErr st auxDef.name e
+    return (st, newGen)
+
+  if needsCasesOn then
+    let (st', gen) := wrapPhase st generatedConsts .casesOnAux
+      fun stCur n rv => runC ctx stCur n (Ix.AuxGen.generateCasesOn n rv)
+    st := st'
+    generatedConsts := gen.fold (fun m k v => m.insert k v) generatedConsts
+  if needsRecOn then
+    let (st', gen) := wrapPhase st generatedConsts .recOnAux
+      fun _ n rv => .ok (Ix.AuxGen.generateRecOn n rv)
+    st := st'
+    generatedConsts := gen.fold (fun m k v => m.insert k v) generatedConsts
+
+  -- Phase 2: .below constants (:4522-4739).
+  let mut belowConsts : Array Ix.AuxGen.BelowConstant := #[]
+  if needsBelow || needsBelowRec || needsBrecon then
+    match runK ctx st lo (fun maps =>
+        Ix.AuxGen.generateBelowConstants classes canonicalRecs isProp maps) with
+    | .ok (consts, kctx') =>
+      belowConsts := consts
+      st := { st with kctx := kctx' }
+    | .error e =>
+      st := recordErr st lo s!"aux_gen below failed for {lo.pretty}: {e}"
+  let allBelowNames : Array Ix.Name := belowConsts.map fun bc =>
+    match bc with
+    | .indc i => i.name
+    | .defn d => d.name
+  for bc in belowConsts do
+    match bc with
+    | .defn d =>
+      generatedConsts := generatedConsts.insert d.name (belowDefToLean d)
+    | .indc i =>
+      let (indVal, ctors) := belowIndcToLean i allBelowNames
+      generatedConsts := generatedConsts.insert i.name (.inductInfo indVal)
+      for ctor in ctors do
+        generatedConsts := generatedConsts.insert ctor.cnst.name (.ctorInfo ctor)
+  st := sync st generatedConsts
+
+  if needsBelow then
+    let belowMembers : Ix.Set Ix.Name := auxMembers.foldl (init := {})
+      fun s (k, n) => if k == .below then s.insert n else s
+    -- BelowIndc: one batched roundtrip (:4600-4637).
+    let mut belowIndcMcs : List Ix.MutConst := []
+    let mut belowIndcBuildErr := false
+    for bc in belowConsts do
+      if let .indc i := bc then
+        let (indVal, _) := belowIndcToLean i allBelowNames
+        match runC ctx st i.name (Ix.CompileM.MutConst.mkIndc indVal) with
+        | .ok mc => belowIndcMcs := belowIndcMcs ++ [mc]
+        | .error e =>
+          st := recordErr st i.name s!"below indc mkIndc: {e}"
+          belowIndcBuildErr := true
+    if belowIndcBuildErr then
+      belowIndcMcs := []
+    if !belowIndcMcs.isEmpty then
+      match roundtripBlock belowIndcMcs generatedConsts ctx.origEnv?
+          st.workEnv ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+      | .ok roundtripped => st := insertAll st roundtripped
+      | .error e =>
+        for bc in belowConsts do
+          if let .indc i := bc then
+            if belowMembers.contains i.name then
+              st := recoverOr ctx st i.name generatedConsts
+              st := recordErr st i.name e
+    -- BelowDef: individual roundtrips, regen-track members only (:4639-4739).
+    for bc in belowConsts do
+      let .defn d := bc | continue
+      if !belowMembers.contains d.name then continue
+      let mc : Ix.MutConst := .defn {
+        name := d.name, levelParams := d.levelParams, type := d.typ
+        kind := .defn, value := d.value, hints := .abbrev
+        safety := if d.isUnsafe then .unsaf else .safe
+        all := #[d.name] }
+      match roundtripBlock [mc] generatedConsts ctx.origEnv? st.workEnv
+          ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+      | .ok roundtripped => st := insertAll st roundtripped
+      | .error e =>
+        st := recoverOr ctx st d.name generatedConsts
+        st := recordErr st d.name e
+
+  -- Phase 3: .below.rec for Prop-level below inductives (:4741-4826).
+  if needsBelowRec && isProp then
+    let mut belowEnv := buildBlockEnv allNames st.workEnv
+    let mut belowClasses : Array (Array Ix.Name) := #[]
+    for bc in belowConsts do
+      if let .indc i := bc then
+        let (indVal, ctors) := belowIndcToLean i allBelowNames
+        belowEnv := belowEnv.insert i.name (.inductInfo indVal)
+        for ctor in ctors do
+          belowEnv := belowEnv.insert ctor.cnst.name (.ctorInfo ctor)
+        belowClasses := belowClasses.push #[i.name]
+    if !belowClasses.isEmpty then
+      match runK ctx st lo (fun maps =>
+          Ix.AuxGen.generateCanonicalRecursorsWithOverlay belowClasses none
+            none maps) (view? := some belowEnv) with
+      | .ok ((belowRecs, _), kctx') =>
+        st := { st with kctx := kctx' }
+        let belowRecMembers : Ix.Set Ix.Name := auxMembers.foldl (init := {})
+          fun s (k, n) => if k == .belowRec then s.insert n else s
+        let mcs : List Ix.MutConst := (belowRecs.filterMap fun (n, rv) =>
+          if belowRecMembers.contains n then some (Ix.MutConst.recr rv)
+          else none).toList
+        match roundtripBlock mcs generatedConsts ctx.origEnv? st.workEnv
+            ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+        | .ok roundtripped => st := insertAll st roundtripped
+        | .error e =>
+          for (n, rv) in belowRecs do
+            if belowRecMembers.contains n then
+              match recoverAuxFromOriginal n ctx.ixonEnv st.workEnv
+                  ctx.origEnv? with
+              | some entries =>
+                for (en, eci) in entries do
+                  st := { st with dstt := st.dstt.insert en eci }
+              | none =>
+                st := { st with dstt := st.dstt.insert n (.recInfo rv) }
+              st := recordErr st n e
+      | .error e =>
+        st := recordErr st lo s!"aux_gen below.rec failed for {lo.pretty}: {e}"
+
+  -- Sync + kenv below-population before brecOn (:4828-4841).
+  st := sync st generatedConsts
+  if !belowConsts.isEmpty then
+    match runK ctx st lo (fun maps =>
+        Ix.AuxGen.populateCanonKenvWithBelow belowConsts classes maps) with
+    | .ok (_, kctx') => st := { st with kctx := kctx' }
+    | .error e => st := recordErr st lo s!"populate_canon_kenv: {e}"
+
+  -- Phase 4: .brecOn / .go / .eq (:4843-4936).
+  if needsBrecon then
+    match runK ctx st lo (fun maps =>
+        Ix.AuxGen.generateBreconConstants classes canonicalRecs belowConsts
+          isProp maps) with
+    | .ok (breconDefs, kctx') =>
+      st := { st with kctx := kctx' }
+      for d in breconDefs do
+        generatedConsts := generatedConsts.insert d.name (breconDefToLean d)
+      let breconMembers : Ix.Set Ix.Name := auxMembers.foldl (init := {})
+        fun s (k, n) =>
+          if k == .brecOn || k == .brecOnGo || k == .brecOnEq then s.insert n
+          else s
+      for d in breconDefs do
+        if !breconMembers.contains d.name then continue
+        -- kind/hints/safety matrix (mirrors `brecon_def_to_lean` /
+        -- `brecon_to_mut_const`): unsafe eq/Prop flip Thm → unsafe Defn
+        -- with opaque hints.
+        let isEq := match Ix.AuxGen.classifyAuxGen d.name with
+          | some (.brecOnEq, _) => true
+          | _ => false
+        let wantsThm := (d.isProp || isEq) && !d.isUnsafe
+        let kind : Ix.DefKind := if wantsThm then .thm else .defn
+        let hints : Lean.ReducibilityHints :=
+          if (d.isUnsafe && (d.isProp || isEq)) || wantsThm then .opaque
+          else .abbrev
+        let mc : Ix.MutConst := .defn {
+          name := d.name, levelParams := d.levelParams, type := d.typ
+          kind, value := d.value, hints
+          safety := if d.isUnsafe then .unsaf else .safe
+          all := #[d.name] }
+        match roundtripBlock [mc] generatedConsts ctx.origEnv? st.workEnv
+            ctx.ixonEnv st.callSitePlans st.brecOnPlans st.belowPlans with
+        | .ok roundtripped =>
+          if roundtripped.isEmpty then
+            match recoverAuxFromOriginal d.name ctx.ixonEnv st.workEnv
+                ctx.origEnv? with
+            | some entries =>
+              for (en, eci) in entries do
+                st := { st with dstt := st.dstt.insert en eci }
+            | none =>
+              st := { st with dstt := st.dstt.insert d.name (breconDefToLean d) }
+          else
+            st := insertAll st roundtripped
+        | .error e =>
+          match recoverAuxFromOriginal d.name ctx.ixonEnv st.workEnv
+              ctx.origEnv? with
+          | some entries =>
+            for (en, eci) in entries do
+              st := { st with dstt := st.dstt.insert en eci }
+          | none =>
+            st := { st with dstt := st.dstt.insert d.name (breconDefToLean d) }
+          st := recordErr st d.name e
+    | .error e =>
+      st := recordErr st lo s!"aux_gen brecOn failed for {lo.pretty}: {e}"
+
+  return st
+
+/-- Pass 2 driver: group aux blocks, topo-sort by cross-block deps, and
+    regenerate each (decompile.rs:5060-5330 minus diagnostics). -/
+def decompileEnvPass2 (ixonEnv : Ixon.Env)
+    (pass1 : Std.HashMap Ix.Name Ix.ConstantInfo)
+    (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
+    : Pass2St := Id.run do
+  let mutsIndex := buildMutsPlanIndex ixonEnv
+  let auxPerms := rehydrateAuxPerms ixonEnv mutsIndex
+  let blocks := collectAuxBlocks ixonEnv pass1
+  let ctx : Pass2Ctx := {
+    ixonEnv, mutsIndex
+    nameToAddr := ixonEnv.named.fold (init := {})
+      fun m n named => m.insert n named.addr
+    origEnv? }
+  -- name → block key (members + their ctors), then block deps
+  -- (decompile.rs:5096-5133).
+  let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
+  for (blockKey, (allNames, _)) in blocks do
+    for indName in allNames do
+      nameToBlock := nameToBlock.insert indName blockKey
+      if let some (.inductInfo v) := pass1.get? indName then
+        for ctor in v.ctors do
+          nameToBlock := nameToBlock.insert ctor blockKey
+  let mut blockDeps : Std.HashMap Ix.Name (Ix.Set Ix.Name) := {}
+  for (blockKey, (allNames, _)) in blocks do
+    let mut deps : Ix.Set Ix.Name := {}
+    for indName in allNames do
+      if let some ci := pass1.get? indName then
+        let (refs, _) := Ix.GraphM.run { consts := pass1 } .init
+          (Ix.graphConst ci)
+        for r in refs do
+          if let some depBlock := nameToBlock.get? r then
+            if depBlock != blockKey then
+              deps := deps.insert depBlock
+    blockDeps := blockDeps.insert blockKey deps
+  -- Deterministic Kahn topo (sorted keys; a cycle would stall — emit
+  -- remaining keys sorted at the end, matching Rust's tolerance of
+  -- degenerate orders).
+  let sortedKeys := (blockDeps.toList.map (·.1)).toArray.qsort
+    (fun a b => a.pretty < b.pretty)
+  let mut remainingDeps := blockDeps
+  let mut order : Array Ix.Name := #[]
+  let mut emitted : Ix.Set Ix.Name := {}
+  let mut progress := true
+  while progress do
+    progress := false
+    for k in sortedKeys do
+      if emitted.contains k then continue
+      let deps := (remainingDeps.get? k).getD {}
+      let ready := Id.run do
+        for d in deps do
+          if !emitted.contains d then return false
+        return true
+      if ready then
+        order := order.push k
+        emitted := emitted.insert k
+        progress := true
+  for k in sortedKeys do
+    if !emitted.contains k then
+      order := order.push k
+
+  let mut st : Pass2St := {
+    workEnv := pass1
+    dstt := pass1
+    kctx := Ix.AuxGen.AuxKernelCtx.new
+    auxPerms }
+  -- Cold-start kernel prelude (decompile.rs:5140-5142).
+  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
+      Ix.AuxGen.ensurePreludeInKenvOf maps) with
+  | .ok (_, kctx') => st := { st with kctx := kctx' }
+  | .error e =>
+    let errs := st.errors.push (Ix.Name.mkAnon, s!"prelude ingress: {e}")
+    st := { st with errors := errs }
+
+  for blockKey in order do
+    let some (allNames, auxMembers) := blocks.get? blockKey | continue
+    -- Transitive BFS ingress with global dedup (decompile.rs:5171-5186).
+    let mut stack : Array Ix.Name := allNames
+    let mut toIngress : Array Ix.Name := #[]
+    while !stack.isEmpty do
+      let name := stack.back!
+      stack := stack.pop
+      if st.ingressed.contains name then continue
+      st := { st with ingressed := st.ingressed.insert name }
+      toIngress := toIngress.push name
+      if let some ci := st.workEnv.get? name then
+        let (refs, _) := Ix.GraphM.run { consts := st.workEnv } .init
+          (Ix.graphConst ci)
+        for r in refs do
+          if !st.ingressed.contains r then
+            stack := stack.push r
+    match runK ctx st blockKey (fun maps => do
+        for n in toIngress do
+          Ix.AuxGen.ensureInKenvOf n maps) with
+    | .ok (_, kctx') => st := { st with kctx := kctx' }
+    | .error e =>
+      let errs := st.errors.push (blockKey, s!"block ingress: {e}")
+      st := { st with errors := errs }
+    st := decompileBlockAuxGen ctx st allNames auxMembers
+
+  return st
+
+/-- Full decompile driver: Pass 1 (aux skipped) → Pass 1.5 flags →
+    Pass 2 regeneration/recovery. Returns the decompiled env, the
+    per-name errors from both passes, and the final Pass-2 state (plan
+    maps for callers that recompile). -/
+def decompileEnvFull (ixonEnv : Ixon.Env)
+    (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
+    : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) × Pass2St := Id.run do
+  let (pass1Raw, pass1Errs) := decompileAllParallel ixonEnv
+    (skip := fun n named =>
+      named.original.isSome && Ix.AuxGen.isAuxGenSuffix n)
+  let pass1 := match fixupInductiveFlags pass1Raw with
+    | .ok fixed => fixed
+    | .error _ => pass1Raw
+  let st := decompileEnvPass2 ixonEnv pass1 origEnv?
+  return (st.dstt, pass1Errs ++ st.errors, st)
 
 end Ix.DecompileM
