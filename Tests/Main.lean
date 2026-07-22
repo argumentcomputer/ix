@@ -10,6 +10,7 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.DecompileDiff
 import Tests.Ix.AuxGen.ExprUtilsTests
 import Tests.Ix.AuxGen.LevelsTests
 import Tests.Ix.AuxGen.RecursorTests
@@ -167,6 +168,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
   -- Tests.Ix.Compile.AuxGenDiff).
   ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
+  ("decompile-diff", Tests.Compile.DecompileDiff.run env),
   -- lean4lean dependency smoke: accept a real closure, reject an
   -- ill-typed decl (see Tests.Ix.Lean4Lean).
   ("lean4lean", Tests.Ix.Lean4Lean.run env),
