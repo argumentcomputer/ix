@@ -1112,4 +1112,3133 @@ theorem lift_spec {S : KExpr .anon → Prop} {e : KExpr .anon}
     rw [hrun]
     exact ⟨post.result, post.wf, post.sup⟩
 
+/-! ## The `subst` walker
+
+`substCached` shares `liftCached`'s tail discipline (memo-check →
+rebuild → intern → memoize); its `var` arm at the substitution target
+composes the whole `lift` walker (`lift arg depth 0`, with `lift`'s own
+fresh scratch — the two memo spaces never mix, mirroring the separate
+`lift_scratch` in Rust). The proof composes `lift_spec` at exactly that
+point, so the support `S` must also cover `LiftReach depth arg 0` at
+every `var` node.
+
+`WalkScratchInv`/`WalkPost` below are `LiftScratchInv`/`LiftPost`
+generalized over the pure spec; the remaining sibling walkers reuse
+them. -/
+
+namespace KExpr
+
+/-- Pure, memo-free, intern-free single substitution
+    `body[arg / Var(depth)]`: the target index is replaced by `arg`
+    lifted by `depth`, indices above it shift down by one. Anon-mode
+    spec — mirrors `substCached`'s rebuild arms exactly. -/
+def substSpec (body arg : KExpr .anon) (depth : UInt64) : KExpr .anon :=
+  match body with
+  | .var i name _ =>
+    if i == depth then liftSpec arg depth 0
+    else if i > depth then mkVar (i - 1) name
+    else body
+  | .app f x _ => mkApp (substSpec f arg depth) (substSpec x arg depth)
+  | .lam n bi ty inner _ =>
+    mkLam n bi (substSpec ty arg depth) (substSpec inner arg (depth + 1))
+  | .all n bi ty inner _ =>
+    mkAll n bi (substSpec ty arg depth) (substSpec inner arg (depth + 1))
+  | .letE n ty val inner nd _ =>
+    mkLet n (substSpec ty arg depth) (substSpec val arg depth)
+      (substSpec inner arg (depth + 1)) nd
+  | .prj id field val _ => mkPrj id field (substSpec val arg depth)
+  | body => body
+
+/-- The `lbr ≤ depth` fast path is sound: with no loose index ≥ `depth`
+    there is no substitution site and nothing to shift. -/
+theorem substSpec_id {body arg : KExpr .anon} {depth : UInt64}
+    (hcon : Constructed body)
+    (hcut : depth.toNat + body.size < UInt64.size)
+    (hlbr : body.lbr ≤ depth) :
+    substSpec body arg depth = body := by
+  induction hcon generalizing depth with
+  | @var idx name md hidx =>
+    rw [mkVar_lbr] at hlbr
+    have hle : idx.toNat + 1 ≤ depth.toNat := by
+      have h := UInt64.le_iff_toNat_le.mp hlbr
+      rwa [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+        Nat.mod_eq_of_lt hidx] at h
+    have hne : ¬ (idx == depth) = true := fun h => by
+      have := congrArg UInt64.toNat (eq_of_beq h)
+      omega
+    have hngt : ¬ idx > depth := fun h => by
+      have := UInt64.lt_iff_toNat_lt.mp h
+      omega
+    rw [mkVar_shape, substSpec, if_neg hne, if_neg hngt]
+  | fvar => rfl
+  | sort => rfl
+  | const => rfl
+  | @app f a md hf ha ihf iha =>
+    rw [mkApp_lbr] at hlbr
+    rw [mkApp_shape, size] at hcut
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    rw [mkApp_shape, substSpec,
+      ihf (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      iha (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr hmax.2)]
+    exact mkApp_shape f a md
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    rw [mkLam_lbr] at hlbr
+    rw [mkLam_shape, size] at hcut
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+    rw [mkLam_shape, substSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLam_shape n bi ty body md
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    rw [mkAll_lbr] at hlbr
+    rw [mkAll_shape, size] at hcut
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+    rw [mkAll_shape, substSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkAll_shape n bi ty body md
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    rw [mkLet_lbr] at hlbr
+    rw [mkLet_shape, size] at hcut
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, toNat_max, Nat.max_le, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+    rw [mkLet_shape, substSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr hmax.1.1),
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr hmax.1.2),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLet_shape n ty val body nd md
+  | @prj id field val md hval ihval =>
+    rw [mkPrj_lbr] at hlbr
+    rw [mkPrj_shape, size] at hcut
+    rw [mkPrj_shape, substSpec,
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hlbr]
+    exact mkPrj_shape id field val md
+  | nat => rfl
+  | str => rfl
+
+/-- Everything the `substCached` walk on `body` at depth `d` can read,
+    store, or intern: subterms at their visit depths, their spec images,
+    and — at `var` nodes — the footprint of the composed
+    `lift arg d 0` call. Finite and spec-determined. -/
+def SubstReach (arg : KExpr .anon) :
+    KExpr .anon → UInt64 → KExpr .anon → Prop
+  | body, d, x =>
+    x = body ∨ x = substSpec body arg d ∨
+      match body with
+      | .var _ _ _ => LiftReach d arg 0 x
+      | .app f a _ => SubstReach arg f d x ∨ SubstReach arg a d x
+      | .lam _ _ ty inner _ =>
+        SubstReach arg ty d x ∨ SubstReach arg inner (d + 1) x
+      | .all _ _ ty inner _ =>
+        SubstReach arg ty d x ∨ SubstReach arg inner (d + 1) x
+      | .letE _ ty val inner _ _ =>
+        SubstReach arg ty d x ∨ SubstReach arg val d x ∨
+          SubstReach arg inner (d + 1) x
+      | .prj _ _ val _ => SubstReach arg val d x
+      | _ => False
+
+theorem SubstReach.self (arg body : KExpr .anon) (d : UInt64) :
+    SubstReach arg body d body := by
+  cases body <;> exact .inl rfl
+
+theorem SubstReach.spec (arg body : KExpr .anon) (d : UInt64) :
+    SubstReach arg body d (substSpec body arg d) := by
+  cases body <;> exact .inr (.inl rfl)
+
+end KExpr
+
+/-- Run equation for a composed `InternM` action lifted into the walker
+    (the `lift` call inside `substCached`'s `var` arm): it acts on the
+    intern table alone and leaves the walker's scratch untouched. -/
+private theorem run_liftIntern_bind {α} (x : InternM .anon (KExpr .anon))
+    (f : KExpr .anon → WalkM .anon α) (it : InternTable .anon)
+    (sc : Scratch .anon) :
+    (liftInternW x >>= f) (it, sc) = f (x it).1 ((x it).2, sc) := rfl
+
+/-- `LiftScratchInv` generalized over the pure spec: every memo entry is
+    the spec image of a support witness carrying the key's address, at
+    the key's depth. -/
+def WalkScratchInv (S : KExpr .anon → Prop)
+    (spec : KExpr .anon → UInt64 → KExpr .anon) (sc : Scratch .anon) : Prop :=
+  ∀ (a : Address) (c : UInt64) (r : KExpr .anon), sc[(a, c)]? = some r →
+    ∃ w, S w ∧ w.addr = a ∧ r = spec w c
+
+theorem WalkScratchInv.empty (S : KExpr .anon → Prop)
+    (spec : KExpr .anon → UInt64 → KExpr .anon) :
+    WalkScratchInv S spec ({} : Scratch .anon) := by
+  intro a c r hr
+  simp at hr
+
+theorem WalkScratchInv.insert {S : KExpr .anon → Prop}
+    {spec : KExpr .anon → UInt64 → KExpr .anon} {sc : Scratch .anon}
+    (hsc : WalkScratchInv S spec sc) {e r : KExpr .anon} {c : UInt64}
+    (hSe : S e) (hr : r = spec e c) :
+    WalkScratchInv S spec (sc.insert (e.addr, c) r) := by
+  intro a d v hv
+  rw [Std.HashMap.getElem?_insert] at hv
+  split at hv
+  · next hbeq =>
+    cases hv
+    cases eq_of_beq hbeq
+    exact ⟨e, hSe, rfl, hr⟩
+  · exact hsc _ _ _ hv
+
+/-- `LiftPost` generalized over the pure spec: the walker run lands on
+    the spec image and every threaded invariant survives. -/
+structure WalkPost (S : KExpr .anon → Prop)
+    (spec : KExpr .anon → UInt64 → KExpr .anon) (c : UInt64)
+    (e : KExpr .anon)
+    (out : KExpr .anon × (InternTable .anon × Scratch .anon)) : Prop where
+  result : out.1 = spec e c
+  wf : out.2.1.WF
+  sup : ∀ x, out.2.1.ExprSupport x → S x
+  scr : WalkScratchInv S spec out.2.2
+
+/-- Rebuild tail (the `__do_jp` join point) for any walker with the
+    intern-then-memoize discipline. -/
+private theorem walkPost_jp {S : KExpr .anon → Prop}
+    {spec : KExpr .anon → UInt64 → KExpr .anon} {e cand : KExpr .anon}
+    {c : UInt64} {it : InternTable .anon} {sc : Scratch .anon}
+    (hcf : KExpr.CollisionFree S)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S spec sc)
+    (hSe : S e) (hScand : S cand)
+    (hcand : cand = spec e c) :
+    WalkPost S spec c e
+      ((it.internExpr cand).1,
+        ((it.internExpr cand).2,
+          sc.insert (e.addr, c) (it.internExpr cand).1)) := by
+  have hkcf : KExpr.KeyCollisionFree
+      fun v => it.ExprSupport v ∨ v = cand :=
+    KExpr.keyCollisionFree_anon.mpr
+      (hcf.mono fun x hx => hx.elim (hsup x) fun hxe => hxe ▸ hScand)
+  have hcanon : (it.internExpr cand).1 = cand := by
+    have h := InternTable.internExpr_eraseMeta hwf hkcf
+    rwa [KExpr.eraseMeta_anon, KExpr.eraseMeta_anon] at h
+  refine ⟨?_, hwf.internExpr cand, ?_, ?_⟩
+  · show (it.internExpr cand).1 = spec e c
+    rw [hcanon, hcand]
+  · intro x hx
+    rcases InternTable.ExprSupport.of_internExpr hx with h | h
+    · exact hsup x h
+    · exact h ▸ hScand
+  · exact hsc.insert hSe (by rw [hcanon, hcand])
+
+/-- Store-self tail: memoize the node itself and return it, unchanged
+    and un-interned. -/
+private theorem walkPost_store_self {S : KExpr .anon → Prop}
+    {spec : KExpr .anon → UInt64 → KExpr .anon} {e : KExpr .anon}
+    {c : UInt64} {it : InternTable .anon} {sc : Scratch .anon}
+    (hspec : spec e c = e) (hSe : S e)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S spec sc) :
+    WalkPost S spec c e (e, (it, sc.insert (e.addr, c) e)) :=
+  ⟨hspec.symm, hwf, hsup, hsc.insert hSe hspec.symm⟩
+
+/-- Fast path (`lbr ≤ depth`): the walker returns its input unchanged,
+    which is the spec image by `substSpec_id`. -/
+private theorem substPost_fast {S : KExpr .anon → Prop}
+    {body arg : KExpr .anon} {depth : UInt64} {it : InternTable .anon}
+    {sc : Scratch .anon}
+    (hcon : KExpr.Constructed body)
+    (hcut : depth.toNat + body.size < UInt64.size)
+    (hfast : body.lbr ≤ depth)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.substSpec · arg ·) sc) :
+    WalkPost S (KExpr.substSpec · arg ·) depth body
+      (substCached body arg depth (it, sc)) := by
+  have hrun : substCached body arg depth (it, sc) = (body, (it, sc)) := by
+    rw [substCached, if_pos hfast]
+    rfl
+  rw [hrun]
+  exact ⟨(KExpr.substSpec_id hcon hcut hfast).symm, hwf, hsup, hsc⟩
+
+/-- Scratch hit: the stored entry converts to the spec image of the
+    current node via collision-freedom on the support. -/
+private theorem substPost_hit {S : KExpr .anon → Prop}
+    {body arg r : KExpr .anon} {depth : UInt64} {it : InternTable .anon}
+    {sc : Scratch .anon}
+    (hcf : KExpr.CollisionFree S) (hSe : S body)
+    (hfast : ¬ body.lbr ≤ depth)
+    (hget : sc[(body.addr, depth)]? = some r)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.substSpec · arg ·) sc) :
+    WalkPost S (KExpr.substSpec · arg ·) depth body
+      (substCached body arg depth (it, sc)) := by
+  have hrun : substCached body arg depth (it, sc) = (r, (it, sc)) := by
+    rw [substCached, if_neg hfast, run_pure_bind]
+    simp only []
+    rw [run_scratchGet_bind, hget]
+    rfl
+  rw [hrun]
+  refine ⟨?_, hwf, hsup, hsc⟩
+  obtain ⟨w, hwS, hwaddr, hrspec⟩ := hsc _ _ _ hget
+  have hwe : w = body := by
+    have h := hcf hwS hSe hwaddr
+    rwa [KExpr.eraseMeta_anon, KExpr.eraseMeta_anon] at h
+  show r = KExpr.substSpec body arg depth
+  rw [hrspec, hwe]
+
+/-- **WalkM memo-soundness for `subst`**: under collision-freedom of an
+    abstract support `S` covering `SubstReach ∪ intern-support`, the
+    memoized, interning walker computes exactly the pure spec. The `var`
+    arm at the substitution target composes `lift_spec` — the first
+    walker-in-walker composition of the program. -/
+theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
+    (hcf : KExpr.CollisionFree S) (hconArg : KExpr.Constructed arg)
+    (hargsz : arg.size < UInt64.size)
+    {body : KExpr .anon} (hcon : KExpr.Constructed body) :
+    ∀ {depth : UInt64} {it : InternTable .anon} {sc : Scratch .anon},
+      depth.toNat + body.size < UInt64.size →
+      (∀ x, KExpr.SubstReach arg body depth x → S x) →
+      it.WF → (∀ x, it.ExprSupport x → S x) →
+      WalkScratchInv S (KExpr.substSpec · arg ·) sc →
+      WalkPost S (KExpr.substSpec · arg ·) depth body
+        (substCached body arg depth (it, sc)) := by
+  induction hcon with
+  | @var idx name md hidx =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkVar_shape] at hreach ⊢
+    by_cases hfast :
+        (KExpr.var idx name (KExpr.mkVar idx name md).info).lbr ≤ depth
+    · exact substPost_fast (.var hidx) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.var idx name
+          (KExpr.mkVar idx name md).info).addr, depth)]? with
+      | some r =>
+        exact substPost_hit hcf (hreach _ (KExpr.SubstReach.self ..)) hfast
+          hget hwf hsup hsc
+      | none =>
+        by_cases heq : (idx == depth) = true
+        · -- Substitution target: compose the `lift arg depth 0` call.
+          rcases hlift : lift arg depth 0 it with ⟨rl, it1⟩
+          have postL := lift_spec (S := S) (e := arg) (shift := depth)
+            (cutoff := 0) (it := it) hcf hconArg
+            (by show 0 + arg.size < UInt64.size; omega)
+            (fun x hx => hreach x (.inr (.inr hx)))
+            hwf hsup
+          rw [hlift] at postL
+          have hres : rl = KExpr.liftSpec arg depth 0 := postL.1
+          have hwf1 : it1.WF := postL.2.1
+          have hsup1 : ∀ x, it1.ExprSupport x → S x := postL.2.2
+          have hrun : substCached
+              (.var idx name (KExpr.mkVar idx name md).info) arg depth
+              (it, sc)
+              = ((it1.internExpr rl).1,
+                 ((it1.internExpr rl).2,
+                  sc.insert ((KExpr.var idx name
+                      (KExpr.mkVar idx name md).info).addr, depth)
+                    (it1.internExpr rl).1)) := by
+            rw [substCached, if_neg hfast, run_pure_bind]
+            try simp only []
+            rw [run_scratchGet_bind, hget]
+            try simp (config := { proj := false }) only []
+            try rw [run_pure_bind]
+            try simp only []
+            rw [if_pos heq]
+            rw [run_liftIntern_bind, hlift]
+            try simp only []
+            rfl
+          rw [hrun]
+          have hcand : rl = KExpr.substSpec
+              (.var idx name (KExpr.mkVar idx name md).info) arg depth := by
+            rw [KExpr.substSpec, if_pos heq]
+            exact hres
+          exact walkPost_jp hcf hwf1 hsup1 hsc
+            (hreach _ (KExpr.SubstReach.self ..))
+            (hreach _ (.inr (.inl hcand)))
+            hcand
+        · by_cases hgt : idx > depth
+          · -- Above the target: rebuild with the decremented index.
+            have hrun : substCached
+                (.var idx name (KExpr.mkVar idx name md).info) arg depth
+                (it, sc)
+                = ((it.internExpr (KExpr.mkVar (idx - 1) name)).1,
+                   ((it.internExpr (KExpr.mkVar (idx - 1) name)).2,
+                    sc.insert ((KExpr.var idx name
+                        (KExpr.mkVar idx name md).info).addr, depth)
+                      (it.internExpr (KExpr.mkVar (idx - 1) name)).1)) := by
+              rw [substCached, if_neg hfast, run_pure_bind]
+              try simp only []
+              rw [run_scratchGet_bind, hget]
+              try simp (config := { proj := false }) only []
+              try rw [run_pure_bind]
+              try simp only []
+              rw [if_neg heq, if_pos hgt]
+              rfl
+            rw [hrun]
+            have hcand : KExpr.mkVar (idx - 1) name
+                = KExpr.substSpec
+                    (.var idx name (KExpr.mkVar idx name md).info)
+                    arg depth := by
+              rw [KExpr.substSpec, if_neg heq, if_pos hgt]
+            exact walkPost_jp hcf hwf hsup hsc
+              (hreach _ (KExpr.SubstReach.self ..))
+              (hreach _ (.inr (.inl hcand)))
+              hcand
+          · -- Below the target: unreachable once the fast path declined.
+            exfalso
+            have hfast' : ¬ (idx + 1 ≤ depth) := hfast
+            have hne : idx.toNat ≠ depth.toNat := fun h =>
+              heq (beq_iff_eq.mpr (UInt64.toNat_inj.mp h))
+            have hnlt : ¬ depth.toNat < idx.toNat := fun h =>
+              hgt (UInt64.lt_iff_toNat_lt.mpr h)
+            have h1 : ¬ (idx.toNat + 1 ≤ depth.toNat) := fun h =>
+              hfast' (UInt64.le_iff_toNat_le.mpr (by
+                rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+                  Nat.mod_eq_of_lt hidx]
+                exact h))
+            omega
+  | @fvar id name md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact substPost_fast .fvar hcut UInt64.zero_le hwf hsup hsc
+  | @sort u md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact substPost_fast .sort hcut UInt64.zero_le hwf hsup hsc
+  | @const id us md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact substPost_fast .const hcut UInt64.zero_le hwf hsup hsc
+  | @app f a md hf ha ihf iha =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkApp_shape] at hreach ⊢
+    have hcut' : depth.toNat + (f.size + a.size + 1) < UInt64.size := hcut
+    by_cases hfast :
+        (KExpr.app f a (KExpr.mkApp f a md).info).lbr ≤ depth
+    · exact substPost_fast (.app hf ha) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.app f a
+          (KExpr.mkApp f a md).info).addr, depth)]? with
+      | some r =>
+        exact substPost_hit hcf (hreach _ (KExpr.SubstReach.self ..)) hfast
+          hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : substCached f arg depth (it, sc) with ⟨rf, it1, sc1⟩
+        have post1 := ihf (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : substCached a arg depth (it1, sc1) with ⟨ra, it2, sc2⟩
+        have post2 := iha (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rf = KExpr.substSpec f arg depth := post1.result
+        have hres2 : ra = KExpr.substSpec a arg depth := post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.substSpec · arg ·) sc2 :=
+          post2.scr
+        have hrun : substCached
+            (.app f a (KExpr.mkApp f a md).info) arg depth (it, sc)
+            = ((it2.internExpr (KExpr.mkApp rf ra)).1,
+               ((it2.internExpr (KExpr.mkApp rf ra)).2,
+                sc2.insert ((KExpr.app f a
+                    (KExpr.mkApp f a md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
+          rw [substCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkApp rf ra
+            = KExpr.substSpec (.app f a (KExpr.mkApp f a md).info)
+                arg depth := by
+          rw [KExpr.substSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.SubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkLam_shape] at hreach ⊢
+    have hcut' : depth.toNat + (ty.size + body.size + 1) < UInt64.size :=
+      hcut
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut')
+    by_cases hfast :
+        (KExpr.lam n bi ty body
+          (KExpr.mkLam n bi ty body md).info).lbr ≤ depth
+    · exact substPost_fast (.lam hty hbody) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.lam n bi ty body
+          (KExpr.mkLam n bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact substPost_hit hcf (hreach _ (KExpr.SubstReach.self ..)) hfast
+          hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : substCached ty arg depth (it, sc) with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : substCached body arg (depth + 1) (it1, sc1)
+          with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.substSpec ty arg depth := post1.result
+        have hres2 : rbody = KExpr.substSpec body arg (depth + 1) :=
+          post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.substSpec · arg ·) sc2 :=
+          post2.scr
+        have hrun : substCached
+            (.lam n bi ty body (KExpr.mkLam n bi ty body md).info)
+            arg depth (it, sc)
+            = ((it2.internExpr (KExpr.mkLam n bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkLam n bi rty rbody)).2,
+                sc2.insert ((KExpr.lam n bi ty body
+                    (KExpr.mkLam n bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkLam n bi rty rbody)).1)) := by
+          rw [substCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLam n bi rty rbody
+            = KExpr.substSpec
+                (.lam n bi ty body (KExpr.mkLam n bi ty body md).info)
+                arg depth := by
+          rw [KExpr.substSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.SubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkAll_shape] at hreach ⊢
+    have hcut' : depth.toNat + (ty.size + body.size + 1) < UInt64.size :=
+      hcut
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut')
+    by_cases hfast :
+        (KExpr.all n bi ty body
+          (KExpr.mkAll n bi ty body md).info).lbr ≤ depth
+    · exact substPost_fast (.all hty hbody) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.all n bi ty body
+          (KExpr.mkAll n bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact substPost_hit hcf (hreach _ (KExpr.SubstReach.self ..)) hfast
+          hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : substCached ty arg depth (it, sc) with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : substCached body arg (depth + 1) (it1, sc1)
+          with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.substSpec ty arg depth := post1.result
+        have hres2 : rbody = KExpr.substSpec body arg (depth + 1) :=
+          post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.substSpec · arg ·) sc2 :=
+          post2.scr
+        have hrun : substCached
+            (.all n bi ty body (KExpr.mkAll n bi ty body md).info)
+            arg depth (it, sc)
+            = ((it2.internExpr (KExpr.mkAll n bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkAll n bi rty rbody)).2,
+                sc2.insert ((KExpr.all n bi ty body
+                    (KExpr.mkAll n bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkAll n bi rty rbody)).1)) := by
+          rw [substCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkAll n bi rty rbody
+            = KExpr.substSpec
+                (.all n bi ty body (KExpr.mkAll n bi ty body md).info)
+                arg depth := by
+          rw [KExpr.substSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.SubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkLet_shape] at hreach ⊢
+    have hcut' :
+        depth.toNat + (ty.size + val.size + body.size + 1) < UInt64.size :=
+      hcut
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut')
+    by_cases hfast :
+        (KExpr.letE n ty val body nd
+          (KExpr.mkLet n ty val body nd md).info).lbr ≤ depth
+    · exact substPost_fast (.letE hty hval hbody) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.letE n ty val body nd
+          (KExpr.mkLet n ty val body nd md).info).addr, depth)]? with
+      | some r =>
+        exact substPost_hit hcf (hreach _ (KExpr.SubstReach.self ..)) hfast
+          hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : substCached ty arg depth (it, sc) with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : substCached val arg depth (it1, sc1)
+          with ⟨rval, it2, sc2⟩
+        have post2 := ihval (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inl hx)))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        rcases hrun3 : substCached body arg (depth + 1) (it2, sc2)
+          with ⟨rbody, it3, sc3⟩
+        have post3 := ihbody (depth := depth + 1) (it := it2) (sc := sc2)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inr hx)))))
+          post2.wf post2.sup post2.scr
+        rw [hrun3] at post3
+        have hres1 : rty = KExpr.substSpec ty arg depth := post1.result
+        have hres2 : rval = KExpr.substSpec val arg depth := post2.result
+        have hres3 : rbody = KExpr.substSpec body arg (depth + 1) :=
+          post3.result
+        have hwf3 : it3.WF := post3.wf
+        have hsup3 : ∀ x, it3.ExprSupport x → S x := post3.sup
+        have hsc3 : WalkScratchInv S (KExpr.substSpec · arg ·) sc3 :=
+          post3.scr
+        have hrun : substCached
+            (.letE n ty val body nd
+              (KExpr.mkLet n ty val body nd md).info) arg depth (it, sc)
+            = ((it3.internExpr (KExpr.mkLet n rty rval rbody nd)).1,
+               ((it3.internExpr (KExpr.mkLet n rty rval rbody nd)).2,
+                sc3.insert ((KExpr.letE n ty val body nd
+                    (KExpr.mkLet n ty val body nd md).info).addr, depth)
+                  (it3.internExpr (KExpr.mkLet n rty rval rbody nd)).1)) := by
+          rw [substCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun3]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLet n rty rval rbody nd
+            = KExpr.substSpec
+                (.letE n ty val body nd
+                  (KExpr.mkLet n ty val body nd md).info) arg depth := by
+          rw [KExpr.substSpec, hres1, hres2, hres3]
+        exact walkPost_jp hcf hwf3 hsup3 hsc3
+          (hreach _ (KExpr.SubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @prj id field val md hval ihval =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkPrj_shape] at hreach ⊢
+    have hcut' : depth.toNat + (val.size + 1) < UInt64.size := hcut
+    by_cases hfast :
+        (KExpr.prj id field val
+          (KExpr.mkPrj id field val md).info).lbr ≤ depth
+    · exact substPost_fast (.prj hval) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.prj id field val
+          (KExpr.mkPrj id field val md).info).addr, depth)]? with
+      | some r =>
+        exact substPost_hit hcf (hreach _ (KExpr.SubstReach.self ..)) hfast
+          hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : substCached val arg depth (it, sc)
+          with ⟨rval, it1, sc1⟩
+        have post1 := ihval (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr hx)))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        have hres1 : rval = KExpr.substSpec val arg depth := post1.result
+        have hwf1 : it1.WF := post1.wf
+        have hsup1 : ∀ x, it1.ExprSupport x → S x := post1.sup
+        have hsc1 : WalkScratchInv S (KExpr.substSpec · arg ·) sc1 :=
+          post1.scr
+        have hrun : substCached
+            (.prj id field val (KExpr.mkPrj id field val md).info)
+            arg depth (it, sc)
+            = ((it1.internExpr (KExpr.mkPrj id field rval)).1,
+               ((it1.internExpr (KExpr.mkPrj id field rval)).2,
+                sc1.insert ((KExpr.prj id field val
+                    (KExpr.mkPrj id field val md).info).addr, depth)
+                  (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
+          rw [substCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkPrj id field rval
+            = KExpr.substSpec
+                (.prj id field val (KExpr.mkPrj id field val md).info)
+                arg depth := by
+          rw [KExpr.substSpec, hres1]
+        exact walkPost_jp hcf hwf1 hsup1 hsc1
+          (hreach _ (KExpr.SubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @nat v blob md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact substPost_fast .nat hcut UInt64.zero_le hwf hsup hsc
+  | @str v blob md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact substPost_fast .str hcut UInt64.zero_le hwf hsup hsc
+
+/-- **`subst` is the pure spec** (InternM API level). Fresh scratch per
+    call, so only the intern-table invariants thread in and out.
+    Instantiate `S` with `SubstReach arg body depth ∪ it.ExprSupport`
+    (both finite) to discharge `hreach`/`hsup` definitionally. -/
+theorem subst_spec {S : KExpr .anon → Prop} {body arg : KExpr .anon}
+    {depth : UInt64} {it : InternTable .anon}
+    (hcf : KExpr.CollisionFree S)
+    (hconBody : KExpr.Constructed body) (hconArg : KExpr.Constructed arg)
+    (hcut : depth.toNat + body.size < UInt64.size)
+    (hargsz : arg.size < UInt64.size)
+    (hreach : ∀ x, KExpr.SubstReach arg body depth x → S x)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x) :
+    (subst body arg depth it).1 = KExpr.substSpec body arg depth ∧
+    (subst body arg depth it).2.WF ∧
+    (∀ x, (subst body arg depth it).2.ExprSupport x → S x) := by
+  by_cases hfast : body.lbr ≤ depth
+  · have hrun : subst body arg depth it = (body, it) := by
+      rw [subst, if_pos hfast]
+      rfl
+    rw [hrun]
+    exact ⟨(KExpr.substSpec_id hconBody hcut hfast).symm, hwf, hsup⟩
+  · have post := substCached_spec hcf hconArg hargsz hconBody
+      (depth := depth) (it := it) (sc := {}) hcut hreach hwf hsup
+      (WalkScratchInv.empty S _)
+    have hrun : subst body arg depth it
+        = ((substCached body arg depth (it, {})).1,
+           (substCached body arg depth (it, {})).2.1) := by
+      rw [subst, if_neg hfast]
+      rfl
+    rw [hrun]
+    exact ⟨post.result, post.wf, post.sup⟩
+
+/-! ## The `simulSubst` walker
+
+Same discipline; the `var` arm replaces a RANGE `[depth, depth + n)` of
+indices by lifted array elements (`lift substs[i - depth] depth 0`,
+composed as in `subst`), and — unlike the single-substitution walker —
+memoizes the lift result directly with an early return, skipping the
+outer intern tail. Indices at or above `depth + n` shift down by `n`.
+
+The `UInt64` range arithmetic (`depth + n`) forces a combined no-wrap
+bound `depth + body.size + substs.size < 2⁶⁴`, which threads through
+binder descent exactly like the plain size bound. -/
+
+private theorem toNat_toUInt64 (k : Nat) :
+    k.toUInt64.toNat = k % UInt64.size := by
+  unfold Nat.toUInt64
+  rfl
+
+namespace KExpr
+
+/-- Pure simultaneous substitution: `Var(depth + j) ↦ substs[j]` lifted
+    by `depth`, indices ≥ `depth + n` shift down by `n`. Anon-mode spec —
+    mirrors `simulSubstCached`'s rebuild arms exactly. -/
+def simulSubstSpec (body : KExpr .anon) (substs : Array (KExpr .anon))
+    (depth : UInt64) : KExpr .anon :=
+  match body with
+  | .var i _ _ =>
+    if i ≥ depth && i < depth + substs.size.toUInt64 then
+      liftSpec substs[(i - depth).toNat]! depth 0
+    else if i ≥ depth + substs.size.toUInt64 then
+      mkVar (i - substs.size.toUInt64) (anonName (m := .anon))
+    else body
+  | .app f x _ =>
+    mkApp (simulSubstSpec f substs depth) (simulSubstSpec x substs depth)
+  | .lam n bi ty inner _ =>
+    mkLam n bi (simulSubstSpec ty substs depth)
+      (simulSubstSpec inner substs (depth + 1))
+  | .all n bi ty inner _ =>
+    mkAll n bi (simulSubstSpec ty substs depth)
+      (simulSubstSpec inner substs (depth + 1))
+  | .letE n ty val inner nd _ =>
+    mkLet n (simulSubstSpec ty substs depth)
+      (simulSubstSpec val substs depth)
+      (simulSubstSpec inner substs (depth + 1)) nd
+  | .prj id field val _ => mkPrj id field (simulSubstSpec val substs depth)
+  | body => body
+
+/-- The `lbr ≤ depth` fast path is sound: every loose index is below the
+    substitution window. -/
+theorem simulSubstSpec_id {body : KExpr .anon}
+    {substs : Array (KExpr .anon)} {depth : UInt64}
+    (hcon : Constructed body)
+    (hbig : depth.toNat + body.size + substs.size < UInt64.size)
+    (hlbr : body.lbr ≤ depth) :
+    simulSubstSpec body substs depth = body := by
+  induction hcon generalizing depth with
+  | @var idx name md hidx =>
+    rw [mkVar_lbr] at hlbr
+    have hbig' : depth.toNat + 1 + substs.size < UInt64.size := hbig
+    have hle : idx.toNat + 1 ≤ depth.toNat := by
+      have h := UInt64.le_iff_toNat_le.mp hlbr
+      rwa [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+        Nat.mod_eq_of_lt hidx] at h
+    have hsz : substs.size.toUInt64.toNat = substs.size := by
+      rw [toNat_toUInt64]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    have hnn : (depth + substs.size.toUInt64).toNat
+        = depth.toNat + substs.size := by
+      rw [UInt64.toNat_add, hsz]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    have hge : ¬ (idx ≥ depth) := fun h => by
+      have := UInt64.le_iff_toNat_le.mp h
+      omega
+    have hb1 : ¬ ((idx ≥ depth && idx < depth + substs.size.toUInt64)
+        = true) := by
+      rw [decide_eq_false hge, Bool.false_and]
+      exact Bool.false_ne_true
+    have hge2 : ¬ (idx ≥ depth + substs.size.toUInt64) := fun h => by
+      have := UInt64.le_iff_toNat_le.mp h
+      omega
+    rw [mkVar_shape, simulSubstSpec, if_neg hb1, if_neg hge2]
+  | fvar => rfl
+  | sort => rfl
+  | const => rfl
+  | @app f a md hf ha ihf iha =>
+    rw [mkApp_lbr] at hlbr
+    rw [mkApp_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    rw [mkApp_shape, simulSubstSpec,
+      ihf (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      iha (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.2)]
+    exact mkApp_shape f a md
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    rw [mkLam_lbr] at hlbr
+    rw [mkLam_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig)
+    rw [mkLam_shape, simulSubstSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLam_shape n bi ty body md
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    rw [mkAll_lbr] at hlbr
+    rw [mkAll_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig)
+    rw [mkAll_shape, simulSubstSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkAll_shape n bi ty body md
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    rw [mkLet_lbr] at hlbr
+    rw [mkLet_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, toNat_max, Nat.max_le, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig)
+    rw [mkLet_shape, simulSubstSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1.1),
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1.2),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLet_shape n ty val body nd md
+  | @prj id field val md hval ihval =>
+    rw [mkPrj_lbr] at hlbr
+    rw [mkPrj_shape, size] at hbig
+    rw [mkPrj_shape, simulSubstSpec,
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig) hlbr]
+    exact mkPrj_shape id field val md
+  | nat => rfl
+  | str => rfl
+
+/-- Everything the `simulSubstCached` walk can touch. At `var` nodes the
+    composed lift's footprint enters through the pattern's own index
+    (out-of-range indices contribute the harmless `default`-element
+    reach — a superset keeps `S` simple and still finite). -/
+def SimulSubstReach (substs : Array (KExpr .anon)) :
+    KExpr .anon → UInt64 → KExpr .anon → Prop
+  | body, d, x =>
+    x = body ∨ x = simulSubstSpec body substs d ∨
+      match body with
+      | .var i _ _ => LiftReach d substs[(i - d).toNat]! 0 x
+      | .app f a _ =>
+        SimulSubstReach substs f d x ∨ SimulSubstReach substs a d x
+      | .lam _ _ ty inner _ =>
+        SimulSubstReach substs ty d x ∨
+          SimulSubstReach substs inner (d + 1) x
+      | .all _ _ ty inner _ =>
+        SimulSubstReach substs ty d x ∨
+          SimulSubstReach substs inner (d + 1) x
+      | .letE _ ty val inner _ _ =>
+        SimulSubstReach substs ty d x ∨ SimulSubstReach substs val d x ∨
+          SimulSubstReach substs inner (d + 1) x
+      | .prj _ _ val _ => SimulSubstReach substs val d x
+      | _ => False
+
+theorem SimulSubstReach.self (substs : Array (KExpr .anon))
+    (body : KExpr .anon) (d : UInt64) :
+    SimulSubstReach substs body d body := by
+  cases body <;> exact .inl rfl
+
+theorem SimulSubstReach.spec (substs : Array (KExpr .anon))
+    (body : KExpr .anon) (d : UInt64) :
+    SimulSubstReach substs body d (simulSubstSpec body substs d) := by
+  cases body <;> exact .inr (.inl rfl)
+
+end KExpr
+
+/-- Fast path (`lbr ≤ depth`). -/
+private theorem simulPost_fast {S : KExpr .anon → Prop}
+    {body : KExpr .anon} {substs : Array (KExpr .anon)} {depth : UInt64}
+    {it : InternTable .anon} {sc : Scratch .anon}
+    (hcon : KExpr.Constructed body)
+    (hbig : depth.toNat + body.size + substs.size < UInt64.size)
+    (hfast : body.lbr ≤ depth)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.simulSubstSpec · substs ·) sc) :
+    WalkPost S (KExpr.simulSubstSpec · substs ·) depth body
+      (simulSubstCached body substs depth (it, sc)) := by
+  have hrun : simulSubstCached body substs depth (it, sc)
+      = (body, (it, sc)) := by
+    rw [simulSubstCached, if_pos hfast]
+    rfl
+  rw [hrun]
+  exact ⟨(KExpr.simulSubstSpec_id hcon hbig hfast).symm, hwf, hsup, hsc⟩
+
+/-- Scratch hit. -/
+private theorem simulPost_hit {S : KExpr .anon → Prop}
+    {body r : KExpr .anon} {substs : Array (KExpr .anon)} {depth : UInt64}
+    {it : InternTable .anon} {sc : Scratch .anon}
+    (hcf : KExpr.CollisionFree S) (hSe : S body)
+    (hfast : ¬ body.lbr ≤ depth)
+    (hget : sc[(body.addr, depth)]? = some r)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.simulSubstSpec · substs ·) sc) :
+    WalkPost S (KExpr.simulSubstSpec · substs ·) depth body
+      (simulSubstCached body substs depth (it, sc)) := by
+  have hrun : simulSubstCached body substs depth (it, sc)
+      = (r, (it, sc)) := by
+    rw [simulSubstCached, if_neg hfast, run_pure_bind]
+    simp only []
+    rw [run_scratchGet_bind, hget]
+    rfl
+  rw [hrun]
+  refine ⟨?_, hwf, hsup, hsc⟩
+  obtain ⟨w, hwS, hwaddr, hrspec⟩ := hsc _ _ _ hget
+  have hwe : w = body := by
+    have h := hcf hwS hSe hwaddr
+    rwa [KExpr.eraseMeta_anon, KExpr.eraseMeta_anon] at h
+  show r = KExpr.simulSubstSpec body substs depth
+  rw [hrspec, hwe]
+
+/-- **WalkM memo-soundness for `simulSubst`**: the memoized, interning
+    walker computes exactly the pure spec, composing `lift_spec` at
+    every in-range `var` and memoizing that result via the early-return
+    path (no re-intern — the lift already interned it). -/
+theorem simulSubstCached_spec {S : KExpr .anon → Prop}
+    {substs : Array (KExpr .anon)}
+    (hcf : KExpr.CollisionFree S)
+    (hconS : ∀ k, k < substs.size → KExpr.Constructed substs[k]!)
+    (hszS : ∀ k, k < substs.size → substs[k]!.size < UInt64.size)
+    {body : KExpr .anon} (hcon : KExpr.Constructed body) :
+    ∀ {depth : UInt64} {it : InternTable .anon} {sc : Scratch .anon},
+      depth.toNat + body.size + substs.size < UInt64.size →
+      (∀ x, KExpr.SimulSubstReach substs body depth x → S x) →
+      it.WF → (∀ x, it.ExprSupport x → S x) →
+      WalkScratchInv S (KExpr.simulSubstSpec · substs ·) sc →
+      WalkPost S (KExpr.simulSubstSpec · substs ·) depth body
+        (simulSubstCached body substs depth (it, sc)) := by
+  induction hcon with
+  | @var idx name md hidx =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkVar_shape] at hreach ⊢
+    by_cases hfast :
+        (KExpr.var idx name (KExpr.mkVar idx name md).info).lbr ≤ depth
+    · exact simulPost_fast (.var hidx) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.var idx name
+          (KExpr.mkVar idx name md).info).addr, depth)]? with
+      | some r =>
+        exact simulPost_hit hcf (hreach _ (KExpr.SimulSubstReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        have hbig' : depth.toNat + 1 + substs.size < UInt64.size := hbig
+        have hsz : substs.size.toUInt64.toNat = substs.size := by
+          rw [toNat_toUInt64]
+          exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+        have hnn : (depth + substs.size.toUInt64).toNat
+            = depth.toNat + substs.size := by
+          rw [UInt64.toNat_add, hsz]
+          exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+        have hfast' : ¬ (idx + 1 ≤ depth) := hfast
+        have hgei : depth.toNat ≤ idx.toNat := by
+          have h1 : ¬ (idx.toNat + 1 ≤ depth.toNat) := fun h =>
+            hfast' (UInt64.le_iff_toNat_le.mpr (by
+              rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+                Nat.mod_eq_of_lt hidx]
+              exact h))
+          omega
+        by_cases hin :
+            (idx ≥ depth && idx < depth + substs.size.toUInt64) = true
+        · -- In range: compose the lift, memoize it, early-return.
+          have hlt : idx.toNat < depth.toNat + substs.size := by
+            have h2 := (Bool.and_eq_true_iff.mp hin).2
+            have h3 := UInt64.lt_iff_toNat_lt.mp (of_decide_eq_true h2)
+            omega
+          have hk : (idx - depth).toNat < substs.size := by
+            rw [UInt64.toNat_sub_of_le idx depth
+              (UInt64.le_iff_toNat_le.mpr hgei)]
+            omega
+          rcases hlift : lift substs[(idx - depth).toNat]! depth 0 it
+            with ⟨rl, it1⟩
+          have postL := lift_spec (S := S)
+            (e := substs[(idx - depth).toNat]!) (shift := depth)
+            (cutoff := 0) (it := it) hcf (hconS _ hk)
+            (by show 0 + substs[(idx - depth).toNat]!.size < UInt64.size
+                have := hszS _ hk
+                omega)
+            (fun x hx => hreach x (.inr (.inr hx)))
+            hwf hsup
+          rw [hlift] at postL
+          have hres : rl
+              = KExpr.liftSpec substs[(idx - depth).toNat]! depth 0 :=
+            postL.1
+          have hwf1 : it1.WF := postL.2.1
+          have hsup1 : ∀ x, it1.ExprSupport x → S x := postL.2.2
+          have hrun : simulSubstCached
+              (.var idx name (KExpr.mkVar idx name md).info) substs depth
+              (it, sc)
+              = (rl, (it1, sc.insert ((KExpr.var idx name
+                  (KExpr.mkVar idx name md).info).addr, depth) rl)) := by
+            rw [simulSubstCached, if_neg hfast, run_pure_bind]
+            try simp only []
+            rw [run_scratchGet_bind, hget]
+            try simp (config := { proj := false }) only []
+            try rw [run_pure_bind]
+            try simp only []
+            rw [if_pos hin]
+            rw [run_liftIntern_bind, hlift]
+            try simp only []
+            rfl
+          rw [hrun]
+          have hcand : rl = KExpr.simulSubstSpec
+              (.var idx name (KExpr.mkVar idx name md).info)
+              substs depth := by
+            rw [KExpr.simulSubstSpec, if_pos hin]
+            exact hres
+          exact ⟨hcand, hwf1, hsup1,
+            hsc.insert (hreach _ (KExpr.SimulSubstReach.self ..)) hcand⟩
+        · by_cases hge2 : idx ≥ depth + substs.size.toUInt64
+          · -- Above the window: rebuild with the shifted-down index.
+            have hrun : simulSubstCached
+                (.var idx name (KExpr.mkVar idx name md).info) substs
+                depth (it, sc)
+                = ((it.internExpr (KExpr.mkVar
+                      (idx - substs.size.toUInt64)
+                      (anonName (m := .anon)))).1,
+                   ((it.internExpr (KExpr.mkVar
+                       (idx - substs.size.toUInt64)
+                       (anonName (m := .anon)))).2,
+                    sc.insert ((KExpr.var idx name
+                        (KExpr.mkVar idx name md).info).addr, depth)
+                      (it.internExpr (KExpr.mkVar
+                        (idx - substs.size.toUInt64)
+                        (anonName (m := .anon)))).1)) := by
+              rw [simulSubstCached, if_neg hfast, run_pure_bind]
+              try simp only []
+              rw [run_scratchGet_bind, hget]
+              try simp (config := { proj := false }) only []
+              try rw [run_pure_bind]
+              try simp only []
+              rw [if_neg hin, if_pos hge2]
+              rfl
+            rw [hrun]
+            have hcand : KExpr.mkVar (idx - substs.size.toUInt64)
+                (anonName (m := .anon))
+                = KExpr.simulSubstSpec
+                    (.var idx name (KExpr.mkVar idx name md).info)
+                    substs depth := by
+              rw [KExpr.simulSubstSpec, if_neg hin, if_pos hge2]
+            exact walkPost_jp hcf hwf hsup hsc
+              (hreach _ (KExpr.SimulSubstReach.self ..))
+              (hreach _ (.inr (.inl hcand)))
+              hcand
+          · -- Between the guards: impossible once the fast path declined.
+            exfalso
+            have hd : decide (idx ≥ depth) = true :=
+              decide_eq_true (UInt64.le_iff_toNat_le.mpr hgei)
+            have hnlt : ¬ (idx < depth + substs.size.toUInt64) := fun h =>
+              hin (by rw [hd, decide_eq_true h]; rfl)
+            have hgen : depth.toNat + substs.size ≤ idx.toNat := by
+              have h1 : ¬ (idx.toNat
+                  < (depth + substs.size.toUInt64).toNat) := fun h =>
+                hnlt (UInt64.lt_iff_toNat_lt.mpr h)
+              omega
+            exact hge2 (UInt64.le_iff_toNat_le.mpr (by rw [hnn]; omega))
+  | @fvar id name md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact simulPost_fast .fvar hbig UInt64.zero_le hwf hsup hsc
+  | @sort u md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact simulPost_fast .sort hbig UInt64.zero_le hwf hsup hsc
+  | @const id us md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact simulPost_fast .const hbig UInt64.zero_le hwf hsup hsc
+  | @app f a md hf ha ihf iha =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkApp_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (f.size + a.size + 1) + substs.size < UInt64.size :=
+      hbig
+    by_cases hfast :
+        (KExpr.app f a (KExpr.mkApp f a md).info).lbr ≤ depth
+    · exact simulPost_fast (.app hf ha) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.app f a
+          (KExpr.mkApp f a md).info).addr, depth)]? with
+      | some r =>
+        exact simulPost_hit hcf (hreach _ (KExpr.SimulSubstReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : simulSubstCached f substs depth (it, sc)
+          with ⟨rf, it1, sc1⟩
+        have post1 := ihf (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : simulSubstCached a substs depth (it1, sc1)
+          with ⟨ra, it2, sc2⟩
+        have post2 := iha (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rf = KExpr.simulSubstSpec f substs depth :=
+          post1.result
+        have hres2 : ra = KExpr.simulSubstSpec a substs depth :=
+          post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.simulSubstSpec · substs ·)
+            sc2 := post2.scr
+        have hrun : simulSubstCached
+            (.app f a (KExpr.mkApp f a md).info) substs depth (it, sc)
+            = ((it2.internExpr (KExpr.mkApp rf ra)).1,
+               ((it2.internExpr (KExpr.mkApp rf ra)).2,
+                sc2.insert ((KExpr.app f a
+                    (KExpr.mkApp f a md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
+          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkApp rf ra
+            = KExpr.simulSubstSpec (.app f a (KExpr.mkApp f a md).info)
+                substs depth := by
+          rw [KExpr.simulSubstSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.SimulSubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkLam_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (ty.size + body.size + 1) + substs.size
+          < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    by_cases hfast :
+        (KExpr.lam n bi ty body
+          (KExpr.mkLam n bi ty body md).info).lbr ≤ depth
+    · exact simulPost_fast (.lam hty hbody) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.lam n bi ty body
+          (KExpr.mkLam n bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact simulPost_hit hcf (hreach _ (KExpr.SimulSubstReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : simulSubstCached ty substs depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : simulSubstCached body substs (depth + 1) (it1, sc1)
+          with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.simulSubstSpec ty substs depth :=
+          post1.result
+        have hres2 : rbody = KExpr.simulSubstSpec body substs (depth + 1) :=
+          post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.simulSubstSpec · substs ·)
+            sc2 := post2.scr
+        have hrun : simulSubstCached
+            (.lam n bi ty body (KExpr.mkLam n bi ty body md).info)
+            substs depth (it, sc)
+            = ((it2.internExpr (KExpr.mkLam n bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkLam n bi rty rbody)).2,
+                sc2.insert ((KExpr.lam n bi ty body
+                    (KExpr.mkLam n bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkLam n bi rty rbody)).1)) := by
+          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLam n bi rty rbody
+            = KExpr.simulSubstSpec
+                (.lam n bi ty body (KExpr.mkLam n bi ty body md).info)
+                substs depth := by
+          rw [KExpr.simulSubstSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.SimulSubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkAll_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (ty.size + body.size + 1) + substs.size
+          < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    by_cases hfast :
+        (KExpr.all n bi ty body
+          (KExpr.mkAll n bi ty body md).info).lbr ≤ depth
+    · exact simulPost_fast (.all hty hbody) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.all n bi ty body
+          (KExpr.mkAll n bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact simulPost_hit hcf (hreach _ (KExpr.SimulSubstReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : simulSubstCached ty substs depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : simulSubstCached body substs (depth + 1) (it1, sc1)
+          with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.simulSubstSpec ty substs depth :=
+          post1.result
+        have hres2 : rbody = KExpr.simulSubstSpec body substs (depth + 1) :=
+          post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.simulSubstSpec · substs ·)
+            sc2 := post2.scr
+        have hrun : simulSubstCached
+            (.all n bi ty body (KExpr.mkAll n bi ty body md).info)
+            substs depth (it, sc)
+            = ((it2.internExpr (KExpr.mkAll n bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkAll n bi rty rbody)).2,
+                sc2.insert ((KExpr.all n bi ty body
+                    (KExpr.mkAll n bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkAll n bi rty rbody)).1)) := by
+          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkAll n bi rty rbody
+            = KExpr.simulSubstSpec
+                (.all n bi ty body (KExpr.mkAll n bi ty body md).info)
+                substs depth := by
+          rw [KExpr.simulSubstSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.SimulSubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkLet_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (ty.size + val.size + body.size + 1) + substs.size
+          < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    by_cases hfast :
+        (KExpr.letE n ty val body nd
+          (KExpr.mkLet n ty val body nd md).info).lbr ≤ depth
+    · exact simulPost_fast (.letE hty hval hbody) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.letE n ty val body nd
+          (KExpr.mkLet n ty val body nd md).info).addr, depth)]? with
+      | some r =>
+        exact simulPost_hit hcf (hreach _ (KExpr.SimulSubstReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : simulSubstCached ty substs depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : simulSubstCached val substs depth (it1, sc1)
+          with ⟨rval, it2, sc2⟩
+        have post2 := ihval (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inl hx)))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        rcases hrun3 : simulSubstCached body substs (depth + 1) (it2, sc2)
+          with ⟨rbody, it3, sc3⟩
+        have post3 := ihbody (depth := depth + 1) (it := it2) (sc := sc2)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inr hx)))))
+          post2.wf post2.sup post2.scr
+        rw [hrun3] at post3
+        have hres1 : rty = KExpr.simulSubstSpec ty substs depth :=
+          post1.result
+        have hres2 : rval = KExpr.simulSubstSpec val substs depth :=
+          post2.result
+        have hres3 : rbody = KExpr.simulSubstSpec body substs (depth + 1) :=
+          post3.result
+        have hwf3 : it3.WF := post3.wf
+        have hsup3 : ∀ x, it3.ExprSupport x → S x := post3.sup
+        have hsc3 : WalkScratchInv S (KExpr.simulSubstSpec · substs ·)
+            sc3 := post3.scr
+        have hrun : simulSubstCached
+            (.letE n ty val body nd
+              (KExpr.mkLet n ty val body nd md).info) substs depth (it, sc)
+            = ((it3.internExpr (KExpr.mkLet n rty rval rbody nd)).1,
+               ((it3.internExpr (KExpr.mkLet n rty rval rbody nd)).2,
+                sc3.insert ((KExpr.letE n ty val body nd
+                    (KExpr.mkLet n ty val body nd md).info).addr, depth)
+                  (it3.internExpr
+                    (KExpr.mkLet n rty rval rbody nd)).1)) := by
+          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun3]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLet n rty rval rbody nd
+            = KExpr.simulSubstSpec
+                (.letE n ty val body nd
+                  (KExpr.mkLet n ty val body nd md).info)
+                substs depth := by
+          rw [KExpr.simulSubstSpec, hres1, hres2, hres3]
+        exact walkPost_jp hcf hwf3 hsup3 hsc3
+          (hreach _ (KExpr.SimulSubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @prj id field val md hval ihval =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkPrj_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (val.size + 1) + substs.size < UInt64.size := hbig
+    by_cases hfast :
+        (KExpr.prj id field val
+          (KExpr.mkPrj id field val md).info).lbr ≤ depth
+    · exact simulPost_fast (.prj hval) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.prj id field val
+          (KExpr.mkPrj id field val md).info).addr, depth)]? with
+      | some r =>
+        exact simulPost_hit hcf (hreach _ (KExpr.SimulSubstReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : simulSubstCached val substs depth (it, sc)
+          with ⟨rval, it1, sc1⟩
+        have post1 := ihval (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr hx)))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        have hres1 : rval = KExpr.simulSubstSpec val substs depth :=
+          post1.result
+        have hwf1 : it1.WF := post1.wf
+        have hsup1 : ∀ x, it1.ExprSupport x → S x := post1.sup
+        have hsc1 : WalkScratchInv S (KExpr.simulSubstSpec · substs ·)
+            sc1 := post1.scr
+        have hrun : simulSubstCached
+            (.prj id field val (KExpr.mkPrj id field val md).info)
+            substs depth (it, sc)
+            = ((it1.internExpr (KExpr.mkPrj id field rval)).1,
+               ((it1.internExpr (KExpr.mkPrj id field rval)).2,
+                sc1.insert ((KExpr.prj id field val
+                    (KExpr.mkPrj id field val md).info).addr, depth)
+                  (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
+          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkPrj id field rval
+            = KExpr.simulSubstSpec
+                (.prj id field val (KExpr.mkPrj id field val md).info)
+                substs depth := by
+          rw [KExpr.simulSubstSpec, hres1]
+        exact walkPost_jp hcf hwf1 hsup1 hsc1
+          (hreach _ (KExpr.SimulSubstReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @nat v blob md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact simulPost_fast .nat hbig UInt64.zero_le hwf hsup hsc
+  | @str v blob md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact simulPost_fast .str hbig UInt64.zero_le hwf hsup hsc
+
+/-- **`simulSubst` is the pure spec** (InternM API level). -/
+theorem simulSubst_spec {S : KExpr .anon → Prop} {body : KExpr .anon}
+    {substs : Array (KExpr .anon)} {depth : UInt64}
+    {it : InternTable .anon}
+    (hcf : KExpr.CollisionFree S)
+    (hconBody : KExpr.Constructed body)
+    (hconS : ∀ k, k < substs.size → KExpr.Constructed substs[k]!)
+    (hszS : ∀ k, k < substs.size → substs[k]!.size < UInt64.size)
+    (hbig : depth.toNat + body.size + substs.size < UInt64.size)
+    (hreach : ∀ x, KExpr.SimulSubstReach substs body depth x → S x)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x) :
+    (simulSubst body substs depth it).1
+      = KExpr.simulSubstSpec body substs depth ∧
+    (simulSubst body substs depth it).2.WF ∧
+    (∀ x, (simulSubst body substs depth it).2.ExprSupport x → S x) := by
+  by_cases hfast : body.lbr ≤ depth
+  · have hrun : simulSubst body substs depth it = (body, it) := by
+      rw [simulSubst, if_pos hfast]
+      rfl
+    rw [hrun]
+    exact ⟨(KExpr.simulSubstSpec_id hconBody hbig hfast).symm, hwf, hsup⟩
+  · have post := simulSubstCached_spec hcf hconS hszS hconBody
+      (depth := depth) (it := it) (sc := {}) hbig hreach hwf hsup
+      (WalkScratchInv.empty S _)
+    have hrun : simulSubst body substs depth it
+        = ((simulSubstCached body substs depth (it, {})).1,
+           (simulSubstCached body substs depth (it, {})).2.1) := by
+      rw [simulSubst, if_neg hfast]
+      rfl
+    rw [hrun]
+    exact ⟨post.result, post.wf, post.sup⟩
+
+/-! ## The `instantiateRev` walker
+
+`simulSubst`'s shape with a pure in-range arm: the replacement is read
+directly off the array in reverse order (`Var(depth) ↦ fvars[n-1]`, …)
+with no lifting — replacements are fvar-shaped and closed — and no
+interning (array elements are already interned). The reach set
+therefore needs no lift footprint: the in-range result IS the spec
+image, already covered by the spec disjunct. -/
+
+namespace KExpr
+
+/-- Pure reverse instantiation. Anon-mode spec — mirrors
+    `instantiateRevCached`'s rebuild arms exactly. -/
+def instantiateRevSpec (body : KExpr .anon) (fvars : Array (KExpr .anon))
+    (depth : UInt64) : KExpr .anon :=
+  match body with
+  | .var i _ _ =>
+    if i ≥ depth && i < depth + fvars.size.toUInt64 then
+      fvars[(fvars.size.toUInt64 - 1 - (i - depth)).toNat]!
+    else if i ≥ depth + fvars.size.toUInt64 then
+      mkVar (i - fvars.size.toUInt64) (anonName (m := .anon))
+    else body
+  | .app f x _ =>
+    mkApp (instantiateRevSpec f fvars depth)
+      (instantiateRevSpec x fvars depth)
+  | .lam n bi ty inner _ =>
+    mkLam n bi (instantiateRevSpec ty fvars depth)
+      (instantiateRevSpec inner fvars (depth + 1))
+  | .all n bi ty inner _ =>
+    mkAll n bi (instantiateRevSpec ty fvars depth)
+      (instantiateRevSpec inner fvars (depth + 1))
+  | .letE n ty val inner nd _ =>
+    mkLet n (instantiateRevSpec ty fvars depth)
+      (instantiateRevSpec val fvars depth)
+      (instantiateRevSpec inner fvars (depth + 1)) nd
+  | .prj id field val _ =>
+    mkPrj id field (instantiateRevSpec val fvars depth)
+  | body => body
+
+/-- The `lbr ≤ depth` fast path is sound. -/
+theorem instantiateRevSpec_id {body : KExpr .anon}
+    {fvars : Array (KExpr .anon)} {depth : UInt64}
+    (hcon : Constructed body)
+    (hbig : depth.toNat + body.size + fvars.size < UInt64.size)
+    (hlbr : body.lbr ≤ depth) :
+    instantiateRevSpec body fvars depth = body := by
+  induction hcon generalizing depth with
+  | @var idx name md hidx =>
+    rw [mkVar_lbr] at hlbr
+    have hbig' : depth.toNat + 1 + fvars.size < UInt64.size := hbig
+    have hle : idx.toNat + 1 ≤ depth.toNat := by
+      have h := UInt64.le_iff_toNat_le.mp hlbr
+      rwa [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+        Nat.mod_eq_of_lt hidx] at h
+    have hsz : fvars.size.toUInt64.toNat = fvars.size := by
+      rw [toNat_toUInt64]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    have hnn : (depth + fvars.size.toUInt64).toNat
+        = depth.toNat + fvars.size := by
+      rw [UInt64.toNat_add, hsz]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    have hge : ¬ (idx ≥ depth) := fun h => by
+      have := UInt64.le_iff_toNat_le.mp h
+      omega
+    have hb1 : ¬ ((idx ≥ depth && idx < depth + fvars.size.toUInt64)
+        = true) := by
+      rw [decide_eq_false hge, Bool.false_and]
+      exact Bool.false_ne_true
+    have hge2 : ¬ (idx ≥ depth + fvars.size.toUInt64) := fun h => by
+      have := UInt64.le_iff_toNat_le.mp h
+      omega
+    rw [mkVar_shape, instantiateRevSpec, if_neg hb1, if_neg hge2]
+  | fvar => rfl
+  | sort => rfl
+  | const => rfl
+  | @app f a md hf ha ihf iha =>
+    rw [mkApp_lbr] at hlbr
+    rw [mkApp_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    rw [mkApp_shape, instantiateRevSpec,
+      ihf (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      iha (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.2)]
+    exact mkApp_shape f a md
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    rw [mkLam_lbr] at hlbr
+    rw [mkLam_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig)
+    rw [mkLam_shape, instantiateRevSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLam_shape n bi ty body md
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    rw [mkAll_lbr] at hlbr
+    rw [mkAll_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig)
+    rw [mkAll_shape, instantiateRevSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkAll_shape n bi ty body md
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    rw [mkLet_lbr] at hlbr
+    rw [mkLet_shape, size] at hbig
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, toNat_max, Nat.max_le, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig)
+    rw [mkLet_shape, instantiateRevSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1.1),
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr hmax.1.2),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig)
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLet_shape n ty val body nd md
+  | @prj id field val md hval ihval =>
+    rw [mkPrj_lbr] at hlbr
+    rw [mkPrj_shape, size] at hbig
+    rw [mkPrj_shape, instantiateRevSpec,
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hbig) hlbr]
+    exact mkPrj_shape id field val md
+  | nat => rfl
+  | str => rfl
+
+/-- The empty-array fast path is sound: with `n = 0` the range guard is
+    vacuous and the shift-down arm rebuilds `Var(i - 0) = Var(i)` (the
+    anon-mode metadata fields are all `Unit`, so the rebuild is the
+    original node). -/
+theorem instantiateRevSpec_empty {body : KExpr .anon}
+    {fvars : Array (KExpr .anon)} {depth : UInt64}
+    (hcon : Constructed body) (hemp : fvars.size = 0) :
+    instantiateRevSpec body fvars depth = body := by
+  induction hcon generalizing depth with
+  | @var idx name md hidx =>
+    have hsz : fvars.size.toUInt64 = 0 := by rw [hemp]; rfl
+    rw [mkVar_shape, instantiateRevSpec, hsz, UInt64.add_zero]
+    have hb1 : ¬ ((idx ≥ depth && idx < depth) = true) := fun h => by
+      have h12 := Bool.and_eq_true_iff.mp h
+      have hge := UInt64.le_iff_toNat_le.mp (of_decide_eq_true h12.1)
+      have hlt := UInt64.lt_iff_toNat_lt.mp (of_decide_eq_true h12.2)
+      omega
+    rw [if_neg hb1]
+    by_cases hge : idx ≥ depth
+    · rw [if_pos hge, UInt64.sub_zero idx]
+      exact (mkVar_shape idx name md).symm ▸ rfl
+    · rw [if_neg hge]
+  | fvar => rfl
+  | sort => rfl
+  | const => rfl
+  | @app f a md hf ha ihf iha =>
+    rw [mkApp_shape, instantiateRevSpec, ihf (depth := depth),
+      iha (depth := depth)]
+    exact mkApp_shape f a md
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    rw [mkLam_shape, instantiateRevSpec, ihty (depth := depth),
+      ihbody (depth := depth + 1)]
+    exact mkLam_shape n bi ty body md
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    rw [mkAll_shape, instantiateRevSpec, ihty (depth := depth),
+      ihbody (depth := depth + 1)]
+    exact mkAll_shape n bi ty body md
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    rw [mkLet_shape, instantiateRevSpec, ihty (depth := depth),
+      ihval (depth := depth), ihbody (depth := depth + 1)]
+    exact mkLet_shape n ty val body nd md
+  | @prj id field val md hval ihval =>
+    rw [mkPrj_shape, instantiateRevSpec, ihval (depth := depth)]
+    exact mkPrj_shape id field val md
+  | nat => rfl
+  | str => rfl
+
+/-- Everything the `instantiateRevCached` walk can touch. The `var` arm
+    needs no extra footprint: its in-range result is the spec image. -/
+def InstRevReach (fvars : Array (KExpr .anon)) :
+    KExpr .anon → UInt64 → KExpr .anon → Prop
+  | body, d, x =>
+    x = body ∨ x = instantiateRevSpec body fvars d ∨
+      match body with
+      | .app f a _ =>
+        InstRevReach fvars f d x ∨ InstRevReach fvars a d x
+      | .lam _ _ ty inner _ =>
+        InstRevReach fvars ty d x ∨ InstRevReach fvars inner (d + 1) x
+      | .all _ _ ty inner _ =>
+        InstRevReach fvars ty d x ∨ InstRevReach fvars inner (d + 1) x
+      | .letE _ ty val inner _ _ =>
+        InstRevReach fvars ty d x ∨ InstRevReach fvars val d x ∨
+          InstRevReach fvars inner (d + 1) x
+      | .prj _ _ val _ => InstRevReach fvars val d x
+      | _ => False
+
+theorem InstRevReach.self (fvars : Array (KExpr .anon))
+    (body : KExpr .anon) (d : UInt64) :
+    InstRevReach fvars body d body := by
+  cases body <;> exact .inl rfl
+
+theorem InstRevReach.spec (fvars : Array (KExpr .anon))
+    (body : KExpr .anon) (d : UInt64) :
+    InstRevReach fvars body d (instantiateRevSpec body fvars d) := by
+  cases body <;> exact .inr (.inl rfl)
+
+end KExpr
+
+/-- Fast path (`lbr ≤ depth`). -/
+private theorem instRevPost_fast {S : KExpr .anon → Prop}
+    {body : KExpr .anon} {fvars : Array (KExpr .anon)} {depth : UInt64}
+    {it : InternTable .anon} {sc : Scratch .anon}
+    (hcon : KExpr.Constructed body)
+    (hbig : depth.toNat + body.size + fvars.size < UInt64.size)
+    (hfast : body.lbr ≤ depth)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·) sc) :
+    WalkPost S (KExpr.instantiateRevSpec · fvars ·) depth body
+      (instantiateRevCached body fvars depth (it, sc)) := by
+  have hrun : instantiateRevCached body fvars depth (it, sc)
+      = (body, (it, sc)) := by
+    rw [instantiateRevCached, if_pos hfast]
+    rfl
+  rw [hrun]
+  exact ⟨(KExpr.instantiateRevSpec_id hcon hbig hfast).symm, hwf, hsup, hsc⟩
+
+/-- Scratch hit. -/
+private theorem instRevPost_hit {S : KExpr .anon → Prop}
+    {body r : KExpr .anon} {fvars : Array (KExpr .anon)} {depth : UInt64}
+    {it : InternTable .anon} {sc : Scratch .anon}
+    (hcf : KExpr.CollisionFree S) (hSe : S body)
+    (hfast : ¬ body.lbr ≤ depth)
+    (hget : sc[(body.addr, depth)]? = some r)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·) sc) :
+    WalkPost S (KExpr.instantiateRevSpec · fvars ·) depth body
+      (instantiateRevCached body fvars depth (it, sc)) := by
+  have hrun : instantiateRevCached body fvars depth (it, sc)
+      = (r, (it, sc)) := by
+    rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+    simp only []
+    rw [run_scratchGet_bind, hget]
+    rfl
+  rw [hrun]
+  refine ⟨?_, hwf, hsup, hsc⟩
+  obtain ⟨w, hwS, hwaddr, hrspec⟩ := hsc _ _ _ hget
+  have hwe : w = body := by
+    have h := hcf hwS hSe hwaddr
+    rwa [KExpr.eraseMeta_anon, KExpr.eraseMeta_anon] at h
+  show r = KExpr.instantiateRevSpec body fvars depth
+  rw [hrspec, hwe]
+
+/-- **WalkM memo-soundness for `instantiateRev`**. -/
+theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
+    {fvars : Array (KExpr .anon)}
+    (hcf : KExpr.CollisionFree S)
+    {body : KExpr .anon} (hcon : KExpr.Constructed body) :
+    ∀ {depth : UInt64} {it : InternTable .anon} {sc : Scratch .anon},
+      depth.toNat + body.size + fvars.size < UInt64.size →
+      (∀ x, KExpr.InstRevReach fvars body depth x → S x) →
+      it.WF → (∀ x, it.ExprSupport x → S x) →
+      WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·) sc →
+      WalkPost S (KExpr.instantiateRevSpec · fvars ·) depth body
+        (instantiateRevCached body fvars depth (it, sc)) := by
+  induction hcon with
+  | @var idx name md hidx =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkVar_shape] at hreach ⊢
+    by_cases hfast :
+        (KExpr.var idx name (KExpr.mkVar idx name md).info).lbr ≤ depth
+    · exact instRevPost_fast (.var hidx) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.var idx name
+          (KExpr.mkVar idx name md).info).addr, depth)]? with
+      | some r =>
+        exact instRevPost_hit hcf (hreach _ (KExpr.InstRevReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        have hbig' : depth.toNat + 1 + fvars.size < UInt64.size := hbig
+        have hsz : fvars.size.toUInt64.toNat = fvars.size := by
+          rw [toNat_toUInt64]
+          exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+        have hnn : (depth + fvars.size.toUInt64).toNat
+            = depth.toNat + fvars.size := by
+          rw [UInt64.toNat_add, hsz]
+          exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+        have hfast' : ¬ (idx + 1 ≤ depth) := hfast
+        have hgei : depth.toNat ≤ idx.toNat := by
+          have h1 : ¬ (idx.toNat + 1 ≤ depth.toNat) := fun h =>
+            hfast' (UInt64.le_iff_toNat_le.mpr (by
+              rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+                Nat.mod_eq_of_lt hidx]
+              exact h))
+          omega
+        by_cases hin :
+            (idx ≥ depth && idx < depth + fvars.size.toUInt64) = true
+        · -- In range: pure array read, memoize, early-return.
+          have hrun : instantiateRevCached
+              (.var idx name (KExpr.mkVar idx name md).info) fvars depth
+              (it, sc)
+              = (fvars[(fvars.size.toUInt64 - 1 - (idx - depth)).toNat]!,
+                 (it, sc.insert ((KExpr.var idx name
+                     (KExpr.mkVar idx name md).info).addr, depth)
+                   fvars[(fvars.size.toUInt64 - 1
+                     - (idx - depth)).toNat]!)) := by
+            rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+            try simp only []
+            rw [run_scratchGet_bind, hget]
+            try simp (config := { proj := false }) only []
+            try rw [run_pure_bind]
+            try simp only []
+            rw [if_pos hin]
+            rfl
+          rw [hrun]
+          have hcand :
+              fvars[(fvars.size.toUInt64 - 1 - (idx - depth)).toNat]!
+              = KExpr.instantiateRevSpec
+                  (.var idx name (KExpr.mkVar idx name md).info)
+                  fvars depth := by
+            rw [KExpr.instantiateRevSpec, if_pos hin]
+          exact ⟨hcand, hwf, hsup,
+            hsc.insert (hreach _ (KExpr.InstRevReach.self ..)) hcand⟩
+        · by_cases hge2 : idx ≥ depth + fvars.size.toUInt64
+          · -- Above the window: rebuild with the shifted-down index.
+            have hrun : instantiateRevCached
+                (.var idx name (KExpr.mkVar idx name md).info) fvars
+                depth (it, sc)
+                = ((it.internExpr (KExpr.mkVar
+                      (idx - fvars.size.toUInt64)
+                      (anonName (m := .anon)))).1,
+                   ((it.internExpr (KExpr.mkVar
+                       (idx - fvars.size.toUInt64)
+                       (anonName (m := .anon)))).2,
+                    sc.insert ((KExpr.var idx name
+                        (KExpr.mkVar idx name md).info).addr, depth)
+                      (it.internExpr (KExpr.mkVar
+                        (idx - fvars.size.toUInt64)
+                        (anonName (m := .anon)))).1)) := by
+              rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+              try simp only []
+              rw [run_scratchGet_bind, hget]
+              try simp (config := { proj := false }) only []
+              try rw [run_pure_bind]
+              try simp only []
+              rw [if_neg hin, if_pos hge2]
+              rfl
+            rw [hrun]
+            have hcand : KExpr.mkVar (idx - fvars.size.toUInt64)
+                (anonName (m := .anon))
+                = KExpr.instantiateRevSpec
+                    (.var idx name (KExpr.mkVar idx name md).info)
+                    fvars depth := by
+              rw [KExpr.instantiateRevSpec, if_neg hin, if_pos hge2]
+            exact walkPost_jp hcf hwf hsup hsc
+              (hreach _ (KExpr.InstRevReach.self ..))
+              (hreach _ (.inr (.inl hcand)))
+              hcand
+          · -- Between the guards: impossible once the fast path declined.
+            exfalso
+            have hd : decide (idx ≥ depth) = true :=
+              decide_eq_true (UInt64.le_iff_toNat_le.mpr hgei)
+            have hnlt : ¬ (idx < depth + fvars.size.toUInt64) := fun h =>
+              hin (by rw [hd, decide_eq_true h]; rfl)
+            have hgen : depth.toNat + fvars.size ≤ idx.toNat := by
+              have h1 : ¬ (idx.toNat
+                  < (depth + fvars.size.toUInt64).toNat) := fun h =>
+                hnlt (UInt64.lt_iff_toNat_lt.mpr h)
+              omega
+            exact hge2 (UInt64.le_iff_toNat_le.mpr (by rw [hnn]; omega))
+  | @fvar id name md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact instRevPost_fast .fvar hbig UInt64.zero_le hwf hsup hsc
+  | @sort u md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact instRevPost_fast .sort hbig UInt64.zero_le hwf hsup hsc
+  | @const id us md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact instRevPost_fast .const hbig UInt64.zero_le hwf hsup hsc
+  | @app f a md hf ha ihf iha =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkApp_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (f.size + a.size + 1) + fvars.size < UInt64.size :=
+      hbig
+    by_cases hfast :
+        (KExpr.app f a (KExpr.mkApp f a md).info).lbr ≤ depth
+    · exact instRevPost_fast (.app hf ha) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.app f a
+          (KExpr.mkApp f a md).info).addr, depth)]? with
+      | some r =>
+        exact instRevPost_hit hcf (hreach _ (KExpr.InstRevReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : instantiateRevCached f fvars depth (it, sc)
+          with ⟨rf, it1, sc1⟩
+        have post1 := ihf (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : instantiateRevCached a fvars depth (it1, sc1)
+          with ⟨ra, it2, sc2⟩
+        have post2 := iha (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rf = KExpr.instantiateRevSpec f fvars depth :=
+          post1.result
+        have hres2 : ra = KExpr.instantiateRevSpec a fvars depth :=
+          post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·)
+            sc2 := post2.scr
+        have hrun : instantiateRevCached
+            (.app f a (KExpr.mkApp f a md).info) fvars depth (it, sc)
+            = ((it2.internExpr (KExpr.mkApp rf ra)).1,
+               ((it2.internExpr (KExpr.mkApp rf ra)).2,
+                sc2.insert ((KExpr.app f a
+                    (KExpr.mkApp f a md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
+          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkApp rf ra
+            = KExpr.instantiateRevSpec
+                (.app f a (KExpr.mkApp f a md).info) fvars depth := by
+          rw [KExpr.instantiateRevSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.InstRevReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @lam n bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkLam_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (ty.size + body.size + 1) + fvars.size
+          < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    by_cases hfast :
+        (KExpr.lam n bi ty body
+          (KExpr.mkLam n bi ty body md).info).lbr ≤ depth
+    · exact instRevPost_fast (.lam hty hbody) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.lam n bi ty body
+          (KExpr.mkLam n bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact instRevPost_hit hcf (hreach _ (KExpr.InstRevReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : instantiateRevCached ty fvars depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : instantiateRevCached body fvars (depth + 1)
+          (it1, sc1) with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.instantiateRevSpec ty fvars depth :=
+          post1.result
+        have hres2 : rbody = KExpr.instantiateRevSpec body fvars
+            (depth + 1) := post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·)
+            sc2 := post2.scr
+        have hrun : instantiateRevCached
+            (.lam n bi ty body (KExpr.mkLam n bi ty body md).info)
+            fvars depth (it, sc)
+            = ((it2.internExpr (KExpr.mkLam n bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkLam n bi rty rbody)).2,
+                sc2.insert ((KExpr.lam n bi ty body
+                    (KExpr.mkLam n bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkLam n bi rty rbody)).1)) := by
+          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLam n bi rty rbody
+            = KExpr.instantiateRevSpec
+                (.lam n bi ty body (KExpr.mkLam n bi ty body md).info)
+                fvars depth := by
+          rw [KExpr.instantiateRevSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.InstRevReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @all n bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkAll_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (ty.size + body.size + 1) + fvars.size
+          < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    by_cases hfast :
+        (KExpr.all n bi ty body
+          (KExpr.mkAll n bi ty body md).info).lbr ≤ depth
+    · exact instRevPost_fast (.all hty hbody) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.all n bi ty body
+          (KExpr.mkAll n bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact instRevPost_hit hcf (hreach _ (KExpr.InstRevReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : instantiateRevCached ty fvars depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : instantiateRevCached body fvars (depth + 1)
+          (it1, sc1) with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.instantiateRevSpec ty fvars depth :=
+          post1.result
+        have hres2 : rbody = KExpr.instantiateRevSpec body fvars
+            (depth + 1) := post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·)
+            sc2 := post2.scr
+        have hrun : instantiateRevCached
+            (.all n bi ty body (KExpr.mkAll n bi ty body md).info)
+            fvars depth (it, sc)
+            = ((it2.internExpr (KExpr.mkAll n bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkAll n bi rty rbody)).2,
+                sc2.insert ((KExpr.all n bi ty body
+                    (KExpr.mkAll n bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkAll n bi rty rbody)).1)) := by
+          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkAll n bi rty rbody
+            = KExpr.instantiateRevSpec
+                (.all n bi ty body (KExpr.mkAll n bi ty body md).info)
+                fvars depth := by
+          rw [KExpr.instantiateRevSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.InstRevReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @letE n ty val body nd md hty hval hbody ihty ihval ihbody =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkLet_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (ty.size + val.size + body.size + 1) + fvars.size
+          < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    by_cases hfast :
+        (KExpr.letE n ty val body nd
+          (KExpr.mkLet n ty val body nd md).info).lbr ≤ depth
+    · exact instRevPost_fast (.letE hty hval hbody) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.letE n ty val body nd
+          (KExpr.mkLet n ty val body nd md).info).addr, depth)]? with
+      | some r =>
+        exact instRevPost_hit hcf (hreach _ (KExpr.InstRevReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : instantiateRevCached ty fvars depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : instantiateRevCached val fvars depth (it1, sc1)
+          with ⟨rval, it2, sc2⟩
+        have post2 := ihval (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inl hx)))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        rcases hrun3 : instantiateRevCached body fvars (depth + 1)
+          (it2, sc2) with ⟨rbody, it3, sc3⟩
+        have post3 := ihbody (depth := depth + 1) (it := it2) (sc := sc2)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inr hx)))))
+          post2.wf post2.sup post2.scr
+        rw [hrun3] at post3
+        have hres1 : rty = KExpr.instantiateRevSpec ty fvars depth :=
+          post1.result
+        have hres2 : rval = KExpr.instantiateRevSpec val fvars depth :=
+          post2.result
+        have hres3 : rbody = KExpr.instantiateRevSpec body fvars
+            (depth + 1) := post3.result
+        have hwf3 : it3.WF := post3.wf
+        have hsup3 : ∀ x, it3.ExprSupport x → S x := post3.sup
+        have hsc3 : WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·)
+            sc3 := post3.scr
+        have hrun : instantiateRevCached
+            (.letE n ty val body nd
+              (KExpr.mkLet n ty val body nd md).info) fvars depth (it, sc)
+            = ((it3.internExpr (KExpr.mkLet n rty rval rbody nd)).1,
+               ((it3.internExpr (KExpr.mkLet n rty rval rbody nd)).2,
+                sc3.insert ((KExpr.letE n ty val body nd
+                    (KExpr.mkLet n ty val body nd md).info).addr, depth)
+                  (it3.internExpr
+                    (KExpr.mkLet n rty rval rbody nd)).1)) := by
+          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun3]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLet n rty rval rbody nd
+            = KExpr.instantiateRevSpec
+                (.letE n ty val body nd
+                  (KExpr.mkLet n ty val body nd md).info)
+                fvars depth := by
+          rw [KExpr.instantiateRevSpec, hres1, hres2, hres3]
+        exact walkPost_jp hcf hwf3 hsup3 hsc3
+          (hreach _ (KExpr.InstRevReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @prj id field val md hval ihval =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    rw [KExpr.mkPrj_shape] at hreach ⊢
+    have hbig' :
+        depth.toNat + (val.size + 1) + fvars.size < UInt64.size := hbig
+    by_cases hfast :
+        (KExpr.prj id field val
+          (KExpr.mkPrj id field val md).info).lbr ≤ depth
+    · exact instRevPost_fast (.prj hval) hbig hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.prj id field val
+          (KExpr.mkPrj id field val md).info).addr, depth)]? with
+      | some r =>
+        exact instRevPost_hit hcf (hreach _ (KExpr.InstRevReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : instantiateRevCached val fvars depth (it, sc)
+          with ⟨rval, it1, sc1⟩
+        have post1 := ihval (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hbig')
+          (fun x hx => hreach x (.inr (.inr hx)))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        have hres1 : rval = KExpr.instantiateRevSpec val fvars depth :=
+          post1.result
+        have hwf1 : it1.WF := post1.wf
+        have hsup1 : ∀ x, it1.ExprSupport x → S x := post1.sup
+        have hsc1 : WalkScratchInv S (KExpr.instantiateRevSpec · fvars ·)
+            sc1 := post1.scr
+        have hrun : instantiateRevCached
+            (.prj id field val (KExpr.mkPrj id field val md).info)
+            fvars depth (it, sc)
+            = ((it1.internExpr (KExpr.mkPrj id field rval)).1,
+               ((it1.internExpr (KExpr.mkPrj id field rval)).2,
+                sc1.insert ((KExpr.prj id field val
+                    (KExpr.mkPrj id field val md).info).addr, depth)
+                  (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
+          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkPrj id field rval
+            = KExpr.instantiateRevSpec
+                (.prj id field val (KExpr.mkPrj id field val md).info)
+                fvars depth := by
+          rw [KExpr.instantiateRevSpec, hres1]
+        exact walkPost_jp hcf hwf1 hsup1 hsc1
+          (hreach _ (KExpr.InstRevReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @nat v blob md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact instRevPost_fast .nat hbig UInt64.zero_le hwf hsup hsc
+  | @str v blob md =>
+    intro depth it sc hbig hreach hwf hsup hsc
+    exact instRevPost_fast .str hbig UInt64.zero_le hwf hsup hsc
+
+/-- **`instantiateRev` is the pure spec** (InternM API level, depth 0).
+    The `fvars.isEmpty` fast path is covered by
+    `instantiateRevSpec_empty`, the `lbr == 0` one by the `_id` lemma. -/
+theorem instantiateRev_spec {S : KExpr .anon → Prop} {body : KExpr .anon}
+    {fvars : Array (KExpr .anon)} {it : InternTable .anon}
+    (hcf : KExpr.CollisionFree S)
+    (hconBody : KExpr.Constructed body)
+    (hbig : body.size + fvars.size < UInt64.size)
+    (hreach : ∀ x, KExpr.InstRevReach fvars body 0 x → S x)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x) :
+    (instantiateRev body fvars it).1
+      = KExpr.instantiateRevSpec body fvars 0 ∧
+    (instantiateRev body fvars it).2.WF ∧
+    (∀ x, (instantiateRev body fvars it).2.ExprSupport x → S x) := by
+  by_cases hfast : (fvars.isEmpty || body.lbr == 0) = true
+  · have hrun : instantiateRev body fvars it = (body, it) := by
+      rw [instantiateRev, if_pos hfast]
+      rfl
+    rw [hrun]
+    refine ⟨?_, hwf, hsup⟩
+    show body = KExpr.instantiateRevSpec body fvars 0
+    rcases Bool.or_eq_true_iff.mp hfast with hemp | h0
+    · exact (KExpr.instantiateRevSpec_empty hconBody
+        (eq_of_beq (hemp : (fvars.size == 0) = true))).symm
+    · exact (KExpr.instantiateRevSpec_id hconBody
+        (by show 0 + body.size + fvars.size < UInt64.size; omega)
+        (by rw [eq_of_beq h0]; exact UInt64.zero_le)).symm
+  · have post := instantiateRevCached_spec hcf hconBody
+      (depth := 0) (it := it) (sc := {})
+      (by show 0 + body.size + fvars.size < UInt64.size; omega)
+      hreach hwf hsup (WalkScratchInv.empty S _)
+    have hrun : instantiateRev body fvars it
+        = ((instantiateRevCached body fvars 0 (it, {})).1,
+           (instantiateRevCached body fvars 0 (it, {})).2.1) := by
+      rw [instantiateRev, if_neg hfast]
+      rfl
+    rw [hrun]
+    exact ⟨post.result, post.wf, post.sup⟩
+
+/-! ## The `abstractFVars` walker
+
+The inverse of `instantiateRev`: listed fvars become bound variables
+(`fvar(id) ↦ Var(depth + pos[id])`), other loose bvars shift up by `n`.
+Two shape novelties: the fast guard also requires `!hasFVars` (so the
+`_id` lemma carries a `hasFVars = false` coherence hypothesis, pushed
+through children by the `mk*_hasFVars` equations), and the `fvar` arm
+interns inside the arm with an early return — which lands on exactly
+the `walkPost_jp` tuple.
+
+The theorem is stated against an arbitrary position map `pos`; the
+API-level lemma characterizing the `pos`-building fold in
+`abstractFVars` is deferred until a consumer (M5's whnf layer) fixes
+the shape it needs. -/
+
+private theorem bool_or_eq_false {a b : Bool} (h : (a || b) = false) :
+    a = false ∧ b = false := by
+  cases a with
+  | false => exact ⟨rfl, h⟩
+  | true => exact Bool.noConfusion h
+
+namespace KExpr
+
+@[simp] theorem mkVar_hasFVars (idx : UInt64) (name : m.F Name) (md) :
+    (mkVar idx name md).hasFVars = false := rfl
+
+@[simp] theorem mkFVar_hasFVars (id : FVarId) (name : m.F Name) (md) :
+    (mkFVar id name md).hasFVars = true := rfl
+
+@[simp] theorem mkSort_hasFVars (u : KUniv m) (md) :
+    (mkSort u md).hasFVars = false := rfl
+
+@[simp] theorem mkConst_hasFVars (id : KId m) (us : Array (KUniv m)) (md) :
+    (mkConst id us md).hasFVars = false := rfl
+
+@[simp] theorem mkApp_hasFVars (f a : KExpr m) (md) :
+    (mkApp f a md).hasFVars = (f.hasFVars || a.hasFVars) := rfl
+
+@[simp] theorem mkLam_hasFVars (n : m.F Name) (bi : m.F Lean.BinderInfo)
+    (ty body : KExpr m) (md) :
+    (mkLam n bi ty body md).hasFVars
+      = (ty.hasFVars || body.hasFVars) := rfl
+
+@[simp] theorem mkAll_hasFVars (n : m.F Name) (bi : m.F Lean.BinderInfo)
+    (ty body : KExpr m) (md) :
+    (mkAll n bi ty body md).hasFVars
+      = (ty.hasFVars || body.hasFVars) := rfl
+
+@[simp] theorem mkLet_hasFVars (n : m.F Name) (ty val body : KExpr m)
+    (nd : Bool) (md) :
+    (mkLet n ty val body nd md).hasFVars
+      = (ty.hasFVars || val.hasFVars || body.hasFVars) := rfl
+
+@[simp] theorem mkPrj_hasFVars (id : KId m) (field : UInt64)
+    (val : KExpr m) (md) :
+    (mkPrj id field val md).hasFVars = val.hasFVars := rfl
+
+@[simp] theorem mkNat_hasFVars (v : Nat) (blob : Address) (md) :
+    (mkNat (m := m) v blob md).hasFVars = false := rfl
+
+@[simp] theorem mkStr_hasFVars (v : String) (blob : Address) (md) :
+    (mkStr (m := m) v blob md).hasFVars = false := rfl
+
+/-- Pure fvar abstraction. Anon-mode spec — mirrors
+    `abstractFVarsCached`'s rebuild arms exactly. -/
+def abstractFVarsSpec (body : KExpr .anon)
+    (pos : Std.HashMap FVarId UInt64) (n depth : UInt64) : KExpr .anon :=
+  match body with
+  | .fvar id _ _ =>
+    match pos[id]? with
+    | some p => mkVar (depth + p) (anonName (m := .anon))
+    | none => body
+  | .var i name _ => if i ≥ depth then mkVar (i + n) name else body
+  | .app f x _ =>
+    mkApp (abstractFVarsSpec f pos n depth) (abstractFVarsSpec x pos n depth)
+  | .lam nm bi ty inner _ =>
+    mkLam nm bi (abstractFVarsSpec ty pos n depth)
+      (abstractFVarsSpec inner pos n (depth + 1))
+  | .all nm bi ty inner _ =>
+    mkAll nm bi (abstractFVarsSpec ty pos n depth)
+      (abstractFVarsSpec inner pos n (depth + 1))
+  | .letE nm ty val inner nd _ =>
+    mkLet nm (abstractFVarsSpec ty pos n depth)
+      (abstractFVarsSpec val pos n depth)
+      (abstractFVarsSpec inner pos n (depth + 1)) nd
+  | .prj id field val _ => mkPrj id field (abstractFVarsSpec val pos n depth)
+  | body => body
+
+/-- The `!hasFVars && lbr ≤ depth` fast path is sound: no fvars to
+    abstract and no loose index to shift. -/
+theorem abstractFVarsSpec_id {body : KExpr .anon}
+    {pos : Std.HashMap FVarId UInt64} {n depth : UInt64}
+    (hcon : Constructed body)
+    (hcut : depth.toNat + body.size < UInt64.size)
+    (hnofv : body.hasFVars = false)
+    (hlbr : body.lbr ≤ depth) :
+    abstractFVarsSpec body pos n depth = body := by
+  induction hcon generalizing depth with
+  | @var idx name md hidx =>
+    rw [mkVar_lbr] at hlbr
+    have hle : idx.toNat + 1 ≤ depth.toNat := by
+      have h := UInt64.le_iff_toNat_le.mp hlbr
+      rwa [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+        Nat.mod_eq_of_lt hidx] at h
+    have hngt : ¬ (idx ≥ depth) := fun h => by
+      have := UInt64.le_iff_toNat_le.mp h
+      omega
+    rw [mkVar_shape, abstractFVarsSpec, if_neg hngt]
+  | @fvar id name md =>
+    exact Bool.noConfusion (hnofv : (true : Bool) = false)
+  | sort => rfl
+  | const => rfl
+  | @app f a md hf ha ihf iha =>
+    rw [mkApp_lbr] at hlbr
+    rw [mkApp_hasFVars] at hnofv
+    rw [mkApp_shape, size] at hcut
+    have hor := bool_or_eq_false hnofv
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    rw [mkApp_shape, abstractFVarsSpec,
+      ihf (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hor.1
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      iha (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hor.2
+        (UInt64.le_iff_toNat_le.mpr hmax.2)]
+    exact mkApp_shape f a md
+  | @lam nm bi ty body md hty hbody ihty ihbody =>
+    rw [mkLam_lbr] at hlbr
+    rw [mkLam_hasFVars] at hnofv
+    rw [mkLam_shape, size] at hcut
+    have hor := bool_or_eq_false hnofv
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+    rw [mkLam_shape, abstractFVarsSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hor.1
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut) hor.2
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLam_shape nm bi ty body md
+  | @all nm bi ty body md hty hbody ihty ihbody =>
+    rw [mkAll_lbr] at hlbr
+    rw [mkAll_hasFVars] at hnofv
+    rw [mkAll_shape, size] at hcut
+    have hor := bool_or_eq_false hnofv
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+    rw [mkAll_shape, abstractFVarsSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hor.1
+        (UInt64.le_iff_toNat_le.mpr hmax.1),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut) hor.2
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkAll_shape nm bi ty body md
+  | @letE nm ty val body nd md hty hval hbody ihty ihval ihbody =>
+    rw [mkLet_lbr] at hlbr
+    rw [mkLet_hasFVars] at hnofv
+    rw [mkLet_shape, size] at hcut
+    have hor1 := bool_or_eq_false hnofv
+    have hor2 := bool_or_eq_false hor1.1
+    have hmax := UInt64.le_iff_toNat_le.mp hlbr
+    rw [toNat_max, toNat_max, Nat.max_le, Nat.max_le] at hmax
+    have hsat := toNat_le_sat1_add_one body.lbr
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+    rw [mkLet_shape, abstractFVarsSpec,
+      ihty (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hor2.1
+        (UInt64.le_iff_toNat_le.mpr hmax.1.1),
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hor2.2
+        (UInt64.le_iff_toNat_le.mpr hmax.1.2),
+      ihbody (depth := depth + 1)
+        (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut) hor1.2
+        (UInt64.le_iff_toNat_le.mpr (by rw [hc1]; omega))]
+    exact mkLet_shape nm ty val body nd md
+  | @prj id field val md hval ihval =>
+    rw [mkPrj_lbr] at hlbr
+    rw [mkPrj_hasFVars] at hnofv
+    rw [mkPrj_shape, size] at hcut
+    rw [mkPrj_shape, abstractFVarsSpec,
+      ihval (depth := depth) (Nat.lt_of_le_of_lt (by omega) hcut) hnofv
+        hlbr]
+    exact mkPrj_shape id field val md
+  | nat => rfl
+  | str => rfl
+
+/-- Everything the `abstractFVarsCached` walk can touch. Both leaf
+    rewrites (`fvar` hits and shifted `var`s) are the spec image, so no
+    extra footprint is needed. -/
+def AbstractReach (pos : Std.HashMap FVarId UInt64) (n : UInt64) :
+    KExpr .anon → UInt64 → KExpr .anon → Prop
+  | body, d, x =>
+    x = body ∨ x = abstractFVarsSpec body pos n d ∨
+      match body with
+      | .app f a _ =>
+        AbstractReach pos n f d x ∨ AbstractReach pos n a d x
+      | .lam _ _ ty inner _ =>
+        AbstractReach pos n ty d x ∨ AbstractReach pos n inner (d + 1) x
+      | .all _ _ ty inner _ =>
+        AbstractReach pos n ty d x ∨ AbstractReach pos n inner (d + 1) x
+      | .letE _ ty val inner _ _ =>
+        AbstractReach pos n ty d x ∨ AbstractReach pos n val d x ∨
+          AbstractReach pos n inner (d + 1) x
+      | .prj _ _ val _ => AbstractReach pos n val d x
+      | _ => False
+
+theorem AbstractReach.self (pos : Std.HashMap FVarId UInt64) (n : UInt64)
+    (body : KExpr .anon) (d : UInt64) :
+    AbstractReach pos n body d body := by
+  cases body <;> exact .inl rfl
+
+theorem AbstractReach.spec (pos : Std.HashMap FVarId UInt64) (n : UInt64)
+    (body : KExpr .anon) (d : UInt64) :
+    AbstractReach pos n body d (abstractFVarsSpec body pos n d) := by
+  cases body <;> exact .inr (.inl rfl)
+
+end KExpr
+
+/-- Fast path (`!hasFVars && lbr ≤ depth`). -/
+private theorem absPost_fast {S : KExpr .anon → Prop} {body : KExpr .anon}
+    {pos : Std.HashMap FVarId UInt64} {n depth : UInt64}
+    {it : InternTable .anon} {sc : Scratch .anon}
+    (hcon : KExpr.Constructed body)
+    (hcut : depth.toNat + body.size < UInt64.size)
+    (hfast : (!body.hasFVars && decide (body.lbr ≤ depth)) = true)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·) sc) :
+    WalkPost S (KExpr.abstractFVarsSpec · pos n ·) depth body
+      (abstractFVarsCached body pos n depth (it, sc)) := by
+  have hrun : abstractFVarsCached body pos n depth (it, sc)
+      = (body, (it, sc)) := by
+    rw [abstractFVarsCached, if_pos hfast]
+    rfl
+  rw [hrun]
+  have h12 := Bool.and_eq_true_iff.mp hfast
+  have hnofv : body.hasFVars = false := by
+    cases hb : body.hasFVars with
+    | false => rfl
+    | true =>
+      rw [hb] at h12
+      exact Bool.noConfusion h12.1
+  exact ⟨(KExpr.abstractFVarsSpec_id hcon hcut hnofv
+    (of_decide_eq_true h12.2)).symm, hwf, hsup, hsc⟩
+
+/-- Scratch hit. -/
+private theorem absPost_hit {S : KExpr .anon → Prop} {body r : KExpr .anon}
+    {pos : Std.HashMap FVarId UInt64} {n depth : UInt64}
+    {it : InternTable .anon} {sc : Scratch .anon}
+    (hcf : KExpr.CollisionFree S) (hSe : S body)
+    (hfast : ¬ (!body.hasFVars && decide (body.lbr ≤ depth)) = true)
+    (hget : sc[(body.addr, depth)]? = some r)
+    (hwf : it.WF) (hsup : ∀ x, it.ExprSupport x → S x)
+    (hsc : WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·) sc) :
+    WalkPost S (KExpr.abstractFVarsSpec · pos n ·) depth body
+      (abstractFVarsCached body pos n depth (it, sc)) := by
+  have hrun : abstractFVarsCached body pos n depth (it, sc)
+      = (r, (it, sc)) := by
+    rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+    simp only []
+    rw [run_scratchGet_bind, hget]
+    rfl
+  rw [hrun]
+  refine ⟨?_, hwf, hsup, hsc⟩
+  obtain ⟨w, hwS, hwaddr, hrspec⟩ := hsc _ _ _ hget
+  have hwe : w = body := by
+    have h := hcf hwS hSe hwaddr
+    rwa [KExpr.eraseMeta_anon, KExpr.eraseMeta_anon] at h
+  show r = KExpr.abstractFVarsSpec body pos n depth
+  rw [hrspec, hwe]
+
+/-- **WalkM memo-soundness for `abstractFVars`** (walker level, against
+    an arbitrary position map). -/
+theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
+    {pos : Std.HashMap FVarId UInt64} {n : UInt64}
+    (hcf : KExpr.CollisionFree S)
+    {body : KExpr .anon} (hcon : KExpr.Constructed body) :
+    ∀ {depth : UInt64} {it : InternTable .anon} {sc : Scratch .anon},
+      depth.toNat + body.size < UInt64.size →
+      (∀ x, KExpr.AbstractReach pos n body depth x → S x) →
+      it.WF → (∀ x, it.ExprSupport x → S x) →
+      WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·) sc →
+      WalkPost S (KExpr.abstractFVarsSpec · pos n ·) depth body
+        (abstractFVarsCached body pos n depth (it, sc)) := by
+  induction hcon with
+  | @var idx name md hidx =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkVar_shape] at hreach ⊢
+    by_cases hfast :
+        (!(KExpr.var idx name (KExpr.mkVar idx name md).info).hasFVars
+          && decide ((KExpr.var idx name
+            (KExpr.mkVar idx name md).info).lbr ≤ depth)) = true
+    · exact absPost_fast (.var hidx) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.var idx name
+          (KExpr.mkVar idx name md).info).addr, depth)]? with
+      | some r =>
+        exact absPost_hit hcf (hreach _ (KExpr.AbstractReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        by_cases hge : idx ≥ depth
+        · -- Loose index: rebuild shifted up by `n`.
+          have hrun : abstractFVarsCached
+              (.var idx name (KExpr.mkVar idx name md).info) pos n depth
+              (it, sc)
+              = ((it.internExpr (KExpr.mkVar (idx + n) name)).1,
+                 ((it.internExpr (KExpr.mkVar (idx + n) name)).2,
+                  sc.insert ((KExpr.var idx name
+                      (KExpr.mkVar idx name md).info).addr, depth)
+                    (it.internExpr (KExpr.mkVar (idx + n) name)).1)) := by
+            rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+            try simp only []
+            rw [run_scratchGet_bind, hget]
+            try simp (config := { proj := false }) only []
+            try rw [run_pure_bind]
+            try simp only []
+            rw [if_pos hge]
+            rfl
+          rw [hrun]
+          have hcand : KExpr.mkVar (idx + n) name
+              = KExpr.abstractFVarsSpec
+                  (.var idx name (KExpr.mkVar idx name md).info)
+                  pos n depth := by
+            rw [KExpr.abstractFVarsSpec, if_pos hge]
+          exact walkPost_jp hcf hwf hsup hsc
+            (hreach _ (KExpr.AbstractReach.self ..))
+            (hreach _ (.inr (.inl hcand)))
+            hcand
+        · -- Below `depth`: unreachable once the fast path declined
+          -- (a `var` node has no fvars, so the guard was just `lbr`).
+          exfalso
+          have hfast' : ¬ (decide (idx + 1 ≤ depth) = true) := hfast
+          have hnle : ¬ (idx + 1 ≤ depth) := fun h =>
+            hfast' (decide_eq_true h)
+          have hgei : depth.toNat ≤ idx.toNat := by
+            have h1 : ¬ (idx.toNat + 1 ≤ depth.toNat) := fun h =>
+              hnle (UInt64.le_iff_toNat_le.mpr (by
+                rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+                  Nat.mod_eq_of_lt hidx]
+                exact h))
+            omega
+          exact hge (UInt64.le_iff_toNat_le.mpr hgei)
+  | @fvar id name md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkFVar_shape] at hreach ⊢
+    by_cases hfast :
+        (!(KExpr.fvar id name (KExpr.mkFVar id name md).info).hasFVars
+          && decide ((KExpr.fvar id name
+            (KExpr.mkFVar id name md).info).lbr ≤ depth)) = true
+    · exact absurd (hfast : (false : Bool) = true) Bool.false_ne_true
+    · cases hget : sc[((KExpr.fvar id name
+          (KExpr.mkFVar id name md).info).addr, depth)]? with
+      | some r =>
+        exact absPost_hit hcf (hreach _ (KExpr.AbstractReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        cases hpos : pos[id]? with
+        | some p =>
+          -- Listed fvar: intern the new bound variable, memoize it.
+          have hrun : abstractFVarsCached
+              (.fvar id name (KExpr.mkFVar id name md).info) pos n depth
+              (it, sc)
+              = ((it.internExpr (KExpr.mkVar (depth + p)
+                    (anonName (m := .anon)))).1,
+                 ((it.internExpr (KExpr.mkVar (depth + p)
+                     (anonName (m := .anon)))).2,
+                  sc.insert ((KExpr.fvar id name
+                      (KExpr.mkFVar id name md).info).addr, depth)
+                    (it.internExpr (KExpr.mkVar (depth + p)
+                      (anonName (m := .anon)))).1)) := by
+            rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+            try simp only []
+            rw [run_scratchGet_bind, hget]
+            try simp (config := { proj := false }) only []
+            try rw [run_pure_bind]
+            try simp only []
+            rw [hpos]
+            try simp only []
+            rfl
+          rw [hrun]
+          have hcand : KExpr.mkVar (depth + p) (anonName (m := .anon))
+              = KExpr.abstractFVarsSpec
+                  (.fvar id name (KExpr.mkFVar id name md).info)
+                  pos n depth := by
+            rw [KExpr.abstractFVarsSpec, hpos]
+          exact walkPost_jp hcf hwf hsup hsc
+            (hreach _ (KExpr.AbstractReach.self ..))
+            (hreach _ (.inr (.inl hcand)))
+            hcand
+        | none =>
+          -- Unlisted fvar: passes through, memoized as itself.
+          have hrun : abstractFVarsCached
+              (.fvar id name (KExpr.mkFVar id name md).info) pos n depth
+              (it, sc)
+              = (.fvar id name (KExpr.mkFVar id name md).info,
+                 (it, sc.insert ((KExpr.fvar id name
+                     (KExpr.mkFVar id name md).info).addr, depth)
+                   (.fvar id name (KExpr.mkFVar id name md).info))) := by
+            rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+            try simp only []
+            rw [run_scratchGet_bind, hget]
+            try simp (config := { proj := false }) only []
+            try rw [run_pure_bind]
+            try simp only []
+            rw [hpos]
+            try simp only []
+            rfl
+          rw [hrun]
+          exact walkPost_store_self
+            (by rw [KExpr.abstractFVarsSpec, hpos])
+            (hreach _ (KExpr.AbstractReach.self ..)) hwf hsup hsc
+  | @sort u md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact absPost_fast .sort hcut
+      (decide_eq_true (p := (KExpr.mkSort u md).lbr ≤ depth)
+        UInt64.zero_le)
+      hwf hsup hsc
+  | @const id us md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact absPost_fast .const hcut
+      (decide_eq_true (p := (KExpr.mkConst id us md).lbr ≤ depth)
+        UInt64.zero_le)
+      hwf hsup hsc
+  | @app f a md hf ha ihf iha =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkApp_shape] at hreach ⊢
+    have hcut' : depth.toNat + (f.size + a.size + 1) < UInt64.size := hcut
+    by_cases hfast :
+        (!(KExpr.app f a (KExpr.mkApp f a md).info).hasFVars
+          && decide ((KExpr.app f a
+            (KExpr.mkApp f a md).info).lbr ≤ depth)) = true
+    · exact absPost_fast (.app hf ha) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.app f a
+          (KExpr.mkApp f a md).info).addr, depth)]? with
+      | some r =>
+        exact absPost_hit hcf (hreach _ (KExpr.AbstractReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : abstractFVarsCached f pos n depth (it, sc)
+          with ⟨rf, it1, sc1⟩
+        have post1 := ihf (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : abstractFVarsCached a pos n depth (it1, sc1)
+          with ⟨ra, it2, sc2⟩
+        have post2 := iha (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rf = KExpr.abstractFVarsSpec f pos n depth :=
+          post1.result
+        have hres2 : ra = KExpr.abstractFVarsSpec a pos n depth :=
+          post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·)
+            sc2 := post2.scr
+        have hrun : abstractFVarsCached
+            (.app f a (KExpr.mkApp f a md).info) pos n depth (it, sc)
+            = ((it2.internExpr (KExpr.mkApp rf ra)).1,
+               ((it2.internExpr (KExpr.mkApp rf ra)).2,
+                sc2.insert ((KExpr.app f a
+                    (KExpr.mkApp f a md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
+          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkApp rf ra
+            = KExpr.abstractFVarsSpec
+                (.app f a (KExpr.mkApp f a md).info) pos n depth := by
+          rw [KExpr.abstractFVarsSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.AbstractReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @lam nm bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkLam_shape] at hreach ⊢
+    have hcut' : depth.toNat + (ty.size + body.size + 1) < UInt64.size :=
+      hcut
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut')
+    by_cases hfast :
+        (!(KExpr.lam nm bi ty body
+            (KExpr.mkLam nm bi ty body md).info).hasFVars
+          && decide ((KExpr.lam nm bi ty body
+            (KExpr.mkLam nm bi ty body md).info).lbr ≤ depth)) = true
+    · exact absPost_fast (.lam hty hbody) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.lam nm bi ty body
+          (KExpr.mkLam nm bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact absPost_hit hcf (hreach _ (KExpr.AbstractReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : abstractFVarsCached ty pos n depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : abstractFVarsCached body pos n (depth + 1)
+          (it1, sc1) with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.abstractFVarsSpec ty pos n depth :=
+          post1.result
+        have hres2 : rbody = KExpr.abstractFVarsSpec body pos n
+            (depth + 1) := post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·)
+            sc2 := post2.scr
+        have hrun : abstractFVarsCached
+            (.lam nm bi ty body (KExpr.mkLam nm bi ty body md).info)
+            pos n depth (it, sc)
+            = ((it2.internExpr (KExpr.mkLam nm bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkLam nm bi rty rbody)).2,
+                sc2.insert ((KExpr.lam nm bi ty body
+                    (KExpr.mkLam nm bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkLam nm bi rty rbody)).1)) := by
+          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLam nm bi rty rbody
+            = KExpr.abstractFVarsSpec
+                (.lam nm bi ty body (KExpr.mkLam nm bi ty body md).info)
+                pos n depth := by
+          rw [KExpr.abstractFVarsSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.AbstractReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @all nm bi ty body md hty hbody ihty ihbody =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkAll_shape] at hreach ⊢
+    have hcut' : depth.toNat + (ty.size + body.size + 1) < UInt64.size :=
+      hcut
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut')
+    by_cases hfast :
+        (!(KExpr.all nm bi ty body
+            (KExpr.mkAll nm bi ty body md).info).hasFVars
+          && decide ((KExpr.all nm bi ty body
+            (KExpr.mkAll nm bi ty body md).info).lbr ≤ depth)) = true
+    · exact absPost_fast (.all hty hbody) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.all nm bi ty body
+          (KExpr.mkAll nm bi ty body md).info).addr, depth)]? with
+      | some r =>
+        exact absPost_hit hcf (hreach _ (KExpr.AbstractReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : abstractFVarsCached ty pos n depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : abstractFVarsCached body pos n (depth + 1)
+          (it1, sc1) with ⟨rbody, it2, sc2⟩
+        have post2 := ihbody (depth := depth + 1) (it := it1) (sc := sc1)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr hx))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        have hres1 : rty = KExpr.abstractFVarsSpec ty pos n depth :=
+          post1.result
+        have hres2 : rbody = KExpr.abstractFVarsSpec body pos n
+            (depth + 1) := post2.result
+        have hwf2 : it2.WF := post2.wf
+        have hsup2 : ∀ x, it2.ExprSupport x → S x := post2.sup
+        have hsc2 : WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·)
+            sc2 := post2.scr
+        have hrun : abstractFVarsCached
+            (.all nm bi ty body (KExpr.mkAll nm bi ty body md).info)
+            pos n depth (it, sc)
+            = ((it2.internExpr (KExpr.mkAll nm bi rty rbody)).1,
+               ((it2.internExpr (KExpr.mkAll nm bi rty rbody)).2,
+                sc2.insert ((KExpr.all nm bi ty body
+                    (KExpr.mkAll nm bi ty body md).info).addr, depth)
+                  (it2.internExpr (KExpr.mkAll nm bi rty rbody)).1)) := by
+          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkAll nm bi rty rbody
+            = KExpr.abstractFVarsSpec
+                (.all nm bi ty body (KExpr.mkAll nm bi ty body md).info)
+                pos n depth := by
+          rw [KExpr.abstractFVarsSpec, hres1, hres2]
+        exact walkPost_jp hcf hwf2 hsup2 hsc2
+          (hreach _ (KExpr.AbstractReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @letE nm ty val body nd md hty hval hbody ihty ihval ihbody =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkLet_shape] at hreach ⊢
+    have hcut' :
+        depth.toNat + (ty.size + val.size + body.size + 1) < UInt64.size :=
+      hcut
+    have hc1 : (depth + 1).toNat = depth.toNat + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut')
+    by_cases hfast :
+        (!(KExpr.letE nm ty val body nd
+            (KExpr.mkLet nm ty val body nd md).info).hasFVars
+          && decide ((KExpr.letE nm ty val body nd
+            (KExpr.mkLet nm ty val body nd md).info).lbr ≤ depth)) = true
+    · exact absPost_fast (.letE hty hval hbody) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.letE nm ty val body nd
+          (KExpr.mkLet nm ty val body nd md).info).addr, depth)]? with
+      | some r =>
+        exact absPost_hit hcf (hreach _ (KExpr.AbstractReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : abstractFVarsCached ty pos n depth (it, sc)
+          with ⟨rty, it1, sc1⟩
+        have post1 := ihty (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inl hx))))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        rcases hrun2 : abstractFVarsCached val pos n depth (it1, sc1)
+          with ⟨rval, it2, sc2⟩
+        have post2 := ihval (depth := depth) (it := it1) (sc := sc1)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inl hx)))))
+          post1.wf post1.sup post1.scr
+        rw [hrun2] at post2
+        rcases hrun3 : abstractFVarsCached body pos n (depth + 1)
+          (it2, sc2) with ⟨rbody, it3, sc3⟩
+        have post3 := ihbody (depth := depth + 1) (it := it2) (sc := sc2)
+          (by rw [hc1]; exact Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr (.inr (.inr hx)))))
+          post2.wf post2.sup post2.scr
+        rw [hrun3] at post3
+        have hres1 : rty = KExpr.abstractFVarsSpec ty pos n depth :=
+          post1.result
+        have hres2 : rval = KExpr.abstractFVarsSpec val pos n depth :=
+          post2.result
+        have hres3 : rbody = KExpr.abstractFVarsSpec body pos n
+            (depth + 1) := post3.result
+        have hwf3 : it3.WF := post3.wf
+        have hsup3 : ∀ x, it3.ExprSupport x → S x := post3.sup
+        have hsc3 : WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·)
+            sc3 := post3.scr
+        have hrun : abstractFVarsCached
+            (.letE nm ty val body nd
+              (KExpr.mkLet nm ty val body nd md).info) pos n depth
+            (it, sc)
+            = ((it3.internExpr (KExpr.mkLet nm rty rval rbody nd)).1,
+               ((it3.internExpr (KExpr.mkLet nm rty rval rbody nd)).2,
+                sc3.insert ((KExpr.letE nm ty val body nd
+                    (KExpr.mkLet nm ty val body nd md).info).addr, depth)
+                  (it3.internExpr
+                    (KExpr.mkLet nm rty rval rbody nd)).1)) := by
+          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun2]
+          try simp only []
+          try rw [run_bind]
+          rw [hrun3]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkLet nm rty rval rbody nd
+            = KExpr.abstractFVarsSpec
+                (.letE nm ty val body nd
+                  (KExpr.mkLet nm ty val body nd md).info)
+                pos n depth := by
+          rw [KExpr.abstractFVarsSpec, hres1, hres2, hres3]
+        exact walkPost_jp hcf hwf3 hsup3 hsc3
+          (hreach _ (KExpr.AbstractReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @prj id field val md hval ihval =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    rw [KExpr.mkPrj_shape] at hreach ⊢
+    have hcut' : depth.toNat + (val.size + 1) < UInt64.size := hcut
+    by_cases hfast :
+        (!(KExpr.prj id field val
+            (KExpr.mkPrj id field val md).info).hasFVars
+          && decide ((KExpr.prj id field val
+            (KExpr.mkPrj id field val md).info).lbr ≤ depth)) = true
+    · exact absPost_fast (.prj hval) hcut hfast hwf hsup hsc
+    · cases hget : sc[((KExpr.prj id field val
+          (KExpr.mkPrj id field val md).info).addr, depth)]? with
+      | some r =>
+        exact absPost_hit hcf (hreach _ (KExpr.AbstractReach.self ..))
+          hfast hget hwf hsup hsc
+      | none =>
+        rcases hrun1 : abstractFVarsCached val pos n depth (it, sc)
+          with ⟨rval, it1, sc1⟩
+        have post1 := ihval (depth := depth) (it := it) (sc := sc)
+          (Nat.lt_of_le_of_lt (by omega) hcut')
+          (fun x hx => hreach x (.inr (.inr hx)))
+          hwf hsup hsc
+        rw [hrun1] at post1
+        have hres1 : rval = KExpr.abstractFVarsSpec val pos n depth :=
+          post1.result
+        have hwf1 : it1.WF := post1.wf
+        have hsup1 : ∀ x, it1.ExprSupport x → S x := post1.sup
+        have hsc1 : WalkScratchInv S (KExpr.abstractFVarsSpec · pos n ·)
+            sc1 := post1.scr
+        have hrun : abstractFVarsCached
+            (.prj id field val (KExpr.mkPrj id field val md).info)
+            pos n depth (it, sc)
+            = ((it1.internExpr (KExpr.mkPrj id field rval)).1,
+               ((it1.internExpr (KExpr.mkPrj id field rval)).2,
+                sc1.insert ((KExpr.prj id field val
+                    (KExpr.mkPrj id field val md).info).addr, depth)
+                  (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
+          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          try simp only []
+          rw [run_scratchGet_bind, hget]
+          try simp (config := { proj := false }) only []
+          try rw [run_pure_bind]
+          try simp only []
+          rw [run_bind, hrun1]
+          try simp only []
+          rfl
+        rw [hrun]
+        have hcand : KExpr.mkPrj id field rval
+            = KExpr.abstractFVarsSpec
+                (.prj id field val (KExpr.mkPrj id field val md).info)
+                pos n depth := by
+          rw [KExpr.abstractFVarsSpec, hres1]
+        exact walkPost_jp hcf hwf1 hsup1 hsc1
+          (hreach _ (KExpr.AbstractReach.self ..))
+          (hreach _ (.inr (.inl hcand)))
+          hcand
+  | @nat v blob md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact absPost_fast .nat hcut
+      (decide_eq_true (p := (KExpr.mkNat v blob md).lbr ≤ depth)
+        UInt64.zero_le)
+      hwf hsup hsc
+  | @str v blob md =>
+    intro depth it sc hcut hreach hwf hsup hsc
+    exact absPost_fast .str hcut
+      (decide_eq_true (p := (KExpr.mkStr v blob md).lbr ≤ depth)
+        UInt64.zero_le)
+      hwf hsup hsc
+
 end Ix.Tc
