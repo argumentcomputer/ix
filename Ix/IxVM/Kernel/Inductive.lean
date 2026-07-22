@@ -14,6 +14,10 @@ validation, universe constraints, strict positivity, recursor synthesis).
 Structure-only validation, no name diagnostics.
 -/
 
+-- The Aiur quotation below is at the elaborator's default recursion
+-- limit; nested-statement chains (dbg!/sord_then continuations) push
+-- past it.
+set_option maxRecDepth 65536 in
 def inductive_check := ⟦
   -- Mirror: src/ix/kernel/inductive.rs:1968-2080 check_ctor_return_type.
   -- Validates that a ctor's declared type, after peeling
@@ -1171,15 +1175,32 @@ def inductive_check := ⟦
   fn is_rec_field(dom: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                    types: List‹KExpr›, top: List‹&KConstantInfo›,
                    addrs: List‹Addr›, spec_lift_by: G) -> (G, G) {
-    match peel_leading_foralls(dom) {
-      (doms, body) =>
-        let inner_types = list_concat(list_reverse(doms), types);
-        let body_w = whnf(body, inner_types, top, addrs);
-        match collect_spine(body_w) {
+    -- Mirror inductive.rs is_rec_field's loop: whnf, peel ONE Forall,
+    -- repeat — WITHOUT pushing the peeled binder doms into a whnf
+    -- context. The body's loose BVars (field locals and the caller
+    -- frame's param refs) are stuck under whnf either way, and a
+    -- context built from local doms violates ctx-trim's frame
+    -- well-formedness (a param-referencing dom's lbr exceeds the depth
+    -- below it, running ctx_next_cut off the end of the list —
+    -- e.g. a Prop class `C (pat) where f (s t) : P pat s → ...`).
+    -- Per-peel whnf also exposes index binders hidden under
+    -- definitional wrappers, which the old peel-then-whnf missed.
+    let lift = spec_lift_by + list_length(types);
+    is_rec_field_peel(dom, flat, lift, top, addrs)
+  }
+
+  fn is_rec_field_peel(ty: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                       lift: G, top: List‹&KConstantInfo›,
+                       addrs: List‹Addr›) -> (G, G) {
+    let w = whnf(ty, store(ListNode.Nil), top, addrs);
+    match load(w) {
+      KExprNode.Forall(_, body) =>
+        is_rec_field_peel(body, flat, lift, top, addrs),
+      _ =>
+        match collect_spine(w) {
           (head, spine_args) =>
             match load(head) {
               KExprNode.Const(idx, _) =>
-                let lift = spec_lift_by + list_length(types);
                 find_flat_member_match(flat, idx, spine_args, 0, lift),
               _ => (0, 0),
             },
@@ -1504,6 +1525,26 @@ def inductive_check := ⟦
   -- `self_mem_pos` = self's POSITION in the flat block (signature-
   -- resolved by the caller); idx lookup would alias same-idx aux
   -- members.
+  -- whnf-tolerant n-binder collector (mirror the Rust param peel):
+  -- whnf before each peel so binders hidden under definitional wrappers
+  -- expose, and stop without failing when the type runs out of Foralls.
+  fn collect_n_doms_whnf(ty: KExpr, n: G, top: List‹&KConstantInfo›,
+                         addrs: List‹Addr›) -> (List‹KExpr›, KExpr) {
+    match n {
+      0 => (store(ListNode.Nil), ty),
+      _ =>
+        let w = whnf(ty, store(ListNode.Nil), top, addrs);
+        match load(w) {
+          KExprNode.Forall(dom, body) =>
+            match collect_n_doms_whnf(body, n - 1, top, addrs) {
+              (rest_doms, rest) =>
+                (store(ListNode.Cons(dom, rest_doms)), rest),
+            },
+          _ => (store(ListNode.Nil), w),
+        },
+    }
+  }
+
   fn build_rec_type(ind_idx: G, ind_ty: KExpr, ctor_indices: List‹G›,
                     n_params: G, n_indices: G, ind_lvls: G,
                     self_own_params: G,
@@ -1524,13 +1565,20 @@ def inductive_check := ⟦
     let n_rec_params = n_params;
     let motive_base = n_rec_params;
 
-    -- Use self's concrete occurrence_us for ind_ty inst (so nested aux univ
-    -- args match what Lean stored).
-    let self_member0 = flat_member_at(flat, self_mem_pos);
-    let self_occ_us0 = match self_member0 { (_, _, _, ou) => ou, };
-    let ind_ty_inst = expr_inst_levels(ind_ty, self_occ_us0);
-
-    let params_walk = collect_n_doms(ind_ty_inst, n_params);
+    -- Params walk over the PRIMARY inductive's type under the first
+    -- inductive's univ_offset-shifted params, with a whnf-tolerant peel
+    -- (mirror inductive.rs build_rec_type: `ind_infos[0].4` +
+    -- `first_ind_univs`, whnf per step, break on non-Forall). Peeling
+    -- SELF's type with the primary's param count walks past the end for
+    -- aux-member recursors whose ext types have fewer binders.
+    let primary_ci0 = load(list_lookup(top, primary_ind_idx));
+    let params_walk = match primary_ci0 {
+      KConstantInfo.Induct(p_lvls, p_ty, _, _, _, _, _) =>
+        let p_us = build_param_lvls_range(univ_offset, p_lvls, 0);
+        collect_n_doms_whnf(expr_inst_levels(p_ty, p_us), n_params, top, addrs),
+      _ =>
+        collect_n_doms_whnf(ind_ty, n_params, top, addrs),
+    };
     match params_walk {
       (param_doms, after_params) =>
         let flat_own_params = flat_own_params_of(flat, top);
@@ -2273,7 +2321,15 @@ def inductive_check := ⟦
         match ctor_ci {
           KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
             let body = match is_aux {
-              0 => peel_n_foralls_tolerant(ctor_ty, n_params),
+              -- Instantiate the ctor's level params with the member's
+              -- occurrence universes BEFORE scanning (mirror inductive.rs
+              -- queue scan). For originals occ_us is the univ_offset-shifted
+              -- Param range, so occurrences found inside carry rec-frame
+              -- concrete levels — without this, aux members store raw
+              -- block-frame Params and every large-eliminator minor built
+              -- from them references the wrong universe (Param 0 where the
+              -- stored recursor has Param 1).
+              0 => peel_n_foralls_tolerant(expr_inst_levels(ctor_ty, occ_us), n_params),
               _ => synth_aux_ctor_ty(ctor_ty, n_params, spec_params, occ_us, top, addrs),
             };
             let from_this = detect_nested_in_field_chain(body, block_idxs, top, 0);
@@ -2669,17 +2725,38 @@ def inductive_check := ⟦
                                                     block_param_doms, sbase,
                                                     top, addrs),
                                     ctx, addrs),
-                          aux_view_ctors_cmp(ctors_a, np_a, sp_a, ou_a,
-                                             ctors_b, np_b, sp_b, ou_b,
-                                             aux, block_us, n_block_params,
-                                             block_param_doms, sbase, ctx,
-                                             top, addrs)))),
+                          sord_then(aux_view_ctors_cmp(ctors_a, np_a, sp_a, ou_a,
+                                                       ctors_b, np_b, sp_b, ou_b,
+                                                       aux, block_us, n_block_params,
+                                                       block_param_doms, sbase, ctx,
+                                                       top, addrs),
+                            -- Trailing identity marker (mirror
+                            -- inductive.rs canonical_aux_order): the ext
+                            -- applied to its occurrence universes and spec
+                            -- params, NOT sentinel-rewritten. Distinct exts
+                            -- (or phantom-distinct spec params over one
+                            -- ext) whose field views tie weak through
+                            -- sentinels are ordered strongly here —
+                            -- external consts by address, block-local refs
+                            -- by ctx class. Address-equal spec params still
+                            -- compare Equal and collapse.
+                            compare_kexpr_ctx(
+                              aux_marker_view(ext_a, ou_a, sp_a),
+                              aux_marker_view(ext_b, ou_b, sp_b),
+                              ctx, addrs))))),
                   _ => sord_eq_strong(),
                 },
               _ => sord_eq_strong(),
             },
         },
     }
+  }
+
+  -- The aux's nested-occurrence identity: `Ext spec_params` under the
+  -- occurrence's universe args. Mirror: the synthetic trailing marker
+  -- ctor in inductive.rs canonical_aux_order.
+  fn aux_marker_view(ext_idx: G, ou: List‹KLevel›, sp: List‹KExpr›) -> KExpr {
+    apply_spine(store(KExprNode.Const(ext_idx, ou)), sp)
   }
 
   fn aux_view_ind_ty(ext_ty: KExpr, ext_np: G, sp: List‹KExpr›,

@@ -1293,7 +1293,13 @@ def primitive := ⟦
                       ListNode.Nil =>
                         store(KExprNode.Const(zero_idx, store(ListNode.Nil))),
                       ListNode.Cons(_, _) =>
-                        let pred = store(KExprNode.Lit(KLiteral.Nat(klimbs_dec(klimbs))));
+                        -- klimbs_dec at a limb boundary (e.g. 2^32 = [0,1] →
+                        -- [0xFFFFFFFF, 0]) leaves a trailing zero limb; without
+                        -- normalization the countdown reaches a Cons-shaped zero
+                        -- ([0,0]) that takes this succ arm again and decrements
+                        -- past zero — an unbounded descent. Canonical limbs also
+                        -- keep the per-layer Lit nodes shared in the memo.
+                        let pred = store(KExprNode.Lit(KLiteral.Nat(klimbs_normalize(klimbs_dec(klimbs)))));
                         let succ_const = store(KExprNode.Const(succ_idx, store(ListNode.Nil)));
                         store(KExprNode.App(succ_const, pred)),
                     },
@@ -1614,7 +1620,10 @@ def primitive := ⟦
                 match try_extract_nat(a0_w, addrs) {
                   (1, na) =>
                     let post = list_drop(spine, 1);
-                    (1, apply_spine(mk_nat_lit(klimbs_dec(na)), post)),
+                    -- Normalize: dec at a limb boundary leaves a trailing zero
+                    -- limb, and a non-canonical Lit poisons every downstream
+                    -- literal comparison and ctor-exposure countdown.
+                    (1, apply_spine(mk_nat_lit(klimbs_normalize(klimbs_dec(na))), post)),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
             },
@@ -1682,10 +1691,42 @@ def primitive := ⟦
       0 => (0, store(KExprNode.BVar(0))),
       _ =>
         let post = list_drop(spine, 2);
-        match mk_nat_offset_stuck(a0_w, nb, post, addrs) {
-          (1, stuck) => (2, stuck),
-          (0, _) => (0, store(KExprNode.BVar(0))),
+        -- `Nat.add` keeps the canonical add-offset shape (shared with the
+        -- linear-rec collapse). Div/mod MUST keep their own head: routing
+        -- them through the add builder rewrote `x / n` into `x + n` —
+        -- wrong value — corrupting offset-aware def-eq (unsound equalities
+        -- between /- and +-derived forms) and sending genuinely equal
+        -- `x >>> k` comparisons into full delta-unfolds of the division
+        -- algorithm on symbolic args.
+        match is_add {
+          1 =>
+            match mk_nat_offset_stuck(a0_w, nb, post, addrs) {
+              (1, stuck) => (2, stuck),
+              (0, _) => (0, store(KExprNode.BVar(0))),
+            },
+          0 =>
+            match mk_nat_binop_stuck(head_addr, a0_w, nb, post, addrs) {
+              (1, stuck) => (2, stuck),
+              (0, _) => (0, store(KExprNode.BVar(0))),
+            },
         },
+    }
+  }
+
+  -- Rebuild a stuck binary Nat op `op base (Lit n)` applied to `post`,
+  -- preserving the op's own head (div stays div, mod stays mod). The
+  -- add-offset shape has its own builder (`mk_nat_offset_stuck`, shared
+  -- with the linear-rec collapse); this is the non-add sibling.
+  fn mk_nat_binop_stuck(op_addr: Addr, base_w: KExpr, n: KLimbs, post: List‹KExpr›,
+                        addrs: List‹Addr›) -> (G, KExpr) {
+    match find_addr_idx_safe(op_addr, addrs, 0) {
+      (0, _) => (0, store(KExprNode.BVar(0))),
+      (1, op_idx) =>
+        let op_const = store(KExprNode.Const(op_idx, store(ListNode.Nil)));
+        let stuck = store(KExprNode.App(
+          store(KExprNode.App(op_const, base_w)),
+          mk_nat_lit(n)));
+        (1, apply_spine(stuck, post)),
     }
   }
 

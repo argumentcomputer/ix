@@ -634,27 +634,146 @@ def levels := ⟦
     }
   }
 
+  -- Mirror level.rs KUniv::max exactly: explicit-numeral collapse,
+  -- STRUCTURAL equality (store dedup makes structurally identical levels
+  -- pointer-equal), zero absorption, max-subsumption, same-base offset
+  -- collapse — and NO Succ-over-Max factoring. Lean stores type-former
+  -- levels normalized with Succ distributed INTO Max (`max (u+1) (v+1)`);
+  -- factoring Succ back out here rebuilt Succ-headed forms whose variant
+  -- rank differs, diverging canonical-sort comparisons (aux view order)
+  -- from the stored/compile shapes.
   fn level_max(a: KLevel, b: KLevel) -> KLevel {
-    match load(a) {
-      KLevelNode.Zero => b,
-      _ =>
-        match load(b) {
-          KLevelNode.Zero => a,
+    match level_explicit_val(a) {
+      (1, na) =>
+        match level_explicit_val(b) {
+          (1, nb) =>
+            match u32_less_than(na, nb) {
+              1 => b,
+              0 => a,
+            },
+          _ => level_max_go(a, b),
+        },
+      _ => level_max_go(a, b),
+    }
+  }
+
+  fn level_max_go(a: KLevel, b: KLevel) -> KLevel {
+    match level_struct_eq(a, b) {
+      1 => a,
+      0 =>
+        match load(a) {
+          KLevelNode.Zero => b,
           _ =>
-            let eq = level_eq(a, b);
-            match eq {
-              1 => a,
-              0 =>
-                match load(a) {
-                  KLevelNode.Succ(a1) =>
-                    match load(b) {
-                      KLevelNode.Succ(b1) => store(KLevelNode.Succ(level_max(a1, b1))),
-                      _ => store(KLevelNode.Max(a, b)),
+            match load(b) {
+              KLevelNode.Zero => a,
+              _ =>
+                match level_max_subsumes(b, a) {
+                  1 => b,
+                  0 =>
+                    match level_max_subsumes(a, b) {
+                      1 => a,
+                      0 => level_max_offsets(a, b),
                     },
-                  _ => store(KLevelNode.Max(a, b)),
                 },
             },
         },
+    }
+  }
+
+  -- Structural (raw, non-normalizing) level equality — mirror of Rust's
+  -- KUniv `==` (hash equality over the raw structure). Pointer equality
+  -- is a sound fast path (same data), but pointer INEQUALITY does not
+  -- imply different data, so the fallback compares values recursively.
+  fn level_struct_eq(a: KLevel, b: KLevel) -> G {
+    match ptr_val(a) - ptr_val(b) {
+      0 => 1,
+      _ =>
+        match load(a) {
+          KLevelNode.Zero =>
+            match load(b) {
+              KLevelNode.Zero => 1,
+              _ => 0,
+            },
+          KLevelNode.Succ(x) =>
+            match load(b) {
+              KLevelNode.Succ(y) => level_struct_eq(x, y),
+              _ => 0,
+            },
+          KLevelNode.Max(x1, x2) =>
+            match load(b) {
+              KLevelNode.Max(y1, y2) =>
+                level_struct_eq(x1, y1) * level_struct_eq(x2, y2),
+              _ => 0,
+            },
+          KLevelNode.IMax(x1, x2) =>
+            match load(b) {
+              KLevelNode.IMax(y1, y2) =>
+                level_struct_eq(x1, y1) * level_struct_eq(x2, y2),
+              _ => 0,
+            },
+          KLevelNode.Param(i) =>
+            match load(b) {
+              KLevelNode.Param(j) =>
+                match i - j {
+                  0 => 1,
+                  _ => 0,
+                },
+              _ => 0,
+            },
+        },
+    }
+  }
+
+  -- 1 iff `m` is `Max(l, r)` with `l` or `r` structurally equal to `x`:
+  -- max(x, max(x, b)) = max(x, b) etc.
+  fn level_max_subsumes(m: KLevel, x: KLevel) -> G {
+    match load(m) {
+      KLevelNode.Max(l, r) =>
+        match level_struct_eq(l, x) {
+          1 => 1,
+          0 => level_struct_eq(r, x),
+        },
+      _ => 0,
+    }
+  }
+
+  -- Same-base offset collapse: succ^n(x) vs succ^m(x) with structurally
+  -- equal base → the larger; otherwise the raw Max node.
+  fn level_max_offsets(a: KLevel, b: KLevel) -> KLevel {
+    match level_offset_of(a, 0) {
+      (base_a, off_a) =>
+        match level_offset_of(b, 0) {
+          (base_b, off_b) =>
+            match level_struct_eq(base_a, base_b) {
+              1 =>
+                match u32_less_than(off_a, off_b) {
+                  1 => b,
+                  0 => a,
+                },
+              0 => store(KLevelNode.Max(a, b)),
+            },
+        },
+    }
+  }
+
+  -- (1, n) iff the level is the explicit numeral succ^n(Zero).
+  fn level_explicit_val(l: KLevel) -> (G, G) {
+    match load(l) {
+      KLevelNode.Zero => (1, 0),
+      KLevelNode.Succ(inner) =>
+        match level_explicit_val(inner) {
+          (1, n) => (1, n + 1),
+          _ => (0, 0),
+        },
+      _ => (0, 0),
+    }
+  }
+
+  -- Peel Succs: level_offset_of(succ^n(x), 0) = (x, n).
+  fn level_offset_of(l: KLevel, k: G) -> (KLevel, G) {
+    match load(l) {
+      KLevelNode.Succ(inner) => level_offset_of(inner, k + 1),
+      _ => (l, k),
     }
   }
 
