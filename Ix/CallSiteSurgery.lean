@@ -49,38 +49,72 @@ public section
 
 namespace Ix.AuxGen
 
+/-- Kind of a Lean auto-generated auxiliary, as classified by name
+    suffix. Mirrors Rust `AuxKind` (decompile.rs). Constructor-name
+    renames forced by Lean's auto-generated declarations on this very
+    inductive (`AuxKind.rec`/`recOn`/`casesOn` would collide):
+    `Rec → recr`, `RecOn → recOnAux`, `CasesOn → casesOnAux`; the rest
+    keep Rust's names. -/
+inductive AuxKind where
+  | recr | recOnAux | casesOnAux | below | belowRec
+  | brecOn | brecOnGo | brecOnEq
+  deriving BEq, Repr, Inhabited
+
+/-- Classify an aux_gen constant by suffix, returning
+    `(kind, root inductive)` — the base inductive the auxiliary is
+    derived from. Mirrors Rust `classify_aux_gen` (decompile.rs:2157)
+    branch-for-branch. -/
+def classifyAuxGen (name : Name) : Option (AuxKind × Name) :=
+  match name with
+  | .str p1 s1 _ =>
+    if s1 == "rec" || s1.startsWith "rec_" then
+      -- X.rec / X.rec_N or X.below.rec / X.below_N.rec
+      match p1 with
+      | .str gp ps _ =>
+        if ps == "below" || ps.startsWith "below_" then
+          some (.belowRec, gp)
+        else
+          some (.recr, p1)
+      | _ => some (.recr, p1)
+    else if s1 == "recOn" || s1.startsWith "recOn_" then
+      some (.recOnAux, p1)
+    else if s1 == "casesOn" || s1.startsWith "casesOn_" then
+      some (.casesOnAux, p1)
+    else if s1 == "below" || s1.startsWith "below_" then
+      some (.below, p1)
+    else if s1 == "brecOn" || s1.startsWith "brecOn_" then
+      some (.brecOn, p1)
+    else if s1 == "go" then
+      -- X.brecOn.go or X.brecOn_N.go (nested auxiliary)
+      match p1 with
+      | .str gp ps _ =>
+        if ps == "brecOn" || ps.startsWith "brecOn_" then
+          some (.brecOnGo, gp)
+        else
+          none
+      | _ => none
+    else if s1 == "eq" then
+      -- X.brecOn.eq or X.brecOn_N.eq (nested auxiliary)
+      match p1 with
+      | .str gp ps _ =>
+        if ps == "brecOn" || ps.startsWith "brecOn_" then
+          some (.brecOnEq, gp)
+        else
+          none
+      | _ => none
+    else
+      none
+  | _ => none
+
 /-- Is `name` a Lean auto-generated auxiliary that aux-gen regenerates
     (`.rec`/`.rec_N`, `.recOn*`, `.casesOn*`, `.below*`, `.below.rec`,
     `.brecOn*`, `.brecOn*.go`, `.brecOn*.eq`)?
 
-    Boolean projection of Rust `classify_aux_gen` (decompile.rs:2157,
-    via `is_aux_gen_suffix` decompile.rs:2151), preserving its exact
-    branch structure. The `(AuxKind, root_inductive)` payload is only
-    consumed by the decompiler, which is out of scope; the compile-side
-    guard in `compile_expr` (compile.rs:829) needs just the Bool. -/
+    Boolean projection of `classifyAuxGen` — Rust `is_aux_gen_suffix`
+    (decompile.rs:2151). Used by the compile-side aux-regen guard in
+    `compile_expr` (compile.rs:829) and the decompiler's Pass-1 skip. -/
 def isAuxGenSuffix (name : Name) : Bool :=
-  match name with
-  | .str p1 s1 _ =>
-    if s1 == "rec" || s1.startsWith "rec_" then
-      -- X.rec / X.rec_N (AuxKind::Rec) or X.below.rec / X.below_N.rec
-      -- (AuxKind::BelowRec) — both classify as Some.
-      true
-    else if s1 == "recOn" || s1.startsWith "recOn_" then
-      true
-    else if s1 == "casesOn" || s1.startsWith "casesOn_" then
-      true
-    else if s1 == "below" || s1.startsWith "below_" then
-      true
-    else if s1 == "brecOn" || s1.startsWith "brecOn_" then
-      true
-    else if s1 == "go" || s1 == "eq" then
-      -- X.brecOn.go / X.brecOn_N.go / X.brecOn.eq / X.brecOn_N.eq only.
-      match p1 with
-      | .str _ ps _ => ps == "brecOn" || ps.startsWith "brecOn_"
-      | _ => false
-    else
-      false
-  | _ => false
+  (classifyAuxGen name).isSome
 
 /-! ## Telescope utilities (surgery.rs:201) -/
 
