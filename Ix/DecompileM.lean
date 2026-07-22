@@ -669,12 +669,17 @@ def decompileDefinition (d : Ixon.Definition) (cnst : Constant) (cMeta : Constan
   let valueRoot := match cMeta.info with
     | .defn _ _ _ _ _ _ valueRoot => valueRoot
     | _ => (0 : UInt64)
-  -- Hints live in `Env.anonHints`, keyed by the constant address the
-  -- name resolves to; absent entry → `.opaque`, matching the
-  -- compiler's treatment of theorems and opaques.
+  -- Hints come from the per-name `Named.hints` channel — the exact
+  -- value `finalize_hints` recorded for this name (Rust
+  -- decompile.rs:1549-1560). The per-address `Env.anonHints` channel is
+  -- unusable here: alpha-identical definitions under different names
+  -- share one constant address, so it only holds a merged winner
+  -- (the `instInhabited*`/`UInt*.to*` family of whole-env mismatches).
+  -- Absent → `.opaque`, matching the compiler's treatment of theorems
+  -- and opaques.
   let ixonEnv := (← getEnv).ixonEnv
   let hints := match ixonEnv.named.get? name with
-    | some named => (ixonEnv.anonHints.get? named.addr).getD .opaque
+    | some named => named.hints.getD .opaque
     | none => .opaque
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
   withFreshBlock cnst mutCtx univParams arena (metaSharing := cMeta.metaSharing) do

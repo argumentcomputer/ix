@@ -12,6 +12,8 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.DecompileM
+public import Ix.DecompileDriver
+public import Ix.DecompileRoundtrip
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
@@ -39,9 +41,15 @@ def testDecompile : TestSeq :=
     IO.println s!"[Step 1]   names={phases.compileEnv.names.size}, named={phases.compileEnv.named.size}, consts={phases.compileEnv.consts.size}, blobs={phases.compileEnv.blobs.size}"
     IO.println ""
 
-    -- Step 2: Parallel decompile to Ix types
-    IO.println s!"[Step 2] Decompiling (parallel) to Ix types..."
-    let (decompiled, decompErrors) ← Ix.DecompileM.decompileAllParallelIO phases.compileEnv
+    -- Step 2: Full decompile driver (Pass 1 aux-skip → Pass 1.5 flags →
+    -- Pass 2 aux regeneration/recovery) with the source env as the
+    -- debug-track oracle.
+    IO.println s!"[Step 2] Decompiling (full driver) to Ix types..."
+    let decompStart ← IO.monoMsNow
+    let origView : Std.HashMap Ix.Name Ix.ConstantInfo := phases.rawEnv.consts
+    let (decompiled, decompErrors, _p2st) :=
+      Ix.DecompileM.decompileEnvFull phases.compileEnv (some origView)
+    IO.println s!"[Step 2]   {decompiled.size} constants, {decompErrors.size} errors in {(← IO.monoMsNow) - decompStart}ms"
     IO.println ""
 
     -- Report errors
@@ -79,31 +87,29 @@ def testDecompile : TestSeq :=
     -- Sequential hash comparison (cheap: just address equality on 32-byte hashes)
     let mut nMatch := (0 : Nat); let mut nMismatch := (0 : Nat); let mut nMissing := (0 : Nat)
     let mut firstMismatches : Array (Ix.Name × String) := #[]
+    -- Full structural comparison (`ConstantInfo` BEq — hash-based at
+    -- the Name/Level/Expr leaves): every field, not just type/value.
     for (name, decompInfo) in decompiled do
       match ixEnv.consts.get? name with
       | some origInfo =>
-        let decompTyHash := decompInfo.getCnst.type.getHash
-        let origTyHash := origInfo.getCnst.type.getHash
-        if decompTyHash != origTyHash then
+        if decompInfo == origInfo then
+          nMatch := nMatch + 1
+        else
           nMismatch := nMismatch + 1
           if firstMismatches.size < 10 then
-            firstMismatches := firstMismatches.push (name, s!"type hash mismatch")
-        else
-          let valMismatch := match decompInfo, origInfo with
-            | .defnInfo dv, .defnInfo ov => dv.value.getHash != ov.value.getHash
-            | .thmInfo dv, .thmInfo ov => dv.value.getHash != ov.value.getHash
-            | .opaqueInfo dv, .opaqueInfo ov => dv.value.getHash != ov.value.getHash
-            | _, _ => false
-          if valMismatch then
-            nMismatch := nMismatch + 1
-            if firstMismatches.size < 10 then
-              firstMismatches := firstMismatches.push (name, s!"value hash mismatch")
-          else
-            nMatch := nMatch + 1
+            firstMismatches := firstMismatches.push (name, "constant-info mismatch")
       | none =>
         nMissing := nMissing + 1
         if firstMismatches.size < 10 then
           firstMismatches := firstMismatches.push (name, "not in original")
+    -- Reverse coverage: source constants never reconstructed.
+    let mut nMissingFromDecompile := (0 : Nat)
+    for (name, _) in ixEnv.consts do
+      if !decompiled.contains name then
+        nMissingFromDecompile := nMissingFromDecompile + 1
+        if firstMismatches.size < 10 then
+          firstMismatches := firstMismatches.push (name, "missing from decompile")
+    nMissing := nMissing + nMissingFromDecompile
 
     let compareTime := (← IO.monoMsNow) - compareStart
     IO.println s!"[Compare] Matched: {nMatch}, Mismatched: {nMismatch}, Missing: {nMissing} ({compareTime}ms)"

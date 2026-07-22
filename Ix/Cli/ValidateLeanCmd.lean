@@ -3,8 +3,7 @@
   against the Lean environment for any file — the `Ix.Tc` counterpart to
   `ix validate` (which drives the Rust implementation's 8-phase pipeline).
 
-  Phases (stubs marked — the pure-Lean decompiler is not implemented
-  yet, so that section skips loudly):
+  Phases (all pure-Lean):
 
     1. Compile (Lean → Ixon)          — the full pure-Lean pipeline
                                         (canon → graph → ground →
@@ -19,7 +18,11 @@
                                         to `Ix.ConstantInfo`, compared
                                         against the elaborated env with
                                         Rust `compare_envs` semantics
-    5. Decompile (Ixon → Lean)        [STUB: not yet implemented, skipped]
+    5. Decompile (Ixon → Lean)        — the full decompile driver (Pass 1
+                                        aux-skip → flags → Pass 2 aux
+                                        regeneration/recovery), compared
+                                        hash-identical against the
+                                        canonicalized source
 
   Starting from a Lean FILE (like `ix validate`) is what makes phase 4
   possible: the elaborated environment is the comparison oracle. For an
@@ -36,6 +39,9 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.DecompileM
+public import Ix.DecompileDriver
+public import Ix.DecompileRoundtrip
 public import Ix.Meta
 public import Ix.Tc
 public import Ix.Cli.ValidateCmd
@@ -77,6 +83,9 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut phases : Array (String × PhaseResult) := #[]
   let mut bytes : ByteArray := .empty
   let mut leanEnv? : Option Lean.Environment := none
+  -- Canonicalized source view (phase 1's canon output) — phase 5's
+  -- decompile oracle.
+  let mut canonView? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none
 
   match ixe?, path? with
   | some ixePath, _ =>
@@ -115,6 +124,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
         .failed s!"pure-Lean pipeline: {e}")
     | .ok out =>
       bytes := out.bytes
+      canonView? := some out.cenv.env.consts
       let t1 ← IO.monoMsNow
       if out.cenv.ungrounded.size > 0 then
         let shown := out.cenv.ungrounded.toList.take 3
@@ -179,9 +189,58 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
             .failed (s!"{report.errorCount} comparison error(s); {counts}\n" ++
               String.intercalate "\n" msgs.toList))
 
-  -- Phase 5: decompile (pure-Lean decompiler not implemented).
-  phases := phases.push ("5 decompile",
-    .stubbed "pure-Lean decompiler not implemented — skipped")
+  -- Phase 5: decompile through the full pure-Lean driver (Pass 1
+  -- aux-skip → Pass 1.5 flags → Pass 2 aux regeneration/recovery).
+  -- With a Lean source (path mode) the canonicalized env is the oracle:
+  -- every reconstructed constant must be hash-identical, both
+  -- directions. In `--ixe` mode the phase runs oracle-free (decompile
+  -- errors only).
+  match ixonEnv? with
+  | none =>
+    phases := phases.push ("5 decompile", .skipped "serde gate failed")
+  | some ixonEnv =>
+    let t0 ← IO.monoMsNow
+    let (decompiled, errs, _p2st) :=
+      Ix.DecompileM.decompileEnvFull ixonEnv canonView?
+    let t1 ← IO.monoMsNow
+    if !errs.isEmpty then
+      let shown := errs.toList.take 5
+      let msgs := shown.map fun (n, m) => s!"    ✗ {n.pretty}: {m.take 160}"
+      phases := phases.push ("5 decompile",
+        .failed (s!"{errs.size} decompile error(s) \
+({decompiled.size} constants, {t1 - t0}ms)\n" ++
+          String.intercalate "\n" msgs))
+    else
+      match canonView? with
+      | some view =>
+        let mut nMatch := (0 : Nat)
+        let mut mismatches : Array Ix.Name := #[]
+        let mut missing := (0 : Nat)
+        for (name, info) in decompiled do
+          match view.get? name with
+          | some orig =>
+            if info == orig then nMatch := nMatch + 1
+            else mismatches := mismatches.push name
+          | none => missing := missing + 1
+        for (name, _) in view do
+          if !decompiled.contains name then
+            missing := missing + 1
+            if mismatches.size < 10 then
+              mismatches := mismatches.push name
+        if mismatches.isEmpty && missing == 0 then
+          phases := phases.push ("5 decompile",
+            .passed s!"{nMatch} constants reconstructed hash-identical \
+to the canonicalized source ({t1 - t0}ms)")
+        else
+          let msgs := mismatches.toList.take 5 |>.map (s!"    ✗ {·.pretty}")
+          phases := phases.push ("5 decompile",
+            .failed (s!"{mismatches.size} mismatch(es), {missing} \
+missing; {nMatch} matched ({t1 - t0}ms)\n" ++
+              String.intercalate "\n" msgs))
+      | none =>
+        phases := phases.push ("5 decompile",
+          .passed s!"oracle-free: {decompiled.size} constants decompiled, \
+0 errors ({t1 - t0}ms)")
 
   IO.println ""
   for (name, result) in phases do

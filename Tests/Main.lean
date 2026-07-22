@@ -94,7 +94,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("condense-cross", Tests.Ix.CondenseM.suiteIO),
   -- Lean-side decompilation not yet revived, disabled
   ("compile", Tests.Compile.compileSuiteIO),
-  --("decompile", Tests.Decompile.decompileSuiteIO),
+  ("decompile", Tests.Decompile.decompileSuiteIO),
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("ixon-corpus", Tests.Ixon.Corpus.suite),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
