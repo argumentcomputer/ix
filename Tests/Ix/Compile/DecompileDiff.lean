@@ -127,7 +127,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[decompile-diff]   aux-family: {auxMatch} matched, {auxMismatch.size} mismatched  (red until D3 original recovery)"
   if !auxMismatch.isEmpty then
     IO.println s!"[decompile-diff]     mismatch e.g. {sample auxMismatch}"
-  IO.println s!"[decompile-diff]   callsite errors: {callSiteErrs.size}  (red until D1 replay)"
+  IO.println s!"[decompile-diff]   callsite errors: {callSiteErrs.size}  (D1 gate — must be 0)"
   if !callSiteErrs.isEmpty then
     IO.println s!"[decompile-diff]     e.g. {sample callSiteErrs}"
   IO.println s!"[decompile-diff]   aux errors: {auxErrs.size}  (red until D3)"
@@ -145,8 +145,9 @@ def run (env : Lean.Environment) : IO UInt32 := do
 
   let gateOk := plainMismatch.isEmpty && otherErrs.isEmpty
     && notInSource.isEmpty && missingPlain.isEmpty
+    && callSiteErrs.isEmpty
   IO.println ""
-  IO.println s!"[decompile-diff] D0 gate (plain fidelity): {if gateOk then "PASS" else "FAIL"}"
+  IO.println s!"[decompile-diff] D0+D1 gate (plain fidelity + callsite replay): {if gateOk then "PASS" else "FAIL"}"
   return if gateOk then 0 else 1
 
 end Tests.Compile.DecompileDiff
