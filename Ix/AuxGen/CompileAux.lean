@@ -104,15 +104,20 @@ def auxInsertExtraName (name : Name) : CompileM Unit :=
   modifyBlockState fun st =>
     { st with auxGenExtraNames := st.auxGenExtraNames.insert name }
 
-/-- Non-throwing `stt.resolve_addr` (compile.rs:261-274): compiled names,
-    then the current block's aux registrations, then previously merged
-    aux names. The total sibling of `Ix.CompileM.lookupConstAddr`. -/
+/-- Non-throwing `stt.resolve_addr` (compile.rs:261-274): compiled names
+    (the current block's primary registrations, then the driver-merged
+    map), then the current block's aux registrations, then previously
+    merged aux names. The total sibling of `Ix.CompileM.lookupConstAddr`. -/
 def resolveAddr? (name : Name) : CompileM (Option Address) := do
   let env ← getCompileEnv
-  match env.nameToNamed.get? name with
-  | some named => pure (some named.addr)
+  let bstate ← getBlockState
+  match bstate.blockNameToAddr.get? name with
+  | some addr => pure (some addr)
   | none =>
-    match (← getBlockState).auxNameToAddr.get? name with
+  match env.nameToAddr.get? name with
+  | some addr => pure (some addr)
+  | none =>
+    match bstate.auxNameToAddr.get? name with
     | some addr => pure (some addr)
     | none => pure (env.auxNameToAddr.get? name)
 

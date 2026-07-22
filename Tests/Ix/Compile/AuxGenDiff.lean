@@ -29,6 +29,7 @@ import Ix.Commit
 import Ix.AuxGen.Nested
 import Ix.AuxGen.Patches
 import Ix.AuxGen.CompileAux
+import Ix.CompileDriver
 import Tests.Ix.Compile.ValidateAux
 
 namespace Tests.Compile.AuxGenDiff
@@ -718,6 +719,100 @@ def run (env : Lean.Environment) : IO UInt32 := do
     IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
   | none => pure ()
 
-  return if gateOk && dumpOk && patchesOk && plansOk then 0 else 1
+  -- A8 gate: FULL aux-aware driver parity. `compileEnvAux` runs the
+  -- production pipeline (prereq seeding, per-block aux tails, promotion
+  -- + no-aux originals, pending release) over the same corpus; the
+  -- result env is compared against Rust's CompileState env whole:
+  -- named coverage both directions, per-name addresses, per-address
+  -- constant BYTES, and full Named metadata (constMeta + original +
+  -- hints, informational until A9 tightens).
+  IO.println "[aux-gen-diff] A8: aux-aware driver (compileEnvAux)..."
+  let driverOk ← do
+    match Ix.CompileM.compileEnvAux rawEnv condensed with
+    | .error e =>
+      IO.println s!"[aux-gen-diff] driver ERROR: {e}"
+      pure false
+    | .ok (leanEnv, _, dcenv) =>
+      let mut ungroundedOk := true
+      if dcenv.ungrounded.size > 0 then
+        ungroundedOk := false
+        IO.println s!"[aux-gen-diff]   driver ungrounded: {dcenv.ungrounded.size}"
+        for (n, e) in dcenv.ungrounded.toList.take 6 do
+          IO.println s!"[aux-gen-diff]     {n.pretty}: {(e.take 200)}"
+      let mut addrMism : Array (Ix.Name × Address × Address) := #[]
+      let mut missingRust : Array Ix.Name := #[]
+      let mut byteMism : Array Ix.Name := #[]
+      let mut metaMism : Nat := 0
+      let mut originalMism : Nat := 0
+      let mut hintsMism : Nat := 0
+      for (name, leanNamed) in leanEnv.named do
+        match rustEnv.named.get? name with
+        | none => missingRust := missingRust.push name
+        | some rustNamed =>
+          if leanNamed.addr != rustNamed.addr then
+            addrMism := addrMism.push (name, leanNamed.addr, rustNamed.addr)
+          else
+            let lb := leanEnv.getConst? leanNamed.addr |>.map Ixon.ser
+            let rb := rustEnv.getConst? rustNamed.addr |>.map Ixon.ser
+            if lb != rb then
+              byteMism := byteMism.push name
+          if leanNamed.constMeta != rustNamed.constMeta then
+            metaMism := metaMism + 1
+          if leanNamed.original != rustNamed.original then
+            originalMism := originalMism + 1
+          if leanNamed.hints != rustNamed.hints then
+            hintsMism := hintsMism + 1
+      let mut missingLean : Array Ix.Name := #[]
+      for (name, _) in rustEnv.named do
+        if !leanEnv.named.contains name then
+          missingLean := missingLean.push name
+      IO.println s!"[aux-gen-diff]   driver: {leanEnv.named.size} lean named vs {rustEnv.named.size} rust named"
+      IO.println s!"[aux-gen-diff]   addr mismatches: {addrMism.size}"
+      if !addrMism.isEmpty then
+        for (n, la, ra) in addrMism.toList.take 12 do
+          IO.println s!"[aux-gen-diff]     {n.pretty}: lean={la} rust={ra}"
+      IO.println s!"[aux-gen-diff]   byte mismatches (addr-equal): {byteMism.size}"
+      if !byteMism.isEmpty then
+        IO.println s!"[aux-gen-diff]     e.g. {sample byteMism}"
+      IO.println s!"[aux-gen-diff]   missing in rust: {missingRust.size}, missing in lean: {missingLean.size}"
+      if !missingRust.isEmpty then
+        IO.println s!"[aux-gen-diff]     missingRust e.g. {sample missingRust}"
+      if !missingLean.isEmpty then
+        IO.println s!"[aux-gen-diff]     missingLean e.g. {sample missingLean}"
+      IO.println s!"[aux-gen-diff]   named meta mismatches (informational): constMeta={metaMism} original={originalMism} hints={hintsMism}"
+      -- anonHints table (finalize_hints' per-address channel).
+      let mut anonHintsMism : Nat := 0
+      for (addr, h) in leanEnv.anonHints do
+        if rustEnv.anonHints.get? addr != some h then
+          anonHintsMism := anonHintsMism + 1
+      for (addr, _) in rustEnv.anonHints do
+        if !leanEnv.anonHints.contains addr then
+          anonHintsMism := anonHintsMism + 1
+      IO.println s!"[aux-gen-diff]   anonHints mismatches: {anonHintsMism} (lean {leanEnv.anonHints.size} / rust {rustEnv.anonHints.size})"
+      -- Whole-env serialization: the A9 ladder's first rung. Both sides
+      -- serialize through the same canonical `Ixon.serEnv`; byte
+      -- equality here means the .ixe files would be identical.
+      let serOk ← do
+        match Ixon.serEnv leanEnv, Ixon.serEnv rustEnv with
+        | .ok lb, .ok rb =>
+          if lb == rb then
+            IO.println s!"[aux-gen-diff]   serialized env: {lb.size} bytes, IDENTICAL"
+            pure true
+          else
+            IO.println s!"[aux-gen-diff]   serialized env DIFFERS: lean {lb.size}B rust {rb.size}B (first diff at {repr (firstDiff lb rb)})"
+            pure false
+        | .error e, _ =>
+          IO.println s!"[aux-gen-diff]   serEnv (lean) failed: {e}"
+          pure false
+        | _, .error e =>
+          IO.println s!"[aux-gen-diff]   serEnv (rust) failed: {e}"
+          pure false
+      pure (ungroundedOk && addrMism.isEmpty && byteMism.isEmpty
+        && missingRust.isEmpty && missingLean.isEmpty
+        && metaMism == 0 && originalMism == 0 && hintsMism == 0
+        && anonHintsMism == 0 && serOk)
+  IO.println s!"[aux-gen-diff] driver gate: {if driverOk then "PASS" else "FAIL"}"
+
+  return if gateOk && dumpOk && patchesOk && plansOk && driverOk then 0 else 1
 
 end Tests.Compile.AuxGenDiff

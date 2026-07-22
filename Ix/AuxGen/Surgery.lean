@@ -23,27 +23,12 @@
   where `A ~ B`, `A.rec` keeps `motive_A` while `B.rec` keeps `motive_B`,
   because each recursor's result type uses the motive for its "self" type.
 
-  NOT ported here — the CONSUMPTION half (call-site expression rewriting
-  applied by compile.rs's `compile_expr` arms), a later milestone:
-
-  - `adapt_split_minor`        (surgery.rs:834) — wraps a kept source minor
-    in a lambda that synthesizes IHs for fields targeting other SCCs;
-  - `source_ctor_for_minor`    (surgery.rs:942) — source minor index →
-    `(sourcePos, ConstructorVal)` across user + aux minor bands;
-  - `source_minor_type`        (surgery.rs:1168) — instantiated type of the
-    `srcMinorIdx`-th minor binder of a source recursor;
-  - `peel_binders`             (surgery.rs:1197) — open `n` foralls into
-    fresh-FVar `LocalDecl`s;
-  - `SourceRecTarget` / `find_source_rec_target` (surgery.rs:1226/1233) —
-    detect a minor field whose type targets a source (or aux) inductive;
-  - `synthesize_external_ih`   (surgery.rs:1306) — build the recursive-call
-    IH for an out-of-block target;
-  - `dump_plan_state`          (surgery.rs:1354) — `IX_SURGERY_DUMP` gated
-    stderr diagnostic (env-var debug blocks are not ported, matching the
-    `IX_RECURSOR_DUMP` precedent in `Ix.AuxGen.Nested`).
-
-  Those consumers will need `auxMotiveSigs` / `AuxMotiveSig`,
-  `deriveHeadRewriteApp`, and the telescope collectors ported below.
+  The CONSUMPTION half (call-site expression rewriting applied by
+  `compile_expr`'s arms: `adapt_split_minor`, `derive_head_rewrite_app`,
+  `aux_motive_sigs`, the telescope collectors, and their helpers) lives in
+  the leaf module `Ix.CallSiteSurgery` (re-exported here), below
+  `Ix.CompileM`, so `compileExpr` can consume plans without importing
+  AuxGen.
 
   Environment access: Rust threads `lean_env: &LeanEnv`; the Lean port
   reads the base compile environment via `lookupConst?` (CompileM), the
@@ -58,6 +43,8 @@ public import Ix.Common
 public import Ix.Address
 public import Ix.Environment
 public import Ix.Ixon
+public import Ix.CallSitePlan
+public import Ix.CallSiteSurgery
 public import Ix.CompileM
 public import Ix.AuxGen.ExprUtils
 public import Ix.AuxGen.Nested
@@ -66,144 +53,6 @@ public section
 namespace Ix.AuxGen
 
 open Ix.CompileM (CompileM CompileError)
-
-/-! ## Plan data model (surgery.rs:50-175)
-
-Declaration order deviation: Rust declares `CallSitePlan` (surgery.rs:56)
-before `AuxHeadRewrite` (surgery.rs:101); Lean needs the dependency
-first. Field-for-field identical. -/
-
-/-- Head-rewrite directive carried by `CallSitePlan.headRewrite`.
-    Mirrors Rust `AuxHeadRewrite` (surgery.rs:101). -/
-structure AuxHeadRewrite where
-  /-- The external inductive's recursor (the alias target, e.g. `List.rec`). -/
-  targetRec : Name
-  /-- Source motive position of the evaporated aux (`nUserMotives + j`). -/
-  targetMotivePos : Nat
-  deriving Repr, Nonempty, Inhabited
-
-/-- Per-auxiliary surgery plan for call-site argument reordering.
-
-    Computed per original recursor name (not per equivalence class),
-    because the choice of which collapsed motive to keep depends on which
-    member of the equivalence class the recursor "belongs to".
-    Mirrors Rust `CallSitePlan` (surgery.rs:56). -/
-structure CallSitePlan where
-  /-- Number of parameters (unchanged between source and canonical). -/
-  nParams : Nat
-  /-- Source-order motive count (from original `rec.all.size`). -/
-  nSourceMotives : Nat
-  /-- Source-order minor count. -/
-  nSourceMinors : Nat
-  /-- Number of indices (between minors and major premise). -/
-  nIndices : Nat
-  /-- `keep[i]`: true if source motive `i` survives collapse.
-      For `A.rec`, `keep[A_pos]` = true. For `B.rec`, `keep[B_pos]` = true. -/
-  motiveKeep : Array Bool
-  /-- `keep[i]`: true if source minor `i` survives collapse. -/
-  minorKeep : Array Bool
-  /-- `sourceToCanonMotive[i]` = canonical position of source motive `i`.
-      Collapsed positions share the canonical index of their representative. -/
-  sourceToCanonMotive : Array Nat
-  /-- Same for minors. -/
-  sourceToCanonMinor : Array Nat
-  /-- `true` when the source motive belongs to this canonical SCC.
-
-      Source recursor types use Lean's original `all` block, but canonical
-      recursors are generated per minimal SCC. A source motive can
-      therefore be present in the source telescope while absent from this
-      canonical block. Call-site minor adaptation uses this bit to
-      distinguish "canonical recursor supplies an IH binder" from "the IH
-      must be synthesized by a recursive call into another canonical
-      block". -/
-  sourceInBlock : Array Bool
-  /-- `some` when the callee is an EVAPORATED aux recursor — a
-      `<all0>.rec_N` whose nested occurrence lost every spec-param
-      inductive to another SCC. Its claim is aliased to the external
-      inductive's own recursor (see the evaporated-aux alias pass in
-      `aux_gen.rs`), so the call spine must be rebuilt onto that
-      telescope:
-
-        source: params… motives… minors… indices… major   (over-merged)
-        target: specs…  motive   minors′… indices… major  (external rec)
-
-      The spec args and extended level list are derived at the apply site
-      from the source recursor's type instantiated with the call-site args
-      (`deriveHeadRewriteApp`). -/
-  headRewrite : Option AuxHeadRewrite
-  deriving Repr, Nonempty, Inhabited
-
-namespace CallSitePlan
-
-/-- Number of canonical (kept) motives.
-    Mirrors Rust `CallSitePlan::n_canonical_motives` (surgery.rs:110). -/
-def nCanonicalMotives (plan : CallSitePlan) : Nat :=
-  plan.motiveKeep.foldl (fun acc k => if k then acc + 1 else acc) 0
-
-/-- Number of canonical (kept) minors.
-    Mirrors Rust `CallSitePlan::n_canonical_minors` (surgery.rs:115). -/
-def nCanonicalMinors (plan : CallSitePlan) : Nat :=
-  plan.minorKeep.foldl (fun acc k => if k then acc + 1 else acc) 0
-
-/-- Total canonical args in the telescope (params + kept motives + kept
-    minors + indices + 1 major).
-    Mirrors Rust `CallSitePlan::n_canonical_args` (surgery.rs:120). -/
-def nCanonicalArgs (plan : CallSitePlan) : Nat :=
-  plan.nParams
-    + plan.nCanonicalMotives
-    + plan.nCanonicalMinors
-    + plan.nIndices
-    + 1 -- major premise
-
-/-- Whether this plan is an identity (no reordering, no collapse).
-    Mirrors Rust `CallSitePlan::is_identity` (surgery.rs:129). -/
-def isIdentity (plan : CallSitePlan) : Bool :=
-  plan.headRewrite.isNone
-    && plan.motiveKeep.all (fun k => k)
-    && plan.minorKeep.all (fun k => k)
-    && plan.sourceToCanonMotive.zipIdx.all (fun (c, i) => c == i)
-    && plan.sourceToCanonMinor.zipIdx.all (fun (c, i) => c == i)
-
-end CallSitePlan
-
-/-- Call-site surgery plan for `.brecOn` / `.brecOn_N`.
-
-    `.rec` telescope layout is:
-    `params, motives, minors, indices, major`.
-
-    `.brecOn` telescope layout is:
-    `params, motives, indices, major, handlers`, with one handler per
-    motive. The motive permutation/drop decision is the same as the
-    corresponding recursor plan, and the handlers mirror that motive
-    layout. Mirrors Rust `BRecOnCallSitePlan` (surgery.rs:148). -/
-structure BRecOnCallSitePlan where
-  nParams : Nat
-  nSourceMotives : Nat
-  nIndices : Nat
-  motiveKeep : Array Bool
-  sourceToCanonMotive : Array Nat
-  deriving Repr, Nonempty, Inhabited
-
-namespace BRecOnCallSitePlan
-
-/-- Mirrors Rust `BRecOnCallSitePlan::from_rec_plan` (surgery.rs:157). -/
-def fromRecPlan (plan : CallSitePlan) : BRecOnCallSitePlan :=
-  { nParams := plan.nParams
-    nSourceMotives := plan.nSourceMotives
-    nIndices := plan.nIndices
-    motiveKeep := plan.motiveKeep
-    sourceToCanonMotive := plan.sourceToCanonMotive }
-
-/-- Mirrors Rust `BRecOnCallSitePlan::n_canonical_motives` (surgery.rs:167). -/
-def nCanonicalMotives (plan : BRecOnCallSitePlan) : Nat :=
-  plan.motiveKeep.foldl (fun acc k => if k then acc + 1 else acc) 0
-
-/-- Mirrors Rust `BRecOnCallSitePlan::is_identity` (surgery.rs:171). -/
-def isIdentity (plan : BRecOnCallSitePlan) : Bool :=
-  plan.motiveKeep.all (fun k => k)
-    && plan.sourceToCanonMotive.zipIdx.all (fun (c, i) => c == i)
-
-end BRecOnCallSitePlan
 
 /-- Mirrors Rust `rec_name_to_brecon_name` (surgery.rs:177).
     `X.rec → X.brecOn`, `X.rec_N → X.brecOn_N`, otherwise `none`. -/
@@ -230,35 +79,6 @@ def recNameToBelowName (name : Name) : Option Name :=
     else
       none
   | _ => none
-
-/-! ## Telescope utilities (surgery.rs:201) -/
-
-/-- Mirrors Rust `collect_lean_telescope` (surgery.rs:208).
-
-    Collect a Lean App telescope: peel App nodes to get
-    `(head, #[a1, ..., aN])`, arguments in application order (leftmost
-    first). Same walk as `decomposeApps` (Rust keeps both — surgery.rs's
-    reference-based collector and expr_utils' owned `decompose_apps`);
-    the Lean port delegates so the two can never drift. -/
-def collectLeanTelescope (e : Expr) : Expr × Array Expr :=
-  decomposeApps e
-
-/-- Mirrors Rust `collect_ixon_telescope` (surgery.rs:225).
-
-    Collect an Ixon App telescope: peel App nodes to get
-    `(head, #[a1, ..., aN])`, arguments in application order (leftmost
-    first). -/
-def collectIxonTelescope (e : Ixon.Expr) : Ixon.Expr × Array Ixon.Expr :=
-  Id.run do
-    let mut args : Array Ixon.Expr := #[]
-    let mut cur := e
-    repeat
-      match cur with
-      | .app f a =>
-        args := args.push a
-        cur := f
-      | _ => break
-    return (cur, args.reverse)
 
 /-! ## Plan computation (surgery.rs:238)
 
@@ -667,153 +487,4 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
         plans := plans.insert recName plan
 
   return plans
-
-/-! ## Aux motive signatures (surgery.rs:988)
-
-Shared with the consumption half: `adapt_split_minor`,
-`source_ctor_for_minor`, and `find_source_rec_target` (surgery.rs:834/
-942/1233) all take the `AuxMotiveSig` list extracted here. -/
-
-/-- Signature of a nested-aux motive read off a source recursor's type:
-    motive `sourcePos` targets `extName specs… idx…`. Spec args are
-    concrete (the recursor type is instantiated with call-site params
-    before extraction), so field types can be matched against them by
-    hash. Mirrors Rust `AuxMotiveSig` (surgery.rs:992). -/
-structure AuxMotiveSig where
-  sourcePos : Nat
-  extName : Name
-  extNParams : Nat
-  specs : Array Expr
-  deriving Repr, Nonempty, Inhabited
-
-/-- Extract `AuxMotiveSig`s for every aux motive position (`≥ all.size`)
-    of `recVal`, by walking its type instantiated with the call site's
-    levels, params, and motives. Mirrors Rust `aux_motive_sigs`
-    (surgery.rs:1002). -/
-def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
-    (params : Array Expr) (motives : Array Expr) :
-    CompileM (Array AuxMotiveSig) := do
-  let nUser := recVal.all.size
-  let nMotives := recVal.numMotives
-  let mut out : Array AuxMotiveSig := #[]
-  if nMotives <= nUser then
-    return out
-  let mut cur :=
-    substLevels recVal.cnst.type recVal.cnst.levelParams recLevels
-  for arg in params do
-    match cur with
-    | .forallE _ _ body _ _ =>
-      -- Shift-aware substitution — args may reference the caller's
-      -- telescope (see `source_minor_type`, surgery.rs:1019).
-      cur := instantiateRev body #[arg]
-    | _ => return out
-  for (motive, mIdx) in motives.zipIdx do
-    if mIdx >= nMotives then
-      break
-    match cur with
-    | .forallE _ dom body _ _ =>
-      if mIdx >= nUser then
-        -- dom = `∀ idx…, Ext specs… idx… → Sort _` — the major's type is
-        -- the last peeled domain (surgery.rs:1031).
-        let mut d := consumeTypeAnnotations dom
-        let mut lastDom : Option Expr := none
-        let mut i : Nat := 0
-        repeat
-          match d with
-          | .forallE _ dd db _ _ =>
-            lastDom := some (consumeTypeAnnotations dd)
-            let (_, fv) := freshFVar "aux_sig_idx" (mIdx * 64 + i)
-            d := instantiate1 db fv
-            i := i + 1
-          | _ => break
-        if let some t := lastDom then
-          let (head, tArgs) := decomposeApps t
-          if let .const extName _ _ := head then
-            match ← lookupConst? extName with
-            | some (.inductInfo ind) =>
-              let extNParams := ind.numParams
-              if tArgs.size >= extNParams then
-                out := out.push {
-                  sourcePos := mIdx
-                  extName, extNParams
-                  specs := tArgs.extract 0 extNParams }
-            | _ => pure ()
-      cur := instantiateRev body #[motive]
-    | _ => return out
-  return out
-
-/-- Derive the pieces needed to rebuild a head-rewritten call site onto
-    the external recursor's telescope: the extended universe-level list
-    and the external inductive's parameter (spec) arguments.
-
-    Both are read off the SOURCE aux recursor's type — the motive binder
-    at `hr.targetMotivePos` has domain `∀ idx…, Ext.{occ} specs… idx… →
-    Sort _` — instantiated with the call site's levels, params, and
-    preceding motives, so the result is expressed in caller terms.
-
-    Mirrors Rust `derive_head_rewrite_app` (surgery.rs:1076), including
-    its `Result<_, String>` error channel (`Except String` — the
-    consumption caller decides how to wrap failures). -/
-def deriveHeadRewriteApp (recName : Name) (recLevels : Array Level)
-    (hr : AuxHeadRewrite) (params : Array Expr) (motives : Array Expr) :
-    CompileM (Except String (Array Level × Array Expr)) := do
-  let some (.recInfo recVal) ← lookupConst? recName
-    | return .error s!"'{recName.pretty}' is not a recursor"
-  let sigs ← auxMotiveSigs recVal recLevels params motives
-  let some sig := sigs.find? fun s => s.sourcePos == hr.targetMotivePos
-    | return .error s!"no aux motive signature at position {hr.targetMotivePos}"
-  if Name.mkStr sig.extName "rec" != hr.targetRec then
-    return .error s!"aux motive targets '{sig.extName.pretty}' but the \
-plan's target is '{hr.targetRec.pretty}'"
-  -- Occurrence levels: re-extract the external const's level args from
-  -- the motive's major type — `auxMotiveSigs` keeps only the value args
-  -- (surgery.rs:1105).
-  let mut cur :=
-    substLevels recVal.cnst.type recVal.cnst.levelParams recLevels
-  for arg in params ++ motives.extract 0 hr.targetMotivePos do
-    match cur with
-    | .forallE _ _ body _ _ =>
-      -- Shift-aware substitution — args may reference the caller's
-      -- telescope (see `source_minor_type`, surgery.rs:1110).
-      cur := instantiateRev body #[arg]
-    | _ => return .error "recursor telescope too short"
-  let .forallE _ dom _ _ _ := cur
-    | return .error "missing target motive binder"
-  let mut d := consumeTypeAnnotations dom
-  let mut lastDom : Option Expr := none
-  let mut i : Nat := 0
-  repeat
-    match d with
-    | .forallE _ dd db _ _ =>
-      lastDom := some (consumeTypeAnnotations dd)
-      let (_, fv) := freshFVar "hr_idx" i
-      d := instantiate1 db fv
-      i := i + 1
-    | _ => break
-  let some t := lastDom
-    | return .error "motive domain has no major binder"
-  let (head, _) := decomposeApps t
-  let occLevels : Array Level ←
-    match head with
-    | .const _ lvls _ => pure lvls
-    | _ => return .error "major type head is not a constant"
-  let some (.recInfo target) ← lookupConst? hr.targetRec
-    | return .error
-        s!"target recursor '{hr.targetRec.pretty}' missing from env"
-  let needed := target.cnst.levelParams.size
-  let targetLevels : Array Level ←
-    if needed == occLevels.size + 1 then
-      -- Elimination level first (Lean's recursor level convention), then
-      -- the external inductive's own levels from the occurrence.
-      let some elim := recLevels[0]?
-        | return .error "source recursor has no elimination level"
-      pure (#[elim] ++ occLevels)
-    else if needed == occLevels.size then
-      pure occLevels
-    else
-      return .error s!"cannot map universe levels: target \
-'{hr.targetRec.pretty}' has {needed} level params, occurrence supplies \
-{occLevels.size}"
-  return .ok (targetLevels, sig.specs)
-
 end Ix.AuxGen
