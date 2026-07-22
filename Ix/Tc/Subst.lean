@@ -62,7 +62,7 @@ abbrev WalkM (m : Mode) := StateM (InternTable m × Scratch m)
 
 /-- Inner recursive worker for `lift`, memoized by `(addr, cutoff)`
     (`shift` is fixed across a call). -/
-partial def liftCached (e : KExpr m) (shift cutoff : UInt64) :
+def liftCached (e : KExpr m) (shift cutoff : UInt64) :
     WalkM m (KExpr m) := do
   if shift == 0 || e.lbr ≤ cutoff then
     return e
@@ -104,13 +104,14 @@ partial def liftCached (e : KExpr m) (shift cutoff : UInt64) :
   let interned ← liftInternW (internExprM result)
   scratchInsert key interned
   return interned
+termination_by structural e
 
 /-- Shift free de Bruijn indices ≥ `cutoff` up by `shift`. -/
 def lift (e : KExpr m) (shift cutoff : UInt64) : InternM m (KExpr m) :=
   if shift == 0 || e.lbr ≤ cutoff then pure e
   else runWalk (liftCached e shift cutoff)
 
-partial def substCached (body arg : KExpr m) (depth : UInt64) :
+def substCached (body arg : KExpr m) (depth : UInt64) :
     WalkM m (KExpr m) := do
   if body.lbr ≤ depth then
     return body
@@ -151,6 +152,7 @@ partial def substCached (body arg : KExpr m) (depth : UInt64) :
   let interned ← liftInternW (internExprM result)
   scratchInsert key interned
   return interned
+termination_by structural body
 
 /-- Single substitution `body[arg/Var(depth)]`: replaces `Var(depth)` with
     `arg` (lifted by `depth`), shifts free variables above `depth` down
@@ -159,7 +161,7 @@ def subst (body arg : KExpr m) (depth : UInt64) : InternM m (KExpr m) :=
   if body.lbr ≤ depth then pure body
   else runWalk (substCached body arg depth)
 
-partial def simulSubstCached (body : KExpr m)
+def simulSubstCached (body : KExpr m)
     (substs : Array (KExpr m)) (depth : UInt64) : WalkM m (KExpr m) := do
   if body.lbr ≤ depth then
     return body
@@ -200,6 +202,7 @@ partial def simulSubstCached (body : KExpr m)
   let interned ← liftInternW (internExprM result)
   scratchInsert key interned
   return interned
+termination_by structural body
 
 /-- Simultaneous substitution: replace `Var(depth)..Var(depth+n-1)` with
     `substs[0]..substs[n-1]`, shifting free variables above by `-n`. -/
@@ -212,7 +215,7 @@ def simulSubst (body : KExpr m) (substs : Array (KExpr m)) (depth : UInt64) :
     recursor peeling). Deliberately does NOT intern: interning a long chain
     of distinct never-reused nodes keeps every predecessor alive for the
     whole environment check. -/
-partial def substNoIntern (body arg : KExpr m) (depth : UInt64) : KExpr m :=
+def substNoIntern (body arg : KExpr m) (depth : UInt64) : KExpr m :=
   if body.lbr ≤ depth then body
   else match body with
     | .var i name _ =>
@@ -234,6 +237,7 @@ partial def substNoIntern (body arg : KExpr m) (depth : UInt64) : KExpr m :=
     | .prj id field val _ =>
       KExpr.mkPrj id field (substNoIntern val arg depth)
     | _ => body
+termination_by structural body
 where
   liftNoIntern (e : KExpr m) (shift cutoff : UInt64) : KExpr m :=
     if shift == 0 || e.lbr ≤ cutoff then e
@@ -255,8 +259,9 @@ where
       | .prj id field val _ =>
         KExpr.mkPrj id field (liftNoIntern val shift cutoff)
       | _ => e
+  termination_by structural e
 
-partial def instantiateRevCached (body : KExpr m)
+def instantiateRevCached (body : KExpr m)
     (fvars : Array (KExpr m)) (depth : UInt64) : WalkM m (KExpr m) := do
   if body.lbr ≤ depth then
     return body
@@ -299,6 +304,7 @@ partial def instantiateRevCached (body : KExpr m)
   let interned ← liftInternW (internExprM result)
   scratchInsert key interned
   return interned
+termination_by structural body
 
 /-- Instantiate the outermost `n = fvars.size` loose bound variables in
     `body` by the corresponding fvars, in reverse order (`Var(0) →
@@ -310,7 +316,7 @@ def instantiateRev (body : KExpr m) (fvars : Array (KExpr m)) :
   if fvars.isEmpty || body.lbr == 0 then pure body
   else runWalk (instantiateRevCached body fvars 0)
 
-partial def abstractFVarsCached (body : KExpr m)
+def abstractFVarsCached (body : KExpr m)
     (pos : Std.HashMap FVarId UInt64) (n depth : UInt64) :
     WalkM m (KExpr m) := do
   -- Subtrees with neither fvars nor loose bvars ≥ depth are unchanged.
@@ -359,6 +365,7 @@ partial def abstractFVarsCached (body : KExpr m)
   let interned ← liftInternW (internExprM result)
   scratchInsert key interned
   return interned
+termination_by structural body
 
 /-- Inverse of `instantiateRev`: replace each listed fvar with the
     appropriate `Var(level)` and shift other loose bvars up by `n` so the
@@ -380,6 +387,17 @@ def abstractFVars (body : KExpr m) (fvars : Array FVarId) :
       return pos
     runWalk (abstractFVarsCached body pos n 0)
 
+/-- Peel up to `n` outermost lambdas, counting from `i`: returns the exposed
+    body and the final count. Structural rewrite of `cheapBetaReduce`'s
+    counting `while` (Tier A — the loop and the recursion exit on exactly the
+    same states, so the traversal is unchanged). -/
+def peelLams (n : Nat) (head : KExpr m) (i : Nat) : KExpr m × Nat :=
+  match head with
+  | .lam _ _ _ inner _ =>
+    if i < n then peelLams n inner (i + 1) else (head, i)
+  | _ => (head, i)
+termination_by structural head
+
 /-- Cheap beta reduction: peephole-reduce `App(λ…λ. body, args)` without full
     `subst` in trivial cases (closed body, or single-bvar body). Otherwise
     returns the input unchanged (full WHNF handles it). Mirrors lean4lean's
@@ -393,14 +411,7 @@ def cheapBetaReduce (e : KExpr m) : InternM m (KExpr m) := do
   | .lam .. => pure ()
   | _ => return e
   -- Peel up to `args.size` lambdas.
-  let mut head := head₀
-  let mut i := 0
-  while i < args.size do
-    match head with
-    | .lam _ _ _ inner _ =>
-      head := inner
-      i := i + 1
-    | _ => break
+  let (head, i) := peelLams args.size head₀ 0
   -- Case A: closed body — drop the peeled binders, apply remaining args.
   if head.lbr == 0 then
     let mut result := head
