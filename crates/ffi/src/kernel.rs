@@ -69,7 +69,9 @@ use ix_kernel::ingress::{
 #[cfg(feature = "test-ffi")]
 use ix_kernel::ingress::{ixon_ingress, lean_ingress};
 use ix_kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
-use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
+use ix_kernel::profile::{
+  BlockEntry, BlockProfile, ProfileBuilder, ProfileSink,
+};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
 #[cfg(feature = "test-ffi")]
@@ -2141,8 +2143,69 @@ fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
     .map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
 }
 
+/// Display name per profile block: the lexicographically-smallest named
+/// member (constants resolve through `profile_block_of`, so a projection's
+/// name lands on its block; a directly-named `Muts` block keeps its own
+/// `…._mutual`-style name). Smallest-wins keeps the pick deterministic.
+/// The anon env carries no names (`get_anon_mmap` stops before §4-6), so
+/// the §5 entries are re-read from the file via the lazy index — cheap:
+/// the lazy parser skips constant and metadata bodies. Any read/parse
+/// failure just yields an empty map (the leaderboards fall back to
+/// addresses); names are presentation, never worth failing the profile.
+fn block_display_names(
+  env: &IxonEnv,
+  path: &str,
+) -> FxHashMap<Address, String> {
+  let Ok(bytes) = std::fs::read(path) else {
+    return FxHashMap::default();
+  };
+  let Ok(index) = IxonEnv::parse_lazy_index(&bytes) else {
+    return FxHashMap::default();
+  };
+  let mut names: FxHashMap<Address, String> = FxHashMap::default();
+  for ln in &index.named {
+    let block = profile_block_of(env, &ln.addr);
+    let s = format!("{}", ln.name);
+    names
+      .entry(block)
+      .and_modify(|cur| {
+        if s < *cur {
+          *cur = s.clone();
+        }
+      })
+      .or_insert(s);
+  }
+  names
+}
+
+/// Print the top-`n` blocks by one metric, largest first, with display
+/// names (falling back to the block address) and the block's member count.
+fn print_top_blocks(
+  title: &str,
+  n: usize,
+  profile: &BlockProfile,
+  names: &FxHashMap<Address, String>,
+  metric: &dyn Fn(&BlockEntry) -> u64,
+) {
+  let blocks = profile.blocks();
+  let mut idx: Vec<usize> = (0..blocks.len()).collect();
+  idx.sort_by_key(|&i| std::cmp::Reverse(metric(&blocks[i])));
+  eprintln!("\n top {} blocks by {title}", n.min(blocks.len()));
+  for (rank, &i) in idx.iter().take(n).enumerate() {
+    let b = &blocks[i];
+    let name = names.get(&b.addr).cloned().unwrap_or_else(|| b.addr.hex());
+    let members = if b.const_count > 1 {
+      format!("  [{} consts]", b.const_count)
+    } else {
+      String::new()
+    };
+    eprintln!("  {:>2}. {:>14}  {name}{members}", rank + 1, metric(b));
+  }
+}
+
 /// Print the general-purpose cost breakdown for `ix profile` — the kernel-work
-/// metrics plus the predicted Zisk leaf cost/RAM (à la `cargo-zisk … -p summary`).
+/// metrics plus the predicted Zisk leaf cost/RAM (à la `cargo-zisk … -p summary`)
+/// and, when `top_n > 0`, per-metric block leaderboards.
 // `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss
 // past 2⁵³ steps is irrelevant to a two-sig-fig estimate.
 #[allow(clippy::cast_precision_loss)]
@@ -2150,6 +2213,8 @@ fn print_profile_summary(
   env_path: &str,
   sink: &ProfileSink,
   profile: &BlockProfile,
+  env: &IxonEnv,
+  top_n: usize,
 ) {
   use ix_kernel::shard::{
     SHARD_STEP_FLOOR, STEPS_PER_HEARTBEAT, STEPS_PER_INGRESS_BYTE,
@@ -2194,6 +2259,37 @@ fn print_profile_summary(
     profile.num_blocks(),
     steps as f64,
   );
+  if top_n > 0 {
+    let names = block_display_names(env, env_path);
+    // Aiur-relevant metrics first, the Zisk step model last: Aiur's
+    // memoized query execution collapses repeated work, so raw
+    // substitution volume overweights repetitive blocks and heartbeats
+    // (reduction steps, already downstream of the kernel's memo tables)
+    // track measured fft-cost closest of the recorded counters.
+    // TODO: a calibrated Aiur prove-time/RAM model — until then the
+    // ground truth is measured fft-cost from `ix bench run --backend
+    // aiur --consts <name>`.
+    eprintln!(
+      "\n predicted Aiur prove time / RAM per block: TODO (no calibrated \
+       Aiur cost model; heartbeats below are the closest recorded proxy, \
+       and `ix bench run --backend aiur --consts <name>` measures ground \
+       truth)"
+    );
+    print_top_blocks("heartbeats", top_n, profile, &names, &|b| b.heartbeats);
+    print_top_blocks("substitution nodes", top_n, profile, &names, &|b| {
+      b.subst
+    });
+    print_top_blocks("ingress bytes", top_n, profile, &names, &|b| {
+      u64::from(b.serialized_size)
+    });
+    print_top_blocks(
+      "predicted Zisk steps (sharding cost)",
+      top_n,
+      profile,
+      &names,
+      &block_step_cost,
+    );
+  }
 }
 
 /// Aggregate per-constant records into a block-level [`BlockProfile`]: map each
@@ -2332,6 +2428,7 @@ pub fn profile_anon_ixe(
   out: &str,
   isolate: bool,
   quiet: bool,
+  top_n: usize,
 ) -> Result<ProfileStats, String> {
   let load_start = Instant::now();
   let ixon_env = IxonEnv::get_anon_mmap(std::path::Path::new(path))
@@ -2354,7 +2451,7 @@ pub fn profile_anon_ixe(
     run_start.elapsed()
   );
   let profile = build_block_profile(&env_arc, &merged);
-  print_profile_summary(path, &merged, &profile);
+  print_profile_summary(path, &merged, &profile, &env_arc, top_n);
   let bytes = profile.to_bytes();
   std::fs::write(out, &bytes).map_err(|e| format!("write {out}: {e}"))?;
   eprintln!(
@@ -2380,12 +2477,16 @@ pub extern "C" fn rs_kernel_profile_anon(
   out_path: LeanString<LeanBorrowed<'_>>,
   isolate: LeanBool<LeanBorrowed<'_>>,
   quiet: LeanBool<LeanBorrowed<'_>>,
+  top: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
+  // Decimal string, kept ABI-simple like `rs_shard_esp`'s numeric params.
+  let top_n = top.to_string().parse::<usize>().unwrap_or(10);
   match profile_anon_ixe(
     &env_path.to_string(),
     &out_path.to_string(),
     isolate.to_bool(),
     quiet.to_bool(),
+    top_n,
   ) {
     Ok(s) => {
       eprintln!(

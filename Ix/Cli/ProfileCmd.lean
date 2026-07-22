@@ -44,9 +44,11 @@ def runProfileCmd (p : Cli.Parsed) : IO UInt32 := do
       return 1
     Std.Internal.UV.System.osSetenv "IX_KERNEL_CHECK_WORKERS" (toString n)
 
+  let top := (p.flag? "top").map (·.as! Nat) |>.getD 10
+
   IO.println s!"Profiling {envPath} → {outPath} (isolate={isolate})"
   let start ← IO.monoMsNow
-  rsProfileAnonFFI envPath outPath isolate quiet
+  rsProfileAnonFFI envPath outPath isolate quiet (toString top)
   let elapsed := (← IO.monoMsNow) - start
   IO.println s!"[profile] wrote {outPath} in {elapsed.formatMs}"
   return 0
@@ -63,6 +65,7 @@ def profileCmd : Cli.Cmd := `[Cli|
     "keep-caches";          "Keep cross-constant caches: faster, lower-fidelity, may under-record"
     workers       : Nat;    "Parallel kernel workers (default: available_parallelism). Plumbs IX_KERNEL_CHECK_WORKERS."
     verbose;                "Log every constant (default: quiet)"
+    top           : Nat;    "Block-leaderboard size in the summary: top N by heartbeats (closest Aiur proxy), substitutions, ingress bytes, and predicted Zisk steps (default 10; 0 disables)"
 
   ARGS:
     path : String; "Path to a serialized .ixe environment"

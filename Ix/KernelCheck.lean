@@ -198,13 +198,16 @@ opaque rsEnvExtractFFI :
     per-block heartbeats + the delta-unfold graph (the sharding cost model,
     see `plans/sharding.md`). Runs the anon kernel over every checkable target.
     `isolate` clears the kernel's reduction-memo caches between constants for
-    sound/faithful recording; `quiet` suppresses per-constant progress. -/
+    sound/faithful recording; `quiet` suppresses per-constant progress. `top`
+    (a decimal string, kept ABI-simple) sizes the summary's per-metric block
+    leaderboards; "0" disables them. -/
 @[extern "rs_kernel_profile_anon"]
 opaque rsProfileAnonFFI :
     @& String →                          -- .ixe path
     @& String →                          -- .ixprof output path
     @& Bool →                            -- isolate caches
     @& Bool →                            -- quiet
+    @& String →                          -- leaderboard size (decimal)
     IO Unit
 
 /-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
