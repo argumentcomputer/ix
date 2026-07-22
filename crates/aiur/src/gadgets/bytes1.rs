@@ -1,6 +1,6 @@
 use multi_stark::{
   builder::symbolic::{SymbolicExpression, preprocessed_var, var},
-  lookup::Lookup,
+  lookup::{Lookup, LookupValues},
   p3_air::{Air, AirBuilder, BaseAir},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
@@ -160,11 +160,13 @@ impl AiurGadget for Bytes1 {
   fn witness_data(
     &self,
     record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+    slot_arg_widths: &[usize],
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
     let mut rows = vec![G::ZERO; 256 * TRACE_WIDTH];
 
     // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
-    let mut lookups = vec![vec![Lookup::empty(); TRACE_WIDTH]; 256];
+    let mut builder = LookupValues::builder(256, slot_arg_widths);
+    let mut row_writers = builder.rows_mut();
 
     let bit_decomposition_channel = u8_bit_decomposition_channel();
     let shift_left_channel = u8_shift_left_channel();
@@ -175,7 +177,7 @@ impl AiurGadget for Bytes1 {
       .chunks_exact_mut(TRACE_WIDTH)
       .enumerate()
       .zip(&record.bytes1_queries.0)
-      .zip(&mut lookups)
+      .zip(row_writers.iter_mut())
       .for_each(|(((byte, row), &[bd, shl, shr]), row_lookups)| {
         let byte = G::from_usize(byte);
         row[0] = bd;
@@ -186,21 +188,24 @@ impl AiurGadget for Bytes1 {
         let mut bit_decomposition_args = Vec::with_capacity(10);
         bit_decomposition_args.extend([bit_decomposition_channel, byte]);
         bit_decomposition_args.extend(Self::bit_decompose(&byte));
-        row_lookups[0] = Lookup::pull(bd, bit_decomposition_args);
+        row_lookups.pull(0, bd, &bit_decomposition_args);
 
         // Pull shift left.
-        row_lookups[1] = Lookup::pull(
+        row_lookups.pull(
+          1,
           shl,
-          vec![shift_left_channel, byte, Self::shift_left(&byte)],
+          &[shift_left_channel, byte, Self::shift_left(&byte)],
         );
 
         // Pull shift right.
-        row_lookups[2] = Lookup::pull(
+        row_lookups.pull(
+          2,
           shr,
-          vec![shift_right_channel, byte, Self::shift_right(&byte)],
+          &[shift_right_channel, byte, Self::shift_right(&byte)],
         );
       });
-    (RowMajorMatrix::new(rows, TRACE_WIDTH), lookups)
+    drop(row_writers);
+    (RowMajorMatrix::new(rows, TRACE_WIDTH), builder.finish())
   }
 }
 

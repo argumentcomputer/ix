@@ -1,6 +1,6 @@
 use multi_stark::{
   builder::symbolic::{SymbolicExpression, var},
-  lookup::Lookup,
+  lookup::{Lookup, LookupValues},
   p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
@@ -19,16 +19,11 @@ pub struct Memory {
 }
 
 impl Memory {
-  pub(super) fn lookup(
-    multiplicity: G,
-    size: G,
-    ptr: G,
-    values: &[G],
-  ) -> Lookup<G> {
+  pub(super) fn lookup_args(size: G, ptr: G, values: &[G]) -> Vec<G> {
     let mut args = Vec::with_capacity(3 + values.len());
     args.extend([memory_channel(), size, ptr]);
     args.extend(values);
-    Lookup { multiplicity, args }
+    args
   }
 
   fn width(size: usize) -> usize {
@@ -54,7 +49,8 @@ impl Memory {
   pub fn witness_data(
     size: usize,
     record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+    slot_arg_widths: &[usize],
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
     let queries = record.memory_queries.get(&size).expect("Invalid size");
     let width = Self::width(size);
     let height_no_padding = queries.len();
@@ -69,12 +65,14 @@ impl Memory {
     let mut rows = vec![G::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];
 
-    let mut lookups = vec![vec![Lookup::empty()]; height];
-    let lookups_no_padding = &mut lookups[0..height_no_padding];
+    // Builder rows start zeroed (`Lookup::empty()`), so padding rows need no
+    // writes at all.
+    let mut builder = LookupValues::builder(height, slot_arg_widths);
+    let mut row_writers = builder.rows_mut();
 
     rows_no_padding
       .par_chunks_mut(width)
-      .zip(lookups_no_padding.par_iter_mut())
+      .zip(row_writers[..height_no_padding].par_iter_mut())
       .enumerate()
       .for_each(|(i, (row, row_lookups))| {
         let (values, result) = queries.get_index(i).expect("index in range");
@@ -83,12 +81,13 @@ impl Memory {
         row[2] = G::from_usize(i);
         row[3..].copy_from_slice(values);
 
-        row_lookups[0] =
-          Self::lookup(-row[0], G::from_usize(size), row[2], &row[3..]);
+        let args = Self::lookup_args(G::from_usize(size), row[2], &row[3..]);
+        row_lookups.pull(0, row[0], &args);
       });
+    drop(row_writers);
 
     let trace = RowMajorMatrix::new(rows, width);
-    (trace, lookups)
+    (trace, builder.finish())
   }
 }
 

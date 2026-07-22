@@ -1,6 +1,6 @@
 use multi_stark::{
   builder::symbolic::{SymbolicExpression, preprocessed_var, var},
-  lookup::Lookup,
+  lookup::{Lookup, LookupValues},
   p3_air::{Air, AirBuilder, BaseAir},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
@@ -313,11 +313,13 @@ impl AiurGadget for Bytes2 {
   fn witness_data(
     &self,
     record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+    slot_arg_widths: &[usize],
+  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
     let mut rows = vec![G::ZERO; 256 * 256 * TRACE_WIDTH];
 
     // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
-    let mut lookups = vec![vec![Lookup::empty(); TRACE_WIDTH]; 256 * 256];
+    let mut builder = LookupValues::builder(256 * 256, slot_arg_widths);
+    let mut row_writers = builder.rows_mut();
 
     let xor_channel = u8_xor_channel();
     let add_channel = u8_add_channel();
@@ -334,7 +336,7 @@ impl AiurGadget for Bytes2 {
       .chunks_exact_mut(TRACE_WIDTH)
       .enumerate()
       .zip(&record.bytes2_queries.0)
-      .zip(&mut lookups)
+      .zip(row_writers.iter_mut())
       .for_each(
         |(
           (
@@ -369,55 +371,55 @@ impl AiurGadget for Bytes2 {
           row[9] = chain_rotr4;
 
           // Pull xor.
-          row_lookups[0] =
-            Lookup::pull(xor, vec![xor_channel, i, j, Self::xor(&i, &j)]);
+          row_lookups.pull(0, xor, &[xor_channel, i, j, Self::xor(&i, &j)]);
 
           // Pull add (low byte only; carry derived in-circuit).
           let (r, _o) = Self::add(&i, &j);
-          row_lookups[1] = Lookup::pull(add, vec![add_channel, i, j, r]);
+          row_lookups.pull(1, add, &[add_channel, i, j, r]);
 
           // Pull sub (low byte only; borrow derived in-circuit).
           let (r, _u) = Self::sub(&i, &j);
-          row_lookups[2] = Lookup::pull(sub, vec![sub_channel, i, j, r]);
+          row_lookups.pull(2, sub, &[sub_channel, i, j, r]);
 
           // Pull and.
-          row_lookups[3] =
-            Lookup::pull(and, vec![and_channel, i, j, Self::and(&i, &j)]);
+          row_lookups.pull(3, and, &[and_channel, i, j, Self::and(&i, &j)]);
 
           // Pull or.
-          row_lookups[4] =
-            Lookup::pull(or, vec![or_channel, i, j, Self::or(&i, &j)]);
+          row_lookups.pull(4, or, &[or_channel, i, j, Self::or(&i, &j)]);
 
           // Pull less_than.
-          row_lookups[5] = Lookup::pull(
+          row_lookups.pull(
+            5,
             less_than,
-            vec![less_than_channel, i, j, Self::less_than(&i, &j)],
+            &[less_than_channel, i, j, Self::less_than(&i, &j)],
           );
 
           // Pull range_check.
-          row_lookups[6] =
-            Lookup::pull(range_check, vec![range_check_channel, i, j]);
+          row_lookups.pull(6, range_check, &[range_check_channel, i, j]);
 
           // Pull mul.
           let (lo, hi) = Self::mul(&i, &j);
-          row_lookups[7] = Lookup::pull(mul, vec![mul_channel, i, j, lo, hi]);
+          row_lookups.pull(7, mul, &[mul_channel, i, j, lo, hi]);
 
           // Pull chain_rotr7.
           let (o0, o1, o2) = Self::chain_rotr7(&i, &j);
-          row_lookups[8] = Lookup::pull(
+          row_lookups.pull(
+            8,
             chain_rotr7,
-            vec![chain_rotr7_channel, i, j, o0, o1, o2],
+            &[chain_rotr7_channel, i, j, o0, o1, o2],
           );
 
           // Pull chain_rotr4.
           let (o0, o1, o2) = Self::chain_rotr4(&i, &j);
-          row_lookups[9] = Lookup::pull(
+          row_lookups.pull(
+            9,
             chain_rotr4,
-            vec![chain_rotr4_channel, i, j, o0, o1, o2],
+            &[chain_rotr4_channel, i, j, o0, o1, o2],
           );
         },
       );
-    (RowMajorMatrix::new(rows, TRACE_WIDTH), lookups)
+    drop(row_writers);
+    (RowMajorMatrix::new(rows, TRACE_WIDTH), builder.finish())
   }
 }
 
