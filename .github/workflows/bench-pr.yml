@@ -4,14 +4,15 @@
 #   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] [aiur-recursive] | all) [execute]
 #     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
 #      with a note in the config summary)
-#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive; defaults to every
-#                                  #  registry env for compile/decompile, InitStd for the rest;
-#                                  #  env-keyed-only requests may name any registry env, e.g. Lean/FLT)
+#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
+#                                  #  defaults to every env for compile/decompile, InitStd
+#                                  #  for the rest)
 #   BENCH_CONSTS=Mathlib.X,Y       # bench exactly these constants on the per-constant
 #                                  #  backends (overrides the curated selection); each name's
 #                                  #  env comes from its Vectors.csv row, so a Mathlib constant
-#                                  #  schedules a Mathlib entry by itself — BENCH_ENVS is only
-#                                  #  needed (single env) to place a name the CSV doesn't list
+#                                  #  schedules a Mathlib entry by itself. A single-env
+#                                  #  BENCH_ENVS overrides the attribution and places names
+#                                  #  the CSV doesn't list
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment

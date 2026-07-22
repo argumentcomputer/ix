@@ -374,10 +374,10 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let ziskShards : Option DesiredPlot := do
     let ziskTb ← findUuid testbeds "slug" "zisk-check-execute-x64-32x"
     let shardsM ← findUuid measures "slug" "shards"
-    let benched := (BenchCmd.envSpecs.filter (·.benched)).map (·.name)
-    let heavy := benched.foldl (init := (#[] : Array String)) fun acc env =>
-      acc ++ (BenchCmd.selectNames rows env "execute"
-        (full := false) (tier := "heavy") (shardOnly := false)).map (·.name)
+    let heavy := (BenchCmd.envSpecs.map (·.name)).foldl
+      (init := (#[] : Array String)) fun acc env =>
+        acc ++ (BenchCmd.selectNames rows env "execute"
+          (full := false) (tier := "heavy") (shardOnly := false)).map (·.name)
     return { title := "Zisk Shards", testbeds := #[ziskTb],
              benchmarks := heavy.filterMap (findUuid benchmarks "name" ·),
              measure := shardsM, window := windowFor "Zisk Shards" window }

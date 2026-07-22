@@ -569,13 +569,16 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     job needs verbatim: the display label, the bencher testbed/workload
     pair, and the rendered `--threshold-*` flags, so the workflow
     hardcodes none of it. -/
-def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
+def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
+  let csv := (p.flag? "csv").map (·.as! String)
+    |>.getD "Benchmarks/Vectors.csv"
+  let rows := Ix.Cli.BenchCmd.parseVectorsCsv (← IO.FS.readFile csv)
   let mut entries : Array Json := #[]
   for b in Ix.Cli.BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
     for (mode, testbed) in b.testbeds do
       if b.unscheduled.contains mode then continue
-      for env in b.envNames do
+      for env in b.envNames rows do
         -- The fixed-config backend's env is only its `.ixe`-restore key,
         -- not what it measures — keep it out of the label.
         let label := if b.inputs == .fixedConfigs then s!"{b.name}-{mode}"
@@ -614,24 +617,22 @@ def parseError (msg : String) : IO UInt32 := do
     `$GITHUB_OUTPUT` is set, the machine outputs (matrix, flags, summary,
     passthrough env) are appended there in Actions format.
 
-    Grammar (an unknown command-line token, or an unknown/unbenched env in
+    Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
       !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
                  [execute | recursive] [fresh] [KEY=VALUE …]
-      BENCH_ENVS=InitStd,Mathlib   (case-insensitive; defaults to every
-                                    registry env for the env-keyed
-                                    backends (compile, decompile), InitStd
-                                    for the rest; env-keyed-only requests
-                                    may name any registry env, e.g. Lean
-                                    or FLT)
+      BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
+                                    defaults to every env for the
+                                    env-keyed backends (compile,
+                                    decompile), InitStd for the rest)
       BENCH_CONSTS=Mathlib.X,…     (bench exactly these constants on the
                                     per-constant backends, overriding the
                                     curated selection; each name's env
-                                    comes from its Vectors.csv row —
-                                    BENCH_ENVS is needed only to place a
-                                    name the CSV doesn't list, and then
-                                    must name a single env)
+                                    comes from its Vectors.csv row — a
+                                    single-env BENCH_ENVS overrides the
+                                    attribution and places names the CSV
+                                    doesn't list)
       BENCH_FULL=1                 (full curated set, not just primary)
       BENCH_SHARD=1                (only the multi-shard target constants)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
@@ -716,8 +717,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   -- unknown key rejects, same as a typo'd backend), then the lines below
   -- the command (lenient — comments contain prose, and prose contains
   -- `=`, so only recognized keys are consulted there).
-  let benchedEnvNames :=
-    (Ix.Cli.BenchCmd.envSpecs.filter (·.benched)).map (·.name)
   let mut envs : Array String := #[]
   let mut consts : Array String := #[]
   let mut shard := "0"
@@ -746,17 +745,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           let tok := tok.trimAscii.toString
           match Ix.Cli.BenchCmd.findEnv tok with
           | some e =>
-            -- The env-keyed backends (`inputs := .perEnv` — compile,
-            -- decompile) measure any registry env: their row is the env
-            -- itself, no curated constants involved. Every other backend
-            -- selects constants from Vectors.csv, which only covers the
-            -- benched envs — so an unbenched env needs an env-keyed-only
-            -- request.
-            if !e.benched && backends.any (·.inputs != .perEnv) then
-              return ← parseError s!"env `{e.name}` is only available for the \
-                env-keyed backends (compile, decompile); the others need \
-                curated constants (benched: \
-                {", ".intercalate benchedEnvNames})"
             if !envs.contains e.name then envs := envs.push e.name
           | none =>
             return ← parseError s!"unknown env `{tok}` in BENCH_ENVS \
@@ -824,7 +812,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
         && (b.inputs == .perConstant || b.inputs == .perConstantWithEnv) then
       constEnvs
     else if !envs.isEmpty then envs
-    else if b.inputs == .perEnv then b.envNames.toArray
+    else if b.inputs == .perEnv then
+      (Ix.Cli.BenchCmd.envSpecs.map (·.name)).toArray
     else #["InitStd"]
 
   let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
@@ -962,6 +951,9 @@ open Ix.Cli.BenchReport in
 def benchCiMatrixCmd : Cli.Cmd := `[Cli|
   "matrix" VIA runMatrixCmd;
   "Emit the benchmark matrix from the registry: each enabled backend × its env set × scheduled modes, with per-entry testbed/workload/threshold metadata"
+
+  FLAGS:
+    csv : String; "Vectors path for the per-constant env fan-out (default: Benchmarks/Vectors.csv)"
 ]
 
 open Ix.Cli.BenchReport in

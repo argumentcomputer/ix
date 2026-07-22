@@ -104,14 +104,12 @@ structure EnvSpec where
   name : String
   /-- The Lean source `ix compile` builds the env from. -/
   module : String
-  /-- In the bench-main matrices (and `!benchmark`'s allowed env set). -/
-  benched : Bool
 
 def envSpecs : List EnvSpec := [
-  { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean", benched := true },
-  { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean",    benched := false },
-  { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean", benched := true },
-  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean",     benched := false }
+  { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
+  { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
+  { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" },
+  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean" }
 ]
 
 def findEnv (token : String) : Option EnvSpec :=
@@ -123,8 +121,10 @@ def findEnv (token : String) : Option EnvSpec :=
       · `perEnv` — one row per compiled env, keyed by the env name itself; runs
         over EVERY compiled env. The env-keyed compile/decompile pair: a `.ixe`
         producer and its consumer, both measuring the whole env.
-      · `perConstant` — one row per selected `Vectors.csv` constant, over the
-        benched envs. The prove/execute backends (aiur, zisk, sp1).
+      · `perConstant` — one row per selected `Vectors.csv` constant, over
+        the envs whose CSV rows select any — an env joins this fan-out by
+        gaining rows, not by a registry flag. The prove/execute backends
+        (aiur, zisk, sp1).
       · `perConstantWithEnv` — `perConstant` plus a whole-env row (ooc).
       · `fixedConfigs` — env-independent fixed configs, a single matrix entry
         (aiur-recursive: fixed toy statements, no `.ixe`). -/
@@ -325,32 +325,37 @@ def BackendSpec.thresholdFlags (b : BackendSpec) : String :=
     s!"--threshold-lower-boundary {lower}"
 
 /-- The envs this backend's runs cover, from its `inputs`: `perEnv` covers
-    every compiled env; the per-constant backends cover the benched subset; the
-    fixed-config backend is env-independent, represented by a single (head
-    benched) env so CI schedules exactly one run. -/
-def BackendSpec.envNames (b : BackendSpec) : List String :=
-  let benched := (envSpecs.filter (·.benched)).map (·.name)
+    every registry env; the per-constant backends cover the envs whose
+    `Vectors.csv` rows select at least one primary constant — an env joins
+    their fan-out by gaining rows, not by a registry flag; the
+    fixed-config backend is env-independent, pinned to the head env so CI
+    schedules exactly one entry. -/
+def BackendSpec.envNames (b : BackendSpec) (rows : Array VectorRow) :
+    List String :=
+  let names := envSpecs.map (·.name)
   match b.inputs with
-  | .perEnv => envSpecs.map (·.name)
-  | .perConstant | .perConstantWithEnv => benched
-  | .fixedConfigs => benched.take 1
+  | .perEnv => names
+  | .perConstant | .perConstantWithEnv =>
+    names.filter fun env =>
+      !(selectNames rows env b.defaultMode
+        (full := false) (tier := "") (shardOnly := false)).isEmpty
+  | .fixedConfigs => names.take 1
 
 /-- The benchmark row names this backend uploads — the bencher slugs the
     dashboard plots and compare table key on — from its `inputs`: env-keyed
     backends key one row per compiled env; the per-constant backends select
-    from `Vectors.csv` (`perConstantWithEnv` prepends a whole-env row); the
-    fixed-config backend lists its configs. Dynamic shard sub-rows
-    (`<name>/shard-N`) are excluded — the parent row carries the headline
-    trend. -/
+    from `Vectors.csv` over their env set (`perConstantWithEnv` prepends a
+    whole-env row); the fixed-config backend lists its configs. Dynamic
+    shard sub-rows (`<name>/shard-N`) are excluded — the parent row
+    carries the headline trend. -/
 def BackendSpec.benchmarkNames (b : BackendSpec) (rows : Array VectorRow)
     (mode : String) : Array String := Id.run do
   match b.inputs with
   | .perEnv => return (envSpecs.map (·.name)).toArray
   | .fixedConfigs => return (recursiveConfigs.map (·.1)).toArray
   | .perConstant | .perConstantWithEnv =>
-    let benched := (envSpecs.filter (·.benched)).map (·.name)
     let mut ns : Array String := #[]
-    for env in benched do
+    for env in b.envNames rows do
       if b.inputs == .perConstantWithEnv then ns := ns.push env
       ns := ns ++ (selectNames rows env mode
         (full := false) (tier := "") (shardOnly := false)).map (·.name)

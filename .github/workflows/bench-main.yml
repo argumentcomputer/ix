@@ -128,9 +128,9 @@ jobs:
         # env = the registry key (Ix/Cli/BenchCmd.lean): the `ix bench run --env`
         # token, `<env>.ixe` filename, lake target suffix (Compile<env>),
         # cache-key suffix, and bencher row name, all one spelling.
-        # Deliberately wider than the benched set: Lean/FLT
-        # compile-throughput is tracked even though no downstream job proves
-        # them. Add FC if updated to latest Lean.
+        # Every registry env compiles; the per-constant benchmark entries
+        # fan over whichever envs Vectors.csv selects constants in.
+        # Add FC if updated to latest Lean.
         include:
           - { env: InitStd }
           - { env: Lean }
