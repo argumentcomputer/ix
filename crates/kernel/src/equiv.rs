@@ -6,10 +6,10 @@
 
 use rustc_hash::FxHashMap;
 
-use super::env::Addr;
+use super::env::{Addr, CtxAddr};
 
 /// Composite key: (expression content hash, context content hash).
-pub type EqKey = (Addr, Addr);
+pub type EqKey = (Addr, CtxAddr);
 
 /// Union-find structure for tracking definitional equality between
 /// (expr_hash, ctx_hash) pairs.
@@ -141,13 +141,17 @@ mod tests {
   use super::*;
 
   fn addr(n: u64) -> Addr {
+    n
+  }
+
+  fn ctx(n: u64) -> CtxAddr {
     blake3::hash(&n.to_le_bytes())
   }
 
   #[test]
   fn test_basic_equiv() {
     let mut em = EquivManager::new();
-    let zero = addr(0);
+    let zero = ctx(0);
     assert!(!em.is_equiv(&(addr(100), zero), &(addr(200), zero)));
     em.add_equiv((addr(100), zero), (addr(200), zero));
     assert!(em.is_equiv(&(addr(100), zero), &(addr(200), zero)));
@@ -157,7 +161,7 @@ mod tests {
   #[test]
   fn test_transitivity() {
     let mut em = EquivManager::new();
-    let zero = addr(0);
+    let zero = ctx(0);
     em.add_equiv((addr(100), zero), (addr(200), zero));
     em.add_equiv((addr(200), zero), (addr(300), zero));
     assert!(em.is_equiv(&(addr(100), zero), &(addr(300), zero)));
@@ -166,8 +170,8 @@ mod tests {
   #[test]
   fn test_context_isolation() {
     let mut em = EquivManager::new();
-    let ctx1 = addr(1);
-    let ctx2 = addr(2);
+    let ctx1 = ctx(1);
+    let ctx2 = ctx(2);
     em.add_equiv((addr(100), ctx1), (addr(200), ctx1));
     assert!(em.is_equiv(&(addr(100), ctx1), &(addr(200), ctx1)));
     assert!(!em.is_equiv(&(addr(100), ctx2), &(addr(200), ctx2)));

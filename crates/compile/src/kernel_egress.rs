@@ -404,9 +404,9 @@ struct EgressCtx {
   /// Memoized expression conversion. Keyed by `KExpr::addr()` (content
   /// hash); same hash → same Ixon expression (within a single block's
   /// tables).
-  expr_cache: FxHashMap<blake3::Hash, Arc<IxonExpr>>,
+  expr_cache: FxHashMap<ix_kernel::env::Addr, Arc<IxonExpr>>,
   /// Memoized universe conversion.
-  univ_cache: FxHashMap<blake3::Hash, Arc<IxonUniv>>,
+  univ_cache: FxHashMap<ix_kernel::env::Addr, Arc<IxonUniv>>,
 }
 
 impl EgressCtx {

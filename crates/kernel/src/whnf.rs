@@ -2,7 +2,7 @@
 //!
 //! Multi-phase: whnf_core (beta, iota, zeta) → proj → nat → quot → delta.
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use rustc_hash::FxHashSet;
 
@@ -75,7 +75,9 @@ use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
-use super::subst::{simul_subst, subst, subst_no_intern};
+use super::subst::{
+  Clo, MEnv, clo_readback, clo_subst, subst, subst_no_intern,
+};
 use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
 
 use bignat::Nat;
@@ -116,6 +118,84 @@ struct NatRecLiteralParts<M: KernelMode> {
   major: Nat,
   base_idx: usize,
   step_idx: usize,
+  major_idx: usize,
+}
+
+/// Which primitive-reducer family a head constant belongs to. The WHNF
+/// loops used to probe every reducer per iteration — each collecting its
+/// own app spine and running its own gauntlet of 32-byte address
+/// compares. Classifying the head ONCE (memoized per address in
+/// `KEnv::prim_family_cache`) lets an iteration call at most one family
+/// reducer and skip everything for ordinary constants. Mirrors the IxVM
+/// `prim_family` dispatch memo.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PrimFamily {
+  Native,
+  BitVec,
+  Nat,
+  Decidable,
+  Str,
+  Other,
+}
+
+fn prim_family_uncached<M: KernelMode>(
+  p: &Primitives<M>,
+  addr: &Address,
+) -> PrimFamily {
+  if *addr == p.nat_succ.addr
+    || *addr == p.nat_add.addr
+    || *addr == p.nat_sub.addr
+    || *addr == p.nat_mul.addr
+    || *addr == p.nat_div.addr
+    || *addr == p.nat_mod.addr
+    || *addr == p.nat_pow.addr
+    || *addr == p.nat_gcd.addr
+    || *addr == p.nat_land.addr
+    || *addr == p.nat_lor.addr
+    || *addr == p.nat_xor.addr
+    || *addr == p.nat_shift_left.addr
+    || *addr == p.nat_shift_right.addr
+    || *addr == p.nat_beq.addr
+    || *addr == p.nat_ble.addr
+  {
+    return PrimFamily::Nat;
+  }
+  if *addr == p.nat_dec_le.addr
+    || *addr == p.nat_dec_eq.addr
+    || *addr == p.nat_dec_lt.addr
+    || *addr == p.int_dec_le.addr
+    || *addr == p.int_dec_eq.addr
+    || *addr == p.int_dec_lt.addr
+  {
+    return PrimFamily::Decidable;
+  }
+  if *addr == p.bit_vec_to_nat.addr
+    || *addr == p.bit_vec_ult.addr
+    || *addr == p.decidable_decide.addr
+  {
+    return PrimFamily::BitVec;
+  }
+  if *addr == p.punit_size_of_1.addr
+    || *addr == p.subtype_val.addr
+    || *addr == p.size_of_size_of.addr
+    || *addr == p.system_platform_num_bits.addr
+    || *addr == p.reduce_bool.addr
+    || *addr == p.reduce_nat.addr
+  {
+    return PrimFamily::Native;
+  }
+  if *addr == p.string_back.addr
+    || *addr == p.string_legacy_back.addr
+    || *addr == p.string_utf8_byte_size.addr
+    || *addr == p.string_to_byte_array.addr
+    || *addr == p.string_of_list.addr
+    || *addr == p.string_mk.addr
+    || *addr == p.string_append.addr
+    || *addr == p.string_dec_eq.addr
+  {
+    return PrimFamily::Str;
+  }
+  PrimFamily::Other
 }
 
 impl<M: KernelMode> TypeChecker<'_, M> {
@@ -132,7 +212,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     let (orig_head, orig_args) = collect_app_spine(original);
     let (cur_head, cur_args) = collect_app_spine(current);
-    eprintln!(
+    log::info!(
       "[whnf fuel] {phase} const={} depth={} original_head={} original_args={} current_head={} current_args={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -141,8 +221,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       cur_head,
       cur_args.len()
     );
-    eprintln!("  original: {original}");
-    eprintln!("  current:  {current}");
+    log::info!("  original: {original}");
+    log::info!("  current:  {current}");
   }
 
   fn dump_delta_trace(&self, id: &KId<M>, arity: usize, e: &KExpr<M>) {
@@ -156,7 +236,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }
-    eprintln!(
+    log::info!(
       "[delta] const={} depth={} head={} args={arity} expr={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -185,7 +265,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     let (head, args) = collect_app_spine(wval);
     match result {
-      Some(result) => eprintln!(
+      Some(result) => log::info!(
         "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result={}",
         self.debug_label.as_deref().unwrap_or("<unknown>"),
         self.depth(),
@@ -196,7 +276,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         ctor_params,
         result
       ),
-      None => eprintln!(
+      None => log::info!(
         "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result=<stuck>",
         self.debug_label.as_deref().unwrap_or("<unknown>"),
         self.depth(),
@@ -221,7 +301,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !head_s.contains(filter) {
       return;
     }
-    eprintln!(
+    log::info!(
       "[nat] const={} depth={} phase={} head={} args={} expr={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -245,7 +325,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *IX_WHNF_COUNT_LOG {
       let n = WHNF_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
-        eprintln!("[whnf] count={n}");
+        log::info!("[whnf] count={n}");
       }
     }
     crate::profile::bump_whnf();
@@ -262,7 +342,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Step journal (see `IX_STEP_TRACE` in def_eq.rs); placed after the
     // quick exit to mirror the Lean kernel's `[whnf+]` site.
     if *IX_STEP_TRACE {
-      eprintln!("[whnf+] {} {}", self.fuel_used(), &e.hash_key().to_hex()[..8]);
+      eprintln!("[whnf+] {} {}", self.fuel_used(), &e.hash_key());
     }
 
     // Context-aware cache: closed exprs use ptr only; open exprs include
@@ -305,10 +385,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         break;
       }
 
-      // Native reduction: Lean.reduceBool, Lean.reduceNat, System.Platform.numBits
-      // (mirrors lean4 `type_checker.cpp:667-672` and lean4lean
-      // `TypeChecker.lean:438` — `reduce_native` runs before `reduce_nat`).
-      if let Some(reduced) = self.try_reduce_native(&cur)? {
+      // Primitive reduction, dispatched by memoized head family — the
+      // five recognizers below each collect their own spine and run their
+      // own address gauntlet, so probing all of them every iteration was
+      // a measurable tax on ordinary (Other-headed) terms. Semantics are
+      // unchanged: the families' head-address sets are disjoint, so at
+      // most one recognizer could fire anyway. Reference order preserved
+      // (native before nat: lean4 `type_checker.cpp:667-672`).
+      let family = self.head_prim_family(&cur);
+      if family == PrimFamily::Native
+        && let Some(reduced) = self.try_reduce_native(&cur)?
+      {
         cur = reduced;
         continue;
       }
@@ -316,7 +403,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // BitVec definitions reduce through Nat comparisons. Keep this before
       // delta so small definitional facts such as `x < 0#w` collapse
       // without unfolding the full Fin-backed representation of BitVec.
-      if let Some(reduced) = self.try_reduce_bitvec(&cur)? {
+      if family == PrimFamily::BitVec
+        && let Some(reduced) = self.try_reduce_bitvec(&cur)?
+      {
         cur = reduced;
         continue;
       }
@@ -324,22 +413,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // Nat primitive reduction in main WHNF loop (lean4lean TypeChecker.lean:439).
       // Must run BEFORE delta_unfold_one, so that Nat.sub/Nat.pow/etc. get
       // short-circuited before their bodies (which use Nat.rec) are exposed.
-      if let Some(reduced) =
-        self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
+      if family == PrimFamily::Nat
+        && let Some(reduced) =
+          self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
       {
         cur = reduced;
         continue;
       }
       // Nat decidability: Nat.decLe/decEq/decLt on literals → Decidable.isTrue/isFalse.
       // Must run BEFORE delta, so the body (which uses dite/Nat.rec) is never exposed.
-      if let Some(reduced) = self.try_reduce_decidable(&cur)? {
+      if family == PrimFamily::Decidable
+        && let Some(reduced) = self.try_reduce_decidable(&cur)?
+      {
         cur = reduced;
         continue;
       }
 
       // String literal primitives (`String.back ""`, literal append,
       // constructor-built strings collapsing to `Str` literals).
-      if let Some(reduced) = self.try_reduce_string(&cur)? {
+      if family == PrimFamily::Str
+        && let Some(reduced) = self.try_reduce_string(&cur)?
+      {
         cur = reduced;
         continue;
       }
@@ -351,6 +445,22 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // Consumers that need the `Char.mk` constructor form (iota majors,
       // projections, def-eq lazy delta) expand it explicitly.
       if self.char_lit_value(&cur).is_some() {
+        break;
+      }
+
+      // Keep `Nat.add base (Lit n)` (symbolic base, n > 0) and
+      // `Nat.div/mod base (Lit k)` (k ≥ 2) STUCK as a compact offset instead
+      // of delta-unfolding: `Nat.add` would materialize succ^n(base) — O(n)
+      // substitution per layer — and `Nat.div/mod` would expand the division
+      // algorithm, even though both are irreducible for a symbolic base.
+      // (`Nat.shiftRight x k` unfolds to k nested `Nat.div _ 2`, which now
+      // stay stuck.) Iota over such a major still works via
+      // `cleanup_nat_offset_major`; def-eq decides offset pairs in
+      // `try_def_eq_offset`. Mirrors IxVM 5dcab7f/f7cfe23.
+      if family == PrimFamily::Nat
+        && let Some(stuck) = self.try_nat_offset_stuck(&cur)?
+      {
+        cur = stuck;
         break;
       }
 
@@ -564,31 +674,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let (f0, args) = collect_app_spine(&cur);
       let f = self.whnf_core_with_flags(&f0, flags)?;
 
-      // Multi-arg beta
+      // Beta: enter the environment machine. Subsequent betas/zetas are
+      // O(1) environment pushes; substitution materializes only at the
+      // machine's exit, which re-enters this loop as the new `cur` (so
+      // ambient zeta / iota / prim dispatch see exactly what the old
+      // eager-substitution path produced). Entry is gated on an actual
+      // beta firing — Const-headed terms (e.g. literal recursor loops)
+      // never pay the closure-wrap + readback overhead.
       if matches!(f.data(), ExprData::Lam(..)) {
-        let mut body = f;
-        // Pre-size: at most one arg is consumed per outer Lam, capped by
-        // `args.len()`. Pre-sizing skips the first growth reallocation
-        // for non-trivial spines on this hot path.
-        let mut consumed_args = Vec::with_capacity(args.len());
-        while consumed_args.len() < args.len() {
-          if let ExprData::Lam(_, _, _, inner, _) = body.data() {
-            let inner = inner.clone();
-            consumed_args.push(args[consumed_args.len()].clone());
-            body = inner;
-          } else {
-            break;
-          }
-        }
-        let remaining_start = consumed_args.len();
-        if !consumed_args.is_empty() {
-          consumed_args.reverse();
-          body = simul_subst(&mut self.env.intern, &body, &consumed_args, 0);
-        }
-        for arg in &args[remaining_start..] {
-          body = self.intern(KExpr::app(body, arg.clone()));
-        }
-        cur = body;
+        cur = self.machine_whnf(f, &args, &mut fuel, flags)?;
         continue;
       }
 
@@ -613,6 +707,324 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       return Ok(cur);
     }
+  }
+
+  /// The WHNF environment machine (Krivine-style, structural fragment).
+  /// See `docs/env_machine_whnf.md`; mirrors the IxVM `mwhnf_spine`.
+  ///
+  /// Entered from the App arm of [`Self::whnf_core_with_flags_uncached`]
+  /// when a beta is about to fire: `head` is the already-whnf_core'd
+  /// `Lam`, `args` the plain argument spine nearest-first. Machine state
+  /// is `(head, env, spine)`: `head` a raw subterm of the program, `env`
+  /// the closure environment its loose `Var`s refer to, and `spine` the
+  /// pending argument closures used as a stack — NEAREST argument last.
+  ///
+  /// Transitions (each O(1), no substitution):
+  ///   `App(f, a)`         push `Clo{a, env}`; descend to `f`
+  ///   `Lam` + pending arg pop spine, push env (**beta**)
+  ///   `Let`               push `Clo{val, env}` (**zeta**)
+  ///   `Var(i)`, `i < n`   jump into `env[i]`'s closure
+  ///
+  /// Everything else EXITS: the head and remaining spine read back to a
+  /// plain expression (`clo_subst` — work proportional to what the
+  /// reduction actually consumes), and the caller's loop continues with
+  /// it. That exit contract keeps ambient let/LDecl zeta (the outer
+  /// Var/FVar arms), iota, projection reduction under the `flags` cheap
+  /// policy, and prim dispatch byte-identical to the eager path the
+  /// machine replaces.
+  ///
+  /// Fuel: beta and zeta charge the caller's budget — the same
+  /// one-substitution-event-per-tick granularity as the eager path.
+  /// The transitions between charges (App peels, var jumps) are bounded
+  /// by program structure reachable from the fueled pushes, so total
+  /// work stays fuel-bounded.
+  fn machine_whnf(
+    &mut self,
+    head: KExpr<M>,
+    args: &[KExpr<M>],
+    fuel: &mut u32,
+    flags: WhnfFlags,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    let mut head = head;
+    let mut env: MEnv<M> = MEnv::empty();
+    let mut spine: Vec<Arc<Clo<M>>> =
+      args.iter().rev().map(|a| Arc::new(Clo::closed(a.clone()))).collect();
+
+    loop {
+      match head.data() {
+        ExprData::App(f, a, _) => {
+          let c = Arc::new(Clo::new(a.clone(), env.clone()));
+          let f = f.clone();
+          spine.push(c);
+          head = f;
+        },
+
+        ExprData::Lam(name, bi, ty, body, _) => {
+          if let Some(c) = spine.pop() {
+            // Beta: O(1) environment push.
+            if *fuel == 0 {
+              return Err(TcError::MaxRecDepth);
+            }
+            *fuel -= 1;
+            let body = body.clone();
+            env = env.push(c);
+            head = body;
+          } else {
+            // Value. Read back under one binder.
+            if env.len() == 0 {
+              return Ok(head.clone());
+            }
+            let ty2 = clo_subst(&mut self.env.intern, ty, &env, 0);
+            let body2 = clo_subst(&mut self.env.intern, body, &env, 1);
+            return Ok(self.intern(KExpr::lam(
+              name.clone(),
+              bi.clone(),
+              ty2,
+              body2,
+            )));
+          }
+        },
+
+        ExprData::Let(_, _, val, body, _, _) => {
+          // Zeta: O(1) environment push.
+          if *fuel == 0 {
+            return Err(TcError::MaxRecDepth);
+          }
+          *fuel -= 1;
+          let c = Arc::new(Clo::new(val.clone(), env.clone()));
+          let body = body.clone();
+          env = env.push(c);
+          head = body;
+        },
+
+        ExprData::Var(i, name, _) => {
+          let i = *i;
+          if i < env.len() {
+            // Machine-bound variable: jump into its closure. This is
+            // where laziness pays — the entry was never substituted.
+            let c = env.get(i).clone();
+            head = c.e.clone();
+            env = c.env.clone();
+          } else {
+            // Ambient variable: shift below the machine binders and
+            // exit stuck; the outer loop's Var arm handles legacy
+            // let-bound zeta on it.
+            let h = self.intern(KExpr::var(i - env.len(), name.clone()));
+            return Ok(self.machine_exit(h, &spine));
+          }
+        },
+
+        // Closure-iota (Phase B; mirrors IxVM try_iota_c): a recursor
+        // head consumes the spine LAZILY. On the main ctor-rule path the
+        // rule RHS re-enters the machine with the params/motives/minors
+        // and post-major arguments as their ORIGINAL closures (plus the
+        // ctor's fields wrapped closed) — the rule's Lam-chain betas push
+        // them straight into an environment, so unselected minors
+        // (dropped match/Decidable branches) are never substituted and
+        // never read back. Anything off the main path misses to the
+        // plain readback exit, whose `try_iota` redoes the major's whnf
+        // against a warm cache. Gated like the eager path: cheap_rec
+        // mode never runs full iota from inside the machine.
+        ExprData::Const(id, us, _) => {
+          if !flags.cheap_rec {
+            let id = id.clone();
+            let us: Vec<KUniv<M>> = us.to_vec();
+            if let Some((rhs, new_spine)) =
+              self.try_iota_clo(&id, &us, &spine)?
+            {
+              if *fuel == 0 {
+                return Err(TcError::MaxRecDepth);
+              }
+              *fuel -= 1;
+              head = rhs;
+              env = MEnv::empty();
+              spine = new_spine;
+              continue;
+            }
+          }
+          let h = head.clone();
+          return Ok(self.machine_exit(h, &spine));
+        },
+
+        // Stuck or dispatch-owned heads (no loose Vars of their own):
+        // exit; the outer loop applies prim dispatch / LDecl zeta
+        // exactly as before.
+        ExprData::FVar(..)
+        | ExprData::Sort(..)
+        | ExprData::Nat(..)
+        | ExprData::Str(..) => {
+          let h = head.clone();
+          return Ok(self.machine_exit(h, &spine));
+        },
+
+        // Pi value (or ill-typed Pi application): read back; outer loop
+        // returns it (spine empty) or leaves it stuck (non-empty), as
+        // the eager path did.
+        ExprData::All(name, bi, ty, body, _) => {
+          let h = if env.len() == 0 {
+            head.clone()
+          } else {
+            let ty2 = clo_subst(&mut self.env.intern, ty, &env, 0);
+            let body2 = clo_subst(&mut self.env.intern, body, &env, 1);
+            self.intern(KExpr::all(name.clone(), bi.clone(), ty2, body2))
+          };
+          return Ok(self.machine_exit(h, &spine));
+        },
+
+        // Projection: read the scrutinee back and exit; the outer loop
+        // reduces the projection under the caller's `flags` cheap/full
+        // policy (its Prj arm, or the App arm's head reduction when the
+        // spine is non-empty).
+        ExprData::Prj(id, field, val, _) => {
+          let h = if env.len() == 0 {
+            head.clone()
+          } else {
+            let val2 = clo_subst(&mut self.env.intern, val, &env, 0);
+            self.intern(KExpr::prj(id.clone(), *field, val2))
+          };
+          return Ok(self.machine_exit(h, &spine));
+        },
+      }
+    }
+  }
+
+  /// Read the machine's remaining spine back onto an exit head:
+  /// `h a₁ … aₙ` with each argument materialized via [`clo_readback`].
+  /// `spine` holds the nearest argument LAST.
+  fn machine_exit(&mut self, h: KExpr<M>, spine: &[Arc<Clo<M>>]) -> KExpr<M> {
+    let mut cur = h;
+    for c in spine.iter().rev() {
+      let a = clo_readback(&mut self.env.intern, c);
+      cur = self.intern(KExpr::app(cur, a));
+    }
+    cur
+  }
+
+  /// Closure-spine iota for the machine's `Const` exit: the main
+  /// ctor-rule path of [`Self::try_iota_with_flags`], consuming the
+  /// machine spine lazily. Returns the level-instantiated rule RHS and
+  /// the machine spine to re-enter with — the params/motives/minors and
+  /// post-major arguments ride through as their original closures
+  /// (never read back; only the major materializes), the ctor's field
+  /// arguments are wrapped closed.
+  ///
+  /// Everything off the main path returns `None`, and the caller falls
+  /// back to the plain readback exit whose `try_iota` is complete:
+  /// - K recursors (nullary-ctor synthesis needs infer + def-eq),
+  /// - `Nat` literal majors (the transient-work discipline must keep
+  ///   literal succ-chains out of the interner and the whnf caches, and
+  ///   the linear-rec/offset shortcuts live on the plain path),
+  /// - `Str` literal majors (ctor coercion + re-whnf),
+  /// - struct-eta candidates and genuinely stuck majors.
+  ///
+  /// A miss costs one readback of the major closure; the plain path's
+  /// own whnf of that major then hits a warm cache.
+  fn try_iota_clo(
+    &mut self,
+    rec_id: &KId<M>,
+    rec_us: &[KUniv<M>],
+    spine: &[Arc<Clo<M>>],
+  ) -> Result<Option<(KExpr<M>, Vec<Arc<Clo<M>>>)>, TcError<M>> {
+    let recr = match self.try_get_const(rec_id)? {
+      Some(KConst::Recr {
+        k,
+        params,
+        motives,
+        minors,
+        indices,
+        rules,
+        lvls,
+        ..
+      }) => {
+        if k {
+          return Ok(None);
+        }
+        let major_idx = u64_to_usize::<M>(params + motives + minors + indices)?;
+        if spine.len() <= major_idx {
+          return Ok(None);
+        }
+        // H6: level params arity (lean4lean Reduce.lean:76).
+        if rec_us.len() as u64 != lvls {
+          return Ok(None);
+        }
+        IotaInfo {
+          k,
+          params: u64_to_usize::<M>(params)?,
+          motives: u64_to_usize::<M>(motives)?,
+          minors: u64_to_usize::<M>(minors)?,
+          indices: u64_to_usize::<M>(indices)?,
+          major_idx,
+          rules,
+          lvls,
+        }
+      },
+      _ => return Ok(None),
+    };
+
+    // Materialize ONLY the major. `spine` is nearest-LAST, so the i-th
+    // argument nearest-first sits at `spine[len - 1 - i]`.
+    let len = spine.len();
+    let major_clo = spine[len - 1 - recr.major_idx].clone();
+    let major = clo_readback(&mut self.env.intern, &major_clo);
+    // Mirror the eager path's pre- and post-whnf offset cleanups so
+    // `Nat.add base k` majors expose a `Nat.succ` layer here instead of
+    // missing to a second full attempt.
+    let major = match self.cleanup_nat_offset_major(&major)? {
+      Some(cleaned) => cleaned,
+      None => major,
+    };
+    let mut major_whnf = self.whnf(&major)?;
+    if matches!(major_whnf.data(), ExprData::Nat(..)) {
+      return Ok(None);
+    }
+    if let Some(cleaned) = self.cleanup_nat_offset_major(&major_whnf)? {
+      major_whnf = cleaned;
+    }
+    if matches!(major_whnf.data(), ExprData::Str(..)) {
+      return Ok(None);
+    }
+
+    let (ctor_head, ctor_args) = collect_app_spine(&major_whnf);
+    let ctor_id = match ctor_head.data() {
+      ExprData::Const(id, _, _) => id.clone(),
+      _ => return Ok(None),
+    };
+    let (cidx, ctor_fields) = match self.try_get_const(&ctor_id)? {
+      Some(KConst::Ctor { cidx, fields, .. }) => {
+        (u64_to_usize::<M>(cidx)?, u64_to_usize::<M>(fields)?)
+      },
+      _ => return Ok(None),
+    };
+    if cidx >= recr.rules.len() {
+      return Ok(None);
+    }
+    // H5: nfields ≤ major args (lean4lean Reduce.lean:75).
+    if ctor_fields > ctor_args.len() {
+      return Ok(None);
+    }
+
+    crate::perf::record_iota_histo(&rec_id.addr);
+    let rule = &recr.rules[cidx];
+    let rec_us_vec: Vec<_> = rec_us.to_vec();
+    let rhs = self.instantiate_univ_params(&rule.rhs, &rec_us_vec)?;
+
+    // New machine spine, nearest-LAST. Nearest-first the rule sees
+    // `pmm ++ ctor fields ++ post-major`; in machine order that is the
+    // post-major prefix of `spine` (indices below the major's slot),
+    // then the fields reversed, then the pmm suffix of `spine`. The
+    // index arguments between pmm and the major are dropped, as in the
+    // eager path.
+    let pmm_end = recr.params + recr.motives + recr.minors;
+    let field_start = ctor_args.len() - ctor_fields;
+    let post_len = len - 1 - recr.major_idx;
+    let mut new_spine: Vec<Arc<Clo<M>>> =
+      Vec::with_capacity(post_len + ctor_fields + pmm_end);
+    new_spine.extend_from_slice(&spine[..post_len]);
+    for arg in ctor_args[field_start..].iter().rev() {
+      new_spine.push(Arc::new(Clo::closed(arg.clone())));
+    }
+    new_spine.extend_from_slice(&spine[len - pmm_end..]);
+    Ok(Some((rhs, new_spine)))
   }
 
   /// WHNF without delta: whnf_core → proj-app → nat/native/string → quot.
@@ -722,15 +1134,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
 
+      // Primitive reduction, dispatched by memoized head family (see the
+      // main WHNF loop) — family head sets are disjoint, so dispatching
+      // replaces probe-everything without changing semantics.
+      let family = self.head_prim_family(&cur);
+
       // BitVec.toNat/ult reductions are definitional wrappers around Nat.
-      if let Some(reduced) = self.try_reduce_bitvec(&cur)? {
+      if family == PrimFamily::BitVec
+        && let Some(reduced) = self.try_reduce_bitvec(&cur)?
+      {
         cur = reduced;
         continue;
       }
 
       // Nat primitive reduction
-      if let Some(reduced) =
-        self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
+      if family == PrimFamily::Nat
+        && let Some(reduced) =
+          self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
       {
         cur = reduced;
         continue;
@@ -741,13 +1161,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // `Subtype.val` and `String.toByteArray` are projection definitions;
       // once rewritten to `Prj`, the cheap primitive recognizers no longer
       // see the original head.
-      if let Some(reduced) = self.try_reduce_native(&cur)? {
+      if family == PrimFamily::Native
+        && let Some(reduced) = self.try_reduce_native(&cur)?
+      {
         cur = reduced;
         continue;
       }
 
       // String literal primitives.
-      if let Some(reduced) = self.try_reduce_string(&cur)? {
+      if family == PrimFamily::Str
+        && let Some(reduced) = self.try_reduce_string(&cur)?
+      {
         cur = reduced;
         continue;
       }
@@ -911,7 +1335,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           minors: u64_to_usize::<M>(minors)?,
           indices: u64_to_usize::<M>(indices)?,
           major_idx,
-          rules: rules.clone(),
+          // `rules` is already owned here (moved out of the KConst clone
+          // `try_get_const` returned) — do not clone it again.
+          rules,
           lvls,
         }
       },
@@ -960,7 +1386,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let n = NAT_IOTA_TRACE_COUNT
           .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if n < 32 {
-          eprintln!(
+          log::info!(
             "[nat_iota_trace] rec={} major_bits={} spine={} major_idx={}",
             rec_id,
             val.0.bits(),
@@ -1013,9 +1439,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !is_ctor && let Some(filter) = IX_IOTA_STUCK.as_ref() {
       let rec_name = format!("{rec_id}");
       if filter.is_empty() || rec_name.contains(filter) {
-        eprintln!("[iota stuck] rec={rec_name}");
-        eprintln!("[iota stuck]   major:      {major}");
-        eprintln!("[iota stuck]   major whnf: {major_whnf}");
+        log::info!("[iota stuck] rec={rec_name}");
+        log::info!("[iota stuck]   major:      {major}");
+        log::info!("[iota stuck]   major whnf: {major_whnf}");
       }
     }
 
@@ -1101,23 +1527,43 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Nat literal iota can create a long chain of distinct predecessor terms.
   /// These terms are useful only while the current WHNF is executing; keeping
   /// each one in the global WHNF caches makes RSS linear in the literal.
+  /// Allocation-free spine probe: head expression and arg count without
+  /// materializing the spine. The transient-nat probes below run on
+  /// *every* whnf call **before** the cache lookup, so they must not
+  /// heap-allocate on the (overwhelmingly common) non-Nat-recursor path —
+  /// the previous implementation paid two `collect_app_spine` Vec
+  /// allocations plus a `KConst::Recr` clone per call, defeating the
+  /// cache on the hottest path in a full check. (Ported from jcb/fixes
+  /// H-15.)
+  fn spine_head_and_len(e: &KExpr<M>) -> (&KExpr<M>, usize) {
+    let mut cur = e;
+    let mut n = 0usize;
+    while let ExprData::App(f, _, _) = cur.data() {
+      n += 1;
+      cur = f;
+    }
+    (cur, n)
+  }
+
   fn is_transient_nat_literal_work(
     &mut self,
     e: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    if self.is_nat_literal_recursor_app(e)? {
-      return Ok(true);
-    }
-
-    let (head, args) = collect_app_spine(e);
+    let (head, nargs) = Self::spine_head_and_len(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(false);
     };
-
-    if id.addr == self.prims.nat_succ.addr && args.len() == 1 {
-      return self.is_nat_literal_recursor_app(&args[0]);
+    if id.addr == self.prims.nat_rec.addr
+      || id.addr == self.prims.nat_cases_on.addr
+    {
+      return self.is_nat_literal_recursor_app(e);
     }
-
+    if id.addr == self.prims.nat_succ.addr
+      && nargs == 1
+      && let ExprData::App(_, arg, _) = e.data()
+    {
+      return self.is_nat_literal_recursor_app(arg);
+    }
     Ok(false)
   }
 
@@ -1125,7 +1571,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    let (head, spine) = collect_app_spine(e);
+    // Cheap pre-filter first; only fall through to the allocating spine
+    // collection + recursor lookup when the head can actually match.
+    let (head, _) = Self::spine_head_and_len(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(false);
     };
@@ -1140,6 +1588,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     else {
       return Ok(false);
     };
+    let (_, spine) = collect_app_spine(e);
     let major_idx = u64_to_usize::<M>(params + motives + minors + indices)?;
     Ok(
       spine
@@ -1266,6 +1715,114 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     None
+  }
+
+  /// If `e` is `Nat.add base (Lit n)` (n > 0) or `Nat.div/mod base (Lit k)`
+  /// (k ≥ 2) with a non-literal base, return the same operation in canonical
+  /// compact form so the WHNF loop can leave it stuck instead of
+  /// delta-unfolding. Thresholds keep `x + 0`, `x / 1`, `x / 0` (and mod)
+  /// reducing through the normal path. `None` means "not this shape —
+  /// proceed normally".
+  fn try_nat_offset_stuck(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    // Allocation-free quick reject: this probe runs once per delta-unfold
+    // loop iteration, so don't collect a spine Vec unless the head constant
+    // is one of the three Nat primitives.
+    {
+      let mut cur = e;
+      loop {
+        match cur.data() {
+          ExprData::App(f, _, _) => cur = f,
+          ExprData::Const(id, _, _) => {
+            if id.addr != self.prims.nat_add.addr
+              && id.addr != self.prims.nat_div.addr
+              && id.addr != self.prims.nat_mod.addr
+            {
+              return Ok(None);
+            }
+            break;
+          },
+          _ => return Ok(None),
+        }
+      }
+    }
+    let (head, args) = collect_app_spine(e);
+    let ExprData::Const(id, _, _) = head.data() else {
+      return Ok(None);
+    };
+    let is_add = id.addr == self.prims.nat_add.addr;
+    let is_divmod =
+      id.addr == self.prims.nat_div.addr || id.addr == self.prims.nat_mod.addr;
+    if (!is_add && !is_divmod) || args.len() != 2 {
+      return Ok(None);
+    }
+    let Some(wb) = self.whnf_prim_arg(&args[1])? else {
+      return Ok(None);
+    };
+    let Some(n) = extract_nat_value(&wb, &self.prims) else {
+      return Ok(None);
+    };
+    if n.0 == num_bigint::BigUint::ZERO {
+      return Ok(None);
+    }
+    if is_divmod && n.0 == num_bigint::BigUint::from(1u64) {
+      return Ok(None);
+    }
+    let Some(wa) = self.whnf_prim_arg(&args[0])? else {
+      return Ok(None);
+    };
+    if extract_nat_value(&wa, &self.prims).is_some() {
+      // Both sides literal: this is closed arithmetic for `try_reduce_nat`,
+      // not a stuck offset.
+      return Ok(None);
+    }
+    let lit = self.nat_expr_from_value(n);
+    let inner = self.intern(KExpr::app(head.clone(), wa));
+    Ok(Some(self.intern(KExpr::app(inner, lit))))
+  }
+
+  /// Decompose a (whnf'd) Nat term into `(base, offset)` for offset-aware
+  /// def-eq: `Lit n` → `(None, n)`; `succ^j(Nat.add core (Lit m))` →
+  /// `(Some(core), j + m)` read in O(1) per layer via [`Self::nat_offset`]
+  /// instead of peeled one `is_def_eq` recursion level at a time.
+  /// `base = None` means the core is literal zero (the term IS a numeral).
+  /// `None` (the outer Option) means "not offset-shaped".
+  pub(super) fn nat_offset_decompose(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<(Option<KExpr<M>>, Nat)>, TcError<M>> {
+    if let Some(v) = extract_nat_value(e, &self.prims) {
+      return Ok(Some((None, v)));
+    }
+    match self.nat_offset(e, 0)? {
+      Some((base, off)) if off.0 > num_bigint::BigUint::ZERO => {
+        if let Some(bv) = extract_nat_value(&base, &self.prims) {
+          Ok(Some((None, Nat(bv.0 + off.0))))
+        } else {
+          Ok(Some((Some(base), off)))
+        }
+      },
+      _ => Ok(None),
+    }
+  }
+
+  /// Rebuild `base + r` in the compact offset form used by
+  /// [`Self::try_nat_offset_stuck`].
+  pub(super) fn nat_offset_rebuild(
+    &mut self,
+    base: Option<KExpr<M>>,
+    r: Nat,
+  ) -> KExpr<M> {
+    match base {
+      None => self.nat_expr_from_value(r),
+      Some(b) if r.0 == num_bigint::BigUint::ZERO => b,
+      Some(b) => {
+        let lit = self.nat_expr_from_value(r);
+        self.mk_nat_add(b, lit)
+      },
+    }
   }
 
   fn mk_nat_succ(&mut self, pred: KExpr<M>) -> KExpr<M> {
@@ -1411,11 +1968,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Err(_) => return Ok(None),
     };
     if *IX_KSYNTH_LOG {
-      eprintln!("[ksynth-attempt] {}", &ctor_app.hash_key().to_hex()[..8]);
+      eprintln!("[ksynth-attempt] {}", &ctor_app.hash_key());
     }
     if !self.is_def_eq(&major_ty_w, &ctor_ty)? {
       if *IX_KSYNTH_LOG {
-        eprintln!("[ksynth-reject] {}", &ctor_app.hash_key().to_hex()[..8]);
+        eprintln!("[ksynth-reject] {}", &ctor_app.hash_key());
       }
       return Ok(None);
     }
@@ -1726,7 +2283,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let n =
         NAT_EXPAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(10_000) {
-        eprintln!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
+        log::info!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
       }
     }
     if val.0 == BigUint::ZERO {
@@ -1747,6 +2304,26 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Nat primitive reduction (add, sub, mul, div, mod, pow, gcd, bitwise, predicates).
+  /// Classify `e`'s head constant into a primitive-reducer family.
+  /// Allocation-free app-chain walk + per-address memo.
+  pub(super) fn head_prim_family(&mut self, e: &KExpr<M>) -> PrimFamily {
+    let mut cur = e;
+    loop {
+      match cur.data() {
+        ExprData::App(f, _, _) => cur = f,
+        ExprData::Const(id, _, _) => {
+          if let Some(&fam) = self.env.prim_family_cache.get(&id.addr) {
+            return fam;
+          }
+          let fam = prim_family_uncached(&self.prims, &id.addr);
+          self.env.prim_family_cache.insert(id.addr.clone(), fam);
+          return fam;
+        },
+        _ => return PrimFamily::Other,
+      }
+    }
+  }
+
   pub(super) fn try_reduce_nat(
     &mut self,
     e: &KExpr<M>,
@@ -1856,7 +2433,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if self.env.nat_succ_stuck.contains(&entry_key) {
       return Ok(None);
     }
-    let mut visited: Vec<(super::env::Addr, super::env::Addr)> =
+    let mut visited: Vec<(super::env::Addr, super::env::CtxAddr)> =
       vec![entry_key];
     let mut offset = num_bigint::BigUint::from(1u64);
     let mut cur = arg.clone();
@@ -1921,7 +2498,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n < 8 {
         let step_whnf = self.whnf(step)?;
-        eprintln!(
+        log::info!(
           "[nat_linear_rec] major_bits={} base_idx={} step_idx={} spine={} step_whnf={}",
           parts.major.0.bits(),
           parts.base_idx,
@@ -1938,7 +2515,20 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let base = base.clone();
     let base_whnf = self.whnf(&base)?;
     let Some(base_val) = extract_nat_value(&base_whnf, &self.prims) else {
-      return Ok(None);
+      // Symbolic base: collapse `succ^offset(Nat.rec base succ-step (Lit n))`
+      // to the compact offset `Nat.add base (Lit (n + offset))` rather than
+      // declining into n iota steps that materialize succ^n(base). Keeps the
+      // value in the same `base + k` form a literal already has, so def-eq
+      // converges instead of descending n unary succ layers. Conservative:
+      // only when the recursor application carries no post-major arguments.
+      // Mirrors IxVM dbc4177.
+      if parts.spine.len() != parts.major_idx + 1 {
+        return Ok(None);
+      }
+      let total = Nat(&parts.major.0 + offset);
+      let lit = self.nat_expr_from_value(total);
+      let result = self.mk_nat_add(base_whnf, lit);
+      return Ok(Some(result));
     };
 
     let mut total = base_val.0;
@@ -1985,7 +2575,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
     let major = major.clone();
 
-    Ok(Some(NatRecLiteralParts { spine, major, base_idx, step_idx }))
+    Ok(Some(NatRecLiteralParts { spine, major, base_idx, step_idx, major_idx }))
   }
 
   fn is_nat_succ_ih_step(
@@ -3167,6 +3757,15 @@ fn compute_nat_bin<M: KernelMode>(
   b: &Nat,
 ) -> Option<Nat> {
   use num_bigint::BigUint;
+  // Output-size cap for natively-computed results. `shiftLeft` and `pow`
+  // amplify a tiny term into a result exponentially larger than the input
+  // bytes (`Nat.shiftLeft 1 (1 << 40)` is a ~12-byte term demanding a
+  // ~128 GiB allocation). Refuse to materialize anything wider and leave
+  // the term stuck, exactly like the `pow` exponent guard below. 2^26 bits
+  // (8 MiB) keeps every `2^e, e <= ReducePowMaxExp` reduction the C++
+  // kernel performs while bounding the allocation an adversarial term can
+  // force. (Ported from jcb/fixes H-12.)
+  const MAX_NAT_REDUCE_BITS: u64 = 1 << 26;
   let zero = BigUint::ZERO;
   // Profiling: charge big-Nat arithmetic limb-work to the `nat_arith` counter,
   // which tracks the Aiur `klimbs_*`/`u64_*` circuits (cost ∝ operand limbs;
@@ -3204,7 +3803,14 @@ fn compute_nat_bin<M: KernelMode>(
     const REDUCE_POW_MAX_EXP: u64 = 1 << 24; // 16_777_216
     match b.to_u64() {
       #[allow(clippy::cast_possible_truncation)] // guarded: exp <= 2^24
-      Some(exp) if exp <= REDUCE_POW_MAX_EXP => a.0.pow(exp as u32),
+      Some(exp) if exp <= REDUCE_POW_MAX_EXP => {
+        // The exponent cap alone does not bound the *result*: a wide base
+        // with an allowed exponent still explodes (bits(a) * exp).
+        if a.0.bits().saturating_mul(exp) > MAX_NAT_REDUCE_BITS {
+          return None;
+        }
+        a.0.pow(exp as u32)
+      },
       _ => return None, // too large to compute
     }
   } else if *addr == p.nat_gcd.addr {
@@ -3216,8 +3822,16 @@ fn compute_nat_bin<M: KernelMode>(
   } else if *addr == p.nat_xor.addr {
     &a.0 ^ &b.0
   } else if *addr == p.nat_shift_left.addr {
-    let shift = usize::try_from(b.to_u64()?).ok()?;
-    &a.0 << shift
+    let shift = b.to_u64()?;
+    if a.0 == zero {
+      zero
+    } else if a.0.bits().saturating_add(shift) > MAX_NAT_REDUCE_BITS {
+      // Result has exactly bits(a) + shift bits — refuse to materialize.
+      return None;
+    } else {
+      let shift = usize::try_from(shift).ok()?;
+      &a.0 << shift
+    }
   } else if *addr == p.nat_shift_right.addr {
     let shift = usize::try_from(b.to_u64()?).ok()?;
     &a.0 >> shift
@@ -3473,6 +4087,163 @@ mod tests {
     let id_const = AE::cnst(mk_id("id"), Box::new([]));
     let app = AE::app(id_const, sort0());
     assert_eq!(tc.whnf(&app).unwrap(), sort0());
+  }
+
+  // ---- environment-machine readback paths ----
+
+  #[test]
+  fn whnf_machine_open_term_shift() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x. x #3) opaque → opaque #2: the ambient Var must shift down
+    // past the consumed machine binder during spine readback.
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let body = AE::app(AE::var(0, ()), AE::var(3, ()));
+    let lam = AE::lam((), (), sort0(), body);
+    let app = AE::app(lam, opaque.clone());
+    let expected = AE::app(opaque, AE::var(2, ()));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
+  }
+
+  #[test]
+  fn whnf_machine_partial_app_value() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x y. x y) opaque → λ y. opaque y: Lam value exit reads the body
+    // back at binder depth 1.
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let body = AE::app(AE::var(1, ()), AE::var(0, ()));
+    let lam2 = AE::lam((), (), sort0(), AE::lam((), (), sort0(), body));
+    let app = AE::app(lam2, opaque.clone());
+    let expected = AE::lam((), (), sort0(), AE::app(opaque, AE::var(0, ())));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
+  }
+
+  #[test]
+  fn whnf_machine_env_entry_lifts_under_binder() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x y. x) #3 → λ y. #4: substituting an OPEN argument under the
+    // surviving binder must lift it (Var arm of clo_subst at depth 1).
+    let lam2 =
+      AE::lam((), (), sort0(), AE::lam((), (), sort0(), AE::var(1, ())));
+    let app = AE::app(lam2, AE::var(3, ()));
+    let expected = AE::lam((), (), sort0(), AE::var(4, ()));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
+  }
+
+  #[test]
+  fn whnf_machine_zeta_under_beta() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x. let z := x in z) opaque → opaque: machine zeta push.
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let body = AE::let_((), sort0(), AE::var(0, ()), AE::var(0, ()), true);
+    let lam = AE::lam((), (), sort0(), body);
+    let app = AE::app(lam, opaque.clone());
+    assert_eq!(tc.whnf(&app).unwrap(), opaque);
+  }
+
+  #[test]
+  fn whnf_machine_closure_iota_via_beta() {
+    use super::super::constant::RecRule;
+    // A beta whose body is a recursor application: the machine's Const
+    // exit must take the closure-iota path (rule args ride through as
+    // closures) and produce the same result as the eager iota.
+    //
+    // Unit-like inductive `U` with one ctor `U.mk` (no params/fields)
+    // and recursor `U.rec : (motive) (minor) (major) → minor`.
+    let u_id = mk_id("Test.U");
+    let u_mk_id = mk_id("Test.U.mk");
+    let u_rec_id = mk_id("Test.U.rec");
+    let mut env = env_with_id();
+    env.insert(
+      u_id.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_unsafe: false,
+        block: u_id.clone(),
+        member_idx: 0,
+        ty: sort0(),
+        ctors: vec![u_mk_id.clone()],
+        lean_all: (),
+      },
+    );
+    env.insert(
+      u_mk_id.clone(),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        induct: u_id.clone(),
+        cidx: 0,
+        params: 0,
+        fields: 0,
+        ty: AE::cnst(u_id.clone(), Box::new([])),
+      },
+    );
+    env.insert(
+      u_rec_id.clone(),
+      KConst::Recr {
+        name: (),
+        level_params: (),
+        k: false,
+        is_unsafe: false,
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        motives: 1,
+        minors: 1,
+        block: u_id.clone(),
+        member_idx: 0,
+        ty: sort0(),
+        // rule rhs: λ motive minor. minor
+        rules: vec![RecRule {
+          ctor: (),
+          fields: 0,
+          rhs: AE::lam(
+            (),
+            (),
+            sort0(),
+            AE::lam((), (), sort0(), AE::var(0, ())),
+          ),
+        }],
+        lean_all: (),
+      },
+    );
+    let mut tc = TypeChecker::new(&mut env);
+    let rec = AE::cnst(u_rec_id, Box::new([]));
+    let mk = AE::cnst(u_mk_id, Box::new([]));
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    // (λ m. U.rec Sort0 m U.mk #2) opaque
+    //   → machine beta (m := opaque), Const(U.rec) exit → closure-iota
+    //   → minor = opaque, post-major arg #3 shifts to #2.
+    let body = AE::app(
+      AE::app(AE::app(AE::app(rec, sort0()), AE::var(0, ())), mk),
+      AE::var(3, ()),
+    );
+    let lam = AE::lam((), (), sort0(), body);
+    let app = AE::app(lam, opaque.clone());
+    let expected = AE::app(opaque, AE::var(2, ()));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
+  }
+
+  #[test]
+  fn whnf_machine_chained_beta() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // ((λ x. x) (λ y. y)) opaque → opaque: the intermediate beta result
+    // is consumed by the next beta without materializing.
+    let inner = AE::lam((), (), sort0(), AE::var(0, ()));
+    let outer = AE::lam((), (), sort0(), AE::var(0, ()));
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let app = AE::app(AE::app(outer, inner), opaque.clone());
+    assert_eq!(tc.whnf(&app).unwrap(), opaque);
   }
 
   #[test]
@@ -4154,7 +4925,13 @@ mod tests {
   }
 
   #[test]
-  fn whnf_nat_add_symbolic_literal_rhs_exposes_succ() {
+  fn whnf_nat_add_symbolic_literal_rhs_stays_compact() {
+    // `Nat.add x (Lit 2)` with a symbolic base must stay STUCK in compact
+    // offset form (`try_nat_offset_stuck`) instead of delta-unfolding into
+    // `succ(succ(x))` — that tower is O(n) substitution per layer and the
+    // dominant cost on Nat-arithmetic proofs. Iota over such a major still
+    // works via `cleanup_nat_offset_major`; def-eq decides offset pairs in
+    // `try_def_eq_offset`.
     let mut env = nat_env();
     let empty = KEnv::new();
     let prims = Primitives::from_env(&empty);
@@ -4162,10 +4939,29 @@ mod tests {
 
     let mut tc = TypeChecker::new(&mut env);
     let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
-    let expr = app(app(add, var(0)), mk_nat(2));
+    let expr = app(app(add.clone(), var(0)), mk_nat(2));
     let result = tc.whnf(&expr).unwrap();
+    assert_eq!(result, app(app(add, var(0)), mk_nat(2)));
+  }
+
+  #[test]
+  fn def_eq_nat_offset_succ_tower_vs_compact_add() {
+    // `succ(succ(x))` ≡ `Nat.add x (Lit 2)` must be decided by the offset
+    // decomposition in `try_def_eq_offset` (equal offsets → compare bases),
+    // and `succ(x) ≟ Nat.add x (Lit 2)` must NOT be equal.
+    let mut env = nat_env();
+    let empty = KEnv::new();
+    let prims = Primitives::from_env(&empty);
+    insert_nat_add_model(&mut env, prims.nat_add.clone());
+
+    let mut tc = TypeChecker::new(&mut env);
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
     let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
-    assert_eq!(result, app(succ.clone(), app(succ, var(0))));
+    let tower = app(succ.clone(), app(succ.clone(), var(0)));
+    let compact = app(app(add, var(0)), mk_nat(2));
+    assert!(tc.is_def_eq(&tower, &compact).unwrap());
+    let one = app(succ, var(0));
+    assert!(!tc.is_def_eq(&one, &compact).unwrap());
   }
 
   #[test]
@@ -4445,7 +5241,7 @@ mod tests {
       },
       ExprData::App(..) => {
         // Might be Nat.succ chain — that's also acceptable
-        eprintln!("Nat.rec result is App chain (not folded to literal)");
+        log::info!("Nat.rec result is App chain (not folded to literal)");
       },
       other => panic!("unexpected Nat.rec result: {:?}", other),
     }

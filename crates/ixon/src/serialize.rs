@@ -2428,14 +2428,6 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
-      let computed = Address::hash(bytes);
-      if computed != addr {
-        return Err(format!(
-          "Env::get_anon: const at idx {i} bytes hash to {} but stored under {}",
-          computed.hex(),
-          addr.hex()
-        ));
-      }
       if let Some(prev) = consts_order.last()
         && *prev >= addr
       {
@@ -2445,9 +2437,16 @@ impl Env {
         ));
       }
       consts_order.push(addr.clone());
-      env
-        .consts
-        .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
+      let _ = i;
+      // Address binding is verified lazily at first materialization
+      // (`LazyConstant::get`) instead of one content hash per constant
+      // here — constants shipped in a closure but never forced by the
+      // typechecker are never hashed, while everything the kernel
+      // certifies still gets verified on the way in.
+      env.consts.insert(
+        addr.clone(),
+        crate::lazy::LazyConstant::from_bytes_deferred(bytes.into(), addr),
+      );
     }
 
     // `main` must reference a constant actually present in the file.
@@ -3418,11 +3417,19 @@ mod tests {
     let off = first_const_payload_offset(&buf) + 3;
     assert!(off < buf.len());
     buf[off] ^= 0xFF;
-    let res = Env::get_anon(&mut buf.as_slice());
-    let err = res.expect_err("tampered const bytes should be rejected");
+    // Address binding is verified lazily: parse succeeds, but the
+    // tampered constant is rejected at first materialization (which is
+    // what gates anything the kernel certifies).
+    let parsed = Env::get_anon(&mut buf.as_slice())
+      .expect("get_anon defers per-const verification");
+    let entry = parsed.consts.iter().next().expect("one const");
+    let err = entry
+      .value()
+      .get()
+      .expect_err("tampered const bytes should be rejected at get()");
     assert!(
       err.contains("bytes hash to") && err.contains("but stored under"),
-      "expected per-entry verify error, got: {err}"
+      "expected deferred verify error, got: {err}"
     );
   }
 
