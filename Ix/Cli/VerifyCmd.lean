@@ -37,14 +37,14 @@ private def addrOfHex! (label : String) (s : String) : IO Address := do
     silently with no useful diagnostic, so these MUST match the
     proving side until they migrate into the proof header. -/
 private def commitmentParameters : Aiur.CommitmentParameters :=
-  { logBlowup := 1, capHeight := 0 }
+  { logBlowup := 2, capHeight := 0 }
 
 private def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
   numQueries := 100
-  commitProofOfWorkBits := 20
-  queryProofOfWorkBits := 0
+  commitProofOfWorkBits := 0
+  queryProofOfWorkBits := 20
 }
 
 /-- Verify one persisted `Ixon.Proof` wrapper (by store address) against its

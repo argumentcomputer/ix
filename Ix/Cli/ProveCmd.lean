@@ -48,14 +48,14 @@ namespace Ix.Cli.ProveCmd
     proof header, they MUST stay in sync between `prove` and
     `verify`. -/
 private def commitmentParameters : Aiur.CommitmentParameters :=
-  { logBlowup := 1, capHeight := 0 }
+  { logBlowup := 2, capHeight := 0 }
 
 private def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
   numQueries := 100
-  commitProofOfWorkBits := 20
-  queryProofOfWorkBits := 0
+  commitProofOfWorkBits := 0
+  queryProofOfWorkBits := 20
 }
 
 def proveOne (aiurSystem : Aiur.AiurSystem)

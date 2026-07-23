@@ -7,7 +7,7 @@ import Ix.Benchmark.Bench
 open BgroupM
 
 def commitmentParameters : Aiur.CommitmentParameters := {
-  logBlowup := 1
+  logBlowup := 2
   capHeight := 0
 }
 
@@ -15,8 +15,8 @@ def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
   numQueries := 100
-  commitProofOfWorkBits := 20
-  queryProofOfWorkBits := 0
+  commitProofOfWorkBits := 0
+  queryProofOfWorkBits := 20
 }
 
 def main : IO Unit := do
