@@ -112,6 +112,34 @@ structure Report where
 def sample (xs : Array Ix.Name) (n : Nat := 12) : String :=
   String.intercalate ", " ((xs.toList.take n).map (·.pretty))
 
+/-- Recursively inline `.share` backrefs through a sharing table — used by the
+    `addr:` debug probe to compare block variants modulo table ordering. -/
+partial def expandShares (tbl : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
+  | .share i => match tbl[i.toNat]? with
+    | some e => expandShares tbl e
+    | none => .share i
+  | .app f a => .app (expandShares tbl f) (expandShares tbl a)
+  | .lam d b => .lam (expandShares tbl d) (expandShares tbl b)
+  | .all d b => .all (expandShares tbl d) (expandShares tbl b)
+  | .letE n t v b => .letE n (expandShares tbl t) (expandShares tbl v) (expandShares tbl b)
+  | .prj i j e => .prj i j (expandShares tbl e)
+  | e => e
+
+/-- `expandShares` over every expr in a constant's payload. -/
+def expandConst (c : Ixon.Constant) : Ixon.ConstantInfo :=
+  let go := expandShares c.sharing
+  let goRules := fun (rs : Array Ixon.RecursorRule) =>
+    rs.map fun ru => { ru with rhs := go ru.rhs }
+  let goMut : Ixon.MutConst → Ixon.MutConst
+    | .defn d => .defn { d with typ := go d.typ, value := go d.value }
+    | .indc i => .indc { i with typ := go i.typ, ctors := i.ctors.map fun ct => { ct with typ := go ct.typ } }
+    | .recr r => .recr { r with typ := go r.typ, rules := goRules r.rules }
+  match c.info with
+  | .muts ms => .muts (ms.map goMut)
+  | .defn d => .defn { d with typ := go d.typ, value := go d.value }
+  | .recr r => .recr { r with typ := go r.typ, rules := goRules r.rules }
+  | other => other
+
 /-- Hex render for byte-level divergence hunting (`IX_AUX_DIFF_DEBUG`). -/
 def hex (bytes : ByteArray) (maxBytes : Nat := 512) : String := Id.run do
   let toHex (n : UInt8) : Char :=
@@ -545,6 +573,35 @@ def run (env : Lean.Environment) : IO UInt32 := do
   let rustEnv := raw.compileEnv.toEnv
   let phases : CompilePhases := { rawEnv, condensed, compileEnv := rustEnv }
   IO.println s!"[aux-gen-diff] Rust: {rustEnv.named.size} named, {condensed.blocks.size} blocks"
+
+  -- `IX_AUX_DIFF_DEBUG=addr:<hex>,<hex>,…` dumps the Rust-compiled constants
+  -- at those addresses (full hex, no truncation) and exits — a raw-bytes
+  -- probe for comparing alpha-identical block variants without a Lean run.
+  if let some spec := debugConst? then
+    if spec.startsWith "addr:" then
+      for hexAddr in (spec.drop 5).toString.splitOn "," do
+        match Address.fromString hexAddr with
+        | some addr =>
+          match rustEnv.getConst? addr with
+          | some c =>
+            let bytes := Ixon.ser c
+            IO.println s!"[addr-dump] {hexAddr} ({bytes.size}B):"
+            IO.println (hex bytes (maxBytes := bytes.size))
+            IO.println s!"[addr-dump] {hexAddr} refs ({c.refs.size}):"
+            for i in [:c.refs.size] do
+              let r := c.refs[i]!
+              let names := rustEnv.named.toList.filterMap fun (n, named) =>
+                if named.addr == r then some n.pretty else none
+              IO.println s!"  [{i}] {r} {names.take 3}"
+            IO.println s!"[addr-dump] {hexAddr} univs ({c.univs.size}): {repr c.univs}"
+            IO.println s!"[addr-dump] {hexAddr} sharing ({c.sharing.size}):"
+            for i in [:c.sharing.size] do
+              IO.println s!"  [{i}] {repr c.sharing[i]!}"
+            IO.println s!"[addr-dump] {hexAddr} info: {repr c.info}"
+            IO.println s!"[addr-dump] {hexAddr} expanded: {repr (expandConst c)}"
+          | none => IO.println s!"[addr-dump] {hexAddr}: NOT FOUND"
+        | none => IO.println s!"[addr-dump] bad address {hexAddr}"
+      return 0
 
   -- CompileEnv seeded with Rust results: every block compiles in isolation
   -- against correct surroundings.

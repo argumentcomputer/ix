@@ -332,4 +332,231 @@ mutual
 end
 end StructureTwin2
 
+namespace ZFA
+/- Mathlib `SetTheory/Lists` shape, transcribed self-contained: a
+   Prop-level MUTUAL pair (`Lists.Equiv` / `Lists'.Subset`) indexed by a
+   sigma over a Bool-indexed inductive, with a ctor argument applying an
+   external recursive function (`toList`). Reproduces the Mathlib-scale
+   `.below.rec` divergence found during benchmarking (the only 2
+   diverging constants in the 3.15 GB Mathlib env were
+   `Lists.Equiv.below.rec` / `Lists'.Subset.below.rec`). -/
+
+inductive Lists' (α : Type u) : Bool → Type u
+  | atom : α → Lists' α false
+  | nil : Lists' α true
+  | cons' {b} : Lists' α b → Lists' α true → Lists' α true
+
+def Lists (α : Type u) := Σ b, Lists' α b
+
+variable {α : Type u}
+
+namespace Lists'
+
+def cons : Lists α → Lists' α true → Lists' α true
+  | ⟨_, a⟩, l => cons' a l
+
+def toList : ∀ {b}, Lists' α b → List (Lists α)
+  | _, atom _ => []
+  | _, nil => []
+  | _, cons' a l => ⟨_, a⟩ :: l.toList
+
+end Lists'
+
+mutual
+  inductive Lists.Equiv : Lists α → Lists α → Prop
+    | refl (l) : Lists.Equiv l l
+    | antisymm {l₁ l₂ : Lists' α true} :
+      Lists'.Subset l₁ l₂ → Lists'.Subset l₂ l₁ → Lists.Equiv ⟨_, l₁⟩ ⟨_, l₂⟩
+
+  inductive Lists'.Subset : Lists' α true → Lists' α true → Prop
+    | nil {l} : Lists'.Subset Lists'.nil l
+    | cons {a a' l l'} :
+      Lists.Equiv a a' →
+        a' ∈ Lists'.toList l' → Lists'.Subset l l' →
+          Lists'.Subset (Lists'.cons a l) l'
+end
+
+end ZFA
+
+namespace ZFA2
+/- Mathlib `SetTheory/Lists` shape, transcribed self-contained: a
+   Prop-level MUTUAL pair (`Lists.Equiv` / `Lists'.Subset`) indexed by a
+   sigma over a Bool-indexed inductive, with a ctor argument applying an
+   external recursive function (`toList`). Reproduces the Mathlib-scale
+   `.below.rec` divergence found during benchmarking (the only 2
+   diverging constants in the 3.15 GB Mathlib env were
+   `Lists.Equiv.below.rec` / `Lists'.Subset.below.rec`). -/
+
+inductive Lists' (α : Type u) : Bool → Type u
+  | atom : α → Lists' α false
+  | nil : Lists' α true
+  | cons' {b} : Lists' α b → Lists' α true → Lists' α true
+
+def Lists (α : Type u) := Σ b, Lists' α b
+
+variable {α : Type u}
+
+namespace Lists'
+
+def cons : Lists α → Lists' α true → Lists' α true
+  | ⟨_, a⟩, l => cons' a l
+
+def toList : ∀ {b}, Lists' α b → List (Lists α)
+  | _, atom _ => []
+  | _, nil => []
+  | _, cons' a l => ⟨_, a⟩ :: l.toList
+
+end Lists'
+
+mutual
+  inductive Lists.Equiv : Lists α → Lists α → Prop
+    | refl (l) : Lists.Equiv l l
+    | antisymm {l₁ l₂ : Lists' α true} :
+      Lists'.Subset l₁ l₂ → Lists'.Subset l₂ l₁ → Lists.Equiv ⟨_, l₁⟩ ⟨_, l₂⟩
+
+  inductive Lists'.Subset : Lists' α true → Lists' α true → Prop
+    | nil {l} : Lists'.Subset Lists'.nil l
+    | cons {a a' l l'} :
+      Lists.Equiv a a' →
+        a' ∈ Lists'.toList l' → Lists'.Subset l l' →
+          Lists'.Subset (Lists'.cons a l) l'
+end
+
+end ZFA2
+namespace ZFA3
+/- Mathlib `SetTheory/Lists` shape, transcribed self-contained: a
+   Prop-level MUTUAL pair (`Lists.Equiv` / `Lists'.Subset`) indexed by a
+   sigma over a Bool-indexed inductive, with a ctor argument applying an
+   external recursive function (`toList`). Reproduces the Mathlib-scale
+   `.below.rec` divergence found during benchmarking (the only 2
+   diverging constants in the 3.15 GB Mathlib env were
+   `Lists.Equiv.below.rec` / `Lists'.Subset.below.rec`). -/
+
+inductive Lists' (α : Type u) : Bool → Type u
+  | atom : α → Lists' α false
+  | nil : Lists' α true
+  | cons' {b} : Lists' α b → Lists' α true → Lists' α true
+
+def Lists (α : Type u) := Σ b, Lists' α b
+
+variable {α : Type u}
+
+namespace Lists'
+
+def cons : Lists α → Lists' α true → Lists' α true
+  | ⟨_, a⟩, l => cons' a l
+
+def toList : ∀ {b}, Lists' α b → List (Lists α)
+  | _, atom _ => []
+  | _, nil => []
+  | _, cons' a l => ⟨_, a⟩ :: l.toList
+
+end Lists'
+
+mutual
+  inductive Lists.Equiv : Lists α → Lists α → Prop
+    | refl (l) : Lists.Equiv l l
+    | antisymm {l₁ l₂ : Lists' α true} :
+      Lists'.Subset l₁ l₂ → Lists'.Subset l₂ l₁ → Lists.Equiv ⟨_, l₁⟩ ⟨_, l₂⟩
+
+  inductive Lists'.Subset : Lists' α true → Lists' α true → Prop
+    | nil {l} : Lists'.Subset Lists'.nil l
+    | cons {a a' l l'} :
+      Lists.Equiv a a' →
+        a' ∈ Lists'.toList l' → Lists'.Subset l l' →
+          Lists'.Subset (Lists'.cons a l) l'
+end
+
+end ZFA3
+namespace ZFA4
+/- Mathlib `SetTheory/Lists` shape, transcribed self-contained: a
+   Prop-level MUTUAL pair (`Lists.Equiv` / `Lists'.Subset`) indexed by a
+   sigma over a Bool-indexed inductive, with a ctor argument applying an
+   external recursive function (`toList`). Reproduces the Mathlib-scale
+   `.below.rec` divergence found during benchmarking (the only 2
+   diverging constants in the 3.15 GB Mathlib env were
+   `Lists.Equiv.below.rec` / `Lists'.Subset.below.rec`). -/
+
+inductive Lists' (α : Type u) : Bool → Type u
+  | atom : α → Lists' α false
+  | nil : Lists' α true
+  | cons' {b} : Lists' α b → Lists' α true → Lists' α true
+
+def Lists (α : Type u) := Σ b, Lists' α b
+
+variable {α : Type u}
+
+namespace Lists'
+
+def cons : Lists α → Lists' α true → Lists' α true
+  | ⟨_, a⟩, l => cons' a l
+
+def toList : ∀ {b}, Lists' α b → List (Lists α)
+  | _, atom _ => []
+  | _, nil => []
+  | _, cons' a l => ⟨_, a⟩ :: l.toList
+
+end Lists'
+
+mutual
+  inductive Lists.Equiv : Lists α → Lists α → Prop
+    | refl (l) : Lists.Equiv l l
+    | antisymm {l₁ l₂ : Lists' α true} :
+      Lists'.Subset l₁ l₂ → Lists'.Subset l₂ l₁ → Lists.Equiv ⟨_, l₁⟩ ⟨_, l₂⟩
+
+  inductive Lists'.Subset : Lists' α true → Lists' α true → Prop
+    | nil {l} : Lists'.Subset Lists'.nil l
+    | cons {a a' l l'} :
+      Lists.Equiv a a' →
+        a' ∈ Lists'.toList l' → Lists'.Subset l l' →
+          Lists'.Subset (Lists'.cons a l) l'
+end
+
+end ZFA4
+namespace ZFA5
+/- Mathlib `SetTheory/Lists` shape, transcribed self-contained: a
+   Prop-level MUTUAL pair (`Lists.Equiv` / `Lists'.Subset`) indexed by a
+   sigma over a Bool-indexed inductive, with a ctor argument applying an
+   external recursive function (`toList`). Reproduces the Mathlib-scale
+   `.below.rec` divergence found during benchmarking (the only 2
+   diverging constants in the 3.15 GB Mathlib env were
+   `Lists.Equiv.below.rec` / `Lists'.Subset.below.rec`). -/
+
+inductive Lists' (α : Type u) : Bool → Type u
+  | atom : α → Lists' α false
+  | nil : Lists' α true
+  | cons' {b} : Lists' α b → Lists' α true → Lists' α true
+
+def Lists (α : Type u) := Σ b, Lists' α b
+
+variable {α : Type u}
+
+namespace Lists'
+
+def cons : Lists α → Lists' α true → Lists' α true
+  | ⟨_, a⟩, l => cons' a l
+
+def toList : ∀ {b}, Lists' α b → List (Lists α)
+  | _, atom _ => []
+  | _, nil => []
+  | _, cons' a l => ⟨_, a⟩ :: l.toList
+
+end Lists'
+
+mutual
+  inductive Lists.Equiv : Lists α → Lists α → Prop
+    | refl (l) : Lists.Equiv l l
+    | antisymm {l₁ l₂ : Lists' α true} :
+      Lists'.Subset l₁ l₂ → Lists'.Subset l₂ l₁ → Lists.Equiv ⟨_, l₁⟩ ⟨_, l₂⟩
+
+  inductive Lists'.Subset : Lists' α true → Lists' α true → Prop
+    | nil {l} : Lists'.Subset Lists'.nil l
+    | cons {a a' l l'} :
+      Lists.Equiv a a' →
+        a' ∈ Lists'.toList l' → Lists'.Subset l l' →
+          Lists'.Subset (Lists'.cons a l) l'
+end
+
+end ZFA5
+
 end Tests.Ix.Compile.Canonicity
