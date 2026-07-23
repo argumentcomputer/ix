@@ -51,7 +51,10 @@ libc = "0.2"
 log = "0.4"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "40092c160f51fdc2330b9e388873ece3fa4c12c2" }
+# logup-optimization branch tip: chained-logup + message grouping with the
+# flat quotient commitment (= main's 40092c1 "Quotient matrix #67") rebased
+# on top — the only rev carrying both features this workspace needs.
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "73b30d025f72a3fe79ded88dda23d91d51bb8c57" }
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
@@ -119,3 +122,4 @@ unnecessary_wraps = "warn"
 unnested_or_patterns = "warn"
 type_complexity = "allow"
 too_many_arguments = "allow"
+

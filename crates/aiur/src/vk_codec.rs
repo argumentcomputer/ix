@@ -28,6 +28,7 @@
 //!   7 x u16 LE   commitment + FRI parameters (log_blowup, cap_height,
 //!                log_final_poly_len, max_log_arity, num_queries,
 //!                commit_proof_of_work_bits, query_proof_of_work_bits)
+//!   u16          lookup group size (lookups per partial-accumulator step)
 //!   u16          circuit count
 //! PER-CIRCUIT RECORDS (circuit count times; each record is a contiguous
 //!                      byte range — a future Merkle leaf)
@@ -231,6 +232,15 @@ pub(crate) fn to_bytes(
   push_u16(&mut buf, fri_parameters.num_queries);
   push_u16(&mut buf, fri_parameters.commit_proof_of_work_bits);
   push_u16(&mut buf, fri_parameters.query_proof_of_work_bits);
+  // The lookup group size shapes every circuit's constraint set and stage-2
+  // layout, so the decoder must rebuild the airs with the same value.
+  push_u16(
+    &mut buf,
+    system
+      .circuits
+      .first()
+      .map_or(1, |c| c.air.lookup_group_size()),
+  );
   push_u16(&mut buf, system.circuits.len());
   for c in &system.circuits {
     let mut r = RecordBufs::default();
@@ -391,7 +401,10 @@ impl<'a> RecordReader<'a> {
       t => return Err(format!("bad expr kind {t}")),
     })
   }
-  fn circuit(&mut self) -> Result<Circuit<AiurCircuit, Val>, String> {
+  fn circuit(
+    &mut self,
+    lookup_group_size: usize,
+  ) -> Result<Circuit<AiurCircuit, Val>, String> {
     let inner_air = match self.tags.u8()? {
       0 => {
         let n = self.meta_usize()?;
@@ -424,7 +437,7 @@ impl<'a> RecordReader<'a> {
       }
       lookups.push(Lookup { multiplicity, args });
     }
-    let air = LookupAir { inner_air, lookups, preprocessed: None };
+    let air = LookupAir::from_parts(inner_air, lookups, None, lookup_group_size);
     let c = Circuit {
       air,
       constraint_count: self.meta_usize()?,
@@ -465,6 +478,10 @@ pub(crate) fn from_bytes(
     commit_proof_of_work_bits: r.u16()? as usize,
     query_proof_of_work_bits: r.u16()? as usize,
   };
+  let lookup_group_size = r.u16()? as usize;
+  if lookup_group_size == 0 {
+    return Err("lookup group size must be at least 1".to_string());
+  }
   let n_circuits = r.u16()? as usize;
   let mut circuits = Vec::with_capacity(n_circuits);
   for _ in 0..n_circuits {
@@ -481,7 +498,7 @@ pub(crate) fn from_bytes(
     let c8 = Seg { buf: r.take(lens[3])?, pos: 0 };
     let meta = Seg { buf: r.take(lens[4])?, pos: 0 };
     let mut rec = RecordReader { tags, idx, c2, c8, meta };
-    circuits.push(rec.circuit()?);
+    circuits.push(rec.circuit(lookup_group_size)?);
   }
   let preprocessed_commit = match r.u8()? {
     0 => None,

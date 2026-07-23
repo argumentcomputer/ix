@@ -29,6 +29,13 @@ pub type AiurConfig = GoldilocksBlake3Config;
 /// A proof under [`AiurConfig`].
 pub type AiurProof = Proof<AiurConfig>;
 
+/// Number of consecutive lookups covered by each step of multi-stark's
+/// partial-accumulator chain (logup message grouping). With Aiur's degree-1
+/// multiplicities and degree-2 messages, a group of 2 reaches constraint
+/// degree 5, so systems must be built with `log_blowup >= 2` (blowup 4);
+/// `System::new_with_lookup_group_size` asserts this at setup.
+pub const LOOKUP_GROUP_SIZE: usize = 2;
+
 pub struct AiurSystem {
   toplevel: Toplevel,
   // perhaps remove the key from the system in verifier only mode?
@@ -115,9 +122,10 @@ impl AiurSystem {
     .into_iter();
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
-    let (system, key) = System::new(
+    let (system, key) = System::new_with_lookup_group_size(
       config,
       function_circuits.chain(memory_circuits).chain(gadget_circuits),
+      LOOKUP_GROUP_SIZE,
     );
     AiurSystem { system, key, toplevel, commitment_parameters, fri_parameters }
   }
