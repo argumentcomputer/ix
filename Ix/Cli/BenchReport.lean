@@ -21,6 +21,8 @@ public import Lean.Data.Json
 public import Ix.Benchmark.Results
 public import Ix.Cli.BenchCmd
 public import Ix.Cli.BenchPlots
+public import Ix.Cli.NameResolve
+public import Ix.Meta
 
 public section
 
@@ -626,13 +628,16 @@ def parseError (msg : String) : IO UInt32 := do
                                     defaults to every env for the
                                     env-keyed backends (compile,
                                     decompile), InitStd for the rest)
-      BENCH_CONSTS=Mathlib.X,…     (bench exactly these constants on the
+      BENCH_CONSTS=Nat.gcd,…       (bench exactly these constants on the
                                     per-constant backends, overriding the
-                                    curated selection; each name's env
-                                    comes from its Vectors.csv row — a
-                                    single-env BENCH_ENVS overrides the
-                                    attribution and places names the CSV
-                                    doesn't list)
+                                    curated selection. Each name's env is
+                                    found automatically: its Vectors.csv
+                                    row first, else its defining module
+                                    (Init/Std → InitStd, Lean → Lean),
+                                    else Mathlib — or FLT for FLT.* names
+                                    — so BENCH_ENVS is never required. A
+                                    single-env BENCH_ENVS still forces
+                                    placement.)
       BENCH_FULL=1                 (full curated set, not just primary)
       BENCH_SHARD=1                (only the multi-shard target constants)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
@@ -770,25 +775,55 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- BENCH_CONSTS: bench exactly these constants on the per-constant
   -- backends, overriding the curated selection (`ix bench run --consts`
-  -- downstream). Each name is attributed to the env(s) whose Vectors.csv
-  -- rows list it — `BENCH_CONSTS=Mathlib.X` alone schedules a Mathlib
-  -- entry scoped to it, no BENCH_ENVS needed. A name the CSV doesn't
-  -- list (a curated-set candidate being scouted) can't be attributed:
-  -- a single-env BENCH_ENVS adopts it, anything else rejects.
+  -- downstream). Each name finds its own env — no BENCH_ENVS needed:
+  --   1. a Vectors.csv row wins (curated attribution);
+  --   2. otherwise, locate the name by defining module: import the
+  --      `Lean` environment (toolchain oleans only — its closure IS the
+  --      Lean bench env, and it contains InitStd's) and map the module
+  --      root — Init/Std → InitStd, anything else found → Lean;
+  --   3. not found there means it lives above: FLT when the name's root
+  --      is `FLT`, else Mathlib (safe default — Mathlib ⊂ FLT, and a
+  --      wrong guess fails at run time with a clear name-not-found).
+  -- An explicit single-env BENCH_ENVS still overrides the attribution.
   let mut constsByEnv : Array (String × Array String) := #[]
   if !consts.isEmpty then
     let csvPath := (p.flag? "csv").map (·.as! String)
       |>.getD "Benchmarks/Vectors.csv"
     let rows := Ix.Cli.BenchCmd.parseVectorsCsv
       (← try IO.FS.readFile csvPath catch _ => pure "")
+    -- Loaded lazily, once, and only when some name has no CSV row.
+    let mut lookupEnv? : Option Lean.Environment := none
     for n in consts do
-      let owners := ((rows.filter (·.name == n)).map (·.env)).toList.eraseDups
-      let owners := if !envs.isEmpty then owners.filter envs.contains else owners
-      let owners := if owners.isEmpty && envs.size == 1 then envs.toList else owners
+      let csvOwners :=
+        ((rows.filter (·.name == n)).map (·.env)).toList.eraseDups
+      let mut owners := csvOwners
       if owners.isEmpty then
-        return ← parseError <| s!"BENCH_CONSTS: `{n}` has no row in {csvPath}" ++
-          (if envs.isEmpty then " — pass BENCH_ENVS with a single env to place it"
-           else s!" under BENCH_ENVS ({", ".intercalate envs.toList})")
+        let env ← match lookupEnv? with
+          | some e => pure e
+          | none => do
+            IO.eprintln
+              s!"[parse] locating uncurated constant(s) by module: importing Lean"
+            let e ← getCompileEnv #[`Lean]
+            lookupEnv? := some e
+            pure e
+        owners := match Ix.Cli.NameResolve.resolveName env n with
+          | some ln =>
+            let root := match env.getModuleIdxFor? ln with
+              | some idx => env.allImportedModuleNames[idx.toNat]!.getRoot
+              | none => Lean.Name.anonymous
+            if root == `Init || root == `Std then ["InitStd"] else ["Lean"]
+          | none =>
+            if (Ix.Cli.NameResolve.parseName n).getRoot == `FLT then ["FLT"]
+            else ["Mathlib"]
+      let resolvedOwners := owners
+      if !envs.isEmpty then
+        let inter := owners.filter envs.contains
+        owners := if inter.isEmpty && envs.size == 1 then envs.toList else inter
+      if owners.isEmpty then
+        return ← parseError s!"BENCH_CONSTS: `{n}` belongs to env \
+          `{", ".intercalate resolvedOwners}`, which BENCH_ENVS \
+          ({", ".intercalate envs.toList}) excludes — drop BENCH_ENVS, \
+          include that env, or name a single env to force placement"
       for o in owners do
         match constsByEnv.findIdx? (·.1 == o) with
         | some i =>

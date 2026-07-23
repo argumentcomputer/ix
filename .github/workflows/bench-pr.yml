@@ -7,12 +7,12 @@
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
-#   BENCH_CONSTS=Mathlib.X,Y       # bench exactly these constants on the per-constant
-#                                  #  backends (overrides the curated selection); each name's
-#                                  #  env comes from its Vectors.csv row, so a Mathlib constant
-#                                  #  schedules a Mathlib entry by itself. A single-env
-#                                  #  BENCH_ENVS overrides the attribution and places names
-#                                  #  the CSV doesn't list
+#   BENCH_CONSTS=Nat.gcd,Y        # bench exactly these constants on the per-constant
+#                                  #  backends (overrides the curated selection). Each name's
+#                                  #  env is found automatically — Vectors.csv row first, else
+#                                  #  defining module, else Mathlib (FLT for FLT.* names) — so
+#                                  #  BENCH_ENVS is never required; a single-env BENCH_ENVS
+#                                  #  still forces placement
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
