@@ -32,6 +32,23 @@ namespace Ix.Tc
 
 open Lean4Lean (VExpr VLevel VLocalDecl)
 
+/-! Lawfulness of `FVarId` equality (KId pattern) — here because the
+fvar-keyed context machinery needs it from `Trans.lean` on. -/
+
+instance : LawfulBEq FVarId where
+  eq_of_beq {a b} h := by
+    cases a with | mk x =>
+    cases b with | mk y =>
+    have h' : (x == y) = true := h
+    rw [eq_of_beq h']
+  rfl {a} := by
+    cases a with | mk x =>
+    show (x == x) = true
+    exact beq_self_eq_true x
+
+instance : LawfulHashable FVarId where
+  hash_eq a b h := by rw [eq_of_beq h]
+
 /-- Translation-side local context: declarations optionally addressable
     by an `FVarId` (with its dependency list), innermost first. -/
 def KVLCtx := List (Option (FVarId × List FVarId) × VLocalDecl)

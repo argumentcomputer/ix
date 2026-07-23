@@ -16,6 +16,9 @@ only ever *grows* the ghost state.
 `TcInv vs₀ s` — "some ghost state ≥ the baseline `vs₀` describes `s`" —
 is the concrete invariant `I` that M1's Hoare combinators (Verify/
 Monad.lean, `I`-generic by design) get instantiated with from here on.
+Like the env translation it is parametric over the reference-safety
+level `safety` (the ghost venv holds the in-safety fragment; the v1
+headline instantiates `.safe`).
 
 `TcStateWF` deliberately constrains only the SEMANTIC core of the
 20-field `TcState`: the constant map (via `TrKEnv`) and the intern
@@ -51,66 +54,75 @@ theorem VState.LE.trans {vs₁ vs₂ vs₃ : VState} (h1 : vs₁ ≤ vs₂)
     (h2 : vs₂ ≤ vs₃) : vs₁ ≤ vs₃ :=
   ⟨h1.venv.trans h2.venv, fun a n h => h2.nameOf a n (h1.nameOf a n h)⟩
 
-variable (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+variable (safety : Ix.DefinitionSafety)
+    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The concrete state is described by the ghost state: the constant
     map translates (`TrKEnv`) and the intern table is well-formed.
     Extension point for the M5/M6 cache-coherence conditions. -/
 structure TcStateWF (s : TcState .anon) (vs : VState) : Prop where
-  env : TrKEnv vs.nameOf trProj s.env vs.venv
+  env : TrKEnv safety vs.nameOf trProj s.env vs.venv
   intern : s.env.intern.WF
 
 /-- The wide frame: any state operation preserving the constant map and
     the intern table preserves `TcStateWF` — fuel ticks, flag flips,
     depth bumps, statistics, scratch. -/
-theorem TcStateWF.of_consts_eq {trProj} {s s' : TcState .anon}
-    {vs : VState} (h : TcStateWF trProj s vs)
+theorem TcStateWF.of_consts_eq {safety trProj} {s s' : TcState .anon}
+    {vs : VState} (h : TcStateWF safety trProj s vs)
     (hc : s'.env.consts = s.env.consts)
     (hi : s'.env.intern.WF) :
-    TcStateWF trProj s' vs := by
+    TcStateWF safety trProj s' vs := by
   refine ⟨?_, hi⟩
   obtain ⟨Q, henv⟩ := h.env
   exact ⟨Q, hc ▸ henv⟩
 
 /-- `of_consts_eq` when the whole env is untouched. -/
-theorem TcStateWF.of_env_eq {trProj} {s s' : TcState .anon} {vs : VState}
-    (h : TcStateWF trProj s vs) (he : s'.env = s.env) :
-    TcStateWF trProj s' vs :=
+theorem TcStateWF.of_env_eq {safety trProj} {s s' : TcState .anon}
+    {vs : VState} (h : TcStateWF safety trProj s vs)
+    (he : s'.env = s.env) :
+    TcStateWF safety trProj s' vs :=
   h.of_consts_eq (by rw [he]) (he ▸ h.intern)
 
-variable (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+variable (safety : Ix.DefinitionSafety)
+    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The run invariant: some ghost state above the baseline describes the
     current concrete state. This is the `I` for M1's Hoare kernel from
     M3 on — monotonicity in the baseline lets callers thread one
     invariant through sub-calls that grow the environment. -/
 def TcInv (vs₀ : VState) (s : TcState .anon) : Prop :=
-  ∃ vs, vs₀ ≤ vs ∧ TcStateWF trProj s vs
+  ∃ vs, vs₀ ≤ vs ∧ TcStateWF safety trProj s vs
 
-theorem TcStateWF.tcInv {trProj} {s : TcState .anon} {vs : VState}
-    (h : TcStateWF trProj s vs) : TcInv trProj vs s :=
+theorem TcStateWF.tcInv {safety trProj} {s : TcState .anon}
+    {vs : VState} (h : TcStateWF safety trProj s vs) :
+    TcInv safety trProj vs s :=
   ⟨vs, VState.le_refl vs, h⟩
 
 /-- Weaken the baseline. -/
-theorem TcInv.mono {trProj} {vs₀ vs₀' : VState} {s : TcState .anon}
-    (hle : vs₀' ≤ vs₀) (h : TcInv trProj vs₀ s) : TcInv trProj vs₀' s :=
+theorem TcInv.mono {safety trProj} {vs₀ vs₀' : VState}
+    {s : TcState .anon} (hle : vs₀' ≤ vs₀)
+    (h : TcInv safety trProj vs₀ s) : TcInv safety trProj vs₀' s :=
   let ⟨vs, hvs, hwf⟩ := h
   ⟨vs, hle.trans hvs, hwf⟩
 
 /-- Every `TcInv` state has a well-formed Theory environment. -/
-theorem TcInv.venv_wf {trProj} {vs₀ : VState} {s : TcState .anon}
-    (h : TcInv trProj vs₀ s) : ∃ vs, vs₀ ≤ vs ∧ vs.venv.WF :=
+theorem TcInv.venv_wf {safety trProj} {vs₀ : VState}
+    {s : TcState .anon} (h : TcInv safety trProj vs₀ s) :
+    ∃ vs, vs₀ ≤ vs ∧ vs.venv.WF :=
   let ⟨vs, hvs, hwf⟩ := h
   ⟨vs, hvs, hwf.env.wf⟩
 
-/-- Lookups under the invariant translate, at some ghost state above
-    the baseline (`TrKEnv.find?` lifted to `TcInv`). -/
-theorem TcInv.find? {trProj} {vs₀ : VState} {s : TcState .anon}
-    (h : TcInv trProj vs₀ s) {j : KId .anon} {c : KConst .anon}
-    (hg : s.env.get? j = some c) :
+/-- In-safety lookups under the invariant translate, at some ghost
+    state above the baseline (`TrKEnv.find?` lifted to `TcInv`). This
+    is the lemma that discharges the `TrKExprS.const` premises at
+    `checkConst` read sites; its `hs` hypothesis is the
+    `checkNoUnsafeRefs` bridge (M6/M7). -/
+theorem TcInv.find? {safety trProj} {vs₀ : VState} {s : TcState .anon}
+    (h : TcInv safety trProj vs₀ s) {j : KId .anon} {c : KConst .anon}
+    (hg : s.env.get? j = some c) (hs : safety ≤ c.safety) :
     ∃ vs, vs₀ ≤ vs ∧ ∃ n ci', vs.nameOf j.addr = some n ∧
       vs.venv.constants n = some ci' ∧
-      TrKConstant vs.venv vs.nameOf trProj c ci' :=
+      TrKConstant safety vs.venv vs.nameOf trProj c ci' :=
   let ⟨vs, hvs, hwf⟩ := h
-  ⟨vs, hvs, hwf.env.find? hg⟩
+  ⟨vs, hvs, hwf.env.find? hg hs⟩
 
 /-! ### Growth: ingress steps as ghost-state transitions
 
@@ -118,55 +130,71 @@ The other half of the monotone design: inserting a translated constant
 re-establishes `TcStateWF` at a strictly larger ghost state (the
 `TrKEnv'` log steps, viewed as `TcState` transitions — the shape the
 ingress-path verification will discharge per constant). The ghost
-`nameOf` is total from the start; only `venv` grows. -/
+`nameOf` is total from the start; only `venv` grows — and not at all
+for `skip` steps. -/
 
 /-- Ingress of an axiom: the `axio` log step as a state transition. -/
-theorem TcStateWF.insert_axio {trProj} {s : TcState .anon} {vs : VState}
-    {id : KId .anon} {nm : Mode.anon.F Name}
-    {lps : Mode.anon.F (Array Name)} {lvls : UInt64} {ty : KExpr .anon}
-    {ci' : Lean4Lean.VConstVal} {venv' : VEnv}
-    (h : TcStateWF trProj s vs)
-    (h1 : TrKConstVal vs.venv vs.nameOf trProj id.addr
-      (.axio nm lps false lvls ty) ci')
+theorem TcStateWF.insert_axio {safety trProj} {s : TcState .anon}
+    {vs : VState} {id : KId .anon} {nm : Mode.anon.F Name}
+    {lps : Mode.anon.F (Array Name)} {isUnsafe : Bool} {lvls : UInt64}
+    {ty : KExpr .anon} {ci' : Lean4Lean.VConstVal} {venv' : VEnv}
+    (h : TcStateWF safety trProj s vs)
+    (h1 : TrKConstVal safety vs.venv vs.nameOf trProj id.addr
+      (.axio nm lps isUnsafe lvls ty) ci')
     (h2 : s.env.consts[id]? = none)
     (h3 : ci'.WF vs.venv)
     (h4 : vs.venv.addConst ci'.name ci'.toVConstant = some venv') :
-    TcStateWF trProj
-      { s with env := s.env.insert id (.axio nm lps false lvls ty) }
+    TcStateWF safety trProj
+      { s with env := s.env.insert id (.axio nm lps isUnsafe lvls ty) }
       ⟨venv', vs.nameOf⟩ ∧ vs ≤ ⟨venv', vs.nameOf⟩ := by
   obtain ⟨Q, henv⟩ := h.env
   exact ⟨⟨⟨Q, .axio h1 h2 h3 h4 henv⟩, h.intern⟩,
     ⟨VEnv.addConst_le h4, fun _ _ hn => hn⟩⟩
 
-/-- Ingress of a (safe) definition: the `defn` log step as a state
+/-- Ingress of an in-safety definition: the `defn` log step as a state
     transition. -/
-theorem TcStateWF.insert_defn {trProj} {s : TcState .anon} {vs : VState}
-    {id : KId .anon} {nm : Mode.anon.F Name}
+theorem TcStateWF.insert_defn {safety trProj} {s : TcState .anon}
+    {vs : VState} {id : KId .anon} {nm : Mode.anon.F Name}
     {lps : Mode.anon.F (Array Name)} {kind : Ix.DefKind}
-    {hints : Lean.ReducibilityHints} {lvls : UInt64}
-    {ty val : KExpr .anon} {leanAll : Mode.anon.F (Array (KId .anon))}
-    {block : KId .anon} {ci' : Lean4Lean.VDefVal} {venv' : VEnv}
-    (h : TcStateWF trProj s vs)
-    (h1 : TrKDefVal vs.venv vs.nameOf trProj id.addr
-      (.defn nm lps kind .safe hints lvls ty val leanAll block) val ci')
+    {dsafety : Ix.DefinitionSafety} {hints : Lean.ReducibilityHints}
+    {lvls : UInt64} {ty val : KExpr .anon}
+    {leanAll : Mode.anon.F (Array (KId .anon))} {block : KId .anon}
+    {ci' : Lean4Lean.VDefVal} {venv' : VEnv}
+    (h : TcStateWF safety trProj s vs)
+    (h1 : TrKDefVal safety vs.venv vs.nameOf trProj id.addr
+      (.defn nm lps kind dsafety hints lvls ty val leanAll block) val
+      ci')
     (h2 : s.env.consts[id]? = none)
     (h3 : ci'.WF vs.venv)
     (h4 : vs.venv.addConst ci'.name ci'.toVConstant = some venv') :
-    TcStateWF trProj
+    TcStateWF safety trProj
       { s with env :=
           (s.env.insert id
-            (.defn nm lps kind .safe hints lvls ty val leanAll block)) }
+            (.defn nm lps kind dsafety hints lvls ty val leanAll
+              block)) }
       ⟨venv'.addDefEq ci'.toDefEq, vs.nameOf⟩ ∧
     vs ≤ ⟨venv'.addDefEq ci'.toDefEq, vs.nameOf⟩ := by
   obtain ⟨Q, henv⟩ := h.env
   exact ⟨⟨⟨Q, .defn h1 h2 h3 h4 henv⟩, h.intern⟩,
     ⟨(VEnv.addConst_le h4).trans VEnv.addDefEq_le, fun _ _ hn => hn⟩⟩
 
+/-- Ingress of an out-of-safety constant: the `skip` log step as a
+    state transition — the ghost state does not move at all. -/
+theorem TcStateWF.insert_skip {safety trProj} {s : TcState .anon}
+    {vs : VState} {id : KId .anon} {c : KConst .anon}
+    (h : TcStateWF safety trProj s vs)
+    (h1 : ¬safety ≤ c.safety)
+    (h2 : s.env.consts[id]? = none) :
+    TcStateWF safety trProj { s with env := s.env.insert id c } vs := by
+  obtain ⟨Q, henv⟩ := h.env
+  exact ⟨⟨Q, .skip h1 h2 henv⟩, h.intern⟩
+
 /-! ### Validation: the M1 helpers under the real invariant -/
 
 /-- `tick` preserves the run invariant (fuel is framed away). -/
-theorem TcM.tick.tcInv {trProj} {vs₀ : VState} {s : TcState .anon} :
-    TcM.WF (TcInv trProj vs₀) s (TcM.tick (m := .anon))
+theorem TcM.tick.tcInv {safety trProj} {vs₀ : VState}
+    {s : TcState .anon} :
+    TcM.WF (TcInv safety trProj vs₀) s (TcM.tick (m := .anon))
       (fun _ s' => s'.recFuel = s.recFuel - 1)
       (fun e s' => e = .maxRecFuel ∧ s' = s) :=
   TcM.tick.wf fun _ h =>
@@ -179,13 +207,13 @@ theorem TcM.tick.tcInv {trProj} {vs₀ : VState} {s : TcState .anon} :
     carries through both outcomes. The caller supplies the pre-state
     intern-support condition (`S` covers the table) exactly as in the
     M2 theorem; `TcInv` supplies the intern `WF` half itself. -/
-theorem TcM.instantiateUnivParams.tcInv {trProj} {vs₀ : VState}
+theorem TcM.instantiateUnivParams.tcInv {safety trProj} {vs₀ : VState}
     {S : KExpr .anon → Prop} {us : Array (KUniv .anon)}
     {e : KExpr .anon} {s : TcState .anon}
     (hcf : KExpr.CollisionFree S)
     (hreach : ∀ x, KExpr.InstUnivReach us e x → S x)
     (hsup : ∀ x, s.env.intern.ExprSupport x → S x) :
-    TcM.WF (TcInv trProj vs₀) s (TcM.instantiateUnivParams e us)
+    TcM.WF (TcInv safety trProj vs₀) s (TcM.instantiateUnivParams e us)
       (fun r s' => KExpr.instantiateUnivParamsSpec e us = .ok r ∧
         s' = { s with env := { s.env with intern := s'.env.intern } })
       (fun _ s' =>

@@ -3,7 +3,7 @@ import Ix.Tc.Const
 import Ix.Tc.Env
 
 /-!
-# Environment translation: `KEnv` ↔ `VEnv` (M3 opening)
+# Environment translation: `KEnv` ↔ `VEnv` (M3)
 
 Upstream `TrEnv'` (Verify/Environment/Basic.lean:105) re-keyed for the
 content-addressed environment. The structural divergences:
@@ -13,22 +13,73 @@ content-addressed environment. The structural divergences:
   constants carry no names at all. The assignment
   `nameOf : Address → Option Lean.Name` is ghost specification data
   (the SAME parameter the translation relation `TrKExprS` reads at
-  `const`/`prj` nodes): each log step pins `nameOf id.addr =
-  some ci'.name`, and name-injectivity across the env comes free from
-  `addConst` freshness along the log.
+  `const`/`prj` nodes): each translating log step pins
+  `nameOf id.addr = some ci'.name`, and name-injectivity across the
+  env comes free from `addConst` freshness along the log.
 - **Positional levels.** `TrKConstant`'s uvar link is just
   `c.lvls.toNat = ci'.uvars` — no levelParams-name-list translation
   (our `KUniv` is positional like `VLevel` already).
-- **Slice-1 scope** (recorded in the roadmap): `axio` pins
-  `isUnsafe = false` and `defn` pins `.safe` (the safety parameter +
-  `VDecl.block` name-reservation for unsafe decls is a slice-2 debt);
-  the `quot` step and `thm`/`opaque` kind refinements are slice-2;
-  `AddKInduct` is an EMPTY inductive — exact upstream parity (their
-  `AddInduct` is an empty `-- TODO`), so the relation is uninhabited
-  for envs containing inductives until M8 supplies the block
-  translation. M5/M6 consume `TrKEnv` as a hypothesis, so their
-  lemmas are unaffected.
+- **Safety via `skip` steps.** Ingress admits constants of every
+  safety into `KEnv` unconditionally (Ingress.lean:371,389,406), so
+  the log takes a `safety` parameter and out-of-safety constants enter
+  by a `skip` step — inserted in the map with NO Theory-side step
+  (upstream `Aligned.ignoreConst`'s role; upstream `TrEnv'` itself
+  pins every logged constant in-safety, which cannot describe real
+  anon KEnvs). The venv holds exactly the in-safety fragment, so
+  lookups translate only under a `safety ≤ c.safety` hypothesis —
+  discharged at reference sites by the `checkNoUnsafeRefs`
+  (Check.lean:43-76) verification in M6/M7. The v1 headline
+  instantiates `safety := .safe`.
+- **Remaining slice-2 debts** (roadmap): the `quot` step, the
+  `thm`/`opaque` kind refinement of `defn` (it currently registers the
+  defeq for every kind), and `AddKInduct` — an EMPTY inductive (exact
+  upstream parity: their `AddInduct` is an empty `-- TODO`), so the
+  relation is uninhabited for envs containing inductives until M8
+  supplies the block translation. M5/M6 consume `TrKEnv` as a
+  hypothesis, so their lemmas are unaffected.
 -/
+
+namespace Ix.DefinitionSafety
+
+/-- The safety lattice order, `unsaf < part < safe`:
+`callerSafety ≤ ref.safety` says a `ref.safety`-level constant may be
+referenced from a `callerSafety`-level subject — exactly what
+`checkNoUnsafeRefs` (Check.lean:43-76) enforces at reference time
+(safe subjects reference only safe constants; partial subjects may
+also reference partial; unsafe subjects reference anything). Upstream
+keys `TrConstant` by the same `safety ≤ ci.safety` (their hand-rolled
+`DefinitionSafety.compare`, Verify/Expr.lean:29 — hand-rolled here too
+because the derived `Ord` uses the declaration order
+`unsaf < safe < part`, which is NOT the lattice). -/
+protected def le : Ix.DefinitionSafety → Ix.DefinitionSafety → Bool
+  | .unsaf, _ => true
+  | _, .safe => true
+  | .part, .part => true
+  | _, _ => false
+
+instance : LE Ix.DefinitionSafety := ⟨fun a b => a.le b⟩
+
+instance (a b : Ix.DefinitionSafety) : Decidable (a ≤ b) :=
+  inferInstanceAs (Decidable (_ = true))
+
+theorem le_trans {a b c : Ix.DefinitionSafety} :
+    a ≤ b → b ≤ c → a ≤ c := by
+  cases a <;> cases b <;> cases c <;> decide
+
+theorem le_rfl {a : Ix.DefinitionSafety} : a ≤ a := by
+  cases a <;> rfl
+
+theorem unsaf_le {a : Ix.DefinitionSafety} : unsaf ≤ a := by
+  cases a <;> rfl
+
+theorem le_safe {a : Ix.DefinitionSafety} : a ≤ safe := by
+  cases a <;> rfl
+
+theorem le_antisymm {a b : Ix.DefinitionSafety} :
+    a ≤ b → b ≤ a → a = b := by
+  cases a <;> cases b <;> decide
+
+end Ix.DefinitionSafety
 
 namespace Ix.Tc
 
@@ -65,34 +116,91 @@ theorem TrKExprS.mono {env env' : VEnv} (henv : env ≤ env')
   | nat h1 => exact .nat (h1.mono henv)
   | str h1 => exact .str (h1.mono henv)
 
+/-! ### Constant safety -/
+
+/-- The safety level of a constant (upstream `ConstantInfo.safety`,
+    Verify/Environment/Basic.lean:14): `defn` carries it; `axio`/
+    `recr`/`indc`/`ctor` fold their `isUnsafe` flag (those kinds have
+    no partial variant); `quot` is kernel-generated and safe. -/
+def KConst.safety {m : Mode} : KConst m → Ix.DefinitionSafety
+  | .defn (safety := s) .. => s
+  | .recr (isUnsafe := u) .. => if u then .unsaf else .safe
+  | .axio (isUnsafe := u) .. => if u then .unsaf else .safe
+  | .quot .. => .safe
+  | .indc (isUnsafe := u) .. => if u then .unsaf else .safe
+  | .ctor (isUnsafe := u) .. => if u then .unsaf else .safe
+
 /-! ### Per-constant translation (upstream `TrConstant` tower) -/
 
-variable (env : VEnv) (nameOf : Address → Option Lean.Name)
+variable (safety : Ix.DefinitionSafety) (env : VEnv)
+    (nameOf : Address → Option Lean.Name)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
-/-- The constant's type translates in the empty context, with the
-    positional uvar counts linked (upstream `TrConstant`, minus the
-    levelParams-list translation ours doesn't need). -/
+/-- The constant is in-safety and its type translates in the empty
+    context, with the positional uvar counts linked (upstream
+    `TrConstant`, minus the levelParams-list translation ours doesn't
+    need). -/
 def TrKConstant (c : KConst .anon) (ci' : VConstant) : Prop :=
-  c.lvls.toNat = ci'.uvars ∧
+  safety ≤ c.safety ∧ c.lvls.toNat = ci'.uvars ∧
   TrKExprS env ci'.uvars nameOf trProj [] c.ty ci'.type
 
-variable (env : VEnv) (nameOf : Address → Option Lean.Name)
+variable (safety : Ix.DefinitionSafety) (env : VEnv)
+    (nameOf : Address → Option Lean.Name)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- `TrKConstant` plus the ghost name link (upstream `TrConstVal`;
     the name comes from `nameOf`, not the constant — anon constants
     are nameless). -/
 def TrKConstVal (addr : Address) (c : KConst .anon) (ci' : VConstVal) :
     Prop :=
-  TrKConstant env nameOf trProj c ci'.toVConstant ∧
+  TrKConstant safety env nameOf trProj c ci'.toVConstant ∧
   nameOf addr = some ci'.name
 
-variable (env : VEnv) (nameOf : Address → Option Lean.Name)
+variable (safety : Ix.DefinitionSafety) (env : VEnv)
+    (nameOf : Address → Option Lean.Name)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- `TrKConstVal` plus the value translation (upstream `TrDefVal`). -/
 def TrKDefVal (addr : Address) (c : KConst .anon) (val : KExpr .anon)
     (ci' : VDefVal) : Prop :=
-  TrKConstVal env nameOf trProj addr c ci'.toVConstVal ∧
+  TrKConstVal safety env nameOf trProj addr c ci'.toVConstVal ∧
   TrKExprS env c.lvls.toNat nameOf trProj [] val ci'.value
+
+/-! ### Monotonicity of the tower
+(upstream Verify/Environment/Lemmas.lean:8-22) -/
+
+theorem TrKConstant.sf_mono {safety safety' : Ix.DefinitionSafety}
+    {env : VEnv} {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {c : KConst .anon} {ci' : VConstant} (hsf : safety ≤ safety')
+    (H : TrKConstant safety' env nameOf trProj c ci') :
+    TrKConstant safety env nameOf trProj c ci' :=
+  ⟨Ix.DefinitionSafety.le_trans hsf H.1, H.2⟩
+
+theorem TrKConstant.mono {safety : Ix.DefinitionSafety}
+    {env env' : VEnv} (henv : env ≤ env')
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {c : KConst .anon} {ci' : VConstant}
+    (H : TrKConstant safety env nameOf trProj c ci') :
+    TrKConstant safety env' nameOf trProj c ci' :=
+  ⟨H.1, H.2.1, H.2.2.mono henv⟩
+
+theorem TrKConstVal.mono {safety : Ix.DefinitionSafety}
+    {env env' : VEnv} (henv : env ≤ env')
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {addr : Address} {c : KConst .anon} {ci' : VConstVal}
+    (H : TrKConstVal safety env nameOf trProj addr c ci') :
+    TrKConstVal safety env' nameOf trProj addr c ci' :=
+  ⟨H.1.mono henv, H.2⟩
+
+theorem TrKDefVal.mono {safety : Ix.DefinitionSafety}
+    {env env' : VEnv} (henv : env ≤ env')
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {addr : Address} {c : KConst .anon} {val : KExpr .anon}
+    {ci' : VDefVal}
+    (H : TrKDefVal safety env nameOf trProj addr c val ci') :
+    TrKDefVal safety env' nameOf trProj addr c val ci' :=
+  ⟨H.1.mono henv, H.2.mono henv⟩
 
 /-! ### The environment log -/
 
@@ -110,41 +218,53 @@ theorem AddKInduct.to_addInduct
     (H : AddKInduct C₁ env₁ decl C₂ env₂) :
     env₁.addInduct decl = some env₂ := nomatch H
 
-variable (nameOf : Address → Option Lean.Name)
+variable (safety : Ix.DefinitionSafety)
+    (nameOf : Address → Option Lean.Name)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
-/-- The environment translation as an event log (upstream `TrEnv'`):
-    each step translates one declaration against the pre-`VEnv`,
-    requires address- and name-freshness, and performs the Theory-side
-    `addConst`/`addDefEq` step. The `Bool` tracks quotient
-    initialization (vestigial until the slice-2 `quot` step). -/
+/-- The environment translation as an event log (upstream `TrEnv'`
+    fused with upstream `Aligned`'s skip steps): each translating step
+    checks the declaration against the pre-`VEnv`, requires
+    address-freshness, and performs the Theory-side `addConst`/
+    `addDefEq` step; a `skip` step inserts an out-of-safety constant
+    with the `VEnv` unmoved (and no ghost-name obligation), so the
+    `VEnv` holds exactly the in-safety fragment. The `Bool` tracks
+    quotient initialization (vestigial until the slice-2 `quot`
+    step). -/
 inductive TrKEnv' :
     HashMap (KId .anon) (KConst .anon) → Bool → VEnv → Prop
   | empty : TrKEnv' {} false .empty
+  | skip {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool}
+      {env : VEnv} {id : KId .anon} {c : KConst .anon} :
+    ¬safety ≤ c.safety →
+    C[id]? = none →
+    TrKEnv' C Q env →
+    TrKEnv' (C.insert id c) Q env
   | axio {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool}
       {env env' : VEnv} {id : KId .anon} {nm : Mode.anon.F Name}
-      {lps : Mode.anon.F (Array Name)} {lvls : UInt64}
-      {ty : KExpr .anon} {ci' : VConstVal} :
-    TrKConstVal env nameOf trProj id.addr (.axio nm lps false lvls ty)
-      ci' →
+      {lps : Mode.anon.F (Array Name)} {isUnsafe : Bool}
+      {lvls : UInt64} {ty : KExpr .anon} {ci' : VConstVal} :
+    TrKConstVal safety env nameOf trProj id.addr
+      (.axio nm lps isUnsafe lvls ty) ci' →
     C[id]? = none →
     ci'.WF env →
     env.addConst ci'.name ci'.toVConstant = some env' →
     TrKEnv' C Q env →
-    TrKEnv' (C.insert id (.axio nm lps false lvls ty)) Q env'
+    TrKEnv' (C.insert id (.axio nm lps isUnsafe lvls ty)) Q env'
   | defn {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool}
       {env env' : VEnv} {id : KId .anon} {nm : Mode.anon.F Name}
       {lps : Mode.anon.F (Array Name)} {kind : Ix.DefKind}
+      {dsafety : Ix.DefinitionSafety}
       {hints : Lean.ReducibilityHints} {lvls : UInt64}
       {ty val : KExpr .anon} {leanAll : Mode.anon.F (Array (KId .anon))}
       {block : KId .anon} {ci' : VDefVal} :
-    TrKDefVal env nameOf trProj id.addr
-      (.defn nm lps kind .safe hints lvls ty val leanAll block) val
+    TrKDefVal safety env nameOf trProj id.addr
+      (.defn nm lps kind dsafety hints lvls ty val leanAll block) val
       ci' →
     C[id]? = none →
     ci'.WF env →
     env.addConst ci'.name ci'.toVConstant = some env' →
     TrKEnv' C Q env →
-    TrKEnv' (C.insert id (.defn nm lps kind .safe hints lvls ty val
+    TrKEnv' (C.insert id (.defn nm lps kind dsafety hints lvls ty val
       leanAll block)) Q (env'.addDefEq ci'.toDefEq)
   | induct {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool}
       {env : VEnv} {decl : VInductDecl}
@@ -156,19 +276,23 @@ inductive TrKEnv' :
 
 /-- The environment translation (upstream `TrEnv`), quotient flag
     packaged. -/
-def TrKEnv (nameOf : Address → Option Lean.Name)
+def TrKEnv (safety : Ix.DefinitionSafety)
+    (nameOf : Address → Option Lean.Name)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop)
     (kenv : KEnv .anon) (venv : VEnv) : Prop :=
-  ∃ Q, TrKEnv' nameOf trProj kenv.consts Q venv
+  ∃ Q, TrKEnv' safety nameOf trProj kenv.consts Q venv
 
 /-- The translated environment is well-formed — the log replays as
-    `VEnv.WF'` declaration steps (upstream `TrEnv'.wf`). -/
-theorem TrKEnv'.wf {nameOf : Address → Option Lean.Name}
+    `VEnv.WF'` declaration steps, with `skip` steps invisible
+    (upstream `TrEnv'.wf`). -/
+theorem TrKEnv'.wf {safety : Ix.DefinitionSafety}
+    {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool} {venv : VEnv}
-    (H : TrKEnv' nameOf trProj C Q venv) : venv.WF := by
+    (H : TrKEnv' safety nameOf trProj C Q venv) : venv.WF := by
   induction H with
   | empty => exact ⟨_, .empty⟩
+  | skip _ _ _ ih => exact ih
   | axio h1 h2 h3 h4 _ ih =>
     have ⟨_, H⟩ := ih
     exact ⟨_, H.decl <| .axiom h3 h4⟩
@@ -179,14 +303,15 @@ theorem TrKEnv'.wf {nameOf : Address → Option Lean.Name}
     have ⟨_, H⟩ := ih
     exact ⟨_, H.decl <| .induct h1 h2.to_addInduct⟩
 
-theorem TrKEnv.wf {nameOf : Address → Option Lean.Name}
+theorem TrKEnv.wf {safety : Ix.DefinitionSafety}
+    {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {kenv : KEnv .anon} {venv : VEnv}
-    (H : TrKEnv nameOf trProj kenv venv) : venv.WF :=
+    (H : TrKEnv safety nameOf trProj kenv venv) : venv.WF :=
   let ⟨_, H⟩ := H
   H.wf
 
-/-! ### Reading the log: lookups translate
+/-! ### Reading the log: in-safety lookups translate
 
 Anon `KId` equality is lawful (address `==` is lawful by
 Verify/Expr.lean's `LawfulBEq Address`; the name component is `Unit`),
@@ -211,22 +336,32 @@ instance : LawfulBEq (KId .anon) where
 instance : LawfulHashable (KId .anon) where
   hash_eq a b h := by rw [eq_of_beq h]
 
-/-- Successful lookups translate: the resolved constant has a ghost
-    name, a Theory-side constant at that name, and the translation —
-    transported to the FINAL `VEnv` along the log's extension order
-    (upstream `TrEnv.find?` / `Aligned.find?`, address-keyed). This is
-    the lemma that discharges the `TrKExprS.const` premises at
-    `checkConst` read sites. -/
-theorem TrKEnv'.find? {nameOf : Address → Option Lean.Name}
+/-- Successful in-safety lookups translate: the resolved constant has
+    a ghost name, a Theory-side constant at that name, and the
+    translation — transported to the FINAL `VEnv` along the log's
+    extension order (upstream `Aligned.find?`, address-keyed). The
+    `hs` hypothesis is discharged at reference sites by the
+    `checkNoUnsafeRefs` verification: skipped constants resolve in the
+    map but have no Theory-side image. -/
+theorem TrKEnv'.find? {safety : Ix.DefinitionSafety}
+    {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {C : HashMap (KId .anon) (KConst .anon)} {Q : Bool} {venv : VEnv}
-    (H : TrKEnv' nameOf trProj C Q venv)
-    {j : KId .anon} {c : KConst .anon} (h : C[j]? = some c) :
+    (H : TrKEnv' safety nameOf trProj C Q venv)
+    {j : KId .anon} {c : KConst .anon} (h : C[j]? = some c)
+    (hs : safety ≤ c.safety) :
     ∃ n ci', nameOf j.addr = some n ∧ venv.constants n = some ci' ∧
-      TrKConstant venv nameOf trProj c ci' := by
+      TrKConstant safety venv nameOf trProj c ci' := by
   induction H with
   | empty => simp at h
-  | @axio C Q env env' id nm lps lvls ty ci' h1 h2 h3 h4 _ ih =>
+  | skip h1 _ _ ih =>
+    rw [Std.HashMap.getElem?_insert] at h
+    split at h
+    · cases h
+      exact absurd hs h1
+    · exact ih h
+  | @axio C Q env env' id nm lps isUnsafe lvls ty ci' h1 h2 h3 h4 _
+      ih =>
     have le := VEnv.addConst_le h4
     rw [Std.HashMap.getElem?_insert] at h
     split at h
@@ -234,14 +369,11 @@ theorem TrKEnv'.find? {nameOf : Address → Option Lean.Name}
       cases h
       have hij : id = j := eq_of_beq heq
       subst hij
-      have hname := h1.2
-      have hlv := h1.1.1
-      have hty := h1.1.2
-      exact ⟨_, _, hname, VEnv.addConst_self h4, hlv, hty.mono le⟩
+      exact ⟨_, _, h1.2, VEnv.addConst_self h4, h1.1.mono le⟩
     · obtain ⟨n, ci₀, hn, hc, htr⟩ := ih h
-      exact ⟨n, ci₀, hn, le.1 hc, htr.1, htr.2.mono le⟩
-  | @defn C Q env env' id nm lps kind hints lvls ty val leanAll block
-      ci' h1 h2 h3 h4 _ ih =>
+      exact ⟨n, ci₀, hn, le.1 hc, htr.mono le⟩
+  | @defn C Q env env' id nm lps kind dsafety hints lvls ty val
+      leanAll block ci' h1 h2 h3 h4 _ ih =>
     have le : env ≤ env'.addDefEq ci'.toDefEq :=
       (VEnv.addConst_le h4).trans VEnv.addDefEq_le
     rw [Std.HashMap.getElem?_insert] at h
@@ -250,24 +382,23 @@ theorem TrKEnv'.find? {nameOf : Address → Option Lean.Name}
       cases h
       have hij : id = j := eq_of_beq heq
       subst hij
-      have hname := h1.1.2
-      have hlv := h1.1.1.1
-      have hty := h1.1.1.2
-      exact ⟨_, _, hname, VEnv.addDefEq_le.1 (VEnv.addConst_self h4),
-        hlv, hty.mono le⟩
+      exact ⟨_, _, h1.1.2, VEnv.addDefEq_le.1 (VEnv.addConst_self h4),
+        h1.1.1.mono le⟩
     · obtain ⟨n, ci₀, hn, hc, htr⟩ := ih h
-      exact ⟨n, ci₀, hn, le.1 hc, htr.1, htr.2.mono le⟩
+      exact ⟨n, ci₀, hn, le.1 hc, htr.mono le⟩
   | induct _ h2 => cases h2
 
 /-- `TrKEnv.find?` at the `KEnv` API (`KEnv.get?` is the map lookup). -/
-theorem TrKEnv.find? {nameOf : Address → Option Lean.Name}
+theorem TrKEnv.find? {safety : Ix.DefinitionSafety}
+    {nameOf : Address → Option Lean.Name}
     {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {kenv : KEnv .anon} {venv : VEnv}
-    (H : TrKEnv nameOf trProj kenv venv)
-    {j : KId .anon} {c : KConst .anon} (h : kenv.get? j = some c) :
+    (H : TrKEnv safety nameOf trProj kenv venv)
+    {j : KId .anon} {c : KConst .anon} (h : kenv.get? j = some c)
+    (hs : safety ≤ c.safety) :
     ∃ n ci', nameOf j.addr = some n ∧ venv.constants n = some ci' ∧
-      TrKConstant venv nameOf trProj c ci' :=
+      TrKConstant safety venv nameOf trProj c ci' :=
   let ⟨_, H⟩ := H
-  H.find? h
+  H.find? h hs
 
 end Ix.Tc

@@ -201,14 +201,24 @@ namespace KVLCtx
 @[simp] theorem liftVar_zero (v : Nat ⊕ FVarId) : liftVar 0 0 v = v := by
   cases v <;> simp [liftVar]
 
-/-- `Δ'` is `Δ` with `dn` de Bruijn entries inserted at entry-position
-    `dk`; the `VExpr` side lifts by the inserted depth sum `n` at
-    position `k`. -/
+/-- `Δ'` is `Δ` with entries inserted at entry-position `dk`: `dn` of
+    them de Bruijn (each shifts KExpr indices), plus any number of
+    fvar-tagged ones (transparent to KExpr indices — `skip_fvar`,
+    upstream `FVLift.skip_fvar`'s role, fused into the one relation
+    because our contexts mix both kinds under a lookup). The `VExpr`
+    side lifts by the inserted depth sum `n` at position `k`. A skipped
+    fvar carries freshness for the SOURCE so `.inr` lookups transport
+    without capture (upstream gets this from the target's `WF`). -/
 inductive KBVLift : KVLCtx → KVLCtx → Nat → Nat → Nat → Nat → Prop
   | refl {Δ : KVLCtx} : KBVLift Δ Δ 0 0 0 0
   | skip {Δ Δ' : KVLCtx} {dn n : Nat} (d : VLocalDecl) :
     KBVLift Δ Δ' dn 0 n 0 →
     KBVLift Δ ((none, d) :: Δ') (dn + 1) 0 (n + d.depth) 0
+  | skip_fvar {Δ Δ' : KVLCtx} {dn n : Nat} (fv : FVarId × List FVarId)
+      (d : VLocalDecl) :
+    fv.1 ∉ Δ.fvars →
+    KBVLift Δ Δ' dn 0 n 0 →
+    KBVLift Δ ((some fv, d) :: Δ') dn 0 (n + d.depth) 0
   | cons {Δ Δ' : KVLCtx} {dn dk n k : Nat} (d : VLocalDecl) :
     KBVLift Δ Δ' dn dk n k →
     KBVLift ((none, d) :: Δ) ((none, d.liftN n k) :: Δ') dn (dk + 1) n
@@ -227,6 +237,14 @@ theorem KBVLift.toCtx {Δ Δ' : KVLCtx} {dn dk n k : Nat}
       let .zero As eq := ih
       simp [KVLCtx.toCtx, hΓ']
       exact .zero (A :: As) (eq ▸ rfl)
+  | @skip_fvar _ Δ' _ _ fv d _ _ ih =>
+    match d with
+    | .vlet .. => exact ih
+    | .vlam A =>
+      generalize hΓ' : KVLCtx.toCtx Δ' = Γ' at ih
+      let .zero As eq := ih
+      simp [KVLCtx.toCtx, hΓ']
+      exact .zero (A :: As) (eq ▸ rfl)
   | cons d _ ih =>
     match d with
     | .vlet .. => exact ih
@@ -237,6 +255,7 @@ theorem KBVLift.bvars_eq {Δ Δ' : KVLCtx} {dn dk n k : Nat}
   induction W with
   | refl => rfl
   | skip d _ ih => simp [KVLCtx.bvars, ih]; omega
+  | skip_fvar fv d _ _ ih => simpa [KVLCtx.bvars] using ih
   | cons d _ ih => simp [KVLCtx.bvars, ih]; omega
 
 theorem KBVLift.dk_le_bvars {Δ Δ' : KVLCtx} {dn dk n k : Nat}
@@ -244,6 +263,7 @@ theorem KBVLift.dk_le_bvars {Δ Δ' : KVLCtx} {dn dk n k : Nat}
   induction W with
   | refl => exact Nat.zero_le _
   | skip d _ ih => exact Nat.zero_le _
+  | skip_fvar fv d _ _ ih => exact Nat.zero_le _
   | cons d _ ih => simp [KVLCtx.bvars]; omega
 
 /-- A successful de Bruijn lookup is bounded by the entry count. -/
@@ -272,6 +292,36 @@ theorem find?_inl_lt : ∀ {Δ : KVLCtx} {j : Nat} {x : VExpr × VExpr},
     simp [bvars]
     omega
 
+/-- A successful fvar lookup means the id is declared (upstream
+    `VLCtx.find?_eq_some`, the direction we need). -/
+theorem find?_inr_mem : ∀ {Δ : KVLCtx} {fv : FVarId} {x : VExpr × VExpr},
+    find? Δ (.inr fv) = some x → fv ∈ Δ.fvars
+  | [], _, _, h => by simp [find?] at h
+  | (none, d) :: Δ, fv, x, h => by
+    simp only [find?, next, Option.bind_eq_bind] at h
+    have h2 : ∃ y, find? Δ (.inr fv) = some y := by
+      cases hf : find? Δ (.inr fv) with
+      | none => rw [hf] at h; exact absurd h (by simp)
+      | some y => exact ⟨y, rfl⟩
+    obtain ⟨y, hy⟩ := h2
+    simpa using find?_inr_mem hy
+  | (some p, d) :: Δ, fv, x, h => by
+    cases hEq : p.1 == fv with
+    | true =>
+      simp only [fvars_cons_some]
+      rw [eq_of_beq hEq]
+      exact List.mem_cons_self
+    | false =>
+      simp only [find?, next, hEq, Bool.false_eq_true, if_false,
+        Option.bind_eq_bind] at h
+      have h2 : ∃ y, find? Δ (.inr fv) = some y := by
+        cases hf : find? Δ (.inr fv) with
+        | none => rw [hf] at h; exact absurd h (by simp)
+        | some y => exact ⟨y, rfl⟩
+      obtain ⟨y, hy⟩ := h2
+      simp only [fvars_cons_some]
+      exact List.mem_cons_of_mem _ (find?_inr_mem hy)
+
 /-- Lookup transport across an insertion — upstream `BVLift.find?`. -/
 protected theorem KBVLift.find? {Δ Δ' : KVLCtx} {dn dk n k : Nat}
     {v : Nat ⊕ FVarId} {e A : VExpr}
@@ -281,6 +331,14 @@ protected theorem KBVLift.find? {Δ Δ' : KVLCtx} {dn dk n k : Nat}
   | refl => simp [H]
   | @skip _ Δ' _ _ d _ ih =>
     obtain v | fv := v <;> simp [find?, liftVar, next] <;>
+      exact ⟨_, _, ih H, by simp [Lean4Lean.VExpr.liftN_liftN]⟩
+  | @skip_fvar Δ Δ' _ _ fv d hfresh _ ih =>
+    obtain v | fv' := v
+    · simp [find?, liftVar, next]
+      exact ⟨_, _, ih H, by simp [Lean4Lean.VExpr.liftN_liftN]⟩
+    · have hne : ¬fv.1 = fv' := fun hEq =>
+        hfresh (hEq ▸ find?_inr_mem H)
+      simp [find?, liftVar, next, hne]
       exact ⟨_, _, ih H, by simp [Lean4Lean.VExpr.liftN_liftN]⟩
   | cons d _ ih =>
     obtain (_ | v) | fv := v <;> simp [liftVar] <;>
