@@ -284,7 +284,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   | .checkEnv root asm =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
-    ioBuffer ← seedAsm asm ioBuffer
+    ioBuffer ← seedTreeAt asm trees ioBuffer
   | .reveal comm _info =>
     ioBuffer := addEntries env (closureFrom env comm).contains ioBuffer
   | .contains tree _target =>
@@ -313,14 +313,44 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
   -- check_reachable. The frontier stays the "at most" assumption set.
   let some envTree := Ix.AssumptionTree.canonical owned
     | .error "shardCheckEnvClaim: empty owned set"
-  let asmTree? := Ix.AssumptionTree.canonical frontier
-  let claim := Ix.Claim.checkEnv envTree.root (asmTree?.map (·.root))
+  -- The assumption tree is MANDATORY: an empty frontier is declared with
+  -- the canonical padding tree (root = zeroAddress), a positive "assumes
+  -- nothing" rather than an absent field.
+  let asmTree := (Ix.AssumptionTree.canonical frontier).getD .padding
+  let claim := Ix.Claim.checkEnv envTree.root asmTree.root
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert envTree.root envTree
-  match asmTree? with
-  | some asmTree => trees := trees.insert asmTree.root asmTree
-  | none => pure ()
+  trees := trees.insert asmTree.root asmTree
   pure (claim, closure, trees)
+
+/-- "Typecheck `target` and everything it transitively depends on" as a
+    DECLARED claim: `CheckEnv` whose owned tree is `target`'s reference
+    closure and whose assumption tree is the canonical empty tree.
+
+    The kernel no longer derives a dependency set — it checks exactly what
+    the claim names — so the closure is computed here and committed in the
+    claim root. Same guarantee as the old `Check addr none`, but the
+    checked set is now part of the public statement. -/
+def buildClosureCheckWitness (env : Ixon.Env) (target : Address) :
+    Except String (Ix.Claim × ClaimWitness) := do
+  let closure := closureFrom env target
+  -- Partition the closure: CONSTANTS are what gets checked (`owned`);
+  -- blob/literal addresses are declared in `asm`, where the assumption is
+  -- vacuous — a byte string has nothing to typecheck, and its value is
+  -- already pinned by its content address. Without the split a blob would
+  -- land in `owned` and the kernel would try to check it.
+  let closureArr := closure.toArray
+  let ownedArr := closureArr.filter (fun a => env.consts.contains a)
+  let blobArr := closureArr.filter (fun a => !env.consts.contains a)
+  let some ownedTree := Ix.AssumptionTree.canonical ownedArr
+    | .error s!"buildClosureCheckWitness: empty closure for {target}"
+  let asmTree := (Ix.AssumptionTree.canonical blobArr).getD .padding
+  let claim := Ix.Claim.checkEnv ownedTree.root asmTree.root
+  let trees : Std.HashMap Address Ix.AssumptionTree :=
+    (({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree).insert
+      asmTree.root asmTree
+  let witness ← buildClaimWitness env claim trees
+  pure (claim, witness)
 
 def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × ClaimWitness) := do

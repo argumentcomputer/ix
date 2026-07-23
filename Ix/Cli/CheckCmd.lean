@@ -63,8 +63,7 @@ def loadClaimAndTrees (claimHex : String) :
   let treeRoots : Array Address := match claim with
     | .check _ (some r)        => #[r]
     | .eval _ _ (some r)       => #[r]
-    | .checkEnv root none      => #[root]
-    | .checkEnv root (some r)  => #[root, r]
+    | .checkEnv root asm       => #[root, asm]
     | .contains tree _         => #[tree]
     | _                        => #[]
   let mut trees : Std.HashMap Address Ix.AssumptionTree := {}
@@ -78,13 +77,16 @@ def loadClaimAndTrees (claimHex : String) :
     trees := trees.insert r tree
   return (claim, trees)
 
-/-- Build a `ClaimWitness` for the `verify_claim` entrypoint against
-    `Ix.Claim.check addr none` (full transitive typecheck of the
-    target's closure). -/
+/-- Build a `ClaimWitness` for the `verify_claim` entrypoint doing a full
+    transitive typecheck of the target's closure — expressed as a
+    `CheckEnv` whose owned tree IS the closure and whose assumption tree
+    is the canonical empty tree. The checked set is declared in the claim
+    rather than derived inside the kernel. -/
 def mkWitness (addr : Address) (ixonEnv : Ixon.Env) :
     IO IxVM.ClaimHarness.ClaimWitness := do
-  IO.ofExcept <|
-    IxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none)
+  let (_claim, witness) ← IO.ofExcept <|
+    IxVM.ClaimHarness.buildClosureCheckWitness ixonEnv addr
+  pure witness
 
 /-- Compute + emit per-circuit stats. With `statsOut = none` prints to
     stdout; with `some path` redirects stdout to the file for the

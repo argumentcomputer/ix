@@ -237,10 +237,21 @@ fn add_prim_presence_entries(
 /// directly in Rust. Returns `(claim, claim_digest_input, io_buffer)`
 /// ready to feed to `crate::ix::aiur_ixvm_runner::execute_ixvm`.
 ///
-/// Mirrors `IxVM.ClaimHarness.buildClaimWitness` on the
-/// `Claim.check addr none` branch: closure-from-addr seeds ch 2/3/4/5,
-/// claim bytes go to ch 0. Asm-tree variant deferred — caller falls
-/// back to Lean witness when `asm = Some _`.
+/// Rust twin of `IxVM.ClaimHarness.buildClosureCheckWitness`: "typecheck
+/// `target` and everything it transitively depends on", expressed as a
+/// DECLARED `CheckEnv` whose owned tree is the closure's CONSTANTS and
+/// whose assumption tree is the closure's BLOB addresses.
+///
+/// The kernel derives no dependency set — it checks exactly what the
+/// claim names — so the closure is computed here and committed in the
+/// claim root. Blobs go in `assumptions` because a byte string has
+/// nothing to typecheck (its value is already pinned by its content
+/// address); putting them in `owned` would make the kernel try to check
+/// them.
+///
+/// MUST stay in lockstep with the Lean builder: both produce the same
+/// claim for the same target, so the claim digest matches whichever path
+/// built the witness.
 pub fn build_claim_check_witness(
   env: &Env,
   target: &Address,
@@ -249,7 +260,25 @@ pub fn build_claim_check_witness(
   let closure: FxHashSet<Address> =
     closure_from_set(env, std::slice::from_ref(target));
 
-  let claim = Claim::Check { const_addr: target.clone(), assumptions: None };
+  let mut owned_vec: Vec<Address> =
+    closure.iter().filter(|a| env.consts.contains_key(*a)).cloned().collect();
+  owned_vec.sort();
+  let mut blob_vec: Vec<Address> =
+    closure.iter().filter(|a| !env.consts.contains_key(*a)).cloned().collect();
+  blob_vec.sort();
+
+  let owned_tree = AssumptionTree::canonical(&owned_vec).ok_or_else(|| {
+    "build_claim_check_witness: closure has no constants".to_string()
+  })?;
+  let asm_tree = AssumptionTree::canonical(&blob_vec);
+
+  let claim = Claim::CheckEnv {
+    root: owned_tree.root(),
+    assumptions: asm_tree
+      .as_ref()
+      .unwrap_or(&AssumptionTree::Padding)
+      .root(),
+  };
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
@@ -264,6 +293,21 @@ pub fn build_claim_check_witness(
   // ch 2/3/4/5: per-const/blob/hint entries — parallel byte conversion.
   add_entries_parallel(env, &closure, &mut io);
   add_prim_presence_entries(env, &closure, &mut io);
+  // ch 1: owned tree, and the assumption tree (canonical empty when the
+  // closure has no blobs).
+  extend(
+    &mut io,
+    G::ONE,
+    addr_key(&owned_tree.root()),
+    bytes_to_g(&owned_tree.ser()),
+  );
+  let asm_tree = asm_tree.unwrap_or(AssumptionTree::Padding);
+  extend(
+    &mut io,
+    G::ONE,
+    addr_key(&asm_tree.root()),
+    bytes_to_g(&asm_tree.ser()),
+  );
 
   Ok((claim, digest_key, io))
 }
@@ -295,11 +339,14 @@ pub fn build_shard_check_env_witness(
   let env_tree = AssumptionTree::canonical(&owned_sorted).ok_or_else(|| {
     "build_shard_check_env_witness: empty owned set".to_string()
   })?;
-  let asm_tree = AssumptionTree::canonical(&frontier);
+  // Assumptions are mandatory: a shard with an empty frontier declares
+  // the canonical empty (padding) tree rather than an absent field.
+  let asm_tree = AssumptionTree::canonical(&frontier)
+    .unwrap_or(AssumptionTree::Padding);
 
   let claim = Claim::CheckEnv {
     root: env_tree.root(),
-    assumptions: asm_tree.as_ref().map(|t| t.root()),
+    assumptions: asm_tree.root(),
   };
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
@@ -322,10 +369,13 @@ pub fn build_shard_check_env_witness(
     addr_key(&env_tree.root()),
     bytes_to_g(&env_tree.ser()),
   );
-  // ch 1: asm tree (if present)
-  if let Some(at) = asm_tree {
-    extend(&mut io, G::ONE, addr_key(&at.root()), bytes_to_g(&at.ser()));
-  }
+  // ch 1: asm tree (always present — mandatory declaration)
+  extend(
+    &mut io,
+    G::ONE,
+    addr_key(&asm_tree.root()),
+    bytes_to_g(&asm_tree.ser()),
+  );
 
   Ok((claim, digest_key, io))
 }

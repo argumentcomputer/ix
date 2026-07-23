@@ -90,7 +90,7 @@ def genClaim : Gen Claim :=
   frequency [
     (10, Claim.eval     <$> genAddress <*> genAddress <*> genOptAddress),
     (10, Claim.check    <$> genAddress <*> genOptAddress),
-    (10, Claim.checkEnv <$> genAddress <*> genOptAddress),
+    (10, Claim.checkEnv <$> genAddress <*> genAddress),
     (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo),
     (10, Claim.contains <$> genAddress <*> genAddress),
   ]
@@ -122,13 +122,12 @@ instance : Shrinkable RevealConstantInfo where
 instance : Shrinkable Claim where
   shrink
     | .check _ none => []
-    | .checkEnv _ none => []
     | .check c (some _) => [.check c none]
-    | .checkEnv r (some _) => [.checkEnv r none]
+    | .checkEnv r _ => []
     | .eval input _ _ => [.check input none]
     | .reveal comm info =>
       (.reveal comm <$> Shrinkable.shrink info) ++ [.check comm none]
-    | .contains t _ => [.checkEnv t none]
+    | .contains t _ => []
 
 /-! ## SampleableExt instances -/
 

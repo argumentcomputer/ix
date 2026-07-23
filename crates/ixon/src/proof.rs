@@ -155,10 +155,16 @@ pub enum Claim {
   /// The constant at `const_addr` is well-typed, optionally modulo
   /// `assumptions`.
   Check { const_addr: Address, assumptions: Option<Address> },
-  /// Every constant in the env merkle-rooted at `root` is well-typed,
-  /// optionally modulo `assumptions` (typically the env's axiom
-  /// leaves).
-  CheckEnv { root: Address, assumptions: Option<Address> },
+  /// Every constant in the tree at `root` is well-typed, assuming AT
+  /// MOST the constants in the tree at `assumptions`.
+  ///
+  /// `assumptions` is mandatory: the trust surface is part of the
+  /// statement, never elided. "Assumes nothing" is the canonical empty
+  /// (padding) tree, whose root is the zero address. The kernel enforces
+  /// the declaration — every constant it dereferences must be in
+  /// `root union assumptions` — so the stated trust surface is the real
+  /// one.
+  CheckEnv { root: Address, assumptions: Address },
   /// Selective field revelation of a committed constant.
   Reveal { comm: Address, info: RevealConstantInfo },
   /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
@@ -942,7 +948,7 @@ impl Claim {
       Claim::CheckEnv { root, assumptions } => {
         Tag4::new(FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM).put(buf);
         buf.extend_from_slice(root.as_bytes());
-        put_opt_addr(assumptions, buf);
+        buf.extend_from_slice(assumptions.as_bytes());
       },
       Claim::Reveal { comm, info } => {
         Tag4::new(FLAG_CLAIM, VARIANT_REVEAL_CLAIM).put(buf);
@@ -979,7 +985,7 @@ impl Claim {
       },
       VARIANT_CHECK_ENV_CLAIM => {
         let root = get_address(buf)?;
-        let assumptions = get_opt_addr(buf)?;
+        let assumptions = get_address(buf)?;
         Ok(Claim::CheckEnv { root, assumptions })
       },
       VARIANT_REVEAL_CLAIM => {
@@ -1044,7 +1050,7 @@ impl Proof {
       },
       Claim::CheckEnv { root, assumptions } => {
         buf.extend_from_slice(root.as_bytes());
-        put_opt_addr(assumptions, buf);
+        buf.extend_from_slice(assumptions.as_bytes());
       },
       Claim::Reveal { comm, info } => {
         buf.extend_from_slice(comm.as_bytes());
@@ -1082,7 +1088,7 @@ impl Proof {
       },
       VARIANT_CHECK_ENV_PROOF => {
         let root = get_address(buf)?;
-        let assumptions = get_opt_addr(buf)?;
+        let assumptions = get_address(buf)?;
         Claim::CheckEnv { root, assumptions }
       },
       VARIANT_REVEAL_PROOF => {

@@ -32,9 +32,9 @@ def claimUnits : TestSeq :=
   ++ test "Check no-asm roundtrip" (claimSerde (.check addr1 none))
   ++ test "Check with-asm roundtrip"
        (claimSerde (.check addr1 (some addr2)))
-  ++ test "CheckEnv no-asm roundtrip" (claimSerde (.checkEnv addr1 none))
+  ++ test "CheckEnv empty-asm roundtrip" (claimSerde (.checkEnv addr1 Ix.AssumptionTree.padding.root))
   ++ test "CheckEnv with-asm roundtrip"
-       (claimSerde (.checkEnv addr1 (some addr2)))
+       (claimSerde (.checkEnv addr1 addr2))
   -- Contains
   ++ test "Contains roundtrip" (claimSerde (.contains addr1 addr2))
   -- Reveal claim variants (carried over from previous suite)
@@ -74,7 +74,7 @@ def claimEncodingTests : TestSeq :=
   let evalWithAsm := Claim.ser (.eval addr1 addr2 (some addr3))
   let checkBytes := Claim.ser (.check addr1 none)
   let checkWithAsm := Claim.ser (.check addr1 (some addr2))
-  let checkEnvBytes := Claim.ser (.checkEnv addr1 none)
+  let checkEnvBytes := Claim.ser (.checkEnv addr1 addr2)
   let containsBytes := Claim.ser (.contains addr1 addr2)
   let revealSafetyOnly := Claim.ser
     (.reveal addr1 (.defn none (some .safe) none none none))

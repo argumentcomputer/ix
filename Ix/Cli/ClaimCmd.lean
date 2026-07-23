@@ -17,6 +17,7 @@ module
 public import Cli
 public import Ix.Common
 public import Ix.Claim
+public import Ix.AssumptionTree
 public import Ix.Store
 
 public section
@@ -74,11 +75,11 @@ def runClaimCheckEnv (p : Cli.Parsed) : IO UInt32 := do
   let some rootArg := p.positionalArg? "root"
     | p.printError "error: must specify <env-root-hex>"; return 1
   let root ← addrOfHex! "root" (rootArg.as! String)
+  -- Assumptions are mandatory; with no --asm the claim declares the
+  -- canonical empty tree ("assumes nothing"), never an absent field.
   let asm ← match p.flag? "asm" with
-    | none => pure none
-    | some flag => do
-      let r ← addrOfHex! "asm" (flag.as! String)
-      pure (some r)
+    | none => pure (Ix.AssumptionTree.padding.root)
+    | some flag => addrOfHex! "asm" (flag.as! String)
   let claim := Ix.Claim.checkEnv root asm
   let digest ← persistClaim claim
   IO.println (toString digest)

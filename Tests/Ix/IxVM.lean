@@ -159,7 +159,7 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
     IO AiurTestCase := do
   let ixonEnv ← loadIxonEnv name env
   let target ← lookupAddr ixonEnv name
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.check target none)
+  let (_claim, witness) ← IO.ofExcept <| buildClosureCheckWitness ixonEnv target
   pure { functionName := witness.funcName, label := s!"Kernel check {name}"
          input := witness.input, inputIOBuffer := witness.inputIOBuffer
          expectedIOBuffer := witness.inputIOBuffer
@@ -383,8 +383,10 @@ public def claimContains : IO AiurTestCase := do
 public def claimCheckEnv (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let some tree := envCanonicalTree ixonEnv
     | throw <| IO.userError "envCanonicalTree empty"
+  let asmTree := Ix.AssumptionTree.padding
+  let trees := (singletonTrees tree).insert asmTree.root asmTree
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.checkEnv tree.root none) (singletonTrees tree)
+    (Ix.Claim.checkEnv tree.root asmTree.root) trees
   pure (asTestCase "Claim CheckEnv (shared smoke env)" witness)
 
 /-- `Reveal` Defn with `kind` + `safety` only — exercises the

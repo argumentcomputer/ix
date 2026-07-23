@@ -141,7 +141,18 @@ Five variants in three families:
 inductive Claim where
   | eval     (input output : Address) (assumptions : Option Address)
   | check    (const : Address) (assumptions : Option Address)
-  | checkEnv (root : Address) (assumptions : Option Address)
+  /-- `checkEnv root assumptions`: every constant in the tree at `root`
+      typechecks, assuming **at most** the constants in the tree at
+      `assumptions`.
+
+      `assumptions` is MANDATORY: the trust surface is part of the
+      statement, never elided. A claim that assumes nothing carries the
+      canonical empty tree (root `Address.empty`), which is a positive
+      declaration of "nothing assumed" rather than an absence. The kernel
+      enforces the declaration — every constant it dereferences must be in
+      `root ∪ assumptions`, and an undeclared use is rejected — so the
+      trust surface a reader sees is the real one. -/
+  | checkEnv (root : Address) (assumptions : Address)
   | reveal   (comm : Address) (info : RevealConstantInfo)
   | contains (tree : Address) (const : Address)
   deriving BEq, Repr, Inhabited
@@ -497,7 +508,7 @@ def put : Claim → PutM Unit
   | .checkEnv root assumptions => do
     putTag4 ⟨FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM⟩
     Serialize.put root
-    putOptAddr assumptions
+    Serialize.put assumptions
   | .reveal comm info => do
     putTag4 ⟨FLAG_CLAIM, VARIANT_REVEAL_CLAIM⟩
     Serialize.put comm
@@ -522,7 +533,7 @@ def get : GetM Claim := do
     return .check const asm
   else if tag.size == VARIANT_CHECK_ENV_CLAIM then
     let root ← Serialize.get
-    let asm ← getOptAddr
+    let asm ← Serialize.get
     return .checkEnv root asm
   else if tag.size == VARIANT_REVEAL_CLAIM then
     return .reveal (← Serialize.get) (← RevealConstantInfo.get)
@@ -582,7 +593,7 @@ def put (p : Proof) : PutM Unit := do
     Ix.Claim.putOptAddr asm
   | .checkEnv root asm => do
     Serialize.put root
-    Ix.Claim.putOptAddr asm
+    Serialize.put asm
   | .reveal comm info => do
     Serialize.put comm
     Ix.RevealConstantInfo.put info
@@ -608,7 +619,7 @@ def get : GetM Proof := do
       pure (.check addr asm)
     else if tag.size == Ix.Claim.VARIANT_CHECK_ENV_PROOF then do
       let root ← Serialize.get
-      let asm ← Ix.Claim.getOptAddr
+      let asm ← Serialize.get
       pure (.checkEnv root asm)
     else if tag.size == Ix.Claim.VARIANT_REVEAL_PROOF then do
       let comm ← Serialize.get

@@ -93,7 +93,7 @@ def claim := ⟦
   enum Claim {
     Eval(Addr, Addr, Option‹Addr›),
     Check(Addr, Option‹Addr›),
-    CheckEnv(Addr, Option‹Addr›),
+    CheckEnv(Addr, Addr),
     Reveal(Addr, RevealConstantInfo),
     Contains(Addr, Addr)
   }
@@ -419,7 +419,10 @@ def claim := ⟦
         (Claim.Check(c, asm), s),
       5 =>
         let (root, s) = get_address(s);
-        let (asm, s) = get_opt_addr(s);
+        -- Mandatory: the trust surface is part of the statement. An
+        -- "assumes nothing" claim carries the canonical empty (padding)
+        -- tree, whose root is the zero address.
+        let (asm, s) = get_address(s);
         (Claim.CheckEnv(root, asm), s),
       6 =>
         let (comm, s) = get_address(s);
@@ -789,32 +792,52 @@ def claim := ⟦
   -- constant checks once. A de-interned asm pointer reads as absent, so
   -- the constant gets CHECKED instead of assumed — conservative.
   -- ============================================================================
-  fn check_reachable(addr: Addr, asm_map: &RBTreeMap‹G›) {
+  -- Three-way classification of every address the ref graph can name.
+  -- `Expr.Ref`/`Expr.Rec` are the ONLY way to name a constant, and they
+  -- index into the naming constant's `refs`, so walking the ref graph
+  -- from the owned set covers every constant this claim can possibly
+  -- dereference. That lets the classification live here, in the claim
+  -- layer where the declared maps already are — no map threading through
+  -- the kernel, and no expression-DAG walking.
+  --
+  --   in `owned` -> check it, and recurse into its refs
+  --   in `asm`   -> skip: a DECLARED assumption (blob/literal addresses
+  --                 are declared here too; a byte string's assumption is
+  --                 vacuous). Recursion STOPS, so the walk never expands
+  --                 past one ref level beyond owned.
+  --   neither    -> REJECT: an undeclared use. This is what makes the
+  --                 claim's stated trust surface binding rather than
+  --                 decorative.
+  --
+  -- Both maps are derived from merkle trees whose roots are pinned by the
+  -- claim, so the classification is pinned data — not prover advice.
+  -- Lookups are ptr_val-keyed, which cannot yield a FALSE POSITIVE (the
+  -- Aiur store is content-addressed: one pointer per content), so an
+  -- undeclared address can never masquerade as declared. A de-interned
+  -- pointer can only produce a false negative, i.e. a rejection.
+  -- Memoized per (addr, owned_map, asm_map).
+  fn check_reachable(addr: Addr, owned_map: &RBTreeMap‹G›, asm_map: &RBTreeMap‹G›) {
     match rbtree_map_lookup_or_default(ptr_val(addr), load(asm_map), 0) {
-      0 =>
-        -- Presence 0 (blob) / 2 (absent primitive): nothing to check. The
-        -- byte is prover-chosen, but both outcomes are sound — skipping
-        -- here is paired with `load_verified_constant`'s
-        -- `presence == 1` assert, so an address skipped here can never
-        -- have its constant data loaded anywhere (see the channel table
-        -- in Ingress.lean). Memoized per (addr, asm_map).
-        match load_presence(addr) {
-          0 => (),
-          2 => (),
-          _ =>
+      1 => (),
+      _ =>
+        match rbtree_map_lookup_or_default(ptr_val(addr), load(owned_map), 0) {
+          1 =>
             check_one(addr);
-            check_deps(const_check_deps(addr), asm_map),
+            check_deps(const_check_deps(addr), owned_map, asm_map),
+          _ =>
+            -- Undeclared: neither checked nor assumed.
+            assert_eq!(0, 1);
+            (),
         },
-      _ => (),
     }
   }
 
-  fn check_deps(deps: List‹Addr›, asm_map: &RBTreeMap‹G›) {
+  fn check_deps(deps: List‹Addr›, owned_map: &RBTreeMap‹G›, asm_map: &RBTreeMap‹G›) {
     match load(deps) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
-        check_reachable(a, asm_map);
-        check_deps(rest, asm_map),
+        check_reachable(a, owned_map, asm_map);
+        check_deps(rest, owned_map, asm_map),
     }
   }
 
@@ -875,14 +898,18 @@ def claim := ⟦
   -- ============================================================================
   -- Per-variant handlers. Each takes already-parsed claim fields.
   -- ============================================================================
+  -- Subject-only: check exactly `const_addr`, assuming the declared set.
+  -- The kernel derives no dependency set, so "check this constant AND its
+  -- whole closure" is expressed as a `CheckEnv` whose owned tree IS the
+  -- closure — stated in the claim rather than inferred here.
   fn run_check(const_addr: Addr, asm: Option‹Addr›) {
-    match asm {
-      Option.None =>
-        check_reachable(const_addr, store(RBTreeMap.Nil)),
+    let asm_map = match asm {
+      Option.None => store(RBTreeMap.Nil),
       Option.Some(asm_root) =>
-        let asm_leaves = load_assumption_tree(asm_root);
-        check_reachable(const_addr, store(build_asm_leaf_map(asm_leaves))),
-    }
+        store(build_asm_leaf_map(load_assumption_tree(asm_root))),
+    };
+    let owned_map = store(rbtree_map_insert(ptr_val(const_addr), 1, RBTreeMap.Nil));
+    check_reachable(const_addr, owned_map, asm_map)
   }
 
   fn run_contains(tree_root: Addr, target_addr: Addr) {
@@ -900,23 +927,21 @@ def claim := ⟦
   -- (every assumption is some claim's checked constant, the union covers
   -- the env) is the composition layer's obligation, proven once per
   -- campaign instead of re-derived inside every shard.
-  fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
-    let root_leaves = load_assumption_tree(env_root);
-    match asm {
-      Option.None =>
-        check_leaves(root_leaves, store(RBTreeMap.Nil)),
-      Option.Some(asm_root) =>
-        let asm_leaves = load_assumption_tree(asm_root);
-        check_leaves(root_leaves, store(build_asm_leaf_map(asm_leaves))),
-    }
+  fn run_check_env(env_root: Addr, asm_root: Addr) {
+    let owned_leaves = load_assumption_tree(env_root);
+    let asm_leaves = load_assumption_tree(asm_root);
+    let owned_map = store(build_asm_leaf_map(owned_leaves));
+    let asm_map = store(build_asm_leaf_map(asm_leaves));
+    check_leaves(owned_leaves, owned_map, asm_map)
   }
 
-  fn check_leaves(leaves: List‹Addr›, asm_map: &RBTreeMap‹G›) {
+  fn check_leaves(leaves: List‹Addr›, owned_map: &RBTreeMap‹G›,
+                  asm_map: &RBTreeMap‹G›) {
     match load(leaves) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
-        check_reachable(a, asm_map);
-        check_leaves(rest, asm_map),
+        check_reachable(a, owned_map, asm_map);
+        check_leaves(rest, owned_map, asm_map),
     }
   }
 

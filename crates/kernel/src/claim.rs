@@ -13,6 +13,7 @@
 use rustc_hash::FxHashSet;
 
 use ix_common::address::Address;
+use ixon::assumption_tree::AssumptionTree;
 use ixon::constant::ConstantInfo;
 use ixon::env::Env;
 use ixon::merkle::merkle_root_canonical;
@@ -80,7 +81,11 @@ pub fn build_check_env_claim(env: &Env) -> Option<Claim> {
     })
     .collect();
   axioms.sort_unstable();
-  let assumptions = merkle_root_canonical(&axioms);
+  // Assumptions are mandatory: an env with no axioms declares the
+  // canonical empty (padding) tree, whose root is the zero address —
+  // a positive "assumes nothing" rather than an absent field.
+  let assumptions = merkle_root_canonical(&axioms)
+    .unwrap_or_else(|| AssumptionTree::Padding.root());
   Some(Claim::CheckEnv { root, assumptions })
 }
 
