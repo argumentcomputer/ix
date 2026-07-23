@@ -56,7 +56,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  `recursive-proof-size`, `recursive-verify-time`). The whole
                  system, inner prove included, switches to the recursion-tuned
                  parameters (`recursiveFriParameters`), so recursive rows are
-                 NOT comparable to the standard prove cell — they land on
+                 NOT comparable to the standard prove run — they land on
                  their own testbed (`ix bench run --backend aiur --mode
                  recursive`). An IxVM-scale verifier execute needs >108 GB,
                  so a watchdog kill landing as a `status: oom` row (dropped
@@ -128,10 +128,10 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
 /-- Recursion FRI parameters for `--recursive`. The query count IS the
     soundness level, so a real (secure) recursive proof needs the full query
     count, not a toy handful. The in-circuit verifier's cost scales with that
-    count, so at IxVM scale the cell is expected to exceed even a 128 GB host —
+    count, so at IxVM scale the run is expected to exceed even a 128 GB host —
     an OOM row here documents the gap between secure recursion and what fits
     today. `--recursive` runs the WHOLE system, inner prove included, under
-    these, so its rows are not comparable to the standard `prove` cell's. -/
+    these, so its rows are not comparable to the standard `prove` run's. -/
 def recursiveFriParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
@@ -211,7 +211,7 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     the execute; a prove run's row carries the prove-phase peak and
     constants/sec over the prove. The two modes upload to separate bencher
     testbeds (aiur-check-execute-* / aiur-check-prove-*), so the shared names never
-    collide — run the execute cell when you want execute-side numbers. -/
+    collide — run the execute run when you want execute-side numbers. -/
 def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
   if r.failed then
     (r.name, Json.mkObj [("status", Json.str "rejected")]) else

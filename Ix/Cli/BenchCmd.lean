@@ -1,15 +1,16 @@
 /-
-  `ix bench run`: the benchmark cell orchestrator — one command that
-  reproduces a CI benchmark cell locally, byte-for-byte on the same tools.
+  `ix bench run`: the benchmark orchestrator — one command that
+  reproduces a CI benchmark run locally, byte-for-byte on the same tools.
 
-  A cell is (backend, env, mode). The orchestrator:
+  A run executes one parameter combination: (backend, env, mode). The
+  orchestrator:
 
   1. selects constant names from `Benchmarks/Vectors.csv` (filters ported
      from the `!benchmark` manifest: env, tier, primary subset, shard flag);
   2. resolves the env's `.ixe` (an explicit `--ixe` path, else `ix
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
-  3. spawns the cell's measured tool — `bench-typecheck` (aiur),
+  3. spawns the run's measured tool — `bench-typecheck` (aiur),
      `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
      `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`:
      cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
@@ -19,7 +20,7 @@
      spawn's texray window (`<out>.spans`) belongs wholly to it, folded
      into the row as flat `phase-<span>` fields — independent bencher
      measures with no attribution machinery;
-  4. gates the cell on the row contract (`Ix.Benchmark.Results`): exit 3
+  4. gates the run on the row contract (`Ix.Benchmark.Results`): exit 3
      when any row is `rejected`, exit 1 when NO rows were produced, else 0.
 
   Every tool self-reports through the same `--json` results-rows contract,
@@ -91,7 +92,7 @@ def selectNames (rows : Array VectorRow) (env : String) (mode : String)
 `Benchmarks/Vectors.csv` holds the per-constant rows; everything else lives
 here, in one language with one owner. The workflows never read it directly:
 `ix bench ci matrix` serves the job matrices and `ix bench ci parse` the
-`!benchmark` cells, both post-build. (`bencher-thresholds-reset.yml` keeps
+`!benchmark` runs, both post-build. (`bencher-thresholds-reset.yml` keeps
 a static workload list with a sync note — it runs on cheap runners with no
 built `ix`.) -/
 
@@ -103,26 +104,53 @@ structure EnvSpec where
   name : String
   /-- The Lean source `ix compile` builds the env from. -/
   module : String
-  /-- In the bench-main matrices (and `!benchmark`'s allowed env set). -/
-  benched : Bool
 
 def envSpecs : List EnvSpec := [
-  { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean", benched := true },
-  { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean",    benched := false },
-  { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean", benched := true },
-  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean",     benched := false }
+  { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
+  { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
+  { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" },
+  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean" }
 ]
 
 def findEnv (token : String) : Option EnvSpec :=
   envSpecs.find? fun e => e.name.toLower == token.toLower
 
-/-- One benchmark backend. Backends with several modes run one bench-main
-    cell per (mode, testbed) entry — shared measure names (`peak-rss`,
-    `throughput`) mean that mode's phase, and a `!benchmark` cell of either
+/-- How a backend enumerates the inputs its runs measure over — the single
+    registry declaration every consumer (plot specs, CI job matrices, the
+    `.ixe` cache gate) reads, so none special-cases a backend by name.
+      · `perEnv` — one row per compiled env, keyed by the env name itself; runs
+        over EVERY compiled env. The env-keyed compile/decompile pair: a `.ixe`
+        producer and its consumer, both measuring the whole env.
+      · `perConstant` — one row per selected `Vectors.csv` constant, over
+        the envs whose CSV rows select any — an env joins this fan-out by
+        gaining rows, not by a registry flag. The prove/execute backends
+        (aiur, zisk, sp1).
+      · `perConstantWithEnv` — `perConstant` plus a whole-env row (ooc).
+      · `fixedConfigs` — env-independent fixed configs, a single matrix entry
+        (aiur-recursive: fixed toy statements, no `.ixe`). -/
+inductive BenchInputs
+  | perEnv
+  | perConstant
+  | perConstantWithEnv
+  | fixedConfigs
+  deriving BEq
+
+/-- A testbed minus its runner-arch suffix — the workload key the threshold
+    reset anchors (`refs/bencher/<workload>`), the dashboard plot titles,
+    and the run metadata are written against. -/
+def workloadOf (testbed : String) : String :=
+  if testbed.endsWith "-x64-32x" then (testbed.dropEnd 8).toString
+  else testbed
+
+/-- One benchmark backend. Backends with several modes schedule one bench-main
+    matrix entry per (mode, testbed) — shared measure names (`peak-rss`,
+    `throughput`) mean that mode's phase, and a `!benchmark` request of either
     mode finds a cached bencher baseline. -/
 structure BackendSpec where
   name : String
   defaultMode : String
+  /-- The inputs (envs and row names) this backend's runs fan over. -/
+  inputs : BenchInputs
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
@@ -138,20 +166,38 @@ structure BackendSpec where
       wall-clock time, throughput, peak-rss, then detail (secondary times,
       sizes, deterministic counters). -/
   metrics : List (String × List String)
+  /-- Regression bounds per tracked measure: (measure, upper, lower), each
+      bound a percentage over the baseline as a decimal fraction ("0.10"),
+      "0" for an exact pin, or "_" for unbounded on that side. Rendered by
+      `thresholdFlags` into the bencher-track action's `--threshold-*`
+      triples. Shared across the backend's scheduled modes: a threshold
+      naming a measure absent from a mode's upload just sits empty on that
+      testbed. Bound conventions:
+        · deterministic counters (constants) pin exactly (0/0) — a drop
+          means lost coverage, not an improvement;
+        · deterministic costs that only drop on a real win (cycles, shards,
+          fft-cost) take an upper-only bound — flag regressions, let wins
+          through;
+        · noisy wall-clock / RAM take ~10% upper bounds; throughput's
+          regression is a drop, so its bound is the lower side;
+        · sizes are structural (fixed layout) and ride tight 1–5% bands.
+      The dynamically-named `phase-<span>` measures upload un-thresholded
+      (noisy; the PR-comment drill-down does the phase-level compare). -/
+  thresholds : List (String × String × String) := []
 
 def backendSpecs : List BackendSpec := [
   -- prove is aiur's default: the real-workload simulation (it measures
   -- Phase 1 — execute-time, fft-cost — inside the same process en route).
   -- execute is the fast Phase-1-only signal. recursive layers the in-circuit
   -- multi-stark verifier on prove: execute it over each fresh proof, then
-  -- prove that execution — the recursion cell. It runs under the
+  -- prove that execution — the recursion run. It runs under the
   -- recursion-tuned FRI parameters, so even its shared-name metrics
-  -- (prove-time, peak-rss) are not comparable to the prove cell's. An
+  -- (prove-time, peak-rss) are not comparable to the prove run's. An
   -- IxVM-scale verifier execute needs >108 GB, beyond the CI ceiling; the
   -- kill lands as a `status: oom` row that bmf drops, which is why it's
   -- marked `unscheduled`: a testbed for local `--mode recursive` runs only —
   -- never uploaded to bencher, never plotted.
-  { name := "aiur", defaultMode := "prove",
+  { name := "aiur", defaultMode := "prove", inputs := .perConstant,
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
                  ("execute", "aiur-check-execute-x64-32x"),
                  ("recursive", "aiur-check-recursive-x64-32x")],
@@ -164,43 +210,85 @@ def backendSpecs : List BackendSpec := [
                 ("recursive", ["recursive-prove-time", "recursive-peak-rss",
                                "recursive-proof-size", "recursive-verify-time",
                                "recursive-execute-time", "recursive-fft-cost",
-                               "prove-time", "proof-size"])] },
+                               "prove-time", "proof-size"])],
+    -- fft-cost is deterministic but only ever drops on a real Aiur win →
+    -- upper-only 5% instead of a hard pin. peak-rss and throughput are
+    -- phase-scoped by the CELL (execute vs prove testbed);
+    -- prove/verify-time and proof-size exist only on the prove testbed.
+    thresholds := [("constants", "0", "0"), ("fft-cost", "0.05", "_"),
+                   ("prove-time", "0.10", "_"), ("verify-time", "0.10", "_"),
+                   ("proof-size", "0.05", "_"), ("execute-time", "0.10", "_"),
+                   ("peak-rss", "0.10", "_"), ("throughput", "_", "0.10")] },
   -- The aiur-recursive toy (bench-recursive-verifier): fixed tiny
   -- statements (`recursiveConfigs`), proving the in-circuit multi-stark
-  -- verifier end-to-end. Env-independent: the cell ignores --env and never
+  -- verifier end-to-end. Env-independent: the run ignores --env and never
   -- needs an .ixe. Unlike the aiur recursive mode above, the floor
   -- config's outer prove fits a 128 GB host, so CI schedules this testbed.
-  { name := "aiur-recursive", defaultMode := "prove",
+  { name := "aiur-recursive", defaultMode := "prove", inputs := .fixedConfigs,
     testbeds := [("prove", "aiur-recursive-x64-32x")],
     metrics := [("prove", ["recursive-prove-time", "recursive-peak-rss",
                            "recursive-proof-size", "recursive-verify-time",
                            "recursive-execute-time", "recursive-fft-cost",
                            "prove-time", "proof-size", "verify-time",
-                           "peak-rss"])] },
-  { name := "zisk", defaultMode := "execute",
+                           "peak-rss"])],
+    -- recursive-fft-cost drifts ~±15% run-to-run (the parallel prover
+    -- emits byte-different valid proofs, so the verifier authenticates
+    -- different Merkle paths) → the loose 25% bound; proof sizes are
+    -- structural (fixed query count and path depth) → the tight 5%.
+    thresholds := [("recursive-fft-cost", "0.25", "_"),
+                   ("recursive-execute-time", "0.10", "_"),
+                   ("recursive-prove-time", "0.10", "_"),
+                   ("recursive-verify-time", "0.10", "_"),
+                   ("recursive-peak-rss", "0.10", "_"),
+                   ("recursive-proof-size", "0.05", "_"),
+                   ("prove-time", "0.10", "_"), ("proof-size", "0.05", "_"),
+                   ("verify-time", "0.10", "_"), ("peak-rss", "0.10", "_")] },
+  { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
-                             "cycles", "constants", "shards"])] },
-  { name := "sp1", defaultMode := "execute",
+                             "cycles", "constants", "shards"])],
+    -- cycles / shards / max-shard-cycles are deterministic per guest ELF,
+    -- but a real guest / packer improvement legitimately drops them →
+    -- upper-only 0% bounds.
+    thresholds := [("constants", "0", "0"), ("cycles", "0", "_"),
+                   ("shards", "0", "_"), ("max-shard-cycles", "0", "_"),
+                   ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_"),
+                   ("throughput", "_", "0.10")] },
+  { name := "sp1", defaultMode := "execute", inputs := .perConstant,
     disabled := some "execute run too slow for per-push CI; re-enable here once trimmed",
     testbeds := [("execute", "sp1-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
-                             "cycles"])] },
-  { name := "ooc", defaultMode := "execute",
+                             "cycles"])],
+    thresholds := [("constants", "0", "0"), ("cycles", "0", "_"),
+                   ("execute-time", "0.10", "_"), ("peak-rss", "0.10", "_"),
+                   ("throughput", "_", "0.10")] },
+  { name := "ooc", defaultMode := "execute", inputs := .perConstantWithEnv,
     testbeds := [("execute", "ooc-check-x64-32x")],
-    metrics := [("execute", ["check-time", "throughput", "peak-rss"])] },
-  { name := "compile", defaultMode := "execute",
+    metrics := [("execute", ["check-time", "throughput", "peak-rss"])],
+    thresholds := [("constants", "0", "0"), ("check-time", "0.10", "_"),
+                   ("throughput", "_", "0.10"), ("peak-rss", "0.10", "_")] },
+  { name := "compile", defaultMode := "execute", inputs := .perEnv,
     testbeds := [("execute", "ix-compile-x64-32x")],
     metrics := [("execute", ["compile-time", "throughput", "peak-rss",
-                             "file-size", "constants"])] },
+                             "file-size", "constants"])],
+    -- file-size wiggles slightly run-to-run (the serialized env is not
+    -- byte-reproducible — worth its own investigation for a
+    -- content-addressed store) → a tight ±1% band instead of a pin.
+    thresholds := [("compile-time", "0.05", "_"), ("throughput", "_", "0.05"),
+                   ("file-size", "0.01", "0.01"), ("constants", "0", "0"),
+                   ("peak-rss", "0.10", "_")] },
   -- The inverse of compile: decompiles the env's `.ixe` back to Lean
   -- constants (roundtrip-verified). Env-keyed like compile, but a `.ixe`
-  -- CONSUMER — it reuses the compile cell's fresh `.ixe` rather than
+  -- CONSUMER — it reuses the compile run's fresh `.ixe` rather than
   -- producing one.
-  { name := "decompile", defaultMode := "execute",
+  { name := "decompile", defaultMode := "execute", inputs := .perEnv,
     testbeds := [("execute", "ix-decompile-x64-32x")],
     metrics := [("execute", ["decompile-time", "throughput", "peak-rss",
-                             "file-size", "constants"])] }
+                             "file-size", "constants"])],
+    -- file-size (the input `.ixe`) duplicates the compile run's, so it
+    -- uploads for the row's completeness but rides no threshold here.
+    thresholds := [("constants", "0", "0"), ("decompile-time", "0.10", "_"),
+                   ("throughput", "_", "0.10"), ("peak-rss", "0.10", "_")] }
 ]
 
 def findBackend (name : String) : Option BackendSpec :=
@@ -224,6 +312,54 @@ def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
 
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
+
+/-- `thresholds` rendered as the bencher-track action's `--threshold-*`
+    flags, one percentage-test triple per measure. `__WINDOW__` is the
+    action's placeholder for the per-workload baseline window (data points
+    since the workload's reset anchor); the action word-splits the string,
+    so every flag value stays a single token. -/
+def BackendSpec.thresholdFlags (b : BackendSpec) : String :=
+  "\n".intercalate <| b.thresholds.map fun (m, upper, lower) =>
+    s!"--threshold-measure {m} --threshold-test percentage\n" ++
+    s!"--threshold-max-sample-size __WINDOW__ --threshold-upper-boundary {upper}\n" ++
+    s!"--threshold-lower-boundary {lower}"
+
+/-- The envs this backend's runs cover, from its `inputs`: `perEnv` covers
+    every registry env; the per-constant backends cover the envs whose
+    `Vectors.csv` rows select at least one primary constant — an env joins
+    their fan-out by gaining rows, not by a registry flag; the
+    fixed-config backend is env-independent, pinned to the head env so CI
+    schedules exactly one entry. -/
+def BackendSpec.envNames (b : BackendSpec) (rows : Array VectorRow) :
+    List String :=
+  let names := envSpecs.map (·.name)
+  match b.inputs with
+  | .perEnv => names
+  | .perConstant | .perConstantWithEnv =>
+    names.filter fun env =>
+      !(selectNames rows env b.defaultMode
+        (full := false) (tier := "") (shardOnly := false)).isEmpty
+  | .fixedConfigs => names.take 1
+
+/-- The benchmark row names this backend uploads — the bencher slugs the
+    dashboard plots and compare table key on — from its `inputs`: env-keyed
+    backends key one row per compiled env; the per-constant backends select
+    from `Vectors.csv` over their env set (`perConstantWithEnv` prepends a
+    whole-env row); the fixed-config backend lists its configs. Dynamic
+    shard sub-rows (`<name>/shard-N`) are excluded — the parent row
+    carries the headline trend. -/
+def BackendSpec.benchmarkNames (b : BackendSpec) (rows : Array VectorRow)
+    (mode : String) : Array String := Id.run do
+  match b.inputs with
+  | .perEnv => return (envSpecs.map (·.name)).toArray
+  | .fixedConfigs => return (recursiveConfigs.map (·.1)).toArray
+  | .perConstant | .perConstantWithEnv =>
+    let mut ns : Array String := #[]
+    for env in b.envNames rows do
+      if b.inputs == .perConstantWithEnv then ns := ns.push env
+      ns := ns ++ (selectNames rows env mode
+        (full := false) (tier := "") (shardOnly := false)).map (·.name)
+    return ns
 
 /-- Default RAM watchdog ceiling, same rule for all backends: the
     machine's total RAM minus 15 GB (the ~123 GiB CI runner lands at
@@ -327,7 +463,7 @@ def mergeSpans (out : String) (name : String) : IO Unit := do
     to it. Per exit: ≥128 (watchdog TERM/KILL or the kernel OOM killer) →
     mark the row `oom` (keeping whatever the tool flushed, spans included)
     and continue; `exitRejected` → the rejected row is on disk, continue
-    (the final gate reddens the cell); any other nonzero exit is
+    (the final gate fails the job); any other nonzero exit is
     deterministic (usage error, missing input, crash on startup) and would
     repeat for every remaining name — abort loudly.
 
@@ -341,7 +477,7 @@ def runPerConstant (out : String) (names : Array String)
     let exit ← spawn name
     -- 255 is never a signal death (our kills exit 134/137/143) — it's a
     -- failed exec ("could not execute external process") or a tool bailing
-    -- with -1; labeling it oom would turn a broken spawn into a green cell
+    -- with -1; labeling it oom would turn a broken spawn into a passing job
     -- of fake-OOM rows.
     if exit == 255 || (exit != 0 && exit != exitRejected && exit < 128) then
       IO.eprintln s!"[bench] tool failed on '{name}' (exit {exit}, not a kill); aborting the remaining names"
@@ -402,11 +538,11 @@ def cutClosureShards (ix : String) (envIxe : String)
       return none
   return some (subIxe, manifest)
 
-/-- Final cell gate from the rows themselves: exit 1 when any EXPECTED name
+/-- Final run gate from the rows themselves: exit 1 when any EXPECTED name
     lacks a row (an aborted loop, a killed batch, or a dropped whole-env
     check must never look green — every selected name owes exactly one
-    row), exit 3 when any row is `rejected` (red cell, rows on disk say
-    why), else 0. -/
+    row), exit 3 when any row is `rejected` (a failing exit, with the rows
+    on disk saying why), else 0. -/
 def gate (out : String) (expected : Array String) : IO UInt32 := do
   let rows ← readRows out
   match rows with
@@ -433,16 +569,16 @@ def gate (out : String) (expected : Array String) : IO UInt32 := do
 def benchOutputDir : IO String :=
   return (← IO.getEnv "BENCH_OUTPUT_DIR").getD ".lake/benches"
 
-/-- Save the run as the local baseline (`<benchOutputDir>/<cell>.json`),
+/-- Save the run as the local baseline (`<benchOutputDir>/<params>.json`),
     rotating the previous baseline to `.prev.json` — `ix bench compare`
     defaults to the pair, so a bare local rerun compares against the last
     run automatically. -/
-def saveBaseline (out : String) (cell : String) : IO Unit := do
+def saveBaseline (out : String) (params : String) : IO Unit := do
   let dir ← benchOutputDir
   IO.FS.createDirAll dir
-  let base := s!"{dir}/{cell}.json"
+  let base := s!"{dir}/{params}.json"
   if ← FilePath.pathExists base then
-    IO.FS.writeFile s!"{dir}/{cell}.prev.json" (← IO.FS.readFile base)
+    IO.FS.writeFile s!"{dir}/{params}.prev.json" (← IO.FS.readFile base)
   IO.FS.writeFile base (← IO.FS.readFile out)
 
 def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -492,9 +628,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let names := selected.map (·.name)
   match backend with
   | "aiur-recursive" =>
-    IO.eprintln s!"[bench] cell {backend}-{mode}: {recursiveConfigs.length} config(s)"
+    IO.eprintln s!"[bench] run {backend}-{mode}: {recursiveConfigs.length} config(s)"
   | _ =>
-    IO.eprintln s!"[bench] cell {backend}-{env}-{mode}: {names.size} constant(s)"
+    IO.eprintln s!"[bench] run {backend}-{env}-{mode}: {names.size} constant(s)"
 
   -- Fresh accumulator per run.
   if ← FilePath.pathExists out then IO.FS.removeFile out
@@ -511,9 +647,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[bench] ix compile failed (exit {exit})"
       return 1
   | "decompile" =>
-    -- The inverse of compile: consume the env's `.ixe` (the compile cell's
+    -- The inverse of compile: consume the env's `.ixe` (the compile run's
     -- fresh artifact) and decompile it back to Lean constants. Env-keyed row,
-    -- like compile. A malformed decompile exits nonzero and reddens the cell;
+    -- like compile. A malformed decompile exits nonzero and fails the job;
     -- deep roundtrip fidelity is gated by the canonical roundtrip checks
     -- (`ix validate` / the roundtrip tests), not measured here.
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
@@ -585,7 +721,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let bin := (← IO.FS.realPath s!"{work}/target/release/{host}").toString
     -- Heavy-tier zisk constants run as their closure-shard partition (a
     -- single full-closure leaf would blow the runner's RAM); everything
-    -- else runs as one host process per constant like the aiur cells.
+    -- else runs as one host process per constant like the aiur runs.
     let heavy := if backend == "zisk"
       then (selected.filter (·.tier == "heavy")).map (·.name) else #[]
     let light := names.filter (!heavy.contains ·)
@@ -628,9 +764,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
 /-- `ix bench shard`: pre-cut the closure-shard artifacts for the env's
     heavy-tier constants into `zkshards-<env>/` — `ix shard extract` →
     `ix profile` → `ix shard` per name, skipping names whose artifacts
-    already exist. Not a benchmark cell (no rows, no watchdog): bench-main's
+    already exist. Not a benchmark run (no rows, no watchdog): bench-main's
     compile job runs it next to the fresh `.ixe` so the artifacts ride the
-    same cache; the zisk cells cut lazily as a fallback when they're
+    same cache; the zisk runs cut lazily as a fallback when they're
     absent. -/
 def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let some info := findEnv ((p.flag? "env").map (·.as! String) |>.getD "InitStd")
@@ -658,7 +794,7 @@ end Ix.Cli.BenchCmd
 open Ix.Cli.BenchCmd in
 def benchRunCmd : Cli.Cmd := `[Cli|
   "run" VIA runBenchRunCmd;
-  "Run one benchmark cell (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
+  "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
     backend      : String; "aiur | zisk | sp1 | ooc | compile | decompile | aiur-recursive"
@@ -679,7 +815,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchCmd in
 def benchShardCmd : Cli.Cmd := `[Cli|
   "shard" VIA runBenchShardCmd;
-  "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's heavy-tier constants into zkshards-<env>/; skips names already cut. The zisk cells cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
+  "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's heavy-tier constants into zkshards-<env>/; skips names already cut. The zisk runs cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
 
   FLAGS:
     env          : String; "Benchmark env from the registry (default: InitStd)"

@@ -11,8 +11,10 @@
   Idempotent, keyed by title (the display names in `plotTitle`): a plot
   whose dimensions already match is left alone (only its dashboard index
   is re-asserted); a stale one is deleted and recreated (the plot PATCH
-  endpoint only takes index/title/window, not dimensions). Unrecognized
-  titles are untouched, so hand-pinned plots survive. A registry benchmark
+  endpoint only takes index/title/window, not dimensions). The registry
+  owns the dashboard: every plot whose title is not in the desired set is
+  deleted, so each sync converges to exactly the registry's plots — a
+  hand-created plot does not survive a sync. A registry benchmark
   — or a whole testbed — bencher hasn't seen yet (first upload still
   pending) is skipped with a warning and picked up on the next sync.
 
@@ -36,11 +38,10 @@ open Lean (Json)
 
 namespace Ix.Cli.BenchPlots
 
-/-- A testbed minus its runner-arch suffix — the workload key the titles,
-    skips, and ordering are written against. -/
+/-- The registry's workload key (testbed minus runner-arch suffix) — what
+    the titles, skips, and ordering here are written against. -/
 def workloadOf (testbed : String) : String :=
-  if testbed.endsWith "-x64-32x" then (testbed.dropEnd 8).toString
-  else testbed
+  BenchCmd.workloadOf testbed
 
 /-- Dashboard display title per (workload, measure). Presentation only —
     measurement identity stays the slugs — which is why it lives here and
@@ -74,23 +75,35 @@ def plotTitle (workload measure : String) : String :=
   | "ooc-check", "check-time"            => "OOC Check Time"
   | "ooc-check", "throughput"            => "OOC Check Throughput"
   | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
+  | "aiur-recursive", "recursive-execute-time" => "Aiur Recursive Verifier Execute Time"
+  | "aiur-recursive", "recursive-prove-time"   => "Aiur Recursive Verifier Prove Time"
+  | "aiur-recursive", "recursive-verify-time"  => "Aiur Recursive Verifier Verify Time"
+  | "aiur-recursive", "recursive-peak-rss"     => "Aiur Recursive Verifier Peak RAM Usage"
+  | "aiur-recursive", "recursive-proof-size"   => "Aiur Recursive Verifier Proof Size"
+  | "aiur-recursive", "recursive-fft-cost"     => "Aiur Recursive Verifier FFT Cost"
   | w, m => s!"{w}: {m}"
 
-/-- Tracked but not plotted solo. The two aiur cells re-measure each
+/-- Tracked but not plotted solo. The two aiur runs re-measure each
     other's deterministic Phase-1 numbers as a redundancy check — one
-    trend line each is enough ("Aiur Execute Time" from the execute cell,
-    "Aiur FFT Cost" from the prove cell). Zisk `shards` is charted below
+    trend line each is enough ("Aiur Execute Time" from the execute run,
+    "Aiur FFT Cost" from the prove run). Zisk `shards` is charted below
     over the heavy-tier primaries alone (light constants are pinned at a
     single shard, a flat line at 1), not over the full set here; zisk
     `constants` charts on the input-constants plot below instead of alone.
-    `ix-decompile` reuses the compile cell's `.ixe`, so its `file-size` /
+    `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
-    exactly — the decompile cell tracks only its own decompile-time /
-    throughput / peak-rss trends. -/
+    exactly — the decompile run tracks only its own decompile-time /
+    throughput / peak-rss trends. The aiur-recursive run's plain
+    prove-time / proof-size / verify-time / peak-rss measure the INNER
+    toy-statement proof — tracked for the compare table, but the
+    dashboard trend that matters is the recursion layer's own
+    `recursive-*` series, so the inner metrics aren't plotted. -/
 def plotSkips : List (String × String) :=
   [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
    ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
-   ("ix-decompile", "file-size"), ("ix-decompile", "constants")]
+   ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
+   ("aiur-recursive", "prove-time"), ("aiur-recursive", "proof-size"),
+   ("aiur-recursive", "verify-time"), ("aiur-recursive", "peak-rss")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -133,16 +146,14 @@ structure PlotSpec where
   measures : List String
   benchmarks : Array String
 
-/-- One spec per bench-main testbed: its measure slugs and the benchmark
-    row names uploaded there, mirroring the row emitters — compile keys
-    one row per env (benched or not: the compile matrix is deliberately
-    wider), decompile one row per benched env (a `.ixe` consumer), ooc one
-    whole-env row plus one full-closure row per primary,
-    the per-constant backends one row per primary. Dynamic sub-rows
-    (`<name>/shard-N`) are left out: their multiplicity shifts with the
+/-- One spec per bench-main testbed: its measure slugs and the benchmark row
+    names uploaded there, both from the registry (`BackendSpec.benchmarkNames`,
+    keyed off `inputs`) — env-keyed backends (compile, decompile) key one row
+    per compiled env, the per-constant backends one row per primary, ooc adds a
+    whole-env row, and the fixed-config backend lists its configs. Dynamic
+    sub-rows (`<name>/shard-N`) are left out: their multiplicity shifts with the
     shard manifest, and the parent row carries the headline trend. -/
 def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
-  let benched := (BenchCmd.envSpecs.filter (·.benched)).map (·.name)
   let mut specs : Array PlotSpec := #[]
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
@@ -150,32 +161,27 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
       -- On-demand modes (e.g. aiur `recursive`) upload nothing, so there's
       -- nothing to plot — the registry marks them explicitly.
       if b.unscheduled.contains mode then continue
-      let names : Array String := Id.run do
-        if b.name == "compile" then
-          return (BenchCmd.envSpecs.map (·.name)).toArray
-        if b.name == "aiur-recursive" then
-          return (BenchCmd.recursiveConfigs.map (·.1)).toArray
-        -- decompile is env-keyed like compile but a `.ixe` consumer: one row
-        -- per benched env (it runs only where a benched `.ixe` exists).
-        if b.name == "decompile" then
-          return benched.toArray
-        let mut ns : Array String := #[]
-        for env in benched do
-          if b.name == "ooc" then ns := ns.push env
-          ns := ns ++ (BenchCmd.selectNames rows env mode
-            (full := false) (tier := "") (shardOnly := false)).map (·.name)
-        return ns
       specs := specs.push
-        { testbed, measures := b.metricsFor mode, benchmarks := names }
+        { testbed, measures := b.metricsFor mode,
+          benchmarks := b.benchmarkNames rows mode }
   return specs.qsort fun a b =>
     workloadOrder.idxOf (workloadOf a.testbed)
       < workloadOrder.idxOf (workloadOf b.testbed)
 
 /-! ## bencher CLI plumbing -/
 
+/-- Spawn env for the bencher CLI: drop LD_LIBRARY_PATH. `lake exe`
+    prepends the Lean toolchain's lib dirs there (for libleanshared), and
+    the loader consults LD_LIBRARY_PATH before a binary's own RUNPATH — so
+    bencher would resolve the toolchain's bundled, older `libgcc_s.so.1`
+    and die on a missing GCC symbol version. bencher is self-contained;
+    it needs nothing from the Lean runtime. -/
+def bencherEnv : Array (String × Option String) :=
+  #[("LD_LIBRARY_PATH", none)]
+
 /-- Run the bencher CLI and parse its JSON stdout. -/
 def bencherJson (args : Array String) : IO Json := do
-  let r ← IO.Process.output { cmd := "bencher", args }
+  let r ← IO.Process.output { cmd := "bencher", args, env := bencherEnv }
   if r.exitCode != 0 then
     throw <| IO.userError
       s!"bencher {" ".intercalate args.toList} failed (exit {r.exitCode}):\n{r.stderr}"
@@ -187,7 +193,7 @@ def bencherJson (args : Array String) : IO Json := do
 
 /-- Run a bencher write call (create/update/delete), output discarded. -/
 def bencherRun (args : Array String) : IO Unit := do
-  let r ← IO.Process.output { cmd := "bencher", args }
+  let r ← IO.Process.output { cmd := "bencher", args, env := bencherEnv }
   if r.exitCode != 0 then
     throw <| IO.userError
       s!"bencher {" ".intercalate args.toList} failed (exit {r.exitCode}):\n{r.stderr}"
@@ -217,12 +223,23 @@ def findUuid (items : Array Json) (key val : String) : Option String :=
 
 /-! ## Sync -/
 
+/-- History window (seconds) for a plot, overriding the global `--window`
+    default by display title. A listed title renders a tighter rolling span so
+    its recent trend isn't compressed by older history; every other title uses
+    the default. Keyed by title — the same identity the sync keeps/replaces
+    on. -/
+def windowFor (title : String) (dflt : Nat) : Nat :=
+  match title with
+  | "Zisk Execute Throughput" => 4 * 7 * 24 * 3600  -- 4 weeks
+  | _ => dflt
+
 /-- A plot as the sync wants it: everything already resolved to UUIDs. -/
 structure DesiredPlot where
   title : String
   testbeds : Array String
   benchmarks : Array String
   measure : String
+  window : Nat
 
 inductive Outcome | created | replaced | kept
 
@@ -230,7 +247,7 @@ inductive Outcome | created | replaced | kept
     dimensions (order-insensitively), window, and axis → keep, re-asserting
     only the dashboard index (the list JSON carries no index field, so it
     can't be diffed). Anything else is deleted and recreated. -/
-def syncPlot (project : String) (dryRun : Bool) (window : Nat)
+def syncPlot (project : String) (dryRun : Bool)
     (xAxis branchUuid : String) (plots : Array Json) (idx : Nat)
     (d : DesiredPlot) : IO Outcome := do
   let sorted := fun (a : Array String) => a.qsort (· < ·)
@@ -242,7 +259,7 @@ def syncPlot (project : String) (dryRun : Bool) (window : Nat)
       && sorted (objStrArr pl "benchmarks") == sorted d.benchmarks
       && objStrArr pl "measures" == #[d.measure]
       && ((pl.getObjVal? "window").toOption.bind (·.getNat?.toOption))
-           == some window
+           == some d.window
       && objStr pl "x_axis" == some xAxis
     if same then
       IO.println s!"keep:    {d.title}"
@@ -258,7 +275,7 @@ def syncPlot (project : String) (dryRun : Bool) (window : Nat)
   unless dryRun do
     let mut args := #["plot", "create", project,
       "--title", d.title, "--index", toString idx,
-      "--x-axis", xAxis, "--window", toString window,
+      "--x-axis", xAxis, "--window", toString d.window,
       "--branches", branchUuid, "--measures", d.measure]
     for t in d.testbeds do args := args ++ #["--testbeds", t]
     for b in d.benchmarks do args := args ++ #["--benchmarks", b]
@@ -306,7 +323,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut desired : Array DesiredPlot := #[]
   for spec in specs do
     let workload := workloadOf spec.testbed
-    -- A registry testbed bencher hasn't seen yet (its bench-main cell isn't
+    -- A registry testbed bencher hasn't seen yet (its bench-main run isn't
     -- scheduled — e.g. the aiur `recursive` mode, whose outer prove doesn't
     -- fit the CI host, so nothing ever uploads to it) has no plots to sync:
     -- warn and skip it, like a not-yet-uploaded benchmark, instead of
@@ -325,9 +342,10 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
       if plotSkips.contains (workload, measure) then continue
       let some measureUuid := findUuid measures "slug" measure
         | p.printError s!"error: no measure slug '{measure}'"; return 1
+      let title := plotTitle workload measure
       desired := desired.push
-        { title := plotTitle workload measure, testbeds := #[testbedUuid],
-          benchmarks := benchUuids, measure := measureUuid }
+        { title, testbeds := #[testbedUuid], benchmarks := benchUuids,
+          measure := measureUuid, window := windowFor title window }
 
   -- Input-constants trend over the primary set. aiur and zisk report the
   -- SAME named-constant count for each checked closure (the pre-shard input
@@ -342,7 +360,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
       (·.benchmarks.filterMap (findUuid benchmarks "name" ·))
     return { title := "Aiur/Zisk Input Constants",
              testbeds := #[aiurTb], benchmarks := primaries,
-             measure := consts }
+             measure := consts, window := windowFor "Aiur/Zisk Input Constants" window }
   match overlay with
   | some d => desired := desired.push d
   | none => do
@@ -356,27 +374,41 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let ziskShards : Option DesiredPlot := do
     let ziskTb ← findUuid testbeds "slug" "zisk-check-execute-x64-32x"
     let shardsM ← findUuid measures "slug" "shards"
-    let benched := (BenchCmd.envSpecs.filter (·.benched)).map (·.name)
-    let heavy := benched.foldl (init := (#[] : Array String)) fun acc env =>
-      acc ++ (BenchCmd.selectNames rows env "execute"
-        (full := false) (tier := "heavy") (shardOnly := false)).map (·.name)
+    let heavy := (BenchCmd.envSpecs.map (·.name)).foldl
+      (init := (#[] : Array String)) fun acc env =>
+        acc ++ (BenchCmd.selectNames rows env "execute"
+          (full := false) (tier := "heavy") (shardOnly := false)).map (·.name)
     return { title := "Zisk Shards", testbeds := #[ziskTb],
              benchmarks := heavy.filterMap (findUuid benchmarks "name" ·),
-             measure := shardsM }
+             measure := shardsM, window := windowFor "Zisk Shards" window }
   match ziskShards with
   | some d => desired := desired.push d
   | none => do
     IO.eprintln
       "warn: Zisk shards plot skipped (missing testbed or measure)"
 
+  -- The registry owns the dashboard: delete every plot whose title isn't
+  -- in the desired set, so each sync converges to exactly the registry's
+  -- plots (a renamed or de-listed plot goes away instead of lingering
+  -- beside its replacement).
+  let desiredTitles := desired.map (·.title)
+  let mut removed := 0
+  for pl in plots do
+    if let some title := objStr pl "title" then
+      if !desiredTitles.contains title then
+        IO.println s!"remove:  {title}"
+        unless dryRun do
+          bencherRun #["plot", "delete", project, (objStr pl "uuid").getD ""]
+        removed := removed + 1
+
   for d in desired do
-    match ← syncPlot project dryRun window xAxis branchUuid plots idx d with
+    match ← syncPlot project dryRun xAxis branchUuid plots idx d with
     | .created => created := created + 1
     | .replaced => replaced := replaced + 1
     | .kept => kept := kept + 1
     idx := idx + 1
 
-  IO.println s!"plots: {created} created, {replaced} replaced, {kept} kept \
+  IO.println s!"plots: {created} created, {replaced} replaced, {removed} removed, {kept} kept \
     → https://bencher.dev/console/projects/{project}/plots"
   return 0
 
