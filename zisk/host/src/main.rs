@@ -461,8 +461,15 @@ fn append_proof(
 
 /// Load the proof store. Entries missing the `.asm` witness file (written by
 /// a pre-discharge host) are skipped with a note — without the assumption
-/// preimages they cannot be folded as mode-1 children.
-fn load_proof_index(dir: &std::path::Path) -> Vec<StoredProof> {
+/// preimages they cannot be folded as mode-1 children. When `expected_vk` is
+/// given, entries whose program vk differs are skipped too: a store written
+/// by an older guest (or an older kernel with since-fixed bugs) must be
+/// re-proven, not folded — its vk would otherwise have to enter the allowed
+/// set, silently widening what the aggregate vouches for.
+fn load_proof_index(
+  dir: &std::path::Path,
+  expected_vk: Option<&[u8]>,
+) -> Vec<StoredProof> {
   use ix_common::address::Address;
   let pdir = dir.join("proofs");
   let mut out = Vec::new();
@@ -476,6 +483,14 @@ fn load_proof_index(dir: &std::path::Path) -> Vec<StoredProof> {
       );
       continue;
     };
+    if let Some(vk) = expected_vk
+      && program_vk(&blob) != vk
+    {
+      println!(
+        "  store: skipping {idx}.proof (stale guest vk; re-prove to refresh)"
+      );
+      continue;
+    }
     let mut subjects: Vec<Address> = Address::unpack(&cov).collect();
     subjects.sort_unstable();
     subjects.dedup();
@@ -572,23 +587,34 @@ fn leaf_assumptions(
 /// Extract a proof's 32-byte program vk: Zisk (v0.18 and v1.0.0-alpha
 /// alike) lays the proof out as u64
 /// words `[minimal(1)][n_publics(1)][program_vk(4)]…`, so the program vk is
-/// bytes `[16..48)` (words 2..6). Used both to derive the allowed-vk set the
-/// agg guest pins against and to key the proof store.
+/// bytes `[16..48)` (words 2..6). Used to validate stored proofs against the
+/// current guest and to sanity-check freshly produced proofs against the
+/// ELF-derived vk.
 fn program_vk(proof: &[u8]) -> Vec<u8> {
   proof.get(16..48).map(|s| s.to_vec()).unwrap_or_default()
 }
 
-/// The distinct program vks across a set of proofs (the allowed set to pin the
-/// agg guest against — typically {SHARD_VK} or {SHARD_VK, AGG_VK}).
-fn distinct_vks(proofs: &[Vec<u8>]) -> Vec<Vec<u8>> {
-  let mut out: Vec<Vec<u8>> = Vec::new();
-  for p in proofs {
-    let vk = program_vk(p);
-    if !out.contains(&vk) {
-      out.push(vk);
-    }
-  }
-  out
+/// The 32-byte program vk derived from an embedded guest ELF — the TRUSTED
+/// side of vk pinning. The allowed set the agg guest verifies children
+/// against must come from here, never from the proofs being folded: deriving
+/// it from the (untrusted) proofs would let any proof admit its own program.
+/// Requires the program's ROM setup to have run (`client.setup(...)`), which
+/// writes the verkey file this reads.
+fn guest_vk_bytes(program: &zisk_sdk::GuestProgram) -> Result<Vec<u8>> {
+  let vk = program
+    .vk()
+    .map_err(|e| anyhow::anyhow!("verkey for {}: {e}", program.name()))?;
+  Ok(vk.vk.iter().flat_map(|w| w.to_le_bytes()).collect())
+}
+
+/// The uniform allowed-vk set for every aggregation call: `[SHARD_VK,
+/// AGG_VK]`, in that order. Index 0 must be the leaf vk and indices ≥ 1 the
+/// agg vks (the agg guest's positional convention: it requires children
+/// matching an index ≥ 1 — nested aggregates — to commit this same set's
+/// hash, making the pin transitive down the tree). Using one set at every
+/// level is what makes that recursive check satisfiable.
+fn allowed_vk_set(shard_vk: &[u8], agg_vk: &[u8]) -> Vec<Vec<u8>> {
+  vec![shard_vk.to_vec(), agg_vk.to_vec()]
 }
 
 /// Core of the closure check, factored out for testing: given parsed inputs
@@ -1121,12 +1147,17 @@ async fn run_shard_plan(
     anyhow::anyhow!("parse manifest {}: {e}", manifest_path.display())
   })?;
 
+  // The trusted vk of the shard guest, derived from the embedded ELF (its
+  // ROM setup ran in `run` before this point). Anchors the allowed set the
+  // agg guest pins children against and gates which stored proofs may fold.
+  let shard_vk = guest_vk_bytes(&SHARD_PROGRAM)?;
+
   // ---- Cross-run reuse store (loaded before grouping: a store-aware manifest
   // omits covered work, which grouping accepts only when the store accounts
   // for it). ----
   let write_store = args.store_dir.is_some() && !args.no_reuse;
   let stored: Vec<StoredProof> = match (&args.store_dir, args.no_reuse) {
-    (Some(dir), false) => load_proof_index(dir),
+    (Some(dir), false) => load_proof_index(dir, Some(&shard_vk)),
     _ => Vec::new(),
   };
   let covered_by_store: HashSet<[u8; 32]> = stored
@@ -1441,6 +1472,12 @@ async fn run_shard_plan(
       result.get_execution_steps(),
     );
     reject_failures(&publics, &format!("shard {idx}"))?;
+    if program_vk(&blob) != shard_vk {
+      bail!(
+        "shard {idx}: proof vk ≠ ELF-derived shard vk — proving key hash \
+         mode disagrees with the verkey file (re-run ROM setup)"
+      );
+    }
     // Bind each leaf: its committed subject must equal the env-derived merkle
     // root over the constants it certified. A guest that proved a different set
     // than the manifest assigned would commit a different root and fail here.
@@ -1499,12 +1536,18 @@ async fn run_shard_plan(
   for p in &covering {
     covered_union.extend(p.subjects.iter().map(|a| *a.as_bytes()));
   }
+  // The env's full target set — what the final aggregate must answer for
+  // (when not smoke-testing a single shard). Checked twice: here against the
+  // proofs this run holds (fail before spending aggregation time), and after
+  // the fold against the root's actual subject set (the authoritative check:
+  // a proof produced but dropped from the fold — e.g. by a tree that omits
+  // its shard id — passes this pre-check but not that one).
+  let grand: HashSet<[u8; 32]> = work
+    .iter()
+    .flat_map(|w| w.proven_targets())
+    .map(|a| *a.as_bytes())
+    .collect();
   if args.only_shard.is_none() {
-    let grand: HashSet<[u8; 32]> = work
-      .iter()
-      .flat_map(|w| w.proven_targets())
-      .map(|a| *a.as_bytes())
-      .collect();
     let miss = grand.iter().filter(|t| !covered_union.contains(*t)).count();
     if miss > 0 {
       bail!(
@@ -1595,6 +1638,11 @@ async fn run_shard_plan(
       }
 
       client.setup(&AGG_PROGRAM).run()?.await?;
+      // One allowed set for EVERY agg call (see `allowed_vk_set`): derived
+      // from the embedded ELFs, never from the child proofs.
+      let agg_vk = guest_vk_bytes(&AGG_PROGRAM)?;
+      let allowed = allowed_vk_set(&shard_vk, &agg_vk);
+      let expected_vks_id = Address::hash(&allowed.concat());
       let id_to_idx: std::collections::HashMap<u32, usize> =
         leaf_ids.iter().copied().enumerate().map(|(i, id)| (id, i)).collect();
       println!(
@@ -1633,7 +1681,6 @@ async fn run_shard_plan(
                 (Address::pack(&slot_subj[c]), Address::pack(&slot_asm[c]))
               })
               .collect();
-            let allowed = distinct_vks(&proofs);
             let astart = Instant::now();
             let result = client
               .prove(&AGG_PROGRAM, agg_stdin(&allowed, &proofs, Some(&witness)))
@@ -1659,7 +1706,14 @@ async fn run_shard_plan(
               children.iter().map(|&c| slot_asm[c].len()).sum::<usize>(),
               outstanding.len(),
             );
-            slot_proof.push(result.get_proof_bytes()?);
+            let agg_blob = result.get_proof_bytes()?;
+            if program_vk(&agg_blob) != agg_vk {
+              bail!(
+                "agg proof vk ≠ ELF-derived agg vk — proving key hash mode \
+                 disagrees with the verkey file (re-run ROM setup)"
+              );
+            }
+            slot_proof.push(agg_blob);
             slot_subj.push(union_s);
             slot_asm.push(outstanding);
             root_result = Some(result);
@@ -1673,11 +1727,44 @@ async fn run_shard_plan(
       let fpub = ShardPublics::decode(&fbuf);
       let vstart = Instant::now();
       root.verify()?;
+      // The root must commit the allowed-vk set this host derived from its
+      // embedded ELFs — the reference an external verifier checks (printed
+      // below). Anything else means the fold pinned children against a
+      // different program set.
+      if fpub.env_hash != *expected_vks_id.as_bytes() {
+        bail!(
+          "root vks id {}… ≠ expected {}… — aggregate was pinned against a \
+           different allowed-vk set",
+          Address::from_slice(&fpub.env_hash)
+            .map(|a| a.hex()[..16].to_string())
+            .unwrap_or_default(),
+          &expected_vks_id.hex()[..16],
+        );
+      }
+      println!(
+        "  [agg] allowed-vk set id {} (blake3(shard_vk ‖ agg_vk) — the value \
+         an external verifier must expect in the root's publics)",
+        expected_vks_id.hex(),
+      );
       let committed_addr = Address::from_slice(&fpub.subject_root)
         .unwrap_or_else(|_| ixon::merkle::zero_address());
       // Root subject = canonical merkle root over the UNION of certified
       // targets — a set commitment, independent of fold shape.
       let root_subj = slot_subj.last().expect("root subject set");
+      // Authoritative coverage: every env target must be in the set the fold
+      // ACTUALLY certified (a proven leaf the tree dropped would pass the
+      // pre-aggregation coverage check but fail here).
+      if args.only_shard.is_none() {
+        let folded: HashSet<[u8; 32]> =
+          root_subj.iter().map(|a| *a.as_bytes()).collect();
+        let miss = grand.iter().filter(|t| !folded.contains(*t)).count();
+        if miss > 0 {
+          bail!(
+            "fold under-covers: {miss} env target(s) proven but absent from \
+             the aggregated subject set (bisection tree omits their shard?)"
+          );
+        }
+      }
       let expected = ixon::merkle::merkle_root_canonical(root_subj)
         .unwrap_or_else(ixon::merkle::zero_address);
       // Bind the root's outstanding-assumptions root to the host mirror, and
@@ -1861,7 +1948,10 @@ async fn run() -> Result<()> {
     let covered = match (&args.store_dir, args.no_reuse) {
       (Some(dir), false) => {
         let mut set = std::collections::HashSet::default();
-        for p in load_proof_index(dir) {
+        // No vk filter: this pre-flight runs before any client/ROM setup
+        // exists. Stale entries admitted here only relax a CHECK (closure);
+        // the fold path re-loads the store with the vk filter on.
+        for p in load_proof_index(dir, None) {
           set.extend(p.subjects.iter().map(|a| *a.as_bytes()));
         }
         set
@@ -2053,6 +2143,10 @@ async fn run() -> Result<()> {
     if !args.emulator {
       client.setup(&AGG_PROGRAM).run()?.await?;
     }
+    // One ELF-derived allowed set for every level (see `allowed_vk_set`).
+    let shard_vk = guest_vk_bytes(&SHARD_PROGRAM)?;
+    let agg_vk = guest_vk_bytes(&AGG_PROGRAM)?;
+    let allowed = allowed_vk_set(&shard_vk, &agg_vk);
     let mut current: Vec<Vec<u8>> = leaf_proof_bytes;
     let mut total_agg_steps: u64 = 0;
     let mut total_agg_ms: u64 = 0;
@@ -2070,10 +2164,6 @@ async fn run() -> Result<()> {
       let mut next: Vec<Vec<u8>> = Vec::with_capacity(n_chunks);
       let mut last_result_this_level = None;
       for (i, &(s, e)) in ranges.iter().enumerate() {
-        // Allowed vks = the distinct program vks of the proofs being folded
-        // (SHARD_VK at the leaf level; AGG_VK at higher levels). The agg guest
-        // pins each child to one of these and commits them.
-        let allowed = distinct_vks(&current[s..e]);
         let stdin = agg_stdin(&allowed, &current[s..e], None);
         let agg_start = Instant::now();
         let result = client.prove(&AGG_PROGRAM, stdin).run()?.await?;

@@ -285,6 +285,17 @@ impl AggNode {
     }
   }
 
+  /// Append every leaf's shard id (left-to-right).
+  pub fn collect_leaves(&self, out: &mut Vec<u32>) {
+    match self {
+      AggNode::Leaf(id) => out.push(*id),
+      AggNode::Internal(l, r) => {
+        l.collect_leaves(out);
+        r.collect_leaves(out);
+      },
+    }
+  }
+
   /// The smallest shard id under this node — its left-to-right position. Used to
   /// keep aggregation children in shard order (so the subject merkle-fold stays
   /// the left-associative order the agg guest reproduces).
@@ -1460,6 +1471,23 @@ impl ShardManifest {
     } else {
       None
     };
+    // The tree is the aggregation plan: a leaf set that is not exactly the
+    // shard id set (each id once) would silently drop or duplicate proven
+    // shards in the fold, so a manifest carrying such a tree is invalid.
+    if let Some(t) = &tree {
+      let mut leaf_ids = Vec::with_capacity(num_shards);
+      t.collect_leaves(&mut leaf_ids);
+      leaf_ids.sort_unstable();
+      let mut shard_ids: Vec<u32> = shards.iter().map(|s| s.id).collect();
+      shard_ids.sort_unstable();
+      if leaf_ids != shard_ids {
+        return Err(format!(
+          "bisection tree leaves ({} ids) do not match the manifest's shard \
+           id set ({num_shards} shards)",
+          leaf_ids.len()
+        ));
+      }
+    }
     Ok(ShardManifest {
       num_shards: num_shards as u32,
       shards,
@@ -2526,5 +2554,31 @@ mod tests {
     let m0 = ShardManifest::build(&p, &shard_of, 2);
     let q0 = ShardManifest::from_bytes(&m0.to_bytes()).unwrap();
     assert_eq!(q0.tree, None);
+  }
+
+  #[test]
+  fn manifest_rejects_tree_shard_mismatch() {
+    let p = two_clusters();
+    let h = Hypergraph::from_profile(&p);
+    let (shard_of, _) = h.partition_with_tree(2, 0.10);
+    let m = ShardManifest::build(&p, &shard_of, 2);
+    // Tree missing shard 1: that shard's proof would be silently dropped
+    // from the fold.
+    let err =
+      ShardManifest::from_bytes(&m.clone().with_tree(leaf(0)).to_bytes())
+        .unwrap_err();
+    assert!(err.contains("do not match"), "got: {err}");
+    // Tree duplicating a shard id is equally invalid.
+    let err = ShardManifest::from_bytes(
+      &m.clone().with_tree(node(leaf(0), leaf(0))).to_bytes(),
+    )
+    .unwrap_err();
+    assert!(err.contains("do not match"), "got: {err}");
+    // Tree naming a shard id outside the manifest is invalid.
+    let err = ShardManifest::from_bytes(
+      &m.with_tree(node(leaf(0), leaf(7))).to_bytes(),
+    )
+    .unwrap_err();
+    assert!(err.contains("do not match"), "got: {err}");
   }
 }
