@@ -463,7 +463,7 @@ def mergeSpans (out : String) (name : String) : IO Unit := do
     to it. Per exit: ≥128 (watchdog TERM/KILL or the kernel OOM killer) →
     mark the row `oom` (keeping whatever the tool flushed, spans included)
     and continue; `exitRejected` → the rejected row is on disk, continue
-    (the final gate reddens the run); any other nonzero exit is
+    (the final gate fails the job); any other nonzero exit is
     deterministic (usage error, missing input, crash on startup) and would
     repeat for every remaining name — abort loudly.
 
@@ -477,7 +477,7 @@ def runPerConstant (out : String) (names : Array String)
     let exit ← spawn name
     -- 255 is never a signal death (our kills exit 134/137/143) — it's a
     -- failed exec ("could not execute external process") or a tool bailing
-    -- with -1; labeling it oom would turn a broken spawn into a green run
+    -- with -1; labeling it oom would turn a broken spawn into a passing job
     -- of fake-OOM rows.
     if exit == 255 || (exit != 0 && exit != exitRejected && exit < 128) then
       IO.eprintln s!"[bench] tool failed on '{name}' (exit {exit}, not a kill); aborting the remaining names"
@@ -541,8 +541,8 @@ def cutClosureShards (ix : String) (envIxe : String)
 /-- Final run gate from the rows themselves: exit 1 when any EXPECTED name
     lacks a row (an aborted loop, a killed batch, or a dropped whole-env
     check must never look green — every selected name owes exactly one
-    row), exit 3 when any row is `rejected` (red run, rows on disk say
-    why), else 0. -/
+    row), exit 3 when any row is `rejected` (a failing exit, with the rows
+    on disk saying why), else 0. -/
 def gate (out : String) (expected : Array String) : IO UInt32 := do
   let rows ← readRows out
   match rows with
@@ -649,7 +649,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   | "decompile" =>
     -- The inverse of compile: consume the env's `.ixe` (the compile run's
     -- fresh artifact) and decompile it back to Lean constants. Env-keyed row,
-    -- like compile. A malformed decompile exits nonzero and reddens the run;
+    -- like compile. A malformed decompile exits nonzero and fails the job;
     -- deep roundtrip fidelity is gated by the canonical roundtrip checks
     -- (`ix validate` / the roundtrip tests), not measured here.
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
