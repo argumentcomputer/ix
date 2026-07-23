@@ -1,0 +1,169 @@
+[16:00:37] start  mergesort --shard-bytes 250000 --max-witness-stored 10
+input /home/ubuntu/ix/mergesort.ixe: 1373 work items (1454 target constants), 4 shard(s)
+  [  1/  4] range [    0,   355)  items=  355  bytes=249.5kB
+  [  2/  4] range [  355,   716)  items=  361  bytes=248.4kB
+  [  3/  4] range [  716,  1105)  items=  389  bytes=249.8kB
+  [  4/  4] range [ 1105,  1373)  items=  268  bytes=165.3kB
+2026-06-04T16:00:45.565225Z INFO: Creating proof context
+2026-06-04T16:00:45.576798Z INFO: >>> INITIALIZING_PROOFMAN
+[INFO] PilStark: GPU assignment: node_rank=0 numa=0 GPUs=[0(numa0)]
+[INFO] PilStark: Process rank 0 - GPU 0 [0/1]: 94.155762 GB free / 94.972412 GB total
+[INFO] PilStark: Process rank 0: Using minimum memory across 1 GPUs: 94.155762 GB
+[INFO] PilStark: Minimum free memory available for GPU usage: 94.155762 GB
+2026-06-04T16:00:48.605896Z INFO: Max prover buffer size: 7.41 GB
+2026-06-04T16:00:48.605910Z INFO: Max prover recursive buffer size: 7.38 GB
+2026-06-04T16:00:48.605912Z INFO: Max prover recursive1/recursive2 buffer size: 1.48 GB
+2026-06-04T16:00:48.605913Z INFO: Using 12 streams per GPU for basic proofs and 0 streams per GPU for recursive proofs. Using 4.78 GB for fixed pols
+[INFO] PilStark: Memory allocation per GPU:
+[INFO] PilStark:   - Constant polynomials (separate): 1.377606 GB
+[INFO] PilStark:   - Constant polynomials aggregation: 3.400978 GB
+[INFO] PilStark:   - Auxiliary trace (12 streams): 88.963037 GB
+[INFO] PilStark:   - Auxiliary trace recursive (0 streams): 0.000000 GB
+[INFO] PilStark:   - Unified buffer per GPU: 92.364015 GB
+[INFO] PilStark:   - Total GPU memory per GPU: 93.741621 GB
+[INFO] PilStark:   - Pinned host memory per GPU: 2.000000 GB
+[INFO] PilStark: GPU 0: Available memory: 94.147949 GB / 94.972412 GB
+[INFO] PilStark: GPU 0: Allocated 93.741621 GB (92.364015 GB unified + 1.377606 GB const pols)
+[INFO] PilStark: All GPU memory allocations successful
+2026-06-04T16:00:49.346928Z INFO: >>> LOADING_FIXED_POLS
+2026-06-04T16:00:50.246949Z INFO: <<< LOADING_FIXED_POLS (900ms)
+2026-06-04T16:00:50.246972Z INFO: <<< INITIALIZING_PROOFMAN (4670ms)
+2026-06-04T16:00:50.246975Z INFO: >>> INIT_PROOFMAN
+2026-06-04T16:00:50.246979Z INFO: <<< INIT_PROOFMAN (0ms)
+2026-06-04T16:00:50.247050Z INFO: MemoryHandler::Total memory for basic traces: 4.38 GB
+2026-06-04T16:00:50.247056Z INFO: MemoryHandlerRecursive::Total memory for recursive traces: 3.40 GB
+2026-06-04T16:00:50.256331Z INFO: Node has 16 cores
+2026-06-04T16:00:50.256615Z INFO: Using 16 threads based on physical cores per process, considering there are 1 processes per node
+2026-06-04T16:00:50.256618Z INFO: Using 2 threads per witness computation
+  [/home/ubuntu/ix/mergesort.ixe leaf 1/4] range [0, 355) — proving...
+2026-06-04T16:00:51.215587Z INFO: Initializing publics custom_commits
+2026-06-04T16:00:51.226557Z INFO: >>> EXECUTE
+2026-06-04T16:00:51.233094Z INFO: >>> COMPUTE_MINIMAL_TRACE
+2026-06-04T16:01:17.265914Z INFO: >>> COUNT
+2026-06-04T16:01:19.584373Z INFO: <<< COUNT (2318ms)
+2026-06-04T16:01:19.584387Z INFO: <<< COMPUTE_MINIMAL_TRACE (28351ms)
+2026-06-04T16:01:19.584393Z INFO: >>> PLAN
+2026-06-04T16:01:23.292224Z INFO: <<< PLAN (3707ms)
+2026-06-04T16:01:23.292238Z INFO: >>> WAIT_PLAN_MEM_CPP
+2026-06-04T16:01:23.292240Z INFO: <<< WAIT_PLAN_MEM_CPP (0ms)
+2026-06-04T16:01:23.439089Z INFO: --- PROOF INSTANCES SUMMARY ---
+2026-06-04T16:01:23.439114Z INFO: Zisk | Arith: 13 | Binary: 74 | BinaryAdd: 36 | BinaryExtension: 19 | Blake3f: 243 | Dma: 1 | Dma64AlignedMem: 3 | DmaMemCpy: 2 | DmaPrePost: 1 | DmaPrePostMemCpy: 2 | DmaUnaligned: 7 | InputData: 1 | Main: 421 | Mem: 111 | MemAlign: 39 | MemAlignByte: 1 | MemAlignReadByte: 41 | MemAlignWriteByte: 2 | Rom: 1 | RomData: 15 | SpecifiedRanges: 1 | VirtualTable0: 1 | VirtualTable1: 1 | Total global instances: 1036
+2026-06-04T16:01:23.439119Z INFO: --------------------------------
+2026-06-04T16:01:23.439242Z INFO: <<< EXECUTE (32212ms)
+2026-06-04T16:01:23.439249Z INFO: >>> CALCULATING_CONTRIBUTIONS
+2026-06-04T16:02:20.628942Z INFO: <<< CALCULATING_CONTRIBUTIONS (57189ms)
+2026-06-04T16:02:20.629021Z INFO: ··· Global challenge: [7077273182268645526, 1109280773114414239, 16360867827682279177]
+2026-06-04T16:02:20.629026Z INFO: >>> GENERATING_PROOFS
+2026-06-04T16:02:20.629027Z INFO: >>> GENERATING_INNER_PROOFS
+2026-06-04T16:06:31.551602Z INFO: <<< GENERATING_INNER_PROOFS (250922ms)
+2026-06-04T16:06:31.553442Z INFO: >>> GENERATE_VADCOP_FINAL_PROOF
+2026-06-04T16:06:31.678903Z INFO: <<< GENERATE_VADCOP_FINAL_PROOF (125ms)
+    failures=0, prove time 340.46s, 1764504187 steps
+  [/home/ubuntu/ix/mergesort.ixe leaf 2/4] range [355, 716) — proving...
+2026-06-04T16:06:31.682063Z INFO: Initializing publics custom_commits
+2026-06-04T16:06:31.692239Z INFO: >>> EXECUTE
+2026-06-04T16:06:31.812915Z INFO: >>> COMPUTE_MINIMAL_TRACE
+2026-06-04T16:06:57.859291Z INFO: >>> COUNT
+2026-06-04T16:07:00.171091Z INFO: <<< COUNT (2311ms)
+2026-06-04T16:07:00.171105Z INFO: <<< COMPUTE_MINIMAL_TRACE (28358ms)
+2026-06-04T16:07:00.171108Z INFO: >>> PLAN
+2026-06-04T16:07:03.954443Z INFO: <<< PLAN (3783ms)
+2026-06-04T16:07:03.954460Z INFO: >>> WAIT_PLAN_MEM_CPP
+2026-06-04T16:07:03.954463Z INFO: <<< WAIT_PLAN_MEM_CPP (0ms)
+2026-06-04T16:07:04.047026Z INFO: --- PROOF INSTANCES SUMMARY ---
+2026-06-04T16:07:04.047046Z INFO: Zisk | Arith: 13 | Binary: 74 | BinaryAdd: 36 | BinaryExtension: 19 | Blake3f: 245 | Dma: 1 | Dma64AlignedMem: 3 | DmaMemCpy: 2 | DmaPrePost: 1 | DmaPrePostMemCpy: 2 | DmaUnaligned: 7 | InputData: 1 | Main: 419 | Mem: 110 | MemAlign: 39 | MemAlignByte: 1 | MemAlignReadByte: 41 | MemAlignWriteByte: 2 | Rom: 1 | RomData: 15 | SpecifiedRanges: 1 | VirtualTable0: 1 | VirtualTable1: 1 | Total global instances: 1035
+2026-06-04T16:07:04.047049Z INFO: --------------------------------
+2026-06-04T16:07:04.047172Z INFO: <<< EXECUTE (32354ms)
+2026-06-04T16:07:04.047182Z INFO: >>> CALCULATING_CONTRIBUTIONS
+2026-06-04T16:08:01.231987Z INFO: <<< CALCULATING_CONTRIBUTIONS (57184ms)
+2026-06-04T16:08:01.232066Z INFO: ··· Global challenge: [8379907348387510796, 9473518135418067, 11610579934529618215]
+2026-06-04T16:08:01.232071Z INFO: >>> GENERATING_PROOFS
+2026-06-04T16:08:01.232072Z INFO: >>> GENERATING_INNER_PROOFS
+2026-06-04T16:12:06.507547Z INFO: <<< GENERATING_INNER_PROOFS (245275ms)
+2026-06-04T16:12:06.509855Z INFO: >>> GENERATE_VADCOP_FINAL_PROOF
+2026-06-04T16:12:06.634588Z INFO: <<< GENERATE_VADCOP_FINAL_PROOF (124ms)
+    failures=0, prove time 334.95s, 1757386271 steps
+  [/home/ubuntu/ix/mergesort.ixe leaf 3/4] range [716, 1105) — proving...
+2026-06-04T16:12:06.637699Z INFO: Initializing publics custom_commits
+2026-06-04T16:12:06.648224Z INFO: >>> EXECUTE
+2026-06-04T16:12:06.672742Z INFO: >>> COMPUTE_MINIMAL_TRACE
+2026-06-04T16:12:36.696293Z INFO: >>> COUNT
+2026-06-04T16:12:39.351063Z INFO: <<< COUNT (2654ms)
+2026-06-04T16:12:39.351077Z INFO: <<< COMPUTE_MINIMAL_TRACE (32678ms)
+2026-06-04T16:12:39.351080Z INFO: >>> PLAN
+2026-06-04T16:12:43.337244Z INFO: <<< PLAN (3986ms)
+2026-06-04T16:12:43.337256Z INFO: >>> WAIT_PLAN_MEM_CPP
+2026-06-04T16:12:43.337258Z INFO: <<< WAIT_PLAN_MEM_CPP (0ms)
+2026-06-04T16:12:43.434729Z INFO: --- PROOF INSTANCES SUMMARY ---
+2026-06-04T16:12:43.434749Z INFO: Zisk | Arith: 14 | Binary: 84 | BinaryAdd: 42 | BinaryExtension: 21 | Blake3f: 285 | Dma: 1 | Dma64AlignedMem: 3 | Dma64AlignedMemSet: 1 | DmaMemCpy: 3 | DmaPrePost: 1 | DmaPrePostMemCpy: 3 | DmaUnaligned: 8 | InputData: 1 | Main: 480 | Mem: 127 | MemAlign: 46 | MemAlignReadByte: 46 | MemAlignWriteByte: 3 | Rom: 1 | RomData: 17 | SpecifiedRanges: 1 | VirtualTable0: 1 | VirtualTable1: 1 | Total global instances: 1190
+2026-06-04T16:12:43.434752Z INFO: --------------------------------
+2026-06-04T16:12:43.434901Z INFO: <<< EXECUTE (36786ms)
+2026-06-04T16:12:43.434908Z INFO: >>> CALCULATING_CONTRIBUTIONS
+2026-06-04T16:13:49.274951Z INFO: <<< CALCULATING_CONTRIBUTIONS (65840ms)
+2026-06-04T16:13:49.275029Z INFO: ··· Global challenge: [9060490341931105077, 18352762805865237217, 6966223630517014182]
+2026-06-04T16:13:49.275034Z INFO: >>> GENERATING_PROOFS
+2026-06-04T16:13:49.275036Z INFO: >>> GENERATING_INNER_PROOFS
+2026-06-04T16:18:33.454363Z INFO: <<< GENERATING_INNER_PROOFS (284179ms)
+2026-06-04T16:18:33.456457Z INFO: >>> GENERATE_VADCOP_FINAL_PROOF
+2026-06-04T16:18:33.583833Z INFO: <<< GENERATE_VADCOP_FINAL_PROOF (127ms)
+    failures=0, prove time 386.95s, 2009072532 steps
+  [/home/ubuntu/ix/mergesort.ixe leaf 4/4] range [1105, 1373) — proving...
+2026-06-04T16:18:33.585772Z INFO: Initializing publics custom_commits
+2026-06-04T16:18:33.596098Z INFO: >>> EXECUTE
+2026-06-04T16:18:33.631840Z INFO: >>> COMPUTE_MINIMAL_TRACE
+2026-06-04T16:18:48.622905Z INFO: >>> COUNT
+2026-06-04T16:18:49.961593Z INFO: <<< COUNT (1338ms)
+2026-06-04T16:18:49.961608Z INFO: <<< COMPUTE_MINIMAL_TRACE (16329ms)
+2026-06-04T16:18:49.961611Z INFO: >>> PLAN
+2026-06-04T16:18:51.679104Z INFO: <<< PLAN (1717ms)
+2026-06-04T16:18:51.679117Z INFO: >>> WAIT_PLAN_MEM_CPP
+2026-06-04T16:18:51.679120Z INFO: <<< WAIT_PLAN_MEM_CPP (0ms)
+2026-06-04T16:18:51.759093Z INFO: --- PROOF INSTANCES SUMMARY ---
+2026-06-04T16:18:51.759114Z INFO: Zisk | Arith: 7 | Binary: 44 | BinaryAdd: 23 | BinaryExtension: 11 | Blake3f: 143 | Dma: 1 | Dma64AlignedMem: 2 | Dma64AlignedMemSet: 1 | DmaMemCpy: 1 | DmaPrePost: 1 | DmaPrePostMemCpy: 1 | DmaUnaligned: 4 | InputData: 1 | Main: 245 | Mem: 65 | MemAlign: 23 | MemAlignReadByte: 23 | MemAlignWriteByte: 2 | Rom: 1 | RomData: 8 | SpecifiedRanges: 1 | VirtualTable0: 1 | VirtualTable1: 1 | Total global instances: 610
+2026-06-04T16:18:51.759118Z INFO: --------------------------------
+2026-06-04T16:18:51.759207Z INFO: <<< EXECUTE (18163ms)
+2026-06-04T16:18:51.759216Z INFO: >>> CALCULATING_CONTRIBUTIONS
+2026-06-04T16:19:26.597449Z INFO: <<< CALCULATING_CONTRIBUTIONS (34838ms)
+2026-06-04T16:19:26.597531Z INFO: ··· Global challenge: [15143578643108566371, 4372542725851822250, 452585866110493170]
+2026-06-04T16:19:26.597536Z INFO: >>> GENERATING_PROOFS
+2026-06-04T16:19:26.597538Z INFO: >>> GENERATING_INNER_PROOFS
+2026-06-04T16:21:50.463620Z INFO: <<< GENERATING_INNER_PROOFS (143866ms)
+2026-06-04T16:21:50.466145Z INFO: >>> GENERATE_VADCOP_FINAL_PROOF
+2026-06-04T16:21:50.588074Z INFO: <<< GENERATE_VADCOP_FINAL_PROOF (121ms)
+    failures=0, prove time 197.00s, 1024462815 steps
+leaf phase: 4 proofs across 1 input(s), 1259.38s wall, 1259.37s sum, leaf-bytes total 1.3MB
+  [agg L1] folding 4 proofs into 1 (arity 16)
+2026-06-04T16:21:50.590272Z INFO: Initializing publics custom_commits
+2026-06-04T16:21:50.600587Z INFO: >>> EXECUTE
+2026-06-04T16:21:50.618950Z INFO: >>> COMPUTE_MINIMAL_TRACE
+2026-06-04T16:21:51.236110Z INFO: >>> COUNT
+2026-06-04T16:21:51.287664Z INFO: <<< COUNT (51ms)
+2026-06-04T16:21:51.287672Z INFO: <<< COMPUTE_MINIMAL_TRACE (668ms)
+2026-06-04T16:21:51.287673Z INFO: >>> PLAN
+2026-06-04T16:21:51.358058Z INFO: <<< PLAN (70ms)
+2026-06-04T16:21:51.358066Z INFO: >>> WAIT_PLAN_MEM_CPP
+2026-06-04T16:21:51.358069Z INFO: <<< WAIT_PLAN_MEM_CPP (0ms)
+2026-06-04T16:21:51.439930Z INFO: --- PROOF INSTANCES SUMMARY ---
+2026-06-04T16:21:51.439948Z INFO: Zisk | Arith: 1 | Binary: 3 | BinaryAdd: 3 | BinaryExtension: 1 | Dma: 1 | Dma64AlignedMem: 1 | DmaPrePost: 1 | DmaUnaligned: 1 | InputData: 1 | Main: 13 | Mem: 2 | MemAlign: 1 | MemAlignByte: 1 | Poseidon2: 2 | Rom: 1 | RomData: 1 | SpecifiedRanges: 1 | VirtualTable0: 1 | VirtualTable1: 1 | Total global instances: 37
+2026-06-04T16:21:51.439952Z INFO: --------------------------------
+2026-06-04T16:21:51.439987Z INFO: <<< EXECUTE (839ms)
+2026-06-04T16:21:51.439998Z INFO: >>> CALCULATING_CONTRIBUTIONS
+2026-06-04T16:21:53.076965Z INFO: <<< CALCULATING_CONTRIBUTIONS (1636ms)
+2026-06-04T16:21:53.077051Z INFO: ··· Global challenge: [8439785489306290529, 18255409349232453714, 6832778414336326607]
+2026-06-04T16:21:53.077056Z INFO: >>> GENERATING_PROOFS
+2026-06-04T16:21:53.077058Z INFO: >>> GENERATING_INNER_PROOFS
+2026-06-04T16:22:00.588372Z INFO: <<< GENERATING_INNER_PROOFS (7511ms)
+2026-06-04T16:22:00.590076Z INFO: >>> GENERATE_VADCOP_FINAL_PROOF
+2026-06-04T16:22:00.712349Z INFO: <<< GENERATE_VADCOP_FINAL_PROOF (122ms)
+    [1/1] 4 proofs → 51666487 steps, prove 10.12s (wall 10.12s)
+failures: 0
+inputs: 1
+work items: 1373
+target constants: 1454
+leaves: 4
+total prove time: 1269.49s (leaves 1259.37s + agg 10.12s)
+prove throughput: 1.1consts/s
+final proof size: 336.2kB
+final proof steps: 51666487
+verify time: 0.001s
+[16:22:06] done   mergesort --shard-bytes 250000 --max-witness-stored 10
