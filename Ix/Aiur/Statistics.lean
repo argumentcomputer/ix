@@ -60,9 +60,9 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount) 
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
     -- Mirrors `crates/aiur/src/memory.rs` (`Memory::width`): multiplicity +
     -- selector + pointer + `size` value columns; the single lookup adds
-    -- `G.extensionDegree * (1 + 1)` stage-2 columns, as in
+    -- `G.extensionDegree * Bytecode.stage2ExtensionWidth 1` stage-2 columns, as in
     -- `FunctionLayout.totalWidth`.
-    let w := 3 + size + G.extensionDegree * (1 + 1)
+    let w := 3 + size + G.extensionDegree * Bytecode.stage2ExtensionWidth 1
     let qc := queryCounts[nAllFuns + i]!
     let h := qc.uniqueRows
     let hits := qc.totalHits - qc.uniqueRows

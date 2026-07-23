@@ -97,8 +97,20 @@ structure FunctionLayout where
 def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
+/-- Number of consecutive lookups covered by each step of multi-stark's
+partial-accumulator chain (logup message grouping). Must mirror
+`LOOKUP_GROUP_SIZE` in `crates/aiur/src/synthesis.rs`. -/
+def lookupGroupSize : Nat := 2
+
+/-- Stage-2 (logup) width in extension-field columns: the accumulator plus
+one partial-accumulator column per lookup group after the first, i.e.
+`max 1 ⌈lookups / lookupGroupSize⌉`. Mirrors multi-stark's
+`LookupAir::stage_2_width`. -/
+def stage2ExtensionWidth (lookups : Nat) : Nat :=
+  max 1 ((lookups + lookupGroupSize - 1) / lookupGroupSize)
+
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
-  l.width + G.extensionDegree * (1 + l.lookups)
+  l.width + G.extensionDegree * stage2ExtensionWidth l.lookups
 
 structure Function where
   body : Block
