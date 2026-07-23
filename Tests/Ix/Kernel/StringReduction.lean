@@ -72,6 +72,14 @@ good_decl (strThm `strAppendBothEmpty (strAppend (strLit "") (strLit "")) "")
 good_decl (strThm `strAppendUnicode (strAppend (strLit "L∃") (strLit "∀N")) "L∃∀N")
 good_decl (strThm `strAppendChain
   (strAppend (strAppend (strLit "a") (strLit "b")) (strLit "c")) "abc")
+-- Composition: the appended value arrives as a constructor build, so the
+-- binop's argument whnf must collapse it to a literal before the native
+-- append can fire — without the ofList collapse this is REJECTED (the
+-- argument whnfs to the ctor form, the native misses, and the
+-- structural append body is kernel-stuck).
+good_decl (strThm `strAppendOfList
+  (strAppend (Lean.mkApp (Lean.mkConst ``String.ofList) (charListLit "ok"))
+    (strLit "!")) "ok!")
 
 /-! ## B. Constructor-built strings collapse to literals -/
 

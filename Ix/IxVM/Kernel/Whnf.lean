@@ -145,7 +145,13 @@ def whnf := ⟦
   fn whnf_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
                     types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let inner_whnf = whnf(inner, types, top, addrs);
-    let inner_pair = collect_spine(inner_whnf);
+    -- Str-literal scrutinee → constructor form (mirror whnf.rs's proj
+    -- expansion site): with the native ofList collapse a constructor
+    -- build whnfs to the literal, so the field pull needs the
+    -- delta-stepped re-expansion. Stuck fallbacks keep `inner_whnf`
+    -- (the literal), not the expansion.
+    let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types, top, addrs);
+    let inner_pair = collect_spine(inner_exp);
     match inner_pair {
       (inner_head, inner_args) =>
         -- Mirror: whnf.rs:1441-1500 try_reduce_fin_val_decidable_rec.
@@ -210,7 +216,7 @@ def whnf := ⟦
         let fam = prim_family(head_addr);
         let attempt = match fam {
           1 => try_nat_dispatch(head_addr, spine, types, top, addrs),
-          2 => try_str_dispatch(head_addr, spine, addrs),
+          2 => try_str_dispatch(head_addr, head, spine, types, top, addrs),
           3 => try_bitvec_dispatch(head_addr, spine, types, top, addrs),
           4 => try_reduce_native(head_addr, spine, types, top, addrs),
           5 => try_reduce_decidable(head_addr, idx, lvls, spine, types, top, addrs),
@@ -320,7 +326,9 @@ def whnf := ⟦
   fn whnf_nd_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
                         types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let inner_whnf = whnf_nd(inner, types, top, addrs);
-    let inner_pair = collect_spine(inner_whnf);
+    -- Same Str-literal re-expansion as `whnf_proj_head`.
+    let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types, top, addrs);
+    let inner_pair = collect_spine(inner_exp);
     match inner_pair {
       (inner_head, inner_args) =>
         let fvd_pair = try_reduce_fin_val_decidable_rec(tidx, fidx, inner_head, inner_args, addrs);
@@ -370,7 +378,7 @@ def whnf := ⟦
         let fam = prim_family(head_addr);
         let attempt = match fam {
           1 => try_nat_dispatch(head_addr, spine, types, top, addrs),
-          2 => try_str_dispatch(head_addr, spine, addrs),
+          2 => try_str_dispatch(head_addr, head, spine, types, top, addrs),
           3 => try_bitvec_dispatch(head_addr, spine, types, top, addrs),
           4 => try_reduce_native(head_addr, spine, types, top, addrs),
           5 => try_reduce_decidable(head_addr, idx, lvls, spine, types, top, addrs),
@@ -564,10 +572,13 @@ def whnf := ⟦
     let major_clean1 = cleanup_nat_offset_major(major, addrs);
     let major_whnf_raw = whnf(major_clean1, types, top, addrs);
     let major_clean2 = cleanup_nat_offset_major(major_whnf_raw, addrs);
-    -- Coerce Nat / Str literals to ctor chain so iota fires
-    -- (mirror whnf.rs:929-946 nat, whnf.rs:953-960 string).
+    -- Coerce Nat / Str literals to ctor chain so iota fires (mirror
+    -- whnf.rs nat coercion + str_lit_to_ctor_app: the Str expansion
+    -- takes one delta step past `String.ofList` where it is a Defn, so
+    -- the head is the real constructor and the native ofList collapse
+    -- cannot fold the expansion straight back into the literal).
     let major_whnf_nat = nat_lit_to_ctor_or_self(major_clean2, addrs);
-    let major_whnf = str_lit_to_ctor_or_self(major_whnf_nat, addrs);
+    let major_whnf = str_lit_to_ctor_app_or_self(major_whnf_nat, types, top, addrs);
     let major_pair = collect_spine(major_whnf);
     match major_pair {
       (ctor_head, ctor_args) =>
