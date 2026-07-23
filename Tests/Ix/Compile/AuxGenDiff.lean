@@ -562,6 +562,46 @@ def compareDumps (rust lean : String) : IO Bool := do
 
 def run (env : Lean.Environment) : IO UInt32 := do
   let debugConst? := (← IO.getEnv "IX_AUX_DIFF_DEBUG")
+  -- `IX_AUX_DIFF_DEBUG=belowscan:<path>` parses the `.ixe` at <path> and
+  -- reports every multi-member `.below.rec` Muts block (the blast radius
+  -- of the below.rec canonical-order fix: these are the only blocks whose
+  -- bytes depend on joint generation order), then exits. Runs before the
+  -- corpus phases — no compile needed, just deEnv + a named-table scan.
+  if let some spec := debugConst? then
+    if spec.startsWith "belowscan:" then
+      let path := (spec.drop 10).toString
+      let bytes ← IO.FS.readBinFile path
+      match Ixon.deEnv bytes with
+      | .error e =>
+        IO.eprintln s!"[belowscan] {path}: parse error: {e}"
+        return 1
+      | .ok ixenv =>
+        let mut blockAddrs : Ix.Set Address := {}
+        let mut blocks := 0
+        for (n, nd) in ixenv.named.toList do
+          if let .muts allClasses _ := nd.constMeta.info then
+            let s := n.pretty
+            if (s.splitOn ".below.rec").length > 1 then
+              let total := allClasses.foldl (fun a c => a + c.size) 0
+              blocks := blocks + 1
+              blockAddrs := blockAddrs.insert nd.addr
+              IO.println
+                s!"[belowscan] block {s} classes={allClasses.size} members={total}"
+        let mut memberRows := 0
+        for (n, nd) in ixenv.named.toList do
+          match nd.constMeta.info with
+          | .muts _ _ => pure ()
+          | _ =>
+            -- Member rows point at projection constants (rprj{block, idx}),
+            -- not the block address — resolve one hop to the block.
+            if n.pretty.endsWith ".below.rec" then
+              if let some c := ixenv.getConst? nd.addr then
+                if let .rPrj p := c.info then
+                  if blockAddrs.contains p.block then
+                    memberRows := memberRows + 1
+        IO.println
+          s!"[belowscan] {path}: multiBelowRecBlocks={blocks} namedRows={memberRows}"
+        return 0
   IO.println "[aux-gen-diff] collecting fixture closure..."
   let filtered := validateAuxClosure env
   IO.println s!"[aux-gen-diff] {filtered.length} constants"
