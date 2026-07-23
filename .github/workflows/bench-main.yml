@@ -1,25 +1,26 @@
 name: Benchmark main
 
-# Benchmarks tracked on Bencher on every push to main, all reusing the one
-# compiled `.ixe` so the compiler runs once. Every measurement is a single
-# `ix bench run` invocation (backend × env × mode) — the same orchestrator local
-# runs and the !benchmark PR workflow use — converted for upload by
-# `ix bench bmf`. Three stages, mirroring bench-pr.yml:
-#   1. plan      — `ix bench ci matrix` emits the registry's parameter fan-out
-#                  (Ix/Cli/BenchCmd.lean), each combination carrying its testbed,
-#                  workload, and threshold flags.
-#   2. compile   — `ix bench run --backend compile` per env: serialize the
-#                  Lean env to a `.ixe` (compile-throughput metrics) and
-#                  cache the `.ixe` for the runs.
-#   3. benchmark — ONE job per remaining parameter combination: restore the
-#                  `.ixe` and drive its backend over it (aiur STARK-check, zkVM
-#                  execute, out-of-circuit check, decompile, the
-#                  aiur-recursive toy).
-# Each run reports to its own bencher testbed/workload so a threshold reset
-# only touches its own measures. `ix bench run` exits 3 when the kernel
-# REJECTS a constant — the red X lands on that step (no output scraping),
-# while the clean rows still upload (`ix bench bmf` drops every non-ok row,
-# so a rejected or OOM'd constant never becomes a bencher data point).
+# Benchmarks every push to main and uploads the results to bencher.dev.
+# Each measurement is one `ix bench run` with a (backend, env, mode)
+# parameter combination — the same command you can run locally, and the
+# same one the !benchmark PR workflow uses. Three stages:
+#
+#   1. plan      — `ix bench ci matrix` prints the list of parameter
+#                  combinations to run. The list comes from the registry
+#                  (Ix/Cli/BenchCmd.lean) and each entry already carries
+#                  its bencher testbed, workload, and threshold flags, so
+#                  this file hardcodes none of that.
+#   2. compile   — compiles each Lean env to a `.ixe` file (this IS the
+#                  compile benchmark) and caches the file for stage 3.
+#   3. benchmark — one job per remaining entry: restore the `.ixe` and
+#                  run the entry's backend over it (aiur, zisk, ooc,
+#                  decompile, aiur-recursive).
+#
+# Each entry uploads to its own bencher testbed/workload, so a threshold
+# reset for one workload never touches another. When the kernel REJECTS a
+# constant, `ix bench run` exits 3 and that step fails visibly — but the
+# clean rows still upload, because `ix bench bmf` drops every non-ok row
+# (rejected or OOM) before the upload.
 
 on:
   push:
@@ -30,25 +31,23 @@ permissions:
   contents: read
   checks: write
 
-# No concurrency group: push-to-main and manual dispatch only — every merged
-# commit gets benchmarked; a later merge must never cancel or queue behind an
-# in-flight run.
+# No concurrency group on purpose: every merged commit gets benchmarked,
+# and a later merge must never cancel or queue behind an in-flight run.
 
 env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
-  # Build + stage the `ix`, `bench-typecheck`, and `bench-recursive-verifier`
-  # binaries once, then restore them on the matrix runners.
-  # `-Ctarget-cpu=native`: every job that RUNS these binaries must also be a
-  # warp host.
+  # Build the `ix`, `bench-typecheck`, and `bench-recursive-verifier`
+  # binaries once and cache them; every later job restores them instead of
+  # rebuilding. They are built with -Ctarget-cpu=native, so every job that
+  # runs them must use the same warp runner class.
   build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v7
-      # Pinned Rust toolchain + cargo cache (~/.cargo + target/, via the action's
-      # built-in rust-cache), so `lake build`'s cargo step doesn't recompile the
-      # Plonky3/multi-stark deps from scratch on every run.
+      # Rust toolchain + cargo cache, so the cargo step inside `lake build`
+      # does not recompile the Plonky3/multi-stark dependencies every run.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       # Log the build CPU so a benchmark shift can be traced to a host change.
       - name: Log build CPU
@@ -72,16 +71,15 @@ jobs:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
 
-  # Derive the benchmark matrix from the registry (Ix/Cli/BenchCmd.lean)
-  # via `ix bench ci matrix`, so the parameter fan-out and its upload metadata
-  # are single-sourced instead of hand-copied. Runs beside the compile
+  # Ask the registry which benchmarks to run. `ix bench ci matrix` prints
+  # one JSON entry per (backend, env, mode) combination, each carrying its
+  # own testbed, workload, and threshold flags — so nothing benchmark-
+  # specific is written into this file. Runs in parallel with the compile
   # job; only the benchmark job waits on it.
   plan:
     needs: build
-    # `ci matrix` is a pure-Lean subcommand (AVX-512 lives only in the
-    # binary's Rust objects, which it never executes) — cheap host is fine.
-    # Move to a warp host if `ix` startup or this subcommand ever touches
-    # the FFI.
+    # `ci matrix` only runs Lean code (the AVX-512 parts of the binary are
+    # never executed here), so a cheap non-warp host is fine.
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
@@ -103,21 +101,18 @@ jobs:
         run: |
           ix bench ci matrix > matrix.json
           cat matrix.json
-          # Every scheduled parameter combination (backend × env × mode), with its
-          # testbed / workload / threshold metadata from the registry. The
-          # compile runs get their own job below (the `.ixe` producers
-          # everything else restores — no intra-matrix ordering on GitHub),
-          # so the benchmark matrix takes the consumers. An env name (e.g.
-          # InitStd) is the single identifier: `ix bench run --env`, the
-          # `<env>.ixe` filename, the cache-key suffix, and the env-keyed
-          # bencher benchmark name.
+          # Drop the compile entries: they run as their own job below,
+          # because they produce the `.ixe` files everything else consumes
+          # and GitHub cannot order entries within one matrix. Everything
+          # else becomes the benchmark job's matrix.
           echo "matrix=$(jq -c 'map(select(.backend == "compile" | not))' matrix.json)" >> "$GITHUB_OUTPUT"
 
-  # Compile each library env to a `.ixe` and track compile throughput. Caches
-  # the `.ixe` (keyed by sha + env slug) for the benchmark runs to consume.
+  # Compile each Lean env to a `.ixe` file. The compile itself is the
+  # benchmark (compile time, throughput, env size); the `.ixe` is then
+  # cached for the benchmark job to restore.
   compile:
-    # Explicit names on the matrix jobs: the default would append every
-    # matrix value (slugs, flags) to the job title.
+    # Explicit name — the default would append every matrix value to the
+    # job title.
     name: compile-${{ matrix.env }}
     needs: build
     runs-on: warp-ubuntu-latest-x64-32x
@@ -125,12 +120,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # env = the registry key (Ix/Cli/BenchCmd.lean): the `ix bench run --env`
-        # token, `<env>.ixe` filename, lake target suffix (Compile<env>),
-        # cache-key suffix, and bencher row name, all one spelling.
-        # Every registry env compiles; the per-constant benchmark entries
-        # fan over whichever envs Vectors.csv selects constants in.
-        # Add FC if updated to latest Lean.
+        # The env name (e.g. InitStd) is the one identifier used
+        # everywhere: `ix bench run --env`, the `<env>.ixe` filename, the
+        # lake target (Compile<env>), the cache-key suffix, and the
+        # bencher row name. Every registry env compiles here; which envs
+        # the benchmark job then proves/checks depends on which envs have
+        # constants in Vectors.csv. Add FC once it's on current Lean.
         include:
           - { env: InitStd }
           - { env: Lean }
@@ -148,9 +143,10 @@ jobs:
       # point COMPILE_DIR there for the FC matrix job.
       # - if: matrix.env == 'FC'
       #   run: echo "COMPILE_DIR=${{ env.COMPILE_DIR }}FC" | tee -a $GITHUB_ENV
-      # Download elan; fetch the mathlib cache only for benches that import
-      # Mathlib (Mathlib, FLT) — InitStd/Lean would otherwise pull it for
-      # nothing, since the shared Benchmarks/Compile package depends on mathlib.
+      # Install the Lean toolchain. The mathlib olean cache is fetched only
+      # for envs that import Mathlib (Mathlib, FLT) — the shared
+      # Benchmarks/Compile package depends on mathlib, so without this
+      # guard InitStd/Lean would download it for nothing.
       - uses: leanprover/lean-action@v1
         with:
           lake-package-directory: ${{ env.COMPILE_DIR }}
@@ -167,23 +163,24 @@ jobs:
       # warning that must not fail the build.
       - run: lake build Compile${{ matrix.env }}
         working-directory: ${{ env.COMPILE_DIR }}
-      # Serialize the env to a `.ixe` and measure the compile via `ix bench
-      # run` — for the `compile` backend the compile IS the benchmark (always
-      # fresh; `--ixe` is ignored by design). Writes `<env>.ixe` at the
-      # workspace root and one results row keyed by the CamelCase env slug —
-      # the same driver the !benchmark PR path uses; bmf wraps it for bencher.
+      # The measured compile: serializes the env to `<env>.ixe` at the
+      # workspace root and writes one results row keyed by the env name.
+      # For the compile backend the compile IS the benchmark, so it always
+      # compiles fresh (`--ixe` is ignored on purpose). `bmf` converts the
+      # row to bencher's upload format.
       - name: Run ix compile benchmark
         run: |
           ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
           ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
-      # Registry reads for the steps below, all off the same parameter fan-out
-      # the benchmark matrix uses (no hand-copied env lists or upload
-      # metadata):
-      #   consumed — some downstream run restores this env's `.ixe`.
-      #   zkvm     — a zkVM run executes it, so pre-cut its closure shards.
-      #   testbed / workload / thresholds — this env's compile-run upload
-      #   metadata for the bencher-track step.
+      # Ask the registry three things about this env (instead of keeping
+      # hand-written env lists here):
+      #   consumed — does any benchmark entry restore this env's `.ixe`?
+      #              If yes, cache it below.
+      #   zkvm     — does a zkVM entry execute this env? If yes, pre-cut
+      #              its closure shards below.
+      #   testbed / workload / thresholds — the upload metadata for this
+      #              env's own compile benchmark.
       - id: gates
         name: Read this env's registry metadata
         run: |
@@ -195,20 +192,19 @@ jobs:
           echo "testbed=$(meta testbed)" >> "$GITHUB_OUTPUT"
           echo "workload=$(meta workload)" >> "$GITHUB_OUTPUT"
           { echo "thresholds<<EOF"; meta thresholds; echo "EOF"; } >> "$GITHUB_OUTPUT"
-      # Pre-cut the zisk closure-shard artifacts for the heavy primaries
-      # (`ix shard extract` → `ix profile` → `ix shard`, via `ix bench
-      # shard` — the same code path the zisk runs fall back to when the
-      # artifacts are absent). Done here, next to the fresh `.ixe` with
-      # `ix` + the Lean toolchain on hand, so the zisk runs just restore
-      # the dir.
+      # Pre-cut the closure shards zisk needs for heavy constants
+      # (extract → profile → shard). The zisk runs can cut these lazily
+      # themselves, but doing it here — right next to the fresh `.ixe`,
+      # with the toolchain already installed — means they just restore a
+      # directory.
       - if: steps.gates.outputs.zkvm == 'true'
         name: Cut closure shards for heavy primaries
         run: ix bench shard --env ${{ matrix.env }} --ixe ${{ matrix.env }}.ixe
-      # Cache the `.ixe` (+ closure-shard artifacts where the step above cut
-      # them) for every downstream consumer, reused never regenerated — for a
-      # decompile-only env (Lean/FLT) the `zkshards-*` dir is absent and
-      # simply not stored. NB: every restore of this key must list the SAME
-      # paths — actions/cache versions the entry by its path list.
+      # Cache the `.ixe` (plus the shard directory when the step above ran)
+      # for the benchmark job. For an env only decompile consumes, the
+      # `zkshards-*` directory doesn't exist and simply isn't stored.
+      # IMPORTANT: every restore of this key must list the same paths —
+      # actions/cache versions the entry by its path list.
       - if: steps.gates.outputs.consumed == 'true'
         uses: actions/cache/save@v6
         with:
@@ -216,10 +212,9 @@ jobs:
             ${{ matrix.env }}.ixe
             zkshards-${{ matrix.env }}
           key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
-      # Upload compile metrics — testbed / workload / threshold flags all
-      # from its registry matrix entry (bound rationale lives beside `thresholds`
-      # in Ix/Cli/BenchCmd.lean). Every measure shares the per-workload
-      # baseline window (data points since the workload's reset tag).
+      # Upload the compile metrics. Testbed, workload, and threshold flags
+      # all come from the registry (the reasoning behind each bound lives
+      # next to `thresholds` in Ix/Cli/BenchCmd.lean).
       - uses: ./.github/actions/bencher-track
         with:
           testbed: ${{ steps.gates.outputs.testbed }}
@@ -229,30 +224,31 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           thresholds: ${{ steps.gates.outputs.thresholds }}
 
-  # ONE job per remaining parameter combination (backend × env × mode),
-  # mirroring bench-pr.yml's single benchmark job: each combination's label,
-  # testbed, workload, and threshold flags all ride in its matrix entry, so
-  # no backend has bespoke steps here beyond the zkVM toolchain installs.
-  # Restores the compile job's cached `.ixe` — no recompile. Backend notes:
-  #   - aiur prove is the real-workload simulation (full STARK prove under
-  #     the RAM watchdog, per-constant subprocess isolation, `status: oom`
-  #     rows for a too-large prove); aiur execute is the fast Phase-1-only
-  #     signal. Separate testbeds share measure names (peak-rss,
-  #     throughput) meaning that mode's phase, so a `!benchmark aiur
-  #     [execute]` PR run always finds a cached baseline.
-  #   - zisk executes the same constants through the zkVM host
-  #     (deterministic cycle counts; proving needs a GPU, so execute-only),
-  #     reusing the pre-cut zkshards-<env>/ artifacts; `ix bench run`
-  #     builds the Rust host itself.
-  #   - ooc runs the same kernel out-of-circuit and in parallel (far
-  #     faster), one whole-env row plus one full-closure row per primary.
-  #   - decompile is the inverse of compile; deep roundtrip fidelity is
-  #     gated by the canonical checks (`ix validate` / roundtrip tests),
-  #     not measured here.
-  #   - aiur-recursive proves fixed tiny statements and the in-circuit
-  #     multi-stark verifier over each proof, then proves THAT execution —
-  #     env-independent, its run env is only the (already-cached)
-  #     `.ixe`-restore key.
+  # One job per remaining matrix entry, all sharing this one step list
+  # (same shape as bench-pr.yml's benchmark job). Each entry brings its
+  # own label, testbed, workload, and threshold flags, so the only
+  # backend-specific steps are the zkVM toolchain installs. Every entry
+  # restores the compile job's cached `.ixe` — nothing recompiles here.
+  #
+  # What each backend measures:
+  #   - aiur prove: the real workload — a full STARK prove per constant,
+  #     one subprocess per constant under the RAM watchdog; a too-large
+  #     prove is killed and recorded as a `status: oom` row.
+  #     aiur execute: the fast signal — witness generation only.
+  #     The two modes upload to separate testbeds; shared measure names
+  #     (peak-rss, throughput) mean that mode's phase.
+  #   - zisk: executes the same constants in the zkVM (deterministic
+  #     cycle counts; proving would need a GPU, so execute-only). Reuses
+  #     the pre-cut zkshards-<env>/ dirs; builds its Rust host in-job.
+  #   - ooc: the same kernel run out-of-circuit and in parallel (much
+  #     faster). One whole-env row plus one row per primary constant.
+  #   - decompile: the inverse of compile. Roundtrip correctness is
+  #     checked elsewhere (`ix validate` / roundtrip tests) — this only
+  #     measures speed and memory.
+  #   - aiur-recursive: proves small fixed statements, runs the
+  #     in-circuit verifier over each proof, then proves THAT — the cost
+  #     of recursion. Env-independent: its `env` field only names the
+  #     (already-cached) `.ixe` the shared restore step pulls.
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]
@@ -300,9 +296,9 @@ jobs:
             zkshards-${{ matrix.params.env }}
           key: bench-ixe-${{ github.sha }}-${{ matrix.params.env }}
           fail-on-cache-miss: true
-      # Exit 3 = the kernel REJECTED a constant (a correctness regression,
-      # not a benchmark blip): the job reddens right here, with the rows on
-      # disk for the upload below.
+      # If the kernel rejects a constant, `ix bench run` exits 3 and this
+      # step fails — that is a correctness regression, not a benchmark
+      # blip. The completed rows are already on disk for the upload below.
       - name: Run ${{ matrix.params.label }} benchmark
         run: |
           # ZisK's ASM microservices mmap with MAP_LOCKED: raise the memlock
@@ -314,8 +310,8 @@ jobs:
           ix bench run --backend ${{ matrix.params.backend }} \
             --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }} \
             --ixe ${{ matrix.params.env }}.ixe --out bench.json
-      # Upload whatever clean rows exist even when the run step reddened the
-      # job — bmf drops every non-ok (rejected/oom) row, so those never
+      # Convert rows for upload even when the run step failed: bmf drops
+      # every non-ok row (rejected or OOM), so only clean measurements
       # reach bencher.
       - name: Convert to Bencher Metric Format
         id: bmf
@@ -323,10 +319,9 @@ jobs:
         run: |
           ix bench bmf --in bench.json --out bench-bmf.json
           cat bench-bmf.json
-      # Upload the run's metrics under its registry testbed/workload; the
-      # threshold flags (and their bound rationale) live beside the backend
-      # in Ix/Cli/BenchCmd.lean. Every measure shares the per-workload
-      # baseline window (data points since the workload's reset tag).
+      # Upload under this entry's testbed and workload. The threshold
+      # flags (and the reasoning behind each bound) live next to the
+      # backend in Ix/Cli/BenchCmd.lean.
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
         with:
