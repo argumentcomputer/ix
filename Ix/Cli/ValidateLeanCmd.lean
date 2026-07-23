@@ -117,8 +117,10 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"Total constants: {constList.length}"
     -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
     -- ground → condense → aux-aware parallel compile → serialize).
+    let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
     let t0 ← IO.monoMsNow
-    match ← Ix.CompileM.compileLeanConsts constList with
+    match ← Ix.CompileM.compileLeanConsts constList
+        (numWorkers := compileWorkers) with
     | .error e =>
       phases := phases.push ("1 compile",
         .failed s!"pure-Lean pipeline: {e}")
@@ -200,8 +202,10 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     phases := phases.push ("5 decompile", .skipped "serde gate failed")
   | some ixonEnv =>
     let t0 ← IO.monoMsNow
+    let decompileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 16
     let (decompiled, errs, _p2st) ←
       Ix.DecompileM.decompileEnvFullParallel ixonEnv canonView?
+        (numWorkers := decompileWorkers)
     let t1 ← IO.monoMsNow
     if !errs.isEmpty then
       let shown := errs.toList.take 5
@@ -260,6 +264,7 @@ def validateLeanCmd : Cli.Cmd := `[Cli|
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
     ixe : String; "Validate a pre-compiled .ixe instead of a Lean file (oracle-free: runs serde + anon roundtrip only)"
+    workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale — phase 1 at 32 workers peaks past 116 GiB there."
 
   ARGS:
     ...path : String; "Path to the Lean source file whose env should be validated (omit with --ixe)."

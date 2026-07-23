@@ -47,7 +47,7 @@ parentheses.
 |---|---|---|---|
 | InitStd | 39.9 s (84.8 s) | 4.75 s | ALIGNED |
 | Lean | 85.0 s (161.5 s) | 8.31 s | ALIGNED |
-| Mathlib | 646.5 s (1,058.6 s) | 56.2 s | 49-byte divergence under investigation¹ |
+| Mathlib | 646.5 s (1,058.6 s) | 56.2 s | ALIGNED¹ |
 
 Lean pipeline phase breakdown:
 
@@ -57,23 +57,27 @@ Lean pipeline phase breakdown:
 | Lean | 4.8 s | 1.7 s | 18.8 s | 4.7 s | 85.0 s | 46.6 s |
 | Mathlib | 39.0 s | 14.2 s | 138.5 s | 27.5 s | 646.5 s | 193.0 s |
 
-¹ `ix diff` localizes the Mathlib divergence to two constants
-(`Lists.Equiv.below.rec` / `Lists'.Subset.below.rec` — a Prop-level
-mutual `.below.rec` over the nested `Lists`/`Lists'` family) plus their
-address ripples; every other constant in the 3.15 GB env is
-byte-identical. Root cause (reproduced in-gate by alpha-identical
-namespace clones of the `Lists` family): the Rust compiler collects a
-mutual block's `.below` inductives by iterating
-`patches: FxHashMap<Name, _>` (`mutual.rs:794`), so the *generation
-order* of the joint `.below.rec` recursor block — which bakes motive
-order and rule concatenation into the block bytes — follows FxHash
-bucket order over the (name-dependent) key set. Rust itself therefore
-emits different bytes for alpha-identical content depending on name
-hashes (a canonicity violation independent of the Lean port); the Lean
-pipeline iterates its own `Std.HashMap` layout and agrees with Rust's
-order only coincidentally. Every other aux phase is order-insensitive
-(per-member-independent generation + canonical class sort), which is
-why a 3.15 GB env diverges in exactly one multi-`.below` mutual block.
+¹ An earlier revision of this table reported a 49-byte divergence here
+(two constants — `Lists.Equiv.below.rec` / `Lists'.Subset.below.rec`,
+the Prop-level joint `.below.rec` over the `Lists`/`Lists'` family —
+plus address ripples). Root cause, reproduced in-gate by alpha-identical
+namespace clones (`ZFA`–`ZFA5` in `Tests/Ix/Compile/Canonicity.lean`):
+both compilers collected a mutual block's `.below` inductives by
+name-keyed hash-map iteration, so the *joint generation order* of the
+`.below.rec` block — which bakes motive order and rule concatenation
+into the block bytes — was name-dependent. That made Rust itself emit
+different bytes for alpha-identical content (a canonicity violation
+independent of the port); the two implementations agreed elsewhere only
+because their hash orders coincided. **Fixed on both sides** by
+ordering the collection canonically (the below inductives' own
+`sort_consts` partition-refinement order — content-derived and
+alpha-invariant; see `docs/ix_canonicity.md`, "below.rec block").
+Post-fix, the full ladder is ALIGNED and the Mathlib output is
+byte-identical to the pre-fix Rust artifact (Rust's hash order happened
+to already coincide with the canonical order for this block), so no
+persisted artifact changed. Every other aux phase was and is
+order-insensitive (per-member generation + canonical class sort), which
+is why a 3.15 GB env diverged in exactly one multi-`.below` block.
 
 ## Serialization (in-memory env → `.ixe` bytes)
 
@@ -114,13 +118,17 @@ Rust: `ix decompile` (the decompile pass over a `.ixe`). Lean:
 flags → Pass 2 aux regeneration/recovery) *plus* the hash comparison
 against the canonicalized source (comparison overhead ~5 s at 205k
 constants). Lean decompilation is dominated by Pass 2's kernel bridge
-(regeneration re-infers through `Ix.Tc`).
+(regeneration re-infers through `Ix.Tc`); Pass 2 runs on the
+wave-parallel driver (`decompileEnvPass2Parallel`, 16 workers — the
+count is memory-bound, not core-bound; `IX_DECOMPILE_WORKERS`
+overrides). The sequential figures from before the parallel driver are
+kept for reference.
 
-| Environment | Lean decompile (+compare) | Rust decompile |
-|---|---|---|
-| InitStd | 305 s | 6.70 s |
-| Lean | 1,317 s | 12.68 s |
-| Mathlib | TBD | 221.0 s |
+| Environment | Lean decompile (+compare) | (sequential Pass 2) | Rust decompile |
+|---|---|---|---|
+| InitStd | 58.3 s | 305 s | 6.70 s |
+| Lean | 268.7 s | 1,317 s | 12.68 s |
+| Mathlib | TBD | — | 221.0 s |
 
 ## Typechecking (`.ixe` through the kernel, meta mode)
 
@@ -151,16 +159,19 @@ compile/decompile and alpha-equivalence; Lean's `ix validate-lean` runs
 compile → serde → kernel anon+meta roundtrips → decompile), so both
 are reported as end-to-end wall times with their phase tables.
 
-`ix validate-lean` (pure Lean, all phases):
+`ix validate-lean` (pure Lean, all phases; single clean sequential
+runs with the wave-parallel phase-5 driver; Mathlib runs with
+`--workers 16` — phase 1 at the default 32 workers exceeds memory at
+that scale):
 
 | Phase | InitStd | Lean | Mathlib |
 |---|---|---|---|
-| 1 compile | 81.2 s | 176.9 s | TBD |
-| 2 serde (byte-identical) | 31.8 s | 55.3 s | TBD |
-| 3 kernel anon roundtrip | 459.0 s | 450.2 s | TBD |
-| 4 kernel meta roundtrip | 13.1 s | 16.1 s | TBD |
-| 5 decompile (hash-identical) | 305.0 s | 1,317.4 s | TBD |
-| **total** | **~14.8 min** | **~33.6 min** | TBD |
+| 1 compile | 83.2 s | 158.9 s | TBD |
+| 2 serde (byte-identical) | 33.9 s | 59.0 s | TBD |
+| 3 kernel anon roundtrip | 462.8 s | 462.6 s | TBD |
+| 4 kernel meta roundtrip | 12.5 s | 16.6 s | TBD |
+| 5 decompile (hash-identical) | 58.3 s | 268.7 s | TBD |
+| **total** | **~10.8 min** | **~16.1 min** | TBD |
 
 `ix validate` (Rust, 8-phase aux_gen validation: compile → congruence →
 leak check → alpha/cross-namespace canonicity → double decompile →

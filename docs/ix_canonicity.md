@@ -385,6 +385,36 @@ Muts([                               // BELOW.REC BLOCK
 
 Recursors for the Prop-case `.below` inductives.
 
+**Generation class order is semantic and canonicalized.** Unlike every
+other aux phase (per-member generation, layout canonicalized by the
+class sort), the `.below.rec` recursors are generated **jointly** as one
+mutual family: the class order determines the motive order across the
+block and the rule concatenation inside every member, and is therefore
+baked into the block *bytes* before any layout sort runs. The
+generation classes are ordered by the below inductives' own
+partition-refinement (`sort_consts`) order — their canonical member
+order in the compiled below-inductive block, equivalently ascending
+anon projection index. This order is content-derived (alpha-invariant,
+name-free) and is applied at the Phase-3 collection in both
+implementations (`mutual.rs` `generate_and_compile_aux_recursors`
+Phase 3; `Ix/AuxGen/CompileAux.lean` mirror), so Phase-5 generation and
+the per-name metadata `all` lists inherit it.
+
+History: the collection originally iterated a name-keyed hash map, so
+the joint generation order followed hash-bucket order over the member
+*names* — alpha-identical families could compile to different bytes (a
+canonicity violation; observed as a 49-byte divergence at Mathlib scale
+in the `SetTheory/Lists` mutual-Prop pair). The regression family
+`ZFA`–`ZFA5` in `Tests/Ix/Compile/Canonicity.lean` (five alpha-identical
+transcriptions of that shape) pins the fix: all five must produce the
+same `.below.rec` block address, enforced by validate Phase 4b twin
+groups and the aux-gen-diff driver gates. Ties in the canonical sort
+are structurally unreachable — alpha-identical belows would require
+alpha-identical parents, which collapse to a single class (and a single
+below patch) upstream; the `PropCollapseA/B` fixtures pin that
+collapsed path, including the `.below.rec` alias for non-representative
+members.
+
 #### `brecOn` blocks — three of them
 
 ```
