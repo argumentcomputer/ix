@@ -45,16 +45,16 @@ opaque rsAuxGenDumpExpandFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO String
 
 /-- FFI (test-ffi only): text dump of `generate_aux_patches` output per
-    inductive SCC block — the gate medium for the A3-A6 generator
-    milestones (`rs_aux_gen_dump_patches` in crates/ffi/src/compile.rs).
-    The Lean comparison filters by patch kind and widens per milestone. -/
+    inductive SCC block — the gate medium for the aux generators
+    (`rs_aux_gen_dump_patches` in crates/ffi/src/compile.rs).
+    The Lean comparison filters by patch kind, one generator at a time. -/
 @[extern "rs_aux_gen_dump_patches"]
 opaque rsAuxGenDumpPatchesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO String
 
 /-- FFI (test-ffi only): post-compile surgery plans + AuxLayouts + Muts
     named entries (`rs_aux_gen_dump_plans` in crates/ffi/src/compile.rs) —
-    the A7 orchestration gate medium. -/
+    the orchestration gate medium. -/
 @[extern "rs_aux_gen_dump_plans"]
 opaque rsAuxGenDumpPlansFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO String
@@ -159,7 +159,7 @@ def firstDiff (a b : ByteArray) : Option Nat := Id.run do
   if a.size != b.size then return some (min a.size b.size)
   return none
 
-/-! ## A2 gate: expansion/canonicity dump parity
+/-! ## Expansion gate: expansion/canonicity dump parity
 
 `leanDumpExpand` reproduces — byte for byte — the text that
 `rs_aux_gen_dump_expand` emits from the Rust side, by running the
@@ -360,7 +360,7 @@ def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     | .error e => out := out ++ s!"block {lo.pretty}\nerror generate {e}\n"
   return out
 
-/-! ## A7 gate: orchestration plans/AuxLayout/Muts parity
+/-! ## Plans gate: orchestration plans/AuxLayout/Muts parity
 
 Mirrors `rs_aux_gen_dump_plans`: per qualifying block (mutual OR
 inductive-containing — Rust registers `Muts` entries for every
@@ -500,8 +500,8 @@ def leanDumpPlans (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
   return out
 
 /-- Keep only `block` headers plus patch/rule/error lines whose kind is in
-    the whitelist — the comparison scope widens per milestone (A3: rec;
-    A4: +casesOn/recOn; A5: +below*; A6: +brecOn+aliases). -/
+    the whitelist — the comparison scope widened generator by generator
+    (rec, then +casesOn/recOn, +below*, +brecOn+aliases). -/
 def filterPatchDump (dump : String) (kinds : List String) : String :=
   let keep (l : String) : Bool :=
     l.startsWith "block " || l.startsWith "error "
@@ -780,19 +780,19 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println ""
   IO.println s!"[aux-gen-diff] drift gate: {if gateOk then "PASS" else "FAIL"}"
 
-  -- A2 gate: expansion/canonicity dump parity (Rust intermediates vs the
-  -- pure-Lean Ix.AuxGen pipeline).
-  IO.println "[aux-gen-diff] A2: expansion dump (Rust)..."
+  -- Expansion gate: expansion/canonicity dump parity (Rust intermediates
+  -- vs the pure-Lean Ix.AuxGen pipeline).
+  IO.println "[aux-gen-diff] expansion dump (Rust)..."
   let rustDump ← rsAuxGenDumpExpandFFI filtered
-  IO.println "[aux-gen-diff] A2: expansion dump (Lean)..."
+  IO.println "[aux-gen-diff] expansion dump (Lean)..."
   let leanDump := leanDumpExpand cenv condensed
   let dumpOk ← compareDumps rustDump leanDump
   IO.println s!"[aux-gen-diff] expansion gate: {if dumpOk then "PASS" else "FAIL"} ({(rustDump.splitOn "\n").length} dump lines)"
 
-  -- A3+ gate: generated-patch parity, kind-filtered (widens per milestone).
-  IO.println "[aux-gen-diff] A3: patches dump (Rust)..."
+  -- Patches gate: generated-patch parity, kind-filtered.
+  IO.println "[aux-gen-diff] patches dump (Rust)..."
   let rustPatchDump ← rsAuxGenDumpPatchesFFI filtered
-  IO.println "[aux-gen-diff] A3: patches dump (Lean)..."
+  IO.println "[aux-gen-diff] patches dump (Lean)..."
   let leanPatchDump := leanDumpPatches cenv condensed
   let kinds := ["rec", "casesOn", "recOn", "belowDef", "belowIndc", "brecOn", "alias"]
   let patchesOk ← compareDumps (filterPatchDump rustPatchDump kinds)
@@ -801,10 +801,10 @@ def run (env : Lean.Environment) : IO UInt32 := do
     (·.startsWith "patch ") |>.length
   IO.println s!"[aux-gen-diff] patches gate ({", ".intercalate kinds}): {if patchesOk then "PASS" else "FAIL"} ({recCount} patches compared)"
 
-  -- A7 gate: orchestration plans / AuxLayout / Muts entries.
-  IO.println "[aux-gen-diff] A7: plans dump (Rust)..."
+  -- Plans gate: orchestration plans / AuxLayout / Muts entries.
+  IO.println "[aux-gen-diff] plans dump (Rust)..."
   let rustPlansDump ← rsAuxGenDumpPlansFFI filtered
-  IO.println "[aux-gen-diff] A7: plans dump (Lean)..."
+  IO.println "[aux-gen-diff] plans dump (Lean)..."
   let leanPlansDump := leanDumpPlans cenv condensed
   let plansOk ← compareDumps rustPlansDump leanPlansDump
   let mutsCount := ((rustPlansDump.splitOn "\n").filter
@@ -824,14 +824,14 @@ def run (env : Lean.Environment) : IO UInt32 := do
     IO.println s!"[aux-gen-diff] dumps saved to {pathPrefix}.*.txt"
   | none => pure ()
 
-  -- A8 gate: FULL aux-aware driver parity. `compileEnvAux` runs the
+  -- Driver gate: FULL aux-aware driver parity. `compileEnvAux` runs the
   -- production pipeline (prereq seeding, per-block aux tails, promotion
   -- + no-aux originals, pending release) over the same corpus; the
   -- result env is compared against Rust's CompileState env whole:
   -- named coverage both directions, per-name addresses, per-address
   -- constant BYTES, and full Named metadata (constMeta + original +
-  -- hints, informational until A9 tightens).
-  IO.println "[aux-gen-diff] A8: aux-aware driver (compileEnvAux)..."
+  -- hints).
+  IO.println "[aux-gen-diff] aux-aware driver (compileEnvAux)..."
   let driverOk ← do
     match Ix.CompileM.compileEnvAux rawEnv condensed with
     | .error e =>
@@ -884,7 +884,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
         IO.println s!"[aux-gen-diff]     missingRust e.g. {sample missingRust}"
       if !missingLean.isEmpty then
         IO.println s!"[aux-gen-diff]     missingLean e.g. {sample missingLean}"
-      IO.println s!"[aux-gen-diff]   named meta mismatches (informational): constMeta={metaMism} original={originalMism} hints={hintsMism}"
+      IO.println s!"[aux-gen-diff]   named meta mismatches (gated — must be 0): constMeta={metaMism} original={originalMism} hints={hintsMism}"
       -- anonHints table (finalize_hints' per-address channel).
       let mut anonHintsMism : Nat := 0
       for (addr, h) in leanEnv.anonHints do
@@ -894,9 +894,9 @@ def run (env : Lean.Environment) : IO UInt32 := do
         if !leanEnv.anonHints.contains addr then
           anonHintsMism := anonHintsMism + 1
       IO.println s!"[aux-gen-diff]   anonHints mismatches: {anonHintsMism} (lean {leanEnv.anonHints.size} / rust {rustEnv.anonHints.size})"
-      -- Whole-env serialization: the A9 ladder's first rung. Both sides
-      -- serialize through the same canonical `Ixon.serEnv`; byte
-      -- equality here means the .ixe files would be identical.
+      -- Whole-env serialization. Both sides serialize through the same
+      -- canonical `Ixon.serEnv`; byte equality here means the .ixe
+      -- files would be identical.
       let serOk ← do
         match Ixon.serEnv leanEnv, Ixon.serEnv rustEnv with
         | .ok lb, .ok rb =>
@@ -918,9 +918,10 @@ def run (env : Lean.Environment) : IO UInt32 := do
         && anonHintsMism == 0 && serOk)
   IO.println s!"[aux-gen-diff] driver gate: {if driverOk then "PASS" else "FAIL"}"
 
-  -- A9: the PARALLEL aux-aware driver must produce the identical env
-  -- (wave workers + rustRef fail-fast — the InitStd gate vehicle).
-  IO.println "[aux-gen-diff] A9: parallel aux driver (compileEnvParallelAux)..."
+  -- Parallel-driver gate: the PARALLEL aux-aware driver must produce the
+  -- identical env (wave workers + rustRef fail-fast — the InitStd gate
+  -- vehicle).
+  IO.println "[aux-gen-diff] parallel aux driver (compileEnvParallelAux)..."
   let rustNameToAddr : Std.HashMap Ix.Name Address :=
     rustEnv.named.fold (init := {}) fun m n named => m.insert n named.addr
   let parOk ← do

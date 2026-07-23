@@ -975,7 +975,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if let Some(cleaned) = self.cleanup_nat_offset_major(&major_whnf)? {
       major_whnf = cleaned;
     }
-    // String literal → constructor form (M3, matching lean4lean
+    // String literal → constructor form (matching lean4lean
     // Reduce.lean:71 / C++ inductive.h:95). The expansion takes one
     // delta step past `String.ofList` (see `str_lit_to_ctor_app`) so the
     // native collapse rule in `try_reduce_string` can't fold it straight

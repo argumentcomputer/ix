@@ -14,10 +14,10 @@ Compiles Lean closures through the Rust compiler, writes the serialized env
 to a temp `.ixe`, and compares per-target verdicts: Rust kernel
 (`rsCheckAnonFFI`) vs pure-Lean `Ix.Tc.checkEnvAnon` over the same bytes.
 
-P7 scope: inductive/recursor validation is not yet ported (P8/P9) — Lean
-verdicts carrying the "not yet ported" stub are counted and skipped; every
-other verdict must agree (pass/fail; messages are not compared). Once P8/P9
-land, the skip set must go to zero and the gate below tightens.
+Lean verdicts carrying a "not yet ported" stub message are counted and
+skipped — a guard from the incremental port, now expected to count zero
+since inductive/recursor validation is in. Every other verdict must agree
+(pass/fail; messages are not compared).
 -/
 
 namespace Tests.Tc.AnonDiff

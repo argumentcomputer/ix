@@ -23,8 +23,8 @@
   - A fresh `AuxKernelCtx` per block instead of Rust's per-worker
     `KernelCtx` reused across blocks (cleared every `KENV_CLEAR_EVERY`).
     The kernel env is content-addressed, so reuse is a cache, not an
-    input — the A2–A7 dump gates verified byte-identical aux output
-    under fresh-per-block contexts.
+    input — the aux-gen-diff dump gates verified byte-identical aux
+    output under fresh-per-block contexts.
   - `stt.aux_perms` is not accumulated (its only consumer is the
     decompiler, which is out of scope); the per-block `AuxLayout` still
     flows through the tail into plan computation and the re-registered

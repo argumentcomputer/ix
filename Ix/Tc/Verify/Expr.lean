@@ -5,21 +5,22 @@ import Std.Data.HashMap.Lemmas
 /-!
 # Expr slice foundations: erasure, `CollisionFree`, and the intern tables
 
-M2 of plans/tc-verify-roadmap.md, first layer: the full collision-freedom
-formulation. M1's pilot (`KUniv.AddrFaithful`, Verify/Level.lean) is
+First layer of the Expr slice: the full collision-freedom
+formulation. The Level slice's pilot (`KUniv.AddrFaithful`, Verify/Level.lean) is
 pairwise — one hypothesis per compared pair. This module generalizes it to
 the composable *support set* form (`CollisionFreeOn`, `Set.InjOn`-style
 over bare predicates — no Mathlib here): the set in practice is an intern
 table's range extended by the candidates being interned, so support growth
 is monotone by construction and one hypothesis over a final support covers
-every intermediate step (risk R1's mitigation).
+every intermediate step — what keeps collision-freedom hypotheses
+composable.
 
-Interop finding (extends the M1/A3 outcome): classic proof files unfold
+Interop finding (extends the Level slice's outcome): classic proof files unfold
 not only `@[expose]` bodies of module-system production files but also
 NON-exposed `public` ones — `ByteArray.beq` (Ix/ByteArray.lean, no
 `@[expose]`) reduces to its `beqNoFFI` model by `rfl` here. That makes
 `LawfulBEq ByteArray` / `LawfulBEq Address` provable in-slice with zero
-production changes, retiring M1's "no `LawfulBEq ByteArray`" friction:
+production changes, retiring the Level slice's "no `LawfulBEq ByteArray`" friction:
 every `==` on `Address` converts to `=`, and the `Std.HashMap` lemma
 library fires for the Address-keyed intern tables.
 
@@ -74,7 +75,7 @@ theorem CollisionFreeOn.mono {key : α → Address} {erase : α → β}
 abbrev KUniv.CollisionFree (S : KUniv m → Prop) : Prop :=
   CollisionFreeOn KUniv.addr KUniv.eraseMeta S
 
-/-- The support-set form recovers M1's pairwise pilot on any two members. -/
+/-- The support-set form recovers the pairwise pilot on any two members. -/
 theorem KUniv.CollisionFree.addrFaithful {S : KUniv m → Prop}
     (h : KUniv.CollisionFree S) {u v : KUniv m} (hu : S u) (hv : S v) :
     u.AddrFaithful v :=
@@ -186,7 +187,7 @@ theorem eraseMeta_anon : ∀ e : KExpr .anon, e.eraseMeta = e
     the fast-path proofs use (mirrors `KUniv.beq_def`). -/
 theorem beq_def (a b : KExpr m) : (a == b) = (a.addr == b.addr) := rfl
 
-/-- Pairwise addr-faithfulness — the M1 pilot shape, for expressions:
+/-- Pairwise addr-faithfulness — the pilot shape from Verify/Level.lean, for expressions:
     concluding anything semantic from an `==` fast path is sound only if
     the compared pair doesn't collide. -/
 def AddrFaithful (a b : KExpr m) : Prop :=

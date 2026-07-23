@@ -3,9 +3,10 @@ import Ix.Tc.Verify.Monad
 import Ix.Tc.Verify.InstUniv
 
 /-!
-# The ghost state and the run invariant (M3, F4)
+# The ghost state and the run invariant
 
-The F4 divergence from upstream, made concrete: lean4lean's environment
+The environment-representation divergence from upstream, made concrete:
+lean4lean's environment
 is *reader context* (fixed per `M.WF` call), ours is **mutable state**
 (lazy ingress inserts constants mid-check). So the `TrEnv`-analog lives
 inside a Hoare invariant: a ghost `VState` (the Theory-side environment
@@ -14,7 +15,7 @@ plus the ghost name assignment) related to the concrete `TcState` by
 only ever *grows* the ghost state.
 
 `TcInv vs₀ s` — "some ghost state ≥ the baseline `vs₀` describes `s`" —
-is the concrete invariant `I` that M1's Hoare combinators (Verify/
+is the concrete invariant `I` that the Hoare combinators (Verify/
 Monad.lean, `I`-generic by design) get instantiated with from here on.
 Like the env translation it is parametric over the reference-safety
 level `safety` (the ghost venv holds the in-safety fragment; the v1
@@ -24,8 +25,8 @@ headline instantiates `.safe`).
 20-field `TcState`: the constant map (via `TrKEnv`) and the intern
 table (via `InternTable.WF`). Everything else — fuel, flags, scratch,
 statistics — is framed away by `of_env_eq`. Cache-coherence fields
-(whnf/infer/defEq entries valid) join the structure with their M5/M6
-consumers.
+(whnf/infer/defEq entries valid) join the structure with their
+consumers, the whnf/infer soundness layers.
 -/
 
 namespace Ix.Tc
@@ -58,7 +59,7 @@ variable (safety : Ix.DefinitionSafety)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The concrete state is described by the ghost state: the constant
     map translates (`TrKEnv`) and the intern table is well-formed.
-    Extension point for the M5/M6 cache-coherence conditions. -/
+    Extension point for the whnf/infer cache-coherence conditions. -/
 structure TcStateWF (s : TcState .anon) (vs : VState) : Prop where
   env : TrKEnv safety vs.nameOf trProj s.env vs.venv
   intern : s.env.intern.WF
@@ -85,8 +86,9 @@ theorem TcStateWF.of_env_eq {safety trProj} {s s' : TcState .anon}
 variable (safety : Ix.DefinitionSafety)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The run invariant: some ghost state above the baseline describes the
-    current concrete state. This is the `I` for M1's Hoare kernel from
-    M3 on — monotonicity in the baseline lets callers thread one
+    current concrete state. This is the `I` the Hoare kernel gets
+    instantiated with from here on — monotonicity in the baseline lets
+    callers thread one
     invariant through sub-calls that grow the environment. -/
 def TcInv (vs₀ : VState) (s : TcState .anon) : Prop :=
   ∃ vs, vs₀ ≤ vs ∧ TcStateWF safety trProj s vs
@@ -114,7 +116,7 @@ theorem TcInv.venv_wf {safety trProj} {vs₀ : VState}
     state above the baseline (`TrKEnv.find?` lifted to `TcInv`). This
     is the lemma that discharges the `TrKExprS.const` premises at
     `checkConst` read sites; its `hs` hypothesis is the
-    `checkNoUnsafeRefs` bridge (M6/M7). -/
+    `checkNoUnsafeRefs` bridge (at the infer/checkConst soundness layers). -/
 theorem TcInv.find? {safety trProj} {vs₀ : VState} {s : TcState .anon}
     (h : TcInv safety trProj vs₀ s) {j : KId .anon} {c : KConst .anon}
     (hg : s.env.get? j = some c) (hs : safety ≤ c.safety) :
@@ -189,7 +191,7 @@ theorem TcStateWF.insert_skip {safety trProj} {s : TcState .anon}
   obtain ⟨Q, henv⟩ := h.env
   exact ⟨⟨Q, .skip h1 h2 henv⟩, h.intern⟩
 
-/-! ### Validation: the M1 helpers under the real invariant -/
+/-! ### Validation: the Hoare helpers under the real invariant -/
 
 /-- `tick` preserves the run invariant (fuel is framed away). -/
 theorem TcM.tick.tcInv {safety trProj} {vs₀ : VState}
@@ -201,12 +203,13 @@ theorem TcM.tick.tcInv {safety trProj} {vs₀ : VState}
     let ⟨vs, hvs, hwf⟩ := h
     ⟨vs, hvs, hwf.of_env_eq rfl⟩
 
-/-- The first M2-walker × M3-invariant composition:
+/-- The first walker × run-invariant composition:
     `instantiateUnivParams` preserves the run invariant — its frame
-    moves only `env.intern`, whose well-formedness the M2 triple
-    carries through both outcomes. The caller supplies the pre-state
-    intern-support condition (`S` covers the table) exactly as in the
-    M2 theorem; `TcInv` supplies the intern `WF` half itself. -/
+    moves only `env.intern`, whose well-formedness the walker triple
+    (Verify/InstUniv.lean) carries through both outcomes. The caller
+    supplies the pre-state intern-support condition (`S` covers the
+    table) exactly as in that theorem; `TcInv` supplies the intern
+    `WF` half itself. -/
 theorem TcM.instantiateUnivParams.tcInv {safety trProj} {vs₀ : VState}
     {S : KExpr .anon → Prop} {us : Array (KUniv .anon)}
     {e : KExpr .anon} {s : TcState .anon}

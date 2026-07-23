@@ -4,7 +4,7 @@ public import LSpec
 public import Ix.Tc
 
 /-!
-Unit tests for `Ix.Tc` P1 foundations (Mode/Id/Level/Expr/Const):
+Unit tests for the `Ix.Tc` foundations (Mode/Id/Level/Expr/Const):
 
 - raw-node address parity with the existing `Ix.Level` wire constructors
   (shared tag bytes ⇒ shared preimages for closed levels)

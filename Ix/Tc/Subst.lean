@@ -389,7 +389,7 @@ def abstractFVars (body : KExpr m) (fvars : Array FVarId) :
 
 /-- Peel up to `n` outermost lambdas, counting from `i`: returns the exposed
     body and the final count. Structural rewrite of `cheapBetaReduce`'s
-    counting `while` (Tier A — the loop and the recursion exit on exactly the
+    counting `while` (the loop and the recursion exit on exactly the
     same states, so the traversal is unchanged). -/
 def peelLams (n : Nat) (head : KExpr m) (i : Nat) : KExpr m × Nat :=
   match head with

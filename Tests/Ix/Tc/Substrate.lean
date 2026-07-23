@@ -4,7 +4,7 @@ public import LSpec
 public import Ix.Tc
 
 /-!
-Unit tests for `Ix.Tc` P2 substrate (Equiv/Primitive/Env/Subst/Lctx/Monad):
+Unit tests for the `Ix.Tc` substrate (Equiv/Primitive/Env/Subst/Lctx/Monad):
 subst/lift/instantiateRev/abstractFVars round-trips (ported from subst.rs
 tests), cheap-beta cases, ctx-id chain determinism, suffix-aware cache keys,
 fuel/tick semantics under EStateM, union-find behavior, local-context

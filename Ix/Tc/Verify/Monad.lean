@@ -3,7 +3,7 @@ import Ix.Tc.Knot
 /-!
 # EStateM Hoare kernel for `TcM`
 
-A6 of plans/tc-verify-roadmap.md, M1 core form. `TcM m = EStateM (TcError m)
+The verification's Hoare kernel, core form. `TcM m = EStateM (TcError m)
 (TcState m)` is **non-backtracking**: state written before a throw survives
 `tryCatch` (cache inserts, consumed fuel — load-bearing Rust parity, see
 Ix/Tc/Monad.lean's module doc). So unlike lean4lean's `M.WF` (StateT over
@@ -12,10 +12,10 @@ constrains **both outcomes**: an invariant `I` holds on the post-state of
 success *and* error, `Q` on success, `E` on error (default trivial — most
 proofs never mention it; nontrivial `E` only at catch-and-continue sites).
 
-M1 scope: the invariant is a plain predicate over `TcState`. M3 upgrades
-this to the ghost `VState` (venv + cache views) with a monotone extension
-order; the combinator lemmas below carry over verbatim — only the state
-type enriches.
+Scope here: the invariant is a plain predicate over `TcState`.
+Verify/State.lean upgrades this to the ghost `VState` (venv + cache
+views) with a monotone extension order; the combinator lemmas below
+carry over verbatim — only the state type enriches.
 -/
 
 namespace Ix.Tc

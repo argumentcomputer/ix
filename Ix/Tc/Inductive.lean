@@ -4,7 +4,7 @@ public import Ix.Tc.Knot
 public import Ix.Tc.CanonicalCheck
 
 /-!
-Mirror: crates/kernel/src/inductive.rs (validation half — P8)
+Mirror: crates/kernel/src/inductive.rs
 
 Inductive schema validation:
 - S3/S3b: mutual peers must share the result universe, parameter count, and
@@ -24,11 +24,11 @@ Inductive schema validation:
 
 Also hosted here (check.rs helpers used by both dispatch and validation):
 well-scopedness validation, plus `getResultSortLevel`, `isLargeEliminator`,
-and `computeKTarget` (P9's recursor machinery consumes the latter two).
+and `computeKTarget` (the recursor machinery consumes the latter two).
 
-The recursor-generation trigger at the end of Rust's
-`check_inductive_member` is deferred to P9 (`Ix.Tc.Check` will wire
-`generateBlockRecursors` back in when it exists).
+As in Rust's `check_inductive_member`, member validation ends by
+triggering recursor generation for the block
+(`generateBlockRecursors`, below).
 -/
 
 public section
@@ -591,7 +591,7 @@ partial def checkInductiveBlockImpl (block : KId m) (members : Array (KId m)) :
     TcM.reset (m := m)
     checkCtorAgainstInductiveMemberImpl ctorId induct
 
--- ### Recursor generation (P9)
+-- ### Recursor generation
 
 /-- Shifted universe param args: `[param offset, …, param (lvls-1+offset)]`
     (offset 1 for large eliminators). -/
@@ -1838,7 +1838,7 @@ partial def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
   modify fun s => { s with env := { s.env with
     recursorCache := s.env.recursorCache.insert indBlockId merged } }
 
--- ### Recursor checking (P9)
+-- ### Recursor checking
 
 /-- Major inductive ids of all peer recursors in a block, sorted+deduped
     (Rust `BTreeSet<KId>` key). -/

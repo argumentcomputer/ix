@@ -3,7 +3,7 @@ import Ix.Tc.Const
 import Ix.Tc.Env
 
 /-!
-# Environment translation: `KEnv` ↔ `VEnv` (M3)
+# Environment translation: `KEnv` ↔ `VEnv`
 
 Upstream `TrEnv'` (Verify/Environment/Basic.lean:105) re-keyed for the
 content-addressed environment. The structural divergences:
@@ -28,15 +28,17 @@ content-addressed environment. The structural divergences:
   anon KEnvs). The venv holds exactly the in-safety fragment, so
   lookups translate only under a `safety ≤ c.safety` hypothesis —
   discharged at reference sites by the `checkNoUnsafeRefs`
-  (Check.lean:43-76) verification in M6/M7. The v1 headline
+  (Check.lean:43-76) verification at the infer/checkConst soundness
+  layers. The v1 headline
   instantiates `safety := .safe`.
-- **Remaining slice-2 debts** (roadmap): the `quot` step, the
+- **Remaining debts**: the `quot` step, the
   `thm`/`opaque` kind refinement of `defn` (it currently registers the
   defeq for every kind), and `AddKInduct` — an EMPTY inductive (exact
   upstream parity: their `AddInduct` is an empty `-- TODO`), so the
-  relation is uninhabited for envs containing inductives until M8
-  supplies the block translation. M5/M6 consume `TrKEnv` as a
-  hypothesis, so their lemmas are unaffected.
+  relation is uninhabited for envs containing inductives until the
+  inductive layer supplies the block translation. The whnf/infer
+  soundness layers consume `TrKEnv` as a hypothesis, so their lemmas
+  are unaffected.
 -/
 
 namespace Ix.DefinitionSafety
@@ -206,7 +208,7 @@ theorem TrKDefVal.mono {safety : Ix.DefinitionSafety}
 
 /-- Block-level inductive translation — upstream-parity STUB (their
     `AddInduct` is an empty inductive pending the `addInduct` spec).
-    M8 fills this; until then `TrKEnv'` is uninhabited for
+    The inductive layer fills this; until then `TrKEnv'` is uninhabited for
     environments containing inductives, exactly like upstream. -/
 inductive AddKInduct :
     HashMap (KId .anon) (KConst .anon) → VEnv → VInductDecl →

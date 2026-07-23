@@ -5,19 +5,18 @@ import Lean4Lean.Verify.Typing.Lemmas
 import Lean4Lean.Theory.Typing.Lemmas
 
 /-!
-# `TrKExprS` — the KExpr ↔ VExpr translation relation (M2)
+# `TrKExprS` — the KExpr ↔ VExpr translation relation
 
 The Ix.Tc restatement of lean4lean's `TrExprS`, rule-for-rule where the
-source languages agree, with the divergences owned deliberately
-(roadmap rule 1):
+source languages agree, with the divergences owned deliberately:
 
 - **Universes are total.** Anon-mode `KUniv` parameters are already de
-  Bruijn indices, so M1's `KUniv.toVLevel` is a total function; where
+  Bruijn indices, so `KUniv.toVLevel` (Verify/Level.lean) is a total function; where
   upstream threads `VLevel.ofLevel Us u = some u'` partiality (name
   lookup), our rules carry the explicit bound `(toVLevel u).WF uvars`.
 - **Constants resolve by address.** An anon `KId` is a bare content
   address; the `nameOf : Address → Option Lean.Name` parameter abstracts
-  the KEnv-side resolution that M3's `TrKEnv` will provide. The rule
+  the KEnv-side resolution that `TrKEnv` (Verify/Env.lean) provides. The rule
   then mirrors upstream: the resolved name must be a declared `env`
   constant with matching universe arity.
 - **Literals are first-class.** `KExpr` has `.nat`/`.str` constructors,
@@ -31,7 +30,7 @@ source languages agree, with the divergences owned deliberately
   the semantics, so the relation abstracts over
   `trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop`.
   Every lemma proven against the abstract parameter holds for whatever
-  definition the inductive layer (M8) supplies; the struct name
+  definition the inductive layer supplies; the struct name
   resolves from the `prj` node's `KId` through `nameOf`.
 - **No `mdata` rule.** Anon `KExpr` has no mdata constructor (metadata
   lives in `ExprInfo`); instead the relation is metadata-blind by
@@ -950,8 +949,8 @@ private theorem wf_weak0 {env : VEnv} (henv : env.Ordered) {U : Nat}
 /-- Every structural translate is well-typed (upstream `TrExprS.wf`).
     Two owned divergences surface as hypotheses: the literal rules are
     DIRECT (no `toConstructor` sub-derivation), so the typing of the
-    closed literal encodings enters as `hlit` (M8's primitive-env
-    invariant discharges it); the abstract `trProj` carries its own
+    closed literal encodings enters as `hlit` (the inductive layer's
+    primitive-env invariant discharges it); the abstract `trProj` carries its own
     WF-closure `htpwf` (upstream `TrProj.wf` is itself sorry). -/
 theorem TrKExprS.wf {env : VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
@@ -995,8 +994,8 @@ theorem TrKExprS.wf {env : VEnv} {uvars : Nat}
 variable (env : VEnv) (uvars : Nat) (nameOf : Address → Option Lean.Name)
     (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- Defeq-quotiented translation (upstream `TrExpr`): some structural
-    translate, defeq to the target. The home of the M5/M6 congruence
-    API — needed already for `instL`, whose level simplifications are
+    translate, defeq to the target. The home of the soundness layers'
+    congruence API — needed already for `instL`, whose level simplifications are
     only `≈`-sound. -/
 def TrKExpr {m : Mode} (Δ : KVLCtx) (e : KExpr m) (e' : VExpr) : Prop :=
   ∃ e₂, TrKExprS env uvars nameOf trProj Δ e e₂ ∧
@@ -1205,8 +1204,9 @@ end KVLCtx
 Upstream `TrExprS.uniq`/`TrExprS.defeqDFC` — the two big inductions the
 congruence API rides on. From here on the abstract `trProj`'s closure
 properties travel as one `TrProjOK` bundle (upstream threads them
-individually, each a sorry for its concrete `TrProj`; M8 discharges the
-bundle once against the real projection rule). Our `sort`/`const` and
+individually, each a sorry for its concrete `TrProj`; the inductive
+layer discharges the bundle once against the real projection rule).
+Our `sort`/`const` and
 literal cases are SIMPLER than upstream: the total level translation
 makes the two targets syntactically equal, so self-defeq suffices — no
 `ofLevel` confluence needed. -/

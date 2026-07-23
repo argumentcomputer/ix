@@ -5,10 +5,10 @@ public import Ix.Tc
 public import Tests.Ix.Tc.IxonFixtures
 
 /-!
-P4 whnf tests, run with throw-stub `Methods` (the infer/isDefEq back-edges
+Whnf tests, run with throw-stub `Methods`: the infer/isDefEq back-edges
 throw and are swallowed, so K-synthesis, struct-eta, and Nat-decidable
-construction are inert until the knot is tied — exactly the plan's P4
-acceptance scope). Assertions are by exact node address.
+construction are inert until the knot is tied — this suite covers
+reduction in isolation. Assertions are by exact node address.
 -/
 
 public section

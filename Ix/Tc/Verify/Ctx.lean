@@ -2,7 +2,7 @@ import Ix.Tc.Verify.State
 import Ix.Tc.Lctx
 
 /-!
-# Dual-context reconciliation: `CtxRecon` (M3)
+# Dual-context reconciliation: `CtxRecon`
 
 The checker keeps TWO context stacks that never record their
 interleaving: the de Bruijn side (`ctx`/`letVals` parallel arrays,
@@ -23,11 +23,11 @@ relates `lctx` to an ALL-fvar `VLCtx` (they prove `noBV`). Our
 per-declaration payload relation `TrKLocalDecl` is upstream
 `TrLocalDecl` re-keyed verbatim.
 
-Freshness design (recorded in the roadmap): the strictly-increasing
+Freshness design: the strictly-increasing
 fvar-id condition (`incr`) plus the id ceiling (`fresh`) live HERE,
 not in `TcStateWF` — they are positional in `lctx.decls` and monotone
 in `nextFVarId` (`.toNat` form; overflow bounds are the caller's
-obligation, M2 discipline), so they survive sub-call
+obligation, per walker discipline), so they survive sub-call
 truncate-restores, and `incr` yields the fvar `Nodup` directly
 (bypassing upstream's map-coherence route). `lctx.index` coherence is
 the `LocalContext.WF` inductive (upstream `LocalContext.WF` re-key);
@@ -37,7 +37,7 @@ its full `find?`-correspondence kit is the NEXT slice, alongside the
 Step lemmas are hypothesis-style (fields of the post-state given by
 equations) so they are robust to record-update spelling; the pop
 lemmas require the Δ-head to be the popped `(none, d)` entry — Δ is
-per-call ghost data, so M5/M6 walkers always know the head form at a
+per-call ghost data, so the soundness layers always know the head form at a
 pop site (popping under live newer fvars would be a scoping bug and is
 deliberately unrepresentable). `truncate`/`restoreDepth` step lemmas
 are deferred with the Tier-B rewrites (both are `while`-loops —
@@ -630,8 +630,9 @@ private theorem frame_of_read
 
 /-- `lookupVar`'s soundness core: the concrete array read plus the
     `lift (idx+1)` re-basing translates to the TYPE component of the
-    ghost `Δ.find?` — the `TrKExprS.var` discharge for M5/M6. The
-    overflow side conditions follow M2 discipline (caller's burden). -/
+    ghost `Δ.find?` — the `TrKExprS.var` discharge for the soundness
+    layers. The overflow side conditions follow walker discipline
+    (caller's burden). -/
 theorem lookupVar {idx : UInt64} {ty : KExpr .anon}
     {ov : Option (KExpr .anon)}
     (h : CtxRecon env uvars nameOf trProj s Δ)
@@ -692,7 +693,7 @@ theorem lookupLetVal {idx : UInt64} {ty val : KExpr .anon}
 /-- The fvar-side lookup bridge at the concrete state: a successful
     `lctx.find?` resolves in the ghost `Δ` with translated payloads at
     the declaration's tail suffix — `TrKExprS.fvar`'s premise plus the
-    re-basing data for M6's read-site analysis. -/
+    re-basing data for the infer layer's read-site analysis. -/
 theorem lctxFind? {fv : FVarId} {d : LocalDecl .anon}
     (h : CtxRecon env uvars nameOf trProj s Δ)
     (hf : s.lctx.find? fv = some d) :
@@ -874,7 +875,7 @@ theorem pop_let {ty' val' : VExpr}
     `openBinderWithFV`, `openLet` and `pushFVarDeclAnon` (all mint
     `fv = ⟨nextFVarId⟩`, push one declaration, and advance the
     counter — `hnext` is STRICT; its no-overflow discharge is the
-    caller's, M2 discipline). -/
+    caller's, per walker discipline). -/
 theorem openFVar {d : LocalDecl .anon} {vd : VLocalDecl}
     {deps : List FVarId}
     (h : CtxRecon env uvars nameOf trProj s Δ)

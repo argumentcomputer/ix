@@ -6,7 +6,7 @@ public import Tests.Ix.Tc.IxonFixtures
 public import Tests.Ix.Tc.IngressMetaTests
 
 /-!
-P7 tests: `checkConst` dispatch (axio/defn/theorem/quot paths),
+Constant-checking tests: `checkConst` dispatch (axio/defn/theorem/quot paths),
 well-scopedness validation, the safety lattice, defn-block coordination with
 failure replay, the lazy-fault driver end-to-end (`TcState.newLazyAnon`,
 `checkEnvAnon`), and the parallel driver (`Ix.Tc.ParCheck`:
@@ -280,7 +280,7 @@ def primVerifyTests : TestSeq :=
         | .error e => (e.splitOn "integrity").length > 1
         | _ => false) : Bool))
 
-/-! ### P8: inductive validation (A1–A4, S3, cidx) -/
+/-! ### Inductive validation (A1–A4, S3, cidx) -/
 
 def indPasses (block : Ixon.Constant) (extra : Ixon.Env := {}) : Bool := Id.run do
   let (ixon, blockAddr) := storeMutsWithProjs extra block
@@ -375,7 +375,7 @@ def inductiveTests : TestSeq :=
       failsContaining ixon (indcProjAddr blockAddr 1)
         "index mentions block inductive" : Bool))
 
-/-! ### P9: recursor stored-vs-generated validation -/
+/-! ### Recursor stored-vs-generated validation -/
 
 /-- Env with `B : Sort 1`, `B.mk : B`, and a recursor block whose single
     recursor is shaped exactly like the canonical generation for B:

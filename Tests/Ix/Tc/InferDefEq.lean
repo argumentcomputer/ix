@@ -6,7 +6,7 @@ public import Tests.Ix.Tc.IxonFixtures
 public import Tests.Ix.Tc.WhnfTests
 
 /-!
-P5/P6 tests: type inference and definitional equality with the real knot
+Type inference and definitional equality with the real knot
 (`Ix.Tc.methods`). Exercises the tiers that were inert under stub methods:
 K-like ctor synthesis in iota, proof irrelevance, lambda eta, struct eta,
 and unit-like equality.

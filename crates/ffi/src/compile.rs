@@ -1843,8 +1843,8 @@ fn aux_dump_block(
 /// FFI: deterministic text dump of nested-expansion/canonicity
 /// intermediates for every inductive SCC block. The pure-Lean port
 /// (`Tests.Compile.AuxGenDiff`) reproduces the same text from its own
-/// structures; the A2 gate is a line diff. See `aux_dump_block` for the
-/// format contract.
+/// structures; the expansion gate is a line diff. See `aux_dump_block`
+/// for the format contract.
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_aux_gen_dump_expand(
@@ -1895,9 +1895,9 @@ pub extern "C" fn rs_aux_gen_dump_expand(
 
 /// Render one generated patch as stable text lines. Expression bodies are
 /// content HASHES (both sides build via mirrored hash-maintaining
-/// constructors, so tree equality ⇔ hash equality — the A2 gate
+/// constructors, so tree equality ⇔ hash equality — the expansion gate
 /// established this for expansion outputs). Lines are kind-tagged so the
-/// Lean harness can widen its comparison scope per milestone
+/// Lean harness can widen its comparison scope generator by generator
 /// (rec → casesOn/recOn → below → brecOn).
 #[cfg(feature = "test-ffi")]
 fn aux_dump_patch(
@@ -2146,8 +2146,8 @@ fn aux_dump_usizes(xs: &[usize]) -> String {
 }
 
 /// FFI: deterministic text dump of the post-compile surgery plans,
-/// AuxLayouts, and synthetic `Muts` named entries — the A7 gate medium
-/// (orchestration parity). Lines:
+/// AuxLayouts, and synthetic `Muts` named entries — the orchestration
+/// parity gate's medium. Lines:
 ///   plan <name> params=<n> smotives=<n> sminors=<n> indices=<n>
 ///        mkeep=<bits> nkeep=<bits> m2c=<csv> n2c=<csv> inblock=<bits>
 ///        head=<target>@<pos>|none

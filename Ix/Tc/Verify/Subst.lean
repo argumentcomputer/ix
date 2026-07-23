@@ -4,10 +4,9 @@ import Ix.Tc.Verify.Expr
 /-!
 # Subst slice: `lift`/`subst` walkers against pure specs
 
-M2 of plans/tc-verify-roadmap.md, second layer: WalkM memo-soundness —
+Second layer of the Expr slice: WalkM memo-soundness —
 the `(addr, depth)`-keyed cache pattern proven in its simplest (pure
-StateM) home before it recurs in every kernel cache (risk R1's
-validation site).
+StateM) home before it recurs in every kernel cache.
 
 Scope decision (recorded): the walker theorems are stated for
 **`m = .anon`** — the v1 checking kernel's mode, where `internKey =
@@ -17,7 +16,7 @@ with the spec, not equality up to erasure. Meta-mode intern transparency
 is a separate `metaAddr`-collision obligation with no bearing on what
 the checker accepts; it stays out of scope until a consumer needs it.
 
-The composability answer to R1: each theorem's collision-freedom
+The composability answer: each theorem's collision-freedom
 hypothesis quantifies over an abstract support `S` that the caller can
 instantiate with the FINITE, spec-determined set
 `LiftReach ∪ (initial intern support)` — the walk only ever compares,
@@ -27,7 +26,7 @@ pigeonhole-false support) is ever required.
 
 Side conditions: `Constructed` (expressions built by the smart
 constructors, with the `var`-index no-wrap bound folded into the `var`
-rule) and M1-style UInt64 no-wrap bounds (`cutoff.toNat + e.size <
+rule) and UInt64 no-wrap bounds (`cutoff.toNat + e.size <
 UInt64.size` for the binder-descent `cutoff + 1`s). An in-memory
 expression cannot violate them; a 2⁶⁴-deep tower genuinely would.
 -/
@@ -218,7 +217,7 @@ def liftSpec (e : KExpr .anon) (shift cutoff : UInt64) : KExpr .anon :=
 
 /-- The `lbr ≤ cutoff` fast path is sound: a constructed expression with no
     loose indices ≥ `cutoff` lifts to itself. The size bound feeds the
-    binder-descent `cutoff + 1`s (M1-style no-wrap threading); the
+    binder-descent `cutoff + 1`s (no-wrap threading); the
     `var`-index bound comes from `Constructed`. -/
 theorem liftSpec_id {e : KExpr .anon} {shift cutoff : UInt64}
     (hcon : Constructed e)
@@ -352,7 +351,7 @@ cutoff `c` can read, store, or intern: the subterms at their visit
 cutoffs together with their spec images. It is FINITE and spec-determined
 — the caller of the master theorem instantiates the abstract support `S`
 with `LiftReach ∪ (initial intern support)`, which is what makes the
-collision-freedom hypothesis composable (R1): no closure under
+collision-freedom hypothesis composable: no closure under
 constructors (that would make `S` infinite and the hypothesis
 pigeonhole-false) is ever needed. -/
 
@@ -541,7 +540,7 @@ private theorem liftPost_store_self {S : KExpr .anon → Prop}
       (e, (it, sc.insert (e.addr, cutoff) e)) :=
   ⟨hspec.symm, hwf, hsup, hsc.insert hSe hspec.symm⟩
 
-/-- **WalkM memo-soundness for `lift`** — the R1 validation. Under
+/-- **WalkM memo-soundness for `lift`** — the pattern's validation site. Under
     collision-freedom of an abstract support `S` (instantiable with the
     finite `LiftReach ∪ intern-support` union), the memoized, interning
     walker computes exactly the pure spec, and every invariant survives
@@ -3459,8 +3458,8 @@ the `walkPost_jp` tuple.
 
 The theorem is stated against an arbitrary position map `pos`; the
 API-level lemma characterizing the `pos`-building fold in
-`abstractFVars` is deferred until a consumer (M5's whnf layer) fixes
-the shape it needs. -/
+`abstractFVars` is deferred until a consumer (the whnf soundness
+layer) fixes the shape it needs. -/
 
 private theorem bool_or_eq_false {a b : Bool} (h : (a || b) = false) :
     a = false ∧ b = false := by
@@ -4243,7 +4242,8 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
 
 /-! ### `Constructed`-closure of the pure specs
 
-Walker outputs feed later walker calls (M5/M6 chain `subst` after `lift`
+Walker outputs feed later walker calls (the whnf/infer soundness
+layers chain `subst` after `lift`
 after `instantiateRev` …) whose masters require `Constructed` inputs.
 Each spec preserves `Constructed` under a no-wrap budget for the indices
 it can create: an up-shifted `var` index is bounded through the input's

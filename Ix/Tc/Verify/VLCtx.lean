@@ -2,14 +2,15 @@ import Ix.Tc.Env
 import Lean4Lean.Verify.VLCtx
 
 /-!
-# `KVLCtx` — the translation-side local context (M2)
+# `KVLCtx` — the translation-side local context
 
 The Ix.Tc analogue of lean4lean's `VLCtx`: a list of local declarations,
 each optionally tagged with the `FVarId` that addresses it (plus that
-entry's fvar dependency list, used by the M3 well-formedness layer).
-Entries tagged `none` are addressable only by de Bruijn index — this is
-what lets ONE context type absorb the checker's dual context (de Bruijn
-`ctx`/`letVals` arrays + fvar `LocalContext`) in M3 (decision F6).
+entry's fvar dependency list, used by the well-formedness layer in
+Verify/Ctx.lean). Entries tagged `none` are addressable only by de
+Bruijn index — this is what lets ONE context type absorb the checker's
+dual context (de Bruijn `ctx`/`letVals` arrays + fvar `LocalContext`)
+in `CtxRecon` (Verify/Ctx.lean).
 
 Design notes:
 - `VLocalDecl` is reused from the upstream dep verbatim: it is

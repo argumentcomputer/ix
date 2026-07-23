@@ -17,7 +17,7 @@ Two modes:
   `tc-anon-diff` but at a much larger scale (hundreds of constants across
   Nat/List/Array/String/Fin/Option/Prod/Sum/Decidable/WellFounded/…).
 
-Acceptance (P10): zero verdict mismatches vs `rsCheckAnonFFI`.
+Acceptance: zero verdict mismatches vs `rsCheckAnonFFI`.
 -/
 
 namespace Tests.Tc.InitScale

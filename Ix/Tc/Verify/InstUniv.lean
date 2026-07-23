@@ -3,13 +3,13 @@ import Ix.Tc.Verify.Monad
 import Ix.Tc.Verify.Level
 
 /-!
-# `instantiateUnivParams` memo-soundness (M2)
+# `instantiateUnivParams` memo-soundness
 
 The last of the five expression walkers: universe-parameter substitution
 with per-call address-keyed memoization (`TcM.instUnivInner`,
 `Ix/Tc/Monad.lean`). Unlike the four `WalkM` siblings this one runs over
 `TcM` — `StateT (HashMap Address (KExpr m)) (TcM m)` — so its soundness
-statement is the first composition of the walker kit with the M1 EStateM
+statement is the first composition of the walker kit with the EStateM
 Hoare kernel (`TcM.WF`): the intern table lives inside `TcState.env`,
 results are interned via `TcM.intern`, and level substitution can THROW
 (`univParamOutOfRange`), so the run has genuine error outcomes.
@@ -887,7 +887,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
 
 /-! ### The Hoare-triple interface -/
 
-/-- **`instantiateUnivParams` correctness through the M1 Hoare kernel** —
+/-- **`instantiateUnivParams` correctness through the Hoare kernel** —
     the first walker × `TcM.WF` composition. From any state whose intern
     table is key-coherent with support inside a collision-free `S`
     covering the walk's reach set: on success the result is exactly the

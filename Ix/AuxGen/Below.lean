@@ -58,7 +58,7 @@ open Ix.CompileM (CompileM CompileError)
     shape `<head>.rec_N`. Returns `none` if the last component isn't a
     `rec_<n>` string.
 
-    Used by `generateBelowConstants` and (A6) `generateBreconConstants`
+    Used by `generateBelowConstants` and `generateBreconConstants`
     to derive source-indexed `below_N` / `brecOn_N` suffixes from the
     (already source-indexed) aux rec names produced by
     `generateAuxPatches`. -/

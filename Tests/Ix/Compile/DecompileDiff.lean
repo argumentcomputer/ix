@@ -1,5 +1,5 @@
 /-
-  Cross-compiler decompilation inventory — D0 of the decompiler port.
+  Cross-compiler decompilation inventory for the decompiler port.
 
   Rust-compiles the shared aux fixture corpus (`validateAuxClosure` — the
   same corpus the aux-gen-diff gates run on), decompiles the resulting
@@ -9,14 +9,16 @@
   Name/Level/Expr leaves, so this is Rust `check_decompile`'s
   `get_hash` comparison at full fidelity).
 
-  Failures are classified into the port's milestone buckets:
+  Failures are classified into buckets, each with its own gate (all
+  gates must be ZERO now that call-site replay and Pass-2 original
+  recovery are ported):
 
     - `callsite` errors — bodies with surgered call-site metadata the
-      pure-Lean decompiler cannot replay yet (D1);
+      pure-Lean decompiler failed to replay;
     - `aux` names (`isAuxGenSuffix`) — decompiled from the REGENERATED
-      canonical constants, expected to mismatch the source's Lean-native
-      originals until Pass 2 recovery lands (D3);
-    - `plain` mismatches / other errors — the D0 gate: must be ZERO.
+      canonical constants and restored to the source's Lean-native
+      originals by Pass-2 recovery;
+    - `plain` mismatches / other errors — plain decompile fidelity.
 
   Coverage is checked in both directions: decompiled-but-not-in-source
   (synthetic/alias artifacts) and in-source-but-not-decompiled (skipped
@@ -120,19 +122,19 @@ def run (env : Lean.Environment) : IO UInt32 := do
 
   IO.println ""
   IO.println s!"[decompile-diff] decompiled {decompiled.size} constants, {errors.size} errors"
-  IO.println s!"[decompile-diff]   plain: {plainMatch} matched, {plainMismatch.size} mismatched  (D0 gate — must be 0)"
+  IO.println s!"[decompile-diff]   plain: {plainMatch} matched, {plainMismatch.size} mismatched  (plain-fidelity gate — must be 0)"
   if !plainMismatch.isEmpty then
     IO.println s!"[decompile-diff]     mismatch e.g. {sample plainMismatch}"
-  IO.println s!"[decompile-diff]   aux-family: {auxMatch} matched, {auxMismatch.size} mismatched  (red until D3 original recovery)"
+  IO.println s!"[decompile-diff]   aux-family: {auxMatch} matched, {auxMismatch.size} mismatched  (aux-fidelity gate — must be 0)"
   if !auxMismatch.isEmpty then
     IO.println s!"[decompile-diff]     mismatch e.g. {sample auxMismatch}"
-  IO.println s!"[decompile-diff]   callsite errors: {callSiteErrs.size}  (D1 gate — must be 0)"
+  IO.println s!"[decompile-diff]   callsite errors: {callSiteErrs.size}  (callsite-replay gate — must be 0)"
   if !callSiteErrs.isEmpty then
     IO.println s!"[decompile-diff]     e.g. {sample callSiteErrs}"
-  IO.println s!"[decompile-diff]   aux errors: {auxErrs.size}  (red until D3)"
+  IO.println s!"[decompile-diff]   aux errors: {auxErrs.size}  (aux-fidelity gate — must be 0)"
   if !auxErrs.isEmpty then
     IO.println s!"[decompile-diff]     e.g. {sample auxErrs}"
-  IO.println s!"[decompile-diff]   other errors: {otherErrs.size}  (D0 gate — must be 0)"
+  IO.println s!"[decompile-diff]   other errors: {otherErrs.size}  (plain-fidelity gate — must be 0)"
   for (n, e) in otherErrs.toList.take 8 do
     IO.println s!"[decompile-diff]     {n.pretty}: {e.take 200}"
   IO.println s!"[decompile-diff]   decompiled-not-in-source: {notInSource.size}"
@@ -146,14 +148,14 @@ def run (env : Lean.Environment) : IO UInt32 := do
     && notInSource.isEmpty && missingPlain.isEmpty
     && callSiteErrs.isEmpty
   IO.println ""
-  IO.println s!"[decompile-diff] D0+D1 gate (plain fidelity + callsite replay): {if gateOk then "PASS" else "FAIL"}"
+  IO.println s!"[decompile-diff] plain fidelity + callsite replay gate: {if gateOk then "PASS" else "FAIL"}"
 
-  -- D2+D3 plan gate: the plans installed DURING Pass 2 (against the
-  -- evolving work env, exactly Rust's ordering) must now reproduce the
+  -- Plan gate: the plans installed DURING Pass 2 (against the
+  -- evolving work env, exactly Rust's ordering) must reproduce the
   -- FRESH compile-side plans in full — nested and collapsed-member
   -- lines included.
   IO.println ""
-  IO.println "[decompile-diff] D2+D3: Pass-2 plan parity..."
+  IO.println "[decompile-diff] Pass-2 plan parity..."
   let csPlans := p2st.callSitePlans
   let brecPlans := p2st.brecOnPlans
   let belowPlans := p2st.belowPlans
@@ -200,7 +202,7 @@ def run (env : Lean.Environment) : IO UInt32 := do
   for n in leanNames do
     if !rustNames.contains n then extraNames := extraNames.push n
   if !missingNames.isEmpty || !extraNames.isEmpty then
-    IO.println s!"[decompile-diff]   plan-name sets: {missingNames.size} missing (informational — `rec_N`/collapsed-member plans need D3's regenerated recursors in the work env), {extraNames.size} extra"
+    IO.println s!"[decompile-diff]   plan-name sets: {missingNames.size} missing (informational — `rec_N`/collapsed-member plans need Pass 2's regenerated recursors in the work env), {extraNames.size} extra"
     IO.println s!"[decompile-diff]   missing e.g. {", ".intercalate (missingNames.toList.take 10)}"
     if !extraNames.isEmpty then
       IO.println s!"[decompile-diff]   extra e.g. {", ".intercalate (extraNames.toList.take 10)}"
@@ -230,11 +232,11 @@ def run (env : Lean.Environment) : IO UInt32 := do
         IO.println s!"[decompile-diff]   fresh {pfx.trimAscii} line missing from Pass-2 plans: {l.take 200}"
     nDerivedExtra := nDerivedExtra + (mineL.length - rustL.length)
   let d2GateOk := d2PlansOk && derivedOk && rehydrateErrs.isEmpty
-  IO.println s!"[decompile-diff] D2+D3 plan gate: {if d2GateOk then "PASS" else "FAIL"} ({sortedCs.size} plans full-parity; {brecPlans.size} bplans, {belowPlans.size} wplans with {nDerivedExtra} evaporated-name extras)"
+  IO.println s!"[decompile-diff] Pass-2 plan gate: {if d2GateOk then "PASS" else "FAIL"} ({sortedCs.size} plans full-parity; {brecPlans.size} bplans, {belowPlans.size} wplans with {nDerivedExtra} evaporated-name extras)"
 
-  -- D3 gate composition: aux-family fidelity must now be total.
+  -- Aux-fidelity gate: aux-family fidelity must be total.
   let d3Ok := auxMismatch.isEmpty && auxErrs.isEmpty && missingAux.isEmpty
-  IO.println s!"[decompile-diff] D3 gate (aux fidelity): {if d3Ok then "PASS" else "FAIL"}"
+  IO.println s!"[decompile-diff] aux-fidelity gate: {if d3Ok then "PASS" else "FAIL"}"
 
   return if gateOk && d2GateOk && d3Ok then 0 else 1
 

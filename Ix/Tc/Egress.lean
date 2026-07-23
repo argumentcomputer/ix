@@ -25,7 +25,7 @@ and the egressed one are passed through `canonConstant`, which
   (typ, value | typ, rules | typ, ctors | member order for Muts), and
 - reduces universe trees through the kernel's simplifying `mkMax`/`mkIMax`
   constructors (ingress stores *reduced* levels; the reduction rules are
-  independently certified by the P1 level-algebra tests and the bit-exact
+  independently certified by the level-algebra unit tests and the bit-exact
   `tc-node-addr` harness, so sharing this one step with ingress does not
   let an ingress bug mask itself structurally).
 

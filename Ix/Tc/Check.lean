@@ -18,7 +18,7 @@ Constant checking dispatch:
   inductive machinery.
 
 The inductive and recursor member/block validators live in
-`Ix.Tc.Inductive` (P8/P9).
+`Ix.Tc.Inductive`.
 -/
 
 public section
@@ -292,7 +292,7 @@ partial def checkBlockBody (block : KId m) (requested : KId m) :
   | .inductive' => checkInductiveBlock block members
   | .recursor => checkRecursorBlock block members
 
--- ### Inductive machinery (P8: validation in Ix.Tc.Inductive; P9 stubs)
+-- ### Inductive machinery (validation and recursor generation in Ix.Tc.Inductive)
 
 partial def checkInductiveMember (id : KId m) : RecM m Unit :=
   checkInductiveMemberImpl id

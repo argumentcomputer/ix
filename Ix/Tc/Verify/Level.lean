@@ -5,8 +5,8 @@ import Lean4Lean.Theory.VLevel
 /-!
 # Level slice: `KUniv` soundness against `Lean4Lean.Theory.VLevel`
 
-M1 of plans/tc-verify-roadmap.md. This file is also the A3 interop spike.
-A3 outcome (2026-07-21): proof files are **classic** (no `module` header) —
+The first verification slice. This file is also the lean4lean-interop
+spike. Interop outcome (2026-07-21): proof files are **classic** (no `module` header) —
 a `module` file cannot import the classic-import lean4lean dep at all
 (`cannot import non-`module` … from `module``), while classic files import
 module-system `Ix.Tc` fine and see its `@[expose]` bodies. The sanity
@@ -73,7 +73,7 @@ def eraseMeta : KUniv m → KUniv .anon
 
 /-! Interop sanity checks: these unfold `@[expose]` bodies from
 `Ix.Tc.Level` (smart constructors through `Id.run`) against `VLevel`
-constructors from the classic-import dep — the A3 spike proper. -/
+constructors from the classic-import dep — the interop spike proper. -/
 
 theorem toVLevel_mkZero : (mkZero (m := m)).toVLevel = .zero := rfl
 
@@ -98,8 +98,8 @@ theorem KUniv.beq_def (u v : KUniv m) : (u == v) = (u.addr == v.addr) := rfl
     collide. Stated (a) with `==` on addresses — precisely the boolean the
     kernel tests, no `LawfulBEq ByteArray` needed — and (b) up to anon
     erasure, because names are never hashed (equal addresses can never
-    promise equal names). The general intern-table `Set.InjOn` form
-    arrives in M2. -/
+    promise equal names). The general intern-table `Set.InjOn` form is
+    `CollisionFreeOn` (Verify/Expr.lean). -/
 def KUniv.AddrFaithful (u v : KUniv m) : Prop :=
   (u.addr == v.addr) = true → u.eraseMeta = v.eraseMeta
 

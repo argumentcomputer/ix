@@ -7,8 +7,8 @@
   core stays a leaf; the driver passes need the aux-gen machinery):
 
     Pass 1    parallel per-constant decompile — `Ix.DecompileM`
-    Pass 1.5  Lean-faithful inductive flags (this module, D0)
-    Pass 2    aux-original recovery — D3, not yet ported
+    Pass 1.5  Lean-faithful inductive flags (this module)
+    Pass 2    aux regeneration + original recovery (this module, wave-parallel)
 
   Definitions live in namespace `Ix.DecompileM` so call sites read
   uniformly with the core (same layout convention as `Ix.CompileDriver`
@@ -74,7 +74,7 @@ def fixupInductiveFlags (decompiled : Std.HashMap Ix.Name Ix.ConstantInfo)
             isReflexive := flags.isReflexive })
   return .ok result
 
-/-! ## Plan rehydration — decompile.rs:3682-4087 (D2)
+/-! ## Plan rehydration — decompile.rs:3682-4087
 
 A DESERIALIZED env has empty in-memory plan state (`aux_perms` and the
 call-site plan maps were compile-time only). Pass 2's regeneration and
@@ -367,11 +367,12 @@ def installDecompileCallSitePlans
         newCs := newCs.push (name, plan)
   return ((callSitePlans, brecOnPlans, belowPlans), (newCs, newBrec, newBelow))
 
-/-! ## Pass 2 — aux regeneration + original recovery (D3)
+/-! ## Pass 2 — aux regeneration + original recovery
 
 Mirror of `decompile_block_aux_gen` (decompile.rs:4128-4972) and the
 Pass-2 loop of `decompile_env` (decompile.rs:5060-5330), on top of the
-roundtrip substrate (`Ix.DecompileRoundtrip`) and the A3-A6 generators.
+roundtrip substrate (`Ix.DecompileRoundtrip`) and the `Ix.AuxGen`
+generators (recursor/casesOn/recOn/below/brecOn).
 
 Deliberate deviations, none output-visible:
 - The debug-track congruence check (decompile.rs:4938-4952,

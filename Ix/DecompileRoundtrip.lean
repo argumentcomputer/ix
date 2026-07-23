@@ -1,6 +1,6 @@
 /-
   Ix.DecompileRoundtrip: compile→decompile roundtrip for binder-name
-  restoration (D3) — the Lean mirror of the roundtrip half of
+  restoration — the Lean mirror of the roundtrip half of
   `crates/compile/src/decompile.rs`:
 
     build_block_env            decompile.rs:2222
@@ -199,7 +199,7 @@ private def decompileIndcEntries (denv : DecompileEnv)
     uses `workEnv`; `orig_env` (the debug-track source env) is `origEnv?`.
     The trailing optional plan maps mirror `stt.call_site_plans` /
     `stt.brec_on_call_site_plans` / `stt.below_call_site_plans`, which in
-    Rust ride along inside `stt` (populated by the D2 plan rehydration);
+    Rust ride along inside `stt` (populated by plan rehydration);
     pass them when available so surgered call sites inside below-ctor
     types recompile byte-identically.
 

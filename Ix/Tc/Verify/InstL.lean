@@ -4,7 +4,7 @@ import Ix.Tc.Verify.InstUniv
 /-!
 # Universe instantiation tracks `VExpr.instL` through the translation
 
-The expression side of the M2→M3 seam: `KExpr.instUnivSpec` (the pure
+The expression side of the walker→run-invariant seam: `KExpr.instUnivSpec` (the pure
 spec of the production walker `TcM.instUnivInner`, Verify/InstUniv.lean)
 corresponds to the Theory's `VExpr.instL` — into the defeq QUOTIENT
 `TrKExpr`, because `substUniv` rebuilds levels with the simplifying

@@ -145,8 +145,8 @@ end Benchmarks
 
 section IxTcVerify
 
-/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec
-(see plans/tc-verify-roadmap.md). Non-default: `lake build ix` never
+/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
+Non-default: `lake build ix` never
 touches it, and `build-all` (the lint driver) skips it by name while it
 carries `sorry`s — `lake lint -- --wfail` would otherwise fail on the
 WIP proof frontier. Dev loop: `lake build IxTcVerify`. -/
