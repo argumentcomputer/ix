@@ -9,8 +9,6 @@ public import Ix.Benchmark.Report
 
 public section
 
-open Batteries (RBMap)
-
 /-!
 # Benchmarking library modeled after Criterion in Rust and Haskell
 

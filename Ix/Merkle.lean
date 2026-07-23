@@ -34,7 +34,6 @@
 
 module
 public import Ix.Address
-public import Ix.ByteArray
 
 public section
 

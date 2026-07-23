@@ -37,7 +37,7 @@ structure CompiledToplevel where
   bytecode : Bytecode.Toplevel
   nameMap : Std.HashMap Global Bytecode.FunIdx
 
-@[inline, expose]
+@[inline]
 def CompiledToplevel.getFuncIdx (ct : CompiledToplevel) (name : Lean.Name) :
     Option Bytecode.FunIdx :=
   ct.nameMap[Global.mk name]?
