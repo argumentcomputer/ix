@@ -536,7 +536,11 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
       for ctor in ind.ctors do
         overlay := overlay.insert ctor.cnst.name (.ctorInfo ctor)
 
-  -- One class per .below inductive (mutual.rs:1082-1088).
+  -- One class per .below inductive (mutual.rs:1082-1088). Class ORDER
+  -- is semantic: the joint generation bakes it into the motive layout
+  -- and rule concatenation of every recursor in the block. `belowIndcs`
+  -- arrives in canonical (sortConsts) order from the Phase-3 collection,
+  -- which is what makes the emitted bytes alpha-canonical.
   let classes : Array (Array Name) := belowIndcs.filterMap fun c =>
     match c with
     | .indc ind => some #[ind.name]
@@ -735,18 +739,51 @@ ctor counts for {perm.size} permutation entries")
 
   -- Phase 3: Compile .below inductives (Prop-level); all .below names
   -- first for the mutual `all` field (mutual.rs:784-816).
-  let allBelowNames : Array Name := Id.run do
-    let mut out : Array Name := #[]
+  --
+  -- CANONICAL ORDER (mirrors the mutual.rs Phase-3 collection): the
+  -- collection is sorted by the below inductives' own sortConsts
+  -- partition-refinement order — their canonical member order in the
+  -- Phase-3 block (≡ ascending anon projection index). Iterating
+  -- `patches` directly would leak Std.HashMap iteration order into
+  -- (1) the JOINT `.below.rec` generation in Phase 5, which bakes class
+  -- order (motive order + rule concatenation) into the recursor bytes,
+  -- and (2) the `all` field, which flows verbatim into per-name
+  -- metadata — a canonicity violation (alpha-identical families would
+  -- compile to name-dependent bytes; see the ZFA clone fixtures).
+  -- sortConsts only reads anon content and `all` is metadata, so
+  -- sorting preliminary MutConsts built with the unsorted name list is
+  -- sound; the final MutConsts are rebuilt in canonical order.
+  let belowRaw : Array BelowIndc := Id.run do
+    let mut out : Array BelowIndc := #[]
     for (_, p) in patches do
       if let .belowIndc bi := p then
-        out := out.push bi.name
+        out := out.push bi
     return out
-  let belowIndcs : Array MutConst := Id.run do
-    let mut out : Array MutConst := #[]
-    for (_, p) in patches do
-      if let .belowIndc bi := p then
-        out := out.push (belowIndcToMutConst bi allBelowNames)
-    return out
+  let belowRaw ←
+    if belowRaw.size ≤ 1 then pure belowRaw else do
+      let prelimNames := belowRaw.map (·.name)
+      let prelim := belowRaw.map (belowIndcToMutConst · prelimNames)
+      -- Fresh-cache sort, mirroring Rust's `BlockCache::default()`
+      -- (same save/clear/restore as compileAuxBlockWithRename).
+      let saved ← liftM (getBlockState : CompileM _)
+      liftM (modifyBlockState (fun c => { c with
+        exprCache := {}, univCache := {}, cmpCache := {},
+        refs := #[], refsIndex := {}, univs := #[], univsIndex := {},
+        arena := {} }) : CompileM _)
+      let sorted ← liftM (sortConsts prelim.toList : CompileM _)
+      liftM (modifyBlockState (fun c => { c with
+        exprCache := saved.exprCache, univCache := saved.univCache,
+        cmpCache := saved.cmpCache, refs := saved.refs,
+        refsIndex := saved.refsIndex, univs := saved.univs,
+        univsIndex := saved.univsIndex, arena := saved.arena }) : CompileM _)
+      let canonical : Array Name :=
+        sorted.toArray.flatMap fun cls => (cls.map (·.name)).toArray
+      pure <| belowRaw.qsort fun a b =>
+        ((canonical.findIdx? (· == a.name)).getD canonical.size)
+          < ((canonical.findIdx? (· == b.name)).getD canonical.size)
+  let allBelowNames : Array Name := belowRaw.map (·.name)
+  let belowIndcs : Array MutConst :=
+    belowRaw.map (belowIndcToMutConst · allBelowNames)
   if !belowIndcs.isEmpty then
     compileAuxBlockWithRename belowIndcs maps (some auxNameRename) none
     -- Note: constructor names are already correctly set by

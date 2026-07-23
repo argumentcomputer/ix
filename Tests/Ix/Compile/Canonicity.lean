@@ -559,4 +559,41 @@ end
 
 end ZFA5
 
+/-!
+Collapsed mutual Prop pair (below.rec canonical-order neighbor case).
+
+`P` and `Q` are alpha-IDENTICAL (symmetric mutual references), so the
+parent block collapses to ONE class. The interesting consequence for the
+below.rec canonical sort: collapse happens UPSTREAM — aux generation
+emits a single `.below` patch for the class representative (member names
+alias it), so `below_indcs` has length 1 and the joint below.rec
+generation never sees tied classes. True ties are structurally
+unreachable (alpha-identical belows would require alpha-identical
+parents, which collapse first). This pair + its clone pin that path:
+collapsed Prop parents through `.below`/`.below.rec` generation and
+aliasing, cross-namespace canonical.
+-/
+
+namespace PropCollapseA
+
+mutual
+  inductive P : Nat → Prop
+    | step : ∀ n, Q n → P n
+  inductive Q : Nat → Prop
+    | step : ∀ n, P n → Q n
+end
+
+end PropCollapseA
+
+namespace PropCollapseB
+
+mutual
+  inductive P : Nat → Prop
+    | step : ∀ n, Q n → P n
+  inductive Q : Nat → Prop
+    | step : ∀ n, P n → Q n
+end
+
+end PropCollapseB
+
 end Tests.Ix.Compile.Canonicity

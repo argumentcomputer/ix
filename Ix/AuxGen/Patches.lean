@@ -444,6 +444,22 @@ refusing to synthesize canonical-indexed _N names")
           if (← liftM (lookupConst? aliasName : CompileM _)).isSome then
             aliases := aliases.insert aliasName repName
 
+      -- Also `.below.rec` — the joint recursor over Prop-level `.below`
+      -- inductives. Generated in compile Phase 5
+      -- (`compileBelowRecursors`), NOT as a patch, so it can't gate on
+      -- patches membership; gate on the representative's `.below` being
+      -- a Prop-level below inductive. For a collapsed class the joint
+      -- generation emits only the representative's `.below.rec` —
+      -- without this alias the member's Lean-exported name never
+      -- resolves (regression fixture: Canonicity PropCollapseA/B).
+      -- Mirrors the aux_gen.rs `.below.rec` alias block.
+      let repBelow := Name.mkStr rep "below"
+      if let some (.belowIndc _) := patches.get? repBelow then
+        let repName := Name.mkStr repBelow "rec"
+        let aliasName := Name.mkStr (Name.mkStr aliasMem "below") "rec"
+        if (← liftM (lookupConst? aliasName : CompileM _)).isSome then
+          aliases := aliases.insert aliasName repName
+
       -- Note: _N suffixed names (rec_1, below_1, brecOn_1, etc.) are NOT
       -- aliased here. They always hang off all[0], not
       -- per-class-representative.
