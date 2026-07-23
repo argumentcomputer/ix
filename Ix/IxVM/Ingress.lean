@@ -23,28 +23,33 @@ def ingress := ⟦
   --     ch 3  Defn reducibility hint  key = defn.addr                  value = [hint_G]
   --
   --   Tier 3 — per-blob data:
-  --     ch 4  blob raw bytes          key = blob.addr                  value = raw bytes
+  --     ch 4  presence discriminator  key = addr                       value = [1=const,0=blob,2=absent-primitive]
+  --     ch 5  blob raw bytes          key = blob.addr                  value = raw bytes
   --
-  -- Soundness: EVERY channel is blake3-verified content — the bytes read
-  -- hash to the key. There is NO unverified discriminator channel. The
-  -- kind of an address (constant vs blob) is never declared out-of-band;
-  -- it is DERIVED from verified content:
-  --   * an address used via `Expr.Ref`/`Expr.Rec` is a constant → read ch 2;
-  --   * an address used via `Expr.Nat`/`Expr.Str` is a blob   → read ch 4;
-  -- the referencing expression node (itself in a blake3-verified constant)
-  -- is the discriminator. A constant is CHECKED iff it appears as a
-  -- `Const` in some checked constant's converted body (`check_reachable`
-  -- collects those and recurses), so "used as a constant" and "checked"
-  -- are the same content-derived set — a prover cannot supply a
-  -- constant's data on ch 2 while dodging its check.
+  -- IOBuffer reads are prover-chosen advice: `io_get_info` yields an
+  -- unconstrained (idx, len) and `#read_byte_stream` unconstrained bytes.
+  -- A read is only meaningful if something in-circuit PINS it.
   --
-  -- ch 3 (reducibility hint) is the sole non-content channel and is
-  -- semantically optional: it steers the WHNF unfold heuristic only;
-  -- def-eq is sound for any value.
+  --   ch 0/1/2/5 are pinned by content: `verify_bytes_against(bytes, key)`
+  --   forces the bytes to be the unique blake3 preimage of the key (ch 1
+  --   equivalently re-folds the merkle root and asserts it equals the key,
+  --   and ch 0's key is the public input).
   --
-  -- Primitives are always shipped on ch 2 when present in the env, so the
-  -- kernel never fabricates a reference to unshipped data — there is no
-  -- stub axiom and no "absent" signal.
+  --   ch 3 (hint) is NOT pinned, and needs no pin: it only orders which
+  --   side lazy-delta unfolds first. Delta preserves definitional equality
+  --   either way, so every value yields the same verdict — an adversarial
+  --   hint costs performance, never soundness.
+  --
+  --   ch 4 (presence) is NOT pinned either, so it must never be able to
+  --   select an UNSOUND outcome. It is locked so that both of its
+  --   reachable outcomes are safe: `load_verified_constant` asserts
+  --   presence == 1, and `check_reachable` skips only on 0/2. Hence the
+  --   prover's choice is between "checked AND loadable" (1) and "neither
+  --   checked nor loadable" (0/2) — there is no setting that yields
+  --   "usable but unchecked". Value 2 additionally stands for an absent
+  --   PRIMITIVE and is honored only for the hardcoded primitive addresses
+  --   (`get_ci`), whose content the prover cannot forge; the stub it
+  --   substitutes can only stall a reduction, never make a check pass.
   --
   -- LAZY INGRESS: there is no upfront closure enumeration. Constants load,
   -- verify, and convert on first dereference via `get_ci`, memoized per
@@ -54,6 +59,15 @@ def ingress := ⟦
   -- Load a constant from IOBuffer by address (ch 2), verify blake3,
   -- deserialize.
   fn load_verified_constant(addr: Addr) -> Constant {
+    -- Loading constant DATA requires the (unconstrained) presence byte to
+    -- say "constant". This locks data-resolution to the check decision:
+    -- `check_reachable` skips only on presence 0/2, so anything loaded
+    -- here (presence 1) is necessarily also checked. Without the lock a
+    -- prover could ship a real constant's bytes on ch 2 while marking it
+    -- ch 4 = 0/2 — using its data while its check is skipped. Mirrors the
+    -- old positional kernel, where one ch 4 read jointly decided "load as
+    -- const" and "add to the check list".
+    assert_eq!(load_presence(addr), 1);
     let raw = load(addr);
     let (idx, len) = io_get_info(2, raw);
     let bytes = #read_byte_stream(2, idx, len);
@@ -63,14 +77,48 @@ def ingress := ⟦
     constant
   }
 
-  -- Load a blob from IOBuffer by address (ch 4), verify blake3, return
+  -- 1 iff `addr` is one of the hardcoded kernel primitive addresses. Only
+  -- these may be replaced by the synthetic stub axiom when absent: the
+  -- prover cannot ship different content at a primitive address (blake3
+  -- binds it), so stubbing an absent primitive only ever stalls a
+  -- reduction — conservative. Any OTHER address marked absent would be a
+  -- real dependency the prover is trying to drop, and hard-fails.
+  fn addr_is_prim(addr: Addr) -> G {
+    addr_in_prim_list(addr, synthetic_primitive_addrs())
+  }
+
+  fn addr_in_prim_list(addr: Addr, xs: List‹Addr›) -> G {
+    match load(xs) {
+      ListNode.Nil => 0,
+      ListNode.Cons(a, rest) =>
+        match address_eq(addr, a) {
+          1 => 1,
+          0 => addr_in_prim_list(addr, rest),
+        },
+    }
+  }
+
+  -- Load a blob from IOBuffer by address (ch 5), verify blake3, return
   -- raw bytes.
   fn load_verified_blob(addr: Addr) -> ByteStream {
     let raw = load(addr);
-    let (idx, len) = io_get_info(4, raw);
-    let bytes = #read_byte_stream(4, idx, len);
+    let (idx, len) = io_get_info(5, raw);
+    let bytes = #read_byte_stream(5, idx, len);
     verify_bytes_against(bytes, raw);
     bytes
+  }
+
+  -- ch 4 presence discriminator for `addr`:
+  --   1 = constant (ch 2 bytes available)
+  --   0 = blob (ch 5 bytes available)
+  --   2 = absent primitive (no bytes; use the synthetic stub)
+  fn load_presence(addr: Addr) -> G {
+    let raw = load(addr);
+    let (idx, len) = io_get_info(4, raw);
+    let bytes = #read_byte_stream(4, idx, len);
+    match load(bytes) {
+      ListNode.Cons(b, _) => to_field(b),
+    }
   }
 
   -- Compare two 32-byte addresses for equality.
@@ -290,6 +338,12 @@ def ingress := ⟦
   }
 
   fn cref_norm_std(addr: Addr) -> (G, G) {
+    match load_presence(addr) {
+          2 =>
+            -- Absent primitive: identity is the address cell itself. Distinct
+            -- from every parsed-constant id (different store cell family).
+            (ptr_val(addr), 0),
+          _ =>
             let c = load_verified_constant(addr);
             match c {
               Constant.Mk(info, _, _, _) =>
@@ -322,7 +376,8 @@ def ingress := ⟦
                     },
                   _ => (ptr_val(store(c)), 0),
                 },
-            }
+            },
+    }
   }
 
   -- Identity compare between constant references, in three tiers:
@@ -439,16 +494,24 @@ def ingress := ⟦
   -- Per-ref conversion inputs of a block (or standalone) constant:
   -- refs become Std crefs (blob refs get a dead cref + their bytes).
   -- ch 4 discriminates const vs blob per ref address.
-  -- One `Std` cref per ref address. A ref that a body uses via
-  -- `Expr.Ref`/`Expr.Rec` is dereferenced as a constant (its cref → ch 2);
-  -- a ref used via `Expr.Nat`/`Expr.Str` is loaded as a blob on demand
-  -- from the same address (ch 4). The expression node — verified content —
-  -- decides which; no per-address discriminator is consulted.
-  fn build_ref_crefs(refs: List‹Addr›) -> List‹CRef› {
+  -- Per-ref conversion inputs: every ref gets a `Std` cref; refs the
+  -- presence byte marks as blobs (0) additionally get their bytes loaded
+  -- into the parallel `lit_blobs` slot for `Expr.Nat`/`Expr.Str`.
+  fn build_ref_crefs_and_blobs(refs: List‹Addr›)
+                               -> (List‹CRef›, List‹ByteStream›) {
     match load(refs) {
-      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Nil => (store(ListNode.Nil), store(ListNode.Nil)),
       ListNode.Cons(addr, rest) =>
-        store(ListNode.Cons(store(CRefNode.Std(addr)), build_ref_crefs(rest))),
+        let (rest_crefs, rest_blobs) = build_ref_crefs_and_blobs(rest);
+        match load_presence(addr) {
+          0 =>
+            let bs = load_verified_blob(addr);
+            (store(ListNode.Cons(store(CRefNode.Std(addr)), rest_crefs)),
+             store(ListNode.Cons(bs, rest_blobs))),
+          _ =>
+            (store(ListNode.Cons(store(CRefNode.Std(addr)), rest_crefs)),
+             store(ListNode.Cons(store(ListNode.Nil), rest_blobs))),
+        },
     }
   }
 
@@ -669,9 +732,9 @@ def ingress := ⟦
       Constant.Mk(info, sharing, refs, univs) =>
         match info {
           ConstantInfo.Muts(members) =>
-            let ref_crefs = build_ref_crefs(refs);
+            let (ref_crefs, lit_blobs) = build_ref_crefs_and_blobs(refs);
             let recur_crefs = build_recur_crefs(blk, members, 0);
-            ConvertCtx.Mk(sharing, ref_crefs, recur_crefs, univs),
+            ConvertCtx.Mk(sharing, ref_crefs, recur_crefs, lit_blobs, univs),
         },
     }
   }
@@ -721,6 +784,18 @@ def ingress := ⟦
     match load(cr) {
       CRefNode.Member(blk, off) => store(convert_member(blk, off)),
       CRefNode.Std(addr) =>
+        match load_presence(addr) {
+          2 =>
+            -- Absent marker honored ONLY for hardcoded primitive addresses:
+            -- the trivially-typechecking stub stands in for a primitive a
+            -- run never materializes (kernel-internal literal expansions
+            -- fabricate such refs). A non-primitive marked absent would be
+            -- a real dependency the prover is dropping: hard-fail. The stub
+            -- can only stall a reduction, never make a check pass.
+            assert_eq!(addr_is_prim(addr), 1);
+            store(KConstantInfo.Axiom(0,
+              store(KExprNode.Srt(store(KLevelNode.Zero))), 0)),
+          _ =>
         let c = load_verified_constant(addr);
         match c {
           Constant.Mk(info, sharing, refs, univs) =>
@@ -752,26 +827,27 @@ def ingress := ⟦
                       member_offset(block_members(blk), flatten_u64(idx)))),
                 },
               ConstantInfo.Defn(defn) =>
-                let ref_crefs = build_ref_crefs(refs);
+                let (ref_crefs, lit_blobs) = build_ref_crefs_and_blobs(refs);
                 let recur_crefs = store(ListNode.Cons(cr, store(ListNode.Nil)));
-                let ctx = ConvertCtx.Mk(sharing, ref_crefs, recur_crefs, univs);
+                let ctx = ConvertCtx.Mk(sharing, ref_crefs, recur_crefs, lit_blobs, univs);
                 let hint = #load_constant_hint(addr);
                 store(convert_definition(defn, ctx, hint)),
               ConstantInfo.Axio(axio) =>
-                let ref_crefs = build_ref_crefs(refs);
-                let ctx = ConvertCtx.Mk(sharing, ref_crefs, store(ListNode.Nil), univs);
+                let (ref_crefs, lit_blobs) = build_ref_crefs_and_blobs(refs);
+                let ctx = ConvertCtx.Mk(sharing, ref_crefs, store(ListNode.Nil), lit_blobs, univs);
                 store(convert_axiom(axio, ctx)),
               ConstantInfo.Quot(quot) =>
-                let ref_crefs = build_ref_crefs(refs);
-                let ctx = ConvertCtx.Mk(sharing, ref_crefs, store(ListNode.Nil), univs);
+                let (ref_crefs, lit_blobs) = build_ref_crefs_and_blobs(refs);
+                let ctx = ConvertCtx.Mk(sharing, ref_crefs, store(ListNode.Nil), lit_blobs, univs);
                 store(convert_quotient(quot, ctx)),
               ConstantInfo.Recr(recr) =>
-                let ref_crefs = build_ref_crefs(refs);
+                let (ref_crefs, lit_blobs) = build_ref_crefs_and_blobs(refs);
                 let recur_crefs = store(ListNode.Cons(cr, store(ListNode.Nil)));
-                let ctx = ConvertCtx.Mk(sharing, ref_crefs, recur_crefs, univs);
+                let ctx = ConvertCtx.Mk(sharing, ref_crefs, recur_crefs, lit_blobs, univs);
                 let (rule_crefs, block_addr) = aux_recr_ctor_crefs(recr, refs, sharing);
                 store(convert_recursor(recr, ctx, rule_crefs, block_addr)),
             },
+        },
         },
     }
   }
@@ -780,111 +856,31 @@ def ingress := ⟦
   -- worklist (every constant whose data could influence this constant's
   -- check is a transitive wire ref). Projections contribute their block's
   -- refs too (block members' deps live on the wrapper).
-  -- The check-recursion set of the constant at `addr`: the external
-  -- constant addresses it (or, for a block/projection, its whole block)
-  -- DEREFERENCES — i.e. the `Std` addresses of the `Const`/`Proj` nodes in
-  -- its converted body. This is content-derived: blob literals convert to
-  -- `Lit` (never collected, so a blob address is never recursed into — it
-  -- has no ch 2 entry and would hard-fail), and intra-block peers are
-  -- `Member` refs (checked with their block, not re-recursed). The claim
-  -- layer recurses `check_reachable` over exactly this set, so "a
-  -- constant's data is dereferenced" and "that constant is checked" are
-  -- the same set — there is no way to supply a constant's ch 2 bytes and
-  -- dodge its check.
-  -- Every collector below is a DIRECT (non-accumulator) recursion keyed on
-  -- its node alone, and combines children with the (itself memoized)
-  -- `list_concat`. Aiur memoizes on the argument tuple, so a shared
-  -- subexpression's const-set is computed once and reused everywhere it
-  -- occurs — an accumulator would thread a unique `acc` through every memo
-  -- key and defeat that sharing entirely (same rule as `collect_spine`).
+  --
+  -- `refs` is used directly — it is already the parsed, deduplicated ref
+  -- list of a blake3-verified constant, so obtaining it is free. Deriving
+  -- the set by walking the converted body instead was tried and is
+  -- catastrophic in Aiur's cost model: memoization keys on the whole
+  -- argument tuple, so a per-node set-union creates a fresh memo entry per
+  -- intermediate list (and per membership probe), which explodes on shared
+  -- expression DAGs — measured 159 GiB (concat) / 82 GiB (dedup-union) on
+  -- `Nat.add_comm`, versus ~1.5 s here. Blob refs among `refs` are skipped
+  -- by `check_reachable` via the presence byte, whose two outcomes are both
+  -- sound (see the channel table at the top of this file).
   fn const_check_deps(addr: Addr) -> List‹Addr› {
     let c = load_verified_constant(addr);
     match c {
-      Constant.Mk(info, _, _, _) =>
-        match info {
-          ConstantInfo.Muts(members) =>
-            collect_block_const_addrs(addr, block_kernel_size(members), 0),
-          _ =>
-            let blk = get_proj_block_addr(info);
-            match address_eq(blk, store([0u8; 32])) {
-              1 =>
-                collect_kci_const_addrs(load(get_ci(store(CRefNode.Std(addr))))),
-              0 =>
-                collect_block_const_addrs(blk,
-                                          block_kernel_size(block_members(blk)), 0),
+      Constant.Mk(info, _, refs, _) =>
+        let blk = get_proj_block_addr(info);
+        match address_eq(blk, store([0u8; 32])) {
+          1 => refs,
+          0 =>
+            let bc = load_verified_constant(blk);
+            match bc {
+              Constant.Mk(_, _, block_refs, _) =>
+                store(ListNode.Cons(blk, list_concat(refs, block_refs))),
             },
         },
-    }
-  }
-
-  fn collect_block_const_addrs(blk: Addr, size: G, off: G) -> List‹Addr› {
-    match size - off {
-      0 => store(ListNode.Nil),
-      _ =>
-        list_concat(
-          collect_kci_const_addrs(load(get_ci(store(CRefNode.Member(blk, off))))),
-          collect_block_const_addrs(blk, size, off + 1)),
-    }
-  }
-
-  fn collect_kci_const_addrs(kci: KConstantInfo) -> List‹Addr› {
-    match kci {
-      KConstantInfo.Axiom(_, ty, _) => collect_expr_const_addrs(ty),
-      KConstantInfo.Defn(_, ty, val, _, _) =>
-        list_concat(collect_expr_const_addrs(ty), collect_expr_const_addrs(val)),
-      KConstantInfo.Thm(_, ty, val) =>
-        list_concat(collect_expr_const_addrs(ty), collect_expr_const_addrs(val)),
-      KConstantInfo.Opaque(_, ty, val, _) =>
-        list_concat(collect_expr_const_addrs(ty), collect_expr_const_addrs(val)),
-      KConstantInfo.Quot(_, ty, _) => collect_expr_const_addrs(ty),
-      KConstantInfo.Induct(_, ty, _, _, _, _, _) => collect_expr_const_addrs(ty),
-      KConstantInfo.Ctor(_, ty, _, _, _, _, _) => collect_expr_const_addrs(ty),
-      KConstantInfo.Rec(_, ty, _, _, _, _, rules, _, _, _) =>
-        list_concat(collect_expr_const_addrs(ty), collect_rules_const_addrs(rules)),
-    }
-  }
-
-  fn collect_rules_const_addrs(rules: List‹KRecRule›) -> List‹Addr› {
-    match load(rules) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(r, rest) =>
-        match r {
-          KRecRule.Mk(ctor_cref, _, rhs) =>
-            list_concat(collect_cref_addr(ctor_cref),
-              list_concat(collect_expr_const_addrs(rhs),
-                          collect_rules_const_addrs(rest))),
-        },
-    }
-  }
-
-  fn collect_cref_addr(cref: CRef) -> List‹Addr› {
-    match load(cref) {
-      CRefNode.Std(a) =>
-        match address_eq(a, store([0u8; 32])) {
-          1 => store(ListNode.Nil),
-          0 => store(ListNode.Cons(a, store(ListNode.Nil))),
-        },
-      CRefNode.Member(_, _) => store(ListNode.Nil),
-    }
-  }
-
-  fn collect_expr_const_addrs(e: KExpr) -> List‹Addr› {
-    match load(e) {
-      KExprNode.BVar(_) => store(ListNode.Nil),
-      KExprNode.Srt(_) => store(ListNode.Nil),
-      KExprNode.Lit(_) => store(ListNode.Nil),
-      KExprNode.Const(cref, _) => collect_cref_addr(cref),
-      KExprNode.App(f, x) =>
-        list_concat(collect_expr_const_addrs(f), collect_expr_const_addrs(x)),
-      KExprNode.Lam(t, b) =>
-        list_concat(collect_expr_const_addrs(t), collect_expr_const_addrs(b)),
-      KExprNode.Forall(t, b) =>
-        list_concat(collect_expr_const_addrs(t), collect_expr_const_addrs(b)),
-      KExprNode.Let(t, v, b) =>
-        list_concat(collect_expr_const_addrs(t),
-          list_concat(collect_expr_const_addrs(v), collect_expr_const_addrs(b))),
-      KExprNode.Proj(cref, _, x) =>
-        list_concat(collect_cref_addr(cref), collect_expr_const_addrs(x)),
     }
   }
 

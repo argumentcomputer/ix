@@ -1820,25 +1820,32 @@ def inductive_check := ⟦
     match load(refs) {
       ListNode.Nil => null_cref(),
       ListNode.Cons(a, rest) =>
-        -- `a` is a collected const address (no blobs), so get_ci is safe.
-        let cand = store(CRefNode.Std(a));
-        match rec_candidate_matches(cand, target_ind_idx,
-                                    want_spec_check, target_sp, own) {
-          1 => cand,
-          0 => find_rec_in_refs(target_ind_idx, want_spec_check,
+        -- Only constant refs can be recursors; skip blobs/absent prims
+        -- without triggering a load on non-const data.
+        match load_presence(a) {
+          1 =>
+            let cand = store(CRefNode.Std(a));
+            match rec_candidate_matches(cand, target_ind_idx,
+                                        want_spec_check, target_sp, own) {
+              1 => cand,
+              0 => find_rec_in_refs(target_ind_idx, want_spec_check,
+                                    target_sp, own, rest),
+            },
+          _ => find_rec_in_refs(target_ind_idx, want_spec_check,
                                 target_sp, own, rest),
         },
     }
   }
 
-  -- The external CONSTANT addresses a recursor-search should scan for a
-  -- checked constant (the `Const(Std _)` refs of its converted body — no
-  -- blobs, so each is safely loadable). Block members scan their whole
-  -- block's const-refs; standalone constants their own.
+  -- The wire refs a recursor-search should scan for a checked constant:
+  -- block members search their block's refs; standalone constants their
+  -- own deps (which for projections chase the block's refs too).
   fn rec_search_refs(cr: CRef) -> List‹Addr› {
     match load(cr) {
       CRefNode.Member(blk, _) =>
-        collect_block_const_addrs(blk, block_kernel_size(block_members(blk)), 0),
+        match load_verified_constant(blk) {
+          Constant.Mk(_, _, refs, _) => refs,
+        },
       CRefNode.Std(addr) => const_check_deps(addr),
     }
   }

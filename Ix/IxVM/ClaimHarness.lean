@@ -173,9 +173,9 @@ def kernelPrimAddrs : Array Address :=
 
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
     `ioBuffer`. See the channel table above. Always finishes with the
-    primitive-presence pass: every hardcoded primitive address outside
-    the kept set gets an absence marker (ch 4 = 2) so the kernel
-    substitutes its stub axiom instead of failing on a missing IO key. -/
+    primitive-presence pass: every hardcoded primitive address outside the
+    kept set gets an absence marker (ch 4 = 2) so the kernel substitutes
+    its stub axiom instead of failing on a missing IO key. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
@@ -185,27 +185,27 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     -- serialized form the lazy entry holds — no materialization needed.
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 2 key (lc.rawBytes.data.map .ofUInt8)
+    -- Discriminator: this addr resolves to a constant.
+    ioBuffer := ioBuffer.extend 4 key #[.ofNat 1]
   for (addr, rawBytes) in ixonEnv.blobs do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend 4 key (rawBytes.data.map fun b => .ofNat b.toNat)
+    ioBuffer := ioBuffer.extend 5 key (rawBytes.data.map fun b => .ofNat b.toNat)
+    -- Discriminator: this addr resolves to a blob.
+    ioBuffer := ioBuffer.extend 4 key #[.ofNat 0]
   for (addr, hints) in ixonEnv.anonHints do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
-  -- Ship every env-present primitive on ch 2 even if outside the closure:
-  -- the kernel fabricates references to primitives during literal
-  -- reduction that no shipped constant lists as a ref. A primitive's
-  -- address is its content hash, so the bytes are the genuine Lean
-  -- primitive (trusted, blake3-bound). Primitives absent from the env are
-  -- never fabricated, so they are simply skipped.
+  -- Out-of-closure primitives get the ABSENCE marker (2), never real
+  -- bytes: data outside the closure is neither checked nor declared as an
+  -- assumption, so shipping it would widen the claim's trust surface. The
+  -- stub the kernel substitutes only ever stalls a reduction.
   for addr in kernelPrimAddrs do
-    if keep addr && ixonEnv.consts.contains addr then continue
-    match ixonEnv.consts[addr]? with
-    | some lc =>
-      let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-      ioBuffer := ioBuffer.extend 2 key (lc.rawBytes.data.map .ofUInt8)
-    | none => pure ()
+    if keep addr && (ixonEnv.consts.contains addr || ixonEnv.blobs.contains addr) then
+      continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend 4 key #[.ofNat 2]
   return ioBuffer
 
 -- ============================================================================

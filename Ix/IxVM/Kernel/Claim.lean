@@ -791,14 +791,20 @@ def claim := ⟦
   -- ============================================================================
   fn check_reachable(addr: Addr, asm_map: &RBTreeMap‹G›) {
     match rbtree_map_lookup_or_default(ptr_val(addr), load(asm_map), 0) {
-      -- Not assumed: check this constant, then recurse over exactly the
-      -- constants it dereferences (`const_check_deps` = the `Const(Std _)`
-      -- addresses in its converted body). Every recursion target is a real
-      -- constant (blobs are never collected), so no presence gate is
-      -- needed and none exists. Memoized per (addr, asm_map).
       0 =>
-        check_one(addr);
-        check_deps(const_check_deps(addr), asm_map),
+        -- Presence 0 (blob) / 2 (absent primitive): nothing to check. The
+        -- byte is prover-chosen, but both outcomes are sound — skipping
+        -- here is paired with `load_verified_constant`'s
+        -- `presence == 1` assert, so an address skipped here can never
+        -- have its constant data loaded anywhere (see the channel table
+        -- in Ingress.lean). Memoized per (addr, asm_map).
+        match load_presence(addr) {
+          0 => (),
+          2 => (),
+          _ =>
+            check_one(addr);
+            check_deps(const_check_deps(addr), asm_map),
+        },
       _ => (),
     }
   }

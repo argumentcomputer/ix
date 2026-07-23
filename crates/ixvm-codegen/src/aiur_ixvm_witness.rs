@@ -14,12 +14,13 @@
 //! | Ctrl  | 1  | assumption tree bytes    | tree.root      | bytes     |
 //! | Const | 2  | constant wire bytes      | const addr     | bytes     |
 //! | Const | 3  | Defn reducibility hint   | Defn addr      | single G  |
-//! | Blob  | 4  | blob raw bytes           | blob addr      | bytes     |
+//! | Blob  | 4  | blob discriminator       | addr           | one byte  |
+//! | Blob  | 5  | blob raw bytes           | blob addr      | bytes     |
 //!
-//! Every channel is blake3-verified content — there is no discriminator
-//! channel. Whether an address is a constant (ch 2) or a blob (ch 4) is
-//! derived kernel-side from how the referencing expression uses it, not
-//! declared out of band.
+//! ch 0/1/2/5 are pinned by content (blake3 against the key). ch 3 (hint)
+//! and ch 4 (presence) are prover-chosen; the kernel is written so that
+//! every value either of them can take leads to a sound outcome — see the
+//! channel table in `Ix/IxVM/Ingress.lean`.
 //!
 //! # Parallelism
 //!
@@ -127,15 +128,22 @@ fn closure_from_set(env: &Env, owned: &[Address]) -> FxHashSet<Address> {
 struct ChannelEntries {
   /// ch 2 const entries: `(key, bytes-as-G)`.
   consts: Vec<(Vec<G>, Vec<G>)>,
-  /// ch 4 blob entries: `(key, bytes-as-G)`.
+  /// ch 5 blob entries: `(key, bytes-as-G)`.
   blobs: Vec<(Vec<G>, Vec<G>)>,
+  /// ch 4 discriminator: `(key, [g])` — `g` is `1` for const, `0` for blob.
+  discs: Vec<(Vec<G>, G)>,
   /// ch 3 Defn hint: `(key, hint-G)`.
   hints: Vec<(Vec<G>, G)>,
 }
 
 impl ChannelEntries {
   fn new() -> Self {
-    Self { consts: Vec::new(), blobs: Vec::new(), hints: Vec::new() }
+    Self {
+      consts: Vec::new(),
+      blobs: Vec::new(),
+      discs: Vec::new(),
+      hints: Vec::new(),
+    }
   }
 }
 
@@ -149,17 +157,16 @@ fn add_entries_parallel(
 ) {
   let ch_const = G::from_u8(2);
   let ch_hint = G::from_u8(3);
-  let ch_blob = G::from_u8(4);
+  let ch_disc = G::from_u8(4);
+  let ch_blob = G::from_u8(5);
+  let g_zero = G::ZERO;
+  let g_one = G::ONE;
 
   // Pull the set of addrs we'll touch as a Vec for parallel iteration.
   let closure_vec: Vec<Address> = closure.iter().cloned().collect();
 
   // Phase A: parallel byte conversion per closure addr. Each thread
-  // produces its own partial `ChannelEntries`. Const vs blob is decided by
-  // which map the address lives in — but the kernel does NOT read a
-  // discriminator: it resolves an address as a constant (ch 2) or blob
-  // (ch 4) purely from how the referencing expression uses it. There is
-  // no discriminator channel.
+  // produces its own partial `ChannelEntries`.
   let partials: Vec<ChannelEntries> = closure_vec
     .par_chunks(256)
     .map(|chunk| {
@@ -167,11 +174,13 @@ fn add_entries_parallel(
       for addr in chunk {
         let key = addr_key(addr);
         if let Some(lc) = env.consts.get(addr) {
-          p.consts.push((key, bytes_to_g(lc.raw_bytes())));
+          p.consts.push((key.clone(), bytes_to_g(lc.raw_bytes())));
+          p.discs.push((key, g_one));
           continue;
         }
         if let Some(blob) = env.blobs.get(addr) {
-          p.blobs.push((key, bytes_to_g(blob.value())));
+          p.blobs.push((key.clone(), bytes_to_g(blob.value())));
+          p.discs.push((key, g_zero));
         }
       }
       for addr in chunk {
@@ -191,38 +200,36 @@ fn add_entries_parallel(
     for (key, data) in p.blobs {
       extend(io, ch_blob, key, data);
     }
+    for (key, disc) in p.discs {
+      extend(io, ch_disc, key, vec![disc]);
+    }
     for (key, hint) in p.hints {
       extend(io, ch_hint, key, vec![hint]);
     }
   }
 }
 
-/// Ship every hardcoded kernel primitive that exists in the env on ch 2,
-/// even when it is outside the shipped closure. The kernel fabricates
-/// references to primitives during literal reduction (e.g. `Nat.succ`
-/// from a Nat literal) that no shipped constant lists as a ref; without
-/// this those `get_ci` loads would hard-fault. A primitive's address is
-/// its blake3 content hash, so the shipped bytes are necessarily the
-/// genuine Lean primitive — already part of the kernel's trusted set —
-/// and a fabricated-only primitive is used but not check-recursed
-/// (matching the old kernel's stub, minus the stub's reduction stalls).
-/// Primitives that appear in the closure are already shipped above; this
-/// only adds the missing ones. A primitive not present in the env is
-/// never fabricated (its literals can't occur), so it is simply skipped.
-fn add_prim_const_entries(
-  env: &Env,
+/// Seed ch 4 absence markers (value 2) for every hardcoded kernel
+/// primitive address outside the shipped closure, so the kernel
+/// substitutes its trivial stub axiom instead of hard-faulting on a
+/// missing IO key when an internal expansion fabricates a reference to
+/// one. Never ships real bytes for out-of-closure primitives: data
+/// outside the closure is neither checked nor declared as an assumption,
+/// so using it would widen the claim's trust surface. The stub only ever
+/// STALLS a reduction — conservative, and exactly the old positional
+/// kernel's behavior for primitives absent from the closure.
+fn add_prim_presence_entries(
+  _env: &Env,
   closure: &FxHashSet<Address>,
   io: &mut IOBuffer,
 ) {
-  let ch_const = G::from_u8(2);
+  let ch_disc = G::from_u8(4);
   for (_name, hex) in ix_kernel::primitive::PrimAddrs::lean_parity_table() {
     let Some(addr) = Address::from_hex(&hex) else { continue };
     if closure.contains(&addr) {
       continue;
     }
-    if let Some(lc) = env.consts.get(&addr) {
-      extend(io, ch_const, addr_key(&addr), bytes_to_g(lc.raw_bytes()));
-    }
+    extend(io, ch_disc, addr_key(&addr), vec![G::from_u8(2)]);
   }
 }
 
@@ -256,7 +263,7 @@ pub fn build_claim_check_witness(
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   // ch 2/3/4/5: per-const/blob/hint entries — parallel byte conversion.
   add_entries_parallel(env, &closure, &mut io);
-  add_prim_const_entries(env, &closure, &mut io);
+  add_prim_presence_entries(env, &closure, &mut io);
 
   Ok((claim, digest_key, io))
 }
@@ -307,7 +314,7 @@ pub fn build_shard_check_env_witness(
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   // ch 2/3/4/5 per-const/blob/hint entries — parallel byte conversion.
   add_entries_parallel(env, &closure, &mut io);
-  add_prim_const_entries(env, &closure, &mut io);
+  add_prim_presence_entries(env, &closure, &mut io);
   // ch 1: owned tree
   extend(
     &mut io,
