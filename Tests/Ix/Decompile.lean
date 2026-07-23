@@ -47,8 +47,8 @@ def testDecompile : TestSeq :=
     IO.println s!"[Step 2] Decompiling (full driver) to Ix types..."
     let decompStart ← IO.monoMsNow
     let origView : Std.HashMap Ix.Name Ix.ConstantInfo := phases.rawEnv.consts
-    let (decompiled, decompErrors, _p2st) :=
-      Ix.DecompileM.decompileEnvFull phases.compileEnv (some origView)
+    let (decompiled, decompErrors, _p2st) ←
+      Ix.DecompileM.decompileEnvFullParallel phases.compileEnv (some origView)
     IO.println s!"[Step 2]   {decompiled.size} constants, {decompErrors.size} errors in {(← IO.monoMsNow) - decompStart}ms"
     IO.println ""
 

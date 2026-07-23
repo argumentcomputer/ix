@@ -15,6 +15,7 @@
   defining into `Ix.CompileM`).
 -/
 module
+import Std.Sync
 public import Ix.Common
 public import Ix.Environment
 public import Ix.Ixon
@@ -304,11 +305,14 @@ def installDecompileCallSitePlans
     (callSitePlans : Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan)
     (brecOnPlans belowPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan)
     : Except String
-        (Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan
+        ((Std.HashMap Ix.Name Ix.AuxGen.CallSitePlan
           × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan
-          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan) := do
+          × Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan)
+          × (Array (Ix.Name × Ix.AuxGen.CallSitePlan)
+          × Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan)
+          × Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan))) := do
   if allNames.isEmpty then
-    return (callSitePlans, brecOnPlans, belowPlans)
+    return ((callSitePlans, brecOnPlans, belowPlans), (#[], #[], #[]))
   let originalAll := allNames
   let mut planBlocks := storedPlanBlocksForOriginalAll ixonEnv index originalAll
   if planBlocks.isEmpty then
@@ -316,6 +320,9 @@ def installDecompileCallSitePlans
   let mut callSitePlans := callSitePlans
   let mut brecOnPlans := brecOnPlans
   let mut belowPlans := belowPlans
+  let mut newCs : Array (Ix.Name × Ix.AuxGen.CallSitePlan) := #[]
+  let mut newBrec : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
+  let mut newBelow : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
   for block in planBlocks do
     if block.classNames.isEmpty then
       continue
@@ -345,15 +352,20 @@ def installDecompileCallSitePlans
             && !brecOnPlans.contains breconName then
           brecOnPlans := brecOnPlans.insert breconName
             (Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
+          newBrec := newBrec.push
+            (breconName, Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
       if let some belowName := Ix.AuxGen.recNameToBelowName name then
         if (auxMemberNames.contains belowName
               || decompiledView.contains belowName)
             && !belowPlans.contains belowName then
           belowPlans := belowPlans.insert belowName
             (Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
+          newBelow := newBelow.push
+            (belowName, Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
       if !callSitePlans.contains name then
         callSitePlans := callSitePlans.insert name plan
-  return (callSitePlans, brecOnPlans, belowPlans)
+        newCs := newCs.push (name, plan)
+  return ((callSitePlans, brecOnPlans, belowPlans), (newCs, newBrec, newBelow))
 
 /-! ## Pass 2 — aux regeneration + original recovery (D3)
 
@@ -398,6 +410,36 @@ structure Pass2St where
   belowPlans : Std.HashMap Ix.Name Ix.AuxGen.BRecOnCallSitePlan := {}
   ingressed : Ix.Set Ix.Name := {}
   errors : Array (Ix.Name × String) := #[]
+  /-- Wave-driver deltas: every insert into `dstt`/`workEnv`/the plan
+      maps while processing the CURRENT block, so the parallel Pass-2
+      driver can ship exactly one block's outputs from a worker to the
+      merge loop. Reset per block by both drivers; content is otherwise
+      redundant with the maps. -/
+  deltaDstt : Array (Ix.Name × Ix.ConstantInfo) := #[]
+  deltaWork : Array (Ix.Name × Ix.ConstantInfo) := #[]
+  deltaCs : Array (Ix.Name × Ix.AuxGen.CallSitePlan) := #[]
+  deltaBrec : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
+  deltaBelow : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
+
+instance : Inhabited Pass2St :=
+  ⟨{ workEnv := {}, dstt := {}, kctx := Ix.AuxGen.AuxKernelCtx.new
+     auxPerms := {} }⟩
+
+/-- One block's outputs, as shipped from a wave worker to the merge
+    loop of the parallel Pass-2 driver. Deliberately SLIM: the worker's
+    grown kernel context, ingress set, and full env/plan maps stay
+    task-local and are dropped when the worker's closure returns —
+    shipping whole `Pass2St`s kept every in-flight worker's kernel env
+    alive through the result channel (~100 GiB peak on the whole-env
+    suite). -/
+structure Pass2BlockOut where
+  dsttD : Array (Ix.Name × Ix.ConstantInfo) := #[]
+  workD : Array (Ix.Name × Ix.ConstantInfo) := #[]
+  csD : Array (Ix.Name × Ix.AuxGen.CallSitePlan) := #[]
+  brecD : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
+  belowD : Array (Ix.Name × Ix.AuxGen.BRecOnCallSitePlan) := #[]
+  errors : Array (Ix.Name × String) := #[]
+  deriving Inhabited
 
 /-- Synthetic `CompileEnv` over an env view, with resolution maps from
     the serialized env (the deserialized-state mirror of `stt`). -/
@@ -433,12 +475,26 @@ private def runC (ctx : Pass2Ctx) (st : Pass2St) (lo : Ix.Name)
   | .ok (a, _) => .ok a
   | .error e => .error (toString e)
 
+/-- Insert into `dstt`, recording the wave-driver delta. Every `dstt`
+    insert in Pass 2 goes through this so the parallel driver can ship a
+    block's outputs (see `Pass2St.deltaDstt`). -/
+private def stPut (st : Pass2St) (n : Ix.Name) (ci : Ix.ConstantInfo)
+    : Pass2St :=
+  { st with dstt := st.dstt.insert n ci
+            deltaDstt := st.deltaDstt.push (n, ci) }
+
+/-- Insert into `workEnv`, recording the wave-driver delta. -/
+private def stPutWork (st : Pass2St) (n : Ix.Name) (ci : Ix.ConstantInfo)
+    : Pass2St :=
+  { st with workEnv := st.workEnv.insert n ci
+            deltaWork := st.deltaWork.push (n, ci) }
+
 /-- Insert roundtripped/recovered entries into the decompiled env. -/
 private def insertAll (st : Pass2St)
     (entries : Std.HashMap Ix.Name Ix.ConstantInfo) : Pass2St := Id.run do
   let mut st := st
   for (n, ci) in entries do
-    st := { st with dstt := st.dstt.insert n ci }
+    st := stPut st n ci
   return st
 
 /-- Recovery-or-fallback for a single aux name (the shared failure arm
@@ -450,10 +506,10 @@ private def recoverOr (ctx : Pass2Ctx) (st : Pass2St) (name : Ix.Name)
   match recoverAuxFromOriginal name ctx.ixonEnv st.workEnv ctx.origEnv? with
   | some entries =>
     for (n, ci) in entries do
-      st := { st with dstt := st.dstt.insert n ci }
+      st := stPut st n ci
   | none =>
     if let some ci := generatedConsts.get? name then
-      st := { st with dstt := st.dstt.insert name ci }
+      st := stPut st name ci
   return st
 
 /-- Regenerate + roundtrip one aux block. Mirrors
@@ -526,11 +582,11 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
     | .ok roundtripped =>
       for (n, ci) in roundtripped do
         if recMembers.contains n || st.workEnv.contains n then
-          st := { st with dstt := st.dstt.insert n ci }
+          st := stPut st n ci
     | .error e =>
       for (n, rv) in canonicalRecs do
         if recMembers.contains n then
-          st := { st with dstt := st.dstt.insert n (.recInfo rv) }
+          st := stPut st n (.recInfo rv)
       st := recordErr st lo s!"roundtrip_block .rec failed: {e}"
 
   -- Sync generated constants into both envs (:4301-4317).
@@ -539,9 +595,9 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
     let mut st := st
     for (n, ci) in gen do
       if !st.workEnv.contains n then
-        st := { st with workEnv := st.workEnv.insert n ci }
+        st := stPutWork st n ci
       if !st.dstt.contains n then
-        st := { st with dstt := st.dstt.insert n ci }
+        st := stPut st n ci
     return st
   st := sync st generatedConsts
 
@@ -552,8 +608,11 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
   match installDecompileCallSitePlans ctx.ixonEnv ctx.mutsIndex st.workEnv
       st.auxPerms allNames auxMemberNames
       st.callSitePlans st.brecOnPlans st.belowPlans with
-  | .ok (cs, brec, below) =>
-    st := { st with callSitePlans := cs, brecOnPlans := brec, belowPlans := below }
+  | .ok ((cs, brec, below), (newCs, newBrec, newBelow)) =>
+    st := { st with callSitePlans := cs, brecOnPlans := brec, belowPlans := below
+                    deltaCs := st.deltaCs ++ newCs
+                    deltaBrec := st.deltaBrec ++ newBrec
+                    deltaBelow := st.deltaBelow ++ newBelow }
   | .error e => st := recordErr st lo e
 
   -- Phases 1b/1c: .casesOn / .recOn wrappers (:4330-4520). Shared arm.
@@ -728,9 +787,9 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
                   ctx.origEnv? with
               | some entries =>
                 for (en, eci) in entries do
-                  st := { st with dstt := st.dstt.insert en eci }
+                  st := stPut st en eci
               | none =>
-                st := { st with dstt := st.dstt.insert n (.recInfo rv) }
+                st := stPut st n (.recInfo rv)
               st := recordErr st n e
       | .error e =>
         st := recordErr st lo s!"aux_gen below.rec failed for {lo.pretty}: {e}"
@@ -782,9 +841,9 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
                 ctx.origEnv? with
             | some entries =>
               for (en, eci) in entries do
-                st := { st with dstt := st.dstt.insert en eci }
+                st := stPut st en eci
             | none =>
-              st := { st with dstt := st.dstt.insert d.name (breconDefToLean d) }
+              st := stPut st d.name (breconDefToLean d)
           else
             st := insertAll st roundtripped
         | .error e =>
@@ -792,9 +851,9 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
               ctx.origEnv? with
           | some entries =>
             for (en, eci) in entries do
-              st := { st with dstt := st.dstt.insert en eci }
+              st := stPut st en eci
           | none =>
-            st := { st with dstt := st.dstt.insert d.name (breconDefToLean d) }
+            st := stPut st d.name (breconDefToLean d)
           st := recordErr st d.name e
     | .error e =>
       st := recordErr st lo s!"aux_gen brecOn failed for {lo.pretty}: {e}"
@@ -827,8 +886,18 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
   let mut blockDeps : Std.HashMap Ix.Name (Ix.Set Ix.Name) := {}
   for (blockKey, (allNames, _)) in blocks do
     let mut deps : Ix.Set Ix.Name := {}
+    -- Graph the parent inductives AND their constructors: the inductive
+    -- constant alone doesn't carry field references (`List B` in
+    -- `A | mk : List B → …` lives in the ctor's type), and evaporated
+    -- `rec_N` plan computation needs the evaporation target's block
+    -- (its REGENERATED recursor) merged before this block runs — the
+    -- edge only exists through the ctor types.
+    let mut graphNames : Array Ix.Name := allNames
     for indName in allNames do
-      if let some ci := pass1.get? indName then
+      if let some (.inductInfo v) := pass1.get? indName then
+        graphNames := graphNames ++ v.ctors
+    for gname in graphNames do
+      if let some ci := pass1.get? gname then
         let (refs, _) := Ix.GraphM.run { consts := pass1 } .init
           (Ix.graphConst ci)
         for r in refs do
@@ -877,6 +946,10 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
 
   for blockKey in order do
     let some (allNames, auxMembers) := blocks.get? blockKey | continue
+    -- Per-block delta reset (bounded memory; the sequential driver
+    -- doesn't read the deltas).
+    st := { st with deltaDstt := #[], deltaWork := #[]
+                    deltaCs := #[], deltaBrec := #[], deltaBelow := #[] }
     -- Transitive BFS ingress with global dedup (decompile.rs:5171-5186).
     let mut stack : Array Ix.Name := allNames
     let mut toIngress : Array Ix.Name := #[]
@@ -903,6 +976,226 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
 
   return st
 
+/-- Parallel Pass 2: wave-based workers over the aux-block dependency
+    graph, mirroring `Ix.CompileM.compileEnvParallelAux`. Each worker
+    runs `decompileBlockAuxGen` against a SNAPSHOT of the merged state
+    (persistent structures make the snapshot free) with a worker-local
+    kernel context, and ships exactly its block's outputs via the
+    `Pass2St.delta*` channels. The merge loop applies deltas in
+    sorted-key order and replays the block's kenv ingress into the
+    MASTER kernel context, so later snapshots stay warm — total ingress
+    work stays at the sequential driver's level while the regeneration
+    (the wall-clock dominator) fans out.
+
+    Output-visible deviation: none for `dstt`/`workEnv`/plan maps
+    (block outputs are disjoint per SCC and workers apply the same
+    only-if-absent policies against a deps-complete snapshot; verified
+    by the whole-env hash-identity suites). The `errors` array is
+    ordered by (wave, block key) rather than topo order — diagnostic
+    only.
+
+    The default worker count is memory-bound, not core-bound: each
+    in-flight block holds its regeneration state plus worker-local
+    kernel-context additions, so 16 keeps peak RSS in check at
+    whole-env scale. -/
+def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
+    (pass1 : Std.HashMap Ix.Name Ix.ConstantInfo)
+    (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
+    (numWorkers : Nat := 16)
+    : IO Pass2St := do
+  let mutsIndex := buildMutsPlanIndex ixonEnv
+  let auxPerms := rehydrateAuxPerms ixonEnv mutsIndex
+  let blocks := collectAuxBlocks ixonEnv pass1
+  let ctx : Pass2Ctx := {
+    ixonEnv, mutsIndex
+    nameToAddr := ixonEnv.named.fold (init := {})
+      fun m n named => m.insert n named.addr
+    origEnv? }
+  -- name → block key + block deps, exactly as the sequential driver.
+  let mut nameToBlock : Std.HashMap Ix.Name Ix.Name := {}
+  for (blockKey, (allNames, _)) in blocks do
+    for indName in allNames do
+      nameToBlock := nameToBlock.insert indName blockKey
+      if let some (.inductInfo v) := pass1.get? indName then
+        for ctor in v.ctors do
+          nameToBlock := nameToBlock.insert ctor blockKey
+  let mut blockDeps : Std.HashMap Ix.Name (Ix.Set Ix.Name) := {}
+  for (blockKey, (allNames, _)) in blocks do
+    let mut deps : Ix.Set Ix.Name := {}
+    -- Graph the parent inductives AND their constructors: the inductive
+    -- constant alone doesn't carry field references (`List B` in
+    -- `A | mk : List B → …` lives in the ctor's type), and evaporated
+    -- `rec_N` plan computation needs the evaporation target's block
+    -- (its REGENERATED recursor) merged before this block runs — the
+    -- edge only exists through the ctor types.
+    let mut graphNames : Array Ix.Name := allNames
+    for indName in allNames do
+      if let some (.inductInfo v) := pass1.get? indName then
+        graphNames := graphNames ++ v.ctors
+    for gname in graphNames do
+      if let some ci := pass1.get? gname then
+        let (refs, _) := Ix.GraphM.run { consts := pass1 } .init
+          (Ix.graphConst ci)
+        for r in refs do
+          if let some depBlock := nameToBlock.get? r then
+            if depBlock != blockKey then
+              deps := deps.insert depBlock
+    blockDeps := blockDeps.insert blockKey deps
+
+  let mut st : Pass2St := {
+    workEnv := pass1
+    dstt := pass1
+    kctx := Ix.AuxGen.AuxKernelCtx.new
+    auxPerms }
+  match runK ctx st (Ix.Name.mkStr Ix.Name.mkAnon "PUnit") (fun maps => do
+      Ix.AuxGen.ensurePreludeInKenvOf maps) with
+  | .ok (_, kctx') => st := { st with kctx := kctx' }
+  | .error e =>
+    st := { st with
+      errors := st.errors.push (Ix.Name.mkAnon, s!"prelude ingress: {e}") }
+
+  -- BFS the not-yet-ingressed transitive closure of `allNames` and run
+  -- the kenv ingress — the per-block prologue, shared by workers (vs
+  -- their snapshot) and the master replay (vs the merged state).
+  let ingressBlock (st₀ : Pass2St) (blockKey : Ix.Name)
+      (allNames : Array Ix.Name) : Pass2St := Id.run do
+    let mut st := st₀
+    let mut stack : Array Ix.Name := allNames
+    let mut toIngress : Array Ix.Name := #[]
+    while !stack.isEmpty do
+      let name := stack.back!
+      stack := stack.pop
+      if st.ingressed.contains name then continue
+      st := { st with ingressed := st.ingressed.insert name }
+      toIngress := toIngress.push name
+      if let some ci := st.workEnv.get? name then
+        let (refs, _) := Ix.GraphM.run { consts := st.workEnv } .init
+          (Ix.graphConst ci)
+        for r in refs do
+          if !st.ingressed.contains r then
+            stack := stack.push r
+    match runK ctx st blockKey (fun maps => do
+        for n in toIngress do
+          Ix.AuxGen.ensureInKenvOf n maps) with
+    | .ok (_, kctx') => st := { st with kctx := kctx' }
+    | .error e =>
+      st := { st with
+        errors := st.errors.push (blockKey, s!"block ingress: {e}") }
+    return st
+
+  -- (Slim per-block result — see `Pass2BlockOut`: shipping whole
+  -- `Pass2St`s held every in-flight worker's kernel env alive through
+  -- the result channel and peaked at ~100 GiB on the whole-env suite.)
+  let processBlock (snapshot : Pass2St) (blockKey : Ix.Name)
+      (allNames : Array Ix.Name)
+      (auxMembers : Array (Ix.AuxGen.AuxKind × Ix.Name))
+      : Pass2BlockOut :=
+    let st := { snapshot with
+      errors := #[], deltaDstt := #[], deltaWork := #[]
+      deltaCs := #[], deltaBrec := #[], deltaBelow := #[] }
+    let st := ingressBlock st blockKey allNames
+    let st := decompileBlockAuxGen ctx st allNames auxMembers
+    { dsttD := st.deltaDstt, workD := st.deltaWork, csD := st.deltaCs
+      brecD := st.deltaBrec, belowD := st.deltaBelow, errors := st.errors }
+
+  -- Apply a completed block's deltas to the master state and replay its
+  -- ingress into the master kernel context. Map merges are
+  -- arrival-order-safe (block outputs are disjoint per SCC and workers
+  -- already applied the only-if-absent policies against a deps-complete
+  -- snapshot); the caller handles deterministic `errors` ordering.
+  let mergeBlock (st₀ : Pass2St) (blockKey : Ix.Name)
+      (allNames : Array Ix.Name) (out : Pass2BlockOut) : Pass2St := Id.run do
+    let mut st := st₀
+    for (n, ci) in out.workD do
+      if !st.workEnv.contains n then
+        st := { st with workEnv := st.workEnv.insert n ci }
+    for (n, ci) in out.dsttD do
+      st := { st with dstt := st.dstt.insert n ci }
+    for (n, p) in out.csD do
+      if !st.callSitePlans.contains n then
+        st := { st with callSitePlans := st.callSitePlans.insert n p }
+    for (n, p) in out.brecD do
+      if !st.brecOnPlans.contains n then
+        st := { st with brecOnPlans := st.brecOnPlans.insert n p }
+    for (n, p) in out.belowD do
+      if !st.belowPlans.contains n then
+        st := { st with belowPlans := st.belowPlans.insert n p }
+    return ingressBlock st blockKey allNames
+
+  let workChan ← Std.CloseableChannel.Sync.new
+    (α := Ix.Name × Array Ix.Name × Array (Ix.AuxGen.AuxKind × Ix.Name)
+      × Pass2St)
+  let resultChan ← Std.CloseableChannel.Sync.new
+    (α := Ix.Name × Pass2BlockOut)
+  let worker (_i : Nat) : IO Unit := do
+    while true do
+      match ← workChan.recv with
+      | none => break
+      | some (blockKey, allNames, auxMembers, snapshot) =>
+        let out := processBlock snapshot blockKey allNames auxMembers
+        discard <| resultChan.send (blockKey, out)
+  let mut workerTasks : Array (Task (Except IO.Error Unit)) := #[]
+  for i in [:numWorkers] do
+    workerTasks := workerTasks.push (← IO.asTask (prio := .dedicated) (worker i))
+
+  let mut remaining : Ix.Set Ix.Name := {}
+  for (blockKey, _) in blocks do
+    remaining := remaining.insert blockKey
+  let mut merged : Ix.Set Ix.Name := {}
+
+  while !remaining.isEmpty do
+    let mut ready : Array Ix.Name := #[]
+    for k in remaining do
+      let deps := (blockDeps.get? k).getD {}
+      let ok := Id.run do
+        for d in deps do
+          if remaining.contains d && !merged.contains d then return false
+        return true
+      if ok then ready := ready.push k
+    -- Debug/bisection aid: 1-worker mode degenerates to 1-block waves —
+    -- merge between every block, i.e. exact sequential-driver semantics
+    -- through the parallel machinery.
+    if numWorkers == 1 && ready.size > 1 then
+      ready := (ready.qsort (fun a b => a.pretty < b.pretty)).take 1
+    if ready.isEmpty then
+      -- Degenerate cycle tolerance: mirror the sequential Kahn tail by
+      -- running the rest one at a time (sorted), merging between.
+      let mut rest : Array Ix.Name := #[]
+      for k in remaining do rest := rest.push k
+      rest := rest.qsort (fun a b => a.pretty < b.pretty)
+      for k in rest do
+        let some (allNames, auxMembers) := blocks.get? k | continue
+        let out := processBlock st k allNames auxMembers
+        st := mergeBlock st k allNames out
+        st := { st with errors := st.errors ++ out.errors }
+      remaining := {}
+      break
+    for k in ready do
+      let some (allNames, auxMembers) := blocks.get? k | continue
+      discard <| workChan.send (k, allNames, auxMembers, st)
+    -- Merge each result as it arrives — holding a whole wave of results
+    -- is exactly the memory cliff the slim deltas exist to avoid. Map
+    -- contents are arrival-order-independent; errors are batched and
+    -- appended in sorted-key order at wave end for determinism.
+    let mut errBatch : Array (Ix.Name × Array (Ix.Name × String)) := #[]
+    for _ in [:ready.size] do
+      match ← resultChan.recv with
+      | none => break
+      | some (blockKey, out) =>
+        let allNames := ((blocks.get? blockKey).map (·.1)).getD #[]
+        st := mergeBlock st blockKey allNames out
+        merged := merged.insert blockKey
+        if !out.errors.isEmpty then
+          errBatch := errBatch.push (blockKey, out.errors)
+    errBatch := errBatch.qsort (fun a b => a.1.pretty < b.1.pretty)
+    for (_, errs) in errBatch do
+      st := { st with errors := st.errors ++ errs }
+    for k in ready do
+      remaining := remaining.erase k
+
+  discard <| workChan.close
+  return st
+
 /-- Full decompile driver: Pass 1 (aux skipped) → Pass 1.5 flags →
     Pass 2 regeneration/recovery. Returns the decompiled env, the
     per-name errors from both passes, and the final Pass-2 state (plan
@@ -917,6 +1210,33 @@ def decompileEnvFull (ixonEnv : Ixon.Env)
     | .ok fixed => fixed
     | .error _ => pass1Raw
   let st := decompileEnvPass2 ixonEnv pass1 origEnv?
+  return (st.dstt, pass1Errs ++ st.errors, st)
+
+/-- `decompileEnvFull` with the wave-parallel Pass 2
+    (`decompileEnvPass2Parallel`). Same outputs — hash-identity is
+    enforced by the whole-env decompile suites — with Pass-2 errors in
+    merge order rather than topo order. -/
+def decompileEnvFullParallel (ixonEnv : Ixon.Env)
+    (origEnv? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none)
+    (numWorkers : Nat := 16)
+    : IO (Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String)
+      × Pass2St) := do
+  -- `IX_DECOMPILE_WORKERS` overrides the worker count (memory/debug
+  -- tuning); `0` selects the sequential Pass-2 driver.
+  let numWorkers ← do
+    match (← IO.getEnv "IX_DECOMPILE_WORKERS").bind (·.toNat?) with
+    | some n => pure n
+    | none => pure numWorkers
+  let (pass1Raw, pass1Errs) := decompileAllParallel ixonEnv
+    (skip := fun n named =>
+      named.original.isSome && Ix.AuxGen.isAuxGenSuffix n)
+  let pass1 := match fixupInductiveFlags pass1Raw with
+    | .ok fixed => fixed
+    | .error _ => pass1Raw
+  if numWorkers == 0 then
+    let st := decompileEnvPass2 ixonEnv pass1 origEnv?
+    return (st.dstt, pass1Errs ++ st.errors, st)
+  let st ← decompileEnvPass2Parallel ixonEnv pass1 origEnv? numWorkers
   return (st.dstt, pass1Errs ++ st.errors, st)
 
 end Ix.DecompileM

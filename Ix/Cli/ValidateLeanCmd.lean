@@ -200,8 +200,8 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     phases := phases.push ("5 decompile", .skipped "serde gate failed")
   | some ixonEnv =>
     let t0 ← IO.monoMsNow
-    let (decompiled, errs, _p2st) :=
-      Ix.DecompileM.decompileEnvFull ixonEnv canonView?
+    let (decompiled, errs, _p2st) ←
+      Ix.DecompileM.decompileEnvFullParallel ixonEnv canonView?
     let t1 ← IO.monoMsNow
     if !errs.isEmpty then
       let shown := errs.toList.take 5

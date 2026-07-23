@@ -66,8 +66,8 @@ def run (env : Lean.Environment) : IO UInt32 := do
   IO.println "[decompile-diff] Lean decompile (full driver: Pass 1 → 1.5 → 2)..."
   let t0 ← IO.monoMsNow
   let origView : Std.HashMap Ix.Name Ix.ConstantInfo := rawEnv.consts
-  let (decompiled, errors, p2st) :=
-    Ix.DecompileM.decompileEnvFull rustEnv (some origView)
+  let (decompiled, errors, p2st) ←
+    Ix.DecompileM.decompileEnvFullParallel rustEnv (some origView)
   IO.println s!"[decompile-diff]   {decompiled.size} constants, {errors.size} errors in {(← IO.monoMsNow) - t0}ms"
 
   -- Error classification.
