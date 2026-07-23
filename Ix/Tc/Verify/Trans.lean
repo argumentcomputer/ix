@@ -868,6 +868,12 @@ theorem KVLCtx.WF.toCtx {env : VEnv} {U : Nat} :
   | (_, .vlam _) :: _, ⟨hΔ, _, hA⟩ => ⟨hΔ.toCtx, hA⟩
   | (_, .vlet ..) :: _, ⟨hΔ, _, _⟩ => hΔ.toCtx
 
+/-- Upstream idiom (Verify/Typing/Lemmas.lean:216): context WF coerces
+    to the bare-context `OnCtx` whenever a Theory lemma wants it. -/
+instance {env : VEnv} {U : Nat} {Δ : KVLCtx} :
+    Coe (KVLCtx.WF env U Δ) (Lean4Lean.OnCtx Δ.toCtx (env.IsType U)) :=
+  ⟨KVLCtx.WF.toCtx⟩
+
 /-- A term well-formed in the empty context is well-formed anywhere
     (closed-term weakening; the WF witness type is allowed to lift). -/
 private theorem wf_weak0 {env : VEnv} (henv : env.Ordered) {U : Nat}
@@ -1113,6 +1119,405 @@ theorem IsDefEq.find?_uniq {env : VEnv} {U : Nat} (henv : VEnv.WF env) :
         rintro d₁' n₁' H1' rfl rfl d₂' n₂' H2' rfl rfl
         simpa [Lean4Lean.VLocalDecl.depth] using find?_uniq henv hΔ H1' H2'
 
+/-- Transport of `find?`-success along a context defeq (upstream
+`VLCtx.IsDefEq.find?_defeqDFC`): a variable resolvable in `Δ₁` is
+resolvable in `Δ₂` (with possibly different value/type — related by
+`find?_uniq`). -/
+theorem IsDefEq.find?_defeqDFC {env : VEnv} {U : Nat} :
+    ∀ {Δ₁ Δ₂ : KVLCtx} {v} {e₁ A₁ : VExpr},
+      IsDefEq env U Δ₁ Δ₂ →
+      Δ₁.find? v = some (e₁, A₁) →
+      ∃ e₂ A₂, Δ₂.find? v = some (e₂, A₂) := by
+  intro Δ₁ Δ₂ v e₁ A₁ hΔ H
+  match hΔ with
+  | .cons hΔ h1 h2 =>
+    revert H
+    unfold KVLCtx.find?
+    split
+    · exact fun _ => ⟨_, _, rfl⟩
+    · simp
+      rintro e A H rfl rfl
+      obtain ⟨_, _, H⟩ := find?_defeqDFC hΔ H
+      exact ⟨_, _, _, _, H, rfl, rfl⟩
+
 end KVLCtx
+
+/-! ### Uniqueness up to defeq, and context-defeq transport
+
+Upstream `TrExprS.uniq`/`TrExprS.defeqDFC` — the two big inductions the
+congruence API rides on. From here on the abstract `trProj`'s closure
+properties travel as one `TrProjOK` bundle (upstream threads them
+individually, each a sorry for its concrete `TrProj`; M8 discharges the
+bundle once against the real projection rule). Our `sort`/`const` and
+literal cases are SIMPLER than upstream: the total level translation
+makes the two targets syntactically equal, so self-defeq suffices — no
+`ofLevel` confluence needed. -/
+
+/-- Closure properties of the abstract projection translation. Fields
+    mirror upstream `TrProj.weakN/instN/wf/uniq/defeqDFC/instL` (all
+    sorried upstream). `weakN`/`instN` restate the `htp`/`htpI`
+    hypotheses of `TrKExprS.weakBV`/`instN` verbatim. -/
+structure TrProjOK (env : VEnv) (uvars : Nat)
+    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) :
+    Prop where
+  weakN : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+    {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+    trProj Γ' s i (e.liftN n k) (e'.liftN n k)
+  instN : ∀ {Γ₀ : List VExpr} {e₀ A₀ : VExpr} {k : Nat}
+    {Γ₁ Γ : List VExpr} {s : Lean.Name} {i : Nat} {e e' : VExpr},
+    Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ → trProj Γ₁ s i e e' →
+    trProj Γ s i (e.inst e₀ k) (e'.inst e₀ k)
+  wf : ∀ {Γ : List VExpr} {s : Lean.Name} {i : Nat} {e e' : VExpr},
+    trProj Γ s i e e' → VExpr.WF env uvars Γ e → VExpr.WF env uvars Γ e'
+  uniq : ∀ {Γ₁ Γ₂ : List VExpr} {s : Lean.Name} {i : Nat}
+    {e₁ e₂ e₁' e₂' : VExpr},
+    VEnv.IsDefEqCtx env uvars [] Γ₁ Γ₂ →
+    trProj Γ₁ s i e₁ e₁' → trProj Γ₂ s i e₂ e₂' →
+    env.IsDefEqU uvars Γ₁ e₁ e₂ → env.IsDefEqU uvars Γ₁ e₁' e₂'
+  defeqDFC : ∀ {Γ₁ Γ₂ : List VExpr} {s : Lean.Name} {i : Nat}
+    {e₁ e₂ e' : VExpr},
+    VEnv.IsDefEqCtx env uvars [] Γ₁ Γ₂ →
+    env.IsDefEqU uvars Γ₁ e₁ e₂ → trProj Γ₁ s i e₁ e' →
+    ∃ e₂', trProj Γ₂ s i e₂ e₂'
+  instL : ∀ {U' : Nat} {ls : List VLevel} {Γ : List VExpr}
+    {s : Lean.Name} {i : Nat} {e e' : VExpr},
+    (∀ l ∈ ls, l.WF U') → trProj Γ s i e e' →
+    trProj (Γ.map (VExpr.instL ls)) s i (e.instL ls) (e'.instL ls)
+
+/-- Uniqueness of structural translation up to defeq (upstream
+    `TrExprS.uniq`): two translates of the same `KExpr` in
+    pairwise-defeq contexts are definitionally equal. -/
+theorem TrKExprS.uniq {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ₁ Δ₂ : KVLCtx} {e : KExpr m} {e₁ e₂ : VExpr}
+    (hΔ : KVLCtx.IsDefEq env uvars Δ₁ Δ₂)
+    (H1 : TrKExprS env uvars nameOf trProj Δ₁ e e₁)
+    (H2 : TrKExprS env uvars nameOf trProj Δ₂ e e₂) :
+    env.IsDefEqU uvars Δ₁.toCtx e₁ e₂ := by
+  induction H1 generalizing Δ₂ e₂ with
+  | var l1 =>
+    let .var r1 := H2
+    exact ⟨_, (hΔ.find?_uniq henv l1 r1).2⟩
+  | fvar l1 =>
+    let .fvar r1 := H2
+    exact ⟨_, (hΔ.find?_uniq henv l1 r1).2⟩
+  | sort l1 =>
+    let .sort _ := H2
+    exact ⟨_, VEnv.HasType.sort l1⟩
+  | @const _ _ us _ _ ci l1 l2 l3 l4 =>
+    let .const r1 _ _ _ := H2
+    cases l1.symm.trans r1
+    refine ⟨_, VEnv.HasType.const l2 ?_ ?_⟩
+    · intro l hl
+      obtain ⟨u, hu, rfl⟩ := List.mem_map.1 hl
+      exact l3 u (by simpa using hu)
+    · simpa using l4
+  | app l1 l2 _ _ ih3 ih4 =>
+    let .app _ _ r3 r4 := H2
+    exact ⟨_, .appDF
+      (ih3 hΔ r3 |>.of_l henv hΔ.wf.toCtx l1)
+      (ih4 hΔ r4 |>.of_l henv hΔ.wf.toCtx l2)⟩
+  | lam l1 _ _ ih2 ih3 =>
+    have ⟨_, l1'⟩ := l1
+    let .lam _ r2 r3 := H2
+    have hA := ih2 hΔ r2 |>.of_l henv hΔ.wf.toCtx l1'
+    have ⟨_, hb⟩ := ih3 (hΔ.cons nofun <| .vlam hA) r3
+    exact ⟨_, .lamDF hA hb⟩
+  | all l1 l2 _ _ ih3 ih4 =>
+    have ⟨_, l1'⟩ := l1
+    have ⟨_, l2'⟩ := l2
+    let .all _ _ r3 r4 := H2
+    have hA := ih3 hΔ r3 |>.of_l henv hΔ.wf.toCtx l1'
+    have hB := ih4 (hΔ.cons nofun <| .vlam hA) r4
+      |>.of_l (Γ := _ :: _) henv ⟨hΔ.wf.toCtx, l1⟩ l2'
+    exact ⟨_, .forallEDF hA hB⟩
+  | letE l1 _ _ _ ih2 ih3 ih4 =>
+    have hΓ := hΔ.wf.toCtx
+    let .letE _ r2 r3 r4 := H2
+    have ⟨_, hb⟩ := l1.isType henv hΓ
+    refine ih4 (hΔ.cons nofun ?_) r4
+    exact .vlet (ih3 hΔ r3 |>.of_l henv hΓ l1)
+      (ih2 hΔ r2 |>.of_l henv hΓ hb)
+  | prj l1 _ l3 ih =>
+    let .prj r1 r2 r3 := H2
+    cases l1.symm.trans r1
+    exact htp.uniq hΔ.defeqCtx l3 r3 (ih hΔ r2)
+  | nat l1 =>
+    let .nat _ := H2
+    exact wf_weak0 henv.ordered (hlit _ l1) _
+  | str l1 =>
+    let .str _ := H2
+    exact wf_weak0 henv.ordered (hlit _ l1) _
+
+/-- Quotient-level uniqueness (upstream `TrExpr.uniq`). -/
+theorem TrKExpr.uniq {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ₁ Δ₂ : KVLCtx} {e : KExpr m} {e₁ e₂ : VExpr}
+    (hΔ : KVLCtx.IsDefEq env uvars Δ₁ Δ₂)
+    (H1 : TrKExpr env uvars nameOf trProj Δ₁ e e₁)
+    (H2 : TrKExpr env uvars nameOf trProj Δ₂ e e₂) :
+    env.IsDefEqU uvars Δ₁.toCtx e₁ e₂ := by
+  let ⟨_, H1, eq1⟩ := H1
+  let ⟨_, H2, eq2⟩ := H2
+  exact eq1.symm.trans henv hΔ.wf <|
+    (H1.uniq henv hlit htp hΔ H2).trans henv hΔ.wf <|
+    eq2.defeqDFC henv (hΔ.defeqCtx.symm henv)
+
+/-- Structural translation transports along a context defeq (upstream
+    `TrExprS.defeqDFC`): retranslate in the defeq context. -/
+theorem TrKExprS.defeqDFC {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ₁ Δ₂ : KVLCtx} {e : KExpr m} {e₁ : VExpr}
+    (hΔ : KVLCtx.IsDefEq env uvars Δ₁ Δ₂)
+    (H : TrKExprS env uvars nameOf trProj Δ₁ e e₁) :
+    ∃ e₂, TrKExprS env uvars nameOf trProj Δ₂ e e₂ := by
+  induction H generalizing Δ₂ with
+  | var h1 =>
+    have ⟨_, _, h1⟩ := hΔ.find?_defeqDFC h1
+    exact ⟨_, .var h1⟩
+  | fvar h1 =>
+    have ⟨_, _, h1⟩ := hΔ.find?_defeqDFC h1
+    exact ⟨_, .fvar h1⟩
+  | sort h1 => exact ⟨_, .sort h1⟩
+  | const h1 h2 h3 h4 => exact ⟨_, .const h1 h2 h3 h4⟩
+  | app h1 h2 h3 h4 ih3 ih4 =>
+    let ⟨_, h3'⟩ := ih3 hΔ
+    let ⟨_, h4'⟩ := ih4 hΔ
+    have h1 := h1.defeqDFC henv hΔ.defeqCtx
+    have h2 := h2.defeqDFC henv hΔ.defeqCtx
+    have h1 := h1.defeqU_l henv (hΔ.symm henv).wf
+      (h3'.uniq henv hlit htp (hΔ.symm henv) h3).symm
+    have h2 := h2.defeqU_l henv (hΔ.symm henv).wf
+      (h4'.uniq henv hlit htp (hΔ.symm henv) h4).symm
+    exact ⟨_, .app h1 h2 h3' h4'⟩
+  | lam h1 h2 h3 ih2 ih3 =>
+    have ⟨_, h1'⟩ := h1
+    let ⟨_, h2'⟩ := ih2 hΔ
+    have h1 := h1.defeqDFC henv hΔ.defeqCtx
+    have h1 := h1.defeqU_l henv (hΔ.symm henv).wf
+      (h2'.uniq henv hlit htp (hΔ.symm henv) h2).symm
+    have ht := (h2.uniq henv hlit htp hΔ h2').of_l henv hΔ.wf h1'
+    let ⟨_, h3'⟩ := ih3 (hΔ.cons nofun <| .vlam ht)
+    exact ⟨_, .lam h1 h2' h3'⟩
+  | all h1 h2 h3 h4 ih3 ih4 =>
+    have ⟨_, h1'⟩ := h1
+    have ⟨_, h2'⟩ := h2
+    let ⟨_, h3'⟩ := ih3 hΔ
+    have ht := (h3.uniq henv hlit htp hΔ h3').of_l henv hΔ.wf h1'
+    have hΔ' := hΔ.cons (ofv := none) nofun (.vlam ht)
+    let ⟨_, h4'⟩ := ih4 hΔ'
+    have h1 := h1.defeqDFC henv hΔ.defeqCtx
+    have h2 := h2.defeqDFC henv (hΔ.defeqCtx.succ ht)
+    have h1 := h1.defeqU_l henv (hΔ.symm henv).wf
+      (h3'.uniq henv hlit htp (hΔ.symm henv) h3).symm
+    have h2 := h2.defeqU_l henv (hΔ'.symm henv).wf
+      (h4'.uniq henv hlit htp (hΔ'.symm henv) h4).symm
+    exact ⟨_, .all h1 h2 h3' h4'⟩
+  | letE h1 h2 h3 h4 ih2 ih3 ih4 =>
+    let ⟨_, h2'⟩ := ih2 hΔ
+    let ⟨_, h3'⟩ := ih3 hΔ
+    have ⟨_, h0⟩ := h1.isType henv hΔ.wf
+    have t0 := (h2.uniq henv hlit htp hΔ h2').of_l henv hΔ.wf h0
+    have t1 := (h3.uniq henv hlit htp hΔ h3').of_l henv hΔ.wf h1
+    have t2 := (h2'.uniq henv hlit htp (hΔ.symm henv) h2).symm
+    have t3 := (h3'.uniq henv hlit htp (hΔ.symm henv) h3).symm
+    have hΔ' := hΔ.cons (ofv := none) nofun (.vlet t1 t0)
+    let ⟨_, h4'⟩ := ih4 hΔ'
+    have h0 := h0.defeqDFC henv hΔ.defeqCtx
+    have h0 := h0.defeqU_l henv (hΔ.symm henv).wf t2
+    have h1 := h1.defeqDFC henv hΔ.defeqCtx
+    have h1 := h1.defeqU_l henv (hΔ.symm henv).wf t3
+    have h1 := h1.defeqU_r henv (hΔ.symm henv).wf t2
+    exact ⟨_, .letE h1 h2' h3' h4'⟩
+  | prj h1 h2 h3 ih =>
+    let ⟨_, h2'⟩ := ih hΔ
+    let ⟨_, h3'⟩ := htp.defeqDFC hΔ.defeqCtx
+      (h2.uniq henv hlit htp hΔ h2') h3
+    exact ⟨_, .prj h1 h2' h3'⟩
+  | nat h1 => exact ⟨_, .nat h1⟩
+  | str h1 => exact ⟨_, .str h1⟩
+
+/-- `defeqDFC` into the quotient (upstream `TrExprS.defeqDFC'`): the
+    retranslation is defeq to the original. -/
+theorem TrKExprS.defeqDFC' {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ₁ Δ₂ : KVLCtx} {e : KExpr m} {e' : VExpr}
+    (hΔ : KVLCtx.IsDefEq env uvars Δ₁ Δ₂)
+    (H : TrKExprS env uvars nameOf trProj Δ₁ e e') :
+    TrKExpr env uvars nameOf trProj Δ₂ e e' := by
+  let ⟨_, H'⟩ := H.defeqDFC henv hlit htp hΔ
+  exact ⟨_, H', H'.uniq henv hlit htp (hΔ.symm henv) H⟩
+
+/-! ### The quotient congruence API (upstream `TrExpr.*`)
+
+Rebuild a quotient translate from quotient translates of the pieces.
+The binder cases pay the toll the two inductions above were built for:
+quotient slack in the binder type shifts the context the body's
+structural witness lives in, so the witness is re-based with
+`defeqDFC` and reconciled with `uniq`. No congruence lemmas for
+`var`/`fvar`/`sort`/`const`/`nat`/`str` — leaves go through the
+structural intro + `TrKExprS.trKExpr`. -/
+
+/-- Widen the quotient along a defeq (upstream `TrExpr.defeq`). -/
+theorem TrKExpr.defeq {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    {m : Mode} {Δ : KVLCtx} {e : KExpr m} {e₁ e₂ : VExpr}
+    (hΔ : Lean4Lean.OnCtx Δ.toCtx (env.IsType uvars))
+    (h1 : TrKExpr env uvars nameOf trProj Δ e e₁)
+    (h2 : env.IsDefEqU uvars Δ.toCtx e₁ e₂) :
+    TrKExpr env uvars nameOf trProj Δ e e₂ :=
+  let ⟨_, H, h1⟩ := h1
+  ⟨_, H, h1.trans henv hΔ h2⟩
+
+/-- Application congruence (upstream `TrExpr.app`). -/
+theorem TrKExpr.app {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    {m : Mode} {Δ : KVLCtx} {f a : KExpr m} {md : ExprInfo m}
+    {f' a' A B : VExpr}
+    (hΔ : Lean4Lean.OnCtx Δ.toCtx (env.IsType uvars))
+    (h1 : env.HasType uvars Δ.toCtx f' (.forallE A B))
+    (h2 : env.HasType uvars Δ.toCtx a' A)
+    (h3 : TrKExpr env uvars nameOf trProj Δ f f')
+    (h4 : TrKExpr env uvars nameOf trProj Δ a a') :
+    TrKExpr env uvars nameOf trProj Δ (.app f a md) (.app f' a') :=
+  let ⟨_, s3, h3⟩ := h3
+  let ⟨_, s4, h4⟩ := h4
+  have h3 := h3.of_r henv hΔ h1
+  have h4 := h4.of_r henv hΔ h2
+  ⟨_, .app h3.hasType.1 h4.hasType.1 s3 s4, _, h3.appDF h4⟩
+
+/-- Lambda congruence (upstream `TrExpr.lam`). -/
+theorem TrKExpr.lam {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ : KVLCtx} {nm : m.F Name} {bi : m.F Lean.BinderInfo}
+    {ty body : KExpr m} {md : ExprInfo m} {ty' body' : VExpr}
+    (hΔ : KVLCtx.WF env uvars Δ)
+    (h1 : env.IsType uvars Δ.toCtx ty')
+    (h2 : TrKExpr env uvars nameOf trProj Δ ty ty')
+    (h3 : TrKExpr env uvars nameOf trProj ((none, .vlam ty') :: Δ)
+      body body') :
+    TrKExpr env uvars nameOf trProj Δ (.lam nm bi ty body md)
+      (.lam ty' body') :=
+  let ⟨_, h1⟩ := h1
+  let ⟨_, s2, h2⟩ := h2
+  let ⟨_, s3, _, h3⟩ := h3
+  have hty := h2.symm.of_l henv hΔ h1
+  have hΔΔ := KVLCtx.IsDefEq.cons (KVLCtx.IsDefEq.refl henv hΔ)
+    (ofv := none) nofun (.vlam hty)
+  let ⟨_, s3'⟩ := s3.defeqDFC henv hlit htp hΔΔ
+  let ⟨_, h3'⟩ := s3.uniq henv hlit htp hΔΔ s3'
+  ⟨_, .lam ⟨_, hty.hasType.2⟩ s2 s3', _,
+    .symm <| .lamDF hty <| h3.symm.trans_l henv hΔΔ.wf.toCtx h3'⟩
+
+/-- Pi congruence (upstream `TrExpr.forallE`; our ctor is `all`). -/
+theorem TrKExpr.all {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ : KVLCtx} {nm : m.F Name} {bi : m.F Lean.BinderInfo}
+    {ty body : KExpr m} {md : ExprInfo m} {ty' body' : VExpr}
+    (hΔ : KVLCtx.WF env uvars Δ)
+    (h1 : env.IsType uvars Δ.toCtx ty')
+    (h2 : env.IsType uvars (ty' :: Δ.toCtx) body')
+    (h3 : TrKExpr env uvars nameOf trProj Δ ty ty')
+    (h4 : TrKExpr env uvars nameOf trProj ((none, .vlam ty') :: Δ)
+      body body') :
+    TrKExpr env uvars nameOf trProj Δ (.all nm bi ty body md)
+      (.forallE ty' body') :=
+  let ⟨_, h1⟩ := h1
+  let ⟨_, h2⟩ := h2
+  let ⟨_, s3, h3⟩ := h3
+  let ⟨_, s4, _, h4⟩ := h4
+  have hty := h3.symm.of_l henv hΔ h1
+  have hΔΔ := KVLCtx.IsDefEq.cons (KVLCtx.IsDefEq.refl henv hΔ)
+    (ofv := none) nofun (.vlam hty)
+  let ⟨_, s4'⟩ := s4.defeqDFC henv hlit htp hΔΔ
+  let ⟨_, h4'⟩ := s4.uniq henv hlit htp hΔΔ s4'
+  have h4 := h4.trans_r henv hΔΔ.wf h2 |>.symm.trans_l henv hΔΔ.wf h4'
+  have h5 := h4.hasType.2.defeq_l henv hty
+  ⟨_, .all ⟨_, hty.hasType.2⟩ ⟨_, h5⟩ s3 s4', _,
+    .symm <| .forallEDF hty h4⟩
+
+/-- Let congruence (upstream `TrExpr.letE`). -/
+theorem TrKExpr.letE {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (hlit : ∀ l, env.ContainsLits l →
+      VExpr.WF env uvars [] (VExpr.trLiteral l))
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ : KVLCtx} {nm : m.F Name} {ty val body : KExpr m}
+    {nd : Bool} {md : ExprInfo m} {ty' val' body' : VExpr}
+    (hΔ : KVLCtx.WF env uvars Δ)
+    (h1 : env.HasType uvars Δ.toCtx val' ty')
+    (h2 : TrKExpr env uvars nameOf trProj Δ ty ty')
+    (h3 : TrKExpr env uvars nameOf trProj Δ val val')
+    (h4 : TrKExpr env uvars nameOf trProj ((none, .vlet ty' val') :: Δ)
+      body body') :
+    TrKExpr env uvars nameOf trProj Δ (.letE nm ty val body nd md)
+      body' :=
+  have ⟨_, h0⟩ := h1.isType henv hΔ
+  let ⟨_, s2, h2⟩ := h2
+  let ⟨_, s3, h3⟩ := h3
+  let ⟨_, s4, _, h4⟩ := h4
+  have h1' := h1.defeqU_r henv hΔ h2.symm |>.defeqU_l henv hΔ h3.symm
+  have h2' := h2.symm.of_l henv hΔ h0
+  have h3' := h3.symm.of_l henv hΔ h1
+  have hΔΔ := KVLCtx.IsDefEq.cons (KVLCtx.IsDefEq.refl henv hΔ)
+    (ofv := none) nofun (.vlet h3' h2')
+  let ⟨_, s4'⟩ := s4.defeqDFC henv hlit htp hΔΔ
+  let ⟨_, h4'⟩ := s4.uniq henv hlit htp hΔΔ s4'
+  ⟨_, .letE h1' s2 s3 s4', _, h4'.symm.trans_l henv hΔ h4⟩
+
+/-- Projection congruence (upstream `TrExpr.proj`, plus our
+    address-resolution premise). -/
+theorem TrKExpr.prj {env : VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : VEnv.WF env)
+    (htp : TrProjOK env uvars trProj)
+    {m : Mode} {Δ : KVLCtx} {sid : KId m} {field : UInt64}
+    {val : KExpr m} {md : ExprInfo m} {sName : Lean.Name} {e' e'' : VExpr}
+    (hΔ : KVLCtx.WF env uvars Δ)
+    (h1 : nameOf sid.addr = some sName)
+    (H : TrKExpr env uvars nameOf trProj Δ val e')
+    (H2 : trProj Δ.toCtx sName field.toNat e' e'') :
+    TrKExpr env uvars nameOf trProj Δ (.prj sid field val md) e'' :=
+  let ⟨_, s2, h2⟩ := H
+  have hΓ := (KVLCtx.IsDefEq.refl henv hΔ).defeqCtx
+  have ⟨_, H2'⟩ := htp.defeqDFC hΓ h2.symm H2
+  ⟨_, .prj h1 s2 H2', htp.uniq hΓ H2' H2 h2⟩
 
 end Ix.Tc
