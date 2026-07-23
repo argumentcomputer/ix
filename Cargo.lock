@@ -1865,6 +1865,7 @@ dependencies = [
  "aiur",
  "dashmap",
  "ix-common",
+ "ix-kernel",
  "ixon",
  "multi-stark",
  "num-bigint",

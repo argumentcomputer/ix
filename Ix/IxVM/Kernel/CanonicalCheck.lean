@@ -123,23 +123,44 @@ def canonicalCheck := ⟦
     ord_cmp_g(xv, yv)
   }
 
-  -- Compare two Const position refs under a KMutCtx.
+  -- Compare two Const references under a KMutCtx whose locals are the
+  -- members of the block at `sblk` (for aux views sblk = [0;32], so the
+  -- sentinel Member([0;32], o) refs are the locals).
   -- Mirror: canonical_check.rs:213-222 — same ref ⇒ Equal strong; both
   -- block-local ⇒ weak cmp of class indices (same class ⇒ weak Equal);
   -- one local ⇒ local < external, strong; both external ⇒ strong cmp of
-  -- ADDRESSES (kernel analogue of compare_external_refs — NOT ingress
-  -- positions, which have no canonical order).
-  fn ctx_cmp_idx(xid: G, yid: G, ctx: List‹(G, G)›, addrs: List‹Addr›) -> (G, G) {
-    match xid - yid {
-      0 => sord_eq_strong(),
-      _ =>
-        let mx = ctx_class_idx(xid, ctx);
-        let my = ctx_class_idx(yid, ctx);
+  -- canonical env ADDRESSES (kernel analogue of compare_external_refs;
+  -- member refs key on their derived projection content address).
+  fn ctx_local_id(cr: CRef, sblk: Addr) -> (G, G) {
+    match load(cr) {
+      CRefNode.Member(b, off) =>
+        match address_eq(b, sblk) {
+          1 => (1, off),
+          0 => (0, 0),
+        },
+      CRefNode.Std(_) => (0, 0),
+    }
+  }
+
+  fn ctx_cmp_idx(xid: CRef, yid: CRef, ctx: List‹(G, G)›, sblk: Addr) -> (G, G) {
+    match cref_eq(xid, yid) {
+      1 => sord_eq_strong(),
+      0 =>
+        let (xl, xoff) = ctx_local_id(xid, sblk);
+        let (yl, yoff) = ctx_local_id(yid, sblk);
+        let mx = match xl {
+          1 => ctx_class_idx(xoff, ctx),
+          _ => 0,
+        };
+        let my = match yl {
+          1 => ctx_class_idx(yoff, ctx),
+          _ => 0,
+        };
         match mx {
           0 =>
             match my {
-              0 => sord_of_g(addr_cmp(list_lookup(addrs, xid),
-                                      list_lookup(addrs, yid))),
+              0 => sord_of_g(addr_cmp(cref_canonical_addr(xid),
+                                      cref_canonical_addr(yid))),
               _ => sord_gt_strong(),
             },
           _ =>
@@ -230,6 +251,17 @@ def canonicalCheck := ⟦
     }
   }
 
+  -- Ctx-less total order on constant references: identical cell = equal;
+  -- otherwise order by canonical env address (derived projection addr for
+  -- members). Only the equality verdict is semantically meaningful to the
+  -- ctx-less comparator's callers; lt/gt just keep the order total.
+  fn cref_cmp(a: CRef, b: CRef) -> G {
+    match ptr_val(a) - ptr_val(b) {
+      0 => 1,
+      _ => addr_cmp(cref_canonical_addr(a), cref_canonical_addr(b)),
+    }
+  }
+
   fn compare_kexpr_node(x: KExprNode, y: KExprNode) -> G {
     match x {
       KExprNode.BVar(xi) =>
@@ -251,7 +283,7 @@ def canonicalCheck := ⟦
             -- Mirror: canonical_check.rs:204-223 — levels first, then ref.
             -- (Position stands in for the address here; fine for the
             -- equality-only callers of this ctx-less comparator.)
-            ord_then(compare_kuniv_list(xls, yls), ord_cmp_g(xid, yid)),
+            ord_then(compare_kuniv_list(xls, yls), cref_cmp(xid, yid)),
           _ => 0,
         },
       KExprNode.App(xf, xa) =>
@@ -306,7 +338,7 @@ def canonicalCheck := ⟦
       KExprNode.Proj(xt, xf, xe) =>
         match y {
           KExprNode.Proj(yt, yf, ye) =>
-            ord_then(ord_cmp_g(xt, yt),
+            ord_then(cref_cmp(xt, yt),
               ord_then(ord_cmp_g(xf, yf), compare_kexpr(xe, ye))),
           _ => 2,
         },
@@ -320,15 +352,15 @@ def canonicalCheck := ⟦
   -- Other arms thread ctx into recursive calls.
   -- ============================================================================
   fn compare_kexpr_ctx(x: KExpr, y: KExpr, ctx: List‹(G, G)›,
-                       addrs: List‹Addr›) -> (G, G) {
+                       sblk: Addr) -> (G, G) {
     match ptr_val(x) - ptr_val(y) {
       0 => sord_eq_strong(),
-      _ => compare_kexpr_node_ctx(load(x), load(y), ctx, addrs),
+      _ => compare_kexpr_node_ctx(load(x), load(y), ctx, sblk),
     }
   }
 
   fn compare_kexpr_node_ctx(x: KExprNode, y: KExprNode, ctx: List‹(G, G)›,
-                            addrs: List‹Addr›) -> (G, G) {
+                            sblk: Addr) -> (G, G) {
     match x {
       KExprNode.BVar(xi) =>
         match y {
@@ -347,7 +379,7 @@ def canonicalCheck := ⟦
           KExprNode.Srt(_) => sord_gt_strong(),
           KExprNode.Const(yid, yls) =>
             sord_then(compare_kuniv_list_sord(xls, yls),
-              ctx_cmp_idx(xid, yid, ctx, addrs)),
+              ctx_cmp_idx(xid, yid, ctx, sblk)),
           _ => sord_lt_strong(),
         },
       KExprNode.App(xf, xa) =>
@@ -356,8 +388,8 @@ def canonicalCheck := ⟦
           KExprNode.Srt(_) => sord_gt_strong(),
           KExprNode.Const(_, _) => sord_gt_strong(),
           KExprNode.App(yf, ya) =>
-            sord_then(compare_kexpr_ctx(xf, yf, ctx, addrs),
-                       compare_kexpr_ctx(xa, ya, ctx, addrs)),
+            sord_then(compare_kexpr_ctx(xf, yf, ctx, sblk),
+                       compare_kexpr_ctx(xa, ya, ctx, sblk)),
           _ => sord_lt_strong(),
         },
       KExprNode.Lam(xt, xb) =>
@@ -367,8 +399,8 @@ def canonicalCheck := ⟦
           KExprNode.Const(_, _) => sord_gt_strong(),
           KExprNode.App(_, _) => sord_gt_strong(),
           KExprNode.Lam(yt, yb) =>
-            sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-                       compare_kexpr_ctx(xb, yb, ctx, addrs)),
+            sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+                       compare_kexpr_ctx(xb, yb, ctx, sblk)),
           _ => sord_lt_strong(),
         },
       KExprNode.Forall(xt, xb) =>
@@ -379,8 +411,8 @@ def canonicalCheck := ⟦
           KExprNode.App(_, _) => sord_gt_strong(),
           KExprNode.Lam(_, _) => sord_gt_strong(),
           KExprNode.Forall(yt, yb) =>
-            sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-                       compare_kexpr_ctx(xb, yb, ctx, addrs)),
+            sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+                       compare_kexpr_ctx(xb, yb, ctx, sblk)),
           _ => sord_lt_strong(),
         },
       KExprNode.Let(xt, xv, xb) =>
@@ -392,9 +424,9 @@ def canonicalCheck := ⟦
           KExprNode.Lam(_, _) => sord_gt_strong(),
           KExprNode.Forall(_, _) => sord_gt_strong(),
           KExprNode.Let(yt, yv, yb) =>
-            sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-              sord_then(compare_kexpr_ctx(xv, yv, ctx, addrs),
-                         compare_kexpr_ctx(xb, yb, ctx, addrs))),
+            sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+              sord_then(compare_kexpr_ctx(xv, yv, ctx, sblk),
+                         compare_kexpr_ctx(xb, yb, ctx, sblk))),
           _ => sord_lt_strong(),
         },
       KExprNode.Lit(xl) =>
@@ -406,9 +438,9 @@ def canonicalCheck := ⟦
       KExprNode.Proj(xt, xf, xe) =>
         match y {
           KExprNode.Proj(yt, yf, ye) =>
-            sord_then(ctx_cmp_idx(xt, yt, ctx, addrs),
+            sord_then(ctx_cmp_idx(xt, yt, ctx, sblk),
               sord_then(sord_of_g(ord_cmp_g(xf, yf)),
-                         compare_kexpr_ctx(xe, ye, ctx, addrs))),
+                         compare_kexpr_ctx(xe, ye, ctx, sblk))),
           _ => sord_gt_strong(),
         },
     }
@@ -529,19 +561,19 @@ def canonicalCheck := ⟦
   -- Mirror: canonical_check.rs:280-289 — (fields, rhs) ONLY; the leading
   -- global ctor idx is an ingress artifact (see compare_krec_rule).
   fn compare_krec_rule_ctx(x: KRecRule, y: KRecRule, ctx: List‹(G, G)›,
-                           addrs: List‹Addr›) -> (G, G) {
+                           sblk: Addr) -> (G, G) {
     match x {
       KRecRule.Mk(_xc, xn, xr) =>
         match y {
           KRecRule.Mk(_yc, yn, yr) =>
             sord_then(sord_of_g(ord_cmp_g(xn, yn)),
-                       compare_kexpr_ctx(xr, yr, ctx, addrs)),
+                       compare_kexpr_ctx(xr, yr, ctx, sblk)),
         },
     }
   }
 
   fn compare_krec_rule_list_ctx(xs: List‹KRecRule›, ys: List‹KRecRule›,
-                                 ctx: List‹(G, G)›, addrs: List‹Addr›) -> (G, G) {
+                                 ctx: List‹(G, G)›, sblk: Addr) -> (G, G) {
     match load(xs) {
       ListNode.Nil =>
         match load(ys) {
@@ -552,8 +584,8 @@ def canonicalCheck := ⟦
         match load(ys) {
           ListNode.Nil => sord_gt_strong(),
           ListNode.Cons(yh, yt) =>
-            sord_then(compare_krec_rule_ctx(xh, yh, ctx, addrs),
-                       compare_krec_rule_list_ctx(xt, yt, ctx, addrs)),
+            sord_then(compare_krec_rule_ctx(xh, yh, ctx, sblk),
+                       compare_krec_rule_list_ctx(xt, yt, ctx, sblk)),
         },
     }
   }
@@ -691,54 +723,54 @@ def canonicalCheck := ⟦
   -- `resolve_ctor` parameter). `addrs` backs the external-ref address
   -- compare in ctx_cmp_idx.
   fn compare_kconst_ctx(x: KConstantInfo, y: KConstantInfo,
-                        ctx: List‹(G, G)›, top: List‹&KConstantInfo›,
-                        addrs: List‹Addr›) -> (G, G) {
+                        ctx: List‹(G, G)›,
+                        sblk: Addr) -> (G, G) {
     let kx = kconst_kind_ord(x);
     let ky = kconst_kind_ord(y);
     let kord = ord_cmp_g(kx, ky);
     match kord {
-      1 => compare_kconst_same_kind_ctx(x, y, ctx, top, addrs),
+      1 => compare_kconst_same_kind_ctx(x, y, ctx, sblk),
       _ => sord_of_g(kord),
     }
   }
 
   fn compare_kconst_same_kind_ctx(x: KConstantInfo, y: KConstantInfo,
-                                   ctx: List‹(G, G)›, top: List‹&KConstantInfo›,
-                                   addrs: List‹Addr›) -> (G, G) {
+                                   ctx: List‹(G, G)›,
+                                   sblk: Addr) -> (G, G) {
     match x {
       KConstantInfo.Defn(xn, xt, xv, _xs, _xh) =>
         match y {
           KConstantInfo.Defn(yn, yt, yv, _ys, _yh) =>
             sord_then(sord_of_g(ord_cmp_g(xn, yn)),
-              sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-                         compare_kexpr_ctx(xv, yv, ctx, addrs))),
+              sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+                         compare_kexpr_ctx(xv, yv, ctx, sblk))),
         },
       KConstantInfo.Thm(xn, xt, xv) =>
         match y {
           KConstantInfo.Thm(yn, yt, yv) =>
             sord_then(sord_of_g(ord_cmp_g(xn, yn)),
-              sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-                         compare_kexpr_ctx(xv, yv, ctx, addrs))),
+              sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+                         compare_kexpr_ctx(xv, yv, ctx, sblk))),
         },
       KConstantInfo.Opaque(xn, xt, xv, xu) =>
         match y {
           KConstantInfo.Opaque(yn, yt, yv, yu) =>
             sord_then(sord_of_g(ord_cmp_g(xn, yn)),
-              sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-                sord_then(compare_kexpr_ctx(xv, yv, ctx, addrs),
+              sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+                sord_then(compare_kexpr_ctx(xv, yv, ctx, sblk),
                            sord_of_g(ord_cmp_g(xu, yu))))),
         },
       KConstantInfo.Quot(xn, xt, _xk) =>
         match y {
           KConstantInfo.Quot(yn, yt, _yk) =>
             sord_then(sord_of_g(ord_cmp_g(xn, yn)),
-                       compare_kexpr_ctx(xt, yt, ctx, addrs)),
+                       compare_kexpr_ctx(xt, yt, ctx, sblk)),
         },
       KConstantInfo.Axiom(xn, xt, xu) =>
         match y {
           KConstantInfo.Axiom(yn, yt, yu) =>
             sord_then(sord_of_g(ord_cmp_g(xn, yn)),
-              sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
+              sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
                          sord_of_g(ord_cmp_g(xu, yu)))),
         },
       -- Mirror: canonical_check.rs:299-338 compare_kindc —
@@ -754,8 +786,8 @@ def canonicalCheck := ⟦
                 sord_then(sord_of_g(ord_cmp_g(xp, yp)),
                   sord_then(sord_of_g(ord_cmp_g(xi, yi)),
                     sord_then(sord_of_g(ord_cmp_g(list_length(xc), list_length(yc))),
-                      sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-                                 compare_kctor_idxs_ctx(xc, yc, ctx, top, addrs))))))),
+                      sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+                                 compare_kctor_idxs_ctx(xc, yc, ctx, sblk))))))),
         },
       KConstantInfo.Ctor(xn, xt, _xi, xc, xp, xf, _xu) =>
         match y {
@@ -764,7 +796,7 @@ def canonicalCheck := ⟦
               sord_then(sord_of_g(ord_cmp_g(xc, yc)),
                 sord_then(sord_of_g(ord_cmp_g(xp, yp)),
                   sord_then(sord_of_g(ord_cmp_g(xf, yf)),
-                             compare_kexpr_ctx(xt, yt, ctx, addrs))))),
+                             compare_kexpr_ctx(xt, yt, ctx, sblk))))),
         },
       KConstantInfo.Rec(xn, xt, xp, xi, xm, xmi, xrules, xk, _xu, _xba) =>
         match y {
@@ -775,8 +807,8 @@ def canonicalCheck := ⟦
                   sord_then(sord_of_g(ord_cmp_g(xm, ym)),
                     sord_then(sord_of_g(ord_cmp_g(xmi, ymi)),
                       sord_then(sord_of_g(ord_cmp_g(xk, yk)),
-                        sord_then(compare_kexpr_ctx(xt, yt, ctx, addrs),
-                                   compare_krec_rule_list_ctx(xrules, yrules, ctx, addrs)))))))),
+                        sord_then(compare_kexpr_ctx(xt, yt, ctx, sblk),
+                                   compare_krec_rule_list_ctx(xrules, yrules, ctx, sblk)))))))),
         },
     }
   }
@@ -786,8 +818,7 @@ def canonicalCheck := ⟦
   -- each position through `top` and comparing the Ctor payloads. List
   -- lengths are compared upstream (|ctors| field), so both lists exhaust
   -- together; the fold mirrors try_zip's lex/weak-propagation semantics.
-  fn compare_kctor_idxs_ctx(xs: List‹G›, ys: List‹G›, ctx: List‹(G, G)›,
-                             top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
+  fn compare_kctor_idxs_ctx(xs: List‹CRef›, ys: List‹CRef›, ctx: List‹(G, G)›, sblk: Addr) -> (G, G) {
     match load(xs) {
       ListNode.Nil => sord_eq_strong(),
       ListNode.Cons(xpos, xrest) =>
@@ -795,9 +826,9 @@ def canonicalCheck := ⟦
           ListNode.Nil => sord_eq_strong(),
           ListNode.Cons(ypos, yrest) =>
             sord_then(
-              compare_kctor_pair_ctx(load(list_lookup(top, xpos)),
-                                     load(list_lookup(top, ypos)), ctx, addrs),
-              compare_kctor_idxs_ctx(xrest, yrest, ctx, top, addrs)),
+              compare_kctor_pair_ctx(load(get_ci(xpos)),
+                                     load(get_ci(ypos)), ctx, sblk),
+              compare_kctor_idxs_ctx(xrest, yrest, ctx, sblk)),
         },
     }
   }
@@ -807,7 +838,7 @@ def canonicalCheck := ⟦
   -- the comparator key. Non-Ctor operands fall back to kind ordering
   -- (comparator stays total on malformed blocks, same as Rust).
   fn compare_kctor_pair_ctx(x: KConstantInfo, y: KConstantInfo,
-                             ctx: List‹(G, G)›, addrs: List‹Addr›) -> (G, G) {
+                             ctx: List‹(G, G)›, sblk: Addr) -> (G, G) {
     match x {
       KConstantInfo.Ctor(xn, xt, _xi, xc, xp, xf, _xu) =>
         match y {
@@ -816,94 +847,41 @@ def canonicalCheck := ⟦
               sord_then(sord_of_g(ord_cmp_g(xc, yc)),
                 sord_then(sord_of_g(ord_cmp_g(xp, yp)),
                   sord_then(sord_of_g(ord_cmp_g(xf, yf)),
-                             compare_kexpr_ctx(xt, yt, ctx, addrs))))),
+                             compare_kexpr_ctx(xt, yt, ctx, sblk))))),
           _ => sord_of_g(ord_cmp_g(kconst_kind_ord(x), kconst_kind_ord(y))),
         },
       _ => sord_of_g(ord_cmp_g(kconst_kind_ord(x), kconst_kind_ord(y))),
     }
   }
 
-  -- Build ctx (list of kernel positions) for all consts in `top` whose
-  -- block_addr equals `target`. Walks `top` once with a position counter.
-  fn block_members_of(target: Addr, top: List‹&KConstantInfo›,
-                       all_top: List‹&KConstantInfo›, pos: G) -> List‹G› {
-    match load(top) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(&ci, rest) =>
-        let ba = kconst_block_addr(ci, all_top);
-        let rest_members = block_members_of(target, rest, all_top, pos + 1);
-        match address_eq(ba, target) {
-          1 => store(ListNode.Cons(pos, rest_members)),
-          0 => rest_members,
-        },
-    }
-  }
-
-  -- Walks `top` finding adjacent KConstantInfo pairs that share a derived
-  -- block_addr. Asserts strict-lt for each such pair. Block_addr derivation:
-  --   Induct → its own 10th-field block_addr.
-  --   Ctor   → parent Induct's block_addr (via induct_idx lookup).
-  --   Rec    → block_addr of the parent of its first rule's ctor.
-  --   Other  → [0;32] (not part of a Muts block).
-  fn check_canonical_block_sort(top: List‹&KConstantInfo›, addrs: List‹Addr›) {
-    check_canonical_block_sort_walk(top, store([0u8; 32]), store(ListNode.Nil), 0, top, addrs)
-  }
-
-  fn kconst_block_addr(ci: KConstantInfo, top: List‹&KConstantInfo›) -> Addr {
-    match ci {
-      KConstantInfo.Induct(_, _, _, _, _, _, ba) => ba,
-      KConstantInfo.Ctor(_, _, induct_idx, _, _, _, _) =>
-        let ind_ci = load(list_lookup(top, induct_idx));
-        match ind_ci {
-          KConstantInfo.Induct(_, _, _, _, _, _, ba) => ba,
-          _ => store([0u8; 32]),
-        },
-      KConstantInfo.Rec(_, _, _, _, _, _, _, _, _, ba) => ba,
-      _ => store([0u8; 32]),
-    }
-  }
-
-  -- Walk top, group consecutive consts sharing a non-zero block_addr,
-  -- and validate each block via iterative refinement.
-  fn check_canonical_block_sort_walk(consts: List‹&KConstantInfo›,
-                                     cur_ba: Addr,
-                                     cur_members: List‹G›,
-                                     pos: G,
-                                     top: List‹&KConstantInfo›,
-                                     addrs: List‹Addr›) {
-    match load(consts) {
-      ListNode.Nil => validate_block_if_nonzero(cur_ba, cur_members, top, addrs),
-      ListNode.Cons(&ci, rest) =>
-        let ba = kconst_block_addr(ci, top);
-        match address_eq(ba, cur_ba) {
-          1 =>
-            check_canonical_block_sort_walk(rest, ba, list_snoc(cur_members, pos),
-                                             pos + 1, top, addrs),
-          0 =>
-            validate_block_if_nonzero(cur_ba, cur_members, top, addrs);
-            let new_members = init_block_members(ba, pos);
-            check_canonical_block_sort_walk(rest, ba, new_members, pos + 1, top, addrs),
-        },
-    }
-  }
-
-  fn init_block_members(ba: Addr, pos: G) -> List‹G› {
-    match address_eq(ba, store([0u8; 32])) {
-      1 => store(ListNode.Nil),
-      0 => store(ListNode.Cons(pos, store(ListNode.Nil))),
-    }
-  }
-
-  fn validate_block_if_nonzero(ba: Addr, members: List‹G›,
-                                top: List‹&KConstantInfo›,
-                                addrs: List‹Addr›) {
-    match address_eq(ba, store([0u8; 32])) {
+  -- Per-block canonical-order validation. Memoized per block address:
+  -- the claim layer invokes it for every block containing a checked
+  -- constant (replaces the old whole-closure walk — canonicality is a
+  -- per-block invariant; global acyclicity is carried by content
+  -- addressing, since a reference cycle would be a hash cycle).
+  fn validate_block(blk: Addr) {
+    match address_eq(blk, store([0u8; 32])) {
       1 => (),
       0 =>
-        match list_length(members) {
+        let offs = block_indc_offsets(block_members(blk), 0);
+        match list_length(offs) {
           0 => (),
           1 => (),
-          _ => validate_block_canonical(members, top, addrs),
+          _ => validate_block_canonical(offs, blk),
+        },
+    }
+  }
+
+  -- Flat offsets of a block's Indc members, member order.
+  fn block_indc_offsets(members: List‹MutConst›, cur: G) -> List‹G› {
+    match load(members) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(mc, rest) =>
+        let sz = member_kernel_size(mc);
+        match mc {
+          MutConst.Indc(_) =>
+            store(ListNode.Cons(cur, block_indc_offsets(rest, cur + sz))),
+          _ => block_indc_offsets(rest, cur + sz),
         },
     }
   }
@@ -915,34 +893,20 @@ def canonicalCheck := ⟦
   -- Mirror Rust ingress.rs:2025-2048: validate canonical order for
   -- Indc subset only. Ctors share parent's block_addr in our walk but
   -- aren't actual block members per Rust's KConst::Indc.block field.
-  fn validate_block_canonical(stored: List‹G›, top: List‹&KConstantInfo›,
-                              addrs: List‹Addr›) {
-    let stored_indcs = filter_indc_positions(stored, top);
+  fn validate_block_canonical(stored: List‹G›,
+                              sblk: Addr) {
+    let stored_indcs = stored;
     match list_length(stored_indcs) {
       0 => (),
       1 => (),
       _ =>
-        let classes = sort_kconsts(stored_indcs, top, addrs);
+        let classes = sort_kconsts(stored_indcs, sblk);
         let sing = all_singleton_classes(classes);
         let sorted = flatten_classes(classes);
         let eq = g_list_eq(sorted, stored_indcs);
         assert_eq!(sing, 1);
         assert_eq!(eq, 1);
         (),
-    }
-  }
-
-  fn filter_indc_positions(positions: List‹G›,
-                           top: List‹&KConstantInfo›) -> List‹G› {
-    match load(positions) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(p, rest) =>
-        let ci = load(list_lookup(top, p));
-        let rest_filtered = filter_indc_positions(rest, top);
-        match kconst_kind_ord(ci) {
-          1 => store(ListNode.Cons(p, rest_filtered)),
-          _ => rest_filtered,
-        },
     }
   }
 
@@ -984,6 +948,17 @@ def canonicalCheck := ⟦
     }
   }
 
+  fn block_ci(sblk: Addr, off: G) -> &KConstantInfo {
+    get_ci(store(CRefNode.Member(sblk, off)))
+  }
+
+  fn cref_member_off(cr: CRef) -> G {
+    match load(cr) {
+      CRefNode.Member(_, off) => off,
+      CRefNode.Std(_) => 0,
+    }
+  }
+
   -- ============================================================================
   -- Iterative refinement: sort_kconsts (mirror canonical_check.rs:650-696).
   --
@@ -998,22 +973,22 @@ def canonicalCheck := ⟦
   -- fixpoint (Rust loops unboundedly; a fixed constant would silently
   -- truncate refinement on very wide blocks).
   -- ============================================================================
-  fn sort_kconsts(members: List‹G›, top: List‹&KConstantInfo›,
-                  addrs: List‹Addr›) -> List‹List‹G›› {
+  fn sort_kconsts(members: List‹G›,
+                  sblk: Addr) -> List‹List‹G›› {
     let seed = store(ListNode.Cons(members, store(ListNode.Nil)));
-    sort_kconsts_loop(seed, top, addrs, 1 + list_length(members))
+    sort_kconsts_loop(seed, sblk, 1 + list_length(members))
   }
 
-  fn sort_kconsts_loop(classes: List‹List‹G››, top: List‹&KConstantInfo›,
-                        addrs: List‹Addr›, fuel: G) -> List‹List‹G›› {
+  fn sort_kconsts_loop(classes: List‹List‹G››,
+                        sblk: Addr, fuel: G) -> List‹List‹G›› {
     match fuel {
       0 => classes,
       _ =>
-        let ctx = build_mut_ctx(classes, top);
-        let new_classes = refine_classes(classes, ctx, top, addrs);
+        let ctx = build_mut_ctx(classes, sblk);
+        let new_classes = refine_classes(classes, ctx, sblk);
         match classes_eq(classes, new_classes) {
           1 => classes,
-          _ => sort_kconsts_loop(new_classes, top, addrs, fuel - 1),
+          _ => sort_kconsts_loop(new_classes, sblk, fuel - 1),
         },
     }
   }
@@ -1026,31 +1001,30 @@ def canonicalCheck := ⟦
   -- Indc member's ctors map to i + cidx, where i starts at |classes| and
   -- advances by each class's max ctor count.
   -- ============================================================================
-  fn build_mut_ctx(classes: List‹List‹G››,
-                   top: List‹&KConstantInfo›) -> List‹(G, G)› {
-    build_mut_ctx_classes(classes, top, 0, list_length(classes))
+  fn build_mut_ctx(classes: List‹List‹G››, sblk: Addr) -> List‹(G, G)› {
+    build_mut_ctx_classes(classes, 0, list_length(classes), sblk)
   }
 
-  fn build_mut_ctx_classes(classes: List‹List‹G››, top: List‹&KConstantInfo›,
-                           j: G, i: G) -> List‹(G, G)› {
+  fn build_mut_ctx_classes(classes: List‹List‹G››,
+                           j: G, i: G, sblk: Addr) -> List‹(G, G)› {
     match load(classes) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(cls, rest) =>
-        let (entries, max_ctors) = build_mut_ctx_members(cls, top, j, i);
+        let (entries, max_ctors) = build_mut_ctx_members(cls, j, i, sblk);
         list_concat(entries,
-                    build_mut_ctx_classes(rest, top, j + 1, i + max_ctors)),
+                    build_mut_ctx_classes(rest, j + 1, i + max_ctors, sblk)),
     }
   }
 
   -- Entries for one class's members (+ their ctors); also returns the
   -- class's max ctor count for the caller's `i` advance.
-  fn build_mut_ctx_members(members: List‹G›, top: List‹&KConstantInfo›,
-                           j: G, i: G) -> (List‹(G, G)›, G) {
+  fn build_mut_ctx_members(members: List‹G›,
+                           j: G, i: G, sblk: Addr) -> (List‹(G, G)›, G) {
     match load(members) {
       ListNode.Nil => (store(ListNode.Nil), 0),
       ListNode.Cons(pos, rest) =>
-        let (rest_entries, rest_max) = build_mut_ctx_members(rest, top, j, i);
-        let ctors = kconst_ctor_idxs(load(list_lookup(top, pos)));
+        let (rest_entries, rest_max) = build_mut_ctx_members(rest, j, i, sblk);
+        let ctors = kconst_ctor_idxs(load(block_ci(sblk, pos)));
         let n = list_length(ctors);
         let ctor_entries = ctor_ctx_entries(ctors, i, 0);
         let entries = store(ListNode.Cons((pos, j),
@@ -1062,18 +1036,18 @@ def canonicalCheck := ⟦
     }
   }
 
-  fn ctor_ctx_entries(ctors: List‹G›, i: G, cidx: G) -> List‹(G, G)› {
+  fn ctor_ctx_entries(ctors: List‹CRef›, i: G, cidx: G) -> List‹(G, G)› {
     match load(ctors) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(cpos, rest) =>
-        store(ListNode.Cons((cpos, i + cidx),
+        store(ListNode.Cons((cref_member_off(cpos), i + cidx),
                             ctor_ctx_entries(rest, i, cidx + 1))),
     }
   }
 
   -- Mirror: canonical_check.rs:73-77 cnst_ctors — Indc's ctor positions,
   -- empty for every other kind.
-  fn kconst_ctor_idxs(ci: KConstantInfo) -> List‹G› {
+  fn kconst_ctor_idxs(ci: KConstantInfo) -> List‹CRef› {
     match ci {
       KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _) => ctor_indices,
       _ => store(ListNode.Nil),
@@ -1081,75 +1055,69 @@ def canonicalCheck := ⟦
   }
 
   fn refine_classes(classes: List‹List‹G››, ctx: List‹(G, G)›,
-                     top: List‹&KConstantInfo›,
-                     addrs: List‹Addr›) -> List‹List‹G›› {
+                     sblk: Addr) -> List‹List‹G›› {
     match load(classes) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(c, rest) =>
-        let refined = refine_one_class(c, ctx, top, addrs);
-        list_concat(refined, refine_classes(rest, ctx, top, addrs)),
+        let refined = refine_one_class(c, ctx, sblk);
+        list_concat(refined, refine_classes(rest, ctx, sblk)),
     }
   }
 
   fn refine_one_class(c: List‹G›, ctx: List‹(G, G)›,
-                       top: List‹&KConstantInfo›,
-                       addrs: List‹Addr›) -> List‹List‹G›› {
+                       sblk: Addr) -> List‹List‹G›› {
     match list_length(c) {
       0 => store(ListNode.Nil),
       1 => store(ListNode.Cons(c, store(ListNode.Nil))),
       _ =>
-        let sorted = insertion_sort_class(c, ctx, top, addrs);
-        group_consecutive_class(sorted, ctx, top, addrs),
+        let sorted = insertion_sort_class(c, ctx, sblk);
+        group_consecutive_class(sorted, ctx, sblk),
     }
   }
 
   fn insertion_sort_class(xs: List‹G›, ctx: List‹(G, G)›,
-                           top: List‹&KConstantInfo›,
-                           addrs: List‹Addr›) -> List‹G› {
+                           sblk: Addr) -> List‹G› {
     match load(xs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(x, rest) =>
-        insert_sorted(x, insertion_sort_class(rest, ctx, top, addrs), ctx, top, addrs),
+        insert_sorted(x, insertion_sort_class(rest, ctx, sblk), ctx, sblk),
     }
   }
 
-  fn insert_sorted(x: G, sorted: List‹G›, ctx: List‹(G, G)›,
-                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> List‹G› {
+  fn insert_sorted(x: G, sorted: List‹G›, ctx: List‹(G, G)›, sblk: Addr) -> List‹G› {
     match load(sorted) {
       ListNode.Nil => store(ListNode.Cons(x, store(ListNode.Nil))),
       ListNode.Cons(h, rest) =>
-        match compare_kconst_ctx(load(list_lookup(top, x)),
-                                  load(list_lookup(top, h)), ctx, top, addrs) {
+        match compare_kconst_ctx(load(block_ci(sblk, x)),
+                                  load(block_ci(sblk, h)), ctx, sblk) {
           (0, _) => store(ListNode.Cons(x, sorted)),
-          _ => store(ListNode.Cons(h, insert_sorted(x, rest, ctx, top, addrs))),
+          _ => store(ListNode.Cons(h, insert_sorted(x, rest, ctx, sblk))),
         },
     }
   }
 
   fn group_consecutive_class(sorted: List‹G›, ctx: List‹(G, G)›,
-                              top: List‹&KConstantInfo›,
-                              addrs: List‹Addr›) -> List‹List‹G›› {
+                              sblk: Addr) -> List‹List‹G›› {
     match load(sorted) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(h, rest) =>
-        group_consecutive_walk(rest, ctx, top, addrs, h,
+        group_consecutive_walk(rest, ctx, sblk, h,
                                 store(ListNode.Cons(h, store(ListNode.Nil)))),
     }
   }
 
-  fn group_consecutive_walk(remaining: List‹G›, ctx: List‹(G, G)›,
-                             top: List‹&KConstantInfo›, addrs: List‹Addr›,
+  fn group_consecutive_walk(remaining: List‹G›, ctx: List‹(G, G)›, sblk: Addr,
                              last: G, current_group: List‹G›) -> List‹List‹G›› {
     match load(remaining) {
       ListNode.Nil => store(ListNode.Cons(current_group, store(ListNode.Nil))),
       ListNode.Cons(h, rest) =>
-        match compare_kconst_ctx(load(list_lookup(top, last)),
-                                  load(list_lookup(top, h)), ctx, top, addrs) {
+        match compare_kconst_ctx(load(block_ci(sblk, last)),
+                                  load(block_ci(sblk, h)), ctx, sblk) {
           (1, _) =>
-            group_consecutive_walk(rest, ctx, top, addrs, h, list_snoc(current_group, h)),
+            group_consecutive_walk(rest, ctx, sblk, h, list_snoc(current_group, h)),
           _ =>
             store(ListNode.Cons(current_group,
-              group_consecutive_walk(rest, ctx, top, addrs, h,
+              group_consecutive_walk(rest, ctx, sblk, h,
                 store(ListNode.Cons(h, store(ListNode.Nil)))))),
         },
     }

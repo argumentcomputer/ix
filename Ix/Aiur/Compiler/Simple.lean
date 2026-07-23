@@ -179,7 +179,10 @@ def Source.Toplevel.checkAndSimplify (toplevel : Source.Toplevel) :
     | .constructor d c => pure $ acc.insert name (.constructor d c : Typed.Declaration)
     | .dataType d => pure $ acc.insert name (.dataType d : Typed.Declaration)
     | .function f => do
-      let f ← ((checkFunction f) (getFunctionContext f decls)).run' {}
+      -- SCAFFOLD: name the failing function in check errors.
+      let f ← match ((checkFunction f) (getFunctionContext f decls)).run' {} with
+        | .ok f => pure f
+        | .error e => dbg_trace "checkFunction FAILED in {name}"; throw e
       pure $ acc.insert name (.function f : Typed.Declaration)
   simplifyDecls decls typedDecls
 

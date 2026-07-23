@@ -55,13 +55,11 @@ def infer := ⟦
   -- Context-trimmed memo wrapper (mirror Rust `infer_key`): key inference on
   -- the suffix of `types` reachable from `e`'s loose-bvar range, so a closed
   -- subterm (`lbr == 0`) shares its inferred type across every binder depth.
-  fn k_infer(e: KExpr, types: List‹KExpr›,
-             top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    k_infer_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
+  fn k_infer(e: KExpr, types: List‹KExpr›) -> KExpr {
+    k_infer_core(e, ctx_trim(types, expr_lbr(e)))
   }
 
-  fn k_infer_core(e: KExpr, types: List‹KExpr›,
-                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+  fn k_infer_core(e: KExpr, types: List‹KExpr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
 
@@ -76,7 +74,7 @@ def infer := ⟦
       -- Mirror: src/ix/kernel/check.rs:110-120 universe-arity validation.
       -- Validates `lvls.len() == num_lvls(ci)`.
       KExprNode.Const(idx, lvls) =>
-        let ci = load(list_lookup(top, idx));
+        let ci = load(get_ci(idx));
         let expected = const_num_lvls(ci);
         let given = list_length(lvls);
         assert_eq!(given, expected);
@@ -92,77 +90,75 @@ def infer := ⟦
         -- on heavily-applied terms.
         match collect_spine(e) {
           (head, args) =>
-            let head_ty = k_infer(head, types, top, addrs);
+            let head_ty = k_infer(head, types);
             k_infer_app_spine_loop(head_ty, args, store(ListNode.Nil),
-                                    types, top, addrs),
+                                    types),
         },
 
       KExprNode.Lam(ty, body) =>
-        k_ensure_sort(ty, types, top, addrs);
+        k_ensure_sort(ty, types);
         let types2 = store(ListNode.Cons(ty, types));
-        let body_ty = k_infer(body, types2, top, addrs);
+        let body_ty = k_infer(body, types2);
         store(KExprNode.Forall(ty, body_ty)),
 
       KExprNode.Forall(ty, body) =>
-        let u1 = k_ensure_sort(ty, types, top, addrs);
+        let u1 = k_ensure_sort(ty, types);
         let types2 = store(ListNode.Cons(ty, types));
-        let u2 = k_ensure_sort(body, types2, top, addrs);
+        let u2 = k_ensure_sort(body, types2);
         store(KExprNode.Srt(level_imax(u1, u2))),
 
-      KExprNode.Let(ty, val, body) => k_infer_let(ty, val, body, types, top, addrs),
+      KExprNode.Let(ty, val, body) => k_infer_let(ty, val, body, types),
 
-      KExprNode.Lit(lit) => k_infer_lit(lit, addrs),
+      KExprNode.Lit(lit) => k_infer_lit(lit),
 
-      KExprNode.Proj(tidx, fidx, e1) => k_infer_proj(tidx, fidx, e1, types, top, addrs),
+      KExprNode.Proj(tidx, fidx, e1) => k_infer_proj(tidx, fidx, e1, types),
     }
   }
 
   -- Cold-extracted Let arm (same pattern as `expr_lbr_let`): four call
   -- sites on a rare arm would otherwise widen every k_infer_core row.
-  fn k_infer_let(ty: KExpr, val: KExpr, body: KExpr, types: List‹KExpr›,
-                 top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    k_ensure_sort(ty, types, top, addrs);
-    k_check(val, ty, types, top, addrs);
+  fn k_infer_let(ty: KExpr, val: KExpr, body: KExpr, types: List‹KExpr›) -> KExpr {
+    k_ensure_sort(ty, types);
+    k_check(val, ty, types);
     let body_substed = expr_inst1(body, val, 0);
-    k_infer(body_substed, types, top, addrs)
+    k_infer(body_substed, types)
   }
 
   -- Cold-extracted Lit arm.
-  fn k_infer_lit(lit: KLiteral, addrs: List‹Addr›) -> KExpr {
+  fn k_infer_lit(lit: KLiteral) -> KExpr {
     match lit {
-      KLiteral.Nat(_) => nat_const_type(addrs),
-      KLiteral.Str(_) => str_const_type(addrs),
+      KLiteral.Nat(_) => nat_const_type(),
+      KLiteral.Str(_) => str_const_type(),
     }
   }
 
   -- Cold-extracted Proj arm: the widest arm of `k_infer_core` by far
   -- (~10 call sites) on a rare node kind.
   -- Mirror: src/ix/kernel/infer.rs:331-450 infer_proj.
-  fn k_infer_proj(tidx: G, fidx: G, e1: KExpr, types: List‹KExpr›,
-                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    let val_ty = k_infer(e1, types, top, addrs);
-    let wty = whnf(val_ty, types, top, addrs);
+  fn k_infer_proj(tidx: CRef, fidx: G, e1: KExpr, types: List‹KExpr›) -> KExpr {
+    let val_ty = k_infer(e1, types);
+    let wty = whnf(val_ty, types);
     let pair = collect_spine(wty);
     match pair {
       (head, args) =>
         match load(head) {
           KExprNode.Const(idx, lvls) =>
-            assert_eq!(idx, tidx);
-            let ind_ci = load(list_lookup(top, idx));
+            assert_eq!(cref_eq(idx, tidx), 1);
+            let ind_ci = load(get_ci(idx));
             match ind_ci {
               KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
                 -- Single-ctor structure required.
                 assert_eq!(list_length(ctor_indices), 1);
                 let is_prop = is_inductive_prop(ind_ty, lvls, n_params + n_indices,
-                                                 types, top, addrs);
+                                                 types);
                 let ctor_idx = list_lookup(ctor_indices, 0);
-                let ctor_ci = load(list_lookup(top, ctor_idx));
+                let ctor_ci = load(get_ci(ctor_idx));
                 match ctor_ci {
                   KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
                     let ctor_ty_inst = expr_inst_levels(ctor_ty, lvls);
                     let after_params = peel_params_subst(ctor_ty_inst, args, n_params);
                     peel_field_loop(after_params, fidx, 0, tidx, e1, is_prop,
-                                    types, top, addrs),
+                                    types),
                 },
             },
         },
@@ -182,41 +178,38 @@ def infer := ⟦
   -- OUTER context, so we restart the descent with subs_rev = [a].
   fn k_infer_app_spine_loop(t: KExpr, args: List‹KExpr›,
                              subs_rev: List‹KExpr›,
-                             types: List‹KExpr›,
-                             top: List‹&KConstantInfo›,
-                             addrs: List‹Addr›) -> KExpr {
+                             types: List‹KExpr›) -> KExpr {
     match load(args) {
       ListNode.Nil => expr_inst_many(t, subs_rev, 0),
       ListNode.Cons(a, rest) =>
         match load(t) {
           KExprNode.Forall(dom, cod) =>
             let concrete_dom = expr_inst_many(dom, subs_rev, 0);
-            k_check(a, concrete_dom, types, top, addrs);
+            k_check(a, concrete_dom, types);
             let new_subs = store(ListNode.Cons(a, subs_rev));
-            k_infer_app_spine_loop(cod, rest, new_subs, types, top, addrs),
+            k_infer_app_spine_loop(cod, rest, new_subs, types),
           _ =>
             let t_concrete = expr_inst_many(t, subs_rev, 0);
-            let t_whnf = whnf(t_concrete, types, top, addrs);
+            let t_whnf = whnf(t_concrete, types);
             let triple = ensure_forall_post_whnf(t_whnf);
             match triple {
               (ok, dom, cod) =>
                 assert_eq!(ok, 1);
-                k_check(a, dom, types, top, addrs);
+                k_check(a, dom, types);
                 let new_subs = store(ListNode.Cons(a, store(ListNode.Nil)));
-                k_infer_app_spine_loop(cod, rest, new_subs, types, top, addrs),
+                k_infer_app_spine_loop(cod, rest, new_subs, types),
             },
         },
     }
   }
 
-  fn k_ensure_sort(e: KExpr, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KLevel {
-    let ty = k_infer(e, types, top, addrs);
+  fn k_ensure_sort(e: KExpr, types: List‹KExpr›) -> KLevel {
+    let ty = k_infer(e, types);
     -- Mirror: src/ix/kernel/infer.rs:454-478 syntactic Sort fast-path.
     match load(ty) {
       KExprNode.Srt(l) => l,
       _ =>
-        let ty_whnf = whnf(ty, types, top, addrs);
+        let ty_whnf = whnf(ty, types);
         let pair = ensure_sort_post_whnf(ty_whnf);
         match pair {
           (ok, l) =>
@@ -228,10 +221,9 @@ def infer := ⟦
 
   -- Mirror: src/ix/kernel/infer.rs App-arg / Let-val pattern. Infer e's
   -- type and compare against expected via k_is_def_eq. Mismatch panics.
-  fn k_check(e: KExpr, expected: KExpr, types: List‹KExpr›,
-             top: List‹&KConstantInfo›, addrs: List‹Addr›) {
-    let inferred = k_infer(e, types, top, addrs);
-    let eq = k_is_def_eq(inferred, expected, types, top, addrs);
+  fn k_check(e: KExpr, expected: KExpr, types: List‹KExpr›) {
+    let inferred = k_infer(e, types);
+    let eq = k_is_def_eq(inferred, expected, types);
     assert_eq!(eq, 1);
   }
 
@@ -280,30 +272,28 @@ def infer := ⟦
   -- path won't pay off, instead of unconditionally paying the parallel
   -- `infer_only` memo cost.
   -- ============================================================================
-  fn k_infer_only(e: KExpr, types: List‹KExpr›,
-                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    k_infer_only_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
+  fn k_infer_only(e: KExpr, types: List‹KExpr›) -> KExpr {
+    k_infer_only_core(e, ctx_trim(types, expr_lbr(e)))
   }
 
-  fn k_infer_only_core(e: KExpr, types: List‹KExpr›,
-                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+  fn k_infer_only_core(e: KExpr, types: List‹KExpr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
       KExprNode.Srt(l) =>
         store(KExprNode.Srt(level_reduce(store(KLevelNode.Succ(l))))),
       KExprNode.Const(idx, lvls) =>
-        let ci = load(list_lookup(top, idx));
+        let ci = load(get_ci(idx));
         let expected = const_num_lvls(ci);
         let given = list_length(lvls);
         assert_eq!(given, expected);
         let ty = const_type_of(ci);
         expr_inst_levels(ty, lvls),
       KExprNode.App(f, a) =>
-        let f_ty = k_infer_only(f, types, top, addrs);
+        let f_ty = k_infer_only(f, types);
         match load(f_ty) {
           KExprNode.Forall(_, cod) => expr_inst1(cod, a, 0),
           _ =>
-            let f_ty_whnf = whnf(f_ty, types, top, addrs);
+            let f_ty_whnf = whnf(f_ty, types);
             let triple = ensure_forall_post_whnf(f_ty_whnf);
             match triple {
               (ok, _, cod) =>
@@ -313,44 +303,44 @@ def infer := ⟦
         },
       KExprNode.Lam(ty, body) =>
         let types2 = store(ListNode.Cons(ty, types));
-        let body_ty = k_infer_only(body, types2, top, addrs);
+        let body_ty = k_infer_only(body, types2);
         store(KExprNode.Forall(ty, body_ty)),
       KExprNode.Forall(ty, body) =>
-        let u1 = k_ensure_sort_only(ty, types, top, addrs);
+        let u1 = k_ensure_sort_only(ty, types);
         let types2 = store(ListNode.Cons(ty, types));
-        let u2 = k_ensure_sort_only(body, types2, top, addrs);
+        let u2 = k_ensure_sort_only(body, types2);
         store(KExprNode.Srt(level_imax(u1, u2))),
       KExprNode.Let(_, val, body) =>
         let body_substed = expr_inst1(body, val, 0);
-        k_infer_only(body_substed, types, top, addrs),
+        k_infer_only(body_substed, types),
       KExprNode.Lit(lit) =>
         match lit {
-          KLiteral.Nat(_) => nat_const_type(addrs),
-          KLiteral.Str(_) => str_const_type(addrs),
+          KLiteral.Nat(_) => nat_const_type(),
+          KLiteral.Str(_) => str_const_type(),
         },
       KExprNode.Proj(tidx, fidx, e1) =>
-        let val_ty = k_infer_only(e1, types, top, addrs);
-        let wty = whnf(val_ty, types, top, addrs);
+        let val_ty = k_infer_only(e1, types);
+        let wty = whnf(val_ty, types);
         let pair = collect_spine(wty);
         match pair {
           (head, args) =>
             match load(head) {
               KExprNode.Const(idx, lvls) =>
-                assert_eq!(idx, tidx);
-                let ind_ci = load(list_lookup(top, idx));
+                assert_eq!(cref_eq(idx, tidx), 1);
+                let ind_ci = load(get_ci(idx));
                 match ind_ci {
                   KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
                     assert_eq!(list_length(ctor_indices), 1);
                     let is_prop = is_inductive_prop(ind_ty, lvls, n_params + n_indices,
-                                                     types, top, addrs);
+                                                     types);
                     let ctor_idx = list_lookup(ctor_indices, 0);
-                    let ctor_ci = load(list_lookup(top, ctor_idx));
+                    let ctor_ci = load(get_ci(ctor_idx));
                     match ctor_ci {
                       KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
                         let ctor_ty_inst = expr_inst_levels(ctor_ty, lvls);
                         let after_params = peel_params_subst(ctor_ty_inst, args, n_params);
                         peel_field_loop(after_params, fidx, 0, tidx, e1, is_prop,
-                                        types, top, addrs),
+                                        types),
                     },
                 },
             },
@@ -358,13 +348,12 @@ def infer := ⟦
     }
   }
 
-  fn k_ensure_sort_only(e: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KLevel {
-    let ty = k_infer_only(e, types, top, addrs);
+  fn k_ensure_sort_only(e: KExpr, types: List‹KExpr›) -> KLevel {
+    let ty = k_infer_only(e, types);
     match load(ty) {
       KExprNode.Srt(l) => l,
       _ =>
-        let ty_whnf = whnf(ty, types, top, addrs);
+        let ty_whnf = whnf(ty, types);
         let pair = ensure_sort_post_whnf(ty_whnf);
         match pair {
           (ok, l) =>
@@ -431,21 +420,20 @@ def infer := ⟦
   --       (no projection past dependent data fields, mirror Rust line 433-444);
   --   (b) projected (target) field must itself be in Prop (mirror Rust line 418-427).
   fn peel_field_loop(ty: KExpr, target_field: G, current: G,
-                     struct_idx: G, val: KExpr, is_prop: G,
-                     types: List‹KExpr›, top: List‹&KConstantInfo›,
-                     addrs: List‹Addr›) -> KExpr {
+                     struct_idx: CRef, val: KExpr, is_prop: G,
+                     types: List‹KExpr›) -> KExpr {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         match target_field - current {
           0 =>
-            check_prop_field_if_prop(is_prop, dom, types, top, addrs);
+            check_prop_field_if_prop(is_prop, dom, types);
             dom,
           _ =>
-            check_no_dep_data_field_if_prop(is_prop, dom, body, types, top, addrs);
+            check_no_dep_data_field_if_prop(is_prop, dom, body, types);
             let proj_expr = store(KExprNode.Proj(struct_idx, current, val));
             let body_substed = expr_inst1(body, proj_expr, 0);
             peel_field_loop(body_substed, target_field, current + 1,
-              struct_idx, val, is_prop, types, top, addrs),
+              struct_idx, val, is_prop, types),
         },
     }
   }
@@ -455,13 +443,11 @@ def infer := ⟦
   -- has any loose bvar (`body.lbr() > 0`) makes projection past it unsound.
   -- Matches Rust's `body.lbr() > 0` check exactly.
   fn check_no_dep_data_field_if_prop(is_prop: G, dom: KExpr, body: KExpr,
-                                       types: List‹KExpr›,
-                                       top: List‹&KConstantInfo›,
-                                       addrs: List‹Addr›) {
+                                       types: List‹KExpr›) {
     match is_prop {
       0 => (),
       _ =>
-        let lvl = k_ensure_sort(dom, types, top, addrs);
+        let lvl = k_ensure_sort(dom, types);
         match level_equal(lvl, store(KLevelNode.Zero)) {
           1 => (),
           _ =>
@@ -473,15 +459,14 @@ def infer := ⟦
   }
 
   -- Peel `n` Foralls, calling `whnf` on each step. Returns the whnf'd body.
-  fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›,
-                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+  fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›) -> KExpr {
     match n {
-      0 => whnf(e, types, top, addrs),
+      0 => whnf(e, types),
       _ =>
-        let ew = whnf(e, types, top, addrs);
+        let ew = whnf(e, types);
         match load(ew) {
           KExprNode.Forall(_, body) =>
-            peel_n_alls_whnf(body, n - 1, types, top, addrs),
+            peel_n_alls_whnf(body, n - 1, types),
           _ => ew,
         },
     }
@@ -491,10 +476,9 @@ def infer := ⟦
   -- Returns 1 iff the inductive lives in Prop (peeled past params + indices,
   -- result sort = Zero).
   fn is_inductive_prop(ind_ty: KExpr, lvls: List‹KLevel›, n_skip: G,
-                       types: List‹KExpr›, top: List‹&KConstantInfo›,
-                       addrs: List‹Addr›) -> G {
+                       types: List‹KExpr›) -> G {
     let ind_ty_inst = expr_inst_levels(ind_ty, lvls);
-    let result = peel_n_alls_whnf(ind_ty_inst, n_skip, types, top, addrs);
+    let result = peel_n_alls_whnf(ind_ty_inst, n_skip, types);
     match load(result) {
       KExprNode.Srt(l) => level_equal(l, store(KLevelNode.Zero)),
       _ => 0,
@@ -504,40 +488,23 @@ def infer := ⟦
   -- Mirror: src/ix/kernel/infer.rs:418-427 Prop-projection guard. When
   -- projecting a field from a Prop-typed structure, the field MUST itself
   -- live in Prop. Otherwise projection violates proof irrelevance.
-  fn check_prop_field_if_prop(is_prop: G, dom: KExpr, types: List‹KExpr›,
-                               top: List‹&KConstantInfo›, addrs: List‹Addr›) {
+  fn check_prop_field_if_prop(is_prop: G, dom: KExpr, types: List‹KExpr›) {
     match is_prop {
       0 => (),
       _ =>
-        let lvl = k_ensure_sort(dom, types, top, addrs);
+        let lvl = k_ensure_sort(dom, types);
         assert_eq!(level_equal(lvl, store(KLevelNode.Zero)), 1);
         (),
     }
   }
 
-  -- Address-keyed literal-type lookup.
-  -- Walks `addrs` to find the kernel position of Nat / String. Builds
-  -- `Const(idx, [])` for the type of `Lit(Nat _)` / `Lit(Str _)`.
-  fn nat_const_type(addrs: List‹Addr›) -> KExpr {
-    let idx = find_addr_idx(nat_addr(), addrs, 0);
-    store(KExprNode.Const(idx, store(ListNode.Nil)))
+  -- Literal types: `Const(Nat)` / `Const(String)` by hardcoded address.
+  fn nat_const_type() -> KExpr {
+    mk_prim_const(nat_addr())
   }
 
-  fn str_const_type(addrs: List‹Addr›) -> KExpr {
-    let idx = find_addr_idx(str_addr(), addrs, 0);
-    store(KExprNode.Const(idx, store(ListNode.Nil)))
-  }
-
-  -- Find the position of `target` in `addrs`. Panics (no Nil arm) if
-  -- not present — caller (literal typing) requires it.
-  fn find_addr_idx(target: Addr, addrs: List‹Addr›, i: G) -> G {
-    match load(addrs) {
-      ListNode.Cons(a, rest) =>
-        match address_eq(target, a) {
-          1 => i,
-          0 => find_addr_idx(target, rest, i + 1),
-        },
-    }
+  fn str_const_type() -> KExpr {
+    mk_prim_const(str_addr())
   }
 ⟧
 

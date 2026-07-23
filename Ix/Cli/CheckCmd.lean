@@ -169,7 +169,7 @@ def runInterp (decls : Aiur.Source.Decls)
   let inputs := Aiur.unflattenInputs decls witness.input inputTypes
   match Aiur.runFunction decls funcName inputs witness.inputIOBuffer with
   | (.error e, s) =>
-    IO.eprintln s!"{label}: interpreter error:\n{e.ppDeref s.store 1 10}"
+    IO.eprintln s!"{label}: interpreter error:\n{e.ppDeref s.store 2 100}"
     return 1
   | (.ok output, _) =>
     IO.println s!"{label}: {output}"

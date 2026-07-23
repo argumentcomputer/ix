@@ -773,14 +773,91 @@ def claim := ⟦
       + to_field(arr[3]) * 16777216
   }
 
+  -- ============================================================================
+  -- Lazy recursive checking.
+  --
+  -- `check_reachable(addr, asm_map)`: the claim-layer obligation for the
+  -- constant at `addr`. If its pointer is an assumption leaf, checking it
+  -- is another claim's obligation (discharged by claim composition) and
+  -- its data is used as-is (content-bound by blake3). Otherwise: check it
+  -- — block constants check every member and validate the block's
+  -- canonical member order — and recurse over its wire refs. Every
+  -- constant whose data can influence a check is a transitive wire ref,
+  -- and the ref graph is acyclic (a reference cycle would be a blake3
+  -- cycle), so the recursion is a well-founded induction over the
+  -- content-addressed DAG. Memoized per (addr ptr, asm_map ptr): each
+  -- constant checks once. A de-interned asm pointer reads as absent, so
+  -- the constant gets CHECKED instead of assumed — conservative.
+  -- ============================================================================
+  fn check_reachable(addr: Addr, asm_map: &RBTreeMap‹G›) {
+    match rbtree_map_lookup_or_default(ptr_val(addr), load(asm_map), 0) {
+      -- Not assumed: check this constant, then recurse over exactly the
+      -- constants it dereferences (`const_check_deps` = the `Const(Std _)`
+      -- addresses in its converted body). Every recursion target is a real
+      -- constant (blobs are never collected), so no presence gate is
+      -- needed and none exists. Memoized per (addr, asm_map).
+      0 =>
+        check_one(addr);
+        check_deps(const_check_deps(addr), asm_map),
+      _ => (),
+    }
+  }
+
+  fn check_deps(deps: List‹Addr›, asm_map: &RBTreeMap‹G›) {
+    match load(deps) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        check_reachable(a, asm_map);
+        check_deps(rest, asm_map),
+    }
+  }
+
+  -- Check the constant at `addr` itself (no dep recursion). Standalone
+  -- constants check directly; block wrappers and projections check the
+  -- WHOLE block — every flattened member, including peer-only members
+  -- with no env-visible projection constant (the old flattened-closure
+  -- loop checked those as list entries) — plus the block's canonical
+  -- member order. Memoized per block, so the members of a block shared
+  -- by many projections check once.
+  fn check_one(addr: Addr) {
+    let c = load_verified_constant(addr);
+    match c {
+      Constant.Mk(info, _, _, _) =>
+        match info {
+          ConstantInfo.Muts(members) =>
+            check_whole_block(addr, block_kernel_size(members)),
+          _ =>
+            let blk = get_proj_block_addr(info);
+            match address_eq(blk, store([0u8; 32])) {
+              1 =>
+                let cr = store(CRefNode.Std(addr));
+                check_const(cr, load(get_ci(cr))),
+              0 =>
+                check_whole_block(blk, block_kernel_size(block_members(blk))),
+            },
+        },
+    }
+  }
+
+  fn check_whole_block(blk: Addr, size: G) {
+    validate_block(blk);
+    check_block_members(blk, 0, size)
+  }
+
+  fn check_block_members(blk: Addr, off: G, size: G) {
+    match size - off {
+      0 => (),
+      _ =>
+        let cr = store(CRefNode.Member(blk, off));
+        check_const(cr, load(get_ci(cr)));
+        check_block_members(blk, off + 1, size),
+    }
+  }
+
   -- Membership map over the assumption leaves, keyed by `ptr_val`. Sound
-  -- by the same invariant as `build_addr_pos_map` (Ingress.lean): one
-  -- pointer maps to one content, so a ptr hit implies the address IS a
-  -- leaf (no false skip); a de-interned pointer reads as absent, which
-  -- here only means the constant gets CHECKED instead of skipped —
-  -- conservative. One tree lookup per constant, no confirming
-  -- address_eq, no per-lookup address loads (ported from jcb/fixes
-  -- H-14; replaces the 4-byte-content-keyed set + confirm compare).
+  -- because a store pointer maps to one content: a ptr hit implies the
+  -- address IS a leaf (no false skip); a de-interned pointer reads as
+  -- absent, which only means the constant gets CHECKED — conservative.
   fn build_asm_leaf_map(leaves: List‹Addr›) -> RBTreeMap‹G› {
     match load(leaves) {
       ListNode.Nil => RBTreeMap.Nil,
@@ -790,55 +867,15 @@ def claim := ⟦
   }
 
   -- ============================================================================
-  -- check_all variant that skips positions whose addr is in the
-  -- supplied assumption-leaf list.
-  -- ============================================================================
-  fn check_all_skipping(consts: List‹&KConstantInfo›,
-                        top: List‹&KConstantInfo›,
-                        addrs: List‹Addr›,
-                        asm_leaves: List‹Addr›) {
-    check_canonical_block_sort(top, addrs);
-    -- Build the ptr_val-keyed skip map once (O(N log N)).
-    let asm_map = store(build_asm_leaf_map(asm_leaves));
-    check_all_skipping_iter(consts, top, addrs, addrs, asm_map, 0)
-  }
-
-  -- `cur_addrs` is the suffix of `addrs` aligned with `consts`, walked in
-  -- lockstep instead of `list_lookup(addrs, pos)` — which re-walks the
-  -- list prefix every iteration, a standalone quadratic in closure size
-  -- (ported from jcb/fixes H-14).
-  fn check_all_skipping_iter(consts: List‹&KConstantInfo›,
-                             top: List‹&KConstantInfo›,
-                             addrs: List‹Addr›,
-                             cur_addrs: List‹Addr›,
-                             asm_map: &RBTreeMap‹G›,
-                             pos: G) {
-    match load(consts) {
-      ListNode.Nil => (),
-      ListNode.Cons(&ci, rest) =>
-        match load(cur_addrs) {
-          ListNode.Cons(addr, rest_addrs) =>
-            match rbtree_map_lookup_or_default(ptr_val(addr), load(asm_map), 0) {
-              0 =>
-                check_const(ci, pos, top, addrs);
-                check_all_skipping_iter(rest, top, addrs, rest_addrs, asm_map, pos + 1),
-              _ =>
-                check_all_skipping_iter(rest, top, addrs, rest_addrs, asm_map, pos + 1),
-            },
-        },
-    }
-  }
-
-  -- ============================================================================
   -- Per-variant handlers. Each takes already-parsed claim fields.
   -- ============================================================================
   fn run_check(const_addr: Addr, asm: Option‹Addr›) {
-    let (k_consts, addrs) = ingress_with_primitives(const_addr);
     match asm {
-      Option.None => check_all(k_consts, k_consts, addrs),
+      Option.None =>
+        check_reachable(const_addr, store(RBTreeMap.Nil)),
       Option.Some(asm_root) =>
         let asm_leaves = load_assumption_tree(asm_root);
-        check_all_skipping(k_consts, k_consts, addrs, asm_leaves),
+        check_reachable(const_addr, store(build_asm_leaf_map(asm_leaves))),
     }
   }
 
@@ -847,21 +884,33 @@ def claim := ⟦
     assert_eq!(addr_in_list(target_addr, leaves), 1);
   }
 
-  -- Ingress the union closure of all env leaves ONCE, then check every
-  -- constant in it (skipping assumption leaves) via the same
-  -- `check_all_skipping` path `run_check` uses. Structurally a
-  -- `run_check` over a closure that happens to be the whole env, so the
-  -- soundness rides on that existing pattern; the union order is verified by
-  -- the single `check_canonical_block_sort(top)` inside `check_all_skipping`
-  -- (a stronger global order than the per-leaf closures it replaces).
+  -- CheckEnv, reinterpreted for lazy ingress: the root commits to the
+  -- claim's CHECKED set (for shards, the owned constants — no longer the
+  -- whole closure), and `asm` commits to what may be assumed ("at most":
+  -- unused leaves only weaken the claim). Each root leaf checks via
+  -- `check_reachable`; refs land either in the asm set (assumed,
+  -- discharged by composition — including deliberately undischarged
+  -- custom axioms) or get checked recursively. Cross-claim coverage
+  -- (every assumption is some claim's checked constant, the union covers
+  -- the env) is the composition layer's obligation, proven once per
+  -- campaign instead of re-derived inside every shard.
   fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
-    let env_leaves = load_assumption_tree(env_root);
-    let (k_consts, addrs) = ingress_env(env_leaves);
+    let root_leaves = load_assumption_tree(env_root);
     match asm {
-      Option.None => check_all(k_consts, k_consts, addrs),
+      Option.None =>
+        check_leaves(root_leaves, store(RBTreeMap.Nil)),
       Option.Some(asm_root) =>
         let asm_leaves = load_assumption_tree(asm_root);
-        check_all_skipping(k_consts, k_consts, addrs, asm_leaves),
+        check_leaves(root_leaves, store(build_asm_leaf_map(asm_leaves))),
+    }
+  }
+
+  fn check_leaves(leaves: List‹Addr›, asm_map: &RBTreeMap‹G›) {
+    match load(leaves) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        check_reachable(a, asm_map);
+        check_leaves(rest, asm_map),
     }
   }
 
@@ -1005,11 +1054,7 @@ def claim := ⟦
   -- thing the test cares about.
   -- ============================================================================
   pub fn verify_const(target_addr: [U8; 32]) {
-    let target = store(target_addr);
-    let (k_consts, addrs) = ingress_with_primitives(target);
-    let target_pos = find_addr_idx(target, addrs, 0);
-    let ci = load(list_lookup(k_consts, target_pos));
-    check_const(ci, target_pos, k_consts, addrs)
+    check_one(store(target_addr))
   }
 ⟧
 

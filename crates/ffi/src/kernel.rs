@@ -755,6 +755,24 @@ pub extern "C" fn rs_prim_addrs_canonical() -> LeanIOResult<LeanOwned> {
   LeanIOResult::ok(arr)
 }
 
+/// FFI: the canonical primitive addresses as a plain array of hex
+/// strings, as a PURE function (`Unit → Array String`; the boxed unit
+/// argument is ignored). Used by `IxVM.ClaimHarness` to seed ch 4
+/// presence entries for primitives without threading IO through the
+/// pure witness builders.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_prim_addrs_canonical_hex(
+  _unit: LeanNat<LeanBorrowed<'_>>,
+) -> LeanOwned {
+  let table = ix_kernel::primitive::PrimAddrs::lean_parity_table();
+  let arr = LeanArray::alloc(table.len());
+  for (i, (_name, hex)) in table.iter().enumerate() {
+    let hex_obj: LeanOwned = LeanString::new(hex).into();
+    arr.set(i, hex_obj);
+  }
+  arr.into()
+}
+
 fn all_checkable_ixon_names(ixon_env: &IxonEnv) -> Vec<Name> {
   let mut names = Vec::with_capacity(ixon_env.named_count());
   for entry in ixon_env.named.iter() {

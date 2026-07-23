@@ -161,8 +161,21 @@ Channel numbers MUST stay in sync with the inlined `io_get_info` /
 `Ix/IxVM/Kernel/Claim.lean`.
 -/
 
+/-- The canonical primitive addresses hardcoded in the kernels
+    (`PrimAddrs::new()` Rust-side, the `*_addr()` fns Aiur-side), as
+    hex strings. Pure FFI so the pure witness builders can consume it. -/
+@[extern "rs_prim_addrs_canonical_hex"]
+private opaque primAddrHexes : Unit → Array String
+
+/-- Parsed form of `primAddrHexes`. -/
+def kernelPrimAddrs : Array Address :=
+  (primAddrHexes ()).filterMap Address.fromString
+
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
-    `ioBuffer`. See the channel table above. -/
+    `ioBuffer`. See the channel table above. Always finishes with the
+    primitive-presence pass: every hardcoded primitive address outside
+    the kept set gets an absence marker (ch 4 = 2) so the kernel
+    substitutes its stub axiom instead of failing on a missing IO key. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
@@ -170,21 +183,29 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     if !keep addr then continue
     -- The kernel re-hashes these bytes against the key, so feed the exact
     -- serialized form the lazy entry holds — no materialization needed.
-    let bytes := lc.rawBytes
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend 2 key (bytes.data.map .ofUInt8)
-    -- Discriminator: this addr resolves to a constant.
-    ioBuffer := ioBuffer.extend 4 key #[.ofNat 1]
+    ioBuffer := ioBuffer.extend 2 key (lc.rawBytes.data.map .ofUInt8)
   for (addr, rawBytes) in ixonEnv.blobs do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend 5 key (rawBytes.data.map fun b => .ofNat b.toNat)
-    -- Discriminator: this addr resolves to a blob.
-    ioBuffer := ioBuffer.extend 4 key #[.ofNat 0]
+    ioBuffer := ioBuffer.extend 4 key (rawBytes.data.map fun b => .ofNat b.toNat)
   for (addr, hints) in ixonEnv.anonHints do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
+  -- Ship every env-present primitive on ch 2 even if outside the closure:
+  -- the kernel fabricates references to primitives during literal
+  -- reduction that no shipped constant lists as a ref. A primitive's
+  -- address is its content hash, so the bytes are the genuine Lean
+  -- primitive (trusted, blake3-bound). Primitives absent from the env are
+  -- never fabricated, so they are simply skipped.
+  for addr in kernelPrimAddrs do
+    if keep addr && ixonEnv.consts.contains addr then continue
+    match ixonEnv.consts[addr]? with
+    | some lc =>
+      let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+      ioBuffer := ioBuffer.extend 2 key (lc.rawBytes.data.map .ofUInt8)
+    | none => pure ()
   return ioBuffer
 
 -- ============================================================================
@@ -287,8 +308,11 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
     return s
   let frontier : Array Address :=
     closure.toArray.filter (fun a => !ownedSet.contains a)
-  let some envTree := Ix.AssumptionTree.canonical closure.toArray
-    | .error "shardCheckEnvClaim: empty shard closure"
+  -- CheckSet semantics: the claim root commits to the OWNED set (what
+  -- this shard actually checks); the kernel walks these leaves via
+  -- check_reachable. The frontier stays the "at most" assumption set.
+  let some envTree := Ix.AssumptionTree.canonical owned
+    | .error "shardCheckEnvClaim: empty owned set"
   let asmTree? := Ix.AssumptionTree.canonical frontier
   let claim := Ix.Claim.checkEnv envTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=

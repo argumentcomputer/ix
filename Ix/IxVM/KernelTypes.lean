@@ -35,19 +35,47 @@ def kernelTypes := ⟦
   }
 
   -- ============================================================================
+  -- Constant references
+  --
+  -- How kernel expressions name other constants. Replaces the former
+  -- global-position scheme (Const(idx) into a flattened closure list):
+  -- references resolve lazily by content address via `get_ci`, so the
+  -- kernel never enumerates or converts a closure upfront.
+  --
+  --   Std(addr):        env constant at its content address.
+  --   Member(blk, off): flattened member at offset `off` of the Muts block
+  --                     at `blk` (peer refs inside mutual blocks; members
+  --                     without an env-visible projection constant have no
+  --                     own address, so identity is (block, offset)).
+  --
+  -- Identity compares go through `cref_norm` (Ingress.lean): a Std ref to
+  -- a projection constant normalizes to its (block, offset) coordinates,
+  -- and block identity uses the content-interned parsed-Constant pointer,
+  -- which dedups distinct wrapper addresses with identical parsed content
+  -- (mirror of the old `extract_dedup_mptr` canonicalization).
+  -- ============================================================================
+
+  enum CRefNode {
+    Std(Addr),
+    Member(Addr, G)
+  }
+
+  type CRef = &CRefNode
+
+  -- ============================================================================
   -- Expressions (de Bruijn indexed, no binder info or names)
   -- ============================================================================
 
   enum KExprNode {
     BVar(G),
     Srt(KLevel),
-    Const(G, List‹KLevel›),
+    Const(CRef, List‹KLevel›),
     App(KExpr, KExpr),
     Lam(KExpr, KExpr),
     Forall(KExpr, KExpr),
     Let(KExpr, KExpr, KExpr),
     Lit(KLiteral),
-    Proj(G, G, KExpr)
+    Proj(CRef, G, KExpr)
   }
 
   type KExpr = &KExprNode
@@ -74,15 +102,13 @@ def kernelTypes := ⟦
   -- Recursor Rule
   --
   -- Mirror: src/ix/kernel/constant.rs::RecRule { ctor, fields, rhs }.
-  -- Aiur keeps a global ctor idx in the first slot for direct lookup
-  -- convenience. Could be simplified to (fields, rhs) at the cost of an
-  -- ingress refactor.
   --
-  -- Layout: (global_ctor_idx, num_fields, rhs).
+  -- Layout: (ctor_ref, num_fields, rhs). Iota matches a rule by comparing
+  -- `ctor_ref` against the major premise's ctor head via `cref_eq`.
   -- ============================================================================
 
   enum KRecRule {
-    Mk(G, G, KExpr)
+    Mk(CRef, G, KExpr)
   }
 
   -- ============================================================================
@@ -101,16 +127,17 @@ def kernelTypes := ⟦
   -- CIOpaque: (num_levels, type, value, is_unsafe)
   -- CIQuot:   (num_levels, type, kind)
   -- CIInduct: (num_levels, type, num_params, num_indices,
-  --            ctor_indices, is_unsafe)
+  --            ctor_refs, is_unsafe, block_addr)
   -- The recr/refl/nested flags were dropped from Ixon (derivable from
   -- constructor structure; trusting declared values was an adversarial
   -- surface). is_rec is computed on demand via `compute_is_rec`.
-  -- CICtor:   (num_levels, type, induct_idx, cidx,
+  -- CICtor:   (num_levels, type, induct_ref, cidx,
   --            num_params, num_fields, is_unsafe)
   -- CIRec:    (num_levels, type, num_params, num_indices,
   --            num_motives, num_minors, rules, k_flag, is_unsafe, block_addr)
-  -- block_addr = address of the Muts wrapper this Recursor lives in. Used
-  -- by canonical_block_sort to validate recursor-block ordering.
+  -- block_addr = raw address of the Muts wrapper this member lives in.
+  -- Used by the per-block canonical-order validation and to rebuild
+  -- member CRefs.
   -- ============================================================================
 
   enum KConstantInfo {
@@ -119,8 +146,8 @@ def kernelTypes := ⟦
     Thm(G, KExpr, KExpr),
     Opaque(G, KExpr, KExpr, G),
     Quot(G, KExpr, QuotKind),
-    Induct(G, KExpr, G, G, List‹G›, G, Addr),
-    Ctor(G, KExpr, G, G, G, G, G),
+    Induct(G, KExpr, G, G, List‹CRef›, G, Addr),
+    Ctor(G, KExpr, CRef, G, G, G, G),
     Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G, Addr)
   }
 
