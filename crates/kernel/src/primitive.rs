@@ -144,6 +144,14 @@ pub struct Primitives<M: KernelMode> {
   pub string_back: KId<M>,
   pub string_legacy_back: KId<M>,
   pub string_utf8_byte_size: KId<M>,
+
+  // -- Native string-value fast paths --
+  // `String.append` / `String.decEq` on literal arguments reduce
+  // natively in whnf (same shape as the Nat ops in `try_reduce_nat`),
+  // so evaluator-grade normalization of string values doesn't fall
+  // into the structural ByteArray/UTF-8 model per character.
+  pub string_append: KId<M>,
+  pub string_dec_eq: KId<M>,
 }
 
 /// Hardcoded primitive addresses (for lookup in the env).
@@ -243,6 +251,8 @@ pub struct PrimAddrs {
   pub string_back: Address,
   pub string_legacy_back: Address,
   pub string_utf8_byte_size: Address,
+  pub string_append: Address,
+  pub string_dec_eq: Address,
 }
 
 impl Default for PrimAddrs {
@@ -555,6 +565,12 @@ impl PrimAddrs {
       string_utf8_byte_size: h(
         "def4433d9547b53175e24a3ac182c88b072af0d4ad33fd04ec4cf2ba3d95ea93",
       ),
+      string_append: h(
+        "594fb1eedec7c939cc872b6c04cc3b3e0a9764fabec3e602ad9214d0e637d30f",
+      ),
+      string_dec_eq: h(
+        "82e5568d88e24f24d5befac30ce915010e92596f55a822e29f4876ea3a579394",
+      ),
     }
   }
 
@@ -666,6 +682,8 @@ impl PrimAddrs {
       ("String.back", p.string_back.hex()),
       ("String.Legacy.back", p.string_legacy_back.hex()),
       ("String.utf8ByteSize", p.string_utf8_byte_size.hex()),
+      ("String.append", p.string_append.hex()),
+      ("String.decEq", p.string_dec_eq.hex()),
     ]
   }
 
@@ -965,6 +983,12 @@ impl PrimAddrs {
       string_utf8_byte_size: h(
         "06ba07154a1cd0e1e9eec2b6e27b195a6fc3ae20a70d1ced7643a61e4e3e6d0f",
       ),
+      string_append: h(
+        "93faafad0b7eff95765986eb5f5cb10635818129b72d8e7fdddaca2a5fb45844",
+      ),
+      string_dec_eq: h(
+        "a53c141a7bbbbdf77d4a2cb049911fd4001f7d71b94ed5c3b877e837da94c349",
+      ),
     }
   }
 }
@@ -1141,6 +1165,8 @@ impl<M: KernelMode> Primitives<M> {
       string_back: r(&a.string_back),
       string_legacy_back: r(&a.string_legacy_back),
       string_utf8_byte_size: r(&a.string_utf8_byte_size),
+      string_append: r(&a.string_append),
+      string_dec_eq: r(&a.string_dec_eq),
     }
   }
 }
@@ -1264,6 +1290,8 @@ mod tests {
       ("string_back", &a.string_back),
       ("string_legacy_back", &a.string_legacy_back),
       ("string_utf8_byte_size", &a.string_utf8_byte_size),
+      ("string_append", &a.string_append),
+      ("string_dec_eq", &a.string_dec_eq),
     ]
   }
 

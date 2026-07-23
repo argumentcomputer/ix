@@ -118,6 +118,8 @@ structure PrimAddrs where
   stringBack : Address
   stringLegacyBack : Address
   stringUtf8ByteSize : Address
+  stringAppend : Address
+  stringDecEq : Address
 
 namespace PrimAddrs
 
@@ -221,6 +223,8 @@ def canonical : PrimAddrs where
   stringBack := h "e95c8d876e7ccf780418615e33b747a245d94facd7567fecbe7ae73a5ac09206"
   stringLegacyBack := h "6bb6162aac7d6a01b6ec05580664e8a7f0d4b0ec1fc5afaae66018e9a1936dac"
   stringUtf8ByteSize := h "def4433d9547b53175e24a3ac182c88b072af0d4ad33fd04ec4cf2ba3d95ea93"
+  stringAppend := h "594fb1eedec7c939cc872b6c04cc3b3e0a9764fabec3e602ad9214d0e637d30f"
+  stringDecEq := h "82e5568d88e24f24d5befac30ce915010e92596f55a822e29f4876ea3a579394"
 
 /-- The synthetic kernel-only marker address used by the *original*
     (LEON-addressed) environment's `PrimAddrs::new_orig()`. Only the marker is
@@ -331,7 +335,9 @@ def leanParityTable : Array (String × Address) :=
     ("SizeOf.sizeOf", p.sizeOfSizeOf),
     ("String.back", p.stringBack),
     ("String.Legacy.back", p.stringLegacyBack),
-    ("String.utf8ByteSize", p.stringUtf8ByteSize)
+    ("String.utf8ByteSize", p.stringUtf8ByteSize),
+    ("String.append", p.stringAppend),
+    ("String.decEq", p.stringDecEq)
   ]
 
 end PrimAddrs
@@ -457,6 +463,8 @@ structure Primitives (m : Mode) where
   stringBack : KId m
   stringLegacyBack : KId m
   stringUtf8ByteSize : KId m
+  stringAppend : KId m
+  stringDecEq : KId m
 
 namespace Primitives
 
@@ -563,7 +571,9 @@ def ofResolve (a : PrimAddrs) (resolve : Address → Option (KId m)) :
     sizeOfSizeOf := r a.sizeOfSizeOf,
     stringBack := r a.stringBack,
     stringLegacyBack := r a.stringLegacyBack,
-    stringUtf8ByteSize := r a.stringUtf8ByteSize
+    stringUtf8ByteSize := r a.stringUtf8ByteSize,
+    stringAppend := r a.stringAppend,
+    stringDecEq := r a.stringDecEq
   }
 
 /-- Resolve primitives from the environment using the canonical address

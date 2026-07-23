@@ -1014,9 +1014,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// String literal expansion (C++ kernel: try_string_lit_expansion_core).
   ///
   /// When `t` is a string literal, expand it to constructor form via
-  /// `str_lit_to_constructor` (String.ofList [Char.ofNat c₁, ...]), WHNF the
-  /// result so String.ofList + Char.ofNat delta-unfold to the canonical
-  /// `String.ofByteArray ...` form, then compare with `s`.
+  /// `str_lit_to_ctor_app` — `String.ofList [Char.ofNat c₁, ...]` with
+  /// one delta step past `String.ofList`, exposing the canonical
+  /// `String.ofByteArray ...` form — then compare with `s`. The delta
+  /// step matters: whnf of the raw `String.ofList` application would
+  /// natively collapse straight back to the `Str` literal
+  /// (`try_reduce_string`), and the comparison would never reach the
+  /// structural constructor form.
   fn try_string_lit_expansion(
     &mut self,
     t: &KExpr<M>,
@@ -1026,7 +1030,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ExprData::Str(v, _, _) => v.clone(),
       _ => return Ok(false),
     };
-    let expanded = self.str_lit_to_constructor(&str_val);
+    // Literal vs literal: equal literals are one interned node (caught
+    // long before this point); distinct literals are never defeq — their
+    // constructor expansions differ in the codepoint payloads. Decide
+    // directly instead of expanding both sides structurally.
+    if let ExprData::Str(s_val, _, _) = s.data() {
+      return Ok(*s_val == str_val);
+    }
+    let expanded = self.str_lit_to_ctor_app(&str_val)?;
     self.is_def_eq(&expanded, s)
   }
 
@@ -1070,6 +1081,32 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     // String.mk list
     self.intern(KExpr::app(string_mk, list))
+  }
+
+  /// String literal → structure-constructor application.
+  ///
+  /// `str_lit_to_constructor` produces `String.ofList [Char.ofNat c…]`;
+  /// with the native collapse rule in `try_reduce_string`, a whnf of
+  /// that application folds straight back into the `Str` literal. So
+  /// callers that need the actual constructor form — iota majors,
+  /// projections, literal-vs-structural def-eq — take one delta step
+  /// past `String.ofList` here: in the compiled environment that
+  /// exposes `String.ofByteArray (List.utf8Encode [chars]) proof`
+  /// (fields stay lazy). In environments where the `String.ofList`
+  /// address IS the constructor (List-Char-model test envs), the delta
+  /// step is a no-op and the expansion is already ctor-headed.
+  pub(super) fn str_lit_to_ctor_app(
+    &mut self,
+    s: &str,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    let of_list_app = self.str_lit_to_constructor(s);
+    match self.delta_unfold_one(&of_list_app)? {
+      // Beta the unfolded body against the char list. `whnf_core` stops
+      // at the constructor head and runs no string-primitive
+      // reductions, so it cannot re-collapse the expansion.
+      Some(unfolded) => self.whnf_core(&unfolded),
+      None => Ok(of_list_app),
+    }
   }
 
   // -----------------------------------------------------------------------
