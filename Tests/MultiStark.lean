@@ -107,13 +107,15 @@ def factorialProgram : Source.Toplevel := ⟦
 ⟧
 
 /-- Inner-proof commitment/FRI parameters. A tractable subset of production
-(`numQueries := 3`) that still drives every generalized verifier path; the
-verifier code itself is blowup/query-count agnostic. -/
+(`numQueries := 3`, standard PoW regime: commit 0 / query 20); the verifier
+code itself is blowup/query-count agnostic, and `pcs_check_witness` is shared
+by both PoW phases, so the query-phase grinding exercises the commit-phase
+code path too. -/
 def recCommitParams : Aiur.CommitmentParameters :=
   { logBlowup := 2, capHeight := 0 }
 def innerFri : Aiur.FriParameters :=
   { logFinalPolyLen := 0, maxLogArity := 1, numQueries := 3,
-    commitProofOfWorkBits := 20, queryProofOfWorkBits := 16 }
+    commitProofOfWorkBits := 0, queryProofOfWorkBits := 20 }
 
 /-- 8 little-endian bytes of a `Nat` (taken mod 2^64). -/
 def u64le (n : Nat) : Array UInt8 :=
