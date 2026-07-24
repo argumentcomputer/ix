@@ -43,8 +43,9 @@ The Rust verifier runs these steps:
   circuit it recomputes `composition(ζ)` by replaying the AIR constraint folder
   (`VerifierConstraintFolder` + `LookupAir::eval`) over the deserialized
   symbolic system and the opened values, recomputes `quotient(ζ)` from the
-  opened quotient chunks (barycentric `zps` weights over the split quotient
-  domains), and asserts `composition(ζ) · inv_vanishing(ζ) == quotient(ζ)`.
+  opened quotient coefficient slices (the power series
+  `Q(ζ) = Σᵢ ζ^(i·n)·cᵢ(ζ)`), and asserts
+  `composition(ζ) · inv_vanishing(ζ) == quotient(ζ)`.
   Validated end-to-end against a real factorial proof (the `recursive-verifier`
   test runner, `Tests/MultiStark.lean`): the verifier accepts the honest proof
   and rejects a tampered claim.
@@ -475,7 +476,7 @@ def verifier := ⟦
   fn verify(proof: Proof) -> G {
     match proof {
       Proof.Mk(_active, _commitments, accs, _log_degrees, _opening,
-               _quotient, _preprocessed, stage_1, stage_2) =>
+               quotient, _preprocessed, stage_1, stage_2) =>
         -- Step 1 (shape, system-independent): the per-round opened-value lists
         -- and the accumulator list all have the same length = the circuit count.
         let num_circuits = list_length(accs);
@@ -483,6 +484,8 @@ def verifier := ⟦
         assert_eq!(eq_zero(num_circuits), 0);
         assert_eq!(list_length(stage_1), num_circuits);
         assert_eq!(list_length(stage_2), num_circuits);
+        -- one wide quotient matrix per active circuit
+        assert_eq!(list_length(quotient), num_circuits);
 
         -- Step 2: accumulator balance — the last accumulator must be zero.
         assert_eq!(last_acc_is_zero(accs), 1);
@@ -495,12 +498,12 @@ def verifier := ⟦
   -- ==========================================================================
   -- Step 5: out-of-domain (OOD) evaluation.
   --
-  -- Mirrors the per-circuit loop in `verifier.rs::verify_multiple_claims`
-  -- (lines 329-434). For each circuit it recomputes the composition polynomial
+  -- Mirrors the per-circuit loop in `verifier.rs::verify_multiple_claims`.
+  -- For each circuit it recomputes the composition polynomial
   -- `composition(ζ)` from the opened values by replaying the AIR constraint
   -- folder (`VerifierConstraintFolder` + `LookupAir::eval`), recomputes the
-  -- quotient `quotient(ζ)` from the opened quotient chunks via the barycentric
-  -- weights `zps`, and asserts
+  -- quotient `quotient(ζ)` from the opened coefficient slices via the power
+  -- series `Q(ζ) = Σᵢ ζ^(i·n)·cᵢ(ζ)`, and asserts
   --   composition(ζ) · inv_vanishing(ζ) == quotient(ζ).
   --
   -- The challenges (lookup, fingerprint, α, ζ) come from `fiat_shamir` above.
@@ -672,66 +675,28 @@ def verifier := ⟦
   }
 
   -- ==========================================================================
-  -- Quotient evaluation from the opened quotient chunks.
+  -- Quotient evaluation from the opened quotient row.
   --
-  -- The trace domain is the order-2^L subgroup H (shift = 1). The quotient
-  -- domain is the disjoint coset `7·H'` of size `2^(L+log_qd)` (7 = Goldilocks
-  -- GENERATOR), split into `qd = 2^log_qd` chunk domains `Dⱼ` of size `2^L`,
-  -- shift `7·g_q^j` where `g_q = two_adic_gen(L + log_qd)`. Then
-  --   quotient(ζ) = Σⱼ zpsⱼ · from_ext_basis(chunkⱼ),
-  --   zpsⱼ = Πₖ≠ⱼ Z_{Dₖ}(ζ) / Z_{Dₖ}(first_point(Dⱼ)),
-  -- with `Z_{Dₖ}(x) = (x · shift_k⁻¹)^(2^L) - 1`.
+  -- The quotient is sliced by COEFFICIENTS — `Q(X) = Σᵢ X^(i·n)·cᵢ(X)` with
+  -- each `cᵢ` of degree < n = 2^L — and all `qd` slices of a circuit live in
+  -- one wide matrix on the trace domain, opened once at ζ. Recombination is
+  -- the plain power series
+  --   quotient(ζ) = Σᵢ ζ^(i·n) · cᵢ(ζ),
+  -- over the slice values reconstructed from the opened row
+  -- (`reconstruct_ext_row`, pairs of base coordinates → extension elements).
   -- ==========================================================================
 
-  -- base-field power `base^e` (e small: the chunk index, < qd).
-  fn g_pow(base: Goldilocks, e: G) -> Goldilocks {
-    match e {
-      0 => 1,
-      _ => gl_mul(base, g_pow(base, e - 1)),
+  -- `Σᵢ powᵢ·sliceᵢ` with `powᵢ = zeta_pow_n^i` (`pow` threads the running
+  -- power, starting at 1).
+  fn quotient_eval(slices: List‹Ext›, zeta_pow_n: Ext, pow: Ext) -> Ext {
+    match load(slices) {
+      ListNode.Nil => [0, 0],
+      ListNode.Cons(c, rest) =>
+        eg_add(eg_mul(pow, c), quotient_eval(rest, zeta_pow_n, eg_mul(pow, zeta_pow_n))),
     }
   }
 
-  -- `Z_{Dⱼ}(x) = (x · shift_j⁻¹)^(2^L) - 1`, evaluated at extension point `x`.
-  fn vanish_chunk(x: Ext, l: G, shiftinv: Goldilocks) -> Ext {
-    eg_sub(ext_exp_pow2(eg_mul(x, [shiftinv, 0]), l), [1, 0])
-  }
-
-  -- `zpsₜ = Πⱼ≠ₜ Z_{Dⱼ}(ζ) / Z_{Dⱼ}(shift_t)`. Iterates j over `[jidx, jidx+rem)`.
-  fn zps_prod(acc: Ext, zeta: Ext, l: G, g_q: Goldilocks, shift_t: Goldilocks, jidx: G, rem: G, t: G) -> Ext {
-    match rem {
-      0 => acc,
-      _ =>
-        let shiftinv = gl_inverse(gl_mul(7, g_pow(g_q, jidx)));
-        -- skip the j = t factor (the chunk's own domain); branch in tail
-        -- position so the inner match is not a non-tail match.
-        match eq_zero(jidx - t) {
-          1 => zps_prod(acc, zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
-          _ =>
-            let factor = eg_mul(vanish_chunk(zeta, l, shiftinv),
-                                 eg_inverse(vanish_chunk([shift_t, 0], l, shiftinv)));
-            zps_prod(eg_mul(acc, factor), zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
-        },
-    }
-  }
-
-  -- `quotient(ζ) = Σₜ zpsₜ · from_ext_basis(chunkₜ)`, iterating the `qd` chunks
-  -- (`q_opened[idx][0] = [c0, c1]`).
-  fn quotient_sum(acc: Ext, zeta: Ext, l: G, qd: G, g_q: Goldilocks,
-      q_opened: OpenedRound, idx: G, rem: G, t: G) -> Ext {
-    match rem {
-      0 => acc,
-      _ =>
-        let shift_t = gl_mul(7, g_pow(g_q, t));
-        let zps_t = zps_prod([1, 0], zeta, l, g_q, shift_t, 0, qd, t);
-        let ch = list_lookup(q_opened, idx);
-        let row = list_lookup(ch, 0);
-        let qv = from_ext_basis(list_lookup(row, 0), list_lookup(row, 1));
-        quotient_sum(eg_add(acc, eg_mul(zps_t, qv)), zeta, l, qd, g_q,
-                     q_opened, idx + 1, rem - 1, t + 1),
-    }
-  }
-
-  -- `quotient_degree = (max(md, 2) - 1).next_power_of_two()` and its log2.
+  -- `quotient_degree = (max(md, 2) - 1).next_power_of_two()`.
   -- Tabulated for `max_constraint_degree ≤ 17` (covers all current circuits);
   -- larger degrees fall through to the `_` arm.
   fn quotient_degree_of(md: G) -> G {
@@ -742,16 +707,6 @@ def verifier := ⟦
       6 => 8, 7 => 8, 8 => 8, 9 => 8,
       10 => 16, 11 => 16, 12 => 16, 13 => 16, 14 => 16, 15 => 16, 16 => 16, 17 => 16,
       _ => 32,
-    }
-  }
-  fn log_qd_of(md: G) -> G {
-    match md {
-      0 => 0, 1 => 0, 2 => 0,
-      3 => 1,
-      4 => 2, 5 => 2,
-      6 => 3, 7 => 3, 8 => 3, 9 => 3,
-      10 => 4, 11 => 4, 12 => 4, 13 => 4, 14 => 4, 15 => 4, 16 => 4, 17 => 4,
-      _ => 5,
     }
   }
 
@@ -772,11 +727,11 @@ def verifier := ⟦
 
   -- Per-circuit OOD loop: for each circuit, recompute composition(ζ) and
   -- quotient(ζ) and assert `composition · inv_vanishing == quotient`. Threads
-  -- the running lookup accumulator `accp` and the quotient-chunk offset `lastq`.
+  -- the running lookup accumulator `accp`.
   fn ood_loop(circuits: List‹SysCircuit›, prep_indices: List‹OptIdx›,
       log_degrees: List‹U8›, accs: List‹Ext›,
       stage1: OpenedRound, stage2: OpenedRound, prep_opt: PreprocessedOpt,
-      q_opened: OpenedRound, i: G, accp: Ext, lastq: G,
+      q_opened: OpenedRound, i: G, accp: Ext,
       lch: Ext, fch: Ext, alpha: Ext, zeta: Ext) -> G {
     match load(circuits) {
       ListNode.Nil => 1,
@@ -785,7 +740,6 @@ def verifier := ⟦
         let SysLookupAir.Mk(air, lookups) = lair;
         let l = to_field(list_lookup(log_degrees, i));
         let qd = quotient_degree_of(md);
-        let log_qd = log_qd_of(md);
         let naccp = list_lookup(accs, i);
         let s1 = list_lookup(stage1, i);
         let main = list_lookup(s1, 0);
@@ -797,11 +751,16 @@ def verifier := ⟦
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
         let comp = ood_composition(air, lookups, main, main_next, s2row, s2next,
                                    prep, isf, isl, ist, lch, fch, accp, naccp, alpha);
-        let g_q = two_adic_gen(l + log_qd);
-        let quot = quotient_sum([0, 0], zeta, l, qd, g_q, q_opened, lastq, qd, 0);
+        -- circuit i's wide quotient row, its base-coordinate pairs folded back
+        -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
+        let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
+        -- shape: `quotient_opened_values[pos][0].len() == quotient_degree · D`
+        -- (Rust `check_shapes`)
+        assert_eq!(eq_zero(list_length(slices) - qd), 1);
+        let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [1, 0]);
         assert_eq!(eg_eq(eg_mul(comp, invv), quot), 1);
         ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
-                 q_opened, i + 1, naccp, lastq + qd, lch, fch, alpha, zeta),
+                 q_opened, i + 1, naccp, lch, fch, alpha, zeta),
     }
   }
 
@@ -863,9 +822,9 @@ def verifier := ⟦
         let acc0 = claims_acc([0, 0], claims, lch, fch);
         -- Step 5: OOD composition/quotient identity for every active circuit.
         let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
-                 prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta);
+                 prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
         pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
-          s1c, s2c, qc, prep_cap, acirc, aprep, log_degrees, zeta,
+          s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
           list_length(acirc), log_blowup, num_queries, commit_pow_bits,
           query_pow_bits),
     }
