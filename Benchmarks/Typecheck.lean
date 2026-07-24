@@ -500,7 +500,6 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           let claimBytes := MultiStark.serializeClaims #[claim]
           let vkBytes := aiurSystem.vkBytes
           let pubInput := MultiStark.verifierPubInput vkBytes claimBytes
-            commitParams friParams
           -- Native path: the advice buffer is built in Rust from the raw
           -- byte blobs and execution routes through the codegen'd verifier.
           let (rvRes, rvSec) ← timed fun _ =>

@@ -593,11 +593,12 @@ def pcs := ⟦
   -- ==========================================================================
   -- PCS (FRI) verification — `two_adic_pcs::verify` + `fri::verify_fri`.
   --
-  -- Specialised to `innerFri`: arity 2 (log_arity = 1 every round),
-  -- log_blowup = 1, log_final_poly_len = 0 (final_poly is ONE constant
-  -- coefficient ⇒ the final Horner eval is just `final_poly[0]`, no `x` needed),
-  -- num_queries = 1, commit/query PoW bits = 0 (a challenger no-op). Field
-  -- arithmetic is the non-native byte Goldilocks (`gl_*`/`eg_*`).
+  -- Specialised to our system: arity 2 (log_arity = 1 every round) and
+  -- log_final_poly_len = 0 (final_poly is ONE constant coefficient ⇒ the final
+  -- Horner eval is just `final_poly[0]`, no `x` needed). The variable FRI
+  -- parameters (log_blowup, num_queries, commit/query PoW bits) come in as
+  -- arguments. Field arithmetic is the non-native byte Goldilocks
+  -- (`gl_*`/`eg_*`).
   --
   -- A reduced-opening accumulator, one per distinct log-height. `alpha_pow`
   -- threads across every (batch, matrix, point, column) at that height, in the
@@ -645,13 +646,14 @@ def pcs := ⟦
         obs_log_arities(snoc_b8(input, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), rest),
     }
   }
-  -- Per round: observe the commitment, then sample β (PoW bits = 0 ⇒ no-op).
-  -- `GrindingChallenger::check_witness` for one commit round: when `bits > 0`,
-  -- observe the PoW witness then sample `bits` bits and assert they are all zero
-  -- (else InvalidPowWitness). Returns the post-PoW `(input, output)` so the
-  -- immediately-following β sample continues the SAME hash stream (no observe in
-  -- between). `bits == 0` is the short-circuit: no observe, no sample.
-  fn pcs_commit_pow(input: ByteStream, witness: U64, bits: G) -> (ByteStream, ByteStream) {
+  -- `GrindingChallenger::check_witness`, shared by the commit-phase (per-round)
+  -- and query-phase grinding checks: when `bits > 0`, observe the PoW witness
+  -- then sample `bits` bits and assert they are all zero (else
+  -- InvalidPowWitness). Returns the post-PoW `(input, output)` so the
+  -- immediately-following sample (β / query index) continues the SAME hash
+  -- stream (no observe in between). `bits == 0` is the short-circuit: no
+  -- observe, no sample.
+  fn pcs_check_witness(input: ByteStream, witness: U64, bits: G) -> (ByteStream, ByteStream) {
     match bits {
       0 => (input, store(ListNode.Nil)),
       _ =>
@@ -668,7 +670,7 @@ def pcs := ⟦
       ListNode.Nil => (store(ListNode.Nil), input),
       ListNode.Cons(c, rest) =>
         let &ListNode.Cons(w, wrest) = witnesses;
-        let (i1, o1) = pcs_commit_pow(snoc_cap(input, c), w, bits);
+        let (i1, o1) = pcs_check_witness(snoc_cap(input, c), w, bits);
         let (b0, b1, i2, _o) = ch_sample_ext(i1, o1);
         let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
         (store(ListNode.Cons([gl_val(b0), gl_val(b1)], bs)), i3),
@@ -992,15 +994,15 @@ def pcs := ⟦
   }
 
   -- ── top-level FRI verification ────────────────────────────────────────────
-  -- `log_blowup` comes from the verifying key; `num_queries` / `commit_pow_bits`
-  -- are the protocol's FRI parameters (public). `query_pow_bits` is taken to be 0
-  -- (our system), so the query-phase grinding check is a no-op.
+  -- All FRI parameters (`log_blowup`, `num_queries`, `commit_pow_bits`,
+  -- `query_pow_bits`) come from the digest-bound verifying key.
   fn pcs_fri_verify(post_zeta_input: ByteStream, stage1: OpenedRound, stage2: OpenedRound,
       q_opened: OpenedRound, prep_opt: PreprocessedOpt, opening: FriProof,
       s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap, prep_commit: MerkleCap,
       circuits: List‹SysCircuit›, prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
-      zeta: Ext, num_circuits: G, log_blowup: G, num_queries: G, commit_pow_bits: G) -> G {
-    let FriProof.Mk(commit_phase_commits, pw, query_proofs, final_poly, _qpw) = opening;
+      zeta: Ext, num_circuits: G, log_blowup: G, num_queries: G, commit_pow_bits: G,
+      query_pow_bits: G) -> G {
+    let FriProof.Mk(commit_phase_commits, pw, query_proofs, final_poly, qpw) = opening;
     let num_rounds = list_length(commit_phase_commits);
     -- FRI shape: one PoW witness per round, num_queries query proofs, and (since
     -- log_final_poly_len = 0) a single final-poly coefficient.
@@ -1021,9 +1023,13 @@ def pcs := ⟦
     let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);
     let input = list_concat(input, ext_row_onto(final_poly, store(ListNode.Nil)));
     let input = obs_log_arities(input, commit_phase_commits);
+    -- query-phase grinding: check_witness over the query PoW witness, sampled
+    -- AFTER the log-arity schedule and BEFORE the query indices (the query
+    -- sampling continues the post-PoW stream). No-op when query_pow_bits == 0.
+    let (input, output) = pcs_check_witness(input, qpw, query_pow_bits);
     -- query indices + per-query verification (log_global_max_height = #rounds + log_blowup)
     let log_gmax = num_rounds + log_blowup;
-    query_loop(input, store(ListNode.Nil), query_proofs, alpha, stage1, stage2, q_opened,
+    query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
       prep_opt, s1c, s2c, qc, prep_commit, circuits, prep_indices, log_degrees, zeta,
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)
   }

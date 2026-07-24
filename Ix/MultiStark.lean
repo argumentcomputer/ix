@@ -17,9 +17,12 @@ public import Ix.MultiStark.Tests
 # Multi-STARK proof verifier (Aiur)
 
 The recursive verifier. Its public statement is purely existential: *"there
-exists a valid multi-stark proof, under the FRI parameters given as public
-input, for the constraint system with this Blake3 digest and these public
-claims."* The proof itself is **non-deterministic advice** (fed on IO channel 0,
+exists a valid multi-stark proof for the constraint system with this Blake3
+digest and these public claims."* The FRI parameters (blowup, query count,
+PoW bits, …) are NOT separate public inputs: they live in the verifying key,
+which the statement already binds through `system_digest` — repeating them
+publicly would be redundant. The proof itself is
+**non-deterministic advice** (fed on IO channel 0,
 never hashed or otherwise bound as a public input): the Fiat-Shamir transcript
 replay plus the Merkle/OOD/FRI checks are exactly what make any accepted advice
 a valid proof — a hash binding of the proof bytes would add nothing to the
@@ -28,9 +31,10 @@ statement, while costing an extra in-circuit hash over those bytes.
 The verifying key and claims, by contrast, ARE digest-bound (`system_digest`,
 `claims_digest`): they determine *what was proven*.
 
-Fixed protocol assumptions (our system): `queryProofOfWorkBits = 0`,
-`capHeight = 0`, `maxLogArity = 1`, `logFinalPolyLen = 0`. The variable FRI
-parameters (`num_queries`, `commit_pow_bits`, `log_blowup`) are public inputs.
+Fixed protocol assumptions (our system): `capHeight = 0`, `maxLogArity = 1`,
+`logFinalPolyLen = 0`. The variable FRI parameters (`num_queries`,
+`commit_pow_bits`, `query_pow_bits`, `log_blowup`) are read from the
+digest-bound verifying key.
 -/
 
 public section
@@ -39,11 +43,11 @@ namespace MultiStark
 
 def entrypoints := ⟦
   -- Public inputs: the Blake3 digests of the verifying key and the claims
-  -- (32 bytes = 4 little-endian u64 lanes each) plus the variable FRI parameters. The
-  -- proof is pure non-deterministic advice on IO channel 0 — see the module
-  -- docstring. One stream per channel (0 = proof, 1 = vk, 2 = claims), each
-  -- registered under key `[0]` on its channel.
-  pub fn verify_multi_stark_proof(system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4], num_queries: G, commit_pow_bits: G, log_blowup: G) {
+  -- (32 bytes = 4 little-endian u64 lanes each). The proof is pure
+  -- non-deterministic advice on IO channel 0 — see the module docstring. One
+  -- stream per channel (0 = proof, 1 = vk, 2 = claims), each registered under
+  -- key `[0]` on its channel.
+  pub fn verify_multi_stark_proof(system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4]) {
     -- Proof advice from IO channel 0: deserialize directly from the IO arena
     -- by byte offset (no materialized byte stream), assert fully consumed.
     -- The byte FETCHES inside the readers are unconstrained (the proof is
@@ -73,7 +77,7 @@ def entrypoints := ⟦
     assert_eq!(verify(proof), 1);
     -- Step 3 + 5: prover-faithful Fiat-Shamir replay and the out-of-domain
     -- composition/quotient check, `composition(ζ)·inv_vanishing(ζ) == quotient(ζ)`.
-    assert_eq!(ood_verify(sys, proof, claims, num_queries, commit_pow_bits, log_blowup), 1);
+    assert_eq!(ood_verify(sys, proof, claims), 1);
     ()
   }
 ⟧
@@ -125,18 +129,15 @@ def serializeClaims (claims : Array (Array Aiur.G)) : ByteArray := Id.run do
 
 /-- Assemble `verify_multi_stark_proof`'s public input from the serialized vk
 (`AiurSystem.vkBytes`) and claims (`serializeClaims`): vk digest ++ claims
-digest ++ the variable FRI parameters. The proof/vk/claims advice itself goes
-through the natively-built IO buffer (`executeMultiStark` /
-`proveMultiStark`, which take the raw byte blobs directly), or through
-`verifierInput` on the Lean-buffer fallback path. -/
-def verifierPubInput (vkBytes claimBytes : ByteArray)
-    (commitParams : Aiur.CommitmentParameters) (friParams : Aiur.FriParameters) :
-    Array Aiur.G :=
+digest. The FRI parameters are read in-circuit from the digest-bound vk, not
+passed publicly. The proof/vk/claims advice itself goes through the
+natively-built IO buffer (`executeMultiStark` / `proveMultiStark`, which take
+the raw byte blobs directly), or through `verifierInput` on the Lean-buffer
+fallback path. -/
+def verifierPubInput (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
   let digestGs : ByteArray → Array Aiur.G :=
     fun b => (Blake3.Rust.hash b).val.data.map .ofUInt8
-  digestGs vkBytes ++ digestGs claimBytes ++
-    #[.ofNat friParams.numQueries, .ofNat friParams.commitProofOfWorkBits,
-      .ofNat commitParams.logBlowup]
+  digestGs vkBytes ++ digestGs claimBytes
 
 /-- Assemble `verify_multi_stark_proof`'s inputs from the serialized proof, vk
 (`AiurSystem.vkBytes`), and claims (`serializeClaims`): the public input
@@ -144,11 +145,10 @@ def verifierPubInput (vkBytes claimBytes : ByteArray)
 2 = claims, each under key `[0]`). The Lean-built buffer boxes every byte
 into a `G` and is marshalled across FFI — prefer the raw-bytes entrypoints
 (`executeMultiStark` / `proveMultiStark`) off the hot path. -/
-def verifierInput (proofBytes vkBytes claimBytes : ByteArray)
-    (commitParams : Aiur.CommitmentParameters) (friParams : Aiur.FriParameters) :
+def verifierInput (proofBytes vkBytes claimBytes : ByteArray) :
     Array Aiur.G × Aiur.IOBuffer :=
   let gs := fun (b : ByteArray) => b.data.map Aiur.G.ofUInt8
-  let pubInput := verifierPubInput vkBytes claimBytes commitParams friParams
+  let pubInput := verifierPubInput vkBytes claimBytes
   let io := (((default : Aiur.IOBuffer).extend 0 #[.ofNat 0] (gs proofBytes)).extend
     1 #[.ofNat 0] (gs vkBytes)).extend 2 #[.ofNat 0] (gs claimBytes)
   (pubInput, io)

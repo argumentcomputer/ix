@@ -136,13 +136,12 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln "inner proof failed to verify"
     return 1
   -- Proof (advice, channel 0), vk (channel 1), claims (channel 2), plus the
-  -- Blake3-bound vk/claims digests and FRI params as public input. The
-  -- advice buffer is built natively in Rust from the raw byte blobs
-  -- (`executeMultiStark` / `proveMultiStark`).
+  -- Blake3-bound vk/claims digests as public input (the FRI params ride in
+  -- the digest-bound vk). The advice buffer is built natively in Rust from
+  -- the raw byte blobs (`executeMultiStark` / `proveMultiStark`).
   let claimBytes := MultiStark.serializeClaims #[claim]
   let vkBytes := facSystem.vkBytes
   let pubInput := MultiStark.verifierPubInput vkBytes claimBytes
-    recCommitParams innerFri
   -- Compile the verifier toplevel and run it over the proof.
   let vTop ← match MultiStark.multiStark with
     | .ok t => pure t
