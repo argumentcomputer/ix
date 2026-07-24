@@ -376,7 +376,7 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
     let shardsM ← findUuid measures "slug" "shards"
     let heavy := (BenchCmd.envSpecs.map (·.name)).foldl
       (init := (#[] : Array String)) fun acc env =>
-        acc ++ (BenchCmd.selectNames rows env "execute"
+        acc ++ (BenchCmd.selectNames rows env "zisk" "execute"
           (full := false) (tier := "heavy") (shardOnly := false)).map (·.name)
     return { title := "Zisk Shards", testbeds := #[ziskTb],
              benchmarks := heavy.filterMap (findUuid benchmarks "name" ·),
