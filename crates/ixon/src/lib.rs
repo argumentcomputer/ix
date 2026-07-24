@@ -21,6 +21,7 @@ pub mod metadata;
 pub mod proof;
 pub mod serialize;
 pub mod sharing;
+pub mod syntax;
 pub mod tag;
 pub mod univ;
 

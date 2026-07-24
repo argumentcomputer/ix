@@ -2,6 +2,7 @@ import Tests.Aiur
 import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
+import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
@@ -66,6 +67,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ffi", Tests.FFI.suite),
   ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
+  ("ixon-syntax", Tests.IxonSyntax.suite),
   ("claim", Tests.Claim.suite),
   ("merkle", Tests.Merkle.suite),
   ("assumption-tree", Tests.AssumptionTree.suite),
