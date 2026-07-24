@@ -2311,10 +2311,17 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
   };
   for (consumer, rec) in &merged.records {
     let (cblock, csize) = resolve(consumer);
-    builder.block(cblock.clone(), rec.fuel, csize, 1, rec.ops.subst_nodes);
+    builder.block(
+      cblock.clone(),
+      rec.fuel,
+      csize,
+      1,
+      rec.ops.subst_nodes,
+      rec.ops.subst_unique,
+    );
     for prod in &rec.producers {
       let (pblock, psize) = resolve(prod);
-      builder.block(pblock.clone(), 0, psize, 0, 0);
+      builder.block(pblock.clone(), 0, psize, 0, 0, 0);
       builder.delta_edge(cblock.clone(), pblock);
     }
   }

@@ -53,6 +53,10 @@ use ix_common::address::Address;
 #[cfg(not(target_os = "zkvm"))]
 thread_local! {
   static SUBST_NODES: Cell<u64> = const { Cell::new(0) };
+  static SUBST_UNIQUE: Cell<u64> = const { Cell::new(0) };
+  static SUBST_CTX: Cell<u64> = const { Cell::new(0) };
+  static SUBST_SEEN: std::cell::RefCell<FxHashSet<u64>> =
+    std::cell::RefCell::new(FxHashSet::default());
   static WHNF_CALLS: Cell<u64> = const { Cell::new(0) };
   static DEF_EQ_CALLS: Cell<u64> = const { Cell::new(0) };
   static NAT_ARITH: Cell<u64> = const { Cell::new(0) };
@@ -63,6 +67,48 @@ thread_local! {
 pub fn bump_subst_nodes() {
   #[cfg(not(target_os = "zkvm"))]
   SUBST_NODES.with(|c| c.set(c.get().wrapping_add(1)));
+}
+
+/// Set the substitution-context component of the unique-work key: a fold
+/// of the substitution arguments' identities, computed once per top-level
+/// `instantiate_rev` call (the recursion never re-enters subst, so one
+/// slot suffices). Mixed into every node key by [`bump_subst_unique`].
+#[inline(always)]
+pub fn set_subst_ctx(ctx: u64) {
+  #[cfg(not(target_os = "zkvm"))]
+  SUBST_CTX.with(|c| c.set(ctx));
+  #[cfg(target_os = "zkvm")]
+  let _ = ctx;
+}
+
+/// Count one substitution-node visit deduplicated by its work identity:
+/// (expression `expr_key`, binder `depth`, the current substitution
+/// context from [`set_subst_ctx`]). A memoizing executor (Aiur proves
+/// each unique query once; repeats are memo-table lookups) pays only for
+/// distinct work, so `subst_unique`, not the raw visit count, is the
+/// substitution-volume feature for an Aiur cost model. The seen-set
+/// spans one constant's check — the same scope as the other counters
+/// (cleared by [`take_op_counts`]).
+#[inline(always)]
+pub fn bump_subst_unique(expr_key: u64, depth: u64) {
+  #[cfg(not(target_os = "zkvm"))]
+  {
+    // splitmix64 finalizer over the mixed triple — collisions only cost
+    // model accuracy, never soundness.
+    let mut k = expr_key
+      ^ SUBST_CTX.with(Cell::get)
+      ^ depth.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    k = (k ^ (k >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    k = (k ^ (k >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    k ^= k >> 31;
+    SUBST_SEEN.with(|s| {
+      if s.borrow_mut().insert(k) {
+        SUBST_UNIQUE.with(|c| c.set(c.get().wrapping_add(1)));
+      }
+    });
+  }
+  #[cfg(target_os = "zkvm")]
+  let _ = (expr_key, depth);
 }
 
 /// Count one `whnf` entry.
@@ -95,6 +141,9 @@ pub fn bump_nat_arith(work: u64) {
 #[derive(Default, Debug, Clone, Copy)]
 pub struct OpCounts {
   pub subst_nodes: u64,
+  /// Distinct substitution work items (see [`bump_subst_unique`]) — the
+  /// post-memoization substitution volume a memoizing executor pays.
+  pub subst_unique: u64,
   pub whnf_calls: u64,
   pub def_eq_calls: u64,
   pub nat_arith: u64,
@@ -104,8 +153,10 @@ pub struct OpCounts {
 pub fn take_op_counts() -> OpCounts {
   #[cfg(not(target_os = "zkvm"))]
   {
+    SUBST_SEEN.with(|s| s.borrow_mut().clear());
     OpCounts {
       subst_nodes: SUBST_NODES.with(|c| c.replace(0)),
+      subst_unique: SUBST_UNIQUE.with(|c| c.replace(0)),
       whnf_calls: WHNF_CALLS.with(|c| c.replace(0)),
       def_eq_calls: DEF_EQ_CALLS.with(|c| c.replace(0)),
       nat_arith: NAT_ARITH.with(|c| c.replace(0)),
@@ -118,7 +169,7 @@ pub fn take_op_counts() -> OpCounts {
 /// Magic bytes at the head of every `.ixprof` file.
 const MAGIC: &[u8; 8] = b"IXPROF\0\0";
 /// On-disk format version. Bump on any incompatible layout change.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 /// Per-block recorded statistics.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,6 +186,10 @@ pub struct BlockEntry {
   /// dominant reduction-volume cost driver. Recorded when profiled with op
   /// counters enabled; 0 otherwise.
   pub subst: u64,
+  /// Distinct substitution work items checking this block — the
+  /// post-memoization substitution volume (see `bump_subst_unique`);
+  /// the Aiur-relevant counterpart of `subst`.
+  pub subst_unique: u64,
 }
 
 /// A recorded kernel profile over an environment.
@@ -215,7 +270,7 @@ impl BlockProfile {
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();
     let mut out = Vec::with_capacity(
-      8 + 4 + 4 + n * 56 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
+      8 + 4 + 4 + n * 64 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
     );
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&VERSION.to_le_bytes());
@@ -226,6 +281,7 @@ impl BlockProfile {
       out.extend_from_slice(&b.serialized_size.to_le_bytes());
       out.extend_from_slice(&b.const_count.to_le_bytes());
       out.extend_from_slice(&b.subst.to_le_bytes());
+      out.extend_from_slice(&b.subst_unique.to_le_bytes());
     }
     out.extend_from_slice(&(self.delta_col.len() as u64).to_le_bytes());
     // CSR row offsets (n+1 entries) as u64.
@@ -258,12 +314,14 @@ impl BlockProfile {
       let serialized_size = r.u32()?;
       let const_count = r.u32()?;
       let subst = r.u64()?;
+      let subst_unique = r.u64()?;
       blocks.push(BlockEntry {
         addr,
         heartbeats,
         serialized_size,
         const_count,
         subst,
+        subst_unique,
       });
     }
     let num_edges = r.u64()? as usize;
@@ -366,6 +424,7 @@ struct Accum {
   serialized_size: u32,
   const_count: u32,
   subst: u64,
+  subst_unique: u64,
   producers: FxHashSet<Address>,
 }
 
@@ -384,12 +443,14 @@ impl ProfileBuilder {
     serialized_size: u32,
     const_count: u32,
     subst: u64,
+    subst_unique: u64,
   ) {
     let e = self.blocks.entry(addr).or_default();
     e.heartbeats = e.heartbeats.saturating_add(heartbeats);
     e.serialized_size = serialized_size;
     e.const_count = e.const_count.saturating_add(const_count);
     e.subst = e.subst.saturating_add(subst);
+    e.subst_unique = e.subst_unique.saturating_add(subst_unique);
   }
 
   /// Record that `consumer` delta-unfolds the body of `producer`. Self-edges
@@ -426,6 +487,7 @@ impl ProfileBuilder {
         serialized_size: a.serialized_size,
         const_count: a.const_count,
         subst: a.subst,
+        subst_unique: a.subst_unique,
       });
       let mut prods: Vec<u32> = a.producers.iter().map(|p| id_of[p]).collect();
       prods.sort_unstable();
@@ -484,6 +546,8 @@ impl ProfileSink {
     rec.fuel = rec.fuel.saturating_add(fuel);
     rec.producers.extend(producers);
     rec.ops.subst_nodes = rec.ops.subst_nodes.saturating_add(ops.subst_nodes);
+    rec.ops.subst_unique =
+      rec.ops.subst_unique.saturating_add(ops.subst_unique);
     rec.ops.whnf_calls = rec.ops.whnf_calls.saturating_add(ops.whnf_calls);
     rec.ops.def_eq_calls =
       rec.ops.def_eq_calls.saturating_add(ops.def_eq_calls);
@@ -497,6 +561,8 @@ impl ProfileSink {
       e.fuel = e.fuel.saturating_add(rec.fuel);
       e.producers.extend(rec.producers);
       e.ops.subst_nodes = e.ops.subst_nodes.saturating_add(rec.ops.subst_nodes);
+      e.ops.subst_unique =
+        e.ops.subst_unique.saturating_add(rec.ops.subst_unique);
       e.ops.whnf_calls = e.ops.whnf_calls.saturating_add(rec.ops.whnf_calls);
       e.ops.def_eq_calls =
         e.ops.def_eq_calls.saturating_add(rec.ops.def_eq_calls);
@@ -516,9 +582,9 @@ mod tests {
   fn sample() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     // Three blocks a<b<c by address ordering.
-    b.block(addr(1), 100, 10, 1, 50);
-    b.block(addr(2), 200, 20, 3, 100);
-    b.block(addr(3), 300, 30, 1, 150);
+    b.block(addr(1), 100, 10, 1, 50, 50);
+    b.block(addr(2), 200, 20, 3, 100, 100);
+    b.block(addr(3), 300, 30, 1, 150, 150);
     // a unfolds b and c; c unfolds b; self-edge ignored.
     b.delta_edge(addr(1), addr(2));
     b.delta_edge(addr(1), addr(3));
@@ -590,11 +656,11 @@ mod tests {
     // via separate builders merged conceptually; result must be identical.
     let mut b = ProfileBuilder::new();
     b.delta_edge(addr(3), addr(2));
-    b.block(addr(3), 300, 30, 1, 150);
+    b.block(addr(3), 300, 30, 1, 150, 150);
     b.delta_edge(addr(1), addr(3));
-    b.block(addr(2), 200, 20, 3, 100);
+    b.block(addr(2), 200, 20, 3, 100, 100);
     b.delta_edge(addr(1), addr(2));
-    b.block(addr(1), 100, 10, 1, 50);
+    b.block(addr(1), 100, 10, 1, 50, 50);
     b.delta_edge(addr(2), addr(2));
     assert_eq!(b.finish(), sample());
   }
