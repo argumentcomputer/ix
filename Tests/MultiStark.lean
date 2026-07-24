@@ -107,13 +107,15 @@ def factorialProgram : Source.Toplevel := ⟦
 ⟧
 
 /-- Inner-proof commitment/FRI parameters. A tractable subset of production
-(`numQueries := 3`) that still drives every generalized verifier path; the
-verifier code itself is blowup/query-count agnostic. -/
+(`numQueries := 3`, standard PoW regime: commit 0 / query 20); the verifier
+code itself is blowup/query-count agnostic, and `pcs_check_witness` is shared
+by both PoW phases, so the query-phase grinding exercises the commit-phase
+code path too. -/
 def recCommitParams : Aiur.CommitmentParameters :=
   { logBlowup := 2, capHeight := 0 }
 def innerFri : Aiur.FriParameters :=
   { logFinalPolyLen := 0, maxLogArity := 1, numQueries := 3,
-    commitProofOfWorkBits := 20, queryProofOfWorkBits := 0 }
+    commitProofOfWorkBits := 0, queryProofOfWorkBits := 20 }
 
 /-- 8 little-endian bytes of a `Nat` (taken mod 2^64). -/
 def u64le (n : Nat) : Array UInt8 :=
@@ -154,11 +156,9 @@ def endToEndSuite : IO UInt32 := do
   let claimBytes := serializeClaims #[claim]
   let claimsDigestInput : Array Aiur.G := (Blake3.Rust.hash claimBytes).val.data.map .ofUInt8
   let claimGs : Array Aiur.G := claimBytes.data.map .ofUInt8
-  -- Public input = vk digest ++ claims digest ++ (num_queries, commit_pow, log_blowup).
-  let friParamInput : Array Aiur.G :=
-    #[Aiur.G.ofNat innerFri.numQueries, Aiur.G.ofNat innerFri.commitProofOfWorkBits,
-      Aiur.G.ofNat recCommitParams.logBlowup]
-  let pubInput : Array Aiur.G := sysDigestInput ++ claimsDigestInput ++ friParamInput
+  -- Public input = vk digest ++ claims digest (the FRI parameters are read
+  -- in-circuit from the digest-bound vk, not passed publicly).
+  let pubInput : Array Aiur.G := sysDigestInput ++ claimsDigestInput
   -- IO advice buffer: proof on channel 0, vk on 1, claims on 2 (each keyed `[0]`).
   let mkIO := fun (pGs cGs : Array Aiur.G) =>
     (((default : IOBuffer).extend 0 #[Aiur.G.ofNat 0] pGs).extend 1 #[Aiur.G.ofNat 0] vkGs).extend
@@ -186,7 +186,7 @@ def endToEndSuite : IO UInt32 := do
   let badClaim : Array Aiur.G := claim.set! (claim.size - 1) (Aiur.G.ofNat 121)
   let badClaimBytes := serializeClaims #[badClaim]
   let badClaimInput : Array Aiur.G :=
-    sysDigestInput ++ ((Blake3.Rust.hash badClaimBytes).val.data.map .ofUInt8) ++ friParamInput
+    sysDigestInput ++ ((Blake3.Rust.hash badClaimBytes).val.data.map .ofUInt8)
 
   -- ── run the (expensive) checks, then assert ─────────────────────────────────
   IO.println "recursive-verifier (proving + recursive verification, ~1.5 min)…"

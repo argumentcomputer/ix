@@ -344,7 +344,7 @@ def findBackend (name : String) : Option BackendSpec :=
     both outer proves strain a 128 GB host, so an OOM row is the honest signal
     that secure recursion does not yet fit. -/
 def recursiveConfigs : List (String × Array String) := [
-  ("square-q100-b1", #["--trivial", "--queries", "100", "--blowup", "1"]),
+  ("square-q100-b1", #["--trivial", "--queries", "100", "--log-blowup", "1"]),
   ("factorial-q100-b2", #["--queries", "100"])
 ]
 

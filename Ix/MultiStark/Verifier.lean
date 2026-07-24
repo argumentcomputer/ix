@@ -832,18 +832,14 @@ def verifier := ⟦
   -- commitments + log_degrees + claims, seed the lookup accumulator from the
   -- claims, then run the OOD composition/quotient check for every circuit.
   -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
-  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››,
-      num_queries: G, commit_pow_bits: G, log_blowup_pub: G) -> G {
-    -- The FRI parameters (`num_queries`, `commit_pow_bits`, `log_blowup`) are
-    -- public inputs. All parameters also live in the (digest-bound) verifying
-    -- key — assert the public ones agree with it.
+  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››) -> G {
+    -- The FRI parameters (`log_blowup`, `num_queries`, `commit_pow_bits`,
+    -- `query_pow_bits`) all come from the verifying key, which the public
+    -- statement binds through `system_digest` — no separate public inputs.
     let Sys.Mk(params, tlimbs, circuits, commit, prep_indices) = sys;
     let SysParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
-                     _max_log_arity, vk_num_queries, vk_commit_pow_bits,
-                     _query_pow_bits) = params;
-    assert_eq!(eq_zero(log_blowup - log_blowup_pub), 1);
-    assert_eq!(eq_zero(vk_num_queries - num_queries), 1);
-    assert_eq!(eq_zero(vk_commit_pow_bits - commit_pow_bits), 1);
+                     _max_log_arity, num_queries, commit_pow_bits,
+                     query_pow_bits) = params;
     match proof {
       Proof.Mk(active, commitments, accs, log_degrees, opening,
                q_opened, prep_opt, stage1, stage2) =>
@@ -870,7 +866,8 @@ def verifier := ⟦
                  prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta);
         pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
           s1c, s2c, qc, prep_cap, acirc, aprep, log_degrees, zeta,
-          list_length(acirc), log_blowup, num_queries, commit_pow_bits),
+          list_length(acirc), log_blowup, num_queries, commit_pow_bits,
+          query_pow_bits),
     }
   }
 

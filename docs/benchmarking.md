@@ -113,7 +113,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar (`bench-recursive-verifier` instead takes
-its config as flags — `--trivial`, `--queries`, `--blowup` — with the row
+its config as flags — `--trivial`, `--queries`, `--log-blowup` — with the row
 name supplied via `--json-name`). The ooc and zkVM cells share per-constant
 **full-closure** scope, so their delta isolates in-circuit vs out-of-circuit
 overhead.
