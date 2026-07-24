@@ -132,26 +132,12 @@ def serializeClaims (claims : Array (Array Aiur.G)) : ByteArray := Id.run do
 digest. The FRI parameters are read in-circuit from the digest-bound vk, not
 passed publicly. The proof/vk/claims advice itself goes through the
 natively-built IO buffer (`executeMultiStark` / `proveMultiStark`, which take
-the raw byte blobs directly), or through `verifierInput` on the Lean-buffer
-fallback path. -/
+the raw byte blobs directly: channel 0 = proof, 1 = vk, 2 = claims, each
+under key `[0]`). -/
 def verifierPubInput (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
   let digestGs : ByteArray → Array Aiur.G :=
     fun b => (Blake3.Rust.hash b).val.data.map .ofUInt8
   digestGs vkBytes ++ digestGs claimBytes
-
-/-- Assemble `verify_multi_stark_proof`'s inputs from the serialized proof, vk
-(`AiurSystem.vkBytes`), and claims (`serializeClaims`): the public input
-(`verifierPubInput`) and the IO buffer (channel 0 = proof advice, 1 = vk,
-2 = claims, each under key `[0]`). The Lean-built buffer boxes every byte
-into a `G` and is marshalled across FFI — prefer the raw-bytes entrypoints
-(`executeMultiStark` / `proveMultiStark`) off the hot path. -/
-def verifierInput (proofBytes vkBytes claimBytes : ByteArray) :
-    Array Aiur.G × Aiur.IOBuffer :=
-  let gs := fun (b : ByteArray) => b.data.map Aiur.G.ofUInt8
-  let pubInput := verifierPubInput vkBytes claimBytes
-  let io := (((default : Aiur.IOBuffer).extend 0 #[.ofNat 0] (gs proofBytes)).extend
-    1 #[.ofNat 0] (gs vkBytes)).extend 2 #[.ofNat 0] (gs claimBytes)
-  (pubInput, io)
 
 /-- The verifier toplevel PLUS its self-test entrypoints
 (`Ix/MultiStark/Tests.lean`), unpruned. Kept separate from `multiStark`
