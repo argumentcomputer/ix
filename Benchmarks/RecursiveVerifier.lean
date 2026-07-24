@@ -85,7 +85,7 @@ def recCommitParams (args : List String) : Aiur.CommitmentParameters :=
 def innerFri (args : List String) : Aiur.FriParameters :=
   { logFinalPolyLen := argNat args "--final-poly" 0, maxLogArity := 1,
     numQueries := argNat args "--queries" 100,
-    commitProofOfWorkBits := argNat args "--pow" 20, queryProofOfWorkBits := 0 }
+    commitProofOfWorkBits := argNat args "--pow" 0, queryProofOfWorkBits := 20 }
 
 def secs (t0 t1 : Nat) : Float := (Float.ofNat (t1 - t0)) / 1e9
 
