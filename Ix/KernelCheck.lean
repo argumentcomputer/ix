@@ -212,6 +212,22 @@ opaque rsProfileAnonFFI :
     @& String →                          -- backend cost models (all|aiur|zisk)
     IO Unit
 
+/-- FFI: env-wide closure cost sweep. For every named constant (one
+    representative name per home block), walks its full reference closure,
+    sums the whole-env `.ixprof` per-block counters over the members, and
+    applies the Aiur execute/prove cost models. Writes a per-root CSV and
+    prints feasibility / min-root-per-hot-block / diversity reports to
+    stderr. Numeric params are decimal strings (ABI-simple). -/
+@[extern "rs_profile_sweep"]
+opaque rsProfileSweepFFI :
+    @& String →                          -- .ixe path
+    @& String →                          -- .ixprof path
+    @& String →                          -- output CSV path
+    @& String →                          -- RAM budget GiB (decimal)
+    @& String →                          -- hot blocks tracked (decimal)
+    @& String →                          -- diversity representatives (decimal)
+    IO Unit
+
 /-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
     manifest. `numShards` and `balancePct` are decimal strings (kept ABI-simple).
     Empty `outPath` skips the manifest. Prints a what-if report to stderr. -/

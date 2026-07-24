@@ -171,6 +171,30 @@ const MAGIC: &[u8; 8] = b"IXPROF\0\0";
 /// On-disk format version. Bump on any incompatible layout change.
 const VERSION: u32 = 2;
 
+/// Per-block operation counters recorded while checking the block's members —
+/// the profiler's persisted feature vector, grouped so builder signatures stay
+/// stable as counters grow.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockCounters {
+  /// Total recursive fuel (heartbeats) consumed.
+  pub heartbeats: u64,
+  /// Substitution-node visits (`instantiate_rev`) — the dominant
+  /// reduction-volume cost driver.
+  pub subst: u64,
+  /// Distinct substitution work items — the post-memoization substitution
+  /// volume (see `bump_subst_unique`); the memoizing-executor counterpart of
+  /// `subst`.
+  pub subst_unique: u64,
+  /// `whnf` entries.
+  pub whnf: u64,
+  /// Definitional-equality checks.
+  pub def_eq: u64,
+  /// Big-Nat limb-work units (op-weighted; see `bump_nat_arith`) — the only
+  /// recorded signal for the limb-arithmetic circuit family no other counter
+  /// tracks.
+  pub nat_arith: u64,
+}
+
 /// Per-block recorded statistics.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockEntry {
@@ -190,6 +214,12 @@ pub struct BlockEntry {
   /// post-memoization substitution volume (see `bump_subst_unique`);
   /// the Aiur-relevant counterpart of `subst`.
   pub subst_unique: u64,
+  /// `whnf` entries checking this block.
+  pub whnf: u64,
+  /// Definitional-equality checks checking this block.
+  pub def_eq: u64,
+  /// Big-Nat limb-work units checking this block.
+  pub nat_arith: u64,
 }
 
 /// A recorded kernel profile over an environment.
@@ -270,7 +300,7 @@ impl BlockProfile {
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();
     let mut out = Vec::with_capacity(
-      8 + 4 + 4 + n * 64 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
+      8 + 4 + 4 + n * 88 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
     );
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&VERSION.to_le_bytes());
@@ -282,6 +312,9 @@ impl BlockProfile {
       out.extend_from_slice(&b.const_count.to_le_bytes());
       out.extend_from_slice(&b.subst.to_le_bytes());
       out.extend_from_slice(&b.subst_unique.to_le_bytes());
+      out.extend_from_slice(&b.whnf.to_le_bytes());
+      out.extend_from_slice(&b.def_eq.to_le_bytes());
+      out.extend_from_slice(&b.nat_arith.to_le_bytes());
     }
     out.extend_from_slice(&(self.delta_col.len() as u64).to_le_bytes());
     // CSR row offsets (n+1 entries) as u64.
@@ -315,6 +348,9 @@ impl BlockProfile {
       let const_count = r.u32()?;
       let subst = r.u64()?;
       let subst_unique = r.u64()?;
+      let whnf = r.u64()?;
+      let def_eq = r.u64()?;
+      let nat_arith = r.u64()?;
       blocks.push(BlockEntry {
         addr,
         heartbeats,
@@ -322,6 +358,9 @@ impl BlockProfile {
         const_count,
         subst,
         subst_unique,
+        whnf,
+        def_eq,
+        nat_arith,
       });
     }
     let num_edges = r.u64()? as usize;
@@ -420,11 +459,9 @@ pub struct ProfileBuilder {
 
 #[derive(Default)]
 struct Accum {
-  heartbeats: u64,
+  counters: BlockCounters,
   serialized_size: u32,
   const_count: u32,
-  subst: u64,
-  subst_unique: u64,
   producers: FxHashSet<Address>,
 }
 
@@ -433,24 +470,26 @@ impl ProfileBuilder {
     Self::default()
   }
 
-  /// Record (or accumulate into) a block's statistics. Heartbeats and
+  /// Record (or accumulate into) a block's statistics. Counters and
   /// const_count accumulate additively; serialized_size is set (idempotent for
   /// a fixed block).
   pub fn block(
     &mut self,
     addr: Address,
-    heartbeats: u64,
+    counters: BlockCounters,
     serialized_size: u32,
     const_count: u32,
-    subst: u64,
-    subst_unique: u64,
   ) {
     let e = self.blocks.entry(addr).or_default();
-    e.heartbeats = e.heartbeats.saturating_add(heartbeats);
+    let c = &mut e.counters;
+    c.heartbeats = c.heartbeats.saturating_add(counters.heartbeats);
+    c.subst = c.subst.saturating_add(counters.subst);
+    c.subst_unique = c.subst_unique.saturating_add(counters.subst_unique);
+    c.whnf = c.whnf.saturating_add(counters.whnf);
+    c.def_eq = c.def_eq.saturating_add(counters.def_eq);
+    c.nat_arith = c.nat_arith.saturating_add(counters.nat_arith);
     e.serialized_size = serialized_size;
     e.const_count = e.const_count.saturating_add(const_count);
-    e.subst = e.subst.saturating_add(subst);
-    e.subst_unique = e.subst_unique.saturating_add(subst_unique);
   }
 
   /// Record that `consumer` delta-unfolds the body of `producer`. Self-edges
@@ -483,11 +522,14 @@ impl ProfileBuilder {
       let a = &self.blocks[addr];
       blocks.push(BlockEntry {
         addr: addr.clone(),
-        heartbeats: a.heartbeats,
+        heartbeats: a.counters.heartbeats,
         serialized_size: a.serialized_size,
         const_count: a.const_count,
-        subst: a.subst,
-        subst_unique: a.subst_unique,
+        subst: a.counters.subst,
+        subst_unique: a.counters.subst_unique,
+        whnf: a.counters.whnf,
+        def_eq: a.counters.def_eq,
+        nat_arith: a.counters.nat_arith,
       });
       let mut prods: Vec<u32> = a.producers.iter().map(|p| id_of[p]).collect();
       prods.sort_unstable();
@@ -579,12 +621,17 @@ mod tests {
     Address::from_slice(&[byte; 32]).unwrap()
   }
 
+  /// Fixture counters: (heartbeats, subst, subst_unique); other counters zero.
+  fn bc(heartbeats: u64, subst: u64, subst_unique: u64) -> BlockCounters {
+    BlockCounters { heartbeats, subst, subst_unique, ..Default::default() }
+  }
+
   fn sample() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     // Three blocks a<b<c by address ordering.
-    b.block(addr(1), 100, 10, 1, 50, 50);
-    b.block(addr(2), 200, 20, 3, 100, 100);
-    b.block(addr(3), 300, 30, 1, 150, 150);
+    b.block(addr(1), bc(100, 50, 50), 10, 1);
+    b.block(addr(2), bc(200, 100, 100), 20, 3);
+    b.block(addr(3), bc(300, 150, 150), 30, 1);
     // a unfolds b and c; c unfolds b; self-edge ignored.
     b.delta_edge(addr(1), addr(2));
     b.delta_edge(addr(1), addr(3));
@@ -656,11 +703,11 @@ mod tests {
     // via separate builders merged conceptually; result must be identical.
     let mut b = ProfileBuilder::new();
     b.delta_edge(addr(3), addr(2));
-    b.block(addr(3), 300, 30, 1, 150, 150);
+    b.block(addr(3), bc(300, 150, 150), 30, 1);
     b.delta_edge(addr(1), addr(3));
-    b.block(addr(2), 200, 20, 3, 100, 100);
+    b.block(addr(2), bc(200, 100, 100), 20, 3);
     b.delta_edge(addr(1), addr(2));
-    b.block(addr(1), 100, 10, 1, 50, 50);
+    b.block(addr(1), bc(100, 50, 50), 10, 1);
     b.delta_edge(addr(2), addr(2));
     assert_eq!(b.finish(), sample());
   }
