@@ -21,6 +21,38 @@ open Ix.KernelCheck
 
 namespace Ix.Cli.ProfileCmd
 
+def runSweepCmd (p : Cli.Parsed) : IO UInt32 := do
+  let some pathArg := p.positionalArg? "path"
+    | p.printError "error: must specify <path> to a .ixe file"
+      return 1
+  let envPath := pathArg.as! String
+  let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
+  let profPath := (p.flag? "prof").map (·.as! String) |>.getD (base ++ ".ixprof")
+  let csvPath  := (p.flag? "out").map (·.as! String) |>.getD (base ++ "-sweep.csv")
+  let budget   := (p.flag? "budget").map (·.as! Nat) |>.getD 64
+  let topBlocks := (p.flag? "top-blocks").map (·.as! Nat) |>.getD 10
+  let reps     := (p.flag? "reps").map (·.as! Nat) |>.getD 10
+  IO.println s!"Sweeping {envPath} × {profPath} → {csvPath} (budget {budget} GiB)"
+  rsProfileSweepFFI envPath profPath csvPath (toString budget)
+    (toString topBlocks) (toString reps)
+  IO.println s!"[sweep] wrote {csvPath}"
+  return 0
+
+def sweepCmd : Cli.Cmd := `[Cli|
+  "sweep" VIA runSweepCmd;
+  "Closure cost sweep: predicted Aiur execute/prove cost for every named constant's dependency closure, plus feasibility/bottleneck/diversity reports"
+
+  FLAGS:
+    prof         : String; "Input .ixprof from `ix profile` (default: <env>.ixprof)"
+    out          : String; "Output CSV path (default: <env>-sweep.csv)"
+    budget       : Nat;    "RAM budget in GiB for the feasibility report (default 64)"
+    "top-blocks" : Nat;    "Expensive blocks tracked for the min-root report (default 10, max 64)"
+    reps         : Nat;    "Diverse feature-mix representatives to pick (default 10; 0 disables)"
+
+  ARGS:
+    path : String; "Path to the serialized .ixe the .ixprof was profiled from"
+]
+
 def runProfileCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a .ixe file"
@@ -74,6 +106,9 @@ def profileCmd : Cli.Cmd := `[Cli|
 
   ARGS:
     path : String; "Path to a serialized .ixe environment"
+
+  SUBCOMMANDS:
+    sweepCmd
 ]
 
 end

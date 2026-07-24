@@ -1824,6 +1824,30 @@ pub fn aiur_block_prove_secs(b: &BlockEntry) -> f64 {
     + AIUR_PROVE_SECS_PER_NLOGN_SUBST * nlogn(b.subst)
 }
 
+/// Calibrated Aiur **execute** (witness-generation, no prove) cost model —
+/// same feature form and calibration pipeline as the prove model above, fit
+/// against the `aiur-check-execute` bench suite. Execute RAM is bytes-only:
+/// the retained query record is dominated by ingress/hashing rows, and no
+/// second feature survives a non-negative fit.
+pub const AIUR_EXEC_BASE_SECS: f64 = 0.146;
+pub const AIUR_EXEC_SECS_PER_NLOGN_INGRESS_BYTE: f64 = 8.54e-8;
+pub const AIUR_EXEC_SECS_PER_NLOGN_SUBST: f64 = 6.77e-8;
+pub const AIUR_EXEC_RAM_BASE_GIB: f64 = 4.72;
+pub const AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE: f64 = 8.50e-8;
+
+/// Predicted Aiur execute time (seconds) for one run.
+pub fn aiur_exec_secs(bytes: u64, subst: u64) -> f64 {
+  AIUR_EXEC_BASE_SECS
+    + AIUR_EXEC_SECS_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_EXEC_SECS_PER_NLOGN_SUBST * nlogn(subst)
+}
+
+/// Predicted Aiur execute peak host RAM (GiB) for one run.
+pub fn aiur_exec_ram_gib(bytes: u64) -> f64 {
+  AIUR_EXEC_RAM_BASE_GIB
+    + AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+}
+
 /// Whole-workload prove-time estimate over a partition's per-shard step counts.
 pub struct ProveEstimate {
   /// Σ predicted guest STEPS over all shards (incl. per-shard floor + ingress).
@@ -2327,10 +2351,15 @@ fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::profile::ProfileBuilder;
+  use crate::profile::{BlockCounters, ProfileBuilder};
 
   fn addr(byte: u8) -> Address {
     Address::from_slice(&[byte; 32]).unwrap()
+  }
+
+  /// Fixture counters: (heartbeats, subst, subst_unique); other counters zero.
+  fn bc(heartbeats: u64, subst: u64, subst_unique: u64) -> BlockCounters {
+    BlockCounters { heartbeats, subst, subst_unique, ..Default::default() }
   }
 
   /// A distinct address for each `n` (more than the 256 `addr(u8)` affords),
@@ -2348,7 +2377,7 @@ mod tests {
   fn two_clusters() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     for i in 1..=6u8 {
-      b.block(addr(i), 100, 1000, 1, 0, 0);
+      b.block(addr(i), bc(100, 0, 0), 1000, 1);
     }
     // intra cluster A
     b.delta_edge(addr(1), addr(2));
@@ -2407,7 +2436,7 @@ mod tests {
     for c in 0..4u8 {
       let base = c * 4 + 1;
       for k in 0..4u8 {
-        b.block(addr(base + k), 100, 500, 1, 0, 0);
+        b.block(addr(base + k), bc(100, 0, 0), 500, 1);
       }
       b.delta_edge(addr(base), addr(base + 1));
       b.delta_edge(addr(base + 1), addr(base + 2));
@@ -2449,9 +2478,9 @@ mod tests {
     // non-empty (parallelism is the goal), even though heartbeat balance is
     // impossible.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), 30_000, 100, 1, 0, 0); // ~30x a light block
+    b.block(addr(1), bc(30_000, 0, 0), 100, 1); // ~30x a light block
     for i in 2..=65u8 {
-      b.block(addr(i), 1000, 100, 1, 0, 0);
+      b.block(addr(i), bc(1000, 0, 0), 100, 1);
     }
     for i in 2..=64u8 {
       b.delta_edge(addr(i), addr(i + 1));
@@ -2497,7 +2526,7 @@ mod tests {
     // each under the cap — no over-sharding from balancing.
     let mut b = ProfileBuilder::new();
     for i in 1..=40u8 {
-      b.block(addr(i), 1000, 0, 0, 0, 0);
+      b.block(addr(i), bc(1000, 0, 0), 0, 0);
     }
     for i in 1..40u8 {
       b.delta_edge(addr(i), addr(i + 1));
@@ -2526,9 +2555,9 @@ mod tests {
     // The packer must keep them together (coherent order) so `dep` is paid once,
     // and must count `dep`'s bytes when deciding the cap.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), 10, 4_000_000, 0, 0, 0); // dep: ~2.6e9 ingress steps if foreign
-    b.block(addr(2), 100, 0, 0, 0, 0);
-    b.block(addr(3), 100, 0, 0, 0, 0);
+    b.block(addr(1), bc(10, 0, 0), 4_000_000, 0); // dep: ~2.6e9 ingress steps if foreign
+    b.block(addr(2), bc(100, 0, 0), 0, 0);
+    b.block(addr(3), bc(100, 0, 0), 0, 0);
     b.delta_edge(addr(2), addr(1)); // 2 unfolds dep
     b.delta_edge(addr(3), addr(1)); // 3 unfolds dep
     let p = b.finish();
@@ -2545,8 +2574,8 @@ mod tests {
     // A single block whose own predicted STEPS exceed the cap cannot be split —
     // it is emitted alone and the plan is flagged infeasible.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), 100_000, 0, 0, 0, 0); // ~16.2e9 steps, far over a 1e9 cap
-    b.block(addr(2), 100, 0, 0, 0, 0);
+    b.block(addr(1), bc(100_000, 0, 0), 0, 0); // ~16.2e9 steps, far over a 1e9 cap
+    b.block(addr(2), bc(100, 0, 0), 0, 0);
     let p = b.finish();
     let plan = partition_for_cycle_cap(&p, 1_000_000_000, 0.05);
     assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
@@ -2570,7 +2599,7 @@ mod tests {
     // shards each under the (usable-fraction) RAM cap.
     let mut b = ProfileBuilder::new();
     for i in 1..=40u8 {
-      b.block(addr(i), 20_000, 200_000, 1, 100_000, 0);
+      b.block(addr(i), bc(20_000, 100_000, 0), 200_000, 1);
     }
     for i in 1..40u8 {
       b.delta_edge(addr(i), addr(i + 1));
@@ -2597,8 +2626,8 @@ mod tests {
     // One block so hot its lone predicted RAM exceeds the cap: emitted alone,
     // flagged infeasible.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), u64::MAX / 2, 1000, 1, 0, 0);
-    b.block(addr(2), 10, 1000, 1, 0, 0);
+    b.block(addr(1), bc(u64::MAX / 2, 1000, 0), 1000, 1);
+    b.block(addr(2), bc(10, 0, 0), 1000, 1);
     let p = b.finish();
     let plan = partition_for_aiur_ram(&p, 8.0, 0.05);
     assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
@@ -2684,7 +2713,7 @@ mod tests {
   fn two_big_clusters(m: u32) -> BlockProfile {
     let mut b = ProfileBuilder::new();
     for i in 0..2 * m {
-      b.block(addr_u32(i + 1), 100, 1000, 1, 0, 0);
+      b.block(addr_u32(i + 1), bc(100, 0, 0), 1000, 1);
     }
     for i in 0..m {
       // cluster A cycle over addrs 1..=m
@@ -2746,9 +2775,9 @@ mod tests {
     // candidates, or a shard ends up empty. (Regression guard.)
     let mut b = ProfileBuilder::new();
     let m = 800u32;
-    b.block(addr_u32(1), 5_000_000, 100, 1, 0, 0); // the giant
+    b.block(addr_u32(1), bc(5_000_000, 0, 0), 100, 1); // the giant
     for i in 2..=m {
-      b.block(addr_u32(i), 1000, 100, 1, 0, 0);
+      b.block(addr_u32(i), bc(1000, 0, 0), 100, 1);
     }
     for i in 1..m {
       b.delta_edge(addr_u32(i), addr_u32(i + 1)); // a chain (incl. the giant)
