@@ -45,10 +45,14 @@ def runProfileCmd (p : Cli.Parsed) : IO UInt32 := do
     Std.Internal.UV.System.osSetenv "IX_KERNEL_CHECK_WORKERS" (toString n)
 
   let top := (p.flag? "top").map (·.as! Nat) |>.getD 10
+  let backend := (p.flag? "backend").map (·.as! String) |>.getD "all"
+  if backend != "all" && backend != "aiur" && backend != "zisk" then
+    p.printError s!"error: --backend must be all, aiur, or zisk (got {backend})"
+    return 1
 
   IO.println s!"Profiling {envPath} → {outPath} (isolate={isolate})"
   let start ← IO.monoMsNow
-  rsProfileAnonFFI envPath outPath isolate quiet (toString top)
+  rsProfileAnonFFI envPath outPath isolate quiet (toString top) backend
   let elapsed := (← IO.monoMsNow) - start
   IO.println s!"[profile] wrote {outPath} in {elapsed.formatMs}"
   return 0
@@ -65,7 +69,8 @@ def profileCmd : Cli.Cmd := `[Cli|
     "keep-caches";          "Keep cross-constant caches: faster, lower-fidelity, may under-record"
     workers       : Nat;    "Parallel kernel workers (default: available_parallelism). Plumbs IX_KERNEL_CHECK_WORKERS."
     verbose;                "Log every constant (default: quiet)"
-    top           : Nat;    "Block-leaderboard size in the summary: top N by heartbeats (closest Aiur proxy), substitutions, ingress bytes, and predicted Zisk steps (default 10; 0 disables)"
+    top           : Nat;    "Block-leaderboard size in the summary: top N by heartbeats, substitutions, ingress bytes, and predicted per-backend cost (default 10; 0 disables)"
+    backend       : String; "Cost models in the summary: all (default), aiur, or zisk"
 
   ARGS:
     path : String; "Path to a serialized .ixe environment"

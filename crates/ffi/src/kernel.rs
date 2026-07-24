@@ -2203,78 +2203,108 @@ fn print_top_blocks(
   }
 }
 
+/// Which backend cost models the `ix profile` summary prints.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProfileBackend {
+  All,
+  Aiur,
+  Zisk,
+}
+
+impl ProfileBackend {
+  fn parse(s: &str) -> Self {
+    match s {
+      "aiur" => Self::Aiur,
+      "zisk" => Self::Zisk,
+      _ => Self::All,
+    }
+  }
+}
+
 /// Print the general-purpose cost breakdown for `ix profile` — the kernel-work
-/// metrics plus the predicted Zisk leaf cost/RAM (à la `cargo-zisk … -p summary`)
-/// and, when `top_n > 0`, per-metric block leaderboards.
+/// metrics plus the predicted per-backend cost/RAM (`backend` selects Aiur,
+/// Zisk, or both) and, when `top_n > 0`, per-metric block leaderboards.
 // `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss
 // past 2⁵³ steps is irrelevant to a two-sig-fig estimate.
 #[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ms display
 fn print_profile_summary(
   env_path: &str,
   sink: &ProfileSink,
   profile: &BlockProfile,
   env: &IxonEnv,
   top_n: usize,
+  backend: ProfileBackend,
 ) {
   use ix_kernel::shard::{
     SHARD_STEP_FLOOR, STEPS_PER_HEARTBEAT, STEPS_PER_INGRESS_BYTE,
-    STEPS_PER_SUBST, block_step_cost, ram_gib_for_steps,
+    STEPS_PER_SUBST, aiur_block_prove_secs, aiur_prove_secs, aiur_ram_gib,
+    block_step_cost, ram_gib_for_steps,
   };
-  let (mut hb, mut subst, mut whnf, mut defeq, mut nat) =
-    (0u64, 0u64, 0u64, 0u64, 0u64);
+  let (mut hb, mut subst, mut uniq, mut whnf, mut defeq, mut nat) =
+    (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
   for rec in sink.records.values() {
     hb = hb.saturating_add(rec.fuel);
     subst = subst.saturating_add(rec.ops.subst_nodes);
+    uniq = uniq.saturating_add(rec.ops.subst_unique);
     whnf = whnf.saturating_add(rec.ops.whnf_calls);
     defeq = defeq.saturating_add(rec.ops.def_eq_calls);
     nat = nat.saturating_add(rec.ops.nat_arith);
   }
   let ingress: u64 =
     profile.blocks().iter().map(|b| u64::from(b.serialized_size)).sum();
-  let steps: u64 = profile
-    .blocks()
-    .iter()
-    .map(block_step_cost)
-    .fold(SHARD_STEP_FLOOR, u64::saturating_add);
-  let ram_gib = ram_gib_for_steps(steps);
-  let warn = if ram_gib > 250.0 {
-    "  → exceeds a 250 GiB box; shard it (ix shard --max-ram G)"
-  } else {
-    ""
-  };
   eprintln!(
     "\n── ix profile: {env_path} ──\n\
      constants {}    blocks {}\n\n\
      kernel work\n\
      \u{20}\u{20}heartbeats     {hb:>14}\n\
      \u{20}\u{20}subst nodes    {subst:>14}\n\
+     \u{20}\u{20}uniq subst     {uniq:>14}\n\
      \u{20}\u{20}whnf calls     {whnf:>14}\n\
      \u{20}\u{20}def-eq calls   {defeq:>14}\n\
      \u{20}\u{20}nat-arith      {nat:>14}\n\
-     \u{20}\u{20}ingress bytes  {ingress:>14}\n\n\
-     predicted Zisk leaf  ({SHARD_STEP_FLOOR} + {STEPS_PER_HEARTBEAT}·hb + {STEPS_PER_SUBST}·subst + {STEPS_PER_INGRESS_BYTE}·bytes)\n\
-     \u{20}\u{20}cycles ≈ {:.2e}\n\
-     \u{20}\u{20}RAM    ≈ {ram_gib:.0} GiB{warn}",
+     \u{20}\u{20}ingress bytes  {ingress:>14}",
     sink.records.len(),
     profile.num_blocks(),
-    steps as f64,
   );
+  if backend != ProfileBackend::Zisk {
+    // Whole-env single-run prediction; large envs exceed any real box and
+    // need `ix shard --backend aiur --max-ram G`.
+    let prove_s = aiur_prove_secs(ingress, subst);
+    let ram = aiur_ram_gib(ingress, hb);
+    let warn = if ram > 250.0 {
+      "  → exceeds a 250 GiB box; shard it (ix shard --backend aiur --max-ram G)"
+    } else {
+      ""
+    };
+    eprintln!(
+      "\n predicted Aiur single run  (calibrated on the aiur bench suite; \
+       limb-arithmetic-heavy work under-predicts)\n\
+       \u{20}\u{20}prove ≈ {prove_s:.1} s\n\
+       \u{20}\u{20}RAM   ≈ {ram:.0} GiB{warn}"
+    );
+  }
+  if backend != ProfileBackend::Aiur {
+    let steps: u64 = profile
+      .blocks()
+      .iter()
+      .map(block_step_cost)
+      .fold(SHARD_STEP_FLOOR, u64::saturating_add);
+    let ram_gib = ram_gib_for_steps(steps);
+    let warn = if ram_gib > 250.0 {
+      "  → exceeds a 250 GiB box; shard it (ix shard --max-ram G)"
+    } else {
+      ""
+    };
+    eprintln!(
+      "\n predicted Zisk leaf  ({SHARD_STEP_FLOOR} + {STEPS_PER_HEARTBEAT}·hb + {STEPS_PER_SUBST}·subst + {STEPS_PER_INGRESS_BYTE}·bytes)\n\
+       \u{20}\u{20}cycles ≈ {:.2e}\n\
+       \u{20}\u{20}RAM    ≈ {ram_gib:.0} GiB{warn}",
+      steps as f64,
+    );
+  }
   if top_n > 0 {
     let names = block_display_names(env, env_path);
-    // Aiur-relevant metrics first, the Zisk step model last: Aiur's
-    // memoized query execution collapses repeated work, so raw
-    // substitution volume overweights repetitive blocks and heartbeats
-    // (reduction steps, already downstream of the kernel's memo tables)
-    // track measured fft-cost closest of the recorded counters.
-    // TODO: a calibrated Aiur prove-time/RAM model — until then the
-    // ground truth is measured fft-cost from `ix bench run --backend
-    // aiur --consts <name>`.
-    eprintln!(
-      "\n predicted Aiur prove time / RAM per block: TODO (no calibrated \
-       Aiur cost model; heartbeats below are the closest recorded proxy, \
-       and `ix bench run --backend aiur --consts <name>` measures ground \
-       truth)"
-    );
     print_top_blocks("heartbeats", top_n, profile, &names, &|b| b.heartbeats);
     print_top_blocks("substitution nodes", top_n, profile, &names, &|b| {
       b.subst
@@ -2282,13 +2312,24 @@ fn print_profile_summary(
     print_top_blocks("ingress bytes", top_n, profile, &names, &|b| {
       u64::from(b.serialized_size)
     });
-    print_top_blocks(
-      "predicted Zisk steps (sharding cost)",
-      top_n,
-      profile,
-      &names,
-      &block_step_cost,
-    );
+    if backend != ProfileBackend::Zisk {
+      print_top_blocks(
+        "predicted Aiur prove ms (marginal)",
+        top_n,
+        profile,
+        &names,
+        &|b| (aiur_block_prove_secs(b) * 1e3) as u64,
+      );
+    }
+    if backend != ProfileBackend::Aiur {
+      print_top_blocks(
+        "predicted Zisk steps (sharding cost)",
+        top_n,
+        profile,
+        &names,
+        &block_step_cost,
+      );
+    }
   }
 }
 
@@ -2436,6 +2477,7 @@ pub fn profile_anon_ixe(
   isolate: bool,
   quiet: bool,
   top_n: usize,
+  backend: &str,
 ) -> Result<ProfileStats, String> {
   let load_start = Instant::now();
   let ixon_env = IxonEnv::get_anon_mmap(std::path::Path::new(path))
@@ -2458,7 +2500,14 @@ pub fn profile_anon_ixe(
     run_start.elapsed()
   );
   let profile = build_block_profile(&env_arc, &merged);
-  print_profile_summary(path, &merged, &profile, &env_arc, top_n);
+  print_profile_summary(
+    path,
+    &merged,
+    &profile,
+    &env_arc,
+    top_n,
+    ProfileBackend::parse(backend),
+  );
   let bytes = profile.to_bytes();
   std::fs::write(out, &bytes).map_err(|e| format!("write {out}: {e}"))?;
   eprintln!(
@@ -2485,6 +2534,7 @@ pub extern "C" fn rs_kernel_profile_anon(
   isolate: LeanBool<LeanBorrowed<'_>>,
   quiet: LeanBool<LeanBorrowed<'_>>,
   top: LeanString<LeanBorrowed<'_>>,
+  backend: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   // Decimal string, kept ABI-simple like `rs_shard_esp`'s numeric params.
   let top_n = top.to_string().parse::<usize>().unwrap_or(10);
@@ -2494,6 +2544,7 @@ pub extern "C" fn rs_kernel_profile_anon(
     isolate.to_bool(),
     quiet.to_bool(),
     top_n,
+    &backend.to_string(),
   ) {
     Ok(s) => {
       eprintln!(
@@ -2552,7 +2603,10 @@ fn system_ram_gib() -> Option<f64> {
 /// FFI: partition a `.ixprof` to a per-shard cycle/RAM budget and write a
 /// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gb` > 0 it is
 /// converted via the measured prover RAM model and overrides `max_cycles`. Pass
-/// "0" for both to default the budget to detected system RAM.
+/// "0" for both to default the budget to detected system RAM. `backend`
+/// selects the cost model: "zisk" (default) packs to the guest-STEP cap,
+/// "aiur" packs to the Aiur RAM model (RAM budgets only — a cycle cap is a
+/// Zisk-specific unit).
 #[allow(clippy::cast_precision_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp_cap(
@@ -2562,6 +2616,7 @@ pub extern "C" fn rs_shard_esp_cap(
   balance_pct: LeanString<LeanBorrowed<'_>>,
   parallelism: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  backend: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let mc = max_cycles.to_string().parse::<u64>().unwrap_or(0);
   let mut ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
@@ -2569,6 +2624,7 @@ pub extern "C" fn rs_shard_esp_cap(
     parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
   let balance =
     (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let aiur = backend.to_string() == "aiur";
   // No explicit cap → default the RAM budget to detected system RAM.
   if mc == 0 && ram <= 0.0 {
     match system_ram_gib() {
@@ -2584,6 +2640,28 @@ pub extern "C" fn rs_shard_esp_cap(
         );
       },
     }
+  }
+  if aiur {
+    if ram <= 0.0 {
+      return LeanIOResult::error_string(
+        "shard --backend aiur sizes by RAM; pass --max-ram G (a cycle cap is a Zisk unit)",
+      );
+    }
+    let out = out_path.to_string();
+    let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
+    return match ix_kernel::shard::shard_esp_aiur(
+      &esp_path.to_string(),
+      ram,
+      balance,
+      parallelism,
+      out_opt,
+    ) {
+      Ok(report) => {
+        eprintln!("[rs_shard]\n{report}");
+        LeanIOResult::ok(LeanOwned::box_usize(0))
+      },
+      Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp_cap: {e}")),
+    };
   }
   let cap =
     if ram > 0.0 { ix_kernel::shard::cycle_cap_for_ram(ram) } else { mc };
