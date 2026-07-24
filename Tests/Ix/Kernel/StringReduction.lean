@@ -88,6 +88,25 @@ good_decl (strThm `strOfListEmpty
 good_decl (strThm `strOfListUnicode
   (Lean.mkApp (Lean.mkConst ``String.ofList) (charListLit "L∃∀N")) "L∃∀N")
 
+/-! ## B2. Constructor build forced through the byte model
+
+`utf8ByteSize (String.ofList [chars])`: the unary `utf8ByteSize` native
+rule needs a syntactic `Str` literal, so the kernel delta-unfolds it and
+must normalize the `String.ofList` application inside the body — per
+character through `Char.ofNat` validity and `List.utf8Encode`, unless a
+native `ofList` collapse short-circuits the build. Both fixtures are
+pinned in the `ixvm` kernel-check list, so the in-circuit cost of this
+shape is tracked either way (one multi-byte-UTF-8 string, one ASCII). -/
+
+good_decl (eqThm `strOfListFoldSize (Lean.mkConst ``Nat)
+  (Lean.mkApp (Lean.mkConst ``String.utf8ByteSize)
+    (Lean.mkApp (Lean.mkConst ``String.ofList) (charListLit "L∃∀N")))
+  (.lit (.natVal 8)))
+good_decl (eqThm `strOfListFoldSizeAscii (Lean.mkConst ``Nat)
+  (Lean.mkApp (Lean.mkConst ``String.utf8ByteSize)
+    (Lean.mkApp (Lean.mkConst ``String.ofList) (charListLit "fold")))
+  (.lit (.natVal 4)))
+
 /-! ## C. `String.utf8ByteSize` on literals (pre-existing native path) -/
 
 good_decl (eqThm `strUtf8ByteSize (Lean.mkConst ``Nat)

@@ -276,6 +276,14 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec",     5_654_142),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1",   5_656_143),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",   2_809_929),
+  -- Structural string fold (StringReduction strOfListFoldSize*):
+  -- `utf8ByteSize` over a `String.ofList [chars]` application. The unary
+  -- native rule misses (argument is not a literal), so the check
+  -- normalizes the constructor build through the byte model — per
+  -- character through `Char.ofNat` validity and `List.utf8Encode`. Pins
+  -- the in-circuit cost of that fold.
+  ("strOfListFoldSize",                                                  763_928_355),
+  ("strOfListFoldSizeAscii",                                             747_210_569),
 ]
 
 private def nameOfString (str : String) : Lean.Name :=
