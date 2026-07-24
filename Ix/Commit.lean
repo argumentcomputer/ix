@@ -147,11 +147,16 @@ def commitDef (compileEnv : CompileM.CompileEnv) (leanEnv : Lean.Environment)
     | .ok env => pure env
     | .error _e => throw $ IO.userError "commitDef: addDeclCore failed"
 
-  -- 4. Also register the committed name in CompileEnv so later compilations can reference it
+  -- 4. Also register the committed name in CompileEnv so later compilations
+  --    can reference it. Both maps must carry it: `nameToNamed` is the final
+  --    named registry, but expression compilation resolves names through
+  --    `nameToAddr` (`lookupConstAddr`'s first hop) — without the latter a
+  --    reference to the commitment fails with `missingConstant`.
   let (ixCommitName, _) := (CanonM.canonName commitName).run {}
   let compileEnv'' := { compileEnv' with
     nameToNamed := compileEnv'.nameToNamed.insert ixCommitName
       { addr := payloadAddr, constMeta := .empty }
+    nameToAddr := compileEnv'.nameToAddr.insert ixCommitName payloadAddr
   }
 
   return (commitAddr, leanEnv', compileEnv'')
