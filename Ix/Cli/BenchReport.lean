@@ -581,6 +581,15 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
     for (mode, testbed) in b.testbeds do
       if b.unscheduled.contains mode then continue
       for env in b.envNames rows do
+        -- Skip a per-constant cell whose selection is empty in THIS mode:
+        -- an env stays in `envNames` because some scheduled mode runs it,
+        -- but a constant excluded from one mode (e.g. Lean's only primary
+        -- constant is prove-excluded) leaves that (env, mode) cell empty —
+        -- scheduling it would waste a job and expect a row that never lands.
+        if b.inputs == .perConstant
+          && (Ix.Cli.BenchCmd.selectNames rows env b.name mode
+              (full := false) (tier := "") (shardOnly := false)).isEmpty then
+          continue
         -- The fixed-config backend's env is only its `.ixe`-restore key,
         -- not what it measures — keep it out of the label.
         let label := if b.inputs == .fixedConfigs then s!"{b.name}-{mode}"

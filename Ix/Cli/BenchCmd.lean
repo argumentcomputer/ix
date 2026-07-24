@@ -71,12 +71,35 @@ def parseVectorsCsv (contents : String) : Array VectorRow :=
       }
     | _ => none) |>.toArray
 
+/-- Per-constant benchmark exclusions: `(name, backend, mode)` a constant
+    must NOT run for, `"*"` wildcarding a dimension. Applied on top of the
+    `Vectors.csv` selection, for constants feasible in some cells but not
+    others — a closure that executes on Aiur but OOMs the Zisk/SP1 zkVM
+    executor, or one that executes but is prove-infeasible. `--consts` runs
+    bypass this: an explicit request always runs. -/
+def benchExclusions : List (String × String × String) :=
+  let bitblast :=
+    "Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual"
+  [ -- ~18B-step atomic mutual block: Aiur executes it, but the zkVM
+    -- executor OOMs (ASM MO crash) and no single-shard prove fits.
+    (bitblast, "zisk", "*"),
+    (bitblast, "sp1", "*"),
+    (bitblast, "aiur", "prove"),
+    -- Executes on Aiur (and the zkVMs) but is Aiur-prove-infeasible.
+    ("Lean.Json", "aiur", "prove") ]
+
+/-- Whether `benchExclusions` bars `name` from this `(backend, mode)`. -/
+def isExcluded (name backend mode : String) : Bool :=
+  benchExclusions.any fun (n, b, m) =>
+    n == name && (b == "*" || b == backend) && (m == "*" || m == mode)
+
 /-- Manifest selection, mirroring the `!benchmark` config surface: the env's
     rows, restricted to the primary subset unless `full`, to `tier` when
     given (prove-mode full runs default to `cheap` — the prove-feasible
-    set), and to shard targets under `shardOnly`. -/
-def selectNames (rows : Array VectorRow) (env : String) (mode : String)
-    (full : Bool) (tier : String) (shardOnly : Bool) :
+    set), to shard targets under `shardOnly`, and minus the
+    `(backend, mode)` exclusions in `benchExclusions`. -/
+def selectNames (rows : Array VectorRow) (env : String) (backend : String)
+    (mode : String) (full : Bool) (tier : String) (shardOnly : Bool) :
     Array VectorRow := Id.run do
   let effTier :=
     if tier != "" then tier
@@ -87,6 +110,7 @@ def selectNames (rows : Array VectorRow) (env : String) (mode : String)
     && (full || r.primary)
     && (effTier == "all" || r.tier == effTier)
     && (!shardOnly || r.shardTarget)
+    && !isExcluded r.name backend mode
 
 /-! ## The registry — single source of truth for the benchmark pipeline
 
@@ -341,12 +365,20 @@ def BackendSpec.thresholdFlags (b : BackendSpec) : String :=
     s!"--threshold-max-sample-size __WINDOW__ --threshold-upper-boundary {upper}\n" ++
     s!"--threshold-lower-boundary {lower}"
 
+/-- The scheduled modes of this backend: its testbed modes minus the
+    `unscheduled` (local-only) ones. -/
+def BackendSpec.scheduledModes (b : BackendSpec) : List String :=
+  b.testbeds.filterMap fun (m, _) =>
+    if b.unscheduled.contains m then none else some m
+
 /-- The envs this backend's runs cover, from its `inputs`: `perEnv` covers
-    every registry env; the per-constant backends cover the envs whose
-    `Vectors.csv` rows select at least one primary constant — an env joins
-    their fan-out by gaining rows, not by a registry flag; the
-    fixed-config backend is env-independent, pinned to the head env so CI
-    schedules exactly one entry. -/
+    every registry env; the per-constant backends cover the envs where at
+    least one primary constant is selected in ANY scheduled mode — an env
+    joins their fan-out by gaining rows, not by a registry flag, and a
+    constant excluded from one mode (e.g. prove) still keeps its env if
+    another scheduled mode (e.g. execute) runs it; the fixed-config
+    backend is env-independent, pinned to the head env so CI schedules
+    exactly one entry. -/
 def BackendSpec.envNames (b : BackendSpec) (rows : Array VectorRow) :
     List String :=
   let names := envSpecs.map (·.name)
@@ -354,8 +386,9 @@ def BackendSpec.envNames (b : BackendSpec) (rows : Array VectorRow) :
   | .perEnv => names
   | .perConstant | .perConstantWithEnv =>
     names.filter fun env =>
-      !(selectNames rows env b.defaultMode
-        (full := false) (tier := "") (shardOnly := false)).isEmpty
+      b.scheduledModes.any fun m =>
+        !(selectNames rows env b.name m
+          (full := false) (tier := "") (shardOnly := false)).isEmpty
   | .fixedConfigs => names.take 1
 
 /-- The benchmark row names this backend uploads — the bencher slugs the
@@ -374,7 +407,7 @@ def BackendSpec.benchmarkNames (b : BackendSpec) (rows : Array VectorRow)
     let mut ns : Array String := #[]
     for env in b.envNames rows do
       if b.inputs == .perConstantWithEnv then ns := ns.push env
-      ns := ns ++ (selectNames rows env mode
+      ns := ns ++ (selectNames rows env b.name mode
         (full := false) (tier := "") (shardOnly := false)).map (·.name)
     return ns
 
@@ -637,7 +670,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     (fun f => Ix.Cli.ConstsFile.parseCommaList (f.as! String))).getD #[]
   let selected :=
     if wanted.isEmpty then
-      selectNames rows env mode full tier (p.hasFlag "shard-only")
+      selectNames rows env backend mode full tier (p.hasFlag "shard-only")
     else
       wanted.map fun n =>
         (rows.find? (fun r => r.name == n && r.env == env)).getD
