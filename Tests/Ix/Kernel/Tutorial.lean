@@ -10,6 +10,7 @@ import Ix.KernelCheck
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
 import Tests.Ix.Kernel.NatReduction
+import Tests.Ix.Kernel.StringReduction
 import LSpec
 
 open LSpec

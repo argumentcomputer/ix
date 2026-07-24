@@ -3415,11 +3415,12 @@ extern "C" fn rs_compile_validate_aux(
         "Tests.Ix.Compile.Canonicity.StructureTwin1.SP",
         "Tests.Ix.Compile.Canonicity.StructureTwin2.XP",
       ],
-      // Structure constructors use _private-mangled names in Lean 4
-      // mutual blocks. The `0` component is Name::num, handled by mk_name.
+      // SC/XC are `public structure`s, so their constructors are NOT
+      // _private-mangled (the mangled seeds went stale when the fixtures
+      // gained `public` — the absent-group check caught it).
       &[
-        "_private.Tests.Ix.Compile.Canonicity.0.Tests.Ix.Compile.Canonicity.StructureTwin1.SC.mk",
-        "_private.Tests.Ix.Compile.Canonicity.0.Tests.Ix.Compile.Canonicity.StructureTwin2.XC.mk",
+        "Tests.Ix.Compile.Canonicity.StructureTwin1.SC.mk",
+        "Tests.Ix.Compile.Canonicity.StructureTwin2.XC.mk",
       ],
       &[
         "Tests.Ix.Compile.Canonicity.StructureTwin1.SP.base",
@@ -3471,6 +3472,42 @@ extern "C" fn rs_compile_validate_aux(
         "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1",
         "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",
       ],
+      // ── ZFA: joint below.rec canonical order ──
+      // Five alpha-identical transcriptions of Mathlib's SetTheory/Lists
+      // shape (a mutual Prop pair whose `.below` inductives get a JOINT
+      // `.below.rec` block). The joint generation bakes class order into
+      // the block bytes, so these groups regress iff that order ever
+      // depends on names again (the FxHashMap-iteration bug: ZFA3 once
+      // compiled to different bytes than ZFA2/4/5 within one Rust run).
+      // `.below.casesOn` values wrap `.below.rec` — same-address ripples.
+      &[
+        "Tests.Ix.Compile.Canonicity.ZFA.Lists.Equiv.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA2.Lists.Equiv.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA3.Lists.Equiv.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA4.Lists.Equiv.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA5.Lists.Equiv.below.rec",
+      ],
+      &[
+        "Tests.Ix.Compile.Canonicity.ZFA.Lists'.Subset.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA2.Lists'.Subset.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA3.Lists'.Subset.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA4.Lists'.Subset.below.rec",
+        "Tests.Ix.Compile.Canonicity.ZFA5.Lists'.Subset.below.rec",
+      ],
+      &[
+        "Tests.Ix.Compile.Canonicity.ZFA.Lists.Equiv.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA2.Lists.Equiv.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA3.Lists.Equiv.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA4.Lists.Equiv.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA5.Lists.Equiv.below.casesOn",
+      ],
+      &[
+        "Tests.Ix.Compile.Canonicity.ZFA.Lists'.Subset.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA2.Lists'.Subset.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA3.Lists'.Subset.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA4.Lists'.Subset.below.casesOn",
+        "Tests.Ix.Compile.Canonicity.ZFA5.Lists'.Subset.below.casesOn",
+      ],
     ];
 
     // Module markers: a fully-absent group is "not applicable" only when
@@ -3489,11 +3526,37 @@ extern "C" fn rs_compile_validate_aux(
       ))
       .is_some();
 
+    // Non-public fixture members appear private-mangled
+    // (`_private.<Module>.0.<name>`) in import-closure envs (the
+    // differential-harness flavor) but UNMANGLED when the fixture file
+    // itself is elaborated (`ix validate <file>`). Seeds are written in
+    // whichever form their original flavor used; resolution tries the
+    // other form before declaring a name absent, so one seed list serves
+    // both env flavors.
+    let resolve_seed = |name: &str| -> Option<ix_common::address::Address> {
+      if let Some(a) = stt.resolve_addr(&mk_name(name)) {
+        return Some(a);
+      }
+      for module in ["Tests.Ix.Compile.Canonicity", "Tests.Ix.Compile.Mutual"] {
+        if let Some(rest) = name.strip_prefix(module) {
+          let mangled = format!("_private.{module}.0.{module}{rest}");
+          if let Some(a) = stt.resolve_addr(&mk_name(&mangled)) {
+            return Some(a);
+          }
+        }
+        let mangled_prefix = format!("_private.{module}.0.");
+        if let Some(rest) = name.strip_prefix(&mangled_prefix)
+          && let Some(a) = stt.resolve_addr(&mk_name(rest))
+        {
+          return Some(a);
+        }
+      }
+      None
+    };
+
     for group in groups {
-      let addrs: Vec<_> = group
-        .iter()
-        .map(|name| (*name, stt.resolve_addr(&mk_name(name))))
-        .collect();
+      let addrs: Vec<_> =
+        group.iter().map(|name| (*name, resolve_seed(name))).collect();
 
       let Some((_, Some(first_addr))) =
         addrs.iter().find(|(_, addr)| addr.is_some())

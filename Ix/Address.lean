@@ -12,7 +12,38 @@ deriving instance Repr for ByteArray
 /-- A 32-byte Blake3 content hash used as a content address for Ix objects. -/
 structure Address where
   hash : ByteArray
-  deriving Lean.ToExpr, BEq, Hashable
+  deriving Lean.ToExpr, BEq
+
+/-- Blake3 output is uniformly distributed, so the first 8 bytes are
+    already a full-quality 64-bit hash. The derived instance instead
+    folds all 32 bytes through the generic `ByteArray` hash on every
+    probe of every Address-keyed map (the kernel's whnf/defeq/infer
+    caches and the intern table are all keyed this way).
+
+    Adversarial collisions: `Hashable` is 64-bit regardless, so ANY
+    instance (this one or the derived 32-byte `mixHash` fold — both
+    unseeded, public functions) admits birthday bucket collisions at
+    ~2^32 blake3 evaluations per colliding pair, ~2^57 for a 10-deep
+    bucket; a blake3-prefix collision additionally costs real blake3
+    preimage work, whereas `mixHash` folds may have cheaper analytic
+    shortcuts (and the Rust mirror's `FxHashMap` is weaker still). Deep
+    buckets degrade probes to linear scans — a complexity-DoS lever,
+    never unsoundness: equality is always the full 32-byte `BEq`, and
+    kernel work per constant is fuel-bounded. If HashDoS hardening is
+    ever required for hostile envs, the fix is seeded hashing or
+    Ord-tree maps at the ingress-facing tables, not a different
+    unseeded 64-bit function. -/
+instance : Hashable Address where
+  hash a :=
+    let h := a.hash
+    (h.get! 0).toUInt64
+    ||| ((h.get! 1).toUInt64 <<< 8)
+    ||| ((h.get! 2).toUInt64 <<< 16)
+    ||| ((h.get! 3).toUInt64 <<< 24)
+    ||| ((h.get! 4).toUInt64 <<< 32)
+    ||| ((h.get! 5).toUInt64 <<< 40)
+    ||| ((h.get! 6).toUInt64 <<< 48)
+    ||| ((h.get! 7).toUInt64 <<< 56)
 
 /-- Compute the Blake3 hash of a `ByteArray`, returning an `Address`. -/
 def Address.blake3 (x: ByteArray) : Address := ⟨(Blake3.Rust.hash x).val⟩
@@ -81,6 +112,20 @@ instance : Repr Address where
 
 instance : Ord Address where
   compare a b := compare a.hash.data.toList b.hash.data.toList
+
+/-- Byte-loop lexicographic comparison. Agrees with the `Ord Address` instance
+    (and with Rust's derived `Ord` on `Address([u8; 32])`) but avoids the
+    per-compare `List` conversion; use this on hot paths. -/
+def Address.cmpBytes (a b : Address) : Ordering := Id.run do
+  let x := a.hash
+  let y := b.hash
+  let n := min x.size y.size
+  for i in [0:n] do
+    let xi := x[i]!
+    let yi := y[i]!
+    if xi < yi then return .lt
+    if yi < xi then return .gt
+  return compare x.size y.size
 
 instance : Inhabited Address where
   default := Address.blake3 ⟨#[]⟩

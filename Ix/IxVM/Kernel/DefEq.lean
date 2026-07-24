@@ -270,7 +270,14 @@ def defEq := ⟦
         match lit {
           KLiteral.Str(bs) =>
             match str_lit_to_ctor(bs, addrs) {
-              (1, expanded) => k_is_def_eq(expanded, s, types, top, addrs),
+              -- One delta step past a Defn `String.ofList` head (mirror
+              -- Rust str_lit_to_ctor_app): the native ofList collapse
+              -- would otherwise fold the expansion straight back into
+              -- the literal and the comparison would never reach the
+              -- structural constructor form.
+              (1, expanded) =>
+                k_is_def_eq(str_lit_delta_step(expanded, types, top, addrs),
+                            s, types, top, addrs),
               (0, _) => 0,
             },
           _ => 0,

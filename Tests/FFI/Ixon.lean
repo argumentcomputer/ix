@@ -182,19 +182,32 @@ def constantMetaTests : TestSeq :=
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let emptyArena : ExprMetaArena := {}
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
-  checkIO "ConstantMeta.empty" (roundtripIxonConstantMeta .empty == .empty) ++
-  checkIO "ConstantMeta.defn" (roundtripIxonConstantMeta
-    (.defn testAddr #[testAddr] #[] #[] smallArena 0 1) ==
-    .defn testAddr #[testAddr] #[] #[] smallArena 0 1) ++
-  checkIO "ConstantMeta.axio" (roundtripIxonConstantMeta
-    (.axio testAddr #[] emptyArena 0) ==
-    .axio testAddr #[] emptyArena 0) ++
-  checkIO "ConstantMeta.ctor" (roundtripIxonConstantMeta
-    (.ctor testAddr #[] testAddr smallArena 2) ==
-    .ctor testAddr #[] testAddr smallArena 2) ++
-  checkIO "ConstantMeta.recr" (roundtripIxonConstantMeta
-    (.recr testAddr #[] #[] #[] #[] smallArena 0 #[1, 2]) ==
-    .recr testAddr #[] #[] #[] #[] smallArena 0 #[1, 2])
+  -- Arena containing a call-site surgery node (the FFI used to silently
+  -- downgrade these to Leaf — this pins the faithful marshalling).
+  let callSiteArena : ExprMetaArena := { nodes := #[
+    .leaf,
+    .callSite testAddr #[.kept 0 0, .collapsed 1 0] #[0, 0] (some (2, 0))
+  ] }
+  let rt (cm : ConstantMeta) : Bool := roundtripIxonConstantMeta cm == cm
+  checkIO "ConstantMeta.empty" (rt .empty) ++
+  checkIO "ConstantMeta.defn" (rt (.new
+    (.defn testAddr #[testAddr] #[] #[] smallArena 0 1))) ++
+  checkIO "ConstantMeta.axio" (rt (.new (.axio testAddr #[] emptyArena 0))) ++
+  checkIO "ConstantMeta.ctor" (rt (.new
+    (.ctor testAddr #[] testAddr smallArena 2))) ++
+  checkIO "ConstantMeta.recr" (rt (.new
+    (.recr testAddr #[] #[] #[] #[] smallArena 0 #[1, 2]))) ++
+  checkIO "ConstantMeta.muts auxLayout none" (rt (.new
+    (.muts #[#[testAddr]] none))) ++
+  checkIO "ConstantMeta.muts auxLayout some" (rt (.new
+    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3]⟩)))) ++
+  checkIO "ConstantMeta callSite arena" (rt (.new
+    (.defn testAddr #[] #[] #[] callSiteArena 0 1))) ++
+  checkIO "ConstantMeta extension tables" (rt
+    { info := .defn testAddr #[] #[] #[] callSiteArena 0 1,
+      metaSharing := #[.app (.share 0) (.var 3), .sort 1],
+      metaRefs := #[testAddr],
+      metaUnivs := #[.succ (.var 0), .zero] })
 
 /-! ## Cross-implementation serialization comparison FFI declarations -/
 
@@ -299,7 +312,7 @@ def envDiffTests : TestSeq :=
     env := env.storeConst addr c
     env := { env with names := RawEnv.addNameComponents env.names fooName }
     env := env.registerName fooName
-      { addr, constMeta := .defn fooName.getHash #[] #[] #[] {} 0 0 }
+      { addr, constMeta := .new (.defn fooName.getHash #[] #[] #[] {} 0 0) }
     env := { env with anonHints := env.anonHints.insert addr h }
     return env
   let constA := mkConst (.var 0)

@@ -61,8 +61,13 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
             worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
-def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
-  IO.println "[validate-aux] finding seeds..."
+/-- The aux-heavy fixture corpus: seed names (fixture namespaces + aux_gen
+    prereqs) resolved against `env` and closed over transitive deps. Shared
+    between the `validate-aux` runner below and the `aux-gen-diff`
+    cross-compiler harness (`Tests.Ix.Compile.AuxGenDiff`), so both gates
+    always see the same corpus. -/
+def validateAuxClosure (env : Lean.Environment)
+    : List (Lean.Name × Lean.ConstantInfo) := Id.run do
   let prefixes := [
     `Tests.Ix.Compile.Mutual,
     `Tests.Ix.Compile.Canonicity,
@@ -71,6 +76,11 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
     -- with distinct spec_params) that only otherwise compile under the
     -- full-env `rust-compile` runner.
     `IxVMInd,
+    -- Partial/WellFounded fixture families: `partial def` mutual blocks
+    -- whose opaques + `_unsafe_rec` witnesses form SCCs through the
+    -- implementation edges — the alpha-collapse shape testCrossImpl
+    -- caught diverging (Test.Ix.Fixtures.Partial.H._unsafe_rec, A9).
+    `Test.Ix.Fixtures,
     --`Init,
     --`_private.Init,
     --`State,
@@ -103,11 +113,12 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
     `reduceCtorParamRefl, `reduceCtorParamRefl.mk, `reduceCtorParamRefl.rec,
     `reduceCtorParamRefl2, `reduceCtorParamRefl2.mk, `reduceCtorParamRefl2.rec,
   ]
-  IO.println s!"[validate-aux] {seeds.length} seeds"
+  return collectDeps env seeds
 
-  IO.println "[validate-aux] collecting transitive deps..."
-  let filtered := collectDeps env seeds
-  IO.println s!"[validate-aux] {filtered.length} constants (from {seeds.length} seeds)"
+def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
+  IO.println "[validate-aux] collecting fixture closure..."
+  let filtered := validateAuxClosure env
+  IO.println s!"[validate-aux] {filtered.length} constants"
 
   IO.println "[validate-aux] calling Rust FFI..."
   let failures := Ix.CompileM.rsCompileValidateAuxFFI filtered

@@ -1,6 +1,7 @@
 import Tests.Aiur
 import Tests.ByteArray
 import Tests.Ix.Ixon
+import Tests.Ix.IxonCorpus
 import Tests.Ix.IxVM
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
@@ -8,6 +9,13 @@ import Tests.Ix.AssumptionTree
 import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
+import Tests.Ix.Compile.AuxGenDiff
+import Tests.Ix.Compile.DecompileDiff
+import Tests.Ix.AuxGen.ExprUtilsTests
+import Tests.Ix.AuxGen.LevelsTests
+import Tests.Ix.AuxGen.RecursorTests
+import Tests.Ix.AuxGen.SurgeryTests
+import Tests.Ix.GroundTests
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.Kernel.BuildPrimOrigs
@@ -19,6 +27,20 @@ import Tests.Ix.Kernel.Arena
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
+import Tests.Ix.Tc.Unit
+import Tests.Ix.Tc.Substrate
+import Tests.Ix.Tc.IxonFixtures
+import Tests.Ix.Tc.WhnfTests
+import Tests.Ix.Tc.InferDefEq
+import Tests.Ix.Tc.CheckTests
+import Tests.Ix.Tc.NodeAddr
+import Tests.Ix.Tc.AnonDiff
+import Tests.Ix.Tc.InitScale
+import Tests.Ix.Tc.TutorialTc
+import Tests.Ix.Tc.Roundtrip
+import Tests.Ix.Tc.IngressMetaTests
+import Tests.Ix.Tc.Pins
+import Tests.Ix.Tc.AccelDiff
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -28,6 +50,7 @@ import Tests.MultiStark
 import Tests.Cli
 import Tests.ShardMap
 import Tests.Ix.EnvBody
+import Tests.Ix.Lean4Lean
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -52,7 +75,13 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("sharing", Tests.Sharing.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
+  ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
+  ("ground-unit", Tests.Ground.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
+  ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
+    ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
+    ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
+    ++ Tests.Tc.Roundtrip.unitTests ++ Tests.Tc.IngressMeta.unitTests),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
@@ -63,10 +92,11 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),
   ("graph-cross", Tests.Ix.GraphM.suiteIO),
   ("condense-cross", Tests.Ix.CondenseM.suiteIO),
-  -- Lean-side compilation/decompilation currently broken, disabled
-  --("compile", Tests.Compile.compileSuiteIO),
-  --("decompile", Tests.Decompile.decompileSuiteIO),
+  -- Lean-side decompilation not yet revived, disabled
+  ("compile", Tests.Compile.compileSuiteIO),
+  ("decompile", Tests.Decompile.decompileSuiteIO),
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
+  ("ixon-corpus", Tests.Ixon.Corpus.suite),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
   ("kernel-ixon-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
@@ -76,6 +106,12 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-check-const", Tests.Ix.Kernel.CheckEnv.constSuite),
   ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
   ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
+  ("tc-node-addr", Tests.Tc.NodeAddr.suite),
+  ("tc-anon-diff", Tests.Tc.AnonDiff.suite),
+  ("tc-init", Tests.Tc.InitScale.suite),
+  ("tc-tutorial", Tests.Tc.TutorialTc.suite),
+  ("tc-roundtrip", Tests.Tc.Roundtrip.suite),
+  ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
@@ -128,6 +164,20 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("validate-aux", runCompileValidateAux env),
+  -- Cross-compiler differential over the same fixture corpus: pure-Lean
+  -- Ix.CompileM per-block vs Rust, root-cause classified (see
+  -- Tests.Ix.Compile.AuxGenDiff).
+  ("aux-gen-diff", Tests.Compile.AuxGenDiff.run env),
+  ("decompile-diff", Tests.Compile.DecompileDiff.run env),
+  -- lean4lean dependency smoke: accept a real closure, reject an
+  -- ill-typed decl (see Tests.Ix.Lean4Lean).
+  ("lean4lean", Tests.Ix.Lean4Lean.run env),
+  -- Pure-Lean kernel regression pins against a real .ixe (needs
+  -- IX_PINS_IXE; skips cleanly otherwise — see Tests.Tc.Pins).
+  ("tc-pins", Tests.Tc.Pins.run),
+  -- Accelerated-vs-pure reduction differentials (IX_PINS_IXE-gated;
+  -- see Tests.Tc.AccelDiff and TcState.noAccel).
+  ("tc-accel-diff", Tests.Tc.AccelDiff.run),
 ]
 
 def main (args : List String) : IO UInt32 := do

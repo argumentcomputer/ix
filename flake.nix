@@ -164,6 +164,22 @@
           };
           lakeDeps = lake2nix.buildDeps {
             src = leanSrc;
+            depOverride = {
+              # lean4-nix guesses a dep's library target by capitalizing the
+              # package name ("lean4lean" -> "Lean4lean"), but this package's
+              # library is `Lean4Lean`. Build the stock default targets
+              # (Lean4Lean, the lean4lean exe, Theory, Verify) plus the
+              # shared/static facets so consumers linking exes find the
+              # module `.o` files in the read-only store path.
+              lean4lean = {
+                buildPhase = ''
+                  runHook preBuild
+                  lake build
+                  lake build Lean4Lean:shared Lean4Lean:static
+                  runHook postBuild
+                '';
+              };
+            };
             depOverrideDeriv = {
               Blake3 = blake3-lean.packages.${system}.rust;
             };

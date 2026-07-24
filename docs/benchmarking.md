@@ -81,6 +81,12 @@ ix bench compare --backend aiur --env InitStd --mode prove \
 # The recursion cell — fixed toy statements, no env or .ixe needed:
 ix bench run --backend aiur-recursive
 
+# The lean4lean reference kernel over InitStd — whole-library replay plus
+# per-primary closure rows, from oleans (no .ixe needed). Read next to the
+# ooc cell's rows for the Rust-vs-reference-kernel gap on the same library:
+ix bench run --backend lean4lean --env InitStd
+ix bench compare --backend lean4lean --env InitStd
+
 # Recursion layered on a real constant (recursion-tuned FRI parameters;
 # an IxVM-scale verifier execute exceeds 100 GB, so cap the watchdog and
 # expect the honest oom row on anything big):
@@ -101,6 +107,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (1 when unsharded) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
+| `lean4lean` | the reference Lean4-in-Lean4 kernel ([digama0/lean4lean](https://github.com/digama0/lean4lean), required by the lakefile at a pinned rev) — the external yardstick for the Ix kernels on the same libraries. Olean-driven (no `.ixe`): the whole-library row replays every module in the env's import closure through lean4lean, module-parallel (check-time, constants, throughput, peak-rss; tune parallelism with `LEAN_NUM_THREADS`), plus one full-closure row per primary (the name's transitive closure into a fresh kernel env), mirroring ooc's row shape. Registry-disabled for CI (no bencher testbed yet); `ix bench run --backend lean4lean` works locally regardless | `bench-lean4lean` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 

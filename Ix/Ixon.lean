@@ -426,6 +426,19 @@ inductive DataValue where
 /-- Key-value map for Lean.Expr.mdata -/
 abbrev KVMap := Array (Address × DataValue)
 
+/-- Entry in a `callSite` metadata node, representing one source-order
+    argument. Mirrors Rust `ixon::metadata::CallSiteEntry`. -/
+inductive CallSiteEntry where
+  /-- Argument exists in canonical form at App-spine position `canonIdx`.
+      `metaIdx` is the arena index for this argument's metadata subtree
+      (Rust field name: `meta` — a reserved keyword here). -/
+  | kept (canonIdx : UInt64) (metaIdx : UInt64)
+  /-- Argument was collapsed. Expression stored in
+      `ConstantMeta.metaSharing[sharingIdx]`. `metaIdx` is the arena index
+      for this argument's metadata subtree. -/
+  | collapsed (sharingIdx : UInt64) (metaIdx : UInt64)
+  deriving BEq, Repr, Inhabited
+
 /-- Arena node for per-expression metadata.
     Nodes are allocated bottom-up (children before parents) in the arena.
     Arena indices are UInt64 values pointing into `ExprMetaArena.nodes`. -/
@@ -439,6 +452,15 @@ inductive ExprMetaData where
   | ref (name : Address)
   | prj (structName : Address) (child : UInt64)
   | mdata (mdata : Array KVMap) (child : UInt64)
+  /-- Surgered call-site: replaces the entire App-spine metadata chain
+      (outermost App down to the Ref head) with a single node. `entries` are
+      in SOURCE order; `canonMeta` holds canonical-order metadata roots (one
+      per argument in the IXON App spine); `origHead` is
+      `some (sharingIdx, meta)` when the call-site head itself was rewritten
+      (evaporated-aux recursors). Mirrors Rust
+      `ixon::metadata::ExprMetaData::CallSite`. -/
+  | callSite (name : Address) (entries : Array CallSiteEntry)
+             (canonMeta : Array UInt64) (origHead : Option (UInt64 × UInt64))
   deriving BEq, Repr, Inhabited
 
 /-- Arena for expression metadata within a single constant. -/
@@ -451,17 +473,21 @@ def ExprMetaArena.alloc (arena : ExprMetaArena) (node : ExprMetaData)
   let idx := arena.nodes.size.toUInt64
   ({ nodes := arena.nodes.push node }, idx)
 
-/-- Count ExprMetaData nodes by type: (leaf, app, binder, letBinder, ref, prj, mdata) -/
-def ExprMetaArena.countByType (arena : ExprMetaArena) : Nat × Nat × Nat × Nat × Nat × Nat × Nat :=
-  arena.nodes.foldl (init := (0, 0, 0, 0, 0, 0, 0)) fun (le, ap, bi, lb, rf, pj, md) node =>
+/-- Count ExprMetaData nodes by type:
+    (leaf, app, binder, letBinder, ref, prj, mdata, callSite) -/
+def ExprMetaArena.countByType (arena : ExprMetaArena)
+    : Nat × Nat × Nat × Nat × Nat × Nat × Nat × Nat :=
+  arena.nodes.foldl (init := (0, 0, 0, 0, 0, 0, 0, 0))
+    fun (le, ap, bi, lb, rf, pj, md, cs) node =>
     match node with
-    | .leaf => (le + 1, ap, bi, lb, rf, pj, md)
-    | .app .. => (le, ap + 1, bi, lb, rf, pj, md)
-    | .binder .. => (le, ap, bi + 1, lb, rf, pj, md)
-    | .letBinder .. => (le, ap, bi, lb + 1, rf, pj, md)
-    | .ref .. => (le, ap, bi, lb, rf + 1, pj, md)
-    | .prj .. => (le, ap, bi, lb, rf, pj + 1, md)
-    | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1)
+    | .leaf => (le + 1, ap, bi, lb, rf, pj, md, cs)
+    | .app .. => (le, ap + 1, bi, lb, rf, pj, md, cs)
+    | .binder .. => (le, ap, bi + 1, lb, rf, pj, md, cs)
+    | .letBinder .. => (le, ap, bi, lb + 1, rf, pj, md, cs)
+    | .ref .. => (le, ap, bi, lb, rf + 1, pj, md, cs)
+    | .prj .. => (le, ap, bi, lb, rf, pj + 1, md, cs)
+    | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1, cs)
+    | .callSite .. => (le, ap, bi, lb, rf, pj, md, cs + 1)
 
 /-- Count mdata items in an arena. -/
 def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
@@ -470,10 +496,22 @@ def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
     | .mdata mdata _ => acc + mdata.foldl (fun a kv => a + kv.size) 0
     | _ => acc
 
-/-- Per-constant metadata with arena-based expression metadata.
-    Each variant stores an ExprMetaArena covering all expressions in
-    that constant, plus root indices pointing into the arena. -/
-inductive ConstantMeta where
+/-- Nested-auxiliary layout info for a mutual inductive block: paired
+    permutation (`perm[sourceJ] = canonicalI`) plus per-source-position aux
+    constructor counts. Lives in the `muts` metadata variant (never enters
+    any constant's content hash). Mirrors Rust `ixon::env::AuxLayout`
+    (`Vec<usize>` fields serialized as u64). -/
+structure AuxLayout where
+  perm : Array UInt64 := #[]
+  sourceCtorCounts : Array UInt64 := #[]
+  deriving BEq, Repr, Inhabited
+
+/-- Per-constant metadata variant payload with arena-based expression
+    metadata. Each variant stores an ExprMetaArena covering all expressions
+    in that constant, plus root indices pointing into the arena. Mirrors
+    Rust `ixon::metadata::ConstantMetaInfo`; the serialized/FFI wrapper
+    around it (extension tables) is [`ConstantMeta`]. -/
+inductive ConstantMetaInfo where
   | empty
   | defn (name : Address) (lvls : Array Address)
          (all : Array Address) (ctx : Array Address)
@@ -491,11 +529,51 @@ inductive ConstantMeta where
          (all : Array Address) (ctx : Array Address)
          (arena : ExprMetaArena) (typeRoot : UInt64)
          (ruleRoots : Array UInt64)
-  | muts (all : Array (Array Address))
+  | muts (all : Array (Array Address)) (auxLayout : Option AuxLayout)
   deriving Inhabited, BEq, Repr
 
-/-- Count total arena nodes in this ConstantMeta. -/
-def ConstantMeta.exprMetaCount : ConstantMeta → Nat
+/-- Per-constant metadata wrapper: variant payload + extension tables.
+    The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) form a
+    virtual address space extending the primary `Constant` tables, used by
+    `callSite` nodes in the metadata arena for call-site surgery roundtrip.
+    Mirrors Rust `ixon::metadata::ConstantMeta`. -/
+structure ConstantMeta where
+  info : ConstantMetaInfo := .empty
+  /-- Compiled Ixon expressions for collapsed call-site arguments. May
+      contain `Share(idx)` references into the extended sharing table. -/
+  metaSharing : Array Expr := #[]
+  /-- Extension refs table (addresses referenced by collapsed arg
+      expressions), serialized as raw 32-byte addresses (not name-indexed). -/
+  metaRefs : Array Address := #[]
+  /-- Extension univs table (universe terms in collapsed arg expressions). -/
+  metaUnivs : Array Univ := #[]
+  deriving Inhabited, BEq, Repr
+
+/-- Wrap a `ConstantMetaInfo` payload (no extension tables). Mirrors Rust
+    `ConstantMeta::new`. -/
+def ConstantMeta.new (info : ConstantMetaInfo) : ConstantMeta := { info }
+
+/-- The default (empty-variant, no extension tables) wrapper — keeps the
+    pre-wrapper `.empty` construction idiom working. -/
+def ConstantMeta.empty : ConstantMeta := {}
+
+/-- Whether this metadata has any surgery extension tables. -/
+def ConstantMeta.hasExtensions (cm : ConstantMeta) : Bool :=
+  !cm.metaSharing.isEmpty || !cm.metaRefs.isEmpty || !cm.metaUnivs.isEmpty
+
+/-- Short kind name for diagnostics (mirrors Rust `kind_name`). -/
+def ConstantMetaInfo.kindName : ConstantMetaInfo → String
+  | .empty => "empty"
+  | .defn .. => "def"
+  | .axio .. => "axio"
+  | .quot .. => "quot"
+  | .indc .. => "indc"
+  | .ctor .. => "ctor"
+  | .recr .. => "rec"
+  | .muts .. => "muts"
+
+/-- Count total arena nodes in this ConstantMetaInfo. -/
+def ConstantMetaInfo.exprMetaCount : ConstantMetaInfo → Nat
   | .empty => 0
   | .defn _ _ _ _ arena _ _ => arena.nodes.size
   | .axio _ _ arena _ => arena.nodes.size
@@ -503,10 +581,10 @@ def ConstantMeta.exprMetaCount : ConstantMeta → Nat
   | .indc _ _ _ _ _ arena _ => arena.nodes.size
   | .ctor _ _ _ arena _ => arena.nodes.size
   | .recr _ _ _ _ _ arena _ _ => arena.nodes.size
-  | .muts _ => 0
+  | .muts _ _ => 0
 
-/-- Count total arena nodes and mdata items in this ConstantMeta. -/
-def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
+/-- Count total arena nodes and mdata items in this ConstantMetaInfo. -/
+def ConstantMetaInfo.exprMetaStats : ConstantMetaInfo → Nat × Nat
   | .empty => (0, 0)
   | .defn _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
   | .axio _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
@@ -514,11 +592,11 @@ def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
   | .indc _ _ _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .ctor _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .recr _ _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
-  | .muts _ => (0, 0)
+  | .muts _ _ => (0, 0)
 
 /-- Count ExprMetaData nodes by type: (binder, letBinder, ref, prj, mdata)
     (compatible signature with old ExprMetas.countByType for comparison) -/
-def ConstantMeta.exprMetaByType : ConstantMeta → Nat × Nat × Nat × Nat × Nat
+def ConstantMetaInfo.exprMetaByType : ConstantMetaInfo → Nat × Nat × Nat × Nat × Nat
   | .empty => (0, 0, 0, 0, 0)
   | cm =>
     let arena := match cm with
@@ -529,9 +607,21 @@ def ConstantMeta.exprMetaByType : ConstantMeta → Nat × Nat × Nat × Nat × N
       | .ctor _ _ _ a _ => a
       | .recr _ _ _ _ _ a _ _ => a
       | .empty => {}
-      | .muts _ => {}
-    let (_, _, bi, lb, rf, pj, md) := arena.countByType
+      | .muts _ _ => {}
+    let (_, _, bi, lb, rf, pj, md, _) := arena.countByType
     (bi, lb, rf, pj, md)
+
+/-- Wrapper delegator: count total arena nodes. -/
+def ConstantMeta.exprMetaCount (cm : ConstantMeta) : Nat :=
+  cm.info.exprMetaCount
+
+/-- Wrapper delegator: count arena nodes and mdata items. -/
+def ConstantMeta.exprMetaStats (cm : ConstantMeta) : Nat × Nat :=
+  cm.info.exprMetaStats
+
+/-- Wrapper delegator: count nodes by type. -/
+def ConstantMeta.exprMetaByType (cm : ConstantMeta) : Nat × Nat × Nat × Nat × Nat :=
+  cm.info.exprMetaByType
 
 /-- A named constant with metadata.
     For aux_gen-rewritten constants, `original` stores the pre-rewrite
@@ -1127,6 +1217,42 @@ def rawBytes (lc : LazyConstant) : ByteArray :=
 
 end LazyConstant
 
+/-- `ConstantInfo` variant tag, readable from a `LazyConstant`'s head byte
+    without parsing the body. Mirrors Rust `ixon::lazy::ConstVariantTag`. -/
+inductive ConstTag where
+  | defn | recr | axio | quot | muts | iPrj | cPrj | rPrj | dPrj
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+namespace LazyConstant
+
+/-- Peek the `ConstantInfo` variant from the leading Tag4 head byte, without
+    parsing the body — the cheap dispatch used by anon work enumeration
+    (mirrors Rust `LazyConstant::peek_variant`). -/
+def peekTag (lc : LazyConstant) : Except String ConstTag := do
+  if lc.len == 0 || lc.off ≥ lc.buf.size then
+    throw "LazyConstant.peekTag: empty bytes"
+  let head := lc.buf[lc.off]!
+  let flag := head >>> 4
+  let large := head &&& 0b1000 != 0
+  let small : UInt64 := (head &&& 0b0111).toUInt64
+  if flag == Constant.FLAG_MUTS then
+    return .muts
+  if flag != Constant.FLAG then
+    throw s!"LazyConstant.peekTag: unexpected Tag4 flag {flag} (head={head})"
+  if large then
+    throw s!"LazyConstant.peekTag: unexpected large-form Tag4 for non-Muts constant (head={head})"
+  if small == ConstantInfo.CONST_DEFN then return .defn
+  else if small == ConstantInfo.CONST_RECR then return .recr
+  else if small == ConstantInfo.CONST_AXIO then return .axio
+  else if small == ConstantInfo.CONST_QUOT then return .quot
+  else if small == ConstantInfo.CONST_CPRJ then return .cPrj
+  else if small == ConstantInfo.CONST_RPRJ then return .rPrj
+  else if small == ConstantInfo.CONST_IPRJ then return .iPrj
+  else if small == ConstantInfo.CONST_DPRJ then return .dPrj
+  else throw s!"LazyConstant.peekTag: invalid ConstantInfo variant {small}"
+
+end LazyConstant
+
 /-! ## Metadata Serialization -/
 
 /-- Type alias for name index (Address → u64). -/
@@ -1310,6 +1436,28 @@ def putExprMetaDataIndexed (em : ExprMetaData) (idx : NameIndex) : PutM Unit := 
     putU8 9
     putMdataStackIndexed mdata idx
     putTag0 ⟨child⟩
+  | .callSite name entries canonMeta origHead =>
+    putU8 10
+    putIdx name idx
+    putTag0 ⟨entries.size.toUInt64⟩
+    for entry in entries do
+      match entry with
+      | .kept canonIdx metaIdx =>
+        putU8 0
+        putTag0 ⟨canonIdx⟩
+        putTag0 ⟨metaIdx⟩
+      | .collapsed sharingIdx metaIdx =>
+        putU8 1
+        putTag0 ⟨sharingIdx⟩
+        putTag0 ⟨metaIdx⟩
+    putTag0 ⟨canonMeta.size.toUInt64⟩
+    for m in canonMeta do putTag0 ⟨m⟩
+    match origHead with
+    | none => putU8 0
+    | some (sharingIdx, metaIdx) =>
+      putU8 1
+      putTag0 ⟨sharingIdx⟩
+      putTag0 ⟨metaIdx⟩
 
 def getExprMetaDataIndexed (rev : NameReverseIndex) : GetM ExprMetaData := do
   let tag ← getU8
@@ -1344,6 +1492,34 @@ def getExprMetaDataIndexed (rev : NameReverseIndex) : GetM ExprMetaData := do
     let mdata ← getMdataStackIndexed rev
     let child := (← getTag0).size
     pure (.mdata mdata child)
+  | 10 =>
+    let name ← getIdx rev
+    let numEntries := (← getTag0).size.toNat
+    let mut entries : Array CallSiteEntry := #[]
+    for _ in [0:numEntries] do
+      let entry ← match ← getU8 with
+        | 0 =>
+          let canonIdx := (← getTag0).size
+          let metaIdx := (← getTag0).size
+          pure (CallSiteEntry.kept canonIdx metaIdx)
+        | 1 =>
+          let sharingIdx := (← getTag0).size
+          let metaIdx := (← getTag0).size
+          pure (CallSiteEntry.collapsed sharingIdx metaIdx)
+        | x => throw s!"invalid CallSiteEntry tag {x}"
+      entries := entries.push entry
+    let numCanonMeta := (← getTag0).size.toNat
+    let mut canonMeta : Array UInt64 := #[]
+    for _ in [0:numCanonMeta] do
+      canonMeta := canonMeta.push (← getTag0).size
+    let origHead ← match ← getU8 with
+      | 0 => pure none
+      | 1 =>
+        let sharingIdx := (← getTag0).size
+        let metaIdx := (← getTag0).size
+        pure (some (sharingIdx, metaIdx))
+      | x => throw s!"invalid CallSite origHead tag {x}"
+    pure (.callSite name entries canonMeta origHead)
   | x => throw s!"invalid ExprMetaData tag {x}"
 
 /-- Serialize ExprMetaArena (length-prefixed array of ExprMetaData nodes). -/
@@ -1359,8 +1535,8 @@ def getExprMetaArenaIndexed (rev : NameReverseIndex) : GetM ExprMetaArena := do
     nodes := nodes.push (← getExprMetaDataIndexed rev)
   pure ⟨nodes⟩
 
-/-- Serialize ConstantMeta with indexed addresses. -/
-def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := do
+/-- Serialize the ConstantMetaInfo variant payload with indexed addresses. -/
+def putConstantMetaInfoIndexed (cm : ConstantMetaInfo) (idx : NameIndex) : PutM Unit := do
   match cm with
   | .empty => putU8 255
   | .defn name lvls all ctx arena typeRoot valueRoot =>
@@ -1411,26 +1587,36 @@ def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := 
     putTag0 ⟨typeRoot⟩
     putTag0 ⟨ruleRoots.size.toUInt64⟩
     for r in ruleRoots do putTag0 ⟨r⟩
-  | .muts all =>
+  | .muts all auxLayout =>
     putU8 6
     putTag0 ⟨all.size.toUInt64⟩
     for cls in all do
       putIdxVec cls idx
-    -- Rust's `ConstantMetaInfo::Muts` also serializes `aux_layout`.
-    -- Lean preserves only the alpha-equivalence classes and writes
-    -- `None` for the Rust-only nested-auxiliary sidecar.
-    putU8 0
-  -- Extension tables (meta_sharing / meta_refs / meta_univs): Rust's
-  -- `ConstantMeta::put_indexed` always appends these three length-prefixed
-  -- vectors after the variant payload, used by call-site surgery roundtrip
-  -- (see src/ix/ixon/metadata.rs:229). Lean does not model these fields, so
-  -- we always write them as empty — this matches Rust's wire format for
-  -- Lean-produced bytes without changing the Lean-side data model.
-  putTag0 ⟨0⟩  -- meta_sharing length
-  putTag0 ⟨0⟩  -- meta_refs length
-  putTag0 ⟨0⟩  -- meta_univs length
+    -- Option AuxLayout: 0 tag = none, 1 tag = some(perm vec, ctor-count
+    -- vec), both as Tag0 u64s (mirrors Rust `ConstantMetaInfo::Muts`).
+    match auxLayout with
+    | none => putU8 0
+    | some layout =>
+      putU8 1
+      putTag0 ⟨layout.perm.size.toUInt64⟩
+      for p in layout.perm do putTag0 ⟨p⟩
+      putTag0 ⟨layout.sourceCtorCounts.size.toUInt64⟩
+      for c in layout.sourceCtorCounts do putTag0 ⟨c⟩
 
-def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
+/-- Serialize ConstantMeta (wrapper) with indexed addresses: the variant
+    payload, then the three extension tables — sharing exprs (`putExpr`),
+    refs (raw 32-byte addresses, NOT name-indexed), univs (`putUniv`).
+    Mirrors Rust `ConstantMeta::put_with`. -/
+def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := do
+  putConstantMetaInfoIndexed cm.info idx
+  putTag0 ⟨cm.metaSharing.size.toUInt64⟩
+  for e in cm.metaSharing do putExpr e
+  putTag0 ⟨cm.metaRefs.size.toUInt64⟩
+  for a in cm.metaRefs do Serialize.put a
+  putTag0 ⟨cm.metaUnivs.size.toUInt64⟩
+  for u in cm.metaUnivs do putUniv u
+
+def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo := do
   let cm ← match ← getU8 with
     | 255 => pure .empty
     | 0 =>
@@ -1488,35 +1674,40 @@ def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
       let mut all : Array (Array Address) := #[]
       for _ in [0:n] do
         all := all.push (← getIdxVec rev)
-      match ← getU8 with
-      | 0 => pure (.muts all)
-      | 1 =>
-        -- Rust carries an optional nested-auxiliary permutation here.
-        -- Lean does not model it, but consumes it so Rust-produced bytes
-        -- remain readable.
-        let nPerm := (← getTag0).size.toNat
-        for _ in [0:nPerm] do
-          let _ ← getTag0
-        let nCounts := (← getTag0).size.toNat
-        for _ in [0:nCounts] do
-          let _ ← getTag0
-        pure (.muts all)
-      | x => throw s!"invalid ConstantMeta muts aux_layout tag {x}"
+      let auxLayout ← match ← getU8 with
+        | 0 => pure none
+        | 1 =>
+          let nPerm := (← getTag0).size.toNat
+          let mut perm : Array UInt64 := #[]
+          for _ in [0:nPerm] do
+            perm := perm.push (← getTag0).size
+          let nCounts := (← getTag0).size.toNat
+          let mut sourceCtorCounts : Array UInt64 := #[]
+          for _ in [0:nCounts] do
+            sourceCtorCounts := sourceCtorCounts.push (← getTag0).size
+          pure (some { perm, sourceCtorCounts : AuxLayout })
+        | x => throw s!"invalid ConstantMeta muts aux_layout tag {x}"
+      pure (.muts all auxLayout)
     | x => throw s!"invalid ConstantMeta tag {x}"
-  -- Extension tables (meta_sharing / meta_refs / meta_univs): mirror of the
-  -- Rust wire format (see `putConstantMetaIndexed` for the rationale). Lean
-  -- drops any payload here, so Rust → Lean roundtrips lose call-site surgery
-  -- sharing; this is acceptable because Lean does not consume that data.
-  let sharingLen := (← getTag0).size.toNat
-  for _ in [0:sharingLen] do
-    let _ ← getExpr
-  let refsLen := (← getTag0).size.toNat
-  for _ in [0:refsLen] do
-    let _ ← Serialize.get (α := Address)
-  let univsLen := (← getTag0).size.toNat
-  for _ in [0:univsLen] do
-    let _ ← getUniv
   pure cm
+
+/-- Deserialize ConstantMeta (wrapper): variant payload + the three
+    extension tables. Mirrors Rust `ConstantMeta::get_with`. -/
+def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
+  let info ← getConstantMetaInfoIndexed rev
+  let sharingLen := (← getTag0).size.toNat
+  let mut metaSharing : Array Expr := #[]
+  for _ in [0:sharingLen] do
+    metaSharing := metaSharing.push (← getExpr)
+  let refsLen := (← getTag0).size.toNat
+  let mut metaRefs : Array Address := #[]
+  for _ in [0:refsLen] do
+    metaRefs := metaRefs.push (← Serialize.get (α := Address))
+  let univsLen := (← getTag0).size.toNat
+  let mut metaUnivs : Array Univ := #[]
+  for _ in [0:univsLen] do
+    metaUnivs := metaUnivs.push (← getUniv)
+  pure { info, metaSharing, metaRefs, metaUnivs }
 
 /-- Serialize Comm (simple - just two addresses). -/
 def putComm (c : Comm) : PutM Unit := do
@@ -1649,6 +1840,171 @@ instance : Repr Env where
 
 end Env
 
+/-! ## KVMap resolution (kernel ingress)
+
+Mirror of `crates/ixon/src/metadata.rs::resolve_kvmap` and its `deser_*`
+helpers: resolve an Ixon KVMap (address-based) to Lean-level MData
+(name/value pairs) against an `Env`. Kernel meta-mode ingress uses this to
+materialize `Expr.mdata` layers; it lives here (not the decompiler) because
+it only needs `Env` blob/name lookups.
+
+Rust semantics preserved exactly: entries whose names/blobs cannot be
+resolved are silently DROPPED (`filter_map` + `?` in Rust — `Option` here),
+never errors. -/
+
+/-- Byte cursor for deserializing syntax blobs (`Option`-valued to mirror
+    the Rust `deser_*` family). -/
+structure DeserCursor where
+  bytes : ByteArray
+  pos : Nat := 0
+
+namespace DeserCursor
+
+def u8? (c : DeserCursor) : Option (UInt8 × DeserCursor) :=
+  if h : c.pos < c.bytes.size then
+    some (c.bytes[c.pos], { c with pos := c.pos + 1 })
+  else none
+
+/-- Tag0 varint (same format as `getTag0`): head byte < 128 is the value;
+    otherwise `head % 128 + 1` little-endian extra bytes follow. -/
+def tag0? (c : DeserCursor) : Option (UInt64 × DeserCursor) := do
+  let (head, c) ← c.u8?
+  if head < 128 then
+    some (head.toUInt64, c)
+  else
+    let extra := (head % 128).toNat + 1
+    let mut val : UInt64 := 0
+    let mut cur := c
+    for i in [0:extra] do
+      let (b, c') ← cur.u8?
+      val := val ||| (b.toUInt64 <<< (i * 8).toUInt64)
+      cur := c'
+    some (val, cur)
+
+def addr? (c : DeserCursor) : Option (Address × DeserCursor) :=
+  if c.pos + 32 ≤ c.bytes.size then
+    some (⟨c.bytes.extract c.pos (c.pos + 32)⟩, { c with pos := c.pos + 32 })
+  else none
+
+end DeserCursor
+
+/-- Mirror of `metadata.rs::deser_int` (compile-side `OfInt` blob encoding). -/
+def deserIntBlob (bytes : ByteArray) : Option Ix.Int :=
+  if bytes.size == 0 then none
+  else
+    let rest := bytes.extract 1 bytes.size
+    match bytes[0]! with
+    | 0 => some (.ofNat (Nat.fromBytesLE rest.data))
+    | 1 => some (.negSucc (Nat.fromBytesLE rest.data))
+    | _ => none
+
+def deserSubstring (env : Env) (c : DeserCursor) :
+    Option (Ix.Substring × DeserCursor) := do
+  let (strAddr, c) ← c.addr?
+  let s ← (← env.getBlob? strAddr) |> String.fromUTF8?
+  let (startPos, c) ← c.tag0?
+  let (stopPos, c) ← c.tag0?
+  some (⟨s, startPos.toNat, stopPos.toNat⟩, c)
+
+def deserSourceInfo (env : Env) (c : DeserCursor) :
+    Option (Ix.SourceInfo × DeserCursor) := do
+  let (tag, c) ← c.u8?
+  match tag with
+  | 0 =>
+    let (leading, c) ← deserSubstring env c
+    let (leadingPos, c) ← c.tag0?
+    let (trailing, c) ← deserSubstring env c
+    let (trailingPos, c) ← c.tag0?
+    some (.original leading leadingPos.toNat trailing trailingPos.toNat, c)
+  | 1 =>
+    let (start, c) ← c.tag0?
+    let (stop, c) ← c.tag0?
+    let (canonical, c) ← c.u8?
+    some (.synthetic start.toNat stop.toNat (canonical != 0), c)
+  | 2 => some (.none, c)
+  | _ => none
+
+def deserPreresolved (env : Env) (c : DeserCursor) :
+    Option (Ix.SyntaxPreresolved × DeserCursor) := do
+  let (tag, c) ← c.u8?
+  match tag with
+  | 0 =>
+    let (nameAddr, c) ← c.addr?
+    let name ← env.names[nameAddr]?
+    some (.namespace name, c)
+  | 1 =>
+    let (nameAddr, c) ← c.addr?
+    let name ← env.names[nameAddr]?
+    let (count, c) ← c.tag0?
+    let mut fields : Array String := #[]
+    let mut cur := c
+    for _ in [0:count.toNat] do
+      let (fieldAddr, c') ← cur.addr?
+      let field ← (← env.getBlob? fieldAddr) |> String.fromUTF8?
+      fields := fields.push field
+      cur := c'
+    some (.decl name fields, cur)
+  | _ => none
+
+/-- Mirror of `metadata.rs::deser_syntax` (compile-side
+    `serialize_syntax_inner` encoding). -/
+partial def deserSyntax (env : Env) (c : DeserCursor) :
+    Option (Ix.Syntax × DeserCursor) := do
+  let (tag, c) ← c.u8?
+  match tag with
+  | 0 => some (.missing, c)
+  | 1 =>
+    let (info, c) ← deserSourceInfo env c
+    let (kindAddr, c) ← c.addr?
+    let kind ← env.names[kindAddr]?
+    let (argCount, c) ← c.tag0?
+    let mut args : Array Ix.Syntax := #[]
+    let mut cur := c
+    for _ in [0:argCount.toNat] do
+      let (arg, c') ← deserSyntax env cur
+      args := args.push arg
+      cur := c'
+    some (.node info kind args, cur)
+  | 2 =>
+    let (info, c) ← deserSourceInfo env c
+    let (valAddr, c) ← c.addr?
+    let val ← (← env.getBlob? valAddr) |> String.fromUTF8?
+    some (.atom info val, c)
+  | 3 =>
+    let (info, c) ← deserSourceInfo env c
+    let (rawVal, c) ← deserSubstring env c
+    let (valAddr, c) ← c.addr?
+    let val ← env.names[valAddr]?
+    let (prCount, c) ← c.tag0?
+    let mut preresolved : Array Ix.SyntaxPreresolved := #[]
+    let mut cur := c
+    for _ in [0:prCount.toNat] do
+      let (pr, c') ← deserPreresolved env cur
+      preresolved := preresolved.push pr
+      cur := c'
+    some (.ident info rawVal val preresolved, cur)
+  | _ => none
+
+/-- Resolve one address-based `DataValue` to its Lean-level form. -/
+def resolveDataValue (env : Env) : DataValue → Option Ix.DataValue
+  | .ofString a => do some (.ofString (← (← env.getBlob? a) |> String.fromUTF8?))
+  | .ofBool b => some (.ofBool b)
+  | .ofName a => do some (.ofName (← env.names[a]?))
+  | .ofNat a => do some (.ofNat (Nat.fromBytesLE (← env.getBlob? a).data))
+  | .ofInt a => do some (.ofInt (← deserIntBlob (← env.getBlob? a)))
+  | .ofSyntax a => do
+    let bytes ← env.getBlob? a
+    let (syn, _) ← deserSyntax env ⟨bytes, 0⟩
+    some (.ofSyntax syn)
+
+/-- Resolve an Ixon KVMap to Lean-level MData pairs. Unresolvable entries
+    are dropped (Rust `filter_map` parity). -/
+def resolveKVMap (env : Env) (kvm : KVMap) : Array (Ix.Name × Ix.DataValue) :=
+  kvm.filterMap fun (addr, dv) => do
+    let name ← env.names[addr]?
+    let resolved ← resolveDataValue env dv
+    some (name, resolved)
+
 /-! ## Raw FFI Types for Env -/
 
 /-- Raw FFI structure for a constant: Address → Constant.
@@ -1664,6 +2020,10 @@ structure RawNamed where
   name : Ix.Name
   addr : Address
   constMeta : ConstantMeta
+  /-- Pre-aux_gen (address, metadata) for rewritten constants (mirrors
+      `Named.original`) — without it, the FFI env value path would drop
+      the §5 original edges that the pure parser preserves. -/
+  original : Option (Address × ConstantMeta) := none
   /-- Per-name reducibility hints (mirrors `Named.hints`). -/
   hints : Option Lean.ReducibilityHints := none
   deriving Repr, Inhabited, BEq
@@ -1754,10 +2114,10 @@ def toEnv (raw : RawEnv) : Env := Id.run do
   -- and ensure all parent components are present for topological consistency.
   for ⟨_, name⟩ in raw.names do
     env := { env with names := addNameComponents env.names name }
-  for ⟨name, addr, constMeta, hints⟩ in raw.named do
+  for ⟨name, addr, constMeta, original, hints⟩ in raw.named do
     -- Also add name components for indexed serialization
     env := { env with names := addNameComponents env.names name }
-    env := env.registerName name { addr, constMeta, hints }
+    env := env.registerName name { addr, constMeta, original, hints }
   for ⟨addr, bytes⟩ in raw.blobs do
     env := { env with blobs := env.blobs.insert addr bytes }
   for ⟨addr, comm⟩ in raw.comms do
@@ -1781,7 +2141,8 @@ def toRawEnv (env : Env) : RawEnv := {
   consts := env.consts.toArray.map fun (addr, lc) =>
     { addr, const := lc.get?.getD default }
   named := env.named.toArray.map fun (name, n) =>
-    { name, addr := n.addr, constMeta := n.constMeta, hints := n.hints }
+    { name, addr := n.addr, constMeta := n.constMeta,
+      original := n.original, hints := n.hints }
   blobs := env.blobs.toArray.map fun (addr, bytes) => { addr, bytes }
   comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
   names := env.names.toArray.map fun (addr, name) => { addr, name }

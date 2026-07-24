@@ -316,6 +316,45 @@ def envSerializationUnitTests : TestSeq :=
     names := #[{ addr := namedName.getHash, name := namedName }],
     anonHints := #[(bundleConstAddr, .abbrev)]
   }
+  -- Test 7: Metadata-bearing named entries — the directed cross-language
+  -- byte vector for the FULL metadata wire grammar: arena with a
+  -- call-site surgery node (indexed names, kept/collapsed entries,
+  -- canonMeta, origHead), surgery extension tables (sharing exprs, raw
+  -- refs, univs), and a muts entry with the nested-aux `auxLayout`
+  -- sidecar. Every indexed name address is a registered name component.
+  let surgName := Ix.Name.mkStr Ix.Name.mkAnon "surg"
+  let blkName := Ix.Name.mkStr Ix.Name.mkAnon "blk"
+  let anonAddr := Ix.Name.mkAnon.getHash
+  let surgArena : ExprMetaArena := { nodes := #[
+    .leaf,
+    .binder anonAddr .implicit 0 0,
+    .callSite surgName.getHash
+      #[.kept 0 1, .collapsed 0 0, .kept 2 1]
+      #[1, 0]
+      (some (1, 0)),
+    .mdata #[#[(blkName.getHash, .ofName surgName.getHash)]] 2
+  ] }
+  let surgMeta : ConstantMeta := {
+    info := .defn surgName.getHash #[anonAddr] #[surgName.getHash] #[]
+      surgArena 0 3,
+    metaSharing := #[.app (.share 1) (.var 2), .sort 0],
+    metaRefs := #[bundleConstAddr],
+    metaUnivs := #[.succ (.var 0), .max .zero (.var 1)]
+  }
+  let mutsMeta : ConstantMeta := .new
+    (.muts #[#[surgName.getHash], #[blkName.getHash]]
+      (some { perm := #[1, 0], sourceCtorCounts := #[2, 3] }))
+  let metaRaw : RawEnv := {
+    consts := #[{ addr := bundleConstAddr, const := bundleConst }],
+    named := #[
+      { name := surgName, addr := bundleConstAddr, constMeta := surgMeta,
+        hints := some (.regular 3) },
+      { name := blkName, addr := bundleConstAddr, constMeta := mutsMeta }],
+    blobs := #[], comms := #[],
+    names := #[
+      { addr := surgName.getHash, name := surgName },
+      { addr := blkName.getHash, name := blkName }]
+  }
   test "Empty env Lean==Rust" (envSerializationMatches emptyRaw) ++
   test "Blob env Lean==Rust" (envSerializationMatches blobRaw) ++
   test "Comm env Lean==Rust" (envSerializationMatches commRaw) ++
@@ -325,7 +364,9 @@ def envSerializationUnitTests : TestSeq :=
   test "Empty env bytes Lean==Rust" (envBytesMatchRust emptyRaw) ++
   test "Blob env bytes Lean==Rust" (envBytesMatchRust blobRaw) ++
   test "Bundle env bytes Lean==Rust" (envBytesMatchRust bundleRaw) ++
-  test "Named env bytes Lean==Rust" (envBytesMatchRust namedRaw)
+  test "Named env bytes Lean==Rust" (envBytesMatchRust namedRaw) ++
+  test "Surgery metadata env bytes Lean==Rust" (envBytesMatchRust metaRaw) ++
+  test "Surgery metadata env pure serde" (envSerde metaRaw)
 
 /-! ## Canonical env merkle root: Lean vs. Rust agreement -/
 
@@ -386,4 +427,9 @@ public def Tests.Ixon.suite : List TestSeq := [
   checkIO "Expr serialization Lean==Rust" (∀ e : Expr, exprSerializationMatches e),
   checkIO "Constant serialization Lean==Rust" (∀ c : Constant, constantSerializationMatches c),
   checkIO "Env serialization Lean==Rust" (∀ raw : RawEnv, envSerializationMatches raw),
+  -- Strict byte equality between the two writers over generated envs —
+  -- generated named entries carry full metadata (call-site surgery,
+  -- extension tables, auxLayout), so this is the generator-driven gate
+  -- that the metadata wire format stays in sync.
+  checkIO "Env bytes Lean==Rust" (∀ raw : RawEnv, envBytesMatchRust raw),
 ]

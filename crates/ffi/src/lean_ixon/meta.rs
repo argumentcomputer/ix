@@ -3,16 +3,17 @@
 //! Includes: DataValue, KVMap, ExprMetaData, ExprMetaArena, ConstantMeta, Named, Comm
 
 use crate::lean::{
-  LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue, LeanIxonExprMetaArena,
-  LeanIxonExprMetaData, LeanIxonNamed,
+  LeanIxonAuxLayout, LeanIxonCallSiteEntry, LeanIxonComm, LeanIxonConstantMeta,
+  LeanIxonConstantMetaInfo, LeanIxonDataValue, LeanIxonExpr,
+  LeanIxonExprMetaArena, LeanIxonExprMetaData, LeanIxonNamed, LeanIxonUniv,
 };
 use ix_common::address::Address;
 use ix_common::env::{BinderInfo, ReducibilityHints};
 use ixon::Comm;
-use ixon::env::Named;
+use ixon::env::{AuxLayout, Named};
 use ixon::metadata::{
-  ConstantMeta, ConstantMetaInfo, DataValue as IxonDataValue, ExprMeta,
-  ExprMetaData, KVMap,
+  CallSiteEntry, ConstantMeta, ConstantMetaInfo, DataValue as IxonDataValue,
+  ExprMeta, ExprMetaData, KVMap,
 };
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanOption, LeanOwned, LeanProd, LeanRef,
@@ -85,6 +86,130 @@ fn build_u64_array(vals: &[u64]) -> LeanArray<LeanOwned> {
 /// Decode Array UInt64.
 fn decode_u64_array(obj: LeanArray<LeanBorrowed<'_>>) -> Vec<u64> {
   obj.iter().map(|elem| elem.unbox_u64()).collect()
+}
+
+// =============================================================================
+// CallSiteEntry Build/Decode
+// =============================================================================
+
+impl LeanIxonCallSiteEntry<LeanOwned> {
+  /// Build Ixon.CallSiteEntry (tag 0: kept, tag 1: collapsed; 2× u64 each).
+  pub fn build(entry: &CallSiteEntry) -> Self {
+    match entry {
+      CallSiteEntry::Kept { canon_idx, meta } => {
+        let ctor = LeanIxonCallSiteEntry::alloc(0);
+        ctor.set_num_64(0, *canon_idx);
+        ctor.set_num_64(1, *meta);
+        ctor
+      },
+      CallSiteEntry::Collapsed { sharing_idx, meta } => {
+        let ctor = LeanIxonCallSiteEntry::alloc(1);
+        ctor.set_num_64(0, *sharing_idx);
+        ctor.set_num_64(1, *meta);
+        ctor
+      },
+    }
+  }
+}
+
+impl<R: LeanRef> LeanIxonCallSiteEntry<R> {
+  /// Decode Ixon.CallSiteEntry.
+  pub fn decode(&self) -> CallSiteEntry {
+    match self.as_ctor().tag() {
+      0 => CallSiteEntry::Kept {
+        canon_idx: self.get_num_64(0),
+        meta: self.get_num_64(1),
+      },
+      1 => CallSiteEntry::Collapsed {
+        sharing_idx: self.get_num_64(0),
+        meta: self.get_num_64(1),
+      },
+      tag => panic!("Invalid Ixon.CallSiteEntry tag: {tag}"),
+    }
+  }
+}
+
+/// Build `Option (UInt64 × UInt64)` (CallSite origHead).
+fn build_opt_u64_pair(pair: &Option<(u64, u64)>) -> LeanOwned {
+  match pair {
+    None => LeanOption::none().into(),
+    Some((a, b)) => {
+      let prod = LeanProd::new(LeanOwned::box_u64(*a), LeanOwned::box_u64(*b));
+      LeanOption::some(prod).into()
+    },
+  }
+}
+
+/// Decode `Option (UInt64 × UInt64)` (CallSite origHead).
+fn decode_opt_u64_pair(obj: LeanBorrowed<'_>) -> Option<(u64, u64)> {
+  if obj.is_scalar() {
+    return None;
+  }
+  let opt = obj.as_ctor();
+  match opt.tag() {
+    0 => None,
+    1 => {
+      let pair = opt.get(0).as_ctor();
+      Some((pair.get(0).unbox_u64(), pair.get(1).unbox_u64()))
+    },
+    tag => panic!("Invalid Option tag for origHead: {tag}"),
+  }
+}
+
+// =============================================================================
+// AuxLayout Build/Decode
+// =============================================================================
+
+impl LeanIxonAuxLayout<LeanOwned> {
+  /// Build Ixon.AuxLayout { perm, sourceCtorCounts : Array UInt64 }.
+  /// Rust stores `Vec<usize>`; the FFI (like the wire format) carries u64.
+  pub fn build(layout: &AuxLayout) -> Self {
+    let perm: Vec<u64> = layout.perm.iter().map(|&p| p as u64).collect();
+    let counts: Vec<u64> =
+      layout.source_ctor_counts.iter().map(|&c| c as u64).collect();
+    let ctor = LeanIxonAuxLayout::alloc(0);
+    ctor.set_obj(0, build_u64_array(&perm));
+    ctor.set_obj(1, build_u64_array(&counts));
+    ctor
+  }
+}
+
+impl<R: LeanRef> LeanIxonAuxLayout<R> {
+  /// Decode Ixon.AuxLayout. `usize` is 64-bit on every supported target
+  /// (same contract as `ixon::serialize::get_aux_layout`).
+  #[allow(clippy::cast_possible_truncation)]
+  pub fn decode(&self) -> AuxLayout {
+    let perm = decode_u64_array(self.get_obj(0).as_array())
+      .into_iter()
+      .map(|p| p as usize)
+      .collect();
+    let source_ctor_counts = decode_u64_array(self.get_obj(1).as_array())
+      .into_iter()
+      .map(|c| c as usize)
+      .collect();
+    AuxLayout { perm, source_ctor_counts }
+  }
+}
+
+/// Build `Option AuxLayout` (muts auxLayout).
+fn build_opt_aux_layout(layout: &Option<AuxLayout>) -> LeanOwned {
+  match layout {
+    None => LeanOption::none().into(),
+    Some(l) => LeanOption::some(LeanIxonAuxLayout::build(l)).into(),
+  }
+}
+
+/// Decode `Option AuxLayout` (muts auxLayout).
+fn decode_opt_aux_layout(obj: LeanBorrowed<'_>) -> Option<AuxLayout> {
+  if obj.is_scalar() {
+    return None;
+  }
+  let opt = obj.as_ctor();
+  match opt.tag() {
+    0 => None,
+    1 => Some(LeanIxonAuxLayout::new(opt.get(0).to_owned_ref()).decode()),
+    tag => panic!("Invalid Option tag for auxLayout: {tag}"),
+  }
 }
 
 // =============================================================================
@@ -173,6 +298,7 @@ impl LeanIxonExprMetaData<LeanOwned> {
   /// | ref        | 4   | 1 (name: Address)      | 0                        |
   /// | prj        | 5   | 1 (structName: Address) | 8 (1× u64)             |
   /// | mdata      | 6   | 1 (mdata: Array)       | 8 (1× u64)              |
+  /// | callSite   | 7   | 4 (name, entries, canonMeta, origHead) | 0       |
   pub fn build(node: &ExprMetaData) -> Self {
     match node {
       ExprMetaData::Leaf => Self::new(LeanOwned::box_usize(0)),
@@ -223,10 +349,17 @@ impl LeanIxonExprMetaData<LeanOwned> {
         ctor
       },
 
-      ExprMetaData::CallSite { .. } => {
-        // CallSite is internal to the Rust surgery pipeline and is not
-        // exposed to the Lean FFI. Represent as a Leaf for now.
-        Self::new(LeanOwned::box_usize(0))
+      ExprMetaData::CallSite { name, entries, canon_meta, orig_head } => {
+        let entries_arr = LeanArray::alloc(entries.len());
+        for (i, entry) in entries.iter().enumerate() {
+          entries_arr.set(i, LeanIxonCallSiteEntry::build(entry));
+        }
+        let ctor = LeanIxonExprMetaData::alloc(7);
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, entries_arr);
+        ctor.set_obj(2, build_u64_array(canon_meta));
+        ctor.set_obj(3, build_opt_u64_pair(orig_head));
+        ctor
       },
     }
   }
@@ -305,6 +438,24 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         ExprMetaData::Mdata { mdata, child }
       },
 
+      7 => {
+        // callSite: 4 obj fields (name, entries, canonMeta, origHead)
+        let name =
+          LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+            .decode();
+        let entries_arr = self.get_obj(1).as_array();
+        let mut entries = Vec::with_capacity(entries_arr.len());
+        for i in 0..entries_arr.len() {
+          entries.push(
+            LeanIxonCallSiteEntry::new(entries_arr.get(i).to_owned_ref())
+              .decode(),
+          );
+        }
+        let canon_meta = decode_u64_array(self.get_obj(2).as_array());
+        let orig_head = decode_opt_u64_pair(self.get_obj(3));
+        ExprMetaData::CallSite { name, entries, canon_meta, orig_head }
+      },
+
       tag => panic!("Invalid Ixon.ExprMetaData tag: {}", tag),
     }
   }
@@ -342,8 +493,8 @@ impl<R: LeanRef> LeanIxonExprMetaArena<R> {
 // ConstantMeta Build/Decode
 // =============================================================================
 
-impl LeanIxonConstantMeta<LeanOwned> {
-  /// Build Ixon.ConstantMeta Lean object.
+impl LeanIxonConstantMetaInfo<LeanOwned> {
+  /// Build Ixon.ConstantMetaInfo Lean object.
   ///
   /// | Variant | Tag | Obj fields | Scalar bytes |
   /// |---------|-----|-----------|-------------|
@@ -354,9 +505,9 @@ impl LeanIxonConstantMeta<LeanOwned> {
   /// | indc    | 4   | 6 (name, lvls, ctors, all, ctx, arena) | 8 (1× u64) |
   /// | ctor    | 5   | 4 (name, lvls, induct, arena) | 8 (1× u64) |
   /// | recr    | 6   | 7 (name, lvls, rules, all, ctx, arena, ruleRoots) | 8 (1× u64) |
-  /// | muts    | 7   | 1 (Array (Array Address)) | 0 |
-  pub fn build(meta: &ConstantMeta) -> Self {
-    match &meta.info {
+  /// | muts    | 7   | 2 (Array (Array Address), Option AuxLayout) | 0 |
+  pub fn build(info: &ConstantMetaInfo) -> Self {
+    match info {
       ConstantMetaInfo::Empty => Self::new(LeanOwned::box_usize(0)),
 
       ConstantMetaInfo::Def {
@@ -368,7 +519,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         type_root,
         value_root,
       } => {
-        let ctor = LeanIxonConstantMeta::alloc(1);
+        let ctor = LeanIxonConstantMetaInfo::alloc(1);
         ctor.set_obj(0, LeanIxAddress::build(name));
         ctor.set_obj(1, LeanIxAddress::build_array(lvls));
         ctor.set_obj(2, LeanIxAddress::build_array(all));
@@ -380,7 +531,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
       },
 
       ConstantMetaInfo::Axio { name, lvls, arena, type_root } => {
-        let ctor = LeanIxonConstantMeta::alloc(2);
+        let ctor = LeanIxonConstantMetaInfo::alloc(2);
         ctor.set_obj(0, LeanIxAddress::build(name));
         ctor.set_obj(1, LeanIxAddress::build_array(lvls));
         ctor.set_obj(2, LeanIxonExprMetaArena::build(arena));
@@ -389,7 +540,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
       },
 
       ConstantMetaInfo::Quot { name, lvls, arena, type_root } => {
-        let ctor = LeanIxonConstantMeta::alloc(3);
+        let ctor = LeanIxonConstantMetaInfo::alloc(3);
         ctor.set_obj(0, LeanIxAddress::build(name));
         ctor.set_obj(1, LeanIxAddress::build_array(lvls));
         ctor.set_obj(2, LeanIxonExprMetaArena::build(arena));
@@ -406,7 +557,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         arena,
         type_root,
       } => {
-        let ctor = LeanIxonConstantMeta::alloc(4);
+        let ctor = LeanIxonConstantMetaInfo::alloc(4);
         ctor.set_obj(0, LeanIxAddress::build(name));
         ctor.set_obj(1, LeanIxAddress::build_array(lvls));
         ctor.set_obj(2, LeanIxAddress::build_array(ctors));
@@ -418,7 +569,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
       },
 
       ConstantMetaInfo::Ctor { name, lvls, induct, arena, type_root } => {
-        let ctor = LeanIxonConstantMeta::alloc(5);
+        let ctor = LeanIxonConstantMetaInfo::alloc(5);
         ctor.set_obj(0, LeanIxAddress::build(name));
         ctor.set_obj(1, LeanIxAddress::build_array(lvls));
         ctor.set_obj(2, LeanIxAddress::build(induct));
@@ -437,7 +588,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
         type_root,
         rule_roots,
       } => {
-        let ctor = LeanIxonConstantMeta::alloc(6);
+        let ctor = LeanIxonConstantMetaInfo::alloc(6);
         ctor.set_obj(0, LeanIxAddress::build(name));
         ctor.set_obj(1, LeanIxAddress::build_array(lvls));
         ctor.set_obj(2, LeanIxAddress::build_array(rules));
@@ -449,32 +600,28 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor
       },
 
-      ConstantMetaInfo::Muts { all, aux_layout: _ } => {
-        // Lean's FFI shape carries the alpha-equivalence classes for a
-        // mutual block, but not the Rust-only nested-auxiliary `aux_layout`
-        // sidecar. The sidecar survives through Rust `put_indexed` /
-        // `get_indexed`; a Rust → Lean → Rust FFI roundtrip intentionally
-        // decodes it as `None`.
-        let ctor = LeanIxonConstantMeta::alloc(7);
+      ConstantMetaInfo::Muts { all, aux_layout } => {
+        let ctor = LeanIxonConstantMetaInfo::alloc(7);
         let outer = LeanArray::alloc(all.len());
         for (i, group) in all.iter().enumerate() {
           outer.set(i, LeanIxAddress::build_array(group));
         }
         ctor.set_obj(0, outer);
+        ctor.set_obj(1, build_opt_aux_layout(aux_layout));
         ctor
       },
     }
   }
 }
 
-impl<R: LeanRef> LeanIxonConstantMeta<R> {
-  /// Decode Ixon.ConstantMeta from Lean pointer.
-  pub fn decode(&self) -> ConstantMeta {
+impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
+  /// Decode Ixon.ConstantMetaInfo from Lean pointer.
+  pub fn decode(&self) -> ConstantMetaInfo {
     // Empty (tag 0, no fields) is represented as a scalar lean_box(0)
     if self.inner().is_scalar() {
       let tag = self.inner().as_raw() as usize >> 1;
-      assert_eq!(tag, 0, "Invalid scalar ConstantMeta tag: {}", tag);
-      return ConstantMeta::default();
+      assert_eq!(tag, 0, "Invalid scalar ConstantMetaInfo tag: {}", tag);
+      return ConstantMetaInfo::Empty;
     }
     match self.as_ctor().tag() {
       1 => {
@@ -489,7 +636,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           LeanIxonExprMetaArena::new(self.get_obj(4).to_owned_ref()).decode();
         let type_root = self.get_num_64(0);
         let value_root = self.get_num_64(1);
-        ConstantMeta::new(ConstantMetaInfo::Def {
+        ConstantMetaInfo::Def {
           name,
           lvls,
           all,
@@ -497,7 +644,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           arena,
           type_root,
           value_root,
-        })
+        }
       },
 
       2 => {
@@ -509,12 +656,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(self.get_obj(2).to_owned_ref()).decode();
         let type_root = self.get_num_64(0);
-        ConstantMeta::new(ConstantMetaInfo::Axio {
-          name,
-          lvls,
-          arena,
-          type_root,
-        })
+        ConstantMetaInfo::Axio { name, lvls, arena, type_root }
       },
 
       3 => {
@@ -526,12 +668,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(self.get_obj(2).to_owned_ref()).decode();
         let type_root = self.get_num_64(0);
-        ConstantMeta::new(ConstantMetaInfo::Quot {
-          name,
-          lvls,
-          arena,
-          type_root,
-        })
+        ConstantMetaInfo::Quot { name, lvls, arena, type_root }
       },
 
       4 => {
@@ -546,15 +683,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(self.get_obj(5).to_owned_ref()).decode();
         let type_root = self.get_num_64(0);
-        ConstantMeta::new(ConstantMetaInfo::Indc {
-          name,
-          lvls,
-          ctors,
-          all,
-          ctx,
-          arena,
-          type_root,
-        })
+        ConstantMetaInfo::Indc { name, lvls, ctors, all, ctx, arena, type_root }
       },
 
       5 => {
@@ -569,13 +698,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(self.get_obj(3).to_owned_ref()).decode();
         let type_root = self.get_num_64(0);
-        ConstantMeta::new(ConstantMetaInfo::Ctor {
-          name,
-          lvls,
-          induct,
-          arena,
-          type_root,
-        })
+        ConstantMetaInfo::Ctor { name, lvls, induct, arena, type_root }
       },
 
       6 => {
@@ -591,7 +714,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           LeanIxonExprMetaArena::new(self.get_obj(5).to_owned_ref()).decode();
         let rule_roots = decode_u64_array(self.get_obj(6).as_array());
         let type_root = self.get_num_64(0);
-        ConstantMeta::new(ConstantMetaInfo::Rec {
+        ConstantMetaInfo::Rec {
           name,
           lvls,
           rules,
@@ -600,23 +723,52 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           arena,
           type_root,
           rule_roots,
-        })
+        }
       },
 
       7 => {
-        // muts: 1 obj field (Array (Array Address)), 0 scalar.
-        // The Rust-only `aux_layout` sidecar is not represented on the
-        // Lean side, so FFI decode defaults it to `None`.
+        // muts: 2 obj fields (Array (Array Address), Option AuxLayout)
         let outer = self.get_obj(0).as_array();
         let mut all = Vec::with_capacity(outer.len());
         for i in 0..outer.len() {
           all.push(decode_address_array(outer.get(i).as_array()));
         }
-        ConstantMeta::new(ConstantMetaInfo::Muts { all, aux_layout: None })
+        let aux_layout = decode_opt_aux_layout(self.get_obj(1));
+        ConstantMetaInfo::Muts { all, aux_layout }
       },
 
-      tag => panic!("Invalid Ixon.ConstantMeta tag: {}", tag),
+      tag => panic!("Invalid Ixon.ConstantMetaInfo tag: {}", tag),
     }
+  }
+}
+
+// =============================================================================
+// ConstantMeta (wrapper) Build/Decode
+// =============================================================================
+
+impl LeanIxonConstantMeta<LeanOwned> {
+  /// Build Ixon.ConstantMeta Lean object — the wrapper structure
+  /// `{ info, metaSharing, metaRefs, metaUnivs }` (single ctor, 4 obj
+  /// fields), mirroring Rust `ixon::metadata::ConstantMeta`.
+  pub fn build(meta: &ConstantMeta) -> Self {
+    let ctor = LeanIxonConstantMeta::alloc(0);
+    ctor.set_obj(0, LeanIxonConstantMetaInfo::build(&meta.info));
+    ctor.set_obj(1, LeanIxonExpr::build_array(&meta.meta_sharing));
+    ctor.set_obj(2, LeanIxAddress::build_array(&meta.meta_refs));
+    ctor.set_obj(3, LeanIxonUniv::build_array(&meta.meta_univs));
+    ctor
+  }
+}
+
+impl<R: LeanRef> LeanIxonConstantMeta<R> {
+  /// Decode Ixon.ConstantMeta (wrapper) from Lean pointer.
+  pub fn decode(&self) -> ConstantMeta {
+    let info =
+      LeanIxonConstantMetaInfo::new(self.get_obj(0).to_owned_ref()).decode();
+    let meta_sharing = LeanIxonExpr::decode_array(&self.get_obj(1).as_array());
+    let meta_refs = decode_address_array(self.get_obj(2).as_array());
+    let meta_univs = LeanIxonUniv::decode_array(&self.get_obj(3).as_array());
+    ConstantMeta { info, meta_sharing, meta_refs, meta_univs }
   }
 }
 

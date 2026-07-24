@@ -28,6 +28,13 @@ open Ixon (PutM runPut putConstant putExpr Comm)
 def mkCompileEnv (phases : Ix.CompileM.CompilePhases) : Ix.CompileM.CompileEnv :=
   { env := phases.rawEnv
   , nameToNamed := phases.compileEnv.named
+  -- Resolution map (Rust `name_to_addr`): seeded from the FINAL named
+  -- registry. In a live driver the two diverge only where the aux tail
+  -- overrode a member's Named entry; when seeding from a completed Rust
+  -- env only the final registry is available, and the aux-gen-diff
+  -- corpus verifies byte-identical ref tables under it.
+  , nameToAddr := phases.compileEnv.named.fold (init := {})
+      fun m n named => m.insert n named.addr
   , constants := phases.compileEnv.consts.fold (init := {})
       fun m a lc => m.insert a (lc.get?.getD default)
   , blobs := phases.compileEnv.blobs

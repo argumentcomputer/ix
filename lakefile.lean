@@ -16,6 +16,13 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.29.0"
 
+/- Test/bench-only dependency: the reference Lean4-in-Lean4 typechecker,
+pinned to upstream master. Only `bench-lean4lean` and the ignored
+`lean4lean` test runner import it, so `lake build ix` never builds it.
+(Same toolchain and batteries pin as ix, so it resolves cleanly.) -/
+require lean4lean from git
+  "https://github.com/digama0/lean4lean" @ "8865b155abbf68d3a827fb3568bf6839780163c2"
+
 /-! ## FFI
 
 The Rust static libraries use `target` + `moreLinkObjs` instead of `extern_lib` because different Lean executables need different Cargo features:
@@ -122,7 +129,31 @@ lean_exe «bench-recursive-verifier» where
   root := `Benchmarks.RecursiveVerifier
   supportInterpreter := true
 
+/- The lean4lean replay machinery as an importable lib: the
+`bench-lean4lean` exe root and the ignored `lean4lean` test runner both
+import `Benchmarks.Lean4Lean`, and modules under `Benchmarks/` belong to
+no other lib target, so without this Lake cannot schedule the module from
+the Tests import graph. -/
+lean_lib Lean4LeanBench where
+  globs := #[.one `Benchmarks.Lean4Lean]
+
+lean_exe «bench-lean4lean» where
+  root := `Benchmarks.Lean4LeanMain
+  supportInterpreter := true
+
 end Benchmarks
+
+section IxTcVerify
+
+/- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
+Non-default: `lake build ix` never
+touches it, and `build-all` (the lint driver) skips it by name while it
+carries `sorry`s — `lake lint -- --wfail` would otherwise fail on the
+WIP proof frontier. Dev loop: `lake build IxTcVerify`. -/
+lean_lib IxTcVerify where
+  globs := #[.submodules `Ix.Tc.Verify]
+
+end IxTcVerify
 
 section IxApplications
 
@@ -181,7 +212,9 @@ script "build-all" (args) := do
   let pkg ← getRootPackage
   let libNames := pkg.configTargets LeanLib.configKind |>.map (·.name.toString)
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
-  let allNames := libNames ++ exeNames |>.toList
+  -- IxTcVerify is the WIP proofs lib: sorry-bearing by design while the
+  -- verification frontier is open, so it must not run under `--wfail`.
+  let allNames := (libNames ++ exeNames |>.toList).filter (· != "IxTcVerify")
   for name in allNames do
     IO.println s!"Building: {name}"
     let child ← IO.Process.spawn {

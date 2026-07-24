@@ -32,11 +32,15 @@ private def tutorialDefsNamespace : Lean.Name :=
 private def natReductionNamespace : Lean.Name :=
   `Tests.Ix.Kernel.NatReduction
 
+private def stringReductionNamespace : Lean.Name :=
+  `Tests.Ix.Kernel.StringReduction
+
 private def isFromFixtureModule (env : Lean.Environment) (name : Lean.Name) : Bool :=
   match env.getModuleIdxFor? name with
   | some modIdx =>
     match env.header.moduleNames[modIdx]? with
     | some modName => modName == tutorialDefsNamespace || modName == natReductionNamespace
+      || modName == stringReductionNamespace
     | none => false
   | none => false
 
@@ -57,6 +61,8 @@ private def isFixtureName (fixtures : Std.HashSet Lean.Name) (name : Lean.Name) 
     || name.toString.contains "_private.Tests.Ix.Kernel.TutorialDefs."
     || natReductionNamespace.isPrefixOf name
     || name.toString.contains "_private.Tests.Ix.Kernel.NatReduction."
+    || stringReductionNamespace.isPrefixOf name
+    || name.toString.contains "_private.Tests.Ix.Kernel.StringReduction."
     || fixtures.contains name
 
 def testRustCheckEnv : TestSeq :=

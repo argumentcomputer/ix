@@ -65,6 +65,7 @@ impl<R: LeanRef> LeanIxonRawConst<R> {
 
 // =============================================================================
 // RawNamed (name: Ix.Name, addr: Address, constMeta: ConstantMeta,
+//           original: Option (Address × ConstantMeta),
 //           hints: Option ReducibilityHints)
 // =============================================================================
 
@@ -73,7 +74,45 @@ pub struct DecodedRawNamed {
   pub name: Name,
   pub addr: Address,
   pub const_meta: ConstantMeta,
+  pub original: Option<(Address, ConstantMeta)>,
   pub hints: Option<ReducibilityHints>,
+}
+
+/// Build `Option (Address × ConstantMeta)` (RawNamed/Named original).
+pub(crate) fn build_opt_original(
+  original: &Option<(Address, ConstantMeta)>,
+) -> LeanOwned {
+  match original {
+    None => LeanOption::none().into(),
+    Some((addr, meta)) => {
+      let pair = LeanProd::new(
+        LeanIxAddress::build(addr),
+        LeanIxonConstantMeta::build(meta),
+      );
+      LeanOption::some(pair).into()
+    },
+  }
+}
+
+/// Decode `Option (Address × ConstantMeta)` from an object slot.
+pub(crate) fn decode_opt_original(
+  obj: LeanBorrowed<'_>,
+) -> Option<(Address, ConstantMeta)> {
+  if obj.is_scalar() {
+    return None;
+  }
+  let opt = obj.as_ctor();
+  match opt.tag() {
+    0 => None,
+    1 => {
+      let pair = opt.get(0).as_ctor();
+      let addr =
+        LeanIxAddress::from_borrowed(pair.get(0).as_byte_array()).decode();
+      let meta = LeanIxonConstantMeta::new(pair.get(1).to_owned_ref()).decode();
+      Some((addr, meta))
+    },
+    tag => panic!("Invalid Option tag for original: {tag}"),
+  }
 }
 
 /// Build `Option Lean.ReducibilityHints` (scalar-optimized `none` or a
@@ -107,7 +146,8 @@ impl LeanIxonRawNamed<LeanOwned> {
     ctor.set_obj(0, LeanIxName::build(cache, &rn.name));
     ctor.set_obj(1, LeanIxAddress::build(&rn.addr));
     ctor.set_obj(2, LeanIxonConstantMeta::build(&rn.const_meta));
-    ctor.set_obj(3, build_opt_hints(rn.hints));
+    ctor.set_obj(3, build_opt_original(&rn.original));
+    ctor.set_obj(4, build_opt_hints(rn.hints));
     ctor
   }
 
@@ -117,13 +157,15 @@ impl LeanIxonRawNamed<LeanOwned> {
     name: &Name,
     addr: &Address,
     meta: &ConstantMeta,
+    original: &Option<(Address, ConstantMeta)>,
     hints: Option<ReducibilityHints>,
   ) -> Self {
     let ctor = LeanIxonRawNamed::alloc(0);
     ctor.set_obj(0, LeanIxName::build(cache, name));
     ctor.set_obj(1, LeanIxAddress::build(addr));
     ctor.set_obj(2, LeanIxonConstantMeta::build(meta));
-    ctor.set_obj(3, build_opt_hints(hints));
+    ctor.set_obj(3, build_opt_original(original));
+    ctor.set_obj(4, build_opt_hints(hints));
     ctor
   }
 }
@@ -137,7 +179,8 @@ impl<R: LeanRef> LeanIxonRawNamed<R> {
       addr: LeanIxAddress::from_borrowed(ctor.get(1).as_byte_array()).decode(),
       const_meta: LeanIxonConstantMeta::new(ctor.get(2).to_owned_ref())
         .decode(),
-      hints: decode_opt_hints(ctor.get(3)),
+      original: decode_opt_original(ctor.get(3)),
+      hints: decode_opt_hints(ctor.get(4)),
     }
   }
 }
@@ -451,6 +494,9 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
   for rn in &decoded.named {
     let mut named = IxonNamed::new(rn.addr.clone(), rn.const_meta.clone());
     named.set_hints(rn.hints);
+    if let Some((orig_addr, orig_meta)) = &rn.original {
+      named.set_original(orig_addr.clone(), orig_meta.clone());
+    }
     env.register_name(rn.name.clone(), named);
   }
   for rb in &decoded.blobs {
@@ -493,6 +539,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
       name: e.key().clone(),
       addr: e.value().addr.clone(),
       const_meta: (*e.value().meta()).clone(),
+      original: e.value().original().map(|(a, m)| (a, (*m).clone())),
       hints: e.value().hints(),
     })
     .collect();

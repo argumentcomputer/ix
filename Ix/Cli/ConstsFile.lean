@@ -38,6 +38,20 @@ def parseCommaList (arg : String) : Array String :=
     let t := s.trimAscii
     if t.isEmpty then none else some t.toString) |>.toArray
 
+/-- Canonical key for cross-kernel displayed-name matching: Lean's
+    `Name.toString` wraps non-identifier components in `«»`
+    (`_private.….«0».…`), the Rust mirror's `Name::pretty` renders them
+    bare — so a fail-out file from one side misses a string-keyed lookup
+    on the other. Stripping the guillemets from BOTH the request and the
+    candidate collapses the two renderings onto the same key (bare form),
+    at the cost of the same flattening ambiguity `pretty` already has.
+    The Rust resolvers apply the identical normalization
+    (`ix_common::env::normalize_displayed_name`). -/
+def normalizeName (s : String) : String :=
+  if s.any (fun c => c == '«' || c == '»') then
+    s.foldl (fun acc c => if c == '«' || c == '»' then acc else acc.push c) ""
+  else s
+
 /-- Union of a parsed `--consts` comma-list flag and a `--consts-file` file
     (both optional), deduped in first-seen order. -/
 def gather (p : Cli.Parsed)

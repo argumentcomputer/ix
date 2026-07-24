@@ -803,6 +803,33 @@ pub fn generate_aux_patches(
         }
       }
 
+      // Also `.below.rec` — the joint recursor over Prop-level `.below`
+      // inductives. It is generated in compile Phase 5
+      // (`compile_below_recursors`), NOT as a patch, so it can't gate on
+      // `patches` membership like the suffixes above; gate on the
+      // representative's `.below` being a Prop-level below inductive.
+      // For a collapsed class the joint generation emits only the
+      // representative's `.below.rec` — without this alias the member's
+      // Lean-exported name never resolves and its scheduler block fails
+      // with "aux_gen precompile incomplete" (regression fixture:
+      // Tests/Ix/Compile/Canonicity.lean PropCollapseA/B).
+      {
+        let rep_below = Name::str(rep.clone(), "below".to_string());
+        if matches!(
+          patches.get(&rep_below),
+          Some(PatchedConstant::BelowIndc(_))
+        ) {
+          let rep_name = Name::str(rep_below, "rec".to_string());
+          let alias_name = Name::str(
+            Name::str(alias.clone(), "below".to_string()),
+            "rec".to_string(),
+          );
+          if lean_env.get(&alias_name).is_some() {
+            aliases.insert(alias_name, rep_name);
+          }
+        }
+      }
+
       // Note: _N suffixed names (rec_1, below_1, brecOn_1, etc.) are NOT
       // aliased here. They always hang off all[0] (the first inductive in
       // source order), not per-class-representative. There is no TreeB.rec_1

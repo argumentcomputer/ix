@@ -111,12 +111,39 @@ partial def toStringAux : Name → String
 instance : ToString Name where
   toString := toStringAux
 
+/-- Dot-separated bare rendering — byte-for-byte mirror of the Rust
+    `Name::pretty` (str components verbatim, num components as plain
+    digits, NO `«»` escaping). The kernel's canonical aux ordering seeds
+    on this exact string (`Ix.Tc.canonicalAuxOrder` ↔ Rust
+    `canonical_aux_order`), so `toString` (which escapes nums as `«n»`)
+    must not be substituted there. -/
+partial def pretty : Name → String
+  | .anonymous _ => ""
+  | .str (.anonymous _) s _ => s
+  | .str parent s _ => s!"{pretty parent}.{s}"
+  | .num (.anonymous _) n _ => s!"{n}"
+  | .num parent n _ => s!"{pretty parent}.{n}"
+
 def fromLeanName : Lean.Name → Name
   | .anonymous => .mkAnon
   | .str pre s => .mkStr (.fromLeanName pre) s
   | .num pre n => .mkNat (.fromLeanName pre) n
 
 end Name
+
+/-- Synthetic name for a mutual block's `Muts` named entry:
+    `Ix.<block-addr-hex>.<first-member components>` (numeric vs string
+    components preserved). Kernel ingress discovers mutual blocks only
+    through entries under these names. Mirrors Rust `Address::muts_name`
+    (crates/common/src/address.rs:99). -/
+partial def _root_.Address.mutsName (addr : Address) (firstMember : Name) : Name :=
+  let base := Name.mkStr (Name.mkStr .mkAnon "Ix") (toString addr)
+  go base firstMember
+where
+  go (base : Name) : Name → Name
+    | .anonymous _ => base
+    | .str parent s _ => Name.mkStr (go base parent) s
+    | .num parent n _ => Name.mkNat (go base parent) n
 
 /-- Compare Ix.Name by hash for ordered collections. -/
 def nameCompare (a b : Name) : Ordering :=

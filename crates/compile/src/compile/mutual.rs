@@ -783,22 +783,53 @@ pub fn generate_and_compile_aux_recursors(
   let rec_on_elapsed = t3.elapsed();
   // Phase 3: Compile .below inductives (Prop-level).
   // Collect all .below names first for the mutual `all` field.
+  //
+  // CANONICAL ORDER: the collection is sorted by the below inductives'
+  // own `sort_consts` partition-refinement order — their canonical member
+  // order in the Phase-3 block (≡ ascending anon projection index).
+  // Iterating `patches` directly would leak FxHashMap iteration order
+  // (FxHash bucket order over blake3(name)) into (1) the JOINT
+  // `.below.rec` generation in Phase 5, which bakes class order (motive
+  // order + rule concatenation) into the recursor bytes, and (2) the
+  // `all` field, which flows verbatim into per-name metadata
+  // (`ConstantMetaInfo::{Indc,Recr}.all`). That made alpha-identical
+  // inductive families compile to different bytes depending on their
+  // names — a canonicity violation (see docs/ix_canonicity.md and the
+  // ZFA clone fixtures in Tests/Ix/Compile/Canonicity.lean).
+  //
+  // `sort_consts` only reads anon content, and the `all` name-list is
+  // metadata, so sorting preliminary MutConsts built with the unsorted
+  // name list is sound; the final MutConsts are rebuilt in canonical
+  // order with the canonical `all`.
   let t4 = std::time::Instant::now();
-  let all_below_names: Vec<Name> = patches
+  let mut below_raw: Vec<&BelowIndc> = patches
     .iter()
     .filter_map(|(_, p)| match p {
-      PatchedConstant::BelowIndc(bi) => Some(bi.name.clone()),
+      PatchedConstant::BelowIndc(bi) => Some(bi),
       _ => None,
     })
     .collect();
-  let below_indcs: Vec<MutConst> = patches
+  if below_raw.len() > 1 {
+    let prelim_names: Vec<Name> =
+      below_raw.iter().map(|bi| bi.name.clone()).collect();
+    let prelim: Vec<MutConst> = below_raw
+      .iter()
+      .map(|bi| below_indc_to_mut_const(bi, &prelim_names))
+      .collect();
+    let prelim_refs: Vec<&MutConst> = prelim.iter().collect();
+    let mut sort_cache = BlockCache::default();
+    let sorted = sort_consts(&prelim_refs, &mut sort_cache, stt)?;
+    let canonical: Vec<Name> =
+      sorted.iter().flat_map(|class| class.iter().map(|c| c.name())).collect();
+    below_raw.sort_by_key(|bi| {
+      canonical.iter().position(|n| *n == bi.name).unwrap_or(usize::MAX)
+    });
+  }
+  let all_below_names: Vec<Name> =
+    below_raw.iter().map(|bi| bi.name.clone()).collect();
+  let below_indcs: Vec<MutConst> = below_raw
     .iter()
-    .filter_map(|(_, p)| match p {
-      PatchedConstant::BelowIndc(bi) => {
-        Some(below_indc_to_mut_const(bi, &all_below_names))
-      },
-      _ => None,
-    })
+    .map(|bi| below_indc_to_mut_const(bi, &all_below_names))
     .collect();
   if !below_indcs.is_empty() {
     compile_aux_block_with_rename(
@@ -1079,6 +1110,12 @@ fn compile_below_recursors(
   // Generate recursors for all .below inductives as ONE mutual block.
   // Each .below goes in its own class, matching the structure of the
   // original Lean .below.rec (which is a mutual recursor over all .below types).
+  //
+  // Class ORDER is semantic: the joint generation bakes it into the
+  // motive layout and rule concatenation of every recursor in the block.
+  // `below_indcs` arrives in canonical (sort_consts) order from the
+  // Phase-3 collection in `generate_and_compile_aux_recursors`, which is
+  // what makes the emitted bytes alpha-canonical.
   let classes: Vec<Vec<Name>> = below_indcs
     .iter()
     .filter_map(|c| match c {

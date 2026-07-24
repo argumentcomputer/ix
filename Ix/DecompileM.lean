@@ -81,6 +81,11 @@ structure BlockCtx where
   mutCtx : Array Ix.Name       -- mutual context: index = Rec index
   univParams : Array Ix.Name   -- universe parameter names
   arena : ExprMetaArena
+  /-- `ConstantMeta.metaSharing` of the constant being decompiled:
+      collapsed call-site arguments (and rewritten original heads),
+      indexed by `CallSiteEntry.collapsed.sharingIdx` / `origHead` —
+      distinct from the block's primary `sharing` table. -/
+  metaSharing : Array Ixon.Expr := #[]
   deriving Inhabited
 
 /-- Per-block mutable state (caches). -/
@@ -345,6 +350,29 @@ def applyMdata (expr : Ix.Expr) (layers : Array (Array (Ix.Name × Ix.DataValue)
 def getArenaNode (idx : UInt64) : DecompileM ExprMetaData := do
   pure ((← getCtx).arena.nodes[idx.toNat]?.getD .leaf)
 
+/-- Collect an Ixon App telescope for call-site replay, transparently
+    expanding `.share` nodes along the SPINE (Rust
+    `collect_ixon_telescope_expanding_shares`, decompile.rs:745).
+    Arguments are returned in application order and are NOT
+    share-expanded — each is decompiled individually, where `.share`
+    handling applies as usual. -/
+def collectIxonTelescopeExpandingShares (e : Ixon.Expr)
+    : DecompileM (Ixon.Expr × Array Ixon.Expr) := do
+  let ctx ← getCtx
+  let mut args : Array Ixon.Expr := #[]
+  let mut cur := e
+  repeat
+    match cur with
+    | .share idx =>
+      match ctx.sharing[idx.toNat]? with
+      | some s => cur := s
+      | none => throw (.invalidShareIndex idx ctx.sharing.size "callSite telescope")
+    | .app f a =>
+      args := args.push a
+      cur := f
+    | _ => break
+  return (cur, args.reverse)
+
 /-- Decompile an expression to Ix.Expr with arena-based metadata. -/
 partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Expr := do
   -- 1. Expand Share transparently
@@ -376,6 +404,65 @@ partial def decompileExpr (e : Ixon.Expr) (arenaIdx : UInt64) : DecompileM Ix.Ex
 
   -- 3. Match (arenaNode, ixonExpr) → Ix.Expr
   let result ← match node, e with
+  -- Call-site surgery replay: reconstruct the SOURCE-order application
+  -- spine from the canonical Ixon spine plus the metadata extension
+  -- tables (Rust decompile.rs:975-1120). Entries walk in source order:
+  -- Kept entries index the canonical telescope by `canonIdx`; Collapsed
+  -- entries index `ConstantMeta.metaSharing` (NOT the block's primary
+  -- sharing table). `origHead` restores the pre-rewrite head of
+  -- evaporated-aux sites; otherwise the head is rebuilt from the
+  -- CallSite name plus the canonical head's level args. Mdata wraps the
+  -- WHOLE reassembled spine, matching how the compiler produced the
+  -- node.
+  | .callSite nameAddr entries _canonMeta origHead, _ => do
+    let ctx ← getCtx
+    let (headIxon, canonicalArgs) ← collectIxonTelescopeExpandingShares e
+    -- Most CallSites have one Kept entry per canonical arg; split-SCC
+    -- minor adaptation stores a synthesized wrapper canonically with the
+    -- source arg Collapsed, so canonical args may OUTNUMBER Kept
+    -- entries — but every Kept entry must point at an existing slot.
+    let keptCount := entries.foldl (init := 0) fun n entry =>
+      match entry with
+      | .kept .. => n + 1
+      | _ => n
+    if keptCount > canonicalArgs.size then
+      throw (.badConstantFormat s!"CallSite: {keptCount} Kept entries \
+but canonical telescope has only {canonicalArgs.size} args")
+    let head ← match origHead with
+      | some (sharingIdx, headMetaIdx) =>
+        -- Head-rewritten site: the ORIGINAL head expression (source
+        -- name + source level args) lives in metaSharing.
+        match ctx.metaSharing[sharingIdx.toNat]? with
+        | some shared => decompileExpr shared headMetaIdx
+        | none =>
+          throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
+            "callSite origHead")
+      | none =>
+        let headName ← lookupNameAddr nameAddr
+        let levels ← match headIxon with
+          | .ref _ univIndices => decompileUnivIndices univIndices
+          | .recur _ univIndices => decompileUnivIndices univIndices
+          | _ => pure #[]
+        pure (Ix.Expr.mkConst headName levels)
+    let mut spine := head
+    for entry in entries do
+      match entry with
+      | .kept canonIdx metaIdx =>
+        match canonicalArgs[canonIdx.toNat]? with
+        | some argIxon =>
+          spine := Ix.Expr.mkApp spine (← decompileExpr argIxon metaIdx)
+        | none =>
+          throw (.badConstantFormat s!"CallSite: Kept canonIdx \
+{canonIdx} out of bounds (canonical telescope has \
+{canonicalArgs.size} args)")
+      | .collapsed sharingIdx metaIdx =>
+        match ctx.metaSharing[sharingIdx.toNat]? with
+        | some shared =>
+          spine := Ix.Expr.mkApp spine (← decompileExpr shared metaIdx)
+        | none =>
+          throw (.invalidShareIndex sharingIdx ctx.metaSharing.size
+            "callSite collapsed")
+    pure (applyMdata spine mdataLayers)
   | _, .var idx =>
     pure (applyMdata (Ix.Expr.mkBVar idx.toNat) mdataLayers)
 
@@ -494,32 +581,37 @@ def toIxQuotKind : QuotKind → Lean.QuotKind
 
 /-! ## ConstantMeta Extraction Helpers -/
 
-def getNameAddr : ConstantMeta → Option Address
+def getNameAddr (cm : ConstantMeta) : Option Address :=
+  match cm.info with
   | .defn name .. => some name | .axio name .. => some name
   | .quot name .. => some name | .indc name .. => some name
   | .ctor name .. => some name | .recr name .. => some name
-  | .empty | .muts _ => none
+  | .empty | .muts _ _ => none
 
-def getLvlAddrs : ConstantMeta → Array Address
+def getLvlAddrs (cm : ConstantMeta) : Array Address :=
+  match cm.info with
   | .defn _ lvls .. => lvls | .axio _ lvls .. => lvls
   | .quot _ lvls .. => lvls | .indc _ lvls .. => lvls
   | .ctor _ lvls .. => lvls | .recr _ lvls .. => lvls
-  | .empty | .muts _ => #[]
+  | .empty | .muts _ _ => #[]
 
-def getArenaAndTypeRoot : ConstantMeta → ExprMetaArena × UInt64
+def getArenaAndTypeRoot (cm : ConstantMeta) : ExprMetaArena × UInt64 :=
+  match cm.info with
   | .defn _ _ _ _ arena typeRoot _ => (arena, typeRoot)
   | .axio _ _ arena typeRoot => (arena, typeRoot)
   | .quot _ _ arena typeRoot => (arena, typeRoot)
   | .indc _ _ _ _ _ arena typeRoot => (arena, typeRoot)
   | .ctor _ _ _ arena typeRoot => (arena, typeRoot)
   | .recr _ _ _ _ _ arena typeRoot _ => (arena, typeRoot)
-  | .empty | .muts _ => ({}, 0)
+  | .empty | .muts _ _ => ({}, 0)
 
-def getAllAddrs : ConstantMeta → Array Address
+def getAllAddrs (cm : ConstantMeta) : Array Address :=
+  match cm.info with
   | .defn _ _ all .. => all | .indc _ _ _ all .. => all
   | .recr _ _ _ all .. => all | _ => #[]
 
-def getCtxAddrs : ConstantMeta → Array Address
+def getCtxAddrs (cm : ConstantMeta) : Array Address :=
+  match cm.info with
   | .defn _ _ _ ctx .. => ctx | .indc _ _ _ _ ctx .. => ctx
   | .recr _ _ _ _ ctx .. => ctx | _ => #[]
 
@@ -551,15 +643,18 @@ def decompileMetaCtx (cMeta : ConstantMeta) : DecompileM (Array Ix.Name) := do
 
 /-- Build a BlockCtx from a Constant. -/
 def mkBlockCtx (cnst : Constant) (mutCtx : Array Ix.Name)
-    (univParams : Array Ix.Name) (arena : ExprMetaArena) : BlockCtx :=
-  { refs := cnst.refs, univs := cnst.univs, sharing := cnst.sharing, mutCtx, univParams, arena }
+    (univParams : Array Ix.Name) (arena : ExprMetaArena)
+    (metaSharing : Array Ixon.Expr := #[]) : BlockCtx :=
+  { refs := cnst.refs, univs := cnst.univs, sharing := cnst.sharing,
+    mutCtx, univParams, arena, metaSharing }
 
 /-- Run with fresh block context and state. -/
 def withFreshBlock (cnst : Constant) (mutCtx : Array Ix.Name)
     (univParams : Array Ix.Name) (arena : ExprMetaArena)
+    (metaSharing : Array Ixon.Expr := #[])
     (m : DecompileM α) : DecompileM α := do
   let env ← getEnv
-  match DecompileM.run env (mkBlockCtx cnst mutCtx univParams arena) {} m with
+  match DecompileM.run env (mkBlockCtx cnst mutCtx univParams arena metaSharing) {} m with
   | .ok (a, _) => pure a
   | .error e => throw e
 
@@ -571,18 +666,23 @@ def decompileDefinition (d : Ixon.Definition) (cnst : Constant) (cMeta : Constan
   let univParams ← decompileMetaLevels cMeta
   let allNames ← decompileMetaAll cMeta name
   let mutCtx ← decompileMetaCtx cMeta
-  let valueRoot := match cMeta with
+  let valueRoot := match cMeta.info with
     | .defn _ _ _ _ _ _ valueRoot => valueRoot
     | _ => (0 : UInt64)
-  -- Hints live in `Env.anonHints`, keyed by the constant address the
-  -- name resolves to; absent entry → `.opaque`, matching the
-  -- compiler's treatment of theorems and opaques.
+  -- Hints come from the per-name `Named.hints` channel — the exact
+  -- value `finalize_hints` recorded for this name (Rust
+  -- decompile.rs:1549-1560). The per-address `Env.anonHints` channel is
+  -- unusable here: alpha-identical definitions under different names
+  -- share one constant address, so it only holds a merged winner
+  -- (the `instInhabited*`/`UInt*.to*` family of whole-env mismatches).
+  -- Absent → `.opaque`, matching the compiler's treatment of theorems
+  -- and opaques.
   let ixonEnv := (← getEnv).ixonEnv
   let hints := match ixonEnv.named.get? name with
-    | some named => (ixonEnv.anonHints.get? named.addr).getD .opaque
+    | some named => named.hints.getD .opaque
     | none => .opaque
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst mutCtx univParams arena do
+  withFreshBlock cnst mutCtx univParams arena (metaSharing := cMeta.metaSharing) do
     let typeExpr ← decompileExpr d.typ typeRoot
     let valueExpr ← decompileExpr d.value valueRoot
     let cv : Ix.ConstantVal := { name, levelParams := univParams, type := typeExpr }
@@ -596,7 +696,7 @@ def decompileAxiom (a : Ixon.Axiom) (cnst : Constant) (cMeta : ConstantMeta)
   let name ← decompileMetaName cMeta
   let univParams ← decompileMetaLevels cMeta
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst #[] univParams arena do
+  withFreshBlock cnst #[] univParams arena (metaSharing := cMeta.metaSharing) do
     let typeExpr ← decompileExpr a.typ typeRoot
     pure (.axiomInfo { cnst := { name, levelParams := univParams, type := typeExpr }, isUnsafe := a.isUnsafe })
 
@@ -605,7 +705,7 @@ def decompileQuotient (q : Ixon.Quotient) (cnst : Constant) (cMeta : ConstantMet
   let name ← decompileMetaName cMeta
   let univParams ← decompileMetaLevels cMeta
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst #[] univParams arena do
+  withFreshBlock cnst #[] univParams arena (metaSharing := cMeta.metaSharing) do
     let typeExpr ← decompileExpr q.typ typeRoot
     pure (.quotInfo { cnst := { name, levelParams := univParams, type := typeExpr }, kind := toIxQuotKind q.kind })
 
@@ -615,7 +715,7 @@ def decompileConstructor (ctor : Ixon.Constructor) (cnst : Constant)
   let name ← decompileMetaName cMeta
   let univParams ← decompileMetaLevels cMeta
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst #[] univParams arena do
+  withFreshBlock cnst #[] univParams arena (metaSharing := cMeta.metaSharing) do
     let typeExpr ← decompileExpr ctor.typ typeRoot
     pure { cnst := { name, levelParams := univParams, type := typeExpr },
            induct := inductName, cidx := ctor.cidx.toNat,
@@ -628,11 +728,11 @@ def decompileRecursor (rec : Ixon.Recursor) (cnst : Constant) (cMeta : ConstantM
   let univParams ← decompileMetaLevels cMeta
   let allNames ← decompileMetaAll cMeta name
   let mutCtx ← decompileMetaCtx cMeta
-  let (ruleRoots, ruleAddrs) := match cMeta with
+  let (ruleRoots, ruleAddrs) := match cMeta.info with
     | .recr _ _ rules _ _ _ _ ruleRoots => (ruleRoots, rules)
     | _ => (#[], #[])
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst mutCtx univParams arena do
+  withFreshBlock cnst mutCtx univParams arena (metaSharing := cMeta.metaSharing) do
     let typeExpr ← decompileExpr rec.typ typeRoot
     let ruleNames ← ruleAddrs.mapM lookupNameAddr
     let mut rules : Array Ix.RecursorRule := #[]
@@ -653,10 +753,10 @@ def decompileInductive (ind : Ixon.Inductive) (cnst : Constant) (cMeta : Constan
   let univParams ← decompileMetaLevels cMeta
   let allNames ← decompileMetaAll cMeta name
   let mutCtx ← decompileMetaCtx cMeta
-  let ctorNameAddrs := match cMeta with
+  let ctorNameAddrs := match cMeta.info with
     | .indc _ _ ctors .. => ctors | _ => #[]
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  let typeExpr ← withFreshBlock cnst mutCtx univParams arena do
+  let typeExpr ← withFreshBlock cnst mutCtx univParams arena (metaSharing := cMeta.metaSharing) do
     decompileExpr ind.typ typeRoot
   let env ← getEnv
   let mut ctors : Array Ix.ConstructorVal := #[]
@@ -770,14 +870,22 @@ def decompileChunk (env : DecompileEnv) (ixonEnv : Ixon.Env)
     | .error err => errors := errors.push (ixName, err)
   (results, errors)
 
-/-- Decompile all constants in parallel using chunked pure Tasks. Returns Ix types. -/
+/-- Decompile all constants in parallel using chunked pure Tasks. Returns Ix types.
+
+    `skip` filters named entries out of the pass entirely — the Pass-1
+    driver passes the aux_gen skip (`named.original.isSome &&
+    isAuxGenSuffix name`, Rust `decompile_named_const`
+    decompile.rs:3595-3597); aux constants are regenerated/recovered by
+    Pass 2 instead. Default skips nothing (standalone whole-env use). -/
 def decompileAllParallel (ixonEnv : Ixon.Env) (numWorkers : Nat := 32)
+    (skip : Ix.Name → Ixon.Named → Bool := fun _ _ => false)
     : Std.HashMap Ix.Name Ix.ConstantInfo × Array (Ix.Name × String) := Id.run do
   let env : DecompileEnv := { ixonEnv }
   -- Collect all named entries into an array
   let mut allEntries : Array (Ix.Name × Ixon.Named) := #[]
   for (ixName, named) in ixonEnv.named do
-    allEntries := allEntries.push (ixName, named)
+    if !skip ixName named then
+      allEntries := allEntries.push (ixName, named)
   let total := allEntries.size
   let chunkSize := (total + numWorkers - 1) / numWorkers
   -- Spawn one task per chunk

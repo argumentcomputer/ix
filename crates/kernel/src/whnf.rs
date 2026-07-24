@@ -6,6 +6,8 @@ use std::sync::LazyLock;
 
 use rustc_hash::FxHashSet;
 
+use crate::def_eq::IX_STEP_TRACE;
+
 use ix_common::address::Address;
 use ixon::constant::DefKind;
 
@@ -31,6 +33,13 @@ static NAT_EXPAND_COUNT: std::sync::atomic::AtomicUsize =
 
 static IX_NAT_IOTA_TRACE: crate::EnvFlag =
   crate::EnvFlag::new(|| crate::env_var("IX_NAT_IOTA_TRACE").is_ok());
+
+/// `IX_KSYNTH_LOG=1`: one `[ksynth-attempt]`/`[ksynth-reject]` line per
+/// `synth_ctor_when_k` candidate that reaches / fails the def-eq verify
+/// (the silent K-synthesis fallback). Cross-kernel comparand of the Lean
+/// kernel's `kSynthAttempts`/`kSynthRejects` IX_TC_STATS counters.
+static IX_KSYNTH_LOG: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_KSYNTH_LOG").is_ok());
 
 static NAT_IOTA_TRACE_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
@@ -58,7 +67,7 @@ static IX_PROJ_TRACE: crate::EnvString =
 static IX_NAT_TRACE: crate::EnvString =
   crate::EnvString::new(|| crate::env_var("IX_NAT_TRACE").ok());
 
-const NAT_REDUCER_OPEN_ARG_REC_FUEL: u64 = 4096;
+const PRIM_REDUCER_OPEN_ARG_REC_FUEL: u64 = 4096;
 
 use super::constant::KConst;
 use super::error::{TcError, u64_to_usize};
@@ -250,6 +259,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ExprData::Var(i, _, _) if !self.is_let_var(*i) => return Ok(e.clone()),
       _ => {},
     }
+    // Step journal (see `IX_STEP_TRACE` in def_eq.rs); placed after the
+    // quick exit to mirror the Lean kernel's `[whnf+]` site.
+    if *IX_STEP_TRACE {
+      eprintln!("[whnf+] {} {}", self.fuel_used(), &e.hash_key().to_hex()[..8]);
+    }
 
     // Context-aware cache: closed exprs use ptr only; open exprs include
     // ctx_id because some reductions consult local binder types.
@@ -323,10 +337,21 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
 
-      // String literal primitives such as `String.back ""`.
-      if let Some(reduced) = self.try_reduce_string(&cur) {
+      // String literal primitives (`String.back ""`, literal append,
+      // constructor-built strings collapsing to `Str` literals).
+      if let Some(reduced) = self.try_reduce_string(&cur)? {
         cur = reduced;
         continue;
+      }
+
+      // Native char values: `Char.ofNat <lit>` with a valid codepoint is
+      // a WHNF value. Do not delta-unfold it into its
+      // `dite Nat.isValidChar …` body — that grinds through Decidable
+      // instance terms and `of_decide_eq_true` proofs per character.
+      // Consumers that need the `Char.mk` constructor form (iota majors,
+      // projections, def-eq lazy delta) expand it explicitly.
+      if self.char_lit_value(&cur).is_some() {
+        break;
       }
 
       if let Some(unfolded) = self.delta_unfold_one(&cur)? {
@@ -722,7 +747,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // String literal primitives.
-      if let Some(reduced) = self.try_reduce_string(&cur) {
+      if let Some(reduced) = self.try_reduce_string(&cur)? {
         cur = reduced;
         continue;
       }
@@ -950,17 +975,26 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if let Some(cleaned) = self.cleanup_nat_offset_major(&major_whnf)? {
       major_whnf = cleaned;
     }
-    // String literal → constructor form (M3: WHNF after, matching lean4lean Reduce.lean:71).
-    // Use the same flag-driven reduction policy as the major above so a
-    // cheap iota stays cheap end-to-end.
+    // String literal → constructor form (matching lean4lean
+    // Reduce.lean:71 / C++ inductive.h:95). The expansion takes one
+    // delta step past `String.ofList` (see `str_lit_to_ctor_app`) so the
+    // native collapse rule in `try_reduce_string` can't fold it straight
+    // back into the literal; constructor fields stay lazy.
     if let ExprData::Str(val, _, _) = major_whnf.data() {
       let val = val.clone();
-      let str_ctor = self.str_lit_to_constructor(&val);
-      major_whnf = if flags.cheap_rec {
-        self.whnf_core_with_flags(&str_ctor, flags)?
-      } else {
-        self.whnf(&str_ctor)?
-      };
+      major_whnf = self.str_lit_to_ctor_app(&val)?;
+    }
+    // Native char values are kept stuck by whnf (they never unfold to
+    // their `dite`-validity body on their own). A recursor that
+    // genuinely scrutinizes a char pays for the structural expansion
+    // here, once — exactly what pre-native reduction did on every whnf.
+    // Cheap mode leaves the major stuck, as it did before the fast path
+    // (`Char.ofNat` is a Defn head that cheap whnf never delta-unfolds).
+    if !flags.cheap_rec
+      && self.char_lit_value(&major_whnf).is_some()
+      && let Some(unfolded) = self.delta_unfold_one(&major_whnf)?
+    {
+      major_whnf = self.whnf(&unfolded)?;
     }
 
     // Check if major is a constructor application
@@ -1376,7 +1410,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(ty) => ty,
       Err(_) => return Ok(None),
     };
+    if *IX_KSYNTH_LOG {
+      eprintln!("[ksynth-attempt] {}", &ctor_app.hash_key().to_hex()[..8]);
+    }
     if !self.is_def_eq(&major_ty_w, &ctor_ty)? {
+      if *IX_KSYNTH_LOG {
+        eprintln!("[ksynth-reject] {}", &ctor_app.hash_key().to_hex()[..8]);
+      }
       return Ok(None);
     }
 
@@ -1393,13 +1433,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     field: u64,
     wval: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    // String literal → constructor form before trying projection
+    // String literal → constructor form before trying projection. The
+    // expansion takes one delta step past `String.ofList` (see
+    // `str_lit_to_ctor_app`) so the native collapse rule can't fold it
+    // back into the literal; in the compiled env the projected fields
+    // stay lazy (`.toByteArray` = the unevaluated UTF-8 encoding).
     let wval_expanded;
-    let wval_expanded_whnf;
     let wval = if let ExprData::Str(s, _, _) = wval.data() {
-      wval_expanded = self.str_lit_to_constructor(&s.clone());
-      wval_expanded_whnf = self.whnf(&wval_expanded)?;
-      &wval_expanded_whnf
+      wval_expanded = self.str_lit_to_ctor_app(&s.clone())?;
+      &wval_expanded
+    } else if self.char_lit_value(wval).is_some() {
+      // Native char values stay stuck in whnf; a projection (`.val`)
+      // needs the `Char.mk` form, so expand structurally, once.
+      match self.delta_unfold_one(wval)? {
+        Some(unfolded) => {
+          wval_expanded = self.whnf(&unfolded)?;
+          &wval_expanded
+        },
+        None => wval,
+      }
     } else {
       wval
     };
@@ -1736,10 +1788,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return self.try_reduce_nat_predicate(&addr, &args);
     }
 
-    let Some(wa) = self.whnf_nat_reducer_arg(&args[0])? else {
+    let Some(wa) = self.whnf_prim_arg(&args[0])? else {
       return Ok(None);
     };
-    let Some(wb) = self.whnf_nat_reducer_arg(&args[1])? else {
+    let Some(wb) = self.whnf_prim_arg(&args[1])? else {
       return Ok(None);
     };
     self.dump_nat_trace("arg0-whnf", &wa);
@@ -1992,7 +2044,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     *addr == self.prims.nat_beq.addr || *addr == self.prims.nat_ble.addr
   }
 
-  fn whnf_nat_reducer_arg(
+  /// WHNF an argument of a native primitive reduction (Nat ops, string
+  /// ops). Closed arguments reduce with full shared fuel; open arguments
+  /// get a small local budget so a stuck symbolic argument can't drain
+  /// the check's fuel before the caller falls back to the structural
+  /// path. `Ok(None)` = budget exhausted, leave the primitive unreduced.
+  fn whnf_prim_arg(
     &mut self,
     arg: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
@@ -2001,7 +2058,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     let saved_fuel = self.rec_fuel;
-    let local_fuel = saved_fuel.min(NAT_REDUCER_OPEN_ARG_REC_FUEL);
+    let local_fuel = saved_fuel.min(PRIM_REDUCER_OPEN_ARG_REC_FUEL);
     self.rec_fuel = local_fuel;
     let result = self.whnf(arg);
     let consumed = local_fuel.saturating_sub(self.rec_fuel);
@@ -2033,13 +2090,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     addr: &Address,
     args: &[KExpr<M>],
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    let Some(wa) = self.whnf_nat_reducer_arg(&args[0])? else {
+    let Some(wa) = self.whnf_prim_arg(&args[0])? else {
       return Ok(None);
     };
     let Some(a_val) = extract_nat_lit(&wa, &self.prims) else {
       return Ok(None);
     };
-    let Some(wb) = self.whnf_nat_reducer_arg(&args[1])? else {
+    let Some(wb) = self.whnf_prim_arg(&args[1])? else {
       return Ok(None);
     };
     let Some(b_val) = extract_nat_lit(&wb, &self.prims) else {
@@ -2783,43 +2840,244 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   // String primitive reduction
   // -----------------------------------------------------------------------
 
-  pub(super) fn try_reduce_string(&mut self, e: &KExpr<M>) -> Option<KExpr<M>> {
+  /// Native reductions for string primitives on literal arguments.
+  ///
+  /// Read-only ops (`String.back`, `String.utf8ByteSize`,
+  /// `String.toByteArray` of `""`) mirror the accelerated Nat ops. The
+  /// value-building ops keep evaluator-grade normalization out of the
+  /// structural ByteArray/UTF-8 model, which grinds per character
+  /// through `Char.ofNat` validity `dite`s and `List.utf8Encode`:
+  ///
+  /// - `String.ofList`/`String.mk` applied to a literal char list
+  ///   collapses to a `Str` literal — the exact inverse of
+  ///   `str_lit_to_constructor`.
+  /// - `String.append` on two literals → the concatenated literal.
+  /// - `String.decEq` on two equal literals → `Decidable.isTrue` with an
+  ///   `Eq.refl` witness (unequal literals fall back to the structural
+  ///   path: core Lean has no `String` analog of
+  ///   `Nat.ne_of_beq_eq_false` to witness `isFalse` with).
+  ///
+  /// Every rule is guarded to be defeq-indistinguishable from the
+  /// structural reduction it replaces: char codepoints must be valid
+  /// Unicode scalar values (`Char.ofNat` maps invalid ones to `'\0'`, so
+  /// invalid literals must keep reducing structurally), and stuck or
+  /// open arguments leave the term untouched.
+  pub(super) fn try_reduce_string(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
     let (head, args) = collect_app_spine(e);
-    if args.len() != 1 {
-      return None;
-    }
     let ExprData::Const(id, _, _) = head.data() else {
-      return None;
+      return Ok(None);
     };
-    let is_back = id.addr == self.prims.string_back.addr
-      || id.addr == self.prims.string_legacy_back.addr;
-    let is_utf8_byte_size = id.addr == self.prims.string_utf8_byte_size.addr;
-    let is_to_byte_array = id.addr == self.prims.string_to_byte_array.addr;
-    if !is_back && !is_utf8_byte_size && !is_to_byte_array {
-      return None;
+    let addr = &id.addr;
+
+    // String.ofList / String.mk: collapse a literal char-list argument.
+    // The two names share one canonical address (see `PrimAddrs`) but
+    // are distinct LEON addresses, so check both.
+    if *addr == self.prims.string_of_list.addr
+      || *addr == self.prims.string_mk.addr
+    {
+      if args.len() != 1 {
+        return Ok(None);
+      }
+      let mut s = String::new();
+      if !self.walk_literal_char_list(&args[0], &mut s)? {
+        return Ok(None);
+      }
+      let blob_addr = Address::hash(s.as_bytes());
+      return Ok(Some(self.intern(KExpr::str(s, blob_addr))));
+    }
+
+    if *addr == self.prims.string_append.addr {
+      if args.len() != 2 {
+        return Ok(None);
+      }
+      let Some((sa, sb)) = self.two_string_lit_args(&args[0], &args[1])? else {
+        return Ok(None);
+      };
+      let joined = format!("{sa}{sb}");
+      let blob_addr = Address::hash(joined.as_bytes());
+      return Ok(Some(self.intern(KExpr::str(joined, blob_addr))));
+    }
+
+    if *addr == self.prims.string_dec_eq.addr {
+      if args.len() != 2 {
+        return Ok(None);
+      }
+      return self.try_reduce_string_dec_eq(e, &args);
+    }
+
+    let is_back = *addr == self.prims.string_back.addr
+      || *addr == self.prims.string_legacy_back.addr;
+    let is_utf8_byte_size = *addr == self.prims.string_utf8_byte_size.addr;
+    let is_to_byte_array = *addr == self.prims.string_to_byte_array.addr;
+    if (!is_back && !is_utf8_byte_size && !is_to_byte_array) || args.len() != 1
+    {
+      return Ok(None);
     }
 
     let s = match args[0].data() {
       ExprData::Str(s, _, _) => s,
-      _ => return None,
+      _ => return Ok(None),
     };
     if is_utf8_byte_size {
       let n = Nat::from(s.len() as u64);
       let addr = Address::hash(&n.to_le_bytes());
-      return Some(self.intern(KExpr::nat(n, addr)));
+      return Ok(Some(self.intern(KExpr::nat(n, addr))));
     }
     if is_to_byte_array {
       if s.is_empty() {
-        return Some(self.intern(KExpr::cnst(
+        return Ok(Some(self.intern(KExpr::cnst(
           self.prims.byte_array_empty.clone(),
           Box::new([]),
-        )));
+        ))));
       }
-      return None;
+      return Ok(None);
     }
 
     let codepoint = s.chars().last().map_or(65u32, u32::from);
-    Some(self.char_of_nat_expr(u64::from(codepoint)))
+    Ok(Some(self.char_of_nat_expr(u64::from(codepoint))))
+  }
+
+  /// WHNF both arguments with the shared fuel-capped policy and require
+  /// both to be `Str` literals.
+  fn two_string_lit_args(
+    &mut self,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+  ) -> Result<Option<(String, String)>, TcError<M>> {
+    let Some(wa) = self.whnf_prim_arg(a)? else {
+      return Ok(None);
+    };
+    let ExprData::Str(sa, _, _) = wa.data() else {
+      return Ok(None);
+    };
+    let sa = sa.clone();
+    let Some(wb) = self.whnf_prim_arg(b)? else {
+      return Ok(None);
+    };
+    let ExprData::Str(sb, _, _) = wb.data() else {
+      return Ok(None);
+    };
+    Ok(Some((sa, sb.clone())))
+  }
+
+  /// `String.decEq` on two EQUAL literals → `Decidable.isTrue prop
+  /// (Eq.refl.{1} String lit)`. Mirrors `try_reduce_decidable`'s Nat
+  /// shape: the proposition is recovered from the inferred type
+  /// (`Decidable prop`), and the witness is proof-irrelevant, so any
+  /// well-typed inhabitant is defeq-indistinguishable from the one
+  /// structural reduction would build.
+  fn try_reduce_string_dec_eq(
+    &mut self,
+    e: &KExpr<M>,
+    args: &[KExpr<M>],
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let Some((sa, sb)) = self.two_string_lit_args(&args[0], &args[1])? else {
+      return Ok(None);
+    };
+    if sa != sb {
+      return Ok(None);
+    }
+
+    // Recover `prop` from `e : Decidable prop` (see try_reduce_decidable).
+    let prop = match self.with_infer_only(|tc| tc.infer(e)) {
+      Ok(e_ty) => {
+        let e_ty_whnf = self.whnf(&e_ty)?;
+        let (_, type_args) = collect_app_spine(&e_ty_whnf);
+        match type_args.into_iter().next() {
+          Some(p) => p,
+          None => return Ok(None),
+        }
+      },
+      Err(_) => return Ok(None),
+    };
+
+    // Eq.refl.{1} String <lit> — String : Type = Sort 1, so u = 1.
+    let u1 = KUniv::succ(KUniv::zero());
+    let eq_refl =
+      self.intern(KExpr::cnst(self.prims.eq_refl.clone(), Box::new([u1])));
+    let string_ty =
+      self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([])));
+    let lit_addr = Address::hash(sa.as_bytes());
+    let lit = self.intern(KExpr::str(sa, lit_addr));
+    let refl = self.intern(KExpr::app(eq_refl, string_ty));
+    let refl = self.intern(KExpr::app(refl, lit));
+
+    let is_true = self
+      .intern(KExpr::cnst(self.prims.decidable_is_true.clone(), Box::new([])));
+    let result = self.intern(KExpr::app(is_true, prop));
+    Ok(Some(self.intern(KExpr::app(result, refl))))
+  }
+
+  /// Walk a `List Char` spine whose nodes and elements WHNF to literal
+  /// constructor form, appending decoded codepoints to `out`. Elements
+  /// must be native char values (`Char.ofNat <Nat-lit>`, valid scalar) —
+  /// the form `str_lit_to_constructor` builds and whnf keeps stuck.
+  /// Returns `Ok(false)` on any non-literal node (stuck tail, open
+  /// element, invalid codepoint): the caller falls back to the
+  /// structural path.
+  fn walk_literal_char_list(
+    &mut self,
+    list: &KExpr<M>,
+    out: &mut String,
+  ) -> Result<bool, TcError<M>> {
+    let mut cur = list.clone();
+    loop {
+      let Some(w) = self.whnf_prim_arg(&cur)? else {
+        return Ok(false);
+      };
+      let (head, args) = collect_app_spine(&w);
+      let ExprData::Const(id, _, _) = head.data() else {
+        return Ok(false);
+      };
+      // List.nil.{u} α
+      if id.addr == self.prims.list_nil.addr {
+        return Ok(args.len() == 1);
+      }
+      // List.cons.{u} α head tail
+      if id.addr != self.prims.list_cons.addr || args.len() != 3 {
+        return Ok(false);
+      }
+      let elem = match self.char_lit_value(&args[1]) {
+        Some(c) => Some(c),
+        None => match self.whnf_prim_arg(&args[1])? {
+          Some(we) => self.char_lit_value(&we),
+          None => None,
+        },
+      };
+      let Some(c) = elem else {
+        return Ok(false);
+      };
+      out.push(c);
+      cur = args[2].clone();
+    }
+  }
+
+  /// Recognize the kernel's native char-value form: `Char.ofNat
+  /// <Nat-lit>` where the literal is a valid Unicode scalar value.
+  /// (`char::from_u32` rejects exactly the complement of
+  /// `Nat.isValidChar`: surrogates and codepoints above `0x10FFFF`.)
+  /// Purely syntactic — no reduction, and no spine allocation: this
+  /// runs on every main-whnf-loop iteration.
+  pub(super) fn char_lit_value(&self, e: &KExpr<M>) -> Option<char> {
+    // Exactly `App(Const(Char.ofNat), Nat-lit)` — a nested App head
+    // (over-application) or any other shape is not a char value.
+    let ExprData::App(f, arg, _) = e.data() else {
+      return None;
+    };
+    let ExprData::Const(id, _, _) = f.data() else {
+      return None;
+    };
+    if id.addr != self.prims.char_of_nat.addr {
+      return None;
+    }
+    let ExprData::Nat(n, _, _) = arg.data() else {
+      return None;
+    };
+    let cp = n.to_u64()?;
+    u32::try_from(cp).ok().and_then(char::from_u32)
   }
 
   fn char_of_nat_expr(&mut self, n: u64) -> KExpr<M> {
@@ -5141,5 +5399,618 @@ mod tests {
     let e = nat_bin_op(tc.prims.nat_div.clone(), AE::var(0, ()), mk_nat(2));
     let r = tc.try_reduce_nat(&e).unwrap();
     assert!(r.is_none(), "div with symbolic dividend should be stuck");
+  }
+
+  // -------------------------------------------------------------------------
+  // Native string-value fast paths (evaluator-grade whnf)
+  // -------------------------------------------------------------------------
+
+  /// Generous tick ceiling for the accelerated string paths. The
+  /// pre-native measurements were 10⁷ ticks to head-normalize a
+  /// two-char constructor-built string and > 4×10⁹ for a six-char
+  /// append; the native rules must land in double digits.
+  const STRING_FAST_PATH_TICKS: u64 = 64;
+
+  fn str_lit(s: &str) -> AE {
+    AE::str(s.to_string(), Address::hash(s.as_bytes()))
+  }
+
+  fn apps_ae(mut f: AE, args: &[AE]) -> AE {
+    for arg in args {
+      f = app(f, arg.clone());
+    }
+    f
+  }
+
+  /// `List.cons.{0} Char (Char.ofNat c) …` chain at the REAL primitive
+  /// addresses — byte-for-byte the shape `str_lit_to_constructor`
+  /// builds and the shape elaborated char-list literals take.
+  fn char_list_lit(prims: &Primitives<Anon>, s: &str) -> AE {
+    let char_ty = AE::cnst(prims.char_type.clone(), Box::new([]));
+    let char_of_nat = AE::cnst(prims.char_of_nat.clone(), Box::new([]));
+    let nil = app(
+      AE::cnst(prims.list_nil.clone(), Box::new([AU::zero()])),
+      char_ty.clone(),
+    );
+    let cons = AE::cnst(prims.list_cons.clone(), Box::new([AU::zero()]));
+    let mut list = nil;
+    for c in s.chars().rev() {
+      let ch = app(char_of_nat.clone(), mk_nat(c as u64));
+      list = apps_ae(cons.clone(), &[char_ty.clone(), ch, list]);
+    }
+    list
+  }
+
+  /// A String environment faithful to the compiled Lean 4.29 shape:
+  /// `String` is ByteArray-backed — the real constructor is
+  /// `String.ofByteArray (toByteArray) (isValidUTF8)` — while
+  /// `String.ofList` (= deprecated `String.mk`; one canonical address)
+  /// is a DEFINITION that UTF-8-encodes a `List Char`:
+  ///
+  /// ```lean
+  /// def String.ofList (data : List Char) : String :=
+  ///   ⟨List.utf8Encode data, .intro data rfl⟩
+  /// ```
+  ///
+  /// `List.utf8Encode` / `IsValidUTF8.intro` are stuck constants here:
+  /// the tests assert the constructor fields stay LAZY (unevaluated
+  /// encodings), which is exactly what makes Str-literal iota and
+  /// projection cheap. `Char.ofNat` gets a simplified body
+  /// (`λ n. Char.mk n`) — tests only need its delta to be observable,
+  /// not the real `dite` validity cascade it stands in for.
+  fn string_env() -> (KEnv<Anon>, KId<Anon>, KId<Anon>) {
+    use super::super::constant::RecRule;
+    let prims = Primitives::from_env(&KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
+
+    let string_id = KId::<Anon>::new(prims.string.addr.clone(), ());
+    let of_byte_array_id = mk_id("String.ofByteArray");
+    let string_rec_id = mk_id("String.rec");
+    let string_const = AE::cnst(string_id.clone(), Box::new([]));
+
+    env.insert(
+      string_id.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_unsafe: false,
+        block: string_id.clone(),
+        member_idx: 0,
+        ty: sort1(),
+        ctors: vec![of_byte_array_id.clone()],
+        lean_all: (),
+      },
+    );
+    env.insert(
+      of_byte_array_id.clone(),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        induct: string_id.clone(),
+        cidx: 0,
+        params: 0,
+        fields: 2,
+        ty: AE::all(
+          (),
+          (),
+          sort0(),
+          AE::all((), (), sort0(), string_const.clone()),
+        ),
+      },
+    );
+    // String.rec: 0 params, 1 motive, 1 minor, 0 indices, K = false.
+    // rule rhs: λ motive minor f₀ f₁. minor f₀ f₁
+    let rec_rhs = AE::lam(
+      (),
+      (),
+      sort0(),
+      AE::lam(
+        (),
+        (),
+        sort0(),
+        AE::lam(
+          (),
+          (),
+          sort0(),
+          AE::lam(
+            (),
+            (),
+            sort0(),
+            apps_ae(AE::var(2, ()), &[AE::var(1, ()), AE::var(0, ())]),
+          ),
+        ),
+      ),
+    );
+    env.insert(
+      string_rec_id.clone(),
+      KConst::Recr {
+        name: (),
+        level_params: (),
+        k: false,
+        is_unsafe: false,
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        motives: 1,
+        minors: 1,
+        block: string_id.clone(),
+        member_idx: 0,
+        ty: sort0(),
+        rules: vec![RecRule { ctor: (), fields: 2, rhs: rec_rhs }],
+        lean_all: (),
+      },
+    );
+
+    // String.ofList = λ data. String.ofByteArray (List.utf8Encode data)
+    //                                            (IsValidUTF8.intro data)
+    let of_byte_array = AE::cnst(of_byte_array_id.clone(), Box::new([]));
+    let utf8_encode = AE::cnst(mk_id("List.utf8Encode"), Box::new([]));
+    let is_valid_intro =
+      AE::cnst(mk_id("ByteArray.IsValidUTF8.intro"), Box::new([]));
+    let list_char = app(
+      AE::cnst(
+        KId::<Anon>::new(prims.list.addr.clone(), ()),
+        Box::new([AU::zero()]),
+      ),
+      AE::cnst(prims.char_type.clone(), Box::new([])),
+    );
+    let of_list_val = AE::lam(
+      (),
+      (),
+      list_char.clone(),
+      apps_ae(
+        of_byte_array,
+        &[
+          app(utf8_encode.clone(), AE::var(0, ())),
+          app(is_valid_intro, AE::var(0, ())),
+        ],
+      ),
+    );
+    let of_list_id = KId::<Anon>::new(prims.string_of_list.addr.clone(), ());
+    env.insert(
+      of_list_id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(1),
+        lvls: 0,
+        ty: AE::all((), (), list_char, string_const.clone()),
+        val: of_list_val,
+        lean_all: (),
+        block: of_list_id.clone(),
+      },
+    );
+
+    // Char.ofNat with an observable delta body: λ n. Char.mk n. The
+    // real definition is a `dite Nat.isValidChar …` cascade; these
+    // tests only need to see WHETHER whnf unfolded it.
+    let char_of_nat_id = KId::<Anon>::new(prims.char_of_nat.addr.clone(), ());
+    let char_mk =
+      AE::cnst(KId::<Anon>::new(prims.char_mk.addr.clone(), ()), Box::new([]));
+    let nat_ty =
+      AE::cnst(KId::<Anon>::new(prims.nat.addr.clone(), ()), Box::new([]));
+    let char_ty = AE::cnst(prims.char_type.clone(), Box::new([]));
+    env.insert(
+      char_of_nat_id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(1),
+        lvls: 0,
+        ty: AE::all((), (), nat_ty, char_ty),
+        val: AE::lam((), (), sort0(), app(char_mk, AE::var(0, ()))),
+        lean_all: (),
+        block: char_of_nat_id.clone(),
+      },
+    );
+
+    (env, of_byte_array_id, string_rec_id)
+  }
+
+  #[test]
+  fn whnf_string_of_list_literal_collapses_to_str() {
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let e = app(of_list, char_list_lit(&tc.prims, "ok"));
+    let result = tc.whnf(&e).unwrap();
+    match result.data() {
+      ExprData::Str(s, _, _) => assert_eq!(s, "ok"),
+      other => panic!("expected Str literal, got {other:?}"),
+    }
+    assert!(
+      tc.fuel_used() < STRING_FAST_PATH_TICKS,
+      "constructor-built string collapse burned {} ticks",
+      tc.fuel_used()
+    );
+  }
+
+  #[test]
+  fn whnf_string_of_list_empty_collapses_to_empty_str() {
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let e = app(of_list, char_list_lit(&tc.prims, ""));
+    let result = tc.whnf(&e).unwrap();
+    match result.data() {
+      ExprData::Str(s, _, _) => assert_eq!(s, ""),
+      other => panic!("expected empty Str literal, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn whnf_string_of_list_multibyte_chars_collapse() {
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let e = app(of_list, char_list_lit(&tc.prims, "L∃∀N"));
+    let result = tc.whnf(&e).unwrap();
+    match result.data() {
+      ExprData::Str(s, _, _) => assert_eq!(s, "L∃∀N"),
+      other => panic!("expected Str literal, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn whnf_string_of_list_invalid_codepoint_falls_back_structurally() {
+    // 0xD800 is a surrogate — `Char.ofNat 0xD800` is NOT a native char
+    // value ('\0' structurally), so the collapse must not fire and the
+    // ordinary delta path must expose the ofByteArray constructor form.
+    let (mut env, of_byte_array_id, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let char_ty = AE::cnst(tc.prims.char_type.clone(), Box::new([]));
+    let bad_char =
+      app(AE::cnst(tc.prims.char_of_nat.clone(), Box::new([])), mk_nat(0xD800));
+    let nil = app(
+      AE::cnst(tc.prims.list_nil.clone(), Box::new([AU::zero()])),
+      char_ty.clone(),
+    );
+    let list = apps_ae(
+      AE::cnst(tc.prims.list_cons.clone(), Box::new([AU::zero()])),
+      &[char_ty, bad_char, nil],
+    );
+    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let result = tc.whnf(&app(of_list, list)).unwrap();
+    let (head, args) = collect_app_spine(&result);
+    match head.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(
+          id.addr, of_byte_array_id.addr,
+          "expected the structural ofByteArray form"
+        );
+      },
+      other => panic!("expected ofByteArray ctor app, got {other:?}"),
+    }
+    assert_eq!(args.len(), 2);
+    assert!(
+      !matches!(result.data(), ExprData::Str(..)),
+      "invalid codepoint must not collapse to a literal"
+    );
+  }
+
+  #[test]
+  fn whnf_string_append_literals_native() {
+    // `String.append` is dispatched purely by address — it is
+    // deliberately NOT in the env, so any non-native path would leave
+    // the term stuck rather than produce the literal.
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let e = apps_ae(append, &[str_lit("hello"), str_lit("!")]);
+    let result = tc.whnf(&e).unwrap();
+    match result.data() {
+      ExprData::Str(s, _, _) => assert_eq!(s, "hello!"),
+      other => panic!("expected Str literal, got {other:?}"),
+    }
+    assert!(
+      tc.fuel_used() < STRING_FAST_PATH_TICKS,
+      "literal append burned {} ticks",
+      tc.fuel_used()
+    );
+  }
+
+  #[test]
+  fn whnf_string_append_of_collapsed_arg_native() {
+    // The append arguments go through the shared arg-whnf, so a
+    // constructor-built argument collapses first and append still
+    // reduces natively end-to-end.
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let ok = app(of_list, char_list_lit(&tc.prims, "ok"));
+    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let e = apps_ae(append, &[ok, str_lit("!")]);
+    let result = tc.whnf(&e).unwrap();
+    match result.data() {
+      ExprData::Str(s, _, _) => assert_eq!(s, "ok!"),
+      other => panic!("expected Str literal, got {other:?}"),
+    }
+    assert!(
+      tc.fuel_used() < STRING_FAST_PATH_TICKS,
+      "collapse + append burned {} ticks",
+      tc.fuel_used()
+    );
+  }
+
+  #[test]
+  fn whnf_string_append_symbolic_arg_stays_stuck() {
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let e = apps_ae(append, &[AE::var(0, ()), str_lit("!")]);
+    let result = tc.whnf(&e).unwrap();
+    assert!(
+      !matches!(result.data(), ExprData::Str(..)),
+      "symbolic append must stay stuck"
+    );
+  }
+
+  #[test]
+  fn whnf_char_of_nat_literal_is_a_value() {
+    // `Char.ofNat 111` must NOT delta-unfold into its body during whnf
+    // — it IS the native char value form.
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let e =
+      app(AE::cnst(tc.prims.char_of_nat.clone(), Box::new([])), mk_nat(111));
+    let result = tc.whnf(&e).unwrap();
+    assert!(
+      result.ptr_eq(&tc.env.intern.intern_expr(e.clone())) || {
+        let (head, args) = collect_app_spine(&result);
+        matches!(head.data(), ExprData::Const(id, _, _)
+          if id.addr == tc.prims.char_of_nat.addr)
+          && args.len() == 1
+      },
+      "Char.ofNat literal should stay stuck as a value, got {result}"
+    );
+    assert!(
+      tc.fuel_used() < 8,
+      "char value whnf burned {} ticks",
+      tc.fuel_used()
+    );
+  }
+
+  #[test]
+  fn whnf_char_of_nat_invalid_codepoint_unfolds() {
+    // Invalid codepoints are NOT native char values: structural
+    // reduction (which maps them to '\0') must keep working, so delta
+    // proceeds — observable via the simplified body's Char.mk head.
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let e =
+      app(AE::cnst(tc.prims.char_of_nat.clone(), Box::new([])), mk_nat(0xD800));
+    let result = tc.whnf(&e).unwrap();
+    let (head, _) = collect_app_spine(&result);
+    match head.data() {
+      ExprData::Const(id, _, _) => assert_eq!(
+        id.addr, tc.prims.char_mk.addr,
+        "invalid Char.ofNat should delta-unfold structurally"
+      ),
+      other => panic!("expected Char.mk head, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn whnf_string_rec_iota_on_str_literal_keeps_fields_lazy() {
+    // `String.rec motive minor "ok"` must iota-reduce through the
+    // delta-stepped expansion — and hand the minor premise the LAZY
+    // fields (unevaluated `List.utf8Encode [chars]`), never a forced
+    // byte-level encoding.
+    let (mut env, _, string_rec_id) = string_env();
+    let utf8_encode_addr = mk_addr("List.utf8Encode");
+    let mut tc = TypeChecker::new(&mut env);
+    let motive = AE::cnst(mk_id("TestMotive"), Box::new([]));
+    let minor = AE::cnst(mk_id("TestMinor"), Box::new([]));
+    let e = apps_ae(
+      AE::cnst(string_rec_id, Box::new([])),
+      &[motive, minor.clone(), str_lit("ok")],
+    );
+    let result = tc.whnf(&e).unwrap();
+    let (head, args) = collect_app_spine(&result);
+    assert!(
+      matches!(head.data(), ExprData::Const(id, _, _)
+        if id.addr == mk_addr("TestMinor")),
+      "expected iota to reach the minor premise, got {result}"
+    );
+    assert_eq!(args.len(), 2, "minor should receive both ctor fields");
+    let (f0_head, f0_args) = collect_app_spine(&args[0]);
+    match f0_head.data() {
+      ExprData::Const(id, _, _) => assert_eq!(
+        id.addr, utf8_encode_addr,
+        "first field should be the LAZY utf8 encoding"
+      ),
+      other => panic!("expected List.utf8Encode app, got {other:?}"),
+    }
+    // …and the lazy encoding still carries the literal char list.
+    assert_eq!(f0_args.len(), 1);
+    let (list_head, _) = collect_app_spine(&f0_args[0]);
+    assert!(matches!(list_head.data(), ExprData::Const(id, _, _)
+      if id.addr == tc.prims.list_cons.addr));
+    assert!(
+      tc.fuel_used() < STRING_FAST_PATH_TICKS,
+      "Str-literal iota burned {} ticks",
+      tc.fuel_used()
+    );
+  }
+
+  #[test]
+  fn whnf_proj_on_str_literal_projects_lazy_field() {
+    // `Prj(String, 0, "ok")` = `.toByteArray` of a literal: projects
+    // the unevaluated UTF-8 encoding out of the delta-stepped
+    // expansion.
+    let (mut env, _, _) = string_env();
+    let utf8_encode_addr = mk_addr("List.utf8Encode");
+    let mut tc = TypeChecker::new(&mut env);
+    let string_kid = KId::<Anon>::new(tc.prims.string.addr.clone(), ());
+    let e = AE::prj(string_kid, 0, str_lit("ok"));
+    let result = tc.whnf(&e).unwrap();
+    let (head, _) = collect_app_spine(&result);
+    match head.data() {
+      ExprData::Const(id, _, _) => assert_eq!(
+        id.addr, utf8_encode_addr,
+        "projection should yield the lazy encoding"
+      ),
+      other => panic!("expected List.utf8Encode app, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn def_eq_str_literal_vs_of_list_constructor_form() {
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let of_list = AE::cnst(tc.prims.string_of_list.clone(), Box::new([]));
+    let ctor_built = app(of_list.clone(), char_list_lit(&tc.prims, "ok"));
+    assert!(tc.is_def_eq(&str_lit("ok"), &ctor_built).unwrap());
+    assert!(tc.is_def_eq(&ctor_built, &str_lit("ok")).unwrap());
+    // …and a mismatched literal is definitionally distinct.
+    let ctor_built_no = app(of_list, char_list_lit(&tc.prims, "no"));
+    assert!(!tc.is_def_eq(&str_lit("ok"), &ctor_built_no).unwrap());
+  }
+
+  #[test]
+  fn def_eq_distinct_str_literals_reject_fast() {
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    assert!(!tc.is_def_eq(&str_lit("a"), &str_lit("b")).unwrap());
+    assert!(
+      tc.fuel_used() < STRING_FAST_PATH_TICKS,
+      "literal/literal mismatch burned {} ticks",
+      tc.fuel_used()
+    );
+  }
+
+  #[test]
+  fn def_eq_append_vs_literal() {
+    // `String.append "a" "b"` ≡ `"ab"` — the native rule fires inside
+    // def-eq's no-delta layer.
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let append = AE::cnst(tc.prims.string_append.clone(), Box::new([]));
+    let e = apps_ae(append, &[str_lit("a"), str_lit("b")]);
+    assert!(tc.is_def_eq(&e, &str_lit("ab")).unwrap());
+    assert!(!tc.is_def_eq(&e, &str_lit("ba")).unwrap());
+  }
+
+  #[test]
+  fn whnf_string_dec_eq_equal_literals_is_true() {
+    let (mut env, _, _) = string_env();
+    // String.decEq with its real type shape so the isTrue prop can be
+    // recovered from inference; the body is a stuck marker — only the
+    // native path can produce isTrue.
+    let prims = Primitives::from_env(&KEnv::<Anon>::new());
+    let string_const = AE::cnst(prims.string.clone(), Box::new([]));
+    let eq_app = apps_ae(
+      AE::cnst(prims.eq.clone(), Box::new([AU::succ(AU::zero())])),
+      &[string_const.clone(), AE::var(1, ()), AE::var(0, ())],
+    );
+    let dec_ty = AE::all(
+      (),
+      (),
+      string_const.clone(),
+      AE::all(
+        (),
+        (),
+        string_const.clone(),
+        app(AE::cnst(mk_id("Decidable"), Box::new([])), eq_app),
+      ),
+    );
+    let dec_eq_id = KId::<Anon>::new(prims.string_dec_eq.addr.clone(), ());
+    env.insert(
+      dec_eq_id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(1),
+        lvls: 0,
+        ty: dec_ty,
+        val: AE::cnst(mk_id("String.decEq.stuckBody"), Box::new([])),
+        lean_all: (),
+        block: dec_eq_id.clone(),
+      },
+    );
+    let mut tc = TypeChecker::new(&mut env);
+    let e = apps_ae(
+      AE::cnst(tc.prims.string_dec_eq.clone(), Box::new([])),
+      &[str_lit("ok"), str_lit("ok")],
+    );
+    let result = tc.whnf(&e).unwrap();
+    let (head, args) = collect_app_spine(&result);
+    match head.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.decidable_is_true.addr);
+      },
+      other => panic!("expected Decidable.isTrue, got {other:?}"),
+    }
+    assert_eq!(args.len(), 2);
+    // Witness: Eq.refl.{1} String "ok"
+    let (refl_head, refl_args) = collect_app_spine(&args[1]);
+    assert!(matches!(refl_head.data(), ExprData::Const(id, _, _)
+      if id.addr == tc.prims.eq_refl.addr));
+    assert_eq!(refl_args.len(), 2);
+    assert!(matches!(refl_args[1].data(), ExprData::Str(s, _, _) if s == "ok"));
+  }
+
+  #[test]
+  fn whnf_string_dec_eq_unequal_literals_falls_back() {
+    // No native isFalse witness — unequal literals must leave the
+    // structural path in charge (here: the stuck marker body).
+    let (mut env, _, _) = string_env();
+    let prims = Primitives::from_env(&KEnv::<Anon>::new());
+    let dec_eq_id = KId::<Anon>::new(prims.string_dec_eq.addr.clone(), ());
+    env.insert(
+      dec_eq_id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(1),
+        lvls: 0,
+        ty: sort0(),
+        val: AE::cnst(mk_id("String.decEq.stuckBody"), Box::new([])),
+        lean_all: (),
+        block: dec_eq_id.clone(),
+      },
+    );
+    let mut tc = TypeChecker::new(&mut env);
+    let e = apps_ae(
+      AE::cnst(tc.prims.string_dec_eq.clone(), Box::new([])),
+      &[str_lit("ok"), str_lit("no")],
+    );
+    let result = tc.whnf(&e).unwrap();
+    let (head, _) = collect_app_spine(&result);
+    assert!(
+      matches!(head.data(), ExprData::Const(id, _, _)
+        if id.addr == mk_addr("String.decEq.stuckBody")),
+      "unequal decEq should have delta-unfolded structurally, got {result}"
+    );
+  }
+
+  #[test]
+  fn whnf_string_back_result_stays_native_char_value() {
+    // `String.back "abc"` reduces natively to `Char.ofNat 99` — and the
+    // char-value guard must keep THAT stuck instead of delta-unfolding
+    // it into the validity cascade.
+    let (mut env, _, _) = string_env();
+    let mut tc = TypeChecker::new(&mut env);
+    let back = AE::cnst(tc.prims.string_back.clone(), Box::new([]));
+    let result = tc.whnf(&app(back, str_lit("abc"))).unwrap();
+    let (head, args) = collect_app_spine(&result);
+    assert!(matches!(head.data(), ExprData::Const(id, _, _)
+      if id.addr == tc.prims.char_of_nat.addr));
+    assert_eq!(args.len(), 1);
+    assert!(matches!(args[0].data(), ExprData::Nat(v, _, _)
+      if v.0 == num_bigint::BigUint::from(99u64)));
   }
 }

@@ -51,7 +51,7 @@ use crate::lean::LeanIxCheckError;
 use crate::lean_env::{GlobalCache, decode_name};
 use crate::lean_env::{decode_env, decode_name_array};
 use ix_common::address::Address;
-use ix_common::env::{Name, NameData};
+use ix_common::env::{Name, NameData, normalize_displayed_name};
 use ix_compile::compile::{
   CompileOptions, CompileState, compile_env_with_options,
 };
@@ -945,6 +945,28 @@ type CheckRes = Result<(), (ErrKind, String)>;
 
 const KERNEL_CHECK_STACK_SIZE: usize = 256 * 1024 * 1024;
 
+unsafe extern "C" {
+  /// Lean runtime (`src/util/thread.cpp`): stack size, in bytes, for
+  /// subsequently spawned `lthread`s — dedicated task threads and new
+  /// task-pool workers. This is the knob behind `lean --tstack`.
+  fn lean_internal_set_thread_stack_size(size: usize);
+}
+
+/// `Ix.Tc.setLeanThreadStackSize : USize → BaseIO Unit`
+///
+/// ABI adapter: the runtime setter is a bare `void(size_t)`, so Lean can't
+/// `@[extern]` it directly. The pure-Lean parallel checker calls this before
+/// spawning its `.dedicated` workers so they get `KERNEL_CHECK_STACK_SIZE`-
+/// class stacks — deep recursor expansions overflow the default 8 MB
+/// `lthread` stack just like they would the Rust workers' (see above).
+#[unsafe(no_mangle)]
+extern "C" fn rs_lean_set_thread_stack_size(
+  size: usize,
+) -> LeanIOResult<LeanOwned> {
+  unsafe { lean_internal_set_thread_stack_size(size) };
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
 #[derive(Clone, Debug)]
 struct CheckWorkItem {
   primary: usize,
@@ -1666,15 +1688,19 @@ fn load_anon_seed_context(
     let mut slice: &[u8] = &bytes;
     let full = IxonEnv::get(&mut slice)
       .map_err(|e| format!("{label}: failed to deserialize {path}: {e}"))?;
+    // Keyed through `normalize_displayed_name` on both sides so requests
+    // rendered by either kernel (Lean `«»`-escaped, Rust bare) resolve.
     let by_name: FxHashMap<String, Address> = full
       .named
       .iter()
-      .map(|e| (e.key().to_string(), e.value().addr.clone()))
+      .map(|e| {
+        (normalize_displayed_name(&e.key().to_string()), e.value().addr.clone())
+      })
       .collect();
     let mut addrs = Vec::with_capacity(names.len());
     let mut missing: Vec<&str> = Vec::new();
     for n in names {
-      match by_name.get(n) {
+      match by_name.get(&normalize_displayed_name(n)) {
         Some(a) => addrs.push(a.clone()),
         None => missing.push(n),
       }
@@ -2020,16 +2046,19 @@ pub extern "C" fn rs_env_extract(
     },
   };
   // Resolve displayed names → addresses through the full env's `named`
-  // metadata (the anon view discards it).
+  // metadata (the anon view discards it). Keys and requests both go
+  // through `normalize_displayed_name` (Lean `«»`-escaped ↔ Rust bare).
   let by_name: FxHashMap<String, Address> = full
     .named
     .iter()
-    .map(|e| (e.key().to_string(), e.value().addr.clone()))
+    .map(|e| {
+      (normalize_displayed_name(&e.key().to_string()), e.value().addr.clone())
+    })
     .collect();
   let mut resolved: Vec<Address> = Vec::with_capacity(names_vec.len());
   let mut missing: Vec<&str> = Vec::new();
   for n in &names_vec {
-    match by_name.get(n.as_str()) {
+    match by_name.get(&normalize_displayed_name(n)) {
       Some(a) => resolved.push(a.clone()),
       None => missing.push(n),
     }
@@ -4040,4 +4069,78 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
   );
 
   build_string_array(&errors)
+}
+
+/// Test-FFI: ingress every anon work item of a serialized env into a fresh
+/// `KEnv<Anon>` and dump one row per kernel constant:
+/// `(kid_hex, ty_addr_hex, extra_hex)` where `extra_hex` is the Defn value
+/// address, or the comma-joined recursor rule-RHS addresses, or empty.
+/// Node-address bit-compat oracle for the pure-Lean `Ix.Tc` ingress
+/// (`Tests/Ix/Tc/NodeAddr.lean`): root ty/val/rule address equality
+/// transitively certifies every child node hash. Rows sorted by kid hex.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_ingress_anon_addrs(
+  env_bytes: lean_ffi::object::LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  use ix_kernel::anon_work::build_anon_work;
+  use ix_kernel::constant::KConst;
+  use ix_kernel::ingress::ingress_anon_addr_shallow;
+
+  let bytes = env_bytes.as_bytes();
+  let mut slice: &[u8] = bytes;
+  let ixon_env = match IxonEnv::get(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress_anon_addrs: deserialize failed: {e}"
+      ));
+    },
+  };
+  let work = match build_anon_work(&ixon_env) {
+    Ok(w) => w,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress_anon_addrs: build_anon_work: {e}"
+      ));
+    },
+  };
+  let mut kenv = KEnv::<Anon>::new();
+  for item in &work {
+    if let Err(e) =
+      ingress_anon_addr_shallow(&mut kenv, &ixon_env, item.primary())
+    {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress_anon_addrs: ingress {}: {e}",
+        item.primary().hex()
+      ));
+    }
+  }
+  let mut rows: Vec<(String, String, String)> = kenv
+    .iter()
+    .map(|(id, c)| {
+      let ty_hex = c.ty().addr().to_hex().to_string();
+      let extra = match &c {
+        KConst::Defn { val, .. } => val.addr().to_hex().to_string(),
+        KConst::Recr { rules, .. } => rules
+          .iter()
+          .map(|r| r.rhs.addr().to_hex().to_string())
+          .collect::<Vec<_>>()
+          .join(","),
+        _ => String::new(),
+      };
+      (id.addr.hex(), ty_hex, extra)
+    })
+    .collect();
+  rows.sort();
+  let arr = LeanArray::alloc(rows.len());
+  for (i, (kid, ty, extra)) in rows.iter().enumerate() {
+    let kid_obj: LeanOwned = LeanString::new(kid).into();
+    let ty_obj: LeanOwned = LeanString::new(ty).into();
+    let extra_obj: LeanOwned = LeanString::new(extra).into();
+    let inner: LeanOwned = LeanProd::new(ty_obj, extra_obj).into();
+    let triple: LeanOwned = LeanProd::new(kid_obj, inner).into();
+    arr.set(i, triple);
+  }
+  LeanIOResult::ok(arr)
 }

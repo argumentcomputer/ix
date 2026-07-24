@@ -662,6 +662,24 @@ def primitive := ⟦
      0x2au8, 0x7cu8, 0x82u8, 0x64u8, 0x73u8, 0xe4u8, 0x99u8, 0x06u8])
   }
 
+  -- Native string-value fast paths (mirror crates/kernel/src/primitive.rs
+  -- `string_append` / `string_dec_eq`): literal append and literal
+  -- decidable equality reduce natively in whnf, keeping evaluator-grade
+  -- string values out of the structural ByteArray/UTF-8 model.
+  fn string_append_addr() -> Addr {
+    store([0x59u8, 0x4fu8, 0xb1u8, 0xeeu8, 0xdeu8, 0xc7u8, 0xc9u8, 0x39u8,
+     0xccu8, 0x87u8, 0x2bu8, 0x6cu8, 0x04u8, 0xccu8, 0x3bu8, 0x3eu8,
+     0x0au8, 0x97u8, 0x64u8, 0xfau8, 0xbeu8, 0xc3u8, 0xe6u8, 0x02u8,
+     0xadu8, 0x92u8, 0x14u8, 0xd0u8, 0xe6u8, 0x37u8, 0xd3u8, 0x0fu8])
+  }
+
+  fn string_dec_eq_addr() -> Addr {
+    store([0x82u8, 0xe5u8, 0x56u8, 0x8du8, 0x88u8, 0xe2u8, 0x4fu8, 0x24u8,
+     0xd5u8, 0xbeu8, 0xfau8, 0xc3u8, 0x0cu8, 0xe9u8, 0x15u8, 0x01u8,
+     0x0eu8, 0x92u8, 0x59u8, 0x6fu8, 0x55u8, 0xa8u8, 0x22u8, 0xe2u8,
+     0x9fu8, 0x48u8, 0x76u8, 0xeau8, 0x3au8, 0x57u8, 0x93u8, 0x94u8])
+  }
+
   fn list_nil_addr() -> Addr {
     store([0x25u8, 0x8au8, 0x73u8, 0x64u8, 0xb8u8, 0x7cu8, 0x99u8, 0xfeu8,
      0x9fu8, 0x83u8, 0xe0u8, 0x5eu8, 0x0du8, 0x05u8, 0xc9u8, 0x35u8,
@@ -1505,7 +1523,19 @@ def primitive := ⟦
           match address_eq(a, string_legacy_back_addr()) {
             1 => 1,
             0 =>
-            0,
+            match address_eq(a, string_append_addr()) {
+              1 => 1,
+              0 =>
+              match address_eq(a, string_dec_eq_addr()) {
+                1 => 1,
+                0 =>
+                match address_eq(a, string_of_list_addr()) {
+                  1 => 1,
+                  0 =>
+                  0,
+                },
+              },
+            },
           },
         },
       },
@@ -2479,13 +2509,34 @@ def primitive := ⟦
     }
   }
 
-  -- Mirror: src/ix/kernel/whnf.rs:2755-2807 fn try_reduce_string +
+  -- Mirror: crates/kernel/src/whnf.rs fn try_reduce_string +
   -- char_of_nat_expr.
   --
-  -- Dispatches on `String.utf8ByteSize`, `String.back`, `String.legacy_back`,
-  -- `String.toByteArray`. All require a single Lit(Str) arg.
-  fn try_str_dispatch(head_addr: Addr, spine: List‹KExpr›,
+  -- Unary ops (`String.utf8ByteSize`, `String.back`, `String.legacy_back`,
+  -- `String.toByteArray`) require a single syntactic Lit(Str) arg. The
+  -- binary value ops (`String.append`, `String.decEq`) whnf both args
+  -- first (Rust `two_string_lit_args` / `whnf_prim_arg`), so nested
+  -- appends chain. `head` is the original Const expr, needed by the
+  -- decEq arm's `k_infer` prop recovery.
+  fn try_str_dispatch(head_addr: Addr, head: KExpr, spine: List‹KExpr›,
+                      types: List‹KExpr›, top: List‹&KConstantInfo›,
                       addrs: List‹Addr›) -> (G, KExpr) {
+    let is_append = address_eq(head_addr, string_append_addr());
+    let is_dec_eq = address_eq(head_addr, string_dec_eq_addr());
+    let is_of_list = address_eq(head_addr, string_of_list_addr());
+    match is_of_list {
+      1 => try_str_of_list(spine, types, top, addrs),
+      0 =>
+        match is_append + is_dec_eq {
+          0 => try_str_dispatch_unary(head_addr, spine, addrs),
+          _ => try_str_binop(is_append, head, spine, types, top, addrs),
+        },
+    }
+  }
+
+  -- The pre-existing single-Lit(Str)-arg ops, unchanged.
+  fn try_str_dispatch_unary(head_addr: Addr, spine: List‹KExpr›,
+                            addrs: List‹Addr›) -> (G, KExpr) {
     let spine_len = list_length(spine);
     let lt1 = u32_less_than(spine_len, 1);
     match lt1 {
@@ -2516,6 +2567,303 @@ def primitive := ⟦
               _ => (0, store(KExprNode.BVar(0))),
             },
           _ => (0, store(KExprNode.BVar(0))),
+        },
+    }
+  }
+
+  -- Mirror: crates/kernel/src/whnf.rs `String.append`/`String.decEq` arms
+  -- of try_reduce_string. Exactly-two-arg applications only (Rust bails
+  -- on `args.len() != 2`); both args whnf'd, both must land on Lit(Str).
+  fn try_str_binop(is_append: G, head: KExpr, spine: List‹KExpr›,
+                   types: List‹KExpr›, top: List‹&KConstantInfo›,
+                   addrs: List‹Addr›) -> (G, KExpr) {
+    match list_length(spine) {
+      2 =>
+        let a_w = whnf(list_lookup(spine, 0), types, top, addrs);
+        match load(a_w) {
+          KExprNode.Lit(la) =>
+            match la {
+              KLiteral.Str(sa) =>
+                let b_w = whnf(list_lookup(spine, 1), types, top, addrs);
+                match load(b_w) {
+                  KExprNode.Lit(lb) =>
+                    match lb {
+                      KLiteral.Str(sb) =>
+                        match is_append {
+                          1 =>
+                            -- Concatenated literal: UTF-8 of the join is
+                            -- the joined byte streams.
+                            let joined = list_concat(sa, sb);
+                            (1, store(KExprNode.Lit(KLiteral.Str(joined)))),
+                          0 => try_str_dec_eq(sa, sb, head, spine, types, top, addrs),
+                        },
+                      _ => (0, store(KExprNode.BVar(0))),
+                    },
+                  _ => (0, store(KExprNode.BVar(0))),
+                },
+              _ => (0, store(KExprNode.BVar(0))),
+            },
+          _ => (0, store(KExprNode.BVar(0))),
+        },
+      _ => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  -- Mirror: crates/kernel/src/whnf.rs try_reduce_string_dec_eq.
+  -- `String.decEq` on two EQUAL literals → `Decidable.isTrue prop
+  -- (Eq.refl.{1} String lit)`. Unequal literals fall back to the
+  -- structural path (core Lean has no String analog of
+  -- `Nat.ne_of_beq_eq_false` to witness `isFalse` with). The prop slot
+  -- is recovered from the inferred `Decidable prop` type of the original
+  -- call, exactly as `decidable_finish` does; the witness is
+  -- proof-irrelevant, so any well-typed inhabitant is
+  -- defeq-indistinguishable from the structural reduction's.
+  fn try_str_dec_eq(sa: ByteStream, sb: ByteStream, head: KExpr,
+                    spine: List‹KExpr›, types: List‹KExpr›,
+                    top: List‹&KConstantInfo›,
+                    addrs: List‹Addr›) -> (G, KExpr) {
+    match bytestream_eq(sa, sb) {
+      0 => (0, store(KExprNode.BVar(0))),
+      1 =>
+        match find_addr_idx_safe(eq_refl_addr(), addrs, 0) {
+          (0, _) => (0, store(KExprNode.BVar(0))),
+          (1, eq_refl_idx) =>
+            match find_addr_idx_safe(str_addr(), addrs, 0) {
+              (0, _) => (0, store(KExprNode.BVar(0))),
+              (1, string_idx) =>
+                match find_addr_idx_safe(decidable_is_true_addr(), addrs, 0) {
+                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  (1, is_true_idx) =>
+                    let call_expr = apply_spine(head, spine);
+                    let call_ty = k_infer(call_expr, types, top, addrs);
+                    let call_ty_w = whnf(call_ty, types, top, addrs);
+                    match collect_spine(call_ty_w) {
+                      (_, dec_args) =>
+                        match u32_less_than(list_length(dec_args), 1) {
+                          1 => (0, store(KExprNode.BVar(0))),
+                          0 =>
+                            let prop = list_lookup(dec_args, 0);
+                            -- Eq.refl.{1} String <lit> — String : Type =
+                            -- Sort 1, so u = 1.
+                            let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
+                            let lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
+                            let eq_refl_const = store(KExprNode.Const(eq_refl_idx, lvls));
+                            let string_const = store(KExprNode.Const(string_idx, store(ListNode.Nil)));
+                            let lit = store(KExprNode.Lit(KLiteral.Str(sa)));
+                            let r1 = store(KExprNode.App(eq_refl_const, string_const));
+                            let refl = store(KExprNode.App(r1, lit));
+                            let is_true_const = store(KExprNode.Const(is_true_idx, store(ListNode.Nil)));
+                            let d1 = store(KExprNode.App(is_true_const, prop));
+                            (1, store(KExprNode.App(d1, refl))),
+                        },
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  -- Mirror: crates/kernel/src/whnf.rs `String.ofList`/`String.mk` arm of
+  -- try_reduce_string + walk_literal_char_list: collapse a literal char
+  -- list to the `Str` literal — the exact inverse of `str_lit_to_ctor`.
+  -- Guards mirror Rust: list nodes and elements must whnf to literal
+  -- constructor form and every codepoint must be a valid Unicode scalar
+  -- (`Char.ofNat` maps invalid ones to '\0', so invalid literals must
+  -- keep reducing structurally). One arg exactly (Rust bails on
+  -- `args.len() != 1`). ofList and mk share one canonical address, so a
+  -- single dispatch address covers both spellings.
+  fn try_str_of_list(spine: List‹KExpr›, types: List‹KExpr›,
+                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
+    match list_length(spine) {
+      1 =>
+        match walk_char_list_bytes(list_lookup(spine, 0), types, top, addrs) {
+          (1, bs) => (1, store(KExprNode.Lit(KLiteral.Str(bs)))),
+          (0, _) => (0, store(KExprNode.BVar(0))),
+        },
+      _ => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  -- Walk a `List Char` spine whose nodes whnf to literal ctor form,
+  -- UTF-8-encoding each element's codepoint into the result stream.
+  -- (0, _) on any non-literal node, wrong arity, or invalid codepoint —
+  -- the caller falls back to the structural path.
+  fn walk_char_list_bytes(list: KExpr, types: List‹KExpr›,
+                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, ByteStream) {
+    let w = whnf(list, types, top, addrs);
+    match collect_spine(w) {
+      (head, args) =>
+        match load(head) {
+          KExprNode.Const(idx, _) =>
+            let a = list_lookup(addrs, idx);
+            match address_eq(a, list_nil_addr()) {
+              1 =>
+                match list_length(args) {
+                  1 => (1, store(ListNode.Nil)),
+                  _ => (0, store(ListNode.Nil)),
+                },
+              0 =>
+                match address_eq(a, list_cons_addr()) {
+                  0 => (0, store(ListNode.Nil)),
+                  1 =>
+                    match list_length(args) {
+                      3 =>
+                        match char_lit_codepoint(list_lookup(args, 1), types, top, addrs) {
+                          (0, _) => (0, store(ListNode.Nil)),
+                          (1, cp) =>
+                            match walk_char_list_bytes(list_lookup(args, 2), types, top, addrs) {
+                              (0, t) => (0, t),
+                              (1, t) => (1, utf8_encode_prepend(cp, t)),
+                            },
+                        },
+                      _ => (0, store(ListNode.Nil)),
+                    },
+                },
+            },
+          _ => (0, store(ListNode.Nil)),
+        },
+    }
+  }
+
+  -- Recognize the native char-value form `App(Const(Char.ofNat), Nat-lit)`
+  -- (whnf'ing the element when the syntactic match misses — mirror Rust
+  -- char_lit_value + the whnf_prim_arg retry) and return the codepoint,
+  -- guarded to valid Unicode scalar values.
+  fn char_lit_codepoint(e: KExpr, types: List‹KExpr›,
+                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
+    match char_lit_codepoint_syn(e, addrs) {
+      (1, cp) => (1, cp),
+      (0, _) =>
+        let w = whnf(e, types, top, addrs);
+        char_lit_codepoint_syn(w, addrs),
+    }
+  }
+
+  fn char_lit_codepoint_syn(e: KExpr, addrs: List‹Addr›) -> (G, G) {
+    match load(e) {
+      KExprNode.App(f, arg) =>
+        match load(f) {
+          KExprNode.Const(idx, _) =>
+            match address_eq(list_lookup(addrs, idx), char_of_nat_addr()) {
+              0 => (0, 0),
+              1 =>
+                match load(arg) {
+                  KExprNode.Lit(lit) =>
+                    match lit {
+                      KLiteral.Nat(limbs) => klimbs_scalar_value(limbs),
+                      _ => (0, 0),
+                    },
+                  _ => (0, 0),
+                },
+            },
+          _ => (0, 0),
+        },
+      _ => (0, 0),
+    }
+  }
+
+  -- Single-limb KLimbs → codepoint, guarded to valid Unicode scalars
+  -- (mirror `char::from_u32`: rejects surrogates and > 0x10FFFF).
+  -- Multi-limb literals bail to the structural path.
+  fn klimbs_scalar_value(limbs: KLimbs) -> (G, G) {
+    match load(limbs) {
+      ListNode.Cons(limb, rest) =>
+        match load(rest) {
+          ListNode.Nil =>
+            let [b0, b1, b2, b3, b4, b5, b6, b7] = limb;
+            let hi = to_field(b3) + to_field(b4) + to_field(b5) + to_field(b6) + to_field(b7);
+            match eq_zero(hi) {
+              0 => (0, 0),
+              1 =>
+                let cp = to_field(b0) + to_field(b1) * 256 + to_field(b2) * 65536;
+                match u32_less_than(cp, 55296) {
+                  1 => (1, cp),
+                  0 =>
+                    match u32_less_than(57343, cp) {
+                      0 => (0, 0),
+                      1 =>
+                        match u32_less_than(cp, 1114112) {
+                          1 => (1, cp),
+                          0 => (0, 0),
+                        },
+                    },
+                },
+            },
+          _ => (0, 0),
+        },
+      _ => (0, 0),
+    }
+  }
+
+  -- Off-circuit 6-bit decomposition (repeated subtraction), only ever
+  -- invoked as `#utf8_groups(...)`; results are prover-provided and MUST
+  -- be pinned by the caller (u8 + window range checks, reconstruction
+  -- assert).
+  fn divmod_64u(x: G, q: G) -> (G, G) {
+    match u32_less_than(x, 64) {
+      1 => (x, q),
+      0 => divmod_64u(x - 64, q + 1),
+    }
+  }
+
+  fn utf8_groups(cp: G) -> (G, G, G, G) {
+    match divmod_64u(cp, 0) {
+      (g0, q1) =>
+        match divmod_64u(q1, 0) {
+          (g1, q2) =>
+            match divmod_64u(q2, 0) {
+              (g2, g3) => (g0, g1, g2, g3),
+            },
+        },
+    }
+  }
+
+  -- Constrained UTF-8 encode of a valid scalar `cp`, prepended to `tail`.
+  -- The 6-bit groups are a prover-provided witness pinned by u8 range
+  -- gadgets (u8_xor(_, 0)), window checks (< 64), and the base-64
+  -- reconstruction assert — the decomposition is unique, so the emitted
+  -- bytes are forced. The length class is selected by constrained
+  -- compares on `cp` (already guarded valid by the caller, so classes
+  -- are exhaustive and overlong encodings are unrepresentable).
+  fn utf8_encode_prepend(cp: G, tail: ByteStream) -> ByteStream {
+    match #utf8_groups(cp) {
+      (g0, g1, g2, g3) =>
+        let g0u = u8_xor(u8_from_field_unsafe(g0), 0u8);
+        let g1u = u8_xor(u8_from_field_unsafe(g1), 0u8);
+        let g2u = u8_xor(u8_from_field_unsafe(g2), 0u8);
+        let g3u = u8_xor(u8_from_field_unsafe(g3), 0u8);
+        let f0 = to_field(g0u);
+        let f1 = to_field(g1u);
+        let f2 = to_field(g2u);
+        let f3 = to_field(g3u);
+        assert_eq!(u32_less_than(f0, 64), 1);
+        assert_eq!(u32_less_than(f1, 64), 1);
+        assert_eq!(u32_less_than(f2, 64), 1);
+        assert_eq!(u32_less_than(f3, 64), 1);
+        assert_eq!(cp, f0 + f1 * 64 + f2 * 4096 + f3 * 262144);
+        match u32_less_than(cp, 128) {
+          1 => store(ListNode.Cons(u8_from_field_unsafe(cp), tail)),
+          0 =>
+            match u32_less_than(cp, 2048) {
+              1 =>
+                let t1 = u8_from_field_unsafe(f0 + 128);
+                let l1 = u8_from_field_unsafe(f1 + 192);
+                store(ListNode.Cons(l1, store(ListNode.Cons(t1, tail)))),
+              0 =>
+                match u32_less_than(cp, 65536) {
+                  1 =>
+                    let t2 = u8_from_field_unsafe(f0 + 128);
+                    let t1 = u8_from_field_unsafe(f1 + 128);
+                    let l2 = u8_from_field_unsafe(f2 + 224);
+                    store(ListNode.Cons(l2, store(ListNode.Cons(t1, store(ListNode.Cons(t2, tail)))))),
+                  0 =>
+                    let t3 = u8_from_field_unsafe(f0 + 128);
+                    let t2 = u8_from_field_unsafe(f1 + 128);
+                    let t1 = u8_from_field_unsafe(f2 + 128);
+                    let l3 = u8_from_field_unsafe(f3 + 240);
+                    store(ListNode.Cons(l3, store(ListNode.Cons(t1, store(ListNode.Cons(t2, store(ListNode.Cons(t3, tail)))))))),
+                },
+            },
         },
     }
   }
@@ -2705,6 +3053,57 @@ def primitive := ⟦
           KLiteral.Str(bs) =>
             match str_lit_to_ctor(bs, addrs) {
               (1, expanded) => expanded,
+              (0, _) => e,
+            },
+          _ => e,
+        },
+      _ => e,
+    }
+  }
+
+  -- Mirror: crates/kernel/src/def_eq.rs str_lit_to_ctor_app — take ONE
+  -- delta step past `String.ofList` when it is a Defn (real compiled
+  -- envs, where the ctor head is `String.ofByteArray`): with the native
+  -- ofList collapse in try_str_dispatch, a whnf of the raw ofList
+  -- application would fold straight back into the `Str` literal and the
+  -- consumer would never reach the constructor form. In envs where the
+  -- ofList address IS the constructor (List-Char-model test envs), the
+  -- step is a no-op and the expansion is already ctor-headed. `whnf_nd`
+  -- settles the unfolded body (beta/zeta) without re-running the string
+  -- native on an ofList head.
+  fn str_lit_delta_step(expanded: KExpr, types: List‹KExpr›,
+                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    match load(expanded) {
+      KExprNode.App(f, list_arg) =>
+        match load(f) {
+          KExprNode.Const(idx, _) =>
+            let ci = load(list_lookup(top, idx));
+            match ci {
+              KConstantInfo.Defn(_, _, value, _, _) =>
+                let body = expr_inst_levels(value, store(ListNode.Nil));
+                match load(body) {
+                  KExprNode.Lam(_, lam_body) =>
+                    whnf_nd(expr_inst1(lam_body, list_arg, 0), types, top, addrs),
+                  _ => whnf_nd(store(KExprNode.App(body, list_arg)), types, top, addrs),
+                },
+              _ => expanded,
+            },
+          _ => expanded,
+        },
+      _ => expanded,
+    }
+  }
+
+  -- `str_lit_to_ctor_or_self` with the delta step — the form consumers
+  -- that re-reduce or structurally compare the expansion must use.
+  fn str_lit_to_ctor_app_or_self(e: KExpr, types: List‹KExpr›,
+                                 top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    match load(e) {
+      KExprNode.Lit(lit) =>
+        match lit {
+          KLiteral.Str(bs) =>
+            match str_lit_to_ctor(bs, addrs) {
+              (1, expanded) => str_lit_delta_step(expanded, types, top, addrs),
               (0, _) => e,
             },
           _ => e,

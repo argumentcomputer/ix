@@ -81,7 +81,11 @@ def kernelPrimitives : Array String := #[
   "OfNat.ofNat",
   "Unit", "PUnit._sizeOf_1",
   "SizeOf.sizeOf",
-  "String.back", "String.Legacy.back", "String.utf8ByteSize"
+  "String.back", "String.Legacy.back", "String.utf8ByteSize",
+  -- Native string-value fast paths (evaluator-grade whnf): literal
+  -- append and literal decidable equality reduce natively in the Rust
+  -- kernel; these addresses gate the addr-dispatched rules.
+  "String.append", "String.decEq"
 ]
 
 /-- Parse a dotted string into a `Lean.Name`, preferring numeric components

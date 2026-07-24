@@ -4,6 +4,9 @@ import Ix.Cli.BenchReport
 import Ix.Cli.CheckCmd
 import Ix.Cli.CodegenCmd
 import Ix.Cli.CheckRsCmd
+import Ix.Cli.CheckLeanCmd
+import Ix.Cli.CompileLeanCmd
+import Ix.Cli.ValidateLeanCmd
 import Ix.Cli.ClaimCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
@@ -35,6 +38,9 @@ def ixCmd : Cli.Cmd := `[Cli|
     decompileCmd;
     checkCmd;
     checkRsCmd;
+    checkLeanCmd;
+    compileLeanCmd;
+    validateLeanCmd;
     claimCmd;
     diffCmd;
     packCmd;
