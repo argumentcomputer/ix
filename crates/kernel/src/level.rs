@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
-use ix_common::env::{Name, UIMAX, UMAX, UPARAM, USUCC, UZERO};
+use ix_common::env::Name;
 
 use super::env::Addr;
 use super::mode::{KernelMode, MetaDisplay};
@@ -81,9 +81,31 @@ impl<M: KernelMode> KUniv<M> {
     Arc::ptr_eq(&self.0, &other.0)
   }
 
-  /// Structural equality by Merkle hash (pointer-first fast path).
+  /// Canonical-identity equality: `ptr_eq` or equal intern uid. Sound in
+  /// the affirmative; incomplete in the negative (independently built
+  /// equal levels carry distinct uids) — `==` adds the structural
+  /// fallback.
   pub fn hash_eq(&self, other: &KUniv<M>) -> bool {
     self.ptr_eq(other) || self.addr() == other.addr()
+  }
+
+  /// Structural equality mirroring the intern identity: `Param` display
+  /// names are NOT compared (matching the historical hash semantics).
+  /// Equal interned subtrees prune at the uid fast path.
+  fn structural_eq(&self, other: &Self) -> bool {
+    if self.hash_eq(other) {
+      return true;
+    }
+    match (self.data(), other.data()) {
+      (UnivData::Zero(_), UnivData::Zero(_)) => true,
+      (UnivData::Succ(a, _), UnivData::Succ(b, _)) => a.structural_eq(b),
+      (UnivData::Max(a1, b1, _), UnivData::Max(a2, b2, _))
+      | (UnivData::IMax(a1, b1, _), UnivData::IMax(a2, b2, _)) => {
+        a1.structural_eq(a2) && b1.structural_eq(b2)
+      },
+      (UnivData::Param(i, _, _), UnivData::Param(j, _, _)) => i == j,
+      _ => false,
+    }
   }
 
   /// True if this level is definitionally zero (Prop).
@@ -130,14 +152,11 @@ impl<M: KernelMode> KUniv<M> {
 
 impl<M: KernelMode> KUniv<M> {
   pub fn zero() -> Self {
-    KUniv::new(UnivData::Zero(blake3::hash(&[UZERO])))
+    KUniv::new(UnivData::Zero(super::expr::fresh_uid()))
   }
 
   pub fn succ(inner: KUniv<M>) -> Self {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&[USUCC]);
-    hasher.update(inner.addr().as_bytes());
-    KUniv::new(UnivData::Succ(inner, hasher.finalize()))
+    KUniv::new(UnivData::Succ(inner, super::expr::fresh_uid()))
   }
 
   /// Construct `max(a, b)` with Lean-style simplifications:
@@ -193,11 +212,7 @@ impl<M: KernelMode> KUniv<M> {
   /// Raw `Max` constructor without simplification. Used by `max()` after
   /// all simplification opportunities are exhausted.
   fn max_raw(a: KUniv<M>, b: KUniv<M>) -> Self {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&[UMAX]);
-    hasher.update(a.addr().as_bytes());
-    hasher.update(b.addr().as_bytes());
-    KUniv::new(UnivData::Max(a, b, hasher.finalize()))
+    KUniv::new(UnivData::Max(a, b, super::expr::fresh_uid()))
   }
 
   /// Construct `imax(a, b)` with Lean-style simplifications:
@@ -228,25 +243,18 @@ impl<M: KernelMode> KUniv<M> {
       return a; // imax(a, a) = a
     }
     // No simplification — construct raw IMax node.
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&[UIMAX]);
-    hasher.update(a.addr().as_bytes());
-    hasher.update(b.addr().as_bytes());
-    KUniv::new(UnivData::IMax(a, b, hasher.finalize()))
+    KUniv::new(UnivData::IMax(a, b, super::expr::fresh_uid()))
   }
 
   pub fn param(idx: u64, name: M::MField<Name>) -> Self {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(&[UPARAM]);
-    hasher.update(&idx.to_le_bytes());
-    KUniv::new(UnivData::Param(idx, name, hasher.finalize()))
+    KUniv::new(UnivData::Param(idx, name, super::expr::fresh_uid()))
   }
 }
 
-// Structural equality by Merkle hash.
+// Structural equality (uid fast path, recursive fallback).
 impl<M: KernelMode> PartialEq for KUniv<M> {
   fn eq(&self, other: &Self) -> bool {
-    self.hash_eq(other)
+    self.structural_eq(other)
   }
 }
 
@@ -725,8 +733,10 @@ mod tests {
 
   #[test]
   fn zero_hash_deterministic() {
-    assert_eq!(MU::zero().addr(), MU::zero().addr());
-    assert_eq!(AU::zero().addr(), AU::zero().addr());
+    // Identity is intern-assigned now: independent constructions carry
+    // distinct uids but remain structurally equal (`==`).
+    assert_eq!(MU::zero(), MU::zero());
+    assert_eq!(AU::zero(), AU::zero());
   }
 
   #[test]
@@ -774,14 +784,14 @@ mod tests {
   fn meta_param_name_does_not_affect_hash() {
     let a = MU::param(0, mk_name("u"));
     let b = MU::param(0, mk_name("v"));
-    assert_eq!(a.addr(), b.addr());
+    assert_eq!(a, b);
   }
 
   #[test]
   fn meta_param_same_name_same_hash() {
     let a = MU::param(0, mk_name("u"));
     let b = MU::param(0, mk_name("u"));
-    assert_eq!(a.addr(), b.addr());
+    assert_eq!(a, b);
   }
 
   // ---- Anon mode: names erased ----
@@ -790,23 +800,31 @@ mod tests {
   fn anon_param_same_index_same_hash() {
     let a = AU::param(0, ());
     let b = AU::param(0, ());
-    assert_eq!(a.addr(), b.addr());
+    assert_eq!(a, b);
   }
 
   // ---- Anon vs Meta structural hash matches (metadata erased) ----
 
   #[test]
   fn anon_vs_meta_named_param_match() {
+    // Cross-mode structural identity is visible through the shallow
+    // intern keys, which are mode-independent.
     let anon = AU::param(0, ());
     let meta = MU::param(0, mk_name("u"));
-    assert_eq!(anon.addr(), meta.addr());
+    assert_eq!(
+      super::super::env::univ_key(&anon),
+      super::super::env::univ_key(&meta)
+    );
   }
 
   #[test]
   fn anon_vs_meta_anon_param_same() {
     let anon = AU::param(0, ());
     let meta = MU::param(0, Name::anon());
-    assert_eq!(anon.addr(), meta.addr());
+    assert_eq!(
+      super::super::env::univ_key(&anon),
+      super::super::env::univ_key(&meta)
+    );
   }
 
   // ---- PartialEq ----
@@ -1011,8 +1029,8 @@ mod tests {
     // Same structure, different names — semantically equal
     let a = MU::param(0, mk_name("u"));
     let b = MU::param(0, mk_name("v"));
-    // Hashes are metadata-erased, and Géran comparison sees the same index.
-    assert_eq!(a.addr(), b.addr());
+    // Identity is metadata-erased, and Géran comparison sees the same index.
+    assert_eq!(a, b);
     assert!(univ_eq(&a, &b));
   }
 

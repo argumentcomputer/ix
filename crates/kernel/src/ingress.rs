@@ -19,7 +19,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use dashmap::DashMap;
 
-use crate::env::Addr;
 use bignat::Nat;
 use ix_common::address::Address;
 #[cfg(not(target_arch = "riscv64"))]
@@ -42,7 +41,7 @@ use ixon::metadata::{
 use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
-use super::env::{InternTable, KEnv};
+use super::env::{CtxAddr, InternTable, KEnv};
 use super::expr::{KExpr, MData};
 use super::id::KId;
 use super::level::KUniv;
@@ -257,7 +256,7 @@ fn timed_intern_univ<M: KernelMode>(
     return intern.intern_univ(u);
   }
   let t0 = Instant::now();
-  let key = *u.addr();
+  let key = super::env::univ_key(&u);
   let result = if let Some(existing) = intern.try_get_univ(&key) {
     stats.intern_univ_get_hits += 1;
     existing
@@ -269,56 +268,45 @@ fn timed_intern_univ<M: KernelMode>(
   result
 }
 
-/// Hash-first interning. Precomputes the content hash, asks the intern
-/// table for an existing canonical KExpr; only on a miss does it call
-/// `build(addr)` to allocate a new KExpr.
+/// Key-first interning. Builds the shallow structural key from already
+/// canonical children, asks the intern table for an existing canonical
+/// KExpr; only on a miss does it call `build()` to allocate a new KExpr
+/// (which takes a fresh uid).
 ///
-/// Why this exists: profiling on Mathlib shows `kexpr_construct` (the
-/// blake3 hash + `Arc<ExprData>` allocation pair) is ~45% of `convert`
-/// worker-sum, of which ~62% is wasted because the intern table
-/// already has the same canonical value. By computing just the hash up
-/// front and skipping construction entirely on a hit, we avoid the
-/// allocation in the majority case.
-///
-/// The `build` closure receives the precomputed `Addr` (a `blake3::Hash`
-/// by value) and is expected to call one of the
-/// `KExpr::*_mdata_with_addr` constructors so it can plug the hash into
-/// `ExprInfo` without re-hashing.
-///
-/// Stats accounting (when enabled): the hit path bumps
-/// `intern_expr_get_hits`. The miss path also bumps `kexpr_construct_*`
-/// for the cost of the closure body. `intern_expr_ns` covers the
-/// surrounding DashMap traffic on both paths but excludes the
-/// closure-internal time.
+/// Why this exists: profiling on Mathlib showed the construction +
+/// interning pair dominates `convert` worker-sum, and most constructed
+/// values are immediately discarded for an existing canonical Arc. By
+/// probing with just the shallow key we skip construction entirely on a
+/// hit. (Historically the probe key was a precomputed blake3 content
+/// hash; the shallow key preserves the skip while removing the hash.)
 #[inline]
 fn timed_intern_or_build<M: KernelMode>(
   intern: &mut InternTable<M>,
-  hash: blake3::Hash,
-  build: impl FnOnce(Addr) -> KExpr<M>,
+  key: &super::env::ExprKey,
+  build: impl FnOnce() -> KExpr<M>,
   stats: &mut ConvertStats,
 ) -> KExpr<M> {
   if !stats.enabled {
-    if let Some(existing) = intern.try_get_expr(&hash) {
+    if let Some(existing) = intern.try_get_expr(key) {
       return existing;
     }
-    return intern.intern_expr(build(hash));
+    return intern.intern_expr(build());
   }
   let t0 = Instant::now();
-  if let Some(existing) = intern.try_get_expr(&hash) {
+  if let Some(existing) = intern.try_get_expr(key) {
     stats.intern_expr_get_hits += 1;
     stats.intern_expr_calls += 1;
     stats.intern_expr_ns += elapsed_ns(t0);
     return existing;
   }
-  let addr = hash;
   let kc_t0 = Instant::now();
-  let new = build(addr);
+  let new = build();
   let kc_elapsed = elapsed_ns(kc_t0);
   stats.kexpr_construct_ns += kc_elapsed;
   stats.kexpr_construct_calls += 1;
   let interned = intern.intern_expr(new);
   let total = elapsed_ns(t0);
-  // Account for the DashMap traffic only — the closure body's time is
+  // Account for the map traffic only — the closure body's time is
   // already in `kexpr_construct_ns`.
   stats.intern_expr_ns += total.saturating_sub(kc_elapsed);
   stats.intern_expr_calls += 1;
@@ -711,25 +699,21 @@ fn ingress_expr<M: KernelMode>(
           if mdata_layers.is_empty() {
             let name_field = M::meta_field(name);
             let mdata_field: M::MField<Vec<MData>> = M::meta_field(vec![]);
-            let hash = KExpr::<M>::var_hash(*idx, &name_field, &mdata_field);
+            let key = super::env::ExprKey::Var(*idx);
             values.push(timed_intern_or_build(
               intern,
-              hash,
-              |addr| {
-                KExpr::var_mdata_with_addr(*idx, name_field, mdata_field, addr)
-              },
+              &key,
+              || KExpr::var_mdata(*idx, name_field, mdata_field),
               stats,
             ));
           } else {
             let name_field = M::meta_field(name);
             let mdata_field = M::meta_field(mdata_layers);
-            let hash = KExpr::<M>::var_hash(*idx, &name_field, &mdata_field);
+            let key = super::env::ExprKey::Var(*idx);
             values.push(timed_intern_or_build(
               intern,
-              hash,
-              |addr| {
-                KExpr::var_mdata_with_addr(*idx, name_field, mdata_field, addr)
-              },
+              &key,
+              || KExpr::var_mdata(*idx, name_field, mdata_field),
               stats,
             ));
           }
@@ -762,11 +746,11 @@ fn ingress_expr<M: KernelMode>(
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
             let zu = ingress_univ(u, ctx, intern, univ_cache, stats);
-            let hash = KExpr::<M>::sort_hash(&zu, &mdata);
+            let key = super::env::ExprKey::Sort(*zu.addr());
             values.push(timed_intern_or_build(
               intern,
-              hash,
-              |addr| KExpr::sort_mdata_with_addr(zu, mdata, addr),
+              &key,
+              || KExpr::sort_mdata(zu, mdata),
               stats,
             ));
           },
@@ -802,11 +786,14 @@ fn ingress_expr<M: KernelMode>(
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
             let id = KId::new(addr, name_field);
-            let hash = KExpr::<M>::cnst_hash(&id, &univs, &mdata);
+            let key = super::env::ExprKey::Const(
+              id.addr.clone(),
+              univs.iter().map(|u| *u.addr()).collect(),
+            );
             values.push(timed_intern_or_build(
               intern,
-              hash,
-              |a| KExpr::cnst_mdata_with_addr(id, univs, mdata, a),
+              &key,
+              || KExpr::cnst_mdata(id, univs, mdata),
               stats,
             ));
           },
@@ -823,11 +810,14 @@ fn ingress_expr<M: KernelMode>(
               .clone();
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
-            let hash = KExpr::<M>::cnst_hash(&mid, &univs, &mdata);
+            let key = super::env::ExprKey::Const(
+              mid.addr.clone(),
+              univs.iter().map(|u| *u.addr()).collect(),
+            );
             values.push(timed_intern_or_build(
               intern,
-              hash,
-              |a| KExpr::cnst_mdata_with_addr(mid, univs, mdata, a),
+              &key,
+              || KExpr::cnst_mdata(mid, univs, mdata),
               stats,
             ));
           },
@@ -931,11 +921,14 @@ fn ingress_expr<M: KernelMode>(
                   let id = KId::new(addr, M::meta_field(name));
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
-                  let hash = KExpr::<M>::cnst_hash(&id, &univs, &mdata_field);
+                  let key = super::env::ExprKey::Const(
+                    id.addr.clone(),
+                    univs.iter().map(|u| *u.addr()).collect(),
+                  );
                   timed_intern_or_build(
                     intern,
-                    hash,
-                    |a| KExpr::cnst_mdata_with_addr(id, univs, mdata_field, a),
+                    &key,
+                    || KExpr::cnst_mdata(id, univs, mdata_field),
                     stats,
                   )
                 },
@@ -958,11 +951,14 @@ fn ingress_expr<M: KernelMode>(
                   )?;
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
-                  let hash = KExpr::<M>::cnst_hash(&mid, &univs, &mdata_field);
+                  let key = super::env::ExprKey::Const(
+                    mid.addr.clone(),
+                    univs.iter().map(|u| *u.addr()).collect(),
+                  );
                   timed_intern_or_build(
                     intern,
-                    hash,
-                    |a| KExpr::cnst_mdata_with_addr(mid, univs, mdata_field, a),
+                    &key,
+                    || KExpr::cnst_mdata(mid, univs, mdata_field),
                     stats,
                   )
                 },
@@ -1189,11 +1185,11 @@ fn ingress_expr<M: KernelMode>(
               format!("invalid UTF-8 in Str blob at addr {}: {e}", addr.hex())
             })?;
             let blob_addr = addr.clone();
-            let hash = KExpr::<M>::str_hash(&blob_addr, &mdata);
+            let key = super::env::ExprKey::Str(blob_addr.clone());
             values.push(timed_intern_or_build(
               intern,
-              hash,
-              |a| KExpr::str_mdata_with_addr(s, blob_addr, mdata, a),
+              &key,
+              || KExpr::str_mdata(s, blob_addr, mdata),
               stats,
             ));
           },
@@ -1216,11 +1212,11 @@ fn ingress_expr<M: KernelMode>(
             }
             let n = Nat::from_le_bytes(&blob);
             let blob_addr = addr.clone();
-            let hash = KExpr::<M>::nat_hash(&blob_addr, &mdata);
+            let key = super::env::ExprKey::Nat(blob_addr.clone());
             values.push(timed_intern_or_build(
               intern,
-              hash,
-              |a| KExpr::nat_mdata_with_addr(n, blob_addr, mdata, a),
+              &key,
+              || KExpr::nat_mdata(n, blob_addr, mdata),
               stats,
             ));
           },
@@ -1242,11 +1238,11 @@ fn ingress_expr<M: KernelMode>(
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let a = values.pop().unwrap();
         let f = values.pop().unwrap();
-        let hash = KExpr::<M>::app_hash(&f, &a, &mdata);
+        let key = super::env::ExprKey::App(*f.addr(), *a.addr());
         values.push(timed_intern_or_build(
           intern,
-          hash,
-          |addr| KExpr::app_mdata_with_addr(f, a, mdata, addr),
+          &key,
+          || KExpr::app_mdata(f, a, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1265,11 +1261,11 @@ fn ingress_expr<M: KernelMode>(
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let hash = KExpr::<M>::lam_hash(&name, &bi, &ty, &body, &mdata);
+        let key = super::env::ExprKey::Lam(*ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
-          hash,
-          |addr| KExpr::lam_mdata_with_addr(name, bi, ty, body, mdata, addr),
+          &key,
+          || KExpr::lam_mdata(name, bi, ty, body, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1288,11 +1284,11 @@ fn ingress_expr<M: KernelMode>(
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let hash = KExpr::<M>::all_hash(&name, &bi, &ty, &body, &mdata);
+        let key = super::env::ExprKey::All(*ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
-          hash,
-          |addr| KExpr::all_mdata_with_addr(name, bi, ty, body, mdata, addr),
+          &key,
+          || KExpr::all_mdata(name, bi, ty, body, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1313,13 +1309,12 @@ fn ingress_expr<M: KernelMode>(
         let body = values.pop().unwrap();
         let val = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let hash = KExpr::<M>::let_hash(&name, &ty, &val, &body, nd, &mdata);
+        let key =
+          super::env::ExprKey::Let(*ty.addr(), *val.addr(), *body.addr(), nd);
         values.push(timed_intern_or_build(
           intern,
-          hash,
-          |addr| {
-            KExpr::let_mdata_with_addr(name, ty, val, body, nd, mdata, addr)
-          },
+          &key,
+          || KExpr::let_mdata(name, ty, val, body, nd, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1343,11 +1338,12 @@ fn ingress_expr<M: KernelMode>(
       ExprFrame::PrjDone { type_id, field_idx, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let s = values.pop().unwrap();
-        let hash = KExpr::<M>::prj_hash(&type_id, field_idx, &s, &mdata);
+        let key =
+          super::env::ExprKey::Prj(type_id.addr.clone(), field_idx, *s.addr());
         values.push(timed_intern_or_build(
           intern,
-          hash,
-          |addr| KExpr::prj_mdata_with_addr(type_id, field_idx, s, mdata, addr),
+          &key,
+          || KExpr::prj_mdata(type_id, field_idx, s, mdata),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -2156,7 +2152,7 @@ pub fn resolve_lean_name_addr(
 /// Compute a stable hash for a `param_names` slice, used as part of the
 /// ingress cache key. Two calls with the same param names (in the same
 /// order) produce the same hash.
-pub fn param_names_hash(param_names: &[Name]) -> Addr {
+pub fn param_names_hash(param_names: &[Name]) -> CtxAddr {
   let mut hasher = blake3::Hasher::new();
   hasher.update(&(param_names.len() as u64).to_le_bytes());
   for n in param_names {
@@ -2236,8 +2232,8 @@ pub fn lean_expr_to_zexpr_cached(
   intern: &mut InternTable<Meta>,
   n2a: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-  mut cache: Option<&mut FxHashMap<(Addr, Addr), KExpr<Meta>>>,
-  pn_hash: Option<&Addr>,
+  mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
+  pn_hash: Option<&CtxAddr>,
 ) -> KExpr<Meta> {
   // Check cache
   if let (Some(cache), Some(pn_hash)) = (cache.as_ref(), pn_hash) {
@@ -2277,8 +2273,8 @@ fn lean_expr_to_zexpr_raw(
   intern: &mut InternTable<Meta>,
   n2a: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-  mut cache: Option<&mut FxHashMap<(Addr, Addr), KExpr<Meta>>>,
-  pn_hash: Option<&Addr>,
+  mut cache: Option<&mut FxHashMap<(CtxAddr, CtxAddr), KExpr<Meta>>>,
+  pn_hash: Option<&CtxAddr>,
 ) -> KExpr<Meta> {
   // Walk through any consecutive `Mdata` wrappers first, accumulating them
   // as kernel-side `MData` layers. Lean represents `Mdata(a, Mdata(b, e))`

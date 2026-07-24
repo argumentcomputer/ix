@@ -4119,12 +4119,12 @@ pub extern "C" fn rs_kernel_ingress_anon_addrs(
   let mut rows: Vec<(String, String, String)> = kenv
     .iter()
     .map(|(id, c)| {
-      let ty_hex = c.ty().addr().to_hex().to_string();
+      let ty_hex = format!("{:016x}", c.ty().addr());
       let extra = match &c {
-        KConst::Defn { val, .. } => val.addr().to_hex().to_string(),
+        KConst::Defn { val, .. } => format!("{:016x}", val.addr()),
         KConst::Recr { rules, .. } => rules
           .iter()
-          .map(|r| r.rhs.addr().to_hex().to_string())
+          .map(|r| format!("{:016x}", r.rhs.addr()))
           .collect::<Vec<_>>()
           .join(","),
         _ => String::new(),
