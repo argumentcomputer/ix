@@ -25,8 +25,8 @@ lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/ex
   --trivial        square(5) instead of factorial(5) — the per-statement floor
   --queries N      FRI query count (default 100 = soundness level; pass a
                    small value for a cheap local run)
-  --blowup N       log2 blowup            (default 2)
-  --pow N          commit PoW bits        (default 20)
+  --log-blowup N   log2 blowup            (default 2)
+  --pow N          query PoW bits         (default 20)
   --json <path>    write a benchmark results row (Ix.Benchmark.Results); the
                    row lands after the verifier execute and is refined after
                    the outer prove, so a kill mid-prove keeps the execute
@@ -81,11 +81,11 @@ def argStr (args : List String) (flag : String) : Option String :=
   | _ => none
 
 def recCommitParams (args : List String) : Aiur.CommitmentParameters :=
-  { logBlowup := argNat args "--blowup" 2, capHeight := 0 }
+  { logBlowup := argNat args "--log-blowup" 2, capHeight := 0 }
 def innerFri (args : List String) : Aiur.FriParameters :=
   { logFinalPolyLen := argNat args "--final-poly" 0, maxLogArity := 1,
     numQueries := argNat args "--queries" 100,
-    commitProofOfWorkBits := argNat args "--pow" 0, queryProofOfWorkBits := 20 }
+    commitProofOfWorkBits := 0, queryProofOfWorkBits := argNat args "--pow" 20 }
 
 def secs (t0 t1 : Nat) : Float := (Float.ofNat (t1 - t0)) / 1e9
 
@@ -97,7 +97,7 @@ def main (args : List String) : IO UInt32 := do
   let jsonOut := argStr args "--json"
   IO.println s!"params: logBlowup={recCommitParams.logBlowup} \
     numQueries={innerFri.numQueries} finalPoly={innerFri.logFinalPolyLen} \
-    pow={innerFri.commitProofOfWorkBits}"
+    pow={innerFri.queryProofOfWorkBits}"
   -- Inner proof: factorial(5) (or `square(5)` under --trivial) under the
   -- multi-stark backend.
   let (program, entry) :=
