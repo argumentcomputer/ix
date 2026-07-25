@@ -678,12 +678,6 @@ def pcs := ⟦
   }
 
   -- ── reduced-opening buckets ───────────────────────────────────────────────
-  fn repeat_g(v: G, n: G) -> List‹G› {
-    match n {
-      0 => store(ListNode.Nil),
-      _ => store(ListNode.Cons(v, repeat_g(v, n - 1))),
-    }
-  }
   -- 1 iff some circuit `i < rem` has log-height `log_degrees[i] + log_blowup == h`.
   fn circ_has_height(log_degrees: List‹U8›, log_blowup: G, rem: G, i: G, h: G) -> G {
     match rem {
@@ -781,29 +775,18 @@ def pcs := ⟦
     }
   }
 
-  -- The quotient batch: `qd` chunks per circuit, one opening point (ζ) each.
-  fn open_q_chunks(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, lh: G,
-      chunk: G, qrem: G, zeta: Ext, base_rows: List‹List‹U64››,
-      q_opened: OpenedRound, alpha: Ext) -> (List‹Bucket›, G) {
-    match qrem {
-      0 => (buckets, chunk),
-      _ =>
-        let b = ri_apply(buckets, lh, idxbits, log_gmax, zeta,
-                  lanes_to_gl(list_lookup(base_rows, chunk)), list_lookup(list_lookup(q_opened, chunk), 0), alpha);
-        open_q_chunks(b, idxbits, log_gmax, lh, chunk + 1, qrem - 1, zeta, base_rows, q_opened, alpha),
-    }
-  }
+  -- The quotient batch: ONE wide matrix per circuit (all its coefficient
+  -- slices), on the trace domain, opened at the single point ζ.
   fn open_quotient(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, log_blowup: G, ci: G,
-      rem: G, chunk: G, circuits: List‹SysCircuit›, log_degrees: List‹U8›, zeta: Ext,
+      rem: G, log_degrees: List‹U8›, zeta: Ext,
       base_rows: List‹List‹U64››, q_opened: OpenedRound, alpha: Ext) -> List‹Bucket› {
     match rem {
       0 => buckets,
       _ =>
-        let SysCircuit.Mk(_a, _cc, md, _ph, _pw, _w1, _w2) = list_lookup(circuits, ci);
-        let qd = quotient_degree_of(md);
         let lh = to_field(list_lookup(log_degrees, ci)) + log_blowup;
-        let (b, chunk2) = open_q_chunks(buckets, idxbits, log_gmax, lh, chunk, qd, zeta, base_rows, q_opened, alpha);
-        open_quotient(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, chunk2, circuits, log_degrees, zeta, base_rows, q_opened, alpha),
+        let b = ri_apply(buckets, lh, idxbits, log_gmax, zeta,
+                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(list_lookup(q_opened, ci), 0), alpha);
+        open_quotient(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta, base_rows, q_opened, alpha),
     }
   }
 
@@ -850,15 +833,6 @@ def pcs := ⟦
       0 => store(ListNode.Nil),
       _ => store(ListNode.Cons(to_field(list_lookup(log_degrees, i)) + log_blowup,
                                heights_all(log_degrees, log_blowup, rem - 1, i + 1))),
-    }
-  }
-  fn heights_quotient(circuits: List‹SysCircuit›, log_degrees: List‹U8›, log_blowup: G, rem: G, i: G) -> List‹G› {
-    match rem {
-      0 => store(ListNode.Nil),
-      _ =>
-        let SysCircuit.Mk(_a, _cc, md, _ph, _pw, _w1, _w2) = list_lookup(circuits, i);
-        list_concat(repeat_g(to_field(list_lookup(log_degrees, i)) + log_blowup, quotient_degree_of(md)),
-                    heights_quotient(circuits, log_degrees, log_blowup, rem - 1, i + 1)),
     }
   }
   fn heights_prep(log_degrees: List‹U8›, log_blowup: G, prep_indices: List‹OptIdx›, rem: G, i: G) -> List‹G› {
@@ -935,7 +909,7 @@ def pcs := ⟦
   fn verify_one_query(idxbits: List‹G›, qp: QueryProof, alpha: Ext,
       stage1: OpenedRound, stage2: OpenedRound, q_opened: OpenedRound,
       prep_opt: PreprocessedOpt, s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap,
-      prep_commit: MerkleCap, circuits: List‹SysCircuit›, prep_indices: List‹OptIdx›,
+      prep_commit: MerkleCap, prep_indices: List‹OptIdx›,
       log_degrees: List‹U8›, zeta: Ext, num_circuits: G, log_blowup: G, log_gmax: G,
       betas: List‹Ext›, commit_phase_commits: List‹MerkleCap›, final_poly: List‹Ext›,
       num_rounds: G) -> G {
@@ -954,9 +928,11 @@ def pcs := ⟦
     assert_eq!(mmcs_verify(s2c, rows_s2, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_s2, log_gmax), 1);
     let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s2, stage2, alpha);
     let BatchOpening.Mk(rows_q, proof_q) = list_lookup(input_proof, 2);
-    assert_eq!(eq_zero(list_length(rows_q) - list_length(q_opened)), 1);
-    assert_eq!(mmcs_verify(qc, rows_q, heights_quotient(circuits, log_degrees, log_blowup, num_circuits, 0), idxbits, proof_q, log_gmax), 1);
-    let buckets = open_quotient(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, 0, circuits, log_degrees, zeta, rows_q, q_opened, alpha);
+    -- one wide quotient matrix per circuit, on the trace domain, so the
+    -- quotient batch's heights are the same per-circuit heights as the stages
+    assert_eq!(eq_zero(list_length(rows_q) - num_circuits), 1);
+    assert_eq!(mmcs_verify(qc, rows_q, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_q, log_gmax), 1);
+    let buckets = open_quotient(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_q, q_opened, alpha);
     let buckets = open_prep_batch(buckets, input_proof, prep_commit, prep_opt, prep_indices, log_degrees, num_circuits, idxbits, log_gmax, log_blowup, zeta, alpha);
     -- a height-`log_blowup` (constant-poly) reduced opening must be zero
     let _cz = assert_blowup_zero(buckets, log_blowup);
@@ -976,7 +952,7 @@ def pcs := ⟦
   fn query_loop(input: ByteStream, output: ByteStream, query_proofs: List‹QueryProof›,
       alpha: Ext, stage1: OpenedRound, stage2: OpenedRound, q_opened: OpenedRound,
       prep_opt: PreprocessedOpt, s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap,
-      prep_commit: MerkleCap, circuits: List‹SysCircuit›, prep_indices: List‹OptIdx›,
+      prep_commit: MerkleCap, prep_indices: List‹OptIdx›,
       log_degrees: List‹U8›, zeta: Ext, num_circuits: G, log_blowup: G, log_gmax: G,
       betas: List‹Ext›, commit_phase_commits: List‹MerkleCap›, final_poly: List‹Ext›,
       num_rounds: G) -> G {
@@ -985,10 +961,10 @@ def pcs := ⟦
       ListNode.Cons(qp, rest) =>
         let (idxbits, input2, output2) = ch_sample_bits(input, output, log_gmax);
         let _q = verify_one_query(idxbits, qp, alpha, stage1, stage2, q_opened, prep_opt,
-          s1c, s2c, qc, prep_commit, circuits, prep_indices, log_degrees, zeta, num_circuits,
+          s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta, num_circuits,
           log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds);
         query_loop(input2, output2, rest, alpha, stage1, stage2, q_opened, prep_opt,
-          s1c, s2c, qc, prep_commit, circuits, prep_indices, log_degrees, zeta, num_circuits,
+          s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta, num_circuits,
           log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds),
     }
   }
@@ -999,7 +975,7 @@ def pcs := ⟦
   fn pcs_fri_verify(post_zeta_input: ByteStream, stage1: OpenedRound, stage2: OpenedRound,
       q_opened: OpenedRound, prep_opt: PreprocessedOpt, opening: FriProof,
       s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap, prep_commit: MerkleCap,
-      circuits: List‹SysCircuit›, prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
+      prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
       zeta: Ext, num_circuits: G, log_blowup: G, num_queries: G, commit_pow_bits: G,
       query_pow_bits: G) -> G {
     let FriProof.Mk(commit_phase_commits, pw, query_proofs, final_poly, qpw) = opening;
@@ -1030,7 +1006,7 @@ def pcs := ⟦
     -- query indices + per-query verification (log_global_max_height = #rounds + log_blowup)
     let log_gmax = num_rounds + log_blowup;
     query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
-      prep_opt, s1c, s2c, qc, prep_commit, circuits, prep_indices, log_degrees, zeta,
+      prep_opt, s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta,
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)
   }
 
