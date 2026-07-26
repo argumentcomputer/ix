@@ -76,72 +76,122 @@ def sortedDedupIds (ids : Array (KId m)) : Array (KId m) := Id.run do
     | none => out := out.push id
   return out
 
+/-- Sum of pending universe constructors in the validation worklist. -/
+def univWorkSize : List (KUniv m) → Nat
+  | [] => 0
+  | u :: stack => u.size + univWorkSize stack
+
+/-- Sum of pending expression nodes in the depth-indexed validation
+    worklist. The depth annotation does not affect termination. -/
+def scopedExprWorkSize : List (KExpr m × UInt64) → Nat
+  | [] => 0
+  | (e, _) :: stack => e.treeSize + scopedExprWorkSize stack
+
+/-- Peel the syntactic forall prefix used when building a rule IH. This is
+    structural: unlike the surrounding reducer-driven telescope scans, no
+    WHNF or binder instantiation occurs between iterations. -/
+def peelRuleIhForalls (root : KExpr m) (flat : Array (FlatBlockMember m)) :
+    Array (KExpr m) × KExpr m :=
+  go root #[]
+where
+  go (inner : KExpr m) (domains : Array (KExpr m)) :
+      Array (KExpr m) × KExpr m :=
+    match inner with
+    | .all _ _ dom body _ =>
+      let (head, _) := inner.collectSpine
+      let isFlatHead := match head with
+        | .const id _ _ => flat.any (·.id.addr == id.addr)
+        | _ => false
+      if isFlatHead then (domains, inner)
+      else go body (domains.push dom)
+    | _ => (domains, inner)
+  termination_by inner.treeSize
+  decreasing_by
+    simp [KExpr.treeSize]
+    omega
+
 mutual
 
 -- ### Well-scopedness validation (check.rs)
 
 /-- Universe params in range, iterative with an addr-keyed seen set. -/
-partial def validateUnivParamsSeen (root : KUniv m) (bound : Nat)
-    (seen : HashSet Address) : RecM m (HashSet Address) := do
-  let mut seen := seen
-  let mut stack : Array (KUniv m) := #[root]
-  while !stack.isEmpty do
-    let u := stack.back!
-    stack := stack.pop
-    if seen.contains u.addr then
-      continue
-    seen := seen.insert u.addr
-    match u with
-    | .zero _ => pure ()
-    | .succ inner _ => stack := stack.push inner
-    | .max a b _ | .imax a b _ =>
-      stack := stack.push a |>.push b
-    | .param idx _ _ =>
-      if idx.toNat ≥ bound then
-        throw (.univParamOutOfRange idx bound)
-  return seen
+def validateUnivParamsSeen (root : KUniv m) (bound : Nat)
+    (seen : HashSet Address) : RecM m (HashSet Address) :=
+  go [root] seen
+where
+  /-- Head-of-list is the old Array stack's back. -/
+  go (stack : List (KUniv m)) (seen : HashSet Address) :
+      RecM m (HashSet Address) :=
+    match stack with
+    | [] => pure seen
+    | u :: stack => do
+      if seen.contains u.addr then
+        return (← go stack seen)
+      let seen := seen.insert u.addr
+      match u with
+      | .zero _ => go stack seen
+      | .succ inner _ => go (inner :: stack) seen
+      | .max a b _ | .imax a b _ => go (b :: a :: stack) seen
+      | .param idx _ _ =>
+        if idx.toNat ≥ bound then
+          throw (.univParamOutOfRange idx bound)
+        go stack seen
+  termination_by univWorkSize stack
+  decreasing_by
+    all_goals simp [univWorkSize, KUniv.size, KUniv.size_pos] <;> omega
 
 /-- Closed at top level; every `param` within the declaration's own level
     arity; const arities match; prj heads known. Iterative, memoized on
     `(addr, depth)`. Mirrors check.rs `validate_expr_well_scoped`. -/
-partial def validateExprWellScoped (root : KExpr m) (rootDepth : UInt64)
-    (lvlBound : Nat) : RecM m Unit := do
-  let mut stack : Array (KExpr m × UInt64) := #[(root, rootDepth)]
-  let mut seenExprs : HashSet (Address × UInt64) := {}
-  let mut seenUnivs : HashSet Address := {}
-  while !stack.isEmpty do
-    let (e, depth) := stack.back!
-    stack := stack.pop
-    if seenExprs.contains (e.addr, depth) then
-      continue
-    seenExprs := seenExprs.insert (e.addr, depth)
-    match e with
-    | .var idx _ _ =>
-      if idx ≥ depth then
-        throw (.varOutOfRange idx depth.toNat)
-    | .sort u _ =>
-      seenUnivs ← validateUnivParamsSeen u lvlBound seenUnivs
-    | .const id us _ =>
-      let c ← TcM.getConst id
-      if c.lvls.toNat != us.size then
-        throw (.univParamMismatch c.lvls us.size)
-      for u in us do
-        seenUnivs ← validateUnivParamsSeen u lvlBound seenUnivs
-    | .app f a _ =>
-      stack := stack.push (f, depth) |>.push (a, depth)
-    | .lam _ _ ty body _ | .all _ _ ty body _ =>
-      stack := stack.push (ty, depth) |>.push (body, depth + 1)
-    | .letE _ ty val body _ _ =>
-      stack := stack.push (ty, depth) |>.push (val, depth)
-        |>.push (body, depth + 1)
-    | .prj id _ val _ =>
-      if !(← TcM.hasConst id) then
-        throw (.unknownConst id.addr)
-      stack := stack.push (val, depth)
-    -- FVars carry no de Bruijn index; leaves.
-    | .fvar .. | .nat .. | .str .. => pure ()
+def validateExprWellScoped (root : KExpr m) (rootDepth : UInt64)
+    (lvlBound : Nat) : RecM m Unit :=
+  go [(root, rootDepth)] {} {}
+where
+  /-- LIFO order matches the former Array worklist. -/
+  go (stack : List (KExpr m × UInt64))
+      (seenExprs : HashSet (Address × UInt64))
+      (seenUnivs : HashSet Address) : RecM m Unit :=
+    match stack with
+    | [] => pure ()
+    | (e, depth) :: stack => do
+      if seenExprs.contains (e.addr, depth) then
+        return (← go stack seenExprs seenUnivs)
+      let seenExprs := seenExprs.insert (e.addr, depth)
+      match e with
+      | .var idx _ _ =>
+        if idx ≥ depth then
+          throw (.varOutOfRange idx depth.toNat)
+        go stack seenExprs seenUnivs
+      | .sort u _ =>
+        let seenUnivs ← validateUnivParamsSeen u lvlBound seenUnivs
+        go stack seenExprs seenUnivs
+      | .const id us _ =>
+        let c ← TcM.getConst id
+        if c.lvls.toNat != us.size then
+          throw (.univParamMismatch c.lvls us.size)
+        let mut seenUnivs := seenUnivs
+        for u in us do
+          seenUnivs ← validateUnivParamsSeen u lvlBound seenUnivs
+        go stack seenExprs seenUnivs
+      | .app f a _ =>
+        go ((a, depth) :: (f, depth) :: stack) seenExprs seenUnivs
+      | .lam _ _ ty body _ | .all _ _ ty body _ =>
+        go ((body, depth + 1) :: (ty, depth) :: stack) seenExprs seenUnivs
+      | .letE _ ty val body _ _ =>
+        go ((body, depth + 1) :: (val, depth) :: (ty, depth) :: stack)
+          seenExprs seenUnivs
+      | .prj id _ val _ =>
+        if !(← TcM.hasConst id) then
+          throw (.unknownConst id.addr)
+        go ((val, depth) :: stack) seenExprs seenUnivs
+      -- FVars carry no de Bruijn index; leaves.
+      | .fvar .. | .nat .. | .str .. => go stack seenExprs seenUnivs
+  termination_by scopedExprWorkSize stack
+  decreasing_by
+    all_goals
+      simp [scopedExprWorkSize, KExpr.treeSize, KExpr.treeSize_pos] <;> omega
 
-partial def validateConstWellScoped (c : KConst m) : RecM m Unit := do
+def validateConstWellScoped (c : KConst m) : RecM m Unit := do
   let lvlBound := c.lvls.toNat
   validateExprWellScoped c.ty 0 lvlBound
   match c with
@@ -155,7 +205,7 @@ partial def validateConstWellScoped (c : KConst m) : RecM m Unit := do
 -- ### Sort/eliminator analysis
 
 /-- Result sort after peeling `n` foralls (opened with fresh fvars). -/
-partial def getResultSortLevel (ty : KExpr m) (n : Nat) :
+def getResultSortLevel (ty : KExpr m) (n : Nat) :
     RecM m (KUniv m) := do
   let saved := (← get).lctx.size
   let mut t := ty
@@ -180,7 +230,7 @@ partial def getResultSortLevel (ty : KExpr m) (n : Nat) :
 /-- Large eliminator (can target any universe): non-Prop, or Empty-like
     (0 ctors), or single-ctor Prop whose non-Prop fields all appear among
     the return-type args (lean4lean `isLargeEliminator`). -/
-partial def isLargeEliminator (resultLevel : KUniv m)
+def isLargeEliminator (resultLevel : KUniv m)
     (indInfos : Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m)) :
     RecM m Bool := do
   -- isNeverZero (not !isZero) so Param(u) falls through to the check below.
@@ -208,7 +258,7 @@ partial def isLargeEliminator (resultLevel : KUniv m)
       match w with
       | .all _ _ dom body _ =>
         if i ≥ nParams then
-          let domTy ← TcM.withInferOnly ((← read).infer dom)
+          let domTy ← inferOnlyCall dom
           match (← try? (ensureSortDirect domTy)) with
           | some sortLvl =>
             if !univEq sortLvl .mkZero then
@@ -232,7 +282,7 @@ partial def isLargeEliminator (resultLevel : KUniv m)
 
 /-- K-like target: single non-mutual inductive, Prop result (semantic zero),
     exactly one constructor with zero non-param fields. -/
-partial def computeKTarget (indId : KId m) : RecM m Bool := do
+def computeKTarget (indId : KId m) : RecM m Bool := do
   let (indParams, indIndices, ctors, block, ty) ←
     match (← TcM.tryGetConst indId) with
     | some (.indc (params := params) (indices := indices) (ctors := ctors)
@@ -255,7 +305,7 @@ partial def computeKTarget (indId : KId m) : RecM m Bool := do
 
 /-- A1 / S3b: walk the first `nParams` foralls of both types, def-eq the
     domains, and open both bodies with the SAME fvar. -/
-partial def checkParamAgreement (indTy ctorTy : KExpr m) (nParams : Nat) :
+def checkParamAgreement (indTy ctorTy : KExpr m) (nParams : Nat) :
     RecM m Unit := do
   let saved := (← get).lctx.size
   let mut it := indTy
@@ -279,7 +329,7 @@ partial def checkParamAgreement (indTy ctorTy : KExpr m) (nParams : Nat) :
 
 /-- A3: strict positivity — block inductives must not appear in negative
     position in any constructor field. -/
-partial def checkPositivity (ctorTy : KExpr m) (nParams : Nat)
+def checkPositivity (ctorTy : KExpr m) (nParams : Nat)
     (blockAddrs : Array Address) : RecM m Unit := do
   let mut ty := ctorTy
   for _ in [0:nParams] do
@@ -287,20 +337,30 @@ partial def checkPositivity (ctorTy : KExpr m) (nParams : Nat)
     match w with
     | .all _ _ _ body _ => ty := body
     | _ => return ()
-  repeat
+  runBounded (fun ty => do
     let w ← whnf ty
     match w with
     | .all _ _ dom body _ =>
       checkPositivityDomain dom blockAddrs
-      ty := body
-    | _ => break
+      return .next body
+    | _ => return .done ()) maxWhnfFuel.toNat ty
 
 /-- Field-domain positivity: recurse through foralls (negative-position
     mentions reject), then require either a direct block-inductive
     application or a valid nested-inductive application (recursively
     checked with the augmented address set). -/
-partial def checkPositivityDomain (dom : KExpr m)
-    (blockAddrs : Array Address) : RecM m Unit := do
+def checkPositivityDomain (dom : KExpr m)
+    (blockAddrs : Array Address) : RecM m Unit :=
+  checkPositivityDomainFuel maxWhnfFuel.toNat dom blockAddrs
+
+/-- Explicit call-depth bound for nested positivity. The old mutual recursion
+    had no termination guard; exhausting this adversarial-input bound is the
+    same local-loop failure used by bounded reduction. Sibling fields reuse
+    the bound, so this measures nesting depth rather than total work. -/
+def checkPositivityDomainFuel :
+    Nat → KExpr m → Array Address → RecM m Unit
+  | 0, _, _ => throw .maxRecDepth
+  | fuel + 1, dom, blockAddrs => do
   if !exprMentionsAnyAddr dom blockAddrs then
     return ()
   let w ← whnf dom
@@ -314,7 +374,7 @@ partial def checkPositivityDomain (dom : KExpr m)
     let (innerOpen, _) ← TcM.openBinderAnon innerDom innerBody
     let result ←
       try
-        checkPositivityDomain innerOpen blockAddrs
+        checkPositivityDomainFuel fuel innerOpen blockAddrs
         pure (Except.ok ())
       catch e =>
         pure (Except.error e)
@@ -351,16 +411,24 @@ partial def checkPositivityDomain (dom : KExpr m)
         let ctorTy ← match (← TcM.getConst ctorId) with
           | .ctor (ty := ty) .. => pure ty
           | _ => throw (.other "positivity: nested ctor not found")
-        checkNestedCtorFields ctorTy nParams paramArgs us augmented
+        checkNestedCtorFieldsFuel fuel ctorTy nParams paramArgs us augmented
     | _ => throw (.other "positivity: not a valid inductive app")
 
 /-- Nested-inductive field positivity: instantiate universes, strip the
     external inductive's param binders, simultaneously substitute the
     actual (block-mentioning) parameter arguments, then check each
     remaining field domain against the augmented address set. -/
-partial def checkNestedCtorFields (ctorTy : KExpr m) (nParams : Nat)
+def checkNestedCtorFields (ctorTy : KExpr m) (nParams : Nat)
     (paramArgs : Array (KExpr m)) (us : Array (KUniv m))
-    (augmentedAddrs : Array Address) : RecM m Unit := do
+    (augmentedAddrs : Array Address) : RecM m Unit :=
+  checkNestedCtorFieldsFuel maxWhnfFuel.toNat ctorTy nParams paramArgs us
+    augmentedAddrs
+
+def checkNestedCtorFieldsFuel :
+    Nat → KExpr m → Nat → Array (KExpr m) → Array (KUniv m) →
+      Array Address → RecM m Unit
+  | 0, _, _, _, _, _ => throw .maxRecDepth
+  | fuel + 1, ctorTy, nParams, paramArgs, us, augmentedAddrs => do
   let mut ty ← TcM.instantiateUnivParams ctorTy us
   for _ in [0:nParams] do
     let w ← whnf ty
@@ -370,19 +438,25 @@ partial def checkNestedCtorFields (ctorTy : KExpr m) (nParams : Nat)
   -- Var(0) = innermost = LAST param after stripping; simulSubst maps
   -- Var(i) ↦ substs[i], so reverse the param order.
   ty ← TcM.runIntern (simulSubst ty paramArgs.reverse 0)
-  checkNestedCtorFieldsLoop ty augmentedAddrs
+  checkNestedCtorFieldsLoopFuel fuel ty augmentedAddrs
 
-partial def checkNestedCtorFieldsLoop (ty : KExpr m)
-    (augmentedAddrs : Array Address) : RecM m Unit := do
+def checkNestedCtorFieldsLoop (ty : KExpr m)
+    (augmentedAddrs : Array Address) : RecM m Unit :=
+  checkNestedCtorFieldsLoopFuel maxWhnfFuel.toNat ty augmentedAddrs
+
+def checkNestedCtorFieldsLoopFuel :
+    Nat → KExpr m → Array Address → RecM m Unit
+  | 0, _, _ => throw .maxRecDepth
+  | fuel + 1, ty, augmentedAddrs => do
   let w ← whnf ty
   match w with
   | .all _ _ dom body _ =>
-    checkPositivityDomain dom augmentedAddrs
+    checkPositivityDomainFuel fuel dom augmentedAddrs
     let saved := (← get).lctx.size
     let (open', _) ← TcM.openBinderAnon dom body
     let result ←
       try
-        checkNestedCtorFieldsLoop open' augmentedAddrs
+        checkNestedCtorFieldsLoopFuel fuel open' augmentedAddrs
         pure (Except.ok ())
       catch e =>
         pure (Except.error e)
@@ -394,7 +468,7 @@ partial def checkNestedCtorFieldsLoop (ty : KExpr m)
 
 /-- A4: field sort levels ≤ the inductive's result level (Prop inductives
     are exempt). -/
-partial def checkFieldUniverses (ctorTy : KExpr m) (nParams : Nat)
+def checkFieldUniverses (ctorTy : KExpr m) (nParams : Nat)
     (indLevel : KUniv m) : RecM m Unit := do
   if indLevel.isZero then
     return ()
@@ -407,7 +481,7 @@ partial def checkFieldUniverses (ctorTy : KExpr m) (nParams : Nat)
       let (open', _) ← TcM.openBinderAnon dom body
       ty := open'
     | _ => break
-  repeat
+  let _ ← runBounded (fun ty => do
     let w ← whnf ty
     match w with
     | .all _ _ dom body _ =>
@@ -417,12 +491,12 @@ partial def checkFieldUniverses (ctorTy : KExpr m) (nParams : Nat)
         modify fun s => { s with lctx := s.lctx.truncate saved }
         throw (.other "field universe exceeds inductive level")
       let (open', _) ← TcM.openBinderAnon dom body
-      ty := open'
-    | _ => break
+      return .next open'
+    | _ => return .done ()) maxWhnfFuel.toNat ty
   modify fun s => { s with lctx := s.lctx.truncate saved }
 
 /-- A2: constructor return type (see module doc for the exact conditions). -/
-partial def checkCtorReturnType (ctorTy : KExpr m)
+def checkCtorReturnType (ctorTy : KExpr m)
     (nParams nIndices nFields : Nat) (indAddr : Address) (indLvls : UInt64)
     (blockAddrs : Array Address) : RecM m Unit := do
   let saved := (← get).lctx.size
@@ -484,7 +558,7 @@ partial def checkCtorReturnType (ctorTy : KExpr m)
 /-- Validate an inductive and every one of its constructors (S3/S3b peer
     agreement + A1–A4). The Rust tail (recursor-generation trigger) lands
     with P9. -/
-partial def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
+def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
   let (params, indices, lvls, ctors, block, isUnsafe, ty) ←
     match (← TcM.getConst id) with
     | .indc (params := params) (indices := indices) (lvls := lvls)
@@ -538,7 +612,7 @@ partial def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
 
 /-- Standalone-constructor validation: the same per-ctor A1–A4 against the
     declared parent. -/
-partial def checkCtorAgainstInductiveMemberImpl (ctorId inductId : KId m) :
+def checkCtorAgainstInductiveMemberImpl (ctorId inductId : KId m) :
     RecM m Unit := do
   let (ctorTy, ctorFields) ← match (← TcM.getConst ctorId) with
     | .ctor (ty := ty) (fields := fields) .. => pure (ty, fields.toNat)
@@ -562,7 +636,7 @@ partial def checkCtorAgainstInductiveMemberImpl (ctorId inductId : KId m) :
 /-- Validate every inductive and constructor of a homogeneous inductive
     block: per-member well-scopedness + type inference, then the member
     checks. -/
-partial def checkInductiveBlockImpl (block : KId m) (members : Array (KId m)) :
+def checkInductiveBlockImpl (block : KId m) (members : Array (KId m)) :
     RecM m Unit := do
   let mut indIds : Array (KId m) := #[]
   let mut ctorIds : Array (KId m) := #[]
@@ -595,7 +669,7 @@ partial def checkInductiveBlockImpl (block : KId m) (members : Array (KId m)) :
 
 /-- Shifted universe param args: `[param offset, …, param (lvls-1+offset)]`
     (offset 1 for large eliminators). -/
-partial def mkIndUnivs (indLvls offset : UInt64) :
+def mkIndUnivs (indLvls offset : UInt64) :
     RecM m (Array (KUniv m)) := do
   let mut out : Array (KUniv m) := Array.mkEmpty indLvls.toNat
   for i in [0:indLvls.toNat] do
@@ -605,18 +679,17 @@ partial def mkIndUnivs (indLvls offset : UInt64) :
 /-- Core of nested-occurrence detection (early-return style; the caller
     restores the lctx). Structural forall peel — NO whnf (a defn head like
     `IO.Ref` is not a nested occurrence). -/
-partial def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
+def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
     (flat : Array (FlatBlockMember m))
     (auxSeen : Array (Address × Array Address)) (univOffset : UInt64)
     (paramDepth : Nat) (nRecParams : UInt64) :
     RecM m (Array (FlatBlockMember m) × Array (Address × Array Address)) := do
-  let mut cur := dom
-  repeat
+  let cur ← runBounded (fun cur => do
     match cur with
     | .all _ _ innerDom body _ =>
       let (open', _) ← TcM.openBinderAnon innerDom body
-      cur := open'
-    | _ => break
+      return .next open'
+    | _ => return .done cur) maxWhnfFuel.toNat dom
   let (head, args) := cur.collectSpine
   let some headId := (match head with
       | .const id _ _ => some id
@@ -665,7 +738,7 @@ partial def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
 /-- Detect whether `dom` is a nested inductive occurrence; if so append an
     auxiliary entry (dedup by `(extAddr, specParam addrs)`). Returns the
     updated `(flat, auxSeen)`; lctx restored. -/
-partial def tryDetectNested (dom : KExpr m) (blockAddrs : Array Address)
+def tryDetectNested (dom : KExpr m) (blockAddrs : Array Address)
     (flat : Array (FlatBlockMember m))
     (auxSeen : Array (Address × Array Address)) (univOffset : UInt64)
     (paramDepth : Nat) (nRecParams : UInt64) :
@@ -678,7 +751,7 @@ partial def tryDetectNested (dom : KExpr m) (blockAddrs : Array Address)
 
 /-- Build the flat block: originals seeded, then a queue pass over every
     member's ctor fields detecting nested occurrences. -/
-partial def buildFlatBlock (blockInds : Array (KId m))
+def buildFlatBlock (blockInds : Array (KId m))
     (nRecParams univOffset : UInt64) :
     RecM m (Array (FlatBlockMember m)) := do
   let allBlockAddrs := blockInds.map (·.addr)
@@ -698,10 +771,12 @@ partial def buildFlatBlock (blockInds : Array (KId m))
           ctors, lvls, indUs, occurrenceUs := indUs }
     | _ => continue
   -- Queue-based scan (flat grows while iterating).
-  let mut qi := 0
-  while qi < flat.size do
-    let member := flat[qi]!
-    qi := qi + 1
+  runBounded (fun (qi, flat0, auxSeen0) => do
+    if qi ≥ flat0.size then
+      return .done flat0
+    let member := flat0[qi]!
+    let mut flat := flat0
+    let mut auxSeen := auxSeen0
     for ctorId in member.ctors do
       let (ctorFields, ctorTy) ← match (← TcM.tryGetConst ctorId) with
         | some (.ctor (fields := fields) (ty := ty) ..) => pure (fields, ty)
@@ -731,11 +806,12 @@ partial def buildFlatBlock (blockInds : Array (KId m))
           cur := open'
         | _ => break
       modify fun s => { s with lctx := s.lctx.truncate saved }
-  return flat
+    return .next (qi + 1, flat, auxSeen)) maxWhnfFuel.toNat
+      (0, flat, auxSeen)
 
 /-- Rewrite one nested occurrence `Ext spec idx…` to
     `aux blockParams idx…` when the head+params match an aux member. -/
-partial def tryReplaceAuxRefForSort (e : KExpr m)
+def tryReplaceAuxRefForSort (e : KExpr m)
     (aux : Array (FlatBlockMember m)) (auxIds : Array (KId m))
     (blockUs : Array (KUniv m)) (nBlockParams localDepth : UInt64) :
     RecM m (Option (KExpr m)) := do
@@ -775,7 +851,7 @@ partial def tryReplaceAuxRefForSort (e : KExpr m)
 
 /-- Rewrite ALL nested occurrences in `e` to block-local synthetic aux
     references (pre-sort normalization; compile-side `replace_all_nested`). -/
-partial def replaceAuxRefsForSort (e : KExpr m)
+def replaceAuxRefsForSort (e : KExpr m)
     (aux : Array (FlatBlockMember m)) (auxIds : Array (KId m))
     (blockUs : Array (KUniv m)) (nBlockParams localDepth : UInt64) :
     RecM m (KExpr m) := do
@@ -810,7 +886,7 @@ partial def replaceAuxRefsForSort (e : KExpr m)
 
 /-- First `n` Pi binders of the block's first inductive, outermost-first
     (domains stay in the recursor-external telescope context). -/
-partial def extractBlockParamBinders (blockFirstId : KId m)
+def extractBlockParamBinders (blockFirstId : KId m)
     (nBlockParams : UInt64) :
     RecM m (Array (m.F Name × m.F Lean.BinderInfo × KExpr m)) := do
   let indTy ← match (← TcM.tryGetConst blockFirstId) with
@@ -830,7 +906,7 @@ partial def extractBlockParamBinders (blockFirstId : KId m)
 
 /-- `∀ T₀ … Tₙ₋₁, body` from outermost-first binders (compile-side
     `mk_forall`). -/
-partial def wrapWithBlockParamForalls (body : KExpr m)
+def wrapWithBlockParamForalls (body : KExpr m)
     (binders : Array (m.F Name × m.F Lean.BinderInfo × KExpr m)) :
     RecM m (KExpr m) := do
   let mut cur := body
@@ -844,7 +920,7 @@ partial def wrapWithBlockParamForalls (body : KExpr m)
     aux-ref rewritten, block-param wrapped), seed by compiler-shaped name
     rank, run `sortKConstsWithSeedKey`, and return
     `perm[k] = original index of class k's representative`. -/
-partial def canonicalAuxOrder (aux : Array (FlatBlockMember m))
+def canonicalAuxOrder (aux : Array (FlatBlockMember m))
     (nBlockParams : UInt64) (blockUs : Array (KUniv m))
     (all0Name : Option Name) (blockFirstId : Option (KId m)) :
     RecM m (Array Nat) := do
@@ -998,7 +1074,7 @@ partial def canonicalAuxOrder (aux : Array (FlatBlockMember m))
 
 /-- Motive type for a flat member:
     `∀ indices (t : I spec/params indices), Sort elim`. Built at depth 0. -/
-partial def buildMotiveTypeFlat (member : FlatBlockMember m)
+def buildMotiveTypeFlat (member : FlatBlockMember m)
     (nRecParams : Nat) (elimLevel : KUniv m) : RecM m (KExpr m) := do
   let indTy := (← TcM.getConst member.id).ty
   let indTyInst ← TcM.instantiateUnivParams indTy member.occurrenceUs
@@ -1050,25 +1126,24 @@ partial def buildMotiveTypeFlat (member : FlatBlockMember m)
 /-- Recursive-field detection: after peeling foralls, `I_k params args`
     matching a flat member. Aux members additionally def-eq the first
     `ownParams` args against spec_params lifted by `specParamsLiftBy`. -/
-partial def isRecField (dom : KExpr m) (flat : Array (FlatBlockMember m))
+def isRecField (dom : KExpr m) (flat : Array (FlatBlockMember m))
     (specParamsLiftBy : UInt64) : RecM m (Option Nat) := do
-  let mut ty := dom
-  repeat
+  runBounded (fun ty => do
     let w ← whnf ty
     match w with
-    | .all _ _ _ body _ => ty := body
+    | .all _ _ _ body _ => return .next body
     | _ =>
       let (head, args) := w.collectSpine
       let some headAddr := (match head with
           | .const id _ _ => some id.addr
           | _ => none)
-        | return none
+        | return .done none
       for h : idx in [0:flat.size] do
         let mem := flat[idx]
         if mem.id.addr != headAddr then
           continue
         if !mem.isAux then
-          return some idx
+          return .done (some idx)
         let own := mem.ownParams.toNat
         if args.size < own || mem.specParams.size != own then
           continue
@@ -1083,13 +1158,12 @@ partial def isRecField (dom : KExpr m) (flat : Array (FlatBlockMember m))
             allMatch := false
             break
         if allMatch then
-          return some idx
-      return none
-  return none
+          return .done (some idx)
+      return .done none) maxWhnfFuel.toNat dom
 
 /-- IH type for a recursive field (direct or forall-wrapped), built while
     fields and k earlier IHs are on the context. -/
-partial def buildDirectIh (fieldIdx blockIndIdx nParams nFields k
+def buildDirectIh (fieldIdx blockIndIdx nParams nFields k
     minorSaved motiveBase : Nat) (fieldDomains : Array (KExpr m))
     (blockAddrs : Array Address) : RecM m (KExpr m) := do
   -- Lift field domain from its depth (minorSaved + fieldIdx) to current
@@ -1102,10 +1176,7 @@ partial def buildDirectIh (fieldIdx blockIndIdx nParams nFields k
   | .all .. =>
     -- Forall-wrapped: ∀ xs…, I_bi params idxArgs(xs)
     let ihSaved := (← get).lctx.size
-    let mut innerTy := wdom
-    let mut forallDoms : Array (KExpr m) := #[]
-    let mut innerWhnf := wdom
-    repeat
+    let (forallDoms, innerWhnf) ← runBounded (fun (innerTy, forallDoms) => do
       let w ← whnf innerTy
       match w with
       | .all _ _ innerDom innerBody _ =>
@@ -1114,14 +1185,10 @@ partial def buildDirectIh (fieldIdx blockIndIdx nParams nFields k
           | .const id _ _ => blockAddrs.contains id.addr
           | _ => false
         if isBlockHead then
-          innerWhnf := w
-          break
-        forallDoms := forallDoms.push innerDom
+          return .done (forallDoms, w)
         let _ ← TcM.pushFVarDeclAnon innerDom
-        innerTy := innerBody
-      | _ =>
-        innerWhnf := w
-        break
+        return .next (innerBody, forallDoms.push innerDom)
+      | _ => return .done (forallDoms, w)) maxWhnfFuel.toNat (wdom, #[])
     let nXs := forallDoms.size
     let (_, innerArgs) := innerWhnf.collectSpine
     let idxArgs := innerArgs.extract nParams innerArgs.size
@@ -1154,7 +1221,7 @@ partial def buildDirectIh (fieldIdx blockIndIdx nParams nFields k
 
 /-- Minor premise type for a constructor, built with params+motives on the
     context: `∀ fields ihs, motive(retIndices, C params fields)`. -/
-partial def buildMinorAtDepth (indIdx : Nat) (ctorId : KId m)
+def buildMinorAtDepth (indIdx : Nat) (ctorId : KId m)
     (member : FlatBlockMember m) (nRecParams motiveBase : Nat)
     (flat : Array (FlatBlockMember m)) (blockAddrs : Array Address) :
     RecM m (KExpr m) := do
@@ -1184,22 +1251,21 @@ partial def buildMinorAtDepth (indIdx : Nat) (ctorId : KId m)
       ty ← TcM.runIntern (subst body p 0)
     | _ => break
   -- Collect fields (pushed as locals) + recursive-field positions.
-  let mut fieldDomains : Array (KExpr m) := #[]
-  let mut recFieldIndices : Array (Nat × Nat) := #[]
-  let mut fidx := 0
-  repeat
+  let (fieldsTy, fieldDomains, recFieldIndices, _) ← runBounded
+      (fun (ty, fieldDomains, recFieldIndices, fidx) => do
     let w ← whnf ty
     match w with
     | .all _ _ dom body _ =>
-      fieldDomains := fieldDomains.push dom
+      let fieldDomains := fieldDomains.push dom
       let nRecParams64 := (flat[0]?.map (·.ownParams)).getD 0
       let liftBy := (← TcM.depth (m := m)) - min (← TcM.depth (m := m)) nRecParams64
+      let mut recFieldIndices := recFieldIndices
       if let some bi ← isRecField dom flat liftBy then
         recFieldIndices := recFieldIndices.push (fidx, bi)
       let _ ← TcM.pushFVarDeclAnon dom
-      ty := body
-      fidx := fidx + 1
-    | _ => break
+      return .next (body, fieldDomains, recFieldIndices, fidx + 1)
+    | _ => return .done (ty, fieldDomains, recFieldIndices, fidx))
+      maxWhnfFuel.toNat (ty, #[], #[], 0)
   let nFields := fieldDomains.size
   -- IH types (pushed as locals).
   let mut ihDomains : Array (KExpr m) := #[]
@@ -1215,7 +1281,7 @@ partial def buildMinorAtDepth (indIdx : Nat) (ctorId : KId m)
   let nIhs := ihDomains.size
   let nBinders := nFields + nIhs
   -- Return type: I params indices → conclusion.
-  let (_, retArgs) := ty.collectSpine
+  let (_, retArgs) := fieldsTy.collectSpine
   let retIndices := retArgs.extract member.ownParams.toNat retArgs.size
   let depth := (← TcM.depth (m := m)).toNat
   let motiveVarIdx := (depth - 1 - (motiveBase + indIdx)).toUInt64
@@ -1254,7 +1320,7 @@ partial def buildMinorAtDepth (indIdx : Nat) (ctorId : KId m)
 
 /-- Full recursor type for flat member `di`:
     `∀ params motives minors indices major, motive indices major`. -/
-partial def buildRecType (di : Nat)
+def buildRecType (di : Nat)
     (indInfos : Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m))
     (blockInds : Array (KId m)) (flat : Array (FlatBlockMember m))
     (motiveTypes : Array (KExpr m)) (univOffset : UInt64) :
@@ -1362,7 +1428,7 @@ partial def buildRecType (di : Nat)
 
 /-- Extract the major-premise domain whose head is `targetAddr`, after
     skipping `prefixSkip` foralls (scan bounded at 64). -/
-partial def recursorMajorDomainForAddr (recTy : KExpr m)
+def recursorMajorDomainForAddr (recTy : KExpr m)
     (prefixSkip : UInt64) (targetAddr : Address) :
     RecM m (Option (KExpr m)) := do
   let mut ty := recTy
@@ -1387,7 +1453,7 @@ partial def recursorMajorDomainForAddr (recTy : KExpr m)
   return none
 
 /-- Same head/universes/arg-count with def-eq args. -/
-partial def majorDomainSignatureEq (a b : KExpr m) : RecM m Bool := do
+def majorDomainSignatureEq (a b : KExpr m) : RecM m Bool := do
   let (aHead, aArgs) := a.collectSpine
   let (bHead, bArgs) := b.collectSpine
   match aHead, bHead with
@@ -1406,7 +1472,7 @@ partial def majorDomainSignatureEq (a b : KExpr m) : RecM m Bool := do
 
 /-- Position-by-position peer recursor alignment (canonical order both
     sides); `none` on any sanity-check failure. -/
-partial def findPeerRecursors (blockId : KId m)
+def findPeerRecursors (blockId : KId m)
     (flat : Array (FlatBlockMember m)) : RecM m (Option (Array (KId m))) := do
   let some members ← TcM.tryGetBlock blockId | return none
   let mut recIds : Array (KId m) := #[]
@@ -1471,7 +1537,7 @@ partial def findPeerRecursors (blockId : KId m)
 
 /-- IH value for a recursive field in a rule RHS:
     `λ xs…, rec[target] params motives minors idxArgs (field xs…)`. -/
-partial def buildRuleIh (fieldIdx nFields totalLams : UInt64)
+def buildRuleIh (fieldIdx nFields totalLams : UInt64)
     (targetBi : Nat) (flat : Array (FlatBlockMember m))
     (peerRecs : Array (KId m)) (nRecParams nMotives nMinors : Nat)
     (isLarge : Bool) (dom : KExpr m) : RecM m (KExpr m) := do
@@ -1485,20 +1551,7 @@ partial def buildRuleIh (fieldIdx nFields totalLams : UInt64)
     recLvls := recLvls.push (← TcM.internUniv (m := m) (.mkParam i.toUInt64 anonN))
   -- Peel foralls (stop when the result head is a flat member).
   let wdom ← whnf dom
-  let mut inner := wdom
-  let mut forallDoms : Array (KExpr m) := #[]
-  repeat
-    match inner with
-    | .all _ _ fd fb _ =>
-      let (h, _) := inner.collectSpine
-      let isFlatHead := match h with
-        | .const id _ _ => flat.any (·.id.addr == id.addr)
-        | _ => false
-      if isFlatHead then
-        break
-      forallDoms := forallDoms.push fd
-      inner := fb
-    | _ => break
+  let (forallDoms, inner) := peelRuleIhForalls wdom flat
   let nXs := forallDoms.size.toUInt64
   let innerW ← whnf inner
   let (_, innerArgs) := innerW.collectSpine
@@ -1530,7 +1583,7 @@ partial def buildRuleIh (fieldIdx nFields totalLams : UInt64)
 
 /-- Rule RHS for one constructor:
     `λ params motives minors fields, minor[gi] fields ihs`. -/
-partial def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
+def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
     (member : FlatBlockMember m) (flat : Array (FlatBlockMember m))
     (peerRecs : Array (KId m)) (recTyForMember : KExpr m)
     (nRecParams : Nat) (isLarge : Bool) : RecM m (KExpr m) := do
@@ -1549,15 +1602,13 @@ partial def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
     match w with
     | .all _ _ _ body _ => countTy := body
     | _ => break
-  let mut nFields : UInt64 := 0
-  let mut tmp := countTy
-  repeat
+  let nFields ← runBounded (fun (tmp, nFields) => do
     let w ← whnf tmp
     match w with
     | .all _ _ _ body _ =>
-      nFields := nFields + 1
-      tmp := body
-    | _ => break
+      return .next (body, nFields + 1)
+    | _ => return .done nFields) maxWhnfFuel.toNat
+      (countTy, (0 : UInt64))
   let totalLams := pmm.toUInt64 + nFields
   -- Pass 2: body = minor[globalIdx] fields ihs.
   let globalMinorIdx := (flat.extract 0 memberIdx).foldl
@@ -1584,19 +1635,22 @@ partial def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
     | _ => break
   -- Recursive fields → IH applications.
   let recFieldLift := totalLams - min totalLams nRecParams.toUInt64
-  let mut fieldIdx : UInt64 := 0
-  repeat
-    let w ← whnf ty2
+  let (_, _, bodyAfterFields) ← runBounded
+      (fun (fieldTy, fieldIdx, loopBody) => do
+    let w ← whnf fieldTy
     match w with
     | .all _ _ dom body2 _ =>
+      let mut loopBody := loopBody
       if let some targetBi ← isRecField dom flat recFieldLift then
         let ih ← buildRuleIh fieldIdx nFields totalLams targetBi flat
           peerRecs nRecParams nMotives nMinors isLarge dom
-        body ← TcM.intern (.mkApp body ih)
+        loopBody ← TcM.intern (.mkApp loopBody ih)
       let fvar : KExpr m := .mkVar (nFields - 1 - fieldIdx) anonN
-      ty2 ← TcM.runIntern (subst body2 fvar 0)
-      fieldIdx := fieldIdx + 1
-    | _ => break
+      let fieldTy ← TcM.runIntern (subst body2 fvar 0)
+      return .next (fieldTy, fieldIdx + 1, loopBody)
+    | _ => return .done (fieldTy, fieldIdx, loopBody))
+      maxWhnfFuel.toNat (ty2, (0 : UInt64), body)
+  body := bodyAfterFields
   -- Field lambdas: domains from the peer recursor's minor premise.
   let minorDomain ← do
     let mut cur := recTyForMember
@@ -1646,7 +1700,7 @@ partial def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
 
 /-- Generate recursors for every flat member of an inductive block and
     cache them (`recursorCache`, `recMajorsCache`). -/
-partial def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
+def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
   let blockInds ← discoverBlockInductives blockId
   if blockInds.isEmpty then
     modify fun s => { s with env := { s.env with
@@ -1739,7 +1793,7 @@ partial def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
 /-- Populate canonical rules from the recursor block's peers (block-level
     recursor checking path). Verifies canonical alignment peer-by-peer via
     major-domain signatures; a divergence is a hard error. -/
-partial def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
+def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
     RecM m Unit := do
   let some generatedSnapshot := (← get).env.recursorCache[indBlockId]?
     | return ()
@@ -1842,7 +1896,7 @@ partial def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
 
 /-- Major inductive ids of all peer recursors in a block, sorted+deduped
     (Rust `BTreeSet<KId>` key). -/
-partial def gatherPeerMajors (recBlock : KId m) : RecM m (Array (KId m)) := do
+def gatherPeerMajors (recBlock : KId m) : RecM m (Array (KId m)) := do
   let mut peers : Array (KId m) := #[]
   match (← TcM.tryGetBlock recBlock) with
   | some members =>
@@ -1869,7 +1923,7 @@ partial def gatherPeerMajors (recBlock : KId m) : RecM m (Array (KId m)) := do
 /-- Block-coordinated inductive validation (inductive.rs `check_inductive`):
     pure inductive blocks route through `blockCheckResults`; anything else
     falls back to the member check. -/
-partial def checkInductive (id : KId m) : RecM m Unit := do
+def checkInductive (id : KId m) : RecM m Unit := do
   let block ← match (← TcM.getConst id) with
     | .indc (block := block) .. => pure block
     | _ => throw (.other "check_inductive: not an inductive")
@@ -1897,7 +1951,7 @@ partial def checkInductive (id : KId m) : RecM m Unit := do
 
 /-- Coherence-only recursor gate: major inductive passes A1–A4 and the
     declared K flag matches the constructive computation. -/
-partial def checkRecursorCoherence (id : KId m) : RecM m Unit := do
+def checkRecursorCoherence (id : KId m) : RecM m Unit := do
   let (ty, declaredK, params, motives, minors, indices) ←
     match (← TcM.getConst id) with
     | .recr (ty := ty) (k := k) (params := p) (motives := mo) (minors := mi)
@@ -1914,7 +1968,7 @@ partial def checkRecursorCoherence (id : KId m) : RecM m Unit := do
 /-- Validate a recursor against the generated canonical form (type def-eq +
     per-rule field count and RHS def-eq), with signature-based aux
     disambiguation and the canonical-aux coherence fallback. -/
-partial def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
+def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
   let (recBlock, ty, declaredK, params, motives, minors, indices) ←
     match (← TcM.getConst id) with
     | .recr (block := block) (ty := ty) (k := k) (params := p)
@@ -2011,7 +2065,7 @@ partial def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
     throw (.other "check_recursor: no generated recursor for major")
 
 /-- Validate every recursor in a homogeneous recursor block. -/
-partial def checkRecursorBlockImpl (block : KId m)
+def checkRecursorBlockImpl (block : KId m)
     (members : Array (KId m)) : RecM m Unit := do
   for member in members do
     TcM.reset (m := m)

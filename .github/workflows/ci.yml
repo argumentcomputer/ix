@@ -31,6 +31,12 @@ jobs:
       # lean-action builds above — fails CI.
       - name: Build all targets
         run: lake lint -- --wfail -v
+      - name: Check Ix.Tc verification sorry frontier
+        run: perl .github/scripts/check_tc_verify_sorries.pl
+      - name: Check Ix.Tc exported theorem trust manifest
+        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements
+      - name: Build Ix.Tc formal verification
+        run: lake build IxTcVerify
       - name: Check codegen'd IxVM kernel is up to date
         run: lake exe ix codegen --check
       # Compile the `.ixe` the zkVM execution gates run the guests over:

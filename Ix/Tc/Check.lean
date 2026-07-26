@@ -36,78 +36,80 @@ inductive CheckBlockKind where
 
 namespace RecM
 
-mutual
-
 -- ### Safety lattice
 
 /-- Safe defs must not reference unsafe/partial constants; partial defs must
     not reference unsafe ones. Iterative walk, memoized. -/
-partial def checkNoUnsafeRefs (root : KExpr m)
-    (callerSafety : Ix.DefinitionSafety) : RecM m Unit := do
-  let mut stack : Array (KExpr m) := #[root]
-  let mut seenExprs : HashSet Address := {}
-  let mut seenConsts : HashSet Address := {}
-  while !stack.isEmpty do
-    let e := stack.back!
-    stack := stack.pop
-    if seenExprs.contains e.addr then
-      continue
-    seenExprs := seenExprs.insert e.addr
-    match e with
-    | .var .. | .fvar .. | .sort .. | .nat .. | .str .. => pure ()
-    | .const id _ _ =>
-      if seenConsts.contains id.addr then
-        continue
-      seenConsts := seenConsts.insert id.addr
-      let short := (toString id.addr).take 8 |>.toString
-      match (← TcM.tryGetConst id) with
-      | some (.axio (isUnsafe := true) ..) =>
-        throw (.other s!"safe definition references unsafe axiom {short}")
-      | some (.defn (safety := .unsaf) ..) =>
-        throw (.other s!"safe definition references unsafe definition {short}")
-      | some (.defn (safety := .part) ..) =>
-        if callerSafety == .safe then
-          throw (.other s!"safe definition references partial definition {short}")
-      | some (.recr (isUnsafe := true) ..) =>
-        throw (.other s!"safe definition references unsafe recursor {short}")
-      | some (.indc (isUnsafe := true) ..) =>
-        throw (.other s!"safe definition references unsafe inductive {short}")
-      | some (.ctor (isUnsafe := true) ..) =>
-        throw (.other s!"safe definition references unsafe constructor {short}")
-      | _ => pure ()
-    | .app f a _ =>
-      stack := stack.push f |>.push a
-    | .lam _ _ ty body _ | .all _ _ ty body _ =>
-      stack := stack.push ty |>.push body
-    | .letE _ ty val body _ _ =>
-      stack := stack.push ty |>.push val |>.push body
-    | .prj _ _ val _ =>
-      stack := stack.push val
+def checkNoUnsafeRefs (root : KExpr m)
+    (callerSafety : Ix.DefinitionSafety) : RecM m Unit :=
+  go [root] {} {}
+where
+  /-- LIFO order matches the former Array stack. -/
+  go (stack : List (KExpr m)) (seenExprs seenConsts : HashSet Address) :
+      RecM m Unit :=
+    match stack with
+    | [] => pure ()
+    | e :: stack => do
+      if seenExprs.contains e.addr then
+        return (← go stack seenExprs seenConsts)
+      let seenExprs := seenExprs.insert e.addr
+      match e with
+      | .var .. | .fvar .. | .sort .. | .nat .. | .str .. =>
+        go stack seenExprs seenConsts
+      | .const id _ _ =>
+        if seenConsts.contains id.addr then
+          return (← go stack seenExprs seenConsts)
+        let seenConsts := seenConsts.insert id.addr
+        let short := (toString id.addr).take 8 |>.toString
+        match (← TcM.tryGetConst id) with
+        | some (.axio (isUnsafe := true) ..) =>
+          throw (.other s!"safe definition references unsafe axiom {short}")
+        | some (.defn (safety := .unsaf) ..) =>
+          throw (.other s!"safe definition references unsafe definition {short}")
+        | some (.defn (safety := .part) ..) =>
+          if callerSafety == .safe then
+            throw (.other s!"safe definition references partial definition {short}")
+        | some (.recr (isUnsafe := true) ..) =>
+          throw (.other s!"safe definition references unsafe recursor {short}")
+        | some (.indc (isUnsafe := true) ..) =>
+          throw (.other s!"safe definition references unsafe inductive {short}")
+        | some (.ctor (isUnsafe := true) ..) =>
+          throw (.other s!"safe definition references unsafe constructor {short}")
+        | _ => pure ()
+        go stack seenExprs seenConsts
+      | .app f a _ => go (a :: f :: stack) seenExprs seenConsts
+      | .lam _ _ ty body _ | .all _ _ ty body _ =>
+        go (body :: ty :: stack) seenExprs seenConsts
+      | .letE _ ty val body _ _ =>
+        go (body :: val :: ty :: stack) seenExprs seenConsts
+      | .prj _ _ val _ => go (val :: stack) seenExprs seenConsts
+  termination_by exprWorkSize stack
+  decreasing_by
+    all_goals simp [exprWorkSize, KExpr.treeSize, KExpr.treeSize_pos] <;> omega
 
 -- ### Quotient validation
 
 /-- Count leading foralls (whnf-peeled, opened with fresh fvars). -/
-partial def countForalls (ty : KExpr m) : RecM m Nat := do
+def countForalls (ty : KExpr m) : RecM m Nat := do
   let saved := (← get).lctx.size
-  let mut n := 0
-  let mut cur := ty
-  repeat
+  runBounded (fun (cur, n) => do
     let w ← whnf cur
     match w with
     | .all name bi dom body _ =>
-      n := n + 1
       let fvId ← TcM.freshFVarId (m := m)
       let fv ← TcM.intern (.mkFVar fvId name)
       modify fun s => { s with lctx := s.lctx.push fvId (.cdecl name bi dom) }
-      cur ← TcM.runIntern (instantiateRev body #[fv])
+      let cur ← TcM.runIntern (instantiateRev body #[fv])
+      return .next (cur, n + 1)
     | _ =>
       modify fun s => { s with lctx := s.lctx.truncate saved }
-      return n
-  return n
+      return .done n) maxWhnfFuel.toNat (ty, 0)
+
+mutual
 
 /-- `Eq` must exist with 1 universe param, 2 params, and `Eq.refl` as its
     single constructor (prerequisite for sound quot reduction). -/
-partial def checkEqType : RecM m Unit := do
+def checkEqType : RecM m Unit := do
   let p ← prims
   let eqC? := (← get).env.consts.fold (init := none)
     fun acc id c => if id.addr == p.eq.addr then some c else acc
@@ -128,7 +130,7 @@ partial def checkEqType : RecM m Unit := do
 /-- Quot structure: address ↔ kind consistency against the primitive table,
     universe counts (1/1/2/1), Eq shape for `lift`, and minimum forall
     counts (2/3/6/5). -/
-partial def checkQuot (id : KId m) (kind : Ix.QuotKind) (lvls : UInt64)
+def checkQuot (id : KId m) (kind : Ix.QuotKind) (lvls : UInt64)
     (ty : KExpr m) : RecM m Unit := do
   let p ← prims
   let expectedKind ←
@@ -158,7 +160,7 @@ partial def checkQuot (id : KId m) (kind : Ix.QuotKind) (lvls : UInt64)
 
 -- ### Block classification / coordination
 
-partial def classifyBlock (members : Array (KId m)) :
+def classifyBlock (members : Array (KId m)) :
     RecM m CheckBlockKind := do
   if members.isEmpty then
     throw (.other "empty check block")
@@ -179,14 +181,14 @@ partial def classifyBlock (members : Array (KId m)) :
   | _, _, _ =>
     throw (.other "unsupported mixed check block: expected only definitions, only inductives/constructors, or only recursors")
 
-partial def coordinatedBlockIfKind (block : KId m)
+def coordinatedBlockIfKind (block : KId m)
     (expected : CheckBlockKind) : RecM m (Option (KId m)) := do
   let some members ← TcM.tryGetBlock block | return none
   match (← try? (classifyBlock members)) with
   | some kind => if kind == expected then return some block else return none
   | none => return none
 
-partial def coordinatedBlockFor (c : KConst m) : RecM m (Option (KId m)) := do
+def coordinatedBlockFor (c : KConst m) : RecM m (Option (KId m)) := do
   match c with
   | .defn (block := block) .. => coordinatedBlockIfKind block .defn
   | .indc (block := block) .. => coordinatedBlockIfKind block .inductive'
@@ -199,7 +201,7 @@ partial def coordinatedBlockFor (c : KConst m) : RecM m (Option (KId m)) := do
   | .axio .. | .quot .. => return none
 
 /-- Whole-block check key for batch schedulers. -/
-partial def coordinatedCheckBlockForConst (id : KId m) :
+def coordinatedCheckBlockForConst (id : KId m) :
     RecM m (Option (KId m)) := do
   let some c ← TcM.tryGetConst id | return none
   coordinatedBlockFor c
@@ -208,7 +210,7 @@ partial def coordinatedCheckBlockForConst (id : KId m) :
 
 /-- Type-check a single constant (block-coordinated when applicable; results
     memoized in `blockCheckResults` so failures replay per member). -/
-partial def checkConst (id : KId m) : RecM m Unit := do
+def checkConst (id : KId m) : RecM m Unit := do
   let c ← TcM.getConst id
   if let some block ← coordinatedBlockFor c then
     if let some result := (← get).env.blockCheckResults[block]? then
@@ -228,12 +230,12 @@ partial def checkConst (id : KId m) : RecM m Unit := do
     | .error e => throw e
   checkConstMemberFresh id
 
-partial def checkConstMemberFresh (id : KId m) : RecM m Unit := do
+def checkConstMemberFresh (id : KId m) : RecM m Unit := do
   TcM.reset (m := m)
   let c ← TcM.getConst id
   checkConstMember id c
 
-partial def checkConstMember (id : KId m) (c : KConst m) : RecM m Unit := do
+def checkConstMember (id : KId m) (c : KConst m) : RecM m Unit := do
   if Mode.F.hasDups c.levelParams then
     throw (.other "duplicate universe level parameter")
   validateConstWellScoped c
@@ -271,7 +273,7 @@ partial def checkConstMember (id : KId m) (c : KConst m) : RecM m Unit := do
     let _ ← ensureSortDirect t
     checkCtorAgainstInductiveMember id induct
 
-partial def checkBlockBody (block : KId m) (requested : KId m) :
+def checkBlockBody (block : KId m) (requested : KId m) :
     RecM m Unit := do
   let members := (← TcM.tryGetBlock block).getD #[requested]
   let kind ← classifyBlock members
@@ -294,21 +296,21 @@ partial def checkBlockBody (block : KId m) (requested : KId m) :
 
 -- ### Inductive machinery (validation and recursor generation in Ix.Tc.Inductive)
 
-partial def checkInductiveMember (id : KId m) : RecM m Unit :=
+def checkInductiveMember (id : KId m) : RecM m Unit :=
   checkInductiveMemberImpl id
 
-partial def checkCtorAgainstInductiveMember (id induct : KId m) :
+def checkCtorAgainstInductiveMember (id induct : KId m) :
     RecM m Unit :=
   checkCtorAgainstInductiveMemberImpl id induct
 
-partial def checkInductiveBlock (block : KId m) (members : Array (KId m)) :
+def checkInductiveBlock (block : KId m) (members : Array (KId m)) :
     RecM m Unit :=
   checkInductiveBlockImpl block members
 
-partial def checkRecursorMember (id : KId m) : RecM m Unit :=
+def checkRecursorMember (id : KId m) : RecM m Unit :=
   checkRecursorMemberImpl id
 
-partial def checkRecursorBlock (block : KId m) (members : Array (KId m)) :
+def checkRecursorBlock (block : KId m) (members : Array (KId m)) :
     RecM m Unit :=
   checkRecursorBlockImpl block members
 
@@ -319,9 +321,14 @@ end RecM
 namespace TcM
 
 /-- Public entry: type-check one constant (per-constant state reset inside;
-    block coordination + memoized block results). -/
+    block coordination + memoized block results).
+
+    A failed pending check may have populated reduction or block-generation
+    caches before discovering the error. `isolateCheckErrors` removes those
+    subject-dependent entries at the public boundary, while preserving lazy
+    loads, interning, fuel consumption, and cached block failures. -/
 def checkConst (id : KId m) : TcM m Unit :=
-  (RecM.checkConst id).run methods
+  isolateCheckErrors (runRec (RecM.checkConst id))
 
 end TcM
 

@@ -213,6 +213,11 @@ def equivTests : TestSeq :=
       let (inC1, em) := em.isEquiv (eqAddr 100, c1) (eqAddr 200, c1)
       let (inC2, _) := em.isEquiv (eqAddr 100, c2) (eqAddr 200, c2)
       return inC1 && !inC2)
+  ++ test "find reaches the root and path-halves within the node bound"
+    ((let em : EquivManager :=
+        { parent := #[1, 2, 3, 3], rank := #[0, 0, 0, 0] }
+      let (root, em) := em.find 0
+      root == 3 && em.parent == #[2, 2, 3, 3]) : Bool)
 
 /-! ### TcM: ctx-id chain, cache keys, fuel, modes (ported from tc.rs tests) -/
 
@@ -259,6 +264,18 @@ def ctxTests : TestSeq :=
       TcM.popLocal
       let c3 := (← get).numLetBindings
       return c1 == 1 && c2 == 1 && c3 == 0) == .ok true)
+  ++ test "restoreDepth pops the exact suffix and restores frame metadata"
+    (runTcVal (do
+      TcM.pushLocal sort0
+      let saved := (← get).ctx.size
+      let savedId := (← get).ctxId
+      TcM.pushLet sort1 sort0
+      TcM.pushLocal sort1
+      TcM.restoreDepth saved
+      let s ← get
+      return s.ctx.size == saved && s.letVals.size == saved &&
+        s.numLetBindings == 0 && s.ctxId == savedId &&
+        s.ctxIdStack.size == saved) == .ok true)
   ++ test "whnfKey empty ctx for closed expr"
     (runTcVal (do
       TcM.pushLocal sort0

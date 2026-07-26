@@ -114,6 +114,45 @@ def exprAnonMeta : TestSeq :=
   ++ test "nat" ((aNatLit 42).addr == (mNatLit 42).addr)
   ++ test "str" ((aStrLit "hello").addr == (mStrLit "hello").addr)
 
+def renderTests : TestSeq :=
+  test "render preserves leaf output through depth 20"
+    (KExpr.render (aVar 0) 20 == "#0")
+  ++ test "render cuts off before inspecting a node at depth 21"
+    (KExpr.render (aVar 0) 21 == "...")
+  ++ test "render gives children the predecessor budget"
+    (KExpr.render (KExpr.mkApp (aVar 0) (aVar 1)) 20 == "(... ...)")
+
+def canonicalTotalizationTests : TestSeq :=
+  test "compareKUniv recurses structurally through successors"
+    (compareKUniv (KUniv.mkSucc aZ) (KUniv.mkSucc (aP 0)) ==
+      compareKUniv aZ (aP 0))
+  ++ test "mergeSorted preserves the left-before-right tie rule"
+    ((let leftId := aId "left"
+      let rightId := aId "right"
+      let c : KConst .anon := .axio () () false 0 sort0A
+      match mergeSorted {} (fun _ => none) #[(leftId, c)] #[(rightId, c)] with
+      | .ok items =>
+        items.size == 2 && items[0]!.1 == leftId && items[1]!.1 == rightId
+      | .error _ => false) : Bool)
+  ++ test "canonical refinement keeps its empty-input fast path"
+    ((match sortKConstsWithSeedKey (m := .anon) (fun _ => none)
+        (fun id _ => id.addr) #[] with
+      | .ok classes => classes.isEmpty
+      | .error _ => false) : Bool)
+
+def occurrenceTests : TestSeq :=
+  test "exprMentionsAddr sees constant and projection heads"
+    ((let c := aId "needle"
+      let e := KExpr.mkLet () sort0A (KExpr.mkConst c #[])
+        (KExpr.mkPrj c 0 (aVar 0)) false
+      exprMentionsAddr e c.addr &&
+        !exprMentionsAddr e (aId "absent").addr) : Bool)
+  ++ test "exprMentionsAddr remains stack-safe on a deep application spine"
+    ((let c := aId "deep-needle"
+      let e := (List.range 4096).foldl
+        (fun e _ => KExpr.mkApp e (aVar 0)) (KExpr.mkConst c #[])
+      exprMentionsAddr e c.addr) : Bool)
+
 /-! ### ExprInfo invariants (ported from expr.rs tests) -/
 
 def exprInfo : TestSeq :=
@@ -362,7 +401,8 @@ def modeTests : TestSeq :=
           == (Address.blake3 "x".toUTF8).cmpBytes (Address.blake3 "y".toUTF8)))
 
 public def suite : List TestSeq :=
-  [rawParity, univAnonMeta, exprAnonMeta, exprInfo, smartCtors, levelAlgebra,
-   props, modeTests]
+  [rawParity, univAnonMeta, exprAnonMeta, renderTests,
+    canonicalTotalizationTests, occurrenceTests, exprInfo, smartCtors,
+    levelAlgebra, props, modeTests]
 
 end Tests.Tc.Unit

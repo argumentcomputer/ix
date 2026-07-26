@@ -83,14 +83,20 @@ def push (lctx : LocalContext m) (id : FVarId) (decl : LocalDecl m) :
 
 /-- Truncate to `len`, dropping declarations pushed since (their fvars become
     unresolvable via `find?`). -/
-def truncate (lctx : LocalContext m) (len : Nat) : LocalContext m := Id.run do
-  let mut decls := lctx.decls
-  let mut index := lctx.index
-  while decls.size > len do
-    let (id, _) := decls.back!
-    decls := decls.pop
-    index := index.erase id
-  return { decls, index }
+def truncate (lctx : LocalContext m) (len : Nat) : LocalContext m :=
+  go lctx.decls lctx.index (lctx.decls.size - len)
+where
+  /-- The old loop pops exactly `decls.size - len` entries. Keeping that
+      count explicit preserves its newest-first erase order. -/
+  go (decls : Array (FVarId × LocalDecl m))
+      (index : Std.HashMap FVarId Nat) : Nat → LocalContext m
+    | 0 => { decls, index }
+    | fuel + 1 =>
+      if decls.size > len then
+        let (id, _) := decls.back!
+        go decls.pop (index.erase id) fuel
+      else
+        { decls, index }
 
 def wrapBinders (lctx : LocalContext m) (fvars : Array FVarId)
     (body : KExpr m) (asLambda : Bool) : InternM m (KExpr m) := do

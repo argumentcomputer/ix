@@ -28,7 +28,8 @@ namespace RecM
 
 mutual
 
-partial def infer (e : KExpr m) : RecM m (KExpr m) := do
+def inferWith (inferRec : KExpr m → RecM m (KExpr m))
+    (e : KExpr m) : RecM m (KExpr m) := do
   let inferOnly := (← get).inferOnly
   let cacheKey ← TcM.inferKey e
   -- Full-mode results are validated; either mode may consume them.
@@ -55,10 +56,10 @@ partial def infer (e : KExpr m) : RecM m (KExpr m) := do
         throw (.univParamMismatch c.lvls us.size)
       TcM.instantiateUnivParams c.ty us
     | .app f a _ => do
-      let fTy ← infer f
+      let fTy ← inferRec f
       let (dom, cod) ← ensureForallDirect fTy
       if !inferOnly then
-        let aTy ← infer a
+        let aTy ← inferRec a
         let isEager ← TcM.isEagerReduce a
         if isEager then
           modify fun s => { s with eagerReduce := true }
@@ -72,7 +73,7 @@ partial def infer (e : KExpr m) : RecM m (KExpr m) := do
       TcM.runIntern (subst cod a 0)
     | .lam name bi ty body _ => do
       if !inferOnly then
-        let t ← infer ty
+        let t ← inferRec ty
         let _ ← ensureSortDirect t
       -- Open the binder with a fresh fvar (lean4lean inferLambda).
       let saved := (← get).lctx.size
@@ -80,7 +81,7 @@ partial def infer (e : KExpr m) : RecM m (KExpr m) := do
       let fv ← TcM.intern (.mkFVar fvId name)
       modify fun s => { s with lctx := s.lctx.push fvId (.cdecl name bi ty) }
       let bodyOpen ← TcM.runIntern (instantiateRev body #[fv])
-      let bodyTy ← infer bodyOpen
+      let bodyTy ← inferRec bodyOpen
       -- Peephole-reduce App(λ…, …) shapes before wrapping in the Pi.
       let bodyTy ← TcM.runIntern (cheapBetaReduce bodyTy)
       let abstracted ← TcM.runIntern (abstractFVars bodyTy #[fvId])
@@ -88,22 +89,22 @@ partial def infer (e : KExpr m) : RecM m (KExpr m) := do
       -- Anonymous binder metadata (hash-neutral; see module doc).
       TcM.intern (.mkAll anonN anonBi ty abstracted)
     | .all name bi ty body _ => do
-      let tyTy ← infer ty
+      let tyTy ← inferRec ty
       let u1 ← ensureSortDirect tyTy
       let saved := (← get).lctx.size
       let fvId ← TcM.freshFVarId (m := m)
       let fv ← TcM.intern (.mkFVar fvId name)
       modify fun s => { s with lctx := s.lctx.push fvId (.cdecl name bi ty) }
       let bodyOpen ← TcM.runIntern (instantiateRev body #[fv])
-      let bodyTy ← infer bodyOpen
+      let bodyTy ← inferRec bodyOpen
       let u2 ← ensureSortDirect bodyTy
       modify fun s => { s with lctx := s.lctx.truncate saved }
       TcM.intern (.mkSort (.mkIMax u1 u2))
     | .letE name ty val body _ _ => do
       if !inferOnly then
-        let t ← infer ty
+        let t ← inferRec ty
         let _ ← ensureSortDirect t
-        let valTy ← infer val
+        let valTy ← inferRec val
         if !(← isDefEqCall valTy ty) then
           throw .declTypeMismatch
       -- Open with a let-bound fvar (lean4lean inferLet); eagerly substitute
@@ -113,14 +114,14 @@ partial def infer (e : KExpr m) : RecM m (KExpr m) := do
       let fv ← TcM.intern (.mkFVar fvId name)
       modify fun s => { s with lctx := s.lctx.push fvId (.ldecl name ty val) }
       let bodyOpen ← TcM.runIntern (instantiateRev body #[fv])
-      let bodyTy ← infer bodyOpen
+      let bodyTy ← inferRec bodyOpen
       let abstracted ← TcM.runIntern (abstractFVars bodyTy #[fvId])
       let r ← TcM.runIntern (subst abstracted val 0)
       let r ← TcM.runIntern (cheapBetaReduce r)
       modify fun s => { s with lctx := s.lctx.truncate saved }
       pure r
     | .prj structId field val _ => do
-      let valTy ← infer val
+      let valTy ← inferRec val
       inferProj structId field val valTy
     | .nat .. => do TcM.intern (.mkConst (← prims).nat #[])
     | .str .. => do TcM.intern (.mkConst (← prims).string #[])
@@ -132,16 +133,31 @@ partial def infer (e : KExpr m) : RecM m (KExpr m) := do
       inferOnlyCache := s.env.inferOnlyCache.insert cacheKey ty } }
   return ty
 
+/-- One recursive Infer edge through the indexed method table. -/
+@[inline] def inferCall (e : KExpr m) : RecM m (KExpr m) := do
+  (← read).infer e
+
+/-- One recursive Infer edge with Infer-only validation policy scoped around
+    the underlying `TcM` action. -/
+@[inline] def inferOnlyCall (e : KExpr m) : RecM m (KExpr m) := do
+  let methods ← read
+  TcM.withInferOnly (methods.infer e)
+
+/-- Tie Infer's structural recursive calls through the indexed method table.
+    `inferWith` is the transparent one-layer body consumed by K0/K1 proofs. -/
+def infer (e : KExpr m) : RecM m (KExpr m) :=
+  inferWith inferCall e
+
 /-- `ensureSort` against the direct whnf (no Methods indirection needed —
     infer imports whnf). -/
-partial def ensureSortDirect (e : KExpr m) : RecM m (KUniv m) := do
+def ensureSortDirect (e : KExpr m) : RecM m (KUniv m) := do
   if let .sort u _ := e then
     return u
   match (← whnf e) with
   | .sort u _ => return u
   | _ => throw .typeExpected
 
-partial def ensureForallDirect (e : KExpr m) : RecM m (KExpr m × KExpr m) := do
+def ensureForallDirect (e : KExpr m) : RecM m (KExpr m × KExpr m) := do
   if let .all _ _ a b _ := e then
     return (a, b)
   let w ← whnf e
@@ -150,10 +166,10 @@ partial def ensureForallDirect (e : KExpr m) : RecM m (KExpr m × KExpr m) := do
   | _ => throw (.funExpected e w)
 
 /-- The isDefEq back-edge (tied in `Ix.Tc.Knot`). -/
-partial def isDefEqCall (a b : KExpr m) : RecM m Bool := do
+def isDefEqCall (a b : KExpr m) : RecM m Bool := do
   (← read).isDefEq a b
 
-partial def inferProj (structId : KId m) (field : UInt64) (val : KExpr m)
+def inferProj (structId : KId m) (field : UInt64) (val : KExpr m)
     (valTy : KExpr m) : RecM m (KExpr m) := do
   let wty ← whnf valTy
   let (head, args) := wty.collectSpine
@@ -184,13 +200,13 @@ partial def inferProj (structId : KId m) (field : UInt64) (val : KExpr m)
     if i == field.toNat then
       -- Prop structures may only project Prop fields.
       if isPropStruct then
-        let fieldSortTy ← infer dom
+        let fieldSortTy ← inferCall dom
         let fieldLevel ← ensureSortDirect fieldSortTy
         if !univEq fieldLevel .mkZero then
           throw (.other "projection: cannot project data field from Prop structure")
       return dom
     if isPropStruct then
-      let fieldSortTy ← infer dom
+      let fieldSortTy ← inferCall dom
       let fieldLevel ← ensureSortDirect fieldSortTy
       let isData := !univEq fieldLevel .mkZero
       -- body.lbr > 0 ⇒ later fields depend on this one.
@@ -202,7 +218,7 @@ partial def inferProj (structId : KId m) (field : UInt64) (val : KExpr m)
   throw (.other "projection: unreachable")
 
 /-- Peel a leading `Π`: syntactic fast path, whnf fallback. -/
-partial def peelProjForall (e : KExpr m) (err : String) :
+def peelProjForall (e : KExpr m) (err : String) :
     RecM m (KExpr m × KExpr m) := do
   if let .all _ _ dom body _ := e then
     return (dom, body)
@@ -210,7 +226,7 @@ partial def peelProjForall (e : KExpr m) (err : String) :
   | .all _ _ dom body _ => return (dom, body)
   | _ => throw (.other err)
 
-partial def inductiveAppIsProp (indId : KId m) (levels : Array (KUniv m))
+def inductiveAppIsProp (indId : KId m) (levels : Array (KUniv m))
     (binders : Nat) : RecM m Bool := do
   let indTy ← match (← TcM.tryGetConst indId) with
     | some (.indc (ty := ty) ..) => pure ty

@@ -1621,8 +1621,9 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
 
   -- WHNF-reduced result sort level via the kernel.
   let resultKuniv ←
-    match ← runTc ((Ix.Tc.RecM.getResultSortLevel firstTyZ
-        (nParams + firstNIndices.toNat)).run Ix.Tc.methods) with
+    match ← runTc (Ix.Tc.TcM.runRec
+        (Ix.Tc.RecM.getResultSortLevel firstTyZ
+          (nParams + firstNIndices.toNat))) with
     | .ok u => pure u
     | .error e =>
       throw (.invalidMutualBlock
@@ -1630,8 +1631,8 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
 {classes[0]!.ind.cnst.name.pretty}: {e}")
 
   let isLarge ←
-    match ← runTc ((Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos).run
-        Ix.Tc.methods) with
+    match ← runTc (Ix.Tc.TcM.runRec
+        (Ix.Tc.RecM.isLargeEliminator resultKuniv indInfos)) with
     | .ok b => pure b
     | .error e =>
       throw (.invalidMutualBlock

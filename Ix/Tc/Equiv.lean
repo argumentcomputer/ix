@@ -54,14 +54,23 @@ def nodeForKey (em : EquivManager) (key : EqKey) : Nat × EquivManager :=
       nodeToKey := em.nodeToKey.push key
       keyToNode := em.keyToNode.insert key node })
 
-/-- Find root with path halving (every other node → grandparent). -/
-def find (em : EquivManager) (node : Nat) : Nat × EquivManager := Id.run do
-  let mut parent := em.parent
-  let mut n := node
-  while parent[n]! != n do
-    parent := parent.set! n parent[parent[n]!]!
-    n := parent[n]!
-  return (n, { em with parent })
+/-- Find root with path halving (every other node → grandparent). A
+    well-formed union-find forest reaches a root in fewer than
+    `parent.size` hops; the explicit bound replaces the proof-opaque loop.
+    The zero branch is reachable only for a malformed cyclic table. -/
+def find (em : EquivManager) (node : Nat) : Nat × EquivManager :=
+  let (root, parent) := go em.parent node em.parent.size
+  (root, { em with parent })
+where
+  go (parent : Array Nat) (n : Nat) : Nat → Nat × Array Nat
+    | 0 => (n, parent)
+    | fuel + 1 =>
+      if parent[n]! != n then
+        let parent := parent.set! n parent[parent[n]!]!
+        let n := parent[n]!
+        go parent n fuel
+      else
+        (n, parent)
 
 /-- Union by rank. Returns `true` if the sets were different. -/
 def union (em : EquivManager) (a b : Nat) : Bool × EquivManager := Id.run do

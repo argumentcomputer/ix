@@ -261,6 +261,63 @@ def clearReductionCaches (env : KEnv m) : KEnv m :=
     natSuccStuck := {}
     isPropCache := {} }
 
+/-- One fold step for error-side block-result restoration. -/
+def restoreBlockCheckResultOnError
+    (before results : Std.HashMap (KId m) (Except (TcError m) Unit))
+    (block : KId m) (result : Except (TcError m) Unit) :
+    Std.HashMap (KId m) (Except (TcError m) Unit) :=
+  match result with
+  | .ok () => results
+  | .error _ =>
+    match before[block]? with
+    | some _ => results
+    | none => results.insert block result
+
+/-- Preserve every old block verdict and add only previously absent errors
+from a failing run. A post-error value can therefore never replace a cached
+success (or a prior deterministic failure). -/
+def restoreBlockCheckResultsOnError
+    (before after : Std.HashMap (KId m) (Except (TcError m) Unit)) :
+    Std.HashMap (KId m) (Except (TcError m) Unit) :=
+  after.fold (init := before) (restoreBlockCheckResultOnError before)
+
+/-- Roll back every cache whose new contents may have been computed from the
+    declaration (or atomic block) currently being checked.
+
+    This is the error-side isolation boundary for `TcM.checkConst`.
+    Reduction caches can contain intermediate facts from a computation that
+    eventually failed; the inductive/recursor caches are even more directly
+    subject-scoped. None of the entries created by that failing computation
+    may become warm input to the next pending declaration. Entries present in
+    `before` are retained: their provenance was established at an earlier
+    successful boundary.
+
+    Non-cache state comes from `after`, preserving lazy loads, interned nodes,
+    the fvar counter, and ingress structure. `blockCheckResults` keeps all old
+    entries plus newly cached *errors*: unlike a cached success, a failure
+    cannot justify acceptance and deterministic replay remains useful. -/
+def restoreCheckCachesOnError (before after : KEnv m) : KEnv m :=
+  { after with
+    whnfCache := before.whnfCache
+    whnfNoDeltaCache := before.whnfNoDeltaCache
+    whnfNoDeltaCheapCache := before.whnfNoDeltaCheapCache
+    whnfCoreCache := before.whnfCoreCache
+    whnfCoreCheapCache := before.whnfCoreCheapCache
+    inferCache := before.inferCache
+    inferOnlyCache := before.inferOnlyCache
+    defEqCache := before.defEqCache
+    defEqCheapCache := before.defEqCheapCache
+    defEqFailure := before.defEqFailure
+    unfoldCache := before.unfoldCache
+    natSuccStuck := before.natSuccStuck
+    isPropCache := before.isPropCache
+    isRecCache := before.isRecCache
+    recursorCache := before.recursorCache
+    recMajorsCache := before.recMajorsCache
+    blockPeerAgreementCache := before.blockPeerAgreementCache
+    blockCheckResults := restoreBlockCheckResultsOnError
+      before.blockCheckResults after.blockCheckResults }
+
 /-- Snapshot of all cache sizes (diagnostics). -/
 def cacheSizes (env : KEnv m) : KEnvCacheSizes where
   consts := env.consts.size

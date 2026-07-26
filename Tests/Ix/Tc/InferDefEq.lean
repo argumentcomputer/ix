@@ -7,7 +7,7 @@ public import Tests.Ix.Tc.WhnfTests
 
 /-!
 Type inference and definitional equality with the real knot
-(`Ix.Tc.methods`). Exercises the tiers that were inert under stub methods:
+(`Ix.Tc.methodsN`). Exercises the tiers that were inert under stub methods:
 K-like ctor synthesis in iota, proof irrelevance, lambda eta, struct eta,
 and unit-like equality.
 -/
@@ -37,6 +37,87 @@ def runTcOn (env : AnonEnv) (x : TcM .anon α) : Except (TcError .anon) α :=
   match x.run (.ofEnvAnon env) with
   | .ok a _ => .ok a
   | .error e _ => .error e
+
+/-- One of the direct method-table reads used by the production knot. -/
+def directInferBackedge (e : AE) : RecM .anon AE :=
+  fun methods => methods.infer e
+
+/-- The two policy-sensitive WHNF back-edges added to make cheap projection
+    and stuck-successor recursion decrease the same method-table index. -/
+def directWhnfModeBackedge (e : AE) (mode : NatSuccMode) : RecM .anon AE :=
+  fun methods => methods.whnfMode e mode
+
+def directWhnfCoreFlagsBackedge (e : AE) (flags : WhnfFlags) :
+    RecM .anon AE :=
+  fun methods => methods.whnfCoreFlags e flags
+
+def knotFuelTests : TestSeq :=
+  test "zero current fuel rejects the first method back-edge without mutation"
+    ((let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 0, fuelBudget := 37 }
+      match (TcM.runRec (directInferBackedge sort0)).run initial with
+      | .error .maxRecFuel final =>
+        final.recFuel == 0 && final.fuelBudget == 37 &&
+          final.dispatchDepth == initial.dispatchDepth &&
+          final.env.consts.size == initial.env.consts.size
+      | _ => false) : Bool)
+  ++ test "one method-table level permits one non-recursive infer dispatch"
+    ((let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 1, fuelBudget := 99 }
+      match (TcM.runRec (directInferBackedge sort0)).run initial with
+      | .ok ty final => ty.addr == sort1.addr && final.recFuel == 1
+      | _ => false) : Bool)
+  ++ test "zero depth rejects policy-sensitive WHNF back-edges unchanged"
+    ((let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 0, fuelBudget := 41 }
+      match (TcM.runRec
+              (directWhnfModeBackedge sort0 .stuck)).run initial,
+          (TcM.runRec
+              (directWhnfCoreFlagsBackedge sort0 .DEF_EQ_CORE)).run initial with
+      | .error .maxRecFuel modeFinal, .error .maxRecFuel flagsFinal =>
+        modeFinal.recFuel == initial.recFuel &&
+          modeFinal.fuelBudget == initial.fuelBudget &&
+          modeFinal.dispatchDepth == initial.dispatchDepth &&
+          modeFinal.env.consts.size == initial.env.consts.size &&
+          flagsFinal.recFuel == initial.recFuel &&
+          flagsFinal.fuelBudget == initial.fuelBudget &&
+          flagsFinal.dispatchDepth == initial.dispatchDepth &&
+          flagsFinal.env.consts.size == initial.env.consts.size
+      | _, _ => false) : Bool)
+  ++ test "one level admits non-recursive policy-sensitive WHNF dispatch"
+    ((let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 1, fuelBudget := 43 }
+      match (TcM.runRec
+              (directWhnfModeBackedge sort0 .stuck)).run initial,
+          (TcM.runRec
+              (directWhnfCoreFlagsBackedge sort0 .DEF_EQ_CORE)).run initial with
+      | .ok modeResult modeFinal, .ok flagsResult flagsFinal =>
+        modeResult.addr == sort0.addr && flagsResult.addr == sort0.addr &&
+          modeFinal.recFuel == initial.recFuel &&
+          modeFinal.fuelBudget == initial.fuelBudget &&
+          modeFinal.dispatchDepth == initial.dispatchDepth &&
+          flagsFinal.recFuel == initial.recFuel &&
+          flagsFinal.fuelBudget == initial.fuelBudget &&
+          flagsFinal.dispatchDepth == initial.dispatchDepth
+      | _, _ => false) : Bool)
+  ++ test "zero fuel still permits a top-level infer with no back-edge"
+    ((let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 0, fuelBudget := 99 }
+      match (TcM.infer sort0).run initial with
+      | .ok ty final => ty.addr == sort1.addr && final.recFuel == 0
+      | _ => false) : Bool)
+  ++ test "Infer structural recursion consumes method-table depth"
+    ((let forallExpr := KExpr.mkAll () () sort0 sort0
+      let zero : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 0, fuelBudget := 17 }
+      let one : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 1, fuelBudget := 17 }
+      match (TcM.infer forallExpr).run zero,
+          (TcM.infer forallExpr).run one with
+      | .error .maxRecFuel zeroFinal, .ok _ oneFinal =>
+        zeroFinal.recFuel == 0 && zeroFinal.fuelBudget == 17 &&
+          zeroFinal.env.inferCache.isEmpty && oneFinal.recFuel == 1
+      | _, _ => false) : Bool)
 
 def inferEq (env : AnonEnv) (e expected : AE) : Bool :=
   match runTcOn env (TcM.infer e) with
@@ -258,6 +339,7 @@ def defEqAdvanced : TestSeq :=
       | .ok v s => v && s.env.defEqFailure.size ≥ 0
       | .error _ _ => false : Bool))
 
-public def suite : List TestSeq := [inferTests, defEqBasics, defEqAdvanced]
+public def suite : List TestSeq :=
+  [knotFuelTests, inferTests, defEqBasics, defEqAdvanced]
 
 end Tests.Tc.InferDefEq
