@@ -11,6 +11,7 @@ dashmap = { workspace = true }
 indexmap = { workspace = true }
 ix-common = { workspace = true }
 memmap2 = { workspace = true }
+nom = { workspace = true }
 num-bigint = { workspace = true }
 rustc-hash = { workspace = true }
 sha2 = { workspace = true }

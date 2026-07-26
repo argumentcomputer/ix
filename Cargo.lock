@@ -1849,6 +1849,7 @@ dependencies = [
  "indexmap",
  "ix-common",
  "memmap2",
+ "nom",
  "num-bigint",
  "quickcheck",
  "quickcheck_macros",
