@@ -1,3 +1,13 @@
+# Standalone workspace root. This guest crate is compiled out-of-tree for
+# the zkVM target and never joins the host Cargo workspace; its own (empty)
+# `[workspace]` pins cargo's upward workspace search to this directory.
+# Without it, a NESTED checkout — e.g. the benchmark base-run, which checks
+# the base repo out under `base/` inside the PR checkout — lets cargo walk
+# past the relative `exclude` paths in the outer manifests and resolve this
+# crate to the outer workspace, failing the build script with "current
+# package believes it's in a workspace when it's not".
+[workspace]
+
 [package]
 name = "zisk-guest"
 version = "0.1.0"
