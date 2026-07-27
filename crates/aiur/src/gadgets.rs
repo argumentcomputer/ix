@@ -2,7 +2,7 @@ pub(crate) mod bytes1;
 pub(crate) mod bytes2;
 
 use multi_stark::{
-  builder::symbolic::SymbolicExpression,
+  expr::Expr,
   lookup::{Lookup, LookupValues},
   p3_matrix::dense::RowMajorMatrix,
 };
@@ -25,6 +25,12 @@ pub(crate) trait AiurGadget {
   /// Returns the number of output values this gadget produces for the given operation.
   fn output_size(&self, op: &Self::Op) -> usize;
 
+  /// Main-trace width of the gadget circuit.
+  fn main_width(&self) -> usize;
+
+  /// The gadget's preprocessed trace, if any.
+  fn preprocessed(&self) -> Option<RowMajorMatrix<G>>;
+
   /// Executes the gadget on concrete inputs, returning the resulting output values.
   fn execute(
     &self,
@@ -33,8 +39,8 @@ pub(crate) trait AiurGadget {
     record: &mut QueryRecord,
   ) -> Vec<G>;
 
-  /// Returns the symbolic lookups associated with this gadget.
-  fn lookups(&self) -> Vec<Lookup<SymbolicExpression<G>>>;
+  /// Returns the lookups associated with this gadget.
+  fn lookups(&self) -> Vec<Lookup<Expr<G>>>;
 
   /// Returns the witness data for the prover, including a row-major trace matrix and
   /// the flat lookup values.

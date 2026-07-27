@@ -1,7 +1,5 @@
 use multi_stark::{
-  builder::symbolic::{SymbolicExpression, var},
   lookup::Lookup,
-  p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::{Field, PrimeCharacteristicRing},
 };
 use std::{array, ops::Range, sync::LazyLock};
@@ -21,8 +19,20 @@ use crate::{
   u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
 };
 
-type Expr = SymbolicExpression<G>;
+type Expr = multi_stark::expr::Expr<G>;
 type Degree = u8;
+
+/// Main-trace column variable at index `i`.
+#[inline]
+fn var(i: usize) -> Expr {
+  Expr::main(u32::try_from(i).expect("column index exceeds u32"))
+}
+
+/// Base-field constant expression.
+#[inline]
+fn konst(value: G) -> Expr {
+  Expr::constant(value)
+}
 
 /// `256⁻¹` in the Goldilocks field. The field inversion is expensive, so it is
 /// computed once and reused by the byte carry-chain constraints.
@@ -33,28 +43,6 @@ pub struct Constraints {
   pub zeros: Vec<Expr>,
   pub selectors: Range<usize>,
   pub width: usize,
-}
-
-impl BaseAir<G> for Constraints {
-  fn width(&self) -> usize {
-    self.width
-  }
-}
-
-impl<AB> Air<AB> for Constraints
-where
-  AB: AirBuilder<F = G>,
-{
-  fn eval(&self, builder: &mut AB) {
-    let main = builder.main();
-    let row = main.current_slice();
-    for zero in &self.zeros {
-      builder.assert_zero(zero.interpret(row, None));
-    }
-    for sel in self.selectors.clone() {
-      builder.assert_bool(row[sel]);
-    }
-  }
 }
 
 struct ConstraintState {
@@ -124,13 +112,23 @@ impl Toplevel {
       column: 0,
       lookup: 0,
       map: vec![],
-      lookups: vec![Lookup::empty(); function.layout.lookups],
+      lookups: vec![empty_lookup(); function.layout.lookups],
       constraints,
       yield_info: vec![],
     };
     function.build_constraints(&mut state);
+    // The old `Air::eval` asserted each selector column boolean; the new
+    // system compiles a constraint vector, so materialize those explicitly.
+    for sel in state.constraints.selectors.clone() {
+      let s = var(sel);
+      state.constraints.zeros.push(s.clone() * (s - konst(G::ONE)));
+    }
     (state.constraints, state.lookups)
   }
+}
+
+fn empty_lookup() -> Lookup<Expr> {
+  Lookup { multiplicity: konst(G::ZERO), args: vec![] }
 }
 
 impl Function {
@@ -160,7 +158,7 @@ impl Block {
     state
       .constraints
       .zeros
-      .push(block_sel.clone() * (Expr::from(G::ONE) - block_sel));
+      .push(block_sel.clone() * (konst(G::ONE) - block_sel));
     self.ops.iter().for_each(|op| op.collect_constraints(&sel, state));
     self.ctrl.collect_constraints(sel, state);
   }
@@ -177,12 +175,12 @@ impl Block {
         var(state.selector_index(*sel))
       },
       Ctrl::Match(_, cases, def) | Ctrl::MatchContinue(_, cases, def, ..) => {
-        let mut sel = Expr::from(G::ZERO);
+        let mut sel = konst(G::ZERO);
         for branch in cases.values() {
-          sel += branch.get_block_selector(state);
+          sel = sel + branch.get_block_selector(state);
         }
         if let Some(branch) = def {
-          sel += branch.get_block_selector(state);
+          sel = sel + branch.get_block_selector(state);
         }
         sel
       },
@@ -194,12 +192,12 @@ impl Block {
 /// constraints. Each branch is processed with save/restore so branches share
 /// auxiliary columns. Returns (max_column, max_lookup) across all branches.
 fn collect_branch_constraints(
-  var: ValIdx,
+  var_idx: ValIdx,
   cases: &FxIndexMap<G, Block>,
   def: &Option<Box<Block>>,
   state: &mut ConstraintState,
 ) -> (usize, usize) {
-  let (var, _) = state.map[var].clone();
+  let (matched, _) = state.map[var_idx].clone();
   let init = state.save();
   let mut max_column = init.column;
   let mut max_lookup = init.lookup;
@@ -208,7 +206,7 @@ fn collect_branch_constraints(
     state
       .constraints
       .zeros
-      .push(branch_sel.clone() * (var.clone() - Expr::from(value)));
+      .push(branch_sel.clone() * (matched.clone() - konst(value)));
     branch.collect_constraints(branch_sel, state);
     max_column = max_column.max(state.column);
     max_lookup = max_lookup.max(state.lookup);
@@ -220,7 +218,7 @@ fn collect_branch_constraints(
       let inverse = state.next_auxiliary();
       state.constraints.zeros.push(
         branch_sel.clone()
-          * ((var.clone() - Expr::from(value)) * inverse - Expr::from(G::ONE)),
+          * ((matched.clone() - konst(value)) * inverse - konst(G::ONE)),
       );
     }
     branch.collect_constraints(branch_sel, state);
@@ -238,8 +236,8 @@ impl Ctrl {
       Ctrl::Return(_, values) => {
         // channel and function index
         let mut args = vec![
-          sel.clone() * function_channel(),
-          sel.clone() * state.function_index,
+          sel.clone() * konst(function_channel()),
+          sel.clone() * konst(state.function_index),
         ];
         // input
         args.extend(
@@ -260,14 +258,14 @@ impl Ctrl {
           values.iter().map(|&v| state.map[v].clone()).collect();
         state.yield_info.push((yield_sel, yield_vals));
       },
-      Ctrl::Match(var, cases, def) => {
+      Ctrl::Match(var_idx, cases, def) => {
         let (max_column, max_lookup) =
-          collect_branch_constraints(*var, cases, def, state);
+          collect_branch_constraints(*var_idx, cases, def, state);
         state.column = max_column;
         state.lookup = max_lookup;
       },
       Ctrl::MatchContinue(
-        var,
+        var_idx,
         cases,
         def,
         output_size,
@@ -277,7 +275,7 @@ impl Ctrl {
       ) => {
         let yield_info_base = state.yield_info.len();
         let (max_column, max_lookup) =
-          collect_branch_constraints(*var, cases, def, state);
+          collect_branch_constraints(*var_idx, cases, def, state);
 
         // Advance past the shared branch region so merge + continuation
         // auxiliaries don't collide with branch auxiliaries.
@@ -292,7 +290,7 @@ impl Ctrl {
         let cont_sel = yields
           .iter()
           .map(|(sel, _)| sel.clone())
-          .fold(Expr::from(G::ZERO), |a, b| a + b);
+          .fold(konst(G::ZERO), |a, b| a + b);
 
         // Merge constraints, gated by the parent selector `sel`. Gating is
         // required because a matchContinue inside a tail match branch may be
@@ -303,7 +301,7 @@ impl Ctrl {
           let sum = yields
             .iter()
             .map(|(sel_j, vals)| sel_j.clone() * vals[i].0.clone())
-            .fold(Expr::from(G::ZERO), |a, b| a + b);
+            .fold(konst(G::ZERO), |a, b| a + b);
           state.constraints.zeros.push(sel.clone() * (merged.clone() - sum));
           state.map.push((merged, 1));
         }
@@ -350,9 +348,9 @@ impl Op {
       },
       Op::EqZero(a) => {
         let (a, deg) = state.map[*a].clone();
-        if let Expr::Constant(a) = a {
+        if let Expr::Const(a) = a {
           assert_eq!(deg, 0);
-          state.map.push((Expr::from_bool(a == G::ZERO), 0));
+          state.map.push((konst(G::from_bool(a == G::ZERO)), 0));
         } else {
           // We have two constraints:
           // 1. ax = 0
@@ -368,7 +366,7 @@ impl Op {
           state
             .constraints
             .zeros
-            .push(sel.clone() * (a * d + x.clone() - Expr::ONE));
+            .push(sel.clone() * (a * d + x.clone() - konst(G::ONE)));
           state.map.push((x, 1));
         }
       },
@@ -382,8 +380,8 @@ impl Op {
         } else {
           // channel and function index
           let mut lookup_args = vec![
-            sel.clone() * function_channel(),
-            sel.clone() * G::from_usize(*function_index),
+            sel.clone() * konst(function_channel()),
+            sel.clone() * konst(G::from_usize(*function_index)),
           ];
           // input
           lookup_args.extend(
@@ -399,7 +397,7 @@ impl Op {
 
           let lookup = state.next_lookup();
           combine_lookup_args(lookup, lookup_args);
-          lookup.multiplicity += sel.clone();
+          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
         }
       },
       Op::Store(values) => {
@@ -408,8 +406,8 @@ impl Op {
         let ptr = state.next_auxiliary();
         state.map.push((ptr.clone(), 1));
         let mut lookup_args = vec![
-          sel.clone() * memory_channel(),
-          sel.clone() * G::from_usize(size),
+          sel.clone() * konst(memory_channel()),
+          sel.clone() * konst(G::from_usize(size)),
           sel.clone() * ptr,
         ];
         // stored values
@@ -419,13 +417,13 @@ impl Op {
 
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity += sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
       },
       Op::Load(size, ptr) => {
         // channel, size and pointer
         let mut lookup_args = vec![
-          sel.clone() * memory_channel(),
-          sel.clone() * G::from_usize(*size),
+          sel.clone() * konst(memory_channel()),
+          sel.clone() * konst(G::from_usize(*size)),
           sel.clone() * state.map[*ptr].0.clone(),
         ];
         // loaded values
@@ -438,7 +436,7 @@ impl Op {
 
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity += sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
       },
       Op::AssertEq(xs, ys) => {
         assert_eq!(xs.len(), ys.len());
@@ -496,14 +494,14 @@ impl Op {
         combine_lookup_args(
           lookup,
           vec![
-            sel.clone() * u8_add_channel(),
+            sel.clone() * konst(u8_add_channel()),
             sel.clone() * x.clone(),
             sel.clone() * y.clone(),
             sel.clone() * z.clone(),
           ],
         );
-        lookup.multiplicity += sel.clone();
-        let carry = (x + y - z.clone()) * *INV_256;
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        let carry = (x + y - z.clone()) * konst(*INV_256);
         state.map.push((z, 1));
         state.map.push((carry, x_deg.max(y_deg).max(1)));
       },
@@ -526,14 +524,14 @@ impl Op {
         combine_lookup_args(
           lookup,
           vec![
-            sel.clone() * u8_sub_channel(),
+            sel.clone() * konst(u8_sub_channel()),
             sel.clone() * x.clone(),
             sel.clone() * y.clone(),
             sel.clone() * z.clone(),
           ],
         );
-        lookup.multiplicity += sel.clone();
-        let borrow = (z.clone() + y - x) * *INV_256;
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        let borrow = (z.clone() + y - x) * konst(*INV_256);
         state.map.push((z, 1));
         state.map.push((borrow, x_deg.max(y_deg).max(1)));
       },
@@ -586,12 +584,12 @@ impl Op {
         combine_lookup_args(
           lookup,
           vec![
-            sel.clone() * u8_range_check_channel(),
+            sel.clone() * konst(u8_range_check_channel()),
             sel.clone() * x,
             sel.clone() * y,
           ],
         );
-        lookup.multiplicity += sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
       },
       Op::U32LessThan(x_idx, y_idx) => {
         // u32 less-than via addition carry chain.
@@ -626,25 +624,21 @@ impl Op {
         let base =
           |k: usize| G::from_u64(256u64.pow(u32::try_from(k).unwrap()));
         let recompose = |bytes: &[Expr; 4]| {
-          bytes
-            .iter()
-            .enumerate()
-            .fold(Expr::Constant(G::ZERO), |acc, (k, b)| {
-              acc + b.clone() * base(k)
-            })
+          bytes.iter().enumerate().fold(konst(G::ZERO), |acc, (k, b)| {
+            acc + b.clone() * konst(base(k))
+          })
         };
         state.constraints.zeros.push(sel.clone() * (a - recompose(&x_bytes)));
         state.constraints.zeros.push(sel.clone() * (b - recompose(&z_bytes)));
 
         // Carry chain: a + c + 1 = b + carry * 2^32
-        let mut carry = Expr::ONE; // initial carry = 1 for strict less-than
+        let mut carry = konst(G::ONE); // initial carry = 1 for strict less-than
         for k in 0..4 {
           let sum = x_bytes[k].clone() + y_bytes[k].clone() + carry;
-          carry = (sum - z_bytes[k].clone()) * *INV_256;
-          state
-            .constraints
-            .zeros
-            .push(sel.clone() * (carry.clone() * (carry.clone() - Expr::ONE)));
+          carry = (sum - z_bytes[k].clone()) * konst(*INV_256);
+          state.constraints.zeros.push(
+            sel.clone() * (carry.clone() * (carry.clone() - konst(G::ONE))),
+          );
         }
 
         // Range-check byte pairs via Bytes2 lookups
@@ -661,16 +655,16 @@ impl Op {
           combine_lookup_args(
             lookup,
             vec![
-              sel.clone() * rc_channel,
+              sel.clone() * konst(rc_channel),
               sel.clone() * pair.0.clone(),
               sel.clone() * pair.1.clone(),
             ],
           );
-          lookup.multiplicity += sel.clone();
+          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
         }
 
         // Output: 1 - carry
-        let output = Expr::ONE - carry;
+        let output = konst(G::ONE) - carry;
         state.map.push((output, 1));
       },
       Op::IOSetInfo(..) | Op::IOWrite(..) | Op::Debug(..) => (),
@@ -708,13 +702,13 @@ fn bytes1_constraints(
   byte: usize,
   op: &Bytes1Op,
   channel: G,
-  sel: SymbolicExpression<G>,
+  sel: Expr,
   state: &mut ConstraintState,
 ) {
   let size = Bytes1.output_size(op);
 
   let mut lookup_args =
-    vec![sel.clone() * channel, sel.clone() * state.map[byte].0.clone()];
+    vec![sel.clone() * konst(channel), sel.clone() * state.map[byte].0.clone()];
 
   let output = (0..size).map(|_| {
     let col = state.next_auxiliary();
@@ -725,7 +719,7 @@ fn bytes1_constraints(
 
   let lookup = state.next_lookup();
   combine_lookup_args(lookup, lookup_args);
-  lookup.multiplicity += sel;
+  lookup.multiplicity = lookup.multiplicity.clone() + sel;
 }
 
 fn bytes2_constraints(
@@ -733,13 +727,13 @@ fn bytes2_constraints(
   j: usize,
   op: &Bytes2Op,
   channel: G,
-  sel: SymbolicExpression<G>,
+  sel: Expr,
   state: &mut ConstraintState,
 ) {
   let size = Bytes2.output_size(op);
 
   let mut lookup_args = vec![
-    sel.clone() * channel,
+    sel.clone() * konst(channel),
     sel.clone() * state.map[i].0.clone(),
     sel.clone() * state.map[j].0.clone(),
   ];
@@ -753,17 +747,17 @@ fn bytes2_constraints(
 
   let lookup = state.next_lookup();
   combine_lookup_args(lookup, lookup_args);
-  lookup.multiplicity += sel;
+  lookup.multiplicity = lookup.multiplicity.clone() + sel;
 }
 
 fn combine_lookup_args(
-  lookup: &mut Lookup<SymbolicExpression<G>>,
-  args: impl IntoIterator<Item = SymbolicExpression<G>>,
+  lookup: &mut Lookup<Expr>,
+  args: impl IntoIterator<Item = Expr>,
 ) {
   let mut args_iterator = args.into_iter();
   lookup.args.iter_mut().zip(args_iterator.by_ref()).for_each(
     |(arg, value)| {
-      *arg += value;
+      *arg = arg.clone() + value;
     },
   );
   lookup.args.extend(args_iterator);

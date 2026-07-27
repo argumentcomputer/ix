@@ -1,7 +1,6 @@
 use multi_stark::{
-  builder::symbolic::{SymbolicExpression, var},
+  expr::Expr,
   lookup::{Lookup, LookupValues},
-  p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
 };
@@ -31,19 +30,40 @@ impl Memory {
     3 + size
   }
 
-  pub fn build(size: usize) -> (Self, Vec<Lookup<SymbolicExpression<G>>>) {
-    let multiplicity = var(0);
-    let selector = var(1);
-    let pointer = var(2);
+  /// Returns the memory circuit together with its base-field constraints and
+  /// its (single) lookup.
+  pub fn build(size: usize) -> (Self, Vec<Expr<G>>, Vec<Lookup<Expr<G>>>) {
+    let multiplicity = Expr::main(0);
+    let selector = Expr::main(1);
+    let pointer = Expr::main(2);
     let mut args = Vec::with_capacity(3 + size);
-    args.push(selector.clone() * memory_channel());
-    args.push(selector.clone() * G::from_usize(size));
+    args.push(selector.clone() * Expr::constant(memory_channel()));
+    args.push(selector.clone() * Expr::constant(G::from_usize(size)));
     args.push(selector.clone() * pointer);
     for val_idx in 0..size {
-      args.push(selector.clone() * var(3 + val_idx));
+      let col = u32::try_from(3 + val_idx).expect("column index exceeds u32");
+      args.push(selector.clone() * Expr::main(col));
     }
     let width = Self::width(size);
-    (Self { width }, vec![Lookup::pull(multiplicity, args)])
+    // pull = negated multiplicity.
+    let lookups = vec![Lookup { multiplicity: -multiplicity, args }];
+
+    // Transition constraints (formerly the `Air::eval` body): the selector is
+    // boolean; a real next row implies a real current row; and the pointer
+    // increments by one across a real transition.
+    let is_real = Expr::main(1);
+    let is_real_next = Expr::main_next(1);
+    let ptr = Expr::main(2);
+    let ptr_next = Expr::main_next(2);
+    let one = || Expr::constant(G::ONE);
+    let is_real_transition = is_real_next * Expr::IsTransition;
+    let constraints = vec![
+      is_real.clone() * (is_real.clone() - one()),
+      is_real_transition.clone() * (is_real - one()),
+      is_real_transition * (ptr + one() - ptr_next),
+    ];
+
+    (Self { width }, constraints, lookups)
   }
 
   pub fn witness_data(
@@ -88,39 +108,5 @@ impl Memory {
 
     let trace = RowMajorMatrix::new(rows, width);
     (trace, builder.finish())
-  }
-}
-
-impl BaseAir<G> for Memory {
-  fn width(&self) -> usize {
-    self.width
-  }
-}
-
-impl<AB> Air<AB> for Memory
-where
-  AB: AirBuilder<F = G>,
-{
-  fn eval(&self, builder: &mut AB) {
-    let main = builder.main();
-    let local = main.current_slice();
-    let next = main.next_slice();
-
-    let (is_real, ptr) = (local[1], local[2]);
-    let (is_real_next, ptr_next) = (next[1], next[2]);
-
-    builder.assert_bool(is_real);
-
-    // Whether the next row is real.
-    let is_real_transition = is_real_next * builder.is_transition();
-
-    // If the next row is real, the current row is real.
-    builder.when(is_real_transition.clone()).assert_one(is_real);
-
-    // Is this necessary?
-    // builder.when_first_row().when(is_real).assert_zero(ptr);
-
-    // Pointer increases by one
-    builder.when(is_real_transition).assert_eq(ptr + AB::Expr::ONE, ptr_next);
   }
 }

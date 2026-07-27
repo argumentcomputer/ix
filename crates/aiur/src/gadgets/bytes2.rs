@@ -1,7 +1,6 @@
 use multi_stark::{
-  builder::symbolic::{SymbolicExpression, preprocessed_var, var},
+  expr::Expr,
   lookup::{Lookup, LookupValues},
-  p3_air::{Air, AirBuilder, BaseAir},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
 };
@@ -62,13 +61,28 @@ pub enum Bytes2Op {
   ChainRotr4,
 }
 
-impl BaseAir<G> for Bytes2 {
-  fn width(&self) -> usize {
+impl AiurGadget for Bytes2 {
+  type Op = Bytes2Op;
+
+  fn output_size(&self, op: &Bytes2Op) -> usize {
+    match op {
+      Bytes2Op::Xor
+      | Bytes2Op::And
+      | Bytes2Op::Or
+      | Bytes2Op::LessThan
+      | Bytes2Op::Add
+      | Bytes2Op::Sub => 1,
+      Bytes2Op::Mul => 2,
+      Bytes2Op::ChainRotr7 | Bytes2Op::ChainRotr4 => 3,
+    }
+  }
+
+  fn main_width(&self) -> usize {
     TRACE_WIDTH
   }
 
   /// Builds the preprocessed trace over all 256 byte values.
-  fn preprocessed_trace(&self) -> Option<RowMajorMatrix<G>> {
+  fn preprocessed(&self) -> Option<RowMajorMatrix<G>> {
     let mut trace_values =
       Vec::with_capacity(256 * 256 * PREPROCESSED_TRACE_WIDTH);
     for i in 0..=u8::MAX {
@@ -114,28 +128,6 @@ impl BaseAir<G> for Bytes2 {
       }
     }
     Some(RowMajorMatrix::new(trace_values, PREPROCESSED_TRACE_WIDTH))
-  }
-}
-
-impl<AB: AirBuilder<F = G>> Air<AB> for Bytes2 {
-  /// A no-op, since all constraints are enforced through lookups.
-  fn eval(&self, _builder: &mut AB) {}
-}
-
-impl AiurGadget for Bytes2 {
-  type Op = Bytes2Op;
-
-  fn output_size(&self, op: &Bytes2Op) -> usize {
-    match op {
-      Bytes2Op::Xor
-      | Bytes2Op::And
-      | Bytes2Op::Or
-      | Bytes2Op::LessThan
-      | Bytes2Op::Add
-      | Bytes2Op::Sub => 1,
-      Bytes2Op::Mul => 2,
-      Bytes2Op::ChainRotr7 | Bytes2Op::ChainRotr4 => 3,
-    }
   }
 
   fn execute(
@@ -191,90 +183,93 @@ impl AiurGadget for Bytes2 {
     }
   }
 
-  fn lookups(&self) -> Vec<Lookup<SymbolicExpression<G>>> {
+  fn lookups(&self) -> Vec<Lookup<Expr<G>>> {
     // Channels
-    let xor_channel = u8_xor_channel().into();
-    let add_channel = u8_add_channel().into();
-    let sub_channel = u8_sub_channel().into();
-    let and_channel = u8_and_channel().into();
-    let or_channel = u8_or_channel().into();
-    let less_than_channel = u8_less_than_channel().into();
-    let range_check_channel = u8_range_check_channel().into();
-    let mul_channel = u8_mul_channel().into();
-    let chain_rotr7_channel = u8_chain_rotr7_channel().into();
-    let chain_rotr4_channel = u8_chain_rotr4_channel().into();
+    let xor_channel = Expr::constant(u8_xor_channel());
+    let add_channel = Expr::constant(u8_add_channel());
+    let sub_channel = Expr::constant(u8_sub_channel());
+    let and_channel = Expr::constant(u8_and_channel());
+    let or_channel = Expr::constant(u8_or_channel());
+    let less_than_channel = Expr::constant(u8_less_than_channel());
+    let range_check_channel = Expr::constant(u8_range_check_channel());
+    let mul_channel = Expr::constant(u8_mul_channel());
+    let chain_rotr7_channel = Expr::constant(u8_chain_rotr7_channel());
+    let chain_rotr4_channel = Expr::constant(u8_chain_rotr4_channel());
 
     // Multiplicity columns
-    let xor_multiplicity = var(0);
-    let add_multiplicity = var(1);
-    let sub_multiplicity = var(2);
-    let and_multiplicity = var(3);
-    let or_multiplicity = var(4);
-    let less_than_multiplicity = var(5);
-    let range_check_multiplicity = var(6);
-    let mul_multiplicity = var(7);
-    let chain_rotr7_multiplicity = var(8);
-    let chain_rotr4_multiplicity = var(9);
+    let xor_multiplicity = Expr::main(0);
+    let add_multiplicity = Expr::main(1);
+    let sub_multiplicity = Expr::main(2);
+    let and_multiplicity = Expr::main(3);
+    let or_multiplicity = Expr::main(4);
+    let less_than_multiplicity = Expr::main(5);
+    let range_check_multiplicity = Expr::main(6);
+    let mul_multiplicity = Expr::main(7);
+    let chain_rotr7_multiplicity = Expr::main(8);
+    let chain_rotr4_multiplicity = Expr::main(9);
 
     // Preprocessed columns
-    let i = preprocessed_var(0);
-    let j = preprocessed_var(1);
-    let xor = preprocessed_var(2);
-    let add_r = preprocessed_var(3);
-    let sub_r = preprocessed_var(4);
-    let and = preprocessed_var(5);
-    let or = preprocessed_var(6);
-    let less_than = preprocessed_var(7);
-    let mul_lo = preprocessed_var(8);
-    let mul_hi = preprocessed_var(9);
-    let chain_rotr7_o0 = preprocessed_var(10);
-    let chain_rotr7_o1 = preprocessed_var(11);
-    let chain_rotr7_o2 = preprocessed_var(12);
-    let chain_rotr4_o0 = preprocessed_var(13);
-    let chain_rotr4_o1 = preprocessed_var(14);
-    let chain_rotr4_o2 = preprocessed_var(15);
+    let i = Expr::preprocessed(0);
+    let j = Expr::preprocessed(1);
+    let xor = Expr::preprocessed(2);
+    let add_r = Expr::preprocessed(3);
+    let sub_r = Expr::preprocessed(4);
+    let and = Expr::preprocessed(5);
+    let or = Expr::preprocessed(6);
+    let less_than = Expr::preprocessed(7);
+    let mul_lo = Expr::preprocessed(8);
+    let mul_hi = Expr::preprocessed(9);
+    let chain_rotr7_o0 = Expr::preprocessed(10);
+    let chain_rotr7_o1 = Expr::preprocessed(11);
+    let chain_rotr7_o2 = Expr::preprocessed(12);
+    let chain_rotr4_o0 = Expr::preprocessed(13);
+    let chain_rotr4_o1 = Expr::preprocessed(14);
+    let chain_rotr4_o2 = Expr::preprocessed(15);
 
-    let pull_xor = Lookup::pull(
-      xor_multiplicity,
-      vec![xor_channel, i.clone(), j.clone(), xor],
-    );
+    // pull = negated multiplicity.
+    let pull_xor = Lookup {
+      multiplicity: -xor_multiplicity,
+      args: vec![xor_channel, i.clone(), j.clone(), xor],
+    };
 
-    let pull_add = Lookup::pull(
-      add_multiplicity,
-      vec![add_channel, i.clone(), j.clone(), add_r],
-    );
+    let pull_add = Lookup {
+      multiplicity: -add_multiplicity,
+      args: vec![add_channel, i.clone(), j.clone(), add_r],
+    };
 
-    let pull_sub = Lookup::pull(
-      sub_multiplicity,
-      vec![sub_channel, i.clone(), j.clone(), sub_r],
-    );
+    let pull_sub = Lookup {
+      multiplicity: -sub_multiplicity,
+      args: vec![sub_channel, i.clone(), j.clone(), sub_r],
+    };
 
-    let pull_and = Lookup::pull(
-      and_multiplicity,
-      vec![and_channel, i.clone(), j.clone(), and],
-    );
+    let pull_and = Lookup {
+      multiplicity: -and_multiplicity,
+      args: vec![and_channel, i.clone(), j.clone(), and],
+    };
 
-    let pull_or =
-      Lookup::pull(or_multiplicity, vec![or_channel, i.clone(), j.clone(), or]);
+    let pull_or = Lookup {
+      multiplicity: -or_multiplicity,
+      args: vec![or_channel, i.clone(), j.clone(), or],
+    };
 
-    let pull_less_than = Lookup::pull(
-      less_than_multiplicity,
-      vec![less_than_channel, i.clone(), j.clone(), less_than],
-    );
+    let pull_less_than = Lookup {
+      multiplicity: -less_than_multiplicity,
+      args: vec![less_than_channel, i.clone(), j.clone(), less_than],
+    };
 
-    let pull_mul = Lookup::pull(
-      mul_multiplicity,
-      vec![mul_channel, i.clone(), j.clone(), mul_lo, mul_hi],
-    );
+    let pull_mul = Lookup {
+      multiplicity: -mul_multiplicity,
+      args: vec![mul_channel, i.clone(), j.clone(), mul_lo, mul_hi],
+    };
 
-    let pull_range_check = Lookup::pull(
-      range_check_multiplicity,
-      vec![range_check_channel, i.clone(), j.clone()],
-    );
+    let pull_range_check = Lookup {
+      multiplicity: -range_check_multiplicity,
+      args: vec![range_check_channel, i.clone(), j.clone()],
+    };
 
-    let pull_chain_rotr7 = Lookup::pull(
-      chain_rotr7_multiplicity,
-      vec![
+    let pull_chain_rotr7 = Lookup {
+      multiplicity: -chain_rotr7_multiplicity,
+      args: vec![
         chain_rotr7_channel,
         i.clone(),
         j.clone(),
@@ -282,11 +277,11 @@ impl AiurGadget for Bytes2 {
         chain_rotr7_o1,
         chain_rotr7_o2,
       ],
-    );
+    };
 
-    let pull_chain_rotr4 = Lookup::pull(
-      chain_rotr4_multiplicity,
-      vec![
+    let pull_chain_rotr4 = Lookup {
+      multiplicity: -chain_rotr4_multiplicity,
+      args: vec![
         chain_rotr4_channel,
         i,
         j,
@@ -294,7 +289,7 @@ impl AiurGadget for Bytes2 {
         chain_rotr4_o1,
         chain_rotr4_o2,
       ],
-    );
+    };
 
     vec![
       pull_xor,
