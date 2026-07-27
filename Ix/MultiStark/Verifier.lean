@@ -535,143 +535,109 @@ def verifier := ⟦
     }
   }
 
-  -- Evaluate a symbolic AIR expression at the opened point (Rust:
-  -- `SymbolicExpression::interpret`). Function-circuit `zeros` and lookup
-  -- args/multiplicities only ever reference `Main`/`Preprocessed` entries
-  -- (offset 0) and constants; the other entries never appear here.
-  fn eval_sym(e: SymExpr, main: List‹Ext›, prep: List‹Ext›) -> Ext {
-    match e {
-      SymExpr.Var(entry, idx) =>
-        match entry {
-          SysEntry.Main(_o) => list_lookup(main, idx),
-          SysEntry.Preprocessed(_o) => list_lookup(prep, idx),
-          SysEntry.Stage2(_o) => [0, 0],
-          SysEntry.Public => [0, 0],
-          SysEntry.Stage2Public => [0, 0],
-          SysEntry.Challenge => [0, 0],
+  -- ==========================================================================
+  -- Compiled node-graph evaluation (replaces the symbolic AIR folder).
+  --
+  -- The composition polynomial at ζ is `Σᵢ α^(k-1-i)·zeroᵢ`, where each `zeroᵢ`
+  -- is the value of a constraint-root node. The nodes form a flat,
+  -- topologically ordered graph (children precede parents), so one forward
+  -- sweep computes an ExtVal per node (Rust: `multi_stark::eval`'s dense
+  -- sweep). The buffer is built in REVERSE (prepend; head = most recent):
+  -- when the k-th node (0-based) is processed the buffer holds k values
+  -- `[v_{k-1}, …, v_0]`, so child NodeId `c` sits at buffer index `k-1-c`. The
+  -- lookup-argument constraints are already compiled into `zeros`, so nothing
+  -- special is done for them (Rust `verifier.rs` evaluates one node graph and
+  -- Horner-folds the roots).
+  -- ==========================================================================
+
+  -- A node child's value from the FORWARD buffer: node `c`'s value sits at
+  -- buffer index `c` (children always have smaller NodeIds than their parent,
+  -- so they are already present).
+  fn buf_child(buf: List‹Ext›, c: G) -> Ext {
+    list_lookup(buf, c)
+  }
+
+  -- Evaluate one node into an ExtVal, given the forward buffer and the leaf
+  -- context. Stage-2 columns are the OPENED BASE columns used directly (no
+  -- `from_ext_basis` reassembly).
+  fn eval_node(nd: SysNode, buf: List‹Ext›,
+      main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
+      s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
+      isf: Ext, isl: Ext, ist: Ext) -> Ext {
+    match nd {
+      SysNode.Const(c) => [c, 0],
+      SysNode.Var(src, off, idx) =>
+        -- flatten (source, offset) into one selector: 2·source + offset,
+        -- with source 0 Preprocessed / 1 Main / 2 Stage2, offset 0 cur / 1 next.
+        let sel = src + src + off;
+        match sel {
+          0 => list_lookup(prep, idx),
+          1 => list_lookup(prep_next, idx),
+          2 => list_lookup(main, idx),
+          3 => list_lookup(main_next, idx),
+          4 => list_lookup(s2, idx),
+          _ => list_lookup(s2next, idx),
         },
-      SymExpr.IsFirstRow => [0, 0],
-      SymExpr.IsLastRow => [0, 0],
-      SymExpr.IsTransition => [0, 0],
-      SymExpr.Const(c) => [c, 0],
-      SymExpr.Add(x, y) => eg_add(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
-      SymExpr.Sub(x, y) => eg_sub(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
-      SymExpr.Neg(x) => eg_neg(eval_sym(load(x), main, prep)),
-      SymExpr.Mul(x, y) => eg_mul(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SysNode.Public(idx) => list_lookup(publics, idx),
+      SysNode.IsFirstRow => isf,
+      SysNode.IsLastRow => isl,
+      SysNode.IsTransition => ist,
+      SysNode.Add(a, b) => eg_add(buf_child(buf, a), buf_child(buf, b)),
+      SysNode.Sub(a, b) => eg_sub(buf_child(buf, a), buf_child(buf, b)),
+      SysNode.Mul(a, b) => eg_mul(buf_child(buf, a), buf_child(buf, b)),
+      SysNode.Neg(a) => eg_neg(buf_child(buf, a)),
     }
   }
 
-  -- `fingerprint(r, args) = Σ argᵢ·rⁱ` (Horner over the reversed argument list,
-  -- `lookup.rs::fingerprint`).
-  fn fingerprint_ext(r: Ext, args: List‹SymExpr›, main: List‹Ext›, prep: List‹Ext›) -> Ext {
-    match load(args) {
-      ListNode.Nil => [0, 0],
-      ListNode.Cons(a, rest) =>
-        eg_add(eval_sym(a, main, prep), eg_mul(r, fingerprint_ext(r, rest, main, prep))),
+  -- Forward sweep: append each node's value so that `buf[i]` is node `i`'s
+  -- value. `buf` starts `Nil`.
+  fn sweep_nodes(nodes: List‹SysNode›, buf: List‹Ext›,
+      main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
+      s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
+      isf: Ext, isl: Ext, ist: Ext) -> List‹Ext› {
+    match load(nodes) {
+      ListNode.Nil => buf,
+      ListNode.Cons(nd, rest) =>
+        let v = eval_node(nd, buf, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
+        sweep_nodes(rest, list_concat(buf, store(ListNode.Cons(v, store(ListNode.Nil)))),
+                    main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
     }
   }
 
-  -- Fold the inner-AIR `zeros` constraints (Function circuit): each is asserted
-  -- zero on the main (stage-1) row, with no preprocessed row.
-  fn fold_zeros(acc: Ext, alpha: Ext, zeros: List‹SymExpr›, main: List‹Ext›) -> Ext {
+  -- Horner-fold the constraint roots with α: `acc := acc·α + buf[z]` for each
+  -- root NodeId `z`, in `zeros` order (the canonical compiled order the prover
+  -- folded in).
+  fn fold_roots(acc: Ext, alpha: Ext, zeros: List‹G›, buf: List‹Ext›) -> Ext {
     match load(zeros) {
       ListNode.Nil => acc,
       ListNode.Cons(z, rest) =>
-        fold_zeros(ood_fold(acc, alpha, eval_sym(z, main, store(ListNode.Nil))), alpha, rest, main),
+        let v = list_lookup(buf, z);
+        fold_roots(ood_fold(acc, alpha, v), alpha, rest, buf),
     }
   }
 
-  -- Fold the selector boolean checks (Function circuit): `assert_bool(row[s])`
-  -- = `assert_zero(s·(s-1))` for `s` in the selector range `[idx, idx+count)`.
-  fn fold_sel_bools(acc: Ext, alpha: Ext, main: List‹Ext›, idx: G, count: G) -> Ext {
-    match count {
-      0 => acc,
-      _ =>
-        let x = list_lookup(main, idx);
-        let bc = eg_mul(x, eg_sub(x, [1, 0]));
-        fold_sel_bools(ood_fold(acc, alpha, bc), alpha, main, idx + 1, count - 1),
-    }
+  -- The composition polynomial `composition(ζ)` for one circuit: sweep the
+  -- compiled node graph over the opened rows / publics / selectors, then
+  -- Horner-fold the constraint roots with α.
+  fn ood_composition(nodes: List‹SysNode›, zeros: List‹G›,
+      main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
+      s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
+      isf: Ext, isl: Ext, ist: Ext, alpha: Ext) -> Ext {
+    let buf = sweep_nodes(nodes, store(ListNode.Nil),
+                          main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
+    fold_roots([0, 0], alpha, zeros, buf)
   }
 
-  -- Fold the per-lookup constraints (`LookupAir::eval`): for lookup `k`,
-  -- `assert_one_ext(messageₖ · minvₖ)` = `assert_zero_ext(messageₖ·minvₖ - 1)`,
-  -- where `minvₖ = stage_2_row[1+k]` and
-  -- `messageₖ = lookup_challenge + fingerprint(fingerprint_challenge, argsₖ)`.
-  -- Simultaneously builds `acc_expr = stage_2_row[0] + Σ multiplicityₖ·minvₖ`.
-  -- Returns `(folder_acc, acc_expr)`.
-  fn fold_lookups(acc: Ext, alpha: Ext, lookups: List‹SysLookup›, k: G,
-      main: List‹Ext›, prep: List‹Ext›, s2row: List‹Ext›,
-      lch: Ext, fch: Ext, acc_expr: Ext) -> (Ext, Ext) {
-    match load(lookups) {
-      ListNode.Nil => (acc, acc_expr),
-      ListNode.Cons(lk, rest) =>
-        let SysLookup.Mk(mult_e, args) = lk;
-        let minv = list_lookup(s2row, k + 1);
-        let mult = eval_sym(mult_e, main, prep);
-        let fp = fingerprint_ext(fch, args, main, prep);
-        let message = eg_add(lch, fp);
-        let c = eg_sub(eg_mul(message, minv), [1, 0]);
-        let acc = ood_fold(acc, alpha, c);
-        let acc_expr = eg_add(acc_expr, eg_mul(mult, minv));
-        fold_lookups(acc, alpha, rest, k + 1, main, prep, s2row, lch, fch, acc_expr),
-    }
-  }
-
-  -- The composition polynomial `composition(ζ)` for one circuit: replays the
-  -- inner-AIR constraints (per air kind) followed by the lookup-argument
-  -- constraints, folding each with `α` exactly as `LookupAir::eval` drives the
-  -- verifier folder. `accp`/`naccp` are the current/next lookup accumulators.
-  fn ood_composition(air: SysAir, lookups: List‹SysLookup›,
-      main: List‹Ext›, main_next: List‹Ext›, s2row: List‹Ext›, s2next: List‹Ext›,
-      prep: List‹Ext›, isf: Ext, isl: Ext, ist: Ext,
-      lch: Ext, fch: Ext, accp: Ext, naccp: Ext, alpha: Ext) -> Ext {
-    -- inner-AIR constraints first, then hand the accumulator to the lookup tail
-    -- (split so each `match air` arm ends in a tail call — Aiur forbids
-    -- non-tail matches).
-    match air {
-      SysAir.Function(c) =>
-        let SysConstraints.Mk(zeros, ss, se, _w) = c;
-        let acc = fold_zeros([0, 0], alpha, zeros, main);
-        let acc = fold_sel_bools(acc, alpha, main, ss, se - ss);
-        ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
-      SysAir.Memory(m) =>
-        let SysMemory.Mk(_w) = m;
-        -- `Memory::eval`: is_real = col 1, ptr = col 2 (current and next row).
-        let is_real = list_lookup(main, 1);
-        let ptr = list_lookup(main, 2);
-        let is_real_next = list_lookup(main_next, 1);
-        let ptr_next = list_lookup(main_next, 2);
-        -- assert_bool(is_real)
-        let acc = ood_fold([0, 0], alpha, eg_mul(is_real, eg_sub(is_real, [1, 0])));
-        -- is_real_transition = is_real_next · is_transition
-        let irt = eg_mul(is_real_next, ist);
-        -- when(irt).assert_one(is_real) = irt·(is_real - 1)
-        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(is_real, [1, 0])));
-        -- when(irt).assert_eq(ptr+1, ptr_next) = irt·(ptr + 1 - ptr_next)
-        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(eg_add(ptr, [1, 0]), ptr_next)));
-        ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
-      SysAir.Bytes1 =>
-        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
-      SysAir.Bytes2 =>
-        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
-    }
-  }
-
-  -- Tail of `ood_composition`: fold the lookup-argument constraints onto the
-  -- inner-AIR accumulator, then the three accumulator boundary constraints.
-  fn ood_comp_tail(acc: Ext, lookups: List‹SysLookup›, main: List‹Ext›, prep: List‹Ext›,
-      s2row: List‹Ext›, s2next: List‹Ext›, isf: Ext, isl: Ext, ist: Ext,
-      lch: Ext, fch: Ext, accp: Ext, naccp: Ext, alpha: Ext) -> Ext {
-    let (acc, acc_expr) =
-      fold_lookups(acc, alpha, lookups, 0, main, prep, s2row, lch, fch, list_lookup(s2row, 0));
-    let acc_col = list_lookup(s2row, 0);
-    let next_acc_col = list_lookup(s2next, 0);
-    -- when_first_row: acc_col = accp
-    let acc = ood_fold(acc, alpha, eg_mul(isf, eg_sub(acc_col, accp)));
-    -- when_transition: acc_expr = next_acc_col
-    let acc = ood_fold(acc, alpha, eg_mul(ist, eg_sub(acc_expr, next_acc_col)));
-    -- when_last_row: acc_expr = naccp
-    ood_fold(acc, alpha, eg_mul(isl, eg_sub(acc_expr, naccp)))
+  -- The public-input coordinates for one circuit's lookup argument: the base
+  -- coordinates of (β, γ, current acc, next acc), each lifted into ExtVal
+  -- (`EF::from(coord)`). Indexed by the compiled `Public` node index
+  -- (`num_publics = 4·D`, `D = 2`).
+  fn build_publics(lch: Ext, fch: Ext, accp: Ext, naccp: Ext) -> List‹Ext› {
+    store(ListNode.Cons([lch[0], 0], store(ListNode.Cons([lch[1], 0],
+    store(ListNode.Cons([fch[0], 0], store(ListNode.Cons([fch[1], 0],
+    store(ListNode.Cons([accp[0], 0], store(ListNode.Cons([accp[1], 0],
+    store(ListNode.Cons([naccp[0], 0], store(ListNode.Cons([naccp[1], 0],
+    store(ListNode.Nil)))))))))))))))))
   }
 
   -- ==========================================================================
@@ -710,17 +676,17 @@ def verifier := ⟦
     }
   }
 
-  -- The preprocessed opened row at ζ for circuit `i`, or `Nil` if the circuit
-  -- has no preprocessed trace (`preprocessed_indices[i] = None`).
-  fn ood_prep_row(prep_opt: PreprocessedOpt, oi: OptIdx) -> List‹Ext› {
+  -- The preprocessed opened rows (current, next) at ζ for circuit `i`, or
+  -- `(Nil, Nil)` if the circuit has no preprocessed trace.
+  fn ood_prep_rows(prep_opt: PreprocessedOpt, oi: OptIdx) -> (List‹Ext›, List‹Ext›) {
     match oi {
-      OptIdx.NoIdx => store(ListNode.Nil),
+      OptIdx.NoIdx => (store(ListNode.Nil), store(ListNode.Nil)),
       OptIdx.SomeIdx(j) =>
         match prep_opt {
-          PreprocessedOpt.NoPreprocessed => store(ListNode.Nil),
+          PreprocessedOpt.NoPreprocessed => (store(ListNode.Nil), store(ListNode.Nil)),
           PreprocessedOpt.SomePreprocessed(round) =>
             let pr = list_lookup(round, j);
-            list_lookup(pr, 0),
+            (list_lookup(pr, 0), list_lookup(pr, 1)),
         },
     }
   }
@@ -736,8 +702,7 @@ def verifier := ⟦
     match load(circuits) {
       ListNode.Nil => 1,
       ListNode.Cons(circ, rest) =>
-        let SysCircuit.Mk(lair, _cc, md, _ph, _pw, _w1, _w2) = circ;
-        let SysLookupAir.Mk(air, lookups) = lair;
+        let SysCircuit.Mk(nodes, _node_count, zeros, md) = circ;
         let l = to_field(list_lookup(log_degrees, i));
         let qd = quotient_degree_of(md);
         let naccp = list_lookup(accs, i);
@@ -745,17 +710,18 @@ def verifier := ⟦
         let main = list_lookup(s1, 0);
         let main_next = list_lookup(s1, 1);
         let s2 = list_lookup(stage2, i);
-        let s2row = reconstruct_ext_row(list_lookup(s2, 0));
-        let s2next = reconstruct_ext_row(list_lookup(s2, 1));
-        let prep = ood_prep_row(prep_opt, list_lookup(prep_indices, i));
+        -- Stage-2 opened rows are base columns; used directly (no pairing).
+        let s2row = list_lookup(s2, 0);
+        let s2next = list_lookup(s2, 1);
+        let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
-        let comp = ood_composition(air, lookups, main, main_next, s2row, s2next,
-                                   prep, isf, isl, ist, lch, fch, accp, naccp, alpha);
+        let publics = build_publics(lch, fch, accp, naccp);
+        let comp = ood_composition(nodes, zeros,
+                                   main, main_next, prep, prep_next, s2row, s2next,
+                                   publics, isf, isl, ist, alpha);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
-        -- shape: `quotient_opened_values[pos][0].len() == quotient_degree · D`
-        -- (Rust `check_shapes`)
         assert_eq!(eq_zero(list_length(slices) - qd), 1);
         let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [1, 0]);
         assert_eq!(eg_eq(eg_mul(comp, invv), quot), 1);
