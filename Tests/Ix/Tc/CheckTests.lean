@@ -119,6 +119,42 @@ def wellScopedTests : TestSeq :=
         | .error (.unknownConst _) => true
         | _ => false) : Bool))
 
+/-! ### K0 totalization boundaries -/
+
+def totalizationTests : TestSeq :=
+  test "universe validation preserves LIFO error order"
+    ((let a : KUniv .anon :=
+        .param 2 () (Address.blake3 "univ-work-a".toUTF8)
+      let b : KUniv .anon :=
+        .param 3 () (Address.blake3 "univ-work-b".toUTF8)
+      let root : KUniv .anon :=
+        .max a b (Address.blake3 "univ-work-root".toUTF8)
+      match ((RecM.validateUnivParamsSeen root 0 {}).run default).run
+          (TcState.ofEnvAnon {}) with
+      | .error (.univParamOutOfRange idx 0) _ => idx == 3
+      | _ => false) : Bool)
+  ++ test "well-scopedness worklist remains stack-safe on a deep spine"
+    ((let deep := (List.range 4096).foldl
+        (fun e n => KExpr.mkApp e (.mkNatLit n)) (.mkNatLit 0)
+      match ((RecM.validateExprWellScoped deep 0 0).run default).run
+          (TcState.ofEnvAnon {}) with
+      | .ok () _ => true
+      | .error _ _ => false) : Bool)
+  ++ test "nested-positivity zero depth fails before changing state"
+    ((let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 7 }
+      match ((RecM.checkPositivityDomainFuel 0 (.mkSort .mkZero) #[]).run
+          default).run initial with
+      | .error .maxRecDepth s => s.recFuel == 7 && s.lctx.size == 0
+      | _ => false) : Bool)
+  ++ test "forall counting restores the local context"
+    ((let sort0 : AE := .mkSort .mkZero
+      let ty := KExpr.mkAll () () sort0
+        (KExpr.mkAll () () sort0 (KExpr.mkAll () () sort0 sort0))
+      match ((RecM.countForalls ty).run default).run (TcState.ofEnvAnon {}) with
+      | .ok n s => n == 3 && s.lctx.size == 0
+      | .error _ _ => false) : Bool)
+
 /-! ### Safety lattice -/
 
 def safetyTests : TestSeq :=
@@ -153,6 +189,14 @@ def safetyTests : TestSeq :=
       let (ixon, puAddr) := storeConst ixon partialUser
       failsContaining ixon sAddr "references partial definition"
         && passes ixon puAddr : Bool))
+  ++ test "safety worklist remains stack-safe on a deep application spine"
+    ((let leaf := pAddr (Address.blake3 "safety-leaf".toUTF8)
+      let deep := (List.range 4096).foldl
+        (fun e n => KExpr.mkApp e (.mkNatLit n)) leaf
+      match ((RecM.checkNoUnsafeRefs deep .safe).run default).run
+          (TcState.ofEnvAnon {}) with
+      | .ok () _ => true
+      | .error _ _ => false) : Bool)
 
 /-! ### Quot validation -/
 
@@ -245,6 +289,89 @@ def lazyTests : TestSeq :=
       match (TcM.checkConst (m := .anon) ⟨wrongAddr, ()⟩).run
           (TcState.newLazyAnon ixon) with
       | .error (.other msg) _ => (msg.splitOn "integrity").length > 1
+      | _ => false : Bool))
+
+/-! ### Failed-check cache isolation -/
+
+/-- Sizes of exactly the caches rolled back by the public `checkConst` error
+boundary. `blockCheckResults` is intentionally separate because new failures
+are retained for deterministic replay. -/
+def subjectCacheSizes (env : KEnv .anon) : Array Nat := #[
+  env.whnfCache.size,
+  env.whnfNoDeltaCache.size,
+  env.whnfNoDeltaCheapCache.size,
+  env.whnfCoreCache.size,
+  env.whnfCoreCheapCache.size,
+  env.inferCache.size,
+  env.inferOnlyCache.size,
+  env.defEqCache.size,
+  env.defEqCheapCache.size,
+  env.defEqFailure.size,
+  env.unfoldCache.size,
+  env.natSuccStuck.size,
+  env.isPropCache.size,
+  env.isRecCache.size,
+  env.recursorCache.size,
+  env.recMajorsCache.size,
+  env.blockPeerAgreementCache.size
+]
+
+def cacheIsolationTests : TestSeq :=
+  test "failed pending check rolls back new caches and preserves warm caches"
+    ((let (ixon, aAddr) := envA
+      let bad : Ixon.Constant :=
+        ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], .sort 0⟩,
+          #[], #[aAddr], #[.zero]⟩
+      let (ixon, badAddr) := storeConst ixon bad
+      let warmExpr := pAddr aAddr
+      let warmKey := (warmExpr.addr, emptyCtxAddr)
+      let replayBlock : KId .anon :=
+        ⟨Address.blake3 "cache-isolation-replay".toUTF8, ()⟩
+      let base := ingressEnvOf ixon
+      let warmed : KEnv .anon := { base with
+        whnfCache := base.whnfCache.insert warmKey warmExpr
+        blockCheckResults := base.blockCheckResults.insert replayBlock
+          (.error .typeExpected) }
+      let initial := TcState.ofEnvAnon warmed
+      let raw := (TcM.runRec
+        (RecM.checkConst (m := .anon) ⟨badAddr, ()⟩)).run initial
+      let isolated := (TcM.checkConst (m := .anon) ⟨badAddr, ()⟩).run initial
+      match raw, isolated with
+      | .error _ rawState, .error _ isolatedState =>
+        let rawGrew := subjectCacheSizes rawState.env != subjectCacheSizes warmed
+        let rolledBack :=
+          subjectCacheSizes isolatedState.env == subjectCacheSizes warmed
+        let warmEntryKept :=
+          isolatedState.env.whnfCache[warmKey]? == some warmExpr
+        let replayKept :=
+          match isolatedState.env.blockCheckResults[replayBlock]? with
+          | some (.error .typeExpected) => true
+          | _ => false
+        let nonCacheStateKept :=
+          isolatedState.env.consts.size == rawState.env.consts.size &&
+            isolatedState.recFuel == rawState.recFuel
+        let nextWarm :=
+          (TcM.checkConst (m := .anon) ⟨aAddr, ()⟩).run isolatedState
+        let nextFresh :=
+          (TcM.checkConst (m := .anon) ⟨aAddr, ()⟩).run initial
+        let sameVerdict := match nextWarm, nextFresh with
+          | .ok () _, .ok () _ => true
+          | .error e _, .error e' _ => e == e'
+          | _, _ => false
+        rawGrew && rolledBack && warmEntryKept && replayKept &&
+          nonCacheStateKept && sameVerdict
+      | _, _ => false : Bool))
+  ++ test "error rollback retains an earlier block success"
+    ((let block : KId .anon :=
+        ⟨Address.blake3 "cache-isolation-old-success".toUTF8, ()⟩
+      let emptyEnv : KEnv .anon := {}
+      let before : KEnv .anon := { emptyEnv with
+        blockCheckResults := emptyEnv.blockCheckResults.insert block (.ok ()) }
+      let after : KEnv .anon := { before with
+        blockCheckResults := before.blockCheckResults.insert block
+          (.error .typeExpected) }
+      match (before.restoreCheckCachesOnError after).blockCheckResults[block]? with
+      | some (.ok ()) => true
       | _ => false : Bool))
 
 /-! ### Forced verification of primitive addresses (`--no-verify` hole)
@@ -524,7 +651,9 @@ def parallelTests : TestSeq :=
            fails={report.failures.size} kenv={kenv.consts.size}")) .done
 
 public def suite : List TestSeq :=
-  [acceptRejectTests, wellScopedTests, safetyTests, quotTests, blockTests,
-   lazyTests, primVerifyTests, inductiveTests, recursorTests, parallelTests]
+  [acceptRejectTests, wellScopedTests, totalizationTests, safetyTests,
+   quotTests, blockTests,
+   lazyTests, cacheIsolationTests, primVerifyTests, inductiveTests,
+   recursorTests, parallelTests]
 
 end Tests.Tc.CheckTests

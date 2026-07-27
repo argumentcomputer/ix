@@ -26,8 +26,9 @@ Fuels are data-level and placed exactly where Rust places them
 (post-cache-miss). The `IX_MAX_REC_FUEL` env override is not ported.
 
 Cross-file recursion (whnf ↔ infer ↔ def_eq) is tied through a `Methods m`
-record + `RecM m := ReaderT (Methods m) (TcM m)`; the knot is tied by one
-`partial def` in `Ix.Tc.Knot`. Only back-edges go through the record.
+record + `RecM m := ReaderT (Methods m) (TcM m)`; `Ix.Tc.Knot` ties a total
+method table indexed by the current `recFuel`. Only back-edges go through
+the record.
 
 Not ported (diagnostics/profiling only): perf counters, hot-miss sampler,
 `def_eq_trace_depth`, profile sink, `debug_label` env filters.
@@ -161,6 +162,18 @@ def ofEnv (env : KEnv m) : TcState m :=
 def ofEnvAnon (env : KEnv .anon) : TcState .anon :=
   { env, prims := .ofAnonAddrs }
 
+/-- Error-side cache isolation for one top-level constant check.
+
+    Caches that may depend on the failed pending subject are restored from the
+    pre-check state; newly cached block errors remain replayable. All other
+    post-state data, including lazy loads, interned terms, fault history, and
+    consumed fuel, survives. -/
+def restoreCheckCachesOnError (before after : TcState m) : TcState m :=
+  { after with
+    env := KEnv.restoreCheckCachesOnError before.env after.env
+    equivManager := before.equivManager
+    ctxAddrCache := before.ctxAddrCache }
+
 end TcState
 
 /-- The type-checking monad. -/
@@ -169,6 +182,14 @@ abbrev TcM (m : Mode) := EStateM (TcError m) (TcState m)
 instance : Inhabited (TcM m α) := ⟨fun s => .error default s⟩
 
 namespace TcM
+
+/-- Run `x` unchanged on success, but sanitize its error state before
+    returning it. This direct `EStateM` wrapper keeps every non-cache mutation
+    from the failing run while exposing an exact verification equation. -/
+def isolateCheckErrors (x : TcM m α) : TcM m α := fun s =>
+  match x s with
+  | .ok a s' => .ok a s'
+  | .error e s' => .error e (s.restoreCheckCachesOnError s')
 
 @[inline] def ofExcept : Except (TcError m) α → TcM m α
   | .ok a => pure a
@@ -302,6 +323,32 @@ def depth : TcM m UInt64 := do
   let s ← get
   return (s.ctx.size + s.lctx.size).toUInt64
 
+/-- One closure step for the suffix needed by `ctxAddrForLbr`. Starting at
+    `need`, dependencies may only increase the result, which is then clamped
+    to the context length. -/
+def ctxSuffixNeedStep (s : TcState m) (need : Nat) : Nat := Id.run do
+  let n := s.ctx.size
+  let start := n - need
+  let mut nextNeed := need
+  for i in [start:n] do
+    let frameOffset := n - i
+    let tyNeed := s.ctx[i]!.lbr.toNat
+    nextNeed := max nextNeed (frameOffset + tyNeed)
+    if let some val := s.letVals[i]! then
+      nextNeed := max nextNeed (frameOffset + val.lbr.toNat)
+  return min nextNeed n
+
+/-- Iterate suffix closure with an explicit bound. Because
+    `ctxSuffixNeedStep` is monotone and clamped below `s.ctx.size`, at most
+    `s.ctx.size` strict increases are possible; one extra step detects the
+    fixed point. -/
+def ctxSuffixNeed (s : TcState m) : Nat → Nat → Nat
+  | 0, need => need
+  | fuel + 1, need =>
+    let nextNeed := ctxSuffixNeedStep s need
+    if nextNeed == need then need
+    else ctxSuffixNeed s fuel nextNeed
+
 /-- Suffix-aware context identity for a loose-bound-variable range.
 
     Pure in `(ctxId, lbr)` (memoized). Runs a fixpoint closing the needed
@@ -316,20 +363,7 @@ def ctxAddrForLbr (lbr : UInt64) : TcM m Address := do
   if let some cached := s.ctxAddrCache[cacheKey]? then
     return cached
   let n := s.ctx.size
-  let mut need := min lbr.toNat n
-  repeat
-    let start := n - need
-    let mut nextNeed := need
-    for i in [start:n] do
-      let frameOffset := n - i
-      let tyNeed := s.ctx[i]!.lbr.toNat
-      nextNeed := max nextNeed (frameOffset + tyNeed)
-      if let some val := s.letVals[i]! then
-        nextNeed := max nextNeed (frameOffset + val.lbr.toNat)
-    nextNeed := min nextNeed n
-    if nextNeed == need then
-      break
-    need := nextNeed
+  let need := ctxSuffixNeed s (n + 1) (min lbr.toNat n)
   let result :=
     if need == n then s.ctxId
     else Id.run do
@@ -435,8 +469,17 @@ def saveDepth : TcM m Nat := do
 
 /-- Restore the legacy ctx to a saved depth. -/
 def restoreDepth (saved : Nat) : TcM m Unit := do
-  while (← get).ctx.size > saved do
-    popLocal
+  let fuel := (← get).ctx.size - saved
+  go fuel
+where
+  /-- Explicit form of the old pop loop. `fuel` is the initial excess
+      context length, and `popLocal` removes exactly one frame. -/
+  go : Nat → TcM m Unit
+    | 0 => pure ()
+    | fuel + 1 => do
+      if (← get).ctx.size > saved then
+        popLocal
+        go fuel
 
 /-- Bound variable's type, lifted to the current depth. -/
 def lookupVar (idx : UInt64) : TcM m (KExpr m) := do
@@ -618,29 +661,35 @@ end TcM
 
 /-! ### Free-standing helpers (tc.rs) -/
 
+/-- Sum of pending expression nodes in a worklist. This is proof-only in
+    `exprMentionsAddr`'s termination argument. -/
+def exprWorkSize : List (KExpr m) → Nat
+  | [] => 0
+  | e :: stack => e.treeSize + exprWorkSize stack
+
 /-- Does `e` mention a constant with the given address? Iterative
     (stack-based) — immune to stack overflow on deep input. -/
-def exprMentionsAddr (e : KExpr m) (addr : Address) : Bool := Id.run do
-  let mut stack : Array (KExpr m) := #[e]
-  while !stack.isEmpty do
-    let e := stack.back!
-    stack := stack.pop
-    match e with
-    | .const id _ _ =>
-      if id.addr == addr then
-        return true
-    | .app f a _ =>
-      stack := stack.push f |>.push a
-    | .lam _ _ ty body _ | .all _ _ ty body _ =>
-      stack := stack.push ty |>.push body
-    | .letE _ ty val body _ _ =>
-      stack := stack.push ty |>.push val |>.push body
-    | .prj id _ val _ =>
-      if id.addr == addr then
-        return true
-      stack := stack.push val
-    | _ => pure ()
-  return false
+def exprMentionsAddr (e : KExpr m) (addr : Address) : Bool :=
+  go [e]
+where
+  /-- LIFO order matches the former Array stack: the last pushed child is
+      visited first. -/
+  go : List (KExpr m) → Bool
+    | [] => false
+    | e :: stack =>
+      match e with
+      | .const id _ _ =>
+        if id.addr == addr then true else go stack
+      | .app f a _ => go (a :: f :: stack)
+      | .lam _ _ ty body _ | .all _ _ ty body _ =>
+        go (body :: ty :: stack)
+      | .letE _ ty val body _ _ => go (body :: val :: ty :: stack)
+      | .prj id _ val _ =>
+        if id.addr == addr then true else go (val :: stack)
+      | _ => go stack
+  termination_by stack => exprWorkSize stack
+  decreasing_by
+    all_goals simp [exprWorkSize, KExpr.treeSize, KExpr.treeSize_pos] <;> omega
 
 /-- Does `e` mention any constant from `addrs`? -/
 def exprMentionsAnyAddr (e : KExpr m) (addrs : Array Address) : Bool :=
@@ -648,12 +697,40 @@ def exprMentionsAnyAddr (e : KExpr m) (addrs : Array Address) : Bool :=
 
 /-! ### The recursion knot -/
 
+/-- Reduction-policy flags shared with the internal WHNF knot. Keeping the
+    policy type here lets the total method approximation index cheap/full
+    recursive WHNF calls without an import cycle. -/
+structure WhnfFlags where
+  cheapRec : Bool
+  cheapProj : Bool
+  deriving BEq, Repr, Inhabited
+
+namespace WhnfFlags
+
+def FULL : WhnfFlags := ⟨false, false⟩
+def DEF_EQ_CORE : WhnfFlags := ⟨false, true⟩
+
+@[inline] def isFull (f : WhnfFlags) : Bool := !f.cheapRec && !f.cheapProj
+
+end WhnfFlags
+
+/-- Nat succ-collapse policy. The `.stuck` entry is part of the internal
+    total knot because succ peeling recursively normalizes without
+    re-entering succ collapse. -/
+inductive NatSuccMode where
+  | collapse
+  | stuck
+  deriving BEq, Repr, Inhabited
+
 /-- Back-edges of the whnf ↔ infer ↔ def-eq recursion. Whnf reads
-    `infer`/`isDefEq`; Infer imports Whnf directly; DefEq imports both. The
-    knot is tied by one `partial def` in `Ix.Tc.Knot`. -/
+    `infer`/`isDefEq`; its two policy-sensitive internal recursive entries
+    also live here so cheap-core and stuck-succ calls decrease the same
+    `methodsN` index. Infer imports Whnf directly; DefEq imports both. -/
 structure Methods (m : Mode) where
   whnf : KExpr m → TcM m (KExpr m)
   whnfCore : KExpr m → TcM m (KExpr m)
+  whnfMode : KExpr m → NatSuccMode → TcM m (KExpr m)
+  whnfCoreFlags : KExpr m → WhnfFlags → TcM m (KExpr m)
   infer : KExpr m → TcM m (KExpr m)
   isDefEq : KExpr m → KExpr m → TcM m Bool
 
@@ -661,6 +738,9 @@ instance : Inhabited (Methods m) where
   default :=
     { whnf := fun _ => throw (.other "Methods.whnf: knot not tied")
       whnfCore := fun _ => throw (.other "Methods.whnfCore: knot not tied")
+      whnfMode := fun _ _ => throw (.other "Methods.whnfMode: knot not tied")
+      whnfCoreFlags := fun _ _ =>
+        throw (.other "Methods.whnfCoreFlags: knot not tied")
       infer := fun _ => throw (.other "Methods.infer: knot not tied")
       isDefEq := fun _ _ => throw (.other "Methods.isDefEq: knot not tied") }
 
@@ -680,6 +760,26 @@ abbrev RecM (m : Mode) := ReaderT (Methods m) (TcM m)
 def maxDispatchDepth : UInt32 := 200_000
 
 namespace RecM
+
+/-- One iteration of an explicitly bounded kernel loop. `next` consumes the
+    current iteration and continues from a new state; `done` returns without
+    consulting the remaining bound. -/
+inductive BoundedStep (σ α : Type) where
+  | next (state : σ)
+  | done (result : α)
+
+/-- Run at most `fuel` loop iterations. Exhaustion is checked before invoking
+    `step`, matching the former `if fuel == 0; fuel := fuel - 1` loops.
+    Keeping the driver total and higher-order lets WHNF and def-eq expose their
+    local loop equations independently of the still-open recursive knot. -/
+@[specialize]
+def runBounded (step : σ → RecM m (BoundedStep σ α)) :
+    Nat → σ → RecM m α
+  | 0, _ => throw .maxRecDepth
+  | fuel + 1, state => do
+    match ← step state with
+    | .next state => runBounded step fuel state
+    | .done result => return result
 
 /-- Enter one knot dispatch: bump the depth, trip past the ceiling.
     Callers pair with `exitDispatch` via `try/finally` (balanced on

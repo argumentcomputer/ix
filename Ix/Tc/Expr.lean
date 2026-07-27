@@ -113,6 +113,21 @@ def info : KExpr m → ExprInfo m
 @[inline] def hasFVars (e : KExpr m) : Bool := e.info.hasFVars
 @[inline] def mdata (e : KExpr m) : m.F (Array MData) := e.info.mdata
 
+/-- Number of expression nodes, ignoring cached metadata. Used as a
+    termination measure for stack-based production traversals; it does not
+    participate in expression hashing or runtime fuel. -/
+def treeSize : KExpr m → Nat
+  | .var .. | .fvar .. | .sort .. | .const .. | .nat .. | .str .. => 1
+  | .app f a _ => f.treeSize + a.treeSize + 1
+  | .lam _ _ ty body _ | .all _ _ ty body _ =>
+    ty.treeSize + body.treeSize + 1
+  | .letE _ ty val body _ _ =>
+    ty.treeSize + val.treeSize + body.treeSize + 1
+  | .prj _ _ val _ => val.treeSize + 1
+
+@[simp] theorem treeSize_pos (e : KExpr m) : 0 < e.treeSize := by
+  cases e <;> simp [treeSize]
+
 /-- The metadata-aware address as a plain `Address` (meta mode; `default`
     is unreachable — every meta node carries one). -/
 @[inline] def metaAddrD (e : KExpr m) : Address :=
@@ -413,11 +428,11 @@ where
 
 /-! ### Display (diagnostics only) -/
 
-/-- Meta mode shows names when available; anon mode shows positional/hash
-    fallbacks. Depth-capped. Mirrors Rust `fmt_expr`. -/
-partial def render (e : KExpr m) (depth : Nat := 0) : String :=
-  if depth > 20 then "..."
-  else match e with
+/-- Total worker for `render`. `fuel = 21 - depth` is exactly the historical
+    `depth > 20` cutoff, made explicit for the recursive calls. -/
+def renderFuel : Nat → KExpr m → Nat → String
+  | 0, _, _ => "..."
+  | fuel + 1, e, depth => match e with
     | .var idx name _ =>
       if MetaDisplay.hasMeta name then MetaDisplay.metaFmt name
       else s!"#{idx.toNat}"
@@ -433,20 +448,31 @@ partial def render (e : KExpr m) (depth : Nat := 0) : String :=
         s!"{base}.\{{lvls}}"
     | .app .. =>
       let (head, args) := collectSpine e
-      let parts := (head :: args.toList).map (render · (depth + 1))
+      let parts := (head :: args.toList).map
+        (fun e => renderFuel fuel e (depth + 1))
       s!"({String.intercalate " " parts})"
     | .lam name _ ty body _ =>
       let n := if MetaDisplay.hasMeta name then MetaDisplay.metaFmt name else "_"
-      s!"(fun ({n} : {render ty (depth + 1)}) => {render body (depth + 1)})"
+      s!"(fun ({n} : {renderFuel fuel ty (depth + 1)}) => \
+        {renderFuel fuel body (depth + 1)})"
     | .all name _ ty body _ =>
       let n := if MetaDisplay.hasMeta name then MetaDisplay.metaFmt name else "_"
-      s!"(({n} : {render ty (depth + 1)}) -> {render body (depth + 1)})"
+      s!"(({n} : {renderFuel fuel ty (depth + 1)}) -> \
+        {renderFuel fuel body (depth + 1)})"
     | .letE name ty val body _ _ =>
       let n := if MetaDisplay.hasMeta name then MetaDisplay.metaFmt name else "_"
-      s!"(let {n} : {render ty (depth + 1)} := {render val (depth + 1)} in {render body (depth + 1)})"
-    | .prj id field val _ => s!"{render val (depth + 1)}.{field.toNat}@{id}"
+      s!"(let {n} : {renderFuel fuel ty (depth + 1)} := \
+        {renderFuel fuel val (depth + 1)} in \
+        {renderFuel fuel body (depth + 1)})"
+    | .prj id field val _ =>
+      s!"{renderFuel fuel val (depth + 1)}.{field.toNat}@{id}"
     | .nat val _ _ => toString val
     | .str val _ _ => reprStr val
+
+/-- Meta mode shows names when available; anon mode shows positional/hash
+    fallbacks. Depth-capped. Mirrors Rust `fmt_expr`. -/
+def render (e : KExpr m) (depth : Nat := 0) : String :=
+  renderFuel (21 - depth) e depth
 
 instance : ToString (KExpr m) := ⟨(render ·)⟩
 

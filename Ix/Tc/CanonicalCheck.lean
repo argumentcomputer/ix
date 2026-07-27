@@ -123,7 +123,7 @@ instance : Inhabited (KConst m) :=
 
 /-- Structural universe comparison; `param` index is its identity.
     Variant order: zero < succ < max < imax < param. -/
-partial def compareKUniv : KUniv m → KUniv m → SOrd
+def compareKUniv : KUniv m → KUniv m → SOrd
   | .zero _, .zero _ => .eq' true
   | .zero _, _ => .lt' true
   | _, .zero _ => .gt' true
@@ -153,7 +153,7 @@ def compareCtxRef (ctx : KMutCtx) (x y : Address) : SOrd :=
     through binders, ctx-aware for block-local refs. FVars must not appear
     (closed egressed expressions only). Variant order:
     var < sort < const < app < lam < all < letE < nat < str < prj. -/
-partial def compareKExpr (ctx : KMutCtx) (x y : KExpr m) :
+def compareKExpr (ctx : KMutCtx) (x y : KExpr m) :
     Except (TcError m) SOrd := do
   if x.hasFVars || y.hasFVars then
     throw .unexpectedFVarInComparator
@@ -188,8 +188,17 @@ partial def compareKExpr (ctx : KMutCtx) (x y : KExpr m) :
     return (← compareKExpr ctx xt yt).andThen (← compareKExpr ctx xb yb)
   | .all .., _ => return .lt' true
   | _, .all .. => return .gt' true
-  | .letE _ xt xv xb _ _, .letE _ yt yv yb _ _ =>
-    SOrd.zipWithM (compareKExpr ctx) #[xt, xv, xb] #[yt, yv, yb]
+  | .letE _ xt xv xb _ _, .letE _ yt yv yb _ _ => do
+    -- Preserve `zipWithM`'s left-to-right short circuit: later fields must
+    -- not introduce an error after an earlier non-equal decision.
+    let tyOrd ← compareKExpr ctx xt yt
+    if tyOrd.ordering != .eq then
+      return tyOrd
+    let valOrd ← compareKExpr ctx xv yv
+    let head := tyOrd.andThen valOrd
+    if head.ordering != .eq then
+      return head
+    return head.andThen (← compareKExpr ctx xb yb)
   | .letE .., _ => return .lt' true
   | _, .letE .. => return .gt' true
   | .nat xv _ _, .nat yv _ _ => return .ofOrdering (compare xv yv)
@@ -304,35 +313,48 @@ def compareKConst (ctx : KMutCtx) (resolveCtor : ResolveCtor m)
 /-! ### sort_consts port (iterative partition refinement) -/
 
 /-- Stable merge of two sorted arrays (left preferred on ties). -/
-partial def mergeSorted (ctx : KMutCtx) (resolveCtor : ResolveCtor m)
+def mergeSorted (ctx : KMutCtx) (resolveCtor : ResolveCtor m)
     (left right : Array (KId m × KConst m)) :
-    Except (TcError m) (Array (KId m × KConst m)) := do
-  let mut result : Array (KId m × KConst m) :=
-    Array.mkEmpty (left.size + right.size)
-  let mut li := 0
-  let mut ri := 0
-  while li < left.size && ri < right.size do
-    let cmp ← compareKConst ctx resolveCtor left[li]!.2 right[ri]!.2
-    if cmp.ordering == .gt then
-      result := result.push right[ri]!
-      ri := ri + 1
-    else
-      result := result.push left[li]!
-      li := li + 1
-  result := result ++ left.extract li left.size
-  result := result ++ right.extract ri right.size
-  return result
+    Except (TcError m) (Array (KId m × KConst m)) :=
+  go 0 0 (Array.mkEmpty (left.size + right.size))
+    (left.size + right.size)
+where
+  /-- Each comparison consumes exactly one item from `left` or `right`. -/
+  go (li ri : Nat) (result : Array (KId m × KConst m)) : Nat →
+      Except (TcError m) (Array (KId m × KConst m))
+    | 0 =>
+      return result ++ left.extract li left.size ++ right.extract ri right.size
+    | fuel + 1 => do
+      if li < left.size && ri < right.size then
+        let cmp ← compareKConst ctx resolveCtor left[li]!.2 right[ri]!.2
+        if cmp.ordering == .gt then
+          go li (ri + 1) (result.push right[ri]!) fuel
+        else
+          go (li + 1) ri (result.push left[li]!) fuel
+      else
+        return result ++ left.extract li left.size ++
+          right.extract ri right.size
+
+/-- Merge-sort worker. Both halves receive the predecessor budget; for a
+    nontrivial input their sizes are strictly below the caller's size. -/
+def sortByCompareFuel (ctx : KMutCtx) (resolveCtor : ResolveCtor m) :
+    Nat → Array (KId m × KConst m) →
+      Except (TcError m) (Array (KId m × KConst m))
+  | 0, items => return items
+  | fuel + 1, items => do
+    if items.size ≤ 1 then
+      return items
+    let mid := items.size / 2
+    let left ← sortByCompareFuel ctx resolveCtor fuel (items.extract 0 mid)
+    let right ← sortByCompareFuel ctx resolveCtor fuel
+      (items.extract mid items.size)
+    mergeSorted ctx resolveCtor left right
 
 /-- Merge-sort by structural comparison. -/
-partial def sortByCompare (ctx : KMutCtx) (resolveCtor : ResolveCtor m)
+def sortByCompare (ctx : KMutCtx) (resolveCtor : ResolveCtor m)
     (items : Array (KId m × KConst m)) :
-    Except (TcError m) (Array (KId m × KConst m)) := do
-  if items.size ≤ 1 then
-    return items
-  let mid := items.size / 2
-  let left ← sortByCompare ctx resolveCtor (items.extract 0 mid)
-  let right ← sortByCompare ctx resolveCtor (items.extract mid items.size)
-  mergeSorted ctx resolveCtor left right
+    Except (TcError m) (Array (KId m × KConst m)) :=
+  sortByCompareFuel ctx resolveCtor items.size items
 
 /-- Group consecutive equal elements of a sorted array. -/
 def groupConsecutive (ctx : KMutCtx) (resolveCtor : ResolveCtor m)
@@ -367,21 +389,14 @@ def classesEq (a b : Array (Array (KId m × KConst m))) : Bool := Id.run do
         return false
   return true
 
-/-- Iterative partition refinement with a caller-provided deterministic
-    seed/tiebreak key (compile-side seeds by `MutConst.name()`). -/
-partial def sortKConstsWithSeedKey (resolveCtor : ResolveCtor m)
-    (seedKey : KId m → KConst m → Address)
-    (members : Array (KId m × KConst m)) :
-    Except (TcError m) (Array (Array (KId m × KConst m))) := do
-  if members.isEmpty then
-    return #[]
-  let seed := members.qsort fun a b =>
-    match Address.cmpBytes (seedKey a.1 a.2) (seedKey b.1 b.2) with
-    | .lt => true
-    | .gt => false
-    | .eq => Address.cmpBytes a.1.addr b.1.addr == .lt
-  let mut classes : Array (Array (KId m × KConst m)) := #[seed]
-  repeat
+/-- Bounded partition-refinement worker. A non-fixed pass splits at least one
+    class; at most `members.size - 1` splits and one final equality check are
+    reachable from the singleton initial partition. -/
+def sortKConstsRefineFuel (resolveCtor : ResolveCtor m) :
+    Nat → Array (Array (KId m × KConst m)) →
+      Except (TcError m) (Array (Array (KId m × KConst m)))
+  | 0, classes => return classes
+  | fuel + 1, classes => do
     let ctx := KMutCtx.fromIdClasses classes
     let mut newClasses : Array (Array (KId m × KConst m)) := #[]
     for cls in classes do
@@ -392,8 +407,22 @@ partial def sortKConstsWithSeedKey (resolveCtor : ResolveCtor m)
         newClasses := newClasses ++ (← groupConsecutive ctx resolveCtor sorted)
     if classesEq classes newClasses then
       return newClasses
-    classes := newClasses
-  return classes
+    sortKConstsRefineFuel resolveCtor fuel newClasses
+
+/-- Iterative partition refinement with a caller-provided deterministic
+    seed/tiebreak key (compile-side seeds by `MutConst.name()`). -/
+def sortKConstsWithSeedKey (resolveCtor : ResolveCtor m)
+    (seedKey : KId m → KConst m → Address)
+    (members : Array (KId m × KConst m)) :
+    Except (TcError m) (Array (Array (KId m × KConst m))) := do
+  if members.isEmpty then
+    return #[]
+  let seed := members.qsort fun a b =>
+    match Address.cmpBytes (seedKey a.1 a.2) (seedKey b.1 b.2) with
+    | .lt => true
+    | .gt => false
+    | .eq => Address.cmpBytes a.1.addr b.1.addr == .lt
+  sortKConstsRefineFuel resolveCtor (members.size + 1) #[seed]
 
 /-- Refinement with the identity (address) seed key. -/
 def sortKConsts (resolveCtor : ResolveCtor m)

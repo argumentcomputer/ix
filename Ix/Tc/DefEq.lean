@@ -37,6 +37,12 @@ inductive LazyDeltaStep where
   | unknown
   deriving BEq, Repr, Inhabited
 
+/-- Result of the bounded Tier-4 delta loop: either a final equality answer,
+    or the pair on which the post-delta tiers must continue. -/
+inductive LazyDeltaLoopResult (m : Mode) where
+  | answer (result : Bool)
+  | stopped (a b : KExpr m)
+
 /-- Canonically ordered address pair (byte-lexicographic). -/
 def canonicalPair (a b : Address) : Address × Address :=
   if a.cmpBytes b != .gt then (a, b) else (b, a)
@@ -53,11 +59,89 @@ def headConstId (e : KExpr m) : Option (KId m) :=
 
 namespace RecM
 
+/-! ### Non-recursive definitional-equality helpers -/
+
+/-- Lexicographic rank comparison ((class, height) tuples). -/
+def compareRank (a b : Nat × Nat) : Ordering :=
+  match compare a.1 b.1 with
+  | .eq => compare a.2 b.2
+  | o => o
+
+def isNatLike (e : KExpr m) : RecM m Bool := do
+  let p ← prims
+  match e with
+  | .nat .. => return true
+  | .const id _ _ => return id.addr == p.natZero.addr
+  | .app f _ _ =>
+    match f with
+    | .const id _ _ => return id.addr == p.natSucc.addr
+    | _ => return false
+  | _ => return false
+
+def isNatZero (e : KExpr m) : RecM m Bool := do
+  let p ← prims
+  match e with
+  | .nat v _ _ => return v == 0
+  | .const id _ _ => return id.addr == p.natZero.addr
+  | _ => return false
+
+def natSuccOf (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  let p ← prims
+  match e with
+  | .nat v _ _ =>
+    if v == 0 then
+      return none
+    return some (← TcM.intern (natExprFromValue (v - 1) : KExpr m))
+  | .app f arg _ =>
+    match f with
+    | .const id _ _ =>
+      if id.addr == p.natSucc.addr then
+        return some arg
+      return none
+    | _ => return none
+  | _ => return none
+
+def isBoolTrue (e : KExpr m) : RecM m Bool := do
+  match e with
+  | .const id us _ =>
+    return us.isEmpty && id.addr == (← prims).boolTrue.addr
+  | _ => return false
+
+/-- Is the constant delta-reducible (Definition/Theorem)? -/
+def isDelta (id : KId m) : RecM m Bool := do
+  match (← TcM.tryGetConst id) with
+  | some (.defn (kind := kind) ..) =>
+    match kind with
+    | .defn | .thm => return true
+    | .opaq => return false
+  | _ => return false
+
+/-- Regular reducibility hints (guards the same-head-spine attempt). -/
+def isRegular (id : KId m) : RecM m Bool := do
+  match (← TcM.tryGetConst id) with
+  | some (.defn (hints := .regular _) ..) => return true
+  | _ => return false
+
+/-- Reducibility rank `(class, height)`, lexicographic; higher unfolds
+    first. Opaque/Theorem/unknown `(0,0)`; `Regular h` `(1,h)`;
+    `Abbrev` `(2,0)`. -/
+def defRankId (id : KId m) : RecM m (Nat × Nat) := do
+  match (← TcM.tryGetConst id) with
+  | some (.defn (kind := kind) (hints := hints) ..) =>
+    match kind with
+    | .opaq | .thm => return (0, 0)
+    | .defn =>
+      match hints with
+      | .opaque => return (0, 0)
+      | .regular h => return (1, h.toNat)
+      | .abbrev => return (2, 0)
+  | _ => return (0, 0)
+
 mutual
 
 /-- Definitional equality entry point: fast paths, equiv-manager, caches
     (with cheap-mode routing), fuel/depth accounting, then the tiers. -/
-partial def isDefEq (a b : KExpr m) : RecM m Bool := do
+def isDefEq (a b : KExpr m) : RecM m Bool := do
   TcM.stepTrace (m := m) "deq" fun _ =>
     s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}"
   TcM.bumpStats (m := m) fun s => { s with deqCalls := s.deqCalls + 1 }
@@ -160,7 +244,7 @@ partial def isDefEq (a b : KExpr m) : RecM m Bool := do
       defEqCache := s.env.defEqCache.insert cacheKey ok } }
   return ok
 
-partial def isDefEqInner (a b : KExpr m) : RecM m Bool := do
+def isDefEqInner (a b : KExpr m) : RecM m Bool := do
   -- Tier 1: quick structural.
   if (← quickDefEq a b) then
     return true
@@ -186,8 +270,8 @@ partial def isDefEqInner (a b : KExpr m) : RecM m Bool := do
     return true
   if (← quickDefEq ca cb) then
     return true
-  let mut wa ← whnfNoDeltaForDefEq a
-  let mut wb ← whnfNoDeltaForDefEq b
+  let wa ← whnfNoDeltaForDefEq a
+  let wb ← whnfNoDeltaForDefEq b
   if wa.addr == wb.addr then
     return true
   if (← quickDefEq wa wb) then
@@ -196,30 +280,29 @@ partial def isDefEqInner (a b : KExpr m) : RecM m Bool := do
   if (← tryProofIrrel wa wb) then
     return true
   -- Tier 4: iterative lazy delta.
-  let mut fuel := maxWhnfFuel
-  let mut broke := false
-  repeat
-    if fuel == 0 then
-      throw .maxRecDepth
-    fuel := fuel - 1
+  let step (state : KExpr m × KExpr m) :
+      RecM m (BoundedStep (KExpr m × KExpr m) (LazyDeltaLoopResult m)) := do
+    let (wa0, wb0) := state
+    let mut wa := wa0
+    let mut wb := wb0
     -- Nat offset comparison at the top of the loop.
     if let some result ← tryDefEqOffset wa wb then
-      return result
+      return .done (.answer result)
     -- Nat primitives gated on closed terms (or eagerReduce).
     let natOk := (!wa.hasFVars && !wb.hasFVars) || (← get).eagerReduce
     if natOk then
       if let some wa2 ← tryReduceNat wa then
-        return (← isDefEq wa2 wb)
+        return .done (.answer (← isDefEqCall wa2 wb))
       if let some wb2 ← tryReduceNat wb then
-        return (← isDefEq wa wb2)
+        return .done (.answer (← isDefEqCall wa wb2))
     if let some wa2 ← tryReduceNative wa then
-      return (← isDefEq wa2 wb)
+      return .done (.answer (← isDefEqCall wa2 wb))
     if let some wb2 ← tryReduceNative wb then
-      return (← isDefEq wa wb2)
+      return .done (.answer (← isDefEqCall wa wb2))
     if let some wa2 ← tryReduceDecidable wa then
-      return (← isDefEq wa2 wb)
+      return .done (.answer (← isDefEqCall wa2 wb))
     if let some wb2 ← tryReduceDecidable wb then
-      return (← isDefEq wa wb2)
+      return .done (.answer (← isDefEqCall wa wb2))
     let aHead := headConstId wa
     let bHead := headConstId wb
     let aDelta ← match aHead with
@@ -229,17 +312,14 @@ partial def isDefEqInner (a b : KExpr m) : RecM m Bool := do
       | some h => isDelta h
       | none => pure false
     if !aDelta && !bDelta then
-      broke := true
-      break
+      return .done (.stopped wa wb)
     -- Before unfolding, try reducing projection apps on the other side.
     if aDelta && !bDelta then
       if let some wb2 ← tryUnfoldProjApp wb then
-        wb := wb2
-        continue
+        return .next (wa, wb2)
     else if bDelta && !aDelta then
       if let some wa2 ← tryUnfoldProjApp wa then
-        wa := wa2
-        continue
+        return .next (wa2, wb)
     if aDelta && bDelta then
       let waW ← match aHead with
         | some h => defRankId h
@@ -255,7 +335,7 @@ partial def isDefEqInner (a b : KExpr m) : RecM m Bool := do
             let failureKey := (flo, fhi, ← TcM.defEqCtxKey wa wb)
             if !(← get).env.defEqFailure.contains failureKey then
               if let some result ← trySameHeadSpine wa wb then
-                return result
+                return .done (.answer result)
               -- Attempted and failed — record.
               modify fun s => { s with env := { s.env with
                 defEqFailure := s.env.defEqFailure.insert failureKey } }
@@ -271,65 +351,57 @@ partial def isDefEqInner (a b : KExpr m) : RecM m Bool := do
         | none, some ub =>
           wb ← whnfNoDeltaForDefEq ub
         | none, none =>
-          broke := true
-          break
+          return .done (.stopped wa wb)
       else if compareRank waW wbW == .gt then
         match (← deltaUnfoldOne wa) with
         | some ua => wa ← whnfNoDeltaForDefEq ua
         | none =>
-          broke := true
-          break
+          return .done (.stopped wa wb)
       else
         match (← deltaUnfoldOne wb) with
         | some ub => wb ← whnfNoDeltaForDefEq ub
         | none =>
-          broke := true
-          break
+          return .done (.stopped wa wb)
     else if aDelta then
       match (← deltaUnfoldOne wa) with
       | some ua => wa ← whnfNoDeltaForDefEq ua
       | none =>
-        broke := true
-        break
+        return .done (.stopped wa wb)
     else
       match (← deltaUnfoldOne wb) with
       | some ub => wb ← whnfNoDeltaForDefEq ub
       | none =>
-        broke := true
-        break
+        return .done (.stopped wa wb)
     if wa.addr == wb.addr then
-      return true
+      return .done (.answer true)
     if (← quickDefEq wa wb) then
+      return .done (.answer true)
+    return .next (wa, wb)
+  match ← runBounded step maxWhnfFuel.toNat (wa, wb) with
+  | .answer result => return result
+  | .stopped wa wb =>
+    -- Tier 4b: post-delta structural congruence.
+    if (← tryStructuralCongruence wa wb) then
       return true
-  let _ := broke
-  -- Tier 4b: post-delta structural congruence.
-  if (← tryStructuralCongruence wa wb) then
-    return true
-  -- Tier 4c: second structural pass — whnfCore, NOT full whnf.
-  let waCore ← whnfCore wa
-  let wbCore ← whnfCore wb
-  let waChanged := waCore.addr != wa.addr
-  let wbChanged := wbCore.addr != wb.addr
-  if waChanged || wbChanged then
-    return (← isDefEq waCore wbCore)
-  if waCore.addr == wbCore.addr then
-    return true
-  if (← quickDefEq waCore wbCore) then
-    return true
-  -- Tier 4d: app-spine comparison.
-  if (← tryDefEqApp waCore wbCore) then
-    return true
-  isDefEqWhnf waCore wbCore
-
-/-- Lexicographic rank comparison ((class, height) tuples). -/
-partial def compareRank (a b : Nat × Nat) : Ordering :=
-  match compare a.1 b.1 with
-  | .eq => compare a.2 b.2
-  | o => o
+    -- Tier 4c: second structural pass — whnfCore, NOT full whnf.
+    let waCore ← whnfCore wa
+    let wbCore ← whnfCore wb
+    let waChanged := waCore.addr != wa.addr
+    let wbChanged := wbCore.addr != wb.addr
+    if waChanged || wbChanged then
+      return (← isDefEqCall waCore wbCore)
+    if waCore.addr == wbCore.addr then
+      return true
+    if (← quickDefEq waCore wbCore) then
+      return true
+    -- Tier 4d: app-spine comparison.
+    if (← tryDefEqApp waCore wbCore) then
+      return true
+    isDefEqWhnf waCore wbCore
 
 /-- Tier-1 quick structural: same ctor, same children (binders open both
     bodies with the SAME fresh fvar — the common-fvar trick). -/
-partial def quickDefEq (a b : KExpr m) : RecM m Bool := do
+def quickDefEq (a b : KExpr m) : RecM m Bool := do
   match a, b with
   | .sort u1 _, .sort u2 _ => return univEq u1 u2
   | .lam name bi ty1 body1 _, .lam _ _ ty2 body2 _ =>
@@ -338,9 +410,9 @@ partial def quickDefEq (a b : KExpr m) : RecM m Bool := do
     quickBinder name bi ty1 body1 ty2 body2
   | _, _ => return false
 
-partial def quickBinder (name : m.F Name) (bi : m.F Lean.BinderInfo)
+def quickBinder (name : m.F Name) (bi : m.F Lean.BinderInfo)
     (ty1 body1 ty2 body2 : KExpr m) : RecM m Bool := do
-  if !(← isDefEq ty1 ty2) then
+  if !(← isDefEqCall ty1 ty2) then
     return false
   let saved := (← get).lctx.size
   let fvId ← TcM.freshFVarId (m := m)
@@ -350,7 +422,7 @@ partial def quickBinder (name : m.F Name) (bi : m.F Lean.BinderInfo)
   let b2Open ← TcM.runIntern (instantiateRev body2 #[fv])
   let r ←
     try
-      let r ← isDefEq b1Open b2Open
+      let r ← isDefEqCall b1Open b2Open
       pure (Except.ok r)
     catch e =>
       pure (Except.error e)
@@ -361,7 +433,7 @@ partial def quickBinder (name : m.F Name) (bi : m.F Lean.BinderInfo)
 
 /-- Both are `C us args` with the same head: compare spines without
     unfolding. `none` means "not applicable / spine differs". -/
-partial def trySameHeadSpine (a b : KExpr m) : RecM m (Option Bool) := do
+def trySameHeadSpine (a b : KExpr m) : RecM m (Option Bool) := do
   let (aHead, aArgs) := a.collectSpine
   let (bHead, bArgs) := b.collectSpine
   let .const aId aUs _ := aHead | return none
@@ -374,12 +446,12 @@ partial def trySameHeadSpine (a b : KExpr m) : RecM m (Option Bool) := do
     if !univEq u v then
       return none
   for (ai, bi) in aArgs.zip bArgs do
-    if !(← isDefEq ai bi) then
+    if !(← isDefEqCall ai bi) then
       return none
   return some true
 
 /-- Tier 5: full structural + eta / struct-eta / unit / proof irrelevance. -/
-partial def isDefEqWhnf (a b : KExpr m) : RecM m Bool := do
+def isDefEqWhnf (a b : KExpr m) : RecM m Bool := do
   match a, b with
   | .sort u1 _, .sort u2 _ => return univEq u1 u2
   | .var i _ _, .var j _ _ =>
@@ -395,8 +467,8 @@ partial def isDefEqWhnf (a b : KExpr m) : RecM m Bool := do
     -- PROOF: comparing proof pairs whose value pair already failed forces
     -- unbounded proof normalization (e.g. materializing `Nat.le`
     -- derivations — the `minEntry!_eq_get!_minEntry?` OOM).
-    if (← isDefEq f1 f2) then
-      if (← isDefEq a1 a2) then
+    if (← isDefEqCall f1 f2) then
+      if (← isDefEqCall a1 a2) then
         return true
   | .lam name bi ty1 body1 _, .lam _ _ ty2 body2 _ =>
     if (← quickBinder name bi ty1 body1 ty2 body2) then
@@ -407,15 +479,15 @@ partial def isDefEqWhnf (a b : KExpr m) : RecM m Bool := do
   | .letE name ty1 v1 body1 _ _, .letE _ ty2 v2 body2 _ _ =>
     -- Normally zeta-reduced before reaching here; push LDecl in case.
     -- Short-circuit like the app case (Rust `&&` semantics).
-    if (← isDefEq ty1 ty2) then
-      if (← isDefEq v1 v2) then
+    if (← isDefEqCall ty1 ty2) then
+      if (← isDefEqCall v1 v2) then
         let saved := (← get).lctx.size
         let fvId ← TcM.freshFVarId (m := m)
         let fv ← TcM.intern (.mkFVar fvId name)
         modify fun s => { s with lctx := s.lctx.push fvId (.ldecl name ty1 v1) }
         let b1Open ← TcM.runIntern (instantiateRev body1 #[fv])
         let b2Open ← TcM.runIntern (instantiateRev body2 #[fv])
-        let r ← isDefEq b1Open b2Open
+        let r ← isDefEqCall b1Open b2Open
         modify fun s => { s with lctx := s.lctx.truncate saved }
         if r then
           return true
@@ -451,21 +523,21 @@ partial def isDefEqWhnf (a b : KExpr m) : RecM m Bool := do
   tryProofIrrel a b
 
 /-- Proof irrelevance: both proofs of the same Prop. -/
-partial def tryProofIrrel (a b : KExpr m) : RecM m Bool := do
-  let some aTy ← try? (TcM.withInferOnly ((← read).infer a)) | return false
+def tryProofIrrel (a b : KExpr m) : RecM m Bool := do
+  let some aTy ← try? (inferOnlyCall a) | return false
   if !(← isPropType aTy) then
     return false
-  let some bTy ← try? (TcM.withInferOnly ((← read).infer b)) | return false
-  isDefEq aTy bTy
+  let some bTy ← try? (inferOnlyCall b) | return false
+  isDefEqCall aTy bTy
 
 /-- Is `ty : Sort 0`? Memoized on `(tyAddr, ctxAddr)`; inner-chain errors
     treated as non-prop. -/
-partial def isPropType (ty : KExpr m) : RecM m Bool := do
+def isPropType (ty : KExpr m) : RecM m Bool := do
   let cacheKey := (ty.addr, ← TcM.ctxAddrForLbr (m := m) ty.lbr)
   if let some cached := (← get).env.isPropCache[cacheKey]? then
     return cached
   let result ← (do
-    match (← try? (TcM.withInferOnly ((← read).infer ty))) with
+    match (← try? (inferOnlyCall ty)) with
     | none => pure false
     | some sort =>
       match (← try? (whnf sort)) with
@@ -477,8 +549,8 @@ partial def isPropType (ty : KExpr m) : RecM m Bool := do
 
 /-- Unit-like (non-recursive, 0 indices, 1 nullary ctor): any two
     inhabitants of the same unit-like type are def-eq. -/
-partial def tryDefEqUnit (a b : KExpr m) : RecM m Bool := do
-  let some aTy ← try? (TcM.withInferOnly ((← read).infer a)) | return false
+def tryDefEqUnit (a b : KExpr m) : RecM m Bool := do
+  let some aTy ← try? (inferOnlyCall a) | return false
   let some aTyW ← try? (whnf aTy) | return false
   let (aHead, _) := aTyW.collectSpine
   let .const aInd _ _ := aHead | return false
@@ -493,90 +565,56 @@ partial def tryDefEqUnit (a b : KExpr m) : RecM m Bool := do
     | _ => return false
   if !isUnit then
     return false
-  let some bTy ← try? (TcM.withInferOnly ((← read).infer b)) | return false
-  isDefEq aTyW bTy
-
-partial def isNatLike (e : KExpr m) : RecM m Bool := do
-  let p ← prims
-  match e with
-  | .nat .. => return true
-  | .const id _ _ => return id.addr == p.natZero.addr
-  | .app f _ _ =>
-    match f with
-    | .const id _ _ => return id.addr == p.natSucc.addr
-    | _ => return false
-  | _ => return false
-
-partial def isNatZero (e : KExpr m) : RecM m Bool := do
-  let p ← prims
-  match e with
-  | .nat v _ _ => return v == 0
-  | .const id _ _ => return id.addr == p.natZero.addr
-  | _ => return false
-
-partial def natSuccOf (e : KExpr m) : RecM m (Option (KExpr m)) := do
-  let p ← prims
-  match e with
-  | .nat v _ _ =>
-    if v == 0 then
-      return none
-    return some (← TcM.intern (natExprFromValue (v - 1) : KExpr m))
-  | .app f arg _ =>
-    match f with
-    | .const id _ _ =>
-      if id.addr == p.natSucc.addr then
-        return some arg
-      return none
-    | _ => return none
-  | _ => return none
+  let some bTy ← try? (inferOnlyCall b) | return false
+  isDefEqCall aTyW bTy
 
 /-- Nat-like comparison: literal fast path, zero/succ peeling. -/
-partial def isDefEqNat (a b : KExpr m) : RecM m Bool := do
+def isDefEqNat (a b : KExpr m) : RecM m Bool := do
   match a, b with
   | .nat va _ _, .nat vb _ _ => return va == vb
   | _, _ => pure ()
   if (← isNatZero a) && (← isNatZero b) then
     return true
   match (← natSuccOf a), (← natSuccOf b) with
-  | some aPred, some bPred => isDefEq aPred bPred
+  | some aPred, some bPred => isDefEqCall aPred bPred
   | _, _ => return false
 
 /-- Nat offset comparison in the lazy delta loop (`isDefEqOffset`). -/
-partial def tryDefEqOffset (a b : KExpr m) : RecM m (Option Bool) := do
+def tryDefEqOffset (a b : KExpr m) : RecM m (Option Bool) := do
   match a, b with
   | .nat va _ _, .nat vb _ _ => return some (va == vb)
   | _, _ => pure ()
   if (← isNatZero a) && (← isNatZero b) then
     return some true
   match (← natSuccOf a), (← natSuccOf b) with
-  | some aPred, some bPred => return some (← isDefEq aPred bPred)
+  | some aPred, some bPred => return some (← isDefEqCall aPred bPred)
   | _, _ => return none
 
 /-- Expand a string literal to ctor form and compare. -/
-partial def tryStringLitExpansion (t s : KExpr m) : RecM m Bool := do
+def tryStringLitExpansion (t s : KExpr m) : RecM m Bool := do
   let .str strVal _ _ := t | return false
   let expanded ← strLitToConstructor strVal
-  isDefEq expanded s
+  isDefEqCall expanded s
 
 /-- Lambda eta: `t` a lambda, `s` not — wrap `s` as `λ(ty). s #0`. -/
-partial def tryEtaExpansion (t s : KExpr m) : RecM m Bool := do
+def tryEtaExpansion (t s : KExpr m) : RecM m Bool := do
   let tIsLam := match t with | .lam .. => true | _ => false
   let sIsLam := match s with | .lam .. => true | _ => false
   if !tIsLam || sIsLam then
     return false
-  let some sTy ← try? (TcM.withInferOnly ((← read).infer s)) | return false
+  let some sTy ← try? (inferOnlyCall s) | return false
   let some sTyWhnf ← try? (whnf sTy) | return false
   let .all name bi ty _ _ := sTyWhnf | return false
   let sLifted ← TcM.runIntern (lift s 1 0)
   let v0 ← TcM.intern (.mkVar 0 anonN : KExpr m)
   let body ← TcM.intern (KExpr.mkApp sLifted v0)
   let sLam ← TcM.intern (.mkLam name bi ty body)
-  isDefEq t sLam
+  isDefEqCall t sLam
 
 /-- Struct eta: `s` a fully-applied ctor of a struct-like type; compare
     `prj i t ≡ s.args[params+i]` per field (types def-eq first; no Prop
     guard here — equality checking, not term construction). -/
-partial def tryEtaStruct (t s : KExpr m) : RecM m Bool := do
+def tryEtaStruct (t s : KExpr m) : RecM m Bool := do
   let tNorm ← (do
     match (← try? (whnfNoDelta t)) with
     | some w => pure w
@@ -591,21 +629,21 @@ partial def tryEtaStruct (t s : KExpr m) : RecM m Bool := do
     return false
   if !(← isStructLike inductId) then
     return false
-  let some sTy ← try? (TcM.withInferOnly ((← read).infer s)) | return false
-  let some tTy ← try? (TcM.withInferOnly ((← read).infer tNorm)) | return false
-  if !(← isDefEq tTy sTy) then
+  let some sTy ← try? (inferOnlyCall s) | return false
+  let some tTy ← try? (inferOnlyCall tNorm) | return false
+  if !(← isDefEqCall tTy sTy) then
     return false
   if let some base ← etaExpansionBase inductId numParams numFields sArgs then
-    if (← isDefEq tNorm base) then
+    if (← isDefEqCall tNorm base) then
       return true
   for i in [0:numFields] do
     let proj ← TcM.intern (.mkPrj inductId i.toUInt64 tNorm)
-    if !(← isDefEq proj sArgs[numParams + i]!) then
+    if !(← isDefEqCall proj sArgs[numParams + i]!) then
       return false
   return true
 
 /-- If every ctor field is `prj i base` of one common base, return it. -/
-partial def etaExpansionBase (inductId : KId m) (numParams numFields : Nat)
+def etaExpansionBase (inductId : KId m) (numParams numFields : Nat)
     (args : Array (KExpr m)) : RecM m (Option (KExpr m)) := do
   let mut base : Option (KExpr m) := none
   for i in [0:numFields] do
@@ -626,7 +664,7 @@ partial def etaExpansionBase (inductId : KId m) (numParams numFields : Nat)
   return base
 
 /-- App-spine comparison (isDefEqApp). -/
-partial def tryDefEqApp (a b : KExpr m) : RecM m Bool := do
+def tryDefEqApp (a b : KExpr m) : RecM m Bool := do
   let aIsApp := match a with | .app .. => true | _ => false
   let bIsApp := match b with | .app .. => true | _ => false
   if !aIsApp || !bIsApp then
@@ -635,51 +673,15 @@ partial def tryDefEqApp (a b : KExpr m) : RecM m Bool := do
   let (bHead, bArgs) := b.collectSpine
   if aArgs.size != bArgs.size then
     return false
-  if !(← isDefEq aHead bHead) then
+  if !(← isDefEqCall aHead bHead) then
     return false
   for (ai, bi) in aArgs.zip bArgs do
-    if !(← isDefEq ai bi) then
+    if !(← isDefEqCall ai bi) then
       return false
   return true
 
-partial def isBoolTrue (e : KExpr m) : RecM m Bool := do
-  match e with
-  | .const id us _ =>
-    return us.isEmpty && id.addr == (← prims).boolTrue.addr
-  | _ => return false
-
-/-- Is the constant delta-reducible (Definition/Theorem)? -/
-partial def isDelta (id : KId m) : RecM m Bool := do
-  match (← TcM.tryGetConst id) with
-  | some (.defn (kind := kind) ..) =>
-    match kind with
-    | .defn | .thm => return true
-    | .opaq => return false
-  | _ => return false
-
-/-- Regular reducibility hints (guards the same-head-spine attempt). -/
-partial def isRegular (id : KId m) : RecM m Bool := do
-  match (← TcM.tryGetConst id) with
-  | some (.defn (hints := .regular _) ..) => return true
-  | _ => return false
-
-/-- Reducibility rank `(class, height)`, lexicographic; higher unfolds
-    first. Opaque/Theorem/unknown `(0,0)`; `Regular h` `(1,h)`;
-    `Abbrev` `(2,0)`. -/
-partial def defRankId (id : KId m) : RecM m (Nat × Nat) := do
-  match (← TcM.tryGetConst id) with
-  | some (.defn (kind := kind) (hints := hints) ..) =>
-    match kind with
-    | .opaq | .thm => return (0, 0)
-    | .defn =>
-      match hints with
-      | .opaque => return (0, 0)
-      | .regular h => return (1, h.toNat)
-      | .abbrev => return (2, 0)
-  | _ => return (0, 0)
-
 /-- Post-delta structural congruence (Const/Var/Prj). -/
-partial def tryStructuralCongruence (a b : KExpr m) : RecM m Bool := do
+def tryStructuralCongruence (a b : KExpr m) : RecM m Bool := do
   match a, b with
   | .const id1 us1 _, .const id2 us2 _ =>
     return id1.addr == id2.addr && us1.size == us2.size
@@ -691,30 +693,24 @@ partial def tryStructuralCongruence (a b : KExpr m) : RecM m Bool := do
     lazyDeltaProjReduction id1 f1 v1 v2
   | _, _ => return false
 
-partial def lazyDeltaProjReduction (structId : KId m) (field : UInt64)
+def lazyDeltaProjReduction (structId : KId m) (field : UInt64)
     (a0 b0 : KExpr m) : RecM m Bool := do
-  let mut a := a0
-  let mut b := b0
-  let mut fuel := maxWhnfFuel
-  repeat
-    if fuel == 0 then
-      throw .maxRecDepth
-    fuel := fuel - 1
-    let (step, a', b') ← lazyDeltaReductionStep a b
-    a := a'
-    b := b'
-    match step with
-    | .equal => return true
-    | .continue' => continue
+  let step (state : KExpr m × KExpr m) :
+      RecM m (BoundedStep (KExpr m × KExpr m) Bool) := do
+    let (a, b) := state
+    let (outcome, a, b) ← lazyDeltaReductionStep a b
+    match outcome with
+    | .equal => return .done true
+    | .continue' => return .next (a, b)
     | .unknown =>
       let pa ← tryProjReduce structId field a
       let pb ← tryProjReduce structId field b
       match pa, pb with
-      | some pa, some pb => return (← isDefEq pa pb)
-      | _, _ => return (← isDefEq a b)
-  return false
+      | some pa, some pb => return .done (← isDefEqCall pa pb)
+      | _, _ => return .done (← isDefEqCall a b)
+  runBounded step maxWhnfFuel.toNat (a0, b0)
 
-partial def lazyDeltaReductionStep (a0 b0 : KExpr m) :
+def lazyDeltaReductionStep (a0 b0 : KExpr m) :
     RecM m (LazyDeltaStep × KExpr m × KExpr m) := do
   let mut a := a0
   let mut b := b0
@@ -774,7 +770,7 @@ partial def lazyDeltaReductionStep (a0 b0 : KExpr m) :
   return (.continue', a, b)
 
 /-- Head-Prj: one whnf-no-delta attempt (tryUnfoldProjApp). -/
-partial def tryUnfoldProjApp (e : KExpr m) : RecM m (Option (KExpr m)) := do
+def tryUnfoldProjApp (e : KExpr m) : RecM m (Option (KExpr m)) := do
   let (head, _) := e.collectSpine
   match head with
   | .prj .. => pure ()

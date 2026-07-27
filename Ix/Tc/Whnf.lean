@@ -42,28 +42,6 @@ open Std (HashMap HashSet)
 /-- Local fuel cap for whnf on *open* arguments of the Nat reducer. -/
 def natReducerOpenArgRecFuel : UInt64 := 4096
 
-/-- Reduction-policy flags (whnf.rs `WhnfFlags`). -/
-structure WhnfFlags where
-  cheapRec : Bool
-  cheapProj : Bool
-  deriving BEq, Repr, Inhabited
-
-namespace WhnfFlags
-
-def FULL : WhnfFlags := ⟨false, false⟩
-def DEF_EQ_CORE : WhnfFlags := ⟨false, true⟩
-
-@[inline] def isFull (f : WhnfFlags) : Bool := !f.cheapRec && !f.cheapProj
-
-end WhnfFlags
-
-/-- Nat succ-collapse policy: `stuck` bypasses whnf caches and disables the
-    succ-chain collapse (used inside the succ-peeling loop itself). -/
-inductive NatSuccMode where
-  | collapse
-  | stuck
-  deriving BEq, Repr, Inhabited
-
 /-- Recursor info snapshot for iota reduction (tc.rs `IotaInfo`). -/
 structure IotaInfo (m : Mode) where
   k : Bool
@@ -92,18 +70,19 @@ def extractNatLit (e : KExpr m) (prims : Primitives m) : Option Nat :=
   | _ => none
 
 /-- Nat value from literal form or a constructor numeral
-    (`Nat.succ (Nat.succ …(lit)…)`). -/
-partial def extractNatValue (e : KExpr m) (prims : Primitives m) : Option Nat :=
+    (`Nat.succ (Nat.succ …(lit)…)`). Exactly one application is accepted at
+    each successor layer, matching the former `collectSpine`/size check. -/
+def extractNatValue (e : KExpr m) (prims : Primitives m) : Option Nat :=
   match extractNatLit e prims with
   | some n => some n
   | none =>
-    let (head, args) := e.collectSpine
-    match head with
-    | .const id _ _ =>
-      if id.addr == prims.natSucc.addr && args.size == 1 then
-        (extractNatValue args[0]! prims).map (· + 1)
+    match e with
+    | .app (.const id _ _) arg _ =>
+      if id.addr == prims.natSucc.addr then
+        (extractNatValue arg prims).map (· + 1)
       else none
     | _ => none
+termination_by structural e
 
 /-- Binary Nat op evaluation. `none` when uncomputable (pow exponent above
     the kernel cap, shift beyond u64) — caller leaves the term unreduced. -/
@@ -143,7 +122,7 @@ def extractIntLit (e : KExpr m) (prims : Primitives m) : Option _root_.Int :=
 
 /-- Arity/field info when a definition body is a projection wrapper
     `λ…λ. Prj(S, f, Var k)` (whnf.rs `projection_definition_info`). -/
-partial def projectionDefinitionInfo (val : KExpr m) :
+def projectionDefinitionInfo (val : KExpr m) :
     Option (Nat × KId m × UInt64 × Nat) :=
   go val 0
 where
@@ -157,6 +136,7 @@ where
         else some (arity, structId, field, arity - 1 - idx.toNat)
       | _ => none
     | _ => none
+  termination_by structural cur
 
 namespace RecM
 
@@ -258,13 +238,350 @@ def finishAppResult (result₀ : KExpr m) (args : Array (KExpr m))
     result ← TcM.intern (KExpr.mkApp result arg)
   return result
 
+/-! ### Bounded Nat-offset parsing (Tier B)
+
+The public API carries the historical `depth`; the total workers carry the
+equivalent remaining budget `256 - depth` so every recursive call is visibly
+decreasing and the old cutoff result is unchanged.
+-/
+
+mutual
+
+def natOffsetFuel : Nat → KExpr m → RecM m (Option (KExpr m × Nat))
+  | 0, _ => pure none
+  | fuel + 1, e => do
+    let (head, args) := e.collectSpine
+    let .const id _ _ := head | return none
+    let p ← prims
+    if id.addr == p.natSucc.addr && args.size == 1 then
+      let arg := args[0]!
+      let (base, offset) := (← natOffsetFuel fuel arg).getD (arg, 0)
+      return some (base, offset + 1)
+    if id.addr == p.natAdd.addr && args.size == 2 then
+      let some rhs ← evalNatOffsetLiteralFuel fuel args[1]! | return none
+      let arg := args[0]!
+      let (base, offset) := (← natOffsetFuel fuel arg).getD (arg, 0)
+      return some (base, offset + rhs)
+    return none
+
+/-- Syntactic, no-delta evaluator for Nat offset constants (weaker than
+    WHNF by design), indexed by its remaining historical depth budget. -/
+def evalNatOffsetLiteralFuel : Nat → KExpr m → RecM m (Option Nat)
+  | 0, _ => pure none
+  | fuel + 1, e => do
+    let p ← prims
+    if let some n := extractNatValue e p then
+      return some n
+    let (head, args) := e.collectSpine
+    let .const id _ _ := head | return none
+    if id.addr == p.natPred.addr && args.size == 1 then
+      let some n ← evalNatOffsetLiteralFuel fuel args[0]! | return none
+      return some (n - 1)
+    if (← isNatBinArithAddr id.addr) && args.size == 2 then
+      let some a ← evalNatOffsetLiteralFuel fuel args[0]! | return none
+      let some b ← evalNatOffsetLiteralFuel fuel args[1]! | return none
+      return computeNatBin id.addr PrimAddrs.canonical a b
+    return none
+
+end
+
+def natOffset (e : KExpr m) (depth : Nat) :
+    RecM m (Option (KExpr m × Nat)) :=
+  natOffsetFuel (256 - depth) e
+
+def natOffsetOrZero (e : KExpr m) (depth : Nat) :
+    RecM m (KExpr m × Nat) := do
+  return (← natOffset e depth).getD (e, 0)
+
+def evalNatOffsetLiteral (e : KExpr m) (depth : Nat) :
+    RecM m (Option Nat) :=
+  evalNatOffsetLiteralFuel (256 - depth) e
+
+/-! ### Non-recursive WHNF helpers
+
+These helpers used to live in the large recursive WHNF mutual block even
+though none of them takes a recursive edge.  Keeping them outside that block
+makes their equations transparent to the K0 proofs without adding runtime
+fuel or changing their operational behavior.
+-/
+
+/-- Universe-instantiated body of an unfolded head, cached by the head
+    `const` expression's content hash (lean4 C++ `m_unfold` cache). -/
+def unfoldConstValue (headExpr : KExpr m) (val : KExpr m)
+    (us : Array (KUniv m)) : RecM m (KExpr m) := do
+  let key := headExpr.addr
+  if let some cached := (← get).env.unfoldCache[key]? then
+    return cached
+  let result ← TcM.instantiateUnivParams val us
+  modify fun s => { s with env := { s.env with
+    unfoldCache := s.env.unfoldCache.insert key result } }
+  return result
+
+def tryDeltaUnfold (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  let (head, args) := e.collectSpine
+  let .const id us _ := head | return none
+  let val ← match (← TcM.tryGetConst id) with
+    | some (.defn (kind := kind) (val := val) ..) =>
+      match kind with
+      | .defn | .thm => pure val
+      | .opaq => return none
+    | _ => return none
+  let val ← unfoldConstValue head val us
+  let mut result := val
+  for arg in args do
+    result ← TcM.intern (KExpr.mkApp result arg)
+  return some result
+
+/-- Delta: unfold one defined constant (head-applied or bare). -/
+def deltaUnfoldOne (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  if let some unfolded ← tryDeltaUnfold e then
+    return some unfolded
+  if let .const id us _ := e then
+    match (← TcM.tryGetConst id) with
+    | some (.defn (kind := kind) (val := val) ..) =>
+      match kind with
+      | .defn | .thm => return some (← unfoldConstValue e val us)
+      | .opaq => return none
+    | _ => return none
+  return none
+
+/-- Transient-mode iota application: beta-reduce as we go without interning
+    (Nat-literal recursor chains would otherwise pin every predecessor). -/
+def applyIotaArg (result : KExpr m) (arg : KExpr m)
+    (transient : Bool) : RecM m (KExpr m) := do
+  if transient then
+    if let .lam _ _ _ body _ := result then
+      return substNoIntern body arg 0
+    return KExpr.mkApp result arg
+  else
+    TcM.intern (KExpr.mkApp result arg)
+
+def isNatLiteralRecursorApp (e : KExpr m) : RecM m Bool := do
+  let (head, spine) := e.collectSpine
+  let .const id _ _ := head | return false
+  let p ← prims
+  if id.addr != p.natRec.addr && id.addr != p.natCasesOn.addr then
+    return false
+  let some (.recr (params := params) (motives := motives) (minors := minors)
+      (indices := indices) ..) ← TcM.tryGetConst id
+    | return false
+  let majorIdx := (params + motives + minors + indices).toNat
+  match spine[majorIdx]? with
+  | some (.nat ..) => return true
+  | _ => return false
+
+/-- Nat-literal recursor work is only useful while the current WHNF runs;
+    caching it would make RSS linear in the literal. -/
+def isTransientNatLiteralWork (e : KExpr m) : RecM m Bool := do
+  if (← isNatLiteralRecursorApp e) then
+    return true
+  let (head, args) := e.collectSpine
+  let .const id _ _ := head | return false
+  if id.addr == (← prims).natSucc.addr && args.size == 1 then
+    isNatLiteralRecursorApp args[0]!
+  else
+    return false
+
+/-- Lean's `cleanupNatOffsetMajor`: expose one ctor layer of a definitional
+    offset `base + k` (k > 0) as `Nat.succ (base + (k-1))`, keeping closed
+    arithmetic for the primitive reducer. -/
+def cleanupNatOffsetMajor (e : KExpr m) :
+    RecM m (Option (KExpr m)) := do
+  if (← evalNatOffsetLiteral e 0).isSome then
+    return none
+  let some (base, offset) ← natOffset e 0 | return none
+  if offset == 0 then
+    return none
+  let predOffset := offset - 1
+  let pred ← if predOffset == 0 then pure base
+    else do mkNatAdd base (natExprFromValue predOffset)
+  return some (← mkNatSucc pred)
+
+def projectDecidableFinValMinor (id : KId m) (field : UInt64)
+    (minor : KExpr m) : RecM m (Option (KExpr m)) := do
+  let .lam name bi dom body _ := minor | return none
+  let proj ← TcM.intern (KExpr.mkPrj id field body)
+  return some (← TcM.intern (KExpr.mkLam name bi dom proj))
+
+/-- `(Decidable.rec … : Fin n).val` → push the projection into both minors
+    (whnf.rs `try_reduce_fin_val_decidable_rec`). -/
+def tryReduceFinValDecidableRec (id : KId m) (field : UInt64)
+    (head : KExpr m) (args : Array (KExpr m)) :
+    RecM m (Option (KExpr m)) := do
+  if (← get).noAccel then return none
+  let p ← prims
+  if id.addr != p.fin.addr || field != 0 then
+    return none
+  let .const recId recUs _ := head | return none
+  if recId.addr != p.decidableRec.addr || args.size < 5 then
+    return none
+  let .lam motiveName motiveBi motiveDom _ _ := args[1]! | return none
+  let some falseMinor ← projectDecidableFinValMinor id field args[2]!
+    | return none
+  let some trueMinor ← projectDecidableFinValMinor id field args[3]!
+    | return none
+  let natTy ← TcM.intern (.mkConst p.nat #[])
+  let motive ← TcM.intern (KExpr.mkLam motiveName motiveBi motiveDom natTy)
+  let mut result ← TcM.intern (KExpr.mkConst recId recUs)
+  result ← TcM.intern (KExpr.mkApp result args[0]!)
+  result ← TcM.intern (KExpr.mkApp result motive)
+  result ← TcM.intern (KExpr.mkApp result falseMinor)
+  result ← TcM.intern (KExpr.mkApp result trueMinor)
+  result ← TcM.intern (KExpr.mkApp result args[4]!)
+  for arg in args.extract 5 args.size do
+    result ← TcM.intern (KExpr.mkApp result arg)
+  return some result
+
+/-- Rewrite an applied projection-wrapper definition to a `prj` node. -/
+def tryReduceProjectionDefinition (e : KExpr m) :
+    RecM m (Option (KExpr m)) := do
+  let (head, args) := e.collectSpine
+  let .const id _ _ := head | return none
+  let val ← match (← TcM.tryGetConst id) with
+    | some (.defn (kind := .defn) (val := val) ..) => pure val
+    | _ => return none
+  let some (arity, structId, field, structArgIdx) :=
+    projectionDefinitionInfo val | return none
+  if args.size < arity then
+    return none
+  let mut result ← TcM.intern (KExpr.mkPrj structId field args[structArgIdx]!)
+  for arg in args.extract arity args.size do
+    result ← TcM.intern (KExpr.mkApp result arg)
+  return some result
+
+def natRecLiteralParts (e : KExpr m) :
+    RecM m (Option (NatRecLiteralParts m)) := do
+  let (head, spine) := e.collectSpine
+  let .const id _ _ := head | return none
+  if id.addr != (← prims).natRec.addr then
+    return none
+  let some (.recr (params := params) (motives := motives) (minors := minors)
+      (indices := indices) ..) ← TcM.tryGetConst id
+    | return none
+  if minors.toNat < 2 then
+    return none
+  let baseIdx := params.toNat + motives.toNat
+  let stepIdx := baseIdx + 1
+  let majorIdx := params.toNat + motives.toNat + minors.toNat + indices.toNat
+  let some (.nat major _ _) := spine[majorIdx]? | return none
+  return some { spine, major, baseIdx, stepIdx }
+
+/-- Heads that leave a Nat-predicate argument stuck. -/
+def isNatStuckRecursorAddr (addr : Address) : RecM m Bool := do
+  let p ← prims
+  return addr == p.natRec.addr || addr == p.natCasesOn.addr
+    || addr == p.bitVecToNat.addr
+
+def isStuckNatPredicateProbe (e : KExpr m) : RecM m Bool := do
+  let (head, _) := e.collectSpine
+  match head with
+  | .const id _ _ =>
+    return (← isNatBinPredAddr id.addr) || (← isNatStuckRecursorAddr id.addr)
+  | .prj id _ val _ =>
+    if id.addr == (← prims).fin.addr then
+      return true
+    let (valHead, _) := val.collectSpine
+    match valHead with
+    | .const valId _ _ => isNatStuckRecursorAddr valId.addr
+    | _ => return false
+  | _ => return false
+
+/-- `(width, n)` from `BitVec.ofNat width n` or
+    `OfNat.ofNat (BitVec width) n inst…`. -/
+def bitvecOfNatArgs (e : KExpr m) :
+    RecM m (Option (KExpr m × KExpr m)) := do
+  let p ← prims
+  let (head, args) := e.collectSpine
+  let .const id _ _ := head | return none
+  if id.addr == p.bitVecOfNat.addr && args.size == 2 then
+    return some (args[0]!, args[1]!)
+  if id.addr != p.ofNatOfNat.addr || args.size < 2 then
+    return none
+  let (typeHead, typeArgs) := args[0]!.collectSpine
+  let .const typeId _ _ := typeHead | return none
+  if typeId.addr == p.bitVec.addr && typeArgs.size == 1 then
+    return some (typeArgs[0]!, args[1]!)
+  return none
+
+def charOfNatExpr (n : Nat) : RecM m (Option (KExpr m)) := do
+  let charOfNat ← TcM.intern (.mkConst (← prims).charOfNat #[])
+  let natLit ← TcM.intern (natExprFromValue n : KExpr m)
+  return some (← TcM.intern (KExpr.mkApp charOfNat natLit))
+
+/-- String literal primitives: `String.back` / legacy back /
+    `utf8ByteSize` / `toByteArray ""`. -/
+def tryReduceString (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  let (head, args) := e.collectSpine
+  if args.size != 1 then
+    return none
+  let .const id _ _ := head | return none
+  let p ← prims
+  let isBack := id.addr == p.stringBack.addr
+    || id.addr == p.stringLegacyBack.addr
+  let isUtf8ByteSize := id.addr == p.stringUtf8ByteSize.addr
+  let isToByteArray := id.addr == p.stringToByteArray.addr
+  if !isBack && !isUtf8ByteSize && !isToByteArray then
+    return none
+  let .str s _ _ := args[0]! | return none
+  if isUtf8ByteSize then
+    return some (← TcM.intern (natExprFromValue s.utf8ByteSize : KExpr m))
+  if isToByteArray then
+    if s.isEmpty then
+      return some (← TcM.intern (.mkConst p.byteArrayEmpty #[]))
+    return none
+  let codepoint := (s.toList.getLast?.map (·.toNat)).getD 65
+  charOfNatExpr codepoint
+
+def discoverBlockInductives (blockId : KId m) :
+    RecM m (Array (KId m)) := do
+  let some members ← TcM.tryGetBlock blockId | return #[]
+  let mut inds : Array (KId m) := #[]
+  for id in members do
+    if let some (.indc ..) ← TcM.tryGetConst id then
+      inds := inds.push id
+  return inds
+
+/-- Peel as many leading lambdas as there are application arguments. The
+    explicit bound is the original argument count, so the old inner `repeat`
+    cannot outlive its spine. -/
+def consumeBetaLamsFuel : Nat → KExpr m → Array (KExpr m) →
+    Array (KExpr m) → KExpr m × Array (KExpr m)
+  | 0, body, _, consumed => (body, consumed)
+  | fuel + 1, body, args, consumed =>
+    if consumed.size ≥ args.size then
+      (body, consumed)
+    else
+      match body with
+      | .lam _ _ _ inner _ =>
+        consumeBetaLamsFuel fuel inner args
+          (consumed.push args[consumed.size]!)
+      | _ => (body, consumed)
+
+def consumeBetaLams (body : KExpr m) (args : Array (KExpr m)) :
+    KExpr m × Array (KExpr m) :=
+  consumeBetaLamsFuel args.size body args (Array.mkEmpty args.size)
+
+/-- Internal WHNF back-edges. Each crosses to the predecessor `methodsN`
+    table without changing the runtime state; the policy-sensitive entries
+    preserve cheap-projection and stuck-succ behavior exactly. -/
+@[inline] def whnfRec (e : KExpr m) : RecM m (KExpr m) := do
+  (← read).whnf e
+
+@[inline] def whnfModeRec (e : KExpr m) (mode : NatSuccMode) :
+    RecM m (KExpr m) := do
+  (← read).whnfMode e mode
+
+@[inline] def whnfCoreFlagsRec (e : KExpr m) (flags : WhnfFlags) :
+    RecM m (KExpr m) := do
+  (← read).whnfCoreFlags e flags
+
 mutual
 
 /-- Full WHNF: loop of whnf-no-delta → native/nat/decidable/string → delta. -/
-partial def whnf (e : KExpr m) : RecM m (KExpr m) :=
+def whnf (e : KExpr m) : RecM m (KExpr m) :=
   whnfWithNatSuccMode e .collapse
 
-partial def whnfWithNatSuccMode (e : KExpr m) (natSuccMode : NatSuccMode) :
+def whnfWithNatSuccMode (e : KExpr m) (natSuccMode : NatSuccMode) :
     RecM m (KExpr m) := do
   -- Quick exit for non-reducing forms.
   match e with
@@ -272,8 +589,57 @@ partial def whnfWithNatSuccMode (e : KExpr m) (natSuccMode : NatSuccMode) :
   | .var i _ _ =>
     if !(← TcM.isLetVar (m := m) i) then return e
   | _ => pure ()
+  whnfWithNatSuccModeNonLeaf e natSuccMode
+
+/-- One full-WHNF loop iteration.  The named seam exposes the exact order of
+    no-delta normalization, cycle detection, accelerators, literal reducers,
+    and one delta step without changing the bounded driver. -/
+def whnfWithNatSuccModeStep (natSuccMode : NatSuccMode)
+    (state : KExpr m × HashSet Address) :
+    RecM m (BoundedStep (KExpr m × HashSet Address) (KExpr m)) := do
+  let (cur, seen) := state
+  let cur ← whnfNoDeltaImpl cur .FULL natSuccMode
+  if seen.contains cur.addr then
+    return .done cur
+  let seen := seen.insert cur.addr
+  -- Native reduction runs before nat reduction (lean4lean order).
+  if let some reduced ← tryReduceNative cur then
+    return .next (reduced, seen)
+  if let some reduced ← tryReduceBitvec cur then
+    return .next (reduced, seen)
+  -- Nat primitives BEFORE delta (short-circuit Nat.sub/pow/… bodies).
+  if let some reduced ← tryReduceNatWithSuccMode cur natSuccMode then
+    return .next (reduced, seen)
+  -- Nat decidables BEFORE delta.
+  if let some reduced ← tryReduceDecidable cur then
+    return .next (reduced, seen)
+  if let some reduced ← tryReduceString cur then
+    return .next (reduced, seen)
+  if let some unfolded ← deltaUnfoldOne cur then
+    return .next (unfolded, seen)
+  return .done cur
+
+/-- Full-WHNF bounded loop without the outer instrumentation/cache policy. -/
+def whnfWithNatSuccModeUncached (e : KExpr m)
+    (natSuccMode : NatSuccMode) : RecM m (KExpr m) :=
+  runBounded (whnfWithNatSuccModeStep natSuccMode) maxWhnfFuel.toNat (e, {})
+
+/-- Trace/statistics prefix executed by full WHNF after syntactic fast paths
+    and before key computation. -/
+def whnfWithNatSuccModePrefix (e : KExpr m) : RecM m Unit := do
   TcM.stepTrace (m := m) "whnf+" fun _ => TcM.addr8 e.addr
   TcM.bumpStats (m := m) fun s => { s with whnfCalls := s.whnfCalls + 1 }
+
+/-- Work charged only after a full-WHNF cache miss. -/
+def whnfWithNatSuccModeMissCharge : RecM m Unit := do
+  TcM.bumpStats (m := m) fun s => { s with whnfMisses := s.whnfMisses + 1 }
+  TcM.tick (m := m)
+
+/-- Instrumented/keyed full-WHNF body reached after the public syntactic fast
+    paths.  Naming it makes the cache and fuel boundary equation-visible. -/
+def whnfWithNatSuccModeNonLeaf (e : KExpr m)
+    (natSuccMode : NatSuccMode) : RecM m (KExpr m) := do
+  whnfWithNatSuccModePrefix e
   let key ← TcM.whnfKey e
   let useCache := natSuccMode == .collapse
   let transientNatWork ← isTransientNatLiteralWork e
@@ -281,69 +647,32 @@ partial def whnfWithNatSuccMode (e : KExpr m) (natSuccMode : NatSuccMode) :
     if let some cached := (← get).env.whnfCache[key]? then
       return cached
   -- Tick AFTER fast paths and cache: only consume fuel for actual work.
-  TcM.bumpStats (m := m) fun s => { s with whnfMisses := s.whnfMisses + 1 }
-  TcM.tick (m := m)
-  let mut cur := e
-  let mut fuel := maxWhnfFuel
-  let mut seen : HashSet Address := {}
-  repeat
-    if fuel == 0 then
-      throw .maxRecDepth
-    fuel := fuel - 1
-    cur ← whnfNoDeltaImpl cur .FULL natSuccMode
-    if seen.contains cur.addr then
-      break
-    seen := seen.insert cur.addr
-    -- Native reduction runs before nat reduction (lean4lean order).
-    if let some reduced ← tryReduceNative cur then
-      cur := reduced
-      continue
-    if let some reduced ← tryReduceBitvec cur then
-      cur := reduced
-      continue
-    -- Nat primitives BEFORE delta (short-circuit Nat.sub/pow/… bodies).
-    if let some reduced ← tryReduceNatWithSuccMode cur natSuccMode then
-      cur := reduced
-      continue
-    -- Nat decidables BEFORE delta.
-    if let some reduced ← tryReduceDecidable cur then
-      cur := reduced
-      continue
-    if let some reduced ← tryReduceString cur then
-      cur := reduced
-      continue
-    if let some unfolded ← deltaUnfoldOne cur then
-      cur := unfolded
-      continue
-    break
+  whnfWithNatSuccModeMissCharge
+  let cur ← whnfWithNatSuccModeUncached e natSuccMode
   if !(← get).inNativeReduce && useCache && !transientNatWork then
     modify fun s => { s with env := { s.env with
       whnfCache := s.env.whnfCache.insert key cur } }
   return cur
 
 /-- Structural WHNF (beta/iota/zeta/proj), NO delta, FULL flags. -/
-partial def whnfCore (e : KExpr m) : RecM m (KExpr m) :=
+def whnfCore (e : KExpr m) : RecM m (KExpr m) :=
   whnfCoreWithFlags e .FULL
 
 /-- Structural WHNF for def-eq's cheap-projection scaffold
     (`whnfCore (cheapProj := true)`). Bumps `cheapRecursionDepth` so cheap
     false negatives stay out of the full def-eq cache. -/
-partial def whnfCoreForDefEq (e : KExpr m) : RecM m (KExpr m) := do
+def whnfCoreForDefEq (e : KExpr m) : RecM m (KExpr m) := do
   modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth + 1 }
   try
     whnfCoreWithFlags e .DEF_EQ_CORE
   finally
     modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth - 1 }
 
-partial def whnfCoreWithFlags (e : KExpr m) (flags : WhnfFlags) :
+/-- Key/cache/uncached body reached after structural-WHNF's syntactic fast
+paths.  Naming this seam leaves runtime behavior unchanged while allowing the
+outer cache policy to be verified independently of leaf/variable dispatch. -/
+def whnfCoreWithFlagsNonLeaf (e : KExpr m) (flags : WhnfFlags) :
     RecM m (KExpr m) := do
-  -- Leaves whnf_core never reduces (incl. `const` — no delta here); `var`
-  -- only when no let frame can zeta it.
-  match e with
-  | .sort .. | .all .. | .lam .. | .nat .. | .str .. | .const .. => return e
-  | .var i _ _ =>
-    if !(← TcM.isLetVar (m := m) i) then return e
-  | _ => pure ()
   let key ← TcM.whnfKey e
   let transientNatWork ← isTransientNatLiteralWork e
   if flags.isFull then
@@ -365,102 +694,129 @@ partial def whnfCoreWithFlags (e : KExpr m) (flags : WhnfFlags) :
         whnfCoreCheapCache := s.env.whnfCoreCheapCache.insert key result } }
     return result
 
-partial def whnfCoreWithFlagsUncached (e : KExpr m) (flags : WhnfFlags) :
+def whnfCoreWithFlags (e : KExpr m) (flags : WhnfFlags) :
     RecM m (KExpr m) := do
-  let mut cur := e
-  let mut fuel := maxWhnfFuel
-  repeat
-    if fuel == 0 then
-      throw .maxRecDepth
-    fuel := fuel - 1
+  -- Leaves whnf_core never reduces (incl. `const` — no delta here); `var`
+  -- only when no let frame can zeta it.
+  match e with
+  | .sort .. | .all .. | .lam .. | .nat .. | .str .. | .const .. => return e
+  | .var i _ _ =>
+    if !(← TcM.isLetVar (m := m) i) then return e
+  | _ => pure ()
+  whnfCoreWithFlagsNonLeaf e flags
+
+/-- One structural-WHNF loop iteration.  Naming the step keeps the bounded
+driver unchanged while exposing a stable verification seam for individual
+reduction branches. -/
+def whnfCoreWithFlagsStep (cur : KExpr m) (flags : WhnfFlags) :
+    RecM m (BoundedStep (KExpr m) (KExpr m)) := do
     match cur with
     | .var i _ _ =>
       -- Legacy let-bound variable zeta-reduction.
       match (← TcM.lookupLetVal (m := m) i) with
-      | some val =>
-        cur := val
-        continue
-      | none => return cur
+      | some val => return .next val
+      | none => return .done cur
     | .fvar id _ _ =>
       -- Let-bound fvar zeta-reduction (lean4lean `whnfFVar`).
       match (← get).lctx.find? id with
-      | some (.ldecl _ _ val) =>
-        cur := val
-        continue
-      | _ => return cur
+      | some (.ldecl _ _ val) => return .next val
+      | _ => return .done cur
     | .sort .. | .all .. | .lam .. | .nat .. | .str .. | .const .. =>
-      return cur
+      return .done cur
     | .prj id field val _ =>
       -- FULL: full whnf on the struct value (delta may expose a ctor).
       -- CHEAP: structural only; stuck projections stay stuck.
-      let wval ← if flags.cheapProj then whnfCoreWithFlags val flags
-        else whnf val
+      let wval ← if flags.cheapProj then whnfCoreFlagsRec val flags
+        else whnfRec val
       match (← tryProjReduce id field wval) with
-      | some result =>
-        cur := result
-        continue
-      | none => return cur
+      | some result => return .next result
+      | none => return .done cur
     | .letE _ _ val body _ _ =>
-      cur ← TcM.runIntern (subst body val 0)
-      continue
+      return .next (← TcM.runIntern (subst body val 0))
     | .app .. => pure ()
     -- App: collect spine, whnf-core the head, beta / iota.
     let (f0, args) := cur.collectSpine
-    let f ← whnfCoreWithFlags f0 flags
+    let f ← whnfCoreFlagsRec f0 flags
     if let .lam .. := f then
       -- Multi-arg beta.
-      let mut body := f
-      let mut consumedArgs : Array (KExpr m) := Array.mkEmpty args.size
-      repeat
-        if consumedArgs.size ≥ args.size then break
-        match body with
-        | .lam _ _ _ inner _ =>
-          consumedArgs := consumedArgs.push args[consumedArgs.size]!
-          body := inner
-        | _ => break
+      let (body₀, consumedArgs) := consumeBetaLams f args
+      let mut body := body₀
       let remainingStart := consumedArgs.size
       if !consumedArgs.isEmpty then
         body ← TcM.runIntern (simulSubst body consumedArgs.reverse 0)
       for arg in args.extract remainingStart args.size do
         body ← TcM.intern (KExpr.mkApp body arg)
-      cur := body
-      continue
+      return .next body
     if f != f0 then
       -- Head reduced: rebuild, try iota once, else done.
       let mut rebuilt := f
       for arg in args do
         rebuilt ← TcM.intern (KExpr.mkApp rebuilt arg)
       match (← tryIotaWithFlags rebuilt flags) with
-      | some reduced =>
-        cur := reduced
-        continue
-      | none => return rebuilt
+      | some reduced => return .next reduced
+      | none => return .done rebuilt
     match (← tryIotaWithFlags cur flags) with
-    | some reduced =>
-      cur := reduced
-      continue
-    | none => return cur
-  throw .maxRecDepth
+    | some reduced => return .next reduced
+    | none => return .done cur
+
+def whnfCoreWithFlagsUncached (e : KExpr m) (flags : WhnfFlags) :
+    RecM m (KExpr m) :=
+  runBounded (fun cur => whnfCoreWithFlagsStep cur flags)
+    maxWhnfFuel.toNat e
 
 /-- WHNF without delta: whnf-core → proj-app → nat/native/string → quot. -/
-partial def whnfNoDelta (e : KExpr m) : RecM m (KExpr m) :=
+def whnfNoDelta (e : KExpr m) : RecM m (KExpr m) :=
   whnfNoDeltaImpl e .FULL .collapse
 
 /-- Def-eq no-delta WHNF (cheap projection policy). -/
-partial def whnfNoDeltaForDefEq (e : KExpr m) : RecM m (KExpr m) := do
+def whnfNoDeltaForDefEq (e : KExpr m) : RecM m (KExpr m) := do
   modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth + 1 }
   try
     whnfNoDeltaImpl e .DEF_EQ_CORE .collapse
   finally
     modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth - 1 }
 
-partial def whnfNoDeltaImpl (e : KExpr m) (flags : WhnfFlags)
+/-- One no-delta WHNF loop iteration, in the precise production reducer
+    order.  Successful syntax-directed helpers remain visible as `.next`;
+    a fully stuck structural result terminates the loop. -/
+def whnfNoDeltaImplStep (flags : WhnfFlags) (natSuccMode : NatSuccMode)
+    (cur : KExpr m) : RecM m (BoundedStep (KExpr m) (KExpr m)) := do
+  let cur ← whnfCoreWithFlags cur flags
+  -- App-of-Prj: whnf_core resolves the outermost Prj only; give the
+  -- head one more attempt under the same projection policy.
+  match (← tryProjAppReduce cur flags) with
+  | some (projResult, args) =>
+    let mut result := projResult
+    for arg in args do
+      result ← TcM.intern (KExpr.mkApp result arg)
+    return .next result
+  | none => pure ()
+  if let some reduced ← tryReduceBitvec cur then
+    return .next reduced
+  if let some reduced ← tryReduceNatWithSuccMode cur natSuccMode then
+    return .next reduced
+  -- Native/string before projection-definition rewriting (wrappers like
+  -- Subtype.val are projection definitions; once rewritten to Prj the
+  -- recognizers no longer see the head).
+  if let some reduced ← tryReduceNative cur then
+    return .next reduced
+  if let some reduced ← tryReduceString cur then
+    return .next reduced
+  if flags.isFull then
+    if let some reduced ← tryReduceProjectionDefinition cur then
+      return .next reduced
+  if let some reduced ← tryQuotReduce cur then
+    return .next reduced
+  return .done cur
+
+/-- No-delta bounded loop without its outer cache policy. -/
+def whnfNoDeltaImplUncached (e : KExpr m) (flags : WhnfFlags)
+    (natSuccMode : NatSuccMode) : RecM m (KExpr m) :=
+  runBounded (whnfNoDeltaImplStep flags natSuccMode) maxWhnfFuel.toNat e
+
+/-- Key/cache/uncached no-delta body reached after syntactic fast paths. -/
+def whnfNoDeltaImplNonLeaf (e : KExpr m) (flags : WhnfFlags)
     (natSuccMode : NatSuccMode) : RecM m (KExpr m) := do
-  match e with
-  | .sort .. | .all .. | .lam .. | .nat .. | .str .. => return e
-  | .var i _ _ =>
-    if !(← TcM.isLetVar (m := m) i) then return e
-  | _ => pure ()
   let key ← TcM.whnfKey e
   let useCache := natSuccMode == .collapse
   let transientNatWork ← isTransientNatLiteralWork e
@@ -471,46 +827,7 @@ partial def whnfNoDeltaImpl (e : KExpr m) (flags : WhnfFlags)
     else
       if let some cached := (← get).env.whnfNoDeltaCheapCache[key]? then
         return cached
-  let mut cur := e
-  let mut fuel := maxWhnfFuel
-  repeat
-    if fuel == 0 then
-      throw .maxRecDepth
-    fuel := fuel - 1
-    cur ← whnfCoreWithFlags cur flags
-    -- App-of-Prj: whnf_core resolves the outermost Prj only; give the
-    -- head one more attempt under the same projection policy.
-    match (← tryProjAppReduce cur flags) with
-    | some (projResult, args) =>
-      let mut result := projResult
-      for arg in args do
-        result ← TcM.intern (KExpr.mkApp result arg)
-      cur := result
-      continue
-    | none => pure ()
-    if let some reduced ← tryReduceBitvec cur then
-      cur := reduced
-      continue
-    if let some reduced ← tryReduceNatWithSuccMode cur natSuccMode then
-      cur := reduced
-      continue
-    -- Native/string before projection-definition rewriting (wrappers like
-    -- Subtype.val are projection definitions; once rewritten to Prj the
-    -- recognizers no longer see the head).
-    if let some reduced ← tryReduceNative cur then
-      cur := reduced
-      continue
-    if let some reduced ← tryReduceString cur then
-      cur := reduced
-      continue
-    if flags.isFull then
-      if let some reduced ← tryReduceProjectionDefinition cur then
-        cur := reduced
-        continue
-    if let some reduced ← tryQuotReduce cur then
-      cur := reduced
-      continue
-    break
+  let cur ← whnfNoDeltaImplUncached e flags natSuccMode
   if !(← get).inNativeReduce && useCache && !transientNatWork then
     if flags.isFull then
       modify fun s => { s with env := { s.env with
@@ -520,49 +837,18 @@ partial def whnfNoDeltaImpl (e : KExpr m) (flags : WhnfFlags)
         whnfNoDeltaCheapCache := s.env.whnfNoDeltaCheapCache.insert key cur } }
   return cur
 
-/-- Delta: unfold one defined constant (head-applied or bare). -/
-partial def deltaUnfoldOne (e : KExpr m) : RecM m (Option (KExpr m)) := do
-  if let some unfolded ← tryDeltaUnfold e then
-    return some unfolded
-  if let .const id us _ := e then
-    match (← TcM.tryGetConst id) with
-    | some (.defn (kind := kind) (val := val) ..) =>
-      match kind with
-      | .defn | .thm => return some (← unfoldConstValue e val us)
-      | .opaq => return none
-    | _ => return none
-  return none
-
-partial def tryDeltaUnfold (e : KExpr m) : RecM m (Option (KExpr m)) := do
-  let (head, args) := e.collectSpine
-  let .const id us _ := head | return none
-  let val ← match (← TcM.tryGetConst id) with
-    | some (.defn (kind := kind) (val := val) ..) =>
-      match kind with
-      | .defn | .thm => pure val
-      | .opaq => return none
-    | _ => return none
-  let val ← unfoldConstValue head val us
-  let mut result := val
-  for arg in args do
-    result ← TcM.intern (KExpr.mkApp result arg)
-  return some result
-
-/-- Universe-instantiated body of an unfolded head, cached by the head
-    `const` expression's content hash (lean4 C++ `m_unfold` cache). -/
-partial def unfoldConstValue (headExpr : KExpr m) (val : KExpr m)
-    (us : Array (KUniv m)) : RecM m (KExpr m) := do
-  let key := headExpr.addr
-  if let some cached := (← get).env.unfoldCache[key]? then
-    return cached
-  let result ← TcM.instantiateUnivParams val us
-  modify fun s => { s with env := { s.env with
-    unfoldCache := s.env.unfoldCache.insert key result } }
-  return result
+def whnfNoDeltaImpl (e : KExpr m) (flags : WhnfFlags)
+    (natSuccMode : NatSuccMode) : RecM m (KExpr m) := do
+  match e with
+  | .sort .. | .all .. | .lam .. | .nat .. | .str .. => return e
+  | .var i _ _ =>
+    if !(← TcM.isLetVar (m := m) i) then return e
+  | _ => pure ()
+  whnfNoDeltaImplNonLeaf e flags natSuccMode
 
 /-- Iota: recursor applied to a constructor (or K-synthesized / struct-eta
     fallback). `cheapRec` reduces the major structurally only. -/
-partial def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
+def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
     RecM m (Option (KExpr m)) := do
   let (head, spine) := e.collectSpine
   let .const recId recUs _ := head | return none
@@ -584,8 +870,8 @@ partial def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
     else pure major
   let major := (← cleanupNatOffsetMajor major).getD major
   -- WHNF the major (cheap mode skips delta on the major itself).
-  let majorWhnf0 ← if flags.cheapRec then whnfCoreWithFlags major flags
-    else whnf major
+  let majorWhnf0 ← if flags.cheapRec then whnfCoreFlagsRec major flags
+    else whnfRec major
   -- Nat literal → constructor form (one layer).
   let mut majorWhnf := majorWhnf0
   let mut majorWasNatLit := false
@@ -600,8 +886,8 @@ partial def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
   match majorWhnf with
   | .str val _ _ =>
     let strCtor ← strLitToConstructor val
-    majorWhnf ← if flags.cheapRec then whnfCoreWithFlags strCtor flags
-      else whnf strCtor
+    majorWhnf ← if flags.cheapRec then whnfCoreFlagsRec strCtor flags
+      else whnfRec strCtor
   | _ => pure ()
   -- Constructor application?
   let (ctorHead, ctorArgs) := majorWhnf.collectSpine
@@ -636,7 +922,7 @@ partial def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
   -- Struct eta iota fallback.
   tryStructEtaIota recId recr recUs spine
 
-partial def isStructLike (id : KId m) : RecM m Bool := do
+def isStructLike (id : KId m) : RecM m Bool := do
   match (← TcM.tryGetConst id) with
   | some (.indc (indices := indices) (ctors := ctors) ..) =>
     if indices != 0 || ctors.size != 1 then
@@ -644,102 +930,10 @@ partial def isStructLike (id : KId m) : RecM m Bool := do
   | _ => return false
   return !(← computedIsRec id)
 
-/-- Transient-mode iota application: beta-reduce as we go without interning
-    (Nat-literal recursor chains would otherwise pin every predecessor). -/
-partial def applyIotaArg (result : KExpr m) (arg : KExpr m)
-    (transient : Bool) : RecM m (KExpr m) := do
-  if transient then
-    if let .lam _ _ _ body _ := result then
-      return substNoIntern body arg 0
-    return KExpr.mkApp result arg
-  else
-    TcM.intern (KExpr.mkApp result arg)
-
-/-- Nat-literal recursor work is only useful while the current WHNF runs;
-    caching it would make RSS linear in the literal. -/
-partial def isTransientNatLiteralWork (e : KExpr m) : RecM m Bool := do
-  if (← isNatLiteralRecursorApp e) then
-    return true
-  let (head, args) := e.collectSpine
-  let .const id _ _ := head | return false
-  if id.addr == (← prims).natSucc.addr && args.size == 1 then
-    isNatLiteralRecursorApp args[0]!
-  else
-    return false
-
-partial def isNatLiteralRecursorApp (e : KExpr m) : RecM m Bool := do
-  let (head, spine) := e.collectSpine
-  let .const id _ _ := head | return false
-  let p ← prims
-  if id.addr != p.natRec.addr && id.addr != p.natCasesOn.addr then
-    return false
-  let some (.recr (params := params) (motives := motives) (minors := minors)
-      (indices := indices) ..) ← TcM.tryGetConst id
-    | return false
-  let majorIdx := (params + motives + minors + indices).toNat
-  match spine[majorIdx]? with
-  | some (.nat ..) => return true
-  | _ => return false
-
-/-- Lean's `cleanupNatOffsetMajor`: expose one ctor layer of a definitional
-    offset `base + k` (k > 0) as `Nat.succ (base + (k-1))`, keeping closed
-    arithmetic for the primitive reducer. -/
-partial def cleanupNatOffsetMajor (e : KExpr m) :
-    RecM m (Option (KExpr m)) := do
-  if (← evalNatOffsetLiteral e 0).isSome then
-    return none
-  let some (base, offset) ← natOffset e 0 | return none
-  if offset == 0 then
-    return none
-  let predOffset := offset - 1
-  let pred ← if predOffset == 0 then pure base
-    else do mkNatAdd base (natExprFromValue predOffset)
-  return some (← mkNatSucc pred)
-
-partial def natOffset (e : KExpr m) (depth : Nat) :
-    RecM m (Option (KExpr m × Nat)) := do
-  if depth ≥ 256 then
-    return none
-  let (head, args) := e.collectSpine
-  let .const id _ _ := head | return none
-  let p ← prims
-  if id.addr == p.natSucc.addr && args.size == 1 then
-    let (base, offset) ← natOffsetOrZero args[0]! (depth + 1)
-    return some (base, offset + 1)
-  if id.addr == p.natAdd.addr && args.size == 2 then
-    let some rhs ← evalNatOffsetLiteral args[1]! (depth + 1) | return none
-    let (base, offset) ← natOffsetOrZero args[0]! (depth + 1)
-    return some (base, offset + rhs)
-  return none
-
-partial def natOffsetOrZero (e : KExpr m) (depth : Nat) :
-    RecM m (KExpr m × Nat) := do
-  return (← natOffset e depth).getD (e, 0)
-
-/-- Syntactic, no-delta evaluator for Nat offset constants (weaker than
-    WHNF by design). -/
-partial def evalNatOffsetLiteral (e : KExpr m) (depth : Nat) :
-    RecM m (Option Nat) := do
-  if depth ≥ 256 then
-    return none
-  let p ← prims
-  if let some n := extractNatValue e p then
-    return some n
-  let (head, args) := e.collectSpine
-  let .const id _ _ := head | return none
-  if id.addr == p.natPred.addr && args.size == 1 then
-    let some n ← evalNatOffsetLiteral args[0]! (depth + 1) | return none
-    return some (n - 1)
-  if (← isNatBinArithAddr id.addr) && args.size == 2 then
-    let some a ← evalNatOffsetLiteral args[0]! (depth + 1) | return none
-    let some b ← evalNatOffsetLiteral args[1]! (depth + 1) | return none
-    return computeNatBin id.addr PrimAddrs.canonical a b
-  return none
-
 /-- Struct-eta iota: single-rule recursor over a non-recursive one-ctor
     zero-index inductive; rebuild the rule with projections of the major.
     Prop-typed majors are excluded (lean4lean `toCtorWhenStruct`). -/
-partial def tryStructEtaIota (recId : KId m) (recr : IotaInfo m)
+def tryStructEtaIota (recId : KId m) (recr : IotaInfo m)
     (recUs : Array (KUniv m)) (spine : Array (KExpr m)) :
     RecM m (Option (KExpr m)) := do
   if recr.rules.size != 1 then
@@ -758,7 +952,7 @@ partial def tryStructEtaIota (recId : KId m) (recr : IotaInfo m)
     | return none
   let some majorSort ← try? (TcM.withInferOnly ((← read).infer majorTy))
     | return none
-  let some majorSortW ← try? (whnf majorSort) | return none
+  let some majorSortW ← try? (whnfRec majorSort) | return none
   if let .sort u _ := majorSortW then
     if u.isZero then
       return none
@@ -776,11 +970,11 @@ partial def tryStructEtaIota (recId : KId m) (recr : IotaInfo m)
 
 /-- K-like recursors: when the major isn't a ctor but its type matches the
     target inductive, build `ctor₀ params…` and def-eq-verify its type. -/
-partial def synthCtorWhenK (major : KExpr m) (recId : KId m)
+def synthCtorWhenK (major : KExpr m) (recId : KId m)
     (recr : IotaInfo m) : RecM m (Option (KExpr m)) := do
   let some majorTy ← try? (TcM.withInferOnly ((← read).infer major))
     | return none
-  let some majorTyW ← try? (whnf majorTy) | return none
+  let some majorTyW ← try? (whnfRec majorTy) | return none
   let (tyHead, tyArgs) := majorTyW.collectSpine
   let .const tyHeadId tyUs _ := tyHead | return none
   let recTy ← match (← TcM.tryGetConst recId) with
@@ -814,12 +1008,12 @@ partial def synthCtorWhenK (major : KExpr m) (recId : KId m)
 
 /-- Projection of a ctor application (with string-literal expansion first,
     and the `Fin.val`-through-`Decidable.rec` special case). -/
-partial def tryProjReduce (id : KId m) (field : UInt64) (wval : KExpr m) :
+def tryProjReduce (id : KId m) (field : UInt64) (wval : KExpr m) :
     RecM m (Option (KExpr m)) := do
   let wval ← match wval with
     | .str s _ _ => do
       let expanded ← strLitToConstructor s
-      whnf expanded
+      whnfRec expanded
     | _ => pure wval
   let (head, args) := wval.collectSpine
   if let some result ← tryReduceFinValDecidableRec id field head args then
@@ -830,83 +1024,31 @@ partial def tryProjReduce (id : KId m) (field : UInt64) (wval : KExpr m) :
     | _ => return none
   return args[ctorParams + field.toNat]?
 
-/-- `(Decidable.rec … : Fin n).val` → push the projection into both minors
-    (whnf.rs `try_reduce_fin_val_decidable_rec`). -/
-partial def tryReduceFinValDecidableRec (id : KId m) (field : UInt64)
-    (head : KExpr m) (args : Array (KExpr m)) :
-    RecM m (Option (KExpr m)) := do
-  if (← get).noAccel then return none
-  let p ← prims
-  if id.addr != p.fin.addr || field != 0 then
-    return none
-  let .const recId recUs _ := head | return none
-  if recId.addr != p.decidableRec.addr || args.size < 5 then
-    return none
-  let .lam motiveName motiveBi motiveDom _ _ := args[1]! | return none
-  let some falseMinor ← projectDecidableFinValMinor id field args[2]!
-    | return none
-  let some trueMinor ← projectDecidableFinValMinor id field args[3]!
-    | return none
-  let natTy ← TcM.intern (.mkConst p.nat #[])
-  let motive ← TcM.intern (KExpr.mkLam motiveName motiveBi motiveDom natTy)
-  let mut result ← TcM.intern (KExpr.mkConst recId recUs)
-  result ← TcM.intern (KExpr.mkApp result args[0]!)
-  result ← TcM.intern (KExpr.mkApp result motive)
-  result ← TcM.intern (KExpr.mkApp result falseMinor)
-  result ← TcM.intern (KExpr.mkApp result trueMinor)
-  result ← TcM.intern (KExpr.mkApp result args[4]!)
-  for arg in args.extract 5 args.size do
-    result ← TcM.intern (KExpr.mkApp result arg)
-  return some result
-
-partial def projectDecidableFinValMinor (id : KId m) (field : UInt64)
-    (minor : KExpr m) : RecM m (Option (KExpr m)) := do
-  let .lam name bi dom body _ := minor | return none
-  let proj ← TcM.intern (KExpr.mkPrj id field body)
-  return some (← TcM.intern (KExpr.mkLam name bi dom proj))
-
 /-- `App(Prj(S, i, v), args…)`: one more projection attempt on the head. -/
-partial def tryProjAppReduce (e : KExpr m) (flags : WhnfFlags) :
+def tryProjAppReduce (e : KExpr m) (flags : WhnfFlags) :
     RecM m (Option (KExpr m × Array (KExpr m))) := do
   let (head, args) := e.collectSpine
   if args.isEmpty then
     return none
   let .prj id field val _ := head | return none
-  let wval ← if flags.cheapProj then whnfCoreWithFlags val flags
-    else whnf val
+  let wval ← if flags.cheapProj then whnfCoreFlagsRec val flags
+    else whnfRec val
   match (← tryProjReduce id field wval) with
   | some result => return some (result, args)
   | none => return none
 
-/-- Rewrite an applied projection-wrapper definition to a `prj` node. -/
-partial def tryReduceProjectionDefinition (e : KExpr m) :
-    RecM m (Option (KExpr m)) := do
-  let (head, args) := e.collectSpine
-  let .const id _ _ := head | return none
-  let val ← match (← TcM.tryGetConst id) with
-    | some (.defn (kind := .defn) (val := val) ..) => pure val
-    | _ => return none
-  let some (arity, structId, field, structArgIdx) :=
-    projectionDefinitionInfo val | return none
-  if args.size < arity then
-    return none
-  let mut result ← TcM.intern (KExpr.mkPrj structId field args[structArgIdx]!)
-  for arg in args.extract arity args.size do
-    result ← TcM.intern (KExpr.mkApp result arg)
-  return some result
-
 /-- Major-premise inductive of a recursor type: peel `skip` foralls, then
     scan (bounded) for the first forall whose domain head is an inductive. -/
-partial def getMajorInductiveId (recTy : KExpr m) (skip : UInt64) :
+def getMajorInductiveId (recTy : KExpr m) (skip : UInt64) :
     RecM m (KId m) := do
   let mut ty := recTy
   for _ in [0:skip.toNat] do
-    let w ← whnf ty
+    let w ← whnfRec ty
     match w with
     | .all _ _ _ body _ => ty := body
     | _ => throw (.other "get_major_inductive_id: not enough foralls")
   for _ in [0:9] do
-    let w ← whnf ty
+    let w ← whnfRec ty
     match w with
     | .all _ _ dom body _ =>
       let (head, _) := dom.collectSpine
@@ -919,10 +1061,10 @@ partial def getMajorInductiveId (recTy : KExpr m) (skip : UInt64) :
     "get_major_inductive_id: no inductive-headed forall within scan bound")
 
 /-- Nat primitives: succ-collapse, binary arithmetic, boolean predicates. -/
-partial def tryReduceNat (e : KExpr m) : RecM m (Option (KExpr m)) :=
+def tryReduceNat (e : KExpr m) : RecM m (Option (KExpr m)) :=
   tryReduceNatWithSuccMode e .collapse
 
-partial def tryReduceNatWithSuccMode (e : KExpr m)
+def tryReduceNatWithSuccMode (e : KExpr m)
     (natSuccMode : NatSuccMode) : RecM m (Option (KExpr m)) := do
   let (head, args) := e.collectSpine
   let .const id _ _ := head | return none
@@ -956,77 +1098,56 @@ partial def tryReduceNatWithSuccMode (e : KExpr m)
 /-- Collapse a `Nat.succ` chain onto a literal (with stuck-chain memo: the
     inner WHNF runs in `stuck` mode which bypasses caches, so without the
     memo a stuck `succ^k(x)` re-peels from every depth — O(k²)). -/
-partial def tryReduceNatSuccIter (arg : KExpr m) :
+def tryReduceNatSuccIter (arg : KExpr m) :
     RecM m (Option (KExpr m)) := do
   let entryKey ← TcM.whnfKey arg
   if (← get).env.natSuccStuck.contains entryKey then
     return none
-  let mut visited : Array (Address × Address) := #[entryKey]
-  let mut offset : Nat := 1
-  let mut cur := arg
-  repeat
+  runBounded (fun (cur, offset, visited) => do
     if let some result ← tryReduceNatSuccLinearRec cur offset then
-      return some result
-    let w ← whnfWithNatSuccMode cur .stuck
+      return .done (some result)
+    let w ← whnfModeRec cur .stuck
     if let some n := extractNatLit w (← prims) then
-      return some (natExprFromValue (n + offset))
+      return .done (some (natExprFromValue (n + offset)))
     let (head, args) := w.collectSpine
     let isSucc ← match head with
       | .const id _ _ =>
         pure (id.addr == (← prims).natSucc.addr && args.size == 1)
       | _ => pure false
     if isSucc then
-      offset := offset + 1
-      cur := args[0]!
+      let offset := offset + 1
+      let cur := args[0]!
       let curKey ← TcM.whnfKey cur
       if (← get).env.natSuccStuck.contains curKey then
         -- Known-stuck suffix ⇒ the whole chain above is stuck too.
         let vs := visited
         modify fun s => { s with env := { s.env with
           natSuccStuck := vs.foldl (·.insert ·) s.env.natSuccStuck } }
-        return none
-      visited := visited.push curKey
+        return .done none
+      let visited := visited.push curKey
       -- succ(cur) can surface later as a succ-iter argument too.
-      visited := visited.push (← TcM.whnfKey w)
-      continue
+      let visited := visited.push (← TcM.whnfKey w)
+      return .next (cur, offset, visited)
     let vs := visited
     modify fun s => { s with env := { s.env with
       natSuccStuck := vs.foldl (·.insert ·) s.env.natSuccStuck } }
-    return none
-  return none
+    return .done none) maxWhnfFuel.toNat (arg, 1, #[entryKey])
 
 /-- `Nat.rec base step (lit n)` where step = `fun _ ih => Nat.succ ih`:
     compute `base + n + offset` directly. -/
-partial def tryReduceNatSuccLinearRec (arg : KExpr m) (offset : Nat) :
+def tryReduceNatSuccLinearRec (arg : KExpr m) (offset : Nat) :
     RecM m (Option (KExpr m)) := do
   let some parts ← natRecLiteralParts arg | return none
   let some base := parts.spine[parts.baseIdx]? | return none
   let some step := parts.spine[parts.stepIdx]? | return none
   if !(← isNatSuccIhStep step) then
     return none
-  let baseWhnf ← whnf base
+  let baseWhnf ← whnfRec base
   let some baseVal := extractNatValue baseWhnf (← prims) | return none
   return some (natExprFromValue (baseVal + parts.major + offset))
 
-partial def natRecLiteralParts (e : KExpr m) :
-    RecM m (Option (NatRecLiteralParts m)) := do
-  let (head, spine) := e.collectSpine
-  let .const id _ _ := head | return none
-  if id.addr != (← prims).natRec.addr then
-    return none
-  let some (.recr (params := params) (motives := motives) (minors := minors)
-      (indices := indices) ..) ← TcM.tryGetConst id
-    | return none
-  if minors.toNat < 2 then
-    return none
-  let baseIdx := params.toNat + motives.toNat
-  let stepIdx := baseIdx + 1
-  let majorIdx := params.toNat + motives.toNat + minors.toNat + indices.toNat
-  let some (.nat major _ _) := spine[majorIdx]? | return none
-  return some { spine, major, baseIdx, stepIdx }
-
-partial def isNatSuccIhStep (step : KExpr m) : RecM m Bool := do
-  let step ← whnf step
+def isNatSuccIhStep (step : KExpr m) : RecM m Bool := do
+  let step ← whnfRec step
   let .lam _ _ _ body _ := step | return false
   let .lam _ _ _ body _ := body | return false
   let (head, args) := body.collectSpine
@@ -1040,16 +1161,16 @@ partial def isNatSuccIhStep (step : KExpr m) : RecM m Bool := do
 /-- WHNF a Nat-reducer argument. Open arguments get a bounded local fuel so
     a stuck symbolic argument can't burn the shared budget; fuel exhaustion
     yields `none` (leave unreduced). -/
-partial def whnfNatReducerArg (arg : KExpr m) :
+def whnfNatReducerArg (arg : KExpr m) :
     RecM m (Option (KExpr m)) := do
   if !arg.hasFVars || (← get).eagerReduce then
-    return some (← whnf arg)
+    return some (← whnfRec arg)
   let savedFuel := (← get).recFuel
   let localFuel := min savedFuel natReducerOpenArgRecFuel
   modify fun s => { s with recFuel := localFuel }
   let result : Except (TcError m) (KExpr m) ←
     try
-      let w ← whnf arg
+      let w ← whnfRec arg
       pure (Except.ok w)
     catch e =>
       pure (Except.error e)
@@ -1060,7 +1181,7 @@ partial def whnfNatReducerArg (arg : KExpr m) :
   | .error .maxRecDepth | .error .maxRecFuel => return none
   | .error e => throw e
 
-partial def tryReduceNatPredicate (addr : Address) (args : Array (KExpr m)) :
+def tryReduceNatPredicate (addr : Address) (args : Array (KExpr m)) :
     RecM m (Option (KExpr m)) := do
   let some wa ← whnfNatReducerArg args[0]! | return none
   let p ← prims
@@ -1076,7 +1197,7 @@ partial def tryReduceNatPredicate (addr : Address) (args : Array (KExpr m)) :
     with the canonical kernel proof terms; `decLt n m → decLe (n+1) m`;
     Int decidables get literal *normalization* only. `decLe false` falls to
     delta (needs the `False` primitive). -/
-partial def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
+def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
   if (← get).noAccel then return none
   let (head, args) := e.collectSpine
   let .const id _ _ := head | return none
@@ -1092,8 +1213,8 @@ partial def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
     return none
   if args.size < 2 then
     return none
-  let wa ← whnf args[0]!
-  let wb ← whnf args[1]!
+  let wa ← whnfRec args[0]!
+  let wb ← whnfRec args[1]!
   let some aVal := extractNatValue wa p | return none
   let some bVal := extractNatValue wb p | return none
   -- S5: @Eq.refl.{1} for Bool : Type = Sort 1.
@@ -1109,7 +1230,7 @@ partial def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
   let some prop ← (do
     let some eTy ← try? (TcM.withInferOnly ((← read).infer e))
       | return none
-    let eTyWhnf ← whnf eTy
+    let eTyWhnf ← whnfRec eTy
     let (_, typeArgs) := eTyWhnf.collectSpine
     return typeArgs[0]?) | return none
   let (bResult, proofTrueFn, proofFalseFn) :=
@@ -1150,12 +1271,12 @@ partial def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
 
 /-- Normalize Int decidable arguments to canonical ctor-form literals (the
     delta+iota chain then reduces them; no native Int evaluation). -/
-partial def tryNormalizeIntDecidable (addr : Address)
+def tryNormalizeIntDecidable (addr : Address)
     (args : Array (KExpr m)) : RecM m (Option (KExpr m)) := do
   if args.size < 2 then
     return none
-  let wa ← whnf args[0]!
-  let wb ← whnf args[1]!
+  let wa ← whnfRec args[0]!
+  let wb ← whnfRec args[1]!
   let p ← prims
   let some aVal := extractIntLit wa p | return none
   let some bVal := extractIntLit wb p | return none
@@ -1173,7 +1294,7 @@ partial def tryNormalizeIntDecidable (addr : Address)
 
 /-- Quotient reduction (`Quot.lift` arity 6 / major 5; `Quot.ind` arity 5 /
     major 4), gated on the resolved primitive addresses. -/
-partial def tryQuotReduce (e : KExpr m) : RecM m (Option (KExpr m)) := do
+def tryQuotReduce (e : KExpr m) : RecM m (Option (KExpr m)) := do
   let (head, args) := e.collectSpine
   let .const id _ _ := head | return none
   let p ← prims
@@ -1186,7 +1307,7 @@ partial def tryQuotReduce (e : KExpr m) : RecM m (Option (KExpr m)) := do
       pure (3, 4)
     else
       return none
-  let majorWhnf ← whnf args[majorIdx]!
+  let majorWhnf ← whnfRec args[majorIdx]!
   let (mkHead, mkArgs) := majorWhnf.collectSpine
   let .const mkId _ _ := mkHead | return none
   if mkId.addr != p.quotCtor.addr then
@@ -1201,33 +1322,16 @@ partial def tryQuotReduce (e : KExpr m) : RecM m (Option (KExpr m)) := do
 
 -- ### BitVec native reduction (whnf.rs try_reduce_bitvec)
 
-/-- Heads that leave a Nat-predicate argument stuck. -/
-partial def isNatStuckRecursorAddr (addr : Address) : RecM m Bool := do
-  let p ← prims
-  return addr == p.natRec.addr || addr == p.natCasesOn.addr
-    || addr == p.bitVecToNat.addr
-
-partial def isStuckNatPredicateProbe (e : KExpr m) : RecM m Bool := do
-  let (head, _) := e.collectSpine
-  match head with
-  | .const id _ _ =>
-    return (← isNatBinPredAddr id.addr) || (← isNatStuckRecursorAddr id.addr)
-  | .prj id _ val _ =>
-    if id.addr == (← prims).fin.addr then
-      return true
-    let (valHead, _) := val.collectSpine
-    match valHead with
-    | .const valId _ _ => isNatStuckRecursorAddr valId.addr
-    | _ => return false
-  | _ => return false
-
 /-- Bounded literal evaluator for widths/predicate args: literal
     extraction, succ/pred/binary-arith folding, stuck-probe early-out,
     whnf fallback. Mirrors whnf.rs `try_eval_nat_value_for_pred`. -/
-partial def tryEvalNatValueForPred (e : KExpr m) (depth : Nat := 0) :
-    RecM m (Option Nat) := do
-  if depth ≥ 64 then
-    return none
+def tryEvalNatValueForPred (e : KExpr m) (depth : Nat := 0) :
+    RecM m (Option Nat) :=
+  tryEvalNatValueForPredFuel (64 - depth) e
+
+def tryEvalNatValueForPredFuel : Nat → KExpr m → RecM m (Option Nat)
+  | 0, _ => return none
+  | fuel + 1, e => do
   let p ← prims
   if let some n := extractNatLit e p then
     return some n
@@ -1237,51 +1341,34 @@ partial def tryEvalNatValueForPred (e : KExpr m) (depth : Nat := 0) :
   match head with
   | .const id _ _ =>
     if id.addr == p.natSucc.addr && args.size == 1 then
-      let some pred ← tryEvalNatValueForPred args[0]! (depth + 1)
+      let some pred ← tryEvalNatValueForPredFuel fuel args[0]!
         | return none
       return some (pred + 1)
     if id.addr == p.natPred.addr && args.size == 1 then
-      let some n ← tryEvalNatValueForPred args[0]! (depth + 1)
+      let some n ← tryEvalNatValueForPredFuel fuel args[0]!
         | return none
       return some (n - 1)
     if (← isNatBinArithAddr id.addr) && args.size == 2 then
-      let some a ← tryEvalNatValueForPred args[0]! (depth + 1)
+      let some a ← tryEvalNatValueForPredFuel fuel args[0]!
         | return none
-      let some b ← tryEvalNatValueForPred args[1]! (depth + 1)
+      let some b ← tryEvalNatValueForPredFuel fuel args[1]!
         | return none
       return computeNatBin id.addr PrimAddrs.canonical a b
   | .var .. | .fvar .. | .sort .. | .lam .. | .all .. | .str .. | .nat .. =>
     return none
   | _ => pure ()
-  let w ← whnf e
+  let w ← whnfRec e
   if let some n := extractNatValue w p then
     return some n
   if w.addr == e.addr then
     return none
-  tryEvalNatValueForPred w (depth + 1)
-
-/-- `(width, n)` from `BitVec.ofNat width n` or
-    `OfNat.ofNat (BitVec width) n inst…`. -/
-partial def bitvecOfNatArgs (e : KExpr m) :
-    RecM m (Option (KExpr m × KExpr m)) := do
-  let p ← prims
-  let (head, args) := e.collectSpine
-  let .const id _ _ := head | return none
-  if id.addr == p.bitVecOfNat.addr && args.size == 2 then
-    return some (args[0]!, args[1]!)
-  if id.addr != p.ofNatOfNat.addr || args.size < 2 then
-    return none
-  let (typeHead, typeArgs) := args[0]!.collectSpine
-  let .const typeId _ _ := typeHead | return none
-  if typeId.addr == p.bitVec.addr && typeArgs.size == 1 then
-    return some (typeArgs[0]!, args[1]!)
-  return none
+  tryEvalNatValueForPredFuel fuel w
 
 /-- `BitVec.toNat (BitVec.ofNat w n) ⇒ n % 2^w` (width ≤ 2^24). -/
-partial def tryReduceBitvecToNat (value : KExpr m) :
+def tryReduceBitvecToNat (value : KExpr m) :
     RecM m (Option (KExpr m)) := do
   let some (width, nExpr) ← bitvecOfNatArgs value | return none
-  let nWhnf ← whnf nExpr
+  let nWhnf ← whnfRec nExpr
   let some n := extractNatValue nWhnf (← prims) | return none
   if n == 0 then
     return some (natLiteral 0)
@@ -1292,7 +1379,7 @@ partial def tryReduceBitvecToNat (value : KExpr m) :
 
 /-- `value.toNat` — collapsed when possible, else the symbolic
     `BitVec.toNat width value` application. -/
-partial def bitvecToNatExpr (width value : KExpr m) : RecM m (KExpr m) := do
+def bitvecToNatExpr (width value : KExpr m) : RecM m (KExpr m) := do
   if let some result ← tryReduceBitvecToNat value then
     return result
   let head ← TcM.intern (.mkConst (← prims).bitVecToNat #[])
@@ -1302,16 +1389,16 @@ partial def bitvecToNatExpr (width value : KExpr m) : RecM m (KExpr m) := do
 /-- `BitVec.ult w x y`: rhs 0 ⇒ false; both literal ⇒ compare; else the
     definitional `Nat.ble (succ x.toNat) y.toNat` route when it collapses
     to a Bool literal. -/
-partial def tryReduceBitvecUlt (width lhs rhs : KExpr m) :
+def tryReduceBitvecUlt (width lhs rhs : KExpr m) :
     RecM m (Option (KExpr m)) := do
   let p ← prims
   let lhsNat ← bitvecToNatExpr width lhs
   let rhsNat ← bitvecToNatExpr width rhs
-  let rhsNatWhnf ← whnf rhsNat
+  let rhsNatWhnf ← whnfRec rhsNat
   if let some rhsVal := extractNatValue rhsNatWhnf p then
     if rhsVal == 0 then
       return some (← TcM.intern (.mkConst p.boolFalse #[]))
-    let lhsNatWhnf ← whnf lhsNat
+    let lhsNatWhnf ← whnfRec lhsNat
     if let some lhsVal := extractNatValue lhsNatWhnf p then
       let resultId := if lhsVal < rhsVal then p.boolTrue else p.boolFalse
       return some (← TcM.intern (.mkConst resultId #[]))
@@ -1319,13 +1406,13 @@ partial def tryReduceBitvecUlt (width lhs rhs : KExpr m) :
   let ble ← TcM.intern (.mkConst p.natBle #[])
   let cmpLhs ← TcM.intern (.mkApp ble lhsSucc)
   let cmp ← TcM.intern (.mkApp cmpLhs rhsNat)
-  let result ← whnf cmp
+  let result ← whnfRec cmp
   if (← boolLitValue result).isSome then
     return some result
   return none
 
 /-- `LT.lt (BitVec w) inst x y ⇒ ult w x y`. -/
-partial def tryReduceBitvecLtProp (prop : KExpr m) :
+def tryReduceBitvecLtProp (prop : KExpr m) :
     RecM m (Option (KExpr m)) := do
   let p ← prims
   let (head, args) := prop.collectSpine
@@ -1340,7 +1427,7 @@ partial def tryReduceBitvecLtProp (prop : KExpr m) :
 
 /-- BitVec native reduction: `BitVec.toNat`, `BitVec.ult`, and
     `Decidable.decide (LT.lt (BitVec w) …)`. -/
-partial def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
+def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
   if (← get).noAccel then return none
   let p ← prims
   let (head, args) := e.collectSpine
@@ -1361,7 +1448,7 @@ partial def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
 /-- Native reduction: `Lean.reduceBool/reduceNat` markers,
     `System.Platform.numBits ⇒ 64` (also the `Subtype.val (getNumBits ())`
     form), and the PUnit/Unit SizeOf singletons. -/
-partial def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
+def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
   if (← get).noAccel then return none
   let (head, args) := e.collectSpine
   let .const id _ _ := head | return none
@@ -1406,7 +1493,7 @@ partial def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
   modify fun s => { s with inNativeReduce := true }
   let result : Except (TcError m) (KExpr m) ←
     try
-      let r ← whnf body
+      let r ← whnfRec body
       pure (Except.ok r)
     catch err =>
       pure (Except.error err)
@@ -1426,51 +1513,13 @@ partial def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
     | .nat .. => return some result
     | _ => return none
 
-/-- String literal primitives: `String.back` / legacy back /
-    `utf8ByteSize` / `toByteArray ""`. -/
-partial def tryReduceString (e : KExpr m) : RecM m (Option (KExpr m)) := do
-  let (head, args) := e.collectSpine
-  if args.size != 1 then
-    return none
-  let .const id _ _ := head | return none
-  let p ← prims
-  let isBack := id.addr == p.stringBack.addr
-    || id.addr == p.stringLegacyBack.addr
-  let isUtf8ByteSize := id.addr == p.stringUtf8ByteSize.addr
-  let isToByteArray := id.addr == p.stringToByteArray.addr
-  if !isBack && !isUtf8ByteSize && !isToByteArray then
-    return none
-  let .str s _ _ := args[0]! | return none
-  if isUtf8ByteSize then
-    return some (← TcM.intern (natExprFromValue s.utf8ByteSize : KExpr m))
-  if isToByteArray then
-    if s.isEmpty then
-      return some (← TcM.intern (.mkConst p.byteArrayEmpty #[]))
-    return none
-  let codepoint := (s.toList.getLast?.map (·.toNat)).getD 65
-  charOfNatExpr codepoint
-
-partial def charOfNatExpr (n : Nat) : RecM m (Option (KExpr m)) := do
-  let charOfNat ← TcM.intern (.mkConst (← prims).charOfNat #[])
-  let natLit ← TcM.intern (natExprFromValue n : KExpr m)
-  return some (← TcM.intern (KExpr.mkApp charOfNat natLit))
-
 -- ### `is_rec` verification (inductive.rs `computed_is_rec` — hosted here
 -- because struct-likeness needs it; `Ix.Tc.Inductive` reuses it)
-
-partial def discoverBlockInductives (blockId : KId m) :
-    RecM m (Array (KId m)) := do
-  let some members ← TcM.tryGetBlock blockId | return #[]
-  let mut inds : Array (KId m) := #[]
-  for id in members do
-    if let some (.indc ..) ← TcM.tryGetConst id then
-      inds := inds.push id
-  return inds
 
 /-- Constructive `is_rec`: any constructor field (after params) mentioning
     any inductive of the mutual block. Provisional-true cache entry guards
     re-entrancy through whnf → struct-eta → isStructLike. -/
-partial def computedIsRec (ind : KId m) : RecM m Bool := do
+def computedIsRec (ind : KId m) : RecM m Bool := do
   if let some v := (← get).env.isRecCache[ind.addr]? then
     return v
   let (params, ctors, block) ← match (← TcM.getConst ind) with
@@ -1491,7 +1540,7 @@ partial def computedIsRec (ind : KId m) : RecM m Bool := do
       isRecCache := s.env.isRecCache.erase ind.addr } }
     throw e
 
-partial def computeIsRec (ctors : Array (KId m)) (nParams : Nat)
+def computeIsRec (ctors : Array (KId m)) (nParams : Nat)
     (blockAddrs : Array Address) : RecM m Bool := do
   for ctorId in ctors do
     let ctorTy ← match (← TcM.tryGetConst ctorId) with
@@ -1499,18 +1548,20 @@ partial def computeIsRec (ctors : Array (KId m)) (nParams : Nat)
       | _ => continue
     let mut ty := ctorTy
     for _ in [0:nParams] do
-      let w ← whnf ty
+      let w ← whnfRec ty
       match w with
       | .all _ _ _ body _ => ty := body
       | _ => break
-    repeat
-      let w ← whnf ty
+    let found ← runBounded (fun ty => do
+      let w ← whnfRec ty
       match w with
       | .all _ _ dom body _ =>
         if exprMentionsAnyAddr dom blockAddrs then
-          return true
-        ty := body
-      | _ => break
+          return .done true
+        return .next body
+      | _ => return .done false) maxWhnfFuel.toNat ty
+    if found then
+      return true
   return false
 
 end

@@ -13,9 +13,9 @@ success *and* error, `Q` on success, `E` on error (default trivial — most
 proofs never mention it; nontrivial `E` only at catch-and-continue sites).
 
 Scope here: the invariant is a plain predicate over `TcState`.
-Verify/State.lean upgrades this to the ghost `VState` (venv + cache
-views) with a monotone extension order; the combinator lemmas below
-carry over verbatim — only the state type enriches.
+Verify/State.lean instantiates it with a monotone `VerifyWorld` containing an
+immutable catalog and a growing trusted semantic environment; the combinator
+lemmas below carry over verbatim.
 -/
 
 namespace Ix.Tc

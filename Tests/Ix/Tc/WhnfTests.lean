@@ -31,9 +31,24 @@ def appN (f : AE) (args : List AE) : AE := args.foldl .mkApp f
 
 def P := PrimAddrs.canonical
 
-/-- Run a whnf action against a given anon env with stub methods. -/
+/-- Tie only WHNF's internal policy-sensitive recursion. Infer/isDefEq stay
+    as throw stubs, preserving the isolation this suite relies on. -/
+def whnfOnlyMethodsN : Nat → Methods .anon
+  | 0 => default
+  | n + 1 =>
+    { (default : Methods .anon) with
+      whnf := fun e => (RecM.whnf e).run (whnfOnlyMethodsN n)
+      whnfCore := fun e => (RecM.whnfCore e).run (whnfOnlyMethodsN n)
+      whnfMode := fun e mode =>
+        (RecM.whnfWithNatSuccMode e mode).run (whnfOnlyMethodsN n)
+      whnfCoreFlags := fun e flags =>
+        (RecM.whnfCoreWithFlags e flags).run (whnfOnlyMethodsN n) }
+
+/-- Run a whnf action against a given anon env with only the non-WHNF
+    back-edges stubbed. -/
 def runWhnf (env : AnonEnv) (e : AE) : Except (TcError .anon) AE :=
-  match ((RecM.whnf e).run default).run (.ofEnvAnon env) with
+  match ((RecM.whnf e).run (whnfOnlyMethodsN maxWhnfFuel.toNat)).run
+      (.ofEnvAnon env) with
   | .ok a _ => .ok a
   | .error err _ => .error err
 
@@ -43,6 +58,80 @@ def whnfEq (env : AnonEnv) (e expected : AE) : Bool :=
   | .error _ => false
 
 def emptyEnv : AnonEnv := {}
+
+/-! ### Totalized pure helpers -/
+
+def pureHelperTests : TestSeq :=
+  test "extractNatValue accepts literals and exact unary successor spines"
+    (extractNatValue (natLit 7) Primitives.ofAnonAddrs == some 7 &&
+      extractNatValue
+        (KExpr.mkApp (pAddr P.natSucc)
+          (KExpr.mkApp (pAddr P.natSucc) (natLit 3)))
+        Primitives.ofAnonAddrs == some 5)
+  ++ test "extractNatValue rejects an over-applied successor"
+    (extractNatValue
+      (appN (pAddr P.natSucc) [natLit 1, natLit 2])
+      Primitives.ofAnonAddrs == none)
+  ++ test "projectionDefinitionInfo counts lambdas and projected parameter"
+    ((let structId := aId "S"
+      let body := KExpr.mkPrj structId 3 (.mkVar 1 ())
+      let wrapper := KExpr.mkLam () () sort0
+        (KExpr.mkLam () () sort0 body)
+      projectionDefinitionInfo wrapper == some (2, structId, 3, 0)) : Bool)
+  ++ test "projectionDefinitionInfo rejects a variable outside the wrapper"
+    ((let structId := aId "S"
+      let wrapper := KExpr.mkLam () () sort0
+        (KExpr.mkPrj structId 0 (.mkVar 1 ()))
+      (projectionDefinitionInfo wrapper).isNone) : Bool)
+  ++ test "natOffset preserves symbolic base and counts the successor spine"
+    ((let x := pConst (aId "x")
+      let e := KExpr.mkApp (pAddr P.natSucc)
+        (KExpr.mkApp (pAddr P.natSucc) x)
+      match ((RecM.natOffset e 0).run default).run (.ofEnvAnon {}) with
+      | .ok (some (base, offset)) _ => base.addr == x.addr && offset == 2
+      | _ => false) : Bool)
+  ++ test "Nat-offset depth cutoff occurs before literal inspection"
+    ((let e := natLit 9
+      let state := TcState.ofEnvAnon {}
+      match ((RecM.evalNatOffsetLiteral e 255).run default).run state,
+          ((RecM.evalNatOffsetLiteral e 256).run default).run state with
+      | .ok (some 9) _, .ok none _ => true
+      | _, _ => false) : Bool)
+  ++ test "predicate Nat evaluator zero fuel returns none unchanged"
+    ((let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 7, fuelBudget := 11 }
+      match ((RecM.tryEvalNatValueForPredFuel 0 (natLit 9)).run default).run
+          initial with
+      | .ok none final =>
+        final.recFuel == initial.recFuel &&
+          final.fuelBudget == initial.fuelBudget &&
+          final.dispatchDepth == initial.dispatchDepth &&
+          final.env.consts.size == initial.env.consts.size
+      | _ => false) : Bool)
+  ++ test "bounded-loop exhaustion occurs before the next step"
+    ((let step (n : Nat) :
+          RecM .anon (RecM.BoundedStep Nat Nat) := do
+        modify fun s => { s with recFuel := s.recFuel - 1 }
+        return .next (n + 1)
+      let initial : TcState .anon :=
+        { TcState.ofEnvAnon {} with recFuel := 7 }
+      match (RecM.runBounded step 0 0).run default initial,
+          (RecM.runBounded step 1 0).run default initial with
+      | .error .maxRecDepth zeroState, .error .maxRecDepth oneState =>
+        zeroState.recFuel == 7 && oneState.recFuel == 6
+      | _, _ => false) : Bool)
+  ++ test "beta-lambda peeling is bounded by the application spine"
+    ((let x := pConst (aId "x")
+      let y := pConst (aId "y")
+      let z := pConst (aId "z")
+      let body := KExpr.mkVar 1 ()
+      let lam2 := KExpr.mkLam () () sort1
+        (KExpr.mkLam () () sort1 body)
+      match RecM.consumeBetaLams lam2 #[x, y, z] with
+      | (.var 1 _ _, consumed) =>
+        consumed.size == 2 && consumed[0]!.addr == x.addr &&
+          consumed[1]!.addr == y.addr
+      | _ => false) : Bool)
 
 /-! ### Structural reduction -/
 
@@ -231,7 +320,8 @@ def nativeTests : TestSeq :=
 def cacheTests : TestSeq :=
   test "whnf caches full results"
     ((let e := appN (pAddr P.natAdd) [natLit 2, natLit 3]
-     match ((RecM.whnf e).run default).run (.ofEnvAnon {}) with
+     match ((RecM.whnf e).run (whnfOnlyMethodsN maxWhnfFuel.toNat)).run
+         (.ofEnvAnon {}) with
      | .ok _ s => !s.env.whnfCache.isEmpty
      | .error _ _ => false : Bool))
   ++ test "iota results land in the whnf cache"
@@ -240,12 +330,14 @@ def cacheTests : TestSeq :=
      let recId := recrProjAddr blockAddr 1
      let e := appN (pAddr recId)
        [pConst (aId "m"), pConst (aId "n"), pAddr (ctorProjAddr blockAddr 0 0)]
-     match ((RecM.whnf e).run default).run (.ofEnvAnon env) with
+     match ((RecM.whnf e).run (whnfOnlyMethodsN maxWhnfFuel.toNat)).run
+         (.ofEnvAnon env) with
      | .ok _ s => !s.env.whnfCache.isEmpty
      | .error _ _ => false : Bool))
 
 public def suite : List TestSeq :=
-  [structuralTests, iotaTests, natTests, nativeTests, cacheTests]
+  [pureHelperTests, structuralTests, iotaTests, natTests, nativeTests,
+    cacheTests]
 
 end Tests.Tc.WhnfTests
 

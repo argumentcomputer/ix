@@ -132,31 +132,33 @@ theorem InstUnivScratchInv.insert {S : KExpr .anon → Prop}
   · exact hsc _ _ hv
 
 /-- Intern-side invariant plus the frame: the table is key-coherent with
-    support inside `S`, and the rest of the checker state is untouched
+    expression support inside `S`, its universe map is unchanged, and the
+    rest of the checker state is untouched
     relative to the entry state `s₀` — the walker writes exactly
     `env.intern` (and the `StateT` memo layer, which is not part of
     `TcState`). -/
 def InstUnivStateOK (S : KExpr .anon → Prop) (s₀ s : TcState .anon) :
     Prop :=
   s.env.intern.WF ∧ (∀ x, s.env.intern.ExprSupport x → S x) ∧
+    s.env.intern.univs = s₀.env.intern.univs ∧
     s = { s₀ with env := { s₀.env with intern := s.env.intern } }
 
 theorem InstUnivStateOK.refl {S : KExpr .anon → Prop} {s : TcState .anon}
     (hwf : s.env.intern.WF) (hsup : ∀ x, s.env.intern.ExprSupport x → S x) :
     InstUnivStateOK S s s :=
-  ⟨hwf, hsup, rfl⟩
+  ⟨hwf, hsup, rfl, rfl⟩
 
 theorem InstUnivStateOK.trans {S : KExpr .anon → Prop}
     {s₀ s₁ s₂ : TcState .anon} (h₁ : InstUnivStateOK S s₀ s₁)
     (h₂ : InstUnivStateOK S s₁ s₂) : InstUnivStateOK S s₀ s₂ := by
-  refine ⟨h₂.1, h₂.2.1, ?_⟩
-  rw [h₂.2.2, h₁.2.2]
+  refine ⟨h₂.1, h₂.2.1, h₂.2.2.1.trans h₁.2.2.1, ?_⟩
+  rw [h₂.2.2.2, h₁.2.2.2]
 
 /-! ### The post-relation -/
 
 /-- What a finished walker run means, on both outcomes: on success the
     result is the spec value and every threaded invariant survives; on
-    error the state invariants and the frame still hold (EStateM is
+    error the state invariants and both frames still hold (EStateM is
     non-backtracking — the partially extended intern table survives the
     throw, and it is still key-coherent inside `S`). -/
 def InstUnivPost (S : KExpr .anon → Prop) (us : Array (KUniv .anon))
@@ -351,7 +353,7 @@ private theorem instUnivPost_jp {S : KExpr .anon → Prop}
           sc₁.insert e.addr (s₁.env.intern.internExpr cand).1)
         { s₁ with env :=
           { s₁.env with intern := (s₁.env.intern.internExpr cand).2 } }) := by
-  obtain ⟨hwf, hsup, hframe⟩ := hok
+  obtain ⟨hwf, hsup, hunivs, hframe⟩ := hok
   have hkcf : KExpr.KeyCollisionFree
       (fun v => s₁.env.intern.ExprSupport v ∨ v = cand) :=
     KExpr.keyCollisionFree_anon.mpr
@@ -361,8 +363,8 @@ private theorem instUnivPost_jp {S : KExpr .anon → Prop}
     rwa [KExpr.eraseMeta_anon, KExpr.eraseMeta_anon] at h
   refine ⟨by rw [hcanon]; exact hcand, ?_,
     hsc.insert hSe (by rw [hcanon]; exact hcand)⟩
-  refine InstUnivStateOK.trans ⟨hwf, hsup, hframe⟩
-    ⟨hwf.internExpr cand, ?_, rfl⟩
+  refine InstUnivStateOK.trans ⟨hwf, hsup, hunivs, hframe⟩
+    ⟨hwf.internExpr cand, ?_, InternTable.internExpr_univs cand, rfl⟩
   intro x hx
   rcases InternTable.ExprSupport.of_internExpr hx with h | h
   · exact hsup x h
@@ -902,9 +904,11 @@ theorem TcM.instantiateUnivParams_wf {S : KExpr .anon → Prop}
         ∀ x, s.env.intern.ExprSupport x → S x) s
       (TcM.instantiateUnivParams e us)
       (fun r s' => KExpr.instantiateUnivParamsSpec e us = .ok r ∧
-        s' = { s with env := { s.env with intern := s'.env.intern } })
+        s' = { s with env := { s.env with intern := s'.env.intern } } ∧
+        s'.env.intern.univs = s.env.intern.univs)
       (fun _ s' =>
-        s' = { s with env := { s.env with intern := s'.env.intern } }) := by
+        s' = { s with env := { s.env with intern := s'.env.intern } } ∧
+        s'.env.intern.univs = s.env.intern.univs) := by
   intro hI
   obtain ⟨hwf, hsup⟩ := hI
   by_cases hemp : us.isEmpty
@@ -913,14 +917,14 @@ theorem TcM.instantiateUnivParams_wf {S : KExpr .anon → Prop}
       try rfl
     rw [hrun]
     exact ⟨⟨hwf, hsup⟩,
-      by rw [KExpr.instantiateUnivParamsSpec, if_pos hemp], rfl⟩
+      by rw [KExpr.instantiateUnivParamsSpec, if_pos hemp], rfl, rfl⟩
   · have post := TcM.instUnivInner_spec hcf (e := e) (sc := {}) (s := s)
       hreach hwf hsup (InstUnivScratchInv.empty S us)
     cases hrec : TcM.instUnivInner e us {} s with
     | ok v s' =>
       obtain ⟨r, sc'⟩ := v
       rw [hrec] at post
-      obtain ⟨hspec, ⟨hwf', hsup', hframe⟩, -⟩ := post
+      obtain ⟨hspec, ⟨hwf', hsup', hunivs, hframe⟩, -⟩ := post
       have hrun : TcM.instantiateUnivParams e us s = .ok r s' := by
         rw [TcM.instantiateUnivParams, if_neg hemp]
         show ((TcM.instUnivInner e us).run' {}) s = _
@@ -929,17 +933,17 @@ theorem TcM.instantiateUnivParams_wf {S : KExpr .anon → Prop}
       rw [hrun]
       exact ⟨⟨hwf', hsup'⟩,
         by rw [KExpr.instantiateUnivParamsSpec, if_neg hemp]; exact hspec,
-        hframe⟩
+        hframe, hunivs⟩
     | error err s' =>
       rw [hrec] at post
-      obtain ⟨hwf', hsup', hframe⟩ := post
+      obtain ⟨hwf', hsup', hunivs, hframe⟩ := post
       have hrun : TcM.instantiateUnivParams e us s = .error err s' := by
         rw [TcM.instantiateUnivParams, if_neg hemp]
         show ((TcM.instUnivInner e us).run' {}) s = _
         rw [run_run', hrec]
         try rfl
       rw [hrun]
-      exact ⟨⟨hwf', hsup'⟩, hframe⟩
+      exact ⟨⟨hwf', hsup'⟩, hframe, hunivs⟩
 
 /-! ### `substUniv` Theory correspondence (level side)
 

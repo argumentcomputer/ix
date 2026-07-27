@@ -149,7 +149,11 @@ section IxTcVerify
 Non-default: `lake build ix` never
 touches it, and `build-all` (the lint driver) skips it by name while it
 carries `sorry`s — `lake lint -- --wfail` would otherwise fail on the
-WIP proof frontier. Dev loop: `lake build IxTcVerify`. -/
+WIP proof frontier. Required CI builds it separately without `--wfail`,
+audits the exact local sorry frontier, and checks exact per-root transitive
+axiom plus direct-`sorryAx`-origin manifests. Dev loop:
+`lake build IxTcVerify`; focused trust audit:
+`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements`. -/
 lean_lib IxTcVerify where
   globs := #[.submodules `Ix.Tc.Verify]
 
@@ -214,6 +218,7 @@ script "build-all" (args) := do
   let exeNames := pkg.configTargets LeanExe.configKind |>.map (·.name.toString)
   -- IxTcVerify is the WIP proofs lib: sorry-bearing by design while the
   -- verification frontier is open, so it must not run under `--wfail`.
+  -- Required CI builds it separately and audits the exact frontier.
   let allNames := (libNames ++ exeNames |>.toList).filter (· != "IxTcVerify")
   for name in allNames do
     IO.println s!"Building: {name}"

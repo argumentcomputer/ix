@@ -39,9 +39,10 @@ equations) so they are robust to record-update spelling; the pop
 lemmas require the Δ-head to be the popped `(none, d)` entry — Δ is
 per-call ghost data, so the soundness layers always know the head form at a
 pop site (popping under live newer fvars would be a scoping bug and is
-deliberately unrepresentable). `truncate`/`restoreDepth` step lemmas
-are deferred with the Tier-B rewrites (both are `while`-loops —
-partial `Loop.forIn`, opaque to the logic).
+deliberately unrepresentable). K0 has replaced the `truncate` and
+`restoreDepth` `while` loops with explicit Nat recursion; their exact
+production equations live in `Verify/Totalization`. Preservation lemmas for
+`CtxRecon` over more than one pop remain part of the checker-soundness layer.
 -/
 
 namespace Ix.Tc
@@ -714,6 +715,40 @@ theorem lctxFind? {fv : FVarId} {d : LocalDecl .anon}
     rw [Array.length_toList, hidx, Array.getElem?_toList]
     exact hd
   exact h.recon.fvar_frame h.fvars_nodup hj
+
+/-- A let-valued fvar lookup yields a translation of the concrete stored
+    value at the current mixed context, provided that value is closed with
+    respect to the legacy de Bruijn stack.  This premise is operationally
+    significant: production fvar zeta returns `val` unchanged, while a
+    stale value with loose bvars would instead need the `dn` lift exposed by
+    `lctxFind?`. -/
+theorem lctxFindLetVal {fv : FVarId} {nm : Mode.anon.F Name}
+    {ty val : KExpr .anon}
+    (h : CtxRecon env uvars nameOf trProj s Δ)
+    (henv : env.Ordered) (htp : TrProjOK env uvars trProj)
+    (hf : s.lctx.find? fv = some (.ldecl nm ty val))
+    (hcon : KExpr.Constructed val) (hclosed : val.lbr = 0)
+    (hbig : Δ.bvars + val.size < UInt64.size) :
+    ∃ e A, KVLCtx.find? Δ (.inr fv) = some (e, A) ∧
+      TrKExprS env uvars nameOf trProj Δ val e := by
+  obtain ⟨Δ₀, vd, dn, m, W, hfind, hsub, htr⟩ := h.lctxFind? hf
+  cases htr with
+  | vlet hty hval hvalTy =>
+    refine ⟨_, _, hfind, ?_⟩
+    have hdn : dn < UInt64.size := by
+      have hb := W.bvars_eq
+      omega
+    have hshift : dn.toUInt64.toNat = dn := by
+      rw [Nat.toUInt64_eq]
+      exact UInt64.toNat_ofNat_of_lt' hdn
+    have hw := hval.weakBV henv htp.weakN
+      (shift := dn.toUInt64) (cutoff := 0) W hshift rfl hbig
+    have hid : KExpr.liftSpec val dn.toUInt64 0 = val := by
+      apply KExpr.liftSpec_id hcon
+        (by simpa using (show val.size < UInt64.size by omega))
+      simp [hclosed]
+    rw [hid] at hw
+    simpa [Lean4Lean.VLocalDecl.value, Lean4Lean.VLocalDecl.depth] using hw
 
 /-- Fvar leaves resolve — the bare `TrKExprS.fvar` premise. -/
 theorem fvar_resolves {fv : FVarId} {d : LocalDecl .anon}

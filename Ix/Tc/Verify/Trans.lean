@@ -16,7 +16,8 @@ source languages agree, with the divergences owned deliberately:
   lookup), our rules carry the explicit bound `(toVLevel u).WF uvars`.
 - **Constants resolve by address.** An anon `KId` is a bare content
   address; the `nameOf : Address → Option Lean.Name` parameter abstracts
-  the KEnv-side resolution that `TrKEnv` (Verify/Env.lean) provides. The rule
+  the trusted-world resolution that `TrustedConstRel` (Verify/Env.lean)
+  provides to consumers. The rule
   then mirrors upstream: the resolved name must be a declared `env`
   constant with matching universe arity.
 - **Literals are first-class.** `KExpr` has `.nat`/`.str` constructors,
