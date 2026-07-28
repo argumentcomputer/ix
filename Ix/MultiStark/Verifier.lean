@@ -540,30 +540,26 @@ def verifier := ⟦
   --
   -- The composition polynomial at ζ is `Σᵢ α^(k-1-i)·zeroᵢ`, where each `zeroᵢ`
   -- is the value of a constraint-root node. The nodes form a flat,
-  -- topologically ordered graph (children precede parents), so one forward
-  -- sweep computes an ExtVal per node (Rust: `multi_stark::eval`'s dense
-  -- sweep). The buffer is built in REVERSE (prepend; head = most recent):
-  -- when the k-th node (0-based) is processed the buffer holds k values
-  -- `[v_{k-1}, …, v_0]`, so child NodeId `c` sits at buffer index `k-1-c`. The
-  -- lookup-argument constraints are already compiled into `zeros`, so nothing
-  -- special is done for them (Rust `verifier.rs` evaluates one node graph and
-  -- Horner-folds the roots).
+  -- topologically ordered DAG (children by NodeId, children precede parents).
+  -- Instead of the Rust prover's dense forward sweep (which would build an
+  -- O(n²) temporary value-buffer list here), `eval_at` interprets the graph
+  -- directly by recursing into children. Aiur memoizes calls by argument
+  -- pointers, so each node is evaluated at most once per opening context and
+  -- every further reference — DAG sharing, later constraint roots — is a
+  -- cache hit; node fetches share `list_drop`'s cached drop-chain over the
+  -- one `nodes` list. The lookup-argument constraints are already compiled
+  -- into `zeros`, so nothing special is done for them (Rust `verifier.rs`
+  -- evaluates one node graph and Horner-folds the roots).
   -- ==========================================================================
 
-  -- A node child's value from the FORWARD buffer: node `c`'s value sits at
-  -- buffer index `c` (children always have smaller NodeIds than their parent,
-  -- so they are already present).
-  fn buf_child(buf: List‹Ext›, c: G) -> Ext {
-    list_lookup(buf, c)
-  }
-
-  -- Evaluate one node into an ExtVal, given the forward buffer and the leaf
-  -- context. Stage-2 columns are the OPENED BASE columns used directly (no
+  -- Evaluate node `i` of the graph into an ExtVal, given the leaf context.
+  -- Stage-2 columns are the OPENED BASE columns used directly (no
   -- `from_ext_basis` reassembly).
-  fn eval_node(nd: SysNode, buf: List‹Ext›,
+  fn eval_at(nodes: List‹SysNode›, i: G,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext) -> Ext {
+    let nd = list_lookup(nodes, i);
     match nd {
       SysNode.Const(c) => [c, 0],
       SysNode.Var(src, off, idx) =>
@@ -582,50 +578,46 @@ def verifier := ⟦
       SysNode.IsFirstRow => isf,
       SysNode.IsLastRow => isl,
       SysNode.IsTransition => ist,
-      SysNode.Add(a, b) => eg_add(buf_child(buf, a), buf_child(buf, b)),
-      SysNode.Sub(a, b) => eg_sub(buf_child(buf, a), buf_child(buf, b)),
-      SysNode.Mul(a, b) => eg_mul(buf_child(buf, a), buf_child(buf, b)),
-      SysNode.Neg(a) => eg_neg(buf_child(buf, a)),
+      SysNode.Add(a, b) =>
+        eg_add(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+               eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
+      SysNode.Sub(a, b) =>
+        eg_sub(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+               eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
+      SysNode.Mul(a, b) =>
+        eg_mul(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+               eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
+      SysNode.Neg(a) =>
+        eg_neg(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
     }
   }
 
-  -- Forward sweep: append each node's value so that `buf[i]` is node `i`'s
-  -- value. `buf` starts `Nil`.
-  fn sweep_nodes(nodes: List‹SysNode›, buf: List‹Ext›,
+  -- Horner-fold the constraint roots with α: `acc := acc·α + eval_at(z)` for
+  -- each root NodeId `z`, in `zeros` order (the canonical compiled order the
+  -- prover folded in). Roots share subgraphs, so their evaluations hit the
+  -- `eval_at` cache.
+  fn fold_roots(acc: Ext, alpha: Ext, zeros: List‹G›, nodes: List‹SysNode›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
-      isf: Ext, isl: Ext, ist: Ext) -> List‹Ext› {
-    match load(nodes) {
-      ListNode.Nil => buf,
-      ListNode.Cons(nd, rest) =>
-        let v = eval_node(nd, buf, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-        sweep_nodes(rest, list_concat(buf, store(ListNode.Cons(v, store(ListNode.Nil)))),
-                    main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
-    }
-  }
-
-  -- Horner-fold the constraint roots with α: `acc := acc·α + buf[z]` for each
-  -- root NodeId `z`, in `zeros` order (the canonical compiled order the prover
-  -- folded in).
-  fn fold_roots(acc: Ext, alpha: Ext, zeros: List‹G›, buf: List‹Ext›) -> Ext {
+      isf: Ext, isl: Ext, ist: Ext) -> Ext {
     match load(zeros) {
       ListNode.Nil => acc,
       ListNode.Cons(z, rest) =>
-        let v = list_lookup(buf, z);
-        fold_roots(ood_fold(acc, alpha, v), alpha, rest, buf),
+        let v = eval_at(nodes, z, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
+        fold_roots(ood_fold(acc, alpha, v), alpha, rest, nodes,
+                   main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
     }
   }
 
-  -- The composition polynomial `composition(ζ)` for one circuit: sweep the
-  -- compiled node graph over the opened rows / publics / selectors, then
-  -- Horner-fold the constraint roots with α.
+  -- The composition polynomial `composition(ζ)` for one circuit: interpret
+  -- the compiled node graph at each constraint root over the opened rows /
+  -- publics / selectors, Horner-folding with α.
   fn ood_composition(nodes: List‹SysNode›, zeros: List‹G›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext) -> Ext {
-    let buf = sweep_nodes(nodes, store(ListNode.Nil),
-                          main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-    fold_roots([0, 0], alpha, zeros, buf)
+    fold_roots([0, 0], alpha, zeros, nodes,
+               main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)
   }
 
   -- The public-input coordinates for one circuit's lookup argument: the base
