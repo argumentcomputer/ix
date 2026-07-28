@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use lean_ffi::include::lean_object;
 use lean_ffi::object::LeanNat;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use lean_ffi::object::{
   LeanArray, LeanBool, LeanBorrowed, LeanIOResult, LeanList, LeanOption,
@@ -73,11 +73,10 @@ use ix_kernel::profile::{
   BlockCounters, BlockEntry, BlockProfile, ProfileBuilder, ProfileSink,
 };
 use ix_kernel::tc::TypeChecker;
+use ixon::constant::Constant as IxonConstant;
 use ixon::constant::ConstantInfo as IxonCI;
-#[cfg(feature = "test-ffi")]
 use ixon::constant::MutConst as IxonMutConst;
 use ixon::env::Env as IxonEnv;
-#[cfg(feature = "test-ffi")]
 use ixon::expr::Expr as IxonExpr;
 use ixon::metadata::ConstantMetaInfo;
 
@@ -2249,14 +2248,209 @@ fn print_top_blocks(
 /// `Env::bfs_closure`. This is the graph persisted into the `.ixprof`
 /// (reachability over it = a block's full dependency closure — the Aiur
 /// shard ingress unit) and the sweep's walk graph.
+/// Collect the `Constant.refs` indices reachable from `e`. `Ref`/`Prj` carry a
+/// ref index directly; `Str`/`Nat` index the same table for their blob.
+///
+/// `Share(i)` resolves through the constant's `sharing` table, so a type built
+/// from shared subexpressions contributes their refs too — missing those would
+/// silently under-report the type closure. `seen` breaks sharing-table cycles
+/// and stops repeated expansion of a widely-shared node.
+fn collect_expr_ref_idxs(
+  e: &IxonExpr,
+  sharing: &[Arc<IxonExpr>],
+  seen: &mut FxHashSet<u64>,
+  out: &mut FxHashSet<u64>,
+) {
+  match e {
+    IxonExpr::Ref(i, _) | IxonExpr::Str(i) | IxonExpr::Nat(i) => {
+      out.insert(*i);
+    },
+    IxonExpr::Prj(i, _, inner) => {
+      out.insert(*i);
+      collect_expr_ref_idxs(inner, sharing, seen, out);
+    },
+    IxonExpr::App(a, b) | IxonExpr::Lam(a, b) | IxonExpr::All(a, b) => {
+      collect_expr_ref_idxs(a, sharing, seen, out);
+      collect_expr_ref_idxs(b, sharing, seen, out);
+    },
+    IxonExpr::Let(_, a, b, c) => {
+      collect_expr_ref_idxs(a, sharing, seen, out);
+      collect_expr_ref_idxs(b, sharing, seen, out);
+      collect_expr_ref_idxs(c, sharing, seen, out);
+    },
+    IxonExpr::Share(i) => {
+      if seen.insert(*i)
+        && let Some(shared) =
+          usize::try_from(*i).ok().and_then(|k| sharing.get(k))
+      {
+        collect_expr_ref_idxs(shared, sharing, seen, out);
+      }
+    },
+    _ => {},
+  }
+}
+
+/// The ref indices occurring in a constant's TYPE only — never its value, and
+/// never a recursor's rules. A frontier constant is ingressed as a type-only
+/// axiom, so this is what its ingress must be closed under.
+///
+/// Inductives contribute their constructors' types too: a shard that keeps an
+/// inductive as a frontier entry still sees its constructor signatures.
+fn collect_type_ref_idxs(c: &IxonConstant, out: &mut FxHashSet<u64>) {
+  let sh = &c.sharing;
+  let seen = &mut FxHashSet::default();
+  let mut ty = |e: &IxonExpr, out: &mut FxHashSet<u64>| {
+    collect_expr_ref_idxs(e, sh, seen, out)
+  };
+  match &c.info {
+    IxonCI::Defn(d) => ty(&d.typ, out),
+    IxonCI::Recr(r) => ty(&r.typ, out),
+    IxonCI::Axio(a) => ty(&a.typ, out),
+    IxonCI::Quot(q) => ty(&q.typ, out),
+    IxonCI::Muts(ms) => {
+      for m in ms {
+        match m {
+          IxonMutConst::Defn(d) => ty(&d.typ, out),
+          IxonMutConst::Recr(r) => ty(&r.typ, out),
+          IxonMutConst::Indc(i) => {
+            ty(&i.typ, out);
+            for ctor in &i.ctors {
+              ty(&ctor.typ, out);
+            }
+          },
+        }
+      }
+    },
+    // Projections carry no expression of their own; the parent block address
+    // is a structural dependency and is added by the caller.
+    IxonCI::IPrj(_) | IxonCI::CPrj(_) | IxonCI::RPrj(_) | IxonCI::DPrj(_) => {},
+  }
+}
+
+/// Whether a constant's body can be consumed by reduction (iota, quot, proj),
+/// which makes it unrepresentable as a type-only axiom on a frontier.
+fn is_not_axiomatizable(c: &IxonConstant) -> bool {
+  match &c.info {
+    IxonCI::Recr(_)
+    | IxonCI::Quot(_)
+    | IxonCI::IPrj(_)
+    | IxonCI::CPrj(_)
+    | IxonCI::RPrj(_) => true,
+    IxonCI::Muts(ms) => ms
+      .iter()
+      .any(|m| matches!(m, IxonMutConst::Indc(_) | IxonMutConst::Recr(_))),
+    IxonCI::Defn(_) | IxonCI::Axio(_) | IxonCI::DPrj(_) => false,
+  }
+}
+
+/// Per-block property bits, parallel to `profile.blocks()`.
+fn build_block_flags(env: &IxonEnv, profile: &BlockProfile) -> Vec<u32> {
+  let blocks = profile.blocks();
+  let id_of: FxHashMap<&Address, u32> = blocks
+    .iter()
+    .enumerate()
+    .filter_map(|(i, b)| u32::try_from(i).ok().map(|id| (&b.addr, id)))
+    .collect();
+  let mut flags = vec![0u32; blocks.len()];
+  for entry in env.consts.iter() {
+    let (addr, lazy) = (entry.key(), entry.value());
+    let Ok(c) = lazy.get() else { continue };
+    let home_addr = match &c.info {
+      IxonCI::IPrj(p) => &p.block,
+      IxonCI::CPrj(p) => &p.block,
+      IxonCI::RPrj(p) => &p.block,
+      IxonCI::DPrj(p) => &p.block,
+      _ => addr,
+    };
+    if let Some(&id) = id_of.get(home_addr)
+      && is_not_axiomatizable(&c)
+    {
+      flags[id as usize] |= BlockEntry::NOT_AXIOMATIZABLE;
+    }
+  }
+  flags
+}
+
+/// The type-reference sub-graph, same block-folding as
+/// [`build_block_ref_adjacency`] but restricted to type-occurring refs.
+fn build_block_type_ref_adjacency(
+  env: &IxonEnv,
+  profile: &BlockProfile,
+) -> Vec<Vec<u32>> {
+  let blocks = profile.blocks();
+  let n = blocks.len();
+  let id_of: FxHashMap<&Address, u32> = blocks
+    .iter()
+    .enumerate()
+    .filter_map(|(i, b)| u32::try_from(i).ok().map(|id| (&b.addr, id)))
+    .collect();
+  let mut home: FxHashMap<Address, u32> = FxHashMap::default();
+  for entry in env.consts.iter() {
+    let (addr, lazy) = (entry.key(), entry.value());
+    let Ok(c) = lazy.get() else { continue };
+    let home_addr = match &c.info {
+      IxonCI::IPrj(p) => &p.block,
+      IxonCI::CPrj(p) => &p.block,
+      IxonCI::RPrj(p) => &p.block,
+      IxonCI::DPrj(p) => &p.block,
+      _ => addr,
+    };
+    if let Some(&id) = id_of.get(home_addr) {
+      home.insert(addr.clone(), id);
+    }
+  }
+  let mut adj: Vec<Vec<u32>> = vec![Vec::new(); n];
+  let mut idxs: FxHashSet<u64> = FxHashSet::default();
+  for entry in env.consts.iter() {
+    let (addr, lazy) = (entry.key(), entry.value());
+    let Ok(c) = lazy.get() else { continue };
+    let Some(&hid) = home.get(addr) else { continue };
+    idxs.clear();
+    collect_type_ref_idxs(&c, &mut idxs);
+    // A projection's parent block is structural, not expression-borne.
+    let parent = match &c.info {
+      IxonCI::IPrj(p) => Some(&p.block),
+      IxonCI::CPrj(p) => Some(&p.block),
+      IxonCI::RPrj(p) => Some(&p.block),
+      IxonCI::DPrj(p) => Some(&p.block),
+      _ => None,
+    };
+    if let Some(pb) = parent
+      && let Some(&rid) = home.get(pb)
+      && rid != hid
+    {
+      adj[hid as usize].push(rid);
+    }
+    for i in &idxs {
+      let Some(r) = usize::try_from(*i).ok().and_then(|k| c.refs.get(k))
+      else {
+        continue;
+      };
+      if let Some(&rid) = home.get(r)
+        && rid != hid
+      {
+        adj[hid as usize].push(rid);
+      }
+    }
+  }
+  for row in &mut adj {
+    row.sort_unstable();
+    row.dedup();
+  }
+  adj
+}
+
 fn build_block_ref_adjacency(
   env: &IxonEnv,
   profile: &BlockProfile,
 ) -> Vec<Vec<u32>> {
   let blocks = profile.blocks();
   let n = blocks.len();
-  let id_of: FxHashMap<&Address, u32> =
-    blocks.iter().enumerate().map(|(i, b)| (&b.addr, i as u32)).collect();
+  let id_of: FxHashMap<&Address, u32> = blocks
+    .iter()
+    .enumerate()
+    .filter_map(|(i, b)| u32::try_from(i).ok().map(|id| (&b.addr, id)))
+    .collect();
   // Pass 1: every constant's home block id.
   let mut home: FxHashMap<Address, u32> = FxHashMap::default();
   for entry in env.consts.iter() {
@@ -2904,6 +3098,13 @@ pub fn profile_anon_ixe(
   // full reference closure, which only this graph can reproduce.
   let adj = build_block_ref_adjacency(&env_arc, &profile);
   profile.set_ref_graph(&adj);
+  // Frontier-aware planning needs two more facts the delta/ref graphs cannot
+  // supply: which references a constant's TYPE alone carries, and which blocks
+  // hold bodies that reduction consumes (so they cannot be axiomatized).
+  let type_adj = build_block_type_ref_adjacency(&env_arc, &profile);
+  profile.set_type_ref_graph(&type_adj);
+  let flags = build_block_flags(&env_arc, &profile);
+  profile.set_block_flags(&flags);
   print_profile_summary(
     path,
     &merged,

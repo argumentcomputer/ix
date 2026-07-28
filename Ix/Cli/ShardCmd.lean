@@ -106,8 +106,8 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   -- (budget) > default (size to detected system RAM).
   match shardsFlag with
   | some n =>
-    if backend == "aiur" then
-      p.printError "error: --backend aiur packs to a RAM budget; use --max-ram, not --shards"
+    if backend != "zisk" then
+      p.printError s!"error: --backend {backend} packs to a RAM budget; use --max-ram, not --shards"
       return 1
     IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
     rsShardEspFFI espPath (toString n) (toString balancePct) (toString parallelism)

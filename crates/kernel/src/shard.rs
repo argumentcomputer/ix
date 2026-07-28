@@ -1641,6 +1641,13 @@ pub fn shard_esp_aiur(
        accounting it drives; regenerate with the current `ix profile`"
     ));
   }
+  if !profile.has_type_ref_graph() {
+    return Err(format!(
+      "{esp_path} has no type-reference sub-graph — the ingress model needs \
+       it (and the block kind flags); regenerate with the current \
+       `ix profile`"
+    ));
+  }
   let plan = partition_for_aiur_ram(&profile, ram_budget_gib, balance);
   let mut manifest =
     ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
@@ -2180,18 +2187,29 @@ pub struct AiurBudgetPlan {
 
 /// Size a partition to a per-shard Aiur host-RAM budget by bin-packing to the
 /// cap — the Aiur counterpart of [`partition_for_cycle_cap`], with the same
-/// cut-coherent-order + greedy next-fit structure but **closure-union byte
-/// accounting**: an Aiur shard's CheckEnv claim ingresses and hashes the
-/// owned blocks' entire reference closure (frontier constants are assumptions
-/// — trusted, not re-checked), so a shard's ingress bytes are the serialized
-/// size of its closure UNION, walked over the profile's reference graph, not
-/// the delta-frontier. Checking counters (hb/subst) stay owned-blocks-only.
-/// Grouping blocks with overlapping closures is therefore the packing
-/// objective that matters: a shared dependency's bytes are paid once per
-/// shard that reaches it. Requires the profile's reference graph
-/// ([`BlockProfile::has_ref_graph`]); without it every closure looks empty
-/// and the caps would silently revert to the broken delta accounting — the
-/// caller must reject such profiles.
+/// cut-coherent-order + greedy next-fit structure but **ingress-union byte
+/// accounting**.
+///
+/// A shard's CheckEnv claim ingresses and hashes a union of blocks in one of
+/// two states, and pays each block's serialized bytes once either way — only
+/// the recursion differs:
+///
+/// - **full**: the block is ingressed whole, so every reference it carries
+///   must be present. Owned blocks are full, as is everything they
+///   delta-unfold (an unfolded body's references must resolve) and any block
+///   reduction can consume ([`BlockEntry::NOT_AXIOMATIZABLE`] — inductives,
+///   constructors, recursors, quotients, projections).
+/// - **axiom**: a frontier block, ingressed as a type-only stub. It is
+///   trusted rather than re-checked and never unfolded, so the walk continues
+///   through its TYPE references only.
+///
+/// Checking counters (hb/subst) stay owned-blocks-only. Grouping blocks with
+/// overlapping ingress is therefore the packing objective that matters: a
+/// shared dependency's bytes are paid once per shard that reaches it.
+///
+/// Requires the profile's reference graph, type-reference sub-graph and block
+/// flags; without them the walk would silently under-count, so the caller
+/// must reject such profiles.
 pub fn partition_for_aiur_ram(
   profile: &BlockProfile,
   ram_budget_gib: f64,
@@ -2215,26 +2233,78 @@ pub fn partition_for_aiur_ram(
   }
 
   // Per-block closure bytes (the block's lone-shard ingress) — the RAM floor
-  // per block and the infeasibility test. Parallel BFS over the reference
-  // graph with per-worker epoch-marked visited arrays.
+  // per block and the infeasibility test. Parallel walk with per-worker
+  // epoch-marked state arrays.
   let closure_bytes: Vec<u64> = {
     use rayon::prelude::*;
     (0..nblocks as u32)
       .into_par_iter()
       .map_init(
-        || (vec![0u32; nblocks], 0u32, Vec::<u32>::new()),
-        |(visited, epoch, stack), b| {
+        || {
+          (
+            vec![0u32; nblocks],
+            0u32,
+            Vec::<u32>::new(),
+            vec![0u32; nblocks],
+            vec![0u32; nblocks],
+          )
+        },
+        |(visited, epoch, stack, full_mark, axiom_mark), b| {
           *epoch += 1;
+          let mut bytes = 0u64;
+          // Two node states. FULL: ingressed whole, so every reference it
+          // carries must be present — owned blocks, everything they reduce
+          // through, and any block whose body reduction can consume.
+          // AXIOM: ingressed as a type-only stub, so only its TYPE
+          // references follow. Bytes are identical either way (the whole
+          // constant is hashed); only the recursion differs.
+          let mut work: Vec<(u32, bool)> = Vec::new();
+          // Seed: `b` plus everything it delta-unfolds, all FULL.
           stack.clear();
           stack.push(b);
           visited[b as usize] = *epoch;
-          let mut bytes = 0u64;
+          work.push((b, true));
           while let Some(x) = stack.pop() {
+            for &p in profile.producers(x) {
+              if visited[p as usize] != *epoch {
+                visited[p as usize] = *epoch;
+                stack.push(p);
+                work.push((p, true));
+              }
+            }
+          }
+          // `visited` doubles as the byte-charged set and the delta seed
+          // already claimed its members, so charge them up front; the main
+          // loop's `visited` test then skips them.
+          for &(x, _) in &work {
             bytes = bytes.saturating_add(size(x));
-            for &r in profile.refs(x) {
-              if visited[r as usize] != *epoch {
-                visited[r as usize] = *epoch;
-                stack.push(r);
+          }
+          while let Some((x, is_full)) = work.pop() {
+            if is_full {
+              if full_mark[x as usize] == *epoch {
+                continue;
+              }
+              full_mark[x as usize] = *epoch;
+              if visited[x as usize] != *epoch {
+                visited[x as usize] = *epoch;
+                bytes = bytes.saturating_add(size(x));
+              }
+              for &r in profile.refs(x) {
+                work.push((r, !profile.block(r).axiomatizable()));
+              }
+            } else {
+              if full_mark[x as usize] == *epoch
+                || axiom_mark[x as usize] == *epoch
+              {
+                continue;
+              }
+              axiom_mark[x as usize] = *epoch;
+              if visited[x as usize] != *epoch {
+                visited[x as usize] = *epoch;
+                bytes = bytes.saturating_add(size(x));
+              }
+              for &r in profile.type_refs(x) {
+                work.push((r, !profile.block(r).axiomatizable()));
               }
             }
           }
@@ -2272,6 +2342,12 @@ pub fn partition_for_aiur_ram(
   let mut shard_of = vec![0u32; nblocks];
   let mut member_mark = vec![0u32; nblocks];
   let mut walk_mark = vec![0u32; nblocks];
+  // FrontierAxiom state, per shard epoch: which blocks are in the union as
+  // full ingests, which as type-only axioms, and which have had their bytes
+  // charged (a block can be charged once but upgraded axiom -> full later).
+  let mut full_mark = vec![0u32; nblocks];
+  let mut axiom_mark = vec![0u32; nblocks];
+  let mut charged_mark = vec![0u32; nblocks];
   let mut shard_epoch = 1u32;
   let mut walk_epoch = 0u32;
   let mut stack: Vec<u32> = Vec::new();
@@ -2283,8 +2359,11 @@ pub fn partition_for_aiur_ram(
   let mut infeasible = false;
   let predicted = |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.hb);
 
-  // Closure-delta walk vs the current shard union: fills `collected` with the
-  // not-yet-union blocks reachable from `b` and returns their byte sum.
+  // Incremental ingress walk against the shard's live union: fills
+  // `collected` with the blocks `b` newly drags in and returns their byte
+  // sum. `full_mark`/`axiom_mark` persist across calls within a shard, so a
+  // block already present as a type-only axiom is re-expanded when a later
+  // owned block needs it in full.
   let mut union_delta = |b: u32,
                          member_mark: &[u32],
                          shard_epoch: u32,
@@ -2296,20 +2375,45 @@ pub fn partition_for_aiur_ram(
     stack.clear();
     collected.clear();
     let mut bytes = 0u64;
-    if member_mark[b as usize] != shard_epoch {
-      walk_mark[b as usize] = *walk_epoch;
-      stack.push(b);
-    }
+    let mut work: Vec<(u32, bool)> = Vec::new();
+    walk_mark[b as usize] = *walk_epoch;
+    stack.push(b);
+    work.push((b, true));
     while let Some(x) = stack.pop() {
-      collected.push(x);
-      bytes = bytes.saturating_add(size(x));
-      for &r in profile.refs(x) {
-        if member_mark[r as usize] != shard_epoch
-          && walk_mark[r as usize] != *walk_epoch
-        {
-          walk_mark[r as usize] = *walk_epoch;
-          stack.push(r);
+      for &p in profile.producers(x) {
+        if walk_mark[p as usize] != *walk_epoch {
+          walk_mark[p as usize] = *walk_epoch;
+          stack.push(p);
+          work.push((p, true));
         }
+      }
+    }
+    while let Some((x, is_full)) = work.pop() {
+      let seen = if is_full {
+        full_mark[x as usize] == shard_epoch
+      } else {
+        full_mark[x as usize] == shard_epoch
+          || axiom_mark[x as usize] == shard_epoch
+      };
+      if seen {
+        continue;
+      }
+      if is_full {
+        full_mark[x as usize] = shard_epoch;
+      } else {
+        axiom_mark[x as usize] = shard_epoch;
+      }
+      if member_mark[x as usize] != shard_epoch
+        && charged_mark[x as usize] != shard_epoch
+      {
+        charged_mark[x as usize] = shard_epoch;
+        collected.push(x);
+        bytes = bytes.saturating_add(size(x));
+      }
+      let next: &[u32] =
+        if is_full { profile.refs(x) } else { profile.type_refs(x) };
+      for &r in next {
+        work.push((r, !profile.block(r).axiomatizable()));
       }
     }
     bytes
@@ -2724,11 +2828,92 @@ mod tests {
     for i in 1..=4u8 {
       b.block(addr(i), bc(10, 0, 0), 1000, 1);
     }
-    let p = with_refs(b.finish(), &vec![vec![2], vec![2], vec![3], vec![]]);
+    let p = with_refs(b.finish(), &[vec![2], vec![2], vec![3], vec![]]);
     let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
     assert_eq!(plan.num_shards, 1);
     assert_eq!(plan.shard_costs[0].union_bytes, 4000);
     assert_eq!(plan.shard_costs[0].hb, 40);
+  }
+
+  
+  #[test]
+  fn aiur_ingress_follows_type_refs_not_value_refs() {
+    // refs:      0→1→2→{3,4}
+    // type-refs: 0→1→2→{3}      (4 is reachable only through 2's VALUE)
+    //
+    // Floors are the max over every block, so pick a shape where block 0's
+    // reach is the discriminator. Frontier-stop halts one hop out, and its
+    // heaviest block is 2 ({2,3,4} = 3000). FrontierAxiom keeps 1 and 2 as
+    // axioms and follows their TYPE refs, so block 0 reaches {0,1,2,3} =
+    // 4000 — and must NOT reach 4, which would make it 5000.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=5u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    let mut p = with_refs(
+      b.finish(),
+      &[vec![1], vec![2], vec![3, 4], vec![], vec![]],
+    );
+    p.set_type_ref_graph(&[vec![1], vec![2], vec![3], vec![], vec![]]);
+    let ax = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    assert!((ax.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9);
+  }
+
+  #[test]
+  fn aiur_ingress_expands_non_axiomatizable_in_full() {
+    // Same shape as above, but block 2 holds a recursor: it cannot stand in
+    // as a type-only axiom, so its FULL refs are followed and block 0 now
+    // reaches 4 as well — {0,1,2,3,4} = 5000 instead of 4000.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=5u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    let mut p = with_refs(
+      b.finish(),
+      &[vec![1], vec![2], vec![3, 4], vec![], vec![]],
+    );
+    p.set_type_ref_graph(&[vec![1], vec![2], vec![3], vec![], vec![]]);
+    let mut flags = vec![0u32; 5];
+    flags[2] = BlockEntry::NOT_AXIOMATIZABLE;
+    p.set_block_flags(&flags);
+    let ax = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    assert!((ax.largest_block_ram_gib - aiur_ram_gib(5000, 10)).abs() < 1e-9);
+  }
+
+  #[test]
+  fn aiur_ingress_charges_the_reduction_closure() {
+    // refs chain 0→1→2→3; block 0 additionally UNFOLDS 1, and 1 unfolds 2.
+    // Everything a block reduces through is ingressed FULL, so block 0 pays
+    // for {0,1,2} plus one hop off each of them, which drags in 3.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    b.delta_edge(addr(1), addr(2));
+    b.delta_edge(addr(2), addr(3));
+    let mut p = with_refs(b.finish(), &[vec![1], vec![2], vec![3], vec![]]);
+    p.set_type_ref_graph(&[vec![1], vec![2], vec![3], vec![]]);
+    let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    assert!(
+      (plan.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9
+    );
+  }
+
+  #[test]
+  fn aiur_ingress_expands_refs_when_member_becomes_owned() {
+    // Block 0 refs 1; block 1 refs 2. Packing 0 first pulls 1 in as a
+    // frontier member; when 1 is then packed as OWNED, its ref 2 must join
+    // the union. A membership test on 1 alone would price that at zero and
+    // silently under-charge the shard.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=3u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    let p = with_refs(b.finish(), &[vec![1], vec![2], vec![]]);
+    let plan =
+      partition_for_aiur_ram(&p, 1000.0, 0.05);
+    assert_eq!(plan.num_shards, 1);
+    assert_eq!(plan.shard_costs[0].union_bytes, 3000);
   }
 
   #[test]
@@ -2738,7 +2923,7 @@ mod tests {
     let mut b = ProfileBuilder::new();
     b.block(addr(1), bc(10, 0, 0), 100, 1);
     b.block(addr(2), bc(10, 0, 0), 3_000_000, 1);
-    let p = with_refs(b.finish(), &vec![vec![1], vec![]]);
+    let p = with_refs(b.finish(), &[vec![1], vec![]]);
     let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
     let floor = aiur_ram_gib(3_000_100, 10);
     assert!(
@@ -2756,7 +2941,7 @@ mod tests {
     let mut b = ProfileBuilder::new();
     b.block(addr(1), bc(u64::MAX / 2, 1000, 0), 1000, 1);
     b.block(addr(2), bc(10, 0, 0), 1000, 1);
-    let p = with_refs(b.finish(), &vec![vec![], vec![]]);
+    let p = with_refs(b.finish(), &[vec![], vec![]]);
     let plan = partition_for_aiur_ram(&p, 8.0, 0.05);
     assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
   }
@@ -2767,7 +2952,7 @@ mod tests {
     for i in 1..=3u8 {
       b.block(addr(i), bc(1, 2, 3), 10, 1);
     }
-    let p = with_refs(b.finish(), &vec![vec![1, 2], vec![2], vec![]]);
+    let p = with_refs(b.finish(), &[vec![1, 2], vec![2], vec![]]);
     let q = BlockProfile::from_bytes(&p.to_bytes()).unwrap();
     assert!(q.has_ref_graph());
     assert_eq!(q.refs(0), &[1, 2]);

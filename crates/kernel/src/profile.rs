@@ -169,7 +169,7 @@ pub fn take_op_counts() -> OpCounts {
 /// Magic bytes at the head of every `.ixprof` file.
 const MAGIC: &[u8; 8] = b"IXPROF\0\0";
 /// On-disk format version. Bump on any incompatible layout change.
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 
 /// Per-block operation counters recorded while checking the block's members —
 /// the profiler's persisted feature vector, grouped so builder signatures stay
@@ -220,6 +220,23 @@ pub struct BlockEntry {
   pub def_eq: u64,
   /// Big-Nat limb-work units checking this block.
   pub nat_arith: u64,
+  /// Block property bits; see [`BlockEntry::NOT_AXIOMATIZABLE`].
+  pub flags: u32,
+}
+
+impl BlockEntry {
+  /// The block holds a constant whose BODY a checker can consume —
+  /// inductives, constructors, recursors, quotients, and the projections
+  /// into them. Reduction (iota, quot, proj) reads that body, so such a
+  /// block cannot stand in as a type-only axiom on a shard's frontier: it
+  /// must be ingressed whole or the reductions that need it fail.
+  pub const NOT_AXIOMATIZABLE: u32 = 1;
+
+  /// Whether this block may be represented as a type-only axiom when it
+  /// lands on a shard's frontier.
+  pub fn axiomatizable(&self) -> bool {
+    self.flags & Self::NOT_AXIOMATIZABLE == 0
+  }
 }
 
 /// A recorded kernel profile over an environment.
@@ -245,6 +262,15 @@ pub struct BlockProfile {
   ref_row: Vec<usize>,
   /// CSR column indices: referenced block ids, grouped by referrer.
   ref_col: Vec<u32>,
+  /// CSR row offsets into `type_ref_col`, length `blocks.len() + 1`.
+  ///
+  /// The sub-graph of `ref_row`/`ref_col` restricted to references occurring
+  /// in a constant's TYPE, excluding those reachable only through its value
+  /// or a recursor's rules. A frontier constant contributes only its type,
+  /// so this is the graph its ingress must be closed under.
+  type_ref_row: Vec<usize>,
+  /// CSR column indices: type-referenced block ids, grouped by referrer.
+  type_ref_col: Vec<u32>,
 }
 
 impl BlockProfile {
@@ -322,6 +348,44 @@ impl BlockProfile {
     &self.ref_col[lo..hi]
   }
 
+  /// Whether the type-reference sub-graph is present.
+  pub fn has_type_ref_graph(&self) -> bool {
+    !self.type_ref_row.is_empty()
+  }
+
+  /// Type-referenced block ids of block `b` — the references occurring in
+  /// its constants' types. Empty when no type-reference graph was recorded.
+  pub fn type_refs(&self, b: u32) -> &[u32] {
+    if self.type_ref_row.is_empty() {
+      return &[];
+    }
+    let lo = self.type_ref_row[b as usize];
+    let hi = self.type_ref_row[b as usize + 1];
+    &self.type_ref_col[lo..hi]
+  }
+
+  /// Set per-block property bits (see [`BlockEntry::NOT_AXIOMATIZABLE`]),
+  /// one entry per block id.
+  pub fn set_block_flags(&mut self, flags: &[u32]) {
+    assert_eq!(flags.len(), self.blocks.len());
+    for (b, &f) in self.blocks.iter_mut().zip(flags) {
+      b.flags = f;
+    }
+  }
+
+  /// Attach the block-level type-reference sub-graph. Same shape as
+  /// [`BlockProfile::set_ref_graph`].
+  pub fn set_type_ref_graph(&mut self, adj: &[Vec<u32>]) {
+    assert_eq!(adj.len(), self.blocks.len());
+    self.type_ref_row = Vec::with_capacity(adj.len() + 1);
+    self.type_ref_row.push(0);
+    self.type_ref_col.clear();
+    for row in adj {
+      self.type_ref_col.extend_from_slice(row);
+      self.type_ref_row.push(self.type_ref_col.len());
+    }
+  }
+
   /// Attach the block-level reference graph (per-block sorted, deduped,
   /// self-edge-free referenced ids; one row per block).
   pub fn set_ref_graph(&mut self, adj: &[Vec<u32>]) {
@@ -354,6 +418,7 @@ impl BlockProfile {
       out.extend_from_slice(&b.whnf.to_le_bytes());
       out.extend_from_slice(&b.def_eq.to_le_bytes());
       out.extend_from_slice(&b.nat_arith.to_le_bytes());
+      out.extend_from_slice(&b.flags.to_le_bytes());
     }
     out.extend_from_slice(&(self.delta_col.len() as u64).to_le_bytes());
     // CSR row offsets (n+1 entries) as u64.
@@ -372,6 +437,17 @@ impl BlockProfile {
       }
       for &r in &self.ref_col {
         out.extend_from_slice(&r.to_le_bytes());
+      }
+      // Type-reference sub-graph, same layout again. Only meaningful with
+      // the reference graph present, so it is nested inside it.
+      if !self.type_ref_row.is_empty() {
+        out.extend_from_slice(&(self.type_ref_col.len() as u64).to_le_bytes());
+        for &off in &self.type_ref_row {
+          out.extend_from_slice(&(off as u64).to_le_bytes());
+        }
+        for &r in &self.type_ref_col {
+          out.extend_from_slice(&r.to_le_bytes());
+        }
       }
     }
     out
@@ -401,6 +477,7 @@ impl BlockProfile {
       let whnf = r.u64()?;
       let def_eq = r.u64()?;
       let nat_arith = r.u64()?;
+      let flags = r.u32()?;
       blocks.push(BlockEntry {
         addr,
         heartbeats,
@@ -411,6 +488,7 @@ impl BlockProfile {
         whnf,
         def_eq,
         nat_arith,
+        flags,
       });
     }
     let num_edges = r.u64()? as usize;
@@ -442,6 +520,7 @@ impl BlockProfile {
     // Optional trailing reference-graph section (same layout). End-of-input
     // here means the profile predates reference recording.
     let (mut ref_row, mut ref_col) = (Vec::new(), Vec::new());
+    let (mut type_ref_row, mut type_ref_col) = (Vec::new(), Vec::new());
     if r.remaining() > 0 {
       let num_refs = r.u64()? as usize;
       ref_row = Vec::with_capacity(n + 1);
@@ -459,8 +538,36 @@ impl BlockProfile {
       {
         return Err(ProfileError::Corrupt);
       }
+      // Optional type-reference sub-graph, nested inside the reference
+      // section because it is only meaningful alongside it.
+      if r.remaining() > 0 {
+        let num_type_refs = r.u64()? as usize;
+        type_ref_row = Vec::with_capacity(n + 1);
+        for _ in 0..n + 1 {
+          type_ref_row.push(r.u64()? as usize);
+        }
+        type_ref_col = Vec::with_capacity(num_type_refs);
+        for _ in 0..num_type_refs {
+          type_ref_col.push(r.u32()?);
+        }
+        if type_ref_row.first() != Some(&0)
+          || type_ref_row.last() != Some(&num_type_refs)
+          || type_ref_row.windows(2).any(|w| w[0] > w[1])
+          || type_ref_col.iter().any(|&x| x as usize >= n)
+        {
+          return Err(ProfileError::Corrupt);
+        }
+      }
     }
-    Ok(BlockProfile { blocks, delta_row, delta_col, ref_row, ref_col })
+    Ok(BlockProfile {
+      blocks,
+      delta_row,
+      delta_col,
+      ref_row,
+      ref_col,
+      type_ref_row,
+      type_ref_col,
+    })
   }
 }
 
@@ -604,6 +711,9 @@ impl ProfileBuilder {
         whnf: a.counters.whnf,
         def_eq: a.counters.def_eq,
         nat_arith: a.counters.nat_arith,
+        // Kind bits come from the environment, not the profiling run;
+        // `set_block_flags` fills them in.
+        flags: 0,
       });
       let mut prods: Vec<u32> = a.producers.iter().map(|p| id_of[p]).collect();
       prods.sort_unstable();
@@ -618,6 +728,8 @@ impl ProfileBuilder {
       delta_col,
       ref_row: Vec::new(),
       ref_col: Vec::new(),
+      type_ref_row: Vec::new(),
+      type_ref_col: Vec::new(),
     }
   }
 }
