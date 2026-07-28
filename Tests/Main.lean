@@ -34,7 +34,6 @@ import Tests.Ix.Tc.IxonFixtures
 import Tests.Ix.Tc.WhnfTests
 import Tests.Ix.Tc.InferDefEq
 import Tests.Ix.Tc.CheckTests
-import Tests.Ix.Tc.NodeAddr
 import Tests.Ix.Tc.AnonDiff
 import Tests.Ix.Tc.InitScale
 import Tests.Ix.Tc.TutorialTc
@@ -108,7 +107,6 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-check-const", Tests.Ix.Kernel.CheckEnv.constSuite),
   ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
   ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
-  ("tc-node-addr", Tests.Tc.NodeAddr.suite),
   ("tc-anon-diff", Tests.Tc.AnonDiff.suite),
   ("tc-init", Tests.Tc.InitScale.suite),
   ("tc-tutorial", Tests.Tc.TutorialTc.suite),
