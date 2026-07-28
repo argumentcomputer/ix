@@ -174,92 +174,92 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
     observed cost in the message so it can be pasted back. -/
 private def kernelCheckEntries : List (String × Nat) := [
   -- Stdlib
-  ("HEq",                                                                1_559_582),
-  ("HEq.rec",                                                            2_423_818),
-  ("Eq.rec",                                                             2_335_613),
-  ("Nat",                                                                1_698_382),
-  ("Nat.add",                                                            11_831_354),
-  ("Nat.add_comm",                                                       48_934_934),
-  ("Nat.decEq",                                                          60_799_673),
-  ("Nat.decLe",                                                          169_490_147),
-  ("Nat.sub_le_of_le_add",                                               451_886_206),
+  ("HEq",                                                                1_559_817),
+  ("HEq.rec",                                                            2_425_168),
+  ("Eq.rec",                                                             2_336_963),
+  ("Nat",                                                                1_698_617),
+  ("Nat.add",                                                            11_858_423),
+  ("Nat.add_comm",                                                       49_063_742),
+  ("Nat.decEq",                                                          60_935_571),
+  ("Nat.decLe",                                                          169_943_097),
+  ("Nat.sub_le_of_le_add",                                               453_123_271),
   -- Offset-stuck regression driver: the succ-step unfold of `x >>> n`
   -- into a symbolic-base `Nat.div` chain. Exercises the div/mod
   -- offset-stuck path where rebuilding the stuck form with the wrong
   -- (add) head corrupted offset-aware def-eq and sent `x >>> k`
   -- comparisons into full delta-unfolds of the division algorithm.
-  ("Nat.shiftRight_succ",                                                330_140_499),
+  ("Nat.shiftRight_succ",                                                331_106_493),
   -- Newly-unlocked targets (level_leq Géran normalize).
-  ("Trans.mk",                                                           2_545_672),
-  ("Array.append_assoc",                                                 2_147_029_174),
-  ("Vector.append",                                                      2_210_559_715),
+  ("Trans.mk",                                                           2_546_227),
+  ("Array.append_assoc",                                                 2_151_611_712),
+  ("Vector.append",                                                      2_215_356_478),
   -- Primitive reduction theorems (`IxVMPrim`)
-  ("IxVMPrim.nat_add_lit",                                               25_504_612),
-  ("IxVMPrim.nat_sub_lit",                                               30_824_798),
-  ("IxVMPrim.nat_mul_lit",                                               22_487_223),
-  ("IxVMPrim.nat_mul_big",                                               21_958_639),
-  ("IxVMPrim.nat_div_lit",                                               321_912_294),
-  ("IxVMPrim.nat_mod_lit",                                               329_375_998),
-  ("IxVMPrim.nat_succ_lit",                                              6_683_502),
-  ("IxVMPrim.nat_pred_lit",                                              13_449_973),
-  ("IxVMPrim.nat_gcd_lit",                                               532_601_617),
-  ("IxVMPrim.nat_land_lit",                                              898_286_649),
-  ("IxVMPrim.nat_lor_lit",                                               898_967_022),
-  ("IxVMPrim.nat_xor_lit",                                               906_466_938),
-  ("IxVMPrim.nat_shl_lit",                                               31_767_303),
-  ("IxVMPrim.nat_shr_lit",                                               326_487_155),
-  ("IxVMPrim.nat_pow_big",                                                67_263_776),
-  ("IxVMPrim.nat_beq_lit",                                               22_047_698),
-  ("IxVMPrim.nat_ble_lit",                                               20_463_904),
-  ("IxVMPrim.nat_cases_big",                                             13_075_553),
-  ("IxVMPrim.nat_dec_le",                                                175_380_162),
-  ("IxVMPrim.nat_dec_lt",                                                179_038_344),
-  ("IxVMPrim.nat_dec_eq",                                                73_170_774),
-  ("IxVMPrim.str_size_lit",                                              639_591_657),
-  ("IxVMPrim.bv_to_nat_lit",                                             508_773_830),
+  ("IxVMPrim.nat_add_lit",                                               25_565_088),
+  ("IxVMPrim.nat_sub_lit",                                               30_905_635),
+  ("IxVMPrim.nat_mul_lit",                                               22_545_894),
+  ("IxVMPrim.nat_mul_big",                                               22_016_410),
+  ("IxVMPrim.nat_div_lit",                                               322_847_213),
+  ("IxVMPrim.nat_mod_lit",                                               330_340_695),
+  ("IxVMPrim.nat_succ_lit",                                              6_695_573),
+  ("IxVMPrim.nat_pred_lit",                                              13_482_711),
+  ("IxVMPrim.nat_gcd_lit",                                               534_212_217),
+  ("IxVMPrim.nat_land_lit",                                              901_085_305),
+  ("IxVMPrim.nat_lor_lit",                                               901_767_132),
+  ("IxVMPrim.nat_xor_lit",                                               909_293_224),
+  ("IxVMPrim.nat_shl_lit",                                               31_852_883),
+  ("IxVMPrim.nat_shr_lit",                                               327_444_074),
+  ("IxVMPrim.nat_pow_big",                                                67_400_691),
+  ("IxVMPrim.nat_beq_lit",                                               22_102_783),
+  ("IxVMPrim.nat_ble_lit",                                               20_514_556),
+  ("IxVMPrim.nat_cases_big",                                             13_105_030),
+  ("IxVMPrim.nat_dec_le",                                                175_855_742),
+  ("IxVMPrim.nat_dec_lt",                                                179_529_483),
+  ("IxVMPrim.nat_dec_eq",                                                73_346_008),
+  ("IxVMPrim.str_size_lit",                                              641_619_107),
+  ("IxVMPrim.bv_to_nat_lit",                                             510_344_695),
   -- Mutual block + multi-member recursors
-  ("IxVMInd.Even",                                                       23_687_872),
-  ("IxVMInd.Odd",                                                        23_444_741),
-  ("IxVMInd.Even.rec",                                                   28_812_304),
-  ("IxVMInd.Odd.rec",                                                    28_809_529),
+  ("IxVMInd.Even",                                                       23_742_957),
+  ("IxVMInd.Odd",                                                        23_499_825),
+  ("IxVMInd.Even.rec",                                                   28_883_779),
+  ("IxVMInd.Odd.rec",                                                    28_881_003),
   -- Nested inductive + aux recursor (Tree.mk : List Tree → Tree)
-  ("IxVMInd.Tree",                                                       2_415_396),
-  ("IxVMInd.Tree.rec",                                                   4_422_915),
+  ("IxVMInd.Tree",                                                       2_416_327),
+  ("IxVMInd.Tree.rec",                                                   4_428_499),
   -- Aux dedup: distinct spec_params on one external inductive (3 motives).
-  ("IxVMInd.DedupM",                                                     4_450_103),
-  ("IxVMInd.DedupM.rec",                                                 7_293_331),
+  ("IxVMInd.DedupM",                                                     4_452_890),
+  ("IxVMInd.DedupM.rec",                                                 7_301_394),
   -- Aux dedup de-lift guard: equal spec_params at field depths 0 and 2.
-  ("IxVMInd.DepthM",                                                     3_321_167),
-  ("IxVMInd.DepthM.rec",                                                 5_739_427),
+  ("IxVMInd.DepthM",                                                     3_322_969),
+  ("IxVMInd.DepthM.rec",                                                 5_745_613),
   -- Edge cases from prelude
-  ("String.Internal.append",                                             632_360_858),
-  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         950_282_181),
+  ("String.Internal.append",                                             634_344_775),
+  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         953_345_146),
   -- Aux recursor with transitively-nested inductives (Syntax → Array Syntax
   -- → List Syntax); shard 53 regression driver.
-  ("Lean.Syntax.rec",                                                    656_174_378),
+  ("Lean.Syntax.rec",                                                    658_207_452),
   -- Canonical aux order with structurally-distinct exts that tie weak
   -- through sentinels: the trailing identity marker must decide by
   -- external address, matching compile order (the Lean.Json.rec bug;
   -- Json itself is ~68G FFT, far too heavy to pin here). AuxTie is
   -- verified to fail on the pre-marker kernel.
-  ("IxVMInd.AuxTie",                                                     70_849_972),
-  ("IxVMInd.AuxTie.rec",                                                 79_718_798),
+  ("IxVMInd.AuxTie",                                                     71_044_281),
+  ("IxVMInd.AuxTie.rec",                                                 79_934_596),
   -- Parameterized Prop class whose ctor field references the params
   -- under local ∀-binders: is_rec_field's classification whnf must not
   -- build a context from the peeled binder doms (frame-level param refs
   -- give those doms loose ranges exceeding the local depth, running the
   -- ctx-trim cut walk off the end of the list).
-  ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec",         884_290_034),
+  ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec",         886_977_001),
   -- Universe-polymorphic nested inductive: aux occurrence universes must
   -- carry the univ_offset-shifted frame into minor construction.
-  ("Lean.Widget.TaggedText.rec",                                         637_611_176),
+  ("Lean.Widget.TaggedText.rec",                                         639_599_302),
   -- Aux-member recursors: the canonical param walk peels the PRIMARY
   -- inductive's type, not self's.
-  ("Lean.Doc.Part.rec",                                                  664_076_427),
+  ("Lean.Doc.Part.rec",                                                  666_092_633),
   -- Multi-aux mutual block whose canonical aux order hinges on comparing
   -- stored (Succ-distributed-into-Max) levels structurally: level_max
   -- must not factor Succ back out of Max.
-  ("Lean.Doc.Block.rec",                                                 696_914_645),
+  ("Lean.Doc.Block.rec",                                                 698_947_718),
   -- Evaporated-aux canonicalization (Tests/Ix/Compile/Mutual.lean AuxDedup*):
   -- SCC splitting strands `rec_N` auxes whose spec-param inductives moved to
   -- other SCCs; their claims alias the external inductive's recursor
@@ -267,15 +267,15 @@ private def kernelCheckEntries : List (String × Nat) := [
   -- whose claims are literally the same `List.rec` closure. AuxDedupMixed
   -- mixes one genuine canonical aux (`M.rec_1`, over `List M`) with one
   -- evaporated alias (`M.rec_2`, over `List B`).
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A",             3_271_120),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec",         4_090_919),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1",       2_810_993),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2",       2_810_993),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1",       2_810_993),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M",         3_303_921),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec",     5_656_580),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1",   5_658_580),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",   2_810_993),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A",             3_272_922),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec",         4_095_336),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1",       2_813_276),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2",       2_813_276),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1",       2_813_276),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M",         3_305_723),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec",     5_664_007),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1",   5_666_007),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",   2_813_276),
 ]
 
 private def nameOfString (str : String) : Lean.Name :=

@@ -856,11 +856,17 @@ def claim := ⟦
   -- (a stronger global order than the per-leaf closures it replaces).
   fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
     let env_leaves = load_assumption_tree(env_root);
-    let (k_consts, addrs) = ingress_env(env_leaves);
     match asm {
-      Option.None => check_all(k_consts, k_consts, addrs),
+      Option.None =>
+        let (k_consts, addrs) = ingress_env(env_leaves, store(RBTreeMap.Nil));
+        check_all(k_consts, k_consts, addrs),
       Option.Some(asm_root) =>
+        -- The frontier is known before ingress so `load_with_deps` can stop at
+        -- it: a frontier constant is ingressed as a type-only axiom and its
+        -- own references are never followed.
         let asm_leaves = load_assumption_tree(asm_root);
+        let asm_map = store(build_asm_leaf_map(asm_leaves));
+        let (k_consts, addrs) = ingress_env(env_leaves, asm_map);
         check_all_skipping(k_consts, k_consts, addrs, asm_leaves),
     }
   }
