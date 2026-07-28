@@ -81,7 +81,9 @@ pub fn build_check_env_claim(env: &Env) -> Option<Claim> {
     .collect();
   axioms.sort_unstable();
   let assumptions = merkle_root_canonical(&axioms);
-  Some(Claim::CheckEnv { root, assumptions })
+  // Whole-env claim: every constant present is ingressed in full, so nothing
+  // is a type-only stub.
+  Some(Claim::CheckEnv { root, assumptions, stubbed: None })
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +215,7 @@ mod tests {
     let a = Address::hash(b"a");
     env.store_const(a.clone(), defn_const(vec![]));
     match build_check_env_claim(&env).unwrap() {
-      Claim::CheckEnv { root, assumptions: None } => {
+      Claim::CheckEnv { root, assumptions: None, .. } => {
         assert_eq!(Some(root), env_merkle_root(&env));
       },
       other => panic!("expected CheckEnv None, got {other:?}"),
@@ -228,7 +230,7 @@ mod tests {
     env.store_const(a.clone(), defn_const(vec![ax.clone()]));
     env.store_const(ax.clone(), axiom_const(vec![]));
     match build_check_env_claim(&env).unwrap() {
-      Claim::CheckEnv { root, assumptions: Some(asm) } => {
+      Claim::CheckEnv { root, assumptions: Some(asm), .. } => {
         assert_eq!(Some(root), env_merkle_root(&env));
         assert_eq!(asm, leaf_hash(&ax));
       },

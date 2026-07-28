@@ -158,7 +158,16 @@ pub enum Claim {
   /// Every constant in the env merkle-rooted at `root` is well-typed,
   /// optionally modulo `assumptions` (typically the env's axiom
   /// leaves).
-  CheckEnv { root: Address, assumptions: Option<Address> },
+  CheckEnv {
+    root: Address,
+    assumptions: Option<Address>,
+    /// Subset of `assumptions` ingressed as type-only axioms: bodies
+    /// withheld, so the claim holds given only their types and no reduction
+    /// passed through them. Blocks the shard reduces through are in
+    /// `assumptions` but not here — they are ingressed whole and checked by
+    /// whichever shard owns them.
+    stubbed: Option<Address>,
+  },
   /// Selective field revelation of a committed constant.
   Reveal { comm: Address, info: RevealConstantInfo },
   /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
@@ -939,10 +948,11 @@ impl Claim {
         buf.extend_from_slice(const_addr.as_bytes());
         put_opt_addr(assumptions, buf);
       },
-      Claim::CheckEnv { root, assumptions } => {
+      Claim::CheckEnv { root, assumptions, stubbed } => {
         Tag4::new(FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM).put(buf);
         buf.extend_from_slice(root.as_bytes());
         put_opt_addr(assumptions, buf);
+        put_opt_addr(stubbed, buf);
       },
       Claim::Reveal { comm, info } => {
         Tag4::new(FLAG_CLAIM, VARIANT_REVEAL_CLAIM).put(buf);
@@ -980,7 +990,8 @@ impl Claim {
       VARIANT_CHECK_ENV_CLAIM => {
         let root = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
-        Ok(Claim::CheckEnv { root, assumptions })
+        let stubbed = get_opt_addr(buf)?;
+        Ok(Claim::CheckEnv { root, assumptions, stubbed })
       },
       VARIANT_REVEAL_CLAIM => {
         let comm = get_address(buf)?;
@@ -1042,9 +1053,10 @@ impl Proof {
         buf.extend_from_slice(const_addr.as_bytes());
         put_opt_addr(assumptions, buf);
       },
-      Claim::CheckEnv { root, assumptions } => {
+      Claim::CheckEnv { root, assumptions, stubbed } => {
         buf.extend_from_slice(root.as_bytes());
         put_opt_addr(assumptions, buf);
+        put_opt_addr(stubbed, buf);
       },
       Claim::Reveal { comm, info } => {
         buf.extend_from_slice(comm.as_bytes());
@@ -1083,7 +1095,8 @@ impl Proof {
       VARIANT_CHECK_ENV_PROOF => {
         let root = get_address(buf)?;
         let assumptions = get_opt_addr(buf)?;
-        Claim::CheckEnv { root, assumptions }
+        let stubbed = get_opt_addr(buf)?;
+        Claim::CheckEnv { root, assumptions, stubbed }
       },
       VARIANT_REVEAL_PROOF => {
         let comm = get_address(buf)?;
@@ -1343,6 +1356,7 @@ mod tests {
         2 => Claim::CheckEnv {
           root: Address::arbitrary(g),
           assumptions: gen_opt_addr(g),
+          stubbed: gen_opt_addr(g),
         },
         3 => Claim::Reveal {
           comm: Address::arbitrary(g),
@@ -1464,8 +1478,11 @@ mod tests {
 
   #[test]
   fn test_check_env_claim_no_asm_roundtrip() {
-    let claim =
-      Claim::CheckEnv { root: Address::hash(b"env-root"), assumptions: None };
+    let claim = Claim::CheckEnv {
+      root: Address::hash(b"env-root"),
+      assumptions: None,
+      stubbed: None,
+    };
     assert!(claim_roundtrip(&claim));
   }
 
@@ -1474,6 +1491,17 @@ mod tests {
     let claim = Claim::CheckEnv {
       root: Address::hash(b"env-root"),
       assumptions: Some(Address::hash(b"asm")),
+      stubbed: None,
+    };
+    assert!(claim_roundtrip(&claim));
+  }
+
+  #[test]
+  fn test_check_env_claim_with_stubbed_roundtrip() {
+    let claim = Claim::CheckEnv {
+      root: Address::hash(b"env-root"),
+      assumptions: Some(Address::hash(b"asm")),
+      stubbed: Some(Address::hash(b"stubs")),
     };
     assert!(claim_roundtrip(&claim));
   }
@@ -1514,7 +1542,11 @@ mod tests {
   #[test]
   fn test_check_env_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::CheckEnv { root: Address::hash(b"env-root"), assumptions: None },
+      Claim::CheckEnv {
+        root: Address::hash(b"env-root"),
+        assumptions: None,
+        stubbed: None,
+      },
       vec![0x11, 0x22],
     );
     assert!(proof_roundtrip(&proof));
@@ -1628,7 +1660,7 @@ mod tests {
         VARIANT_CHECK_CLAIM,
       ),
       (
-        Claim::CheckEnv { root: a.clone(), assumptions: None },
+        Claim::CheckEnv { root: a.clone(), assumptions: None, stubbed: None },
         VARIANT_CHECK_ENV_CLAIM,
       ),
       (
@@ -1667,7 +1699,7 @@ mod tests {
         VARIANT_CHECK_PROOF,
       ),
       (
-        Claim::CheckEnv { root: a.clone(), assumptions: None },
+        Claim::CheckEnv { root: a.clone(), assumptions: None, stubbed: None },
         VARIANT_CHECK_ENV_PROOF,
       ),
       (
@@ -1736,10 +1768,24 @@ mod tests {
       "Check with-asm = 66 bytes"
     );
     assert_eq!(
-      claim_bytes(&Claim::CheckEnv { root: a.clone(), assumptions: None })
-        .len(),
-      1 + 32 + 1,
-      "CheckEnv no-asm = 34 bytes"
+      claim_bytes(&Claim::CheckEnv {
+        root: a.clone(),
+        assumptions: None,
+        stubbed: None
+      })
+      .len(),
+      1 + 32 + 1 + 1,
+      "CheckEnv no-asm no-stubs = 35 bytes (two option presence bytes)"
+    );
+    assert_eq!(
+      claim_bytes(&Claim::CheckEnv {
+        root: a.clone(),
+        assumptions: Some(asm.clone()),
+        stubbed: Some(asm.clone())
+      })
+      .len(),
+      1 + 32 + 1 + 32 + 1 + 32,
+      "CheckEnv with-asm with-stubs = 99 bytes"
     );
     assert_eq!(
       claim_bytes(&Claim::Contains { tree: a, const_addr: b }).len(),
@@ -1767,7 +1813,10 @@ mod tests {
         0xE3,
       ),
       (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xE4),
-      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xE5),
+      (
+        Claim::CheckEnv { root: a.clone(), assumptions: None, stubbed: None },
+        0xE5,
+      ),
       (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xE6),
       (Claim::Contains { tree: a, const_addr: b }, 0xE7),
     ];
@@ -1794,7 +1843,10 @@ mod tests {
         0xF0,
       ),
       (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xF1),
-      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xF2),
+      (
+        Claim::CheckEnv { root: a.clone(), assumptions: None, stubbed: None },
+        0xF2,
+      ),
       (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xF3),
       (Claim::Contains { tree: a, const_addr: b }, 0xF4),
     ];

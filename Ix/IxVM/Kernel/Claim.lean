@@ -93,7 +93,7 @@ def claim := ⟦
   enum Claim {
     Eval(Addr, Addr, Option‹Addr›),
     Check(Addr, Option‹Addr›),
-    CheckEnv(Addr, Option‹Addr›),
+    CheckEnv(Addr, Option‹Addr›, Option‹Addr›),
     Reveal(Addr, RevealConstantInfo),
     Contains(Addr, Addr)
   }
@@ -420,7 +420,8 @@ def claim := ⟦
       5 =>
         let (root, s) = get_address(s);
         let (asm, s) = get_opt_addr(s);
-        (Claim.CheckEnv(root, asm), s),
+        let (stubbed, s) = get_opt_addr(s);
+        (Claim.CheckEnv(root, asm, stubbed), s),
       6 =>
         let (comm, s) = get_address(s);
         let (info, s) = get_reveal_info(s);
@@ -854,19 +855,28 @@ def claim := ⟦
   -- soundness rides on that existing pattern; the union order is verified by
   -- the single `check_canonical_block_sort(top)` inside `check_all_skipping`
   -- (a stronger global order than the per-leaf closures it replaces).
-  fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
+  -- `asm` and `stubbed` are different sets and both are needed.
+  --
+  -- `asm` names everything this shard does not CHECK — another shard owns it.
+  -- `stubbed` names the subset ingressed as type-only axioms, whose bodies are
+  -- withheld. A block the shard reduces through (a definition it unfolds, an
+  -- inductive whose recursor rules it applies) is in `asm` but NOT `stubbed`:
+  -- unchecked here, yet ingressed whole, because a stub would lose exactly the
+  -- reductions that need it.
+  fn run_check_env(env_root: Addr, asm: Option‹Addr›, stubbed: Option‹Addr›) {
     let env_leaves = load_assumption_tree(env_root);
+    -- Known before ingress so `load_with_deps` can stop at a stub rather than
+    -- follow its references.
+    let stub_map = match stubbed {
+      Option.None => store(RBTreeMap.Nil),
+      Option.Some(stub_root) =>
+        store(build_asm_leaf_map(load_assumption_tree(stub_root))),
+    };
+    let (k_consts, addrs) = ingress_env(env_leaves, stub_map);
     match asm {
-      Option.None =>
-        let (k_consts, addrs) = ingress_env(env_leaves, store(RBTreeMap.Nil));
-        check_all(k_consts, k_consts, addrs),
+      Option.None => check_all(k_consts, k_consts, addrs),
       Option.Some(asm_root) =>
-        -- The frontier is known before ingress so `load_with_deps` can stop at
-        -- it: a frontier constant is ingressed as a type-only axiom and its
-        -- own references are never followed.
         let asm_leaves = load_assumption_tree(asm_root);
-        let asm_map = store(build_asm_leaf_map(asm_leaves));
-        let (k_consts, addrs) = ingress_env(env_leaves, asm_map);
         check_all_skipping(k_consts, k_consts, addrs, asm_leaves),
     }
   }
@@ -994,7 +1004,7 @@ def claim := ⟦
     match claim {
       Claim.Eval(input, output, asm) => run_eval(input, output, asm),
       Claim.Check(c, asm) => run_check(c, asm),
-      Claim.CheckEnv(root, asm) => run_check_env(root, asm),
+      Claim.CheckEnv(root, asm, stubbed) => run_check_env(root, asm, stubbed),
       Claim.Reveal(comm, info) => run_reveal(comm, info),
       Claim.Contains(tree, target) => run_contains(tree, target),
     }

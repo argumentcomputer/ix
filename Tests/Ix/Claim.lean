@@ -32,9 +32,11 @@ def claimUnits : TestSeq :=
   ++ test "Check no-asm roundtrip" (claimSerde (.check addr1 none))
   ++ test "Check with-asm roundtrip"
        (claimSerde (.check addr1 (some addr2)))
-  ++ test "CheckEnv no-asm roundtrip" (claimSerde (.checkEnv addr1 none))
+  ++ test "CheckEnv no-asm roundtrip" (claimSerde (.checkEnv addr1 none none))
   ++ test "CheckEnv with-asm roundtrip"
-       (claimSerde (.checkEnv addr1 (some addr2)))
+       (claimSerde (.checkEnv addr1 (some addr2) none))
+  ++ test "CheckEnv stubbed roundtrip"
+       (claimSerde (.checkEnv addr1 (some addr2) (some addr1)))
   -- Contains
   ++ test "Contains roundtrip" (claimSerde (.contains addr1 addr2))
   -- Reveal claim variants (carried over from previous suite)
@@ -74,7 +76,7 @@ def claimEncodingTests : TestSeq :=
   let evalWithAsm := Claim.ser (.eval addr1 addr2 (some addr3))
   let checkBytes := Claim.ser (.check addr1 none)
   let checkWithAsm := Claim.ser (.check addr1 (some addr2))
-  let checkEnvBytes := Claim.ser (.checkEnv addr1 none)
+  let checkEnvBytes := Claim.ser (.checkEnv addr1 none none)
   let containsBytes := Claim.ser (.contains addr1 addr2)
   let revealSafetyOnly := Claim.ser
     (.reveal addr1 (.defn none (some .safe) none none none))
@@ -88,9 +90,9 @@ def claimEncodingTests : TestSeq :=
   ++ test "Check tag byte is 0xE4" (checkBytes.data[0]! == 0xE4)
   ++ test "Check no-asm size is 34" (checkBytes.size == 34)
   ++ test "Check with-asm size is 66" (checkWithAsm.size == 66)
-  -- CheckEnv claim: 0xE5 + 32 + 1 = 34 bytes
+  -- CheckEnv claim: 0xE5 + 32 + 1 (asm opt) + 1 (stubbed opt) = 35 bytes
   ++ test "CheckEnv tag byte is 0xE5" (checkEnvBytes.data[0]! == 0xE5)
-  ++ test "CheckEnv no-asm size is 34" (checkEnvBytes.size == 34)
+  ++ test "CheckEnv no-asm size is 35" (checkEnvBytes.size == 35)
   -- Reveal claim: 0xE6
   ++ test "Reveal tag byte is 0xE6" (revealSafetyOnly.data[0]! == 0xE6)
   -- Reveal safety-only defn: 1 (tag) + 32 (comm) + 1 (variant) + 1 (mask) + 1 (safety) = 36

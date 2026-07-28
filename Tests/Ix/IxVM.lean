@@ -384,7 +384,7 @@ public def claimCheckEnv (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let some tree := envCanonicalTree ixonEnv
     | throw <| IO.userError "envCanonicalTree empty"
   let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.checkEnv tree.root none) (singletonTrees tree)
+    (Ix.Claim.checkEnv tree.root none none) (singletonTrees tree)
   pure (asTestCase "Claim CheckEnv (shared smoke env)" witness)
 
 /-- `Reveal` Defn with `kind` + `safety` only — exercises the

@@ -274,6 +274,10 @@ pub fn build_shard_check_env_witness(
   let claim = Claim::CheckEnv {
     root: env_tree.root(),
     assumptions: asm_tree.as_ref().map(|t| t.root()),
+    // No stubs yet: this builder still ingresses the full closure. The
+    // per-shard stub set comes from the partition, which knows which blocks
+    // the shard reduces through; it is not derivable from the env alone.
+    stubbed: None,
   };
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);

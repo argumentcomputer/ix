@@ -63,8 +63,8 @@ def loadClaimAndTrees (claimHex : String) :
   let treeRoots : Array Address := match claim with
     | .check _ (some r)        => #[r]
     | .eval _ _ (some r)       => #[r]
-    | .checkEnv root none      => #[root]
-    | .checkEnv root (some r)  => #[root, r]
+    | .checkEnv root none     st => #[root] ++ st.toArray
+    | .checkEnv root (some r) st => #[root, r] ++ st.toArray
     | .contains tree _         => #[tree]
     | _                        => #[]
   let mut trees : Std.HashMap Address Ix.AssumptionTree := {}

@@ -137,11 +137,27 @@ Five variants in three families:
   the merkle tree rooted at `tree`. Used by aggregation to discharge
   leaves from a conditional claim's assumption set. Carries no
   assumptions.
+
+`checkEnv` carries a second root, `stubbed`, naming the subset of
+`assumptions` the claim ingressed as type-only axioms: their bodies were
+withheld, so the claim holds given only their TYPES, and no reduction
+passed through them.
+
+The two roots are genuinely different sets, which is why one cannot serve
+for both. A shard skips checking everything it does not own, but it must
+still ingress in FULL anything it reduces through — a definition it
+unfolds, or an inductive whose recursor rules it applies — even though
+another shard is responsible for checking that constant. Those blocks are
+in `assumptions` but NOT in `stubbed`. Folding them into the owned set
+instead is not possible: owned sets partition the environment so each
+constant is checked exactly once, and two shards may reduce through the
+same constant.
 -/
 inductive Claim where
   | eval     (input output : Address) (assumptions : Option Address)
   | check    (const : Address) (assumptions : Option Address)
   | checkEnv (root : Address) (assumptions : Option Address)
+             (stubbed : Option Address)
   | reveal   (comm : Address) (info : RevealConstantInfo)
   | contains (tree : Address) (const : Address)
   deriving BEq, Repr, Inhabited
@@ -494,10 +510,11 @@ def put : Claim → PutM Unit
     putTag4 ⟨FLAG_CLAIM, VARIANT_CHECK_CLAIM⟩
     Serialize.put const
     putOptAddr assumptions
-  | .checkEnv root assumptions => do
+  | .checkEnv root assumptions stubbed => do
     putTag4 ⟨FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM⟩
     Serialize.put root
     putOptAddr assumptions
+    putOptAddr stubbed
   | .reveal comm info => do
     putTag4 ⟨FLAG_CLAIM, VARIANT_REVEAL_CLAIM⟩
     Serialize.put comm
@@ -523,7 +540,8 @@ def get : GetM Claim := do
   else if tag.size == VARIANT_CHECK_ENV_CLAIM then
     let root ← Serialize.get
     let asm ← getOptAddr
-    return .checkEnv root asm
+    let stubbed ← getOptAddr
+    return .checkEnv root asm stubbed
   else if tag.size == VARIANT_REVEAL_CLAIM then
     return .reveal (← Serialize.get) (← RevealConstantInfo.get)
   else if tag.size == VARIANT_CONTAINS_CLAIM then
@@ -538,7 +556,7 @@ instance : ToString Claim where
   toString c := match c with
     | .eval i o asm => s!"Eval({i}, {o}, {asm})"
     | .check v asm => s!"Check({v}, {asm})"
-    | .checkEnv r asm => s!"CheckEnv({r}, {asm})"
+    | .checkEnv r asm st => s!"CheckEnv({r}, {asm}, {st})"
     | .reveal comm info => s!"Reveal({comm}, {repr info})"
     | .contains t c => s!"Contains({t}, {c})"
 
@@ -566,7 +584,7 @@ namespace Proof
 def variantOf : Ix.Claim → UInt64
   | .eval _ _ _     => Ix.Claim.VARIANT_EVAL_PROOF
   | .check _ _      => Ix.Claim.VARIANT_CHECK_PROOF
-  | .checkEnv _ _   => Ix.Claim.VARIANT_CHECK_ENV_PROOF
+  | .checkEnv _ _ _ => Ix.Claim.VARIANT_CHECK_ENV_PROOF
   | .reveal _ _     => Ix.Claim.VARIANT_REVEAL_PROOF
   | .contains _ _   => Ix.Claim.VARIANT_CONTAINS_PROOF
 
@@ -580,9 +598,10 @@ def put (p : Proof) : PutM Unit := do
   | .check addr asm => do
     Serialize.put addr
     Ix.Claim.putOptAddr asm
-  | .checkEnv root asm => do
+  | .checkEnv root asm stubbed => do
     Serialize.put root
     Ix.Claim.putOptAddr asm
+    Ix.Claim.putOptAddr stubbed
   | .reveal comm info => do
     Serialize.put comm
     Ix.RevealConstantInfo.put info
@@ -609,7 +628,8 @@ def get : GetM Proof := do
     else if tag.size == Ix.Claim.VARIANT_CHECK_ENV_PROOF then do
       let root ← Serialize.get
       let asm ← Ix.Claim.getOptAddr
-      pure (.checkEnv root asm)
+      let stubbed ← Ix.Claim.getOptAddr
+      pure (.checkEnv root asm stubbed)
     else if tag.size == Ix.Claim.VARIANT_REVEAL_PROOF then do
       let comm ← Serialize.get
       let info ← Ix.RevealConstantInfo.get

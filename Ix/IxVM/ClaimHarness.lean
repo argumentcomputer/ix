@@ -260,7 +260,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .checkEnv root asm =>
+  | .checkEnv root asm _stubbed =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
@@ -290,7 +290,10 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
   let some envTree := Ix.AssumptionTree.canonical closure.toArray
     | .error "shardCheckEnvClaim: empty shard closure"
   let asmTree? := Ix.AssumptionTree.canonical frontier
-  let claim := Ix.Claim.checkEnv envTree.root (asmTree?.map (·.root))
+  -- No stubs yet: this builder ingresses the full closure. The per-shard stub
+  -- set comes from the partition, which knows which blocks the shard reduces
+  -- through; it is not derivable from the env alone.
+  let claim := Ix.Claim.checkEnv envTree.root (asmTree?.map (·.root)) none
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert envTree.root envTree
   match asmTree? with
