@@ -248,16 +248,38 @@ fn mk_info<M: KernelMode>(
 static NEXT_UID: std::sync::atomic::AtomicU64 =
   std::sync::atomic::AtomicU64::new(1);
 
+/// Uids are handed out in thread-local blocks so the process-global
+/// counter is touched once per block instead of once per node: a single
+/// shared cache line under `fetch_add` from every checker worker caps
+/// aggregate intern throughput once worker counts grow. Blocks are never
+/// reused (a thread's unspent remainder is simply abandoned on exit), so
+/// the never-reuse guarantee is unchanged.
+const UID_BLOCK: u64 = 1 << 20;
+
+thread_local! {
+  static UID_RANGE: std::cell::Cell<(u64, u64)> =
+    const { std::cell::Cell::new((0, 0)) };
+}
+
 #[inline]
 pub(crate) fn fresh_uid() -> Addr {
-  let uid = NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-  // Uid exhaustion guard. Uids are ASSIGNED (sequential), never computed
-  // from content, so two distinct terms can only alias if the counter
-  // wraps — which would take centuries at nanosecond allocation rates
-  // (and >2^67 guest cycles in-circuit). Abort rather than reason about
-  // it: identity soundness must not rest on "probably won't happen".
-  assert!(uid < u64::MAX, "kernel uid counter exhausted");
-  uid
+  UID_RANGE.with(|r| {
+    let (next, end) = r.get();
+    if next < end {
+      r.set((next + 1, end));
+      return next;
+    }
+    let start =
+      NEXT_UID.fetch_add(UID_BLOCK, std::sync::atomic::Ordering::Relaxed);
+    // Uid exhaustion guard. Uids are ASSIGNED (sequential), never computed
+    // from content, so two distinct terms can only alias if the counter
+    // wraps — which would take centuries at nanosecond allocation rates
+    // (and >2^67 guest cycles in-circuit). Abort rather than reason about
+    // it: identity soundness must not rest on "probably won't happen".
+    assert!(start < u64::MAX - UID_BLOCK, "kernel uid counter exhausted");
+    r.set((start + 1, start + UID_BLOCK));
+    start
+  })
 }
 
 // =============================================================================
