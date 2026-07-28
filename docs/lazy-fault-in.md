@@ -146,6 +146,74 @@ constant whose own bytes cost far more.
 Step 1 is the bulk and the risk; `Inductive.lean` carries the heaviest
 positional reasoning about constructor and recursor indices.
 
+### Step 1 must be atomic — attempted incrementally and disproven
+
+The obvious way to stage a 107-site representation change is to carry BOTH
+fields for a while — `Const(G, Addr, List<KLevel>)` — keep the position
+authoritative, and migrate consumers one module at a time. That does not
+work.
+
+The address participates in structural identity. Aiur's `store` dedupes by
+content, and def-eq and the canonical checks compare nodes structurally, so
+`Const(idx, real_addr, us)` and `Const(idx, placeholder, us)` are different
+nodes even though they denote the same constant. Measured: with addresses
+filled at some sites and placeholder at others, 40 checks fail, all on
+recursors (`IxVMInd.Tree.rec`, `Lean.Syntax.rec`, ...). With every address
+uniformly placeholder, zero non-FFT failures.
+
+So there is no valid partial state: either every construction site supplies
+the correct address, or they all supply the same constant. The migration
+from position to address must land in one change.
+
+Two further facts from the attempt:
+
+- **`lake build` does not validate the Aiur DSL.** Lean elaboration accepts
+  unbound globals inside an Aiur block; `ix codegen` (toplevel compile) is
+  the real compiler. Any refactor loop must run it.
+- **Carrying both fields costs ~1% FFT** (median +0.95%, max +5.08% over
+  the pinned fixtures) from the larger nodes — which is why the scaffold is
+  not worth committing on its own.
+
+### Steps 1 and 2 must merge — measured
+
+The sequencing above splits the representation change (Step 1, eager
+driver retained) from making the driver lazy (Step 2). That split is not
+available either, for a cost reason rather than a correctness one.
+
+An address-keyed `Const` with an eager driver still has to answer
+address -> position, which the position-aligned `addrs` list does only by
+linear scan. Carrying a reverse index alongside it (`AddrTable`, built once
+per ingress) was tried and measured: **every one of the 64 pinned fixtures
+got worse** — median +5.78% FFT, worst +55.32% (`HEq`, a small closure
+where the eager map build dominates), aggregate +1.08%. Nothing improved,
+because real primitives already sit early in `addrs`, so the scans the
+index replaces are short in practice.
+
+The end state has no global position table at all: `Const(addr)` resolves
+through `get_const(addr)` reading the witness directly, memoized by Aiur's
+call cache, and both `top` and `addrs` disappear. A reverse index is
+therefore transitional scaffolding for a problem the destination does not
+have.
+
+So the change to make is a single one: `Const` carries an address AND
+resolution goes to `get_const`, with the layout/pos-map subsystem deleted
+in the same move. There is no cheaper intermediate.
+
+### The blocking prerequisite
+
+Of the 42 construction sites, most can supply an address today: rebuild
+sites carry the matched one through, `Primitive.lean`'s 35 already hold the
+address they looked the position up from (those SIMPLIFY), and
+`Expr.Ref(i)` resolves through the constant's own `refs` table — which is
+the end-state semantics, and which the attempt confirmed works.
+
+The exception is `Expr.Rec(i)`: a mutual-block member, whose address is a
+synthesized projection address rather than an entry in `refs`.
+`cprj_content_addr` shows how to compute one in-circuit for CPrj, but the
+Defn/Indc/Recr member cases do not exist yet. **Synthesizing mutual-block
+member addresses is therefore the prerequisite for Step 1**, and should be
+built and tested on its own before the atomic switch.
+
 ## Step 0 result: the gate is passed
 
 Lazy fault-in's saving is exactly "closure minus touched". Measured by
