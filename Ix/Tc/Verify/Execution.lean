@@ -8,7 +8,15 @@ choosing `[]` would make coverage and bounds vacuous. `ExecutionRequests` is
 therefore indexed by the actual `TcM` computation *and its concrete initial
 state*. Its atomic constructors are the audited interning operations, its
 composition constructors follow the actual success/error state transition,
-and it deliberately has no constructor for an arbitrary silent computation.
+and its silent constructors (`set`, `modifyGet`) each require the state
+transition to preserve the intern table. The resulting guarantee: every
+constructor path that changes the intern table records a request, so a
+certificate confines the run's interning to the audited operations in its
+request list, and a `[]`-certificate exists only for runs that leave the
+intern table untouched. Reads, cache writes, fuel, and scratch state stay
+silent by design — their obligations are carried by the Hoare layer
+(Verify/Monad.lean, cache provenance in Verify/Cache.lean), not by request
+coverage.
 
 This module intentionally imports no translation/world layer. Statement
 skeletons can use its concrete execution and support boundary without
@@ -19,7 +27,9 @@ namespace Ix.Tc
 
 /-- A proof-level decomposition of a `TcM` computation into audited
 interning operations. Lists conservatively include all continuation/handler
-branches and may be finitely weakened. -/
+branches and may be finitely weakened. Silent state transitions are
+admissible only when they preserve the intern table, so the request list is
+an upper bound on the run's interning. -/
 inductive ExecutionRequests : {α : Type} →
     TcM .anon α → TcState .anon → List WalkerRequest → Prop where
   | pure (s : TcState .anon) (a : α) :
@@ -28,10 +38,12 @@ inductive ExecutionRequests : {α : Type} →
       ExecutionRequests (throw err : TcM .anon α) s []
   | get (s : TcState .anon) :
       ExecutionRequests (get : TcM .anon (TcState .anon)) s []
-  | set (initial target : TcState .anon) :
+  | set (initial target : TcState .anon)
+      (hintern : target.env.intern = initial.env.intern) :
       ExecutionRequests (set target : TcM .anon PUnit) initial []
   | modifyGet (s : TcState .anon)
-      (f : TcState .anon → α × TcState .anon) :
+      (f : TcState .anon → α × TcState .anon)
+      (hintern : (f s).2.env.intern = s.env.intern) :
       ExecutionRequests (modifyGet f : TcM .anon α) s []
   | internExpr (s : TcState .anon) (e : KExpr .anon) :
       ExecutionRequests (TcM.intern e) s [.internExpr e]
@@ -97,6 +109,85 @@ theorem throw_weaken (s : TcState .anon) (err : TcError .anon)
   .weaken (ExecutionRequests.throw s err) (by
     intro request h
     simp at h)
+
+/-- The non-laundering guarantee, `[]` case: a certificate with an empty
+request list forces the run to leave the intern table untouched on both
+outcomes.  Silent constructors preserve the table by hypothesis, atomic
+constructors record a request, and composition follows the actual state
+transitions, so no intern-extending computation admits an empty
+certificate. -/
+theorem intern_eq_of_nil {α : Type} {x : TcM .anon α}
+    {s : TcState .anon} {requests : List WalkerRequest}
+    (h : ExecutionRequests x s requests) (hnil : requests = []) :
+    match x s with
+    | .ok _ s' => s'.env.intern = s.env.intern
+    | .error _ s' => s'.env.intern = s.env.intern := by
+  induction h with
+  | pure s a => exact rfl
+  | throw s err => exact rfl
+  | get s => exact rfl
+  | set initial target hintern => exact hintern
+  | modifyGet s f hintern => exact hintern
+  | internExpr | internUniv | lift | subst | simulSubst | instRev |
+      abstractFVars | instUniv =>
+    exact absurd hnil (by simp)
+  | bind hx hf ihx ihf =>
+    rename_i s x f before after
+    obtain ⟨hbefore, hafter⟩ := List.append_eq_nil_iff.mp hnil
+    have hx' := ihx hbefore
+    show (match EStateM.bind x f s with
+      | .ok _ s' => s'.env.intern = s.env.intern
+      | .error _ s' => s'.env.intern = s.env.intern)
+    unfold EStateM.bind
+    match hxs : x s with
+    | .ok a s₁ =>
+      simp only [hxs] at hx'
+      have hf' := ihf a s₁ hxs hafter
+      show (match f a s₁ with
+        | .ok _ s' => s'.env.intern = s.env.intern
+        | .error _ s' => s'.env.intern = s.env.intern)
+      match hfs : f a s₁ with
+      | .ok b s₂ =>
+        simp only [hfs] at hf'
+        exact hf'.trans hx'
+      | .error err s₂ =>
+        simp only [hfs] at hf'
+        exact hf'.trans hx'
+    | .error err s₁ =>
+      simp only [hxs] at hx'
+      exact hx'
+  | tryCatch hx hh ihx ihh =>
+    rename_i s x handler body caught
+    obtain ⟨hbody, hcaught⟩ := List.append_eq_nil_iff.mp hnil
+    have hx' := ihx hbody
+    show (match EStateM.tryCatch x handler s with
+      | .ok _ s' => s'.env.intern = s.env.intern
+      | .error _ s' => s'.env.intern = s.env.intern)
+    unfold EStateM.tryCatch
+    match hxs : x s with
+    | .ok a s₁ =>
+      simp only [hxs] at hx'
+      exact hx'
+    | .error err s₁ =>
+      simp only [hxs] at hx'
+      have hh' := ihh err s₁ hxs hcaught
+      show (match handler err s₁ with
+        | .ok _ s' => s'.env.intern = s.env.intern
+        | .error _ s' => s'.env.intern = s.env.intern)
+      match hhs : handler err s₁ with
+      | .ok b s₂ =>
+        simp only [hhs] at hh'
+        exact hh'.trans hx'
+      | .error err' s₂ =>
+        simp only [hhs] at hh'
+        exact hh'.trans hx'
+  | weaken hx hsub ihx =>
+    subst hnil
+    exact ihx (List.eq_nil_iff_forall_not_mem.mpr
+      fun request hmem => by simpa using hsub request hmem)
+  | of_eq hxy hy ihy =>
+    subst hxy
+    exact ihy hnil
 
 end ExecutionRequests
 

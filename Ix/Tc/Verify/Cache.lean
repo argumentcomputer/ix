@@ -367,6 +367,14 @@ structure CacheSemantics where
     (block : KId .anon) (err : TcError .anon),
       Valid authority support (.blockResult block (.error err))
 
+/-- The vacuous contract accepting every entry.  It carries no semantic
+content; it is the default witness that lets statement-level `CacheSemantics`
+stubs be declared `opaque`. -/
+instance : Inhabited CacheSemantics :=
+  ⟨{ Valid := fun _ _ _ => True
+     mono := fun _ h => h
+     blockError := fun _ _ _ _ => trivial }⟩
+
 /-- Full ghost certificate attached to one physical entry. -/
 structure CacheProvenance (semantics : CacheSemantics)
     (authority : CacheAuthority) (support : RunSupport)
