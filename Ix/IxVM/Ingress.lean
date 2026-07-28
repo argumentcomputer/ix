@@ -137,6 +137,31 @@ def ingress := ⟦
   -- collide with a real const-position encoding.
   fn sentinel_blob_ref() -> G { 4294967295 }
 
+  -- Classify an address that is NOT at a const position. Absence alone says
+  -- nothing — a blob is legitimately absent, and so is a constant the witness
+  -- declined to ingress — so the ch-4 discriminator decides: 0 = blob, whose
+  -- bytes arrive on ch 5; anything else = a constant that was never ingressed,
+  -- which POISONS the ref. An address with no ch-4 entry at all has no
+  -- `ListNode.Nil` arm below and fails here.
+  --
+  -- Reading absence as "blob" instead (the previous behaviour) let any
+  -- non-ingressed constant resolve to ref index 0, silently rebinding the
+  -- reference to whatever constant occupies kernel position 0. Blob and
+  -- constant addresses are both blake3 of their own bytes, so the blob
+  -- channel's verification accepts a constant's own bytes and cannot tell
+  -- the two apart.
+  fn classify_absent_ref(addr: Addr) -> G {
+    let (idx, len) = io_get_info(4, load(addr));
+    let kind_bytes = #read_byte_stream(4, idx, len);
+    match load(kind_bytes) {
+      ListNode.Cons(b, _) =>
+        match to_field(b) {
+          0 => sentinel_blob_ref(),
+          _ => poison_ref_idx(),
+        },
+    }
+  }
+
   -- Extract the Muts block address from a projection ConstantInfo.
   -- Returns [0; 32] for non-projection constants.
   fn get_proj_block_addr(info: ConstantInfo) -> Addr {
@@ -206,13 +231,16 @@ def ingress := ⟦
   }
 
   -- Resolve an address to its kernel position via `addr_pos_map`:
-  -- SENTINEL (4294967295) → blob ref → 0; else → const at `hit-1`.
+  -- SENTINEL (4294967295) → blob ref → 0; POISON (4294967294) → a constant
+  -- the witness never ingressed, rejected here rather than resolved;
+  -- else → const at `hit-1`.
   -- Panic-on-miss `rbtree_map_lookup` asserts presence; see
   -- `build_addr_pos_map` for why a miss is rejected, not recovered.
   fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›) -> G {
     let hit = rbtree_map_lookup(ptr_val(target), load(addr_pos_map));
     match hit {
       4294967295 => 0,
+      4294967294 => assert_poison_unused(),
       _ => hit - 1,
     }
   }
@@ -269,10 +297,10 @@ def ingress := ⟦
         let hit = rbtree_map_lookup_or_default(key, m, 0);
         match hit {
           0 =>
-            -- Not yet registered: classify as blob ref via SENTINEL.
-            insert_refs_as_blobs(rest, rbtree_map_insert(key, sentinel_blob_ref(), m)),
+            -- Not yet registered: classify from the ch-4 discriminator.
+            insert_refs_as_blobs(rest, rbtree_map_insert(key, classify_absent_ref(addr), m)),
           _ =>
-            -- Already a const (pos+1) or already a blob (SENTINEL): leave alone.
+            -- Already a const (pos+1), a blob (SENTINEL) or poisoned: leave alone.
             insert_refs_as_blobs(rest, m),
         },
     }
@@ -596,7 +624,9 @@ def ingress := ⟦
   -- ============================================================================
 
   -- Fused walk of `refs` → (ref_idxs, lit_blobs), one `addr_pos_map` probe
-  -- per ref: SENTINEL → blob (load+decode, idx 0); else → const at `hit-1`.
+  -- per ref: SENTINEL → blob (load+decode, idx 0); POISON → carried through
+  -- so only a ref that is actually USED fails (an unused entry in the table
+  -- costs nothing); else → const at `hit-1`.
   -- Panic-on-miss `rbtree_map_lookup` is safe: `augment_with_blob_refs` keyed
   -- every ref from these same list cells, so the probe always hits.
   fn build_ref_idxs_and_blobs(refs: List‹Addr›, addr_pos_map: &RBTreeMap‹G›)
@@ -612,6 +642,9 @@ def ingress := ⟦
             let bs = load_verified_blob(addr);
             (store(ListNode.Cons(0, rest_idxs)),
              store(ListNode.Cons(bs, rest_blobs))),
+          4294967294 =>
+            (store(ListNode.Cons(poison_ref_idx(), rest_idxs)),
+             store(ListNode.Cons(store(ListNode.Nil), rest_blobs))),
           _ =>
             (store(ListNode.Cons(hit - 1, rest_idxs)),
              store(ListNode.Cons(store(ListNode.Nil), rest_blobs))),

@@ -141,6 +141,31 @@ def convert := ⟦
     }
   }
 
+  -- Sentinel stored in `addr_pos_map` / `ref_idxs` for a ref naming a constant
+  -- the witness never ingressed. Distinct from the blob SENTINEL and beyond any
+  -- honest `pos+1`, so it cannot collide with a real position.
+  --
+  -- Carried rather than rejected at classification time so that only a ref
+  -- actually USED by an expression fails; a constant may carry entries in its
+  -- ref table that no expression dereferences.
+  fn poison_ref_idx() -> G { 4294967294 }
+
+  -- Reject a poisoned ref index at its use site. Resolving one to a position
+  -- would silently rebind the reference to another constant.
+  fn assert_ref_resolved(idx: G) {
+    match idx - poison_ref_idx() {
+      0 => assert_eq!(0, 1); (),
+      _ => (),
+    }
+  }
+
+  -- `lookup_addr_pos` has no expression context to blame, so a poisoned
+  -- address there is rejected outright.
+  fn assert_poison_unused() -> G {
+    assert_eq!(0, 1);
+    0
+  }
+
   fn convert_expr(
     e: &Expr,
     sharing: List‹&Expr›,
@@ -161,6 +186,7 @@ def convert := ⟦
 
       Expr.Ref(ref_idx, univ_idxs) =>
         let const_idx = list_lookup(ref_idxs, flatten_u64(ref_idx));
+        assert_ref_resolved(const_idx);
         let levels = convert_univ_idxs(univ_idxs, univs);
         store(KExprNode.Const(const_idx, levels)),
 
@@ -171,6 +197,7 @@ def convert := ⟦
 
       Expr.Prj(type_ref_idx, field_idx, inner) =>
         let type_idx = list_lookup(ref_idxs, flatten_u64(type_ref_idx));
+        assert_ref_resolved(type_idx);
         store(KExprNode.Proj(
           type_idx,
           flatten_u64(field_idx),
