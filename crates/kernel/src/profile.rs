@@ -235,6 +235,16 @@ pub struct BlockProfile {
   delta_row: Vec<usize>,
   /// CSR column indices: producer block ids, grouped by consumer.
   delta_col: Vec<u32>,
+  /// CSR row offsets into `ref_col`, length `blocks.len() + 1`. The
+  /// **reference** graph (every cross-block `Constant.refs` edge, projections
+  /// and mutual members folded into home blocks) — a superset of the delta
+  /// graph. Reachability over it is a block's full dependency closure, which
+  /// is what an Aiur shard ingresses (`shardCheckEnvClaim` builds its env
+  /// tree over the owned blocks' whole closure), so the Aiur packer's byte
+  /// accounting runs on this graph, not the delta graph.
+  ref_row: Vec<usize>,
+  /// CSR column indices: referenced block ids, grouped by referrer.
+  ref_col: Vec<u32>,
 }
 
 impl BlockProfile {
@@ -296,6 +306,35 @@ impl BlockProfile {
     self.blocks.iter().map(|b| u128::from(b.heartbeats)).sum()
   }
 
+  /// Whether the reference graph is present (older recordings may lack it).
+  pub fn has_ref_graph(&self) -> bool {
+    !self.ref_row.is_empty()
+  }
+
+  /// Referenced block ids of block `b` (sorted, deduped, no self-edges).
+  /// Empty when no reference graph was recorded.
+  pub fn refs(&self, b: u32) -> &[u32] {
+    if self.ref_row.is_empty() {
+      return &[];
+    }
+    let lo = self.ref_row[b as usize];
+    let hi = self.ref_row[b as usize + 1];
+    &self.ref_col[lo..hi]
+  }
+
+  /// Attach the block-level reference graph (per-block sorted, deduped,
+  /// self-edge-free referenced ids; one row per block).
+  pub fn set_ref_graph(&mut self, adj: &[Vec<u32>]) {
+    assert_eq!(adj.len(), self.blocks.len());
+    self.ref_row = Vec::with_capacity(adj.len() + 1);
+    self.ref_row.push(0);
+    self.ref_col = Vec::with_capacity(adj.iter().map(Vec::len).sum());
+    for row in adj {
+      self.ref_col.extend_from_slice(row);
+      self.ref_row.push(self.ref_col.len());
+    }
+  }
+
   /// Serialize to the `.ixprof` binary format.
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();
@@ -323,6 +362,17 @@ impl BlockProfile {
     }
     for &p in &self.delta_col {
       out.extend_from_slice(&p.to_le_bytes());
+    }
+    // Trailing reference-graph CSR, same layout as the delta section.
+    // Readers treat end-of-input here as "no reference graph".
+    if !self.ref_row.is_empty() {
+      out.extend_from_slice(&(self.ref_col.len() as u64).to_le_bytes());
+      for &off in &self.ref_row {
+        out.extend_from_slice(&(off as u64).to_le_bytes());
+      }
+      for &r in &self.ref_col {
+        out.extend_from_slice(&r.to_le_bytes());
+      }
     }
     out
   }
@@ -389,7 +439,28 @@ impl BlockProfile {
         return Err(ProfileError::Corrupt);
       }
     }
-    Ok(BlockProfile { blocks, delta_row, delta_col })
+    // Optional trailing reference-graph section (same layout). End-of-input
+    // here means the profile predates reference recording.
+    let (mut ref_row, mut ref_col) = (Vec::new(), Vec::new());
+    if r.remaining() > 0 {
+      let num_refs = r.u64()? as usize;
+      ref_row = Vec::with_capacity(n + 1);
+      for _ in 0..n + 1 {
+        ref_row.push(r.u64()? as usize);
+      }
+      ref_col = Vec::with_capacity(num_refs);
+      for _ in 0..num_refs {
+        ref_col.push(r.u32()?);
+      }
+      if ref_row.first() != Some(&0)
+        || ref_row.last() != Some(&num_refs)
+        || ref_row.windows(2).any(|w| w[0] > w[1])
+        || ref_col.iter().any(|&x| x as usize >= n)
+      {
+        return Err(ProfileError::Corrupt);
+      }
+    }
+    Ok(BlockProfile { blocks, delta_row, delta_col, ref_row, ref_col })
   }
 }
 
@@ -426,6 +497,9 @@ struct Reader<'a> {
 impl<'a> Reader<'a> {
   fn new(buf: &'a [u8]) -> Self {
     Reader { buf, pos: 0 }
+  }
+  fn remaining(&self) -> usize {
+    self.buf.len() - self.pos
   }
   fn take(&mut self, n: usize) -> Result<&'a [u8], ProfileError> {
     let end = self.pos.checked_add(n).ok_or(ProfileError::Truncated)?;
@@ -538,7 +612,13 @@ impl ProfileBuilder {
       delta_row.push(delta_col.len());
     }
 
-    BlockProfile { blocks, delta_row, delta_col }
+    BlockProfile {
+      blocks,
+      delta_row,
+      delta_col,
+      ref_row: Vec::new(),
+      ref_col: Vec::new(),
+    }
   }
 }
 

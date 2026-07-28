@@ -1635,6 +1635,12 @@ pub fn shard_esp_aiur(
     std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
   let profile = BlockProfile::from_bytes(&bytes)
     .map_err(|e| format!("parse {esp_path}: {e}"))?;
+  if !profile.has_ref_graph() {
+    return Err(format!(
+      "{esp_path} has no reference graph — Aiur packing needs the closure \
+       accounting it drives; regenerate with the current `ix profile`"
+    ));
+  }
   let plan = partition_for_aiur_ram(&profile, ram_budget_gib, balance);
   let mut manifest =
     ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
@@ -1647,23 +1653,32 @@ pub fn shard_esp_aiur(
     std::fs::write(op, manifest.to_bytes())
       .map_err(|e| format!("write {op}: {e}"))?;
   }
-  // Per-shard predicted prove time from the shard's aggregates: every
-  // ingressed byte (own + foreign) plus the members' substitution volume.
-  let mut subst = vec![0u64; plan.num_shards];
-  for (b, &s) in plan.shard_of.iter().enumerate() {
-    subst[s as usize] =
-      subst[s as usize].saturating_add(profile.block(b as u32).subst);
-  }
-  let prove_secs: Vec<f64> = manifest
-    .shards
+  // Per-shard predicted prove time from the packer's own accounting: the
+  // closure-union ingress bytes plus the owned blocks' substitution volume.
+  let prove_secs: Vec<f64> = plan
+    .shard_costs
     .iter()
-    .map(|sh| {
-      aiur_prove_secs(
-        sh.own_size.saturating_add(sh.cross_ingress),
-        subst[sh.id as usize],
-      )
-    })
+    .map(|c| aiur_prove_secs(c.union_bytes, c.subst))
     .collect();
+  // Costs sidecar (`<out>.costs.csv`): the packer's per-shard accounting and
+  // predictions, for measured-vs-predicted comparison and refits.
+  if let Some(op) = out_path {
+    let mut csv =
+      String::from("shard,union_bytes,hb,subst,pred_ram_gib,pred_prove_s\n");
+    for (i, c) in plan.shard_costs.iter().enumerate() {
+      csv.push_str(&format!(
+        "{},{},{},{},{:.2},{:.2}\n",
+        i,
+        c.union_bytes,
+        c.hb,
+        c.subst,
+        aiur_ram_gib(c.union_bytes, c.hb),
+        prove_secs[i],
+      ));
+    }
+    let cp = format!("{op}.costs.csv");
+    std::fs::write(&cp, csv).map_err(|e| format!("write {cp}: {e}"))?;
+  }
   let seq_secs: f64 = prove_secs.iter().sum();
   let max_secs = prove_secs.iter().fold(0.0f64, |a, &s| a.max(s));
   let p = parallelism.max(1);
@@ -2125,6 +2140,21 @@ pub fn partition_for_cycle_cap(
 /// A partition sized to a per-shard Aiur host-RAM budget. The Aiur analog of
 /// [`BudgetPlan`], reported in the Aiur model's native unit (GiB) rather than
 /// guest steps.
+/// One shard's Aiur cost aggregates as the packer accounted them: the
+/// closure-union ingress bytes plus the owned blocks' checking counters.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AiurShardCost {
+  /// Serialized bytes of the shard's full reference-closure union (owned ∪
+  /// every transitively referenced block) — what the shard's CheckEnv claim
+  /// ingresses and hashes.
+  pub union_bytes: u64,
+  /// Σ heartbeats over owned blocks only (frontier constants are assumptions,
+  /// never re-checked).
+  pub hb: u64,
+  /// Σ substitution-node visits over owned blocks only.
+  pub subst: u64,
+}
+
 pub struct AiurBudgetPlan {
   /// Chosen shard count.
   pub num_shards: usize,
@@ -2135,24 +2165,33 @@ pub struct AiurBudgetPlan {
   /// Per-shard predicted-RAM cap actually enforced:
   /// `budget × AIUR_RAM_USABLE_FRAC`.
   pub ram_cap_gib: f64,
-  /// Heaviest shard's full predicted RAM ([`aiur_ram_gib`] over members +
-  /// cross-ingress bytes) — the tightest number to compare against the cap.
+  /// Per-shard cost aggregates, indexed by shard id.
+  pub shard_costs: Vec<AiurShardCost>,
+  /// Heaviest shard's full predicted RAM — the tightest number to compare
+  /// against the cap.
   pub max_shard_ram_gib: f64,
-  /// Largest single (atomic) block's predicted RAM, own dependency ingress
-  /// included — the hard floor no shard count can beat.
+  /// Largest single block's predicted RAM with its full closure ingress —
+  /// the hard floor no shard count can beat: every shard containing the
+  /// block ingresses at least that closure.
   pub largest_block_ram_gib: f64,
-  /// True when one atomic block alone exceeds the cap.
+  /// True when one block alone (closure included) exceeds the cap.
   pub infeasible_atomic_floor: bool,
 }
 
 /// Size a partition to a per-shard Aiur host-RAM budget by bin-packing to the
 /// cap — the Aiur counterpart of [`partition_for_cycle_cap`], with the same
-/// cut-coherent-order + greedy next-fit structure. Differences: the cap test
-/// evaluates the nonlinear [`aiur_ram_gib`] model over the shard's running
-/// aggregates (ingressed bytes including live cross-ingress, summed
-/// heartbeats), and the safety margin is [`AIUR_RAM_USABLE_FRAC`] of the
-/// budget. The model is monotone in both aggregates, so greedy packing against
-/// it is exactly as sound as against an additive cap.
+/// cut-coherent-order + greedy next-fit structure but **closure-union byte
+/// accounting**: an Aiur shard's CheckEnv claim ingresses and hashes the
+/// owned blocks' entire reference closure (frontier constants are assumptions
+/// — trusted, not re-checked), so a shard's ingress bytes are the serialized
+/// size of its closure UNION, walked over the profile's reference graph, not
+/// the delta-frontier. Checking counters (hb/subst) stay owned-blocks-only.
+/// Grouping blocks with overlapping closures is therefore the packing
+/// objective that matters: a shared dependency's bytes are paid once per
+/// shard that reaches it. Requires the profile's reference graph
+/// ([`BlockProfile::has_ref_graph`]); without it every closure looks empty
+/// and the caps would silently revert to the broken delta accounting — the
+/// caller must reject such profiles.
 pub fn partition_for_aiur_ram(
   profile: &BlockProfile,
   ram_budget_gib: f64,
@@ -2168,28 +2207,52 @@ pub fn partition_for_aiur_ram(
       shard_of: Vec::new(),
       tree: AggNode::Leaf(0),
       ram_cap_gib,
+      shard_costs: Vec::new(),
       max_shard_ram_gib: AIUR_RAM_BASE_GIB,
       largest_block_ram_gib: 0.0,
       infeasible_atomic_floor: false,
     };
   }
 
-  // A lone block's predicted RAM includes the dependency bytes it must
-  // ingress — the same accounting the packer applies to a shard.
-  let lone_block_ram = |b: u32| -> f64 {
-    let dep_bytes: u64 =
-      profile.producers(b).iter().filter(|&&p| p != b).map(|&p| size(p)).sum();
-    let e = profile.block(b);
-    aiur_ram_gib(
-      u64::from(e.serialized_size).saturating_add(dep_bytes),
-      e.heartbeats,
-    )
+  // Per-block closure bytes (the block's lone-shard ingress) — the RAM floor
+  // per block and the infeasibility test. Parallel BFS over the reference
+  // graph with per-worker epoch-marked visited arrays.
+  let closure_bytes: Vec<u64> = {
+    use rayon::prelude::*;
+    (0..nblocks as u32)
+      .into_par_iter()
+      .map_init(
+        || (vec![0u32; nblocks], 0u32, Vec::<u32>::new()),
+        |(visited, epoch, stack), b| {
+          *epoch += 1;
+          stack.clear();
+          stack.push(b);
+          visited[b as usize] = *epoch;
+          let mut bytes = 0u64;
+          while let Some(x) = stack.pop() {
+            bytes = bytes.saturating_add(size(x));
+            for &r in profile.refs(x) {
+              if visited[r as usize] != *epoch {
+                visited[r as usize] = *epoch;
+                stack.push(r);
+              }
+            }
+          }
+          bytes
+        },
+      )
+      .collect()
+  };
+  let lone_block_ram = |b: u32| {
+    aiur_ram_gib(closure_bytes[b as usize], profile.block(b).heartbeats)
   };
   let largest_block_ram_gib =
     (0..nblocks as u32).map(lone_block_ram).fold(0.0, f64::max);
 
-  // 1. Cut-coherent block order, sized so ~PACK_PIECES_PER_CAP fine pieces
-  //    cover one cap's worth of predicted RAM above the per-run base.
+  // 1. Cut-coherent block order. Piece sizing uses the own-bytes total as a
+  //    granularity proxy (union bytes are not additive across pieces); the
+  //    order's job is only to keep closure-overlapping blocks adjacent, which
+  //    the min-cut on shared-dependency nets already does.
   let total_bytes: u64 = profile
     .blocks()
     .iter()
@@ -2201,84 +2264,105 @@ pub fn partition_for_aiur_ram(
   let pieces = (total_ram / headroom * PACK_PIECES_PER_CAP as f64) as usize;
   let order = cut_coherent_order(profile, pieces, epsilon);
 
-  // 2. Greedy next-fit packing to the RAM cap, with live cross-ingress
-  //    accounting (structure mirrors `partition_for_cycle_cap`; the tentative
-  //    test evaluates the nonlinear model over running aggregates).
+  // 2. Greedy next-fit packing to the RAM cap with live closure-union
+  //    accounting. `member_mark[x] == shard_epoch` ⇔ x is in the current
+  //    shard's closure union; a candidate's byte delta is a BFS that stops at
+  //    union members, so each block's closure is walked at most twice (once
+  //    tentatively against a full shard, once fresh in the next).
   let mut shard_of = vec![0u32; nblocks];
-  let mut members: FxHashSet<u32> = FxHashSet::default();
-  let mut foreign: FxHashSet<u32> = FxHashSet::default();
-  let mut seen: FxHashSet<u32> = FxHashSet::default();
-  let mut member_bytes = 0u64;
-  let mut member_hb = 0u64;
-  let mut foreign_bytes = 0u64;
+  let mut member_mark = vec![0u32; nblocks];
+  let mut walk_mark = vec![0u32; nblocks];
+  let mut shard_epoch = 1u32;
+  let mut walk_epoch = 0u32;
+  let mut stack: Vec<u32> = Vec::new();
+  let mut collected: Vec<u32> = Vec::new();
+  let mut cur_cost = AiurShardCost::default();
+  let mut shard_costs: Vec<AiurShardCost> = Vec::new();
   let mut cur = 0u32;
-  let mut max_shard_ram_gib = 0.0f64;
+  let mut owned_in_cur = 0usize;
   let mut infeasible = false;
-  let predicted = |member_bytes: u64, member_hb: u64, foreign_bytes: u64| {
-    aiur_ram_gib(member_bytes.saturating_add(foreign_bytes), member_hb)
+  let predicted = |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.hb);
+
+  // Closure-delta walk vs the current shard union: fills `collected` with the
+  // not-yet-union blocks reachable from `b` and returns their byte sum.
+  let mut union_delta = |b: u32,
+                         member_mark: &[u32],
+                         shard_epoch: u32,
+                         walk_epoch: &mut u32,
+                         stack: &mut Vec<u32>,
+                         collected: &mut Vec<u32>|
+   -> u64 {
+    *walk_epoch += 1;
+    stack.clear();
+    collected.clear();
+    let mut bytes = 0u64;
+    if member_mark[b as usize] != shard_epoch {
+      walk_mark[b as usize] = *walk_epoch;
+      stack.push(b);
+    }
+    while let Some(x) = stack.pop() {
+      collected.push(x);
+      bytes = bytes.saturating_add(size(x));
+      for &r in profile.refs(x) {
+        if member_mark[r as usize] != shard_epoch
+          && walk_mark[r as usize] != *walk_epoch
+        {
+          walk_mark[r as usize] = *walk_epoch;
+          stack.push(r);
+        }
+      }
+    }
+    bytes
   };
 
-  for (i, &b) in order.iter().enumerate() {
+  for &b in &order {
     let e = profile.block(b);
-    seen.clear();
-    let mut added = 0u64;
-    for &p in profile.producers(b) {
-      if p != b
-        && !members.contains(&p)
-        && !foreign.contains(&p)
-        && seen.insert(p)
-      {
-        added = added.saturating_add(size(p));
-      }
-    }
-    let removed = if foreign.contains(&b) { size(b) } else { 0 };
-    let tent_fbytes =
-      foreign_bytes.saturating_add(added).saturating_sub(removed);
-    let tentative = predicted(
-      member_bytes.saturating_add(u64::from(e.serialized_size)),
-      member_hb.saturating_add(e.heartbeats),
-      tent_fbytes,
+    let delta = union_delta(
+      b,
+      &member_mark,
+      shard_epoch,
+      &mut walk_epoch,
+      &mut stack,
+      &mut collected,
     );
+    let tentative = AiurShardCost {
+      union_bytes: cur_cost.union_bytes.saturating_add(delta),
+      hb: cur_cost.hb.saturating_add(e.heartbeats),
+      subst: cur_cost.subst.saturating_add(e.subst),
+    };
 
-    if !members.is_empty() && tentative > ram_cap_gib {
-      max_shard_ram_gib = max_shard_ram_gib.max(predicted(
-        member_bytes,
-        member_hb,
-        foreign_bytes,
-      ));
+    if owned_in_cur > 0 && predicted(&tentative) > ram_cap_gib {
+      // Close the shard, open a fresh union, re-walk b's full closure.
+      shard_costs.push(cur_cost);
       cur += 1;
-      members.clear();
-      foreign.clear();
-      member_bytes = 0;
-      member_hb = 0;
-      foreign_bytes = 0;
+      shard_epoch += 1;
+      owned_in_cur = 0;
+      cur_cost = AiurShardCost::default();
+      let delta = union_delta(
+        b,
+        &member_mark,
+        shard_epoch,
+        &mut walk_epoch,
+        &mut stack,
+        &mut collected,
+      );
+      cur_cost.union_bytes = delta;
+    } else {
+      cur_cost.union_bytes = tentative.union_bytes;
     }
-
-    if foreign.remove(&b) {
-      foreign_bytes = foreign_bytes.saturating_sub(size(b));
+    for &x in &collected {
+      member_mark[x as usize] = shard_epoch;
     }
-    members.insert(b);
-    member_bytes = member_bytes.saturating_add(u64::from(e.serialized_size));
-    member_hb = member_hb.saturating_add(e.heartbeats);
-    for &p in profile.producers(b) {
-      if p != b && !members.contains(&p) && foreign.insert(p) {
-        foreign_bytes = foreign_bytes.saturating_add(size(p));
-      }
-    }
+    cur_cost.hb = cur_cost.hb.saturating_add(e.heartbeats);
+    cur_cost.subst = cur_cost.subst.saturating_add(e.subst);
+    owned_in_cur += 1;
     shard_of[b as usize] = cur;
-    if members.len() == 1
-      && predicted(member_bytes, member_hb, foreign_bytes) > ram_cap_gib
-    {
+    if owned_in_cur == 1 && predicted(&cur_cost) > ram_cap_gib {
       infeasible = true;
     }
-    if i == order.len() - 1 {
-      max_shard_ram_gib = max_shard_ram_gib.max(predicted(
-        member_bytes,
-        member_hb,
-        foreign_bytes,
-      ));
-    }
   }
+  shard_costs.push(cur_cost);
+  let max_shard_ram_gib = shard_costs.iter().map(predicted).fold(0.0, f64::max);
 
   let num_shards = (cur + 1) as usize;
   let tree = balanced_agg_tree(0, num_shards as u32);
@@ -2288,6 +2372,7 @@ pub fn partition_for_aiur_ram(
     shard_of,
     tree,
     ram_cap_gib,
+    shard_costs,
     max_shard_ram_gib,
     largest_block_ram_gib,
     infeasible_atomic_floor: infeasible,
@@ -2593,19 +2678,29 @@ mod tests {
     assert!(aiur_prove_secs(1_000_000, 200_000) > p);
   }
 
+  /// Attach a reference graph given per-block (sorted, deduped) ref lists.
+  fn with_refs(mut p: BlockProfile, adj: &[Vec<u32>]) -> BlockProfile {
+    p.set_ref_graph(adj);
+    p
+  }
+
   #[test]
   fn aiur_ram_cap_respected() {
-    // 40-block chain, uniform weights: the packer must split into multiple
-    // shards each under the (usable-fraction) RAM cap.
+    // 40-block chain (each references the next), uniform weights: the packer
+    // must split into multiple shards each under the (usable-fraction) cap,
+    // where a shard's bytes are its closure UNION — for a chain, everything
+    // downstream of its first member.
     let mut b = ProfileBuilder::new();
     for i in 1..=40u8 {
-      b.block(addr(i), bc(20_000, 100_000, 0), 200_000, 1);
+      b.block(addr(i), bc(10_000, 100_000, 0), 20_000, 1);
     }
     for i in 1..40u8 {
       b.delta_edge(addr(i), addr(i + 1));
     }
-    let p = b.finish();
-    let budget = 30.0;
+    let adj: Vec<Vec<u32>> =
+      (0..40u32).map(|i| if i < 39 { vec![i + 1] } else { vec![] }).collect();
+    let p = with_refs(b.finish(), &adj);
+    let budget = 64.0;
     let plan = partition_for_aiur_ram(&p, budget, 0.05);
     assert!(plan.num_shards > 1, "must shard: whole env exceeds the budget");
     assert!(
@@ -2614,11 +2709,44 @@ mod tests {
       plan.max_shard_ram_gib,
       plan.ram_cap_gib,
     );
-    assert!(!plan.infeasible_atomic_floor);
     // Every block is assigned, ids contiguous.
     assert_eq!(plan.shard_of.len(), 40);
     let max_id = plan.shard_of.iter().copied().max().unwrap() as usize;
     assert_eq!(max_id + 1, plan.num_shards);
+  }
+
+  #[test]
+  fn aiur_union_counts_shared_dep_once() {
+    // Blocks 0 and 1 both reference deep dep 2 (which references 3). Packed
+    // into one shard, the union must charge {0,1,2,3} once — NOT
+    // closure(0)+closure(1).
+    let mut b = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    let p = with_refs(b.finish(), &vec![vec![2], vec![2], vec![3], vec![]]);
+    let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    assert_eq!(plan.num_shards, 1);
+    assert_eq!(plan.shard_costs[0].union_bytes, 4000);
+    assert_eq!(plan.shard_costs[0].hb, 40);
+  }
+
+  #[test]
+  fn aiur_floor_is_closure_bytes() {
+    // A cheap block referencing a huge dependency: its lone-shard RAM floor
+    // must include the dependency's bytes even though its own are tiny.
+    let mut b = ProfileBuilder::new();
+    b.block(addr(1), bc(10, 0, 0), 100, 1);
+    b.block(addr(2), bc(10, 0, 0), 3_000_000, 1);
+    let p = with_refs(b.finish(), &vec![vec![1], vec![]]);
+    let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    let floor = aiur_ram_gib(3_000_100, 10);
+    assert!(
+      (plan.largest_block_ram_gib - floor).abs() < 1e-9,
+      "floor {} != closure-based {}",
+      plan.largest_block_ram_gib,
+      floor,
+    );
   }
 
   #[test]
@@ -2628,9 +2756,24 @@ mod tests {
     let mut b = ProfileBuilder::new();
     b.block(addr(1), bc(u64::MAX / 2, 1000, 0), 1000, 1);
     b.block(addr(2), bc(10, 0, 0), 1000, 1);
-    let p = b.finish();
+    let p = with_refs(b.finish(), &vec![vec![], vec![]]);
     let plan = partition_for_aiur_ram(&p, 8.0, 0.05);
     assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
+  }
+
+  #[test]
+  fn ref_graph_roundtrips_through_ixprof() {
+    let mut b = ProfileBuilder::new();
+    for i in 1..=3u8 {
+      b.block(addr(i), bc(1, 2, 3), 10, 1);
+    }
+    let p = with_refs(b.finish(), &vec![vec![1, 2], vec![2], vec![]]);
+    let q = BlockProfile::from_bytes(&p.to_bytes()).unwrap();
+    assert!(q.has_ref_graph());
+    assert_eq!(q.refs(0), &[1, 2]);
+    assert_eq!(q.refs(1), &[2]);
+    assert_eq!(q.refs(2), &[] as &[u32]);
+    assert_eq!(p, q);
   }
 
   #[test]
