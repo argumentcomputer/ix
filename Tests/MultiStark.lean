@@ -96,12 +96,19 @@ def selfTestSuite : IO UInt32 := do
 -- `recursive-verifier`: prove factorial(5)=120, verify it, reject tampering
 -- ════════════════════════════════════════════════════════════════════════════
 
-/-- A tiny Aiur program: `factorial` as the proving entrypoint. -/
+/-- A tiny Aiur program: `factorial` as the proving entrypoint. The recursion
+argument is deliberately routed through `store`/`load` so the inner system
+contains a memory circuit — memory circuits set `uses_next_row` (their
+transition rules read the next row), so the in-circuit verifier's two-point
+opening path is exercised alongside the single-point function/gadget
+circuits. -/
 def factorialProgram : Source.Toplevel := ⟦
   pub fn factorial(n: G) -> G {
     match n {
       0 => 1,
-      _ => n * factorial(n - 1),
+      _ =>
+        let p = store(n - 1);
+        n * factorial(load(p)),
     }
   }
 ⟧

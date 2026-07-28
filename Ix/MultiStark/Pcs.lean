@@ -761,6 +761,17 @@ def pcs := ⟦
     let b1 = ri_apply(buckets, lh, idxbits, log_gmax, zeta, p_x, pz0, alpha);
     ri_apply(b1, lh, idxbits, log_gmax, zn, p_x, pz1, alpha)
   }
+  -- A main/preprocessed matrix: opened at ζ, and at ζ·g only when the
+  -- circuit's `uses_next_row` flag is set (mirroring the prover's round
+  -- construction; the α-power stream advances only over openings that exist).
+  fn open_flag_mat(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, lh: G,
+      ldeg: G, zeta: Ext, p_x: List‹Goldilocks›, mat: List‹List‹Ext››, alpha: Ext,
+      unr: G) -> List‹Bucket› {
+    match unr {
+      0 => ri_apply(buckets, lh, idxbits, log_gmax, zeta, p_x, list_lookup(mat, 0), alpha),
+      _ => open_2pt_mat(buckets, idxbits, log_gmax, lh, ldeg, zeta, p_x, mat, alpha),
+    }
+  }
   fn open_batch_2pt(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, log_blowup: G, ci: G,
       rem: G, log_degrees: List‹U8›, zeta: Ext, base_rows: List‹List‹U64››,
       opened: OpenedRound, alpha: Ext) -> List‹Bucket› {
@@ -772,6 +783,21 @@ def pcs := ⟦
                   lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(opened, ci), alpha);
         open_batch_2pt(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta,
                        base_rows, opened, alpha),
+    }
+  }
+  -- The stage-1 batch: per-circuit point count from the `flags` list.
+  fn open_batch_flag(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, log_blowup: G, ci: G,
+      rem: G, log_degrees: List‹U8›, flags: List‹G›, zeta: Ext, base_rows: List‹List‹U64››,
+      opened: OpenedRound, alpha: Ext) -> List‹Bucket› {
+    match rem {
+      0 => buckets,
+      _ =>
+        let ldeg = to_field(list_lookup(log_degrees, ci));
+        let b = open_flag_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
+                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(opened, ci), alpha,
+                  list_lookup(flags, ci));
+        open_batch_flag(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, flags,
+                        zeta, base_rows, opened, alpha),
     }
   }
 
@@ -792,28 +818,30 @@ def pcs := ⟦
 
   -- The preprocessed batch: only circuits with `prep_indices[i] = Some(j)`;
   -- `k` tracks the position in the preprocessed commitment (= base-row index).
+  -- The point count follows the owning circuit's `uses_next_row` flag.
   fn open_prep(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, log_blowup: G, ci: G, rem: G,
-      k: G, log_degrees: List‹U8›, prep_indices: List‹OptIdx›, zeta: Ext,
+      k: G, log_degrees: List‹U8›, prep_indices: List‹OptIdx›, flags: List‹G›, zeta: Ext,
       base_rows: List‹List‹U64››, prep_round: OpenedRound, alpha: Ext) -> List‹Bucket› {
     match rem {
       0 => buckets,
       _ => match list_lookup(prep_indices, ci) {
         OptIdx.NoIdx =>
           open_prep(buckets, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, k, log_degrees,
-                    prep_indices, zeta, base_rows, prep_round, alpha),
+                    prep_indices, flags, zeta, base_rows, prep_round, alpha),
         OptIdx.SomeIdx(_j) =>
           let ldeg = to_field(list_lookup(log_degrees, ci));
-          let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                    lanes_to_gl(list_lookup(base_rows, k)), list_lookup(prep_round, k), alpha);
+          let b = open_flag_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
+                    lanes_to_gl(list_lookup(base_rows, k)), list_lookup(prep_round, k), alpha,
+                    list_lookup(flags, ci));
           open_prep(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, k + 1, log_degrees,
-                    prep_indices, zeta, base_rows, prep_round, alpha),
+                    prep_indices, flags, zeta, base_rows, prep_round, alpha),
       },
     }
   }
   fn open_prep_batch(buckets: List‹Bucket›, input_proof: List‹BatchOpening›,
       prep_commit: MerkleCap, prep_opt: PreprocessedOpt, prep_indices: List‹OptIdx›,
-      log_degrees: List‹U8›, num_circuits: G, idxbits: List‹G›, log_gmax: G, log_blowup: G,
-      zeta: Ext, alpha: Ext) -> List‹Bucket› {
+      flags: List‹G›, log_degrees: List‹U8›, num_circuits: G, idxbits: List‹G›, log_gmax: G,
+      log_blowup: G, zeta: Ext, alpha: Ext) -> List‹Bucket› {
     match prep_opt {
       PreprocessedOpt.NoPreprocessed => buckets,
       PreprocessedOpt.SomePreprocessed(prep_round) =>
@@ -823,7 +851,7 @@ def pcs := ⟦
         assert_eq!(mmcs_verify(prep_commit, rows_p,
           heights_prep(log_degrees, log_blowup, prep_indices, num_circuits, 0), idxbits, proof_p, log_gmax), 1);
         open_prep(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, 0, log_degrees,
-                  prep_indices, zeta, rows_p, prep_round, alpha),
+                  prep_indices, flags, zeta, rows_p, prep_round, alpha),
     }
   }
 
@@ -909,7 +937,7 @@ def pcs := ⟦
   fn verify_one_query(idxbits: List‹G›, qp: QueryProof, alpha: Ext,
       stage1: OpenedRound, stage2: OpenedRound, q_opened: OpenedRound,
       prep_opt: PreprocessedOpt, s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap,
-      prep_commit: MerkleCap, prep_indices: List‹OptIdx›,
+      prep_commit: MerkleCap, prep_indices: List‹OptIdx›, flags: List‹G›,
       log_degrees: List‹U8›, zeta: Ext, num_circuits: G, log_blowup: G, log_gmax: G,
       betas: List‹Ext›, commit_phase_commits: List‹MerkleCap›, final_poly: List‹Ext›,
       num_rounds: G) -> G {
@@ -922,7 +950,7 @@ def pcs := ⟦
     let BatchOpening.Mk(rows_s1, proof_s1) = list_lookup(input_proof, 0);
     assert_eq!(eq_zero(list_length(rows_s1) - num_circuits), 1);
     assert_eq!(mmcs_verify(s1c, rows_s1, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_s1, log_gmax), 1);
-    let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s1, stage1, alpha);
+    let buckets = open_batch_flag(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, flags, zeta, rows_s1, stage1, alpha);
     let BatchOpening.Mk(rows_s2, proof_s2) = list_lookup(input_proof, 1);
     assert_eq!(eq_zero(list_length(rows_s2) - num_circuits), 1);
     assert_eq!(mmcs_verify(s2c, rows_s2, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_s2, log_gmax), 1);
@@ -933,7 +961,7 @@ def pcs := ⟦
     assert_eq!(eq_zero(list_length(rows_q) - num_circuits), 1);
     assert_eq!(mmcs_verify(qc, rows_q, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_q, log_gmax), 1);
     let buckets = open_quotient(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_q, q_opened, alpha);
-    let buckets = open_prep_batch(buckets, input_proof, prep_commit, prep_opt, prep_indices, log_degrees, num_circuits, idxbits, log_gmax, log_blowup, zeta, alpha);
+    let buckets = open_prep_batch(buckets, input_proof, prep_commit, prep_opt, prep_indices, flags, log_degrees, num_circuits, idxbits, log_gmax, log_blowup, zeta, alpha);
     -- a height-`log_blowup` (constant-poly) reduced opening must be zero
     let _cz = assert_blowup_zero(buckets, log_blowup);
     -- the first reduced opening must sit at log_global_max_height
@@ -952,7 +980,7 @@ def pcs := ⟦
   fn query_loop(input: ByteStream, output: ByteStream, query_proofs: List‹QueryProof›,
       alpha: Ext, stage1: OpenedRound, stage2: OpenedRound, q_opened: OpenedRound,
       prep_opt: PreprocessedOpt, s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap,
-      prep_commit: MerkleCap, prep_indices: List‹OptIdx›,
+      prep_commit: MerkleCap, prep_indices: List‹OptIdx›, flags: List‹G›,
       log_degrees: List‹U8›, zeta: Ext, num_circuits: G, log_blowup: G, log_gmax: G,
       betas: List‹Ext›, commit_phase_commits: List‹MerkleCap›, final_poly: List‹Ext›,
       num_rounds: G) -> G {
@@ -961,10 +989,10 @@ def pcs := ⟦
       ListNode.Cons(qp, rest) =>
         let (idxbits, input2, output2) = ch_sample_bits(input, output, log_gmax);
         let _q = verify_one_query(idxbits, qp, alpha, stage1, stage2, q_opened, prep_opt,
-          s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta, num_circuits,
+          s1c, s2c, qc, prep_commit, prep_indices, flags, log_degrees, zeta, num_circuits,
           log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds);
         query_loop(input2, output2, rest, alpha, stage1, stage2, q_opened, prep_opt,
-          s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta, num_circuits,
+          s1c, s2c, qc, prep_commit, prep_indices, flags, log_degrees, zeta, num_circuits,
           log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds),
     }
   }
@@ -975,7 +1003,7 @@ def pcs := ⟦
   fn pcs_fri_verify(post_zeta_input: ByteStream, stage1: OpenedRound, stage2: OpenedRound,
       q_opened: OpenedRound, prep_opt: PreprocessedOpt, opening: FriProof,
       s1c: MerkleCap, s2c: MerkleCap, qc: MerkleCap, prep_commit: MerkleCap,
-      prep_indices: List‹OptIdx›, log_degrees: List‹U8›,
+      prep_indices: List‹OptIdx›, flags: List‹G›, log_degrees: List‹U8›,
       zeta: Ext, num_circuits: G, log_blowup: G, num_queries: G, commit_pow_bits: G,
       query_pow_bits: G) -> G {
     let FriProof.Mk(commit_phase_commits, pw, query_proofs, final_poly, qpw) = opening;
@@ -1006,7 +1034,7 @@ def pcs := ⟦
     -- query indices + per-query verification (log_global_max_height = #rounds + log_blowup)
     let log_gmax = num_rounds + log_blowup;
     query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
-      prep_opt, s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta,
+      prep_opt, s1c, s2c, qc, prep_commit, prep_indices, flags, log_degrees, zeta,
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)
   }
 

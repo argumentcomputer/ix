@@ -18,9 +18,10 @@ flat base-field node graph, so this reader parses that compiled form:
 * GLOBAL HEADER: 7 × u16 parameters + u16 circuit count.
 * PER-CIRCUIT RECORD: a `u32 LE len` prefix followed by exactly `len`
   contiguous bytes —
-    - 8 × u32: main_width, preprocessed_width, preprocessed_height,
+    - 9 × u32: main_width, preprocessed_width, preprocessed_height,
       num_publics, stage_2_width, max_constraint_degree, lookup_prefix_len,
-      node_count
+      node_count, uses_next_row (0/1: whether main/preprocessed are opened
+      at ζ·g in addition to ζ)
     - `node_count` tagged nodes (children are u32 NodeIds, never sub-trees):
       0 Const(u64) · 1 Var(u8 source, u8 offset, u32 index) · 2 Public(u32) ·
       3 IsFirstRow · 4 IsLastRow · 5 IsTransition ·
@@ -76,7 +77,7 @@ def systemDeserialize := ⟦
   -- NodeIds (`zeros`), and the maximum constraint degree (for the quotient
   -- degree). The lookups are omitted — their constraints are compiled into
   -- `zeros`, so the verifier never needs them.
-  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G) }   -- nodes, node_count, zeros, max_constraint_degree
+  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, G) }   -- nodes, node_count, zeros, max_constraint_degree, uses_next_row
 
   -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
   -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
@@ -230,13 +231,13 @@ def systemDeserialize := ⟦
   }
 
   -- One circuit record: a u32 length prefix then the contiguous record. The
-  -- 8-word header, the node stream, and the zeros are parsed; the compiled
+  -- 9-word header, the node stream, and the zeros are parsed; the compiled
   -- lookups (which the verifier does not use) are skipped by jumping to the
   -- record end via the length prefix. Besides the parsed circuit, returns its
-  -- 6 shape words as u64 limbs, in `observe_shape` order: constraint_count
+  -- 7 shape words as u64 limbs, in `observe_shape` order: constraint_count
   -- (= zero_count), max_constraint_degree, preprocessed_height,
-  -- preprocessed_width, main_width, stage_2_width.
-  fn read_sys_circuit(base: G) -> (SysCircuit, [U64; 6], G) {
+  -- preprocessed_width, main_width, stage_2_width, uses_next_row.
+  fn read_sys_circuit(base: G) -> (SysCircuit, [U64; 7], G) {
     let (rec_len, r0) = #read_vk_u32(base);
     let (mw, mwl, c1) = #read_vk_u32_limb(r0);
     let (pw, pwl, c2) = #read_vk_u32_limb(c1);
@@ -246,28 +247,29 @@ def systemDeserialize := ⟦
     let (md, mdl, c6) = #read_vk_u32_limb(c5);
     let (lpl, c7) = #read_vk_u32(c6);
     let (ncount, c8) = #read_vk_u32(c7);
-    let (nodes, c9) = read_nodes_n(c8, ncount);
+    let (unr, unrl, c8b) = #read_vk_u32_limb(c8);
+    let (nodes, c9) = read_nodes_n(c8b, ncount);
     let (zcount, zcl, c10) = #read_vk_u32_limb(c9);
     let (zeros, c11) = read_node_ids_n(c10, zcount);
     -- The remaining bytes of the record are the compiled lookups; skip them.
     let rend = r0 + rec_len;
-    (SysCircuit.Mk(nodes, ncount, zeros, md),
-     [zcl, mdl, phl, pwl, mwl, s2wl], rend)
+    (SysCircuit.Mk(nodes, ncount, zeros, md, unr),
+     [zcl, mdl, phl, pwl, mwl, s2wl, unrl], rend)
   }
-  fn cons_shape6(l: [U64; 6], tail: List‹U64›) -> List‹U64› {
+  fn cons_shape7(l: [U64; 7], tail: List‹U64›) -> List‹U64› {
     store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],
     store(ListNode.Cons(l[3], store(ListNode.Cons(l[4], store(ListNode.Cons(l[5],
-    tail))))))))))))
+    store(ListNode.Cons(l[6], tail))))))))))))))
   }
   -- Returns the circuits plus their shape limbs (`observe_shape` order: each
-  -- circuit's 6 metadata words; the count limb is consed by `read_system`).
+  -- circuit's 7 metadata words; the count limb is consed by `read_system`).
   fn read_sys_circuits_n(i: G, n: G) -> (List‹SysCircuit›, List‹U64›, G) {
     match n {
       0 => (store(ListNode.Nil), store(ListNode.Nil), i),
       _ =>
         let (x, xl, j) = read_sys_circuit(i);
         let (rest, lrest, j2) = read_sys_circuits_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), cons_shape6(xl, lrest), j2),
+        (store(ListNode.Cons(x, rest)), cons_shape7(xl, lrest), j2),
     }
   }
 

@@ -59,46 +59,51 @@ impl AiurSystem {
     let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
-    let mut push_circuit =
-      |main_width: usize,
-       preprocessed: Option<RowMajorMatrix<G>>,
-       constraints: Vec<Expr<G>>,
-       lookups: Vec<Lookup<Expr<G>>>| {
-        slot_widths.push(lookups.iter().map(|l| l.args.len()).collect());
-        circuit_inputs.push(CircuitInputs {
-          main_width,
-          preprocessed,
-          constraints,
-          ext_constraints: vec![],
-          lookups,
-        });
-      };
+    let mut push_circuit = |main_width: usize,
+                            preprocessed: Option<RowMajorMatrix<G>>,
+                            constraints: Vec<Expr<G>>,
+                            lookups: Vec<Lookup<Expr<G>>>,
+                            uses_next_row: bool| {
+      slot_widths.push(lookups.iter().map(|l| l.args.len()).collect());
+      circuit_inputs.push(CircuitInputs {
+        main_width,
+        preprocessed,
+        constraints,
+        ext_constraints: vec![],
+        lookups,
+        uses_next_row,
+      });
+    };
 
-    // Constrained functions (ascending index).
+    // Constrained functions (ascending index). Function circuits are
+    // single-row: no constraint references the next row.
     for i in 0..toplevel.functions.len() {
       if !toplevel.functions[i].constrained {
         continue;
       }
       let (constraints, lookups) = toplevel.build_constraints(i);
-      push_circuit(constraints.width, None, constraints.zeros, lookups);
+      push_circuit(constraints.width, None, constraints.zeros, lookups, false);
     }
-    // Memories.
+    // Memories. Their transition rules (address ordering) reference the
+    // next row, so these circuits need the ζ·g opening.
     for &size in &toplevel.memory_sizes {
       let (memory, constraints, lookups) = Memory::build(size);
-      push_circuit(memory.width, None, constraints, lookups);
+      push_circuit(memory.width, None, constraints, lookups, true);
     }
-    // Gadgets.
+    // Gadgets: preprocessed tables with per-row lookups only.
     push_circuit(
       Bytes1.main_width(),
       Bytes1.preprocessed(),
       vec![],
       Bytes1.lookups(),
+      false,
     );
     push_circuit(
       Bytes2.main_width(),
       Bytes2.preprocessed(),
       vec![],
       Bytes2.lookups(),
+      false,
     );
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
@@ -445,6 +450,29 @@ mod tests {
       vec![function_channel(), G::from_usize(0), a, b, expected],
       "unexpected claim layout / computed output"
     );
+
+    // The opening shape must follow the per-circuit flags: function and
+    // gadget circuits (single-row) are opened at ζ only, the memory circuit
+    // at ζ and ζ·g. Circuit order: f, g, memory[1], Bytes1, Bytes2.
+    let flags: Vec<bool> =
+      system.system.circuits.iter().map(|c| c.uses_next_row).collect();
+    assert_eq!(flags, [false, false, true, false, false]);
+    let opened: Vec<usize> =
+      proof.stage_1_opened_values.iter().map(Vec::len).collect();
+    assert_eq!(
+      opened,
+      [1, 1, 2, 1, 1],
+      "main-trace opening count must be 1, except 2 for the memory circuit"
+    );
+    // The gadget preprocessed tables belong to unflagged circuits: ζ only.
+    let prep_opened: Vec<usize> = proof
+      .preprocessed_opened_values
+      .as_ref()
+      .unwrap()
+      .iter()
+      .map(Vec::len)
+      .collect();
+    assert_eq!(prep_opened, [1, 1]);
 
     system
       .verify(&claim, &proof)

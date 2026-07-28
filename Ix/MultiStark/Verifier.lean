@@ -668,9 +668,20 @@ def verifier := ⟦
     }
   }
 
+  -- The "next"-row opened values of a matrix that was opened at ζ (and, only
+  -- when `unr = 1`, at ζ·g). When there is no second opening, the circuit's
+  -- constraints provably never read the next row (enforced at setup), so the
+  -- ζ row is returned to keep widths consistent — mirroring Rust's verifier.
+  fn opened_next_row(mat: List‹List‹Ext››, unr: G) -> List‹Ext› {
+    match unr {
+      0 => list_lookup(mat, 0),
+      _ => list_lookup(mat, 1),
+    }
+  }
+
   -- The preprocessed opened rows (current, next) at ζ for circuit `i`, or
   -- `(Nil, Nil)` if the circuit has no preprocessed trace.
-  fn ood_prep_rows(prep_opt: PreprocessedOpt, oi: OptIdx) -> (List‹Ext›, List‹Ext›) {
+  fn ood_prep_rows(prep_opt: PreprocessedOpt, oi: OptIdx, unr: G) -> (List‹Ext›, List‹Ext›) {
     match oi {
       OptIdx.NoIdx => (store(ListNode.Nil), store(ListNode.Nil)),
       OptIdx.SomeIdx(j) =>
@@ -678,7 +689,7 @@ def verifier := ⟦
           PreprocessedOpt.NoPreprocessed => (store(ListNode.Nil), store(ListNode.Nil)),
           PreprocessedOpt.SomePreprocessed(round) =>
             let pr = list_lookup(round, j);
-            (list_lookup(pr, 0), list_lookup(pr, 1)),
+            (list_lookup(pr, 0), opened_next_row(pr, unr)),
         },
     }
   }
@@ -694,18 +705,19 @@ def verifier := ⟦
     match load(circuits) {
       ListNode.Nil => 1,
       ListNode.Cons(circ, rest) =>
-        let SysCircuit.Mk(nodes, _node_count, zeros, md) = circ;
+        let SysCircuit.Mk(nodes, _node_count, zeros, md, unr) = circ;
         let l = to_field(list_lookup(log_degrees, i));
         let qd = quotient_degree_of(md);
         let naccp = list_lookup(accs, i);
         let s1 = list_lookup(stage1, i);
         let main = list_lookup(s1, 0);
-        let main_next = list_lookup(s1, 1);
+        let main_next = opened_next_row(s1, unr);
         let s2 = list_lookup(stage2, i);
         -- Stage-2 opened rows are base columns; used directly (no pairing).
+        -- Stage-2 is ALWAYS opened at ζ and ζ·g (lookup transition).
         let s2row = list_lookup(s2, 0);
         let s2next = list_lookup(s2, 1);
-        let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
+        let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i), unr);
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
         let publics = build_publics(lch, fch, accp, naccp);
         let comp = ood_composition(nodes, zeros,
@@ -773,6 +785,7 @@ def verifier := ⟦
         assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
         let acirc = select_active_circuits(circuits, active);
         let aprep = select_active_prep(prep_indices, active);
+        let aflags = circuit_flags(acirc);
         assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
         let Commitments.Mk(s1c, s2c, qc) = commitments;
         let prep_cap = opt_commit_cap(commit);
@@ -782,9 +795,21 @@ def verifier := ⟦
         let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
         pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
-          s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
+          s1c, s2c, qc, prep_cap, aprep, aflags, log_degrees, zeta,
           list_length(acirc), log_blowup, num_queries, commit_pow_bits,
           query_pow_bits),
+    }
+  }
+
+  -- Per-circuit `uses_next_row` flags, in circuit order (for the PCS
+  -- reduced-opening replay: flagged matrices are opened at ζ and ζ·g,
+  -- unflagged ones at ζ only).
+  fn circuit_flags(circuits: List‹SysCircuit›) -> List‹G› {
+    match load(circuits) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(c, rest) =>
+        let SysCircuit.Mk(_nodes, _node_count, _zeros, _md, unr) = c;
+        store(ListNode.Cons(unr, circuit_flags(rest))),
     }
   }
 

@@ -30,9 +30,10 @@
 //!   u16          circuit count
 //! PER-CIRCUIT RECORDS (circuit count times; each is `u32 LE len` + `len` bytes
 //!                      so a record is a contiguous byte range)
-//!   8 x u32 LE   main_width, preprocessed_width, preprocessed_height,
+//!   9 x u32 LE   main_width, preprocessed_width, preprocessed_height,
 //!                num_publics, stage_2_width, max_constraint_degree,
-//!                lookup_prefix_len, node_count
+//!                lookup_prefix_len, node_count, uses_next_row (0/1:
+//!                whether main/preprocessed are opened at ζ·g)
 //!   node_count nodes, each:
 //!     u8 tag  0 Const 1 Var 2 Public 3 IsFirstRow 4 IsLastRow
 //!             5 IsTransition 6 Add 7 Sub 8 Mul 9 Neg
@@ -153,6 +154,7 @@ fn encode_circuit(buf: &mut Vec<u8>, circuit: &Circuit<Val>) {
   push_u32(buf, compiled.max_constraint_degree as usize);
   push_u32(buf, compiled.lookup_prefix_len);
   push_u32(buf, compiled.nodes.len());
+  push_u32(buf, usize::from(circuit.uses_next_row));
   for node in &compiled.nodes {
     push_node(buf, node);
   }
@@ -332,6 +334,11 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
     u32::try_from(seg.u32_usize()?).expect("degree exceeds u32");
   let lookup_prefix_len = seg.u32_usize()?;
   let node_count = seg.u32_usize()?;
+  let uses_next_row = match seg.u32_usize()? {
+    0 => false,
+    1 => true,
+    v => return Err(format!("uses_next_row flag out of range: {v}")),
+  };
   let mut nodes = Vec::with_capacity(node_count.min(1 << 20));
   for _ in 0..node_count {
     nodes.push(decode_node(&mut seg)?);
@@ -373,6 +380,7 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
     num_lookups,
     stage_2_width,
     num_publics,
+    uses_next_row,
   })
 }
 
@@ -462,13 +470,17 @@ mod tests {
         constraints: vec![],
         ext_constraints: vec![],
         lookups: Bytes1.lookups(),
+        uses_next_row: false,
       },
+      // `true` is allowed even without next-row constraints (it just opens
+      // both points); set it here so the codec round-trips both values.
       CircuitInputs {
         main_width: Bytes2.main_width(),
         preprocessed: Bytes2.preprocessed(),
         constraints: vec![],
         ext_constraints: vec![],
         lookups: Bytes2.lookups(),
+        uses_next_row: true,
       },
     ];
     let (system, _key) = System::new(AiurConfig::new(cp, fp), inputs);
@@ -498,6 +510,7 @@ mod tests {
       assert_eq!(a.num_publics, b.num_publics);
       assert_eq!(a.preprocessed_width, b.preprocessed_width);
       assert_eq!(a.preprocessed_height, b.preprocessed_height);
+      assert_eq!(a.uses_next_row, b.uses_next_row);
     }
   }
 
