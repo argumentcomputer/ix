@@ -227,12 +227,15 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     for m in a.metrics do
       let mv := rowNum a.mainRows n m
       let pv := rowNum a.prRows n m
-      -- An OOM row may still carry real partial measurements; render those,
-      -- and OOM only for the metrics the kill prevented. A REJECTED row is
+      -- An OOM/CRASH row may still carry real partial measurements; render
+      -- those, and the status only for the metrics the kill prevented. OOM
+      -- is a capacity kill; CRASH is a fault in the tool (e.g. a segfault)
+      -- and needs a bug hunt, not a bigger box. A REJECTED row is
       -- spelled out — the constant was rejected, not benchmarked.
       let renderSide := fun (status : String) (v : Option Float) =>
         if status == "rejected" then "❌ failed typecheck"
         else if status == "oom" && v.isNone then "OOM"
+        else if status == "crash" && v.isNone then "💥 CRASH"
         else human v m
       let mut delta := "n/a"
       if let (some mvv, some pvv) := (mv, pv) then
