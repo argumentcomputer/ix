@@ -42,6 +42,7 @@
 //!   the on-disk bytes.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use memmap2::Mmap;
 
@@ -113,6 +114,17 @@ pub struct LazyConstant {
   /// a constant forces its materialization). `None` for the
   /// compile-side path, which owns the parsed value already.
   pending_addr: Option<Address>,
+  /// Set after the first SUCCESSFUL `Address::hash(bytes) ==
+  /// pending_addr` check, so verification runs once per entry rather
+  /// than once per `get()`. Without this memo, the check-loop policy of
+  /// re-ingressing each work item's closure after
+  /// `clear_releasing_memory()` re-hashes every constant once per
+  /// closure it appears in — measured as +63.9% whole-env check time on
+  /// `ooc · InitStd`. `Arc`-shared so clones (which share `bytes`)
+  /// inherit the verdict. Failures are never memoized: `bytes` are
+  /// immutable, so a failing entry re-fails deterministically on every
+  /// call.
+  verified: Arc<AtomicBool>,
 }
 
 impl LazyConstant {
@@ -127,17 +139,21 @@ impl LazyConstant {
       bytes: BytesSource::Heap(bytes),
       cache: None,
       pending_addr: None,
+      verified: Arc::new(AtomicBool::new(false)),
     }
   }
 
   /// Like [`Self::from_bytes`], but with the address-binding check
-  /// deferred to first [`Self::get`]. Used by `Env::get_anon` so env
-  /// parse time does not pay one content hash per constant.
+  /// deferred to the first successful [`Self::get`] (memoized there —
+  /// one hash per entry per load, not per call). Used by
+  /// `Env::get_anon` so env parse time does not pay one content hash
+  /// per constant.
   pub fn from_bytes_deferred(bytes: Arc<[u8]>, addr: Address) -> Self {
     LazyConstant {
       bytes: BytesSource::Heap(bytes),
       cache: None,
       pending_addr: Some(addr),
+      verified: Arc::new(AtomicBool::new(false)),
     }
   }
 
@@ -152,6 +168,7 @@ impl LazyConstant {
       bytes: BytesSource::Mmap { mmap, offset, len },
       cache: None,
       pending_addr: None,
+      verified: Arc::new(AtomicBool::new(false)),
     }
   }
 
@@ -166,6 +183,7 @@ impl LazyConstant {
       bytes: BytesSource::Heap(buf.into()),
       cache: Some(Arc::new(c)),
       pending_addr: None,
+      verified: Arc::new(AtomicBool::new(false)),
     }
   }
 
@@ -181,6 +199,7 @@ impl LazyConstant {
       bytes: BytesSource::Heap(buf.into()),
       cache: None,
       pending_addr: None,
+      verified: Arc::new(AtomicBool::new(false)),
     }
   }
 
@@ -195,7 +214,12 @@ impl LazyConstant {
     if let Some(c) = &self.cache {
       return Ok(c.clone());
     }
-    if let Some(expected) = &self.pending_addr {
+    // Memoized: hash only until the first success. `Relaxed` suffices —
+    // the flag guards recomputation of a pure function of immutable
+    // bytes, so a race just means both threads hash once.
+    if let Some(expected) = &self.pending_addr
+      && !self.verified.load(Ordering::Relaxed)
+    {
       let computed = Address::hash(self.bytes.as_slice());
       if computed != *expected {
         return Err(format!(
@@ -204,6 +228,7 @@ impl LazyConstant {
           expected.hex()
         ));
       }
+      self.verified.store(true, Ordering::Relaxed);
     }
     let mut slice: &[u8] = self.bytes.as_slice();
     let parsed = Constant::get(&mut slice)
@@ -286,6 +311,13 @@ impl LazyConstant {
   pub fn verify_address(&self, expected: &Address) -> bool {
     Address::hash(self.bytes.as_slice()) == *expected
   }
+
+  /// Whether the deferred address check has already succeeded on this
+  /// entry (test observability for the verify-once memo).
+  #[cfg(test)]
+  pub(crate) fn was_verified(&self) -> bool {
+    self.verified.load(Ordering::Relaxed)
+  }
 }
 
 /// Bytes are deterministic for a given `Constant`, so byte-equality
@@ -360,6 +392,48 @@ mod tests {
     assert_eq!(*lazy.get().unwrap(), c);
     // get() parses fresh and does not populate a cache.
     assert!(!lazy.is_materialized());
+  }
+
+  #[test]
+  fn from_bytes_deferred_verifies_once() {
+    let c = defn_constant();
+    let (addr, bytes) = c.commit();
+    let lazy = LazyConstant::from_bytes_deferred(bytes.into(), addr);
+    assert!(!lazy.was_verified());
+    assert_eq!(*lazy.get().unwrap(), c);
+    // The address check ran and is memoized; later get()s skip the hash.
+    assert!(lazy.was_verified());
+    assert_eq!(*lazy.get().unwrap(), c);
+    assert!(lazy.was_verified());
+  }
+
+  #[test]
+  fn from_bytes_deferred_never_memoizes_failure() {
+    let c = defn_constant();
+    let (_, bytes) = c.commit();
+    let wrong = Address::hash(b"not these bytes");
+    let lazy = LazyConstant::from_bytes_deferred(bytes.into(), wrong);
+    for _ in 0..2 {
+      let err = lazy.get().expect_err("address mismatch must reject");
+      assert!(
+        err.contains("bytes hash to") && err.contains("but stored under"),
+        "expected deferred verify error, got: {err}"
+      );
+      assert!(!lazy.was_verified());
+    }
+  }
+
+  #[test]
+  fn from_bytes_deferred_clones_share_verification() {
+    let c = defn_constant();
+    let (addr, bytes) = c.commit();
+    let lazy = LazyConstant::from_bytes_deferred(bytes.into(), addr);
+    let cloned = lazy.clone();
+    assert!(!cloned.was_verified());
+    lazy.get().unwrap();
+    // Clones share `bytes`, so the memoized verdict transfers soundly.
+    assert!(cloned.was_verified());
+    cloned.get().unwrap();
   }
 
   #[test]

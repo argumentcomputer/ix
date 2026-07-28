@@ -28,9 +28,11 @@ this language:
   cross-run proof store is keyed by address (content-addressed: the same
   constant has the same address in every env).
 - Address↔bytes binding is enforced by `Address::hash(bytes) == addr`,
-  verified at first materialization (`ixon::lazy::LazyConstant::get`).
-  Every constant the kernel certifies is necessarily materialized, so
-  everything that can enter a subject root has passed the check.
+  verified at first materialization (`ixon::lazy::LazyConstant::get`;
+  memoized — one hash per constant per load, not per call, and a
+  failure is never memoized). Every constant the kernel certifies is
+  necessarily materialized, so everything that can enter a subject
+  root has passed the check.
 
 **Merkle inclusion proofs for individual constants live entirely in this
 layer** and are unaffected by anything below: proving "address `A` is in

@@ -2437,7 +2437,6 @@ impl Env {
         ));
       }
       consts_order.push(addr.clone());
-      let _ = i;
       // Address binding is verified lazily at first materialization
       // (`LazyConstant::get`) instead of one content hash per constant
       // here — constants shipped in a closure but never forced by the
