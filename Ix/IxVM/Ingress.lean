@@ -1618,6 +1618,44 @@ def ingress := ⟦
   -- compile uses, serializing it in-Aiur, and hashing. No external trust
   -- needed — every input is derived from a `load_verified_*` result or a
   -- loop counter.
+  -- A mutual-block member's own content address, synthesized from its
+  -- (index, block) the same way `cprj_content_addr` does for constructors:
+  -- build the projection `Constant` the compiler would have built — empty
+  -- sharing/refs/univs tables — serialize it in-Aiur and hash. Mirrors
+  -- `Constant::new(ConstantInfo::XPrj{..}).commit()` on the Rust side
+  -- (`anon_defn_proj_addr` and friends).
+  --
+  -- Address-keyed constants need these: `Expr.Rec(i)` names a member by
+  -- index within its block, so unlike `Expr.Ref` it has no entry in the
+  -- constant's `refs` table to resolve through.
+  fn dprj_content_addr(idx: U64, block: Addr) -> Addr {
+    let cnst = Constant.Mk(ConstantInfo.DPrj(DefinitionProj.Mk(idx, block)),
+      store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+    bytes_to_addr(put_constant(cnst, store(ListNode.Nil)))
+  }
+
+  fn iprj_content_addr(idx: U64, block: Addr) -> Addr {
+    let cnst = Constant.Mk(ConstantInfo.IPrj(InductiveProj.Mk(idx, block)),
+      store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+    bytes_to_addr(put_constant(cnst, store(ListNode.Nil)))
+  }
+
+  fn rprj_content_addr(idx: U64, block: Addr) -> Addr {
+    let cnst = Constant.Mk(ConstantInfo.RPrj(RecursorProj.Mk(idx, block)),
+      store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+    bytes_to_addr(put_constant(cnst, store(ListNode.Nil)))
+  }
+
+  -- Dispatch on the member's kind: a Defn member is reached through a DPrj,
+  -- an Indc through an IPrj, a Recr through an RPrj.
+  fn member_content_addr(members: List‹MutConst›, i: U64, block: Addr) -> Addr {
+    match list_lookup_u64(members, i) {
+      MutConst.Defn(_) => dprj_content_addr(i, block),
+      MutConst.Indc(_) => iprj_content_addr(i, block),
+      MutConst.Recr(_) => rprj_content_addr(i, block),
+    }
+  }
+
   fn cprj_content_addr(idx: U64, cidx: G, block: Addr) -> Addr {
     let prj = ConstructorProj.Mk(idx, [u8_from_field_unsafe(cidx), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], block);
     let info = ConstantInfo.CPrj(prj);

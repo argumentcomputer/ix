@@ -5245,3 +5245,40 @@ mod tests {
     assert_eq!(ctor_addr, anon_ctor_proj_addr(&b, 2, 3));
   }
 }
+
+#[cfg(test)]
+mod proj_addr_fixture {
+  /// Pins the projection-address encoding that the Aiur kernel's
+  /// `dprj_content_addr` / `iprj_content_addr` / `rprj_content_addr`
+  /// reproduce in-circuit (`member_addr_tests` in `Ix/IxVM.lean`).
+  ///
+  /// Address-keyed constants resolve `Expr.Rec(i)` — a mutual-block member,
+  /// which has no entry in the constant's `refs` table — through exactly
+  /// these addresses, so the two sides must agree. If this test fails the
+  /// Aiur pins need the same new values.
+  #[test]
+  fn projection_addresses_match_the_aiur_pins() {
+    use ix_common::address::Address;
+    use ixon::constant::{
+      Constant, ConstantInfo, DefinitionProj, InductiveProj, RecursorProj,
+    };
+    let b = Address::hash(b"member-addr-fixture");
+    assert_eq!(
+      b.hex(),
+      "136647a8968489abf200ba35feb613d7b35ce3ba68219306d56240589c4c558b"
+    );
+    let addr = |info| Constant::new(info).commit().0.hex();
+    assert_eq!(
+      addr(ConstantInfo::DPrj(DefinitionProj { idx: 3, block: b.clone() })),
+      "ef8033c18954f22e1b88b33894dbdd0628e0c333f27cb55d0742e4a7a7b47546"
+    );
+    assert_eq!(
+      addr(ConstantInfo::IPrj(InductiveProj { idx: 3, block: b.clone() })),
+      "f59f2fae428d9e4a4e5fddee4c58f8b834f8fb6d54cd9a7434a4533c95995721"
+    );
+    assert_eq!(
+      addr(ConstantInfo::RPrj(RecursorProj { idx: 3, block: b.clone() })),
+      "5cb14579d7c8cea91db5acea36c03920c92946de6984f6f0266037b961491013"
+    );
+  }
+}
