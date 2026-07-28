@@ -2242,6 +2242,58 @@ fn print_top_blocks(
   }
 }
 
+/// Block-level reference adjacency for a profiled env: for each block, the
+/// sorted, deduped, self-edge-free set of blocks it references. Projection
+/// and mutual-member edges are intra-block by construction, so per-constant
+/// `refs` folded to home blocks carry every cross-block edge of
+/// `Env::bfs_closure`. This is the graph persisted into the `.ixprof`
+/// (reachability over it = a block's full dependency closure — the Aiur
+/// shard ingress unit) and the sweep's walk graph.
+fn build_block_ref_adjacency(
+  env: &IxonEnv,
+  profile: &BlockProfile,
+) -> Vec<Vec<u32>> {
+  let blocks = profile.blocks();
+  let n = blocks.len();
+  let id_of: FxHashMap<&Address, u32> =
+    blocks.iter().enumerate().map(|(i, b)| (&b.addr, i as u32)).collect();
+  // Pass 1: every constant's home block id.
+  let mut home: FxHashMap<Address, u32> = FxHashMap::default();
+  for entry in env.consts.iter() {
+    let (addr, lazy) = (entry.key(), entry.value());
+    let Ok(c) = lazy.get() else { continue };
+    let home_addr = match &c.info {
+      IxonCI::IPrj(p) => &p.block,
+      IxonCI::CPrj(p) => &p.block,
+      IxonCI::RPrj(p) => &p.block,
+      IxonCI::DPrj(p) => &p.block,
+      _ => addr,
+    };
+    if let Some(&id) = id_of.get(home_addr) {
+      home.insert(addr.clone(), id);
+    }
+  }
+  // Pass 2: fold each constant's refs to home-block edges.
+  let mut adj: Vec<Vec<u32>> = vec![Vec::new(); n];
+  for entry in env.consts.iter() {
+    let (addr, lazy) = (entry.key(), entry.value());
+    let Ok(c) = lazy.get() else { continue };
+    let Some(&hid) = home.get(addr) else { continue };
+    for r in &c.refs {
+      if let Some(&rid) = home.get(r)
+        && rid != hid
+      {
+        adj[hid as usize].push(rid);
+      }
+    }
+  }
+  for row in &mut adj {
+    row.sort_unstable();
+    row.dedup();
+  }
+  adj
+}
+
 /// One root's closure-aggregated features + model predictions, as produced by
 /// [`profile_sweep`].
 struct SweepRow {
@@ -2304,51 +2356,16 @@ pub fn profile_sweep(
     .map_err(|e| format!("sweep: mmap+deserialize {env_path}: {e}"))?;
   let prof_bytes = std::fs::read(prof_path)
     .map_err(|e| format!("sweep: read {prof_path}: {e}"))?;
-  let profile = BlockProfile::from_bytes(&prof_bytes)
+  let mut profile = BlockProfile::from_bytes(&prof_bytes)
     .map_err(|e| format!("sweep: parse {prof_path}: {e}"))?;
+  if !profile.has_ref_graph() {
+    let adj = build_block_ref_adjacency(&env, &profile);
+    profile.set_ref_graph(&adj);
+  }
   let blocks = profile.blocks();
   let n = blocks.len();
   let id_of: FxHashMap<&Address, u32> =
     blocks.iter().enumerate().map(|(i, b)| (&b.addr, i as u32)).collect();
-
-  // Pass 1: every constant's home block id (projections fold into their
-  // block; everything else is its own block when profiled).
-  let mut home: FxHashMap<Address, u32> = FxHashMap::default();
-  for entry in env.consts.iter() {
-    let (addr, lazy) = (entry.key(), entry.value());
-    let Ok(c) = lazy.get() else { continue };
-    let home_addr = match &c.info {
-      IxonCI::IPrj(p) => &p.block,
-      IxonCI::CPrj(p) => &p.block,
-      IxonCI::RPrj(p) => &p.block,
-      IxonCI::DPrj(p) => &p.block,
-      _ => addr,
-    };
-    if let Some(&id) = id_of.get(home_addr) {
-      home.insert(addr.clone(), id);
-    }
-  }
-
-  // Pass 2: block-level reference adjacency (deduped). Projection and
-  // mutual-member edges are intra-block by construction, so `refs` alone
-  // carries every cross-block edge of `Env::bfs_closure`.
-  let mut adj: Vec<Vec<u32>> = vec![Vec::new(); n];
-  for entry in env.consts.iter() {
-    let (addr, lazy) = (entry.key(), entry.value());
-    let Ok(c) = lazy.get() else { continue };
-    let Some(&hid) = home.get(addr) else { continue };
-    for r in &c.refs {
-      if let Some(&rid) = home.get(r)
-        && rid != hid
-      {
-        adj[hid as usize].push(rid);
-      }
-    }
-  }
-  for row in &mut adj {
-    row.sort_unstable();
-    row.dedup();
-  }
 
   // Roots: one representative (lexicographically-smallest) name per block.
   let names = block_display_names(&env, env_path);
@@ -2358,9 +2375,8 @@ pub fn profile_sweep(
     .collect();
   roots.sort();
   eprintln!(
-    "[sweep] {} blocks, {} adj edges, {} roots ({:.1?} setup)",
+    "[sweep] {} blocks, {} roots ({:.1?} setup)",
     n,
-    adj.iter().map(Vec::len).sum::<usize>(),
     roots.len(),
     t0.elapsed()
   );
@@ -2406,7 +2422,7 @@ pub fn profile_sweep(
           if hot_bit[b as usize] != u64::MAX {
             hot_mask |= 1 << hot_bit[b as usize];
           }
-          for &r in &adj[b as usize] {
+          for &r in profile.refs(b) {
             if visited[r as usize] != *epoch {
               visited[r as usize] = *epoch;
               stack.push(r);
@@ -2882,7 +2898,12 @@ pub fn profile_anon_ixe(
     failed,
     run_start.elapsed()
   );
-  let profile = build_block_profile(&env_arc, &merged);
+  let mut profile = build_block_profile(&env_arc, &merged);
+  // Record the block-level reference graph so downstream planners can do
+  // closure accounting offline: an Aiur shard ingresses its owned blocks'
+  // full reference closure, which only this graph can reproduce.
+  let adj = build_block_ref_adjacency(&env_arc, &profile);
+  profile.set_ref_graph(&adj);
   print_profile_summary(
     path,
     &merged,
