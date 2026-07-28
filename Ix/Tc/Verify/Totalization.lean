@@ -424,7 +424,7 @@ theorem RecM.natRecLiteralParts_equation (e : KExpr m) :
       let majorIdx :=
         params.toNat + motives.toNat + minors.toNat + indices.toNat
       let some (.nat major _ _) := spine[majorIdx]? | return none
-      return some { spine, major, baseIdx, stepIdx } := rfl
+      return some { spine, major, baseIdx, stepIdx, majorIdx } := rfl
 
 theorem RecM.isNatStuckRecursorAddr_equation (addr : Address) :
     RecM.isNatStuckRecursorAddr (m := m) addr = do

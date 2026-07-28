@@ -101,6 +101,17 @@ def natSuccOf (e : KExpr m) : RecM m (Option (KExpr m)) := do
     | _ => return none
   | _ => return none
 
+/-- Allocation-free check that `e` could decompose to `base + offset`:
+    a Nat literal, `Nat.zero`/`Nat.succ`, or an app whose head constant is
+    `Nat.succ`/`Nat.add`. Walks the app chain — no spine. -/
+def natOffsetCandidate (p : Primitives m) : KExpr m → Bool
+  | .nat .. => true
+  | .const id _ _ =>
+    id.addr == p.natZero.addr || id.addr == p.natSucc.addr
+      || id.addr == p.natAdd.addr
+  | .app f _ _ => natOffsetCandidate p f
+  | _ => false
+
 def isBoolTrue (e : KExpr m) : RecM m Bool := do
   match e with
   | .const id us _ =>
@@ -579,16 +590,38 @@ def isDefEqNat (a b : KExpr m) : RecM m Bool := do
   | some aPred, some bPred => isDefEqCall aPred bPred
   | _, _ => return false
 
-/-- Nat offset comparison in the lazy delta loop (`isDefEqOffset`). -/
+/-- Nat offset comparison in the lazy delta loop (`isDefEqOffset`),
+    generalized to offset form: each side decomposes to `base + offset`
+    (`Lit n`, `succ` layers, and the compact stuck `Nat.add base (Lit m)`
+    form WHNF leaves — all read in O(1) per layer), the shared offset is
+    stripped in ONE step, and the remainders compare through full def-eq.
+    This collapses `succ^k(x) ≟ succ^k(x)` from k def-eq recursion levels
+    (which blew the def-eq depth limit for large k) to one. Stripping is
+    verdict-preserving: `+k` is definitionally injective, the same
+    semantics a one-succ peel relies on. Non-offset shapes fall back
+    (`none`) to the generic path. Mirrors def_eq.rs `try_def_eq_offset`. -/
 def tryDefEqOffset (a b : KExpr m) : RecM m (Option Bool) := do
   match a, b with
   | .nat va _ _, .nat vb _ _ => return some (va == vb)
   | _, _ => pure ()
   if (← isNatZero a) && (← isNatZero b) then
     return some true
-  match (← natSuccOf a), (← natSuccOf b) with
-  | some aPred, some bPred => return some (← isDefEqCall aPred bPred)
-  | _, _ => return none
+  -- Quick reject: decompose walks app spines, so only run it when both
+  -- heads are plausibly offset-shaped (a one-succ peel rejects non-Nat
+  -- shapes in O(1) off the head — keep that property).
+  let p ← prims
+  if !natOffsetCandidate p a || !natOffsetCandidate p b then
+    return none
+  let some (baseA, ka) ← natOffsetDecompose a | return none
+  let some (baseB, kb) ← natOffsetDecompose b | return none
+  let k := min ka kb
+  if k == 0 then
+    -- No shared offset to strip (e.g. literal 0 vs offset-shaped): defer
+    -- to the generic path.
+    return none
+  let ra ← natOffsetRebuild baseA (ka - k)
+  let rb ← natOffsetRebuild baseB (kb - k)
+  return some (← isDefEqCall ra rb)
 
 /-- Expand a string literal to ctor form and compare. -/
 def tryStringLitExpansion (t s : KExpr m) : RecM m Bool := do

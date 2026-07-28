@@ -339,7 +339,22 @@ def defEqAdvanced : TestSeq :=
       | .ok v s => v && s.env.defEqFailure.size ≥ 0
       | .error _ _ => false : Bool))
 
+def natOffsetTests : TestSeq :=
+  let succ (e : AE) : AE := KExpr.mkApp (pAddr P.natSucc) e
+  let x : AE := .mkConst (aId "x") #[]
+  let compact (k : Nat) : AE := appN (pAddr P.natAdd) [x, .mkNatLit k]
+  test "succ tower ↔ compact add decided by offset decomposition"
+    (defEq {} (succ (succ x)) (compact 2)
+      && defNeq {} (succ x) (compact 2))
+  ++ test "large shared offset strips in bulk without depth exhaustion"
+    -- One-succ-per-level peeling would exceed the def-eq depth limit here;
+    -- offset stripping must decide it in a handful of levels.
+    (let tower := (List.range 2500).foldl (fun e _ => succ e) x
+     defEq {} tower (compact 2500))
+  ++ test "div-derived and add-derived stuck offsets are not equated"
+    (defNeq {} (appN (pAddr P.natDiv) [x, .mkNatLit 2]) (compact 2))
+
 public def suite : List TestSeq :=
-  [knotFuelTests, inferTests, defEqBasics, defEqAdvanced]
+  [knotFuelTests, inferTests, defEqBasics, defEqAdvanced, natOffsetTests]
 
 end Tests.Tc.InferDefEq

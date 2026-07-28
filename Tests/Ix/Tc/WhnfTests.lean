@@ -265,6 +265,43 @@ def natTests : TestSeq :=
   ++ test "succ chain on symbolic base is stuck"
     (let e := KExpr.mkApp (pAddr P.natSucc) (pConst (aId "x"))
      whnfEq emptyEnv e e)
+  ++ test "nat add with symbolic base and literal rhs stays compact"
+    -- A decoy `Nat.add` definition would be exposed by delta; the offset
+    -- freeze must keep the compact form without unfolding it.
+    (let x := pConst (aId "x")
+     let decoy := KExpr.mkLam () () sort1 (KExpr.mkLam () () sort1
+       (KExpr.mkApp (pAddr P.natSucc) (.mkVar 1 ())))
+     let env := (KEnv.new (m := .anon)).insert ⟨P.natAdd, ()⟩
+       (.defn () () .defn .safe (.regular 0) 0 sort1 decoy () ⟨P.natAdd, ()⟩)
+     let e := appN (pAddr P.natAdd) [x, natLit 2]
+     whnfEq env e e)
+  ++ test "nat div and mod with symbolic base and literal divisor stay compact"
+    (let x := pConst (aId "x")
+     let decoy := KExpr.mkLam () () sort1 (KExpr.mkLam () () sort1 (natLit 7))
+     let mkEnv (a : Address) : AnonEnv := (KEnv.new (m := .anon)).insert ⟨a, ()⟩
+       (.defn () () .defn .safe (.regular 0) 0 sort1 decoy () ⟨a, ()⟩)
+     let dv := appN (pAddr P.natDiv) [x, natLit 2]
+     let md := appN (pAddr P.natMod) [x, natLit 2]
+     whnfEq (mkEnv P.natDiv) dv dv && whnfEq (mkEnv P.natMod) md md)
+  ++ test "linear nat recursion over symbolic base collapses to compact offset"
+    -- `succ (Nat.rec base succ-step (Lit 5))` with symbolic `base` must
+    -- collapse to `Nat.add base (Lit 6)`; a post-major argument blocks the
+    -- collapse and leaves the chain stuck.
+    (let x := pConst (aId "x")
+     let natRecId : KId .anon := ⟨P.natRec, ()⟩
+     let env := (KEnv.new (m := .anon)).insert natRecId
+       (.recr (name := ()) (levelParams := ()) (k := false) (isUnsafe := false)
+         (lvls := 0) (params := 0) (indices := 0) (motives := 1) (minors := 2)
+         (block := natRecId) (memberIdx := 0) (ty := sort1)
+         (rules := #[]) (leanAll := ()))
+     let step := KExpr.mkLam () () sort1 (KExpr.mkLam () () sort1
+       (KExpr.mkApp (pAddr P.natSucc) (.mkVar 0 ())))
+     let recApp := appN (pAddr P.natRec) [sort0, x, step, natLit 5]
+     let collapsed := whnfEq env (KExpr.mkApp (pAddr P.natSucc) recApp)
+       (appN (pAddr P.natAdd) [x, natLit 6])
+     let postMajor := KExpr.mkApp (pAddr P.natSucc)
+       (KExpr.mkApp recApp (natLit 0))
+     collapsed && whnfEq env postMajor postMajor)
   ++ test "nested arithmetic collapses"
     -- (2 + 3) * (10 - 4) = 30
     (let sum := appN (pAddr P.natAdd) [natLit 2, natLit 3]
