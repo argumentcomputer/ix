@@ -125,6 +125,15 @@ pub enum ExecError {
     lhs: u64,
     rhs: u64,
   },
+  /// Interpreter-only variant of `AssertEqMismatch` carrying the function
+  /// the assert fired in — the codegen'd kernel returns the bare variant
+  /// (244 inlined sites), but the interpreter tracks `fun_idx` anyway and
+  /// a diagnosed site turns a generic mismatch into a named one.
+  AssertEqMismatchIn {
+    fun_idx: FunIdx,
+    lhs: u64,
+    rhs: u64,
+  },
   MatchNoCase(u64),
   NoContinuation,
   StackNotEmpty,
@@ -163,6 +172,9 @@ impl std::fmt::Display for ExecError {
       },
       Self::AssertEqMismatch { lhs, rhs } => {
         write!(f, "assert_eq mismatch: {lhs} != {rhs}")
+      },
+      Self::AssertEqMismatchIn { fun_idx, lhs, rhs } => {
+        write!(f, "assert_eq mismatch in fun {fun_idx}: {lhs} != {rhs}")
       },
       Self::MatchNoCase(v) => write!(f, "no match case for value {v}"),
       Self::NoContinuation => write!(f, "yield without continuation"),
@@ -378,7 +390,19 @@ impl Function {
             let lhs = map[*x];
             let rhs = map[*y];
             if lhs != rhs {
-              return Err(ExecError::AssertEqMismatch {
+              // Failure forensics: the caller chain names the semantic
+              // path to the assert, which the bare fun index cannot; the
+              // locals map exposes the failing values' provenance.
+              let stack: Vec<FunIdx> =
+                callers_states_stack.iter().map(|c| c.fun_idx).collect();
+              eprintln!(
+                "[aiur assert] fun {fun_idx} caller stack (outermost first): {stack:?}"
+              );
+              let locals: Vec<u64> =
+                map.iter().map(|v| v.as_canonical_u64()).collect();
+              eprintln!("[aiur assert] locals: {locals:?}");
+              return Err(ExecError::AssertEqMismatchIn {
+                fun_idx,
                 lhs: lhs.as_canonical_u64(),
                 rhs: rhs.as_canonical_u64(),
               });
