@@ -2533,6 +2533,7 @@ dependencies = [
  "indexmap",
  "ix-common",
  "memmap2",
+ "nom",
  "num-bigint",
  "rayon",
  "rustc-hash 2.1.2",
