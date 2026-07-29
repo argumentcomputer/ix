@@ -30,6 +30,7 @@ public import Ix.Common
 public import Ix.IxVM
 public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
+public import Ix.KernelCheck
 public import Ix.Meta
 public import Ix.Store
 public import Ix.Cli.NameResolve
@@ -454,11 +455,13 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks foreign stubbed : Array Address)
 /-- IxVM-native fast path: dispatch through `shardCheckWithEnv` (a
     Rust-owned `EnvHandle` reused across calls). Caller threads in
     the pre-built envHandle so all shards in an all-shards run share
-    one env parse. -/
-def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
+    one env parse. Returns the failure message (`none` = passed) so
+    the repair driver can read the kernel's wanted-stub report out of
+    it; plain check paths wrap it back into an exit code. -/
+def runShardOwnedNativeR (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
     (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
     (ixonEnv : Ixon.Env) (blocks foreign stubbed : Array Address) (shardK : Nat) :
-    IO UInt32 := do
+    IO (Option String) := do
   let owned := ownedConstsForBlocks ixonEnv blocks
   let foreignConsts := ownedConstsForBlocks ixonEnv foreign
   let stubs := ownedConstsForBlocks ixonEnv stubbed
@@ -481,10 +484,19 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
     stubBlob useBytecode with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
-    return 1
+    return some e
   | .ok (_output, _ioBuffer, queryCounts) =>
     if printStats then emitStats compiled queryCounts statsOut
-    pure 0
+    pure none
+
+def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
+    (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
+    (ixonEnv : Ixon.Env) (blocks foreign stubbed : Array Address) (shardK : Nat) :
+    IO UInt32 := do
+  match ← runShardOwnedNativeR envHandle compiled printStats statsOut useBytecode
+      ixonEnv blocks foreign stubbed shardK with
+  | none => pure 0
+  | some _ => pure 1
 
 /-- Manifest-driven check/prove of one shard `shardK` of the partition. -/
 def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
@@ -577,6 +589,122 @@ def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Na
         | .ok r => if r != 0 then rc := 1
         | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
     pure rc
+
+/-- Extract the kernel's wanted-stub report from a shard failure message:
+    `... invalid IO key: channel 98, key <64-hex> ...` → the address. -/
+def extractWantedStub (msg : String) : Option Address := do
+  let marker := "channel 98, key "
+  let parts := msg.splitOn marker
+  let tail ← parts[1]?
+  Address.fromString (tail.take 64).toString
+
+/-- The escalation retry driver (`ix check --ixes --repair`).
+
+    Replay divergence — the Aiur kernel reducing where the touch-graph
+    recording short-circuited, and jamming on a stub — is only
+    discoverable by running a shard, so repair is a fixpoint loop:
+
+    1. pack the manifest from the profile at the given budget;
+    2. check every shard (concurrently, `--jobs`-capped);
+    3. escalate exactly what failed: a failure carrying the kernel's
+       wanted-stub report promotes THAT block alone (`K:+HEX`,
+       constant-precision, ~KB of extra ingress); one without a report —
+       or one that repeats a report already granted — takes a
+       whole-frontier promotion round (`K:N`, ~1.5x union bytes);
+    4. repack with the accumulated spec and recheck only the escalated
+       shards — untouched shards' sets are byte-identical across regens
+       (the partition is deterministic in profile + budget);
+    5. repeat until green or `maxIters`.
+
+    The ladder's top rung is full closure (the original, known-correct
+    semantics), so escalation always terminates; `maxIters` merely caps
+    how much of the ladder one run climbs. -/
+def runShardRepair (ixprofPath manifestPath ixePath : String)
+    (maxRam balancePct : Nat) (jobs? : Option Nat) (maxIters : Nat)
+    (compiled : Aiur.CompiledToplevel) (useBytecode : Bool) : IO UInt32 := do
+  let regen (spec : String) : IO Unit :=
+    Ix.KernelCheck.rsShardEspCapFFI ixprofPath "0" (toString maxRam)
+      (toString balancePct) "1" manifestPath "aiur" spec
+  IO.println s!"[repair] packing {ixprofPath} at --max-ram {maxRam} → {manifestPath}"
+  regen ""
+  let ixonEnv ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
+    | .error e => IO.eprintln s!"env parse failed: {e}"; return 1
+    | .ok env => pure env
+  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+    | .ok h => pure h
+  let mut rounds : Std.HashMap Nat Nat := {}
+  let mut adds : Std.HashMap Nat (Array String) := {}
+  -- `pending = none` means "check everything" (first iteration).
+  let mut pending : Option (List Nat) := none
+  for iter in [0:maxIters + 1] do
+    let shards ← match parseIxesAllShards (← IO.FS.readBinFile manifestPath) with
+      | .error e => IO.eprintln s!"manifest parse failed: {e}"; return 1
+      | .ok s => pure s
+    if iter == 0 then
+      if !(← shardsCover ixonEnv shards) then return 1
+    let targets := pending.getD (List.range shards.size)
+    let maxJobs := max 1 (jobs?.getD targets.length)
+    let mut failures : Array (Nat × String) := #[]
+    for chunk in targets.toChunks maxJobs do
+      let tasks ← chunk.mapM fun k =>
+        IO.asTask (prio := .dedicated) do
+          match shards[k]? with
+          | none => pure (k, some s!"shard {k} out of range")
+          | some (blocks, foreign, stubbed) =>
+            pure (k, ← runShardOwnedNativeR envHandle compiled false none
+              useBytecode ixonEnv blocks foreign stubbed k)
+      for t in tasks do
+        match t.get with
+        | .ok (k, some e) => failures := failures.push (k, e)
+        | .ok (_, none) => pure ()
+        | .error e => IO.eprintln s!"shard task failed: {e}"; return 1
+    if failures.isEmpty then
+      let mut escalated : Array String := #[]
+      for (k, n) in rounds.toList do
+        escalated := escalated.push s!"{k}:{n}r"
+      for (k, hs) in adds.toList do
+        escalated := escalated.push s!"{k}:+{hs.size}"
+      IO.println s!"[repair] all {shards.size} shards green after {iter} escalation(s); \
+        escalated: {if escalated.isEmpty then "none" else String.intercalate ", " escalated.toList}"
+      return 0
+    if iter == maxIters then
+      IO.eprintln s!"[repair] {failures.size} shard(s) still failing after {maxIters} iteration(s): \
+        {failures.toList.map (·.1)}"
+      return 1
+    for (k, msg) in failures do
+      -- A wanted-stub report escalates with constant precision; a repeat
+      -- of an already-granted report means the precise rung stalled, so
+      -- take the blunt one. The reported address is a constant; promote
+      -- its HOME BLOCK (projections live in their parent's block).
+      let targeted : Option String := do
+        let addr ← extractWantedStub msg
+        let c ← ixonEnv.consts.get? addr
+        let c ← c.get?
+        pure (toString (blockAddrOf addr c))
+      match targeted with
+      | some blockHex =>
+        let granted := (adds.get? k).getD #[]
+        if granted.contains blockHex then
+          rounds := rounds.insert k ((rounds.get? k).getD 0 + 1)
+          IO.println s!"[repair] shard {k}: repeat want {blockHex.take 12}…, \
+            promoting whole frontier (round {(rounds.get? k).getD 0})"
+        else
+          adds := adds.insert k (granted.push blockHex)
+          IO.println s!"[repair] shard {k}: wants {blockHex.take 12}…, shipping it whole"
+      | none =>
+        rounds := rounds.insert k ((rounds.get? k).getD 0 + 1)
+        IO.println s!"[repair] shard {k}: no wanted-stub report, \
+          promoting whole frontier (round {(rounds.get? k).getD 0})"
+    let mut parts : Array String := #[]
+    for (k, n) in rounds.toList do
+      if n > 0 then parts := parts.push s!"{k}:{n}"
+    for (k, hs) in adds.toList do
+      for h in hs do
+        parts := parts.push s!"{k}:+{h}"
+    regen (String.intercalate "," parts.toList)
+    pending := some (failures.toList.map (·.1))
+  return 1
 
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
@@ -675,6 +803,22 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
           (label : String) : IO UInt32 :=
         runCompiled compiled printStats statsOut useBytecode envHandle? target label
       pure go
+  -- Repair mode: pack + check + escalate to a green partition. Needs the
+  -- profile and budget so manifest regeneration is deterministic.
+  if p.hasFlag "repair" then
+    match ixePath, ixesPath, (p.flag? "ixprof").map (·.as! String),
+          (p.flag? "max-ram").map (·.as! Nat) with
+    | some ixe, some manifest, some ixprof, some maxRam =>
+      let compiled ← match toplevel.compile with
+        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+        | .ok c => pure c
+      let balance := ((p.flag? "balance").map (·.as! Nat)).getD 5
+      let maxIters := ((p.flag? "max-rounds").map (·.as! Nat)).getD 4
+      return (← runShardRepair ixprof manifest ixe maxRam balance
+        ((p.flag? "jobs").map (·.as! Nat)) maxIters compiled useBytecode)
+    | _, _, _, _ =>
+      IO.eprintln "error: --repair needs --ixe, --ixes (output path), --ixprof and --max-ram"
+      return 1
   match ixePath, ixesPath, shardK with
   | some ixe, some manifest, some k =>
     if interpSource then
@@ -714,6 +858,11 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Max shards to check concurrently when checking a whole partition (--ixes without --shard). Default: all at once. Lower it to bound peak RAM — each in-flight shard re-ingests its closure into its own IO buffer."
+    "repair";               "Escalation retry driver: pack --ixprof at --max-ram into --ixes, check every shard, escalate exactly what failed (the kernel's wanted-stub report promotes one named block; otherwise a whole-frontier round), repack and recheck only the escalated shards, until green or --max-rounds."
+    "ixprof"    : String;   "Path to the .ixprof (with --repair): the profile the manifest is packed from."
+    "max-ram"   : Nat;      "Per-shard host-RAM budget in GiB (with --repair), as in `ix shard --max-ram`."
+    balance     : Nat;      "Packing balance tolerance percent (with --repair; default 5)."
+    "max-rounds": Nat;      "Escalation iterations before giving up (with --repair; default 4)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."

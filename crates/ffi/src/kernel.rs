@@ -3275,6 +3275,7 @@ pub extern "C" fn rs_shard_esp_cap(
   parallelism: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
   backend: LeanString<LeanBorrowed<'_>>,
+  promote_spec: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let mc = max_cycles.to_string().parse::<u64>().unwrap_or(0);
   let mut ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
@@ -3313,6 +3314,7 @@ pub extern "C" fn rs_shard_esp_cap(
       balance,
       parallelism,
       out_opt,
+      &promote_spec.to_string(),
     ) {
       Ok(report) => {
         eprintln!("[rs_shard]\n{report}");

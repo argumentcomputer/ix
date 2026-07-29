@@ -135,6 +135,24 @@ def infer := ⟦
     }
   }
 
+  -- Wanted-stub report. A Proj whose value-type's whnf head is not the
+  -- stored inductive means reduction jammed on an unfoldable constant —
+  -- in a sharded witness, a type-only stub standing in for a definition
+  -- (e.g. a type alias over the struct). Abort through an IO channel no
+  -- witness populates, so the error NAMES the address the shard needs
+  -- shipped whole ("invalid IO key: channel 98, key <addr>") and the
+  -- repair driver can escalate with constant precision. Fires only on
+  -- the mismatch path, where the assert right after would kill the run
+  -- anyway — a passing check never takes it.
+  fn report_wanted_stub(idx: G, tidx: G, addrs: List‹Addr›) {
+    match idx - tidx {
+      0 => (),
+      _ =>
+        let (_i, _l) = io_get_info(98, load(list_lookup(addrs, idx)));
+        (),
+    }
+  }
+
   -- Cold-extracted Proj arm: the widest arm of `k_infer_core` by far
   -- (~10 call sites) on a rare node kind.
   -- Mirror: src/ix/kernel/infer.rs:331-450 infer_proj.
@@ -147,6 +165,7 @@ def infer := ⟦
       (head, args) =>
         match load(head) {
           KExprNode.Const(idx, lvls) =>
+            report_wanted_stub(idx, tidx, addrs);
             assert_eq!(idx, tidx);
             let ind_ci = load(list_lookup(top, idx));
             match ind_ci {
@@ -336,6 +355,7 @@ def infer := ⟦
           (head, args) =>
             match load(head) {
               KExprNode.Const(idx, lvls) =>
+                report_wanted_stub(idx, tidx, addrs);
                 assert_eq!(idx, tidx);
                 let ind_ci = load(list_lookup(top, idx));
                 match ind_ci {

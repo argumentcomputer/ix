@@ -255,6 +255,7 @@ opaque rsShardEspCapFFI :
     @& String →                          -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
     @& String →                          -- backend cost model (zisk|aiur)
+    @& String →                          -- per-shard promotion spec ("" = none; "K:N" rounds, "K:+HEX" named block)
     IO Unit
 
 end Ix.KernelCheck
