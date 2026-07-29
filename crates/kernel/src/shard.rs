@@ -1637,6 +1637,23 @@ pub const STEPS_PER_INGRESS_BYTE: u64 = 652;
 /// setup plus the foreign-dependency ingress a shard re-pays.
 pub const SHARD_STEP_FLOOR: u64 = 180_000_000;
 
+/// Predicted Zisk guest cost units for a bag of raw op counters — the
+/// linear model from the sb/kernel-perf shard recalibration, coefficients
+/// inlined (main's planner itself still prices in STEPS). Used only by the
+/// per-constant attribution CSV `ix check-rs --per-const` emits, so both
+/// sides of a bench compare price identically.
+pub fn op_counts_cost(ops: &crate::profile::OpCounts) -> u64 {
+  const COST_PER_SUBST: u64 = 196_600;
+  const COST_PER_WHNF: u64 = 1_797_600;
+  const COST_PER_DEF_EQ: u64 = 567_100;
+  const COST_PER_INTERN: u64 = 28_400;
+  COST_PER_SUBST
+    .saturating_mul(ops.subst_nodes)
+    .saturating_add(COST_PER_WHNF.saturating_mul(ops.whnf_calls))
+    .saturating_add(COST_PER_DEF_EQ.saturating_mul(ops.def_eq_calls))
+    .saturating_add(COST_PER_INTERN.saturating_mul(ops.intern_nodes))
+}
+
 /// Predicted Zisk guest STEPS contributed by a single block (reduction + its own
 /// ingress). The per-shard floor and any cross-shard re-ingress are added at the
 /// shard level, not here.

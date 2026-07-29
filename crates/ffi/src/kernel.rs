@@ -1392,6 +1392,23 @@ fn run_anon_checks_parallel(
   eprintln!(
     "[rs_kernel_check_anon] checking {work_total} work item(s) for {total} consts with {worker_count} worker(s)..."
   );
+  // Per-work-item attribution entries (addr-keyed CSV; the CLI joins
+  // Lean names afterwards). An entry measures checking THAT item alone —
+  // one constant, or one whole Muts block — NOT re-checking its
+  // dependency closure: deps are lazily ingressed (parsed, hash-verified,
+  // interned) and trusted, and get their own entries when the whole-env
+  // walk reaches them. Because the KEnv is cleared before every item
+  // (clear_every default 1), each entry re-pays the ingress of whatever
+  // closure slice its check consults, so the counters charge everything
+  // the item consumed to the item: entries are attribution-faithful and
+  // sum to the env total with no double counting. This is a DIFFERENT
+  // scope from `check-rs --consts` closure measurements (full closure
+  // re-checked, the zkVM hosts' semantics). One push per item — lock
+  // contention is noise.
+  let per_const_out =
+    std::env::var("IX_KERNEL_PER_CONST_OUT").ok().filter(|s| !s.is_empty());
+  let per_const_rows: Arc<std::sync::Mutex<Vec<String>>> =
+    Arc::new(std::sync::Mutex::new(Vec::new()));
 
   let work = Arc::new(work);
   let addrs = Arc::new(addrs);
@@ -1412,6 +1429,8 @@ fn run_anon_checks_parallel(
     let results = Arc::clone(&results);
     let progress_worker = Arc::clone(&progress);
     let failure_log_worker = failure_log.clone();
+    let record_per_const = per_const_out.is_some();
+    let per_const_rows_worker = Arc::clone(&per_const_rows);
 
     let handle = match thread::Builder::new()
       .name(format!("ix-kernel-check-anon-{worker_idx}"))
@@ -1444,12 +1463,38 @@ fn run_anon_checks_parallel(
 
           let tc_start = Instant::now();
           let kid = KId::<Anon>::new(primary_addr.clone(), ());
-          let check_res = {
+          if record_per_const {
+            // Reset this worker's op counters so the post-check read
+            // attributes exactly this item (incl. TC setup + lazy ingress).
+            let _ = ix_kernel::profile::take_op_counts();
+          }
+          let (check_res, item_fuel) = {
             let mut tc =
               TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
-            tc.check_const(&kid)
+            let res = tc.check_const(&kid);
+            (res, tc.fuel_used())
           };
           let elapsed = tc_start.elapsed();
+          if record_per_const {
+            let ops = ix_kernel::profile::take_op_counts();
+            let cost = ix_kernel::shard::op_counts_cost(&ops);
+            let row = format!(
+              "{},{},{},{},{},{},{},{},{},{}",
+              primary_addr.hex(),
+              result_idxs.len(),
+              elapsed.as_nanos(),
+              item_fuel,
+              ops.subst_nodes,
+              ops.whnf_calls,
+              ops.def_eq_calls,
+              ops.nat_arith,
+              ops.intern_nodes,
+              cost,
+            );
+            if let Ok(mut rows) = per_const_rows_worker.lock() {
+              rows.push(row);
+            }
+          }
           let result: CheckRes = match check_res {
             Ok(()) => Ok(()),
             Err(e) => Err((ErrKind::Kernel, format!("{e}"))),
@@ -1518,6 +1563,25 @@ fn run_anon_checks_parallel(
   progress.log_mem_summary();
   if panicked {
     return Err("anon worker panicked".to_string());
+  }
+
+  if let Some(path) = &per_const_out {
+    let rows =
+      per_const_rows.lock().map_err(|_| "per-const entries poisoned")?;
+    let mut out = String::with_capacity(rows.len() * 96 + 96);
+    out.push_str(
+      "addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost\n",
+    );
+    for r in rows.iter() {
+      out.push_str(r);
+      out.push('\n');
+    }
+    std::fs::write(path, out)
+      .map_err(|e| format!("write per-const csv {path}: {e}"))?;
+    eprintln!(
+      "[rs_kernel_check_anon] wrote {} per-const entries → {path}",
+      rows.len()
+    );
   }
 
   let mut ordered: Vec<CheckRes> = Vec::with_capacity(total);

@@ -308,6 +308,221 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     out := (out.push "" |>.push "**per-phase drill-down**") ++ detail
   return "\n".intercalate out.toList
 
+/-! ## Per-constant drill-down (ooc `--per-const` attribution CSVs) -/
+
+/-- One entry of a `check-rs --per-const` attribution CSV: the
+    aggregated measurements of one constant's (or Muts block's) check. -/
+structure PerConstEntry where
+  nanos : Float := 0
+  cost : Float := 0
+  subst : Float := 0
+  whnf : Float := 0
+  defEq : Float := 0
+  natArith : Float := 0
+  intern : Float := 0
+
+/-- Split one CSV line whose FIRST field may be minimally quoted (names
+    like `«term_,_»`); the remaining fields are plain numerics. -/
+private def splitPerConstLine (line : String) : Option (String × Array String) :=
+  if line.startsWith "\"" then
+    -- Scan for the closing quote, un-escaping doubled quotes.
+    let chars := line.toList.drop 1
+    let rec go (cs : List Char) (acc : String) : Option (String × String) :=
+      match cs with
+      | '"' :: '"' :: rest => go rest (acc.push '"')
+      | '"' :: ',' :: rest => some (acc, String.ofList rest)
+      | '"' :: [] => some (acc, "")
+      | c :: rest => go rest (acc.push c)
+      | [] => none
+    match go chars "" with
+    | some (name, rest) => some (name, (rest.splitOn ",").toArray)
+    | none => none
+  else
+    match line.splitOn "," with
+    | name :: rest => some (name, rest.toArray)
+    | [] => none
+
+/-- Parse an attribution CSV into name → summed entry (structurally
+    equivalent constants can share a first-registered name; summing keeps
+    the join total-preserving). Column order comes from the Rust writer:
+    `name,addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost`. -/
+def readPerConstCsv (path : String) : IO (Std.HashMap String PerConstEntry) := do
+  let mut out : Std.HashMap String PerConstEntry := {}
+  let content ← IO.FS.readFile path
+  for rawLine in content.splitOn "\n" do
+    -- CRLF tolerance: a trailing '\r' would silently zero the last field.
+    let line :=
+      if rawLine.endsWith "\r" then rawLine.dropRight 1 else rawLine
+    if line.isEmpty || line.startsWith "name," then continue
+    let some (name, fs) := splitPerConstLine line | continue
+    if fs.size < 10 then continue
+    let num := fun (i : Nat) => (fs[i]!.toNat?.getD 0).toFloat
+    let row : PerConstEntry := {
+      nanos := num 2, subst := num 4, whnf := num 5, defEq := num 6
+      natArith := num 7, intern := num 8, cost := num 9 }
+    let acc := out.get? name |>.getD {}
+    out := out.insert name {
+      nanos := acc.nanos + row.nanos, cost := acc.cost + row.cost
+      subst := acc.subst + row.subst, whnf := acc.whnf + row.whnf
+      defEq := acc.defEq + row.defEq, natArith := acc.natArith + row.natArith
+      intern := acc.intern + row.intern }
+  return out
+
+/-- One delta cell in the drill-down tables, styled like the main compare
+    table: signed percent, a `(N.NN× word)` ratio annotation past 1.05×,
+    and ⚠️ / 🟢 past `threshold` percent (badness-signed, so 🟢 marks
+    improvements). `metric` picks the ratio wording via `metricKind`. -/
+private def fmtDeltaCell (mainV prV : Float) (metric : String)
+    (threshold : Float := 3.0) : String :=
+  if mainV <= 0 then "n/a" else Id.run do
+    let dp := (prV - mainV) / mainV * 100.0
+    let mut s := (if dp >= 0 then "+" else "") ++ fmtF dp 1 ++ "%"
+    if let some (f, word) := ratio mainV prV metric then
+      if f >= 1.05 then s := s ++ s!" ({fmtF f 2}× {word})"
+    let bad := badness dp metric
+    if bad > threshold then s := s ++ " ⚠️"
+    else if bad < -threshold then s := s ++ " 🟢"
+    return s
+
+private def fmtMs (nanos : Float) : String :=
+  let ms := nanos / 1e6
+  if ms >= 1000 then s!"{fmtF (ms / 1000) 2}s"
+  else if ms >= 10 then s!"{fmtF ms 0}ms"
+  else s!"{fmtF ms 1}ms"
+
+private def fmtPct (x : Float) : String :=
+  (if x >= 0 then "+" else "") ++ fmtF (x * 100) 1 ++ "%"
+
+/-- The counter whose relative change best explains a mover — model-free
+    "why" hint next to the wall-time delta. Counters with tiny volumes on
+    both sides (< 20 events) are skipped as ratio noise, and a best delta
+    under 5% is not worth naming. -/
+private def moverDriver (m pr : PerConstEntry) : String :=
+  let cands := #[
+    ("subst", m.subst, pr.subst), ("whnf", m.whnf, pr.whnf),
+    ("def_eq", m.defEq, pr.defEq), ("nat_arith", m.natArith, pr.natArith),
+    ("intern", m.intern, pr.intern)]
+  let scored := cands.filterMap fun (n, a, b) =>
+    if a < 20 && b < 20 then none
+    else
+      let base := if a < 1 then 1.0 else a
+      some (n, (b - base) / base)
+  let best := scored.foldl (init := none) fun acc x =>
+    match acc with
+    | none => some x
+    | some y => if x.2.abs > y.2.abs then some x else acc
+  match best with
+  | some (n, d) => if d.abs < 0.05 then "—" else s!"{n} {fmtPct d}"
+  | none => "—"
+
+/-- Render the top-movers drill-down from two per-constant attribution
+    CSVs (`check-rs --per-const`).
+
+    **Entry scope.** An entry is one constant's (or Muts block's) OWN
+    check inside the whole-env run: dependencies are lazily ingressed and
+    trusted — each checked in its own entry — but the ingress of the
+    closure slice the check consults is charged to the entry (the env is
+    cleared per item). Entries therefore sum to the whole-env totals with
+    no double counting, and a change to a shared dependency surfaces in
+    every consumer entry it affects. This is NOT the full-closure scope of
+    the headline table's curated `--consts` measurements (which re-check
+    the whole closure, the zkVM hosts' semantics) — the same name can be
+    seconds there and milliseconds here.
+
+    Movers split into two classes with different evidence quality:
+
+    - **cost movers** — the predicted cost moved: |Δcost| ≥ `costFloorRel`
+      of the constant's main-side cost, OR ≥ `costFloorAbs` outright (so a
+      big constant moving a lot of real cost at a small percentage still
+      enters). Ranked by percent change — pathologies first. The op
+      counters are far more stable than wall time but NOT bit-deterministic
+      under parallel checking: worker→item assignment varies uids, and
+      uid-keyed hash iteration order perturbs a few order-sensitive kernel
+      paths. A Mathlib A/A run measured drift on 0.7% of constants,
+      envelope ≈ 13% relative and 0.27e9 absolute — hence the 15% / 1e9
+      defaults. (`--workers 1` runs are exactly reproducible when
+      precision matters.)
+    - **time-only movers** — wall time moved (≥ `floorMs` and `floorRel`)
+      but cost did not. On an A/A run this is pure scheduling/cache noise;
+      on an A/B it can also be allocator or locality effects a counter
+      can't see. Reported second, clearly labeled. -/
+def renderPerConstMovers (mainCsv prCsv : String) (topN : Nat := 10)
+    (floorMs : Float := 10.0) (floorRel : Float := 0.03)
+    (costFloorRel : Float := 0.15) (costFloorAbs : Float := 1e9) :
+    IO String := do
+  let main ← readPerConstCsv mainCsv
+  let pr ← readPerConstCsv prCsv
+  let mut behavior : Array (String × PerConstEntry × PerConstEntry × Float) := #[]
+  let mut timeOnly : Array (String × PerConstEntry × PerConstEntry × Float) := #[]
+  let mut sumMain := 0.0
+  let mut sumPr := 0.0
+  let mut sumCostMain := 0.0
+  let mut sumCostPr := 0.0
+  let mut removed := 0
+  let mut removedNs := 0.0
+  for (name, m) in main do
+    sumMain := sumMain + m.nanos
+    sumCostMain := sumCostMain + m.cost
+    match pr.get? name with
+    | some p =>
+      let dc := p.cost - m.cost
+      let d := p.nanos - m.nanos
+      if dc.abs >= 5e7
+        && (dc.abs >= costFloorRel * m.cost || dc.abs >= costFloorAbs)
+      then
+        -- Store the RELATIVE deltas: sections rank by percent change.
+        behavior := behavior.push (name, m, p, dc / max m.cost 1.0)
+      else if d.abs >= floorMs * 1e6 && d.abs >= floorRel * m.nanos then
+        timeOnly := timeOnly.push (name, m, p, d / max m.nanos 1.0)
+    | none => removed := removed + 1; removedNs := removedNs + m.nanos
+  let mut added := 0
+  let mut addedNs := 0.0
+  for (name, p) in pr do
+    sumPr := sumPr + p.nanos
+    sumCostPr := sumCostPr + p.cost
+    if !main.contains name then
+      added := added + 1; addedNs := addedNs + p.nanos
+  let totalDelta :=
+    if sumMain > 0 then fmtPct ((sumPr - sumMain) / sumMain) else "n/a"
+  let totalCostDelta :=
+    if sumCostMain > 0
+    then fmtPct ((sumCostPr - sumCostMain) / sumCostMain) else "n/a"
+  let mut out := s!"<details><summary>per-constant drill-down — \
+    Σ check {fmtMs sumMain} → {fmtMs sumPr} ({totalDelta}), \
+    Σ cost {totalCostDelta}; \
+    {behavior.size} cost mover(s), {timeOnly.size} time-only mover(s)"
+  if added > 0 || removed > 0 then
+    out := out ++ s!"; {added} added ({fmtMs addedNs}), \
+      {removed} removed ({fmtMs removedNs})"
+  out := out ++ "</summary>\n\n"
+  out := out ++ "_Each entry is one constant's own check within the \
+    whole-env run (deps ingress lazily; each dep is checked in its own \
+    entry; entries sum to the env) — not the full-closure scope of the \
+    headline `--consts` measurements._\n\n"
+  let section_ := fun (title : String)
+      (rows : Array (String × PerConstEntry × PerConstEntry × Float)) =>
+    if rows.isEmpty then ""
+    else Id.run do
+      let mut s := s!"**{title}**\n\n\
+        | constant | main | PR | Δtime | Δcost (Zisk) | driver |\n\
+        |---|---|---|---|---|---|\n"
+      for (name, m, p, _) in rows do
+        let dcost := fmtDeltaCell m.cost p.cost "cycles"
+        let dtime := fmtDeltaCell m.nanos p.nanos "check-time"
+        s := s ++ s!"| `{name}` | {fmtMs m.nanos} | {fmtMs p.nanos} \
+          | {dtime} | {dcost} | {moverDriver m p} |\n"
+      s ++ "\n"
+  let bSorted := behavior.qsort (fun a b => a.2.2.2.abs > b.2.2.2.abs)
+  out := out ++ section_ "Cost regressions (counter-backed)"
+    (bSorted.filter (fun a => a.2.2.2 > 0) |>.extract 0 topN)
+  out := out ++ section_ "Cost improvements (counter-backed)"
+    (bSorted.filter (fun a => a.2.2.2 < 0) |>.extract 0 topN)
+  let tSorted := timeOnly.qsort (fun a b => a.2.2.2.abs > b.2.2.2.abs)
+  out := out ++ section_
+    "Time-only movers (cost flat — scheduling/locality noise)"
+    (tSorted.extract 0 (min topN 5))
+  return out ++ "</details>"
+
 def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
   let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
@@ -341,7 +556,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     else s!"`{backend}` · `{env}`"
   let title := (p.flag? "title").map (·.as! String)
     |>.getD s!"### {cellName} — main from: {mainSrc}"
-  let table := renderCompare {
+  let mut table := renderCompare {
     mainRows := ← readRows mainPath
     prRows := ← readRows prPath
     metrics, threshold, title
@@ -352,6 +567,15 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
       else if backend == "aiur-recursive" then "proof"
       else "constant"
   }
+  -- Per-constant attribution drill-down: rendered whenever an
+  -- attribution CSV (`--per-const`, written by the ooc whole-env run)
+  -- sits next to BOTH results files.
+  let mainAttrib := mainPath ++ ".perconst.csv"
+  let prAttrib := prPath ++ ".perconst.csv"
+  if (← System.FilePath.pathExists ⟨mainAttrib⟩)
+    && (← System.FilePath.pathExists ⟨prAttrib⟩)
+  then
+    table := table ++ "\n\n" ++ (← renderPerConstMovers mainAttrib prAttrib)
   match p.flag? "out" with
   | some f => IO.FS.writeFile (f.as! String) (table ++ "\n")
   | none => IO.println table
