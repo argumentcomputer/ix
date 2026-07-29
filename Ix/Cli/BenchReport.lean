@@ -365,7 +365,8 @@ def readPerConstCsv (path : String) : IO (Std.HashMap String PerConstEntry) := d
   for rawLine in content.splitOn "\n" do
     -- CRLF tolerance: a trailing '\r' would silently zero the last field.
     let line :=
-      if rawLine.endsWith "\r" then rawLine.dropRight 1 else rawLine
+      if rawLine.endsWith "\r" then (rawLine.dropEnd 1).toString
+      else rawLine
     if line.isEmpty || line.startsWith "name," then continue
     let some (name, fs) := splitPerConstLine line | continue
     if fs.size < 10 then continue
