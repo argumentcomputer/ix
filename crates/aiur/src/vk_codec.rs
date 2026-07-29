@@ -11,16 +11,16 @@
 //! `System`, `system::Circuit`, `graph::ConstraintGraph`, `Node`, `NodeId`,
 //! `ColRef`, `Lookup`, `CommitmentParameters`, `FriParameters`.
 //!
-//! # ⚠️ Wire format changed with the multi-stark constraint-IR migration
+//! The recursive verifier hashes every vk byte (digest binding) and parses
+//! them in-circuit, so the format optimizes for density: u16 node ids
+//! (per-circuit graphs are far below 65k nodes), the Var (source, offset)
+//! packed into the tag byte, a small/big constant split, and u16 zeros and
+//! lookup references. The logUp constraints are never serialized — they are
+//! evaluated directly by both verifiers from the compiled lookups.
+//! The Lean mirror is `Ix/MultiStark/SystemDeserialize.lean`; the two must
+//! stay byte-identical.
 //!
-//! The previous format serialized a per-circuit *symbolic* AIR
-//! (`SymbolicExpression` trees + `LookupAir` + the `AiurCircuit` tag). The new
-//! multi-stark compiles circuits to a flat base-field node graph, so this
-//! codec now serializes that compiled form instead. **The Lean mirror
-//! `Ix/MultiStark/SystemDeserialize.lean` must be rewritten to match this new
-//! format** (it is NOT updated here). See "Wire format (v3)" below.
-//!
-//! # Wire format (v3)
+//! # Wire format (v5, dense)
 //!
 //! ```text
 //! GLOBAL HEADER
@@ -31,21 +31,22 @@
 //! PER-CIRCUIT RECORDS (circuit count times; each is `u32 LE len` + `len` bytes
 //!                      so a record is a contiguous byte range)
 //!   8 x u32 LE   main_width, preprocessed_width, preprocessed_height,
-//!                num_publics, stage_2_width, max_constraint_degree,
+//!                constraint_count (user roots + (L+3)*D), stage_2_width,
+//!                max_constraint_degree (combined user + logUp),
 //!                lookup_prefix_len, node_count
-//!   node_count nodes, each:
-//!     u8 tag  0 Const 1 Var 2 Public 3 IsFirstRow 4 IsLastRow
-//!             5 IsTransition 6 Add 7 Sub 8 Mul 9 Neg
-//!     Const:  u64 LE canonical value
-//!     Var:    u8 source (0 Preprocessed 1 Main 2 Stage2), u8 offset
-//!             (0 current 1 next), u32 LE column index
-//!     Public: u32 LE index
-//!     Add/Sub/Mul: u32 LE, u32 LE child node ids
-//!     Neg:    u32 LE child node id
-//!   u32 zero_count, then zero_count x u32 LE constraint-root node ids
+//!   node_count nodes, each a u8 tag then payload:
+//!     0  ConstSmall: u16 LE canonical value
+//!     1  ConstBig:   u64 LE canonical value
+//!     2  Public:     u8 index
+//!     3 IsFirstRow · 4 IsLastRow · 5 IsTransition (no payload)
+//!     6 Add · 7 Sub · 8 Mul: u16 LE, u16 LE child node ids
+//!     9  Neg: u16 LE child node id
+//!     10..=15  Var (tag = 10 + 2*source + offset; source 0 Preprocessed
+//!              1 Main 2 Stage2, offset 0 current 1 next): u16 LE column
+//!   u32 zero_count, then zero_count x u16 LE constraint-root node ids
 //!   u32 lookup_count, then per lookup:
-//!     u32 LE multiplicity node id
-//!     u32 LE arg count, then arg_count x u32 LE arg node ids
+//!     u16 LE multiplicity node id
+//!     u16 LE arg count, then arg_count x u16 LE arg node ids
 //! TRAILER
 //!   u8           preprocessed commit flag (0 = None / 1 = Some)
 //!   [u16 + 32-byte digests]   MerkleCap, if flag = 1
@@ -56,7 +57,7 @@
 //! IsTransition = 0, Var/IsFirstRow/IsLastRow = 1, Add/Sub = max of children,
 //! Mul = sum, Neg = child) and recomputed on decode in node order (children
 //! precede parents in the compiled vector). Goldilocks constants are written
-//! as `as_canonical_u64()` and read back with `from_u64`.
+//! canonically and reduced on read.
 
 // The codec is exercised by tests and wired to the FFI / Aiur port.
 #![allow(dead_code)]
@@ -89,18 +90,29 @@ fn push_u32(buf: &mut Vec<u8>, v: usize) {
   buf.extend_from_slice(&v.to_le_bytes());
 }
 
+/// Node ids on the wire are u16: per-circuit graphs are far below 65k
+/// nodes (the whole kernel system is ~140k across 800+ circuits).
 fn push_node_id(buf: &mut Vec<u8>, id: NodeId) {
-  buf.extend_from_slice(&id.0.to_le_bytes());
+  let id = u16::try_from(id.0).expect("node id exceeds u16 (vk wire format)");
+  buf.extend_from_slice(&id.to_le_bytes());
 }
 
 fn push_node(buf: &mut Vec<u8>, node: &Node<Val>) {
   match node {
     Node::Const(c) => {
-      buf.push(0);
-      buf.extend_from_slice(&c.as_canonical_u64().to_le_bytes());
+      // Small/big constant split: most constants (selector weights, small
+      // literals) fit u16.
+      let v = c.as_canonical_u64();
+      if let Ok(small) = u16::try_from(v) {
+        buf.push(0);
+        buf.extend_from_slice(&small.to_le_bytes());
+      } else {
+        buf.push(1);
+        buf.extend_from_slice(&v.to_le_bytes());
+      }
     },
     Node::Var(col) => {
-      buf.push(1);
+      // Var tag packs (source, offset): 10 + 2·source + offset.
       let source = match col.source {
         Source::Preprocessed => 0u8,
         Source::Main => 1,
@@ -110,13 +122,14 @@ fn push_node(buf: &mut Vec<u8>, node: &Node<Val>) {
         RowOffset::Current => 0u8,
         RowOffset::Next => 1,
       };
-      buf.push(source);
-      buf.push(offset);
-      buf.extend_from_slice(&col.index.to_le_bytes());
+      buf.push(10 + 2 * source + offset);
+      let index = u16::try_from(col.index)
+        .expect("column index exceeds u16 (vk wire format)");
+      buf.extend_from_slice(&index.to_le_bytes());
     },
     Node::Public(i) => {
       buf.push(2);
-      buf.extend_from_slice(&i.to_le_bytes());
+      buf.push(u8::try_from(*i).expect("public index exceeds u8"));
     },
     Node::IsFirstRow => buf.push(3),
     Node::IsLastRow => buf.push(4),
@@ -167,7 +180,7 @@ fn encode_circuit(buf: &mut Vec<u8>, circuit: &Circuit<Val>) {
   push_u32(buf, compiled.lookups.len());
   for lookup in &compiled.lookups {
     push_node_id(buf, lookup.multiplicity);
-    push_u32(buf, lookup.args.len());
+    push_u16(buf, lookup.args.len());
     for &arg in &lookup.args {
       push_node_id(buf, arg);
     }
@@ -259,7 +272,7 @@ impl<'a> Seg<'a> {
     Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()) as usize)
   }
   fn node_id(&mut self) -> Result<NodeId, String> {
-    Ok(NodeId(u32::from_le_bytes(self.take(4)?.try_into().unwrap())))
+    Ok(NodeId(u32::from(self.u16()?)))
   }
   fn u64(&mut self) -> Result<u64, String> {
     Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
@@ -278,23 +291,9 @@ impl<'a> Seg<'a> {
 
 fn decode_node(seg: &mut Seg<'_>) -> Result<Node<Val>, String> {
   Ok(match seg.u8()? {
-    0 => Node::Const(Val::from_u64(seg.u64()?)),
-    1 => {
-      let source = match seg.u8()? {
-        0 => Source::Preprocessed,
-        1 => Source::Main,
-        2 => Source::Stage2,
-        s => return Err(format!("bad source {s}")),
-      };
-      let offset = match seg.u8()? {
-        0 => RowOffset::Current,
-        1 => RowOffset::Next,
-        o => return Err(format!("bad row offset {o}")),
-      };
-      let index = u32::from_le_bytes(seg.take(4)?.try_into().unwrap());
-      Node::Var(ColRef { source, offset, index })
-    },
-    2 => Node::Public(u32::from_le_bytes(seg.take(4)?.try_into().unwrap())),
+    0 => Node::Const(Val::from_u16(seg.u16()?)),
+    1 => Node::Const(Val::from_u64(seg.u64()?)),
+    2 => Node::Public(u32::from(seg.u8()?)),
     3 => Node::IsFirstRow,
     4 => Node::IsLastRow,
     5 => Node::IsTransition,
@@ -302,6 +301,18 @@ fn decode_node(seg: &mut Seg<'_>) -> Result<Node<Val>, String> {
     7 => Node::Sub(seg.node_id()?, seg.node_id()?),
     8 => Node::Mul(seg.node_id()?, seg.node_id()?),
     9 => Node::Neg(seg.node_id()?),
+    t @ 10..=15 => {
+      let v = t - 10;
+      let source = match v / 2 {
+        0 => Source::Preprocessed,
+        1 => Source::Main,
+        _ => Source::Stage2,
+      };
+      let offset =
+        if v % 2 == 0 { RowOffset::Current } else { RowOffset::Next };
+      let index = u32::from(seg.u16()?);
+      Node::Var(ColRef { source, offset, index })
+    },
     t => return Err(format!("bad node tag {t}")),
   })
 }
@@ -348,7 +359,7 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
   let mut lookups = Vec::with_capacity(lookup_count.min(1 << 16));
   for _ in 0..lookup_count {
     let multiplicity = seg.node_id()?;
-    let arg_count = seg.u32_usize()?;
+    let arg_count = seg.u16()? as usize;
     let mut args = Vec::with_capacity(arg_count.min(1 << 16));
     for _ in 0..arg_count {
       args.push(seg.node_id()?);

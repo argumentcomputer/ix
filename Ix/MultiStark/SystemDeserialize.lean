@@ -22,14 +22,16 @@ flat base-field node graph, so this reader parses that compiled form:
       constraint_count (user roots + (L+3)·D — the `observe_shape` value),
       stage_2_width, max_constraint_degree (combined user + logUp),
       lookup_prefix_len, node_count
-    - `node_count` tagged nodes (children are u32 NodeIds, never sub-trees):
-      0 Const(u64) · 1 Var(u8 source, u8 offset, u32 index) · 2 Public(u32) ·
+    - `node_count` tagged nodes (dense v5: u16 children, never sub-trees):
+      0 ConstSmall(u16) · 1 ConstBig(u64) · 2 Public(u8) ·
       3 IsFirstRow · 4 IsLastRow · 5 IsTransition ·
-      6 Add(u32,u32) · 7 Sub(u32,u32) · 8 Mul(u32,u32) · 9 Neg(u32)
-    - u32 zero_count, then that many u32 constraint-root NodeIds (USER
+      6 Add(u16,u16) · 7 Sub(u16,u16) · 8 Mul(u16,u16) · 9 Neg(u16) ·
+      10..15 Var(u16 index) with (source, offset) packed in the tag
+      (tag = 10 + 2·source + offset)
+    - u32 zero_count, then that many u16 constraint-root NodeIds (USER
       constraints only — the logUp constraints are never compiled)
-    - u32 lookup_count, then the compiled lookups (u32 multiplicity NodeId,
-      u32 arg count, arg NodeIds) — these drive the verifier's direct
+    - u32 lookup_count, then the compiled lookups (u16 multiplicity NodeId,
+      u16 arg count, u16 arg NodeIds) — these drive the verifier's direct
       logUp constraint evaluation (`Verifier.lean`).
 * TRAILER: preprocessed commit (`0` = None / `1` + MerkleCap) then one u16
   per circuit for the preprocessed index (`0xFFFF` = None).
@@ -181,34 +183,39 @@ def systemDeserialize := ⟦
   -- are u32 NodeIds — there is no recursion over sub-expressions.
   -- ==========================================================================
 
+  -- Dense (v5) node encoding: u16 child ids and column indices; the Var
+  -- (source, offset) pair packed into the tag (10 + 2·source + offset);
+  -- small (u16) / big (u64) constant split; u8 public index.
   fn read_node(i: G) -> (SysNode, G) {
     let (tag, i1) = #read_vk_tag(i);
     match tag {
-      0 => let (c, i2) = #read_field(i1); (SysNode.Const(c), i2),
-      1 =>
-        let (s, i2) = #read_vk_tag(i1);
-        let (o, i3) = #read_vk_tag(i2);
-        let (idx, i4) = #read_vk_u32(i3);
-        (SysNode.Var(s, o, idx), i4),
-      2 => let (idx, i2) = #read_vk_u32(i1); (SysNode.Public(idx), i2),
+      0 => let (c, i2) = #read_vk_u16(i1); (SysNode.Const(c), i2),
+      1 => let (c, i2) = #read_field(i1); (SysNode.Const(c), i2),
+      2 => let (idx, i2) = #read_vk_tag(i1); (SysNode.Public(idx), i2),
       3 => (SysNode.IsFirstRow, i1),
       4 => (SysNode.IsLastRow, i1),
       5 => (SysNode.IsTransition, i1),
       6 =>
-        let (a, i2) = #read_vk_u32(i1);
-        let (b, i3) = #read_vk_u32(i2);
+        let (a, i2) = #read_vk_u16(i1);
+        let (b, i3) = #read_vk_u16(i2);
         (SysNode.Add(a, b), i3),
       7 =>
-        let (a, i2) = #read_vk_u32(i1);
-        let (b, i3) = #read_vk_u32(i2);
+        let (a, i2) = #read_vk_u16(i1);
+        let (b, i3) = #read_vk_u16(i2);
         (SysNode.Sub(a, b), i3),
       8 =>
-        let (a, i2) = #read_vk_u32(i1);
-        let (b, i3) = #read_vk_u32(i2);
+        let (a, i2) = #read_vk_u16(i1);
+        let (b, i3) = #read_vk_u16(i2);
         (SysNode.Mul(a, b), i3),
-      _ =>
-        let (a, i2) = #read_vk_u32(i1);
+      9 =>
+        let (a, i2) = #read_vk_u16(i1);
         (SysNode.Neg(a), i2),
+      10 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(0, 0, idx), i2),
+      11 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(0, 1, idx), i2),
+      12 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(1, 0, idx), i2),
+      13 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(1, 1, idx), i2),
+      14 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(2, 0, idx), i2),
+      _ => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(2, 1, idx), i2),
     }
   }
 
@@ -222,20 +229,20 @@ def systemDeserialize := ⟦
     }
   }
 
-  -- A run of u32 NodeIds (the `zeros` constraint roots).
+  -- A run of u16 NodeIds (constraint roots / lookup argument ids).
   fn read_node_ids_n(i: G, n: G) -> (List‹G›, G) {
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (id, i1) = #read_vk_u32(i);
+        let (id, i1) = #read_vk_u16(i);
         let (rest, i2) = read_node_ids_n(i1, n - 1);
         (store(ListNode.Cons(id, rest)), i2),
     }
   }
 
   fn read_sys_lookup(i: G) -> (SysLookup, G) {
-    let (m, i1) = #read_vk_u32(i);
-    let (ac, i2) = #read_vk_u32(i1);
+    let (m, i1) = #read_vk_u16(i);
+    let (ac, i2) = #read_vk_u16(i1);
     let (args, i3) = read_node_ids_n(i2, ac);
     (SysLookup.Mk(m, args), i3)
   }
