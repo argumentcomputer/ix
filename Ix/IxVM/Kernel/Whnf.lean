@@ -193,12 +193,12 @@ def whnf := ⟦
   -- whole-frontier promotion round). Aiur memoizes `want_if_stub` per
   -- head position, so each distinct stub is logged at most once and
   -- repeat stucks are cache hits.
-  fn want_stub_write(addr: Addr) {
+  fn want_stub_write(ch: G, addr: Addr) {
     let [b0, b1, b2, b3, b4, b5, b6, b7,
          b8, b9, b10, b11, b12, b13, b14, b15,
          b16, b17, b18, b19, b20, b21, b22, b23,
          b24, b25, b26, b27, b28, b29, b30, b31] = load(addr);
-    io_write(97, [to_field(b0), to_field(b1), to_field(b2), to_field(b3),
+    io_write(ch, [to_field(b0), to_field(b1), to_field(b2), to_field(b3),
                   to_field(b4), to_field(b5), to_field(b6), to_field(b7),
                   to_field(b8), to_field(b9), to_field(b10), to_field(b11),
                   to_field(b12), to_field(b13), to_field(b14), to_field(b15),
@@ -214,11 +214,33 @@ def whnf := ⟦
     match ci {
       KConstantInfo.Axiom(_, _, u) =>
         match u - 2 {
-          0 => want_stub_write(list_lookup(addrs, idx)),
+          0 => want_stub_write(97, list_lookup(addrs, idx)),
           _ => (),
         },
       _ => (),
     }
+  }
+
+  -- Stub-consult log (ch 96). `const_num_lvls` with a side effect: when
+  -- the consulted entry is a frontier STUB (flag 2), its address is
+  -- appended to channel 96 — non-aborting, the read succeeds (the stub
+  -- carries its real type). The host harvests the channel after a
+  -- successful classification run: stubs on it need their types; stubs
+  -- absent from it were never semantically consulted and re-witness as
+  -- GHOSTS (position-only, no bytes) for the prove run. Swapped in for
+  -- `const_num_lvls` at infer's Const arms, so the hot arm's call count
+  -- is unchanged. Memoized per node: one row per distinct consulted
+  -- entry, repeats are cache hits.
+  fn const_num_lvls_logged(ci: KConstantInfo, idx: G, addrs: List‹Addr›) -> G {
+    match ci {
+      KConstantInfo.Axiom(_, _, u) =>
+        match u - 2 {
+          0 => want_stub_write(96, list_lookup(addrs, idx)),
+          _ => (),
+        },
+      _ => (),
+    };
+    const_num_lvls(ci)
   }
 
   fn whnf_const_head(idx: G, lvls: List‹KLevel›, head: KExpr, spine: List‹KExpr›,

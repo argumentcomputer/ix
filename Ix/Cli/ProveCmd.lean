@@ -189,7 +189,10 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     match Ix.Cli.CheckCmd.shardClaimDigest ixonEnv blocks foreign stubbed with
     | .error e => IO.eprintln s!"reconstruct shard {digests.size} claim failed: {e}"; return 1
     | .ok d => digests := digests.push d
-  -- Resume: keep sidecar rows whose digest still matches this manifest.
+  -- Resume: keep sidecar rows whose digest still matches this manifest
+  -- AND whose proof still verifies — a digest match alone would count a
+  -- proof made under a different circuit version (any kernel change
+  -- between sessions regenerates the codegen and the verifying key).
   let sidecar := manifestPath ++ ".proofs.csv"
   let mut done : Std.HashMap Nat Address := {}
   if ← System.FilePath.pathExists sidecar then
@@ -198,7 +201,12 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
       | [k, d, pa] =>
         match k.toNat?, Address.fromString d, Address.fromString pa with
         | some k, some d, some pa =>
-          if digests[k]? == some d then done := done.insert k pa
+          if digests[k]? == some d && !done.contains k then
+            if (← Ix.Cli.VerifyCmd.verifyOneProof aiurSystem compiled pa) == 0 then
+              done := done.insert k pa
+            else
+              IO.println s!"[prove] shard {k}: sidecar proof {pa} no longer \
+                verifies (circuit changed?) — re-proving"
         | _, _, _ => pure ()
       | _ => pure ()
   let pending := (List.range shards.size).filter (fun k => !done.contains k)

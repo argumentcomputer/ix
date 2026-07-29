@@ -60,6 +60,21 @@ def infer := ⟦
     k_infer_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
   }
 
+  -- GHOST-mention report. A Const whose target carries the ghost arity
+  -- sentinel means the shard MENTIONS a constant the witness shipped as
+  -- position-only — the very next assert would fail anyway, so abort
+  -- through empty channel 98 and let the error NAME the address; the
+  -- repair driver then ships that block whole. Cold: real constants
+  -- never carry the sentinel.
+  fn report_wanted_ghost(expected: G, idx: G, addrs: List‹Addr›) {
+    match expected - ghost_arity() {
+      0 =>
+        let (_i, _l) = io_get_info(98, load(list_lookup(addrs, idx)));
+        (),
+      _ => (),
+    }
+  }
+
   fn k_infer_core(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
@@ -77,8 +92,9 @@ def infer := ⟦
       -- Validates `lvls.len() == num_lvls(ci)`.
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
-        let expected = const_num_lvls(ci);
+        let expected = const_num_lvls_logged(ci, idx, addrs);
         let given = list_length(lvls);
+        report_wanted_ghost(expected, idx, addrs);
         assert_eq!(given, expected);
         let ty = const_type_of(ci);
         expr_inst_levels(ty, lvls),
@@ -312,8 +328,9 @@ def infer := ⟦
         store(KExprNode.Srt(level_reduce(store(KLevelNode.Succ(l))))),
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
-        let expected = const_num_lvls(ci);
+        let expected = const_num_lvls_logged(ci, idx, addrs);
         let given = list_length(lvls);
+        report_wanted_ghost(expected, idx, addrs);
         assert_eq!(given, expected);
         let ty = const_type_of(ci);
         expr_inst_levels(ty, lvls),

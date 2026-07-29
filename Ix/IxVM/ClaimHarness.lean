@@ -162,16 +162,25 @@ Channel numbers MUST stay in sync with the inlined `io_get_info` /
 -/
 
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
-    `ioBuffer`. See the channel table above. -/
+    `ioBuffer`. See the channel table above.
+
+    `ghost` addrs ship position-only: a kind-2 discriminator and nothing
+    else — the kernel fabricates a fail-closed node at their position
+    instead of loading + hashing bytes. Mirrors the Rust builder's
+    `add_entries_parallel`. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
-    (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
+    (ioBuffer : Aiur.IOBuffer)
+    (ghost : Address → Bool := fun _ => false) : Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
   for (addr, lc) in ixonEnv.consts do
     if !keep addr then continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    if ghost addr then
+      ioBuffer := ioBuffer.extend 4 key #[.ofNat 2]
+      continue
     -- The kernel re-hashes these bytes against the key, so feed the exact
     -- serialized form the lazy entry holds — no materialization needed.
     let bytes := lc.rawBytes
-    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 2 key (bytes.data.map .ofUInt8)
     -- Discriminator: this addr resolves to a constant.
     ioBuffer := ioBuffer.extend 4 key #[.ofNat 1]
@@ -183,6 +192,7 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     ioBuffer := ioBuffer.extend 4 key #[.ofNat 0]
   for (addr, hints) in ixonEnv.anonHints do
     if !keep addr then continue
+    if ghost addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
   return ioBuffer
@@ -291,10 +301,12 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned foreign stubbed : Array Address) 
     foreign.foldl (·.insert ·) (owned.foldl (·.insert ·) {})
   -- Blobs are not blocks, so the manifest never lists them — but every
   -- blob an ingressed constant references joins the ingress set (string
-  -- and Nat literals read their bytes wherever they occur). MUST mirror
-  -- the Rust builder (`build_shard_check_env_witness`) exactly: the env
-  -- tree and frontier are built over this set, and any divergence splits
-  -- the claim digest between prover and verifier.
+  -- and Nat literals read their bytes wherever they occur) — INCLUDING
+  -- stubs': the stub-vs-ghost split is a per-run witness decision made
+  -- after the claim exists, so the env tree must not depend on it.
+  -- MUST mirror the Rust builder (`build_shard_check_env_witness`)
+  -- exactly: the env tree and frontier are built over this set, and any
+  -- divergence splits the claim digest between prover and verifier.
   let closure : Std.HashSet Address := Id.run do
     let mut c := blockClosure
     for a in blockClosure do
@@ -340,8 +352,12 @@ def buildShardCheckEnvWitness (env : Ixon.Env)
   let digestKey := addrKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
-  -- Ship only the shard closure (consts + blobs + Defn hints).
-  ioBuffer := addEntries env closure.contains ioBuffer
+  -- Ship only the shard closure (consts + blobs + Defn hints); every
+  -- stub ships as a GHOST — position-only, no bytes.
+  let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
+  let stubSet : Std.HashSet Address :=
+    stubbed.foldl (fun m a => if ownedSet.contains a then m else m.insert a) {}
+  ioBuffer := addEntries env closure.contains ioBuffer stubSet.contains
   -- Seed the env-root and (when present) frontier assumption trees.
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer

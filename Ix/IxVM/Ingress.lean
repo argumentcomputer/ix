@@ -1300,6 +1300,27 @@ def ingress := ⟦
               ListNode.Cons(next, rest) =>
                 load_with_deps(next, rest, visited_addrs, visited_consts, visited_set, asm_map),
             },
+          2 =>
+            -- GHOST: the claim's assumption tree names this address, but
+            -- the recording consulted nothing about it, so the witness
+            -- ships position + address only — no ch-2 bytes, no blake3.
+            -- A fabricated ixon-flag-3 axiom occupies the kernel position
+            -- (refs to it resolve instead of dangling); `convert_axiom`
+            -- turns it into the sentinel node that fails closed — and
+            -- names this address — on any semantic access. Lying on this
+            -- discriminator only withholds an assumption's content, which
+            -- can turn passes into failures, never failures into passes.
+            let new_addrs = store(ListNode.Cons(addr, visited_addrs));
+            let new_set = rbtree_map_insert(ptr_val(addr), 1, visited_set);
+            let ghost = Constant.Mk(
+              ConstantInfo.Axio(Axiom.Mk(3, [0u8; 8], store(Expr.Var([0u8; 8])))),
+              store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+            let new_consts = store(ListNode.Cons(store(ghost), visited_consts));
+            match load(worklist) {
+              ListNode.Nil => (new_addrs, new_consts),
+              ListNode.Cons(next, rest) =>
+                load_with_deps(next, rest, new_addrs, new_consts, new_set, asm_map),
+            },
           _ =>
             let new_addrs = store(ListNode.Cons(addr, visited_addrs));
             let new_set = rbtree_map_insert(ptr_val(addr), 1, visited_set);

@@ -303,10 +303,30 @@ def convert := ⟦
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match a {
           Axiom.Mk(is_unsafe, lvls, typ) =>
-            let ktyp = convert_expr(typ, sharing, ref_idxs, recur_idxs, lit_blobs, univs);
-            KConstantInfo.Axiom(flatten_u64(lvls), ktyp, is_unsafe),
+            match is_unsafe - 3 {
+              0 =>
+                -- GHOST (fabricated by `load_with_deps` for a ch-4 kind-2
+                -- leaf): the witness shipped no bytes, so this node holds
+                -- no real content. The arity sentinel makes every mention
+                -- fail the universe-arity assert closed (and report the
+                -- address, `report_wanted_ghost`); flag 2 keeps the
+                -- whnf-stuck wanted-stub report firing for it. The type
+                -- is unreachable behind the sentinel.
+                KConstantInfo.Axiom(ghost_arity(), store(KExprNode.BVar(0)), 2),
+              _ =>
+                let ktyp = convert_expr(typ, sharing, ref_idxs, recur_idxs, lit_blobs, univs);
+                KConstantInfo.Axiom(flatten_u64(lvls), ktyp, is_unsafe),
+            },
         },
     }
+  }
+
+  -- Universe-arity sentinel carried by GHOST entries: no real constant
+  -- declares 2^32-1 level parameters, so `assert_eq!(list_length(lvls),
+  -- const_num_lvls(ci))` can never pass on a ghost — any term that
+  -- actually MENTIONS one fails closed at infer.
+  fn ghost_arity() -> G {
+    4294967295
   }
 
   fn convert_quotient(q: Quotient, ctx: ConvertCtx) -> KConstantInfo {

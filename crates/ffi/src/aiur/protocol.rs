@@ -2,7 +2,7 @@ use multi_stark::{
   p3_field::PrimeField64,
   types::{CommitmentParameters, FriParameters},
 };
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use std::sync::LazyLock;
 
 use lean_ffi::object::{
@@ -477,9 +477,12 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   };
   let env = &env_handle.get().env;
 
+  // Pure stub witness (no ghosts): checks and the repair loop stay in
+  // the fast-converging regime; ghosting happens inside the prove path
+  // after its classification pass.
   let (_claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned, &foreign, &stubbed,
+      env, &owned, &foreign, &stubbed, &FxHashSet::default(),
     ) {
       Ok(t) => t,
       Err(e) => {
@@ -619,15 +622,58 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   };
   let env = &env_handle.get().env;
 
-  let (claim, input, mut io_buffer) =
+  // Phase 1 — CLASSIFY. Execute the shard once with every stub carrying
+  // its type bytes (this converges — the type tier absorbs the whole
+  // type-read surface). The kernel logs every stub whose type it
+  // actually consults on IO channel 96 (`const_num_lvls_logged`).
+  let empty = FxHashSet::default();
+  let (_claim1, input1, mut io1) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned, &foreign, &stubbed,
+      env, &owned, &foreign, &stubbed, &empty,
     ) {
       Ok(t) => t,
       Err(e) => {
         return LeanExcept::error_string(&format!("witness build: {e}"));
       },
     };
+  if let Err(e) = ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+    aiur_system_obj.get().toplevel(),
+    fun_idx,
+    input1.clone(),
+    &mut io1,
+  ) {
+    return LeanExcept::error_string(&format!(
+      "classification execute: {}",
+      append_wanted_stubs(&e.to_string(), &io1)
+    ));
+  }
+  let consulted = harvest_addresses(&io1, 96);
+
+  // Phase 2 — GHOST + PROVE. Stubs the classification never consulted
+  // ship position-only (no bytes, no blake3 rows); the claim digest is
+  // identical to phase 1's by construction, so binding and composition
+  // never see the split. The prover's own execution re-validates: a
+  // misclassified ghost aborts naming its address.
+  let ghosts: FxHashSet<ix_common::address::Address> = stubbed
+    .iter()
+    .filter(|a| !consulted.contains(*a))
+    .cloned()
+    .collect();
+  let (claim, input, mut io_buffer) =
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+      env, &owned, &foreign, &stubbed, &ghosts,
+    ) {
+      Ok(t) => t,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
+    };
+  eprintln!(
+    "[prove] stub classification: {} consulted, {} ghosted of {} stubs",
+    consulted.len(),
+    ghosts.len(),
+    stubbed.len()
+  );
 
   let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
     fun_idx,
@@ -637,6 +683,27 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   );
 
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
+}
+
+/// Collect the 32-byte addresses accumulated on an IO want/consult
+/// channel (each entry is one address, appended by the kernel's
+/// `want_stub_write`).
+fn harvest_addresses(
+  io_buffer: &IOBuffer,
+  channel: u8,
+) -> FxHashSet<ix_common::address::Address> {
+  use multi_stark::p3_field::PrimeCharacteristicRing;
+  let mut out = FxHashSet::default();
+  if let Some(arena) = io_buffer.data.get(&G::from_u8(channel)) {
+    for chunk in arena.chunks_exact(32) {
+      let bytes: Vec<u8> =
+        chunk.iter().map(|g| (g.as_canonical_u64() & 0xff) as u8).collect();
+      if let Ok(a) = ix_common::address::Address::from_slice(&bytes) {
+        out.insert(a);
+      }
+    }
+  }
+  out
 }
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape

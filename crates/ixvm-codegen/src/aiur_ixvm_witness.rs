@@ -165,9 +165,16 @@ impl ChannelEntries {
 /// Build the per-channel `(key, data)` tuples for every addr in
 /// `closure`. Byte→G conversion runs in parallel; the IOBuffer
 /// assembly is sequential because arena `idx` must be monotonic.
+///
+/// `ghosts` ship position-only: a kind-2 discriminator and nothing else —
+/// no ch-2 bytes for the kernel to blake3, no hint. The kernel fabricates
+/// a fail-closed node at their position (`load_with_deps` kind-2 arm), so
+/// refs to them resolve instead of dangling, and any semantic use aborts
+/// naming the address.
 fn add_entries_parallel(
   env: &Env,
   closure: &FxHashSet<Address>,
+  ghosts: &FxHashSet<Address>,
   io: &mut IOBuffer,
 ) {
   let ch_const = G::from_u8(2);
@@ -176,6 +183,7 @@ fn add_entries_parallel(
   let ch_blob = G::from_u8(5);
   let g_zero = G::ZERO;
   let g_one = G::ONE;
+  let g_ghost = G::from_u8(2);
 
   // Pull the set of addrs we'll touch as a Vec for parallel iteration.
   let closure_vec: Vec<Address> = closure.iter().cloned().collect();
@@ -188,6 +196,10 @@ fn add_entries_parallel(
       let mut p = ChannelEntries::new();
       for addr in chunk {
         let key = addr_key(addr);
+        if ghosts.contains(addr) {
+          p.discs.push((key, g_ghost));
+          continue;
+        }
         // Const lookup first.
         if let Some(lc) = env.consts.get(addr) {
           let data = bytes_to_g(lc.raw_bytes());
@@ -207,7 +219,9 @@ fn add_entries_parallel(
       }
       // Hints come from env.anon_hints (sidecar). Collect per chunk.
       for addr in chunk {
-        if let Some(h) = env.anon_hints.get(addr) {
+        if !ghosts.contains(addr)
+          && let Some(h) = env.anon_hints.get(addr)
+        {
           p.hints.push((addr_key(addr), hint_to_g(&h)));
         }
       }
@@ -261,7 +275,8 @@ pub fn build_claim_check_witness(
   // ch 0: claim bytes
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   // ch 2/3/4/5: per-const/blob/hint entries — parallel byte conversion.
-  add_entries_parallel(env, &closure, &mut io);
+  // Full-closure single-const checks ship no ghosts.
+  add_entries_parallel(env, &closure, &FxHashSet::default(), &mut io);
 
   Ok((claim, digest_key, io))
 }
@@ -284,18 +299,28 @@ pub fn build_shard_check_env_witness(
   owned: &[Address],
   foreign: &[Address],
   stubbed: &[Address],
+  ghosts: &FxHashSet<Address>,
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
   let owned_set: FxHashSet<Address> = owned.iter().cloned().collect();
   // A shard never stubs what it owns.
   let stub_set: FxHashSet<Address> =
     stubbed.iter().filter(|a| !owned_set.contains(*a)).cloned().collect();
+  // Ghosts are the stubs a classification run proved unconsulted; they
+  // ship position-only. Only a stub may ghost — the claim and trees are
+  // identical either way, so the split never reaches the digest.
+  let ghost_set: FxHashSet<Address> =
+    ghosts.iter().filter(|a| stub_set.contains(*a)).cloned().collect();
 
   let mut closure: FxHashSet<Address> =
     owned.iter().chain(foreign.iter()).cloned().collect();
   // The manifest lists BLOCKS, and blobs are not blocks — but a constant's
   // ref table points at them for string and Nat literals, and the kernel
   // reads their bytes wherever they occur. Pull in every blob any ingressed
-  // constant references.
+  // constant references — INCLUDING stubs': whether a given stub ships as
+  // a type-only stub or a ghost is a per-run witness decision made AFTER
+  // the claim exists, and the env tree (hence the claim digest) must not
+  // depend on it. An unread blob leaf costs nothing — the kernel loads
+  // blob bytes on demand, so bytes nobody converts are never hashed.
   //
   // Constant refs pointing outside the ingress set are left out on purpose:
   // they get a discriminator below but no bytes, so they poison if an
@@ -340,13 +365,19 @@ pub fn build_shard_check_env_witness(
   // ch 0: claim bytes
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   // ch 2/3/4/5 per-const/blob/hint entries — parallel byte conversion.
-  add_entries_parallel(env, &closure, &mut io);
-  // Every ref of an ingressed constant needs a ch-4 discriminator even when
-  // the target is not ingressed: the kernel classifies refs from that channel
-  // and an address with no entry fails the read outright. A constant outside
-  // the ingress set gets the discriminator alone, so it resolves to poison.
+  // Classified-unconsulted stubs ship as GHOSTS: position-only, no
+  // bytes, no hashing; the rest of the stubs keep their type bytes.
+  add_entries_parallel(env, &closure, &ghost_set, &mut io);
+  // Every ref of an ingressed NON-GHOST constant needs a ch-4
+  // discriminator even when the target is not ingressed: the kernel
+  // classifies refs from that channel and an address with no entry fails
+  // the read outright. A constant outside the ingress set gets the
+  // discriminator alone, so it resolves to poison. Ghost refs are never
+  // classified — the ghost is not converted; a type-only stub IS, so its
+  // type refs need their discriminators like anyone else's.
   let outside: FxHashSet<Address> = closure
     .iter()
+    .filter(|a| !ghost_set.contains(*a))
     .filter_map(|a| env.get_const(a))
     .flat_map(|c| c.refs.clone())
     .filter(|r| !closure.contains(r))
