@@ -186,7 +186,8 @@ private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
 
 @[extern "rs_aiur_toplevel_shard_check_with_env"]
 private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& ByteArray →
+  @& ByteArray → Bool →
     Except String ExecuteResult
 
 /-- Per-claim check against a Rust-owned `EnvHandle`. `useBytecode`
@@ -206,9 +207,10 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
     `checkAddrWithEnv` for `useBytecode` semantics. -/
 def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
-  (ownedBlob : ByteArray) (useBytecode : Bool := false)
+  (ownedBlob foreignBlob stubbedBlob : ByteArray) (useBytecode : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode).map
+  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob foreignBlob
+    stubbedBlob useBytecode).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 end Bytecode.Toplevel

@@ -4,6 +4,24 @@ Design for removing the ingress-prediction problem from sharded checking.
 Written after the frontier-stub approach was implemented and disproven; the
 measurements that motivate it are in this document's final section.
 
+> **Status: superseded by host-measured ingress.** The kernel rewrite this
+> document designs turned out to be unnecessary for the RAM win: the
+> native Rust kernel is *already* lazy, so the host can measure the exact
+> ingress set by recording every constant the check consults
+> (`TypeChecker::touched` → the `.ixprof` v4 touch graph) and hand the
+> unchanged eager Aiur kernel precisely that set — full entries for
+> everything consulted, type-only stubs for the rest. This resurrects the
+> frontier-stub machinery with its set source swapped from prediction to
+> measurement, and it passes where prediction failed: the delta model
+> stubbed constants whose HEIGHTS the kernel had read (heights steer
+> lazy-delta's unfold order), while the touch set ships everything whose
+> content influenced any decision, so the recording run replays
+> identically. Measured on Init: 60 shards / 25.6 GiB floor at a 250 GiB
+> budget (full closure: 699 / 174.8).
+> The analysis below — the one-blob economics, why prediction fails, why
+> the address-keyed refactor cannot land incrementally — remains the
+> reference if in-circuit laziness is ever wanted for its own sake.
+
 ## The problem
 
 An Aiur shard's `CheckEnv` claim ingresses its owned blocks' entire

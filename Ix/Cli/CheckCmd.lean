@@ -119,7 +119,7 @@ def emitStats (compiled : Aiur.CompiledToplevel)
     re-parse. -/
 inductive Target where
   | addr  (a : Address)
-  | shard (owned : Array Address)
+  | shard (owned foreign stubbed : Array Address)
   | leanW (w : IxVM.ClaimHarness.ClaimWitness)
 
 /-- Run a single check claim through the codegen'd IxVM Rust kernel.
@@ -140,8 +140,9 @@ def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
     match target, envHandle? with
     | .addr a, some envHandle =>
       compiled.bytecode.checkAddrWithEnv funIdx envHandle a.hash useBytecode
-    | .shard owned, some envHandle =>
-      compiled.bytecode.shardCheckWithEnv funIdx envHandle (buildBlob owned) useBytecode
+    | .shard owned foreign stubbed, some envHandle =>
+      compiled.bytecode.shardCheckWithEnv funIdx envHandle
+        (buildBlob owned) (buildBlob foreign) (buildBlob stubbed) useBytecode
     | .leanW witness, _ =>
       if useBytecode then
         compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
@@ -353,22 +354,27 @@ private def ixesAddr : IxesP Address := do
   if p + 32 ≤ b.size then modify (fun _ => (b, p + 32)); pure ⟨b.extract p (p + 32)⟩
   else throw "ixes: truncated (expected a 32-byte address)"
 
-/-- Parse every shard's owned block addresses from a serialized `.ixes`
-    manifest (`ShardManifest::to_bytes`, `src/ix/shard.rs`):
+/-- Parse every shard's owned and stubbed block addresses from a serialized
+    `.ixes` manifest (`ShardManifest::to_bytes`, `src/ix/shard.rs`):
     magic(8) ‖ total_cross_ingress(u128) ‖ num_shards(u32) ‖ per shard
     { id(u32) ‖ heartbeats(u64) ‖ own_size(u64) ‖ cross_ingress(u64) ‖
       assumption_root(u8 tag + 32?) ‖ blocks(u32 len + 32·len) ‖
-      foreign_blocks(u32 len + 32·len) }.
+      foreign_blocks(u32 len + 32·len) ‖ stubbed_blocks(u32 len + 32·len) }.
+
+    `stubbed_blocks` are the blocks a shard ingresses as type-only axioms.
+    Only the partition can identify them — it comes from the profile's delta
+    graph — so they travel in the manifest rather than being re-derived here.
     Bounds-checked: a truncated/malformed file yields `.error`, never a panic. -/
-def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address)) :=
-  let go : IxesP (Array (Array Address)) := do
+def parseIxesAllShards (bytes : ByteArray) :
+    Except String (Array (Array Address × Array Address × Array Address)) :=
+  let go : IxesP (Array (Array Address × Array Address × Array Address)) := do
     let m0 ← ixesU8; let m1 ← ixesU8; let m2 ← ixesU8; let m3 ← ixesU8
     if !(m0 == 0x49 && m1 == 0x58 && m2 == 0x45 && m3 == 0x53) then
       throw "not an .ixes file (bad magic)"
     ixesSkip 4    -- rest of the 8-byte magic
     ixesSkip 16   -- total_cross_ingress (u128)
     let n ← ixesU32
-    let mut shards : Array (Array Address) := #[]
+    let mut shards : Array (Array Address × Array Address × Array Address) := #[]
     for _ in [0:n.toNat] do
       ixesSkip (4 + 8 + 8 + 8)  -- id + heartbeats + own_size + cross_ingress
       if (← ixesU8) == 1 then ixesSkip 32  -- assumption_root present
@@ -376,8 +382,15 @@ def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address
       let mut blocks : Array Address := #[]
       for _ in [0:blen.toNat] do
         blocks := blocks.push (← ixesAddr)
-      ixesSkip ((← ixesU32).toNat * 32)  -- skip foreign_blocks
-      shards := shards.push blocks
+      let flen ← ixesU32
+      let mut foreign : Array Address := #[]
+      for _ in [0:flen.toNat] do
+        foreign := foreign.push (← ixesAddr)
+      let slen ← ixesU32
+      let mut stubbed : Array Address := #[]
+      for _ in [0:slen.toNat] do
+        stubbed := stubbed.push (← ixesAddr)
+      shards := shards.push (blocks, foreign, stubbed)
     pure shards
   go.run' (bytes, 0)
 
@@ -405,14 +418,17 @@ def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) : Array A
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the
     digest `prove --shard K` produced, so a proof can be bound to its shard. -/
-def shardClaimDigest (ixonEnv : Ixon.Env) (blocks : Array Address) : Except String Address := do
-  let (claim, _, _) ← IxVM.ClaimHarness.shardCheckEnvClaim ixonEnv (ownedConstsForBlocks ixonEnv blocks)
+def shardClaimDigest (ixonEnv : Ixon.Env) (blocks foreign stubbed : Array Address) :
+    Except String Address := do
+  let (claim, _, _) ← IxVM.ClaimHarness.shardCheckEnvClaim ixonEnv
+    (ownedConstsForBlocks ixonEnv blocks) (ownedConstsForBlocks ixonEnv foreign)
+    (ownedConstsForBlocks ixonEnv stubbed)
   pure (Address.blake3 (Ix.Claim.ser claim))
 
 /-- Load the `.ixe` env and the `.ixes` shard partition together (each file
     read once). Shared by every manifest-driven shard path. -/
 def loadEnvAndShards (manifestPath ixePath : String) :
-    IO (Except String (Ixon.Env × Array (Array Address))) := do
+    IO (Except String (Ixon.Env × Array (Array Address × Array Address × Array Address))) := do
   match parseIxesAllShards (← IO.FS.readBinFile manifestPath) with
   | .error e => return .error s!"manifest parse failed: {e}"
   | .ok shards => match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
@@ -422,12 +438,16 @@ def loadEnvAndShards (manifestPath ixePath : String) :
 /-- Run the shard operation for one shard, given the already-loaded env and the
     shard's owned `blocks`: build the `CheckEnv` witness over the owned consts
     (ingress their closure, skip the frontier) and dispatch `runOne`. -/
-def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
+def runShardOwned (ixonEnv : Ixon.Env) (blocks foreign stubbed : Array Address)
+    (shardK : Nat)
     (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
+  let foreignConsts := ownedConstsForBlocks ixonEnv foreign
+  let stubs := ownedConstsForBlocks ixonEnv stubbed
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
-    {owned.size}/{ixonEnv.consts.size} owned consts"
-  match IxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned with
+    {owned.size}/{ixonEnv.consts.size} owned consts, {stubs.size} stubbed"
+  match IxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned foreignConsts
+    stubs with
   | .error e => IO.eprintln s!"shard witness build failed: {e}"; return 1
   | .ok (claim, witness) => runOne claim witness s!"shard {shardK}"
 
@@ -437,10 +457,13 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
     one env parse. -/
 def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
     (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
-    (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
+    (ixonEnv : Ixon.Env) (blocks foreign stubbed : Array Address) (shardK : Nat) :
+    IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
+  let foreignConsts := ownedConstsForBlocks ixonEnv foreign
+  let stubs := ownedConstsForBlocks ixonEnv stubbed
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
-    {owned.size}/{ixonEnv.consts.size} owned consts"
+    {owned.size}/{ixonEnv.consts.size} owned consts, {stubs.size} stubbed"
   let label := s!"shard {shardK}"
   IO.println s!"Typechecking {label}"
   (← IO.getStdout).flush
@@ -448,7 +471,14 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
   let mut blob := ByteArray.empty
   for a in owned do
     blob := blob ++ a.hash
-  match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob useBytecode with
+  let mut foreignBlob := ByteArray.empty
+  for a in foreignConsts do
+    foreignBlob := foreignBlob ++ a.hash
+  let mut stubBlob := ByteArray.empty
+  for a in stubs do
+    stubBlob := stubBlob ++ a.hash
+  match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob foreignBlob
+    stubBlob useBytecode with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
     return 1
@@ -463,7 +493,8 @@ def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) => match shards[shardK]? with
     | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
-    | some blocks => runShardOwned ixonEnv blocks shardK runOne
+    | some (blocks, foreign, stubbed) =>
+      runShardOwned ixonEnv blocks foreign stubbed shardK runOne
 
 /-- IxVM-native shard check, single shard. Builds an `EnvHandle`
     once for this one call. -/
@@ -474,11 +505,12 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) => match shards[shardK]? with
     | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
-    | some blocks =>
+    | some (blocks, foreign, stubbed) =>
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks shardK
+      runShardOwnedNative envHandle compiled printStats statsOut useBytecode
+        ixonEnv blocks foreign stubbed shardK
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -487,11 +519,12 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
     (checked) by some other shard. Prints the per-shard report; returns whether
     the partition is a valid disjoint cover (no block owned by two shards, no
     constant whose block no shard owns). -/
-def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool := do
+def shardsCover (ixonEnv : Ixon.Env)
+    (shards : Array (Array Address × Array Address × Array Address)) : IO Bool := do
   -- block → shard, detecting blocks claimed by more than one shard.
   let mut blockToShard : Std.HashMap Address Nat := {}
   let mut dup : Nat := 0
-  for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
+  for ((blocks, _, _), k) in shards.mapIdx (fun k b => (b, k)) do
     for blk in blocks do
       match blockToShard.get? blk with
       | some _ => dup := dup + 1
@@ -505,8 +538,9 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     | some k => counts := counts.modify k (· + 1)  -- total: no-op if out of range
     | none => unowned := unowned + 1
   IO.println s!"[shards] {shards.size} shards, {ixonEnv.consts.size} consts"
-  for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
-    IO.println s!"  shard {k}: {blocks.size} blocks, {(counts[k]?).getD 0} consts"
+  for ((blocks, _, stubbed), k) in shards.mapIdx (fun k b => (b, k)) do
+    IO.println s!"  shard {k}: {blocks.size} blocks ({stubbed.size} stubbed), \
+      {(counts[k]?).getD 0} consts"
   if dup != 0 then
     IO.eprintln s!"[shards] FAIL: {dup} block(s) owned by >1 shard (not disjoint)"
   if unowned != 0 then
@@ -534,9 +568,10 @@ def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Na
     let maxJobs := max 1 (jobs?.getD shards.size)
     let mut rc : UInt32 := 0
     for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-      let tasks ← chunk.mapM fun (blocks, k) =>
+      let tasks ← chunk.mapM fun ((blocks, foreign, stubbed), k) =>
         IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks k)
+          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode
+            ixonEnv blocks foreign stubbed k)
       for t in tasks do
         match t.get with
         | .ok r => if r != 0 then rc := 1
@@ -552,8 +587,8 @@ def runShardManifestAll (manifestPath ixePath : String)
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
     let mut rc : UInt32 := 0
-    for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
-      if (← runShardOwned ixonEnv blocks k runOne) != 0 then rc := 1
+    for ((blocks, foreign, stubbed), k) in shards.mapIdx (fun k b => (b, k)) do
+      if (← runShardOwned ixonEnv blocks foreign stubbed k runOne) != 0 then rc := 1
     pure rc
 
 /-- Check EVERY shard of the partition concurrently (shards are independent
@@ -573,8 +608,9 @@ def runShardCheckAll (manifestPath ixePath : String) (jobs? : Option Nat)
   let maxJobs := max 1 (jobs?.getD shards.size)
   let mut rc : UInt32 := 0
   for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-    let tasks ← chunk.mapM fun (blocks, k) =>
-      IO.asTask (prio := .dedicated) (runShardOwned ixonEnv blocks k runOne)
+    let tasks ← chunk.mapM fun ((blocks, foreign, stubbed), k) =>
+      IO.asTask (prio := .dedicated)
+        (runShardOwned ixonEnv blocks foreign stubbed k runOne)
     for t in tasks do
       match t.get with
       | .ok r => if r != 0 then rc := 1

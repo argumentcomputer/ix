@@ -457,6 +457,8 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
     LeanBorrowed<'_>,
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
+  foreign_blob: LeanByteArray<LeanBorrowed<'_>>,
+  stubbed_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
@@ -465,11 +467,19 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
     Ok(v) => v,
     Err(e) => return LeanExcept::error_string(&e),
   };
+  let foreign = match decode_owned_blob(&foreign_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let stubbed = match decode_owned_blob(&stubbed_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
   let env = &env_handle.get().env;
 
   let (_claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned,
+      env, &owned, &foreign, &stubbed,
     ) {
       Ok(t) => t,
       Err(e) => {
@@ -549,9 +559,19 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     LeanBorrowed<'_>,
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
+  foreign_blob: LeanByteArray<LeanBorrowed<'_>>,
+  stubbed_blob: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let owned = match decode_owned_blob(&owned_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let foreign = match decode_owned_blob(&foreign_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let stubbed = match decode_owned_blob(&stubbed_blob) {
     Ok(v) => v,
     Err(e) => return LeanExcept::error_string(&e),
   };
@@ -559,7 +579,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 
   let (claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned,
+      env, &owned, &foreign, &stubbed,
     ) {
       Ok(t) => t,
       Err(e) => {

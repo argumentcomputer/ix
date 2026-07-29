@@ -84,10 +84,13 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
         IO.eprintln s!"{label}: proveAddrWithEnv error: {e}"
         return 1
       | .ok (_claimBytes, proof, _outIO) => pure proof
-    | .shard owned, some envHandle =>
-      let mut blob := ByteArray.empty
-      for x in owned do blob := blob ++ x.hash
-      match aiurSystem.shardProveWithEnv funIdx envHandle blob with
+    | .shard owned foreign stubbed, some envHandle =>
+      let blobOf (xs : Array Address) : ByteArray := Id.run do
+        let mut b := ByteArray.empty
+        for x in xs do b := b ++ x.hash
+        pure b
+      match aiurSystem.shardProveWithEnv funIdx envHandle
+        (blobOf owned) (blobOf foreign) (blobOf stubbed) with
       | .error e =>
         IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
         return 1
@@ -109,21 +112,24 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
     prove run in one FFI trip with the parallel Rust witness
     builder. -/
 def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
-    (ixonEnv : Ixon.Env) (shards : Array (Array Address)) (shardK : Nat)
+    (ixonEnv : Ixon.Env) (shards : Array (Array Address × Array Address × Array Address))
+    (shardK : Nat)
     (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
     (_printStats : Bool) : IO UInt32 := do
   match shards[shardK]? with
   | none => IO.eprintln s!"shard {shardK} out of range (0..{shards.size})"; return 1
-  | some blocks => do
-    let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks
-    let mut blob := ByteArray.empty
-    for a in owned do
-      blob := blob ++ a.hash
+  | some (blocks, foreign, stubbed) => do
+    let blobOf (bs : Array Address) : ByteArray := Id.run do
+      let mut b := ByteArray.empty
+      for a in Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv bs do
+        b := b ++ a.hash
+      pure b
     let label := s!"shard {shardK}"
     IO.println s!"Proving {label}"
     (← IO.getStdout).flush
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-    match aiurSystem.shardProveWithEnv funIdx envHandle blob with
+    match aiurSystem.shardProveWithEnv funIdx envHandle
+      (blobOf blocks) (blobOf foreign) (blobOf stubbed) with
     | .error e =>
       IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
       return 1

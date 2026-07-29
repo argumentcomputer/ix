@@ -1258,8 +1258,15 @@ pub struct ShardInfo {
   pub heartbeats: u64,
   /// Sum of member serialized sizes (the shard's own ingress).
   pub own_size: u64,
-  /// Foreign blocks delta-unfolded by members but proven in other shards.
+  /// Blocks this shard ingresses but does not check — another shard owns
+  /// them. Under the Aiur model this is the whole ingress set minus the
+  /// owned blocks; it is what the claim's assumption tree covers.
   pub foreign_blocks: Vec<Address>,
+  /// The subset of `foreign_blocks` ingressed as type-only axioms: bodies
+  /// withheld, references not followed. The complement — blocks in
+  /// `foreign_blocks` but not here — are ingressed whole because this shard
+  /// reduces through them, and only the partition knows which those are.
+  pub stubbed_blocks: Vec<Address>,
   /// Sum of `serialized_size` over `foreign_blocks` (this shard's share of the
   /// cross-shard ingress objective).
   pub cross_ingress: u64,
@@ -1332,6 +1339,9 @@ impl ShardManifest {
         heartbeats,
         own_size,
         foreign_blocks,
+        // Filled by the Aiur layer, which runs the ingress walk; the pure
+        // partitioner has no notion of stubbing.
+        stubbed_blocks: Vec::new(),
         cross_ingress,
         assumption_root: None,
       });
@@ -1412,6 +1422,7 @@ impl ShardManifest {
       }
       put_addrs(&mut out, &sh.blocks);
       put_addrs(&mut out, &sh.foreign_blocks);
+      put_addrs(&mut out, &sh.stubbed_blocks);
     }
     // Trailing optional bisection-tree section: presence byte then preorder
     // tree. Appended after the shards so older readers that stop at the shard
@@ -1443,12 +1454,14 @@ impl ShardManifest {
       let assumption_root = if c.u8()? == 1 { Some(c.addr()?) } else { None };
       let blocks = c.addrs()?;
       let foreign_blocks = c.addrs()?;
+      let stubbed_blocks = c.addrs()?;
       shards.push(ShardInfo {
         id,
         blocks,
         heartbeats,
         own_size,
         foreign_blocks,
+        stubbed_blocks,
         cross_ingress,
         assumption_root,
       });
@@ -1652,7 +1665,36 @@ pub fn shard_esp_aiur(
   let mut manifest =
     ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
       .with_tree(plan.tree);
-  for shard in &mut manifest.shards {
+  // Replace the partitioner's delta-frontier with the real ingress
+  // classification: what this shard loads but does not check, and which of
+  // those are type-only stubs. The witness builders cannot derive this from
+  // the environment — "reduces through" lives in the profile's delta graph.
+  //
+  // IX_STUB_PROMOTE_ROUNDS=N pushes every shard's stub frontier N reference
+  // hops further out (see `aiur_shard_ingress_sets`) — the escalation knob
+  // for shards whose replay diverges from the recording.
+  let promote_rounds: usize = crate::env_var("IX_STUB_PROMOTE_ROUNDS")
+    .ok()
+    .and_then(|v| v.parse().ok())
+    .unwrap_or(0);
+  let sets = aiur_shard_ingress_sets(
+    &profile,
+    &plan.shard_of,
+    plan.num_shards,
+    promote_rounds,
+  );
+  for (shard, (full_extra, stubbed)) in manifest.shards.iter_mut().zip(&sets) {
+    let addr = |b: &u32| profile.block(*b).addr.clone();
+    let mut foreign: Vec<Address> =
+      full_extra.iter().chain(stubbed.iter()).map(addr).collect();
+    foreign.sort();
+    shard.cross_ingress = full_extra
+      .iter()
+      .chain(stubbed.iter())
+      .map(|&b| u64::from(profile.block(b).serialized_size))
+      .sum();
+    shard.foreign_blocks = foreign;
+    shard.stubbed_blocks = stubbed.iter().map(addr).collect();
     shard.assumption_root =
       ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
   }
@@ -2185,6 +2227,130 @@ pub struct AiurBudgetPlan {
   pub infeasible_atomic_floor: bool,
 }
 
+/// Per-shard ingress classification under the frontier-trusted model, as block
+/// ids: `(unchecked_full, stubbed)`.
+///
+/// Runs the same two-state walk the packer costs with, but per finished shard,
+/// and reports what the witness builder needs rather than a byte total:
+///
+/// - `stubbed` — reached only as a type-only axiom. Its body is withheld and
+///   its references are not followed.
+/// - `unchecked_full` — ingressed whole but owned by another shard: every
+///   block the owned checks CONSULTED per the profile's touch graph (type and
+///   height reads included), plus any block reduction consumes, which cannot
+///   be a stub.
+///
+/// With a touch graph (v4 profile) the full set is a *measurement*: what the
+/// recording run's lazy checker faulted in, which is exactly what the shard's
+/// replay consults. Without one the walk falls back to the delta closure —
+/// a prediction known to under-ingress (stubbing erases definitional height,
+/// which changes lazy-delta's unfold order), kept only so old profiles still
+/// produce manifests.
+///
+/// Owned blocks appear in neither list.
+///
+/// `promote_rounds` is the escalation ladder for shards whose replay
+/// diverges from the recording (the Aiur kernel's caches are not the Rust
+/// kernel's, so it occasionally reduces where the recording short-circuited
+/// and reaches a stub): each round promotes every current stub to FULL and
+/// re-expands, pushing the stub frontier one reference hop further out.
+/// Round 0 is the measured baseline.
+pub fn aiur_shard_ingress_sets(
+  profile: &BlockProfile,
+  shard_of: &[u32],
+  num_shards: usize,
+  promote_rounds: usize,
+) -> Vec<(Vec<u32>, Vec<u32>)> {
+  let nblocks = profile.num_blocks();
+  let mut owned_of: Vec<Vec<u32>> = vec![Vec::new(); num_shards];
+  for (b, &s) in shard_of.iter().enumerate() {
+    owned_of[s as usize].push(b as u32);
+  }
+  let measured = profile.has_touch_graph();
+  // Three independent marks. Conflating "expanded as full" with "expanded as
+  // axiom" loses blocks: the work stack is LIFO, so an owned block can be
+  // popped as a stub (reached from some ref) before its own FULL entry comes
+  // up, and a guard that tests both marks then skips the FULL expansion and
+  // never follows that block's references.
+  let mut full_mark = vec![u32::MAX; nblocks];
+  let mut axiom_mark = vec![u32::MAX; nblocks];
+  let mut out = Vec::with_capacity(num_shards);
+  for (s, owned) in owned_of.iter().enumerate() {
+    let epoch = s as u32;
+    let is_owned = |b: u32| shard_of[b as usize] as usize == s;
+    let mut work: Vec<(u32, bool)> = owned.iter().map(|&b| (b, true)).collect();
+    if measured {
+      // Everything the owned checks consulted ships whole, heights intact,
+      // so the decisions the recording run made replay identically.
+      for &b in owned {
+        work.extend(profile.touched_blocks(b).iter().map(|&t| (t, true)));
+      }
+    }
+    let (mut full_extra, mut stubbed) = (Vec::new(), Vec::new());
+    for round in 0..=promote_rounds {
+      if round > 0 {
+        // Escalate: every stub still standing becomes FULL and re-expands.
+        // `full_mark` overrides `axiom_mark`, so the final retain drops the
+        // promoted entries from `stubbed`.
+        work.extend(
+          stubbed
+            .iter()
+            .filter(|&&b| full_mark[b as usize] != epoch)
+            .map(|&b| (b, true)),
+        );
+        if work.is_empty() {
+          break;
+        }
+      }
+      while let Some((x, is_full)) = work.pop() {
+        if is_full {
+          if full_mark[x as usize] == epoch {
+            continue;
+          }
+          full_mark[x as usize] = epoch;
+          if !is_owned(x) {
+            full_extra.push(x);
+          }
+          // Prediction-only cascade: anything ingressed whole may be REDUCED
+          // through, so whatever it unfolds must be whole as well. Measured
+          // sets don't need it — a consulted body's unfolds were consulted
+          // too, and recorded against the owned consumer directly.
+          if !measured {
+            for &p in profile.producers(x) {
+              work.push((p, true));
+            }
+          }
+          for &r in profile.refs(x) {
+            work.push((r, !profile.block(r).axiomatizable()));
+          }
+        } else {
+          if full_mark[x as usize] == epoch || axiom_mark[x as usize] == epoch
+          {
+            continue;
+          }
+          axiom_mark[x as usize] = epoch;
+          if !is_owned(x) {
+            stubbed.push(x);
+          }
+          for &r in profile.type_refs(x) {
+            work.push((r, !profile.block(r).axiomatizable()));
+          }
+        }
+      }
+    }
+    // A block promoted stub -> full must not stay in `stubbed`, and an owned
+    // block is never either.
+    stubbed.retain(|&b| full_mark[b as usize] != epoch && !is_owned(b));
+    full_extra.retain(|&b| !is_owned(b));
+    full_extra.sort_unstable();
+    full_extra.dedup();
+    stubbed.sort_unstable();
+    stubbed.dedup();
+    out.push((full_extra, stubbed));
+  }
+  out
+}
+
 /// Size a partition to a per-shard Aiur host-RAM budget by bin-packing to the
 /// cap — the Aiur counterpart of [`partition_for_cycle_cap`], with the same
 /// cut-coherent-order + greedy next-fit structure but **ingress-union byte
@@ -2308,6 +2474,9 @@ pub fn partition_for_aiur_ram(
               if visited[x as usize] != *epoch {
                 visited[x as usize] = *epoch;
                 bytes = bytes.saturating_add(size(x));
+              }
+              for &p in profile.producers(x) {
+                work.push((p, true));
               }
               for &r in profile.refs(x) {
                 work.push((r, !profile.block(r).axiomatizable()));
@@ -2934,6 +3103,111 @@ mod tests {
     assert!(
       (measured.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9
     );
+  }
+
+  #[test]
+  fn aiur_ingress_sets_split_stubs_from_full() {
+    // 0 owns nothing but itself; refs 0→1→2 and 1 also type-refs 3.
+    // Shard {0}: 1 is reached from a FULL block, is axiomatizable, so it is
+    // a stub; the walk then follows only 1's TYPE refs, reaching 3 as a stub
+    // and never 2.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    let mut p =
+      with_refs(b.finish(), &[vec![1], vec![2, 3], vec![], vec![]]);
+    p.set_type_ref_graph(&[vec![1], vec![3], vec![], vec![]]);
+    // Each block its own shard so shard 0 owns only block 0.
+    let shard_of = vec![0u32, 1, 2, 3];
+    let sets = aiur_shard_ingress_sets(&p, &shard_of, 4, 0);
+    let (full_extra, stubbed) = &sets[0];
+    assert!(full_extra.is_empty(), "unexpected full ingest: {full_extra:?}");
+    assert_eq!(stubbed, &vec![1, 3]);
+  }
+
+  #[test]
+  fn aiur_ingress_sets_expand_owned_reached_as_a_ref_first() {
+    // Shard 0 owns {0,1,2}; block 2 refs block 0, and block 0 refs block 3.
+    //
+    // The work stack is LIFO, so block 0 is reached as a REF (a stub
+    // candidate) while its own owned FULL entry is still further down. If the
+    // stub visit is allowed to mark block 0 as done, its FULL expansion is
+    // skipped and block 3 never enters the ingress set — the shard then asks
+    // the kernel for a constant the manifest never listed.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    let mut p =
+      with_refs(b.finish(), &[vec![3], vec![], vec![0], vec![]]);
+    p.set_type_ref_graph(&[vec![], vec![], vec![], vec![]]);
+    let shard_of = vec![0u32, 0, 0, 1];
+    let sets = aiur_shard_ingress_sets(&p, &shard_of, 2, 0);
+    let (full_extra, stubbed) = &sets[0];
+    assert!(full_extra.is_empty(), "unexpected full ingest: {full_extra:?}");
+    assert_eq!(
+      stubbed,
+      &vec![3],
+      "owned block 0 must still expand its refs after being seen as a ref"
+    );
+  }
+
+  #[test]
+  fn aiur_ingress_sets_measured_touch_full_no_producer_cascade() {
+    // refs 0→1→2; block 0's check CONSULTED 1 (touch edge), and 1's own
+    // check unfolds 2 (delta edge). Measured semantics: 1 ships whole
+    // because it was consulted, but 1's delta edge is NOT cascaded — what
+    // block 0's check did to 2 would be in 0's own touched set, and it is
+    // not, so 2 is reachable only as 1's ref: a stub. The predicted
+    // fallback stubs 1 outright (0 never unfolds it) and reaches 2 not at
+    // all — the exact under-ingress that fails at k_check.
+    let build = |touch: bool| {
+      let mut b = ProfileBuilder::new();
+      for i in 1..=3u8 {
+        b.block(addr(i), bc(10, 0, 0), 1000, 1);
+      }
+      b.delta_edge(addr(2), addr(3));
+      if touch {
+        b.touch_edge(addr(1), addr(2));
+      }
+      let mut p = with_refs(b.finish(), &[vec![1], vec![2], vec![]]);
+      p.set_type_ref_graph(&[vec![1], vec![], vec![]]);
+      p
+    };
+    let shard_of = vec![0u32, 1, 2];
+    let (full_extra, stubbed) =
+      aiur_shard_ingress_sets(&build(true), &shard_of, 3, 0)[0].clone();
+    assert_eq!(full_extra, vec![1], "consulted block must ship whole");
+    assert_eq!(stubbed, vec![2], "unconsulted ref stays a stub");
+    let (full_extra, stubbed) =
+      aiur_shard_ingress_sets(&build(false), &shard_of, 3, 0)[0].clone();
+    assert!(full_extra.is_empty(), "prediction never promotes 1");
+    assert_eq!(stubbed, vec![1], "prediction stops at the stub frontier");
+    // One promotion round: the stub becomes FULL and re-expands.
+    let (full_extra, stubbed) =
+      aiur_shard_ingress_sets(&build(true), &shard_of, 3, 1)[0].clone();
+    assert_eq!(full_extra, vec![1, 2], "promotion lifts the stub to full");
+    assert!(stubbed.is_empty(), "2 has no refs, so no new frontier");
+  }
+
+  #[test]
+  fn aiur_ingress_sets_keep_reduced_through_blocks_full() {
+    // Shard 0 owns block 0, which UNFOLDS block 1: block 1 must be ingressed
+    // whole (not stubbed) even though shard 1 checks it, and 1's own refs
+    // then follow in full.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=3u8 {
+      b.block(addr(i), bc(10, 0, 0), 1000, 1);
+    }
+    b.delta_edge(addr(1), addr(2));
+    let mut p = with_refs(b.finish(), &[vec![1], vec![2], vec![]]);
+    p.set_type_ref_graph(&[vec![1], vec![], vec![]]);
+    let shard_of = vec![0u32, 1, 2];
+    let sets = aiur_shard_ingress_sets(&p, &shard_of, 3, 0);
+    let (full_extra, stubbed) = &sets[0];
+    assert_eq!(full_extra, &vec![1], "delta target must be ingressed whole");
+    assert_eq!(stubbed, &vec![2], "1's ref is reachable only as a stub");
   }
 
   #[test]

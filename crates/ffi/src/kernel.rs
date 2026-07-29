@@ -2327,20 +2327,18 @@ fn collect_type_ref_idxs(c: &IxonConstant, out: &mut FxHashSet<u64>) {
   }
 }
 
-/// Whether a constant's body can be consumed by reduction (iota, quot, proj),
-/// which makes it unrepresentable as a type-only axiom on a frontier.
+/// Whether a constant cannot be represented as a type-only axiom on a shard's
+/// frontier. Must agree exactly with the kernel's `axiomatize_frontier`
+/// (`Ix/IxVM/Ingress.lean`), which asserts when handed anything else: only a
+/// standalone Defn or Axio carries a type the kernel can lift out on its own.
+///
+/// Recursors and quotients have rules reduction consumes. Every projection —
+/// DPrj included — draws its type from a mutual block, so stubbing one would
+/// need that block anyway. A mutual block is excluded whatever it contains,
+/// because its members expand into several kernel positions and a single
+/// axiom cannot stand in for them.
 fn is_not_axiomatizable(c: &IxonConstant) -> bool {
-  match &c.info {
-    IxonCI::Recr(_)
-    | IxonCI::Quot(_)
-    | IxonCI::IPrj(_)
-    | IxonCI::CPrj(_)
-    | IxonCI::RPrj(_) => true,
-    IxonCI::Muts(ms) => ms
-      .iter()
-      .any(|m| matches!(m, IxonMutConst::Indc(_) | IxonMutConst::Recr(_))),
-    IxonCI::Defn(_) | IxonCI::Axio(_) | IxonCI::DPrj(_) => false,
-  }
+  !matches!(&c.info, IxonCI::Defn(_) | IxonCI::Axio(_))
 }
 
 /// Per-block property bits, parallel to `profile.blocks()`.
@@ -2352,6 +2350,19 @@ fn build_block_flags(env: &IxonEnv, profile: &BlockProfile) -> Vec<u32> {
     .filter_map(|(i, b)| u32::try_from(i).ok().map(|id| (&b.addr, id)))
     .collect();
   let mut flags = vec![0u32; blocks.len()];
+  // The kernel dispatches primitives by ADDRESS — `nat_add_addr()`,
+  // `decidable_decide_addr()` and the rest — and expects to find the real
+  // declaration behind each one. A type-only axiom silently disables the
+  // primitive's reduction rule, so a primitive can never sit on a frontier
+  // however ordinary its kind looks. `PrimAddrs` is the same table the
+  // Aiur kernel's hardcoded literals come from.
+  for (_, hex) in ix_kernel::primitive::PrimAddrs::lean_parity_table() {
+    if let Some(a) = Address::from_hex(&hex)
+      && let Some(&id) = id_of.get(&a)
+    {
+      flags[id as usize] |= BlockEntry::NOT_AXIOMATIZABLE;
+    }
+  }
   for entry in env.consts.iter() {
     let (addr, lazy) = (entry.key(), entry.value());
     let Ok(c) = lazy.get() else { continue };
