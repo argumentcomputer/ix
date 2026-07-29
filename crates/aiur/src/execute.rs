@@ -64,7 +64,7 @@ impl IOBuffer {
       // constant or blob whose bytes the host failed to seed.
       let hex: String = key
         .iter()
-        .map(|g| format!("{:02x}", g.as_canonical_u64() as u8))
+        .map(|g| format!("{:02x}", g.as_canonical_u64() & 0xff))
         .collect();
       ExecError::InvalidIOKey { channel: channel.as_canonical_u64(), key: hex }
     })

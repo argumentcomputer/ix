@@ -2958,6 +2958,17 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
       builder.block(pblock.clone(), BlockCounters::default(), psize, 0);
       builder.delta_edge(cblock.clone(), pblock);
     }
+    // Touched sets may contain addresses outside the env (synthetic
+    // entries the checker consults); only env constants have a home block
+    // to attribute the touch to.
+    for t in &rec.touched {
+      if env.get_const(t).is_none() {
+        continue;
+      }
+      let (tblock, tsize) = resolve(t);
+      builder.block(tblock.clone(), BlockCounters::default(), tsize, 0);
+      builder.touch_edge(cblock.clone(), tblock);
+    }
   }
   builder.finish()
 }

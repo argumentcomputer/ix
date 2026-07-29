@@ -167,10 +167,10 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// Addresses of constants whose bodies were delta-unfolded during the current
   /// constant's check. Drained per constant by `record_current_fuel_used`.
   pub(crate) delta_targets: FxHashSet<Address>,
-  /// Diagnostic: every constant CONSULTED while checking the current one,
-  /// whether its body was unfolded or only its type read. Lazy fault-in
-  /// pays for exactly this set, so its size against the constant's
-  /// reference closure is what decides whether faulting in is worth it.
+  /// Every constant CONSULTED while checking the current one, whether its
+  /// body was unfolded or only its type read — the measured ingress set of
+  /// a lazy checker. Drained per constant by `record_current_fuel_used`
+  /// into the profile sink, which persists it as the `.ixprof` touch graph.
   pub(crate) touched: FxHashSet<Address>,
   /// Gated miss sampler for fuel-exhaustion diagnostics. Populated only when
   /// `IX_HOT_MISSES=1`, keyed by a compact phase/head/lbr shape.
@@ -925,7 +925,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       let ops = crate::profile::take_op_counts();
       if let Some(addr) = self.cur_const.take() {
         let sink = self.env.profile_sink.as_mut().unwrap();
-        sink.record(addr, used, producers, ops);
+        sink.record(addr, used, producers, touched, ops);
       }
     }
   }

@@ -2207,6 +2207,15 @@ pub struct AiurBudgetPlan {
 /// overlapping ingress is therefore the packing objective that matters: a
 /// shared dependency's bytes are paid once per shard that reaches it.
 ///
+/// When the profile carries a **touch graph** (v4, recorded by a lazy
+/// profiling run), each owned block additionally seeds every block its check
+/// CONSULTED as FULL. Consultation includes type and height reads, so all
+/// information that steered the recording run's lazy-delta decisions ships
+/// in the witness and the run replays identically; only never-consulted
+/// blocks are left as type-only stubs. Without a touch graph the seeding
+/// falls back to the delta closure alone (predicted, known to under-ingress
+/// in def-eq-heavy shards).
+///
 /// Requires the profile's reference graph, type-reference sub-graph and block
 /// flags; without them the walk would silently under-count, so the caller
 /// must reject such profiles.
@@ -2271,6 +2280,17 @@ pub fn partition_for_aiur_ram(
                 stack.push(p);
                 work.push((p, true));
               }
+            }
+          }
+          // Measured ingress: every block the check CONSULTED (type or
+          // height reads included, not just unfolds) is ingressed FULL so
+          // the lazy-delta decisions the recording run made replay
+          // identically. Only blocks the check never looked at are left
+          // to the type-only stub expansion below.
+          for &t in profile.touched_blocks(b) {
+            if visited[t as usize] != *epoch {
+              visited[t as usize] = *epoch;
+              work.push((t, true));
             }
           }
           // `visited` doubles as the byte-charged set and the delta seed
@@ -2386,6 +2406,13 @@ pub fn partition_for_aiur_ram(
           stack.push(p);
           work.push((p, true));
         }
+      }
+    }
+    // Measured ingress: consulted blocks join FULL (see the closure walk).
+    for &t in profile.touched_blocks(b) {
+      if walk_mark[t as usize] != *walk_epoch {
+        walk_mark[t as usize] = *walk_epoch;
+        work.push((t, true));
       }
     }
     while let Some((x, is_full)) = work.pop() {
@@ -2878,6 +2905,35 @@ mod tests {
     p.set_block_flags(&flags);
     let ax = partition_for_aiur_ram(&p, 1000.0, 0.05);
     assert!((ax.largest_block_ram_gib - aiur_ram_gib(5000, 10)).abs() < 1e-9);
+  }
+
+  #[test]
+  fn aiur_ingress_seeds_touched_blocks_full() {
+    // refs: 0→1, 1→{2,3}; type-refs: 0→1, 1→2. Predicted (no touch graph):
+    // block 0 ingresses 1 as a type-only stub, whose TYPE refs reach only 2
+    // — {0,1,2} = 3000. Measured: block 0's check CONSULTED 1, so 1 is
+    // ingressed FULL and its full refs drag in 3 too — {0,1,2,3} = 4000.
+    let build = |touch: bool| {
+      let mut b = ProfileBuilder::new();
+      for i in 1..=4u8 {
+        b.block(addr(i), bc(10, 0, 0), 1000, 1);
+      }
+      if touch {
+        b.touch_edge(addr(1), addr(2));
+      }
+      let mut p =
+        with_refs(b.finish(), &[vec![1], vec![2, 3], vec![], vec![]]);
+      p.set_type_ref_graph(&[vec![1], vec![2], vec![], vec![]]);
+      p
+    };
+    let predicted = partition_for_aiur_ram(&build(false), 1000.0, 0.05);
+    assert!(
+      (predicted.largest_block_ram_gib - aiur_ram_gib(3000, 10)).abs() < 1e-9
+    );
+    let measured = partition_for_aiur_ram(&build(true), 1000.0, 0.05);
+    assert!(
+      (measured.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9
+    );
   }
 
   #[test]
