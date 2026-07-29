@@ -32,11 +32,17 @@ use ix_kernel::anon_work::{
   block_of_addr, build_anon_work, build_sub_env, work_block_addr,
 };
 use ixon::env::Env as IxonEnv;
-use sp1_sdk::{
-  Elf, ProveRequest, Prover, ProverClient, ProvingKey, SP1Stdin, include_elf,
-};
+#[cfg(not(clippy))]
+use sp1_sdk::include_elf;
+use sp1_sdk::{Elf, ProveRequest, Prover, ProverClient, ProvingKey, SP1Stdin};
 
+// sp1-build skips the guest compilation under clippy ("Skipping build due
+// to clippy invocation"), so there is no ELF file to embed on a clean
+// checkout; hand clippy an empty one — nothing executes under clippy.
+#[cfg(not(clippy))]
 pub const GUEST_ELF: Elf = include_elf!("sp1-guest");
+#[cfg(clippy)]
+pub const GUEST_ELF: Elf = Elf::Static(&[]);
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -217,10 +223,10 @@ async fn run() -> Result<()> {
   tracing_texray::rss_sampler::start(std::time::Duration::from_millis(50));
   // With --texray + --json, per-phase span timings land at `<json>.spans` as
   // JSON Lines — the CI drill-down input.
-  if args.texray {
-    if let Some(json) = args.json.as_ref().and_then(|p| p.to_str()) {
-      let _ = tracing_texray::json_sink::to_file(&format!("{json}.spans"));
-    }
+  if args.texray
+    && let Some(json) = args.json.as_ref().and_then(|p| p.to_str())
+  {
+    let _ = tracing_texray::json_sink::to_file(&format!("{json}.spans"));
   }
 
   let whole_env_bytes = load_env_bytes(args.ixe.as_ref());
