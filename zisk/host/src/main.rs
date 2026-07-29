@@ -1150,7 +1150,13 @@ async fn run_shard_plan(
   // The trusted vk of the shard guest, derived from the embedded ELF (its
   // ROM setup ran in `run` before this point). Anchors the allowed set the
   // agg guest pins children against and gates which stored proofs may fold.
-  let shard_vk = guest_vk_bytes(&SHARD_PROGRAM)?;
+  // Dump mode without a store returns before any vk use and skips ROM setup
+  // entirely, so the vk is not derivable there — leave it empty.
+  let shard_vk = if args.dump_input.is_none() || args.store_dir.is_some() {
+    guest_vk_bytes(&SHARD_PROGRAM)?
+  } else {
+    Vec::new()
+  };
 
   // ---- Cross-run reuse store (loaded before grouping: a store-aware manifest
   // omits covered work, which grouping accepts only when the store accounts
@@ -1308,21 +1314,35 @@ async fn run_shard_plan(
     Ok((check_list, sub_env, cover))
   };
 
-  // ---- Dump mode: write the selected shard's guest stdin to a file (for
-  // standalone profiling with `ziskemu`/`cargo-zisk run -i`), then exit. ----
+  // ---- Dump mode: write the selected shards' guest stdins to files (for
+  // standalone profiling with `ziskemu`/`cargo-zisk run -i`), then exit.
+  // A single selected shard (`--only-shard`) writes exactly the given path;
+  // multiple shards write `<stem>-s<manifest index><ext>` each. ----
   if let Some(dump) = &args.dump_input {
-    let (idx, g) = selected.first().expect("a selected shard");
-    let (check_list, sub_env, _cover) = build_inputs(g)?;
-    let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
-    stdin
-      .save(dump)
-      .map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
-    println!(
-      "dumped shard {idx} input ({} work items, sub-env {}) → {}",
-      g.len(),
-      sub_env.len().human_count_bytes(),
-      dump.display(),
-    );
+    let many = selected.len() > 1;
+    for (idx, g) in &selected {
+      let path = if many {
+        let stem = dump.file_stem().unwrap_or_default().to_string_lossy();
+        let ext = dump
+          .extension()
+          .map(|e| format!(".{}", e.to_string_lossy()))
+          .unwrap_or_default();
+        dump.with_file_name(format!("{stem}-s{idx}{ext}"))
+      } else {
+        dump.clone()
+      };
+      let (check_list, sub_env, _cover) = build_inputs(g)?;
+      let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+      stdin
+        .save(&path)
+        .map_err(|e| anyhow::anyhow!("save {}: {e}", path.display()))?;
+      println!(
+        "dumped shard {idx} input ({} work items, sub-env {}) → {}",
+        g.len(),
+        sub_env.len().human_count_bytes(),
+        path.display(),
+      );
+    }
     return Ok(());
   }
 
@@ -1971,7 +1991,12 @@ async fn run() -> Result<()> {
   let total_leaves: usize = plans.iter().map(|p| p.shards.len()).sum();
 
   let client = build_client(args.gpu, !args.emulator)?;
-  client.setup(&SHARD_PROGRAM).run()?.await?;
+  // Dump mode never runs the VM; it needs ROM setup (and thus the proving
+  // key) only to derive the shard vk for store filtering. Skipping setup
+  // otherwise makes input dumping fast and key-free.
+  if args.dump_input.is_none() || args.store_dir.is_some() {
+    client.setup(&SHARD_PROGRAM).run()?.await?;
+  }
   // Skip agg-guest setup unless we'll produce more than one leaf proof.
   // The shard-plan path sets up the agg program itself, after its leaves.
   //
