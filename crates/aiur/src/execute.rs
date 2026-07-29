@@ -95,7 +95,7 @@ impl IOBuffer {
       .get(idx..idx.saturating_add(len))
       .ok_or(ExecError::IOReadOutOfBounds { idx, len })
   }
-  fn write(&mut self, channel: G, data: impl Iterator<Item = G>) {
+  pub fn write(&mut self, channel: G, data: impl Iterator<Item = G>) {
     self.data.entry(channel).or_default().extend(data)
   }
 }

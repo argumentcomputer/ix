@@ -182,6 +182,45 @@ def whnf := ⟦
   -- Const-head WHNF dispatch, split out of `whnf_with_spine` (see its Const arm).
   -- `head` is the original `Const(idx, lvls)` KExpr, passed for the stuck
   -- `apply_spine(head, spine)` fallbacks.
+  -- Wanted-stub log. Reduction is stuck on a Const head that cannot make
+  -- progress: if that head is a frontier STUB (an Axiom with flag 2 —
+  -- `axiomatize_frontier`), the real definition might have reduced, so
+  -- record the address on IO channel 97. `io_write` only appends to the
+  -- IO buffer — no abort, because a stuck head is usually benign (every
+  -- opaque type head sits here). The host reads the channel back only
+  -- when the shard as a whole FAILS; the repair driver then ships the
+  -- logged blocks whole (constant-precision escalation instead of a
+  -- whole-frontier promotion round). Aiur memoizes `want_if_stub` per
+  -- head position, so each distinct stub is logged at most once and
+  -- repeat stucks are cache hits.
+  fn want_stub_write(addr: Addr) {
+    let [b0, b1, b2, b3, b4, b5, b6, b7,
+         b8, b9, b10, b11, b12, b13, b14, b15,
+         b16, b17, b18, b19, b20, b21, b22, b23,
+         b24, b25, b26, b27, b28, b29, b30, b31] = load(addr);
+    io_write(97, [to_field(b0), to_field(b1), to_field(b2), to_field(b3),
+                  to_field(b4), to_field(b5), to_field(b6), to_field(b7),
+                  to_field(b8), to_field(b9), to_field(b10), to_field(b11),
+                  to_field(b12), to_field(b13), to_field(b14), to_field(b15),
+                  to_field(b16), to_field(b17), to_field(b18), to_field(b19),
+                  to_field(b20), to_field(b21), to_field(b22), to_field(b23),
+                  to_field(b24), to_field(b25), to_field(b26), to_field(b27),
+                  to_field(b28), to_field(b29), to_field(b30), to_field(b31)]);
+    ()
+  }
+
+  fn want_if_stub(idx: G, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
+    let ci = load(list_lookup(top, idx));
+    match ci {
+      KConstantInfo.Axiom(_, _, u) =>
+        match u - 2 {
+          0 => want_stub_write(list_lookup(addrs, idx)),
+          _ => (),
+        },
+      _ => (),
+    }
+  }
+
   fn whnf_const_head(idx: G, lvls: List‹KLevel›, head: KExpr, spine: List‹KExpr›,
                      types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let head_addr = list_lookup(addrs, idx);
@@ -248,7 +287,12 @@ def whnf := ⟦
                     let body = expr_inst_levels(value, lvls);
                     whnf_with_spine(body, spine, types, top, addrs),
                   KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
-                  _ => apply_spine(head, spine),
+                  _ =>
+                    -- Stuck on a non-unfoldable head; a frontier stub
+                    -- here is the divergence signal the repair driver
+                    -- consumes (see `want_if_stub`).
+                    want_if_stub(idx, top, addrs);
+                    apply_spine(head, spine),
                 },
             },
         },

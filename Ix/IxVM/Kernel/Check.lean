@@ -32,10 +32,19 @@ Top-level entry: `check_all` walks the kernel const list and calls
 
 def check := ⟦
   -- Mirror: each KConstantInfo's unsafe flag (Defn = DefinitionSafety,
-  -- others = G). Returns 1 if unsafe, 0 if safe. Thm and Quot are always safe.
+  -- others = G). Returns 1 if unsafe, 0 if safe. Thm and Quot are always
+  -- safe. An Axiom's flag can also be 2 — a frontier STUB
+  -- (`axiomatize_frontier`) — which is safe: only exact 1 means unsafe,
+  -- and `safe_refs_only` computes `1 - is_unsafe_ci`, so any other
+  -- nonzero value would poison the safety product of everything that
+  -- references a stub.
   fn is_unsafe_ci(ci: KConstantInfo) -> G {
     match ci {
-      KConstantInfo.Axiom(_, _, u) => u,
+      KConstantInfo.Axiom(_, _, u) =>
+        match u - 1 {
+          0 => 1,
+          _ => 0,
+        },
       KConstantInfo.Defn(_, _, _, s, _) =>
         match s {
           DefinitionSafety.Unsafe => 1,

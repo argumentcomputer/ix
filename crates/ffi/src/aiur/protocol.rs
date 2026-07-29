@@ -495,7 +495,9 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
     use_bytecode,
   ) {
     Ok(p) => p,
-    Err(e) => return LeanExcept::error_string(&e),
+    Err(e) => {
+      return LeanExcept::error_string(&append_wanted_stubs(&e, &io_buffer));
+    },
   };
 
   LeanExcept::ok(build_execute_result(
@@ -504,6 +506,46 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
     &query_record,
     &toplevel,
   ))
+}
+
+/// Append the kernel's wanted-stub log to a shard failure message.
+///
+/// Def-eq's stuck exits write the address of any frontier stub they
+/// jammed on to IO channel 97 (`want_if_stub`) — a non-aborting log,
+/// because a false def-eq verdict is legitimate mid-search. It only
+/// means something when the shard as a whole FAILS: then the logged
+/// addresses are the constants whose absence plausibly caused it, and
+/// the repair driver ships them whole instead of promoting the entire
+/// frontier. Deduplicated, first-logged-first, capped so a pathological
+/// run cannot bloat the message.
+fn append_wanted_stubs(err: &str, io_buffer: &IOBuffer) -> String {
+  use multi_stark::p3_field::PrimeCharacteristicRing;
+  let Some(arena) = io_buffer.data.get(&G::from_u8(97)) else {
+    return err.to_string();
+  };
+  let mut seen = std::collections::HashSet::new();
+  let mut wants = Vec::new();
+  for chunk in arena.chunks_exact(32) {
+    let hex: String = chunk
+      .iter()
+      .map(|g| format!("{:02x}", g.as_canonical_u64() & 0xff))
+      .collect();
+    if seen.insert(hex.clone()) {
+      wants.push(hex);
+      // Execution aborts at the first assert failure, so this list holds
+      // everything logged before that point; ship it all — each entry is
+      // ~KBs of ingress — rather than rediscovering the tail one retry
+      // at a time. The cap only guards against a pathological run.
+      if wants.len() >= 64 {
+        break;
+      }
+    }
+  }
+  if wants.is_empty() {
+    err.to_string()
+  } else {
+    format!("{err}; wanted stubs: {}", wants.join(","))
+  }
 }
 
 /// `AiurSystem.proveAddrWithEnv`: per-claim prove against a

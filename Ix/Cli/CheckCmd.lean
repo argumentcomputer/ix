@@ -590,13 +590,24 @@ def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Na
         | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
     pure rc
 
-/-- Extract the kernel's wanted-stub report from a shard failure message:
-    `... invalid IO key: channel 98, key <64-hex> ...` → the address. -/
-def extractWantedStub (msg : String) : Option Address := do
-  let marker := "channel 98, key "
-  let parts := msg.splitOn marker
-  let tail ← parts[1]?
-  Address.fromString (tail.take 64).toString
+/-- Extract the kernel's wanted-stub reports from a shard failure message.
+    Two forms, possibly both present:
+    - `... invalid IO key: channel 98, key <64-hex> ...` — the Proj-site
+      abort names exactly one address;
+    - `...; wanted stubs: <64-hex>,<64-hex>,...` — the def-eq want log,
+      appended by the FFI from IO channel 97 on failure. -/
+def extractWantedStubs (msg : String) : List Address :=
+  let projSite : List Address :=
+    match (msg.splitOn "channel 98, key ")[1]? with
+    | none => []
+    | some tail => (Address.fromString (tail.take 64).toString).toList
+  let defEqLog : List Address :=
+    match (msg.splitOn "wanted stubs: ")[1]? with
+    | none => []
+    | some rest =>
+      (rest.splitOn ",").filterMap fun h =>
+        Address.fromString (h.take 64).toString
+  projSite ++ defEqLog
 
 /-- The escalation retry driver (`ix check --ixes --repair`).
 
@@ -673,29 +684,27 @@ def runShardRepair (ixprofPath manifestPath ixePath : String)
         {failures.toList.map (·.1)}"
       return 1
     for (k, msg) in failures do
-      -- A wanted-stub report escalates with constant precision; a repeat
-      -- of an already-granted report means the precise rung stalled, so
-      -- take the blunt one. The reported address is a constant; promote
-      -- its HOME BLOCK (projections live in their parent's block).
-      let targeted : Option String := do
-        let addr ← extractWantedStub msg
-        let c ← ixonEnv.consts.get? addr
-        let c ← c.get?
-        pure (toString (blockAddrOf addr c))
-      match targeted with
-      | some blockHex =>
-        let granted := (adds.get? k).getD #[]
-        if granted.contains blockHex then
-          rounds := rounds.insert k ((rounds.get? k).getD 0 + 1)
-          IO.println s!"[repair] shard {k}: repeat want {blockHex.take 12}…, \
-            promoting whole frontier (round {(rounds.get? k).getD 0})"
-        else
-          adds := adds.insert k (granted.push blockHex)
-          IO.println s!"[repair] shard {k}: wants {blockHex.take 12}…, shipping it whole"
-      | none =>
+      -- Wanted-stub reports escalate with constant precision; when every
+      -- report is one already granted the precise rung has stalled, so
+      -- take the blunt one. Reported addresses are constants; promote
+      -- their HOME BLOCKS (projections live in their parent's block).
+      let wantedBlocks : List String :=
+        ((extractWantedStubs msg).filterMap fun addr => do
+          let lc ← ixonEnv.consts.get? addr
+          let c ← lc.get?
+          pure (toString (blockAddrOf addr c))).eraseDups
+      let granted := (adds.get? k).getD #[]
+      let fresh := wantedBlocks.filter (fun h => !granted.contains h)
+      if fresh.isEmpty then
         rounds := rounds.insert k ((rounds.get? k).getD 0 + 1)
-        IO.println s!"[repair] shard {k}: no wanted-stub report, \
+        let why := if wantedBlocks.isEmpty then "no wanted-stub report"
+          else "every want already granted"
+        IO.println s!"[repair] shard {k}: {why}, \
           promoting whole frontier (round {(rounds.get? k).getD 0})"
+      else
+        adds := adds.insert k (granted ++ fresh.toArray)
+        IO.println s!"[repair] shard {k}: wants \
+          {String.intercalate ", " (fresh.map (fun h => (h.take 12).toString))}…, shipping whole"
     let mut parts : Array String := #[]
     for (k, n) in rounds.toList do
       if n > 0 then parts := parts.push s!"{k}:{n}"
@@ -813,7 +822,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
       let balance := ((p.flag? "balance").map (·.as! Nat)).getD 5
-      let maxIters := ((p.flag? "max-rounds").map (·.as! Nat)).getD 4
+      let maxIters := ((p.flag? "max-rounds").map (·.as! Nat)).getD 8
       return (← runShardRepair ixprof manifest ixe maxRam balance
         ((p.flag? "jobs").map (·.as! Nat)) maxIters compiled useBytecode)
     | _, _, _, _ =>
@@ -862,7 +871,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixprof"    : String;   "Path to the .ixprof (with --repair): the profile the manifest is packed from."
     "max-ram"   : Nat;      "Per-shard host-RAM budget in GiB (with --repair), as in `ix shard --max-ram`."
     balance     : Nat;      "Packing balance tolerance percent (with --repair; default 5)."
-    "max-rounds": Nat;      "Escalation iterations before giving up (with --repair; default 4)."
+    "max-rounds": Nat;      "Escalation iterations before giving up (with --repair; default 8). Divergence is discovered one failure point at a time, so a shard can need several targeted iterations."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."

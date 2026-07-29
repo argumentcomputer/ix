@@ -1235,8 +1235,11 @@ def ingress := ⟦
   -- witness and the partition disagree; reject rather than check against a
   -- stub whose reductions would be missing.
   --
-  -- The synthesized axiom is marked safe: safety gates checking, and a
-  -- frontier constant is not checked here — the shard that owns it is.
+  -- The synthesized axiom carries flag 2 — "stub": treated as SAFE by
+  -- `is_unsafe_ci` (only exact 1 means unsafe; safety gates checking, and
+  -- a frontier constant is not checked here — the shard that owns it is)
+  -- but distinguishable from a real axiom, so def-eq's stuck exits can
+  -- report the stub they jammed on (`want_if_stub`).
   fn axiomatize_frontier(c: Constant) -> Constant {
     match c {
       Constant.Mk(info, sharing, refs, univs) =>
@@ -1244,7 +1247,7 @@ def ingress := ⟦
           ConstantInfo.Defn(d) =>
             match d {
               Definition.Mk(_, _, lvls, typ, _) =>
-                Constant.Mk(ConstantInfo.Axio(Axiom.Mk(0, lvls, typ)),
+                Constant.Mk(ConstantInfo.Axio(Axiom.Mk(2, lvls, typ)),
                   sharing, refs, univs),
             },
           ConstantInfo.Axio(_) => c,
