@@ -640,7 +640,14 @@ def saveBaseline (out : String) (params : String) : IO Unit := do
   let base := s!"{dir}/{params}.json"
   if ← FilePath.pathExists base then
     IO.FS.writeFile s!"{dir}/{params}.prev.json" (← IO.FS.readFile base)
+    -- Rotate the per-constant attribution CSV alongside its results file.
+    if ← FilePath.pathExists s!"{base}.perconst.csv" then
+      IO.FS.writeFile s!"{dir}/{params}.prev.json.perconst.csv"
+        (← IO.FS.readFile s!"{base}.perconst.csv")
   IO.FS.writeFile base (← IO.FS.readFile out)
+  if ← FilePath.pathExists s!"{out}.perconst.csv" then
+    IO.FS.writeFile s!"{base}.perconst.csv"
+      (← IO.FS.readFile s!"{out}.perconst.csv")
 
 def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
@@ -722,9 +729,11 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   | "ooc" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ix ← resolveBin repo "ix"
-    -- Whole-env row (keyed by the env name) …
+    -- Whole-env row (keyed by the env name), plus the per-constant
+    -- attribution CSV the compare drill-down reads (top movers).
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.name]
+      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.name,
+        "--per-const", s!"{out}.perconst.csv"]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- … plus one full-closure row per primary. ONE process for all names

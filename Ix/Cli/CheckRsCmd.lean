@@ -31,11 +31,13 @@
 module
 public import Cli
 public import Ix.Common
+public import Ix.Ixon
 public import Ix.KernelCheck
 public import Ix.Meta
 public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
+public import Ix.Cli.NameResolve
 public import Ix.Cli.ValidateCmd
 public import Std.Internal.UV.System
 
@@ -120,6 +122,68 @@ private def selectNamesIxon (allNames : Array Lean.Name)
     IO.println s!"[check] filter: {s.prefixes.length} prefix(es), {s.exacts.length} exact(s) → {seeds.size} seed constants"
     pure seeds
 
+/-- Quote a CSV field only when it needs it (comma/quote — Mathlib names
+    like `«term_,_»` exist). -/
+private def csvField (s : String) : String :=
+  if s.any (fun c => c == ',' || c == '"')
+  then "\"" ++ s.replace "\"" "\"\"" ++ "\""
+  else s
+
+/-- Rewrite the Rust-side addr-keyed per-const CSV (`addrCsv`) into the
+    user-facing name-keyed CSV (`outCsv`): a `name` column is prepended by
+    resolving each work item's primary address against the env's `named`
+    table, falling back for anonymized `Muts` blocks to the name of a
+    projection constant into the block (`nameLookup`'s scan, batched), and
+    finally to the abbreviated address itself. -/
+private def writePerConstNamed (ixePath addrCsv outCsv : String) :
+    IO Unit := do
+  let bytes ← IO.FS.readBinFile ixePath
+  let lines := (← IO.FS.readFile addrCsv).splitOn "\n"
+  match Ixon.deEnvAnon bytes with
+  | .error e =>
+    IO.eprintln s!"[check] per-const: env parse failed ({e}); \
+      writing addr-keyed entries only"
+    IO.FS.writeFile outCsv ("name," ++ "\n".intercalate lines)
+  | .ok ixonEnv =>
+    -- addr → first registered name.
+    let mut named : Std.HashMap String String := {}
+    for (n, entry) in ixonEnv.named do
+      let key := toString entry.addr
+      if !named.contains key then
+        named := named.insert key
+          (toString (Ix.Cli.NameResolve.ixNameToLeanName n))
+    -- block addr → a projection constant's name (repro handle for
+    -- anonymized Muts blocks).
+    let mut viaPrj : Std.HashMap String String := {}
+    for (caddr, lc) in ixonEnv.consts do
+      let some c := lc.get? | continue
+      let blk? := match c.info with
+        | .iPrj p => some p.block
+        | .cPrj p => some p.block
+        | .rPrj p => some p.block
+        | .dPrj p => some p.block
+        | _ => none
+      let some blk := blk? | continue
+      let key := toString blk
+      if !viaPrj.contains key then
+        if let some n := ixonEnv.getName? caddr then
+          viaPrj := viaPrj.insert key
+            (toString (Ix.Cli.NameResolve.ixNameToLeanName n))
+    let mut out := ""
+    for line in lines do
+      if line.isEmpty then continue
+      if line.startsWith "addr," then
+        out := out ++ "name," ++ line ++ "\n"
+      else
+        let addr := (line.takeWhile (· != ',')).toString
+        let name := match named.get? addr with
+          | some n => n
+          | none => match viaPrj.get? addr with
+            | some n => n
+            | none => s!"@{addr.take 16}"
+        out := out ++ csvField name ++ "," ++ line ++ "\n"
+    IO.FS.writeFile outCsv out
+
 /-- Print up to `limit` failures, then a summary line if truncated. -/
 private def reportFailures (failures : Array (String × String))
     (limit : Nat := 30) : IO Unit := do
@@ -142,10 +206,28 @@ private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
     | some flag => flag.as! String
     | none      => ""
 
+  let perConstPath : String :=
+    match p.flag? "per-const" with
+    | some flag => flag.as! String
+    | none      => ""
+  if !perConstPath.isEmpty then
+    Std.Internal.UV.System.osSetenv "IX_KERNEL_PER_CONST_OUT"
+      (perConstPath ++ ".addr")
+
   IO.println s!"Running Ix kernel check (anon mode) on {envPath}"
   let start ← IO.monoMsNow
   let results ← rsCheckAnonFFI envPath (!verbose) failOutPath
   let elapsed := (← IO.monoMsNow) - start
+
+  if !perConstPath.isEmpty then
+    Std.Internal.UV.System.osSetenv "IX_KERNEL_PER_CONST_OUT" ""
+    let addrCsv := perConstPath ++ ".addr"
+    if ← FilePath.pathExists addrCsv then
+      writePerConstNamed envPath addrCsv perConstPath
+      IO.FS.removeFile addrCsv
+      IO.println s!"[check] per-const attribution → {perConstPath}"
+    else
+      IO.eprintln s!"[check] per-const: expected {addrCsv} was not written"
 
   let mut passed := 0
   let mut failures : Array (String × String) := #[]
@@ -334,6 +416,7 @@ def checkRsCmd : Cli.Cmd := `[Cli|
     "consts-file" : String; "Path to a file with one constant name per line (`#` comments); unions with --consts."
     "skip-deps";            "With --anon --consts: check each named constant subject-only, trusting its deps (same flag as zisk-host/sp1-host/bench-typecheck)."
     "fail-out"    : String; "Write failing constants to this path (consumable by --consts-file)"
+    "per-const"   : String; "Anon whole-env mode: write a per-work-item attribution CSV (name, addr, wall nanos, op counters, predicted Zisk cost) to this path. Each entry is ONE constant's (or Muts block's) own check — deps are lazily ingressed and trusted, not re-checked — plus the ingress of the closure slice that check consults; entries sum to the env total. NOT the full-closure scope of --consts measurements. Feeds the `ix bench compare` top-movers drill-down."
     json          : String; "Write benchmark results rows to this path (anon mode). Whole-env: one row keyed by --json-name. With --consts: each name runs as its OWN closure check (the zkVM hosts' per-constant scope) and records its own timed row, env loaded once."
     "json-name"   : String; "Row key for the whole-env --json row (default: `env`)"
     workers       : Nat;    "Number of parallel kernel-check workers; 1 disables parallelism (default: available_parallelism). Plumbs via IX_KERNEL_CHECK_WORKERS env var."
