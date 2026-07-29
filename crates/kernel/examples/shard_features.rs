@@ -13,14 +13,16 @@
 use ix_common::address::Address;
 use ix_kernel::profile::BlockProfile;
 use ix_kernel::shard::{
-  SHARD_STEP_FLOOR, STEPS_PER_INGRESS_BYTE, ShardManifest, block_step_cost,
+  COST_PER_INGRESS_BYTE, SHARD_COST_FLOOR, ShardManifest, block_step_cost,
 };
 use rustc_hash::FxHashMap;
 
 fn main() {
   let mut args = std::env::args().skip(1);
-  let prof_path = args.next().expect("usage: shard_features <ixprof> <ixes> [label]");
-  let ixes_path = args.next().expect("usage: shard_features <ixprof> <ixes> [label]");
+  let prof_path =
+    args.next().expect("usage: shard_features <ixprof> <ixes> [label]");
+  let ixes_path =
+    args.next().expect("usage: shard_features <ixprof> <ixes> [label]");
   let label = args.next().unwrap_or_else(|| {
     std::path::Path::new(&ixes_path)
       .file_stem()
@@ -71,8 +73,8 @@ fn main() {
     }
     debug_assert_eq!(hb, s.heartbeats);
     let predicted = block_steps
-      .saturating_add(SHARD_STEP_FLOOR)
-      .saturating_add(STEPS_PER_INGRESS_BYTE.saturating_mul(s.cross_ingress));
+      .saturating_add(SHARD_COST_FLOOR)
+      .saturating_add(COST_PER_INGRESS_BYTE.saturating_mul(s.cross_ingress));
     println!(
       "{label},{idx},{},{hb},{subst},{whnf},{def_eq},{nat_arith},{intern},\
        {bytes},{consts},{},{predicted}",

@@ -2181,17 +2181,18 @@ fn print_profile_summary(
   profile: &BlockProfile,
 ) {
   use ix_kernel::shard::{
-    SHARD_STEP_FLOOR, STEPS_PER_HEARTBEAT, STEPS_PER_INGRESS_BYTE,
-    STEPS_PER_SUBST, block_step_cost, ram_gib_for_steps,
+    COST_PER_DEF_EQ, COST_PER_INGRESS_BYTE, COST_PER_INTERN, COST_PER_SUBST,
+    COST_PER_WHNF, SHARD_COST_FLOOR, block_step_cost, ram_gib_for_steps,
   };
-  let (mut hb, mut subst, mut whnf, mut defeq, mut nat) =
-    (0u64, 0u64, 0u64, 0u64, 0u64);
+  let (mut hb, mut subst, mut whnf, mut defeq, mut nat, mut intern) =
+    (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
   for rec in sink.records.values() {
     hb = hb.saturating_add(rec.fuel);
     subst = subst.saturating_add(rec.ops.subst_nodes);
     whnf = whnf.saturating_add(rec.ops.whnf_calls);
     defeq = defeq.saturating_add(rec.ops.def_eq_calls);
     nat = nat.saturating_add(rec.ops.nat_arith);
+    intern = intern.saturating_add(rec.ops.intern_nodes);
   }
   let ingress: u64 =
     profile.blocks().iter().map(|b| u64::from(b.serialized_size)).sum();
@@ -2199,7 +2200,7 @@ fn print_profile_summary(
     .blocks()
     .iter()
     .map(block_step_cost)
-    .fold(SHARD_STEP_FLOOR, u64::saturating_add);
+    .fold(SHARD_COST_FLOOR, u64::saturating_add);
   let ram_gib = ram_gib_for_steps(steps);
   let warn = if ram_gib > 250.0 {
     "  → exceeds a 250 GiB box; shard it (ix shard --max-ram G)"
@@ -2215,10 +2216,11 @@ fn print_profile_summary(
      \u{20}\u{20}whnf calls     {whnf:>14}\n\
      \u{20}\u{20}def-eq calls   {defeq:>14}\n\
      \u{20}\u{20}nat-arith      {nat:>14}\n\
+     \u{20}\u{20}intern nodes   {intern:>14}\n\
      \u{20}\u{20}ingress bytes  {ingress:>14}\n\n\
-     predicted Zisk leaf  ({SHARD_STEP_FLOOR} + {STEPS_PER_HEARTBEAT}·hb + {STEPS_PER_SUBST}·subst + {STEPS_PER_INGRESS_BYTE}·bytes)\n\
-     \u{20}\u{20}cycles ≈ {:.2e}\n\
-     \u{20}\u{20}RAM    ≈ {ram_gib:.0} GiB{warn}",
+     predicted Zisk leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
+     \u{20}\u{20}cost units ≈ {:.2e}  (~92.5/guest step)\n\
+     \u{20}\u{20}RAM        ≈ {ram_gib:.0} GiB{warn}",
     sink.records.len(),
     profile.num_blocks(),
     steps as f64,
