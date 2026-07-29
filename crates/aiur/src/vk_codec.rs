@@ -156,28 +156,29 @@ fn push_node(buf: &mut Vec<u8>, node: &Node<Val>) {
   }
 }
 
+/// One circuit record. Nothing derivable is serialized: `constraint_count`
+/// (= zeros + (L+3)·D), `stage_2_width` (= (1+L)·D), `num_publics` (= 4·D),
+/// and `lookup_prefix_len` (= 1 + max node id reachable from the lookups)
+/// are all recomputed on decode, and the Lean reader derives the observed
+/// shape limbs the same way.
 fn encode_circuit(buf: &mut Vec<u8>, circuit: &Circuit<Val>) {
   let compiled = &circuit.graph;
-  push_u32(buf, circuit.main_width);
-  push_u32(buf, circuit.preprocessed_width);
+  push_u16(buf, circuit.main_width);
+  push_u16(buf, circuit.preprocessed_width);
+  // u32: the Bytes2 table height is exactly 65536.
   push_u32(buf, circuit.preprocessed_height);
-  // Total folded constraint count (user roots + directly-evaluated logUp),
-  // the value `observe_shape` binds. Replaces the old `num_publics` slot
-  // (which is a constant, `4·D`, and is derived on decode).
-  push_u32(buf, circuit.constraint_count);
-  push_u32(buf, circuit.stage_2_width);
-  // Combined max degree (user graph + analytic logUp), as observed.
-  push_u32(buf, circuit.max_constraint_degree);
-  push_u32(buf, compiled.lookup_prefix_len);
-  push_u32(buf, compiled.nodes.len());
+  // Combined max degree (user graph + analytic logUp), as observed. Not
+  // derivable cheaply in-circuit (it would need a full degree pass).
+  push_u16(buf, circuit.max_constraint_degree);
+  push_u16(buf, compiled.nodes.len());
   for node in &compiled.nodes {
     push_node(buf, node);
   }
-  push_u32(buf, compiled.zeros.len());
+  push_u16(buf, compiled.zeros.len());
   for &z in &compiled.zeros {
     push_node_id(buf, z);
   }
-  push_u32(buf, compiled.lookups.len());
+  push_u16(buf, compiled.lookups.len());
   for lookup in &compiled.lookups {
     push_node_id(buf, lookup.multiplicity);
     push_u16(buf, lookup.args.len());
@@ -206,10 +207,7 @@ pub(crate) fn to_bytes(
   push_u16(&mut buf, fri_parameters.query_proof_of_work_bits);
   push_u16(&mut buf, system.circuits.len());
   for circuit in &system.circuits {
-    let mut record = Vec::new();
-    encode_circuit(&mut record, circuit);
-    push_u32(&mut buf, record.len());
-    buf.extend_from_slice(&record);
+    encode_circuit(&mut buf, circuit);
   }
   match &system.preprocessed_commit {
     None => buf.push(0),
@@ -336,27 +334,23 @@ fn recompute_degrees(nodes: &[Node<Val>]) -> Vec<u32> {
   degrees
 }
 
-fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
-  let mut seg = Seg { buf: bytes, pos: 0 };
-  let main_width = seg.u32_usize()?;
-  let preprocessed_width = seg.u32_usize()?;
+fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
+  let main_width = seg.u16()? as usize;
+  let preprocessed_width = seg.u16()? as usize;
   let preprocessed_height = seg.u32_usize()?;
-  let constraint_count = seg.u32_usize()?;
-  let stage_2_width = seg.u32_usize()?;
-  let max_constraint_degree = seg.u32_usize()?;
-  let lookup_prefix_len = seg.u32_usize()?;
-  let node_count = seg.u32_usize()?;
-  let mut nodes = Vec::with_capacity(node_count.min(1 << 20));
+  let max_constraint_degree = seg.u16()? as usize;
+  let node_count = seg.u16()? as usize;
+  let mut nodes = Vec::with_capacity(node_count);
   for _ in 0..node_count {
-    nodes.push(decode_node(&mut seg)?);
+    nodes.push(decode_node(seg)?);
   }
-  let zero_count = seg.u32_usize()?;
-  let mut zeros = Vec::with_capacity(zero_count.min(1 << 20));
+  let zero_count = seg.u16()? as usize;
+  let mut zeros = Vec::with_capacity(zero_count);
   for _ in 0..zero_count {
     zeros.push(seg.node_id()?);
   }
-  let lookup_count = seg.u32_usize()?;
-  let mut lookups = Vec::with_capacity(lookup_count.min(1 << 16));
+  let lookup_count = seg.u16()? as usize;
+  let mut lookups = Vec::with_capacity(lookup_count);
   for _ in 0..lookup_count {
     let multiplicity = seg.node_id()?;
     let arg_count = seg.u16()? as usize;
@@ -366,7 +360,6 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
     }
     lookups.push(Lookup { multiplicity, args });
   }
-  seg.done("circuit record")?;
 
   let degrees = recompute_degrees(&nodes);
   // The graph's own max degree covers only the user roots (the serialized
@@ -374,6 +367,15 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
   let user_max_degree = zeros
     .iter()
     .map(|z| degrees[usize::try_from(z.0).expect("node id")])
+    .max()
+    .unwrap_or(0);
+  // The lookup prefix is exactly the nodes interned while compiling the
+  // lookup expressions, all of which are reachable from (and bounded by)
+  // the lookup roots — children always precede parents.
+  let lookup_prefix_len = lookups
+    .iter()
+    .flat_map(|l| std::iter::once(l.multiplicity).chain(l.args.iter().copied()))
+    .map(|id| id.0 as usize + 1)
     .max()
     .unwrap_or(0);
   let graph = ConstraintGraph {
@@ -396,11 +398,17 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
     preprocessed_width,
     preprocessed_height,
     num_lookups,
-    stage_2_width,
+    stage_2_width: multi_stark::lookup::stage2_width(num_lookups, ext_degree),
     num_publics: multi_stark::lookup::num_publics(ext_degree),
-    constraint_count,
+    constraint_count: zeros_plus_logup(zero_count, num_lookups, ext_degree),
     max_constraint_degree,
   })
+}
+
+/// The folded constraint count: user roots + the directly-evaluated logUp
+/// values (mirrors `multi_stark::lookup::logup_constraint_count`).
+fn zeros_plus_logup(zero_count: usize, num_lookups: usize, d: usize) -> usize {
+  zero_count + multi_stark::lookup::logup_constraint_count(num_lookups, d)
 }
 
 /// Deserialize a `System<AiurConfig>` from [`to_bytes`] output, requiring that
@@ -424,9 +432,7 @@ pub(crate) fn from_bytes(
   let n_circuits = r.u16()? as usize;
   let mut circuits = Vec::with_capacity(n_circuits);
   for _ in 0..n_circuits {
-    let len = r.u32_usize()?;
-    let record = r.take(len)?;
-    circuits.push(decode_circuit(record)?);
+    circuits.push(decode_circuit(&mut r)?);
   }
   let preprocessed_commit = match r.u8()? {
     0 => None,
@@ -541,10 +547,16 @@ mod tests {
   #[test]
   fn rejects_bad_record_length() {
     let (system, cp, fp) = test_system();
-    let mut bytes = to_bytes(&system, cp, fp);
-    // First record length is the u32 right after the 16-byte global header.
-    let len = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
-    bytes[16..20].copy_from_slice(&(len + 1).to_le_bytes());
-    assert!(from_bytes(&bytes).is_err(), "should reject bad record length");
+    let bytes = to_bytes(&system, cp, fp);
+    // Records carry no length prefix (nothing derivable is serialized), so
+    // the malformation guards are the full-consumption check and read
+    // overflow: truncated and padded inputs must both be rejected.
+    assert!(
+      from_bytes(&bytes[..bytes.len() - 1]).is_err(),
+      "should reject truncated vk"
+    );
+    let mut padded = bytes.clone();
+    padded.push(0);
+    assert!(from_bytes(&padded).is_err(), "should reject padded vk");
   }
 }

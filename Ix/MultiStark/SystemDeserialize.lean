@@ -16,21 +16,20 @@ layout). The multi-stark constraint-IR migration replaced the per-circuit
 flat base-field node graph, so this reader parses that compiled form:
 
 * GLOBAL HEADER: 7 × u16 parameters + u16 circuit count.
-* PER-CIRCUIT RECORD: a `u32 LE len` prefix followed by exactly `len`
-  contiguous bytes —
-    - 8 × u32: main_width, preprocessed_width, preprocessed_height,
-      constraint_count (user roots + (L+3)·D — the `observe_shape` value),
-      stage_2_width, max_constraint_degree (combined user + logUp),
-      lookup_prefix_len, node_count
+* PER-CIRCUIT RECORD (no framing prefix; nothing derivable is serialized —
+  constraint_count, stage_2_width, num_publics, and lookup_prefix_len are
+  all recomputed from the counts below):
+    - u16 main_width, u16 preprocessed_width, u32 preprocessed_height,
+      u16 max_constraint_degree (combined user + logUp), u16 node_count
     - `node_count` tagged nodes (dense v5: u16 children, never sub-trees):
       0 ConstSmall(u16) · 1 ConstBig(u64) · 2 Public(u8) ·
       3 IsFirstRow · 4 IsLastRow · 5 IsTransition ·
       6 Add(u16,u16) · 7 Sub(u16,u16) · 8 Mul(u16,u16) · 9 Neg(u16) ·
       10..15 Var(u16 index) with (source, offset) packed in the tag
       (tag = 10 + 2·source + offset)
-    - u32 zero_count, then that many u16 constraint-root NodeIds (USER
+    - u16 zero_count, then that many u16 constraint-root NodeIds (USER
       constraints only — the logUp constraints are never compiled)
-    - u32 lookup_count, then the compiled lookups (u16 multiplicity NodeId,
+    - u16 lookup_count, then the compiled lookups (u16 multiplicity NodeId,
       u16 arg count, u16 arg NodeIds) — these drive the verifier's direct
       logUp constraint evaluation (`Verifier.lean`).
 * TRAILER: preprocessed commit (`0` = None / `1` + MerkleCap) then one u16
@@ -264,25 +263,24 @@ def systemDeserialize := ⟦
   -- from the header), max_constraint_degree (combined),
   -- preprocessed_height, preprocessed_width, main_width, stage_2_width.
   fn read_sys_circuit(base: G) -> (SysCircuit, [U64; 6], G) {
-    let (rec_len, r0) = #read_vk_u32(base);
-    let (mw, mwl, c1) = #read_vk_u32_limb(r0);
-    let (pw, pwl, c2) = #read_vk_u32_limb(c1);
+    let (mw, mwl, c1) = #read_vk_u16_limb(base);
+    let (pw, pwl, c2) = #read_vk_u16_limb(c1);
     let (ph, phl, c3) = #read_vk_u32_limb(c2);
-    let (cc, ccl, c4) = #read_vk_u32_limb(c3);
-    let (s2w, s2wl, c5) = #read_vk_u32_limb(c4);
-    let (md, mdl, c6) = #read_vk_u32_limb(c5);
-    let (lpl, c7) = #read_vk_u32(c6);
-    let (ncount, c8) = #read_vk_u32(c7);
-    let (nodes, c9) = read_nodes_n(c8, ncount);
-    let (zcount, c10) = #read_vk_u32(c9);
-    let (zeros, c11) = read_node_ids_n(c10, zcount);
-    let (lcount, c12) = #read_vk_u32(c11);
-    let (lks, c13) = read_sys_lookups_n(c12, lcount);
-    -- The record length prefix must frame exactly the parsed content.
-    let rend = r0 + rec_len;
-    assert_eq!(rend - c13, 0);
+    let (md, mdl, c4) = #read_vk_u16_limb(c3);
+    let (ncount, c5) = #read_vk_u16(c4);
+    let (nodes, c6) = read_nodes_n(c5, ncount);
+    let (zcount, c7) = #read_vk_u16(c6);
+    let (zeros, c8) = read_node_ids_n(c7, zcount);
+    let (lcount, c9) = #read_vk_u16(c8);
+    let (lks, c10) = read_sys_lookups_n(c9, lcount);
+    -- Derived shape values (not serialized): constraint_count = user roots
+    -- + (L+3)·D and stage_2_width = (1+L)·D, their observation limbs built
+    -- by byte decomposition (both values are far below 2^32, so the
+    -- canonical decomposition IS the little-endian u64 limb).
+    let ccl = gl_to_bytes(zcount + 2 * (lcount + 3));
+    let s2wl = gl_to_bytes(2 * (1 + lcount));
     (SysCircuit.Mk(nodes, ncount, zeros, md, lks),
-     [ccl, mdl, phl, pwl, mwl, s2wl], rend)
+     [ccl, mdl, phl, pwl, mwl, s2wl], c10)
   }
   fn cons_shape6(l: [U64; 6], tail: List‹U64›) -> List‹U64› {
     store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],
