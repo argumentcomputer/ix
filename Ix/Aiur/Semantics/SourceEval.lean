@@ -337,14 +337,17 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
         match v with
         | .pointer _ n => .ok (.field (G.ofNat n), st')
         | _            => .error (.typeMismatch "ptrVal")
-  | .assertEq t1 t2 ret =>
+  | .assertEq t1 t2 msg ret =>
       match interp decls fuel bindings t1 st with
       | .error e => .error e
       | .ok (v1, st1) =>
         match interp decls fuel bindings t2 st1 with
         | .error e => .error e
         | .ok (v2, st2) =>
-          if v1 != v2 then .error (.typeMismatch "assertEq")
+          if v1 != v2 then
+            .error (.typeMismatch (match msg with
+              | some m => s!"assertEq: {m}"
+              | none   => "assertEq"))
           else interp decls fuel bindings ret st2
   | .u8BitDecomposition t =>
       match interp decls fuel bindings t st with

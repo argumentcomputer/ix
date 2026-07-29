@@ -25,6 +25,7 @@ import Tests.Ix.Kernel.Roundtrip
 import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
+import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
@@ -79,6 +80,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
   ("ground-unit", Tests.Ground.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
+  ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
     ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
@@ -133,26 +135,63 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
   ("ixvm", do
-    let kernelUnitTests := .exec `kernel_unit_tests
-    let serdeNatAddCommTest ← serdeNatAddComm env
     let kernelChecks ← kernelChecks env
-    let claimSmokes ← claimSmokeTests env
+    -- the kernel CheckEnv smokes .
+    let claimEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
+    let envFull ← claimCheckEnvFull claimEnv
+    let envFrontier ← claimCheckEnvFrontier claimEnv
+    let checkAsm ← claimCheckWithAsm claimEnv
+    let revealFields ← claimRevealDefnFields claimEnv
+    let revealExpr ← claimRevealDefnExpr claimEnv
+    let revealCPrj ← claimRevealCPrj claimEnv
+    let containsTc ← claimContains
+    -- Codegen parity gate: the generated Rust kernel is emitted from the
+    -- toplevel, so this runs the same witnesses through both engines and
+    -- asserts they agree. It is only meaningful against a CURRENT
+    -- `ix codegen` output — regenerate after any Aiur edit, or this gate
+    -- compares against a stale kernel.
     let parityCases ← parityCases env
-    -- Test-only entrypoints (`kernel_unit_tests`, `ixon_serde_test`) exist
-    -- only in the FULL toplevel; everything codegen-coupled (kernel checks,
-    -- claim smokes, arena, parity) runs on the pruned production toplevel —
-    -- the one `ix codegen` mirrors.
+    -- Shared-infrastructure test entrypoints live only in the FULL
+    -- toplevel (pruning drops them so test-only circuits never widen a
+    -- committed kernel system).
+    let kernelUnitTests := .exec `kernel_unit_tests
+    let serdeTest ← serdeNatAddComm env
     match AiurTestEnv.build IxVM.ixVM, AiurTestEnv.build IxVM.ixVMFull with
-    | .error e, _ | _, .error e => IO.eprintln s!"IxVM env build failed: {e}"; return 1
-    | .ok aiurEnv, .ok fullEnv =>
-      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env aiurEnv.compiled
-      let fullSeq := [kernelUnitTests, serdeNatAddCommTest].foldl (init := .done)
-        fun s tc => s ++ fullEnv.runTestCase tc
-      let aiurSeq := (kernelChecks ++ claimSmokes).foldl (init := .done) fun s tc =>
-        s ++ aiurEnv.runTestCase tc
+    | .error e, _ | _, .error e =>
+      IO.eprintln s!"IxVM env build failed: {e}"; return 1
+    | .ok v2Env, .ok v2FullEnv =>
+      -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
+      -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
+      -- through the kernel's subject-only `verify_const` debug entrypoint.
+      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env v2Env.compiled
+      let aiurSeq := (kernelChecks ++
+          [envFull, envFrontier, checkAsm,
+           revealFields, revealExpr, revealCPrj, containsTc]).foldl
+        (init := .done) fun s tc => s ++ v2Env.runTestCase tc
       let paritySeq := parityCases.foldl (init := .done) fun s tc =>
-        s ++ runParityCase aiurEnv.compiled tc
-      LSpec.lspecIO (.ofList [("ixvm", [fullSeq, aiurSeq, arenaSeq, paritySeq])]) []),
+        s ++ runParityCase v2Env.compiled tc
+      let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
+        fun s tc => s ++ v2FullEnv.runTestCase tc
+      -- Shard pipeline: witness built in Rust (thin-frontier claim,
+      -- parallel closure walk) and run on the native kernel. Pinned FFT
+      -- is the regression signal.
+      let shardSeq ← match (← shardCheckEnvCase env) with
+        | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
+        | some (handle, ownedBlob) =>
+          let funIdx := v2Env.compiled.getFuncIdx `verify_claim |>.get!
+          match v2Env.compiled.bytecode.shardCheckWithEnv
+                  funIdx handle ownedBlob false with
+          | .error e =>
+            pure (LSpec.test s!"shard pipeline execution: {e}" false)
+          | .ok (_, _, qc) =>
+            -- Exact pin, same convention as `kernelCheckEntries`
+            -- (`.round.toUInt64.toNat`): any cost shift must be an
+            -- explicit, reviewed bump.
+            let cost :=
+              (Aiur.computeStats v2Env.compiled qc).totalFftCost.round.toUInt64.toNat
+            pure (LSpec.test "shard pipeline FFT" (cost == 1_924_939_724))
+      LSpec.lspecIO
+        (.ofList [("ixvm", [fullSeq, aiurSeq, arenaSeq, paritySeq, shardSeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with

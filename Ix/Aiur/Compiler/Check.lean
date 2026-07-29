@@ -847,11 +847,11 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
       let ret' ← inferTerm ret
       pure (Typed.Term.ioWrite ret'.typ ret'.escapes channel' data' ret')
     | typ' => throw $ .notAnArray typ'
-  | .assertEq a b ret => do
+  | .assertEq a b msg ret => do
     let a' ← inferNoEscape a
     let b' ← checkNoEscape b a'.typ
     let ret' ← inferTerm ret
-    pure (Typed.Term.assertEq ret'.typ ret'.escapes a' b' ret')
+    pure (Typed.Term.assertEq ret'.typ ret'.escapes a' b' msg ret')
   | .debug label term ret => do
     let term' ← match term with
       | none => pure none
@@ -958,8 +958,9 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
   | .store τ e a => do pure (.store (← zonkTyp τ) e (← zonkTypedTerm a))
   | .load τ e a => do pure (.load (← zonkTyp τ) e (← zonkTypedTerm a))
   | .ptrVal τ e a => do pure (.ptrVal (← zonkTyp τ) e (← zonkTypedTerm a))
-  | .assertEq τ e a b r => do
-      pure (.assertEq (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b) (← zonkTypedTerm r))
+  | .assertEq τ e a b msg r => do
+      pure (.assertEq (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b)
+        msg (← zonkTypedTerm r))
   | .ioGetInfo τ e c k => do
       pure (.ioGetInfo (← zonkTyp τ) e (← zonkTypedTerm c) (← zonkTypedTerm k))
   | .ioSetInfo τ e c k i l r => do

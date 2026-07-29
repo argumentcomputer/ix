@@ -55,8 +55,27 @@ pub fn build_eval_claim(env: &Env, input: Address, output: Address) -> Claim {
   Claim::Eval { input, output, assumptions }
 }
 
-/// Build a whole-env check claim. Subject is the env's canonical merkle
-/// root; assumptions are the env's axiom leaves.
+/// Build a shard `CheckEnv` claim under the SHARD PROTOCOL convention:
+/// root over the owned set, assumptions over the THIN frontier (direct
+/// out-of-owned walk edges). Delegates to [`ixon::shard_claim`] — the
+/// single source of truth shared with the Aiur witness builders, so
+/// digests reproduce across the Rust and Aiur pipelines. The
+/// claim-exact check set (asm-cutoff walk + strict owned-membership)
+/// is [`ixon::shard_claim::walk_check_set`]; a native checker
+/// validating such a claim must check exactly that set — checking the
+/// whole env eagerly is a sound superset for DEV use but does not
+/// certify the claim (it misses the strict-membership coverage rule).
+pub fn build_shard_check_env_claim(
+  env: &Env,
+  owned: &[Address],
+) -> Option<(Claim, Vec<Address>)> {
+  ixon::shard_claim::shard_check_env_claim(env, owned)
+}
+
+/// Legacy whole-env check claim (DEV convention, not the shard
+/// protocol): subject is the env's canonical merkle root; assumptions
+/// are the env's axiom leaves. Digest-INCOMPATIBLE with the shard
+/// protocol's thin-frontier `CheckEnv` claims — do not mix pipelines.
 ///
 /// Returns `None` if the env has an empty const set (no subject root
 /// can be formed).
@@ -65,7 +84,7 @@ pub fn build_eval_claim(env: &Env, input: Address, output: Address) -> Claim {
 /// This forces a full env walk; callers that already hold structured
 /// constants are unaffected, but a freshly-loaded lazy env will pay
 /// the parse cost here.
-pub fn build_check_env_claim(env: &Env) -> Option<Claim> {
+pub fn build_check_env_claim_axioms(env: &Env) -> Option<Claim> {
   let root = env_merkle_root(env)?;
   let mut axioms: Vec<Address> = env
     .consts
@@ -212,7 +231,7 @@ mod tests {
     let env = Env::new();
     let a = Address::hash(b"a");
     env.store_const(a.clone(), defn_const(vec![]));
-    match build_check_env_claim(&env).unwrap() {
+    match build_check_env_claim_axioms(&env).unwrap() {
       Claim::CheckEnv { root, assumptions: None } => {
         assert_eq!(Some(root), env_merkle_root(&env));
       },
@@ -227,7 +246,7 @@ mod tests {
     let ax = Address::hash(b"ax");
     env.store_const(a.clone(), defn_const(vec![ax.clone()]));
     env.store_const(ax.clone(), axiom_const(vec![]));
-    match build_check_env_claim(&env).unwrap() {
+    match build_check_env_claim_axioms(&env).unwrap() {
       Claim::CheckEnv { root, assumptions: Some(asm) } => {
         assert_eq!(Some(root), env_merkle_root(&env));
         assert_eq!(asm, leaf_hash(&ax));
@@ -239,7 +258,30 @@ mod tests {
   #[test]
   fn check_env_empty_returns_none() {
     let env = Env::new();
-    assert!(build_check_env_claim(&env).is_none());
+    assert!(build_check_env_claim_axioms(&env).is_none());
+  }
+
+  #[test]
+  fn shard_check_env_claim_is_thin_frontier() {
+    // a -> b -> c: owned {a} gives frontier {b} only — c is below the
+    // first layer and must NOT enter the asm set.
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let c = Address::hash(b"c");
+    env.store_const(a.clone(), defn_const(vec![b.clone()]));
+    env.store_const(b.clone(), defn_const(vec![c.clone()]));
+    env.store_const(c.clone(), defn_const(vec![]));
+    let (claim, frontier) =
+      build_shard_check_env_claim(&env, std::slice::from_ref(&a)).unwrap();
+    assert_eq!(frontier, vec![b.clone()]);
+    match claim {
+      Claim::CheckEnv { root, assumptions: Some(asm) } => {
+        assert_eq!(root, leaf_hash(&a));
+        assert_eq!(asm, leaf_hash(&b));
+      },
+      other => panic!("expected CheckEnv Some, got {other:?}"),
+    }
   }
 
   #[test]

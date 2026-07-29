@@ -306,9 +306,10 @@ def termToConcrete
   | .store τ e a => do pure (.store (← typToConcrete mono τ) e (← termToConcrete mono a))
   | .load τ e a => do pure (.load (← typToConcrete mono τ) e (← termToConcrete mono a))
   | .ptrVal τ e a => do pure (.ptrVal (← typToConcrete mono τ) e (← termToConcrete mono a))
-  | .assertEq τ e a b r => do
+  | .assertEq τ e a b msg r => do
       pure (.assertEq (← typToConcrete mono τ) e
-                      (← termToConcrete mono a) (← termToConcrete mono b) (← termToConcrete mono r))
+                      (← termToConcrete mono a) (← termToConcrete mono b)
+                      msg (← termToConcrete mono r))
   | .ioGetInfo τ e c k => do
       pure (.ioGetInfo (← typToConcrete mono τ) e
                        (← termToConcrete mono c) (← termToConcrete mono k))
@@ -530,10 +531,10 @@ def rewriteTypedTerm (decls : Typed.Decls)
   | .store τ e a => .store (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono a)
   | .load τ e a => .load (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono a)
   | .ptrVal τ e a => .ptrVal (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono a)
-  | .assertEq τ e a b r =>
+  | .assertEq τ e a b msg r =>
     .assertEq (rewriteTyp subst mono τ) e
               (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
-              (rewriteTypedTerm decls subst mono r)
+              msg (rewriteTypedTerm decls subst mono r)
   | .ioGetInfo τ e c k =>
     .ioGetInfo (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono c) (rewriteTypedTerm decls subst mono k)
@@ -669,7 +670,7 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
   | .proj τ _ a _ | .get τ _ a _ | .slice τ _ a _ _ =>
     collectInTypedTerm (collectInTyp seen τ) a
   | .set τ _ a _ v => collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) v
-  | .assertEq τ _ a b r =>
+  | .assertEq τ _ a b _ r =>
     collectInTypedTerm
       (collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b) r
   | .ioSetInfo τ _ c k i l r =>
@@ -740,7 +741,7 @@ def collectCalls (decls : Typed.Decls)
     collectCalls decls (collectCalls decls seen c) k
   | .proj _ _ a _ | .get _ _ a _ | .slice _ _ a _ _ => collectCalls decls seen a
   | .set _ _ a _ v => collectCalls decls (collectCalls decls seen a) v
-  | .assertEq _ _ a b r =>
+  | .assertEq _ _ a b _ r =>
     collectCalls decls (collectCalls decls (collectCalls decls seen a) b) r
   | .ioSetInfo _ _ c k i l r =>
     collectCalls decls
@@ -803,9 +804,9 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
   | .store τ e a => .store (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .load τ e a => .load (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .ptrVal τ e a => .ptrVal (Typ.instantiate subst τ) e (substInTypedTerm subst a)
-  | .assertEq τ e a b r =>
+  | .assertEq τ e a b msg r =>
     .assertEq (Typ.instantiate subst τ) e (substInTypedTerm subst a)
-              (substInTypedTerm subst b) (substInTypedTerm subst r)
+              (substInTypedTerm subst b) msg (substInTypedTerm subst r)
   | .ioGetInfo τ e c k =>
     .ioGetInfo (Typ.instantiate subst τ) e
       (substInTypedTerm subst c) (substInTypedTerm subst k)

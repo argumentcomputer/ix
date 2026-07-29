@@ -1,60 +1,489 @@
-/-
-  # Aiur kernel claim dispatcher
-
-  The flow mirrors how constants are loaded: hash the bytes, assert
-  equality with the supplied digest, deserialize once into an Aiur
-  ADT, and use the structured value. No scattered inline-parse
-  comparisons.
-
-      claim_digest ── IOBuffer ─▶ claim_bytes
-                                  │
-                                  ▼
-                          blake3 assert
-                                  │
-                                  ▼
-                           get_claim                    ◀ deserialize
-                                  │
-                                  ▼
-                       match Claim variant              ◀ structured use
-
-  Wire format mirrors `Ix/Claim.lean`:
-
-    Variant 3  EvalClaim       (input output : Addr) (asm : Opt Addr)
-    Variant 4  CheckClaim      (const : Addr)        (asm : Opt Addr)
-    Variant 5  CheckEnvClaim   (root  : Addr)        (asm : Opt Addr)
-    Variant 6  RevealClaim     (comm  : Addr) (info : RevealConstantInfo)
-    Variant 7  ContainsClaim   (tree  : Addr) (const : Addr)
-
-  Eval is the only `run_*` arm still placeholder — Rust kernel has
-  not pinned reduction semantics yet.
--/
 module
 public import Ix.Aiur.Meta
 public import Ix.IxVM.KernelTypes
-public import Ix.IxVM.Ingress
-public import Ix.IxVM.IxonSerialize
-public import Ix.IxVM.IxonDeserialize
 public import Ix.IxVM.Kernel.Check
+public import Ix.IxVM.Ingress
 
 public section
 
 namespace IxVM
 
-def claim := ⟦
-  -- ============================================================================
-  -- Reveal-specific ADT mirror. `RevealConstantInfo` parallels
-  -- `ConstantInfo` (from `Ix/IxVM/Ixon.lean`) but every payload field
-  -- is wrapped in `Option‹…›` for selective revelation, and Expr
-  -- fields are replaced by their content-hashed `Addr`. The shape is
-  -- a 1:1 copy of `Ix.RevealConstantInfo` in `Ix/Claim.lean`.
-  -- ============================================================================
+/-! ## Claim — the claim-variant runners behind `verify_claim`
 
-  -- (ruleIdx, fields, rhs_addr). `rhs_addr` = blake3(put_expr rhs).
+`run_claim` parses the claim at ch 0 and dispatches to one of these:
+
+* `run_check` — typecheck a single constant.
+* `run_check_transitive` — a constant plus everything reachable through
+  refs, with no ownership set (Check claims assert nothing about which
+  shard owns what).
+* `run_check_env` — every leaf of an owned merkle tree, walking with an
+  assumption cutoff and a strict owned-membership rule.
+* `run_reveal` — selective field revelation of a committed constant.
+* `run_contains` — merkle membership of a target in a tree.
+-/
+
+def claim := ⟦
+  -- Single-const check. Loads `addr`'s KConstantInfo lazily and
+  -- typechecks it. Every ref discovered during typechecking is
+  -- resolved via nested `get_ci`, faulting bytes from IOBuffer
+  -- on first touch.
+  fn run_check(addr: Addr) {
+    let ci = load(get_ci(addr));
+    check_const(ci, addr)
+  }
+
+  -- Which entries of a constant's `refs` are BLOB addresses.
+  --
+  -- An address is a blob only when an Expr node references it as one:
+  -- `Str(i)` and `Nat(i)` index the blob payload, while `Ref(i)` and
+  -- `Prj(i, ..)` index a constant. `refs` holds exactly the union of those
+  -- four (crates/ixon/src/constant.rs:220), so every entry is classified,
+  -- and an address reached from outside any Expr — a claim target, a block
+  -- address — is a constant reference by Ixon convention.
+  --
+  -- Derived from the hash-bound bytes, so blob-ness is a POSITIVE property
+  -- the kernel computes rather than something the prover asserts. Every
+  -- address lacking it is a constant the walk must check.
+  --
+  -- Note the same BYTES may be readable as both a constant and a Nat or
+  -- utf-8 string; only this Expr context disambiguates, so byte inspection
+  -- could not replace it.
+  -- Direct recursion, no accumulator: each function is a pure function of
+  -- the node it is given, so Aiur memoizes per-pointer and a shared
+  -- subexpression is traversed once no matter how many parents reach it.
+  -- Threading an accumulator would defeat that — the accumulator differs at
+  -- every call site, so no two calls would ever share a memo entry.
+  fn blob_idxs_expr(e: &Expr) -> List‹G› {
+    match load(e) {
+      Expr.Str(i) =>
+        store(ListNode.Cons(flatten_u64(i), store(ListNode.Nil))),
+      Expr.Nat(i) =>
+        store(ListNode.Cons(flatten_u64(i), store(ListNode.Nil))),
+      Expr.Prj(_, _, inner) => blob_idxs_expr(inner),
+      Expr.App(f, a) => list_concat(blob_idxs_expr(f), blob_idxs_expr(a)),
+      Expr.Lam(t, b) => list_concat(blob_idxs_expr(t), blob_idxs_expr(b)),
+      Expr.All(t, b) => list_concat(blob_idxs_expr(t), blob_idxs_expr(b)),
+      Expr.Let(_, t, v, b) =>
+        list_concat(blob_idxs_expr(t),
+          list_concat(blob_idxs_expr(v), blob_idxs_expr(b))),
+      -- `Share` is deliberately NOT followed: the Expr is a DAG, and
+      -- following share edges expands it exponentially. Every shared
+      -- subexpression is itself an entry in `sharing`, which is walked
+      -- once below, so coverage is complete and the traversal stays linear.
+      _ => store(ListNode.Nil),
+    }
+  }
+
+  fn blob_idxs_exprs(es: List‹&Expr›) -> List‹G› {
+    match load(es) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(e, rest) =>
+        list_concat(blob_idxs_expr(e), blob_idxs_exprs(rest)),
+    }
+  }
+
+  fn blob_idxs_rules(rs: List‹RecursorRule›) -> List‹G› {
+    match load(rs) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(r, rest) =>
+        match r {
+          RecursorRule.Mk(_, rhs) =>
+            list_concat(blob_idxs_expr(rhs), blob_idxs_rules(rest)),
+        },
+    }
+  }
+
+  fn blob_idxs_ctors(cs: List‹Constructor›) -> List‹G› {
+    match load(cs) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(c, rest) =>
+        match c {
+          Constructor.Mk(_, _, _, _, _, typ) =>
+            list_concat(blob_idxs_expr(typ), blob_idxs_ctors(rest)),
+        },
+    }
+  }
+
+  fn blob_idxs_muts(ms: List‹MutConst›) -> List‹G› {
+    match load(ms) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(m, rest) =>
+        match m {
+          MutConst.Defn(d) =>
+            match d {
+              Definition.Mk(_, _, _, typ, value) =>
+                list_concat(
+                  list_concat(blob_idxs_expr(typ), blob_idxs_expr(value)),
+                  blob_idxs_muts(rest)),
+            },
+          MutConst.Indc(i) =>
+            match i {
+              Inductive.Mk(_, _, _, _, typ, ctors) =>
+                list_concat(
+                  list_concat(blob_idxs_expr(typ), blob_idxs_ctors(ctors)),
+                  blob_idxs_muts(rest)),
+            },
+          MutConst.Recr(r) =>
+            match r {
+              Recursor.Mk(_, _, _, _, _, _, _, typ, rules) =>
+                list_concat(
+                  list_concat(blob_idxs_expr(typ), blob_idxs_rules(rules)),
+                  blob_idxs_muts(rest)),
+            },
+        },
+    }
+  }
+
+  fn blob_idxs_of(c: Constant) -> List‹G› {
+    match c {
+      Constant.Mk(info, sharing, _, _) =>
+        let shared = blob_idxs_exprs(sharing);
+        match info {
+          ConstantInfo.Defn(d) =>
+            match d {
+              Definition.Mk(_, _, _, typ, value) =>
+                list_concat(shared,
+                  list_concat(blob_idxs_expr(typ), blob_idxs_expr(value))),
+            },
+          ConstantInfo.Recr(r) =>
+            match r {
+              Recursor.Mk(_, _, _, _, _, _, _, typ, rules) =>
+                list_concat(shared,
+                  list_concat(blob_idxs_expr(typ), blob_idxs_rules(rules))),
+            },
+          ConstantInfo.Axio(a) =>
+            match a {
+              Axiom.Mk(_, _, typ) =>
+                list_concat(shared, blob_idxs_expr(typ)),
+            },
+          ConstantInfo.Quot(q) =>
+            match q {
+              Quotient.Mk(_, _, typ) =>
+                list_concat(shared, blob_idxs_expr(typ)),
+            },
+          ConstantInfo.Muts(members) =>
+            list_concat(shared, blob_idxs_muts(members)),
+          -- Projection wrappers carry no Exprs of their own.
+          _ => shared,
+        },
+    }
+  }
+
+  fn g_list_has(xs: List‹G›, x: G) -> G {
+    match load(xs) {
+      ListNode.Nil => 0,
+      ListNode.Cons(y, rest) =>
+        match y - x {
+          0 => 1,
+          _ => g_list_has(rest, x),
+        },
+    }
+  }
+
+  -- Transitive check: verify `addr` + every constant reachable via
+  -- refs. Refs are BLOCK-level addresses — the acyclic dep DAG lives
+  -- at block granularity (mutual constants inside a single Muts block;
+  -- block refs form a DAG). Aiur memoizes per-addr so shared
+  -- subgraphs check once.
+  --
+  -- Projection wrappers (DPrj/IPrj/CPrj/RPrj) have empty refs of their
+  -- own; the actual dep list lives on their target BLOCK's
+  -- Constant.Mk. Unwrap to the block via run_check_transitive
+  -- recursion, which then walks the block's refs.
+  --
+  -- Every address that reaches here is a CONSTANT: blob entries are
+  -- filtered by the caller from `blob_idxs_of`, and a claim target or a
+  -- block address is a constant reference by convention. The decision to
+  -- check is never taken from IO-buffer metadata.
+  fn run_check_transitive(addr: Addr) {
+    let c = load_verified_constant(addr);
+    match c {
+      Constant.Mk(info, _, refs, _) =>
+        match info {
+          ConstantInfo.Muts(members) =>
+            check_muts_all(addr, members, members, 0),
+          ConstantInfo.DPrj(dprj) =>
+            match dprj {
+              DefinitionProj.Mk(_, block_addr) =>
+                run_check(addr);
+                run_check_transitive(block_addr),
+            },
+          ConstantInfo.IPrj(iprj) =>
+            match iprj {
+              InductiveProj.Mk(_, block_addr) =>
+                run_check(addr);
+                run_check_transitive(block_addr),
+            },
+          ConstantInfo.CPrj(cprj) =>
+            match cprj {
+              ConstructorProj.Mk(_, _, block_addr) =>
+                run_check(addr);
+                run_check_transitive(block_addr),
+            },
+          ConstantInfo.RPrj(rprj) =>
+            match rprj {
+              RecursorProj.Mk(_, block_addr) =>
+                run_check(addr);
+                run_check_transitive(block_addr),
+            },
+          _ => run_check(addr),
+        };
+        walk_refs_transitive(refs, blob_idxs_of(c), 0),
+    }
+  }
+
+  -- Skip refs the constant's own Exprs marked as blob payloads; recurse on
+  -- everything else. The skip decision comes from `blob_idxs_of`, i.e. from
+  -- bytes already bound by blake3 — not from an IO probe the prover answers.
+  fn walk_refs_transitive(refs: List‹Addr›, blobs: List‹G›, i: G) {
+    match load(refs) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        match g_list_has(blobs, i) {
+          1 => (),
+          _ => run_check_transitive(a),
+        };
+        walk_refs_transitive(rest, blobs, i + 1),
+    }
+  }
+
+  -- Check every member of a Muts block. Each member is checked through
+  -- the projection ci (via get_ci_iprj/cprj/rprj/dprj) so all block
+  -- members get their full soundness gauntlet.
+  fn check_muts_all(block_addr: Addr, all_members: List‹MutConst›,
+                          cur: List‹MutConst›, pos: G) {
+    match load(cur) {
+      ListNode.Nil => (),
+      ListNode.Cons(m, rest) =>
+        check_muts_member_at(block_addr, all_members, m, pos);
+        check_muts_all(block_addr, all_members, rest, pos + 1),
+    }
+  }
+
+  fn check_muts_member_at(block_addr: Addr,
+                                all_members: List‹MutConst›,
+                                m: MutConst, pos: G) {
+    let member_addr = projection_addr(all_members, block_addr, pos);
+    let ci = load(get_ci(member_addr));
+    check_const(ci, member_addr)
+  }
+
+  -- ============================================================================
+  -- Assumption / env tree: leaf list serialization (ch 1). The format
+  -- matches the Rust implementation in crates/kernel/src, so the same
+  -- witness buffers feed either checker. The tree is bound to its ch 1
+  -- key by recomputing the merkle root, not by hashing the bytes — see
+  -- the channel table in Ix/IxVM/ClaimHarness.lean.
+  -- ============================================================================
+  fn leaf_hash(addr: Addr) -> Addr {
+    let tail = put_address(addr, store(ListNode.Nil));
+    let bytes = store(ListNode.Cons(0u8, tail));
+    bytes_to_addr(bytes)
+  }
+
+  fn node_hash(l: Addr, r: Addr) -> Addr {
+    let tail = put_address(l, put_address(r, store(ListNode.Nil)));
+    let bytes = store(ListNode.Cons(1u8, tail));
+    bytes_to_addr(bytes)
+  }
+
+  -- Assumption-tree parser / loader. Same as constants: load bytes,
+  -- recompute root via merkle fold, assert match.
+  fn parse_atree_body(stream: ByteStream) -> (Addr, List‹Addr›, ByteStream) {
+    let (tag, s) = read_byte(stream);
+    match tag {
+      0 =>
+        let (addr, s2) = get_address(s);
+        let h = leaf_hash(addr);
+        (h, store(ListNode.Cons(addr, store(ListNode.Nil))), s2),
+      1 =>
+        (store([0u8; 32]), store(ListNode.Nil), s),
+      2 =>
+        let (lh, ll, s2) = parse_atree_body(s);
+        let (rh, rl, s3) = parse_atree_body(s2);
+        let h = node_hash(lh, rh);
+        (h, list_concat(ll, rl), s3),
+    }
+  }
+
+  fn load_assumption_tree(root: Addr) -> List‹Addr› {
+    let raw = load(root);
+    let (idx, len) = io_get_info(1, raw);
+    let bytes = #read_byte_stream(1, idx, len);
+    let (tag, s) = get_tag4(bytes);
+    let (flag, size) = tag;
+    assert_eq!(flag, 0xE, "assumption tree: wrong tag4 flag");
+    assert_eq!(to_field(size[0]), 2, "assumption tree: wrong tag4 variant");
+    let (computed_root, leaves, rest) = parse_atree_body(s);
+    assert_eq!(load(rest), ListNode.Nil,
+      "assumption tree: trailing bytes after tree body");
+    let computed_arr = load(computed_root);
+    -- Binds ch 1 to its key: the recomputed merkle root must equal the
+    -- address the tree was requested under.
+    assert_eq!(computed_arr, raw,
+      "assumption tree: recomputed merkle root != requested root");
+    leaves
+  }
+
+  -- ============================================================================
+  -- R1: asm-aware transitive walk. Shared by Check-with-asm and
+  -- CheckEnv. Per visited constant addr:
+  --   * addr ∈ asm: assumed well-typed by its owning shard — do not
+  --     check, do not recurse. The asm tree is the thin FRONTIER of
+  --     the owned closure's out-of-shard refs; the ref-walk can only
+  --     leave the shard through a frontier member, so nothing below
+  --     the frontier is visited. (Bytes below the frontier may still
+  --     be faulted by get_ci during delta unfolding — that is the
+  --     ch 2 byte scope, blake3-bound per addr, and deliberately NOT
+  --     subject to this walk's membership rule.)
+  --   * strict=1 (CheckEnv): addr must be ∈ owned — a walk-reachable
+  --     constant in neither owned nor asm means the claim's owned
+  --     tree does not cover its own closure (bad frontier); abort
+  --     rather than silently absorb the check. Owned trees must list
+  --     the full block-level closure (blocks and wrappers included),
+  --     which is what `AssumptionTree.canonical` over a closure set
+  --     produces.
+  --   * otherwise: check the constant (Muts: every member) and
+  --     recurse its block-level refs.
+  -- Aiur memoizes per (addr, owned, asm, strict) — the list pointers
+  -- are per-run constants, so shared subgraphs walk once.
+  -- Addr-set membership via RBTreeMap keyed on the interned store
+  -- pointer: content-addressed interning makes ptr equality ⇔ 32-byte
+  -- equality in BOTH directions (each content has exactly one store
+  -- slot), so a u32 ptr key is an exact membership test. O(log n) per
+  -- query vs the O(n) list scan — the frontier list is the biggest
+  -- per-visit cost on fat-frontier shards (e.g. 1977 asm leaves).
+  fn addr_set_build(leaves: List‹Addr›, acc: RBTreeMap‹G›) -> RBTreeMap‹G› {
+    match load(leaves) {
+      ListNode.Nil => acc,
+      ListNode.Cons(a, rest) =>
+        addr_set_build(rest, rbtree_map_insert(ptr_val(a), 1, acc)),
+    }
+  }
+
+  fn addr_set_member(a: Addr, tree: RBTreeMap‹G›) -> G {
+    rbtree_map_lookup_or_default(ptr_val(a), tree, 0)
+  }
+
+  fn env_walk(addr: Addr, owned: RBTreeMap‹G›, asm: RBTreeMap‹G›,
+                  strict: G) {
+    -- Every address reaching here is a constant: blob refs are filtered by
+    -- the caller from the referring constant's own Exprs, and a walk root or
+    -- block address is a constant reference by convention. Nothing here may
+    -- branch on IO-buffer metadata — this walk decides both what gets checked
+    -- and what strict membership covers, so a prover-steerable skip would
+    -- exclude an owned leaf from both while the claim's merkle root still
+    -- commits to it.
+    match addr_set_member(addr, asm) {
+      1 => (),
+      _ =>
+        match strict {
+          1 =>
+            assert_eq!(addr_set_member(addr, owned), 1,
+              "CheckEnv: walk reached a constant outside the owned set");
+            (),
+          _ => (),
+        };
+        let c = load_verified_constant(addr);
+        match c {
+          Constant.Mk(info, _, refs, _) =>
+            match info {
+              ConstantInfo.Muts(members) =>
+                check_muts_all(addr, members, members, 0),
+              ConstantInfo.DPrj(dprj) =>
+                match dprj {
+                  DefinitionProj.Mk(_, block_addr) =>
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict),
+                },
+              ConstantInfo.IPrj(iprj) =>
+                match iprj {
+                  InductiveProj.Mk(_, block_addr) =>
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict),
+                },
+              ConstantInfo.CPrj(cprj) =>
+                match cprj {
+                  ConstructorProj.Mk(_, _, block_addr) =>
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict),
+                },
+              ConstantInfo.RPrj(rprj) =>
+                match rprj {
+                  RecursorProj.Mk(_, block_addr) =>
+                    run_check(addr);
+                    env_walk(block_addr, owned, asm, strict),
+                },
+              _ => run_check(addr),
+            };
+            env_walk_refs(refs, blob_idxs_of(c), 0, owned, asm, strict),
+        },
+    }
+  }
+
+  fn env_walk_refs(refs: List‹Addr›, blobs: List‹G›, i: G,
+                       owned: RBTreeMap‹G›,
+                       asm: RBTreeMap‹G›, strict: G) {
+    match load(refs) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        match g_list_has(blobs, i) {
+          1 => (),
+          _ => env_walk(a, owned, asm, strict),
+        };
+        env_walk_refs(rest, blobs, i + 1, owned, asm, strict),
+    }
+  }
+
+  fn env_walk_leaves(leaves: List‹Addr›, owned: RBTreeMap‹G›,
+                         asm: RBTreeMap‹G›) {
+    match load(leaves) {
+      ListNode.Nil => (),
+      ListNode.Cons(a, rest) =>
+        env_walk(a, owned, asm, 1);
+        env_walk_leaves(rest, owned, asm),
+    }
+  }
+
+  -- CheckEnv: every owned leaf is checked TRANSITIVELY with the asm
+  -- cutoff and strict owned-membership on the walk set. The walk has to
+  -- be explicit because `get_ci` is lazy and consults a dependency's
+  -- declared type without checking it: being loaded is not evidence of
+  -- being well-typed, so every constant the claim covers must be
+  -- reached by this walk or assumed via the frontier.
+  fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
+    let owned = load_assumption_tree(env_root);
+    let asm_leaves = match asm {
+      Option.None => store(ListNode.Nil),
+      Option.Some(r) => load_assumption_tree(r),
+    };
+    let owned_set = addr_set_build(owned, RBTreeMap.Nil);
+    let asm_set = addr_set_build(asm_leaves, RBTreeMap.Nil);
+    env_walk_leaves(owned, owned_set, asm_set)
+  }
+
+  -- Option<Address> deserializer, mirror (Kernel/Claim.lean:109).
+  fn get_opt_addr(stream: ByteStream) -> (Option‹Addr›, ByteStream) {
+    let (tag, s) = read_byte(stream);
+    match tag {
+      0 => (Option.None, s),
+      1 =>
+        let (addr, s2) = get_address(s);
+        (Option.Some(addr), s2),
+    }
+  }
+
+  -- ============================================================================
+  -- Reveal claim (variant 6). Mirrors the Rust implementation in
+  -- crates/kernel/src; the machinery is Ixon-level rather than
+  -- typechecker-level: parse a `RevealConstantInfo` (per-field Option
+  -- mirror of `ConstantInfo`, Expr fields as content hashes), load the
+  -- committed constant, assert every Some(field) equals the real one.
+
   enum RevealRecursorRule {
     Mk(U64, U64, Addr)
   }
 
-  -- (isUnsafe, lvls, cidx, params, fields, typ).
   enum RevealConstructorInfo {
     Mk(Option‹G›, Option‹U64›, Option‹U64›,
        Option‹U64›, Option‹U64›, Option‹Addr›)
@@ -87,33 +516,6 @@ def claim := ⟦
     IPrj(Option‹U64›, Option‹Addr›),
     DPrj(Option‹U64›, Option‹Addr›),
     Muts(List‹(U64, RevealMutConstInfo)›)
-  }
-
-  -- The full claim ADT — parallels `Ix.Claim` in `Ix/Claim.lean`.
-  enum Claim {
-    Eval(Addr, Addr, Option‹Addr›),
-    Check(Addr, Option‹Addr›),
-    CheckEnv(Addr, Option‹Addr›),
-    Reveal(Addr, RevealConstantInfo),
-    Contains(Addr, Addr)
-  }
-
-  -- ============================================================================
-  -- Wire-format helpers shared across the deserializers.
-  -- ============================================================================
-
-  -- `Option<Address>` per `Ix/Claim.lean::putOptAddr` (top-level
-  -- `assumptions` slot, NOT the bitmask-gated reveal-fields form).
-  --   [0x00]              → none
-  --   [0x01][addr:32]     → some addr
-  fn get_opt_addr(stream: ByteStream) -> (Option‹Addr›, ByteStream) {
-    let (tag, s) = read_byte(stream);
-    match tag {
-      0 => (Option.None, s),
-      1 =>
-        let (addr, s2) = get_address(s);
-        (Option.Some(addr), s2),
-    }
   }
 
   -- Bitmask-gated decoders for the per-field Reveal payloads.
@@ -190,10 +592,8 @@ def claim := ⟦
     }
   }
 
-  -- ============================================================================
   -- RevealRecursorRule list parser.
   -- Wire: `Tag0(count) + count × (Tag0(idx) + Tag0(fields) + Address)`.
-  -- ============================================================================
   fn get_reveal_rule(stream: ByteStream) -> (RevealRecursorRule, ByteStream) {
     let (rule_idx, s) = get_tag0(stream);
     let (fields, s) = get_tag0(s);
@@ -223,9 +623,7 @@ def claim := ⟦
     }
   }
 
-  -- ============================================================================
   -- RevealConstructorInfo parser. 6 optional fields, mask bits 0..5.
-  -- ============================================================================
   fn get_reveal_ctor_info(stream: ByteStream)
       -> (RevealConstructorInfo, ByteStream) {
     let (mask, s) = get_tag0(stream);
@@ -269,9 +667,7 @@ def claim := ⟦
     }
   }
 
-  -- ============================================================================
   -- RevealMutConstInfo parser. variant + mask + per-bit fields.
-  -- ============================================================================
   fn get_reveal_mut_const_info(stream: ByteStream)
       -> (RevealMutConstInfo, ByteStream) {
     let (variant, s) = read_byte(stream);
@@ -330,9 +726,7 @@ def claim := ⟦
     }
   }
 
-  -- ============================================================================
   -- RevealConstantInfo parser. `variant + mask:Tag0 + per-bit fields`.
-  -- ============================================================================
   fn get_reveal_info(stream: ByteStream) -> (RevealConstantInfo, ByteStream) {
     let (variant, s) = read_byte(stream);
     let (mask, s) = get_tag0(s);
@@ -398,68 +792,14 @@ def claim := ⟦
     }
   }
 
-  -- ============================================================================
-  -- Claim parser. Parses Tag4(0xE, variant) wrapper + per-variant
-  -- payload into the `Claim` ADT.
-  -- ============================================================================
-  fn get_claim(bytes: ByteStream) -> (Claim, ByteStream) {
-    let (tag, s) = get_tag4(bytes);
-    let (flag, size) = tag;
-    assert_eq!(flag, 0xE);
-    let variant = size[0];
-    match variant {
-      3 =>
-        let (input, s) = get_address(s);
-        let (output, s) = get_address(s);
-        let (asm, s) = get_opt_addr(s);
-        (Claim.Eval(input, output, asm), s),
-      4 =>
-        let (c, s) = get_address(s);
-        let (asm, s) = get_opt_addr(s);
-        (Claim.Check(c, asm), s),
-      5 =>
-        let (root, s) = get_address(s);
-        let (asm, s) = get_opt_addr(s);
-        (Claim.CheckEnv(root, asm), s),
-      6 =>
-        let (comm, s) = get_address(s);
-        let (info, s) = get_reveal_info(s);
-        (Claim.Reveal(comm, info), s),
-      7 =>
-        let (tree, s) = get_address(s);
-        let (target, s) = get_address(s);
-        (Claim.Contains(tree, target), s),
-    }
-  }
-
-  -- Load + verify a claim from the IOBuffer at key=`digest`. Mirrors
-  -- `load_verified_constant`: read bytes, recompute blake3, assert
-  -- equality, deserialize, assert no trailing data.
-  -- Load + verify a claim from IOBuffer at `digest` (ch 0). Reads bytes,
-  -- recomputes blake3, asserts equality, deserialises.
-  fn load_verified_claim(digest: [U8; 32]) -> Claim {
-    let (idx, len) = io_get_info(0, digest);
-    let bytes = #read_byte_stream(0, idx, len);
-    verify_bytes_against(bytes, digest);
-    let (claim, rest) = get_claim(bytes);
-    assert_eq!(load(rest), ListNode.Nil);
-    claim
-  }
-
-  -- ============================================================================
-  -- Content hash of an `Expr`: `blake3(put_expr expr)`. Per
-  -- docs/Ixon.md:970-971 — Reveal claim's `Option<Address>` Expr
-  -- fields bind to this hash.
-  -- ============================================================================
+  -- Content hash of an `Expr`: `blake3(put_expr expr)`.
   fn expr_addr(e_ref: &Expr) -> Addr {
     let bytes = put_expr(load(e_ref), store(ListNode.Nil));
     bytes_to_addr(bytes)
   }
 
-  -- ============================================================================
   -- Per-field equality checks. None = no-op (selective reveal);
   -- Some(claimed) = assert equality with the real field.
-  -- ============================================================================
   fn def_kind_tag(k: DefKind) -> G {
     match k {
       DefKind.Definition => 0,
@@ -489,7 +829,8 @@ def claim := ⟦
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
-        assert_eq!(def_kind_tag(real), def_kind_tag(claimed));
+        assert_eq!(def_kind_tag(real), def_kind_tag(claimed),
+          "Reveal: claimed definition kind != real");
         (),
     }
   }
@@ -499,7 +840,8 @@ def claim := ⟦
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
-        assert_eq!(def_safety_tag(real), def_safety_tag(claimed));
+        assert_eq!(def_safety_tag(real), def_safety_tag(claimed),
+          "Reveal: claimed definition safety != real");
         (),
     }
   }
@@ -508,7 +850,8 @@ def claim := ⟦
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
-        assert_eq!(quot_kind_tag(real), quot_kind_tag(claimed));
+        assert_eq!(quot_kind_tag(real), quot_kind_tag(claimed),
+          "Reveal: claimed quotient kind != real");
         (),
     }
   }
@@ -517,7 +860,7 @@ def claim := ⟦
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
-        assert_eq!(real, claimed);
+        assert_eq!(real, claimed, "Reveal: claimed flag != real");
         (),
     }
   }
@@ -526,7 +869,7 @@ def claim := ⟦
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
-        assert_eq!(real, claimed);
+        assert_eq!(real, claimed, "Reveal: claimed numeric field != real");
         (),
     }
   }
@@ -535,7 +878,8 @@ def claim := ⟦
     match opt {
       Option.None => (),
       Option.Some(claimed) =>
-        assert_eq!(load(real), load(claimed));
+        assert_eq!(load(real), load(claimed),
+          "Reveal: claimed address field != real");
         (),
     }
   }
@@ -545,16 +889,24 @@ def claim := ⟦
       Option.None => (),
       Option.Some(claimed) =>
         let computed = expr_addr(real_e);
-        assert_eq!(load(computed), load(claimed));
+        assert_eq!(load(computed), load(claimed),
+          "Reveal: claimed expr hash != hash of the real expr");
         (),
     }
   }
 
   -- Walk both lists in lockstep: claimed (idx, fields, rhs_addr) per
-  -- entry vs real (fields, rhs:&Expr) — positional `idx` is read but
-  -- not asserted (matches `Ix.RevealRecursorRule.ruleIdx` semantics).
+  -- entry vs real (fields, rhs:&Expr).
+  --
+  -- The claimed `idx` is part of the reveal's digest, so a consumer reads it
+  -- and believes it identifies WHICH rule was revealed. The comparison here
+  -- is positional, so without this assert a reveal could carry
+  -- `ruleIdx: 7` while matching the rule at position 0 — the consumer then
+  -- believes it learned rule 7 and it learned rule 0. Every sibling reveal
+  -- check (CPrj/RPrj/IPrj/DPrj) already validates its index.
   fn check_recr_rules(real: List‹RecursorRule›,
-                      claimed: List‹RevealRecursorRule›) {
+                      claimed: List‹RevealRecursorRule›,
+                      pos: U64) {
     match load(claimed) {
       ListNode.Nil =>
         match load(real) {
@@ -564,12 +916,16 @@ def claim := ⟦
         match load(real) {
           ListNode.Cons(rr, rest_real) =>
             match cr {
-              RevealRecursorRule.Mk(_c_idx, c_fields, c_rhs) =>
+              RevealRecursorRule.Mk(c_idx, c_fields, c_rhs) =>
                 match rr {
                   RecursorRule.Mk(r_fields, r_rhs) =>
-                    assert_eq!(r_fields, c_fields);
+                    assert_eq!(c_idx, pos,
+                      "Reveal: claimed recursor rule index != its position");
+                    assert_eq!(r_fields, c_fields,
+                      "Reveal: claimed recursor rule field count != real");
                     check_opt_expr_addr(r_rhs, Option.Some(c_rhs));
-                    check_recr_rules(rest_real, rest_claimed),
+                    check_recr_rules(rest_real, rest_claimed,
+                      relaxed_u64_succ(pos)),
                 },
             },
         },
@@ -580,7 +936,9 @@ def claim := ⟦
                           opt: Option‹List‹RevealRecursorRule››) {
     match opt {
       Option.None => (),
-      Option.Some(claimed) => check_recr_rules(real, claimed),
+      Option.Some(claimed) =>
+        check_recr_rules(real, claimed,
+          [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]),
     }
   }
 
@@ -695,176 +1053,6 @@ def claim := ⟦
     }
   }
 
-  -- ============================================================================
-  -- Merkle leaf / node hash (Ix.Merkle.leafHash / nodeHash).
-  -- ============================================================================
-  fn leaf_hash(addr: Addr) -> Addr {
-    let tail = put_address(addr, store(ListNode.Nil));
-    let bytes = store(ListNode.Cons(0u8, tail));
-    bytes_to_addr(bytes)
-  }
-
-  fn node_hash(l: Addr, r: Addr) -> Addr {
-    let tail = put_address(l, put_address(r, store(ListNode.Nil)));
-    let bytes = store(ListNode.Cons(1u8, tail));
-    bytes_to_addr(bytes)
-  }
-
-  -- ============================================================================
-  -- Assumption-tree parser / loader. Same as constants: load bytes,
-  -- recompute root via merkle fold, assert match.
-  -- ============================================================================
-  fn parse_atree_body(stream: ByteStream) -> (Addr, List‹Addr›, ByteStream) {
-    let (tag, s) = read_byte(stream);
-    match tag {
-      0 =>
-        let (addr, s2) = get_address(s);
-        let h = leaf_hash(addr);
-        (h, store(ListNode.Cons(addr, store(ListNode.Nil))), s2),
-      1 =>
-        (store([0u8; 32]), store(ListNode.Nil), s),
-      2 =>
-        let (lh, ll, s2) = parse_atree_body(s);
-        let (rh, rl, s3) = parse_atree_body(s2);
-        let h = node_hash(lh, rh);
-        (h, list_concat(ll, rl), s3),
-    }
-  }
-
-  fn load_assumption_tree(root: Addr) -> List‹Addr› {
-    let raw = load(root);
-    let (idx, len) = io_get_info(1, raw);
-    let bytes = #read_byte_stream(1, idx, len);
-    let (tag, s) = get_tag4(bytes);
-    let (flag, size) = tag;
-    assert_eq!(flag, 0xE);
-    assert_eq!(to_field(size[0]), 2);
-    let (computed_root, leaves, rest) = parse_atree_body(s);
-    assert_eq!(load(rest), ListNode.Nil);
-    let computed_arr = load(computed_root);
-    assert_eq!(computed_arr, raw);
-    leaves
-  }
-
-  fn addr_in_list(target: Addr, xs: List‹Addr›) -> G {
-    match load(xs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(a, rest) =>
-        match address_eq(target, a) {
-          1 => 1,
-          _ => addr_in_list(target, rest),
-        },
-    }
-  }
-
-  -- Pack the first 4 address bytes (LE) into a u32 key for addr-keyed
-  -- rbtrees (block-membership table in `Inductive.lean`).
-  --
-  -- Capped at 4 bytes because `RBTreeMap` orders keys with `u32_less_than`, a
-  -- 32-bit comparator gadget — a wider key (a single `G` could hold 7 bytes in
-  -- Goldilocks) would overflow it and corrupt the tree ordering. A 32-bit key
-  -- space means key collisions are possible; consumers must be
-  -- collision-tolerant.
-  fn addr_key(a: Addr) -> G {
-    let arr = load(a);
-    to_field(arr[0])
-      + to_field(arr[1]) * 256
-      + to_field(arr[2]) * 65536
-      + to_field(arr[3]) * 16777216
-  }
-
-  -- Membership map over the assumption leaves, keyed by `ptr_val`. Sound
-  -- by the same invariant as `build_addr_pos_map` (Ingress.lean): one
-  -- pointer maps to one content, so a ptr hit implies the address IS a
-  -- leaf (no false skip); a de-interned pointer reads as absent, which
-  -- here only means the constant gets CHECKED instead of skipped —
-  -- conservative. One tree lookup per constant, no confirming
-  -- address_eq, no per-lookup address loads (ported from jcb/fixes
-  -- H-14; replaces the 4-byte-content-keyed set + confirm compare).
-  fn build_asm_leaf_map(leaves: List‹Addr›) -> RBTreeMap‹G› {
-    match load(leaves) {
-      ListNode.Nil => RBTreeMap.Nil,
-      ListNode.Cons(a, rest) =>
-        rbtree_map_insert(ptr_val(a), 1, build_asm_leaf_map(rest)),
-    }
-  }
-
-  -- ============================================================================
-  -- check_all variant that skips positions whose addr is in the
-  -- supplied assumption-leaf list.
-  -- ============================================================================
-  fn check_all_skipping(consts: List‹&KConstantInfo›,
-                        top: List‹&KConstantInfo›,
-                        addrs: List‹Addr›,
-                        asm_leaves: List‹Addr›) {
-    check_canonical_block_sort(top, addrs);
-    -- Build the ptr_val-keyed skip map once (O(N log N)).
-    let asm_map = store(build_asm_leaf_map(asm_leaves));
-    check_all_skipping_iter(consts, top, addrs, addrs, asm_map, 0)
-  }
-
-  -- `cur_addrs` is the suffix of `addrs` aligned with `consts`, walked in
-  -- lockstep instead of `list_lookup(addrs, pos)` — which re-walks the
-  -- list prefix every iteration, a standalone quadratic in closure size
-  -- (ported from jcb/fixes H-14).
-  fn check_all_skipping_iter(consts: List‹&KConstantInfo›,
-                             top: List‹&KConstantInfo›,
-                             addrs: List‹Addr›,
-                             cur_addrs: List‹Addr›,
-                             asm_map: &RBTreeMap‹G›,
-                             pos: G) {
-    match load(consts) {
-      ListNode.Nil => (),
-      ListNode.Cons(&ci, rest) =>
-        match load(cur_addrs) {
-          ListNode.Cons(addr, rest_addrs) =>
-            match rbtree_map_lookup_or_default(ptr_val(addr), load(asm_map), 0) {
-              0 =>
-                check_const(ci, pos, top, addrs);
-                check_all_skipping_iter(rest, top, addrs, rest_addrs, asm_map, pos + 1),
-              _ =>
-                check_all_skipping_iter(rest, top, addrs, rest_addrs, asm_map, pos + 1),
-            },
-        },
-    }
-  }
-
-  -- ============================================================================
-  -- Per-variant handlers. Each takes already-parsed claim fields.
-  -- ============================================================================
-  fn run_check(const_addr: Addr, asm: Option‹Addr›) {
-    let (k_consts, addrs) = ingress_with_primitives(const_addr);
-    match asm {
-      Option.None => check_all(k_consts, k_consts, addrs),
-      Option.Some(asm_root) =>
-        let asm_leaves = load_assumption_tree(asm_root);
-        check_all_skipping(k_consts, k_consts, addrs, asm_leaves),
-    }
-  }
-
-  fn run_contains(tree_root: Addr, target_addr: Addr) {
-    let leaves = load_assumption_tree(tree_root);
-    assert_eq!(addr_in_list(target_addr, leaves), 1);
-  }
-
-  -- Ingress the union closure of all env leaves ONCE, then check every
-  -- constant in it (skipping assumption leaves) via the same
-  -- `check_all_skipping` path `run_check` uses. Structurally a
-  -- `run_check` over a closure that happens to be the whole env, so the
-  -- soundness rides on that existing pattern; the union order is verified by
-  -- the single `check_canonical_block_sort(top)` inside `check_all_skipping`
-  -- (a stronger global order than the per-leaf closures it replaces).
-  fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
-    let env_leaves = load_assumption_tree(env_root);
-    let (k_consts, addrs) = ingress_env(env_leaves);
-    match asm {
-      Option.None => check_all(k_consts, k_consts, addrs),
-      Option.Some(asm_root) =>
-        let asm_leaves = load_assumption_tree(asm_root);
-        check_all_skipping(k_consts, k_consts, addrs, asm_leaves),
-    }
-  }
-
   -- Reveal: real constant at `comm` must match the variant of `info`
   -- AND every Some-field's claimed value must equal the real field.
   fn run_reveal(comm_addr: Addr, info: RevealConstantInfo) {
@@ -970,46 +1158,70 @@ def claim := ⟦
     }
   }
 
-  fn run_eval(input: Addr, output: Addr, asm: Option‹Addr›) {
-    -- Eval semantics undefined upstream; placeholder until Rust kernel
-    -- pins them.
-    assert_eq!(0, 1);
+  -- Contains claim (variant 7): merkle membership of `target` in the
+  -- tree at `tree_root`. Mirror run_contains.
+  fn run_contains(tree_root: Addr, target: Addr) {
+    let leaves = load_assumption_tree(tree_root);
+    assert_eq!(se_addr_in(target, leaves), 1,
+      "Contains: target is not a leaf of the claimed tree");
   }
 
-  -- ============================================================================
-  -- Top-level entrypoint.
-  -- ============================================================================
-  --
-  -- Public input: 32-G blake3 digest of `Claim.ser claim`. Flow
-  -- mirrors `load_verified_constant`: hash-verified bytes deserialize
-  -- into a typed `Claim`, then dispatch.
-  pub fn verify_claim(claim_digest: [U8; 32]) {
-    let claim = load_verified_claim(claim_digest);
-    match claim {
-      Claim.Eval(input, output, asm) => run_eval(input, output, asm),
-      Claim.Check(c, asm) => run_check(c, asm),
-      Claim.CheckEnv(root, asm) => run_check_env(root, asm),
-      Claim.Reveal(comm, info) => run_reveal(comm, info),
-      Claim.Contains(tree, target) => run_contains(tree, target),
+  -- Claim dispatch. Loads claim bytes at ch 0 keyed by digest,
+  -- blake3-verifies, and dispatches:
+  --   variant 4 (Check target asm?)  → transitive check; with asm the
+  --     walk stops at frontier members (no owned-membership rule —
+  --     Check claims target + everything reachable, no ownership set).
+  --   variant 5 (CheckEnv root asm?) → run_check_env: per-leaf
+  --     transitive walk, asm cutoff, strict owned-membership.
+  --   variant 6 (Reveal comm info)   → run_reveal: selective field
+  --     revelation of the committed constant.
+  --   variant 7 (Contains tree target) → run_contains: merkle
+  --     membership.
+  -- Variants without an arm here (notably 3, Eval) have no defined
+  -- semantics upstream, so the match falls through and aborts rather
+  -- than accepting a claim whose meaning is unspecified.
+  fn run_claim(digest: [U8; 32]) {
+    let (idx, len) = io_get_info(0, digest);
+    let bytes = #read_byte_stream(0, idx, len);
+    verify_bytes_against(bytes, digest);
+    let (tag, s) = get_tag4(bytes);
+    let (flag, size) = tag;
+    assert_eq!(flag, 0xE, "claim: wrong tag4 flag");
+    -- Dispatch on the FULL tag4 size, matching Rust `Claim::get` which
+    -- matches `tag.size: u64`. The variant is only ever 4-7, so the high 7
+    -- bytes must be zero; a size >= 256 whose low byte is 4/5/6/7 would
+    -- otherwise dispatch here while Rust rejects it as an unknown variant.
+    -- Sum is 0 iff every high byte is 0 (7 bytes, max sum 1785, no wrap).
+    let [_, sz1, sz2, sz3, sz4, sz5, sz6, sz7] = size;
+    assert_eq!(((((((to_field(sz1) + to_field(sz2)) + to_field(sz3))
+                  + to_field(sz4)) + to_field(sz5)) + to_field(sz6))
+                  + to_field(sz7)), 0,
+      "claim: tag4 size exceeds a single byte");
+    let variant = size[0];
+    match variant {
+      4 =>
+        let (target, s2) = get_address(s);
+        let (asm, _s3) = get_opt_addr(s2);
+        match asm {
+          Option.None => run_check_transitive(target),
+          Option.Some(r) =>
+            let asm_leaves = load_assumption_tree(r);
+            let asm_set = addr_set_build(asm_leaves, RBTreeMap.Nil);
+            env_walk(target, RBTreeMap.Nil, asm_set, 0),
+        },
+      5 =>
+        let (root, s2) = get_address(s);
+        let (asm, _s3) = get_opt_addr(s2);
+        run_check_env(root, asm),
+      6 =>
+        let (comm, s2) = get_address(s);
+        let (info, _s3) = get_reveal_info(s2);
+        run_reveal(comm, info),
+      7 =>
+        let (tree, s2) = get_address(s);
+        let (target, _s3) = get_address(s2);
+        run_contains(tree, target),
     }
-  }
-
-  -- ============================================================================
-  -- verify_const: subject-only typecheck entrypoint. Checks the
-  -- constant at `target_addr` in isolation; transitive deps are
-  -- trusted (not re-verified). NOT a claim path — the public
-  -- `verify_claim` is the only entrypoint that goes through the
-  -- claim-digest discipline. Used by the in-Lean arena test runner
-  -- (`Tests/Ix/Kernel/Arena.lean::arenaTests`) where each fixture
-  -- is a self-contained decl whose own well-typedness is the only
-  -- thing the test cares about.
-  -- ============================================================================
-  pub fn verify_const(target_addr: [U8; 32]) {
-    let target = store(target_addr);
-    let (k_consts, addrs) = ingress_with_primitives(target);
-    let target_pos = find_addr_idx(target, addrs, 0);
-    let ci = load(list_lookup(k_consts, target_pos));
-    check_const(ci, target_pos, k_consts, addrs)
   }
 ⟧
 

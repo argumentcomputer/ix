@@ -1,4 +1,5 @@
 import Ix.IxVM
+import Ix.IxVM.Toplevel
 import Ix.IxVM.ClaimHarness
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler

@@ -183,7 +183,7 @@ syntax "set" "(" aiur_trm ", " num ", " aiur_trm ")"                        : ai
 syntax "store" "(" aiur_trm ")"                                              : aiur_trm
 syntax "load" "(" aiur_trm ")"                                               : aiur_trm
 syntax "ptr_val" "(" aiur_trm ")"                                            : aiur_trm
-syntax "assert_eq!" "(" aiur_trm ", " aiur_trm ")" ";" (aiur_trm)?         : aiur_trm
+syntax "assert_eq!" "(" aiur_trm ", " aiur_trm (", " str)? ")" ";" (aiur_trm)? : aiur_trm
 syntax aiur_trm ": " aiur_typ                                               : aiur_trm
 syntax "io_get_info" "(" aiur_trm ", " aiur_trm ")"                          : aiur_trm
 syntax "io_set_info" "(" aiur_trm ", " aiur_trm ", " aiur_trm ", " aiur_trm ")" ";"
@@ -310,8 +310,11 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.load #[← elabTrm a]
   | `(aiur_trm| ptr_val($a:aiur_trm)) => do
     mkAppM ``Source.Term.ptrVal #[← elabTrm a]
-  | `(aiur_trm| assert_eq!($a:aiur_trm, $b:aiur_trm); $[$ret:aiur_trm]?) => do
-    mkAppM ``Source.Term.assertEq #[← elabTrm a, ← elabTrm b, ← elabRet ret]
+  | `(aiur_trm| assert_eq!($a:aiur_trm, $b:aiur_trm $[, $msg:str]?); $[$ret:aiur_trm]?) => do
+    let msgExpr ← match msg with
+      | some m => mkAppM ``Option.some #[mkStrLit m.getString]
+      | none   => mkAppOptM ``Option.none #[Lean.mkConst ``String]
+    mkAppM ``Source.Term.assertEq #[← elabTrm a, ← elabTrm b, msgExpr, ← elabRet ret]
   | `(aiur_trm| $v:aiur_trm : $t:aiur_typ) => do
     mkAppM ``Source.Term.ann #[← elabTyp t, ← elabTrm v]
   | `(aiur_trm| io_get_info($ch:aiur_trm, $key:aiur_trm)) => do
@@ -500,11 +503,11 @@ where
     | `(aiur_trm| ptr_val($a:aiur_trm)) => do
       let a ← replaceToken old new a
       `(aiur_trm| ptr_val($a))
-    | `(aiur_trm| assert_eq!($a:aiur_trm, $b:aiur_trm); $[$ret:aiur_trm]?) => do
+    | `(aiur_trm| assert_eq!($a:aiur_trm, $b:aiur_trm $[, $msg:str]?); $[$ret:aiur_trm]?) => do
       let a ← replaceToken old new a
       let b ← replaceToken old new b
       let ret' ← ret.mapM $ replaceToken old new
-      `(aiur_trm| assert_eq!($a, $b); $[$ret']?)
+      `(aiur_trm| assert_eq!($a, $b $[, $msg]?); $[$ret']?)
     | `(aiur_trm| $v:aiur_trm : $t:aiur_typ) => do
       let v ← replaceToken old new v
       `(aiur_trm| $v : $t)

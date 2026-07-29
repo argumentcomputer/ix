@@ -28,6 +28,7 @@ public import Ix.AssumptionTree
 public import Ix.Claim
 public import Ix.Common
 public import Ix.IxVM
+public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
@@ -84,7 +85,7 @@ def loadClaimAndTrees (claimHex : String) :
 def mkWitness (addr : Address) (ixonEnv : Ixon.Env) :
     IO IxVM.ClaimHarness.ClaimWitness := do
   IO.ofExcept <|
-    IxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none)
+    IxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none) {}
 
 /-- Compute + emit per-circuit stats. With `statsOut = none` prints to
     stdout; with `some path` redirects stdout to the file for the
@@ -286,6 +287,10 @@ def forEachClaim
     -- can share one handle across many names; this arm cannot
     -- without a shared-env preprocess pass.)
     let runOneByName (name : Lean.Name) (label : String) : IO UInt32 := do
+      -- the kernel env loader: also seeds the constants the kernel fabricates
+      -- during reduction (Bool/Nat ctors, String-literal ctor form),
+      -- whose bytes must be in ch 2 even when the target's proof body
+      -- never references them.
       let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
       let claim := Ix.Claim.check addr none

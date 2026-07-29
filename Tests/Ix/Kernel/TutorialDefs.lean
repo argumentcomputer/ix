@@ -1337,4 +1337,216 @@ good_raw_consts
   dummyRecInfo f
   ]
 
+/-! ## Kernel-check regression fixtures
+
+Each fixture below targets one dropped check. They are written as raw
+`ConstantInfo`s because the badness is not expressible in Lean source —
+the elaborator rejects all three before a declaration exists — and
+because `addConstInfos` admits them under `debug.skipKernelTC`.
+
+Every name in a `bad_raw_consts` case is required to be REJECTED (see
+`Arena.collectChecks`), so shared helper inductives stay outside the
+case: `r7RetHeadBad` borrows `Nat` as its foreign return head, and the
+eta fixture depends on the ordinary `EtaRecStruct` declared below. -/
+
+-- A ctor whose declared return type heads a DIFFERENT inductive (`Nat`)
+-- than the one it belongs to. `check_ctor_return_type` constrained the
+-- head only to be some `Const` of matching universe arity, so this was
+-- accepted; `assert_return_head_is_parent` now pins it to the parent.
+bad_raw_consts
+  let n := `r7RetHeadBad
+  #[ .inductInfo {
+      name := n
+      levelParams := []
+      type := .sort 1
+      numParams := 0
+      numIndices := 0
+      all := [n]
+      ctors := [n ++ `mk]
+      numNested := 0
+      isRec := false
+      isUnsafe := false
+      isReflexive := false
+  },
+  .ctorInfo {
+      name := n ++ `mk
+      levelParams := []
+      -- Should be `Lean.mkConst n`; returning `Nat` is the defect.
+      type := Lean.mkConst ``Nat
+      numParams := 0
+      induct := n
+      cidx := 0
+      numFields := 0
+      isUnsafe := false
+  },
+  dummyRecInfo n
+  ]
+
+-- A projection of field 0 taken on a TWO-constructor inductive, applied
+-- to a value built by the other ctor. `k_infer_proj` ignored
+-- `num_ctors` and unconditionally read ctor 0's field types, so this
+-- inferred `Empty` from an `@Sum.inr Empty Unit ()`.
+bad_raw_consts
+  #[ .defnInfo {
+      name := `r4ProjMultiCtorBad
+      levelParams := []
+      type := Lean.mkConst ``Empty
+      value :=
+        -- `Sum.{u,v}` is universe-polymorphic in both arguments; omitting
+        -- the levels makes the kernel reject on level-count mismatch
+        -- before it ever reaches the projection.
+        .proj ``Sum 0 <|
+          Lean.mkApp3 (Lean.mkConst ``Sum.inr [0, 0])
+            (Lean.mkConst ``Empty) (Lean.mkConst ``Unit)
+            (Lean.mkConst ``Unit.unit)
+      hints := .abbrev
+      safety := .safe
+  }]
+
+/-- Single constructor, no indices, and RECURSIVE — passes the shape
+    half of the structure-eta gate but is not `isStructureLike`, so eta
+    must not fire on it. Uninhabited, which is irrelevant: the fixture
+    compares open terms under a binder. -/
+inductive EtaRecStruct where
+  | node : EtaRecStruct → EtaRecStruct
+
+-- `Eq.refl x : x = x` checked against `x = EtaRecStruct.node x.0`. The
+-- only way to accept it is structure eta, which `try_eta_struct` used to
+-- allow here because it tested only (0 indices, 1 ctor) and dropped the
+-- non-recursive requirement.
+bad_raw_consts
+  #[ .thmInfo {
+      name := `r5EtaRecursiveBad
+      levelParams := []
+      type :=
+        Lean.mkForall `x .default (Lean.mkConst ``EtaRecStruct) <|
+          Lean.mkApp3 (Lean.mkConst ``Eq [1]) (Lean.mkConst ``EtaRecStruct)
+            (.bvar 0)
+            (Lean.mkApp (Lean.mkConst ``EtaRecStruct.node)
+              (.proj ``EtaRecStruct 0 (.bvar 0)))
+      value :=
+        Lean.mkLambda `x .default (Lean.mkConst ``EtaRecStruct) <|
+          Lean.mkApp2 (Lean.mkConst ``Eq.refl [1])
+            (Lean.mkConst ``EtaRecStruct) (.bvar 0)
+  }]
+
+-- R6: strict positivity must descend into a NESTED inductive's own
+-- constructors.
+--
+-- Shape matters here. `check_positivity_aug` short-circuits on
+-- `expr_mentions_block(dom, block_addrs) == 0`, so the descent only
+-- fires when the host appears INSIDE the nested inductive's arguments.
+-- `r6Host`'s field is `r6NegBox r6Host`, which mentions the host block
+-- and so gets past the early-out; the head `r6NegBox` is not a peer, its
+-- post-param args are empty (so the existing index check passes), and
+-- before the augmenting descent the walk simply returned there.
+--
+-- `r6NegBox` is not strictly positive in its OWN block — its field is
+-- `(r6NegBox α → Empty)`, a negative self-occurrence. Only by descending
+-- into its constructors under an augmented block set is that visible
+-- while checking `r6Host`. Both names must be rejected: `r6NegBox` on
+-- its own merits, `r6Host` only via the descent.
+bad_raw_consts
+  let neg := `r6NegBox
+  let host := `r6Host
+  #[ .inductInfo {
+      name := neg
+      levelParams := []
+      -- r6NegBox : Type → Type
+      type := arrow (.sort 1) (.sort 1)
+      numParams := 1
+      numIndices := 0
+      all := [neg]
+      ctors := [neg ++ `mk]
+      numNested := 0
+      isRec := true
+      isUnsafe := false
+      isReflexive := true
+  },
+  .ctorInfo {
+      name := neg ++ `mk
+      levelParams := []
+      -- ∀ (α : Type), ((r6NegBox α → Empty)) → r6NegBox α
+      -- α is bvar 0 inside the field domain, bvar 1 in the return type
+      -- (one extra binder from the field itself).
+      type :=
+        Lean.mkForall `α .default (.sort 1) <|
+          Lean.mkForall `f .default
+            (Lean.mkForall `x .default
+              (Lean.mkApp (Lean.mkConst neg) (.bvar 0))
+              (Lean.mkConst ``Empty))
+            (Lean.mkApp (Lean.mkConst neg) (.bvar 1))
+      numParams := 1
+      induct := neg
+      cidx := 0
+      numFields := 1
+      isUnsafe := false
+  },
+  dummyRecInfo neg,
+  .inductInfo {
+      name := host
+      levelParams := []
+      type := .sort 1
+      numParams := 0
+      numIndices := 0
+      all := [host]
+      ctors := [host ++ `mk]
+      -- Honest flags: the compile-side `validate_ind_flags` recomputes
+      -- these and rejects the whole env on a mismatch, which would
+      -- poison every other fixture. `r6Host` nests one inductive and is
+      -- reflexive through it.
+      numNested := 1
+      isRec := true
+      isUnsafe := false
+      isReflexive := true
+  },
+  .ctorInfo {
+      name := host ++ `mk
+      levelParams := []
+      -- r6NegBox r6Host → r6Host : mentions the host block, so the walk
+      -- reaches the nested inductive instead of short-circuiting.
+      type :=
+        arrow (Lean.mkApp (Lean.mkConst neg) (Lean.mkConst host))
+              (Lean.mkConst host)
+      numParams := 0
+      induct := host
+      cidx := 0
+      numFields := 1
+      isUnsafe := false
+  },
+  dummyRecInfo host
+  ]
+
+/-! ### R8: recursive field behind a reducible definition
+
+`is_rec_field` decides whether a constructor field gets an induction
+hypothesis in the reconstructed recursor rule. It peels Foralls and takes
+the spine, but does not reduce — so a field whose recursive occurrence
+sits behind a reducible definition is classified NOT recursive, the
+reconstruction omits the IH, and `compare_rules` then disagrees with the
+real recursor (which has it).
+
+`R8Box` is an `abbrev`, so the field elaborates to `R8Box R8B` with the
+constant intact (verified: Lean stores `(R8Box R8B) -> R8A`); only WHNF
+exposes the `R8B` head underneath.
+
+The block must be MUTUAL. For a solo inductive `check_recursor_canonical_full`
+bails before reaching `is_rec_field` — `build_flat_block` returns `Nil`
+when the recursor's block is not a Muts block — so a solo fixture passes
+regardless of the defect. That bail is R3.
+
+GOOD fixture: Lean accepts these declarations, so the kernel must too.
+Fails until the reduction is restored. -/
+
+abbrev R8Box (α : Type) : Type := α
+
+mutual
+  inductive R8A where
+    | mk : R8Box R8B → R8A
+  inductive R8B where
+    | mk : R8A → R8B
+end
+
+good_consts #[``R8A, ``R8B, ``R8A.rec, ``R8B.rec]
+
 end Tests.Ix.Kernel.TutorialDefs

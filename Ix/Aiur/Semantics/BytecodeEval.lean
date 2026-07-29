@@ -197,7 +197,7 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     let ptrG ← readIdx st ptr
     let vs ← memLoad st size ptrG.val.toNat
     pure (appendMap st vs)
-  | .assertEq as bs => do
+  | .assertEq as bs _ => do
     let aGs ← readIdxs st as
     let bGs ← readIdxs st bs
     if aGs == bGs then .ok st else .error .assertFailed

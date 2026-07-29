@@ -195,7 +195,9 @@ extern "C" fn rs_aiur_system_prove(
 }
 
 // =============================================================================
-// EnvHandle constructors + with-env FFIs (PLAN.md "EnvHandle redesign")
+// EnvHandle constructors + with-env FFIs: the env is parsed once per CLI
+// invocation into an opaque Rust-owned handle, and every per-target call
+// borrows it, so no call re-parses the environment.
 // =============================================================================
 
 /// `Aiur.EnvHandle.fromIxe`: open and parse a `.ixe` file once,
@@ -467,6 +469,9 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   };
   let env = &env_handle.get().env;
 
+  // Migration Phase 1: the generated kernel is the kernel, so the default
+  // shard entrypoint builds the the kernel witness (thin frontier + wrapper
+  // augmentation).
   let (_claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
       env, &owned,

@@ -318,10 +318,13 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match ← interp decls bindings t with
       | .pointer _ n => return .field (G.ofNat n)
       | _            => throwErr "ptrVal: expected pointer"
-  | .assertEq t1 t2 ret => do
+  | .assertEq t1 t2 msg ret => do
       let v1 ← interp decls bindings t1
       let v2 ← interp decls bindings t2
-      if v1 != v2 then throwErr s!"assertEq: {v1} ≠ {v2}"
+      if v1 != v2 then
+        match msg with
+        | some m => throwErr s!"assertEq: {v1} ≠ {v2} ({m})"
+        | none   => throwErr s!"assertEq: {v1} ≠ {v2}"
       interp decls bindings ret
   | .u8BitDecomposition t => do
       match ← interp decls bindings t with

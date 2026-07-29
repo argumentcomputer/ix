@@ -7,9 +7,20 @@ namespace IxVM
 
 def kernelTypes := ⟦
   -- ============================================================================
-  -- Universe Levels
+  -- KernelTypes — the addr-first kernel term representation
+  --
+  -- Every constant reference in a KExpr is a content-hash `Addr`, never a
+  -- position. Consumers resolve refs through the memoized `get_ci(addr)`,
+  -- so no global constant list has to be threaded to interpret a term.
+  --
+  -- Precondition: the Lean→Ixon compile alpha-collapses the env before
+  -- witness build, so every logical constant has exactly ONE canonical
+  -- addr and duplicate Muts wrappers are already merged. The kernel does
+  -- no dedup of its own — same content gives the same addr, which the
+  -- store interns to the same pointer, so sharing is automatic.
   -- ============================================================================
 
+  -- Universe Levels.
   enum KLevelNode {
     Zero,
     Succ(KLevel),
@@ -20,13 +31,7 @@ def kernelTypes := ⟦
 
   type KLevel = &KLevelNode
 
-  -- ============================================================================
-  -- Literals
-  -- ============================================================================
-
-  -- Nat bignum: little-endian list of u64 limbs (least-significant first).
-  -- E.g. the number 0x1_00000000_00000001 is [1, 1] (two limbs).
-  -- Zero is represented as List.Nil.
+  -- Literals. Nat literals are little-endian U64 limb lists; see Klimbs.
   type KLimbs = List‹U64›
 
   enum KLiteral {
@@ -35,32 +40,29 @@ def kernelTypes := ⟦
   }
 
   -- ============================================================================
-  -- Expressions (de Bruijn indexed, no binder info or names)
+  -- Expressions — addr-first `Const(Addr, List<KLevel>)`.
+  --
+  -- Proj carries its structure type as an `Addr` too, not an index, so a
+  -- projection is interpretable on its own; consumers resolve it via
+  -- `get_ci(addr)` like any other reference.
   -- ============================================================================
 
   enum KExprNode {
     BVar(G),
     Srt(KLevel),
-    Const(G, List‹KLevel›),
+    Const(Addr, List‹KLevel›),
     App(KExpr, KExpr),
     Lam(KExpr, KExpr),
     Forall(KExpr, KExpr),
     Let(KExpr, KExpr, KExpr),
     Lit(KLiteral),
-    Proj(G, G, KExpr)
+    Proj(Addr, G, KExpr)
   }
 
   type KExpr = &KExprNode
 
-  -- Collect an application spine: peel `App(f, a)` layers, returning the head
-  -- and the args in application order. The single shared definition for every
-  -- kernel caller (whnf, primitive, inductive_check, def_eq) — defined here in
-  -- `kernelTypes` so it precedes them all in the merge.
-  --
-  -- Non-tail (no accumulator): keyed on `e` alone, so Aiur memoization dedups
-  -- shared sub-spines across reductions. An accumulator would thread `acc`
-  -- through the memo key and block that sharing (tail recursion buys nothing in
-  -- Aiur — stack depth is free). `list_snoc` keeps order and is itself memoized.
+  -- collect_spine: peel `App(f, a)` layers. Non-tail, memoized per `e`;
+  -- shared sub-spines dedup.
   fn collect_spine(e: KExpr) -> (KExpr, List‹KExpr›) {
     match load(e) {
       KExprNode.App(f, a) =>
@@ -73,12 +75,9 @@ def kernelTypes := ⟦
   -- ============================================================================
   -- Recursor Rule
   --
-  -- Mirror: src/ix/kernel/constant.rs::RecRule { ctor, fields, rhs }.
-  -- Aiur keeps a global ctor idx in the first slot for direct lookup
-  -- convenience. Could be simplified to (fields, rhs) at the cost of an
-  -- ingress refactor.
-  --
-  -- Layout: (global_ctor_idx, num_fields, rhs).
+  -- the kernel: `cidx` identifies the constructor within the parent inductive.
+  -- Iota matches by `cidx == ctor.cidx`. Rule's ctor address is
+  -- (rec.block_addr, rec.ind_idx, cidx) — implicit from the rec's context.
   -- ============================================================================
 
   enum KRecRule {
@@ -86,31 +85,21 @@ def kernelTypes := ⟦
   }
 
   -- ============================================================================
-  -- Constant Info
+  -- Constant Info — the kernel addr-first
   --
-  -- CIAxiom:  (num_levels, type, is_unsafe)
-  -- CIDefn:   (num_levels, type, value, safety, hints)
+  -- Ctor / Induct / Rec reference their parent Muts wrapper by
+  -- `(block_addr, ind_idx)` pair instead of a synthesized projection
+  -- addr. This avoids needing to compute blake3(IPrj(idx, block_addr))
+  -- at kernel time. Consumers wanting the parent inductive's KCI call
+  -- `get_ci_ind_at(block_addr, ind_idx)`.
   --
-  -- `hints` is a packed G encoding of `Lean.ReducibilityHints`:
-  --   0           = Opaque   (never unfold in whnf; lazy-delta-only)
-  --   1 + h       = Regular(h)  (h up to 2^32 - 2; height drives lazy-delta priority)
-  --   2^32 - 1    = Abbrev   (always unfold, highest priority in lazy-delta)
-  -- Larger value = higher delta-rank (unfold first).
-  -- Plumbed via secondary IOBuffer key `[2] ++ addr` from Lean side.
-  -- CIThm:    (num_levels, type, value)
-  -- CIOpaque: (num_levels, type, value, is_unsafe)
-  -- CIQuot:   (num_levels, type, kind)
-  -- CIInduct: (num_levels, type, num_params, num_indices,
-  --            ctor_indices, is_unsafe)
-  -- The recr/refl/nested flags were dropped from Ixon (derivable from
-  -- constructor structure; trusting declared values was an adversarial
-  -- surface). is_rec is computed on demand via `compute_is_rec`.
-  -- CICtor:   (num_levels, type, induct_idx, cidx,
+  -- CIInduct: (num_levels, type, num_params, num_indices, num_ctors,
+  --            is_unsafe, block_addr, ind_idx)
+  -- CICtor:   (num_levels, type, block_addr, ind_idx, cidx,
   --            num_params, num_fields, is_unsafe)
   -- CIRec:    (num_levels, type, num_params, num_indices,
-  --            num_motives, num_minors, rules, k_flag, is_unsafe, block_addr)
-  -- block_addr = address of the Muts wrapper this Recursor lives in. Used
-  -- by canonical_block_sort to validate recursor-block ordering.
+  --            num_motives, num_minors, rules, k_flag, is_unsafe,
+  --            block_addr, rec_idx)
   -- ============================================================================
 
   enum KConstantInfo {
@@ -119,9 +108,9 @@ def kernelTypes := ⟦
     Thm(G, KExpr, KExpr),
     Opaque(G, KExpr, KExpr, G),
     Quot(G, KExpr, QuotKind),
-    Induct(G, KExpr, G, G, List‹G›, G, Addr),
-    Ctor(G, KExpr, G, G, G, G, G),
-    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G, Addr)
+    Induct(G, KExpr, G, G, G, G, Addr, G),
+    Ctor(G, KExpr, Addr, G, G, G, G, G),
+    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G, Addr, G)
   }
 
 ⟧

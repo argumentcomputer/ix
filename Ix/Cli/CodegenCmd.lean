@@ -29,6 +29,7 @@ public import Cli
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Stages.Codegen
 public import Ix.IxVM
+public import Ix.IxVM.Toplevel
 public import Ix.MultiStark
 
 public section
@@ -45,6 +46,10 @@ structure Target where
   outPath : String
 
 def targets : List Target := [
+  -- the generated kernel is the kernel. Every consumer of
+  -- `execute_ixvm` must select the SAME toplevel for its function-index
+  -- table (CheckCmd / ProveCmd / VerifyCmd), or `funIdx` lookups
+  -- resolve against a different function set than the generated code.
   { label := "ixvm", source := IxVM.ixVM,
     outPath := "crates/ixvm-codegen/src/aiur_ixvm.rs" },
   { label := "multi-stark", source := MultiStark.multiStark,

@@ -152,139 +152,30 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
          expectedIOBuffer := ioBuffer
          interpret := false, executionOnly := true }
 
-/-- Build a `verify_claim` invocation for `name` driving the claim
-    `Ix.Claim.check addr none` — fully transitive typecheck of the
-    target's closure. -/
+/-- kernel check with equivalent transitive typecheck semantic.
+    Reshapes an `Ix.Claim.check target none` request as a `CheckEnv`
+    claim whose owned tree lists the target's transitive closure —
+    every member gets typechecked, not just the target. Kernel path:
+    verify_claim → run_check_env → per-leaf run_check.
+
+    Blake3 binding is preserved end-to-end: every closure member
+    reaches the kernel via `get_ci(addr)` which reads bytes from
+    ch 2 and asserts blake3(bytes) == addr before returning. -/
 public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
     IO AiurTestCase := do
   let ixonEnv ← loadIxonEnv name env
   let target ← lookupAddr ixonEnv name
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.check target none)
+  -- Claim.Check with transitive semantics: run_check_transitive walks the
+  -- block-level ref DAG lazily. No AssumptionTree needed — Aiur
+  -- memoization ensures every reachable const/block gets checked exactly
+  -- once, and the FFT cost stays pure typecheck cost with no tree
+  -- hash-verify overhead folded in.
+  let claim := Ix.Claim.check target none
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim {}
   pure { functionName := witness.funcName, label := s!"Kernel check {name}"
          input := witness.input, inputIOBuffer := witness.inputIOBuffer
          expectedIOBuffer := witness.inputIOBuffer
          interpret := false, executionOnly := true }
-
-/-- Kernel-check targets paired with their expected total FFT cost
-    (rounded to `Nat`). Names listed as strings to dodge name-quotation
-    parser issues with numeric components (e.g. `_private...0...`).
-
-    The pinned cost makes any kernel change that shifts FFT cost cause a
-    test failure, forcing a manual bump here. Failures report the
-    observed cost in the message so it can be pasted back. -/
-private def kernelCheckEntries : List (String × Nat) := [
-  -- Stdlib
-  ("HEq",                                                                1_422_377),
-  ("HEq.rec",                                                            2_248_839),
-  ("Eq.rec",                                                             2_167_118),
-  ("Nat",                                                                1_561_822),
-  ("Nat.add",                                                            11_316_552),
-  ("Nat.add_comm",                                                       47_091_221),
-  ("Nat.decEq",                                                          58_299_184),
-  ("Nat.decLe",                                                          163_010_330),
-  ("Nat.sub_le_of_le_add",                                               434_240_570),
-  -- Offset-stuck regression driver: the succ-step unfold of `x >>> n`
-  -- into a symbolic-base `Nat.div` chain. Exercises the div/mod
-  -- offset-stuck path where rebuilding the stuck form with the wrong
-  -- (add) head corrupted offset-aware def-eq and sent `x >>> k`
-  -- comparisons into full delta-unfolds of the division algorithm.
-  ("Nat.shiftRight_succ",                                                317_421_449),
-  -- Newly-unlocked targets (level_leq Géran normalize).
-  ("Trans.mk",                                                           2_364_054),
-  ("Array.append_assoc",                                                 2_056_848_911),
-  ("Vector.append",                                                      2_117_995_739),
-  -- Primitive reduction theorems (`IxVMPrim`)
-  ("IxVMPrim.nat_add_lit",                                               24_569_820),
-  ("IxVMPrim.nat_sub_lit",                                               29_716_542),
-  ("IxVMPrim.nat_mul_lit",                                               21_633_770),
-  ("IxVMPrim.nat_mul_big",                                               21_121_333),
-  ("IxVMPrim.nat_div_lit",                                               309_509_856),
-  ("IxVMPrim.nat_mod_lit",                                               316_710_104),
-  ("IxVMPrim.nat_succ_lit",                                              6_388_951),
-  ("IxVMPrim.nat_pred_lit",                                              12_937_436),
-  ("IxVMPrim.nat_gcd_lit",                                               512_049_961),
-  ("IxVMPrim.nat_land_lit",                                              863_876_396),
-  ("IxVMPrim.nat_lor_lit",                                               864_538_928),
-  ("IxVMPrim.nat_xor_lit",                                               871_819_843),
-  ("IxVMPrim.nat_shl_lit",                                               30_606_446),
-  ("IxVMPrim.nat_shr_lit",                                               313_936_489),
-  ("IxVMPrim.nat_pow_big",                                                63_371_031),
-  ("IxVMPrim.nat_beq_lit",                                               21_216_717),
-  ("IxVMPrim.nat_ble_lit",                                               19_681_496),
-  ("IxVMPrim.nat_cases_big",                                             12_574_731),
-  ("IxVMPrim.nat_dec_le",                                                168_723_623),
-  ("IxVMPrim.nat_dec_lt",                                                172_272_111),
-  ("IxVMPrim.nat_dec_eq",                                                70_281_013),
-  ("IxVMPrim.str_size_lit",                                              615_742_529),
-  ("IxVMPrim.bv_to_nat_lit",                                             489_428_838),
-  -- Mutual block + multi-member recursors
-  ("IxVMInd.Even",                                                       22_796_180),
-  ("IxVMInd.Odd",                                                        22_559_147),
-  ("IxVMInd.Even.rec",                                                   27_740_095),
-  ("IxVMInd.Odd.rec",                                                    27_737_306),
-  -- Nested inductive + aux recursor (Tree.mk : List Tree → Tree)
-  ("IxVMInd.Tree",                                                       2_253_665),
-  ("IxVMInd.Tree.rec",                                                   4_184_733),
-  -- Aux dedup: distinct spec_params on one external inductive (3 motives).
-  ("IxVMInd.DedupM",                                                     4_231_601),
-  ("IxVMInd.DedupM.rec",                                                 6_964_804),
-  -- Aux dedup de-lift guard: equal spec_params at field depths 0 and 2.
-  ("IxVMInd.DepthM",                                                     3_135_027),
-  ("IxVMInd.DepthM.rec",                                                 5_460_512),
-  -- Edge cases from prelude
-  ("String.Internal.append",                                             608_754_163),
-  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         914_698_909),
-  -- Aux recursor with transitively-nested inductives (Syntax → Array Syntax
-  -- → List Syntax); shard 53 regression driver.
-  ("Lean.Syntax.rec",                                                    631_819_629),
-  -- Canonical aux order with structurally-distinct exts that tie weak
-  -- through sentinels: the trailing identity marker must decide by
-  -- external address, matching compile order (the Lean.Json.rec bug;
-  -- Json itself is ~68G FFT, far too heavy to pin here). AuxTie is
-  -- verified to fail on the pre-marker kernel.
-  ("IxVMInd.AuxTie",                                                     68_499_165),
-  ("IxVMInd.AuxTie.rec",                                                 77_049_263),
-  -- Parameterized Prop class whose ctor field references the params
-  -- under local ∀-binders: is_rec_field's classification whnf must not
-  -- build a context from the peeled binder doms (frame-level param refs
-  -- give those doms loose ranges exceeding the local depth, running the
-  -- ctx-trim cut walk off the end of the list).
-  ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec",         850_286_686),
-  -- Universe-polymorphic nested inductive: aux occurrence universes must
-  -- carry the univ_offset-shifted frame into minor construction.
-  ("Lean.Widget.TaggedText.rec",                                         613_779_550),
-  -- Aux-member recursors: the canonical param walk peels the PRIMARY
-  -- inductive's type, not self's.
-  ("Lean.Doc.Part.rec",                                                  639_391_067),
-  -- Multi-aux mutual block whose canonical aux order hinges on comparing
-  -- stored (Succ-distributed-into-Max) levels structurally: level_max
-  -- must not factor Succ back out of Max.
-  ("Lean.Doc.Block.rec",                                                 670_857_859),
-  -- Evaporated-aux canonicalization (Tests/Ix/Compile/Mutual.lean AuxDedup*):
-  -- SCC splitting strands `rec_N` auxes whose spec-param inductives moved to
-  -- other SCCs; their claims alias the external inductive's recursor
-  -- (`List.rec`) — hence the identical pin on all four evaporated entries,
-  -- whose claims are literally the same `List.rec` closure. AuxDedupMixed
-  -- mixes one genuine canonical aux (`M.rec_1`, over `List M`) with one
-  -- evaporated alias (`M.rec_2`, over `List B`).
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A",             3_084_348),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec",         3_873_841),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1",       2_627_832),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2",       2_627_832),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1",       2_627_832),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M",         3_115_727),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec",     5_379_916),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1",   5_381_872),
-  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",   2_627_832),
-  -- Structural string fold (StringReduction strOfListFoldSize*):
-  -- `utf8ByteSize` over a `String.ofList [chars]` application. The unary
-  -- native rule misses (argument is not a literal), so the check
-  -- normalizes the constructor build through the byte model — per
-  -- character through `Char.ofNat` validity and `List.utf8Encode`. Pins
-  -- the in-circuit cost of that fold.
-  ("strOfListFoldSize",                                                  736_138_090),
-  ("strOfListFoldSizeAscii",                                             720_671_439),
-]
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
@@ -292,6 +183,82 @@ private def nameOfString (str : String) : Lean.Name :=
     | some n => .mkNum acc n
     | none   => .mkStr acc s
 
+/-- Exact FFT-cost pins, one per checked constant. These are equality
+    assertions, not budgets: any kernel change that shifts the cost of a
+    listed constant fails the suite, so a regression cannot land quietly
+    and an improvement has to be acknowledged by re-pinning. -/
+private def kernelCheckEntries : List (String × Nat) := [
+  ("HEq",                                                                 395_811),
+  ("HEq.rec",                                                             1_323_495),
+  ("Eq.rec",                                                              1_249_383),
+  ("Nat",                                                                 397_658),
+  ("Nat.add",                                                             9_758_127),
+  ("Nat.add_comm",                                                        42_747_927),
+  ("Nat.decEq",                                                           53_824_834),
+  ("Nat.decLe",                                                           149_920_641),
+  ("Nat.sub_le_of_le_add",                                                408_370_681),
+  ("Nat.shiftRight_succ",                                                 296_693_575),
+  ("Trans.mk",                                                            1_642_516),
+  ("Array.append_assoc",                                                  1_940_277_213),
+  ("Vector.append",                                                       1_994_697_378),
+  ("IxVMPrim.nat_add_lit",                                                21_266_835),
+  ("IxVMPrim.nat_sub_lit",                                                25_966_975),
+  ("IxVMPrim.nat_mul_lit",                                                19_078_002),
+  ("IxVMPrim.nat_mul_big",                                                18_585_602),
+  ("IxVMPrim.nat_div_lit",                                                289_293_947),
+  ("IxVMPrim.nat_mod_lit",                                                295_891_931),
+  ("IxVMPrim.nat_succ_lit",                                               4_814_596),
+  ("IxVMPrim.nat_pred_lit",                                               10_865_181),
+  ("IxVMPrim.nat_gcd_lit",                                                480_363_765),
+  ("IxVMPrim.nat_land_lit",                                               810_894_589),
+  ("IxVMPrim.nat_lor_lit",                                                811_575_434),
+  ("IxVMPrim.nat_xor_lit",                                                817_363_480),
+  ("IxVMPrim.nat_shl_lit",                                                26_926_572),
+  ("IxVMPrim.nat_shr_lit",                                                293_333_675),
+  ("IxVMPrim.nat_pow_big",                                                57_958_372),
+  ("IxVMPrim.nat_beq_lit",                                                18_302_331),
+  ("IxVMPrim.nat_ble_lit",                                                16_918_756),
+  ("IxVMPrim.nat_cases_big",                                              10_596_242),
+  ("IxVMPrim.nat_dec_le",                                                 154_842_675),
+  ("IxVMPrim.nat_dec_lt",                                                 157_955_585),
+  ("IxVMPrim.nat_dec_eq",                                                 64_378_039),
+  ("IxVMPrim.str_size_lit",                                               564_095_020),
+  ("IxVMPrim.bv_to_nat_lit",                                              456_230_975),
+  ("IxVMInd.Even",                                                        19_884_433),
+  ("IxVMInd.Odd",                                                         19_884_780),
+  ("IxVMInd.Even.rec",                                                    24_421_295),
+  ("IxVMInd.Odd.rec",                                                     24_421_841),
+  ("IxVMInd.Tree",                                                        767_180),
+  ("IxVMInd.Tree.rec",                                                    3_320_775),
+  ("IxVMInd.DedupM",                                                      1_856_017),
+  ("IxVMInd.DedupM.rec",                                                  5_199_536),
+  ("IxVMInd.DepthM",                                                      1_311_809),
+  ("IxVMInd.DepthM.rec",                                                  4_105_479),
+  ("String.Internal.append",                                              556_601_613),
+  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",          838_012_993),
+  ("Lean.Syntax.rec",                                                     571_274_738),
+  ("IxVMInd.AuxTie",                                                      52_925_191),
+  ("IxVMInd.AuxTie.rec",                                                  63_356_527),
+  ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec",          783_213_486),
+  ("Lean.Widget.TaggedText.rec",                                          561_988_742),
+  ("Lean.Doc.Part.rec",                                                   572_437_576),
+  ("Lean.Doc.Block.rec",                                                  610_506_747),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 1_288_044),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 2_152_810),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 1_712_798),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2", 1_712_798),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1", 1_712_798),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M", 1_294_339),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 4_180_426),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 4_180_326),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 1_712_798),
+  ("strOfListFoldSize",                                                   639_176_545),
+  ("strOfListFoldSizeAscii",                                              639_467_002),
+]
+
+/-- Variant of `kernelChecks`, pinned to the baseline
+    (`kernelCheckEntries`). Any kernel change that shifts the kernel FFT
+    cost fails the suite and forces a manual pin bump. -/
 public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
   kernelCheckEntries.mapM fun (name, expected) => do
     let tc ← kernelCheck (nameOfString name) env
@@ -321,13 +288,11 @@ public def runParityCase (compiled : Aiur.CompiledToplevel)
           (bQC.zip cQC).all fun (b, c) =>
             b.uniqueRows == c.uniqueRows && b.totalHits == c.totalHits)
 
-/-- Parity fixtures: every pinned `kernelCheckEntries` constant runs a
-    realistic workload (blake3, ingress, whnf, def-eq, recursor gen)
-    against the same IOBuffer under both engines. Parity requires
-    entrypoints present in the codegen'd kernel, i.e. the PRUNED
-    production toplevel — test-only entries (`kernel_unit_tests`) are
-    interpreter-only and covered by the `ixvm` suite's full-toplevel
-    exec cases instead. -/
+/-- Codegen parity fixtures: run each check through both the Aiur
+    bytecode interpreter and the generated Rust kernel, and assert they
+    agree on output, IOBuffer, and QueryCount. This is the gate that keeps
+    `crates/ixvm-codegen` in step with the Lean kernel source — an Aiur
+    edit without a `ix codegen` regen fails here. -/
 public def parityCases (env : Lean.Environment) : IO (List AiurTestCase) := do
   kernelCheckEntries.mapM fun (name, _) =>
     kernelCheck (nameOfString name) env
@@ -362,8 +327,10 @@ private def singletonTrees (tree : Ix.AssumptionTree) :
     Std.HashMap Address Ix.AssumptionTree :=
   ({} : Std.HashMap _ _).insert tree.root tree
 
-/-- `Check` claim with `assumptions = some tree.root` covering every
-    transitive dep — kernel ends up checking only the subject. -/
+/-- the kernel `Check` with `assumptions = some tree.root` covering every
+    transitive dep — the cutoff walk (strict=0) stops at each frontier
+    member, so the kernel ends up checking only the subject. the kernel analog
+    of `claimCheckWithAsm`. -/
 public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
   let target ← lookupAddr ixonEnv ``Nat.zero
   let closure := closureFrom ixonEnv target
@@ -376,7 +343,75 @@ public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     (Ix.Claim.check target (some tree.root)) (singletonTrees tree)
   pure (asTestCase "Claim Check with-asm (Nat.zero)" witness)
 
-/-- `Contains` claim against a synthetic 3-leaf merkle tree. -/
+/-- the kernel CheckEnv, self-contained: owned tree = every env constant.
+    Exercises the R1 strict owned-membership rule over a closure that
+    covers itself (walk-reachable ⊆ owned, empty asm). -/
+public def claimCheckEnvFull (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let some tree := envCanonicalTree ixonEnv
+    | throw <| IO.userError "envCanonicalTree empty"
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
+    (Ix.Claim.checkEnv tree.root none) (singletonTrees tree)
+  pure (asTestCase "CheckEnv self-contained (shared smoke env)" witness)
+
+/-- the kernel CheckEnv with a thin frontier asm: owned = {Nat.add_comm},
+    asm = the direct block-level refs of its constant. Exercises the
+    R1 asm-cutoff walk: the single owned leaf is checked, the walk
+    stops at every frontier member (no recursion below), and strict
+    membership passes because the leaf is owned. Bytes for the full
+    closure stay in ch 2 — delta unfolding punches through the
+    frontier, only the CHECK scope stops there. -/
+public def claimCheckEnvFrontier (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let target ← lookupAddr ixonEnv ``Nat.add_comm
+  let some c := ixonEnv.getConst? target
+    | throw <| IO.userError "Nat.add_comm constant missing"
+  let some ownedTree := Ix.AssumptionTree.canonical #[target]
+    | throw <| IO.userError "owned tree build failed"
+  let some asmTree := Ix.AssumptionTree.canonical c.refs
+    | throw <| IO.userError "asm (frontier) tree build failed"
+  let trees := (singletonTrees ownedTree).insert asmTree.root asmTree
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
+    (Ix.Claim.checkEnv ownedTree.root (some asmTree.root)) trees
+  pure (asTestCase "CheckEnv frontier-asm (Nat.add_comm)" witness)
+
+/-- the kernel `Reveal` Defn (kind+safety) — coverage. -/
+public def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
+    fun ci => match ci with | .defn _ => true | _ => false
+  let .defn d := info
+    | throw <| IO.userError "findConstWith returned non-Defn"
+  let revealInfo : Ix.RevealConstantInfo :=
+    .defn (some d.kind) (some d.safety) none none none
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
+    (Ix.Claim.reveal comm revealInfo) {}
+  pure (asTestCase "Claim Reveal Defn (kind+safety)" witness)
+
+/-- the kernel `Reveal` Defn `typ` via content-hash binding — exercises the
+    the kernel `expr_addr` path. -/
+public def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
+    fun ci => match ci with | .defn _ => true | _ => false
+  let .defn d := info
+    | throw <| IO.userError "findConstWith returned non-Defn"
+  let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr d.typ))
+  let revealInfo : Ix.RevealConstantInfo :=
+    .defn none none none (some typAddr) none
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
+    (Ix.Claim.reveal comm revealInfo) {}
+  pure (asTestCase "Claim Reveal Defn (typ Expr addr)" witness)
+
+/-- the kernel `Reveal` CPrj — all projection fields. coverage. -/
+public def claimRevealCPrj (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"
+    fun ci => match ci with | .cPrj _ => true | _ => false
+  let .cPrj p := info
+    | throw <| IO.userError "findConstWith returned non-CPrj"
+  let revealInfo : Ix.RevealConstantInfo :=
+    .cPrj (some p.idx) (some p.cidx) (some p.block)
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
+    (Ix.Claim.reveal comm revealInfo) {}
+  pure (asTestCase "Claim Reveal CPrj (all fields)" witness)
+
+/-- the kernel `Contains` against a synthetic 3-leaf tree. -/
 public def claimContains : IO AiurTestCase := do
   let a : Address := ⟨⟨Array.replicate 32 0x11⟩⟩
   let b : Address := ⟨⟨Array.replicate 32 0x22⟩⟩
@@ -387,78 +422,62 @@ public def claimContains : IO AiurTestCase := do
     (Ix.Claim.contains tree.root b) (singletonTrees tree)
   pure (asTestCase "Claim Contains (synthetic 3-leaf)" witness)
 
-/-- `CheckEnv` claim over the shared smoke env. -/
-public def claimCheckEnv (ixonEnv : Ixon.Env) : IO AiurTestCase := do
-  let some tree := envCanonicalTree ixonEnv
-    | throw <| IO.userError "envCanonicalTree empty"
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
-    (Ix.Claim.checkEnv tree.root none) (singletonTrees tree)
-  pure (asTestCase "Claim CheckEnv (shared smoke env)" witness)
 
-/-- `Reveal` Defn with `kind` + `safety` only — exercises the
-    enum-tag compare path with no Expr hashing. -/
-public def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO AiurTestCase := do
-  let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
-    fun ci => match ci with | .defn _ => true | _ => false
-  let .defn d := info
-    | throw <| IO.userError "findConstWith returned non-Defn"
-  let revealInfo : Ix.RevealConstantInfo :=
-    .defn (some d.kind) (some d.safety) none none none
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
-  pure (asTestCase "Claim Reveal Defn (kind+safety)" witness)
+/-! ## Shard pipeline
 
-/-- `Reveal` CPrj — projection idx, cidx, block fields. -/
-public def claimRevealCPrj (ixonEnv : Ixon.Env) : IO AiurTestCase := do
-  let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"
-    fun ci => match ci with | .cPrj _ => true | _ => false
-  let .cPrj p := info
-    | throw <| IO.userError "findConstWith returned non-CPrj"
-  let revealInfo : Ix.RevealConstantInfo :=
-    .cPrj (some p.idx) (some p.cidx) (some p.block)
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
-  pure (asTestCase "Claim Reveal CPrj (all fields)" witness)
+The one path where the WITNESS is built in Rust rather than Lean:
+`shardCheckWithEnv` hands an `EnvHandle` plus an owned-address blob to
+`build_shard_check_env_witness`, which walks the closure, converts
+bytes, and commits the thin-frontier asm tree in parallel Rust. Every
+other suite case builds its witness Lean-side, so without this the
+Rust builder — including the thin-frontier convention that determines
+CheckEnv claim digests — would be untested. -/
 
-/-- `Reveal` Defn `typ` via content-hash binding — exercises the
-    Aiur `expr_addr` path against `blake3(putExpr d.typ)` on Lean. -/
-public def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO AiurTestCase := do
-  let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
-    fun ci => match ci with | .defn _ => true | _ => false
-  let .defn d := info
-    | throw <| IO.userError "findConstWith returned non-Defn"
-  let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr d.typ))
-  let revealInfo : Ix.RevealConstantInfo :=
-    .defn none none none (some typAddr) none
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
-  pure (asTestCase "Claim Reveal Defn (typ Expr addr)" witness)
+/-- Group key for shard partitioning: projection wrappers group with
+    their block, everything else is its own group. Keeps a block and
+    all its wrappers in one shard, so an owned set is walk-closed at
+    both block and wrapper granularity. -/
+private def shardGroupOf (a : Address) (ci : Ixon.ConstantInfo) : Address :=
+  match ci with
+  | .iPrj p | .cPrj p | .rPrj p | .dPrj p => p.block
+  | _ => a
 
-/-- `Reveal` Muts — first component, one variant-appropriate
-    field set. -/
-public def claimRevealMuts (ixonEnv : Ixon.Env) : IO AiurTestCase := do
-  let (comm, info) ← findConstWithOrThrow ixonEnv "Muts"
-    fun ci => match ci with | .muts _ => true | _ => false
-  let .muts components := info
-    | throw <| IO.userError "findConstWith returned non-Muts"
-  let some firstMc := components[0]?
-    | throw <| IO.userError "Muts components empty"
-  let revealMc : Ix.RevealMutConstInfo := match firstMc with
-    | .defn d => .defn (some d.kind) (some d.safety) none none none
-    | .indc i => .indc (some i.isUnsafe) none none none none none
-    | .recr r => .recr (some r.k) (some r.isUnsafe) none none none none none
-                       none none
-  let revealInfo : Ix.RevealConstantInfo := .muts #[(0, revealMc)]
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
-  pure (asTestCase "Claim Reveal Muts (first component)" witness)
+/-- Root namespace component of an Ixon name (`String.utf8ByteSize` →
+    `"String"`). -/
+private partial def ixNameRoot : Ix.Name → Option String
+  | .str (.anonymous _) s _ => some s
+  | .str p _ _ => ixNameRoot p
+  | .num p _ _ => ixNameRoot p
+  | .anonymous _ => none
 
-/-- All claim-variant smoke tests packaged for the `ixvm` runner.
-    Builds the shared Ixon env once and threads it through every
-    test. -/
-public def claimSmokeTests (env : Lean.Environment) : IO (List AiurTestCase) := do
-  let ixonEnv ← loadSharedIxonEnv #[``Nat.zero, ``Nat.add_comm] env
-  let t1 ← claimCheckWithAsm ixonEnv
-  let t2 ← claimContains
-  let t3 ← claimCheckEnv ixonEnv
-  let t4 ← claimRevealDefnFields ixonEnv
-  let t5 ← claimRevealCPrj ixonEnv
-  let t6 ← claimRevealDefnExpr ixonEnv
-  let t7 ← claimRevealMuts ixonEnv
-  pure [t1, t2, t3, t4, t5, t6, t7]
+/-- Synthetic shard over the utf8-decode theorem's closure: owned = the
+    `String`/`Char` subsystem's block groups, frontier = its direct
+    out-of-owned refs. Non-toy on all three axes (owned in the dozens,
+    closure in the thousands, frontier in the hundreds) while staying
+    inside a few B FFT.
+
+    Runs through the Rust witness builder + native kernel via
+    `shardCheckWithEnv`. Execution-only: the pinned FFT cost is the
+    regression signal. -/
+public def shardCheckEnvCase (env : Lean.Environment) :
+    IO (Option (Aiur.EnvHandle × ByteArray)) := do
+  let base : Lean.Name :=
+    .str (.str .anonymous "ByteArray") "utf8DecodeChar?_utf8EncodeChar_append"
+  if !env.constants.contains base then return none
+  let ixonEnv ← loadIxonEnv base env
+  let mut groups : Std.HashMap Address (Array Address) := {}
+  let mut ownedGroups : Std.HashSet Address := {}
+  for (a, lc) in ixonEnv.consts do
+    if let some c := lc.get? then
+      let k := shardGroupOf a c.info
+      groups := groups.insert k ((groups.getD k #[]).push a)
+      if let some n := ixonEnv.addrToName[a]? then
+        if ixNameRoot n == some "String" || ixNameRoot n == some "Char" then
+          ownedGroups := ownedGroups.insert k
+  let mut owned : Array Address := #[]
+  for k in ownedGroups.toArray do owned := owned ++ groups.getD k #[]
+  if owned.isEmpty then return none
+  let envBytes ← IO.ofExcept (Ixon.serEnv ixonEnv)
+  let handle ← IO.ofExcept (Aiur.EnvHandle.fromBytes envBytes)
+  let ownedBlob : ByteArray := owned.foldl (fun b a => b ++ a.hash) .empty
+  return some (handle, ownedBlob)

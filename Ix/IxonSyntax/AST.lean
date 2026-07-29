@@ -20,13 +20,13 @@ public section
 
 namespace Ixon.Syntax
 
-/-- Grammar version this implementation speaks (R7). The `ixon <n>`
+/-- Grammar version this implementation speaks . The `ixon <n>`
     header is optional: absent means version 1, forever; grammar
     versions ≥ 2 must declare themselves, and canonical version-1
     output omits the header. Mirrors Rust `syntax::VERSION`. -/
 def VERSION : Nat := 1
 
-/-- Parser resource caps (R2: gas for admission). Mirrors Rust
+/-- Parser resource caps . Mirrors Rust
     `syntax::Limits`, including the defaults. -/
 structure Limits where
   /-- Maximum input length in bytes (checked before any work). -/

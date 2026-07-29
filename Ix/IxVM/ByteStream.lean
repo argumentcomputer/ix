@@ -285,7 +285,8 @@ def byteStream := ⟦
   -- this is enforced by assert_eq!, limiting the range to 7 bytes (< 2^56).
   fn flatten_u64(x: [U8; 8]) -> G {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = x;
-    assert_eq!(to_field(b7), 0);
+    assert_eq!(to_field(b7), 0,
+      "u64 -> field: value exceeds 2^56 (top byte must be zero)");
     to_field(b0) + 0x100 * to_field(b1) + 0x10000 * to_field(b2)
       + 0x1000000 * to_field(b3) + 0x100000000 * to_field(b4)
       + 0x10000000000 * to_field(b5) + 0x1000000000000 * to_field(b6)
