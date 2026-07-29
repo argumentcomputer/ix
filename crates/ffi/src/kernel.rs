@@ -1407,8 +1407,8 @@ fn run_anon_checks_parallel(
   // contention is noise.
   let per_const_out =
     std::env::var("IX_KERNEL_PER_CONST_OUT").ok().filter(|s| !s.is_empty());
-  let per_const_rows: Arc<std::sync::Mutex<Vec<String>>> =
-    Arc::new(std::sync::Mutex::new(Vec::new()));
+  let per_const_rows: Arc<Mutex<Vec<String>>> =
+    Arc::new(Mutex::new(Vec::new()));
 
   let work = Arc::new(work);
   let addrs = Arc::new(addrs);
@@ -1566,8 +1566,9 @@ fn run_anon_checks_parallel(
   }
 
   if let Some(path) = &per_const_out {
-    let rows =
-      per_const_rows.lock().map_err(|_| "per-const entries poisoned")?;
+    let rows = per_const_rows
+      .lock()
+      .map_err(|e| format!("per-const entries poisoned: {e}"))?;
     let mut out = String::with_capacity(rows.len() * 96 + 96);
     out.push_str(
       "addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost\n",

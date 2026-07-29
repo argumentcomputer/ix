@@ -1884,10 +1884,10 @@ async fn run() -> Result<()> {
   tracing_texray::rss_sampler::start(std::time::Duration::from_millis(50));
   // With --texray + --json, per-phase span timings land at `<json>.spans` as
   // JSON Lines — the CI drill-down input.
-  if args.texray {
-    if let Some(json) = args.json.as_ref().and_then(|p| p.to_str()) {
-      let _ = tracing_texray::json_sink::to_file(&format!("{json}.spans"));
-    }
+  if args.texray
+    && let Some(json) = args.json.as_ref().and_then(|p| p.to_str())
+  {
+    let _ = tracing_texray::json_sink::to_file(&format!("{json}.spans"));
   }
 
   // Collect inputs. No `--ixe` → a single empty env (back-compat).
@@ -2312,7 +2312,7 @@ mod closure_tests {
       .max_by_key(|(_, n)| *n)
       .map(|(a, _)| a)
       .expect("env has at least one dependency edge");
-    work2.retain(|w| !w.proven_targets().iter().any(|t| *t == hottest));
+    work2.retain(|w| !w.proven_targets().contains(&hottest));
 
     let holed = vec![("holed".to_string(), env2, work2)];
     let (missing2, _, _) = find_missing_deps(&holed, &store);

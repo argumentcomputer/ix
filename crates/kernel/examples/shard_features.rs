@@ -42,7 +42,9 @@ fn main() {
     .blocks()
     .iter()
     .enumerate()
-    .map(|(i, b)| (b.addr.clone(), i as u32))
+    .map(|(i, b)| {
+      (b.addr.clone(), u32::try_from(i).expect("block ids are u32"))
+    })
     .collect();
 
   println!(
@@ -67,8 +69,8 @@ fn main() {
       def_eq += b.def_eq;
       nat_arith += b.nat_arith;
       intern += b.intern;
-      bytes += b.serialized_size as u64;
-      consts += b.const_count as u64;
+      bytes += u64::from(b.serialized_size);
+      consts += u64::from(b.const_count);
       block_steps += block_step_cost(b);
     }
     debug_assert_eq!(hb, s.heartbeats);
