@@ -128,6 +128,10 @@ jobs:
           cd sp1
           cargo build --release --bin sp1-host
           cargo test --release --bin sp1-host
+          # --release shares the build's dep artifacts. Under clippy,
+          # sp1-build skips the guest compilation and the host cfg-gates its
+          # ELF embed accordingly, so this lints host code only.
+          cargo clippy --release --workspace --all-targets -- -D warnings
       # Wait 5 minutes max for `lean-test` to upload `nataddcomm.ixe`
       - name: Wait for the nataddcomm.ixe cache
         env:
@@ -178,6 +182,9 @@ jobs:
           cd zisk
           cargo build --release --bin zisk-host
           cargo test --release --bin zisk-host
+          # --release shares the build's dep artifacts (including the guest
+          # ELFs its build scripts already produced).
+          cargo clippy --release --workspace --all-targets -- -D warnings
       - name: Wait for the nataddcomm.ixe cache
         env:
           GH_TOKEN: ${{ github.token }}
