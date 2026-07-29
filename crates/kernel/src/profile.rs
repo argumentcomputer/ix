@@ -56,6 +56,7 @@ thread_local! {
   static WHNF_CALLS: Cell<u64> = const { Cell::new(0) };
   static DEF_EQ_CALLS: Cell<u64> = const { Cell::new(0) };
   static NAT_ARITH: Cell<u64> = const { Cell::new(0) };
+  static INTERN_NODES: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Count one substitution-node visit (called per node in `instantiate_rev`).
@@ -91,6 +92,16 @@ pub fn bump_nat_arith(work: u64) {
   let _ = work;
 }
 
+/// Count one intern-table visit (called per node in `intern_expr` /
+/// `intern_univ`). A proxy for term-construction volume — the guest-side
+/// memory traffic (allocation, table probes, spine copies) that scales with
+/// nodes built rather than with reduction ticks.
+#[inline(always)]
+pub fn bump_intern_nodes() {
+  #[cfg(not(target_os = "zkvm"))]
+  INTERN_NODES.with(|c| c.set(c.get().wrapping_add(1)));
+}
+
 /// Richer per-constant cost features, recorded alongside `fuel`/heartbeats.
 #[derive(Default, Debug, Clone, Copy)]
 pub struct OpCounts {
@@ -98,6 +109,18 @@ pub struct OpCounts {
   pub whnf_calls: u64,
   pub def_eq_calls: u64,
   pub nat_arith: u64,
+  pub intern_nodes: u64,
+}
+
+impl OpCounts {
+  /// Saturating field-wise accumulation.
+  pub fn add(&mut self, o: &OpCounts) {
+    self.subst_nodes = self.subst_nodes.saturating_add(o.subst_nodes);
+    self.whnf_calls = self.whnf_calls.saturating_add(o.whnf_calls);
+    self.def_eq_calls = self.def_eq_calls.saturating_add(o.def_eq_calls);
+    self.nat_arith = self.nat_arith.saturating_add(o.nat_arith);
+    self.intern_nodes = self.intern_nodes.saturating_add(o.intern_nodes);
+  }
 }
 
 /// Read and reset the thread-local op counters (call at each constant boundary).
@@ -109,6 +132,7 @@ pub fn take_op_counts() -> OpCounts {
       whnf_calls: WHNF_CALLS.with(|c| c.replace(0)),
       def_eq_calls: DEF_EQ_CALLS.with(|c| c.replace(0)),
       nat_arith: NAT_ARITH.with(|c| c.replace(0)),
+      intern_nodes: INTERN_NODES.with(|c| c.replace(0)),
     }
   }
   #[cfg(target_os = "zkvm")]
@@ -118,7 +142,7 @@ pub fn take_op_counts() -> OpCounts {
 /// Magic bytes at the head of every `.ixprof` file.
 const MAGIC: &[u8; 8] = b"IXPROF\0\0";
 /// On-disk format version. Bump on any incompatible layout change.
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 /// Per-block recorded statistics.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,6 +159,14 @@ pub struct BlockEntry {
   /// dominant reduction-volume cost driver. Recorded when profiled with op
   /// counters enabled; 0 otherwise.
   pub subst: u64,
+  /// `whnf` entries checking this block (counted before cache probes).
+  pub whnf: u64,
+  /// `is_def_eq` entries checking this block.
+  pub def_eq: u64,
+  /// Limb-weighted native Nat-arithmetic work checking this block.
+  pub nat_arith: u64,
+  /// Intern-table node visits checking this block (term-construction volume).
+  pub intern: u64,
 }
 
 /// A recorded kernel profile over an environment.
@@ -215,7 +247,7 @@ impl BlockProfile {
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();
     let mut out = Vec::with_capacity(
-      8 + 4 + 4 + n * 56 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
+      8 + 4 + 4 + n * 80 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
     );
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&VERSION.to_le_bytes());
@@ -226,6 +258,10 @@ impl BlockProfile {
       out.extend_from_slice(&b.serialized_size.to_le_bytes());
       out.extend_from_slice(&b.const_count.to_le_bytes());
       out.extend_from_slice(&b.subst.to_le_bytes());
+      out.extend_from_slice(&b.whnf.to_le_bytes());
+      out.extend_from_slice(&b.def_eq.to_le_bytes());
+      out.extend_from_slice(&b.nat_arith.to_le_bytes());
+      out.extend_from_slice(&b.intern.to_le_bytes());
     }
     out.extend_from_slice(&(self.delta_col.len() as u64).to_le_bytes());
     // CSR row offsets (n+1 entries) as u64.
@@ -258,12 +294,20 @@ impl BlockProfile {
       let serialized_size = r.u32()?;
       let const_count = r.u32()?;
       let subst = r.u64()?;
+      let whnf = r.u64()?;
+      let def_eq = r.u64()?;
+      let nat_arith = r.u64()?;
+      let intern = r.u64()?;
       blocks.push(BlockEntry {
         addr,
         heartbeats,
         serialized_size,
         const_count,
         subst,
+        whnf,
+        def_eq,
+        nat_arith,
+        intern,
       });
     }
     let num_edges = r.u64()? as usize;
@@ -365,7 +409,7 @@ struct Accum {
   heartbeats: u64,
   serialized_size: u32,
   const_count: u32,
-  subst: u64,
+  ops: OpCounts,
   producers: FxHashSet<Address>,
 }
 
@@ -374,22 +418,22 @@ impl ProfileBuilder {
     Self::default()
   }
 
-  /// Record (or accumulate into) a block's statistics. Heartbeats and
-  /// const_count accumulate additively; serialized_size is set (idempotent for
-  /// a fixed block).
+  /// Record (or accumulate into) a block's statistics. Heartbeats,
+  /// const_count, and the op counters accumulate additively; serialized_size
+  /// is set (idempotent for a fixed block).
   pub fn block(
     &mut self,
     addr: Address,
     heartbeats: u64,
     serialized_size: u32,
     const_count: u32,
-    subst: u64,
+    ops: OpCounts,
   ) {
     let e = self.blocks.entry(addr).or_default();
     e.heartbeats = e.heartbeats.saturating_add(heartbeats);
     e.serialized_size = serialized_size;
     e.const_count = e.const_count.saturating_add(const_count);
-    e.subst = e.subst.saturating_add(subst);
+    e.ops.add(&ops);
   }
 
   /// Record that `consumer` delta-unfolds the body of `producer`. Self-edges
@@ -425,7 +469,11 @@ impl ProfileBuilder {
         heartbeats: a.heartbeats,
         serialized_size: a.serialized_size,
         const_count: a.const_count,
-        subst: a.subst,
+        subst: a.ops.subst_nodes,
+        whnf: a.ops.whnf_calls,
+        def_eq: a.ops.def_eq_calls,
+        nat_arith: a.ops.nat_arith,
+        intern: a.ops.intern_nodes,
       });
       let mut prods: Vec<u32> = a.producers.iter().map(|p| id_of[p]).collect();
       prods.sort_unstable();
@@ -483,11 +531,7 @@ impl ProfileSink {
     let rec = self.records.entry(consumer).or_default();
     rec.fuel = rec.fuel.saturating_add(fuel);
     rec.producers.extend(producers);
-    rec.ops.subst_nodes = rec.ops.subst_nodes.saturating_add(ops.subst_nodes);
-    rec.ops.whnf_calls = rec.ops.whnf_calls.saturating_add(ops.whnf_calls);
-    rec.ops.def_eq_calls =
-      rec.ops.def_eq_calls.saturating_add(ops.def_eq_calls);
-    rec.ops.nat_arith = rec.ops.nat_arith.saturating_add(ops.nat_arith);
+    rec.ops.add(&ops);
   }
 
   /// Merge another worker's sink into this one (order-independent).
@@ -496,11 +540,7 @@ impl ProfileSink {
       let e = self.records.entry(addr).or_default();
       e.fuel = e.fuel.saturating_add(rec.fuel);
       e.producers.extend(rec.producers);
-      e.ops.subst_nodes = e.ops.subst_nodes.saturating_add(rec.ops.subst_nodes);
-      e.ops.whnf_calls = e.ops.whnf_calls.saturating_add(rec.ops.whnf_calls);
-      e.ops.def_eq_calls =
-        e.ops.def_eq_calls.saturating_add(rec.ops.def_eq_calls);
-      e.ops.nat_arith = e.ops.nat_arith.saturating_add(rec.ops.nat_arith);
+      e.ops.add(&rec.ops);
     }
   }
 }
@@ -513,12 +553,16 @@ mod tests {
     Address::from_slice(&[byte; 32]).unwrap()
   }
 
+  fn ops(subst: u64) -> OpCounts {
+    OpCounts { subst_nodes: subst, ..OpCounts::default() }
+  }
+
   fn sample() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     // Three blocks a<b<c by address ordering.
-    b.block(addr(1), 100, 10, 1, 50);
-    b.block(addr(2), 200, 20, 3, 100);
-    b.block(addr(3), 300, 30, 1, 150);
+    b.block(addr(1), 100, 10, 1, ops(50));
+    b.block(addr(2), 200, 20, 3, ops(100));
+    b.block(addr(3), 300, 30, 1, ops(150));
     // a unfolds b and c; c unfolds b; self-edge ignored.
     b.delta_edge(addr(1), addr(2));
     b.delta_edge(addr(1), addr(3));
@@ -590,11 +634,11 @@ mod tests {
     // via separate builders merged conceptually; result must be identical.
     let mut b = ProfileBuilder::new();
     b.delta_edge(addr(3), addr(2));
-    b.block(addr(3), 300, 30, 1, 150);
+    b.block(addr(3), 300, 30, 1, ops(150));
     b.delta_edge(addr(1), addr(3));
-    b.block(addr(2), 200, 20, 3, 100);
+    b.block(addr(2), 200, 20, 3, ops(100));
     b.delta_edge(addr(1), addr(2));
-    b.block(addr(1), 100, 10, 1, 50);
+    b.block(addr(1), 100, 10, 1, ops(50));
     b.delta_edge(addr(2), addr(2));
     assert_eq!(b.finish(), sample());
   }

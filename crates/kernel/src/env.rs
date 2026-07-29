@@ -100,6 +100,7 @@ impl<M: KernelMode> InternTable<M> {
   /// existing Arc (ensuring pointer uniqueness). Otherwise insert and
   /// return.
   pub fn intern_univ(&mut self, u: KUniv<M>) -> KUniv<M> {
+    crate::profile::bump_intern_nodes();
     let key = *u.addr();
     if let Some(existing) = self.univs.get(&key) {
       return existing.clone();
@@ -110,6 +111,7 @@ impl<M: KernelMode> InternTable<M> {
   /// Intern an expression: same pointer-uniqueness guarantee as
   /// `intern_univ`.
   pub fn intern_expr(&mut self, e: KExpr<M>) -> KExpr<M> {
+    crate::profile::bump_intern_nodes();
     let key = *e.addr();
     if let Some(existing) = self.exprs.get(&key) {
       return existing.clone();
