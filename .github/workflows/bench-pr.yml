@@ -39,11 +39,11 @@
 # bencher, so the canonical baseline is never touched.
 #
 # For each matrix entry the job runs `ix bench run` twice: once on the PR
-# checkout, once for the main side. The main side normally comes from
-# bencher.dev (`ix bench fetch-main`); the workflow only runs the base
-# SHA locally when bencher can't supply the numbers — the base SHA isn't
-# uploaded yet, or the PR selects constants main never benched (typically
-# ones the PR itself adds), or `fresh` demands it.
+# checkout, once for the main side. The main side comes from bencher.dev
+# (`ix bench fetch-main`) only on FULL coverage (and, for ooc, a cached
+# attribution CSV); anything less — base SHA not uploaded, partial
+# coverage, an ooc attribution cache miss, or `fresh` — triggers a full
+# local base-SHA rerun whose rows take priority over bencher's.
 #
 # Why two trigger stages: GitHub gives issue_comment runs read-only cache
 # access (anti-poisoning; no token permission can override it), so cache
@@ -486,9 +486,9 @@ jobs:
       #           backend/mode) that a local run can never fix — fail
       #           loudly instead of silently paying the fallback forever.
       # Partial miss (exit 0 with a non-empty missing.txt): bencher covers
-      # some names but not all — typically constants this PR adds. The
-      # base run below fills only the gaps; bencher stays canonical for
-      # the rest. `run-base` gates every base-side step.
+      # some names but not all — typically constants this PR adds. Any
+      # partial coverage triggers a FULL base rerun whose rows take
+      # priority (bencher only fills rows the rerun fails to produce).
       - name: Fetch main from bencher
         id: bencher
         run: |
@@ -513,7 +513,7 @@ jobs:
           set -e
           case $rc in
             0) if [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
-                 echo "source=bencher @ ${BASE_SHA::7} + base run ($(wc -l < "$GITHUB_WORKSPACE/missing.txt") new)" >> "$GITHUB_OUTPUT"
+                 echo "source=base run @ ${BASE_SHA::7} (bencher partial — full rerun)" >> "$GITHUB_OUTPUT"
                  echo "run-base=true" >> "$GITHUB_OUTPUT"
                else
                  echo "source=bencher @ ${BASE_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -523,8 +523,39 @@ jobs:
                echo "run-base=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::fetch-main: permanent config error (exit $rc) — check backendSpecs testbeds vs bench-main.yml"; exit "$rc" ;;
           esac
+      # Main-side attribution CSV for the ooc drill-down: bench-main cached
+      # the base SHA's CSV by (SHA, cell) — bencher itself stores metric
+      # rows only. Restored BEFORE the base-run decision so a miss can
+      # force one (ooc's base run is the cheapest backend; a re-run beats
+      # a silently absent drill-down).
+      - name: Restore main-side attribution CSV (ooc)
+        id: perconst
+        if: matrix.params.backend == 'ooc'
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: bench.json.perconst.csv
+          key: bench-perconst-${{ env.BASE_SHA }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
+      # The final base-run decision — every base-side step gates on THIS
+      # step. A base run, whatever triggered it (bencher miss or partial,
+      # `fresh`, or an ooc attribution-CSV cache miss), is always a FULL
+      # rerun whose rows take priority over bencher's.
+      - name: Decide base run
+        id: decide
+        run: |
+          rb="${{ steps.bencher.outputs.run-base }}"
+          src="${{ steps.bencher.outputs.source }}"
+          if [ "$BACKEND" = ooc ] \
+            && [ "${{ steps.perconst.outputs.cache-hit }}" != "true" ] \
+            && [ "$rb" != true ]; then
+            echo "ooc attribution CSV not cached — full fresh base run"
+            rb=true
+            src="base run @ ${BASE_SHA::7} (ooc attribution cache miss)"
+          fi
+          echo "run-base=$rb" >> "$GITHUB_OUTPUT"
+          echo "source=$src" >> "$GITHUB_OUTPUT"
       - name: Checkout base (bencher data missing or partial)
-        if: steps.bencher.outputs.run-base == 'true'
+        if: steps.decide.outputs.run-base == 'true'
         uses: actions/checkout@v7
         with:
           ref: ${{ env.BASE_SHA }}
@@ -537,14 +568,14 @@ jobs:
       # workflow's build job for PR heads — a stacked-PR base hits the
       # latter.)
       - name: Restore base binaries (bench-bins cache)
-        if: steps.bencher.outputs.run-base == 'true'
+        if: steps.decide.outputs.run-base == 'true'
         id: base-bins
         uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ env.BASE_SHA }}
       - name: Restore base .ixe (bench-main compile cache)
-        if: steps.bencher.outputs.run-base == 'true'
+        if: steps.decide.outputs.run-base == 'true'
         id: base-ixe
         uses: actions/cache/restore@v6
         with:
@@ -562,7 +593,7 @@ jobs:
       # base/.lake/build/bin, where `ix bench run --repo base` finds them;
       # a from-scratch base build puts them there natively.
       - name: Resolve base binaries
-        if: steps.bencher.outputs.run-base == 'true'
+        if: steps.decide.outputs.run-base == 'true'
         id: base-src
         run: |
           cached=false
@@ -578,7 +609,7 @@ jobs:
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
           echo "base binaries: $([ "$cached" = true ] && echo restored from cache || echo building from source)"
       - name: Build base (ix, bench-typecheck, bench-recursive-verifier)
-        if: steps.bencher.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: base
@@ -594,7 +625,7 @@ jobs:
       # with cached binaries ride the restored `.ixe` and skip it.
       - name: Fetch base Mathlib oleans
         if: >-
-          steps.bencher.outputs.run-base == 'true' &&
+          steps.decide.outputs.run-base == 'true' &&
           (matrix.params.env == 'Mathlib' || matrix.params.env == 'FLT') &&
           (matrix.params.backend == 'compile' || steps.base-src.outputs.cached != 'true')
         working-directory: base/Benchmarks/Compile
@@ -612,7 +643,7 @@ jobs:
       # tree's Vectors.csv doesn't list — so --csv points at the PR's copy.
       # Full miss: run the normal selection (or the BENCH_CONSTS override).
       - name: Run backend on base → merge into main.json
-        if: steps.bencher.outputs.run-base == 'true'
+        if: steps.decide.outputs.run-base == 'true'
         run: |
           if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
             mv "${{ matrix.params.env }}.ixe" "base/${{ matrix.params.env }}.ixe"
@@ -626,11 +657,9 @@ jobs:
           flags=""
           [ "$FULL" = 1 ] && flags="$flags --full"
           [ "$SHARD" = 1 ] && flags="$flags --shard-only"
-          if [ -s "$GITHUB_WORKSPACE/main.json" ] && [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
-            flags="$flags --consts $(paste -sd, "$GITHUB_WORKSPACE/missing.txt")"
-          elif [ -n "$CONSTS" ]; then
-            # Full miss with a BENCH_CONSTS override: the base side must
-            # measure the same explicit names, not the default selection.
+          if [ -n "$CONSTS" ]; then
+            # BENCH_CONSTS override: the base side must measure the same
+            # explicit names, not the default selection.
             flags="$flags --consts $CONSTS"
           fi
           # A base-side failure must not fail the PR's job: whatever rows
@@ -645,27 +674,45 @@ jobs:
             --out "$GITHUB_WORKSPACE/base.json" $flags
           echo "base-side ix bench run exit $?"
           set -e
-          # Merge: bencher's numbers win any overlap (they are canonical);
-          # the base run only fills the gaps. On a full miss there is no
-          # main.json yet, so the base run becomes it.
+          # The rerun's rows win; bencher-fetched rows only fill anything
+          # the rerun failed to produce (e.g. an OOM'd row bencher has a
+          # clean measurement for). On a full miss there is no main.json
+          # yet, so the base run becomes it.
           if [ -s "$GITHUB_WORKSPACE/base.json" ]; then
             if [ -s "$GITHUB_WORKSPACE/main.json" ]; then
-              jq -s '.[0] + .[1]' "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json" \
+              jq -s '.[1] + .[0]' "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json" \
                 > "$GITHUB_WORKSPACE/main.merged" \
                 && mv "$GITHUB_WORKSPACE/main.merged" "$GITHUB_WORKSPACE/main.json"
             else
               mv "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json"
             fi
+            # The ooc run writes a per-constant attribution CSV next to its
+            # results file; carry it to main.json's side so `ix bench
+            # compare` finds the pair and renders the drill-down (bencher
+            # cannot supply it — it stores metric rows only).
+            if [ -f "$GITHUB_WORKSPACE/base.json.perconst.csv" ]; then
+              mv "$GITHUB_WORKSPACE/base.json.perconst.csv" \
+                 "$GITHUB_WORKSPACE/main.json.perconst.csv"
+            fi
           fi
 
       # ---------- compare ----------
+      # A base-run-produced attribution CSV (moved to main.json's side in
+      # the merge step) wins; the cached one only fills the gap.
+      - name: Place main-side attribution CSV
+        if: matrix.params.backend == 'ooc'
+        run: |
+          if [ ! -f "$GITHUB_WORKSPACE/main.json.perconst.csv" ] \
+            && [ -f bench.json.perconst.csv ]; then
+            mv bench.json.perconst.csv "$GITHUB_WORKSPACE/main.json.perconst.csv"
+          fi
       - name: Build comparison table
         run: |
           mkdir -p out
           ix bench compare \
             --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --main "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
-            --main-source "${{ steps.bencher.outputs.source }}" \
+            --main-source "${{ steps.decide.outputs.source }}" \
             --out "out/table-$LABEL.md"
           cat "out/table-$LABEL.md"
 

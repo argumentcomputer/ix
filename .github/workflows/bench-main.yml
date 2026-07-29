@@ -310,6 +310,19 @@ jobs:
           ix bench run --backend ${{ matrix.params.backend }} \
             --env ${{ matrix.params.env }} --mode ${{ matrix.params.mode }} \
             --ixe ${{ matrix.params.env }}.ixe --out bench.json
+      # The ooc run writes a per-constant attribution CSV next to its
+      # results file. Bencher stores metric rows only, so cache the CSV by
+      # (SHA, cell) — bench-pr restores it to render the per-constant
+      # drill-down against a bencher-fetched main side (PR runs can read
+      # caches created on main). Best-effort: an evicted or missing entry
+      # just means the drill-down falls back to base-run-only availability.
+      - name: Cache per-constant attribution CSV
+        if: ${{ !cancelled() && matrix.params.backend == 'ooc' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: bench.json.perconst.csv
+          key: bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # Convert rows for upload even when the run step failed: bmf drops
       # every non-ok row (rejected or OOM), so only clean measurements
       # reach bencher.
