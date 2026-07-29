@@ -258,9 +258,12 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     if rowImproved then improved := improved + 1
     lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
 
-  let mut out := #[a.title, ""] ++ lines ++ #[""]
-  -- Typecheck failures first and loud — a constant the kernel REJECTS is a
-  -- correctness signal, not a benchmark blip.
+  -- Assembly order puts the scannable verdict FIRST and collapses long
+  -- tables: a multi-cell PR comment reads as one verdict line per cell,
+  -- with each table one click away. Typecheck failures and empty-side
+  -- warnings stay visible unconditionally — a constant the kernel REJECTS
+  -- is a correctness signal, not a benchmark blip.
+  let mut out := #[a.title, ""]
   for (n, side) in failures do
     out := out.push s!"❌ **`{n}` FAILED TO TYPECHECK on the {side} side** — \
       the kernel rejected it; see the logs."
@@ -280,6 +283,13 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
+  if names.size > 5 then
+    out := out ++ #["",
+      s!"<details><summary>comparison table \
+        ({plural names.size a.rowNoun})</summary>", ""]
+      ++ lines ++ #["", "</details>"]
+  else
+    out := out ++ #[""] ++ lines
   -- Per-phase drill-down (only under `a.phases`): the main table above
   -- carries every constant's high-level row; below it, each constant with
   -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns, zkVM
