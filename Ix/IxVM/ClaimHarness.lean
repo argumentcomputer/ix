@@ -287,8 +287,27 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned foreign stubbed : Array Address) 
   -- which still have to resolve, and following those needs the
   -- type-reference graph only the profile carries. Taking the set wholesale
   -- also keeps this in lockstep with the Rust builder and the packer.
-  let closure : Std.HashSet Address :=
+  let blockClosure : Std.HashSet Address :=
     foreign.foldl (·.insert ·) (owned.foldl (·.insert ·) {})
+  -- Blobs are not blocks, so the manifest never lists them — but every
+  -- blob an ingressed constant references joins the ingress set (string
+  -- and Nat literals read their bytes wherever they occur). MUST mirror
+  -- the Rust builder (`build_shard_check_env_witness`) exactly: the env
+  -- tree and frontier are built over this set, and any divergence splits
+  -- the claim digest between prover and verifier.
+  let closure : Std.HashSet Address := Id.run do
+    let mut c := blockClosure
+    for a in blockClosure do
+      match env.consts.get? a with
+      | none => pure ()
+      | some lc =>
+        match lc.get? with
+        | none => pure ()
+        | some cst =>
+          for r in cst.refs do
+            if env.blobs.contains r then
+              c := c.insert r
+    pure c
   let frontier : Array Address :=
     closure.toArray.filter (fun a => !ownedSet.contains a)
   let some envTree := Ix.AssumptionTree.canonical closure.toArray
