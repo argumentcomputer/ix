@@ -28,7 +28,7 @@ use ix_kernel::anon_work::build_anon_work;
 use ix_kernel::env::KEnv;
 use ix_kernel::id::KId;
 use ix_kernel::mode::Anon;
-use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
+use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
 use ix_kernel::shard::{
   Hypergraph, ShardManifest, cycle_cap_for_ram, partition_for_cycle_cap,
 };
@@ -221,14 +221,14 @@ fn main() {
   for (consumer, rec) in &sink.records {
     let cb = block_of(&env, consumer);
     let cs = block_size(&env, &cb);
-    builder.block(cb.clone(), rec.fuel, cs, 1, rec.ops.subst_nodes);
+    builder.block(cb.clone(), rec.fuel, cs, 1, rec.ops);
     for prod in &rec.producers {
       let pb = block_of(&env, prod);
       if covered_blocks.contains(&pb) {
         continue; // assumption against the store, not a partition edge
       }
       let ps = block_size(&env, &pb);
-      builder.block(pb.clone(), 0, ps, 0, 0);
+      builder.block(pb.clone(), 0, ps, 0, OpCounts::default());
       builder.delta_edge(cb.clone(), pb);
     }
   }

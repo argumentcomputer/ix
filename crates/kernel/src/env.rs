@@ -193,6 +193,7 @@ impl<M: KernelMode> InternTable<M> {
   /// shallow key is meaningful.
   pub fn intern_univ(&mut self, u: KUniv<M>) -> KUniv<M> {
     use super::level::UnivData;
+    crate::profile::bump_intern_nodes();
     if self.canon_univs.contains(u.addr()) {
       return u;
     }
@@ -242,6 +243,7 @@ impl<M: KernelMode> InternTable<M> {
   /// content-hash interning semantics.
   pub fn intern_expr(&mut self, e: KExpr<M>) -> KExpr<M> {
     use super::expr::ExprData;
+    crate::profile::bump_intern_nodes();
     if self.canon_exprs.contains(e.addr()) {
       return e;
     }

@@ -69,7 +69,7 @@ use ix_kernel::ingress::{
 #[cfg(feature = "test-ffi")]
 use ix_kernel::ingress::{ixon_ingress, lean_ingress};
 use ix_kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
-use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
+use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
 #[cfg(feature = "test-ffi")]
@@ -2244,10 +2244,10 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
   };
   for (consumer, rec) in &merged.records {
     let (cblock, csize) = resolve(consumer);
-    builder.block(cblock.clone(), rec.fuel, csize, 1, rec.ops.subst_nodes);
+    builder.block(cblock.clone(), rec.fuel, csize, 1, rec.ops);
     for prod in &rec.producers {
       let (pblock, psize) = resolve(prod);
-      builder.block(pblock.clone(), 0, psize, 0, 0);
+      builder.block(pblock.clone(), 0, psize, 0, OpCounts::default());
       builder.delta_edge(cblock.clone(), pblock);
     }
   }

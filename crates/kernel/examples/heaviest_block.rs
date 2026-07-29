@@ -53,13 +53,7 @@ fn main() {
   let sink = kenv.profile_sink.take().unwrap();
   let mut builder = ProfileBuilder::new();
   for (consumer, rec) in &sink.records {
-    builder.block(
-      block_of(&env, consumer),
-      rec.fuel,
-      0,
-      1,
-      rec.ops.subst_nodes,
-    );
+    builder.block(block_of(&env, consumer), rec.fuel, 0, 1, rec.ops);
   }
   let profile = builder.finish();
   let mut blocks: Vec<(Address, u64)> =

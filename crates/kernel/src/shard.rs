@@ -2044,10 +2044,14 @@ fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::profile::ProfileBuilder;
+  use crate::profile::{OpCounts, ProfileBuilder};
 
   fn addr(byte: u8) -> Address {
     Address::from_slice(&[byte; 32]).unwrap()
+  }
+
+  fn ops(subst: u64) -> OpCounts {
+    OpCounts { subst_nodes: subst, ..OpCounts::default() }
   }
 
   /// A distinct address for each `n` (more than the 256 `addr(u8)` affords),
@@ -2065,7 +2069,7 @@ mod tests {
   fn two_clusters() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     for i in 1..=6u8 {
-      b.block(addr(i), 100, 1000, 1, 0);
+      b.block(addr(i), 100, 1000, 1, ops(0));
     }
     // intra cluster A
     b.delta_edge(addr(1), addr(2));
@@ -2124,7 +2128,7 @@ mod tests {
     for c in 0..4u8 {
       let base = c * 4 + 1;
       for k in 0..4u8 {
-        b.block(addr(base + k), 100, 500, 1, 0);
+        b.block(addr(base + k), 100, 500, 1, ops(0));
       }
       b.delta_edge(addr(base), addr(base + 1));
       b.delta_edge(addr(base + 1), addr(base + 2));
@@ -2166,9 +2170,9 @@ mod tests {
     // non-empty (parallelism is the goal), even though heartbeat balance is
     // impossible.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), 30_000, 100, 1, 0); // ~30x a light block
+    b.block(addr(1), 30_000, 100, 1, ops(0)); // ~30x a light block
     for i in 2..=65u8 {
-      b.block(addr(i), 1000, 100, 1, 0);
+      b.block(addr(i), 1000, 100, 1, ops(0));
     }
     for i in 2..=64u8 {
       b.delta_edge(addr(i), addr(i + 1));
@@ -2214,7 +2218,7 @@ mod tests {
     // each under the cap — no over-sharding from balancing.
     let mut b = ProfileBuilder::new();
     for i in 1..=40u8 {
-      b.block(addr(i), 1000, 0, 0, 0);
+      b.block(addr(i), 1000, 0, 0, ops(0));
     }
     for i in 1..40u8 {
       b.delta_edge(addr(i), addr(i + 1));
@@ -2243,9 +2247,9 @@ mod tests {
     // The packer must keep them together (coherent order) so `dep` is paid once,
     // and must count `dep`'s bytes when deciding the cap.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), 10, 4_000_000, 0, 0); // dep: ~2.6e9 ingress steps if foreign
-    b.block(addr(2), 100, 0, 0, 0);
-    b.block(addr(3), 100, 0, 0, 0);
+    b.block(addr(1), 10, 4_000_000, 0, ops(0)); // dep: ~2.6e9 ingress steps if foreign
+    b.block(addr(2), 100, 0, 0, ops(0));
+    b.block(addr(3), 100, 0, 0, ops(0));
     b.delta_edge(addr(2), addr(1)); // 2 unfolds dep
     b.delta_edge(addr(3), addr(1)); // 3 unfolds dep
     let p = b.finish();
@@ -2262,8 +2266,8 @@ mod tests {
     // A single block whose own predicted STEPS exceed the cap cannot be split —
     // it is emitted alone and the plan is flagged infeasible.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), 100_000, 0, 0, 0); // ~16.2e9 steps, far over a 1e9 cap
-    b.block(addr(2), 100, 0, 0, 0);
+    b.block(addr(1), 100_000, 0, 0, ops(0)); // ~16.2e9 steps, far over a 1e9 cap
+    b.block(addr(2), 100, 0, 0, ops(0));
     let p = b.finish();
     let plan = partition_for_cycle_cap(&p, 1_000_000_000, 0.05);
     assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
@@ -2349,7 +2353,7 @@ mod tests {
   fn two_big_clusters(m: u32) -> BlockProfile {
     let mut b = ProfileBuilder::new();
     for i in 0..2 * m {
-      b.block(addr_u32(i + 1), 100, 1000, 1, 0);
+      b.block(addr_u32(i + 1), 100, 1000, 1, ops(0));
     }
     for i in 0..m {
       // cluster A cycle over addrs 1..=m
@@ -2411,9 +2415,9 @@ mod tests {
     // candidates, or a shard ends up empty. (Regression guard.)
     let mut b = ProfileBuilder::new();
     let m = 800u32;
-    b.block(addr_u32(1), 5_000_000, 100, 1, 0); // the giant
+    b.block(addr_u32(1), 5_000_000, 100, 1, ops(0)); // the giant
     for i in 2..=m {
-      b.block(addr_u32(i), 1000, 100, 1, 0);
+      b.block(addr_u32(i), 1000, 100, 1, ops(0));
     }
     for i in 1..m {
       b.delta_edge(addr_u32(i), addr_u32(i + 1)); // a chain (incl. the giant)
