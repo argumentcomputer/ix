@@ -1661,28 +1661,71 @@ pub fn shard_esp_aiur(
        `ix profile`"
     ));
   }
-  let plan = partition_for_aiur_ram(&profile, ram_budget_gib, balance);
-  let mut manifest =
-    ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
-      .with_tree(plan.tree);
+  let mut plan = partition_for_aiur_ram(&profile, ram_budget_gib, balance);
   // Replace the partitioner's delta-frontier with the real ingress
   // classification: what this shard loads but does not check, and which of
   // those are type-only stubs. The witness builders cannot derive this from
   // the environment — "reduces through" lives in the profile's delta graph.
   //
-  // IX_STUB_PROMOTE_ROUNDS=N pushes every shard's stub frontier N reference
-  // hops further out (see `aiur_shard_ingress_sets`) — the escalation knob
-  // for shards whose replay diverges from the recording.
-  let promote_rounds: usize = crate::env_var("IX_STUB_PROMOTE_ROUNDS")
-    .ok()
-    .and_then(|v| v.parse().ok())
-    .unwrap_or(0);
+  // IX_STUB_PROMOTE="2:1,14:1,43:2" gives shard 2 one promotion round,
+  // shard 43 two, everyone else zero (see `aiur_shard_ingress_sets`) — the
+  // per-shard escalation knob for replay divergence. A bare "N" applies N
+  // rounds to every shard.
+  let mut promote_rounds_of = vec![0usize; plan.num_shards];
+  if let Ok(spec) = crate::env_var("IX_STUB_PROMOTE") {
+    if let Ok(n) = spec.parse::<usize>() {
+      promote_rounds_of.fill(n);
+    } else {
+      for part in spec.split(',').filter(|p| !p.is_empty()) {
+        let (shard, rounds) = part
+          .split_once(':')
+          .ok_or_else(|| format!("IX_STUB_PROMOTE: bad entry {part:?}"))?;
+        let s: usize = shard
+          .trim()
+          .parse()
+          .map_err(|_| format!("IX_STUB_PROMOTE: bad shard in {part:?}"))?;
+        let r: usize = rounds
+          .trim()
+          .parse()
+          .map_err(|_| format!("IX_STUB_PROMOTE: bad rounds in {part:?}"))?;
+        *promote_rounds_of
+          .get_mut(s)
+          .ok_or_else(|| format!("IX_STUB_PROMOTE: shard {s} out of range"))? =
+          r;
+      }
+    }
+  }
   let sets = aiur_shard_ingress_sets(
     &profile,
     &plan.shard_of,
     plan.num_shards,
-    promote_rounds,
+    &promote_rounds_of,
   );
+  // Re-price union bytes from the EMITTED sets. The pack walk priced the
+  // round-0 frontier; promotion rounds grow what a shard actually
+  // ingresses, and the costs sidecar and cap report must describe the
+  // manifest that ships, not the estimate that packed it.
+  let mut owned_bytes = vec![0u64; plan.num_shards];
+  for (b, &s) in plan.shard_of.iter().enumerate() {
+    owned_bytes[s as usize] = owned_bytes[s as usize]
+      .saturating_add(u64::from(profile.block(b as u32).serialized_size));
+  }
+  for (s, (full_extra, stubbed)) in sets.iter().enumerate() {
+    let cross: u64 = full_extra
+      .iter()
+      .chain(stubbed.iter())
+      .map(|&b| u64::from(profile.block(b).serialized_size))
+      .sum();
+    plan.shard_costs[s].union_bytes = owned_bytes[s].saturating_add(cross);
+  }
+  plan.max_shard_ram_gib = plan
+    .shard_costs
+    .iter()
+    .map(|c| aiur_ram_gib(c.union_bytes, c.hb))
+    .fold(0.0, f64::max);
+  let mut manifest =
+    ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
+      .with_tree(plan.tree);
   for (shard, (full_extra, stubbed)) in manifest.shards.iter_mut().zip(&sets) {
     let addr = |b: &u32| profile.block(*b).addr.clone();
     let mut foreign: Vec<Address> =
@@ -2249,18 +2292,21 @@ pub struct AiurBudgetPlan {
 ///
 /// Owned blocks appear in neither list.
 ///
-/// `promote_rounds` is the escalation ladder for shards whose replay
-/// diverges from the recording (the Aiur kernel's caches are not the Rust
-/// kernel's, so it occasionally reduces where the recording short-circuited
-/// and reaches a stub): each round promotes every current stub to FULL and
+/// `promote_rounds_of[s]` is shard `s`'s rung on the escalation ladder for
+/// replay divergence (the Aiur kernel's caches are not the Rust kernel's,
+/// so it occasionally reduces where the recording short-circuited and
+/// reaches a stub): each round promotes every current stub to FULL and
 /// re-expands, pushing the stub frontier one reference hop further out.
-/// Round 0 is the measured baseline.
+/// Round 0 is the measured baseline. Per-shard because an ingress-set
+/// change shifts kernel positions, so a global promotion can flip a
+/// previously-green shard; each shard settles at its own working radius.
 pub fn aiur_shard_ingress_sets(
   profile: &BlockProfile,
   shard_of: &[u32],
   num_shards: usize,
-  promote_rounds: usize,
+  promote_rounds_of: &[usize],
 ) -> Vec<(Vec<u32>, Vec<u32>)> {
+  assert_eq!(promote_rounds_of.len(), num_shards);
   let nblocks = profile.num_blocks();
   let mut owned_of: Vec<Vec<u32>> = vec![Vec::new(); num_shards];
   for (b, &s) in shard_of.iter().enumerate() {
@@ -2287,7 +2333,7 @@ pub fn aiur_shard_ingress_sets(
       }
     }
     let (mut full_extra, mut stubbed) = (Vec::new(), Vec::new());
-    for round in 0..=promote_rounds {
+    for round in 0..=promote_rounds_of[s] {
       if round > 0 {
         // Escalate: every stub still standing becomes FULL and re-expands.
         // `full_mark` overrides `axiom_mark`, so the final retain drops the
@@ -3120,7 +3166,7 @@ mod tests {
     p.set_type_ref_graph(&[vec![1], vec![3], vec![], vec![]]);
     // Each block its own shard so shard 0 owns only block 0.
     let shard_of = vec![0u32, 1, 2, 3];
-    let sets = aiur_shard_ingress_sets(&p, &shard_of, 4, 0);
+    let sets = aiur_shard_ingress_sets(&p, &shard_of, 4, &[0; 4]);
     let (full_extra, stubbed) = &sets[0];
     assert!(full_extra.is_empty(), "unexpected full ingest: {full_extra:?}");
     assert_eq!(stubbed, &vec![1, 3]);
@@ -3143,7 +3189,7 @@ mod tests {
       with_refs(b.finish(), &[vec![3], vec![], vec![0], vec![]]);
     p.set_type_ref_graph(&[vec![], vec![], vec![], vec![]]);
     let shard_of = vec![0u32, 0, 0, 1];
-    let sets = aiur_shard_ingress_sets(&p, &shard_of, 2, 0);
+    let sets = aiur_shard_ingress_sets(&p, &shard_of, 2, &[0; 2]);
     let (full_extra, stubbed) = &sets[0];
     assert!(full_extra.is_empty(), "unexpected full ingest: {full_extra:?}");
     assert_eq!(
@@ -3177,16 +3223,16 @@ mod tests {
     };
     let shard_of = vec![0u32, 1, 2];
     let (full_extra, stubbed) =
-      aiur_shard_ingress_sets(&build(true), &shard_of, 3, 0)[0].clone();
+      aiur_shard_ingress_sets(&build(true), &shard_of, 3, &[0; 3])[0].clone();
     assert_eq!(full_extra, vec![1], "consulted block must ship whole");
     assert_eq!(stubbed, vec![2], "unconsulted ref stays a stub");
     let (full_extra, stubbed) =
-      aiur_shard_ingress_sets(&build(false), &shard_of, 3, 0)[0].clone();
+      aiur_shard_ingress_sets(&build(false), &shard_of, 3, &[0; 3])[0].clone();
     assert!(full_extra.is_empty(), "prediction never promotes 1");
     assert_eq!(stubbed, vec![1], "prediction stops at the stub frontier");
     // One promotion round: the stub becomes FULL and re-expands.
     let (full_extra, stubbed) =
-      aiur_shard_ingress_sets(&build(true), &shard_of, 3, 1)[0].clone();
+      aiur_shard_ingress_sets(&build(true), &shard_of, 3, &[1; 3])[0].clone();
     assert_eq!(full_extra, vec![1, 2], "promotion lifts the stub to full");
     assert!(stubbed.is_empty(), "2 has no refs, so no new frontier");
   }
@@ -3204,7 +3250,7 @@ mod tests {
     let mut p = with_refs(b.finish(), &[vec![1], vec![2], vec![]]);
     p.set_type_ref_graph(&[vec![1], vec![], vec![]]);
     let shard_of = vec![0u32, 1, 2];
-    let sets = aiur_shard_ingress_sets(&p, &shard_of, 3, 0);
+    let sets = aiur_shard_ingress_sets(&p, &shard_of, 3, &[0; 3]);
     let (full_extra, stubbed) = &sets[0];
     assert_eq!(full_extra, &vec![1], "delta target must be ingressed whole");
     assert_eq!(stubbed, &vec![2], "1's ref is reachable only as a stub");
