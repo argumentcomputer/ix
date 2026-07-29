@@ -148,9 +148,13 @@ fn encode_circuit(buf: &mut Vec<u8>, circuit: &Circuit<Val>) {
   push_u32(buf, circuit.main_width);
   push_u32(buf, circuit.preprocessed_width);
   push_u32(buf, circuit.preprocessed_height);
-  push_u32(buf, circuit.num_publics);
+  // Total folded constraint count (user roots + directly-evaluated logUp),
+  // the value `observe_shape` binds. Replaces the old `num_publics` slot
+  // (which is a constant, `4·D`, and is derived on decode).
+  push_u32(buf, circuit.constraint_count);
   push_u32(buf, circuit.stage_2_width);
-  push_u32(buf, compiled.max_constraint_degree as usize);
+  // Combined max degree (user graph + analytic logUp), as observed.
+  push_u32(buf, circuit.max_constraint_degree);
   push_u32(buf, compiled.lookup_prefix_len);
   push_u32(buf, compiled.nodes.len());
   for node in &compiled.nodes {
@@ -326,10 +330,9 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
   let main_width = seg.u32_usize()?;
   let preprocessed_width = seg.u32_usize()?;
   let preprocessed_height = seg.u32_usize()?;
-  let num_publics = seg.u32_usize()?;
+  let constraint_count = seg.u32_usize()?;
   let stage_2_width = seg.u32_usize()?;
-  let max_constraint_degree =
-    u32::try_from(seg.u32_usize()?).expect("degree exceeds u32");
+  let max_constraint_degree = seg.u32_usize()?;
   let lookup_prefix_len = seg.u32_usize()?;
   let node_count = seg.u32_usize()?;
   let mut nodes = Vec::with_capacity(node_count.min(1 << 20));
@@ -355,15 +358,26 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
   seg.done("circuit record")?;
 
   let degrees = recompute_degrees(&nodes);
+  // The graph's own max degree covers only the user roots (the serialized
+  // `max_constraint_degree` is the combined user + analytic-logUp value).
+  let user_max_degree = zeros
+    .iter()
+    .map(|z| degrees[usize::try_from(z.0).expect("node id")])
+    .max()
+    .unwrap_or(0);
   let graph = ConstraintGraph {
     nodes,
     degrees,
     zeros,
     lookups,
     lookup_prefix_len,
-    max_constraint_degree,
+    max_constraint_degree: user_max_degree,
   };
   let num_lookups = graph.lookups.len();
+  let ext_degree =
+    <multi_stark::types::ExtVal as multi_stark::p3_field::BasedVectorSpace<
+      Val,
+    >>::DIMENSION;
   Ok(Circuit {
     graph,
     main_width,
@@ -372,7 +386,9 @@ fn decode_circuit(bytes: &[u8]) -> Result<Circuit<Val>, String> {
     preprocessed_height,
     num_lookups,
     stage_2_width,
-    num_publics,
+    num_publics: multi_stark::lookup::num_publics(ext_degree),
+    constraint_count,
+    max_constraint_degree,
   })
 }
 

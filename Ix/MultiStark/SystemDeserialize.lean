@@ -19,17 +19,18 @@ flat base-field node graph, so this reader parses that compiled form:
 * PER-CIRCUIT RECORD: a `u32 LE len` prefix followed by exactly `len`
   contiguous bytes —
     - 8 × u32: main_width, preprocessed_width, preprocessed_height,
-      num_publics, stage_2_width, max_constraint_degree, lookup_prefix_len,
-      node_count
+      constraint_count (user roots + (L+3)·D — the `observe_shape` value),
+      stage_2_width, max_constraint_degree (combined user + logUp),
+      lookup_prefix_len, node_count
     - `node_count` tagged nodes (children are u32 NodeIds, never sub-trees):
       0 Const(u64) · 1 Var(u8 source, u8 offset, u32 index) · 2 Public(u32) ·
       3 IsFirstRow · 4 IsLastRow · 5 IsTransition ·
       6 Add(u32,u32) · 7 Sub(u32,u32) · 8 Mul(u32,u32) · 9 Neg(u32)
-    - u32 zero_count, then that many u32 constraint-root NodeIds
-    - u32 lookup_count, then the compiled lookups (multiplicity + args as
-      NodeIds) — the verifier does NOT need these (the lookup argument's
-      constraints are compiled into `zeros`), so the reader SKIPS them via
-      the record length prefix.
+    - u32 zero_count, then that many u32 constraint-root NodeIds (USER
+      constraints only — the logUp constraints are never compiled)
+    - u32 lookup_count, then the compiled lookups (u32 multiplicity NodeId,
+      u32 arg count, arg NodeIds) — these drive the verifier's direct
+      logUp constraint evaluation (`Verifier.lean`).
 * TRAILER: preprocessed commit (`0` = None / `1` + MerkleCap) then one u16
   per circuit for the preprocessed index (`0xFFFF` = None).
 
@@ -76,7 +77,10 @@ def systemDeserialize := ⟦
   -- NodeIds (`zeros`), and the maximum constraint degree (for the quotient
   -- degree). The lookups are omitted — their constraints are compiled into
   -- `zeros`, so the verifier never needs them.
-  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G) }   -- nodes, node_count, zeros, max_constraint_degree
+  -- A compiled lookup: multiplicity node id + argument node ids (all into
+  -- the graph's lookup prefix). Drives the direct logUp evaluation.
+  enum SysLookup { Mk(G, List‹G›) }
+  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›) }   -- nodes, node_count, zeros, max_constraint_degree, lookups
 
   -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
   -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
@@ -229,30 +233,49 @@ def systemDeserialize := ⟦
     }
   }
 
+  fn read_sys_lookup(i: G) -> (SysLookup, G) {
+    let (m, i1) = #read_vk_u32(i);
+    let (ac, i2) = #read_vk_u32(i1);
+    let (args, i3) = read_node_ids_n(i2, ac);
+    (SysLookup.Mk(m, args), i3)
+  }
+  fn read_sys_lookups_n(i: G, n: G) -> (List‹SysLookup›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = read_sys_lookup(i);
+        let (rest, j2) = read_sys_lookups_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
+    }
+  }
+
   -- One circuit record: a u32 length prefix then the contiguous record. The
-  -- 8-word header, the node stream, and the zeros are parsed; the compiled
-  -- lookups (which the verifier does not use) are skipped by jumping to the
-  -- record end via the length prefix. Besides the parsed circuit, returns its
-  -- 6 shape words as u64 limbs, in `observe_shape` order: constraint_count
-  -- (= zero_count), max_constraint_degree, preprocessed_height,
-  -- preprocessed_width, main_width, stage_2_width.
+  -- 8-word header, the node stream, the zeros, and the compiled lookups
+  -- (which drive the direct logUp evaluation) are all parsed. Besides the
+  -- parsed circuit, returns its 6 shape words as u64 limbs, in
+  -- `observe_shape` order: constraint_count (user roots + (L+3)·D, read
+  -- from the header), max_constraint_degree (combined),
+  -- preprocessed_height, preprocessed_width, main_width, stage_2_width.
   fn read_sys_circuit(base: G) -> (SysCircuit, [U64; 6], G) {
     let (rec_len, r0) = #read_vk_u32(base);
     let (mw, mwl, c1) = #read_vk_u32_limb(r0);
     let (pw, pwl, c2) = #read_vk_u32_limb(c1);
     let (ph, phl, c3) = #read_vk_u32_limb(c2);
-    let (np, c4) = #read_vk_u32(c3);
+    let (cc, ccl, c4) = #read_vk_u32_limb(c3);
     let (s2w, s2wl, c5) = #read_vk_u32_limb(c4);
     let (md, mdl, c6) = #read_vk_u32_limb(c5);
     let (lpl, c7) = #read_vk_u32(c6);
     let (ncount, c8) = #read_vk_u32(c7);
     let (nodes, c9) = read_nodes_n(c8, ncount);
-    let (zcount, zcl, c10) = #read_vk_u32_limb(c9);
+    let (zcount, c10) = #read_vk_u32(c9);
     let (zeros, c11) = read_node_ids_n(c10, zcount);
-    -- The remaining bytes of the record are the compiled lookups; skip them.
+    let (lcount, c12) = #read_vk_u32(c11);
+    let (lks, c13) = read_sys_lookups_n(c12, lcount);
+    -- The record length prefix must frame exactly the parsed content.
     let rend = r0 + rec_len;
-    (SysCircuit.Mk(nodes, ncount, zeros, md),
-     [zcl, mdl, phl, pwl, mwl, s2wl], rend)
+    assert_eq!(rend - c13, 0);
+    (SysCircuit.Mk(nodes, ncount, zeros, md, lks),
+     [ccl, mdl, phl, pwl, mwl, s2wl], rend)
   }
   fn cons_shape6(l: [U64; 6], tail: List‹U64›) -> List‹U64› {
     store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],

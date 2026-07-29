@@ -609,15 +609,103 @@ def verifier := ⟦
     }
   }
 
+  -- ==========================================================================
+  -- Direct logUp constraint evaluation (mirrors Rust
+  -- `lookup::logup_constraint_values`). The logUp constraints are protocol
+  -- machinery, never compiled into the vk's node graph: their values at ζ
+  -- are computed here from the lookup ids (evaluated through the memoized
+  -- `eval_at`), the stage-2 openings, and the lookup publics, and folded
+  -- with α after the user roots — per lookup the 2 coordinates of
+  -- `(β + fingerprint(γ, args))·inv − 1`, then the first-row, transition,
+  -- and last-row accumulator constraints (2 coordinates each).
+  --
+  -- Coordinates: a coordinate-expanded logUp constraint is a PAIR of
+  -- base-field polynomials; at ζ each coordinate is an Ext value. Pair
+  -- products are in X² = 7 with Ext coefficients:
+  -- (a0·b0 + 7·a1·b1, a0·b1 + a1·b0).
+  -- ==========================================================================
+  fn pair_mul(a0: Ext, a1: Ext, b0: Ext, b1: Ext) -> (Ext, Ext) {
+    (eg_add(eg_mul(a0, b0), eg_mul([7, 0], eg_mul(a1, b1))),
+     eg_add(eg_mul(a0, b1), eg_mul(a1, b0)))
+  }
+
+  -- fingerprint(γ, args) = Σᵢ argsᵢ·γ^i as a coordinate pair:
+  -- fp(Cons(a, rest)) = (eval a, 0) + γ ⊗ fp(rest); args embed in coord 0.
+  fn logup_fingerprint(args: List‹G›, g0: Ext, g1: Ext, nodes: List‹SysNode›,
+      main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
+      s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
+      isf: Ext, isl: Ext, ist: Ext) -> (Ext, Ext) {
+    match load(args) {
+      ListNode.Nil => ([0, 0], [0, 0]),
+      ListNode.Cons(a, rest) =>
+        let (f0, f1) = logup_fingerprint(rest, g0, g1, nodes,
+          main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
+        let (m0, m1) = pair_mul(f0, f1, g0, g1);
+        let av = eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next,
+                         publics, isf, isl, ist);
+        (eg_add(m0, av), m1),
+    }
+  }
+
+  -- Per-lookup message constraints, folding into the α accumulator as we
+  -- go and accumulating `acc_expr = acc_col + Σⱼ multⱼ·invⱼ` (as a
+  -- coordinate pair) for the accumulator constraints. `j` is the lookup
+  -- slot (inverse columns at stage-2 slots 1+j).
+  fn logup_lookups_fold(acc: Ext, alpha: Ext, lks: List‹SysLookup›, j: G,
+      ae0: Ext, ae1: Ext, b0: Ext, b1: Ext, g0: Ext, g1: Ext,
+      nodes: List‹SysNode›,
+      main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
+      s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
+      isf: Ext, isl: Ext, ist: Ext) -> (Ext, Ext, Ext) {
+    match load(lks) {
+      ListNode.Nil => (acc, ae0, ae1),
+      ListNode.Cons(lk, rest) =>
+        let SysLookup.Mk(mid, args) = lk;
+        let inv0 = list_lookup(s2, 2 + j + j);
+        let inv1 = list_lookup(s2, 3 + j + j);
+        let (f0, f1) = logup_fingerprint(args, g0, g1, nodes,
+          main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
+        let (c0, c1) = pair_mul(eg_add(f0, b0), eg_add(f1, b1), inv0, inv1);
+        let acc1 = ood_fold(ood_fold(acc, alpha, eg_sub(c0, [1, 0])), alpha, c1);
+        let m = eval_at(nodes, mid, main, main_next, prep, prep_next, s2, s2next,
+                        publics, isf, isl, ist);
+        logup_lookups_fold(acc1, alpha, rest, j + 1,
+          eg_add(ae0, eg_mul(m, inv0)), eg_add(ae1, eg_mul(m, inv1)),
+          b0, b1, g0, g1, nodes,
+          main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+    }
+  }
+
   -- The composition polynomial `composition(ζ)` for one circuit: interpret
-  -- the compiled node graph at each constraint root over the opened rows /
-  -- publics / selectors, Horner-folding with α.
-  fn ood_composition(nodes: List‹SysNode›, zeros: List‹G›,
+  -- the compiled node graph at each USER constraint root, then fold the
+  -- directly-evaluated logUp constraint values, all Horner-folded with α
+  -- in the canonical protocol order.
+  fn ood_composition(nodes: List‹SysNode›, zeros: List‹G›, lks: List‹SysLookup›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext) -> Ext {
-    fold_roots([0, 0], alpha, zeros, nodes,
-               main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)
+    let base = fold_roots([0, 0], alpha, zeros, nodes,
+               main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
+    -- publics layout: β=(0,1), γ=(2,3), acc=(4,5), next_acc=(6,7).
+    let b0 = list_lookup(publics, 0); let b1 = list_lookup(publics, 1);
+    let g0 = list_lookup(publics, 2); let g1 = list_lookup(publics, 3);
+    let a0 = list_lookup(publics, 4); let a1 = list_lookup(publics, 5);
+    let na0 = list_lookup(publics, 6); let na1 = list_lookup(publics, 7);
+    -- stage-2 slot 0 = the running accumulator column.
+    let ac0 = list_lookup(s2, 0); let ac1 = list_lookup(s2, 1);
+    let nc0 = list_lookup(s2next, 0); let nc1 = list_lookup(s2next, 1);
+    let (acc, ae0, ae1) = logup_lookups_fold(base, alpha, lks, 0, ac0, ac1,
+      b0, b1, g0, g1, nodes,
+      main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
+    -- First row: acc_col = acc.
+    let acc = ood_fold(acc, alpha, eg_mul(isf, eg_sub(ac0, a0)));
+    let acc = ood_fold(acc, alpha, eg_mul(isf, eg_sub(ac1, a1)));
+    -- Transition: acc_expr = next row's accumulator column.
+    let acc = ood_fold(acc, alpha, eg_mul(ist, eg_sub(ae0, nc0)));
+    let acc = ood_fold(acc, alpha, eg_mul(ist, eg_sub(ae1, nc1)));
+    -- Last row: acc_expr = next_acc.
+    let acc = ood_fold(acc, alpha, eg_mul(isl, eg_sub(ae0, na0)));
+    ood_fold(acc, alpha, eg_mul(isl, eg_sub(ae1, na1)))
   }
 
   -- The public-input coordinates for one circuit's lookup argument: the base
@@ -694,7 +782,7 @@ def verifier := ⟦
     match load(circuits) {
       ListNode.Nil => 1,
       ListNode.Cons(circ, rest) =>
-        let SysCircuit.Mk(nodes, _node_count, zeros, md) = circ;
+        let SysCircuit.Mk(nodes, _node_count, zeros, md, lks) = circ;
         let l = to_field(list_lookup(log_degrees, i));
         let qd = quotient_degree_of(md);
         let naccp = list_lookup(accs, i);
@@ -708,7 +796,7 @@ def verifier := ⟦
         let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
         let publics = build_publics(lch, fch, accp, naccp);
-        let comp = ood_composition(nodes, zeros,
+        let comp = ood_composition(nodes, zeros, lks,
                                    main, main_next, prep, prep_next, s2row, s2next,
                                    publics, isf, isl, ist, alpha);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back
