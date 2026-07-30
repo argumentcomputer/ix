@@ -1,3 +1,8 @@
+# Standalone workspace root: this guest is compiled out-of-tree for the
+# zkVM target; the empty `[workspace]` pins cargo's upward workspace
+# search to this directory (mirrors `../../sp1/guest`).
+[workspace]
+
 [package]
 name = "sp1-compress-guest"
 version = "0.1.0"
@@ -9,15 +14,19 @@ edition = "2024"
 aiur = { path = "../../crates/aiur", default-features = false }
 # Must stay on the exact rev the root workspace pins: the proof/vk wire
 # formats and the verifier transcript are rev-sensitive.
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2c019220cb43ce946efec6b9caf507f5a6bccd1c" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "40092c160f51fdc2330b9e388873ece3fa4c12c2" }
 # Digest of the verifying-key bytes committed as public values. Same hash the
 # Ix store uses for addressing, so consumers can compare against known vks.
 blake3 = "1"
-sp1-zkvm = "6.3.1"
+sp1-zkvm = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", features = [
+  "blake3",
+] }
 
-# Route Keccak-f through SP1's KECCAK_PERMUTE precompile. multi-stark's
-# Merkle/challenger hashing is Keccak-256 via p3-keccak -> tiny-keccak, and it
-# dominates the verifier's cycle count (unpatched: ~215M cycles for the demo).
-# The guest is its own workspace, so this patch must live here.
+# Route blake3 compression through SP1's BLAKE3_COMPRESS precompile on the
+# zkVM target. Aiur's config is GoldilocksBlake3Config: the challenger AND
+# the Merkle commitments hash with blake3, so this patch covers the whole
+# transcript (the earlier tiny-keccak patch here predated the config switch
+# and patched a hash the verifier no longer uses). The guest is its own
+# workspace, so the patch must live here.
 [patch.crates-io]
-tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.2.0" }
+blake3 = { git = "https://github.com/argumentcomputer/BLAKE3", branch = "sp1" }

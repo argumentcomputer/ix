@@ -58,35 +58,46 @@ pub fn fri_parameters_to_bytes(fri: &FriParameters) -> Vec<u8> {
   .collect()
 }
 
-/// Expected guest public values: `blake3(vk) || fri params || claim`.
+/// Expected guest public values:
+/// `blake3(vk) || fri params || n || (claim_len_u32 || claim)*`.
 pub fn expected_public_values(
   vk_bytes: &[u8],
-  claim_bytes: &[u8],
+  claims: &[Vec<u8>],
   fri: &FriParameters,
 ) -> Vec<u8> {
-  let mut expected = Vec::with_capacity(32 + 40 + claim_bytes.len());
+  let mut expected = Vec::with_capacity(32 + 40 + 4);
   expected.extend_from_slice(blake3::hash(vk_bytes).as_bytes());
   expected.extend_from_slice(&fri_parameters_to_bytes(fri));
-  expected.extend_from_slice(claim_bytes);
+  expected.extend_from_slice(&(claims.len() as u32).to_le_bytes());
+  for claim_bytes in claims {
+    expected
+      .extend_from_slice(&((claim_bytes.len() / 8) as u32).to_le_bytes());
+    expected.extend_from_slice(claim_bytes);
+  }
   expected
 }
 
-/// Run the guest over `(vk, fri, claim, proof)` and produce an SP1 proof of
-/// the in-circuit Aiur verification (or just emulate, for `Mode::Execute`).
-/// `output`, when set, receives the SP1 proof in the SDK's `.save()` format.
+/// Run the guest over `(vk, fri, [(claim, proof)…])` and produce ONE SP1
+/// proof of the in-circuit verification of the whole batch (or just
+/// emulate, for `Mode::Execute`). Every proof in the batch is a statement
+/// of the same system, verified against the single shared vk. `output`,
+/// when set, receives the SP1 proof in the SDK's `.save()` format.
 pub async fn run_sp1(
   vk_bytes: Vec<u8>,
-  claim_bytes: Vec<u8>,
-  proof_bytes: Vec<u8>,
+  pairs: Vec<(Vec<u8>, Vec<u8>)>,
   fri: &FriParameters,
   mode: Mode,
   output: Option<&Path>,
 ) -> Result<()> {
+  if pairs.is_empty() {
+    bail!("empty batch: need at least one (claim, proof) pair");
+  }
+  let proof_total: usize = pairs.iter().map(|(_, p)| p.len()).sum();
   println!(
-    "inner proof: {} bytes, vk: {} bytes, claim: {} elements",
-    proof_bytes.len(),
-    vk_bytes.len(),
-    claim_bytes.len() / 8
+    "batch: {} proof(s), {} proof bytes total, vk: {} bytes",
+    pairs.len(),
+    proof_total,
+    vk_bytes.len()
   );
 
   // Debug escape hatch: dump the exact guest inputs as artifact files (the
@@ -95,18 +106,25 @@ pub async fn run_sp1(
     let dir = Path::new(&dir);
     std::fs::create_dir_all(dir)?;
     std::fs::write(dir.join("vk.bin"), &vk_bytes)?;
-    std::fs::write(dir.join("claim.bin"), &claim_bytes)?;
-    std::fs::write(dir.join("proof.bin"), &proof_bytes)?;
+    for (k, (claim_bytes, proof_bytes)) in pairs.iter().enumerate() {
+      std::fs::write(dir.join(format!("claim-{k}.bin")), claim_bytes)?;
+      std::fs::write(dir.join(format!("proof-{k}.bin")), proof_bytes)?;
+    }
     println!("sp1-compress: dumped guest inputs to {}", dir.display());
   }
 
   let mut stdin = SP1Stdin::new();
   stdin.write_vec(vk_bytes.clone());
   stdin.write_vec(fri_parameters_to_bytes(fri));
-  stdin.write_vec(claim_bytes.clone());
-  stdin.write_vec(proof_bytes);
+  stdin.write_vec((pairs.len() as u32).to_le_bytes().to_vec());
+  let claims: Vec<Vec<u8>> =
+    pairs.iter().map(|(c, _)| c.clone()).collect();
+  for (claim_bytes, proof_bytes) in pairs {
+    stdin.write_vec(claim_bytes);
+    stdin.write_vec(proof_bytes);
+  }
 
-  let expected = expected_public_values(&vk_bytes, &claim_bytes, fri);
+  let expected = expected_public_values(&vk_bytes, &claims, fri);
   let client = ProverClient::from_env().await;
 
   if matches!(mode, Mode::Execute) {
@@ -164,18 +182,12 @@ pub async fn run_sp1(
 /// Blocking wrapper for callers without an async runtime (the `ix` FFI).
 pub fn run_sp1_blocking(
   vk_bytes: Vec<u8>,
-  claim_bytes: Vec<u8>,
-  proof_bytes: Vec<u8>,
+  pairs: Vec<(Vec<u8>, Vec<u8>)>,
   fri: &FriParameters,
   mode: Mode,
   output: Option<&Path>,
 ) -> Result<()> {
-  tokio::runtime::Runtime::new().context("tokio runtime")?.block_on(run_sp1(
-    vk_bytes,
-    claim_bytes,
-    proof_bytes,
-    fri,
-    mode,
-    output,
-  ))
+  tokio::runtime::Runtime::new()
+    .context("tokio runtime")?
+    .block_on(run_sp1(vk_bytes, pairs, fri, mode, output))
 }

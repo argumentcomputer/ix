@@ -12,9 +12,7 @@
 //! degree-2 `Mul`; `lookups` counts the reserved return lookup (slot 0)
 //! plus one per `Call`.
 
-use aiur::bytecode::{
-  Block, Circuit, Ctrl, Function, FunctionLayout, Op, Toplevel,
-};
+use aiur::bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel};
 
 pub fn toplevel() -> Toplevel {
   let square_sum_layout = FunctionLayout {
@@ -53,16 +51,7 @@ pub fn toplevel() -> Toplevel {
     entry: false,
     constrained: true,
   };
-  Toplevel {
-    functions: vec![square_sum, add],
-    memory_sizes: vec![],
-    // Ungrouped functions get one singleton circuit each, in function order
-    // (mirrors `Bytecode.Toplevel.buildCircuits` on the Lean side).
-    circuits: vec![
-      Circuit { members: vec![0], layout: square_sum_layout },
-      Circuit { members: vec![1], layout: add_layout },
-    ],
-  }
+  Toplevel { functions: vec![square_sum, add], memory_sizes: vec![] }
 }
 
 /// Entry function index for [`toplevel`].

@@ -1017,10 +1017,13 @@ fn decode_io_buffer_map(
 /// `Aiur.sp1CompressAiurProof : @& ByteArray → @& ByteArray → @& ByteArray →
 /// @& FriParameters → @& String → @& String → Except String Unit`
 ///
-/// Verifies an Aiur proof inside the SP1 zkVM guest and produces a recursive
-/// SP1 proof of that verification (see `sp1-compress/`). Arguments are the
-/// verifying-key bytes (`vk_codec` format), the claim as canonical u64 LE
-/// Goldilocks elements, and the `Proof::to_bytes` bytes. `mode` is one of
+/// Verifies a BATCH of Aiur proofs (statements of one shared system)
+/// inside the SP1 zkVM guest and produces a single recursive SP1 proof of
+/// the whole batch (see `sp1-compress/`). Arguments are the verifying-key
+/// bytes (`vk_codec` format) and two FRAMED batch blobs pairing by
+/// position: `claims_blob` and `proofs_blob` are each a concatenation of
+/// `u32 LE length ‖ item` records (claims: canonical u64 LE Goldilocks
+/// elements; proofs: `Proof::to_bytes`). `mode` is one of
 /// `execute|core|compressed|groth16|plonk`; `output` is the path the SP1
 /// proof is saved to (`""` = don't save).
 ///
@@ -1029,14 +1032,32 @@ fn decode_io_buffer_map(
 #[unsafe(no_mangle)]
 extern "C" fn rs_sp1_compress_aiur_proof(
   vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
-  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
-  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claims_blob: LeanByteArray<LeanBorrowed<'_>>,
+  proofs_blob: LeanByteArray<LeanBorrowed<'_>>,
   fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   mode: LeanString<LeanBorrowed<'_>>,
   output: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   #[cfg(feature = "sp1")]
   {
+    fn unframe(blob: &[u8], what: &str) -> Result<Vec<Vec<u8>>, String> {
+      let mut items = Vec::new();
+      let mut pos = 0usize;
+      while pos < blob.len() {
+        if pos + 4 > blob.len() {
+          return Err(format!("{what}: truncated length at byte {pos}"));
+        }
+        let len =
+          u32::from_le_bytes(blob[pos..pos + 4].try_into().unwrap()) as usize;
+        pos += 4;
+        if pos + len > blob.len() {
+          return Err(format!("{what}: truncated item at byte {pos}"));
+        }
+        items.push(blob[pos..pos + len].to_vec());
+        pos += len;
+      }
+      Ok(items)
+    }
     let fri = decode_fri_parameters(&fri_parameters);
     let mode = match mode.as_str().parse::<sp1_compress_host::Mode>() {
       Ok(m) => m,
@@ -1046,10 +1067,25 @@ extern "C" fn rs_sp1_compress_aiur_proof(
       "" => None,
       s => Some(std::path::PathBuf::from(s)),
     };
+    let claims = match unframe(claims_blob.as_bytes(), "claims blob") {
+      Ok(v) => v,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let proofs = match unframe(proofs_blob.as_bytes(), "proofs blob") {
+      Ok(v) => v,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    if claims.len() != proofs.len() {
+      return LeanExcept::error_string(&format!(
+        "{} claim(s) but {} proof(s); they pair by position",
+        claims.len(),
+        proofs.len()
+      ));
+    }
+    let pairs = claims.into_iter().zip(proofs).collect();
     match sp1_compress_host::run_sp1_blocking(
       vk_bytes.as_bytes().to_vec(),
-      claim_bytes.as_bytes().to_vec(),
-      proof_bytes.as_bytes().to_vec(),
+      pairs,
       &fri,
       mode,
       output.as_deref(),
@@ -1061,7 +1097,7 @@ extern "C" fn rs_sp1_compress_aiur_proof(
   #[cfg(not(feature = "sp1"))]
   {
     let _ =
-      (&vk_bytes, &claim_bytes, &proof_bytes, &fri_parameters, &mode, &output);
+      (&vk_bytes, &claims_blob, &proofs_blob, &fri_parameters, &mode, &output);
     LeanExcept::error_string(
       "ix was built without SP1 support; rebuild with `IX_SP1=1 lake build`",
     )

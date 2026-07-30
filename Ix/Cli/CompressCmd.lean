@@ -42,13 +42,20 @@ private def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
   numQueries := 100
-  commitProofOfWorkBits := 20
-  queryProofOfWorkBits := 0
+  commitProofOfWorkBits := 0
+  queryProofOfWorkBits := 20
 }
 
 /-- Aiur claim → guest wire format: one canonical u64 LE per element. -/
 private def claimToLEBytes (claim : Array Aiur.G) : ByteArray :=
   claim.foldl (init := .empty) fun acc g => acc ++ g.val.toLEBytes
+
+/-- Frame batch items for the FFI: `u32 LE length ‖ item` per record. -/
+private def frame (items : Array ByteArray) : ByteArray :=
+  items.foldl (init := .empty) fun acc b =>
+    acc ++ (⟨#[(b.size % 256).toUInt8, (b.size / 256 % 256).toUInt8,
+               (b.size / 65536 % 256).toUInt8,
+               (b.size / 16777216 % 256).toUInt8]⟩ : ByteArray) ++ b
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   let output := (p.flag? "output").map (·.as! String) |>.getD ""
@@ -66,18 +73,12 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     | .error e =>
       IO.eprintln s!"error: SP1 wrap failed: {e}"
       return 1
-  let proofHex ← match (p.variableArgsAs! String).toList with
-    | [h] => pure h
+  let proofHexes ← match (p.variableArgsAs! String).toList with
     | [] =>
-      p.printError "error: must specify <proof-hex> (or --from-sp1 <file>)"
+      p.printError "error: must specify <proof-hex>… (or --from-sp1 <file>)"
       return 1
-    | _ =>
-      p.printError "error: expected exactly one <proof-hex>"
-      return 1
+    | hs => pure hs
   let mode := (p.flag? "mode").map (·.as! String) |>.getD "compressed"
-  let proofAddr ← addrOfHex! "proof" proofHex
-  let bytes ← StoreIO.toIO (Store.read proofAddr)
-  let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
   let (aiurSystem, compiled) ← match (← Ix.Cli.VerifyCmd.buildBackend) with
     | .error e => IO.eprintln e; return 1
     | .ok b => pure b
@@ -86,17 +87,32 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     | none =>
       IO.eprintln "error: `verify_claim` entrypoint missing from compiled toplevel"
       return 1
-  -- Same public-input reconstruction as `ix verify`: `verify_claim` takes
-  -- the 32-G blake3 digest of the serialized claim.
-  let claimDigest := Address.blake3 (Ix.Claim.ser wrapper.claim)
-  let input : Array Aiur.G := claimDigest.hash.data.map .ofUInt8
-  let aiurClaim := Aiur.buildClaim funIdx input #[]
-  IO.println s!"Compressing proof {proofAddr} (claim {claimDigest}) in SP1, mode={mode}"
+  -- One shared vk: every shard proof is a statement of the same
+  -- `verify_claim` system, so the guest decodes the vk once and verifies
+  -- the whole batch against it.
+  let mut claims : Array ByteArray := #[]
+  let mut proofs : Array ByteArray := #[]
+  let mut digests : Array Address := #[]
+  for proofHex in proofHexes do
+    let proofAddr ← addrOfHex! "proof" proofHex
+    let bytes ← StoreIO.toIO (Store.read proofAddr)
+    let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
+    -- Same public-input reconstruction as `ix verify`: `verify_claim`
+    -- takes the 32-G blake3 digest of the serialized claim.
+    let claimDigest := Address.blake3 (Ix.Claim.ser wrapper.claim)
+    let input : Array Aiur.G := claimDigest.hash.data.map .ofUInt8
+    let aiurClaim := Aiur.buildClaim funIdx input #[]
+    claims := claims.push (claimToLEBytes aiurClaim)
+    proofs := proofs.push wrapper.proof
+    digests := digests.push claimDigest
+  IO.println s!"Compressing {proofHexes.length} proof(s) in SP1, mode={mode}"
+  for (h, d) in proofHexes.zip digests.toList do
+    IO.println s!"  {h.take 16}… → claim {d}"
   (← IO.getStdout).flush
-  match Aiur.sp1CompressAiurProof aiurSystem.vkBytes (claimToLEBytes aiurClaim)
-      wrapper.proof friParameters mode output with
+  match Aiur.sp1CompressAiurProof aiurSystem.vkBytes (frame claims)
+      (frame proofs) friParameters mode output with
   | .ok () =>
-    IO.println s!"ok: SP1 ({mode}) accepted proof {proofAddr} for claim {claimDigest}"
+    IO.println s!"ok: SP1 ({mode}) accepted {proofHexes.length} proof(s)"
     return 0
   | .error e =>
     IO.eprintln s!"error: SP1 compress failed: {e}"
@@ -115,7 +131,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "from-sp1" : String; "Upgrade an already-saved compressed SP1 proof file to groth16/plonk without redoing the STARK pipeline. Skips <proof-hex> and the Aiur backend entirely."
 
   ARGS:
-    ...proof : String; "32-byte hex address of a persisted `Ixon.Proof` wrapper in `~/.ix/store/`. Exactly one, unless --from-sp1 is given (then omit it)."
+    ...proof : String; "32-byte hex addresses of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. One or more (a batch becomes ONE SP1 proof), unless --from-sp1 is given (then omit them)."
 ]
 
 end

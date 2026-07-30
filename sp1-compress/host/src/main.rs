@@ -73,17 +73,20 @@ enum Command {
     #[arg(long)]
     output: Option<PathBuf>,
   },
-  /// Compress an existing Aiur proof from artifact files.
+  /// Compress a batch of existing Aiur proofs (statements of ONE shared
+  /// system) from artifact files into a single SP1 proof.
   Compress {
     /// Verifying key bytes (`aiur::vk_codec::aiur_system_to_bytes`).
     #[arg(long)]
     vk: PathBuf,
-    /// Claim: one canonical u64 LE per Goldilocks element.
-    #[arg(long)]
-    claim: PathBuf,
-    /// Proof bytes (`multi_stark::prover::Proof::to_bytes`).
-    #[arg(long)]
-    proof: PathBuf,
+    /// Claim files, one canonical u64 LE per Goldilocks element. Repeat
+    /// the flag per batch member; positions pair with `--proof`.
+    #[arg(long, required = true)]
+    claim: Vec<PathBuf>,
+    /// Proof files (`multi_stark::prover::Proof::to_bytes`). Repeat the
+    /// flag per batch member; positions pair with `--claim`.
+    #[arg(long, required = true)]
+    proof: Vec<PathBuf>,
     #[command(flatten)]
     fri: FriArgs,
     #[command(flatten)]
@@ -102,9 +105,9 @@ struct FriArgs {
   max_log_arity: usize,
   #[arg(long, default_value_t = 100)]
   num_queries: usize,
-  #[arg(long, default_value_t = 20)]
-  commit_pow_bits: usize,
   #[arg(long, default_value_t = 0)]
+  commit_pow_bits: usize,
+  #[arg(long, default_value_t = 20)]
   query_pow_bits: usize,
 }
 
@@ -150,8 +153,7 @@ async fn main() -> Result<()> {
         sp1.mode.parse().map_err(|e: String| anyhow::anyhow!(e))?;
       run_sp1(
         vk_bytes,
-        claim_bytes,
-        proof_bytes,
+        vec![(claim_bytes, proof_bytes)],
         &fri.to_parameters(),
         mode,
         sp1.output.as_deref(),
@@ -163,19 +165,38 @@ async fn main() -> Result<()> {
       sp1_compress_host::wrap::wrap_saved(&input, mode, output.as_deref()).await
     },
     Command::Compress { vk, claim, proof, fri, sp1 } => {
+      if claim.len() != proof.len() {
+        bail!(
+          "{} --claim file(s) but {} --proof file(s); they pair by position",
+          claim.len(),
+          proof.len()
+        );
+      }
       let vk_bytes =
         std::fs::read(&vk).with_context(|| format!("read {}", vk.display()))?;
-      let claim_bytes = std::fs::read(&claim)
-        .with_context(|| format!("read {}", claim.display()))?;
-      let proof_bytes = std::fs::read(&proof)
-        .with_context(|| format!("read {}", proof.display()))?;
       // Fail fast on bad artifacts before paying for SP1 setup: the guest
       // would reject them anyway, but natively the error is immediate.
       let key = AiurVerifyingKey::from_bytes(&vk_bytes)
         .map_err(|e| anyhow::anyhow!("bad verifying key: {e}"))?;
-      let claim_elts = decode_claim(&claim_bytes)?;
-      let inner_proof = multi_stark::prover::Proof::from_bytes(&proof_bytes)
-        .map_err(|e| anyhow::anyhow!("bad proof: {e}"))?;
+      let mut pairs: Vec<(Vec<u8>, Vec<u8>)> =
+        Vec::with_capacity(claim.len());
+      for (c, pr) in claim.iter().zip(&proof) {
+        let claim_bytes = std::fs::read(c)
+          .with_context(|| format!("read {}", c.display()))?;
+        let proof_bytes = std::fs::read(pr)
+          .with_context(|| format!("read {}", pr.display()))?;
+        let claim_elts = decode_claim(&claim_bytes)?;
+        let inner_proof = multi_stark::prover::Proof::from_bytes(&proof_bytes)
+          .map_err(|e| anyhow::anyhow!("bad proof {}: {e}", pr.display()))?;
+        key.verify(&claim_elts, &inner_proof).map_err(|e| {
+          anyhow::anyhow!(
+            "Aiur proof {} does not verify natively: {e:?}",
+            pr.display()
+          )
+        })?;
+        pairs.push((claim_bytes, proof_bytes));
+      }
+      println!("native pre-check: {} Aiur proof(s) verify", pairs.len());
       let fri_params = fri.to_parameters();
       let vk_fri = key.fri_parameters();
       if (
@@ -193,21 +214,10 @@ async fn main() -> Result<()> {
       ) {
         bail!("--fri parameters do not match the verifying key");
       }
-      key.verify(&claim_elts, &inner_proof).map_err(|e| {
-        anyhow::anyhow!("Aiur proof does not verify natively: {e:?}")
-      })?;
-      println!("native pre-check: Aiur proof verifies");
       let mode: Mode =
         sp1.mode.parse().map_err(|e: String| anyhow::anyhow!(e))?;
-      run_sp1(
-        vk_bytes,
-        claim_bytes,
-        proof_bytes,
-        &fri.to_parameters(),
-        mode,
-        sp1.output.as_deref(),
-      )
-      .await
+      run_sp1(vk_bytes, pairs, &fri.to_parameters(), mode, sp1.output.as_deref())
+        .await
     },
   }
 }

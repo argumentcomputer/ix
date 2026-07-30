@@ -8,23 +8,28 @@ edition = "2024"
 # under rayon. Only the host proves; the guest never enables it.
 aiur = { path = "../../crates/aiur", features = ["parallel"] }
 # Same rev as the root workspace and the guest — see guest/Cargo.toml.
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2c019220cb43ce946efec6b9caf507f5a6bccd1c" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "40092c160f51fdc2330b9e388873ece3fa4c12c2", features = ["parallel"] }
 blake3 = "1"
 # Git tag rather than crates.io: the SDK's `cuda` feature depends on
 # `sp1-cuda` 6.3.1, which was never published to crates.io and only resolves
 # from the sp1 repo itself. Same code as the crates.io 6.3.1 release.
-sp1-sdk = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+# The argumentcomputer fork: adds the BLAKE3_COMPRESS precompile chip the
+# guest's patched blake3 issues (stock v6.3.1 rejects the syscall), plus
+# `experimental` for the WITHOUT_VK_VERIFICATION=1 bypass its non-registry
+# recursion shapes need. Mirrors ../sp1/host.
+sp1-sdk = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", features = ["experimental"] }
 # The `wrap` upgrade path (resume shrink→wrap→gnark from a saved compressed
-# proof) needs the prover internals the SDK doesn't re-export. Same tag as
-# sp1-sdk; the slop-* crates live in the same repo.
-sp1-prover = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
-sp1-hypercube = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
-sp1-primitives = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
-sp1-recursion-circuit = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
-sp1-recursion-executor = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
-sp1-recursion-gnark-ffi = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
-slop-algebra = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
-slop-bn254 = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+# proof) needs the prover internals the SDK doesn't re-export. Every sp1-*
+# and slop-* crate MUST come from the same source as sp1-sdk (the fork) or
+# cargo compiles two sp1-verifier crates and the SP1Proof types split.
+sp1-prover = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+sp1-hypercube = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+sp1-primitives = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+sp1-recursion-circuit = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", default-features = false }
+sp1-recursion-executor = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", default-features = false }
+sp1-recursion-gnark-ffi = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", default-features = false }
+slop-algebra = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+slop-bn254 = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
@@ -35,7 +40,7 @@ bincode = "1.3"
 hex = "0.4"
 
 [build-dependencies]
-sp1-build = "6.3.1"
+sp1-build = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
 
 [features]
 default = []
