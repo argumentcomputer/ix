@@ -18,15 +18,5 @@ multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev
 # Digest of the verifying-key bytes committed as public values. Same hash the
 # Ix store uses for addressing, so consumers can compare against known vks.
 blake3 = "1"
-sp1-zkvm = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", features = [
-  "blake3",
-] }
+sp1-zkvm = "6.3.1"
 
-# Route blake3 compression through SP1's BLAKE3_COMPRESS precompile on the
-# zkVM target. Aiur's config is GoldilocksBlake3Config: the challenger AND
-# the Merkle commitments hash with blake3, so this patch covers the whole
-# transcript (the earlier tiny-keccak patch here predated the config switch
-# and patched a hash the verifier no longer uses). The guest is its own
-# workspace, so the patch must live here.
-[patch.crates-io]
-blake3 = { git = "https://github.com/argumentcomputer/BLAKE3", branch = "sp1" }

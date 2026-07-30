@@ -64,16 +64,25 @@ pub async fn wrap_saved(
     saved.public_values.as_slice().len()
   );
 
-  let node =
-    SP1LocalNodeBuilder::from_worker_client_builder(cpu_worker_builder())
-      .build()
+  // Shrink + wrap run on CPU here. In-process GPU (SP1CudaProverComponents)
+  // is blocked upstream: sp1-gpu-sys's CMake links CUDA::nvToolsExt, which
+  // CUDA 12.9 removed (only handled for >=13), and nvcc 13.x miscompiles
+  // the kernels (measured: `misaligned address` in the shrink stage on
+  // sm_120). Revisit when upstream fixes the 12.9 CMake branch. The main
+  // pipeline is unaffected: the SDK's .plonk()/.groth16() paths run
+  // shrink+wrap on the prebuilt gpu-server.
+  let wrap_proof = {
+    let node =
+      SP1LocalNodeBuilder::from_worker_client_builder(cpu_worker_builder())
+        .build()
+        .await
+        .map_err(|e| anyhow!("building local prover node: {e:#}"))?;
+    println!("running shrink + wrap (recursive STARK stages)...");
+    node
+      .shrink_wrap(&saved.proof)
       .await
-      .map_err(|e| anyhow!("building local prover node: {e:#}"))?;
-  println!("running shrink + wrap (recursive STARK stages)...");
-  let wrap_proof = node
-    .shrink_wrap(&saved.proof)
-    .await
-    .map_err(|e| anyhow!("shrink/wrap failed: {e:#}"))?;
+      .map_err(|e| anyhow!("shrink/wrap failed: {e:#}"))?
+  };
 
   println!("running gnark {mode:?} wrap...");
   saved.proof = match mode {

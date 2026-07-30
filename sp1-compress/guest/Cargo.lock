@@ -101,7 +101,8 @@ dependencies = [
 [[package]]
 name = "blake3"
 version = "1.8.5"
-source = "git+https://github.com/argumentcomputer/BLAKE3?branch=sp1#d36366f7badbff9be8e2522868dddd14561638f3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0aa83c34e62843d924f905e0f5c866eb1dd6545fc4d719e803d9ba6030371fce"
 dependencies = [
  "arrayref",
  "arrayvec",
@@ -1204,7 +1205,8 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 [[package]]
 name = "slop-algebra"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c112cafd4c5c374d267a48c8976d12fca3b0f2cc2e44e6fb1343808310b4fc6"
 dependencies = [
  "itertools 0.14.0",
  "p3-field 0.4.3-succinct",
@@ -1214,7 +1216,8 @@ dependencies = [
 [[package]]
 name = "slop-bn254"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea991a652ea2e55f0523649f5c9efbfb32cf9fdcc2bf3b3580b4343a94379503"
 dependencies = [
  "ff",
  "p3-bn254-fr",
@@ -1228,7 +1231,8 @@ dependencies = [
 [[package]]
 name = "slop-challenger"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33b33f1eaadcd4159157758b0edcf1c14f470915f85c648e660e4740ff83e921"
 dependencies = [
  "futures",
  "p3-challenger 0.4.3-succinct",
@@ -1240,7 +1244,8 @@ dependencies = [
 [[package]]
 name = "slop-koala-bear"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8795ee9a92ecf0a604c0e3ed20e80bbc38772310c0622f94a2e1b66ca2455cb8"
 dependencies = [
  "lazy_static",
  "p3-koala-bear",
@@ -1254,7 +1259,8 @@ dependencies = [
 [[package]]
 name = "slop-poseidon2"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25561d9ecf4bcf1aa2e800560ac557bff6dad943b9dc5cd0e8427fceca1e8c65"
 dependencies = [
  "p3-poseidon2 0.4.3-succinct",
 ]
@@ -1262,7 +1268,8 @@ dependencies = [
 [[package]]
 name = "slop-primitives"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6b24ad70b49f40d6acfe7b1ccf042db25820abe305a4c2232f15204f63f0227"
 dependencies = [
  "slop-algebra",
 ]
@@ -1270,7 +1277,8 @@ dependencies = [
 [[package]]
 name = "slop-symmetric"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94e580d03bb5383aca1c12579a8a24b838afb12eb356439e740cba34904b6864"
 dependencies = [
  "p3-symmetric 0.4.3-succinct",
 ]
@@ -1288,7 +1296,8 @@ dependencies = [
 [[package]]
 name = "sp1-lib"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "629b673d6aa3c666b41e14d699323413fa90195c906365ba8c49d1b8e4531151"
 dependencies = [
  "bincode 1.3.3",
  "serde",
@@ -1298,7 +1307,8 @@ dependencies = [
 [[package]]
 name = "sp1-primitives"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "421b4590a89bf7c263f8a64844a4034ee8cb73c351498911ce0acd18da6b5ed2"
 dependencies = [
  "bincode 1.3.3",
  "blake3",
@@ -1321,9 +1331,9 @@ dependencies = [
 [[package]]
 name = "sp1-zkvm"
 version = "6.3.1"
-source = "git+https://github.com/argumentcomputer/sp1?branch=blake3-precompile#261741a90e6e5e637a4dae7c00a501d63b90349c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f18fbc79e5a1cc499d3ae3904771104a854493ea12c317ff1407137d86153c26"
 dependencies = [
- "blake3",
  "cfg-if",
  "critical-section",
  "embedded-alloc",

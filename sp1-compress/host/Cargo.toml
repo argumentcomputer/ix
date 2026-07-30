@@ -17,19 +17,19 @@ blake3 = "1"
 # guest's patched blake3 issues (stock v6.3.1 rejects the syscall), plus
 # `experimental` for the WITHOUT_VK_VERIFICATION=1 bypass its non-registry
 # recursion shapes need. Mirrors ../sp1/host.
-sp1-sdk = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", features = ["experimental"] }
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
 # The `wrap` upgrade path (resume shrink→wrap→gnark from a saved compressed
 # proof) needs the prover internals the SDK doesn't re-export. Every sp1-*
 # and slop-* crate MUST come from the same source as sp1-sdk (the fork) or
 # cargo compiles two sp1-verifier crates and the SP1Proof types split.
-sp1-prover = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
-sp1-hypercube = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
-sp1-primitives = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
-sp1-recursion-circuit = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", default-features = false }
-sp1-recursion-executor = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", default-features = false }
-sp1-recursion-gnark-ffi = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", default-features = false }
-slop-algebra = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
-slop-bn254 = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+sp1-prover = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+sp1-hypercube = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+sp1-primitives = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+sp1-recursion-circuit = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
+sp1-recursion-executor = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
+sp1-recursion-gnark-ffi = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
+slop-algebra = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+slop-bn254 = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
@@ -40,7 +40,7 @@ bincode = "1.3"
 hex = "0.4"
 
 [build-dependencies]
-sp1-build = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+sp1-build = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
 
 [features]
 default = []
