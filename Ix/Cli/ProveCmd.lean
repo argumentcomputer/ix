@@ -226,7 +226,7 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
   for k in [0:shards.size] do
     let entry := proofsDir / toString digests[k]!
     if ← entry.pathExists then
-      match Address.fromString (← IO.FS.readFile entry).trim with
+      match Address.fromString (← IO.FS.readFile entry).trimAscii.toString with
       | some pa =>
         if (← Ix.Cli.VerifyCmd.verifyOneProof aiurSystem compiled pa) == 0 then
           done := done.insert k pa
