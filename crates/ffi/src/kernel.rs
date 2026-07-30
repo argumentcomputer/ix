@@ -69,7 +69,7 @@ use ix_kernel::ingress::{
 #[cfg(feature = "test-ffi")]
 use ix_kernel::ingress::{ixon_ingress, lean_ingress};
 use ix_kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
-use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
+use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
 #[cfg(feature = "test-ffi")]
@@ -1392,6 +1392,23 @@ fn run_anon_checks_parallel(
   eprintln!(
     "[rs_kernel_check_anon] checking {work_total} work item(s) for {total} consts with {worker_count} worker(s)..."
   );
+  // Per-work-item attribution entries (addr-keyed CSV; the CLI joins
+  // Lean names afterwards). An entry measures checking THAT item alone —
+  // one constant, or one whole Muts block — NOT re-checking its
+  // dependency closure: deps are lazily ingressed (parsed, hash-verified,
+  // interned) and trusted, and get their own entries when the whole-env
+  // walk reaches them. Because the KEnv is cleared before every item
+  // (clear_every default 1), each entry re-pays the ingress of whatever
+  // closure slice its check consults, so the counters charge everything
+  // the item consumed to the item: entries are attribution-faithful and
+  // sum to the env total with no double counting. This is a DIFFERENT
+  // scope from `check-rs --consts` closure measurements (full closure
+  // re-checked, the zkVM hosts' semantics). One push per item — lock
+  // contention is noise.
+  let per_const_out =
+    std::env::var("IX_KERNEL_PER_CONST_OUT").ok().filter(|s| !s.is_empty());
+  let per_const_rows: Arc<Mutex<Vec<String>>> =
+    Arc::new(Mutex::new(Vec::new()));
 
   let work = Arc::new(work);
   let addrs = Arc::new(addrs);
@@ -1412,6 +1429,8 @@ fn run_anon_checks_parallel(
     let results = Arc::clone(&results);
     let progress_worker = Arc::clone(&progress);
     let failure_log_worker = failure_log.clone();
+    let record_per_const = per_const_out.is_some();
+    let per_const_rows_worker = Arc::clone(&per_const_rows);
 
     let handle = match thread::Builder::new()
       .name(format!("ix-kernel-check-anon-{worker_idx}"))
@@ -1444,12 +1463,38 @@ fn run_anon_checks_parallel(
 
           let tc_start = Instant::now();
           let kid = KId::<Anon>::new(primary_addr.clone(), ());
-          let check_res = {
+          if record_per_const {
+            // Reset this worker's op counters so the post-check read
+            // attributes exactly this item (incl. TC setup + lazy ingress).
+            let _ = ix_kernel::profile::take_op_counts();
+          }
+          let (check_res, item_fuel) = {
             let mut tc =
               TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
-            tc.check_const(&kid)
+            let res = tc.check_const(&kid);
+            (res, tc.fuel_used())
           };
           let elapsed = tc_start.elapsed();
+          if record_per_const {
+            let ops = ix_kernel::profile::take_op_counts();
+            let cost = ix_kernel::shard::op_counts_cost(&ops);
+            let row = format!(
+              "{},{},{},{},{},{},{},{},{},{}",
+              primary_addr.hex(),
+              result_idxs.len(),
+              elapsed.as_nanos(),
+              item_fuel,
+              ops.subst_nodes,
+              ops.whnf_calls,
+              ops.def_eq_calls,
+              ops.nat_arith,
+              ops.intern_nodes,
+              cost,
+            );
+            if let Ok(mut rows) = per_const_rows_worker.lock() {
+              rows.push(row);
+            }
+          }
           let result: CheckRes = match check_res {
             Ok(()) => Ok(()),
             Err(e) => Err((ErrKind::Kernel, format!("{e}"))),
@@ -1518,6 +1563,26 @@ fn run_anon_checks_parallel(
   progress.log_mem_summary();
   if panicked {
     return Err("anon worker panicked".to_string());
+  }
+
+  if let Some(path) = &per_const_out {
+    let rows = per_const_rows
+      .lock()
+      .map_err(|e| format!("per-const entries poisoned: {e}"))?;
+    let mut out = String::with_capacity(rows.len() * 96 + 96);
+    out.push_str(
+      "addr,consts,nanos,heartbeats,subst,whnf,def_eq,nat_arith,intern,cost\n",
+    );
+    for r in rows.iter() {
+      out.push_str(r);
+      out.push('\n');
+    }
+    std::fs::write(path, out)
+      .map_err(|e| format!("write per-const csv {path}: {e}"))?;
+    eprintln!(
+      "[rs_kernel_check_anon] wrote {} per-const entries → {path}",
+      rows.len()
+    );
   }
 
   let mut ordered: Vec<CheckRes> = Vec::with_capacity(total);
@@ -2181,17 +2246,18 @@ fn print_profile_summary(
   profile: &BlockProfile,
 ) {
   use ix_kernel::shard::{
-    SHARD_STEP_FLOOR, STEPS_PER_HEARTBEAT, STEPS_PER_INGRESS_BYTE,
-    STEPS_PER_SUBST, block_step_cost, ram_gib_for_steps,
+    COST_PER_DEF_EQ, COST_PER_INGRESS_BYTE, COST_PER_INTERN, COST_PER_SUBST,
+    COST_PER_WHNF, SHARD_COST_FLOOR, block_step_cost, ram_gib_for_steps,
   };
-  let (mut hb, mut subst, mut whnf, mut defeq, mut nat) =
-    (0u64, 0u64, 0u64, 0u64, 0u64);
+  let (mut hb, mut subst, mut whnf, mut defeq, mut nat, mut intern) =
+    (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
   for rec in sink.records.values() {
     hb = hb.saturating_add(rec.fuel);
     subst = subst.saturating_add(rec.ops.subst_nodes);
     whnf = whnf.saturating_add(rec.ops.whnf_calls);
     defeq = defeq.saturating_add(rec.ops.def_eq_calls);
     nat = nat.saturating_add(rec.ops.nat_arith);
+    intern = intern.saturating_add(rec.ops.intern_nodes);
   }
   let ingress: u64 =
     profile.blocks().iter().map(|b| u64::from(b.serialized_size)).sum();
@@ -2199,7 +2265,7 @@ fn print_profile_summary(
     .blocks()
     .iter()
     .map(block_step_cost)
-    .fold(SHARD_STEP_FLOOR, u64::saturating_add);
+    .fold(SHARD_COST_FLOOR, u64::saturating_add);
   let ram_gib = ram_gib_for_steps(steps);
   let warn = if ram_gib > 250.0 {
     "  → exceeds a 250 GiB box; shard it (ix shard --max-ram G)"
@@ -2215,10 +2281,11 @@ fn print_profile_summary(
      \u{20}\u{20}whnf calls     {whnf:>14}\n\
      \u{20}\u{20}def-eq calls   {defeq:>14}\n\
      \u{20}\u{20}nat-arith      {nat:>14}\n\
+     \u{20}\u{20}intern nodes   {intern:>14}\n\
      \u{20}\u{20}ingress bytes  {ingress:>14}\n\n\
-     predicted Zisk leaf  ({SHARD_STEP_FLOOR} + {STEPS_PER_HEARTBEAT}·hb + {STEPS_PER_SUBST}·subst + {STEPS_PER_INGRESS_BYTE}·bytes)\n\
-     \u{20}\u{20}cycles ≈ {:.2e}\n\
-     \u{20}\u{20}RAM    ≈ {ram_gib:.0} GiB{warn}",
+     predicted Zisk leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
+     \u{20}\u{20}cost units ≈ {:.2e}  (~92.5/guest step)\n\
+     \u{20}\u{20}RAM        ≈ {ram_gib:.0} GiB{warn}",
     sink.records.len(),
     profile.num_blocks(),
     steps as f64,
@@ -2244,10 +2311,10 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
   };
   for (consumer, rec) in &merged.records {
     let (cblock, csize) = resolve(consumer);
-    builder.block(cblock.clone(), rec.fuel, csize, 1, rec.ops.subst_nodes);
+    builder.block(cblock.clone(), rec.fuel, csize, 1, rec.ops);
     for prod in &rec.producers {
       let (pblock, psize) = resolve(prod);
-      builder.block(pblock.clone(), 0, psize, 0, 0);
+      builder.block(pblock.clone(), 0, psize, 0, OpCounts::default());
       builder.delta_edge(cblock.clone(), pblock);
     }
   }
@@ -4069,78 +4136,4 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
   );
 
   build_string_array(&errors)
-}
-
-/// Test-FFI: ingress every anon work item of a serialized env into a fresh
-/// `KEnv<Anon>` and dump one row per kernel constant:
-/// `(kid_hex, ty_addr_hex, extra_hex)` where `extra_hex` is the Defn value
-/// address, or the comma-joined recursor rule-RHS addresses, or empty.
-/// Node-address bit-compat oracle for the pure-Lean `Ix.Tc` ingress
-/// (`Tests/Ix/Tc/NodeAddr.lean`): root ty/val/rule address equality
-/// transitively certifies every child node hash. Rows sorted by kid hex.
-#[cfg(feature = "test-ffi")]
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_kernel_ingress_anon_addrs(
-  env_bytes: lean_ffi::object::LeanByteArray<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  use ix_kernel::anon_work::build_anon_work;
-  use ix_kernel::constant::KConst;
-  use ix_kernel::ingress::ingress_anon_addr_shallow;
-
-  let bytes = env_bytes.as_bytes();
-  let mut slice: &[u8] = bytes;
-  let ixon_env = match IxonEnv::get(&mut slice) {
-    Ok(env) => env,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_kernel_ingress_anon_addrs: deserialize failed: {e}"
-      ));
-    },
-  };
-  let work = match build_anon_work(&ixon_env) {
-    Ok(w) => w,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_kernel_ingress_anon_addrs: build_anon_work: {e}"
-      ));
-    },
-  };
-  let mut kenv = KEnv::<Anon>::new();
-  for item in &work {
-    if let Err(e) =
-      ingress_anon_addr_shallow(&mut kenv, &ixon_env, item.primary())
-    {
-      return LeanIOResult::error_string(&format!(
-        "rs_kernel_ingress_anon_addrs: ingress {}: {e}",
-        item.primary().hex()
-      ));
-    }
-  }
-  let mut rows: Vec<(String, String, String)> = kenv
-    .iter()
-    .map(|(id, c)| {
-      let ty_hex = c.ty().addr().to_hex().to_string();
-      let extra = match &c {
-        KConst::Defn { val, .. } => val.addr().to_hex().to_string(),
-        KConst::Recr { rules, .. } => rules
-          .iter()
-          .map(|r| r.rhs.addr().to_hex().to_string())
-          .collect::<Vec<_>>()
-          .join(","),
-        _ => String::new(),
-      };
-      (id.addr.hex(), ty_hex, extra)
-    })
-    .collect();
-  rows.sort();
-  let arr = LeanArray::alloc(rows.len());
-  for (i, (kid, ty, extra)) in rows.iter().enumerate() {
-    let kid_obj: LeanOwned = LeanString::new(kid).into();
-    let ty_obj: LeanOwned = LeanString::new(ty).into();
-    let extra_obj: LeanOwned = LeanString::new(extra).into();
-    let inner: LeanOwned = LeanProd::new(ty_obj, extra_obj).into();
-    let triple: LeanOwned = LeanProd::new(kid_obj, inner).into();
-    arr.set(i, triple);
-  }
-  LeanIOResult::ok(arr)
 }

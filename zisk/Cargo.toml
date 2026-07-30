@@ -12,8 +12,8 @@ resolver = "2"
 # v1.0.0-alpha).
 # The guest reaches the precompile via `ziskos::zisklib::blake3` or,
 # transparently, through the `blake3` shim crate (see `zisk/guest/Cargo.toml`).
-zisk-sdk = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
-ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
+zisk-sdk = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-1.0.0-alpha" }
+ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-1.0.0-alpha" }
 
 # No local-path patch: the host builds zisk-sdk directly from the
 # `blake3-precompile` branch above. To iterate against a local checkout

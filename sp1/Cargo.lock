@@ -1811,6 +1811,7 @@ dependencies = [
  "indexmap 2.14.0",
  "ix-common",
  "memmap2",
+ "nom",
  "num-bigint 0.4.6",
  "rayon",
  "rustc-hash",

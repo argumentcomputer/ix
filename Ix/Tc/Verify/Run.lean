@@ -7,11 +7,11 @@ import Ix.Tc.Verify.Frame
 
 An explicit request list is not, by itself, evidence that it describes a
 checker run: choosing `[]` would make coverage and bounds vacuous.  This file
-closes that interface hole with `ExecutionRequests`, an inductive certificate
-indexed by the actual `TcM` computation and initial state. Its atomic constructors are exactly
+builds on `ExecutionRequests`, an inductive certificate indexed by the actual
+`TcM` computation and initial state. Its atomic constructors are exactly
 the currently audited interning operations; its composition constructors
-mirror `bind` and `tryCatch`.  There is deliberately no constructor that marks
-an arbitrary computation as silent.
+mirror `bind` and `tryCatch`; its silent constructors require intern-table
+preservation, so the request list bounds the run's interning.
 
 `ExecutionRequests` and `RunAssumptions` live in Verify/Execution.lean so the
 temporary statement skeleton can import them without importing concrete

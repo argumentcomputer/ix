@@ -141,6 +141,9 @@ lean_exe «bench-lean4lean» where
   root := `Benchmarks.Lean4LeanMain
   supportInterpreter := true
 
+lean_exe «bench-compile-init» where
+  root := `Benchmarks.CompileInit
+
 end Benchmarks
 
 section IxTcVerify

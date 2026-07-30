@@ -233,6 +233,8 @@ private def roots : Array RootAllowance := #[
     standardAxioms := standard, nativeAxioms := levelNative },
   { root := ``Ix.Tc.ExecutionRequests.of_eq,
     standardAxioms := standard, nativeAxioms := levelNative },
+  { root := ``Ix.Tc.ExecutionRequests.intern_eq_of_nil,
+    standardAxioms := standard, nativeAxioms := levelNative },
   { root := ``Ix.Tc.RunAssumptions.initial,
     standardAxioms := standard, nativeAxioms := levelNative },
   { root := ``Ix.Tc.RunAssumptions.requestBounds,

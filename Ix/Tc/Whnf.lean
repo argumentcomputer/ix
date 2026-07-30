@@ -58,6 +58,7 @@ structure NatRecLiteralParts (m : Mode) where
   major : Nat
   baseIdx : Nat
   stepIdx : Nat
+  majorIdx : Nat
 
 /-! ### Pure helpers -/
 
@@ -297,6 +298,46 @@ def evalNatOffsetLiteral (e : KExpr m) (depth : Nat) :
     RecM m (Option Nat) :=
   evalNatOffsetLiteralFuel (256 - depth) e
 
+/-- Decompose a (whnf'd) Nat term into `(base, offset)` for offset-aware
+    def-eq: `Lit n` → `(none, n)`; `succ^j(Nat.add core (Lit m))` →
+    `(some core, j + m)` read in O(1) per layer via `natOffset` instead of
+    peeled one def-eq recursion level at a time. `base = none` means the
+    core is literal zero (the term IS a numeral). The outer `none` means
+    "not offset-shaped". Mirrors whnf.rs `nat_offset_decompose`. -/
+def natOffsetDecompose (e : KExpr m) :
+    RecM m (Option (Option (KExpr m) × Nat)) := do
+  if let some v := extractNatValue e (← prims) then
+    return some (none, v)
+  match (← natOffset e 0) with
+  | some (base, offset) =>
+    if offset == 0 then
+      return none
+    if let some bv := extractNatValue base (← prims) then
+      return some (none, bv + offset)
+    return some (some base, offset)
+  | none => return none
+
+/-- Rebuild `base + r` in the compact offset form left stuck by
+    `tryNatOffsetStuck` (NOT interned — mirrors `nat_offset_rebuild`). -/
+def natOffsetRebuild (base : Option (KExpr m)) (r : Nat) :
+    RecM m (KExpr m) := do
+  match base with
+  | none => return natExprFromValue r
+  | some b =>
+    if r == 0 then
+      return b
+    mkNatAdd b (natExprFromValue r)
+
+/-- Allocation-free head probe for `tryNatOffsetStuck`: the probe runs once
+    per delta-unfold loop iteration, so the spine head must be one of the
+    three Nat primitives before a spine is collected. -/
+def natOffsetStuckHead (p : Primitives m) : KExpr m → Bool
+  | .app f _ _ => natOffsetStuckHead p f
+  | .const id _ _ =>
+    id.addr == p.natAdd.addr || id.addr == p.natDiv.addr
+      || id.addr == p.natMod.addr
+  | _ => false
+
 /-! ### Non-recursive WHNF helpers
 
 These helpers used to live in the large recursive WHNF mutual block even
@@ -464,7 +505,7 @@ def natRecLiteralParts (e : KExpr m) :
   let stepIdx := baseIdx + 1
   let majorIdx := params.toNat + motives.toNat + minors.toNat + indices.toNat
   let some (.nat major _ _) := spine[majorIdx]? | return none
-  return some { spine, major, baseIdx, stepIdx }
+  return some { spine, major, baseIdx, stepIdx, majorIdx }
 
 /-- Heads that leave a Nat-predicate argument stuck. -/
 def isNatStuckRecursorAddr (addr : Address) : RecM m Bool := do
@@ -615,6 +656,15 @@ def whnfWithNatSuccModeStep (natSuccMode : NatSuccMode)
     return .next (reduced, seen)
   if let some reduced ← tryReduceString cur then
     return .next (reduced, seen)
+  -- Keep `Nat.add base (Lit n)` (symbolic base, n > 0) and
+  -- `Nat.div/mod base (Lit k)` (k ≥ 2) STUCK as a compact offset instead
+  -- of delta-unfolding: `Nat.add` would materialize succ^n(base) — O(n)
+  -- substitution per layer — and `Nat.div/mod` would expand the division
+  -- algorithm, even though both are irreducible for a symbolic base.
+  -- Iota over such a major still works via `cleanupNatOffsetMajor`;
+  -- def-eq decides offset pairs in `tryDefEqOffset`.
+  if let some stuck ← tryNatOffsetStuck cur then
+    return .done stuck
   if let some unfolded ← deltaUnfoldOne cur then
     return .next (unfolded, seen)
   return .done cur
@@ -1134,7 +1184,8 @@ def tryReduceNatSuccIter (arg : KExpr m) :
     return .done none) maxWhnfFuel.toNat (arg, 1, #[entryKey])
 
 /-- `Nat.rec base step (lit n)` where step = `fun _ ih => Nat.succ ih`:
-    compute `base + n + offset` directly. -/
+    compute `base + n + offset` directly (literal base), or collapse to the
+    compact offset `Nat.add base (Lit (n + offset))` (symbolic base). -/
 def tryReduceNatSuccLinearRec (arg : KExpr m) (offset : Nat) :
     RecM m (Option (KExpr m)) := do
   let some parts ← natRecLiteralParts arg | return none
@@ -1143,8 +1194,20 @@ def tryReduceNatSuccLinearRec (arg : KExpr m) (offset : Nat) :
   if !(← isNatSuccIhStep step) then
     return none
   let baseWhnf ← whnfRec base
-  let some baseVal := extractNatValue baseWhnf (← prims) | return none
-  return some (natExprFromValue (baseVal + parts.major + offset))
+  match extractNatValue baseWhnf (← prims) with
+  | some baseVal =>
+    return some (natExprFromValue (baseVal + parts.major + offset))
+  | none =>
+    -- Symbolic base: collapse `succ^offset(Nat.rec base succ-step (Lit n))`
+    -- to the compact offset `Nat.add base (Lit (n + offset))` rather than
+    -- declining into n iota steps that materialize succ^n(base). Keeps the
+    -- value in the same `base + k` form a literal already has, so def-eq
+    -- converges instead of descending n unary succ layers. Conservative:
+    -- only when the recursor application carries no post-major arguments.
+    -- Mirrors whnf.rs `try_reduce_nat_succ_linear_rec`.
+    if parts.spine.size != parts.majorIdx + 1 then
+      return none
+    return some (← mkNatAdd baseWhnf (natExprFromValue (parts.major + offset)))
 
 def isNatSuccIhStep (step : KExpr m) : RecM m Bool := do
   let step ← whnfRec step
@@ -1192,6 +1255,36 @@ def tryReduceNatPredicate (addr : Address) (args : Array (KExpr m)) :
   let boolId := if decision then p.boolTrue else p.boolFalse
   let result ← TcM.intern (.mkConst boolId #[])
   return some (← finishAppResult result args 2)
+
+/-- If `e` is `Nat.add base (Lit n)` (n > 0) or `Nat.div/mod base (Lit k)`
+    (k ≥ 2) with a non-literal base, return the same operation in canonical
+    compact form so the WHNF loop can leave it stuck instead of
+    delta-unfolding. Thresholds keep `x + 0`, `x / 1`, `x / 0` (and mod)
+    reducing through the normal path. `none` means "not this shape —
+    proceed normally". Mirrors whnf.rs `try_nat_offset_stuck`. -/
+def tryNatOffsetStuck (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  let p ← prims
+  if !natOffsetStuckHead p e then
+    return none
+  let (head, args) := e.collectSpine
+  let .const id _ _ := head | return none
+  let isAdd := id.addr == p.natAdd.addr
+  let isDivmod := id.addr == p.natDiv.addr || id.addr == p.natMod.addr
+  if (!isAdd && !isDivmod) || args.size != 2 then
+    return none
+  let some wb ← whnfNatReducerArg args[1]! | return none
+  let some n := extractNatValue wb p | return none
+  if n == 0 then
+    return none
+  if isDivmod && n == 1 then
+    return none
+  let some wa ← whnfNatReducerArg args[0]! | return none
+  if (extractNatValue wa p).isSome then
+    -- Both sides literal: closed arithmetic for the Nat reducer, not a
+    -- stuck offset.
+    return none
+  let inner ← TcM.intern (KExpr.mkApp head wa)
+  return some (← TcM.intern (KExpr.mkApp inner (natExprFromValue n)))
 
 /-- Native Nat.decLe/decEq/decLt on literals → `Decidable.isTrue/isFalse`
     with the canonical kernel proof terms; `decLt n m → decLe (n+1) m`;

@@ -30,21 +30,32 @@
 //!
 //! Input (bincode-framed via `ziskos::io::read`):
 //!   1. `u32` mode (0 or 1).
-//!   2. `u32` num_vks, then that many `Vec<u8>` (32-byte) ALLOWED program vks
-//!      (e.g. [SHARD_VK] for a single-level fold; [SHARD_VK, AGG_VK] for
-//!      tree-fold). Committed so an external verifier checks them against the
-//!      real program vks.
+//!   2. `u32` num_vks, then that many `Vec<u8>` (32-byte) ALLOWED program vks.
+//!      POSITIONAL CONVENTION: index 0 is the LEAF (shard) vk; every index
+//!      ≥ 1 is an aggregation vk. The order is load-bearing and committed
+//!      (the id below hashes the concatenation in order), so an external
+//!      verifier that checks the id against the known-good [SHARD_VK,
+//!      AGG_VK] hash also pins the convention.
 //!   3. `u32` num_proofs, then that many `Vec<u8>` proof blobs.
 //!   4. Mode 1 only: per child, `Vec<u8>` packed subject addresses then
 //!      `Vec<u8>` packed assumption addresses (32 bytes each, any order —
 //!      the canonical root sorts and dedups).
+//!
+//! Per-child checks, on top of proof verification: the program vk must be in
+//! the allowed set; the committed `failures` word (slot 10) must be 0 — an
+//! aggregate must never launder a kernel-rejected constant into a
+//! `failures=0` root; and a child that is itself an aggregate (vk index ≥ 1)
+//! must commit THIS instance's vks id — without that recursive pin, an
+//! agg-of-1 built against a rogue allowed set (containing an arbitrary
+//! program's vk) would fold under an honest-looking root, since only its
+//! program vk (the shared AGG vk) is checked here.
 //!
 //! Output (committed, leaf-COMPATIBLE 112-byte layout so an aggregate is
 //! parseable exactly like a leaf — enabling agg-of-agg):
 //!   - [0..32)   blake3(allowed vks)   (id; the leaf's `env_hash` slot)
 //!   - [32..36)  num_proofs            (field_a)
 //!   - [36..40)  mode                  (field_b)
-//!   - [40..44)  0                     (failures)
+//!   - [40..44)  0                     (failures; every child asserted 0)
 //!   - [44..76)  combined subject root
 //!   - [76..108) combined assumptions root (mode 1: post-discharge)
 //!   - [108..112) num_proofs           (checked_count)
@@ -95,6 +106,7 @@ fn main() {
     allowed.push(w);
     allowed_bytes.extend_from_slice(&vk);
   }
+  let vks_id = Address::hash(&allowed_bytes);
 
   // 2. Verify + bind each child proof, collecting its committed roots.
   let num_proofs: u32 = ziskos::io::read();
@@ -116,8 +128,20 @@ fn main() {
     // committed publics carry no meaning (any valid proof of any program
     // would pass).
     let vk = [words[2], words[3], words[4], words[5]];
-    if !allowed.iter().any(|a| *a == vk) {
+    let Some(vk_idx) = allowed.iter().position(|a| *a == vk) else {
       panic!("child proof {i}: program vk not in allowed set");
+    };
+    // A child that is itself an aggregate must have pinned its own children
+    // against THIS allowed set (uniform down the tree): its committed id
+    // (slots 0..8) is blake3(its allowed vks), which must equal ours.
+    if vk_idx >= 1 && read_pub_addr(&words, 0) != vks_id {
+      panic!("child proof {i}: aggregate child pinned a different vk set");
+    }
+    // Never fold a failed leaf: this instance commits failures=0, so a
+    // nonzero child failures word would otherwise be erased from the claim.
+    let failures = words[6 + 10] as u32;
+    if failures != 0 {
+      panic!("child proof {i}: committed failures={failures}");
     }
     let s = read_pub_addr(&words, 11);
     let a = read_pub_addr(&words, 19);
@@ -180,8 +204,6 @@ fn main() {
       merkle_root_canonical(&outstanding).unwrap_or_else(zero_address),
     )
   };
-
-  let vks_id = Address::hash(&allowed_bytes);
 
   // Leaf-compatible 112-byte layout (see module docs).
   ziskos::io::commit_slice(vks_id.as_bytes());

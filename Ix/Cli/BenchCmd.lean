@@ -451,14 +451,23 @@ def runGuarded (watchdog : Option String) (ceilingGb : Nat)
   }
   child.wait
 
-/-- Merge `status: oom` into a constant's row, PRESERVING metrics the tool
-    flushed before the kill (e.g. bench-typecheck persists Phase-1 fields
-    before the prove starts). The compare surface renders OOM only for the
-    metrics that are absent. -/
-def markOom (out : String) (name : String) : IO Unit := do
+/-- Merge a kill `status` (`oom` or `crash`) into a constant's row,
+    PRESERVING metrics the tool flushed before the kill (e.g.
+    bench-typecheck persists Phase-1 fields before the prove starts). The
+    compare surface renders the status only for the metrics that are
+    absent. -/
+def markKilled (out : String) (name : String) (status : String) : IO Unit := do
   let rows ← readRows out
   let row := (rows.getObjVal? name).toOption.getD (Lean.Json.mkObj [])
-  writeEntry out name (row.setObjVal! "status" (Lean.Json.str "oom"))
+  writeEntry out name (row.setObjVal! "status" (Lean.Json.str status))
+
+/-- Status for a 128+signal death: explicit kills (137 KILL — cgroup breach
+    or watchdog; 143 TERM) and allocator aborts (134 — e.g. Rust's OOM
+    abort) are capacity kills, `oom`. Everything else (139 SIGSEGV, 135
+    SIGBUS, …) is a genuine fault in the tool, `crash` — conflating the two
+    turned a zisk mem-planner segfault into a phantom OOM row. -/
+def killStatus (exit : UInt32) : String :=
+  if exit == 137 || exit == 143 || exit == 134 then "oom" else "crash"
 
 /-- Sum a texray spans JSONL window (`{"span": s, "seconds": n}` per line)
     by span name. Missing or unparseable content contributes nothing. -/
@@ -510,8 +519,9 @@ def mergeSpans (out : String) (name : String) : IO Unit := do
 /-- Run a per-constant tool: ONE PROCESS PER CONSTANT, so a kill costs
     exactly that constant with no resume inference, and each spawn's texray
     window (`<out>.spans`, truncated by the tool at startup) belongs wholly
-    to it. Per exit: ≥128 (watchdog TERM/KILL or the kernel OOM killer) →
-    mark the row `oom` (keeping whatever the tool flushed, spans included)
+    to it. Per exit: ≥128 (watchdog TERM/KILL, the kernel OOM killer, or a
+    fault in the tool) → mark the row `oom`/`crash` per `killStatus`
+    (keeping whatever the tool flushed, spans included)
     and continue; `exitRejected` → the rejected row is on disk, continue
     (the final gate fails the job); any other nonzero exit is
     deterministic (usage error, missing input, crash on startup) and would
@@ -539,8 +549,9 @@ def runPerConstant (out : String) (names : Array String)
       if complete then
         IO.eprintln s!"[bench] '{name}' killed in teardown (exit {exit}); row already complete"
       else
-        IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording oom"
-        markOom out name
+        let status := killStatus exit
+        IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording {status}"
+        markKilled out name status
     mergeSpans out name
 
 /-- Resolve the env's `.ixe`: an explicit `--ixe` path is used as-is (and
@@ -629,7 +640,14 @@ def saveBaseline (out : String) (params : String) : IO Unit := do
   let base := s!"{dir}/{params}.json"
   if ← FilePath.pathExists base then
     IO.FS.writeFile s!"{dir}/{params}.prev.json" (← IO.FS.readFile base)
+    -- Rotate the per-constant attribution CSV alongside its results file.
+    if ← FilePath.pathExists s!"{base}.perconst.csv" then
+      IO.FS.writeFile s!"{dir}/{params}.prev.json.perconst.csv"
+        (← IO.FS.readFile s!"{base}.perconst.csv")
   IO.FS.writeFile base (← IO.FS.readFile out)
+  if ← FilePath.pathExists s!"{out}.perconst.csv" then
+    IO.FS.writeFile s!"{base}.perconst.csv"
+      (← IO.FS.readFile s!"{out}.perconst.csv")
 
 def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
@@ -711,9 +729,11 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   | "ooc" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ix ← resolveBin repo "ix"
-    -- Whole-env row (keyed by the env name) …
+    -- Whole-env row (keyed by the env name), plus the per-constant
+    -- attribution CSV the compare drill-down reads (top movers).
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.name]
+      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.name,
+        "--per-const", s!"{out}.perconst.csv"]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- … plus one full-closure row per primary. ONE process for all names

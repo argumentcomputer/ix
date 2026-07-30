@@ -2751,6 +2751,31 @@ theorem betaFullChargedStringNone (prims : Primitives .anon) :
   rw [KExpr.mkConst_shape]
   rfl
 
+/-- `betaArg` is a bare constant: the offset-stuck probe either rejects its
+head outright or the collected spine has no arguments — `none` either way,
+for any primitive address assignment. -/
+theorem betaFullChargedNatOffsetStuckNone (prims : Primitives .anon) :
+    (RecM.tryNatOffsetStuck betaArg).run betaHarnessMethods
+      (fullWhnfChargedState prims) =
+      .ok none (fullWhnfChargedState prims) := by
+  unfold RecM.tryNatOffsetStuck
+  rw [ReaderT.run_bind]
+  change EStateM.bind ((RecM.prims).run betaHarnessMethods) _
+    (fullWhnfChargedState prims) = _
+  unfold EStateM.bind
+  rw [show (RecM.prims (m := .anon)).run betaHarnessMethods
+    (fullWhnfChargedState prims) =
+      .ok prims (fullWhnfChargedState prims) from rfl]
+  simp only
+  cases hprobe : RecM.natOffsetStuckHead prims betaArg with
+  | false => rfl
+  | true =>
+    simp only [Bool.not_true, Bool.false_eq_true, if_false]
+    unfold betaArg
+    rw [KExpr.mkConst_shape]
+    simp [KExpr.collectSpine, KExpr.collectSpine.go]
+    rfl
+
 theorem betaFullChargedGetZero (prims : Primitives .anon) :
     TcM.tryGetConst zeroId (fullWhnfChargedState prims) =
       .ok (some zeroConcrete) (fullWhnfChargedState prims) := by
@@ -2804,7 +2829,8 @@ theorem betaFullChargedDeltaNone (prims : Primitives .anon) :
 
 /-- One full-WHNF iteration first consumes the certified no-delta hit, proves
 the fresh cycle set cannot stop it, and then checks native, bitvector, Nat,
-Decidable, String, and delta reducers in their production order. -/
+Decidable, String, offset-stuck, and delta reducers in their production
+order. -/
 theorem betaFullWhnfStep (prims : Primitives .anon) :
     (RecM.whnfWithNatSuccModeStep .collapse (betaSource, {})).run
       betaHarnessMethods (fullWhnfChargedState prims) =
@@ -2855,6 +2881,13 @@ theorem betaFullWhnfStep (prims : Primitives .anon) :
       (fullWhnfChargedState prims) = _
   unfold EStateM.bind
   rw [betaFullChargedStringNone prims]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    ((RecM.tryNatOffsetStuck betaArg).run betaHarnessMethods) _
+      (fullWhnfChargedState prims) = _
+  unfold EStateM.bind
+  rw [betaFullChargedNatOffsetStuckNone prims]
   simp only
   rw [ReaderT.run_bind]
   change EStateM.bind

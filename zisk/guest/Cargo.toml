@@ -43,7 +43,7 @@ log = { version = "0.4", features = ["max_level_off"] }
 # requiring memory recycling (>~500 constants empirically) hit the RAM
 # wall. Init still doesn't fit on either allocator (MT-trace shmem
 # ceiling, not allocator pressure).
-ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile", default-features = false, features = ["zisk-embedded-dlmalloc-alloc"] }
+ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-1.0.0-alpha", default-features = false, features = ["zisk-embedded-dlmalloc-alloc"] }
 
 # Redirect every `blake3::*` use across the kernel dep tree to the
 # precompile-backed `blake3` shim that ships in the Zisk fork
@@ -57,4 +57,4 @@ ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake
 # instance (single `#[global_allocator]`). No `[patch."...zisk.git"]`
 # override is needed now that the shim is published on the branch.
 [patch.crates-io]
-blake3 = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile", package = "blake3" }
+blake3 = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-1.0.0-alpha", package = "blake3" }

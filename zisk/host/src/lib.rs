@@ -1,4 +1,4 @@
-use zisk_sdk::{load_program, GuestProgram};
+use zisk_sdk::{GuestProgram, load_program};
 
 /// Leaf guest: typechecks Anon work items in `[start, end)` and
 /// commits `env_hash[32] || start[4] || end[4] || failures[4]` (44 B).
