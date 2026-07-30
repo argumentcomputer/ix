@@ -59,6 +59,26 @@ private def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 20
 }
 
+/-- Resolve a keyed cache namespace: `<cacheRoot>/<ns>` when a root is
+    given (tests use a scratch root to stay hermetic), else the global
+    `~/.ix/cache/<ns>`. Entries are named by claim digest and hold
+    re-derivable state, so the directory is safe to wipe. -/
+def cacheSubdir (cacheRoot : Option System.FilePath) (ns : String) :
+    IO System.FilePath := do
+  match cacheRoot with
+  | some root =>
+    let d := root / ns
+    IO.FS.createDirAll d
+    pure d
+  | none => StoreIO.toIO (Store.cacheDir ns)
+
+/-- Atomic keyed-cache write: `<dir>/<key>` via temp file + rename. -/
+def writeCacheEntry (dir : System.FilePath) (key content : String) :
+    IO Unit := do
+  let tmp := dir / s!"{key}.tmp"
+  IO.FS.writeFile tmp content
+  IO.FS.rename tmp (dir / key)
+
 def proveOne (aiurSystem : Aiur.AiurSystem)
     (compiled : Aiur.CompiledToplevel)
     (claim : Ix.Claim)
@@ -90,8 +110,10 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
         let mut b := ByteArray.empty
         for x in xs do b := b ++ x.hash
         pure b
+      let consultDir ← cacheSubdir none "stub-consults"
       match aiurSystem.shardProveWithEnv funIdx envHandle
-        (blobOf owned) (blobOf foreign) (blobOf stubbed) with
+        (blobOf owned) (blobOf foreign) (blobOf stubbed)
+        consultDir.toString with
       | .error e =>
         IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
         return 1
@@ -129,9 +151,10 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     IO.println s!"Proving {label}"
     (← IO.getStdout).flush
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+    let consultDir ← cacheSubdir none "stub-consults"
     match aiurSystem.shardProveWithEnv funIdx envHandle
       (blobOf blocks) (blobOf foreign) (blobOf stubbed)
-      (manifestPath ++ ".ghosts.csv") with
+      consultDir.toString with
     | .error e =>
       IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
       return 1
@@ -151,8 +174,8 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
         let _ := manifestPath  -- kept for parity with previous signature
         return 0
 
-/-- One row of the batch-prove sidecar (`<manifest>.proofs.csv`):
-    a shard proven, verified, and bound to its reconstructed claim. -/
+/-- A shard proven, verified, and bound to its reconstructed claim;
+    persisted as the `shard-proofs/<claim_digest>` cache entry. -/
 structure ProofRow where
   shard : Nat
   claimDigest : Address
@@ -163,13 +186,15 @@ structure ProofRow where
 
     One `EnvHandle`, one compiled toplevel, and one `AiurSystem` are shared
     across every shard (the per-invocation setup is paid once). Progress
-    persists in `<manifest>.proofs.csv` (`shard,claim_digest,proof_addr`):
-    a row is appended only after the shard's proof both VERIFIES and binds
-    to the shard's reconstructed `CheckEnv` claim digest, so a crash,
-    OOM, or interrupt costs only the in-flight shard and re-running the
-    same command resumes. Rows whose digest no longer matches the current
-    manifest (e.g. after a repair escalation changed the shard's ingress
-    sets) are discarded and the shard re-proven.
+    persists in the keyed cache `~/.ix/cache/shard-proofs/` (one file per
+    claim digest, holding the proof's store address): an entry is written
+    only after the shard's proof both VERIFIES and binds to the shard's
+    reconstructed `CheckEnv` claim digest, so a crash, OOM, or interrupt
+    costs only the in-flight shard and re-running the same command
+    resumes. The claim digest IS the staleness test — a repacked or
+    escalated shard has a new digest, which never matches an old entry —
+    and it is manifest-independent, so two manifests sharing a shard
+    share its proof. `cacheRoot` overrides `~/.ix/cache` (tests).
 
     `jobs` shards prove concurrently (default 1: each prove peaks at the
     shard's full predicted RAM, so concurrency is a big-box knob).
@@ -181,35 +206,34 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     (ixonEnv : Ixon.Env)
     (shards : Array (Array Address × Array Address × Array Address))
     (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (jobs : Nat) : IO UInt32 := do
+    (jobs : Nat) (cacheRoot : Option System.FilePath := none) : IO UInt32 := do
   if !(← Ix.Cli.CheckCmd.shardsCover ixonEnv shards) then return 1
   -- Reconstructed claim digest per shard: the binding target for proofs
-  -- and the staleness test for sidecar rows.
+  -- and the cache key.
   let mut digests : Array Address := #[]
   for (blocks, foreign, stubbed) in shards do
     match Ix.Cli.CheckCmd.shardClaimDigest ixonEnv blocks foreign stubbed with
     | .error e => IO.eprintln s!"reconstruct shard {digests.size} claim failed: {e}"; return 1
     | .ok d => digests := digests.push d
-  -- Resume: keep sidecar rows whose digest still matches this manifest
-  -- AND whose proof still verifies — a digest match alone would count a
-  -- proof made under a different circuit version (any kernel change
-  -- between sessions regenerates the codegen and the verifying key).
-  let sidecar := manifestPath ++ ".proofs.csv"
+  let proofsDir ← cacheSubdir cacheRoot "shard-proofs"
+  let consultDir ← cacheSubdir cacheRoot "stub-consults"
+  -- Resume: a shard whose digest names a cache entry is done IF the
+  -- recorded proof still verifies — the digest pins the claim but not
+  -- the circuit version (any kernel change between sessions regenerates
+  -- the codegen and the verifying key), so trusting the entry alone
+  -- would count a stale-circuit proof.
   let mut done : Std.HashMap Nat Address := {}
-  if ← System.FilePath.pathExists sidecar then
-    for line in (← IO.FS.readFile sidecar).splitOn "\n" do
-      match line.splitOn "," with
-      | [k, d, pa] =>
-        match k.toNat?, Address.fromString d, Address.fromString pa with
-        | some k, some d, some pa =>
-          if digests[k]? == some d && !done.contains k then
-            if (← Ix.Cli.VerifyCmd.verifyOneProof aiurSystem compiled pa) == 0 then
-              done := done.insert k pa
-            else
-              IO.println s!"[prove] shard {k}: sidecar proof {pa} no longer \
-                verifies (circuit changed?) — re-proving"
-        | _, _, _ => pure ()
-      | _ => pure ()
+  for k in [0:shards.size] do
+    let entry := proofsDir / toString digests[k]!
+    if ← entry.pathExists then
+      match Address.fromString (← IO.FS.readFile entry).trim with
+      | some pa =>
+        if (← Ix.Cli.VerifyCmd.verifyOneProof aiurSystem compiled pa) == 0 then
+          done := done.insert k pa
+        else
+          IO.println s!"[prove] shard {k}: cached proof {pa} no longer \
+            verifies (circuit changed?) — re-proving"
+      | none => pure ()
   let pending := (List.range shards.size).filter (fun k => !done.contains k)
   -- Largest-predicted-RAM first. The RAM model carries a content residual
   -- it cannot see (the klimbs blind spot), so if any shard is going to
@@ -237,11 +261,9 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
       pure <| pending.mergeSort (fun a b =>
         (ram.get? a).getD 0 ≥ (ram.get? b).getD 0)
   IO.println s!"[prove] {shards.size} shards: {done.size} already proven \
-    (sidecar {sidecar}), {pending.length} pending (heaviest first)"
-  let appendRow (r : ProofRow) : IO Unit := do
-    let h ← IO.FS.Handle.mk sidecar .append
-    h.putStr s!"{r.shard},{r.claimDigest},{r.proofAddr}\n"
-    h.flush
+    (cache {proofsDir}), {pending.length} pending (heaviest first)"
+  let recordProof (r : ProofRow) : IO Unit :=
+    writeCacheEntry proofsDir (toString r.claimDigest) s!"{r.proofAddr}\n"
   let funIdx := compiled.getFuncIdx `verify_claim |>.get!
   let proveOneShard (k : Nat) : IO (Except String ProofRow) := do
     let (blocks, foreign, stubbed) := shards[k]!
@@ -254,7 +276,7 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     (← IO.getStdout).flush
     match aiurSystem.shardProveWithEnv funIdx envHandle
       (blobOf blocks) (blobOf foreign) (blobOf stubbed)
-      (manifestPath ++ ".ghosts.csv") with
+      consultDir.toString with
     | .error e => return .error s!"shardProveWithEnv: {e}"
     | .ok (claimBytes, proof, _outIO) =>
       match Ixon.runGet Ix.Claim.get claimBytes with
@@ -277,7 +299,7 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     for t in tasks do
       match t.get with
       | .ok (k, .ok row) =>
-        appendRow row
+        recordProof row
         done := done.insert k row.proofAddr
         IO.println s!"[prove] shard {k}: proof {row.proofAddr} verified \
           ({done.size}/{shards.size})"
@@ -292,7 +314,7 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
       {failures.map (·.1)}; re-run the same command to resume"
     return 1
   IO.println s!"[prove] OK: composed verdict — all {shards.size} shards \
-    proven + verified + bound, disjoint cover ({sidecar})"
+    proven + verified + bound, disjoint cover"
   return 0
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -322,7 +344,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       runShardProveNative manifest envHandle ixonEnv shards k aiurSystem compiled false
   | some ixe, some manifest, none =>
     -- Batched, resumable all-shards prove (one env handle + one Aiur
-    -- system across every shard; progress in <manifest>.proofs.csv).
+    -- system across every shard; progress in ~/.ix/cache/shard-proofs).
     match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>

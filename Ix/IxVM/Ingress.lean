@@ -1301,7 +1301,8 @@ def ingress := ⟦
                 load_with_deps(next, rest, visited_addrs, visited_consts, visited_set, asm_map),
             },
           2 =>
-            -- GHOST: the claim's assumption tree names this address, but
+            -- ADDRESS-ONLY: the claim's assumption tree names this
+            -- address, but
             -- the recording consulted nothing about it, so the witness
             -- ships position + address only — no ch-2 bytes, no blake3.
             -- A fabricated ixon-flag-3 axiom occupies the kernel position
@@ -1312,10 +1313,10 @@ def ingress := ⟦
             -- can turn passes into failures, never failures into passes.
             let new_addrs = store(ListNode.Cons(addr, visited_addrs));
             let new_set = rbtree_map_insert(ptr_val(addr), 1, visited_set);
-            let ghost = Constant.Mk(
+            let addr_only = Constant.Mk(
               ConstantInfo.Axio(Axiom.Mk(3, [0u8; 8], store(Expr.Var([0u8; 8])))),
               store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
-            let new_consts = store(ListNode.Cons(store(ghost), visited_consts));
+            let new_consts = store(ListNode.Cons(store(addr_only), visited_consts));
             match load(worklist) {
               ListNode.Nil => (new_addrs, new_consts),
               ListNode.Cons(next, rest) =>

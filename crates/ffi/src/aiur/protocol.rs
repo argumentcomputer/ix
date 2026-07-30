@@ -477,8 +477,9 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   };
   let env = &env_handle.get().env;
 
-  // Pure stub witness (no ghosts): checks and the repair loop stay in
-  // the fast-converging regime; ghosting happens inside the prove path
+  // Pure stub witness (no address-only entries): checks and the repair
+  // loop stay in the fast-converging regime; the address-only drop
+  // happens inside the prove path
   // after its classification pass.
   let (_claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
@@ -606,7 +607,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   foreign_blob: LeanByteArray<LeanBorrowed<'_>>,
   stubbed_blob: LeanByteArray<LeanBorrowed<'_>>,
-  ghost_cache_path: LeanString<LeanBorrowed<'_>>,
+  consult_cache_dir: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let owned = match decode_owned_blob(&owned_blob) {
@@ -622,7 +623,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     Err(e) => return LeanExcept::error_string(&e),
   };
   let env = &env_handle.get().env;
-  let cache_path = ghost_cache_path.to_string();
+  let cache_dir = consult_cache_dir.to_string();
 
   // Phase 1 — CLASSIFY. Execute the shard once with every stub carrying
   // its type bytes (this converges — the type tier absorbs the whole
@@ -630,10 +631,11 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   // actually consults on IO channel 96 (`const_num_lvls_logged`).
   //
   // Classification is deterministic in the witness, and the claim digest
-  // pins the witness rules, so it caches: `ghost_cache_path` (empty =
-  // no cache) holds `digest,addr` rows and a `digest,-` marker for
-  // classified-empty; a hit skips this whole pass. Stale rows (digest
-  // changed) are simply never matched.
+  // pins the witness rules, so it caches: `consult_cache_dir` (empty =
+  // no cache) holds one file per claim digest — concatenated 32-byte
+  // consulted addresses, empty file = classified-empty — and a hit
+  // skips this whole pass. A repacked shard has a new digest, so a
+  // stale entry is simply never opened.
   let empty = FxHashSet::default();
   let (claim1, input1, mut io1) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
@@ -649,7 +651,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     claim1.put(&mut b);
     ix_common::address::Address::hash(&b).hex()
   };
-  let consulted = match read_ghost_cache(&cache_path, &digest_hex) {
+  let consulted = match read_consult_cache(&cache_dir, &digest_hex) {
     Some(cached) => {
       eprintln!(
         "[prove] stub classification cached ({} consulted)",
@@ -670,24 +672,24 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
         ));
       }
       let consulted = harvest_addresses(&io1, 96);
-      append_ghost_cache(&cache_path, &digest_hex, &consulted);
+      write_consult_cache(&cache_dir, &digest_hex, &consulted);
       consulted
     },
   };
 
-  // Phase 2 — GHOST + PROVE. Stubs the classification never consulted
-  // ship position-only (no bytes, no blake3 rows); the claim digest is
-  // identical to phase 1's by construction, so binding and composition
-  // never see the split. The prover's own execution re-validates: a
-  // misclassified ghost aborts naming its address.
-  let ghosts: FxHashSet<ix_common::address::Address> = stubbed
+  // Phase 2 — DROP TO ADDRESS-ONLY + PROVE. Stubs the classification
+  // never consulted ship position-only (no bytes, no blake3 rows); the
+  // claim digest is identical to phase 1's by construction, so binding
+  // and composition never see the split. The prover's own execution
+  // re-validates: a misclassified entry aborts naming its address.
+  let addr_only: FxHashSet<ix_common::address::Address> = stubbed
     .iter()
     .filter(|a| !consulted.contains(*a))
     .cloned()
     .collect();
   let (claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned, &foreign, &stubbed, &ghosts,
+      env, &owned, &foreign, &stubbed, &addr_only,
     ) {
       Ok(t) => t,
       Err(e) => {
@@ -695,9 +697,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
       },
     };
   eprintln!(
-    "[prove] stub classification: {} consulted, {} ghosted of {} stubs",
+    "[prove] stub classification: {} consulted, {} address-only of {} stubs",
     consulted.len(),
-    ghosts.len(),
+    addr_only.len(),
     stubbed.len()
   );
 
@@ -711,59 +713,51 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
 }
 
-/// Read a shard's cached stub classification: the `addr` of every
-/// `digest,addr` row matching `digest`, or an empty set when the
-/// `digest,-` classified-empty marker is present. `None` = no cache
-/// entry (or caching disabled via an empty path) — classify by running.
-fn read_ghost_cache(
-  path: &str,
+/// Read a shard's cached stub classification from `<dir>/<digest>`:
+/// concatenated 32-byte consulted addresses; an empty (or trailing-
+/// garbage) tail is ignored, an empty file is the classified-empty hit.
+/// `None` = no cache entry (or caching disabled via an empty dir) —
+/// classify by running.
+fn read_consult_cache(
+  dir: &str,
   digest: &str,
 ) -> Option<FxHashSet<ix_common::address::Address>> {
-  if path.is_empty() {
+  if dir.is_empty() {
     return None;
   }
-  let contents = std::fs::read_to_string(path).ok()?;
-  let mut found = false;
+  let bytes = std::fs::read(std::path::Path::new(dir).join(digest)).ok()?;
   let mut out = FxHashSet::default();
-  for line in contents.lines() {
-    let Some((d, a)) = line.split_once(',') else { continue };
-    if d != digest {
-      continue;
-    }
-    found = true;
-    if a != "-"
-      && let Some(addr) = ix_common::address::Address::from_hex(a)
-    {
-      out.insert(addr);
+  for chunk in bytes.chunks_exact(32) {
+    if let Ok(a) = ix_common::address::Address::from_slice(chunk) {
+      out.insert(a);
     }
   }
-  found.then_some(out)
+  Some(out)
 }
 
-/// Append a shard's classification to the cache (no-op when caching is
-/// disabled). A shard with no consulted stubs writes the `digest,-`
-/// marker so the empty result is still a cache hit.
-fn append_ghost_cache(
-  path: &str,
+/// Persist a shard's classification as `<dir>/<digest>` (no-op when
+/// caching is disabled): concatenated 32-byte consulted addresses,
+/// empty file for classified-empty. Written to a temp file and renamed
+/// so a crash never leaves a torn entry.
+fn write_consult_cache(
+  dir: &str,
   digest: &str,
   consulted: &FxHashSet<ix_common::address::Address>,
 ) {
-  if path.is_empty() {
+  if dir.is_empty() {
     return;
   }
-  let mut rows = String::new();
-  if consulted.is_empty() {
-    rows.push_str(&format!("{digest},-\n"));
-  } else {
-    for a in consulted {
-      rows.push_str(&format!("{digest},{}\n", a.hex()));
-    }
+  let dir = std::path::Path::new(dir);
+  if std::fs::create_dir_all(dir).is_err() {
+    return;
   }
-  use std::io::Write;
-  if let Ok(mut f) =
-    std::fs::OpenOptions::new().create(true).append(true).open(path)
-  {
-    let _ = f.write_all(rows.as_bytes());
+  let mut bytes: Vec<u8> = Vec::with_capacity(consulted.len() * 32);
+  for a in consulted {
+    bytes.extend_from_slice(a.as_bytes());
+  }
+  let tmp = dir.join(format!("{digest}.tmp.{}", std::process::id()));
+  if std::fs::write(&tmp, &bytes).is_ok() {
+    let _ = std::fs::rename(&tmp, dir.join(digest));
   }
 }
 

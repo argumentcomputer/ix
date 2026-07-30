@@ -227,7 +227,7 @@ def whnf := ⟦
   -- carries its real type). The host harvests the channel after a
   -- successful classification run: stubs on it need their types; stubs
   -- absent from it were never semantically consulted and re-witness as
-  -- GHOSTS (position-only, no bytes) for the prove run. Swapped in for
+  -- ADDRESS-ONLY (position, no bytes) for the prove run. Swapped in for
   -- `const_num_lvls` at infer's Const arms, so the hot arm's call count
   -- is unchanged. Memoized per node: one row per distinct consulted
   -- entry, repeats are cache hits.

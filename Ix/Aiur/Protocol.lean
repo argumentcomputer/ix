@@ -143,14 +143,17 @@ private opaque shardProveWithEnv' : @& AiurSystem →
 
 /-- Per-shard prove against a Rust-owned `EnvHandle`. `stubbedBlob` names the
     blocks ingressed as type-only axioms; only the partition knows which those
-    are, so it travels from the `.ixes` manifest. -/
+    are, so it travels from the `.ixes` manifest. `consultCacheDir` (empty =
+    disabled) is the keyed stub-consultation cache directory (normally
+    `~/.ix/cache/stub-consults`, one file per claim digest); a hit skips the
+    classification execute. -/
 def shardProveWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob foreignBlob stubbedBlob : ByteArray)
-  (ghostCachePath : String := "") :
+  (consultCacheDir : String := "") :
     Except String (ByteArray × Proof × IOBuffer) :=
   (shardProveWithEnv' system funIdx envHandle ownedBlob foreignBlob
-    stubbedBlob ghostCachePath).map
+    stubbedBlob consultCacheDir).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_verify"]

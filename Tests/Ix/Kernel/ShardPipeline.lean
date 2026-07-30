@@ -3,8 +3,8 @@
 
       Lean env → .ixe → `ix profile` (touch graph) → `ix shard`
       (measured packing) → check every shard (stub witnesses) →
-      batch prove (classify → ghost → prove → verify → bind) →
-      composed verdict → resume.
+      batch prove (classify → drop unconsulted stubs to address-only →
+      prove → verify → bind) → composed verdict → resume.
 
   This is the pipeline the sb/measured-ingress branch ships; until now
   its only end-to-end validation lived in ad-hoc session fixtures. The
@@ -13,15 +13,17 @@
   - the packer produces a disjoint cover over a fresh v4 profile;
   - every shard's stub witness CHECKS through the native kernel (the
     fast-converging repair regime — a tiny closure needs no escalation);
-  - the batched prove classifies stub consults, ghosts the rest, and
-    every proof VERIFIES and binds to its shard's reconstructed claim
-    (the composed verdict);
-  - the proofs sidecar makes the run resumable (second run: 0 pending),
-    exercising the row re-verification path;
-  - the ghost-classification cache is written and hit.
+  - the batched prove classifies stub consults, drops the rest to
+    address-only, and every proof VERIFIES and binds to its shard's
+    reconstructed claim (the composed verdict);
+  - the shard-proofs cache makes the run resumable (second run: 0
+    pending), exercising the entry re-verification path;
+  - the stub-consultation cache is written and hit.
 
-  Artifacts live under `.lake/tmp-shard-pipeline/` (wiped per run);
-  proofs land in the content-addressed store like any prove.
+  Artifacts live under `.lake/tmp-shard-pipeline/` (wiped per run),
+  including a scratch cache root so the test never touches the global
+  `~/.ix/cache`; proofs land in the content-addressed store like any
+  prove.
 -/
 import Ix.Meta
 import Ix.Aiur.Protocol
@@ -52,10 +54,10 @@ def shardPipelineTests (env : Lean.Environment)
   let ixe := dir / "pipeline.ixe"
   let prof := dir / "pipeline.ixprof"
   let ixes := dir / "pipeline.ixes"
-  let proofsCsv := (ixes.toString ++ ".proofs.csv" : System.FilePath)
-  let ghostsCsv := (ixes.toString ++ ".ghosts.csv" : System.FilePath)
-  for f in [ixe, prof, ixes, proofsCsv, ghostsCsv] do
+  let cacheRoot := dir / "cache"
+  for f in [ixe, prof, ixes] do
     if ← f.pathExists then IO.FS.removeFile f
+  if ← cacheRoot.pathExists then IO.FS.removeDirAll cacheRoot
 
   -- Lean env → .ixe
   let ixonEnv ← IxVM.ClaimHarness.loadSharedIxonEnv roots env
@@ -83,7 +85,8 @@ def shardPipelineTests (env : Lean.Environment)
     ixe.toString none compiled false none false
   tests := tests ++ test "all shards check (stub witnesses)" (checkRc == 0)
 
-  -- Batched prove: classify → ghost → prove → verify → bind → compose.
+  -- Batched prove: classify → address-only → prove → verify → bind →
+  -- compose.
   let (aiurSystem, compiled') ← match ← Ix.Cli.VerifyCmd.buildBackend with
     | .error e => throw <| IO.userError s!"backend build failed: {e}"
     | .ok b => pure b
@@ -91,16 +94,23 @@ def shardPipelineTests (env : Lean.Environment)
     | .error e => throw <| IO.userError s!"EnvHandle.fromIxe: {e}"
     | .ok h => pure h
   let proveRc ← Ix.Cli.ProveCmd.runShardProveAllNative ixes.toString envHandle
-    parsedEnv shards aiurSystem compiled' 1
+    parsedEnv shards aiurSystem compiled' 1 (some cacheRoot)
   tests := tests ++ test "batch prove reaches the composed verdict" (proveRc == 0)
-  tests := tests ++ test "proofs sidecar written" (← proofsCsv.pathExists)
-  tests := tests ++ test "ghost-classification cache written"
-    (← ghostsCsv.pathExists)
+  let cacheEntries (ns : String) : IO Nat := do
+    if !(← (cacheRoot / ns).pathExists) then return 0
+    return (← (cacheRoot / ns).readDir).size
+  tests := tests ++ test
+    s!"shard-proofs cache written ({← cacheEntries "shard-proofs"} entries)"
+    ((← cacheEntries "shard-proofs") == shards.size)
+  tests := tests ++ test "stub-consultation cache written"
+    ((← cacheEntries "stub-consults") > 0)
 
-  -- Resume: every row must re-verify and be skipped; verdict unchanged.
+  -- Resume: every cached proof must re-verify and be skipped; verdict
+  -- unchanged.
   let resumeRc ← Ix.Cli.ProveCmd.runShardProveAllNative ixes.toString envHandle
-    parsedEnv shards aiurSystem compiled' 1
-  tests := tests ++ test "resume re-verifies rows and stays green" (resumeRc == 0)
+    parsedEnv shards aiurSystem compiled' 1 (some cacheRoot)
+  tests := tests ++ test "resume re-verifies cached proofs and stays green"
+    (resumeRc == 0)
   pure tests
 
 end Tests.Ix.Kernel.ShardPipeline
