@@ -325,6 +325,23 @@ def whnf := ⟦
           (0, _, _) =>
             whnf_const_head(idx, lvls, head, spine_readback(cspine), types, top, addrs),
         },
+      KConstantInfo.Defn(_, _, value, _, _) =>
+        -- Machine-native delta. Plain whnf unfolds any non-prim,
+        -- non-proj-def Defn without inspecting the spine, so the closure
+        -- spine can ride through the unfold untouched — delta chains pay
+        -- zero readback between steps. Prim-family heads need literal
+        -- args (dispatch) and proj-defs index the spine: both take the
+        -- readback path, where the plain dispatch handles them.
+        match prim_family(list_lookup(addrs, idx)) {
+          0 =>
+            match is_proj_def(idx, top) {
+              1 => whnf_const_head(idx, lvls, head, spine_readback(cspine), types, top, addrs),
+              _ =>
+                mwhnf_spine(expr_inst_levels(value, lvls), store(ListNode.Nil), 0,
+                            cspine, types, top, addrs),
+            },
+          _ => whnf_const_head(idx, lvls, head, spine_readback(cspine), types, top, addrs),
+        },
       _ => whnf_const_head(idx, lvls, head, spine_readback(cspine), types, top, addrs),
     }
   }

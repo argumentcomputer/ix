@@ -526,12 +526,18 @@ def subst := ⟦
   }
 
   fn clo_subst(e: KExpr, env: List‹&Clo›, n: G, depth: G) -> KExpr {
-    -- Fast path: when `expr_lbr(e) <= depth`, no BVar at or above depth
-    -- exists in `e`, so the substitution is a no-op.
-    let l = expr_lbr(e);
-    match u32_less_than(depth, l) {
+    -- Fast paths: an empty environment substitutes nothing (machine
+    -- states built from closed closures land here), and when
+    -- `expr_lbr(e) <= depth` no BVar at or above depth exists in `e`,
+    -- so the substitution is a no-op either way.
+    match n {
       0 => e,
-      1 => clo_subst_walk(e, env, n, depth),
+      _ =>
+        let l = expr_lbr(e);
+        match u32_less_than(depth, l) {
+          0 => e,
+          1 => clo_subst_walk(e, env, n, depth),
+        },
     }
   }
 
