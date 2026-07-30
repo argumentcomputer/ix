@@ -36,11 +36,9 @@ runs:
           libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
           openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
           pkg-config libssl-dev
-    # Host links the argumentcomputer/zisk `blake3-precompile` fork, which is now
-    # based on upstream v1.0.0-alpha (check-setup lives in the new
-    # `cargo-zisk-dev` binary, used below to regenerate the key's const-trees).
-    # Keep the pin anyway so a future upstream release can't silently change
-    # the toolchain under us. `--cpu` picks
+    # Host links the argumentcomputer/zisk fork (check-setup lives in the
+    # `cargo-zisk-dev` binary, used below to regenerate the key's
+    # const-trees). `--cpu` picks
     # the CPU build (no GPU on the runner) and `--nokey` skips ziskup's key
     # install — both avoid its interactive /dev/tty prompts. We keep `--nokey`
     # because the upstream `zisk-setup` bucket only carries the upstream circuit's
@@ -55,10 +53,11 @@ runs:
         # Rust toolchain from 0xPolygonHermez/rust `releases/latest`, which
         # breaks whenever upstream publishes a release tag before uploading
         # its assets. Tolerate that one failure (it is ziskup's last material
-        # step under --nokey) and redo the toolchain install pinned to the
-        # zisk-1.0.0 tag. The follow-up command still fails the job if
-        # ziskup died earlier (no # cargo-zisk binary) or the pinned download
-        # itself breaks.
+        # step under --nokey) and redo the toolchain install; the follow-up
+        # command still fails the job if ziskup died earlier (no cargo-zisk
+        # binary) or the download itself breaks. Latest is deliberate: the
+        # guests rely on the linker script embedded in current toolchain
+        # builds (the zisk-1.0.0 artifact predates its restoration).
         curl -L https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh \
           | bash -s -- --cpu --nokey -y --prefix "$HOME/.zisk" || true
         # No --toolchain-version pin: the zisk-1.0.0 toolchain artifact
