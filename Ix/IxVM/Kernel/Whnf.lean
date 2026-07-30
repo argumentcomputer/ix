@@ -151,7 +151,14 @@ def whnf := ⟦
   -- Proj-head WHNF dispatch, split out of `whnf_with_spine` (see its Proj arm).
   fn whnf_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
                     types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    let inner_whnf = whnf(inner, types, top, addrs);
+    whnf_proj_head_w(tidx, fidx, whnf(inner, types, top, addrs), spine,
+                     types, top, addrs)
+  }
+
+  -- Proj reduction on an ALREADY-whnf'd scrutinee (the machine whnfs the
+  -- scrutinee lazily through its closure before calling here).
+  fn whnf_proj_head_w(tidx: G, fidx: G, inner_whnf: KExpr, spine: List‹KExpr›,
+                    types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     -- Str-literal scrutinee → constructor form (mirror whnf.rs's proj
     -- expansion site): with the native ofList collapse a constructor
     -- build whnfs to the literal, so the field pull needs the
@@ -210,6 +217,118 @@ def whnf := ⟦
     }
   }
 
+  -- whnf of a closure: plain fast path for empty environments.
+  fn clo_whnf(c: &Clo, types: List‹KExpr›, top: List‹&KConstantInfo›,
+              addrs: List‹Addr›) -> KExpr {
+    match load(c) {
+      Clo.Mk(e, env, n) =>
+        match n {
+          0 => whnf(e, types, top, addrs),
+          _ => mwhnf_spine(e, env, n, store(ListNode.Nil), types, top, addrs),
+        },
+    }
+  }
+
+  -- Closure-spine iota: the main ctor-rule path only, consuming the
+  -- spine LAZILY. The major is whnf'd through the machine (no readback
+  -- of its unconsumed parts); on a hit the rule head returns with the
+  -- params/motives/minors + ctor fields + post-major args as CLOSURES,
+  -- which the rule's Lam-chain betas push straight into an environment —
+  -- the unselected rules and unused minors are never substituted, never
+  -- read back. Everything off the main path MISSES to the caller, which
+  -- falls back to the plain machinery on a readback spine: K recursors
+  -- (ctor synthesis), LITERAL majors (the plain path owns the linear-rec
+  -- / nat-offset / one-level chain shortcuts and the Str expansion), and
+  -- non-ctor majors (struct-eta).
+  fn try_iota_c(lvls: List‹KLevel›, cspine: List‹&Clo›,
+                num_lvls: G, num_params: G, num_indices: G,
+                num_motives: G, num_minors: G,
+                rules: List‹KRecRule›, k_flag: G, types: List‹KExpr›,
+                top: List‹&KConstantInfo›,
+                addrs: List‹Addr›) -> (G, KExpr, List‹&Clo›) {
+    match k_flag {
+      1 => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+      0 =>
+        let major_idx = num_params + num_motives + num_minors + num_indices;
+        let spine_len = list_length(cspine);
+        match u32_less_than(major_idx, spine_len) {
+          0 => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+          1 =>
+            let lvls_len = list_length(lvls);
+            match lvls_len - num_lvls {
+              0 =>
+                let major_w = clo_whnf(list_lookup(cspine, major_idx), types, top, addrs);
+                match load(major_w) {
+                  KExprNode.Lit(_) =>
+                    -- Nat/Str literal major: miss to the plain path's
+                    -- literal machinery (linear-rec, offset, expansion).
+                    (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+                  _ =>
+                    -- Post-whnf nat-offset cleanup, same as the plain
+                    -- path: a stuck `Nat.add base lit` exposes one succ
+                    -- layer so iota can fire.
+                    let major_c = cleanup_nat_offset_major(major_w, addrs);
+                    match collect_spine(major_c) {
+                      (ctor_head, ctor_args) =>
+                        match load(ctor_head) {
+                          KExprNode.Const(ctor_idx, _) =>
+                            let ctor_ci = load(list_lookup(top, ctor_idx));
+                            match ctor_ci {
+                              KConstantInfo.Ctor(_, _, _, cidx, _, ctor_nfields, _) =>
+                                let rules_len = list_length(rules);
+                                match u32_less_than(cidx, rules_len) {
+                                  0 => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+                                  1 =>
+                                    let ctor_args_len = list_length(ctor_args);
+                                    match u32_less_than(ctor_args_len, ctor_nfields) {
+                                      1 => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+                                      0 =>
+                                        match list_lookup(rules, cidx) {
+                                          KRecRule.Mk(_, _, rhs) =>
+                                            let pmm_end = num_params + num_motives + num_minors;
+                                            let pmm_c = list_take(cspine, pmm_end);
+                                            let field_start = ctor_args_len - ctor_nfields;
+                                            let fields_c = spine_wrap(list_drop(ctor_args, field_start));
+                                            let post_c = list_drop(cspine, major_idx + 1);
+                                            let rhs_inst = expr_inst_levels(rhs, lvls);
+                                            let tail_c = list_concat(fields_c, post_c);
+                                            (1, rhs_inst, list_concat(pmm_c, tail_c)),
+                                        },
+                                    },
+                                },
+                              _ => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+                            },
+                          _ => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+                        },
+                    },
+                },
+              _ => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+            },
+        },
+    }
+  }
+
+  -- Machine Const-head exit: Rec heads try the lazy closure-iota first;
+  -- everything else (and any iota miss) reads the spine back and uses
+  -- the plain dispatch. Separate function so mwhnf_spine stays narrow.
+  fn mwhnf_const(idx: G, lvls: List‹KLevel›, head: KExpr, cspine: List‹&Clo›,
+                 types: List‹KExpr›, top: List‹&KConstantInfo›,
+                 addrs: List‹Addr›) -> KExpr {
+    let ci = load(list_lookup(top, idx));
+    match ci {
+      KConstantInfo.Rec(num_lvls, _, num_params, num_indices, num_motives, num_minors, rules, k_flag, _, _) =>
+        match try_iota_c(lvls, cspine, num_lvls, num_params, num_indices,
+                         num_motives, num_minors, rules, k_flag,
+                         types, top, addrs) {
+          (1, h, comb) =>
+            mwhnf_spine(h, store(ListNode.Nil), 0, comb, types, top, addrs),
+          (0, _, _) =>
+            whnf_const_head(idx, lvls, head, spine_readback(cspine), types, top, addrs),
+        },
+      _ => whnf_const_head(idx, lvls, head, spine_readback(cspine), types, top, addrs),
+    }
+  }
+
   fn mwhnf_spine(head: KExpr, env: List‹&Clo›, n: G, spine: List‹&Clo›,
                  types: List‹KExpr›, top: List‹&KConstantInfo›,
                  addrs: List‹Addr›) -> KExpr {
@@ -248,11 +367,15 @@ def whnf := ⟦
             apply_spine(store(KExprNode.BVar(i - n)), spine_readback(spine)),
         },
       KExprNode.Const(idx, lvls) =>
-        -- exit to the existing Const-head dispatch on a readback spine
-        whnf_const_head(idx, lvls, head, spine_readback(spine), types, top, addrs),
+        -- Rec heads take the lazy closure-iota; others read back and use
+        -- the plain dispatch (see mwhnf_const).
+        mwhnf_const(idx, lvls, head, spine, types, top, addrs),
       KExprNode.Proj(tidx, fidx, inner) =>
-        whnf_proj_head(tidx, fidx, clo_subst(inner, env, n, 0),
-                       spine_readback(spine), types, top, addrs),
+        -- whnf the scrutinee through the machine (lazy), then the plain
+        -- proj machinery on the already-whnf'd head.
+        whnf_proj_head_w(tidx, fidx,
+          clo_whnf(store(Clo.Mk(inner, env, n)), types, top, addrs),
+          spine_readback(spine), types, top, addrs),
       KExprNode.Forall(ty, body) =>
         let v = store(KExprNode.Forall(
           clo_subst(ty, env, n, 0),
