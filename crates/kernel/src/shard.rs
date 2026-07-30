@@ -1728,8 +1728,7 @@ pub fn shard_esp_aiur(
   // `promote_spec` is the per-shard escalation for replay divergence
   // (see `parse_promote_spec`); the repair driver accumulates it across
   // retry iterations, and `ix shard --promote` exposes it manually.
-  let promotions =
-    parse_promote_spec(promote_spec, &profile, plan.num_shards)?;
+  let promotions = parse_promote_spec(promote_spec, &profile, plan.num_shards)?;
   let sets = aiur_shard_ingress_sets(
     &profile,
     &plan.shard_of,
@@ -1790,8 +1789,9 @@ pub fn shard_esp_aiur(
   // Costs sidecar (`<out>.costs.csv`): the packer's per-shard accounting and
   // predictions, for measured-vs-predicted comparison and refits.
   if let Some(op) = out_path {
-    let mut csv =
-      String::from("shard,union_bytes,hb,subst,whnf,def_eq,nat_arith,pred_ram_gib,pred_prove_s\n");
+    let mut csv = String::from(
+      "shard,union_bytes,hb,subst,whnf,def_eq,nat_arith,pred_ram_gib,pred_prove_s\n",
+    );
     for (i, c) in plan.shard_costs.iter().enumerate() {
       csv.push_str(&format!(
         "{},{},{},{},{},{},{},{:.2},{:.2}\n",
@@ -2434,8 +2434,7 @@ pub fn aiur_shard_ingress_sets(
             work.push((r, !profile.block(r).axiomatizable()));
           }
         } else {
-          if full_mark[x as usize] == epoch || axiom_mark[x as usize] == epoch
-          {
+          if full_mark[x as usize] == epoch || axiom_mark[x as usize] == epoch {
             continue;
           }
           axiom_mark[x as usize] = epoch;
@@ -3147,7 +3146,6 @@ mod tests {
     assert_eq!(plan.shard_costs[0].hb, 40);
   }
 
-  
   #[test]
   fn aiur_ingress_follows_type_refs_not_value_refs() {
     // refs:      0→1→2→{3,4}
@@ -3162,10 +3160,8 @@ mod tests {
     for i in 1..=5u8 {
       b.block(addr(i), bc(10, 0, 0), 1000, 1);
     }
-    let mut p = with_refs(
-      b.finish(),
-      &[vec![1], vec![2], vec![3, 4], vec![], vec![]],
-    );
+    let mut p =
+      with_refs(b.finish(), &[vec![1], vec![2], vec![3, 4], vec![], vec![]]);
     p.set_type_ref_graph(&[vec![1], vec![2], vec![3], vec![], vec![]]);
     let ax = partition_for_aiur_ram(&p, 1000.0, 0.05);
     assert!((ax.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9);
@@ -3180,10 +3176,8 @@ mod tests {
     for i in 1..=5u8 {
       b.block(addr(i), bc(10, 0, 0), 1000, 1);
     }
-    let mut p = with_refs(
-      b.finish(),
-      &[vec![1], vec![2], vec![3, 4], vec![], vec![]],
-    );
+    let mut p =
+      with_refs(b.finish(), &[vec![1], vec![2], vec![3, 4], vec![], vec![]]);
     p.set_type_ref_graph(&[vec![1], vec![2], vec![3], vec![], vec![]]);
     let mut flags = vec![0u32; 5];
     flags[2] = BlockEntry::NOT_AXIOMATIZABLE;
@@ -3206,8 +3200,7 @@ mod tests {
       if touch {
         b.touch_edge(addr(1), addr(2));
       }
-      let mut p =
-        with_refs(b.finish(), &[vec![1], vec![2, 3], vec![], vec![]]);
+      let mut p = with_refs(b.finish(), &[vec![1], vec![2, 3], vec![], vec![]]);
       p.set_type_ref_graph(&[vec![1], vec![2], vec![], vec![]]);
       p
     };
@@ -3231,12 +3224,16 @@ mod tests {
     for i in 1..=4u8 {
       b.block(addr(i), bc(10, 0, 0), 1000, 1);
     }
-    let mut p =
-      with_refs(b.finish(), &[vec![1], vec![2, 3], vec![], vec![]]);
+    let mut p = with_refs(b.finish(), &[vec![1], vec![2, 3], vec![], vec![]]);
     p.set_type_ref_graph(&[vec![1], vec![3], vec![], vec![]]);
     // Each block its own shard so shard 0 owns only block 0.
     let shard_of = vec![0u32, 1, 2, 3];
-    let sets = aiur_shard_ingress_sets(&p, &shard_of, 4, &vec![ShardPromotion::default(); 4]);
+    let sets = aiur_shard_ingress_sets(
+      &p,
+      &shard_of,
+      4,
+      &vec![ShardPromotion::default(); 4],
+    );
     let (full_extra, stubbed) = &sets[0];
     assert!(full_extra.is_empty(), "unexpected full ingest: {full_extra:?}");
     assert_eq!(stubbed, &vec![1, 3]);
@@ -3255,11 +3252,15 @@ mod tests {
     for i in 1..=4u8 {
       b.block(addr(i), bc(10, 0, 0), 1000, 1);
     }
-    let mut p =
-      with_refs(b.finish(), &[vec![3], vec![], vec![0], vec![]]);
+    let mut p = with_refs(b.finish(), &[vec![3], vec![], vec![0], vec![]]);
     p.set_type_ref_graph(&[vec![], vec![], vec![], vec![]]);
     let shard_of = vec![0u32, 0, 0, 1];
-    let sets = aiur_shard_ingress_sets(&p, &shard_of, 2, &vec![ShardPromotion::default(); 2]);
+    let sets = aiur_shard_ingress_sets(
+      &p,
+      &shard_of,
+      2,
+      &vec![ShardPromotion::default(); 2],
+    );
     let (full_extra, stubbed) = &sets[0];
     assert!(full_extra.is_empty(), "unexpected full ingest: {full_extra:?}");
     assert_eq!(
@@ -3292,17 +3293,32 @@ mod tests {
       p
     };
     let shard_of = vec![0u32, 1, 2];
-    let (full_extra, stubbed) =
-      aiur_shard_ingress_sets(&build(true), &shard_of, 3, &vec![ShardPromotion::default(); 3])[0].clone();
+    let (full_extra, stubbed) = aiur_shard_ingress_sets(
+      &build(true),
+      &shard_of,
+      3,
+      &vec![ShardPromotion::default(); 3],
+    )[0]
+      .clone();
     assert_eq!(full_extra, vec![1], "consulted block must ship whole");
     assert_eq!(stubbed, vec![2], "unconsulted ref stays a stub");
-    let (full_extra, stubbed) =
-      aiur_shard_ingress_sets(&build(false), &shard_of, 3, &vec![ShardPromotion::default(); 3])[0].clone();
+    let (full_extra, stubbed) = aiur_shard_ingress_sets(
+      &build(false),
+      &shard_of,
+      3,
+      &vec![ShardPromotion::default(); 3],
+    )[0]
+      .clone();
     assert!(full_extra.is_empty(), "prediction never promotes 1");
     assert_eq!(stubbed, vec![1], "prediction stops at the stub frontier");
     // One promotion round: the stub becomes FULL and re-expands.
-    let (full_extra, stubbed) =
-      aiur_shard_ingress_sets(&build(true), &shard_of, 3, &vec![ShardPromotion { rounds: 1, extra_full: vec![] }; 3])[0].clone();
+    let (full_extra, stubbed) = aiur_shard_ingress_sets(
+      &build(true),
+      &shard_of,
+      3,
+      &vec![ShardPromotion { rounds: 1, extra_full: vec![] }; 3],
+    )[0]
+      .clone();
     assert_eq!(full_extra, vec![1, 2], "promotion lifts the stub to full");
     assert!(stubbed.is_empty(), "2 has no refs, so no new frontier");
     // Targeted promotion of exactly block 2 (a wanted-stub report): 2
@@ -3329,8 +3345,15 @@ mod tests {
     assert_eq!(promos[1], ShardPromotion { rounds: 1, extra_full: vec![1] });
     assert_eq!(promos[2], ShardPromotion::default());
     // Bare N applies everywhere; empty spec is all-defaults.
-    assert!(parse_promote_spec("3", &p, 2).unwrap().iter().all(|q| q.rounds == 3));
-    assert!(parse_promote_spec("", &p, 2).unwrap().iter().all(|q| *q == ShardPromotion::default()));
+    assert!(
+      parse_promote_spec("3", &p, 2).unwrap().iter().all(|q| q.rounds == 3)
+    );
+    assert!(
+      parse_promote_spec("", &p, 2)
+        .unwrap()
+        .iter()
+        .all(|q| *q == ShardPromotion::default())
+    );
     // Errors: bad shard, unknown address.
     assert!(parse_promote_spec("9:1", &p, 3).is_err());
     assert!(parse_promote_spec("0:+deadbeef", &p, 3).is_err());
@@ -3349,7 +3372,12 @@ mod tests {
     let mut p = with_refs(b.finish(), &[vec![1], vec![2], vec![]]);
     p.set_type_ref_graph(&[vec![1], vec![], vec![]]);
     let shard_of = vec![0u32, 1, 2];
-    let sets = aiur_shard_ingress_sets(&p, &shard_of, 3, &vec![ShardPromotion::default(); 3]);
+    let sets = aiur_shard_ingress_sets(
+      &p,
+      &shard_of,
+      3,
+      &vec![ShardPromotion::default(); 3],
+    );
     let (full_extra, stubbed) = &sets[0];
     assert_eq!(full_extra, &vec![1], "delta target must be ingressed whole");
     assert_eq!(stubbed, &vec![2], "1's ref is reachable only as a stub");
@@ -3369,9 +3397,7 @@ mod tests {
     let mut p = with_refs(b.finish(), &[vec![1], vec![2], vec![3], vec![]]);
     p.set_type_ref_graph(&[vec![1], vec![2], vec![3], vec![]]);
     let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
-    assert!(
-      (plan.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9
-    );
+    assert!((plan.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9);
   }
 
   #[test]
@@ -3385,8 +3411,7 @@ mod tests {
       b.block(addr(i), bc(10, 0, 0), 1000, 1);
     }
     let p = with_refs(b.finish(), &[vec![1], vec![2], vec![]]);
-    let plan =
-      partition_for_aiur_ram(&p, 1000.0, 0.05);
+    let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
     assert_eq!(plan.num_shards, 1);
     assert_eq!(plan.shard_costs[0].union_bytes, 3000);
   }

@@ -137,7 +137,10 @@ pub enum ExecError {
   MatchNoCase(u64),
   NoContinuation,
   StackNotEmpty,
-  InvalidIOKey { channel: u64, key: String },
+  InvalidIOKey {
+    channel: u64,
+    key: String,
+  },
   IOMappingAlreadySet,
   IOReadOutOfBounds {
     idx: usize,
