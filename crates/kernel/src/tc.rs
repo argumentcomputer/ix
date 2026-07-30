@@ -688,45 +688,54 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     if us.is_empty() {
       return Ok(e.clone());
     }
-    // Per-call pointer-identity memoization: universe substitution does
-    // not change the term's bound-variable structure, so two sub-terms
-    // with the same content hash produce the same result for the same
-    // `us`. Shared sub-terms in a body (common under hash-consing) get
-    // visited once per call. See `src/ix/kernel/subst.rs` for the
-    // analogous optimisation on de-Bruijn substitution and the general
-    // "walk the DAG as a DAG" rationale.
-    let mut cache: FxHashMap<Addr, KExpr<M>> = FxHashMap::default();
-    self.inst_univ_inner(e, us, &mut cache)
+    // CROSS-call memoization keyed by `(expr addr, us id)` in the intern
+    // table (`inst_univ_cache`, cleared with the intern tables): delta
+    // unfolds instantiate the same definition value at the same levels
+    // over and over, and substitution depends on nothing but the term
+    // and the level vector. The us id names a distinct level vector
+    // (`inst_univ_us_ids`), computed once per call so the per-node key
+    // stays a cheap `(Addr, u64)`.
+    let us_addrs: Box<[Addr]> = us.iter().map(|u| *u.addr()).collect();
+    let next_id = self.env.intern.inst_univ_us_ids.len() as u64;
+    let us_id = *self
+      .env
+      .intern
+      .inst_univ_us_ids
+      .entry(us_addrs)
+      .or_insert(next_id);
+    self.inst_univ_inner(e, us, us_id)
   }
 
   fn inst_univ_inner(
     &mut self,
     e: &KExpr<M>,
     us: &[KUniv<M>],
-    cache: &mut FxHashMap<Addr, KExpr<M>>,
+    us_id: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
-    // Key by content hash only — `us` is fixed across the whole call.
-    let key = e.hash_key();
-    if let Some(cached) = cache.get(&key) {
+    let key = (e.hash_key(), us_id);
+    if let Some(cached) = self.env.intern.inst_univ_cache.get(&key) {
       return Ok(cached.clone());
     }
 
+    // Every arm short-circuits to `e` when substitution changed nothing
+    // (all children pointer-identical): the input is already interned, so
+    // reusing it skips both the rebuild and the re-canonicalization walk.
+    // Param-free subtrees — most of a typical proof term — never build a
+    // node this way.
     let result = match e.data() {
       ExprData::Var(..)
       | ExprData::FVar(..)
       | ExprData::Nat(..)
       | ExprData::Str(..) => {
         // These have no universe parameters, so substitution is a no-op.
-        // Cache the pass-through so the ptr-identity check above fires
-        // for subsequent visits to the same sub-term.
         let r = e.clone();
-        cache.insert(key, r.clone());
+        self.env.intern.inst_univ_cache.insert(key, r.clone());
         return Ok(r);
       },
 
       ExprData::Sort(u, _) => {
         let u2 = self.subst_univ(u, us)?;
-        KExpr::sort(u2)
+        if u2.ptr_eq(u) { e.clone() } else { KExpr::sort(u2) }
       },
 
       ExprData::Const(id, cur_us, _) => {
@@ -734,41 +743,65 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
           .iter()
           .map(|u| self.subst_univ(u, us))
           .collect::<Result<Box<[_]>, _>>()?;
-        KExpr::cnst(id.clone(), new_us)
+        if new_us.iter().zip(cur_us.iter()).all(|(a, b)| a.ptr_eq(b)) {
+          e.clone()
+        } else {
+          KExpr::cnst(id.clone(), new_us)
+        }
       },
 
       ExprData::App(f, a, _) => {
-        let f2 = self.inst_univ_inner(f, us, cache)?;
-        let a2 = self.inst_univ_inner(a, us, cache)?;
-        KExpr::app(f2, a2)
+        let f2 = self.inst_univ_inner(f, us, us_id)?;
+        let a2 = self.inst_univ_inner(a, us, us_id)?;
+        if f2.ptr_eq(f) && a2.ptr_eq(a) {
+          e.clone()
+        } else {
+          KExpr::app(f2, a2)
+        }
       },
 
       ExprData::Lam(name, bi, ty, body, _) => {
-        let ty2 = self.inst_univ_inner(ty, us, cache)?;
-        let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::lam(name.clone(), bi.clone(), ty2, body2)
+        let ty2 = self.inst_univ_inner(ty, us, us_id)?;
+        let body2 = self.inst_univ_inner(body, us, us_id)?;
+        if ty2.ptr_eq(ty) && body2.ptr_eq(body) {
+          e.clone()
+        } else {
+          KExpr::lam(name.clone(), bi.clone(), ty2, body2)
+        }
       },
 
       ExprData::All(name, bi, ty, body, _) => {
-        let ty2 = self.inst_univ_inner(ty, us, cache)?;
-        let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::all(name.clone(), bi.clone(), ty2, body2)
+        let ty2 = self.inst_univ_inner(ty, us, us_id)?;
+        let body2 = self.inst_univ_inner(body, us, us_id)?;
+        if ty2.ptr_eq(ty) && body2.ptr_eq(body) {
+          e.clone()
+        } else {
+          KExpr::all(name.clone(), bi.clone(), ty2, body2)
+        }
       },
 
       ExprData::Let(name, ty, val, body, nd, _) => {
-        let ty2 = self.inst_univ_inner(ty, us, cache)?;
-        let val2 = self.inst_univ_inner(val, us, cache)?;
-        let body2 = self.inst_univ_inner(body, us, cache)?;
-        KExpr::let_(name.clone(), ty2, val2, body2, *nd)
+        let ty2 = self.inst_univ_inner(ty, us, us_id)?;
+        let val2 = self.inst_univ_inner(val, us, us_id)?;
+        let body2 = self.inst_univ_inner(body, us, us_id)?;
+        if ty2.ptr_eq(ty) && val2.ptr_eq(val) && body2.ptr_eq(body) {
+          e.clone()
+        } else {
+          KExpr::let_(name.clone(), ty2, val2, body2, *nd)
+        }
       },
 
       ExprData::Prj(id, field, val, _) => {
-        let val2 = self.inst_univ_inner(val, us, cache)?;
-        KExpr::prj(id.clone(), *field, val2)
+        let val2 = self.inst_univ_inner(val, us, us_id)?;
+        if val2.ptr_eq(val) {
+          e.clone()
+        } else {
+          KExpr::prj(id.clone(), *field, val2)
+        }
       },
     };
     let interned = self.env.intern.intern_expr(result);
-    cache.insert(key, interned.clone());
+    self.env.intern.inst_univ_cache.insert(key, interned.clone());
     Ok(interned)
   }
 
@@ -798,17 +831,29 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       },
       UnivData::Succ(inner, _) => {
         let inner2 = self.subst_univ(inner, us)?;
-        Ok(KUniv::succ(inner2))
+        if inner2.ptr_eq(inner) {
+          Ok(u.clone())
+        } else {
+          Ok(KUniv::succ(inner2))
+        }
       },
       UnivData::Max(a, b, _) => {
         let a2 = self.subst_univ(a, us)?;
         let b2 = self.subst_univ(b, us)?;
-        Ok(KUniv::max(a2, b2))
+        if a2.ptr_eq(a) && b2.ptr_eq(b) {
+          Ok(u.clone())
+        } else {
+          Ok(KUniv::max(a2, b2))
+        }
       },
       UnivData::IMax(a, b, _) => {
         let a2 = self.subst_univ(a, us)?;
         let b2 = self.subst_univ(b, us)?;
-        Ok(KUniv::imax(a2, b2))
+        if a2.ptr_eq(a) && b2.ptr_eq(b) {
+          Ok(u.clone())
+        } else {
+          Ok(KUniv::imax(a2, b2))
+        }
       },
     }
   }

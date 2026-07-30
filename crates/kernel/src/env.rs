@@ -119,6 +119,18 @@ pub struct InternTable<M: KernelMode> {
   /// cleared and returned to the pool on exit, so allocations persist
   /// across calls like the other scratches.
   pub(crate) clo_scratch_pool: Vec<FxHashMap<(Addr, u64), KExpr<M>>>,
+  /// Universe-instantiation memo, keyed by `(expr addr, us id)` where the
+  /// us id names a distinct level vector (see `inst_univ_us_ids`). CROSS-
+  /// call (unlike the scratches): delta unfolds instantiate the same
+  /// definition value at the same levels over and over, and universe
+  /// substitution depends on nothing but the term and the level vector.
+  /// Cleared with the intern tables (`KEnv::clear`), same lifetime as
+  /// `whnf_cache`.
+  pub(crate) inst_univ_cache: FxHashMap<(Addr, u64), KExpr<M>>,
+  /// Interning table for universe-level vectors: each distinct `us`
+  /// (by canonical level addresses) gets a small id, so the memo key
+  /// stays a cheap `(Addr, u64)` instead of hashing the vector per node.
+  pub(crate) inst_univ_us_ids: FxHashMap<Box<[Addr]>, u64>,
 }
 
 impl<M: KernelMode> Default for InternTable<M> {
@@ -171,6 +183,8 @@ impl<M: KernelMode> InternTable<M> {
       subst_scratch: FxHashMap::default(),
       lift_scratch: FxHashMap::default(),
       clo_scratch_pool: Vec::new(),
+      inst_univ_cache: FxHashMap::default(),
+      inst_univ_us_ids: FxHashMap::default(),
     }
   }
 
@@ -740,6 +754,8 @@ impl<M: KernelMode> KEnv<M> {
     self.intern.subst_scratch.clear();
     self.intern.lift_scratch.clear();
     self.intern.clo_scratch_pool.clear();
+    self.intern.inst_univ_cache.clear();
+    self.intern.inst_univ_us_ids.clear();
     let _ = self.prims.take();
     self.whnf_cache.clear();
     self.whnf_no_delta_cache.clear();
