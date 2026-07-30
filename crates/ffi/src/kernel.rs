@@ -2433,8 +2433,7 @@ fn build_block_type_ref_adjacency(
       adj[hid as usize].push(rid);
     }
     for i in &idxs {
-      let Some(r) = usize::try_from(*i).ok().and_then(|k| c.refs.get(k))
-      else {
+      let Some(r) = usize::try_from(*i).ok().and_then(|k| c.refs.get(k)) else {
         continue;
       };
       if let Some(&rid) = home.get(r)

@@ -483,7 +483,11 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   // after its classification pass.
   let (_claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
-      env, &owned, &foreign, &stubbed, &FxHashSet::default(),
+      env,
+      &owned,
+      &foreign,
+      &stubbed,
+      &FxHashSet::default(),
     ) {
       Ok(t) => t,
       Err(e) => {
@@ -682,11 +686,8 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   // claim digest is identical to phase 1's by construction, so binding
   // and composition never see the split. The prover's own execution
   // re-validates: a misclassified entry aborts naming its address.
-  let addr_only: FxHashSet<ix_common::address::Address> = stubbed
-    .iter()
-    .filter(|a| !consulted.contains(*a))
-    .cloned()
-    .collect();
+  let addr_only: FxHashSet<ix_common::address::Address> =
+    stubbed.iter().filter(|a| !consulted.contains(*a)).cloned().collect();
   let (claim, input, mut io_buffer) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
       env, &owned, &foreign, &stubbed, &addr_only,
