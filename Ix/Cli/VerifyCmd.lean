@@ -97,7 +97,8 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
   let digestOf (k : Nat) : IO (Option Address) := do
     match shards[k]? with
     | none => IO.eprintln s!"shard {k} out of range ({shards.size} shards)"; pure none
-    | some blocks => match Ix.Cli.CheckCmd.shardClaimDigest ixonEnv blocks with
+    | some (blocks, foreign, stubbed) =>
+      match Ix.Cli.CheckCmd.shardClaimDigest ixonEnv blocks foreign stubbed with
       | .error e => IO.eprintln s!"reconstruct shard {k} claim failed: {e}"; pure none
       | .ok d => pure (some d)
   let claimDigestOfProof (hex : String) : IO (Address × Address) := do

@@ -224,6 +224,13 @@ impl AiurSystem {
   /// generation are all unchanged — the proof produced here is
   /// verification-compatible with one produced by `prove`.
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_ixvm")]
+  /// The compiled toplevel this system proves — for callers that need a
+  /// plain execution against the same bytecode (e.g. the shard prove
+  /// path's stub-classification pass).
+  pub fn toplevel(&self) -> &Toplevel {
+    &self.toplevel
+  }
+
   pub fn prove_ixvm<F>(
     &self,
     fun_idx: FunIdx,

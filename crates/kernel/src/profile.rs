@@ -53,6 +53,10 @@ use ix_common::address::Address;
 #[cfg(not(target_os = "zkvm"))]
 thread_local! {
   static SUBST_NODES: Cell<u64> = const { Cell::new(0) };
+  static SUBST_UNIQUE: Cell<u64> = const { Cell::new(0) };
+  static SUBST_CTX: Cell<u64> = const { Cell::new(0) };
+  static SUBST_SEEN: std::cell::RefCell<FxHashSet<u64>> =
+    std::cell::RefCell::new(FxHashSet::default());
   static WHNF_CALLS: Cell<u64> = const { Cell::new(0) };
   static DEF_EQ_CALLS: Cell<u64> = const { Cell::new(0) };
   static NAT_ARITH: Cell<u64> = const { Cell::new(0) };
@@ -63,6 +67,48 @@ thread_local! {
 pub fn bump_subst_nodes() {
   #[cfg(not(target_os = "zkvm"))]
   SUBST_NODES.with(|c| c.set(c.get().wrapping_add(1)));
+}
+
+/// Set the substitution-context component of the unique-work key: a fold
+/// of the substitution arguments' identities, computed once per top-level
+/// `instantiate_rev` call (the recursion never re-enters subst, so one
+/// slot suffices). Mixed into every node key by [`bump_subst_unique`].
+#[inline(always)]
+pub fn set_subst_ctx(ctx: u64) {
+  #[cfg(not(target_os = "zkvm"))]
+  SUBST_CTX.with(|c| c.set(ctx));
+  #[cfg(target_os = "zkvm")]
+  let _ = ctx;
+}
+
+/// Count one substitution-node visit deduplicated by its work identity:
+/// (expression `expr_key`, binder `depth`, the current substitution
+/// context from [`set_subst_ctx`]). A memoizing executor (Aiur proves
+/// each unique query once; repeats are memo-table lookups) pays only for
+/// distinct work, so `subst_unique`, not the raw visit count, is the
+/// substitution-volume feature for an Aiur cost model. The seen-set
+/// spans one constant's check — the same scope as the other counters
+/// (cleared by [`take_op_counts`]).
+#[inline(always)]
+pub fn bump_subst_unique(expr_key: u64, depth: u64) {
+  #[cfg(not(target_os = "zkvm"))]
+  {
+    // splitmix64 finalizer over the mixed triple — collisions only cost
+    // model accuracy, never soundness.
+    let mut k = expr_key
+      ^ SUBST_CTX.with(Cell::get)
+      ^ depth.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    k = (k ^ (k >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    k = (k ^ (k >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    k ^= k >> 31;
+    SUBST_SEEN.with(|s| {
+      if s.borrow_mut().insert(k) {
+        SUBST_UNIQUE.with(|c| c.set(c.get().wrapping_add(1)));
+      }
+    });
+  }
+  #[cfg(target_os = "zkvm")]
+  let _ = (expr_key, depth);
 }
 
 /// Count one `whnf` entry.
@@ -95,6 +141,9 @@ pub fn bump_nat_arith(work: u64) {
 #[derive(Default, Debug, Clone, Copy)]
 pub struct OpCounts {
   pub subst_nodes: u64,
+  /// Distinct substitution work items (see [`bump_subst_unique`]) — the
+  /// post-memoization substitution volume a memoizing executor pays.
+  pub subst_unique: u64,
   pub whnf_calls: u64,
   pub def_eq_calls: u64,
   pub nat_arith: u64,
@@ -104,8 +153,10 @@ pub struct OpCounts {
 pub fn take_op_counts() -> OpCounts {
   #[cfg(not(target_os = "zkvm"))]
   {
+    SUBST_SEEN.with(|s| s.borrow_mut().clear());
     OpCounts {
       subst_nodes: SUBST_NODES.with(|c| c.replace(0)),
+      subst_unique: SUBST_UNIQUE.with(|c| c.replace(0)),
       whnf_calls: WHNF_CALLS.with(|c| c.replace(0)),
       def_eq_calls: DEF_EQ_CALLS.with(|c| c.replace(0)),
       nat_arith: NAT_ARITH.with(|c| c.replace(0)),
@@ -118,7 +169,31 @@ pub fn take_op_counts() -> OpCounts {
 /// Magic bytes at the head of every `.ixprof` file.
 const MAGIC: &[u8; 8] = b"IXPROF\0\0";
 /// On-disk format version. Bump on any incompatible layout change.
-const VERSION: u32 = 1;
+const VERSION: u32 = 4;
+
+/// Per-block operation counters recorded while checking the block's members —
+/// the profiler's persisted feature vector, grouped so builder signatures stay
+/// stable as counters grow.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockCounters {
+  /// Total recursive fuel (heartbeats) consumed.
+  pub heartbeats: u64,
+  /// Substitution-node visits (`instantiate_rev`) — the dominant
+  /// reduction-volume cost driver.
+  pub subst: u64,
+  /// Distinct substitution work items — the post-memoization substitution
+  /// volume (see `bump_subst_unique`); the memoizing-executor counterpart of
+  /// `subst`.
+  pub subst_unique: u64,
+  /// `whnf` entries.
+  pub whnf: u64,
+  /// Definitional-equality checks.
+  pub def_eq: u64,
+  /// Big-Nat limb-work units (op-weighted; see `bump_nat_arith`) — the only
+  /// recorded signal for the limb-arithmetic circuit family no other counter
+  /// tracks.
+  pub nat_arith: u64,
+}
 
 /// Per-block recorded statistics.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,6 +210,33 @@ pub struct BlockEntry {
   /// dominant reduction-volume cost driver. Recorded when profiled with op
   /// counters enabled; 0 otherwise.
   pub subst: u64,
+  /// Distinct substitution work items checking this block — the
+  /// post-memoization substitution volume (see `bump_subst_unique`);
+  /// the Aiur-relevant counterpart of `subst`.
+  pub subst_unique: u64,
+  /// `whnf` entries checking this block.
+  pub whnf: u64,
+  /// Definitional-equality checks checking this block.
+  pub def_eq: u64,
+  /// Big-Nat limb-work units checking this block.
+  pub nat_arith: u64,
+  /// Block property bits; see [`BlockEntry::NOT_AXIOMATIZABLE`].
+  pub flags: u32,
+}
+
+impl BlockEntry {
+  /// The block holds a constant whose BODY a checker can consume —
+  /// inductives, constructors, recursors, quotients, and the projections
+  /// into them. Reduction (iota, quot, proj) reads that body, so such a
+  /// block cannot stand in as a type-only axiom on a shard's frontier: it
+  /// must be ingressed whole or the reductions that need it fail.
+  pub const NOT_AXIOMATIZABLE: u32 = 1;
+
+  /// Whether this block may be represented as a type-only axiom when it
+  /// lands on a shard's frontier.
+  pub fn axiomatizable(&self) -> bool {
+    self.flags & Self::NOT_AXIOMATIZABLE == 0
+  }
 }
 
 /// A recorded kernel profile over an environment.
@@ -150,6 +252,36 @@ pub struct BlockProfile {
   delta_row: Vec<usize>,
   /// CSR column indices: producer block ids, grouped by consumer.
   delta_col: Vec<u32>,
+  /// CSR row offsets into `ref_col`, length `blocks.len() + 1`. The
+  /// **reference** graph (every cross-block `Constant.refs` edge, projections
+  /// and mutual members folded into home blocks) — a superset of the delta
+  /// graph. Reachability over it is a block's full dependency closure, which
+  /// is what an Aiur shard ingresses (`shardCheckEnvClaim` builds its env
+  /// tree over the owned blocks' whole closure), so the Aiur packer's byte
+  /// accounting runs on this graph, not the delta graph.
+  ref_row: Vec<usize>,
+  /// CSR column indices: referenced block ids, grouped by referrer.
+  ref_col: Vec<u32>,
+  /// CSR row offsets into `type_ref_col`, length `blocks.len() + 1`.
+  ///
+  /// The sub-graph of `ref_row`/`ref_col` restricted to references occurring
+  /// in a constant's TYPE, excluding those reachable only through its value
+  /// or a recursor's rules. A frontier constant contributes only its type,
+  /// so this is the graph its ingress must be closed under.
+  type_ref_row: Vec<usize>,
+  /// CSR column indices: type-referenced block ids, grouped by referrer.
+  type_ref_col: Vec<u32>,
+  /// CSR row offsets into `touch_col`, length `blocks.len() + 1`.
+  ///
+  /// The **touch** graph: blocks whose constants the kernel CONSULTED
+  /// (`try_get_const`) while checking each block's members — whether a body
+  /// was unfolded or only a type read. Unlike the delta and reference
+  /// graphs this is a *measurement* of the ingress a lazy checker demands,
+  /// not a prediction from graph structure: it is the set the check
+  /// actually faulted in. Self-edges dropped; recorded per profiling run.
+  touch_row: Vec<usize>,
+  /// CSR column indices: touched block ids, grouped by consumer.
+  touch_col: Vec<u32>,
 }
 
 impl BlockProfile {
@@ -211,11 +343,97 @@ impl BlockProfile {
     self.blocks.iter().map(|b| u128::from(b.heartbeats)).sum()
   }
 
+  /// Whether the reference graph is present (older recordings may lack it).
+  pub fn has_ref_graph(&self) -> bool {
+    !self.ref_row.is_empty()
+  }
+
+  /// Referenced block ids of block `b` (sorted, deduped, no self-edges).
+  /// Empty when no reference graph was recorded.
+  pub fn refs(&self, b: u32) -> &[u32] {
+    if self.ref_row.is_empty() {
+      return &[];
+    }
+    let lo = self.ref_row[b as usize];
+    let hi = self.ref_row[b as usize + 1];
+    &self.ref_col[lo..hi]
+  }
+
+  /// Whether the type-reference sub-graph is present.
+  pub fn has_type_ref_graph(&self) -> bool {
+    !self.type_ref_row.is_empty()
+  }
+
+  /// Type-referenced block ids of block `b` — the references occurring in
+  /// its constants' types. Empty when no type-reference graph was recorded.
+  pub fn type_refs(&self, b: u32) -> &[u32] {
+    if self.type_ref_row.is_empty() {
+      return &[];
+    }
+    let lo = self.type_ref_row[b as usize];
+    let hi = self.type_ref_row[b as usize + 1];
+    &self.type_ref_col[lo..hi]
+  }
+
+  /// Whether the touch graph is present (profiles recorded before touch
+  /// recording, or built without a sink, lack it).
+  pub fn has_touch_graph(&self) -> bool {
+    !self.touch_row.is_empty()
+  }
+
+  /// Block ids consulted while checking block `b` (sorted, deduped, no
+  /// self-edges). Empty when no touch graph was recorded. This is the
+  /// measured ingress set of `b` minus `b` itself: what a lazy checker
+  /// faulted in to check it.
+  pub fn touched_blocks(&self, b: u32) -> &[u32] {
+    if self.touch_row.is_empty() {
+      return &[];
+    }
+    let lo = self.touch_row[b as usize];
+    let hi = self.touch_row[b as usize + 1];
+    &self.touch_col[lo..hi]
+  }
+
+  /// Set per-block property bits (see [`BlockEntry::NOT_AXIOMATIZABLE`]),
+  /// one entry per block id.
+  pub fn set_block_flags(&mut self, flags: &[u32]) {
+    assert_eq!(flags.len(), self.blocks.len());
+    for (b, &f) in self.blocks.iter_mut().zip(flags) {
+      b.flags = f;
+    }
+  }
+
+  /// Attach the block-level type-reference sub-graph. Same shape as
+  /// [`BlockProfile::set_ref_graph`].
+  pub fn set_type_ref_graph(&mut self, adj: &[Vec<u32>]) {
+    assert_eq!(adj.len(), self.blocks.len());
+    self.type_ref_row = Vec::with_capacity(adj.len() + 1);
+    self.type_ref_row.push(0);
+    self.type_ref_col.clear();
+    for row in adj {
+      self.type_ref_col.extend_from_slice(row);
+      self.type_ref_row.push(self.type_ref_col.len());
+    }
+  }
+
+  /// Attach the block-level reference graph (per-block sorted, deduped,
+  /// self-edge-free referenced ids; one row per block).
+  pub fn set_ref_graph(&mut self, adj: &[Vec<u32>]) {
+    assert_eq!(adj.len(), self.blocks.len());
+    self.ref_row = Vec::with_capacity(adj.len() + 1);
+    self.ref_row.push(0);
+    self.ref_col = Vec::with_capacity(adj.iter().map(Vec::len).sum());
+    for row in adj {
+      self.ref_col.extend_from_slice(row);
+      self.ref_row.push(self.ref_col.len());
+    }
+  }
+
   /// Serialize to the `.ixprof` binary format.
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();
     let mut out = Vec::with_capacity(
-      8 + 4 + 4 + n * 56 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
+      8 + 4 + 4 + n * 88 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
     );
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&VERSION.to_le_bytes());
@@ -226,14 +444,27 @@ impl BlockProfile {
       out.extend_from_slice(&b.serialized_size.to_le_bytes());
       out.extend_from_slice(&b.const_count.to_le_bytes());
       out.extend_from_slice(&b.subst.to_le_bytes());
+      out.extend_from_slice(&b.subst_unique.to_le_bytes());
+      out.extend_from_slice(&b.whnf.to_le_bytes());
+      out.extend_from_slice(&b.def_eq.to_le_bytes());
+      out.extend_from_slice(&b.nat_arith.to_le_bytes());
+      out.extend_from_slice(&b.flags.to_le_bytes());
     }
-    out.extend_from_slice(&(self.delta_col.len() as u64).to_le_bytes());
-    // CSR row offsets (n+1 entries) as u64.
-    for &off in &self.delta_row {
-      out.extend_from_slice(&(off as u64).to_le_bytes());
-    }
-    for &p in &self.delta_col {
-      out.extend_from_slice(&p.to_le_bytes());
+    // CSR sections. The delta graph is always present; the reference,
+    // type-reference, and touch graphs are each framed by a one-byte
+    // presence flag so any subset can be absent without EOF inference.
+    write_csr(&mut out, &self.delta_row, &self.delta_col);
+    for (row, col) in [
+      (&self.ref_row, &self.ref_col),
+      (&self.type_ref_row, &self.type_ref_col),
+      (&self.touch_row, &self.touch_col),
+    ] {
+      if row.is_empty() {
+        out.push(0);
+      } else {
+        out.push(1);
+        write_csr(&mut out, row, col);
+      }
     }
     out
   }
@@ -258,41 +489,53 @@ impl BlockProfile {
       let serialized_size = r.u32()?;
       let const_count = r.u32()?;
       let subst = r.u64()?;
+      let subst_unique = r.u64()?;
+      let whnf = r.u64()?;
+      let def_eq = r.u64()?;
+      let nat_arith = r.u64()?;
+      let flags = r.u32()?;
       blocks.push(BlockEntry {
         addr,
         heartbeats,
         serialized_size,
         const_count,
         subst,
+        subst_unique,
+        whnf,
+        def_eq,
+        nat_arith,
+        flags,
       });
     }
-    let num_edges = r.u64()? as usize;
-    let mut delta_row = Vec::with_capacity(n + 1);
-    for _ in 0..n + 1 {
-      delta_row.push(r.u64()? as usize);
-    }
-    let mut delta_col = Vec::with_capacity(num_edges);
-    for _ in 0..num_edges {
-      delta_col.push(r.u32()?);
-    }
-    // Structural validation: monotone offsets bounded by edge count, in-range ids.
-    if delta_row.len() != n + 1
-      || delta_row.first() != Some(&0)
-      || delta_row.last() != Some(&num_edges)
-    {
-      return Err(ProfileError::Corrupt);
-    }
-    for w in delta_row.windows(2) {
-      if w[0] > w[1] {
-        return Err(ProfileError::Corrupt);
+    let (delta_row, delta_col) = read_csr(&mut r, n)?;
+    let mut optional = [
+      (Vec::new(), Vec::new()),
+      (Vec::new(), Vec::new()),
+      (Vec::new(), Vec::new()),
+    ];
+    for slot in &mut optional {
+      match r.u8()? {
+        0 => {},
+        1 => *slot = read_csr(&mut r, n)?,
+        _ => return Err(ProfileError::Corrupt),
       }
     }
-    for &p in &delta_col {
-      if p as usize >= n {
-        return Err(ProfileError::Corrupt);
-      }
-    }
-    Ok(BlockProfile { blocks, delta_row, delta_col })
+    let [
+      (ref_row, ref_col),
+      (type_ref_row, type_ref_col),
+      (touch_row, touch_col),
+    ] = optional;
+    Ok(BlockProfile {
+      blocks,
+      delta_row,
+      delta_col,
+      ref_row,
+      ref_col,
+      type_ref_row,
+      type_ref_col,
+      touch_row,
+      touch_col,
+    })
   }
 }
 
@@ -339,12 +582,51 @@ impl<'a> Reader<'a> {
     self.pos = end;
     Ok(s)
   }
+  fn u8(&mut self) -> Result<u8, ProfileError> {
+    Ok(self.take(1)?[0])
+  }
   fn u32(&mut self) -> Result<u32, ProfileError> {
     Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
   }
   fn u64(&mut self) -> Result<u64, ProfileError> {
     Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
   }
+}
+
+/// Serialize one CSR section: edge count, `n+1` u64 row offsets, u32 columns.
+fn write_csr(out: &mut Vec<u8>, row: &[usize], col: &[u32]) {
+  out.extend_from_slice(&(col.len() as u64).to_le_bytes());
+  for &off in row {
+    out.extend_from_slice(&(off as u64).to_le_bytes());
+  }
+  for &c in col {
+    out.extend_from_slice(&c.to_le_bytes());
+  }
+}
+
+/// Read and structurally validate one CSR section over `n` blocks: offsets
+/// monotone from 0 to the edge count, column ids in range.
+fn read_csr(
+  r: &mut Reader<'_>,
+  n: usize,
+) -> Result<(Vec<usize>, Vec<u32>), ProfileError> {
+  let num_edges = r.u64()? as usize;
+  let mut row = Vec::with_capacity(n + 1);
+  for _ in 0..n + 1 {
+    row.push(r.u64()? as usize);
+  }
+  let mut col = Vec::with_capacity(num_edges);
+  for _ in 0..num_edges {
+    col.push(r.u32()?);
+  }
+  if row.first() != Some(&0)
+    || row.last() != Some(&num_edges)
+    || row.windows(2).any(|w| w[0] > w[1])
+    || col.iter().any(|&x| x as usize >= n)
+  {
+    return Err(ProfileError::Corrupt);
+  }
+  Ok((row, col))
 }
 
 /// Accumulates block-level statistics and delta edges (keyed by address), then
@@ -362,11 +644,11 @@ pub struct ProfileBuilder {
 
 #[derive(Default)]
 struct Accum {
-  heartbeats: u64,
+  counters: BlockCounters,
   serialized_size: u32,
   const_count: u32,
-  subst: u64,
   producers: FxHashSet<Address>,
+  touched: FxHashSet<Address>,
 }
 
 impl ProfileBuilder {
@@ -374,22 +656,26 @@ impl ProfileBuilder {
     Self::default()
   }
 
-  /// Record (or accumulate into) a block's statistics. Heartbeats and
+  /// Record (or accumulate into) a block's statistics. Counters and
   /// const_count accumulate additively; serialized_size is set (idempotent for
   /// a fixed block).
   pub fn block(
     &mut self,
     addr: Address,
-    heartbeats: u64,
+    counters: BlockCounters,
     serialized_size: u32,
     const_count: u32,
-    subst: u64,
   ) {
     let e = self.blocks.entry(addr).or_default();
-    e.heartbeats = e.heartbeats.saturating_add(heartbeats);
+    let c = &mut e.counters;
+    c.heartbeats = c.heartbeats.saturating_add(counters.heartbeats);
+    c.subst = c.subst.saturating_add(counters.subst);
+    c.subst_unique = c.subst_unique.saturating_add(counters.subst_unique);
+    c.whnf = c.whnf.saturating_add(counters.whnf);
+    c.def_eq = c.def_eq.saturating_add(counters.def_eq);
+    c.nat_arith = c.nat_arith.saturating_add(counters.nat_arith);
     e.serialized_size = serialized_size;
     e.const_count = e.const_count.saturating_add(const_count);
-    e.subst = e.subst.saturating_add(subst);
   }
 
   /// Record that `consumer` delta-unfolds the body of `producer`. Self-edges
@@ -402,6 +688,17 @@ impl ProfileBuilder {
     }
     self.blocks.entry(producer.clone()).or_default();
     self.blocks.entry(consumer).or_default().producers.insert(producer);
+  }
+
+  /// Record that checking `consumer` consulted `target` (`try_get_const`),
+  /// whether its body was unfolded or only its type read. Self-edges are
+  /// ignored; both endpoints are ensured as blocks, like [`Self::delta_edge`].
+  pub fn touch_edge(&mut self, consumer: Address, target: Address) {
+    if consumer == target {
+      return;
+    }
+    self.blocks.entry(target.clone()).or_default();
+    self.blocks.entry(consumer).or_default().touched.insert(target);
   }
 
   /// Freeze into an immutable [`BlockProfile`]. Block ids are assigned by
@@ -417,24 +714,56 @@ impl ProfileBuilder {
     let mut delta_row = Vec::with_capacity(addrs.len() + 1);
     let mut delta_col = Vec::new();
     delta_row.push(0usize);
+    let mut touch_row = Vec::with_capacity(addrs.len() + 1);
+    let mut touch_col = Vec::new();
+    touch_row.push(0usize);
+    let any_touches = self.blocks.values().any(|a| !a.touched.is_empty());
 
     for addr in &addrs {
       let a = &self.blocks[addr];
       blocks.push(BlockEntry {
         addr: addr.clone(),
-        heartbeats: a.heartbeats,
+        heartbeats: a.counters.heartbeats,
         serialized_size: a.serialized_size,
         const_count: a.const_count,
-        subst: a.subst,
+        subst: a.counters.subst,
+        subst_unique: a.counters.subst_unique,
+        whnf: a.counters.whnf,
+        def_eq: a.counters.def_eq,
+        nat_arith: a.counters.nat_arith,
+        // Kind bits come from the environment, not the profiling run;
+        // `set_block_flags` fills them in.
+        flags: 0,
       });
       let mut prods: Vec<u32> = a.producers.iter().map(|p| id_of[p]).collect();
       prods.sort_unstable();
       prods.dedup();
       delta_col.extend_from_slice(&prods);
       delta_row.push(delta_col.len());
+      let mut touches: Vec<u32> = a.touched.iter().map(|t| id_of[t]).collect();
+      touches.sort_unstable();
+      touches.dedup();
+      touch_col.extend_from_slice(&touches);
+      touch_row.push(touch_col.len());
+    }
+    // A profile recorded without touch instrumentation has no touch graph
+    // at all, which readers distinguish from "recorded, all rows empty".
+    if !any_touches {
+      touch_row = Vec::new();
+      touch_col = Vec::new();
     }
 
-    BlockProfile { blocks, delta_row, delta_col }
+    BlockProfile {
+      blocks,
+      delta_row,
+      delta_col,
+      ref_row: Vec::new(),
+      ref_col: Vec::new(),
+      type_ref_row: Vec::new(),
+      type_ref_col: Vec::new(),
+      touch_row,
+      touch_col,
+    }
   }
 }
 
@@ -460,6 +789,10 @@ pub struct ConstRecord {
   pub fuel: u64,
   /// Constant addresses whose bodies were delta-unfolded during the check.
   pub producers: FxHashSet<Address>,
+  /// Constant addresses CONSULTED during the check (`try_get_const`) —
+  /// a superset of `producers` that also covers type-only reads. The
+  /// measured ingress set of a lazy checker.
+  pub touched: FxHashSet<Address>,
   /// Richer cost features (substitution-node visits, whnf/def-eq calls),
   /// recorded on every native profiling run; compiled out (all zero) on the
   /// zkvm target.
@@ -472,18 +805,23 @@ impl ProfileSink {
   }
 
   /// Accumulate one constant's record (additive in fuel + op counts, set-union
-  /// in producers) so repeated flushes for the same constant combine correctly.
+  /// in producers/touched) so repeated flushes for the same constant combine
+  /// correctly.
   pub fn record(
     &mut self,
     consumer: Address,
     fuel: u64,
     producers: impl IntoIterator<Item = Address>,
+    touched: impl IntoIterator<Item = Address>,
     ops: OpCounts,
   ) {
     let rec = self.records.entry(consumer).or_default();
     rec.fuel = rec.fuel.saturating_add(fuel);
     rec.producers.extend(producers);
+    rec.touched.extend(touched);
     rec.ops.subst_nodes = rec.ops.subst_nodes.saturating_add(ops.subst_nodes);
+    rec.ops.subst_unique =
+      rec.ops.subst_unique.saturating_add(ops.subst_unique);
     rec.ops.whnf_calls = rec.ops.whnf_calls.saturating_add(ops.whnf_calls);
     rec.ops.def_eq_calls =
       rec.ops.def_eq_calls.saturating_add(ops.def_eq_calls);
@@ -496,7 +834,10 @@ impl ProfileSink {
       let e = self.records.entry(addr).or_default();
       e.fuel = e.fuel.saturating_add(rec.fuel);
       e.producers.extend(rec.producers);
+      e.touched.extend(rec.touched);
       e.ops.subst_nodes = e.ops.subst_nodes.saturating_add(rec.ops.subst_nodes);
+      e.ops.subst_unique =
+        e.ops.subst_unique.saturating_add(rec.ops.subst_unique);
       e.ops.whnf_calls = e.ops.whnf_calls.saturating_add(rec.ops.whnf_calls);
       e.ops.def_eq_calls =
         e.ops.def_eq_calls.saturating_add(rec.ops.def_eq_calls);
@@ -513,17 +854,27 @@ mod tests {
     Address::from_slice(&[byte; 32]).unwrap()
   }
 
+  /// Fixture counters: (heartbeats, subst, subst_unique); other counters zero.
+  fn bc(heartbeats: u64, subst: u64, subst_unique: u64) -> BlockCounters {
+    BlockCounters { heartbeats, subst, subst_unique, ..Default::default() }
+  }
+
   fn sample() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     // Three blocks a<b<c by address ordering.
-    b.block(addr(1), 100, 10, 1, 50);
-    b.block(addr(2), 200, 20, 3, 100);
-    b.block(addr(3), 300, 30, 1, 150);
+    b.block(addr(1), bc(100, 50, 50), 10, 1);
+    b.block(addr(2), bc(200, 100, 100), 20, 3);
+    b.block(addr(3), bc(300, 150, 150), 30, 1);
     // a unfolds b and c; c unfolds b; self-edge ignored.
     b.delta_edge(addr(1), addr(2));
     b.delta_edge(addr(1), addr(3));
     b.delta_edge(addr(3), addr(2));
     b.delta_edge(addr(2), addr(2));
+    // a consulted c; b consulted a and c; self-edge ignored.
+    b.touch_edge(addr(1), addr(3));
+    b.touch_edge(addr(2), addr(1));
+    b.touch_edge(addr(2), addr(3));
+    b.touch_edge(addr(3), addr(3));
     b.finish()
   }
 
@@ -563,11 +914,35 @@ mod tests {
   }
 
   #[test]
+  fn touch_graph_sorted_self_edge_dropped_and_absent_when_unrecorded() {
+    let p = sample();
+    assert!(p.has_touch_graph());
+    // block 0 (addr 1) consulted block 2; block 1 consulted blocks 0 and 2.
+    assert_eq!(p.touched_blocks(0), &[2]);
+    assert_eq!(p.touched_blocks(1), &[0, 2]);
+    // block 2 (addr 3): self-edge dropped → no touches.
+    assert_eq!(p.touched_blocks(2), &[]);
+    // A builder fed no touch edges yields no touch graph at all.
+    let mut b = ProfileBuilder::new();
+    b.block(addr(1), bc(1, 0, 0), 1, 1);
+    let q = b.finish();
+    assert!(!q.has_touch_graph());
+    assert_eq!(q.touched_blocks(0), &[]);
+  }
+
+  #[test]
   fn roundtrip_serialization() {
     let p = sample();
     let bytes = p.to_bytes();
     let q = BlockProfile::from_bytes(&bytes).unwrap();
     assert_eq!(p, q);
+    // Absent optional sections roundtrip as absent, not as empty-present.
+    let mut b = ProfileBuilder::new();
+    b.block(addr(1), bc(1, 0, 0), 1, 1);
+    let bare = b.finish();
+    let r = BlockProfile::from_bytes(&bare.to_bytes()).unwrap();
+    assert_eq!(bare, r);
+    assert!(!r.has_touch_graph() && !r.has_ref_graph());
   }
 
   #[test]
@@ -590,12 +965,16 @@ mod tests {
     // via separate builders merged conceptually; result must be identical.
     let mut b = ProfileBuilder::new();
     b.delta_edge(addr(3), addr(2));
-    b.block(addr(3), 300, 30, 1, 150);
+    b.touch_edge(addr(2), addr(3));
+    b.block(addr(3), bc(300, 150, 150), 30, 1);
     b.delta_edge(addr(1), addr(3));
-    b.block(addr(2), 200, 20, 3, 100);
+    b.touch_edge(addr(3), addr(3));
+    b.block(addr(2), bc(200, 100, 100), 20, 3);
     b.delta_edge(addr(1), addr(2));
-    b.block(addr(1), 100, 10, 1, 50);
+    b.touch_edge(addr(2), addr(1));
+    b.block(addr(1), bc(100, 50, 50), 10, 1);
     b.delta_edge(addr(2), addr(2));
+    b.touch_edge(addr(1), addr(3));
     assert_eq!(b.finish(), sample());
   }
 }

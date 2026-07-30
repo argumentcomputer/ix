@@ -97,21 +97,32 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     match p.flag? "parallelism" with
     | some flag => max 1 (flag.as! Nat)
     | none      => 1
+  let backend := (p.flag? "backend").map (·.as! String) |>.getD "zisk"
+  if backend != "zisk" && backend != "aiur" then
+    p.printError s!"error: --backend must be zisk or aiur (got {backend})"
+    return 1
+  let promote := (p.flag? "promote").map (·.as! String) |>.getD ""
+  if !promote.isEmpty && backend != "aiur" then
+    p.printError "error: --promote applies to the aiur ingress model only"
+    return 1
 
   -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
   -- (budget) > default (size to detected system RAM).
   match shardsFlag with
   | some n =>
+    if backend != "zisk" then
+      p.printError s!"error: --backend {backend} packs to a RAM budget; use --max-ram, not --shards"
+      return 1
     IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
     rsShardEspFFI espPath (toString n) (toString balancePct) (toString parallelism)
       outPath
   | none =>
     if maxCycles.isNone && maxRam.isNone then
-      IO.println s!"Sharding {espPath} to detected system RAM (balance ±{balancePct}%)"
+      IO.println s!"Sharding {espPath} to detected system RAM ({backend} model, balance ±{balancePct}%)"
     else
-      IO.println s!"Sharding {espPath} to budget (max-cycles={maxCycles.getD 0}, max-ram={maxRam.getD 0} GiB, balance ±{balancePct}%)"
+      IO.println s!"Sharding {espPath} to budget ({backend} model, max-cycles={maxCycles.getD 0}, max-ram={maxRam.getD 0} GiB, balance ±{balancePct}%)"
     rsShardEspCapFFI espPath (toString (maxCycles.getD 0)) (toString (maxRam.getD 0))
-      (toString balancePct) (toString parallelism) outPath
+      (toString balancePct) (toString parallelism) outPath backend promote
   if !outPath.isEmpty then
     IO.println s!"[shard] wrote {outPath}"
   return 0
@@ -129,6 +140,8 @@ def shardCmd : Cli.Cmd := `[Cli|
     "max-ram"    : Nat;    "Per-shard host-RAM budget, GiB (default: detected system RAM)"
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (default 1 = sequential)"
+    backend      : String; "Packing cost model: zisk (default, guest-STEP cap) or aiur (RAM model; use with --max-ram)"
+    promote      : String; "Per-shard escalation for replay divergence (aiur only): comma-separated `K:N` (N whole-frontier promotion rounds for shard K) and/or `K:+HEX` (ship the named block whole in shard K); a bare `N` applies N rounds everywhere. `ix check --repair` accumulates this automatically."
     out          : String; "Output .ixes manifest path (default: <prof>.ixes, e.g. init.ixprof → init.ixes)"
 
   ARGS:

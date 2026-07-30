@@ -38,6 +38,19 @@ def storeDir : StoreIO FilePath := do
     IO.toEIO .ioError (IO.FS.createDirAll path)
   return path
 
+/-- `~/.ix/cache/<namespace>` — keyed, wipeable derived state, distinct
+    from the content-addressed store: filenames are lookup keys (claim
+    digests), contents are re-derivable or re-verifiable, and deleting
+    the directory only costs recomputation. Used for the shard-prove
+    resume ledger (`shard-proofs`) and the stub-consultation
+    classification (`stub-consults`). -/
+def cacheDir (namespace' : String) : StoreIO FilePath := do
+  let home ← getHomeDir
+  let path := home / ".ix" / "cache" / namespace'
+  if !(<- path.pathExists) then
+    IO.toEIO .ioError (IO.FS.createDirAll path)
+  return path
+
 def storePath (addr: Address): StoreIO FilePath := do
   let store <- storeDir
   let hex := hexOfBytes addr.hash

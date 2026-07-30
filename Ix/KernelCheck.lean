@@ -198,13 +198,34 @@ opaque rsEnvExtractFFI :
     per-block heartbeats + the delta-unfold graph (the sharding cost model,
     see `plans/sharding.md`). Runs the anon kernel over every checkable target.
     `isolate` clears the kernel's reduction-memo caches between constants for
-    sound/faithful recording; `quiet` suppresses per-constant progress. -/
+    sound/faithful recording; `quiet` suppresses per-constant progress. `top`
+    (a decimal string, kept ABI-simple) sizes the summary's per-metric block
+    leaderboards; "0" disables them. `backend` selects which cost models the
+    summary prints: "aiur", "zisk", or "all". -/
 @[extern "rs_kernel_profile_anon"]
 opaque rsProfileAnonFFI :
     @& String →                          -- .ixe path
     @& String →                          -- .ixprof output path
     @& Bool →                            -- isolate caches
     @& Bool →                            -- quiet
+    @& String →                          -- leaderboard size (decimal)
+    @& String →                          -- backend cost models (all|aiur|zisk)
+    IO Unit
+
+/-- FFI: env-wide closure cost sweep. For every named constant (one
+    representative name per home block), walks its full reference closure,
+    sums the whole-env `.ixprof` per-block counters over the members, and
+    applies the Aiur execute/prove cost models. Writes a per-root CSV and
+    prints feasibility / min-root-per-hot-block / diversity reports to
+    stderr. Numeric params are decimal strings (ABI-simple). -/
+@[extern "rs_profile_sweep"]
+opaque rsProfileSweepFFI :
+    @& String →                          -- .ixe path
+    @& String →                          -- .ixprof path
+    @& String →                          -- output CSV path
+    @& String →                          -- RAM budget GiB (decimal)
+    @& String →                          -- hot blocks tracked (decimal)
+    @& String →                          -- diversity representatives (decimal)
     IO Unit
 
 /-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
@@ -222,7 +243,9 @@ opaque rsShardEspFFI :
 /-- FFI: partition a `.ixprof` to a per-shard cycle/RAM budget, writing a
     `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGb` > 0 it is
     converted via the measured prover RAM model and overrides `maxCycles`. Pass
-    "0" for whichever is unused. Decimal strings (ABI-simple). -/
+    "0" for whichever is unused. Decimal strings (ABI-simple). `backend`
+    selects the packing cost model: "zisk" (guest-STEP cap) or "aiur" (RAM
+    model; RAM budgets only). -/
 @[extern "rs_shard_esp_cap"]
 opaque rsShardEspCapFFI :
     @& String →                          -- .ixprof path
@@ -231,6 +254,8 @@ opaque rsShardEspCapFFI :
     @& String →                          -- balance percent
     @& String →                          -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
+    @& String →                          -- backend cost model (zisk|aiur)
+    @& String →                          -- per-shard promotion spec ("" = none; "K:N" rounds, "K:+HEX" named block)
     IO Unit
 
 end Ix.KernelCheck

@@ -822,7 +822,10 @@ def defEq := ⟦
     match ae {
       0 =>
         match be {
-          0 => (0, 0),
+          0 =>
+            want_if_stub(ai, top, addrs);
+            want_if_stub(bi, top, addrs);
+            (0, 0),
           1 => unfold_b_and_loop(a, b, fuel, types, top, addrs),
           _ => (0, 0),
         },
@@ -854,7 +857,9 @@ def defEq := ⟦
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
                               addrs: List‹Addr›) -> (G, G) {
     match is_delta_eligible(ai, top) {
-      0 => (0, 0),
+      0 =>
+        want_if_stub(ai, top, addrs);
+        (0, 0),
       1 =>
         match try_unfold_proj_app(b, top) {
           (1, b2) =>
@@ -872,7 +877,9 @@ def defEq := ⟦
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
                               addrs: List‹Addr›) -> (G, G) {
     match is_delta_eligible(bi, top) {
-      0 => (0, 0),
+      0 =>
+        want_if_stub(bi, top, addrs);
+        (0, 0),
       1 =>
         match try_unfold_proj_app(a, top) {
           (1, a2) =>

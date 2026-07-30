@@ -167,6 +167,11 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// Addresses of constants whose bodies were delta-unfolded during the current
   /// constant's check. Drained per constant by `record_current_fuel_used`.
   pub(crate) delta_targets: FxHashSet<Address>,
+  /// Every constant CONSULTED while checking the current one, whether its
+  /// body was unfolded or only its type read — the measured ingress set of
+  /// a lazy checker. Drained per constant by `record_current_fuel_used`
+  /// into the profile sink, which persists it as the `.ixprof` touch graph.
+  pub(crate) touched: FxHashSet<Address>,
   /// Gated miss sampler for fuel-exhaustion diagnostics. Populated only when
   /// `IX_HOT_MISSES=1`, keyed by a compact phase/head/lbr shape.
   hot_misses: FxHashMap<String, u64>,
@@ -217,6 +222,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       debug_label: None,
       cur_const: None,
       delta_targets: FxHashSet::default(),
+      touched: FxHashSet::default(),
       hot_misses: FxHashMap::default(),
       ctx_addr_cache: FxHashMap::default(),
       lctx: super::lctx::LocalContext::new(),
@@ -247,6 +253,9 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     &mut self,
     id: &KId<M>,
   ) -> Result<Option<KConst<M>>, TcError<M>> {
+    if self.env.profile_sink.is_some() {
+      self.touched.insert(id.addr.clone());
+    }
     if let Some(c) = self.env.get(id) {
       return Ok(Some(c));
     }
@@ -904,13 +913,19 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     // delta-unfold edges. `delta_targets` is always drained (even when
     // `cur_const` is unset) so producers never leak into the next constant.
     if self.env.profile_sink.is_some() {
+      let touched = std::mem::take(&mut self.touched);
+      if std::env::var_os("IX_TOUCH_STATS").is_some()
+        && let Some(a) = self.cur_const.as_ref()
+      {
+        eprintln!("[touch] {} {}", a.hex(), touched.len());
+      }
       let producers = std::mem::take(&mut self.delta_targets);
       // Always drain the op counters (even when `cur_const` is unset) so they
       // never leak into the next constant, mirroring `delta_targets`.
       let ops = crate::profile::take_op_counts();
       if let Some(addr) = self.cur_const.take() {
         let sink = self.env.profile_sink.as_mut().unwrap();
-        sink.record(addr, used, producers, ops);
+        sink.record(addr, used, producers, touched, ops);
       }
     }
   }

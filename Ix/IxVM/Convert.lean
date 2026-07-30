@@ -141,6 +141,31 @@ def convert := ⟦
     }
   }
 
+  -- Sentinel stored in `addr_pos_map` / `ref_idxs` for a ref naming a constant
+  -- the witness never ingressed. Distinct from the blob SENTINEL and beyond any
+  -- honest `pos+1`, so it cannot collide with a real position.
+  --
+  -- Carried rather than rejected at classification time so that only a ref
+  -- actually USED by an expression fails; a constant may carry entries in its
+  -- ref table that no expression dereferences.
+  fn poison_ref_idx() -> G { 4294967294 }
+
+  -- Reject a poisoned ref index at its use site. Resolving one to a position
+  -- would silently rebind the reference to another constant.
+  fn assert_ref_resolved(idx: G) {
+    match idx - poison_ref_idx() {
+      0 => assert_eq!(0, 1); (),
+      _ => (),
+    }
+  }
+
+  -- `lookup_addr_pos` has no expression context to blame, so a poisoned
+  -- address there is rejected outright.
+  fn assert_poison_unused() -> G {
+    assert_eq!(0, 1);
+    0
+  }
+
   fn convert_expr(
     e: &Expr,
     sharing: List‹&Expr›,
@@ -161,6 +186,7 @@ def convert := ⟦
 
       Expr.Ref(ref_idx, univ_idxs) =>
         let const_idx = list_lookup(ref_idxs, flatten_u64(ref_idx));
+        assert_ref_resolved(const_idx);
         let levels = convert_univ_idxs(univ_idxs, univs);
         store(KExprNode.Const(const_idx, levels)),
 
@@ -171,6 +197,7 @@ def convert := ⟦
 
       Expr.Prj(type_ref_idx, field_idx, inner) =>
         let type_idx = list_lookup(ref_idxs, flatten_u64(type_ref_idx));
+        assert_ref_resolved(type_idx);
         store(KExprNode.Proj(
           type_idx,
           flatten_u64(field_idx),
@@ -276,10 +303,31 @@ def convert := ⟦
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match a {
           Axiom.Mk(is_unsafe, lvls, typ) =>
-            let ktyp = convert_expr(typ, sharing, ref_idxs, recur_idxs, lit_blobs, univs);
-            KConstantInfo.Axiom(flatten_u64(lvls), ktyp, is_unsafe),
+            match is_unsafe - 3 {
+              0 =>
+                -- ADDRESS-ONLY stub (fabricated by `load_with_deps` for a
+                -- ch-4 kind-2 leaf): the witness shipped no bytes, so this
+                -- node holds no real content. The arity sentinel makes
+                -- every mention fail the universe-arity assert closed (and
+                -- report the address, `report_wanted_addr_only`); flag 2
+                -- keeps the whnf-stuck wanted-stub report firing for it.
+                -- The type is unreachable behind the sentinel.
+                KConstantInfo.Axiom(addr_only_arity(), store(KExprNode.BVar(0)), 2),
+              _ =>
+                let ktyp = convert_expr(typ, sharing, ref_idxs, recur_idxs, lit_blobs, univs);
+                KConstantInfo.Axiom(flatten_u64(lvls), ktyp, is_unsafe),
+            },
         },
     }
+  }
+
+  -- Universe-arity sentinel carried by ADDRESS-ONLY entries: no real
+  -- constant declares 2^32-1 level parameters, so
+  -- `assert_eq!(list_length(lvls), const_num_lvls(ci))` can never pass
+  -- on one — any term that actually MENTIONS an address-only stub fails
+  -- closed at infer.
+  fn addr_only_arity() -> G {
+    4294967295
   }
 
   fn convert_quotient(q: Quotient, ctx: ConvertCtx) -> KConstantInfo {

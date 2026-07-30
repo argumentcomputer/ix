@@ -162,16 +162,25 @@ Channel numbers MUST stay in sync with the inlined `io_get_info` /
 -/
 
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
-    `ioBuffer`. See the channel table above. -/
+    `ioBuffer`. See the channel table above.
+
+    `addrOnly` addrs ship position-only: a kind-2 discriminator and nothing
+    else — the kernel fabricates a fail-closed node at their position
+    instead of loading + hashing bytes. Mirrors the Rust builder's
+    `add_entries_parallel`. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
-    (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
+    (ioBuffer : Aiur.IOBuffer)
+    (addrOnly : Address → Bool := fun _ => false) : Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
   for (addr, lc) in ixonEnv.consts do
     if !keep addr then continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    if addrOnly addr then
+      ioBuffer := ioBuffer.extend 4 key #[.ofNat 2]
+      continue
     -- The kernel re-hashes these bytes against the key, so feed the exact
     -- serialized form the lazy entry holds — no materialization needed.
     let bytes := lc.rawBytes
-    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 2 key (bytes.data.map .ofUInt8)
     -- Discriminator: this addr resolves to a constant.
     ioBuffer := ioBuffer.extend 4 key #[.ofNat 1]
@@ -183,6 +192,7 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     ioBuffer := ioBuffer.extend 4 key #[.ofNat 0]
   for (addr, hints) in ixonEnv.anonHints do
     if !keep addr then continue
+    if addrOnly addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
   return ioBuffer
@@ -260,7 +270,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     ioBuffer := addEntries env
       (fun a => inputClosure.contains a || outputClosure.contains a) ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
-  | .checkEnv root asm =>
+  | .checkEnv root asm _stubbed =>
     ioBuffer := addEntries env (fun _ => true) ioBuffer
     ioBuffer ← seedTreeAt root trees ioBuffer
     ioBuffer ← seedAsm asm ioBuffer
@@ -276,37 +286,78 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     IO buffer. Deterministic in `owned` (canonical trees sort addresses), so the
     claim digest reproduces exactly what `prove`d — used to bind a proof to a
     shard during verification, cheaply (no buffer serialization). -/
-def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
+def shardCheckEnvClaim (env : Ixon.Env) (owned foreign stubbed : Array Address) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
+  -- A shard never stubs what it owns.
+  let stubSet : Std.HashSet Address :=
+    stubbed.foldl (fun m a => if ownedSet.contains a then m else m.insert a) {}
+  -- The ingress set comes from the manifest, not from a walk here. Stopping a
+  -- walk at a stub would miss the constants the stub's own TYPE mentions,
+  -- which still have to resolve, and following those needs the
+  -- type-reference graph only the profile carries. Taking the set wholesale
+  -- also keeps this in lockstep with the Rust builder and the packer.
+  let blockClosure : Std.HashSet Address :=
+    foreign.foldl (·.insert ·) (owned.foldl (·.insert ·) {})
+  -- Blobs are not blocks, so the manifest never lists them — but every
+  -- blob an ingressed constant references joins the ingress set (string
+  -- and Nat literals read their bytes wherever they occur) — INCLUDING
+  -- stubs': the stub-vs-address-only split is a per-run witness decision made
+  -- after the claim exists, so the env tree must not depend on it.
+  -- MUST mirror the Rust builder (`build_shard_check_env_witness`)
+  -- exactly: the env tree and frontier are built over this set, and any
+  -- divergence splits the claim digest between prover and verifier.
   let closure : Std.HashSet Address := Id.run do
-    let mut s : Std.HashSet Address := {}
-    for a in owned do
-      for x in (closureFrom env a).toArray do
-        s := s.insert x
-    return s
+    let mut c := blockClosure
+    for a in blockClosure do
+      match env.consts.get? a with
+      | none => pure ()
+      | some lc =>
+        match lc.get? with
+        | none => pure ()
+        | some cst =>
+          for r in cst.refs do
+            if env.blobs.contains r then
+              c := c.insert r
+    pure c
   let frontier : Array Address :=
     closure.toArray.filter (fun a => !ownedSet.contains a)
   let some envTree := Ix.AssumptionTree.canonical closure.toArray
     | .error "shardCheckEnvClaim: empty shard closure"
   let asmTree? := Ix.AssumptionTree.canonical frontier
+  -- No stubs yet: this builder ingresses the full closure. The per-shard stub
+  -- set comes from the partition, which knows which blocks the shard reduces
+  -- through; it is not derivable from the env alone.
+  -- Only stubs the walk actually reached: the partition works on blocks, so
+  -- it may name constants this shard never touched.
+  let stubTree? := Ix.AssumptionTree.canonical
+    (closure.toArray.filter stubSet.contains)
   let claim := Ix.Claim.checkEnv envTree.root (asmTree?.map (·.root))
+    (stubTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
     ({} : Std.HashMap Address Ix.AssumptionTree).insert envTree.root envTree
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
+  match stubTree? with
+  | some stubTree => trees := trees.insert stubTree.root stubTree
+  | none => pure ()
   pure (claim, closure, trees)
 
-def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
+def buildShardCheckEnvWitness (env : Ixon.Env)
+    (owned foreign stubbed : Array Address) :
     Except String (Ix.Claim × ClaimWitness) := do
-  let (claim, closure, trees) ← shardCheckEnvClaim env owned
+  let (claim, closure, trees) ← shardCheckEnvClaim env owned foreign stubbed
   let claimBytes := Ix.Claim.ser claim
   let digestKey := addrKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
-  -- Ship only the shard closure (consts + blobs + Defn hints).
-  ioBuffer := addEntries env closure.contains ioBuffer
+  -- Ship only the shard closure (consts + blobs + Defn hints); every
+  -- stub ships ADDRESS-ONLY — position and address, no bytes.
+  let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
+  let stubSet : Std.HashSet Address :=
+    stubbed.foldl (fun m a => if ownedSet.contains a then m else m.insert a) {}
+  ioBuffer := addEntries env closure.contains ioBuffer stubSet.contains
   -- Seed the env-root and (when present) frontier assumption trees.
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer

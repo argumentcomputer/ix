@@ -137,6 +137,31 @@ def ingress := ⟦
   -- collide with a real const-position encoding.
   fn sentinel_blob_ref() -> G { 4294967295 }
 
+  -- Classify an address that is NOT at a const position. Absence alone says
+  -- nothing — a blob is legitimately absent, and so is a constant the witness
+  -- declined to ingress — so the ch-4 discriminator decides: 0 = blob, whose
+  -- bytes arrive on ch 5; anything else = a constant that was never ingressed,
+  -- which POISONS the ref. An address with no ch-4 entry at all has no
+  -- `ListNode.Nil` arm below and fails here.
+  --
+  -- Reading absence as "blob" instead (the previous behaviour) let any
+  -- non-ingressed constant resolve to ref index 0, silently rebinding the
+  -- reference to whatever constant occupies kernel position 0. Blob and
+  -- constant addresses are both blake3 of their own bytes, so the blob
+  -- channel's verification accepts a constant's own bytes and cannot tell
+  -- the two apart.
+  fn classify_absent_ref(addr: Addr) -> G {
+    let (idx, len) = io_get_info(4, load(addr));
+    let kind_bytes = #read_byte_stream(4, idx, len);
+    match load(kind_bytes) {
+      ListNode.Cons(b, _) =>
+        match to_field(b) {
+          0 => sentinel_blob_ref(),
+          _ => poison_ref_idx(),
+        },
+    }
+  }
+
   -- Extract the Muts block address from a projection ConstantInfo.
   -- Returns [0; 32] for non-projection constants.
   fn get_proj_block_addr(info: ConstantInfo) -> Addr {
@@ -206,13 +231,16 @@ def ingress := ⟦
   }
 
   -- Resolve an address to its kernel position via `addr_pos_map`:
-  -- SENTINEL (4294967295) → blob ref → 0; else → const at `hit-1`.
+  -- SENTINEL (4294967295) → blob ref → 0; POISON (4294967294) → a constant
+  -- the witness never ingressed, rejected here rather than resolved;
+  -- else → const at `hit-1`.
   -- Panic-on-miss `rbtree_map_lookup` asserts presence; see
   -- `build_addr_pos_map` for why a miss is rejected, not recovered.
   fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›) -> G {
     let hit = rbtree_map_lookup(ptr_val(target), load(addr_pos_map));
     match hit {
       4294967295 => 0,
+      4294967294 => assert_poison_unused(),
       _ => hit - 1,
     }
   }
@@ -269,10 +297,10 @@ def ingress := ⟦
         let hit = rbtree_map_lookup_or_default(key, m, 0);
         match hit {
           0 =>
-            -- Not yet registered: classify as blob ref via SENTINEL.
-            insert_refs_as_blobs(rest, rbtree_map_insert(key, sentinel_blob_ref(), m)),
+            -- Not yet registered: classify from the ch-4 discriminator.
+            insert_refs_as_blobs(rest, rbtree_map_insert(key, classify_absent_ref(addr), m)),
           _ =>
-            -- Already a const (pos+1) or already a blob (SENTINEL): leave alone.
+            -- Already a const (pos+1), a blob (SENTINEL) or poisoned: leave alone.
             insert_refs_as_blobs(rest, m),
         },
     }
@@ -596,7 +624,9 @@ def ingress := ⟦
   -- ============================================================================
 
   -- Fused walk of `refs` → (ref_idxs, lit_blobs), one `addr_pos_map` probe
-  -- per ref: SENTINEL → blob (load+decode, idx 0); else → const at `hit-1`.
+  -- per ref: SENTINEL → blob (load+decode, idx 0); POISON → carried through
+  -- so only a ref that is actually USED fails (an unused entry in the table
+  -- costs nothing); else → const at `hit-1`.
   -- Panic-on-miss `rbtree_map_lookup` is safe: `augment_with_blob_refs` keyed
   -- every ref from these same list cells, so the probe always hits.
   fn build_ref_idxs_and_blobs(refs: List‹Addr›, addr_pos_map: &RBTreeMap‹G›)
@@ -612,6 +642,9 @@ def ingress := ⟦
             let bs = load_verified_blob(addr);
             (store(ListNode.Cons(0, rest_idxs)),
              store(ListNode.Cons(bs, rest_blobs))),
+          4294967294 =>
+            (store(ListNode.Cons(poison_ref_idx(), rest_idxs)),
+             store(ListNode.Cons(store(ListNode.Nil), rest_blobs))),
           _ =>
             (store(ListNode.Cons(hit - 1, rest_idxs)),
              store(ListNode.Cons(store(ListNode.Nil), rest_blobs))),
@@ -1183,12 +1216,59 @@ def ingress := ⟦
   -- the prover provides len=0 for blobs (which are not serialized constants).
   -- For projection constants (IPrj, CPrj, RPrj, DPrj), also follows the
   -- Muts block's refs so that all dependencies of block members are loaded.
+  -- A frontier constant is trusted rather than re-checked and is never
+  -- unfolded, so it contributes its TYPE only. Rewriting it here — before
+  -- layout, pos_map and conversion — leaves the whole downstream pipeline
+  -- unchanged: the `sharing`, `refs` and `univs` tables are preserved so the
+  -- type's `Expr::Ref` indices still resolve, and an Axio occupies the same
+  -- single kernel position a Defn would.
+  --
+  -- Dropping the value is what makes frontier-trusted ingress pay off: the
+  -- value's references are never walked, so a shard stops ingressing its
+  -- frontier's transitive closure.
+  --
+  -- Only standalone Defn and Axio may sit on a frontier. Anything whose body
+  -- reduction consumes — inductives, constructors, recursors, quotients,
+  -- projections, and mutual blocks, which may contain them — must be
+  -- ingressed whole, so the packer marks those blocks NOT_AXIOMATIZABLE and
+  -- the host never places them on a frontier. Reaching one here means the
+  -- witness and the partition disagree; reject rather than check against a
+  -- stub whose reductions would be missing.
+  --
+  -- The synthesized axiom carries flag 2 — "stub": treated as SAFE by
+  -- `is_unsafe_ci` (only exact 1 means unsafe; safety gates checking, and
+  -- a frontier constant is not checked here — the shard that owns it is)
+  -- but distinguishable from a real axiom, so def-eq's stuck exits can
+  -- report the stub they jammed on (`want_if_stub`).
+  fn axiomatize_frontier(c: Constant) -> Constant {
+    match c {
+      Constant.Mk(info, sharing, refs, univs) =>
+        match info {
+          ConstantInfo.Defn(d) =>
+            match d {
+              Definition.Mk(_, _, lvls, typ, _) =>
+                Constant.Mk(ConstantInfo.Axio(Axiom.Mk(2, lvls, typ)),
+                  sharing, refs, univs),
+            },
+          ConstantInfo.Axio(_) => c,
+          ConstantInfo.Recr(_) => assert_eq!(0, 1); c,
+          ConstantInfo.Quot(_) => assert_eq!(0, 1); c,
+          ConstantInfo.Muts(_) => assert_eq!(0, 1); c,
+          ConstantInfo.IPrj(_) => assert_eq!(0, 1); c,
+          ConstantInfo.CPrj(_) => assert_eq!(0, 1); c,
+          ConstantInfo.RPrj(_) => assert_eq!(0, 1); c,
+          ConstantInfo.DPrj(_) => assert_eq!(0, 1); c,
+        },
+    }
+  }
+
   fn load_with_deps(
     addr: Addr,
     worklist: List‹Addr›,
     visited_addrs: List‹Addr›,
     visited_consts: List‹&Constant›,
-    visited_set: RBTreeMap‹G›
+    visited_set: RBTreeMap‹G›,
+    asm_map: &RBTreeMap‹G›
   ) -> (List‹Addr›, List‹&Constant›) {
     let already = rbtree_map_lookup_or_default(ptr_val(addr), visited_set, 0);
     match already {
@@ -1196,7 +1276,7 @@ def ingress := ⟦
         match load(worklist) {
           ListNode.Nil => (visited_addrs, visited_consts),
           ListNode.Cons(next, rest) =>
-            load_with_deps(next, rest, visited_addrs, visited_consts, visited_set),
+            load_with_deps(next, rest, visited_addrs, visited_consts, visited_set, asm_map),
         },
       _ =>
         -- Discriminator on ch 4: 1 = const, 0 = blob. The host
@@ -1218,35 +1298,75 @@ def ingress := ⟦
             match load(worklist) {
               ListNode.Nil => (visited_addrs, visited_consts),
               ListNode.Cons(next, rest) =>
-                load_with_deps(next, rest, visited_addrs, visited_consts, visited_set),
+                load_with_deps(next, rest, visited_addrs, visited_consts, visited_set, asm_map),
+            },
+          2 =>
+            -- ADDRESS-ONLY: the claim's assumption tree names this
+            -- address, but
+            -- the recording consulted nothing about it, so the witness
+            -- ships position + address only — no ch-2 bytes, no blake3.
+            -- A fabricated ixon-flag-3 axiom occupies the kernel position
+            -- (refs to it resolve instead of dangling); `convert_axiom`
+            -- turns it into the sentinel node that fails closed — and
+            -- names this address — on any semantic access. Lying on this
+            -- discriminator only withholds an assumption's content, which
+            -- can turn passes into failures, never failures into passes.
+            let new_addrs = store(ListNode.Cons(addr, visited_addrs));
+            let new_set = rbtree_map_insert(ptr_val(addr), 1, visited_set);
+            let addr_only = Constant.Mk(
+              ConstantInfo.Axio(Axiom.Mk(3, [0u8; 8], store(Expr.Var([0u8; 8])))),
+              store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+            let new_consts = store(ListNode.Cons(store(addr_only), visited_consts));
+            match load(worklist) {
+              ListNode.Nil => (new_addrs, new_consts),
+              ListNode.Cons(next, rest) =>
+                load_with_deps(next, rest, new_addrs, new_consts, new_set, asm_map),
             },
           _ =>
             let new_addrs = store(ListNode.Cons(addr, visited_addrs));
             let new_set = rbtree_map_insert(ptr_val(addr), 1, visited_set);
-            let constant = load_verified_constant(addr);
+            let raw = load_verified_constant(addr);
+            -- Frontier entries are still blake3-verified above, so the type
+            -- the stub carries stays bound to the address the claim's
+            -- assumption tree names.
+            let on_frontier = rbtree_map_lookup_or_default(ptr_val(addr), load(asm_map), 0);
+            let constant = match on_frontier {
+              0 => raw,
+              _ => axiomatize_frontier(raw),
+            };
             let new_consts = store(ListNode.Cons(store(constant), visited_consts));
-            match constant {
-              Constant.Mk(info, _, refs, _) =>
-                let block_addr = get_proj_block_addr(info);
-                match address_eq(block_addr, store([0u8; 32])) {
-                  1 =>
-                    let combined_refs = list_concat(refs, store(ListNode.Nil));
-                    let next_worklist = list_concat(combined_refs, worklist);
-                    match load(next_worklist) {
-                      ListNode.Nil => (new_addrs, new_consts),
-                      ListNode.Cons(next, rest) =>
-                        load_with_deps(next, rest, new_addrs, new_consts, new_set),
-                    },
-                  0 =>
-                    let combined_refs = list_concat(
-                      refs,
-                      store(ListNode.Cons(block_addr, store(ListNode.Nil)))
-                    );
-                    let next_worklist = list_concat(combined_refs, worklist);
-                    match load(next_worklist) {
-                      ListNode.Nil => (new_addrs, new_consts),
-                      ListNode.Cons(next, rest) =>
-                        load_with_deps(next, rest, new_addrs, new_consts, new_set),
+            match on_frontier {
+              1 =>
+                -- Type-only stub: nothing to follow.
+                match load(worklist) {
+                  ListNode.Nil => (new_addrs, new_consts),
+                  ListNode.Cons(next, rest) =>
+                    load_with_deps(next, rest, new_addrs, new_consts, new_set, asm_map),
+                },
+              _ =>
+                match constant {
+                  Constant.Mk(info, _, refs, _) =>
+                    let block_addr = get_proj_block_addr(info);
+                    match address_eq(block_addr, store([0u8; 32])) {
+                      1 =>
+                        let combined_refs = list_concat(refs, store(ListNode.Nil));
+                        let next_worklist = list_concat(combined_refs, worklist);
+                        match load(next_worklist) {
+                          ListNode.Nil => (new_addrs, new_consts),
+                          ListNode.Cons(next, rest) =>
+                            load_with_deps(next, rest, new_addrs, new_consts, new_set, asm_map),
+                        },
+                      0 =>
+                        let combined_refs = list_concat(
+                          refs,
+                          store(ListNode.Cons(block_addr, store(ListNode.Nil)))
+                        );
+                        let next_worklist = list_concat(combined_refs, worklist);
+                        match load(next_worklist) {
+                          ListNode.Nil => (new_addrs, new_consts),
+                          ListNode.Cons(next, rest) =>
+                            load_with_deps(next, rest, new_addrs, new_consts, new_set, asm_map),
+                        },
                     },
                 },
             },
@@ -1258,7 +1378,8 @@ def ingress := ⟦
   -- verifies blake3 hashes then converts to kernel types.
   fn ingress(target_addr: Addr) -> List‹&KConstantInfo› {
     let (all_addrs, all_consts) = load_with_deps(
-      target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
+      target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil),
+      RBTreeMap.Nil, store(RBTreeMap.Nil));
     let (block_addrs, block_starts, _total) = compute_layout(all_consts, all_addrs, 0);
     let block_start_map = store(build_block_start_map(block_addrs, block_starts));
     let pos_map_naive = build_pos_map(all_consts, all_addrs, block_start_map, 0);
@@ -1522,6 +1643,44 @@ def ingress := ⟦
   -- compile uses, serializing it in-Aiur, and hashing. No external trust
   -- needed — every input is derived from a `load_verified_*` result or a
   -- loop counter.
+  -- A mutual-block member's own content address, synthesized from its
+  -- (index, block) the same way `cprj_content_addr` does for constructors:
+  -- build the projection `Constant` the compiler would have built — empty
+  -- sharing/refs/univs tables — serialize it in-Aiur and hash. Mirrors
+  -- `Constant::new(ConstantInfo::XPrj{..}).commit()` on the Rust side
+  -- (`anon_defn_proj_addr` and friends).
+  --
+  -- Address-keyed constants need these: `Expr.Rec(i)` names a member by
+  -- index within its block, so unlike `Expr.Ref` it has no entry in the
+  -- constant's `refs` table to resolve through.
+  fn dprj_content_addr(idx: U64, block: Addr) -> Addr {
+    let cnst = Constant.Mk(ConstantInfo.DPrj(DefinitionProj.Mk(idx, block)),
+      store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+    bytes_to_addr(put_constant(cnst, store(ListNode.Nil)))
+  }
+
+  fn iprj_content_addr(idx: U64, block: Addr) -> Addr {
+    let cnst = Constant.Mk(ConstantInfo.IPrj(InductiveProj.Mk(idx, block)),
+      store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+    bytes_to_addr(put_constant(cnst, store(ListNode.Nil)))
+  }
+
+  fn rprj_content_addr(idx: U64, block: Addr) -> Addr {
+    let cnst = Constant.Mk(ConstantInfo.RPrj(RecursorProj.Mk(idx, block)),
+      store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
+    bytes_to_addr(put_constant(cnst, store(ListNode.Nil)))
+  }
+
+  -- Dispatch on the member's kind: a Defn member is reached through a DPrj,
+  -- an Indc through an IPrj, a Recr through an RPrj.
+  fn member_content_addr(members: List‹MutConst›, i: U64, block: Addr) -> Addr {
+    match list_lookup_u64(members, i) {
+      MutConst.Defn(_) => dprj_content_addr(i, block),
+      MutConst.Indc(_) => iprj_content_addr(i, block),
+      MutConst.Recr(_) => rprj_content_addr(i, block),
+    }
+  }
+
   fn cprj_content_addr(idx: U64, cidx: G, block: Addr) -> Addr {
     let prj = ConstructorProj.Mk(idx, [u8_from_field_unsafe(cidx), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], block);
     let info = ConstantInfo.CPrj(prj);
@@ -1535,7 +1694,8 @@ def ingress := ⟦
 
   fn ingress_with_primitives(target_addr: Addr) -> (List‹&KConstantInfo›, List‹Addr›) {
     let (all_addrs, all_consts) = load_with_deps(
-      target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
+      target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil),
+      RBTreeMap.Nil, store(RBTreeMap.Nil));
     finish_ingress(all_addrs, all_consts)
   }
 
@@ -1544,12 +1704,14 @@ def ingress := ⟦
   -- the initial worklist loads every leaf + its transitive deps; then the
   -- shared `finish_ingress` pipeline runs ONCE over the union, rather than
   -- being re-run per leaf as CheckEnv previously did.
-  fn ingress_env(leaves: List‹Addr›) -> (List‹&KConstantInfo›, List‹Addr›) {
+  fn ingress_env(leaves: List‹Addr›, asm_map: &RBTreeMap‹G›)
+                 -> (List‹&KConstantInfo›, List‹Addr›) {
     match load(leaves) {
       ListNode.Nil => synthetic_primitive_entries(),
       ListNode.Cons(first, rest) =>
         let (all_addrs, all_consts) = load_with_deps(
-          first, rest, store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
+          first, rest, store(ListNode.Nil), store(ListNode.Nil),
+          RBTreeMap.Nil, asm_map);
         finish_ingress(all_addrs, all_consts),
     }
   }

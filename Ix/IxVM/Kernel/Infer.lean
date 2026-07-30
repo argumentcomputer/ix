@@ -60,6 +60,21 @@ def infer := ⟦
     k_infer_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
   }
 
+  -- ADDRESS-ONLY-mention report. A Const whose target carries the sentinel arity
+  -- sentinel means the shard MENTIONS a constant the witness shipped as
+  -- position-only — the very next assert would fail anyway, so abort
+  -- through empty channel 98 and let the error NAME the address; the
+  -- repair driver then ships that block whole. Cold: real constants
+  -- never carry the sentinel.
+  fn report_wanted_addr_only(expected: G, idx: G, addrs: List‹Addr›) {
+    match expected - addr_only_arity() {
+      0 =>
+        let (_i, _l) = io_get_info(98, load(list_lookup(addrs, idx)));
+        (),
+      _ => (),
+    }
+  }
+
   fn k_infer_core(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
@@ -77,8 +92,9 @@ def infer := ⟦
       -- Validates `lvls.len() == num_lvls(ci)`.
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
-        let expected = const_num_lvls(ci);
+        let expected = const_num_lvls_logged(ci, idx, addrs);
         let given = list_length(lvls);
+        report_wanted_addr_only(expected, idx, addrs);
         assert_eq!(given, expected);
         let ty = const_type_of(ci);
         expr_inst_levels(ty, lvls),
@@ -135,6 +151,24 @@ def infer := ⟦
     }
   }
 
+  -- Wanted-stub report. A Proj whose value-type's whnf head is not the
+  -- stored inductive means reduction jammed on an unfoldable constant —
+  -- in a sharded witness, a type-only stub standing in for a definition
+  -- (e.g. a type alias over the struct). Abort through an IO channel no
+  -- witness populates, so the error NAMES the address the shard needs
+  -- shipped whole ("invalid IO key: channel 98, key <addr>") and the
+  -- repair driver can escalate with constant precision. Fires only on
+  -- the mismatch path, where the assert right after would kill the run
+  -- anyway — a passing check never takes it.
+  fn report_wanted_stub(idx: G, tidx: G, addrs: List‹Addr›) {
+    match idx - tidx {
+      0 => (),
+      _ =>
+        let (_i, _l) = io_get_info(98, load(list_lookup(addrs, idx)));
+        (),
+    }
+  }
+
   -- Cold-extracted Proj arm: the widest arm of `k_infer_core` by far
   -- (~10 call sites) on a rare node kind.
   -- Mirror: src/ix/kernel/infer.rs:331-450 infer_proj.
@@ -147,6 +181,7 @@ def infer := ⟦
       (head, args) =>
         match load(head) {
           KExprNode.Const(idx, lvls) =>
+            report_wanted_stub(idx, tidx, addrs);
             assert_eq!(idx, tidx);
             let ind_ci = load(list_lookup(top, idx));
             match ind_ci {
@@ -293,8 +328,9 @@ def infer := ⟦
         store(KExprNode.Srt(level_reduce(store(KLevelNode.Succ(l))))),
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
-        let expected = const_num_lvls(ci);
+        let expected = const_num_lvls_logged(ci, idx, addrs);
         let given = list_length(lvls);
+        report_wanted_addr_only(expected, idx, addrs);
         assert_eq!(given, expected);
         let ty = const_type_of(ci);
         expr_inst_levels(ty, lvls),
@@ -336,6 +372,7 @@ def infer := ⟦
           (head, args) =>
             match load(head) {
               KExprNode.Const(idx, lvls) =>
+                report_wanted_stub(idx, tidx, addrs);
                 assert_eq!(idx, tidx);
                 let ind_ci = load(list_lookup(top, idx));
                 match ind_ci {

@@ -138,14 +138,22 @@ def proveAddrWithEnv (system : @& AiurSystem)
 
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
-    Except String ProveEnvResult
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& ByteArray →
+  @& ByteArray → @& String → Except String ProveEnvResult
 
-/-- Per-shard prove against a Rust-owned `EnvHandle`. -/
+/-- Per-shard prove against a Rust-owned `EnvHandle`. `stubbedBlob` names the
+    blocks ingressed as type-only axioms; only the partition knows which those
+    are, so it travels from the `.ixes` manifest. `consultCacheDir` (empty =
+    disabled) is the keyed stub-consultation cache directory (normally
+    `~/.ix/cache/stub-consults`, one file per claim digest); a hit skips the
+    classification execute. -/
 def shardProveWithEnv (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (ownedBlob : ByteArray) :
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (ownedBlob foreignBlob stubbedBlob : ByteArray)
+  (consultCacheDir : String := "") :
     Except String (ByteArray × Proof × IOBuffer) :=
-  (shardProveWithEnv' system funIdx envHandle ownedBlob).map
+  (shardProveWithEnv' system funIdx envHandle ownedBlob foreignBlob
+    stubbedBlob consultCacheDir).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_verify"]

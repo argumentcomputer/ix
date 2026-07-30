@@ -79,7 +79,12 @@ def runClaimCheckEnv (p : Cli.Parsed) : IO UInt32 := do
     | some flag => do
       let r ← addrOfHex! "asm" (flag.as! String)
       pure (some r)
-  let claim := Ix.Claim.checkEnv root asm
+  let stubbed ← match p.flag? "stubbed" with
+    | none => pure none
+    | some flag => do
+      let r ← addrOfHex! "stubbed" (flag.as! String)
+      pure (some r)
+  let claim := Ix.Claim.checkEnv root asm stubbed
   let digest ← persistClaim claim
   IO.println (toString digest)
   return 0
@@ -90,6 +95,7 @@ def claimCheckEnvCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     asm : String; "32-byte hex address of an assumption-tree merkle root (typically the env's axiom leaves). The tree must already live in `~/.ix/store/`."
+    stubbed : String; "32-byte hex address of a merkle root over the subset of --asm ingressed as type-only axioms (bodies withheld, no reduction through them). Must be a subset of the assumption tree; omit when the claim ingresses every constant in full."
 
   ARGS:
     root : String; "32-byte hex address of the env's canonical merkle root (build with `ix tree env <ixe>`)."
