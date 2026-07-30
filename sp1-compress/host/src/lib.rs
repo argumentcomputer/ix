@@ -4,8 +4,6 @@
 //! Library surface shared by the `sp1-compress-host` CLI and `ix-ffi`
 //! (cargo feature `sp1`), which backs the `ix compress` command.
 
-pub mod wrap;
-
 use std::{path::Path, str::FromStr};
 
 use anyhow::{Context, Result, bail};

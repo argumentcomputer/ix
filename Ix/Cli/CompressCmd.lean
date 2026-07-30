@@ -59,23 +59,9 @@ private def frame (items : Array ByteArray) : ByteArray :=
 
 def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
   let output := (p.flag? "output").map (·.as! String) |>.getD ""
-  -- `--from-sp1`: upgrade an already-saved compressed SP1 proof to
-  -- groth16/plonk (only the shrink → wrap → gnark stages run). No store or
-  -- Aiur backend involved; the proof's own public values carry over.
-  if let some savedPath := (p.flag? "from-sp1").map (·.as! String) then
-    let mode := (p.flag? "mode").map (·.as! String) |>.getD "plonk"
-    IO.println s!"Wrapping saved SP1 proof {savedPath} to {mode}"
-    (← IO.getStdout).flush
-    match Aiur.sp1WrapSavedProof savedPath mode output with
-    | .ok () =>
-      IO.println s!"ok: SP1 ({mode}) wrap of {savedPath} succeeded"
-      return 0
-    | .error e =>
-      IO.eprintln s!"error: SP1 wrap failed: {e}"
-      return 1
   let proofHexes ← match (p.variableArgsAs! String).toList with
     | [] =>
-      p.printError "error: must specify <proof-hex>… (or --from-sp1 <file>)"
+      p.printError "error: must specify <proof-hex>…"
       return 1
     | hs => pure hs
   let mode := (p.flag? "mode").map (·.as! String) |>.getD "compressed"
@@ -126,12 +112,11 @@ def compressCmd : Cli.Cmd := `[Cli|
   "Compress a persisted STARK proof by re-verifying it inside the SP1 zkVM (needs an `IX_SP1=1` build)"
 
   FLAGS:
-    "mode" : String;     "SP1 stage: execute | core | compressed | groth16 | plonk (default: compressed; with --from-sp1: plonk). `execute` only emulates and prints cycle counts; groth16/plonk need Docker for the gnark wrapper."
+    "mode" : String;     "SP1 stage: execute | core | compressed | groth16 | plonk (default: compressed). `execute` only emulates and prints cycle counts; groth16/plonk need Docker for the gnark wrapper."
     "output" : String;   "Path to save the SP1 proof to (the SDK's `.save()` bincode format)."
-    "from-sp1" : String; "Upgrade an already-saved compressed SP1 proof file to groth16/plonk without redoing the STARK pipeline. Skips <proof-hex> and the Aiur backend entirely."
 
   ARGS:
-    ...proof : String; "32-byte hex addresses of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. One or more (a batch becomes ONE SP1 proof), unless --from-sp1 is given (then omit them)."
+    ...proof : String; "32-byte hex addresses of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. One or more (a batch becomes ONE SP1 proof)."
 ]
 
 end
