@@ -98,7 +98,9 @@ def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
-  l.width + G.extensionDegree * (1 + l.lookups)
+  -- Stage 2 commits max(L, 1) chained partial accumulators (no message
+  -- inverses); see `multi_stark::lookup::stage2_width`.
+  l.width + G.extensionDegree * (max l.lookups 1)
 
 structure Function where
   body : Block

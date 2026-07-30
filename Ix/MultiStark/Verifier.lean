@@ -467,16 +467,9 @@ def verifier := ⟦
 
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = trace_vanishing(zeta, l);
-    let g = two_adic_gen(l);
-    let ginv = gl_inverse(g);
-    let n = pow2(l);
-    -- NORMALIZED Lagrange selectors (value exactly 1 at their row),
-    -- mirroring the Rust prover/verifier: the unnormalized numerators
-    -- evaluate to n at the first row and n·g at the last, so scale by
-    -- their inverses. The chained-logUp wrap constraint consumes
-    -- is_last_row additively, which is why the scale is load-bearing.
-    let is_first = eg_mul(eg_div(zh, eg_sub(zeta, [1, 0])), [gl_inverse(n), 0]);
-    let is_last = eg_mul(eg_div(zh, eg_sub(zeta, [ginv, 0])), [gl_inverse(n * g), 0]);
+    let ginv = gl_inverse(two_adic_gen(l));
+    let is_first = eg_div(zh, eg_sub(zeta, [1, 0]));
+    let is_last = eg_div(zh, eg_sub(zeta, [ginv, 0]));
     let is_trans = eg_sub(zeta, [ginv, 0]);
     let inv_van = eg_inverse(zh);
     (is_first, is_last, is_trans, inv_van)
@@ -712,7 +705,7 @@ def verifier := ⟦
   fn ood_composition(nodes: List‹SysNode›, zeros: List‹G›, lks: List‹SysLookup›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
-      isf: Ext, isl: Ext, ist: Ext, alpha: Ext) -> Ext {
+      isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: G) -> Ext {
     let base = fold_roots([0, 0], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
     -- publics layout: β=(0,1), γ=(2,3), acc_initial=(4,5), acc_final=(6,7).
@@ -720,10 +713,12 @@ def verifier := ⟦
     let g0 = list_lookup(publics, 2); let g1 = list_lookup(publics, 3);
     let a0 = list_lookup(publics, 4); let a1 = list_lookup(publics, 5);
     let na0 = list_lookup(publics, 6); let na1 = list_lookup(publics, 7);
-    -- Boundary injection: is_last_row·(acc_final − acc_initial), with the
-    -- NORMALIZED last-row selector (value 1 at the last row).
-    let inj0 = eg_mul(isl, eg_sub(na0, a0));
-    let inj1 = eg_mul(isl, eg_sub(na1, a1));
+    -- Boundary injection: is_last_row·(acc_final − acc_initial) with the
+    -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
+    -- p3's raw selector has value n·g at the last row, and Δ is constant
+    -- across the domain, mirroring the Rust prover/verifier).
+    let inj0 = eg_mul(isl, eg_mul(eg_sub(na0, a0), [inorm, 0]));
+    let inj1 = eg_mul(isl, eg_mul(eg_sub(na1, a1), [inorm, 0]));
     match load(lks) {
       -- No lookups: single pass-through column, acc′ − acc + inj = 0.
       ListNode.Nil =>
@@ -826,9 +821,10 @@ def verifier := ⟦
         let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
         let publics = build_publics(lch, fch, accp, naccp);
+        let inorm = gl_inverse(pow2(l) * two_adic_gen(l));
         let comp = ood_composition(nodes, zeros, lks,
                                    main, main_next, prep, prep_next, s2row, s2next,
-                                   publics, isf, isl, ist, alpha);
+                                   publics, isf, isl, ist, alpha, inorm);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
