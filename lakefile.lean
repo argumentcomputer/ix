@@ -129,6 +129,10 @@ lean_exe «bench-recursive-verifier» where
   root := `Benchmarks.RecursiveVerifier
   supportInterpreter := true
 
+lean_exe «bench-recursion-debug» where
+  root := `Benchmarks.RecursionDebug
+  supportInterpreter := true
+
 /- The lean4lean replay machinery as an importable lib: the
 `bench-lean4lean` exe root and the ignored `lean4lean` test runner both
 import `Benchmarks.Lean4Lean`, and modules under `Benchmarks/` belong to
