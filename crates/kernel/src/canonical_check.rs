@@ -462,7 +462,14 @@ pub fn compare_kconst<M: KernelMode>(
     (
       KConst::Defn { kind: xk, lvls: xl, ty: xt, val: xv, .. },
       KConst::Defn { kind: yk, lvls: yl, ty: yt, val: yv, .. },
-    ) => compare_kdefn::<M>(*xk, *xl, xt, xv, *yk, *yl, yt, yv, ctx),
+    ) => {
+      let (Some(xv), Some(yv)) = (xv, yv) else {
+        return Err(TcError::Other(
+          "canonical compare on a deferred Defn value".into(),
+        ));
+      };
+      compare_kdefn::<M>(*xk, *xl, xt, xv, *yk, *yl, yt, yv, ctx)
+    },
     (
       KConst::Indc {
         lvls: xl,

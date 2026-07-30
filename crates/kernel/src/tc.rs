@@ -321,6 +321,41 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     })
   }
 
+  /// Force a DEFERRED Defn value (anon lazy ingress): no-op unless the
+  /// constant is currently stored as a Defn with `val: None`. Callers on
+  /// every value-demand path (delta unfold, proj-def classification,
+  /// native reduce, the constant's own check) hoist this before reading
+  /// `val`.
+  pub fn ensure_defn_value(&mut self, id: &KId<M>) -> Result<(), TcError<M>> {
+    let deferred = matches!(
+      self.env.consts.get(id),
+      Some(KConst::Defn { val: None, .. })
+    );
+    if !deferred {
+      return Ok(());
+    }
+    if self.lazy_anon.is_some() {
+      let lazy = self.lazy_anon.as_mut().expect("checked above");
+      // SAFETY: same `M = Anon` witness as `lazy_ingress_addr` — the
+      // `lazy_anon` field is only set by the Anon constructor.
+      let env_anon: &mut KEnv<super::mode::Anon> = unsafe {
+        &mut *(self.env as *mut KEnv<M>).cast::<KEnv<super::mode::Anon>>()
+      };
+      return crate::ingress::ingress_anon_defn_value(
+        env_anon,
+        lazy.anon_env,
+        &id.addr,
+      )
+      .map_err(|msg| {
+        TcError::Other(format!("lazy defn value {}: {msg}", id.addr.hex()))
+      });
+    }
+    Err(TcError::Other(format!(
+      "deferred Defn value without a lazy anon env: {}",
+      id.addr.hex()
+    )))
+  }
+
   // -----------------------------------------------------------------------
   // Context management
   // -----------------------------------------------------------------------

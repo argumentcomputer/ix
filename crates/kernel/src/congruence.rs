@@ -188,14 +188,23 @@ pub fn const_congruent(
     | (LeanCI::QuotInfo(_), KConst::Quot { .. }) => Ok(()),
 
     (LeanCI::DefnInfo(v), KConst::Defn { val, .. }) => {
+      let val = val
+        .as_ref()
+        .ok_or_else(|| "value deferred (lazy anon ingress)".to_string())?;
       expr_congruent(&v.value, val, nr).map_err(|e| format!("value: {e}"))
     },
 
     (LeanCI::ThmInfo(v), KConst::Defn { val, .. }) => {
+      let val = val
+        .as_ref()
+        .ok_or_else(|| "value deferred (lazy anon ingress)".to_string())?;
       expr_congruent(&v.value, val, nr).map_err(|e| format!("value: {e}"))
     },
 
     (LeanCI::OpaqueInfo(v), KConst::Defn { val, .. }) => {
+      let val = val
+        .as_ref()
+        .ok_or_else(|| "value deferred (lazy anon ingress)".to_string())?;
       expr_congruent(&v.value, val, nr).map_err(|e| format!("value: {e}"))
     },
 
@@ -730,7 +739,7 @@ mod tests {
       hints: ReducibilityHints::Opaque,
       lvls: 0,
       ty: KExpr::sort(KUniv::zero()),
-      val: KExpr::sort(KUniv::zero()),
+      val: Some(KExpr::sort(KUniv::zero())),
       lean_all: (),
       block: KId::new(mk_addr("A"), ()),
     };
@@ -774,7 +783,7 @@ mod tests {
       lvls: 0,
       ty: KExpr::sort(KUniv::zero()),
       // mismatched value: Var(0) instead of Sort 0
-      val: KExpr::var(0, ()),
+      val: Some(KExpr::var(0, ())),
       lean_all: (),
       block: KId::new(mk_addr("f"), ()),
     };
@@ -971,7 +980,7 @@ mod tests {
       hints: ReducibilityHints::Opaque,
       lvls: 0,
       ty: KExpr::sort(KUniv::zero()),
-      val: KExpr::sort(KUniv::zero()),
+      val: Some(KExpr::sort(KUniv::zero())),
       lean_all: (),
       block: KId::new(mk_addr("t"), ()),
     };

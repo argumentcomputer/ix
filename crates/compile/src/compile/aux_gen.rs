@@ -1097,7 +1097,7 @@ pub fn populate_canon_kenv_with_below(
             hints: ix_common::env::ReducibilityHints::Abbrev,
             lvls: d.level_params.len() as u64,
             ty: ty_z,
-            val: val_z,
+            val: Some(val_z),
             lean_all: vec![],
             block: zid,
           },

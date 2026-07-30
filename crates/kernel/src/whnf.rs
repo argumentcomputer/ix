@@ -1214,9 +1214,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       && let Some(KConst::Defn { kind, val, .. }) = self.try_get_const(id)?
       && matches!(kind, DefKind::Definition | DefKind::Theorem)
     {
+      let val = match val {
+        Some(v) => v,
+        None => {
+          // Deferred value (whole-env lazy scope): force and re-read.
+          self.ensure_defn_value(id)?;
+          match self.try_get_const(id)? {
+            Some(KConst::Defn { val: Some(v), .. }) => v,
+            _ => return Ok(None),
+          }
+        },
+      };
       self.dump_delta_trace(id, 0, e);
       self.record_delta_target(id);
-      let val = val.clone();
       let us: Vec<_> = us.to_vec();
       return Ok(Some(self.unfold_const_value(e, &val, &us)?));
     }
@@ -1241,9 +1251,21 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         val,
         ..
       }) => {
+        let val = match val {
+          Some(v) => v,
+          None => {
+            // Deferred value (whole-env lazy scope): the unfold consumes
+            // it either way — force and re-read.
+            self.ensure_defn_value(id)?;
+            match self.try_get_const(id)? {
+              Some(KConst::Defn { val: Some(v), .. }) => v,
+              _ => return Ok(None),
+            }
+          },
+        };
         self.dump_delta_trace(id, args.len(), e);
         self.record_delta_target(id);
-        val.clone()
+        val
       },
       _ => return Ok(None),
     };
@@ -2149,7 +2171,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(None);
     };
     let val = match self.try_get_const(id)? {
-      Some(KConst::Defn { kind: DefKind::Definition, val, .. }) => val,
+      Some(KConst::Defn { kind: DefKind::Definition, val, .. }) => match val {
+        Some(v) => v,
+        None => {
+          // Deferred value: classification reads it, and on a miss the
+          // plain path delta-unfolds the same value anyway — never wasted
+          // on the delta-full path.
+          self.ensure_defn_value(id)?;
+          match self.try_get_const(id)? {
+            Some(KConst::Defn { val: Some(v), .. }) => v,
+            _ => return Ok(None),
+          }
+        },
+      },
       _ => return Ok(None),
     };
     let (arity, struct_id, field, struct_arg_idx) =
@@ -3389,9 +3423,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
     let (arg_id, arg_us) = arg_const;
 
-    // Look up the constant's definition body
+    // Look up the constant's definition body (a deferred value forces —
+    // native reduce evaluates it).
     let body = match self.try_get_const(&arg_id)? {
-      Some(KConst::Defn { val, .. }) => val.clone(),
+      Some(KConst::Defn { val: Some(val), .. }) => val,
+      Some(KConst::Defn { val: None, .. }) => {
+        self.ensure_defn_value(&arg_id)?;
+        match self.try_get_const(&arg_id)? {
+          Some(KConst::Defn { val: Some(v), .. }) => v,
+          _ => return Ok(None),
+        }
+      },
       _ => return Ok(None),
     };
 
@@ -3978,7 +4020,7 @@ mod tests {
         hints: ReducibilityHints::Abbrev,
         lvls: 0,
         ty: id_ty,
-        val: id_val,
+        val: Some(id_val),
         lean_all: (),
         block: mk_id("id"),
       },
@@ -3996,7 +4038,7 @@ mod tests {
         hints: ReducibilityHints::Opaque,
         lvls: 0,
         ty: opaq_ty,
-        val: opaq_val,
+        val: Some(opaq_val),
         lean_all: (),
         block: mk_id("opaque"),
       },
@@ -4013,7 +4055,7 @@ mod tests {
         hints: ReducibilityHints::Opaque,
         lvls: 0,
         ty: opaque_def_ty,
-        val: opaque_def_val,
+        val: Some(opaque_def_val),
         lean_all: (),
         block: mk_id("opaque_def"),
       },
@@ -4469,7 +4511,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: sort0(),
-        val: lam(sort0(), one_char_list),
+        val: Some(lam(sort0(), one_char_list)),
         lean_all: (),
         block: string_to_list_id.clone(),
       },
@@ -4493,7 +4535,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 1,
         ty: sort0(),
-        val: lam(sort0(), lam(app(list_const, var(0)), length_body)),
+        val: Some(lam(sort0(), lam(app(list_const, var(0)), length_body))),
         lean_all: (),
         block: list_length_id.clone(),
       },
@@ -4803,7 +4845,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: sub_ty,
-        val: sub_val,
+        val: Some(sub_val),
         lean_all: (),
         block: mk_id("Nat.sub"),
       },
@@ -4837,7 +4879,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: add_ty,
-        val: add_val,
+        val: Some(add_val),
         lean_all: (),
         block: add_id,
       },
@@ -4866,7 +4908,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: sub_ty,
-        val: sub_val,
+        val: Some(sub_val),
         lean_all: (),
         block: sub_id.clone(),
       },
@@ -5185,7 +5227,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: sub_ty,
-        val: sub_val,
+        val: Some(sub_val),
         lean_all: (),
         block: sub_id.clone(),
       },
@@ -5272,7 +5314,7 @@ mod tests {
         hints: ReducibilityHints::Abbrev,
         lvls: 0,
         ty: nat(),
-        val: AE::cnst(mk_id("opaque.bits"), Box::new([])),
+        val: Some(AE::cnst(mk_id("opaque.bits"), Box::new([]))),
         lean_all: (),
         block: prims.system_platform_num_bits.clone(),
       },
@@ -5291,7 +5333,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: pow_ty,
-        val: pow_val,
+        val: Some(pow_val),
         lean_all: (),
         block: prims.nat_pow.clone(),
       },
@@ -5310,7 +5352,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: sub_ty,
-        val: sub_val,
+        val: Some(sub_val),
         lean_all: (),
         block: prims.nat_sub.clone(),
       },
@@ -5334,7 +5376,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: pred_ty,
-        val: pred_val,
+        val: Some(pred_val),
         lean_all: (),
         block: prims.nat_pred.clone(),
       },
@@ -5355,7 +5397,7 @@ mod tests {
         hints: ReducibilityHints::Abbrev, // @[reducible]
         lvls: 0,
         ty: nat(),
-        val: usize_size_val,
+        val: Some(usize_size_val),
         lean_all: (),
         block: mk_id("USize.size"),
       },
@@ -5504,7 +5546,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: AE::cnst(prims.bool_type.clone(), Box::new([])),
-        val: AE::cnst(prims.bool_true.clone(), Box::new([])),
+        val: Some(AE::cnst(prims.bool_true.clone(), Box::new([]))),
         lean_all: (),
         block: mk_id("BodyTrue"),
       },
@@ -6377,7 +6419,7 @@ mod tests {
         hints: ReducibilityHints::Regular(1),
         lvls: 0,
         ty: AE::all((), (), list_char, string_const.clone()),
-        val: of_list_val,
+        val: Some(of_list_val),
         lean_all: (),
         block: of_list_id.clone(),
       },
@@ -6402,7 +6444,7 @@ mod tests {
         hints: ReducibilityHints::Regular(1),
         lvls: 0,
         ty: AE::all((), (), nat_ty, char_ty),
-        val: AE::lam((), (), sort0(), app(char_mk, AE::var(0, ()))),
+        val: Some(AE::lam((), (), sort0(), app(char_mk, AE::var(0, ())))),
         lean_all: (),
         block: char_of_nat_id.clone(),
       },
@@ -6729,7 +6771,7 @@ mod tests {
         hints: ReducibilityHints::Regular(1),
         lvls: 0,
         ty: dec_ty,
-        val: AE::cnst(mk_id("String.decEq.stuckBody"), Box::new([])),
+        val: Some(AE::cnst(mk_id("String.decEq.stuckBody"), Box::new([]))),
         lean_all: (),
         block: dec_eq_id.clone(),
       },
@@ -6773,7 +6815,7 @@ mod tests {
         hints: ReducibilityHints::Regular(1),
         lvls: 0,
         ty: sort0(),
-        val: AE::cnst(mk_id("String.decEq.stuckBody"), Box::new([])),
+        val: Some(AE::cnst(mk_id("String.decEq.stuckBody"), Box::new([]))),
         lean_all: (),
         block: dec_eq_id.clone(),
       },

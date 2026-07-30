@@ -36,7 +36,14 @@ pub enum KConst<M: KernelMode> {
     hints: ReducibilityHints,
     lvls: u64,
     ty: KExpr<M>,
-    val: KExpr<M>,
+    /// `None` = value conversion DEFERRED (anon-mode lazy ingress): the
+    /// ixon bytes are parsed and hash-verified at fault-in, but the value
+    /// expression only converts and interns when a delta unfold, iota
+    /// rule, or the constant's own check first demands it
+    /// (`ensure_anon_defn_value`). Named/Lean ingress always converts
+    /// eagerly (`Some`). Readers on paths that cannot demand (egress,
+    /// canonicalization of already-checked envs) `expect` presence.
+    val: Option<KExpr<M>>,
     lean_all: M::MField<Vec<KId<M>>>,
     block: KId<M>,
   },
@@ -186,7 +193,7 @@ mod tests {
       hints: ReducibilityHints::Regular(5),
       lvls: 1,
       ty: sort0(),
-      val: sort0(),
+      val: Some(sort0()),
       lean_all: (),
       block: KId::new(mk_addr("block"), ()),
     };

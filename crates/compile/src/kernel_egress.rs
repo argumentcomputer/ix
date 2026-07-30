@@ -151,6 +151,9 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         level_params: lp.clone(),
         typ: egress_expr(ty, lp, &mut cache),
       };
+      let val = val
+        .as_ref()
+        .expect("egress: named-mode ingress is eager; value present");
       let value = egress_expr(val, lp, &mut cache);
       let all = zids_to_names(lean_all);
       match kind {
@@ -567,6 +570,9 @@ fn kdefn_to_ixon(
   match kc {
     KConst::Defn { kind, safety, lvls, ty, val, .. } => {
       let typ = kexpr_to_ixon(ty, ctx);
+      let val = val
+        .as_ref()
+        .expect("egress: named-mode ingress is eager; value present");
       let value = kexpr_to_ixon(val, ctx);
       Ok(IxonDefinition {
         kind: *kind,

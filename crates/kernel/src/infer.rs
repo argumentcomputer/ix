@@ -660,7 +660,7 @@ mod tests {
         hints: ReducibilityHints::Abbrev,
         lvls: 0,
         ty: id_ty,
-        val: id_val,
+        val: Some(id_val),
         lean_all: (),
         block: mk_id("id"),
       },

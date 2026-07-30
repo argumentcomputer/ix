@@ -1437,6 +1437,10 @@ fn run_anon_checks_parallel(
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
         let mut kenv = KEnv::<Anon>::new();
+        // Whole-env scope trusts deps (shallow per-item checks), so most
+        // dependency values are never demanded — the profitable scope for
+        // deferred value conversion. Closure/guest scopes stay eager.
+        kenv.defer_defn_values = true;
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         loop {

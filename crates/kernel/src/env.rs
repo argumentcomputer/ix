@@ -462,6 +462,14 @@ impl std::fmt::Display for KEnvCacheSizes {
 /// `get()` returns owned `KConst`/`Vec` (cheap Arc clones) to avoid
 /// tying callers to internal map borrows.
 pub struct KEnv<M: KernelMode> {
+  /// Defer anon Defn VALUE conversion until first demand
+  /// (`ensure_defn_value`). A measured, scope-sensitive trade: pays off
+  /// where dependencies are trusted and mostly type-consulted (the
+  /// whole-env anon runner: most values never convert), REGRESSES where
+  /// reduction demands nearly every value anyway (guest closure/shard
+  /// checking: the split loses the type/value shared conversion caches,
+  /// +1.7% cycles measured). Default false; the whole-env runner opts in.
+  pub defer_defn_values: bool,
   // -- Constants --
   /// Loaded constants keyed by `KId`.
   pub consts: FxHashMap<KId<M>, KConst<M>>,
@@ -631,6 +639,7 @@ impl<M: KernelMode> KEnv<M> {
     recursor_aux_order: RecursorAuxOrder,
   ) -> Self {
     KEnv {
+      defer_defn_values: false,
       consts: FxHashMap::default(),
       blocks: FxHashMap::default(),
       intern: InternTable::new(),

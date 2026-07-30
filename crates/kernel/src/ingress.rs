@@ -1392,6 +1392,7 @@ fn ingress_defn<M: KernelMode>(
   // projection addresses; passing `Some(_)` skips the metadata-derived
   // `build_mut_ctx` call. Meta callers pass `None`.
   mut_ctx_override: Option<Vec<KId<M>>>,
+  defer_value: bool,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1442,16 +1443,24 @@ fn ingress_defn<M: KernelMode>(
     &mut univ_cache,
     stats,
   )?;
-  let value = ingress_expr(
-    &def.value,
-    value_root,
-    &ctx,
-    intern,
-    ixon_env,
-    &mut cache,
-    &mut univ_cache,
-    stats,
-  )?;
+  // Value conversion is the expensive half (proof bodies dominate). In
+  // anon mode it defers until a delta/iota/check demand
+  // (`ensure_anon_defn_value`); most consulted constants only ever need
+  // their type.
+  let value = if defer_value {
+    None
+  } else {
+    Some(ingress_expr(
+      &def.value,
+      value_root,
+      &ctx,
+      intern,
+      ixon_env,
+      &mut cache,
+      &mut univ_cache,
+      stats,
+    )?)
+  };
   let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
 
   let name = resolve_name(
@@ -1637,6 +1646,7 @@ fn ingress_standalone<M: KernelMode>(
       intern,
       stats,
       None,
+      false,
     ),
 
     IxonCI::Axio(ax) => {
@@ -2032,7 +2042,8 @@ fn ingress_muts_block<M: KernelMode>(
           intern,
           stats,
           None,
-        )?);
+          false,
+    )?);
       },
     }
   }
@@ -2775,7 +2786,7 @@ fn lean_const_to_kconst(
         hints: v.hints,
         lvls: pn.len() as u64,
         ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        val: Some(expr_to_k(&v.value, pn)),
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -2791,7 +2802,7 @@ fn lean_const_to_kconst(
         hints: ReducibilityHints::Opaque,
         lvls: pn.len() as u64,
         ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        val: Some(expr_to_k(&v.value, pn)),
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -2811,7 +2822,7 @@ fn lean_const_to_kconst(
         hints: ReducibilityHints::Opaque,
         lvls: pn.len() as u64,
         ty: expr_to_k(&v.cnst.typ, pn),
-        val: expr_to_k(&v.value, pn),
+        val: Some(expr_to_k(&v.value, pn)),
         lean_all: lean_all_ids(&v.all, n2a),
         block: lean_block_id(self_name, all, n2a),
       }
@@ -4241,6 +4252,7 @@ fn ingress_anon_standalone(
       &mut kenv.intern,
       &mut convert_stats,
       Some(vec![self_id.clone()]),
+      kenv.defer_defn_values,
     )?,
     IxonCI::Recr(rec) => ingress_recursor::<Anon>(
       rec,
@@ -4466,7 +4478,8 @@ pub fn ingress_anon_block(
           &mut kenv.intern,
           &mut convert_stats,
           Some(mut_ctx.clone()),
-        )?;
+          false,
+    )?;
         all_entries.extend(entries);
       },
       IxonMutConst::Recr(rec) => {
@@ -4591,6 +4604,70 @@ pub fn ingress_anon_addr_shallow(
   // Standalone (Defn/Recr/Axio/Quot).
   ingress_anon_standalone(kenv, anon_env, addr, &constant)?;
   Ok(true)
+}
+
+/// Force a DEFERRED Defn value (anon lazy mode): convert and intern the
+/// value expression of a constant previously ingressed type-only by
+/// `ingress_anon_standalone`, and patch it into the stored `KConst`.
+/// No-op when the constant is absent, not a Defn, or already has a value.
+/// Mirrors the value half of `ingress_defn` under the anon empty-meta
+/// context (same `mut_ctx`, arena, and roots as the standalone path).
+pub fn ingress_anon_defn_value(
+  kenv: &mut KEnv<Anon>,
+  anon_env: &IxonEnv,
+  addr: &Address,
+) -> Result<(), String> {
+  let self_id: KId<Anon> = KId::new(addr.clone(), ());
+  match kenv.consts.get(&self_id) {
+    Some(KConst::Defn { val: None, .. }) => {},
+    _ => return Ok(()),
+  }
+  let Some(constant) = anon_env.get_const(addr) else {
+    return Err(format!(
+      "ingress_anon_defn_value: constant {} absent from env",
+      addr.hex()
+    ));
+  };
+  let IxonCI::Defn(def) = &constant.info else {
+    return Err(format!(
+      "ingress_anon_defn_value: {} is not a Defn",
+      addr.hex()
+    ));
+  };
+  let empty_names: FxHashMap<Address, Name> = FxHashMap::default();
+  let mut convert_stats = ConvertStats::new(false);
+  let mut cache: ExprCache<Anon> = FxHashMap::default();
+  let mut univ_cache: UnivCache<Anon> = FxHashMap::default();
+  let ctx = Ctx {
+    sharing: &constant.sharing,
+    refs: &constant.refs,
+    univs: &constant.univs,
+    mut_ctx: vec![self_id.clone()],
+    arena: &DEFAULT_ARENA,
+    names: &empty_names,
+    lvls: vec![],
+    synth_counter: Cell::new(0),
+  };
+  let value = ingress_expr(
+    &def.value,
+    0,
+    &ctx,
+    &mut kenv.intern,
+    anon_env,
+    &mut cache,
+    &mut univ_cache,
+    &mut convert_stats,
+  )?;
+  match kenv.consts.get_mut(&self_id) {
+    Some(KConst::Defn { val, .. }) => {
+      *val = Some(value);
+      Ok(())
+    },
+    _ => Err(format!(
+      "ingress_anon_defn_value: {} vanished during conversion",
+      addr.hex()
+    )),
+  }
 }
 
 #[cfg(test)]

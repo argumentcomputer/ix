@@ -94,6 +94,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     self.reset();
     self.begin_const(id);
 
+    // The subject's own value is about to be inferred; force a deferred
+    // one before the constant is cloned out of the env.
+    self.ensure_defn_value(id)?;
     let c = self.get_const(id)?;
     self.check_const_member(id, &c)
   }
@@ -132,6 +135,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
 
       KConst::Defn { ty, val, safety, kind, .. } => {
+        let val = val.as_ref().ok_or_else(|| {
+          TcError::Other("checked Defn value missing after ensure".into())
+        })?;
         let t_infer_ty_start = overall.map(|_| Instant::now());
         let t = self.infer(ty)?;
         let lvl = self.ensure_sort(&t)?;
@@ -449,7 +455,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       t.ty += start.elapsed();
     }
     match c {
-      KConst::Defn { val, .. } => {
+      KConst::Defn { val: Some(val), .. } => {
         let val_start = timing.as_ref().map(|_| Instant::now());
         self.validate_expr_well_scoped(
           val,
@@ -460,6 +466,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if let (Some(t), Some(start)) = (timing.as_deref_mut(), val_start) {
           t.val += start.elapsed();
         }
+      },
+      KConst::Defn { val: None, .. } => {
+        return Err(TcError::Other(
+          "validate: checked Defn value missing after ensure".into(),
+        ));
       },
       KConst::Recr { rules, .. } => {
         let rules_start = timing.as_ref().map(|_| Instant::now());
@@ -969,7 +980,7 @@ mod tests {
         hints: ReducibilityHints::Abbrev,
         lvls: 0,
         ty: id_ty,
-        val: id_val,
+        val: Some(id_val),
         lean_all: (),
         block: mk_id("id"),
       },
@@ -987,7 +998,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: wrong_ty,
-        val: wrong_val,
+        val: Some(wrong_val),
         lean_all: (),
         block: mk_id("wrong"),
       },
@@ -1073,7 +1084,7 @@ mod tests {
         hints: ReducibilityHints::Opaque,
         lvls: 0,
         ty: AE::cnst(mk_id("P"), Box::new([])),
-        val: AE::cnst(mk_id("p"), Box::new([])),
+        val: Some(AE::cnst(mk_id("p"), Box::new([]))),
         lean_all: (),
         block: mk_id("thm"),
       },
@@ -1096,7 +1107,7 @@ mod tests {
         hints: ReducibilityHints::Opaque,
         lvls: 0,
         ty: sort1(), // Type, not Prop
-        val: sort0(),
+        val: Some(sort0()),
         lean_all: (),
         block: mk_id("thm_bad"),
       },
@@ -1256,7 +1267,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: AE::all((), (), unsafe_expr.clone(), unsafe_expr.clone()),
-        val: AE::lam((), (), unsafe_expr, AE::var(0, ())),
+        val: Some(AE::lam((), (), unsafe_expr, AE::var(0, ()))),
         lean_all: (),
         block: mk_id("useUnsafe"),
       },
@@ -1282,7 +1293,7 @@ mod tests {
         hints: ReducibilityHints::Abbrev,
         lvls: 0,
         ty: AE::all((), (), sort0(), sort0()),
-        val: AE::lam((), (), sort0(), AE::var(0, ())),
+        val: Some(AE::lam((), (), sort0(), AE::var(0, ()))),
         lean_all: (),
         block,
       },
@@ -1306,7 +1317,7 @@ mod tests {
         hints: ReducibilityHints::Regular(0),
         lvls: 0,
         ty: AE::all((), (), sort0(), sort0()),
-        val: sort1(),
+        val: Some(sort1()),
         lean_all: (),
         block: block.clone(),
       },

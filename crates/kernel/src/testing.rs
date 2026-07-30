@@ -146,7 +146,7 @@ pub fn mk_defn(
     hints,
     lvls,
     ty,
-    val,
+    val: Some(val),
     lean_all: vec![id.clone()],
     block: id.clone(),
   };
@@ -169,7 +169,7 @@ pub fn mk_thm(
     hints: ReducibilityHints::Opaque,
     lvls,
     ty,
-    val,
+    val: Some(val),
     lean_all: vec![id.clone()],
     block: id.clone(),
   };
