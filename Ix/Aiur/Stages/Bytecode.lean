@@ -98,9 +98,15 @@ def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
-  -- Stage 2 commits max(L, 1) chained partial accumulators (no message
-  -- inverses); see `multi_stark::lookup::stage2_width`.
-  l.width + G.extensionDegree * (max l.lookups 1)
+  -- Stage 2 commits max(⌈L/k⌉, 1) chained partial accumulators (no message
+  -- inverses); see `multi_stark::lookup::stage2_width`. Mirrors the
+  -- synthesis grouping rule (`crates/aiur/src/synthesis.rs`): branchless
+  -- functions (one selector) have raw degree-1 lookup arguments, so their
+  -- lookups are grouped 2 per accumulator step.
+  let slots := if l.selectors == 1 && l.lookups >= 2
+    then (l.lookups + 1) / 2
+    else max l.lookups 1
+  l.width + G.extensionDegree * slots
 
 structure Function where
   body : Block

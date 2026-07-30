@@ -63,7 +63,8 @@ impl AiurSystem {
       |main_width: usize,
        preprocessed: Option<RowMajorMatrix<G>>,
        constraints: Vec<Expr<G>>,
-       lookups: Vec<Lookup<Expr<G>>>| {
+       lookups: Vec<Lookup<Expr<G>>>,
+       lookup_group_size: usize| {
         slot_widths.push(lookups.iter().map(|l| l.args.len()).collect());
         circuit_inputs.push(CircuitInputs {
           main_width,
@@ -71,7 +72,7 @@ impl AiurSystem {
           constraints,
           ext_constraints: vec![],
           lookups,
-          lookup_group_size: 1,
+          lookup_group_size,
         });
       };
 
@@ -81,12 +82,30 @@ impl AiurSystem {
         continue;
       }
       let (constraints, lookups) = toplevel.build_constraints(i);
-      push_circuit(constraints.width, None, constraints.zeros, lookups);
+      // A branchless function's lookup arguments are sent raw (degree 1;
+      // see `ConstraintState::gate`), so two lookups fit in one chained
+      // accumulator step at degree 3 — within the degree the selector-gated
+      // constraints already pay for. Branching functions keep k = 1: their
+      // superposed arguments are degree 2, and grouping would push the
+      // logUp constraints past the quotient budget.
+      let group_size =
+        if toplevel.functions[i].layout.selectors == 1 && lookups.len() >= 2 {
+          2
+        } else {
+          1
+        };
+      push_circuit(
+        constraints.width,
+        None,
+        constraints.zeros,
+        lookups,
+        group_size,
+      );
     }
     // Memories.
     for &size in &toplevel.memory_sizes {
       let (memory, constraints, lookups) = Memory::build(size);
-      push_circuit(memory.width, None, constraints, lookups);
+      push_circuit(memory.width, None, constraints, lookups, 1);
     }
     // Gadgets.
     push_circuit(
@@ -94,12 +113,14 @@ impl AiurSystem {
       Bytes1.preprocessed(),
       vec![],
       Bytes1.lookups(),
+      1,
     );
     push_circuit(
       Bytes2.main_width(),
       Bytes2.preprocessed(),
       vec![],
       Bytes2.lookups(),
+      1,
     );
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);

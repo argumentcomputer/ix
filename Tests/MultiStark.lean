@@ -96,13 +96,22 @@ def selfTestSuite : IO UInt32 := do
 -- `recursive-verifier`: prove factorial(5)=120, verify it, reject tampering
 -- ════════════════════════════════════════════════════════════════════════════
 
-/-- A tiny Aiur program: `factorial` as the proving entrypoint. -/
+/-- A tiny Aiur program: a BRANCHLESS entrypoint (single selector, no match)
+that routes its argument through store/load before calling `factorial`. Its
+circuit has 4 lookups (return, store, load, call) with raw degree-1
+arguments, so synthesis groups them 2 per chained-accumulator step
+(`lookup_group_size = 2`) — the recursive verifier's grouped logUp fold is
+exercised end-to-end alongside the k = 1 branching/memory circuits. -/
 def factorialProgram : Source.Toplevel := ⟦
   pub fn factorial(n: G) -> G {
     match n {
       0 => 1,
       _ => n * factorial(n - 1),
     }
+  }
+
+  pub fn fact_entry(n: G) -> G {
+    factorial(load(store(n)))
   }
 ⟧
 
@@ -138,9 +147,9 @@ def endToEndSuite : IO UInt32 := do
     | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
     | .ok c => pure c
   let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
-  let facIdx ← match facCompiled.getFuncIdx `factorial with
+  let facIdx ← match facCompiled.getFuncIdx `fact_entry with
     | some i => pure i
-    | none => IO.eprintln "factorial entrypoint not found"; return 1
+    | none => IO.eprintln "fact_entry entrypoint not found"; return 1
 
   -- ── prove factorial(5) = 120 (`G` is a reserved DSL token, spell it qualified)
   let input := #[Aiur.G.ofNat 5]
