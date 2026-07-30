@@ -1,7 +1,6 @@
 use multi_stark::{
-  builder::symbolic::{SymbolicExpression, preprocessed_var, var},
+  expr::Expr,
   lookup::{Lookup, LookupValues},
-  p3_air::{Air, AirBuilder, BaseAir},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
 };
@@ -33,13 +32,22 @@ pub enum Bytes1Op {
   ShiftRight,
 }
 
-impl BaseAir<G> for Bytes1 {
-  fn width(&self) -> usize {
+impl AiurGadget for Bytes1 {
+  type Op = Bytes1Op;
+
+  fn output_size(&self, op: &Bytes1Op) -> usize {
+    match op {
+      Bytes1Op::BitDecomposition => 8,
+      Bytes1Op::ShiftLeft | Bytes1Op::ShiftRight => 1,
+    }
+  }
+
+  fn main_width(&self) -> usize {
     TRACE_WIDTH
   }
 
   /// Builds the preprocessed trace over all 256 byte values.
-  fn preprocessed_trace(&self) -> Option<RowMajorMatrix<G>> {
+  fn preprocessed(&self) -> Option<RowMajorMatrix<G>> {
     let mut values = vec![G::ZERO; 256 * PREPROCESSED_TRACE_WIDTH];
     values.chunks_exact_mut(PREPROCESSED_TRACE_WIDTH).enumerate().for_each(
       |(i, row)| {
@@ -63,22 +71,6 @@ impl BaseAir<G> for Bytes1 {
       },
     );
     Some(RowMajorMatrix::new(values, PREPROCESSED_TRACE_WIDTH))
-  }
-}
-
-impl<AB: AirBuilder<F = G>> Air<AB> for Bytes1 {
-  /// A no-op, since all constraints are enforced through lookups.
-  fn eval(&self, _builder: &mut AB) {}
-}
-
-impl AiurGadget for Bytes1 {
-  type Op = Bytes1Op;
-
-  fn output_size(&self, op: &Bytes1Op) -> usize {
-    match op {
-      Bytes1Op::BitDecomposition => 8,
-      Bytes1Op::ShiftLeft | Bytes1Op::ShiftRight => 1,
-    }
   }
 
   fn execute(
@@ -104,33 +96,35 @@ impl AiurGadget for Bytes1 {
     }
   }
 
-  fn lookups(&self) -> Vec<Lookup<SymbolicExpression<G>>> {
+  fn lookups(&self) -> Vec<Lookup<Expr<G>>> {
     // Channels
-    let bit_decomposition_channel = u8_bit_decomposition_channel().into();
-    let shift_left_channel = u8_shift_left_channel().into();
-    let shift_right_channel = u8_shift_right_channel().into();
+    let bit_decomposition_channel =
+      Expr::constant(u8_bit_decomposition_channel());
+    let shift_left_channel = Expr::constant(u8_shift_left_channel());
+    let shift_right_channel = Expr::constant(u8_shift_right_channel());
 
     // Multiplicity columns
-    let bit_decomposition_multiplicity = var(0);
-    let shift_left_multiplicity = var(1);
-    let shift_right_multiplicity = var(2);
+    let bit_decomposition_multiplicity = Expr::main(0);
+    let shift_left_multiplicity = Expr::main(1);
+    let shift_right_multiplicity = Expr::main(2);
 
     // Preprocessed columns
-    let byte = preprocessed_var(0);
-    let byte_bit0 = preprocessed_var(1);
-    let byte_bit1 = preprocessed_var(2);
-    let byte_bit2 = preprocessed_var(3);
-    let byte_bit3 = preprocessed_var(4);
-    let byte_bit4 = preprocessed_var(5);
-    let byte_bit5 = preprocessed_var(6);
-    let byte_bit6 = preprocessed_var(7);
-    let byte_bit7 = preprocessed_var(8);
-    let byte_left_shifted = preprocessed_var(9);
-    let byte_right_shifted = preprocessed_var(10);
+    let byte = Expr::preprocessed(0);
+    let byte_bit0 = Expr::preprocessed(1);
+    let byte_bit1 = Expr::preprocessed(2);
+    let byte_bit2 = Expr::preprocessed(3);
+    let byte_bit3 = Expr::preprocessed(4);
+    let byte_bit4 = Expr::preprocessed(5);
+    let byte_bit5 = Expr::preprocessed(6);
+    let byte_bit6 = Expr::preprocessed(7);
+    let byte_bit7 = Expr::preprocessed(8);
+    let byte_left_shifted = Expr::preprocessed(9);
+    let byte_right_shifted = Expr::preprocessed(10);
 
-    let pull_bit_decomposition = Lookup::pull(
-      bit_decomposition_multiplicity,
-      vec![
+    // pull = negated multiplicity.
+    let pull_bit_decomposition = Lookup {
+      multiplicity: -bit_decomposition_multiplicity,
+      args: vec![
         bit_decomposition_channel,
         byte.clone(),
         byte_bit0,
@@ -142,17 +136,17 @@ impl AiurGadget for Bytes1 {
         byte_bit6,
         byte_bit7,
       ],
-    );
+    };
 
-    let pull_shift_left = Lookup::pull(
-      shift_left_multiplicity,
-      vec![shift_left_channel, byte.clone(), byte_left_shifted],
-    );
+    let pull_shift_left = Lookup {
+      multiplicity: -shift_left_multiplicity,
+      args: vec![shift_left_channel, byte.clone(), byte_left_shifted],
+    };
 
-    let pull_shift_right = Lookup::pull(
-      shift_right_multiplicity,
-      vec![shift_right_channel, byte, byte_right_shifted],
-    );
+    let pull_shift_right = Lookup {
+      multiplicity: -shift_right_multiplicity,
+      args: vec![shift_right_channel, byte, byte_right_shifted],
+    };
 
     vec![pull_bit_decomposition, pull_shift_left, pull_shift_right]
   }

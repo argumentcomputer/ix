@@ -8,29 +8,44 @@ public import Ix.MultiStark.Deserialize
 # Verifying-key deserializer (Aiur)
 
 Aiur port of `crates/aiur/src/vk_codec.rs` — reconstructs the verifier's
-`System<AiurCircuit>` from the bytes the prover places on the IO channel.
+`System<AiurConfig>` from the bytes the prover places on the IO channel.
 
-Split-streams wire format (v2, mirrors `vk_codec.rs` — see its module docs
-for the full layout): a global header (7 × u16 parameters + u16 circuit
-count), then one contiguous record per circuit — 5 × u32 segment lengths
-followed by the TAGS / IDX / C2 / C8 / META segments — then the trailer
-(preprocessed commit + u16 preprocessed indices, `0xFFFF` = None). Every
-field class has a single fixed width, so all reads are static-size
-`io_read` chunks:
+Wire format (v3, mirrors `vk_codec.rs` — see its module docs for the full
+layout). The multi-stark constraint-IR migration replaced the per-circuit
+*symbolic* AIR (`SymbolicExpression` trees + `LookupAir`) with a *compiled*
+flat base-field node graph, so this reader parses that compiled form:
 
-* TAGS : 1 byte per node — low nibble = kind, high nibble = aux
-         (Variable: entry kind + 8·rotation; Constant: size class)
-* IDX  : u16 per Variable (column index)
-* C2   : u16 per small constant; C8 : u64 per large constant
-* META : u32 per count / metadata field
+* GLOBAL HEADER: 7 × u16 parameters + u16 circuit count.
+* PER-CIRCUIT RECORD (no framing prefix; nothing derivable is serialized —
+  constraint_count, stage_2_width, num_publics, and lookup_prefix_len are
+  all recomputed from the counts below):
+    - u16 main_width, u16 preprocessed_width, u32 preprocessed_height,
+      u16 max_constraint_degree (combined user + logUp), u16 node_count
+    - `node_count` tagged nodes (dense v5: u16 children, never sub-trees):
+      0 ConstSmall(u16) · 1 ConstBig(u64) · 2 Public(u8) ·
+      3 IsFirstRow · 4 IsLastRow · 5 IsTransition ·
+      6 Add(u16,u16) · 7 Sub(u16,u16) · 8 Mul(u16,u16) · 9 Neg(u16) ·
+      10..15 Var(u16 index) with (source, offset) packed in the tag
+      (tag = 10 + 2·source + offset)
+    - u16 zero_count, then that many u16 constraint-root NodeIds (USER
+      constraints only — the logUp constraints are never compiled)
+    - u16 lookup_count, then the compiled lookups (u16 multiplicity NodeId,
+      u16 arg count, u16 arg NodeIds) — these drive the verifier's direct
+      logUp constraint evaluation (`Verifier.lean`).
+* TRAILER: preprocessed commit (`0` = None / `1` + MerkleCap) then one u16
+  per circuit for the preprocessed index (`0xFFFF` = None).
 
-`degree_multiple` is not on the wire (and unused by the verifier — the
-constraint folder just evaluates the tree), so `SymExpr` no longer carries
-it. The vk stream (IO channel 1) is read by byte offset — the readers
-thread one cursor per segment; the record header binds the cursors and the
-per-record end asserts pin each segment's exact consumption. The leaf
-fetches are unconstrained — the digest binding (`b3_io` over the whole
-arena) is what makes the bytes meaningful.
+The vk stream (IO channel 1) is read by byte offset with a single cursor —
+a v3 record is a contiguous byte range, so there are no separate segment
+cursors. The leaf fetches are unconstrained; the digest binding (`b3_io`
+over the whole arena, bound to the public `system_digest`) is what makes
+the bytes meaningful. Per-node degrees are neither serialized nor needed
+(the node sweep just evaluates the graph).
+
+The Fiat-Shamir shape limbs are unchanged from v2: `observe_shape` still
+feeds the challenger the circuit count then, per circuit, the six words
+constraint_count, max_constraint_degree, preprocessed_height,
+preprocessed_width, main_width, stage_2_width (as 8-byte LE limbs).
 -/
 
 public section
@@ -39,53 +54,34 @@ namespace MultiStark
 
 def systemDeserialize := ⟦
   -- ==========================================================================
-  -- Reconstructed `System<AiurCircuit>` as Aiur data.
+  -- Reconstructed `System<AiurConfig>` as Aiur data (compiled form).
   -- ==========================================================================
 
-  -- `SymbolicVariable.entry` (a column reference within the window). The
-  -- payload of Preprocessed/Main/Stage2 is the rotation offset (0 or 1).
-  enum SysEntry {
-    Preprocessed(G),
-    Main(G),
-    Stage2(G),
-    Public,
-    Stage2Public,
-    Challenge
-  }
-
-  -- `SymbolicExpression<G>` — the AIR constraint tree. Children are pointers.
-  -- (`degree_multiple` is not materialized: the wire drops it and the
-  -- constraint folder never reads it.)
-  enum SymExpr {
-    Var(SysEntry, G),            -- entry, index
+  -- A compiled constraint node (`multi_stark::circuit::Node`). Children of
+  -- Add/Sub/Mul/Neg are NodeIds (indices into the circuit's node vector),
+  -- not sub-trees: the graph is flat and topologically ordered (a node's
+  -- children always have smaller indices).
+  enum SysNode {
+    Const(G),            -- native Goldilocks constant (reduced on read)
+    Var(G, G, G),        -- source (0 Preprocessed, 1 Main, 2 Stage2), offset (0 current, 1 next), column index
+    Public(G),           -- public-input coordinate index
     IsFirstRow,
     IsLastRow,
     IsTransition,
-    Const(G),                   -- a native Goldilocks constant (reduced on read)
-    Add(&SymExpr, &SymExpr),
-    Sub(&SymExpr, &SymExpr),
-    Neg(&SymExpr),
-    Mul(&SymExpr, &SymExpr)
+    Add(G, G),           -- child NodeIds
+    Sub(G, G),
+    Mul(G, G),
+    Neg(G)
   }
 
-  enum SysLookup { Mk(SymExpr, List‹SymExpr›) }          -- multiplicity, args
-
-  enum SysConstraints { Mk(List‹SymExpr›, G, G, G) }     -- zeros, sel_start, sel_end, width
-
-  enum SysMemory { Mk(G) }                               -- width
-
-  enum SysAir {
-    Function(SysConstraints),
-    Memory(SysMemory),
-    Bytes1,
-    Bytes2
-  }
-
-  enum SysLookupAir { Mk(SysAir, List‹SysLookup›) }      -- inner_air, lookups
-
-  -- air, constraint_count, max_constraint_degree, preprocessed_height,
-  -- preprocessed_width, stage_1_width, stage_2_width.
-  enum SysCircuit { Mk(SysLookupAir, G, G, G, G, G, G) }
+  -- A compiled circuit: the flat node vector, its length, the constraint-root
+  -- NodeIds (`zeros`), and the maximum constraint degree (for the quotient
+  -- degree). The lookups are omitted — their constraints are compiled into
+  -- `zeros`, so the verifier never needs them.
+  -- A compiled lookup: multiplicity node id + argument node ids (all into
+  -- the graph's lookup prefix). Drives the direct logUp evaluation.
+  enum SysLookup { Mk(G, List‹G›) }
+  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›) }   -- nodes, node_count, zeros, max_constraint_degree, lookups
 
   -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
   -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
@@ -101,9 +97,7 @@ def systemDeserialize := ⟦
   -- challenger observes before any commitment — the 7 parameters (bound via
   -- the challenger seed) followed by the system shape (`observe_shape`: the
   -- circuit count, then 6 metadata words per circuit) — kept as limbs because
-  -- the Fiat-Shamir replay needs their little-endian bytes. The OBSERVED
-  -- values are width-independent, so the narrow wire fields pad to the same
-  -- 8-byte limbs v1 produced.
+  -- the Fiat-Shamir replay needs their little-endian bytes.
   enum Sys { Mk(SysParams, List‹U64›, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
 
   -- ==========================================================================
@@ -117,7 +111,8 @@ def systemDeserialize := ⟦
     (u8_from_field_unsafe(b), i + 1)
   }
 
-  -- A TAGS byte, kept as a raw field value for match dispatch.
+  -- A single byte kept as a raw field value for match dispatch (tags, source,
+  -- offset).
   fn read_vk_tag(i: G) -> (G, G) {
     let [b] = io_read(1, i, 1);
     (b, i + 1)
@@ -158,7 +153,7 @@ def systemDeserialize := ⟦
       u8_from_field_unsafe(b6), u8_from_field_unsafe(b7)], i + 8)
   }
 
-  -- A large (C8) Goldilocks constant, reduced into a native field value so it
+  -- A full (u64) Goldilocks constant, reduced into a native field value so it
   -- can feed the composition arithmetic directly.
   fn read_field(i: G) -> (G, G) {
     let (u, j) = #read_vk_u64(i);
@@ -183,127 +178,109 @@ def systemDeserialize := ⟦
   }
 
   -- ==========================================================================
-  -- Expression reader. Cursors: t = TAGS, x = IDX, a = C2, b = C8. The tag
-  -- byte packs kind (low nibble) + aux (high nibble); the match keys are the
-  -- whole byte values (kind + 16·aux).
+  -- Node reader. A node is a single tagged record whose children (when any)
+  -- are u32 NodeIds — there is no recursion over sub-expressions.
   -- ==========================================================================
 
-  fn read_sym_expr(t: G, x: G, a: G, b: G) -> (SymExpr, G, G, G, G) {
-    let (tag, t1) = #read_vk_tag(t);
+  -- Dense (v5) node encoding: u16 child ids and column indices; the Var
+  -- (source, offset) pair packed into the tag (10 + 2·source + offset);
+  -- small (u16) / big (u64) constant split; u8 public index.
+  fn read_node(i: G) -> (SysNode, G) {
+    let (tag, i1) = #read_vk_tag(i);
     match tag {
-      -- Var: aux = entry kind + 8·rotation
-      0 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Preprocessed(0), i), t1, x1, a, b),
-      16 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Main(0), i), t1, x1, a, b),
-      32 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Stage2(0), i), t1, x1, a, b),
-      48 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Public, i), t1, x1, a, b),
-      64 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Stage2Public, i), t1, x1, a, b),
-      80 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Challenge, i), t1, x1, a, b),
-      128 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Preprocessed(1), i), t1, x1, a, b),
-      144 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Main(1), i), t1, x1, a, b),
-      160 => let (i, x1) = #read_vk_u16(x); (SymExpr.Var(SysEntry.Stage2(1), i), t1, x1, a, b),
-      1 => (SymExpr.IsFirstRow, t1, x, a, b),
-      2 => (SymExpr.IsLastRow, t1, x, a, b),
-      3 => (SymExpr.IsTransition, t1, x, a, b),
-      -- Const: aux = size class (0 -> C2, 1 -> C8)
-      4 => let (c, a1) = #read_vk_u16(a); (SymExpr.Const(c), t1, x, a1, b),
-      20 => let (c, b1) = #read_field(b); (SymExpr.Const(c), t1, x, a, b1),
-      5 =>
-        let (l, t2, x2, a2, b2) = read_sym_expr(t1, x, a, b);
-        let (r, t3, x3, a3, b3) = read_sym_expr(t2, x2, a2, b2);
-        (SymExpr.Add(store(l), store(r)), t3, x3, a3, b3),
+      0 => let (c, i2) = #read_vk_u16(i1); (SysNode.Const(c), i2),
+      1 => let (c, i2) = #read_field(i1); (SysNode.Const(c), i2),
+      2 => let (idx, i2) = #read_vk_tag(i1); (SysNode.Public(idx), i2),
+      3 => (SysNode.IsFirstRow, i1),
+      4 => (SysNode.IsLastRow, i1),
+      5 => (SysNode.IsTransition, i1),
       6 =>
-        let (l, t2, x2, a2, b2) = read_sym_expr(t1, x, a, b);
-        let (r, t3, x3, a3, b3) = read_sym_expr(t2, x2, a2, b2);
-        (SymExpr.Sub(store(l), store(r)), t3, x3, a3, b3),
+        let (a, i2) = #read_vk_u16(i1);
+        let (b, i3) = #read_vk_u16(i2);
+        (SysNode.Add(a, b), i3),
       7 =>
-        let (l, t2, x2, a2, b2) = read_sym_expr(t1, x, a, b);
-        (SymExpr.Neg(store(l)), t2, x2, a2, b2),
-      _ =>
-        let (l, t2, x2, a2, b2) = read_sym_expr(t1, x, a, b);
-        let (r, t3, x3, a3, b3) = read_sym_expr(t2, x2, a2, b2);
-        (SymExpr.Mul(store(l), store(r)), t3, x3, a3, b3),
+        let (a, i2) = #read_vk_u16(i1);
+        let (b, i3) = #read_vk_u16(i2);
+        (SysNode.Sub(a, b), i3),
+      8 =>
+        let (a, i2) = #read_vk_u16(i1);
+        let (b, i3) = #read_vk_u16(i2);
+        (SysNode.Mul(a, b), i3),
+      9 =>
+        let (a, i2) = #read_vk_u16(i1);
+        (SysNode.Neg(a), i2),
+      10 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(0, 0, idx), i2),
+      11 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(0, 1, idx), i2),
+      12 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(1, 0, idx), i2),
+      13 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(1, 1, idx), i2),
+      14 => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(2, 0, idx), i2),
+      _ => let (idx, i2) = #read_vk_u16(i1); (SysNode.Var(2, 1, idx), i2),
     }
   }
 
-  fn read_sym_exprs_n(t: G, x: G, a: G, b: G, n: G) -> (List‹SymExpr›, G, G, G, G) {
+  fn read_nodes_n(i: G, n: G) -> (List‹SysNode›, G) {
     match n {
-      0 => (store(ListNode.Nil), t, x, a, b),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (e, t1, x1, a1, b1) = read_sym_expr(t, x, a, b);
-        let (rest, t2, x2, a2, b2) = read_sym_exprs_n(t1, x1, a1, b1, n - 1);
-        (store(ListNode.Cons(e, rest)), t2, x2, a2, b2),
+        let (nd, i1) = read_node(i);
+        let (rest, i2) = read_nodes_n(i1, n - 1);
+        (store(ListNode.Cons(nd, rest)), i2),
     }
   }
 
-  -- ==========================================================================
-  -- Circuit readers. Cursor m = META joins for the count/metadata fields.
-  -- ==========================================================================
-
-  fn read_sys_lookup(t: G, x: G, a: G, b: G, m: G) -> (SysLookup, G, G, G, G, G) {
-    let (mul, t1, x1, a1, b1) = read_sym_expr(t, x, a, b);
-    let (na, m1) = #read_vk_u32(m);
-    let (args, t2, x2, a2, b2) = read_sym_exprs_n(t1, x1, a1, b1, na);
-    (SysLookup.Mk(mul, args), t2, x2, a2, b2, m1)
-  }
-  fn read_sys_lookups_n(t: G, x: G, a: G, b: G, m: G, n: G) -> (List‹SysLookup›, G, G, G, G, G) {
+  -- A run of u16 NodeIds (constraint roots / lookup argument ids).
+  fn read_node_ids_n(i: G, n: G) -> (List‹G›, G) {
     match n {
-      0 => (store(ListNode.Nil), t, x, a, b, m),
+      0 => (store(ListNode.Nil), i),
       _ =>
-        let (l, t1, x1, a1, b1, m1) = read_sys_lookup(t, x, a, b, m);
-        let (rest, t2, x2, a2, b2, m2) = read_sys_lookups_n(t1, x1, a1, b1, m1, n - 1);
-        (store(ListNode.Cons(l, rest)), t2, x2, a2, b2, m2),
+        let (id, i1) = #read_vk_u16(i);
+        let (rest, i2) = read_node_ids_n(i1, n - 1);
+        (store(ListNode.Cons(id, rest)), i2),
     }
   }
 
-  fn read_sys_air(t: G, x: G, a: G, b: G, m: G) -> (SysAir, G, G, G, G, G) {
-    let (tag, t1) = #read_vk_tag(t);
-    match tag {
-      0 =>
-        let (nz, m1) = #read_vk_u32(m);
-        let (zeros, t2, x2, a2, b2) = read_sym_exprs_n(t1, x, a, b, nz);
-        let (ss, m2) = #read_vk_u32(m1);
-        let (se, m3) = #read_vk_u32(m2);
-        let (w, m4) = #read_vk_u32(m3);
-        (SysAir.Function(SysConstraints.Mk(zeros, ss, se, w)), t2, x2, a2, b2, m4),
-      1 => let (w, m1) = #read_vk_u32(m); (SysAir.Memory(SysMemory.Mk(w)), t1, x, a, b, m1),
-      2 => (SysAir.Bytes1, t1, x, a, b, m),
-      _ => (SysAir.Bytes2, t1, x, a, b, m),
+  fn read_sys_lookup(i: G) -> (SysLookup, G) {
+    let (m, i1) = #read_vk_u16(i);
+    let (ac, i2) = #read_vk_u16(i1);
+    let (args, i3) = read_node_ids_n(i2, ac);
+    (SysLookup.Mk(m, args), i3)
+  }
+  fn read_sys_lookups_n(i: G, n: G) -> (List‹SysLookup›, G) {
+    match n {
+      0 => (store(ListNode.Nil), i),
+      _ =>
+        let (x, j) = read_sys_lookup(i);
+        let (rest, j2) = read_sys_lookups_n(j, n - 1);
+        (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  -- One circuit record: 5 × u32 segment lengths, then the segments. Besides
-  -- the parsed circuit, also returns its 6 metadata words as u64 limbs —
-  -- `observe_shape` feeds exactly these bytes into the challenger. The end
-  -- asserts pin every segment to exact consumption, binding the header
-  -- lengths to the parsed structure.
+  -- One circuit record: a u32 length prefix then the contiguous record. The
+  -- 8-word header, the node stream, the zeros, and the compiled lookups
+  -- (which drive the direct logUp evaluation) are all parsed. Besides the
+  -- parsed circuit, returns its 6 shape words as u64 limbs, in
+  -- `observe_shape` order: constraint_count (user roots + (L+3)·D, read
+  -- from the header), max_constraint_degree (combined),
+  -- preprocessed_height, preprocessed_width, main_width, stage_2_width.
   fn read_sys_circuit(base: G) -> (SysCircuit, [U64; 6], G) {
-    let (lt, h1) = #read_vk_u32(base);
-    let (lx, h2) = #read_vk_u32(h1);
-    let (la, h3) = #read_vk_u32(h2);
-    let (lb, h4) = #read_vk_u32(h3);
-    let (lm, h5) = #read_vk_u32(h4);
-    let t0 = h5;
-    let x0 = t0 + lt;
-    let a0 = x0 + lx;
-    let b0 = a0 + la;
-    let m0 = b0 + lb;
-    let rend = m0 + lm;
-    let (air, t1, x1, a1, b1, m1) = read_sys_air(t0, x0, a0, b0, m0);
-    let (nl, m2) = #read_vk_u32(m1);
-    let (lookups, t2, x2, a2, b2, m3) = read_sys_lookups_n(t1, x1, a1, b1, m2, nl);
-    let (cc, ccl, m4) = #read_vk_u32_limb(m3);
-    let (md, mdl, m5) = #read_vk_u32_limb(m4);
-    let (ph, phl, m6) = #read_vk_u32_limb(m5);
-    let (pw, pwl, m7) = #read_vk_u32_limb(m6);
-    let (w1, w1l, m8) = #read_vk_u32_limb(m7);
-    let (w2, w2l, m9) = #read_vk_u32_limb(m8);
-    assert_eq!(t2, x0);
-    assert_eq!(x2, a0);
-    assert_eq!(a2, b0);
-    assert_eq!(b2, m0);
-    assert_eq!(m9, rend);
-    (SysCircuit.Mk(SysLookupAir.Mk(air, lookups), cc, md, ph, pw, w1, w2),
-     [ccl, mdl, phl, pwl, w1l, w2l], rend)
+    let (mw, mwl, c1) = #read_vk_u16_limb(base);
+    let (pw, pwl, c2) = #read_vk_u16_limb(c1);
+    let (ph, phl, c3) = #read_vk_u32_limb(c2);
+    let (md, mdl, c4) = #read_vk_u16_limb(c3);
+    let (ncount, c5) = #read_vk_u16(c4);
+    let (nodes, c6) = read_nodes_n(c5, ncount);
+    let (zcount, c7) = #read_vk_u16(c6);
+    let (zeros, c8) = read_node_ids_n(c7, zcount);
+    let (lcount, c9) = #read_vk_u16(c8);
+    let (lks, c10) = read_sys_lookups_n(c9, lcount);
+    -- Derived shape values (not serialized): constraint_count = user roots
+    -- + (L+3)·D and stage_2_width = (1+L)·D, their observation limbs built
+    -- by byte decomposition (both values are far below 2^32, so the
+    -- canonical decomposition IS the little-endian u64 limb).
+    let ccl = gl_to_bytes(zcount + 2 * (lcount + 3));
+    let s2wl = gl_to_bytes(2 * (1 + lcount));
+    (SysCircuit.Mk(nodes, ncount, zeros, md, lks),
+     [ccl, mdl, phl, pwl, mwl, s2wl], c10)
   }
   fn cons_shape6(l: [U64; 6], tail: List‹U64›) -> List‹U64› {
     store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],
@@ -367,7 +344,7 @@ def systemDeserialize := ⟦
      j6)
   }
 
-  -- Full `System<AiurCircuit>`, read from the channel-1 IO arena starting at
+  -- Full `System<AiurConfig>`, read from the channel-1 IO arena starting at
   -- byte offset `i`. Returns the end offset; the entrypoint asserts full
   -- consumption.
   fn read_system(i: G) -> (Sys, G) {
