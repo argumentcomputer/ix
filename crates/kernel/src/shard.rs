@@ -1791,14 +1791,17 @@ pub fn shard_esp_aiur(
   // predictions, for measured-vs-predicted comparison and refits.
   if let Some(op) = out_path {
     let mut csv =
-      String::from("shard,union_bytes,hb,subst,pred_ram_gib,pred_prove_s\n");
+      String::from("shard,union_bytes,hb,subst,whnf,def_eq,nat_arith,pred_ram_gib,pred_prove_s\n");
     for (i, c) in plan.shard_costs.iter().enumerate() {
       csv.push_str(&format!(
-        "{},{},{},{},{:.2},{:.2}\n",
+        "{},{},{},{},{},{},{},{:.2},{:.2}\n",
         i,
         c.union_bytes,
         c.hb,
         c.subst,
+        c.whnf,
+        c.def_eq,
+        c.nat_arith,
         aiur_ram_gib(c.union_bytes, c.hb),
         prove_secs[i],
       ));
@@ -2280,6 +2283,14 @@ pub struct AiurShardCost {
   pub hb: u64,
   /// Σ substitution-node visits over owned blocks only.
   pub subst: u64,
+  /// Σ `whnf` entries over owned blocks only.
+  pub whnf: u64,
+  /// Σ definitional-equality checks over owned blocks only.
+  pub def_eq: u64,
+  /// Σ big-Nat limb-work units over owned blocks only — the klimbs
+  /// circuit family's only recorded signal; persisted per shard so the
+  /// RAM model's content residual can eventually be fit against it.
+  pub nat_arith: u64,
 }
 
 pub struct AiurBudgetPlan {
@@ -2728,6 +2739,9 @@ pub fn partition_for_aiur_ram(
       union_bytes: cur_cost.union_bytes.saturating_add(delta),
       hb: cur_cost.hb.saturating_add(e.heartbeats),
       subst: cur_cost.subst.saturating_add(e.subst),
+      whnf: cur_cost.whnf.saturating_add(e.whnf),
+      def_eq: cur_cost.def_eq.saturating_add(e.def_eq),
+      nat_arith: cur_cost.nat_arith.saturating_add(e.nat_arith),
     };
 
     if owned_in_cur > 0 && predicted(&tentative) > ram_cap_gib {
@@ -2754,6 +2768,9 @@ pub fn partition_for_aiur_ram(
     }
     cur_cost.hb = cur_cost.hb.saturating_add(e.heartbeats);
     cur_cost.subst = cur_cost.subst.saturating_add(e.subst);
+    cur_cost.whnf = cur_cost.whnf.saturating_add(e.whnf);
+    cur_cost.def_eq = cur_cost.def_eq.saturating_add(e.def_eq);
+    cur_cost.nat_arith = cur_cost.nat_arith.saturating_add(e.nat_arith);
     owned_in_cur += 1;
     shard_of[b as usize] = cur;
     if owned_in_cur == 1 && predicted(&cur_cost) > ram_cap_gib {
