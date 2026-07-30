@@ -131,6 +131,10 @@ structure EnvSpec where
   module : String
 
 def envSpecs : List EnvSpec := [
+  -- Init is the Aiur shard pipeline's deliverable env (the partition the
+  -- full-Init proof runs over), so its planner trend line matters on its
+  -- own — InitStd's does not subsume it.
+  { name := "Init",    module := "Benchmarks/Compile/CompileInit.lean" },
   { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
   { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
   { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" },
