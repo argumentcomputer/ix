@@ -84,6 +84,7 @@ impl AiurSystem {
           constraints,
           ext_constraints: vec![],
           lookups,
+          lookup_group_size: 1,
         });
       };
 

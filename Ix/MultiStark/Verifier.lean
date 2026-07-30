@@ -623,9 +623,8 @@ def verifier := ⟦
   -- machinery, never compiled into the vk's node graph: their values at ζ
   -- are computed here from the lookup ids (evaluated through the memoized
   -- `eval_at`), the stage-2 openings, and the lookup publics, and folded
-  -- with α after the user roots — per lookup the 2 coordinates of
-  -- `(β + fingerprint(γ, args))·inv − 1`, then the first-row, transition,
-  -- and last-row accumulator constraints (2 coordinates each).
+  -- with α after the user roots — per lookup GROUP the 2 coordinates of
+  -- the chained-accumulator step constraint (see `logup_steps_fold`).
   --
   -- Coordinates: a coordinate-expanded logUp constraint is a PAIR of
   -- base-field polynomials; at ζ each coordinate is an Ext value. Pair
@@ -655,20 +654,21 @@ def verifier := ⟦
     }
   }
 
-  -- Per-lookup message constraints, folding into the α accumulator as we
-  -- go and accumulating `acc_expr = acc_col + Σⱼ multⱼ·invⱼ` (as a
-  -- coordinate pair) for the accumulator constraints. `j` is the lookup
-  -- slot (inverse columns at stage-2 slots 1+j).
-  -- One chained-accumulator step per lookup (Rust
-  -- `lookup::logup_constraint_values`): stage-2 slot `j` holds `acc_j`, the
-  -- running sum entering lookup `j`'s step. Interior steps assert
-  -- `m_j·(acc_{j+1} − acc_j) − mult_j = 0`; the wrap step (j = L−1) targets
-  -- the NEXT row's slot 0 plus the boundary injection
-  -- `is_last_row·(acc_final − acc_initial)` (`inj`), which converts the
-  -- cyclic telescoped sum into the public accumulator difference.
-  -- `is_last_row` is normalized (`trace_selectors`), so no row-position
-  -- constraints exist besides the injection.
+  -- Per-GROUP chained-accumulator constraints, folding into the α
+  -- accumulator as we go (Rust `lookup::logup_constraint_values`): stage-2
+  -- slot `g` holds `acc_g`, the running sum entering group `g`'s step. A
+  -- group of `k` consecutive lookups (the last group may be smaller)
+  -- asserts `(Π_j m_j)·(acc_{g+1} − acc_g) − Σ_j mult_j·Π_{j'≠j} m_{j'}`;
+  -- the wrap step (last group) targets the NEXT row's slot 0 plus the
+  -- boundary injection `is_last_row·(acc_final − acc_initial)` (`inj`),
+  -- which converts the cyclic telescoped sum into the public accumulator
+  -- difference. Group state is built in one pass with the recurrence
+  -- `R ← R·m + mult·P; P ← P·m` (P the message product, R the mult sum);
+  -- `rem` counts the group's remaining capacity, `j` the lookup index.
+  -- Ungrouped (k = 1) closes every step: P = m, R = (mult, 0), exactly the
+  -- per-lookup chained constraint.
   fn logup_steps_fold(acc: Ext, alpha: Ext, lks: List‹SysLookup›, j: G, lcount: G,
+      g: G, rem: G, k: G, p0: Ext, p1: Ext, r0: Ext, r1: Ext,
       inj0: Ext, inj1: Ext, b0: Ext, b1: Ext, g0: Ext, g1: Ext,
       nodes: List‹SysNode›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
@@ -678,23 +678,49 @@ def verifier := ⟦
       ListNode.Nil => acc,
       ListNode.Cons(lk, rest) =>
         let SysLookup.Mk(mid, args) = lk;
-        let s0 = list_lookup(s2, j + j);
-        let s1 = list_lookup(s2, j + j + 1);
-        let (t0, t1) = match (j + 1 - lcount) {
-          0 => (eg_add(list_lookup(s2next, 0), inj0),
-                eg_add(list_lookup(s2next, 1), inj1)),
-          _ => (list_lookup(s2, j + j + 2), list_lookup(s2, j + j + 3)),
-        };
         let (f0, f1) = logup_fingerprint(args, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-        let (c0, c1) = pair_mul(eg_add(f0, b0), eg_add(f1, b1),
-                                eg_sub(t0, s0), eg_sub(t1, s1));
+        let m0 = eg_add(f0, b0);
+        let m1 = eg_add(f1, b1);
         let mv = eval_at(nodes, mid, main, main_next, prep, prep_next, s2, s2next,
                          publics, isf, isl, ist);
-        let acc1 = ood_fold(ood_fold(acc, alpha, eg_sub(c0, mv)), alpha, c1);
-        logup_steps_fold(acc1, alpha, rest, j + 1, lcount, inj0, inj1,
-          b0, b1, g0, g1, nodes,
-          main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+        -- R ← R·m + mult·P, then P ← P·m.
+        let (rm0, rm1) = pair_mul(r0, r1, m0, m1);
+        let nr0 = eg_add(rm0, eg_mul(mv, p0));
+        let nr1 = eg_add(rm1, eg_mul(mv, p1));
+        let (np0, np1) = pair_mul(p0, p1, m0, m1);
+        match (j + 1 - lcount) {
+          0 =>
+            -- Final lookup: close the (possibly smaller) last group against
+            -- the wrap target.
+            let s0 = list_lookup(s2, g + g);
+            let s1 = list_lookup(s2, g + g + 1);
+            let t0 = eg_add(list_lookup(s2next, 0), inj0);
+            let t1 = eg_add(list_lookup(s2next, 1), inj1);
+            let (c0, c1) = pair_mul(np0, np1, eg_sub(t0, s0), eg_sub(t1, s1));
+            ood_fold(ood_fold(acc, alpha, eg_sub(c0, nr0)), alpha, eg_sub(c1, nr1)),
+          _ => match rem - 1 {
+            0 =>
+              -- Group full: close against the next slot, reset the state.
+              let s0 = list_lookup(s2, g + g);
+              let s1 = list_lookup(s2, g + g + 1);
+              let t0 = list_lookup(s2, g + g + 2);
+              let t1 = list_lookup(s2, g + g + 3);
+              let (c0, c1) = pair_mul(np0, np1, eg_sub(t0, s0), eg_sub(t1, s1));
+              let acc1 = ood_fold(ood_fold(acc, alpha, eg_sub(c0, nr0)), alpha,
+                                  eg_sub(c1, nr1));
+              logup_steps_fold(acc1, alpha, rest, j + 1, lcount,
+                g + 1, k, k, [1, 0], [0, 0], [0, 0], [0, 0],
+                inj0, inj1, b0, b1, g0, g1, nodes,
+                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+            _ =>
+              -- Keep accumulating within the group.
+              logup_steps_fold(acc, alpha, rest, j + 1, lcount,
+                g, rem - 1, k, np0, np1, nr0, nr1,
+                inj0, inj1, b0, b1, g0, g1, nodes,
+                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+          },
+        },
     }
   }
 
@@ -703,6 +729,7 @@ def verifier := ⟦
   -- directly-evaluated chained-logUp step values, all Horner-folded with α
   -- in the canonical protocol order.
   fn ood_composition(nodes: List‹SysNode›, zeros: List‹G›, lks: List‹SysLookup›,
+      k: G,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: G) -> Ext {
@@ -727,7 +754,8 @@ def verifier := ⟦
         ood_fold(acc, alpha,
           eg_add(eg_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
       ListNode.Cons(_h, _t) =>
-        logup_steps_fold(base, alpha, lks, 0, list_length(lks), inj0, inj1,
+        logup_steps_fold(base, alpha, lks, 0, list_length(lks),
+          0, k, k, [1, 0], [0, 0], [0, 0], [0, 0], inj0, inj1,
           b0, b1, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
     }
@@ -807,7 +835,7 @@ def verifier := ⟦
     match load(circuits) {
       ListNode.Nil => 1,
       ListNode.Cons(circ, rest) =>
-        let SysCircuit.Mk(nodes, _node_count, zeros, md, lks) = circ;
+        let SysCircuit.Mk(nodes, _node_count, zeros, md, lks, k) = circ;
         let l = to_field(list_lookup(log_degrees, i));
         let qd = quotient_degree_of(md);
         let naccp = list_lookup(accs, i);
@@ -822,7 +850,7 @@ def verifier := ⟦
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
         let publics = build_publics(lch, fch, accp, naccp);
         let inorm = gl_inverse(pow2(l) * two_adic_gen(l));
-        let comp = ood_composition(nodes, zeros, lks,
+        let comp = ood_composition(nodes, zeros, lks, k,
                                    main, main_next, prep, prep_next, s2row, s2next,
                                    publics, isf, isl, ist, alpha, inorm);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back

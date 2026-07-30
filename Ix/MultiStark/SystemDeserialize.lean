@@ -20,7 +20,9 @@ flat base-field node graph, so this reader parses that compiled form:
   constraint_count, stage_2_width, num_publics, and lookup_prefix_len are
   all recomputed from the counts below):
     - u16 main_width, u16 preprocessed_width, u32 preprocessed_height,
-      u16 max_constraint_degree (combined user + logUp), u16 node_count
+      u16 max_constraint_degree (combined user + logUp),
+      u8 lookup_group_size (k: lookups per chained accumulator step),
+      u16 node_count
     - `node_count` tagged nodes (dense v5: u16 children, never sub-trees):
       0 ConstSmall(u16) · 1 ConstBig(u64) · 2 Public(u8) ·
       3 IsFirstRow · 4 IsLastRow · 5 IsTransition ·
@@ -42,10 +44,10 @@ over the whole arena, bound to the public `system_digest`) is what makes
 the bytes meaningful. Per-node degrees are neither serialized nor needed
 (the node sweep just evaluates the graph).
 
-The Fiat-Shamir shape limbs are unchanged from v2: `observe_shape` still
-feeds the challenger the circuit count then, per circuit, the six words
-constraint_count, max_constraint_degree, preprocessed_height,
-preprocessed_width, main_width, stage_2_width (as 8-byte LE limbs).
+The Fiat-Shamir shape limbs (`observe_shape`): the circuit count then,
+per circuit, the seven words constraint_count, max_constraint_degree,
+preprocessed_height, preprocessed_width, main_width, stage_2_width,
+lookup_group_size (as 8-byte LE limbs).
 -/
 
 public section
@@ -81,7 +83,7 @@ def systemDeserialize := ⟦
   -- A compiled lookup: multiplicity node id + argument node ids (all into
   -- the graph's lookup prefix). Drives the direct logUp evaluation.
   enum SysLookup { Mk(G, List‹G›) }
-  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›) }   -- nodes, node_count, zeros, max_constraint_degree, lookups
+  enum SysCircuit { Mk(List‹SysNode›, G, List‹G›, G, List‹SysLookup›, G) }   -- nodes, node_count, zeros, max_constraint_degree, lookups, lookup_group_size
 
   -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
   -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
@@ -255,52 +257,68 @@ def systemDeserialize := ⟦
     }
   }
 
+  -- ⌈n/k⌉ by walking the lookups with a within-group countdown (`rem`,
+  -- 0 = a new group starts on the next lookup). No in-circuit division.
+  fn lookup_groups_count(n: G, rem: G, k: G) -> G {
+    match n {
+      0 => 0,
+      _ => match rem {
+        0 => 1 + lookup_groups_count(n - 1, k - 1, k),
+        _ => lookup_groups_count(n - 1, rem - 1, k),
+      },
+    }
+  }
+
   -- One circuit record: a u32 length prefix then the contiguous record. The
   -- 8-word header, the node stream, the zeros, and the compiled lookups
   -- (which drive the direct logUp evaluation) are all parsed. Besides the
-  -- parsed circuit, returns its 6 shape words as u64 limbs, in
-  -- `observe_shape` order: constraint_count (user roots + (L+3)·D, read
+  -- parsed circuit, returns its 7 shape words as u64 limbs, in
+  -- `observe_shape` order: constraint_count (user roots + ⌈L/k⌉·D, read
   -- from the header), max_constraint_degree (combined),
-  -- preprocessed_height, preprocessed_width, main_width, stage_2_width.
-  fn read_sys_circuit(base: G) -> (SysCircuit, [U64; 6], G) {
+  -- preprocessed_height, preprocessed_width, main_width, stage_2_width,
+  -- lookup_group_size.
+  fn read_sys_circuit(base: G) -> (SysCircuit, [U64; 7], G) {
     let (mw, mwl, c1) = #read_vk_u16_limb(base);
     let (pw, pwl, c2) = #read_vk_u16_limb(c1);
     let (ph, phl, c3) = #read_vk_u32_limb(c2);
     let (md, mdl, c4) = #read_vk_u16_limb(c3);
-    let (ncount, c5) = #read_vk_u16(c4);
+    let (k, c4b) = #read_vk_tag(c4);
+    let (ncount, c5) = #read_vk_u16(c4b);
     let (nodes, c6) = read_nodes_n(c5, ncount);
     let (zcount, c7) = #read_vk_u16(c6);
     let (zeros, c8) = read_node_ids_n(c7, zcount);
     let (lcount, c9) = #read_vk_u16(c8);
     let (lks, c10) = read_sys_lookups_n(c9, lcount);
     -- Derived shape values (not serialized): constraint_count = user roots
-    -- + (L+3)·D and stage_2_width = (1+L)·D, their observation limbs built
-    -- by byte decomposition (both values are far below 2^32, so the
-    -- canonical decomposition IS the little-endian u64 limb).
-    -- Chained logUp: max(L, 1) accumulator slots, one constraint per slot.
-    let lslots = match lcount {
+    -- + ⌈L/k⌉·D and stage_2_width = max(⌈L/k⌉, 1)·D, their observation
+    -- limbs built by byte decomposition (both values are far below 2^32, so
+    -- the canonical decomposition IS the little-endian u64 limb).
+    -- Grouped chained logUp: one accumulator slot and one constraint per
+    -- lookup GROUP (`k` consecutive lookups; the last group may be smaller).
+    let gslots = match lcount {
       0 => 1,
-      _ => lcount,
+      _ => lookup_groups_count(lcount, 0, k),
     };
-    let ccl = gl_to_bytes(zcount + lslots + lslots);
-    let s2wl = gl_to_bytes(lslots + lslots);
-    (SysCircuit.Mk(nodes, ncount, zeros, md, lks),
-     [ccl, mdl, phl, pwl, mwl, s2wl], c10)
+    let ccl = gl_to_bytes(zcount + gslots + gslots);
+    let s2wl = gl_to_bytes(gslots + gslots);
+    let kl = gl_to_bytes(k);
+    (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k),
+     [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }
-  fn cons_shape6(l: [U64; 6], tail: List‹U64›) -> List‹U64› {
+  fn cons_shape7(l: [U64; 7], tail: List‹U64›) -> List‹U64› {
     store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],
     store(ListNode.Cons(l[3], store(ListNode.Cons(l[4], store(ListNode.Cons(l[5],
-    tail))))))))))))
+    store(ListNode.Cons(l[6], tail))))))))))))))
   }
   -- Returns the circuits plus their shape limbs (`observe_shape` order: each
-  -- circuit's 6 metadata words; the count limb is consed by `read_system`).
+  -- circuit's 7 metadata words; the count limb is consed by `read_system`).
   fn read_sys_circuits_n(i: G, n: G) -> (List‹SysCircuit›, List‹U64›, G) {
     match n {
       0 => (store(ListNode.Nil), store(ListNode.Nil), i),
       _ =>
         let (x, xl, j) = read_sys_circuit(i);
         let (rest, lrest, j2) = read_sys_circuits_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), cons_shape6(xl, lrest), j2),
+        (store(ListNode.Cons(x, rest)), cons_shape7(xl, lrest), j2),
     }
   }
 

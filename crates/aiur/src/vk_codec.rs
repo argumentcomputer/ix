@@ -30,10 +30,9 @@
 //!   u16          circuit count
 //! PER-CIRCUIT RECORDS (circuit count times; each is `u32 LE len` + `len` bytes
 //!                      so a record is a contiguous byte range)
-//!   8 x u32 LE   main_width, preprocessed_width, preprocessed_height,
-//!                constraint_count (user roots + (L+3)*D), stage_2_width,
-//!                max_constraint_degree (combined user + logUp),
-//!                lookup_prefix_len, node_count
+//!   u16 main_width, u16 preprocessed_width, u32 preprocessed_height,
+//!   u16 max_constraint_degree (combined user + logUp),
+//!   u8 lookup_group_size (k: lookups per chained accumulator step)
 //!   node_count nodes, each a u8 tag then payload:
 //!     0  ConstSmall: u16 LE canonical value
 //!     1  ConstBig:   u64 LE canonical value
@@ -157,7 +156,8 @@ fn push_node(buf: &mut Vec<u8>, node: &Node<Val>) {
 }
 
 /// One circuit record. Nothing derivable is serialized: `constraint_count`
-/// (= zeros + (L+3)·D), `stage_2_width` (= (1+L)·D), `num_publics` (= 4·D),
+/// (= zeros + ⌈L/k⌉·D), `stage_2_width` (= max(⌈L/k⌉, 1)·D), `num_publics`
+/// (= 4·D),
 /// and `lookup_prefix_len` (= 1 + max node id reachable from the lookups)
 /// are all recomputed on decode, and the Lean reader derives the observed
 /// shape limbs the same way.
@@ -170,6 +170,10 @@ fn encode_circuit(buf: &mut Vec<u8>, circuit: &Circuit<Val>) {
   // Combined max degree (user graph + analytic logUp), as observed. Not
   // derivable cheaply in-circuit (it would need a full degree pass).
   push_u16(buf, circuit.max_constraint_degree);
+  // The lookup group size is a free per-circuit choice (it changes the
+  // constraint structure, not just counts), so it must be serialized.
+  buf
+    .push(u8::try_from(circuit.lookup_group_size).expect("group size fits u8"));
   push_u16(buf, compiled.nodes.len());
   for node in &compiled.nodes {
     push_node(buf, node);
@@ -339,6 +343,10 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
   let preprocessed_width = seg.u16()? as usize;
   let preprocessed_height = seg.u32_usize()?;
   let max_constraint_degree = seg.u16()? as usize;
+  let lookup_group_size = seg.u8()? as usize;
+  if !(1..=multi_stark::lookup::MAX_LOOKUP_GROUP).contains(&lookup_group_size) {
+    return Err(format!("bad lookup group size {lookup_group_size}"));
+  }
   let node_count = seg.u16()? as usize;
   let mut nodes = Vec::with_capacity(node_count);
   for _ in 0..node_count {
@@ -398,17 +406,33 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
     preprocessed_width,
     preprocessed_height,
     num_lookups,
-    stage_2_width: multi_stark::lookup::stage2_width(num_lookups, ext_degree),
+    stage_2_width: multi_stark::lookup::stage2_width(
+      num_lookups,
+      lookup_group_size,
+      ext_degree,
+    ),
     num_publics: multi_stark::lookup::num_publics(ext_degree),
-    constraint_count: zeros_plus_logup(zero_count, num_lookups, ext_degree),
+    lookup_group_size,
+    constraint_count: zeros_plus_logup(
+      zero_count,
+      num_lookups,
+      lookup_group_size,
+      ext_degree,
+    ),
     max_constraint_degree,
   })
 }
 
 /// The folded constraint count: user roots + the directly-evaluated logUp
 /// values (mirrors `multi_stark::lookup::logup_constraint_count`).
-fn zeros_plus_logup(zero_count: usize, num_lookups: usize, d: usize) -> usize {
-  zero_count + multi_stark::lookup::logup_constraint_count(num_lookups, d)
+fn zeros_plus_logup(
+  zero_count: usize,
+  num_lookups: usize,
+  group_size: usize,
+  d: usize,
+) -> usize {
+  zero_count
+    + multi_stark::lookup::logup_constraint_count(num_lookups, group_size, d)
 }
 
 /// Deserialize a `System<AiurConfig>` from [`to_bytes`] output, requiring that
@@ -495,6 +519,7 @@ mod tests {
         constraints: vec![],
         ext_constraints: vec![],
         lookups: Bytes1.lookups(),
+        lookup_group_size: 1,
       },
       CircuitInputs {
         main_width: Bytes2.main_width(),
@@ -502,6 +527,9 @@ mod tests {
         constraints: vec![],
         ext_constraints: vec![],
         lookups: Bytes2.lookups(),
+        // Grouped-circuit coverage: the codec must carry the group size
+        // through (it changes the derived stage-2 width and count).
+        lookup_group_size: 2,
       },
     ];
     let (system, _key) = System::new(AiurConfig::new(cp, fp), inputs);
@@ -527,6 +555,7 @@ mod tests {
         assert_eq!(la.args, lb.args);
       }
       assert_eq!(a.main_width, b.main_width);
+      assert_eq!(a.lookup_group_size, b.lookup_group_size);
       assert_eq!(a.stage_2_width, b.stage_2_width);
       assert_eq!(a.num_publics, b.num_publics);
       assert_eq!(a.preprocessed_width, b.preprocessed_width);
