@@ -55,23 +55,54 @@ def whnf := ⟦
   }
 
   -- ============================================================================
-  -- Beta
+  -- Beta: entry into the environment machine
   --
-  -- One argument per step, NOT a simultaneous multi-arg substitution: a
-  -- measured choice. A simultaneous `instantiate_rev`-style peel was
-  -- tried (2026-06-10) and REGRESSED FFT ~3%: recursor betas share a
-  -- constant argument prefix across iterations (motive/base/step), so
-  -- the sequential chain's per-arg memo keys hit across every iteration,
-  -- while a combined args-list key is unique per iteration and re-walks
-  -- the whole body each time. Curried beats tupled under Aiur's
-  -- content-memoization.
+  -- Reductions stay on the zero-overhead plain-spine path until a beta
+  -- actually fires; the first beta enters `mwhnf_spine`, where subsequent
+  -- betas/zetas are O(1) environment pushes and substitution materializes
+  -- only at exit points (`clo_subst` readback). Pure Const-head workloads
+  -- (literal recursor loops) never pay the closure-wrap + readback
+  -- overhead — a machine-everywhere variant measured +26% on them.
+  -- ============================================================================
+
+  -- Wrap a plain spine's args as closed closures (ambient args have no
+  -- machine environment).
+  fn spine_wrap(spine: List‹KExpr›) -> List‹&Clo› {
+    match load(spine) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(a, rest) =>
+        store(ListNode.Cons(
+          store(Clo.Mk(a, store(ListNode.Nil), 0)),
+          spine_wrap(rest))),
+    }
+  }
+
+  fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
+                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    match load(spine) {
+      ListNode.Nil => lam,
+      ListNode.Cons(a, rest) =>
+        match load(lam) {
+          KExprNode.Lam(_, body) =>
+            mwhnf_spine(body,
+              store(ListNode.Cons(store(Clo.Mk(a, store(ListNode.Nil), 0)),
+                                  store(ListNode.Nil))),
+              1, spine_wrap(rest), types, top, addrs),
+        },
+    }
+  }
+
+  -- ============================================================================
+  -- WHNF main loop with `prims` for nat-primitive dispatch.
   -- ============================================================================
 
   -- Peel a beta telescope: consume one spine arg per leading `Lam` of `lam`,
   -- accumulating the consumed args innermost-first in `acc` (prepend), until
   -- the head is no longer a `Lam` or the spine is empty. Returns the deepest
   -- body, the consumed args (innermost-first, ready for `expr_inst_many`), and
-  -- the unconsumed spine tail.
+  -- the unconsumed spine tail. Used by the no-delta path's eager beta
+  -- (`whnf_nd_apply_beta`) — the machine only runs delta-full whnf, because
+  -- its exits dispatch through the delta-unfolding `whnf_const_head`.
   fn peel_beta(lam: KExpr, spine: List‹KExpr›, acc: List‹KExpr›)
               -> (KExpr, List‹KExpr›, List‹KExpr›) {
     match load(lam) {
@@ -82,30 +113,6 @@ def whnf := ⟦
           ListNode.Nil => (lam, acc, spine),
         },
       _ => (lam, acc, spine),
-    }
-  }
-
-  -- ============================================================================
-  -- WHNF main loop with `prims` for nat-primitive dispatch.
-  -- ============================================================================
-
-  -- Multi-arg beta (mirror src/ix/kernel/whnf.rs:541-567): peel the whole
-  -- telescope and substitute all consumed args in ONE `expr_inst_many` walk,
-  -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
-  -- stay on the cheap `expr_inst1` path (no list overhead).
-  fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    match peel_beta(lam, spine, store(ListNode.Nil)) {
-      (deep, consumed, rest) =>
-        match list_length(consumed) {
-          0 => apply_spine(lam, spine),
-          1 =>
-            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
-            whnf_with_spine(body2, rest, types, top, addrs),
-          _ =>
-            let body2 = expr_inst_many(deep, consumed, 0);
-            whnf_with_spine(body2, rest, types, top, addrs),
-        },
     }
   }
 
@@ -176,6 +183,83 @@ def whnf := ⟦
                 apply_spine(stuck, spine),
             },
         },
+    }
+  }
+
+  -- ============================================================================
+  -- WHNF environment machine
+  --
+  -- The spine walker carries closures instead of eagerly substituting:
+  -- beta and zeta are O(1) environment pushes, and App-spine collection
+  -- is O(1) per layer (no collect_spine / list_snoc churn). Plain-KExpr
+  -- substitution happens only at exit points: a Const/Proj head hands a
+  -- READBACK spine to the existing dispatch machinery (which carries the
+  -- wanted-stub reporting and primitive families unchanged), and value
+  -- results read back via `clo_subst`. Work is proportional to what the
+  -- reduction consumes — a beta chain that ends in another beta never
+  -- materializes its intermediate bodies.
+  --
+  -- whnf never reduces under binders, so environments never lift
+  -- (see the `Clo` declaration in KernelTypes).
+  -- ============================================================================
+  fn spine_readback(spine: List‹&Clo›) -> List‹KExpr› {
+    match load(spine) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(c, rest) =>
+        store(ListNode.Cons(clo_readback(c), spine_readback(rest))),
+    }
+  }
+
+  fn mwhnf_spine(head: KExpr, env: List‹&Clo›, n: G, spine: List‹&Clo›,
+                 types: List‹KExpr›, top: List‹&KConstantInfo›,
+                 addrs: List‹Addr›) -> KExpr {
+    match load(head) {
+      KExprNode.App(f, a) =>
+        mwhnf_spine(f, env, n,
+          store(ListNode.Cons(store(Clo.Mk(a, env, n)), spine)),
+          types, top, addrs),
+      KExprNode.Lam(ty, body) =>
+        match load(spine) {
+          ListNode.Nil =>
+            -- value: read the binder back under the environment
+            store(KExprNode.Lam(
+              clo_subst(ty, env, n, 0),
+              clo_subst(body, env, n, 1))),
+          ListNode.Cons(c, rest) =>
+            -- beta: O(1) environment push
+            mwhnf_spine(body, store(ListNode.Cons(c, env)), n + 1, rest,
+                        types, top, addrs),
+        },
+      KExprNode.Let(_, val, body) =>
+        -- zeta: O(1) environment push
+        mwhnf_spine(body,
+          store(ListNode.Cons(store(Clo.Mk(val, env, n)), env)), n + 1,
+          spine, types, top, addrs),
+      KExprNode.BVar(i) =>
+        match u32_less_than(i, n) {
+          1 =>
+            -- jump into the bound closure, spine intact
+            match load(clo_env_lookup(env, i)) {
+              Clo.Mk(e2, env2, n2) =>
+                mwhnf_spine(e2, env2, n2, spine, types, top, addrs),
+            },
+          0 =>
+            -- ambient variable: stuck
+            apply_spine(store(KExprNode.BVar(i - n)), spine_readback(spine)),
+        },
+      KExprNode.Const(idx, lvls) =>
+        -- exit to the existing Const-head dispatch on a readback spine
+        whnf_const_head(idx, lvls, head, spine_readback(spine), types, top, addrs),
+      KExprNode.Proj(tidx, fidx, inner) =>
+        whnf_proj_head(tidx, fidx, clo_subst(inner, env, n, 0),
+                       spine_readback(spine), types, top, addrs),
+      KExprNode.Forall(ty, body) =>
+        let v = store(KExprNode.Forall(
+          clo_subst(ty, env, n, 0),
+          clo_subst(body, env, n, 1)));
+        apply_spine(v, spine_readback(spine)),
+      KExprNode.Srt(_) => apply_spine(head, spine_readback(spine)),
+      KExprNode.Lit(_) => apply_spine(head, spine_readback(spine)),
     }
   }
 

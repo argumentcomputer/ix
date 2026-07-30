@@ -52,6 +52,21 @@ def kernelTypes := ⟦
 
   type KExpr = &KExprNode
 
+  -- A closure: an expression paired with the environment of bindings its
+  -- loose BVars refer to, and that environment's length. `Clo.Mk(e, env, n)`
+  -- denotes e[BVar(i) := env[i]] for i < n, with BVar(i) for i >= n
+  -- shifting down by n to the ambient context. Environments are built ONLY
+  -- by the whnf machine's beta/zeta steps, which consume binders — whnf
+  -- never reduces under a binder, so environments never need lifting.
+  -- Substitution materializes lazily at machine exit points (clo_subst):
+  -- subterms the reduction never consumes (unselected recursor rules,
+  -- dropped Decidable branches, unused arguments) are never substituted.
+  -- The length rides in the node so readback never re-counts the env
+  -- (an env_len walk is one query row per element per distinct env).
+  enum Clo {
+    Mk(KExpr, List‹&Clo›, G)
+  }
+
   -- Collect an application spine: peel `App(f, a)` layers, returning the head
   -- and the args in application order. The single shared definition for every
   -- kernel caller (whnf, primitive, inductive_check, def_eq) — defined here in
