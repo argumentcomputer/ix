@@ -139,17 +139,18 @@ def proveAddrWithEnv (system : @& AiurSystem)
 @[extern "rs_aiur_system_shard_prove_with_env"]
 private opaque shardProveWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → @& ByteArray →
-  @& ByteArray → Except String ProveEnvResult
+  @& ByteArray → @& String → Except String ProveEnvResult
 
 /-- Per-shard prove against a Rust-owned `EnvHandle`. `stubbedBlob` names the
     blocks ingressed as type-only axioms; only the partition knows which those
     are, so it travels from the `.ixes` manifest. -/
 def shardProveWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
-  (ownedBlob foreignBlob stubbedBlob : ByteArray) :
+  (ownedBlob foreignBlob stubbedBlob : ByteArray)
+  (ghostCachePath : String := "") :
     Except String (ByteArray × Proof × IOBuffer) :=
   (shardProveWithEnv' system funIdx envHandle ownedBlob foreignBlob
-    stubbedBlob).map
+    stubbedBlob ghostCachePath).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_verify"]

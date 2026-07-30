@@ -26,6 +26,7 @@ import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
 import Tests.Ix.Kernel.BlobRefAudit
+import Tests.Ix.Kernel.ShardPipeline
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
@@ -151,6 +152,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env aiurEnv.compiled
       let blobRefSeq ←
         Tests.Ix.Kernel.BlobRefAudit.blobRefAuditTests env aiurEnv.compiled
+      let shardPipeSeq ←
+        Tests.Ix.Kernel.ShardPipeline.shardPipelineTests env aiurEnv.compiled
       let fullSeq := [kernelUnitTests, serdeNatAddCommTest].foldl (init := .done)
         fun s tc => s ++ fullEnv.runTestCase tc
       let aiurSeq := (kernelChecks ++ claimSmokes).foldl (init := .done) fun s tc =>
@@ -158,7 +161,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       let paritySeq := parityCases.foldl (init := .done) fun s tc =>
         s ++ runParityCase aiurEnv.compiled tc
       LSpec.lspecIO
-        (.ofList [("ixvm", [fullSeq, aiurSeq, arenaSeq, blobRefSeq, paritySeq])]) []),
+        (.ofList [("ixvm", [fullSeq, aiurSeq, arenaSeq, blobRefSeq, shardPipeSeq, paritySeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with

@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef,
+  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::{
@@ -606,6 +606,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   foreign_blob: LeanByteArray<LeanBorrowed<'_>>,
   stubbed_blob: LeanByteArray<LeanBorrowed<'_>>,
+  ghost_cache_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let owned = match decode_owned_blob(&owned_blob) {
@@ -621,13 +622,20 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     Err(e) => return LeanExcept::error_string(&e),
   };
   let env = &env_handle.get().env;
+  let cache_path = ghost_cache_path.to_string();
 
   // Phase 1 — CLASSIFY. Execute the shard once with every stub carrying
   // its type bytes (this converges — the type tier absorbs the whole
   // type-read surface). The kernel logs every stub whose type it
   // actually consults on IO channel 96 (`const_num_lvls_logged`).
+  //
+  // Classification is deterministic in the witness, and the claim digest
+  // pins the witness rules, so it caches: `ghost_cache_path` (empty =
+  // no cache) holds `digest,addr` rows and a `digest,-` marker for
+  // classified-empty; a hit skips this whole pass. Stale rows (digest
+  // changed) are simply never matched.
   let empty = FxHashSet::default();
-  let (_claim1, input1, mut io1) =
+  let (claim1, input1, mut io1) =
     match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
       env, &owned, &foreign, &stubbed, &empty,
     ) {
@@ -636,18 +644,36 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
         return LeanExcept::error_string(&format!("witness build: {e}"));
       },
     };
-  if let Err(e) = ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-    aiur_system_obj.get().toplevel(),
-    fun_idx,
-    input1.clone(),
-    &mut io1,
-  ) {
-    return LeanExcept::error_string(&format!(
-      "classification execute: {}",
-      append_wanted_stubs(&e.to_string(), &io1)
-    ));
-  }
-  let consulted = harvest_addresses(&io1, 96);
+  let digest_hex = {
+    let mut b: Vec<u8> = Vec::new();
+    claim1.put(&mut b);
+    ix_common::address::Address::hash(&b).hex()
+  };
+  let consulted = match read_ghost_cache(&cache_path, &digest_hex) {
+    Some(cached) => {
+      eprintln!(
+        "[prove] stub classification cached ({} consulted)",
+        cached.len()
+      );
+      cached
+    },
+    None => {
+      if let Err(e) = ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+        aiur_system_obj.get().toplevel(),
+        fun_idx,
+        input1.clone(),
+        &mut io1,
+      ) {
+        return LeanExcept::error_string(&format!(
+          "classification execute: {}",
+          append_wanted_stubs(&e.to_string(), &io1)
+        ));
+      }
+      let consulted = harvest_addresses(&io1, 96);
+      append_ghost_cache(&cache_path, &digest_hex, &consulted);
+      consulted
+    },
+  };
 
   // Phase 2 — GHOST + PROVE. Stubs the classification never consulted
   // ship position-only (no bytes, no blake3 rows); the claim digest is
@@ -683,6 +709,62 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   );
 
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
+}
+
+/// Read a shard's cached stub classification: the `addr` of every
+/// `digest,addr` row matching `digest`, or an empty set when the
+/// `digest,-` classified-empty marker is present. `None` = no cache
+/// entry (or caching disabled via an empty path) — classify by running.
+fn read_ghost_cache(
+  path: &str,
+  digest: &str,
+) -> Option<FxHashSet<ix_common::address::Address>> {
+  if path.is_empty() {
+    return None;
+  }
+  let contents = std::fs::read_to_string(path).ok()?;
+  let mut found = false;
+  let mut out = FxHashSet::default();
+  for line in contents.lines() {
+    let Some((d, a)) = line.split_once(',') else { continue };
+    if d != digest {
+      continue;
+    }
+    found = true;
+    if a != "-"
+      && let Some(addr) = ix_common::address::Address::from_hex(a)
+    {
+      out.insert(addr);
+    }
+  }
+  found.then_some(out)
+}
+
+/// Append a shard's classification to the cache (no-op when caching is
+/// disabled). A shard with no consulted stubs writes the `digest,-`
+/// marker so the empty result is still a cache hit.
+fn append_ghost_cache(
+  path: &str,
+  digest: &str,
+  consulted: &FxHashSet<ix_common::address::Address>,
+) {
+  if path.is_empty() {
+    return;
+  }
+  let mut rows = String::new();
+  if consulted.is_empty() {
+    rows.push_str(&format!("{digest},-\n"));
+  } else {
+    for a in consulted {
+      rows.push_str(&format!("{digest},{}\n", a.hex()));
+    }
+  }
+  use std::io::Write;
+  if let Ok(mut f) =
+    std::fs::OpenOptions::new().create(true).append(true).open(path)
+  {
+    let _ = f.write_all(rows.as_bytes());
+  }
 }
 
 /// Collect the 32-byte addresses accumulated on an IO want/consult

@@ -130,7 +130,8 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     (← IO.getStdout).flush
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
     match aiurSystem.shardProveWithEnv funIdx envHandle
-      (blobOf blocks) (blobOf foreign) (blobOf stubbed) with
+      (blobOf blocks) (blobOf foreign) (blobOf stubbed)
+      (manifestPath ++ ".ghosts.csv") with
     | .error e =>
       IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
       return 1
@@ -252,7 +253,8 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     IO.println s!"Proving shard {k}"
     (← IO.getStdout).flush
     match aiurSystem.shardProveWithEnv funIdx envHandle
-      (blobOf blocks) (blobOf foreign) (blobOf stubbed) with
+      (blobOf blocks) (blobOf foreign) (blobOf stubbed)
+      (manifestPath ++ ".ghosts.csv") with
     | .error e => return .error s!"shardProveWithEnv: {e}"
     | .ok (claimBytes, proof, _outIO) =>
       match Ixon.runGet Ix.Claim.get claimBytes with
