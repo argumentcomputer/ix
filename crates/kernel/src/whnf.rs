@@ -710,7 +710,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// The WHNF environment machine (Krivine-style, structural fragment).
-  /// See `docs/env_machine_whnf.md`; mirrors the IxVM `mwhnf_spine`.
   ///
   /// Entered from the App arm of [`Self::whnf_core_with_flags_uncached`]
   /// when a beta is about to fire: `head` is the already-whnf_core'd

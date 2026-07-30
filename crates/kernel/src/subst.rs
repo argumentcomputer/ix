@@ -492,8 +492,8 @@ fn lift_cached<M: KernelMode>(
 }
 
 // ============================================================================
-// Closures for the WHNF environment machine (see `whnf.rs` machine loop and
-// `docs/env_machine_whnf.md`). Beta/zeta there are O(1) pushes onto an
+// Closures for the WHNF environment machine (see the `whnf.rs` machine
+// loop). Beta/zeta there are O(1) pushes onto an
 // `MEnv`; substitution happens only here, at machine exit points
 // ("readback"), and only for the parts of the term the reduction actually
 // hands to a plain-expression consumer.
