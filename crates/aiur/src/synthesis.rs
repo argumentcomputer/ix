@@ -120,20 +120,23 @@ impl AiurSystem {
       let (memory, constraints, lookups) = Memory::build(size);
       push_circuit(memory.width, None, constraints, lookups, 1);
     }
-    // Gadgets.
+    // Gadgets. The byte chips' lookup arguments are preprocessed columns
+    // and their multiplicities main columns (all degree 1), so their
+    // lookups also group 2 per chained step at degree 3 — halving the
+    // stage-2 accumulators (Bytes2: 10 → 5 at height 65536).
     push_circuit(
       Bytes1.main_width(),
       Bytes1.preprocessed(),
       vec![],
       Bytes1.lookups(),
-      1,
+      2,
     );
     push_circuit(
       Bytes2.main_width(),
       Bytes2.preprocessed(),
       vec![],
       Bytes2.lookups(),
-      1,
+      2,
     );
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
