@@ -62,6 +62,33 @@ structure NatRecLiteralParts (m : Mode) where
 
 /-! ### Pure helpers -/
 
+/-- Decode exactly the recursor fields consumed by ordinary iota.  Keeping
+this pure snapshot separate from `tryIotaWithFlags` gives verification an
+exact relation between the loaded `KConst` and the rule array later indexed
+by constructor position. -/
+def KConst.iotaInfo? : KConst m → Option (IotaInfo m)
+  | .recr (k := k) (lvls := lvls) (params := params)
+      (indices := indices) (motives := motives) (minors := minors)
+      (rules := rules) .. =>
+    let majorIdx := (params + motives + minors + indices).toNat
+    some {
+      k
+      params := params.toNat
+      motives := motives.toNat
+      minors := minors.toNat
+      indices := indices.toNat
+      majorIdx
+      rules
+      lvls }
+  | _ => none
+
+/-- Decode the constructor index and field count used by ordinary iota.
+All other loaded constant kinds are constructor misses. -/
+def KConst.iotaCtorInfo? : KConst m → Option (Nat × Nat)
+  | .ctor (cidx := cidx) (fields := fields) .. =>
+    some (cidx.toNat, fields.toNat)
+  | _ => none
+
 /-- Nat value from a literal or the `Nat.zero` constructor (C++
     `is_nat_lit_ext` / lean4lean `rawNatLitExt?`). -/
 def extractNatLit (e : KExpr m) (prims : Primitives m) : Option Nat :=
@@ -192,6 +219,21 @@ def isNatBinPredAddr (addr : Address) : RecM m Bool := do
   let p ← prims
   return addr == p.natBeq.addr || addr == p.natBle.addr
 
+/-- Intern the character-list fold used by String-literal expansion.  The
+input is already reversed, so each step prepends the current character and
+the final list retains source order.  Keeping this recursion explicit gives
+verification a structural induction point without changing production's
+left-to-right intern sequence. -/
+def strLitListToConstructor (charOfNat cons : KExpr m) :
+    List Char → KExpr m → RecM m (KExpr m)
+  | [], list => pure list
+  | c :: chars, list => do
+    let natLit ← TcM.intern (natExprFromValue c.toNat : KExpr m)
+    let charVal ← TcM.intern (KExpr.mkApp charOfNat natLit)
+    let partialApp ← TcM.intern (KExpr.mkApp cons charVal)
+    let list ← TcM.intern (KExpr.mkApp partialApp list)
+    strLitListToConstructor charOfNat cons chars list
+
 /-- `"abc" → String.ofList (List.cons (Char.ofNat 97) … List.nil)` — the
     kernel's string-literal constructor expansion (def_eq.rs
     `str_lit_to_constructor`; `Char.ofNat` + `String.ofList`, matching
@@ -205,12 +247,7 @@ def strLitToConstructor (s : String) : RecM m (KExpr m) := do
   let nil ← TcM.intern (KExpr.mkApp listNilZ charConst)
   let listConsZ ← TcM.intern (.mkConst p.listCons #[.mkZero])
   let cons ← TcM.intern (KExpr.mkApp listConsZ charConst)
-  let mut list := nil
-  for c in s.toList.reverse do
-    let natLit ← TcM.intern (natExprFromValue c.toNat : KExpr m)
-    let charVal ← TcM.intern (KExpr.mkApp charOfNat natLit)
-    let partialApp ← TcM.intern (KExpr.mkApp cons charVal)
-    list ← TcM.intern (KExpr.mkApp partialApp list)
+  let list ← strLitListToConstructor charOfNat cons s.toList.reverse nil
   TcM.intern (KExpr.mkApp stringMk list)
 
 /-- `Int.ofNat n` / `Int.negSucc (|v|-1)` canonical literal. -/
@@ -396,6 +433,65 @@ def applyIotaArg (result : KExpr m) (arg : KExpr m)
     return KExpr.mkApp result arg
   else
     TcM.intern (KExpr.mkApp result arg)
+
+/-- Apply an iota rule's arguments from left to right.  Keeping this loop in
+    one helper makes the three argument segments in `tryIotaWithFlags`
+    observationally identical while preserving the transient Nat-literal
+    policy. -/
+def applyIotaArgs (result : KExpr m) (args : Array (KExpr m))
+    (transient : Bool) : RecM m (KExpr m) := do
+  let mut result := result
+  for arg in args do
+    result ← applyIotaArg result arg transient
+  return result
+
+/-- Parameters, motives, and minors passed to an ordinary iota rule.  The
+`min` is production's defensive truncation when a malformed recursor reports
+more prefix arguments than the source spine contains. -/
+def iotaPrefixArgs (recr : IotaInfo m) (spine : Array (KExpr m)) :
+    Array (KExpr m) :=
+  let pmmEnd := recr.params + recr.motives + recr.minors
+  spine.extract 0 (min pmmEnd spine.size)
+
+/-- Constructor fields passed to an ordinary iota rule.  Production has
+already checked `ctorFields ≤ ctorArgs.size` before selecting this slice. -/
+def iotaFieldArgs (ctorArgs : Array (KExpr m)) (ctorFields : Nat) :
+    Array (KExpr m) :=
+  ctorArgs.extract (ctorArgs.size - ctorFields) ctorArgs.size
+
+/-- Arguments after the recursor major are retained as an over-application
+suffix of the reduced rule. -/
+def iotaTrailingArgs (recr : IotaInfo m) (spine : Array (KExpr m)) :
+    Array (KExpr m) :=
+  spine.extract (recr.majorIdx + 1) spine.size
+
+/-- Instantiate one selected iota rule and apply exactly the three argument
+segments used by `tryIotaWithFlags`.  Isolating this successful constructor
+branch gives verification one production term whose indices cannot drift
+from the reducer's slice arithmetic. -/
+def applyIotaRule (rule : RecRule m) (recUs : Array (KUniv m))
+    (recr : IotaInfo m) (spine ctorArgs : Array (KExpr m))
+    (ctorFields : Nat) (transient : Bool) : RecM m (KExpr m) := do
+  let rhs ← TcM.instantiateUnivParams rule.rhs recUs
+  let result ← applyIotaArgs rhs (iotaPrefixArgs recr spine) transient
+  let result ← applyIotaArgs result
+    (iotaFieldArgs ctorArgs ctorFields) transient
+  applyIotaArgs result (iotaTrailingArgs recr spine) transient
+
+/-- Select and execute the constructor-indexed ordinary iota rule.  The
+three guards are kept in production order: rule existence, universe arity,
+then constructor-field availability. -/
+def tryApplyIotaCtor (recr : IotaInfo m) (recUs : Array (KUniv m))
+    (spine ctorArgs : Array (KExpr m)) (cidx ctorFields : Nat)
+    (transient : Bool) : RecM m (Option (KExpr m)) := do
+  let some rule := recr.rules[cidx]? | return none
+  -- H6: level arity; H5: fields ≤ ctor args (lean4lean Reduce.lean:75-76).
+  if recUs.size.toUInt64 != recr.lvls then
+    return none
+  if ctorFields > ctorArgs.size then
+    return none
+  return some (← applyIotaRule rule recUs recr spine ctorArgs ctorFields
+    transient)
 
 def isNatLiteralRecursorApp (e : KExpr m) : RecM m Bool := do
   let (head, spine) := e.collectSpine
@@ -616,6 +712,18 @@ def consumeBetaLams (body : KExpr m) (args : Array (KExpr m)) :
     RecM m (KExpr m) := do
   (← read).whnfCoreFlags e flags
 
+/-- Inference back-edge under the validation policy used by K synthesis and
+other WHNF probes.  Naming this seam exposes the caught callback as one
+operation while preserving the original method-table read and state scope. -/
+@[inline] def inferOnlyRec (e : KExpr m) : RecM m (KExpr m) := do
+  let methods ← read
+  TcM.withInferOnly (methods.infer e)
+
+/-- Catch a WHNF probe error as absence while retaining its error-side state,
+matching Rust's `&mut` catch-and-continue behavior. -/
+@[inline] def tryOptional (x : RecM m α) : RecM m (Option α) :=
+  try? x
+
 mutual
 
 /-- Full WHNF: loop of whnf-no-delta → native/nat/decidable/string → delta. -/
@@ -794,14 +902,11 @@ def whnfCoreWithFlagsStep (cur : KExpr m) (flags : WhnfFlags) :
       let remainingStart := consumedArgs.size
       if !consumedArgs.isEmpty then
         body ← TcM.runIntern (simulSubst body consumedArgs.reverse 0)
-      for arg in args.extract remainingStart args.size do
-        body ← TcM.intern (KExpr.mkApp body arg)
+      body ← finishAppResult body args remainingStart
       return .next body
     if f != f0 then
       -- Head reduced: rebuild, try iota once, else done.
-      let mut rebuilt := f
-      for arg in args do
-        rebuilt ← TcM.intern (KExpr.mkApp rebuilt arg)
+      let rebuilt ← finishAppResult f args 0
       match (← tryIotaWithFlags rebuilt flags) with
       | some reduced => return .next reduced
       | none => return .done rebuilt
@@ -826,21 +931,16 @@ def whnfNoDeltaForDefEq (e : KExpr m) : RecM m (KExpr m) := do
   finally
     modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth - 1 }
 
-/-- One no-delta WHNF loop iteration, in the precise production reducer
-    order.  Successful syntax-directed helpers remain visible as `.next`;
-    a fully stuck structural result terminates the loop. -/
-def whnfNoDeltaImplStep (flags : WhnfFlags) (natSuccMode : NatSuccMode)
-    (cur : KExpr m) : RecM m (BoundedStep (KExpr m) (KExpr m)) := do
-  let cur ← whnfCoreWithFlags cur flags
+/-- Ordered reducer tail of one no-delta iteration, after structural WHNF has
+    completed.  Naming this seam makes the helper precedence and partial
+    error states independently verifiable without changing the bounded loop. -/
+def whnfNoDeltaReducersStep (flags : WhnfFlags)
+    (natSuccMode : NatSuccMode) (cur : KExpr m) :
+    RecM m (BoundedStep (KExpr m) (KExpr m)) := do
   -- App-of-Prj: whnf_core resolves the outermost Prj only; give the
   -- head one more attempt under the same projection policy.
-  match (← tryProjAppReduce cur flags) with
-  | some (projResult, args) =>
-    let mut result := projResult
-    for arg in args do
-      result ← TcM.intern (KExpr.mkApp result arg)
+  if let some result ← tryProjAppReduceFinished cur flags then
     return .next result
-  | none => pure ()
   if let some reduced ← tryReduceBitvec cur then
     return .next reduced
   if let some reduced ← tryReduceNatWithSuccMode cur natSuccMode then
@@ -858,6 +958,14 @@ def whnfNoDeltaImplStep (flags : WhnfFlags) (natSuccMode : NatSuccMode)
   if let some reduced ← tryQuotReduce cur then
     return .next reduced
   return .done cur
+
+/-- One no-delta WHNF loop iteration, in the precise production reducer
+    order.  Successful syntax-directed helpers remain visible as `.next`;
+    a fully stuck structural result terminates the loop. -/
+def whnfNoDeltaImplStep (flags : WhnfFlags) (natSuccMode : NatSuccMode)
+    (cur : KExpr m) : RecM m (BoundedStep (KExpr m) (KExpr m)) := do
+  let cur ← whnfCoreWithFlags cur flags
+  whnfNoDeltaReducersStep flags natSuccMode cur
 
 /-- No-delta bounded loop without its outer cache policy. -/
 def whnfNoDeltaImplUncached (e : KExpr m) (flags : WhnfFlags)
@@ -896,32 +1004,49 @@ def whnfNoDeltaImpl (e : KExpr m) (flags : WhnfFlags)
   | _ => pure ()
   whnfNoDeltaImplNonLeaf e flags natSuccMode
 
-/-- Iota: recursor applied to a constructor (or K-synthesized / struct-eta
-    fallback). `cheapRec` reduces the major structurally only. -/
-def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
+/-- Dispatch an already normalized, non-String major either to an ordinary
+constructor rule or to struct eta.  Literal conversion and cleanup live in
+`tryIotaAfterMajorWhnf`, so this seam owns only constructor lookup and the
+final fallback. -/
+def tryIotaCtorOrStructEta (recId : KId m) (recr : IotaInfo m)
+    (recUs : Array (KUniv m)) (spine : Array (KExpr m))
+    (majorWhnf : KExpr m) (transient : Bool) :
     RecM m (Option (KExpr m)) := do
-  let (head, spine) := e.collectSpine
-  let .const recId recUs _ := head | return none
-  let recr ← match (← TcM.tryGetConst recId) with
-    | some (.recr (k := k) (lvls := lvls) (params := params)
-        (indices := indices) (motives := motives) (minors := minors)
-        (rules := rules) ..) =>
-      let majorIdx := (params + motives + minors + indices).toNat
-      if spine.size ≤ majorIdx then
-        return none
-      pure { k, params := params.toNat, motives := motives.toNat,
-             minors := minors.toNat, indices := indices.toNat,
-             majorIdx, rules, lvls : IotaInfo m }
-    | _ => return none
-  -- K-like: synthesize a nullary ctor from the major's type before WHNF.
-  let major := spine[recr.majorIdx]!
-  let major ← if recr.k then
-      pure ((← synthCtorWhenK major recId recr).getD major)
-    else pure major
-  let major := (← cleanupNatOffsetMajor major).getD major
-  -- WHNF the major (cheap mode skips delta on the major itself).
-  let majorWhnf0 ← if flags.cheapRec then whnfCoreFlagsRec major flags
-    else whnfRec major
+  let (ctorHead, ctorArgs) := majorWhnf.collectSpine
+  let ctorInfo? ← match ctorHead with
+    | .const cid _ _ =>
+      match (← TcM.tryGetConst cid) with
+      | some ctor => pure ctor.iotaCtorInfo?
+      | _ => pure none
+    | _ => pure none
+  if let some (cidx, ctorFields) := ctorInfo? then
+    return ← tryApplyIotaCtor recr recUs spine ctorArgs cidx ctorFields
+      transient
+  tryStructEtaIota recId recr recUs spine
+
+/-- Dispatch after Nat-offset cleanup.  String literals require constructor
+expansion plus one policy-selected recursive WHNF callback; every other
+shape proceeds directly to constructor/struct-eta selection. -/
+def tryIotaAfterCleanup (flags : WhnfFlags) (recId : KId m)
+    (recr : IotaInfo m) (recUs : Array (KUniv m))
+    (spine : Array (KExpr m)) (majorWhnf : KExpr m)
+    (majorWasNatLit : Bool) : RecM m (Option (KExpr m)) := do
+  let mut majorWhnf := majorWhnf
+  match majorWhnf with
+  | .str val _ _ =>
+    let strCtor ← strLitToConstructor val
+    majorWhnf ← if flags.cheapRec then whnfCoreFlagsRec strCtor flags
+      else whnfRec strCtor
+  | _ => pure ()
+  tryIotaCtorOrStructEta recId recr recUs spine majorWhnf majorWasNatLit
+
+/-- Finish iota preprocessing after the major callback.  This seam owns Nat
+literal expansion, the second offset cleanup, String expansion, and then the
+constructor/struct-eta dispatch above. -/
+def tryIotaAfterMajorWhnf (flags : WhnfFlags) (recId : KId m)
+    (recr : IotaInfo m) (recUs : Array (KUniv m))
+    (spine : Array (KExpr m)) (majorWhnf0 : KExpr m) :
+    RecM m (Option (KExpr m)) := do
   -- Nat literal → constructor form (one layer).
   let mut majorWhnf := majorWhnf0
   let mut majorWasNatLit := false
@@ -933,44 +1058,28 @@ def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
   if let some cleaned ← cleanupNatOffsetMajor majorWhnf then
     majorWhnf := cleaned
   -- String literal → constructor form, then WHNF (same flag policy).
-  match majorWhnf with
-  | .str val _ _ =>
-    let strCtor ← strLitToConstructor val
-    majorWhnf ← if flags.cheapRec then whnfCoreFlagsRec strCtor flags
-      else whnfRec strCtor
-  | _ => pure ()
-  -- Constructor application?
-  let (ctorHead, ctorArgs) := majorWhnf.collectSpine
-  let ctorInfo? ← match ctorHead with
-    | .const cid _ _ =>
-      match (← TcM.tryGetConst cid) with
-      | some (.ctor (cidx := cidx) (fields := fields) ..) =>
-        pure (some (cidx.toNat, fields.toNat))
-      | _ => pure none
-    | _ => pure none
-  if let some (cidx, ctorFields) := ctorInfo? then
-    if h : cidx < recr.rules.size then
-      let rule := recr.rules[cidx]
-      -- H6: level arity; H5: fields ≤ ctor args (lean4lean Reduce.lean:75-76).
-      if recUs.size.toUInt64 != recr.lvls then
-        return none
-      if ctorFields > ctorArgs.size then
-        return none
-      let rhs ← TcM.instantiateUnivParams rule.rhs recUs
-      let pmmEnd := recr.params + recr.motives + recr.minors
-      let fieldStart := ctorArgs.size - ctorFields
-      let mut result := rhs
-      for arg in spine.extract 0 (min pmmEnd spine.size) do
-        result ← applyIotaArg result arg majorWasNatLit
-      for arg in ctorArgs.extract fieldStart ctorArgs.size do
-        result ← applyIotaArg result arg majorWasNatLit
-      for arg in spine.extract (recr.majorIdx + 1) spine.size do
-        result ← applyIotaArg result arg majorWasNatLit
-      return some result
-    else
-      return none
-  -- Struct eta iota fallback.
-  tryStructEtaIota recId recr recUs spine
+  tryIotaAfterCleanup flags recId recr recUs spine majorWhnf majorWasNatLit
+
+/-- Iota: recursor applied to a constructor (or K-synthesized / struct-eta
+    fallback). `cheapRec` reduces the major structurally only. -/
+def tryIotaWithFlags (e : KExpr m) (flags : WhnfFlags) :
+    RecM m (Option (KExpr m)) := do
+  let (head, spine) := e.collectSpine
+  let .const recId recUs _ := head | return none
+  let some recursor ← TcM.tryGetConst recId | return none
+  let some recr := recursor.iotaInfo? | return none
+  if spine.size ≤ recr.majorIdx then
+    return none
+  -- K-like: synthesize a nullary ctor from the major's type before WHNF.
+  let major := spine[recr.majorIdx]!
+  let major ← if recr.k then
+      pure ((← synthCtorWhenK major recId recr recUs).getD major)
+    else pure major
+  let major := (← cleanupNatOffsetMajor major).getD major
+  -- WHNF the major (cheap mode skips delta on the major itself).
+  let majorWhnf0 ← if flags.cheapRec then whnfCoreFlagsRec major flags
+    else whnfRec major
+  tryIotaAfterMajorWhnf flags recId recr recUs spine majorWhnf0
 
 def isStructLike (id : KId m) : RecM m Bool := do
   match (← TcM.tryGetConst id) with
@@ -980,6 +1089,65 @@ def isStructLike (id : KId m) : RecM m Bool := do
   | _ => return false
   return !(← computedIsRec id)
 
+/-- Intern the projection/application pairs for a contiguous struct field
+range.  The explicit remaining-field index makes totality and left-to-right
+state threading visible while retaining the old loop's exact request order. -/
+def finishStructEtaFields (indId : KId m) (major : KExpr m) :
+    Nat → Nat → KExpr m → RecM m (KExpr m)
+  | 0, _, result => pure result
+  | fuel + 1, field, result => do
+      let proj ← TcM.intern (KExpr.mkPrj indId field.toUInt64 major)
+      let result ← TcM.intern (KExpr.mkApp result proj)
+      finishStructEtaFields indId major fuel (field + 1) result
+
+/-- Rebuild the struct-eta recursor result after all semantic guards have
+passed.  The three named left-to-right segments preserve the generated
+expression and intern order of the former imperative loops. -/
+def finishStructEtaResult (indId : KId m) (major rhs : KExpr m)
+    (fields : UInt64) (prefixArgs trailingArgs : Array (KExpr m)) :
+    RecM m (KExpr m) := do
+  let result ← finishAppResult rhs prefixArgs 0
+  let result ← finishStructEtaFields indId major fields.toNat 0 result
+  finishAppResult result trailingArgs 0
+
+/-- The H3 post-probe guard rejects exactly `Prop`-valued majors.  Keeping
+this test pure makes the semantic boundary independently inspectable without
+moving any checker effects across it. -/
+def structEtaSortRejected : KExpr m → Bool
+  | .sort u _ => u.isZero
+  | _ => false
+
+/-- Apply the H3 Prop guard and, for an admissible major sort, instantiate
+and rebuild the selected struct-eta rule. -/
+def finishStructEtaAfterSort (recUs : Array (KUniv m))
+    (spine : Array (KExpr m)) (recr : IotaInfo m) (rule : RecRule m)
+    (indId : KId m) (major majorSortW : KExpr m) :
+    RecM m (Option (KExpr m)) := do
+  if structEtaSortRejected majorSortW then
+    return none
+  let rhs ← TcM.instantiateUnivParams rule.rhs recUs
+  let pmmEnd := recr.params + recr.motives + recr.minors
+  let result ← finishStructEtaResult indId major rhs rule.fields
+    (spine.extract 0 (min pmmEnd spine.size))
+    (spine.extract (recr.majorIdx + 1) spine.size)
+  return some result
+
+/-- Complete struct-eta after the recursor type scan has selected the major
+inductive.  Optional inference/WHNF probes retain their error-side state;
+universe instantiation and rebuilding errors remain ordinary propagated
+errors. -/
+def tryStructEtaAfterInductive (recUs : Array (KUniv m))
+    (spine : Array (KExpr m)) (recr : IotaInfo m) (rule : RecRule m)
+    (indId : KId m) : RecM m (Option (KExpr m)) := do
+  if !(← isStructLike indId) then
+    return none
+  -- H3: Prop guard.
+  let major := spine[recr.majorIdx]!
+  let some majorTy ← tryOptional (inferOnlyRec major) | return none
+  let some majorSort ← tryOptional (inferOnlyRec majorTy) | return none
+  let some majorSortW ← tryOptional (whnfRec majorSort) | return none
+  finishStructEtaAfterSort recUs spine recr rule indId major majorSortW
+
 /-- Struct-eta iota: single-rule recursor over a non-recursive one-ctor
     zero-index inductive; rebuild the rule with projections of the major.
     Prop-typed majors are excluded (lean4lean `toCtorWhenStruct`). -/
@@ -988,62 +1156,32 @@ def tryStructEtaIota (recId : KId m) (recr : IotaInfo m)
     RecM m (Option (KExpr m)) := do
   if recr.rules.size != 1 then
     return none
+  if recUs.size.toUInt64 != recr.lvls then
+    return none
   let rule := recr.rules[0]!
   let recTy ← match (← TcM.tryGetConst recId) with
     | some c => pure c.ty
     | none => return none
   let skip := (recr.params + recr.motives + recr.minors + recr.indices).toUInt64
-  let some indId ← try? (getMajorInductiveId recTy skip) | return none
-  if !(← isStructLike indId) then
-    return none
-  -- H3: Prop guard.
-  let major := spine[recr.majorIdx]!
-  let some majorTy ← try? (TcM.withInferOnly ((← read).infer major))
-    | return none
-  let some majorSort ← try? (TcM.withInferOnly ((← read).infer majorTy))
-    | return none
-  let some majorSortW ← try? (whnfRec majorSort) | return none
-  if let .sort u _ := majorSortW then
-    if u.isZero then
-      return none
-  let rhs ← TcM.instantiateUnivParams rule.rhs recUs
-  let pmmEnd := recr.params + recr.motives + recr.minors
-  let mut result := rhs
-  for arg in spine.extract 0 (min pmmEnd spine.size) do
-    result ← TcM.intern (KExpr.mkApp result arg)
-  for i in [0:rule.fields.toNat] do
-    let proj ← TcM.intern (KExpr.mkPrj indId i.toUInt64 major)
-    result ← TcM.intern (KExpr.mkApp result proj)
-  for arg in spine.extract (recr.majorIdx + 1) spine.size do
-    result ← TcM.intern (KExpr.mkApp result arg)
-  return some result
+  let some indId ← tryOptional (do
+    -- The stored declaration type is polymorphic in the recursor's own
+    -- universe parameters.  Scan the instance named by this application,
+    -- not that raw declaration under the caller's unrelated universe scope.
+    let recTy ← TcM.instantiateUnivParams recTy recUs
+    getMajorInductiveId recTy skip) | return none
+  tryStructEtaAfterInductive recUs spine recr rule indId
 
-/-- K-like recursors: when the major isn't a ctor but its type matches the
-    target inductive, build `ctor₀ params…` and def-eq-verify its type. -/
-def synthCtorWhenK (major : KExpr m) (recId : KId m)
-    (recr : IotaInfo m) : RecM m (Option (KExpr m)) := do
-  let some majorTy ← try? (TcM.withInferOnly ((← read).infer major))
-    | return none
-  let some majorTyW ← try? (whnfRec majorTy) | return none
-  let (tyHead, tyArgs) := majorTyW.collectSpine
-  let .const tyHeadId tyUs _ := tyHead | return none
-  let recTy ← match (← TcM.tryGetConst recId) with
-    | some c => pure c.ty
-    | none => return none
-  let skip := (recr.params + recr.motives + recr.minors + recr.indices).toUInt64
-  let some indId ← try? (getMajorInductiveId recTy skip) | return none
-  if tyHeadId.addr != indId.addr then
-    return none
-  let ctorId ← match (← TcM.tryGetConst indId) with
-    | some (.indc (ctors := ctors) ..) =>
-      match ctors[0]? with
-      | some c => pure c
-      | none => return none
-    | _ => return none
-  let mut ctorApp ← TcM.intern (KExpr.mkConst ctorId tyUs)
-  for arg in tyArgs.extract 0 (min recr.params tyArgs.size) do
-    ctorApp ← TcM.intern (KExpr.mkApp ctorApp arg)
-  let some ctorTy ← try? (TcM.withInferOnly ((← read).infer ctorApp))
+/-- Build one K-synthesis constructor candidate and validate that its inferred
+type is definitionally equal to the normalized major type.  Catalog selection
+stays in `synthCtorWhenK`; this seam owns all intern, stats, and final DefEq
+effects, including the counted silent rejection. -/
+def verifyKSynthCandidate (majorTyW : KExpr m) (ctorId : KId m)
+    (tyUs : Array (KUniv m)) (tyArgs : Array (KExpr m)) (params : Nat) :
+    RecM m (Option (KExpr m)) := do
+  let ctorApp ← TcM.intern (KExpr.mkConst ctorId tyUs)
+  let ctorApp ← finishAppResult ctorApp
+    (tyArgs.extract 0 (min params tyArgs.size)) 0
+  let some ctorTy ← tryOptional (inferOnlyRec ctorApp)
     | return none
   TcM.bumpStats (m := m) fun s =>
     { s with kSynthAttempts := s.kSynthAttempts + 1 }
@@ -1056,23 +1194,75 @@ def synthCtorWhenK (major : KExpr m) (recId : KId m)
     return none
   return some ctorApp
 
-/-- Projection of a ctor application (with string-literal expansion first,
-    and the `Fin.val`-through-`Decidable.rec` special case). -/
-def tryProjReduce (id : KId m) (field : UInt64) (wval : KExpr m) :
+/-- Finish K-synthesis after the recursor scan has selected its major
+inductive.  Naming this defensive catalog transaction exposes the address
+check, repeated inductive lookup, empty-constructor fallback, and candidate
+result without changing their order or state scope. -/
+def selectKSynthCandidate (majorTyW : KExpr m) (tyHeadId : KId m)
+    (tyUs : Array (KUniv m)) (tyArgs : Array (KExpr m))
+    (indId : KId m) (params : Nat) : RecM m (Option (KExpr m)) := do
+  if tyHeadId.addr != indId.addr then
+    return none
+  let ctorId ← match (← TcM.tryGetConst indId) with
+    | some (.indc (ctors := ctors) ..) =>
+      match ctors[0]? with
+      | some c => pure c
+      | none => return none
+    | _ => return none
+  verifyKSynthCandidate majorTyW ctorId tyUs tyArgs params
+
+/-- K-like recursors: when the major isn't a ctor but its type matches the
+    target inductive, build `ctor₀ params…` and def-eq-verify its type. -/
+def synthCtorWhenK (major : KExpr m) (recId : KId m)
+    (recr : IotaInfo m) (recUs : Array (KUniv m)) :
     RecM m (Option (KExpr m)) := do
-  let wval ← match wval with
-    | .str s _ _ => do
-      let expanded ← strLitToConstructor s
-      whnfRec expanded
-    | _ => pure wval
+  if recUs.size.toUInt64 != recr.lvls then
+    return none
+  let some majorTy ← tryOptional (inferOnlyRec major)
+    | return none
+  let some majorTyW ← tryOptional (whnfRec majorTy) | return none
+  let (tyHead, tyArgs) := majorTyW.collectSpine
+  let .const tyHeadId tyUs _ := tyHead | return none
+  let recTy ← match (← TcM.tryGetConst recId) with
+    | some c => pure c.ty
+    | none => return none
+  let skip := (recr.params + recr.motives + recr.minors + recr.indices).toUInt64
+  let some indId ← tryOptional (do
+    let recTy ← TcM.instantiateUnivParams recTy recUs
+    getMajorInductiveId recTy skip) | return none
+  selectKSynthCandidate majorTyW tyHeadId tyUs tyArgs indId recr.params
+
+/- Projection reduction is split at the String-literal preprocessing
+boundary.  Besides giving verification an induction-free seam, this keeps
+the accelerated `Fin.val` probe and lazy constructor lookup in one tail whose
+evaluation order is shared by literal and non-literal inputs. -/
+
+/-- Projection tail after any String-literal expansion and recursive WHNF. -/
+def tryProjReduceTail (id : KId m) (field : UInt64) (wval : KExpr m) :
+    RecM m (Option (KExpr m)) := do
   let (head, args) := wval.collectSpine
   if let some result ← tryReduceFinValDecidableRec id field head args then
     return some result
   let .const ctorId _ _ := head | return none
   let ctorParams ← match (← TcM.tryGetConst ctorId) with
     | some (.ctor (params := params) ..) => pure params.toNat
-    | _ => return none
+      | _ => return none
   return args[ctorParams + field.toNat]?
+
+/-- Normalize only the String-literal input form used by projection. -/
+def tryProjPrepare (wval : KExpr m) : RecM m (KExpr m) :=
+  match wval with
+  | .str s _ _ => do
+      let expanded ← strLitToConstructor s
+      whnfRec expanded
+  | _ => pure wval
+
+/-- Projection of a ctor application (with string-literal expansion first,
+    and the `Fin.val`-through-`Decidable.rec` special case). -/
+def tryProjReduce (id : KId m) (field : UInt64) (wval : KExpr m) :
+    RecM m (Option (KExpr m)) := do
+  let wval ← tryProjPrepare wval
+  tryProjReduceTail id field wval
 
 /-- `App(Prj(S, i, v), args…)`: one more projection attempt on the head. -/
 def tryProjAppReduce (e : KExpr m) (flags : WhnfFlags) :
@@ -1087,28 +1277,67 @@ def tryProjAppReduce (e : KExpr m) (flags : WhnfFlags) :
   | some result => return some (result, args)
   | none => return none
 
+/-- Complete the app-of-projection reduction by rebuilding the full trailing
+    spine through the shared, left-to-right application helper. -/
+def tryProjAppReduceFinished (e : KExpr m) (flags : WhnfFlags) :
+    RecM m (Option (KExpr m)) := do
+  match (← tryProjAppReduce e flags) with
+  | some (projResult, args) =>
+    return some (← finishAppResult projResult args 0)
+  | none => return none
+
+/-- Peel the fixed recursor prefix before searching for the major premise. -/
+def peelMajorForalls : Nat → KExpr m → RecM m (KExpr m)
+  | 0, ty => pure ty
+  | fuel + 1, ty => do
+    let w ← whnfRec ty
+    match w with
+    | .all _ _ dom body _ =>
+      -- The body is open.  Retain the binder in the legacy context so a
+      -- recursive WHNF cannot resolve one of its variables through an
+      -- unrelated caller frame.
+      TcM.pushLocal dom
+      peelMajorForalls fuel body
+    | _ => throw (.other "get_major_inductive_id: not enough foralls")
+
+/-- One successful-WHNF step of the bounded major-inductive scan.  Naming the
+step keeps the callback boundary and the binder-scoped continuation visible to
+verification without changing lookup or error order. -/
+def scanMajorInductiveStep
+    (next : KExpr m → RecM m (KId m)) (w : KExpr m) : RecM m (KId m) := do
+  match w with
+  | .all _ _ dom body _ =>
+    let (head, _) := dom.collectSpine
+    if let .const id _ _ := head then
+      if let some (.indc ..) ← TcM.tryGetConst id then
+        return id
+    -- Continue underneath the forall in the context in which its body is
+    -- scoped.  `getMajorInductiveId` restores the caller depth on every
+    -- outcome.
+    TcM.pushLocal dom
+    next body
+  | _ => throw (.other "get_major_inductive_id: expected forall at major")
+
+/-- Bounded search for the first forall whose domain head is a loaded
+inductive.  The recursive presentation preserves the former loop's exact
+left-to-right lookup and error order. -/
+def scanMajorInductive : Nat → KExpr m → RecM m (KId m)
+  | 0, _ => throw (.other
+      "get_major_inductive_id: no inductive-headed forall within scan bound")
+  | fuel + 1, ty => do
+    let w ← whnfRec ty
+    scanMajorInductiveStep (scanMajorInductive fuel) w
+
 /-- Major-premise inductive of a recursor type: peel `skip` foralls, then
     scan (bounded) for the first forall whose domain head is an inductive. -/
 def getMajorInductiveId (recTy : KExpr m) (skip : UInt64) :
     RecM m (KId m) := do
-  let mut ty := recTy
-  for _ in [0:skip.toNat] do
-    let w ← whnfRec ty
-    match w with
-    | .all _ _ _ body _ => ty := body
-    | _ => throw (.other "get_major_inductive_id: not enough foralls")
-  for _ in [0:9] do
-    let w ← whnfRec ty
-    match w with
-    | .all _ _ dom body _ =>
-      let (head, _) := dom.collectSpine
-      if let .const id _ _ := head then
-        if let some (.indc ..) ← TcM.tryGetConst id then
-          return id
-      ty := body
-    | _ => throw (.other "get_major_inductive_id: expected forall at major")
-  throw (.other
-    "get_major_inductive_id: no inductive-headed forall within scan bound")
+  let saved ← liftM (TcM.saveDepth (m := m))
+  try
+    let ty ← peelMajorForalls skip.toNat recTy
+    scanMajorInductive 9 ty
+  finally
+    liftM (TcM.restoreDepth (m := m) saved)
 
 /-- Nat primitives: succ-collapse, binary arithmetic, boolean predicates. -/
 def tryReduceNat (e : KExpr m) : RecM m (Option (KExpr m)) :=
@@ -1145,6 +1374,85 @@ def tryReduceNatWithSuccMode (e : KExpr m)
       TcM.intern (.mkConst (if b then p.boolTrue else p.boolFalse) #[])
   finishAppResult resultExpr args 2
 
+/-- Recognize exactly one `Nat.succ` application after recursive WHNF.  The
+    helper retains the production's second primitive-table read while making
+    its Boolean branch independently equation-visible. -/
+def isNatSuccSpine (w : KExpr m) : RecM m Bool := do
+  let (head, args) := w.collectSpine
+  match head with
+  | .const id _ _ =>
+    pure (id.addr == (← prims).natSucc.addr && args.size == 1)
+  | _ => pure false
+
+/-- Commit the finite set of successor arguments proved stuck by one loop
+    execution.  Both stuck exits share this exact state mutation. -/
+def recordNatSuccStuck (visited : Array (Address × Address)) : RecM m Unit :=
+  modify fun s => { s with env := { s.env with
+    natSuccStuck := visited.foldl (·.insert ·) s.env.natSuccStuck } }
+
+/-- Extend the successor-loop trace after the peeled argument is known not to
+    have a stuck memo entry. -/
+def tryReduceNatSuccPeelMiss (w cur : KExpr m) (offset : Nat)
+    (visited : Array (Address × Address)) (curKey : Address × Address) :
+    RecM m (BoundedStep
+      (KExpr m × Nat × Array (Address × Address)) (Option (KExpr m))) := do
+  let visited := visited.push curKey
+  -- succ(cur) can surface later as a succ-iter argument too.
+  let visited := visited.push (← TcM.whnfKey w)
+  return .next (cur, offset + 1, visited)
+
+/-- Decide a resolved peeled argument key: either propagate a known-stuck
+    suffix to the whole visited prefix, or continue with the second key. -/
+def tryReduceNatSuccPeelAfterKey (w cur : KExpr m) (offset : Nat)
+    (visited : Array (Address × Address)) (curKey : Address × Address) :
+    RecM m (BoundedStep
+      (KExpr m × Nat × Array (Address × Address)) (Option (KExpr m))) := do
+  if (← get).env.natSuccStuck.contains curKey then
+    -- Known-stuck suffix ⇒ the whole chain above is stuck too.
+    recordNatSuccStuck visited
+    return .done none
+  tryReduceNatSuccPeelMiss w cur offset visited curKey
+
+/-- Peel one recognized successor layer, either stopping at a previously
+    memoized suffix or extending the visited-key trace for the next step. -/
+def tryReduceNatSuccPeel (w cur : KExpr m) (offset : Nat)
+    (visited : Array (Address × Address)) :
+    RecM m (BoundedStep
+      (KExpr m × Nat × Array (Address × Address)) (Option (KExpr m))) := do
+  let curKey ← TcM.whnfKey cur
+  tryReduceNatSuccPeelAfterKey w cur offset visited curKey
+
+/-- Classify the recursively normalized successor argument.  This second
+    successor-loop seam isolates literal success, successor peeling, and both
+    stuck-memo writes from the two recursive callbacks that precede it. -/
+def tryReduceNatSuccAfterWhnf (w : KExpr m) (offset : Nat)
+    (visited : Array (Address × Address)) :
+    RecM m (BoundedStep
+      (KExpr m × Nat × Array (Address × Address)) (Option (KExpr m))) := do
+  let p ← prims
+  if let some n := extractNatLit w p then
+    return .done (some (natExprFromValue (n + offset)))
+  let (_, args) := w.collectSpine
+  let isSucc ← isNatSuccSpine w
+  if isSucc then
+    let cur := args[0]!
+    return (← tryReduceNatSuccPeel w cur offset visited)
+  recordNatSuccStuck visited
+  return .done none
+
+/-- One bounded successor-collapse iteration.  Naming this seam exposes the
+    linear-recognizer, recursive WHNF, literal, successor-peel, and stuck-memo
+    branches to verification without changing their production order. -/
+def tryReduceNatSuccIterStep
+    (state : KExpr m × Nat × Array (Address × Address)) :
+    RecM m (BoundedStep
+      (KExpr m × Nat × Array (Address × Address)) (Option (KExpr m))) := do
+  let (cur, offset, visited) := state
+  if let some result ← tryReduceNatSuccLinearRec cur offset then
+    return .done (some result)
+  let w ← whnfModeRec cur .stuck
+  tryReduceNatSuccAfterWhnf w offset visited
+
 /-- Collapse a `Nat.succ` chain onto a literal (with stuck-chain memo: the
     inner WHNF runs in `stuck` mode which bypasses caches, so without the
     memo a stuck `succ^k(x)` re-peels from every depth — O(k²)). -/
@@ -1153,35 +1461,8 @@ def tryReduceNatSuccIter (arg : KExpr m) :
   let entryKey ← TcM.whnfKey arg
   if (← get).env.natSuccStuck.contains entryKey then
     return none
-  runBounded (fun (cur, offset, visited) => do
-    if let some result ← tryReduceNatSuccLinearRec cur offset then
-      return .done (some result)
-    let w ← whnfModeRec cur .stuck
-    if let some n := extractNatLit w (← prims) then
-      return .done (some (natExprFromValue (n + offset)))
-    let (head, args) := w.collectSpine
-    let isSucc ← match head with
-      | .const id _ _ =>
-        pure (id.addr == (← prims).natSucc.addr && args.size == 1)
-      | _ => pure false
-    if isSucc then
-      let offset := offset + 1
-      let cur := args[0]!
-      let curKey ← TcM.whnfKey cur
-      if (← get).env.natSuccStuck.contains curKey then
-        -- Known-stuck suffix ⇒ the whole chain above is stuck too.
-        let vs := visited
-        modify fun s => { s with env := { s.env with
-          natSuccStuck := vs.foldl (·.insert ·) s.env.natSuccStuck } }
-        return .done none
-      let visited := visited.push curKey
-      -- succ(cur) can surface later as a succ-iter argument too.
-      let visited := visited.push (← TcM.whnfKey w)
-      return .next (cur, offset, visited)
-    let vs := visited
-    modify fun s => { s with env := { s.env with
-      natSuccStuck := vs.foldl (·.insert ·) s.env.natSuccStuck } }
-    return .done none) maxWhnfFuel.toNat (arg, 1, #[entryKey])
+  runBounded tryReduceNatSuccIterStep maxWhnfFuel.toNat
+    (arg, 1, #[entryKey])
 
 /-- `Nat.rec base step (lit n)` where step = `fun _ ih => Nat.succ ih`:
     compute `base + n + offset` directly (literal base), or collapse to the
@@ -1609,29 +1890,53 @@ def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
 -- ### `is_rec` verification (inductive.rs `computed_is_rec` — hosted here
 -- because struct-likeness needs it; `Ix.Tc.Inductive` reuses it)
 
-/-- Constructive `is_rec`: any constructor field (after params) mentioning
-    any inductive of the mutual block. Provisional-true cache entry guards
-    re-entrancy through whnf → struct-eta → isStructLike. -/
-def computedIsRec (ind : KId m) : RecM m Bool := do
-  if let some v := (← get).env.isRecCache[ind.addr]? then
-    return v
-  let (params, ctors, block) ← match (← TcM.getConst ind) with
-    | .indc (params := params) (ctors := ctors) (block := block) .. =>
-      pure (params, ctors, block)
-    | _ => throw (.other "computed_is_rec: not an inductive")
-  modify fun s => { s with env := { s.env with
-    isRecCache := s.env.isRecCache.insert ind.addr true } }
-  let blockInds ← discoverBlockInductives block
-  let blockAddrs := blockInds.map (·.addr)
+/-- Finish one constructor-parameter peel after the recursive WHNF callback.
+Naming the post-callback seam keeps the binder mutation equation stable for
+verification without changing the production control flow. -/
+def computeIsRecParamStepAfterWhnf (ty w : KExpr m) :
+    RecM m (ForInStep (KExpr m)) := do
+  match w with
+  | .all _ _ dom body _ =>
+    TcM.pushLocal dom
+    return .yield body
+  | _ => return .done ty
+
+/-- Peel one constructor parameter when its normalized type remains a forall.
+The pushed domain scopes the returned body for every later scan step. -/
+def computeIsRecParamStep (ty : KExpr m) :
+    RecM m (ForInStep (KExpr m)) := do
+  let w ← whnfRec ty
+  computeIsRecParamStepAfterWhnf ty w
+
+/-- Finish one constructor-field scan after the recursive WHNF callback. -/
+def computeIsRecFieldStepAfterWhnf (blockAddrs : Array Address)
+    (w : KExpr m) : RecM m (BoundedStep (KExpr m) Bool) := do
+  match w with
+  | .all _ _ dom body _ =>
+    if exprMentionsAnyAddr dom blockAddrs then
+      return .done true
+    TcM.pushLocal dom
+    return .next body
+  | _ => return .done false
+
+/-- Inspect one constructor field and either find a recursive occurrence,
+continue under its binder, or finish at the end of the telescope. -/
+def computeIsRecFieldStep (blockAddrs : Array Address) (ty : KExpr m) :
+    RecM m (BoundedStep (KExpr m) Bool) := do
+  let w ← whnfRec ty
+  computeIsRecFieldStepAfterWhnf blockAddrs w
+
+/-- Classify one constructor telescope while restoring the caller's legacy
+context depth on every result and partial error. -/
+def computeIsRecCtor (ctorTy : KExpr m) (nParams : Nat)
+    (blockAddrs : Array Address) : RecM m Bool := do
+  let saved ← liftM (TcM.saveDepth (m := m))
   try
-    let v ← computeIsRec ctors params.toNat blockAddrs
-    modify fun s => { s with env := { s.env with
-      isRecCache := s.env.isRecCache.insert ind.addr v } }
-    return v
-  catch e =>
-    modify fun s => { s with env := { s.env with
-      isRecCache := s.env.isRecCache.erase ind.addr } }
-    throw e
+    let ty ← forIn [0:nParams] ctorTy fun _ ty =>
+      computeIsRecParamStep ty
+    runBounded (computeIsRecFieldStep blockAddrs) maxWhnfFuel.toNat ty
+  finally
+    liftM (TcM.restoreDepth (m := m) saved)
 
 def computeIsRec (ctors : Array (KId m)) (nParams : Nat)
     (blockAddrs : Array Address) : RecM m Bool := do
@@ -1639,25 +1944,80 @@ def computeIsRec (ctors : Array (KId m)) (nParams : Nat)
     let ctorTy ← match (← TcM.tryGetConst ctorId) with
       | some (.ctor (ty := ty) ..) => pure ty
       | _ => continue
-    let mut ty := ctorTy
-    for _ in [0:nParams] do
-      let w ← whnfRec ty
-      match w with
-      | .all _ _ _ body _ => ty := body
-      | _ => break
-    let found ← runBounded (fun ty => do
-      let w ← whnfRec ty
-      match w with
-      | .all _ _ dom body _ =>
-        if exprMentionsAnyAddr dom blockAddrs then
-          return .done true
-        return .next body
-      | _ => return .done false) maxWhnfFuel.toNat ty
+    let found ← computeIsRecCtor ctorTy nParams blockAddrs
     if found then
       return true
   return false
 
+/-- The single physical write used for both the provisional re-entrancy
+marker and the final recursion result.  Naming the seam keeps the semantic
+cache certificate separate from the classifier's control flow. -/
+def cacheIsRec (ind : KId m) (value : Bool) : RecM m Unit :=
+  modify fun s => { s with env := { s.env with
+    isRecCache := s.env.isRecCache.insert ind.addr value } }
+
+/-- Cleanup performed only when the constructor-field classifier throws.
+Errors from declaration or mutual-block discovery occur before this scope and
+therefore deliberately retain the provisional marker. -/
+def eraseCachedIsRec (ind : KId m) : RecM m Unit :=
+  modify fun s => { s with env := { s.env with
+    isRecCache := s.env.isRecCache.erase ind.addr } }
+
+/-- Classify one already-discovered mutual block and commit its exact result.
+The non-backtracking handler erases the provisional entry from the partial
+error state before rethrowing. -/
+def computedIsRecClassify (ind : KId m) (ctors : Array (KId m))
+    (nParams : Nat) (blockAddrs : Array Address) : RecM m Bool :=
+  tryCatch
+    (do
+      let value ← computeIsRec ctors nParams blockAddrs
+      cacheIsRec ind value
+      return value)
+    (fun err => do
+      eraseCachedIsRec ind
+      throw err)
+
+/-- Cache-miss transaction after the inductive metadata has been selected.
+The provisional marker precedes mutual-block discovery, matching the original
+Rust/Lean state-on-error behavior. -/
+def computedIsRecMiss (ind : KId m) (params : UInt64)
+    (ctors : Array (KId m)) (block : KId m) : RecM m Bool := do
+  cacheIsRec ind true
+  let blockInds ← discoverBlockInductives block
+  computedIsRecClassify ind ctors params.toNat (blockInds.map (·.addr))
+
+/-- Constructive `is_rec`: any constructor field (after params) mentioning
+    any inductive of the mutual block. Provisional-true cache entry guards
+    re-entrancy through whnf → struct-eta → isStructLike. -/
+def computedIsRec (ind : KId m) : RecM m Bool := do
+  if let some value := (← get).env.isRecCache[ind.addr]? then
+    return value
+  match (← TcM.getConst ind) with
+  | .indc (params := params) (ctors := ctors) (block := block) .. =>
+      computedIsRecMiss ind params ctors block
+  | _ => throw (.other "computed_is_rec: not an inductive")
+
 end
+
+/-- Equation theorem exposing only the projection prelude/tail split.  Keeping
+this outside the large recursive method block prevents downstream proofs from
+unfolding unrelated WHNF definitions merely to inspect `tryProjReduce`. -/
+theorem tryProjPrepare_eq (wval : KExpr m) :
+    tryProjPrepare wval =
+      match wval with
+      | .str value _ _ => do
+          let expanded ← strLitToConstructor value
+          whnfRec expanded
+      | _ => pure wval := by
+  cases wval <;> rfl
+
+theorem tryProjReduce_eq (id : KId m) (field : UInt64) (wval : KExpr m) :
+    tryProjReduce id field wval = (do
+      let prepared ← tryProjPrepare wval
+      tryProjReduceTail id field prepared) := by
+  rfl
+
+attribute [irreducible] tryProjPrepare tryProjReduce
 
 end RecM
 

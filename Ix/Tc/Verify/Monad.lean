@@ -58,6 +58,27 @@ theorem mono {I : TcState m → Prop} {Q Q' : α → TcState m → Prop}
   | .ok a s' => rw [hxs] at this; exact ⟨this.1, hq _ _ this.2⟩
   | .error e s' => rw [hxs] at this; exact ⟨this.1, he _ _ this.2⟩
 
+/-- Retain the concrete execution equation selected by either outcome of a
+verified computation.  Semantic boundaries use this strengthening to ensure
+that an external certificate is tied to the value production actually
+computed, without granting that certificate any state authority. -/
+theorem with_run_eq {I : TcState m → Prop} {s : TcState m} {x : TcM m α}
+    {Q : α → TcState m → Prop}
+    {E : TcError m → TcState m → Prop}
+    (hx : TcM.WF I s x Q E) :
+    TcM.WF I s x
+      (fun value after => Q value after ∧ x s = .ok value after)
+      (fun err after => E err after ∧ x s = .error err after) := by
+  intro hI
+  have hpost := hx hI
+  cases hrun : x s with
+  | ok value after =>
+      rw [hrun] at hpost
+      exact ⟨hpost.1, hpost.2, rfl⟩
+  | error err after =>
+      rw [hrun] at hpost
+      exact ⟨hpost.1, hpost.2, rfl⟩
+
 theorem bind {I : TcState m → Prop} {Q₁ : α → TcState m → Prop}
     {Q₂ : β → TcState m → Prop} {E : TcError m → TcState m → Prop}
     {x : TcM m α} {f : α → TcM m β}
@@ -103,6 +124,70 @@ theorem tryCatch {I : TcState m → Prop} {Q : α → TcState m → Prop}
   | .error e s' =>
     rw [hxs] at hres
     exact hh e s' hres.2 hres.1
+
+/-- Exact non-backtracking equation for an `EStateM` finalizer.  The
+finalizer always runs after the body; a finalizer error supersedes either
+body outcome, while a successful finalizer retains the body's payload. -/
+private theorem tryFinally_eq
+    (x : TcM m α) (finalizer : TcM m β) (s : TcState m) :
+    tryFinally x finalizer s =
+      match x s with
+      | .ok a after =>
+          match finalizer after with
+          | .ok _ final => .ok a final
+          | .error err final => .error err final
+      | .error err after =>
+          match finalizer after with
+          | .ok _ final => .error err final
+          | .error cleanupErr final => .error cleanupErr final := by
+  unfold tryFinally
+  change EStateM.map (fun x : α × β => x.1)
+    (tryFinally' x (fun _ => finalizer)) s = _
+  unfold EStateM.map MonadFinally.tryFinally' EStateM.instMonadFinally
+  cases hrun : x s <;>
+    simp only [hrun] <;>
+    cases hcleanup : finalizer _ <;>
+    rfl
+
+/-- A state-independent success fact survives an invariant-preserving
+`finally` action.  Both body and finalizer errors retain the invariant; the
+error payload remains intentionally unconstrained. -/
+theorem tryFinally_const
+    {I : TcState m → Prop} {s : TcState m}
+    {x : TcM m α} {finalizer : TcM m β} {Q : α → Prop}
+    (hx : TcM.WF I s x (fun a _ => Q a))
+    (hfinalizer : ∀ s', TcM.WF I s' finalizer (fun _ _ => True)) :
+    TcM.WF I s (tryFinally x finalizer) (fun a _ => Q a) := by
+  intro hI
+  have hbody := hx hI
+  rw [tryFinally_eq]
+  cases hrun : x s with
+  | ok a after =>
+      rw [hrun] at hbody
+      simp only
+      have hfinal := hfinalizer after hbody.1
+      cases hcleanup : finalizer after with
+      | ok _ final =>
+          rw [hcleanup] at hfinal
+          simp only
+          exact ⟨hfinal.1, hbody.2⟩
+      | error err final =>
+          rw [hcleanup] at hfinal
+          simp only
+          exact ⟨hfinal.1, trivial⟩
+  | error err after =>
+      rw [hrun] at hbody
+      simp only
+      have hfinal := hfinalizer after hbody.1
+      cases hcleanup : finalizer after with
+      | ok _ final =>
+          rw [hcleanup] at hfinal
+          simp only
+          exact ⟨hfinal.1, trivial⟩
+      | error cleanupErr final =>
+          rw [hcleanup] at hfinal
+          simp only
+          exact ⟨hfinal.1, trivial⟩
 
 theorem get {I : TcState m → Prop} {Q : TcState m → TcState m → Prop}
     {E : TcError m → TcState m → Prop}

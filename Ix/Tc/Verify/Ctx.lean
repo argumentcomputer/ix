@@ -691,6 +691,35 @@ theorem lookupLetVal {idx : UInt64} {ty val : KExpr .anon}
     simpa [Lean4Lean.VLocalDecl.value, Lean4Lean.VLocalDecl.depth]
       using hw
 
+/-- Walker-tight sibling of `lookupLetVal`.  The older theorem asks for the
+coarse ambient bound `Δ.bvars + val.size`; the production lift walker records
+the strictly smaller obligations it actually needs: construction, cutoff
+space, and `val.lbr + val.size + (idx + 1)` space.  Using those exact request
+bounds avoids inventing a run-global context-size assumption for legacy
+zeta. -/
+theorem lookupLetVal_liftBounds {idx : UInt64} {ty val : KExpr .anon}
+    (h : CtxRecon env uvars nameOf trProj s Δ)
+    (henv : env.Ordered) (htp : TrProjOK env uvars trProj)
+    (hidx : idx.toNat < s.ctx.size)
+    (hshift : (idx + 1).toNat = idx.toNat + 1)
+    (hty : s.ctx[s.ctx.size - 1 - idx.toNat]? = some ty)
+    (hov : s.letVals[s.ctx.size - 1 - idx.toNat]? = some (some val))
+    (hcon : KExpr.Constructed val)
+    (hcut : (0 : UInt64).toNat + val.size < UInt64.size)
+    (hlift : val.lbr.toNat + val.size + (idx + 1).toNat < UInt64.size) :
+    ∃ e A, KVLCtx.find? Δ (.inl idx.toNat) = some (e, A) ∧
+      TrKExprS env uvars nameOf trProj Δ
+        (KExpr.liftSpec val (idx + 1) 0) e := by
+  obtain ⟨Δ₀, vd, m, W, hf, hsub, htr⟩ :=
+    h.frame_of_read hidx hty hov
+  cases htr with
+  | vlet h1 h2 h3 =>
+    refine ⟨_, _, hf, ?_⟩
+    have hw := h2.weakBV_lbr henv htp.weakN hcon W hshift
+      (show (0 : UInt64).toNat = 0 from rfl) hcut hlift
+    simpa [Lean4Lean.VLocalDecl.value, Lean4Lean.VLocalDecl.depth]
+      using hw
+
 /-- The fvar-side lookup bridge at the concrete state: a successful
     `lctx.find?` resolves in the ghost `Δ` with translated payloads at
     the declaration's tail suffix — `TrKExprS.fvar`'s premise plus the

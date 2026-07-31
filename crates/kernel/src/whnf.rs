@@ -1349,7 +1349,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let major = &spine[recr.major_idx];
     let major = if recr.k {
       self
-        .synth_ctor_when_k(major, &rec_id, &recr)?
+        .synth_ctor_when_k(major, &rec_id, &recr, &rec_us)?
         .unwrap_or_else(|| major.clone())
     } else {
       major.clone()
@@ -1845,11 +1845,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if recr.rules.len() != 1 {
       return Ok(None);
     }
+    if rec_us.len() as u64 != recr.lvls {
+      return Ok(None);
+    }
     let rule = &recr.rules[0];
 
     let rec_ty = match self.try_get_const(rec_id)? {
       Some(c) => c.ty().clone(),
       None => return Ok(None),
+    };
+    let rec_ty = match self.instantiate_univ_params(&rec_ty, rec_us) {
+      Ok(ty) => ty,
+      Err(_) => return Ok(None),
     };
     let skip = (recr.params + recr.motives + recr.minors + recr.indices) as u64;
     let ind_id = match self.get_major_inductive_id(&rec_ty, skip) {
@@ -1911,7 +1918,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     major: &KExpr<M>,
     rec_id: &KId<M>,
     recr: &IotaInfo<M>,
+    rec_us: &[KUniv<M>],
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if rec_us.len() as u64 != recr.lvls {
+      return Ok(None);
+    }
     // Infer major's type (infer-only: we just need the type, not validation)
     let major_ty = match self.with_infer_only(|tc| tc.infer(major)) {
       Ok(ty) => ty,
@@ -1933,6 +1944,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let rec_ty = match self.try_get_const(rec_id)? {
       Some(c) => c.ty().clone(),
       None => return Ok(None),
+    };
+    let rec_ty = match self.instantiate_univ_params(&rec_ty, rec_us) {
+      Ok(ty) => ty,
+      Err(_) => return Ok(None),
     };
     let skip = (recr.params + recr.motives + recr.minors + recr.indices) as u64;
     let ind_id = match self.get_major_inductive_id(&rec_ty, skip) {
@@ -2227,47 +2242,57 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     skip: u64,
   ) -> Result<KId<M>, TcError<M>> {
     const MAX_EXTRA_FORALLS: u64 = 8;
-
-    let mut ty = rec_ty.clone();
-    for _ in 0..skip {
-      let w = self.whnf(&ty)?;
-      match w.data() {
-        ExprData::All(_, _, _, body, _) => ty = body.clone(),
-        _ => {
-          return Err(TcError::Other(
-            "get_major_inductive_id: not enough foralls".into(),
-          ));
-        },
+    let saved = self.save_depth();
+    let result = (|| -> Result<KId<M>, TcError<M>> {
+      let mut ty = rec_ty.clone();
+      for _ in 0..skip {
+        let w = self.whnf(&ty)?;
+        match w.data() {
+          ExprData::All(_, _, dom, body, _) => {
+            // Keep the peeled binder in scope. The body is open, and must not
+            // resolve one of its Vars through an unrelated caller frame.
+            self.push_local(dom.clone());
+            ty = body.clone();
+          },
+          _ => {
+            return Err(TcError::Other(
+              "get_major_inductive_id: not enough foralls".into(),
+            ));
+          },
+        }
       }
-    }
 
-    // Scan forward looking for a forall whose domain has a `KConst::Indc`
-    // head. Accept the first match. Bounded so we can't loop forever.
-    for _ in 0..=MAX_EXTRA_FORALLS {
-      let w = self.whnf(&ty)?;
-      match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
-          let (head, _) = collect_app_spine(dom);
-          if let ExprData::Const(id, _, _) = head.data() {
-            // Only accept if the head resolves to an inductive.
-            if matches!(self.try_get_const(id)?, Some(KConst::Indc { .. })) {
-              return Ok(id.clone());
+      // Scan forward looking for a forall whose domain has a `KConst::Indc`
+      // head. Accept the first match. Bounded so we can't loop forever.
+      for _ in 0..=MAX_EXTRA_FORALLS {
+        let w = self.whnf(&ty)?;
+        match w.data() {
+          ExprData::All(_, _, dom, body, _) => {
+            let (head, _) = collect_app_spine(dom);
+            if let ExprData::Const(id, _, _) = head.data() {
+              // Only accept if the head resolves to an inductive.
+              if matches!(self.try_get_const(id)?, Some(KConst::Indc { .. })) {
+                return Ok(id.clone());
+              }
             }
-          }
-          ty = body.clone();
-        },
-        _ => {
-          return Err(TcError::Other(
-            "get_major_inductive_id: expected forall at major".into(),
-          ));
-        },
+            self.push_local(dom.clone());
+            ty = body.clone();
+          },
+          _ => {
+            return Err(TcError::Other(
+              "get_major_inductive_id: expected forall at major".into(),
+            ));
+          },
+        }
       }
-    }
 
-    Err(TcError::Other(
-      "get_major_inductive_id: no inductive-headed forall within scan bound"
-        .into(),
-    ))
+      Err(TcError::Other(
+        "get_major_inductive_id: no inductive-headed forall within scan bound"
+          .into(),
+      ))
+    })();
+    self.restore_depth(saved);
+    result
   }
 
   /// Convert a Nat literal to constructor form: 0 → Nat.zero, n+1 → Nat.succ(n-1).
@@ -4262,6 +4287,47 @@ mod tests {
     let opaque_def = AE::cnst(mk_id("opaque_def"), Box::new([]));
     let result = tc.whnf(&opaque_def).unwrap();
     assert_eq!(result, sort1());
+  }
+
+  #[test]
+  fn major_scan_does_not_capture_an_unrelated_caller_let() {
+    let target_id = mk_id("major-scan-target");
+    let mut env = KEnv::new();
+    env.insert(
+      target_id.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_unsafe: false,
+        block: target_id.clone(),
+        member_idx: 0,
+        ty: sort0(),
+        ctors: Vec::new(),
+        lean_all: (),
+      },
+    );
+    let mut tc = TypeChecker::new(&mut env);
+    let forged = AE::all((), (), AE::cnst(target_id, Box::new([])), sort0());
+    // Peeling the outer forall exposes Var 0. Without retaining its binder,
+    // WHNF zeta-reduces that variable through this unrelated caller let and
+    // fabricates the inductive-headed forall above.
+    let rec_ty = AE::all((), (), sort0(), AE::var(0, ()));
+    tc.push_let(sort0(), forged.clone());
+    let saved_depth = tc.save_depth();
+    let saved_ctx_id = tc.ctx_id;
+    let saved_let_count = tc.num_let_bindings;
+
+    assert!(tc.get_major_inductive_id(&rec_ty, 1).is_err());
+    assert_eq!(tc.save_depth(), saved_depth);
+    assert_eq!(tc.ctx_id, saved_ctx_id);
+    assert_eq!(tc.num_let_bindings, saved_let_count);
+    assert!(
+      matches!(&tc.let_vals[0], Some(value) if value == &forged),
+      "the caller let must survive the scoped scan unchanged"
+    );
   }
 
   #[test]

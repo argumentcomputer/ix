@@ -395,6 +395,35 @@ theorem blockError (semantics : CacheSemantics) (authority : CacheAuthority)
   intro id href
   exact False.elim href
 
+/-- Build provenance for an operational recursion-classifier entry once the
+queried anonymous identifier is trusted and the selected cache semantics
+accepts this exact Boolean.
+
+The Boolean itself deliberately carries no Theory claim here.  A cached
+`true` may be production's conservative re-entrancy marker, while a cached
+`false` merely allows the struct-eta code to continue to its separately
+checked semantic-success boundary.  Trust of the queried identifier is still
+mandatory because `.isRec` is a subject-scoped cache family and stable
+boundaries have no active-block authority. -/
+theorem isRec_of_trusted {semantics : CacheSemantics}
+    {world : VerifyWorld} {support : RunSupport}
+    {ind : KId .anon} {value : Bool}
+    (htrusted : world.trusted ind)
+    (hvalid : semantics.Valid (CacheAuthority.stable world) support
+      (.isRec ind.addr value)) :
+    CacheProvenance semantics (CacheAuthority.stable world) support
+      (.isRec ind.addr value) := by
+  refine ⟨trivial, ?_, hvalid⟩
+  intro id href
+  apply Or.inl
+  have hid : id = ind := by
+    rcases id with ⟨idAddr, ⟨⟩⟩
+    rcases ind with ⟨indAddr, ⟨⟩⟩
+    change idAddr = indAddr at href
+    cases href
+    rfl
+  simpa [hid] using htrusted
+
 theorem mono {semantics : CacheSemantics}
     {before after : CacheAuthority} {support : RunSupport}
     {entry : CacheEntry} (hauth : before ≤ after)
@@ -607,6 +636,46 @@ theorem insertWhnf {semantics : CacheSemantics}
   | blockPeer hmem => exact .inr (.blockPeer hmem)
   | blockResult hget => exact .inr (.blockResult hget)
 
+/-- Insert one certified universe-instantiated definition body while
+retaining provenance for every other physical cache entry. -/
+theorem insertUnfold {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address} {value : KExpr .anon}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.unfold key value)) :
+    CacheInvariant semantics authority support
+      { env with unfoldCache := env.unfoldCache.insert key value } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | @unfold foundKey foundValue hget =>
+    rw [Std.HashMap.getElem?_insert] at hget
+    split at hget
+    · next heq =>
+      cases hget
+      have hkey : key = foundKey := eq_of_beq heq
+      subst foundKey
+      exact .inl rfl
+    · exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
 /-- Insert one certified full-policy no-delta result. -/
 theorem insertWhnfNoDelta {semantics : CacheSemantics}
     {authority : CacheAuthority} {support : RunSupport}
@@ -768,6 +837,360 @@ theorem insertWhnfCoreCheap {semantics : CacheSemantics}
   | recMajors hget => exact .inr (.recMajors hget)
   | blockPeer hmem => exact .inr (.blockPeer hmem)
   | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert one certified full-mode inference result.  Full inference entries
+may later be consumed in either inference policy, so this update targets only
+the validated `inferCache` partition. -/
+theorem insertInfer {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address × Address} {value : KExpr .anon}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.expr .infer key value)) :
+    CacheInvariant semantics authority support
+      { env with inferCache := env.inferCache.insert key value } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | @infer foundKey foundValue hget =>
+    rw [Std.HashMap.getElem?_insert] at hget
+    split at hget
+    · next heq =>
+      cases hget
+      have hkey : key = foundKey := eq_of_beq heq
+      subst foundKey
+      exact .inl rfl
+    · exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert one certified infer-only result without widening it into the full
+validated inference partition. -/
+theorem insertInferOnly {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address × Address} {value : KExpr .anon}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.expr .inferOnly key value)) :
+    CacheInvariant semantics authority support
+      { env with inferOnlyCache := env.inferOnlyCache.insert key value } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | @inferOnly foundKey foundValue hget =>
+    rw [Std.HashMap.getElem?_insert] at hget
+    split at hget
+    · next heq =>
+      cases hget
+      have hkey : key = foundKey := eq_of_beq heq
+      subst foundKey
+      exact .inl rfl
+    · exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert one certified full definitional-equality result. -/
+theorem insertDefEq {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address × Address × Address} {value : Bool}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.defEq .full key value)) :
+    CacheInvariant semantics authority support
+      { env with defEqCache := env.defEqCache.insert key value } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | @defEq foundKey foundValue hget =>
+    rw [Std.HashMap.getElem?_insert] at hget
+    split at hget
+    · next heq =>
+      cases hget
+      have hkey : key = foundKey := eq_of_beq heq
+      subst foundKey
+      exact .inl rfl
+    · exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert one certified cheap definitional-equality result.  Sound `true`
+promotion into the full cache is a separate update and cannot be obtained by
+retagging this entry. -/
+theorem insertDefEqCheap {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address × Address × Address} {value : Bool}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.defEq .cheap key value)) :
+    CacheInvariant semantics authority support
+      { env with defEqCheapCache := env.defEqCheapCache.insert key value } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | @defEqCheap foundKey foundValue hget =>
+    rw [Std.HashMap.getElem?_insert] at hget
+    split at hget
+    · next heq =>
+      cases hget
+      have hkey : key = foundKey := eq_of_beq heq
+      subst foundKey
+      exact .inl rfl
+    · exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert one certified narrow DefEq failure marker.  The marker has no
+acceptance consequence, but its source addresses and authorization still
+belong to the physical cache invariant. -/
+theorem insertDefEqFailure {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address × Address × Address}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.defEqFailure key)) :
+    CacheInvariant semantics authority support
+      { env with defEqFailure := env.defEqFailure.insert key } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | @defEqFailure foundKey hmem =>
+    rw [Std.HashSet.contains_insert, Bool.or_eq_true] at hmem
+    rcases hmem with hsame | hold
+    · have hkey : key = foundKey := eq_of_beq hsame
+      subst foundKey
+      exact .inl rfl
+    · exact .inr (.defEqFailure hold)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert one provenance-certified stuck-successor marker.  The certificate
+is deliberately explicit: a marker changes future reduction behavior even
+though it stores no reduced expression, so physical set membership alone is
+not enough to preserve the kernel cache invariant. -/
+theorem insertNatSuccStuck {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address × Address}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.natSuccStuck key)) :
+    CacheInvariant semantics authority support
+      { env with natSuccStuck := env.natSuccStuck.insert key } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | @natSuccStuck foundKey hmem =>
+    rw [Std.HashSet.contains_insert, Bool.or_eq_true] at hmem
+    rcases hmem with hsame | hold
+    · have hkey : key = foundKey := eq_of_beq hsame
+      subst foundKey
+      exact .inl rfl
+    · exact .inr (.natSuccStuck hold)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert or overwrite one provenance-certified recursion-classification
+entry.  The certificate is explicit because `false` enables struct-eta
+reduction, while the provisional `true` marker controls re-entrancy. -/
+theorem insertIsRec {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {ind : Address} {value : Bool}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.isRec ind value)) :
+    CacheInvariant semantics authority support
+      { env with isRecCache := env.isRecCache.insert ind value } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | @isRec foundInd foundValue hget =>
+      rw [Std.HashMap.getElem?_insert] at hget
+      split at hget
+      · next heq =>
+        cases hget
+        have hind : ind = foundInd := eq_of_beq heq
+        subst foundInd
+        exact .inl rfl
+      · exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Erasing one recursion-classification entry preserves every remaining
+cache certificate.  This is the error-cleanup half of `computedIsRec`. -/
+theorem eraseIsRec {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {ind : Address}
+    (hbefore : CacheInvariant semantics authority support env) :
+    CacheInvariant semantics authority support
+      { env with isRecCache := env.isRecCache.erase ind } := by
+  intro entry hentry
+  apply hbefore
+  cases hentry with
+  | whnf hget => exact .whnf hget
+  | whnfNoDelta hget => exact .whnfNoDelta hget
+  | whnfNoDeltaCheap hget => exact .whnfNoDeltaCheap hget
+  | whnfCore hget => exact .whnfCore hget
+  | whnfCoreCheap hget => exact .whnfCoreCheap hget
+  | infer hget => exact .infer hget
+  | inferOnly hget => exact .inferOnly hget
+  | defEq hget => exact .defEq hget
+  | defEqCheap hget => exact .defEqCheap hget
+  | defEqFailure hmem => exact .defEqFailure hmem
+  | unfold hget => exact .unfold hget
+  | natSuccStuck hmem => exact .natSuccStuck hmem
+  | isProp hget => exact .isProp hget
+  | @isRec foundInd foundValue hget =>
+      rw [Std.HashMap.getElem?_erase] at hget
+      split at hget
+      · simp at hget
+      · exact .isRec hget
+  | recursor hget => exact .recursor hget
+  | recMajors hget => exact .recMajors hget
+  | blockPeer hmem => exact .blockPeer hmem
+  | blockResult hget => exact .blockResult hget
+
+/-- Fold the single-marker rule over a finite list.  Every physical marker
+written by the fold must have its own provenance; duplicate keys are harmless
+because set insertion is idempotent. -/
+theorem insertNatSuccStuckList {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} (keys : List (Address × Address))
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : ∀ key ∈ keys,
+      CacheProvenance semantics authority support (.natSuccStuck key)) :
+    CacheInvariant semantics authority support
+      { env with natSuccStuck :=
+        keys.foldl (fun set key => set.insert key) env.natSuccStuck } := by
+  induction keys generalizing env with
+  | nil => simpa using hbefore
+  | cons key rest ih =>
+      rw [List.foldl_cons]
+      have hhead := insertNatSuccStuck hbefore (hnew key (by simp))
+      have htail := ih (env := { env with
+        natSuccStuck := env.natSuccStuck.insert key }) hhead (by
+          intro found hfound
+          exact hnew found (by simp [hfound]))
+      simpa using htail
+
+/-- Array form matching the production successor loop's `visited.foldl`
+write.  This is the exact invariant rule consumed by both stuck exits. -/
+theorem insertNatSuccStuckArray {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} (keys : Array (Address × Address))
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : ∀ key ∈ keys,
+      CacheProvenance semantics authority support (.natSuccStuck key)) :
+    CacheInvariant semantics authority support
+      { env with natSuccStuck :=
+        keys.foldl (fun set key => set.insert key) env.natSuccStuck } := by
+  rw [← Array.foldl_toList]
+  apply insertNatSuccStuckList keys.toList hbefore
+  intro key hkey
+  exact hnew key (by simpa using hkey)
 
 /-- Exact environment equality preserves all cache provenance. -/
 theorem of_env_eq {semantics : CacheSemantics}

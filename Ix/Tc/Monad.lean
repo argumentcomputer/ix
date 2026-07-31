@@ -349,12 +349,34 @@ def ctxSuffixNeed (s : TcState m) : Nat → Nat → Nat
     if nextNeed == need then need
     else ctxSuffixNeed s fuel nextNeed
 
-/-- Suffix-aware context identity for a loose-bound-variable range.
+/-- Fresh suffix-aware context identity for a loose-bound-variable range.
+    Runs a fixpoint closing the needed suffix over binder type/value
+    dependencies, then hashes the suffix—unless the whole context is needed,
+    in which case `ctxId` itself is the identity. This helper does not inspect
+    or mutate `ctxAddrCache`. -/
+def ctxAddrForLbrUncached (s : TcState m) (lbr : UInt64) : Address :=
+  let n := s.ctx.size
+  let need := ctxSuffixNeed s (n + 1) (min lbr.toNat n)
+  if need == n then s.ctxId
+  else Id.run do
+    let mut h := Blake3.Rust.Hasher.init ()
+    h := h.update "ctx.suffix".toUTF8
+    h := h.update (need.toUInt64.toLEBytes)
+    for i in [n - need:n] do
+      match s.letVals[i]! with
+      | some val =>
+        h := h.update "let".toUTF8
+        h := h.update s.ctx[i]!.addr.hash
+        h := h.update val.addr.hash
+      | none =>
+        h := h.update "local".toUTF8
+        h := h.update s.ctx[i]!.addr.hash
+    return ⟨(h.finalizeWithLength 32).val⟩
 
-    Pure in `(ctxId, lbr)` (memoized). Runs a fixpoint closing the needed
-    suffix over binder type/value dependencies, then hashes the suffix —
-    unless the whole context is needed, in which case `ctxId` itself is the
-    identity. Mirrors tc.rs `ctx_addr_for_lbr` exactly. -/
+/-- Memoized wrapper around `ctxAddrForLbrUncached`, mirroring tc.rs
+    `ctx_addr_for_lbr`. The pure helper is a verification seam as well as an
+    implementation boundary: memo coherence can state that every stored value
+    equals this exact computation. -/
 def ctxAddrForLbr (lbr : UInt64) : TcM m Address := do
   let s ← get
   if lbr == 0 || s.ctx.isEmpty then
@@ -362,24 +384,7 @@ def ctxAddrForLbr (lbr : UInt64) : TcM m Address := do
   let cacheKey := (s.ctxId, lbr)
   if let some cached := s.ctxAddrCache[cacheKey]? then
     return cached
-  let n := s.ctx.size
-  let need := ctxSuffixNeed s (n + 1) (min lbr.toNat n)
-  let result :=
-    if need == n then s.ctxId
-    else Id.run do
-      let mut h := Blake3.Rust.Hasher.init ()
-      h := h.update "ctx.suffix".toUTF8
-      h := h.update (need.toUInt64.toLEBytes)
-      for i in [n - need:n] do
-        match s.letVals[i]! with
-        | some val =>
-          h := h.update "let".toUTF8
-          h := h.update s.ctx[i]!.addr.hash
-          h := h.update val.addr.hash
-        | none =>
-          h := h.update "local".toUTF8
-          h := h.update s.ctx[i]!.addr.hash
-      return ⟨(h.finalizeWithLength 32).val⟩
+  let result := ctxAddrForLbrUncached s lbr
   modify fun s => { s with ctxAddrCache := s.ctxAddrCache.insert cacheKey result }
   return result
 
