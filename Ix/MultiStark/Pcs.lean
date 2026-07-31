@@ -820,8 +820,15 @@ def pcs := ⟦
         let BatchOpening.Mk(rows_p, proof_p) = list_lookup(input_proof, 3);
         -- one opened base row per preprocessed matrix (BatchOpenedValuesCountMismatch)
         assert_eq!(eq_zero(list_length(rows_p) - list_length(prep_round)), 1);
-        assert_eq!(mmcs_verify(prep_commit, rows_p,
-          heights_prep(log_degrees, log_blowup, prep_indices, num_circuits, 0), idxbits, proof_p, log_gmax), 1);
+        -- The preprocessed tree's max height is over the PREP circuits only, so
+        -- it can be SHORTER than the global max when the tallest circuits carry
+        -- no preprocessed matrix. Mirror Plonky3's per-batch index reduction
+        -- (`index >> (log_global_max - log_batch_max)` — dropping the low bits
+        -- of the LSB-first bit list) and verify against the batch's own height.
+        let prep_heights = heights_prep(log_degrees, log_blowup, prep_indices, num_circuits, 0);
+        let log_pmax = heights_max(prep_heights);
+        assert_eq!(mmcs_verify(prep_commit, rows_p, prep_heights,
+          list_drop(idxbits, log_gmax - log_pmax), proof_p, log_pmax), 1);
         open_prep(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, 0, log_degrees,
                   prep_indices, zeta, rows_p, prep_round, alpha),
     }
@@ -833,6 +840,19 @@ def pcs := ⟦
       0 => store(ListNode.Nil),
       _ => store(ListNode.Cons(to_field(list_lookup(log_degrees, i)) + log_blowup,
                                heights_all(log_degrees, log_blowup, rem - 1, i + 1))),
+    }
+  }
+  -- Max of a height list (0 when empty): Plonky3's
+  -- `batch_heights.iter().max().unwrap_or(0)` for the per-batch index reduction.
+  fn heights_max(hs: List‹G›) -> G {
+    match load(hs) {
+      ListNode.Nil => 0,
+      ListNode.Cons(h, rest) =>
+        let m = heights_max(rest);
+        match u32_less_than(m, h) {
+          0 => m,
+          _ => h,
+        },
     }
   }
   fn heights_prep(log_degrees: List‹U8›, log_blowup: G, prep_indices: List‹OptIdx›, rem: G, i: G) -> List‹G› {
