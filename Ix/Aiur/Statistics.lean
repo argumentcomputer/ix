@@ -81,44 +81,37 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount)
     (logBlowup : Nat := defaultCommitmentParameters.logBlowup) :
     ExecutionStats :=
   let t := compiled.bytecode
-  -- Invert nameMap to get FunIdx → String
-  let reverseMap := compiled.nameMap.fold (init := (∅ : Std.HashMap Bytecode.FunIdx String))
-    fun acc global idx => if !acc.contains idx then acc.insert idx (toString global) else acc
   let nAllFuns := t.functions.size
-  let nConstrained := t.functions.foldl (fun n f => if f.constrained then n + 1 else n) 0
-  -- Shapes arrive in canonical system order: constrained functions
-  -- (ascending index), memories, `Bytes1`, `Bytes2`. A mismatch means the
-  -- shapes were built from a different toplevel; misindexing would silently
-  -- attribute costs to the wrong circuits.
-  if shapes.size != nConstrained + t.memorySizes.size + 2 then
+  -- Shapes arrive in canonical system order: function circuits (grouped;
+  -- singletons for ungrouped functions, in ascending member index),
+  -- memories, `Bytes1`, `Bytes2`. A mismatch means the shapes were built
+  -- from a different toplevel; misindexing would silently attribute costs
+  -- to the wrong circuits.
+  if shapes.size != t.circuits.size + t.memorySizes.size + 2 then
     panic! s!"computeStats: {shapes.size} circuit shapes for \
-      {nConstrained} constrained functions + {t.memorySizes.size} memories + 2 gadgets"
+      {t.circuits.size} function circuits + {t.memorySizes.size} memories + 2 gadgets"
   else
   let mkStats (name : String) (shape : CircuitShape) (h hits : Nat) : CircuitStats :=
     { name, width := shape.committedWidth, height := h, cacheHits := hits,
       fftCost := fftCost shape h logBlowup,
       uncachedFftCost := fftCost shape (h + hits) logBlowup }
-  let functionCircuits := Id.run do
-    let mut acc := #[]
-    let mut shapeIdx := 0
-    for i in [:nAllFuns] do
-      if t.functions[i]!.constrained then
-        let shape := shapes[shapeIdx]!
-        shapeIdx := shapeIdx + 1
-        let qc := queryCounts[i]!
-        let name := reverseMap[i]?.getD s!"<fn {i}>"
-        acc := acc.push
-          (mkStats name shape qc.uniqueRows (qc.totalHits - qc.uniqueRows))
-    acc
+  -- One row per function circuit: heights and cache hits are summed over
+  -- the circuit's member functions (singletons sum over one).
+  let functionCircuits := t.circuits.mapIdx fun cIdx c =>
+    let shape := shapes[cIdx]!
+    let (h, hits) := c.members.foldl (init := (0, 0)) fun (h, hits) i =>
+      let qc := queryCounts[i]!
+      (h + qc.uniqueRows, hits + (qc.totalHits - qc.uniqueRows))
+    mkStats c.name shape h hits
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
-    let shape := shapes[nConstrained + i]!
+    let shape := shapes[t.circuits.size + i]!
     let qc := queryCounts[nAllFuns + i]!
     mkStats s!"memory[{size}]" shape qc.uniqueRows (qc.totalHits - qc.uniqueRows)
   -- The byte gadgets commit full-table traces in every proof: their height
   -- is the (fixed) preprocessed height, independent of the query set, so
   -- they carry no cache-hit counterfactual.
   let gadgetCircuits := #["Bytes1", "Bytes2"].mapIdx fun i name =>
-    let shape := shapes[nConstrained + t.memorySizes.size + i]!
+    let shape := shapes[t.circuits.size + t.memorySizes.size + i]!
     mkStats name shape shape.preprocessedHeight 0
   let circuits := (functionCircuits ++ memoryCircuits ++ gadgetCircuits).qsort
     (·.fftCost > ·.fftCost)
