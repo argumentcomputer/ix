@@ -136,9 +136,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // `src/ix/kernel/equiv.rs`), so no additional key construction is paid
     // per method call. Any true result moves the originals into `add_equiv`
     // before returning.
+    let eq_lbr = a.lbr().max(b.lbr());
     let eq_ctx = self.def_eq_ctx_key(a, b);
-    let a_key: crate::equiv::EqKey = (a.hash_key(), eq_ctx);
-    let b_key: crate::equiv::EqKey = (b.hash_key(), eq_ctx);
+    let a_key = crate::equiv::EqKey::new(a.hash_key(), eq_ctx, eq_lbr, a.lbr());
+    let b_key = crate::equiv::EqKey::new(b.hash_key(), eq_ctx, eq_lbr, b.lbr());
 
     if self.equiv_manager.is_equiv(&a_key, &b_key) {
       return Ok(true);
@@ -173,8 +174,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       self.equiv_manager.find_root_key(&a_key),
       self.equiv_manager.find_root_key(&b_key),
     ) && (a_root != a_key || b_root != b_key)
+      && crate::equiv::EqKey::root_cache_scope_matches(
+        &a_root, &b_root, eq_ctx, eq_lbr,
+      )
     {
-      let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
+      let (rlo, rhi) = canonical_pair(a_root.expr_addr, b_root.expr_addr);
       let root_cache_key = (rlo, rhi, eq_ctx);
       let mut cached =
         self.env.def_eq_cache.get(&root_cache_key).map(|v| (*v, false));
@@ -609,26 +613,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         // `instantiate_rev` and lets def-eq compare them structurally.
         // Mirrors lean4lean `isDefEqBinding`
         // (refs/lean4lean/Lean4Lean/TypeChecker.lean:546).
-        let saved = self.lctx.len();
-        let fv_id = self.fresh_fvar_id();
-        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-        self.lctx.push(
-          fv_id,
-          LocalDecl::CDecl {
-            name: name.clone(),
-            bi: bi.clone(),
-            ty: ty1.clone(),
-          },
-        );
-        let b1_open = instantiate_rev(
-          &mut self.env.intern,
-          body1,
-          std::slice::from_ref(&fv),
-        );
-        let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
-        let r = self.is_def_eq(&b1_open, &b2_open);
-        self.lctx.truncate(saved);
-        r
+        self.with_lctx_scope(|tc| {
+          let fv_id = tc.fresh_fvar_id();
+          let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
+          tc.lctx.push(
+            fv_id,
+            LocalDecl::CDecl {
+              name: name.clone(),
+              bi: bi.clone(),
+              ty: ty1.clone(),
+            },
+          );
+          let b1_open = instantiate_rev(
+            &mut tc.env.intern,
+            body1,
+            std::slice::from_ref(&fv),
+          );
+          let b2_open = instantiate_rev(&mut tc.env.intern, body2, &[fv]);
+          tc.is_def_eq(&b1_open, &b2_open)
+        })
       },
       _ => Ok(false),
     }
@@ -705,25 +708,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ) => {
         if self.is_def_eq(ty1, ty2)? {
           // Open both bodies with the same fresh fvar (see `quick_def_eq`).
-          let saved = self.lctx.len();
-          let fv_id = self.fresh_fvar_id();
-          let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-          self.lctx.push(
-            fv_id,
-            LocalDecl::CDecl {
-              name: name.clone(),
-              bi: bi.clone(),
-              ty: ty1.clone(),
-            },
-          );
-          let b1_open = instantiate_rev(
-            &mut self.env.intern,
-            body1,
-            std::slice::from_ref(&fv),
-          );
-          let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
-          let r = self.is_def_eq(&b1_open, &b2_open)?;
-          self.lctx.truncate(saved);
+          let r = self.with_lctx_scope(|tc| {
+            let fv_id = tc.fresh_fvar_id();
+            let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
+            tc.lctx.push(
+              fv_id,
+              LocalDecl::CDecl {
+                name: name.clone(),
+                bi: bi.clone(),
+                ty: ty1.clone(),
+              },
+            );
+            let b1_open = instantiate_rev(
+              &mut tc.env.intern,
+              body1,
+              std::slice::from_ref(&fv),
+            );
+            let b2_open = instantiate_rev(&mut tc.env.intern, body2, &[fv]);
+            tc.is_def_eq(&b1_open, &b2_open)
+          })?;
           if r {
             return Ok(true);
           }
@@ -739,25 +742,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         // FVar zeta-reduction in body comparison, in case this branch IS
         // reached.
         if self.is_def_eq(ty1, ty2)? && self.is_def_eq(v1, v2)? {
-          let saved = self.lctx.len();
-          let fv_id = self.fresh_fvar_id();
-          let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-          self.lctx.push(
-            fv_id,
-            LocalDecl::LDecl {
-              name: name.clone(),
-              ty: ty1.clone(),
-              val: v1.clone(),
-            },
-          );
-          let b1_open = instantiate_rev(
-            &mut self.env.intern,
-            body1,
-            std::slice::from_ref(&fv),
-          );
-          let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
-          let r = self.is_def_eq(&b1_open, &b2_open)?;
-          self.lctx.truncate(saved);
+          let r = self.with_lctx_scope(|tc| {
+            let fv_id = tc.fresh_fvar_id();
+            let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
+            tc.lctx.push(
+              fv_id,
+              LocalDecl::LDecl {
+                name: name.clone(),
+                ty: ty1.clone(),
+                val: v1.clone(),
+              },
+            );
+            let b1_open = instantiate_rev(
+              &mut tc.env.intern,
+              body1,
+              std::slice::from_ref(&fv),
+            );
+            let b2_open = instantiate_rev(&mut tc.env.intern, body2, &[fv]);
+            tc.is_def_eq(&b1_open, &b2_open)
+          })?;
           if r {
             return Ok(true);
           }

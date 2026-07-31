@@ -66,6 +66,9 @@ theorem instantiateUnivParams_whnf_wf
         core := hI.1.core.of_consts_eq hconsts hwalk.1.1
         internSupport := hcover
         caches := hcaches
+        equivalences := by
+          have hequiv := congrArg TcState.equivManager hframe
+          simpa [InternUpdateFrame] using hequiv ▸ hI.1.equivalences
       }
       exact ⟨hframe.whnfStateInv hkernel hI, trivial⟩
 

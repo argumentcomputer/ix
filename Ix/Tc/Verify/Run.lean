@@ -182,36 +182,41 @@ theorem instRev_spec {α : Type} {initial : TcState .anon}
     hsup.of_expr_univs post.2.2
       (instantiateRev_preservesUnivs body fvars it)⟩
 
-/-- API-level abstraction adapter, including its two no-op fast paths. -/
-theorem abstractFVars_spec {α : Type} {initial : TcState .anon}
-    {program : TcM .anon α} {requests : List WalkerRequest}
+/-- Request-independent API-level abstraction adapter, including its two
+no-op fast paths.  Callback-generated fvar ids cannot be selected uniformly
+from one concrete execution list, so recursive inference supplies the same
+finite reach and arithmetic resources directly. -/
+theorem abstractFVars_support_spec
     {support : RunSupport}
-    (h : RunAssumptions initial program requests support)
+    (hcollision : support.CollisionFree)
     {body : KExpr .anon} {fvars : Array FVarId}
-    (hmem : WalkerRequest.abstractFVars body fvars ∈ requests)
+    (hbounds : WalkerRequest.Bounds (.abstractFVars body fvars))
+    (hreach : ∀ x, KExpr.AbstractReach (abstractFVarPositions fvars)
+      fvars.size.toUInt64 body 0 x → support x)
     {it : InternTable .anon} (hwf : it.WF)
     (hsup : support.CoversIntern it) :
     (abstractFVars body fvars it).1 =
         KExpr.abstractFVarsResult body fvars ∧
       (abstractFVars body fvars it).2.WF ∧
       support.CoversIntern (abstractFVars body fvars it).2 := by
-  obtain ⟨hbody, _, hwalk, _⟩ := h.requestBounds hmem
+  obtain ⟨hbody, _, hwalk, _⟩ := hbounds
   have post :
       (abstractFVars body fvars it).1 =
           KExpr.abstractFVarsResult body fvars ∧
         (abstractFVars body fvars it).2.WF ∧
         (∀ x, (abstractFVars body fvars it).2.ExprSupport x →
           support x) := by
-    by_cases hfast : (fvars.isEmpty || !body.hasFVars) = true
+    by_cases hfast :
+        (fvars.isEmpty || (!body.hasFVars && body.lbr == 0)) = true
     · have hrun : abstractFVars body fvars it = (body, it) := by
         rw [abstractFVars_eq, if_pos hfast]
         rfl
       rw [hrun]
       exact ⟨by simp [KExpr.abstractFVarsResult, hfast], hwf, hsup.expr⟩
     · have cached := Ix.Tc.abstractFVarsCached_spec
-          h.collisionFree.expr hbody
+          hcollision.expr hbody
           (depth := 0) (it := it) (sc := {}) (by simpa using hwalk)
-          (h.coverage.abstractFVars hmem) hwf hsup.expr
+          hreach hwf hsup.expr
           (WalkScratchInv.empty support _)
       have hrun : abstractFVars body fvars it =
           ((abstractFVarsCached body (abstractFVarPositions fvars)
@@ -227,6 +232,22 @@ theorem abstractFVars_spec {α : Type} {initial : TcState .anon}
   exact ⟨post.1, post.2.1,
     hsup.of_expr_univs post.2.2
       (abstractFVars_preservesUnivs body fvars it)⟩
+
+/-- Execution-list specialization of `abstractFVars_support_spec`. -/
+theorem abstractFVars_spec {α : Type} {initial : TcState .anon}
+    {program : TcM .anon α} {requests : List WalkerRequest}
+    {support : RunSupport}
+    (h : RunAssumptions initial program requests support)
+    {body : KExpr .anon} {fvars : Array FVarId}
+    (hmem : WalkerRequest.abstractFVars body fvars ∈ requests)
+    {it : InternTable .anon} (hwf : it.WF)
+    (hsup : support.CoversIntern it) :
+    (abstractFVars body fvars it).1 =
+        KExpr.abstractFVarsResult body fvars ∧
+      (abstractFVars body fvars it).2.WF ∧
+      support.CoversIntern (abstractFVars body fvars it).2 :=
+  abstractFVars_support_spec h.collisionFree (h.requestBounds hmem)
+    (h.coverage.abstractFVars hmem) hwf hsup
 
 /-- Adapter for the cached abstraction master.  The remaining API wrapper
 lemma exposes the slow-path master separately for recursive proof clients. -/
@@ -291,13 +312,13 @@ theorem runIntern_supported_wf {semantics : CacheSemantics}
       (fun result s' => result = expected ∧
         s' = { s with env := { s.env with intern := s'.env.intern } }) := by
   intro hI
-  obtain ⟨hstate, hsupport, hcaches⟩ := hI
+  obtain ⟨hstate, hsupport, hcaches, hequiv⟩ := hI
   rcases hrun : x s.env.intern with ⟨result, intern⟩
   have hpost := hspec s.env.intern hstate.intern hsupport
   rw [hrun] at hpost
   simp only [TcM.runIntern, hrun]
   refine ⟨⟨hstate.of_consts_eq rfl hpost.2.1, hpost.2.2,
-      hcaches.of_intern_update⟩,
+      hcaches.of_intern_update, hequiv⟩,
     hpost.1, trivial⟩
 
 theorem lift_wf {α : Type} {initial : TcState .anon}
@@ -397,7 +418,7 @@ theorem instUniv_wf {α : Type} {initial : TcState .anon}
       (fun _ s' =>
         s' = { s with env := { s.env with intern := s'.env.intern } }) := by
   intro hI
-  obtain ⟨hstate, hsupport, hcaches⟩ := hI
+  obtain ⟨hstate, hsupport, hcaches, hequiv⟩ := hI
   have hrunWF := h.instantiateUnivParams_wf hmem
     (s := s) ⟨hstate.intern, hsupport.expr⟩
   match hrun : TcM.instantiateUnivParams e us s with
@@ -415,7 +436,9 @@ theorem instUniv_wf {α : Type} {initial : TcState .anon}
         (CacheAuthority.stable world) support s'.env := by
       rw [hframe]
       exact hcaches.of_intern_update
-    exact ⟨⟨hstate.of_consts_eq hconsts hintern, hcovered, hcaches'⟩,
+    exact ⟨⟨hstate.of_consts_eq hconsts hintern, hcovered, hcaches', by
+        rw [hframe]
+        exact hequiv⟩,
       hspec, hframe⟩
   | .error err s' =>
     rw [hrun] at hrunWF
@@ -430,7 +453,9 @@ theorem instUniv_wf {α : Type} {initial : TcState .anon}
         (CacheAuthority.stable world) support s'.env := by
       rw [hframe]
       exact hcaches.of_intern_update
-    exact ⟨⟨hstate.of_consts_eq hconsts hintern, hcovered, hcaches'⟩,
+    exact ⟨⟨hstate.of_consts_eq hconsts hintern, hcovered, hcaches', by
+        rw [hframe]
+        exact hequiv⟩,
       hframe⟩
 
 end RunAssumptions

@@ -312,6 +312,13 @@ def blockErrorsOnly : CacheSemantics where
   mono := by
     intro before after support entry hle h
     exact h
+  Equiv _ _ := Eq
+  equivEquivalence := by
+    intro authority support
+    exact ⟨fun _ => rfl, Eq.symm, Eq.trans⟩
+  equivMono := by
+    intro before after support left right hle h
+    exact h
   blockError := by
     intro authority support block err
     trivial
@@ -364,6 +371,9 @@ fallback cache semantics. -/
 def isRecCacheSemantics (fallback : CacheSemantics) : CacheSemantics where
   Valid := IsRecCacheValid fallback
   mono := IsRecCacheValid.mono
+  Equiv := fallback.Equiv
+  equivEquivalence := fallback.equivEquivalence
+  equivMono := fallback.equivMono
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
@@ -449,6 +459,9 @@ def whnfCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) : CacheSemantics where
   Valid := WhnfCacheValid keys trProj fallback
   mono := WhnfCacheValid.mono
+  Equiv := fallback.Equiv
+  equivEquivalence := fallback.equivEquivalence
+  equivMono := fallback.equivMono
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
@@ -700,14 +713,16 @@ theorem of_semantic_fields_eq
     (hnum : after.numLetBindings = before.numLetBindings)
     (hlctx : after.lctx = before.lctx)
     (hprims : after.prims = before.prims)
-    (hnoAccel : after.noAccel = before.noAccel) :
+    (hnoAccel : after.noAccel = before.noAccel)
+    (hequiv : after.equivManager = before.equivManager) :
     WhnfStateInv layer semantics trProj world support uvars Δ after := by
   rcases h with ⟨hkernel, hrecon, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
   · exact {
       core := hkernel.core.of_env_eq henv
       internSupport := by simpa only [henv] using hkernel.internSupport
-      caches := by simpa only [henv] using hkernel.caches }
+      caches := by simpa only [henv] using hkernel.caches
+      equivalences := by simpa only [hequiv] using hkernel.equivalences }
   · exact hrecon.of_fields_eq hctx hlet hnum hlctx (by simp [henv])
   · cases layer with
     | structuralNoAccel =>
@@ -716,6 +731,28 @@ theorem of_semantic_fields_eq
         simpa only [WhnfLayer.StateOK, hprims, hnoAccel] using hlayer
     | accelerated =>
         simpa only [WhnfLayer.StateOK, hprims] using hlayer
+
+/-- Replace only the equivalence manager after separately proving its
+semantic representation invariant.  This is the sole state bridge used by
+DefEq manager queries, path compression, and justified union operations. -/
+theorem setEquivManager
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon}
+    (h : WhnfStateInv layer semantics trProj world support uvars Delta s)
+    (manager : EquivManager)
+    (hmanager : EquivManager.WF
+      (semantics.Equiv (CacheAuthority.stable world) support) manager) :
+    WhnfStateInv layer semantics trProj world support uvars Delta
+      {s with equivManager := manager} := by
+  rcases h with ⟨hkernel, hctx, hlayer⟩
+  exact ⟨{
+      core := hkernel.core.of_env_eq rfl
+      internSupport := hkernel.internSupport
+      caches := hkernel.caches
+      equivalences := hmanager },
+    hctx.of_fields_eq rfl rfl rfl rfl (by simp), by
+      cases layer <;> simpa [WhnfLayer.StateOK] using hlayer⟩
 
 /-- The production no-acceleration invariant fixes the complete anon
 primitive table, not merely the `noAccel` Boolean gate. -/
@@ -749,7 +786,7 @@ theorem set_recFuel
     (fuel : UInt64) :
     WhnfStateInv layer semantics trProj world support uvars Δ
       {s with recFuel := fuel} :=
-  h.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl
+  h.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl rfl
 
 end WhnfStateInv
 
@@ -779,11 +816,14 @@ theorem whnfStateInv {layer : WhnfLayer} {semantics : CacheSemantics}
     simpa [ContextKeyFrame] using congrArg TcState.noAccel hframe
   have hprims : after.prims = before.prims := by
     simpa [ContextKeyFrame] using congrArg TcState.prims hframe
+  have hequiv : after.equivManager = before.equivManager := by
+    simpa [ContextKeyFrame] using congrArg TcState.equivManager hframe
   refine ⟨?_, ?_, ?_⟩
   · exact {
       core := hkernel.core.of_env_eq henv
       internSupport := by simpa [henv] using hkernel.internSupport
-      caches := by simpa [henv] using hkernel.caches }
+      caches := by simpa [henv] using hkernel.caches
+      equivalences := by simpa [hequiv] using hkernel.equivalences }
   · exact hctx.of_fields_eq hctxEq hlet hnum hlctx (by simp [henv])
   · cases layer with
     | structuralNoAccel =>
@@ -875,7 +915,8 @@ theorem runIntern_whnf_wf {layer : WhnfLayer}
   have hkernel' : KernelStateWF semantics trProj world support
       { s with env := { s.env with intern } } :=
     ⟨hkernel.core.of_consts_eq rfl hpost.2.1,
-      hpost.2.2, hkernel.caches.of_intern_update⟩
+      hpost.2.2, hkernel.caches.of_intern_update,
+      hkernel.equivalences⟩
   exact ⟨hframe.whnfStateInv hkernel' hI, hpost.1, hframe⟩
 
 /-- Executable form of `runIntern_whnf_wf`.  `InternM` cannot throw, so an
@@ -905,7 +946,7 @@ theorem runIntern_whnf_eval {layer : WhnfLayer}
 node and collision freedom on that same run domain.  This is the request-list
 independent form used by primitive reducers whose generated syntax is already
 enumerated by their verification context. -/
-private theorem internExpr_support_spec
+theorem internExpr_support_spec
     {support : RunSupport} (hcollision : support.CollisionFree)
     {e : KExpr .anon} (hsupport : support e)
     (it : InternTable .anon) (hwf : it.WF)
@@ -1138,6 +1179,7 @@ theorem bumpStats_whnf_wf {layer : WhnfLayer}
     (hlctx : forall s, (f s).lctx = s.lctx)
     (hprims : forall s, (f s).prims = s.prims)
     (hnoAccel : forall s, (f s).noAccel = s.noAccel)
+    (hequiv : forall s, (f s).equivManager = s.equivManager)
     (s : TcState .anon) :
     TcM.WF (WhnfStateInv layer semantics trProj world support uvars Delta) s
       (TcM.bumpStats f) (fun _ _ => True) := by
@@ -1149,7 +1191,7 @@ theorem bumpStats_whnf_wf {layer : WhnfLayer}
   split
   · exact TcM.WF.modifyGet
       (fun hI => hI.of_semantic_fields_eq (henv s') (hctx s') (hlet s')
-        (hnum s') (hlctx s') (hprims s') (hnoAccel s'))
+        (hnum s') (hlctx s') (hprims s') (hnoAccel s') (hequiv s'))
       (fun _ => trivial)
   · exact TcM.WF.pure (fun _ => trivial)
 
@@ -2863,11 +2905,12 @@ theorem full_whnfStateInv
         whnfCoreCache := s.env.whnfCoreCache.insert key result}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertWhnfCore hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -2886,11 +2929,12 @@ theorem cheap_whnfStateInv
         whnfCoreCheapCache := s.env.whnfCoreCheapCache.insert key result}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertWhnfCoreCheap hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -2915,11 +2959,12 @@ theorem fold_whnfStateInv
         (visited.foldl (·.insert ·) s.env.natSuccStuck) } } := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertNatSuccStuckArray visited hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -4176,11 +4221,12 @@ theorem noDelta_whnfStateInv
         whnfNoDeltaCache := s.env.whnfNoDeltaCache.insert key result}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertWhnfNoDelta hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -4198,11 +4244,12 @@ theorem noDeltaCheap_whnfStateInv
           s.env.whnfNoDeltaCheapCache.insert key result}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertWhnfNoDeltaCheap hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -4219,11 +4266,12 @@ theorem full_whnfStateInv
         whnfCache := s.env.whnfCache.insert key result}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertWhnf hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -4684,7 +4732,7 @@ theorem whnfWithNatSuccModePrefix_wf
     exact TcM.bumpStats_whnf_wf
       (fun st => {st with whnfCalls := st.whnfCalls + 1})
       (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1
 
 /-- The full-WHNF miss charge preserves the K1 invariant on both outcomes.
     Its only possible error is the underlying `.maxRecFuel`; the bounded-loop
@@ -4702,12 +4750,12 @@ theorem whnfWithNatSuccModeMissCharge_wf
     exact TcM.bumpStats_whnf_wf
       (fun st => {st with whnfMisses := st.whnfMisses + 1})
       (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s
   · intro _ s1 _
     apply RecM.WF.liftTcM
     exact TcM.WF.mono
       (TcM.tick.wf (fun _ hI => hI.of_semantic_fields_eq
-        rfl rfl rfl rfl rfl rfl rfl))
+        rfl rfl rfl rfl rfl rfl rfl rfl))
       (fun _ _ _ => trivial) (fun _ _ _ => trivial)
 
 /-- Full-WHNF public non-leaf closure with the mechanical prefix and charge

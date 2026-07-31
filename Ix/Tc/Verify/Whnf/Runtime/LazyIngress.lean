@@ -71,6 +71,7 @@ theorem kernelStateWF
     }
     internSupport := frame.internSupport
     caches := fun {_} hentry => h.caches (frame.cacheBack hentry)
+    equivalences := h.equivalences
   }
 
 /-- Changing the ingress-owned environment fields leaves the dual concrete
@@ -121,6 +122,8 @@ theorem whnfStateInv
       }
       internSupport := frame.internSupport
       caches := fun {_} hentry => h.1.caches (frame.cacheBack hentry)
+      equivalences := by
+        simpa [TcM.lazyIngressPost] using h.1.equivalences
     }
   · cases layer <;>
       simpa [TcM.lazyIngressPost, WhnfLayer.StateOK] using h.2.2

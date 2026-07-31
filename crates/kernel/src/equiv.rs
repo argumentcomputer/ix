@@ -1,18 +1,59 @@
 //! Union-find (disjoint set) for context-aware definitional equality caching.
 //!
 //! Provides O(α(n)) amortized equivalence checks via weighted quick-union
-//! with path halving. Keys are `(expr_hash, ctx_hash)` pairs using content-
-//! addressed blake3 hashes for both components.
+//! with path halving. Keys retain the expression hash, context hash, the
+//! context-suffix radius used to construct that hash, and the expression's
+//! intrinsic local-binder radius.
 
 use rustc_hash::FxHashMap;
 
 use super::env::{Addr, CtxAddr};
 
-/// Composite key: (expression content hash, context content hash).
-pub type EqKey = (Addr, CtxAddr);
+/// One expression in one context-suffix interpretation.
+///
+/// The radius is semantically load-bearing even if two suffix calculations
+/// emit the same digest: DefEq transport is justified only at a common
+/// requested radius. Keeping it in the union-find key prevents transitive
+/// components from joining equality results established at different radii.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EqKey {
+  pub expr_addr: Addr,
+  pub ctx_addr: CtxAddr,
+  /// Radius at which `ctx_addr` was computed for this comparison.
+  pub lbr: u64,
+  /// Intrinsic local-binder radius of the expression at `expr_addr`.
+  pub expr_lbr: u64,
+}
+
+impl EqKey {
+  pub fn new(
+    expr_addr: Addr,
+    ctx_addr: CtxAddr,
+    lbr: u64,
+    expr_lbr: u64,
+  ) -> Self {
+    Self { expr_addr, ctx_addr, lbr, expr_lbr }
+  }
+
+  /// Whether two representatives can safely reuse a DefEq cache context.
+  /// Their intrinsic expression radii must reconstruct the requested radius
+  /// at which the context digest was computed.
+  pub fn root_cache_scope_matches(
+    left: &Self,
+    right: &Self,
+    ctx_addr: CtxAddr,
+    lbr: u64,
+  ) -> bool {
+    left.ctx_addr == ctx_addr
+      && right.ctx_addr == ctx_addr
+      && left.lbr == lbr
+      && right.lbr == lbr
+      && left.expr_lbr.max(right.expr_lbr) == lbr
+  }
+}
 
 /// Union-find structure for tracking definitional equality between
-/// (expr_hash, ctx_hash) pairs.
+/// context-aware expression keys.
 #[derive(Debug, Clone)]
 pub struct EquivManager {
   /// Map from composite key to union-find node index.
@@ -152,19 +193,24 @@ mod tests {
   fn test_basic_equiv() {
     let mut em = EquivManager::new();
     let zero = ctx(0);
-    assert!(!em.is_equiv(&(addr(100), zero), &(addr(200), zero)));
-    em.add_equiv((addr(100), zero), (addr(200), zero));
-    assert!(em.is_equiv(&(addr(100), zero), &(addr(200), zero)));
-    assert!(em.is_equiv(&(addr(200), zero), &(addr(100), zero)));
+    let a = EqKey::new(addr(100), zero, 0, 0);
+    let b = EqKey::new(addr(200), zero, 0, 0);
+    assert!(!em.is_equiv(&a, &b));
+    em.add_equiv(a, b);
+    assert!(em.is_equiv(&a, &b));
+    assert!(em.is_equiv(&b, &a));
   }
 
   #[test]
   fn test_transitivity() {
     let mut em = EquivManager::new();
     let zero = ctx(0);
-    em.add_equiv((addr(100), zero), (addr(200), zero));
-    em.add_equiv((addr(200), zero), (addr(300), zero));
-    assert!(em.is_equiv(&(addr(100), zero), &(addr(300), zero)));
+    let a = EqKey::new(addr(100), zero, 0, 0);
+    let b = EqKey::new(addr(200), zero, 0, 0);
+    let c = EqKey::new(addr(300), zero, 0, 0);
+    em.add_equiv(a, b);
+    em.add_equiv(b, c);
+    assert!(em.is_equiv(&a, &c));
   }
 
   #[test]
@@ -172,8 +218,49 @@ mod tests {
     let mut em = EquivManager::new();
     let ctx1 = ctx(1);
     let ctx2 = ctx(2);
-    em.add_equiv((addr(100), ctx1), (addr(200), ctx1));
-    assert!(em.is_equiv(&(addr(100), ctx1), &(addr(200), ctx1)));
-    assert!(!em.is_equiv(&(addr(100), ctx2), &(addr(200), ctx2)));
+    let a1 = EqKey::new(addr(100), ctx1, 1, 1);
+    let b1 = EqKey::new(addr(200), ctx1, 1, 1);
+    let a2 = EqKey::new(addr(100), ctx2, 1, 1);
+    let b2 = EqKey::new(addr(200), ctx2, 1, 1);
+    em.add_equiv(a1, b1);
+    assert!(em.is_equiv(&a1, &b1));
+    assert!(!em.is_equiv(&a2, &b2));
+  }
+
+  #[test]
+  fn test_radius_isolation() {
+    let mut em = EquivManager::new();
+    let zero = ctx(0);
+    let a1 = EqKey::new(addr(100), zero, 1, 1);
+    let b1 = EqKey::new(addr(200), zero, 1, 1);
+    let a2 = EqKey::new(addr(100), zero, 2, 1);
+    let b2 = EqKey::new(addr(200), zero, 2, 1);
+    em.add_equiv(a1, b1);
+    assert!(em.is_equiv(&a1, &b1));
+    assert!(!em.is_equiv(&a2, &b2));
+  }
+
+  #[test]
+  fn test_intrinsic_radius_isolation() {
+    let mut em = EquivManager::new();
+    let zero = ctx(0);
+    let a1 = EqKey::new(addr(100), zero, 2, 1);
+    let b1 = EqKey::new(addr(200), zero, 2, 2);
+    let a2 = EqKey::new(addr(100), zero, 2, 2);
+    let b2 = EqKey::new(addr(200), zero, 2, 2);
+    em.add_equiv(a1, b1);
+    assert!(em.is_equiv(&a1, &b1));
+    assert!(!em.is_equiv(&a2, &b2));
+  }
+
+  #[test]
+  fn test_root_cache_scope_requires_intrinsic_radius() {
+    let scope = ctx(0);
+    let low_left = EqKey::new(addr(100), scope, 2, 1);
+    let low_right = EqKey::new(addr(200), scope, 2, 1);
+    let high_right = EqKey::new(addr(200), scope, 2, 2);
+
+    assert!(!EqKey::root_cache_scope_matches(&low_left, &low_right, scope, 2));
+    assert!(EqKey::root_cache_scope_matches(&low_left, &high_right, scope, 2));
   }
 }

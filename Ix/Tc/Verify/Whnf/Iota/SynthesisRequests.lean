@@ -51,7 +51,7 @@ theorem enterDispatch_whnf_wf
   · exact TcM.WF.throw (fun _ => trivial)
   · apply TcM.WF.set
     · intro hI
-      exact hI.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl
+      exact hI.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl rfl
     · exact fun _ => trivial
 
 /-- The balanced dispatch exit is likewise pure operational bookkeeping. -/
@@ -63,7 +63,7 @@ theorem exitDispatch_whnf_wf
       (exitDispatch (m := .anon)) (fun _ _ => True) := by
   unfold exitDispatch modify
   exact TcM.WF.modifyGet
-    (fun hI => hI.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl)
+    (fun hI => hI.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl rfl)
     (fun _ => trivial)
 
 /-- At certified inputs, the production `callIsDefEq` wrapper is constructed
@@ -275,7 +275,7 @@ theorem verifyKSynthCandidate_state_wf_of_requests
               { st with kSynthAttempts := st.kSynthAttempts + 1 })
             (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
             (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-            (fun _ => rfl) afterInfer)
+            (fun _ => rfl) (fun _ => rfl) afterInfer)
         intro _ afterAttempt _
         rw [ReaderT.run_bind]
         apply TcM.WF.bind (hdefeq majorTyW ctorTy afterAttempt)
@@ -290,7 +290,7 @@ theorem verifyKSynthCandidate_state_wf_of_requests
                   { st with kSynthRejects := st.kSynthRejects + 1 })
                 (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
                 (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-                (fun _ => rfl) afterDefEq)
+                (fun _ => rfl) (fun _ => rfl) afterDefEq)
             intro _ afterReject _
             exact TcM.WF.pure (fun _ => trivial)
         | true =>
@@ -366,7 +366,7 @@ theorem verifyKSynthCandidate_state_wf_of_inputs
               { st with kSynthAttempts := st.kSynthAttempts + 1 })
             (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
             (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-            (fun _ => rfl) afterInfer)
+            (fun _ => rfl) (fun _ => rfl) afterInfer)
         intro _ afterAttempt _
         rw [ReaderT.run_bind]
         apply TcM.WF.bind
@@ -383,7 +383,7 @@ theorem verifyKSynthCandidate_state_wf_of_inputs
                   { st with kSynthRejects := st.kSynthRejects + 1 })
                 (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
                 (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-                (fun _ => rfl) afterDefEq)
+                (fun _ => rfl) (fun _ => rfl) afterDefEq)
             intro _ afterReject _
             exact TcM.WF.pure (fun _ => trivial)
         | true =>

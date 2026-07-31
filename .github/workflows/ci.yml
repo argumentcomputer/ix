@@ -26,6 +26,24 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
+      # Publish the zkVM fixture before the slower build-all and Ix.Tc
+      # verification steps below. The SP1/Zisk jobs run in parallel and only
+      # wait five minutes for this cache after their host builds finish.
+      #
+      # `Nat.add_comm`'s transitive-dep closure (~40 kB, ~40 constants) is a
+      # real theorem, not an empty env. It is seeded from `Ix.lean` (already
+      # built above) via `--consts`, so this is the constant's closure, NOT the
+      # 184 MB full Init+Std env `bench-main`'s compile job produces. The root
+      # package has no Mathlib dependency, so no cache fetch is needed.
+      - name: Compile nataddcomm.ixe for zkVM execution gates
+        run: lake exe ix compile Ix.lean --consts Nat.add_comm --out nataddcomm.ixe
+      # Keyed by commit sha so every run gets a fresh entry (the .ixe is not
+      # byte-reproducible).
+      - name: Cache nataddcomm.ixe for the zkVM execution gates
+        uses: actions/cache/save@v6
+        with:
+          path: nataddcomm.ixe
+          key: nataddcomm-ixe-${{ github.sha }}
       # build-all lint driver compiles every lib/exe target with --wfail, so a
       # warning in any target (exes, benchmarks, Apps) — not just the default lib
       # lean-action builds above — fails CI.
@@ -39,22 +57,6 @@ jobs:
         run: lake build IxTcVerify
       - name: Check codegen'd IxVM kernel is up to date
         run: lake exe ix codegen --check
-      # Compile the `.ixe` the zkVM execution gates run the guests over:
-      # `Nat.add_comm`'s transitive-dep closure (~40 kB, ~40 constants — a real
-      # theorem, not an empty env). Seeded from `Ix.lean` (already built above)
-      # via `--consts`, so it's the constant's closure, NOT the 184 MB full
-      # Init+Std env `bench-main`'s compile job produces. Root package has no
-      # Mathlib dep, so no cache fetch. Cached for the sp1-build / zisk-build
-      # jobs, which have no Lean toolchain to compile it.
-      - name: Compile nataddcomm.ixe for zkVM execution gates
-        run: lake exe ix compile Ix.lean --consts Nat.add_comm --out nataddcomm.ixe
-      # Keyed by commit sha so every run gets a fresh entry (the .ixe is not
-      # byte-reproducible).
-      - name: Cache nataddcomm.ixe for the zkVM execution gates
-        uses: actions/cache/save@v6
-        with:
-          path: nataddcomm.ixe
-          key: nataddcomm-ixe-${{ github.sha }}
       - name: Test Ix CLI
         run: lake test --wfail -- cli
       - name: Aiur tests

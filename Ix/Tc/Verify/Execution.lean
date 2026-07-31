@@ -72,6 +72,9 @@ inductive ExecutionRequests : {α : Type} →
       (us : Array (KUniv .anon)) :
       ExecutionRequests (TcM.instantiateUnivParams e us) s
         [.instUniv e us]
+  | cheapBeta (s : TcState .anon) (e : KExpr .anon) :
+      ExecutionRequests (TcM.runIntern (cheapBetaReduce e)) s
+        [.cheapBeta e]
   | bind {s : TcState .anon} {x : TcM .anon α}
       {f : α → TcM .anon β}
       {before after : List WalkerRequest}
@@ -129,7 +132,7 @@ theorem intern_eq_of_nil {α : Type} {x : TcM .anon α}
   | set initial target hintern => exact hintern
   | modifyGet s f hintern => exact hintern
   | internExpr | internUniv | lift | subst | simulSubst | instRev |
-      abstractFVars | instUniv =>
+      abstractFVars | instUniv | cheapBeta =>
     exact absurd hnil (by simp)
   | bind hx hf ihx ihf =>
     rename_i s x f before after

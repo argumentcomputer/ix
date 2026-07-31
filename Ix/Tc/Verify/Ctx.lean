@@ -113,78 +113,114 @@ def KVLCtx.bvarLets : KVLCtx → Nat
 
 /-! ### Concrete `LocalContext` well-formedness
 
-Upstream `LocalContext.WF` (Verify/LocalContext.lean:119) re-keyed
-over our production `push`: each pushed id is absent from the index.
-Only the `mem_of_index` inversion is needed this slice (it discharges
-mint-freshness); the full `find?`-correspondence kit is next. -/
+The invariant is deliberately extensional in the hash-map representation:
+every successful index lookup must point to a declaration carrying the same
+id.  An earlier push-history inductive was too strong for production
+`truncate`: `erase (insert map key value) key` is lookup-equivalent to `map`
+when the key was absent, but `Std.HashMap` does not promise representation
+equality after that mutation pair. -/
 
-inductive LocalContext.WF {m : Mode} : LocalContext m → Prop
-  | empty : WF {}
-  | push {lctx : LocalContext m} {fv : FVarId} {d : LocalDecl m} :
-    WF lctx → lctx.index[fv]? = none → WF (lctx.push fv d)
+structure LocalContext.WF {m : Mode} (lctx : LocalContext m) : Prop where
+  sound : ∀ {fv : FVarId} {i : Nat}, lctx.index[fv]? = some i →
+    ∃ d, lctx.decls[i]? = some (fv, d)
+
+protected theorem LocalContext.WF.empty :
+    LocalContext.WF ({} : LocalContext m) where
+  sound := by simp
+
+protected theorem LocalContext.WF.push {m : Mode}
+    {lctx : LocalContext m} {fv : FVarId} {d : LocalDecl m}
+    (h : lctx.WF) (hfree : lctx.index[fv]? = none) :
+    (lctx.push fv d).WF where
+  sound := by
+    have _hfree := hfree
+    intro queried i hi
+    simp only [LocalContext.push] at hi ⊢
+    rw [Std.HashMap.getElem?_insert] at hi
+    split at hi
+    · next heq =>
+      cases hi
+      have hid : fv = queried := eq_of_beq heq
+      subst queried
+      refine ⟨d, ?_⟩
+      rw [Array.getElem?_push]
+      simp
+    · obtain ⟨decl, hd⟩ := h.sound hi
+      refine ⟨decl, ?_⟩
+      rw [Array.getElem?_push, if_neg]
+      · exact hd
+      · intro hieq
+        subst i
+        obtain ⟨hlt, _⟩ := Array.getElem?_eq_some_iff.mp hd
+        omega
 
 theorem LocalContext.WF.mem_of_index {m : Mode}
     {lctx : LocalContext m} (h : lctx.WF) {fv : FVarId} {i : Nat}
     (hi : lctx.index[fv]? = some i) :
     ∃ p ∈ lctx.decls.toList, p.1 = fv := by
-  induction h with
-  | empty => simp at hi
-  | @push lctx fv' d _ h2 ih =>
-    simp only [LocalContext.push] at hi ⊢
-    rw [Std.HashMap.getElem?_insert] at hi
-    split at hi
-    · next heq =>
-      have h3 : fv' = fv := eq_of_beq heq
-      subst h3
-      exact ⟨(fv', d), by simp [Array.toList_push], rfl⟩
-    · obtain ⟨p, hp, hfst⟩ := ih hi
-      have hp' : p ∈ (lctx.decls.push (fv', d)).toList := by
-        rw [Array.toList_push]
-        exact List.mem_append.mpr (.inl hp)
-      exact ⟨p, hp', hfst⟩
+  obtain ⟨d, hd⟩ := h.sound hi
+  refine ⟨(fv, d), ?_, rfl⟩
+  apply List.mem_of_getElem?
+  rw [Array.getElem?_toList]
+  exact hd
 
 theorem LocalContext.WF.index_lt {m : Mode} {lctx : LocalContext m}
     (h : lctx.WF) {fv : FVarId} {i : Nat}
     (hi : lctx.index[fv]? = some i) : i < lctx.decls.size := by
-  induction h with
-  | empty => simp at hi
-  | @push lctx fv' d _ h2 ih =>
-    simp only [LocalContext.push] at hi ⊢
-    rw [Std.HashMap.getElem?_insert] at hi
-    split at hi
-    · cases hi
-      rw [Array.size_push]
-      omega
-    · have := ih hi
-      rw [Array.size_push]
-      omega
+  obtain ⟨d, hd⟩ := h.sound hi
+  exact (Array.getElem?_eq_some_iff.mp hd).choose
 
 /-- The index is positionally coherent: a hit points at an entry
     carrying exactly the queried id. -/
 theorem LocalContext.WF.getElem?_of_index {m : Mode}
     {lctx : LocalContext m} (h : lctx.WF) {fv : FVarId} {i : Nat}
     (hi : lctx.index[fv]? = some i) :
-    ∃ d, lctx.decls[i]? = some (fv, d) := by
-  induction h with
-  | empty => simp at hi
-  | @push lctx fv' d hwf h2 ih =>
-    simp only [LocalContext.push] at hi ⊢
-    rw [Std.HashMap.getElem?_insert] at hi
-    split at hi
-    · next heq =>
-      cases hi
-      have h3 : fv' = fv := eq_of_beq heq
-      subst h3
-      refine ⟨d, ?_⟩
-      rw [← Array.getElem?_toList, Array.toList_push,
-        ← Array.length_toList, List.getElem?_concat_length]
-    · obtain ⟨d', hd⟩ := ih hi
-      have hlt : i < lctx.decls.size := hwf.index_lt hi
-      refine ⟨d', ?_⟩
-      rw [← Array.getElem?_toList, Array.toList_push,
-        List.getElem?_append_left (by simpa using hlt),
-        Array.getElem?_toList]
+    ∃ d, lctx.decls[i]? = some (fv, d) :=
+  h.sound hi
+
+/-- Truncating a one-entry extension produces the exact declaration-array
+prefix and an index whose remaining hits are still sound.  The index is not
+claimed equal to any earlier hash-map value. -/
+theorem LocalContext.truncate_pred_eval {m : Mode}
+    {lctx : LocalContext m} {len : Nat}
+    (hsize : lctx.decls.size = len + 1) :
+    lctx.truncate len =
+      { decls := lctx.decls.pop
+        index := lctx.index.erase lctx.decls.back!.1 } := by
+  unfold LocalContext.truncate
+  simp [hsize, LocalContext.truncate.go]
+
+theorem LocalContext.WF.truncate_pred {m : Mode}
+    {lctx : LocalContext m} {len : Nat}
+    (h : lctx.WF) (hsize : lctx.decls.size = len + 1) :
+    (lctx.truncate len).WF := by
+  rw [LocalContext.truncate_pred_eval hsize]
+  constructor
+  intro fv i hi
+  change (lctx.index.erase lctx.decls.back!.1)[fv]? = some i at hi
+  rw [Std.HashMap.getElem?_erase] at hi
+  split at hi
+  · contradiction
+  · next hne =>
+    obtain ⟨d, hd⟩ := h.sound hi
+    by_cases hlt : i < lctx.decls.pop.size
+    · refine ⟨d, ?_⟩
+      rw [Array.getElem?_pop, if_pos (by simpa using hlt)]
       exact hd
+    · have hiOld : i < lctx.decls.size :=
+        (Array.getElem?_eq_some_iff.mp hd).choose
+      have hiLast : i = lctx.decls.size - 1 := by
+        simp only [Array.size_pop] at hlt
+        omega
+      subst i
+      obtain ⟨hiBound, hget⟩ := Array.getElem?_eq_some_iff.mp hd
+      have hback : lctx.decls.back! = (fv, d) := by
+        simp only [Array.back!]
+        rw [getElem!_pos lctx.decls (lctx.decls.size - 1) hiBound]
+        exact hget
+      exfalso
+      rw [hback] at hne
+      simp at hne
 
 /-- Unpack the concrete `find?` read into a positional hit. -/
 theorem LocalContext.WF.find?_pos {m : Mode} {lctx : LocalContext m}
@@ -324,6 +360,19 @@ theorem bvar_let_inv {bs' : List (KExpr .anon × Option (KExpr .anon))}
       CtxRecon' env uvars nameOf trProj bs fs Δ :=
   match H with
   | .bvar_let H1 _ _ _ => ⟨_, _, _, rfl, H1⟩
+
+/-- Head inversion at a tagged fvar entry: the concrete declaration list
+has the same id at its head and its tail reconciles with the outer ghost
+context. -/
+theorem fvar_inv {bs : List (KExpr .anon × Option (KExpr .anon))}
+    {fs : List (FVarId × LocalDecl .anon)} {Δ : KVLCtx}
+    {fv : FVarId} {deps : List FVarId} {vd : VLocalDecl}
+    (H : CtxRecon' env uvars nameOf trProj bs fs
+      ((some (fv, deps), vd) :: Δ)) :
+    ∃ d fs', fs = (fv, d) :: fs' ∧
+      CtxRecon' env uvars nameOf trProj bs fs' Δ :=
+  match H with
+  | .fvar H1 _ _ => ⟨_, _, rfl, H1⟩
 
 theorem bvars_eq {bs : List (KExpr .anon × Option (KExpr .anon))}
     {fs : List (FVarId × LocalDecl .anon)} {Δ : KVLCtx}
@@ -573,6 +622,20 @@ theorem index_fresh (h : CtxRecon env uvars nameOf trProj s Δ) :
     rw [hfst] at h2
     exact absurd h2 (Nat.lt_irrefl _)
 
+/-- The next concrete mint id is also absent from the reconciled ghost
+context.  This is the freshness premise needed when an untagged binder is
+opened into a tagged fvar entry. -/
+theorem nextFVarId_fresh (h : CtxRecon env uvars nameOf trProj s Δ) :
+    (⟨s.env.nextFVarId⟩ : FVarId) ∉ Δ.fvars := by
+  rw [h.recon.fvars_eq]
+  intro hmem
+  obtain ⟨p, hp, hpeq⟩ := List.mem_map.mp hmem
+  have hp' : p ∈ s.lctx.decls.toList := by
+    simpa using hp
+  have hlt := h.fresh p hp'
+  rw [hpeq] at hlt
+  exact Nat.lt_irrefl _ hlt
+
 /-- Distinctness of the declared fvar ids, from `incr`. -/
 theorem fvars_nodup (h : CtxRecon env uvars nameOf trProj s Δ) :
     ((s.lctx.decls.toList.reverse).map (·.1)).Nodup := by
@@ -744,6 +807,63 @@ theorem lctxFind? {fv : FVarId} {d : LocalDecl .anon}
     rw [Array.length_toList, hidx, Array.getElem?_toList]
     exact hd
   exact h.recon.fvar_frame h.fvars_nodup hj
+
+/-- A free-variable lookup yields a translation of its stored declaration
+type at the current mixed context when that type is closed with respect to
+the legacy de Bruijn stack.  This is the inference-side analogue of
+`lctxFindLetVal`: production returns `d.ty` unchanged, so closure is the
+precise condition under which the ghost context's accumulated lift is
+definitionally unnecessary. -/
+theorem lctxFindType {fv : FVarId} {d : LocalDecl .anon}
+    (h : CtxRecon env uvars nameOf trProj s Δ)
+    (henv : env.Ordered) (htp : TrProjOK env uvars trProj)
+    (hf : s.lctx.find? fv = some d)
+    (hcon : KExpr.Constructed d.ty) (hclosed : d.ty.lbr = 0)
+    (hbig : Δ.bvars + d.ty.size < UInt64.size) :
+    ∃ e A, KVLCtx.find? Δ (.inr fv) = some (e, A) ∧
+      TrKExprS env uvars nameOf trProj Δ d.ty A := by
+  obtain ⟨Δ₀, vd, dn, m, W, hfind, hsub, htr⟩ := h.lctxFind? hf
+  refine ⟨vd.value.liftN m 0, vd.type.liftN m 0, hfind, ?_⟩
+  have hdn : dn < UInt64.size := by
+    have hb := W.bvars_eq
+    omega
+  have hshift : dn.toUInt64.toNat = dn := by
+    rw [Nat.toUInt64_eq]
+    exact UInt64.toNat_ofNat_of_lt' hdn
+  cases htr with
+  | @vlam nm bi ty ty' hty htyType =>
+      have hcon' : KExpr.Constructed ty := by
+        simpa [LocalDecl.ty] using hcon
+      have hclosed' : ty.lbr = 0 := by
+        simpa [LocalDecl.ty] using hclosed
+      have hbig' : Δ.bvars + ty.size < UInt64.size := by
+        simpa [LocalDecl.ty] using hbig
+      have hw := hty.weakBV henv htp.weakN
+        (shift := dn.toUInt64) (cutoff := 0) W hshift rfl hbig'
+      have hid : KExpr.liftSpec ty dn.toUInt64 0 = ty := by
+        apply KExpr.liftSpec_id hcon'
+          (by simpa using (show ty.size < UInt64.size by omega))
+        simp [hclosed']
+      rw [hid] at hw
+      simpa [LocalDecl.ty, Lean4Lean.VLocalDecl.type,
+        Lean4Lean.VLocalDecl.depth, Lean4Lean.VExpr.liftN_liftN,
+        Nat.add_comm] using hw
+  | @vlet nm ty val ty' val' hty hval hvalType =>
+      have hcon' : KExpr.Constructed ty := by
+        simpa [LocalDecl.ty] using hcon
+      have hclosed' : ty.lbr = 0 := by
+        simpa [LocalDecl.ty] using hclosed
+      have hbig' : Δ.bvars + ty.size < UInt64.size := by
+        simpa [LocalDecl.ty] using hbig
+      have hw := hty.weakBV henv htp.weakN
+        (shift := dn.toUInt64) (cutoff := 0) W hshift rfl hbig'
+      have hid : KExpr.liftSpec ty dn.toUInt64 0 = ty := by
+        apply KExpr.liftSpec_id hcon'
+          (by simpa using (show ty.size < UInt64.size by omega))
+        simp [hclosed']
+      rw [hid] at hw
+      simpa [LocalDecl.ty, Lean4Lean.VLocalDecl.type,
+        Lean4Lean.VLocalDecl.depth] using hw
 
 /-- A let-valued fvar lookup yields a translation of the concrete stored
     value at the current mixed context, provided that value is closed with
@@ -980,6 +1100,56 @@ theorem openFVar {d : LocalDecl .anon} {vd : VLocalDecl}
       subst hp
       exact hnext
   lets := by rw [hnum, h.lets]; rfl
+
+/-- Close exactly one tagged fvar scope.  The saved length is tied to the
+outer ghost context, so `truncate` removes the concrete head exposed by
+`fvar_inv`; no representation equality for the hash-map index is needed. -/
+theorem closeFVar {fv : FVarId} {deps : List FVarId} {vd : VLocalDecl}
+    {saved : Nat}
+    (h : CtxRecon env uvars nameOf trProj s
+      ((some (fv, deps), vd) :: Δ))
+    (hsaved : saved = Δ.fvars.length) :
+    CtxRecon env uvars nameOf trProj
+      {s with lctx := s.lctx.truncate saved} Δ := by
+  have hsizeExt := h.fvars_length
+  simp only [KVLCtx.fvars_cons_some, List.length_cons] at hsizeExt
+  have hsize : s.lctx.decls.size = saved + 1 := by omega
+  obtain ⟨d, fs, hfs, htail⟩ := h.recon.fvar_inv
+  have hlist : s.lctx.decls.toList = fs.reverse ++ [(fv, d)] := by
+    have hreversed := congrArg List.reverse hfs
+    simpa using hreversed
+  have htruncate := LocalContext.truncate_pred_eval hsize
+  have htruncList :
+      (s.lctx.truncate saved).decls.toList = fs.reverse := by
+    rw [htruncate, Array.toList_pop, hlist]
+    simp
+  refine {
+    size_eq := h.size_eq
+    recon := ?_
+    lwf := h.lwf.truncate_pred hsize
+    incr := ?_
+    fresh := ?_
+    lets := ?_ }
+  · change CtxRecon' env uvars nameOf trProj
+      ((s.ctx.toList.zip s.letVals.toList).reverse)
+      ((s.lctx.truncate saved).decls.toList.reverse) Δ
+    rw [htruncList, List.reverse_reverse]
+    exact htail
+  · change List.Pairwise
+      (fun p q : FVarId × LocalDecl .anon =>
+        p.1.id.toNat < q.1.id.toNat)
+      (s.lctx.truncate saved).decls.toList
+    rw [htruncList]
+    have hincr := h.incr
+    rw [hlist] at hincr
+    exact (List.pairwise_append.mp hincr).1
+  · intro p hp
+    change p ∈ (s.lctx.truncate saved).decls.toList at hp
+    rw [htruncList] at hp
+    apply h.fresh p
+    rw [hlist]
+    exact List.mem_append.mpr (.inl hp)
+  · simpa using h.lets
 
 end CtxRecon
 

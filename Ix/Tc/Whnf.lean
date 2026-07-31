@@ -816,15 +816,21 @@ def whnfWithNatSuccModeNonLeaf (e : KExpr m)
 def whnfCore (e : KExpr m) : RecM m (KExpr m) :=
   whnfCoreWithFlags e .FULL
 
+/-- Run one cheap recursive reduction scope.  Cheap-mode cache routing is
+visible only while the body executes; the caller's depth is restored on both
+success and error. -/
+def withCheapRecursionDepth (x : RecM m α) : RecM m α := do
+  modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth + 1 }
+  try
+    x
+  finally
+    modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth - 1 }
+
 /-- Structural WHNF for def-eq's cheap-projection scaffold
     (`whnfCore (cheapProj := true)`). Bumps `cheapRecursionDepth` so cheap
     false negatives stay out of the full def-eq cache. -/
-def whnfCoreForDefEq (e : KExpr m) : RecM m (KExpr m) := do
-  modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth + 1 }
-  try
-    whnfCoreWithFlags e .DEF_EQ_CORE
-  finally
-    modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth - 1 }
+def whnfCoreForDefEq (e : KExpr m) : RecM m (KExpr m) :=
+  withCheapRecursionDepth (whnfCoreWithFlags e .DEF_EQ_CORE)
 
 /-- Key/cache/uncached body reached after structural-WHNF's syntactic fast
 paths.  Naming this seam leaves runtime behavior unchanged while allowing the
@@ -924,12 +930,9 @@ def whnfNoDelta (e : KExpr m) : RecM m (KExpr m) :=
   whnfNoDeltaImpl e .FULL .collapse
 
 /-- Def-eq no-delta WHNF (cheap projection policy). -/
-def whnfNoDeltaForDefEq (e : KExpr m) : RecM m (KExpr m) := do
-  modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth + 1 }
-  try
-    whnfNoDeltaImpl e .DEF_EQ_CORE .collapse
-  finally
-    modify fun s => { s with cheapRecursionDepth := s.cheapRecursionDepth - 1 }
+def whnfNoDeltaForDefEq (e : KExpr m) : RecM m (KExpr m) :=
+  withCheapRecursionDepth
+    (whnfNoDeltaImpl e .DEF_EQ_CORE .collapse)
 
 /-- Ordered reducer tail of one no-delta iteration, after structural WHNF has
     completed.  Naming this seam makes the helper precedence and partial

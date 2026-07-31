@@ -20,10 +20,11 @@ theorem scratch_pushLocal_run
       s'.numLetBindings = s.numLetBindings ∧
       s'.lctx = s.lctx ∧
       s'.prims = s.prims ∧
-      s'.noAccel = s.noAccel := by
+      s'.noAccel = s.noAccel ∧
+      s'.equivManager = s.equivManager := by
   simp only [TcM.pushLocal, EStateM.bind, get, set, pure] at hrun
   cases hrun
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem scratch_pushLocal_ok (ty : KExpr .anon) (s : TcState .anon) :
     ∃ after, TcM.pushLocal ty s = .ok () after := by
@@ -41,13 +42,14 @@ theorem scratch_pushLocal_inv
     (hrun : TcM.pushLocal ty s = .ok () s') :
     WhnfStateInv layer semantics trProj world support uvars
       ((none, .vlam tyV) :: Delta) s' := by
-  obtain ⟨henv, hctx, hlet, hnum, hlctx, hprims, hnoAccel⟩ :=
+  obtain ⟨henv, hctx, hlet, hnum, hlctx, hprims, hnoAccel, hequiv⟩ :=
     scratch_pushLocal_run hrun
   refine ⟨?_, ?_, ?_⟩
   · exact {
       core := hI.1.core.of_env_eq henv
       internSupport := by simpa only [henv] using hI.1.internSupport
-      caches := by simpa only [henv] using hI.1.caches }
+      caches := by simpa only [henv] using hI.1.caches
+      equivalences := by simpa only [hequiv] using hI.1.equivalences }
   · exact hI.2.1.pushLocal htr htype hctx hlet hnum hlctx (by simp [henv])
   · cases layer with
     | structuralNoAccel =>
@@ -85,11 +87,12 @@ theorem scratch_popLocal_run
       s'.numLetBindings = s.numLetBindings ∧
       s'.lctx = s.lctx ∧
       s'.prims = s.prims ∧
-      s'.noAccel = s.noAccel := by
+      s'.noAccel = s.noAccel ∧
+      s'.equivManager = s.equivManager := by
   have hback := scratch_lam_back hctxRecon
   simp only [TcM.popLocal, EStateM.bind, get, set, pure, hback] at hrun
   cases hrun
-  refine ⟨rfl, rfl, rfl, ?_, rfl, rfl, rfl⟩
+  refine ⟨rfl, rfl, rfl, ?_, rfl, rfl, rfl, rfl⟩
   simp only [hback]
 
 theorem scratch_popLocal_ok (s : TcState .anon) :
@@ -106,13 +109,14 @@ theorem scratch_popLocal_inv
       ((none, .vlam tyV) :: Delta) s)
     (hrun : TcM.popLocal s = .ok () s') :
     WhnfStateInv layer semantics trProj world support uvars Delta s' := by
-  obtain ⟨henv, hctx, hlet, hnum, hlctx, hprims, hnoAccel⟩ :=
+  obtain ⟨henv, hctx, hlet, hnum, hlctx, hprims, hnoAccel, hequiv⟩ :=
     scratch_popLocal_run hI.2.1 hrun
   refine ⟨?_, ?_, ?_⟩
   · exact {
       core := hI.1.core.of_env_eq henv
       internSupport := by simpa only [henv] using hI.1.internSupport
-      caches := by simpa only [henv] using hI.1.caches }
+      caches := by simpa only [henv] using hI.1.caches
+      equivalences := by simpa only [hequiv] using hI.1.equivalences }
   · exact hI.2.1.pop_lam hctx hlet hnum hlctx (by simp [henv])
   · cases layer with
     | structuralNoAccel =>

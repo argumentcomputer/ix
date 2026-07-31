@@ -2,13 +2,60 @@ import Ix.Tc.Verify.Audit.Basic
 import Ix.Tc.Verify.Ctx
 import Ix.Tc.Verify.Decl
 import Ix.Tc.Verify.DefEq
+import Ix.Tc.Verify.DefEq.AcceleratorGates
+import Ix.Tc.Verify.DefEq.ApplicationSpine
+import Ix.Tc.Verify.DefEq.CacheShell
+import Ix.Tc.Verify.DefEq.Closure
+import Ix.Tc.Verify.DefEq.DeltaClassification
+import Ix.Tc.Verify.DefEq.EqualRankCache
+import Ix.Tc.Verify.DefEq.EqualRankPrefix
+import Ix.Tc.Verify.DefEq.EqualRankReduction
+import Ix.Tc.Verify.DefEq.FinalWhnf.Application
+import Ix.Tc.Verify.DefEq.FinalWhnf.Closure
+import Ix.Tc.Verify.DefEq.FinalWhnf.Contracts
+import Ix.Tc.Verify.DefEq.FinalWhnf.EtaExpansion
+import Ix.Tc.Verify.DefEq.FinalWhnf.LetDeclaration
+import Ix.Tc.Verify.DefEq.FinalWhnf.NatBridge
+import Ix.Tc.Verify.DefEq.FinalWhnf.ProofTail
+import Ix.Tc.Verify.DefEq.FinalWhnf.StringExpansion
+import Ix.Tc.Verify.DefEq.FinalWhnf.StructuralPrefix
+import Ix.Tc.Verify.DefEq.FinalWhnf.StructureEta
+import Ix.Tc.Verify.DefEq.FinalWhnf.UnitLike
+import Ix.Tc.Verify.DefEq.LazyDelta
+import Ix.Tc.Verify.DefEq.LazyDeltaClosure
+import Ix.Tc.Verify.DefEq.LazyDeltaIteration
+import Ix.Tc.Verify.DefEq.LoopFinish
+import Ix.Tc.Verify.DefEq.NatOffset
+import Ix.Tc.Verify.DefEq.NatOffsetDecomposition
+import Ix.Tc.Verify.DefEq.NatReduction
+import Ix.Tc.Verify.DefEq.OneSidedDelta
+import Ix.Tc.Verify.DefEq.ProjectionDeltaActive
+import Ix.Tc.Verify.DefEq.ProjectionDeltaClosure
+import Ix.Tc.Verify.DefEq.ProjectionDeltaEqualRank
+import Ix.Tc.Verify.DefEq.ProjectionDeltaFinish
+import Ix.Tc.Verify.DefEq.ProjectionDeltaLoop
+import Ix.Tc.Verify.DefEq.ProjectionDeltaRank
+import Ix.Tc.Verify.DefEq.ProjectionDeltaStep
+import Ix.Tc.Verify.DefEq.ProjectionDeltaUnfolding
+import Ix.Tc.Verify.DefEq.ProjectionProbe
+import Ix.Tc.Verify.DefEq.ProjectionReduction
+import Ix.Tc.Verify.DefEq.PropositionClassifier
+import Ix.Tc.Verify.DefEq.RankDispatch
+import Ix.Tc.Verify.DefEq.SameHeadSpine
+import Ix.Tc.Verify.DefEq.SpineArguments
+import Ix.Tc.Verify.DefEq.StoppedContinuation
+import Ix.Tc.Verify.DefEq.StoppedContinuationClosure
+import Ix.Tc.Verify.DefEq.StructuralCongruence
 import Ix.Tc.Verify.Execution
 import Ix.Tc.Verify.Frame
+import Ix.Tc.Verify.Infer.CacheSoundness
+import Ix.Tc.Verify.InferDefEq.Closure
 import Ix.Tc.Verify.InstL
 import Ix.Tc.Verify.Whnf.Closure
 import Ix.Tc.Verify.Knot
 import Ix.Tc.Verify.NatFixture
 import Ix.Tc.Verify.Run
+import Ix.Tc.Verify.RecursiveMethods.Closure
 import Ix.Tc.Verify.Support
 import Ix.Tc.Verify.Totalization
 import Ix.Tc.Verify.Whnf
@@ -333,7 +380,7 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Tc.RunAssumptions.instantiateUnivParams_wf,
     standardAxioms := standard, nativeAxioms := levelNative },
   { root := ``Ix.Tc.RunAssumptions.runIntern_supported_wf,
-    standardAxioms := standard,
+    standardAxioms := standard, nativeAxioms := blake3Native,
     sorryOrigins := #[inductiveWF, addInduct] },
   { root := ``Ix.Tc.RunAssumptions.lift_wf,
     standardAxioms := standard, nativeAxioms := levelNative,
@@ -684,10 +731,10 @@ private def roots : Array RootAllowance := #[
     nativeAxioms := #[nativeAxiom `Blake3
       `Blake3.HasherOps.hash._native.native_decide.ax_1] },
   { root := ``Ix.Tc.KernelStateWF.pendingCacheIsolation,
-    standardAxioms := standard,
+    standardAxioms := standard, nativeAxioms := blake3Native,
     sorryOrigins := #[inductiveWF, addInduct] },
   { root := ``Ix.Tc.KernelStateWF.restoreCheckCachesOnError,
-    standardAxioms := standard,
+    standardAxioms := standard, nativeAxioms := blake3Native,
     sorryOrigins := #[inductiveWF, addInduct] },
   { root := ``Ix.Tc.AmbientNat.warmCache_worldTransport,
     standardAxioms := standard, nativeAxioms := expressionNative,
@@ -3057,7 +3104,7 @@ private def roots : Array RootAllowance := #[
     sorryOrigins := #[inductiveWF, addInduct],
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.LazyIngressEnvFrame.kernelStateWF,
-    standardAxioms := standard,
+    standardAxioms := standard, nativeAxioms := blake3Native,
     sorryOrigins := #[inductiveWF, addInduct],
     forbiddenDependencies := legacyWholeEnv },
   { root := ``Ix.Tc.LazyIngressEnvFrame.ctxRecon,
@@ -4801,7 +4848,748 @@ private def roots : Array RootAllowance := #[
   { root := ``Ix.Tc.RecM.inferWith_inferOnlyHit_acceptance,
     standardAxioms := standard, nativeAxioms := inferNative,
     sorryOrigins := typingDebt,
-    forbiddenDependencies := legacyWholeEnv }
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The memoized proposition classifier closes proof irrelevance's sole
+  -- auxiliary cache family.  Positive hits and writes are tied to `Sort 0`
+  -- through expression collision freedom and the explicit suffix model.
+  { root := ``Ix.Tc.RecM.isPropType_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryProofIrrel_classifier_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- Lazy delta is a bounded semantic state machine.  These roots expose the
+  -- pair invariant, the fuel-bounded closure, and the exact remaining
+  -- obligations for one iteration and the stopped continuation.
+  { root := ``Ix.Tc.RecM.DefEqPairInvariant.refl,
+    standardAxioms := standard,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqPairInvariant.conclude,
+    standardAxioms := standard,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.runDefEqLazyDelta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqInnerAfterProofIrrelevance_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqAfterProofIrrelevance.ofLazyDelta,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The front of each lazy-delta iteration now closes the actual Nat-offset
+  -- literal/zero guards and both ordinary Nat-reduction attempts.  Structural
+  -- offset decomposition and the post-Nat reducer tiers remain explicit
+  -- continuation contracts; negative recognizer results carry no semantics.
+  { root := ``Ix.Tc.RecM.isNatZero_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsNatZero.ofContext,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqOffset_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqOffset.ofContext,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepAfterOffsetMiss_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaAfterOffsetMiss.ofNat,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepAfterNatMiss_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaAfterNatMiss.ofNoAccel,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.classifyDeltaHead_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepAfterAcceleratorMiss_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root :=
+      ``Ix.Tc.RecM.DefEqLazyDeltaAfterAcceleratorMiss.ofClassification,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryUnfoldProjApp_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepAfterDeltaClassification_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root :=
+      ``Ix.Tc.RecM.DefEqLazyDeltaAfterDeltaClassification.ofProjection,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.finishDefEqLazyDeltaStep_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepWithLeftDelta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepWithRightDelta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.rankDeltaHead_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepAfterProjectionMiss_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaAfterProjectionMiss.ofRankDispatch,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepAfterSameHeadMiss_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaAfterSameHeadMiss.ofReduction,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- Equal-rank closure: recursive spine arguments, constant-universe
+  -- congruence, and the rejection-only failure-cache shell.  A cache hit can
+  -- only skip the comparison; every positive result still comes from the
+  -- semantic same-head proof.
+  { root := ``Ix.Tc.RecM.allDefEqSpineArgs_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TrAppSpine.defEq_of_zip,
+    standardAxioms := standard,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.sameDefEqUniverses_sound,
+    standardAxioms := standard,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.constantHeadsDefEq,
+    standardAxioms := standard,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.trySameHeadSpine_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TrySameHeadSpine.ofResources,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.CacheEntry.defEqFailureReferencesAuthorized,
+    standardAxioms := standardWithoutChoice,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.DefEqFailureCacheResources.ofKernelSuffixModel,
+    standardAxioms := standard, nativeAxioms := contextNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isRegular_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.trySameHeadSpineCached_wf,
+    standardAxioms := standard, nativeAxioms := contextNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TrySameHeadSpineCached.ofResources,
+    standardAxioms := standard, nativeAxioms := contextNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defEqLazyDeltaStepWithEqualRank_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaEqualRank.ofPrefix,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaEqualRank.ofKernelResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The Nat-offset candidate branch is state-safe on every parser and rebuild
+  -- path.  Its only semantic input is an exact successful-run reflection;
+  -- recursive equality is transported forward through the common successor
+  -- suffix, without assuming offset injectivity or completeness.
+  { root := ``Ix.Tc.TcM.WF.withInvRunEq,
+    standardAxioms := standardWithoutChoice,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.natOffsetDecompose_state_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.natOffsetRebuild_state_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqOffsetAfterCandidates_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqOffsetAfterCandidates.ofContext,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The stopped continuation now closes its exact outer control flow.  The
+  -- general app probe reconstructs equality through both typed spines;
+  -- structural congruence proves constants and variables directly and
+  -- delegates matching projections to one execution-indexed helper contract.
+  { root := ``Ix.Tc.RecM.tryDefEqApp_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqApp.ofResources,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryStructuralCongruence_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryStructuralCongruence.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqAfterLazyDeltaStopped_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqAfterLazyDeltaStopped.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaContext.ofKernelResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.DefEqAfterProofIrrelevance.ofKernelResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The structural projection callback's bounded lazy-delta driver preserves
+  -- the original projected semantics across delta steps, direct projection
+  -- reduction, recursive comparison, and normal depth exhaustion.
+  { root := ``Ix.Tc.RecM.lazyDeltaProjReduction_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.LazyDeltaProjReduction.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- Direct projection reduction gets state/support closure from the proved
+  -- no-acceleration helper and consults semantic reflection only for the
+  -- exact successful execution that occurred.
+  { root := ``Ix.Tc.RecM.tryProjReduce_direct_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryProjReduce.ofDirectResources,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The compact projection-loop delta step exposes its two lazy declaration
+  -- classifications as a proved prefix; the exact branch continuation sees
+  -- only their concrete results.
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStep_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.LazyDeltaReductionStep.ofClassification,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStepAfterClassification_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root :=
+      ``Ix.Tc.RecM.LazyDeltaReductionAfterClassification.ofActive,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.LazyDeltaReductionStep.ofActive,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- Once classification reports an active delta head, the compact step is
+  -- exhaustive: projection hits enter the productive finish, misses select
+  -- one- or two-sided unfolding, and equal ranks try same-head congruence
+  -- before normalizing both sides.  The final two roots assemble that branch
+  -- proof with the already-audited classifier prefix.
+  { root := ``Ix.Tc.RecM.finishLazyDeltaReductionStep_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStepWithLeftDelta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStepWithRightDelta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStepAfterSameHeadMiss_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStepWithEqualRank_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.defRankId_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStepWithBothDelta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.lazyDeltaReductionStepAfterActive_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.LazyDeltaReductionAfterActive.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.LazyDeltaReductionStep.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- Concrete projection-loop assembly derives the compact step, bounded
+  -- projection comparison, and structural-congruence projection branch from
+  -- named lower reducers.  The exact-run direct projection reflection is the
+  -- remaining semantic boundary; the outer loop itself is no longer one.
+  { root := ``Ix.Tc.RecM.ProjectionDeltaClosureResources.loop,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.LazyDeltaProjReduction.ofClosureResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root :=
+      ``Ix.Tc.RecM.TryStructuralCongruence.ofProjectionDeltaResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The stopped continuation now derives its structural field from the
+  -- concrete projection loop and reuses that record's core/quick resources;
+  -- only application-spine and final-WHNF contracts remain as sibling inputs.
+  { root :=
+      ``Ix.Tc.RecM.StoppedContinuationClosureResources.stopped,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root :=
+      ``Ix.Tc.RecM.DefEqAfterLazyDeltaStopped.ofClosureResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The final-WHNF comparator is split at a production seam: an optional
+  -- constructor-directed prefix followed by the fallback chain.  Application
+  -- comparison and every constructor in the prefix are now exhaustive
+  -- concrete proofs.  The let roots include exact allocation, common-fvar
+  -- body opening, context transport, and local-scope restoration.
+  { root := ``Ix.Tc.RecM.isDefEqWhnf_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsDefEqWhnf.ofPhases,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfApp_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqWhnfApp.ofResources,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.TcM.openLetWithFV_scope,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.withLctxScope_openLetWithFV_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfLet_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqWhnfLet.ofResources,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isNatLike_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.natSuccOf_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.NatSuccOf.ofResources,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqNatAfterLiteral_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqNat_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfNat_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqWhnfNat.ofResources,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqWhnfAfterStructural_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsDefEqWhnfAfterStructural.ofNat,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfStructural_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqWhnfStructural.ofResources,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- Lambda eta is split into a syntactic guard, caught infer/WHNF probes, and
+  -- an explicit term builder.  The builder's lifted source and generated #0
+  -- application are translated structurally before the recursive comparison
+  -- is composed with Theory eta; the ordered reverse attempt uses symmetry.
+  { root := ``Ix.Tc.TcM.lift_whnf_wf_of_resources,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.compareEtaExpansion_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryEtaExpansionAfterGuard_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryEtaExpansion_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfEtaAfterGuard_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfEta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqWhnfEta.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqWhnfAfterNat_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsDefEqWhnfAfterNat.ofEta,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The final-WHNF String phase reuses the exact expansion plans proved for
+  -- the earlier DefEq tier.  Its optional result preserves the original
+  -- two-way short-circuit order; reverse success is justified by symmetry.
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfStringAfterGuard_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfString_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqWhnfString.ofContext,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqWhnfAfterEta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsDefEqWhnfAfterEta.ofString,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The terminal final-WHNF chain is split at the two inductive boundaries.
+  -- Proof irrelevance is concrete through the memoized proposition
+  -- classifier; unit-like and structure-eta soundness remain separately
+  -- named contracts until their exact inductive laws are supplied.
+  { root := ``Ix.Tc.RecM.isDefEqWhnfAfterUnit_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsDefEqWhnfAfterUnit.ofClassifier,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqWhnfAfterStructEta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsDefEqWhnfAfterStructEta.ofUnitAndProof,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.isDefEqWhnfAfterString_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.IsDefEqWhnfAfterString.ofStructEta,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- The unit-like classifier is tied to the exact immutable-catalog entries
+  -- returned by both lazy lookups.  The shortcut then consumes only the
+  -- narrow unique-inhabitant law for that trusted zero-index, one-nullary-
+  -- constructor shape; it does not recover the legacy whole-environment
+  -- inductive oracle.
+  { root := ``Ix.Tc.RecM.isUnitLikeInductive_wf,
+    standardAxioms := standard, nativeAxioms := blake3Native,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.tryDefEqUnit_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+  { root := ``Ix.Tc.RecM.TryDefEqUnit.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  { root := ``Ix.Tc.RecM.DefEqLazyDeltaStep.ofKernelResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := legacyWholeEnv },
+
+  -- Structure eta is proved from the exact normalized source, immutable
+  -- constructor lookup, typed field spine, and generated projection law.
+  -- The positive structure classifier cannot manufacture semantic eta on
+  -- its own, and every exported root remains quarantined from both legacy
+  -- whole-environment and broad delta-authority paths.
+  { root := ``Ix.Tc.TrKExprS.prj_components,
+    standardAxioms := standard,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryEtaStructFields_wf,
+    standardAxioms := standard, nativeAxioms := expressionNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.etaExpansionBaseLoop_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.etaExpansionBase_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryEtaStructAfterTypes_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.normalizeEtaStructSource_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct, addInductWF],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryEtaStructAfterConstructor_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryEtaStructAfterNormalization_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryEtaStruct_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.tryDefEqWhnfStructEta_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.TryDefEqWhnfStructEta.ofResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+
+  -- The final-WHNF phases are now assembled in exact production order.
+  { root := ``Ix.Tc.RecM.FinalWhnfClosureResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.FinalWhnfClosureResources.afterStructural,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.FinalWhnfClosureResources.finalWhnf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+
+  -- Recursive DefEq closure: trusted finite expression references authorize
+  -- only the two direct roots of an ordinary result entry.  The complete
+  -- inner tier then feeds the guarded public cache shell.
+  { root := ``Ix.Tc.CacheEntry.defEqReferencesAuthorized,
+    standardAxioms := standardWithoutChoice,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.DefEqInner.WF,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.isDefEq_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.DefEqClosureResources,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.DefEqClosureResources.stopped,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.DefEqClosureResources.lazyDelta,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.DefEqClosureResources.inner,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.DefEqClosureResources.entryPoint,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecM.DefEqClosureResources.nextDefEq_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt,
+    forbiddenDependencies := k1ForbiddenDependencies },
+
+  -- Inference and DefEq consume the same predecessor table and suffix model;
+  -- their fixed-universe pair closes before it is joined to the four WHNF
+  -- fields.  `TrProj` remains a separately named upstream debt origin.
+  { root := ``Ix.Tc.UncachedInference.Context.nextInfer_wf,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt.push trProjSorry,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.Methods.InferDefEqClosedAt,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.InferDefEqClosureContext,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.InferDefEqClosureContext.layer,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt.push trProjSorry,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.InferDefEqClosureContext.closedAt,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt.push trProjSorry,
+    forbiddenDependencies := k1ForbiddenDependencies },
+
+  -- Final six-field knot assembly under the canonical production cache
+  -- stack.  These roots prove every finite `methodsN` approximation and the
+  -- fixed-universe runner interface without importing a headline checker
+  -- `sorry`.
+  { root := ``Ix.Tc.kernelCacheFallback,
+    standardAxioms := standard,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.kernelCacheSemantics_eq_k1,
+    standardAxioms := standard,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.Methods.ClosedAt,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.Methods.ClosedAt.of_parts,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.TcM.runRec_wfAt,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecursiveMethodClosureContext,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := #[inductiveWF, addInduct],
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecursiveMethodClosureContext.closedAt,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt.push trProjSorry,
+    forbiddenDependencies := k1ForbiddenDependencies },
+  { root := ``Ix.Tc.RecursiveMethodClosureContext.methodsN,
+    standardAxioms := standard, nativeAxioms := inferNative,
+    sorryOrigins := typingDebt.push trProjSorry,
+    forbiddenDependencies := k1ForbiddenDependencies }
 ]
 
 run_cmd Ix.Tc.Verify.Audit.check roots

@@ -138,11 +138,12 @@ theorem full_whnfStateInv
         inferCache := s.env.inferCache.insert key ty}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertInfer hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -161,11 +162,12 @@ theorem inferOnly_whnfStateInv
         inferOnlyCache := s.env.inferOnlyCache.insert key ty}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertInferOnly hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -281,6 +283,9 @@ def inferCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) : CacheSemantics where
   Valid := InferCacheValid keys trProj fallback
   mono := InferCacheValid.mono
+  Equiv := fallback.Equiv
+  equivEquivalence := fallback.equivEquivalence
+  equivMono := fallback.equivMono
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err

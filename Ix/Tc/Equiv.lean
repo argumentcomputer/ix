@@ -6,8 +6,9 @@ public import Ix.Address
 Mirror: crates/kernel/src/equiv.rs
 
 Union-find (disjoint set) for context-aware definitional-equality caching:
-weighted quick-union with path halving, keyed by `(expr_hash, ctx_hash)`
-content-address pairs.
+weighted quick-union with path halving, keyed by expression hash, context
+hash, the requested context-suffix radius, and the expression's intrinsic
+local-binder radius.
 
 Pure port: operations return the updated manager (path halving mutates on
 reads). Do not reuse the `IO.Ref`-based `Ix.UnionFind`.
@@ -18,11 +19,43 @@ public section
 
 namespace Ix.Tc
 
-/-- Composite key: (expression content hash, context content hash). -/
-abbrev EqKey := Address × Address
+/-- Composite key for one expression in one context-suffix interpretation.
 
-/-- Union-find for tracking definitional equality between
-    `(expr_hash, ctx_hash)` pairs. -/
+The radius is semantically load-bearing even when two suffix calculations
+emit the same digest: DefEq transport is only justified between executions
+that requested the same radius.  Retaining it here prevents union-find
+transitivity from silently joining equality proofs made at different
+context-suffix radii. -/
+structure EqKey where
+  exprAddr : Address
+  ctxAddr : Address
+  /-- Radius at which `ctxAddr` was computed for this comparison. -/
+  lbr : UInt64
+  /-- Intrinsic local-binder radius of the expression at `exprAddr`. -/
+  exprLbr : UInt64
+deriving Inhabited
+
+instance : BEq EqKey where
+  beq left right :=
+    left.exprAddr == right.exprAddr &&
+      left.ctxAddr == right.ctxAddr &&
+      left.lbr == right.lbr &&
+      left.exprLbr == right.exprLbr
+
+instance : Hashable EqKey where
+  hash key := hash (key.exprAddr, key.ctxAddr, key.lbr, key.exprLbr)
+
+/-- Whether two union-find representatives can safely reuse a DefEq cache
+context.  Besides retaining the requested scope, their intrinsic expression
+radii must reconstruct the radius at which that context digest was made. -/
+def EqKey.rootCacheScopeMatches (left right : EqKey)
+    (ctxAddr : Address) (lbr : UInt64) : Bool :=
+  left.ctxAddr == ctxAddr && right.ctxAddr == ctxAddr &&
+    left.lbr == lbr && right.lbr == lbr &&
+    max left.exprLbr right.exprLbr == lbr
+
+/-- Union-find for tracking definitional equality between context-aware
+    expression keys. -/
 structure EquivManager where
   /-- Map from composite key to union-find node index. -/
   keyToNode : Std.HashMap EqKey Nat := {}

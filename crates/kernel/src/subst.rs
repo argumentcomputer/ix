@@ -941,13 +941,15 @@ fn instantiate_rev_cached<M: KernelMode>(
 /// Used by `LocalContext::mk_lambda` / `mk_pi` to close a body back into
 /// a chain of de Bruijn binders after binder opening.
 ///
-/// Fast path: returns `body` unchanged when `!body.has_fvars()`.
+/// Fast path: returns `body` unchanged when there are no target fvars, or
+/// when `body` has neither fvars nor loose bvars.  A no-fvar term with loose
+/// bvars must still be traversed: wrapping new binders shifts those bvars.
 pub fn abstract_fvars<M: KernelMode>(
   env: &mut InternTable<M>,
   body: &KExpr<M>,
   fvars: &[FVarId],
 ) -> KExpr<M> {
-  if fvars.is_empty() || !body.has_fvars() {
+  if fvars.is_empty() || (!body.has_fvars() && body.lbr() == 0) {
     return body.clone();
   }
   // Build a position map for O(1) fvar → position lookup. For typical
@@ -1278,11 +1280,11 @@ mod tests {
   }
 
   #[test]
-  fn abstract_fvars_no_fvars_passthrough() {
+  fn abstract_fvars_no_fvars_shifts_loose_bvar() {
     let mut env = InternTable::<Anon>::new();
     let v0 = AE::var(0, ());
     let result = abstract_fvars(&mut env, &v0, &[FVarId(0)]);
-    assert!(result.ptr_eq(&v0));
+    assert_eq!(result, AE::var(1, ()));
   }
 
   #[test]

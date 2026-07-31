@@ -363,6 +363,13 @@ structure CacheSemantics where
   mono : ∀ {before after : CacheAuthority} {support : RunSupport}
     {entry : CacheEntry}, before ≤ after →
       Valid before support entry → Valid after support entry
+  /-- Semantic relation represented by the per-check DefEq union-find. -/
+  Equiv : CacheAuthority → RunSupport → EqKey → EqKey → Prop
+  equivEquivalence : ∀ authority support,
+    Equivalence (Equiv authority support)
+  equivMono : ∀ {before after : CacheAuthority} {support : RunSupport}
+    {left right : EqKey}, before ≤ after →
+      Equiv before support left right → Equiv after support left right
   blockError : ∀ (authority : CacheAuthority) (support : RunSupport)
     (block : KId .anon) (err : TcError .anon),
       Valid authority support (.blockResult block (.error err))
@@ -373,6 +380,9 @@ stubs be declared `opaque`. -/
 instance : Inhabited CacheSemantics :=
   ⟨{ Valid := fun _ _ _ => True
      mono := fun _ h => h
+     Equiv := fun _ _ => Eq
+     equivEquivalence := fun _ _ => ⟨fun _ => rfl, Eq.symm, Eq.trans⟩
+     equivMono := fun _ h => h
      blockError := fun _ _ _ _ => trivial }⟩
 
 /-- Full ghost certificate attached to one physical entry. -/
@@ -1072,6 +1082,47 @@ theorem insertNatSuccStuck {semantics : CacheSemantics}
       exact .inl rfl
     · exact .inr (.natSuccStuck hold)
   | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | blockResult hget => exact .inr (.blockResult hget)
+
+/-- Insert or overwrite one provenance-certified proposition-classification
+entry.  A cached `true` participates directly in proof-irrelevance
+acceptance, so the semantic certificate is mandatory. -/
+theorem insertIsProp {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {key : Address × Address} {value : Bool}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.isProp key value)) :
+    CacheInvariant semantics authority support
+      { env with isPropCache := env.isPropCache.insert key value } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | @isProp foundKey foundValue hget =>
+      rw [Std.HashMap.getElem?_insert] at hget
+      split at hget
+      · next heq =>
+        cases hget
+        have hkey : key = foundKey := eq_of_beq heq
+        subst foundKey
+        exact .inl rfl
+      · exact .inr (.isProp hget)
   | isRec hget => exact .inr (.isRec hget)
   | recursor hget => exact .inr (.recursor hget)
   | recMajors hget => exact .inr (.recMajors hget)

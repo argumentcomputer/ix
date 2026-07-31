@@ -1012,6 +1012,7 @@ theorem freshKernelStateWF (prims : Primitives .anon) :
       (state prims) := by
   apply KernelStateWF.of_no_cache_entries (stateWF prims)
   · exact (checkSupport prims).initial
+  · rfl
   · intro entry
     simpa [state] using loadedEnv_noCacheEntries entry
 
@@ -1041,10 +1042,11 @@ theorem noAccelStateInv (prims : Primitives .anon) :
       0 [] (noAccelState prims) := by
   refine ⟨?_, ?_, rfl⟩
   · have h := freshKernelStateWF prims
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_⟩
     · exact h.core.of_env_eq rfl
     · simpa [noAccelState] using h.internSupport
     · simpa [noAccelState] using h.caches
+    · simpa [noAccelState] using h.equivalences
   · apply CtxRecon.empty <;> rfl
 
 /-- WHNF layer policy retains the old primitive reduction witness only in the explicitly structural layer:
@@ -1115,8 +1117,9 @@ theorem warmCoreWF (prims : Primitives .anon) :
 theorem warmKernelStateWF (prims : Primitives .anon) :
     KernelStateWF whnfSemantics RawProjRel.none worldGood support
       (warmState prims) := by
-  refine ⟨warmCoreWF prims, ?_, warmCache_worldTransport⟩
-  simpa [warmState, warmEnv, state] using (checkSupport prims).initial
+  refine ⟨warmCoreWF prims, ?_, warmCache_worldTransport, ?_⟩
+  · simpa [warmState, warmEnv, state] using (checkSupport prims).initial
+  · exact EquivManager.WF.empty
 
 /-- The real warm state computes the certified key and its empty semantic
 context is represented by the fixture's closed-key model. -/
@@ -1462,7 +1465,7 @@ theorem bvarZetaStateInv (prims : Primitives .anon) :
       0 bvarZetaCtx (bvarZetaState prims) := by
   have hbase := noAccelStateInv prims
   exact ⟨⟨hbase.1.core.of_env_eq rfl,
-      hbase.1.internSupport, hbase.1.caches⟩,
+      hbase.1.internSupport, hbase.1.caches, hbase.1.equivalences⟩,
     bvarZetaCtxRecon prims, rfl⟩
 
 theorem bvarZetaLiftSpec :
@@ -1577,13 +1580,14 @@ theorem fvarZetaStateInv (prims : Primitives .anon) :
       0 fvarZetaCtx (fvarZetaState prims) := by
   have hbase := noAccelStateInv prims
   refine ⟨?_, fvarZetaCtxRecon prims, rfl⟩
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · exact hbase.1.core.of_consts_eq (by rfl) (by
       simpa [fvarZetaState] using hbase.1.core.intern)
   · simpa [fvarZetaState] using hbase.1.internSupport
   · intro entry hentry
     apply hbase.1.caches
     cases hentry <;> (constructor; assumption)
+  · simpa [fvarZetaState] using hbase.1.equivalences
 
 /-- The real bounded structural-WHNF driver resolves a let-valued fvar and
 returns its closed Nat.zero value without changing checker state. -/
@@ -1779,7 +1783,7 @@ theorem iotaStateInv (prims : Primitives .anon) :
       0 [] (iotaState prims) := by
   have hbase := noAccelStateInv (iotaPrims prims)
   refine ⟨?_, ?_, rfl⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · have hcat : worldGood.catalog iotaId = some iotaConcrete := by
         exact catalog_iota
       simpa [iotaState] using hbase.1.core.load hcat
@@ -1787,6 +1791,7 @@ theorem iotaStateInv (prims : Primitives .anon) :
     · intro entry hentry
       apply hbase.1.caches
       cases hentry <;> (constructor; assumption)
+    · simpa [iotaState] using hbase.1.equivalences
   · apply CtxRecon.empty <;> rfl
 
 theorem iotaGetRec (prims : Primitives .anon) :
@@ -3394,13 +3399,14 @@ theorem structuralLoopStateInv (prims : Primitives .anon) :
       0 structuralLoopCtx (structuralLoopState prims) := by
   have hbase := noAccelStateInv prims
   refine ⟨?_, structuralLoopCtxRecon prims, rfl⟩
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · exact hbase.1.core.of_consts_eq (by rfl) (by
       simpa [structuralLoopState] using hbase.1.core.intern)
   · simpa [structuralLoopState] using hbase.1.internSupport
   · intro entry hentry
     apply hbase.1.caches
     cases hentry <;> (constructor; assumption)
+  · simpa [structuralLoopState] using hbase.1.equivalences
 
 /-- First local meaning: fvar zeta exposes the closed beta redex. -/
 theorem structuralLoopSourceMeaning (prims : Primitives .anon) :
@@ -3668,6 +3674,7 @@ theorem coreCacheFreshStateInv (prims : Primitives .anon) :
       · intro x hx
         obtain ⟨a, ha⟩ := hx
         simp [noAccelState, state, loadedEnv, KEnv.insert] at ha
+    · rfl
     · intro entry
       simpa [noAccelState, state] using loadedEnv_noCacheEntries entry
   · apply CtxRecon.empty <;> rfl
@@ -4474,7 +4481,7 @@ theorem fullWhnfChargedStateInv (prims : Primitives .anon) :
     WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
       coreCacheSupport 0 [] (fullWhnfChargedState prims) := by
   exact WhnfStateInv.of_semantic_fields_eq
-    (fullNoDeltaWarmStateInv prims) rfl rfl rfl rfl rfl rfl rfl
+    (fullNoDeltaWarmStateInv prims) rfl rfl rfl rfl rfl rfl rfl rfl
 
 theorem fullWhnfPrefixCold (prims : Primitives .anon) :
     (RecM.whnfWithNatSuccModePrefix betaSource).run betaHarnessMethods
@@ -4863,6 +4870,7 @@ theorem bvarStuckStateInv (prims : Primitives .anon) :
   apply KernelStateWF.of_no_cache_entries
   · exact hbase.1.core.of_env_eq rfl
   · exact hbase.1.internSupport.mono support_le_stuckSupport
+  · rfl
   · intro entry
     simpa [bvarStuckState, noAccelState, state] using
       loadedEnv_noCacheEntries entry
@@ -4948,6 +4956,7 @@ theorem fvarStuckStateInv (prims : Primitives .anon) :
   · exact (by
       simpa [fvarStuckState] using
         hbase.1.internSupport.mono support_le_stuckSupport)
+  · rfl
   · intro entry
     intro hentry
     apply loadedEnv_noCacheEntries entry
@@ -5010,6 +5019,7 @@ theorem fallbackStateInv (prims : Primitives .anon) :
   · exact hbase.1.internSupport.mono
       (RunSupport.le_trans support_le_stuckSupport
         stuckSupport_le_fallbackSupport)
+  · rfl
   · intro entry
     simpa [noAccelState, state] using loadedEnv_noCacheEntries entry
 
@@ -5181,6 +5191,7 @@ theorem stateInv :
       · intro u hu
         obtain ⟨addr, haddr⟩ := hu
         simp [state, TcState.ofEnvAnon] at haddr
+    · rfl
     · intro entry hentry
       cases hentry <;> simp [state, TcState.ofEnvAnon] at *
   · apply CtxRecon.empty <;> rfl
@@ -5517,6 +5528,7 @@ theorem multiBetaStateInv (prims : Primitives .anon) :
     · intro u hu
       obtain ⟨a, ha⟩ := hu
       simp [noAccelState, state, loadedEnv, KEnv.insert] at ha
+  · rfl
   · intro entry
     simpa [noAccelState, state] using loadedEnv_noCacheEntries entry
 
@@ -5576,6 +5588,7 @@ theorem iotaArgsStateInv (prims : Primitives .anon) :
   apply KernelStateWF.of_no_cache_entries
   · exact hbase.1.core
   · exact hbase.1.internSupport.mono support_le_iotaArgsSupport
+  · rfl
   · intro entry
     simpa [noAccelState, state] using loadedEnv_noCacheEntries entry
 
@@ -5731,6 +5744,7 @@ theorem multiIotaStateInv (prims : Primitives .anon) :
   apply KernelStateWF.of_no_cache_entries
   · exact hbase.1.core
   · exact hbase.1.internSupport.mono support_le_multiIotaSupport
+  · rfl
   · intro entry
     simpa [noAccelState, state] using loadedEnv_noCacheEntries entry
 
@@ -6100,6 +6114,7 @@ theorem changedHeadStateInv (prims : Primitives .anon) :
     · intro u hu
       obtain ⟨a, ha⟩ := hu
       simp [noAccelState, state, loadedEnv, KEnv.insert] at ha
+  · rfl
   · intro entry
     simpa [noAccelState, state] using loadedEnv_noCacheEntries entry
 

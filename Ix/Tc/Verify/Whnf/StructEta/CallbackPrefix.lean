@@ -77,17 +77,17 @@ theorem withInferOnly_whnf_wf
   have hEnabled :
       WhnfStateInv layer semantics trProj world support uvars Delta
         {s with inferOnly := true} :=
-    hI.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl
+    hI.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl rfl
   have hcallback := hf hEnabled
   rw [withInferOnly_eq]
   cases hrun : f {s with inferOnly := true} with
   | ok a after =>
       rw [hrun] at hcallback
-      exact ⟨hcallback.1.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl,
+      exact ⟨hcallback.1.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl rfl,
         hcallback.2⟩
   | error err after =>
       rw [hrun] at hcallback
-      exact ⟨hcallback.1.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl,
+      exact ⟨hcallback.1.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl rfl,
         hcallback.2⟩
 
 end TcM

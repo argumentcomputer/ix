@@ -113,13 +113,14 @@ inductive StringListPlan (support : RunSupport)
 /-- The actual recursive String-list builder executes any finite pure plan,
 returning its exact result and preserving the complete K1 invariant. -/
 theorem strLitListToConstructor_plan_wf
-    {semantics : CacheSemantics} {trProj : RawProjRel}
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport}
     (hcollision : support.CollisionFree)
     {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon}
     {charOfNat cons list result : KExpr .anon} {chars : List Char}
     (plan : StringListPlan support charOfNat cons chars list result) :
-    RecM.WF .noAccel semantics trProj world support uvars Delta s
+    RecM.WF layer semantics trProj world support uvars Delta s
       (strLitListToConstructor charOfNat cons chars list)
       (fun actual _ => actual = result ∧ support actual) := by
   induction plan generalizing s with
@@ -167,18 +168,21 @@ structure StringExpansionPlan (trProj : RawProjRel) (world : VerifyWorld)
 
 /-- The already-read primitive-table transaction executes the exact finite
 plan, including all seven prefix interns, the recursive character fold, and
-the final `String.ofList` application. -/
-theorem strLitToConstructorWithPrimitives_plan_wf
-    {semantics : CacheSemantics} {trProj : RawProjRel}
+the final `String.ofList` application.  This stronger form retains the exact
+concrete result so semantic clients can attach a specific translation rather
+than merely an existential one. -/
+theorem strLitToConstructorWithPrimitives_plan_exact_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics} {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport}
     (hcollision : support.CollisionFree)
     {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon}
     {p : Primitives .anon} {value : String}
     (plan : StringExpansionPlan trProj world support p value) :
-    RecM.WF .noAccel semantics trProj world support uvars Delta s
+    RecM.WF layer semantics trProj world support uvars Delta s
       (strLitToConstructorWithPrimitives p value)
       (fun expanded _ =>
-        support expanded ∧
+        expanded = KExpr.mkApp (stringMkConst p) plan.list ∧
+          support expanded ∧
           ∃ expandedV,
             TrKExprS world.venv uvars world.nameOf trProj Delta expanded
               expandedV) := by
@@ -258,18 +262,65 @@ theorem strLitToConstructorWithPrimitives_plan_wf
     rw [ReaderT.run_monadLift]
     exact hFinal
   rw [hrun]
-  exact ⟨hI9, plan.final, plan.translation uvars Delta⟩
+  exact ⟨hI9, rfl, plan.final, plan.translation uvars Delta⟩
+
+/-- Compatibility form used by K1 callers that need only support and some
+structural translation of the generated constructor term. -/
+theorem strLitToConstructorWithPrimitives_plan_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics} {trProj : RawProjRel}
+    {world : VerifyWorld} {support : RunSupport}
+    (hcollision : support.CollisionFree)
+    {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon}
+    {p : Primitives .anon} {value : String}
+    (plan : StringExpansionPlan trProj world support p value) :
+    RecM.WF layer semantics trProj world support uvars Delta s
+      (strLitToConstructorWithPrimitives p value)
+      (fun expanded _ =>
+        support expanded ∧
+          ∃ expandedV,
+            TrKExprS world.venv uvars world.nameOf trProj Delta expanded
+              expandedV) := by
+  apply RecM.WF.mono
+    (strLitToConstructorWithPrimitives_plan_exact_wf hcollision plan)
+  · intro expanded after hpost
+    exact ⟨hpost.2.1, hpost.2.2⟩
+  · intro _ _ _
+    trivial
+
+/-- Exact production String expansion, including the primitive-table read. -/
+theorem strLitToConstructor_plan_exact_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics} {trProj : RawProjRel}
+    {world : VerifyWorld} {support : RunSupport}
+    (hcollision : support.CollisionFree)
+    {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon} {value : String}
+    (plan : StringExpansionPlan trProj world support s.prims value) :
+    RecM.WF layer semantics trProj world support uvars Delta s
+      (strLitToConstructor value)
+      (fun expanded _ =>
+        expanded = KExpr.mkApp (stringMkConst s.prims) plan.list ∧
+          support expanded ∧
+          ∃ expandedV,
+            TrKExprS world.venv uvars world.nameOf trProj Delta expanded
+              expandedV) := by
+  rw [strLitToConstructor_eq]
+  apply RecM.WF.bind
+    (Q₁ := fun p after => p = s.prims ∧ after = s)
+    (prims_wf (s := s))
+  intro p after hread
+  rcases hread with ⟨rfl, rfl⟩
+  exact strLitToConstructorWithPrimitives_plan_exact_wf hcollision plan
 
 /-- Production's full `strLitToConstructor` transaction first reads the
 primitive table without changing state and then executes the certified finite
 intern transaction above. -/
 theorem strLitToConstructor_plan_wf
-    {semantics : CacheSemantics} {trProj : RawProjRel}
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel}
     {world : VerifyWorld} {support : RunSupport}
     (hcollision : support.CollisionFree)
     {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon} {value : String}
     (plan : StringExpansionPlan trProj world support s.prims value) :
-    RecM.WF .noAccel semantics trProj world support uvars Delta s
+    RecM.WF layer semantics trProj world support uvars Delta s
       (strLitToConstructor value)
       (fun expanded _ =>
         support expanded ∧

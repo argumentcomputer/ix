@@ -305,7 +305,7 @@ production API.  This equation is the bridge from an `abstractFVars` request
 to the already-proved cached walker. -/
 theorem abstractFVars_eq (body : KExpr .anon) (fvars : Array FVarId) :
     abstractFVars body fvars =
-      if fvars.isEmpty || !body.hasFVars then pure body
+      if fvars.isEmpty || (!body.hasFVars && body.lbr == 0) then pure body
       else runWalk (abstractFVarsCached body
         (abstractFVarPositions fvars) fvars.size.toUInt64 0) := by
   rw [abstractFVars]
@@ -313,15 +313,65 @@ theorem abstractFVars_eq (body : KExpr .anon) (fvars : Array FVarId) :
 
 namespace KExpr
 
-/-- Pure result of the production `abstractFVars` API, including both of its
-no-op fast paths. The cached walker spec is used only on the slow path. -/
+/-- Pure result of the production `abstractFVars` API.  A term without fvars
+is a no-op only when it also has no loose bvars: otherwise wrapping new
+binders must shift those bvars even though none of the target fvars occurs. -/
 def abstractFVarsResult (body : KExpr .anon) (fvars : Array FVarId) :
     KExpr .anon :=
-  if fvars.isEmpty || !body.hasFVars then body
+  if fvars.isEmpty || (!body.hasFVars && body.lbr == 0) then body
   else abstractFVarsSpec body (abstractFVarPositions fvars)
     fvars.size.toUInt64 0
 
 end KExpr
+
+/-! ## Cheap-beta finite footprint -/
+
+/-- Every base/candidate in the left-associated application chain selected
+by one cheap-beta plan. -/
+def cheapBetaChainList (base : KExpr .anon) :
+    List (KExpr .anon) → List (KExpr .anon)
+  | [] => [base]
+  | arg :: trailing =>
+    base :: cheapBetaChainList (KExpr.mkApp base arg) trailing
+
+/-- Exact finite expression footprint of `cheapBetaReduce`: the unchanged
+source plus the selected base and every intermediate application candidate. -/
+def KExpr.CheapBetaReach (source x : KExpr .anon) : Prop :=
+  x ∈ source :: match cheapBetaPlan? source with
+    | none => []
+    | some plan => cheapBetaChainList plan.base plan.trailing
+
+namespace KExpr.CheapBetaReach
+
+theorem finite (source : KExpr .anon) :
+    FiniteSupport (KExpr.CheapBetaReach source) :=
+  ⟨source :: match cheapBetaPlan? source with
+      | none => []
+      | some plan => cheapBetaChainList plan.base plan.trailing,
+    fun {_} h => h⟩
+
+end KExpr.CheapBetaReach
+
+/-- Arithmetic/constructedness contract shared by the simultaneous-
+substitution request and cheap beta's consumed prefix. -/
+def SimulSubstBounds (body : KExpr .anon)
+    (substs : Array (KExpr .anon)) (depth : UInt64) : Prop :=
+  KExpr.Constructed body ∧
+    (∀ k, k < substs.size → KExpr.Constructed substs[k]!) ∧
+    (∀ k, k < substs.size → substs[k]!.size < UInt64.size) ∧
+    depth.toNat + body.size + substs.size < UInt64.size ∧
+    (∀ k, k < substs.size →
+      substs[k]!.lbr.toNat + substs[k]!.size + depth.toNat + body.size <
+        UInt64.size)
+
+/-- Resource bounds for the exact lambda prefix selected by cheap beta. -/
+def KExpr.CheapBetaBounds (source : KExpr .anon) : Prop :=
+  (∀ x, KExpr.CheapBetaReach source x → KExpr.Constructed x) ∧
+    ∀ {head : KExpr .anon} {args : Array (KExpr .anon)}
+        {body : KExpr .anon} {consumed : Nat},
+      source.collectSpine = (head, args) →
+      peelLamsN args.size head = (body, consumed) →
+      SimulSubstBounds body (args.extract 0 consumed).reverse 0
 
 /-- One interning operation whose address reads, memo keys, and candidates
 must be covered by the run support. -/
@@ -335,6 +385,7 @@ inductive WalkerRequest where
   | instRev (body : KExpr .anon) (fvars : Array (KExpr .anon))
   | abstractFVars (body : KExpr .anon) (fvars : Array FVarId)
   | instUniv (e : KExpr .anon) (us : Array (KUniv .anon))
+  | cheapBeta (e : KExpr .anon)
 
 namespace WalkerRequest
 
@@ -350,6 +401,7 @@ def Reach : WalkerRequest → KExpr .anon → Prop
     KExpr.AbstractReach (abstractFVarPositions fvars)
       fvars.size.toUInt64 body 0
   | .instUniv e us => KExpr.InstUnivReach us e
+  | .cheapBeta e => KExpr.CheapBetaReach e
 
 /-- Universe candidates are tracked separately from expressions: the two
 address domains have different erasures and therefore different collision
@@ -372,13 +424,14 @@ theorem reach_finite (request : WalkerRequest) :
     exact KExpr.AbstractReach.finite (abstractFVarPositions fvars)
       fvars.size.toUInt64 body 0
   | instUniv e us => exact KExpr.InstUnivReach.finite us e
+  | cheapBeta e => exact KExpr.CheapBetaReach.finite e
 
 theorem univReach_finite (request : WalkerRequest) :
     FiniteSupport request.UnivReach := by
   cases request with
   | internUniv u => exact FiniteSupport.singleton u
   | internExpr | lift | subst | simulSubst | instRev | abstractFVars |
-      instUniv =>
+      instUniv | cheapBeta =>
     exact FiniteSupport.empty
 
 /-- Covering one request means covering every expression it can address,
@@ -407,13 +460,7 @@ def Bounds : WalkerRequest → Prop
     arg.size < UInt64.size ∧
     arg.lbr.toNat + arg.size + depth.toNat + body.size < UInt64.size
   | .simulSubst body substs depth =>
-    KExpr.Constructed body ∧
-    (∀ k, k < substs.size → KExpr.Constructed substs[k]!) ∧
-    (∀ k, k < substs.size → substs[k]!.size < UInt64.size) ∧
-    depth.toNat + body.size + substs.size < UInt64.size ∧
-    (∀ k, k < substs.size →
-      substs[k]!.lbr.toNat + substs[k]!.size + depth.toNat + body.size <
-        UInt64.size)
+    SimulSubstBounds body substs depth
   | .instRev body fvars =>
     KExpr.Constructed body ∧
     (∀ k, k < fvars.size → KExpr.Constructed fvars[k]!) ∧
@@ -426,6 +473,7 @@ def Bounds : WalkerRequest → Prop
     body.size < UInt64.size ∧
     body.lbr.toNat + body.size + fvars.size.toUInt64.toNat < UInt64.size
   | .instUniv _ _ => True
+  | .cheapBeta e => KExpr.CheapBetaBounds e
 
 namespace Bounds
 

@@ -2,6 +2,7 @@ import Ix.Tc.Verify.Env
 import Ix.Tc.Verify.Monad
 import Ix.Tc.Verify.InstUniv
 import Ix.Tc.Verify.Cache
+import Ix.Tc.Verify.EquivalenceManager
 
 /-!
 # The verification world and the run invariant
@@ -118,6 +119,8 @@ structure KernelStateWF (semantics : CacheSemantics) (trProj : RawProjRel)
   core : TcStateWF trProj s world
   internSupport : support.CoversIntern s.env.intern
   caches : CacheInvariant semantics (CacheAuthority.stable world) support s.env
+  equivalences : EquivManager.WF
+    (semantics.Equiv (CacheAuthority.stable world) support) s.equivManager
 
 /-- Existential current-world form of the complete G4 state invariant. -/
 def KernelTcInv (semantics : CacheSemantics) (trProj : RawProjRel)
@@ -133,9 +136,12 @@ theorem of_no_cache_entries {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
     {s : TcState .anon} (hcore : TcStateWF trProj s world)
     (hintern : support.CoversIntern s.env.intern)
+    (hequiv : s.equivManager = EquivManager.empty)
     (hempty : ∀ entry, ¬s.env.HasCacheEntry entry) :
     KernelStateWF semantics trProj world support s :=
-  ⟨hcore, hintern, CacheInvariant.of_no_entries hempty⟩
+  ⟨hcore, hintern, CacheInvariant.of_no_entries hempty, by
+    rw [hequiv]
+    exact EquivManager.WF.empty⟩
 
 /-- A physical hit in a stable state exposes its complete provenance. -/
 theorem cacheHit {semantics : CacheSemantics} {trProj : RawProjRel}
@@ -170,12 +176,13 @@ theorem restoreCheckCachesOnError {semantics : CacheSemantics}
     (hafterIntern : support.CoversIntern after.env.intern) :
     KernelStateWF semantics trProj world support
       (before.restoreCheckCachesOnError after) := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · apply hafterCore.of_consts_eq
     · simp [TcState.restoreCheckCachesOnError]
     · simpa [TcState.restoreCheckCachesOnError] using hafterCore.intern
   · simpa [TcState.restoreCheckCachesOnError] using hafterIntern
   · exact hbefore.caches.restoreCheckCachesOnError
+  · simpa [TcState.restoreCheckCachesOnError] using hbefore.equivalences
 
 end KernelStateWF
 

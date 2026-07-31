@@ -199,71 +199,71 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         // Open the binder with a fresh fvar. Mirrors lean4lean
         // `inferLambda` (TypeChecker.lean:122) and the C++
         // `infer_lambda` (refs/lean4/src/kernel/type_checker.cpp:116).
-        let saved = self.lctx.len();
-        let fv_id = self.fresh_fvar_id();
-        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-        self.lctx.push(
-          fv_id,
-          LocalDecl::CDecl {
-            name: name.clone(),
-            bi: bi.clone(),
-            ty: ty.clone(),
-          },
-        );
-        let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
-        let body_ty = self.infer(&body_open)?;
-        // Peephole-reduce App(λ.., ..) shapes inside the inferred type
-        // before wrapping in the Pi. Idempotent in the Pi case, so
-        // outer frames pay nothing.
-        let body_ty = cheap_beta_reduce(&mut self.env.intern, &body_ty);
-        // Close back: abstract the fvar and wrap in `All` with anonymous
-        // name + default binder info (matching the pre-fvar legacy shape;
-        // the Lam's user-facing name does not propagate into the
-        // inferred Pi type). Recursor coherence relies on this exact
-        // shape — `lctx.mk_pi` would preserve the Lam's `name`/`bi`,
-        // diverging from what `inductive.rs::build_recursor_*` produces
-        // canonically.
-        let abstracted =
-          abstract_fvars(&mut self.env.intern, &body_ty, &[fv_id]);
-        self.lctx.truncate(saved);
-        self.intern(KExpr::all(
-          M::meta_field(ix_common::env::Name::anon()),
-          M::meta_field(ix_common::env::BinderInfo::Default),
-          ty.clone(),
-          abstracted,
-        ))
+        self.with_lctx_scope(|tc| {
+          let fv_id = tc.fresh_fvar_id();
+          let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
+          tc.lctx.push(
+            fv_id,
+            LocalDecl::CDecl {
+              name: name.clone(),
+              bi: bi.clone(),
+              ty: ty.clone(),
+            },
+          );
+          let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
+          let body_ty = tc.infer(&body_open)?;
+          // Peephole-reduce App(λ.., ..) shapes inside the inferred type
+          // before wrapping in the Pi. Idempotent in the Pi case, so
+          // outer frames pay nothing.
+          let body_ty = cheap_beta_reduce(&mut tc.env.intern, &body_ty);
+          // Close back: abstract the fvar and wrap in `All` with anonymous
+          // name + default binder info (matching the pre-fvar legacy shape;
+          // the Lam's user-facing name does not propagate into the
+          // inferred Pi type). Recursor coherence relies on this exact
+          // shape — `lctx.mk_pi` would preserve the Lam's `name`/`bi`,
+          // diverging from what `inductive.rs::build_recursor_*` produces
+          // canonically.
+          let abstracted =
+            abstract_fvars(&mut tc.env.intern, &body_ty, &[fv_id]);
+          Ok(tc.intern(KExpr::all(
+            M::meta_field(ix_common::env::Name::anon()),
+            M::meta_field(ix_common::env::BinderInfo::Default),
+            ty.clone(),
+            abstracted,
+          )))
+        })?
       },
 
       ExprData::All(name, bi, ty, body, _) => {
         let ty_ty = self.infer(ty)?;
         let u1 = self.ensure_sort(&ty_ty)?;
-        let saved = self.lctx.len();
-        let fv_id = self.fresh_fvar_id();
-        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-        if crate::env_var("IX_FVAR_TRACE").is_ok() {
-          log::info!(
-            "[fvar All push] fv={fv_id} ty.addr={:?} ty.lbr={} ctx_len_before_push={} body.lbr={}",
-            ty.addr(),
-            ty.lbr(),
-            self.ctx.len(),
-            body.lbr(),
+        self.with_lctx_scope(|tc| {
+          let fv_id = tc.fresh_fvar_id();
+          let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
+          if crate::env_var("IX_FVAR_TRACE").is_ok() {
+            log::info!(
+              "[fvar All push] fv={fv_id} ty.addr={:?} ty.lbr={} ctx_len_before_push={} body.lbr={}",
+              ty.addr(),
+              ty.lbr(),
+              tc.ctx.len(),
+              body.lbr(),
+            );
+            log::info!("    ty data: {:?}", ty.data());
+          }
+          tc.lctx.push(
+            fv_id,
+            LocalDecl::CDecl {
+              name: name.clone(),
+              bi: bi.clone(),
+              ty: ty.clone(),
+            },
           );
-          log::info!("    ty data: {:?}", ty.data());
-        }
-        self.lctx.push(
-          fv_id,
-          LocalDecl::CDecl {
-            name: name.clone(),
-            bi: bi.clone(),
-            ty: ty.clone(),
-          },
-        );
-        let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
-        let body_ty = self.infer(&body_open)?;
-        let u2 = self.ensure_sort(&body_ty)?;
-        self.lctx.truncate(saved);
-        let u = KUniv::imax(u1, u2);
-        self.intern(KExpr::sort(u))
+          let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
+          let body_ty = tc.infer(&body_open)?;
+          let u2 = tc.ensure_sort(&body_ty)?;
+          let u = KUniv::imax(u1, u2);
+          Ok(tc.intern(KExpr::sort(u)))
+        })?
       },
 
       ExprData::Let(name, ty, val, body, _, _) => {
@@ -280,32 +280,31 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         // WHNF can zeta-reduce on FVar(let) lookup, and so the closing
         // step below produces a `Let` wrapper whose body is the
         // abstracted body_ty.
-        let saved = self.lctx.len();
-        let fv_id = self.fresh_fvar_id();
-        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-        self.lctx.push(
-          fv_id,
-          LocalDecl::LDecl {
-            name: name.clone(),
-            ty: ty.clone(),
-            val: val.clone(),
-          },
-        );
-        let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
-        let body_ty = self.infer(&body_open)?;
-        // Eagerly substitute `val` for the let's fvar in the inferred
-        // type, then cheap-beta. This matches the pre-fvar behavior of
-        // `inferLet` (which used a single `subst(body_ty, val, 0)` after
-        // pop) and avoids leaking a `Let` wrapper into cached infer
-        // results, which would change cache shapes for downstream
-        // consumers. Equivalent to `lctx.mk_pi([fv_id], body_ty)`
-        // followed by zeta — we collapse directly.
-        let abstracted =
-          abstract_fvars(&mut self.env.intern, &body_ty, &[fv_id]);
-        let r = subst(&mut self.env.intern, &abstracted, val, 0);
-        let r = cheap_beta_reduce(&mut self.env.intern, &r);
-        self.lctx.truncate(saved);
-        r
+        self.with_lctx_scope(|tc| {
+          let fv_id = tc.fresh_fvar_id();
+          let fv = tc.intern(KExpr::fvar(fv_id, name.clone()));
+          tc.lctx.push(
+            fv_id,
+            LocalDecl::LDecl {
+              name: name.clone(),
+              ty: ty.clone(),
+              val: val.clone(),
+            },
+          );
+          let body_open = instantiate_rev(&mut tc.env.intern, body, &[fv]);
+          let body_ty = tc.infer(&body_open)?;
+          // Eagerly substitute `val` for the let's fvar in the inferred
+          // type, then cheap-beta. This matches the pre-fvar behavior of
+          // `inferLet` (which used a single `subst(body_ty, val, 0)` after
+          // pop) and avoids leaking a `Let` wrapper into cached infer
+          // results, which would change cache shapes for downstream
+          // consumers. Equivalent to `lctx.mk_pi([fv_id], body_ty)`
+          // followed by zeta — we collapse directly.
+          let abstracted =
+            abstract_fvars(&mut tc.env.intern, &body_ty, &[fv_id]);
+          let r = subst(&mut tc.env.intern, &abstracted, val, 0);
+          Ok(cheap_beta_reduce(&mut tc.env.intern, &r))
+        })?
       },
 
       ExprData::Prj(struct_id, field, val, _) => {
@@ -609,6 +608,7 @@ mod tests {
   use super::super::error::TcError;
   use super::super::expr::{ExprData, KExpr};
   use super::super::id::KId;
+  use super::super::lctx::LocalDecl;
   use super::super::level::KUniv;
   use super::super::mode::Anon;
   use super::super::tc::TypeChecker;
@@ -827,6 +827,36 @@ mod tests {
         assert_eq!(ctx_len, 0);
       },
       other => panic!("expected VarOutOfRange, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_binder_errors_restore_lctx_scope() {
+    let bad_body = AE::cnst(mk_id("MissingBinderBody"), Box::new([]));
+    let cases = [
+      ("lambda", AE::lam((), (), sort0(), bad_body.clone())),
+      ("forall", AE::all((), (), sort0(), bad_body.clone())),
+      ("let", AE::let_((), sort1(), sort0(), bad_body, false)),
+    ];
+
+    for (kind, expr) in cases {
+      let mut env = test_env();
+      let mut tc = TypeChecker::new(&mut env);
+      let outer_id = tc.fresh_fvar_id();
+      tc.lctx
+        .push(outer_id, LocalDecl::CDecl { name: (), bi: (), ty: sort0() });
+      let saved = tc.lctx.len();
+
+      assert!(tc.infer(&expr).is_err(), "{kind} body must fail");
+      assert_eq!(
+        tc.lctx.len(),
+        saved,
+        "{kind} inference leaked a binder local after error"
+      );
+      assert!(
+        tc.lctx.find(outer_id).is_some(),
+        "{kind} inference damaged the enclosing local context"
+      );
     }
   }
 

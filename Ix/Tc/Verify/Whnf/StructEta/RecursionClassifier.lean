@@ -36,11 +36,12 @@ theorem insert_whnfStateInv
         isRecCache := s.env.isRecCache.insert ind value}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertIsRec hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -57,11 +58,12 @@ theorem erase_whnfStateInv
         isRecCache := s.env.isRecCache.erase ind}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.eraseIsRec
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 

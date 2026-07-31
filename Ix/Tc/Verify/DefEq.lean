@@ -1,4 +1,5 @@
 import Ix.Tc.Verify.Infer
+import Ix.Tc.Verify.Whnf.Closure
 import Batteries.Data.UInt
 
 /-!
@@ -16,6 +17,21 @@ open Lean4Lean (VExpr)
 private theorem uint64_max_comm (a b : UInt64) : max a b = max b a := by
   apply UInt64.toNat_inj.mp
   simp only [UInt64.toNat_max, Nat.max_comm]
+
+namespace EqKey
+
+/-- Propositional contract for the runtime guard on root-derived DefEq cache
+lookups.  This is the exact scope information consumed by the semantic branch
+proof below. -/
+theorem rootCacheScopeMatches_iff (left right : EqKey)
+    (ctxAddr : Address) (lbr : UInt64) :
+    left.rootCacheScopeMatches right ctxAddr lbr = true ↔
+      left.ctxAddr = ctxAddr ∧ right.ctxAddr = ctxAddr ∧
+      left.lbr = lbr ∧ right.lbr = lbr ∧
+      max left.exprLbr right.exprLbr = lbr := by
+  simp [EqKey.rootCacheScopeMatches, and_assoc]
+
+end EqKey
 
 /-- A represented context address tied to the actual DefEq key computation.
 The expression-address pair is canonicalized separately after this run. -/
@@ -45,18 +61,73 @@ theorem withEquiv_eq (f : EquivManager → α × EquivManager)
   rw [hresult]
   rfl
 
-/-- Union-find queries and path compression preserve every component of the
-fixed-world checker invariant. -/
+/-- A union-find operation preserves the fixed-world checker invariant once
+its updated manager has been proved valid.  The preservation premise is
+deliberately explicit: arbitrary mutation of the manager is not semantic
+bookkeeping. -/
 theorem withEquiv_whnf_wf
     {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
     {uvars : Nat} {Delta : KVLCtx}
-    (f : EquivManager → α × EquivManager) (s : TcState .anon) :
+    (f : EquivManager → α × EquivManager)
+    (hf : ∀ em, EquivManager.WF
+        (semantics.Equiv (CacheAuthority.stable world) support) em →
+      EquivManager.WF
+        (semantics.Equiv (CacheAuthority.stable world) support) (f em).2)
+    (s : TcState .anon) :
     TcM.WF (WhnfStateInv layer semantics trProj world support uvars Delta) s
       (TcM.withEquiv f) (fun _ _ => True) := by
   intro hI
   rw [TcM.withEquiv_eq]
-  exact ⟨hI.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl, trivial⟩
+  exact ⟨hI.setEquivManager _ (hf _ hI.1.equivalences), trivial⟩
+
+/-- The production equivalence query performs only verified path compression;
+a positive Boolean additionally exposes the semantic relation represented by
+the manager. -/
+theorem withEquiv_isEquiv_whnf_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    {uvars : Nat} {Delta : KVLCtx} (left right : EqKey)
+    (s : TcState .anon) :
+    TcM.WF (WhnfStateInv layer semantics trProj world support uvars Delta) s
+      (TcM.withEquiv (·.isEquiv left right))
+      (fun answer _ => answer = true →
+        semantics.Equiv (CacheAuthority.stable world) support left right) := by
+  intro hI
+  rw [TcM.withEquiv_eq]
+  have hquery := hI.1.equivalences.isEquiv
+    (semantics.equivEquivalence (CacheAuthority.stable world) support)
+    left right
+  rcases hresult : s.equivManager.isEquiv left right with ⟨answer, manager⟩
+  rw [hresult] at hquery
+  exact ⟨hI.setEquivManager manager hquery.1, hquery.2⟩
+
+/-- DefEq's two-root second-chance query preserves the manager and returns a
+semantic relation from each original key to any representative it exposes. -/
+theorem withEquiv_findRootKeys_whnf_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    {uvars : Nat} {Delta : KVLCtx} (left right : EqKey)
+    (s : TcState .anon) :
+    TcM.WF (WhnfStateInv layer semantics trProj world support uvars Delta) s
+      (TcM.withEquiv fun em =>
+        let (leftRoot, em) := em.findRootKey left
+        let (rightRoot, em) := em.findRootKey right
+        ((leftRoot, rightRoot), em))
+      (fun roots _ =>
+        (∀ root, roots.1 = some root →
+          semantics.Equiv (CacheAuthority.stable world) support left root) ∧
+        (∀ root, roots.2 = some root →
+          semantics.Equiv (CacheAuthority.stable world) support right root)) := by
+  intro hI
+  rw [TcM.withEquiv_eq]
+  have hroots := hI.1.equivalences.findRootKeys
+    (semantics.equivEquivalence (CacheAuthority.stable world) support)
+    left right
+  rcases hleft : s.equivManager.findRootKey left with ⟨leftRoot, manager₁⟩
+  rcases hright : manager₁.findRootKey right with ⟨rightRoot, manager₂⟩
+  simp only [hleft, hright] at hroots ⊢
+  exact ⟨hI.setEquivManager manager₂ hroots.1, hroots.2⟩
 
 /-- DefEq's shared context key permits only the suffix-memo state frame. -/
 theorem defEqCtxKey_wf {layer : WhnfLayer} {semantics : CacheSemantics}
@@ -99,6 +170,24 @@ theorem defEqCtxKey_operational_matches_wf
       exact hwf
 
 end TcM
+
+namespace WhnfStateInv
+
+/-- Record one already-proved semantic equality in the concrete manager. -/
+theorem addEquiv
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon}
+    {left right : EqKey}
+    (h : WhnfStateInv layer semantics trProj world support uvars Delta s)
+    (hrel : semantics.Equiv (CacheAuthority.stable world) support left right) :
+    WhnfStateInv layer semantics trProj world support uvars Delta
+      {s with equivManager := s.equivManager.addEquiv left right} :=
+  h.setEquivManager _ <|
+    h.1.equivalences.addEquiv
+      (semantics.equivEquivalence (CacheAuthority.stable world) support) hrel
+
+end WhnfStateInv
 
 /-- Soundness meaning of one concrete boolean def-eq result. -/
 def DefEqMeaning (trProj : RawProjRel) (world : VerifyWorld)
@@ -181,20 +270,310 @@ theorem of_translations {trProj : RawProjRel} {world : VerifyWorld}
 
 end DefEqMeaning
 
+/-- Soundness meaning of one memoized proposition classifier result.  The
+classifier is conservative on `false`; a `true` result retains a structural
+translation of the concrete type with type `Sort 0`. -/
+def IsPropMeaning (trProj : RawProjRel) (world : VerifyWorld)
+    (uvars : Nat) (Delta : KVLCtx) (source : KExpr .anon)
+    (answer : Bool) : Prop :=
+  answer = true →
+    ∃ sourceV,
+      TrKExprS world.venv uvars world.nameOf trProj Delta source sourceV ∧
+      world.venv.HasType uvars Delta.toCtx sourceV (.sort .zero)
+
+namespace IsPropMeaning
+
+theorem false {trProj : RawProjRel} {world : VerifyWorld} {uvars : Nat}
+    {Delta : KVLCtx} {source : KExpr .anon} :
+    IsPropMeaning trProj world uvars Delta source false := by
+  intro htrue
+  contradiction
+
+theorem mono {trProj : RawProjRel} {before after : VerifyWorld}
+    (hle : before ≤ after) {uvars : Nat} {Delta : KVLCtx}
+    {source : KExpr .anon} {answer : Bool}
+    (h : IsPropMeaning trProj before uvars Delta source answer) :
+    IsPropMeaning trProj after uvars Delta source answer := by
+  intro htrue
+  obtain ⟨sourceV, hsource, htype⟩ := h htrue
+  refine ⟨sourceV, ?_, htype.mono hle.venv⟩
+  simpa only [← hle.nameOf] using hsource.mono hle.venv
+
+/-- Reconcile cached proposition meaning with the caller's particular
+structural translation. -/
+theorem of_translation {trProj : RawProjRel} {world : VerifyWorld}
+    {uvars : Nat} (theory : WhnfTheory trProj world uvars)
+    {Delta : KVLCtx} (hDelta : KVLCtx.WF world.venv uvars Delta)
+    {source : KExpr .anon} {sourceV : VExpr} {answer : Bool}
+    (hsource : TrKExprS world.venv uvars world.nameOf trProj Delta source
+      sourceV)
+    (h : IsPropMeaning trProj world uvars Delta source answer)
+    (htrue : answer = true) :
+    world.venv.HasType uvars Delta.toCtx sourceV (.sort .zero) := by
+  obtain ⟨cachedV, hcached, htype⟩ := h htrue
+  have hctx := KVLCtx.IsDefEq.refl world.venvWF hDelta
+  have heq := hcached.uniq world.venvWF theory.literalWF
+    theory.projections hctx hsource
+  exact htype.defeqU_l world.venvWF hDelta heq
+
+end IsPropMeaning
+
+/-! ## Semantic relation represented by the equivalence manager -/
+
+/-- One directed, semantically justified union-find edge.  Besides the
+context/radius agreement, both endpoint keys retain concrete finite-support
+witnesses.  That witness retention is what makes a chain of manager edges
+semantically composable: the intermediate address is never interpreted as an
+expression merely because a hash happens to exist. -/
+structure DefEqKeyEdge (keys : WhnfContextKeys) (trProj : RawProjRel)
+    (authority : CacheAuthority) (support : RunSupport)
+    (left right : EqKey) : Prop where
+  context_eq : left.ctxAddr = right.ctxAddr
+  radius_eq : left.lbr = right.lbr
+  leftWitness : ∃ a, support a ∧ a.addr = left.exprAddr ∧
+    a.lbr = left.exprLbr
+  rightWitness : ∃ b, support b ∧ b.addr = right.exprAddr ∧
+    b.lbr = right.exprLbr
+  meaning : ∀ a, support a → a.addr = left.exprAddr →
+    ∀ b, support b → b.addr = right.exprAddr →
+      ∀ Delta, keys.Represents left.lbr left.ctxAddr Delta →
+        DefEqMeaning trProj authority.world keys.uvars Delta a b true
+
+namespace DefEqKeyEdge
+
+/-- Edge validity is monotone in the trusted Theory world. -/
+theorem mono {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {before after : CacheAuthority} {support : RunSupport}
+    {left right : EqKey} (hle : before ≤ after)
+    (h : DefEqKeyEdge keys trProj before support left right) :
+    DefEqKeyEdge keys trProj after support left right where
+  context_eq := h.context_eq
+  radius_eq := h.radius_eq
+  leftWitness := h.leftWitness
+  rightWitness := h.rightWitness
+  meaning a ha haddrA b hb haddrB Delta hrepresented :=
+    (h.meaning a ha haddrA b hb haddrB Delta hrepresented).mono hle.world
+
+end DefEqKeyEdge
+
+/-- One undirected semantic step.  Union-find parent edges may choose either
+orientation, so symmetry belongs at this structural layer rather than being
+silently assumed of a raw insertion certificate. -/
+inductive DefEqKeyStep (keys : WhnfContextKeys) (trProj : RawProjRel)
+    (authority : CacheAuthority) (support : RunSupport) :
+    EqKey → EqKey → Prop where
+  | forward : DefEqKeyEdge keys trProj authority support left right →
+      DefEqKeyStep keys trProj authority support left right
+  | backward : DefEqKeyEdge keys trProj authority support right left →
+      DefEqKeyStep keys trProj authority support left right
+
+namespace DefEqKeyStep
+
+theorem symm {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyStep keys trProj authority support left right) :
+    DefEqKeyStep keys trProj authority support right left := by
+  cases h with
+  | forward hedge => exact .backward hedge
+  | backward hedge => exact .forward hedge
+
+theorem mono {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {before after : CacheAuthority} {support : RunSupport}
+    {left right : EqKey} (hle : before ≤ after)
+    (h : DefEqKeyStep keys trProj before support left right) :
+    DefEqKeyStep keys trProj after support left right := by
+  cases h with
+  | forward hedge => exact .forward (hedge.mono hle)
+  | backward hedge => exact .backward (hedge.mono hle)
+
+theorem context_eq {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyStep keys trProj authority support left right) :
+    left.ctxAddr = right.ctxAddr := by
+  cases h with
+  | forward hedge => exact hedge.context_eq
+  | backward hedge => exact hedge.context_eq.symm
+
+theorem radius_eq {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyStep keys trProj authority support left right) :
+    left.lbr = right.lbr := by
+  cases h with
+  | forward hedge => exact hedge.radius_eq
+  | backward hedge => exact hedge.radius_eq.symm
+
+/-- Every step provides a supported expression for its target key. -/
+theorem targetWitness {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyStep keys trProj authority support left right) :
+    ∃ b, support b ∧ b.addr = right.exprAddr ∧ b.lbr = right.exprLbr := by
+  cases h with
+  | forward hedge => exact hedge.rightWitness
+  | backward hedge => exact hedge.leftWitness
+
+/-- Interpret one undirected step at a represented source context. -/
+theorem meaning {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyStep keys trProj authority support left right)
+    {a b : KExpr .anon} (ha : support a) (haddrA : a.addr = left.exprAddr)
+    (hb : support b) (haddrB : b.addr = right.exprAddr)
+    {Delta : KVLCtx} (hrepresented :
+      keys.Represents left.lbr left.ctxAddr Delta) :
+    DefEqMeaning trProj authority.world keys.uvars Delta a b true := by
+  cases h with
+  | forward hedge =>
+      exact hedge.meaning a ha haddrA b hb haddrB Delta hrepresented
+  | backward hedge =>
+      have hrepresented' :
+          keys.Represents right.lbr right.ctxAddr Delta := by
+        simpa only [hedge.radius_eq, hedge.context_eq] using hrepresented
+      exact (hedge.meaning b hb haddrB a ha haddrA Delta hrepresented').symm
+
+end DefEqKeyStep
+
+/-- A finite path of justified manager edges.  Its constructors make
+reflexivity and transitivity structural; no unproved transitivity of context
+digests or expression addresses enters the relation. -/
+inductive DefEqKeyEquiv (keys : WhnfContextKeys) (trProj : RawProjRel)
+    (authority : CacheAuthority) (support : RunSupport) :
+    EqKey → EqKey → Prop where
+  | refl (key : EqKey) : DefEqKeyEquiv keys trProj authority support key key
+  | cons : DefEqKeyStep keys trProj authority support left middle →
+      DefEqKeyEquiv keys trProj authority support middle right →
+      DefEqKeyEquiv keys trProj authority support left right
+
+namespace DefEqKeyEquiv
+
+theorem trans {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left middle right : EqKey}
+    (h₁ : DefEqKeyEquiv keys trProj authority support left middle)
+    (h₂ : DefEqKeyEquiv keys trProj authority support middle right) :
+    DefEqKeyEquiv keys trProj authority support left right := by
+  induction h₁ with
+  | refl => exact h₂
+  | cons hstep htail ih => exact .cons hstep (ih h₂)
+
+theorem symm {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyEquiv keys trProj authority support left right) :
+    DefEqKeyEquiv keys trProj authority support right left := by
+  induction h with
+  | refl => exact .refl _
+  | @cons left middle right hstep htail ih =>
+      exact trans ih (.cons hstep.symm (.refl _))
+
+theorem equivalence (keys : WhnfContextKeys) (trProj : RawProjRel)
+    (authority : CacheAuthority) (support : RunSupport) :
+    Equivalence (DefEqKeyEquiv keys trProj authority support) :=
+  ⟨.refl, symm, trans⟩
+
+theorem mono {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {before after : CacheAuthority} {support : RunSupport}
+    {left right : EqKey} (hle : before ≤ after)
+    (h : DefEqKeyEquiv keys trProj before support left right) :
+    DefEqKeyEquiv keys trProj after support left right := by
+  induction h with
+  | refl => exact .refl _
+  | cons hstep htail ih => exact .cons (hstep.mono hle) ih
+
+theorem context_eq {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyEquiv keys trProj authority support left right) :
+    left.ctxAddr = right.ctxAddr := by
+  induction h with
+  | refl => rfl
+  | cons hstep htail ih => exact hstep.context_eq.trans ih
+
+theorem radius_eq {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyEquiv keys trProj authority support left right) :
+    left.lbr = right.lbr := by
+  induction h with
+  | refl => rfl
+  | cons hstep htail ih => exact hstep.radius_eq.trans ih
+
+/-- A manager path exposes a concrete supported witness for its target once
+the queried source key has one.  The intrinsic-radius equality is retained so
+root-derived cache probes can reconstruct the exact context radius used by
+their expression pair. -/
+theorem targetWitness {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport} {left right : EqKey}
+    (h : DefEqKeyEquiv keys trProj authority support left right)
+    {a : KExpr .anon} (ha : support a) (haddr : a.addr = left.exprAddr)
+    (hlbr : a.lbr = left.exprLbr) :
+    ∃ b, support b ∧ b.addr = right.exprAddr ∧ b.lbr = right.exprLbr := by
+  induction h generalizing a with
+  | refl => exact ⟨a, ha, haddr, hlbr⟩
+  | cons hstep htail ih =>
+      obtain ⟨middle, hmiddle, hmiddleAddr, hmiddleLbr⟩ :=
+        hstep.targetWitness
+      exact ih hmiddle hmiddleAddr hmiddleLbr
+
+/-- A manager path is sound for concrete translated endpoints.  Intermediate
+expressions and translations come from the edge certificates themselves;
+they are never reconstructed from hashes. -/
+theorem sound {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {authority : CacheAuthority} {support : RunSupport}
+    (theory : WhnfTheory trProj authority.world keys.uvars)
+    {Delta : KVLCtx} (hDelta : KVLCtx.WF authority.world.venv keys.uvars Delta)
+    (hcollision : support.CollisionFree)
+    {left right : EqKey}
+    (h : DefEqKeyEquiv keys trProj authority support left right)
+    {a b : KExpr .anon} {va vb : VExpr}
+    (haSupport : support a) (haddrA : a.addr = left.exprAddr)
+    (hbSupport : support b) (haddrB : b.addr = right.exprAddr)
+    (hrepresented : keys.Represents left.lbr left.ctxAddr Delta)
+    (ha : TrKExprS authority.world.venv keys.uvars authority.world.nameOf
+      trProj Delta a va)
+    (hb : TrKExprS authority.world.venv keys.uvars authority.world.nameOf
+      trProj Delta b vb) :
+    authority.world.venv.IsDefEqU keys.uvars Delta.toCtx va vb := by
+  induction h generalizing a va with
+  | refl =>
+      have habAddr : a.addr = b.addr := haddrA.trans haddrB.symm
+      have hab : a = b := by
+        have herase := hcollision.expr haSupport hbSupport habAddr
+        simpa only [KExpr.eraseMeta_anon] using herase
+      subst b
+      exact ha.uniq authority.world.venvWF theory.literalWF
+        theory.projections (KVLCtx.IsDefEq.refl authority.world.venvWF hDelta) hb
+  | @cons left middle right hstep htail ih =>
+      obtain ⟨mid, hmidSupport, hmidAddr, _hmidLbr⟩ := hstep.targetWitness
+      have hstepMeaning := hstep.meaning haSupport haddrA hmidSupport hmidAddr
+        hrepresented
+      obtain ⟨stepA, midV, hstepA, hmid, hstepEq⟩ := hstepMeaning rfl
+      have hleftMid : authority.world.venv.IsDefEqU keys.uvars Delta.toCtx
+          va midV :=
+        DefEqMeaning.of_translations theory hDelta ha hmid hstepMeaning rfl
+      have hrepresentedTail :
+          keys.Represents middle.lbr middle.ctxAddr Delta := by
+        simpa only [hstep.radius_eq, hstep.context_eq] using hrepresented
+      have hmidRight := ih hmidSupport hmidAddr haddrB
+        hrepresentedTail hmid
+      exact hleftMid.trans authority.world.venvWF hDelta hmidRight
+
+end DefEqKeyEquiv
+
 /-! ## Joint suffix semantics
 
 The production context key is itself a Blake3 digest.  Expression-address
 collision freedom does not imply injectivity of this second, composite hash.
-Consequently the three semantic transports below remain an explicit boundary:
+Consequently the four semantic transports below remain an explicit boundary:
 they may later be proved from a finite context-digest collision hypothesis and
 the declarative suffix-closure theorem, but must not be inferred from a bare
 address equality. -/
 
 /-- One context-key interpretation sufficient for every K1/K2 semantic cache
-family.  Operational representation is shared, while WHNF, inference, and
-DefEq each state their own context-transport consequence. -/
+family.  Operational representation is shared, while WHNF, inference, DefEq,
+and the auxiliary proposition classifier each state their own
+context-transport consequence. -/
 structure KernelSuffixModel (trProj : RawProjRel) (world : VerifyWorld) where
   keys : WhnfContextKeys
+  representsCtx : ∀ {before after : TcState .anon} {lbr : UInt64}
+      {ctxAddr : Address} {Delta : KVLCtx},
+    CtxRecon world.venv keys.uvars world.nameOf trProj before Delta →
+    TcM.ctxAddrForLbr lbr before = .ok ctxAddr after →
+    keys.Represents lbr ctxAddr Delta
   represents : ∀ {before after : TcState .anon} {key : Address × Address}
       {Delta : KVLCtx} {source : KExpr .anon},
     CtxRecon world.venv keys.uvars world.nameOf trProj before Delta →
@@ -218,6 +597,78 @@ structure KernelSuffixModel (trProj : RawProjRel) (world : VerifyWorld) where
     keys.Represents (max a.lbr b.lbr) ctxAddr Delta' →
     DefEqMeaning trProj world keys.uvars Delta a b answer →
     DefEqMeaning trProj world keys.uvars Delta' a b answer
+  isPropTransport : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
+      {source : KExpr .anon} {answer : Bool},
+    keys.Represents source.lbr ctxAddr Delta →
+    keys.Represents source.lbr ctxAddr Delta' →
+    IsPropMeaning trProj world keys.uvars Delta source answer →
+    IsPropMeaning trProj world keys.uvars Delta' source answer
+
+namespace TcM
+
+/-- A joint suffix model interprets a direct context-address execution at an
+arbitrary expression's local-binding radius. -/
+theorem ctxAddrForLbr_model_matches_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    {Delta : KVLCtx} {source : KExpr .anon} {s : TcState .anon} :
+    TcM.WF
+      (WhnfStateInv layer semantics trProj world support model.keys.uvars
+        Delta) s
+      (TcM.ctxAddrForLbr source.lbr)
+      (fun ctxAddr s' =>
+        model.keys.Represents source.lbr ctxAddr Delta ∧
+          ContextKeyFrame s s') := by
+  intro hI
+  have hwf :=
+    (TcM.ctxAddrForLbr_wf
+      (fun hInv hframe => hframe.whnfStateInv hInv) source.lbr s) hI
+  match hrun : TcM.ctxAddrForLbr source.lbr s with
+  | .ok ctxAddr s' =>
+      rw [hrun] at hwf
+      exact ⟨hwf.1, model.representsCtx hI.2.1 hrun, hwf.2⟩
+  | .error err s' =>
+      rw [hrun] at hwf
+      exact hwf
+
+/-- A joint suffix model supplies the same direct representation theorem for
+DefEq's bare context-key execution that it supplies for WHNF/inference keys.
+Keeping this field explicit prevents a model of expression-key runs from
+being silently assumed to cover `ctxAddrForLbr` in isolation. -/
+theorem defEqCtxKey_model_matches_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    {Delta : KVLCtx} {a b : KExpr .anon} {s : TcState .anon} :
+    TcM.WF
+      (WhnfStateInv layer semantics trProj world support model.keys.uvars
+        Delta) s
+      (TcM.defEqCtxKey a b)
+      (fun ctxAddr s' =>
+        DefEqContextKeys.Matches model.keys trProj world s Delta a b
+          ctxAddr /\ ContextKeyFrame s s') := by
+  intro hI
+  have hwf :=
+    (TcM.defEqCtxKey_wf
+      (layer := layer) (semantics := semantics)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta) (a := a) (b := b)
+      (s := s)) hI
+  match hrun : TcM.defEqCtxKey a b s with
+  | .ok ctxAddr s' =>
+      rw [hrun] at hwf
+      have hctxRun : TcM.ctxAddrForLbr (max a.lbr b.lbr) s =
+          .ok ctxAddr s' := by
+        simpa [TcM.defEqCtxKey] using hrun
+      exact ⟨hwf.1,
+        ⟨⟨hI.2.1, model.representsCtx hI.2.1 hctxRun, ⟨s', hrun⟩⟩,
+          hwf.2⟩⟩
+  | .error err s' =>
+      rw [hrun] at hwf
+      exact hwf
+
+end TcM
 
 /-- Declarative sufficiency of one normalized context-digest input.  This is
 the semantic half of K2's suffix theorem: equality of the exact input—not
@@ -238,6 +689,11 @@ structure ContextSuffixSemantics {trProj : RawProjRel} {world : VerifyWorld}
         spec.inputOf (max a.lbr b.lbr) Delta' →
     DefEqMeaning trProj world uvars Delta a b answer →
     DefEqMeaning trProj world uvars Delta' a b answer
+  isProp : ∀ {Delta Delta' : KVLCtx} {source : KExpr .anon}
+      {answer : Bool},
+    spec.inputOf source.lbr Delta = spec.inputOf source.lbr Delta' →
+    IsPropMeaning trProj world uvars Delta source answer →
+    IsPropMeaning trProj world uvars Delta' source answer
 
 /-- Joint suffix model whose representation theorem is restricted to states
 in one explicit domain.  This is the correct shape for a finite execution
@@ -247,6 +703,12 @@ structure ScopedKernelSuffixModel (trProj : RawProjRel)
     (world : VerifyWorld) where
   keys : WhnfContextKeys
   StateInScope : TcState .anon → Prop
+  representsCtx : ∀ {before after : TcState .anon} {lbr : UInt64}
+      {ctxAddr : Address} {Delta : KVLCtx},
+    StateInScope before →
+    CtxRecon world.venv keys.uvars world.nameOf trProj before Delta →
+    TcM.ctxAddrForLbr lbr before = .ok ctxAddr after →
+    keys.Represents lbr ctxAddr Delta
   represents : ∀ {before after : TcState .anon} {key : Address × Address}
       {Delta : KVLCtx} {source : KExpr .anon},
     StateInScope before →
@@ -271,6 +733,12 @@ structure ScopedKernelSuffixModel (trProj : RawProjRel)
     keys.Represents (max a.lbr b.lbr) ctxAddr Delta' →
     DefEqMeaning trProj world keys.uvars Delta a b answer →
     DefEqMeaning trProj world keys.uvars Delta' a b answer
+  isPropTransport : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
+      {source : KExpr .anon} {answer : Bool},
+    keys.Represents source.lbr ctxAddr Delta →
+    keys.Represents source.lbr ctxAddr Delta' →
+    IsPropMeaning trProj world keys.uvars Delta source answer →
+    IsPropMeaning trProj world keys.uvars Delta' source answer
 
 namespace ScopedKernelSuffixModel
 
@@ -284,6 +752,8 @@ def finiteOperational {trProj : RawProjRel} {world : VerifyWorld}
     ScopedKernelSuffixModel trProj world where
   keys := scopedOperationalWhnfContextKeys spec scope
   StateInScope before := spec.StateValid before ∧ scope.Captures before
+  representsCtx hscope hctx hrun :=
+    scopedOperationalWhnfContextKeys.representsCtx hscope.1 hscope.2 hctx hrun
   represents hscope hctx hrun :=
     scopedOperationalWhnfContextKeys.represents hscope.1 hscope.2 hctx hrun
   whnfTransport hDelta hDelta' hmeaning := by
@@ -307,6 +777,13 @@ def finiteOperational {trProj : RawProjRel} {world : VerifyWorld}
     · exact scopedOperationalWhnfContextKeys.mem hDelta'
     · exact (scopedOperationalWhnfContextKeys.digest_eq hDelta).trans
         (scopedOperationalWhnfContextKeys.digest_eq hDelta').symm
+  isPropTransport hDelta hDelta' hmeaning := by
+    apply hsemantics.isProp _ hmeaning
+    apply hcollision
+    · exact scopedOperationalWhnfContextKeys.mem hDelta
+    · exact scopedOperationalWhnfContextKeys.mem hDelta'
+    · exact (scopedOperationalWhnfContextKeys.digest_eq hDelta).trans
+        (scopedOperationalWhnfContextKeys.digest_eq hDelta').symm
 
 /-- Forget the state domain only after proving that it contains every state
 quantified by the legacy universal interface.  Finite run proofs should use
@@ -316,10 +793,12 @@ def toKernelSuffixModel {trProj : RawProjRel} {world : VerifyWorld}
     (hcomplete : ∀ before, model.StateInScope before) :
     KernelSuffixModel trProj world where
   keys := model.keys
+  representsCtx hctx hrun := model.representsCtx (hcomplete _) hctx hrun
   represents hctx hrun := model.represents (hcomplete _) hctx hrun
   whnfTransport := model.whnfTransport
   inferTransport := model.inferTransport
   defEqTransport := model.defEqTransport
+  isPropTransport := model.isPropTransport
 
 end ScopedKernelSuffixModel
 
@@ -334,7 +813,7 @@ def toWhnfSuffixModel {trProj : RawProjRel} {world : VerifyWorld}
   transport := model.whnfTransport
 
 /-- Build the joint model over the canonical operational representation.
-Only the three semantic same-digest transports remain as assumptions; actual
+Only the four semantic same-digest transports remain as assumptions; actual
 key membership is derived from production executions. -/
 def operational {trProj : RawProjRel} {world : VerifyWorld} (uvars : Nat)
     (hwhnf : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
@@ -360,9 +839,19 @@ def operational {trProj : RawProjRel} {world : VerifyWorld} (uvars : Nat)
       (operationalWhnfContextKeys trProj world uvars).Represents
         (max a.lbr b.lbr) ctxAddr Delta' →
       DefEqMeaning trProj world uvars Delta a b answer →
-      DefEqMeaning trProj world uvars Delta' a b answer) :
+      DefEqMeaning trProj world uvars Delta' a b answer)
+    (hisProp : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
+      {source : KExpr .anon} {answer : Bool},
+      (operationalWhnfContextKeys trProj world uvars).Represents
+        source.lbr ctxAddr Delta →
+      (operationalWhnfContextKeys trProj world uvars).Represents
+        source.lbr ctxAddr Delta' →
+      IsPropMeaning trProj world uvars Delta source answer →
+      IsPropMeaning trProj world uvars Delta' source answer) :
     KernelSuffixModel trProj world where
   keys := operationalWhnfContextKeys trProj world uvars
+  representsCtx hctx hrun :=
+    operationalWhnfContextKeys.representsCtx hctx hrun
   represents hctx hrun :=
     operationalWhnfContextKeys.represents hctx hrun
   whnfTransport hDelta hDelta' hmeaning :=
@@ -371,6 +860,8 @@ def operational {trProj : RawProjRel} {world : VerifyWorld} (uvars : Nat)
     hinfer hDelta hDelta' hmeaning
   defEqTransport hDelta hDelta' hmeaning :=
     hdefeq hDelta hDelta' hmeaning
+  isPropTransport hDelta hDelta' hmeaning :=
+    hisProp hDelta hDelta' hmeaning
 
 /-- Universal corollary of the finite scoped construction.  It is available
 only when every state quantified by `KernelSuffixModel` satisfies both the
@@ -383,7 +874,7 @@ named facts:
   finite list;
 * `ContextDigestScope.CollisionFree` turns equal composite digests into
   equal normalized inputs only on that list; and
-* `ContextSuffixSemantics` transports the three declarative meanings across
+* `ContextSuffixSemantics` transports the four declarative meanings across
   equal inputs.
 
 No expression-address collision theorem appears in this construction. -/
@@ -398,6 +889,60 @@ def finiteOperational {trProj : RawProjRel} {world : VerifyWorld}
     spec scope hcollision hsemantics).toKernelSuffixModel hstates
 
 end KernelSuffixModel
+
+/-- Exact validity of the memoized proposition classifier.  A key is
+interpreted only through a finite-support expression witness and a represented
+suffix context; the fallback owns every other cache family. -/
+def IsPropCacheValid (keys : WhnfContextKeys) (trProj : RawProjRel)
+    (fallback : CacheSemantics) (authority : CacheAuthority)
+    (support : RunSupport) : CacheEntry → Prop
+  | .isProp key answer =>
+      ∀ source, support source → source.addr = key.1 →
+        ∀ Delta, keys.Represents source.lbr key.2 Delta →
+          IsPropMeaning trProj authority.world keys.uvars Delta source answer
+  | entry => fallback.Valid authority support entry
+
+namespace IsPropCacheValid
+
+theorem mono {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {fallback : CacheSemantics} {before after : CacheAuthority}
+    {support : RunSupport} {entry : CacheEntry} (hle : before ≤ after)
+    (h : IsPropCacheValid keys trProj fallback before support entry) :
+    IsPropCacheValid keys trProj fallback after support entry := by
+  cases entry with
+  | isProp key answer =>
+      intro source hsource haddr Delta hrepresented
+      exact (h source hsource haddr Delta hrepresented).mono hle.world
+  | expr | defEq | defEqFailure | unfold | natSuccStuck | isRec |
+      recursor | recMajors | blockPeer | blockResult =>
+      exact fallback.mono hle h
+
+theorem result {keys : WhnfContextKeys} {trProj : RawProjRel}
+    {fallback : CacheSemantics} {authority : CacheAuthority}
+    {support : RunSupport} {key : Address × Address} {answer : Bool}
+    {source : KExpr .anon}
+    (h : IsPropCacheValid keys trProj fallback authority support
+      (.isProp key answer))
+    (hsource : support source) (haddr : source.addr = key.1)
+    {Delta : KVLCtx}
+    (hrepresented : keys.Represents source.lbr key.2 Delta) :
+    IsPropMeaning trProj authority.world keys.uvars Delta source answer :=
+  h source hsource haddr Delta hrepresented
+
+end IsPropCacheValid
+
+/-- Overlay the proposition-classifier meaning on an arbitrary fallback
+cache semantics. -/
+def isPropCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
+    (fallback : CacheSemantics) : CacheSemantics where
+  Valid := IsPropCacheValid keys trProj fallback
+  mono := IsPropCacheValid.mono
+  Equiv := fallback.Equiv
+  equivEquivalence := fallback.equivEquivalence
+  equivMono := fallback.equivMono
+  blockError := by
+    intro authority support block err
+    exact fallback.blockError authority support block err
 
 /-- Exact validity for full/cheap def-eq maps and the negative failure set. -/
 def DefEqCacheValid (keys : WhnfContextKeys) (trProj : RawProjRel)
@@ -448,19 +993,23 @@ def defEqCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) : CacheSemantics where
   Valid := DefEqCacheValid keys trProj fallback
   mono := DefEqCacheValid.mono
+  Equiv := DefEqKeyEquiv keys trProj
+  equivEquivalence := DefEqKeyEquiv.equivalence keys trProj
+  equivMono := DefEqKeyEquiv.mono
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
 
-/-- Canonical K1+K2 semantic stack.  WHNF stays outermost so all K1 driver
-theorems apply unchanged; inference and def-eq occupy precisely the fallback
+/-- Canonical K1+K2 semantic stack.  K1's WHNF and fixed-universe unfold
+layers stay outermost; inference and def-eq occupy precisely the fallback
 families they own. -/
 def kernelCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel) :
     CacheSemantics :=
-  whnfCacheSemantics keys trProj <|
+  k1CacheSemantics keys trProj <|
     inferCacheSemantics keys trProj <|
       defEqCacheSemantics keys trProj <|
-        isRecCacheSemantics CacheSemantics.blockErrorsOnly
+        isPropCacheSemantics keys trProj <|
+          isRecCacheSemantics CacheSemantics.blockErrorsOnly
 
 /-- The canonical cache stack owns both final and conservative/provisional
 recursion-classifier entries for every trusted anonymous identifier. -/
@@ -478,6 +1027,38 @@ theorem kernelCacheSemantics_isRec_valid
     (value := value) htrusted
 
 namespace CacheProvenance
+
+/-- Read one proposition-classifier entry from the canonical cache stack. -/
+theorem kernelIsPropMeaning {keys : WhnfContextKeys}
+    {trProj : RawProjRel} {authority : CacheAuthority}
+    {support : RunSupport} {key : Address × Address} {answer : Bool}
+    {source : KExpr .anon}
+    (h : CacheProvenance (kernelCacheSemantics keys trProj)
+      authority support (.isProp key answer))
+    (hsource : support source) (haddr : source.addr = key.1)
+    {Delta : KVLCtx}
+    (hrepresented : keys.Represents source.lbr key.2 Delta) :
+    IsPropMeaning trProj authority.world keys.uvars Delta source answer :=
+  IsPropCacheValid.result
+    (fallback := isRecCacheSemantics CacheSemantics.blockErrorsOnly)
+    h.valid hsource haddr hrepresented
+
+/-- Full and cheap DefEq partitions have identical semantic validity; only
+their lookup policy differs.  A certified entry can therefore be copied
+between partitions without re-proving its witnesses, references, or result. -/
+theorem kernelDefEqRekind {keys : WhnfContextKeys}
+    {trProj : RawProjRel} {authority : CacheAuthority}
+    {support : RunSupport} {source target : DefEqCacheKind}
+    {key : Address × Address × Address} {answer : Bool}
+    (h : CacheProvenance (kernelCacheSemantics keys trProj)
+      authority support (.defEq source key answer)) :
+    CacheProvenance (kernelCacheSemantics keys trProj)
+      authority support (.defEq target key answer) := by
+  refine ⟨h.supported, h.references, ?_⟩
+  simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+    WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
+    inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+    DefEqCacheValid] using h.valid
 
 theorem kernelWhnfMeaningOfMatches {keys : WhnfContextKeys}
     {trProj : RawProjRel} {authority : CacheAuthority}
@@ -507,14 +1088,16 @@ theorem kernelInferMeaningOfMatches {keys : WhnfContextKeys}
         (fallback := defEqCacheSemantics keys trProj
           CacheSemantics.blockErrorsOnly) .infer (hsource := hsource)
         (haddr := hmatch.sourceAddr) (hctx := hmatch.2.1)
-      simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid] using
+      simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
         h.valid
   | inferOnly =>
       apply InferCacheValid.expr
         (fallback := defEqCacheSemantics keys trProj
           CacheSemantics.blockErrorsOnly) .inferOnly (hsource := hsource)
         (haddr := hmatch.sourceAddr) (hctx := hmatch.2.1)
-      simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid] using
+      simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
         h.valid
 
 theorem kernelDefEqMeaning {keys : WhnfContextKeys}
@@ -533,7 +1116,8 @@ theorem kernelDefEqMeaning {keys : WhnfContextKeys}
     (fallback := CacheSemantics.blockErrorsOnly) (kind := kind)
     (ha := ha) (haddrA := haddrA) (hb := hb) (haddrB := haddrB)
     (hctx := hctx)
-  simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid,
+  simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+    WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
     inferCacheSemantics, InferCacheValid] using h.valid
 
 /-- Eliminate a physical DefEq cache entry in the caller's original order.
@@ -564,6 +1148,119 @@ theorem kernelDefEqMeaningCanonical {keys : WhnfContextKeys}
       simpa [uint64_max_comm] using hctx
     exact (h.kernelDefEqMeaning hb rfl ha rfl hctx').symm
 
+/-- A positive canonical cache entry is also a justified manager edge in the
+caller's original operand order.  Collision freedom is used only to recover
+the concrete supported expressions quantified by the edge contract. -/
+theorem kernelDefEqEdgeCanonical {keys : WhnfContextKeys}
+    {trProj : RawProjRel} {authority : CacheAuthority}
+    {support : RunSupport} {kind : DefEqCacheKind}
+    {ctxAddr : Address} {a b : KExpr .anon}
+    (h : CacheProvenance (kernelCacheSemantics keys trProj)
+      authority support
+      (.defEq kind
+        ((canonicalPair a.addr b.addr).1,
+          (canonicalPair a.addr b.addr).2, ctxAddr) true))
+    (hcollision : support.CollisionFree)
+    (ha : support a) (hb : support b) :
+    DefEqKeyEdge keys trProj authority support
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ where
+  context_eq := rfl
+  radius_eq := rfl
+  leftWitness := ⟨a, ha, rfl, rfl⟩
+  rightWitness := ⟨b, hb, rfl, rfl⟩
+  meaning otherA hotherA haddrA otherB hotherB haddrB Delta hrepresented := by
+    have heqA : a = otherA := by
+      have herase := hcollision.expr ha hotherA haddrA.symm
+      simpa only [KExpr.eraseMeta_anon] using herase
+    have heqB : b = otherB := by
+      have herase := hcollision.expr hb hotherB haddrB.symm
+      simpa only [KExpr.eraseMeta_anon] using herase
+    subst otherA
+    subst otherB
+    exact h.kernelDefEqMeaningCanonical ha hb hrepresented
+
+/-- Package a positive canonical cache entry as the equivalence relation
+consumed by `EquivManager.WF.addEquiv`. -/
+theorem kernelDefEqEquivCanonical {keys : WhnfContextKeys}
+    {trProj : RawProjRel} {authority : CacheAuthority}
+    {support : RunSupport} {kind : DefEqCacheKind}
+    {ctxAddr : Address} {a b : KExpr .anon}
+    (h : CacheProvenance (kernelCacheSemantics keys trProj)
+      authority support
+      (.defEq kind
+        ((canonicalPair a.addr b.addr).1,
+          (canonicalPair a.addr b.addr).2, ctxAddr) true))
+    (hcollision : support.CollisionFree)
+    (ha : support a) (hb : support b) :
+    DefEqKeyEquiv keys trProj authority support
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ :=
+  .cons (.forward (h.kernelDefEqEdgeCanonical hcollision ha hb)) (.refl _)
+
+/-- Interpret a positive root-derived cache hit without treating a root
+address as an expression.  Each manager path supplies a supported endpoint
+witness; the runtime scope guard proves that those endpoints reconstruct the
+same represented suffix radius as the caller.  The result is the composition
+`a ≃ root(a) ≃ root(b) ≃ b`. -/
+theorem kernelDefEqRootAcceptance {keys : WhnfContextKeys}
+    {trProj : RawProjRel} {authority : CacheAuthority}
+    {support : RunSupport} {kind : DefEqCacheKind}
+    {ctxAddr : Address} {lbr : UInt64}
+    {a b : KExpr .anon} {aRoot bRoot : EqKey}
+    {Delta : KVLCtx} {va vb : VExpr}
+    (h : CacheProvenance (kernelCacheSemantics keys trProj)
+      authority support
+      (.defEq kind
+        ((canonicalPair aRoot.exprAddr bRoot.exprAddr).1,
+          (canonicalPair aRoot.exprAddr bRoot.exprAddr).2, ctxAddr) true))
+    (theory : WhnfTheory trProj authority.world keys.uvars)
+    (hDelta : KVLCtx.WF authority.world.venv keys.uvars Delta)
+    (hcollision : support.CollisionFree)
+    (haPath : DefEqKeyEquiv keys trProj authority support
+      ⟨a.addr, ctxAddr, lbr, a.lbr⟩ aRoot)
+    (hbPath : DefEqKeyEquiv keys trProj authority support
+      ⟨b.addr, ctxAddr, lbr, b.lbr⟩ bRoot)
+    (hscope : aRoot.rootCacheScopeMatches bRoot ctxAddr lbr = true)
+    (hrepresented : keys.Represents lbr ctxAddr Delta)
+    (haSupport : support a) (hbSupport : support b)
+    (ha : TrKExprS authority.world.venv keys.uvars authority.world.nameOf
+      trProj Delta a va)
+    (hb : TrKExprS authority.world.venv keys.uvars authority.world.nameOf
+      trProj Delta b vb) :
+    authority.world.venv.IsDefEqU keys.uvars Delta.toCtx va vb := by
+  obtain ⟨rootA, hrootASupport, hrootAAddr, hrootALbr⟩ :=
+    haPath.targetWitness haSupport rfl rfl
+  obtain ⟨rootB, hrootBSupport, hrootBAddr, hrootBLbr⟩ :=
+    hbPath.targetWitness hbSupport rfl rfl
+  have hscopeFields :=
+    (EqKey.rootCacheScopeMatches_iff aRoot bRoot ctxAddr lbr).mp hscope
+  have hrootRepresented :
+      keys.Represents (max rootA.lbr rootB.lbr) ctxAddr Delta := by
+    rw [hrootALbr, hrootBLbr, hscopeFields.2.2.2.2]
+    exact hrepresented
+  have hrootCache :
+      CacheProvenance (kernelCacheSemantics keys trProj) authority support
+        (.defEq kind
+          ((canonicalPair rootA.addr rootB.addr).1,
+            (canonicalPair rootA.addr rootB.addr).2, ctxAddr) true) := by
+    simpa only [hrootAAddr, hrootBAddr] using h
+  have hrootMeaning :
+      DefEqMeaning trProj authority.world keys.uvars Delta rootA rootB true :=
+    hrootCache.kernelDefEqMeaningCanonical
+      hrootASupport hrootBSupport hrootRepresented
+  obtain ⟨rootVA, rootVB, hrootATr, hrootBTr, hrootEq⟩ := hrootMeaning rfl
+  have haRootEq : authority.world.venv.IsDefEqU keys.uvars Delta.toCtx
+      va rootVA :=
+    haPath.sound theory hDelta hcollision
+      haSupport rfl hrootASupport hrootAAddr hrepresented ha hrootATr
+  have hbRootEq : authority.world.venv.IsDefEqU keys.uvars Delta.toCtx
+      vb rootVB :=
+    hbPath.sound theory hDelta hcollision
+      hbSupport rfl hrootBSupport hrootBAddr hrepresented hb hrootBTr
+  exact (haRootEq.trans authority.world.venvWF hDelta hrootEq).trans
+    authority.world.venvWF hDelta hbRootEq.symm
+
 theorem defEqMeaning {keys : WhnfContextKeys} {trProj : RawProjRel}
     {fallback : CacheSemantics} {authority : CacheAuthority}
     {support : RunSupport} {kind : DefEqCacheKind}
@@ -582,6 +1279,39 @@ theorem defEqMeaning {keys : WhnfContextKeys} {trProj : RawProjRel}
 end CacheProvenance
 
 namespace KernelSuffixModel
+
+/-- Turn one executed proposition-classifier result into collision-robust
+provenance for the memo table. -/
+theorem isPropProvenance {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    (hcollision : support.CollisionFree)
+    {Delta : KVLCtx} {source : KExpr .anon} {answer : Bool}
+    {ctxAddr : Address}
+    (hsource : support source)
+    (hctx : model.keys.Represents source.lbr ctxAddr Delta)
+    (hmeaning : IsPropMeaning trProj world model.keys.uvars Delta source
+      answer)
+    (hreferences :
+      (CacheEntry.isProp (source.addr, ctxAddr) answer).ReferencesAuthorized
+        (CacheAuthority.stable world) support) :
+    CacheProvenance (kernelCacheSemantics model.keys trProj)
+      (CacheAuthority.stable world) support
+      (.isProp (source.addr, ctxAddr) answer) := by
+  refine ⟨⟨source, hsource, rfl⟩, hreferences, ?_⟩
+  have hvalid : IsPropCacheValid model.keys trProj
+      (isRecCacheSemantics CacheSemantics.blockErrorsOnly)
+      (CacheAuthority.stable world) support
+      (.isProp (source.addr, ctxAddr) answer) := by
+    intro other hother haddr Delta' hrepresented
+    have heq : source = other := by
+      have herase := hcollision.expr hsource hother haddr.symm
+      simpa only [KExpr.eraseMeta_anon] using herase
+    subst other
+    exact model.isPropTransport hctx hrepresented hmeaning
+  simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+    WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
+    inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+    DefEqCacheValid, isPropCacheSemantics] using hvalid
 
 /-- Turn one executed inference result into collision-robust provenance for
 either inference cache.  Validity quantifies over every supported expression
@@ -618,7 +1348,8 @@ theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
             CacheSemantics.blockErrorsOnly)
           (CacheAuthority.stable world) support
           (.expr .infer key ty) := hall
-      simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid] using
+      simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
         hvalid
   | inferOnly =>
       have hvalid : InferCacheValid model.keys trProj
@@ -626,7 +1357,8 @@ theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
             CacheSemantics.blockErrorsOnly)
           (CacheAuthority.stable world) support
           (.expr .inferOnly key ty) := hall
-      simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid] using
+      simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
         hvalid
 
 /-- Turn one executed DefEq result into collision-robust provenance for the
@@ -668,7 +1400,8 @@ theorem defEqProvenance {trProj : RawProjRel} {world : VerifyWorld}
       subst otherA
       subst otherB
       exact model.defEqTransport hctx hrepresented hmeaning
-    simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid,
+    simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+      WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
       inferCacheSemantics, InferCacheValid] using hvalid
   · have hpair : canonicalPair a.addr b.addr = (b.addr, a.addr) := by
       simp [canonicalPair, horder]
@@ -690,7 +1423,8 @@ theorem defEqProvenance {trProj : RawProjRel} {world : VerifyWorld}
           (max b.lbr a.lbr) ctxAddr Delta := by
         simpa [uint64_max_comm] using hctx
       exact model.defEqTransport hctx' hrepresented hmeaning.symm
-    simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid,
+    simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+      WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
       inferCacheSemantics, InferCacheValid] using hvalid
 
 /-- A narrow same-head failure marker is rejection-only, so it needs no
@@ -718,7 +1452,8 @@ theorem defEqFailureProvenance {trProj : RawProjRel} {world : VerifyWorld}
     have hvalid : DefEqCacheValid model.keys trProj
         CacheSemantics.blockErrorsOnly (CacheAuthority.stable world) support
         (.defEqFailure (a.addr, b.addr, ctxAddr)) := trivial
-    simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid,
+    simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+      WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
       inferCacheSemantics, InferCacheValid] using hvalid
   · have hpair : canonicalPair a.addr b.addr = (b.addr, a.addr) := by
       simp [canonicalPair, horder]
@@ -727,12 +1462,41 @@ theorem defEqFailureProvenance {trProj : RawProjRel} {world : VerifyWorld}
     have hvalid : DefEqCacheValid model.keys trProj
         CacheSemantics.blockErrorsOnly (CacheAuthority.stable world) support
         (.defEqFailure (b.addr, a.addr, ctxAddr)) := trivial
-    simpa [kernelCacheSemantics, whnfCacheSemantics, WhnfCacheValid,
+    simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
+      WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
       inferCacheSemantics, InferCacheValid] using hvalid
 
 end KernelSuffixModel
 
 namespace RecM
+
+namespace IsPropCacheUpdate
+
+/-- Installing one certified proposition classification changes only its
+dedicated memo map and preserves the complete checker invariant. -/
+theorem whnfStateInv
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    {uvars : Nat} {Delta : KVLCtx} {s : TcState .anon}
+    {key : Address × Address} {answer : Bool}
+    (hI : WhnfStateInv layer semantics trProj world support uvars Delta s)
+    (hnew : CacheProvenance semantics (CacheAuthority.stable world) support
+      (.isProp key answer)) :
+    WhnfStateInv layer semantics trProj world support uvars Delta
+      {s with env := {s.env with
+        isPropCache := s.env.isPropCache.insert key answer}} := by
+  rcases hI with ⟨hkernel, hctx, hlayer⟩
+  refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
+    · exact hkernel.core.of_consts_eq rfl (by
+        simpa using hkernel.core.intern)
+    · simpa using hkernel.internSupport
+    · exact hkernel.caches.insertIsProp hnew
+    · exact hkernel.equivalences
+  · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
+  · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
+
+end IsPropCacheUpdate
 
 namespace DefEqCacheUpdate
 
@@ -751,11 +1515,12 @@ theorem full_whnfStateInv
         defEqCache := s.env.defEqCache.insert key answer}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertDefEq hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -774,11 +1539,12 @@ theorem cheap_whnfStateInv
         defEqCheapCache := s.env.defEqCheapCache.insert key answer}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertDefEqCheap hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
@@ -797,20 +1563,21 @@ theorem failure_whnfStateInv
         defEqFailure := s.env.defEqFailure.insert key}} := by
   rcases hI with ⟨hkernel, hctx, hlayer⟩
   refine ⟨?_, ?_, ?_⟩
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · exact hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
     · simpa using hkernel.internSupport
     · exact hkernel.caches.insertDefEqFailure hnew
+    · exact hkernel.equivalences
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 
 end DefEqCacheUpdate
 
-/-- Exact production execution for the first positive full DefEq cache hit in
-non-cheap mode.  The only post-hit mutation is union-find insertion; the
-semantic cache maps are unchanged. -/
-theorem isDefEq_fullHit_true
+/-- Exact production execution for a positive equivalence-manager hit.  The
+query may path-compress the manager, but no semantic cache is consulted or
+written on this branch. -/
+theorem isDefEq_equivHit_true
     {methods : Methods .anon} {a b : KExpr .anon}
     {ctxAddr : Address} {s s1 s2 s3 s4 : TcState .anon}
     (htrace : TcM.stepTrace "deq"
@@ -821,14 +1588,9 @@ theorem isDefEq_fullHit_true
     (haddr : (a.addr == b.addr) = false)
     (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
     (hequiv : TcM.withEquiv
-      (·.isEquiv (a.addr, ctxAddr) (b.addr, ctxAddr)) s3 = .ok false s4)
-    (hcheap : (s4.cheapRecursionDepth > 0) = false)
-    (hhit : s4.env.defEqCache[
-      ((canonicalPair a.addr b.addr).1,
-        (canonicalPair a.addr b.addr).2, ctxAddr)]? = some true) :
-    (isDefEq a b).run methods s = .ok true
-      {s4 with equivManager := (s4.equivManager.addEquiv
-        (a.addr, ctxAddr) (b.addr, ctxAddr))} := by
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok true s4) :
+    (isDefEq a b).run methods s = .ok true s4 := by
   unfold isDefEq
   rw [ReaderT.run_bind]
   change EStateM.bind
@@ -852,13 +1614,159 @@ theorem isDefEq_fullHit_true
   simp only
   change ReaderT.run
     ((liftM (TcM.withEquiv
-      (·.isEquiv (a.addr, ctxAddr) (b.addr, ctxAddr))) :
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) :
         RecM .anon Bool) >>= _)
       methods s3 = _
   rw [ReaderT.run_bind]
   change EStateM.bind
     (TcM.withEquiv
-      (·.isEquiv (a.addr, ctxAddr) (b.addr, ctxAddr))) _ s3 = _
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
+  unfold EStateM.bind
+  rw [hequiv]
+  simp
+
+/-- A positive manager hit is a Theory equality, not merely an optimization
+claim.  The manager path is interpreted through its supported edge chain at
+the exact executed context/radius key. -/
+theorem isDefEq_equivHit_true_acceptance
+    {methods : Methods .anon} {layer : WhnfLayer}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    {uvars : Nat} {Delta : KVLCtx} {a b : KExpr .anon} {va vb : VExpr}
+    {ctxAddr : Address} {s s1 s2 s3 s4 : TcState .anon}
+    (theory : WhnfTheory trProj world uvars)
+    (hcollision : support.CollisionFree)
+    (htrace : TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s = .ok () s1)
+    (hstats : TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}) s1 =
+        .ok () s2)
+    (haddr : (a.addr == b.addr) = false)
+    (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
+    (hequiv : TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok true s4)
+    (hI : WhnfStateInv layer
+      (kernelCacheSemantics
+        (operationalWhnfContextKeys trProj world uvars) trProj)
+      trProj world support uvars Delta s)
+    (haSupport : support a) (hbSupport : support b)
+    (ha : TrKExprS world.venv uvars world.nameOf trProj Delta a va)
+    (hb : TrKExprS world.venv uvars world.nameOf trProj Delta b vb) :
+    (isDefEq a b).run methods s = .ok true s4 ∧
+      WhnfStateInv layer
+        (kernelCacheSemantics
+          (operationalWhnfContextKeys trProj world uvars) trProj)
+        trProj world support uvars Delta s4 ∧
+      world.venv.IsDefEqU uvars Delta.toCtx va vb := by
+  have htraceWf :=
+    (TcM.stepTrace_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics
+        (operationalWhnfContextKeys trProj world uvars) trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := uvars) (Delta := Delta) "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s) hI
+  rw [htrace] at htraceWf
+  have hstatsWf :=
+    (TcM.bumpStats_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics
+        (operationalWhnfContextKeys trProj world uvars) trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := uvars) (Delta := Delta)
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1})
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1)
+      htraceWf.1
+  rw [hstats] at hstatsWf
+  have hctxWf :=
+    (TcM.defEqCtxKey_wf (layer := layer)
+      (semantics := kernelCacheSemantics
+        (operationalWhnfContextKeys trProj world uvars) trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := uvars) (Delta := Delta) (a := a) (b := b) (s := s2))
+      hstatsWf.1
+  rw [hctx] at hctxWf
+  have hequivWf :=
+    (TcM.withEquiv_isEquiv_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics
+        (operationalWhnfContextKeys trProj world uvars) trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := uvars) (Delta := Delta)
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ s3) hctxWf.1
+  rw [hequiv] at hequivWf
+  have hctxRun :
+      TcM.ctxAddrForLbr (max a.lbr b.lbr) s2 = .ok ctxAddr s3 := by
+    simpa [TcM.defEqCtxKey] using hctx
+  have hrepresented := operationalWhnfContextKeys.representsCtx
+    hstatsWf.1.2.1 hctxRun
+  have hrel := hequivWf.2 rfl
+  change DefEqKeyEquiv (operationalWhnfContextKeys trProj world uvars)
+    trProj (CacheAuthority.stable world) support
+    ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+    ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ at hrel
+  have hsemantic := hrel.sound theory hequivWf.1.2.1.wf hcollision
+    haSupport rfl hbSupport rfl hrepresented ha hb
+  exact ⟨isDefEq_equivHit_true htrace hstats haddr hctx hequiv,
+    hequivWf.1, hsemantic⟩
+
+/-- Exact production execution for the first positive full DefEq cache hit in
+non-cheap mode.  The only post-hit mutation is union-find insertion; the
+semantic cache maps are unchanged. -/
+theorem isDefEq_fullHit_true
+    {methods : Methods .anon} {a b : KExpr .anon}
+    {ctxAddr : Address} {s s1 s2 s3 s4 : TcState .anon}
+    (htrace : TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s = .ok () s1)
+    (hstats : TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}) s1 =
+        .ok () s2)
+    (haddr : (a.addr == b.addr) = false)
+    (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
+    (hequiv : TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok false s4)
+    (hcheap : (s4.cheapRecursionDepth > 0) = false)
+    (hhit : s4.env.defEqCache[
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)]? = some true) :
+    (isDefEq a b).run methods s = .ok true
+      {s4 with equivManager := (s4.equivManager.addEquiv
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)} := by
+  unfold isDefEq
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}")) _ s = _
+  unfold EStateM.bind
+  rw [htrace]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}))
+      _ s1 = _
+  unfold EStateM.bind
+  rw [hstats]
+  simp only [haddr, Bool.false_eq_true, if_false]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
+  unfold EStateM.bind
+  rw [hctx]
+  simp only
+  change ReaderT.run
+    ((liftM (TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) :
+        RecM .anon Bool) >>= _)
+      methods s3 = _
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
   unfold EStateM.bind
   rw [hequiv]
   simp only [Bool.false_eq_true, if_false, pure_bind]
@@ -884,6 +1792,7 @@ theorem isDefEq_fullHit_true_acceptance
     {uvars : Nat} {Delta : KVLCtx} {a b : KExpr .anon} {va vb : VExpr}
     {ctxAddr : Address} {s s1 s2 s3 s4 : TcState .anon}
     (theory : WhnfTheory trProj world uvars)
+    (hcollision : support.CollisionFree)
     (htrace : TcM.stepTrace "deq"
       (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s = .ok () s1)
     (hstats : TcM.bumpStats
@@ -892,7 +1801,8 @@ theorem isDefEq_fullHit_true_acceptance
     (haddr : (a.addr == b.addr) = false)
     (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
     (hequiv : TcM.withEquiv
-      (·.isEquiv (a.addr, ctxAddr) (b.addr, ctxAddr)) s3 = .ok false s4)
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok false s4)
     (hcheap : (s4.cheapRecursionDepth > 0) = false)
     (hhit : s4.env.defEqCache[
       ((canonicalPair a.addr b.addr).1,
@@ -905,7 +1815,8 @@ theorem isDefEq_fullHit_true_acceptance
     (ha : TrKExprS world.venv uvars world.nameOf trProj Delta a va)
     (hb : TrKExprS world.venv uvars world.nameOf trProj Delta b vb) :
     let final := {s4 with equivManager := (s4.equivManager.addEquiv
-      (a.addr, ctxAddr) (b.addr, ctxAddr))}
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)}
     (isDefEq a b).run methods s = .ok true final ∧
       WhnfStateInv layer
         (kernelCacheSemantics
@@ -930,7 +1841,7 @@ theorem isDefEq_fullHit_true_acceptance
       (uvars := uvars) (Delta := Delta)
       (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1})
       (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1) hI1
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1) hI1
   rw [hstats] at hstatsWf
   have hI2 := hstatsWf.1
   have hctxWf :=
@@ -942,12 +1853,13 @@ theorem isDefEq_fullHit_true_acceptance
   rw [hctx] at hctxWf
   have hI3 := hctxWf.1
   have hequivWf :=
-    (TcM.withEquiv_whnf_wf (layer := layer)
+    (TcM.withEquiv_isEquiv_whnf_wf (layer := layer)
       (semantics := kernelCacheSemantics
         (operationalWhnfContextKeys trProj world uvars) trProj)
       (trProj := trProj) (world := world) (support := support)
       (uvars := uvars) (Delta := Delta)
-      (·.isEquiv (a.addr, ctxAddr) (b.addr, ctxAddr)) s3) hI3
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ s3) hI3
   rw [hequiv] at hequivWf
   have hI4 := hequivWf.1
   have hctxRun :
@@ -960,15 +1872,488 @@ theorem isDefEq_fullHit_true_acceptance
     haSupport hbSupport hrepresented
   have hsemantic := DefEqMeaning.of_translations theory hI4.2.1.wf
     ha hb hmeaning rfl
+  have hrel :
+      (kernelCacheSemantics
+        (operationalWhnfContextKeys trProj world uvars) trProj).Equiv
+        (CacheAuthority.stable world) support
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ := by
+    change DefEqKeyEquiv (operationalWhnfContextKeys trProj world uvars)
+      trProj (CacheAuthority.stable world) support
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+    exact hprovenance.kernelDefEqEquivCanonical hcollision
+      haSupport hbSupport
   have hfinal : WhnfStateInv layer
       (kernelCacheSemantics
         (operationalWhnfContextKeys trProj world uvars) trProj)
       trProj world support uvars Delta
       {s4 with equivManager := (s4.equivManager.addEquiv
-        (a.addr, ctxAddr) (b.addr, ctxAddr))} :=
-    hI4.of_semantic_fields_eq rfl rfl rfl rfl rfl rfl rfl
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)} :=
+    hI4.addEquiv hrel
   exact ⟨isDefEq_fullHit_true htrace hstats haddr hctx hequiv hcheap hhit,
     hfinal, hsemantic⟩
+
+/-- Exact production execution for a positive non-cheap full-cache hit found
+through the guarded equivalence-root second chance.  The hit is copied to the
+original pair and the original keys are then joined in the manager. -/
+theorem isDefEq_rootFullHit_true
+    {methods : Methods .anon} {a b : KExpr .anon}
+    {ctxAddr : Address} {aRoot bRoot : EqKey}
+    {s s1 s2 s3 s4 s5 : TcState .anon}
+    (htrace : TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s = .ok () s1)
+    (hstats : TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}) s1 =
+        .ok () s2)
+    (haddr : (a.addr == b.addr) = false)
+    (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
+    (hequiv : TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok false s4)
+    (hcheap : (s4.cheapRecursionDepth > 0) = false)
+    (hmiss : s4.env.defEqCache[
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)]? = none)
+    (hroots : TcM.withEquiv (fun em =>
+      let (aRoot?, em) := em.findRootKey
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      let (bRoot?, em) := em.findRootKey
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+      ((aRoot?, bRoot?), em)) s4 = .ok (some aRoot, some bRoot) s5)
+    (hchanged : (aRoot !=
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩ ||
+      bRoot != ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) = true)
+    (hscope : aRoot.rootCacheScopeMatches bRoot ctxAddr
+      (max a.lbr b.lbr) = true)
+    (hhit : s5.env.defEqCache[
+      ((canonicalPair aRoot.exprAddr bRoot.exprAddr).1,
+        (canonicalPair aRoot.exprAddr bRoot.exprAddr).2, ctxAddr)]? = some true) :
+    let cacheKey :=
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)
+    let aKey : EqKey :=
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+    let bKey : EqKey :=
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+    let cachedState := {s5 with env := {s5.env with
+      defEqCache := s5.env.defEqCache.insert cacheKey true}}
+    let final := {cachedState with
+      equivManager := cachedState.equivManager.addEquiv aKey bKey}
+    (isDefEq a b).run methods s = .ok true final := by
+  dsimp only
+  unfold isDefEq
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}")) _ s = _
+  unfold EStateM.bind
+  rw [htrace]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}))
+      _ s1 = _
+  unfold EStateM.bind
+  rw [hstats]
+  simp only [haddr, Bool.false_eq_true, if_false]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
+  unfold EStateM.bind
+  rw [hctx]
+  simp only
+  change ReaderT.run
+    ((liftM (TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) :
+        RecM .anon Bool) >>= _)
+      methods s3 = _
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
+  unfold EStateM.bind
+  rw [hequiv]
+  simp only [Bool.false_eq_true, if_false, pure_bind]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
+  simp only [hcheap]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
+  simp only [hmiss]
+  change ReaderT.run
+    ((liftM (TcM.withEquiv (fun em =>
+      let (aRoot?, em) := em.findRootKey
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      let (bRoot?, em) := em.findRootKey
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+      ((aRoot?, bRoot?), em))) :
+        RecM .anon (Option EqKey × Option EqKey)) >>= _)
+      methods s4 = _
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.withEquiv (fun em =>
+      let (aRoot?, em) := em.findRootKey
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      let (bRoot?, em) := em.findRootKey
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+      ((aRoot?, bRoot?), em))) _ s4 = _
+  unfold EStateM.bind
+  rw [hroots]
+  simp only [hchanged, hscope, if_true]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s5 = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s5 = .ok s5 s5 from rfl]
+  simp only [hhit]
+  rfl
+
+/-- Semantic acceptance and invariant preservation for the guarded positive
+root/full-cache branch.  The copied original-pair entry receives fresh
+provenance from the joint suffix model; the final union is justified by that
+same positive entry rather than treated as bookkeeping. -/
+theorem isDefEq_rootFullHit_true_acceptance
+    {methods : Methods .anon} {layer : WhnfLayer}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    (model : KernelSuffixModel trProj world)
+    {Delta : KVLCtx} {a b : KExpr .anon} {va vb : VExpr}
+    {ctxAddr : Address} {aRoot bRoot : EqKey}
+    {s s1 s2 s3 s4 s5 : TcState .anon}
+    (theory : WhnfTheory trProj world model.keys.uvars)
+    (hcollision : support.CollisionFree)
+    (htrace : TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s = .ok () s1)
+    (hstats : TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}) s1 =
+        .ok () s2)
+    (haddr : (a.addr == b.addr) = false)
+    (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
+    (hequiv : TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok false s4)
+    (hcheap : (s4.cheapRecursionDepth > 0) = false)
+    (hmiss : s4.env.defEqCache[
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)]? = none)
+    (hroots : TcM.withEquiv (fun em =>
+      let (aRoot?, em) := em.findRootKey
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      let (bRoot?, em) := em.findRootKey
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+      ((aRoot?, bRoot?), em)) s4 = .ok (some aRoot, some bRoot) s5)
+    (hchanged : (aRoot !=
+        ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩ ||
+      bRoot != ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) = true)
+    (hscope : aRoot.rootCacheScopeMatches bRoot ctxAddr
+      (max a.lbr b.lbr) = true)
+    (hhit : s5.env.defEqCache[
+      ((canonicalPair aRoot.exprAddr bRoot.exprAddr).1,
+        (canonicalPair aRoot.exprAddr bRoot.exprAddr).2, ctxAddr)]? = some true)
+    (hI : WhnfStateInv layer (kernelCacheSemantics model.keys trProj)
+      trProj world support model.keys.uvars Delta s)
+    (haSupport : support a) (hbSupport : support b)
+    (ha : TrKExprS world.venv model.keys.uvars world.nameOf trProj Delta a va)
+    (hb : TrKExprS world.venv model.keys.uvars world.nameOf trProj Delta b vb)
+    (hreferences :
+      (CacheEntry.defEq .full
+        ((canonicalPair a.addr b.addr).1,
+          (canonicalPair a.addr b.addr).2, ctxAddr) true).ReferencesAuthorized
+        (CacheAuthority.stable world) support) :
+    let cacheKey :=
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)
+    let aKey : EqKey :=
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+    let bKey : EqKey :=
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+    let cachedState := {s5 with env := {s5.env with
+      defEqCache := s5.env.defEqCache.insert cacheKey true}}
+    let final := {cachedState with
+      equivManager := cachedState.equivManager.addEquiv aKey bKey}
+    (isDefEq a b).run methods s = .ok true final ∧
+      WhnfStateInv layer (kernelCacheSemantics model.keys trProj)
+        trProj world support model.keys.uvars Delta final ∧
+      world.venv.IsDefEqU model.keys.uvars Delta.toCtx va vb := by
+  dsimp only
+  have htraceWf :=
+    (TcM.stepTrace_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta) "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s) hI
+  rw [htrace] at htraceWf
+  have hI1 := htraceWf.1
+  have hstatsWf :=
+    (TcM.bumpStats_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta)
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1})
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1) hI1
+  rw [hstats] at hstatsWf
+  have hI2 := hstatsWf.1
+  have hctxWf :=
+    (TcM.defEqCtxKey_model_matches_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (support := support) model (Delta := Delta) (a := a) (b := b)
+      (s := s2)) hI2
+  rw [hctx] at hctxWf
+  have hI3 := hctxWf.1
+  have hrepresented := hctxWf.2.1.2.1
+  have hequivWf :=
+    (TcM.withEquiv_isEquiv_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta)
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ s3) hI3
+  rw [hequiv] at hequivWf
+  have hI4 := hequivWf.1
+  have hrootsWf :=
+    (TcM.withEquiv_findRootKeys_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta)
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ s4) hI4
+  rw [hroots] at hrootsWf
+  have hI5 := hrootsWf.1
+  have haPath := hrootsWf.2.1 aRoot rfl
+  have hbPath := hrootsWf.2.2 bRoot rfl
+  change DefEqKeyEquiv model.keys trProj (CacheAuthority.stable world) support
+    ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩ aRoot at haPath
+  change DefEqKeyEquiv model.keys trProj (CacheAuthority.stable world) support
+    ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ bRoot at hbPath
+  have hrootProvenance := hI5.1.caches.hit (.defEq hhit)
+  have hsemantic := hrootProvenance.kernelDefEqRootAcceptance
+    theory hI5.2.1.wf hcollision haPath hbPath hscope hrepresented
+      haSupport hbSupport ha hb
+  have horiginalMeaning :
+      DefEqMeaning trProj world model.keys.uvars Delta a b true := by
+    intro _
+    exact ⟨va, vb, ha, hb, hsemantic⟩
+  have hnew := model.defEqProvenance hcollision .full
+    haSupport hbSupport hrepresented horiginalMeaning hreferences
+  have hcached : WhnfStateInv layer (kernelCacheSemantics model.keys trProj)
+      trProj world support model.keys.uvars Delta
+      {s5 with env := {s5.env with
+        defEqCache := s5.env.defEqCache.insert
+          ((canonicalPair a.addr b.addr).1,
+            (canonicalPair a.addr b.addr).2, ctxAddr) true}} :=
+    DefEqCacheUpdate.full_whnfStateInv hI5 hnew
+  have hrel : DefEqKeyEquiv model.keys trProj
+      (CacheAuthority.stable world) support
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ :=
+    hnew.kernelDefEqEquivCanonical hcollision haSupport hbSupport
+  have hfinal := hcached.addEquiv hrel
+  exact ⟨isDefEq_rootFullHit_true htrace hstats haddr hctx hequiv hcheap
+    hmiss hroots hchanged hscope hhit, hfinal, hsemantic⟩
+
+/-- Exact production execution for a positive direct cheap-cache hit.  Cheap
+`true` is promoted to the full partition and recorded in the manager before
+returning. -/
+theorem isDefEq_cheapHit_true
+    {methods : Methods .anon} {a b : KExpr .anon}
+    {ctxAddr : Address} {s s1 s2 s3 s4 : TcState .anon}
+    (htrace : TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s = .ok () s1)
+    (hstats : TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}) s1 =
+        .ok () s2)
+    (haddr : (a.addr == b.addr) = false)
+    (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
+    (hequiv : TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok false s4)
+    (hcheap : (s4.cheapRecursionDepth > 0) = true)
+    (hfullMiss : s4.env.defEqCache[
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)]? = none)
+    (hhit : s4.env.defEqCheapCache[
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)]? = some true) :
+    let cacheKey :=
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)
+    let aKey : EqKey :=
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+    let bKey : EqKey :=
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+    let final := {s4 with
+      env := {s4.env with
+        defEqCache := s4.env.defEqCache.insert cacheKey true}
+      equivManager := s4.equivManager.addEquiv aKey bKey}
+    (isDefEq a b).run methods s = .ok true final := by
+  dsimp only
+  unfold isDefEq
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}")) _ s = _
+  unfold EStateM.bind
+  rw [htrace]
+  simp only
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}))
+      _ s1 = _
+  unfold EStateM.bind
+  rw [hstats]
+  simp only [haddr, Bool.false_eq_true, if_false]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (TcM.defEqCtxKey a b) _ s2 = _
+  unfold EStateM.bind
+  rw [hctx]
+  simp only
+  change ReaderT.run
+    ((liftM (TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) :
+        RecM .anon Bool) >>= _)
+      methods s3 = _
+  rw [ReaderT.run_bind]
+  change EStateM.bind
+    (TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩)) _ s3 = _
+  unfold EStateM.bind
+  rw [hequiv]
+  simp only [Bool.false_eq_true, if_false, pure_bind]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
+  simp only [hcheap]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
+  simp only [hfullMiss, if_true]
+  rw [ReaderT.run_bind]
+  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s4 = _
+  unfold EStateM.bind
+  rw [show (get : TcM .anon (TcState .anon)) s4 = .ok s4 s4 from rfl]
+  simp only [hhit, if_true]
+  rfl
+
+/-- A positive cheap hit is semantically accepted, promoted with the same
+provenance into the full partition, and safely joined in the manager. -/
+theorem isDefEq_cheapHit_true_acceptance
+    {methods : Methods .anon} {layer : WhnfLayer}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    (model : KernelSuffixModel trProj world)
+    {Delta : KVLCtx} {a b : KExpr .anon} {va vb : VExpr}
+    {ctxAddr : Address} {s s1 s2 s3 s4 : TcState .anon}
+    (theory : WhnfTheory trProj world model.keys.uvars)
+    (hcollision : support.CollisionFree)
+    (htrace : TcM.stepTrace "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s = .ok () s1)
+    (hstats : TcM.bumpStats
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1}) s1 =
+        .ok () s2)
+    (haddr : (a.addr == b.addr) = false)
+    (hctx : TcM.defEqCtxKey a b s2 = .ok ctxAddr s3)
+    (hequiv : TcM.withEquiv
+      (·.isEquiv ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+        ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩) s3 = .ok false s4)
+    (hcheap : (s4.cheapRecursionDepth > 0) = true)
+    (hfullMiss : s4.env.defEqCache[
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)]? = none)
+    (hhit : s4.env.defEqCheapCache[
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)]? = some true)
+    (hI : WhnfStateInv layer (kernelCacheSemantics model.keys trProj)
+      trProj world support model.keys.uvars Delta s)
+    (haSupport : support a) (hbSupport : support b)
+    (ha : TrKExprS world.venv model.keys.uvars world.nameOf trProj Delta a va)
+    (hb : TrKExprS world.venv model.keys.uvars world.nameOf trProj Delta b vb) :
+    let cacheKey :=
+      ((canonicalPair a.addr b.addr).1,
+        (canonicalPair a.addr b.addr).2, ctxAddr)
+    let aKey : EqKey :=
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+    let bKey : EqKey :=
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩
+    let final := {s4 with
+      env := {s4.env with
+        defEqCache := s4.env.defEqCache.insert cacheKey true}
+      equivManager := s4.equivManager.addEquiv aKey bKey}
+    (isDefEq a b).run methods s = .ok true final ∧
+      WhnfStateInv layer (kernelCacheSemantics model.keys trProj)
+        trProj world support model.keys.uvars Delta final ∧
+      world.venv.IsDefEqU model.keys.uvars Delta.toCtx va vb := by
+  dsimp only
+  have htraceWf :=
+    (TcM.stepTrace_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta) "deq"
+      (fun _ => s!"{TcM.addr8 a.addr} ~ {TcM.addr8 b.addr}") s) hI
+  rw [htrace] at htraceWf
+  have hstatsWf :=
+    (TcM.bumpStats_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta)
+      (fun st : TcState .anon => {st with deqCalls := st.deqCalls + 1})
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
+      (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1)
+      htraceWf.1
+  rw [hstats] at hstatsWf
+  have hctxWf :=
+    (TcM.defEqCtxKey_model_matches_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (support := support) model (Delta := Delta) (a := a) (b := b)
+      (s := s2)) hstatsWf.1
+  rw [hctx] at hctxWf
+  have hrepresented := hctxWf.2.1.2.1
+  have hequivWf :=
+    (TcM.withEquiv_isEquiv_whnf_wf (layer := layer)
+      (semantics := kernelCacheSemantics model.keys trProj)
+      (trProj := trProj) (world := world) (support := support)
+      (uvars := model.keys.uvars) (Delta := Delta)
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ s3) hctxWf.1
+  rw [hequiv] at hequivWf
+  have hcheapProvenance := hequivWf.1.1.caches.hit (.defEqCheap hhit)
+  have hmeaning := hcheapProvenance.kernelDefEqMeaningCanonical
+    haSupport hbSupport hrepresented
+  have hsemantic := DefEqMeaning.of_translations theory hequivWf.1.2.1.wf
+    ha hb hmeaning rfl
+  have hfullProvenance :
+      CacheProvenance (kernelCacheSemantics model.keys trProj)
+        (CacheAuthority.stable world) support
+        (.defEq .full
+          ((canonicalPair a.addr b.addr).1,
+            (canonicalPair a.addr b.addr).2, ctxAddr) true) :=
+    hcheapProvenance.kernelDefEqRekind
+  have hcached : WhnfStateInv layer (kernelCacheSemantics model.keys trProj)
+      trProj world support model.keys.uvars Delta
+      {s4 with env := {s4.env with
+        defEqCache := s4.env.defEqCache.insert
+          ((canonicalPair a.addr b.addr).1,
+            (canonicalPair a.addr b.addr).2, ctxAddr) true}} :=
+    DefEqCacheUpdate.full_whnfStateInv hequivWf.1 hfullProvenance
+  have hrel : DefEqKeyEquiv model.keys trProj
+      (CacheAuthority.stable world) support
+      ⟨a.addr, ctxAddr, max a.lbr b.lbr, a.lbr⟩
+      ⟨b.addr, ctxAddr, max a.lbr b.lbr, b.lbr⟩ :=
+    hfullProvenance.kernelDefEqEquivCanonical hcollision
+      haSupport hbSupport
+  have hfinal := hcached.addEquiv hrel
+  exact ⟨isDefEq_cheapHit_true htrace hstats haddr hctx hequiv hcheap
+    hfullMiss hhit, hfinal, hsemantic⟩
 
 /-- The first production DefEq branch is sound under the run-scoped collision
 hypothesis.  Trace and statistics instrumentation preserve the semantic
@@ -999,7 +2384,7 @@ theorem isDefEq_addrEq_wf
       exact TcM.bumpStats_whnf_wf
         (fun st => {st with deqCalls := st.deqCalls + 1})
         (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl)
-        (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1
+        (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) (fun _ => rfl) s1
     · intro _ s2 _
       simp only [haddr, if_true]
       apply RecM.WF.pure

@@ -123,7 +123,8 @@ theorem unfoldCacheInsert_whnfStateInv
       core := hkernel.core.of_consts_eq rfl (by
         simpa using hkernel.core.intern)
       internSupport := by simpa using hkernel.internSupport
-      caches := hkernel.caches.insertUnfold hnew }
+      caches := hkernel.caches.insertUnfold hnew
+      equivalences := hkernel.equivalences }
   · exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
   · cases layer <;> simpa [WhnfLayer.StateOK] using hlayer
 

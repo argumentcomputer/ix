@@ -264,9 +264,15 @@ def addr8 (a : Address) : String := ((toString a).take 8).toString
   if (← get).stats then
     modify f
 
+/-- Mint a checker-global free-variable id.  Match Rust's checked counter:
+the final counter value is reserved as the exhausted state, so allocation
+fails instead of wrapping and reusing an id already present in caches. -/
 def freshFVarId : TcM m FVarId := fun s =>
-  let (id, env) := s.env.freshFVarId
-  .ok id { s with env }
+  if s.env.nextFVarId.toNat + 1 < UInt64.size then
+    let (id, env) := s.env.freshFVarId
+    .ok id { s with env }
+  else
+    .error (.other "free-variable id space exhausted") s
 
 /-- Fault `addr` through the lazy-ingress hook (if installed), deduplicated
     by `faultedAddrs`. Ingress errors surface as `TcError.other` with the
@@ -538,6 +544,15 @@ def openLet (name : m.F Name) (ty val : KExpr m) (body : KExpr m) :
   let bodyOpen ← runIntern (instantiateRev body #[fv])
   return (bodyOpen, fvId)
 
+/-- Like `openLet` but also returns the fvar expression itself. -/
+def openLetWithFV (name : m.F Name) (ty val : KExpr m)
+    (body : KExpr m) : TcM m (KExpr m × KExpr m × FVarId) := do
+  let fvId ← freshFVarId
+  let fv ← intern (KExpr.mkFVar fvId name)
+  modify fun s => { s with lctx := s.lctx.push fvId (.ldecl name ty val) }
+  let bodyOpen ← runIntern (instantiateRev body #[fv])
+  return (bodyOpen, fv, fvId)
+
 /-- Push a fresh fvar declaration without a body to instantiate. -/
 def pushFVarDeclAnon (ty : KExpr m) : TcM m (FVarId × KExpr m) := do
   let name : m.F Name := Mode.fieldWith fun _ => .mkAnon
@@ -765,6 +780,16 @@ abbrev RecM (m : Mode) := ReaderT (Methods m) (TcM m)
 def maxDispatchDepth : UInt32 := 200_000
 
 namespace RecM
+
+/-- Run one computation in a free-variable local-context scope.  Any
+declarations pushed by `x` are discarded when it returns, including when it
+returns a kernel error.  Mutations to the rest of the checker state are
+retained. -/
+def withLctxScope (x : RecM m α) : RecM m α := do
+  let saved := (← get).lctx.size
+  try x
+  finally
+    modify fun s => { s with lctx := s.lctx.truncate saved }
 
 /-- One iteration of an explicitly bounded kernel loop. `next` consumes the
     current iteration and continues from a new state; `done` returns without

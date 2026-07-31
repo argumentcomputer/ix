@@ -373,7 +373,7 @@ termination_by structural body
     (`Var(n-1)`), `fvars[n-1]` the innermost (`Var(0)`). -/
 def abstractFVars (body : KExpr m) (fvars : Array FVarId) :
     InternM m (KExpr m) :=
-  if fvars.isEmpty || !body.hasFVars then pure body
+  if fvars.isEmpty || (!body.hasFVars && body.lbr == 0) then pure body
   else
     let n : UInt64 := fvars.size.toUInt64
     -- Innermost (last) fvar gets position 0; outermost (first) gets `n-1`,
@@ -398,34 +398,77 @@ def peelLams (n : Nat) (head : KExpr m) (i : Nat) : KExpr m × Nat :=
   | _ => (head, i)
 termination_by structural head
 
+/-- Equivalent remaining-fuel presentation of lambda peeling.  The returned
+count is the number of binders removed, rather than an absolute loop index;
+this form makes the structural verification trace direct. -/
+def peelLamsN : Nat → KExpr m → KExpr m × Nat
+  | 0, head => (head, 0)
+  | n + 1, .lam _ _ _ inner _ =>
+      let (head, consumed) := peelLamsN n inner
+      (head, consumed + 1)
+  | _ + 1, head => (head, 0)
+termination_by n => n
+
+/-- The deterministic rebuild selected by `cheapBetaReduce`: start from
+`base` and intern applications of `trailing` from left to right.  Naming this
+pure plan gives verification an exact finite footprint without changing the
+production algorithm. -/
+structure CheapBetaPlan (m : Mode) where
+  base : KExpr m
+  trailing : List (KExpr m)
+
+namespace CheapBetaPlan
+
+/-- Pure result of one cheap-beta rebuild plan. -/
+def result (plan : CheapBetaPlan m) : KExpr m :=
+  plan.trailing.foldl KExpr.mkApp plan.base
+
+end CheapBetaPlan
+
+/-- Select the cheap-beta rebuild, if any, without touching the intern table. -/
+def cheapBetaPlan? (e : KExpr m) : Option (CheapBetaPlan m) :=
+  match e with
+  | .app .. =>
+    let (head₀, args) := e.collectSpine
+    match head₀ with
+    | .lam .. =>
+      let (head, i) := peelLamsN args.size head₀
+      let trailing := (args.extract i args.size).toList
+      if head.lbr == 0 then
+        some ⟨head, trailing⟩
+      else
+        match head with
+        | .var k _ _ =>
+          if k < i.toUInt64 then
+            some ⟨args[i - k.toNat - 1]!, trailing⟩
+          else none
+        | _ => none
+    | _ => none
+  | _ => none
+
+/-- Pure result selected by `cheapBetaReduce`, before canonical interning of
+the intermediate application chain. -/
+def KExpr.cheapBetaReduceResult (e : KExpr m) : KExpr m :=
+  match cheapBetaPlan? e with
+  | none => e
+  | some plan => plan.result
+
+/-- Intern the left-associated application chain of a selected cheap-beta
+plan. -/
+def internAppChain (base : KExpr m) : List (KExpr m) → InternM m (KExpr m)
+  | [] => pure base
+  | arg :: trailing => do
+    let next ← internExprM (KExpr.mkApp base arg)
+    internAppChain next trailing
+
 /-- Cheap beta reduction: peephole-reduce `App(λ…λ. body, args)` without full
     `subst` in trivial cases (closed body, or single-bvar body). Otherwise
     returns the input unchanged (full WHNF handles it). Mirrors lean4lean's
     `Expr.cheapBetaReduce`. -/
 def cheapBetaReduce (e : KExpr m) : InternM m (KExpr m) := do
-  match e with
-  | .app .. => pure ()
-  | _ => return e
-  let (head₀, args) := e.collectSpine
-  match head₀ with
-  | .lam .. => pure ()
-  | _ => return e
-  -- Peel up to `args.size` lambdas.
-  let (head, i) := peelLams args.size head₀ 0
-  -- Case A: closed body — drop the peeled binders, apply remaining args.
-  if head.lbr == 0 then
-    let mut result := head
-    for arg in args.extract i args.size do
-      result ← internExprM (KExpr.mkApp result arg)
-    return result
-  -- Case B: body is Var(k) selecting a peeled arg.
-  if let .var k _ _ := head then
-    if k < i.toUInt64 then
-      let mut result := args[i - k.toNat - 1]!
-      for arg in args.extract i args.size do
-        result ← internExprM (KExpr.mkApp result arg)
-      return result
-  return e
+  match cheapBetaPlan? e with
+  | none => return e
+  | some plan => internAppChain plan.base plan.trailing
 
 end Ix.Tc
 

@@ -66,6 +66,9 @@ def unfoldCacheSemantics (uvars : Nat) (trProj : RawProjRel)
     (fallback : CacheSemantics) : CacheSemantics where
   Valid := UnfoldCacheValid uvars trProj fallback
   mono := UnfoldCacheValid.mono
+  Equiv := fallback.Equiv
+  equivEquivalence := fallback.equivEquivalence
+  equivMono := fallback.equivMono
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
