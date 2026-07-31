@@ -277,8 +277,13 @@ def systemDeserialize := ⟦
     -- + (L+3)·D and stage_2_width = (1+L)·D, their observation limbs built
     -- by byte decomposition (both values are far below 2^32, so the
     -- canonical decomposition IS the little-endian u64 limb).
-    let ccl = gl_to_bytes(zcount + 2 * (lcount + 3));
-    let s2wl = gl_to_bytes(2 * (1 + lcount));
+    -- Chained logUp: max(L, 1) accumulator slots, one constraint per slot.
+    let lslots = match lcount {
+      0 => 1,
+      _ => lcount,
+    };
+    let ccl = gl_to_bytes(zcount + lslots + lslots);
+    let s2wl = gl_to_bytes(lslots + lslots);
     (SysCircuit.Mk(nodes, ncount, zeros, md, lks),
      [ccl, mdl, phl, pwl, mwl, s2wl], c10)
   }
