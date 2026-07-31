@@ -1836,6 +1836,364 @@ pub fn shard_esp_aiur(
   ))
 }
 
+/// Greedy next-fit packing of one block subset to a RAM cap, with the same
+/// FrontierAxiom closure-union accounting as [`partition_for_aiur_ram`]'s
+/// packing walk. Returns the children as block-id lists, in pack order.
+fn pack_block_subset_to_cap(
+  profile: &BlockProfile,
+  blocks_in_order: &[u32],
+  cap_gib: f64,
+) -> Vec<Vec<u32>> {
+  let size = |b: u32| u64::from(profile.block(b).serialized_size);
+  let mut children: Vec<Vec<u32>> = Vec::new();
+  let mut cur: Vec<u32> = Vec::new();
+  let mut cur_cost = AiurShardCost::default();
+  // Per-child union state: which blocks are present FULL, which as type-only
+  // axioms, and which have had their bytes charged (an axiom→full upgrade
+  // re-expands references but charges bytes once).
+  let mut full: FxHashSet<u32> = FxHashSet::default();
+  let mut axiom: FxHashSet<u32> = FxHashSet::default();
+  let mut charged: FxHashSet<u32> = FxHashSet::default();
+  let predicted = |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.hb);
+
+  let union_delta = |b: u32,
+                     full: &mut FxHashSet<u32>,
+                     axiom: &mut FxHashSet<u32>,
+                     charged: &mut FxHashSet<u32>|
+   -> u64 {
+    let mut bytes = 0u64;
+    let mut work: Vec<(u32, bool)> = Vec::new();
+    // Seed: `b`, its producer closure, and every consulted block, all FULL
+    // (the measured-ingress rule: consulted blocks replay identically only
+    // when shipped whole).
+    let mut seen_seed: FxHashSet<u32> = FxHashSet::default();
+    let mut stack = vec![b];
+    seen_seed.insert(b);
+    work.push((b, true));
+    while let Some(x) = stack.pop() {
+      for &p in profile.producers(x) {
+        if seen_seed.insert(p) {
+          stack.push(p);
+          work.push((p, true));
+        }
+      }
+    }
+    for &t in profile.touched_blocks(b) {
+      if seen_seed.insert(t) {
+        work.push((t, true));
+      }
+    }
+    while let Some((x, is_full)) = work.pop() {
+      let already = if is_full {
+        full.contains(&x)
+      } else {
+        full.contains(&x) || axiom.contains(&x)
+      };
+      if already {
+        continue;
+      }
+      if is_full {
+        full.insert(x);
+      } else {
+        axiom.insert(x);
+      }
+      if charged.insert(x) {
+        bytes = bytes.saturating_add(size(x));
+      }
+      let next: &[u32] =
+        if is_full { profile.refs(x) } else { profile.type_refs(x) };
+      for &r in next {
+        work.push((r, !profile.block(r).axiomatizable()));
+      }
+    }
+    bytes
+  };
+
+  for &b in blocks_in_order {
+    let e = profile.block(b);
+    let delta = union_delta(b, &mut full, &mut axiom, &mut charged);
+    let tentative = AiurShardCost {
+      union_bytes: cur_cost.union_bytes.saturating_add(delta),
+      hb: cur_cost.hb.saturating_add(e.heartbeats),
+      subst: cur_cost.subst.saturating_add(e.subst),
+      whnf: cur_cost.whnf.saturating_add(e.whnf),
+      def_eq: cur_cost.def_eq.saturating_add(e.def_eq),
+      nat_arith: cur_cost.nat_arith.saturating_add(e.nat_arith),
+    };
+    if !cur.is_empty() && predicted(&tentative) > cap_gib {
+      children.push(std::mem::take(&mut cur));
+      full.clear();
+      axiom.clear();
+      charged.clear();
+      let delta = union_delta(b, &mut full, &mut axiom, &mut charged);
+      cur_cost = AiurShardCost {
+        union_bytes: delta,
+        hb: e.heartbeats,
+        subst: e.subst,
+        whnf: e.whnf,
+        def_eq: e.def_eq,
+        nat_arith: e.nat_arith,
+      };
+    } else {
+      cur_cost = tentative;
+    }
+    cur.push(b);
+  }
+  if !cur.is_empty() {
+    children.push(cur);
+  }
+  children
+}
+
+/// Surgically re-partition ONE shard of an existing Aiur manifest at a
+/// smaller per-shard RAM budget. Every other shard's triple (owned, foreign,
+/// stubbed) is copied VERBATIM from the input manifest, so cached claims and
+/// proofs for those shards remain valid; only shard `k` is replaced by its
+/// children (the first child keeps id `k`, the rest are appended).
+///
+/// The children's ingress sets come from the standard measured-ingress walk
+/// over the modified assignment, then inherit the parent's escalated FULL
+/// ingress (`foreign \ stubbed` of the input shard): any such block not
+/// already FULL for a child is added, and removed from the child's stub set.
+/// Shipping extra blocks whole is always sound — it only costs bytes — and it
+/// preserves whatever replay-divergence repairs the parent had accumulated.
+pub fn rebudget_manifest_shard(
+  esp_path: &str,
+  manifest_path: &str,
+  shard_k: usize,
+  child_budget_gib: f64,
+  epsilon: f64,
+  out_path: &str,
+) -> Result<String, String> {
+  let bytes =
+    std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
+  let profile = BlockProfile::from_bytes(&bytes)
+    .map_err(|e| format!("parse {esp_path}: {e}"))?;
+  if !profile.has_touch_graph() {
+    return Err(format!(
+      "{esp_path} has no touch graph — rebudget needs measured ingress"
+    ));
+  }
+  let mbytes = std::fs::read(manifest_path)
+    .map_err(|e| format!("read {manifest_path}: {e}"))?;
+  let manifest = ShardManifest::from_bytes(&mbytes)
+    .map_err(|e| format!("parse {manifest_path}: {e}"))?;
+  let old_n = manifest.shards.len();
+  let parent = manifest
+    .shards
+    .get(shard_k)
+    .ok_or_else(|| format!("shard {shard_k} out of range (0..{old_n})"))?;
+
+  let id_of: FxHashMap<&Address, u32> = profile
+    .blocks()
+    .iter()
+    .enumerate()
+    .map(|(i, b)| (&b.addr, i as u32))
+    .collect();
+  let to_id = |a: &Address| -> Result<u32, String> {
+    id_of
+      .get(a)
+      .copied()
+      .ok_or_else(|| format!("manifest block {a:?} not in profile"))
+  };
+  let parent_blocks: FxHashSet<u32> = parent
+    .blocks
+    .iter()
+    .map(&to_id)
+    .collect::<Result<_, _>>()?;
+
+  // Pack the parent's blocks at the child budget, in the same cut-coherent
+  // global order the original partition used.
+  let cap_gib = child_budget_gib * AIUR_RAM_USABLE_FRAC;
+  let total_bytes: u64 = profile
+    .blocks()
+    .iter()
+    .fold(0u64, |a, b| a.saturating_add(u64::from(b.serialized_size)));
+  let total_hb: u64 =
+    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.heartbeats));
+  let total_ram = aiur_ram_gib(total_bytes, total_hb) - AIUR_RAM_BASE_GIB;
+  let headroom = (cap_gib - AIUR_RAM_BASE_GIB).max(f64::MIN_POSITIVE);
+  let pieces = (total_ram / headroom * PACK_PIECES_PER_CAP as f64) as usize;
+  let order = cut_coherent_order(&profile, pieces, epsilon);
+  let subset: Vec<u32> =
+    order.iter().copied().filter(|b| parent_blocks.contains(b)).collect();
+  let children_ids = pack_block_subset_to_cap(&profile, &subset, cap_gib);
+  let n_children = children_ids.len();
+  if n_children <= 1 {
+    return Err(format!(
+      "shard {shard_k} does not split at budget {child_budget_gib} GiB \
+       (cap {cap_gib:.1}): got {n_children} child(ren) — lower the budget"
+    ));
+  }
+
+  // Modified assignment: child 0 keeps id `shard_k`; the rest append.
+  let mut shard_of: Vec<u32> = vec![0; profile.num_blocks()];
+  for (s, info) in manifest.shards.iter().enumerate() {
+    if s == shard_k {
+      continue;
+    }
+    for a in &info.blocks {
+      shard_of[to_id(a)? as usize] = s as u32;
+    }
+  }
+  let new_n = old_n + n_children - 1;
+  for (c, ids) in children_ids.iter().enumerate() {
+    let sid = if c == 0 { shard_k as u32 } else { (old_n + c - 1) as u32 };
+    for &b in ids {
+      shard_of[b as usize] = sid;
+    }
+  }
+
+  // Parent's escalated FULL ingress: foreign minus stubbed, as block ids.
+  // Fed to the standard walk as `extra_full` promotions so each promoted
+  // block's reference frontier expands exactly as it did for the parent
+  // (a promoted FULL block introduces its refs as new type-only stubs —
+  // hand-unioning the blocks alone would drop that frontier).
+  let parent_stubs: FxHashSet<&Address> =
+    parent.stubbed_blocks.iter().collect();
+  let parent_full_extra: Vec<u32> = parent
+    .foreign_blocks
+    .iter()
+    .filter(|a| !parent_stubs.contains(*a))
+    .map(&to_id)
+    .collect::<Result<_, _>>()?;
+  let mut promotions = vec![ShardPromotion::default(); new_n];
+  for (c, ids) in children_ids.iter().enumerate() {
+    let sid = if c == 0 { shard_k } else { old_n + c - 1 };
+    let owned: FxHashSet<u32> = ids.iter().copied().collect();
+    promotions[sid].extra_full = parent_full_extra
+      .iter()
+      .copied()
+      .filter(|b| !owned.contains(b))
+      .collect();
+  }
+  let sets = aiur_shard_ingress_sets(&profile, &shard_of, new_n, &promotions);
+
+  let addr = |b: u32| profile.block(b).addr.clone();
+  let child_info = |c: usize| -> ShardInfo {
+    let sid = if c == 0 { shard_k as u32 } else { (old_n + c - 1) as u32 };
+    let mut owned: Vec<u32> = children_ids[c].clone();
+    owned.sort_unstable();
+    let (full_extra, stubbed) = &sets[sid as usize];
+    let mut foreign: Vec<Address> = full_extra
+      .iter()
+      .copied()
+      .chain(stubbed.iter().copied())
+      .map(addr)
+      .collect();
+    foreign.sort();
+    let cross_ingress: u64 = full_extra
+      .iter()
+      .copied()
+      .chain(stubbed.iter().copied())
+      .map(|b| u64::from(profile.block(b).serialized_size))
+      .sum();
+    ShardInfo {
+      id: sid,
+      blocks: owned.iter().copied().map(addr).collect(),
+      heartbeats: owned.iter().map(|&b| profile.block(b).heartbeats).sum(),
+      own_size: owned
+        .iter()
+        .map(|&b| u64::from(profile.block(b).serialized_size))
+        .sum(),
+      assumption_root: ixon::merkle::merkle_root_canonical(&foreign),
+      foreign_blocks: foreign,
+      stubbed_blocks: stubbed.iter().copied().map(addr).collect(),
+      cross_ingress,
+    }
+  };
+
+  let mut shards = manifest.shards.clone();
+  shards[shard_k] = child_info(0);
+  for c in 1..n_children {
+    shards.push(child_info(c));
+  }
+  let total_cross: u128 =
+    shards.iter().map(|s| u128::from(s.cross_ingress)).sum();
+  // Patch the aggregation tree: the parent's leaf becomes a left-leaning
+  // chain over its children, keeping every other leaf untouched.
+  fn patch_tree(node: &AggNode, k: u32, extra: &[u32]) -> AggNode {
+    match node {
+      AggNode::Leaf(id) if *id == k => {
+        let mut t = AggNode::Leaf(k);
+        for &e in extra {
+          t = AggNode::Internal(Box::new(t), Box::new(AggNode::Leaf(e)));
+        }
+        t
+      },
+      AggNode::Leaf(id) => AggNode::Leaf(*id),
+      AggNode::Internal(l, r) => AggNode::Internal(
+        Box::new(patch_tree(l, k, extra)),
+        Box::new(patch_tree(r, k, extra)),
+      ),
+    }
+  }
+  let extra_ids: Vec<u32> =
+    (0..n_children - 1).map(|i| (old_n + i) as u32).collect();
+  let tree = manifest
+    .tree
+    .as_ref()
+    .map(|t| patch_tree(t, shard_k as u32, &extra_ids));
+
+  let out = ShardManifest {
+    num_shards: new_n as u32,
+    shards,
+    total_cross_ingress: total_cross,
+    tree,
+  };
+  std::fs::write(out_path, out.to_bytes())
+    .map_err(|e| format!("write {out_path}: {e}"))?;
+
+  // Costs sidecar: recompute every row from the manifest triples (identical
+  // to the input rows for untouched shards — union = own + cross, and the
+  // reduction aggregates come from the owned blocks).
+  let mut csv = String::from(
+    "shard,union_bytes,hb,subst,whnf,def_eq,nat_arith,pred_ram_gib,pred_prove_s\n",
+  );
+  let mut report = String::new();
+  for (i, sh) in out.shards.iter().enumerate() {
+    let ids: Vec<u32> = sh
+      .blocks
+      .iter()
+      .map(&to_id)
+      .collect::<Result<_, _>>()?;
+    let sum = |f: &dyn Fn(u32) -> u64| ids.iter().map(|&b| f(b)).sum::<u64>();
+    let union_bytes = sh.own_size.saturating_add(sh.cross_ingress);
+    let hb = sh.heartbeats;
+    let subst = sum(&|b| profile.block(b).subst);
+    let whnf = sum(&|b| profile.block(b).whnf);
+    let def_eq = sum(&|b| profile.block(b).def_eq);
+    let nat_arith = sum(&|b| profile.block(b).nat_arith);
+    let ram = aiur_ram_gib(union_bytes, hb);
+    csv.push_str(&format!(
+      "{},{},{},{},{},{},{},{:.2},{:.2}\n",
+      i,
+      union_bytes,
+      hb,
+      subst,
+      whnf,
+      def_eq,
+      nat_arith,
+      ram,
+      aiur_prove_secs(union_bytes, subst),
+    ));
+    if i == shard_k || i >= old_n {
+      report.push_str(&format!(
+        "  child shard {i}: {} blocks, union {:.1} MB, pred_ram {ram:.2} GiB\n",
+        sh.blocks.len(),
+        union_bytes as f64 / 1e6,
+      ));
+    }
+  }
+  let cp = format!("{out_path}.costs.csv");
+  std::fs::write(&cp, csv).map_err(|e| format!("write {cp}: {e}"))?;
+
+  Ok(format!(
+    "rebudget shard {shard_k} @ {child_budget_gib} GiB (cap {cap_gib:.1}): \
+     {old_n} → {new_n} shards; all other shards copied verbatim\n{report}"
+  ))
+}
+
 /// Calibrated Zisk guest-STEP cost model — the **single source of truth** for
 /// predicting a block's in-circuit step contribution: reduction work
 /// (`heartbeats` + substitution-node visits `subst`) plus a small ingress term

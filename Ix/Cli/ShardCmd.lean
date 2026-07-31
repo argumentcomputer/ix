@@ -106,6 +106,27 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     p.printError "error: --promote applies to the aiur ingress model only"
     return 1
 
+  -- Surgical single-shard split: `--rebudget K --manifest M.ixes --max-ram G`.
+  -- Every other shard is copied verbatim (cached proofs stay valid); shard K
+  -- is replaced by children packed at the smaller budget.
+  match (p.flag? "rebudget").map (·.as! Nat) with
+  | some k =>
+    let manifestIn := (p.flag? "manifest").map (·.as! String) |>.getD ""
+    if manifestIn.isEmpty then
+      p.printError "error: --rebudget needs --manifest (the input .ixes to split)"
+      return 1
+    match maxRam with
+    | none =>
+      p.printError "error: --rebudget needs --max-ram (per-child budget, GiB)"
+      return 1
+    | some g =>
+      IO.println s!"Rebudgeting shard {k} of {manifestIn} at {g} GiB per child"
+      rsShardRebudgetFFI espPath manifestIn (toString k) (toString g)
+        (toString balancePct) outPath
+      IO.println s!"[shard] wrote {outPath}"
+      return 0
+  | none => pure ()
+
   -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
   -- (budget) > default (size to detected system RAM).
   match shardsFlag with
@@ -142,6 +163,8 @@ def shardCmd : Cli.Cmd := `[Cli|
     parallelism  : Nat;    "Provers assumed for the prove-time estimate (default 1 = sequential)"
     backend      : String; "Packing cost model: zisk (default, guest-STEP cap) or aiur (RAM model; use with --max-ram)"
     promote      : String; "Per-shard escalation for replay divergence (aiur only): comma-separated `K:N` (N whole-frontier promotion rounds for shard K) and/or `K:+HEX` (ship the named block whole in shard K); a bare `N` applies N rounds everywhere. `ix check --repair` accumulates this automatically."
+    rebudget     : Nat;    "Surgically split shard K of --manifest at the smaller --max-ram budget; every other shard is copied verbatim so its cached claims/proofs stay valid. Children inherit K's escalated FULL ingress."
+    manifest     : String; "Input .ixes manifest to split (with --rebudget)."
     out          : String; "Output .ixes manifest path (default: <prof>.ixes, e.g. init.ixprof → init.ixes)"
 
   ARGS:
