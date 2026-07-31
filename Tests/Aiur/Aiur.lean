@@ -719,6 +719,38 @@ def toplevel := ⟦
     let s5 = c[4] + c[0];                       -- 255
     s1 + s2 + 10 * s3 + s4 + s5                 -- 1309
   }
+
+  ---------------------------------------------------------------------------
+  -- Grouped circuits (`CompiledToplevel.groupFunctions`): the test runner
+  -- groups these three into one circuit whose branching selects the member.
+  -- Grouping is a circuit-level choice, so there is NO source annotation:
+  -- the same functions also run ungrouped in the plain suite. Members
+  -- differ in arity, output and branch count, call each other (through the
+  -- shared circuit) and recurse.
+  ---------------------------------------------------------------------------
+  fn grouped_double(x: G) -> G {
+    x + x
+  }
+
+  -- Different arity, a match (two selectors), calls a fellow group member.
+  fn grouped_pick(t: G, a: G, b: G) -> G {
+    match t {
+      0 => grouped_double(a),
+      _ => b,
+    }
+  }
+
+  -- Recursive group member: self-calls route through the shared circuit.
+  fn grouped_sum_range(n: G) -> G {
+    match n {
+      0 => 0,
+      _ => n + grouped_sum_range(n - 1),
+    }
+  }
+
+  pub fn calls_grouped(t: G, a: G, b: G) -> G {
+    grouped_pick(t, a, b) + grouped_sum_range(a)
+  }
 ⟧
 
 /-- The PROVING suite: every case runs the full prove+verify pipeline
@@ -843,6 +875,53 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Unconstrained g_to_bytes / g_inverse hints: all cases in one proof
     .prove `hint_test #[] #[1309],
+
+    -- Grouped-circuit member functions, run UNGROUPED here (the grouped
+    -- variant runs in the grouped env; see `testGroups`).
+    -- t=0 → grouped_double(5) + Σ1..5 = 10 + 15 = 25; t≠0 → 9 + Σ1..3 = 15.
+    .prove `calls_grouped #[0, 5, 9] #[25]
+      (label := "calls_grouped(0,5,9)"),
+    .prove `calls_grouped #[1, 3, 9] #[15]
+      (label := "calls_grouped(1,3,9)"),
   ]
+
+/-- The grouping the `aiur` runner applies for the grouped environment. -/
+def testGroups : Array (String × Array Lean.Name) :=
+  #[("test_group", #[`grouped_double, `grouped_pick, `grouped_sum_range])]
+
+def groupedTestCases : List AiurTestCase := [
+  .prove `calls_grouped #[0, 5, 9] #[25]
+    (label := "calls_grouped(0,5,9) [grouped]"),
+  .prove `calls_grouped #[1, 3, 9] #[15]
+    (label := "calls_grouped(1,3,9) [grouped]"),
+]
+
+/-- Structural checks on the grouped partition: the grouped circuit exists,
+holds exactly its members, its layout follows the merge rule (max inputs,
+summed selectors, max auxiliaries, max lookups), and every constrained
+function lands in exactly one circuit. -/
+def groupingStructureChecks (compiled : Aiur.CompiledToplevel) : TestSeq :=
+  let t := compiled.bytecode
+  let memberOf := fun (name : Lean.Name) => compiled.getFuncIdx name |>.get!
+  let expectedMembers :=
+    #[`grouped_double, `grouped_pick, `grouped_sum_range].map memberOf
+  match t.circuits.find? (·.name == "test_group") with
+  | none => test "test_group circuit exists" false
+  | some c =>
+    let layouts := c.members.map (t.functions[·]!.layout)
+    let expected := layouts.foldl (init := (⟨0, 0, 0, 0⟩ : Aiur.Bytecode.FunctionLayout))
+      Aiur.Bytecode.FunctionLayout.merge
+    let allCircuitMembers := t.circuits.flatMap (·.members)
+    let constrained := (Array.range t.functions.size).filter
+      (t.functions[·]!.constrained)
+    test "test_group circuit exists" true ++
+    test "test_group members" (c.members == expectedMembers) ++
+    test "test_group layout follows the merge rule"
+      (c.layout.inputSize == expected.inputSize &&
+       c.layout.selectors == expected.selectors &&
+       c.layout.auxiliaries == expected.auxiliaries &&
+       c.layout.lookups == expected.lookups) ++
+    test "every constrained function is in exactly one circuit"
+      (allCircuitMembers.qsort (· < ·) == constrained)
 
 end
