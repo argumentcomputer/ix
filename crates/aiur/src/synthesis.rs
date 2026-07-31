@@ -82,18 +82,20 @@ impl AiurSystem {
         continue;
       }
       let (constraints, lookups) = toplevel.build_constraints(i);
-      // A branchless function's lookup arguments are sent raw (degree 1;
-      // see `ConstraintState::gate`), so two lookups fit in one chained
-      // accumulator step at degree 3 — within the degree the selector-gated
-      // constraints already pay for. Branching functions keep k = 1: their
-      // superposed arguments are degree 2, and grouping would push the
-      // logUp constraints past the quotient budget.
-      let group_size =
-        if toplevel.functions[i].layout.selectors == 1 && lookups.len() >= 2 {
-          2
-        } else {
-          1
-        };
+      // Grouped logUp steps are sized to fill the degree-5 budget
+      // (log_blowup = 2 → quotient degree ≤ 4): a branchless function's
+      // lookup arguments are sent raw (degree 1; see
+      // `ConstraintState::gate`), so FOUR lookups fit in one chained
+      // accumulator step at degree 4·1 + 1 = 5; a branching function's
+      // superposed arguments are degree 2, fitting TWO lookups per step at
+      // degree 2·2 + 1 = 5.
+      let group_size = if lookups.len() < 2 {
+        1
+      } else if toplevel.functions[i].layout.selectors == 1 {
+        4
+      } else {
+        2
+      };
       push_circuit(
         constraints.width,
         None,
@@ -108,22 +110,22 @@ impl AiurSystem {
       push_circuit(memory.width, None, constraints, lookups, 1);
     }
     // Gadgets. The byte chips' lookup arguments are preprocessed columns
-    // and their multiplicities main columns (all degree 1), so their
-    // lookups also group 2 per chained step at degree 3 — halving the
-    // stage-2 accumulators (Bytes2: 10 → 5 at height 65536).
+    // and their multiplicities main columns (all degree 1), so like
+    // branchless functions they group 4 per chained step at degree 5
+    // (Bytes2: 10 → 3 stage-2 accumulators at height 65536).
     push_circuit(
       Bytes1.main_width(),
       Bytes1.preprocessed(),
       vec![],
       Bytes1.lookups(),
-      2,
+      4,
     );
     push_circuit(
       Bytes2.main_width(),
       Bytes2.preprocessed(),
       vec![],
       Bytes2.lookups(),
-      2,
+      4,
     );
 
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
@@ -320,11 +322,12 @@ mod tests {
   };
   use rustc_hash::FxHashMap;
 
-  /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
-  /// while still exercising the full FRI pipeline (log_blowup 1, 64 queries,
-  /// no proof-of-work).
+  /// Small FRI parameters: cheap to prove while still exercising the full
+  /// FRI pipeline (64 queries, no proof-of-work). log_blowup 2 matches
+  /// production — synthesis sizes its lookup groups to the degree-5 budget
+  /// that blowup buys.
   fn test_parameters() -> (CommitmentParameters, FriParameters) {
-    let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
+    let cp = CommitmentParameters { log_blowup: 2, cap_height: 0 };
     let fp = FriParameters {
       log_final_poly_len: 0,
       max_log_arity: 1,
