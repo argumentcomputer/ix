@@ -6,7 +6,7 @@ use std::{array, ops::Range, sync::LazyLock};
 
 use crate::{
   FxIndexMap, G,
-  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
+  bytecode::{Block, Ctrl, Op, Toplevel, ValIdx},
   function_channel,
   gadgets::{
     AiurGadget,
@@ -46,11 +46,18 @@ pub struct Constraints {
 }
 
 struct ConstraintState {
+  /// Index of the circuit member currently being walked.
   function_index: G,
-  /// Exactly one selector: the function has a single leaf block (no
-  /// matches), so every lookup slot is written by exactly one branch.
+  /// Exactly one selector: the circuit backs a single function with a
+  /// single leaf block (no matches), so every lookup slot is written by
+  /// exactly one branch.
   branchless: bool,
-  layout: FunctionLayout,
+  /// Input size of the current member (inputs live in columns
+  /// `0..input_size` for every member; the circuit reserves the max).
+  input_size: usize,
+  /// Column of the current member's first selector: the circuit's input
+  /// block plus the selector counts of the members walked before it.
+  sel_base: usize,
   column: usize,
   lookup: usize,
   lookups: Vec<Lookup<Expr>>,
@@ -69,7 +76,7 @@ struct SharedState {
 
 impl ConstraintState {
   fn selector_index(&self, sel: usize) -> usize {
-    sel + self.layout.input_size
+    sel + self.sel_base
   }
 
   /// Selector-gate a lookup argument. Lookup slots shared across branches
@@ -112,33 +119,74 @@ impl ConstraintState {
 }
 
 impl Toplevel {
+  /// Build the constraints of one circuit. The circuit's members are walked
+  /// like branches of a single function: each walk restarts the auxiliary
+  /// column / lookup-slot counters (so members share those, like match arms
+  /// do), while selector columns are laid out consecutively per member. All
+  /// members fold their return message into the shared lookup slot 0, gated
+  /// by their own selectors and carrying their own function index, against
+  /// the single shared multiplicity column.
   pub fn build_constraints(
     &self,
-    function_index: usize,
+    circuit_index: usize,
   ) -> (Constraints, Vec<Lookup<Expr>>) {
-    let function = &self.functions[function_index];
+    let circuit = &self.circuits[circuit_index];
+    let layout = circuit.layout;
     let constraints = Constraints {
       zeros: vec![],
-      selectors: 0..0,
-      width: function.layout.width(),
+      selectors: layout.input_size..layout.input_size + layout.selectors,
+      width: layout.width(),
     };
     let mut state = ConstraintState {
-      function_index: G::from_usize(function_index),
-      branchless: function.layout.selectors == 1,
-      layout: function.layout,
+      function_index: G::ZERO,
+      branchless: layout.selectors == 1,
+      input_size: 0,
+      sel_base: 0,
       column: 0,
       lookup: 0,
       map: vec![],
-      lookups: vec![empty_lookup(); function.layout.lookups],
+      lookups: vec![empty_lookup(); layout.lookups],
       constraints,
       yield_info: vec![],
     };
-    function.build_constraints(&mut state);
+    // The shared multiplicity column: first auxiliary, right after the
+    // selectors. The return lookup occupies the first lookup slot.
+    let multiplicity = var(layout.input_size + layout.selectors);
+    state.lookups[0].multiplicity = -multiplicity;
+    let aux_start = layout.input_size + layout.selectors + 1;
+    let mut sel_base = layout.input_size;
+    let mut circuit_sel = Expr::from(G::ZERO);
+    for &member in &circuit.members {
+      let function = &self.functions[member];
+      state.function_index = G::from_usize(member);
+      state.input_size = function.layout.input_size;
+      state.sel_base = sel_base;
+      state.column = aux_start;
+      state.lookup = 1;
+      state.map.clear();
+      (0..function.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
+      let body_sel = function.body.get_block_selector(&state);
+      circuit_sel = circuit_sel + body_sel.clone();
+      function.body.collect_constraints(body_sel, &mut state);
+      debug_assert!(state.yield_info.is_empty());
+      sel_base += function.layout.selectors;
+    }
     // The old `Air::eval` asserted each selector column boolean; the new
     // system compiles a constraint vector, so materialize those explicitly.
     for sel in state.constraints.selectors.clone() {
       let s = var(sel);
       state.constraints.zeros.push(s.clone() * (s - konst(G::ONE)));
+    }
+    // Cross-member exclusivity: the circuit-level selector (the sum of the
+    // members' top-block selectors) must be boolean, so at most one member
+    // is active per row and the shared return lookup emits a single
+    // member's message. A singleton circuit already gets this from its top
+    // block's own boolean constraint.
+    if circuit.members.len() > 1 {
+      state
+        .constraints
+        .zeros
+        .push(circuit_sel.clone() * (Expr::from(G::ONE) - circuit_sel));
     }
     (state.constraints, state.lookups)
   }
@@ -146,26 +194,6 @@ impl Toplevel {
 
 fn empty_lookup() -> Lookup<Expr> {
   Lookup { multiplicity: konst(G::ZERO), args: vec![] }
-}
-
-impl Function {
-  fn build_constraints(&self, state: &mut ConstraintState) {
-    // the first columns are occupied by the input, which is also mapped
-    state.column += self.layout.input_size;
-    (0..self.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
-    // then comes the selectors, which are not mapped
-    let init_sel = state.column;
-    let final_sel = state.column + self.layout.selectors;
-    state.constraints.selectors = init_sel..final_sel;
-    state.column = final_sel;
-    // the multiplicity occupies another column
-    let multiplicity = var(state.column);
-    state.column += 1;
-    // the return lookup occupies the first lookup slot
-    state.lookups[0].multiplicity = -multiplicity.clone();
-    state.lookup += 1;
-    self.body.collect_constraints(self.body.get_block_selector(state), state);
-  }
 }
 
 impl Block {
@@ -258,7 +286,7 @@ impl Ctrl {
         ];
         // input
         args.extend(
-          (0..state.layout.input_size)
+          (0..state.input_size)
             .map(|arg| state.gate(&sel, state.map[arg].0.clone())),
         );
         // output

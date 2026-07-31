@@ -89,20 +89,17 @@ impl AiurSystem {
         });
       };
 
-    // Constrained functions (ascending index).
-    for i in 0..toplevel.functions.len() {
-      if !toplevel.functions[i].constrained {
-        continue;
-      }
+    // Function circuits, in partition order (singletons unless grouped).
+    for i in 0..toplevel.circuits.len() {
       let (constraints, lookups) = toplevel.build_constraints(i);
-      // A branchless function's lookup arguments are sent raw (degree 1;
+      // A branchless circuit's lookup arguments are sent raw (degree 1;
       // see `ConstraintState::gate`), so two lookups fit in one chained
       // accumulator step at degree 3 — within the degree the selector-gated
-      // constraints already pay for. Branching functions keep k = 1: their
+      // constraints already pay for. Branching circuits keep k = 1: their
       // superposed arguments are degree 2, and grouping would push the
       // logUp constraints past the quotient budget.
       let group_size =
-        if toplevel.functions[i].layout.selectors == 1 && lookups.len() >= 2 {
+        if toplevel.circuits[i].layout.selectors == 1 && lookups.len() >= 2 {
           2
         } else {
           1
@@ -156,11 +153,8 @@ impl AiurSystem {
   /// order the circuits were chained in [`AiurSystem::build`], so index `i`
   /// of the returned `Vec` corresponds to `self.system.circuits[i]`.
   fn circuit_types(&self) -> Vec<CircuitType> {
-    let functions = (0..self.toplevel.functions.len()).filter_map(|idx| {
-      self.toplevel.functions[idx]
-        .constrained
-        .then_some(CircuitType::Function { idx })
-    });
+    let functions = (0..self.toplevel.circuits.len())
+      .map(|idx| CircuitType::Function { idx });
     let memories = self
       .toplevel
       .memory_sizes
@@ -384,6 +378,24 @@ mod tests {
   ///   fresh auxiliary column pinned by `sel * (col - a*b)`.
   /// - `lookups = 1`: the function-provide (return) lookup in slot 0, which
   ///   pulls the claim `[function_channel, fun_idx, a, b, a*b]`.
+  /// Test-side singleton partition (production circuits come pre-built from
+  /// the Lean compiler).
+  fn with_singleton_circuits(
+    functions: Vec<crate::bytecode::Function>,
+    memory_sizes: Vec<usize>,
+  ) -> Toplevel {
+    let circuits = functions
+      .iter()
+      .enumerate()
+      .filter(|(_, f)| f.constrained)
+      .map(|(i, f)| crate::bytecode::Circuit {
+        members: vec![i],
+        layout: f.layout,
+      })
+      .collect();
+    Toplevel { functions, memory_sizes, circuits }
+  }
+
   fn mul_toplevel() -> Toplevel {
     let body =
       Block { ops: vec![Op::Mul(0, 1)], ctrl: Ctrl::Return(0, vec![2]) };
@@ -398,7 +410,7 @@ mod tests {
       entry: true,
       constrained: true,
     };
-    Toplevel { functions: vec![function], memory_sizes: vec![] }
+    with_singleton_circuits(vec![function], vec![])
   }
 
   /// Hand-build a toplevel exercising the two migrated integration paths that
@@ -478,7 +490,7 @@ mod tests {
       constrained: true,
     };
 
-    Toplevel { functions: vec![f, g], memory_sizes: vec![1] }
+    with_singleton_circuits(vec![f, g], vec![1])
   }
 
   #[test]

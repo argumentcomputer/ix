@@ -72,10 +72,13 @@ structure AiurTestEnv where
   aiurSystem : Aiur.AiurSystem
   shapes : Array Aiur.CircuitShape
 
-def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel) :
+def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
+    (groups : Array (String × Array Lean.Name) := #[]) :
     Except String AiurTestEnv := do
   let toplevel ← toplevelFn.mapError toString
   let compiled ← toplevel.compile
+  let compiled ← if groups.isEmpty then pure compiled
+    else compiled.groupFunctions groups
   let decls ← toplevel.mkDecls.mapError toString
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
   return ⟨compiled, decls, aiurSystem, aiurSystem.circuitShapes⟩
