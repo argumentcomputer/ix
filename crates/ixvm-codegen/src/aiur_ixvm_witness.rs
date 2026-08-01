@@ -229,26 +229,28 @@ fn prim_addrs() -> Vec<Address> {
 /// only re-adds its (already present) block — so no reverse scan of the
 /// env is needed.
 ///
-/// Primitives are seeded on top because the kernel FABRICATES references
-/// to them while reducing — `Const(nat_succ_addr(), ..)` and friends are
-/// built from addresses hardcoded in the Aiur source, not discovered by
-/// walking `refs` — and `get_ci` then faults their bytes from ch 2 like
-/// any other constant. Such a primitive need not appear anywhere in the
-/// target's ref closure, so a closure-only scope aborts with `invalid IO
-/// key`. Intersected with `env.consts`: a primitive the env does not
-/// carry is one the check cannot reach.
+/// Primitives are seeded as additional ROOTS because the kernel
+/// FABRICATES references to them while reducing — `Const(nat_succ_addr(),
+/// ..)` and friends are built from addresses hardcoded in the Aiur
+/// source, not discovered by walking `refs` — and `get_ci` then faults
+/// their bytes from ch 2 like any other constant. Such a primitive need
+/// not appear anywhere in the target's ref closure, so a closure-only
+/// scope aborts with `invalid IO key`. Intersected with `env.consts`: a
+/// primitive the env does not carry is one the check cannot reach.
+///
+/// They are walked rather than merely inserted because def-eq
+/// delta-unfolds primitive BODIES, and a body's refs are reachable from
+/// nowhere else in the scope (the `strAppend*` arena fixtures exercise
+/// exactly this).
 ///
 /// Every witness builder goes through here, so the byte scope cannot
 /// drift apart per call site. Mirrors
-/// `Ix.IxVM.ClaimHarness.closureFromBase`.
+/// `Ix.IxVM.ClaimHarness.closureFrom`.
 fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
-  let mut scope = env.bfs_closure(roots);
-  for a in prim_addrs() {
-    if env.consts.contains_key(&a) {
-      scope.insert(a);
-    }
-  }
-  scope
+  let mut all_roots: Vec<Address> = roots.to_vec();
+  all_roots
+    .extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
+  env.bfs_closure(&all_roots)
 }
 
 /// Shard `CheckEnv` witness: thin-frontier claim (see

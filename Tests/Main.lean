@@ -4,6 +4,7 @@ import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
 import Tests.Ix.IxVM
+import Tests.Ix.IxVM.Exploits
 import Tests.Ix.Claim
 import Tests.Ix.Merkle
 import Tests.Ix.AssumptionTree
@@ -164,6 +165,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
       -- through the kernel's subject-only `verify_const` debug entrypoint.
       let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env v2Env.compiled
+      -- Adversarial Ixon: exploit attempts authored as raw Ixon
+      -- constants, below the layer the arena's Lean fixtures can
+      -- reach. Each case pins the kernel's verdict, which is REJECT
+      -- except where accepting is the specified claim semantics.
+      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests v2Env.compiled
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealCPrj, containsTc]).foldl
@@ -189,9 +195,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             -- explicit, reviewed bump.
             let cost :=
               (Aiur.computeStats v2Env.compiled qc).totalFftCost.round.toUInt64.toNat
-            pure (LSpec.test "shard pipeline FFT" (cost == 1_924_939_724))
+            pure (LSpec.test "shard pipeline FFT" (cost == 1_949_519_856))
       LSpec.lspecIO
-        (.ofList [("ixvm", [fullSeq, aiurSeq, arenaSeq, paritySeq, shardSeq])]) []),
+        (.ofList [("ixvm",
+          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with

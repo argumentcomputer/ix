@@ -32,18 +32,30 @@ def claim := ⟦
     check_const(ci, addr)
   }
 
-  -- Which entries of a constant's `refs` are BLOB addresses.
+  -- Which entries of a constant's `refs` are CONSTANT addresses — the
+  -- indices the walk must recurse into.
   --
-  -- An address is a blob only when an Expr node references it as one:
-  -- `Str(i)` and `Nat(i)` index the blob payload, while `Ref(i)` and
-  -- `Prj(i, ..)` index a constant. `refs` holds exactly the union of those
-  -- four (crates/ixon/src/constant.rs:220), so every entry is classified,
-  -- and an address reached from outside any Expr — a claim target, a block
-  -- address — is a constant reference by Ixon convention.
+  -- An address is a constant when an Expr node references it as one:
+  -- `Ref(i, ..)` and `Prj(i, ..)` index a constant, while `Str(i)` and
+  -- `Nat(i)` index a blob payload. An address reached from outside any
+  -- Expr — a claim target, a block address — is a constant reference by
+  -- Ixon convention and is walked by its own path.
   --
-  -- Derived from the hash-bound bytes, so blob-ness is a POSITIVE property
-  -- the kernel computes rather than something the prover asserts. Every
-  -- address lacking it is a constant the walk must check.
+  -- The rule is deliberately POSITIVE: walk index `i` iff some Expr uses
+  -- it as a constant. The inverse formulation — skip whatever looks like
+  -- a blob — is unsound, because the Exprs are authored by the prover and
+  -- `refs` is one index space shared by all four node kinds. Under that
+  -- rule a single `Nat(i)` node anywhere in the constant suppresses the
+  -- walk of `refs[i]` used as a `Ref` everywhere else, and the entry need
+  -- not even be live: `sharing` is traversed here in full but converted
+  -- only where an `Expr.Share` reaches it, so a dead `Nat(i)` entry costs
+  -- the prover nothing and hides an arbitrary dependency from the
+  -- checker. `k_infer` then reads that dependency's DECLARED type without
+  -- ever checking it, which is a wrong answer rather than an abort.
+  --
+  -- Over-approximating this set is safe: a walk into a non-constant
+  -- address faults an unseeded key and aborts, which only costs a
+  -- dishonest prover. Under-approximating it is not.
   --
   -- Note the same BYTES may be readable as both a constant and a Nat or
   -- utf-8 string; only this Expr context disambiguates, so byte inspection
@@ -53,19 +65,24 @@ def claim := ⟦
   -- subexpression is traversed once no matter how many parents reach it.
   -- Threading an accumulator would defeat that — the accumulator differs at
   -- every call site, so no two calls would ever share a memo entry.
-  fn blob_idxs_expr(e: &Expr) -> List‹G› {
+  fn const_idxs_expr(e: &Expr) -> List‹G› {
     match load(e) {
-      Expr.Str(i) =>
+      -- `Ref(i, _)` resolves refs[i] as a constant; `Prj(i, _, inner)`
+      -- resolves refs[i] as the projected structure's type constant.
+      -- These two are the ONLY Expr nodes that name a constant through
+      -- the refs table — `Rec` resolves through `recur_addrs`, and a
+      -- projection's block comes from the ConstantInfo payload, both
+      -- walked separately.
+      Expr.Ref(i, _) =>
         store(ListNode.Cons(flatten_u64(i), store(ListNode.Nil))),
-      Expr.Nat(i) =>
-        store(ListNode.Cons(flatten_u64(i), store(ListNode.Nil))),
-      Expr.Prj(_, _, inner) => blob_idxs_expr(inner),
-      Expr.App(f, a) => list_concat(blob_idxs_expr(f), blob_idxs_expr(a)),
-      Expr.Lam(t, b) => list_concat(blob_idxs_expr(t), blob_idxs_expr(b)),
-      Expr.All(t, b) => list_concat(blob_idxs_expr(t), blob_idxs_expr(b)),
+      Expr.Prj(i, _, inner) =>
+        store(ListNode.Cons(flatten_u64(i), const_idxs_expr(inner))),
+      Expr.App(f, a) => list_concat(const_idxs_expr(f), const_idxs_expr(a)),
+      Expr.Lam(t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
+      Expr.All(t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
       Expr.Let(_, t, v, b) =>
-        list_concat(blob_idxs_expr(t),
-          list_concat(blob_idxs_expr(v), blob_idxs_expr(b))),
+        list_concat(const_idxs_expr(t),
+          list_concat(const_idxs_expr(v), const_idxs_expr(b))),
       -- `Share` is deliberately NOT followed: the Expr is a DAG, and
       -- following share edges expands it exponentially. Every shared
       -- subexpression is itself an entry in `sharing`, which is walked
@@ -74,37 +91,37 @@ def claim := ⟦
     }
   }
 
-  fn blob_idxs_exprs(es: List‹&Expr›) -> List‹G› {
+  fn const_idxs_exprs(es: List‹&Expr›) -> List‹G› {
     match load(es) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(e, rest) =>
-        list_concat(blob_idxs_expr(e), blob_idxs_exprs(rest)),
+        list_concat(const_idxs_expr(e), const_idxs_exprs(rest)),
     }
   }
 
-  fn blob_idxs_rules(rs: List‹RecursorRule›) -> List‹G› {
+  fn const_idxs_rules(rs: List‹RecursorRule›) -> List‹G› {
     match load(rs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(r, rest) =>
         match r {
           RecursorRule.Mk(_, rhs) =>
-            list_concat(blob_idxs_expr(rhs), blob_idxs_rules(rest)),
+            list_concat(const_idxs_expr(rhs), const_idxs_rules(rest)),
         },
     }
   }
 
-  fn blob_idxs_ctors(cs: List‹Constructor›) -> List‹G› {
+  fn const_idxs_ctors(cs: List‹Constructor›) -> List‹G› {
     match load(cs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(c, rest) =>
         match c {
           Constructor.Mk(_, _, _, _, _, typ) =>
-            list_concat(blob_idxs_expr(typ), blob_idxs_ctors(rest)),
+            list_concat(const_idxs_expr(typ), const_idxs_ctors(rest)),
         },
     }
   }
 
-  fn blob_idxs_muts(ms: List‹MutConst›) -> List‹G› {
+  fn const_idxs_muts(ms: List‹MutConst›) -> List‹G› {
     match load(ms) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(m, rest) =>
@@ -113,56 +130,56 @@ def claim := ⟦
             match d {
               Definition.Mk(_, _, _, typ, value) =>
                 list_concat(
-                  list_concat(blob_idxs_expr(typ), blob_idxs_expr(value)),
-                  blob_idxs_muts(rest)),
+                  list_concat(const_idxs_expr(typ), const_idxs_expr(value)),
+                  const_idxs_muts(rest)),
             },
           MutConst.Indc(i) =>
             match i {
               Inductive.Mk(_, _, _, _, typ, ctors) =>
                 list_concat(
-                  list_concat(blob_idxs_expr(typ), blob_idxs_ctors(ctors)),
-                  blob_idxs_muts(rest)),
+                  list_concat(const_idxs_expr(typ), const_idxs_ctors(ctors)),
+                  const_idxs_muts(rest)),
             },
           MutConst.Recr(r) =>
             match r {
               Recursor.Mk(_, _, _, _, _, _, _, typ, rules) =>
                 list_concat(
-                  list_concat(blob_idxs_expr(typ), blob_idxs_rules(rules)),
-                  blob_idxs_muts(rest)),
+                  list_concat(const_idxs_expr(typ), const_idxs_rules(rules)),
+                  const_idxs_muts(rest)),
             },
         },
     }
   }
 
-  fn blob_idxs_of(c: Constant) -> List‹G› {
+  fn const_idxs_of(c: Constant) -> List‹G› {
     match c {
       Constant.Mk(info, sharing, _, _) =>
-        let shared = blob_idxs_exprs(sharing);
+        let shared = const_idxs_exprs(sharing);
         match info {
           ConstantInfo.Defn(d) =>
             match d {
               Definition.Mk(_, _, _, typ, value) =>
                 list_concat(shared,
-                  list_concat(blob_idxs_expr(typ), blob_idxs_expr(value))),
+                  list_concat(const_idxs_expr(typ), const_idxs_expr(value))),
             },
           ConstantInfo.Recr(r) =>
             match r {
               Recursor.Mk(_, _, _, _, _, _, _, typ, rules) =>
                 list_concat(shared,
-                  list_concat(blob_idxs_expr(typ), blob_idxs_rules(rules))),
+                  list_concat(const_idxs_expr(typ), const_idxs_rules(rules))),
             },
           ConstantInfo.Axio(a) =>
             match a {
               Axiom.Mk(_, _, typ) =>
-                list_concat(shared, blob_idxs_expr(typ)),
+                list_concat(shared, const_idxs_expr(typ)),
             },
           ConstantInfo.Quot(q) =>
             match q {
               Quotient.Mk(_, _, typ) =>
-                list_concat(shared, blob_idxs_expr(typ)),
+                list_concat(shared, const_idxs_expr(typ)),
             },
           ConstantInfo.Muts(members) =>
-            list_concat(shared, blob_idxs_muts(members)),
+            list_concat(shared, const_idxs_muts(members)),
           -- Projection wrappers carry no Exprs of their own.
           _ => shared,
         },
@@ -191,8 +208,8 @@ def claim := ⟦
   -- Constant.Mk. Unwrap to the block via run_check_transitive
   -- recursion, which then walks the block's refs.
   --
-  -- Every address that reaches here is a CONSTANT: blob entries are
-  -- filtered by the caller from `blob_idxs_of`, and a claim target or a
+  -- Every address that reaches here is a CONSTANT: the caller admits only
+  -- indices `const_idxs_of` saw used as constants, and a claim target or a
   -- block address is a constant reference by convention. The decision to
   -- check is never taken from IO-buffer metadata.
   fn run_check_transitive(addr: Addr) {
@@ -228,22 +245,23 @@ def claim := ⟦
             },
           _ => run_check(addr),
         };
-        walk_refs_transitive(refs, blob_idxs_of(c), 0),
+        walk_refs_transitive(refs, const_idxs_of(c), 0),
     }
   }
 
-  -- Skip refs the constant's own Exprs marked as blob payloads; recurse on
-  -- everything else. The skip decision comes from `blob_idxs_of`, i.e. from
-  -- bytes already bound by blake3 — not from an IO probe the prover answers.
-  fn walk_refs_transitive(refs: List‹Addr›, blobs: List‹G›, i: G) {
+  -- Recurse into exactly the refs the constant's own Exprs use as
+  -- CONSTANTS; everything else is a blob payload or unreferenced. The
+  -- decision comes from `const_idxs_of`, i.e. from bytes already bound by
+  -- blake3 — not from an IO probe the prover answers.
+  fn walk_refs_transitive(refs: List‹Addr›, consts: List‹G›, i: G) {
     match load(refs) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
-        match g_list_has(blobs, i) {
-          1 => (),
-          _ => run_check_transitive(a),
+        match g_list_has(consts, i) {
+          1 => run_check_transitive(a),
+          _ => (),
         };
-        walk_refs_transitive(rest, blobs, i + 1),
+        walk_refs_transitive(rest, consts, i + 1),
     }
   }
 
@@ -367,9 +385,10 @@ def claim := ⟦
 
   fn env_walk(addr: Addr, owned: RBTreeMap‹G›, asm: RBTreeMap‹G›,
                   strict: G) {
-    -- Every address reaching here is a constant: blob refs are filtered by
-    -- the caller from the referring constant's own Exprs, and a walk root or
-    -- block address is a constant reference by convention. Nothing here may
+    -- Every address reaching here is a constant: the caller admits only
+    -- indices the referring constant's own Exprs use as constants, and a
+    -- walk root or block address is a constant reference by convention.
+    -- Nothing here may
     -- branch on IO-buffer metadata — this walk decides both what gets checked
     -- and what strict membership covers, so a prover-steerable skip would
     -- exclude an owned leaf from both while the claim's merkle root still
@@ -416,22 +435,22 @@ def claim := ⟦
                 },
               _ => run_check(addr),
             };
-            env_walk_refs(refs, blob_idxs_of(c), 0, owned, asm, strict),
+            env_walk_refs(refs, const_idxs_of(c), 0, owned, asm, strict),
         },
     }
   }
 
-  fn env_walk_refs(refs: List‹Addr›, blobs: List‹G›, i: G,
+  fn env_walk_refs(refs: List‹Addr›, consts: List‹G›, i: G,
                        owned: RBTreeMap‹G›,
                        asm: RBTreeMap‹G›, strict: G) {
     match load(refs) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
-        match g_list_has(blobs, i) {
-          1 => (),
-          _ => env_walk(a, owned, asm, strict),
+        match g_list_has(consts, i) {
+          1 => env_walk(a, owned, asm, strict),
+          _ => (),
         };
-        env_walk_refs(rest, blobs, i + 1, owned, asm, strict),
+        env_walk_refs(rest, consts, i + 1, owned, asm, strict),
     }
   }
 

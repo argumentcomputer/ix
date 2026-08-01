@@ -117,17 +117,18 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
 def projWrapperAddr (info : Ixon.ConstantInfo) : Address :=
   Address.blake3 (Ixon.ser (⟨info, #[], #[], #[]⟩ : Ixon.Constant))
 
-/-- Walk the Constant ref-graph from `target` to compute the set of
-    addresses needed to type-check it. Mirrors Rust `Env::bfs_closure`:
+/-- Walk the Constant ref-graph from `roots` to compute the set of
+    addresses needed to type-check them. Mirrors Rust `Env::bfs_closure`:
     follow `Constant.refs`, the projection's `block` pointer
     (IPrj/CPrj/RPrj/DPrj), and — for a `Muts` block — every derived
     member/constructor projection wrapper address. The wrapper edges are
     what the kernel's lazy `get_ci` needs: it synthesizes those addrs via
     kernel-side blake3 and faults their bytes from ch 2, and no
     `Constant.refs` edge names them. -/
-partial def closureFromBase (env : Ixon.Env) (target : Address) : Std.HashSet Address := Id.run do
+partial def closureFromRoots (env : Ixon.Env) (roots : Array Address) :
+    Std.HashSet Address := Id.run do
   let mut visited : Std.HashSet Address := {}
-  let mut worklist : Array Address := #[target]
+  let mut worklist : Array Address := roots
   while !worklist.isEmpty do
     let addr := worklist.back!
     worklist := worklist.pop
@@ -291,23 +292,23 @@ private def seedTreeAt (root : Address)
     .ok (ioBuffer.extend 1 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
-/-- The full witness byte scope for `target`: `closureFromBase` (which
-    already carries the projection wrappers as forward edges) plus every
-    primitive address present in `env`, bytes only — no walk from them.
-    Mirrors Rust `witness_scope`.
+/-- The full witness byte scope for `target`: the closure of `target`
+    together with every primitive address present in `env`, all as walk
+    ROOTS. Mirrors Rust `witness_scope`.
 
     Primitives are seeded because the kernel fabricates
     `Const(Std(prim_addr))` refs inline via `mk_prim_const`
     (Whnf/Infer/NatPrim), which triggers a load bypassing the ref walk —
-    those addresses need not appear in any `Constant.refs`. Only the
-    primitive's own bytes ship: its closure is not walked, so a def-eq
-    path that delta-unfolds a primitive body whose refs are not otherwise
-    in scope aborts with `invalid IO key` (loud, not unsound). -/
-def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address := Id.run do
-  let mut result := closureFromBase env target
-  for a in Ix.Tc.primAddrSet do
-    if env.consts.contains a then result := result.insert a
-  return result
+    those addresses need not appear in any `Constant.refs`.
+
+    Their closures are walked, not just their own bytes: def-eq
+    delta-unfolds primitive BODIES (the `strAppend*` arena fixtures do
+    exactly this), and a body's refs are reachable from nowhere else in
+    the scope. Shipping the address alone aborts those with `invalid IO
+    key`. -/
+def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
+  closureFromRoots env
+    (#[target] ++ Ix.Tc.primAddrSet.toArray.filter env.consts.contains)
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
