@@ -71,9 +71,11 @@ For each constant the harness STARK-checks `Ix.Claim.check addr none` (the full
 transitive typecheck) in two phases:
 
 1. **Execute** (every constant): run the bytecode out-of-circuit. Cheap and
-   deterministic, so we always record `constants` (closure size), `fft-cost`
-   (Σ width·height·log2(height) over circuits — the proving-cost proxy), and
-   `execute-time`.
+   deterministic, so we always record `constants` (the number of constants the
+   kernel actually typechecked: `check_const`'s unique query count — NOT the
+   shipped byte scope, which also carries primitive bytes the kernel may
+   never touch), `fft-cost` (Σ width·height·log2(height) over circuits — the
+   proving-cost proxy), and `execute-time`.
 2. **Prove** (cheap→expensive by measured fft-cost): the end-to-end STARK prove,
    recording `prove-time`, the serialized `proof-size` (bytes), and
    `verify-time` (verifying the fresh proof) — prover changes can trade speed
@@ -322,6 +324,10 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
     | throw (IO.userError s!"{entrypoint} entrypoint missing")
+  -- `check_const`'s unique query count is the `constants` metric below;
+  -- resolve it up front so a kernel rename fails the run, not the metric.
+  let some checkConstIdx := compiled.getFuncIdx `check_const
+    | throw (IO.userError "check_const missing from compiled kernel")
   -- Recursive mode runs the WHOLE system — the inner prove included — under
   -- the recursion-tuned parameters, so the verifier's query loop stays
   -- tractable (cost scales with numQueries).
@@ -399,7 +405,15 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
              failed := true }, addr)
       | .ok (_, _, queryCounts) =>
         let stats := Aiur.computeStats compiled queryCounts
-        let constants := (IxVM.ClaimHarness.closureFrom ixonEnv addr).size
+        -- Constants CHECKED, not shipped: `check_const` is memoized per
+        -- (ci, addr), so its unique query count is exactly the number of
+        -- constants the kernel typechecked. The shipped byte scope
+        -- (`closureFrom`) is a superset (primitive bytes seeded for
+        -- reduction), so counting it would inflate throughput.
+        let some qc := queryCounts[checkConstIdx]?
+          | throw (IO.userError s!"queryCounts has no entry for check_const \
+              (idx {checkConstIdx}, {queryCounts.size} entries)")
+        let constants := qc.uniqueRows
         -- Throughput via the shared benchmark framework; duration/RAM per
         -- phase stream from texray's `aiur/execute_ixvm` span line.
         let thrpt := (Throughput.Elements constants.toUInt64 "consts").formatRate

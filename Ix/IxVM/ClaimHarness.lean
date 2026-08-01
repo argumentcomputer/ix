@@ -22,10 +22,12 @@ The harness handles every step the Aiur side cannot:
    return an `Ixon.Env` representing the constants' transitive
    closure.
 
-2. **Closure layout**: `closureFrom` follows `Constant.refs` (+
-   projection block addresses) from a target address — the same edge
-   relation the kernel's claim walk uses (`ixon::shard_claim::walk_edges`),
-   so the IOBuffer carries everything the kernel can reach.
+2. **Closure layout**: `closureFrom` follows `Constant.refs`,
+   projection block addresses, and the derived Muts→wrapper edges from
+   a target address, then seeds primitive bytes — the same scope the
+   Rust witness builder computes (`witness_scope` over
+   `Env::bfs_closure`), so the IOBuffer carries everything the kernel
+   can reach.
 
 3. **IOBuffer population**: `addEntries` seeds the constants, blobs, and
    Defn reducibility hints on their own channels, each keyed by the
@@ -108,21 +110,24 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
   pure rawEnv.toEnv
 
-/-- Walk the Constant ref-graph from `target` to compute the set of
-    addresses needed to type-check it. Mirrors Aiur's `load_with_deps`:
-    follow `Constant.refs` plus the projection's `block_addr` (the parent
-    Muts wrapper) for IPrj/CPrj/RPrj/DPrj.
+/-- Content address of a synthesized projection wrapper: a `Constant`
+    holding just the proj info with empty sharing/refs/univs tables,
+    serialized and blake3-hashed — the same construction compile uses
+    (and Rust `ixon::constant::*_proj_address`). -/
+def projWrapperAddr (info : Ixon.ConstantInfo) : Address :=
+  Address.blake3 (Ixon.ser (⟨info, #[], #[], #[]⟩ : Ixon.Constant))
 
-    Also seeds every primitive address present in `env`: the kernel
-    fabricates `Const(Std(prim_addr))` refs inline via `mk_prim_const`
-    (Whnf/Infer/Primitive), which triggers a load bypassing the ref
-    walk. Those addresses do not appear in any `Constant.refs`, so we
-    add them here so the IOBuffer carries their bytes. -/
+/-- Walk the Constant ref-graph from `target` to compute the set of
+    addresses needed to type-check it. Mirrors Rust `Env::bfs_closure`:
+    follow `Constant.refs`, the projection's `block` pointer
+    (IPrj/CPrj/RPrj/DPrj), and — for a `Muts` block — every derived
+    member/constructor projection wrapper address. The wrapper edges are
+    what the kernel's lazy `get_ci` needs: it synthesizes those addrs via
+    kernel-side blake3 and faults their bytes from ch 2, and no
+    `Constant.refs` edge names them. -/
 partial def closureFromBase (env : Ixon.Env) (target : Address) : Std.HashSet Address := Id.run do
   let mut visited : Std.HashSet Address := {}
   let mut worklist : Array Address := #[target]
-  for a in Ix.Tc.primAddrSet do
-    if env.consts.contains a then worklist := worklist.push a
   while !worklist.isEmpty do
     let addr := worklist.back!
     worklist := worklist.pop
@@ -136,6 +141,20 @@ partial def closureFromBase (env : Ixon.Env) (target : Address) : Std.HashSet Ad
     match c.info with
     | .rPrj p | .dPrj p => worklist := worklist.push p.block
     | _ => pure ()
+    if let .muts members := c.info then
+      let mut i : UInt64 := 0
+      for m in members do
+        let info : Ixon.ConstantInfo := match m with
+          | .defn _ => .dPrj ⟨i, addr⟩
+          | .indc _ => .iPrj ⟨i, addr⟩
+          | .recr _ => .rPrj ⟨i, addr⟩
+        worklist := worklist.push (projWrapperAddr info)
+        if let .indc ind := m then
+          let mut cidx : UInt64 := 0
+          for _ in ind.ctors do
+            worklist := worklist.push (projWrapperAddr (.cPrj ⟨i, cidx, addr⟩))
+            cidx := cidx + 1
+        i := i + 1
   return visited
 
 /-- Build the `ixon_serde_test` / `ixon_serde_blake3_bench` IOBuffer:
@@ -272,37 +291,28 @@ private def seedTreeAt (root : Address)
     .ok (ioBuffer.extend 1 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
-/-- Wrapper augmentation: extends `closureFromBase` with a pass that
-    includes every projection wrapper (IPrj/CPrj/RPrj/DPrj) whose `block`
-    addr is in the base closure. Needed because `get_ci` on a Ctor's type
-    synthesizes the parent IPrj wrapper's addr kernel-side via blake3
-    rather than following a stored reference — the walk never names that
-    addr, so it must be seeded on ch 2 anyway or ingress aborts with
-    `invalid IO key`. -/
-def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
-  let base := closureFromBase env target
-  Id.run do
-    let mut result := base
-    for (a, lc) in env.consts.toArray do
-      match lc.get? with
-      | none => pure ()
-      | some c =>
-        let blockOpt : Option Address := match c.info with
-          | .iPrj p => some p.block
-          | .cPrj p => some p.block
-          | .rPrj p => some p.block
-          | .dPrj p => some p.block
-          | _ => none
-        match blockOpt with
-        | some b => if base.contains b then result := result.insert a
-        | none => pure ()
-    return result
+/-- The full witness byte scope for `target`: `closureFromBase` (which
+    already carries the projection wrappers as forward edges) plus every
+    primitive address present in `env`, bytes only — no walk from them.
+    Mirrors Rust `witness_scope`.
 
-/-- wrapper-aware `buildClaimWitness`. Same as `buildClaimWitness` but
-    ingresses the union of `closureFrom` closures instead of
-    `closureFrom` — the kernel's lazy `get_ci` synthesizes IPrj/CPrj/RPrj
-    wrapper addrs via kernel-side blake3, so their bytes must be
-    present in ch 2. -/
+    Primitives are seeded because the kernel fabricates
+    `Const(Std(prim_addr))` refs inline via `mk_prim_const`
+    (Whnf/Infer/NatPrim), which triggers a load bypassing the ref walk —
+    those addresses need not appear in any `Constant.refs`. Only the
+    primitive's own bytes ship: its closure is not walked, so a def-eq
+    path that delta-unfolds a primitive body whose refs are not otherwise
+    in scope aborts with `invalid IO key` (loud, not unsound). -/
+def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address := Id.run do
+  let mut result := closureFromBase env target
+  for a in Ix.Tc.primAddrSet do
+    if env.consts.contains a then result := result.insert a
+  return result
+
+/-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
+    populates the IOBuffer with the `closureFrom` byte scope of every
+    address the claim variant names (plus any caller-supplied
+    `AssumptionTree`s under their merkle roots). -/
 def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
     Except String ClaimWitness := do
@@ -388,34 +398,17 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
   pure (claim, closure, trees)
 
 /-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
-    `shardCheckEnvClaim`) and the `closureFrom`-style wrapper
-    augmentation on the byte scope: the kernel's `get_ci` synthesizes
-    IPrj/CPrj/RPrj/DPrj wrapper addrs via kernel-side blake3, so every
-    wrapper over a closure block must have its bytes in ch 2. -/
+    `shardCheckEnvClaim`) with the `closureFrom` byte scope, which
+    carries the IPrj/CPrj/RPrj/DPrj wrappers the kernel's `get_ci`
+    synthesizes via kernel-side blake3 as forward Muts→wrapper edges. -/
 def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × ClaimWitness) := do
   let (claim, closure, trees) ← shardCheckEnvClaim env owned
-  let byteScope : Std.HashSet Address := Id.run do
-    let mut result := closure
-    for (a, lc) in env.consts.toArray do
-      match lc.get? with
-      | none => pure ()
-      | some c =>
-        let blockOpt : Option Address := match c.info with
-          | .iPrj p => some p.block
-          | .cPrj p => some p.block
-          | .rPrj p => some p.block
-          | .dPrj p => some p.block
-          | _ => none
-        match blockOpt with
-        | some b => if closure.contains b then result := result.insert a
-        | none => pure ()
-    return result
   let claimBytes := Ix.Claim.ser claim
   let digestKey := addrKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
-  ioBuffer := addEntries env byteScope.contains ioBuffer
+  ioBuffer := addEntries env closure.contains ioBuffer
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer
   return (claim, { funcName := `verify_claim
@@ -427,10 +420,9 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
 def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
   Ix.AssumptionTree.canonical (env.consts.keys.toArray)
 
-/-- Variant of `buildVerifyConst`: same subject-only `verify_const`
-    entrypoint, the kernel byte scope (`closureFrom`'s wrapper augmentation —
-    the kernel synthesizes projection wrapper addrs via kernel-side
-    blake3 and faults their bytes from ch 2). -/
+/-- Subject-only `verify_const` witness: the `closureFrom` byte scope
+    (which carries the kernel-side blake3-synthesized projection
+    wrappers as forward edges) faulted from ch 2. -/
 def buildVerifyConst (env : Ixon.Env) (target : Address) : ClaimWitness :=
   let closure := closureFrom env target
   let ioBuffer := addEntries env closure.contains default
