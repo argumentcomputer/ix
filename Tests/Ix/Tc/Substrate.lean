@@ -107,8 +107,8 @@ def instantiateRevTests : TestSeq :=
 def abstractFVarsTests : TestSeq :=
   test "empty passthrough"
     (runI (abstractFVars (aVar 0) #[]) == aVar 0)
-  ++ test "no fvars passthrough"
-    (runI (abstractFVars (aVar 0) #[⟨0⟩]) == aVar 0)
+  ++ test "no fvars still shifts loose bvars"
+    (runI (abstractFVars (aVar 0) #[⟨0⟩]) == aVar 1)
   ++ test "single replacement"
     (runI (abstractFVars (aFVar 0) #[⟨0⟩]) == aVar 0)
   ++ test "position mapping"
@@ -187,31 +187,37 @@ def internTests : TestSeq :=
 
 def eqAddr (n : UInt64) : Address := Address.blake3 ⟨n.toLEBytes.data⟩
 
+def eqKey (n : UInt64) (ctxAddr : Address) : EqKey where
+  exprAddr := eqAddr n
+  ctxAddr := ctxAddr
+  lbr := 0
+  exprLbr := 0
+
 def equivTests : TestSeq :=
   test "basic equiv"
     (Id.run do
       let z := eqAddr 0
       let em : EquivManager := {}
-      let (before, em) := em.isEquiv (eqAddr 100, z) (eqAddr 200, z)
-      let em := em.addEquiv (eqAddr 100, z) (eqAddr 200, z)
-      let (after, em) := em.isEquiv (eqAddr 100, z) (eqAddr 200, z)
-      let (sym, _) := em.isEquiv (eqAddr 200, z) (eqAddr 100, z)
+      let (before, em) := em.isEquiv (eqKey 100 z) (eqKey 200 z)
+      let em := em.addEquiv (eqKey 100 z) (eqKey 200 z)
+      let (after, em) := em.isEquiv (eqKey 100 z) (eqKey 200 z)
+      let (sym, _) := em.isEquiv (eqKey 200 z) (eqKey 100 z)
       return !before && after && sym)
   ++ test "transitivity"
     (Id.run do
       let z := eqAddr 0
       let em := EquivManager.empty
-        |>.addEquiv (eqAddr 100, z) (eqAddr 200, z)
-        |>.addEquiv (eqAddr 200, z) (eqAddr 300, z)
-      let (r, _) := em.isEquiv (eqAddr 100, z) (eqAddr 300, z)
+        |>.addEquiv (eqKey 100 z) (eqKey 200 z)
+        |>.addEquiv (eqKey 200 z) (eqKey 300 z)
+      let (r, _) := em.isEquiv (eqKey 100 z) (eqKey 300 z)
       return r)
   ++ test "context isolation"
     (Id.run do
       let c1 := eqAddr 1
       let c2 := eqAddr 2
-      let em := EquivManager.empty.addEquiv (eqAddr 100, c1) (eqAddr 200, c1)
-      let (inC1, em) := em.isEquiv (eqAddr 100, c1) (eqAddr 200, c1)
-      let (inC2, _) := em.isEquiv (eqAddr 100, c2) (eqAddr 200, c2)
+      let em := EquivManager.empty.addEquiv (eqKey 100 c1) (eqKey 200 c1)
+      let (inC1, em) := em.isEquiv (eqKey 100 c1) (eqKey 200 c1)
+      let (inC2, _) := em.isEquiv (eqKey 100 c2) (eqKey 200 c2)
       return inC1 && !inC2)
   ++ test "find reaches the root and path-halves within the node bound"
     ((let em : EquivManager :=
