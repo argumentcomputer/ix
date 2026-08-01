@@ -645,6 +645,22 @@ def charOfNatExpr (n : Nat) : RecM m (Option (KExpr m)) := do
   let natLit ← TcM.intern (natExprFromValue n : KExpr m)
   return some (← TcM.intern (KExpr.mkApp charOfNat natLit))
 
+/-- Reduce an already recognized String literal under a constant head.  This
+named seam keeps the literal cases independently verifiable while preserving
+the original primitive tests and intern order. -/
+def tryReduceStringLiteral (p : Primitives m) (id : KId m)
+    (s : String) : RecM m (Option (KExpr m)) := do
+  let isUtf8ByteSize := id.addr == p.stringUtf8ByteSize.addr
+  let isToByteArray := id.addr == p.stringToByteArray.addr
+  if isUtf8ByteSize then
+    return some (← TcM.intern (natExprFromValue s.utf8ByteSize : KExpr m))
+  if isToByteArray then
+    if s.isEmpty then
+      return some (← TcM.intern (.mkConst p.byteArrayEmpty #[]))
+    return none
+  let codepoint := (s.toList.getLast?.map (·.toNat)).getD 65
+  charOfNatExpr codepoint
+
 /-- String literal primitives: `String.back` / legacy back /
     `utf8ByteSize` / `toByteArray ""`. -/
 def tryReduceString (e : KExpr m) : RecM m (Option (KExpr m)) := do
@@ -660,14 +676,7 @@ def tryReduceString (e : KExpr m) : RecM m (Option (KExpr m)) := do
   if !isBack && !isUtf8ByteSize && !isToByteArray then
     return none
   let .str s _ _ := args[0]! | return none
-  if isUtf8ByteSize then
-    return some (← TcM.intern (natExprFromValue s.utf8ByteSize : KExpr m))
-  if isToByteArray then
-    if s.isEmpty then
-      return some (← TcM.intern (.mkConst p.byteArrayEmpty #[]))
-    return none
-  let codepoint := (s.toList.getLast?.map (·.toNat)).getD 65
-  charOfNatExpr codepoint
+  tryReduceStringLiteral p id s
 
 def discoverBlockInductives (blockId : KId m) :
     RecM m (Array (KId m)) := do
@@ -723,6 +732,13 @@ operation while preserving the original method-table read and state scope. -/
 matching Rust's `&mut` catch-and-continue behavior. -/
 @[inline] def tryOptional (x : RecM m α) : RecM m (Option α) :=
   try? x
+
+/-- The result of the pure front-end classifier for native reduction.  A
+completed plan returns immediately; a marker plan still has to pass the
+stateful re-entrancy guard before its argument can be reduced. -/
+inductive NativeReductionPlan (m : Mode) where
+  | done (result : Option (KExpr m))
+  | marker (isReduceBool : Bool) (arg : KExpr m)
 
 mutual
 
@@ -1570,6 +1586,53 @@ def tryNatOffsetStuck (e : KExpr m) : RecM m (Option (KExpr m)) := do
   let inner ← TcM.intern (KExpr.mkApp head wa)
   return some (← TcM.intern (KExpr.mkApp inner (natExprFromValue n)))
 
+/-- Build the canonical `Decidable.isTrue` proof term for a successful
+native Nat decision.  This seam records the exact left-to-right intern order
+without mixing construction with the surrounding reducer classifier. -/
+def buildNatDecidableTrue (p : Primitives m) (prop : KExpr m)
+    (args : Array (KExpr m)) (proofTrueFn : KId m) (u1 : KUniv m) :
+    RecM m (KExpr m) := do
+  let eqRefl ← TcM.intern (.mkConst p.eqRefl #[u1])
+  let boolTy ← TcM.intern (.mkConst p.boolType #[])
+  let boolTrue ← TcM.intern (.mkConst p.boolTrue #[])
+  let reflProof ← TcM.intern (KExpr.mkApp eqRefl boolTy)
+  let reflProof ← TcM.intern (KExpr.mkApp reflProof boolTrue)
+  let proofConst ← TcM.intern (.mkConst proofTrueFn #[])
+  let proof ← TcM.intern (KExpr.mkApp proofConst args[0]!)
+  let proof ← TcM.intern (KExpr.mkApp proof args[1]!)
+  let proof ← TcM.intern (KExpr.mkApp proof reflProof)
+  let isTrue ← TcM.intern (.mkConst p.decidableIsTrue #[])
+  let result ← TcM.intern (KExpr.mkApp isTrue prop)
+  TcM.intern (KExpr.mkApp result proof)
+
+/-- Build the canonical `Decidable.isFalse` proof term for a failed native
+Nat equality decision.  As above, the helper preserves the production intern
+sequence exactly. -/
+def buildNatDecidableFalse (p : Primitives m) (prop : KExpr m)
+    (args : Array (KExpr m)) (proofFalseFn : KId m) (u1 : KUniv m) :
+    RecM m (KExpr m) := do
+  let eqRefl ← TcM.intern (.mkConst p.eqRefl #[u1])
+  let boolTy ← TcM.intern (.mkConst p.boolType #[])
+  let boolFalse ← TcM.intern (.mkConst p.boolFalse #[])
+  let reflProof ← TcM.intern (KExpr.mkApp eqRefl boolTy)
+  let reflProof ← TcM.intern (KExpr.mkApp reflProof boolFalse)
+  let proofConst ← TcM.intern (.mkConst proofFalseFn #[])
+  let proof ← TcM.intern (KExpr.mkApp proofConst args[0]!)
+  let proof ← TcM.intern (KExpr.mkApp proof args[1]!)
+  let proof ← TcM.intern (KExpr.mkApp proof reflProof)
+  let isFalse ← TcM.intern (.mkConst p.decidableIsFalse #[])
+  let result ← TcM.intern (KExpr.mkApp isFalse prop)
+  TcM.intern (KExpr.mkApp result proof)
+
+/-- Recover the proposition carried by a `Decidable` expression.  Inference
+runs under the validation-only policy and is caught as an accelerator miss;
+normalizing the inferred type remains a recursive WHNF edge. -/
+def inferDecidableProp (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  let some eTy ← try? (TcM.withInferOnly ((← read).infer e))
+    | return none
+  let eTyWhnf ← whnfRec eTy
+  return eTyWhnf.collectSpine.2[0]?
+
 /-- Native Nat.decLe/decEq/decLt on literals → `Decidable.isTrue/isFalse`
     with the canonical kernel proof terms; `decLt n m → decLe (n+1) m`;
     Int decidables get literal *normalization* only. `decLe false` falls to
@@ -1604,43 +1667,16 @@ def tryReduceDecidable (e : KExpr m) : RecM m (Option (KExpr m)) := do
     result ← TcM.intern (KExpr.mkApp result args[1]!)
     return some (← finishAppResult result args 2)
   -- The proposition from `e : Decidable prop`.
-  let some prop ← (do
-    let some eTy ← try? (TcM.withInferOnly ((← read).infer e))
-      | return none
-    let eTyWhnf ← whnfRec eTy
-    let (_, typeArgs) := eTyWhnf.collectSpine
-    return typeArgs[0]?) | return none
+  let some prop ← inferDecidableProp e | return none
   let (bResult, proofTrueFn, proofFalseFn) :=
     if isDecLe then
       (aVal.ble bVal, p.natLeOfBleEqTrue, p.natNotLeOfNotBleEqTrue)
     else
       (aVal == bVal, p.natEqOfBeqEqTrue, p.natNeOfBeqEqFalse)
-  let resultExpr ← if bResult then do
-      let eqRefl ← TcM.intern (.mkConst p.eqRefl #[u1])
-      let boolTy ← TcM.intern (.mkConst p.boolType #[])
-      let boolTrue ← TcM.intern (.mkConst p.boolTrue #[])
-      let reflProof ← TcM.intern (KExpr.mkApp eqRefl boolTy)
-      let reflProof ← TcM.intern (KExpr.mkApp reflProof boolTrue)
-      let proofConst ← TcM.intern (.mkConst proofTrueFn #[])
-      let proof ← TcM.intern (KExpr.mkApp proofConst args[0]!)
-      let proof ← TcM.intern (KExpr.mkApp proof args[1]!)
-      let proof ← TcM.intern (KExpr.mkApp proof reflProof)
-      let isTrue ← TcM.intern (.mkConst p.decidableIsTrue #[])
-      let r ← TcM.intern (KExpr.mkApp isTrue prop)
-      TcM.intern (KExpr.mkApp r proof)
-    else if isDecEq then do
-      let eqRefl ← TcM.intern (.mkConst p.eqRefl #[u1])
-      let boolTy ← TcM.intern (.mkConst p.boolType #[])
-      let boolFalse ← TcM.intern (.mkConst p.boolFalse #[])
-      let reflProof ← TcM.intern (KExpr.mkApp eqRefl boolTy)
-      let reflProof ← TcM.intern (KExpr.mkApp reflProof boolFalse)
-      let proofConst ← TcM.intern (.mkConst proofFalseFn #[])
-      let proof ← TcM.intern (KExpr.mkApp proofConst args[0]!)
-      let proof ← TcM.intern (KExpr.mkApp proof args[1]!)
-      let proof ← TcM.intern (KExpr.mkApp proof reflProof)
-      let isFalse ← TcM.intern (.mkConst p.decidableIsFalse #[])
-      let r ← TcM.intern (KExpr.mkApp isFalse prop)
-      TcM.intern (KExpr.mkApp r proof)
+  let resultExpr ← if bResult then
+      buildNatDecidableTrue p prop args proofTrueFn u1
+    else if isDecEq then
+      buildNatDecidableFalse p prop args proofFalseFn u1
     else
       -- decLe false: fall through to delta.
       return none
@@ -1822,47 +1858,13 @@ def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
       return some (← finishAppResult result args 2)
   return none
 
-/-- Native reduction: `Lean.reduceBool/reduceNat` markers,
-    `System.Platform.numBits ⇒ 64` (also the `Subtype.val (getNumBits ())`
-    form), and the PUnit/Unit SizeOf singletons. -/
-def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
-  if (← get).noAccel then return none
-  let (head, args) := e.collectSpine
-  let .const id _ _ := head | return none
-  let p ← prims
-  let headAddr := id.addr
-  let isUnitSizeofImpl := headAddr == p.punitSizeOf1.addr && args.size == 1
-  if e.lbr > 0 then
-    if isUnitSizeofImpl then
-      return some (natLiteral 1)
-    return none
-  -- `System.Platform.numBits` via the subtype projection of getNumBits ().
-  if headAddr == p.subtypeVal.addr && args.size == 3 then
-    let (valueHead, valueArgs) := args[2]!.collectSpine
-    if valueArgs.size == 1 then
-      if let .const valueId _ _ := valueHead then
-        if valueId.addr == p.systemPlatformGetNumBits.addr then
-          return some (natLiteral 64)
-  -- PUnit/Unit SizeOf instance is extensionally the constant 1.
-  if headAddr == p.sizeOfSizeOf.addr && args.size == 3 then
-    let (tyHead, _) := args[0]!.collectSpine
-    if let .const tyId _ _ := tyHead then
-      if tyId.addr == p.unit.addr || tyId.addr == p.punit.addr then
-        return some (natLiteral 1)
-  if isUnitSizeofImpl then
-    return some (natLiteral 1)
-  if headAddr == p.systemPlatformNumBits.addr && args.isEmpty then
-    return some (natLiteral 64)
-  let isReduceBool := headAddr == p.reduceBool.addr
-  let isReduceNat := headAddr == p.reduceNat.addr
-  if !isReduceBool && !isReduceNat then
-    return none
-  if args.size != 1 then
-    return none
-  -- Re-entrancy guard: whnf → native → whnf → native.
-  if (← get).inNativeReduce then
-    return none
-  let .const argId argUs _ := args[0]! | return none
+/-- Execute an already recognized `Lean.reduceBool`/`Lean.reduceNat` marker.
+This seam owns the lazy declaration lookup, universe instantiation,
+re-entrancy guard, recursive callback, guard restoration, and final result
+classifier. -/
+def tryReduceNativeMarker (p : Primitives m) (isReduceBool : Bool)
+    (argId : KId m) (argUs : Array (KUniv m)) :
+    RecM m (Option (KExpr m)) := do
   let body ← match (← TcM.tryGetConst argId) with
     | some (.defn (val := val) ..) => pure val
     | _ => return none
@@ -1889,6 +1891,60 @@ def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
     match result with
     | .nat .. => return some result
     | _ => return none
+
+/-- Classify the syntax-only native reductions after the primitive table and
+constant-headed spine have been obtained.  Keeping this decision tree pure
+separates it from the re-entrancy guard and recursive callback. -/
+def planNativeReduction (p : Primitives m) (e : KExpr m)
+    (headAddr : Address) (args : Array (KExpr m)) :
+    NativeReductionPlan m := Id.run do
+  let isUnitSizeofImpl := headAddr == p.punitSizeOf1.addr && args.size == 1
+  if e.lbr > 0 then
+    if isUnitSizeofImpl then
+      return .done (some (natLiteral 1))
+    return .done none
+  -- `System.Platform.numBits` via the subtype projection of getNumBits ().
+  if headAddr == p.subtypeVal.addr && args.size == 3 then
+    let (valueHead, valueArgs) := args[2]!.collectSpine
+    if valueArgs.size == 1 then
+      if let .const valueId _ _ := valueHead then
+        if valueId.addr == p.systemPlatformGetNumBits.addr then
+          return .done (some (natLiteral 64))
+  -- PUnit/Unit SizeOf instance is extensionally the constant 1.
+  if headAddr == p.sizeOfSizeOf.addr && args.size == 3 then
+    let (tyHead, _) := args[0]!.collectSpine
+    if let .const tyId _ _ := tyHead then
+      if tyId.addr == p.unit.addr || tyId.addr == p.punit.addr then
+        return .done (some (natLiteral 1))
+  if isUnitSizeofImpl then
+    return .done (some (natLiteral 1))
+  if headAddr == p.systemPlatformNumBits.addr && args.isEmpty then
+    return .done (some (natLiteral 64))
+  let isReduceBool := headAddr == p.reduceBool.addr
+  let isReduceNat := headAddr == p.reduceNat.addr
+  if !isReduceBool && !isReduceNat then
+    return .done none
+  if args.size != 1 then
+    return .done none
+  return .marker isReduceBool args[0]!
+
+/-- Native reduction: `Lean.reduceBool/reduceNat` markers,
+    `System.Platform.numBits ⇒ 64` (also the `Subtype.val (getNumBits ())`
+    form), and the PUnit/Unit SizeOf singletons. -/
+def tryReduceNative (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  if (← get).noAccel then return none
+  let (head, args) := e.collectSpine
+  let .const id _ _ := head | return none
+  let p ← prims
+  let headAddr := id.addr
+  match planNativeReduction p e headAddr args with
+  | .done result => pure result
+  | .marker isReduceBool arg =>
+    -- Re-entrancy guard: whnf → native → whnf → native.
+    if (← get).inNativeReduce then
+      return none
+    let .const argId argUs _ := arg | return none
+    tryReduceNativeMarker p isReduceBool argId argUs
 
 -- ### `is_rec` verification (inductive.rs `computed_is_rec` — hosted here
 -- because struct-likeness needs it; `Ix.Tc.Inductive` reuses it)

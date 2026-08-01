@@ -108,7 +108,8 @@ theorem checkedRhsSuffixQuot
   obtain ⟨throughType, hthroughType⟩ :=
     hsuffix.startHasType hsourceType
   have hthroughEq :=
-    hpattern.checkedReduction hmatch hthroughType hchecks
+    hpattern.checkedReduction world.venvWF hDelta.toCtx hmatch hthroughType
+      hchecks
   exact hsuffix.rebaseQuot world.venvWF hDelta hrhsTr hthroughEq
 
 end NatRecLiteralTranslationSplit

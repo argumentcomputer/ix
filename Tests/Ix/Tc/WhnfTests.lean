@@ -362,6 +362,21 @@ def nativeTests : TestSeq :=
        (KExpr.mkApp f x)
       && whnfEq emptyEnv (appN (pAddr P.quotInd) [a, r, β, f, mk])
        (KExpr.mkApp f x))
+  ++ test "quot reduction preserves the post-major suffix"
+    (let a := pConst (aId "A"); let r := pConst (aId "r")
+     let f := pConst (aId "f"); let x := pConst (aId "x")
+     let β := pConst (aId "B"); let extra := pConst (aId "extra")
+     let mk := appN (pAddr P.quotCtor) [a, r, x]
+     whnfEq emptyEnv (appN (pAddr P.quotInd) [a, r, β, f, mk, extra])
+       (appN f [x, extra]))
+  ++ test "quot reduction requires exact Quot.mk arity"
+    (let a := pConst (aId "A"); let r := pConst (aId "r")
+     let f := pConst (aId "f"); let h := pConst (aId "h")
+     let x := pConst (aId "x"); let β := pConst (aId "B")
+     let extra := pConst (aId "extra")
+     let mk := appN (pAddr P.quotCtor) [a, r, x, extra]
+     let e := appN (pAddr P.quotLift) [a, r, β, f, h, mk]
+     whnfEq emptyEnv e e)
   ++ test "Int decidable literals normalize to ctor form"
     -- Int.decEq (Int.ofNat (succ-numeral 2)) (Int.ofNat 2) rebuilds args
     -- as canonical literals.

@@ -10,7 +10,7 @@ Property tests for the pure (kernel-free) helpers of
 
 Every expected value was derived by hand-tracing the Rust bodies
 (`reorder_flat_by_layout`, `infer_implicit`, `name_append_after`,
-`collect_binders`, `maximize_occurrence_levels`,
+`collect_binders`,
 `match_classes_against_app`, `collect_const_refs`); expression/level
 assertions are hash-based `==` (bit-parity, not just structural).
 
@@ -24,7 +24,8 @@ namespace Tests.AuxGen.Recursor
 
 open LSpec
 open Ix.AuxGen
-open Ix (Name Level Expr)
+open Ix (Name Level Expr ConstantVal InductiveVal ConstructorVal ConstantInfo
+  Environment)
 
 def nm (s : String) : Name := Name.mkStr .mkAnon s
 def u : Level := Level.mkParam (nm "u")
@@ -144,26 +145,64 @@ def collectBindersTests : TestSeq :=
       let ty := Expr.mkForallE (nm "x") dom prop .default
       (collectBinders ty 1)[0]!.domain == prop : Bool))
 
-/-- `maximize_occurrence_levels` (nested.rs:1958) + `level_max_raw`. -/
-def maximizeLevelsTests : TestSeq :=
-  test "levelMaxRaw: only equality/zero simplifications"
-    ((levelMaxRaw u u == u && levelMaxRaw Level.mkZero u == u
-      && levelMaxRaw u Level.mkZero == u
-      && levelMaxRaw u v == Level.mkMax u v : Bool))
-  ++ test "maximizeOccurrenceLevels merges same-name aux levels pointwise"
-    ((let mk := fun (ls : Array Level) =>
-        ({ name := nm "Array", specParams := #[], occurrenceLevelArgs := ls
-           ownParams := 1, nIndices := 0 } : FvarFlatMember)
-      let orig : FvarFlatMember :=
-        { name := nm "T", specParams := #[], occurrenceLevelArgs := #[u]
-          ownParams := 0, nIndices := 0 }
-      let out := maximizeOccurrenceLevels #[orig, mk #[u], mk #[Level.mkMax u v]] 1
-      -- level_max_raw(u, max u v) = Max(u, max u v) (raw — no subsumption);
-      -- both aux entries get the merged value; the original is untouched.
-      let merged := levelMaxRaw u (Level.mkMax u v)
-      out[0]!.occurrenceLevelArgs == #[u]
-        && out[1]!.occurrenceLevelArgs == #[merged]
-        && out[2]!.occurrenceLevelArgs == #[merged] : Bool))
+/-- Hand-built metadata for the same phantom-universe specialization that
+Lean expands into two distinct nested auxiliaries. -/
+def universeSpecializedNestedEnv : Environment := Id.run do
+  let phantom := nm "Phantom"
+  let phantomMk := nm "Phantom.mk"
+  let root := nm "UniverseNested"
+  let left := nm "UniverseNested.left"
+  let right := nm "UniverseNested.right"
+  let p := nm "p"
+  let q := nm "q"
+  let rootApp := Expr.mkConst root #[u, v]
+  let mut consts : Std.HashMap Name ConstantInfo := {}
+  consts := consts.insert phantom (.inductInfo {
+    cnst := ⟨phantom, #[p, q],
+      Expr.mkForallE (nm "alpha") (Expr.mkSort (Level.mkParam p)) prop
+        .default⟩,
+    numParams := 1, numIndices := 0, all := #[phantom], ctors := #[phantomMk],
+    numNested := 0, isRec := false, isUnsafe := false, isReflexive := false })
+  consts := consts.insert phantomMk (.ctorInfo {
+    cnst := ⟨phantomMk, #[p, q],
+      Expr.mkForallE (nm "alpha") (Expr.mkSort (Level.mkParam p))
+        (Expr.mkForallE (nm "beta") (Expr.mkSort (Level.mkParam q))
+          (Expr.mkApp (Expr.mkConst phantom #[Level.mkParam p, Level.mkParam q])
+            (Expr.mkBVar 1)) .default) .default⟩,
+    induct := phantom, cidx := 0, numParams := 1, numFields := 1,
+    isUnsafe := false })
+  consts := consts.insert root (.inductInfo {
+    cnst := ⟨root, #[nm "u", nm "v"], prop⟩,
+    numParams := 0, numIndices := 0, all := #[root], ctors := #[left, right],
+    numNested := 2, isRec := true, isUnsafe := false, isReflexive := false })
+  let addRootCtor := fun consts name level cidx =>
+    let nested := Expr.mkApp (Expr.mkConst phantom #[Level.mkZero, level]) rootApp
+    consts.insert name (.ctorInfo {
+      cnst := ⟨name, #[nm "u", nm "v"],
+        Expr.mkForallE (nm "nested") nested rootApp .default⟩,
+      induct := root, cidx, numParams := 0, numFields := 1, isUnsafe := false })
+  consts := addRootCtor consts left u 0
+  consts := addRootCtor consts right v 1
+  return { consts }
+
+def runUniverseSpecializedFlat : Option (Array CompileFlatMember) :=
+  let cenv := Ix.CompileM.CompileEnv.new universeSpecializedNestedEnv
+  let blockEnv : Ix.CompileM.BlockEnv :=
+    { all := {}, current := nm "UniverseNested", mutCtx := default, univCtx := [] }
+  match Ix.CompileM.CompileM.run cenv blockEnv {}
+      (buildCompileFlatBlock #[nm "UniverseNested"]) with
+  | .ok (flat, _) => some flat
+  | .error _ => none
+
+def universeSpecializationTests : TestSeq :=
+  test "flat identity retains phantom universe specializations"
+    ((match runUniverseSpecializedFlat with
+      | some flat =>
+        flat.size == 3 && flat[1]!.name == nm "Phantom"
+          && flat[2]!.name == nm "Phantom"
+          && flat[1]!.occurrenceLevelArgs == #[Level.mkZero, u]
+          && flat[2]!.occurrenceLevelArgs == #[Level.mkZero, v]
+      | none => false : Bool))
 
 def mkFlatInfo (s : String) (isAux : Bool) (specParams : Array Expr)
     (ownParams : Nat) : FlatInfo :=
@@ -219,7 +258,7 @@ def collectConstRefsTests : TestSeq :=
 
 public def suite : List TestSeq :=
   [reorderTests, reorderErrorTests, inferImplicitTests, nameAppendAfterTests,
-   collectBindersTests, maximizeLevelsTests, matchClassesTests,
+   collectBindersTests, universeSpecializationTests, matchClassesTests,
    collectConstRefsTests]
 
 end Tests.AuxGen.Recursor

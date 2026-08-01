@@ -36,6 +36,21 @@ def checkOn (ixon : Ixon.Env) (addr : Address) : Except (TcError .anon) Unit :=
   | .ok () _ => .ok ()
   | .error e _ => .error e
 
+/-- Run `checkConst` against an already-ingressed environment. Adversarial
+    metadata tests use this boundary to model an incomplete/malformed block
+    index without changing the serialized fixture's expression graph. -/
+def checkKEnvOn (env : KEnv .anon) (id : KId .anon) :
+    Except (TcError .anon) Unit :=
+  match (TcM.checkConst id).run (.ofEnvAnon env) with
+  | .ok () _ => .ok ()
+  | .error e _ => .error e
+
+def kenvFailsContaining (env : KEnv .anon) (id : KId .anon)
+    (frag : String) : Bool :=
+  match checkKEnvOn env id with
+  | .error e => ((toString e).splitOn frag).length > 1
+  | .ok () => false
+
 def passes (ixon : Ixon.Env) (addr : Address) : Bool :=
   (checkOn ixon addr).isOk
 
@@ -143,8 +158,11 @@ def totalizationTests : TestSeq :=
   ++ test "nested-positivity zero depth fails before changing state"
     ((let initial : TcState .anon :=
         { TcState.ofEnvAnon {} with recFuel := 7 }
-      match ((RecM.checkPositivityDomainFuel 0 (.mkSort .mkZero) #[]).run
-          default).run initial with
+      let groups : Array (PositivityGroup .anon) := #[]
+      let addrs : Array Address := #[]
+      match ((RecM.checkPositivityDomainFuel 0
+          (.mkSort .mkZero : KExpr .anon) groups addrs).run default).run
+          initial with
       | .error .maxRecDepth s => s.recFuel == 7 && s.lctx.size == 0
       | _ => false) : Bool)
   ++ test "forall counting restores the local context"
@@ -200,6 +218,67 @@ def safetyTests : TestSeq :=
 
 /-! ### Quot validation -/
 
+/-- Direct kernel environment for the canonical bundle installed by Lean's
+    `Environment.addQuot`. Direct construction is intentional: it lets the
+    adversarial tests retain a reserved primitive address while changing only
+    the loaded declaration, which serialized content-addressed ingress would
+    reject earlier as an integrity mismatch. -/
+def canonicalQuotEnv : KEnv .anon := Id.run do
+  let p := Primitives.ofAnonAddrs
+  let mut env : KEnv .anon := {}
+  env := env.insert p.eq
+    (.indc () () 1 2 1 false p.eq 0
+      (RecM.canonicalEqType (m := .anon)) #[p.eqRefl] ())
+  env := env.insert p.eqRefl
+    (.ctor () () false 1 p.eq 0 2 0 (RecM.canonicalEqReflType p))
+  env := env.insert p.quotType
+    (.quot () () .type 1 (RecM.canonicalQuotType p .type))
+  env := env.insert p.quotCtor
+    (.quot () () .ctor 1 (RecM.canonicalQuotType p .ctor))
+  env := env.insert p.quotLift
+    (.quot () () .lift 2 (RecM.canonicalQuotType p .lift))
+  env := env.insert p.quotInd
+    (.quot () () .ind 1 (RecM.canonicalQuotType p .ind))
+  return env
+
+def replaceQuotType (env : KEnv .anon) (id : KId .anon) (ty : AE) :
+    KEnv .anon :=
+  match env.get? id with
+  | some (.quot name levelParams kind lvls _) =>
+      env.insert id (.quot name levelParams kind lvls ty)
+  | _ => env
+
+def replaceQuotMetadata (env : KEnv .anon) (id : KId .anon)
+    (kind : Ix.QuotKind) (lvls : UInt64) : KEnv .anon :=
+  match env.get? id with
+  | some (.quot name levelParams _ _ ty) =>
+      env.insert id (.quot name levelParams kind lvls ty)
+  | _ => env
+
+def replaceEqType (env : KEnv .anon) (ty : AE) : KEnv .anon :=
+  let p := Primitives.ofAnonAddrs
+  env.insert p.eq (.indc () () 1 2 1 false p.eq 0 ty #[p.eqRefl] ())
+
+def replaceEqReflType (env : KEnv .anon) (ty : AE) : KEnv .anon :=
+  let p := Primitives.ofAnonAddrs
+  env.insert p.eqRefl (.ctor () () false 1 p.eq 0 2 0 ty)
+
+/-- A well-typed type satisfying the old minimum-forall test but carrying no
+    quotient semantics. -/
+def forgedForallType (n : Nat) : AE :=
+  (List.range n).foldl
+    (fun body _ => KExpr.mkAll () () (.mkSort .mkZero) body)
+    (.mkSort .mkZero)
+
+/-- Same binders as Eq, but returns `Sort 1` instead of `Prop`; this keeps the
+    canonical Quot.lift type inferable so the exact Eq prerequisite is what
+    rejects the environment. -/
+def forgedEqType : AE :=
+  let u : KUniv .anon := .mkParam 0 ()
+  KExpr.mkAll () () (.mkSort u)
+    (KExpr.mkAll () () (.mkVar 0 ())
+      (KExpr.mkAll () () (.mkVar 1 ()) (.mkSort (.mkSucc .mkZero))))
+
 def quotTests : TestSeq :=
   test "quot at a non-primitive address is rejected"
     ((let (ixon, aAddr) := envA
@@ -207,6 +286,54 @@ def quotTests : TestSeq :=
         ⟨.quot ⟨.type, 1, .ref 0 #[]⟩, #[], #[aAddr], #[]⟩
       let (ixon, qAddr) := storeConst ixon fakeQuot
       failsContaining ixon qAddr "unknown quot address" : Bool))
+  ++ test "canonical Quot bundle is accepted"
+    ((let p := Primitives.ofAnonAddrs
+      (checkKEnvOn canonicalQuotEnv p.quotType).isOk
+        && (checkKEnvOn canonicalQuotEnv p.quotCtor).isOk
+        && (checkKEnvOn canonicalQuotEnv p.quotLift).isOk
+        && (checkKEnvOn canonicalQuotEnv p.quotInd).isOk : Bool))
+  ++ test "quot kind must agree with its reserved address"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceQuotMetadata canonicalQuotEnv p.quotType .ctor 1
+      kenvFailsContaining env p.quotType "kind mismatch" : Bool))
+  ++ test "Quot.lift requires exactly two universe parameters"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceQuotMetadata canonicalQuotEnv p.quotLift .lift 3
+      kenvFailsContaining env p.quotLift "expects 2 universe params" : Bool))
+  ++ test "forged Quot type with two foralls is rejected"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceQuotType canonicalQuotEnv p.quotType
+        (forgedForallType 2)
+      kenvFailsContaining env p.quotType "type is not canonical" : Bool))
+  ++ test "forged Quot.mk type with three foralls is rejected"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceQuotType canonicalQuotEnv p.quotCtor
+        (forgedForallType 3)
+      kenvFailsContaining env p.quotCtor "type is not canonical" : Bool))
+  ++ test "forged Quot.lift type with six foralls is rejected"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceQuotType canonicalQuotEnv p.quotLift
+        (forgedForallType 6)
+      kenvFailsContaining env p.quotLift "type is not canonical" : Bool))
+  ++ test "forged Quot.ind type with five foralls is rejected"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceQuotType canonicalQuotEnv p.quotInd
+        (forgedForallType 5)
+      kenvFailsContaining env p.quotInd "type is not canonical" : Bool))
+  ++ test "Quot.lift rejects a noncanonical Eq type"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceEqType canonicalQuotEnv forgedEqType
+      kenvFailsContaining env p.quotLift "Eq type is not canonical" : Bool))
+  ++ test "Quot.lift rejects a noncanonical Eq.refl type"
+    ((let p := Primitives.ofAnonAddrs
+      let env := replaceEqReflType canonicalQuotEnv (forgedForallType 2)
+      kenvFailsContaining env p.quotLift "Eq.refl type is not canonical" : Bool))
+  ++ test "Quot.lift rejects noncanonical Eq.refl metadata"
+    ((let p := Primitives.ofAnonAddrs
+      let env := canonicalQuotEnv.insert p.eqRefl
+        (.ctor () () false 1 p.eq 0 2 1 (RecM.canonicalEqReflType p))
+      kenvFailsContaining env p.quotLift
+        "Eq.refl metadata is not canonical" : Bool))
 
 /-! ### Block coordination -/
 
@@ -418,6 +545,37 @@ def indFailsWith (block : Ixon.Constant) (frag : String)
   let (ixon, blockAddr) := storeMutsWithProjs extra block
   failsContaining ixon (indcProjAddr blockAddr 0) frag
 
+/-- A two-constructor family used to probe constructor header metadata. -/
+def ctorMetadataFixture :
+    KEnv .anon × KId .anon × KId .anon × KId .anon := Id.run do
+  let ind : Ixon.Inductive :=
+    ⟨false, 0, 0, 0, .sort 0,
+      #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
+        ⟨false, 0, 1, 0, 0, .recur 0 #[]⟩]⟩
+  let (ixon, blockAddr) := storeMutsWithProjs {}
+    ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+  let blockId : KId .anon := ⟨blockAddr, ()⟩
+  let indId : KId .anon := ⟨indcProjAddr blockAddr 0, ()⟩
+  let ctorId : KId .anon := ⟨ctorProjAddr blockAddr 0 0, ()⟩
+  return (ingressEnvOf ixon, blockId, indId, ctorId)
+
+def replaceCtorMetadata (env : KEnv .anon) (ctorId : KId .anon)
+    (isUnsafe : Bool) (lvls cidx params fields : UInt64) : KEnv .anon :=
+  match env.get? ctorId with
+  | some (.ctor name levelParams _ _ induct _ _ _ ty) =>
+      env.insert ctorId
+        (.ctor name levelParams isUnsafe lvls induct cidx params fields ty)
+  | _ => env
+
+def removeInductiveCtors (env : KEnv .anon) (indId : KId .anon) :
+    KEnv .anon :=
+  match env.get? indId with
+  | some (.indc name levelParams lvls params indices isUnsafe block memberIdx
+      ty _ leanAll) =>
+    env.insert indId (.indc name levelParams lvls params indices isUnsafe
+      block memberIdx ty #[] leanAll)
+  | _ => env
+
 def inductiveTests : TestSeq :=
   test "Nat-like recursive inductive validates"
     -- N : Sort 1, zero : N, succ : N → N
@@ -441,6 +599,101 @@ def inductiveTests : TestSeq :=
             .all (.all (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩
       indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
         "strict positivity" : Bool))
+  ++ test "non-uniform parameter in a recursive field is rejected (F2)"
+    -- I : (A : Sort 1) → Sort 1,
+    -- I.mk : (A : Sort 1) → I ExternalA → I A.
+    ((let (extra, aAddr) := envA
+      let ind : Ixon.Inductive :=
+        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+          #[⟨false, 0, 0, 1, 1,
+            .all (.sort 0)
+              (.all (.app (.recur 0 #[]) (.ref 0 #[]))
+                (.app (.recur 0 #[]) (.var 1)))⟩]⟩
+      indFailsWith
+        ⟨.muts #[.indc ind], #[], #[aAddr], #[.succ .zero]⟩
+        "non-uniform parameter" (extra := extra) : Bool))
+  ++ test "non-uniform universe in a recursive field is rejected (F2)"
+    -- J.{u} : Sort 1, J.mk.{u} : J.{0} → J.{u}.
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 1, 0, 0, .sort 2,
+          #[⟨false, 1, 0, 0, 1,
+            .all (.recur 0 #[1]) (.recur 0 #[0])⟩]⟩
+      indFailsWith
+        ⟨.muts #[.indc ind], #[], #[], #[.var 0, .zero, .succ .zero]⟩
+        "non-uniform universe arguments" : Bool))
+  ++ test "recursive field index mentioning the block is rejected (F3)"
+    -- K : Sort 1 → Sort 1, K.mk : K (K ExternalA) → K ExternalA.
+    ((let (extra, aAddr) := envA
+      let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 1, .all (.sort 0) (.sort 0),
+          #[⟨false, 0, 0, 0, 1,
+            .all
+              (.app (.recur 0 #[])
+                (.app (.recur 0 #[]) (.ref 0 #[])))
+              (.app (.recur 0 #[]) (.ref 0 #[]))⟩]⟩
+      indFailsWith
+        ⟨.muts #[.indc ind], #[], #[aAddr], #[.succ .zero]⟩
+        "index mentions an active inductive" (extra := extra) : Bool))
+  ++ test "ill-typed phantom nested argument is checked before rewriting (#14576)"
+    ((let (extra, aAddr) := envA
+      -- Phantom : Sort 1 → Sort 1; Phantom.mk : (A : Sort 1) → Phantom A.
+      -- Its parameter is absent from constructor fields.
+      let phantom : Ixon.Inductive :=
+        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+          #[⟨false, 0, 0, 1, 0,
+            .all (.sort 0) (.app (.recur 0 #[]) (.var 0))⟩]⟩
+      let (extra, phantomBlockAddr) := storeMutsWithProjs extra
+        ⟨.muts #[.indc phantom], #[], #[], #[.succ .zero]⟩
+      let phantomAddr := indcProjAddr phantomBlockAddr 0
+      -- Bad.mk : Phantom (A A) → Bad. A : Sort 1 is not a function, so
+      -- the original stored constructor is ill-typed. A rewrite that erased
+      -- Phantom's parameter would lose this error.
+      let bad : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0,
+          #[⟨false, 0, 0, 0, 1,
+            .all
+              (.app (.ref 0 #[]) (.app (.ref 1 #[]) (.ref 1 #[])))
+              (.recur 0 #[])⟩]⟩
+      indFailsWith
+        ⟨.muts #[.indc bad], #[], #[phantomAddr, aAddr], #[.succ .zero]⟩
+        "function expected" (extra := extra) : Bool))
+  ++ test "distinct specializations of an active nested helper are accepted"
+    ((let (extra, aAddr) := envA
+      -- Opt : Sort 1 → Sort 1.
+      let opt : Ixon.Inductive :=
+        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+          #[⟨false, 0, 0, 1, 0,
+              .all (.sort 0) (.app (.recur 0 #[]) (.var 0))⟩,
+            ⟨false, 0, 1, 1, 1,
+              .all (.sort 0)
+                (.all (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
+      let (extra, optBlockAddr) := storeMutsWithProjs extra
+        ⟨.muts #[.indc opt], #[], #[], #[.succ .zero]⟩
+      let optAddr := indcProjAddr optBlockAddr 0
+      -- Helper A has an unrelated `Opt ExternalA`, a root-carrying `Opt A`,
+      -- and a positive A field. While checking Root below, Opt is already
+      -- active at the specialization `Opt (Helper Root)`.
+      let helper : Ixon.Inductive :=
+        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+          #[⟨false, 0, 0, 1, 3,
+            .all (.sort 0)
+              (.all (.app (.ref 0 #[]) (.ref 1 #[]))
+                (.all (.app (.ref 0 #[]) (.var 1))
+                  (.all (.var 2)
+                    (.app (.recur 0 #[]) (.var 3)))))⟩]⟩
+      let (extra, helperBlockAddr) := storeMutsWithProjs extra
+        ⟨.muts #[.indc helper], #[], #[optAddr, aAddr], #[.succ .zero]⟩
+      let helperAddr := indcProjAddr helperBlockAddr 0
+      -- Root.mk : Opt (Helper Root) → Root.
+      let root : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0,
+          #[⟨false, 0, 0, 0, 1,
+            .all
+              (.app (.ref 0 #[]) (.app (.ref 1 #[]) (.recur 0 #[])))
+              (.recur 0 #[])⟩]⟩
+      indPasses
+        ⟨.muts #[.indc root], #[], #[optAddr, helperAddr], #[.succ .zero]⟩
+        (extra := extra) : Bool))
   ++ test "unsafe inductive skips positivity (A3 exemption)"
     ((let ind : Ixon.Inductive :=
         ⟨true, 0, 0, 0, .sort 0,
@@ -477,6 +730,46 @@ def inductiveTests : TestSeq :=
         ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 1, 0, .recur 0 #[]⟩]⟩
       indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
         "params mismatch" : Bool))
+  ++ test "standalone ctor params mismatch is rejected"
+    ((let (env, blockId, _, ctorId) := ctorMetadataFixture
+      let env := replaceCtorMetadata env ctorId false 0 0 1 0
+      let env := { env with blocks := env.blocks.erase blockId }
+      kenvFailsContaining env ctorId "ctor params mismatch" : Bool))
+  ++ test "standalone ctor cidx mismatch is rejected"
+    ((let (env, blockId, _, ctorId) := ctorMetadataFixture
+      let env := replaceCtorMetadata env ctorId false 0 1 0 0
+      let env := { env with blocks := env.blocks.erase blockId }
+      kenvFailsContaining env ctorId "ctor cidx mismatch" : Bool))
+  ++ test "standalone ctor universe arity mismatch is rejected"
+    ((let (env, blockId, _, ctorId) := ctorMetadataFixture
+      let env := replaceCtorMetadata env ctorId false 1 0 0 0
+      let env := { env with blocks := env.blocks.erase blockId }
+      kenvFailsContaining env ctorId "ctor universe arity mismatch" : Bool))
+  ++ test "unlisted ctor in an inductive block is rejected"
+    ((let (env, _, indId, _) := ctorMetadataFixture
+      let env := removeInductiveCtors env indId
+      kenvFailsContaining env indId "not listed by parent" : Bool))
+  ++ test "ctor safety must match its parent inductive"
+    ((let (env, _, indId, ctorId) := ctorMetadataFixture
+      let env := replaceCtorMetadata env ctorId true 0 0 0 0
+      kenvFailsContaining env indId "ctor safety mismatch" : Bool))
+  ++ test "ctor fields metadata is exact (telescope negative control)"
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0,
+          #[⟨false, 0, 0, 0, 0,
+            .all (.recur 0 #[]) (.recur 0 #[])⟩]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+        "head is not the inductive" : Bool))
+  ++ test "inductive params-plus-indices overflow is rejected"
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 18446744073709551615, 1, .sort 0, #[]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+        "inductive params + indices metadata sum overflow" : Bool))
+  ++ test "generated recursor universe arity overflow is rejected"
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 18446744073709551615, 0, 0, .sort 0, #[]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+        "generated recursor universe arity metadata sum overflow" : Bool))
   ++ test "mutual peers in different universes are rejected (S3)"
     ((let indB : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
       let indC : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 1, #[]⟩
@@ -489,6 +782,18 @@ def inductiveTests : TestSeq :=
       let indC : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
       indPasses ⟨.muts #[.indc indB, .indc indC], #[], #[], #[.succ .zero]⟩
       : Bool))
+  ++ test "mutual peers must share universe-parameter arity"
+    ((let indB : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
+      let indC : Ixon.Inductive := ⟨false, 1, 0, 0, .sort 0, #[]⟩
+      indFailsWith
+        ⟨.muts #[.indc indB, .indc indC], #[], #[], #[.succ .zero]⟩
+        "same universe arity" : Bool))
+  ++ test "mutual peers must share the declaration safety flag"
+    ((let indB : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
+      let indC : Ixon.Inductive := ⟨true, 0, 0, 0, .sort 0, #[]⟩
+      indFailsWith
+        ⟨.muts #[.indc indB, .indc indC], #[], #[], #[.succ .zero]⟩
+        "same safety flag" : Bool))
   ++ test "index mentioning a block inductive is rejected (A2)"
     -- Block [B : Sort 1 (no ctors), I : Sort 1 → Sort 1] with
     -- `mk : I (B → B)` — the index arg is well-typed but mentions B.
@@ -509,9 +814,11 @@ def inductiveTests : TestSeq :=
     `∀ (motive : B → Sort u) (minor : motive B.mk) (t : B), motive t`
     with the single rule `λ motive minor, minor`. Returns
     `(env, recProjAddr)`. -/
-def recFixture (k : Bool) (tamperRule : Bool) : Ixon.Env × Address := Id.run do
+def recFixtureWithMetadata (indUnsafe recUnsafe : Bool) (recLvls : UInt64)
+    (k : Bool) (tamperRule : Bool) : Ixon.Env × Address := Id.run do
   let ind : Ixon.Inductive :=
-    ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩
+    ⟨indUnsafe, 0, 0, 0, .sort 0,
+      #[⟨indUnsafe, 0, 0, 0, 0, .recur 0 #[]⟩]⟩
   let (env, bBlockAddr) := storeMutsWithProjs {}
     ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
   let bAddr := indcProjAddr bBlockAddr 0
@@ -529,9 +836,43 @@ def recFixture (k : Bool) (tamperRule : Bool) : Ixon.Env × Address := Id.run do
     else
       .lam motiveTy (.lam (.app (.var 0) (.ref 1 #[])) (.var 0))
   let recr : Ixon.Recursor :=
-    ⟨k, false, 1, 0, 0, 1, 1, recTyp, #[⟨0, ruleRhs⟩]⟩
+    ⟨k, recUnsafe, recLvls, 0, 0, 1, 1, recTyp, #[⟨0, ruleRhs⟩]⟩
   let (env, recBlockAddr) := storeMutsWithProjs env
     ⟨.muts #[.recr recr], #[], #[bAddr, mkAddr], #[.var 0]⟩
+  return (env, recrProjAddr recBlockAddr 0)
+
+def recFixture (k : Bool) (tamperRule : Bool) : Ixon.Env × Address :=
+  recFixtureWithMetadata false false 1 k tamperRule
+
+/-- F1 exploit fixture: a fabricated recursor over `B` whose attacker-supplied
+    `motives = 2` used to bypass both type and rule comparison. -/
+def badMultiMotiveRecFixture : Ixon.Env × Address := Id.run do
+  let ind : Ixon.Inductive :=
+    ⟨false, 0, 0, 0, .sort 0, #[]⟩
+  let (env, bBlockAddr) := storeMutsWithProjs {}
+    ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+  let bAddr := indcProjAddr bBlockAddr 0
+  -- (C : B → Prop) → (junk : B) → (b : B) → C b
+  let recTyp : Ixon.Expr :=
+    .all (.all (.ref 0 #[]) (.sort 0))
+      (.all (.ref 0 #[])
+        (.all (.ref 0 #[])
+          (.app (.var 2) (.var 0))))
+  let recr : Ixon.Recursor :=
+    -- Keep large-eliminator metadata canonical so the fixture tests
+    -- the fabricated motive count rather than failing at the earlier arity gate.
+    ⟨false, false, 1, 0, 0, 2, 0, recTyp, #[]⟩
+  let (env, recBlockAddr) := storeMutsWithProjs env
+    ⟨.muts #[.recr recr], #[], #[bAddr], #[.zero]⟩
+  return (env, recrProjAddr recBlockAddr 0)
+
+/-- The four serialized recursor arities must not wrap while computing the
+    major-premise position. -/
+def overflowRecursorFixture : Ixon.Env × Address := Id.run do
+  let recr : Ixon.Recursor :=
+    ⟨false, false, 0, 18446744073709551615, 0, 1, 0, .sort 0, #[]⟩
+  let (env, recBlockAddr) := storeMutsWithProjs {}
+    ⟨.muts #[.recr recr], #[], #[], #[.zero]⟩
   return (env, recrProjAddr recBlockAddr 0)
 
 def recursorTests : TestSeq :=
@@ -544,6 +885,20 @@ def recursorTests : TestSeq :=
   ++ test "tampered rule RHS is rejected"
     ((let (ixon, recAddr) := recFixture false true
       failsContaining ixon recAddr "RHS mismatch" : Bool))
+  ++ test "fabricated multi-motive recursor is rejected (F1)"
+    ((let (ixon, recAddr) := badMultiMotiveRecFixture
+      failsContaining ixon recAddr "arity metadata mismatch" : Bool))
+  ++ test "recursor major-index overflow is rejected before layout use"
+    ((let (ixon, recAddr) := overflowRecursorFixture
+      failsContaining ixon recAddr
+        "recursor major index metadata sum overflow" : Bool))
+  ++ test "recursor universe arity must match canonical generation"
+    ((let (ixon, recAddr) := recFixtureWithMetadata false false 2 false false
+      failsContaining ixon recAddr
+        "check_recursor: universe arity mismatch" : Bool))
+  ++ test "safe recursor cannot be attached to an unsafe inductive"
+    ((let (ixon, recAddr) := recFixtureWithMetadata true false 1 false false
+      failsContaining ixon recAddr "check_recursor: safety mismatch" : Bool))
 
 /-! ### Parallel driver (`Ix.Tc.ParCheck`) -/
 

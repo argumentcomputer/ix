@@ -26,6 +26,11 @@ pub struct RecRule<M: KernelMode> {
 }
 
 /// A loaded constant.
+///
+/// `member_idx` is representation metadata, not a reduction index. Inductive
+/// ingress derives it from physical block traversal, anonymous recursor ingress
+/// intentionally records zero, and kernel checking/WHNF do not branch on the
+/// stored value. Constructor dispatch instead uses the validated `cidx`.
 #[derive(Clone, Debug)]
 pub enum KConst<M: KernelMode> {
   Defn {

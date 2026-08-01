@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use rustc_hash::FxHashSet;
 
 use ix_common::address::Address;
-use ix_common::env::{DefinitionSafety, QuotKind};
+use ix_common::env::{BinderInfo, DefinitionSafety, Name, QuotKind};
 use ixon::constant::DefKind;
 
 use super::constant::KConst;
@@ -13,10 +13,9 @@ use super::env::Addr;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
-use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData, univ_eq};
 use super::mode::{CheckDupLevelParams, KernelMode};
-use super::subst::instantiate_rev;
+use super::primitive::Primitives;
 use super::tc::TypeChecker;
 
 /// Emit `[decl diff]` when a `Defn`'s value fails the `is_def_eq(val_ty,
@@ -55,6 +54,205 @@ enum CheckBlockKind {
   Recursor,
 }
 
+fn canonical_var<M: KernelMode>(idx: u64) -> KExpr<M> {
+  KExpr::var(idx, M::meta_field(Name::anon()))
+}
+
+fn canonical_all<M: KernelMode>(
+  bi: BinderInfo,
+  dom: KExpr<M>,
+  body: KExpr<M>,
+) -> KExpr<M> {
+  KExpr::all(M::meta_field(Name::anon()), M::meta_field(bi), dom, body)
+}
+
+fn canonical_arrow<M: KernelMode>(dom: KExpr<M>, body: KExpr<M>) -> KExpr<M> {
+  canonical_all(BinderInfo::Default, dom, body)
+}
+
+fn canonical_apps<M: KernelMode>(
+  mut head: KExpr<M>,
+  args: &[KExpr<M>],
+) -> KExpr<M> {
+  for arg in args {
+    head = KExpr::app(head, arg.clone());
+  }
+  head
+}
+
+fn canonical_const<M: KernelMode>(id: &KId<M>, us: &[KUniv<M>]) -> KExpr<M> {
+  KExpr::cnst(id.clone(), us.iter().cloned().collect())
+}
+
+/// `α → α → Prop` at a point where `α` is `Var(0)`.
+fn canonical_quot_relation<M: KernelMode>() -> KExpr<M> {
+  canonical_arrow(
+    canonical_var(0),
+    canonical_arrow(canonical_var(1), KExpr::sort(KUniv::zero())),
+  )
+}
+
+/// Exact semantic type required of the `Eq` prerequisite used by
+/// `Environment.addQuot`.
+fn canonical_eq_type<M: KernelMode>() -> KExpr<M> {
+  let u = KUniv::param(0, M::meta_field(Name::anon()));
+  canonical_all(
+    BinderInfo::Implicit,
+    KExpr::sort(u),
+    canonical_all(
+      BinderInfo::Default,
+      canonical_var(0),
+      canonical_all(
+        BinderInfo::Default,
+        canonical_var(1),
+        KExpr::sort(KUniv::zero()),
+      ),
+    ),
+  )
+}
+
+/// Exact semantic type required of the `Eq.refl` prerequisite used by
+/// `Environment.addQuot`.
+fn canonical_eq_refl_type<M: KernelMode>(prims: &Primitives<M>) -> KExpr<M> {
+  let u = KUniv::param(0, M::meta_field(Name::anon()));
+  let result = canonical_apps(
+    canonical_const(&prims.eq, std::slice::from_ref(&u)),
+    &[canonical_var(1), canonical_var(0), canonical_var(0)],
+  );
+  canonical_all(
+    BinderInfo::Implicit,
+    KExpr::sort(u),
+    canonical_all(BinderInfo::Default, canonical_var(0), result),
+  )
+}
+
+/// Canonical type installed by Lean's `Environment.addQuot` for each
+/// reserved quotient primitive. Binder names/info are metadata in `KExpr`;
+/// the returned de Bruijn structure, universes, primitive heads, and domains
+/// are the semantic contract.
+fn canonical_quot_type<M: KernelMode>(
+  prims: &Primitives<M>,
+  kind: QuotKind,
+) -> KExpr<M> {
+  let u = KUniv::param(0, M::meta_field(Name::anon()));
+  let v = KUniv::param(1, M::meta_field(Name::anon()));
+  let sort_u = KExpr::sort(u.clone());
+  let prop = KExpr::sort(KUniv::zero());
+
+  match kind {
+    // Quot.{u} {α : Sort u} (r : α → α → Prop) : Sort u
+    QuotKind::Type => canonical_all(
+      BinderInfo::Implicit,
+      sort_u.clone(),
+      canonical_all(BinderInfo::Default, canonical_quot_relation(), sort_u),
+    ),
+
+    // Quot.mk.{u} {α : Sort u} (r : α → α → Prop) (a : α) : Quot α r
+    QuotKind::Ctor => {
+      let result = canonical_apps(
+        canonical_const(&prims.quot_type, std::slice::from_ref(&u)),
+        &[canonical_var(2), canonical_var(1)],
+      );
+      canonical_all(
+        BinderInfo::Implicit,
+        sort_u,
+        canonical_all(
+          BinderInfo::Default,
+          canonical_quot_relation(),
+          canonical_all(BinderInfo::Default, canonical_var(1), result),
+        ),
+      )
+    },
+
+    // Quot.lift.{u,v} {α} {r} {β} (f) (h) (q) : β
+    QuotKind::Lift => {
+      let f_ty = canonical_arrow(canonical_var(2), canonical_var(1));
+      let rab =
+        canonical_apps(canonical_var(4), &[canonical_var(1), canonical_var(0)]);
+      let fa = KExpr::app(canonical_var(3), canonical_var(2));
+      let fb = KExpr::app(canonical_var(3), canonical_var(1));
+      let fa_eq_fb = canonical_apps(
+        canonical_const(&prims.eq, std::slice::from_ref(&v)),
+        &[canonical_var(4), fa, fb],
+      );
+      let h_ty = canonical_all(
+        BinderInfo::Default,
+        canonical_var(3),
+        canonical_all(
+          BinderInfo::Default,
+          canonical_var(4),
+          canonical_arrow(rab, fa_eq_fb),
+        ),
+      );
+      let quot_r = canonical_apps(
+        canonical_const(&prims.quot_type, std::slice::from_ref(&u)),
+        &[canonical_var(4), canonical_var(3)],
+      );
+      canonical_all(
+        BinderInfo::Implicit,
+        sort_u,
+        canonical_all(
+          BinderInfo::Implicit,
+          canonical_quot_relation(),
+          canonical_all(
+            BinderInfo::Implicit,
+            KExpr::sort(v),
+            canonical_all(
+              BinderInfo::Default,
+              f_ty,
+              canonical_all(
+                BinderInfo::Default,
+                h_ty,
+                canonical_arrow(quot_r, canonical_var(3)),
+              ),
+            ),
+          ),
+        ),
+      )
+    },
+
+    // Quot.ind.{u} {α} {r} {β : Quot α r → Prop} (mk) {q} : β q
+    QuotKind::Ind => {
+      let quot_r_d2 = canonical_apps(
+        canonical_const(&prims.quot_type, std::slice::from_ref(&u)),
+        &[canonical_var(1), canonical_var(0)],
+      );
+      let beta_ty = canonical_arrow(quot_r_d2, prop);
+      let quot_mk_a = canonical_apps(
+        canonical_const(&prims.quot_ctor, std::slice::from_ref(&u)),
+        &[canonical_var(3), canonical_var(2), canonical_var(0)],
+      );
+      let mk_minor = canonical_all(
+        BinderInfo::Default,
+        canonical_var(2),
+        KExpr::app(canonical_var(1), quot_mk_a),
+      );
+      let quot_r_d4 = canonical_apps(
+        canonical_const(&prims.quot_type, std::slice::from_ref(&u)),
+        &[canonical_var(3), canonical_var(2)],
+      );
+      let result = KExpr::app(canonical_var(2), canonical_var(0));
+      canonical_all(
+        BinderInfo::Implicit,
+        sort_u,
+        canonical_all(
+          BinderInfo::Implicit,
+          canonical_quot_relation(),
+          canonical_all(
+            BinderInfo::Implicit,
+            beta_ty,
+            canonical_all(
+              BinderInfo::Default,
+              mk_minor,
+              canonical_all(BinderInfo::Implicit, quot_r_d4, result),
+            ),
+          ),
+        ),
+      )
+    },
+  }
+}
+
 impl<M: KernelMode> TypeChecker<'_, M> {
   /// Return the whole-block check key for a constant when its block has a
   /// supported homogeneous shape. This is used by batch schedulers to avoid
@@ -72,7 +270,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Type-check a single constant. Clears per-constant caches first.
   pub fn check_const(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<Name>>: CheckDupLevelParams,
   {
     let c = self.get_const(id)?;
     if let Some(block) = self.coordinated_block_for(&c)? {
@@ -89,7 +287,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   fn check_const_member_fresh(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<Name>>: CheckDupLevelParams,
   {
     self.reset();
     self.begin_const(id);
@@ -104,7 +302,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     c: &KConst<M>,
   ) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<Name>>: CheckDupLevelParams,
   {
     let phase_timing = *IX_PHASE_TIMING;
     let overall = if phase_timing { Some(Instant::now()) } else { None };
@@ -214,9 +412,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       },
 
       KConst::Quot { ty, kind, lvls, .. } => {
+        // Reject a forged reserved primitive before invoking inference or
+        // reduction on attacker-controlled syntax.
+        self.check_quot(id, *kind, *lvls, ty)?;
         let t = self.infer(ty)?;
         self.ensure_sort(&t)?;
-        self.check_quot(id, *kind, *lvls, ty)?;
         Ok(())
       },
 
@@ -340,7 +540,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     requested: &KId<M>,
   ) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<Name>>: CheckDupLevelParams,
   {
     let phase_timing = *IX_PHASE_TIMING;
     let overall = if phase_timing { Some(Instant::now()) } else { None };
@@ -608,7 +808,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Checks:
   /// - Correct address matches the expected QuotKind
   /// - Correct universe parameter count per variant
-  /// - Eq type exists with correct shape (1 universe param, 1 ctor Eq.refl)
+  /// - The complete type is the canonical type installed by `addQuot`
+  /// - Eq and Eq.refl have exact canonical metadata/types for Quot.lift
   fn check_quot(
     &mut self,
     id: &KId<M>,
@@ -652,35 +853,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       )));
     }
 
+    let expected_ty = canonical_quot_type(&self.prims, kind);
+    if ty != &expected_ty {
+      return Err(TcError::Other(format!(
+        "check_quot: {:?} type is not canonical",
+        kind
+      )));
+    }
+
     // For Quot.lift (the main eliminator), verify Eq is properly formed.
     // This is a prerequisite for the quot reduction rule to be sound.
     if kind == QuotKind::Lift {
       self.check_eq_type()?;
     }
 
-    // Validate the type has the correct number of forall binders.
-    // Quot: 2 (α, r)
-    // Quot.mk: 3 (α, r, a)
-    // Quot.lift: 6 (α, r, β, f, h, q)
-    // Quot.ind: 5 (α, r, β, h, q)
-    let expected_foralls = match kind {
-      QuotKind::Type => 2,
-      QuotKind::Ctor => 3,
-      QuotKind::Lift => 6,
-      QuotKind::Ind => 5,
-    };
-    let n_foralls = self.count_foralls(ty)?;
-    if n_foralls < expected_foralls {
-      return Err(TcError::Other(format!(
-        "check_quot: {:?} expects at least {} foralls, got {}",
-        kind, expected_foralls, n_foralls
-      )));
-    }
-
     Ok(())
   }
 
-  /// Verify Eq type has the expected shape: 1 universe param, 1 constructor (Eq.refl).
+  /// Verify the exact Eq/Eq.refl prerequisite checked by Lean before it
+  /// installs the quotient primitives.
   fn check_eq_type(&self) -> Result<(), TcError<M>> {
     // Find Eq inductive in the environment by address.
     // Search all constants for one matching the Eq address.
@@ -693,7 +884,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       TcError::Other("check_eq_type: Eq not found in environment".into())
     })?;
     match &eq_c {
-      KConst::Indc { lvls, ctors, params, .. } => {
+      KConst::Indc { lvls, params, indices, is_unsafe, ty, ctors, .. } => {
         if *lvls != 1 {
           return Err(TcError::Other(format!(
             "check_eq_type: Eq expects 1 universe param, got {}",
@@ -708,6 +899,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             params
           )));
         }
+        if *indices != 1 {
+          return Err(TcError::Other(format!(
+            "check_eq_type: Eq expects 1 index, got {}",
+            indices
+          )));
+        }
+        if *is_unsafe {
+          return Err(TcError::Other("check_eq_type: Eq must be safe".into()));
+        }
         if ctors.len() != 1 {
           return Err(TcError::Other(format!(
             "check_eq_type: Eq expects 1 constructor, got {}",
@@ -720,42 +920,62 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             "check_eq_type: Eq's constructor is not Eq.refl".into(),
           ));
         }
-        Ok(())
+        if ty != &canonical_eq_type() {
+          return Err(TcError::Other(
+            "check_eq_type: Eq type is not canonical".into(),
+          ));
+        }
       },
-      _ => Err(TcError::Other(
-        "check_eq_type: Eq not found or not inductive".into(),
-      )),
+      _ => {
+        return Err(TcError::Other(
+          "check_eq_type: Eq not found or not inductive".into(),
+        ));
+      },
     }
-  }
 
-  /// Count the number of leading foralls in a type.
-  fn count_foralls(&mut self, ty: &KExpr<M>) -> Result<usize, TcError<M>> {
-    let saved = self.lctx.len();
-    let mut n = 0;
-    let mut cur = ty.clone();
-    loop {
-      let w = self.whnf(&cur)?;
-      match w.data() {
-        ExprData::All(name, bi, dom, body, _) => {
-          n += 1;
-          let fv_id = self.fresh_fvar_id();
-          let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-          self.lctx.push(
-            fv_id,
-            LocalDecl::CDecl {
-              name: name.clone(),
-              bi: bi.clone(),
-              ty: dom.clone(),
-            },
-          );
-          cur = instantiate_rev(&mut self.env.intern, body, &[fv]);
-        },
-        _ => {
-          self.lctx.truncate(saved);
-          return Ok(n);
-        },
-      }
+    let refl_c = self
+      .env
+      .iter()
+      .find(|(id, _)| id.addr == self.prims.eq_refl.addr)
+      .map(|(_, c)| c.clone())
+      .ok_or_else(|| {
+        TcError::Other("check_eq_type: Eq.refl not found".into())
+      })?;
+    match refl_c {
+      KConst::Ctor {
+        is_unsafe,
+        lvls,
+        induct,
+        cidx,
+        params,
+        fields,
+        ty,
+        ..
+      } => {
+        if is_unsafe
+          || lvls != 1
+          || induct.addr != self.prims.eq.addr
+          || cidx != 0
+          || params != 2
+          || fields != 0
+        {
+          return Err(TcError::Other(
+            "check_eq_type: Eq.refl metadata is not canonical".into(),
+          ));
+        }
+        if ty != canonical_eq_refl_type(&self.prims) {
+          return Err(TcError::Other(
+            "check_eq_type: Eq.refl type is not canonical".into(),
+          ));
+        }
+      },
+      _ => {
+        return Err(TcError::Other(
+          "check_eq_type: Eq.refl not found or not a constructor".into(),
+        ));
+      },
     }
+    Ok(())
   }
 
   // -----------------------------------------------------------------------
@@ -871,9 +1091,10 @@ mod tests {
   use super::super::id::KId;
   use super::super::level::KUniv;
   use super::super::mode::Anon;
+  use super::super::primitive::Primitives;
   use super::super::tc::TypeChecker;
   use ix_common::address::Address;
-  use ix_common::env::{DefinitionSafety, ReducibilityHints};
+  use ix_common::env::{DefinitionSafety, QuotKind, ReducibilityHints};
   use ixon::constant::DefKind;
 
   #[test]
@@ -941,6 +1162,271 @@ mod tests {
   }
   fn sort1() -> AE {
     AE::sort(AU::succ(AU::zero()))
+  }
+
+  fn canonical_quot_env() -> (KEnv<Anon>, Primitives<Anon>) {
+    let mut env = KEnv::<Anon>::new();
+    let prims = Primitives::from_env(&env);
+
+    env.insert(
+      prims.eq.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 1,
+        params: 2,
+        indices: 1,
+        is_unsafe: false,
+        block: prims.eq.clone(),
+        member_idx: 0,
+        ty: super::canonical_eq_type(),
+        ctors: vec![prims.eq_refl.clone()],
+        lean_all: (),
+      },
+    );
+    env.insert(
+      prims.eq_refl.clone(),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 1,
+        induct: prims.eq.clone(),
+        cidx: 0,
+        params: 2,
+        fields: 0,
+        ty: super::canonical_eq_refl_type(&prims),
+      },
+    );
+
+    for (id, kind, lvls) in [
+      (prims.quot_type.clone(), QuotKind::Type, 1),
+      (prims.quot_ctor.clone(), QuotKind::Ctor, 1),
+      (prims.quot_lift.clone(), QuotKind::Lift, 2),
+      (prims.quot_ind.clone(), QuotKind::Ind, 1),
+    ] {
+      env.insert(
+        id,
+        KConst::Quot {
+          name: (),
+          level_params: (),
+          kind,
+          lvls,
+          ty: super::canonical_quot_type(&prims, kind),
+        },
+      );
+    }
+    (env, prims)
+  }
+
+  fn replace_quot_type(env: &mut KEnv<Anon>, id: &KId<Anon>, ty: AE) {
+    let KConst::Quot { kind, lvls, .. } = env.get(id).expect("quot fixture")
+    else {
+      panic!("expected quotient fixture")
+    };
+    env.insert(
+      id.clone(),
+      KConst::Quot { name: (), level_params: (), kind, lvls, ty },
+    );
+  }
+
+  fn replace_quot_metadata(
+    env: &mut KEnv<Anon>,
+    id: &KId<Anon>,
+    kind: QuotKind,
+    lvls: u64,
+  ) {
+    let KConst::Quot { ty, .. } = env.get(id).expect("quot fixture") else {
+      panic!("expected quotient fixture")
+    };
+    env.insert(
+      id.clone(),
+      KConst::Quot { name: (), level_params: (), kind, lvls, ty },
+    );
+  }
+
+  fn replace_eq_type(env: &mut KEnv<Anon>, prims: &Primitives<Anon>, ty: AE) {
+    env.insert(
+      prims.eq.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 1,
+        params: 2,
+        indices: 1,
+        is_unsafe: false,
+        block: prims.eq.clone(),
+        member_idx: 0,
+        ty,
+        ctors: vec![prims.eq_refl.clone()],
+        lean_all: (),
+      },
+    );
+  }
+
+  fn replace_eq_refl_type(
+    env: &mut KEnv<Anon>,
+    prims: &Primitives<Anon>,
+    ty: AE,
+  ) {
+    env.insert(
+      prims.eq_refl.clone(),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 1,
+        induct: prims.eq.clone(),
+        cidx: 0,
+        params: 2,
+        fields: 0,
+        ty,
+      },
+    );
+  }
+
+  /// A well-typed type with the old minimum number of leading foralls but no
+  /// quotient semantics. Every variant below was accepted by the former
+  /// arity-only gate when installed directly at a reserved primitive KId.
+  fn forged_forall_type(n: usize) -> AE {
+    (0..n).fold(sort0(), |body, _| AE::all((), (), sort0(), body))
+  }
+
+  fn forged_eq_type() -> AE {
+    let u = AU::param(0, ());
+    AE::all(
+      (),
+      (),
+      AE::sort(u),
+      AE::all((), (), AE::var(0, ()), AE::all((), (), AE::var(1, ()), sort1())),
+    )
+  }
+
+  fn assert_not_canonical(err: TcError<Anon>, label: &str) {
+    match err {
+      TcError::Other(s) => assert!(
+        s.contains("not canonical"),
+        "expected canonicality error for {label}, got {s}"
+      ),
+      other => panic!("expected canonicality error for {label}, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn canonical_quotient_bundle_is_accepted() {
+    let (mut env, prims) = canonical_quot_env();
+    for id in
+      [prims.quot_type, prims.quot_ctor, prims.quot_lift, prims.quot_ind]
+    {
+      TypeChecker::new(&mut env).check_const(&id).unwrap();
+    }
+  }
+
+  #[test]
+  fn reject_quot_kind_address_mismatch() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_quot_metadata(&mut env, &prims.quot_type, QuotKind::Ctor, 1);
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_type).unwrap_err();
+    match err {
+      TcError::Other(s) => assert!(s.contains("kind mismatch"), "got {s}"),
+      other => panic!("expected kind mismatch, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn reject_quot_universe_count_mismatch() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_quot_metadata(&mut env, &prims.quot_lift, QuotKind::Lift, 3);
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_lift).unwrap_err();
+    match err {
+      TcError::Other(s) => {
+        assert!(s.contains("expects 2 universe params"), "got {s}")
+      },
+      other => panic!("expected universe-count mismatch, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn reject_forged_quot_type_with_two_foralls() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_quot_type(&mut env, &prims.quot_type, forged_forall_type(2));
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_type).unwrap_err();
+    assert_not_canonical(err, "Quot");
+  }
+
+  #[test]
+  fn reject_forged_quot_mk_type_with_three_foralls() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_quot_type(&mut env, &prims.quot_ctor, forged_forall_type(3));
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_ctor).unwrap_err();
+    assert_not_canonical(err, "Quot.mk");
+  }
+
+  #[test]
+  fn reject_forged_quot_lift_type_with_six_foralls() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_quot_type(&mut env, &prims.quot_lift, forged_forall_type(6));
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_lift).unwrap_err();
+    assert_not_canonical(err, "Quot.lift");
+  }
+
+  #[test]
+  fn reject_forged_quot_ind_type_with_five_foralls() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_quot_type(&mut env, &prims.quot_ind, forged_forall_type(5));
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_ind).unwrap_err();
+    assert_not_canonical(err, "Quot.ind");
+  }
+
+  #[test]
+  fn reject_quot_lift_when_eq_type_is_not_canonical() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_eq_type(&mut env, &prims, forged_eq_type());
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_lift).unwrap_err();
+    assert_not_canonical(err, "Eq");
+  }
+
+  #[test]
+  fn reject_quot_lift_when_eq_refl_type_is_not_canonical() {
+    let (mut env, prims) = canonical_quot_env();
+    replace_eq_refl_type(&mut env, &prims, forged_forall_type(2));
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_lift).unwrap_err();
+    assert_not_canonical(err, "Eq.refl");
+  }
+
+  #[test]
+  fn reject_quot_lift_when_eq_refl_metadata_is_not_canonical() {
+    let (mut env, prims) = canonical_quot_env();
+    env.insert(
+      prims.eq_refl.clone(),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 1,
+        induct: prims.eq.clone(),
+        cidx: 0,
+        params: 2,
+        fields: 1,
+        ty: super::canonical_eq_refl_type(&prims),
+      },
+    );
+    let err =
+      TypeChecker::new(&mut env).check_const(&prims.quot_lift).unwrap_err();
+    match err {
+      TcError::Other(s) => {
+        assert!(s.contains("Eq.refl metadata is not canonical"), "got {s}")
+      },
+      other => panic!("expected Eq.refl metadata mismatch, got {other:?}"),
+    }
   }
 
   fn test_env() -> KEnv<Anon> {

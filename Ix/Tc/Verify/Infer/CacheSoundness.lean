@@ -34,6 +34,25 @@ theorem inferKey_model_matches_wf
       (keys := model.keys) (Δ := Delta) (source := source) (s := s)
       (fun _ _ hctx hrun => model.represents hctx hrun))
 
+/-- Run-scoped inference-key matching.  Unlike the legacy theorem, both
+success and error states retain the finite suffix-state witness, and the key
+representation consumes that witness at the concrete pre-state. -/
+theorem inferKey_scoped_model_matches_wf
+    {layer : WhnfLayer} {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : ScopedKernelSuffixModel trProj world)
+    {Delta : KVLCtx} {source : KExpr .anon} {s : TcState .anon} :
+    TcM.WF
+      (ScopedWhnfStateInv model layer
+        (kernelCacheSemantics model.keys trProj) support Delta) s
+      (TcM.inferKey source)
+      (fun key s' =>
+        model.keys.Matches trProj world s Delta source key ∧
+          ContextKeyFrame s s') := by
+  simpa [TcM.inferKey_eq_whnfKey] using
+    (TcM.whnfKey_scoped_model_matches_wf
+      (layer := layer) (semantics := kernelCacheSemantics model.keys trProj)
+      (support := support) model (Delta := Delta) (source := source) (s := s))
+
 end TcM
 
 namespace UncachedInference.Context

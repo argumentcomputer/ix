@@ -5733,6 +5733,61 @@ mod tests {
   }
 
   #[test]
+  fn whnf_quot_ind_reduces_and_preserves_suffix() {
+    // Quot.ind α r β f (Quot.mk α r a) extra → f a extra.
+    let mut env = quot_env();
+    let mut tc = TypeChecker::new(&mut env);
+
+    let alpha = AE::cnst(mk_id("α"), Box::new([]));
+    let r = AE::cnst(mk_id("r"), Box::new([]));
+    let beta = AE::cnst(mk_id("β"), Box::new([]));
+    let f = AE::cnst(mk_id("f"), Box::new([]));
+    let a = AE::cnst(mk_id("a"), Box::new([]));
+    let extra = AE::cnst(mk_id("extra"), Box::new([]));
+    let apps = |head: AE, args: &[AE]| args.iter().cloned().fold(head, AE::app);
+
+    let mk = apps(
+      AE::cnst(tc.prims.quot_ctor.clone(), Box::new([])),
+      &[alpha.clone(), r.clone(), a.clone()],
+    );
+    let ind = apps(
+      AE::cnst(tc.prims.quot_ind.clone(), Box::new([])),
+      &[alpha, r, beta, f.clone(), mk, extra.clone()],
+    );
+
+    let result = tc.whnf(&ind).unwrap();
+    assert_eq!(result, AE::app(AE::app(f, a), extra));
+  }
+
+  #[test]
+  fn whnf_quot_stuck_on_overapplied_mk_major() {
+    // Lean recognizes `Quot.mk` at exact arity three. An extra argument on
+    // the major must not be mistaken for the represented quotient value.
+    let mut env = quot_env();
+    let mut tc = TypeChecker::new(&mut env);
+
+    let alpha = AE::cnst(mk_id("α"), Box::new([]));
+    let r = AE::cnst(mk_id("r"), Box::new([]));
+    let beta = AE::cnst(mk_id("β"), Box::new([]));
+    let f = AE::cnst(mk_id("f"), Box::new([]));
+    let h = AE::cnst(mk_id("h"), Box::new([]));
+    let a = AE::cnst(mk_id("a"), Box::new([]));
+    let extra = AE::cnst(mk_id("extra"), Box::new([]));
+    let apps = |head: AE, args: &[AE]| args.iter().cloned().fold(head, AE::app);
+
+    let overapplied_mk = apps(
+      AE::cnst(tc.prims.quot_ctor.clone(), Box::new([])),
+      &[alpha.clone(), r.clone(), a, extra],
+    );
+    let lift = apps(
+      AE::cnst(tc.prims.quot_lift.clone(), Box::new([])),
+      &[alpha, r, beta, f, h, overapplied_mk],
+    );
+
+    assert_eq!(tc.whnf(&lift).unwrap(), lift);
+  }
+
+  #[test]
   fn whnf_quot_lift_stuck_on_non_mk_major() {
     // Major is not Quot.mk → no reduction.
     let mut env = quot_env();

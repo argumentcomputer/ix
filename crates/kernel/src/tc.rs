@@ -70,8 +70,13 @@ pub fn max_rec_fuel() -> u64 {
   (*IX_MAX_REC_FUEL).unwrap_or(MAX_REC_FUEL)
 }
 
-/// Temporary struct for recursor info during iota reduction,
-/// avoiding borrow conflicts with `&self.env`.
+/// Temporary struct for recursor info during iota reduction, avoiding borrow
+/// conflicts with `&self.env`.
+///
+/// The layout fields are added on the WHNF hot path. This is sound only for an
+/// accepted environment: `check_recursor_member` first proves their complete
+/// sum does not overflow and equals canonical recursor generation. Direct
+/// callers that construct an unchecked `KEnv` do not inherit that precondition.
 pub struct IotaInfo<M: KernelMode> {
   pub k: bool,
   pub params: usize,

@@ -17,12 +17,7 @@ use File::Spec;
 my $repo_root = abs_path(File::Spec->catdir($RealBin, '..', '..'));
 my $verify_root = File::Spec->catdir($repo_root, 'Ix', 'Tc', 'Verify');
 
-my %expected = (
-  "Ix/Tc/Verify/Statements.lean\0TcM.whnf.wf"       => 1,
-  "Ix/Tc/Verify/Statements.lean\0TcM.infer.wf"      => 1,
-  "Ix/Tc/Verify/Statements.lean\0TcM.isDefEq.wf"    => 1,
-  "Ix/Tc/Verify/Statements.lean\0TcM.checkConst.wf" => 1,
-);
+my %expected = ();
 
 sub mask_chunk {
   my ($chunk) = @_;

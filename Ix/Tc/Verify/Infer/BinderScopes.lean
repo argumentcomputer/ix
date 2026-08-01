@@ -85,20 +85,18 @@ theorem instRev_whnf_eval_of_resources
           (instantiateRev_preservesUnivs body fvars it)⟩)
     hI
 
-/-- Opening a translated binder either fails before changing the semantic
-context, or returns its freshly tagged body under the corresponding extended
-concrete and ghost contexts. -/
-theorem openBinder_scope
+/-- Operational core of binder opening.  The domain translation is already
+typed so the ghost context can be extended, while the body relation is left
+to a caller-specific wrapper. -/
+theorem openBinder_scope_base
     {support : RunSupport}
     {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {uvars : Nat}
     {Delta : KVLCtx} {s : TcState .anon}
     {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
-    {ty body : KExpr .anon} {tyV bodyV : VExpr}
+    {ty body : KExpr .anon} {tyV : VExpr}
     (hty : TrKExprS world.venv uvars world.nameOf trProj Delta ty tyV)
     (htyType : world.venv.IsType uvars Delta.toCtx tyV)
-    (hbody : TrKExprS world.venv uvars world.nameOf trProj
-      ((none, .vlam tyV) :: Delta) body bodyV)
     (hcollision : support.CollisionFree)
     (hresources : BinderOpeningResources support name body) :
     WhnfStateInv layer semantics trProj world support uvars Delta s →
@@ -110,10 +108,7 @@ theorem openBinder_scope
         WhnfStateInv layer semantics trProj world support uvars
           ((some (⟨s.env.nextFVarId⟩, Delta.fvars), .vlam tyV) :: Delta)
           after ∧
-        support bodyOpen ∧
-        TrKExprS world.venv uvars world.nameOf trProj
-          ((some (⟨s.env.nextFVarId⟩, Delta.fvars), .vlam tyV) :: Delta)
-          bodyOpen bodyV
+        support bodyOpen
     | .error _ after =>
         WhnfStateInv layer semantics trProj world support uvars Delta after ∧
           after = s := by
@@ -184,9 +179,6 @@ theorem openBinder_scope
         · simpa [afterPush, InternUpdateFrame] using
             congrArg TcState.noAccel hInternFrame
       have hopenBound := hresources.instRevBounds ⟨s.env.nextFVarId⟩
-      have hbodyOpenTr := hbody.openFVarZero
-        (fv := ⟨s.env.nextFVarId⟩) (deps := Delta.fvars) (name := name)
-        hI.2.1.nextFVarId_fresh (by simpa using hopenBound.2.2)
       have hbodyOpenSupport : support
           (KExpr.instantiateRevSpec body #[fv] 0) :=
         hresources.instRevSupport ⟨s.env.nextFVarId⟩ _
@@ -218,9 +210,60 @@ theorem openBinder_scope
         rw [hopenRun]
         rfl
       rw [hopenSuccess]
-      refine ⟨rfl, rfl, hIOpen, ?_, ?_⟩
-      · simpa [fv] using hbodyOpenSupport
-      · simpa [fv] using hbodyOpenTr
+      refine ⟨rfl, rfl, hIOpen, ?_⟩
+      simpa [fv] using hbodyOpenSupport
+
+/-- Opening a typed binder returns the freshly tagged typed body under the
+corresponding extended concrete and ghost contexts. -/
+theorem openBinder_scope
+    {support : RunSupport}
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {uvars : Nat}
+    {Delta : KVLCtx} {s : TcState .anon}
+    {name : Mode.anon.F Name} {bi : Mode.anon.F Lean.BinderInfo}
+    {ty body : KExpr .anon} {tyV bodyV : VExpr}
+    (hty : TrKExprS world.venv uvars world.nameOf trProj Delta ty tyV)
+    (htyType : world.venv.IsType uvars Delta.toCtx tyV)
+    (hbody : TrKExprS world.venv uvars world.nameOf trProj
+      ((none, .vlam tyV) :: Delta) body bodyV)
+    (hcollision : support.CollisionFree)
+    (hresources : BinderOpeningResources support name body) :
+    WhnfStateInv layer semantics trProj world support uvars Delta s →
+    match TcM.openBinder name bi ty body s with
+    | .ok (bodyOpen, fvId) after =>
+        fvId = ⟨s.env.nextFVarId⟩ ∧
+        bodyOpen = KExpr.instantiateRevSpec body
+          #[.mkFVar ⟨s.env.nextFVarId⟩ name] 0 ∧
+        WhnfStateInv layer semantics trProj world support uvars
+          ((some (⟨s.env.nextFVarId⟩, Delta.fvars), .vlam tyV) :: Delta)
+          after ∧
+        support bodyOpen ∧
+        TrKExprS world.venv uvars world.nameOf trProj
+          ((some (⟨s.env.nextFVarId⟩, Delta.fvars), .vlam tyV) :: Delta)
+          bodyOpen bodyV
+    | .error _ after =>
+        WhnfStateInv layer semantics trProj world support uvars Delta after ∧
+          after = s := by
+  intro hI
+  have hbase := openBinder_scope_base (bi := bi) hty htyType hcollision
+    hresources hI
+  cases hopen : TcM.openBinder name bi ty body s with
+  | error err after =>
+      rw [hopen] at hbase
+      simpa only using hbase
+  | ok opened after =>
+      rcases opened with ⟨bodyOpen, fv⟩
+      rw [hopen] at hbase
+      simp only
+      rcases hbase with ⟨hfv, hbodyEq, hIopen, hsupport⟩
+      have hopenBound := hresources.instRevBounds ⟨s.env.nextFVarId⟩
+      have hbodyOpenTr := hbody.openFVarZero
+        (fv := ⟨s.env.nextFVarId⟩) (deps := Delta.fvars) (name := name)
+        hI.2.1.nextFVarId_fresh (by simpa using hopenBound.2.2)
+      refine ⟨hfv, hbodyEq, hIopen, hsupport, ?_⟩
+      subst fv
+      subst bodyOpen
+      exact hbodyOpenTr
 
 end TcM
 

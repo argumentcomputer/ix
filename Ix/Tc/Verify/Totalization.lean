@@ -469,6 +469,21 @@ theorem RecM.charOfNatExpr_equation (n : Nat) :
       let natLit ← TcM.intern (RecM.natExprFromValue n : KExpr m)
       return some (← TcM.intern (KExpr.mkApp charOfNat natLit)) := rfl
 
+theorem RecM.tryReduceStringLiteral_equation (p : Primitives m)
+    (id : KId m) (s : String) :
+    RecM.tryReduceStringLiteral p id s = (do
+      let isUtf8ByteSize := id.addr == p.stringUtf8ByteSize.addr
+      let isToByteArray := id.addr == p.stringToByteArray.addr
+      if isUtf8ByteSize then
+        return some (← TcM.intern
+          (RecM.natExprFromValue s.utf8ByteSize : KExpr m))
+      if isToByteArray then
+        if s.isEmpty then
+          return some (← TcM.intern (.mkConst p.byteArrayEmpty #[]))
+        return none
+      let codepoint := (s.toList.getLast?.map (·.toNat)).getD 65
+      RecM.charOfNatExpr codepoint) := rfl
+
 theorem RecM.tryReduceString_equation (e : KExpr m) :
     RecM.tryReduceString e = (do
       let (head, args) := e.collectSpine
@@ -738,24 +753,29 @@ theorem RecM.validateExprWellScoped_go_app
       RecM.peelRuleIhForalls.go flat root #[] := rfl
 
 @[simp] theorem RecM.checkPositivityDomain_equation
-    (dom : KExpr m) (blockAddrs : Array Address) :
-    RecM.checkPositivityDomain dom blockAddrs =
-      RecM.checkPositivityDomainFuel maxWhnfFuel.toNat dom blockAddrs := rfl
+    (dom : KExpr m) (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) :
+    RecM.checkPositivityDomain dom groups activeAddrs =
+      RecM.checkPositivityDomainFuel maxWhnfFuel.toNat dom groups
+        activeAddrs := rfl
 
 @[simp] theorem RecM.checkPositivityDomainFuel_zero
-    (dom : KExpr m) (blockAddrs : Array Address) :
-    RecM.checkPositivityDomainFuel 0 dom blockAddrs =
+    (dom : KExpr m) (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) :
+    RecM.checkPositivityDomainFuel 0 dom groups activeAddrs =
       throw .maxRecDepth := rfl
 
 @[simp] theorem RecM.checkNestedCtorFieldsFuel_zero
     (ctorTy : KExpr m) (nParams : Nat) (paramArgs : Array (KExpr m))
-    (us : Array (KUniv m)) (augmentedAddrs : Array Address) :
+    (us : Array (KUniv m)) (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) :
     RecM.checkNestedCtorFieldsFuel 0 ctorTy nParams paramArgs us
-      augmentedAddrs = throw .maxRecDepth := rfl
+      groups activeAddrs = throw .maxRecDepth := rfl
 
 @[simp] theorem RecM.checkNestedCtorFieldsLoopFuel_zero
-    (ty : KExpr m) (augmentedAddrs : Array Address) :
-    RecM.checkNestedCtorFieldsLoopFuel 0 ty augmentedAddrs =
+    (ty : KExpr m) (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) :
+    RecM.checkNestedCtorFieldsLoopFuel 0 ty groups activeAddrs =
       throw .maxRecDepth := rfl
 
 theorem RecM.countForalls_equation (ty : KExpr m) :

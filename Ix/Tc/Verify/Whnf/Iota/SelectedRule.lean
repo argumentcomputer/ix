@@ -622,7 +622,8 @@ theorem checkedMeaning
     (hfinalTr : TrKExpr world.venv uvars world.nameOf trProj Delta final
       finalV) :
     WhnfMeaning trProj world uvars Delta source final := by
-  have hsourceFinal := hpattern.checkedReduction hmatch hsourceType hchecks
+  have hsourceFinal := hpattern.checkedReduction world.venvWF hDelta.toCtx
+    hmatch hsourceType hchecks
   change finalV = pattern.rhs.apply levels captures at haligned
   rw [← haligned] at hsourceFinal
   obtain ⟨resultV, hresultTr, hresultEq⟩ := hfinalTr

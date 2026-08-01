@@ -411,6 +411,7 @@ def oracle : InductiveOracle RawProjRel.none catalog nameOf
 
 def worldNat : VerifyWorld where
   catalog := catalog
+  blocks := BlockCatalog.empty
   trusted := oracle.TrustBlock
   venv := natEnv
   nameOf := nameOf
@@ -523,7 +524,7 @@ def worldGood : VerifyWorld where
     · exact worldNat.trustedCatalogued hold
 
 theorem nat_le_good : worldNat ≤ worldGood := by
-  exact ⟨rfl, rfl, TrustInsert.old, VEnv.addConst_le addGood⟩
+  exact ⟨rfl, rfl, rfl, TrustInsert.old, VEnv.addConst_le addGood⟩
 
 theorem trustedCatalogRelGood :
     TrustedCatalogRel RawProjRel.none worldGood :=

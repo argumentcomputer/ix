@@ -130,6 +130,27 @@ def KernelTcInv (semantics : CacheSemantics) (trProj : RawProjRel)
 
 namespace KernelStateWF
 
+/-- Rebase a stable kernel invariant after ghost-only world growth.  The
+caller supplies the core relation for the larger world (normally produced by
+`TcStateWF.promote`); cache and equivalence-manager facts transport
+monotonically along the same world extension. -/
+theorem rebaseWorld {semantics : CacheSemantics}
+    {trProj : RawProjRel} {beforeWorld afterWorld : VerifyWorld}
+    {support : RunSupport} {s : TcState .anon}
+    (hle : beforeWorld ≤ afterWorld)
+    (hcore : TcStateWF trProj s afterWorld)
+    (h : KernelStateWF semantics trProj beforeWorld support s) :
+    KernelStateWF semantics trProj afterWorld support s := by
+  have hauth : CacheAuthority.stable beforeWorld ≤
+      CacheAuthority.stable afterWorld :=
+    CacheAuthority.stable_mono hle
+  exact
+    { core := hcore
+      internSupport := h.internSupport
+      caches := h.caches.mono hauth
+      equivalences := h.equivalences.mono
+        (fun hrel => semantics.equivMono hauth hrel) }
+
 /-- Build the complete state invariant when the physical environment has no
 semantic cache entries. Constants, blocks, and intern tables may be nonempty. -/
 theorem of_no_cache_entries {semantics : CacheSemantics}

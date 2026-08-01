@@ -703,6 +703,20 @@ structure ScopedKernelSuffixModel (trProj : RawProjRel)
     (world : VerifyWorld) where
   keys : WhnfContextKeys
   StateInScope : TcState .anon → Prop
+  /-- A real suffix-key execution keeps the next checker state inside the
+  same finite run domain.  This field is needed independently of semantic
+  representation: subsequent key operations run from the memo-updated
+  state, including after partial computations. -/
+  preservesCtx : ∀ {before after : TcState .anon} {lbr : UInt64}
+      {ctxAddr : Address},
+    StateInScope before →
+    TcM.ctxAddrForLbr lbr before = .ok ctxAddr after →
+    StateInScope after
+  /-- Ordinary cache, intern, and bookkeeping updates preserve scope when
+  they fix the complete digest-relevant state projection. -/
+  preservesFrame : ∀ {before after : TcState .anon},
+    StateInScope before → ContextDigestFrame before after →
+    StateInScope after
   representsCtx : ∀ {before after : TcState .anon} {lbr : UInt64}
       {ctxAddr : Address} {Delta : KVLCtx},
     StateInScope before →
@@ -740,6 +754,109 @@ structure ScopedKernelSuffixModel (trProj : RawProjRel)
     IsPropMeaning trProj world keys.uvars Delta source answer →
     IsPropMeaning trProj world keys.uvars Delta' source answer
 
+/-- The state-independent semantic half shared by the legacy global model
+and the run-scoped model.  Cache provenance needs only these transports;
+key construction is kept in the separate global/scoped operational fields so
+it cannot accidentally erase the run domain. -/
+structure KernelSuffixTransports (trProj : RawProjRel)
+    (world : VerifyWorld) where
+  keys : WhnfContextKeys
+  whnfTransport : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
+      {source result : KExpr .anon},
+    keys.Represents source.lbr ctxAddr Delta →
+    keys.Represents source.lbr ctxAddr Delta' →
+    WhnfMeaning trProj world keys.uvars Delta source result →
+    WhnfMeaning trProj world keys.uvars Delta' source result
+  inferTransport : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
+      {source ty : KExpr .anon},
+    keys.Represents source.lbr ctxAddr Delta →
+    keys.Represents source.lbr ctxAddr Delta' →
+    InferMeaning trProj world keys.uvars Delta source ty →
+    InferMeaning trProj world keys.uvars Delta' source ty
+  defEqTransport : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
+      {a b : KExpr .anon} {answer : Bool},
+    keys.Represents (max a.lbr b.lbr) ctxAddr Delta →
+    keys.Represents (max a.lbr b.lbr) ctxAddr Delta' →
+    DefEqMeaning trProj world keys.uvars Delta a b answer →
+    DefEqMeaning trProj world keys.uvars Delta' a b answer
+  isPropTransport : ∀ {ctxAddr : Address} {Delta Delta' : KVLCtx}
+      {source : KExpr .anon} {answer : Bool},
+    keys.Represents source.lbr ctxAddr Delta →
+    keys.Represents source.lbr ctxAddr Delta' →
+    IsPropMeaning trProj world keys.uvars Delta source answer →
+    IsPropMeaning trProj world keys.uvars Delta' source answer
+
+namespace KernelSuffixModel
+
+def transports {trProj : RawProjRel} {world : VerifyWorld}
+    (model : KernelSuffixModel trProj world) :
+    KernelSuffixTransports trProj world where
+  keys := model.keys
+  whnfTransport := model.whnfTransport
+  inferTransport := model.inferTransport
+  defEqTransport := model.defEqTransport
+  isPropTransport := model.isPropTransport
+
+end KernelSuffixModel
+
+namespace ScopedKernelSuffixModel
+
+/-- A production reset returns to the finite suffix model's state domain.
+This is an operational obligation because an arbitrary scoped model may
+choose any predicate for `StateInScope`. -/
+def ResetPreservesScope
+    {trProj : RawProjRel} {world : VerifyWorld}
+    (model : ScopedKernelSuffixModel trProj world) : Prop :=
+  ∀ {before after : TcState .anon},
+    model.StateInScope before →
+    TcM.reset before = .ok () after →
+    model.StateInScope after
+
+def transports {trProj : RawProjRel} {world : VerifyWorld}
+    (model : ScopedKernelSuffixModel trProj world) :
+    KernelSuffixTransports trProj world where
+  keys := model.keys
+  whnfTransport := model.whnfTransport
+  inferTransport := model.inferTransport
+  defEqTransport := model.defEqTransport
+  isPropTransport := model.isPropTransport
+
+end ScopedKernelSuffixModel
+
+/-- The ordinary checker invariant refined by membership in one explicit
+suffix-model state domain.  K2S uses this predicate at every model-dependent
+key boundary; the unscoped invariant remains available for model-independent
+helpers and legacy compatibility theorems. -/
+def ScopedWhnfStateInv {trProj : RawProjRel} {world : VerifyWorld}
+    (model : ScopedKernelSuffixModel trProj world)
+    (layer : WhnfLayer) (semantics : CacheSemantics) (support : RunSupport)
+    (Delta : KVLCtx) (s : TcState .anon) : Prop :=
+  WhnfStateInv layer semantics trProj world support model.keys.uvars Delta s ∧
+    model.StateInScope s
+
+namespace ScopedWhnfStateInv
+
+theorem base
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {model : ScopedKernelSuffixModel trProj world}
+    {layer : WhnfLayer} {semantics : CacheSemantics} {support : RunSupport}
+    {Delta : KVLCtx} {s : TcState .anon}
+    (h : ScopedWhnfStateInv model layer semantics support Delta s) :
+    WhnfStateInv layer semantics trProj world support model.keys.uvars Delta
+      s :=
+  h.1
+
+theorem inScope
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {model : ScopedKernelSuffixModel trProj world}
+    {layer : WhnfLayer} {semantics : CacheSemantics} {support : RunSupport}
+    {Delta : KVLCtx} {s : TcState .anon}
+    (h : ScopedWhnfStateInv model layer semantics support Delta s) :
+    model.StateInScope s :=
+  h.2
+
+end ScopedWhnfStateInv
+
 namespace ScopedKernelSuffixModel
 
 /-- Construct the genuinely run-scoped joint model.  State membership is
@@ -752,6 +869,13 @@ def finiteOperational {trProj : RawProjRel} {world : VerifyWorld}
     ScopedKernelSuffixModel trProj world where
   keys := scopedOperationalWhnfContextKeys spec scope
   StateInScope before := spec.StateValid before ∧ scope.Captures before
+  preservesCtx hscope hrun :=
+    ⟨spec.preserves hscope.1 hrun,
+      ContextDigestScope.Captures.contextKeyFrame hscope.2
+        (TcM.ctxAddrForLbr_frame hrun)⟩
+  preservesFrame hscope hframe :=
+    ⟨spec.framePreserves hscope.1 hframe,
+      ContextDigestScope.Captures.contextDigestFrame hscope.2 hframe⟩
   representsCtx hscope hctx hrun :=
     scopedOperationalWhnfContextKeys.representsCtx hscope.1 hscope.2 hctx hrun
   represents hscope hctx hrun :=
@@ -801,6 +925,111 @@ def toKernelSuffixModel {trProj : RawProjRel} {world : VerifyWorld}
   isPropTransport := model.isPropTransport
 
 end ScopedKernelSuffixModel
+
+namespace TcM
+
+/-- A scoped suffix model interprets and preserves one direct context-key
+execution from a state already admitted by the finite run domain. -/
+theorem ctxAddrForLbr_scoped_model_matches_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : ScopedKernelSuffixModel trProj world)
+    {Delta : KVLCtx} {source : KExpr .anon} {s : TcState .anon} :
+    TcM.WF
+      (ScopedWhnfStateInv model layer semantics support Delta) s
+      (TcM.ctxAddrForLbr source.lbr)
+      (fun ctxAddr s' =>
+        model.keys.Represents source.lbr ctxAddr Delta ∧
+          ContextKeyFrame s s') := by
+  intro hI
+  have hwf :=
+    (TcM.ctxAddrForLbr_wf
+      (fun hInv hframe => hframe.whnfStateInv hInv) source.lbr s) hI.1
+  match hrun : TcM.ctxAddrForLbr source.lbr s with
+  | .ok ctxAddr s' =>
+      rw [hrun] at hwf
+      exact ⟨⟨hwf.1, model.preservesCtx hI.2 hrun⟩,
+        model.representsCtx hI.2 hI.1.2.1 hrun, hwf.2⟩
+  | .error err s' =>
+      obtain ⟨ctxAddr, after, htotal⟩ :=
+        TcM.ctxAddrForLbr_total source.lbr s
+      rw [htotal] at hrun
+      contradiction
+
+/-- Scoped operational matching for the WHNF-shaped key shared by WHNF and
+inference. -/
+theorem whnfKey_scoped_model_matches_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : ScopedKernelSuffixModel trProj world)
+    {Delta : KVLCtx} {source : KExpr .anon} {s : TcState .anon} :
+    TcM.WF
+      (ScopedWhnfStateInv model layer semantics support Delta) s
+      (TcM.whnfKey source)
+      (fun key s' =>
+        model.keys.Matches trProj world s Delta source key ∧
+          ContextKeyFrame s s') := by
+  intro hI
+  have hwf := TcM.whnfKey_wf
+    (layer := layer) (semantics := semantics) (trProj := trProj)
+    (world := world) (support := support) (uvars := model.keys.uvars)
+    (Δ := Delta) (source := source) (s := s) hI.1
+  match hrun : TcM.whnfKey source s with
+  | .ok key s' =>
+      rw [hrun] at hwf
+      have hctxRun := TcM.whnfKey_ctx hrun
+      exact ⟨⟨hwf.1, model.preservesCtx hI.2 hctxRun⟩,
+        ⟨⟨hI.1.2.1, model.represents hI.2 hI.1.2.1 hrun, ⟨s', hrun⟩⟩,
+          hwf.2.2⟩⟩
+  | .error err s' =>
+      obtain ⟨ctxAddr, after, htotal⟩ :=
+        TcM.ctxAddrForLbr_total source.lbr s
+      have hkeyTotal : TcM.whnfKey source s =
+          .ok (source.addr, ctxAddr) after := by
+        unfold TcM.whnfKey
+        change EStateM.bind (TcM.ctxAddrForLbr source.lbr)
+          (fun addr => pure (source.addr, addr)) s = _
+        unfold EStateM.bind
+        rw [htotal]
+        rfl
+      rw [hkeyTotal] at hrun
+      contradiction
+
+/-- Scoped operational matching for DefEq's bare context key. -/
+theorem defEqCtxKey_scoped_model_matches_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : ScopedKernelSuffixModel trProj world)
+    {Delta : KVLCtx} {a b : KExpr .anon} {s : TcState .anon} :
+    TcM.WF
+      (ScopedWhnfStateInv model layer semantics support Delta) s
+      (TcM.defEqCtxKey a b)
+      (fun ctxAddr s' =>
+        DefEqContextKeys.Matches model.keys trProj world s Delta a b
+          ctxAddr ∧ ContextKeyFrame s s') := by
+  intro hI
+  have hwf := TcM.defEqCtxKey_wf
+    (layer := layer) (semantics := semantics) (trProj := trProj)
+    (world := world) (support := support) (uvars := model.keys.uvars)
+    (Delta := Delta) (a := a) (b := b) (s := s) hI.1
+  match hrun : TcM.defEqCtxKey a b s with
+  | .ok ctxAddr s' =>
+      rw [hrun] at hwf
+      have hctxRun : TcM.ctxAddrForLbr (max a.lbr b.lbr) s =
+          .ok ctxAddr s' := by
+        simpa [TcM.defEqCtxKey] using hrun
+      exact ⟨⟨hwf.1, model.preservesCtx hI.2 hctxRun⟩,
+        ⟨⟨hI.1.2.1, model.representsCtx hI.2 hI.1.2.1 hctxRun,
+          ⟨s', hrun⟩⟩, hwf.2⟩⟩
+  | .error err s' =>
+      obtain ⟨ctxAddr, after, htotal⟩ :=
+        TcM.ctxAddrForLbr_total (max a.lbr b.lbr) s
+      have hkeyTotal : TcM.defEqCtxKey a b s = .ok ctxAddr after := by
+        simpa [TcM.defEqCtxKey] using htotal
+      rw [hkeyTotal] at hrun
+      contradiction
+
+end TcM
 
 namespace KernelSuffixModel
 
@@ -943,6 +1172,12 @@ def isPropCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
+  blockSuccess := by
+    intro authority support block h
+    exact fallback.blockSuccess authority support block h
+  blockSuccessSound := by
+    intro authority support block h
+    exact fallback.blockSuccessSound authority support block h
 
 /-- Exact validity for full/cheap def-eq maps and the negative failure set. -/
 def DefEqCacheValid (keys : WhnfContextKeys) (trProj : RawProjRel)
@@ -999,6 +1234,12 @@ def defEqCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
+  blockSuccess := by
+    intro authority support block h
+    exact fallback.blockSuccess authority support block h
+  blockSuccessSound := by
+    intro authority support block h
+    exact fallback.blockSuccessSound authority support block h
 
 /-- Canonical K1+K2 semantic stack.  K1's WHNF and fixed-universe unfold
 layers stay outermost; inference and def-eq occupy precisely the fallback
@@ -1278,12 +1519,12 @@ theorem defEqMeaning {keys : WhnfContextKeys} {trProj : RawProjRel}
 
 end CacheProvenance
 
-namespace KernelSuffixModel
+namespace KernelSuffixTransports
 
 /-- Turn one executed proposition-classifier result into collision-robust
 provenance for the memo table. -/
 theorem isPropProvenance {trProj : RawProjRel} {world : VerifyWorld}
-    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    {support : RunSupport} (model : KernelSuffixTransports trProj world)
     (hcollision : support.CollisionFree)
     {Delta : KVLCtx} {source : KExpr .anon} {answer : Bool}
     {ctxAddr : Address}
@@ -1317,7 +1558,7 @@ theorem isPropProvenance {trProj : RawProjRel} {world : VerifyWorld}
 either inference cache.  Validity quantifies over every supported expression
 sharing the source address and every context sharing the suffix digest. -/
 theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
-    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    {support : RunSupport} (model : KernelSuffixTransports trProj world)
     (hcollision : support.CollisionFree)
     {kind : ExprCacheKind} (hkind : kind.IsInfer)
     {Delta : KVLCtx} {source ty : KExpr .anon}
@@ -1365,7 +1606,7 @@ theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
 canonicalized production key.  The swapped canonical-pair branch transports
 the semantic result through symmetry explicitly. -/
 theorem defEqProvenance {trProj : RawProjRel} {world : VerifyWorld}
-    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    {support : RunSupport} (model : KernelSuffixTransports trProj world)
     (hcollision : support.CollisionFree) (kind : DefEqCacheKind)
     {Delta : KVLCtx} {a b : KExpr .anon} {answer : Bool}
     {ctxAddr : Address}
@@ -1431,7 +1672,7 @@ theorem defEqProvenance {trProj : RawProjRel} {world : VerifyWorld}
 semantic transport.  It still records finite source witnesses and explicit
 reference authorization for the canonical operand pair. -/
 theorem defEqFailureProvenance {trProj : RawProjRel} {world : VerifyWorld}
-    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    {support : RunSupport} (model : KernelSuffixTransports trProj world)
     {a b : KExpr .anon} {ctxAddr : Address}
     (ha : support a) (hb : support b)
     (hreferences :
@@ -1465,6 +1706,84 @@ theorem defEqFailureProvenance {trProj : RawProjRel} {world : VerifyWorld}
     simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
       WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
       inferCacheSemantics, InferCacheValid] using hvalid
+
+end KernelSuffixTransports
+
+namespace KernelSuffixModel
+
+/-- Legacy global-model spelling retained as a compatibility wrapper around
+the state-independent transport proof. -/
+theorem isPropProvenance {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    (hcollision : support.CollisionFree)
+    {Delta : KVLCtx} {source : KExpr .anon} {answer : Bool}
+    {ctxAddr : Address}
+    (hsource : support source)
+    (hctx : model.keys.Represents source.lbr ctxAddr Delta)
+    (hmeaning : IsPropMeaning trProj world model.keys.uvars Delta source
+      answer)
+    (hreferences :
+      (CacheEntry.isProp (source.addr, ctxAddr) answer).ReferencesAuthorized
+        (CacheAuthority.stable world) support) :
+    CacheProvenance (kernelCacheSemantics model.keys trProj)
+      (CacheAuthority.stable world) support
+      (.isProp (source.addr, ctxAddr) answer) :=
+  model.transports.isPropProvenance hcollision hsource hctx hmeaning
+    hreferences
+
+theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    (hcollision : support.CollisionFree)
+    {kind : ExprCacheKind} (hkind : kind.IsInfer)
+    {Delta : KVLCtx} {source ty : KExpr .anon}
+    {key : Address × Address} {s : TcState .anon}
+    (hsource : support source) (hty : support ty)
+    (hmatch : model.keys.Matches trProj world s Delta source key)
+    (hmeaning : InferMeaning trProj world model.keys.uvars Delta source ty)
+    (hreferences : (CacheEntry.expr kind key ty).ReferencesAuthorized
+      (CacheAuthority.stable world) support) :
+    CacheProvenance (kernelCacheSemantics model.keys trProj)
+      (CacheAuthority.stable world) support (.expr kind key ty) :=
+  model.transports.inferProvenance hcollision hkind hsource hty hmatch
+    hmeaning hreferences
+
+theorem defEqProvenance {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    (hcollision : support.CollisionFree) (kind : DefEqCacheKind)
+    {Delta : KVLCtx} {a b : KExpr .anon} {answer : Bool}
+    {ctxAddr : Address}
+    (ha : support a) (hb : support b)
+    (hctx : model.keys.Represents (max a.lbr b.lbr) ctxAddr Delta)
+    (hmeaning : DefEqMeaning trProj world model.keys.uvars Delta a b answer)
+    (hreferences :
+      (CacheEntry.defEq kind
+        ((canonicalPair a.addr b.addr).1,
+          (canonicalPair a.addr b.addr).2, ctxAddr) answer).ReferencesAuthorized
+        (CacheAuthority.stable world) support) :
+    CacheProvenance (kernelCacheSemantics model.keys trProj)
+      (CacheAuthority.stable world) support
+      (.defEq kind
+        ((canonicalPair a.addr b.addr).1,
+          (canonicalPair a.addr b.addr).2, ctxAddr) answer) :=
+  model.transports.defEqProvenance hcollision kind ha hb hctx hmeaning
+    hreferences
+
+theorem defEqFailureProvenance
+    {trProj : RawProjRel} {world : VerifyWorld}
+    {support : RunSupport} (model : KernelSuffixModel trProj world)
+    {a b : KExpr .anon} {ctxAddr : Address}
+    (ha : support a) (hb : support b)
+    (hreferences :
+      (CacheEntry.defEqFailure
+        ((canonicalPair a.addr b.addr).1,
+          (canonicalPair a.addr b.addr).2, ctxAddr)).ReferencesAuthorized
+        (CacheAuthority.stable world) support) :
+    CacheProvenance (kernelCacheSemantics model.keys trProj)
+      (CacheAuthority.stable world) support
+      (.defEqFailure
+        ((canonicalPair a.addr b.addr).1,
+          (canonicalPair a.addr b.addr).2, ctxAddr)) :=
+  model.transports.defEqFailureProvenance ha hb hreferences
 
 end KernelSuffixModel
 

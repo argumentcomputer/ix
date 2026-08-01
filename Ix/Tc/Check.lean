@@ -34,6 +34,13 @@ inductive CheckBlockKind where
   | recursor
   deriving BEq, Repr, Inhabited
 
+/-- State update performed when a coordinated check publishes its captured
+verdict.  All fields except `env.blockCheckResults` are preserved exactly. -/
+def TcState.withBlockCheckResult (state : TcState m) (block : KId m)
+    (result : Except (TcError m) Unit) : TcState m :=
+  { state with env := { state.env with blockCheckResults :=
+      state.env.blockCheckResults.insert block result } }
+
 namespace RecM
 
 -- ### Safety lattice
@@ -105,31 +112,183 @@ def countForalls (ty : KExpr m) : RecM m Nat := do
       modify fun s => { s with lctx := s.lctx.truncate saved }
       return .done n) maxWhnfFuel.toNat (ty, 0)
 
+/-- Implicit binder metadata for canonical primitive types. Binder metadata is
+    hash-neutral in `KExpr`; retaining Lean's source binder info here makes the
+    builder readable and keeps meta-mode egress faithful. -/
+@[inline] def quotImplicitBi : {m : Mode} → m.F Lean.BinderInfo :=
+  Mode.fieldWith fun _ => .implicit
+
+@[inline] def canonicalVar (idx : UInt64) : KExpr m :=
+  .mkVar idx anonN
+
+@[inline] def canonicalAll (bi : m.F Lean.BinderInfo)
+    (dom body : KExpr m) : KExpr m :=
+  .mkAll anonN bi dom body
+
+@[inline] def canonicalArrow (dom body : KExpr m) : KExpr m :=
+  canonicalAll anonBi dom body
+
+/-- `α → α → Prop` at a point where `α` is `Var(0)`. -/
+def canonicalQuotRelation : KExpr m :=
+  canonicalArrow (canonicalVar 0)
+    (canonicalArrow (canonicalVar 1) (.mkSort .mkZero))
+
+/-- Exact semantic type required of the `Eq` prerequisite used by
+    `Environment.addQuot`. -/
+def canonicalEqType : KExpr m :=
+  let u : KUniv m := .mkParam 0 anonN
+  canonicalAll quotImplicitBi (.mkSort u)
+    (canonicalAll anonBi (canonicalVar 0)
+      (canonicalAll anonBi (canonicalVar 1) (.mkSort .mkZero)))
+
+/-- Exact semantic type required of the `Eq.refl` prerequisite used by
+    `Environment.addQuot`. -/
+def canonicalEqReflType (p : Primitives m) : KExpr m :=
+  let u : KUniv m := .mkParam 0 anonN
+  let result := KExpr.mkAppN (.mkConst p.eq #[u])
+    #[canonicalVar 1, canonicalVar 0, canonicalVar 0]
+  canonicalAll quotImplicitBi (.mkSort u)
+    (canonicalAll anonBi (canonicalVar 0) result)
+
+/-- Canonical type installed by Lean's `Environment.addQuot` for each
+    reserved quotient primitive. Names and binder info are metadata; the
+    de Bruijn structure, universes, primitive heads, and domains form the
+    semantic acceptance contract. -/
+def canonicalQuotType (p : Primitives m) (kind : Ix.QuotKind) : KExpr m :=
+  let u : KUniv m := .mkParam 0 anonN
+  let v : KUniv m := .mkParam 1 anonN
+  let sortU : KExpr m := .mkSort u
+  let prop : KExpr m := .mkSort .mkZero
+  match kind with
+  | .type =>
+      canonicalAll quotImplicitBi sortU
+        (canonicalAll anonBi canonicalQuotRelation sortU)
+  | .ctor =>
+      let result := KExpr.mkAppN (.mkConst p.quotType #[u])
+        #[canonicalVar 2, canonicalVar 1]
+      canonicalAll quotImplicitBi sortU
+        (canonicalAll anonBi canonicalQuotRelation
+          (canonicalAll anonBi (canonicalVar 1) result))
+  | .lift =>
+      let fTy := canonicalArrow (canonicalVar 2) (canonicalVar 1)
+      let rab := KExpr.mkAppN (canonicalVar 4)
+        #[canonicalVar 1, canonicalVar 0]
+      let fa := KExpr.mkApp (canonicalVar 3) (canonicalVar 2)
+      let fb := KExpr.mkApp (canonicalVar 3) (canonicalVar 1)
+      let faEqFb := KExpr.mkAppN (.mkConst p.eq #[v])
+        #[canonicalVar 4, fa, fb]
+      let hTy := canonicalAll anonBi (canonicalVar 3)
+        (canonicalAll anonBi (canonicalVar 4)
+          (canonicalArrow rab faEqFb))
+      let quotR := KExpr.mkAppN (.mkConst p.quotType #[u])
+        #[canonicalVar 4, canonicalVar 3]
+      canonicalAll quotImplicitBi sortU
+        (canonicalAll quotImplicitBi canonicalQuotRelation
+          (canonicalAll quotImplicitBi (.mkSort v)
+            (canonicalAll anonBi fTy
+              (canonicalAll anonBi hTy
+                (canonicalArrow quotR (canonicalVar 3))))))
+  | .ind =>
+      let quotRD2 := KExpr.mkAppN (.mkConst p.quotType #[u])
+        #[canonicalVar 1, canonicalVar 0]
+      let betaTy := canonicalArrow quotRD2 prop
+      let quotMkA := KExpr.mkAppN (.mkConst p.quotCtor #[u])
+        #[canonicalVar 3, canonicalVar 2, canonicalVar 0]
+      let mkMinor := canonicalAll anonBi (canonicalVar 2)
+        (KExpr.mkApp (canonicalVar 1) quotMkA)
+      let quotRD4 := KExpr.mkAppN (.mkConst p.quotType #[u])
+        #[canonicalVar 3, canonicalVar 2]
+      let result := KExpr.mkApp (canonicalVar 2) (canonicalVar 0)
+      canonicalAll quotImplicitBi sortU
+        (canonicalAll quotImplicitBi canonicalQuotRelation
+          (canonicalAll quotImplicitBi betaTy
+            (canonicalAll anonBi mkMinor
+              (canonicalAll quotImplicitBi quotRD4 result))))
+
+/-! ### Block classification data -/
+
+/-- Accumulator used while production classifies one complete physical block.
+Keeping it named exposes the homogeneous-kind check to verification without
+changing the order or error behavior of member lookups. -/
+structure BlockClassFlags where
+  sawDefn : Bool := false
+  sawRecr : Bool := false
+  sawInductiveLike : Bool := false
+  deriving Repr, Inhabited
+
+namespace BlockClassFlags
+
+/-- The initial empty shape census. -/
+def empty : BlockClassFlags := ⟨false, false, false⟩
+
+/-- Record the declaration shape of one loaded member, or reject a shape
+which is intentionally outside coordinated checking. -/
+def note (flags : BlockClassFlags) (member : KId m) (c : KConst m) :
+    Except (TcError m) BlockClassFlags :=
+  match c with
+  | .defn .. => .ok { flags with sawDefn := true }
+  | .recr .. => .ok { flags with sawRecr := true }
+  | .indc .. | .ctor .. => .ok { flags with sawInductiveLike := true }
+  | .axio .. | .quot .. =>
+      .error (.other s!"unsupported check block {member}: axiom/quotient member")
+
+/-- Convert the complete shape census to the one supported homogeneous
+checker branch. -/
+def finish (flags : BlockClassFlags) : Except (TcError m) CheckBlockKind :=
+  match flags.sawDefn, flags.sawInductiveLike, flags.sawRecr with
+  | true, false, false => .ok .defn
+  | false, true, false => .ok .inductive'
+  | false, false, true => .ok .recursor
+  | _, _, _ =>
+      .error (.other "unsupported mixed check block: expected only definitions, only inductives/constructors, or only recursors")
+
+end BlockClassFlags
+
 mutual
 
-/-- `Eq` must exist with 1 universe param, 2 params, and `Eq.refl` as its
-    single constructor (prerequisite for sound quot reduction). -/
+/-- `Eq` and `Eq.refl` must have the exact metadata and semantic types checked
+    by Lean before it installs the quotient primitives. -/
 def checkEqType : RecM m Unit := do
   let p ← prims
   let eqC? := (← get).env.consts.fold (init := none)
-    fun acc id c => if id.addr == p.eq.addr then some c else acc
-  let some eqC := eqC?
+    fun acc id c => if id.addr == p.eq.addr then some (id, c) else acc
+  let some (_, eqC) := eqC?
     | throw (.other "check_eq_type: Eq not found in environment")
   match eqC with
-  | .indc (lvls := lvls) (params := params) (ctors := ctors) .. =>
+  | .indc (lvls := lvls) (params := params) (indices := indices)
+      (isUnsafe := isUnsafe) (ty := ty) (ctors := ctors) .. =>
     if lvls != 1 then
       throw (.other s!"check_eq_type: Eq expects 1 universe param, got {lvls}")
     if params != 2 then
       throw (.other s!"check_eq_type: Eq expects 2 params (α, a), got {params}")
+    if indices != 1 then
+      throw (.other s!"check_eq_type: Eq expects 1 index, got {indices}")
+    if isUnsafe then
+      throw (.other "check_eq_type: Eq must be safe")
     if ctors.size != 1 then
       throw (.other s!"check_eq_type: Eq expects 1 constructor, got {ctors.size}")
     if ctors[0]!.addr != p.eqRefl.addr then
       throw (.other "check_eq_type: Eq's constructor is not Eq.refl")
+    if ty.addr != (canonicalEqType (m := m)).addr then
+      throw (.other "check_eq_type: Eq type is not canonical")
   | _ => throw (.other "check_eq_type: Eq not found or not inductive")
+  let reflC? := (← get).env.consts.fold (init := none)
+    fun acc id c => if id.addr == p.eqRefl.addr then some c else acc
+  let some reflC := reflC?
+    | throw (.other "check_eq_type: Eq.refl not found")
+  match reflC with
+  | .ctor (isUnsafe := isUnsafe) (lvls := lvls) (induct := induct)
+      (cidx := cidx) (params := params) (fields := fields) (ty := ty) .. =>
+    if isUnsafe || lvls != 1 || induct.addr != p.eq.addr || cidx != 0
+        || params != 2 || fields != 0 then
+      throw (.other "check_eq_type: Eq.refl metadata is not canonical")
+    if ty.addr != (canonicalEqReflType p).addr then
+      throw (.other "check_eq_type: Eq.refl type is not canonical")
+  | _ => throw (.other "check_eq_type: Eq.refl not found or not a constructor")
 
 /-- Quot structure: address ↔ kind consistency against the primitive table,
-    universe counts (1/1/2/1), Eq shape for `lift`, and minimum forall
-    counts (2/3/6/5). -/
+    universe counts (1/1/2/1), exact Eq/Eq.refl prerequisites for `lift`,
+    and the complete canonical type installed by Lean's `addQuot`. -/
 def checkQuot (id : KId m) (kind : Ix.QuotKind) (lvls : UInt64)
     (ty : KExpr m) : RecM m Unit := do
   let p ← prims
@@ -147,39 +306,34 @@ def checkQuot (id : KId m) (kind : Ix.QuotKind) (lvls : UInt64)
     | .type | .ctor | .ind => 1
   if lvls != expectedLvls then
     throw (.other s!"check_quot: {repr kind} expects {expectedLvls} universe params, got {lvls}")
+  if ty.addr != (canonicalQuotType p kind).addr then
+    throw (.other s!"check_quot: {repr kind} type is not canonical")
   if kind == .lift then
     checkEqType
-  let expectedForalls : Nat := match kind with
-    | .type => 2
-    | .ctor => 3
-    | .lift => 6
-    | .ind => 5
-  let nForalls ← countForalls ty
-  if nForalls < expectedForalls then
-    throw (.other s!"check_quot: {repr kind} expects at least {expectedForalls} foralls, got {nForalls}")
 
 -- ### Block classification / coordination
+
+/-- Ordered recursive form of the classifier's member loop. -/
+def collectBlockClassFlags (members : List (KId m))
+    (flags : BlockClassFlags := BlockClassFlags.empty) :
+    RecM m BlockClassFlags := do
+  match members with
+  | [] => pure flags
+  | member :: rest =>
+      let c ← TcM.getConst member
+      match flags.note member c with
+      | .error err => throw err
+      | .ok next => collectBlockClassFlags rest next
+termination_by members.length
 
 def classifyBlock (members : Array (KId m)) :
     RecM m CheckBlockKind := do
   if members.isEmpty then
     throw (.other "empty check block")
-  let mut sawDefn := false
-  let mut sawRecr := false
-  let mut sawInductiveLike := false
-  for member in members do
-    match (← TcM.getConst member) with
-    | .defn .. => sawDefn := true
-    | .recr .. => sawRecr := true
-    | .indc .. | .ctor .. => sawInductiveLike := true
-    | .axio .. | .quot .. =>
-      throw (.other s!"unsupported check block {member}: axiom/quotient member")
-  match sawDefn, sawInductiveLike, sawRecr with
-  | true, false, false => return .defn
-  | false, true, false => return .inductive'
-  | false, false, true => return .recursor
-  | _, _, _ =>
-    throw (.other "unsupported mixed check block: expected only definitions, only inductives/constructors, or only recursors")
+  let flags ← collectBlockClassFlags members.toList
+  match flags.finish with
+  | .ok kind => pure kind
+  | .error err => throw err
 
 def coordinatedBlockIfKind (block : KId m)
     (expected : CheckBlockKind) : RecM m (Option (KId m)) := do
@@ -208,27 +362,40 @@ def coordinatedCheckBlockForConst (id : KId m) :
 
 -- ### Checking
 
+/-- Capture the exact outcome of a fresh block body without publishing it.
+The non-backtracking checker monad retains the body's post-state on either
+outcome; `checkCoordinatedBlock` performs the sole cache insertion afterward. -/
+def captureBlockCheckResult (block requested : KId m) :
+    RecM m (Except (TcError m) Unit) :=
+  try
+    checkBlockBody block requested
+    pure (Except.ok ())
+  catch e =>
+    pure (Except.error e)
+
+/-- Execute the coordinated suffix after routing has selected an exact
+physical block.  Naming this boundary keeps the cache-hit and fresh-body
+transactions visible to verification: a fresh verdict is inserted only
+after `checkBlockBody` has returned, and an error verdict is then replayed as
+the call's error. -/
+def checkCoordinatedBlock (block requested : KId m) : RecM m Unit := do
+  if let some result := (← get).env.blockCheckResults[block]? then
+    match result with
+    | .ok () => return ()
+    | .error e => throw e
+  let result ← captureBlockCheckResult block requested
+  modify fun s => s.withBlockCheckResult block result
+  match result with
+  | .ok () => return ()
+  | .error e => throw e
+
 /-- Type-check a single constant (block-coordinated when applicable; results
     memoized in `blockCheckResults` so failures replay per member). -/
 def checkConst (id : KId m) : RecM m Unit := do
   let c ← TcM.getConst id
-  if let some block ← coordinatedBlockFor c then
-    if let some result := (← get).env.blockCheckResults[block]? then
-      match result with
-      | .ok () => return ()
-      | .error e => throw e
-    let result ←
-      try
-        checkBlockBody block id
-        pure (Except.ok ())
-      catch e =>
-        pure (Except.error e)
-    modify fun s => { s with env := { s.env with
-      blockCheckResults := s.env.blockCheckResults.insert block result } }
-    match result with
-    | .ok () => return ()
-    | .error e => throw e
-  checkConstMemberFresh id
+  match (← coordinatedBlockFor c) with
+  | some block => checkCoordinatedBlock block id
+  | none => checkConstMemberFresh id
 
 def checkConstMemberFresh (id : KId m) : RecM m Unit := do
   TcM.reset (m := m)
@@ -257,9 +424,11 @@ def checkConstMember (id : KId m) (c : KConst m) : RecM m Unit := do
       checkNoUnsafeRefs ty safety
       checkNoUnsafeRefs val safety
   | .quot (ty := ty) (kind := kind) (lvls := lvls) .. =>
+    -- Reject a forged reserved primitive before invoking inference or
+    -- reduction on attacker-controlled syntax.
+    checkQuot id kind lvls ty
     let t ← infer ty
     let _ ← ensureSortDirect t
-    checkQuot id kind lvls ty
   | .recr (ty := ty) .. =>
     let t ← infer ty
     let _ ← ensureSortDirect t
@@ -273,10 +442,10 @@ def checkConstMember (id : KId m) (c : KConst m) : RecM m Unit := do
     let _ ← ensureSortDirect t
     checkCtorAgainstInductiveMember id induct
 
-def checkBlockBody (block : KId m) (requested : KId m) :
-    RecM m Unit := do
-  let members := (← TcM.tryGetBlock block).getD #[requested]
-  let kind ← classifyBlock members
+/-- Execute the validation/checking phase after block lookup and
+classification have fixed the complete member array and homogeneous kind. -/
+def checkClassifiedBlock (kind : CheckBlockKind) (block : KId m)
+    (members : Array (KId m)) : RecM m Unit := do
   if kind != .defn then
     for member in members do
       let c ← TcM.getConst member
@@ -293,6 +462,13 @@ def checkBlockBody (block : KId m) (requested : KId m) :
     modify fun s => { s with defEqPeak := p }
   | .inductive' => checkInductiveBlock block members
   | .recursor => checkRecursorBlock block members
+
+def checkBlockBody (block : KId m) (requested : KId m) :
+    RecM m Unit := do
+  let some members ← TcM.tryGetBlock block
+    | throw (.other s!"coordinated check block {block} disappeared while checking {requested}")
+  let kind ← classifyBlock members
+  checkClassifiedBlock kind block members
 
 -- ### Inductive machinery (validation and recursor generation in Ix.Tc.Inductive)
 

@@ -336,22 +336,30 @@ def insertStandaloneEntries (entries : Array Entry) : IngressM Unit := do
   modifyGet fun env => ((), entries.foldl (init := env) fun env (id, c) =>
     (env.insert id c).insertBlock id #[id])
 
+/-- Insert the flat entry array into the constant map, in production's exact
+left-to-right last-write-wins order. -/
+def insertEntriesState (env : AnonEnv) (entries : Array Entry) : AnonEnv :=
+  entries.toList.foldl (fun env (id, c) => env.insert id c) env
+
 /-- Muts registration: `blocks[blockId] = [m0, m0.ctors…, m1, …]` (flat, in
-    generation order), block id read from the first entry's `block` field. -/
-def insertMutsEntries (entries : Array Entry) : IngressM Unit := do
-  guardReserved entries
+generation order), block id read from the first entry's `block` field. -/
+def insertMutsEntriesState (env : AnonEnv) (entries : Array Entry) : AnonEnv :=
   let blockId? := entries[0]?.bind fun (_, c) => match c with
     | .defn (block := b) .. => some b
     | .recr (block := b) .. => some b
     | .indc (block := b) .. => some b
     | _ => none
-  modifyGet fun env => Id.run do
-    let mut env := env
-    if let some bid := blockId? then
-      env := env.insertBlock bid (entries.map (·.1))
-    for (id, c) in entries do
-      env := env.insert id c
-    return ((), env)
+  let env := match blockId? with
+    | some bid => env.insertBlock bid (entries.map (·.1))
+    | none => env
+  insertEntriesState env entries
+
+/-- Effectful wrapper around `insertMutsEntriesState`.  Keeping the exact
+pure state transition named makes successful ingress executions available to
+the verification layer without changing the runtime behavior. -/
+def insertMutsEntries (entries : Array Entry) : IngressM Unit := do
+  guardReserved entries
+  modifyGet fun env => ((), insertMutsEntriesState env entries)
 
 /-- Convert a `Definition`. `mutCtx` resolves `Expr.recur`; standalone
     callers pass `#[selfId]` (self-recursive standalones encode their
@@ -445,13 +453,21 @@ def ingressAnonStandalone (ixonEnv : Ixon.Env) (addr : Address)
   insertStandaloneEntries entries
   return selfId
 
-/-- Anon ingress for an entire Muts block: every member (and every ctor of
-    every inductive member) lands under its deterministic projection address.
-    Verifies each computed address exists in `ixonEnv.consts` (missing ⇒
-    corrupted env). Returns the member KIds in order; the first is the
-    block's "primary". -/
-def ingressAnonBlock (ixonEnv : Ixon.Env) (blockConstant : Ixon.Constant)
-    (blockAddr : Address) : IngressM (Array (KId .anon)) := do
+/-- Proof-visible result of converting and inserting an entire anonymous
+Muts block.  `memberKids` is the public top-level member array returned by the
+legacy API; `allEntries` additionally retains constructors and the exact
+converted constants inserted into the kernel environment. -/
+structure AnonBlockIngressTrace where
+  memberKids : Array (KId .anon)
+  allEntries : Array Entry
+  deriving Inhabited
+
+/-- Convert an entire Muts block without publishing it.  Splitting conversion
+from insertion makes the atomic publication tail explicit to verification;
+the public wrapper below preserves the original all-or-error behavior. -/
+def prepareAnonBlock (ixonEnv : Ixon.Env)
+    (blockConstant : Ixon.Constant) (blockAddr : Address) :
+    IngressM AnonBlockIngressTrace := do
   let .muts members := blockConstant.info
     | throw s!"ingressAnonBlock: {blockAddr} is not a Muts block"
   let blockId : KId .anon := ⟨blockAddr, ()⟩
@@ -506,8 +522,21 @@ def ingressAnonBlock (ixonEnv : Ixon.Env) (blockConstant : Ixon.Constant)
       let entries ← ingressAnonInductive ixonEnv ind selfId blockConstant
         blockId idx ctorAddrs mutCtx
       allEntries := allEntries ++ entries
-  insertMutsEntries allEntries
-  return memberKids
+  return { memberKids, allEntries }
+
+/-- Traced anon ingress for an entire Muts block: convert every member, then
+atomically publish the exact flat entry array returned in the trace. -/
+def ingressAnonBlockWithTrace (ixonEnv : Ixon.Env)
+    (blockConstant : Ixon.Constant) (blockAddr : Address) :
+    IngressM AnonBlockIngressTrace := do
+  let trace ← prepareAnonBlock ixonEnv blockConstant blockAddr
+  insertMutsEntries trace.allEntries
+  return trace
+
+/-- Compatibility projection of `ingressAnonBlockWithTrace`. -/
+def ingressAnonBlock (ixonEnv : Ixon.Env) (blockConstant : Ixon.Constant)
+    (blockAddr : Address) : IngressM (Array (KId .anon)) := do
+  return (← ingressAnonBlockWithTrace ixonEnv blockConstant blockAddr).memberKids
 
 /-- Anon shallow ingress for a single address — the lazy fault path. For a
     projection, fetches the parent block and ingresses the whole block (with
