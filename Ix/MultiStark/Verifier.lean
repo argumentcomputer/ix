@@ -457,6 +457,14 @@ def verifier := ⟦
   --   is_transition  = ζ - g⁻¹
   --   inv_vanishing  = 1 / Z_H(ζ)
   -- where g = two_adic_gen(L) is the subgroup generator.
+  -- 2^l as a field value (l is a small log-height).
+  fn pow2(l: G) -> G {
+    match l {
+      0 => 1,
+      _ => 2 * pow2(l - 1),
+    }
+  }
+
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = trace_vanishing(zeta, l);
     let ginv = gl_inverse(two_adic_gen(l));
@@ -651,26 +659,40 @@ def verifier := ⟦
   -- go and accumulating `acc_expr = acc_col + Σⱼ multⱼ·invⱼ` (as a
   -- coordinate pair) for the accumulator constraints. `j` is the lookup
   -- slot (inverse columns at stage-2 slots 1+j).
-  fn logup_lookups_fold(acc: Ext, alpha: Ext, lks: List‹SysLookup›, j: G,
-      ae0: Ext, ae1: Ext, b0: Ext, b1: Ext, g0: Ext, g1: Ext,
+  -- One chained-accumulator step per lookup (Rust
+  -- `lookup::logup_constraint_values`): stage-2 slot `j` holds `acc_j`, the
+  -- running sum entering lookup `j`'s step. Interior steps assert
+  -- `m_j·(acc_{j+1} − acc_j) − mult_j = 0`; the wrap step (j = L−1) targets
+  -- the NEXT row's slot 0 plus the boundary injection
+  -- `is_last_row·(acc_final − acc_initial)` (`inj`), which converts the
+  -- cyclic telescoped sum into the public accumulator difference.
+  -- `is_last_row` is normalized (`trace_selectors`), so no row-position
+  -- constraints exist besides the injection.
+  fn logup_steps_fold(acc: Ext, alpha: Ext, lks: List‹SysLookup›, j: G, lcount: G,
+      inj0: Ext, inj1: Ext, b0: Ext, b1: Ext, g0: Ext, g1: Ext,
       nodes: List‹SysNode›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
-      isf: Ext, isl: Ext, ist: Ext) -> (Ext, Ext, Ext) {
+      isf: Ext, isl: Ext, ist: Ext) -> Ext {
     match load(lks) {
-      ListNode.Nil => (acc, ae0, ae1),
+      ListNode.Nil => acc,
       ListNode.Cons(lk, rest) =>
         let SysLookup.Mk(mid, args) = lk;
-        let inv0 = list_lookup(s2, 2 + j + j);
-        let inv1 = list_lookup(s2, 3 + j + j);
+        let s0 = list_lookup(s2, j + j);
+        let s1 = list_lookup(s2, j + j + 1);
+        let (t0, t1) = match (j + 1 - lcount) {
+          0 => (eg_add(list_lookup(s2next, 0), inj0),
+                eg_add(list_lookup(s2next, 1), inj1)),
+          _ => (list_lookup(s2, j + j + 2), list_lookup(s2, j + j + 3)),
+        };
         let (f0, f1) = logup_fingerprint(args, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-        let (c0, c1) = pair_mul(eg_add(f0, b0), eg_add(f1, b1), inv0, inv1);
-        let acc1 = ood_fold(ood_fold(acc, alpha, eg_sub(c0, [1, 0])), alpha, c1);
-        let m = eval_at(nodes, mid, main, main_next, prep, prep_next, s2, s2next,
-                        publics, isf, isl, ist);
-        logup_lookups_fold(acc1, alpha, rest, j + 1,
-          eg_add(ae0, eg_mul(m, inv0)), eg_add(ae1, eg_mul(m, inv1)),
+        let (c0, c1) = pair_mul(eg_add(f0, b0), eg_add(f1, b1),
+                                eg_sub(t0, s0), eg_sub(t1, s1));
+        let mv = eval_at(nodes, mid, main, main_next, prep, prep_next, s2, s2next,
+                         publics, isf, isl, ist);
+        let acc1 = ood_fold(ood_fold(acc, alpha, eg_sub(c0, mv)), alpha, c1);
+        logup_steps_fold(acc1, alpha, rest, j + 1, lcount, inj0, inj1,
           b0, b1, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
     }
@@ -678,34 +700,37 @@ def verifier := ⟦
 
   -- The composition polynomial `composition(ζ)` for one circuit: interpret
   -- the compiled node graph at each USER constraint root, then fold the
-  -- directly-evaluated logUp constraint values, all Horner-folded with α
+  -- directly-evaluated chained-logUp step values, all Horner-folded with α
   -- in the canonical protocol order.
   fn ood_composition(nodes: List‹SysNode›, zeros: List‹G›, lks: List‹SysLookup›,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
-      isf: Ext, isl: Ext, ist: Ext, alpha: Ext) -> Ext {
+      isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: G) -> Ext {
     let base = fold_roots([0, 0], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-    -- publics layout: β=(0,1), γ=(2,3), acc=(4,5), next_acc=(6,7).
+    -- publics layout: β=(0,1), γ=(2,3), acc_initial=(4,5), acc_final=(6,7).
     let b0 = list_lookup(publics, 0); let b1 = list_lookup(publics, 1);
     let g0 = list_lookup(publics, 2); let g1 = list_lookup(publics, 3);
     let a0 = list_lookup(publics, 4); let a1 = list_lookup(publics, 5);
     let na0 = list_lookup(publics, 6); let na1 = list_lookup(publics, 7);
-    -- stage-2 slot 0 = the running accumulator column.
-    let ac0 = list_lookup(s2, 0); let ac1 = list_lookup(s2, 1);
-    let nc0 = list_lookup(s2next, 0); let nc1 = list_lookup(s2next, 1);
-    let (acc, ae0, ae1) = logup_lookups_fold(base, alpha, lks, 0, ac0, ac1,
-      b0, b1, g0, g1, nodes,
-      main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-    -- First row: acc_col = acc.
-    let acc = ood_fold(acc, alpha, eg_mul(isf, eg_sub(ac0, a0)));
-    let acc = ood_fold(acc, alpha, eg_mul(isf, eg_sub(ac1, a1)));
-    -- Transition: acc_expr = next row's accumulator column.
-    let acc = ood_fold(acc, alpha, eg_mul(ist, eg_sub(ae0, nc0)));
-    let acc = ood_fold(acc, alpha, eg_mul(ist, eg_sub(ae1, nc1)));
-    -- Last row: acc_expr = next_acc.
-    let acc = ood_fold(acc, alpha, eg_mul(isl, eg_sub(ae0, na0)));
-    ood_fold(acc, alpha, eg_mul(isl, eg_sub(ae1, na1)))
+    -- Boundary injection: is_last_row·(acc_final − acc_initial) with the
+    -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
+    -- p3's raw selector has value n·g at the last row, and Δ is constant
+    -- across the domain, mirroring the Rust prover/verifier).
+    let inj0 = eg_mul(isl, eg_mul(eg_sub(na0, a0), [inorm, 0]));
+    let inj1 = eg_mul(isl, eg_mul(eg_sub(na1, a1), [inorm, 0]));
+    match load(lks) {
+      -- No lookups: single pass-through column, acc′ − acc + inj = 0.
+      ListNode.Nil =>
+        let acc = ood_fold(base, alpha,
+          eg_add(eg_sub(list_lookup(s2next, 0), list_lookup(s2, 0)), inj0));
+        ood_fold(acc, alpha,
+          eg_add(eg_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
+      ListNode.Cons(_h, _t) =>
+        logup_steps_fold(base, alpha, lks, 0, list_length(lks), inj0, inj1,
+          b0, b1, g0, g1, nodes,
+          main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+    }
   }
 
   -- The public-input coordinates for one circuit's lookup argument: the base
@@ -796,9 +821,10 @@ def verifier := ⟦
         let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
         let publics = build_publics(lch, fch, accp, naccp);
+        let inorm = gl_inverse(pow2(l) * two_adic_gen(l));
         let comp = ood_composition(nodes, zeros, lks,
                                    main, main_next, prep, prep_next, s2row, s2next,
-                                   publics, isf, isl, ist, alpha);
+                                   publics, isf, isl, ist, alpha, inorm);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
