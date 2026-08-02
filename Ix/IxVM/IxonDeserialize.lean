@@ -52,6 +52,15 @@ def ixonDeserialize := ⟦
         ([u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], s),
       _ =>
         let num_bytes = small_size + 1;
+        -- A u64 payload is at most 8 bytes. `small` is 7 bits here, so
+        -- `num_bytes` reaches 128 and `get_u64_le` would consume the
+        -- surplus and DISCARD it, silently accepting bytes no host will:
+        -- Rust rejects `len > 8`, and the Lean host folds the extra bytes
+        -- back in (its shift is mod 64), reading a different value from
+        -- the same address. Reject instead, so the accepted language
+        -- matches the format.
+        assert_eq!(u8_less_than(u8_from_field_unsafe(num_bytes), 9u8), 1,
+          "tag0: payload width exceeds 8 bytes");
         get_u64_le(s, num_bytes),
     }
   }
@@ -68,6 +77,10 @@ def ixonDeserialize := ⟦
         ((flag, [u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), s),
       _ =>
         let num_bytes = small_size + 1;
+        -- Same bound as `get_tag0`; `small` is 5 bits here, so
+        -- `num_bytes` reaches 32.
+        assert_eq!(u8_less_than(u8_from_field_unsafe(num_bytes), 9u8), 1,
+          "tag2: payload width exceeds 8 bytes");
         let (size, s2) = get_u64_le(s, num_bytes);
         ((flag, size), s2),
     }

@@ -10095,17 +10095,23 @@ fn aiur_fn_70(
           _ => {
             let __v_30: G = G::from_u64(1);
             let __v_31: G = (__v_29 + __v_30);
+            let __v_32: G = G::from_u64(9);
+            let __v_33: G = if unconstrained { Bytes2::less_than(&__v_31, &__v_32) } else { bytes2_less_than_value(__v_31, __v_32, record) };
+            let __v_34: G = G::from_u64(1);
+            if (__v_33 != __v_34) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_33.as_canonical_u64(), rhs: __v_34.as_canonical_u64(), msg: Some("tag0: payload width exceeds 8 bytes".to_string()) });
+            }
             let __r_arr: [G; OUT_69] = { let __args: [G; IN_69] = [__v_3, __v_31]; let __cu = unconstrained; if let Some(result) = record.function_queries[69].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_69] = unsafe { *(result.output.as_ptr() as *const [G; OUT_69]) }; __ret } else { aiur_fn_69(__args, record, io_buffer, __cu)? } };
-            let __v_32: G = __r_arr[0];
-            let __v_33: G = __r_arr[1];
-            let __v_34: G = __r_arr[2];
-            let __v_35: G = __r_arr[3];
-            let __v_36: G = __r_arr[4];
-            let __v_37: G = __r_arr[5];
-            let __v_38: G = __r_arr[6];
-            let __v_39: G = __r_arr[7];
-            let __v_40: G = __r_arr[8];
-            let __ret: [G; OUT_70] = [__v_32, __v_33, __v_34, __v_35, __v_36, __v_37, __v_38, __v_39, __v_40];
+            let __v_35: G = __r_arr[0];
+            let __v_36: G = __r_arr[1];
+            let __v_37: G = __r_arr[2];
+            let __v_38: G = __r_arr[3];
+            let __v_39: G = __r_arr[4];
+            let __v_40: G = __r_arr[5];
+            let __v_41: G = __r_arr[6];
+            let __v_42: G = __r_arr[7];
+            let __v_43: G = __r_arr[8];
+            let __ret: [G; OUT_70] = [__v_35, __v_36, __v_37, __v_38, __v_39, __v_40, __v_41, __v_42, __v_43];
             record.function_queries[70].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
             return Ok(__ret);
           },
@@ -10185,6 +10191,12 @@ fn aiur_fn_71(
             let __v_35: G = __r_arr[6];
             let __v_36: G = __r_arr[7];
             let __v_37: G = __r_arr[8];
+            let __v_38: G = G::from_u64(9);
+            let __v_39: G = if unconstrained { Bytes2::less_than(&__v_28, &__v_38) } else { bytes2_less_than_value(__v_28, __v_38, record) };
+            let __v_40: G = G::from_u64(1);
+            if (__v_39 != __v_40) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_39.as_canonical_u64(), rhs: __v_40.as_canonical_u64(), msg: Some("tag2: payload width exceeds 8 bytes".to_string()) });
+            }
             let __ret: [G; OUT_71] = [__v_14, __v_29, __v_30, __v_31, __v_32, __v_33, __v_34, __v_35, __v_36, __v_37];
             record.function_queries[71].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
             return Ok(__ret);

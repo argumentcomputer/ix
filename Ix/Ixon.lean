@@ -141,8 +141,17 @@ def putU64TrimmedLE (x : UInt64) : PutM Unit := do
   for i in [0:n.toNat] do
     putU8 ((x >>> (i.toUInt64 * 8)).toUInt8)
 
-/-- Read a u64 from minimal little-endian bytes. -/
+/-- Read a u64 from minimal little-endian bytes.
+
+    Widths past 8 are rejected, matching Rust `u64_get_trimmed_le`.
+    Without the guard the shift below wraps — `UInt64.shiftLeft` is taken
+    mod 64 — so byte 8 would OR back into bits 0-7 and a `Tag0` whose
+    payload claims nine bytes would read as a *different value* here than
+    in the kernel, which discards the surplus. Same bytes, same address,
+    two constants. -/
 def getU64TrimmedLE (len : Nat) : GetM UInt64 := do
+  if len > 8 then
+    throw "getU64TrimmedLE: len > 8"
   let mut x : UInt64 := 0
   for i in [0:len] do
     let b ← getU8
