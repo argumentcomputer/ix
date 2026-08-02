@@ -155,6 +155,13 @@ def convert := ⟦
       Expr.Str(blob_ref_idx) =>
         let blob_addr = list_lookup(refs, flatten_u64(blob_ref_idx));
         let bs = load_verified_blob(blob_addr);
+        -- The bytes are hash-bound to `blob_addr`, but nothing else on
+        -- this path inspects them: `k_infer_lit` types a `KLiteral.Str`
+        -- as `String` outright. Validate here, mirroring the reference
+        -- kernels' `String::from_utf8` at ingress, or a literal that is
+        -- never decoded typechecks as a `String` with no Lean
+        -- counterpart.
+        utf8_validate(bs);
         store(KExprNode.Lit(KLiteral.Str(bs))),
 
       Expr.Nat(blob_ref_idx) =>

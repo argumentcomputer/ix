@@ -896,6 +896,26 @@ def natPrim := ⟦
 
   -- Walk byte stream forward decoding UTF-8; return last codepoint.
   -- Empty → 65 ('A') per Rust default.
+  -- Validate an entire byte stream as UTF-8, aborting on the first
+  -- malformed scalar. `utf8_decode_one` already rejects out-of-range
+  -- continuation bytes, stray continuations as leaders, and overlong
+  -- forms, so walking the stream with it is exactly the reference
+  -- kernels' `String::from_utf8` check at ingress.
+  --
+  -- Needed at Str-literal CONVERSION, not just during string reduction:
+  -- `KLiteral.Str` is typed `String` by `k_infer_lit` without inspecting
+  -- the bytes, so a literal that is never decoded would otherwise
+  -- typecheck as a `String` that no Lean `String` corresponds to.
+  fn utf8_validate(bs: ByteStream) {
+    match load(bs) {
+      ListNode.Nil => (),
+      ListNode.Cons(b0, rest) =>
+        match utf8_decode_one(b0, rest) {
+          (_, remaining) => utf8_validate(remaining),
+        },
+    }
+  }
+
   fn utf8_last_codepoint(bs: ByteStream) -> G {
     utf8_last_go(bs, 65)
   }

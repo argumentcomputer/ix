@@ -169,7 +169,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- constants, below the layer the arena's Lean fixtures can
       -- reach. Each case pins the kernel's verdict, which is REJECT
       -- except where accepting is the specified claim semantics.
-      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests v2Env.compiled
+      let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env v2Env.compiled
       let aiurSeq := (kernelChecks ++
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealCPrj, containsTc]).foldl
@@ -195,7 +195,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             -- explicit, reviewed bump.
             let cost :=
               (Aiur.computeStats v2Env.compiled qc).totalFftCost.round.toUInt64.toNat
-            pure (LSpec.test "shard pipeline FFT" (cost == 1_949_519_856))
+            pure (LSpec.test "shard pipeline FFT" (cost == 1_949_519_873))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
