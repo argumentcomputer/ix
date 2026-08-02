@@ -755,11 +755,6 @@ def natPrim := ⟦
     }
   }
 
-  -- List length of a ByteStream (List<U8>) as U64.
-  fn bytestream_length_u64(bs: ByteStream) -> U64 {
-    let n = list_length(bs);
-    [u8_from_field_unsafe(n), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]
-  }
 
   -- String primitive dispatch. Handles:
   -- - String.utf8ByteSize (Lit(Str))          -> Lit(Nat len)
@@ -791,8 +786,17 @@ def natPrim := ⟦
               KExprNode.Lit(lit) =>
                 match lit {
                   KLiteral.Str(bs) =>
-                    let len = bytestream_length_u64(bs);
-                    let limbs = store(ListNode.Cons(len, store(ListNode.Nil)));
+                    -- The length must be a CANONICAL `KLimbs`, because
+                    -- `klimbs_eq` — behind `Nat.beq`/`Nat.decEq`/
+                    -- `literal_eq` — compares limbs without normalizing.
+                    -- `klimbs_from_g` range-checks and pins its byte
+                    -- decomposition (so a length >= 256 lands in the right
+                    -- limb instead of an out-of-range digit), and
+                    -- `klimbs_normalize` strips the all-zero limb so the
+                    -- empty string yields the canonical zero rather than
+                    -- `[[0;8]]`.
+                    let limbs =
+                      klimbs_normalize(klimbs_from_g(list_length(bs)));
                     (1, store(KExprNode.Lit(KLiteral.Nat(limbs)))),
                   _ => (0, store(KExprNode.BVar(0))),
                 },

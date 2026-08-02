@@ -191,6 +191,28 @@ def klimbs := ⟦
   }
 
   -- Strip trailing zero limbs (canonicalize `[k, 0, 0]` → `[k]`).
+  -- Force every limb byte of a prover-supplied `KLimbs` into [0, 256).
+  --
+  -- `KLimbs` is canonical in two independent ways — no trailing zero
+  -- limbs, and every byte in range — and `klimbs_normalize` only
+  -- establishes the first. The second matters because `klimbs_eq` is a
+  -- raw limb compare: a value-correct but digit-wrong `KLimbs` compares
+  -- unequal to its canonical form, so `Nat.beq` answers `false` where
+  -- Lean answers `true`. `u8_range_check` takes a pair per lookup row,
+  -- so eight bytes cost four.
+  fn klimbs_range_check(n: KLimbs) {
+    match load(n) {
+      ListNode.Nil => (),
+      ListNode.Cons(limb, rest) =>
+        let [b0, b1, b2, b3, b4, b5, b6, b7] = limb;
+        let (_, _) = u8_range_check(to_field(b0), to_field(b1));
+        let (_, _) = u8_range_check(to_field(b2), to_field(b3));
+        let (_, _) = u8_range_check(to_field(b4), to_field(b5));
+        let (_, _) = u8_range_check(to_field(b6), to_field(b7));
+        klimbs_range_check(rest),
+    }
+  }
+
   fn klimbs_normalize(n: KLimbs) -> KLimbs {
     match load(n) {
       ListNode.Nil => store(ListNode.Nil),
@@ -484,12 +506,16 @@ def klimbs := ⟦
   -- `r < b` when `b != 0`. For `b == 0` the op returns `(0, a)`; only the
   -- `q*b + r == a` equality is required (which holds: `0*0 + a == a`).
   --
-  -- Soundness on the prover-supplied bytes: every limb byte flows through
-  -- u8_mul inside `klimbs_mul(q, b)` and u8_add inside `klimbs_add(qb, r)`,
-  -- both of which push to the u8_range_check channel
-  -- (src/aiur/gadgets/bytes2.rs), so a byte > 255 fails the gadget's range
-  -- check. Trailing junk limbs that mul doesn't touch are caught by the
-  -- post-normalize equality below.
+  -- Soundness on the prover-supplied bytes: pinned by the explicit
+  -- `klimbs_range_check`es below, NOT by the arithmetic. `u64_mul` was
+  -- rewritten to raw field products plus `#split_carry`, whose u8 checks
+  -- constrain the split OUTPUTS, not the input digits — and it
+  -- re-canonicalizes while multiplying, so a digit-wrong `q` still yields
+  -- a canonical `q*b` and sails through the equality below. That left the
+  -- quotient's VALUE pinned but its representation free, which is enough:
+  -- `klimbs_eq` compares limbs rather than values, so a digit-wrong
+  -- quotient makes `Nat.beq (Nat.div 300 1) 300` answer `false`.
+  -- Trailing junk limbs are caught by the post-normalize equality.
   fn klimbs_div_mod(a: KLimbs, b: KLimbs) -> (KLimbs, KLimbs) {
     let (q_hint, r_hint) = unconstrained_big_uint_div_mod(a, b);
     -- Normalize the hint before anything reads it. The op is unconstrained,
@@ -499,6 +525,8 @@ def klimbs := ⟦
     -- limb made the `r < b` test pass vacuously.
     let q = klimbs_normalize(q_hint);
     let r = klimbs_normalize(r_hint);
+    klimbs_range_check(q);
+    klimbs_range_check(r);
     let qb = klimbs_mul(q, b);
     let lhs = klimbs_normalize(klimbs_add(qb, r));
     let rhs = klimbs_normalize(a);
