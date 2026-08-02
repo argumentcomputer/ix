@@ -2206,7 +2206,8 @@ def check := ⟦
           parent_block_addr, parent_ind_idx, n_p, n_mot, n_min, occ_us,
           rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
           spec_params, 0);
-        compare_rules(rules, canonical, n_p, n_mot, n_min),
+        compare_rules(rules, canonical, n_p, n_mot, n_min,
+          parent_block_addr, parent_ind_idx, num_ctors, 0),
     }
   }
 
@@ -2269,12 +2270,38 @@ def check := ⟦
   -- (n_p + n_mot + n_min + nf) Lams off stored rhs, def_eq against
   -- canonical body.
   fn compare_rules(stored: List‹KRecRule›, canonical: List‹KExpr›,
-                        n_p: G, n_mot: G, n_min: G) {
+                        n_p: G, n_mot: G, n_min: G,
+                        block_addr: Addr, ind_idx: G, num_ctors: G, pos: G) {
     match load(stored) {
       ListNode.Nil => (),
       ListNode.Cons(r, rest) =>
         match r {
           KRecRule.Mk(cidx, nf, rhs) =>
+            -- Pin the rule's own labels against the constructor it claims.
+            -- Equivalents of these three live in `check_rec_rules_walk`,
+            -- which nothing calls; the live path had none of them.
+            --
+            -- `cidx` selects the rule at reduction time (`find_rule` in
+            -- try_iota) while `compare_rules` pairs stored against
+            -- canonical POSITIONALLY, so permuted labels would fire one
+            -- constructor's rule for another. It holds today only because
+            -- ingress assigns `cidx` positionally (`Convert.lean`) — this
+            -- makes it an asserted invariant rather than a coincidence.
+            --
+            -- `nf` decides how `try_iota` splits the constructor's
+            -- arguments (`field_start = ctor_fields_len - rfields`), so a
+            -- wrong value hands the minor premise the wrong slice.
+            assert_eq!(cidx, pos,
+              "recursor rule is out of ctor order");
+            assert_eq!(u32_less_than(cidx, num_ctors), 1,
+              "recursor rule names a ctor index out of range");
+            let ctor_ci = load(get_ci_cprj(block_addr, ind_idx, cidx));
+            match ctor_ci {
+              KConstantInfo.Ctor(_, _, _, _, _, _, c_nf, _) =>
+                assert_eq!(nf, c_nf,
+                  "recursor rule field count differs from the ctor's");
+                (),
+            };
             match load(canonical) {
               ListNode.Nil => (),
               ListNode.Cons(cbody, crest) =>
@@ -2309,7 +2336,8 @@ def check := ⟦
                       "recursor rule rhs differs from canonical reconstruction");
                     (),
                 };
-                compare_rules(rest, crest, n_p, n_mot, n_min),
+                compare_rules(rest, crest, n_p, n_mot, n_min,
+                  block_addr, ind_idx, num_ctors, pos + 1),
             },
         },
     }
