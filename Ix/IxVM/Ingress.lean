@@ -86,8 +86,38 @@ def ingress := ⟦
         match info {
           ConstantInfo.Defn(defn) =>
             let hint = #load_constant_hint(addr);
-            -- Standalone Defn: single recur slot = self.
-            let self_recur = store(ListNode.Cons(addr, store(ListNode.Nil)));
+            -- Standalone Defn: a single recur slot naming ITSELF, and only
+            -- for an unsafe definition.
+            --
+            -- `Rec` converts to a plain `Const`, and `k_infer` reads a
+            -- `Const`'s DECLARED type without checking it. So a self slot
+            -- lets a definition discharge its own type by citing itself:
+            -- `theorem bad : False := bad` would typecheck, since the
+            -- referent is the constant already under check and the
+            -- ref-walk does not follow `Rec`. Lean forbids exactly this by
+            -- checking a definition against an environment that does not
+            -- yet contain it, admitting self-reference only for `unsafe`.
+            --
+            -- `unsafe` and `partial` are where self-reference is both
+            -- legitimate and contained. Legitimate because the compiler
+            -- emits a singleton or fully-collapsed mutual block as a
+            -- standalone `Defn` whose body still says `Rec(0)`, and those
+            -- blocks are exactly Lean's `unsafe`/`partial` recursive
+            -- definitions — a `safe` recursive definition compiles its
+            -- recursion into `.rec` applications instead. Contained
+            -- because safe code may not reference either kind, so a
+            -- self-reference cannot leak into the trusted fragment.
+            --
+            -- A `safe` definition gets an empty list, so its `Rec` aborts
+            -- on the out-of-range lookup. Mutual blocks are unaffected —
+            -- their peer slots come from `build_recur_addrs`.
+            let self_recur = match defn {
+              Definition.Mk(_, safety, _, _, _) =>
+                match safety {
+                  DefinitionSafety.Safe => store(ListNode.Nil),
+                  _ => store(ListNode.Cons(addr, store(ListNode.Nil))),
+                },
+            };
             store(convert_definition(defn, sharing, refs,
                                           self_recur, univs, hint)),
           ConstantInfo.Axio(axio) =>

@@ -30,14 +30,24 @@ included here (no addr work).
 
 set_option maxRecDepth 32768 in
 def check := ⟦
-  -- Mirror is_unsafe_ci: 1 if unsafe, 0 if safe. Thm/Quot always safe.
+  -- Mirror is_unsafe_ci: 1 if a SAFE constant may not reference it, 0
+  -- otherwise. Thm/Quot always safe.
+  --
+  -- `Partial` counts alongside `Unsafe`, matching the reference's
+  -- "safe definition references partial definition" rejection
+  -- (crates/kernel/src/check.rs). This is load-bearing rather than
+  -- cosmetic: a partial definition may reference ITSELF (see the recur
+  -- slot in Ingress), and `k_infer` discharges a `Const` against its
+  -- declared type without checking it, so `partial def bad : False := bad`
+  -- typechecks in isolation. Barring safe code from referencing it is what
+  -- keeps that out of the trusted fragment.
   fn is_unsafe_ci(ci: KConstantInfo) -> G {
     match ci {
       KConstantInfo.Axiom(_, _, u) => u,
       KConstantInfo.Defn(_, _, _, s, _) =>
         match s {
-          DefinitionSafety.Unsafe => 1,
-          _ => 0,
+          DefinitionSafety.Safe => 0,
+          _ => 1,
         },
       KConstantInfo.Thm(_, _, _) => 0,
       KConstantInfo.Opaque(_, _, _, u) => u,
