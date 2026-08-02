@@ -77,6 +77,39 @@ private def canonical : Std.HashMap Address String := Id.run do
     m := m.insert a name
   return m
 
+/-- Fold a name to a comparison key: drop namespace separators and
+    underscores, lowercase. `nat_add_addr` and `Nat.add` both become
+    `natadd`. -/
+private def normKey (s : String) : String :=
+  ((s.replace "_" "").replace "." "").toLower
+
+private def dropSuffix (s suf : String) : String :=
+  if s.endsWith suf then (s.dropEnd suf.length).toString else s
+
+/-- The addr function's key: last namespace component, with the
+    dispatch-site suffix (`_dec`/`_io`/`_iota` — several primitives have
+    one addr function per call site), the `_addr` marker, and a trailing
+    `_type`/`_ty` removed, then normalized. `str` is spelled out, since
+    the kernel abbreviates `String`. -/
+private def fnKey (fnName : String) : String :=
+  let base := (fnName.splitOn ".").getLast!
+  let base := ["_dec", "_io", "_iota"].foldl dropSuffix base
+  let base := dropSuffix base "_addr"
+  let base := ["_type", "_ty"].foldl dropSuffix base
+  let k := normKey base
+  if k == "str" || (k.startsWith "str" && !k.startsWith "string")
+  then "string" ++ k.drop 3 else k
+
+/-- Addr functions whose name does not follow `snake_case` of the Lean
+    constant even after the normalizations above. Maps the function's key
+    to the constant it must resolve to; anything absent is required to
+    match by normalized name. -/
+private def nameExceptions : Std.HashMap String String := .ofList [
+  ("quotctor", "Quot.mk"),
+  ("quotlift", "Quot.lift"),
+  ("quotind", "Quot.ind")
+]
+
 def suite : List TestSeq := Id.run do
   let some toplevel := (IxVM.ixVMFull).toOption
     | [test "IxVM toplevel builds" false]
@@ -88,7 +121,21 @@ def suite : List TestSeq := Id.run do
   for (fnName, addr) in fns do
     match canonical[addr]? with
     | some canonName =>
-      tests := tests ++ test s!"{fnName} = {canonName}" true
+      -- Assert the function resolves to the constant its NAME claims.
+      -- Membership alone is not enough: this map is keyed by address, so
+      -- a table where `nat_add_addr` held `Nat.mul`'s bytes would still
+      -- find a canonical entry and pass. That permutation is precisely
+      -- the defect this suite exists to catch — the kernel would apply
+      -- one primitive's native semantics under another's name.
+      -- The addr function may spell the constant fully (`nat_add_addr` ↔
+      -- `Nat.add`) or only its final component (`reduce_bool_addr` ↔
+      -- `Lean.reduceBool`); both are accepted, anything else must be
+      -- declared in `nameExceptions`.
+      let k := fnKey fnName
+      let ok : Bool := match nameExceptions[k]? with
+        | some want => canonName == want
+        | none => k == normKey canonName || k == fnKey canonName
+      tests := tests ++ test s!"{fnName} = {canonName}" ok
     | none =>
       -- A named address constant that matches no canonical address is
       -- the defect this test exists for: the kernel will never

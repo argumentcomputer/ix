@@ -182,6 +182,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       -- parallel closure walk) and run on the native kernel. Pinned FFT
       -- is the regression signal.
       let shardSeq ← match (← shardCheckEnvCase env) with
+        -- Only reachable when the target constant is absent from this
+        -- toolchain; a fixture that no longer selects any owned
+        -- constants throws instead of skipping.
         | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
         | some (handle, ownedBlob) =>
           let funIdx := v2Env.compiled.getFuncIdx `verify_claim |>.get!
@@ -261,6 +264,15 @@ def main (args : List String) : IO UInt32 := do
     let mut result ← LSpec.lspecIO ignoredSuites filterArgs
     let env ← get_env!
     let ignored := ignoredRunners env
+    -- A filter arg matching no runner must be an ERROR, not a silent
+    -- no-op: `filterMap` would drop it, leaving nothing to run and
+    -- returning 0, so a typo'd suite name reports success having
+    -- executed nothing.
+    for arg in filterArgs do
+      if !(ignored.any fun (key, _) => key == arg)
+          && !ignoredSuites.contains arg then
+        IO.eprintln s!"error: no ignored suite or runner named '{arg}'"
+        return 1
     let filtered := if filterArgs.isEmpty then ignored
       else filterArgs.filterMap fun arg => ignored.find? fun (key, _) => key == arg
     for (_, action) in filtered do

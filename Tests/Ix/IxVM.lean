@@ -476,7 +476,16 @@ public def shardCheckEnvCase (env : Lean.Environment) :
           ownedGroups := ownedGroups.insert k
   let mut owned : Array Address := #[]
   for k in ownedGroups.toArray do owned := owned ++ groups.getD k #[]
-  if owned.isEmpty then return none
+  -- Distinct from the `none` above, which means the target constant is
+  -- absent from this toolchain. Reaching here means the target EXISTS but
+  -- the shard partitioning selected nothing to own, i.e. the fixture
+  -- stopped exercising the Rust witness builder and thin-frontier claim
+  -- convention. Reporting that as a skip would leave the only test of
+  -- that path permanently green while testing nothing.
+  if owned.isEmpty then
+    throw <| IO.userError "shardCheckEnvCase: target present but the \
+      partition selected zero owned constants — fixture no longer \
+      exercises the shard pipeline"
   let envBytes ← IO.ofExcept (Ixon.serEnv ixonEnv)
   let handle ← IO.ofExcept (Aiur.EnvHandle.fromBytes envBytes)
   let ownedBlob : ByteArray := owned.foldl (fun b a => b ++ a.hash) .empty
