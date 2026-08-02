@@ -239,16 +239,48 @@ let block_c = load_verified_constant(block_addr);
     }
   }
 
-  -- Convert G idx (assumed < 256) to a U64 [U8; 8] little-endian.
-  -- Pack a member/ctor index into the u64 projection field. Only the
-  -- low byte is populated; u8_range_check both range-asserts idx < 256
-  -- AND returns the value typed as u8 — u8_from_field_unsafe here
-  -- silently truncated for idx >= 256, colliding the synthesized
-  -- projection addresses of members 0 and 256. Full u64 decomposition
-  -- deferred.
+  -- Pack a member/ctor index into the u64 projection field as a
+  -- little-endian [U8; 8].
+  --
+  -- The bytes come from the `unconstrained_g_to_bytes` hint and are then
+  -- CONSTRAINED, because field -> bytes is not free: `flatten_u64` goes
+  -- bytes -> field for nothing, but the reverse needs the bytes supplied
+  -- as advice and pinned. Three obligations, all discharged here:
+  --
+  --   * every byte is range-checked into [0, 256) (`u8_range_check`
+  --     takes a pair per lookup row, so eight bytes cost four);
+  --   * the bytes must RECOMPOSE to `idx`;
+  --   * the recomposition must be CANONICAL. This one is load-bearing:
+  --     Goldilocks is 2^64 - 2^32 + 1, so an arbitrary eight-byte string
+  --     is not injective into the field — values at or above `p` wrap,
+  --     and a prover could hand over a second string recomposing to the
+  --     same element.
+  --
+  -- Uniqueness is the soundness property, since the synthesized
+  -- projection address is blake3 over these serialized bytes: a prover
+  -- free to pick a different string for one index would get a second
+  -- address for a member, or collide two members onto one address. The
+  -- earlier `u8_from_field_unsafe` version truncated and did exactly
+  -- that for members 0 and 256.
+  --
+  -- Indices at or beyond 2^56 fail the assert rather than truncating
+  -- silently — a liveness bound only, and far past any real block or
+  -- constructor count.
   fn idx_to_u64(idx: G) -> U64 {
-    let (idx_u8, _) = u8_range_check(idx, 0);
-    [idx_u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]
+    let [h0, h1, h2, h3, h4, h5, h6, h7] = unconstrained_g_to_bytes(idx);
+    let (b0, b1) = u8_range_check(to_field(h0), to_field(h1));
+    let (b2, b3) = u8_range_check(to_field(h2), to_field(h3));
+    let (b4, b5) = u8_range_check(to_field(h4), to_field(h5));
+    let (b6, b7) = u8_range_check(to_field(h6), to_field(h7));
+    let bytes = [b0, b1, b2, b3, b4, b5, b6, b7];
+    -- `flatten_u64` contributes the top-byte-is-zero assert and the sum.
+    -- It does NOT range-check its input and so is not injective on its
+    -- own; uniqueness here holds only because the range checks above
+    -- bound every byte. Both halves are load-bearing — dropping either
+    -- lets a prover pick a second byte string for the same index.
+    assert_eq!(flatten_u64(bytes), idx,
+      "projection index bytes do not recompose to the index");
+    bytes
   }
 
   -- Synthesize the projection-wrapper Addr for Muts member at idx.

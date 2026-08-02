@@ -283,6 +283,22 @@ def byteStream := ⟦
   -- Flatten a [U8; 8] (U64 little-endian bytes) into a single G via
   -- b0 + 256 * b1 + ... + 256^6 * b6. The most significant byte (b7) must be zero;
   -- this is enforced by assert_eq!, limiting the range to 7 bytes (< 2^56).
+  --
+  -- INJECTIVITY IS CONDITIONAL ON THE CALLER. `[U8; 8]` is nominal typing,
+  -- not a constraint — `u8_from_field_unsafe` mints a `U8` holding any
+  -- field element — so this function alone does NOT pin a unique input
+  -- for a given output. With unchecked bytes the sum is satisfiable many
+  -- ways (`b1 = k`, `b0 = x - 256k`). Only when every byte is
+  -- range-checked does `b7 = 0` bound the value by 2^56 - 1, which is
+  -- below Goldilocks `p`, so the sum cannot wrap and the decomposition is
+  -- unique.
+  --
+  -- Callers relying on that uniqueness must therefore supply
+  -- range-checked bytes, and must not lose the `b7 = 0` assert: widening
+  -- this to a full u64 would silently break them, since 8-byte strings
+  -- are not injective into the field (a value and value + p collide).
+  -- `Ingress.idx_to_u64` is one such caller — it pins a projection index
+  -- whose bytes are hashed into a member's content address.
   fn flatten_u64(x: [U8; 8]) -> G {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = x;
     assert_eq!(to_field(b7), 0,

@@ -25183,16 +25183,25 @@ fn aiur_fn_265(
 ) -> Result<[G; OUT_265], ExecError> {
   stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
     let __v_0: G = inp[0];
-    let __v_1: G = G::from_u64(0);
-    if !unconstrained { let __vi = __v_0; let __vj = __v_1; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
-    let __v_2: G = G::from_u64(0);
-    let __v_3: G = G::from_u64(0);
-    let __v_4: G = G::from_u64(0);
-    let __v_5: G = G::from_u64(0);
-    let __v_6: G = G::from_u64(0);
-    let __v_7: G = G::from_u64(0);
-    let __v_8: G = G::from_u64(0);
-    let __ret: [G; OUT_265] = [__v_0, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8];
+    let __gb: [u8; 8] = __v_0.as_canonical_u64().to_le_bytes();
+    let __v_1: G = G::from_u8(__gb[0]);
+    let __v_2: G = G::from_u8(__gb[1]);
+    let __v_3: G = G::from_u8(__gb[2]);
+    let __v_4: G = G::from_u8(__gb[3]);
+    let __v_5: G = G::from_u8(__gb[4]);
+    let __v_6: G = G::from_u8(__gb[5]);
+    let __v_7: G = G::from_u8(__gb[6]);
+    let __v_8: G = G::from_u8(__gb[7]);
+    if !unconstrained { let __vi = __v_1; let __vj = __v_2; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_3; let __vj = __v_4; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_5; let __vj = __v_6; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    if !unconstrained { let __vi = __v_7; let __vj = __v_8; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+    let __r_arr: [G; OUT_15] = { let __args: [G; IN_15] = [__v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[15].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_15] = unsafe { *(result.output.as_ptr() as *const [G; OUT_15]) }; __ret } else { aiur_fn_15(__args, record, io_buffer, __cu)? } };
+    let __v_9: G = __r_arr[0];
+    if (__v_9 != __v_0) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_9.as_canonical_u64(), rhs: __v_0.as_canonical_u64(), msg: Some("projection index bytes do not recompose to the index".to_string()) });
+    }
+    let __ret: [G; OUT_265] = [__v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8];
     record.function_queries[265].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
     return Ok(__ret);
   })
