@@ -652,8 +652,11 @@ def check := ⟦
                             -- number of distinct reachable blocks is finite.
                             let aug = store(ListNode.Cons(ext_block_addr,
                                                               block_addrs));
+                            let rev_params = list_reverse(
+                              list_take(args, n_ctor_params));
                             check_nested_ctors_positivity(ext_block_addr,
-                              ext_ind_idx, ext_num_ctors, aug, 0),
+                              ext_ind_idx, ext_num_ctors, aug, 0,
+                              n_ctor_params, rev_params),
                         },
                     },
                 },
@@ -666,21 +669,42 @@ def check := ⟦
   -- (block_addr, ind_idx), checking its fields under the augmented block
   -- set. The ctors are reached by index through the block's projection
   -- wrappers.
+  -- `rev_params` are the nested inductive's actual parameter ARGUMENTS,
+  -- reversed, and `n_params` is how many there are.
+  --
+  -- Substituting them is what makes this check mean anything. A nested
+  -- constructor's fields mention the inductive's parameters as bound
+  -- variables, so descending into the raw declared type asks whether the
+  -- block occurs in `BVar 0` — it never does, and every parameter
+  -- position passes vacuously. The occurrence being hunted lives in the
+  -- ARGUMENT that was substituted for that parameter. Concretely, for
+  -- `Inner α | mk : (α → False) → Inner α` used as `Inner Host`, the
+  -- negative occurrence of `Host` only appears once `α := Host`.
+  --
+  -- Mirrors `check_nested_ctor_fields` (crates/kernel/src/inductive.rs):
+  -- strip `n_params` foralls, then simultaneously substitute at depth 0.
+  -- After stripping, `BVar 0` is the LAST (innermost) parameter, so the
+  -- argument list is reversed — `expr_inst_many` maps `substs[i]` to
+  -- `BVar(depth + i)`, the same convention as `simul_subst`.
   fn check_nested_ctors_positivity(block_addr: Addr, ind_idx: G,
                                         num_ctors: G, aug: List‹Addr›,
-                                        cidx: G) {
+                                        cidx: G, n_params: G,
+                                        rev_params: List‹KExpr›) {
     match num_ctors - cidx {
       0 => (),
       _ =>
         let ctor_ci = load(get_ci_cprj(block_addr, ind_idx, cidx));
         match ctor_ci {
-          KConstantInfo.Ctor(_, ctor_ty, _, _, _, c_np, _, _) =>
-            match peel_n_foralls_with_types(ctor_ty, c_np,
+          KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _, _) =>
+            match peel_n_foralls_with_types(ctor_ty, n_params,
                                                  store(ListNode.Nil)) {
-              (body, types_after) =>
-                check_positivity_fields(body, aug, types_after);
+              (body, _) =>
+                -- Parameters are substituted away, so the field walk
+                -- starts with no binders in scope.
+                check_positivity_fields(expr_inst_many(body, rev_params, 0),
+                  aug, store(ListNode.Nil));
                 check_nested_ctors_positivity(block_addr, ind_idx,
-                  num_ctors, aug, cidx + 1),
+                  num_ctors, aug, cidx + 1, n_params, rev_params),
             },
         },
     }
