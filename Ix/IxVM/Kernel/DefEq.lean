@@ -401,8 +401,29 @@ def defEq := ⟦
                             match struct_is_rec(struct_addr) {
                               1 => 0,
                               _ =>
-                                compare_struct_fields(struct_addr, nparams,
-                                                           nfields, t, s_args, 0, types),
+                                -- The two sides must have def-eq TYPES.
+                                -- Without this the rule degenerates: for
+                                -- ANY `t` of ANY type it would compare
+                                -- `t` against `S.mk … (Proj S i t) …`,
+                                -- and `compare_struct_fields` builds
+                                -- exactly those projections, so the
+                                -- pointer fast path matches them and the
+                                -- pair is accepted. Those projections are
+                                -- synthesized inside def-eq and never
+                                -- inferred, so `k_infer_proj`'s own
+                                -- head-address gate never sees them.
+                                -- Mirrors the reference's
+                                -- "Types must be def-eq" check
+                                -- (crates/kernel/src/def_eq.rs), itself
+                                -- lean4lean's `tryEtaStructCore`.
+                                let t_ty = k_infer_only(t, types);
+                                let s_ty = k_infer_only(s, types);
+                                match k_is_def_eq(t_ty, s_ty, types) {
+                                  0 => 0,
+                                  _ =>
+                                    compare_struct_fields(struct_addr, nparams,
+                                                               nfields, t, s_args, 0, types),
+                                },
                             },
                         },
                       _ => 0,
