@@ -398,7 +398,12 @@ private def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
   | _ => addr
 
 /-- Owned constants of a shard: every env constant whose check-schedule block
-    is in `blocks`. -/
+    is in `blocks`.
+
+    Constants whose bytes do not parse are skipped and therefore owned by
+    NOBODY. That is safe only because `shardsCover` fails the run when any
+    exist, so this is never reached with one present; without that gate a
+    silent skip here means a constant no shard ever checks. -/
 def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) : Array Address := Id.run do
   let blockSet : Std.HashSet Address := blocks.foldl (·.insert ·) {}
   let mut o : Array Address := #[]
@@ -504,8 +509,17 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
   -- assign every const to a shard via its block; count + detect unowned.
   let mut counts : Array Nat := Array.replicate shards.size 0
   let mut unowned : Nat := 0
+  let mut unparsed : Nat := 0
   for (addr, lc) in ixonEnv.consts do
-    let some c := lc.get? | continue
+    -- A constant whose bytes do not parse must FAIL the gate, not be
+    -- skipped. `.ixe` loading is lazy and `LazyConstant.get?` discards
+    -- the error, so such a constant sits in `consts` with its key
+    -- present: skipping it assigned it to no shard, counted it as
+    -- neither owned nor unowned, and still included it in the "covers
+    -- all N consts" total below. It would also enter a referring
+    -- shard's frontier, since that admits an edge on key presence
+    -- without parsing — an assumption no shard discharges.
+    let some c := lc.get? | unparsed := unparsed + 1; continue
     match blockToShard.get? (blockAddrOf addr c) with
     | some k => counts := counts.modify k (· + 1)  -- total: no-op if out of range
     | none => unowned := unowned + 1
@@ -516,7 +530,10 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     IO.eprintln s!"[shards] FAIL: {dup} block(s) owned by >1 shard (not disjoint)"
   if unowned != 0 then
     IO.eprintln s!"[shards] FAIL: {unowned} const(s) with no owning shard (coverage gap)"
-  let ok := dup == 0 && unowned == 0
+  if unparsed != 0 then
+    IO.eprintln s!"[shards] FAIL: {unparsed} const(s) whose bytes do not parse \
+      (cannot be assigned to a shard)"
+  let ok := dup == 0 && unowned == 0 && unparsed == 0
   if ok then
     IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
   pure ok
