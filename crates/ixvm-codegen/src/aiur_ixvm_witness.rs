@@ -17,8 +17,12 @@
 //! | 4  | blob raw bytes           | blob addr      | bytes     |
 //!
 //! An address is seeded on ch 2 iff it is a constant and on ch 4 iff it
-//! is a blob; the two sets are disjoint. The kernel derives which it is
-//! from Expr context, so no discriminator entry is shipped.
+//! is a blob. The two sets are NOT disjoint: constant and blob addresses
+//! share a hash codomain, so one address can be read both ways, and the
+//! Expr context (`Ref`/`Prj` vs `Str`/`Nat`) is what says which table a
+//! reference means. Each channel is therefore seeded independently, and
+//! the kernel derives which it wants from that context, so no
+//! discriminator entry is shipped.
 //!
 //! Every byte-stream is blake3-verified kernel-side against its
 //! content-addressed key.
@@ -86,9 +90,9 @@ fn hint_to_g(h: &ReducibilityHints) -> G {
 /// Per-channel entry produced by the parallel scan over the closure.
 /// Sorted into the IOBuffer in a serial fold afterwards.
 struct ChannelEntries {
-  /// ch 2 const entries: `(key, bytes-as-G)`. Constants only — an address
-  /// is seeded on ch 2 iff it is a constant and on ch 4 iff it is a blob,
-  /// and the two sets are disjoint.
+  /// ch 2 const entries: `(key, bytes-as-G)`. An address may also appear
+  /// in `blobs` below — the two tables share a hash codomain, so one
+  /// address can be read both ways.
   consts: Vec<(Vec<G>, Vec<G>)>,
   /// ch 4 blob entries: `(key, bytes-as-G)`.
   blobs: Vec<(Vec<G>, Vec<G>)>,
@@ -119,21 +123,27 @@ fn add_entries_parallel(
 
   // Phase A: parallel byte conversion per closure addr. Each thread
   // produces its own partial `ChannelEntries`. A constant goes to ch 2
-  // and a blob to ch 4; nothing is seeded on both. The kernel derives
-  // blob-vs-constant from Expr context, so no marker entry is needed.
+  // and a blob to ch 4, and an address that is both is seeded on both.
+  // The kernel derives blob-vs-constant from Expr context, so no marker
+  // entry is needed.
   let partials: Vec<ChannelEntries> = closure_vec
     .par_chunks(256)
     .map(|chunk| {
       let mut p = ChannelEntries::new();
       for addr in chunk {
         let key = addr_key(addr);
-        // Const lookup first.
+        // The two lookups are INDEPENDENT: one address may be both a
+        // constant and a blob payload, since the two share a hash
+        // codomain and it is the Expr context (`Ref`/`Prj` vs
+        // `Str`/`Nat`) that says which table a reference means. The
+        // kernel faults ch 2 and ch 4 separately, so letting a constant
+        // hit suppress the blob seeding aborts such a check with
+        // `invalid IO key`. Mirrors the Lean seeder, which walks
+        // `consts` and `blobs` in separate passes.
         if let Some(lc) = env.consts.get(addr) {
           let data = bytes_to_g(lc.raw_bytes());
-          p.consts.push((key, data));
-          continue;
+          p.consts.push((key.clone(), data));
         }
-        // Blob lookup.
         if let Some(blob) = env.blobs.get(addr) {
           let data = bytes_to_g(blob.value());
           p.blobs.push((key, data));
@@ -308,4 +318,52 @@ pub fn build_shard_check_env_witness(
   }
 
   Ok((claim, digest_key, io))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use ixon::constant::{Axiom, Constant, ConstantInfo};
+  use ixon::expr::Expr;
+  use std::sync::Arc;
+
+  fn const_with_refs(refs: Vec<Address>) -> Constant {
+    Constant::with_tables(
+      ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: Arc::new(Expr::Sort(0)),
+      }),
+      Vec::new(),
+      refs,
+      Vec::new(),
+    )
+  }
+
+  /// One address can legitimately be read as both a constant and a blob
+  /// payload: blob and constant addresses share a hash codomain, and the
+  /// Expr context (`Ref`/`Prj` vs `Str`/`Nat`) is what disambiguates. The
+  /// kernel faults such an address from ch 2 and ch 4 independently, so
+  /// the witness must seed both — a constant hit must not suppress the
+  /// blob lookup, or the check aborts with `invalid IO key`.
+  #[test]
+  fn dual_use_address_is_seeded_on_both_channels() {
+    let env = Env::new();
+    let target = Address::hash(b"target");
+    let dual = Address::hash(b"dual");
+    env.store_const(target.clone(), const_with_refs(vec![dual.clone()]));
+    env.store_const(dual.clone(), const_with_refs(vec![]));
+    env.blobs.insert(dual.clone(), vec![1, 2, 3]);
+
+    let (_, _, io) = build_claim_check_witness(&env, &target).unwrap();
+    let key = addr_key(&dual);
+    assert!(
+      io.map.contains_key(&(G::from_u8(2), key.clone())),
+      "dual-use address missing from ch 2 (constant bytes)"
+    );
+    assert!(
+      io.map.contains_key(&(G::from_u8(4), key)),
+      "dual-use address missing from ch 4 (blob bytes)"
+    );
+  }
 }
