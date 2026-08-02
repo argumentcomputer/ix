@@ -110,6 +110,46 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
   pure rawEnv.toEnv
 
+/-- The `refs` indices `e` uses as a CONSTANT: `Ref i` and the type index
+    of `Prj i`. `Str`/`Nat` index blob payloads and `Rec` resolves through
+    the block's members, so neither contributes. `Share` is not followed —
+    every shared subexpression is itself an entry of `Constant.sharing`,
+    walked separately. Mirrors `const_idxs_expr` in `Kernel/Claim.lean`. -/
+partial def constIdxsExpr : Ixon.Expr → Std.HashSet UInt64
+  | .ref i _ => {i}
+  | .prj i _ inner => (constIdxsExpr inner).insert i
+  | .app a b | .lam a b | .all a b => (constIdxsExpr a).union (constIdxsExpr b)
+  | .letE _ t v b =>
+    ((constIdxsExpr t).union (constIdxsExpr v)).union (constIdxsExpr b)
+  | _ => {}
+
+/-- The `refs` indices `c` uses as constants, over its `sharing` table and
+    every Expr its `ConstantInfo` carries. Mirrors `const_idxs_of` in
+    `Kernel/Claim.lean` and `ixon::shard_claim::const_idxs_of`. -/
+def constIdxsOf (c : Ixon.Constant) : Std.HashSet UInt64 := Id.run do
+  let mut out : Std.HashSet UInt64 := {}
+  for e in c.sharing do
+    out := out.union (constIdxsExpr e)
+  let ofDefn (d : Ixon.Definition) := (constIdxsExpr d.typ).union (constIdxsExpr d.value)
+  let ofRecr (r : Ixon.Recursor) := r.rules.foldl
+    (fun acc rule => acc.union (constIdxsExpr rule.rhs)) (constIdxsExpr r.typ)
+  let ofIndc (i : Ixon.Inductive) := i.ctors.foldl
+    (fun acc ctor => acc.union (constIdxsExpr ctor.typ)) (constIdxsExpr i.typ)
+  match c.info with
+  | .defn d => out := out.union (ofDefn d)
+  | .recr r => out := out.union (ofRecr r)
+  | .axio a => out := out.union (constIdxsExpr a.typ)
+  | .quot q => out := out.union (constIdxsExpr q.typ)
+  | .muts members =>
+    for m in members do
+      out := out.union <| match m with
+        | .defn d => ofDefn d
+        | .indc i => ofIndc i
+        | .recr r => ofRecr r
+  -- Projection wrappers carry no Exprs of their own.
+  | _ => pure ()
+  return out
+
 /-- Content address of a synthesized projection wrapper: a `Constant`
     holding just the proj info with empty sharing/refs/univs tables,
     serialized and blake3-hashed — the same construction compile uses
@@ -372,8 +412,14 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
       match env.getConst? o with
       | none => pure ()
       | some c =>
-        for r in c.refs do
-          if !ownedSet.contains r && env.consts.contains r then
+        -- Only the indices some Expr uses as a constant are walk edges,
+        -- matching the kernel's `env_walk_refs`. A `refs` entry no Expr
+        -- names as a constant is never walked in-circuit, so admitting it
+        -- would put a phantom member in the frontier.
+        let used := constIdxsOf c
+        for (r, i) in c.refs.zipIdx do
+          if used.contains i.toUInt64 && !ownedSet.contains r
+              && env.consts.contains r then
             fs := fs.insert r
         let blockOpt : Option Address := match c.info with
           | .iPrj p => some p.block

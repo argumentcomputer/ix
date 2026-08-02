@@ -6,8 +6,12 @@
 //!
 //! Semantics (mirrors the Aiur kernel's `env_walk`):
 //!
-//! - **Walk edge relation**: a constant's `refs`, plus — for a
-//!   projection wrapper (IPrj/CPrj/RPrj/DPrj) — its `block` pointer.
+//! - **Walk edge relation**: the `refs` entries some Expr uses AS A
+//!   CONSTANT (`Ref(i, ..)` or `Prj(i, ..)`), plus — for a projection
+//!   wrapper (IPrj/CPrj/RPrj/DPrj) — its `block` pointer. `Str`/`Nat`
+//!   entries index blob payloads and entries no Expr names are never
+//!   walked, so neither is an edge; admitting them would put phantom
+//!   members in the frontier the kernel never visits.
 //!   NOT `Env::closure_edges`: that also derives Muts member-projection
 //!   addresses, which the claim walk does not traverse (a Muts block's
 //!   members are checked in place; recursion leaves the block only
@@ -31,15 +35,107 @@
 
 use rustc_hash::FxHashSet;
 
-use crate::constant::{Constant, ConstantInfo};
+use crate::constant::{
+  Constant, ConstantInfo, Definition, Inductive, MutConst, Recursor,
+};
 use crate::env::Env;
+use crate::expr::Expr;
 use crate::merkle::merkle_root_canonical;
 use crate::proof::Claim;
 use ix_common::address::Address;
 
-/// The claim walk's edge relation: `refs` + projection `block`.
+/// Collect the `refs` indices this Expr uses as a CONSTANT: `Ref(i, _)`
+/// and the type index of `Prj(i, _, _)`. `Str`/`Nat` index blob payloads
+/// and `Rec` resolves through the block's members, so neither
+/// contributes. `Share` is not followed — every shared subexpression is
+/// itself an entry of `Constant.sharing`, which is walked separately, so
+/// coverage is complete and the traversal stays linear.
+///
+/// Mirror of `const_idxs_expr` in `Ix/IxVM/Kernel/Claim.lean`.
+fn const_idxs_expr(e: &Expr, out: &mut FxHashSet<u64>) {
+  match e {
+    Expr::Ref(i, _) => {
+      out.insert(*i);
+    },
+    Expr::Prj(i, _, inner) => {
+      out.insert(*i);
+      const_idxs_expr(inner, out);
+    },
+    Expr::App(a, b) | Expr::Lam(a, b) | Expr::All(a, b) => {
+      const_idxs_expr(a, out);
+      const_idxs_expr(b, out);
+    },
+    Expr::Let(_, t, v, b) => {
+      const_idxs_expr(t, out);
+      const_idxs_expr(v, out);
+      const_idxs_expr(b, out);
+    },
+    _ => {},
+  }
+}
+
+/// The `refs` indices a constant uses as constants, over its `sharing`
+/// table and every Expr its `ConstantInfo` carries.
+///
+/// Mirror of `const_idxs_of` in `Ix/IxVM/Kernel/Claim.lean`.
+fn const_idxs_of(c: &Constant) -> FxHashSet<u64> {
+  let mut out = FxHashSet::default();
+  for e in &c.sharing {
+    const_idxs_expr(e, &mut out);
+  }
+  let defn = |d: &Definition, out: &mut FxHashSet<u64>| {
+    const_idxs_expr(&d.typ, out);
+    const_idxs_expr(&d.value, out);
+  };
+  let recr = |r: &Recursor, out: &mut FxHashSet<u64>| {
+    const_idxs_expr(&r.typ, out);
+    for rule in &r.rules {
+      const_idxs_expr(&rule.rhs, out);
+    }
+  };
+  let indc = |i: &Inductive, out: &mut FxHashSet<u64>| {
+    const_idxs_expr(&i.typ, out);
+    for ctor in &i.ctors {
+      const_idxs_expr(&ctor.typ, out);
+    }
+  };
+  match &c.info {
+    ConstantInfo::Defn(d) => defn(d, &mut out),
+    ConstantInfo::Recr(r) => recr(r, &mut out),
+    ConstantInfo::Axio(a) => const_idxs_expr(&a.typ, &mut out),
+    ConstantInfo::Quot(q) => const_idxs_expr(&q.typ, &mut out),
+    ConstantInfo::Muts(members) => {
+      for m in members {
+        match m {
+          MutConst::Defn(d) => defn(d, &mut out),
+          MutConst::Indc(i) => indc(i, &mut out),
+          MutConst::Recr(r) => recr(r, &mut out),
+        }
+      }
+    },
+    // Projection wrappers carry no Exprs of their own.
+    _ => {},
+  }
+  out
+}
+
+/// The claim walk's edge relation: the `refs` entries used as constants,
+/// plus a projection's `block`.
+///
+/// Only positively-used indices are edges, matching the kernel's
+/// `env_walk_refs` / `walk_refs_transitive`. Treating every `refs` entry
+/// as an edge would over-approximate against a prover-authored constant —
+/// a `refs` entry no Expr uses as a constant is never walked in-circuit,
+/// so admitting it here would put a phantom member in the thin frontier
+/// (and thus a phantom cross-shard assumption edge) that the kernel never
+/// produces.
 pub fn walk_edges(c: &Constant, edges: &mut Vec<Address>) {
-  edges.extend(c.refs.iter().cloned());
+  let used = const_idxs_of(c);
+  for (i, a) in c.refs.iter().enumerate() {
+    if used.contains(&(i as u64)) {
+      edges.push(a.clone());
+    }
+  }
   match &c.info {
     ConstantInfo::IPrj(p) => edges.push(p.block.clone()),
     ConstantInfo::CPrj(p) => edges.push(p.block.clone()),
@@ -160,12 +256,30 @@ mod tests {
   use crate::expr::Expr;
   use std::sync::Arc;
 
+  /// A constant whose type NAMES every one of its `refs` entries via a
+  /// `Ref` node. The walk admits an index only when some Expr uses it as
+  /// a constant, so a fixture whose Exprs ignore `refs` would produce no
+  /// edges at all.
   fn const_with_refs(refs: Vec<Address>) -> Constant {
+    let mut typ: Arc<Expr> = Arc::new(Expr::Sort(0));
+    for i in 0..refs.len() {
+      typ = Arc::new(Expr::App(typ, Arc::new(Expr::Ref(i as u64, Vec::new()))));
+    }
+    Constant::with_tables(
+      ConstantInfo::Axio(Axiom { is_unsafe: false, lvls: 0, typ }),
+      Vec::new(),
+      refs,
+      Vec::new(),
+    )
+  }
+
+  /// `refs` carries every address, but only index 0 is named by a `Ref`.
+  fn const_using_only_first(refs: Vec<Address>) -> Constant {
     Constant::with_tables(
       ConstantInfo::Axio(Axiom {
         is_unsafe: false,
         lvls: 0,
-        typ: Arc::new(Expr::Sort(0)),
+        typ: Arc::new(Expr::Ref(0, Vec::new())),
       }),
       Vec::new(),
       refs,
@@ -206,6 +320,32 @@ mod tests {
     assert!(!f.contains(&a));
     assert!(!f.contains(&b));
     assert!(!f.contains(&blob));
+  }
+
+  /// A `refs` entry that is a real constant but that no Expr uses as one
+  /// is never walked in-circuit, so it must not appear in the frontier.
+  /// Admitting it would commit the claim to a cross-shard assumption the
+  /// kernel never makes — a phantom dependency edge, and a potential
+  /// phantom cycle once assumptions are discharged.
+  #[test]
+  fn thin_frontier_excludes_unused_ref_entries() {
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let used = Address::hash(b"used");
+    let dead = Address::hash(b"dead");
+    env.store_const(used.clone(), const_with_refs(vec![]));
+    env.store_const(dead.clone(), const_with_refs(vec![]));
+    env.store_const(
+      a.clone(),
+      const_using_only_first(vec![used.clone(), dead.clone()]),
+    );
+
+    let f = thin_frontier(&env, &[a]);
+    assert!(f.contains(&used), "positively-used ref missing from frontier");
+    assert!(
+      !f.contains(&dead),
+      "unused refs entry became a phantom frontier member"
+    );
   }
 
   #[test]
