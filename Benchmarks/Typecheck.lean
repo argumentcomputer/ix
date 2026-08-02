@@ -317,7 +317,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   | _, _ => pure ()
 
   -- Compile the IxVM kernel once; build the prover system once.
-  let .ok toplevel := IxVM.ixVM
+  -- `--skip-deps` proves the subject-only `verify_const`, a debug
+  -- entrypoint absent from the production toplevel, so it needs the full
+  -- one — and is thereby measuring a DIFFERENT verifying key than a
+  -- claim run, which is the honest reading of those numbers.
+  let .ok toplevel := (if skipDeps then IxVM.ixVMFull else IxVM.ixVM)
     | throw (IO.userError "Merging IxVM kernel failed")
   let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation of IxVM kernel failed")
@@ -424,7 +428,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           ({ name := label, constants, fftCost := stats.totalFftCost,
              executeSec := execSec, executePeakRss := some execPeak }, addr)
     catch e =>
+      -- Record the failure rather than dropping the constant. A silent
+      -- drop left `execed.any (·.failed)` clear, so a thrown constant —
+      -- including the `check_const`-missing throw above — yielded an
+      -- exit-0 run with one fewer row and no other trace.
       IO.eprintln s!"  execute {label} threw: {e}"
+      execed := execed.push
+        ({ name := label, constants := 0, fftCost := 0, executeSec := 0,
+           failed := true }, addr)
 
   -- Persist rows when `--json` was given, MERGING into the file (the shared
   -- results-row contract): rows land after each result, so a kill leaves the
@@ -492,10 +503,18 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         let proofBytes := Aiur.Proof.toBytes proof
         let (verifyRes, verifySec) ← timed fun _ =>
           aiurSystem.verify claim proof
+        -- A proof that does not verify is a correctness alarm, not a slow
+        -- row: mark the entry FAILED so `status` says so and the run
+        -- exits non-zero. Leaving `failed` clear emitted `"status":"ok"`
+        -- with prove-time and proof-size present, the only signal being
+        -- an absent `verify-time` key — invisible to anything keying on
+        -- status.
+        let mut r := r
         let verifySec? ← match verifyRes with
           | .ok () => pure (some verifySec)
           | .error e =>
             IO.eprintln s!"  verify {r.name} FAILED: {e}"
+            r := { r with failed := true }
             pure none
         IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
           proof={proofBytes.size} bytes (cumulative {spent}s)"

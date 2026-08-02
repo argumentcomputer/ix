@@ -205,11 +205,24 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge claim
   vm.merge entrypoints
 
-/-- Pruned production toplevel. -/
+/-- Pruned production toplevel: `verify_claim` and nothing else.
+
+    `verify_const` / `verify_check` / `verify_check_env` are DEBUG
+    entrypoints that trust their dependencies instead of walking them, so
+    a proof made with one attests far less than a claim does. Keeping
+    them here put them in the same verifying key as `verify_claim`,
+    leaving `ix verify`'s funcIdx check as the only thing standing
+    between a debug proof and acceptance — a policy, enforced in one
+    place, with no test asserting it, and no policy at all in the
+    recursive verifier.
+
+    Pruning them makes it structural: under the production VK such a
+    proof cannot exist. Callers that genuinely want a subject-only check
+    build `ixVMFull` and are thereby using a different VK, which is the
+    honest signal. -/
 def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← ixVMFull
-  pure (vm.prune [`verify_check, `verify_check_env, `verify_claim,
-                  `verify_const])
+  pure (vm.prune [`verify_claim])
 
 end IxVM
 

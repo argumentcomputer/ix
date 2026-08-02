@@ -66,7 +66,9 @@ def secs (t0 t1 : Nat) : Float := (Float.ofNat (t1 - t0)) / 1e9
 /-- Prove `constName`'s typecheck and return `(proofBytes, vkBytes, claimBytes)`. -/
 def proveConst (ixePath constName : String) (skipDeps : Bool)
     (fri : Aiur.FriParameters) : IO (Option (ByteArray × ByteArray × ByteArray)) := do
-  let .ok toplevel := IxVM.ixVM
+  -- `--skip-deps` uses the subject-only `verify_const`, which the
+  -- production toplevel no longer carries.
+  let .ok toplevel := (if skipDeps then IxVM.ixVMFull else IxVM.ixVM)
     | IO.eprintln "IxVM toplevel merge failed"; return none
   let .ok compiled := toplevel.compile
     | IO.eprintln "IxVM compile failed"; return none

@@ -1,7 +1,7 @@
 /-
   Drives the Aiur kernel through every lean-kernel-arena tutorial
   fixture (`Tests.Ix.Kernel.TutorialDefs` + `NatReduction`) using the
-  shared `IxVM.ixVM` toplevel + `verify_const` entrypoint.
+  shared `IxVM.ixVMFull` toplevel + `verify_const` entrypoint.
 
   Each fixture's outcome is classified against the test case's expected
   outcome (good must typecheck; bad must be rejected via Aiur execution
@@ -108,7 +108,7 @@ private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
     .ok (witness.input, witness.inputIOBuffer)
 
 /-- Run the arena suite against `compiled` (already-compiled Aiur
-    `IxVM.ixVM` toplevel) using a single shared Ixon env. Returns one
+    `IxVM.ixVMFull` toplevel) using a single shared Ixon env. Returns one
     `TestSeq` entry per fixture. -/
 def arenaTests (env : Lean.Environment)
     (compiled : Aiur.CompiledToplevel) : IO TestSeq := do

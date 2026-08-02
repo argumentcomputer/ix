@@ -163,8 +163,10 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     | .ok v2Env, .ok v2FullEnv =>
       -- Kernel-arena fixtures: the repo's NEGATIVE corpus (every
       -- `bad_*` must be rejected by an in-kernel assert_eq!). Runs
-      -- through the kernel's subject-only `verify_const` debug entrypoint.
-      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env v2Env.compiled
+      -- through the kernel's subject-only `verify_const` debug
+      -- entrypoint, which lives only in the FULL toplevel — the
+      -- production one carries `verify_claim` alone.
+      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env v2FullEnv.compiled
       -- Adversarial Ixon: exploit attempts authored as raw Ixon
       -- constants, below the layer the arena's Lean fixtures can
       -- reach. Each case pins the kernel's verdict, which is REJECT
