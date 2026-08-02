@@ -50339,11 +50339,14 @@ fn aiur_fn_612(
                 if (__v_21 != __v_15) {
                   return Err(ExecError::AssertEqMismatch { lhs: __v_21.as_canonical_u64(), rhs: __v_15.as_canonical_u64(), msg: Some("recursor rule rhs has too few binders to peel".to_string()) });
                 }
-                let __r_arr: [G; OUT_394] = { let __args: [G; IN_394] = [__v_20, __v_11, __v_22]; let __cu = unconstrained; if let Some(result) = record.function_queries[394].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_394] = unsafe { *(result.output.as_ptr() as *const [G; OUT_394]) }; __ret } else { aiur_fn_394(__args, record, io_buffer, __cu)? } };
-                let __v_23: G = __r_arr[0];
+                let __v_23: G = G::from_u64(1);
                 let __v_24: G = G::from_u64(1);
-                if (__v_23 != __v_24) {
-                  return Err(ExecError::AssertEqMismatch { lhs: __v_23.as_canonical_u64(), rhs: __v_24.as_canonical_u64(), msg: Some("recursor rule rhs differs from canonical reconstruction".to_string()) });
+                let __v_25: G = { let __values: [G; 3] = [__v_23, __v_24, __v_24]; let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; if let Some(result) = __mq.get_mut(&__values[..]) { if !unconstrained { *result.multiplicity += G::ONE; } result.output[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+                let __r_arr: [G; OUT_394] = { let __args: [G; IN_394] = [__v_20, __v_11, __v_25]; let __cu = unconstrained; if let Some(result) = record.function_queries[394].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_394] = unsafe { *(result.output.as_ptr() as *const [G; OUT_394]) }; __ret } else { aiur_fn_394(__args, record, io_buffer, __cu)? } };
+                let __v_26: G = __r_arr[0];
+                let __v_27: G = G::from_u64(1);
+                if (__v_26 != __v_27) {
+                  return Err(ExecError::AssertEqMismatch { lhs: __v_26.as_canonical_u64(), rhs: __v_27.as_canonical_u64(), msg: Some("recursor rule rhs differs from canonical reconstruction".to_string()) });
                 }
                 let __r_arr: [G; OUT_612] = { let __args: [G; IN_612] = [__v_9, __v_12, __v_2, __v_3, __v_4]; let __cu = unconstrained; if let Some(result) = record.function_queries[612].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_612] = unsafe { *(result.output.as_ptr() as *const [G; OUT_612]) }; __ret } else { aiur_fn_612(__args, record, io_buffer, __cu)? } };
                 let __ret: [G; OUT_612] = [];

@@ -2281,10 +2281,31 @@ def check := ⟦
                 let total = ((n_p + n_mot) + n_min) + nf;
                 match peel_n_lams_collect(rhs, total, 0,
                         store(ListNode.Nil)) {
-                  (stored_body, peeled, types) =>
+                  (stored_body, peeled, _) =>
                     assert_eq!(peeled, total,
                       "recursor rule rhs has too few binders to peel");
-                    assert_eq!(k_is_def_eq(stored_body, cbody, types), 1,
+                    -- Compare under an EMPTY context, discarding the
+                    -- domains just peeled.
+                    --
+                    -- Those domains come off the STORED rule, so they are
+                    -- prover-authored and unvalidated — nothing compares
+                    -- them against the canonical reconstruction, and
+                    -- reduction never consults them (`try_iota` beta-
+                    -- reduces straight through). Feeding them to
+                    -- `k_is_def_eq` let the prover choose what the two
+                    -- sides INFER to: retype every binder to a Prop and
+                    -- proof irrelevance accepts any body, so a recursor
+                    -- whose computation rules are swapped between
+                    -- constructors passed.
+                    --
+                    -- An honest rule matches the reconstruction
+                    -- structurally, and the structural path never
+                    -- consults the context — it compares `BVar i`
+                    -- against `BVar i` directly. Anything that instead
+                    -- needs to INFER a bound variable's type now runs out
+                    -- of context and aborts, which is the safe direction.
+                    assert_eq!(k_is_def_eq(stored_body, cbody,
+                        store(ListNode.Nil)), 1,
                       "recursor rule rhs differs from canonical reconstruction");
                     (),
                 };
