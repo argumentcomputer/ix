@@ -438,7 +438,9 @@ def whnf := ⟦
       KConstantInfo.Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
                           rules, k_flag, _unsafe, _block, _ridx) =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
-                                 nindices, rules, types, head);
+                                 nindices, rules, types, head,
+                                 rec_to_parent_addr(rec_ty, nparams, nmotives,
+                                   nminors, nindices));
         match iota {
           (1, reduced) => whnf(reduced, types),
           (2, stuck) =>
@@ -667,7 +669,7 @@ def whnf := ⟦
   fn try_iota(lvls: List‹KLevel›, spine: List‹KExpr›,
                   nparams: G, nmotives: G, nminors: G, nindices: G,
                   rules: List‹KRecRule›, types: List‹KExpr›,
-                  head: KExpr) -> (G, KExpr) {
+                  head: KExpr, rec_parent: Addr) -> (G, KExpr) {
     let major_idx = nparams + nmotives + nminors + nindices;
     let spine_len = list_length(spine);
     match u32_less_than(major_idx, spine_len) {
@@ -688,7 +690,20 @@ def whnf := ⟦
         let major_clean2 = cleanup_nat_offset_major(major_w);
         let major = nat_lit_to_ctor_or_self(major_clean2);
         match collect_spine_of_ctor(major) {
-          (1, ctor_cidx, ctor_args) =>
+          (1, ctor_cidx, ctor_parent, ctor_args) =>
+            -- The constructor must belong to the inductive THIS recursor
+            -- eliminates. Rules are otherwise selected by index alone, so
+            -- any inductive's constructor with a matching index fires a
+            -- rule and the redex reduces to a branch of an unrelated
+            -- eliminator. Lean matches on the constructor's name, which
+            -- pins the inductive; this is the addr-first equivalent.
+            --
+            -- `rec_to_parent_addr` reads the parent off the recursor's
+            -- own type (the major premise's head), and Aiur memoizes it
+            -- per argument tuple, so the walk is paid once per recursor
+            -- rather than once per reduction.
+            assert_eq!(address_eq(ctor_parent, rec_parent), 1,
+              "iota: major's constructor belongs to a different inductive");
             let rule = find_rule(rules, ctor_cidx);
             match rule {
               (0, _, _) =>
@@ -720,17 +735,24 @@ def whnf := ⟦
 
   -- Collect a Ctor application: returns (1, cidx, args) if head is
   -- Const(ctor_addr) with a Ctor KCI, else (0, 0, []).
-  fn collect_spine_of_ctor(e: KExpr) -> (G, G, List‹KExpr›) {
+  -- Also returns the constructor's PARENT inductive, as the address of
+  -- its projection wrapper, so the caller can check that the constructor
+  -- actually belongs to the recursor being reduced. Without that, rules
+  -- are selected by index alone and any inductive's constructor with a
+  -- matching index fires a rule. Lean matches on the constructor's name,
+  -- which pins the inductive.
+  fn collect_spine_of_ctor(e: KExpr) -> (G, G, Addr, List‹KExpr›) {
     match collect_spine(e) {
       (head, args) =>
         match load(head) {
           KExprNode.Const(addr, _) =>
             let ci = load(get_ci(addr));
             match ci {
-              KConstantInfo.Ctor(_, _, _, _, cidx, _, _, _) => (1, cidx, args),
-              _ => (0, 0, store(ListNode.Nil)),
+              KConstantInfo.Ctor(_, _, block_addr, ind_idx, cidx, _, _, _) =>
+                (1, cidx, compute_iprj_addr(block_addr, ind_idx), args),
+              _ => (0, 0, store([0u8; 32]), store(ListNode.Nil)),
             },
-          _ => (0, 0, store(ListNode.Nil)),
+          _ => (0, 0, store([0u8; 32]), store(ListNode.Nil)),
         },
     }
   }
@@ -1103,7 +1125,9 @@ def whnf := ⟦
       KConstantInfo.Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
                           rules, k_flag, _unsafe, _block, _ridx) =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
-                                 nindices, rules, types, head);
+                                 nindices, rules, types, head,
+                                 rec_to_parent_addr(rec_ty, nparams, nmotives,
+                                   nminors, nindices));
         match iota {
           (1, reduced) => whnf_nd(reduced, types),
           _ => apply_spine(head, spine),
