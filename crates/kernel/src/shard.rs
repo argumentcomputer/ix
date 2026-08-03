@@ -1688,7 +1688,7 @@ pub fn shard_esp_aiur(
   let prove_secs: Vec<f64> = plan
     .shard_costs
     .iter()
-    .map(|c| aiur_prove_secs(c.union_bytes, c.subst))
+    .map(|c| aiur_prove_secs(c.union_bytes, c.subst, c.def_eq))
     .collect();
   if let Some(op) = out_path {
     let mut csv = String::from(
@@ -1706,7 +1706,7 @@ pub fn shard_esp_aiur(
         c.whnf,
         c.def_eq,
         c.nat_arith,
-        aiur_ram_gib(c.union_bytes, c.hb),
+        aiur_ram_gib(c.union_bytes, c.subst, c.def_eq),
         prove_secs[i],
       ));
     }
@@ -1757,7 +1757,8 @@ fn pack_block_subset_to_cap(
   let mut cur_cost = AiurShardCost::default();
   let mut charged: FxHashSet<u32> = FxHashSet::default();
   let mut walked: FxHashSet<u32> = FxHashSet::default();
-  let predicted = |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.hb);
+  let predicted =
+    |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.subst, c.def_eq);
 
   let union_delta = |b: u32,
                      charged: &mut FxHashSet<u32>,
@@ -1791,9 +1792,13 @@ fn pack_block_subset_to_cap(
   for &b in blocks_in_order {
     let e = profile.block(b);
     let delta = union_delta(b, &mut charged, &mut walked);
+    // The tentative cost must carry every model feature, or the cap test
+    // under-predicts the candidate shard.
     let tentative = AiurShardCost {
       union_bytes: cur_cost.union_bytes.saturating_add(delta),
       hb: cur_cost.hb.saturating_add(e.heartbeats),
+      subst: cur_cost.subst.saturating_add(e.subst),
+      def_eq: cur_cost.def_eq.saturating_add(e.def_eq),
       ..cur_cost
     };
     if !cur.is_empty() && predicted(&tentative) > cap_gib {
@@ -1807,6 +1812,7 @@ fn pack_block_subset_to_cap(
     }
     cur_cost.hb = cur_cost.hb.saturating_add(e.heartbeats);
     cur_cost.subst = cur_cost.subst.saturating_add(e.subst);
+    cur_cost.def_eq = cur_cost.def_eq.saturating_add(e.def_eq);
     cur.push(b);
   }
   if !cur.is_empty() {
@@ -1874,10 +1880,14 @@ pub fn rebudget_manifest_shard(
     .blocks()
     .iter()
     .fold(0u64, |a, b| a.saturating_add(u64::from(b.serialized_size)));
-  let total_hb: u64 =
-    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.heartbeats));
-  let total_ram = aiur_ram_gib(total_bytes, total_hb) - AIUR_RAM_BASE_GIB;
-  let headroom = (cap_gib - AIUR_RAM_BASE_GIB).max(f64::MIN_POSITIVE);
+  let total_subst: u64 =
+    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.subst));
+  let total_def_eq: u64 =
+    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.def_eq));
+  let base_ram = aiur_ram_gib(0, 0, 0);
+  let total_ram =
+    aiur_ram_gib(total_bytes, total_subst, total_def_eq) - base_ram;
+  let headroom = (cap_gib - base_ram).max(f64::MIN_POSITIVE);
   #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
   let pieces = (total_ram / headroom * PACK_PIECES_PER_CAP as f64) as usize;
   let order = cut_coherent_order(&profile, pieces, epsilon);
@@ -1995,7 +2005,7 @@ pub fn rebudget_manifest_shard(
     let whnf = sum(&|b| profile.block(b).whnf);
     let def_eq = sum(&|b| profile.block(b).def_eq);
     let nat_arith = sum(&|b| profile.block(b).nat_arith);
-    let ram = aiur_ram_gib(union_bytes, hb);
+    let ram = aiur_ram_gib(union_bytes, subst, def_eq);
     csv.push_str(&format!(
       "{},{},{},{},{},{},{},{},{:.2},{:.2}\n",
       i,
@@ -2007,7 +2017,7 @@ pub fn rebudget_manifest_shard(
       def_eq,
       nat_arith,
       ram,
-      aiur_prove_secs(union_bytes, subst),
+      aiur_prove_secs(union_bytes, subst, def_eq),
     ));
     if i == shard_k || i >= old_n {
       report.push_str(&format!(
@@ -2151,76 +2161,104 @@ fn nlogn(x: u64) -> f64 {
   x * (x + 2.0).log2()
 }
 
-/// Calibrated Aiur cost model — predicts a **run's** (one Aiur prove: a whole
-/// closure or one shard) prove time and peak host RAM directly from the kernel
-/// profile counters, no Aiur execution needed. Features are run-level
-/// aggregates: `bytes` is every serialized byte the run's checks fault in
-/// (owned blocks plus the measured touched set — under the lazy kernel only
-/// faulted bytes cost ingress trace rows), `hb`/`subst` are the run's summed
-/// reduction counters. Fit against measured `aiur-check-prove` bench-suite
-/// runs (bencher.dev `ix` project) of the pre-addr-first eager-ingress
-/// kernel; coefficients and fit quality live in the calibrating commit's
-/// message. Known limit: constants whose Aiur cost is dominated by big-Nat
-/// limb gadgets have no native-counter signal and under-predict;
-/// [`AIUR_RAM_USABLE_FRAC`] carries that risk.
-pub const AIUR_PROVE_BASE_SECS: f64 = 1.43;
-pub const AIUR_PROVE_SECS_PER_NLOGN_INGRESS_BYTE: f64 = 2.38e-7;
-pub const AIUR_PROVE_SECS_PER_NLOGN_SUBST: f64 = 9.06e-7;
-pub const AIUR_RAM_BASE_GIB: f64 = 3.67;
-pub const AIUR_RAM_GIB_PER_NLOGN_INGRESS_BYTE: f64 = 1.18e-6;
-pub const AIUR_RAM_GIB_PER_NLOGN_HEARTBEAT: f64 = 1.57e-5;
-/// Usable fraction of an Aiur host-RAM budget. Lower than the Zisk
-/// [`RAM_USABLE_FRAC`]: it also absorbs the model's blind spot on
-/// limb-arithmetic-heavy blocks, not just OS overhead and variance.
-pub const AIUR_RAM_USABLE_FRAC: f64 = 0.7;
+/// Calibrated two-stage Aiur cost model.
+///
+/// **Stage 1** predicts a run's total FFT cost (the prover's actual work
+/// unit: `Σ width·2^⌈log h⌉·log h` over circuits) from the profile
+/// counters of the run's owned blocks plus its faulted-set bytes. `def_eq`
+/// is a load-bearing feature: definitional-equality-dense checks drive
+/// trace volume that bytes/subst alone under-predict.
+///
+/// **Stage 2** maps FFT cost linearly to prove wall seconds and peak host
+/// RAM — physically grounded (committed LDE volume is proportional to FFT
+/// work) and measured tight (≤10% on RAM, ≤12% on wall).
+///
+/// Fit 2026-08-03 on this kernel (addr-first, lazy fault-in): stage 1
+/// against the exact per-shard FFT costs of all 34 Init shards at a 250
+/// GiB pack (execute-mode stats dumps; MAPE 5.0%, worst under −18.5%),
+/// stage 2 against 13 measured shard proves spanning 21–81 BFFT (RSS
+/// max |err| 9.9%, wall 12.2%). Composed end-to-end on the proved set:
+/// RAM within 12.4%. The prove base term includes env load + system
+/// setup, matching what the batch driver schedules.
+pub const AIUR_FFT_BASE: f64 = 2.599e9;
+pub const AIUR_FFT_PER_NLOGN_INGRESS_BYTE: f64 = 188.6;
+pub const AIUR_FFT_PER_NLOGN_SUBST: f64 = 71.27;
+pub const AIUR_FFT_PER_NLOGN_DEF_EQ: f64 = 6548.0;
+pub const AIUR_PROVE_BASE_SECS: f64 = 6.18;
+pub const AIUR_PROVE_SECS_PER_BFFT: f64 = 2.0425;
+pub const AIUR_RAM_BASE_GIB: f64 = 13.59;
+pub const AIUR_RAM_GIB_PER_BFFT: f64 = 2.3507;
+/// Usable fraction of an Aiur host-RAM budget. Covers the composed model's
+/// measured worst under-prediction (stage-1 tail −18.5% × stage-2 −8.5% ≈
+/// −25%, so predictions at cap stay under budget), with the remainder as
+/// OS/variance margin.
+pub const AIUR_RAM_USABLE_FRAC: f64 = 0.75;
 
-/// Predicted Aiur prove time (seconds) for one run faulting in `bytes` and
-/// performing `subst` substitution-node visits.
-pub fn aiur_prove_secs(bytes: u64, subst: u64) -> f64 {
-  AIUR_PROVE_BASE_SECS
-    + AIUR_PROVE_SECS_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
-    + AIUR_PROVE_SECS_PER_NLOGN_SUBST * nlogn(subst)
+/// Stage 1: predicted total FFT cost for one run faulting in `bytes`,
+/// with `subst` substitution-node visits and `def_eq` definitional
+/// equality checks over its owned blocks.
+pub fn aiur_shard_fft(bytes: u64, subst: u64, def_eq: u64) -> f64 {
+  AIUR_FFT_BASE
+    + AIUR_FFT_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_FFT_PER_NLOGN_SUBST * nlogn(subst)
+    + AIUR_FFT_PER_NLOGN_DEF_EQ * nlogn(def_eq)
 }
 
-/// Predicted Aiur peak host RAM (GiB) for one run faulting in `bytes` at `hb`
-/// heartbeats of reduction.
-pub fn aiur_ram_gib(bytes: u64, hb: u64) -> f64 {
-  AIUR_RAM_BASE_GIB
-    + AIUR_RAM_GIB_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
-    + AIUR_RAM_GIB_PER_NLOGN_HEARTBEAT * nlogn(hb)
+/// Stage 2: prove wall seconds for a run of `fft` total FFT cost. Feed a
+/// measured FFT cost (an execute-mode stats dump) for an exact-height
+/// prediction, or [`aiur_shard_fft`]'s estimate at plan time.
+pub fn aiur_prove_secs_for_fft(fft: f64) -> f64 {
+  AIUR_PROVE_BASE_SECS + AIUR_PROVE_SECS_PER_BFFT * (fft / 1e9)
+}
+
+/// Stage 2: peak prover host RAM (GiB) for a run of `fft` total FFT cost.
+pub fn aiur_ram_gib_for_fft(fft: f64) -> f64 {
+  AIUR_RAM_BASE_GIB + AIUR_RAM_GIB_PER_BFFT * (fft / 1e9)
+}
+
+/// Composed plan-time prediction: prove wall seconds from profile features.
+pub fn aiur_prove_secs(bytes: u64, subst: u64, def_eq: u64) -> f64 {
+  aiur_prove_secs_for_fft(aiur_shard_fft(bytes, subst, def_eq))
+}
+
+/// Composed plan-time prediction: peak prover host RAM (GiB) from profile
+/// features.
+pub fn aiur_ram_gib(bytes: u64, subst: u64, def_eq: u64) -> f64 {
+  aiur_ram_gib_for_fft(aiur_shard_fft(bytes, subst, def_eq))
 }
 
 /// A block's marginal predicted Aiur prove time (seconds), `nlogn` taken at
-/// block granularity and the per-run base omitted. Slightly under-counts a
+/// block granularity and the per-run bases omitted. Slightly under-counts a
 /// block's share inside a large run (whose `log` factor is bigger), which is
 /// fine for its purpose: ranking blocks in the `ix profile` leaderboards.
 pub fn aiur_block_prove_secs(b: &BlockEntry) -> f64 {
-  AIUR_PROVE_SECS_PER_NLOGN_INGRESS_BYTE * nlogn(u64::from(b.serialized_size))
-    + AIUR_PROVE_SECS_PER_NLOGN_SUBST * nlogn(b.subst)
+  let fft = AIUR_FFT_PER_NLOGN_INGRESS_BYTE
+    * nlogn(u64::from(b.serialized_size))
+    + AIUR_FFT_PER_NLOGN_SUBST * nlogn(b.subst)
+    + AIUR_FFT_PER_NLOGN_DEF_EQ * nlogn(b.def_eq);
+  AIUR_PROVE_SECS_PER_BFFT * (fft / 1e9)
 }
 
 /// Calibrated Aiur **execute** (witness-generation, no prove) cost model —
-/// same feature form and calibration pipeline as the prove model above, fit
-/// against the `aiur-check-execute` bench suite. Execute RAM is bytes-only:
-/// the retained query record is dominated by ingress/hashing rows, and no
-/// second feature survives a non-negative fit.
-pub const AIUR_EXEC_BASE_SECS: f64 = 0.146;
-pub const AIUR_EXEC_SECS_PER_NLOGN_INGRESS_BYTE: f64 = 8.54e-8;
-pub const AIUR_EXEC_SECS_PER_NLOGN_SUBST: f64 = 6.77e-8;
-pub const AIUR_EXEC_RAM_BASE_GIB: f64 = 4.72;
-pub const AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE: f64 = 8.50e-8;
+/// fit on the same 34-shard Init sweep as stage 1 (wall MAPE 9.6%, RSS
+/// 3.7%). Execute wall tracks `def_eq` alone; execute RSS adds the
+/// faulted-byte term.
+pub const AIUR_EXEC_BASE_SECS: f64 = 3.72;
+pub const AIUR_EXEC_SECS_PER_NLOGN_DEF_EQ: f64 = 3.602e-6;
+pub const AIUR_EXEC_RAM_BASE_GIB: f64 = 1.34;
+pub const AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE: f64 = 3.008e-8;
+pub const AIUR_EXEC_RAM_GIB_PER_NLOGN_DEF_EQ: f64 = 6.119e-7;
 
 /// Predicted Aiur execute time (seconds) for one run.
-pub fn aiur_exec_secs(bytes: u64, subst: u64) -> f64 {
-  AIUR_EXEC_BASE_SECS
-    + AIUR_EXEC_SECS_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
-    + AIUR_EXEC_SECS_PER_NLOGN_SUBST * nlogn(subst)
+pub fn aiur_exec_secs(def_eq: u64) -> f64 {
+  AIUR_EXEC_BASE_SECS + AIUR_EXEC_SECS_PER_NLOGN_DEF_EQ * nlogn(def_eq)
 }
 
 /// Predicted Aiur execute peak host RAM (GiB) for one run.
-pub fn aiur_exec_ram_gib(bytes: u64) -> f64 {
+pub fn aiur_exec_ram_gib(bytes: u64, def_eq: u64) -> f64 {
   AIUR_EXEC_RAM_BASE_GIB
     + AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_EXEC_RAM_GIB_PER_NLOGN_DEF_EQ * nlogn(def_eq)
 }
 
 /// Whole-workload prove-time estimate over a partition's per-shard step counts.
@@ -2590,7 +2628,7 @@ pub fn partition_for_aiur_ram(
       tree: AggNode::Leaf(0),
       ram_cap_gib,
       shard_costs: Vec::new(),
-      max_shard_ram_gib: AIUR_RAM_BASE_GIB,
+      max_shard_ram_gib: aiur_ram_gib(0, 0, 0),
       largest_block_ram_gib: 0.0,
       infeasible_atomic_floor: false,
     };
@@ -2637,7 +2675,11 @@ pub fn partition_for_aiur_ram(
       .collect()
   };
   let lone_block_ram = |b: u32| {
-    aiur_ram_gib(closure_bytes[b as usize], profile.block(b).heartbeats)
+    aiur_ram_gib(
+      closure_bytes[b as usize],
+      profile.block(b).subst,
+      profile.block(b).def_eq,
+    )
   };
   let largest_block_ram_gib =
     (0..nblocks as u32).map(lone_block_ram).fold(0.0, f64::max);
@@ -2650,10 +2692,14 @@ pub fn partition_for_aiur_ram(
     .blocks()
     .iter()
     .fold(0u64, |a, b| a.saturating_add(u64::from(b.serialized_size)));
-  let total_hb: u64 =
-    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.heartbeats));
-  let total_ram = aiur_ram_gib(total_bytes, total_hb) - AIUR_RAM_BASE_GIB;
-  let headroom = (ram_cap_gib - AIUR_RAM_BASE_GIB).max(f64::MIN_POSITIVE);
+  let total_subst: u64 =
+    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.subst));
+  let total_def_eq: u64 =
+    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.def_eq));
+  let base_ram = aiur_ram_gib(0, 0, 0);
+  let total_ram =
+    aiur_ram_gib(total_bytes, total_subst, total_def_eq) - base_ram;
+  let headroom = (ram_cap_gib - base_ram).max(f64::MIN_POSITIVE);
   #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
   let pieces = (total_ram / headroom * PACK_PIECES_PER_CAP as f64) as usize;
   let order = cut_coherent_order(profile, pieces, epsilon);
@@ -2673,7 +2719,8 @@ pub fn partition_for_aiur_ram(
   let mut cur = 0u32;
   let mut owned_in_cur = 0usize;
   let mut infeasible = false;
-  let predicted = |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.hb);
+  let predicted =
+    |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.subst, c.def_eq);
 
   // Byte delta of adding `b`'s faulted set to the current shard's union.
   let union_delta = |b: u32,
@@ -2724,9 +2771,13 @@ pub fn partition_for_aiur_ram(
       &mut charged_mark,
       &mut walk_mark,
     );
+    // The tentative cost must carry every model feature, or the cap test
+    // under-predicts the candidate shard.
     let tentative = AiurShardCost {
       union_bytes: cur_cost.union_bytes.saturating_add(delta),
       hb: cur_cost.hb.saturating_add(e.heartbeats),
+      subst: cur_cost.subst.saturating_add(e.subst),
+      def_eq: cur_cost.def_eq.saturating_add(e.def_eq),
       ..cur_cost
     };
 
@@ -3068,13 +3119,15 @@ mod tests {
   #[test]
   fn aiur_model_monotone() {
     // The packer's greedy cap test is only sound if the model never decreases
-    // when a shard grows in either aggregate.
-    let base = aiur_ram_gib(1_000_000, 10_000);
-    assert!(aiur_ram_gib(2_000_000, 10_000) > base);
-    assert!(aiur_ram_gib(1_000_000, 20_000) > base);
-    let p = aiur_prove_secs(1_000_000, 100_000);
-    assert!(aiur_prove_secs(2_000_000, 100_000) > p);
-    assert!(aiur_prove_secs(1_000_000, 200_000) > p);
+    // when a shard grows in any aggregate.
+    let base = aiur_ram_gib(1_000_000, 10_000, 10_000);
+    assert!(aiur_ram_gib(2_000_000, 10_000, 10_000) > base);
+    assert!(aiur_ram_gib(1_000_000, 20_000, 10_000) > base);
+    assert!(aiur_ram_gib(1_000_000, 10_000, 20_000) > base);
+    let p = aiur_prove_secs(1_000_000, 100_000, 10_000);
+    assert!(aiur_prove_secs(2_000_000, 100_000, 10_000) > p);
+    assert!(aiur_prove_secs(1_000_000, 200_000, 10_000) > p);
+    assert!(aiur_prove_secs(1_000_000, 100_000, 20_000) > p);
   }
 
   /// Attach a reference graph given per-block (sorted, deduped) ref lists.
@@ -3091,7 +3144,7 @@ mod tests {
     // downstream of its first member.
     let mut b = ProfileBuilder::new();
     for i in 1..=40u8 {
-      b.block(addr(i), 10_000, 20_000, 1, ops(100_000));
+      b.block(addr(i), 10_000, 20_000, 1, ops(5_000_000));
     }
     for i in 1..40u8 {
       b.delta_edge(addr(i), addr(i + 1));
@@ -3148,11 +3201,11 @@ mod tests {
     };
     let fallback = partition_for_aiur_ram(&build(false), 1000.0, 0.05);
     assert!(
-      (fallback.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9
+      (fallback.largest_block_ram_gib - aiur_ram_gib(4000, 0, 0)).abs() < 1e-9
     );
     let measured = partition_for_aiur_ram(&build(true), 1000.0, 0.05);
     assert!(
-      (measured.largest_block_ram_gib - aiur_ram_gib(2000, 10)).abs() < 1e-9
+      (measured.largest_block_ram_gib - aiur_ram_gib(2000, 0, 0)).abs() < 1e-9
     );
   }
 
@@ -3180,7 +3233,7 @@ mod tests {
     b.block(addr(2), 10, 3_000_000, 1, ops(0));
     let p = with_refs(b.finish(), &[vec![1], vec![]]);
     let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
-    let floor = aiur_ram_gib(3_000_100, 10);
+    let floor = aiur_ram_gib(3_000_100, 0, 0);
     assert!(
       (plan.largest_block_ram_gib - floor).abs() < 1e-9,
       "floor {} != closure-based {}",
@@ -3225,7 +3278,7 @@ mod tests {
     // the same blocks with the split shard's children appended.
     let mut b = ProfileBuilder::new();
     for i in 1..=6u8 {
-      b.block(addr(i), 2_000, 100_000, 1, ops(0));
+      b.block(addr(i), 2_000, 1_000, 1, ops(5_000_000));
     }
     let p =
       with_refs(b.finish(), &[vec![], vec![], vec![], vec![], vec![], vec![]]);
@@ -3235,10 +3288,11 @@ mod tests {
     let m0 = dir.join(format!("ix_rebudget_{pid}.ixes"));
     let m1 = dir.join(format!("ix_rebudget_{pid}_split.ixes"));
     std::fs::write(&prof, p.to_bytes()).unwrap();
-    // Budget picked so the 6 blocks pack into 2-3 shards.
+    // Budget picked so the 6 blocks pack into 2-3 shards (composed base
+    // ~19.7 GiB + ~18.6 GiB marginal per block at subst 5e6).
     shard_esp_aiur(
       prof.to_str().unwrap(),
-      20.0,
+      100.0,
       0.05,
       1,
       Some(m0.to_str().unwrap()),
@@ -3252,7 +3306,7 @@ mod tests {
       prof.to_str().unwrap(),
       m0.to_str().unwrap(),
       0,
-      12.0,
+      60.0,
       0.05,
       m1.to_str().unwrap(),
     )

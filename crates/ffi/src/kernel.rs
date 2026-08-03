@@ -2512,10 +2512,10 @@ pub fn profile_sweep(
           whnf,
           def_eq,
           nat_arith: nat,
-          exec_s: aiur_exec_secs(bytes, subst),
-          exec_gib: aiur_exec_ram_gib(bytes),
-          prove_s: aiur_prove_secs(bytes, subst),
-          prove_gib: aiur_ram_gib(bytes, hb),
+          exec_s: aiur_exec_secs(def_eq),
+          exec_gib: aiur_exec_ram_gib(bytes, def_eq),
+          prove_s: aiur_prove_secs(bytes, subst, def_eq),
+          prove_gib: aiur_ram_gib(bytes, subst, def_eq),
           hot_mask,
         }
       },
@@ -2739,8 +2739,8 @@ fn print_profile_summary(
   if backend != ProfileBackend::Zisk {
     // Whole-env single-run prediction; large envs exceed any real box and
     // need `ix shard --backend aiur --max-ram G`.
-    let prove_s = aiur_prove_secs(ingress, subst);
-    let ram = aiur_ram_gib(ingress, hb);
+    let prove_s = aiur_prove_secs(ingress, subst, defeq);
+    let ram = aiur_ram_gib(ingress, subst, defeq);
     let warn = if ram > 250.0 {
       "  → exceeds a 250 GiB box; shard it (ix shard --backend aiur --max-ram G)"
     } else {

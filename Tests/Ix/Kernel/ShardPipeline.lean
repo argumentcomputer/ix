@@ -59,11 +59,13 @@ def shardPipelineTests (env : Lean.Environment)
   let bytes ← IO.ofExcept (Ixon.serEnv ixonEnv)
   IO.FS.writeBinFile ixe bytes
 
-  -- .ixe → touch-graph profile → measured manifest. The tiny budget
-  -- forces a multi-shard partition so cross-shard frontiers exist.
+  -- .ixe → touch-graph profile → fixed 3-shard min-cut manifest. A fixed
+  -- count (not the Aiur RAM packer, whose composed base exceeds any budget
+  -- a ~200-constant env could fill) keeps the partition multi-shard and
+  -- small; the claim layer is partition-agnostic, and the RAM packer has
+  -- its own unit coverage.
   Ix.KernelCheck.rsProfileAnonFFI ixe.toString prof.toString true true "0" "aiur"
-  Ix.KernelCheck.rsShardEspCapFFI prof.toString "0" "6" "5" "1"
-    ixes.toString "aiur"
+  Ix.KernelCheck.rsShardEspFFI prof.toString "3" "10" "1" ixes.toString
 
   let (parsedEnv, shards) ←
     match ← Ix.Cli.CheckCmd.loadEnvAndShards ixes.toString ixe.toString with
