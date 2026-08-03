@@ -81,6 +81,10 @@ def plotTitle (workload measure : String) : String :=
   | "aiur-recursive", "recursive-peak-rss"     => "Aiur Recursive Verifier Peak RAM Usage"
   | "aiur-recursive", "recursive-proof-size"   => "Aiur Recursive Verifier Proof Size"
   | "aiur-recursive", "recursive-fft-cost"     => "Aiur Recursive Verifier FFT Cost"
+  | "aiur-shard", "shards"              => "Aiur Predicted Shards"
+  | "aiur-shard", "union-bytes"         => "Aiur Shard Ingress Bytes"
+  | "aiur-shard", "heavy-execute-time"  => "Aiur Heavy-Shard Execute Time"
+  | "aiur-shard", "heavy-peak-rss"      => "Aiur Heavy-Shard Peak RAM Usage"
   | w, m => s!"{w}: {m}"
 
 /-- Tracked but not plotted solo. The two aiur runs re-measure each
@@ -98,13 +102,17 @@ def plotTitle (workload measure : String) : String :=
     IxVM typecheck proof (under recursion-tuned parameters) — tracked for
     the compare table, but the dashboard trend that matters is the
     recursion layer's own `recursive-*` series, so the inner metrics
-    aren't plotted. -/
+    aren't plotted. aiur-shard's
+    `pred-floor-ram` is a cap-overflow tripwire (thresholded), while the
+    heavy-three execution charts the real RAM — the prediction adds no
+    dashboard trend of its own. -/
 def plotSkips : List (String × String) :=
   [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
    ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
    ("aiur-recursive", "prove-time"), ("aiur-recursive", "proof-size"),
-   ("aiur-recursive", "verify-time"), ("aiur-recursive", "peak-rss")]
+   ("aiur-recursive", "verify-time"), ("aiur-recursive", "peak-rss"),
+   ("aiur-shard", "pred-floor-ram")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -127,6 +135,10 @@ def unitsFor (slug : String) : Option String :=
    ("cycles", "cycles"),
    ("max-shard-cycles", "cycles"),
    ("shards", "shards"),
+   ("pred-floor-ram", "GiB"),
+   ("union-bytes", "bytes (B)"),
+   ("heavy-execute-time", "seconds (s)"),
+   ("heavy-peak-rss", "bytes (B)"),
    ("fft-cost", "FFTs"),
    ("recursive-execute-time", "seconds (s)"),
    ("recursive-prove-time", "seconds (s)"),
@@ -140,7 +152,7 @@ def unitsFor (slug : String) : Option String :=
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
   ["ix-compile", "ix-decompile", "aiur-check-prove", "aiur-check-execute",
-   "aiur-recursive", "zisk-check-execute", "ooc-check"]
+   "aiur-recursive", "aiur-shard", "zisk-check-execute", "ooc-check"]
 
 structure PlotSpec where
   testbed : String

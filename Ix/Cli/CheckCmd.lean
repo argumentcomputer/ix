@@ -24,6 +24,7 @@ public import Ix.Aiur.Interpret
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Statistics
 public import Ix.AssumptionTree
+public import Ix.Benchmark.Results
 public import Ix.Claim
 public import Ix.Common
 public import Ix.IxVM
@@ -32,6 +33,7 @@ public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
+public import Ix.TracingTexray
 public import Ix.Cli.NameResolve
 
 public section
@@ -484,7 +486,8 @@ def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
     once for this one call. -/
 def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
     (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
+    (statsOut : Option String) (useBytecode : Bool)
+    (benchJson : Option (String × String) := none) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) => match shards[shardK]? with
@@ -493,7 +496,26 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks shardK
+      -- `benchJson = (out, rowName)` reports the check as a benchmark row
+      -- (the `aiur-shard` bench backend's per-shard spawn): `execute-time`
+      -- windows the check itself — the env parse and `EnvHandle` build are
+      -- excluded, so the measure tracks the kernel, not the loader — while
+      -- `peak-rss` is the process tree's absolute high-water (the parsed
+      -- env sits in the baseline, matching the ooc rows' semantics).
+      if benchJson.isSome then
+        TracingTexray.startSampler
+        TracingTexray.resetPeakTreeRss
+      let start ← IO.monoMsNow
+      let rc ← runShardOwnedNative envHandle compiled printStats statsOut
+        useBytecode ixonEnv blocks shardK
+      if let some (out, rowName) := benchJson then
+        if rc == 0 then
+          let secs := ((← IO.monoMsNow) - start).toFloat / 1000.0
+          let peakRss ← TracingTexray.peakTreeRssBytes
+          Ix.Benchmark.Results.writeRow out rowName "ok"
+            [ ("execute-time", Ix.Benchmark.Results.jsonRound 3 secs)
+            , ("peak-rss", Lean.toJson peakRss) ]
+      return rc
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -672,7 +694,11 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut useBytecode)
+      let benchJson := (p.flag? "json").map fun f =>
+        (f.as! String,
+         ((p.flag? "json-name").map (·.as! String)).getD s!"shard-{k}")
+      return (← runShardCheckManifestNative manifest ixe k compiled printStats
+        statsOut useBytecode benchJson)
   | some ixe, some manifest, none   =>
     if interpSource then
       return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
@@ -702,6 +728,8 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Max shards to check concurrently when checking a whole partition (--ixes without --shard). Default: all at once. Lower it to bound peak RAM — each in-flight shard re-ingests its closure into its own IO buffer."
+    json        : String;   "Benchmark results JSON accumulator (single-shard mode only): append an `execute-time`/`peak-rss` row for the checked shard. Used by `ix bench run --backend aiur-shard`."
+    "json-name" : String;   "Row name for --json (default: shard-<K>)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
