@@ -656,7 +656,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
           pure 1
       pure go
     else do
-      let compiled ← match toplevel.compile with
+      let compiled ← match toplevel.compileWithGroups IxVM.coldGroups with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
       let go (_ : Ix.Claim) (envHandle? : Option Aiur.EnvHandle) (target : Target)
@@ -669,7 +669,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       return (← runShardCheckManifest manifest ixe k
         (fun c w l => runOne c none (.leanW w) l))
     else do
-      let compiled ← match toplevel.compile with
+      let compiled ← match toplevel.compileWithGroups IxVM.coldGroups with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
       return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut useBytecode)
@@ -678,7 +678,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
         (fun c w l => runOne c none (.leanW w) l))
     else do
-      let compiled ← match toplevel.compile with
+      let compiled ← match toplevel.compileWithGroups IxVM.coldGroups with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
       return (← runShardManifestAllNative manifest ixe

@@ -1,6 +1,7 @@
 module
 public import Ix.Aiur.Meta
 public import Ix.IxVM.Core
+public import Ix.IxVM.ColdGroups
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.RBTreeMap

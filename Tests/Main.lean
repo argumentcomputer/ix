@@ -182,7 +182,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     -- committed kernel system).
     let kernelUnitTests := .exec `kernel_unit_tests
     let serdeTest ← serdeNatAddComm env
-    match AiurTestEnv.build IxVM.ixVM, AiurTestEnv.build IxVM.ixVMFull with
+    match AiurTestEnv.build IxVM.ixVM IxVM.coldGroups, AiurTestEnv.build IxVM.ixVMFull with
     | .error e, _ | _, .error e =>
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
     | .ok v2Env, .ok v2FullEnv =>

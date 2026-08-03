@@ -11,6 +11,7 @@ public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
 public import Ix.MultiStark.SystemDeserialize
 public import Ix.MultiStark.Verifier
+public import Ix.MultiStark.VerifierColdGroups
 public import Ix.MultiStark.Tests
 
 /-!
