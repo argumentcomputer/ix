@@ -58,7 +58,16 @@ impl IOBuffer {
     channel: G,
     key: &[G],
   ) -> Result<&IOKeyInfo, ExecError> {
-    self.map.get(&(channel, key.to_vec())).ok_or(ExecError::InvalidIOKey)
+    self.map.get(&(channel, key.to_vec())).ok_or_else(|| {
+      // Name the channel and key: a missing witness entry is otherwise
+      // indistinguishable from any other, and the key identifies the
+      // constant or blob whose bytes the host failed to seed.
+      let hex: String = key
+        .iter()
+        .map(|g| format!("{:02x}", g.as_canonical_u64() & 0xff))
+        .collect();
+      ExecError::InvalidIOKey { channel: channel.as_canonical_u64(), key: hex }
+    })
   }
   fn set_info(
     &mut self,
@@ -123,7 +132,10 @@ pub enum ExecError {
   MatchNoCase(u64),
   NoContinuation,
   StackNotEmpty,
-  InvalidIOKey,
+  InvalidIOKey {
+    channel: u64,
+    key: String,
+  },
   IOMappingAlreadySet,
   IOReadOutOfBounds {
     idx: usize,
@@ -165,7 +177,9 @@ impl std::fmt::Display for ExecError {
       Self::StackNotEmpty => {
         write!(f, "exec entries stack not empty at return")
       },
-      Self::InvalidIOKey => write!(f, "invalid IO key"),
+      Self::InvalidIOKey { channel, key } => {
+        write!(f, "invalid IO key: channel {channel}, key {key}")
+      },
       Self::IOMappingAlreadySet => write!(f, "IO mapping already set for key"),
       Self::IOReadOutOfBounds { idx, len } => {
         write!(f, "IO read out of bounds: idx={idx}, len={len}")
