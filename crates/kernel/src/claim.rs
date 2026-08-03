@@ -129,14 +129,22 @@ mod tests {
     )
   }
 
+  /// A definition whose value NAMES every one of its `refs` entries via a
+  /// `Ref` node. The claim walk admits an index only when some Expr uses
+  /// it as a constant, so a fixture whose Exprs ignore `refs` produces no
+  /// edges and every frontier comes back empty.
   fn defn_const(refs: Vec<Address>) -> Constant {
+    let mut value = Expr::var(0);
+    for i in 0..refs.len() {
+      value = Expr::app(value, Expr::reference(i as u64, Vec::new()));
+    }
     Constant::with_tables(
       ConstantInfo::Defn(Definition {
         kind: DefKind::Definition,
         safety: DefinitionSafety::Safe,
         lvls: 0,
         typ: Expr::sort(0),
-        value: Expr::var(0),
+        value,
       }),
       Vec::new(),
       refs,
