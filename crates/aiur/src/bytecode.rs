@@ -42,7 +42,7 @@ pub enum Op {
   Call(FunIdx, Vec<ValIdx>, usize, bool),
   Store(Vec<ValIdx>),
   Load(usize, ValIdx),
-  AssertEq(Vec<ValIdx>, Vec<ValIdx>),
+  AssertEq(Vec<ValIdx>, Vec<ValIdx>, Option<String>),
   IOGetInfo(ValIdx, Vec<ValIdx>),
   IOSetInfo(ValIdx, Vec<ValIdx>, ValIdx, ValIdx),
   IORead(ValIdx, ValIdx, usize),

@@ -2,152 +2,299 @@ module
 public import Ix.Aiur.Meta
 public import Ix.IxVM.KernelTypes
 public import Ix.IxVM.Kernel.Subst
+public import Ix.IxVM.Kernel.Levels
+public import Ix.IxVM.Kernel.Klimbs
+public import Ix.IxVM.Kernel.NatPrim
 public import Ix.IxVM.Kernel.Whnf
+public import Ix.IxVM.Kernel.InferOnly
+public import Ix.IxVM.Ingress
 
 public section
 
 namespace IxVM
 
-/-! ## Definitional equality over `KExpr`
+/-! ## Def-Eq
 
-Mirrors `src/ix/kernel/def_eq.rs`.
+`k_is_def_eq(a, b, types) → 1 iff a ≡ b`. Decided by a ladder of tiers,
+cheapest first, because the expensive tiers are the ones that unfold
+definitions and can blow up:
 
-Tiered strategy:
+pointer equality → memo lookup on a context-trimmed, pointer-ordered key
+→ app congruence on a shared Const head (no unfolding) → string-literal
+expansion → no-delta whnf (`whnf_nd`) plus `quick_def_eq` → proof
+irrelevance → unit-like types → structure eta → Nat offset comparison →
+lazy delta, unfolding the higher-ranked side first → full structural
+compare.
 
-1. **Structural alpha-equivalence**: same expression shapes with recursive
-   def_eq on sub-expressions. Pointer equality short-circuit.
-2. **WHNF**: reduce both sides; retry structural.
-3. **Proof irrelevance**: both sides accepted when their inferred type is
-   a Prop. Implemented via `is_prop_type_of` over the shared types ctx.
-4. **Lazy delta**: simultaneous unfold of both sides when both heads are
-   Const(idx) of a Defn/Thm; falls through to Const-Proj / Proj-Const /
-   Const-App congruence when applicable.
-5. **Lambda eta**: when one side is a `Lam` and the other isn't, wrap the
-   non-Lam side as `λ(dom). s #0` (via `expr_lift`) and recurse via the
-   structural Lam-Lam arm.
-6. **Struct / unit-like eta**: subsingleton Prop ctors and recursive
-   single-ctor structures fold via `is_unit_like_type` and the iota
-   step in `Whnf.lean::try_struct_eta_iota`.
+Tier order is load-bearing rather than a matter of taste; where a tier's
+position matters for correctness and not just cost, the reason is
+recorded at that tier.
 -/
 
 def defEq := ⟦
-  -- ============================================================================
-  -- k_is_def_eq
-  --
-  -- Mirror of `src/ix/kernel/def_eq.rs::is_def_eq`. Returns G:
-  -- 1 = def-eq, 0 = not.
-  -- ============================================================================
-  fn k_is_def_eq(a: KExpr, b: KExpr, types: List‹KExpr›,
-                 top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    -- Tier 1: pointer equality short-circuit.
+  -- Level list equality (semantic, uses level normalization).
+  fn level_list_eq(a: List‹KLevel›, b: List‹KLevel›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        match load(b) {
+          ListNode.Nil => 1,
+          _ => 0,
+        },
+      ListNode.Cons(x, xs) =>
+        match load(b) {
+          ListNode.Nil => 0,
+          ListNode.Cons(y, ys) =>
+            match level_equal(x, y) {
+              0 => 0,
+              _ => level_list_eq(xs, ys),
+            },
+        },
+    }
+  }
+
+  -- Main entry: def-eq of two KExpr in a shared types context.
+  -- Context-trimmed memo key (mirror k_is_def_eq / Rust
+  -- def_eq_ctx_key): key on the suffix of `types` reachable from
+  -- either side; closed pairs (lbr 0) key to the empty context and
+  -- share across binder depths. Without the trim, the same pair
+  -- compared under every distinct binder context memoizes separately —
+  -- on deep dependent proof towers that is an exponential duplicate-
+  -- work (and QueryRecord memory) amplifier.
+  fn k_is_def_eq(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match ptr_val(a) - ptr_val(b) {
-      0 => 1,
-      -- Context-trimmed memo key (mirror Rust `def_eq_ctx_key`): decide on the
-      -- suffix of `types` reachable from either side; closed pairs (lbr 0) key
-      -- to the empty context and share across binder depths.
-      _ => k_is_def_eq_core(a, b, ctx_trim(types, lbr_max(expr_lbr(a), expr_lbr(b))), top, addrs),
+      0 => 1,  -- ptr-eq: same interned pointer = equal
+      _ => k_is_def_eq_core(a, b,
+             ctx_trim(types, lbr_max(expr_lbr(a), expr_lbr(b)))),
     }
   }
 
-  -- Def-eq is symmetric (every tier below treats the sides symmetrically or
-  -- tries both directions), so canonicalize the pair by pointer order before
-  -- the tiered run: (a, b) and (b, a) share one ordered run, and — the
-  -- larger effect — the eta/structural recursion below issues its
-  -- `expr_inst1`/`expr_lift` traffic with a canonical orientation, deduping
-  -- instantiation work across mirrored queries. Sorting lives here rather
-  -- than in `k_is_def_eq`: this circuit runs once per unique pair, the entry
-  -- once per call, and the swap costs a second call-site's width. Pointer
-  -- values fit u32 for any feasible trace.
-  fn k_is_def_eq_core(a: KExpr, b: KExpr, types: List‹KExpr›,
-                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
+  -- Def-eq is symmetric (every tier treats the sides symmetrically or
+  -- tries both directions), so canonicalize the pair by pointer order
+  -- (mirror k_is_def_eq_core): (a, b) and (b, a) share one ordered
+  -- memo row, and the recursion below issues instantiation traffic
+  -- with a canonical orientation.
+  fn k_is_def_eq_core(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match u32_less_than(ptr_val(a), ptr_val(b)) {
-      1 => k_is_def_eq_ordered(a, b, types, top, addrs),
-      0 => k_is_def_eq_ordered(b, a, types, top, addrs),
+      1 => k_is_def_eq_ordered(a, b, types),
+      _ => k_is_def_eq_ordered(b, a, types),
     }
   }
 
-  fn k_is_def_eq_ordered(a: KExpr, b: KExpr, types: List‹KExpr›,
-                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-        -- Tier 1.5: lazy-delta app-congruence pre-WHNF. Mirror:
-        -- src/ix/kernel/def_eq.rs:1262-1287 try_def_eq_app. When both
-        -- sides share Const(idx, lvls) head with same arg count, recurse
-        -- on args directly. Sound: only accepts when args recursively def-eq.
-        match try_lazy_delta_app(a, b, types, top, addrs) {
-          1 => 1,
-          0 =>
-        -- Tier 1c: string literal expansion (must run before WHNF). Mirror:
-        -- src/ix/kernel/def_eq.rs:295-304. If exactly one side is Lit(Str),
-        -- expand to `String.ofList [Char.ofNat c, ...]` ctor form so both
-        -- sides reduce in lockstep through delta + iota.
-        match try_string_lit_pair(a, b, types, top, addrs) {
-          1 => 1,
-          0 =>
-            -- Tier 1d: no-delta whnf + structural shortcuts (mirror Rust
-            -- `whnf_no_delta_for_def_eq` + `quick_def_eq` + post-`try_def_eq_app`).
-            let aw_nd = whnf_nd(a, types, top, addrs);
-            let bw_nd = whnf_nd(b, types, top, addrs);
-            match ptr_val(aw_nd) - ptr_val(bw_nd) {
-              0 => 1,
-              _ =>
-                match k_is_def_eq_struct_safe(aw_nd, bw_nd, types, top, addrs) {
-                  1 => 1,
-                  0 =>
-                    match try_lazy_delta_app(aw_nd, bw_nd, types, top, addrs) {
-                      1 => 1,
+  fn k_is_def_eq_ordered(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    -- Pre-WHNF lazy-delta app congruence.
+    -- When both sides share Const head + same lvl args + arity,
+    -- recurse on arg lists without unfolding — avoids expensive
+    -- delta on cases where args recursively def-eq.
+    match try_def_eq_app(a, b, types) {
+      1 => 1,
+      _ => k_is_def_eq_slow(a, b, types),
+    }
+  }
+
+  -- App-congruence PRE-WHNF: if both sides collect_spine to
+  -- (Const(addr), args) with same addr + same level args + same arity,
+  -- recurse on args pairwise. Sound: if all args def-eq, whole exprs
+  -- def-eq without unfolding the const.
+  fn try_def_eq_app(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    match collect_spine(a) {
+      (ah, aa) =>
+        match collect_spine(b) {
+          (bh, bb) =>
+            match load(ah) {
+              KExprNode.Const(a_addr, al) =>
+                match load(bh) {
+                  KExprNode.Const(b_addr, bl) =>
+                    match ptr_val(a_addr) - ptr_val(b_addr) {
                       0 =>
-            -- Tier 2: WHNF both sides.
-            let aw = whnf(a, types, top, addrs);
-            let bw = whnf(b, types, top, addrs);
-            match ptr_val(aw) - ptr_val(bw) {
-              0 => 1,
-              _ =>
-                -- Tier 3: proof irrelevance.
-                match try_proof_irrel(aw, bw, types, top, addrs) {
-                  1 => 1,
-                  0 =>
-                    -- Tier 3b: unit-like-type symmetry.
-                    match try_unit_like(aw, bw, types, top, addrs) {
-                      1 => 1,
-                      0 =>
-                        -- Tier 3c: struct eta (mirror def_eq.rs:778-784).
-                        match try_eta_struct(aw, bw, types, top, addrs) {
-                          1 => 1,
-                          0 =>
-                            match try_eta_struct(bw, aw, types, top, addrs) {
-                              1 => 1,
-                              0 =>
-                                -- Tier 3d: Nat offset (mirror def_eq.rs:751).
-                                match try_def_eq_nat(aw, bw, types, top, addrs) {
-                                  (1, eq) => eq,
-                                  (0, _) =>
-                                    -- Tier 4: lazy-delta unfold loop (mirror
-                                    -- def_eq.rs:1418-1483 lazy_delta_reduction_step).
-                                    -- Both sides may be Const-headed Defn/Thm
-                                    -- left stuck by whnf (Opaque hint or Theorem).
-                                    -- Unfold one side per rank; recurse.
-                                    match lazy_delta_loop(aw, bw, 16, types, top, addrs) {
-                                      (1, eq) => eq,
-                                      (0, _) => k_is_def_eq_struct(aw, bw, types, top, addrs),
-                                    },
-                                },
+                        match level_list_eq(al, bl) {
+                          0 => 0,
+                          _ =>
+                            match list_length(aa) - list_length(bb) {
+                              0 => de_args(aa, bb, types),
+                              _ => 0,
                             },
                         },
+                      _ => 0,
                     },
+                  _ => 0,
                 },
+              _ => 0,
             },
+        },
+    }
+  }
+
+  fn de_args(aa: List‹KExpr›, bb: List‹KExpr›, types: List‹KExpr›) -> G {
+    match load(aa) {
+      ListNode.Nil =>
+        match load(bb) {
+          ListNode.Nil => 1,
+          _ => 0,
+        },
+      ListNode.Cons(a, ar) =>
+        match load(bb) {
+          ListNode.Nil => 0,
+          ListNode.Cons(b, br) =>
+            match k_is_def_eq(a, b, types) {
+              0 => 0,
+              _ => de_args(ar, br, types),
+            },
+        },
+    }
+  }
+
+  -- Nat.zero recognition for offset-aware def_eq.
+  fn is_nat_zero(e: KExpr) -> G {
+    match load(e) {
+      KExprNode.Lit(lit) =>
+        match lit {
+          KLiteral.Nat(limbs) => klimbs_is_zero(limbs),
+          _ => 0,
+        },
+      KExprNode.Const(caddr, _) => address_eq(caddr, nat_zero_addr()),
+      _ => 0,
+    }
+  }
+
+  -- Decompose a whnf'd Nat into (matched, base, offset). Recognizes:
+  --   Lit n              -> (1, Lit 0, n)
+  --   Nat.succ e         -> base/offset of e, offset+1
+  --   Nat.add e (Lit m)  -> base/offset of e, offset+m
+  -- Mirror nat_offset_of.
+  fn nat_offset_of(e: KExpr) -> (G, KExpr, KLimbs) {
+    match load(e) {
+      KExprNode.Lit(lit) =>
+        match lit {
+          KLiteral.Nat(n) => (1, mk_nat_lit(store(ListNode.Nil)), n),
+          _ => (0, e, store(ListNode.Nil)),
+        },
+      KExprNode.App(f, a) =>
+        match load(f) {
+          KExprNode.Const(caddr, _) =>
+            match address_eq(caddr, nat_succ_addr()) {
+              1 =>
+                match nat_offset_of(a) {
+                  (_, base, o) => (1, base, klimbs_succ(o)),
+                },
+              _ => (0, e, store(ListNode.Nil)),
+            },
+          KExprNode.App(g, x) =>
+            match load(g) {
+              KExprNode.Const(caddr, _) =>
+                match address_eq(caddr, nat_add_addr()) {
+                  1 =>
+                    match load(a) {
+                      KExprNode.Lit(alit) =>
+                        match alit {
+                          KLiteral.Nat(m) =>
+                            match nat_offset_of(x) {
+                              (1, base, o) => (1, base, klimbs_add(o, m)),
+                              _ => (1, x, m),
+                            },
+                          _ => (0, e, store(ListNode.Nil)),
+                        },
+                      _ => (0, e, store(ListNode.Nil)),
+                    },
+                  _ => (0, e, store(ListNode.Nil)),
+                },
+              _ => (0, e, store(ListNode.Nil)),
+            },
+          _ => (0, e, store(ListNode.Nil)),
+        },
+      _ => (0, e, store(ListNode.Nil)),
+    }
+  }
+
+  -- Offset-aware Nat def_eq. Returns (matched, eq). Sound because
+  -- `+k` is injective — equal offsets reduces the compare to base ≟ base.
+  -- Collapses `succ^k(x) ≟ succ^k(x)` from O(k) unary steps to O(1).
+  fn try_def_eq_nat(a: KExpr, b: KExpr, types: List‹KExpr›) -> (G, G) {
+    let za = is_nat_zero(a);
+    let zb = is_nat_zero(b);
+    match za * zb {
+      1 => (1, 1),
+      _ =>
+        match nat_offset_of(a) {
+          (ma, ba, oa) =>
+            match nat_offset_of(b) {
+              (mb, bb, ob) =>
+                match ma * mb {
+                  0 => (0, 0),
+                  _ =>
+                    match klimbs_eq(oa, ob) {
+                      0 => (0, 0),
+                      _ => (1, k_is_def_eq(ba, bb, types)),
                     },
                 },
             },
         },
-        }
+    }
   }
 
-  -- Mirror Rust `def_eq.rs::quick_def_eq`. Sound on partially-whnf'd
-  -- (no-delta) inputs because the handled shapes (Sort/Lam/All) don't
-  -- depend on further reductions for their judgment. Returns 1 only
-  -- when DEFINITELY def-eq; 0 = fall through.
-  fn k_is_def_eq_struct_safe(a: KExpr, b: KExpr, types: List‹KExpr›,
-                              top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
+  -- Slow path: whnf both sides, structural compare, then proof-irrel
+  -- fallback. On both structural + proof-irrel misses, delta-unfold on
+  -- mismatched Const heads is done inside k_is_def_eq_struct via
+  -- try_lazy_delta_app.
+  -- Tier 1d (mirror DefEq.lean:85-97 / Rust quick_def_eq +
+  -- whnf_no_delta_for_def_eq): no-delta whnf both sides; many pairs
+  -- settle by ptr-eq, safe structural compare, or app-congruence on
+  -- the nd forms — without ever full-delta-unfolding large Defn
+  -- bodies. Only on fall-through do we pay Tier 2's full whnf.
+  -- Tier 1c (mirror DefEq.lean:78-84 / Rust def_eq.rs:295-304
+  -- try_string_lit_expansion): if exactly one side is Lit(Str), expand
+  -- it to `String.ofList [Char.ofNat c, ...]` ctor form so both sides
+  -- reduce in lockstep through delta + iota instead of the literal
+  -- staying opaque while the other side delta-cascades.
+  fn try_string_lit_pair(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    match try_string_lit_one(a, b, types) {
+      1 => 1,
+      _ => try_string_lit_one(b, a, types),
+    }
+  }
+
+  fn try_string_lit_one(t: KExpr, s: KExpr, types: List‹KExpr›) -> G {
+    match load(t) {
+      KExprNode.Lit(lit) =>
+        match lit {
+          KLiteral.Str(bs) =>
+            k_is_def_eq(str_lit_delta_step(str_lit_to_ctor(bs), types),
+                           s, types),
+          _ => 0,
+        },
+      _ => 0,
+    }
+  }
+
+  fn k_is_def_eq_slow(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    match try_string_lit_pair(a, b, types) {
+      1 => 1,
+      _ => k_is_def_eq_slow_nd(a, b, types),
+    }
+  }
+
+  fn k_is_def_eq_slow_nd(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    let aw_nd = whnf_nd(a, types);
+    let bw_nd = whnf_nd(b, types);
+    match ptr_val(aw_nd) - ptr_val(bw_nd) {
+      0 => 1,
+      _ =>
+        match k_is_def_eq_struct_safe(aw_nd, bw_nd, types) {
+          1 => 1,
+          _ =>
+            match try_def_eq_app(aw_nd, bw_nd, types) {
+              1 => 1,
+              _ => k_is_def_eq_slow2(a, b, types),
+            },
+        },
+    }
+  }
+
+  -- Mirror of Rust `def_eq.rs::quick_def_eq`.
+  -- Sound on partially-whnf'd (no-delta) inputs because the handled
+  -- shapes (Sort/Lam/Forall) don't depend on further reduction for
+  -- their judgment. Returns 1 only when DEFINITELY def-eq; 0 = fall
+  -- through.
+  fn k_is_def_eq_struct_safe(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match load(a) {
       KExprNode.Srt(la) =>
         match load(b) {
@@ -157,22 +304,22 @@ def defEq := ⟦
       KExprNode.Lam(ty_a, body_a) =>
         match load(b) {
           KExprNode.Lam(ty_b, body_b) =>
-            match k_is_def_eq(ty_a, ty_b, types, top, addrs) {
+            match k_is_def_eq(ty_a, ty_b, types) {
               1 =>
                 let inner = store(ListNode.Cons(ty_a, types));
-                k_is_def_eq(body_a, body_b, inner, top, addrs),
-              0 => 0,
+                k_is_def_eq(body_a, body_b, inner),
+              _ => 0,
             },
           _ => 0,
         },
       KExprNode.Forall(ty_a, body_a) =>
         match load(b) {
           KExprNode.Forall(ty_b, body_b) =>
-            match k_is_def_eq(ty_a, ty_b, types, top, addrs) {
+            match k_is_def_eq(ty_a, ty_b, types) {
               1 =>
                 let inner = store(ListNode.Cons(ty_a, types));
-                k_is_def_eq(body_a, body_b, inner, top, addrs),
-              0 => 0,
+                k_is_def_eq(body_a, body_b, inner),
+              _ => 0,
             },
           _ => 0,
         },
@@ -180,65 +327,198 @@ def defEq := ⟦
     }
   }
 
-  -- Mirror: src/ix/kernel/def_eq.rs:801-818 fn try_proof_irrel.
-  fn try_proof_irrel(a: KExpr, b: KExpr, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    let a_ty = k_infer_only(a, types, top, addrs);
-    match is_prop_type(a_ty, types, top, addrs) {
-      0 => 0,
-      1 =>
-        let b_ty = k_infer_only(b, types, top, addrs);
-        k_is_def_eq(a_ty, b_ty, types, top, addrs),
+  -- Tier order is load-bearing: proof_irrel comes BEFORE any
+  -- structural/eta machinery. With Thm heads stuck in whnf, proof-term
+  -- pairs stay high-level (Lam vs Thm-app etc.); eta-expanding a proof
+  -- fabricates over-applied proof terms whose infer_only aborts —
+  -- proof_irrel must get first shot.
+  fn k_is_def_eq_slow2(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    let aw = whnf(a, types);
+    let bw = whnf(b, types);
+    match ptr_val(aw) - ptr_val(bw) {
+      0 => 1,
+      _ =>
+        match try_proof_irrel(aw, bw, types) {
+          1 => 1,
+          _ =>
+            match try_unit_like(aw, bw, types) {
+              1 => 1,
+              _ =>
+                match try_eta_struct(aw, bw, types) {
+                  1 => 1,
+                  _ =>
+                    match try_eta_struct(bw, aw, types) {
+                      1 => 1,
+                      _ =>
+                        match try_def_eq_nat(aw, bw, types) {
+                          (1, eq) => eq,
+                          _ =>
+                        match lazy_delta_loop(aw, bw, 16, types) {
+                          1 => 1,
+                          _ =>
+                        match try_eta_swap(aw, bw, types) {
+                          1 => 1,
+                          _ => k_is_def_eq_struct(aw, bw, types),
+                        },
+                        },
+                        },
+                    },
+                },
+            },
+        },
     }
   }
 
-  -- Returns 1 iff `whnf(infer(ty))` is `Sort 0`.
-  fn is_prop_type(ty: KExpr, types: List‹KExpr›,
-                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    let sort = k_infer_only(ty, types, top, addrs);
-    let sort_w = whnf(sort, types, top, addrs);
-    match load(sort_w) {
-      KExprNode.Srt(l) =>
-        match load(l) {
-          KLevelNode.Zero => 1,
+  -- Struct-eta: if `s` is a fully-applied ctor of a single-ctor
+  -- 0-indices inductive (struct-like) and `t` is any expr,
+  -- accept when `Proj(induct, i, t) ≡ s_args[nparams + i]` for every
+  -- field. Mirror crates/kernel/src.
+  fn try_eta_struct(t: KExpr, s: KExpr, types: List‹KExpr›) -> G {
+    match collect_spine(s) {
+      (s_head, s_args) =>
+        match load(s_head) {
+          KExprNode.Const(ctor_addr, _) =>
+            let ci = load(get_ci(ctor_addr));
+            match ci {
+              KConstantInfo.Ctor(_, _, ind_block_addr, ind_idx, _, nparams, nfields, _) =>
+                match list_length(s_args) - (nparams + nfields) {
+                  0 =>
+                    let ind_ci = load(get_ci_iprj(ind_block_addr, ind_idx));
+                    match ind_ci {
+                      KConstantInfo.Induct(_, _, _, nindices, nctors, _, _, _) =>
+                        let shape_ok = eq_zero(nindices) * eq_zero(nctors - 1);
+                        match shape_ok {
+                          0 => 0,
+                          _ =>
+                            let struct_addr = compute_iprj_addr(ind_block_addr, ind_idx);
+                            -- Eta holds for structure-LIKE inductives only, which
+                            -- Lean defines as non-recursive on top of the shape
+                            -- test above (`isStructureLike` requires
+                            -- `isRec := false`). Firing on a recursive one-ctor
+                            -- inductive accepts pairs Lean's kernel rejects. The
+                            -- whnf-side struct-eta iota gates on the same
+                            -- predicate.
+                            match struct_is_rec(struct_addr) {
+                              1 => 0,
+                              _ =>
+                                -- The two sides must have def-eq TYPES.
+                                -- Without this the rule degenerates: for
+                                -- ANY `t` of ANY type it would compare
+                                -- `t` against `S.mk … (Proj S i t) …`,
+                                -- and `compare_struct_fields` builds
+                                -- exactly those projections, so the
+                                -- pointer fast path matches them and the
+                                -- pair is accepted. Those projections are
+                                -- synthesized inside def-eq and never
+                                -- inferred, so `k_infer_proj`'s own
+                                -- head-address gate never sees them.
+                                -- Mirrors the reference's
+                                -- "Types must be def-eq" check
+                                -- (crates/kernel/src/def_eq.rs), itself
+                                -- lean4lean's `tryEtaStructCore`.
+                                let t_ty = k_infer_only(t, types);
+                                let s_ty = k_infer_only(s, types);
+                                match k_is_def_eq(t_ty, s_ty, types) {
+                                  0 => 0,
+                                  _ =>
+                                    compare_struct_fields(struct_addr, nparams,
+                                                               nfields, t, s_args, 0, types),
+                                },
+                            },
+                        },
+                      _ => 0,
+                    },
+                  _ => 0,
+                },
+              _ => 0,
+            },
           _ => 0,
         },
-      _ => 0,
     }
   }
 
-  -- Mirror: src/ix/kernel/def_eq.rs:858-905 fn try_unit_like_eq.
-  fn try_unit_like(a: KExpr, b: KExpr, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    let ta = k_infer_only(a, types, top, addrs);
-    let ta_w = whnf(ta, types, top, addrs);
-    match is_unit_like_type(ta_w, top) {
+  fn compare_struct_fields(struct_addr: Addr, nparams: G, nfields: G,
+                                t: KExpr, s_args: List‹KExpr›, i: G,
+                                types: List‹KExpr›) -> G {
+    match nfields - i {
+      0 => 1,
+      _ =>
+        let proj_expr = store(KExprNode.Proj(struct_addr, i, t));
+        let s_field = list_lookup(s_args, nparams + i);
+        match k_is_def_eq(proj_expr, s_field, types) {
+          0 => 0,
+          _ => compare_struct_fields(struct_addr, nparams, nfields, t,
+                                          s_args, i + 1, types),
+        },
+    }
+  }
+
+  -- Synthesize the parent inductive's IPrj wrapper Addr for use as
+  -- the struct_addr in Proj nodes. Same recipe as Ingress'
+  -- projection_addr but specialized to Indc (no members lookup —
+  -- direct Ixon IPrj Constant + blake3).
+  fn compute_iprj_addr(block_addr: Addr, idx: G) -> Addr {
+    -- Range-check the index rather than truncating it: an unchecked
+    -- low-byte pack collides the synthesized wrapper addrs of members
+    -- 0 and 256.
+    let idx_u64 = idx_to_u64(idx);
+    let info = ConstantInfo.IPrj(InductiveProj.Mk(idx_u64, block_addr));
+    let proj_c = Constant.Mk(info,
+                              store(ListNode.Nil),
+                              store(ListNode.Nil),
+                              store(ListNode.Nil));
+    let bytes = put_constant(proj_c, store(ListNode.Nil));
+    bytes_to_addr(bytes)
+  }
+
+  -- If exactly one side is a Lam, eta-expand the non-Lam side and retry.
+  fn try_eta_swap(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    match load(a) {
+      KExprNode.Lam(ta, ba) =>
+        match load(b) {
+          KExprNode.Lam(_, _) => 0,
+          _ => try_eta_expand(ta, ba, b, types),
+        },
+      _ =>
+        match load(b) {
+          KExprNode.Lam(tb, bb) => try_eta_expand(tb, bb, a, types),
+          _ => 0,
+        },
+    }
+  }
+
+  -- Mirror try_unit_like (Kernel/DefEq.lean:211) / Rust
+  -- def_eq.rs:858-905 try_unit_like_eq: if `a`'s type whnfs to
+  -- `Const(I, _) args` for a single-ctor zero-field inductive
+  -- (PUnit, True, Unit-like structures), any two inhabitants are
+  -- definitionally equal — provided `b`'s type is def-eq to `a`'s.
+  -- Fires all over brecOn/below machinery (below-package PUnit slots).
+  fn try_unit_like(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    let ta = k_infer_only(a, types);
+    let ta_w = whnf(ta, types);
+    match is_unit_like_type(ta_w) {
       0 => 0,
-      1 =>
-        let tb = k_infer_only(b, types, top, addrs);
-        k_is_def_eq(ta, tb, types, top, addrs),
+      _ =>
+        let tb = k_infer_only(b, types);
+        k_is_def_eq(ta, tb, types),
     }
   }
 
   -- 1 iff ty is `Const(I, _) args` for a 1-ctor 0-field inductive.
-  -- (A 0-field ctor cannot reference the block, so an is_rec check would
-  -- be redundant — mirror def_eq.rs try_unit_like, which dropped the flag
-  -- when Ixon stopped storing it.)
-  fn is_unit_like_type(ty: KExpr, top: List‹&KConstantInfo›) -> G {
+  fn is_unit_like_type(ty: KExpr) -> G {
     match collect_spine(ty) {
       (head, _) =>
         match load(head) {
-          KExprNode.Const(idx, _) =>
-            let ci = load(list_lookup(top, idx));
+          KExprNode.Const(addr, _) =>
+            let ci = load(get_ci(addr));
             match ci {
-              KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _) =>
-                match list_length(ctor_indices) {
-                  1 =>
-                    let ctor_idx = list_lookup(ctor_indices, 0);
-                    let ctor_ci = load(list_lookup(top, ctor_idx));
-                    match ctor_ci {
-                      KConstantInfo.Ctor(_, _, _, _, _, n_fields, _) =>
-                        match n_fields {
+              KConstantInfo.Induct(_, _, _, _, num_ctors, _, block, idx) =>
+                match num_ctors - 1 {
+                  0 =>
+                    let cci = load(get_ci_cprj(block, idx, 0));
+                    match cci {
+                      KConstantInfo.Ctor(_, _, _, _, _, _, nfields, _) =>
+                        match nfields {
                           0 => 1,
                           _ => 0,
                         },
@@ -253,396 +533,302 @@ def defEq := ⟦
     }
   }
 
-  -- Mirror: src/ix/kernel/def_eq.rs:1007-1018 try_string_lit_expansion,
-  -- attempted in both directions.
-  fn try_string_lit_pair(a: KExpr, b: KExpr, types: List‹KExpr›,
-                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    match try_string_lit_one(a, b, types, top, addrs) {
-      1 => 1,
-      0 => try_string_lit_one(b, a, types, top, addrs),
-    }
-  }
-
-  fn try_string_lit_one(t: KExpr, s: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    match load(t) {
-      KExprNode.Lit(lit) =>
-        match lit {
-          KLiteral.Str(bs) =>
-            match str_lit_to_ctor(bs, addrs) {
-              -- One delta step past a Defn `String.ofList` head (mirror
-              -- Rust str_lit_to_ctor_app): the native ofList collapse
-              -- would otherwise fold the expansion straight back into
-              -- the literal and the comparison would never reach the
-              -- structural constructor form.
-              (1, expanded) =>
-                k_is_def_eq(str_lit_delta_step(expanded, types, top, addrs),
-                            s, types, top, addrs),
-              (0, _) => 0,
-            },
-          _ => 0,
-        },
-      _ => 0,
-    }
-  }
-
-  -- Mirror: src/ix/kernel/def_eq.rs:920-926 fn is_nat_zero.
-  fn is_nat_zero(e: KExpr, addrs: List‹Addr›) -> G {
-    match load(e) {
-      KExprNode.Lit(lit) =>
-        match lit {
-          KLiteral.Nat(limbs) => klimbs_is_zero(limbs),
-          _ => 0,
-        },
-      KExprNode.Const(idx, _) =>
-        address_eq(list_lookup(addrs, idx), nat_zero_addr()),
-      _ => 0,
-    }
-  }
-
-
-  -- Decompose a WHNF'd Nat into `base + offset` where `base` is the
-  -- non-offset core and `offset` a KLimbs literal. Recognizes:
-  --   Lit n               -> (matched, 0-base, n)
-  --   Nat.succ e          -> base/offset of e, offset+1
-  --   Nat.add e (Lit m)   -> base/offset of e, offset+m
-  -- `matched=1` iff `e` is offset-shaped (succ/add/lit). The few succ layers
-  -- whnf exposes are peeled, but `Nat.add base (Lit m)` is read in O(1) — so a
-  -- `succ^k(x)` chain (which whnf leaves as `succ(Nat.add x (Lit k-1))`)
-  -- decomposes to `(x, k)` in O(1) instead of k unary steps.
-  fn nat_offset_of(e: KExpr, addrs: List‹Addr›) -> (G, KExpr, KLimbs) {
-    match load(e) {
-      KExprNode.Lit(lit) =>
-        match lit {
-          KLiteral.Nat(n) => (1, mk_nat_lit(store(ListNode.Nil)), n),
-          _ => (0, e, store(ListNode.Nil)),
-        },
-      KExprNode.App(f, a) =>
-        match load(f) {
-          KExprNode.Const(idx, _) =>
-            match address_eq(list_lookup(addrs, idx), nat_succ_addr()) {
-              1 =>
-                match nat_offset_of(a, addrs) {
-                  (_, base, o) => (1, base, klimbs_succ(o)),
-                },
-              0 => (0, e, store(ListNode.Nil)),
-            },
-          KExprNode.App(g, x) =>
-            match load(g) {
-              KExprNode.Const(idx, _) =>
-                match address_eq(list_lookup(addrs, idx), nat_add_addr()) {
-                  1 =>
-                    match load(a) {
-                      KExprNode.Lit(alit) =>
-                        match alit {
-                          KLiteral.Nat(m) =>
-                            match nat_offset_of(x, addrs) {
-                              (1, base, o) => (1, base, klimbs_add(o, m)),
-                              (0, _, _) => (1, x, m),
-                            },
-                          _ => (0, e, store(ListNode.Nil)),
-                        },
-                      _ => (0, e, store(ListNode.Nil)),
-                    },
-                  0 => (0, e, store(ListNode.Nil)),
-                },
-              _ => (0, e, store(ListNode.Nil)),
-            },
-          _ => (0, e, store(ListNode.Nil)),
-        },
-      _ => (0, e, store(ListNode.Nil)),
-    }
-  }
-
-  -- Mirror: src/ix/kernel/def_eq.rs:953-995 is_def_eq_nat / try_def_eq_offset,
-  -- generalized to offset form. Returns (matched, eq). Conservative: only
-  -- decides when both sides are offset-shaped with EQUAL offsets (then the
-  -- verdict is `base_a ≟ base_b`, sound because `+k` is injective); differing
-  -- offsets or non-offset shapes fall back (matched=0) to the generic path.
-  -- Collapses `succ^k(x) ≟ succ^k(x)` from k unary steps to one klimbs compare.
-  fn try_def_eq_nat(a: KExpr, b: KExpr, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›,
-                     addrs: List‹Addr›) -> (G, G) {
-    let za = is_nat_zero(a, addrs);
-    let zb = is_nat_zero(b, addrs);
-    match za * zb {
-      1 => (1, 1),
-      0 =>
-        match nat_offset_of(a, addrs) {
-          (ma, ba, oa) =>
-            match nat_offset_of(b, addrs) {
-              (mb, bb, ob) =>
-                match ma * mb {
-                  0 => (0, 0),
-                  _ =>
-                    match klimbs_eq(oa, ob) {
-                      0 => (0, 0),
-                      1 => (1, k_is_def_eq(ba, bb, types, top, addrs)),
-                    },
-                },
-            },
-        },
-    }
-  }
-
-  -- Mirror: src/ix/kernel/def_eq.rs:1105-1231 fn try_eta_struct.
-  -- Direction (t, s): s is the candidate ctor-headed side. Asserts s is
-  -- App-spine of `Const(ctor)` fully applied, induct is struct-like
-  -- (non-rec, 0 indices, 1 ctor), and field-by-field `Proj(induct, i, t)
-  -- ≡ s_args[num_params + i]`.
-  fn try_eta_struct(t: KExpr, s: KExpr, types: List‹KExpr›,
-                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    match collect_spine(s) {
-      (s_head, s_args) =>
-        match load(s_head) {
-          KExprNode.Const(cidx, _) =>
-            match load(list_lookup(top, cidx)) {
-              KConstantInfo.Ctor(_, _, induct_idx, _, num_params, num_fields, _) =>
-                let arity_diff = list_length(s_args) - (num_params + num_fields);
-                match arity_diff {
-                  0 =>
-                    match load(list_lookup(top, induct_idx)) {
-                      KConstantInfo.Induct(_, _, _, n_indices, ctor_indices, _, _) =>
-                        -- struct-like: 0 indices, 1 ctor, computed non-rec
-                        -- (recr flag dropped from Ixon; mirror is_struct_like).
-                        let shape_ok = eq_zero(n_indices) *
-                                       eq_zero(list_length(ctor_indices) - 1);
-                        match shape_ok {
-                          0 => 0,
-                          1 =>
-                            match computed_is_rec_ind(induct_idx, top) {
-                              1 => 0,
-                              0 =>
-                                compare_struct_fields(induct_idx, num_params,
-                                                       num_fields, t, s_args, 0,
-                                                       types, top, addrs),
-                            },
-                        },
-                      _ => 0,
-                    },
-                  _ => 0,
-                },
-              _ => 0,
-            },
-          _ => 0,
-        },
-    }
-  }
-
-  fn compare_struct_fields(induct_idx: G, num_params: G, num_fields: G,
-                            t: KExpr, s_args: List‹KExpr›, i: G,
-                            types: List‹KExpr›,
-                            top: List‹&KConstantInfo›,
-                            addrs: List‹Addr›) -> G {
-    match num_fields - i {
-      0 => 1,
+  -- Mirror crates/kernel/src: if `a`'s type is a Prop,
+  -- and `b`'s type is def-eq to `a`'s type, then a ≡ b as proof-terms.
+  -- Uses k_infer_only to avoid the def_eq ↔ check cycle.
+  fn try_proof_irrel(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    let a_ty = k_infer_only(a, types);
+    match is_prop_type(a_ty, types) {
+      0 => 0,
       _ =>
-        let proj_expr = store(KExprNode.Proj(induct_idx, i, t));
-        let s_field = list_lookup(s_args, num_params + i);
-        match k_is_def_eq(proj_expr, s_field, types, top, addrs) {
-          0 => 0,
-          1 => compare_struct_fields(induct_idx, num_params, num_fields, t,
-                                       s_args, i + 1, types, top, addrs),
-        },
+        let b_ty = k_infer_only(b, types);
+        k_is_def_eq(a_ty, b_ty, types),
     }
   }
 
-  -- ============================================================================
-  -- Structural comparison + Lambda-eta after WHNF.
-  -- ============================================================================
-  -- Mirror: src/ix/kernel/def_eq.rs lambda-eta tier (both directions).
-  -- Every non-Lam `a` paired with Lam `b` falls through to symmetric eta
-  -- expansion (try_eta_expand swap), to accept `λx. axiom x ≡ axiom`.
-  fn k_is_def_eq_struct(a: KExpr, b: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    match load(a) {
-      KExprNode.Srt(la) =>
-        match load(b) {
-          KExprNode.Srt(lb) => level_equal(la, lb),
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-
-      KExprNode.BVar(ia) =>
-        match load(b) {
-          KExprNode.BVar(ib) =>
-            match ia - ib {
-              0 => 1,
-              _ => 0,
-            },
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-
-      KExprNode.Const(ia, lvls_a) =>
-        match load(b) {
-          KExprNode.Const(ib, lvls_b) =>
-            match ia - ib {
-              0 => k_is_def_eq_levels(lvls_a, lvls_b),
-              _ => 0,
-            },
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-
-      KExprNode.App(fa, xa) =>
-        match load(b) {
-          KExprNode.App(fb, xb) =>
-            let f_eq = k_is_def_eq(fa, fb, types, top, addrs);
-            match f_eq {
-              1 => k_is_def_eq(xa, xb, types, top, addrs),
-              0 => 0,
-            },
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-
-      KExprNode.Lam(ty_a, body_a) =>
-        match load(b) {
-          KExprNode.Lam(ty_b, body_b) =>
-            let ty_eq = k_is_def_eq(ty_a, ty_b, types, top, addrs);
-            match ty_eq {
-              1 =>
-                let inner = store(ListNode.Cons(ty_a, types));
-                k_is_def_eq(body_a, body_b, inner, top, addrs),
-              0 => 0,
-            },
-          _ => try_eta_expand(ty_a, body_a, b, types, top, addrs),
-        },
-
-      KExprNode.Forall(ty_a, body_a) =>
-        match load(b) {
-          KExprNode.Forall(ty_b, body_b) =>
-            let ty_eq = k_is_def_eq(ty_a, ty_b, types, top, addrs);
-            match ty_eq {
-              1 =>
-                let inner = store(ListNode.Cons(ty_a, types));
-                k_is_def_eq(body_a, body_b, inner, top, addrs),
-              0 => 0,
-            },
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-
-      KExprNode.Let(ty_a, val_a, body_a) =>
-        match load(b) {
-          KExprNode.Let(ty_b, val_b, body_b) =>
-            let ty_eq = k_is_def_eq(ty_a, ty_b, types, top, addrs);
-            match ty_eq {
-              1 =>
-                let v_eq = k_is_def_eq(val_a, val_b, types, top, addrs);
-                match v_eq {
-                  1 =>
-                    let inner = store(ListNode.Cons(ty_a, types));
-                    k_is_def_eq(body_a, body_b, inner, top, addrs),
-                  0 => 0,
-                },
-              0 => 0,
-            },
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-
-      KExprNode.Lit(la) =>
-        match load(b) {
-          KExprNode.Lit(lb) => literal_eq(la, lb),
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-
-      KExprNode.Proj(tidx_a, fidx_a, ea) =>
-        match load(b) {
-          KExprNode.Proj(tidx_b, fidx_b, eb) =>
-            let same = eq_zero(tidx_a - tidx_b) * eq_zero(fidx_a - fidx_b);
-            match same {
-              1 => k_is_def_eq(ea, eb, types, top, addrs),
-              0 => 0,
-            },
-          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
-          _ => 0,
-        },
-    }
-  }
-
-  -- ============================================================================
-  -- Lambda eta expansion (Rust def_eq.rs:1068-1100).
-  --
-  -- We have `λ(ty_a). body_a` on one side and a non-Lam `b` on the other.
-  -- Build the wrap `λ(ty_a). (lift(b, 1, 0)) #0` and compare its body
-  -- against body_a.
-  --
-  -- Equivalently: compare `body_a` vs `App(lift(b, 1, 0), BVar(0))`.
-  -- ============================================================================
+  -- Mirror crates/kernel/src: `λty. body` vs non-Lam
+  -- `b` → compare `body` vs `App(lift(b, 1, 0), BVar 0)` under the
+  -- extended ctx.
   fn try_eta_expand(ty_a: KExpr, body_a: KExpr, b: KExpr,
-                    types: List‹KExpr›,
-                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
+                        types: List‹KExpr›) -> G {
     let b_lifted = expr_lift(b, 1, 0);
     let bvar0 = store(KExprNode.BVar(0));
     let b_app = store(KExprNode.App(b_lifted, bvar0));
     let inner = store(ListNode.Cons(ty_a, types));
-    k_is_def_eq(body_a, b_app, inner, top, addrs)
+    k_is_def_eq(body_a, b_app, inner)
   }
 
-  -- ============================================================================
-  -- Level list equality.
-  -- ============================================================================
-  fn k_is_def_eq_levels(a: List‹KLevel›, b: List‹KLevel›) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
+  -- 1 iff `whnf(infer_only(ty))` is `Sort 0`.
+  fn is_prop_type(ty: KExpr, types: List‹KExpr›) -> G {
+    let sort = k_infer_only(ty, types);
+    let sort_w = whnf(sort, types);
+    match load(sort_w) {
+      KExprNode.Srt(l) =>
+        match load(l) {
+          KLevelNode.Zero => 1,
           _ => 0,
         },
-      ListNode.Cons(la, ra) =>
+      _ => 0,
+    }
+  }
+
+  -- Structural arm-by-arm equality on WHNF'd exprs. The Lit arm
+  -- continues into `k_is_def_eq_struct_go` directly (see there);
+  -- keep the two-name split so that call can bypass nothing but the
+  -- entry itself.
+  fn k_is_def_eq_struct(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    k_is_def_eq_struct_go(a, b, types)
+  }
+
+  fn k_is_def_eq_struct_go(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    match load(a) {
+      KExprNode.BVar(i) =>
         match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(lb, rb) =>
-            let l_eq = level_equal(la, lb);
-            match l_eq {
-              1 => k_is_def_eq_levels(ra, rb),
+          KExprNode.BVar(j) => match i - j { 0 => 1, _ => 0, },
+          _ => 0,
+        },
+      KExprNode.Srt(la) =>
+        match load(b) {
+          KExprNode.Srt(lb) => level_equal(la, lb),
+          _ => 0,
+        },
+      KExprNode.Const(addr_a, lvls_a) =>
+        match load(b) {
+          KExprNode.Const(addr_b, lvls_b) =>
+            -- Content equality decides which constant this is; pointer
+            -- inequality would not (see the `Addr` note in Core.lean).
+            match address_eq(addr_a, addr_b) {
+              1 => level_list_eq(lvls_a, lvls_b),
+              _ => try_lazy_delta_app(a, b, types),
+            },
+          _ => try_lazy_delta_app(a, b, types),
+        },
+      KExprNode.App(fa, xa) =>
+        match load(b) {
+          KExprNode.App(fb, xb) =>
+            match k_is_def_eq(fa, fb, types) {
+              0 => try_lazy_delta_app(a, b, types),
+              _ =>
+                match k_is_def_eq(xa, xb, types) {
+                  0 => try_lazy_delta_app(a, b, types),
+                  _ => 1,
+                },
+            },
+          _ => try_lazy_delta_app(a, b, types),
+        },
+      KExprNode.Lam(ta, ba) =>
+        match load(b) {
+          KExprNode.Lam(tb, bb) =>
+            match k_is_def_eq(ta, tb, types) {
               0 => 0,
+              _ =>
+                let types2 = store(ListNode.Cons(ta, types));
+                k_is_def_eq(ba, bb, types2),
+            },
+          _ => try_eta_expand(ta, ba, b, types),
+        },
+      KExprNode.Forall(ta, ba) =>
+        match load(b) {
+          KExprNode.Forall(tb, bb) =>
+            match k_is_def_eq(ta, tb, types) {
+              0 => 0,
+              _ =>
+                let types2 = store(ListNode.Cons(ta, types));
+                k_is_def_eq(ba, bb, types2),
+            },
+          _ => 0,
+        },
+      KExprNode.Let(_, _, _) =>
+        -- whnf should have zeta-reduced Let already.
+        0,
+      KExprNode.Lit(la) =>
+        match load(b) {
+          -- Compare the VALUES, not just the shapes: two Lits are def-eq
+          -- only when their payloads are equal. Answering 1 for any pair of
+          -- Lits would accept `Lit 5 ≟ Lit 6` and certify `Nat.add 2 3 = 6`.
+          -- The earlier def_eq_nat tier handles offset-shaped Nat pairs, but
+          -- nothing guarantees it fired before this point, and it never
+          -- covers Str.
+          KExprNode.Lit(lb) => literal_eq(la, lb),
+          _ =>
+            -- Lit vs non-Lit: convert `a` to ctor form (Nat.zero /
+            -- App(Nat.succ, Lit(k-1))) and retry STRUCTURALLY. Handles
+            -- the `Lit(Nat 0) ≡ Const(Nat.zero)` case that comes up
+            -- when one side reduces via nat_lit_to_ctor and the other
+            -- doesn't ( residual — Nat.pred_le).
+            -- MUST NOT re-enter full k_is_def_eq: its whnf collapses
+            -- the succ-wrapped form straight back to the same interned
+            -- Lit (nat prim), producing an infinite expand/collapse
+            -- cycle whenever `b` is a stuck non-ctor app.
+            let a_ctor = nat_lit_to_ctor_or_self(a);
+            match ptr_val(a_ctor) - ptr_val(a) {
+              0 => 0,  -- didn't change, avoid infinite loop
+              _ => k_is_def_eq_struct_go(a_ctor, b, types),
+            },
+        },
+      KExprNode.Proj(struct_a, fidx_a, ea) =>
+        match load(b) {
+          KExprNode.Proj(struct_b, fidx_b, eb) =>
+            -- Content equality decides; pointer inequality would not.
+            match address_eq(struct_a, struct_b) {
+              1 =>
+                match fidx_a - fidx_b {
+                  0 => k_is_def_eq(ea, eb, types),
+                  _ => 0,
+                },
+              _ => 0,
+            },
+          _ => 0,
+        },
+    }
+  }
+
+  -- Multi-step lazy-delta reduction loop (mirror Tier 4).
+  -- Both sides possibly Const-Defn/Thm-headed. Unfold one side per
+  -- iteration (prefer higher-rank/hint), whnf result, retry def_eq.
+  -- Fuel-bounded to prevent runaway on cyclic unfolds. Returns 0 on
+  -- exhaustion; caller falls through to structural compare.
+  fn lazy_delta_loop(a: KExpr, b: KExpr, fuel: G,
+                          types: List‹KExpr›) -> G {
+    match fuel {
+      0 => 0,
+      _ =>
+        match ptr_val(a) - ptr_val(b) {
+          0 => 1,
+          _ =>
+        let (a_addr, a_is_const) = head_addr(a);
+        let (b_addr, b_is_const) = head_addr(b);
+        match a_is_const {
+          1 =>
+            match b_is_const {
+              1 =>
+                -- In-loop app-congruence (mirror lazy_delta_loop:773):
+                -- same head + def-eq levels + pairwise-def-eq args decides
+                -- WITHOUT unfolding — with Thm heads stuck, most proof-app
+                -- pairs settle here.
+                match try_def_eq_app(a, b, types) {
+                  1 => 1,
+                  _ => lazy_delta_step_const_const(a_addr, b_addr, a, b,
+                                                       fuel, types),
+                },
+              _ => lazy_delta_a_const_b_proj(a_addr, a, b, fuel, types),
+            },
+          _ =>
+            match b_is_const {
+              1 => lazy_delta_b_const_a_proj(b_addr, a, b, fuel, types),
+              _ =>
+                -- Neither Const-headed at spine head. Try unfold_proj_app
+                -- on both — if either side is Proj-headed with a
+                -- delta-eligible inner Const, unfold inner and rewrap.
+                lazy_delta_both_proj(a, b, fuel, types),
+            },
+        },
+        },
+    }
+  }
+
+  -- Reducibility rank for lazy-delta unfold ordering (mirror
+  -- delta_rank): Defn carries the ch 3 hint; Thm and everything else
+  -- rank 0.
+  fn delta_rank(ci: KConstantInfo) -> G {
+    match ci {
+      KConstantInfo.Defn(_, _, _, _, hint) => hint,
+      _ => 0,
+    }
+  }
+
+  -- Both heads Const, congruence missed. Rank-ordered unfold (mirror
+  -- lazy_delta_step_const_const / Rust lazy_delta_reduction_step):
+  -- unfold the higher-rank side so both sides meet at the same
+  -- definitional height; equal ranks unfold both.
+  fn lazy_delta_step_const_const(a_addr: Addr, b_addr: Addr, a: KExpr,
+                                       b: KExpr, fuel: G,
+                                       types: List‹KExpr›) -> G {
+    let a_ci = load(get_ci(a_addr));
+    let b_ci = load(get_ci(b_addr));
+    let ae = is_defn_or_thm(a_ci);
+    let be = is_defn_or_thm(b_ci);
+    match ae {
+      0 =>
+        match be {
+          0 => 0,
+          _ => unfold_b_and_loop(a, b, fuel, types),
+        },
+      _ =>
+        match be {
+          0 => unfold_a_and_loop(a, b, fuel, types),
+          _ =>
+            let ar = delta_rank(a_ci);
+            let br = delta_rank(b_ci);
+            match u32_less_than(br, ar) {
+              1 => unfold_a_and_loop(a, b, fuel, types),
+              _ =>
+                match u32_less_than(ar, br) {
+                  1 => unfold_b_and_loop(a, b, fuel, types),
+                  _ => unfold_both_and_loop(a, b, fuel, types),
+                },
             },
         },
     }
   }
 
-  -- ============================================================================
-  -- Lazy-delta app-congruence (Tier 1.5 of k_is_def_eq).
-  -- Mirror: src/ix/kernel/def_eq.rs:1262-1287 try_def_eq_app.
-  --
-  -- When both sides reduce syntactically to `Const(idx, lvls) ◦ args` with
-  -- matching idx, level list, and arg count, recurse on args directly via
-  -- k_is_def_eq. Bypasses delta+beta of the def's body for the common
-  -- congruence case (`f x ≡ f y` whenever `x ≡ y`).
-  --
-  -- Sound: returns 1 only when args recursively def-eq; returns 0 to fall
-  -- through to the regular WHNF-based pipeline.
-  -- ============================================================================
-  fn try_lazy_delta_app(a: KExpr, b: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    match collect_spine(a) {
-      (ah, aa) =>
-        match collect_spine(b) {
-          (bh, bb) =>
-            match load(ah) {
-              KExprNode.Const(ai, al) =>
-                match load(bh) {
-                  KExprNode.Const(bi, bl) =>
-                    match ai - bi {
-                      0 =>
-                        match k_is_def_eq_levels(al, bl) {
-                          0 => 0,
-                          1 =>
-                            let len_a = list_length(aa);
-                            let len_b = list_length(bb);
-                            match len_a - len_b {
-                              0 => is_def_eq_arg_list(aa, bb, types, top, addrs),
-                              _ => 0,
-                            },
-                        },
-                      _ => 0,
-                    },
-                  _ => 0,
+  fn unfold_a_and_loop(a: KExpr, b: KExpr, fuel: G,
+                           types: List‹KExpr›) -> G {
+    match delta_unfold(a) {
+      (1, a2) =>
+        let aw = whnf(a2, types);
+        lazy_delta_loop(aw, b, fuel - 1, types),
+      _ => 0,
+    }
+  }
+
+  fn unfold_b_and_loop(a: KExpr, b: KExpr, fuel: G,
+                           types: List‹KExpr›) -> G {
+    match delta_unfold(b) {
+      (1, b2) =>
+        let bw = whnf(b2, types);
+        lazy_delta_loop(a, bw, fuel - 1, types),
+      _ => 0,
+    }
+  }
+
+  fn unfold_both_and_loop(a: KExpr, b: KExpr, fuel: G,
+                              types: List‹KExpr›) -> G {
+    match delta_unfold(a) {
+      (1, a2) =>
+        match delta_unfold(b) {
+          (1, b2) =>
+            let aw = whnf(a2, types);
+            let bw = whnf(b2, types);
+            lazy_delta_loop(aw, bw, fuel - 1, types),
+          _ => 0,
+        },
+      _ => 0,
+    }
+  }
+
+  -- a is Const-headed spine; b is Proj-headed. Mirror
+  -- lazy_delta_step_a_const: try unfold_proj_app on b, else unfold a.
+  fn lazy_delta_a_const_b_proj(a_addr: Addr, a: KExpr, b: KExpr, fuel: G,
+                                       types: List‹KExpr›) -> G {
+    let a_ci = load(get_ci(a_addr));
+    match is_defn_or_thm(a_ci) {
+      0 => 0,
+      _ =>
+        match try_unfold_proj_app(b) {
+          (1, b2) =>
+            let bw = whnf(b2, types);
+            match k_is_def_eq(a, bw, types) {
+              1 => 1,
+              _ => lazy_delta_loop(a, bw, fuel - 1, types),
+            },
+          _ =>
+            let au = try_unfold_head(a, a_ci, types);
+            match au {
+              (1, aw) =>
+                match k_is_def_eq(aw, b, types) {
+                  1 => 1,
+                  _ => lazy_delta_loop(aw, b, fuel - 1, types),
                 },
               _ => 0,
             },
@@ -650,44 +836,69 @@ def defEq := ⟦
     }
   }
 
-  fn is_def_eq_arg_list(aa: List‹KExpr›, bb: List‹KExpr›,
-                        types: List‹KExpr›, top: List‹&KConstantInfo›,
-                        addrs: List‹Addr›) -> G {
-    match load(aa) {
-      ListNode.Nil =>
-        match load(bb) {
-          ListNode.Nil => 1,
-          _ => 0,
-        },
-      ListNode.Cons(a, ar) =>
-        match load(bb) {
-          ListNode.Nil => 0,
-          ListNode.Cons(b, br) =>
-            match k_is_def_eq(a, b, types, top, addrs) {
-              0 => 0,
-              1 => is_def_eq_arg_list(ar, br, types, top, addrs),
+  -- Symmetric.
+  fn lazy_delta_b_const_a_proj(b_addr: Addr, a: KExpr, b: KExpr, fuel: G,
+                                       types: List‹KExpr›) -> G {
+    let b_ci = load(get_ci(b_addr));
+    match is_defn_or_thm(b_ci) {
+      0 => 0,
+      _ =>
+        match try_unfold_proj_app(a) {
+          (1, a2) =>
+            let aw = whnf(a2, types);
+            match k_is_def_eq(aw, b, types) {
+              1 => 1,
+              _ => lazy_delta_loop(aw, b, fuel - 1, types),
+            },
+          _ =>
+            let bu = try_unfold_head(b, b_ci, types);
+            match bu {
+              (1, bw) =>
+                match k_is_def_eq(a, bw, types) {
+                  1 => 1,
+                  _ => lazy_delta_loop(a, bw, fuel - 1, types),
+                },
+              _ => 0,
             },
         },
     }
   }
 
-  -- ============================================================================
-  -- Lazy-delta unfold loop (Tier 4 of k_is_def_eq).
-  -- Mirror: src/ix/kernel/def_eq.rs:1418-1483 lazy_delta_reduction_step
-  -- + outer fuel loop in def_eq.rs:1383-1414.
-  --
-  -- After Tier 2 whnf may leave both sides stuck on Const-headed
-  -- Defn(Opaque) or Thm. Iteratively unfolds one side per rank-cmp:
-  --   * Both delta-eligible, ar > br : unfold a.
-  --   * Both delta-eligible, ar < br : unfold b.
-  --   * Both delta-eligible, ar == br: unfold both.
-  --   * Only a eligible: unfold a.
-  --   * Only b eligible: unfold b.
-  --   * Neither: stuck → fall through to structural compare.
-  -- After each unfold, whnf the result and recurse. Fuel-bounded.
-  -- ============================================================================
-  fn is_delta_eligible(idx: G, top: List‹&KConstantInfo›) -> G {
-    let ci = load(list_lookup(top, idx));
+  -- Both are Proj-headed spines. Try unfold_proj_app on either or both.
+  fn lazy_delta_both_proj(a: KExpr, b: KExpr, fuel: G,
+                               types: List‹KExpr›) -> G {
+    let ua = try_unfold_proj_app(a);
+    let ub = try_unfold_proj_app(b);
+    match ua {
+      (1, a2) =>
+        let aw = whnf(a2, types);
+        match ub {
+          (1, b2) =>
+            let bw = whnf(b2, types);
+            match k_is_def_eq(aw, bw, types) {
+              1 => 1,
+              _ => lazy_delta_loop(aw, bw, fuel - 1, types),
+            },
+          _ =>
+            match k_is_def_eq(aw, b, types) {
+              1 => 1,
+              _ => lazy_delta_loop(aw, b, fuel - 1, types),
+            },
+        },
+      _ =>
+        match ub {
+          (1, b2) =>
+            let bw = whnf(b2, types);
+            match k_is_def_eq(a, bw, types) {
+              1 => 1,
+              _ => lazy_delta_loop(a, bw, fuel - 1, types),
+            },
+          _ => 0,
+        },
+    }
+  }
+
+  fn is_defn_or_thm(ci: KConstantInfo) -> G {
     match ci {
       KConstantInfo.Defn(_, _, _, _, _) => 1,
       KConstantInfo.Thm(_, _, _) => 1,
@@ -695,22 +906,33 @@ def defEq := ⟦
     }
   }
 
-  fn delta_rank(idx: G, top: List‹&KConstantInfo›) -> G {
-    let ci = load(list_lookup(top, idx));
-    match ci {
-      KConstantInfo.Defn(_, _, _, _, hint) => hint,
-      _ => 0,
-    }
-  }
-
-  -- Unfold a delta-eligible Const-headed expr to its body[lvls] applied
-  -- to the spine. Returns (1, expr2) on success, (0, e) otherwise.
-  fn delta_unfold(e: KExpr, top: List‹&KConstantInfo›) -> (G, KExpr) {
+  -- Mirror try_unfold_proj_app (Kernel/DefEq.lean:732). If e collects
+  -- to Proj(_, _, inner) spine and inner is delta-eligible Const-headed,
+  -- unfold inner and rewrap Proj + reapply spine.
+  fn try_unfold_proj_app(e: KExpr) -> (G, KExpr) {
     match collect_spine(e) {
       (head, spine) =>
         match load(head) {
-          KExprNode.Const(idx, lvls) =>
-            let ci = load(list_lookup(top, idx));
+          KExprNode.Proj(struct_addr, fidx, inner) =>
+            match delta_unfold(inner) {
+              (1, inner2) =>
+                let new_head = store(KExprNode.Proj(struct_addr, fidx, inner2));
+                (1, apply_spine(new_head, spine)),
+              _ => (0, e),
+            },
+          _ => (0, e),
+        },
+    }
+  }
+
+  -- Delta-unfold Const-headed e: replace Const with its Defn/Thm body,
+  -- keeping the spine. Returns (0, e) if head isn't Const-Defn/Thm.
+  fn delta_unfold(e: KExpr) -> (G, KExpr) {
+    match collect_spine(e) {
+      (head, spine) =>
+        match load(head) {
+          KExprNode.Const(addr, lvls) =>
+            let ci = load(get_ci(addr));
             match ci {
               KConstantInfo.Defn(_, _, value, _, _) =>
                 let body = expr_inst_levels(value, lvls);
@@ -725,197 +947,72 @@ def defEq := ⟦
     }
   }
 
-  -- Mirror: src/ix/kernel/def_eq.rs:1539-1549 try_unfold_proj_app.
-  -- If e collects to App-spine on Proj(_, _, inner) where inner is itself
-  -- delta-eligible Const-headed, unfold inner's body and rewrap the Proj.
-  -- Returns (1, e2) on progress, (0, e) otherwise.
-  fn try_unfold_proj_app(e: KExpr, top: List‹&KConstantInfo›) -> (G, KExpr) {
-    match collect_spine(e) {
-      (head, spine) =>
-        match load(head) {
-          KExprNode.Proj(tidx, fidx, inner) =>
-            match delta_unfold(inner, top) {
-              (1, inner2) =>
-                let new_head = store(KExprNode.Proj(tidx, fidx, inner2));
-                (1, apply_spine(new_head, spine)),
-              (0, _) => (0, e),
+  -- Lazy delta: unfold Defn on one side (prefer whichever has body),
+  -- retry. On stuck (neither is Defn), give up.
+  fn try_lazy_delta_app(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    let (a_addr, a_is_const) = head_addr(a);
+    let (b_addr, b_is_const) = head_addr(b);
+    match a_is_const {
+      0 => 0,
+      _ =>
+        match b_is_const {
+          0 => 0,
+          _ =>
+            let a_ci = load(get_ci(a_addr));
+            let b_ci = load(get_ci(b_addr));
+            let a_unfolded = try_unfold_head(a, a_ci, types);
+            let b_unfolded = try_unfold_head(b, b_ci, types);
+            match a_unfolded {
+              (1, aw) =>
+                match b_unfolded {
+                  (1, bw) => k_is_def_eq(aw, bw, types),
+                  _ => k_is_def_eq(aw, b, types),
+                },
+              (0, _) =>
+                match b_unfolded {
+                  (1, bw) => k_is_def_eq(a, bw, types),
+                  _ => 0,
+                },
             },
+        },
+    }
+  }
+
+  -- Extract Const head's addr from a spine expr. Returns (addr, is_const).
+  fn head_addr(e: KExpr) -> (Addr, G) {
+    match collect_spine(e) {
+      (head, _) =>
+        match load(head) {
+          KExprNode.Const(addr, _) => (addr, 1),
+          _ => (store([0u8; 32]), 0),
+        },
+    }
+  }
+
+  -- If ci is a Defn or Thm, delta-unfold its body, reapply the spine,
+  -- and whnf. Thm must go through delta_unfold explicitly — whnf
+  -- keeps Thm heads stuck (mirror), so `whnf(e)` alone would
+  -- return `e` unchanged for Thm and stall the lazy-delta loop.
+  fn try_unfold_head(e: KExpr, ci: KConstantInfo,
+                         types: List‹KExpr›) -> (G, KExpr) {
+    match ci {
+      -- Defn must ALSO go through the explicit delta_unfold, not
+      -- `whnf(e)`: offset-stuck compact forms (`Nat.add/div/mod base
+      -- lit`, whnf verdict 2) are whnf-FIXPOINTS, so "unfold via whnf"
+      -- returns the same pointer and the lazy-delta ladder recurses on
+      -- identical args forever. Explicit body substitution guarantees
+      -- progress (mirror delta_unfold).
+      KConstantInfo.Defn(_, _, _, _, _) =>
+        match delta_unfold(e) {
+          (1, e2) => (1, whnf(e2, types)),
           _ => (0, e),
         },
-    }
-  }
-
-  fn lazy_delta_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
-    match fuel {
-      0 => (0, 0),
-      _ =>
-        match ptr_val(a) - ptr_val(b) {
-          0 => (1, 1),
-          _ =>
-            -- Hoist heads once; structural congruence Tier 1 only fires when
-            -- both heads are Const (avoids try_lazy_delta_app's redundant
-            -- collect_spine when one side is Proj/Lam/etc).
-            -- Mirror src/ix/kernel/def_eq.rs:1418-1495: when one side is
-            -- Const-delta-eligible and the other isn't (Proj, Sort, Lam,
-            -- Forall, Lit, …), unfold the Const side regardless of the
-            -- other head's shape. The (Const, Proj) / (Proj, Const) cases
-            -- are subsumed by the generalized step helpers, since
-            -- try_unfold_proj_app is a no-op on non-Proj heads.
-            match collect_spine(a) {
-              (ah, aa) =>
-                match collect_spine(b) {
-                  (bh, bb) =>
-                    match load(ah) {
-                      KExprNode.Const(ai, al) =>
-                        match load(bh) {
-                          KExprNode.Const(bi, bl) =>
-                            match try_const_app_congruence(ai, al, aa, bi, bl, bb,
-                                                            types, top, addrs) {
-                              1 => (1, 1),
-                              _ => lazy_delta_step_const_const(ai, bi, a, b, fuel,
-                                                                types, top, addrs),
-                            },
-                          _ => lazy_delta_step_a_const(ai, a, b, fuel, types, top, addrs),
-                        },
-                      _ =>
-                        match load(bh) {
-                          KExprNode.Const(bi, _) =>
-                            lazy_delta_step_b_const(bi, a, b, fuel, types, top, addrs),
-                          _ => (0, 0),
-                        },
-                    },
-                },
-            },
+      KConstantInfo.Thm(_, _, _) =>
+        match delta_unfold(e) {
+          (1, e2) => (1, whnf(e2, types)),
+          _ => (0, e),
         },
-    }
-  }
-
-  -- Const-vs-Const spine congruence: same idx, def-eq levels, same arity,
-  -- pairwise def-eq args. Inner of try_lazy_delta_app without the head
-  -- loads (caller already did them).
-  fn try_const_app_congruence(ai: G, al: List‹KLevel›, aa: List‹KExpr›,
-                              bi: G, bl: List‹KLevel›, bb: List‹KExpr›,
-                              types: List‹KExpr›, top: List‹&KConstantInfo›,
-                              addrs: List‹Addr›) -> G {
-    match ai - bi {
-      0 =>
-        match k_is_def_eq_levels(al, bl) {
-          0 => 0,
-          1 =>
-            let len_a = list_length(aa);
-            let len_b = list_length(bb);
-            match len_a - len_b {
-              0 => is_def_eq_arg_list(aa, bb, types, top, addrs),
-              _ => 0,
-            },
-        },
-      _ => 0,
-    }
-  }
-
-  fn lazy_delta_step_const_const(ai: G, bi: G, a: KExpr, b: KExpr, fuel: G,
-                                 types: List‹KExpr›, top: List‹&KConstantInfo›,
-                                 addrs: List‹Addr›) -> (G, G) {
-    let ae = is_delta_eligible(ai, top);
-    let be = is_delta_eligible(bi, top);
-    match ae {
-      0 =>
-        match be {
-          0 => (0, 0),
-          1 => unfold_b_and_loop(a, b, fuel, types, top, addrs),
-          _ => (0, 0),
-        },
-      1 =>
-        match be {
-          0 => unfold_a_and_loop(a, b, fuel, types, top, addrs),
-          1 =>
-            let ar = delta_rank(ai, top);
-            let br = delta_rank(bi, top);
-            match u32_less_than(br, ar) {
-              1 => unfold_a_and_loop(a, b, fuel, types, top, addrs),
-              0 =>
-                match u32_less_than(ar, br) {
-                  1 => unfold_b_and_loop(a, b, fuel, types, top, addrs),
-                  0 => unfold_both_and_loop(a, b, fuel, types, top, addrs),
-                },
-            },
-          _ => (0, 0),
-        },
-      _ => (0, 0),
-    }
-  }
-
-  -- a is Const-headed at idx ai; b is anything else (Proj, Sort, Lam, …).
-  -- Mirror Rust def_eq.rs:1438-1445 (a_delta && !b_delta branch).
-  -- If a-delta-eligible, try try_unfold_proj_app(b) (no-op for non-Proj b);
-  -- else unfold a.
-  fn lazy_delta_step_a_const(ai: G, a: KExpr, b: KExpr, fuel: G,
-                              types: List‹KExpr›, top: List‹&KConstantInfo›,
-                              addrs: List‹Addr›) -> (G, G) {
-    match is_delta_eligible(ai, top) {
-      0 => (0, 0),
-      1 =>
-        match try_unfold_proj_app(b, top) {
-          (1, b2) =>
-            let bw = whnf(b2, types, top, addrs);
-            lazy_delta_loop(a, bw, fuel - 1, types, top, addrs),
-          (0, _) => unfold_a_and_loop(a, b, fuel, types, top, addrs),
-        },
-      _ => (0, 0),
-    }
-  }
-
-  -- b is Const-headed at idx bi; a is anything else. Symmetric to the above.
-  -- Mirror Rust def_eq.rs:1446-1453 (!a_delta && b_delta branch).
-  fn lazy_delta_step_b_const(bi: G, a: KExpr, b: KExpr, fuel: G,
-                              types: List‹KExpr›, top: List‹&KConstantInfo›,
-                              addrs: List‹Addr›) -> (G, G) {
-    match is_delta_eligible(bi, top) {
-      0 => (0, 0),
-      1 =>
-        match try_unfold_proj_app(a, top) {
-          (1, a2) =>
-            let aw = whnf(a2, types, top, addrs);
-            lazy_delta_loop(aw, b, fuel - 1, types, top, addrs),
-          (0, _) => unfold_b_and_loop(a, b, fuel, types, top, addrs),
-        },
-      _ => (0, 0),
-    }
-  }
-
-  fn unfold_a_and_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
-    match delta_unfold(a, top) {
-      (1, a2) =>
-        let aw = whnf(a2, types, top, addrs);
-        lazy_delta_loop(aw, b, fuel - 1, types, top, addrs),
-      (0, _) => (0, 0),
-    }
-  }
-
-  fn unfold_b_and_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
-    match delta_unfold(b, top) {
-      (1, b2) =>
-        let bw = whnf(b2, types, top, addrs);
-        lazy_delta_loop(a, bw, fuel - 1, types, top, addrs),
-      (0, _) => (0, 0),
-    }
-  }
-
-  fn unfold_both_and_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
-    match delta_unfold(a, top) {
-      (1, a2) =>
-        match delta_unfold(b, top) {
-          (1, b2) =>
-            let aw = whnf(a2, types, top, addrs);
-            let bw = whnf(b2, types, top, addrs);
-            lazy_delta_loop(aw, bw, fuel - 1, types, top, addrs),
-          (0, _) => (0, 0),
-        },
-      (0, _) => (0, 0),
+      _ => (0, e),
     }
   }
 ⟧

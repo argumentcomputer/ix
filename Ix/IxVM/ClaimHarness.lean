@@ -5,6 +5,7 @@ public import Ix.Claim
 public import Ix.AssumptionTree
 public import Ix.CompileM
 public import Ix.Common
+public import Ix.Tc.Primitive
 
 public section
 
@@ -21,16 +22,17 @@ The harness handles every step the Aiur side cannot:
    return an `Ixon.Env` representing the constants' transitive
    closure.
 
-2. **Closure layout**: `closureFrom` follows `Constant.refs` (+
-   projection block addresses) from a target address. Mirrors the
-   Aiur kernel's `load_with_deps` so the IOBuffer carries exactly
-   what the kernel will look up.
+2. **Closure layout**: `closureFrom` follows `Constant.refs`,
+   projection block addresses, and the derived Muts→wrapper edges from
+   a target address, then seeds primitive bytes — the same scope the
+   Rust witness builder computes (`witness_scope` over
+   `Env::bfs_closure`), so the IOBuffer carries everything the kernel
+   can reach.
 
-3. **IOBuffer population**: `addEntries` seeds the constants, blobs,
-   and Defn reducibility hints under their content-addressed keys
-   (`addr`, `addr ++ [0]`, `addr ++ [1]`). The Aiur kernel reads via
-   `io_get_info` + `#read_byte_stream` and blake3-verifies each
-   payload against its key.
+3. **IOBuffer population**: `addEntries` seeds the constants, blobs, and
+   Defn reducibility hints on their own channels, each keyed by the
+   address it belongs to. See the "IxVM IOBuffer interface" section
+   below for the channel table and the binding argument.
 
 4. **Witness construction**: `buildClaimWitness` serializes any
    `Ix.Claim`, seeds the bytes at `key = blake3(claim)`, pulls in the
@@ -55,12 +57,6 @@ keys.
 -/
 namespace IxVM.ClaimHarness
 
-/-- Run the Lean → Ixon FFI pipeline for `name`'s transitive closure. -/
-def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) : IO Ixon.Env := do
-  let constList := Lean.collectDependencies name leanEnv.constants
-  let rawEnv ← Ix.CompileM.rsCompileEnvFFI constList
-  pure rawEnv.toEnv
-
 /-- Resolve a Lean name to its `Ixon.Env` `Address`, or fail with a
     descriptive `IO` error. Used by every claim/witness builder that
     starts from a Lean name. -/
@@ -68,6 +64,35 @@ def lookupAddr (ixonEnv : Ixon.Env) (name : Lean.Name) : IO Address :=
   match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
   | some addr => pure addr
   | none => throw <| IO.userError s!"{name} not found in Ixon environment"
+
+/-- Nat / Bool constants the kernel's primitive dispatch synthesizes at
+    reduction time (nat literal → succ chain, nat_beq/ble → Bool.true/
+    false). Bytes for these MUST live in ch 2 for the kernel's `get_ci` to
+    load them — but they may not be dependencies of the target's proof
+    body. Seed them into the compile list. -/
+def synthesizedPrimNames : Array Lean.Name :=
+  #[`Bool.true, `Bool.false, `Nat.zero, `Nat.succ, `Bool,
+    -- String-literal ctor expansion (str_lit_to_ctor): the def_eq
+    -- Tier 1c / proj-head expansion fabricates Consts of these.
+    `String, `String.ofList, `Char, `Char.ofNat, `List.nil, `List.cons]
+
+/-- Variant of loadIxonEnv: also seeds the constants the kernel's kernel
+    fabricates during reduction (Bool.true/false + Nat.zero/succ), so
+    their bytes are always in ch 2 even when the target's proof body
+    doesn't textually reference them. -/
+def loadIxonEnv (name : Lean.Name) (leanEnv : Lean.Environment) :
+    IO Ixon.Env := do
+  let mut seen : Lean.NameSet := {}
+  let mut deduped : Array (Lean.Name × Lean.ConstantInfo) := #[]
+  let names : Array Lean.Name := #[name] ++ synthesizedPrimNames
+  for n in names do
+    if leanEnv.constants.contains n then
+      for entry in Lean.collectDependencies n leanEnv.constants do
+        if !seen.contains entry.fst then
+          seen := seen.insert entry.fst
+          deduped := deduped.push entry
+  let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
+  pure rawEnv.toEnv
 
 /-- Compile the union of `names`'s transitive closures into one shared
     Ixon env. Drivers like `KernelArena.lean` use this to pay the
@@ -85,13 +110,65 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
   pure rawEnv.toEnv
 
-/-- Walk the Constant ref-graph from `target` to compute the set of
-    addresses needed to type-check it. Mirrors Aiur's `load_with_deps`:
-    follow `Constant.refs` plus the projection's `block_addr` (the parent
-    Muts wrapper) for IPrj/CPrj/RPrj/DPrj. -/
-partial def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address := Id.run do
+/-- The `refs` indices `e` uses as a CONSTANT: `Ref i` and the type index
+    of `Prj i`. `Str`/`Nat` index blob payloads and `Rec` resolves through
+    the block's members, so neither contributes. `Share` is not followed —
+    every shared subexpression is itself an entry of `Constant.sharing`,
+    walked separately. Mirrors `const_idxs_expr` in `Kernel/Claim.lean`. -/
+partial def constIdxsExpr : Ixon.Expr → Std.HashSet UInt64
+  | .ref i _ => {i}
+  | .prj i _ inner => (constIdxsExpr inner).insert i
+  | .app a b | .lam a b | .all a b => (constIdxsExpr a).union (constIdxsExpr b)
+  | .letE _ t v b =>
+    ((constIdxsExpr t).union (constIdxsExpr v)).union (constIdxsExpr b)
+  | _ => {}
+
+/-- The `refs` indices `c` uses as constants, over its `sharing` table and
+    every Expr its `ConstantInfo` carries. Mirrors `const_idxs_of` in
+    `Kernel/Claim.lean` and `ixon::shard_claim::const_idxs_of`. -/
+def constIdxsOf (c : Ixon.Constant) : Std.HashSet UInt64 := Id.run do
+  let mut out : Std.HashSet UInt64 := {}
+  for e in c.sharing do
+    out := out.union (constIdxsExpr e)
+  let ofDefn (d : Ixon.Definition) := (constIdxsExpr d.typ).union (constIdxsExpr d.value)
+  let ofRecr (r : Ixon.Recursor) := r.rules.foldl
+    (fun acc rule => acc.union (constIdxsExpr rule.rhs)) (constIdxsExpr r.typ)
+  let ofIndc (i : Ixon.Inductive) := i.ctors.foldl
+    (fun acc ctor => acc.union (constIdxsExpr ctor.typ)) (constIdxsExpr i.typ)
+  match c.info with
+  | .defn d => out := out.union (ofDefn d)
+  | .recr r => out := out.union (ofRecr r)
+  | .axio a => out := out.union (constIdxsExpr a.typ)
+  | .quot q => out := out.union (constIdxsExpr q.typ)
+  | .muts members =>
+    for m in members do
+      out := out.union <| match m with
+        | .defn d => ofDefn d
+        | .indc i => ofIndc i
+        | .recr r => ofRecr r
+  -- Projection wrappers carry no Exprs of their own.
+  | _ => pure ()
+  return out
+
+/-- Content address of a synthesized projection wrapper: a `Constant`
+    holding just the proj info with empty sharing/refs/univs tables,
+    serialized and blake3-hashed — the same construction compile uses
+    (and Rust `ixon::constant::*_proj_address`). -/
+def projWrapperAddr (info : Ixon.ConstantInfo) : Address :=
+  Address.blake3 (Ixon.ser (⟨info, #[], #[], #[]⟩ : Ixon.Constant))
+
+/-- Walk the Constant ref-graph from `roots` to compute the set of
+    addresses needed to type-check them. Mirrors Rust `Env::bfs_closure`:
+    follow `Constant.refs`, the projection's `block` pointer
+    (IPrj/CPrj/RPrj/DPrj), and — for a `Muts` block — every derived
+    member/constructor projection wrapper address. The wrapper edges are
+    what the kernel's lazy `get_ci` needs: it synthesizes those addrs via
+    kernel-side blake3 and faults their bytes from ch 2, and no
+    `Constant.refs` edge names them. -/
+partial def closureFromRoots (env : Ixon.Env) (roots : Array Address) :
+    Std.HashSet Address := Id.run do
   let mut visited : Std.HashSet Address := {}
-  let mut worklist : Array Address := #[target]
+  let mut worklist : Array Address := roots
   while !worklist.isEmpty do
     let addr := worklist.back!
     worklist := worklist.pop
@@ -105,6 +182,20 @@ partial def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Addres
     match c.info with
     | .rPrj p | .dPrj p => worklist := worklist.push p.block
     | _ => pure ()
+    if let .muts members := c.info then
+      let mut i : UInt64 := 0
+      for m in members do
+        let info : Ixon.ConstantInfo := match m with
+          | .defn _ => .dPrj ⟨i, addr⟩
+          | .indc _ => .iPrj ⟨i, addr⟩
+          | .recr _ => .rPrj ⟨i, addr⟩
+        worklist := worklist.push (projWrapperAddr info)
+        if let .indc ind := m then
+          let mut cidx : UInt64 := 0
+          for _ in ind.ctors do
+            worklist := worklist.push (projWrapperAddr (.cPrj ⟨i, cidx, addr⟩))
+            cidx := cidx + 1
+        i := i + 1
   return visited
 
 /-- Build the `ixon_serde_test` / `ixon_serde_blake3_bench` IOBuffer:
@@ -126,39 +217,66 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
 
 /-! ## IxVM IOBuffer interface
 
-The host seeds blake3-keyed payloads on six channels; the Aiur kernel
-consumes them via `io_get_info` + `#read_byte_stream`. One value shape
-per channel — no overloading, no in-band discriminators.
+This section is the normative description of the host↔kernel interface.
+The host seeds payloads on five channels (0–4); the Aiur kernel consumes
+them via `io_get_info` + `#read_byte_stream`. Each channel carries one
+value shape and each key is the content address of the value it maps to
+— no overloading, no in-band discriminators.
 
-Tiered by access pattern (matches kernel runtime order):
+| Channel | Purpose                | Key (32 G)            | Value shape  |
+|---------|------------------------|-----------------------|--------------|
+| 0       | claim wire bytes       | `blake3(claim_bytes)` | claim bytes  |
+| 1       | assumption tree bytes  | `tree.root`           | tree bytes   |
+| 2       | constant wire bytes    | const addr            | const bytes  |
+| 3       | Defn reducibility hint | Defn addr             | single G     |
+| 4       | blob raw bytes         | blob addr             | raw bytes    |
 
-| Tier   | Channel | Purpose                  | Key (32 G)              | Value shape       |
-|--------|---------|--------------------------|-------------------------|-------------------|
-| Ctrl   | 0       | claim wire bytes         | `blake3(claim_bytes)`   | claim bytes       |
-| Ctrl   | 1       | assumption tree bytes    | `tree.root`             | tree bytes        |
-| Const  | 2       | constant wire bytes      | const addr              | const bytes       |
-| Const  | 3       | Defn reducibility hint   | Defn addr               | single G          |
-| Blob   | 4       | blob discriminator       | addr                    | one byte (1=const, 0=blob) |
-| Blob   | 5       | blob raw bytes           | blob addr               | raw bytes         |
+An address is seeded on ch 2 iff it is a constant, and on ch 4 iff it is
+a blob. The two sets are disjoint and neither carries an entry on the
+other's channel.
 
-Tier 1 fires once per `verify_claim` invocation (claim + optional tree).
-Tier 2 fires per constant traversed during `load_with_deps`. Tier 3
-fires per blob ref encountered during `build_ref_idxs_and_blobs`.
+Access pattern. Channels 0 and 1 are read once per `verify_claim`: the
+claim itself, then its assumption tree if the variant carries one.
+Channels 2, 3, and 4 are read on demand — `get_ci` faults a constant
+the first time the check touches its address, and the reducibility hint
+and blob payload follow from that same fault. Nothing is walked up
+front, so what actually gets read is a subset of what the host seeds.
 
-Soundness:
-* ch 0/1/2/5 — every byte stream is blake3-verified by the kernel
-  against its content-addressed key.
-* ch 3 — semantically optional; controls WHNF reduction heuristic
-  only, def-eq is sound either way.
-* ch 4 — sound by erasure-correctness: a lying discriminator flips
-  the const/blob decision and the wrong-path load downstream fails
-  (a "const" blob triggers a ch 2 read returning empty → blake3
-  verify against the non-empty addr fails; a "blob" const dangles
-  references → typecheck fail).
+Binding. On channels 0, 2, and 4 the kernel re-hashes the bytes it read
+and asserts blake3 equality against the key, so the host cannot
+substitute a payload. Channel 1 is bound the same way in effect but by a
+different derivation: the kernel parses the tree and recomputes its
+merkle root, which must equal the key — the tree's serialization is not
+itself hashed. Channel 3 is advisory: it selects a WHNF reduction
+heuristic and def-eq is sound under any value, so a lying hint costs
+performance, never soundness.
+
+`idx` and `len` from `io_get_info` are UNCONSTRAINED prover witness —
+`Op::IOGetInfo` emits no constraint and no lookup. They are safe to use
+for one thing only: locating bytes that are then bound. Read the wrong
+span and the re-hash fails. **Never branch on `idx` or `len`** — a
+control-flow decision taken on them is a decision the prover makes, and
+it is taken before anything is bound.
+
+Blob-vs-constant is derived from the bytes, not asked of the buffer.
+Within a constant's `refs`, an entry is a blob iff some Expr node
+references it as one — `Str(i)` / `Nat(i)` index blob payloads,
+`Ref(i)` / `Prj(i, ..)` index constants — and `refs` is exactly the
+union of those four (`crates/ixon/src/constant.rs`). An address reached
+from outside any Expr (a claim target, a block address) is a constant
+reference by Ixon convention. The same BYTES may be readable as both a
+constant and a Nat or utf-8 string, so this Expr context is the only
+correct discriminator; byte inspection cannot replace it. Blob-ness is
+therefore a POSITIVE property computed from hash-bound bytes, and every
+address lacking it is a constant that must be walked.
 
 Channel numbers MUST stay in sync with the inlined `io_get_info` /
-`#read_byte_stream` channel literals in `Ix/IxVM/Ingress.lean` and
-`Ix/IxVM/Kernel/Claim.lean`.
+`#read_byte_stream` literals in `Ix/IxVM/Ingress.lean` and
+`Ix/IxVM/Kernel/Claim.lean`. Channel 0 is reused with a different key
+shape by the test and benchmark entrypoints (`blake3_test`,
+`ixon_serde_test`, …); those never run in the same execution as
+`verify_claim`, so the one-shape-per-channel rule holds for every
+production path.
 -/
 
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
@@ -173,14 +291,10 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     let bytes := lc.rawBytes
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 2 key (bytes.data.map .ofUInt8)
-    -- Discriminator: this addr resolves to a constant.
-    ioBuffer := ioBuffer.extend 4 key #[.ofNat 1]
   for (addr, rawBytes) in ixonEnv.blobs do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend 5 key (rawBytes.data.map fun b => .ofNat b.toNat)
-    -- Discriminator: this addr resolves to a blob.
-    ioBuffer := ioBuffer.extend 4 key #[.ofNat 0]
+    ioBuffer := ioBuffer.extend 4 key (rawBytes.data.map fun b => .ofNat b.toNat)
   for (addr, hints) in ixonEnv.anonHints do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
@@ -218,28 +332,28 @@ private def seedTreeAt (root : Address)
     .ok (ioBuffer.extend 1 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
-/-- Build the witness for `verify_claim` against `claim`.
+/-- The full witness byte scope for `target`: the closure of `target`
+    together with every primitive address present in `env`, all as walk
+    ROOTS. Mirrors Rust `witness_scope`.
 
-    `trees` is a caller-supplied map of merkle-root → tree; every root
-    that appears in the claim (assumption root, env root, contains
-    tree root) MUST have an entry. `Ix.AssumptionTree.canonical` builds
-    the canonical sorted+padded shape if you start from a leaf list.
+    Primitives are seeded because the kernel fabricates
+    `Const(Std(prim_addr))` refs inline via `mk_prim_const`
+    (Whnf/Infer/NatPrim), which triggers a load bypassing the ref walk —
+    those addresses need not appear in any `Constant.refs`.
 
-    Per-variant IOBuffer payload:
-    - `Check addr none`: closure of `addr`.
-    - `Check addr (some r)`: closure of `addr` + assumption tree at `r`.
-    - `Eval i o asm`: closure of `i ∪ o` (+ optional asm tree).
-    - `CheckEnv root asm`: full env entries + env-tree at `root`
-      (+ optional asm tree).
-    - `Reveal comm info`: closure of `comm`. Info bytes ride inside
-      the claim bytes already.
-    - `Contains tree target`: tree at `tree`. No const ingest.
+    Their closures are walked, not just their own bytes: def-eq
+    delta-unfolds primitive BODIES (the `strAppend*` arena fixtures do
+    exactly this), and a body's refs are reachable from nowhere else in
+    the scope. Shipping the address alone aborts those with `invalid IO
+    key`. -/
+def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
+  closureFromRoots env
+    (#[target] ++ Ix.Tc.primAddrSet.toArray.filter env.consts.contains)
 
-    Returns `Except String ClaimWitness`: error message names the
-    missing assumption root when applicable.
-
-    Eval-claim invocations currently hit the placeholder
-    `assert_eq!(0,1)` arm of `verify_claim` at proving time. -/
+/-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
+    populates the IOBuffer with the `closureFrom` byte scope of every
+    address the claim variant names (plus any caller-supplied
+    `AssumptionTree`s under their merkle roots). -/
 def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
     Except String ClaimWitness := do
@@ -271,11 +385,18 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
-/-- Reconstruct a shard's `CheckEnv` claim, its reference closure, and the
-    assumption trees (env-root + optional frontier) — everything **except** the
-    IO buffer. Deterministic in `owned` (canonical trees sort addresses), so the
-    claim digest reproduces exactly what `prove`d — used to bind a proof to a
-    shard during verification, cheaply (no buffer serialization). -/
+/-- the kernel shard claim with a THIN frontier: asm = the DIRECT out-of-owned
+    walk edges (refs + Prj→block) of the owned constants, not the full
+    `closure ∖ owned`. the kernel's env walk exits the shard only through a
+    direct external edge and stops there, so everything below the first
+    layer is dead weight in the asm tree. Deterministic in
+    `(env, owned)` — canonical trees sort addresses — so prove/verify
+    digests agree. Every edge — `refs` and the `Prj → block` edge alike —
+    is admitted only when it is outside `owned` AND present in
+    `env.consts`, matching `ixon::shard_claim::frontier_of`. An edge absent
+    from `env.consts` is not something the kernel walk can reach, so
+    including it would inflate the asm tree and break digest agreement
+    between the Rust prover and this verifier. -/
 def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
@@ -285,19 +406,48 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
       for x in (closureFrom env a).toArray do
         s := s.insert x
     return s
-  let frontier : Array Address :=
-    closure.toArray.filter (fun a => !ownedSet.contains a)
-  let some envTree := Ix.AssumptionTree.canonical closure.toArray
-    | .error "shardCheckEnvClaim: empty shard closure"
+  let frontier : Array Address := Id.run do
+    let mut fs : Std.HashSet Address := {}
+    for o in owned do
+      match env.getConst? o with
+      | none => pure ()
+      | some c =>
+        -- Only the indices some Expr uses as a constant are walk edges,
+        -- matching the kernel's `env_walk_refs`. A `refs` entry no Expr
+        -- names as a constant is never walked in-circuit, so admitting it
+        -- would put a phantom member in the frontier.
+        let used := constIdxsOf c
+        for (r, i) in c.refs.zipIdx do
+          if used.contains i.toUInt64 && !ownedSet.contains r
+              && env.consts.contains r then
+            fs := fs.insert r
+        let blockOpt : Option Address := match c.info with
+          | .iPrj p => some p.block
+          | .cPrj p => some p.block
+          | .rPrj p => some p.block
+          | .dPrj p => some p.block
+          | _ => none
+        match blockOpt with
+        | some b =>
+          if !ownedSet.contains b && env.consts.contains b then
+            fs := fs.insert b
+        | none => pure ()
+    return fs.toArray
+  let some ownedTree := Ix.AssumptionTree.canonical owned
+    | .error "shardCheckEnvClaim: empty owned set"
   let asmTree? := Ix.AssumptionTree.canonical frontier
-  let claim := Ix.Claim.checkEnv envTree.root (asmTree?.map (·.root))
+  let claim := Ix.Claim.checkEnv ownedTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
-    ({} : Std.HashMap Address Ix.AssumptionTree).insert envTree.root envTree
+    ({} : Std.HashMap Address Ix.AssumptionTree).insert ownedTree.root ownedTree
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
   pure (claim, closure, trees)
 
+/-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
+    `shardCheckEnvClaim`) with the `closureFrom` byte scope, which
+    carries the IPrj/CPrj/RPrj/DPrj wrappers the kernel's `get_ci`
+    synthesizes via kernel-side blake3 as forward Muts→wrapper edges. -/
 def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × ClaimWitness) := do
   let (claim, closure, trees) ← shardCheckEnvClaim env owned
@@ -305,9 +455,7 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
   let digestKey := addrKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
-  -- Ship only the shard closure (consts + blobs + Defn hints).
   ioBuffer := addEntries env closure.contains ioBuffer
-  -- Seed the env-root and (when present) frontier assumption trees.
   for (root, _) in trees do
     ioBuffer ← seedTreeAt root trees ioBuffer
   return (claim, { funcName := `verify_claim
@@ -319,11 +467,9 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
 def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
   Ix.AssumptionTree.canonical (env.consts.keys.toArray)
 
-/-- Build the witness for the `verify_const` Aiur entrypoint.
-    Subject-only typecheck — transitive deps are trusted, not
-    re-verified. Not a claim path (no claim-digest discipline). Used
-    by `Tests/Ix/Kernel/Arena.lean::arenaTests` where each arena
-    fixture's own well-typedness is the only signal needed. -/
+/-- Subject-only `verify_const` witness: the `closureFrom` byte scope
+    (which carries the kernel-side blake3-synthesized projection
+    wrappers as forward edges) faulted from ch 2. -/
 def buildVerifyConst (env : Ixon.Env) (target : Address) : ClaimWitness :=
   let closure := closureFrom env target
   let ioBuffer := addEntries env closure.contains default

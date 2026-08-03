@@ -414,7 +414,7 @@ inductive Term
   | load : Term → Term
   | ptrVal : Term → Term
   | ann : Typ → Term → Term
-  | assertEq : Term → Term → (ret : Term) → Term
+  | assertEq : Term → Term → (msg : Option String) → (ret : Term) → Term
   | ioGetInfo : (channel : Term) → (key : Term) → Term
   | ioSetInfo : (channel : Term) → (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
   | ioRead : (channel : Term) → (idx : Term) → (len : Nat) → Term
@@ -659,9 +659,9 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .load a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .load a')
   | .ptrVal a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .ptrVal a')
   | .ann τ a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .ann τ a')
-  | .assertEq a b c =>
+  | .assertEq a b msg c =>
     let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; let (cnt, c') := Term.freshen cnt subst c
-    (cnt, .assertEq a' b' c')
+    (cnt, .assertEq a' b' msg c')
   | .ioGetInfo c k => let (cnt, c') := Term.freshen cnt subst c; let (cnt, k') := Term.freshen cnt subst k; (cnt, .ioGetInfo c' k')
   | .ioSetInfo c k i l rv =>
     let (cnt, c') := Term.freshen cnt subst c; let (cnt, k') := Term.freshen cnt subst k; let (cnt, i') := Term.freshen cnt subst i
@@ -734,7 +734,8 @@ def Term.inlineCallSites : Term → List (Global × Nat)
   | .u8LessThan a b | .u32LessThan a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
   | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b | .ioGetInfo a b =>
     a.inlineCallSites ++ b.inlineCallSites
-  | .assertEq a b c | .ioWrite a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
+  | .assertEq a b _ c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
+  | .ioWrite a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
   | .ioSetInfo c k i l rv =>
     c.inlineCallSites ++ k.inlineCallSites ++ i.inlineCallSites ++ l.inlineCallSites ++ rv.inlineCallSites
   | .ioRead a b _ => a.inlineCallSites ++ b.inlineCallSites
@@ -827,9 +828,9 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
   | .load a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .load a')
   | .ptrVal a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ptrVal a')
   | .ann τ a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .ann τ a')
-  | .assertEq a b c =>
+  | .assertEq a b msg c =>
     let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b
-    let (cnt, c') := Term.expandOnce done cnt c; (cnt, .assertEq a' b' c')
+    let (cnt, c') := Term.expandOnce done cnt c; (cnt, .assertEq a' b' msg c')
   | .ioGetInfo c k => let (cnt, c') := Term.expandOnce done cnt c; let (cnt, k') := Term.expandOnce done cnt k; (cnt, .ioGetInfo c' k')
   | .ioSetInfo c k i l rv =>
     let (cnt, c') := Term.expandOnce done cnt c; let (cnt, k') := Term.expandOnce done cnt k
@@ -913,10 +914,10 @@ def Term.hoistLets : Term → Term :=
   | .app g args mode =>
     let (fs, cs) := Term.peelListLets (args.attach.map fun ⟨x, _⟩ => Term.hoistLets x)
     Term.wrapLets fs (.app g cs mode)
-  | .assertEq a b c =>
+  | .assertEq a b msg c =>
     let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
     match cs with
-    | [a, b, c] => Term.wrapLets fs (.assertEq a b c)
+    | [a, b, c] => Term.wrapLets fs (.assertEq a b msg c)
     | _ => t
   | .ioSetInfo a b c d e =>
     let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c, Term.hoistLets d, Term.hoistLets e]
@@ -1078,7 +1079,9 @@ partial def Term.collectGlobals (acc : Std.HashSet Global) : Term → Std.HashSe
   | .u8RangeCheck a b | .unconstrainedBigUintDivMod a b | .ioGetInfo a b =>
     b.collectGlobals (a.collectGlobals acc)
   | .set a _ v => v.collectGlobals (a.collectGlobals acc)
-  | .assertEq a b r | .ioWrite a b r =>
+  | .assertEq a b _ r =>
+    r.collectGlobals (b.collectGlobals (a.collectGlobals acc))
+  | .ioWrite a b r =>
     r.collectGlobals (b.collectGlobals (a.collectGlobals acc))
   | .ioSetInfo c k i l r =>
     r.collectGlobals (l.collectGlobals (i.collectGlobals

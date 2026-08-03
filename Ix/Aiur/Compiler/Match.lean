@@ -369,7 +369,8 @@ def typedToSimple : Term → Simple.Term
   | .store τ e a => .store τ e (typedToSimple a)
   | .load τ e a => .load τ e (typedToSimple a)
   | .ptrVal τ e a => .ptrVal τ e (typedToSimple a)
-  | .assertEq τ e a b r => .assertEq τ e (typedToSimple a) (typedToSimple b) (typedToSimple r)
+  | .assertEq τ e a b msg r =>
+    .assertEq τ e (typedToSimple a) (typedToSimple b) msg (typedToSimple r)
   | .ioGetInfo τ e c k => .ioGetInfo τ e (typedToSimple c) (typedToSimple k)
   | .ioSetInfo τ e c k i l r =>
     .ioSetInfo τ e (typedToSimple c) (typedToSimple k) (typedToSimple i)

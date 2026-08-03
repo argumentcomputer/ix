@@ -1069,7 +1069,7 @@ def buildTypeBreconFvar (ci : Nat) (recVal : RecursorVal)
     (breconName : Name) (_all0 : Name) (belowNames : Array Name)
     (nClasses : Nat) (maps : AddrMaps) : KBridgeM (Array BRecOnDef) := do
   -- canon_kenv is populated by `populateCanonKenvWithBelow` between
-  -- Phase 2 and Phase 3: PUnit, PProd, parent inductives, canonical
+  -- and Phase 3: PUnit, PProd, parent inductives, canonical
   -- `.below` types.
   let nParams := recVal.numParams
   let nMotives := recVal.numMotives

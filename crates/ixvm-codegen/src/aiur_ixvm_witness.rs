@@ -8,32 +8,37 @@
 //! Mirrors the per-channel layout documented in
 //! `Ix/IxVM/ClaimHarness.lean`:
 //!
-//! | Tier  | ch | purpose                  | key            | value     |
-//! |-------|----|--------------------------|----------------|-----------|
-//! | Ctrl  | 0  | claim wire bytes         | claim_digest   | bytes     |
-//! | Ctrl  | 1  | assumption tree bytes    | tree.root      | bytes     |
-//! | Const | 2  | constant wire bytes      | const addr     | bytes     |
-//! | Const | 3  | Defn reducibility hint   | Defn addr      | single G  |
-//! | Blob  | 4  | blob discriminator       | addr           | one byte  |
-//! | Blob  | 5  | blob raw bytes           | blob addr      | bytes     |
+//! | ch | purpose                  | key            | value     |
+//! |----|--------------------------|----------------|-----------|
+//! | 0  | claim wire bytes         | claim_digest   | bytes     |
+//! | 1  | assumption tree bytes    | tree.root      | bytes     |
+//! | 2  | constant wire bytes      | const addr     | bytes     |
+//! | 3  | Defn reducibility hint   | Defn addr      | single G  |
+//! | 4  | blob raw bytes           | blob addr      | bytes     |
 //!
-//! Soundness model unchanged — every byte-stream is blake3-verified
-//! kernel-side against its content-addressed key.
+//! An address is seeded on ch 2 iff it is a constant and on ch 4 iff it
+//! is a blob. The two sets are NOT disjoint: constant and blob addresses
+//! share a hash codomain, so one address can be read both ways, and the
+//! Expr context (`Ref`/`Prj` vs `Str`/`Nat`) is what says which table a
+//! reference means. Each channel is therefore seeded independently, and
+//! the kernel derives which it wants from that context, so no
+//! discriminator entry is shipped.
+//!
+//! Every byte-stream is blake3-verified kernel-side against its
+//! content-addressed key.
 //!
 //! # Parallelism
 //!
-//! Two hot phases use rayon for thread-level parallelism:
+//! The byte scope is computed by `witness_scope`, which delegates to
+//! `Env::bfs_closure` — a single sequential BFS that parses each closure
+//! member exactly once. The hot phase that follows uses rayon:
 //!
-//! * **Closure walk** (`closure_from_set`): each owned addr's
-//!   transitive walk runs on its own thread; results are unioned
-//!   into a `DashSet` to dedupe across threads.
 //! * **Byte→G conversion** (`add_entries`): for each addr in the
 //!   closure, the per-const `(key, data)` tuple is built in parallel
 //!   with rayon's `par_bridge`. Only the final IOBuffer assembly
 //!   (extending channel arenas + inserting into the key→(idx,len)
 //!   map) runs serially, since the arena `idx` is monotonic.
 
-use dashmap::DashSet;
 use multi_stark::p3_field::PrimeCharacteristicRing;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
@@ -42,9 +47,9 @@ use aiur::G;
 use aiur::execute::{IOBuffer, IOKeyInfo};
 use ix_common::address::Address;
 use ix_common::env::ReducibilityHints;
+use ix_common::prim_addrs::PrimAddrs;
 use ixon::Env;
 use ixon::assumption_tree::AssumptionTree;
-use ixon::constant::ConstantInfo;
 use ixon::proof::Claim;
 
 /// Append `data` to the per-channel arena and record `(idx, len)`
@@ -82,66 +87,22 @@ fn hint_to_g(h: &ReducibilityHints) -> G {
   G::from_u64(v)
 }
 
-/// Single-source transitive closure over `Constant.refs` + projection
-/// blocks. Sequential BFS.
-fn closure_from(env: &Env, target: &Address, visited: &DashSet<Address>) {
-  let mut stack: Vec<Address> = vec![target.clone()];
-  while let Some(addr) = stack.pop() {
-    if !visited.insert(addr.clone()) {
-      continue;
-    }
-    let Some(c) = env.get_const(&addr) else {
-      continue;
-    };
-    for r in &c.refs {
-      if !visited.contains(r) {
-        stack.push(r.clone());
-      }
-    }
-    let block = match &c.info {
-      ConstantInfo::IPrj(p) => Some(&p.block),
-      ConstantInfo::CPrj(p) => Some(&p.block),
-      ConstantInfo::RPrj(p) => Some(&p.block),
-      ConstantInfo::DPrj(p) => Some(&p.block),
-      _ => None,
-    };
-    if let Some(b) = block
-      && !visited.contains(b)
-    {
-      stack.push(b.clone());
-    }
-  }
-}
-
-/// Parallel transitive closure: each owned addr's walk runs on its
-/// own thread, results unioned via the shared `DashSet`.
-fn closure_from_set(env: &Env, owned: &[Address]) -> FxHashSet<Address> {
-  let visited: DashSet<Address> = DashSet::new();
-  owned.par_iter().for_each(|a| closure_from(env, a, &visited));
-  visited.into_iter().collect()
-}
-
 /// Per-channel entry produced by the parallel scan over the closure.
 /// Sorted into the IOBuffer in a serial fold afterwards.
 struct ChannelEntries {
-  /// ch 2 const entries: `(key, bytes-as-G)`.
+  /// ch 2 const entries: `(key, bytes-as-G)`. An address may also appear
+  /// in `blobs` below — the two tables share a hash codomain, so one
+  /// address can be read both ways.
   consts: Vec<(Vec<G>, Vec<G>)>,
-  /// ch 5 blob entries: `(key, bytes-as-G)`.
+  /// ch 4 blob entries: `(key, bytes-as-G)`.
   blobs: Vec<(Vec<G>, Vec<G>)>,
-  /// ch 4 discriminator: `(key, [g])` — `g` is `1` for const, `0` for blob.
-  discs: Vec<(Vec<G>, G)>,
   /// ch 3 Defn hint: `(key, hint-G)`.
   hints: Vec<(Vec<G>, G)>,
 }
 
 impl ChannelEntries {
   fn new() -> Self {
-    Self {
-      consts: Vec::new(),
-      blobs: Vec::new(),
-      discs: Vec::new(),
-      hints: Vec::new(),
-    }
+    Self { consts: Vec::new(), blobs: Vec::new(), hints: Vec::new() }
   }
 }
 
@@ -155,34 +116,37 @@ fn add_entries_parallel(
 ) {
   let ch_const = G::from_u8(2);
   let ch_hint = G::from_u8(3);
-  let ch_disc = G::from_u8(4);
-  let ch_blob = G::from_u8(5);
-  let g_zero = G::ZERO;
-  let g_one = G::ONE;
+  let ch_blob = G::from_u8(4);
 
   // Pull the set of addrs we'll touch as a Vec for parallel iteration.
   let closure_vec: Vec<Address> = closure.iter().cloned().collect();
 
   // Phase A: parallel byte conversion per closure addr. Each thread
-  // produces its own partial `ChannelEntries`.
+  // produces its own partial `ChannelEntries`. A constant goes to ch 2
+  // and a blob to ch 4, and an address that is both is seeded on both.
+  // The kernel derives blob-vs-constant from Expr context, so no marker
+  // entry is needed.
   let partials: Vec<ChannelEntries> = closure_vec
     .par_chunks(256)
     .map(|chunk| {
       let mut p = ChannelEntries::new();
       for addr in chunk {
         let key = addr_key(addr);
-        // Const lookup first.
+        // The two lookups are INDEPENDENT: one address may be both a
+        // constant and a blob payload, since the two share a hash
+        // codomain and it is the Expr context (`Ref`/`Prj` vs
+        // `Str`/`Nat`) that says which table a reference means. The
+        // kernel faults ch 2 and ch 4 separately, so letting a constant
+        // hit suppress the blob seeding aborts such a check with
+        // `invalid IO key`. Mirrors the Lean seeder, which walks
+        // `consts` and `blobs` in separate passes.
         if let Some(lc) = env.consts.get(addr) {
           let data = bytes_to_g(lc.raw_bytes());
           p.consts.push((key.clone(), data));
-          p.discs.push((key, g_one));
-          continue;
         }
-        // Blob lookup.
         if let Some(blob) = env.blobs.get(addr) {
           let data = bytes_to_g(blob.value());
-          p.blobs.push((key.clone(), data));
-          p.discs.push((key, g_zero));
+          p.blobs.push((key, data));
         }
         // Neither — closure includes some addresses (e.g. blob refs
         // from const.refs) that may not be in env.blobs if the env
@@ -206,9 +170,6 @@ fn add_entries_parallel(
     for (key, data) in p.blobs {
       extend(io, ch_blob, key, data);
     }
-    for (key, disc) in p.discs {
-      extend(io, ch_disc, key, vec![disc]);
-    }
     for (key, hint) in p.hints {
       extend(io, ch_hint, key, vec![hint]);
     }
@@ -220,16 +181,15 @@ fn add_entries_parallel(
 /// ready to feed to `crate::ix::aiur_ixvm_runner::execute_ixvm`.
 ///
 /// Mirrors `IxVM.ClaimHarness.buildClaimWitness` on the
-/// `Claim.check addr none` branch: closure-from-addr seeds ch 2/3/4/5,
+/// `Claim.check addr none` branch: the witness scope seeds ch 2/3/4,
 /// claim bytes go to ch 0. Asm-tree variant deferred — caller falls
 /// back to Lean witness when `asm = Some _`.
 pub fn build_claim_check_witness(
   env: &Env,
   target: &Address,
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
-  // Transitive closure rooted at `target`.
   let closure: FxHashSet<Address> =
-    closure_from_set(env, std::slice::from_ref(target));
+    witness_scope(env, std::slice::from_ref(target));
 
   let claim = Claim::Check { const_addr: target.clone(), assumptions: None };
   let mut claim_bytes: Vec<u8> = Vec::new();
@@ -243,38 +203,98 @@ pub fn build_claim_check_witness(
   };
   // ch 0: claim bytes
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
-  // ch 2/3/4/5: per-const/blob/hint entries — parallel byte conversion.
+  // ch 2/3/4: per-const/hint/blob entries — parallel byte conversion.
   add_entries_parallel(env, &closure, &mut io);
 
   Ok((claim, digest_key, io))
 }
 
-/// Build a `CheckEnv`-shaped shard witness directly in Rust. Returns
-/// `(claim, claim_digest_input, io_buffer)` ready to feed to
-/// `crate::ix::aiur_ixvm_runner::execute_ixvm`.
+/// Every primitive address the kernel can name, as the Lean seeder sees
+/// them: the parity table plus the reserved reduction markers. Built from
+/// `ix_common::prim_addrs::PrimAddrs`, which the `prim-addrs` parity test
+/// pins against `Ix.Tc.PrimAddrs`, so both seeders cover the same set by
+/// construction.
+fn prim_addrs() -> Vec<Address> {
+  let mut v: Vec<Address> = PrimAddrs::lean_parity_table()
+    .iter()
+    .map(|(name, hex)| {
+      Address::from_hex(hex)
+        .unwrap_or_else(|| panic!("primitive {name}: invalid address hex"))
+    })
+    .collect();
+  v.extend(PrimAddrs::reserved_marker_addrs().iter().map(|(_, a)| a.clone()));
+  v
+}
+
+/// The full WITNESS byte scope for `roots`: the env dependency closure
+/// plus every primitive present in the env.
+///
+/// `Env::bfs_closure` follows `refs`, each projection's `block` pointer,
+/// AND — for a `Muts` block — every member/constructor projection
+/// address it derives. That last edge is what the kernel needs: its
+/// lazy `get_ci` synthesizes IPrj/CPrj/RPrj/DPrj wrapper addrs via
+/// kernel-side blake3 and faults their bytes from ch 2, so wrappers
+/// over a closure block must ship even when no `Constant.refs` edge
+/// reaches them. The closure already carries them — expanding a wrapper
+/// only re-adds its (already present) block — so no reverse scan of the
+/// env is needed.
+///
+/// Primitives are seeded as additional ROOTS because the kernel
+/// FABRICATES references to them while reducing — `Const(nat_succ_addr(),
+/// ..)` and friends are built from addresses hardcoded in the Aiur
+/// source, not discovered by walking `refs` — and `get_ci` then faults
+/// their bytes from ch 2 like any other constant. Such a primitive need
+/// not appear anywhere in the target's ref closure, so a closure-only
+/// scope aborts with `invalid IO key`. Intersected with `env.consts`: a
+/// primitive the env does not carry is one the check cannot reach.
+///
+/// They are walked rather than merely inserted because def-eq
+/// delta-unfolds primitive BODIES, and a body's refs are reachable from
+/// nowhere else in the scope (the `strAppend*` arena fixtures exercise
+/// exactly this).
+///
+/// Every witness builder goes through here, so the byte scope cannot
+/// drift apart per call site. Mirrors
+/// `Ix.IxVM.ClaimHarness.closureFrom`.
+fn witness_scope(env: &Env, roots: &[Address]) -> FxHashSet<Address> {
+  let mut all_roots: Vec<Address> = roots.to_vec();
+  all_roots
+    .extend(prim_addrs().into_iter().filter(|a| env.consts.contains_key(a)));
+  env.bfs_closure(&all_roots)
+}
+
+/// Shard `CheckEnv` witness: thin-frontier claim (see
+/// `ixon::shard_claim`) plus the `bfs_closure` byte scope the kernel
+/// needs for its blake3-synthesized projection addresses. The frontier
+/// membership set stays at `closure_from` granularity — the claim's walk
+/// only follows refs + Prj→block edges; the block→wrapper edges
+/// `bfs_closure` adds are byte scope only.
 pub fn build_shard_check_env_witness(
   env: &Env,
   owned: &[Address],
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
-  let owned_set: FxHashSet<Address> = owned.iter().cloned().collect();
-
-  // Transitive closure over `Constant.refs` + projection blocks, parallel
-  // per owned addr.
-  let closure = closure_from_set(env, owned);
-
-  let mut closure_vec: Vec<Address> = closure.iter().cloned().collect();
-  closure_vec.sort();
-  let frontier: Vec<Address> =
-    closure_vec.iter().filter(|a| !owned_set.contains(*a)).cloned().collect();
-  let env_tree = AssumptionTree::canonical(&closure_vec).ok_or_else(|| {
-    "build_shard_check_env_witness: empty closure".to_string()
-  })?;
+  // Claim + THIN frontier from the shared convention module — the
+  // single source of truth for shard CheckEnv digests (see
+  // ixon::shard_claim; Lean mirror:
+  // IxVM.ClaimHarness.shardCheckEnvClaimThin).
+  let (claim, frontier) = ixon::shard_claim::shard_check_env_claim(env, owned)
+    .ok_or_else(|| {
+      "build_shard_check_env_witness: empty owned set".to_string()
+    })?;
+  let mut owned_sorted: Vec<Address> = owned.to_vec();
+  owned_sorted.sort();
+  let owned_tree =
+    AssumptionTree::canonical(&owned_sorted).ok_or_else(|| {
+      "build_shard_check_env_witness: empty owned set".to_string()
+    })?;
   let asm_tree = AssumptionTree::canonical(&frontier);
-
-  let claim = Claim::CheckEnv {
-    root: env_tree.root(),
-    assumptions: asm_tree.as_ref().map(|t| t.root()),
-  };
+  debug_assert_eq!(
+    claim,
+    Claim::CheckEnv {
+      root: owned_tree.root(),
+      assumptions: asm_tree.as_ref().map(|t| t.root()),
+    }
+  );
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
@@ -284,21 +304,66 @@ pub fn build_shard_check_env_witness(
     data: rustc_hash::FxHashMap::default(),
     map: rustc_hash::FxHashMap::default(),
   };
-  // ch 0: claim bytes
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
-  // ch 2/3/4/5 per-const/blob/hint entries — parallel byte conversion.
-  add_entries_parallel(env, &closure, &mut io);
-  // ch 1: env tree
+  let byte_scope = witness_scope(env, owned);
+  add_entries_parallel(env, &byte_scope, &mut io);
   extend(
     &mut io,
     G::ONE,
-    addr_key(&env_tree.root()),
-    bytes_to_g(&env_tree.ser()),
+    addr_key(&owned_tree.root()),
+    bytes_to_g(&owned_tree.ser()),
   );
-  // ch 1: asm tree (if present)
   if let Some(at) = asm_tree {
     extend(&mut io, G::ONE, addr_key(&at.root()), bytes_to_g(&at.ser()));
   }
 
   Ok((claim, digest_key, io))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use ixon::constant::{Axiom, Constant, ConstantInfo};
+  use ixon::expr::Expr;
+  use std::sync::Arc;
+
+  fn const_with_refs(refs: Vec<Address>) -> Constant {
+    Constant::with_tables(
+      ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: Arc::new(Expr::Sort(0)),
+      }),
+      Vec::new(),
+      refs,
+      Vec::new(),
+    )
+  }
+
+  /// One address can legitimately be read as both a constant and a blob
+  /// payload: blob and constant addresses share a hash codomain, and the
+  /// Expr context (`Ref`/`Prj` vs `Str`/`Nat`) is what disambiguates. The
+  /// kernel faults such an address from ch 2 and ch 4 independently, so
+  /// the witness must seed both — a constant hit must not suppress the
+  /// blob lookup, or the check aborts with `invalid IO key`.
+  #[test]
+  fn dual_use_address_is_seeded_on_both_channels() {
+    let env = Env::new();
+    let target = Address::hash(b"target");
+    let dual = Address::hash(b"dual");
+    env.store_const(target.clone(), const_with_refs(vec![dual.clone()]));
+    env.store_const(dual.clone(), const_with_refs(vec![]));
+    env.blobs.insert(dual.clone(), vec![1, 2, 3]);
+
+    let (_, _, io) = build_claim_check_witness(&env, &target).unwrap();
+    let key = addr_key(&dual);
+    assert!(
+      io.map.contains_key(&(G::from_u8(2), key.clone())),
+      "dual-use address missing from ch 2 (constant bytes)"
+    );
+    assert!(
+      io.map.contains_key(&(G::from_u8(4), key)),
+      "dual-use address missing from ch 4 (blob bytes)"
+    );
+  }
 }

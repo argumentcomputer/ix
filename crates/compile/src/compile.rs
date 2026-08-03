@@ -194,7 +194,16 @@ pub struct BlockCache {
   /// Cache for compiled expressions (keyed by Lean hash address)
   pub exprs: FxHashMap<Address, CachedExpr>,
   /// Cache for compiled universes (Level -> Univ conversion)
-  pub univ_cache: FxHashMap<Level, Arc<Univ>>,
+  /// Keyed by `(level, univ_params_key)`, NOT by `level` alone. A
+  /// `Level::Param` compiles to `Univ::Var(i)` where `i` is the
+  /// parameter's POSITION in `univ_params`, so the result depends on the
+  /// context. This cache lives for a whole block (unlike the expression
+  /// cache, which is cleared per constant) and `compile_definition`
+  /// compiles each member under its own `level_params`, so a shared key
+  /// would hand the second member the first member's index — a silently
+  /// wrong constant under a correct-looking name, with no abort.
+  /// `collect_expr_tables` keys its `seen_exprs` the same way.
+  pub univ_cache: FxHashMap<(Level, Address), Arc<Univ>>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
   /// Arena for expression metadata (append-only within a constant)
@@ -412,7 +421,9 @@ pub fn compile_univ(
   univ_params: &[Name],
   cache: &mut BlockCache,
 ) -> Result<Arc<Univ>, CompileError> {
-  if let Some(cached) = cache.univ_cache.get(level) {
+  let ctx_key = univ_params_key(univ_params);
+  if let Some(cached) = cache.univ_cache.get(&(level.clone(), ctx_key.clone()))
+  {
     return Ok(cached.clone());
   }
 
@@ -449,7 +460,7 @@ pub fn compile_univ(
     },
   };
 
-  cache.univ_cache.insert(level.clone(), univ.clone());
+  cache.univ_cache.insert((level.clone(), ctx_key), univ.clone());
   Ok(univ)
 }
 

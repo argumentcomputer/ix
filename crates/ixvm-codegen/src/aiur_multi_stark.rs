@@ -505,7 +505,7 @@ fn aiur_fn_9(
     let __v_7: G = inp[7];
     let __v_8: G = G::from_u64(0);
     if (__v_7 != __v_8) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: Some("u64 -> field: value exceeds 2^56 (top byte must be zero)".to_string()) });
     }
     let __v_9: G = G::from_u64(256);
     let __v_10: G = (__v_9 * __v_1);
@@ -642,13 +642,13 @@ fn aiur_fn_12(
     let __r_arr: [G; OUT_10] = { let __args: [G; IN_10] = [__v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[10].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_10] = unsafe { *(result.output.as_ptr() as *const [G; OUT_10]) }; __ret } else { aiur_fn_10(__args, record, io_buffer, __cu)? } };
     let __v_9: G = __r_arr[0];
     if (__v_9 != __v_0) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_9.as_canonical_u64(), rhs: __v_0.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_9.as_canonical_u64(), rhs: __v_0.as_canonical_u64(), msg: None });
     }
     let __r_arr: [G; OUT_11] = { let __args: [G; IN_11] = [__v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[11].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_11] = unsafe { *(result.output.as_ptr() as *const [G; OUT_11]) }; __ret } else { aiur_fn_11(__args, record, io_buffer, __cu)? } };
     let __v_10: G = __r_arr[0];
     let __v_11: G = G::from_u64(1);
     if (__v_10 != __v_11) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_10.as_canonical_u64(), rhs: __v_11.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_10.as_canonical_u64(), rhs: __v_11.as_canonical_u64(), msg: None });
     }
     let __ret: [G; OUT_12] = [__v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8];
     record.function_queries[12].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -730,12 +730,12 @@ fn aiur_fn_16(
     let __v_5: G = (__v_0 * __v_4);
     let __v_6: G = G::from_u64(0);
     if (__v_5 != __v_6) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_5.as_canonical_u64(), rhs: __v_6.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_5.as_canonical_u64(), rhs: __v_6.as_canonical_u64(), msg: None });
     }
     let __v_7: G = (__v_1 * __v_4);
     let __v_8: G = G::from_u64(0);
     if (__v_7 != __v_8) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: None });
     }
     let __ret: [G; OUT_16] = [__v_1];
     record.function_queries[16].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -861,12 +861,12 @@ fn aiur_fn_21(
     let __v_11: G = (__v_6 * __v_10);
     let __v_12: G = G::from_u64(0);
     if (__v_11 != __v_12) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_11.as_canonical_u64(), rhs: __v_12.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_11.as_canonical_u64(), rhs: __v_12.as_canonical_u64(), msg: None });
     }
     let __v_13: G = (__v_7 * __v_10);
     let __v_14: G = G::from_u64(0);
     if (__v_13 != __v_14) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_13.as_canonical_u64(), rhs: __v_14.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_13.as_canonical_u64(), rhs: __v_14.as_canonical_u64(), msg: None });
     }
     let __v_15: G = (__v_0 * __v_7);
     let __v_16: G = G::from_u64(0);
@@ -10978,7 +10978,7 @@ fn aiur_fn_124(
         let __v_17: G = __r_arr[0];
         let __v_18: G = G::from_u64(0);
         if (__v_17 != __v_18) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_17.as_canonical_u64(), rhs: __v_18.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_17.as_canonical_u64(), rhs: __v_18.as_canonical_u64(), msg: None });
         }
         let __ret: [G; OUT_124] = [__v_15, __v_16];
         record.function_queries[124].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -11301,7 +11301,7 @@ fn aiur_fn_129(
                 let __v_13: G = __r_arr[0];
                 let __v_14: G = G::from_u64(1);
                 if (__v_13 != __v_14) {
-                  return Err(ExecError::AssertEqMismatch { lhs: __v_13.as_canonical_u64(), rhs: __v_14.as_canonical_u64() });
+                  return Err(ExecError::AssertEqMismatch { lhs: __v_13.as_canonical_u64(), rhs: __v_14.as_canonical_u64(), msg: None });
                 }
                 let __v_15: G = G::from_u64(1);
                 let __ret: [G; OUT_129] = [__v_15];
@@ -11398,7 +11398,7 @@ fn aiur_fn_131(
     let __v_21: G = G::from_bool((__v_20 == G::ZERO));
     let __v_22: G = G::from_u64(1);
     if (__v_21 != __v_22) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_21.as_canonical_u64(), rhs: __v_22.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_21.as_canonical_u64(), rhs: __v_22.as_canonical_u64(), msg: None });
     }
     let __r_arr: [G; OUT_128] = { let __args: [G; IN_128] = [__v_0, __v_1, __v_6, __v_7, __v_16, __v_17, __v_8, __v_9]; let __cu = unconstrained; if let Some(result) = record.function_queries[128].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_128] = unsafe { *(result.output.as_ptr() as *const [G; OUT_128]) }; __ret } else { aiur_fn_128(__args, record, io_buffer, __cu)? } };
     let __v_23: G = __r_arr[0];
@@ -11695,7 +11695,7 @@ fn aiur_fn_136(
             let __v_24: G = G::from_bool((__v_23 == G::ZERO));
             let __v_25: G = G::from_u64(1);
             if (__v_24 != __v_25) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_24.as_canonical_u64(), rhs: __v_25.as_canonical_u64() });
+              return Err(ExecError::AssertEqMismatch { lhs: __v_24.as_canonical_u64(), rhs: __v_25.as_canonical_u64(), msg: None });
             }
             let __v_26: G = (__v_9 - __v_20);
             let __r_arr: [G; OUT_209] = { let __args: [G; IN_209] = [__v_8, __v_26]; let __cu = unconstrained; if let Some(result) = record.function_queries[209].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_209] = unsafe { *(result.output.as_ptr() as *const [G; OUT_209]) }; __ret } else { aiur_fn_209(__args, record, io_buffer, __cu)? } };
@@ -11704,7 +11704,7 @@ fn aiur_fn_136(
             let __v_28: G = __r_arr[0];
             let __v_29: G = G::from_u64(1);
             if (__v_28 != __v_29) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_28.as_canonical_u64(), rhs: __v_29.as_canonical_u64() });
+              return Err(ExecError::AssertEqMismatch { lhs: __v_28.as_canonical_u64(), rhs: __v_29.as_canonical_u64(), msg: None });
             }
             let __v_30: G = G::from_u64(0);
             let __v_31: G = G::from_u64(0);
@@ -12072,13 +12072,13 @@ fn aiur_fn_143(
         let __v_15: G = G::from_bool((__v_14 == G::ZERO));
         let __v_16: G = G::from_u64(1);
         if (__v_15 != __v_16) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_15.as_canonical_u64(), rhs: __v_16.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_15.as_canonical_u64(), rhs: __v_16.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_210] = { let __args: [G; IN_210] = [__v_7]; let __cu = unconstrained; if let Some(result) = record.function_queries[210].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_210] = unsafe { *(result.output.as_ptr() as *const [G; OUT_210]) }; __ret } else { aiur_fn_210(__args, record, io_buffer, __cu)? } };
         let __v_17: G = __r_arr[0];
         let __v_18: G = G::from_u64(0);
         if (__v_17 != __v_18) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_17.as_canonical_u64(), rhs: __v_18.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_17.as_canonical_u64(), rhs: __v_18.as_canonical_u64(), msg: None });
         }
         let __ret: [G; OUT_143] = [__v_0, __v_1];
         record.function_queries[143].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -12128,7 +12128,7 @@ fn aiur_fn_143(
                         let __v_38: G = __r_arr[0];
                         let __v_39: G = G::from_u64(1);
                         if (__v_38 != __v_39) {
-                          return Err(ExecError::AssertEqMismatch { lhs: __v_38.as_canonical_u64(), rhs: __v_39.as_canonical_u64() });
+                          return Err(ExecError::AssertEqMismatch { lhs: __v_38.as_canonical_u64(), rhs: __v_39.as_canonical_u64(), msg: None });
                         }
                         let __v_40: G = G::from_u64(0);
                         let __r_arr: [G; OUT_141] = { let __args: [G; IN_141] = [__v_29, __v_30, __v_31, __v_32]; let __cu = unconstrained; if let Some(result) = record.function_queries[141].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_141] = unsafe { *(result.output.as_ptr() as *const [G; OUT_141]) }; __ret } else { aiur_fn_141(__args, record, io_buffer, __cu)? } };
@@ -12146,7 +12146,7 @@ fn aiur_fn_143(
                         let __v_51: G = __r_arr[0];
                         let __v_52: G = G::from_u64(1);
                         if (__v_51 != __v_52) {
-                          return Err(ExecError::AssertEqMismatch { lhs: __v_51.as_canonical_u64(), rhs: __v_52.as_canonical_u64() });
+                          return Err(ExecError::AssertEqMismatch { lhs: __v_51.as_canonical_u64(), rhs: __v_52.as_canonical_u64(), msg: None });
                         }
                         let __r_arr: [G; OUT_143] = { let __args: [G; IN_143] = [__v_35, __v_36, __v_17, __v_20, __v_13, __v_23, __v_25, __v_37, __v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[143].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_143] = unsafe { *(result.output.as_ptr() as *const [G; OUT_143]) }; __ret } else { aiur_fn_143(__args, record, io_buffer, __cu)? } };
                         let __v_53: G = __r_arr[0];
@@ -12270,7 +12270,7 @@ fn aiur_fn_144(
                             let __v_54: G = G::from_bool((__v_53 == G::ZERO));
                             let __v_55: G = G::from_u64(1);
                             if (__v_54 != __v_55) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_54.as_canonical_u64(), rhs: __v_55.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_54.as_canonical_u64(), rhs: __v_55.as_canonical_u64(), msg: None });
                             }
                             let __r_arr: [G; OUT_205] = { let __args: [G; IN_205] = [__v_1]; let __cu = unconstrained; if let Some(result) = record.function_queries[205].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_205] = unsafe { *(result.output.as_ptr() as *const [G; OUT_205]) }; __ret } else { aiur_fn_205(__args, record, io_buffer, __cu)? } };
                             let __v_56: G = __r_arr[0];
@@ -12282,7 +12282,7 @@ fn aiur_fn_144(
                             let __v_61: G = G::from_bool((__v_60 == G::ZERO));
                             let __v_62: G = G::from_u64(1);
                             if (__v_61 != __v_62) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_61.as_canonical_u64(), rhs: __v_62.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_61.as_canonical_u64(), rhs: __v_62.as_canonical_u64(), msg: None });
                             }
                             let __r_arr: [G; OUT_199] = { let __args: [G; IN_199] = [__v_27]; let __cu = unconstrained; if let Some(result) = record.function_queries[199].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_199] = unsafe { *(result.output.as_ptr() as *const [G; OUT_199]) }; __ret } else { aiur_fn_199(__args, record, io_buffer, __cu)? } };
                             let __v_63: G = __r_arr[0];
@@ -12290,7 +12290,7 @@ fn aiur_fn_144(
                             let __v_65: G = G::from_bool((__v_64 == G::ZERO));
                             let __v_66: G = G::from_u64(1);
                             if (__v_65 != __v_66) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_65.as_canonical_u64(), rhs: __v_66.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_65.as_canonical_u64(), rhs: __v_66.as_canonical_u64(), msg: None });
                             }
                             let __v_67: G = G::from_u64(0);
                             let __r_arr: [G; OUT_137] = { let __args: [G; IN_137] = [__v_15, __v_19, __v_18, __v_67]; let __cu = unconstrained; if let Some(result) = record.function_queries[137].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_137] = unsafe { *(result.output.as_ptr() as *const [G; OUT_137]) }; __ret } else { aiur_fn_137(__args, record, io_buffer, __cu)? } };
@@ -12299,7 +12299,7 @@ fn aiur_fn_144(
                             let __v_69: G = __r_arr[0];
                             let __v_70: G = G::from_u64(1);
                             if (__v_69 != __v_70) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_69.as_canonical_u64(), rhs: __v_70.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_69.as_canonical_u64(), rhs: __v_70.as_canonical_u64(), msg: None });
                             }
                             let __r_arr: [G; OUT_199] = { let __args: [G; IN_199] = [__v_32]; let __cu = unconstrained; if let Some(result) = record.function_queries[199].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_199] = unsafe { *(result.output.as_ptr() as *const [G; OUT_199]) }; __ret } else { aiur_fn_199(__args, record, io_buffer, __cu)? } };
                             let __v_71: G = __r_arr[0];
@@ -12307,7 +12307,7 @@ fn aiur_fn_144(
                             let __v_73: G = G::from_bool((__v_72 == G::ZERO));
                             let __v_74: G = G::from_u64(1);
                             if (__v_73 != __v_74) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_73.as_canonical_u64(), rhs: __v_74.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_73.as_canonical_u64(), rhs: __v_74.as_canonical_u64(), msg: None });
                             }
                             let __v_75: G = G::from_u64(0);
                             let __r_arr: [G; OUT_137] = { let __args: [G; IN_137] = [__v_15, __v_19, __v_18, __v_75]; let __cu = unconstrained; if let Some(result) = record.function_queries[137].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_137] = unsafe { *(result.output.as_ptr() as *const [G; OUT_137]) }; __ret } else { aiur_fn_137(__args, record, io_buffer, __cu)? } };
@@ -12316,7 +12316,7 @@ fn aiur_fn_144(
                             let __v_77: G = __r_arr[0];
                             let __v_78: G = G::from_u64(1);
                             if (__v_77 != __v_78) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_77.as_canonical_u64(), rhs: __v_78.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_77.as_canonical_u64(), rhs: __v_78.as_canonical_u64(), msg: None });
                             }
                             let __r_arr: [G; OUT_199] = { let __args: [G; IN_199] = [__v_37]; let __cu = unconstrained; if let Some(result) = record.function_queries[199].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_199] = unsafe { *(result.output.as_ptr() as *const [G; OUT_199]) }; __ret } else { aiur_fn_199(__args, record, io_buffer, __cu)? } };
                             let __v_79: G = __r_arr[0];
@@ -12324,7 +12324,7 @@ fn aiur_fn_144(
                             let __v_81: G = G::from_bool((__v_80 == G::ZERO));
                             let __v_82: G = G::from_u64(1);
                             if (__v_81 != __v_82) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_81.as_canonical_u64(), rhs: __v_82.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_81.as_canonical_u64(), rhs: __v_82.as_canonical_u64(), msg: None });
                             }
                             let __v_83: G = G::from_u64(0);
                             let __r_arr: [G; OUT_137] = { let __args: [G; IN_137] = [__v_15, __v_19, __v_18, __v_83]; let __cu = unconstrained; if let Some(result) = record.function_queries[137].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_137] = unsafe { *(result.output.as_ptr() as *const [G; OUT_137]) }; __ret } else { aiur_fn_137(__args, record, io_buffer, __cu)? } };
@@ -12333,13 +12333,13 @@ fn aiur_fn_144(
                             let __v_85: G = __r_arr[0];
                             let __v_86: G = G::from_u64(1);
                             if (__v_85 != __v_86) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_85.as_canonical_u64(), rhs: __v_86.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_85.as_canonical_u64(), rhs: __v_86.as_canonical_u64(), msg: None });
                             }
                             let __v_87: G = (__v_44 - __v_20);
                             let __v_88: G = G::from_bool((__v_87 == G::ZERO));
                             let __v_89: G = G::from_u64(1);
                             if (__v_88 != __v_89) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_88.as_canonical_u64(), rhs: __v_89.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_88.as_canonical_u64(), rhs: __v_89.as_canonical_u64(), msg: None });
                             }
                             let __v_90: G = G::from_u64(0);
                             let __r_arr: [G; OUT_201] = { let __args: [G; IN_201] = [__v_23, __v_90]; let __cu = unconstrained; if let Some(result) = record.function_queries[201].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_201] = unsafe { *(result.output.as_ptr() as *const [G; OUT_201]) }; __ret } else { aiur_fn_201(__args, record, io_buffer, __cu)? } };
@@ -12349,7 +12349,7 @@ fn aiur_fn_144(
                             let __v_93: G = __r_arr[0];
                             let __v_94: G = G::from_u64(1);
                             if (__v_93 != __v_94) {
-                              return Err(ExecError::AssertEqMismatch { lhs: __v_93.as_canonical_u64(), rhs: __v_94.as_canonical_u64() });
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_93.as_canonical_u64(), rhs: __v_94.as_canonical_u64(), msg: None });
                             }
                             let __v_95: G = G::from_u64(1);
                             let __ret: [G; OUT_144] = [__v_95];
@@ -12546,7 +12546,7 @@ fn aiur_fn_146(
         let __v_76: G = G::from_bool((__v_75 == G::ZERO));
         let __v_77: G = G::from_u64(1);
         if (__v_76 != __v_77) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_76.as_canonical_u64(), rhs: __v_77.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_76.as_canonical_u64(), rhs: __v_77.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_205] = { let __args: [G; IN_205] = [__v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[205].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_205] = unsafe { *(result.output.as_ptr() as *const [G; OUT_205]) }; __ret } else { aiur_fn_205(__args, record, io_buffer, __cu)? } };
         let __v_78: G = __r_arr[0];
@@ -12554,13 +12554,13 @@ fn aiur_fn_146(
         let __v_80: G = G::from_bool((__v_79 == G::ZERO));
         let __v_81: G = G::from_u64(1);
         if (__v_80 != __v_81) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_80.as_canonical_u64(), rhs: __v_81.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_80.as_canonical_u64(), rhs: __v_81.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_205] = { let __args: [G; IN_205] = [__v_9]; let __cu = unconstrained; if let Some(result) = record.function_queries[205].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_205] = unsafe { *(result.output.as_ptr() as *const [G; OUT_205]) }; __ret } else { aiur_fn_205(__args, record, io_buffer, __cu)? } };
         let __v_82: G = __r_arr[0];
         let __v_83: G = G::from_u64(1);
         if (__v_82 != __v_83) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_82.as_canonical_u64(), rhs: __v_83.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_82.as_canonical_u64(), rhs: __v_83.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_145] = { let __args: [G; IN_145] = [__v_71, __v_72, __v_8, __v_61, __v_62, __v_1, __v_2, __v_3, __v_4, __v_5, __v_18, __v_19, __v_20, __v_21, __v_22, __v_23, __v_24, __v_25, __v_26, __v_27, __v_73, __v_63, __v_6, __v_9, __v_31]; let __cu = unconstrained; if let Some(result) = record.function_queries[145].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_145] = unsafe { *(result.output.as_ptr() as *const [G; OUT_145]) }; __ret } else { aiur_fn_145(__args, record, io_buffer, __cu)? } };
         let __v_84: G = __r_arr[0];
@@ -14120,28 +14120,28 @@ fn aiur_fn_173(
         let __v_24: G = G::from_bool((__v_23 == G::ZERO));
         let __v_25: G = G::from_u64(0);
         if (__v_24 != __v_25) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_24.as_canonical_u64(), rhs: __v_25.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_24.as_canonical_u64(), rhs: __v_25.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_199] = { let __args: [G; IN_199] = [__v_21]; let __cu = unconstrained; if let Some(result) = record.function_queries[199].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_199] = unsafe { *(result.output.as_ptr() as *const [G; OUT_199]) }; __ret } else { aiur_fn_199(__args, record, io_buffer, __cu)? } };
         let __v_26: G = __r_arr[0];
         if (__v_26 != __v_23) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_26.as_canonical_u64(), rhs: __v_23.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_26.as_canonical_u64(), rhs: __v_23.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_199] = { let __args: [G; IN_199] = [__v_22]; let __cu = unconstrained; if let Some(result) = record.function_queries[199].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_199] = unsafe { *(result.output.as_ptr() as *const [G; OUT_199]) }; __ret } else { aiur_fn_199(__args, record, io_buffer, __cu)? } };
         let __v_27: G = __r_arr[0];
         if (__v_27 != __v_23) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_27.as_canonical_u64(), rhs: __v_23.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_27.as_canonical_u64(), rhs: __v_23.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_199] = { let __args: [G; IN_199] = [__v_18]; let __cu = unconstrained; if let Some(result) = record.function_queries[199].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_199] = unsafe { *(result.output.as_ptr() as *const [G; OUT_199]) }; __ret } else { aiur_fn_199(__args, record, io_buffer, __cu)? } };
         let __v_28: G = __r_arr[0];
         if (__v_28 != __v_23) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_28.as_canonical_u64(), rhs: __v_23.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_28.as_canonical_u64(), rhs: __v_23.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_148] = { let __args: [G; IN_148] = [__v_4]; let __cu = unconstrained; if let Some(result) = record.function_queries[148].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_148] = unsafe { *(result.output.as_ptr() as *const [G; OUT_148]) }; __ret } else { aiur_fn_148(__args, record, io_buffer, __cu)? } };
         let __v_29: G = __r_arr[0];
         let __v_30: G = G::from_u64(1);
         if (__v_29 != __v_30) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_29.as_canonical_u64(), rhs: __v_30.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_29.as_canonical_u64(), rhs: __v_30.as_canonical_u64(), msg: None });
         }
         let __v_31: G = G::from_u64(1);
         let __ret: [G; OUT_173] = [__v_31];
@@ -15342,7 +15342,7 @@ fn aiur_fn_187(
             let __v_72: G = G::from_bool((__v_71 == G::ZERO));
             let __v_73: G = G::from_u64(1);
             if (__v_72 != __v_73) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_72.as_canonical_u64(), rhs: __v_73.as_canonical_u64() });
+              return Err(ExecError::AssertEqMismatch { lhs: __v_72.as_canonical_u64(), rhs: __v_73.as_canonical_u64(), msg: None });
             }
             let __r_arr: [G; OUT_20] = { let __args: [G; IN_20] = [__v_58, __v_59, __v_51, __v_52]; let __cu = unconstrained; if let Some(result) = record.function_queries[20].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_20] = unsafe { *(result.output.as_ptr() as *const [G; OUT_20]) }; __ret } else { aiur_fn_20(__args, record, io_buffer, __cu)? } };
             let __v_74: G = __r_arr[0];
@@ -15351,7 +15351,7 @@ fn aiur_fn_187(
             let __v_76: G = __r_arr[0];
             let __v_77: G = G::from_u64(1);
             if (__v_76 != __v_77) {
-              return Err(ExecError::AssertEqMismatch { lhs: __v_76.as_canonical_u64(), rhs: __v_77.as_canonical_u64() });
+              return Err(ExecError::AssertEqMismatch { lhs: __v_76.as_canonical_u64(), rhs: __v_77.as_canonical_u64(), msg: None });
             }
             let __v_78: G = G::from_u64(1);
             let __v_79: G = (__v_9 + __v_78);
@@ -15562,7 +15562,7 @@ fn aiur_fn_190(
                     let __v_54: G = __r_arr[0];
                     let __v_55: G = G::from_u64(1);
                     if (__v_54 != __v_55) {
-                      return Err(ExecError::AssertEqMismatch { lhs: __v_54.as_canonical_u64(), rhs: __v_55.as_canonical_u64() });
+                      return Err(ExecError::AssertEqMismatch { lhs: __v_54.as_canonical_u64(), rhs: __v_55.as_canonical_u64(), msg: None });
                     }
                     let __r_arr: [G; OUT_199] = { let __args: [G; IN_199] = [__v_12]; let __cu = unconstrained; if let Some(result) = record.function_queries[199].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_199] = unsafe { *(result.output.as_ptr() as *const [G; OUT_199]) }; __ret } else { aiur_fn_199(__args, record, io_buffer, __cu)? } };
                     let __v_56: G = __r_arr[0];
@@ -15572,7 +15572,7 @@ fn aiur_fn_190(
                     let __v_59: G = G::from_bool((__v_58 == G::ZERO));
                     let __v_60: G = G::from_u64(1);
                     if (__v_59 != __v_60) {
-                      return Err(ExecError::AssertEqMismatch { lhs: __v_59.as_canonical_u64(), rhs: __v_60.as_canonical_u64() });
+                      return Err(ExecError::AssertEqMismatch { lhs: __v_59.as_canonical_u64(), rhs: __v_60.as_canonical_u64(), msg: None });
                     }
                     let __r_arr: [G; OUT_210] = { let __args: [G; IN_210] = [__v_36]; let __cu = unconstrained; if let Some(result) = record.function_queries[210].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_210] = unsafe { *(result.output.as_ptr() as *const [G; OUT_210]) }; __ret } else { aiur_fn_210(__args, record, io_buffer, __cu)? } };
                     let __v_61: G = __r_arr[0];
@@ -15582,7 +15582,7 @@ fn aiur_fn_190(
                     let __v_64: G = G::from_bool((__v_63 == G::ZERO));
                     let __v_65: G = G::from_u64(1);
                     if (__v_64 != __v_65) {
-                      return Err(ExecError::AssertEqMismatch { lhs: __v_64.as_canonical_u64(), rhs: __v_65.as_canonical_u64() });
+                      return Err(ExecError::AssertEqMismatch { lhs: __v_64.as_canonical_u64(), rhs: __v_65.as_canonical_u64(), msg: None });
                     }
                     let __r_arr: [G; OUT_210] = { let __args: [G; IN_210] = [__v_36]; let __cu = unconstrained; if let Some(result) = record.function_queries[210].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_210] = unsafe { *(result.output.as_ptr() as *const [G; OUT_210]) }; __ret } else { aiur_fn_210(__args, record, io_buffer, __cu)? } };
                     let __v_66: G = __r_arr[0];
@@ -15630,7 +15630,7 @@ fn aiur_fn_191(
         let __v_6: G = (__v_2 * __v_5);
         let __v_7: G = G::from_u64(0);
         if (__v_6 != __v_7) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_6.as_canonical_u64(), rhs: __v_7.as_canonical_u64() });
+          return Err(ExecError::AssertEqMismatch { lhs: __v_6.as_canonical_u64(), rhs: __v_7.as_canonical_u64(), msg: None });
         }
         let __r_arr: [G; OUT_191] = { let __args: [G; IN_191] = [__v_3]; let __cu = unconstrained; if let Some(result) = record.function_queries[191].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_191] = unsafe { *(result.output.as_ptr() as *const [G; OUT_191]) }; __ret } else { aiur_fn_191(__args, record, io_buffer, __cu)? } };
         let __v_8: G = __r_arr[0];
@@ -16045,7 +16045,7 @@ fn aiur_fn_198(
     let __v_116: G = __r_arr[1];
     let __v_117: G = (__v_66 + __v_67);
     if (__v_91 != __v_117) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_91.as_canonical_u64(), rhs: __v_117.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_91.as_canonical_u64(), rhs: __v_117.as_canonical_u64(), msg: None });
     }
     let __v_118: G = G::from_u64(1);
     let __r_arr: [G; OUT_98] = { let __args: [G; IN_98] = [__v_118, __v_94, __v_95]; let __cu = unconstrained; if let Some(result) = record.function_queries[98].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_98] = unsafe { *(result.output.as_ptr() as *const [G; OUT_98]) }; __ret } else { aiur_fn_98(__args, record, io_buffer, __cu)? } };
@@ -16115,104 +16115,104 @@ fn aiur_fn_198(
     let __v_181: G = __r_arr[30];
     let __v_182: G = __r_arr[31];
     if (__v_151 != __v_0) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_151.as_canonical_u64(), rhs: __v_0.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_151.as_canonical_u64(), rhs: __v_0.as_canonical_u64(), msg: None });
     }
     if (__v_152 != __v_1) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_152.as_canonical_u64(), rhs: __v_1.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_152.as_canonical_u64(), rhs: __v_1.as_canonical_u64(), msg: None });
     }
     if (__v_153 != __v_2) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_153.as_canonical_u64(), rhs: __v_2.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_153.as_canonical_u64(), rhs: __v_2.as_canonical_u64(), msg: None });
     }
     if (__v_154 != __v_3) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_154.as_canonical_u64(), rhs: __v_3.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_154.as_canonical_u64(), rhs: __v_3.as_canonical_u64(), msg: None });
     }
     if (__v_155 != __v_4) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_155.as_canonical_u64(), rhs: __v_4.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_155.as_canonical_u64(), rhs: __v_4.as_canonical_u64(), msg: None });
     }
     if (__v_156 != __v_5) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_156.as_canonical_u64(), rhs: __v_5.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_156.as_canonical_u64(), rhs: __v_5.as_canonical_u64(), msg: None });
     }
     if (__v_157 != __v_6) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_157.as_canonical_u64(), rhs: __v_6.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_157.as_canonical_u64(), rhs: __v_6.as_canonical_u64(), msg: None });
     }
     if (__v_158 != __v_7) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_158.as_canonical_u64(), rhs: __v_7.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_158.as_canonical_u64(), rhs: __v_7.as_canonical_u64(), msg: None });
     }
     if (__v_159 != __v_8) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_159.as_canonical_u64(), rhs: __v_8.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_159.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: None });
     }
     if (__v_160 != __v_9) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_160.as_canonical_u64(), rhs: __v_9.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_160.as_canonical_u64(), rhs: __v_9.as_canonical_u64(), msg: None });
     }
     if (__v_161 != __v_10) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_161.as_canonical_u64(), rhs: __v_10.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_161.as_canonical_u64(), rhs: __v_10.as_canonical_u64(), msg: None });
     }
     if (__v_162 != __v_11) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_162.as_canonical_u64(), rhs: __v_11.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_162.as_canonical_u64(), rhs: __v_11.as_canonical_u64(), msg: None });
     }
     if (__v_163 != __v_12) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_163.as_canonical_u64(), rhs: __v_12.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_163.as_canonical_u64(), rhs: __v_12.as_canonical_u64(), msg: None });
     }
     if (__v_164 != __v_13) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_164.as_canonical_u64(), rhs: __v_13.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_164.as_canonical_u64(), rhs: __v_13.as_canonical_u64(), msg: None });
     }
     if (__v_165 != __v_14) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_165.as_canonical_u64(), rhs: __v_14.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_165.as_canonical_u64(), rhs: __v_14.as_canonical_u64(), msg: None });
     }
     if (__v_166 != __v_15) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_166.as_canonical_u64(), rhs: __v_15.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_166.as_canonical_u64(), rhs: __v_15.as_canonical_u64(), msg: None });
     }
     if (__v_167 != __v_16) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_167.as_canonical_u64(), rhs: __v_16.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_167.as_canonical_u64(), rhs: __v_16.as_canonical_u64(), msg: None });
     }
     if (__v_168 != __v_17) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_168.as_canonical_u64(), rhs: __v_17.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_168.as_canonical_u64(), rhs: __v_17.as_canonical_u64(), msg: None });
     }
     if (__v_169 != __v_18) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_169.as_canonical_u64(), rhs: __v_18.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_169.as_canonical_u64(), rhs: __v_18.as_canonical_u64(), msg: None });
     }
     if (__v_170 != __v_19) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_170.as_canonical_u64(), rhs: __v_19.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_170.as_canonical_u64(), rhs: __v_19.as_canonical_u64(), msg: None });
     }
     if (__v_171 != __v_20) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_171.as_canonical_u64(), rhs: __v_20.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_171.as_canonical_u64(), rhs: __v_20.as_canonical_u64(), msg: None });
     }
     if (__v_172 != __v_21) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_172.as_canonical_u64(), rhs: __v_21.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_172.as_canonical_u64(), rhs: __v_21.as_canonical_u64(), msg: None });
     }
     if (__v_173 != __v_22) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_173.as_canonical_u64(), rhs: __v_22.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_173.as_canonical_u64(), rhs: __v_22.as_canonical_u64(), msg: None });
     }
     if (__v_174 != __v_23) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_174.as_canonical_u64(), rhs: __v_23.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_174.as_canonical_u64(), rhs: __v_23.as_canonical_u64(), msg: None });
     }
     if (__v_175 != __v_24) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_175.as_canonical_u64(), rhs: __v_24.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_175.as_canonical_u64(), rhs: __v_24.as_canonical_u64(), msg: None });
     }
     if (__v_176 != __v_25) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_176.as_canonical_u64(), rhs: __v_25.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_176.as_canonical_u64(), rhs: __v_25.as_canonical_u64(), msg: None });
     }
     if (__v_177 != __v_26) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_177.as_canonical_u64(), rhs: __v_26.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_177.as_canonical_u64(), rhs: __v_26.as_canonical_u64(), msg: None });
     }
     if (__v_178 != __v_27) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_178.as_canonical_u64(), rhs: __v_27.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_178.as_canonical_u64(), rhs: __v_27.as_canonical_u64(), msg: None });
     }
     if (__v_179 != __v_28) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_179.as_canonical_u64(), rhs: __v_28.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_179.as_canonical_u64(), rhs: __v_28.as_canonical_u64(), msg: None });
     }
     if (__v_180 != __v_29) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_180.as_canonical_u64(), rhs: __v_29.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_180.as_canonical_u64(), rhs: __v_29.as_canonical_u64(), msg: None });
     }
     if (__v_181 != __v_30) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_181.as_canonical_u64(), rhs: __v_30.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_181.as_canonical_u64(), rhs: __v_30.as_canonical_u64(), msg: None });
     }
     if (__v_182 != __v_31) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_182.as_canonical_u64(), rhs: __v_31.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_182.as_canonical_u64(), rhs: __v_31.as_canonical_u64(), msg: None });
     }
     let __v_183: G = (__v_94 + __v_95);
     if (__v_108 != __v_183) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_108.as_canonical_u64(), rhs: __v_183.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_108.as_canonical_u64(), rhs: __v_183.as_canonical_u64(), msg: None });
     }
     let __r_arr: [G; OUT_62] = { let __args: [G; IN_62] = [__v_114]; let __cu = unconstrained; if let Some(result) = record.function_queries[62].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_62] = unsafe { *(result.output.as_ptr() as *const [G; OUT_62]) }; __ret } else { aiur_fn_62(__args, record, io_buffer, __cu)? } };
     let __v_184: G = __r_arr[0];
@@ -16281,100 +16281,100 @@ fn aiur_fn_198(
     let __v_246: G = __r_arr[30];
     let __v_247: G = __r_arr[31];
     if (__v_216 != __v_32) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_216.as_canonical_u64(), rhs: __v_32.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_216.as_canonical_u64(), rhs: __v_32.as_canonical_u64(), msg: None });
     }
     if (__v_217 != __v_33) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_217.as_canonical_u64(), rhs: __v_33.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_217.as_canonical_u64(), rhs: __v_33.as_canonical_u64(), msg: None });
     }
     if (__v_218 != __v_34) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_218.as_canonical_u64(), rhs: __v_34.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_218.as_canonical_u64(), rhs: __v_34.as_canonical_u64(), msg: None });
     }
     if (__v_219 != __v_35) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_219.as_canonical_u64(), rhs: __v_35.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_219.as_canonical_u64(), rhs: __v_35.as_canonical_u64(), msg: None });
     }
     if (__v_220 != __v_36) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_220.as_canonical_u64(), rhs: __v_36.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_220.as_canonical_u64(), rhs: __v_36.as_canonical_u64(), msg: None });
     }
     if (__v_221 != __v_37) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_221.as_canonical_u64(), rhs: __v_37.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_221.as_canonical_u64(), rhs: __v_37.as_canonical_u64(), msg: None });
     }
     if (__v_222 != __v_38) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_222.as_canonical_u64(), rhs: __v_38.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_222.as_canonical_u64(), rhs: __v_38.as_canonical_u64(), msg: None });
     }
     if (__v_223 != __v_39) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_223.as_canonical_u64(), rhs: __v_39.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_223.as_canonical_u64(), rhs: __v_39.as_canonical_u64(), msg: None });
     }
     if (__v_224 != __v_40) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_224.as_canonical_u64(), rhs: __v_40.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_224.as_canonical_u64(), rhs: __v_40.as_canonical_u64(), msg: None });
     }
     if (__v_225 != __v_41) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_225.as_canonical_u64(), rhs: __v_41.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_225.as_canonical_u64(), rhs: __v_41.as_canonical_u64(), msg: None });
     }
     if (__v_226 != __v_42) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_226.as_canonical_u64(), rhs: __v_42.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_226.as_canonical_u64(), rhs: __v_42.as_canonical_u64(), msg: None });
     }
     if (__v_227 != __v_43) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_227.as_canonical_u64(), rhs: __v_43.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_227.as_canonical_u64(), rhs: __v_43.as_canonical_u64(), msg: None });
     }
     if (__v_228 != __v_44) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_228.as_canonical_u64(), rhs: __v_44.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_228.as_canonical_u64(), rhs: __v_44.as_canonical_u64(), msg: None });
     }
     if (__v_229 != __v_45) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_229.as_canonical_u64(), rhs: __v_45.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_229.as_canonical_u64(), rhs: __v_45.as_canonical_u64(), msg: None });
     }
     if (__v_230 != __v_46) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_230.as_canonical_u64(), rhs: __v_46.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_230.as_canonical_u64(), rhs: __v_46.as_canonical_u64(), msg: None });
     }
     if (__v_231 != __v_47) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_231.as_canonical_u64(), rhs: __v_47.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_231.as_canonical_u64(), rhs: __v_47.as_canonical_u64(), msg: None });
     }
     if (__v_232 != __v_48) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_232.as_canonical_u64(), rhs: __v_48.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_232.as_canonical_u64(), rhs: __v_48.as_canonical_u64(), msg: None });
     }
     if (__v_233 != __v_49) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_233.as_canonical_u64(), rhs: __v_49.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_233.as_canonical_u64(), rhs: __v_49.as_canonical_u64(), msg: None });
     }
     if (__v_234 != __v_50) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_234.as_canonical_u64(), rhs: __v_50.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_234.as_canonical_u64(), rhs: __v_50.as_canonical_u64(), msg: None });
     }
     if (__v_235 != __v_51) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_235.as_canonical_u64(), rhs: __v_51.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_235.as_canonical_u64(), rhs: __v_51.as_canonical_u64(), msg: None });
     }
     if (__v_236 != __v_52) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_236.as_canonical_u64(), rhs: __v_52.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_236.as_canonical_u64(), rhs: __v_52.as_canonical_u64(), msg: None });
     }
     if (__v_237 != __v_53) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_237.as_canonical_u64(), rhs: __v_53.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_237.as_canonical_u64(), rhs: __v_53.as_canonical_u64(), msg: None });
     }
     if (__v_238 != __v_54) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_238.as_canonical_u64(), rhs: __v_54.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_238.as_canonical_u64(), rhs: __v_54.as_canonical_u64(), msg: None });
     }
     if (__v_239 != __v_55) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_239.as_canonical_u64(), rhs: __v_55.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_239.as_canonical_u64(), rhs: __v_55.as_canonical_u64(), msg: None });
     }
     if (__v_240 != __v_56) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_240.as_canonical_u64(), rhs: __v_56.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_240.as_canonical_u64(), rhs: __v_56.as_canonical_u64(), msg: None });
     }
     if (__v_241 != __v_57) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_241.as_canonical_u64(), rhs: __v_57.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_241.as_canonical_u64(), rhs: __v_57.as_canonical_u64(), msg: None });
     }
     if (__v_242 != __v_58) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_242.as_canonical_u64(), rhs: __v_58.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_242.as_canonical_u64(), rhs: __v_58.as_canonical_u64(), msg: None });
     }
     if (__v_243 != __v_59) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_243.as_canonical_u64(), rhs: __v_59.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_243.as_canonical_u64(), rhs: __v_59.as_canonical_u64(), msg: None });
     }
     if (__v_244 != __v_60) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_244.as_canonical_u64(), rhs: __v_60.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_244.as_canonical_u64(), rhs: __v_60.as_canonical_u64(), msg: None });
     }
     if (__v_245 != __v_61) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_245.as_canonical_u64(), rhs: __v_61.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_245.as_canonical_u64(), rhs: __v_61.as_canonical_u64(), msg: None });
     }
     if (__v_246 != __v_62) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_246.as_canonical_u64(), rhs: __v_62.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_246.as_canonical_u64(), rhs: __v_62.as_canonical_u64(), msg: None });
     }
     if (__v_247 != __v_63) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_247.as_canonical_u64(), rhs: __v_63.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_247.as_canonical_u64(), rhs: __v_63.as_canonical_u64(), msg: None });
     }
     let __loaded: [G; 3] = { let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; let __ptr_u64 = __v_116.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __mq.get_index_mut(__ptr_usize).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 3 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 3] = __args[..3].try_into().unwrap(); __arr };
     let __v_248: G = __loaded[0];
@@ -16383,25 +16383,25 @@ fn aiur_fn_198(
     let __v_251: G = G::from_u64(1);
     let __v_252: G = G::from_u64(1);
     if (__v_248 != __v_251) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_248.as_canonical_u64(), rhs: __v_251.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_248.as_canonical_u64(), rhs: __v_251.as_canonical_u64(), msg: None });
     }
     if (__v_249 != __v_252) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_249.as_canonical_u64(), rhs: __v_252.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_249.as_canonical_u64(), rhs: __v_252.as_canonical_u64(), msg: None });
     }
     if (__v_250 != __v_252) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_250.as_canonical_u64(), rhs: __v_252.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_250.as_canonical_u64(), rhs: __v_252.as_canonical_u64(), msg: None });
     }
     let __r_arr: [G; OUT_173] = { let __args: [G; IN_173] = [__v_68, __v_69, __v_70, __v_71, __v_72, __v_73, __v_74, __v_75, __v_76, __v_77, __v_78, __v_79, __v_80, __v_81, __v_82, __v_83, __v_84, __v_85, __v_86, __v_87, __v_88, __v_89, __v_90]; let __cu = unconstrained; if let Some(result) = record.function_queries[173].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_173] = unsafe { *(result.output.as_ptr() as *const [G; OUT_173]) }; __ret } else { aiur_fn_173(__args, record, io_buffer, __cu)? } };
     let __v_253: G = __r_arr[0];
     let __v_254: G = G::from_u64(1);
     if (__v_253 != __v_254) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_253.as_canonical_u64(), rhs: __v_254.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_253.as_canonical_u64(), rhs: __v_254.as_canonical_u64(), msg: None });
     }
     let __r_arr: [G; OUT_190] = { let __args: [G; IN_190] = [__v_96, __v_97, __v_98, __v_99, __v_100, __v_101, __v_102, __v_103, __v_104, __v_105, __v_106, __v_107, __v_68, __v_69, __v_70, __v_71, __v_72, __v_73, __v_74, __v_75, __v_76, __v_77, __v_78, __v_79, __v_80, __v_81, __v_82, __v_83, __v_84, __v_85, __v_86, __v_87, __v_88, __v_89, __v_90, __v_115]; let __cu = unconstrained; if let Some(result) = record.function_queries[190].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_190] = unsafe { *(result.output.as_ptr() as *const [G; OUT_190]) }; __ret } else { aiur_fn_190(__args, record, io_buffer, __cu)? } };
     let __v_255: G = __r_arr[0];
     let __v_256: G = G::from_u64(1);
     if (__v_255 != __v_256) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_255.as_canonical_u64(), rhs: __v_256.as_canonical_u64() });
+      return Err(ExecError::AssertEqMismatch { lhs: __v_255.as_canonical_u64(), rhs: __v_256.as_canonical_u64(), msg: None });
     }
     let __ret: [G; OUT_198] = [];
     record.function_queries[198].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));

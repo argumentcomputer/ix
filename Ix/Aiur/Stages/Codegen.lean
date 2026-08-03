@@ -338,7 +338,7 @@ def Op.outputCount : Op → Nat
   | .call _ _ outSize _ => outSize
   | .store _ => 1
   | .load size _ => size
-  | .assertEq _ _ => 0
+  | .assertEq _ _ _ => 0
   | .ioGetInfo _ _ => 2
   | .ioSetInfo _ _ _ _ => 0
   | .ioRead _ _ len => len
@@ -440,7 +440,16 @@ private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt :=
   return stmts
 
 /-- `Op::AssertEq`: mirror execute.rs lines 346-363. -/
-private def emitAssertEq (xs ys : Array ValIdx) : Array RustStmt :=
+private def emitAssertEq (xs ys : Array ValIdx) (msg : Option String) :
+    Array RustStmt :=
+  -- `msg` becomes the `Option<String>` on `ExecError::AssertEqMismatch`.
+  -- Escape quotes and backslashes so an arbitrary label stays a valid
+  -- Rust string literal.
+  let msgLit := match msg with
+    | some m =>
+      let esc := (m.replace "\\" "\\\\").replace "\"" "\\\""
+      s!"Some(\"{esc}\".to_string())"
+    | none => "None"
   if xs.size != ys.size then
     #[.exprStmt (.lit s!"return Err(ExecError::AssertEqLengthMismatch \{ lhs: {xs.size}, rhs: {ys.size} })")]
   else Id.run do
@@ -448,7 +457,7 @@ private def emitAssertEq (xs ys : Array ValIdx) : Array RustStmt :=
     for (x, y) in xs.zip ys do
       stmts := stmts.push (.ifStmt
         (.binop "!=" (valVar x) (valVar y))
-        #[.exprStmt (.lit s!"return Err(ExecError::AssertEqMismatch \{ lhs: __v_{x}.as_canonical_u64(), rhs: __v_{y}.as_canonical_u64() })")]
+        #[.exprStmt (.lit s!"return Err(ExecError::AssertEqMismatch \{ lhs: __v_{x}.as_canonical_u64(), rhs: __v_{y}.as_canonical_u64(), msg: {msgLit} })")]
         none)
     return stmts
 
@@ -681,7 +690,7 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .call callee args outSz opUn => emitCall out callee args outSz opUn
   | .store vs => emitStore out vs
   | .load size ptr => emitLoad out size ptr
-  | .assertEq xs ys => emitAssertEq xs ys
+  | .assertEq xs ys msg => emitAssertEq xs ys msg
   | .ioGetInfo ch key => emitIOGetInfo out ch key
   | .ioSetInfo ch key idx len => emitIOSetInfo ch key idx len
   | .ioRead ch idx len => emitIORead out ch idx len

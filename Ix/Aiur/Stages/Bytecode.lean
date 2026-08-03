@@ -27,7 +27,7 @@ inductive Op
   | call : FunIdx → Array ValIdx → (outputSize : Nat) → (unconstrained : Bool) → Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
-  | assertEq : Array ValIdx → Array ValIdx → Op
+  | assertEq : Array ValIdx → Array ValIdx → Option String → Op
   | ioGetInfo : ValIdx → Array ValIdx → Op
   | ioSetInfo : ValIdx → Array ValIdx → ValIdx → ValIdx → Op
   | ioRead : ValIdx → ValIdx → Nat → Op

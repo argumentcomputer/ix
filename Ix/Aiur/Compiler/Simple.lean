@@ -103,11 +103,11 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
         | some sub => do pure (some (← simplifyTypedTerm decls sub))
       let r' ← simplifyTypedTerm decls r
       pure (.debug τ e l t' r')
-  | .assertEq τ e a b r => do
+  | .assertEq τ e a b msg r => do
       let a' ← simplifyTypedTerm decls a
       let b' ← simplifyTypedTerm decls b
       let r' ← simplifyTypedTerm decls r
-      pure (.assertEq τ e a' b' r')
+      pure (.assertEq τ e a' b' msg r')
   | .ioSetInfo τ e c k i l r => do
       let c' ← simplifyTypedTerm decls c
       let k' ← simplifyTypedTerm decls k

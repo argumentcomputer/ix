@@ -140,7 +140,7 @@ def attempt? (p : M α) : M (Option α) := do
     set st
     return none
 
-/-- Depth guard (R2). -/
+/-- Depth guard . -/
 def withDepth (p : M α) : M α := do
   let ctx ← read
   let st ← get

@@ -438,7 +438,10 @@ impl Op {
         combine_lookup_args(lookup, lookup_args);
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
       },
-      Op::AssertEq(xs, ys) => {
+      // The message is diagnostic only — it never enters the constraint
+      // system, so a labelled and an unlabelled assert are identical in
+      // the circuit.
+      Op::AssertEq(xs, ys, _) => {
         assert_eq!(xs.len(), ys.len());
         for (x, y) in xs.iter().zip(ys) {
           let (x, _) = &state.map[*x];

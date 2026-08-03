@@ -1,5 +1,6 @@
 import Ix.Meta
 import Ix.IxVM
+import Ix.IxVM.Toplevel
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Benchmark.Bench
