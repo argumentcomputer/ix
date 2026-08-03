@@ -121,7 +121,7 @@ def friParameters : Aiur.FriParameters := {
   maxLogArity := 1
   numQueries := 100
   commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 /-- Recursion-tuned commitment parameters for `--recursive`, matching
@@ -143,7 +143,7 @@ def recursiveFriParameters : Aiur.FriParameters := {
   maxLogArity := 1
   numQueries := 100
   commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 
