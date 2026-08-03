@@ -882,8 +882,8 @@ def aiurTestCases : List AiurTestCase := [
   ]
 
 /-- The grouping the `aiur` runner applies for the grouped environment. -/
-def testGroups : Array (String × Array Lean.Name) :=
-  #[("test_group", #[`grouped_double, `grouped_pick, `grouped_sum_range])]
+def testGroups : Array (String × Array String) :=
+  #[("test_group", #["grouped_double", "grouped_pick", "grouped_sum_range"])]
 
 def groupedTestCases : List AiurTestCase := [
   .prove `calls_grouped #[0, 5, 9] #[25]

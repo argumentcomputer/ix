@@ -329,7 +329,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- claim run, which is the honest reading of those numbers.
   let .ok toplevel := (if skipDeps then IxVM.ixVMFull else IxVM.ixVM)
     | throw (IO.userError "Merging IxVM kernel failed")
-  let .ok compiled := toplevel.compile
+  let .ok compiled := toplevel.compileWithGroups IxVM.coldGroups
     | throw (IO.userError "Compilation of IxVM kernel failed")
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
@@ -358,7 +358,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     if !recursive then pure none else do
       let .ok vTop := MultiStark.multiStark
         | throw (IO.userError "Merging multi-stark verifier failed")
-      let .ok vCompiled := vTop.compile
+      let .ok vCompiled := vTop.compileWithGroups MultiStark.verifierColdGroups
         | throw (IO.userError "Compilation of multi-stark verifier failed")
       let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
         | throw (IO.userError "verify_multi_stark_proof entrypoint missing")
