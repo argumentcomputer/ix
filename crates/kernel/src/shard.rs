@@ -75,7 +75,7 @@
   clippy::needless_range_loop
 )]
 
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
@@ -1741,6 +1741,291 @@ pub fn shard_esp_aiur(
   ))
 }
 
+/// Greedy next-fit packing of one block subset to a RAM cap, with the same
+/// faulted-set union accounting as [`partition_for_aiur_ram`]'s packing walk
+/// (measured touch sets when the profile has them, reference-closure BFS
+/// otherwise). Returns the children as block-id lists, in pack order.
+fn pack_block_subset_to_cap(
+  profile: &BlockProfile,
+  blocks_in_order: &[u32],
+  cap_gib: f64,
+) -> Vec<Vec<u32>> {
+  let size = |b: u32| u64::from(profile.block(b).serialized_size);
+  let measured = profile.has_touch_graph();
+  let mut children: Vec<Vec<u32>> = Vec::new();
+  let mut cur: Vec<u32> = Vec::new();
+  let mut cur_cost = AiurShardCost::default();
+  let mut charged: FxHashSet<u32> = FxHashSet::default();
+  let mut walked: FxHashSet<u32> = FxHashSet::default();
+  let predicted = |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.hb);
+
+  let union_delta = |b: u32,
+                     charged: &mut FxHashSet<u32>,
+                     walked: &mut FxHashSet<u32>|
+   -> u64 {
+    let mut bytes = 0u64;
+    let charge = |x: u32, charged: &mut FxHashSet<u32>, bytes: &mut u64| {
+      if charged.insert(x) {
+        *bytes = bytes.saturating_add(size(x));
+      }
+    };
+    if measured {
+      charge(b, charged, &mut bytes);
+      for &t in profile.touched_blocks(b) {
+        charge(t, charged, &mut bytes);
+      }
+    } else if walked.insert(b) {
+      let mut stack = vec![b];
+      while let Some(x) = stack.pop() {
+        charge(x, charged, &mut bytes);
+        for &r in profile.refs(x) {
+          if walked.insert(r) {
+            stack.push(r);
+          }
+        }
+      }
+    }
+    bytes
+  };
+
+  for &b in blocks_in_order {
+    let e = profile.block(b);
+    let delta = union_delta(b, &mut charged, &mut walked);
+    let tentative = AiurShardCost {
+      union_bytes: cur_cost.union_bytes.saturating_add(delta),
+      hb: cur_cost.hb.saturating_add(e.heartbeats),
+      ..cur_cost
+    };
+    if !cur.is_empty() && predicted(&tentative) > cap_gib {
+      children.push(std::mem::take(&mut cur));
+      charged.clear();
+      walked.clear();
+      cur_cost = AiurShardCost::default();
+      cur_cost.union_bytes = union_delta(b, &mut charged, &mut walked);
+    } else {
+      cur_cost.union_bytes = tentative.union_bytes;
+    }
+    cur_cost.hb = cur_cost.hb.saturating_add(e.heartbeats);
+    cur_cost.subst = cur_cost.subst.saturating_add(e.subst);
+    cur.push(b);
+  }
+  if !cur.is_empty() {
+    children.push(cur);
+  }
+  children
+}
+
+/// Surgically re-partition ONE shard of an existing Aiur manifest at a
+/// smaller per-shard RAM budget — the recourse when the cost model's blind
+/// spot packs an outlier shard past what the box can prove. Every other
+/// shard's block list is reproduced VERBATIM (asserted), so its claim digest
+/// — and any cached proof keyed on it in `~/.ix/cache/shard-proofs/` — stays
+/// valid; only shard `k` is replaced by its children. The first child keeps
+/// id `k`, the rest are appended, and the aggregation tree's leaf `k`
+/// becomes a left-leaning chain over the children.
+pub fn rebudget_manifest_shard(
+  esp_path: &str,
+  manifest_path: &str,
+  shard_k: usize,
+  child_budget_gib: f64,
+  epsilon: f64,
+  out_path: &str,
+) -> Result<String, String> {
+  let bytes =
+    std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
+  let profile = BlockProfile::from_bytes(&bytes)
+    .map_err(|e| format!("parse {esp_path}: {e}"))?;
+  if !profile.has_touch_graph() && !profile.has_ref_graph() {
+    return Err(format!(
+      "{esp_path} has neither a touch graph nor a reference graph — \
+       rebudget needs the faulted-set accounting; regenerate with the \
+       current `ix profile`"
+    ));
+  }
+  let mbytes = std::fs::read(manifest_path)
+    .map_err(|e| format!("read {manifest_path}: {e}"))?;
+  let manifest = ShardManifest::from_bytes(&mbytes)
+    .map_err(|e| format!("parse {manifest_path}: {e}"))?;
+  let old_n = manifest.shards.len();
+  let parent = manifest
+    .shards
+    .get(shard_k)
+    .ok_or_else(|| format!("shard {shard_k} out of range (0..{old_n})"))?;
+
+  let id_of: FxHashMap<&Address, u32> = profile
+    .blocks()
+    .iter()
+    .enumerate()
+    .map(|(i, b)| (&b.addr, i as u32))
+    .collect();
+  let to_id = |a: &Address| -> Result<u32, String> {
+    id_of
+      .get(a)
+      .copied()
+      .ok_or_else(|| format!("manifest block {a:?} not in profile"))
+  };
+  let parent_blocks: FxHashSet<u32> =
+    parent.blocks.iter().map(&to_id).collect::<Result<_, _>>()?;
+
+  // Pack the parent's blocks at the child budget, in the same cut-coherent
+  // global order the original partition used.
+  let cap_gib = child_budget_gib * AIUR_RAM_USABLE_FRAC;
+  let total_bytes: u64 = profile
+    .blocks()
+    .iter()
+    .fold(0u64, |a, b| a.saturating_add(u64::from(b.serialized_size)));
+  let total_hb: u64 =
+    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.heartbeats));
+  let total_ram = aiur_ram_gib(total_bytes, total_hb) - AIUR_RAM_BASE_GIB;
+  let headroom = (cap_gib - AIUR_RAM_BASE_GIB).max(f64::MIN_POSITIVE);
+  #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+  let pieces = (total_ram / headroom * PACK_PIECES_PER_CAP as f64) as usize;
+  let order = cut_coherent_order(&profile, pieces, epsilon);
+  let subset: Vec<u32> =
+    order.iter().copied().filter(|b| parent_blocks.contains(b)).collect();
+  let children_ids = pack_block_subset_to_cap(&profile, &subset, cap_gib);
+  let n_children = children_ids.len();
+  if n_children <= 1 {
+    return Err(format!(
+      "shard {shard_k} does not split at budget {child_budget_gib} GiB \
+       (cap {cap_gib:.1}): got {n_children} child(ren) — lower the budget"
+    ));
+  }
+
+  // Modified assignment: child 0 keeps id `shard_k`; the rest append.
+  let mut shard_of: Vec<u32> = vec![0; profile.num_blocks()];
+  for (s, info) in manifest.shards.iter().enumerate() {
+    if s == shard_k {
+      continue;
+    }
+    for a in &info.blocks {
+      shard_of[to_id(a)? as usize] = s as u32;
+    }
+  }
+  let new_n = old_n + n_children - 1;
+  for (c, ids) in children_ids.iter().enumerate() {
+    let sid = if c == 0 { shard_k as u32 } else { (old_n + c - 1) as u32 };
+    for &b in ids {
+      shard_of[b as usize] = sid;
+    }
+  }
+
+  // `ShardManifest::build` is deterministic in (profile, shard_of), so the
+  // untouched shards reproduce byte-identically — asserted below, because
+  // that identity is exactly what keeps their claim digests (and cached
+  // proofs) valid.
+  let mut rebuilt = ShardManifest::build(&profile, &shard_of, new_n);
+  for shard in &mut rebuilt.shards {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+  }
+  for s in 0..old_n {
+    if s == shard_k {
+      continue;
+    }
+    if rebuilt.shards[s].blocks != manifest.shards[s].blocks {
+      return Err(format!(
+        "rebudget internal error: shard {s}'s block list changed — refusing \
+         to write a manifest that would invalidate its cached proof"
+      ));
+    }
+  }
+  // Patch the aggregation tree: the parent's leaf becomes a left-leaning
+  // chain over its children, keeping every other leaf untouched.
+  fn patch_tree(node: &AggNode, k: u32, extra: &[u32]) -> AggNode {
+    match node {
+      AggNode::Leaf(id) if *id == k => {
+        let mut t = AggNode::Leaf(k);
+        for &e in extra {
+          t = AggNode::Internal(Box::new(t), Box::new(AggNode::Leaf(e)));
+        }
+        t
+      },
+      AggNode::Leaf(id) => AggNode::Leaf(*id),
+      AggNode::Internal(l, r) => AggNode::Internal(
+        Box::new(patch_tree(l, k, extra)),
+        Box::new(patch_tree(r, k, extra)),
+      ),
+    }
+  }
+  let extra_ids: Vec<u32> =
+    (0..n_children - 1).map(|i| (old_n + i) as u32).collect();
+  rebuilt.tree =
+    manifest.tree.as_ref().map(|t| patch_tree(t, shard_k as u32, &extra_ids));
+  std::fs::write(out_path, rebuilt.to_bytes())
+    .map_err(|e| format!("write {out_path}: {e}"))?;
+
+  // Costs sidecar: recompute every row's faulted-set union from the profile
+  // (identical to the input rows for untouched shards — the union is a
+  // function of the owned set alone).
+  let measured = profile.has_touch_graph();
+  let mut csv = String::from(
+    "shard,union_bytes,hb,subst,subst_unique,whnf,def_eq,nat_arith,\
+     pred_ram_gib,pred_prove_s\n",
+  );
+  let mut report = String::new();
+  let mut union_set: FxHashSet<u32> = FxHashSet::default();
+  for (i, sh) in rebuilt.shards.iter().enumerate() {
+    let ids: Vec<u32> =
+      sh.blocks.iter().map(&to_id).collect::<Result<_, _>>()?;
+    union_set.clear();
+    for &b in &ids {
+      union_set.insert(b);
+      if measured {
+        union_set.extend(profile.touched_blocks(b).iter().copied());
+      } else {
+        let mut stack = vec![b];
+        while let Some(x) = stack.pop() {
+          for &r in profile.refs(x) {
+            if union_set.insert(r) {
+              stack.push(r);
+            }
+          }
+        }
+      }
+    }
+    let union_bytes: u64 = union_set
+      .iter()
+      .map(|&b| u64::from(profile.block(b).serialized_size))
+      .sum();
+    let sum = |f: &dyn Fn(u32) -> u64| ids.iter().map(|&b| f(b)).sum::<u64>();
+    let hb = sh.heartbeats;
+    let subst = sum(&|b| profile.block(b).subst);
+    let subst_unique = sum(&|b| profile.block(b).subst_unique);
+    let whnf = sum(&|b| profile.block(b).whnf);
+    let def_eq = sum(&|b| profile.block(b).def_eq);
+    let nat_arith = sum(&|b| profile.block(b).nat_arith);
+    let ram = aiur_ram_gib(union_bytes, hb);
+    csv.push_str(&format!(
+      "{},{},{},{},{},{},{},{},{:.2},{:.2}\n",
+      i,
+      union_bytes,
+      hb,
+      subst,
+      subst_unique,
+      whnf,
+      def_eq,
+      nat_arith,
+      ram,
+      aiur_prove_secs(union_bytes, subst),
+    ));
+    if i == shard_k || i >= old_n {
+      report.push_str(&format!(
+        "  child shard {i}: {} blocks, union {:.1} MB, pred_ram {ram:.2} GiB\n",
+        sh.blocks.len(),
+        union_bytes as f64 / 1e6,
+      ));
+    }
+  }
+  let cp = format!("{out_path}.costs.csv");
+  std::fs::write(&cp, csv).map_err(|e| format!("write {cp}: {e}"))?;
+
+  Ok(format!(
+    "rebudget shard {shard_k} @ {child_budget_gib} GiB (cap {cap_gib:.1}): \
+     {old_n} → {new_n} shards; all other shards copied verbatim\n{report}"
+  ))
+}
+
 /// Calibrated Zisk guest-COST model — the **single source of truth** for
 /// predicting a block's in-circuit cost contribution, in **ziskemu cost
 /// units** (`ziskemu -X` TOTAL: MAIN + OPCODES + MEMORY + PRECOMPILES +
@@ -2392,10 +2677,10 @@ pub fn partition_for_aiur_ram(
 
   // Byte delta of adding `b`'s faulted set to the current shard's union.
   let union_delta = |b: u32,
-                         shard_epoch: u32,
-                         stack: &mut Vec<u32>,
-                         charged_mark: &mut [u32],
-                         walk_mark: &mut [u32]|
+                     shard_epoch: u32,
+                     stack: &mut Vec<u32>,
+                     charged_mark: &mut [u32],
+                     walk_mark: &mut [u32]|
    -> u64 {
     let mut bytes = 0u64;
     let charge = |x: u32, charged_mark: &mut [u32], bytes: &mut u64| {
@@ -2929,6 +3214,76 @@ mod tests {
     assert_eq!(q.refs(1), &[2]);
     assert_eq!(q.refs(2), &[] as &[u32]);
     assert_eq!(p, q);
+  }
+
+  #[test]
+  fn rebudget_splits_one_shard_and_copies_the_rest_verbatim() {
+    // Six-block env, two natural clusters; pack everything into few shards
+    // at a large budget, then rebudget one shard at a small one. The other
+    // shards' block lists must be byte-identical (that identity is what
+    // keeps their cached proofs valid), and the new manifest must cover
+    // the same blocks with the split shard's children appended.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=6u8 {
+      b.block(addr(i), 2_000, 100_000, 1, ops(0));
+    }
+    let p =
+      with_refs(b.finish(), &[vec![], vec![], vec![], vec![], vec![], vec![]]);
+    let dir = std::env::temp_dir();
+    let pid = std::process::id();
+    let prof = dir.join(format!("ix_rebudget_{pid}.ixprof"));
+    let m0 = dir.join(format!("ix_rebudget_{pid}.ixes"));
+    let m1 = dir.join(format!("ix_rebudget_{pid}_split.ixes"));
+    std::fs::write(&prof, p.to_bytes()).unwrap();
+    // Budget picked so the 6 blocks pack into 2-3 shards.
+    shard_esp_aiur(
+      prof.to_str().unwrap(),
+      20.0,
+      0.05,
+      1,
+      Some(m0.to_str().unwrap()),
+    )
+    .unwrap();
+    let before =
+      ShardManifest::from_bytes(&std::fs::read(&m0).unwrap()).unwrap();
+    assert!(before.shards.len() >= 2, "fixture must pack multiple shards");
+    // Split shard 0 at a smaller budget so it must break into children.
+    let report = rebudget_manifest_shard(
+      prof.to_str().unwrap(),
+      m0.to_str().unwrap(),
+      0,
+      12.0,
+      0.05,
+      m1.to_str().unwrap(),
+    )
+    .unwrap();
+    let after =
+      ShardManifest::from_bytes(&std::fs::read(&m1).unwrap()).unwrap();
+    assert!(after.shards.len() > before.shards.len(), "report: {report}");
+    for s in 1..before.shards.len() {
+      assert_eq!(
+        after.shards[s].blocks, before.shards[s].blocks,
+        "untouched shard {s} must be copied verbatim"
+      );
+    }
+    // Cover preserved: same multiset of owned blocks overall.
+    let owned = |m: &ShardManifest| {
+      let mut v: Vec<Address> =
+        m.shards.iter().flat_map(|s| s.blocks.iter().cloned()).collect();
+      v.sort();
+      v
+    };
+    assert_eq!(owned(&before), owned(&after));
+    // Sidecar exists with one row per shard.
+    let csv =
+      std::fs::read_to_string(format!("{}.costs.csv", m1.to_str().unwrap()))
+        .unwrap();
+    assert_eq!(csv.lines().count(), after.shards.len() + 1);
+    for f in [&prof, &m0, &m1] {
+      let _ = std::fs::remove_file(f);
+    }
+    let _ = std::fs::remove_file(format!("{}.costs.csv", m0.to_str().unwrap()));
+    let _ = std::fs::remove_file(format!("{}.costs.csv", m1.to_str().unwrap()));
   }
 
   #[test]

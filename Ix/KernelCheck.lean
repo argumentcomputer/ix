@@ -257,6 +257,21 @@ opaque rsShardEspCapFFI :
     @& String →                          -- backend cost model (zisk|aiur)
     IO Unit
 
+/-- FFI: surgically split ONE shard of an existing Aiur `.ixes` manifest at a
+    smaller per-shard RAM budget. Every other shard's block list is copied
+    verbatim (their claims and cached proofs stay valid); shard `k` is
+    replaced by its children (the first child keeps id `k`, the rest append
+    at the end). -/
+@[extern "rs_shard_rebudget"]
+opaque rsShardRebudgetFFI :
+    @& String →                          -- .ixprof path
+    @& String →                          -- input .ixes manifest path
+    @& String →                          -- shard index to split
+    @& String →                          -- per-child RAM budget GiB
+    @& String →                          -- balance percent
+    @& String →                          -- output .ixes path
+    IO Unit
+
 end Ix.KernelCheck
 
 end

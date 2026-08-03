@@ -3197,6 +3197,47 @@ pub extern "C" fn rs_shard_esp_cap(
   }
 }
 
+/// FFI: surgically split ONE shard of an existing Aiur `.ixes` manifest at a
+/// smaller per-shard RAM budget. Every other shard's block list is copied
+/// verbatim (their claims and cached proofs stay valid); shard `k` is
+/// replaced by its children (first child keeps id `k`, the rest append at
+/// the end).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_rebudget(
+  esp_path: LeanString<LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  shard_k: LeanString<LeanBorrowed<'_>>,
+  ram_gb: LeanString<LeanBorrowed<'_>>,
+  balance_pct: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let k = match shard_k.to_string().parse::<usize>() {
+    Ok(k) => k,
+    Err(_) => return LeanIOResult::error_string("rebudget: bad shard index"),
+  };
+  let ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
+  if ram <= 0.0 {
+    return LeanIOResult::error_string(
+      "rebudget: pass a positive per-child RAM budget (GiB)",
+    );
+  }
+  let balance = balance_pct.to_string().parse::<f64>().unwrap_or(5.0) / 100.0;
+  match ix_kernel::shard::rebudget_manifest_shard(
+    &esp_path.to_string(),
+    &manifest_path.to_string(),
+    k,
+    ram,
+    balance,
+    &out_path.to_string(),
+  ) {
+    Ok(report) => {
+      eprintln!("[rs_shard_rebudget]\n{report}");
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanIOResult::error_string(&format!("rs_shard_rebudget: {e}")),
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::{compact_in_flight_label, resolve_kernel_check_workers_from};
