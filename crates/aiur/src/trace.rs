@@ -88,11 +88,11 @@ struct TraceContext<'a> {
 }
 
 /// One row of a circuit trace: the member function it belongs to, the
-/// member's selector offset within the circuit, its function index, and the
-/// recorded query.
+/// member's position within the circuit (its function-selector column), its
+/// function index, and the recorded query.
 struct RowMeta<'a> {
   function: &'a Function,
-  sel_offset: usize,
+  member_pos: usize,
   function_index: G,
   inputs: &'a [G],
   result: QueryRef<'a>,
@@ -110,9 +110,10 @@ impl Toplevel {
     let layout = &circuit.layout;
     let width = layout.width();
     // Concatenate the members' queried rows, in member order.
+    let num_members = circuit.members.len();
+    let grouped = num_members > 1;
     let mut rows_meta = Vec::new();
-    let mut sel_offset = 0;
-    for &member in &circuit.members {
+    for (member_pos, &member) in circuit.members.iter().enumerate() {
       let function = &self.functions[member];
       let function_index = G::from_usize(member);
       rows_meta.extend(
@@ -121,13 +122,12 @@ impl Toplevel {
           .filter(|(_, res)| !res.multiplicity.is_zero())
           .map(|(inputs, result)| RowMeta {
             function,
-            sel_offset,
+            member_pos,
             function_index,
             inputs,
             result,
           }),
       );
-      sel_offset += function.layout.selectors;
     }
     let height_no_padding = rows_meta.len();
     // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
@@ -154,10 +154,19 @@ impl Toplevel {
           // we skip the first lookup, which is reserved for return
           lookup: 1,
         };
+        // Multi-member circuits: raise the member's function selector, and
+        // address the SHARED internal-selector block after the
+        // function-selector block.
+        let sel_offset = if grouped {
+          row[layout.input_size + meta.member_pos] = G::ONE;
+          num_members
+        } else {
+          0
+        };
         let slice = &mut ColumnMutSlice::from_slice(
           meta.function,
           layout,
-          meta.sel_offset,
+          sel_offset,
           row,
           lookups,
         );

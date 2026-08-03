@@ -894,8 +894,8 @@ def groupedTestCases : List AiurTestCase := [
 
 /-- Structural checks on the grouped partition: the grouped circuit exists,
 holds exactly its members, its layout follows the merge rule (max inputs,
-summed selectors, max auxiliaries, max lookups), and every constrained
-function lands in exactly one circuit. -/
+member-count function selectors plus max member selectors, max auxiliaries,
+max lookups), and every constrained function lands in exactly one circuit. -/
 def groupingStructureChecks (compiled : Aiur.CompiledToplevel) : TestSeq :=
   let t := compiled.bytecode
   let memberOf := fun (name : Lean.Name) => compiled.getFuncIdx name |>.get!
@@ -905,8 +905,7 @@ def groupingStructureChecks (compiled : Aiur.CompiledToplevel) : TestSeq :=
   | none => test "test_group circuit exists" false
   | some c =>
     let layouts := c.members.map (t.functions[·]!.layout)
-    let expected := layouts.foldl (init := (⟨0, 0, 0, 0⟩ : Aiur.Bytecode.FunctionLayout))
-      Aiur.Bytecode.FunctionLayout.merge
+    let expected := Aiur.Bytecode.FunctionLayout.mergeGroup layouts
     let allCircuitMembers := t.circuits.flatMap (·.members)
     let constrained := (Array.range t.functions.size).filter
       (t.functions[·]!.constrained)

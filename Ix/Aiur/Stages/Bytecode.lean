@@ -97,17 +97,6 @@ structure FunctionLayout where
 def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
-def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
-  -- Stage 2 commits max(⌈L/k⌉, 1) chained partial accumulators (no message
-  -- inverses); see `multi_stark::lookup::stage2_width`. Mirrors the
-  -- synthesis grouping rule (`crates/aiur/src/synthesis.rs`): branchless
-  -- functions (one selector) have raw degree-1 lookup arguments, so their
-  -- lookups are grouped 2 per accumulator step.
-  let slots := if l.selectors == 1 && l.lookups >= 2
-    then (l.lookups + 1) / 2
-    else max l.lookups 1
-  l.width + G.extensionDegree * slots
-
 structure Function where
   body : Block
   layout: FunctionLayout
@@ -118,22 +107,43 @@ structure Function where
 /-- A circuit of the proving system, backing one or more functions. By
 default every constrained function gets a singleton circuit named after it;
 `CompiledToplevel.groupFunctions` can regroup several functions into one
-circuit whose branching selects the member function. `layout` is the merged
-layout: max `inputSize`, sum of `selectors`, max `auxiliaries` (which
-includes the single shared multiplicity column), max `lookups` (slot 0 is
-the shared return lookup). -/
+circuit selected by per-member FUNCTION-SELECTOR columns. `layout` is the
+merged layout: max `inputSize`, `members.size` function selectors plus the
+MAX of the members' selector counts (the members' internal selector columns
+are shared, like the auxiliaries: every member constraint is gated by its
+function selector), max `auxiliaries` (which includes the single shared
+multiplicity column), max `lookups` (slot 0 is the shared return lookup). -/
 structure Circuit where
   name : String
   members : Array FunIdx
   layout : FunctionLayout
   deriving Inhabited, Repr
 
-/-- Merged layout of a group of functions (see `Circuit`). -/
-def FunctionLayout.merge (a b : FunctionLayout) : FunctionLayout where
-  inputSize := a.inputSize.max b.inputSize
-  selectors := a.selectors + b.selectors
-  auxiliaries := a.auxiliaries.max b.auxiliaries
-  lookups := a.lookups.max b.lookups
+/-- Merged layout of a group of `n` functions (see `Circuit`). -/
+def FunctionLayout.mergeGroup (layouts : Array FunctionLayout) : FunctionLayout where
+  inputSize := layouts.foldl (·.max ·.inputSize) 0
+  selectors := layouts.size + layouts.foldl (·.max ·.selectors) 0
+  auxiliaries := layouts.foldl (·.max ·.auxiliaries) 0
+  lookups := layouts.foldl (·.max ·.lookups) 0
+
+def Circuit.totalWidth (c : Circuit) (functions : Array Function) : Nat :=
+  -- Stage 2 commits max(⌈L/k⌉, 1) chained partial accumulators (no message
+  -- inverses); see `multi_stark::lookup::stage2_width`. Mirrors the
+  -- synthesis lookup-grouping rule (`crates/aiur/src/synthesis.rs`), sized
+  -- to the degree-5 budget (log_blowup = 2) by lookup-argument degree:
+  -- raw args on branchless singletons (k = 4); sel·arg on branching
+  -- singletons and B·arg on all-branchless groups (k = 2); B·sel·arg on
+  -- mixed groups (k = 1).
+  let l := c.layout
+  let slots := if l.lookups < 2 then max l.lookups 1
+    else if c.members.size > 1 then
+      if c.members.all (functions[·]!.layout.selectors == 1)
+      then (l.lookups + 1) / 2
+      else l.lookups
+    else if l.selectors == 1 then (l.lookups + 3) / 4
+    else (l.lookups + 1) / 2
+  l.width + G.extensionDegree * slots
+
 
 structure Toplevel where
   functions : Array Function

@@ -48,16 +48,22 @@ pub struct Constraints {
 struct ConstraintState {
   /// Index of the circuit member currently being walked.
   function_index: G,
-  /// Exactly one selector: the circuit backs a single function with a
-  /// single leaf block (no matches), so every lookup slot is written by
-  /// exactly one branch.
+  /// The current MEMBER has a single leaf block (no matches), so every
+  /// lookup slot it writes is written by exactly one branch and its
+  /// arguments need no branch-selector weighting (only the function
+  /// selector, in multi-member circuits).
   branchless: bool,
   /// Input size of the current member (inputs live in columns
   /// `0..input_size` for every member; the circuit reserves the max).
   input_size: usize,
-  /// Column of the current member's first selector: the circuit's input
-  /// block plus the selector counts of the members walked before it.
+  /// Column of the members' first (shared) internal selector: the circuit's
+  /// input block plus the function-selector block (grouped circuits share
+  /// the internal selector columns across members, like the auxiliaries).
   sel_base: usize,
+  /// The member's function-selector column `B` (multi-member circuits
+  /// only): every constraint and lookup contribution of the member is
+  /// gated by it, disambiguating the shared selector columns.
+  member_gate: Option<Expr>,
   column: usize,
   lookup: usize,
   lookups: Vec<Lookup<Expr>>,
@@ -89,7 +95,20 @@ impl ConstraintState {
   /// message value irrelevant. Degree-1 messages leave the degree headroom
   /// to group two lookups per chained-accumulator step.
   fn gate(&self, sel: &Expr, arg: Expr) -> Expr {
-    if self.branchless { arg } else { sel.clone() * arg }
+    let gated = if self.branchless { arg } else { sel.clone() * arg };
+    match &self.member_gate {
+      Some(b) => b.clone() * gated,
+      None => gated,
+    }
+  }
+
+  /// A lookup-multiplicity contribution: the branch selector, gated by the
+  /// member's function selector in multi-member circuits.
+  fn mult_term(&self, sel: &Expr) -> Expr {
+    match &self.member_gate {
+      Some(b) => b.clone() * sel.clone(),
+      None => sel.clone(),
+    }
   }
 
   fn next_lookup(&mut self) -> &mut Lookup<Expr> {
@@ -137,11 +156,17 @@ impl Toplevel {
       selectors: layout.input_size..layout.input_size + layout.selectors,
       width: layout.width(),
     };
+    let num_members = circuit.members.len();
+    let grouped = num_members > 1;
     let mut state = ConstraintState {
       function_index: G::ZERO,
-      branchless: layout.selectors == 1,
+      branchless: false,
       input_size: 0,
-      sel_base: 0,
+      // Multi-member circuits: the selector block is [B_0..B_{m-1} |
+      // shared internal selectors]; every member's walk addresses the SAME
+      // shared range, disambiguated by its function selector B_j.
+      sel_base: layout.input_size + if grouped { num_members } else { 0 },
+      member_gate: None,
       column: 0,
       lookup: 0,
       map: vec![],
@@ -154,35 +179,51 @@ impl Toplevel {
     let multiplicity = var(layout.input_size + layout.selectors);
     state.lookups[0].multiplicity = -multiplicity;
     let aux_start = layout.input_size + layout.selectors + 1;
-    let mut sel_base = layout.input_size;
     let mut circuit_sel = Expr::from(G::ZERO);
-    for &member in &circuit.members {
+    for (j, &member) in circuit.members.iter().enumerate() {
       let function = &self.functions[member];
       state.function_index = G::from_usize(member);
+      state.branchless = function.layout.selectors == 1;
       state.input_size = function.layout.input_size;
-      state.sel_base = sel_base;
+      state.member_gate = grouped.then(|| var(layout.input_size + j));
       state.column = aux_start;
       state.lookup = 1;
       state.map.clear();
       (0..function.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
       let body_sel = function.body.get_block_selector(&state);
-      circuit_sel = circuit_sel + body_sel.clone();
+      circuit_sel = circuit_sel
+        + match &state.member_gate {
+          Some(b) => b.clone(),
+          None => body_sel.clone(),
+        };
+      let zeros_before = state.constraints.zeros.len();
       function.body.collect_constraints(body_sel, &mut state);
       debug_assert!(state.yield_info.is_empty());
-      sel_base += function.layout.selectors;
+      // Gate every constraint of the member — including its selector
+      // constraints — by its function selector: the shared selector
+      // columns mean the SAME column encodes different branches for
+      // different members, so a member's structural claims may only bind
+      // when that member is active.
+      if let Some(b) = &state.member_gate {
+        for zero in &mut state.constraints.zeros[zeros_before..] {
+          let inner = std::mem::replace(zero, Expr::from(G::ZERO));
+          *zero = b.clone() * inner;
+        }
+      }
     }
     // The old `Air::eval` asserted each selector column boolean; the new
-    // system compiles a constraint vector, so materialize those explicitly.
+    // system compiles a constraint vector, so materialize those explicitly
+    // (for grouped circuits this covers the function selectors AND the
+    // shared internal selectors — column booleanness is member-agnostic).
     for sel in state.constraints.selectors.clone() {
       let s = var(sel);
       state.constraints.zeros.push(s.clone() * (s - konst(G::ONE)));
     }
-    // Cross-member exclusivity: the circuit-level selector (the sum of the
-    // members' top-block selectors) must be boolean, so at most one member
-    // is active per row and the shared return lookup emits a single
-    // member's message. A singleton circuit already gets this from its top
-    // block's own boolean constraint.
-    if circuit.members.len() > 1 {
+    // Cross-member exclusivity: the sum of the function selectors must be
+    // boolean, so at most one member is active per row and the shared
+    // return lookup emits a single member's message. A singleton circuit
+    // already gets this from its top block's own boolean constraint.
+    if grouped {
       state
         .constraints
         .zeros
@@ -443,9 +484,10 @@ impl Op {
           lookup_args
             .extend(output.into_iter().map(|col| state.gate(sel, col)));
 
+          let mult = state.mult_term(sel);
           let lookup = state.next_lookup();
           combine_lookup_args(lookup, lookup_args);
-          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+          lookup.multiplicity = lookup.multiplicity.clone() + mult;
         }
       },
       Op::Store(values) => {
@@ -465,9 +507,10 @@ impl Op {
             .map(|value| state.gate(sel, state.map[*value].0.clone())),
         );
 
+        let mult = state.mult_term(sel);
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + mult;
       },
       Op::Load(size, ptr) => {
         // channel, size and pointer
@@ -486,9 +529,10 @@ impl Op {
           .collect();
         lookup_args.extend(values.into_iter().map(|col| state.gate(sel, col)));
 
+        let mult = state.mult_term(sel);
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + mult;
       },
       // The message is diagnostic only — it never enters the constraint
       // system, so a labelled and an unlabelled assert are identical in
@@ -513,31 +557,26 @@ impl Op {
         *byte,
         &Bytes1Op::BitDecomposition,
         u8_bit_decomposition_channel(),
-        sel.clone(),
+        sel,
         state,
       ),
       Op::U8ShiftLeft(byte) => bytes1_constraints(
         *byte,
         &Bytes1Op::ShiftLeft,
         u8_shift_left_channel(),
-        sel.clone(),
+        sel,
         state,
       ),
       Op::U8ShiftRight(byte) => bytes1_constraints(
         *byte,
         &Bytes1Op::ShiftRight,
         u8_shift_right_channel(),
-        sel.clone(),
+        sel,
         state,
       ),
-      Op::U8Xor(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Xor,
-        u8_xor_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8Xor(i, j) => {
+        bytes2_constraints(*i, *j, &Bytes2Op::Xor, u8_xor_channel(), sel, state)
+      },
       Op::U8Add(i, j) => {
         // The add lookup pins only the low byte `z = (x + y) mod 256`. The
         // carry is then `c = (x + y - z) / 256`, a compound expression that
@@ -551,21 +590,17 @@ impl Op {
           state.gate(sel, y.clone()),
           state.gate(sel, z.clone()),
         ];
+        let mult = state.mult_term(sel);
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + mult;
         let carry = (x + y - z.clone()) * konst(*INV_256);
         state.map.push((z, 1));
         state.map.push((carry, x_deg.max(y_deg).max(1)));
       },
-      Op::U8Mul(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Mul,
-        u8_mul_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8Mul(i, j) => {
+        bytes2_constraints(*i, *j, &Bytes2Op::Mul, u8_mul_channel(), sel, state)
+      },
       Op::U8Sub(i, j) => {
         // The sub lookup pins only the low byte `z = (x - y) mod 256`. Since
         // `z + y = x (mod 256)`, the borrow is `c = (z + y - x) / 256`, a
@@ -579,35 +614,26 @@ impl Op {
           state.gate(sel, y.clone()),
           state.gate(sel, z.clone()),
         ];
+        let mult = state.mult_term(sel);
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + mult;
         let borrow = (z.clone() + y - x) * konst(*INV_256);
         state.map.push((z, 1));
         state.map.push((borrow, x_deg.max(y_deg).max(1)));
       },
-      Op::U8And(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::And,
-        u8_and_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8Or(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Or,
-        u8_or_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8And(i, j) => {
+        bytes2_constraints(*i, *j, &Bytes2Op::And, u8_and_channel(), sel, state)
+      },
+      Op::U8Or(i, j) => {
+        bytes2_constraints(*i, *j, &Bytes2Op::Or, u8_or_channel(), sel, state)
+      },
       Op::U8LessThan(i, j) => bytes2_constraints(
         *i,
         *j,
         &Bytes2Op::LessThan,
         u8_less_than_channel(),
-        sel.clone(),
+        sel,
         state,
       ),
       Op::U8ChainRotr7(i, j) => bytes2_constraints(
@@ -615,7 +641,7 @@ impl Op {
         *j,
         &Bytes2Op::ChainRotr7,
         u8_chain_rotr7_channel(),
-        sel.clone(),
+        sel,
         state,
       ),
       Op::U8ChainRotr4(i, j) => bytes2_constraints(
@@ -623,7 +649,7 @@ impl Op {
         *j,
         &Bytes2Op::ChainRotr4,
         u8_chain_rotr4_channel(),
-        sel.clone(),
+        sel,
         state,
       ),
       Op::U8RangeCheck(i, j) => {
@@ -636,9 +662,10 @@ impl Op {
           state.gate(sel, x),
           state.gate(sel, y),
         ];
+        let mult = state.mult_term(sel);
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
-        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        lookup.multiplicity = lookup.multiplicity.clone() + mult;
       },
       Op::U32LessThan(x_idx, y_idx) => {
         // u32 less-than via addition carry chain.
@@ -705,9 +732,10 @@ impl Op {
             state.gate(sel, pair.0.clone()),
             state.gate(sel, pair.1.clone()),
           ];
+          let mult = state.mult_term(sel);
           let lookup = state.next_lookup();
           combine_lookup_args(lookup, lookup_args);
-          lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+          lookup.multiplicity = lookup.multiplicity.clone() + mult;
         }
 
         // Output: 1 - carry
@@ -749,14 +777,14 @@ fn bytes1_constraints(
   byte: usize,
   op: &Bytes1Op,
   channel: G,
-  sel: Expr,
+  sel: &Expr,
   state: &mut ConstraintState,
 ) {
   let size = Bytes1.output_size(op);
 
   let mut lookup_args = vec![
-    state.gate(&sel, konst(channel)),
-    state.gate(&sel, state.map[byte].0.clone()),
+    state.gate(sel, konst(channel)),
+    state.gate(sel, state.map[byte].0.clone()),
   ];
 
   let output: Vec<Expr> = (0..size)
@@ -766,11 +794,12 @@ fn bytes1_constraints(
       col
     })
     .collect();
-  lookup_args.extend(output.into_iter().map(|col| state.gate(&sel, col)));
+  lookup_args.extend(output.into_iter().map(|col| state.gate(sel, col)));
 
+  let mult = state.mult_term(sel);
   let lookup = state.next_lookup();
   combine_lookup_args(lookup, lookup_args);
-  lookup.multiplicity = lookup.multiplicity.clone() + sel;
+  lookup.multiplicity = lookup.multiplicity.clone() + mult;
 }
 
 fn bytes2_constraints(
@@ -778,15 +807,15 @@ fn bytes2_constraints(
   j: usize,
   op: &Bytes2Op,
   channel: G,
-  sel: Expr,
+  sel: &Expr,
   state: &mut ConstraintState,
 ) {
   let size = Bytes2.output_size(op);
 
   let mut lookup_args = vec![
-    state.gate(&sel, konst(channel)),
-    state.gate(&sel, state.map[i].0.clone()),
-    state.gate(&sel, state.map[j].0.clone()),
+    state.gate(sel, konst(channel)),
+    state.gate(sel, state.map[i].0.clone()),
+    state.gate(sel, state.map[j].0.clone()),
   ];
 
   let output: Vec<Expr> = (0..size)
@@ -796,11 +825,12 @@ fn bytes2_constraints(
       col
     })
     .collect();
-  lookup_args.extend(output.into_iter().map(|col| state.gate(&sel, col)));
+  lookup_args.extend(output.into_iter().map(|col| state.gate(sel, col)));
 
+  let mult = state.mult_term(sel);
   let lookup = state.next_lookup();
   combine_lookup_args(lookup, lookup_args);
-  lookup.multiplicity = lookup.multiplicity.clone() + sel;
+  lookup.multiplicity = lookup.multiplicity.clone() + mult;
 }
 
 fn combine_lookup_args(

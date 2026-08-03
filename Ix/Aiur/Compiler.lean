@@ -56,8 +56,10 @@ auxiliary columns, so each (rare) row pays the group's selector count, while
 the system sheds one circuit (vk entry, commitment matrix, verifier work)
 per absorbed member.
 
-Errors if a name is unknown, unconstrained (it has no circuit to group), an
-entry function, listed twice, or if a group is empty. -/
+Errors if a name is unknown, unconstrained (it has no circuit to group),
+listed twice, or if a group is empty. Entry functions may be grouped: the
+shared return lookup carries each member's own function index, so claims
+keep targeting function indices regardless of the partition. -/
 def CompiledToplevel.groupFunctions (ct : CompiledToplevel)
     (groups : Array (String × Array String)) :
     Except String CompiledToplevel := do
@@ -80,8 +82,6 @@ def CompiledToplevel.groupFunctions (ct : CompiledToplevel)
       let f := t.functions[i]!
       unless f.constrained do
         throw s!"group {gname}: {name} is unconstrained (it has no circuit)"
-      if f.entry then
-        throw s!"group {gname}: {name} is an entry function"
       if grouped.contains i then
         throw s!"group {gname}: {name} is already grouped"
       grouped := grouped.insert i resolved.size
@@ -101,9 +101,9 @@ def CompiledToplevel.groupFunctions (ct : CompiledToplevel)
         unless placed[g]! do
           placed := placed.set! g true
           let (gname, ms) := resolved[g]!
-          let layout := ms.foldl (init := t.functions[ms[0]!]!.layout)
-            fun acc m => if m == ms[0]! then acc
-              else acc.merge t.functions[m]!.layout
+          let layout := if h : ms.size = 1 then t.functions[ms[0]!]!.layout
+            else Bytecode.FunctionLayout.mergeGroup
+              (ms.map (t.functions[·]!.layout))
           circuits := circuits.push { name := gname, members := ms, layout }
     else
       throw "groupFunctions: partition already grouped; group from a freshly compiled toplevel"
