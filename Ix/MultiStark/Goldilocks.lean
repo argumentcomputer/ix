@@ -40,11 +40,6 @@ def goldilocks := ⟦
   type Goldilocks = G
   type ExtGoldilocks = [G; 2]
 
-  fn gl_zero() -> Goldilocks { 0 }
-  fn gl_one() -> Goldilocks { 1 }
-  fn gl_two() -> Goldilocks { 2 }
-  fn gl_seven() -> Goldilocks { 7 }
-
   -- The native field value of 8 LE bytes: `Σ xᵢ·256ⁱ` (mod p). For an
   -- arbitrary 8-byte value (< 2⁶⁴ < 2p) the field sum wraps at most once,
   -- yielding exactly the reduced representative — so this is both the
@@ -139,7 +134,8 @@ def goldilocks := ⟦
     [a[0] * ninv, (0 - a[1]) * ninv]
   }
   fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-    eg_mul(a, eg_inverse(b))
+    let i = eg_inverse(b);
+    [(a[0] * i[0]) + (7 * (a[1] * i[1])), (a[0] * i[1]) + (a[1] * i[0])]
   }
   -- 1 iff two extension elements are equal.
   fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> G {

@@ -61,8 +61,8 @@ def tests := ⟦
     let five = gl_val([5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
     assert_eq!(assert_g8(gl_mul(pm1, five), gl_val([252u8, 255u8, 255u8, 255u8, 254u8, 255u8, 255u8, 255u8])), 1);
     -- a·a⁻¹ = 1 and b·b⁻¹ = 1
-    assert_eq!(assert_g8(gl_mul(a, gl_inverse(a)), gl_one()), 1);
-    assert_eq!(assert_g8(gl_mul(b, gl_inverse(b)), gl_one()), 1);
+    assert_eq!(assert_g8(gl_mul(a, gl_inverse(a)), 1), 1);
+    assert_eq!(assert_g8(gl_mul(b, gl_inverse(b)), 1), 1);
     1
   }
   pub fn eg_ops_test() -> G {
@@ -84,7 +84,7 @@ def tests := ⟦
       gl_val([42u8, 59u8, 64u8, 77u8, 226u8, 214u8, 95u8, 63u8]),
       gl_val([200u8, 46u8, 148u8, 147u8, 124u8, 180u8, 248u8, 140u8])), 1);
     -- e0 · e0⁻¹ = 1
-    assert_eq!(assert_eg(eg_mul(e0, eg_inverse(e0)), gl_one(), gl_zero()), 1);
+    assert_eq!(assert_eg(eg_mul(e0, eg_inverse(e0)), 1, 0), 1);
     1
   }
 
@@ -178,8 +178,8 @@ def tests := ⟦
     let pz2 = [gl_val([44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), gl_val([3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
     let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
                 store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
-    let q = eg_inverse(eg_sub(z, [x, gl_zero()]));
-    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [gl_zero(), gl_zero()], [gl_one(), gl_zero()]);
+    let q = eg_inverse(eg_sub(z, [x, 0]));
+    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
     assert_eq!(ro[0], 7130765474285082575);
     assert_eq!(ro[1], 12254464995725315436);
     1

@@ -400,7 +400,7 @@ def verifier := ⟦
   fn ext_exp_pow2(e: Ext, k: G) -> Ext {
     match k {
       0 => e,
-      _ => ext_exp_pow2(eg_mul(e, e), k - 1),
+      _ => ext_exp_pow2(@eg_mul(e, e), k - 1),
     }
   }
 
@@ -447,7 +447,7 @@ def verifier := ⟦
   -- Vanishing polynomial of the trace domain (shift = 1, size 2^L) at point ζ:
   -- `Z_H(ζ) = ζ^(2^L) - 1`.
   fn trace_vanishing(zeta: Ext, l: G) -> Ext {
-    eg_sub(ext_exp_pow2(zeta, l), [1, 0])
+    @eg_sub(ext_exp_pow2(zeta, l), [1, 0])
   }
 
   -- Lagrange selectors at ζ for the trace domain (shift = 1), mirroring
@@ -468,9 +468,9 @@ def verifier := ⟦
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = trace_vanishing(zeta, l);
     let ginv = gl_inverse(two_adic_gen(l));
-    let is_first = eg_div(zh, eg_sub(zeta, [1, 0]));
-    let is_last = eg_div(zh, eg_sub(zeta, [ginv, 0]));
-    let is_trans = eg_sub(zeta, [ginv, 0]);
+    let is_first = @eg_div(zh, @eg_sub(zeta, [1, 0]));
+    let is_last = @eg_div(zh, @eg_sub(zeta, [ginv, 0]));
+    let is_trans = @eg_sub(zeta, [ginv, 0]);
     let inv_van = eg_inverse(zh);
     (is_first, is_last, is_trans, inv_van)
   }
@@ -522,13 +522,13 @@ def verifier := ⟦
   -- One Horner fold step of the constraint folder: `acc := acc·α + x`
   -- (`VerifierConstraintFolder::assert_zero` / `assert_zero_ext`).
   fn ood_fold(acc: Ext, alpha: Ext, x: Ext) -> Ext {
-    eg_add(eg_mul(acc, alpha), x)
+    @eg_add(@eg_mul(acc, alpha), x)
   }
 
   -- Reconstruct an extension element from its two opened base coordinates,
   -- `from_ext_basis([c0, c1]) = c0 + c1·X` (the ExtVal basis is `[1, X]`).
   fn from_ext_basis(c0: Ext, c1: Ext) -> Ext {
-    eg_add(c0, eg_mul(c1, [0, 1]))
+    @eg_add(c0, @eg_mul(c1, [0, 1]))
   }
 
   -- A stage-2 / quotient opened row arrives as `stage_2_width·2` extension
@@ -587,16 +587,16 @@ def verifier := ⟦
       SysNode.IsLastRow => isl,
       SysNode.IsTransition => ist,
       SysNode.Add(a, b) =>
-        eg_add(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+        @eg_add(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
       SysNode.Sub(a, b) =>
-        eg_sub(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+        @eg_sub(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
       SysNode.Mul(a, b) =>
-        eg_mul(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
+        @eg_mul(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
                eval_at(nodes, b, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
       SysNode.Neg(a) =>
-        eg_neg(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
+        @eg_neg(eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist)),
     }
   }
 
@@ -632,8 +632,8 @@ def verifier := ⟦
   -- (a0·b0 + 7·a1·b1, a0·b1 + a1·b0).
   -- ==========================================================================
   fn pair_mul(a0: Ext, a1: Ext, b0: Ext, b1: Ext) -> (Ext, Ext) {
-    (eg_add(eg_mul(a0, b0), eg_mul([7, 0], eg_mul(a1, b1))),
-     eg_add(eg_mul(a0, b1), eg_mul(a1, b0)))
+    (@eg_add(@eg_mul(a0, b0), @eg_mul([7, 0], @eg_mul(a1, b1))),
+     @eg_add(@eg_mul(a0, b1), @eg_mul(a1, b0)))
   }
 
   -- fingerprint(γ, args) = Σᵢ argsᵢ·γ^i as a coordinate pair:
@@ -650,7 +650,7 @@ def verifier := ⟦
         let (m0, m1) = pair_mul(f0, f1, g0, g1);
         let av = eval_at(nodes, a, main, main_next, prep, prep_next, s2, s2next,
                          publics, isf, isl, ist);
-        (eg_add(m0, av), m1),
+        (@eg_add(m0, av), m1),
     }
   }
 
@@ -680,14 +680,14 @@ def verifier := ⟦
         let SysLookup.Mk(mid, args) = lk;
         let (f0, f1) = logup_fingerprint(args, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-        let m0 = eg_add(f0, b0);
-        let m1 = eg_add(f1, b1);
+        let m0 = @eg_add(f0, b0);
+        let m1 = @eg_add(f1, b1);
         let mv = eval_at(nodes, mid, main, main_next, prep, prep_next, s2, s2next,
                          publics, isf, isl, ist);
         -- R ← R·m + mult·P, then P ← P·m.
         let (rm0, rm1) = pair_mul(r0, r1, m0, m1);
-        let nr0 = eg_add(rm0, eg_mul(mv, p0));
-        let nr1 = eg_add(rm1, eg_mul(mv, p1));
+        let nr0 = @eg_add(rm0, @eg_mul(mv, p0));
+        let nr1 = @eg_add(rm1, @eg_mul(mv, p1));
         let (np0, np1) = pair_mul(p0, p1, m0, m1);
         match (j + 1 - lcount) {
           0 =>
@@ -695,10 +695,10 @@ def verifier := ⟦
             -- the wrap target.
             let s0 = list_lookup(s2, g + g);
             let s1 = list_lookup(s2, g + g + 1);
-            let t0 = eg_add(list_lookup(s2next, 0), inj0);
-            let t1 = eg_add(list_lookup(s2next, 1), inj1);
-            let (c0, c1) = pair_mul(np0, np1, eg_sub(t0, s0), eg_sub(t1, s1));
-            ood_fold(ood_fold(acc, alpha, eg_sub(c0, nr0)), alpha, eg_sub(c1, nr1)),
+            let t0 = @eg_add(list_lookup(s2next, 0), inj0);
+            let t1 = @eg_add(list_lookup(s2next, 1), inj1);
+            let (c0, c1) = pair_mul(np0, np1, @eg_sub(t0, s0), @eg_sub(t1, s1));
+            ood_fold(ood_fold(acc, alpha, @eg_sub(c0, nr0)), alpha, @eg_sub(c1, nr1)),
           _ => match rem - 1 {
             0 =>
               -- Group full: close against the next slot, reset the state.
@@ -706,9 +706,9 @@ def verifier := ⟦
               let s1 = list_lookup(s2, g + g + 1);
               let t0 = list_lookup(s2, g + g + 2);
               let t1 = list_lookup(s2, g + g + 3);
-              let (c0, c1) = pair_mul(np0, np1, eg_sub(t0, s0), eg_sub(t1, s1));
-              let acc1 = ood_fold(ood_fold(acc, alpha, eg_sub(c0, nr0)), alpha,
-                                  eg_sub(c1, nr1));
+              let (c0, c1) = pair_mul(np0, np1, @eg_sub(t0, s0), @eg_sub(t1, s1));
+              let acc1 = ood_fold(ood_fold(acc, alpha, @eg_sub(c0, nr0)), alpha,
+                                  @eg_sub(c1, nr1));
               logup_steps_fold(acc1, alpha, rest, j + 1, lcount,
                 g + 1, k, k, [1, 0], [0, 0], [0, 0], [0, 0],
                 inj0, inj1, b0, b1, g0, g1, nodes,
@@ -744,15 +744,15 @@ def verifier := ⟦
     -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
     -- p3's raw selector has value n·g at the last row, and Δ is constant
     -- across the domain, mirroring the Rust prover/verifier).
-    let inj0 = eg_mul(isl, eg_mul(eg_sub(na0, a0), [inorm, 0]));
-    let inj1 = eg_mul(isl, eg_mul(eg_sub(na1, a1), [inorm, 0]));
+    let inj0 = @eg_mul(isl, @eg_mul(@eg_sub(na0, a0), [inorm, 0]));
+    let inj1 = @eg_mul(isl, @eg_mul(@eg_sub(na1, a1), [inorm, 0]));
     match load(lks) {
       -- No lookups: single pass-through column, acc′ − acc + inj = 0.
       ListNode.Nil =>
         let acc = ood_fold(base, alpha,
-          eg_add(eg_sub(list_lookup(s2next, 0), list_lookup(s2, 0)), inj0));
+          @eg_add(@eg_sub(list_lookup(s2next, 0), list_lookup(s2, 0)), inj0));
         ood_fold(acc, alpha,
-          eg_add(eg_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
+          @eg_add(@eg_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
       ListNode.Cons(_h, _t) =>
         logup_steps_fold(base, alpha, lks, 0, list_length(lks),
           0, k, k, [1, 0], [0, 0], [0, 0], [0, 0], inj0, inj1,
@@ -791,7 +791,7 @@ def verifier := ⟦
     match load(slices) {
       ListNode.Nil => [0, 0],
       ListNode.Cons(c, rest) =>
-        eg_add(eg_mul(pow, c), quotient_eval(rest, zeta_pow_n, eg_mul(pow, zeta_pow_n))),
+        @eg_add(@eg_mul(pow, c), quotient_eval(rest, zeta_pow_n, @eg_mul(pow, zeta_pow_n))),
     }
   }
 
@@ -858,7 +858,7 @@ def verifier := ⟦
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
         assert_eq!(eq_zero(list_length(slices) - qd), 1);
         let quot = quotient_eval(slices, ext_exp_pow2(zeta, l), [1, 0]);
-        assert_eq!(eg_eq(eg_mul(comp, invv), quot), 1);
+        assert_eq!(@eg_eq(@eg_mul(comp, invv), quot), 1);
         ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
                  q_opened, i + 1, naccp, lch, fch, alpha, zeta),
     }
@@ -870,7 +870,7 @@ def verifier := ⟦
     match load(vals) {
       ListNode.Nil => [0, 0],
       ListNode.Cons(v, rest) =>
-        eg_add([gl_val(v), 0], eg_mul(fch, fingerprint_vals(fch, rest))),
+        @eg_add([gl_val(v), 0], @eg_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 
@@ -881,8 +881,8 @@ def verifier := ⟦
     match load(claims) {
       ListNode.Nil => acc,
       ListNode.Cons(c, rest) =>
-        let msg = eg_add(lch, fingerprint_vals(fch, c));
-        claims_acc(eg_add(acc, eg_inverse(msg)), rest, lch, fch),
+        let msg = @eg_add(lch, fingerprint_vals(fch, c));
+        claims_acc(@eg_add(acc, eg_inverse(msg)), rest, lch, fch),
     }
   }
 
