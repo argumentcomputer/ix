@@ -127,6 +127,37 @@ inductive TrKExprS {m : Mode} : KVLCtx → KExpr m → VExpr → Prop
     env.ContainsLits (.strVal s) →
     TrKExprS Δ (.str s blob md) (.trLiteral (.strVal s))
 
+/-! ### Environment-extension monotonicity
+
+This theorem lives with the translation rather than the concrete environment
+log so admission relations can retain typed translations without creating an
+`Env`/`Inductive` import cycle.  The projection relation is environment-free;
+only Theory typing and lookup premises need transport. -/
+
+/-- Structural translation is stable when the trusted Theory environment
+grows. -/
+theorem TrKExprS.mono {env env' : VEnv} (henv : env ≤ env')
+    {uvars : Nat} {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {m : Mode} {Δ : KVLCtx} {e : KExpr m} {e' : VExpr}
+    (H : TrKExprS env uvars nameOf trProj Δ e e') :
+    TrKExprS env' uvars nameOf trProj Δ e e' := by
+  induction H with
+  | var h1 => exact .var h1
+  | fvar h1 => exact .fvar h1
+  | sort h1 => exact .sort h1
+  | const h1 h2 h3 h4 => exact .const h1 (henv.constants h2) h3 h4
+  | app h1 h2 _ _ ih1 ih2 =>
+    exact .app (h1.mono henv) (h2.mono henv) ih1 ih2
+  | lam h1 _ _ ih1 ih2 => exact .lam (h1.mono henv) ih1 ih2
+  | all h1 h2 _ _ ih1 ih2 =>
+    exact .all (h1.mono henv) (h2.mono henv) ih1 ih2
+  | letE h1 _ _ _ ih1 ih2 ih3 =>
+    exact .letE (h1.mono henv) ih1 ih2 ih3
+  | prj h1 _ h3 ih => exact .prj h1 ih h3
+  | nat h1 => exact .nat (h1.mono henv)
+  | str h1 => exact .str (h1.mono henv)
+
 /-- The translation is metadata-blind: erasing to the anon twin
     translates to the SAME `VExpr`. (With `KExpr.eraseMeta_anon` this
     also means anon statements subsume meta ones — the v1 checker's
@@ -517,6 +548,203 @@ theorem TrKExprS.weakBV {env : Lean4Lean.VEnv} {uvars : Nat}
       liftN_trLiteral (.strVal s) n k]
     exact .str h
 
+private theorem tr_toNat_max (a b : UInt64) :
+    (max a b).toNat = max a.toNat b.toNat := by
+  show (if a ≤ b then b else a).toNat = max a.toNat b.toNat
+  rw [Nat.max_def]
+  split <;> split <;>
+    first
+      | rfl
+      | (rename_i h1 h2
+         exact absurd (UInt64.le_iff_toNat_le.mp h1) h2)
+      | (rename_i h1 h2
+         exact absurd h2 fun hh => h1 (UInt64.le_iff_toNat_le.mpr hh))
+
+private theorem tr_toNat_le_sat1_add_one (x : UInt64) :
+    x.toNat ≤ x.sat1.toNat + 1 := by
+  unfold UInt64.sat1
+  split
+  · next h => rw [eq_of_beq h]; exact Nat.le_succ _
+  · next h =>
+    have hx0 : x ≠ 0 := fun he => h (beq_iff_eq.mpr he)
+    have hn0 : x.toNat ≠ 0 := fun h0 =>
+      hx0 (UInt64.toNat_inj.mp (by simpa using h0))
+    have hsub : (x - 1).toNat = x.toNat - 1 := by
+      rw [UInt64.toNat_sub_of_le x 1 (UInt64.le_iff_toNat_le.mpr (by
+        rw [show (1 : UInt64).toNat = 1 from rfl]; omega))]
+      rfl
+    omega
+
+/-- Walker-tight weakening.  Unlike `weakBV`, the arithmetic hypotheses
+    mention only the source expression: `hcut` bounds binder descent and
+    `hlift` bounds shifted loose indices.  These are exactly the two
+    no-wrap obligations carried by `WalkerRequest.Bounds (.lift ...)`. -/
+theorem TrKExprS.weakBV_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    {Δ : KVLCtx} {e : KExpr .anon} {e' : VExpr}
+    (hcon : KExpr.Constructed e)
+    (H : TrKExprS env uvars nameOf trProj Δ e e') :
+    ∀ {Δ' : KVLCtx} {dn dk n k : Nat} {shift cutoff : UInt64},
+      KVLCtx.KBVLift Δ Δ' dn dk n k →
+      shift.toNat = dn → cutoff.toNat = dk →
+      cutoff.toNat + e.size < UInt64.size →
+      e.lbr.toNat + e.size + shift.toNat < UInt64.size →
+      TrKExprS env uvars nameOf trProj Δ'
+        (KExpr.liftSpec e shift cutoff) (e'.liftN n k) := by
+  induction H with
+  | @var Δ idx name info e A h =>
+    cases hcon with
+    | @var _ _ md hidx =>
+      intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+      change cutoff.toNat + 1 < UInt64.size at hcut
+      change (idx + 1).toNat + 1 + shift.toNat < UInt64.size at hlift
+      have hlbr : (idx + 1).toNat = idx.toNat + 1 := by
+        rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl]
+        exact Nat.mod_eq_of_lt hidx
+      rw [hlbr] at hlift
+      have hW := W.find? h
+      rw [KExpr.liftSpec]
+      by_cases hge : idx ≥ cutoff
+      · have hnl : ¬ (idx.toNat < dk) := by
+          have := UInt64.le_iff_toNat_le.mp hge
+          omega
+        rw [if_pos hge, KExpr.mkVar_shape]
+        refine .var (A := A.liftN n k) ?_
+        have htn : (idx + shift).toNat = idx.toNat + dn := by
+          rw [UInt64.toNat_add, hshift]
+          exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hlift)
+        rw [htn]
+        simpa [KVLCtx.liftVar, hnl] using hW
+      · have hl : idx.toNat < dk := by
+          have : ¬ (cutoff.toNat ≤ idx.toNat) := fun hh =>
+            hge (UInt64.le_iff_toNat_le.mpr hh)
+          omega
+        rw [if_neg hge]
+        refine .var (A := A.liftN n k) ?_
+        simpa [KVLCtx.liftVar, hl] using hW
+  | @fvar Δ id name info e A h =>
+    cases hcon
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+    have hW := W.find? h
+    exact .fvar (A := A.liftN n k) (by
+      simpa [KExpr.liftSpec, KVLCtx.liftVar] using hW)
+  | @sort Δ u info h =>
+    cases hcon
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+    exact .sort h
+  | @const Δ id us info c ci h1 h2 h3 h4 =>
+    cases hcon
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+    exact .const h1 h2 h3 h4
+  | @app Δ f a info f' a' A B h1 h2 htf hta ihf iha =>
+    cases hcon with
+    | @app _ _ md hf ha =>
+      intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+      change cutoff.toNat + (f.size + a.size + 1) < UInt64.size at hcut
+      change (max f.lbr a.lbr).toNat + (f.size + a.size + 1) +
+        shift.toNat < UInt64.size at hlift
+      rw [tr_toNat_max] at hlift
+      have hszf := KExpr.size_pos f
+      have hsza := KExpr.size_pos a
+      rw [KExpr.liftSpec, KExpr.mkApp_shape]
+      exact .app (h1.weakN henv W.toCtx) (h2.weakN henv W.toCtx)
+        (ihf hf W hshift hcutoff (by omega) (by omega))
+        (iha ha W hshift hcutoff (by omega) (by omega))
+  | @lam Δ name bi ty body info ty' body' h1 htty htbody ihty ihbody =>
+    cases hcon with
+    | @lam _ _ _ _ md hty hbody =>
+      intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+      change cutoff.toNat + (ty.size + body.size + 1) < UInt64.size at hcut
+      change (max ty.lbr body.lbr.sat1).toNat +
+        (ty.size + body.size + 1) + shift.toNat < UInt64.size at hlift
+      rw [tr_toNat_max] at hlift
+      have hsat := tr_toNat_le_sat1_add_one body.lbr
+      have hszty := KExpr.size_pos ty
+      have hszbody := KExpr.size_pos body
+      have hc1 : (cutoff + 1).toNat = dk + 1 := by
+        rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+          hcutoff]
+        exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+      rw [KExpr.liftSpec, KExpr.mkLam_shape]
+      exact .lam (h1.weakN henv W.toCtx)
+        (ihty hty W hshift hcutoff (by omega) (by omega))
+        (ihbody hbody (W.cons (.vlam ty')) hshift hc1
+          (by rw [hc1]; omega) (by omega))
+  | @all Δ name bi ty body info ty' body' h1 h2 htty htbody ihty ihbody =>
+    cases hcon with
+    | @all _ _ _ _ md hty hbody =>
+      intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+      change cutoff.toNat + (ty.size + body.size + 1) < UInt64.size at hcut
+      change (max ty.lbr body.lbr.sat1).toNat +
+        (ty.size + body.size + 1) + shift.toNat < UInt64.size at hlift
+      rw [tr_toNat_max] at hlift
+      have hsat := tr_toNat_le_sat1_add_one body.lbr
+      have hszty := KExpr.size_pos ty
+      have hszbody := KExpr.size_pos body
+      have hc1 : (cutoff + 1).toNat = dk + 1 := by
+        rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+          hcutoff]
+        exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+      rw [KExpr.liftSpec, KExpr.mkAll_shape]
+      exact .all (h1.weakN henv W.toCtx) (h2.weakN henv W.toCtx.succ)
+        (ihty hty W hshift hcutoff (by omega) (by omega))
+        (ihbody hbody (W.cons (.vlam ty')) hshift hc1
+          (by rw [hc1]; omega) (by omega))
+  | @letE Δ name ty val body nd info ty' val' body' h1 htty htval htbody
+      ihty ihval ihbody =>
+    cases hcon with
+    | @letE _ _ _ _ _ md hty hval hbody =>
+      intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+      change cutoff.toNat + (ty.size + val.size + body.size + 1) <
+        UInt64.size at hcut
+      change (max (max ty.lbr val.lbr) body.lbr.sat1).toNat +
+        (ty.size + val.size + body.size + 1) + shift.toNat <
+        UInt64.size at hlift
+      rw [tr_toNat_max, tr_toNat_max] at hlift
+      have hsat := tr_toNat_le_sat1_add_one body.lbr
+      have hszty := KExpr.size_pos ty
+      have hszval := KExpr.size_pos val
+      have hszbody := KExpr.size_pos body
+      have hc1 : (cutoff + 1).toNat = dk + 1 := by
+        rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl,
+          hcutoff]
+        exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hcut)
+      rw [KExpr.liftSpec, KExpr.mkLet_shape]
+      exact .letE (h1.weakN henv W.toCtx)
+        (ihty hty W hshift hcutoff (by omega) (by omega))
+        (ihval hval W hshift hcutoff (by omega) (by omega))
+        (ihbody hbody (W.cons (.vlet ty' val')) hshift hc1
+          (by rw [hc1]; omega) (by omega))
+  | @prj Δ id field val info sName e' e'' h1 htval htrp ihval =>
+    cases hcon with
+    | @prj _ _ _ md hval =>
+      intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+      change cutoff.toNat + (val.size + 1) < UInt64.size at hcut
+      change val.lbr.toNat + (val.size + 1) + shift.toNat <
+        UInt64.size at hlift
+      have hszval := KExpr.size_pos val
+      rw [KExpr.liftSpec, KExpr.mkPrj_shape]
+      exact .prj h1 (ihval hval W hshift hcutoff (by omega) (by omega))
+        (htp W.toCtx htrp)
+  | @nat Δ v blob info h =>
+    cases hcon
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+    rw [show (Lean4Lean.VExpr.natLit v).liftN n k
+        = Lean4Lean.VExpr.natLit v from liftN_natLit v n k]
+    exact .nat h
+  | @str Δ v blob info h =>
+    cases hcon
+    intro Δ' dn dk n k shift cutoff W hshift hcutoff hcut hlift
+    rw [show (Lean4Lean.VExpr.trLiteral (.strVal v)).liftN n k
+        = Lean4Lean.VExpr.trLiteral (.strVal v) from
+      liftN_trLiteral (.strVal v) n k]
+    exact .str h
+
 /-! ### Instantiation: `substSpec` corresponds to `VExpr.inst`
 
 Mirror of upstream `VLCtx.InstN`/`TrExprS.instN`, with one structural
@@ -684,6 +912,139 @@ theorem KInstN.find?_fvar {Δ₀ : KVLCtx} {e₀ A₀ : VExpr} {dk k : Nat}
     obtain ⟨e, A', H, rfl, rfl⟩ := H
     refine ⟨_, _, ih H, ?_, ?_⟩ <;>
       rw [liftN_depth_inst, depth_inst]
+
+end KVLCtx
+
+/-! ### Let instantiation: `substSpec` removes a depth-zero `vlet`
+
+Unlike `KInstN`, this relation removes a `vlet`, whose Theory depth is zero.
+The source and target bare Theory contexts are therefore definitionally the
+same, and declarations above the removed let are not instantiated.  Kernel
+de Bruijn indices still count the removed entry, so the `dk`/`k` split remains
+essential: `dk` counts mixed-context entries while `k` sums Theory depths. -/
+
+namespace KVLCtx
+
+variable (Δ₀ : KVLCtx) (e₀ A₀ : VExpr) in
+/-- `Δ₁` carries the `vlet A₀ e₀` at entry-position `dk`; `Δ` removes it.
+    Since a `vlet` contributes no Theory binder, both contexts have the same
+    `toCtx`; `k` only records the depth of declarations above the let. -/
+inductive KInstLet : Nat → Nat → KVLCtx → KVLCtx → Prop
+  | zero : KInstLet 0 0 ((none, .vlet A₀ e₀) :: Δ₀) Δ₀
+  | succ {dk k : Nat} {Γ Γ' : KVLCtx} {d : VLocalDecl} :
+    KInstLet dk k Γ Γ' →
+    KInstLet (dk + 1) (k + d.depth) ((none, d) :: Γ)
+      ((none, d) :: Γ')
+
+/-- Removing a `vlet` does not alter the bare Theory context. -/
+protected theorem KInstLet.toCtx {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstLet Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    Δ₁.toCtx = Δ.toCtx := by
+  induction W with
+  | zero => rfl
+  | @succ dk k Γ Γ' d _ ih =>
+    cases d <;> simp only [KVLCtx.toCtx, ih]
+
+/-- The context retained above the removed let is a pure insertion over its
+    base.  This is the weakening bridge for a hit on the let-bound variable. -/
+theorem KInstLet.toKBVLift {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstLet Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    KBVLift Δ₀ Δ dk 0 k 0 := by
+  induction W with
+  | zero => exact .refl
+  | @succ dk k Γ Γ' d _ ih => exact .skip d ih
+
+theorem KInstLet.dk_le_bvars {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstLet Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    dk ≤ Δ.bvars := by
+  induction W with
+  | zero => exact Nat.zero_le _
+  | succ _ ih =>
+    simp [KVLCtx.bvars]
+    omega
+
+/-- A reference to the removed let resolves to its stored value, lifted by
+    exactly the Theory depth of declarations above it. -/
+theorem KInstLet.find?_hit {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstLet Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {e' A : VExpr}, find? Δ₁ (.inl dk) = some (e', A) →
+      e' = e₀.liftN k := by
+  induction W with
+  | zero =>
+    intro e' A H
+    simp [find?, next] at H
+    obtain ⟨rfl, rfl⟩ := H
+    simp [Lean4Lean.VLocalDecl.value]
+  | @succ dk k Γ Γ' d _ ih =>
+    intro e' A H
+    simp [find?, next] at H
+    obtain ⟨e, A', H, rfl, rfl⟩ := H
+    rw [ih H, Lean4Lean.VExpr.liftN_liftN]
+
+/-- References below the removed let retain both their index and resolved
+    Theory pair. -/
+theorem KInstLet.find?_lt {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstLet Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {j : Nat} {e' A : VExpr}, j < dk →
+      find? Δ₁ (.inl j) = some (e', A) →
+      find? Δ (.inl j) = some (e', A) := by
+  induction W with
+  | zero => omega
+  | @succ dk k Γ Γ' d _ ih =>
+    intro j e' A hj H
+    match j with
+    | 0 =>
+      simp [find?, next] at H ⊢
+      exact H
+    | j + 1 =>
+      simp [find?, next] at H ⊢
+      obtain ⟨e, A', H, rfl, rfl⟩ := H
+      exact ⟨_, _, ih (by omega) H, rfl, rfl⟩
+
+/-- References above the removed let shift down by one mixed-context entry,
+    while their resolved Theory pair is unchanged. -/
+theorem KInstLet.find?_gt {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstLet Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {j : Nat} {e' A : VExpr}, dk < j →
+      find? Δ₁ (.inl j) = some (e', A) →
+      find? Δ (.inl (j - 1)) = some (e', A) := by
+  induction W with
+  | zero =>
+    intro j e' A hj H
+    match j, hj with
+    | j + 1, _ =>
+      simp [find?, next] at H
+      obtain ⟨e, A', H, rfl, rfl⟩ := H
+      simpa [Lean4Lean.VLocalDecl.depth] using H
+  | @succ dk k Γ Γ' d _ ih =>
+    intro j e' A hj H
+    match j, hj with
+    | j' + 1, _ =>
+      simp [find?, next] at H
+      obtain ⟨e, A', H, rfl, rfl⟩ := H
+      have hj' : dk < j' := by omega
+      obtain ⟨j'', rfl⟩ : ∃ j'', j' = j'' + 1 := ⟨j' - 1, by omega⟩
+      simp only [Nat.add_sub_cancel]
+      simp [find?, next]
+      exact ⟨_, _, ih hj' H, rfl, rfl⟩
+
+/-- Fvar lookup is independent of the removed untagged let entry. -/
+theorem KInstLet.find?_fvar {Δ₀ : KVLCtx} {e₀ A₀ : VExpr}
+    {dk k : Nat} {Δ₁ Δ : KVLCtx} (W : KInstLet Δ₀ e₀ A₀ dk k Δ₁ Δ) :
+    ∀ {fv : FVarId} {e' A : VExpr},
+      find? Δ₁ (.inr fv) = some (e', A) →
+      find? Δ (.inr fv) = some (e', A) := by
+  induction W with
+  | zero =>
+    intro fv e' A H
+    simp [find?, next] at H
+    obtain ⟨e, A', H, rfl, rfl⟩ := H
+    simpa [Lean4Lean.VLocalDecl.depth] using H
+  | @succ dk k Γ Γ' d _ ih =>
+    intro fv e' A H
+    simp [find?, next] at H ⊢
+    obtain ⟨e, A', H, rfl, rfl⟩ := H
+    exact ⟨_, _, ih H, rfl, rfl⟩
 
 end KVLCtx
 
@@ -862,6 +1223,254 @@ theorem TrKExprS.instN {env : Lean4Lean.VEnv} {uvars : Nat}
       inst_trLiteral (.strVal s) e₀' k]
     exact .str h
 
+/-- **Let instantiation** — substituting the concrete value for a mixed
+    context `vlet` leaves the translated Theory expression unchanged.
+    This mirrors upstream `TrExprS.instN_let`, while retaining the explicit
+    UInt64 resource bound required by `KExpr.substSpec`. -/
+theorem TrKExprS.instN_let {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    {Δ₀ : KVLCtx} {arg : KExpr .anon} {e₀' A₀ : VExpr}
+    (h₀ : TrKExprS env uvars nameOf trProj Δ₀ arg e₀')
+    {Δ₁ : KVLCtx} {body : KExpr .anon} {body' : VExpr}
+    (H : TrKExprS env uvars nameOf trProj Δ₁ body body') :
+    ∀ {Δ : KVLCtx} {dk k : Nat} {depth : UInt64},
+      KVLCtx.KInstLet Δ₀ e₀' A₀ dk k Δ₁ Δ →
+      depth.toNat = dk →
+      Δ.bvars + body.size + arg.size < UInt64.size →
+      TrKExprS env uvars nameOf trProj Δ
+        (KExpr.substSpec body arg depth) body' := by
+  induction H with
+  | @var Δ₁' i nm md e A h =>
+    intro Δ dk k depth W hdepth hbig
+    rw [KExpr.substSpec]
+    by_cases heq : (i == depth) = true
+    · have hik : i.toNat = dk := by rw [eq_of_beq heq]; exact hdepth
+      rw [if_pos heq]
+      have hhit : e = e₀'.liftN k :=
+        W.find?_hit (e' := e) (A := A) (by rw [← hik]; exact h)
+      rw [hhit]
+      exact TrKExprS.weakBV henv htp h₀ W.toKBVLift hdepth rfl
+        (Nat.lt_of_le_of_lt (by omega) hbig)
+    · by_cases hgt : i > depth
+      · have hik : dk < i.toNat := by
+          have := UInt64.lt_iff_toNat_lt.mp hgt
+          omega
+        rw [if_neg heq, if_pos hgt, KExpr.mkVar_shape]
+        refine .var (A := A) ?_
+        have h1i : (1 : UInt64) ≤ i :=
+          UInt64.le_iff_toNat_le.mpr (by
+            rw [show (1 : UInt64).toNat = 1 from rfl]; omega)
+        rw [UInt64.toNat_sub_of_le i 1 h1i,
+          show (1 : UInt64).toNat = 1 from rfl]
+        exact W.find?_gt hik h
+      · have hik : i.toNat < dk := by
+          have hne : i.toNat ≠ depth.toNat := fun hh =>
+            heq (beq_iff_eq.mpr (UInt64.toNat_inj.mp hh))
+          have hnlt : ¬ (depth.toNat < i.toNat) := fun hh =>
+            hgt (UInt64.lt_iff_toNat_lt.mpr hh)
+          omega
+        rw [if_neg heq, if_neg hgt]
+        exact .var (A := A) (W.find?_lt hik h)
+  | @fvar Δ₁' fv nm md e A h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .fvar (A := A) (W.find?_fvar h)
+  | @sort Δ₁' u md h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .sort h
+  | @const Δ₁' id us md c ci h1 h2 h3 h4 =>
+    intro Δ dk k depth W hdepth hbig
+    exact .const h1 h2 h3 h4
+  | @app Δ₁' f a md f' a' A B h1 h2 htf hta ihf iha =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (f.size + a.size + 1) + arg.size
+        < UInt64.size := hbig
+    rw [KExpr.substSpec, KExpr.mkApp_shape]
+    exact .app (W.toCtx ▸ h1) (W.toCtx ▸ h2)
+      (ihf W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (iha W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @lam Δ₁' nm bi ty body md ty' body' h1 htty htbody ihty ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (ty.size + body.size + 1) + arg.size
+        < UInt64.size := hbig
+    have hdk : dk ≤ Δ.bvars := W.dk_le_bvars
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkLam_shape]
+    exact .lam (W.toCtx ▸ h1)
+      (ihty W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.succ (d := .vlam ty')) hc1
+        (by show Δ.bvars + 1 + body.size + arg.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @all Δ₁' nm bi ty body md ty' body' h1 h2 htty htbody ihty ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (ty.size + body.size + 1) + arg.size
+        < UInt64.size := hbig
+    have hdk : dk ≤ Δ.bvars := W.dk_le_bvars
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkAll_shape]
+    exact .all (W.toCtx ▸ h1) (W.toCtx ▸ h2)
+      (ihty W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.succ (d := .vlam ty')) hc1
+        (by show Δ.bvars + 1 + body.size + arg.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @letE Δ₁' nm ty val body nd md ty' val' body' h1 htty htval htbody
+      ihty ihval ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' :
+        Δ.bvars + (ty.size + val.size + body.size + 1) + arg.size
+          < UInt64.size := hbig
+    have hdk : dk ≤ Δ.bvars := W.dk_le_bvars
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkLet_shape]
+    exact .letE (W.toCtx ▸ h1)
+      (ihty W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihval W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (ihbody (W.succ (d := .vlet ty' val')) hc1
+        (by show Δ.bvars + 1 + body.size + arg.size < UInt64.size
+            exact Nat.lt_of_le_of_lt (by omega) hbig'))
+  | @prj Δ₁' sid field val md sName e' e'' h1 htval htrp ihval =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : Δ.bvars + (val.size + 1) + arg.size < UInt64.size :=
+      hbig
+    rw [KExpr.substSpec, KExpr.mkPrj_shape]
+    exact .prj h1
+      (ihval W hdepth (Nat.lt_of_le_of_lt (by omega) hbig'))
+      (W.toCtx ▸ htrp)
+  | @nat Δ₁' v blob md h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .nat h
+  | @str Δ₁' s blob md h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .str h
+
+/-- Walker-tight let instantiation.  The bound is the final conjunct of
+    `WalkerRequest.Bounds (.subst body arg depth)`, and `harg` is its
+    constructed-argument conjunct.  No ambient-context size is needed. -/
+theorem TrKExprS.instN_let_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    {Δ₀ : KVLCtx} {arg : KExpr .anon} {e₀' A₀ : VExpr}
+    (harg : KExpr.Constructed arg)
+    (h₀ : TrKExprS env uvars nameOf trProj Δ₀ arg e₀')
+    {Δ₁ : KVLCtx} {body : KExpr .anon} {body' : VExpr}
+    (H : TrKExprS env uvars nameOf trProj Δ₁ body body') :
+    ∀ {Δ : KVLCtx} {dk k : Nat} {depth : UInt64},
+      KVLCtx.KInstLet Δ₀ e₀' A₀ dk k Δ₁ Δ →
+      depth.toNat = dk →
+      arg.lbr.toNat + arg.size + depth.toNat + body.size < UInt64.size →
+      TrKExprS env uvars nameOf trProj Δ
+        (KExpr.substSpec body arg depth) body' := by
+  induction H with
+  | @var Δ₁' i nm md e A h =>
+    intro Δ dk k depth W hdepth hbig
+    rw [KExpr.substSpec]
+    by_cases heq : (i == depth) = true
+    · have hik : i.toNat = dk := by rw [eq_of_beq heq]; exact hdepth
+      rw [if_pos heq]
+      have hhit : e = e₀'.liftN k :=
+        W.find?_hit (e' := e) (A := A) (by rw [← hik]; exact h)
+      rw [hhit]
+      exact TrKExprS.weakBV_lbr henv htp harg h₀ W.toKBVLift hdepth rfl
+        (by rw [show (0 : UInt64).toNat = 0 from rfl]; omega) (by omega)
+    · by_cases hgt : i > depth
+      · have hik : dk < i.toNat := by
+          have := UInt64.lt_iff_toNat_lt.mp hgt
+          omega
+        rw [if_neg heq, if_pos hgt, KExpr.mkVar_shape]
+        refine .var (A := A) ?_
+        have h1i : (1 : UInt64) ≤ i :=
+          UInt64.le_iff_toNat_le.mpr (by
+            rw [show (1 : UInt64).toNat = 1 from rfl]; omega)
+        rw [UInt64.toNat_sub_of_le i 1 h1i,
+          show (1 : UInt64).toNat = 1 from rfl]
+        exact W.find?_gt hik h
+      · have hik : i.toNat < dk := by
+          have hne : i.toNat ≠ depth.toNat := fun hh =>
+            heq (beq_iff_eq.mpr (UInt64.toNat_inj.mp hh))
+          have hnlt : ¬ (depth.toNat < i.toNat) := fun hh =>
+            hgt (UInt64.lt_iff_toNat_lt.mpr hh)
+          omega
+        rw [if_neg heq, if_neg hgt]
+        exact .var (A := A) (W.find?_lt hik h)
+  | @fvar Δ₁' fv nm md e A h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .fvar (A := A) (W.find?_fvar h)
+  | @sort Δ₁' u md h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .sort h
+  | @const Δ₁' id us md c ci h1 h2 h3 h4 =>
+    intro Δ dk k depth W hdepth hbig
+    exact .const h1 h2 h3 h4
+  | @app Δ₁' f a md f' a' A B h1 h2 htf hta ihf iha =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : arg.lbr.toNat + arg.size + depth.toNat +
+        (f.size + a.size + 1) < UInt64.size := hbig
+    rw [KExpr.substSpec, KExpr.mkApp_shape]
+    exact .app (W.toCtx ▸ h1) (W.toCtx ▸ h2)
+      (ihf W hdepth (by omega))
+      (iha W hdepth (by omega))
+  | @lam Δ₁' nm bi ty body md ty' body' h1 htty htbody ihty ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : arg.lbr.toNat + arg.size + depth.toNat +
+        (ty.size + body.size + 1) < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkLam_shape]
+    exact .lam (W.toCtx ▸ h1)
+      (ihty W hdepth (by omega))
+      (ihbody (W.succ (d := .vlam ty')) hc1 (by rw [hc1]; omega))
+  | @all Δ₁' nm bi ty body md ty' body' h1 h2 htty htbody ihty ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : arg.lbr.toNat + arg.size + depth.toNat +
+        (ty.size + body.size + 1) < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkAll_shape]
+    exact .all (W.toCtx ▸ h1) (W.toCtx ▸ h2)
+      (ihty W hdepth (by omega))
+      (ihbody (W.succ (d := .vlam ty')) hc1 (by rw [hc1]; omega))
+  | @letE Δ₁' nm ty val body nd md ty' val' body' h1 htty htval htbody
+      ihty ihval ihbody =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : arg.lbr.toNat + arg.size + depth.toNat +
+        (ty.size + val.size + body.size + 1) < UInt64.size := hbig
+    have hc1 : (depth + 1).toNat = dk + 1 := by
+      rw [UInt64.toNat_add, show (1 : UInt64).toNat = 1 from rfl, hdepth]
+      exact Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (by omega) hbig')
+    rw [KExpr.substSpec, KExpr.mkLet_shape]
+    exact .letE (W.toCtx ▸ h1)
+      (ihty W hdepth (by omega))
+      (ihval W hdepth (by omega))
+      (ihbody (W.succ (d := .vlet ty' val')) hc1 (by rw [hc1]; omega))
+  | @prj Δ₁' sid field val md sName e' e'' h1 htval htrp ihval =>
+    intro Δ dk k depth W hdepth hbig
+    have hbig' : arg.lbr.toNat + arg.size + depth.toNat +
+        (val.size + 1) < UInt64.size := hbig
+    rw [KExpr.substSpec, KExpr.mkPrj_shape]
+    exact .prj h1 (ihval W hdepth (by omega)) (W.toCtx ▸ htrp)
+  | @nat Δ₁' v blob md h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .nat h
+  | @str Δ₁' s blob md h =>
+    intro Δ dk k depth W hdepth hbig
+    exact .str h
+
 /-- **Beta step at the API level**: substituting under one `vlam`.
     Upstream `TrExprS.inst`. -/
 theorem TrKExprS.inst {env : Lean4Lean.VEnv} {uvars : Nat}
@@ -883,6 +1492,46 @@ theorem TrKExprS.inst {env : Lean4Lean.VEnv} {uvars : Nat}
     TrKExprS env uvars nameOf trProj Δ
       (KExpr.substSpec body arg 0) (body'.inst e₀') :=
   TrKExprS.instN henv htp htpI h₀ t₀ H .zero rfl hbig
+
+/-- **Explicit-let step at the API level**: substituting under one `vlet`
+    preserves the already-inlined Theory translation.  Upstream
+    `TrExprS.inst_let`. -/
+theorem TrKExprS.inst_let {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    {Δ : KVLCtx} {arg body : KExpr .anon} {e₀' A₀ body' : VExpr}
+    (H : TrKExprS env uvars nameOf trProj
+      ((none, .vlet A₀ e₀') :: Δ) body body')
+    (h₀ : TrKExprS env uvars nameOf trProj Δ arg e₀')
+    (hbig : Δ.bvars + body.size + arg.size < UInt64.size) :
+    TrKExprS env uvars nameOf trProj Δ
+      (KExpr.substSpec body arg 0) body' :=
+  TrKExprS.instN_let henv htp h₀ H .zero rfl hbig
+
+/-- Explicit-let instantiation with the exact depth-zero substitution
+    resource bound, independent of the ambient context size. -/
+theorem TrKExprS.inst_let_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
+    {nameOf : Address → Option Lean.Name}
+    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    (henv : env.Ordered)
+    (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
+      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+    {Δ : KVLCtx} {arg body : KExpr .anon} {e₀' A₀ body' : VExpr}
+    (harg : KExpr.Constructed arg)
+    (H : TrKExprS env uvars nameOf trProj
+      ((none, .vlet A₀ e₀') :: Δ) body body')
+    (h₀ : TrKExprS env uvars nameOf trProj Δ arg e₀')
+    (hbig : arg.lbr.toNat + arg.size + body.size < UInt64.size) :
+    TrKExprS env uvars nameOf trProj Δ
+      (KExpr.substSpec body arg 0) body' :=
+  TrKExprS.instN_let_lbr henv htp harg h₀ H .zero rfl (by
+    rw [show (0 : UInt64).toNat = 0 from rfl]
+    omega)
 
 /-! ### Context typing kit (upstream `VLCtx.WF` lemma transfers) -/
 

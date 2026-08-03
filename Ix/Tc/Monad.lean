@@ -264,9 +264,15 @@ def addr8 (a : Address) : String := ((toString a).take 8).toString
   if (← get).stats then
     modify f
 
+/-- Mint a checker-global free-variable id.  Match Rust's checked counter:
+the final counter value is reserved as the exhausted state, so allocation
+fails instead of wrapping and reusing an id already present in caches. -/
 def freshFVarId : TcM m FVarId := fun s =>
-  let (id, env) := s.env.freshFVarId
-  .ok id { s with env }
+  if s.env.nextFVarId.toNat + 1 < UInt64.size then
+    let (id, env) := s.env.freshFVarId
+    .ok id { s with env }
+  else
+    .error (.other "free-variable id space exhausted") s
 
 /-- Fault `addr` through the lazy-ingress hook (if installed), deduplicated
     by `faultedAddrs`. Ingress errors surface as `TcError.other` with the
@@ -349,12 +355,34 @@ def ctxSuffixNeed (s : TcState m) : Nat → Nat → Nat
     if nextNeed == need then need
     else ctxSuffixNeed s fuel nextNeed
 
-/-- Suffix-aware context identity for a loose-bound-variable range.
+/-- Fresh suffix-aware context identity for a loose-bound-variable range.
+    Runs a fixpoint closing the needed suffix over binder type/value
+    dependencies, then hashes the suffix—unless the whole context is needed,
+    in which case `ctxId` itself is the identity. This helper does not inspect
+    or mutate `ctxAddrCache`. -/
+def ctxAddrForLbrUncached (s : TcState m) (lbr : UInt64) : Address :=
+  let n := s.ctx.size
+  let need := ctxSuffixNeed s (n + 1) (min lbr.toNat n)
+  if need == n then s.ctxId
+  else Id.run do
+    let mut h := Blake3.Rust.Hasher.init ()
+    h := h.update "ctx.suffix".toUTF8
+    h := h.update (need.toUInt64.toLEBytes)
+    for i in [n - need:n] do
+      match s.letVals[i]! with
+      | some val =>
+        h := h.update "let".toUTF8
+        h := h.update s.ctx[i]!.addr.hash
+        h := h.update val.addr.hash
+      | none =>
+        h := h.update "local".toUTF8
+        h := h.update s.ctx[i]!.addr.hash
+    return ⟨(h.finalizeWithLength 32).val⟩
 
-    Pure in `(ctxId, lbr)` (memoized). Runs a fixpoint closing the needed
-    suffix over binder type/value dependencies, then hashes the suffix —
-    unless the whole context is needed, in which case `ctxId` itself is the
-    identity. Mirrors tc.rs `ctx_addr_for_lbr` exactly. -/
+/-- Memoized wrapper around `ctxAddrForLbrUncached`, mirroring tc.rs
+    `ctx_addr_for_lbr`. The pure helper is a verification seam as well as an
+    implementation boundary: memo coherence can state that every stored value
+    equals this exact computation. -/
 def ctxAddrForLbr (lbr : UInt64) : TcM m Address := do
   let s ← get
   if lbr == 0 || s.ctx.isEmpty then
@@ -362,24 +390,7 @@ def ctxAddrForLbr (lbr : UInt64) : TcM m Address := do
   let cacheKey := (s.ctxId, lbr)
   if let some cached := s.ctxAddrCache[cacheKey]? then
     return cached
-  let n := s.ctx.size
-  let need := ctxSuffixNeed s (n + 1) (min lbr.toNat n)
-  let result :=
-    if need == n then s.ctxId
-    else Id.run do
-      let mut h := Blake3.Rust.Hasher.init ()
-      h := h.update "ctx.suffix".toUTF8
-      h := h.update (need.toUInt64.toLEBytes)
-      for i in [n - need:n] do
-        match s.letVals[i]! with
-        | some val =>
-          h := h.update "let".toUTF8
-          h := h.update s.ctx[i]!.addr.hash
-          h := h.update val.addr.hash
-        | none =>
-          h := h.update "local".toUTF8
-          h := h.update s.ctx[i]!.addr.hash
-      return ⟨(h.finalizeWithLength 32).val⟩
+  let result := ctxAddrForLbrUncached s lbr
   modify fun s => { s with ctxAddrCache := s.ctxAddrCache.insert cacheKey result }
   return result
 
@@ -532,6 +543,15 @@ def openLet (name : m.F Name) (ty val : KExpr m) (body : KExpr m) :
   modify fun s => { s with lctx := s.lctx.push fvId (.ldecl name ty val) }
   let bodyOpen ← runIntern (instantiateRev body #[fv])
   return (bodyOpen, fvId)
+
+/-- Like `openLet` but also returns the fvar expression itself. -/
+def openLetWithFV (name : m.F Name) (ty val : KExpr m)
+    (body : KExpr m) : TcM m (KExpr m × KExpr m × FVarId) := do
+  let fvId ← freshFVarId
+  let fv ← intern (KExpr.mkFVar fvId name)
+  modify fun s => { s with lctx := s.lctx.push fvId (.ldecl name ty val) }
+  let bodyOpen ← runIntern (instantiateRev body #[fv])
+  return (bodyOpen, fv, fvId)
 
 /-- Push a fresh fvar declaration without a body to instantiate. -/
 def pushFVarDeclAnon (ty : KExpr m) : TcM m (FVarId × KExpr m) := do
@@ -760,6 +780,16 @@ abbrev RecM (m : Mode) := ReaderT (Methods m) (TcM m)
 def maxDispatchDepth : UInt32 := 200_000
 
 namespace RecM
+
+/-- Run one computation in a free-variable local-context scope.  Any
+declarations pushed by `x` are discarded when it returns, including when it
+returns a kernel error.  Mutations to the rest of the checker state are
+retained. -/
+def withLctxScope (x : RecM m α) : RecM m α := do
+  let saved := (← get).lctx.size
+  try x
+  finally
+    modify fun s => { s with lctx := s.lctx.truncate saved }
 
 /-- One iteration of an explicitly bounded kernel loop. `next` consumes the
     current iteration and continues from a new state; `done` returns without

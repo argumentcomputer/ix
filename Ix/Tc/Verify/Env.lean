@@ -92,35 +92,6 @@ open Std (HashMap)
 open Lean4Lean (VExpr VLevel VEnv VConstant VConstVal VDefVal VDecl
   VInductDecl)
 
-/-! ### Env-extension monotonicity of the translation
-
-The environment only grows during a run (lazy ingress); every
-translation fact transports along `VEnv.LE` (upstream
-`TrExprS.mono`). `trProj` never mentions the env, so its facts
-transport for free. -/
-
-theorem TrKExprS.mono {env env' : VEnv} (henv : env ≤ env')
-    {uvars : Nat} {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
-    {m : Mode} {Δ : KVLCtx} {e : KExpr m} {e' : VExpr}
-    (H : TrKExprS env uvars nameOf trProj Δ e e') :
-    TrKExprS env' uvars nameOf trProj Δ e e' := by
-  induction H with
-  | var h1 => exact .var h1
-  | fvar h1 => exact .fvar h1
-  | sort h1 => exact .sort h1
-  | const h1 h2 h3 h4 => exact .const h1 (henv.1 h2) h3 h4
-  | app h1 h2 _ _ ih1 ih2 =>
-    exact .app (h1.mono henv) (h2.mono henv) ih1 ih2
-  | lam h1 _ _ ih1 ih2 => exact .lam (h1.mono henv) ih1 ih2
-  | all h1 h2 _ _ ih1 ih2 =>
-    exact .all (h1.mono henv) (h2.mono henv) ih1 ih2
-  | letE h1 _ _ _ ih1 ih2 ih3 =>
-    exact .letE (h1.mono henv) ih1 ih2 ih3
-  | prj h1 _ h3 ih => exact .prj h1 ih h3
-  | nat h1 => exact .nat (h1.mono henv)
-  | str h1 => exact .str (h1.mono henv)
-
 /-! ### Constant safety -/
 
 /-- The safety level of a constant (upstream `ConstantInfo.safety`,
@@ -443,7 +414,11 @@ end TrustInsert
 
 /-- Provenance for one trusted catalog id.  Standalone entries retain their
 actual declaration-WF transition.  Ambient inductive-family entries retain
-the oracle's raw translation, exact Theory lookup, and constant-WF fact. -/
+the oracle's raw translation, exact Theory lookup, constant-WF fact, and every
+registered recursor-rule and exact iota-pattern witnesses.  Keeping both here
+is important: `TrustedCatalogLog.find` is the consumer path from an admission
+event to WHNF, so dropping either at this boundary would make the oracle's
+rule semantics unusable after admission. -/
 inductive TrustedCatalogEntry (trProj : RawProjRel) (catalog : Catalog)
     (nameOf : Address → Option Lean.Name) (env : VEnv)
     (id : KId .anon) : Prop
@@ -458,6 +433,12 @@ inductive TrustedCatalogEntry (trProj : RawProjRel) (catalog : Catalog)
     RawInductiveConstRel env nameOf trProj id c name ci →
     env.constants name = some ci →
     ci.WF env →
+    (∀ ⦃rule⦄, c.HasRecursorRule rule →
+      RawRecursorRuleRel env nameOf trProj id c rule) →
+    (∀ ⦃ruleIndex rule⦄, c.RecursorRuleAt ruleIndex rule →
+      ∃ pattern,
+        RawRecursorRulePatternRel env catalog nameOf id c rule pattern ∧
+          pattern.ruleIndex = ruleIndex) →
     TrustedCatalogEntry trProj catalog nameOf env id
 
 namespace TrustedCatalogEntry
@@ -470,9 +451,12 @@ theorem mono {trProj : RawProjRel} {catalog : Catalog}
   cases h with
   | standalone hcat hraw hwf hinstalled =>
     exact .standalone hcat (hraw.mono henv) hwf (hinstalled.trans henv)
-  | ambient hcat hraw hlookup hwf =>
+  | ambient hcat hraw hlookup hwf hrules hpatterns =>
     exact .ambient hcat (hraw.mono henv) (henv.constants hlookup)
-      (hwf.mono henv)
+      (hwf.mono henv) (fun _ hrule => (hrules hrule).mono henv)
+      (fun {_ _} hrule => by
+        obtain ⟨pattern, hpattern, hindex⟩ := hpatterns hrule
+        exact ⟨pattern, hpattern.mono henv, hindex⟩)
 
 /-- Both provenance cases expose the exact catalog/name/Theory lookup needed
 by expression translation. -/
@@ -504,8 +488,49 @@ theorem lookup {trProj : RawProjRel} {catalog : Catalog}
         | «opaque» _ hadd =>
           exact ⟨_, _, _, hcat, hname,
             hinstalled.constants (VEnv.addConst_self hadd)⟩
-  | ambient hcat hraw hlookup hwf =>
+  | ambient hcat hraw hlookup hwf hrules hpatterns =>
     exact ⟨_, _, _, hcat, hraw.nameEq, hlookup⟩
+
+/-- Recover the registered Theory equation for any concrete recursor rule
+carried by this trusted entry.  Standalone promotion cannot produce a
+recursor declaration, so only an ambient inductive admission inhabits the
+positive case. -/
+theorem recursorRule {trProj : RawProjRel} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {env : VEnv}
+    {id : KId .anon} (h : TrustedCatalogEntry trProj catalog nameOf env id)
+    {c : KConst .anon} {rule : RecRule .anon}
+    (hcatalog : catalog id = some c) (hrule : c.HasRecursorRule rule) :
+    RawRecursorRuleRel env nameOf trProj id c rule := by
+  cases h with
+  | @standalone c' d before after hcatalog' hraw hwf hinstalled =>
+      have hc : c' = c := Option.some.inj (hcatalog'.symm.trans hcatalog)
+      subst c'
+      cases hraw <;> exact False.elim hrule
+  | @ambient c' name ci hcatalog' hraw hlookup hwf hrules hpatterns =>
+      have hc : c' = c := Option.some.inj (hcatalog'.symm.trans hcatalog)
+      subst c'
+      exact hrules hrule
+
+/-- Recover the exact Lean4Lean iota-pattern witness associated with a
+trusted concrete recursor rule. -/
+theorem recursorPattern {trProj : RawProjRel} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {env : VEnv}
+    {id : KId .anon} (h : TrustedCatalogEntry trProj catalog nameOf env id)
+    {c : KConst .anon} {ruleIndex : Nat} {rule : RecRule .anon}
+    (hcatalog : catalog id = some c)
+    (hrule : c.RecursorRuleAt ruleIndex rule) :
+    ∃ pattern,
+      RawRecursorRulePatternRel env catalog nameOf id c rule pattern ∧
+        pattern.ruleIndex = ruleIndex := by
+  cases h with
+  | @standalone c' d before after hcatalog' hraw hwf hinstalled =>
+      have hc : c' = c := Option.some.inj (hcatalog'.symm.trans hcatalog)
+      subst c'
+      cases hraw <;> exact False.elim hrule
+  | @ambient c' name ci hcatalog' hraw hlookup hwf hrules hpatterns =>
+      have hc : c' = c := Option.some.inj (hcatalog'.symm.trans hcatalog)
+      subst c'
+      exact hpatterns hrule
 
 end TrustedCatalogEntry
 
@@ -649,6 +674,8 @@ theorem find {trProj : RawProjRel} {catalog : Catalog}
     · obtain ⟨c, name, ci, hcat, hraw, hlookup, hwf⟩ :=
         oracle.translateBlock hnew
       exact .ambient hcat hraw hlookup hwf
+        (fun rule hrule => oracle.recursorFacts hnew hcat hrule)
+        fun {_ _} hrule => oracle.recursorPatterns hnew hcat hrule
     · exact (ih hold).mono oracle.envLE
 
 end TrustedCatalogLog
@@ -678,6 +705,28 @@ theorem find {trProj : RawProjRel} {world : VerifyWorld}
     (htrusted : world.trusted id) :
     TrustedCatalogEntry trProj world.catalog world.nameOf world.venv id :=
   TrustedCatalogLog.find h htrusted
+
+/-- Resolve a concrete rule of a trusted recursor to the well-formed Theory
+equation recorded when its ambient inductive block was admitted. -/
+theorem recursorRule {trProj : RawProjRel} {world : VerifyWorld}
+    (h : TrustedCatalogRel trProj world) {id : KId .anon}
+    {c : KConst .anon} {rule : RecRule .anon}
+    (htrusted : world.trusted id) (hcatalog : world.catalog id = some c)
+    (hrule : c.HasRecursorRule rule) :
+    RawRecursorRuleRel world.venv world.nameOf trProj id c rule :=
+  (h.find htrusted).recursorRule hcatalog hrule
+
+/-- Resolve the exact iota-pattern semantics retained for a trusted concrete
+recursor rule. -/
+theorem recursorPattern {trProj : RawProjRel} {world : VerifyWorld}
+    (h : TrustedCatalogRel trProj world) {id : KId .anon}
+    {c : KConst .anon} {ruleIndex : Nat} {rule : RecRule .anon}
+    (htrusted : world.trusted id) (hcatalog : world.catalog id = some c)
+    (hrule : c.RecursorRuleAt ruleIndex rule) :
+    ∃ pattern,
+      RawRecursorRulePatternRel world.venv world.catalog world.nameOf
+        id c rule pattern ∧ pattern.ruleIndex = ruleIndex :=
+  (h.find htrusted).recursorPattern hcatalog hrule
 
 /-- Resolve an exact catalog constant through either standalone or ambient
 trusted provenance.  This is the whole-`KEnv`-free replacement for the
@@ -714,7 +763,7 @@ theorem resolve {trProj : RawProjRel} {world : VerifyWorld}
           have hlookup := hinstalled.constants (VEnv.addConst_self hadd)
           exact ⟨_, _, hcatalog, htrusted, hname, hlookup, rfl, htype,
             hordered.constWF hlookup⟩
-  | @ambient c' name ci hcatalog' hraw hlookup hwf =>
+  | @ambient c' name ci hcatalog' hraw hlookup hwf hrules hpatterns =>
     have hc : c' = c := Option.some.inj (hcatalog'.symm.trans hcatalog)
     subst c'
     exact ⟨name, ci, hcatalog, htrusted, hraw.nameEq, hlookup,

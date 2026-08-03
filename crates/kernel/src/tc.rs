@@ -955,6 +955,19 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     result
   }
 
+  /// Run a closure in a free-variable local-context scope. Declarations
+  /// pushed by the closure are discarded on both `Ok` and `Err` returns;
+  /// mutations to the rest of the checker state are retained.
+  pub(crate) fn with_lctx_scope<R>(
+    &mut self,
+    f: impl FnOnce(&mut Self) -> R,
+  ) -> R {
+    let saved = self.lctx.len();
+    let result = f(self);
+    self.lctx.truncate(saved);
+    result
+  }
+
   // -----------------------------------------------------------------------
   // Interning helper
   // -----------------------------------------------------------------------

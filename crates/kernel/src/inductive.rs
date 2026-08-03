@@ -474,27 +474,40 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         Some(KConst::Ctor { ty, .. }) => ty.clone(),
         _ => continue,
       };
-      // Skip params
-      let mut ty = ctor_ty;
-      for _ in 0..n_params {
-        let w = self.whnf(&ty)?;
-        match w.data() {
-          ExprData::All(_, _, _, body, _) => ty = body.clone(),
-          _ => break,
+      let saved = self.save_depth();
+      let found = (|| -> Result<bool, TcError<M>> {
+        // Skip params, retaining each binder while normalizing the dependent
+        // constructor remainder. Without these frames an open Var could be
+        // zeta-reduced through an unrelated caller let-binding.
+        let mut ty = ctor_ty;
+        for _ in 0..n_params {
+          let w = self.whnf(&ty)?;
+          match w.data() {
+            ExprData::All(_, _, dom, body, _) => {
+              self.push_local(dom.clone());
+              ty = body.clone();
+            },
+            _ => break,
+          }
         }
-      }
-      // Check each remaining field domain for block inductive mentions
-      loop {
-        let w = self.whnf(&ty)?;
-        match w.data() {
-          ExprData::All(_, _, dom, body, _) => {
-            if expr_mentions_any_addr(dom, block_addrs) {
-              return Ok(true);
-            }
-            ty = body.clone();
-          },
-          _ => break,
+        // Check each remaining field domain for block inductive mentions.
+        loop {
+          let w = self.whnf(&ty)?;
+          match w.data() {
+            ExprData::All(_, _, dom, body, _) => {
+              if expr_mentions_any_addr(dom, block_addrs) {
+                return Ok(true);
+              }
+              self.push_local(dom.clone());
+              ty = body.clone();
+            },
+            _ => return Ok(false),
+          }
         }
+      })();
+      self.restore_depth(saved);
+      if found? {
+        return Ok(true);
       }
     }
     Ok(false)

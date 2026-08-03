@@ -29,7 +29,7 @@ private def runNative : Array Lean.Name := #[
   nativeAxiom `Ix.Tc.Level
     `Ix.Tc.KUniv.mkSucc._native.native_decide.ax_1,
   nativeAxiom `Ix.Tc.Monad
-    `Ix.Tc.TcM.ctxAddrForLbr._native.native_decide.ax_5
+    `Ix.Tc.TcM.ctxAddrForLbrUncached._native.native_decide.ax_3
 ]
 
 private def checkConstNative : Array Lean.Name := #[
@@ -40,7 +40,7 @@ private def checkConstNative : Array Lean.Name := #[
   nativeAxiom `Ix.Tc.Level
     `Ix.Tc.KUniv.mkSucc._native.native_decide.ax_1,
   nativeAxiom `Ix.Tc.Monad
-    `Ix.Tc.TcM.ctxAddrForLbr._native.native_decide.ax_5,
+    `Ix.Tc.TcM.ctxAddrForLbrUncached._native.native_decide.ax_3,
   nativeAxiom `Ix.Environment
     `Ix.Name.mkStr._native.native_decide.ax_1,
   nativeAxiom `Ix.Tc.Inductive

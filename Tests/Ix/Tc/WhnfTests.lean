@@ -120,6 +120,32 @@ def pureHelperTests : TestSeq :=
       | .error .maxRecDepth zeroState, .error .maxRecDepth oneState =>
         zeroState.recFuel == 7 && oneState.recFuel == 6
       | _, _ => false) : Bool)
+  ++ test "major scan keeps peeled binders out of an unrelated caller let"
+    ((let targetId := aId "major-scan-target"
+      let target : KConst .anon :=
+        .indc () () 0 0 0 false targetId 0 sort0 #[] ()
+      let env := (KEnv.new (m := .anon)).insert targetId target
+      let forged := KExpr.mkAll () () (pConst targetId) sort0
+      -- After peeling the outer forall, its open body is Var 0.  Without
+      -- retaining that binder, the caller let below fabricates `forged` and
+      -- the scan incorrectly reports `targetId`.
+      let recTy := KExpr.mkAll () () sort0 (.mkVar 0 ())
+      let initial := TcState.ofEnvAnon env
+      match TcM.pushLet sort0 forged initial with
+      | .error _ _ => false
+      | .ok _ pushed =>
+        match (RecM.getMajorInductiveId recTy 1).run
+            (whnfOnlyMethodsN maxWhnfFuel.toNat) pushed with
+        | .ok _ _ => false
+        | .error _ final =>
+          final.ctx.size == pushed.ctx.size &&
+            final.letVals.size == pushed.letVals.size &&
+            final.numLetBindings == pushed.numLetBindings &&
+            final.ctxId == pushed.ctxId &&
+            final.ctxIdStack.size == pushed.ctxIdStack.size &&
+            match final.letVals[0]? with
+            | some (some value) => value.addr == forged.addr
+            | _ => false) : Bool)
   ++ test "beta-lambda peeling is bounded by the application spine"
     ((let x := pConst (aId "x")
       let y := pConst (aId "y")
