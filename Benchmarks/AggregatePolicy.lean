@@ -83,11 +83,12 @@ def parseShardIds (value : String) : Except String (Array Nat) := do
   pure ids
 
 def compileToplevel (label : String)
-    (source : Except Aiur.Global Aiur.Source.Toplevel) :
+    (source : Except Aiur.Global Aiur.Source.Toplevel)
+    (groups : Array (String × Array String)) :
     IO (Except String Aiur.CompiledToplevel) := do
   match source with
   | .error error => pure (.error s!"{label} toplevel merge failed: {error}")
-  | .ok top => match top.compile with
+  | .ok top => match top.compileWithGroups groups with
     | .error error => pure (.error s!"{label} compilation failed: {error}")
     | .ok compiled => pure (.ok compiled)
 
@@ -604,13 +605,13 @@ def main (args : List String) : IO UInt32 := do
   writeReport jsonPath? metadata0 rows #[] "preparing"
   TracingTexray.startSampler 25
   IO.println "[aggregate-policy] compiling IxVM and ixAggr systems"
-  let ixvmCompiled ← match ← compileToplevel "IxVM" IxVM.ixVM with
+  let ixvmCompiled ← match ← compileToplevel "IxVM" IxVM.ixVM IxVM.functionGroups with
     | .error error =>
       writeReport jsonPath? metadata0 rows #[] "error" (error? := some error)
       IO.eprintln error
       return 1
     | .ok compiled => pure compiled
-  let aggrCompiled ← match ← compileToplevel "ixAggr recursion" Aggr.ixAggr with
+  let aggrCompiled ← match ← compileToplevel "ixAggr recursion" Aggr.ixAggr Aggr.functionGroups with
     | .error error =>
       writeReport jsonPath? metadata0 rows #[] "error" (error? := some error)
       IO.eprintln error

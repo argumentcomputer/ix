@@ -59,9 +59,14 @@ per absorbed member.
 Errors if a name is unknown, unconstrained (it has no circuit to group), an
 entry function, listed twice, or if a group is empty. -/
 def CompiledToplevel.groupFunctions (ct : CompiledToplevel)
-    (groups : Array (String × Array Lean.Name)) :
+    (groups : Array (String × Array String)) :
     Except String CompiledToplevel := do
   let t := ct.bytecode
+  -- Function names as printed (`toString` of the `Global`), the exact
+  -- inverse of what statistics reports — so measured groupings can be fed
+  -- back verbatim.
+  let byName : Std.HashMap String Bytecode.FunIdx :=
+    ct.nameMap.fold (init := {}) fun acc g i => acc.insert (toString g) i
   -- Resolve and validate the groups into member-index arrays.
   let mut grouped : Std.HashMap Bytecode.FunIdx Nat := {}
   let mut resolved : Array (String × Array Bytecode.FunIdx) := #[]
@@ -70,7 +75,7 @@ def CompiledToplevel.groupFunctions (ct : CompiledToplevel)
       throw s!"group {gname} is empty"
     let mut members := #[]
     for name in names do
-      let some i := ct.getFuncIdx name
+      let some i := byName[name]?
         | throw s!"group {gname}: unknown function {name}"
       let f := t.functions[i]!
       unless f.constrained do
@@ -203,6 +208,12 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
   let bytecode := { bytecode with
     circuits := bytecode.singletonCircuits fun i => reverseMap[i]?.getD s!"<fn {i}>" }
   pure (CompiledToplevel.mk t bytecode nameMap)
+
+/-- `compile`, then apply a function grouping (see
+`CompiledToplevel.groupFunctions`). -/
+def Source.Toplevel.compileWithGroups (t : Source.Toplevel)
+    (groups : Array (String × Array String)) : Except String CompiledToplevel := do
+  (← t.compile).groupFunctions groups
 
 /-- Progress helper: given success of the three `Except`-returning stages,
 `compile` as a whole returns `.ok` (the remaining stages — `deduplicate`,

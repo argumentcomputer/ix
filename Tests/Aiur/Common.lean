@@ -73,7 +73,7 @@ structure AiurTestEnv where
   shapes : Array Aiur.CircuitShape
 
 def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
-    (groups : Array (String × Array Lean.Name) := #[]) :
+    (groups : Array (String × Array String) := #[]) :
     Except String AiurTestEnv := do
   let toplevel ← toplevelFn.mapError toString
   let compiled ← toplevel.compile

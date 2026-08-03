@@ -62,7 +62,7 @@ def runShardRefineCmd (p : Cli.Parsed) : IO UInt32 := do
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
     | .ok t => pure t
-  let compiled ← match toplevel.compile with
+  let compiled ← match toplevel.compileWithGroups IxVM.functionGroups with
     | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
     | .ok c => pure c
   -- The proven-leaf guard: a selected leaf whose claim already has a

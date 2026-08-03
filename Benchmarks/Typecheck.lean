@@ -450,7 +450,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- claim run, which is the honest reading of those numbers.
   let .ok toplevel := (if skipDeps then IxVM.ixVMFull else IxVM.ixVM)
     | throw (IO.userError "Merging IxVM kernel failed")
-  let .ok compiled := toplevel.compile
+  let .ok compiled := toplevel.compileWithGroups IxVM.functionGroups
     | throw (IO.userError "Compilation of IxVM kernel failed")
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
@@ -479,7 +479,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     if !recursive then pure none else do
       let .ok vTop := MultiStark.multiStark
         | throw (IO.userError "Merging multi-stark verifier failed")
-      let .ok vCompiled := vTop.compile
+      let .ok vCompiled := vTop.compileWithGroups MultiStark.verifierFunctionGroups
         | throw (IO.userError "Compilation of multi-stark verifier failed")
       let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
         | throw (IO.userError "verify_multi_stark_proof entrypoint missing")
@@ -493,7 +493,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     if !join then pure none else do
       let .ok aggrTop := Aggr.ixAggr
         | throw (IO.userError "Merging ix_aggr failed")
-      let .ok aggrCompiled := aggrTop.compile
+      let .ok aggrCompiled := aggrTop.compileWithGroups Aggr.functionGroups
         | throw (IO.userError "Compilation of ix_aggr failed")
       let some aggrIdx := aggrCompiled.getFuncIdx `ix_aggr
         | throw (IO.userError "ix_aggr entrypoint missing")

@@ -82,7 +82,7 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
 def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel)) := do
   match IxVM.ixVM with
   | .error e => return .error s!"toplevel merging failed: {e}"
-  | .ok toplevel => match toplevel.compile with
+  | .ok toplevel => match toplevel.compileWithGroups IxVM.functionGroups with
     | .error e => return .error s!"compilation failed: {e}"
     | .ok compiled =>
       return .ok (Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters, compiled)
@@ -154,12 +154,12 @@ private def buildAggregateBackend
     IO (Except String AggregateBackend) := do
   let ixvmCompiled ← match IxVM.ixVM with
     | .error e => return .error s!"IxVM toplevel merging failed: {e}"
-    | .ok top => match top.compile with
+    | .ok top => match top.compileWithGroups IxVM.functionGroups with
       | .error e => return .error s!"IxVM compilation failed: {e}"
       | .ok compiled => pure compiled
   let aggrCompiled ← match Aggr.ixAggr with
     | .error e => return .error s!"recursion toplevel merging failed: {e}"
-    | .ok top => match top.compile with
+    | .ok top => match top.compileWithGroups Aggr.functionGroups with
       | .error e => return .error s!"recursion compilation failed: {e}"
       | .ok compiled => pure compiled
   let verifyIdx := ixvmCompiled.getFuncIdx `verify_claim |>.get!

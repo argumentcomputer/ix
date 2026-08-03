@@ -74,7 +74,7 @@ def proveConst (ixePath constName : String) (skipDeps : Bool)
   -- production toplevel no longer carries.
   let .ok toplevel := (if skipDeps then IxVM.ixVMFull else IxVM.ixVM)
     | IO.eprintln "IxVM toplevel merge failed"; return none
-  let .ok compiled := toplevel.compile
+  let .ok compiled := toplevel.compileWithGroups IxVM.functionGroups
     | IO.eprintln "IxVM compile failed"; return none
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
@@ -165,7 +165,7 @@ def main (args : List String) : IO UInt32 := do
   -- `--list-funcs`: dump the compiled verifier's funIdx → name table (for
   -- decoding fun_idx stacks printed by the Rust bytecode interpreter).
   if args.contains "--list-funcs" then
-    let .ok vCompiled := vTop.compile
+    let .ok vCompiled := vTop.compileWithGroups MultiStark.verifierFunctionGroups
       | IO.eprintln "multi-stark verifier compile failed"; return 1
     let entries := vCompiled.nameMap.toArray.qsort (·.2 < ·.2)
     for (g, i) in entries do
@@ -199,7 +199,7 @@ def main (args : List String) : IO UInt32 := do
       IO.println s!"ACCEPTED in {secs t0 t1} s: {Aiur.Value.ppDeref s.store depth v}"
       return 0
   else
-    let .ok vCompiled := vTop.compile
+    let .ok vCompiled := vTop.compileWithGroups MultiStark.verifierFunctionGroups
       | IO.eprintln "multi-stark verifier compile failed"; return 1
     let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
       | IO.eprintln "verify_multi_stark_proof entrypoint missing"; return 1

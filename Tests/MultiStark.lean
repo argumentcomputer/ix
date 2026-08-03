@@ -188,7 +188,7 @@ def endToEndSuite : IO UInt32 := do
   let vTop ← match MultiStark.multiStark with
     | .error e => IO.eprintln s!"verifier toplevel merge failed: {e}"; return 1
     | .ok t => pure t
-  let vCompiled ← match vTop.compile with
+  let vCompiled ← match vTop.compileWithGroups MultiStark.verifierFunctionGroups with
     | .error e => IO.eprintln s!"verifier compilation failed: {e}"; return 1
     | .ok c => pure c
   let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
@@ -579,7 +579,7 @@ def joinSmokeSuite : IO UInt32 := do
   let top ← match MultiStark.multiStark with
     | .error e => IO.eprintln s!"aggregate toplevel merge failed: {e}"; return 1
     | .ok t => pure t
-  let compiled ← match top.compile with
+  let compiled ← match top.compileWithGroups MultiStark.verifierFunctionGroups with
     | .error e => IO.eprintln s!"aggregate compilation failed: {e}"; return 1
     | .ok c => pure c
   let joinIdx := compiled.getFuncIdx `join_two |>.get!
