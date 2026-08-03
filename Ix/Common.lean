@@ -397,6 +397,22 @@ def collectDependencies (name : Lean.Name) (consts : Lean.ConstMap) : ConstList 
   let (constList, _) := collectDependenciesAux const consts [(name, const)] default
   constList
 
+/-- Bulk closure: `collectDependencies` over many roots SHARING one
+    visited set, so overlapping closures walk once instead of once per
+    root. For n roots over a common library the per-root variant is
+    O(n × closure); this is O(union closure). -/
+def collectDependenciesMany (names : Array Lean.Name)
+    (consts : Lean.ConstMap) : ConstList := Id.run do
+  let mut acc : ConstList := []
+  let mut seen : Lean.NameHashSet := default
+  for n in names do
+    if seen.contains n then continue
+    let some const := consts.find? n | continue
+    let (acc', seen') := collectDependenciesAux const consts ((n, const) :: acc) seen
+    acc := acc'
+    seen := seen'
+  return acc
+
 end Lean
 
 /-- Format a duration in milliseconds with appropriate unit suffix.

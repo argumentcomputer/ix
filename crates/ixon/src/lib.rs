@@ -20,6 +20,7 @@ pub mod merkle;
 pub mod metadata;
 pub mod proof;
 pub mod serialize;
+pub mod shard_claim;
 pub mod sharing;
 pub mod syntax;
 pub mod tag;

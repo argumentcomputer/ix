@@ -1,7 +1,7 @@
 /-
   Drives the Aiur kernel through every lean-kernel-arena tutorial
   fixture (`Tests.Ix.Kernel.TutorialDefs` + `NatReduction`) using the
-  shared `IxVM.ixVM` toplevel + `verify_const` entrypoint.
+  shared `IxVM.ixVMFull` toplevel + `verify_const` entrypoint.
 
   Each fixture's outcome is classified against the test case's expected
   outcome (good must typecheck; bad must be rejected via Aiur execution
@@ -108,7 +108,7 @@ private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
     .ok (witness.input, witness.inputIOBuffer)
 
 /-- Run the arena suite against `compiled` (already-compiled Aiur
-    `IxVM.ixVM` toplevel) using a single shared Ixon env. Returns one
+    `IxVM.ixVMFull` toplevel) using a single shared Ixon env. Returns one
     `TestSeq` entry per fixture. -/
 def arenaTests (env : Lean.Environment)
     (compiled : Aiur.CompiledToplevel) : IO TestSeq := do
@@ -140,8 +140,21 @@ def arenaTests (env : Lean.Environment)
         tests := tests ++
           test label (c.expectPass)
       | .error e =>
+        -- A `bad_*` fixture counts as correctly rejected only when the
+        -- kernel actually REFUSED it. `assert_eq!` failures qualify, and
+        -- so do unmatched-match aborts: this kernel deliberately relies
+        -- on an unmatched runtime value aborting rather than spending
+        -- circuit width on `_ => assert_eq!(0, 1)` arms, so "no match
+        -- case for value N" is a verdict too.
+        --
+        -- `invalid IO key` is NOT. It means the witness never supplied
+        -- the bytes, so execution died before reaching the logic under
+        -- test — scoring it as a rejection is how a fixture rots into a
+        -- green test that checks nothing. No fixture currently relies on
+        -- it; this keeps it that way.
+        let refused := (e.splitOn "invalid IO key").length == 1
         tests := tests ++
-          test s!"{label} ({e})" (!c.expectPass)
+          test s!"{label} ({e})" (!c.expectPass && refused)
   return tests
 
 end Tests.Ix.Kernel.Arena

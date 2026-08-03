@@ -59,8 +59,15 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       )
     },
     8 => {
-      let [a, b] = ctor.objs::<2>();
-      Op::AssertEq(decode_vec_val_idx(a), decode_vec_val_idx(b))
+      let [a, b, msg_obj] = ctor.objs::<3>();
+      // `Option String`: scalar encodes `none`, otherwise a ctor whose
+      // single field is the string (same shape as `Op::Debug`'s label).
+      let msg = if msg_obj.is_scalar() {
+        None
+      } else {
+        Some(msg_obj.as_ctor().get(0).as_string().to_string())
+      };
+      Op::AssertEq(decode_vec_val_idx(a), decode_vec_val_idx(b), msg)
     },
     9 => {
       let [channel, key] = ctor.objs::<2>();

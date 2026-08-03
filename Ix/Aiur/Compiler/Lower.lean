@@ -267,10 +267,10 @@ def toIndex
     let ptr ← expectIdx layoutMap bindings ptr
     pushOp (.load size ptr) size
   | .ptrVal _ _ ptr => toIndex layoutMap bindings ptr
-  | .assertEq _ _ a b ret => do
+  | .assertEq _ _ a b msg ret => do
     let a ← toIndex layoutMap bindings a
     let b ← toIndex layoutMap bindings b
-    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
+    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b msg) }
     toIndex layoutMap bindings ret
   | .ioGetInfo _ _ channel key => do
     let channel ← expectIdx layoutMap bindings channel
@@ -477,10 +477,10 @@ def Concrete.Term.compile
     let term ← term.mapM (toIndex layoutMap bindings)
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
-  | .assertEq _ _ a b ret => do
+  | .assertEq _ _ a b msg ret => do
     let a ← toIndex layoutMap bindings a
     let b ← toIndex layoutMap bindings b
-    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
+    modify fun stt => { stt with ops := stt.ops.push (.assertEq a b msg) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
   | .ioSetInfo _ _ channel key idx len ret => do
     let channel ← toIndex layoutMap bindings channel

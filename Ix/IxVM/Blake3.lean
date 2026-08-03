@@ -59,7 +59,8 @@ def blake3 := ⟦
        h[5][0], h[5][1], h[5][2], h[5][3],
        h[6][0], h[6][1], h[6][2], h[6][3],
        h[7][0], h[7][1], h[7][2], h[7][3]],
-      expected);
+      expected,
+      "blake3 of the supplied bytes != the address they were fetched under");
   }
 
   -- Hash `bytes` and intern the digest into the Store. Returned pointer is

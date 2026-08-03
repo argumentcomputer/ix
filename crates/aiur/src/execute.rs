@@ -115,6 +115,10 @@ pub enum ExecError {
   AssertEqMismatch {
     lhs: u64,
     rhs: u64,
+    /// Optional label from `assert_eq!(a, b, "…")`, surfaced in the error
+    /// so a failing assert identifies itself instead of reporting bare
+    /// operands that could have come from anywhere.
+    msg: Option<String>,
   },
   MatchNoCase(u64),
   NoContinuation,
@@ -152,8 +156,9 @@ impl std::fmt::Display for ExecError {
       Self::AssertEqLengthMismatch { lhs, rhs } => {
         write!(f, "assert_eq length mismatch: lhs={lhs}, rhs={rhs}")
       },
-      Self::AssertEqMismatch { lhs, rhs } => {
-        write!(f, "assert_eq mismatch: {lhs} != {rhs}")
+      Self::AssertEqMismatch { lhs, rhs, msg } => match msg {
+        Some(m) => write!(f, "assert_eq mismatch: {lhs} != {rhs} ({m})"),
+        None => write!(f, "assert_eq mismatch: {lhs} != {rhs}"),
       },
       Self::MatchNoCase(v) => write!(f, "no match case for value {v}"),
       Self::NoContinuation => write!(f, "yield without continuation"),
@@ -255,7 +260,7 @@ impl Function {
     io_buffer: &mut IOBuffer,
   ) -> Result<Vec<G>, ExecError> {
     let mut exec_entries_stack = vec![];
-    let mut callers_states_stack = vec![];
+    let mut callers_states_stack: Vec<CallerState> = vec![];
     let mut continuation_stack: Vec<ContinuationState<'_>> = vec![];
     macro_rules! push_block_exec_entries {
       ($block:expr) => {
@@ -271,6 +276,17 @@ impl Function {
         stats_ops += 1;
         if stats_ops.is_multiple_of(1 << 31) {
           dump_query_stats(record, &format!("ops={stats_ops}"));
+          let depth = callers_states_stack.len();
+          let tail: Vec<String> = callers_states_stack
+            .iter()
+            .rev()
+            .take(40)
+            .map(|cs| cs.fun_idx.to_string())
+            .collect();
+          eprintln!(
+            "[aiur-stats] call stack depth={depth}, top fns: {}",
+            tail.join(" ")
+          );
         }
       }
       match exec_entry {
@@ -356,7 +372,7 @@ impl Function {
           }
           map.extend_from_slice(args);
         },
-        ExecEntry::Op(Op::AssertEq(xs, ys)) => {
+        ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
           if xs.len() != ys.len() {
             return Err(ExecError::AssertEqLengthMismatch {
               lhs: xs.len(),
@@ -370,6 +386,7 @@ impl Function {
               return Err(ExecError::AssertEqMismatch {
                 lhs: lhs.as_canonical_u64(),
                 rhs: rhs.as_canonical_u64(),
+                msg: msg.clone(),
               });
             }
           }

@@ -243,9 +243,21 @@ def modifyGetBlockState (f : BlockState → α × BlockState) : CompileM α := d
 def withBlockEnv (f : BlockEnv → BlockEnv) (m : CompileM α) : CompileM α :=
   withReader (fun (env, blockEnv) => (env, f blockEnv)) m
 
-/-- Set universe context. -/
-def withUnivCtx (univCtx : List Name) : CompileM α → CompileM α :=
-  withBlockEnv fun env => { env with univCtx }
+/-- Set the universe-parameter context, dropping the universe cache.
+
+    `compileUniv` keys `univCache` by the `Level` alone, but a
+    `Level.param` compiles to `Univ.var i` where `i` is the parameter's
+    POSITION in `univCtx` — so the result depends on this context. The
+    cache lives for a whole block while each member compiles under its
+    own `levelParams`, so without this a member whose context orders the
+    same parameter name differently would inherit the earlier member's
+    index: a silently wrong constant under a correct-looking name, with
+    no error. The expression cache is cleared per constant for the same
+    reason (`clearExprCache`); the Rust mirror instead widens the key to
+    `(level, univ_params_key)`. -/
+def withUnivCtx (univCtx : List Name) : CompileM α → CompileM α := fun act => do
+  modifyBlockState fun c => { c with univCache := {} }
+  withBlockEnv (fun env => { env with univCtx }) act
 
 /-- Set mutual context. -/
 def withMutCtx (mutCtx : MutCtx) : CompileM α → CompileM α :=

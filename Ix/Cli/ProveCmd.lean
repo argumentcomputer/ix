@@ -33,6 +33,7 @@ public import Ix.Claim
 public import Ix.Cli.CheckCmd
 public import Ix.Common
 public import Ix.IxVM
+public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Store

@@ -8,7 +8,7 @@ namespace IxVM
 
 /-! ## Substitution primitives over `KExpr`
 
-Mirror: src/ix/kernel/subst.rs (full file).
+Mirror: crates/kernel/src/subst.rs (full file).
 
 Two core operations:
 
@@ -42,7 +42,7 @@ def subst := ⟦
   -- O(1). First traversal cost matches a single subst walk; the payoff is
   -- short-circuiting subst that would otherwise re-walk closed subtrees.
   --
-  -- Mirror: src/ix/kernel/expr.rs::lbr field on KExprNode (precomputed at
+  -- Mirror: crates/kernel/src/expr.rs::lbr field on KExprNode (precomputed at
   -- intern time in Rust; computed on demand here, memoized via `store`).
   -- ============================================================================
   fn expr_lbr(e: KExpr) -> G {
@@ -230,7 +230,7 @@ def subst := ⟦
   -- Shift `BVar(i)` → `BVar(i + shift)` when `i ≥ cutoff`. Recursion bumps
   -- `cutoff` by 1 when crossing a binder (Lam/Forall/Let).
   --
-  -- Mirrors `src/ix/kernel/subst.rs::lift_no_intern` (line 364-415).
+  -- Mirrors `crates/kernel/src/subst.rs::lift_no_intern` (line 364-415).
   -- Fast path: when `expr_lbr(e) <= cutoff`, no loose BVar at or above the
   -- cutoff exists, so `e` is unchanged.
   -- ============================================================================
@@ -358,7 +358,7 @@ def subst := ⟦
   -- Substitute `BVar(depth)` with `expr_lift(arg, depth, 0)` and decrement
   -- `BVar(i)` for `i > depth`. Crossing a binder bumps `depth`.
   --
-  -- Mirrors the single-arg form of `src/ix/kernel/subst.rs::instantiate_rev`
+  -- Mirrors the single-arg form of `crates/kernel/src/subst.rs::instantiate_rev`
   -- with a list of one element. For the lambda-eta case in def_eq we want
   -- `body[BVar(0) := arg]` which is `expr_inst1(body, arg, 0)`.
   -- ============================================================================
@@ -422,7 +422,7 @@ def subst := ⟦
 
   -- ============================================================================
   -- expr_inst_many — simultaneous substitution of `substs` for the `n` binders
-  -- at `depth` in ONE walk (mirror `src/ix/kernel/subst.rs::simul_subst`). Used
+  -- at `depth` in ONE walk (mirror `crates/kernel/src/subst.rs::simul_subst`). Used
   -- for multi-arg beta: `(λλλ. body) x y z` substitutes all three at once
   -- instead of three separate `expr_inst1` re-walks of the body.
   --

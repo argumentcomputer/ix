@@ -8,8 +8,8 @@ namespace IxVM
 
 /-! ## Level operations + literal equality + expr_inst_levels
 
-Mirror: src/ix/kernel/level.rs + literal-equality helpers from
-src/ix/kernel/expr.rs. Self-contained; new kernel modules
+Mirror: crates/kernel/src/level.rs + literal-equality helpers from
+crates/kernel/src/expr.rs. Self-contained; new kernel modules
 (Subst/Whnf/Infer/DefEq/Check) import from here.
 -/
 
@@ -58,7 +58,7 @@ def levels := ⟦
   }
 
   -- ============================================================================
-  -- Canonical level normalization (mirror: src/ix/kernel/level.rs
+  -- Canonical level normalization (mirror: crates/kernel/src/level.rs
   -- normalize_level / norm_level_eq / norm_level_le, itself a port of
   -- Lean4Lean's Level.Normalize with the documented subsumption and
   -- covers-split fixes).
@@ -388,7 +388,7 @@ def levels := ⟦
     }
   }
 
-  -- Phase 2 subsumption: drop contributions dominated by another entry
+  -- subsumption: drop contributions dominated by another entry
   -- whose path is a subset (active whenever the dominated one is).
   -- Each entry folds over the ORIGINAL (snapshot) list, mirroring the
   -- Rust snapshot semantics. Callers seed `snapshot` with the same list

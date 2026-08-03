@@ -16,6 +16,7 @@ public import Ix.Aiur.Protocol
 public import Ix.Claim
 public import Ix.Common
 public import Ix.IxVM
+public import Ix.IxVM.Toplevel
 public import Ix.IxVM.ClaimHarness
 public import Ix.Store
 public import Ix.Cli.CheckCmd

@@ -68,7 +68,8 @@ inductive Term : Type where
   | store (typ : Typ) (escapes : Bool) (a : Term) : Term
   | load (typ : Typ) (escapes : Bool) (a : Term) : Term
   | ptrVal (typ : Typ) (escapes : Bool) (a : Term) : Term
-  | assertEq (typ : Typ) (escapes : Bool) (a : Term) (b : Term) (r : Term) : Term
+  | assertEq (typ : Typ) (escapes : Bool) (a : Term) (b : Term)
+      (msg : Option String) (r : Term) : Term
   | ioGetInfo (typ : Typ) (escapes : Bool) (c k : Term) : Term
   | ioSetInfo (typ : Typ) (escapes : Bool) (c k i l r : Term) : Term
   | ioRead (typ : Typ) (escapes : Bool) (c i : Term) (n : Nat) : Term
@@ -102,7 +103,7 @@ def Term.typ : Term → Typ
   | .add t _ _ _ | .sub t _ _ _ | .mul t _ _ _ | .eqZero t _ _
   | .proj t _ _ _ | .get t _ _ _ | .slice t _ _ _ _ | .set t _ _ _ _
   | .store t _ _ | .load t _ _ | .ptrVal t _ _
-  | .assertEq t _ _ _ _ | .ioGetInfo t _ _ _ | .ioSetInfo t _ _ _ _ _ _
+  | .assertEq t _ _ _ _ _ | .ioGetInfo t _ _ _ | .ioSetInfo t _ _ _ _ _ _
   | .ioRead t _ _ _ _ | .ioWrite t _ _ _ _
   | .u8BitDecomposition t _ _ | .u8ShiftLeft t _ _ | .u8ShiftRight t _ _
   | .u8Xor t _ _ _ | .u8Add t _ _ _ | .u8Mul t _ _ _ | .u8Sub t _ _ _
@@ -121,7 +122,7 @@ def Term.escapes : Term → Bool
   | .add _ e _ _ | .sub _ e _ _ | .mul _ e _ _ | .eqZero _ e _
   | .proj _ e _ _ | .get _ e _ _ | .slice _ e _ _ _ | .set _ e _ _ _
   | .store _ e _ | .load _ e _ | .ptrVal _ e _
-  | .assertEq _ e _ _ _ | .ioGetInfo _ e _ _ | .ioSetInfo _ e _ _ _ _ _
+  | .assertEq _ e _ _ _ _ | .ioGetInfo _ e _ _ | .ioSetInfo _ e _ _ _ _ _
   | .ioRead _ e _ _ _ | .ioWrite _ e _ _ _
   | .u8BitDecomposition _ e _ | .u8ShiftLeft _ e _ | .u8ShiftRight _ e _
   | .u8Xor _ e _ _ | .u8Add _ e _ _ | .u8Mul _ e _ _ | .u8Sub _ e _ _

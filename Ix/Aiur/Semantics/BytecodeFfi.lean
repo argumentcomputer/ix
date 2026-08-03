@@ -184,17 +184,11 @@ private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
     Except String ExecuteResult
 
-@[extern "rs_aiur_toplevel_shard_check_with_env"]
-private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
-    Except String ExecuteResult
-
 /-- Per-claim check against a Rust-owned `EnvHandle`. `useBytecode`
     selects the generic Aiur bytecode interpreter
     (`Bytecode.Toplevel.execute`) over the codegen'd IxVM kernel
     (`execute_ixvm`); useful for tight iteration loops on Lean-side
-    IxVM source where regenerating `crates/ixvm-codegen/src/aiur_ixvm.rs` and
-    recompiling Rust is too slow. -/
+    IxVM source where regenerating the Rust kernel is too slow. -/
 def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (addrBytes : ByteArray) (useBytecode : Bool := false)
@@ -202,8 +196,14 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
-/-- Per-shard check against a Rust-owned `EnvHandle`. See
-    `checkAddrWithEnv` for `useBytecode` semantics. -/
+@[extern "rs_aiur_toplevel_shard_check_with_env"]
+private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+    Except String ExecuteResult
+
+/-- Per-shard check with the witness shape (wrapper-augmented byte
+    scope for the kernel's kernel-side blake3'd projection addrs). Claim and
+    digest are identical to `shardCheckWithEnv`'s. -/
 def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (ownedBlob : ByteArray) (useBytecode : Bool := false)
