@@ -69,7 +69,9 @@ use ix_kernel::ingress::{
 #[cfg(feature = "test-ffi")]
 use ix_kernel::ingress::{ixon_ingress, lean_ingress};
 use ix_kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
-use ix_kernel::profile::{BlockProfile, OpCounts, ProfileBuilder, ProfileSink};
+use ix_kernel::profile::{
+  BlockEntry, BlockProfile, OpCounts, ProfileBuilder, ProfileSink,
+};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as IxonCI;
 #[cfg(feature = "test-ffi")]
@@ -2240,20 +2242,478 @@ fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
 // `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss
 // past 2⁵³ steps is irrelevant to a two-sig-fig estimate.
 #[allow(clippy::cast_precision_loss)]
+/// Display name per profile block: the lexicographically-smallest named
+/// member (constants resolve through `profile_block_of`, so a projection's
+/// name lands on its block; a directly-named `Muts` block keeps its own
+/// `…._mutual`-style name). Smallest-wins keeps the pick deterministic.
+/// The anon env carries no names (`get_anon_mmap` stops before §4-6), so
+/// the §5 entries are re-read from the file via the lazy index — cheap:
+/// the lazy parser skips constant and metadata bodies. Any read/parse
+/// failure just yields an empty map (the leaderboards fall back to
+/// addresses); names are presentation, never worth failing the profile.
+fn block_display_names(
+  env: &IxonEnv,
+  path: &str,
+) -> FxHashMap<Address, String> {
+  let Ok(bytes) = std::fs::read(path) else {
+    return FxHashMap::default();
+  };
+  let Ok(index) = IxonEnv::parse_lazy_index(&bytes) else {
+    return FxHashMap::default();
+  };
+  let mut names: FxHashMap<Address, String> = FxHashMap::default();
+  // Compiler-generated `Ix.<64-hex>.…` aux aliases sort before every human
+  // name; prefer any human name over them, then smallest-wins.
+  let is_aux = |s: &str| {
+    s.strip_prefix("Ix.").is_some_and(|r| {
+      r.len() > 65
+        && r.as_bytes()[64] == b'.'
+        && r.as_bytes()[..64].iter().all(u8::is_ascii_hexdigit)
+    })
+  };
+  let rank = |s: &str| (is_aux(s), s.to_owned());
+  for ln in &index.named {
+    let block = profile_block_of(env, &ln.addr);
+    let s = format!("{}", ln.name);
+    names
+      .entry(block)
+      .and_modify(|cur| {
+        if rank(&s) < rank(cur) {
+          *cur = s.clone();
+        }
+      })
+      .or_insert(s);
+  }
+  names
+}
+
+/// Print the top-`n` blocks by one metric, largest first, with display
+/// names (falling back to the block address) and the block's member count.
+fn print_top_blocks(
+  title: &str,
+  n: usize,
+  profile: &BlockProfile,
+  names: &FxHashMap<Address, String>,
+  metric: &dyn Fn(&BlockEntry) -> u64,
+) {
+  let blocks = profile.blocks();
+  let mut idx: Vec<usize> = (0..blocks.len()).collect();
+  idx.sort_by_key(|&i| std::cmp::Reverse(metric(&blocks[i])));
+  eprintln!("\n top {} blocks by {title}", n.min(blocks.len()));
+  for (rank, &i) in idx.iter().take(n).enumerate() {
+    let b = &blocks[i];
+    let name = names.get(&b.addr).cloned().unwrap_or_else(|| b.addr.hex());
+    let members = if b.const_count > 1 {
+      format!("  [{} consts]", b.const_count)
+    } else {
+      String::new()
+    };
+    eprintln!("  {:>2}. {:>14}  {name}{members}", rank + 1, metric(b));
+  }
+}
+
+/// Block-level reference adjacency for a profiled env: for each block, the
+/// sorted, deduped, self-edge-free set of blocks it references. Projection
+/// and mutual-member edges are intra-block by construction, so per-constant
+/// `refs` folded to home blocks carry every cross-block edge of
+/// `Env::bfs_closure`. This is the graph persisted into the `.ixprof`
+/// (reachability over it = a block's full dependency closure — what an Aiur
+/// shard's witness ships) and the sweep's walk graph.
+fn build_block_ref_adjacency(
+  env: &IxonEnv,
+  profile: &BlockProfile,
+) -> Vec<Vec<u32>> {
+  let blocks = profile.blocks();
+  let n = blocks.len();
+  let id_of: FxHashMap<&Address, u32> = blocks
+    .iter()
+    .enumerate()
+    .filter_map(|(i, b)| u32::try_from(i).ok().map(|id| (&b.addr, id)))
+    .collect();
+  // Pass 1: every constant's home block id.
+  let mut home: FxHashMap<Address, u32> = FxHashMap::default();
+  for entry in env.consts.iter() {
+    let (addr, lazy) = (entry.key(), entry.value());
+    let Ok(c) = lazy.get() else { continue };
+    let home_addr = match &c.info {
+      IxonCI::IPrj(p) => &p.block,
+      IxonCI::CPrj(p) => &p.block,
+      IxonCI::RPrj(p) => &p.block,
+      IxonCI::DPrj(p) => &p.block,
+      _ => addr,
+    };
+    if let Some(&id) = id_of.get(home_addr) {
+      home.insert(addr.clone(), id);
+    }
+  }
+  // Pass 2: fold each constant's refs to home-block edges.
+  let mut adj: Vec<Vec<u32>> = vec![Vec::new(); n];
+  for entry in env.consts.iter() {
+    let (addr, lazy) = (entry.key(), entry.value());
+    let Ok(c) = lazy.get() else { continue };
+    let Some(&hid) = home.get(addr) else { continue };
+    for r in &c.refs {
+      if let Some(&rid) = home.get(r)
+        && rid != hid
+      {
+        adj[hid as usize].push(rid);
+      }
+    }
+  }
+  for row in &mut adj {
+    row.sort_unstable();
+    row.dedup();
+  }
+  adj
+}
+
+/// One root's closure-aggregated features + model predictions, as produced by
+/// [`profile_sweep`].
+struct SweepRow {
+  name: String,
+  closure_blocks: u32,
+  bytes: u64,
+  hb: u64,
+  subst: u64,
+  subst_unique: u64,
+  whnf: u64,
+  def_eq: u64,
+  nat_arith: u64,
+  exec_s: f64,
+  exec_gib: f64,
+  prove_s: f64,
+  prove_gib: f64,
+  /// Membership mask over the sweep's tracked expensive blocks (bit `j` set ⇔
+  /// this closure contains tracked block `j`).
+  hot_mask: u64,
+}
+
+/// Env-wide closure cost sweep: for every named constant (one representative
+/// name per home block), walk its full reference closure over the env's
+/// constant graph, sum the whole-env profile's per-block counters over the
+/// members, and apply the Aiur execute/prove models. One kernel profile run
+/// amortizes over every query — nothing here re-checks or re-serializes.
+///
+/// The closure is REFERENCE reachability (`Constant.refs`, with projections
+/// folded into their home blocks), matching `ix shard extract`'s membership —
+/// not the `.ixprof` delta graph, which under-approximates it (a constant can
+/// be referenced but never delta-unfolded). Summing whole-env per-block
+/// counters over the membership equals a fresh per-closure profile because
+/// isolate-mode counters are per-block context-free.
+///
+/// Reports, beyond the per-root CSV:
+/// - feasibility at `budget_gib`: counts + the cheapest prove-infeasible
+///   closures (minimal reproducers of the RAM bottleneck);
+/// - min-root per hot block: for each of the `top_m` most expensive blocks
+///   (by marginal Aiur prove cost), the cheapest closure containing it;
+/// - `reps_k` diversity picks: prove-feasible closures with maximally
+///   distinct feature mixes (farthest-point sampling, seeded on the highest
+///   nat-arith share — the model's blind-spot axis).
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+pub fn profile_sweep(
+  env_path: &str,
+  prof_path: &str,
+  csv_out: &str,
+  budget_gib: f64,
+  top_m: usize,
+  reps_k: usize,
+) -> Result<String, String> {
+  use ix_kernel::shard::{
+    AIUR_RAM_USABLE_FRAC, aiur_block_prove_secs, aiur_exec_ram_gib,
+    aiur_exec_secs, aiur_prove_secs, aiur_ram_gib,
+  };
+  use rayon::prelude::*;
+
+  let t0 = Instant::now();
+  let env = IxonEnv::get_anon_mmap(std::path::Path::new(env_path))
+    .map_err(|e| format!("sweep: mmap+deserialize {env_path}: {e}"))?;
+  let prof_bytes = std::fs::read(prof_path)
+    .map_err(|e| format!("sweep: read {prof_path}: {e}"))?;
+  let mut profile = BlockProfile::from_bytes(&prof_bytes)
+    .map_err(|e| format!("sweep: parse {prof_path}: {e}"))?;
+  if !profile.has_ref_graph() {
+    let adj = build_block_ref_adjacency(&env, &profile);
+    profile.set_ref_graph(&adj);
+  }
+  let blocks = profile.blocks();
+  let n = blocks.len();
+  let id_of: FxHashMap<&Address, u32> =
+    blocks.iter().enumerate().map(|(i, b)| (&b.addr, i as u32)).collect();
+
+  // Roots: one representative (lexicographically-smallest) name per block.
+  let names = block_display_names(&env, env_path);
+  let mut roots: Vec<(String, u32)> = names
+    .iter()
+    .filter_map(|(a, s)| id_of.get(a).map(|&id| (s.clone(), id)))
+    .collect();
+  roots.sort();
+  eprintln!(
+    "[sweep] {} blocks, {} roots ({:.1?} setup)",
+    n,
+    roots.len(),
+    t0.elapsed()
+  );
+
+  // Hot blocks to track membership for: top `top_m` by marginal prove cost.
+  let top_m = top_m.min(64);
+  let mut hot: Vec<usize> = (0..n).collect();
+  hot.sort_by(|&a, &b| {
+    aiur_block_prove_secs(&blocks[b])
+      .total_cmp(&aiur_block_prove_secs(&blocks[a]))
+  });
+  hot.truncate(top_m);
+  let mut hot_bit = vec![u64::MAX; n]; // MAX = not tracked
+  for (j, &b) in hot.iter().enumerate() {
+    hot_bit[b] = j as u64;
+  }
+
+  // Per-root BFS with an epoch-marked visited array per rayon worker.
+  let sweep_start = Instant::now();
+  let rows: Vec<SweepRow> = roots
+    .par_iter()
+    .map_init(
+      || (vec![0u32; n], 0u32, Vec::<u32>::new()),
+      |(visited, epoch, stack), (name, root)| {
+        *epoch += 1;
+        stack.clear();
+        stack.push(*root);
+        visited[*root as usize] = *epoch;
+        let (mut cb, mut bytes, mut hb, mut subst, mut uniq) =
+          (0u32, 0u64, 0u64, 0u64, 0u64);
+        let (mut whnf, mut def_eq, mut nat) = (0u64, 0u64, 0u64);
+        let mut hot_mask = 0u64;
+        while let Some(b) = stack.pop() {
+          let e = &blocks[b as usize];
+          cb += 1;
+          bytes += u64::from(e.serialized_size);
+          hb += e.heartbeats;
+          subst += e.subst;
+          uniq += e.subst_unique;
+          whnf += e.whnf;
+          def_eq += e.def_eq;
+          nat += e.nat_arith;
+          if hot_bit[b as usize] != u64::MAX {
+            hot_mask |= 1 << hot_bit[b as usize];
+          }
+          for &r in profile.refs(b) {
+            if visited[r as usize] != *epoch {
+              visited[r as usize] = *epoch;
+              stack.push(r);
+            }
+          }
+        }
+        SweepRow {
+          name: name.clone(),
+          closure_blocks: cb,
+          bytes,
+          hb,
+          subst,
+          subst_unique: uniq,
+          whnf,
+          def_eq,
+          nat_arith: nat,
+          exec_s: aiur_exec_secs(bytes, subst),
+          exec_gib: aiur_exec_ram_gib(bytes),
+          prove_s: aiur_prove_secs(bytes, subst),
+          prove_gib: aiur_ram_gib(bytes, hb),
+          hot_mask,
+        }
+      },
+    )
+    .collect();
+  eprintln!(
+    "[sweep] {} closures walked in {:.1?}",
+    rows.len(),
+    sweep_start.elapsed()
+  );
+
+  // CSV (quote names defensively; Lean names can contain most anything).
+  let mut csv = String::with_capacity(rows.len() * 96);
+  csv.push_str(
+    "name,closure_blocks,bytes,hb,subst,subst_unique,whnf,def_eq,nat_arith,\
+     exec_s,exec_ram_gib,prove_s,prove_ram_gib\n",
+  );
+  for r in &rows {
+    let quoted = if r.name.contains(',') || r.name.contains('"') {
+      format!("\"{}\"", r.name.replace('"', "\"\""))
+    } else {
+      r.name.clone()
+    };
+    csv.push_str(&format!(
+      "{},{},{},{},{},{},{},{},{},{:.3},{:.2},{:.3},{:.2}\n",
+      quoted,
+      r.closure_blocks,
+      r.bytes,
+      r.hb,
+      r.subst,
+      r.subst_unique,
+      r.whnf,
+      r.def_eq,
+      r.nat_arith,
+      r.exec_s,
+      r.exec_gib,
+      r.prove_s,
+      r.prove_gib,
+    ));
+  }
+  std::fs::write(csv_out, &csv).map_err(|e| format!("write {csv_out}: {e}"))?;
+
+  // ── Report 1: feasibility at the budget ──
+  let cap = budget_gib * AIUR_RAM_USABLE_FRAC;
+  let exec_ok = rows.iter().filter(|r| r.exec_gib <= cap).count();
+  let prove_ok = rows.iter().filter(|r| r.prove_gib <= cap).count();
+  let total = rows.len();
+  let usable_pct = AIUR_RAM_USABLE_FRAC * 100.0;
+  let mut report = format!(
+    "sweep: {total} roots → {csv_out}\n\
+     feasibility at {budget_gib:.0} GiB (cap {cap:.1} at {usable_pct:.0}% usable): \
+     executable {exec_ok}/{total}, provable {prove_ok}/{total}\n\
+     cheapest prove-infeasible closures (minimal bottleneck reproducers):\n",
+  );
+  let mut infeasible: Vec<&SweepRow> =
+    rows.iter().filter(|r| r.prove_gib > cap).collect();
+  infeasible.sort_by(|a, b| a.prove_gib.total_cmp(&b.prove_gib));
+  for r in infeasible.iter().take(15) {
+    report.push_str(&format!(
+      "  {:>7.1} GiB  {:>8.1} s  [{} blocks]  {}\n",
+      r.prove_gib, r.prove_s, r.closure_blocks, r.name
+    ));
+  }
+
+  // ── Report 2: cheapest closure containing each hot block ──
+  let names_by_id: Vec<&str> = (0..n)
+    .map(|i| names.get(&blocks[i].addr).map_or("<unnamed>", String::as_str))
+    .collect();
+  report.push_str(
+    "min-root per expensive block (cheapest closure containing it):\n",
+  );
+  for (j, &b) in hot.iter().enumerate() {
+    let best = rows
+      .iter()
+      .filter(|r| r.hot_mask & (1 << j) != 0)
+      .min_by(|a, x| a.prove_s.total_cmp(&x.prove_s));
+    match best {
+      Some(r) => report.push_str(&format!(
+        "  {:>8.1} s marginal {:>8.1} s closure  {}  ⇐ {}\n",
+        aiur_block_prove_secs(&blocks[b]),
+        r.prove_s,
+        names_by_id[b],
+        r.name,
+      )),
+      None => report.push_str(&format!(
+        "  {:>8.1} s marginal  {}  ⇐ (no named closure reaches it)\n",
+        aiur_block_prove_secs(&blocks[b]),
+        names_by_id[b],
+      )),
+    }
+  }
+
+  // ── Report 3: diverse feature-mix representatives (prove-feasible) ──
+  if reps_k > 0 {
+    let cands: Vec<&SweepRow> = rows
+      .iter()
+      .filter(|r| r.prove_gib <= cap && r.closure_blocks > 1)
+      .collect();
+    if !cands.is_empty() {
+      let mix = |r: &SweepRow| -> [f64; 4] {
+        // Feature shares on comparable scales (weights are the models'
+        // nlogn slopes at a common magnitude, folded to a unit simplex).
+        let v = [
+          r.bytes as f64,
+          r.hb as f64 * 20.0,
+          r.subst as f64,
+          r.nat_arith as f64 * 100.0,
+        ];
+        let s: f64 = v.iter().sum::<f64>().max(1.0);
+        [v[0] / s, v[1] / s, v[2] / s, v[3] / s]
+      };
+      let dist = |a: &[f64; 4], b: &[f64; 4]| -> f64 {
+        a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum()
+      };
+      // Seed: highest nat-arith share (the blind-spot axis).
+      let mut picked: Vec<usize> = vec![
+        (0..cands.len())
+          .max_by(|&a, &b| mix(cands[a])[3].total_cmp(&mix(cands[b])[3]))
+          .unwrap_or(0),
+      ];
+      while picked.len() < reps_k.min(cands.len()) {
+        let next =
+          (0..cands.len()).filter(|i| !picked.contains(i)).max_by(|&a, &b| {
+            let da = picked
+              .iter()
+              .map(|&p| dist(&mix(cands[a]), &mix(cands[p])))
+              .fold(f64::INFINITY, f64::min);
+            let db = picked
+              .iter()
+              .map(|&p| dist(&mix(cands[b]), &mix(cands[p])))
+              .fold(f64::INFINITY, f64::min);
+            da.total_cmp(&db)
+          });
+        match next {
+          Some(i) => picked.push(i),
+          None => break,
+        }
+      }
+      report.push_str(
+        "diverse prove-feasible representatives (bytes/hb/subst/nat mix):\n",
+      );
+      for &i in &picked {
+        let r = cands[i];
+        let m = mix(r);
+        report.push_str(&format!(
+          "  {:>6.1} s {:>6.1} GiB  mix [{:.2} {:.2} {:.2} {:.2}]  {}\n",
+          r.prove_s, r.prove_gib, m[0], m[1], m[2], m[3], r.name
+        ));
+      }
+    }
+  }
+  Ok(report)
+}
+
+/// Which backend cost models the `ix profile` summary prints.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProfileBackend {
+  All,
+  Aiur,
+  Zisk,
+}
+
+impl ProfileBackend {
+  fn parse(s: &str) -> Self {
+    match s {
+      "aiur" => Self::Aiur,
+      "zisk" => Self::Zisk,
+      _ => Self::All,
+    }
+  }
+}
+
+/// Print the general-purpose cost breakdown for `ix profile` — the kernel-work
+/// metrics plus the predicted per-backend cost/RAM (`backend` selects Aiur,
+/// Zisk, or both) and, when `top_n > 0`, per-metric block leaderboards.
+// `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss
+// past 2⁵³ steps is irrelevant to a two-sig-fig estimate.
+#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ms display
 fn print_profile_summary(
   env_path: &str,
   sink: &ProfileSink,
   profile: &BlockProfile,
+  env: &IxonEnv,
+  top_n: usize,
+  backend: ProfileBackend,
 ) {
   use ix_kernel::shard::{
     COST_PER_DEF_EQ, COST_PER_INGRESS_BYTE, COST_PER_INTERN, COST_PER_SUBST,
-    COST_PER_WHNF, SHARD_COST_FLOOR, block_step_cost, ram_gib_for_steps,
+    COST_PER_WHNF, SHARD_COST_FLOOR, aiur_block_prove_secs, aiur_prove_secs,
+    aiur_ram_gib, block_step_cost, ram_gib_for_steps,
   };
-  let (mut hb, mut subst, mut whnf, mut defeq, mut nat, mut intern) =
-    (0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+  let (mut hb, mut subst, mut uniq, mut whnf, mut defeq, mut nat, mut intern) =
+    (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
   for rec in sink.records.values() {
     hb = hb.saturating_add(rec.fuel);
     subst = subst.saturating_add(rec.ops.subst_nodes);
+    uniq = uniq.saturating_add(rec.ops.subst_unique);
     whnf = whnf.saturating_add(rec.ops.whnf_calls);
     defeq = defeq.saturating_add(rec.ops.def_eq_calls);
     nat = nat.saturating_add(rec.ops.nat_arith);
@@ -2261,35 +2721,85 @@ fn print_profile_summary(
   }
   let ingress: u64 =
     profile.blocks().iter().map(|b| u64::from(b.serialized_size)).sum();
-  let steps: u64 = profile
-    .blocks()
-    .iter()
-    .map(block_step_cost)
-    .fold(SHARD_COST_FLOOR, u64::saturating_add);
-  let ram_gib = ram_gib_for_steps(steps);
-  let warn = if ram_gib > 250.0 {
-    "  → exceeds a 250 GiB box; shard it (ix shard --max-ram G)"
-  } else {
-    ""
-  };
   eprintln!(
     "\n── ix profile: {env_path} ──\n\
      constants {}    blocks {}\n\n\
      kernel work\n\
      \u{20}\u{20}heartbeats     {hb:>14}\n\
      \u{20}\u{20}subst nodes    {subst:>14}\n\
+     \u{20}\u{20}uniq subst     {uniq:>14}\n\
      \u{20}\u{20}whnf calls     {whnf:>14}\n\
      \u{20}\u{20}def-eq calls   {defeq:>14}\n\
      \u{20}\u{20}nat-arith      {nat:>14}\n\
      \u{20}\u{20}intern nodes   {intern:>14}\n\
-     \u{20}\u{20}ingress bytes  {ingress:>14}\n\n\
-     predicted Zisk leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
-     \u{20}\u{20}cost units ≈ {:.2e}  (~92.5/guest step)\n\
-     \u{20}\u{20}RAM        ≈ {ram_gib:.0} GiB{warn}",
+     \u{20}\u{20}ingress bytes  {ingress:>14}",
     sink.records.len(),
     profile.num_blocks(),
-    steps as f64,
   );
+  if backend != ProfileBackend::Zisk {
+    // Whole-env single-run prediction; large envs exceed any real box and
+    // need `ix shard --backend aiur --max-ram G`.
+    let prove_s = aiur_prove_secs(ingress, subst);
+    let ram = aiur_ram_gib(ingress, hb);
+    let warn = if ram > 250.0 {
+      "  → exceeds a 250 GiB box; shard it (ix shard --backend aiur --max-ram G)"
+    } else {
+      ""
+    };
+    eprintln!(
+      "\n predicted Aiur single run  (calibrated on the aiur bench suite; \
+       limb-arithmetic-heavy work under-predicts)\n\
+       \u{20}\u{20}prove ≈ {prove_s:.1} s\n\
+       \u{20}\u{20}RAM   ≈ {ram:.0} GiB{warn}"
+    );
+  }
+  if backend != ProfileBackend::Aiur {
+    let steps: u64 = profile
+      .blocks()
+      .iter()
+      .map(block_step_cost)
+      .fold(SHARD_COST_FLOOR, u64::saturating_add);
+    let ram_gib = ram_gib_for_steps(steps);
+    let warn = if ram_gib > 250.0 {
+      "  → exceeds a 250 GiB box; shard it (ix shard --max-ram G)"
+    } else {
+      ""
+    };
+    eprintln!(
+      "\n predicted Zisk leaf  ({SHARD_COST_FLOOR} + {COST_PER_SUBST}·subst + {COST_PER_WHNF}·whnf + {COST_PER_DEF_EQ}·def_eq + {COST_PER_INTERN}·intern; cross-shard + {COST_PER_INGRESS_BYTE}·bytes)\n\
+       \u{20}\u{20}cost units ≈ {:.2e}  (~92.5/guest step)\n\
+       \u{20}\u{20}RAM        ≈ {ram_gib:.0} GiB{warn}",
+      steps as f64,
+    );
+  }
+  if top_n > 0 {
+    let names = block_display_names(env, env_path);
+    print_top_blocks("heartbeats", top_n, profile, &names, &|b| b.heartbeats);
+    print_top_blocks("substitution nodes", top_n, profile, &names, &|b| {
+      b.subst
+    });
+    print_top_blocks("ingress bytes", top_n, profile, &names, &|b| {
+      u64::from(b.serialized_size)
+    });
+    if backend != ProfileBackend::Zisk {
+      print_top_blocks(
+        "predicted Aiur prove ms (marginal)",
+        top_n,
+        profile,
+        &names,
+        &|b| (aiur_block_prove_secs(b) * 1e3) as u64,
+      );
+    }
+    if backend != ProfileBackend::Aiur {
+      print_top_blocks(
+        "predicted Zisk cost units (sharding cost)",
+        top_n,
+        profile,
+        &names,
+        &block_step_cost,
+      );
+    }
+  }
 }
 
 /// Aggregate per-constant records into a block-level [`BlockProfile`]: map each
@@ -2316,6 +2826,17 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
       let (pblock, psize) = resolve(prod);
       builder.block(pblock.clone(), 0, psize, 0, OpCounts::default());
       builder.delta_edge(cblock.clone(), pblock);
+    }
+    // Touched sets may contain addresses outside the env (synthetic
+    // entries the checker consults); only env constants have a home block
+    // to attribute the touch to.
+    for t in &rec.touched {
+      if env.get_const(t).is_none() {
+        continue;
+      }
+      let (tblock, tsize) = resolve(t);
+      builder.block(tblock.clone(), 0, tsize, 0, OpCounts::default());
+      builder.touch_edge(cblock.clone(), tblock);
     }
   }
   builder.finish()
@@ -2428,6 +2949,8 @@ pub fn profile_anon_ixe(
   out: &str,
   isolate: bool,
   quiet: bool,
+  top_n: usize,
+  backend: &str,
 ) -> Result<ProfileStats, String> {
   let load_start = Instant::now();
   let ixon_env = IxonEnv::get_anon_mmap(std::path::Path::new(path))
@@ -2449,8 +2972,21 @@ pub fn profile_anon_ixe(
     failed,
     run_start.elapsed()
   );
-  let profile = build_block_profile(&env_arc, &merged);
-  print_profile_summary(path, &merged, &profile);
+  let mut profile = build_block_profile(&env_arc, &merged);
+  // Record the block-level reference graph so downstream planners can do
+  // closure accounting offline: an Aiur shard's witness ships its owned
+  // blocks' full reference closure, which only this graph can reproduce
+  // (and it is the fallback byte accounting when no touch graph exists).
+  let adj = build_block_ref_adjacency(&env_arc, &profile);
+  profile.set_ref_graph(&adj);
+  print_profile_summary(
+    path,
+    &merged,
+    &profile,
+    &env_arc,
+    top_n,
+    ProfileBackend::parse(backend),
+  );
   let bytes = profile.to_bytes();
   std::fs::write(out, &bytes).map_err(|e| format!("write {out}: {e}"))?;
   eprintln!(
@@ -2476,12 +3012,18 @@ pub extern "C" fn rs_kernel_profile_anon(
   out_path: LeanString<LeanBorrowed<'_>>,
   isolate: LeanBool<LeanBorrowed<'_>>,
   quiet: LeanBool<LeanBorrowed<'_>>,
+  top: LeanString<LeanBorrowed<'_>>,
+  backend: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
+  // Decimal string, kept ABI-simple like `rs_shard_esp`'s numeric params.
+  let top_n = top.to_string().parse::<usize>().unwrap_or(10);
   match profile_anon_ixe(
     &env_path.to_string(),
     &out_path.to_string(),
     isolate.to_bool(),
     quiet.to_bool(),
+    top_n,
+    &backend.to_string(),
   ) {
     Ok(s) => {
       eprintln!(
@@ -2493,6 +3035,37 @@ pub extern "C" fn rs_kernel_profile_anon(
     Err(e) => {
       LeanIOResult::error_string(&format!("rs_kernel_profile_anon: {e}"))
     },
+  }
+}
+
+/// FFI: env-wide closure cost sweep (see [`profile_sweep`]). Writes the
+/// per-root CSV and prints the feasibility/min-root/diversity reports to
+/// stderr. Numeric params are decimal strings (ABI-simple).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_profile_sweep(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  prof_path: LeanString<LeanBorrowed<'_>>,
+  csv_path: LeanString<LeanBorrowed<'_>>,
+  budget_gib: LeanString<LeanBorrowed<'_>>,
+  top_blocks: LeanString<LeanBorrowed<'_>>,
+  reps: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let budget = budget_gib.to_string().parse::<f64>().unwrap_or(64.0);
+  let top_m = top_blocks.to_string().parse::<usize>().unwrap_or(10);
+  let reps_k = reps.to_string().parse::<usize>().unwrap_or(10);
+  match profile_sweep(
+    &env_path.to_string(),
+    &prof_path.to_string(),
+    &csv_path.to_string(),
+    budget,
+    top_m,
+    reps_k,
+  ) {
+    Ok(report) => {
+      eprintln!("[rs_sweep]\n{report}");
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanIOResult::error_string(&format!("rs_profile_sweep: {e}")),
   }
 }
 
@@ -2540,7 +3113,10 @@ fn system_ram_gib() -> Option<f64> {
 /// FFI: partition a `.ixprof` to a per-shard cycle/RAM budget and write a
 /// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gb` > 0 it is
 /// converted via the measured prover RAM model and overrides `max_cycles`. Pass
-/// "0" for both to default the budget to detected system RAM.
+/// "0" for both to default the budget to detected system RAM. `backend`
+/// selects the cost model: "zisk" (default) packs to the guest-STEP cap,
+/// "aiur" packs to the Aiur RAM model (RAM budgets only — a cycle cap is a
+/// Zisk-specific unit).
 #[allow(clippy::cast_precision_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp_cap(
@@ -2550,6 +3126,7 @@ pub extern "C" fn rs_shard_esp_cap(
   balance_pct: LeanString<LeanBorrowed<'_>>,
   parallelism: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  backend: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let mc = max_cycles.to_string().parse::<u64>().unwrap_or(0);
   let mut ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
@@ -2557,6 +3134,7 @@ pub extern "C" fn rs_shard_esp_cap(
     parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
   let balance =
     (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let aiur = backend.to_string() == "aiur";
   // No explicit cap → default the RAM budget to detected system RAM.
   if mc == 0 && ram <= 0.0 {
     match system_ram_gib() {
@@ -2572,6 +3150,28 @@ pub extern "C" fn rs_shard_esp_cap(
         );
       },
     }
+  }
+  if aiur {
+    if ram <= 0.0 {
+      return LeanIOResult::error_string(
+        "shard --backend aiur sizes by RAM; pass --max-ram G (a cycle cap is a Zisk unit)",
+      );
+    }
+    let out = out_path.to_string();
+    let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
+    return match ix_kernel::shard::shard_esp_aiur(
+      &esp_path.to_string(),
+      ram,
+      balance,
+      parallelism,
+      out_opt,
+    ) {
+      Ok(report) => {
+        eprintln!("[rs_shard]\n{report}");
+        LeanIOResult::ok(LeanOwned::box_usize(0))
+      },
+      Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp_cap: {e}")),
+    };
   }
   let cap =
     if ram > 0.0 { ix_kernel::shard::cycle_cap_for_ram(ram) } else { mc };

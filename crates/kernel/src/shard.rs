@@ -1648,6 +1648,99 @@ pub fn shard_esp_cap(
   ))
 }
 
+/// Like [`shard_esp_cap`] but sized to a per-shard **Aiur host-RAM** budget
+/// (GiB) via the calibrated Aiur cost model (see [`partition_for_aiur_ram`]).
+/// The manifest format is backend-neutral; only the packing objective and the
+/// report change. Alongside the manifest a `<out>.costs.csv` sidecar records
+/// the packer's per-shard accounting and predictions, for
+/// measured-vs-predicted comparison, refits, and heaviest-first prove
+/// scheduling.
+pub fn shard_esp_aiur(
+  esp_path: &str,
+  ram_budget_gib: f64,
+  balance: f64,
+  parallelism: usize,
+  out_path: Option<&str>,
+) -> Result<String, String> {
+  let bytes =
+    std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
+  let profile = BlockProfile::from_bytes(&bytes)
+    .map_err(|e| format!("parse {esp_path}: {e}"))?;
+  if !profile.has_touch_graph() && !profile.has_ref_graph() {
+    return Err(format!(
+      "{esp_path} has neither a touch graph nor a reference graph — Aiur \
+       packing needs one for its faulted-set byte accounting; regenerate \
+       with the current `ix profile`"
+    ));
+  }
+  let plan = partition_for_aiur_ram(&profile, ram_budget_gib, balance);
+  let mut manifest =
+    ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
+      .with_tree(plan.tree);
+  for shard in &mut manifest.shards {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+  }
+  if let Some(op) = out_path {
+    std::fs::write(op, manifest.to_bytes())
+      .map_err(|e| format!("write {op}: {e}"))?;
+  }
+  let prove_secs: Vec<f64> = plan
+    .shard_costs
+    .iter()
+    .map(|c| aiur_prove_secs(c.union_bytes, c.subst))
+    .collect();
+  if let Some(op) = out_path {
+    let mut csv = String::from(
+      "shard,union_bytes,hb,subst,subst_unique,whnf,def_eq,nat_arith,\
+       pred_ram_gib,pred_prove_s\n",
+    );
+    for (i, c) in plan.shard_costs.iter().enumerate() {
+      csv.push_str(&format!(
+        "{},{},{},{},{},{},{},{},{:.2},{:.2}\n",
+        i,
+        c.union_bytes,
+        c.hb,
+        c.subst,
+        c.subst_unique,
+        c.whnf,
+        c.def_eq,
+        c.nat_arith,
+        aiur_ram_gib(c.union_bytes, c.hb),
+        prove_secs[i],
+      ));
+    }
+    let cp = format!("{op}.costs.csv");
+    std::fs::write(&cp, csv).map_err(|e| format!("write {cp}: {e}"))?;
+  }
+  let seq_secs: f64 = prove_secs.iter().sum();
+  let max_secs = prove_secs.iter().fold(0.0f64, |a, &s| a.max(s));
+  let p = parallelism.max(1);
+  #[allow(clippy::cast_precision_loss)]
+  let wall_secs = (seq_secs / p as f64).max(max_secs);
+  let note = if plan.infeasible_atomic_floor {
+    "\n  [INFEASIBLE: a single atomic block exceeds the RAM cap — split it upstream, raise the budget, or use a bigger box]"
+  } else {
+    ""
+  };
+  Ok(format!(
+    "blocks={} delta_edges={} aiur ram_budget={:.0} GiB (cap {:.1} at {:.0}% usable) → {} shards (packed to cap)\n{}\nprove est ~{} wall at parallelism={} (sequential ~{})\nmax_shard_ram={:.1} GiB largest_block_ram={:.1} GiB{}",
+    profile.num_blocks(),
+    profile.num_edges(),
+    ram_budget_gib,
+    plan.ram_cap_gib,
+    AIUR_RAM_USABLE_FRAC * 100.0,
+    plan.num_shards,
+    manifest.summary(),
+    fmt_duration(wall_secs),
+    p,
+    fmt_duration(seq_secs),
+    plan.max_shard_ram_gib,
+    plan.largest_block_ram_gib,
+    note,
+  ))
+}
+
 /// Calibrated Zisk guest-COST model — the **single source of truth** for
 /// predicting a block's in-circuit cost contribution, in **ziskemu cost
 /// units** (`ziskemu -X` TOTAL: MAIN + OPCODES + MEMORY + PRECOMPILES +
@@ -1760,6 +1853,89 @@ pub const PROVE_SECS_PER_BCOST: f64 = 2.25;
 /// Predicted single-shard leaf prove time (seconds) for a leaf of `steps`.
 pub fn shard_prove_secs(steps: u64) -> f64 {
   PROVE_SETUP_SECS + PROVE_SECS_PER_BCOST * (steps as f64 / 1e9)
+}
+
+/// `x·log₂(x+2)` — the feature form of the Aiur cost model. Aiur's prover work
+/// is a sum of `width·height·log₂(height)` FFTs over its circuits, and each
+/// dominant circuit family's height tracks one kernel counter, so a counter's
+/// cost contribution is super-linear with exactly this shape. The `+2` keeps
+/// the log positive at zero.
+#[allow(clippy::cast_precision_loss)] // counters are far below 2^53
+fn nlogn(x: u64) -> f64 {
+  let x = x as f64;
+  x * (x + 2.0).log2()
+}
+
+/// Calibrated Aiur cost model — predicts a **run's** (one Aiur prove: a whole
+/// closure or one shard) prove time and peak host RAM directly from the kernel
+/// profile counters, no Aiur execution needed. Features are run-level
+/// aggregates: `bytes` is every serialized byte the run's checks fault in
+/// (owned blocks plus the measured touched set — under the lazy kernel only
+/// faulted bytes cost ingress trace rows), `hb`/`subst` are the run's summed
+/// reduction counters. Fit against measured `aiur-check-prove` bench-suite
+/// runs (bencher.dev `ix` project) of the pre-addr-first eager-ingress
+/// kernel; coefficients and fit quality live in the calibrating commit's
+/// message. Known limit: constants whose Aiur cost is dominated by big-Nat
+/// limb gadgets have no native-counter signal and under-predict;
+/// [`AIUR_RAM_USABLE_FRAC`] carries that risk.
+pub const AIUR_PROVE_BASE_SECS: f64 = 1.43;
+pub const AIUR_PROVE_SECS_PER_NLOGN_INGRESS_BYTE: f64 = 2.38e-7;
+pub const AIUR_PROVE_SECS_PER_NLOGN_SUBST: f64 = 9.06e-7;
+pub const AIUR_RAM_BASE_GIB: f64 = 3.67;
+pub const AIUR_RAM_GIB_PER_NLOGN_INGRESS_BYTE: f64 = 1.18e-6;
+pub const AIUR_RAM_GIB_PER_NLOGN_HEARTBEAT: f64 = 1.57e-5;
+/// Usable fraction of an Aiur host-RAM budget. Lower than the Zisk
+/// [`RAM_USABLE_FRAC`]: it also absorbs the model's blind spot on
+/// limb-arithmetic-heavy blocks, not just OS overhead and variance.
+pub const AIUR_RAM_USABLE_FRAC: f64 = 0.7;
+
+/// Predicted Aiur prove time (seconds) for one run faulting in `bytes` and
+/// performing `subst` substitution-node visits.
+pub fn aiur_prove_secs(bytes: u64, subst: u64) -> f64 {
+  AIUR_PROVE_BASE_SECS
+    + AIUR_PROVE_SECS_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_PROVE_SECS_PER_NLOGN_SUBST * nlogn(subst)
+}
+
+/// Predicted Aiur peak host RAM (GiB) for one run faulting in `bytes` at `hb`
+/// heartbeats of reduction.
+pub fn aiur_ram_gib(bytes: u64, hb: u64) -> f64 {
+  AIUR_RAM_BASE_GIB
+    + AIUR_RAM_GIB_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_RAM_GIB_PER_NLOGN_HEARTBEAT * nlogn(hb)
+}
+
+/// A block's marginal predicted Aiur prove time (seconds), `nlogn` taken at
+/// block granularity and the per-run base omitted. Slightly under-counts a
+/// block's share inside a large run (whose `log` factor is bigger), which is
+/// fine for its purpose: ranking blocks in the `ix profile` leaderboards.
+pub fn aiur_block_prove_secs(b: &BlockEntry) -> f64 {
+  AIUR_PROVE_SECS_PER_NLOGN_INGRESS_BYTE * nlogn(u64::from(b.serialized_size))
+    + AIUR_PROVE_SECS_PER_NLOGN_SUBST * nlogn(b.subst)
+}
+
+/// Calibrated Aiur **execute** (witness-generation, no prove) cost model —
+/// same feature form and calibration pipeline as the prove model above, fit
+/// against the `aiur-check-execute` bench suite. Execute RAM is bytes-only:
+/// the retained query record is dominated by ingress/hashing rows, and no
+/// second feature survives a non-negative fit.
+pub const AIUR_EXEC_BASE_SECS: f64 = 0.146;
+pub const AIUR_EXEC_SECS_PER_NLOGN_INGRESS_BYTE: f64 = 8.54e-8;
+pub const AIUR_EXEC_SECS_PER_NLOGN_SUBST: f64 = 6.77e-8;
+pub const AIUR_EXEC_RAM_BASE_GIB: f64 = 4.72;
+pub const AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE: f64 = 8.50e-8;
+
+/// Predicted Aiur execute time (seconds) for one run.
+pub fn aiur_exec_secs(bytes: u64, subst: u64) -> f64 {
+  AIUR_EXEC_BASE_SECS
+    + AIUR_EXEC_SECS_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_EXEC_SECS_PER_NLOGN_SUBST * nlogn(subst)
+}
+
+/// Predicted Aiur execute peak host RAM (GiB) for one run.
+pub fn aiur_exec_ram_gib(bytes: u64) -> f64 {
+  AIUR_EXEC_RAM_BASE_GIB
+    + AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
 }
 
 /// Whole-workload prove-time estimate over a partition's per-shard step counts.
@@ -1934,31 +2110,12 @@ pub fn partition_for_cycle_cap(
     };
   }
 
-  // 1. Cut-coherent block order. A fine min-cut pre-partition's bisection tree,
-  //    read in DFS order, lays tightly-coupled blocks contiguously so the packer
-  //    keeps dependency overlap within a shard. Sized to ~PACK_PIECES_PER_CAP
-  //    pieces per cap (bounded by the block count); when everything fits one cap
-  //    this collapses to a trivial order.
+  // 1. Cut-coherent block order, sized to ~PACK_PIECES_PER_CAP pieces per cap.
   let total: u128 =
     profile.blocks().iter().map(|b| u128::from(block_step_cost(b))).sum();
   let pieces = ((total.saturating_mul(PACK_PIECES_PER_CAP))
     / u128::from(step_cap)) as usize;
-  let n_fine = pieces.clamp(1, nblocks);
-  let order: Vec<u32> = if n_fine < 2 {
-    (0..nblocks as u32).collect()
-  } else {
-    let h = Hypergraph::from_profile(profile);
-    let (fine_of, fine_tree) = h.partition_with_tree(n_fine, epsilon);
-    let mut leaf_order = Vec::with_capacity(n_fine);
-    dfs_leaf_order(&fine_tree, &mut leaf_order);
-    let mut rank = vec![0u32; n_fine];
-    for (r, &sid) in leaf_order.iter().enumerate() {
-      rank[sid as usize] = r as u32;
-    }
-    let mut order: Vec<u32> = (0..nblocks as u32).collect();
-    order.sort_by_key(|&b| (rank[fine_of[b as usize] as usize], b));
-    order
-  };
+  let order = cut_coherent_order(profile, pieces, epsilon);
 
   // 2. Greedy next-fit packing to the cap, with live cross-ingress accounting.
   //    A shard accumulates members until adding the next block would push its
@@ -2053,6 +2210,316 @@ pub fn partition_for_cycle_cap(
     largest_block_steps: largest_block,
     infeasible_atomic_floor: infeasible,
   }
+}
+
+/// One shard's Aiur cost aggregates as the packer accounted them: the
+/// faulted-set ingress bytes plus the owned blocks' checking counters.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AiurShardCost {
+  /// Serialized bytes of the shard's faulted set (owned ∪ every block the
+  /// owned checks consulted per the touch graph; full reference closure
+  /// when no touch graph was recorded) — what the shard's CheckEnv run
+  /// ingresses and hashes under the lazy kernel.
+  pub union_bytes: u64,
+  /// Σ heartbeats over owned blocks only (frontier constants are assumptions,
+  /// never re-checked).
+  pub hb: u64,
+  /// Σ substitution-node visits over owned blocks only.
+  pub subst: u64,
+  /// Σ memo-unique substitution work items over owned blocks only — the
+  /// post-memoization volume a memoizing executor pays; persisted per shard
+  /// so the models can eventually be refit against it.
+  pub subst_unique: u64,
+  /// Σ `whnf` entries over owned blocks only.
+  pub whnf: u64,
+  /// Σ definitional-equality checks over owned blocks only.
+  pub def_eq: u64,
+  /// Σ big-Nat limb-work units over owned blocks only — the klimbs
+  /// circuit family's only recorded signal; persisted per shard so the
+  /// RAM model's content residual can eventually be fit against it.
+  pub nat_arith: u64,
+}
+
+/// A partition sized to a per-shard Aiur host-RAM budget. The Aiur analog of
+/// [`BudgetPlan`], reported in the Aiur model's native unit (GiB) rather than
+/// guest steps.
+pub struct AiurBudgetPlan {
+  /// Chosen shard count.
+  pub num_shards: usize,
+  /// Shard assignment per block id.
+  pub shard_of: Vec<u32>,
+  /// The bisection tree for the chosen partition, for tree-aligned aggregation.
+  pub tree: AggNode,
+  /// Per-shard predicted-RAM cap actually enforced:
+  /// `budget × AIUR_RAM_USABLE_FRAC`.
+  pub ram_cap_gib: f64,
+  /// Per-shard cost aggregates, indexed by shard id.
+  pub shard_costs: Vec<AiurShardCost>,
+  /// Heaviest shard's full predicted RAM — the tightest number to compare
+  /// against the cap.
+  pub max_shard_ram_gib: f64,
+  /// Largest single block's predicted RAM with its full faulted-set ingress —
+  /// the hard floor no shard count can beat: every shard containing the
+  /// block faults in at least that set.
+  pub largest_block_ram_gib: f64,
+  /// True when one block alone (faulted set included) exceeds the cap.
+  pub infeasible_atomic_floor: bool,
+}
+
+/// Size a partition to a per-shard Aiur host-RAM budget by bin-packing to the
+/// cap — the Aiur counterpart of [`partition_for_cycle_cap`], with the same
+/// cut-coherent-order + greedy next-fit structure but **faulted-set byte
+/// accounting**.
+///
+/// Under the addr-first kernel a shard's witness ships its owned blocks' full
+/// dependency closure, but only bytes the checks actually fault in cost
+/// ingress trace rows (an unfaulted constant contributes zero queries), so
+/// the packer charges the *faulted* set. With a **touch graph** (recorded by
+/// a profiling run) that set is a measurement: each owned block contributes
+/// itself plus every block its check consulted — type reads included, and
+/// transitively complete because consults during reduction are recorded
+/// against the owned consumer. Without a touch graph the accounting falls
+/// back to the full reference closure, an over-approximation that
+/// over-shards but never under-budgets.
+///
+/// Checking counters (hb/subst/…) stay owned-blocks-only. Grouping blocks
+/// with overlapping faulted sets is the packing objective that matters: a
+/// shared dependency's bytes are paid once per shard that faults it.
+///
+/// Requires the profile's reference graph when no touch graph is present;
+/// the caller rejects profiles with neither.
+pub fn partition_for_aiur_ram(
+  profile: &BlockProfile,
+  ram_budget_gib: f64,
+  epsilon: f64,
+) -> AiurBudgetPlan {
+  let ram_cap_gib = ram_budget_gib * AIUR_RAM_USABLE_FRAC;
+  let nblocks = profile.num_blocks();
+  let size = |b: u32| u64::from(profile.block(b).serialized_size);
+  let measured = profile.has_touch_graph();
+
+  if nblocks == 0 {
+    return AiurBudgetPlan {
+      num_shards: 1,
+      shard_of: Vec::new(),
+      tree: AggNode::Leaf(0),
+      ram_cap_gib,
+      shard_costs: Vec::new(),
+      max_shard_ram_gib: AIUR_RAM_BASE_GIB,
+      largest_block_ram_gib: 0.0,
+      infeasible_atomic_floor: false,
+    };
+  }
+
+  // Per-block faulted-set bytes (the block's lone-shard ingress) — the RAM
+  // floor per block and the infeasibility test. Measured: the touch row is
+  // already the transitive consult set. Fallback: full reference-closure
+  // BFS, parallel with per-worker epoch-marked state.
+  let closure_bytes: Vec<u64> = if measured {
+    (0..nblocks as u32)
+      .map(|b| {
+        profile
+          .touched_blocks(b)
+          .iter()
+          .map(|&t| size(t))
+          .fold(size(b), u64::saturating_add)
+      })
+      .collect()
+  } else {
+    use rayon::prelude::*;
+    (0..nblocks as u32)
+      .into_par_iter()
+      .map_init(
+        || (vec![0u32; nblocks], 0u32, Vec::<u32>::new()),
+        |(visited, epoch, stack), b| {
+          *epoch += 1;
+          let mut bytes = 0u64;
+          stack.clear();
+          stack.push(b);
+          visited[b as usize] = *epoch;
+          while let Some(x) = stack.pop() {
+            bytes = bytes.saturating_add(size(x));
+            for &r in profile.refs(x) {
+              if visited[r as usize] != *epoch {
+                visited[r as usize] = *epoch;
+                stack.push(r);
+              }
+            }
+          }
+          bytes
+        },
+      )
+      .collect()
+  };
+  let lone_block_ram = |b: u32| {
+    aiur_ram_gib(closure_bytes[b as usize], profile.block(b).heartbeats)
+  };
+  let largest_block_ram_gib =
+    (0..nblocks as u32).map(lone_block_ram).fold(0.0, f64::max);
+
+  // 1. Cut-coherent block order. Piece sizing uses the whole-env totals as a
+  //    granularity proxy (faulted-set bytes are not additive across pieces);
+  //    the order's job is only to keep overlapping blocks adjacent, which
+  //    the min-cut on shared-dependency nets already does.
+  let total_bytes: u64 = profile
+    .blocks()
+    .iter()
+    .fold(0u64, |a, b| a.saturating_add(u64::from(b.serialized_size)));
+  let total_hb: u64 =
+    profile.blocks().iter().fold(0u64, |a, b| a.saturating_add(b.heartbeats));
+  let total_ram = aiur_ram_gib(total_bytes, total_hb) - AIUR_RAM_BASE_GIB;
+  let headroom = (ram_cap_gib - AIUR_RAM_BASE_GIB).max(f64::MIN_POSITIVE);
+  #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+  let pieces = (total_ram / headroom * PACK_PIECES_PER_CAP as f64) as usize;
+  let order = cut_coherent_order(profile, pieces, epsilon);
+
+  // 2. Greedy next-fit packing to the RAM cap with live faulted-union
+  //    accounting. `charged_mark[x] == shard_epoch` ⇔ x's bytes are already
+  //    in the current shard's union; closing a shard bumps the epoch, which
+  //    invalidates every mark at once (a rejected tentative walk leaves no
+  //    residue — the candidate re-walks fresh in the next shard).
+  let mut shard_of = vec![0u32; nblocks];
+  let mut charged_mark = vec![0u32; nblocks];
+  let mut walk_mark = vec![0u32; nblocks];
+  let mut shard_epoch = 1u32;
+  let mut stack: Vec<u32> = Vec::new();
+  let mut cur_cost = AiurShardCost::default();
+  let mut shard_costs: Vec<AiurShardCost> = Vec::new();
+  let mut cur = 0u32;
+  let mut owned_in_cur = 0usize;
+  let mut infeasible = false;
+  let predicted = |c: &AiurShardCost| aiur_ram_gib(c.union_bytes, c.hb);
+
+  // Byte delta of adding `b`'s faulted set to the current shard's union.
+  let union_delta = |b: u32,
+                         shard_epoch: u32,
+                         stack: &mut Vec<u32>,
+                         charged_mark: &mut [u32],
+                         walk_mark: &mut [u32]|
+   -> u64 {
+    let mut bytes = 0u64;
+    let charge = |x: u32, charged_mark: &mut [u32], bytes: &mut u64| {
+      if charged_mark[x as usize] != shard_epoch {
+        charged_mark[x as usize] = shard_epoch;
+        *bytes = bytes.saturating_add(size(x));
+      }
+    };
+    if measured {
+      charge(b, charged_mark, &mut bytes);
+      for &t in profile.touched_blocks(b) {
+        charge(t, charged_mark, &mut bytes);
+      }
+    } else {
+      // Reference-closure BFS, deduped per shard: a subtree expanded once
+      // this epoch is never re-walked for a later member.
+      if walk_mark[b as usize] != shard_epoch {
+        stack.clear();
+        stack.push(b);
+        walk_mark[b as usize] = shard_epoch;
+        while let Some(x) = stack.pop() {
+          charge(x, charged_mark, &mut bytes);
+          for &r in profile.refs(x) {
+            if walk_mark[r as usize] != shard_epoch {
+              walk_mark[r as usize] = shard_epoch;
+              stack.push(r);
+            }
+          }
+        }
+      }
+    }
+    bytes
+  };
+
+  for &b in &order {
+    let e = profile.block(b);
+    let delta = union_delta(
+      b,
+      shard_epoch,
+      &mut stack,
+      &mut charged_mark,
+      &mut walk_mark,
+    );
+    let tentative = AiurShardCost {
+      union_bytes: cur_cost.union_bytes.saturating_add(delta),
+      hb: cur_cost.hb.saturating_add(e.heartbeats),
+      ..cur_cost
+    };
+
+    if owned_in_cur > 0 && predicted(&tentative) > ram_cap_gib {
+      // Close the shard, open a fresh union, re-walk b's faulted set.
+      shard_costs.push(cur_cost);
+      cur += 1;
+      shard_epoch += 1;
+      owned_in_cur = 0;
+      cur_cost = AiurShardCost::default();
+      cur_cost.union_bytes = union_delta(
+        b,
+        shard_epoch,
+        &mut stack,
+        &mut charged_mark,
+        &mut walk_mark,
+      );
+    } else {
+      cur_cost.union_bytes = tentative.union_bytes;
+    }
+    cur_cost.hb = cur_cost.hb.saturating_add(e.heartbeats);
+    cur_cost.subst = cur_cost.subst.saturating_add(e.subst);
+    cur_cost.subst_unique =
+      cur_cost.subst_unique.saturating_add(e.subst_unique);
+    cur_cost.whnf = cur_cost.whnf.saturating_add(e.whnf);
+    cur_cost.def_eq = cur_cost.def_eq.saturating_add(e.def_eq);
+    cur_cost.nat_arith = cur_cost.nat_arith.saturating_add(e.nat_arith);
+    owned_in_cur += 1;
+    shard_of[b as usize] = cur;
+    if owned_in_cur == 1 && predicted(&cur_cost) > ram_cap_gib {
+      infeasible = true;
+    }
+  }
+  shard_costs.push(cur_cost);
+  let max_shard_ram_gib = shard_costs.iter().map(predicted).fold(0.0, f64::max);
+
+  let num_shards = (cur + 1) as usize;
+  let tree = balanced_agg_tree(0, num_shards as u32);
+
+  AiurBudgetPlan {
+    num_shards,
+    shard_of,
+    tree,
+    ram_cap_gib,
+    shard_costs,
+    max_shard_ram_gib,
+    largest_block_ram_gib,
+    infeasible_atomic_floor: infeasible,
+  }
+}
+
+/// A cut-coherent block order for greedy cap-packing: a fine min-cut
+/// pre-partition's bisection tree, read in DFS order, lays tightly-coupled
+/// blocks contiguously so a next-fit packer keeps dependency overlap within a
+/// shard. `pieces` is the requested fine-partition size (~[`PACK_PIECES_PER_CAP`]
+/// per cap, in the caller's cost unit), bounded by the block count; when
+/// everything fits one cap this collapses to the trivial order.
+fn cut_coherent_order(
+  profile: &BlockProfile,
+  pieces: usize,
+  epsilon: f64,
+) -> Vec<u32> {
+  let nblocks = profile.num_blocks();
+  let n_fine = pieces.clamp(1, nblocks);
+  if n_fine < 2 {
+    return (0..nblocks as u32).collect();
+  }
+  let h = Hypergraph::from_profile(profile);
+  let (fine_of, fine_tree) = h.partition_with_tree(n_fine, epsilon);
+  let mut leaf_order = Vec::with_capacity(n_fine);
+  dfs_leaf_order(&fine_tree, &mut leaf_order);
+  let mut rank = vec![0u32; n_fine];
+  for (r, &sid) in leaf_order.iter().enumerate() {
+    rank[sid as usize] = r as u32;
+  }
+  let mut order: Vec<u32> = (0..nblocks as u32).collect();
+  order.sort_by_key(|&b| (rank[fine_of[b as usize] as usize], b));
+  order
 }
 
 /// Collect the leaf shard ids of an [`AggNode`] in left-to-right DFS order.
@@ -2311,6 +2778,157 @@ mod tests {
     let p = b.finish();
     let plan = partition_for_cycle_cap(&p, 1_000_000_000, 0.05);
     assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
+  }
+
+  #[test]
+  fn aiur_model_monotone() {
+    // The packer's greedy cap test is only sound if the model never decreases
+    // when a shard grows in either aggregate.
+    let base = aiur_ram_gib(1_000_000, 10_000);
+    assert!(aiur_ram_gib(2_000_000, 10_000) > base);
+    assert!(aiur_ram_gib(1_000_000, 20_000) > base);
+    let p = aiur_prove_secs(1_000_000, 100_000);
+    assert!(aiur_prove_secs(2_000_000, 100_000) > p);
+    assert!(aiur_prove_secs(1_000_000, 200_000) > p);
+  }
+
+  /// Attach a reference graph given per-block (sorted, deduped) ref lists.
+  fn with_refs(mut p: BlockProfile, adj: &[Vec<u32>]) -> BlockProfile {
+    p.set_ref_graph(adj);
+    p
+  }
+
+  #[test]
+  fn aiur_ram_cap_respected() {
+    // 40-block chain (each references the next), uniform weights: the packer
+    // must split into multiple shards each under the (usable-fraction) cap,
+    // where a shard's bytes are its closure UNION — for a chain, everything
+    // downstream of its first member.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=40u8 {
+      b.block(addr(i), 10_000, 20_000, 1, ops(100_000));
+    }
+    for i in 1..40u8 {
+      b.delta_edge(addr(i), addr(i + 1));
+    }
+    let adj: Vec<Vec<u32>> =
+      (0..40u32).map(|i| if i < 39 { vec![i + 1] } else { vec![] }).collect();
+    let p = with_refs(b.finish(), &adj);
+    let budget = 64.0;
+    let plan = partition_for_aiur_ram(&p, budget, 0.05);
+    assert!(plan.num_shards > 1, "must shard: whole env exceeds the budget");
+    assert!(
+      plan.max_shard_ram_gib <= plan.ram_cap_gib,
+      "heaviest shard {} exceeds cap {}",
+      plan.max_shard_ram_gib,
+      plan.ram_cap_gib,
+    );
+    // Every block is assigned, ids contiguous.
+    assert_eq!(plan.shard_of.len(), 40);
+    let max_id = plan.shard_of.iter().copied().max().unwrap() as usize;
+    assert_eq!(max_id + 1, plan.num_shards);
+  }
+
+  #[test]
+  fn aiur_union_counts_shared_dep_once() {
+    // Blocks 0 and 1 both reference deep dep 2 (which references 3). Packed
+    // into one shard, the union must charge {0,1,2,3} once — NOT
+    // closure(0)+closure(1).
+    let mut b = ProfileBuilder::new();
+    for i in 1..=4u8 {
+      b.block(addr(i), 10, 1000, 1, ops(0));
+    }
+    let p = with_refs(b.finish(), &[vec![2], vec![2], vec![3], vec![]]);
+    let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    assert_eq!(plan.num_shards, 1);
+    assert_eq!(plan.shard_costs[0].union_bytes, 4000);
+    assert_eq!(plan.shard_costs[0].hb, 40);
+  }
+
+  #[test]
+  fn aiur_measured_charges_touched_not_closure() {
+    // refs 0→1, 1→{2,3}; the recording run's check of block 0 consulted only
+    // 1 (touch edge). Measured accounting charges block 0's faulted set
+    // {0,1} = 2000 — the reference closure {0,1,2,3} = 4000 is what a
+    // touch-free profile falls back to.
+    let build = |touch: bool| {
+      let mut b = ProfileBuilder::new();
+      for i in 1..=4u8 {
+        b.block(addr(i), 10, 1000, 1, ops(0));
+      }
+      if touch {
+        b.touch_edge(addr(1), addr(2));
+      }
+      with_refs(b.finish(), &[vec![1], vec![2, 3], vec![], vec![]])
+    };
+    let fallback = partition_for_aiur_ram(&build(false), 1000.0, 0.05);
+    assert!(
+      (fallback.largest_block_ram_gib - aiur_ram_gib(4000, 10)).abs() < 1e-9
+    );
+    let measured = partition_for_aiur_ram(&build(true), 1000.0, 0.05);
+    assert!(
+      (measured.largest_block_ram_gib - aiur_ram_gib(2000, 10)).abs() < 1e-9
+    );
+  }
+
+  #[test]
+  fn aiur_ingress_expands_refs_when_member_becomes_owned() {
+    // Block 0 refs 1; block 1 refs 2. Packing 0 first pulls 1 (and, via the
+    // closure walk, 2) into the union; packing 1 as OWNED afterwards must
+    // not double-charge any of them.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=3u8 {
+      b.block(addr(i), 10, 1000, 1, ops(0));
+    }
+    let p = with_refs(b.finish(), &[vec![1], vec![2], vec![]]);
+    let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    assert_eq!(plan.num_shards, 1);
+    assert_eq!(plan.shard_costs[0].union_bytes, 3000);
+  }
+
+  #[test]
+  fn aiur_floor_is_closure_bytes() {
+    // A cheap block referencing a huge dependency: its lone-shard RAM floor
+    // must include the dependency's bytes even though its own are tiny.
+    let mut b = ProfileBuilder::new();
+    b.block(addr(1), 10, 100, 1, ops(0));
+    b.block(addr(2), 10, 3_000_000, 1, ops(0));
+    let p = with_refs(b.finish(), &[vec![1], vec![]]);
+    let plan = partition_for_aiur_ram(&p, 1000.0, 0.05);
+    let floor = aiur_ram_gib(3_000_100, 10);
+    assert!(
+      (plan.largest_block_ram_gib - floor).abs() < 1e-9,
+      "floor {} != closure-based {}",
+      plan.largest_block_ram_gib,
+      floor,
+    );
+  }
+
+  #[test]
+  fn aiur_flags_infeasible_atomic_block() {
+    // One block so hot its lone predicted RAM exceeds the cap: emitted alone,
+    // flagged infeasible.
+    let mut b = ProfileBuilder::new();
+    b.block(addr(1), u64::MAX / 2, 1000, 1, ops(1000));
+    b.block(addr(2), 10, 1000, 1, ops(0));
+    let p = with_refs(b.finish(), &[vec![], vec![]]);
+    let plan = partition_for_aiur_ram(&p, 8.0, 0.05);
+    assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
+  }
+
+  #[test]
+  fn ref_graph_roundtrips_through_ixprof() {
+    let mut b = ProfileBuilder::new();
+    for i in 1..=3u8 {
+      b.block(addr(i), 1, 10, 1, ops(2));
+    }
+    let p = with_refs(b.finish(), &[vec![1, 2], vec![2], vec![]]);
+    let q = BlockProfile::from_bytes(&p.to_bytes()).unwrap();
+    assert!(q.has_ref_graph());
+    assert_eq!(q.refs(0), &[1, 2]);
+    assert_eq!(q.refs(1), &[2]);
+    assert_eq!(q.refs(2), &[] as &[u32]);
+    assert_eq!(p, q);
   }
 
   #[test]
