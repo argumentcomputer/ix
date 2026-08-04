@@ -16,8 +16,8 @@ concurrency:
 jobs:
   # Build Ix once — with the --wfail lint gate over every lib/exe target — and
   # let lean-action cache the full `.lake` under its per-sha key. The parallel
-  # test-core / test-tc jobs restore that exact build instead of each one
-  # recompiling the base, and ignored.yml keeps restoring the same key.
+  # test-core job restores that exact build instead of recompiling the base, as
+  # do ignored.yml's extended jobs (including the push-to-main-only Ix.Tc suite).
   # `test: false` keeps this job build-only; those jobs run the tests. It also
   # compiles and
   # publishes the small `nataddcomm.ixe` fixture the zkVM execution gates
@@ -36,7 +36,7 @@ jobs:
       # build-all lint driver compiles every lib/exe target with --wfail, so a
       # warning in any target (exes, benchmarks, Apps) — not just the default lib
       # lean-action builds above — fails CI. Building them here also populates
-      # the cache the test-core / test-tc jobs restore.
+      # the cache the test-core job and ignored.yml's extended jobs restore.
       - name: Build all targets
         run: lake lint -- --wfail -v
       - name: Check codegen'd IxVM kernel is up to date
@@ -81,56 +81,6 @@ jobs:
         run: lake test --wfail -- cli
       - name: Aiur tests
         run: lake test --wfail -- --ignored aiur aiur-hashes ixvm multi-stark recursive-verifier
-
-  # Ix.Tc verification + parity over the base build. Its heavyweight work — the
-  # ~13-min `Ix.Tc.Verify` proof elaboration and the parity run — is what keeps
-  # this split from test-core worthwhile: it overlaps that suite instead of
-  # serializing behind it. Unlike test-core this keeps its own `lake-tc-…` cache
-  # so it can additionally persist the proof elaboration across commits: restore
-  # its latest prior build first, fall back to the base build, and save the
-  # proof-laden `.lake` at job end. Correctness is Lake's — a stale restore
-  # forces a rebuild via per-module traces, never a wrong olean.
-  test-tc:
-    name: Ix.Tc verification and parity
-    needs: build
-    runs-on: warp-ubuntu-latest-x64-16x
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: actions/cache@v6
-        with:
-          path: .lake
-          key: lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
-          restore-keys: |
-            lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
-            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
-      - uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          use-github-cache: false
-      - name: Check Ix.Tc exported theorem trust manifest
-        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements
-      - name: Build Ix.Tc formal verification
-        run: lake build IxTcVerify
-      - name: Check Ix.Tc verification sorry frontier
-        run: lake build Ix.Tc.Verify.Audit.SorryFrontier
-      - name: Test Ix.Tc unit and adversarial fixtures
-        run: lake test --wfail -- tc-unit
-      - name: Compile Ix.Tc parity fixture
-        run: >-
-          lake exe ix compile Ix.lean
-          --consts-file .github/fixtures/tc-parity-consts.txt
-          --out tc-parity.ixe
-      # The verification release claim includes executable adversarial and
-      # production-parity evidence. Its exact pin/accelerator seed closure is
-      # deliberately separate from the much smaller zkVM smoke fixture.
-      - name: Test Ix.Tc production parity and scale
-        run: >-
-          lake test --wfail -- --ignored
-          tc-pins tc-accel-diff tc-anon-diff tc-roundtrip tc-init
-          tc-tutorial lean4lean
-        env:
-          IX_PINS_IXE: tc-parity.ixe
 
   rust-test:
     runs-on: ubuntu-latest

@@ -69,3 +69,51 @@ jobs:
             --error-exitcode=1 \
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests -- ffi
+
+  # Ix.Tc formal verification + typechecker parity suite. Lives here (push to
+  # main / dispatch only) rather than in ci.yml so its ~13-min `Ix.Tc.Verify`
+  # proof elaboration and parity run don't gate every PR. Restores the base
+  # `.lake` that ci.yml's build job saved (via the `lake-…` fallback) and keeps
+  # its own `lake-tc-…` cache so the proof elaboration persists across main
+  # commits; lean-action provides only the toolchain, and the steps build/test
+  # against the restored `.lake`.
+  tc-test:
+    name: Ix.Tc verification and parity
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/cache@v6
+        with:
+          path: .lake
+          key: lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: |
+            lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - name: Check Ix.Tc exported theorem trust manifest
+        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements
+      - name: Build Ix.Tc formal verification
+        run: lake build IxTcVerify
+      - name: Check Ix.Tc verification sorry frontier
+        run: lake build Ix.Tc.Verify.Audit.SorryFrontier
+      - name: Test Ix.Tc unit and adversarial fixtures
+        run: lake test --wfail -- tc-unit
+      - name: Compile Ix.Tc parity fixture
+        run: >-
+          lake exe ix compile Ix.lean
+          --consts-file .github/fixtures/tc-parity-consts.txt
+          --out tc-parity.ixe
+      # The verification release claim includes executable adversarial and
+      # production-parity evidence. Its exact pin/accelerator seed closure is
+      # deliberately separate from the much smaller zkVM smoke fixture.
+      - name: Test Ix.Tc production parity and scale
+        run: >-
+          lake test --wfail -- --ignored
+          tc-pins tc-accel-diff tc-anon-diff tc-roundtrip tc-init
+          tc-tutorial lean4lean
+        env:
+          IX_PINS_IXE: tc-parity.ixe
