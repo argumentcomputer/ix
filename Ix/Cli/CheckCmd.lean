@@ -365,33 +365,60 @@ private def ixesAddr : IxesP Address := do
   if p + 32 ≤ b.size then modify (fun _ => (b, p + 32)); pure ⟨b.extract p (p + 32)⟩
   else throw "ixes: truncated (expected a 32-byte address)"
 
-/-- Parse every shard's owned block addresses from a serialized `.ixes`
-    manifest (`ShardManifest::to_bytes`, `src/ix/shard.rs`):
-    magic(8) ‖ total_cross_ingress(u128) ‖ num_shards(u32) ‖ per shard
-    { id(u32) ‖ heartbeats(u64) ‖ own_size(u64) ‖ cross_ingress(u64) ‖
-      assumption_root(u8 tag + 32?) ‖ blocks(u32 len + 32·len) ‖
-      foreign_blocks(u32 len + 32·len) }.
+private def ixesU64 : IxesP Nat := do
+  let mut v : Nat := 0
+  for i in [0:8] do
+    v := v ||| ((← ixesU8).toNat <<< (8 * i))
+  pure v
+
+/-- One shard row of a parsed `.ixes` manifest: the owned block addresses
+    plus the planner cost (`ShardCost` in `crates/kernel/src/shard.rs` —
+    `costTag` 0 = unknown, 1 = profile heartbeats, 2 = Zisk cost units,
+    3 = Aiur fft; `cost` is the scalar, comparable within one manifest). -/
+structure IxesShard where
+  blocks : Array Address
+  costTag : UInt8
+  cost : Nat
+
+/-- Parse every shard of a serialized `.ixes` manifest
+    (`ShardManifest::to_bytes`, `crates/kernel/src/shard.rs`, format v2):
+    magic("IXES\0\0\0" ++ version) ‖ total_cross_ingress(u128) ‖
+    num_shards(u32) ‖ per shard
+    { id(u32) ‖ cost_tag(u8) ‖ cost(u64) ‖ own_size(u64) ‖
+      cross_ingress(u64) ‖ assumption_root(u8 tag + 32?) ‖
+      blocks(u32 len + 32·len) ‖ foreign_blocks(u32 len + 32·len) }.
     Bounds-checked: a truncated/malformed file yields `.error`, never a panic. -/
-def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address)) :=
-  let go : IxesP (Array (Array Address)) := do
+def parseIxesShards (bytes : ByteArray) : Except String (Array IxesShard) :=
+  let go : IxesP (Array IxesShard) := do
     let m0 ← ixesU8; let m1 ← ixesU8; let m2 ← ixesU8; let m3 ← ixesU8
     if !(m0 == 0x49 && m1 == 0x58 && m2 == 0x45 && m3 == 0x53) then
       throw "not an .ixes file (bad magic)"
-    ixesSkip 4    -- rest of the 8-byte magic
+    ixesSkip 3    -- reserved zero bytes of the 8-byte magic
+    let version ← ixesU8
+    if version != 2 then
+      throw s!"unsupported .ixes format version {version} (expected 2) — \
+        regenerate the manifest with the current `ix shard`"
     ixesSkip 16   -- total_cross_ingress (u128)
     let n ← ixesU32
-    let mut shards : Array (Array Address) := #[]
+    let mut shards : Array IxesShard := #[]
     for _ in [0:n.toNat] do
-      ixesSkip (4 + 8 + 8 + 8)  -- id + heartbeats + own_size + cross_ingress
+      ixesSkip 4  -- id
+      let costTag ← ixesU8
+      let cost ← ixesU64
+      ixesSkip (8 + 8)  -- own_size + cross_ingress
       if (← ixesU8) == 1 then ixesSkip 32  -- assumption_root present
       let blen ← ixesU32
       let mut blocks : Array Address := #[]
       for _ in [0:blen.toNat] do
         blocks := blocks.push (← ixesAddr)
       ixesSkip ((← ixesU32).toNat * 32)  -- skip foreign_blocks
-      shards := shards.push blocks
+      shards := shards.push { blocks, costTag, cost }
     pure shards
   go.run' (bytes, 0)
+
+/-- The owned block addresses of every shard (cost columns dropped). -/
+def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address)) :=
+  (parseIxesShards bytes).map (·.map (·.blocks))
 
 /-- The check-schedule block address of a constant: a projection collapses
     to its SCC/Muts wrapper (`p.block`); everything else is its own block.
@@ -639,7 +666,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   | some other =>
     IO.eprintln s!"error: --interp expects \"source\" or \"bytecode\", got \"{other}\""
     return 1
-  let keepGoing := p.hasFlag "keep-going"
+  let keepGoing := p.hasFlag "no-fail-fast"
+  if keepGoing && p.hasFlag "fail-fast" then
+    p.printError "error: --fail-fast and --no-fail-fast are mutually exclusive"
+    return 1
   let statsOut : Option String :=
     (p.flag? "stats-out").map (·.as! String)
   let ixePath : Option String :=
@@ -721,7 +751,8 @@ def checkCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     interp : String;        "Use an interpreter instead of the codegen'd IxVM Rust kernel. Modes: `source` = Aiur source interpreter (richer per-execution error diagnostics, slowest); `bytecode` = generic Aiur bytecode interpreter (skips the regen + cargo rebuild cycle when iterating on `Ix/IxVM/*.lean`). Omit the flag entirely for the native codegen kernel."
-    "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
+    "fail-fast";            "Halt on the first failure (the default; flag accepted for explicitness)."
+    "no-fail-fast";         "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."

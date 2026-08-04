@@ -1258,6 +1258,78 @@ fn uncoarsen_refine(
 // Manifest
 // ============================================================================
 
+/// Planner cost of one shard, tagged by the metric it is denominated in.
+/// All shards of one manifest carry the same variant (one packer, one
+/// backend); the tag makes the unit explicit — cross-backend values can
+/// never be compared by accident — and puts the heaviest-first prove
+/// ordering in the manifest itself instead of a sidecar file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ShardCost {
+  /// No planner cost recorded.
+  #[default]
+  Unknown,
+  /// Sum of member kernel heartbeats — the balance metric of the
+  /// profile-driven min-cut partitioners.
+  ProfileHeartbeats(u64),
+  /// Zisk guest cost units (ziskemu `-X` TOTAL; see the calibrated cost
+  /// model below).
+  ZiskCostUnits(u64),
+  /// Aiur circuit FFT cost (raw `w·h·log2(h)` units, the same
+  /// denomination as the bench rows' `fft-cost` and the Lean stats
+  /// dump): MEASURED when produced by the env scan, model-predicted
+  /// when produced by the `.ixprof` packer.
+  AiurFft(u64),
+}
+
+/// An FFT cost (raw `w·h·log2(h)` units, f64) as a saturating `u64`,
+/// converted without a lossy `as` cast (decimal round-trip; cost
+/// magnitudes sit far below any precision edge, and this only runs once
+/// per shard at manifest-write time).
+pub fn cost_fft(fft: f64) -> u64 {
+  format!("{:.0}", fft.max(0.0)).parse().unwrap_or(u64::MAX)
+}
+
+impl ShardCost {
+  /// The scalar used for ordering and balance WITHIN one manifest; its
+  /// unit is whatever the variant says.
+  pub fn value(self) -> u64 {
+    match self {
+      Self::Unknown => 0,
+      Self::ProfileHeartbeats(v) | Self::ZiskCostUnits(v)
+      | Self::AiurFft(v) => v,
+    }
+  }
+
+  /// Unit label for reports.
+  pub fn unit(self) -> &'static str {
+    match self {
+      Self::Unknown => "",
+      Self::ProfileHeartbeats(_) => "hb",
+      Self::ZiskCostUnits(_) => "cost-units",
+      Self::AiurFft(_) => "fft",
+    }
+  }
+
+  fn tag(self) -> u8 {
+    match self {
+      Self::Unknown => 0,
+      Self::ProfileHeartbeats(_) => 1,
+      Self::ZiskCostUnits(_) => 2,
+      Self::AiurFft(_) => 3,
+    }
+  }
+
+  fn from_tag(tag: u8, value: u64) -> Result<Self, String> {
+    match tag {
+      0 => Ok(Self::Unknown),
+      1 => Ok(Self::ProfileHeartbeats(value)),
+      2 => Ok(Self::ZiskCostUnits(value)),
+      3 => Ok(Self::AiurFft(value)),
+      t => Err(format!("unknown shard-cost tag {t}")),
+    }
+  }
+}
+
 /// Per-shard summary in a [`ShardManifest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShardInfo {
@@ -1265,8 +1337,8 @@ pub struct ShardInfo {
   pub id: u32,
   /// Member block addresses.
   pub blocks: Vec<Address>,
-  /// Sum of member heartbeats (balance metric).
-  pub heartbeats: u64,
+  /// Planner cost (packing/balance metric, unit-tagged).
+  pub cost: ShardCost,
   /// Sum of member serialized sizes (the shard's own ingress).
   pub own_size: u64,
   /// Foreign blocks delta-unfolded by members but proven in other shards.
@@ -1326,6 +1398,7 @@ impl ShardManifest {
         members[s].iter().map(|&b| profile.block(b).addr.clone()).collect();
       let heartbeats: u64 =
         members[s].iter().map(|&b| profile.block(b).heartbeats).sum();
+      let cost = ShardCost::ProfileHeartbeats(heartbeats);
       let own_size: u64 = members[s]
         .iter()
         .map(|&b| u64::from(profile.block(b).serialized_size))
@@ -1340,7 +1413,7 @@ impl ShardManifest {
       shards.push(ShardInfo {
         id: s as u32,
         blocks,
-        heartbeats,
+        cost,
         own_size,
         foreign_blocks,
         cross_ingress,
@@ -1365,16 +1438,23 @@ impl ShardManifest {
 
   /// A human-readable what-if summary line.
   pub fn summary(&self) -> String {
-    let hbs: Vec<u64> = self.shards.iter().map(|s| s.heartbeats).collect();
+    let costs: Vec<u64> =
+      self.shards.iter().map(|s| s.cost.value()).collect();
     let nonempty: Vec<u64> = self
       .shards
       .iter()
       .filter(|s| !s.blocks.is_empty())
-      .map(|s| s.heartbeats)
+      .map(|s| s.cost.value())
       .collect();
-    let max = hbs.iter().copied().max().unwrap_or(0);
+    let unit = self
+      .shards
+      .first()
+      .map(|s| s.cost.unit())
+      .filter(|u| !u.is_empty())
+      .unwrap_or("cost");
+    let max = costs.iter().copied().max().unwrap_or(0);
     let min = nonempty.iter().copied().min().unwrap_or(0);
-    let total: u128 = hbs.iter().map(|&h| u128::from(h)).sum();
+    let total: u128 = costs.iter().map(|&h| u128::from(h)).sum();
     let mean = if self.shards.is_empty() {
       0
     } else {
@@ -1384,7 +1464,7 @@ impl ShardManifest {
     let max_cross =
       self.shards.iter().map(|s| s.cross_ingress).max().unwrap_or(0);
     format!(
-      "shards={} (empty={}) heartbeats[min={} mean={} max={}] imbalance={:.2}x \
+      "shards={} (empty={}) {unit}[min={} mean={} max={}] imbalance={:.2}x \
        cross_ingress_total={} max_shard_cross={}",
       self.shards.len(),
       empty,
@@ -1411,7 +1491,8 @@ impl ShardManifest {
     };
     for sh in &self.shards {
       out.extend_from_slice(&sh.id.to_le_bytes());
-      out.extend_from_slice(&sh.heartbeats.to_le_bytes());
+      out.push(sh.cost.tag());
+      out.extend_from_slice(&sh.cost.value().to_le_bytes());
       out.extend_from_slice(&sh.own_size.to_le_bytes());
       out.extend_from_slice(&sh.cross_ingress.to_le_bytes());
       match &sh.assumption_root {
@@ -1440,7 +1521,15 @@ impl ShardManifest {
   /// Deserialize from the `.ixes` binary format.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
     let mut c = Cur { buf: bytes, pos: 0 };
-    if c.take(8)? != SHARD_MAGIC {
+    let magic = c.take(8)?;
+    if magic != SHARD_MAGIC {
+      if magic.starts_with(b"IXES") {
+        return Err(format!(
+          "unsupported .ixes format version {} (expected {}) — regenerate \
+           the manifest with the current `ix shard`/`ix shard scan`",
+          magic[7], SHARD_MAGIC[7]
+        ));
+      }
       return Err("not an .ixes file (bad magic)".into());
     }
     let total_cross_ingress = c.u128()?;
@@ -1448,7 +1537,7 @@ impl ShardManifest {
     let mut shards = Vec::with_capacity(num_shards);
     for _ in 0..num_shards {
       let id = c.u32()?;
-      let heartbeats = c.u64()?;
+      let cost = ShardCost::from_tag(c.u8()?, c.u64()?)?;
       let own_size = c.u64()?;
       let cross_ingress = c.u64()?;
       let assumption_root = if c.u8()? == 1 { Some(c.addr()?) } else { None };
@@ -1457,7 +1546,7 @@ impl ShardManifest {
       shards.push(ShardInfo {
         id,
         blocks,
-        heartbeats,
+        cost,
         own_size,
         foreign_blocks,
         cross_ingress,
@@ -1497,8 +1586,10 @@ impl ShardManifest {
   }
 }
 
-/// Magic bytes at the head of every `.ixes` file.
-const SHARD_MAGIC: &[u8; 8] = b"IXES\0\0\0\0";
+/// Magic bytes at the head of every `.ixes` file; the final byte is the
+/// format version (bumped to 2 when per-shard tagged costs replaced the
+/// bare heartbeats field).
+const SHARD_MAGIC: &[u8; 8] = b"IXES\0\0\0\x02";
 
 /// Minimal little-endian cursor for manifest decoding.
 struct Cur<'a> {
@@ -1580,7 +1671,7 @@ pub fn shard_esp(
   let max_block_hb =
     profile.blocks().iter().map(|b| b.heartbeats).max().unwrap_or(0);
   let max_shard_hb =
-    manifest.shards.iter().map(|s| s.heartbeats).max().unwrap_or(0);
+    manifest.shards.iter().map(|s| s.cost.value()).max().unwrap_or(0);
   let floored =
     num_shards > 1 && max_shard_hb <= max_block_hb.saturating_mul(11) / 10;
   let note = if floored {
@@ -1677,9 +1768,14 @@ pub fn shard_esp_aiur(
   let mut manifest =
     ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
       .with_tree(plan.tree);
-  for shard in &mut manifest.shards {
+  for (shard, c) in manifest.shards.iter_mut().zip(&plan.shard_costs) {
     shard.assumption_root =
       ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+    shard.cost = ShardCost::AiurFft(cost_fft(aiur_shard_fft(
+      c.union_bytes,
+      c.subst,
+      c.def_eq,
+    )));
   }
   if let Some(op) = out_path {
     std::fs::write(op, manifest.to_bytes())
@@ -1962,12 +2058,12 @@ pub fn rebudget_manifest_shard(
     (0..n_children - 1).map(|i| (old_n + i) as u32).collect();
   rebuilt.tree =
     manifest.tree.as_ref().map(|t| patch_tree(t, shard_k as u32, &extra_ids));
-  std::fs::write(out_path, rebuilt.to_bytes())
-    .map_err(|e| format!("write {out_path}: {e}"))?;
 
   // Costs sidecar: recompute every row's faulted-set union from the profile
   // (identical to the input rows for untouched shards — the union is a
-  // function of the owned set alone).
+  // function of the owned set alone). Untouched shards keep the INPUT
+  // manifest's cost (a scan's measured fft survives a rebudget of a
+  // sibling); children get the model prediction.
   let measured = profile.has_touch_graph();
   let mut csv = String::from(
     "shard,union_bytes,hb,subst,subst_unique,whnf,def_eq,nat_arith,\
@@ -1975,9 +2071,12 @@ pub fn rebudget_manifest_shard(
   );
   let mut report = String::new();
   let mut union_set: FxHashSet<u32> = FxHashSet::default();
-  for (i, sh) in rebuilt.shards.iter().enumerate() {
-    let ids: Vec<u32> =
-      sh.blocks.iter().map(&to_id).collect::<Result<_, _>>()?;
+  for i in 0..rebuilt.shards.len() {
+    let ids: Vec<u32> = rebuilt.shards[i]
+      .blocks
+      .iter()
+      .map(&to_id)
+      .collect::<Result<_, _>>()?;
     union_set.clear();
     for &b in &ids {
       union_set.insert(b);
@@ -1999,18 +2098,26 @@ pub fn rebudget_manifest_shard(
       .map(|&b| u64::from(profile.block(b).serialized_size))
       .sum();
     let sum = |f: &dyn Fn(u32) -> u64| ids.iter().map(|&b| f(b)).sum::<u64>();
-    let hb = sh.heartbeats;
     let subst = sum(&|b| profile.block(b).subst);
     let subst_unique = sum(&|b| profile.block(b).subst_unique);
     let whnf = sum(&|b| profile.block(b).whnf);
     let def_eq = sum(&|b| profile.block(b).def_eq);
     let nat_arith = sum(&|b| profile.block(b).nat_arith);
     let ram = aiur_ram_gib(union_bytes, subst, def_eq);
+    rebuilt.shards[i].cost = if i != shard_k && i < old_n {
+      manifest.shards[i].cost
+    } else {
+      ShardCost::AiurFft(cost_fft(aiur_shard_fft(
+        union_bytes,
+        subst,
+        def_eq,
+      )))
+    };
     csv.push_str(&format!(
       "{},{},{},{},{},{},{},{},{:.2},{:.2}\n",
       i,
       union_bytes,
-      hb,
+      rebuilt.shards[i].cost.value(),
       subst,
       subst_unique,
       whnf,
@@ -2022,11 +2129,13 @@ pub fn rebudget_manifest_shard(
     if i == shard_k || i >= old_n {
       report.push_str(&format!(
         "  child shard {i}: {} blocks, union {:.1} MB, pred_ram {ram:.2} GiB\n",
-        sh.blocks.len(),
+        rebuilt.shards[i].blocks.len(),
         union_bytes as f64 / 1e6,
       ));
     }
   }
+  std::fs::write(out_path, rebuilt.to_bytes())
+    .map_err(|e| format!("write {out_path}: {e}"))?;
   let cp = format!("{out_path}.costs.csv");
   std::fs::write(&cp, csv).map_err(|e| format!("write {cp}: {e}"))?;
 
@@ -2835,7 +2944,7 @@ pub fn partition_for_aiur_ram(
 /// shard. `pieces` is the requested fine-partition size (~[`PACK_PIECES_PER_CAP`]
 /// per cap, in the caller's cost unit), bounded by the block count; when
 /// everything fits one cap this collapses to the trivial order.
-fn cut_coherent_order(
+pub fn cut_coherent_order(
   profile: &BlockProfile,
   pieces: usize,
   epsilon: f64,
@@ -2870,7 +2979,7 @@ fn dfs_leaf_order(node: &AggNode, out: &mut Vec<u32>) {
 }
 
 /// A balanced binary [`AggNode`] over the contiguous shard-id range `lo..hi`.
-fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
+pub fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
   debug_assert!(hi > lo);
   if hi - lo <= 1 {
     AggNode::Leaf(lo)
@@ -2959,8 +3068,8 @@ mod tests {
     let m = ShardManifest::build(&p, &shard_of, 2);
     assert_eq!(m.shards.len(), 2);
     // Each cluster has 3 blocks × 100 heartbeats = 300; perfectly balanced.
-    assert_eq!(m.shards[0].heartbeats, 300);
-    assert_eq!(m.shards[1].heartbeats, 300);
+    assert_eq!(m.shards[0].cost, ShardCost::ProfileHeartbeats(300));
+    assert_eq!(m.shards[1].cost, ShardCost::ProfileHeartbeats(300));
   }
 
   #[test]
@@ -2986,7 +3095,7 @@ mod tests {
     assert_eq!(m.total_cross_ingress, 0);
     // Each non-empty shard should hold exactly one cluster (4×100).
     for s in &m.shards {
-      assert_eq!(s.heartbeats, 400);
+      assert_eq!(s.cost, ShardCost::ProfileHeartbeats(400));
     }
   }
 

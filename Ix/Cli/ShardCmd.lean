@@ -1,19 +1,33 @@
 /-
-  `ix shard <path.ixprof>`: partition a profiled environment into shards,
-  minimizing cross-shard delta-unfold ingress (see `plans/sharding.md`).
+  `ix shard <path>`: partition an environment into shards, dispatched on
+  the input type.
 
-  Two modes (precedence in `runShardCmd`):
+  `.ixe` input — the default, Aiur mode: **measured scan-and-cut**. The
+  env's check schedule executes through the codegen'd Aiur kernel as
+  thin-frontier `CheckEnv` claims with a running FFT readout, and shard
+  boundaries are cut where the measured cost reaches the `--max-ram`
+  budget's FFT equivalent (see `crates/ffi/src/aiur/scan.rs`). No profile
+  pass, no cost model — the manifest carries the MEASURED per-shard cost.
+
+  `.ixe` input with `--backend zisk`: Zisk's planner from the env in one
+  command — the Rust-kernel profiling pass writes `<env>.ixprof`, then
+  the guest-cost packer runs on it (the profile is kept: re-tuning the
+  budget is pure offline graph work on the `.ixprof`).
+
+  `.ixprof` input — the profile-driven packer directly (Zisk default;
+  the Aiur model packer stays reachable via `--backend aiur` for
+  `--rebudget`):
   - default / `--max-ram G` / `--max-cycles C`: **bin-pack to a per-shard
     cycle/RAM cap** — the fewest shards that each stay under the budget, each
     packed as full as the dependency structure allows (no `--max-ram` ⇒ sized to
     detected system RAM). Not balanced: packing yields the minimal shard count.
   - `--shards N`: force exactly `N` **balanced** min-cut shards (manual override).
 
-  Reads the `.ixprof` produced by `ix profile` (pure offline graph work, so the
-  budget/`N` is cheap to re-tune without re-running the kernel). Writes a `.ixes`
-  manifest and prints a what-if report (per-shard cost + total cross-shard
-  ingress). The partitioner is self-contained — no external graph-library
-  dependency.
+  The `.ixprof` comes from `ix profile` (pure offline graph work, so the
+  budget/`N` is cheap to re-tune without re-running the kernel). Both modes
+  write a `.ixes` manifest (format v2, per-shard tagged costs) and print a
+  what-if report. The partitioner is self-contained — no external
+  graph-library dependency.
 
   `ix shard extract <path.ixe> --consts <n1,n2,…>`: the pipeline's scoping
   step — extract the named constants' dependency closure from a serialized
@@ -25,7 +39,13 @@
 -/
 module
 public import Cli
+public import Ix.Aiur.Compiler
+public import Ix.Aiur.Protocol
+public import Ix.Benchmark.Results
+public import Ix.IxVM
+public import Ix.IxVM.Toplevel
 public import Ix.KernelCheck
+public import Ix.TracingTexray
 public import Ix.Cli.ConstsFile
 
 public section
@@ -33,6 +53,67 @@ public section
 open Ix.KernelCheck
 
 namespace Ix.Cli.ShardCmd
+
+/-- Shard a `.ixe` env by MEASURED cost (the default `ix shard` mode for
+    Aiur): execute the check schedule through the codegen'd Aiur kernel
+    with a running FFT readout and cut boundaries at the RAM budget's FFT
+    equivalent. No profile, no prediction; the manifest carries measured
+    per-shard cost. -/
+def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
+  let outPath : String :=
+    match p.flag? "out" with
+    | some flag => flag.as! String
+    | none      =>
+      let base := if ixePath.endsWith ".ixe" then (ixePath.dropEnd 4).toString else ixePath
+      base ++ ".ixes"
+  let budget := (p.flag? "max-ram").map (·.as! Nat) |>.getD 250
+  let eps := (p.flag? "eps").map (·.as! Nat) |>.getD 5
+  let workers := (p.flag? "workers").map (·.as! Nat) |>.getD 0
+  let noFailFast := p.hasFlag "no-fail-fast"
+  if noFailFast && p.hasFlag "fail-fast" then
+    p.printError "error: --fail-fast and --no-fail-fast are mutually exclusive"
+    return 1
+  let toplevel ← match IxVM.ixVM with
+    | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
+    | .ok t => pure t
+  let compiled ← match toplevel.compile with
+    | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let funIdx ← match compiled.getFuncIdx `verify_claim with
+    | some i => pure i
+    | none => IO.eprintln "error: verify_claim missing"; return 1
+  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+    | .ok h => pure h
+  let workersDesc := if workers == 0 then "auto" else toString workers
+  IO.println s!"Scanning {ixePath} @ {budget} GiB (ε {eps}%, {workersDesc} workers)"
+  (← IO.getStdout).flush
+  -- `benchJson = (out, rowName)` reports the scan as a benchmark row (the
+  -- `aiur-shard` bench backend): `scan-time` windows the scan itself — the
+  -- env mmap and toplevel build are excluded, so the measure tracks the
+  -- kernel execution, not the loader — while `peak-rss` is the process
+  -- tree's absolute high-water, matching the check rows' semantics.
+  let benchJson := (p.flag? "json").map fun f =>
+    (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "scan")
+  if benchJson.isSome then
+    TracingTexray.startSampler
+    TracingTexray.resetPeakTreeRss
+  let start ← IO.monoMsNow
+  match Aiur.Bytecode.Toplevel.scanShardsWithEnv compiled.bytecode funIdx
+      envHandle (toString budget) (toString eps) (toString workers)
+      (if noFailFast then "0" else "1") outPath with
+  | .ok () =>
+    if let some (out, rowName) := benchJson then
+      let secs := ((← IO.monoMsNow) - start).toFloat / 1000.0
+      let peakRss ← TracingTexray.peakTreeRssBytes
+      Ix.Benchmark.Results.writeRow out rowName "ok"
+        [ ("scan-time", Ix.Benchmark.Results.jsonRound 3 secs)
+        , ("peak-rss", Lean.toJson peakRss) ]
+    IO.println s!"[shard scan] wrote {outPath} (+ .costs.csv, measured)"
+    return 0
+  | .error e =>
+    IO.eprintln s!"error: shard scan failed: {e}"
+    return 1
 
 def runShardExtractCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
@@ -73,9 +154,28 @@ def shardExtractCmd : Cli.Cmd := `[Cli|
 
 def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
-    | p.printError "error: must specify <path> to a .ixprof file"
+    | p.printError "error: must specify <path> to a .ixe (measured scan) or .ixprof (profile packer)"
       return 1
-  let espPath := pathArg.as! String
+  let path := pathArg.as! String
+  -- Dispatch on the input: a `.ixe` env runs the backend's own planner
+  -- from the env itself — aiur (default) is the measured scan-and-cut;
+  -- zisk chains the Rust-kernel profiling pass into the guest-cost
+  -- packer, leaving the `.ixprof` next to the env so the budget can be
+  -- re-tuned offline without re-running the kernel. A `.ixprof` input
+  -- skips straight to the profile-driven packer.
+  let mut espPath := path
+  if path.endsWith ".ixe" then
+    match (p.flag? "backend").map (·.as! String) |>.getD "aiur" with
+    | "aiur" => return ← runShardScan p path
+    | "zisk" =>
+      let prof := (path.dropEnd 4).toString ++ ".ixprof"
+      IO.println s!"Profiling {path} → {prof} (Rust-kernel pass, zisk counters)"
+      (← IO.getStdout).flush
+      rsProfileAnonFFI path prof true true "0" "zisk"
+      espPath := prof
+    | other =>
+      p.printError s!"error: --backend must be aiur or zisk (got {other})"
+      return 1
   let balancePct : Nat :=
     match p.flag? "balance" with
     | some flag => flag.as! Nat
@@ -149,21 +249,27 @@ end Ix.Cli.ShardCmd
 open Ix.Cli.ShardCmd in
 def shardCmd : Cli.Cmd := `[Cli|
   "shard" VIA runShardCmd;
-  "Partition a `.ixprof` into shards: pack to a RAM/cycle cap (default) or N balanced shards"
+  "Partition an env into shards. A `.ixe` input runs the MEASURED Aiur scan-and-cut (default; no profile pass); a `.ixprof` input runs the profile-driven packer (Zisk)"
 
   FLAGS:
-    shards       : Nat;    "Fixed number of shards N (overrides the default budget sizing)"
-    "max-cycles" : Nat;    "Per-shard guest-cycle budget (overrides the default RAM sizing)"
-    "max-ram"    : Nat;    "Per-shard host-RAM budget, GiB (default: detected system RAM)"
-    balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
-    parallelism  : Nat;    "Provers assumed for the prove-time estimate (default 1 = sequential)"
-    backend      : String; "Packing cost model: zisk (default, guest-STEP cap) or aiur (RAM model; use with --max-ram)"
-    rebudget     : Nat;    "Surgically split shard K of --manifest at the smaller --max-ram budget; every other shard is copied verbatim so its cached claims/proofs stay valid."
+    "max-ram" : Nat;  "Per-shard host-RAM budget, GiB (scan default 250; .ixprof default: detected system RAM)"
+    backend   : String; "Planner: aiur (default on `.ixe`: measured scan) or zisk (`.ixe`: profile pass + guest-cost pack in one command; `.ixprof`: pack directly). On a `.ixprof`, `aiur` selects the model packer (--rebudget's path)"
+    out       : String; "Output .ixes manifest path (default: input basename + .ixes)"
+    eps       : Nat;  "Scan only: pre-charged cut headroom, percent (default 5): covers the incremental claim-walk overcount and the merge pass's fft-sum conservatism"
+    workers   : Nat;  "Scan only: parallel chunk scanners (default 0 = autoscale to cores and detected RAM). Each holds one segment's query record and faulted witness, so workers × segment footprint must fit the box"
+    "fail-fast";      "Scan: halt on the first kernel-rejected block (the default; flag accepted for explicitness)."
+    "no-fail-fast";   "Scan: skip kernel-rejected blocks (named as skipped, excluded from the partition, listed in <out>.failed.csv). The manifest then does not cover them — the downstream coverage gate reports exactly which."
+    json        : String; "Scan only: benchmark results JSON accumulator — append a `scan-time`/`peak-rss` row. Used by `ix bench run --backend aiur-shard`."
+    "json-name" : String; "Row name for --json (default: scan)."
+    shards       : Nat;    ".ixprof only: fixed number of shards N (overrides the budget sizing)"
+    "max-cycles" : Nat;    ".ixprof only: per-shard guest-cycle budget (overrides the RAM sizing)"
+    balance      : Nat;    ".ixprof only: per-bisection balance tolerance, percent (default 5)"
+    parallelism  : Nat;    ".ixprof only: provers assumed for the prove-time estimate (default 1 = sequential)"
+    rebudget     : Nat;    ".ixprof only: surgically split shard K of --manifest at the smaller --max-ram budget; every other shard is copied verbatim so its cached claims/proofs stay valid."
     manifest     : String; "Input .ixes manifest to split (with --rebudget)."
-    out          : String; "Output .ixes manifest path (default: <prof>.ixes, e.g. init.ixprof → init.ixes)"
 
   ARGS:
-    path : String; "Path to a .ixprof produced by `ix profile`"
+    path : String; "A serialized `.ixe` env (measured scan) or a `.ixprof` from `ix profile` (profile packer)"
 
   SUBCOMMANDS:
     shardExtractCmd

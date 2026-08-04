@@ -87,6 +87,30 @@ def shardPipelineTests (env : Lean.Environment)
   let envHandle ← match Aiur.EnvHandle.fromIxe ixe.toString with
     | .error e => throw <| IO.userError s!"EnvHandle.fromIxe: {e}"
     | .ok h => pure h
+
+  -- Scan-and-cut over the same env: measured thin-frontier segments →
+  -- merge/re-measure → manifest. The budget barely clears the RAM-model
+  -- base, so the tiny env still exercises cuts, the merge pass, and the
+  -- refine rounds; the scanned partition must cover and check like the
+  -- profiled one.
+  let scanIxes := dir / "pipeline-scan.ixes"
+  let scanFunIdx ← match compiled.getFuncIdx `verify_claim with
+    | some i => pure i
+    | none => throw <| IO.userError "verify_claim missing"
+  match Aiur.Bytecode.Toplevel.scanShardsWithEnv compiled.bytecode scanFunIdx
+      envHandle "20" "5" "2" "1" scanIxes.toString with
+  | .error e => throw <| IO.userError s!"shard scan failed: {e}"
+  | .ok () => pure ()
+  let (_, scanShards) ←
+    match ← Ix.Cli.CheckCmd.loadEnvAndShards scanIxes.toString ixe.toString with
+    | .error e => throw <| IO.userError s!"scan manifest load failed: {e}"
+    | .ok r => pure r
+  tests := tests ++
+    test s!"scan produced a covering partition ({scanShards.size} shard(s))"
+      (scanShards.size ≥ 1)
+  let scanCheckRc ← Ix.Cli.CheckCmd.runShardManifestAllNative scanIxes.toString
+    ixe.toString none compiled false none false
+  tests := tests ++ test "all scanned shards check" (scanCheckRc == 0)
   let proveRc ← Ix.Cli.ProveCmd.runShardProveAllNative ixes.toString envHandle
     parsedEnv shards aiurSystem compiled' 1 (some cacheRoot)
   tests := tests ++ test "batch prove reaches the composed verdict" (proveRc == 0)

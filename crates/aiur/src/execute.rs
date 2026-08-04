@@ -201,6 +201,10 @@ pub enum ExecError {
     msg: Option<String>,
   },
   MatchNoCase(u64),
+  /// The thread's record-growth budget was crossed (see
+  /// [`set_record_byte_budget`]): not a kernel verdict on the claim — the
+  /// driver that armed the budget re-runs or defers the work.
+  RecordBudgetExceeded,
   NoContinuation,
   StackNotEmpty,
   InvalidIOKey {
@@ -244,6 +248,9 @@ impl std::fmt::Display for ExecError {
         None => write!(f, "assert_eq mismatch: {lhs} != {rhs}"),
       },
       Self::MatchNoCase(v) => write!(f, "no match case for value {v}"),
+      Self::RecordBudgetExceeded => {
+        write!(f, "record byte budget exceeded")
+      },
       Self::NoContinuation => write!(f, "yield without continuation"),
       Self::StackNotEmpty => {
         write!(f, "exec entries stack not empty at return")
@@ -271,7 +278,13 @@ static QUERY_STATS: std::sync::LazyLock<bool> =
     std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
   });
 
-fn dump_query_stats(record: &QueryRecord, tag: &str) {
+/// Whether `IX_AIUR_QUERY_STATS=1` is set (the codegen'd execution paths
+/// share `QueryRecord`, so callers there gate their own dumps on this).
+pub fn query_stats_enabled() -> bool {
+  *QUERY_STATS
+}
+
+pub fn dump_query_stats(record: &QueryRecord, tag: &str) {
   let mut rows: Vec<(usize, usize, usize)> = record
     .function_queries
     .iter()
@@ -304,18 +317,133 @@ impl Toplevel {
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
   ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    let mut record = QueryRecord::new(self);
+    let output =
+      self.execute_with_record(fun_idx, args, io_buffer, &mut record)?;
+    Ok((record, output))
+  }
+
+  /// Like [`Self::execute`] but accumulating into a caller-owned
+  /// [`QueryRecord`]: repeated calls share the memo tables, so a query
+  /// resolved by an earlier call is a hit rather than re-executed. This is
+  /// how a sequence of independent claims is executed with the same
+  /// memoization semantics as one combined run (the scan-and-cut sharder's
+  /// segment loop).
+  pub fn execute_with_record(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    record: &mut QueryRecord,
+  ) -> Result<Vec<G>, ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
-    let mut record = QueryRecord::new(self);
     let function = &self.functions[fun_idx];
-    let output =
-      function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    let output = function.execute(fun_idx, args, self, record, io_buffer)?;
     if *QUERY_STATS {
-      dump_query_stats(&record, "final");
+      dump_query_stats(record, "final");
     }
-    Ok((record, output))
+    Ok(output)
   }
+}
+
+/// Total FFT cost of a [`QueryRecord`]: `Σ width·height·log2(max(height,2))`
+/// over every constrained function circuit plus the memory circuits, with
+/// heights = unique memoized queries. Mirrors `Ix/Aiur/Statistics.lean`'s
+/// `computeStats.totalFftCost` (function width `layout.totalWidth` =
+/// `width + extDegree·max(lookups,1)`; memory width `3 + size + extDegree`;
+/// gadget circuits excluded, as there), so a running readout here matches
+/// the number the check stats dump prints and the RAM/wall lines are
+/// calibrated against.
+/// `usize → f64` without a lossy `as` cast: split into `u32` halves, each
+/// exactly convertible. Matches `n as f64` bit-for-bit below 2^52 (query
+/// counts and widths stay far below) and rounds identically above.
+pub fn f64_from_usize(n: usize) -> f64 {
+  let hi = u32::try_from(n >> 32).expect("usize is at most 64 bits");
+  let lo = u32::try_from(n & 0xFFFF_FFFF).expect("masked to u32 range");
+  f64::from(hi) * 4_294_967_296.0 + f64::from(lo)
+}
+
+std::thread_local! {
+  /// Per-thread record-growth budget: `(bytes charged, byte limit)`.
+  /// Every [`QueryMap::insert`](crate::querymap::QueryMap::insert) charges
+  /// its entry's retained bytes; execution paths poll
+  /// [`record_budget_exceeded`] and abort with
+  /// [`ExecError::RecordBudgetExceeded`] once the limit is crossed. The
+  /// default limit is `usize::MAX`, so nothing changes unless a driver
+  /// (the shard scanner) opts a thread in around an execution it must be
+  /// able to bound — a single dense block can otherwise grow a record by
+  /// tens of GiB with no interior boundary to act on.
+  static RECORD_BYTE_BUDGET: std::cell::Cell<(usize, usize)> =
+    const { std::cell::Cell::new((0, usize::MAX)) };
+}
+
+/// Arm the calling thread's record-growth budget and zero its counter.
+pub fn set_record_byte_budget(limit: usize) {
+  RECORD_BYTE_BUDGET.with(|c| c.set((0, limit)));
+}
+
+/// Disarm the calling thread's record-growth budget.
+pub fn clear_record_byte_budget() {
+  RECORD_BYTE_BUDGET.with(|c| c.set((0, usize::MAX)));
+}
+
+/// Whether the calling thread has charged past its record-growth limit.
+pub fn record_budget_exceeded() -> bool {
+  RECORD_BYTE_BUDGET.with(|c| {
+    let (used, limit) = c.get();
+    used > limit
+  })
+}
+
+pub(crate) fn charge_record_bytes(bytes: usize) {
+  RECORD_BYTE_BUDGET.with(|c| {
+    let (used, limit) = c.get();
+    c.set((used.saturating_add(bytes), limit));
+  });
+}
+
+/// Approximate resident bytes of a [`QueryRecord`]: retained key/output
+/// field elements (8 B each) plus ~13 B of per-entry index overhead
+/// (stored hash, table slot, multiplicity). The memory-circuit stores
+/// dominate on arithmetic-heavy content, where entries are FFT-cheap
+/// (narrow columns) but RAM-heavy — the second resource dimension a
+/// RAM-budgeted partition has to price alongside FFT cost.
+pub fn record_retained_bytes(record: &QueryRecord) -> usize {
+  let mut elems = 0usize;
+  let mut entries = 0usize;
+  for m in &record.function_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  for (_, m) in &record.memory_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  elems * 8 + entries * 13
+}
+
+pub fn record_fft_cost(toplevel: &Toplevel, record: &QueryRecord) -> f64 {
+  const EXT_DEGREE: usize = 2;
+  fn fft(w: usize, h: usize) -> f64 {
+    if h == 0 {
+      0.0
+    } else {
+      f64_from_usize(w) * f64_from_usize(h) * f64_from_usize(h.max(2)).log2()
+    }
+  }
+  let mut total = 0.0;
+  for (i, f) in toplevel.functions.iter().enumerate() {
+    if f.constrained {
+      let w = f.layout.width() + EXT_DEGREE * f.layout.lookups.max(1);
+      total += fft(w, record.function_queries[i].len());
+    }
+  }
+  for (size, qm) in &record.memory_queries {
+    total += fft(3 + size + EXT_DEGREE, qm.len());
+  }
+  total
 }
 
 enum ExecEntry<'a> {
@@ -436,6 +564,9 @@ impl Function {
               &[ptr],
               G::from_bool(!unconstrained),
             );
+            if record_budget_exceeded() {
+              return Err(ExecError::RecordBudgetExceeded);
+            }
             map.push(ptr);
           }
         },
@@ -758,6 +889,9 @@ impl Function {
             &output,
             G::from_bool(!unconstrained),
           );
+          if record_budget_exceeded() {
+            return Err(ExecError::RecordBudgetExceeded);
+          }
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,

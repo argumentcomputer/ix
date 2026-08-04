@@ -218,29 +218,21 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
             verifies (circuit changed?) — re-proving"
       | none => pure ()
   let pending := (List.range shards.size).filter (fun k => !done.contains k)
-  -- Largest-predicted-RAM first. The RAM model carries a content residual
-  -- it cannot see (the klimbs blind spot), so if any shard is going to
-  -- breach the watchdog it is one of the heaviest — proving those first
-  -- surfaces a failure in the opening minutes instead of hours in, and
-  -- everything after the heavy head is strictly safer than what already
-  -- passed. Predictions come from the packer's costs sidecar; without
-  -- one, manifest order stands.
+  -- Largest-cost first, straight from the manifest's per-shard tagged
+  -- cost (measured Mfft on scan manifests, model-predicted on packer
+  -- manifests). If any shard is going to breach the watchdog it is one
+  -- of the heaviest — proving those first surfaces a failure in the
+  -- opening minutes instead of hours in, and everything after the heavy
+  -- head is strictly safer than what already passed. A manifest without
+  -- costs (all-unknown) degrades to manifest order.
   let pending : List Nat ← do
-    let costs := manifestPath ++ ".costs.csv"
-    if !(← System.FilePath.pathExists costs) then
-      IO.println s!"[prove] no costs sidecar ({costs}); proving in manifest order"
+    match Ix.Cli.CheckCmd.parseIxesShards (← IO.FS.readBinFile manifestPath) with
+    | .error e =>
+      IO.println s!"[prove] manifest cost parse failed ({e}); proving in manifest order"
       pure pending
-    else
-      -- `pred_ram_gib` is column 8 of the sidecar, printed with two
-      -- decimals, so dropping the dot yields centi-GiB as a Nat sort key.
-      let mut ram : Std.HashMap Nat Nat := {}
-      for line in (← IO.FS.readFile costs).splitOn "\n" do
-        let fs := line.splitOn ","
-        match fs[0]?.bind (·.toNat?), fs[8]?.bind (fun pr => (pr.replace "." "").toNat?) with
-        | some k, some centi => ram := ram.insert k centi
-        | _, _ => pure ()
+    | .ok rows =>
       pure <| pending.mergeSort (fun a b =>
-        (ram.get? a).getD 0 ≥ (ram.get? b).getD 0)
+        (rows[a]?.map (·.cost)).getD 0 ≥ (rows[b]?.map (·.cost)).getD 0)
   IO.println s!"[prove] {shards.size} shards: {done.size} already proven \
     (cache {proofsDir}), {pending.length} pending (heaviest first)"
   let recordProof (r : ProofRow) : IO Unit :=
@@ -297,7 +289,10 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
   return 0
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
-  let keepGoing := p.hasFlag "keep-going"
+  let keepGoing := p.hasFlag "no-fail-fast"
+  if keepGoing && p.hasFlag "fail-fast" then
+    p.printError "error: --fail-fast and --no-fail-fast are mutually exclusive"
+    return 1
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
@@ -342,7 +337,8 @@ def proveCmd : Cli.Cmd := `[Cli|
   "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
 
   FLAGS:
-    "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
+    "fail-fast";        "Halt on the first failure (the default; flag accepted for explicitness)."
+    "no-fail-fast";     "Continue past failures and report them at the end instead of halting on the first."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
     "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."

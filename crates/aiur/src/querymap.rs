@@ -319,6 +319,7 @@ impl QueryMap {
     } else {
       debug_assert_eq!(output.len(), self.outs.stride);
     }
+    crate::execute::charge_record_bytes((key.len() + output.len()) * 8 + 13);
     let hash = hash_g_slice(key);
     let i = u32::try_from(self.mults.entries).expect("query map overflow");
     self.keys.push(key);

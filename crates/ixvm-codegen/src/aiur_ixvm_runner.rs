@@ -34,10 +34,26 @@ pub fn execute_ixvm(
   args: Vec<G>,
   io_buffer: &mut IOBuffer,
 ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+  let mut record = QueryRecord::new(toplevel);
+  let output =
+    execute_ixvm_with_record(toplevel, fun_idx, &args, io_buffer, &mut record)?;
+  if aiur::execute::query_stats_enabled() {
+    aiur::execute::dump_query_stats(&record, "ixvm final");
+  }
+  Ok((record, output))
+}
+
+/// Like [`execute_ixvm`] but accumulating into a caller-owned record —
+/// see `aiur::execute::Toplevel::execute_with_record`.
+pub fn execute_ixvm_with_record(
+  toplevel: &Toplevel,
+  fun_idx: FunIdx,
+  args: &[G],
+  io_buffer: &mut IOBuffer,
+  record: &mut QueryRecord,
+) -> Result<Vec<G>, ExecError> {
   if !toplevel.functions[fun_idx].entry {
     return Err(ExecError::NotEntryFunction(fun_idx));
   }
-  let mut record = QueryRecord::new(toplevel);
-  let output = execute_generated(fun_idx, &args, &mut record, io_buffer)?;
-  Ok((record, output))
+  execute_generated(fun_idx, args, record, io_buffer)
 }

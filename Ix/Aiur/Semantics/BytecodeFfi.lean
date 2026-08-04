@@ -211,6 +211,24 @@ def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
   (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
+/-- Scan-and-cut sharding: execute the env's check schedule through the
+    codegen'd kernel as incrementally-grown thin-frontier `CheckEnv`
+    claims — the same claim type the prover pays for — with a running
+    FFT-cost readout, cutting shard boundaries where the measured cost
+    reaches the RAM budget's FFT equivalent (see
+    `crates/ffi/src/aiur/scan.rs`). Witness bytes fault in lazily, so a
+    scanner's RAM tracks one segment's touched set. Writes the `.ixes`
+    manifest plus a `.costs.csv` sidecar carrying the MEASURED per-shard
+    FFT mapped through the calibrated resource lines. Numeric params are
+    decimal strings (ABI-simple): budget GiB, cut headroom percent,
+    parallel chunk scanners (0 = autoscale), fail-fast ("0" skips
+    kernel-rejected blocks, recording them in a `.failed.csv` sidecar;
+    anything else aborts on the first). -/
+@[extern "rs_aiur_scan_shards_with_env"]
+opaque scanShardsWithEnv : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& String → @& String → @& String →
+  @& String → @& String → Except String Unit
+
 end Bytecode.Toplevel
 
 end Aiur

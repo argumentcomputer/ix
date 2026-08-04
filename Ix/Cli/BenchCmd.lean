@@ -38,6 +38,7 @@ module
 public import Cli
 public import Lean.Data.Json
 public import Ix.Benchmark.Results
+public import Ix.Cli.CheckCmd
 public import Ix.Cli.ConstsFile
 
 public section
@@ -277,30 +278,28 @@ def backendSpecs : List BackendSpec := [
                    ("recursive-proof-size", "0.05", "_"),
                    ("prove-time", "0.10", "_"), ("proof-size", "0.05", "_"),
                    ("verify-time", "0.10", "_"), ("peak-rss", "0.10", "_")] },
-  -- The Aiur shard pipeline: profile the env's touch graph, pack at the
-  -- pinned budget (`aiurShardBudgetGb`), execute the three
-  -- heaviest-predicted shards through the native kernel — the regime the
-  -- per-constant aiur rows never enter (a single-constant run faults a
-  -- tiny closure). The planner metrics only drop on a real ingress/packer
-  -- win, but they are NOT exactly reproducible — profile worker
-  -- interleaving wobbles the touch sets a little (measured ±2 shards on
-  -- InitStd's ~118) — so they ride tight 5% upper bands instead of pins;
-  -- a real regression (or win) moves them by integer factors.
-  -- pred-floor-ram sits at the pack cap whenever the env is larger than
-  -- one shard, so its band guards CAP OVERFLOW (an atomic block packed
-  -- above budget), not ordinary growth; it is tracked but not plotted —
-  -- the heavy execution measures the real thing. heavy-* slugs are
-  -- count-neutral (mean time / max RSS over the sample) so the trend
-  -- lines survive tuning the sample size. Plan wall time is logged by
-  -- the run, not uploaded — a diagnostic, not a trend.
+  -- The Aiur shard pipeline: one whole-env measured scan (`ix shard
+  -- scan`) at the pinned budget (`aiurShardBudgetGb`) — the FULL check
+  -- schedule executes through the codegen'd kernel as thin-frontier
+  -- CheckEnv claims with a running FFT readout, so the row tracks the
+  -- regime the per-constant aiur rows never enter (a single-constant run
+  -- faults a tiny closure). scan-time is the whole-env execution wall,
+  -- peak-rss the scan process tree's high-water; shards and the measured
+  -- max/total per-shard cost come from the manifest the scan writes.
+  -- fft-cost is the env's TOTAL measured fft — the same raw unit and
+  -- slug as the per-constant aiur rows, so the whole-env series joins
+  -- the existing Aiur FFT cost plot. The scan is deterministic — identical partitions across runs
+  -- on Init and InitStd — so the count and cost slugs ride 0/2% upper
+  -- bands: a regression can only move them up, and a legitimate kernel or
+  -- packer win lowers them freely.
   { name := "aiur-shard", defaultMode := "execute", inputs := .perEnv,
     testbeds := [("execute", "aiur-shard-x64-32x")],
-    metrics := [("execute", ["shards", "pred-floor-ram", "union-bytes",
-                             "heavy-execute-time", "heavy-peak-rss"])],
-    thresholds := [("shards", "0.05", "_"), ("pred-floor-ram", "0.05", "_"),
-                   ("union-bytes", "0.05", "_"),
-                   ("heavy-execute-time", "0.10", "_"),
-                   ("heavy-peak-rss", "0.10", "_")] },
+    metrics := [("execute", ["scan-time", "peak-rss", "shards",
+                             "max-shard-fft", "fft-cost"])],
+    thresholds := [("shards", "0", "_"), ("max-shard-fft", "0.02", "_"),
+                   ("fft-cost", "0.02", "_"),
+                   ("scan-time", "0.10", "_"),
+                   ("peak-rss", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -845,87 +844,46 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       return exitUsage
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ix ← resolveBin repo "ix"
-    let prof := s!"{repo}/{env}-shardbench.ixprof"
     let manifest := s!"{repo}/{env}-shardbench.ixes"
     let budget := (p.flag? "shard-budget").map (·.as! Nat)
       |>.getD aiurShardBudgetGb
-    -- Plan: profile (touch graph) + pack. Wall time is logged, not
-    -- uploaded — a diagnostic, not a tracked trend.
-    let t0 ← IO.monoMsNow
-    let e1 ← runGuarded watchdog ceilingGb ix
-      #["profile", ixe, "--out", prof, "--backend", "aiur"]
-    if e1 != 0 then
-      IO.eprintln s!"[bench] ix profile failed (exit {e1})"
+    -- One whole-env measured scan: executes the entire check schedule as
+    -- thin-frontier CheckEnv claims and writes the manifest with MEASURED
+    -- per-shard fft. The tool self-reports scan-time/peak-rss through
+    -- the rows contract (env load excluded from the timed window, RSS =
+    -- process-tree high-water). A kill (≥128) records `oom`/`crash` — the
+    -- honest row for a box the scan no longer fits; any other nonzero
+    -- exit is a genuine kernel rejection and fails the run.
+    let exit ← runGuarded watchdog ceilingGb ix
+      #["shard", ixe, "--max-ram", toString budget,
+        "--out", manifest, "--json", out, "--json-name", info.name]
+    if exit ≥ 128 then
+      let status := killStatus exit
+      IO.eprintln s!"[bench] scan killed (exit {exit}); recording {status}"
+      markKilled out info.name status
+      return 0
+    if exit != 0 then
+      IO.eprintln s!"[bench] ix shard scan failed (exit {exit})"
       return 1
-    let e2 ← runGuarded watchdog ceilingGb ix
-      #["shard", prof, "--backend", "aiur", "--max-ram", toString budget,
-        "--out", manifest]
-    if e2 != 0 then
-      IO.eprintln s!"[bench] ix shard failed (exit {e2})"
+    -- Partition metrics straight from the manifest's tagged costs
+    -- (measured fft): count, heaviest shard, and the total — the
+    -- deterministic trend lines a kernel or packer change moves.
+    match Ix.Cli.CheckCmd.parseIxesShards (← IO.FS.readBinFile manifest) with
+    | .error e =>
+      IO.eprintln s!"[bench] manifest parse failed: {e}"
       return 1
-    IO.eprintln s!"[bench] plan (profile + pack) took       {((← IO.monoMsNow) - t0).toFloat / 1000.0}s"
-    -- The packer's costs sidecar, one row per shard:
-    -- `shard,union_bytes,hb,subst,subst_unique,whnf,def_eq,nat_arith,pred_ram_gib,pred_prove_s`.
-    -- `pred_ram_gib` prints with two decimals, so dropping the dot yields
-    -- centi-GiB as a Nat sort key.
-    let mut planRows : Array (Nat × Nat × Nat) := #[]  -- (shard, centiGiB, unionBytes)
-    for line in (← IO.FS.readFile (manifest ++ ".costs.csv")).splitOn "\n" do
-      match line.splitOn "," with
-      | [k, union, _, _, _, _, _, _, pr, _] =>
-        match k.toNat?, union.toNat?, ((pr.replace "." "").toNat?) with
-        | some k, some u, some c => planRows := planRows.push (k, c, u)
-        | _, _, _ => pure ()
-      | _ => pure ()
-    if planRows.isEmpty then
-      IO.eprintln s!"[bench] no shard rows parsed from {manifest}.costs.csv"
-      return 1
-    let floorCenti := planRows.foldl (fun m r => max m r.2.1) 0
-    let unionBytes := planRows.foldl (fun s r => s + r.2.2) 0
-    writeRow out info.name "ok"
-      [ ("shards", Lean.toJson planRows.size)
-      , ("pred-floor-ram", jsonRound 2 (floorCenti.toFloat / 100.0))
-      , ("union-bytes", Lean.toJson unionBytes) ]
-    -- Execute the three heaviest-predicted shards — where a model miss or
-    -- kernel regression hits first, and where an ingress win is largest.
-    -- One process per shard (a kill costs that shard); the tool excludes
-    -- its env parse from the timed window and self-reports the row. A
-    -- kill (≥128) records `oom`/`crash` and the walk continues; any other
-    -- nonzero exit is a genuine kernel rejection and fails the run.
-    let byWeight := planRows.qsort (fun a b => a.2.1 > b.2.1)
-    let mut greens : Array String := #[]
-    for r in byWeight.extract 0 3 do
-      let rowName := s!"{info.name}/shard-{r.1}"
-      let exit ← runGuarded watchdog ceilingGb ix
-        #["check", "--ixe", ixe, "--ixes", manifest, "--shard", toString r.1,
-          "--json", out, "--json-name", rowName]
-      if exit == 0 then
-        greens := greens.push rowName
-      else if exit ≥ 128 then
-        let status := killStatus exit
-        IO.eprintln s!"[bench] '{rowName}' killed (exit {exit}); recording {status}"
-        markKilled out rowName status
-      else
-        IO.eprintln s!"[bench] '{rowName}' failed to check (exit {exit})"
+    | .ok shardRows =>
+      if shardRows.isEmpty then
+        IO.eprintln s!"[bench] empty partition in {manifest}"
         return 1
-    -- Headline aggregates on the env row, absent unless all three heavy
-    -- sub-rows completed — a missing aggregate (an OOM'd shard) is the
-    -- honest signal. Mean time and max RSS, not sums: count-robust, so
-    -- the sample size is a tuning knob and not part of the measures'
-    -- identity.
-    let rows ← readRows out
-    let getF (row : Lean.Json) (key : String) : Option Float :=
-      match (row.getObjVal? key).toOption with
-      | some (.num n) => some n.toFloat
-      | _ => none
-    let subs := greens.filterMap fun n => (rows.getObjVal? n).toOption
-    let times := subs.filterMap (getF · "execute-time")
-    let rsss := subs.filterMap (getF · "peak-rss")
-    IO.eprintln s!"[bench] heavy walk: {greens.size}/3 green"
-    if times.size == 3 && rsss.size == 3 then
+      let maxFft := shardRows.foldl (fun m r => max m r.cost) 0
+      let totalFft := shardRows.foldl (fun s r => s + r.cost) 0
+      let rows ← readRows out
       if let some envRow := (rows.getObjVal? info.name).toOption then
-        writeEntry out info.name <| (envRow.setObjVal! "heavy-execute-time"
-            (jsonRound 3 ((times.foldl (· + ·) 0.0) / times.size.toFloat))).setObjVal!
-          "heavy-peak-rss" (jsonRound 0 (rsss.foldl max 0.0))
+        writeEntry out info.name <|
+          ((envRow.setObjVal! "shards" (Lean.toJson shardRows.size)).setObjVal!
+              "max-shard-fft" (Lean.toJson maxFft)).setObjVal!
+            "fft-cost" (Lean.toJson totalFft)
   | "zisk" | "sp1" =>
     if mode != "execute" then
       p.printError s!"error: {backend} supports only execute mode"
@@ -1034,7 +992,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     "shard-only";          "Restrict to shard_target rows"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 15 GB)"
-    "shard-budget" : Nat;  "aiur-shard only: pinned `ix shard --max-ram` packing budget in GiB (default 250, the deliverable prove box). Change it only knowingly — the bencher baseline is keyed to the same partition problem."
+    "shard-budget" : Nat;  "aiur-shard only: pinned `ix shard <env.ixe> --max-ram` budget in GiB (default 250, the deliverable prove box). Change it only knowingly — the bencher baseline is keyed to the same partition problem."
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
 
