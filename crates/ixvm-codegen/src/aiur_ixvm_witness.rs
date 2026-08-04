@@ -118,8 +118,14 @@ fn add_entries_parallel(
   let ch_hint = G::from_u8(3);
   let ch_blob = G::from_u8(4);
 
-  // Pull the set of addrs we'll touch as a Vec for parallel iteration.
-  let closure_vec: Vec<Address> = closure.iter().cloned().collect();
+  // Pull the set of addrs we'll touch as a Vec for parallel iteration,
+  // SORTED: the closure set is unioned by racing threads (DashSet), so its
+  // iteration order varies run to run; the arena indices assigned below
+  // follow this order and flow into the trace via ioGetInfo, so an
+  // unsorted walk makes proof bytes nondeterministic (semantically
+  // equivalent, but bytes and FRI queries reshuffle every run).
+  let mut closure_vec: Vec<Address> = closure.iter().cloned().collect();
+  closure_vec.sort_unstable();
 
   // Phase A: parallel byte conversion per closure addr. Each thread
   // produces its own partial `ChannelEntries`. A constant goes to ch 2
