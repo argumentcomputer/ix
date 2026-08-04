@@ -200,15 +200,33 @@ def ixonDeserialize := ⟦
       0x6 => (store(Expr.Nat(size)), s),
 
       -- App: Tag4(0x7, count) + func + args...
+      --
+      -- A zero count is not a legal encoding — an `App` with no
+      -- arguments, or a binder telescope with no binders, is not an
+      -- expression this format can denote. Rust rejects all three
+      -- outright (`crates/ixon/src/serialize.rs:501-530`).
+      --
+      -- Accepting them made every telescope helper the identity at
+      -- count 0, so `0x70`/`0x80`/`0x90` became free no-op prefixes:
+      -- any expression had 3^k encodings at k extra bytes, hence 3^k
+      -- content addresses the circuit reads as the same constant and no
+      -- host will parse at all. Address grinding at ~1.58 bits/byte
+      -- against anything that compares addresses — `canon_addr_cmp`
+      -- decides canonical Muts member order on external refs.
       0x7 =>
+        assert_eq!(u64_is_zero(size), 0, "App with zero arguments");
         let (func, s2) = get_expr(s);
         get_app_telescope(func, s2, size),
 
       -- Lam: Tag4(0x8, count) + types... + body
-      0x8 => get_lam_telescope(s, size),
+      0x8 =>
+        assert_eq!(u64_is_zero(size), 0, "Lam with zero binders");
+        get_lam_telescope(s, size),
 
       -- All: Tag4(0x9, count) + types... + body
-      0x9 => get_all_telescope(s, size),
+      0x9 =>
+        assert_eq!(u64_is_zero(size), 0, "All with zero binders");
+        get_all_telescope(s, size),
 
       -- Let: Tag4(0xA, non_dep) + expr(ty) + expr(val) + expr(body)
       0xA => get_expr_let(s, size),
@@ -449,8 +467,23 @@ def ixonDeserialize := ⟦
   }
 
   -- Axiom: byte(is_unsafe) + Tag0(lvls) + expr(typ)
+  -- A wire byte standing for a Bool must be 0 or 1, as Rust's `get_bool`
+  -- requires (`crates/ixon/src/serialize.rs:55-61`).
+  --
+  -- Load-bearing, not hygiene: an unvalidated flag flows into
+  -- `is_unsafe_ci` and is consumed MULTIPLICATIVELY by `safe_refs_only`
+  -- (`Kernel/Check.lean:64-82`), which takes `1 - is_unsafe_ci(ci)` per
+  -- `Const` and multiplies the arms together. Two references to
+  -- constants carrying `is_unsafe = 2` give `(1-2)*(1-2) = 1` and
+  -- satisfy the `assert_eq!(…, 1)` that is the entire Safe→Unsafe wall.
+  fn assert_wire_bool(b: U8) {
+    assert_eq!(u8_less_than(b, 2u8), 1, "Bool byte is not 0 or 1");
+    ()
+  }
+
   fn get_axiom(stream: ByteStream) -> (Axiom, ByteStream) {
     let (is_unsafe, s) = read_byte(stream);
+    assert_wire_bool(is_unsafe);
     let (lvls, s2) = get_tag0(s);
     let (typ, s3) = get_expr(s2);
     (Axiom.Mk(to_field(is_unsafe), lvls, typ), s3)
@@ -479,6 +512,7 @@ def ixonDeserialize := ⟦
   --              Tag0(fields) + expr(typ)
   fn get_constructor(stream: ByteStream) -> (Constructor, ByteStream) {
     let (is_unsafe, s) = read_byte(stream);
+    assert_wire_bool(is_unsafe);
     let (lvls, s2) = get_tag0(s);
     let (cidx, s3) = get_tag0(s2);
     let (params, s4) = get_tag0(s3);
@@ -618,8 +652,22 @@ def ixonDeserialize := ⟦
       0xC =>
         let (mutuals, s) = get_mut_const_list(stream, size);
         (ConstantInfo.Muts(mutuals), s),
-      -- Non-Muts: flag=0xD, size[0] is the variant number
+      -- Non-Muts: flag=0xD, size[0] is the variant number.
+      --
+      -- Dispatch on the FULL tag4 size, matching Rust `ConstantInfo::get`
+      -- which matches `tag.size: u64` and errors on anything outside
+      -- 0-7 (`crates/ixon/src/serialize.rs:968-980`). The variant is only
+      -- ever 0-7, so the high 7 bytes must be zero; without this
+      -- `0xD9 0x00 0x01 …` is size 0x100, whose low byte is 0, and the
+      -- circuit parses a `Defn` from a buffer Rust rejects outright.
+      -- Same guard, same reasoning as `run_claim`'s (Kernel/Claim.lean).
+      -- Sum is 0 iff every high byte is 0 (7 bytes, max sum 1785, no wrap).
       0xD =>
+        let [_, sz1, sz2, sz3, sz4, sz5, sz6, sz7] = size;
+        assert_eq!(((((((to_field(sz1) + to_field(sz2)) + to_field(sz3))
+                      + to_field(sz4)) + to_field(sz5)) + to_field(sz6))
+                      + to_field(sz7)), 0,
+          "constant info: tag4 size exceeds a single byte");
         get_constant_info_by_variant(to_field(size[0]), stream),
     }
   }
