@@ -210,9 +210,23 @@ def infer := ⟦
                             types: List‹KExpr›) -> G {
     let ind_ty_inst = expr_inst_levels(ind_ty, lvls);
     let result = peel_n_alls_whnf(ind_ty_inst, n_skip, types);
+    -- No fallthrough arm: an inductive whose type does not peel to a
+    -- Sort is malformed, and both references that implement this ERROR
+    -- rather than answering — Rust `inductive_app_is_prop`
+    -- (`infer.rs:485-517`, "projection: expected forall in inductive
+    -- type", then `ensure_sort`) and `Ix/Tc` `inductiveAppIsProp`
+    -- (`Infer.lean:296-324`), with the same message. lean4lean has no
+    -- counterpart: `inferProj` infers the type of the APPLIED struct
+    -- expression instead and never peels the declaration's telescope, so
+    -- it offers no data point either way.
+    --
+    -- Answering 0 would be a false NEGATIVE — "not a Prop" — the unsafe
+    -- direction, since it silently disables the Prop gates in
+    -- `k_infer_proj` and would let a projection pull data out of a
+    -- proof. `check_const`'s `check_inductive_shape` rejects such an
+    -- inductive first, so this is defence in depth.
     match load(result) {
       KExprNode.Srt(l) => level_equal(l, store(KLevelNode.Zero)),
-      _ => 0,
     }
   }
 
@@ -338,6 +352,11 @@ def infer := ⟦
     }
   }
 
+  -- No fallthrough arm: a value whose type does not whnf to a Sort is not
+  -- a type, and the references error there too (Rust `ensure_sort`,
+  -- `tc.rs:648-658`, returns `TcError::TypeExpected`; `Ix/Tc`
+  -- `ensureSortWhnf` throws `.typeExpected`). Do not give it a default
+  -- level — that would make an ill-typed `Lam` usable as a type.
   fn k_ensure_sort(e: KExpr, types: List‹KExpr›) -> KLevel {
     let t = k_infer(e, types);
     let tw = whnf(t, types);

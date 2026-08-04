@@ -2932,7 +2932,7 @@ fn lean_const_to_kconst(
 #[cfg(not(target_arch = "riscv64"))]
 pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   use std::time::Instant;
-  let quiet = crate::env_var("IX_QUIET").is_ok();
+  let quiet = crate::env_var("IX_VERBOSE").is_err();
   let mut kenv = KEnv::<Meta>::new_with_recursor_aux_order(
     super::env::RecursorAuxOrder::Source,
   );
@@ -3648,7 +3648,7 @@ pub fn ixon_ingress<M: KernelMode>(
 pub fn ixon_ingress_owned<M: KernelMode>(
   ixon_env: IxonEnv,
 ) -> Result<(KEnv<M>, InternTable<M>), String> {
-  let quiet = crate::env_var_os("IX_QUIET").is_some();
+  let quiet = crate::env_var_os("IX_VERBOSE").is_none();
   let result = ixon_ingress_inner(&ixon_env);
   drop_ixon_env(ixon_env, quiet);
   result

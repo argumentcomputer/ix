@@ -26,7 +26,6 @@
 -/
 module
 public import Cli
-public import Std.Internal.UV.System
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
 public import Ix.Claim
@@ -145,7 +144,6 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
         return 0
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
-  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
   let keepGoing := p.hasFlag "keep-going"
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)

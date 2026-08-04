@@ -57,9 +57,10 @@ use ixon::CompileError;
 // Progress + diagnostic logging
 // ===========================================================================
 
-/// Disable all progress output. Set `IX_QUIET=1` for silent compilation.
-static IX_QUIET: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_QUIET").is_ok());
+/// Enable progress output. Quiet by default; set `IX_VERBOSE=1` to see
+/// per-phase timings and scheduler progress.
+static IX_VERBOSE: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_VERBOSE").is_ok());
 
 /// Log every block start + finish. Set `IX_LOG_BLOCKS=1` for deep debugging.
 /// Very verbose — only useful when you need to pin a panic to a specific block.
@@ -154,7 +155,7 @@ pub fn compile_env_with_options(
   let phase_start = Instant::now();
   let scan = setup_scan(lean_env.as_ref());
   let graph = scan.graph;
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 1/7 setup_scan (graph+ground+groups): {:.2}s",
       phase_start.elapsed().as_secs_f32()
@@ -169,7 +170,7 @@ pub fn compile_env_with_options(
   let phase_start = Instant::now();
   let ungrounded =
     proliferate_ungrounded(scan.immediate_ungrounded, &graph.in_refs);
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 2/7 proliferate_ungrounded: {:.2}s",
       phase_start.elapsed().as_secs_f32()
@@ -194,7 +195,7 @@ pub fn compile_env_with_options(
 
   let ungrounded_map: DashMap<Name, String> =
     ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
-  if !ungrounded.is_empty() && !*IX_QUIET {
+  if !ungrounded.is_empty() && *IX_VERBOSE {
     eprintln!(
       "[compile_env] {} ungrounded constants filtered from graph",
       ungrounded.len()
@@ -228,7 +229,7 @@ pub fn compile_env_with_options(
 
   let phase_start = Instant::now();
   let condensed = compute_sccs(&grounded_out_refs);
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s",
       condensed.blocks.len(),
@@ -241,7 +242,7 @@ pub fn compile_env_with_options(
   // re-read here.
   let phase_start = Instant::now();
   validate_ind_groups(&scan.ind_groups, lean_env.as_ref())?;
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 4/7 validate_ind_flags: {:.2}s",
       phase_start.elapsed().as_secs_f32()
@@ -288,7 +289,7 @@ pub fn compile_env_with_options(
   // optional. Transitive deps of surviving seeds are assumed present.
   let phase_start = Instant::now();
   precompile_aux_gen_prereqs(&condensed, lean_env, &stt)?;
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 5/7 precompile_aux_gen_prereqs: {:.2}s",
       phase_start.elapsed().as_secs_f32()
@@ -352,7 +353,7 @@ pub fn compile_env_with_options(
   // Shared ready queue: blocks that are ready to compile
   let ready_queue: Mutex<Vec<(Name, NameSet)>> = Mutex::new(Vec::new());
 
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 6/7 block_info init: {:.2}s",
       phase_start.elapsed().as_secs_f32()
@@ -371,7 +372,7 @@ pub fn compile_env_with_options(
       }
     }
   }
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] setup 7/7 ready_queue init: {:.2}s (total pre-scheduler: {:.2}s)",
       phase_start.elapsed().as_secs_f32(),
@@ -416,7 +417,7 @@ pub fn compile_env_with_options(
     Arc::new(Mutex::new(Vec::new()));
   let stop_progress = Arc::new(AtomicBool::new(false));
 
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     eprintln!(
       "[compile_env] starting: {total_blocks} blocks, {num_threads} workers"
     );
@@ -439,9 +440,10 @@ pub fn compile_env_with_options(
     // completed/total and the oldest in-flight blocks. Exits when
     // stop_progress is set (after all workers have finished).
     //
-    // Skipped entirely when IX_QUIET is set or IX_PROGRESS_MS=0 — both
-    // imply "don't print periodic updates" (one-shot errors still print).
-    if !*IX_QUIET && *IX_PROGRESS_MS > 0 {
+    // Skipped entirely unless IX_VERBOSE is set, and also when
+    // IX_PROGRESS_MS=0 — both imply "don't print periodic updates"
+    // (one-shot errors still print).
+    if *IX_VERBOSE && *IX_PROGRESS_MS > 0 {
       let interval = Duration::from_millis(*IX_PROGRESS_MS);
       // Shorter internal check so shutdown latency is bounded (otherwise the
       // scheduler waits up to `interval` for the reporter to wake and see
@@ -933,7 +935,7 @@ pub fn compile_env_with_options(
     stop_progress_ref.store(true, AtomicOrdering::Relaxed);
   });
 
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     let scheduler_elapsed = compile_start.elapsed().as_secs_f64();
     eprintln!(
       "[compile_env] scheduler drained: {}/{} blocks in {scheduler_elapsed:.1}s",
@@ -974,7 +976,7 @@ pub fn compile_env_with_options(
 
   stt.finalize_hints();
 
-  if !*IX_QUIET {
+  if *IX_VERBOSE {
     let total_elapsed = compile_start.elapsed().as_secs_f64();
     eprintln!(
       "[compile_env] complete in {total_elapsed:.1}s · \

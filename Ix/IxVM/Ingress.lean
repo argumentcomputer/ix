@@ -79,6 +79,59 @@ def ingress := ⟦
   -- / scope: Defn / Axiom / Quot. Projections (IPrj/CPrj/RPrj/DPrj)
   -- + Muts wrappers arrive here.2 (recursor + inductive support).
   -- ============================================================================
+  -- Would this definition's KCI be classified UNSAFE by `is_unsafe_ci`
+  -- (Kernel/Check.lean)? Mirrors `convert_definition`'s kind dispatch:
+  -- `Theorem` becomes `KConstantInfo.Thm`, which is unconditionally
+  -- safe, and `Opaque` keeps only `safety == Unsafe`.
+  --
+  -- The `Rec` slot is granted on exactly this condition, so the two can
+  -- never disagree. Keying the slot on `safety` alone did disagree: with
+  -- `kind` and `safety` independent bytes on the wire
+  -- (`unpack_def_kind_safety`), `(Theorem, Unsafe)` and
+  -- `(Opaque, Partial)` opened the slot while landing on a KCI variant
+  -- that reports safe — so `theorem bad : False := bad` typechecked and
+  -- stayed referenceable from safe code. The invariant to hold is
+  -- "anything that may name itself is something no safe constant may
+  -- reference", and it only holds if one predicate decides both.
+  fn defn_is_unsafe_ci(kind: DefKind, safety: DefinitionSafety) -> G {
+    match kind {
+      DefKind.Theorem => 0,
+      DefKind.Opaque =>
+        match safety {
+          DefinitionSafety.Unsafe => 1,
+          _ => 0,
+        },
+      DefKind.Definition =>
+        match safety {
+          DefinitionSafety.Safe => 0,
+          _ => 1,
+        },
+    }
+  }
+
+  -- Peer slots for a DEFINITION member of a mutual block. Safe members
+  -- get none, for the same reason a standalone safe definition gets no
+  -- self slot: `Rec` converts to a plain `Const` and `k_infer` reads a
+  -- `Const`'s declared type without checking it, so a safe definition
+  -- able to name a block peer — itself included — discharges its own
+  -- type. `build_recur_addrs` handed every member the full list
+  -- regardless, which is how the standalone guard was bypassed by
+  -- wrapping the definition in a singleton block.
+  --
+  -- Inductive and recursor members keep the full list: mutual inductives
+  -- genuinely need to name their peers, and neither kind checks a value
+  -- against a declared type, so neither can close the cycle.
+  fn defn_member_recur_addrs(d: Definition, members: List‹MutConst›,
+                                  block_addr: Addr) -> List‹Addr› {
+    match d {
+      Definition.Mk(kind, safety, _, _, _) =>
+        match defn_is_unsafe_ci(kind, safety) {
+          0 => store(ListNode.Nil),
+          _ => build_recur_addrs(members, block_addr),
+        },
+    }
+  }
+
   fn get_ci(addr: Addr) -> &KConstantInfo {
     let c = load_verified_constant(addr);
     match c {
@@ -108,13 +161,14 @@ def ingress := ⟦
             -- because safe code may not reference either kind, so a
             -- self-reference cannot leak into the trusted fragment.
             --
-            -- A `safe` definition gets an empty list, so its `Rec` aborts
-            -- on the out-of-range lookup. Mutual blocks are unaffected —
-            -- their peer slots come from `build_recur_addrs`.
+            -- A definition classified safe gets an empty list, so its
+            -- `Rec` aborts on the out-of-range lookup. Mutual blocks are
+            -- covered by the same predicate via
+            -- `defn_member_recur_addrs`.
             let self_recur = match defn {
-              Definition.Mk(_, safety, _, _, _) =>
-                match safety {
-                  DefinitionSafety.Safe => store(ListNode.Nil),
+              Definition.Mk(kind, safety, _, _, _) =>
+                match defn_is_unsafe_ci(kind, safety) {
+                  0 => store(ListNode.Nil),
                   _ => store(ListNode.Cons(addr, store(ListNode.Nil))),
                 },
             };
@@ -147,10 +201,27 @@ def ingress := ⟦
               RecursorProj.Mk(idx, block_addr) =>
                 get_ci_rprj(block_addr, flatten_u64(idx)),
             },
-          ConstantInfo.Muts(members) =>
-            -- Muts wrapper referenced directly: return the FIRST member's
-            -- KCI. Rare — usually consumers reference via projections.
-            get_ci_muts_member(addr, members, 0),
+          -- No `Muts` arm: a block address is not a constant, so an
+          -- unmatched value aborts here, which is the reject.
+          --
+          -- This used to fall back to the FIRST member's KCI, which gave
+          -- that member a SECOND working address — `Const(block)` and
+          -- `Const(dprj{0, block})` both resolved to it. One constant at
+          -- two addresses is exactly what content addressing is supposed
+          -- to preclude, and it hands out a second lexicographic position
+          -- wherever addresses are compared; `canon_addr_cmp` orders a
+          -- block's members by their external refs.
+          --
+          -- The reference does not do this either: faulting a block
+          -- address ingresses the members under their PROJECTION KIds and
+          -- the block under `kenv.blocks`, leaving nothing at the block
+          -- address itself, so asking for it errors
+          -- (`crates/kernel/src/ingress.rs:4539-4544`).
+          --
+          -- Nothing in the kernel needed the fallback: `is_muts_block`
+          -- and `check_block_peer_param_agreement` read blocks through
+          -- `load_verified_constant`, and every member is reached by its
+          -- projection.
           ConstantInfo.Recr(recr) =>
             -- Standalone Recr: single recur slot = self.
             let self_recur = store(ListNode.Cons(addr, store(ListNode.Nil)));
@@ -171,7 +242,8 @@ def ingress := ⟦
             match mc {
               MutConst.Defn(d) =>
                 let hint = #load_constant_hint(dprj_addr);
-                let recur_addrs = build_recur_addrs(members, block_addr);
+                let recur_addrs =
+                  defn_member_recur_addrs(d, members, block_addr);
                 store(convert_definition(d, sharing, refs, recur_addrs, univs, hint)),
             },
         },
@@ -232,28 +304,6 @@ let block_c = load_verified_constant(block_addr);
                 store(convert_recursor(r, block_addr, idx,
                                            sharing, refs, recur_addrs, univs)),
             },
-        },
-    }
-  }
-
-  -- Muts direct: return first member's KCI (fallback).
-  fn get_ci_muts_member(muts_addr: Addr, members: List‹MutConst›,
-                             idx: G) -> &KConstantInfo {
-    let block_c = load_verified_constant(muts_addr);
-    match block_c {
-      Constant.Mk(_, sharing, refs, univs) =>
-        let mc = muts_member_at(members, idx);
-        let recur_addrs = build_recur_addrs(members, muts_addr);
-        match mc {
-          MutConst.Defn(d) =>
-            let hint = #load_constant_hint(muts_addr);
-            store(convert_definition(d, sharing, refs, recur_addrs, univs, hint)),
-          MutConst.Indc(ind) =>
-            store(convert_inductive(ind, muts_addr, idx,
-                                         sharing, refs, recur_addrs, univs)),
-          MutConst.Recr(r) =>
-            store(convert_recursor(r, muts_addr, idx,
-                                       sharing, refs, recur_addrs, univs)),
         },
     }
   }

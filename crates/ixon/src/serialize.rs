@@ -1470,9 +1470,9 @@ impl Env {
     #[cfg(not(target_arch = "riscv64"))]
     use rayon::slice::ParallelSliceMut;
 
-    // Chatty per-section logging gated on IX_QUIET=1 (disables) so we can
+    // Chatty per-section logging, off unless IX_VERBOSE=1, so we can
     // diagnose serialization stalls on huge envs (Mathlib: ~1M consts).
-    let quiet = std::env::var("IX_QUIET").is_ok();
+    let verbose = std::env::var("IX_VERBOSE").is_ok();
     let overall_start = std::time::Instant::now();
 
     // Header: Tag4 with flag=0xE, size=0 (Env variant)
@@ -1521,7 +1521,7 @@ impl Env {
     // Section 1: Blobs (Address -> bytes)
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
-    if !quiet {
+    if verbose {
       eprintln!("[Env::put] section 1/6 blobs: {} entries", self.blobs.len(),);
     }
     let mut blob_addrs: Vec<Address> =
@@ -1539,7 +1539,7 @@ impl Env {
         buf.extend_from_slice(bytes);
       }
     }
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 1/6 blobs done in {:.1}s ({} bytes so far)",
         sec_start.elapsed().as_secs_f64(),
@@ -1554,10 +1554,10 @@ impl Env {
     // root computation above.
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
-    if !quiet {
+    if verbose {
       eprintln!("[Env::put] section 2/6 consts: {} entries", self.consts.len(),);
     }
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 2/6 consts: collected+sorted in {:.1}s, \
          streaming put...",
@@ -1578,7 +1578,7 @@ impl Env {
         buf.extend_from_slice(bytes);
       }
     }
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 2/6 consts done: put in {:.1}s, total {:.1}s \
          ({} bytes so far)",
@@ -1623,7 +1623,7 @@ impl Env {
       put_u64(fuse_hint(hints), buf);
       prev = rank + 1;
     }
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 3/6 anon_hints done: {} entries in {:.1}s \
          ({} bytes so far)",
@@ -1641,14 +1641,14 @@ impl Env {
     // follow (e.g., in metadata). `topological_sort_names` handles the
     // parallel key sort + DFS; see that function for details.
     let sec_start = std::time::Instant::now();
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 4/6 names: topo-sorting {} entries",
         self.names.len(),
       );
     }
     let sorted_names = topological_sort_names(&self.names);
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 4/6 names: topo-sorted in {:.1}s, serializing...",
         sec_start.elapsed().as_secs_f64(),
@@ -1662,7 +1662,7 @@ impl Env {
       put_address(addr, buf);
       put_name_component(name, buf);
     }
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 4/6 names done: put in {:.1}s, total {:.1}s \
          ({} bytes so far)",
@@ -1682,7 +1682,7 @@ impl Env {
     // Key clone cost: a `Name` is `Arc<NameData>`, so each clone is a
     // single atomic refcount increment (<1s for 733k).
     let sec_start = std::time::Instant::now();
-    if !quiet {
+    if verbose {
       eprintln!("[Env::put] section 5/6 named: {} entries", self.named.len(),);
     }
     let mut named_keys: Vec<Name> =
@@ -1725,7 +1725,7 @@ impl Env {
         )?;
       }
     }
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 5/6 named done: put in {:.1}s, total {:.1}s \
          ({} bytes so far)",
@@ -1739,7 +1739,7 @@ impl Env {
     // Section 6: Comms (Address -> Comm) — typically empty on compile path
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
-    if !quiet {
+    if verbose {
       eprintln!("[Env::put] section 6/6 comms: {} entries", self.comms.len(),);
     }
     let mut comm_addrs: Vec<Address> =
@@ -1755,7 +1755,7 @@ impl Env {
         entry.value().put(buf);
       }
     }
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] section 6/6 comms done in {:.1}s ({} bytes so far)",
         sec_start.elapsed().as_secs_f64(),
@@ -1763,7 +1763,7 @@ impl Env {
       );
     }
 
-    if !quiet {
+    if verbose {
       eprintln!(
         "[Env::put] ALL DONE: {} bytes in {:.1}s",
         buf.len(),

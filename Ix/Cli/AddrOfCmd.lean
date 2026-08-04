@@ -10,7 +10,6 @@
 -/
 module
 public import Cli
-public import Std.Internal.UV.System
 public import Ix.Address
 public import Ix.Common
 public import Ix.Environment
@@ -26,9 +25,6 @@ open Ix.Cli.NameResolve
 namespace Ix.Cli.AddrOfCmd
 
 def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
-  -- Suppress Rust-side `[compile_env]` scheduler noise; the only
-  -- signal this command emits is the address on stdout.
-  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
   let some nameArg := p.positionalArg? "name"
     | p.printError "error: must specify <Lean.Name>"; return 1
   let argStr := nameArg.as! String
