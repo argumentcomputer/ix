@@ -16,13 +16,27 @@ runs:
         # Some warpbuild images ship an unreachable azure mirror that hangs
         # `apt-get update`; drop it first (no-op elsewhere).
         sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
-        sudo apt-get update
-        sudo apt-get install -y \
-          xz-utils jq curl build-essential qemu-system libomp-dev libgmp-dev \
-          nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
-          libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
-          openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
-          pkg-config libssl-dev
+        export DEBIAN_FRONTEND=noninteractive
+        # The Ubuntu EC2 mirrors sporadically 502 / throttle on these large
+        # fetches (qemu-system alone pulls hundreds of MB), so retry the whole
+        # update+install: `Acquire::Retries` absorbs single-download blips and
+        # `--fix-missing` resumes a partially fetched set.
+        for attempt in 1 2 3; do
+          sudo apt-get update || true
+          if sudo apt-get install -y --fix-missing -o Acquire::Retries=5 \
+            xz-utils jq curl build-essential qemu-system libomp-dev libgmp-dev \
+            nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
+            libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
+            openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
+            pkg-config libssl-dev; then
+            break
+          fi
+          if [ "$attempt" = 3 ]; then
+            echo "::error::apt-get install failed after 3 attempts"; exit 1
+          fi
+          echo "::warning::apt-get install attempt $attempt failed; retrying in $((attempt * 20))s"
+          sleep $((attempt * 20))
+        done
     # sp1up resolves `releases/latest` (and downloads the toolchain) through
     # api.github.com. Anonymous API calls share a 60/hr per-IP limit that hot
     # runner IPs exhaust, failing the step with "Unable to access the latest
