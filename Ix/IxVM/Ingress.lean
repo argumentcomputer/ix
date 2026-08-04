@@ -201,10 +201,27 @@ def ingress := ⟦
               RecursorProj.Mk(idx, block_addr) =>
                 get_ci_rprj(block_addr, flatten_u64(idx)),
             },
-          ConstantInfo.Muts(members) =>
-            -- Muts wrapper referenced directly: return the FIRST member's
-            -- KCI. Rare — usually consumers reference via projections.
-            get_ci_muts_member(addr, members, 0),
+          -- No `Muts` arm: a block address is not a constant, so an
+          -- unmatched value aborts here, which is the reject.
+          --
+          -- This used to fall back to the FIRST member's KCI, which gave
+          -- that member a SECOND working address — `Const(block)` and
+          -- `Const(dprj{0, block})` both resolved to it. One constant at
+          -- two addresses is exactly what content addressing is supposed
+          -- to preclude, and it hands out a second lexicographic position
+          -- wherever addresses are compared; `canon_addr_cmp` orders a
+          -- block's members by their external refs.
+          --
+          -- The reference does not do this either: faulting a block
+          -- address ingresses the members under their PROJECTION KIds and
+          -- the block under `kenv.blocks`, leaving nothing at the block
+          -- address itself, so asking for it errors
+          -- (`crates/kernel/src/ingress.rs:4539-4544`).
+          --
+          -- Nothing in the kernel needed the fallback: `is_muts_block`
+          -- and `check_block_peer_param_agreement` read blocks through
+          -- `load_verified_constant`, and every member is reached by its
+          -- projection.
           ConstantInfo.Recr(recr) =>
             -- Standalone Recr: single recur slot = self.
             let self_recur = store(ListNode.Cons(addr, store(ListNode.Nil)));
@@ -287,29 +304,6 @@ let block_c = load_verified_constant(block_addr);
                 store(convert_recursor(r, block_addr, idx,
                                            sharing, refs, recur_addrs, univs)),
             },
-        },
-    }
-  }
-
-  -- Muts direct: return first member's KCI (fallback).
-  fn get_ci_muts_member(muts_addr: Addr, members: List‹MutConst›,
-                             idx: G) -> &KConstantInfo {
-    let block_c = load_verified_constant(muts_addr);
-    match block_c {
-      Constant.Mk(_, sharing, refs, univs) =>
-        let mc = muts_member_at(members, idx);
-        let recur_addrs = build_recur_addrs(members, muts_addr);
-        match mc {
-          MutConst.Defn(d) =>
-            let hint = #load_constant_hint(muts_addr);
-            let defn_recur = defn_member_recur_addrs(d, members, muts_addr);
-            store(convert_definition(d, sharing, refs, defn_recur, univs, hint)),
-          MutConst.Indc(ind) =>
-            store(convert_inductive(ind, muts_addr, idx,
-                                         sharing, refs, recur_addrs, univs)),
-          MutConst.Recr(r) =>
-            store(convert_recursor(r, muts_addr, idx,
-                                       sharing, refs, recur_addrs, univs)),
         },
     }
   }
