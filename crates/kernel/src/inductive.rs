@@ -61,8 +61,9 @@ fn checked_usize_to_u64<M: KernelMode>(
   label: &str,
   value: usize,
 ) -> Result<u64, TcError<M>> {
-  u64::try_from(value)
-    .map_err(|_| TcError::Other(format!("{label} does not fit in u64")))
+  u64::try_from(value).map_err(|error| {
+    TcError::Other(format!("{label} does not fit in u64: {error}"))
+  })
 }
 
 /// A member of the "flat" mutual block used for recursor generation.
@@ -2142,24 +2143,23 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
   /// inductive address: nested flattening keys auxiliaries by
   /// `(inductive, specialization)`, not by inductive address alone.
   fn positivity_group_matches(
-    &mut self,
     group: &PositivityGroup<M>,
     family: &Address,
     us: &[KUniv<M>],
     args: &[KExpr<M>],
     n_params: usize,
-  ) -> Result<bool, TcError<M>> {
+  ) -> bool {
     let Some(expected_universes) = group.concrete_univs.as_deref() else {
-      return Ok(false);
+      return false;
     };
-    Ok(same_nested_specialization(
+    same_nested_specialization(
       family,
       expected_universes,
       &group.params,
       family,
       us,
       &args[..n_params],
-    ))
+    )
   }
 
   /// Check that a field domain doesn't have block inductives in negative position.
@@ -2260,9 +2260,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
               .cloned()
               .collect();
             for group in &existing_groups {
-              if self.positivity_group_matches(
+              if Self::positivity_group_matches(
                 group, &id.addr, us, &args, n_params,
-              )? {
+              ) {
                 for index in args.iter().skip(n_params) {
                   if expr_mentions_any_addr(index, root_addrs) {
                     return Err(TcError::Other(
