@@ -21,10 +21,22 @@ know about the state of Lean's reference counting mechanism.
 
 By convention, names of external Rust functions start with `rs_`.
 
+## Elaboration-time FFI
+
+Most Ix FFI is linked statically into final Lean executables. Proofs using
+`native_decide`, however, execute compiled Lean code while modules are still
+being elaborated. The `ix-rs-dyn` crate builds the small `ix_rs_dyn` dynamic
+library loaded by the `IxTcVerify` Lake target for that purpose.
+
+The dynamic library contains only the BLAKE3 and unsigned-integer operations
+needed by verification fixtures. It exports both the raw `@[extern]` entry
+points and the boxed entry points used by Lean's native evaluator. When an
+opaque external operation becomes reachable from a new elaboration-time
+computation, its boxed ABI must be added and tested there as well.
+
 ## Linear API
 
 There is a deprecated API for passing mutable objects between Lean and Rust in `c/linear.h`.
 This code path is unused for now as the Rust FFI is designed to clone if mutation is needed.
 However, the `linear.h` file is well-documented in case we want to revisit it later for
 performance-critical applications.
-

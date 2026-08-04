@@ -1,0 +1,18 @@
+[package]
+name = "ix-rs-dyn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "ix_rs_dyn"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Match the audited Blake3.lean Rust backend exactly. The workspace's `1.8.4`
+# requirement is semver-compatible with newer patch releases and is not a pin.
+blake3 = "=1.8.4"
+lean-ffi.workspace = true
+
+[lints]
+workspace = true

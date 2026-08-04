@@ -155,36 +155,17 @@ end Benchmarks
 
 section IxTcVerify
 
-/-- Native-decide fixture proofs execute the same pinned Rust BLAKE3 backend
-used by production address construction.  Build a loadable form of that exact
-backend for Lean's elaboration process. -/
-target blake3_rs_verify_cdylib : FilePath := do
-  let some blake3Pkg ← findPackageByName? `Blake3
-    | error "Blake3 dependency package is unavailable"
+/-- Build the minimal Rust dynlib that supplies raw and boxed FFI symbols to
+Lean's native evaluator while `IxTcVerify` is being elaborated. -/
+target ix_rs_dyn pkg : Dynlib := do
   proc {
     cmd := "cargo"
-    args := #["rustc", "--release", "--", "--crate-type", "cdylib",
-      "-C", "extra-filename="]
-    cwd := blake3Pkg.dir / "rust"
+    args := #["build", "--release", "-p", "ix-rs-dyn"]
+    cwd := pkg.dir
   } (quiet := true)
-  inputBinFile <| blake3Pkg.dir / "rust" / "target" / "release" / "deps" /
-    nameToSharedLib "blake3_rs"
-
-/-- Boxed-symbol adapter loaded by Lean while elaborating native-decide
-proofs.  Its dependency is the exact Rust cdylib above. -/
-target blake3_rs_verify_dynlib pkg : Dynlib := do
-  let source ← inputTextFile <| pkg.dir / "crates" / "ffi" /
-    "blake3_native_decide.c"
-  let leanIncludeDir ← getLeanIncludeDir
-  let object ← buildO
-    (pkg.buildDir / "blake3_native_decide.o") source
-    #["-fPIC", "-I", leanIncludeDir.toString] #[] "cc" getLeanTrace
-  let rustDynlib ← blake3_rs_verify_cdylib.fetch
-  -- Passing the cdylib as a link object records its concrete artifact path in
-  -- the adapter.  Lean can therefore load it without relying on LD_LIBRARY_PATH.
-  buildSharedLib "blake3_native_decide_v4"
-    (pkg.buildDir / nameToSharedLib "blake3_native_decide_v4")
-    #[object, rustDynlib] #[]
+  let dynlib ← inputBinFile <| pkg.dir / "target" / "release" /
+    nameToSharedLib "ix_rs_dyn"
+  dynlib.mapM fun path => pure {path, name := "ix_rs_dyn"}
 
 /- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
 Non-default: `lake build ix` never
@@ -202,7 +183,7 @@ lean_lib IxTcVerify where
   -- that executable is linked, after its modules have been elaborated.
   -- These native-decide proofs need the boxed FFI symbols while the library
   -- modules are being elaborated, so they must be supplied as a dynlib.
-  dynlibs := #[blake3_rs_verify_dynlib]
+  dynlibs := #[ix_rs_dyn]
 
 end IxTcVerify
 
