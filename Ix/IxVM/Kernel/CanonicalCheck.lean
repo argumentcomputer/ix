@@ -446,14 +446,38 @@ def canonicalCheck := ⟦
       KConstantInfo.Induct(xn, xt, xp, xi, xc, xu, xba, xidx) =>
         match y {
           KConstantInfo.Induct(yn, yt, yp, yi, yc, yu, yba, yidx) =>
-            canon_sord_then(canon_sord_of_g(canon_ord_cmp_g(xu, yu)),
+            let head = canon_sord_then(canon_sord_of_g(canon_ord_cmp_g(xu, yu)),
               canon_sord_then(canon_sord_of_g(canon_ord_cmp_g(xn, yn)),
                 canon_sord_then(canon_sord_of_g(canon_ord_cmp_g(xp, yp)),
-                  canon_sord_then(canon_sord_of_g(canon_ord_cmp_g(xi, yi)),
-                    canon_sord_then(canon_sord_of_g(canon_ord_cmp_g(xc, yc)),
-                      canon_sord_then(canon_cmp_kexpr_ctx(xt, yt, ctx),
-                        canon_cmp_ctor_range_ctx(xba, xidx, yba, yidx,
-                                               xc, ctx, 0))))))),
+                  canon_sord_of_g(canon_ord_cmp_g(xi, yi)))));
+            -- The ctor tail runs ONLY when the counts match. Aiur is
+            -- call-by-value, so `canon_sord_then` evaluates its second
+            -- argument even when the first has already decided — and the
+            -- tail below walks `0..xc` resolving BOTH inductives at each
+            -- index, so with `xc > yc` it asks `ctor_at` for a ctor `y`
+            -- does not have and aborts the run. That rejected legitimate
+            -- blocks: Lean forces mutual inductives to share parameters
+            -- and universes, not constructor counts.
+            --
+            -- The references are total here because they zip the two ctor
+            -- lists rather than indexing off one count — `SOrd::try_zip`
+            -- (`crates/common/src/strong_ordering.rs`) returns lt/gt on a
+            -- length mismatch, and `compare_kindc`
+            -- (`canonical_check.rs`) even carries a fallback for an
+            -- unresolvable ctor.
+            --
+            -- Ordering is unchanged: `|ctors|` still ranks ahead of `ty`
+            -- and the tail, since `then(head, then(eq, rest))` is
+            -- `then(head, rest)`.
+            let nctors = canon_ord_cmp_g(xc, yc);
+            match nctors {
+              1 =>
+                canon_sord_then(head,
+                  canon_sord_then(canon_cmp_kexpr_ctx(xt, yt, ctx),
+                    canon_cmp_ctor_range_ctx(xba, xidx, yba, yidx,
+                                           xc, ctx, 0))),
+              _ => canon_sord_then(head, canon_sord_of_g(nctors)),
+            },
           _ => canon_sord_eq_strong(),
         },
       KConstantInfo.Rec(xn, xt, xp, xi, xm, xmi, xrules, xk, _xu, _xba, _xr) =>
@@ -474,8 +498,10 @@ def canonicalCheck := ⟦
   }
 
   -- Walk cidx 0..nc, resolving each ctor from both inductives via
-  -- get_ci_cprj (mirror compare_kctor_idxs_ctx; |ctors| compared
-  -- upstream so both ranges exhaust together).
+  -- get_ci_cprj (mirror compare_kctor_idxs_ctx). Callers MUST have
+  -- established that both inductives have `nc` constructors — this
+  -- indexes off one count and resolves both sides, so a shorter `y`
+  -- aborts in `ctor_at`.
   fn canon_cmp_ctor_range_ctx(xba: Addr, xidx: G, yba: Addr, yidx: G,
                             nc: G, ctx: List‹(Addr, G)›, c: G) -> (G, G) {
     match nc - c {
