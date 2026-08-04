@@ -1765,8 +1765,8 @@ pub fn build_compile_flat_block_with_overlay(
     block_param_decls.iter().map(|d| d.fvar_name.clone()).collect();
 
   let mut flat: Vec<FvarFlatMember> = Vec::new();
-  // Dedup tracker: (ext_ind_name, spec_param content hashes).
-  let mut aux_seen: Vec<(Name, Vec<Hash>)> = Vec::new();
+  // Dedup tracker: (external name, universe hashes, parameter hashes).
+  let mut aux_seen: Vec<(Name, Vec<Hash>, Vec<Hash>)> = Vec::new();
 
   // Precompute the set of block original names once. Threaded through
   // `try_detect_nested_fvar` for O(1) "is head in the block?" checks on
@@ -1878,15 +1878,6 @@ pub fn build_compile_flat_block_with_overlay(
     }
   }
 
-  // Maximize occurrence levels: Lean uses a single set of levels per external
-  // inductive name across ALL occurrences in the block. When `Array` appears
-  // with both `Array.{u}` (containing Type u) and `Array.{max u v}` (containing
-  // Type (max u v)), Lean uses `max u v` for all Array auxiliaries.
-  //
-  // For each external inductive name, compute the pointwise max of all
-  // occurrence_level_args, then apply that to all auxiliaries with that name.
-  maximize_occurrence_levels(&mut flat, ordered_originals.len());
-
   // Convert FVar-form spec_params back to BVar form for the output.
   // Abstract block-param FVars outermost-first: _bp_0 → BVar(n-1),
   // _bp_1 → BVar(n-2), ..., _bp_{n-1} → BVar(0).
@@ -1945,66 +1936,11 @@ fn abstract_spec_params_to_bvars(
 /// rather than BVar range arithmetic.
 ///
 /// Ported from the kernel's `try_detect_nested` (`src/ix/kernel/inductive.rs:483-612`).
-/// Maximize occurrence levels across all auxiliaries sharing the same external
-/// inductive name.
-///
-/// Lean's kernel computes a single set of universe levels per external inductive
-/// across all its nested occurrences in the block. When `Array` appears as both
-/// `Array.{u}` (containing `Type u`) and `Array.{max u v}` (containing
-/// `Type (max u v)`), all Array auxiliaries use `max u v`.
-///
-/// This function computes the pointwise max of `occurrence_level_args` across
-/// all auxiliaries with the same `name`, then updates all of them.
-fn maximize_occurrence_levels(flat: &mut [FvarFlatMember], n_originals: usize) {
-  use ix_common::env::LevelData;
-  use rustc_hash::FxHashMap;
-
-  // Group auxiliary members by external inductive name.
-  // Key: ext_ind name, Value: (n_levels, merged_levels)
-  let mut max_levels: FxHashMap<Name, Vec<Level>> = FxHashMap::default();
-
-  for entry in flat.iter().skip(n_originals) {
-    let merged = max_levels
-      .entry(entry.name.clone())
-      .or_insert_with(|| entry.occurrence_level_args.clone());
-    // Pointwise max: for each level position, take the broader level.
-    if merged.len() == entry.occurrence_level_args.len() {
-      for (m, e) in merged.iter_mut().zip(entry.occurrence_level_args.iter()) {
-        *m = level_max_raw(m, e);
-      }
-    }
-  }
-
-  // Apply the maximized levels to all auxiliaries.
-  for entry in flat.iter_mut().skip(n_originals) {
-    if let Some(merged) = max_levels.get(&entry.name)
-      && merged.len() == entry.occurrence_level_args.len()
-    {
-      entry.occurrence_level_args = merged.clone();
-    }
-  }
-
-  /// Raw level max: `max(a, b)` with only zero elimination.
-  /// Matches Lean's `mkLevelMax` behavior.
-  fn level_max_raw(a: &Level, b: &Level) -> Level {
-    if a == b {
-      return a.clone();
-    }
-    if matches!(a.as_data(), LevelData::Zero(_)) {
-      return b.clone();
-    }
-    if matches!(b.as_data(), LevelData::Zero(_)) {
-      return a.clone();
-    }
-    Level::max(a.clone(), b.clone())
-  }
-}
-
 fn try_detect_nested_fvar(
   dom: &LeanExpr,
   block_names: &FxHashSet<Name>,
   flat: &mut Vec<FvarFlatMember>,
-  aux_seen: &mut Vec<(Name, Vec<Hash>)>,
+  aux_seen: &mut Vec<(Name, Vec<Hash>, Vec<Hash>)>,
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
   block_param_fvar_names: &[Name],
@@ -2090,19 +2026,24 @@ fn try_detect_nested_fvar(
     }
   }
 
-  // Dedup: check if we've already seen this (ext_ind_name, spec_params) pair.
-  // Use blake3 content hashes for structural equality. Since the FVar naming
-  // is deterministic (_bp_0, _bp_1, ...), hashing in FVar form is stable.
+  // Dedup by the complete nested application identity. Universe arguments
+  // cannot be merged by family name: Lean emits distinct motives for
+  // otherwise identical term parameters at different phantom universe
+  // specializations.
+  let level_hashes: Vec<Hash> =
+    head_levels.iter().map(|level| *level.get_hash()).collect();
   let spec_hashes: Vec<Hash> =
     spec_params.iter().map(|e| *e.get_hash()).collect();
-  if aux_seen.iter().any(|(name, hashes)| {
+  if aux_seen.iter().any(|(name, levels, hashes)| {
     *name == head_name
+      && levels.len() == level_hashes.len()
+      && levels.iter().zip(level_hashes.iter()).all(|(a, b)| a == b)
       && hashes.len() == spec_hashes.len()
       && hashes.iter().zip(spec_hashes.iter()).all(|(a, b)| a == b)
   }) {
     return;
   }
-  aux_seen.push((head_name.clone(), spec_hashes));
+  aux_seen.push((head_name.clone(), level_hashes, spec_hashes));
 
   // Use the raw levels from the Const node in the constructor type.
   // These match the Lean kernel's `restore_nested` output, which
@@ -2572,6 +2513,144 @@ mod tests {
     assert_eq!(flat[0].own_params, 0);
     assert_eq!(flat[0].n_indices, 0);
     assert!(flat[0].spec_params.is_empty());
+  }
+
+  /// Exact producer-side analogue of Lean's two-phantom-universe nested
+  /// fixture. The external family and term parameter are identical; only
+  /// its second universe argument differs, so both auxiliaries must survive.
+  fn universe_specialized_nested_compile_env() -> LeanEnv {
+    use ix_common::env::{BinderInfo, ConstructorVal};
+
+    let mut env = LeanEnv::default();
+    let phantom = mk_name_for("Phantom");
+    let phantom_mk = mk_name_for("Phantom.mk");
+    let root = mk_name_for("UniverseNested");
+    let left = mk_name_for("UniverseNested.left");
+    let right = mk_name_for("UniverseNested.right");
+    let p = mk_name_for("p");
+    let q = mk_name_for("q");
+    let u = mk_name_for("u");
+    let v = mk_name_for("v");
+    let param = |name: &Name| LL::param(name.clone());
+    let root_app = || LeanExpr::cnst(root.clone(), vec![param(&u), param(&v)]);
+
+    env.insert(
+      phantom.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: phantom.clone(),
+          level_params: vec![p.clone(), q.clone()],
+          typ: LeanExpr::all(
+            mk_name_for("alpha"),
+            LeanExpr::sort(param(&p)),
+            sort0(),
+            BinderInfo::Default,
+          ),
+        },
+        num_params: Nat::from(1u64),
+        num_indices: Nat::from(0u64),
+        all: vec![phantom.clone()],
+        ctors: vec![phantom_mk.clone()],
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+    env.insert(
+      phantom_mk.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: phantom_mk,
+          level_params: vec![p.clone(), q.clone()],
+          typ: LeanExpr::all(
+            mk_name_for("alpha"),
+            LeanExpr::sort(param(&p)),
+            LeanExpr::all(
+              mk_name_for("beta"),
+              LeanExpr::sort(param(&q)),
+              LeanExpr::app(
+                LeanExpr::cnst(phantom.clone(), vec![param(&p), param(&q)]),
+                LeanExpr::bvar(Nat::from(1u64)),
+              ),
+              BinderInfo::Default,
+            ),
+            BinderInfo::Default,
+          ),
+        },
+        induct: phantom.clone(),
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(1u64),
+        num_fields: Nat::from(1u64),
+        is_unsafe: false,
+      }),
+    );
+
+    env.insert(
+      root.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: root.clone(),
+          level_params: vec![u.clone(), v.clone()],
+          typ: sort0(),
+        },
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        all: vec![root.clone()],
+        ctors: vec![left.clone(), right.clone()],
+        num_nested: Nat::from(2u64),
+        is_rec: true,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+    for (name, level, cidx) in
+      [(left, param(&u), 0u64), (right, param(&v), 1u64)]
+    {
+      let nested = LeanExpr::app(
+        LeanExpr::cnst(phantom.clone(), vec![LL::zero(), level]),
+        root_app(),
+      );
+      env.insert(
+        name.clone(),
+        ConstantInfo::CtorInfo(ConstructorVal {
+          cnst: ConstantVal {
+            name,
+            level_params: vec![u.clone(), v.clone()],
+            typ: LeanExpr::all(
+              mk_name_for("nested"),
+              nested,
+              root_app(),
+              BinderInfo::Default,
+            ),
+          },
+          induct: root.clone(),
+          cidx: Nat::from(cidx),
+          num_params: Nat::from(0u64),
+          num_fields: Nat::from(1u64),
+          is_unsafe: false,
+        }),
+      );
+    }
+    env
+  }
+
+  #[test]
+  fn compile_flat_identity_includes_universe_specialization() {
+    let env = universe_specialized_nested_compile_env();
+    let flat =
+      build_compile_flat_block(&[mk_name_for("UniverseNested")], &env).unwrap();
+    assert_eq!(flat.len(), 3);
+    assert_eq!(flat[1].name, mk_name_for("Phantom"));
+    assert_eq!(flat[2].name, mk_name_for("Phantom"));
+    assert_eq!(
+      flat[1].occurrence_level_args,
+      vec![LL::zero(), LL::param(mk_name_for("u"))]
+    );
+    assert_eq!(
+      flat[2].occurrence_level_args,
+      vec![LL::zero(), LL::param(mk_name_for("v"))]
+    );
   }
 
   #[test]

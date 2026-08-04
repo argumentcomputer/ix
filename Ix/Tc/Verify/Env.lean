@@ -275,9 +275,7 @@ theorem TrKEnv'.wf {safety : Ix.DefinitionSafety}
   | defn h1 h2 h3 h4 _ ih =>
     have ⟨_, H⟩ := ih
     exact ⟨_, H.decl <| .def h3 h4⟩
-  | induct h1 h2 _ ih =>
-    have ⟨_, H⟩ := ih
-    exact ⟨_, H.decl <| .induct h1 h2.to_addInduct⟩
+  | induct _ h2 _ _ => cases h2
 
 theorem TrKEnv.wf {safety : Ix.DefinitionSafety}
     {nameOf : Address → Option Lean.Name}
@@ -790,6 +788,35 @@ def Promotes (before : VerifyWorld) (ids : KId .anon → Prop)
     (after : VerifyWorld) : Prop :=
   before ≤ after ∧ ∀ ⦃id⦄, ids id → after.trusted id
 
+/-- An exact ghost promotion.  Besides ordinary monotone growth, this pins
+the complete post-trust predicate: the only newly trusted identifiers are
+the requested identifiers.  This stronger relation is needed at atomic
+block boundaries; `Promotes` remains the consumer-facing monotone view. -/
+structure ExactPromotion (before : VerifyWorld) (ids : KId .anon → Prop)
+    (after : VerifyWorld) : Prop where
+  le : before ≤ after
+  trusted_iff : ∀ id, after.trusted id ↔ ids id ∨ before.trusted id
+
+namespace ExactPromotion
+
+/-- Forget exactness while retaining the ordinary promotion contract. -/
+theorem promotes {before after : VerifyWorld} {ids : KId .anon → Prop}
+    (h : ExactPromotion before ids after) : Promotes before ids after := by
+  refine ⟨h.le, ?_⟩
+  intro id hid
+  exact (h.trusted_iff id).2 (.inl hid)
+
+/-- Exact promotion cannot introduce an unrelated trusted identifier. -/
+theorem newlyTrusted {before after : VerifyWorld}
+    {ids : KId .anon → Prop} (h : ExactPromotion before ids after)
+    {id : KId .anon} (hafter : after.trusted id)
+    (hbefore : ¬before.trusted id) : ids id := by
+  rcases (h.trusted_iff id).1 hafter with hnew | hold
+  · exact hnew
+  · exact False.elim (hbefore hold)
+
+end ExactPromotion
+
 namespace Promotes
 
 theorem catalog {before after : VerifyWorld} {ids : KId .anon → Prop}
@@ -816,6 +843,48 @@ theorem trans {a b c : VerifyWorld} {ids ids' : KId .anon → Prop}
 
 end Promotes
 
+/-- Admit one pending standalone declaration with an exact post-trust
+predicate.  This is the adversarially strong form of `promote`: the witness
+world is the same one-declaration Theory transition, and no unrelated
+catalog entry can become trusted as a side effect. -/
+theorem TrustedCatalogRel.promoteExact
+    {trProj : RawProjRel} {world : VerifyWorld} {id : KId .anon}
+    {d : VDecl} {venv' : VEnv}
+    (hrel : TrustedCatalogRel trProj world)
+    (hpending : PendingDecl trProj world id d)
+    (hwf : VDecl.WF world.venv d venv') :
+    ∃ world',
+      ExactPromotion world (fun target => target = id) world' ∧
+      TrustedCatalogRel trProj world' ∧
+      TrustedDecl trProj world' id d := by
+  obtain ⟨c, hcat, hraw, huntrusted, hclosed, hfresh⟩ := hpending
+  have hle : world.venv ≤ venv' := RawDeclRel.wf_le hraw hwf
+  let world' : VerifyWorld :=
+    { catalog := world.catalog
+      trusted := TrustInsert world.trusted id
+      venv := venv'
+      nameOf := world.nameOf
+      blocks := world.blocks
+      venvWF := by
+        obtain ⟨ds, hds⟩ := world.venvWF
+        exact ⟨_, .decl hwf hds⟩
+      trustedCatalogued := by
+        intro target htrusted
+        change target = id ∨ world.trusted target at htrusted
+        rcases htrusted with hnew | hold
+        · subst target
+          exact ⟨c, hcat⟩
+        · exact world.trustedCatalogued hold }
+  refine ⟨world', ?_, ?_, ?_⟩
+  · refine ⟨⟨rfl, rfl, rfl, ?_, hle⟩, ?_⟩
+    · intro target hold
+      exact TrustInsert.old hold
+    · intro target
+      rfl
+  · exact TrustedCatalogLog.promote hrel hcat hraw hclosed huntrusted hwf
+  · exact ⟨c, world.venv, venv', hcat, hraw.mono hle,
+      TrustInsert.self, hwf, VEnv.LE.rfl⟩
+
 /-- Admit one pending standalone declaration.  The declaration-WF argument is
 unavoidable and explicit: it is the new fact supplied by checker success.
 The concrete `KEnv` is not mutated. -/
@@ -829,33 +898,9 @@ theorem TrustedCatalogRel.promote
       Promotes world (fun target => target = id) world' ∧
       TrustedCatalogRel trProj world' ∧
       TrustedDecl trProj world' id d := by
-  obtain ⟨c, hcat, hraw, huntrusted, hclosed, hfresh⟩ := hpending
-  have hle : world.venv ≤ venv' := RawDeclRel.wf_le hraw hwf
-  let world' : VerifyWorld :=
-    { catalog := world.catalog
-      trusted := TrustInsert world.trusted id
-      venv := venv'
-      nameOf := world.nameOf
-      venvWF := by
-        obtain ⟨ds, hds⟩ := world.venvWF
-        exact ⟨_, .decl hwf hds⟩
-      trustedCatalogued := by
-        intro target htrusted
-        change target = id ∨ world.trusted target at htrusted
-        rcases htrusted with hnew | hold
-        · subst target
-          exact ⟨c, hcat⟩
-        · exact world.trustedCatalogued hold }
-  refine ⟨world', ?_, ?_, ?_⟩
-  · refine ⟨⟨rfl, rfl, ?_, hle⟩, ?_⟩
-    · intro target hold
-      exact TrustInsert.old hold
-    · intro target htarget
-      subst target
-      exact TrustInsert.self
-  · exact TrustedCatalogLog.promote hrel hcat hraw hclosed huntrusted hwf
-  · exact ⟨c, world.venv, venv', hcat, hraw.mono hle,
-      TrustInsert.self, hwf, VEnv.LE.rfl⟩
+  obtain ⟨world', hexact, hworld, hdecl⟩ :=
+    TrustedCatalogRel.promoteExact hrel hpending hwf
+  exact ⟨world', hexact.promotes, hworld, hdecl⟩
 
 /-- The G1b ill-typed pending world already satisfies the G1c trusted-log
 invariant: its catalog entry remains completely outside the empty log. -/

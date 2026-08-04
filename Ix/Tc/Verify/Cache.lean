@@ -260,9 +260,17 @@ theorem SourceReferences.mono {small large : RunSupport}
   obtain ⟨e, he, ha, href⟩ := h
   exact ⟨e, hle.1 e he, ha, href⟩
 
-/-- Direct constant roots on which an entry can depend. Trusted constants'
-own bodies are justified by their trusted-world provenance, so this records
-roots rather than an unbounded syntactic transitive closure. -/
+/-- Direct *declaration* roots on which an entry can depend. Trusted
+constants' own bodies are justified by their trusted-world provenance, so
+this records roots rather than an unbounded syntactic transitive closure.
+
+Physical block keys are deliberately not declaration roots. They identify
+entries in `KEnv.blocks`, but anonymous Muts addresses are not `KConst`
+members and are never promoted into `VerifyWorld.trusted`. The semantic
+validity predicate for the structural cache families must relate such a key
+to its exact `VerifyWorld.blocks` member array instead. Treating the key as a
+`KId` dependency would make every real inductive-block post-state
+uninhabitable, even after all of its declarations were admitted. -/
 def References (support : RunSupport) : CacheEntry → KId .anon → Prop
   | .expr _ key value, id =>
       SourceReferences support key.1 id ∨ value.References id
@@ -274,14 +282,13 @@ def References (support : RunSupport) : CacheEntry → KId .anon → Prop
   | .natSuccStuck key, id | .isProp key _, id =>
       SourceReferences support key.1 id
   | .isRec ind _, id => id.addr = ind
-  | .recursor block generated, id =>
-      id = block ∨ ∃ g ∈ generated,
+  | .recursor _ generated, id =>
+      ∃ g ∈ generated,
         id.addr = g.indAddr ∨ g.ty.References id ∨
           ∃ rule ∈ g.rules, rule.rhs.References id
-  | .recMajors majors block, id => id ∈ majors ∨ id = block
-  | .blockPeer block, id => id = block
-  | .blockResult block (.ok ()), id => id = block
-  | .blockResult _ (.error _), _ => False
+  | .recMajors majors _, id => id ∈ majors
+  | .blockPeer _, _ => False
+  | .blockResult _ _, _ => False
 
 theorem References.mono {small large : RunSupport} (hle : small ≤ large)
     {entry : CacheEntry} {id : KId .anon} (h : entry.References small id) :
@@ -297,10 +304,7 @@ theorem References.mono {small large : RunSupport} (hle : small ≤ large)
   | natSuccStuck key | isProp key value =>
     exact SourceReferences.mono hle h
   | isRec | recursor | recMajors | blockPeer => exact h
-  | blockResult block value =>
-    cases value with
-    | ok => exact h
-    | error => exact False.elim h
+  | blockResult => exact False.elim h
 
 end CacheEntry
 
@@ -373,17 +377,42 @@ structure CacheSemantics where
   blockError : ∀ (authority : CacheAuthority) (support : RunSupport)
     (block : KId .anon) (err : TcError .anon),
       Valid authority support (.blockResult block (.error err))
+  /-- Once the exact catalogued member array is trusted, a successful block
+  verdict is a valid stable cache entry. -/
+  blockSuccess : ∀ (authority : CacheAuthority) (support : RunSupport)
+    (block : KId .anon), authority.world.AcceptedBlock block →
+      Valid authority support (.blockResult block (.ok ()))
+  /-- Conversely, no cache semantics may accept a successful block verdict
+  without proving that every member of the exact immutable block is trusted. -/
+  blockSuccessSound : ∀ (authority : CacheAuthority) (support : RunSupport)
+    (block : KId .anon),
+      Valid authority support (.blockResult block (.ok ())) →
+        authority.world.AcceptedBlock block
 
 /-- The vacuous contract accepting every entry.  It carries no semantic
 content; it is the default witness that lets statement-level `CacheSemantics`
 stubs be declared `opaque`. -/
 instance : Inhabited CacheSemantics :=
-  ⟨{ Valid := fun _ _ _ => True
-     mono := fun _ h => h
+  ⟨{ Valid := fun authority _ entry =>
+       match entry with
+       | .blockResult block (.ok ()) => authority.world.AcceptedBlock block
+       | _ => True
+     mono := by
+       intro before after support entry hle h
+       cases entry with
+       | blockResult block result =>
+         cases result with
+         | ok value =>
+           cases value
+           exact h.mono hle.world
+         | error => trivial
+       | _ => trivial
      Equiv := fun _ _ => Eq
      equivEquivalence := fun _ _ => ⟨fun _ => rfl, Eq.symm, Eq.trans⟩
      equivMono := fun _ h => h
-     blockError := fun _ _ _ _ => trivial }⟩
+     blockError := fun _ _ _ _ => trivial
+     blockSuccess := fun _ _ _ h => h
+     blockSuccessSound := fun _ _ _ h => h }⟩
 
 /-- Full ghost certificate attached to one physical entry. -/
 structure CacheProvenance (semantics : CacheSemantics)
@@ -402,6 +431,18 @@ theorem blockError (semantics : CacheSemantics) (authority : CacheAuthority)
     CacheProvenance semantics authority support
       (.blockResult block (.error err)) := by
   refine ⟨trivial, ?_, semantics.blockError authority support block err⟩
+  intro id href
+  exact False.elim href
+
+/-- Build complete provenance for a successful coordinated-block verdict.
+Its semantic dependency is the exact immutable member array, not the block
+address as a synthetic declaration reference. -/
+theorem blockSuccess (semantics : CacheSemantics)
+    (authority : CacheAuthority) (support : RunSupport)
+    (block : KId .anon) (haccepted : authority.world.AcceptedBlock block) :
+    CacheProvenance semantics authority support
+      (.blockResult block (.ok ())) := by
+  refine ⟨trivial, ?_, semantics.blockSuccess authority support block haccepted⟩
   intro id href
   exact False.elim href
 
@@ -564,6 +605,31 @@ theorem hit {semantics : CacheSemantics} {authority : CacheAuthority}
     CacheProvenance semantics authority support entry :=
   h hhit
 
+/-- A physical cached success can only replay an already accepted exact
+block.  This is the stable-cache no-overclaim theorem: validity cannot be
+manufactured merely from the presence of a block key. -/
+theorem acceptedBlock_of_success_hit
+    {semantics : CacheSemantics} {authority : CacheAuthority}
+    {support : RunSupport} {env : KEnv .anon} {block : KId .anon}
+    (h : CacheInvariant semantics authority support env)
+    (hhit : env.blockCheckResults[block]? = some (.ok ())) :
+    authority.world.AcceptedBlock block := by
+  have hp := h (.blockResult hhit)
+  exact semantics.blockSuccessSound authority support block hp.valid
+
+/-- Replaying a successful block result certifies each member of the one
+exact array committed for that block. -/
+theorem trusted_of_success_hit
+    {semantics : CacheSemantics} {authority : CacheAuthority}
+    {support : RunSupport} {env : KEnv .anon} {block id : KId .anon}
+    {members : Array (KId .anon)}
+    (h : CacheInvariant semantics authority support env)
+    (hhit : env.blockCheckResults[block]? = some (.ok ()))
+    (hblock : authority.world.blocks block = some members)
+    (hid : id ∈ members) : authority.world.trusted id :=
+  VerifyWorld.AcceptedBlock.trusted
+    (h.acceptedBlock_of_success_hit hhit) hblock hid
+
 /-- Warm entries transport when the trusted world grows. -/
 theorem mono {semantics : CacheSemantics}
     {before after : CacheAuthority} {support : RunSupport}
@@ -603,6 +669,74 @@ theorem update {semantics : CacheSemantics}
   rcases hentries hentry with rfl | hold
   · exact hnew
   · exact hbefore hold
+
+/-- Insert one certified coordinated-block verdict while retaining every
+other cache family.  This is the physical update performed by `checkConst`
+after `checkBlockBody` returns or throws. -/
+theorem insertBlockResult {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {block : KId .anon}
+    {result : Except (TcError .anon) Unit}
+    (hbefore : CacheInvariant semantics authority support env)
+    (hnew : CacheProvenance semantics authority support
+      (.blockResult block result)) :
+    CacheInvariant semantics authority support
+      { env with blockCheckResults :=
+          env.blockCheckResults.insert block result } := by
+  apply update hbefore hnew
+  intro entry hentry
+  cases hentry with
+  | whnf hget => exact .inr (.whnf hget)
+  | whnfNoDelta hget => exact .inr (.whnfNoDelta hget)
+  | whnfNoDeltaCheap hget => exact .inr (.whnfNoDeltaCheap hget)
+  | whnfCore hget => exact .inr (.whnfCore hget)
+  | whnfCoreCheap hget => exact .inr (.whnfCoreCheap hget)
+  | infer hget => exact .inr (.infer hget)
+  | inferOnly hget => exact .inr (.inferOnly hget)
+  | defEq hget => exact .inr (.defEq hget)
+  | defEqCheap hget => exact .inr (.defEqCheap hget)
+  | defEqFailure hmem => exact .inr (.defEqFailure hmem)
+  | unfold hget => exact .inr (.unfold hget)
+  | natSuccStuck hmem => exact .inr (.natSuccStuck hmem)
+  | isProp hget => exact .inr (.isProp hget)
+  | isRec hget => exact .inr (.isRec hget)
+  | recursor hget => exact .inr (.recursor hget)
+  | recMajors hget => exact .inr (.recMajors hget)
+  | blockPeer hmem => exact .inr (.blockPeer hmem)
+  | @blockResult foundBlock foundResult hget =>
+    rw [Std.HashMap.getElem?_insert] at hget
+    split at hget
+    · next heq =>
+      cases hget
+      have hblock : block = foundBlock := eq_of_beq heq
+      subst foundBlock
+      exact .inl rfl
+    · exact .inr (.blockResult hget)
+
+/-- A successful verdict may be inserted only after every member of the
+exact immutable block has become trusted. -/
+theorem insertBlockSuccess {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {block : KId .anon}
+    (hbefore : CacheInvariant semantics authority support env)
+    (haccepted : authority.world.AcceptedBlock block) :
+    CacheInvariant semantics authority support
+      { env with blockCheckResults :=
+          env.blockCheckResults.insert block (.ok ()) } :=
+  insertBlockResult hbefore
+    (CacheProvenance.blockSuccess semantics authority support block haccepted)
+
+/-- A failed verdict carries no acceptance claim and is always safe to
+insert, including on partial-error states retained by `EStateM`. -/
+theorem insertBlockError {semantics : CacheSemantics}
+    {authority : CacheAuthority} {support : RunSupport}
+    {env : KEnv .anon} {block : KId .anon} {err : TcError .anon}
+    (hbefore : CacheInvariant semantics authority support env) :
+    CacheInvariant semantics authority support
+      { env with blockCheckResults :=
+          env.blockCheckResults.insert block (.error err) } :=
+  insertBlockResult hbefore
+    (CacheProvenance.blockError semantics authority support block err)
 
 /-- Insert one certified full-whnf result while retaining provenance for all
 old entries.  The four policy-specific siblings below cover every other K1

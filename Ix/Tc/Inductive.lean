@@ -61,7 +61,55 @@ structure FlatBlockMember (m : Mode) where
   occurrenceUs : Array (KUniv m)
   deriving Inhabited
 
-instance : Inhabited (GeneratedRecursor m) := ⟨⟨default, default, #[]⟩⟩
+/-- One mutually-recursive family active during constructor positivity
+    checking. `concreteUs = none` denotes the root declaration's own
+    `Param(0), …` universe sequence; nested families retain the concrete
+    specialization at which they were encountered. -/
+structure PositivityGroup (m : Mode) where
+  addrs : Array Address
+  params : Array (KExpr m)
+  concreteUs : Option (Array (KUniv m))
+  deriving Inhabited
+
+/-- Exact identity of one flattened nested-inductive specialization.
+
+Universe arguments are load-bearing: Lean may generate two auxiliaries for
+the same external family and term-parameter spine when a phantom universe
+parameter differs between occurrences. -/
+structure NestedSpecializationKey where
+  family : Address
+  universes : Array Address
+  parameters : Array Address
+  deriving BEq, Inhabited
+
+namespace NestedSpecializationKey
+
+/-- Exact flat-block identity of one concrete nested-family application. -/
+def ofApplication (family : Address) (universes : Array (KUniv m))
+    (parameters : Array (KExpr m)) : NestedSpecializationKey :=
+  { family
+    universes := universes.map (·.addr)
+    parameters := parameters.map (·.addr) }
+
+end NestedSpecializationKey
+
+/-- The exact flat-block key represented by a nested positivity group.
+The root group has no concrete specialization and therefore no auxiliary key. -/
+def PositivityGroup.nestedSpecializationKey?
+    (group : PositivityGroup m) (family : Address) :
+    Option NestedSpecializationKey :=
+  group.concreteUs.map fun universes =>
+    NestedSpecializationKey.ofApplication family universes group.params
+
+/-- The flat-block key of the parameter prefix of one nested application. -/
+def nestedApplicationSpecializationKey (family : Address)
+    (universes : Array (KUniv m)) (args : Array (KExpr m))
+    (nParams : Nat) : NestedSpecializationKey :=
+  NestedSpecializationKey.ofApplication family universes
+    (args.extract 0 nParams)
+
+instance : Inhabited (GeneratedRecursor m) :=
+  ⟨⟨default, 0, 0, 0, 0, 0, false, default, #[]⟩⟩
 
 namespace RecM
 
@@ -75,6 +123,23 @@ def sortedDedupIds (ids : Array (KId m)) : Array (KId m) := Id.run do
     | some last => if compare last id != .eq then out := out.push id
     | none => out := out.push id
   return out
+
+/-- Sum declaration-derived natural-number counts while retaining the UInt64
+    representation bound used by serialized metadata and de Bruijn indices. -/
+def checkedNatMetadataSum (label : String) (parts : Array Nat) :
+    RecM m UInt64 := do
+  let total := parts.foldl (· + ·) 0
+  if total < UInt64.size then
+    return total.toUInt64
+  throw (.other s!"{label} metadata sum overflow")
+
+/-- Sum attacker-controlled declaration arities without permitting UInt64
+    wraparound. Reducer and recursor-generation paths consume these sums as
+    binder/major indices, so the combined value must describe the same layout
+    as the individual metadata fields. -/
+def checkedMetadataSum (label : String) (parts : Array UInt64) :
+    RecM m UInt64 :=
+  checkedNatMetadataSum label (parts.map (·.toNat))
 
 /-- Sum of pending universe constructors in the validation worklist. -/
 def univWorkSize : List (KUniv m) → Nat
@@ -292,7 +357,9 @@ def computeKTarget (indId : KId m) : RecM m Bool := do
   let blockInds ← discoverBlockInductives block
   if blockInds.size != 1 then
     return false
-  let resultLevel ← getResultSortLevel ty (indParams + indIndices).toNat
+  let indArity ← checkedMetadataSum "inductive params + indices"
+    #[indParams, indIndices]
+  let resultLevel ← getResultSortLevel ty indArity.toNat
   if !univEq resultLevel .mkZero then
     return false
   if ctors.size != 1 then
@@ -331,50 +398,177 @@ def checkParamAgreement (indTy ctorTy : KExpr m) (nParams : Nat) :
     position in any constructor field. -/
 def checkPositivity (ctorTy : KExpr m) (nParams : Nat)
     (blockAddrs : Array Address) : RecM m Unit := do
-  let mut ty := ctorTy
-  for _ in [0:nParams] do
-    let w ← whnf ty
-    match w with
-    | .all _ _ _ body _ => ty := body
-    | _ => return ()
-  runBounded (fun ty => do
-    let w ← whnf ty
-    match w with
-    | .all _ _ dom body _ =>
-      checkPositivityDomain dom blockAddrs
-      return .next body
-    | _ => return .done ()) maxWhnfFuel.toNat ty
+  let saved := (← get).lctx.size
+  let result ←
+    try
+      -- Open the shared parameter binders so recursive applications can be
+      -- compared with stable fvars, including below dependent field binders.
+      let mut ty := ctorTy
+      let mut paramFVars : Array (KExpr m) := Array.mkEmpty nParams
+      for _ in [0:nParams] do
+        let w ← whnf ty
+        match w with
+        | .all _ _ dom body _ =>
+          let (open', fv, _) ← TcM.openBinderAnonWithFV dom body
+          paramFVars := paramFVars.push fv
+          ty := open'
+        | _ => return ()
+      let groups : Array (PositivityGroup m) :=
+        #[{ addrs := blockAddrs, params := paramFVars, concreteUs := none }]
+      runBounded (fun ty => do
+        let w ← whnf ty
+        match w with
+        | .all _ _ dom body _ =>
+          checkPositivityDomain dom groups blockAddrs
+          let (open', _) ← TcM.openBinderAnon dom body
+          return .next open'
+        | _ => return .done ()) maxWhnfFuel.toNat ty
+      pure (Except.ok ())
+    catch e => pure (Except.error e)
+  modify fun s => { s with lctx := s.lctx.truncate saved }
+  match result with
+  | .ok () => return ()
+  | .error e => throw e
+
+/-- Pure universe-specialization guard shared by recursive-occurrence
+    validation and its proof layer.  `none` is the root block's symbolic
+    `Param(0), ...` specialization; nested groups retain the concrete
+    occurrence universes. -/
+def positiveUniverseArgumentsAgree (group : PositivityGroup m)
+    (us : Array (KUniv m)) : Bool :=
+  match group.concreteUs with
+  | some expected =>
+    expected.size == us.size &&
+      (List.range us.size).all fun i => univEq expected[i]! us[i]!
+  | none =>
+    (List.range us.size).all fun i =>
+      univEq us[i]! (.mkParam i.toUInt64 anonN : KUniv m)
+
+/-- Structurally recursive presentation of the stateful parameter-comparison
+    loop.  `index` is the next source position and `remaining` is the exact
+    number of comparisons still required. -/
+def checkPositiveParametersFrom (id : KId m)
+    (args params : Array (KExpr m)) : Nat → Nat → RecM m Unit
+  | _, 0 => pure ()
+  | index, remaining + 1 => do
+      if !(← isDefEq args[index]! params[index]!) then
+        throw (.other s!"positivity: recursive occurrence {id} has non-uniform parameter {index}: expected {params[index]!}, got {args[index]!}")
+      checkPositiveParametersFrom id args params (index + 1) remaining
+
+/-- The exact stateful parameter-comparison loop used by positivity. Naming
+    it separately exposes the successful recursive `isDefEq` trace to E2c
+    without changing the production comparison order or diagnostics. -/
+def checkPositiveParameters (id : KId m) (args params : Array (KExpr m))
+    (nParams : Nat) : RecM m Unit :=
+  checkPositiveParametersFrom id args params 0 nParams
+
+/-- Pure root-index guard.  The slice begins exactly after the uniform
+    parameter prefix established by `checkPositiveParameters`. -/
+def positiveIndicesIndependent (args : Array (KExpr m)) (nParams : Nat)
+    (rootAddrs : Array Address) : Bool :=
+  (args.extract nParams args.size).all fun index =>
+    !exprMentionsAnyAddr index rootAddrs
+
+/-- The stateless prefix of recursive-application validation.  Keeping the
+    original error values here makes the production control flow and the E2c
+    success characterization share one definition. -/
+def checkPositiveRecursiveApplicationPreconditions
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (group : PositivityGroup m) (nParams nIndices lvls : Nat) :
+    Except (TcError m) Unit :=
+  if args.size = nParams + nIndices then
+    if us.size = lvls then
+      if positiveUniverseArgumentsAgree group us = true then
+        if group.params.size = nParams then
+          .ok ()
+        else
+          .error (.other
+            "positivity: recursive occurrence parameter arity disagrees with its family")
+      else
+        .error (.other
+          "positivity: recursive occurrence has non-uniform universe arguments")
+    else
+      .error (.other
+        s!"positivity: recursive occurrence has wrong universe count: expected {lvls}, got {us.size}")
+  else
+    .error (.other
+      s!"positivity: recursive occurrence has wrong argument count: expected {nParams + nIndices}, got {args.size}")
+
+/-- Validate the already-resolved inductive header of an active recursive
+    application.  Separating the lookup/match from these guards gives E2c an
+    exact successful-branch seam while preserving their production order. -/
+def checkPositiveRecursiveApplicationHeader (id : KId m)
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (group : PositivityGroup m) (rootAddrs : Array Address)
+    (nParams nIndices lvls : Nat) : RecM m Unit := do
+  match checkPositiveRecursiveApplicationPreconditions us args group nParams
+      nIndices lvls with
+  | .error err => throw err
+  | .ok () =>
+    checkPositiveParameters id args group.params nParams
+    if !positiveIndicesIndependent args nParams rootAddrs then
+      throw (.other "positivity: recursive occurrence index mentions an active inductive")
+
+/-- Validate an application of an active recursive family: exact application
+    arity, uniform universe/parameter specialization, and index independence. -/
+def checkPositiveRecursiveApplication (id : KId m) (us : Array (KUniv m))
+    (args : Array (KExpr m)) (groups : Array (PositivityGroup m))
+    (rootAddrs : Array Address) : RecM m Unit := do
+  let some group := groups.find? (fun group => group.addrs.contains id.addr)
+    | throw (.other "positivity: missing recursive-family context")
+  match (← TcM.getConst id) with
+  | .indc (params := params) (indices := indices) (lvls := lvls) .. =>
+    checkPositiveRecursiveApplicationHeader id us args group rootAddrs
+      params.toNat indices.toNat lvls.toNat
+  | _ => throw (.other "positivity: recursive head is not an inductive")
+
+/-- Test exact nested-family specialization. The same external inductive may
+    have multiple active groups when flattening discovers it at distinct
+    parameter specializations. -/
+def positivityGroupMatches (group : PositivityGroup m) (family : Address)
+    (us : Array (KUniv m)) (args : Array (KExpr m))
+    (nParams : Nat) : Bool :=
+  group.params.size == nParams &&
+    group.nestedSpecializationKey? family ==
+      some (nestedApplicationSpecializationKey family us args nParams)
 
 /-- Field-domain positivity: recurse through foralls (negative-position
     mentions reject), then require either a direct block-inductive
     application or a valid nested-inductive application (recursively
     checked with the augmented address set). -/
 def checkPositivityDomain (dom : KExpr m)
-    (blockAddrs : Array Address) : RecM m Unit :=
-  checkPositivityDomainFuel maxWhnfFuel.toNat dom blockAddrs
+    (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) : RecM m Unit :=
+  checkPositivityDomainFuel maxWhnfFuel.toNat dom groups activeAddrs
 
 /-- Explicit call-depth bound for nested positivity. The old mutual recursion
     had no termination guard; exhausting this adversarial-input bound is the
     same local-loop failure used by bounded reduction. Sibling fields reuse
     the bound, so this measures nesting depth rather than total work. -/
 def checkPositivityDomainFuel :
-    Nat → KExpr m → Array Address → RecM m Unit
-  | 0, _, _ => throw .maxRecDepth
-  | fuel + 1, dom, blockAddrs => do
-  if !exprMentionsAnyAddr dom blockAddrs then
+    Nat → KExpr m → Array (PositivityGroup m) → Array Address → RecM m Unit
+  | 0, _, _, _ => throw .maxRecDepth
+  | fuel + 1, dom, groups, activeAddrs => do
+  -- A helper family can occur at an unrelated specialization while it is on
+  -- the nested traversal stack. Only expressions that still contain the
+  -- original block are recursive occurrences for this positivity check.
+  let some rootGroup := groups[0]?
+    | throw (.other "positivity: missing root-family context")
+  let rootAddrs := rootGroup.addrs
+  if !exprMentionsAnyAddr dom rootAddrs then
     return ()
   let w ← whnf dom
   match w with
   | .all _ _ innerDom innerBody _ =>
     -- Inductive in the domain of a Pi = negative position.
-    if exprMentionsAnyAddr innerDom blockAddrs then
+    if exprMentionsAnyAddr innerDom rootAddrs then
       throw (.other "strict positivity violation")
     -- H4: open with an fvar so whnf works on dependent types.
     let saved := (← get).lctx.size
     let (innerOpen, _) ← TcM.openBinderAnon innerDom innerBody
     let result ←
       try
-        checkPositivityDomainFuel fuel innerOpen blockAddrs
+        checkPositivityDomainFuel fuel innerOpen groups activeAddrs
         pure (Except.ok ())
       catch e =>
         pure (Except.error e)
@@ -386,32 +580,48 @@ def checkPositivityDomainFuel :
     let (head, args) := w.collectSpine
     match head with
     | .const id us _ =>
-      if blockAddrs.contains id.addr then
-        return ()
+      if rootAddrs.contains id.addr then
+        return (← checkPositiveRecursiveApplication id us args groups rootAddrs)
       -- Nested inductive: external inductive whose params mention the block.
-      let (nParams, block, ctors) ← match (← TcM.getConst id) with
-        | .indc (params := params) (block := block) (ctors := ctors) .. =>
-          pure (params.toNat, block, ctors)
+      let (nParams, nIndices, lvls, block, ctors) ←
+        match (← TcM.getConst id) with
+        | .indc (params := params) (indices := indices) (lvls := lvls)
+            (block := block) (ctors := ctors) .. =>
+          pure (params.toNat, indices.toNat, lvls.toNat, block, ctors)
         | _ => throw (.other "positivity: not a valid inductive app")
+      if args.size != nParams + nIndices || us.size != lvls then
+        throw (.other "positivity: malformed nested inductive application")
+      -- Repeated exact specialization closes an already-validated auxiliary
+      -- edge. The same address at a different specialization is a new
+      -- auxiliary, as in the two Array specializations of Lean.Doc.Block.
+      for group in groups do
+        if group.addrs.contains id.addr &&
+            positivityGroupMatches group id.addr us args nParams then
+          for index in args.extract nParams args.size do
+            if exprMentionsAnyAddr index rootAddrs then
+              throw (.other "positivity: recursive occurrence index mentions an active inductive")
+          return ()
       let hasNestedRef := (args.extract 0 (min nParams args.size)).any
-        (exprMentionsAnyAddr · blockAddrs)
+        (exprMentionsAnyAddr · rootAddrs)
       if !hasNestedRef then
         throw (.other "positivity: not a valid inductive app")
       -- Index args (after params) must not mention block inductives.
       for arg in args.extract nParams args.size do
-        if exprMentionsAnyAddr arg blockAddrs then
+        if exprMentionsAnyAddr arg rootAddrs then
           throw (.other "positivity: index mentions block inductive")
       -- Augmented address set: block + the external inductive's block.
-      let mut augmented := blockAddrs
-      for extId in (← discoverBlockInductives block) do
-        if !augmented.contains extId.addr then
-          augmented := augmented.push extId.addr
+      let extBlockInductives ← discoverBlockInductives block
+      let extAddrs := extBlockInductives.map (·.addr)
+      let augmented := activeAddrs ++ extAddrs
       let paramArgs := args.extract 0 (min nParams args.size)
+      let augmentedGroups := groups.push
+        { addrs := extAddrs, params := paramArgs, concreteUs := some us }
       for ctorId in ctors do
         let ctorTy ← match (← TcM.getConst ctorId) with
           | .ctor (ty := ty) .. => pure ty
           | _ => throw (.other "positivity: nested ctor not found")
-        checkNestedCtorFieldsFuel fuel ctorTy nParams paramArgs us augmented
+        checkNestedCtorFieldsFuel fuel ctorTy nParams paramArgs us
+          augmentedGroups augmented
     | _ => throw (.other "positivity: not a valid inductive app")
 
 /-- Nested-inductive field positivity: instantiate universes, strip the
@@ -420,15 +630,16 @@ def checkPositivityDomainFuel :
     remaining field domain against the augmented address set. -/
 def checkNestedCtorFields (ctorTy : KExpr m) (nParams : Nat)
     (paramArgs : Array (KExpr m)) (us : Array (KUniv m))
-    (augmentedAddrs : Array Address) : RecM m Unit :=
+    (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) : RecM m Unit :=
   checkNestedCtorFieldsFuel maxWhnfFuel.toNat ctorTy nParams paramArgs us
-    augmentedAddrs
+    groups activeAddrs
 
 def checkNestedCtorFieldsFuel :
     Nat → KExpr m → Nat → Array (KExpr m) → Array (KUniv m) →
-      Array Address → RecM m Unit
-  | 0, _, _, _, _, _ => throw .maxRecDepth
-  | fuel + 1, ctorTy, nParams, paramArgs, us, augmentedAddrs => do
+      Array (PositivityGroup m) → Array Address → RecM m Unit
+  | 0, _, _, _, _, _, _ => throw .maxRecDepth
+  | fuel + 1, ctorTy, nParams, paramArgs, us, groups, activeAddrs => do
   let mut ty ← TcM.instantiateUnivParams ctorTy us
   for _ in [0:nParams] do
     let w ← whnf ty
@@ -438,25 +649,26 @@ def checkNestedCtorFieldsFuel :
   -- Var(0) = innermost = LAST param after stripping; simulSubst maps
   -- Var(i) ↦ substs[i], so reverse the param order.
   ty ← TcM.runIntern (simulSubst ty paramArgs.reverse 0)
-  checkNestedCtorFieldsLoopFuel fuel ty augmentedAddrs
+  checkNestedCtorFieldsLoopFuel fuel ty groups activeAddrs
 
 def checkNestedCtorFieldsLoop (ty : KExpr m)
-    (augmentedAddrs : Array Address) : RecM m Unit :=
-  checkNestedCtorFieldsLoopFuel maxWhnfFuel.toNat ty augmentedAddrs
+    (groups : Array (PositivityGroup m))
+    (activeAddrs : Array Address) : RecM m Unit :=
+  checkNestedCtorFieldsLoopFuel maxWhnfFuel.toNat ty groups activeAddrs
 
 def checkNestedCtorFieldsLoopFuel :
-    Nat → KExpr m → Array Address → RecM m Unit
-  | 0, _, _ => throw .maxRecDepth
-  | fuel + 1, ty, augmentedAddrs => do
+    Nat → KExpr m → Array (PositivityGroup m) → Array Address → RecM m Unit
+  | 0, _, _, _ => throw .maxRecDepth
+  | fuel + 1, ty, groups, activeAddrs => do
   let w ← whnf ty
   match w with
   | .all _ _ dom body _ =>
-    checkPositivityDomainFuel fuel dom augmentedAddrs
+    checkPositivityDomainFuel fuel dom groups activeAddrs
     let saved := (← get).lctx.size
     let (open', _) ← TcM.openBinderAnon dom body
     let result ←
       try
-        checkNestedCtorFieldsLoopFuel fuel open' augmentedAddrs
+        checkNestedCtorFieldsLoopFuel fuel open' groups activeAddrs
         pure (Except.ok ())
       catch e =>
         pure (Except.error e)
@@ -555,6 +767,34 @@ def checkCtorReturnType (ctorTy : KExpr m)
 
 -- ### Member / block validation
 
+/-- Validate the constructor header fields which Lean derives from the parent
+    inductive declaration. Ix consumes these fields operationally (`cidx` for
+    iota dispatch, arities for applications/projections, and `isUnsafe` for
+    the safety lattice), so a well-typed constructor telescope alone is not a
+    sufficient admission check. -/
+def checkCtorMetadataAgainstParent (ctorId inductId : KId m)
+    (expectedCidx indParams : Nat) (indLvls : UInt64)
+    (indIsUnsafe : Bool) : RecM m (KExpr m × Nat) := do
+  let (ctorTy, ctorInduct, ctorCidx, ctorParams, ctorFields, ctorLvls,
+      ctorIsUnsafe) ← match (← TcM.getConst ctorId) with
+    | .ctor (ty := ty) (induct := induct) (cidx := cidx)
+        (params := params) (fields := fields) (lvls := lvls)
+        (isUnsafe := isUnsafe) .. =>
+      pure (ty, induct, cidx.toNat, params.toNat, fields.toNat, lvls,
+        isUnsafe)
+    | _ => throw (.other "check_inductive: constructor not found")
+  if ctorInduct != inductId then
+    throw (.other "check_inductive: ctor parent mismatch")
+  if ctorLvls != indLvls then
+    throw (.other s!"check_inductive: ctor universe arity mismatch: expected {indLvls}, got {ctorLvls}")
+  if ctorIsUnsafe != indIsUnsafe then
+    throw (.other s!"check_inductive: ctor safety mismatch: expected {indIsUnsafe}, got {ctorIsUnsafe}")
+  if ctorParams != indParams then
+    throw (.other s!"check_inductive: ctor params mismatch: expected {indParams}, got {ctorParams}")
+  if ctorCidx != expectedCidx then
+    throw (.other s!"check_inductive: ctor cidx mismatch: expected {expectedCidx}, got {ctorCidx}")
+  return (ctorTy, ctorFields)
+
 /-- Validate an inductive and every one of its constructors (S3/S3b peer
     agreement + A1–A4). The Rust tail (recursor-generation trigger) lands
     with P9. -/
@@ -569,19 +809,29 @@ def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
   let blockInds ← discoverBlockInductives block
   let blockAddrs := blockInds.map (·.addr)
   -- Result sort must exist even for ctor-less inductives.
-  let indLevel ← getResultSortLevel ty (params + indices).toNat
+  let indArity ← checkedMetadataSum "inductive params + indices"
+    #[params, indices]
+  let indLevel ← getResultSortLevel ty indArity.toNat
   -- S3/S3b, memoized per block (transitive agreement).
   if !(← get).env.blockPeerAgreementCache.contains block then
     for peerId in blockInds do
       if peerId.addr == id.addr then
         continue
-      let (peerParams, peerIndices, peerTy) ← match (← TcM.getConst peerId) with
-        | .indc (params := pp) (indices := pi) (ty := pty) .. =>
-          pure (pp, pi, pty)
+      let (peerParams, peerIndices, peerLvls, peerIsUnsafe, peerTy) ←
+        match (← TcM.getConst peerId) with
+        | .indc (params := pp) (indices := pi) (lvls := pl)
+            (isUnsafe := pu) (ty := pty) .. =>
+          pure (pp, pi, pl, pu, pty)
         | _ => continue
-      let peerLevel ← getResultSortLevel peerTy (peerParams + peerIndices).toNat
+      let peerArity ← checkedMetadataSum "inductive params + indices"
+        #[peerParams, peerIndices]
+      let peerLevel ← getResultSortLevel peerTy peerArity.toNat
       if !univEq indLevel peerLevel then
         throw (.other "mutually inductive types must live in the same universe")
+      if peerLvls != lvls then
+        throw (.other s!"mutual peers must declare the same universe arity: self={lvls}, peer={peerLvls}")
+      if peerIsUnsafe != isUnsafe then
+        throw (.other "mutual inductives must share the same safety flag")
       if peerParams != params then
         throw (.other s!"mutual peers must declare the same number of parameters: self={params}, peer={peerParams}")
       checkParamAgreement ty peerTy params.toNat
@@ -590,15 +840,8 @@ def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
   -- Per-constructor A1–A4.
   for h : expectedCidx in [0:ctors.size] do
     let ctorId := ctors[expectedCidx]
-    let (ctorParams, ctorFields, ctorCidx, ctorTy) ←
-      match (← TcM.getConst ctorId) with
-      | .ctor (params := cp) (fields := cf) (cidx := cc) (ty := cty) .. =>
-        pure (cp.toNat, cf.toNat, cc.toNat, cty)
-      | _ => throw (.other "check_inductive: constructor not found")
-    if ctorParams != params.toNat then
-      throw (.other s!"check_inductive: ctor params mismatch: expected {params.toNat}, got {ctorParams}")
-    if ctorCidx != expectedCidx then
-      throw (.other s!"check_inductive: ctor cidx mismatch: expected {expectedCidx}, got {ctorCidx}")
+    let (ctorTy, ctorFields) ← checkCtorMetadataAgainstParent ctorId id
+      expectedCidx params.toNat lvls isUnsafe
     checkParamAgreement ty ctorTy params.toNat
     if !isUnsafe then
       checkPositivity ctorTy params.toNat blockAddrs
@@ -614,18 +857,29 @@ def checkInductiveMemberImpl (id : KId m) : RecM m Unit := do
     declared parent. -/
 def checkCtorAgainstInductiveMemberImpl (ctorId inductId : KId m) :
     RecM m Unit := do
-  let (ctorTy, ctorFields) ← match (← TcM.getConst ctorId) with
-    | .ctor (ty := ty) (fields := fields) .. => pure (ty, fields.toNat)
-    | _ => throw (.other "check_ctor: not a constructor")
-  let (indParams, indIndices, indLvls, indBlock, indIsUnsafe, indTy) ←
+  let (indParams, indIndices, indLvls, indBlock, indIsUnsafe, indTy,
+      indCtors) ←
     match (← TcM.getConst inductId) with
     | .indc (params := params) (indices := indices) (lvls := lvls)
-        (block := block) (isUnsafe := isUnsafe) (ty := ty) .. =>
-      pure (params, indices, lvls, block, isUnsafe, ty)
+        (block := block) (isUnsafe := isUnsafe) (ty := ty)
+        (ctors := ctors) .. =>
+      pure (params, indices, lvls, block, isUnsafe, ty, ctors)
     | _ => throw (.other "check_ctor: parent inductive not found")
+  let mut expectedCidx? : Option Nat := none
+  for h : idx in [0:indCtors.size] do
+    if indCtors[idx] == ctorId then
+      if expectedCidx?.isSome then
+        throw (.other "check_inductive: ctor listed more than once by parent")
+      expectedCidx? := some idx
+  let some expectedCidx := expectedCidx?
+    | throw (.other "check_inductive: ctor not listed by parent")
+  let (ctorTy, ctorFields) ← checkCtorMetadataAgainstParent ctorId inductId
+    expectedCidx indParams.toNat indLvls indIsUnsafe
   let blockInds ← discoverBlockInductives indBlock
   let blockAddrs := blockInds.map (·.addr)
-  let indLevel ← getResultSortLevel indTy (indParams + indIndices).toNat
+  let indArity ← checkedMetadataSum "inductive params + indices"
+    #[indParams, indIndices]
+  let indLevel ← getResultSortLevel indTy indArity.toNat
   checkParamAgreement indTy ctorTy indParams.toNat
   if !indIsUnsafe then
     checkPositivity ctorTy indParams.toNat blockAddrs
@@ -640,6 +894,12 @@ def checkInductiveBlockImpl (block : KId m) (members : Array (KId m)) :
     RecM m Unit := do
   let mut indIds : Array (KId m) := #[]
   let mut ctorIds : Array (KId m) := #[]
+  -- SECURITY INVARIANT (Lean #14576): infer each original stored member
+  -- type, including every constructor type, before building or consulting
+  -- any flattened/nested-inductive representation. A lossy nested rewrite
+  -- can erase phantom parameter arguments; checking only that rewritten
+  -- form would let an ill-typed argument disappear. Keep this pass in full
+  -- inference mode and over the untouched `ty` values.
   for member in members do
     TcM.reset (m := m)
     let c ← TcM.getConst member
@@ -671,6 +931,8 @@ def checkInductiveBlockImpl (block : KId m) (members : Array (KId m)) :
     (offset 1 for large eliminators). -/
 def mkIndUnivs (indLvls offset : UInt64) :
     RecM m (Array (KUniv m)) := do
+  let _ ← checkedMetadataSum "generated recursor universe arity"
+    #[indLvls, offset]
   let mut out : Array (KUniv m) := Array.mkEmpty indLvls.toNat
   for i in [0:indLvls.toNat] do
     out := out.push (← TcM.internUniv (m := m) (.mkParam (i.toUInt64 + offset) anonN))
@@ -681,9 +943,9 @@ def mkIndUnivs (indLvls offset : UInt64) :
     `IO.Ref` is not a nested occurrence). -/
 def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
     (flat : Array (FlatBlockMember m))
-    (auxSeen : Array (Address × Array Address)) (univOffset : UInt64)
+    (auxSeen : Array NestedSpecializationKey) (univOffset : UInt64)
     (paramDepth : Nat) (nRecParams : UInt64) :
-    RecM m (Array (FlatBlockMember m) × Array (Address × Array Address)) := do
+    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
   let cur ← runBounded (fun cur => do
     match cur with
     | .all _ _ innerDom body _ =>
@@ -717,18 +979,21 @@ def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
     return (flat, auxSeen)
   let specParams := args.extract 0 extNParams
   -- S7: reject param args depending on field/domain-local binders.
+  let paramBound ← checkedNatMetadataSum "nested parameter scope"
+    #[paramDepth, nRecParams.toNat]
   let s7ok := specParams.all fun sp =>
-    !sp.hasFVars && sp.lbr ≤ paramDepth.toUInt64 + nRecParams
+    !sp.hasFVars && sp.lbr ≤ paramBound
   if !s7ok then
     return (flat, auxSeen)
-  let specHashes := specParams.map (·.addr)
-  if auxSeen.any (fun (a, s) => a == headId.addr && s == specHashes) then
-    return (flat, auxSeen)
-  let auxSeen' := auxSeen.push (headId.addr, specHashes)
-  let auxUs ← mkIndUnivs extLvls univOffset
   let occurrenceUs := match head with
     | .const _ us _ => us
     | _ => #[]
+  let specialization := NestedSpecializationKey.ofApplication headId.addr
+    occurrenceUs specParams
+  if auxSeen.contains specialization then
+    return (flat, auxSeen)
+  let auxSeen' := auxSeen.push specialization
+  let auxUs ← mkIndUnivs extLvls univOffset
   let flat' := flat.push
     { id := headId, isAux := true, specParams,
       ownParams := extParams, nIndices := extIndices,
@@ -736,13 +1001,13 @@ def tryDetectNestedCore (dom : KExpr m) (blockAddrs : Array Address)
   return (flat', auxSeen')
 
 /-- Detect whether `dom` is a nested inductive occurrence; if so append an
-    auxiliary entry (dedup by `(extAddr, specParam addrs)`). Returns the
-    updated `(flat, auxSeen)`; lctx restored. -/
+    auxiliary entry (dedup by family, universe, and parameter addresses).
+    Returns the updated `(flat, auxSeen)`; lctx restored. -/
 def tryDetectNested (dom : KExpr m) (blockAddrs : Array Address)
     (flat : Array (FlatBlockMember m))
-    (auxSeen : Array (Address × Array Address)) (univOffset : UInt64)
+    (auxSeen : Array NestedSpecializationKey) (univOffset : UInt64)
     (paramDepth : Nat) (nRecParams : UInt64) :
-    RecM m (Array (FlatBlockMember m) × Array (Address × Array Address)) := do
+    RecM m (Array (FlatBlockMember m) × Array NestedSpecializationKey) := do
   let savedLctx := (← get).lctx.size
   let result ← tryDetectNestedCore dom blockAddrs flat auxSeen univOffset
     paramDepth nRecParams
@@ -756,7 +1021,7 @@ def buildFlatBlock (blockInds : Array (KId m))
     RecM m (Array (FlatBlockMember m)) := do
   let allBlockAddrs := blockInds.map (·.addr)
   let mut flat : Array (FlatBlockMember m) := #[]
-  let mut auxSeen : Array (Address × Array Address) := #[]
+  let mut auxSeen : Array NestedSpecializationKey := #[]
   for indId in blockInds do
     match (← TcM.getConst indId) with
     | .indc (params := ownParams) (indices := nIndices) (ctors := ctors)
@@ -840,9 +1105,11 @@ def tryReplaceAuxRefForSort (e : KExpr m)
     if !matched then
       continue
     let mut result ← TcM.intern (.mkConst auxIds[idx]! blockUs)
+    let paramBase ← checkedMetadataSum "auxiliary parameter index"
+      #[localDepth, nBlockParams]
     for pi in [0:nBlockParams.toNat] do
       let p ← TcM.intern (m := m)
-        (.mkVar (localDepth + nBlockParams - 1 - pi.toUInt64) anonN)
+        (.mkVar (paramBase - 1 - pi.toUInt64) anonN)
       result ← TcM.intern (.mkApp result p)
     for idxArg in args.extract own args.size do
       result ← TcM.intern (.mkApp result idxArg)
@@ -1102,11 +1369,13 @@ def buildMotiveTypeFlat (member : FlatBlockMember m)
   let nIdx := member.nIndices.toNat
   -- Major type at depth = nIdx.
   let mut majorTy ← TcM.intern (.mkConst member.id member.occurrenceUs)
-  let depth := nIdx.toUInt64
+  let depth ← checkedNatMetadataSum "generated motive index depth" #[nIdx]
   if !member.isAux then
+    let paramBase ← checkedNatMetadataSum "generated motive parameter depth"
+      #[nRecParams, nIdx]
     for i in [0:nRecParams] do
       let v ← TcM.intern (m := m)
-        (.mkVar ((nRecParams.toUInt64 - 1 - i.toUInt64) + depth) anonN)
+        (.mkVar (paramBase - 1 - i.toUInt64) anonN)
       majorTy ← TcM.intern (.mkApp majorTy v)
   else
     for sp in member.specParams do
@@ -1490,7 +1759,8 @@ def findPeerRecursors (blockId : KId m)
       | some (.recr (params := p) (motives := mo) (minors := mi)
           (indices := ix) (ty := ty) ..) => pure (p, mo, mi, ix, ty)
       | _ => return none
-    let skip := params + motives + minors + indices
+    let skip ← checkedMetadataSum "recursor major index"
+      #[params, motives, minors, indices]
     let majorId? ← try
         pure (some (← getMajorInductiveId ty skip))
       catch
@@ -1545,7 +1815,12 @@ def buildRuleIh (fieldIdx nFields totalLams : UInt64)
   let peerRec := peerRecs[targetBi]!
   let peerRecLvls ← match (← TcM.tryGetConst peerRec) with
     | some (.recr (lvls := lvls) ..) => pure lvls
-    | _ => pure (if isLarge then flat[targetBi]!.lvls + 1 else flat[targetBi]!.lvls)
+    | _ =>
+      if isLarge then
+        checkedMetadataSum "generated recursor universe arity"
+          #[flat[targetBi]!.lvls, 1]
+      else
+        pure flat[targetBi]!.lvls
   let mut recLvls : Array (KUniv m) := Array.mkEmpty peerRecLvls.toNat
   for i in [0:peerRecLvls.toNat] do
     recLvls := recLvls.push (← TcM.internUniv (m := m) (.mkParam i.toUInt64 anonN))
@@ -1556,7 +1831,8 @@ def buildRuleIh (fieldIdx nFields totalLams : UInt64)
   let innerW ← whnf inner
   let (_, innerArgs) := innerW.collectSpine
   let idxArgs := innerArgs.extract targetNParams innerArgs.size
-  let depth := totalLams + nXs
+  let depth ← checkedMetadataSum "generated recursor induction-hypothesis depth"
+    #[totalLams, nXs]
   let mut ih ← TcM.intern (.mkConst peerRec recLvls)
   for pi in [0:nRecParams] do
     ih ← TcM.intern (.mkApp ih (← TcM.intern (m := m)
@@ -1570,7 +1846,9 @@ def buildRuleIh (fieldIdx nFields totalLams : UInt64)
         - mi.toUInt64) anonN)))
   for idx in idxArgs do
     ih ← TcM.intern (.mkApp ih idx)
-  let fieldBase := nFields - 1 - fieldIdx + nXs
+  let fieldOffset := nFields - 1 - fieldIdx
+  let fieldBase ← checkedMetadataSum "generated recursor wrapped-field index"
+    #[fieldOffset, nXs]
   let mut fieldApp ← TcM.intern (m := m) (.mkVar fieldBase anonN)
   for xi in [0:nXs.toNat] do
     fieldApp ← TcM.intern (.mkApp fieldApp (← TcM.intern (m := m)
@@ -1594,6 +1872,9 @@ def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
   let nMotives := flat.size
   let nMinors := flat.foldl (fun acc mem => acc + mem.ctors.size) 0
   let pmm := nRecParams + nMotives + nMinors
+  let pmm64 ← checkedNatMetadataSum
+    "generated recursor params + motives + minors"
+    #[nRecParams, nMotives, nMinors]
   -- Pass 1: count fields.
   let ctorTyInst ← TcM.instantiateUnivParams ctorTyRaw member.occurrenceUs
   let mut countTy := ctorTyInst
@@ -1609,11 +1890,16 @@ def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
       return .next (body, nFields + 1)
     | _ => return .done nFields) maxWhnfFuel.toNat
       (countTy, (0 : UInt64))
-  let totalLams := pmm.toUInt64 + nFields
+  let totalLams ← checkedMetadataSum "generated recursor rule lambdas"
+    #[pmm64, nFields]
   -- Pass 2: body = minor[globalIdx] fields ihs.
   let globalMinorIdx := (flat.extract 0 memberIdx).foldl
     (fun acc mem => acc + mem.ctors.size) 0 + ctorLocalIdx
-  let minorVarIdx := nFields + (nMinors - 1 - globalMinorIdx).toUInt64
+  if globalMinorIdx ≥ nMinors then
+    throw (.other "generated recursor global minor index out of range")
+  let minorVarIdx ← checkedNatMetadataSum
+    "generated recursor minor variable index"
+    #[nFields.toNat, nMinors - 1 - globalMinorIdx]
   let mut body ← TcM.intern (m := m) (.mkVar minorVarIdx anonN)
   for fi in [0:nFields.toNat] do
     body ← TcM.intern (.mkApp body (← TcM.intern (m := m)
@@ -1664,7 +1950,8 @@ def buildRuleRhs (memberIdx ctorLocalIdx : Nat) (ctorId : KId m)
     match w with
     | .all _ _ dom _ _ => pure dom
     | _ => pure (KExpr.mkSort .mkZero)
-  let fieldDomLift := (nMinors - globalMinorIdx).toUInt64
+  let fieldDomLift ← checkedNatMetadataSum
+    "generated recursor field-domain lift" #[nMinors - globalMinorIdx]
   let mut fieldDomains : Array (KExpr m) := Array.mkEmpty nFields.toNat
   let mut minorCur := minorDomain
   for fi in [0:nFields.toNat] do
@@ -1709,19 +1996,31 @@ def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
   let mut indInfos :
       Array (KId m × UInt64 × UInt64 × Array (KId m) × KExpr m) := #[]
   let mut nParams : UInt64 := 0
+  let (blockLvls, blockIsUnsafe) ← match (← TcM.getConst blockInds[0]!) with
+    | .indc (lvls := lvls) (isUnsafe := isUnsafe) .. =>
+      pure (lvls, isUnsafe)
+    | _ => throw (.other "generate_block_recursors: not an inductive")
   for h : i in [0:blockInds.size] do
     let indId := blockInds[i]
     match (← TcM.getConst indId) with
     | .indc (params := params) (indices := indices) (ctors := ctors)
-        (ty := ty) .. =>
+        (lvls := lvls) (isUnsafe := isUnsafe) (ty := ty) .. =>
       if i == 0 then
         nParams := params
+      if lvls != blockLvls then
+        throw (.other "mutual peers must declare the same universe arity")
+      if isUnsafe != blockIsUnsafe then
+        throw (.other "mutual inductives must share the same safety flag")
       indInfos := indInfos.push (indId, params, indices, ctors, ty)
     | _ => throw (.other "generate_block_recursors: not an inductive")
+  let firstIndArity ← checkedMetadataSum "inductive params + indices"
+    #[indInfos[0]!.2.1, indInfos[0]!.2.2.1]
   let resultLevel ← getResultSortLevel indInfos[0]!.2.2.2.2
-    (indInfos[0]!.2.1 + indInfos[0]!.2.2.1).toNat
+    firstIndArity.toNat
   let isLarge ← isLargeEliminator resultLevel indInfos
   let univOffset : UInt64 := if isLarge then 1 else 0
+  let recLvls ← checkedMetadataSum "generated recursor universe arity"
+    #[blockLvls, univOffset]
   let elimLevel : KUniv m ← if isLarge then
       TcM.internUniv (m := m) (.mkParam 0 anonN)
     else
@@ -1756,12 +2055,23 @@ def generateBlockRecursors (blockId : KId m) : RecM m Unit := do
     motiveTypes := motiveTypes.push
       (← buildMotiveTypeFlat mem nParams.toNat elimLevel)
   -- Recursor types for every flat member.
+  let nMotives := flat.size.toUInt64
+  let nMinors ← checkedMetadataSum "generated recursor minors"
+    (flat.map fun mem => mem.ctors.size.toUInt64)
   let mut generated : Array (GeneratedRecursor m) := Array.mkEmpty flat.size
   for di in [0:flat.size] do
     let recType ← buildRecType di flatIndInfos flatIds flat motiveTypes
       univOffset
     generated := generated.push
-      { indAddr := flat[di]!.id.addr, ty := recType, rules := #[] }
+      { indAddr := flat[di]!.id.addr
+        lvls := recLvls
+        params := nParams
+        motives := nMotives
+        minors := nMinors
+        indices := flat[di]!.nIndices
+        isUnsafe := blockIsUnsafe
+        ty := recType
+        rules := #[] }
   -- Rules from co-resident peer recursors (when alignment sanity holds).
   let peerRecs ← findPeerRecursors blockId flat
   if let some peers := peerRecs then
@@ -1841,8 +2151,11 @@ def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
       (fun (g, mem) => g.rules.size == mem.ctors.size) then
     return ()
   let nMotives := flat.size.toUInt64
-  let nMinors := flat.foldl (fun acc mem => acc + mem.ctors.size.toUInt64) 0
-  let prefixBase := nParams64 + nMotives + nMinors
+  let nMinors ← checkedMetadataSum "generated recursor minors"
+    (flat.map fun mem => mem.ctors.size.toUInt64)
+  let prefixBase ← checkedMetadataSum
+    "generated recursor params + motives + minors"
+    #[nParams64, nMotives, nMinors]
   if recIds.size != flat.size then
     throw (.other s!"populate_recursor_rules_from_block: rec_ids/flat count mismatch: rec_ids={recIds.size} flat={flat.size}")
   -- Verify canonical alignment via major-domain signatures.
@@ -1856,9 +2169,11 @@ def populateRecursorRulesFromBlock (indBlockId recBlockId : KId m) :
       | .recr (params := p) (motives := mo) (minors := mi) (indices := ix)
           (ty := ty) .. => pure (p, mo, mi, ix, ty)
       | _ => throw (.other s!"populate_recursor_rules_from_block: rec_ids[{gi}]={rid} is not a recursor")
-    let genMajor ← recursorMajorDomainForAddr genRec.ty
-      (prefixBase + flat[gi]!.nIndices) targetAddr
-    let storedSkip := params + motives + minors + indices
+    let genSkip ← checkedMetadataSum "generated recursor major index"
+      #[prefixBase, flat[gi]!.nIndices]
+    let genMajor ← recursorMajorDomainForAddr genRec.ty genSkip targetAddr
+    let storedSkip ← checkedMetadataSum "recursor major index"
+      #[params, motives, minors, indices]
     let storedMajor ← recursorMajorDomainForAddr ty storedSkip targetAddr
     let signaturesMatch ← match genMajor, storedMajor with
       | some g, some s => majorDomainSignatureEq g s
@@ -1910,7 +2225,7 @@ def gatherPeerMajors (recBlock : KId m) : RecM m (Array (KId m)) := do
       | .recr (params := p) (motives := mo) (minors := mi) (indices := ix)
           (ty := ty) .. => pure (p, mo, mi, ix, ty)
       | _ => continue
-    let skip := p + mo + mi + ix
+    let skip ← checkedMetadataSum "recursor major index" #[p, mo, mi, ix]
     let major? ← try
         pure (some (← getMajorInductiveId peerTy skip))
       catch
@@ -1949,33 +2264,20 @@ def checkInductive (id : KId m) : RecM m Unit := do
   | .ok () => return ()
   | .error e => throw e
 
-/-- Coherence-only recursor gate: major inductive passes A1–A4 and the
-    declared K flag matches the constructive computation. -/
-def checkRecursorCoherence (id : KId m) : RecM m Unit := do
-  let (ty, declaredK, params, motives, minors, indices) ←
-    match (← TcM.getConst id) with
-    | .recr (ty := ty) (k := k) (params := p) (motives := mo) (minors := mi)
-        (indices := ix) .. => pure (ty, k, p, mo, mi, ix)
-    | _ => throw (.other "check_recursor_coherence: not a recursor")
-  let skip := params + motives + minors + indices
-  let indId ← getMajorInductiveId ty skip
-  if let some (.indc ..) ← TcM.tryGetConst indId then
-    checkInductive indId
-  let computedK ← computeKTarget indId
-  if declaredK != computedK then
-    throw (.other s!"check_recursor_coherence: K-target mismatch: declared k={declaredK}, computed k={computedK}")
-
 /-- Validate a recursor against the generated canonical form (type def-eq +
     per-rule field count and RHS def-eq), with signature-based aux
-    disambiguation and the canonical-aux coherence fallback. -/
+    disambiguation. Every successful path compares both type and rules. -/
 def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
-  let (recBlock, ty, declaredK, params, motives, minors, indices) ←
+  let (recBlock, ty, declaredK, declaredLvls, declaredIsUnsafe, params,
+      motives, minors, indices) ←
     match (← TcM.getConst id) with
     | .recr (block := block) (ty := ty) (k := k) (params := p)
-        (motives := mo) (minors := mi) (indices := ix) .. =>
-      pure (block, ty, k, p, mo, mi, ix)
+        (lvls := lvls) (isUnsafe := isUnsafe) (motives := mo)
+        (minors := mi) (indices := ix) .. =>
+      pure (block, ty, k, lvls, isUnsafe, p, mo, mi, ix)
     | _ => throw (.other "check_recursor: not a recursor")
-  let skip := params + motives + minors + indices
+  let skip ← checkedMetadataSum "recursor major index"
+    #[params, motives, minors, indices]
   let indId ← getMajorInductiveId ty skip
   -- Coherence gate: the major inductive must itself pass A1–A4.
   if let some (.indc ..) ← TcM.tryGetConst indId then
@@ -2017,7 +2319,8 @@ def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
   -- Signature-first selection (dedups aux recursors sharing a major head).
   let storedPos := (← get).env.blocks[recBlock]?.bind
     (·.findIdx? (fun mem => mem == id))
-  let prefixSkip := params + motives + minors
+  let prefixSkip ← checkedMetadataSum "recursor params + motives + minors"
+    #[params, motives, minors]
   let storedMajor ← recursorMajorDomainForAddr ty prefixSkip indId.addr
   let mut signatureMatches : Array Nat := #[]
   if let some storedMajorD := storedMajor then
@@ -2036,11 +2339,14 @@ def checkRecursorMemberImpl (id : KId m) : RecM m Unit := do
     <|> (generated.findIdx? (·.indAddr == indId.addr))
   match selectedIdx.bind (generated[·]?) with
   | some g =>
+    if declaredLvls != g.lvls then
+      throw (.other s!"check_recursor: universe arity mismatch: stored={declaredLvls}, generated={g.lvls}")
+    if declaredIsUnsafe != g.isUnsafe then
+      throw (.other s!"check_recursor: safety mismatch: stored={declaredIsUnsafe}, generated={g.isUnsafe}")
+    if params != g.params || motives != g.motives || minors != g.minors
+        || indices != g.indices then
+      throw (.other s!"check_recursor: arity metadata mismatch: stored=(params={params}, motives={motives}, minors={minors}, indices={indices}), generated=(params={g.params}, motives={g.motives}, minors={g.minors}, indices={g.indices})")
     if !(← isDefEq g.ty ty) then
-      let selectedBySignature := selectedIdx.any (signatureMatches.contains ·)
-      if (← get).env.recursorAuxOrder == .canonical && motives > 1
-          && selectedBySignature then
-        return (← checkRecursorCoherence id)
       throw (.other "check_recursor: type mismatch")
     let genRules := g.rules
     let storedRules ← match (← TcM.getConst id) with

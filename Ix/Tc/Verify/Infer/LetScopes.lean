@@ -14,20 +14,19 @@ open Lean4Lean (VExpr)
 
 namespace TcM
 
-/-- Opening a translated let either fails before changing the semantic
-context, or returns its freshly tagged body under a `vlet` frame. -/
-theorem openLet_scope
+/-- Operational core of let opening.  The type and value are already typed
+so the ghost context can be extended, while the body relation is left to a
+caller-specific wrapper. -/
+theorem openLet_scope_base
     {support : RunSupport}
     {layer : WhnfLayer} {semantics : CacheSemantics}
     {trProj : RawProjRel} {world : VerifyWorld} {uvars : Nat}
     {Delta : KVLCtx} {s : TcState .anon}
     {name : Mode.anon.F Name}
-    {ty val body : KExpr .anon} {tyV valV bodyV : VExpr}
+    {ty val body : KExpr .anon} {tyV valV : VExpr}
     (hty : TrKExprS world.venv uvars world.nameOf trProj Delta ty tyV)
     (hval : TrKExprS world.venv uvars world.nameOf trProj Delta val valV)
     (hvalType : world.venv.HasType uvars Delta.toCtx valV tyV)
-    (hbody : TrKExprS world.venv uvars world.nameOf trProj
-      ((none, .vlet tyV valV) :: Delta) body bodyV)
     (hcollision : support.CollisionFree)
     (hresources : BinderOpeningResources support name body) :
     WhnfStateInv layer semantics trProj world support uvars Delta s →
@@ -39,10 +38,7 @@ theorem openLet_scope
         WhnfStateInv layer semantics trProj world support uvars
           ((some (⟨s.env.nextFVarId⟩, Delta.fvars),
             .vlet tyV valV) :: Delta) after ∧
-        support bodyOpen ∧
-        TrKExprS world.venv uvars world.nameOf trProj
-          ((some (⟨s.env.nextFVarId⟩, Delta.fvars),
-            .vlet tyV valV) :: Delta) bodyOpen bodyV
+        support bodyOpen
     | .error _ after =>
         WhnfStateInv layer semantics trProj world support uvars Delta after ∧
           after = s := by
@@ -113,9 +109,6 @@ theorem openLet_scope
         · simpa [afterPush, InternUpdateFrame] using
             congrArg TcState.noAccel hInternFrame
       have hopenBound := hresources.instRevBounds ⟨s.env.nextFVarId⟩
-      have hbodyOpenTr := hbody.openFVarZero
-        (fv := ⟨s.env.nextFVarId⟩) (deps := Delta.fvars) (name := name)
-        hI.2.1.nextFVarId_fresh (by simpa using hopenBound.2.2)
       have hbodyOpenSupport : support
           (KExpr.instantiateRevSpec body #[fv] 0) :=
         hresources.instRevSupport ⟨s.env.nextFVarId⟩ _
@@ -147,9 +140,61 @@ theorem openLet_scope
         rw [hopenRun]
         rfl
       rw [hopenSuccess]
-      refine ⟨rfl, rfl, hIOpen, ?_, ?_⟩
-      · simpa [fv] using hbodyOpenSupport
-      · simpa [fv] using hbodyOpenTr
+      refine ⟨rfl, rfl, hIOpen, ?_⟩
+      simpa [fv] using hbodyOpenSupport
+
+/-- Opening a translated let either fails before changing the semantic
+context, or returns its freshly tagged typed body under a `vlet` frame. -/
+theorem openLet_scope
+    {support : RunSupport}
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {uvars : Nat}
+    {Delta : KVLCtx} {s : TcState .anon}
+    {name : Mode.anon.F Name}
+    {ty val body : KExpr .anon} {tyV valV bodyV : VExpr}
+    (hty : TrKExprS world.venv uvars world.nameOf trProj Delta ty tyV)
+    (hval : TrKExprS world.venv uvars world.nameOf trProj Delta val valV)
+    (hvalType : world.venv.HasType uvars Delta.toCtx valV tyV)
+    (hbody : TrKExprS world.venv uvars world.nameOf trProj
+      ((none, .vlet tyV valV) :: Delta) body bodyV)
+    (hcollision : support.CollisionFree)
+    (hresources : BinderOpeningResources support name body) :
+    WhnfStateInv layer semantics trProj world support uvars Delta s →
+    match TcM.openLet name ty val body s with
+    | .ok (bodyOpen, fvId) after =>
+        fvId = ⟨s.env.nextFVarId⟩ ∧
+        bodyOpen = KExpr.instantiateRevSpec body
+          #[.mkFVar ⟨s.env.nextFVarId⟩ name] 0 ∧
+        WhnfStateInv layer semantics trProj world support uvars
+          ((some (⟨s.env.nextFVarId⟩, Delta.fvars),
+            .vlet tyV valV) :: Delta) after ∧
+        support bodyOpen ∧
+        TrKExprS world.venv uvars world.nameOf trProj
+          ((some (⟨s.env.nextFVarId⟩, Delta.fvars),
+            .vlet tyV valV) :: Delta) bodyOpen bodyV
+    | .error _ after =>
+        WhnfStateInv layer semantics trProj world support uvars Delta after ∧
+          after = s := by
+  intro hI
+  have hbase := openLet_scope_base hty hval hvalType hcollision
+    hresources hI
+  cases hopen : TcM.openLet name ty val body s with
+  | error err after =>
+      rw [hopen] at hbase
+      simpa only using hbase
+  | ok opened after =>
+      rcases opened with ⟨bodyOpen, fv⟩
+      rw [hopen] at hbase
+      simp only
+      rcases hbase with ⟨hfv, hbodyEq, hIopen, hsupport⟩
+      have hopenBound := hresources.instRevBounds ⟨s.env.nextFVarId⟩
+      have hbodyOpenTr := hbody.openFVarZero
+        (fv := ⟨s.env.nextFVarId⟩) (deps := Delta.fvars) (name := name)
+        hI.2.1.nextFVarId_fresh (by simpa using hopenBound.2.2)
+      refine ⟨hfv, hbodyEq, hIopen, hsupport, ?_⟩
+      subst fv
+      subst bodyOpen
+      exact hbodyOpenTr
 
 end TcM
 

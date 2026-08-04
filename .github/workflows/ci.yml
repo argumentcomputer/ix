@@ -66,6 +66,25 @@ jobs:
         run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements
       - name: Build Ix.Tc formal verification
         run: lake build IxTcVerify
+      # The verification release claim includes executable adversarial and
+      # production-parity evidence.  Its exact pin/accelerator seed closure is
+      # deliberately separate from the much smaller zkVM smoke fixture. Doing
+      # this after lean-action avoids another Lean build/cache consumer and
+      # keeps lean-test independent of the zkVM artifact producer.
+      - name: Test Ix.Tc unit and adversarial fixtures
+        run: lake test --wfail -- tc-unit
+      - name: Compile Ix.Tc parity fixture
+        run: >-
+          lake exe ix compile Ix.lean
+          --consts-file .github/fixtures/tc-parity-consts.txt
+          --out tc-parity.ixe
+      - name: Test Ix.Tc production parity and scale
+        run: >-
+          lake test --wfail -- --ignored
+          tc-pins tc-accel-diff tc-anon-diff tc-roundtrip tc-init
+          tc-tutorial lean4lean
+        env:
+          IX_PINS_IXE: tc-parity.ixe
       - name: Check codegen'd IxVM kernel is up to date
         run: lake exe ix codegen --check
       - name: Test Ix CLI

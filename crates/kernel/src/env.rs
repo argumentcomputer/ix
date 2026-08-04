@@ -331,6 +331,14 @@ impl<M: KernelMode> InternTable<M> {
 #[derive(Clone, Debug)]
 pub struct GeneratedRecursor<M: KernelMode> {
   pub ind_addr: Address,
+  /// Canonical recursor arities. These are derived from the validated flat
+  /// inductive block, never from the stored `Recr` metadata.
+  pub lvls: u64,
+  pub params: u64,
+  pub motives: u64,
+  pub minors: u64,
+  pub indices: u64,
+  pub is_unsafe: bool,
   pub ty: KExpr<M>,
   pub rules: Vec<RecRule<M>>,
 }

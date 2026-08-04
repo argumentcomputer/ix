@@ -16,12 +16,15 @@ require Cli from git
 require batteries from git
   "https://github.com/leanprover-community/batteries" @ "v4.29.0"
 
-/- Test/bench-only dependency: the reference Lean4-in-Lean4 typechecker,
-pinned to upstream master. Only `bench-lean4lean` and the ignored
-`lean4lean` test runner import it, so `lake build ix` never builds it.
-(Same toolchain and batteries pin as ix, so it resolves cleanly.) -/
+/- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
+Theory/Verify specification surface, while `bench-lean4lean` and the ignored
+`lean4lean` test runner exercise the implementation. The default `ix` target
+still does not build this dependency. Pin the audited Argument fork exactly:
+this revision replaces the inductive specification placeholders with the
+staged checked/generation/certificate development integrated by Pin A in
+`plans/tc-verify-execution-plan.md`. -/
 require lean4lean from git
-  "https://github.com/digama0/lean4lean" @ "8865b155abbf68d3a827fb3568bf6839780163c2"
+  "https://github.com/argumentcomputer/lean4lean" @ "5e5bb767b3491d21a71908d4c58bcbaa007283bb"
 
 /-! ## FFI
 
@@ -152,17 +155,54 @@ end Benchmarks
 
 section IxTcVerify
 
+/-- Native-decide fixture proofs execute the same pinned Rust BLAKE3 backend
+used by production address construction.  Build a loadable form of that exact
+backend for Lean's elaboration process. -/
+target blake3_rs_verify_cdylib : FilePath := do
+  let some blake3Pkg ← findPackageByName? `Blake3
+    | error "Blake3 dependency package is unavailable"
+  proc {
+    cmd := "cargo"
+    args := #["rustc", "--release", "--", "--crate-type", "cdylib",
+      "-C", "extra-filename="]
+    cwd := blake3Pkg.dir / "rust"
+  } (quiet := true)
+  inputBinFile <| blake3Pkg.dir / "rust" / "target" / "release" / "deps" /
+    nameToSharedLib "blake3_rs"
+
+/-- Boxed-symbol adapter loaded by Lean while elaborating native-decide
+proofs.  Its dependency is the exact Rust cdylib above. -/
+target blake3_rs_verify_dynlib pkg : Dynlib := do
+  let source ← inputTextFile <| pkg.dir / "crates" / "ffi" /
+    "blake3_native_decide.c"
+  let leanIncludeDir ← getLeanIncludeDir
+  let object ← buildO
+    (pkg.buildDir / "blake3_native_decide.o") source
+    #["-fPIC", "-I", leanIncludeDir.toString] #[] "cc" getLeanTrace
+  let rustDynlib ← blake3_rs_verify_cdylib.fetch
+  -- Passing the cdylib as a link object records its concrete artifact path in
+  -- the adapter.  Lean can therefore load it without relying on LD_LIBRARY_PATH.
+  buildSharedLib "blake3_native_decide_v4"
+    (pkg.buildDir / nameToSharedLib "blake3_native_decide_v4")
+    #[object, rustDynlib] #[]
+
 /- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
 Non-default: `lake build ix` never
-touches it, and `build-all` (the lint driver) skips it by name while it
-carries `sorry`s — `lake lint -- --wfail` would otherwise fail on the
-WIP proof frontier. Required CI builds it separately without `--wfail`,
+touches it, and `build-all` (the lint driver) skips it by name because its
+pinned Lean4Lean dependencies still emit named `sorry` warnings — `lake lint
+-- --wfail` would otherwise fail even though the Ix verification source has
+no local `sorry` tokens. Required CI builds it separately without `--wfail`,
 audits the exact local sorry frontier, and checks exact per-root transitive
 axiom plus direct-`sorryAx`-origin manifests. Dev loop:
 `lake build IxTcVerify`; focused trust audit:
 `lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements`. -/
 lean_lib IxTcVerify where
   globs := #[.submodules `Ix.Tc.Verify]
+  -- `supportInterpreter` is a `lean_exe` option and takes effect only when
+  -- that executable is linked, after its modules have been elaborated.
+  -- These native-decide proofs need the boxed FFI symbols while the library
+  -- modules are being elaborated, so they must be supplied as a dynlib.
+  dynlibs := #[blake3_rs_verify_dynlib]
 
 end IxTcVerify
 

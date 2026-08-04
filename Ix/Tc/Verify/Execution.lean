@@ -89,6 +89,15 @@ inductive ExecutionRequests : {α : Type} →
       (hh : ∀ err s', x s = .error err s' →
         ExecutionRequests (handler err) s' caught) :
       ExecutionRequests (EStateM.tryCatch x handler) s (body ++ caught)
+  | runRec {s : TcState .anon} {x : RecM .anon α}
+      {requests : List WalkerRequest}
+      (hx : ExecutionRequests
+        (x.run (methodsN s.recFuel.toNat)) s requests) :
+      ExecutionRequests (TcM.runRec x) s requests
+  | isolateCheckErrors {s : TcState .anon} {x : TcM .anon α}
+      {requests : List WalkerRequest}
+      (hx : ExecutionRequests x s requests) :
+      ExecutionRequests (TcM.isolateCheckErrors x) s requests
   | weaken {s : TcState .anon} {x : TcM .anon α}
       {used planned : List WalkerRequest}
       (hx : ExecutionRequests x s used)
@@ -100,6 +109,14 @@ inductive ExecutionRequests : {α : Type} →
       ExecutionRequests x s requests
 
 namespace ExecutionRequests
+
+/-- Ordinary state modification is a silent execution step when its exact
+state transformer leaves the intern table unchanged. -/
+theorem modify (s : TcState .anon) (f : TcState .anon → TcState .anon)
+    (hintern : (f s).env.intern = s.env.intern) :
+    ExecutionRequests (modify f : TcM .anon Unit) s [] := by
+  exact .of_eq (by rfl)
+    (.modifyGet s (fun state => (PUnit.unit, f state)) hintern)
 
 theorem pure_weaken (s : TcState .anon) (a : α)
     (requests : List WalkerRequest) :
@@ -184,6 +201,19 @@ theorem intern_eq_of_nil {α : Type} {x : TcM .anon α}
       | .error err' s₂ =>
         simp only [hhs] at hh'
         exact hh'.trans hx'
+  | runRec hx ihx =>
+    simpa [TcM.runRec] using ihx hnil
+  | isolateCheckErrors hx ihx =>
+    rename_i s x requests
+    have hx' := ihx hnil
+    unfold TcM.isolateCheckErrors
+    match hxs : x s with
+    | .ok a s' =>
+      simp only [hxs] at hx' ⊢
+      exact hx'
+    | .error err s' =>
+      simp only [hxs] at hx' ⊢
+      exact hx'
   | weaken hx hsub ihx =>
     subst hnil
     exact ihx (List.eq_nil_iff_forall_not_mem.mpr

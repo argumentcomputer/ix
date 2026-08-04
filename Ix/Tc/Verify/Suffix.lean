@@ -64,6 +64,32 @@ theorem ctxAddrForLbr_cacheMiss
   simp [hactive, hcache]
   rfl
 
+/-- Suffix-key construction is total.  Naming this fact lets finite run
+scopes reason about a context before a later memo write without appealing to
+an untracked partial execution. -/
+theorem ctxAddrForLbr_total (lbr : UInt64) (s : TcState .anon) :
+    ∃ ctxAddr after, ctxAddrForLbr lbr s = .ok ctxAddr after := by
+  cases hactive : (lbr == 0 || s.ctx.isEmpty) with
+  | true => exact ⟨_, _, ctxAddrForLbr_trivial hactive⟩
+  | false =>
+      cases hcache : s.ctxAddrCache[(s.ctxId, lbr)]? with
+      | some cached =>
+          exact ⟨_, _, ctxAddrForLbr_cacheHit hactive hcache⟩
+      | none =>
+          exact ⟨_, _, ctxAddrForLbr_cacheMiss hactive hcache⟩
+
+/-- Every successful suffix-key execution has exactly the memo-only state
+frame exposed by the generic Hoare proof. -/
+theorem ctxAddrForLbr_frame
+    {lbr : UInt64} {before after : TcState .anon} {ctxAddr : Address}
+    (hrun : ctxAddrForLbr lbr before = .ok ctxAddr after) :
+    ContextKeyFrame before after := by
+  have hwf := ctxAddrForLbr_wf
+    (I := fun _ : TcState .anon => True)
+    (fun _ _ => trivial) lbr before trivial
+  rw [hrun] at hwf
+  exact hwf.2
+
 /-- Every successful suffix-key computation is stable on immediate replay.
 This covers fast paths, pre-existing memo hits, and the newly inserted miss
 entry against the actual production implementation. -/
@@ -224,6 +250,62 @@ end operationalWhnfContextKeys
 
 /-! ## Finite composite-digest boundary -/
 
+/-- Exact frame for state updates which cannot affect suffix-key inputs or
+their memo coherence.  Environment caches and the intern table may change,
+but every concrete field consulted by `ctxAddrForLbr` and every field needed
+to reconcile the same ghost context is fixed.
+
+Context push/pop/open operations intentionally do not satisfy this frame;
+their new scoped-state witnesses must be supplied by the finite execution
+certificate. -/
+structure ContextDigestFrame (before after : TcState .anon) : Prop where
+  ctx : after.ctx = before.ctx
+  letVals : after.letVals = before.letVals
+  numLetBindings : after.numLetBindings = before.numLetBindings
+  ctxId : after.ctxId = before.ctxId
+  ctxIdStack : after.ctxIdStack = before.ctxIdStack
+  ctxAddrCache : after.ctxAddrCache = before.ctxAddrCache
+  lctx : after.lctx = before.lctx
+  nextFVarId : after.env.nextFVarId = before.env.nextFVarId
+  lazyFault : after.lazyFault = before.lazyFault
+
+namespace ContextDigestFrame
+
+@[refl] theorem refl (s : TcState .anon) : ContextDigestFrame s s where
+  ctx := rfl
+  letVals := rfl
+  numLetBindings := rfl
+  ctxId := rfl
+  ctxIdStack := rfl
+  ctxAddrCache := rfl
+  lctx := rfl
+  nextFVarId := rfl
+  lazyFault := rfl
+
+theorem trans {a b c : TcState .anon}
+    (hab : ContextDigestFrame a b) (hbc : ContextDigestFrame b c) :
+    ContextDigestFrame a c where
+  ctx := hbc.ctx.trans hab.ctx
+  letVals := hbc.letVals.trans hab.letVals
+  numLetBindings := hbc.numLetBindings.trans hab.numLetBindings
+  ctxId := hbc.ctxId.trans hab.ctxId
+  ctxIdStack := hbc.ctxIdStack.trans hab.ctxIdStack
+  ctxAddrCache := hbc.ctxAddrCache.trans hab.ctxAddrCache
+  lctx := hbc.lctx.trans hab.lctx
+  nextFVarId := hbc.nextFVarId.trans hab.nextFVarId
+  lazyFault := hbc.lazyFault.trans hab.lazyFault
+
+/-- Intern-table growth cannot change the normalized context-suffix input.
+This bridge lets scoped proofs reuse the exact intern-only frame already
+produced throughout the WHNF and inference verification. -/
+theorem ofInternUpdateFrame {before after : TcState .anon}
+    (hframe : InternUpdateFrame before after) :
+    ContextDigestFrame before after := by
+  rw [hframe]
+  constructor <;> rfl
+
+end ContextDigestFrame
+
 /-- Declarative specification of the exact composite input hashed by
 `ctxAddrForLbr`.
 
@@ -253,6 +335,11 @@ structure ContextDigestSpec (trProj : RawProjRel) (world : VerifyWorld)
     StateValid before →
     TcM.ctxAddrForLbr lbr before = .ok ctxAddr after →
     StateValid after
+  /-- State validity is insensitive to updates outside the digest-relevant
+  state projection.  Cache writes and interning use this field; context
+  transitions do not. -/
+  framePreserves : ∀ {before after : TcState .anon},
+    StateValid before → ContextDigestFrame before after → StateValid after
   execution : ∀ {before after : TcState .anon} {lbr : UInt64}
       {ctxAddr : Address} {Delta : KVLCtx},
     StateValid before →
@@ -294,6 +381,42 @@ def Captures (scope : ContextDigestScope spec)
     CtxRecon world.venv uvars world.nameOf trProj before Delta →
     TcM.ctxAddrForLbr lbr before = .ok ctxAddr after →
     scope.Contains (spec.inputOf lbr Delta)
+
+/-- Adding or replacing suffix-memo entries does not enlarge the semantic
+context-input domain required by a state.  Reconciliation ignores the memo,
+and totality supplies the corresponding execution from the pre-frame state.
+This is the missing chaining fact for repeated scoped key computations. -/
+theorem Captures.contextKeyFrame
+    {scope : ContextDigestScope spec} {before after : TcState .anon}
+    (hcapture : scope.Captures before)
+    (hframe : ContextKeyFrame before after) :
+    scope.Captures after := by
+  intro final lbr ctxAddr Delta hctx _hrun
+  have hctxBefore :
+      CtxRecon world.venv uvars world.nameOf trProj before Delta := by
+    rw [hframe] at hctx
+    exact hctx.of_fields_eq rfl rfl rfl rfl (by simp)
+  obtain ⟨beforeAddr, beforeFinal, hbeforeRun⟩ :=
+    TcM.ctxAddrForLbr_total lbr before
+  exact hcapture hctxBefore hbeforeRun
+
+/-- A state update fixing the digest-relevant projection also preserves the
+finite set of semantic inputs required by that state. -/
+theorem Captures.contextDigestFrame
+    {scope : ContextDigestScope spec} {before after : TcState .anon}
+    (hcapture : scope.Captures before)
+    (hframe : ContextDigestFrame before after) :
+    scope.Captures after := by
+  intro final lbr ctxAddr Delta hctx _hrun
+  have hctxBefore :
+      CtxRecon world.venv uvars world.nameOf trProj before Delta := by
+    exact hctx.of_fields_eq hframe.ctx.symm hframe.letVals.symm
+      hframe.numLetBindings.symm hframe.lctx.symm (by
+        rw [hframe.nextFVarId]
+        exact Nat.le_refl _)
+  obtain ⟨beforeAddr, beforeFinal, hbeforeRun⟩ :=
+    TcM.ctxAddrForLbr_total lbr before
+  exact hcapture hctxBefore hbeforeRun
 
 end ContextDigestScope
 

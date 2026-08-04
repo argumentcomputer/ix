@@ -1,0 +1,19 @@
+# Exact seed closures required by tc-pins.
+Std.DTreeMap.Internal.Impl.minEntry!_eq_get!_minEntry?
+Std.DTreeMap.Internal.Impl.Const.minEntry!_eq_get!_minEntry?
+Std.DTreeMap.Internal.Impl.minKey!_eq_get!_minKey?
+Std.Internal.List.minKey!_eq_head!_keys
+# Pulls in _private.Init.Data.Char.Ordinal.«0».Char.succ?_eq._proof_1_8.
+Char.succ?_eq
+Std.DHashMap.Internal.Raw₀.insertMany_cons
+Std.Tactic.BVDecide.BVExpr.Cache.Inv_insert
+Std.Tactic.BVDecide.BVExpr.bitblast.blastUdiv.denote_blastDivSubtractShift_q
+
+# Definitions required by the genuine-pure side of tc-accel-diff.
+BitVec.toNat
+BitVec.ofNat
+BitVec.ult
+Nat.decLe
+Nat.decEq
+Decidable.isTrue
+Decidable.isFalse

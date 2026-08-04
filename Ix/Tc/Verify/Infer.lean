@@ -289,6 +289,12 @@ def inferCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
+  blockSuccess := by
+    intro authority support block h
+    exact fallback.blockSuccess authority support block h
+  blockSuccessSound := by
+    intro authority support block h
+    exact fallback.blockSuccessSound authority support block h
 
 namespace CacheProvenance
 

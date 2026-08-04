@@ -92,12 +92,14 @@ theorem checkedReduction
     {pattern : RecursorRulePattern}
     (hpattern : RawRecursorRulePatternRel env catalog nameOf id recursor
       rule pattern)
+    (henv : env.WF)
     {uvars : Nat} {Gamma : List VExpr} {source A : VExpr}
     {levels : List Lean4Lean.VLevel}
     {captures : (RecursorIotaPattern pattern.recursorName pattern.majorIdx
       pattern.constructorName
       (pattern.constructorParams.toNat +
         pattern.constructorFields.toNat)).Path → VExpr}
+    (hGamma : Lean4Lean.OnCtx Gamma (env.IsType uvars))
     (hmatch : Lean4Lean.Pattern.Matches
       (RecursorIotaPattern pattern.recursorName pattern.majorIdx
         pattern.constructorName
@@ -111,7 +113,7 @@ theorem checkedReduction
       (pattern.rhs.apply levels captures) := by
   rcases hpattern with
     ⟨_, _, _, _, _, _, _, hsound⟩
-  exact hsound Lean4Lean.VEnv.LE.rfl hmatch htype hchecks
+  exact hsound Lean4Lean.VEnv.LE.rfl henv hGamma hmatch htype hchecks
 
 end RawRecursorRulePatternRel
 
@@ -169,7 +171,8 @@ theorem checkedRhsSuffix
   obtain ⟨throughType, hthroughType⟩ :=
     hsuffix.startHasType hsourceType
   have hthroughEq :=
-    hpattern.checkedReduction hmatch hthroughType hchecks
+    hpattern.checkedReduction world.venvWF hDelta.toCtx hmatch hthroughType
+      hchecks
   exact hsuffix.rebase world.venvWF hDelta hrhsTr hthroughEq
 
 end NatRecLiteralTranslationSplit

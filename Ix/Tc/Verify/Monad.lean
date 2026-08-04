@@ -58,6 +58,26 @@ theorem mono {I : TcState m → Prop} {Q Q' : α → TcState m → Prop}
   | .ok a s' => rw [hxs] at this; exact ⟨this.1, hq _ _ this.2⟩
   | .error e s' => rw [hxs] at this; exact ⟨this.1, he _ _ this.2⟩
 
+/-- Expose the invariant already carried by a successful `TcM.WF` result.
+This is useful when the next verified action needs to construct semantic
+provenance from the intermediate state rather than merely consume the stated
+postcondition. -/
+theorem withInv
+    {I : TcState m → Prop} {s : TcState m}
+    {x : TcM m alpha} {Q : alpha → TcState m → Prop}
+    {E : TcError m → TcState m → Prop}
+    (hx : TcM.WF I s x Q E) :
+    TcM.WF I s x (fun result after => I after ∧ Q result after) E := by
+  intro hI
+  have hpost := hx hI
+  cases hrun : x s with
+  | ok result after =>
+      rw [hrun] at hpost
+      exact ⟨hpost.1, hpost.1, hpost.2⟩
+  | error err after =>
+      rw [hrun] at hpost
+      exact hpost
+
 /-- Retain the concrete execution equation selected by either outcome of a
 verified computation.  Semantic boundaries use this strengthening to ensure
 that an external certificate is tied to the value production actually

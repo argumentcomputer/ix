@@ -62,44 +62,80 @@ def provenTargets : AnonWorkItem → Array Address
 
 end AnonWorkItem
 
-/-- Enumerate the anon-mode kernel work set from `env.consts` (see module
-    doc). Errors only on a corrupted env. -/
-def buildAnonWork (env : Ixon.Env) : Except IngressErr (Array AnonWorkItem) := do
-  let mut work : Array AnonWorkItem := #[]
-  -- Ascending address order for deterministic run order.
-  let keys := env.consts.keys.toArray.qsort fun a b => a.cmpBytes b == .lt
-  for addr in keys do
-    let some lc := env.consts[addr]?
-      | throw s!"buildAnonWork: missing const at {addr}"
-    let tag ← match lc.peekTag with
-      | .ok t => pure t
-      | .error e => throw s!"buildAnonWork: peekTag {addr}: {e}"
-    match tag with
-    | .iPrj | .cPrj | .rPrj | .dPrj =>
-      -- Skip — covered by parent block.
-      pure ()
-    | .defn | .recr | .axio | .quot =>
-      work := work.push (.standalone addr)
-    | .muts =>
+/-- Projection addresses contributed by one member of a Muts block, in the
+exact flattened order used by ingress and block coordination. -/
+def anonMemberTargets (blockAddr : Address) (index : Nat)
+    (member : Ixon.MutConst) : Array Address :=
+  let idx := index.toUInt64
+  match member with
+  | .defn _ => #[defnProjAddr blockAddr idx]
+  | .recr _ => #[recrProjAddr blockAddr idx]
+  | .indc ind =>
+      #[indcProjAddr blockAddr idx] ++
+        (Array.range ind.ctors.size).map fun ctorIndex =>
+          ctorProjAddr blockAddr idx ctorIndex.toUInt64
+
+/-- Exact flattened projection target array for a Muts block. -/
+def anonBlockTargets (blockAddr : Address)
+    (members : Array Ixon.MutConst) : Array Address :=
+  (Array.range members.size).flatMap fun index =>
+    anonMemberTargets blockAddr index members[index]!
+
+namespace AnonWorkItem
+
+/-- Pure work classification after a constant has been materialized. -/
+def ofConstantInfo (addr : Address) : Ixon.ConstantInfo → Option AnonWorkItem
+  | .iPrj _ | .cPrj _ | .rPrj _ | .dPrj _ => none
+  | .defn _ | .recr _ | .axio _ | .quot _ => some (.standalone addr)
+  | .muts members =>
+      let targets := anonBlockTargets addr members
+      match targets[0]? with
+      | none => none
+      | some primary => some (.block addr primary targets)
+
+end AnonWorkItem
+
+/-- The cheap leading-byte tag corresponding to a materialized constant. -/
+def constantInfoTag : Ixon.ConstantInfo → Ixon.ConstTag
+  | .defn _ => .defn
+  | .recr _ => .recr
+  | .axio _ => .axio
+  | .quot _ => .quot
+  | .muts _ => .muts
+  | .iPrj _ => .iPrj
+  | .cPrj _ => .cPrj
+  | .rPrj _ => .rPrj
+  | .dPrj _ => .dPrj
+
+/-- Deterministic source-key order shared by the implementation and E1's
+coverage certificate. -/
+def orderedAnonConstAddrs (env : Ixon.Env) : Array Address :=
+  env.consts.keys.toArray.qsort fun a b => a.cmpBytes b == .lt
+
+/-- Classify one source key.  Non-Muts entries retain the cheap tag-only
+path; only a Muts body is materialized to enumerate its projections. -/
+def buildAnonWorkItem (env : Ixon.Env) (addr : Address) :
+    Except IngressErr (Option AnonWorkItem) := do
+  let some lc := env.consts.get? addr
+    | throw s!"buildAnonWork: missing const at {addr}"
+  let tag ← match lc.peekTag with
+    | .ok t => pure t
+    | .error e => throw s!"buildAnonWork: peekTag {addr}: {e}"
+  match tag with
+  | .iPrj | .cPrj | .rPrj | .dPrj => return none
+  | .defn | .recr | .axio | .quot => return some (.standalone addr)
+  | .muts =>
       let constant ← match lc.get with
         | .ok c => pure c
         | .error e => throw s!"buildAnonWork: materialize Muts {addr}: {e}"
-      let .muts members := constant.info
+      let .muts _ := constant.info
         | throw s!"buildAnonWork: Tag muts but ConstantInfo differs at {addr}"
-      let mut targets : Array Address := #[]
-      for h : i in [0:members.size] do
-        let idx := i.toUInt64
-        match members[i] with
-        | .defn _ => targets := targets.push (defnProjAddr addr idx)
-        | .recr _ => targets := targets.push (recrProjAddr addr idx)
-        | .indc ind =>
-          targets := targets.push (indcProjAddr addr idx)
-          for cidx in [0:ind.ctors.size] do
-            targets := targets.push (ctorProjAddr addr idx cidx.toUInt64)
-      if targets.isEmpty then
-        continue
-      work := work.push (.block addr targets[0]! targets)
-  return work
+      return AnonWorkItem.ofConstantInfo addr constant.info
+
+/-- Enumerate the anon-mode kernel work set from `env.consts` (see module
+    doc). Errors only on a corrupted env. -/
+def buildAnonWork (env : Ixon.Env) : Except IngressErr (Array AnonWorkItem) := do
+  orderedAnonConstAddrs env |>.filterMapM (buildAnonWorkItem env)
 
 /-- The ingress-block address that owns `addr`: a projection maps to its Muts
     block; anything else is its own block. -/
@@ -191,6 +227,14 @@ structure CheckResult where
   err? : Option String
   deriving Repr, Inhabited
 
+/-- Explicit accumulator for the serial anonymous driver.  Naming this
+state makes the production loop available to E1's trace theorem without
+changing its persistent-checker semantics. -/
+structure AnonCheckLoopState where
+  results : Array CheckResult
+  checker : TcState .anon
+  sinceClear : Nat
+
 /-- Fresh anon checker state over `ixonEnv` with the lazy fault hook
     installed (constants ingress on demand as typechecking discovers them).
     Mirrors Rust `TypeChecker::new_with_lazy_anon`. -/
@@ -200,6 +244,45 @@ def TcState.newLazyAnon (ixonEnv : Ixon.Env) (verify : Bool := true) :
     prims := .ofAnonAddrs
     lazyFault := some fun addr => ingressAnonAddrShallow ixonEnv addr verify }
 
+/-- Finish one serial item after the checker has produced its next concrete
+state and verdict. -/
+def finishAnonCheckItem (cfg : CheckCfg) (before : AnonCheckLoopState)
+    (item : AnonWorkItem) (checker : TcState .anon)
+    (err? : Option String) : AnonCheckLoopState :=
+  let results := before.results ++ item.targets.map fun target =>
+    ⟨target, err?⟩
+  let sinceClear := before.sinceClear + 1
+  if cfg.clearEvery != 0 && sinceClear ≥ cfg.clearEvery then
+    { results
+      checker := { checker with env := checker.env.clearReductionCaches }
+      sinceClear := 0 }
+  else
+    { results, checker, sinceClear }
+
+/-- Execute one work item with the exact success/error handling used by the
+serial driver. -/
+def runAnonCheckItem (cfg : CheckCfg) (before : AnonCheckLoopState)
+    (item : AnonWorkItem) : AnonCheckLoopState :=
+  let primary : KId .anon := ⟨item.primary, ()⟩
+  match (TcM.checkConst primary).run before.checker with
+  | .ok () checker => finishAnonCheckItem cfg before item checker none
+  | .error err checker =>
+      finishAnonCheckItem cfg before item checker (some (toString err))
+
+/-- Proof-visible recursive form of the production serial loop. -/
+def runAnonCheckList (cfg : CheckCfg) :
+    List AnonWorkItem → AnonCheckLoopState → AnonCheckLoopState
+  | [], state => state
+  | item :: rest, state =>
+      runAnonCheckList cfg rest (runAnonCheckItem cfg state item)
+
+/-- Initial serial checker state for one Ixon environment. -/
+def initialAnonCheckLoopState (ixonEnv : Ixon.Env) (cfg : CheckCfg) :
+    AnonCheckLoopState :=
+  { results := #[]
+    checker := TcState.newLazyAnon ixonEnv cfg.verifyHashes
+    sinceClear := 0 }
+
 /-- Check every anon work item of `ixonEnv` with one persistent kernel env
     (lazy faulting makes the cross-item constant reuse pay off) and a fresh
     checker state per item. Verdicts are fanned to every target the item
@@ -207,25 +290,8 @@ def TcState.newLazyAnon (ixonEnv : Ixon.Env) (verify : Bool := true) :
 def checkEnvAnon (ixonEnv : Ixon.Env) (cfg : CheckCfg := {}) :
     Except IngressErr (Array CheckResult) := do
   let work ← buildAnonWork ixonEnv
-  let mut results : Array CheckResult := #[]
-  let mut st := TcState.newLazyAnon ixonEnv cfg.verifyHashes
-  let mut sinceClear := 0
-  for item in work do
-    let primary : KId .anon := ⟨item.primary, ()⟩
-    let err? ← match (TcM.checkConst primary).run st with
-      | .ok () st' =>
-        st := st'
-        pure none
-      | .error e st' =>
-        st := st'
-        pure (some (toString e))
-    for target in item.targets do
-      results := results.push ⟨target, err?⟩
-    sinceClear := sinceClear + 1
-    if cfg.clearEvery != 0 && sinceClear ≥ cfg.clearEvery then
-      st := { st with env := st.env.clearReductionCaches }
-      sinceClear := 0
-  return results
+  return (runAnonCheckList cfg work.toList
+    (initialAnonCheckLoopState ixonEnv cfg)).results
 
 /-! ### Kernel ↔ Ixon roundtrip driver
 

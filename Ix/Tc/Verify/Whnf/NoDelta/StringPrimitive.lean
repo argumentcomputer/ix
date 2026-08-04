@@ -133,6 +133,7 @@ theorem tryReduceString_inv_wf
               simp only [Bool.false_eq_true, if_false]
               cases harg : args[0]! with
               | str value blob stringInfo =>
+                  unfold tryReduceStringLiteral
                   simp only
                   cases hutf8 :
                       (id.addr == prims.stringUtf8ByteSize.addr) with
@@ -159,7 +160,7 @@ theorem tryReduceString_inv_wf
                           simp only [if_true]
                           cases hempty : value.isEmpty with
                           | true =>
-                              simp only [if_true]
+                              simp only [if_true, pure_bind]
                               let requested : KExpr .anon :=
                                 KExpr.mkConst prims.byteArrayEmpty #[]
                               have hrequested : support requested := by
@@ -179,7 +180,7 @@ theorem tryReduceString_inv_wf
                               simp only [Bool.false_eq_true, if_false]
                               exact RecM.WF.pure fun _ => trivial
                       | false =>
-                          simp only [Bool.false_eq_true, if_false]
+                          simp only [Bool.false_eq_true, if_false, pure_bind]
                           have hback :
                               (id.addr == prims.stringBack.addr ||
                                 id.addr ==

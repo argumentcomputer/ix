@@ -1,154 +1,52 @@
-import Ix.Tc.Check
-import Ix.Tc.Verify.Execution
-import Ix.Tc.Verify.State
-import Lean4Lean.Theory.VEnv
+import Ix.Tc.Verify.Check.PublicStandalone
+import Ix.Tc.Verify.Check.PublicBlocks
+import Ix.Tc.Verify.Driver.BooleanAcceptance
+import Ix.Tc.Verify.Ingress.SerializedBoolean
+import Ix.Tc.Verify.RecursiveMethods.Public
 
 /-!
-# Statement skeleton: the headline `.WF` shapes
+# Public checker theorem frontier
 
-Sorried statements of the program's target theorems, written against
-the Hoare kernel (Verify/Monad.lean). The translation relations and the
-run cache contract are `opaque` stubs — *stubs with types*: every statement
-below is a legal proposition today whose shape changes only at named
-architecture milestones as the concrete relations (`TrKExprS`/`TrKExpr` in
-Verify/Trans.lean, finite `RunSupport`/`ResourceBounds` in
-Verify/Support.lean, execution-indexed `RunAssumptions` in
-Verify/Execution.lean, and `KernelTcInv`/`TrustedConstRel` in
-Verify/State.lean and Verify/Env.lean) replace the stubs. G4 has replaced
-the state-invariant stub itself; the judgment-level relations below and the
-cache contract remain provisional.
-Judgment plumbing (universe counts, contexts) deliberately routes through
-the stub relations so the shapes don't churn while that plumbing is
-designed; the theory anchor is `Lean4Lean`'s `VExpr`/`VConstant`.
+All seven public theorem roots now use the concrete verification relations and
+a finite, fuel-indexed production call schedule:
 
-Two quantifier choices are load-bearing:
+* `TcM.whnf.wf`, `TcM.infer.wf`, and `TcM.isDefEq.wf` are the C1A adapters
+  from `RecursiveMethods/Public.lean`;
+* `TcM.checkConst.wf` is K3's standalone axiom/definition-family theorem,
+  starting from `PendingDecl` and untyped validator ingress and producing a
+  real `StandaloneCheckResult`, a `VDecl.WF`-backed trusted-world promotion,
+  and the promoted post-state invariant; and
+* `TcM.checkConst.blockDisposition` is E0's exhaustive successful-dispatch
+  theorem: the production call either performs one exact atomic coordinated
+  admission or takes the separately verified standalone branch; and
+* `BooleanEnumerationFixture.subjectWF` is the E3-S acceptance root: the
+  production serial driver successfully checks the exact six-entry Boolean
+  source environment, and its two coordinated work rows satisfy `SubjectWF`
+  through transparent run-scoped K3/E0 resources, an explicit empty
+  assumption set, and certificate-backed E2 inductive evidence.
+* `BooleanSerialized.subjectWF` is the T0-S representation root: the same
+  semantic result is connected to a successful pure Ixon byte decode, exact
+  hash-verified eager and cold-lazy ingress, serialized dependency refs, and
+  a successful run of the production anonymous driver.
 
-* The cache contract is the fixed stub `StatementCacheSemantics`, not a
-  universally quantified `CacheSemantics`. `CacheSemantics` demands only the
-  `mono`/`blockError` laws, so degenerate contracts (e.g.
-  `CacheSemantics.blockErrorsOnly`, Verify/Whnf.lean) reject entries the
-  checker legitimately inserts; a `∀ semantics` triple would be falsified by
-  any run that warms a cache. The K1 insertion machinery is proved only for
-  the concrete `whnfCacheSemantics` family, and that family is what the stub
-  denotes on the WHNF slice.
-* `support` is one fixed finite domain across the whole triple, on both
-  outcomes. This is honest because `RunAssumptions` covers the initial
-  intern range plus every recorded request, and `ExecutionRequests` confines
-  the run's interning to those requests (silent transitions must preserve
-  the intern table), so the fixed support prospectively covers the intern
-  table of every reachable post-state.
+The K3 statement deliberately exposes `StandaloneRoute`.  E0 now closes the
+coordinated transaction, physical/ghost identity, and cache-publication
+layers.  Singleton definition blocks are constructive.  Inductive and
+recursor bodies remain relative in the generic adapter to an explicitly
+supplied `InductiveOracle` resource; the public E3-S root instantiates both
+resources from the Lean4Lean Boolean generation certificate.  Quotient
+semantics, mutual/nested inductives, indexed or parameterized families, and
+multi-definition blocks remain outside this certificate-backed release
+fragment.  Collision, finite-resource, lazy-ingress, source-to-router
+agreement, projection, and upstream metatheory obligations remain visible in
+`SupportedCheckRun` and its transparent body constructors. There are no
+opaque semantic statement stubs and no local `sorry` frontier in this module.
 
-Sorry frontier: every theorem in this file (they acquire proofs as the
-whnf/infer/checkConst soundness layers land); the stubs themselves are
-not sorries.
+The public root is defined at the end of the production proof itself rather
+than copied or proof-erased here.  This module is only the stable import
+frontier, so its exported statement cannot drift from the actual validator,
+bounded full-inference pipeline, fresh lookup, routing, atomic publication,
+and rollback-aware checker implementation. The bounded roots are audited
+against any dependency on the legacy all-depth
+`RecursiveMethodClosureContext`.
 -/
-
-namespace Ix.Tc
-
-open Lean4Lean (VExpr VConstant)
-
-/-- Cache contract under which the headline runs are stated: the semantic
-meaning of every warm cache family the checker may populate. Its K1 slice is
-the concrete `whnfCacheSemantics` family (Verify/Whnf.lean) over the
-K2-constructed context-key model; the inference/defeq families land with K2.
-The contract is a fixed stub rather than a quantified `CacheSemantics`
-because the structure's `mono`/`blockError` laws alone admit contracts that
-reject legitimately inserted entries, which no cache-warming run could
-preserve. -/
-opaque StatementCacheSemantics : RawProjRel → CacheSemantics
-
-/-- The headline invariant is the concrete G4 invariant under the statement
-cache contract: some current trusted world extends the caller's baseline and
-justifies the loaded catalog, intern range, and every warm cache entry under
-one finite run support. -/
-def KernelRunInv (trProj : RawProjRel)
-    (world₀ : VerifyWorld) (support : RunSupport)
-    (s : TcState .anon) : Prop :=
-  KernelTcInv (StatementCacheSemantics trProj) trProj world₀ support s
-
-/-- Expression translation: `KExpr` denotes this theory-level `VExpr` in
-    the current state's context (the `TrExprS` analog over `KVLCtx`,
-    with owned `prj`/literal cases; concrete form: `TrKExprS`,
-    Verify/Trans.lean). -/
-opaque StatementTrKExpr :
-  {m : Mode} → TcState m → KExpr m → VExpr → Prop
-
-/-- Constant translation: the constant at `id` denotes this theory-level
-    `VConstant` (concrete G2b interface: exact loaded/trusted resolution via
-    `TrustedConstRel`, Verify/Env.lean). -/
-opaque StatementTrKConst :
-  {m : Mode} → TcState m → KId m → VConstant → Prop
-
-/-- The state's environment translates to a well-formed `VEnv` extension
-    in which `d` is a valid constant (the `NativeOracle` defeqs
-    enter as the env's `.extra` judgments). -/
-opaque StatementTrustedConst :
-  {m : Mode} → TcState m → VConstant → Prop
-
-/-- Theory-level definitional equality of the translations, in the
-    current state's environment and context (translation-layer plumbing). -/
-opaque StatementKDefEqU :
-  {m : Mode} → TcState m → VExpr → VExpr → Prop
-
-/-- Theory-level typing of the translations (translation-layer plumbing). -/
-opaque StatementKHasType :
-  {m : Mode} → TcState m → VExpr → VExpr → Prop
-
-/-- **`whnf` soundness shape**: reduction preserves the translation
-    up to theory-level defeq. -/
-theorem TcM.whnf.wf {s : TcState .anon} {e : KExpr .anon} {ve : VExpr}
-    {trProj : RawProjRel}
-    {world₀ : VerifyWorld}
-    {support : RunSupport} {requests : List WalkerRequest}
-    (hrun : RunAssumptions s (TcM.whnf e) requests support)
-    (he : StatementTrKExpr s e ve) :
-    TcM.WF (KernelRunInv trProj world₀ support) s (TcM.whnf e)
-      (fun e' s' => ∃ ve', StatementTrKExpr s' e' ve' ∧
-        StatementKDefEqU s' ve ve') := by
-  sorry
-
-/-- **`infer` soundness shape**: the inferred type translates and
-    types the subject. -/
-theorem TcM.infer.wf {s : TcState .anon} {e : KExpr .anon} {ve : VExpr}
-    {trProj : RawProjRel}
-    {world₀ : VerifyWorld}
-    {support : RunSupport} {requests : List WalkerRequest}
-    (hrun : RunAssumptions s (TcM.infer e) requests support)
-    (he : StatementTrKExpr s e ve) :
-    TcM.WF (KernelRunInv trProj world₀ support) s (TcM.infer e)
-      (fun ty s' => ∃ vty, StatementTrKExpr s' ty vty ∧
-        StatementKHasType s' ve vty) := by
-  sorry
-
-/-- **`isDefEq` soundness shape**: a `true` verdict implies
-    theory-level definitional equality. (`false` implies nothing —
-    incompleteness is not unsoundness.) -/
-theorem TcM.isDefEq.wf {s : TcState .anon}
-    {a b : KExpr .anon} {va vb : VExpr}
-    {trProj : RawProjRel}
-    {world₀ : VerifyWorld}
-    {support : RunSupport} {requests : List WalkerRequest}
-    (hrun : RunAssumptions s (TcM.isDefEq a b) requests support)
-    (ha : StatementTrKExpr s a va) (hb : StatementTrKExpr s b vb) :
-    TcM.WF (KernelRunInv trProj world₀ support) s
-      (TcM.isDefEq a b)
-      (fun r s' => r = true → StatementKDefEqU s' va vb) := by
-  sorry
-
-/-- **`checkConst` soundness shape** (the headline): acceptance means
-    the constant translates to a trusted theory-level constant —
-    conditional on the concrete execution-indexed finite run assumptions
-    (and, inside `StatementTrustedConst`, the `NativeOracle` defeqs and
-    upstream Theory debt). -/
-theorem TcM.checkConst.wf {s : TcState .anon} {id : KId .anon}
-    {trProj : RawProjRel}
-    {world₀ : VerifyWorld}
-    {support : RunSupport} {requests : List WalkerRequest}
-    (hrun : RunAssumptions s (TcM.checkConst id) requests support) :
-    TcM.WF (KernelRunInv trProj world₀ support) s
-      (TcM.checkConst id)
-      (fun _ s' => ∃ d, StatementTrKConst s' id d ∧
-        StatementTrustedConst s' d) := by
-  sorry
-
-end Ix.Tc

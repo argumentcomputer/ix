@@ -1,15 +1,14 @@
 import Ix.Tc.Verify.Decl
+import Ix.Tc.Verify.Inductive.Certificate
 import Ix.Tc.Verify.Trans
 import Lean4Lean.Theory.Typing.Pattern
 
 /-!
 # Ambient inductive oracle
 
-Lean4Lean currently leaves both `VInductDecl.WF` and `VEnv.addInduct` as
-opaque `sorry` definitions.  Requiring an equation involving that operation
-here would make the ambient-inductive precondition impossible to instantiate
-without adding another axiom.  G2 therefore records the semantic consequences
-needed by the checker directly:
+G2 introduced this interface before Lean4Lean had a usable inductive
+specification, so it records the semantic consequences needed by the checker
+directly:
 
 * every admitted concrete inductive-family constant has an exact raw Theory
   translation and lookup;
@@ -18,12 +17,17 @@ needed by the checker directly:
 * every concrete recursor rule has an explicit, well-formed Theory defeq
   witness headed by that recursor.
 
-`InductiveOracle` is an explicit assumption boundary, not a claim that Ix's
-inductive checker has already been verified.  The later inductive milestone
-must construct this interface from block checking and a completed
-Lean4Lean `addInduct` specification.  Keeping the interface in terms of
-semantic consequences permits a closed Nat model with no new Lean axiom now,
-while the recursor clause prevents future whnf proofs from treating
+Pin A now provides Lean4Lean's proved normalized `GenerationCertificate` and
+`addInductCertified` transaction. `Inductive/Certificate.lean` derives the
+Theory-owned environment, lookup, freshness, and rule-registration facts from
+that certificate. It intentionally cannot supply the Ix-owned catalog/name
+translation, checker-execution, and recursor-pattern fields below.
+
+`InductiveOracle` therefore remains an explicit assumption boundary, not a
+claim that Ix's inductive checker has already been verified. E2b must combine
+the certificate facts with actual Ix block checking and pattern-generation
+proofs. Keeping the interface in terms of semantic consequences permits a
+closed Nat model while the recursor clause prevents WHNF proofs from treating
 computation rules as an unrecorded ambient fact.
 -/
 
@@ -84,7 +88,31 @@ theorem hasRecursorRule {c : KConst .anon} {index : Nat}
   case recr rules =>
     exact Array.mem_of_getElem? h
 
+/-- An exact array position selects at most one concrete rule. -/
+theorem unique {c : KConst .anon} {index : Nat}
+    {left right : RecRule .anon}
+    (hleft : c.RecursorRuleAt index left)
+    (hright : c.RecursorRuleAt index right) : left = right := by
+  cases c <;> simp only [KConst.RecursorRuleAt] at hleft hright
+  rw [hleft] at hright
+  exact Option.some.inj hright
+
 end KConst.RecursorRuleAt
+
+namespace KConst.HasRecursorRule
+
+/-- Ordinary rule membership retains some exact dispatch position. -/
+theorem exists_ruleAt {c : KConst .anon} {rule : RecRule .anon}
+    (h : c.HasRecursorRule rule) :
+    ∃ index, c.RecursorRuleAt index rule := by
+  cases c <;>
+    simp only [KConst.HasRecursorRule, KConst.RecursorRuleAt] at h ⊢
+  case recr rules =>
+    obtain ⟨index, hindex, hget⟩ := Array.mem_iff_getElem.mp h
+    exact ⟨index, (Array.getElem?_eq_getElem hindex).trans
+      (congrArg some hget)⟩
+
+end KConst.HasRecursorRule
 
 /-- Constructor metadata relevant to iota pattern matching. -/
 def KConst.ConstructorAt (c : KConst .anon) (index : Nat)
@@ -100,6 +128,41 @@ inductive HeadConst (name : Lean.Name) : VExpr → Prop
   | const (levels : List Lean4Lean.VLevel) :
     HeadConst name (.const name levels)
   | app {fn arg : VExpr} : HeadConst name fn → HeadConst name (.app fn arg)
+
+/-- A closed rewrite equation may bind its complete rule telescope before
+the recursor-headed application.  Lean4Lean's generated iota equations and
+production's stored `RecRule.rhs` both use exactly this closed-lambda shape;
+requiring `HeadConst name defeq.lhs` at the outer node would reject every
+nonempty generated rule telescope. -/
+inductive HeadConstUnderLambdas (name : Lean.Name) : VExpr → Prop
+  | head {body : VExpr} : HeadConst name body →
+      HeadConstUnderLambdas name body
+  | lam {type body : VExpr} : HeadConstUnderLambdas name body →
+      HeadConstUnderLambdas name (.lam type body)
+
+namespace HeadConst
+
+/-- Adding an application spine preserves its constant head. -/
+theorem appN {name : Lean.Name} {head : VExpr}
+    (h : HeadConst name head) :
+    ∀ arguments : List VExpr, HeadConst name (VExpr.appN head arguments)
+  | [] => h
+  | _ :: rest => (HeadConst.app h).appN rest
+
+end HeadConst
+
+namespace HeadConstUnderLambdas
+
+/-- Closing a recursor-headed body under an arbitrary rule telescope
+produces the exact outer shape used by generated equations. -/
+theorem lamN {name : Lean.Name} {body : VExpr}
+    (h : HeadConst name body) :
+  ∀ binders : List VExpr,
+      HeadConstUnderLambdas name (VExpr.lamN binders body)
+  | [] => .head h
+  | _ :: rest => .lam (HeadConstUnderLambdas.lamN h rest)
+
+end HeadConstUnderLambdas
 
 /-- An application spine has exactly `arity` arguments above a constant
 head.  This is the counted form needed to distinguish an iota major from an
@@ -210,7 +273,7 @@ def RegisteredRecursorRuleRhsRel (env : VEnv)
     env.constants name = some constant ∧
     env.defeqs defeq ∧
     defeq.WF env ∧
-    HeadConst name defeq.lhs ∧
+    HeadConstUnderLambdas name defeq.lhs ∧
     RawExprRel env nameOf trProj [] rule.rhs defeq.rhs ∧
     TrKExprS env defeq.uvars nameOf trProj [] rule.rhs defeq.rhs
 
@@ -305,6 +368,54 @@ structure RecursorRulePattern where
   checks : (RecursorIotaPattern recursorName majorIdx constructorName
     (constructorParams.toNat + constructorFields.toNat)).Check
 
+/-- Finite production metadata required by one recursor pattern, separated
+from its semantic rewrite law so E2 adapters can show exactly which part is
+discharged by catalog/layout correspondence. -/
+structure RawRecursorRulePatternMetadataRel (catalog : Catalog)
+    (nameOf : Address → Option Lean.Name) (id : KId .anon)
+    (c : KConst .anon) (rule : RecRule .anon)
+    (pattern : RecursorRulePattern) : Prop where
+  recursorName : nameOf id.addr = some pattern.recursorName
+  majorIdx : c.RecursorMajorIdx = some pattern.majorIdx
+  majorIdxCoherent : c.RecursorMajorIdxCoherent
+  ruleAt : c.RecursorRuleAt pattern.ruleIndex rule
+  constructorName :
+    nameOf pattern.constructorId.addr = some pattern.constructorName
+  constructorAt : ∃ ctor,
+    catalog pattern.constructorId = some ctor ∧
+      ctor.ConstructorAt pattern.ruleIndex pattern.constructorParams
+        pattern.constructorFields
+  fields : rule.fields = pattern.constructorFields
+
+/-- The environment-parametric semantic half of a recursor pattern.
+
+`Params.pat_wf` has a well-formed environment in its class parameters, and
+the Theory inversion/beta lemmas additionally require a well-formed local
+context.  Both premises are explicit here: a registered generated equation
+cannot justify reduction in an arbitrary malformed extension or context. -/
+def RecursorRulePattern.Sound (env : VEnv)
+    (pattern : RecursorRulePattern) : Prop :=
+  ∀ {env' : VEnv}, env ≤ env' →
+    env'.WF →
+    ∀ {uvars : Nat} {Gamma : List VExpr} {source : VExpr}
+      {levels : List Lean4Lean.VLevel}
+      {captures : (RecursorIotaPattern pattern.recursorName pattern.majorIdx
+        pattern.constructorName
+        (pattern.constructorParams.toNat +
+          pattern.constructorFields.toNat)).Path → VExpr}
+      {A : VExpr},
+      Lean4Lean.OnCtx Gamma (env'.IsType uvars) →
+      Lean4Lean.Pattern.Matches
+        (RecursorIotaPattern pattern.recursorName pattern.majorIdx
+          pattern.constructorName
+          (pattern.constructorParams.toNat +
+            pattern.constructorFields.toNat))
+        source levels captures →
+      env'.HasType uvars Gamma source A →
+      pattern.checks.OK (env'.IsDefEqU uvars Gamma) levels captures →
+      env'.IsDefEqU uvars Gamma source
+        (pattern.rhs.apply levels captures)
+
 /-- Proof-irrelevant semantic realization of exact iota-pattern data for one
 concrete rule. -/
 def RawRecursorRulePatternRel (env : VEnv) (catalog : Catalog)
@@ -322,6 +433,7 @@ def RawRecursorRulePatternRel (env : VEnv) (catalog : Catalog)
         pattern.constructorFields) ∧
   rule.fields = pattern.constructorFields ∧
   ∀ {env' : VEnv}, env ≤ env' →
+    env'.WF →
     ∀ {uvars : Nat} {Gamma : List VExpr} {source : VExpr}
       {levels : List Lean4Lean.VLevel}
       {captures : (RecursorIotaPattern pattern.recursorName pattern.majorIdx
@@ -329,6 +441,7 @@ def RawRecursorRulePatternRel (env : VEnv) (catalog : Catalog)
         (pattern.constructorParams.toNat +
           pattern.constructorFields.toNat)).Path → VExpr}
       {A : VExpr},
+      Lean4Lean.OnCtx Gamma (env'.IsType uvars) →
       Lean4Lean.Pattern.Matches
         (RecursorIotaPattern pattern.recursorName pattern.majorIdx
           pattern.constructorName
@@ -342,6 +455,42 @@ def RawRecursorRulePatternRel (env : VEnv) (catalog : Catalog)
 
 namespace RawRecursorRulePatternRel
 
+/-- Assemble the historical flat relation from its separately auditable
+metadata and semantic halves. -/
+theorem of_metadata_sound
+    {env : VEnv} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {id : KId .anon}
+    {c : KConst .anon} {rule : RecRule .anon}
+    {pattern : RecursorRulePattern}
+    (metadata : RawRecursorRulePatternMetadataRel catalog nameOf id c rule
+      pattern)
+    (sound : pattern.Sound env) :
+    RawRecursorRulePatternRel env catalog nameOf id c rule pattern :=
+  ⟨metadata.recursorName, metadata.majorIdx, metadata.majorIdxCoherent,
+    metadata.ruleAt, metadata.constructorName, metadata.constructorAt,
+    metadata.fields, sound⟩
+
+/-- Project finite metadata from the historical flat relation. -/
+theorem metadata
+    {env : VEnv} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {id : KId .anon}
+    {c : KConst .anon} {rule : RecRule .anon}
+    {pattern : RecursorRulePattern}
+    (h : RawRecursorRulePatternRel env catalog nameOf id c rule pattern) :
+    RawRecursorRulePatternMetadataRel catalog nameOf id c rule pattern :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
+    h.2.2.2.2.2.1, h.2.2.2.2.2.2.1⟩
+
+/-- Project semantic soundness from the historical flat relation. -/
+theorem sound
+    {env : VEnv} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name} {id : KId .anon}
+    {c : KConst .anon} {rule : RecRule .anon}
+    {pattern : RecursorRulePattern}
+    (h : RawRecursorRulePatternRel env catalog nameOf id c rule pattern) :
+    pattern.Sound env :=
+  h.2.2.2.2.2.2.2
+
 /-- Pattern provenance is stable under trusted-world extension.  The sound
 law was deliberately quantified over all future environments, so extending
 the admission prefix only composes its lower bound. -/
@@ -354,9 +503,10 @@ theorem mono {env env' : VEnv} (henv : env ≤ env') {catalog : Catalog}
   rcases h with
     ⟨hname, hmajor, hcoherent, hrule, hctorName, hctor, hfields, hsound⟩
   exact ⟨hname, hmajor, hcoherent, hrule, hctorName, hctor, hfields, by
-    intro future hfuture uvars Gamma source levels captures A
-      hmatches htype hchecks
-    exact hsound (henv.trans hfuture) hmatches htype hchecks⟩
+    intro future hfuture hfutureWF uvars Gamma source levels captures A
+      hGamma hmatches htype hchecks
+    exact hsound (henv.trans hfuture) hfutureWF hGamma hmatches htype
+      hchecks⟩
 
 end RawRecursorRulePatternRel
 
@@ -364,10 +514,10 @@ end RawRecursorRulePatternRel
 block.  `members` is exact for this admission step; `fresh` prevents the
 oracle from re-certifying an existing trusted id.
 
-The oracle records `before ≤ after` rather than an opaque
-`before.addInduct = some after` equation.  These are exactly the consequences
-used before E2, and unlike the unfinished upstream operation they admit real
-models. -/
+The oracle records `before ≤ after` rather than requiring every consumer to
+carry a transaction equation. `CertifiedGenerationFacts` now derives this
+Theory-owned portion; the remaining fields are the E2b Ix correspondence
+boundary. -/
 structure InductiveOracle (trProj : RawProjRel) (catalog : Catalog)
     (nameOf : Address → Option Lean.Name) (trusted : KId .anon → Prop)
     (before : VEnv) where
@@ -395,6 +545,44 @@ structure InductiveOracle (trProj : RawProjRel) (catalog : Catalog)
 
 namespace InductiveOracle
 
+/-- Transport an oracle across equality of the immutable catalog and naming
+interpretation.  World extension records these as equal fields, so making the
+transport explicit keeps later residual-oracle proofs independent of opaque
+dependent casts. -/
+def reindex
+    {trProj : RawProjRel} {catalog catalog' : Catalog}
+    {nameOf nameOf' : Address → Option Lean.Name}
+    {trusted : KId .anon → Prop} {before : VEnv}
+    (oracle : InductiveOracle trProj catalog nameOf trusted before)
+    (hcatalog : catalog = catalog') (hnameOf : nameOf = nameOf') :
+    InductiveOracle trProj catalog' nameOf' trusted before := by
+  subst catalog'
+  subst nameOf'
+  exact oracle
+
+@[simp] theorem reindex_members
+    {trProj : RawProjRel} {catalog catalog' : Catalog}
+    {nameOf nameOf' : Address → Option Lean.Name}
+    {trusted : KId .anon → Prop} {before : VEnv}
+    (oracle : InductiveOracle trProj catalog nameOf trusted before)
+    (hcatalog : catalog = catalog') (hnameOf : nameOf = nameOf')
+    (id : KId .anon) :
+    (oracle.reindex hcatalog hnameOf).members id ↔ oracle.members id := by
+  subst catalog'
+  subst nameOf'
+  rfl
+
+@[simp] theorem reindex_after
+    {trProj : RawProjRel} {catalog catalog' : Catalog}
+    {nameOf nameOf' : Address → Option Lean.Name}
+    {trusted : KId .anon → Prop} {before : VEnv}
+    (oracle : InductiveOracle trProj catalog nameOf trusted before)
+    (hcatalog : catalog = catalog') (hnameOf : nameOf = nameOf') :
+    (oracle.reindex hcatalog hnameOf).after = oracle.after := by
+  subst catalog'
+  subst nameOf'
+  rfl
+
 /-- Add exactly this oracle block to the trusted predicate. -/
 def TrustBlock {trProj : RawProjRel} {catalog : Catalog}
     {nameOf : Address → Option Lean.Name} {trusted : KId .anon → Prop}
@@ -421,6 +609,61 @@ theorem catalogued {trProj : RawProjRel} {catalog : Catalog}
     {id : KId .anon} (h : oracle.members id) : Catalog.Contains catalog id := by
   obtain ⟨c, _, _, hcat, _⟩ := oracle.translateBlock h
   exact ⟨c, hcat⟩
+
+/-- Reuse a certified inductive interpretation in a later Theory
+environment, admitting exactly the members which are not already trusted.
+
+This is the form needed by checked-set composition. A composition world may
+already contain part of a physical block because another production check
+validated a dependency first. Requiring the original oracle's whole member
+set to remain fresh would make such a safe replay uninhabitable. The
+residual oracle transports the semantic and generated-rule facts to
+`current`, then makes freshness true by construction. `hmissing` prevents an
+empty ghost transaction. -/
+def restageMissing
+    {trProj : RawProjRel} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name}
+    {trusted₀ : KId .anon → Prop} {before₀ : VEnv}
+    (oracle : InductiveOracle trProj catalog nameOf trusted₀ before₀)
+    {current : VEnv} (henv : oracle.after ≤ current)
+    (hcurrent : current.WF) (trusted : KId .anon → Prop)
+    (hmissing : ∃ id, oracle.members id ∧ ¬trusted id) :
+    InductiveOracle trProj catalog nameOf trusted current where
+  members := fun id => oracle.members id ∧ ¬trusted id
+  nonempty := hmissing
+  fresh := by
+    intro id hmember
+    exact hmember.2
+  after := current
+  envLE := VEnv.LE.rfl
+  blockWF := hcurrent
+  translateBlock := by
+    intro id hmember
+    obtain ⟨concrete, name, constant, hcatalog, hraw, hlookup, hwf⟩ :=
+      oracle.translateBlock hmember.1
+    exact ⟨concrete, name, constant, hcatalog, hraw.mono henv,
+      henv.constants hlookup, hwf.mono henv⟩
+  recursorFacts := by
+    intro id concrete rule hmember hcatalog hrule
+    exact (oracle.recursorFacts hmember.1 hcatalog hrule).mono henv
+  recursorPatterns := by
+    intro id concrete ruleIndex rule hmember hcatalog hrule
+    obtain ⟨pattern, hpattern, hindex⟩ :=
+      oracle.recursorPatterns hmember.1 hcatalog hrule
+    exact ⟨pattern, hpattern.mono henv, hindex⟩
+
+@[simp] theorem restageMissing_members_iff
+    {trProj : RawProjRel} {catalog : Catalog}
+    {nameOf : Address → Option Lean.Name}
+    {trusted₀ : KId .anon → Prop} {before₀ : VEnv}
+    (oracle : InductiveOracle trProj catalog nameOf trusted₀ before₀)
+    {current : VEnv} (henv : oracle.after ≤ current)
+    (hcurrent : current.WF) (trusted : KId .anon → Prop)
+    (hmissing : ∃ id, oracle.members id ∧ ¬trusted id)
+    (id : KId .anon) :
+    (oracle.restageMissing henv hcurrent trusted hmissing).members id ↔
+      oracle.members id ∧ ¬trusted id :=
+  Iff.rfl
 
 end InductiveOracle
 

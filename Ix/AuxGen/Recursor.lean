@@ -193,49 +193,6 @@ def abstractSpecParamsToBVars (specParams : Array Expr)
         m.insert d.fvarName i
     specParams.map fun sp => batchAbstract sp fvarMap n 0
 
-/-- Mirrors Rust `level_max_raw` (aux_gen/nested.rs:1989, local fn inside
-    `maximize_occurrence_levels`): `max(a, b)` with only zero elimination,
-    matching Lean's `mkLevelMax` behavior. -/
-def levelMaxRaw (a b : Level) : Level :=
-  if a == b then a
-  else if a matches .zero _ then b
-  else if b matches .zero _ then a
-  else Level.mkMax a b
-
-/-- Mirrors Rust `maximize_occurrence_levels` (aux_gen/nested.rs:1958).
-
-    Maximize occurrence levels across all auxiliaries sharing the same
-    external inductive name: pointwise `levelMaxRaw` of
-    `occurrenceLevelArgs` across all auxiliaries with the same `name`,
-    then apply the merged levels to all of them. -/
-def maximizeOccurrenceLevels (flat : Array FvarFlatMember) (nOriginals : Nat) :
-    Array FvarFlatMember := Id.run do
-  -- Group auxiliary members by external inductive name.
-  let mut maxLevels : Std.HashMap Name (Array Level) := {}
-  for entry in flat.extract nOriginals flat.size do
-    -- Rust `entry().or_insert_with(occ)` then pointwise max when lengths
-    -- match; on the fresh insert the max is `max(x, x) = x`.
-    let merged := (maxLevels.get? entry.name).getD entry.occurrenceLevelArgs
-    let merged :=
-      if merged.size == entry.occurrenceLevelArgs.size then
-        (merged.zip entry.occurrenceLevelArgs).map fun (m, e) => levelMaxRaw m e
-      else merged
-    maxLevels := maxLevels.insert entry.name merged
-  -- Apply the maximized levels to all auxiliaries.
-  let mut out : Array FvarFlatMember := #[]
-  for (entry, i) in flat.zipIdx do
-    if i < nOriginals then
-      out := out.push entry
-    else
-      match maxLevels.get? entry.name with
-      | some merged =>
-        if merged.size == entry.occurrenceLevelArgs.size then
-          out := out.push { entry with occurrenceLevelArgs := merged }
-        else
-          out := out.push entry
-      | none => out := out.push entry
-  return out
-
 /-- Mirrors Rust `try_detect_nested_fvar` (aux_gen/nested.rs:2003).
 
     Check if a field domain contains a nested inductive occurrence and, if
@@ -245,10 +202,12 @@ def maximizeOccurrenceLevels (flat : Array FvarFlatMember) (nOriginals : Nat) :
     mentions an original block inductive. Rust mutates `flat`/`aux_seen`
     in place; here they are passed and returned. -/
 def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
-    (flat : Array FvarFlatMember) (auxSeen : Array (Name × Array Address))
+    (flat : Array FvarFlatMember)
+    (auxSeen : Array (Name × Array Address × Array Address))
     (overlay : Option (Std.HashMap Name ConstantInfo))
     (blockParamFvarNames : Array Name) :
-    CompileM (Array FvarFlatMember × Array (Name × Array Address)) := do
+    CompileM
+      (Array FvarFlatMember × Array (Name × Array Address × Array Address)) := do
   -- Peel foralls structurally to get to the result type. Note: NOT
   -- forallTelescope — peeled binders introduce BVars in the body, which
   -- `hasInvalidSpecRef` flags if they leak into a spec_param.
@@ -292,14 +251,17 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
     if hasInvalidSpecRef sp blockParamFvarNames then
       return (flat, auxSeen)
 
-  -- Dedup by (ext ind name, spec_param content hashes). FVar naming is
-  -- deterministic (_bp_0, _bp_1, ...) so hashing in FVar form is stable.
+  -- Dedup by the complete nested application identity. Universe arguments
+  -- remain distinct even when the family and term-parameter spine agree.
+  let levelHashes : Array Address := headLevels.map (·.getHash)
   let specHashes : Array Address := specParams.map (·.getHash)
-  if auxSeen.any (fun (name, hashes) =>
-      name == headName && hashes.size == specHashes.size
+  if auxSeen.any (fun (name, levels, hashes) =>
+      name == headName && levels.size == levelHashes.size
+        && (levels.zip levelHashes).all fun (a, b) => a == b
+        && hashes.size == specHashes.size
         && (hashes.zip specHashes).all fun (a, b) => a == b) then
     return (flat, auxSeen)
-  let auxSeen := auxSeen.push (headName, specHashes)
+  let auxSeen := auxSeen.push (headName, levelHashes, specHashes)
 
   -- Use the raw levels from the Const node in the constructor type.
   let flat := flat.push
@@ -336,7 +298,7 @@ an inductive)")
   let blockParamFvarNames : Array Name := blockParamDecls.map (·.fvarName)
 
   let mut flat : Array FvarFlatMember := #[]
-  let mut auxSeen : Array (Name × Array Address) := #[]
+  let mut auxSeen : Array (Name × Array Address × Array Address) := #[]
 
   let blockNameSet : Std.HashSet Name :=
     orderedOriginals.foldl (init := {}) (·.insert ·)
@@ -395,9 +357,6 @@ inductive)")
           flat auxSeen overlay blockParamFvarNames
         flat := flat'
         auxSeen := auxSeen'
-
-  -- Maximize occurrence levels per external inductive name.
-  flat := maximizeOccurrenceLevels flat orderedOriginals.size
 
   -- Convert FVar-form spec_params back to BVar form for the output.
   return flat.map fun entry =>

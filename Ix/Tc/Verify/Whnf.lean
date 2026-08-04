@@ -300,18 +300,26 @@ end WhnfContextKeys.Matches
 
 namespace CacheSemantics
 
-/-- Minimal fallback used by a WHNF-only verification slice: cached block
-errors remain replayable, while every semantic family not owned by K1 is
-rejected.  K2 replaces this fallback when inference and defeq caches become
-available. -/
-def blockErrorsOnly : CacheSemantics where
-  Valid _ _ entry :=
+/-- Minimal fallback used by reducer-only verification slices: cached block
+errors remain replayable, and a cached success is accepted exactly when its
+immutable block catalog entry is nonempty and every exact member is trusted.
+Every non-block semantic family is rejected. -/
+def blockResults : CacheSemantics where
+  Valid authority _ entry :=
     match entry with
+    | .blockResult block (.ok ()) => authority.world.AcceptedBlock block
     | .blockResult _ (.error _) => True
     | _ => False
   mono := by
     intro before after support entry hle h
-    exact h
+    cases entry with
+    | blockResult block result =>
+      cases result with
+      | ok value =>
+        cases value
+        exact h.mono hle.world
+      | error => trivial
+    | _ => exact h
   Equiv _ _ := Eq
   equivEquivalence := by
     intro authority support
@@ -322,6 +330,17 @@ def blockErrorsOnly : CacheSemantics where
   blockError := by
     intro authority support block err
     trivial
+  blockSuccess := by
+    intro authority support block h
+    exact h
+  blockSuccessSound := by
+    intro authority support block h
+    exact h
+
+/-- Compatibility spelling retained for existing K1/K2 clients.  Unlike its
+pre-E0 definition, successful block verdicts now have the exact sound meaning
+specified by `blockResults`. -/
+abbrev blockErrorsOnly : CacheSemantics := blockResults
 
 end CacheSemantics
 
@@ -377,6 +396,12 @@ def isRecCacheSemantics (fallback : CacheSemantics) : CacheSemantics where
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
+  blockSuccess := by
+    intro authority support block h
+    exact fallback.blockSuccess authority support block h
+  blockSuccessSound := by
+    intro authority support block h
+    exact fallback.blockSuccessSound authority support block h
 
 /-- Exact K1 validity for one tagged entry.  The fallback owns every non-K1
 cache family.  A WHNF entry must be sound for every finite-support source
@@ -465,6 +490,12 @@ def whnfCacheSemantics (keys : WhnfContextKeys) (trProj : RawProjRel)
   blockError := by
     intro authority support block err
     exact fallback.blockError authority support block err
+  blockSuccess := by
+    intro authority support block h
+    exact fallback.blockSuccess authority support block h
+  blockSuccessSound := by
+    intro authority support block h
+    exact fallback.blockSuccessSound authority support block h
 
 namespace CacheProvenance
 
@@ -698,6 +729,22 @@ def WhnfStateInv (layer : WhnfLayer) (semantics : CacheSemantics)
     layer.StateOK s
 
 namespace WhnfStateInv
+
+/-- Transport a fixed-state method invariant across ghost-only trusted-world
+growth.  The larger-world core is supplied by the promotion theorem; context,
+cache, and equivalence facts are monotone because promotion fixes the catalog
+and address-to-name map. -/
+theorem rebaseWorld
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {beforeWorld afterWorld : VerifyWorld}
+    {support : RunSupport} {uvars : Nat} {Δ : KVLCtx}
+    {s : TcState .anon}
+    (hle : beforeWorld ≤ afterWorld)
+    (hcore : TcStateWF trProj s afterWorld)
+    (h : WhnfStateInv layer semantics trProj beforeWorld support uvars Δ s) :
+    WhnfStateInv layer semantics trProj afterWorld support uvars Δ s := by
+  refine ⟨h.1.rebaseWorld hle hcore, ?_, h.2.2⟩
+  simpa only [← hle.nameOf] using h.2.1.mono hle.venv
 
 /-- Changing only operational bookkeeping fields preserves the complete
 fixed-world WHNF invariant.  The explicit field equations keep fuel and

@@ -80,6 +80,14 @@ end InternTable
 /-- Generated recursor, cached after inductive validation. -/
 structure GeneratedRecursor (m : Mode) where
   indAddr : Address
+  /-- Canonical universe/term arities derived from the validated flat
+      inductive block. -/
+  lvls : UInt64
+  params : UInt64
+  motives : UInt64
+  minors : UInt64
+  indices : UInt64
+  isUnsafe : Bool
   ty : KExpr m
   rules : Array (RecRule m)
 
