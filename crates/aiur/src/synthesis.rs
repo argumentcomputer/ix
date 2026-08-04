@@ -324,7 +324,6 @@ mod tests {
     p3_field::PrimeCharacteristicRing,
     types::{CommitmentParameters, FriParameters},
   };
-  use rustc_hash::FxHashMap;
 
   /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
   /// while still exercising the full FRI pipeline (log_blowup 1, 64 queries,
@@ -342,7 +341,7 @@ mod tests {
   }
 
   fn empty_io_buffer() -> IOBuffer {
-    IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() }
+    IOBuffer::new()
   }
 
   /// Hand-build the toplevel for a single constrained function `f(a, b) = a*b`.

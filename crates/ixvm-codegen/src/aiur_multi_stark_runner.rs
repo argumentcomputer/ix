@@ -17,7 +17,6 @@
 //! buffer across FFI.
 
 use multi_stark::p3_field::PrimeCharacteristicRing;
-use rustc_hash::FxHashMap;
 
 use crate::aiur_multi_stark::execute_generated;
 use aiur::G;
@@ -60,7 +59,7 @@ pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
     let _ = std::fs::write(format!("{dir}/claims.bin"), claims);
   }
   let mut io =
-    IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() };
+    IOBuffer::new();
   for (channel, bytes) in
     [(0u64, proof), (1, vk), (2, claims)].map(|(c, b)| (G::from_u64(c), b))
   {

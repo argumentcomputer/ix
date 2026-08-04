@@ -38,9 +38,21 @@ impl QueryRecord {
   }
 }
 
+#[derive(Clone, Copy)]
 pub struct IOKeyInfo {
   pub idx: usize,
   pub len: usize,
+}
+
+/// On-demand witness supplier for an [`IOBuffer`]: when execution asks for
+/// a `(channel, key)` the buffer does not hold, the backing gets one chance
+/// to produce the data, which is then materialized into the buffer exactly
+/// as if the host had seeded it eagerly. Execution cannot observe the
+/// difference — same bytes, same keys, same in-circuit verification — so
+/// host witness RAM scales with the FAULTED set instead of the shipped
+/// closure. `Send + Sync` because scan/check workers share one source.
+pub trait IOFaultSource: Send + Sync {
+  fn fault(&self, channel: G, key: &[G]) -> Option<Vec<G>>;
 }
 
 pub struct IOBuffer {
@@ -49,25 +61,84 @@ pub struct IOBuffer {
   /// Channel-keyed info map; same `key` on different channels resolves
   /// to distinct `IOKeyInfo`.
   pub map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
+  /// Lazy witness backing; `None` means fully host-seeded (the eager
+  /// builders and the Lean-marshalled buffers).
+  pub backing: Option<std::sync::Arc<dyn IOFaultSource>>,
+}
+
+impl Default for IOBuffer {
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl IOBuffer {
+  pub fn new() -> Self {
+    Self {
+      data: FxHashMap::default(),
+      map: FxHashMap::default(),
+      backing: None,
+    }
+  }
+
+  pub fn with_backing(backing: std::sync::Arc<dyn IOFaultSource>) -> Self {
+    Self {
+      data: FxHashMap::default(),
+      map: FxHashMap::default(),
+      backing: Some(backing),
+    }
+  }
+
+  fn invalid_key(channel: G, key: &[G]) -> ExecError {
+    // Name the channel and key: a missing witness entry is otherwise
+    // indistinguishable from any other, and the key identifies the
+    // constant or blob whose bytes the host failed to seed.
+    let hex: String = key
+      .iter()
+      .map(|g| format!("{:02x}", g.as_canonical_u64() & 0xff))
+      .collect();
+    ExecError::InvalidIOKey { channel: channel.as_canonical_u64(), key: hex }
+  }
+
+  /// Execution-path lookup: on a miss, the `backing` (if any) may
+  /// materialize the entry into the buffer before the lookup fails.
+  /// `&mut` because a fault appends to the arena; both the interpreter
+  /// and the codegen'd kernels thread `&mut IOBuffer` already.
   #[inline]
   pub fn get_info(
+    &mut self,
+    channel: G,
+    key: &[G],
+  ) -> Result<IOKeyInfo, ExecError> {
+    if let Some(info) = self.map.get(&(channel, key.to_vec())) {
+      return Ok(*info);
+    }
+    if let Some(src) = &self.backing
+      && let Some(data) = src.fault(channel, key)
+    {
+      let arena = self.data.entry(channel).or_default();
+      let info = IOKeyInfo { idx: arena.len(), len: data.len() };
+      arena.extend(data);
+      self.map.insert((channel, key.to_vec()), info);
+      return Ok(info);
+    }
+    Err(Self::invalid_key(channel, key))
+  }
+
+  /// Read-only lookup for post-execution passes (trace generation runs
+  /// circuits in parallel over a shared buffer): never faults — by trace
+  /// time execution has materialized every entry it read.
+  #[inline]
+  pub fn get_info_frozen(
     &self,
     channel: G,
     key: &[G],
-  ) -> Result<&IOKeyInfo, ExecError> {
-    self.map.get(&(channel, key.to_vec())).ok_or_else(|| {
-      // Name the channel and key: a missing witness entry is otherwise
-      // indistinguishable from any other, and the key identifies the
-      // constant or blob whose bytes the host failed to seed.
-      let hex: String = key
-        .iter()
-        .map(|g| format!("{:02x}", g.as_canonical_u64() & 0xff))
-        .collect();
-      ExecError::InvalidIOKey { channel: channel.as_canonical_u64(), key: hex }
-    })
+  ) -> Result<IOKeyInfo, ExecError> {
+    self
+      .map
+      .get(&(channel, key.to_vec()))
+      .copied()
+      .ok_or_else(|| Self::invalid_key(channel, key))
   }
   fn set_info(
     &mut self,
@@ -409,8 +480,8 @@ impl Function {
           let channel = map[*channel];
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let IOKeyInfo { idx, len } = io_buffer.get_info(channel, &key)?;
-          map.push(G::from_usize(*idx));
-          map.push(G::from_usize(*len));
+          map.push(G::from_usize(idx));
+          map.push(G::from_usize(len));
         },
         ExecEntry::Op(Op::IOSetInfo(channel, key, idx, len)) => {
           let channel = map[*channel];
