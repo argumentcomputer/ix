@@ -68,9 +68,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      # `./.lake`, not `.lake`: the cache path is hashed into the entry's
+      # version, and lean-action saves under `./.lake`, so a bare `.lake` here
+      # computes a different version and the restore misses despite the key
+      # matching.
       - uses: actions/cache/restore@v6
         with:
-          path: .lake
+          path: ./.lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
           restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
       - uses: leanprover/lean-action@v1

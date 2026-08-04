@@ -21,7 +21,7 @@ jobs:
       # Only restore the cache, since `ci.yml` will save the test binary to the cache first
       - uses: actions/cache/restore@v6
         with:
-          path: .lake
+          path: ./.lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
           restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
       - uses: leanprover/lean-action@v1
@@ -43,7 +43,7 @@ jobs:
       # Only restore the cache, since `ci.yml` will save the test binary to the cache first
       - uses: actions/cache/restore@v6
         with:
-          path: .lake
+          path: ./.lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
           restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}
       - uses: leanprover/lean-action@v1
@@ -85,7 +85,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: actions/cache@v6
         with:
-          path: .lake
+          path: ./.lake
           key: lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
           restore-keys: |
             lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
