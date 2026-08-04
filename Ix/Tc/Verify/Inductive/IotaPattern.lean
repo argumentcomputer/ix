@@ -93,6 +93,27 @@ def recursorArgumentRhs
   .var (recursorArgumentPath recursorName majorIdx constructorName
     constructorArgs index)
 
+/-- Path of a constructor argument within the right branch of the complete
+iota pattern.  Keeping this distinct from the recursor-prefix path makes the
+parameter/field split in generated recursive rules explicit. -/
+def constructorArgumentPath
+    (recursorName : Lean.Name) (majorIdx : Nat)
+    (constructorName : Lean.Name) (constructorArgs : Nat)
+    (index : Fin constructorArgs) :
+    (RecursorIotaPattern recursorName majorIdx constructorName
+      constructorArgs).Path :=
+  Sum.inr (IotaVarPath (.const constructorName) constructorArgs index)
+
+/-- Pattern RHS selecting one exact constructor argument. -/
+def constructorArgumentRhs
+    (recursorName : Lean.Name) (majorIdx : Nat)
+    (constructorName : Lean.Name) (constructorArgs : Nat)
+    (index : Fin constructorArgs) :
+    (RecursorIotaPattern recursorName majorIdx constructorName
+      constructorArgs).RHS :=
+  .var (constructorArgumentPath recursorName majorIdx constructorName
+    constructorArgs index)
+
 @[simp] theorem recursorArgumentRhs_apply
     (recursorName : Lean.Name) (majorIdx : Nat)
     (constructorName : Lean.Name) (constructorArgs : Nat)
@@ -102,6 +123,17 @@ def recursorArgumentRhs
     (recursorArgumentRhs recursorName majorIdx constructorName constructorArgs
       index).apply levels captures =
       captures (recursorArgumentPath recursorName majorIdx constructorName
+        constructorArgs index) := rfl
+
+@[simp] theorem constructorArgumentRhs_apply
+    (recursorName : Lean.Name) (majorIdx : Nat)
+    (constructorName : Lean.Name) (constructorArgs : Nat)
+    (index : Fin constructorArgs) (levels : List Lean4Lean.VLevel)
+    (captures : (RecursorIotaPattern recursorName majorIdx constructorName
+      constructorArgs).Path → Lean4Lean.VExpr) :
+    (constructorArgumentRhs recursorName majorIdx constructorName
+      constructorArgs index).apply levels captures =
+      captures (constructorArgumentPath recursorName majorIdx constructorName
         constructorArgs index) := rfl
 
 /-- A complete iota match exposes both positional application spines.  The
@@ -139,6 +171,49 @@ theorem matches_spines
         hctorLength, rfl, ?_⟩
       intro index
       simpa [recursorArgumentPath] using hrecCaptures index
+
+/-- Strong inversion of a complete iota match, retaining the positional
+capture equations for both application spines.  Indexed rules need the
+constructor equations as well as the recursor-prefix equations: their
+generated RHS and their index-consistency checks mention constructor fields. -/
+theorem matches_spines_full
+    {recursorName constructorName : Lean.Name}
+    {majorIdx constructorArgs : Nat} {source : Lean4Lean.VExpr}
+    {levels : List Lean4Lean.VLevel}
+    {captures : (RecursorIotaPattern recursorName majorIdx constructorName
+      constructorArgs).Path → Lean4Lean.VExpr}
+    (hmatch : Lean4Lean.Pattern.Matches
+      (RecursorIotaPattern recursorName majorIdx constructorName
+        constructorArgs) source levels captures) :
+    ∃ recursorArguments constructorLevels constructorArguments,
+      recursorArguments.length = majorIdx ∧
+      constructorArguments.length = constructorArgs ∧
+      source = .app
+        (Lean4Lean.VExpr.appN (.const recursorName levels)
+          recursorArguments)
+        (Lean4Lean.VExpr.appN (.const constructorName constructorLevels)
+          constructorArguments) ∧
+      (∀ index : Fin majorIdx,
+        recursorArguments[index.val]? = some
+          (captures (recursorArgumentPath recursorName majorIdx
+            constructorName constructorArgs index))) ∧
+      (∀ index : Fin constructorArgs,
+        constructorArguments[index.val]? = some
+          (captures (constructorArgumentPath recursorName majorIdx
+            constructorName constructorArgs index))) := by
+  simp only [RecursorIotaPattern, Lean4Lean.SimplePattern.toPattern] at hmatch
+  cases hmatch with
+  | app hrecursor hconstructor =>
+      obtain ⟨recursorArguments, hrecLength, rfl, hrecCaptures⟩ :=
+        iotaVarMatch_spine hrecursor
+      obtain ⟨constructorArguments, hctorLength, rfl, hctorCaptures⟩ :=
+        iotaVarMatch_spine hconstructor
+      refine ⟨recursorArguments, _, constructorArguments, hrecLength,
+        hctorLength, rfl, ?_, ?_⟩
+      · intro index
+        simpa [recursorArgumentPath] using hrecCaptures index
+      · intro index
+        simpa [constructorArgumentPath] using hctorCaptures index
 
 end RecursorIotaPattern
 

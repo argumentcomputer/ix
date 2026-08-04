@@ -406,29 +406,39 @@ def isRecCacheSemantics (fallback : CacheSemantics) : CacheSemantics where
 /-- Exact K1 validity for one tagged entry.  The fallback owns every non-K1
 cache family.  A WHNF entry must be sound for every finite-support source
 whose address is its first key component and every context represented by
-its second component. -/
+its second component whenever that source is structurally in scope there.
+
+The final premise is load-bearing for persistent caches: checking may leave
+entries containing fresh variables from a temporary local scope.  Such an
+entry is unreachable after that scope is popped, but demanding a translation
+for it in the restored context would make the state invariant false. -/
 def WhnfCacheValid (keys : WhnfContextKeys) (trProj : RawProjRel)
     (fallback : CacheSemantics) (authority : CacheAuthority)
     (support : RunSupport) : CacheEntry → Prop
   | .expr .whnf key value =>
       ∀ source, support source → source.addr = key.1 →
         ∀ Δ, keys.Represents source.lbr key.2 Δ →
+          source.ContextScoped Δ →
           WhnfMeaning trProj authority.world keys.uvars Δ source value
   | .expr .whnfNoDelta key value =>
       ∀ source, support source → source.addr = key.1 →
         ∀ Δ, keys.Represents source.lbr key.2 Δ →
+          source.ContextScoped Δ →
           WhnfMeaning trProj authority.world keys.uvars Δ source value
   | .expr .whnfNoDeltaCheap key value =>
       ∀ source, support source → source.addr = key.1 →
         ∀ Δ, keys.Represents source.lbr key.2 Δ →
+          source.ContextScoped Δ →
           WhnfMeaning trProj authority.world keys.uvars Δ source value
   | .expr .whnfCore key value =>
       ∀ source, support source → source.addr = key.1 →
         ∀ Δ, keys.Represents source.lbr key.2 Δ →
+          source.ContextScoped Δ →
           WhnfMeaning trProj authority.world keys.uvars Δ source value
   | .expr .whnfCoreCheap key value =>
       ∀ source, support source → source.addr = key.1 →
         ∀ Δ, keys.Represents source.lbr key.2 Δ →
+          source.ContextScoped Δ →
           WhnfMeaning trProj authority.world keys.uvars Δ source value
   | .natSuccStuck _ => True
   | entry => fallback.Valid authority support entry
@@ -444,8 +454,8 @@ theorem mono {keys : WhnfContextKeys} {trProj : RawProjRel}
   | expr kind key value =>
     cases kind with
     | whnf | whnfNoDelta | whnfNoDeltaCheap | whnfCore | whnfCoreCheap =>
-      intro source hsource haddr Δ hctx
-      exact (h source hsource haddr Δ hctx).mono hle.world
+      intro source hsource haddr Δ hctx hscoped
+      exact (h source hsource haddr Δ hctx hscoped).mono hle.world
     | infer | inferOnly =>
       exact fallback.mono hle h
   | natSuccStuck => trivial
@@ -463,9 +473,10 @@ theorem expr {keys : WhnfContextKeys} {trProj : RawProjRel}
     (h : WhnfCacheValid keys trProj fallback authority support
       (.expr kind key value))
     (hsource : support source) (haddr : source.addr = key.1)
-    {Δ : KVLCtx} (hctx : keys.Represents source.lbr key.2 Δ) :
+    {Δ : KVLCtx} (hctx : keys.Represents source.lbr key.2 Δ)
+    (hscoped : source.ContextScoped Δ) :
     WhnfMeaning trProj authority.world keys.uvars Δ source value := by
-  cases hkind <;> exact h source hsource haddr Δ hctx
+  cases hkind <;> exact h source hsource haddr Δ hctx hscoped
 
 /-- A stuck-successor marker carries no positive reduction claim.  Its
 semantic component is therefore unconditional; finite support and trusted
@@ -529,9 +540,10 @@ theorem whnfMeaning {keys : WhnfContextKeys} {trProj : RawProjRel}
       authority support (.expr kind key value))
     (hkind : kind.IsWhnf) (hsource : support source)
     (haddr : source.addr = key.1) {Δ : KVLCtx}
-    (hctx : keys.Represents source.lbr key.2 Δ) :
+    (hctx : keys.Represents source.lbr key.2 Δ)
+    (hscoped : source.ContextScoped Δ) :
     WhnfMeaning trProj authority.world keys.uvars Δ source value := by
-  exact WhnfCacheValid.expr hkind h.valid hsource haddr hctx
+  exact WhnfCacheValid.expr hkind h.valid hsource haddr hctx hscoped
 
 /-- Operationally matched form of `whnfMeaning`: the concrete key execution
 supplies the address equality and represented context together. -/
@@ -543,9 +555,10 @@ theorem whnfMeaningOfMatches {keys : WhnfContextKeys}
     (h : CacheProvenance (whnfCacheSemantics keys trProj fallback)
       authority support (.expr kind key value))
     (hkind : kind.IsWhnf) (hsource : support source)
-    (hmatch : keys.Matches trProj authority.world s Δ source key) :
+    (hmatch : keys.Matches trProj authority.world s Δ source key)
+    (hscoped : source.ContextScoped Δ) :
     WhnfMeaning trProj authority.world keys.uvars Δ source value :=
-  h.whnfMeaning hkind hsource hmatch.sourceAddr hmatch.2.1
+  h.whnfMeaning hkind hsource hmatch.sourceAddr hmatch.2.1 hscoped
 
 end CacheProvenance
 
@@ -562,9 +575,10 @@ theorem whnfHit {keys : WhnfContextKeys} {trProj : RawProjRel}
     (hhit : env.HasCacheEntry (.expr kind key value))
     (hkind : kind.IsWhnf) (hsource : support source)
     (haddr : source.addr = key.1) {Δ : KVLCtx}
-    (hctx : keys.Represents source.lbr key.2 Δ) :
+    (hctx : keys.Represents source.lbr key.2 Δ)
+    (hscoped : source.ContextScoped Δ) :
     WhnfMeaning trProj authority.world keys.uvars Δ source value :=
-  (h.hit hhit).whnfMeaning hkind hsource haddr hctx
+  (h.hit hhit).whnfMeaning hkind hsource haddr hctx hscoped
 
 /-- Physical-hit form using the concrete key computation/context match. -/
 theorem whnfHitOfMatches {keys : WhnfContextKeys} {trProj : RawProjRel}
@@ -576,9 +590,10 @@ theorem whnfHitOfMatches {keys : WhnfContextKeys} {trProj : RawProjRel}
       authority support env)
     (hhit : env.HasCacheEntry (.expr kind key value))
     (hkind : kind.IsWhnf) (hsource : support source)
-    (hmatch : keys.Matches trProj authority.world s Δ source key) :
+    (hmatch : keys.Matches trProj authority.world s Δ source key)
+    (hscoped : source.ContextScoped Δ) :
     WhnfMeaning trProj authority.world keys.uvars Δ source value :=
-  (h.hit hhit).whnfMeaningOfMatches hkind hsource hmatch
+  (h.hit hhit).whnfMeaningOfMatches hkind hsource hmatch hscoped
 
 end CacheInvariant
 
@@ -1602,7 +1617,7 @@ theorem projection {trProj : RawProjRel} {world : VerifyWorld}
     (hname : world.nameOf id.addr = some structName)
     (hvalue :
       TrKExprS world.venv uvars world.nameOf trProj Δ value valueV)
-    (hproj : trProj Δ.toCtx structName field.toNat valueV resultV)
+    (hproj : trProj uvars Δ.toCtx structName field.toNat valueV resultV)
     (hresult :
       TrKExprS world.venv uvars world.nameOf trProj Δ result resultV)
     (hwf : VExpr.WF world.venv uvars Δ.toCtx resultV) :
@@ -3020,7 +3035,8 @@ theorem whnfCoreWithFlags_fullHit_acceptance
     (hI : WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
       trProj world support keys.uvars Δ s₂)
     (hsource : support source)
-    (hmatch : keys.Matches trProj world s₂ Δ source key) :
+    (hmatch : keys.Matches trProj world s₂ Δ source key)
+    (hscoped : source.ContextScoped Δ) :
     (whnfCoreWithFlags source flags).run methods s = .ok cached s₂ ∧
       WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
         trProj world support keys.uvars Δ s₂ ∧
@@ -3029,7 +3045,7 @@ theorem whnfCoreWithFlags_fullHit_acceptance
   · rw [hentry.eval]
     exact whnfCoreWithFlagsNonLeaf_fullHit hfull hkey htransient hhit
   · exact hI.1.caches.whnfHitOfMatches (.whnfCore hhit)
-      .whnfCore hsource hmatch
+      .whnfCore hsource hmatch hscoped
 
 /-- Cheap-core hits are read only from the cheap partition and carry the
 same semantic consequence as full-core hits. -/
@@ -3048,7 +3064,8 @@ theorem whnfCoreWithFlags_cheapHit_acceptance
     (hI : WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
       trProj world support keys.uvars Δ s₂)
     (hsource : support source)
-    (hmatch : keys.Matches trProj world s₂ Δ source key) :
+    (hmatch : keys.Matches trProj world s₂ Δ source key)
+    (hscoped : source.ContextScoped Δ) :
     (whnfCoreWithFlags source flags).run methods s = .ok cached s₂ ∧
       WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
         trProj world support keys.uvars Δ s₂ ∧
@@ -3057,7 +3074,7 @@ theorem whnfCoreWithFlags_cheapHit_acceptance
   · rw [hentry.eval]
     exact whnfCoreWithFlagsNonLeaf_cheapHit hcheap hkey htransient hhit
   · exact hI.1.caches.whnfHitOfMatches (.whnfCoreCheap hhit)
-      .whnfCoreCheap hsource hmatch
+      .whnfCoreCheap hsource hmatch hscoped
 
 /-- A full-core miss may populate the cache only after the uncached trace
 certifies this execution and the new entry has universal cache provenance. -/
@@ -3839,8 +3856,9 @@ theorem closed
     have htransport : forall other, support other -> other.addr = key.1 ->
         forall Delta,
           (WhnfContextKeys.closed uvars).Represents other.lbr key.2 Delta ->
+          other.ContextScoped Delta ->
           WhnfMeaning trProj world uvars Delta other result := by
-      intro other hother haddr Delta hrepresented
+      intro other hother haddr Delta hrepresented _hscoped
       have heq : source = other := by
         have herase := hcollision.expr hsource hother
           (hmatch.sourceAddr.trans haddr.symm)
@@ -4410,6 +4428,7 @@ theorem whnfNoDeltaImplNonLeaf_wf
                         (hI2.1.caches.hit (.whnfNoDelta hcache)).supported.2
                       have hmeaning := hI2.1.caches.whnfHitOfMatches
                         (.whnfNoDelta hcache) .whnfNoDelta hsupport hmatch
+                        hsource.contextScoped
                       have hstart := WhnfPost.refl hsource
                         (theory.exprWF hI2.2.1 hsource)
                       exact ⟨hcached,
@@ -4475,7 +4494,7 @@ theorem whnfNoDeltaImplNonLeaf_wf
                           (.whnfNoDeltaCheap hcache)).supported.2
                       have hmeaning := hI2.1.caches.whnfHitOfMatches
                         (.whnfNoDeltaCheap hcache) .whnfNoDeltaCheap
-                        hsupport hmatch
+                        hsupport hmatch hsource.contextScoped
                       have hstart := WhnfPost.refl hsource
                         (theory.exprWF hI2.2.1 hsource)
                       exact ⟨hcached,
@@ -4665,6 +4684,7 @@ theorem whnfWithNatSuccModeNonLeaf_wf
                     (hI2.1.caches.hit (.whnf hcache)).supported.2
                   have hmeaning := hI2.1.caches.whnfHitOfMatches
                     (.whnf hcache) .whnf hsupport hmatch
+                    hsource.contextScoped
                   have hstart := WhnfPost.refl hsource
                     (theory.exprWF hI2.2.1 hsource)
                   exact ⟨hcached,
@@ -5055,7 +5075,8 @@ theorem whnfNoDeltaImpl_fullHit_acceptance
     (hI : WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
       trProj world support keys.uvars Δ s₂)
     (hsource : support source)
-    (hmatch : keys.Matches trProj world s₂ Δ source key) :
+    (hmatch : keys.Matches trProj world s₂ Δ source key)
+    (hscoped : source.ContextScoped Δ) :
     (whnfNoDeltaImpl source flags .collapse).run methods s =
         .ok cached s₂ ∧
       WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
@@ -5065,7 +5086,7 @@ theorem whnfNoDeltaImpl_fullHit_acceptance
   · rw [hentry.noDelta_eval flags .collapse]
     exact whnfNoDeltaImplNonLeaf_fullHit hfull hkey htransient hhit
   · exact hI.1.caches.whnfHitOfMatches (.whnfNoDelta hhit)
-      .whnfNoDelta hsource hmatch
+      .whnfNoDelta hsource hmatch hscoped
 
 theorem whnfNoDeltaImpl_cheapHit_acceptance
     {keys : WhnfContextKeys} {fallback : CacheSemantics}
@@ -5082,7 +5103,8 @@ theorem whnfNoDeltaImpl_cheapHit_acceptance
     (hI : WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
       trProj world support keys.uvars Δ s₂)
     (hsource : support source)
-    (hmatch : keys.Matches trProj world s₂ Δ source key) :
+    (hmatch : keys.Matches trProj world s₂ Δ source key)
+    (hscoped : source.ContextScoped Δ) :
     (whnfNoDeltaImpl source flags .collapse).run methods s =
         .ok cached s₂ ∧
       WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
@@ -5092,7 +5114,7 @@ theorem whnfNoDeltaImpl_cheapHit_acceptance
   · rw [hentry.noDelta_eval flags .collapse]
     exact whnfNoDeltaImplNonLeaf_cheapHit hcheap hkey htransient hhit
   · exact hI.1.caches.whnfHitOfMatches (.whnfNoDeltaCheap hhit)
-      .whnfNoDeltaCheap hsource hmatch
+      .whnfNoDeltaCheap hsource hmatch hscoped
 
 theorem whnfNoDeltaImpl_fullMiss_acceptance
     {keys : WhnfContextKeys} {fallback : CacheSemantics}
@@ -5478,7 +5500,8 @@ theorem whnfWithNatSuccMode_hit_acceptance
     (hI : WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
       trProj world support keys.uvars Δ s₃)
     (hsource : support source)
-    (hmatch : keys.Matches trProj world s₃ Δ source key) :
+    (hmatch : keys.Matches trProj world s₃ Δ source key)
+    (hscoped : source.ContextScoped Δ) :
     (whnfWithNatSuccMode source .collapse).run methods s =
         .ok cached s₃ ∧
       WhnfStateInv layer (whnfCacheSemantics keys trProj fallback)
@@ -5488,6 +5511,7 @@ theorem whnfWithNatSuccMode_hit_acceptance
   · rw [hentry.full_eval .collapse]
     exact whnfWithNatSuccModeNonLeaf_hit hprefix hkey htransient hhit
   · exact hI.1.caches.whnfHitOfMatches (.whnf hhit) .whnf hsource hmatch
+      hscoped
 
 theorem whnfWithNatSuccMode_miss_acceptance
     {keys : WhnfContextKeys} {fallback : CacheSemantics}

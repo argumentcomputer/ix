@@ -278,18 +278,19 @@ theorem projection
     {trProj : RawProjRel}
     (htpI : ∀ {Γ₀ : List VExpr} {e₀ A₀ : VExpr} {position : Nat}
       {Γ₁ Γ : List VExpr} {s : Lean.Name} {i : Nat} {e e' : VExpr},
+      env.HasType uvars Γ₀ e₀ A₀ →
       Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ position Γ₁ Γ →
-      trProj Γ₁ s i e e' →
-      trProj Γ s i (e.inst e₀ position) (e'.inst e₀ position))
+      trProj uvars Γ₁ s i e e' →
+      trProj uvars Γ s i (e.inst e₀ position) (e'.inst e₀ position))
     {structName : Lean.Name} {field : Nat} {value result : VExpr}
-    (hproj : trProj source.toCtx structName field value result) :
-    trProj target.toCtx structName field
+    (hproj : trProj uvars source.toCtx structName field value result) :
+    trProj uvars target.toCtx structName field
       (VExpr.instBetaArgs value arguments k)
       (VExpr.instBetaArgs result arguments k) := by
   induction h generalizing value result with
   | nil => exact hproj
   | @cons arg arguments A dk k source middle target hstep harg htail ih =>
-      have hfirst := htpI hstep.toCtx hproj
+      have hfirst := htpI harg hstep.toCtx hproj
       simpa [VExpr.instBetaArgs] using ih hfirst
 
 end KInsts

@@ -16,10 +16,12 @@ Instead, every reusable successful call must expose:
   production router;
 * declaration-local K3 resources for an observed standalone route; and
 * either constructive scoped singleton-definition evidence or an explicit
-  E2 oracle-backed resource for every fresh coordinated body.
+  E2 oracle-backed resource for every fresh coordinated body;
+* certificate-backed replay resources for coordinated blocks whose semantic
+  entries are already installed in the current Theory environment.
 
-The final theorem below turns those operational resources into
-`CheckSuccessSound`, which `Driver.Serial` then composes into `SubjectWF`.
+The composition theorems below turn those resources into `CheckSuccessSound`,
+which `Driver.Serial` then composes into `SubjectWF`.
 The source-to-kernel route agreement remains an explicit representation
 premise until the later ingress/refinement phase discharges it generically.
 -/
@@ -195,101 +197,140 @@ theorem certify
 
 end SupportedBlockBodyResources
 
-/-! ## Certificate-backed coordinated blocks -/
+/-! ## Certificate-backed coordinated-block replay -/
 
-/-- A coordinated block whose semantic meaning is supplied directly by an
-explicit E2 oracle rather than by K3's standalone recursive-method proof.
+namespace CheckBlockKind
 
-The oracle contains exactly the exact physical members which are not already
-trusted in `world`. This residual form is important for reusable checked-set
-composition: an arbitrary monotone current world may already contain a
-proper subset, while a replayed successful block must still establish the
-whole `WorkItemAccepted` fact without re-certifying an existing member.
+/-- Kinds which E3-S may replay from already-installed semantic entries.
+Definitions remain on the constructive K3 route; this adapter is only for
+inductive-family and generated-recursor blocks. -/
+def CertificateBacked : CheckBlockKind → Prop
+  | .inductive' | .recursor => True
+  | .defn => False
 
-This resource is intentionally unavailable for definitions. Its semantic
-authority is the named `InductiveOracle` boundary, and its member equation
-prevents either an unrelated declaration or an already-trusted declaration
-from appearing in the new trust delta. -/
-structure ResidualOracleBlockResources (world : VerifyWorld)
+end CheckBlockKind
+
+/-- A coordinated block whose complete semantic entries are already installed
+in `world.venv`.
+
+This is the reusable E3-S form of E2's fixed semantic certificates. Unlike an
+`ExistingSemanticBlockCertificate`, it deliberately has no freshness premise:
+checked-set composition may replay a block in a monotone world which already
+trusts a proper subset of its exact members. Admission is therefore the
+idempotent union of the exact member array with the current trusted set.
+
+The resource cannot certify definitions, cannot choose a future Theory
+environment, and cannot select a residual member predicate. Every member must
+instead carry the same declaration/rule/pattern provenance consumed by trusted
+catalog lookups in the current environment. -/
+structure CertificateBackedBlockResources (world : VerifyWorld)
     (blockAddr primary : Address) (targets : Array Address) : Type where
   trProj : RawProjRel
   members : Array (KId .anon)
   kind : CheckBlockKind
-  oracleBacked : kind.OracleBacked
+  certificateBacked : kind.CertificateBacked
   exactBlock : ExactCheckBlock world (⟨blockAddr, ()⟩ : KId .anon)
     members kind
   workCatalog : (AnonWorkItem.block blockAddr primary targets)
     |>.MatchesBlockCatalog world.blocks
-  oracle : InductiveOracle trProj world.catalog world.nameOf world.trusted
-    world.venv
-  memberIff : ∀ id,
-    oracle.members id ↔ id ∈ members ∧ ¬world.trusted id
+  entry : ∀ {id}, id ∈ members →
+    TrustedCatalogEntry trProj world.catalog world.nameOf world.venv id
 
-namespace ResidualOracleBlockResources
+namespace CertificateBackedBlockResources
 
-/-- If the exact work item is not accepted, at least one semantic template
-member is still untrusted. This is the non-vacuity bridge used before
-`InductiveOracle.restageMissing`; unlike an all-members freshness premise it
-also handles safe partial/replay worlds. -/
-theorem missing_of_not_accepted
+/-- Trust the exact certified member array while leaving the installed Theory
+environment and every immutable representation component unchanged. -/
+def admittedWorld
     {world : VerifyWorld} {blockAddr primary : Address}
-    {targets : Array Address} {members : Array (KId .anon)}
-    {kind : CheckBlockKind} {member : KId .anon → Prop}
-    (exactBlock : ExactCheckBlock world
-      (⟨blockAddr, ()⟩ : KId .anon) members kind)
-    (workCatalog : (AnonWorkItem.block blockAddr primary targets)
-      |>.MatchesBlockCatalog world.blocks)
-    (memberIff : ∀ id, member id ↔ id ∈ members)
-    (hnot : ¬WorkItemAccepted world
-      (.block blockAddr primary targets)) :
-    ∃ id, member id ∧ ¬world.trusted id := by
-  by_contra hmissing
-  have htrusted : ∀ id, id ∈ members → world.trusted id := by
-    intro id hid
-    by_contra huntrusted
-    exact hmissing ⟨id, (memberIff id).2 hid, huntrusted⟩
-  have haccepted : world.AcceptedBlock
-      (⟨blockAddr, ()⟩ : KId .anon) :=
-    ⟨members, exactBlock.blockLookup, exactBlock.nonempty, htrusted⟩
-  apply hnot
-  refine ⟨haccepted, ?_⟩
-  obtain ⟨workMembers, hworkBlock, _hnonempty, _hprimary, htargets⟩ :=
-    workCatalog.block_targets
-  have hmembers : workMembers = members :=
-    Option.some.inj (hworkBlock.symm.trans exactBlock.blockLookup)
-  subst workMembers
-  intro addr haddr
-  rw [htargets] at haddr
-  obtain ⟨id, hid, haddr⟩ := Array.mem_map.mp haddr
-  have htrustedId := htrusted id hid
-  have hkId : (⟨id.addr, ()⟩ : KId .anon) = id := by
-    cases id with
-    | mk idAddr idName => cases idName; rfl
-  rw [← haddr, hkId]
-  exact htrustedId
+    {targets : Array Address}
+    (resources : CertificateBackedBlockResources world blockAddr primary
+      targets) : VerifyWorld where
+  catalog := world.catalog
+  blocks := world.blocks
+  trusted := fun id => id ∈ resources.members ∨ world.trusted id
+  venv := world.venv
+  nameOf := world.nameOf
+  venvWF := world.venvWF
+  trustedCatalogued := by
+    intro id htrusted
+    change id ∈ resources.members ∨ world.trusted id at htrusted
+    rcases htrusted with hmember | hold
+    · obtain ⟨concrete, _, _, hcatalog, _, _⟩ :=
+        (resources.entry hmember).lookup
+      exact ⟨concrete, hcatalog⟩
+    · exact world.trustedCatalogued hold
 
-/-- Admit precisely the residual oracle members and recover the complete
-atomic work-item predicate. Existing exact members are retained through the
-old-trust side of `TrustBlock`; missing exact members enter through the
-oracle side. -/
+/-- The replay trust delta is exactly the fixed physical member array. -/
+@[simp] theorem admittedWorld_trusted_iff
+    {world : VerifyWorld} {blockAddr primary : Address}
+    {targets : Array Address}
+    (resources : CertificateBackedBlockResources world blockAddr primary
+      targets) (id : KId .anon) :
+    resources.admittedWorld.trusted id ↔
+      id ∈ resources.members ∨ world.trusted id :=
+  Iff.rfl
+
+/-- An unrelated declaration cannot ride along with certificate replay. -/
+theorem newlyTrustedMember
+    {world : VerifyWorld} {blockAddr primary : Address}
+    {targets : Array Address}
+    (resources : CertificateBackedBlockResources world blockAddr primary
+      targets) {id : KId .anon}
+    (hafter : resources.admittedWorld.trusted id)
+    (hbefore : ¬world.trusted id) : id ∈ resources.members := by
+  rcases (resources.admittedWorld_trusted_iff id).1 hafter with
+    hmember | hold
+  · exact hmember
+  · exact False.elim (hbefore hold)
+
+/-- Certificate replay is a monotone, environment-preserving world
+extension. -/
+theorem le_admittedWorld
+    {world : VerifyWorld} {blockAddr primary : Address}
+    {targets : Array Address}
+    (resources : CertificateBackedBlockResources world blockAddr primary
+      targets) :
+    world ≤ resources.admittedWorld :=
+  ⟨rfl, rfl, rfl, fun {_} hold => Or.inr hold, Lean4Lean.VEnv.LE.rfl⟩
+
+/-- Reindex installed semantic entries across an arbitrary monotone current
+world. This is the reusable bridge used by E1 after prior work items have
+possibly trusted a proper subset of this block. -/
+def rebaseWorld
+    {before current : VerifyWorld} {blockAddr primary : Address}
+    {targets : Array Address}
+    (resources : CertificateBackedBlockResources before blockAddr primary
+      targets) (hle : before ≤ current) :
+    CertificateBackedBlockResources current blockAddr primary targets where
+  trProj := resources.trProj
+  members := resources.members
+  kind := resources.kind
+  certificateBacked := resources.certificateBacked
+  exactBlock := resources.exactBlock.rebaseWorld hle
+  workCatalog := by
+    simpa only [← hle.blocks] using resources.workCatalog
+  entry := by
+    intro id hmember
+    simpa only [← hle.catalog, ← hle.nameOf] using
+      TrustedCatalogEntry.mono hle.venv (resources.entry hmember)
+
+/-- Replay admits the full exact block and recovers the complete work-item
+predicate. Already trusted members are retained by the old-trust disjunct;
+missing members enter through their fixed certificate entries. -/
 theorem accepts
     {world : VerifyWorld} {blockAddr primary : Address}
     {targets : Array Address}
-    (resources : ResidualOracleBlockResources world blockAddr primary
+    (resources : CertificateBackedBlockResources world blockAddr primary
       targets) :
     ∃ admittedWorld, world ≤ admittedWorld ∧
       WorkItemAccepted admittedWorld
         (.block blockAddr primary targets) := by
-  let admittedWorld := world.admitOracle resources.oracle
-  have hle : world ≤ admittedWorld :=
-    world.le_admitOracle resources.oracle
+  let admittedWorld := resources.admittedWorld
+  have hle : world ≤ admittedWorld := resources.le_admittedWorld
   have htrusted : ∀ id, id ∈ resources.members →
       admittedWorld.trusted id := by
     intro id hmember
-    by_cases hold : world.trusted id
-    · exact resources.oracle.trust_old hold
-    · exact resources.oracle.trust_member
-        ((resources.memberIff id).2 ⟨hmember, hold⟩)
+    exact Or.inl hmember
   have haccepted : admittedWorld.AcceptedBlock
       (⟨blockAddr, ()⟩ : KId .anon) := by
     refine ⟨resources.members, ?_, resources.exactBlock.nonempty,
@@ -312,7 +353,7 @@ theorem accepts
   rw [← hmemberAddr, hid]
   exact hmemberTrusted
 
-end ResidualOracleBlockResources
+end CertificateBackedBlockResources
 
 /-! ## One reusable production call -/
 
@@ -446,16 +487,17 @@ end SupportedCheckRun
 
 /-- Exhaustive semantic resources accepted by the supported-fragment
 adapter. `operational` is the full K3/E0 state-and-cache route.
-`certificateBackedBlock` is the narrower E2 route for inductive/recursor
-blocks whose exact raw representation already has an explicit oracle; it
-does not manufacture a standalone recursive-method context. -/
+`certificateBackedBlock` is the narrower E2 replay route for
+inductive/recursor blocks whose complete semantic entries are already
+installed; it does not manufacture a standalone recursive-method context or
+an oracle-selected future world. -/
 inductive SupportedCheckEvidence (world : VerifyWorld) :
     AnonWorkItem → TcState .anon → Type
   | operational {item initial} :
       SupportedCheckRun world item initial →
       SupportedCheckEvidence world item initial
   | certificateBackedBlock {blockAddr primary targets initial} :
-      ResidualOracleBlockResources world blockAddr primary targets →
+      CertificateBackedBlockResources world blockAddr primary targets →
       SupportedCheckEvidence world (.block blockAddr primary targets) initial
 
 namespace SupportedCheckEvidence
@@ -473,6 +515,69 @@ theorem accepts
   | certificateBackedBlock resources => exact resources.accepts
 
 end SupportedCheckEvidence
+
+/-! ## Oracle-free certificate-backed fragments -/
+
+/-- Exact all-block evidence used when every row in a fragment is backed by
+already-installed semantic entries. Keeping this narrow evidence separate
+from `SupportedCheckEvidence` gives all-block consumers a dependency path
+which cannot reach the operational oracle-backed E0 branch. -/
+inductive CertificateBackedCheckEvidence (world : VerifyWorld) :
+    AnonWorkItem → Type
+  | block {blockAddr primary targets} :
+      CertificateBackedBlockResources world blockAddr primary targets →
+      CertificateBackedCheckEvidence world
+        (.block blockAddr primary targets)
+
+namespace CertificateBackedCheckEvidence
+
+/-- Interpret an exact certificate-backed row without consulting the runtime
+result as semantic authority. The successful result remains a gate in the
+surrounding `CheckSuccessSound` interface. -/
+theorem accepts
+    {world : VerifyWorld} {item : AnonWorkItem}
+    (evidence : CertificateBackedCheckEvidence world item) :
+    ∃ admittedWorld, world ≤ admittedWorld ∧
+      WorkItemAccepted admittedWorld item := by
+  cases evidence with
+  | block resources => exact resources.accepts
+
+end CertificateBackedCheckEvidence
+
+/-- A precisely scoped all-block fragment provider. Resources are requested
+only for a still-pending row at an arbitrary monotone current world, exactly as
+in `SupportedCheckFragment`, but the evidence surface admits only fixed
+certificate-backed blocks. -/
+structure CertificateBackedCheckFragment (baseline : VerifyWorld)
+    (catalog : DependencyCatalog) (work : Array AnonWorkItem) : Type where
+  resources : ∀ item, item ∈ work →
+    ∀ {before : AnonCheckLoopState} {checker : TcState .anon},
+      (TcM.checkConst
+        (⟨item.primary, ()⟩ : KId .anon)).run before.checker =
+          .ok () checker →
+      ∀ current, baseline ≤ current →
+        (∀ {target}, catalog.dependsOn item.root target →
+          catalog.blockOf target ≠ item.root →
+          current.AcceptsAddress target) →
+        ¬WorkItemAccepted current item →
+        CertificateBackedCheckEvidence current item
+
+namespace CertificateBackedCheckFragment
+
+/-- The oracle-free all-block adapter demanded by E1. -/
+theorem checkSuccessSound
+    {baseline : VerifyWorld} {catalog : DependencyCatalog}
+    {work : Array AnonWorkItem}
+    (fragment : CertificateBackedCheckFragment baseline catalog work) :
+    CheckSuccessSound baseline catalog work := by
+  intro item hitem before checker hrun current hcurrent hdeps
+  by_cases haccepted : WorkItemAccepted current item
+  · exact ⟨current, VerifyWorld.LE.rfl, haccepted⟩
+  · have resources := fragment.resources item hitem hrun current hcurrent
+      hdeps haccepted
+    exact resources.accepts
+
+end CertificateBackedCheckFragment
 
 /-- A precisely scoped fragment provider.  Resources are requested only when
 the item is not already accepted in `current`; this keeps the pending/fresh
@@ -512,6 +617,30 @@ theorem checkSuccessSound
 end SupportedCheckFragment
 
 namespace AnonWorkEnvWF
+
+/-- E3-S composition specialized to an all-block certificate-backed fragment.
+This route keeps the public serial success gate and E1 schedule unchanged while
+excluding the operational oracle-backed body branch from its dependency
+closure. -/
+theorem checkEnvAnon_certificateBacked_subjectWF
+    {env : Ixon.Env} (h : AnonWorkEnvWF env)
+    (hblock : IxonEnv.BlockOfIdempotent env)
+    {baseline : VerifyWorld} {assumptions : FiniteAddressSet}
+    (hdeps : DepsClosed (IxonEnv.dependencyCatalog env hblock)
+      (expectedAnonWork env) h.subjects assumptions)
+    (hwf : WellFoundedBlocks (IxonEnv.dependencyCatalog env hblock)
+      (expectedAnonWork env) h.subjects)
+    (hassumptions : AssumptionsWF baseline assumptions)
+    (hdisjoint : h.subjects.Disjoint assumptions)
+    (fragment : CertificateBackedCheckFragment baseline
+      (IxonEnv.dependencyCatalog env hblock) (expectedAnonWork env))
+    (cfg : CheckCfg) {results : Array CheckResult}
+    (hrun : checkEnvAnon env cfg = .ok results)
+    (hresults : AllCheckResultsSucceeded results) :
+    SubjectWF baseline (IxonEnv.dependencyCatalog env hblock)
+      (expectedAnonWork env) h.subjects assumptions := by
+  exact h.checkEnvAnon_subjectWF hblock hdeps hwf hassumptions hdisjoint
+    fragment.checkSuccessSound cfg hrun hresults
 
 /-- E3-S supported-fragment composition theorem. Successful `checkEnvAnon`
 rows imply `SubjectWF` for the exact enumerated work/subject sets and the explicit

@@ -165,6 +165,16 @@ def totalizationTests : TestSeq :=
           initial with
       | .error .maxRecDepth s => s.recFuel == 7 && s.lctx.size == 0
       | _ => false) : Bool)
+  ++ test "nested constructor with a short parameter telescope is rejected"
+    ((let methods : Methods .anon :=
+        { (default : Methods .anon) with whnf := fun e => pure e }
+      let sort0 : KExpr .anon := .mkSort .mkZero
+      match ((RecM.checkNestedCtorFieldsFuel 1 sort0 1 #[] #[] #[] #[]).run
+          methods).run (TcState.ofEnvAnon {}) with
+      | .error (.other msg) _ =>
+          msg ==
+            "positivity: nested constructor has fewer parameter binders than declared"
+      | _ => false) : Bool)
   ++ test "forall counting restores the local context"
     ((let sort0 : AE := .mkSort .mkZero
       let ty := KExpr.mkAll () () sort0
@@ -887,7 +897,7 @@ def recursorTests : TestSeq :=
       failsContaining ixon recAddr "RHS mismatch" : Bool))
   ++ test "fabricated multi-motive recursor is rejected (F1)"
     ((let (ixon, recAddr) := badMultiMotiveRecFixture
-      failsContaining ixon recAddr "arity metadata mismatch" : Bool))
+      failsContaining ixon recAddr "no generated recursor for major" : Bool))
   ++ test "recursor major-index overflow is rejected before layout use"
     ((let (ixon, recAddr) := overflowRecursorFixture
       failsContaining ixon recAddr
@@ -895,10 +905,11 @@ def recursorTests : TestSeq :=
   ++ test "recursor universe arity must match canonical generation"
     ((let (ixon, recAddr) := recFixtureWithMetadata false false 2 false false
       failsContaining ixon recAddr
-        "check_recursor: universe arity mismatch" : Bool))
+        "populate_recursor_rules_from_block: canonical header mismatch" : Bool))
   ++ test "safe recursor cannot be attached to an unsafe inductive"
     ((let (ixon, recAddr) := recFixtureWithMetadata true false 1 false false
-      failsContaining ixon recAddr "check_recursor: safety mismatch" : Bool))
+      failsContaining ixon recAddr
+        "populate_recursor_rules_from_block: canonical header mismatch" : Bool))
 
 /-! ### Parallel driver (`Ix.Tc.ParCheck`) -/
 

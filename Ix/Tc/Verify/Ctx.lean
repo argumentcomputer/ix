@@ -239,7 +239,7 @@ theorem LocalContext.WF.find?_pos {m : Mode} {lctx : LocalContext m}
 /-! ### Per-declaration translation (upstream `TrLocalDecl`) -/
 
 variable (env : VEnv) (uvars : Nat) (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop)
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop)
     (Δ : KVLCtx) in
 /-- The concrete declaration's payloads translate at `Δ` and are
     well-typed there (upstream `TrLocalDecl`,
@@ -259,7 +259,7 @@ inductive TrKLocalDecl : LocalDecl .anon → VLocalDecl → Prop
 
 theorem TrKLocalDecl.wf {env : VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {Δ : KVLCtx} {d : LocalDecl .anon} {vd : VLocalDecl}
     (H : TrKLocalDecl env uvars nameOf trProj Δ d vd) :
     vd.WF env uvars Δ.toCtx :=
@@ -269,7 +269,7 @@ theorem TrKLocalDecl.wf {env : VEnv} {uvars : Nat}
 
 theorem TrKLocalDecl.mono {env env' : VEnv} (henv : env ≤ env')
     {uvars : Nat} {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {Δ : KVLCtx} {d : LocalDecl .anon} {vd : VLocalDecl}
     (H : TrKLocalDecl env uvars nameOf trProj Δ d vd) :
     TrKLocalDecl env' uvars nameOf trProj Δ d vd :=
@@ -278,7 +278,7 @@ theorem TrKLocalDecl.mono {env env' : VEnv} (henv : env ≤ env')
   | .vlet h1 h2 h3 => .vlet (h1.mono henv) (h2.mono henv) (h3.mono henv)
 
 variable (env : VEnv) (uvars : Nat) (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop)
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop)
     (Δ : KVLCtx) in
 /-- A de Bruijn frame's payloads (type + optional let value) translate
     at `Δ` — the pair-side sibling of `TrKLocalDecl`, produced by the
@@ -298,7 +298,7 @@ inductive TrKBvarFrame :
 /-! ### The interleaved reconciliation relation -/
 
 variable (env : VEnv) (uvars : Nat) (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The two concrete stacks (both innermost-first) merge into one
     interleaved `KVLCtx`: `bvar_*` steps consume a de Bruijn frame
     (`(ty, none)` ↦ `.vlam`, `(ty, some val)` ↦ `.vlet`), `fvar` steps
@@ -338,7 +338,7 @@ inductive CtxRecon' :
 namespace CtxRecon'
 
 variable {env : VEnv} {uvars : Nat} {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
 
 /-- Head inversion at a `(none, .vlam)` entry: only `bvar_lam` fits. -/
 theorem bvar_lam_inv {bs' : List (KExpr .anon × Option (KExpr .anon))}
@@ -585,7 +585,7 @@ end CtxRecon'
 /-! ### The packaged reconciliation invariant -/
 
 variable (env : VEnv) (uvars : Nat) (nameOf : Address → Option Lean.Name)
-    (trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
+    (trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop) in
 /-- The per-call context invariant: the ghost `Δ` projects onto both
     concrete stacks, the `lctx` index is coherent, fvar ids are
     strictly increasing and below the mint counter, and the let
@@ -607,7 +607,7 @@ structure CtxRecon (s : TcState .anon) (Δ : KVLCtx) : Prop where
 namespace CtxRecon
 
 variable {env : VEnv} {uvars : Nat} {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {s s' : TcState .anon} {Δ : KVLCtx}
 
 /-- The mint counter's next id is absent from the index — discharges

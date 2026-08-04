@@ -27,12 +27,11 @@ structure IsEnumeration {source : VInductDecl}
     (generation : source.GenerationChecked) : Prop where
   noUniverses : source.uvars = 0
   noParameters : source.nparams = 0
-  noIndices : generation.block.rawIndices = []
-  /-- The fresh motive universe the generated recursor and equations below
-  assume. Small elimination inserts no such universe, so a `Prop`-valued
-  enumeration falls outside this fragment rather than being generated
-  incorrectly. -/
+  /-- E2b's enumeration pattern currently covers the ordinary large
+  eliminator.  Small and K elimination use the L4L-06 universe layout and
+  remain explicit E2c breadth cases. -/
   largeElimination : generation.elimination = .large
+  noIndices : generation.block.rawIndices = []
   nonempty : 0 < generation.block.ctorPairs.length
   constructor : ∀ {index : Nat}
       {normalized : VInductDecl.NormalizedCtor},
@@ -58,13 +57,31 @@ theorem rawParams_nil {source : VInductDecl}
   apply List.eq_nil_of_length_eq_zero
   rw [generation.shape.1, shape.noParameters]
 
+/-- The mixed raw/view parameter surface is empty whenever the raw parameter
+telescope is empty. -/
+@[simp] theorem generationParams_nil {source : VInductDecl}
+    {generation : source.GenerationChecked}
+    (shape : IsEnumeration generation) :
+    generation.block.generationParams = [] := by
+  simp [VInductDecl.NormalizedChecked.generationParams,
+    VInductDecl.generationParams, shape.rawParams_nil]
+
+/-- A universe-free source contributes no source-universe arguments to its
+recursor, independently of the selected elimination mode. -/
+@[simp] theorem sourceLevels_nil {source : VInductDecl}
+    {generation : source.GenerationChecked}
+    (shape : IsEnumeration generation) :
+    generation.sourceLevels = [] := by
+  simp [VInductDecl.GenerationChecked.sourceLevels,
+    Lean4Lean.VInductDecl.ElimMode.sourceLevels,
+    Lean4Lean.VLevel.params', shape.noUniverses]
+
 @[simp] theorem paramsTel_nil {source : VInductDecl}
     {generation : source.GenerationChecked}
     (shape : IsEnumeration generation) :
     generation.paramsTel = [] := by
   simp [VInductDecl.GenerationChecked.paramsTel,
-    VInductDecl.NormalizedChecked.generationParams,
-    VInductDecl.generationParams, shape.rawParams_nil]
+    shape.generationParams_nil]
 
 @[simp] theorem idxTel_nil {source : VInductDecl}
     {generation : source.GenerationChecked}
@@ -118,17 +135,17 @@ theorem rule_lhs {source : VInductDecl}
           (VExpr.appN
             (.const
               (.str generation.block.sourceType.name "rec")
-              (Lean4Lean.VLevel.params 1))
+              generation.recLevels)
             (VExpr.bvarRevRange 0
               (generation.block.ctorPairs.length + 1)))
-          (.const normalized.raw.name [])) := by
+          (.const normalized.raw.name generation.sourceLevels)) := by
   unfold VInductDecl.GenerationChecked.rule
-  rw [shape.largeElimination]
-  rw [shape.paramsTel_nil, shape.fields_nil hconstructor,
+  rw [shape.largeElimination, shape.paramsTel_nil,
+    shape.fields_nil hconstructor,
     shape.resultIndices_nil hconstructor]
   simp [ruleBinders, VExpr.liftTelN, VExpr.appN,
     VExpr.bvarRevRange, shape.noUniverses, shape.noParameters,
-    shape.largeElimination, Lean4Lean.VLevel.params']
+    Lean4Lean.VLevel.params', shape.largeElimination]
 
 /-- Exact generated right-hand side: enum rule `index` is the corresponding
 minor variable and has no field/IH application suffix. -/
@@ -141,8 +158,8 @@ theorem rule_rhs {source : VInductDecl}
       VExpr.lamN (ruleBinders generation)
         (.bvar (generation.block.ctorPairs.length - 1 - index)) := by
   unfold VInductDecl.GenerationChecked.rule
-  rw [shape.largeElimination]
-  rw [shape.paramsTel_nil, shape.fields_nil hconstructor,
+  rw [shape.largeElimination, shape.paramsTel_nil,
+    shape.fields_nil hconstructor,
     shape.recursive_nil hconstructor]
   simp [ruleBinders, VExpr.liftTelN, VExpr.appN,
     VExpr.bvarRevRange]
@@ -174,8 +191,8 @@ theorem recType_instantiated {source : VInductDecl}
   unfold VInductDecl.GenerationChecked.recType
   rw [shape.paramsTel_nil, shape.idxTel_nil]
   simp [ruleBinders, VExpr.forallN, VExpr.appN, VExpr.instL,
-    VExpr.instL_forallN, VExpr.liftTelN, VExpr.bvarRevRange, shape.noUniverses,
-    shape.noParameters, Lean4Lean.VLevel.params']
+    VExpr.instL_forallN, VExpr.liftTelN, VExpr.bvarRevRange,
+    shape.noParameters, shape.sourceLevels_nil]
 
 /-- After universe instantiation, an enumeration equation has exactly the
 same motive/minor telescope as the recursor.  Its result body applies the
@@ -193,21 +210,22 @@ theorem ruleType_instantiated {source : VInductDecl}
           (.bvar generation.block.ctorPairs.length)
           (.const normalized.raw.name [])) := by
   unfold VInductDecl.GenerationChecked.rule
-  rw [shape.largeElimination]
-  rw [shape.paramsTel_nil, shape.fields_nil hconstructor,
+  rw [shape.largeElimination, shape.paramsTel_nil,
+    shape.fields_nil hconstructor,
     shape.resultIndices_nil hconstructor]
   simp [ruleBinders, VExpr.forallN, VExpr.appN, VExpr.instL,
-    VExpr.instL_forallN, VExpr.liftTelN, VExpr.bvarRevRange, shape.noUniverses,
-    shape.noParameters, Lean4Lean.VLevel.params']
+    VExpr.instL_forallN, VExpr.liftTelN, VExpr.bvarRevRange,
+    shape.noParameters, shape.sourceLevels_nil]
 
 /-- Opening the exact generated enumeration LHS with one universe and the
 complete motive/minor spine produces the expression matched by the compiled
 iota pattern. -/
 theorem ruleLhsBody_instantiated {source : VInductDecl}
     {generation : source.GenerationChecked}
+    (shape : IsEnumeration generation)
     (normalized : VInductDecl.NormalizedCtor)
     (levels : List Lean4Lean.VLevel) (arguments : List VExpr)
-    (hlevels : levels.length = 1)
+    (hlevels : levels.length = generation.recUvars)
     (harguments : arguments.length =
       generation.block.ctorPairs.length + 1) :
     VExpr.instRev
@@ -215,10 +233,10 @@ theorem ruleLhsBody_instantiated {source : VInductDecl}
           (VExpr.appN
             (.const
               (.str generation.block.sourceType.name "rec")
-              (Lean4Lean.VLevel.params 1))
+              generation.recLevels)
             (VExpr.bvarRevRange 0
               (generation.block.ctorPairs.length + 1)))
-          (.const normalized.raw.name [])).instL levels)
+          (.const normalized.raw.name generation.sourceLevels)).instL levels)
         arguments =
       VExpr.app
         (VExpr.appN
@@ -228,6 +246,7 @@ theorem ruleLhsBody_instantiated {source : VInductDecl}
         (.const normalized.raw.name []) := by
   simp only [VExpr.instL, VExpr.instL_appN,
     Lean4Lean.VLevel.inst_map_id hlevels,
+    shape.sourceLevels_nil,
     VInductDecl.bvarRevRange_instL]
   change VExpr.instRev
       (VExpr.appN
@@ -296,7 +315,7 @@ theorem enumerationMajorIdx
       calc
         (params + motives + minors + indices).toNat =
             params.toNat + motives.toNat + minors.toNat + indices.toNat :=
-          hrecursor.2.2.2.2.2.2.2
+          hrecursor.2.2.2.2.2.2.2.1
         _ = 0 + 1 + constructorIds.size + 0 := by
           rw [hparams, hrecursor.2.2.2.1,
             hrecursor.2.2.2.2.1, hindices]
@@ -499,8 +518,15 @@ theorem enumerationPatternSound
       (hrecursorLookup.symm.trans hcertifiedRecursorLookup)
   subst recursorConstant
   have hlevelsLength : levels.length = 1 := by
-    simpa [VInductDecl.GenerationChecked.recursor,
-      shape.noUniverses, helim] using hlevelsArity
+    calc
+      levels.length = generation.recUvars := by
+        simpa [VInductDecl.GenerationChecked.recursor] using hlevelsArity
+      _ = 1 := by
+        change source.uvars + generation.elimination.offset = 1
+        rw [shape.noUniverses, shape.largeElimination]
+        rfl
+  have hlevelsRecUvars : levels.length = generation.recUvars := by
+    simpa [VInductDecl.GenerationChecked.recursor] using hlevelsArity
 
   rw [hconstructorArguments] at hconstructorApplied
   simp only [VExpr.appN] at hconstructorApplied
@@ -542,8 +568,10 @@ theorem enumerationPatternSound
     hregisteredFuture
   have hlevelsRuleArity :
       levels.length = (generation.rule index normalized).uvars := by
-    simpa [VInductDecl.GenerationChecked.rule, shape.noUniverses, helim] using
-      hlevelsLength
+    calc
+      levels.length = generation.recUvars := hlevelsRecUvars
+      _ = (generation.rule index normalized).uvars := by
+        rfl
   have hequation : future.IsDefEq uvars Gamma
       ((generation.rule index normalized).lhs.instL levels)
       ((generation.rule index normalized).rhs.instL levels)
@@ -602,10 +630,10 @@ theorem enumerationPatternSound
           ((VExpr.app
             (VExpr.appN
               (.const (.str generation.block.sourceType.name "rec")
-                (Lean4Lean.VLevel.params 1))
+                generation.recLevels)
               (VExpr.bvarRevRange 0
                 (generation.block.ctorPairs.length + 1)))
-            (.const normalized.raw.name [])).instL levels))
+            (.const normalized.raw.name generation.sourceLevels)).instL levels))
         recursorArguments) equationApplicationType := by
     have hcopy := hequationLhsApplied
     rw [CertifiedSingletonGeneration.IsEnumeration.rule_lhs shape hnormalized,
@@ -614,8 +642,8 @@ theorem enumerationPatternSound
   have hlhsBeta := Lean4Lean.VEnv.HasType.lamN_appN_beta
     hfutureWF hGamma hargumentLength hequationLhsApplied'
   rw [CertifiedSingletonGeneration.IsEnumeration.ruleLhsBody_instantiated
-    normalized levels recursorArguments
-    hlevelsLength (by simpa [hcount] using hrecursorLength)] at hlhsBeta
+    shape normalized levels recursorArguments
+    hlevelsRecUvars (by simpa [hcount] using hrecursorLength)] at hlhsBeta
   have hlhsBeta' : future.IsDefEqU uvars Gamma
       (VExpr.appN ((generation.rule index normalized).lhs.instL levels)
         recursorArguments)

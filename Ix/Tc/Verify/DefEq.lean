@@ -1309,9 +1309,11 @@ theorem kernelWhnfMeaningOfMatches {keys : WhnfContextKeys}
     (h : CacheProvenance (kernelCacheSemantics keys trProj)
       authority support (.expr kind key value))
     (hkind : kind.IsWhnf) (hsource : support source)
-    (hmatch : keys.Matches trProj authority.world s Delta source key) :
+    (hmatch : keys.Matches trProj authority.world s Delta source key)
+    (hscoped : source.ContextScoped Delta) :
     WhnfMeaning trProj authority.world keys.uvars Delta source value :=
   WhnfCacheValid.expr hkind h.valid hsource hmatch.sourceAddr hmatch.2.1
+    hscoped
 
 theorem kernelInferMeaningOfMatches {keys : WhnfContextKeys}
     {trProj : RawProjRel} {authority : CacheAuthority}
@@ -1321,7 +1323,8 @@ theorem kernelInferMeaningOfMatches {keys : WhnfContextKeys}
     (h : CacheProvenance (kernelCacheSemantics keys trProj)
       authority support (.expr kind key ty))
     (hkind : kind.IsInfer) (hsource : support source)
-    (hmatch : keys.Matches trProj authority.world s Delta source key) :
+    (hmatch : keys.Matches trProj authority.world s Delta source key)
+    (hscoped : source.ContextScoped Delta) :
     InferMeaning trProj authority.world keys.uvars Delta source ty := by
   cases hkind with
   | infer =>
@@ -1330,6 +1333,7 @@ theorem kernelInferMeaningOfMatches {keys : WhnfContextKeys}
             isPropCacheSemantics keys trProj <|
               isRecCacheSemantics CacheSemantics.blockErrorsOnly) .infer (hsource := hsource)
         (haddr := hmatch.sourceAddr) (hctx := hmatch.2.1)
+        (hscoped := hscoped)
       simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
         WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
         inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
@@ -1341,6 +1345,7 @@ theorem kernelInferMeaningOfMatches {keys : WhnfContextKeys}
             isPropCacheSemantics keys trProj <|
               isRecCacheSemantics CacheSemantics.blockErrorsOnly) .inferOnly (hsource := hsource)
         (haddr := hmatch.sourceAddr) (hctx := hmatch.2.1)
+        (hscoped := hscoped)
       simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
         WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
         inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
@@ -1580,8 +1585,9 @@ theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
       (CacheAuthority.stable world) support (.expr kind key ty) := by
   have hall : ∀ other, support other → other.addr = key.1 →
       ∀ Delta', model.keys.Represents other.lbr key.2 Delta' →
+        other.ContextScoped Delta' →
         InferMeaning trProj world model.keys.uvars Delta' other ty := by
-    intro other hother haddr Delta' hrepresented
+    intro other hother haddr Delta' hrepresented _hscoped
     have heq : source = other := by
       have herase := hcollision.expr hsource hother
         (hmatch.sourceAddr.trans haddr.symm)
@@ -2772,7 +2778,7 @@ theorem inferWith_fullHit_acceptance
       ⟨s', hrun⟩⟩
   have hprovenance := hwf.1.1.caches.hit (.infer hhit)
   have hmeaning := hprovenance.kernelInferMeaningOfMatches
-    .infer hsupport hmatch
+    .infer hsupport hmatch hsource.contextScoped
   exact ⟨inferWith_fullHit hkey hhit, hwf.1,
     hprovenance.supported.2,
     hmeaning.post theory hI.2.1.wf hsource⟩
@@ -2823,7 +2829,7 @@ theorem inferWith_inferOnlyHit_acceptance
       ⟨s', hrun⟩⟩
   have hprovenance := hwf.1.1.caches.hit (.inferOnly hhit)
   have hmeaning := hprovenance.kernelInferMeaningOfMatches
-    .inferOnly hsupport hmatch
+    .inferOnly hsupport hmatch hsource.contextScoped
   exact ⟨inferWith_inferOnlyHit hpolicy hkey hfullMiss hhit, hwf.1,
     hprovenance.supported.2,
     hmeaning.post theory hI.2.1.wf hsource⟩

@@ -40,8 +40,7 @@ theorem checkedTypeUvars {decl : VInductDecl}
   rcases checked with
     ⟨type, typesEq, params, paramsEq, indices, indicesEq,
       resultLevel, resultEq, elimination, eliminationEq, kTarget, kTargetEq,
-      names, namesEq,
-      constructors, constructorsEq, accepted⟩
+      names, namesEq, constructors, constructorsEq, accepted⟩
   cases decl with
   | mk uvars nparams types =>
     change types = [type] at typesEq
@@ -60,8 +59,7 @@ theorem checkedConstructorUvars {decl : VInductDecl}
   rcases checked with
     ⟨type, typesEq, params, paramsEq, indices, indicesEq,
       resultLevel, resultEq, elimination, eliminationEq, kTarget, kTargetEq,
-      names, namesEq,
-      constructors, constructorsEq, accepted⟩
+      names, namesEq, constructors, constructorsEq, accepted⟩
   cases decl with
   | mk uvars nparams types =>
     change types = [type] at typesEq
@@ -277,8 +275,9 @@ structure SingletonFamilyCatalogLink
     tx.certificate.generation constructorIds
   familyName : nameOf familyId.addr =
     some tx.certificate.generation.block.sourceType.name
-  familyType : RawExprRel after nameOf trProj [] familyConcrete.ty
-    tx.certificate.generation.block.sourceType.type
+  familyType : RawExprRel (uvars := familyConcrete.lvls.toNat) after
+    nameOf trProj [] familyConcrete.ty
+      tx.certificate.generation.block.sourceType.type
   constructor : ∀ (index : Nat) (hindex : index < constructorIds.size),
     ∃ sourceConstructor concrete,
       tx.certificate.generation.block.sourceType.ctors[index]? =
@@ -287,7 +286,8 @@ structure SingletonFamilyCatalogLink
       concrete.IsCertifiedSingletonConstructor source familyId index
         sourceConstructor ∧
       nameOf constructorIds[index].addr = some sourceConstructor.name ∧
-      RawExprRel after nameOf trProj [] concrete.ty sourceConstructor.type
+      RawExprRel (uvars := concrete.lvls.toNat) after nameOf trProj []
+        concrete.ty sourceConstructor.type
   fresh : ∀ id, id ∈ (#[familyId] ++ constructorIds) → ¬trusted id
 
 namespace SingletonFamilyCatalogLink

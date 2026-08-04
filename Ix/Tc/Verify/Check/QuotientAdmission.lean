@@ -14,10 +14,11 @@ the other three.
 
 The relation deliberately retains each intermediate `VEnv`: later primitive
 types mention earlier primitives, so translating all four against the initial
-environment would be false. The production-checker proof still has to
-construct this relation from the four exact `checkQuot` successes and the
-`Eq`/`Eq.refl` prerequisite. Once it does, the theorems below close the atomic
-Lean4Lean transition without another oracle.
+environment would be false. `QuotientBridge.lean` constructs this relation
+from four exact `checkQuot` successes, scoped collision freedom, and one
+explicit proposition carrying the canonical Lean4Lean semantic transaction.
+The theorems below then close the atomic transition without granting authority
+to any prefix.
 -/
 
 namespace Ix.Tc
@@ -37,6 +38,8 @@ def QuotientAdmissionStep
     nameOf id.addr = some name ∧
     TrKConstant .safe before nameOf trProj
       (.quot () () kind levels type) semantic ∧
+    RawExprRel (uvars := levels.toNat) before nameOf trProj [] type
+      semantic.type ∧
     before.addConst name semantic = some after ∧
     Next after
 
@@ -52,7 +55,7 @@ theorem bind
     (h : QuotientAdmissionStep catalog nameOf trProj id name kind
       semantic Next before) :
     before.addConst name semantic >>= tail = some final := by
-  obtain ⟨levels, type, after, hcatalog, hname, htranslated, hadd,
+  obtain ⟨levels, type, after, hcatalog, hname, htranslated, hraw, hadd,
     htail⟩ := h
   rw [hadd]
   exact hnext after htail
@@ -67,7 +70,7 @@ theorem le
     (h : QuotientAdmissionStep catalog nameOf trProj id name kind
       semantic Next before) :
     before ≤ final := by
-  obtain ⟨levels, type, after, hcatalog, hname, htranslated, hadd,
+  obtain ⟨levels, type, after, hcatalog, hname, htranslated, hraw, hadd,
     htail⟩ := h
   exact (VEnv.addConst_le hadd).trans (hnext after htail)
 
@@ -119,10 +122,10 @@ theorem catalogEntries
     (∃ levels type,
       catalog prims.quotInd = some (.quot () () .ind levels type)) := by
   unfold QuotientBundleAdmission at h
-  obtain ⟨typeLevels, typeType, env₁, htype, _, _, _, h₁⟩ := h
-  obtain ⟨ctorLevels, ctorType, env₂, hctor, _, _, _, h₂⟩ := h₁
-  obtain ⟨liftLevels, liftType, env₃, hlift, _, _, _, h₃⟩ := h₂
-  obtain ⟨indLevels, indType, env₄, hind, _, _, _, h₄⟩ := h₃
+  obtain ⟨typeLevels, typeType, env₁, htype, _, _, _, _, h₁⟩ := h
+  obtain ⟨ctorLevels, ctorType, env₂, hctor, _, _, _, _, h₂⟩ := h₁
+  obtain ⟨liftLevels, liftType, env₃, hlift, _, _, _, _, h₃⟩ := h₂
+  obtain ⟨indLevels, indType, env₄, hind, _, _, _, _, h₄⟩ := h₃
   exact ⟨⟨typeLevels, typeType, htype⟩,
     ⟨ctorLevels, ctorType, hctor⟩,
     ⟨liftLevels, liftType, hlift⟩,
@@ -140,10 +143,10 @@ theorem nameAssignments
     nameOf prims.quotLift.addr = some ``Quot.lift ∧
     nameOf prims.quotInd.addr = some ``Quot.ind := by
   unfold QuotientBundleAdmission at h
-  obtain ⟨_, _, _, _, htype, _, _, h₁⟩ := h
-  obtain ⟨_, _, _, _, hctor, _, _, h₂⟩ := h₁
-  obtain ⟨_, _, _, _, hlift, _, _, h₃⟩ := h₂
-  obtain ⟨_, _, _, _, hind, _, _, h₄⟩ := h₃
+  obtain ⟨_, _, _, _, htype, _, _, _, h₁⟩ := h
+  obtain ⟨_, _, _, _, hctor, _, _, _, h₂⟩ := h₁
+  obtain ⟨_, _, _, _, hlift, _, _, _, h₃⟩ := h₂
+  obtain ⟨_, _, _, _, hind, _, _, _, h₄⟩ := h₃
   exact ⟨htype, hctor, hlift, hind⟩
 
 /-- A complete Ix bundle witness executes Lean4Lean's production-order

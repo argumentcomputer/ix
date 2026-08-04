@@ -286,6 +286,24 @@ def checkEqType : RecM m Unit := do
       throw (.other "check_eq_type: Eq.refl type is not canonical")
   | _ => throw (.other "check_eq_type: Eq.refl not found or not a constructor")
 
+/-- Post-routing quotient checks, named separately so verification can invert
+    the exact successful guard sequence without duplicating the four address
+    branches. This is an operational seam only; `checkQuot` below retains the
+    same ordering and errors. -/
+def checkQuotBody (p : Primitives m) (expectedKind kind : Ix.QuotKind)
+    (lvls : UInt64) (ty : KExpr m) : RecM m Unit := do
+  if kind != expectedKind then
+    throw (.other s!"check_quot: kind mismatch: declared {repr kind} but address matches {repr expectedKind}")
+  let expectedLvls : UInt64 := match kind with
+    | .lift => 2
+    | .type | .ctor | .ind => 1
+  if lvls != expectedLvls then
+    throw (.other s!"check_quot: {repr kind} expects {expectedLvls} universe params, got {lvls}")
+  if ty.addr != (canonicalQuotType p kind).addr then
+    throw (.other s!"check_quot: {repr kind} type is not canonical")
+  if kind == .lift then
+    checkEqType
+
 /-- Quot structure: address ↔ kind consistency against the primitive table,
     universe counts (1/1/2/1), exact Eq/Eq.refl prerequisites for `lift`,
     and the complete canonical type installed by Lean's `addQuot`. -/
@@ -299,17 +317,7 @@ def checkQuot (id : KId m) (kind : Ix.QuotKind) (lvls : UInt64)
     else if id.addr == p.quotInd.addr then pure Ix.QuotKind.ind
     else
       throw (.other s!"check_quot: unknown quot address {(toString id.addr).take 8 |>.toString}")
-  if kind != expectedKind then
-    throw (.other s!"check_quot: kind mismatch: declared {repr kind} but address matches {repr expectedKind}")
-  let expectedLvls : UInt64 := match kind with
-    | .lift => 2
-    | .type | .ctor | .ind => 1
-  if lvls != expectedLvls then
-    throw (.other s!"check_quot: {repr kind} expects {expectedLvls} universe params, got {lvls}")
-  if ty.addr != (canonicalQuotType p kind).addr then
-    throw (.other s!"check_quot: {repr kind} type is not canonical")
-  if kind == .lift then
-    checkEqType
+  checkQuotBody p expectedKind kind lvls ty
 
 -- ### Block classification / coordination
 

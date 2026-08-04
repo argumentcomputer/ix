@@ -75,7 +75,7 @@ inductive PreTrKExprS : KVLCtx → KExpr .anon → VExpr → Prop
       {name : Lean.Name} {valueV resultV : VExpr} :
     nameOf id.addr = some name →
     PreTrKExprS Delta value valueV →
-    trProj Delta.toCtx name field.toNat valueV resultV →
+    trProj uvars Delta.toCtx name field.toNat valueV resultV →
     PreTrKExprS Delta (.prj id field value info) resultV
   | nat {Delta : KVLCtx} {value : Nat} {blob : Address}
       {info : ExprInfo .anon} :
@@ -111,5 +111,39 @@ theorem pre
   | str hlit => exact .str hlit
 
 end TrKExprS
+
+namespace PreTrKExprS
+
+/-- An untyped structural translation still proves that every variable in the
+source is available from its mixed context.  Cache reachability depends only
+on this structural fact, not on the typing facts established by inference. -/
+theorem contextScoped
+    {env : VEnv} {uvars : Nat} {nameOf : Address → Option Lean.Name}
+    {trProj : RawProjRel} {Delta : KVLCtx} {source : KExpr .anon}
+    {sourceV : VExpr}
+    (h : PreTrKExprS env uvars nameOf trProj Delta source sourceV) :
+    source.ContextScoped Delta := by
+  induction h with
+  | var hfind =>
+      exact KVLCtx.find?_inl_lt hfind
+  | fvar hfind =>
+      exact KVLCtx.find?_inr_mem hfind
+  | sort | const | nat | str =>
+      trivial
+  | app _ _ hfn harg =>
+      exact ⟨hfn, harg⟩
+  | lam _ _ htype hbody =>
+      refine ⟨htype, ?_⟩
+      simpa [KExpr.ContextScoped, KExpr.VarsScoped, KVLCtx.bvars] using hbody
+  | all _ _ htype hbody =>
+      refine ⟨htype, ?_⟩
+      simpa [KExpr.ContextScoped, KExpr.VarsScoped, KVLCtx.bvars] using hbody
+  | letE _ _ _ htype hvalue hbody =>
+      refine ⟨htype, hvalue, ?_⟩
+      simpa [KExpr.ContextScoped, KExpr.VarsScoped, KVLCtx.bvars] using hbody
+  | prj _ _ _ hvalue =>
+      exact hvalue
+
+end PreTrKExprS
 
 end Ix.Tc

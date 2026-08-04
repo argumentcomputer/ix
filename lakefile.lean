@@ -25,10 +25,11 @@ require batteries from git
 Theory/Verify specification surface, while `bench-lean4lean` and the ignored
 `lean4lean` test runner exercise the implementation. The default `ix` target
 still does not build this dependency. Pin the audited Argument fork exactly:
-this revision carries the upstream v4.32/v4.33 kernel hardening — including
-the `checkNoMVarNoFVar` check on an opaque's value (leanprover/lean4#14498),
-which the replay path in `Benchmarks/Lean4Lean.lean` reaches — on top of the
-fork's certified inductive-environment and projection development. -/
+this revision extends the inductive formalization through L4L-08, including
+the remaining one-family parity and first exact mutual-generation certificate
+surface consumed by E2c. It also carries the upstream v4.32/v4.33 kernel
+hardening, including `checkNoMVarNoFVar` for opaque values
+(leanprover/lean4#14498). -/
 require lean4lean from git
   "https://github.com/argumentcomputer/lean4lean" @ "4844eda4fe376a7ab7e23a4b9755189d3c2ffe5b"
 
@@ -209,7 +210,8 @@ no local `sorry` tokens. Required CI builds it separately without `--wfail`,
 audits the exact local sorry frontier, and checks exact per-root transitive
 axiom plus direct-`sorryAx`-origin manifests. Dev loop:
 `lake build IxTcVerify`; focused trust audit:
-`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements`. -/
+`lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Conditional
+Ix.Tc.Verify.Audit.Statements`. -/
 lean_lib IxTcVerify where
   globs := #[.submodules `Ix.Tc.Verify]
   -- `supportInterpreter` is a `lean_exe` option and takes effect only when

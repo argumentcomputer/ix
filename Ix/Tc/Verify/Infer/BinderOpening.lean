@@ -127,7 +127,7 @@ Theory expression unchanged. -/
 theorem TrKExprS.openFVar
     {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {source : KVLCtx} {body : KExpr .anon} {bodyV : VExpr}
     (H : TrKExprS env uvars nameOf trProj source body bodyV) :
     ∀ {fvData : FVarId × List FVarId} {decl : VLocalDecl}
@@ -284,7 +284,7 @@ theorem TrKExprS.openFVar
 theorem TrKExprS.openFVarZero
     {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     {Delta : KVLCtx} {decl : VLocalDecl}
     {body : KExpr .anon} {bodyV : VExpr}
     {fv : FVarId} {deps : List FVarId} {name : Mode.anon.F Name}

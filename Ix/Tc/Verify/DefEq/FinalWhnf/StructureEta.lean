@@ -59,7 +59,7 @@ structure FinalWhnfStructEtaTheory (trProj : RawProjRel)
     ∃ (structName : Lean.Name) (projectedV : Nat → VExpr),
       world.nameOf inductId.addr = some structName ∧
       ∀ field, field < fields.toNat →
-        trProj Delta.toCtx structName field baseV (projectedV field)
+        trProj uvars Delta.toCtx structName field baseV (projectedV field)
   eta : ∀ {uvars : Nat} {Delta : KVLCtx}
       {source : KExpr .anon} {sourceV baseV : VExpr}
       {ctorId inductId : KId .anon} {levels : Array (KUniv .anon)}

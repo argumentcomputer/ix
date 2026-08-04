@@ -761,20 +761,23 @@ theorem RecM.validateExprWellScoped_go_app
     (dom : KExpr m) (groups : Array (PositivityGroup m))
     (activeAddrs : Array Address) :
     RecM.checkPositivityDomainFuel 0 dom groups activeAddrs =
-      throw .maxRecDepth := rfl
+      throw .maxRecDepth := by
+  rw [RecM.checkPositivityDomainFuel.eq_1]
 
 @[simp] theorem RecM.checkNestedCtorFieldsFuel_zero
     (ctorTy : KExpr m) (nParams : Nat) (paramArgs : Array (KExpr m))
     (us : Array (KUniv m)) (groups : Array (PositivityGroup m))
     (activeAddrs : Array Address) :
     RecM.checkNestedCtorFieldsFuel 0 ctorTy nParams paramArgs us
-      groups activeAddrs = throw .maxRecDepth := rfl
+      groups activeAddrs = throw .maxRecDepth := by
+  rw [RecM.checkNestedCtorFieldsFuel.eq_1]
 
 @[simp] theorem RecM.checkNestedCtorFieldsLoopFuel_zero
     (ty : KExpr m) (groups : Array (PositivityGroup m))
     (activeAddrs : Array Address) :
     RecM.checkNestedCtorFieldsLoopFuel 0 ty groups activeAddrs =
-      throw .maxRecDepth := rfl
+      throw .maxRecDepth := by
+  rw [RecM.checkNestedCtorFieldsLoopFuel.eq_1]
 
 theorem RecM.countForalls_equation (ty : KExpr m) :
     RecM.countForalls ty = (do

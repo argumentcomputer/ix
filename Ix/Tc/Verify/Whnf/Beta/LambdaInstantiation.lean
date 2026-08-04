@@ -51,15 +51,18 @@ private theorem instTrLiteral_bx (l : Lean.Literal) (e₀ : VExpr) (k : Nat) :
 bound carried by a substitution walker request. -/
 theorem TrKExprS.instN_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
     {nameOf : Address → Option Lean.Name}
-    {trProj : List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
+    {trProj : Nat → List VExpr → Lean.Name → Nat → VExpr → VExpr → Prop}
     (henv : env.Ordered)
     (htp : ∀ {Γ Γ' : List VExpr} {n k : Nat} {s : Lean.Name} {i : Nat}
-      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' → trProj Γ s i e e' →
-      trProj Γ' s i (e.liftN n k) (e'.liftN n k))
+      {e e' : VExpr}, Lean4Lean.Ctx.LiftN n k Γ Γ' →
+      trProj uvars Γ s i e e' →
+      trProj uvars Γ' s i (e.liftN n k) (e'.liftN n k))
     (htpI : ∀ {Γ₀ : List VExpr} {e₀ A₀ : VExpr} {k : Nat}
       {Γ₁ Γ : List VExpr} {s : Lean.Name} {i : Nat} {e e' : VExpr},
-      Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ → trProj Γ₁ s i e e' →
-      trProj Γ s i (e.inst e₀ k) (e'.inst e₀ k))
+      env.HasType uvars Γ₀ e₀ A₀ →
+      Lean4Lean.Ctx.InstN Γ₀ e₀ A₀ k Γ₁ Γ →
+      trProj uvars Γ₁ s i e e' →
+      trProj uvars Γ s i (e.inst e₀ k) (e'.inst e₀ k))
     {Δ₀ : KVLCtx} {arg : KExpr .anon} {e₀' A₀ : VExpr}
     (harg : KExpr.Constructed arg)
     (h₀ : TrKExprS env uvars nameOf trProj Δ₀ arg e₀')
@@ -161,7 +164,7 @@ theorem TrKExprS.instN_lbr {env : Lean4Lean.VEnv} {uvars : Nat}
     have hbig' : arg.lbr.toNat + arg.size + depth.toNat +
         (val.size + 1) < UInt64.size := hbig
     rw [KExpr.substSpec, KExpr.mkPrj_shape]
-    exact .prj h1 (ihval W hdepth (by omega)) (htpI W.toCtx htrp)
+    exact .prj h1 (ihval W hdepth (by omega)) (htpI t₀ W.toCtx htrp)
   | @nat Δ₁' v blob md h =>
     intro Δ dk k depth W hdepth hbig
     rw [show (Lean4Lean.VExpr.natLit v).inst e₀' k =

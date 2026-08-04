@@ -1,4 +1,5 @@
 import Ix.Tc.Verify.Inductive.EnumerationFixture
+import Ix.Tc.Verify.Inductive.OneFamilyAdmission
 
 /-!
 # Concrete singleton-enumeration checker acceptance
@@ -523,71 +524,155 @@ def exactRecursorBlock :
   nonempty := by rw [recursorMembers_eq]; decide
   memberIff := fun id => recursorCoordinated_iff id
 
-/-! ## Semantic admission of the checked blocks -/
+/-! ## Explicit family transition -/
 
-/-- The family transaction exposed by the exact Ix/source catalog link. -/
-def familyBlockOracle : InductiveOracle RawProjRel.none world.catalog
-    world.nameOf world.trusted world.venv :=
-  familyLink.oracle
+theorem familyLink_members_eq : familyLink.members = familyMembers := by
+  rfl
 
-/-- The stable world obtained by admitting exactly the checked family array. -/
-def familyAcceptedWorld : VerifyWorld :=
-  world.admitOracle familyBlockOracle
+/-- Complete post-generation provenance for one exact family-block member.
+Family and constructor constants have no recursor rules, so their rule and
+pattern obligations close from their certified concrete shapes. -/
+private def familySemanticEntry {id : KId .anon}
+    (hmember : id ∈ familyMembers) :
+    TrustedCatalogEntry RawProjRel.none world.catalog world.nameOf theoryAfter
+      id := by
+  have hlinked : id ∈ familyLink.members := by
+    rw [familyLink_members_eq]
+    exact hmember
+  obtain ⟨concrete, name, ci, hcatalog, hraw, hlookup, hwf⟩ :=
+    familyLink.translateMember hlinked
+  exact .ambient hcatalog hraw hlookup hwf
+    (by
+      intro rule hrule
+      exact False.elim
+        (familyLink.noRecursorRule hlinked hcatalog rule hrule))
+    (by
+      intro ruleIndex rule hrule
+      exact False.elim
+        (familyLink.noRecursorRuleAt hlinked hcatalog ruleIndex rule hrule))
 
-/-- The production family array and the semantic family transaction have
-exactly the same members. -/
-def familyBlockCertificate : OracleBlockCertificate RawProjRel.none world
-    familyBlockId familyMembers .inductive' where
-  oracleBacked := trivial
+/-- The exact Boolean family block advances the explicitly named Theory
+environment produced by its checked generation transaction. -/
+def familyBlockCertificate :
+    SemanticBlockTransitionCertificate RawProjRel.none world familyBlockId
+      familyMembers .inductive' theoryAfter where
   exactBlock := exactFamilyBlock
-  oracle := familyBlockOracle
-  memberIff := fun id => familyLink.oracle_members_iff id
+  fresh := by
+    intro id hmember
+    have hlinked : id ∈ familyLink.members := by
+      rw [familyLink_members_eq]
+      exact hmember
+    exact familyLink.fresh id hlinked
+  envLE := transaction.facts.envLE
+  afterWF := transaction.facts.afterWF
+  entry := fun {_} hmember => familySemanticEntry hmember
+
+/-- The intermediate world after exactly the family and its constructors are
+trusted and the certified generation environment is installed. -/
+def familyAcceptedWorld : VerifyWorld :=
+  familyBlockCertificate.admittedWorld
 
 theorem familyAtomicAdmission :
     AtomicBlockAdmission RawProjRel.none world familyAcceptedWorld
       familyBlockId familyMembers .inductive' :=
   familyBlockCertificate.admit trustedCatalog
 
-theorem familyBlockAccepted :
-    familyAcceptedWorld.AcceptedBlock familyBlockId :=
-  familyAtomicAdmission.accepted
+/-! ## Existing generated-recursor transition -/
 
-/-- The recursor transaction exposed by the exact Ix/source catalog link,
-including both generated Boolean reduction equations. -/
-def recursorBlockOracle : InductiveOracle RawProjRel.none world.catalog
-    world.nameOf world.trusted world.venv :=
-  recursorLink.oracle enumerationShape
+/-- Complete provenance for the generated Boolean recursor in the Theory
+environment installed by the family transaction.  Both concrete rules are
+linked to their registered generated equations and exact enumeration iota
+patterns. -/
+private def recursorSemanticEntryBase :
+    TrustedCatalogEntry RawProjRel.none world.catalog world.nameOf theoryAfter
+      recursorId := by
+  obtain ⟨hraw, hlookup, hwf⟩ := recursorLink.translateRecursor
+  refine .ambient catalog_recursor hraw hlookup hwf ?_ ?_
+  · intro rule hrule
+    exact recursorLink.registeredRule hrule
+  · intro ruleIndex rule hrule
+    exact recursorLink.enumerationPatternRel enumerationShape hrule
 
-/-- The stable world obtained by admitting exactly the checked recursor
-array.  It is stated separately from `familyAcceptedWorld`: both physical
-blocks interpret the same certified Lean4Lean generation transaction, while
-their trust deltas are intentionally their distinct exact member arrays. -/
+def familyRecursorSemanticEntry :
+    TrustedCatalogEntry RawProjRel.none familyAcceptedWorld.catalog
+      familyAcceptedWorld.nameOf familyAcceptedWorld.venv recursorId := by
+  change TrustedCatalogEntry RawProjRel.none world.catalog world.nameOf
+    theoryAfter recursorId
+  exact recursorSemanticEntryBase
+
+theorem familyAcceptedWorld_recursor_fresh :
+    ¬familyAcceptedWorld.trusted recursorId := by
+  intro htrusted
+  change recursorId ∈ familyMembers ∨ world.trusted recursorId at htrusted
+  rcases htrusted with hfamily | hold
+  · have hcoordinated := (familyCoordinated_iff recursorId).1 hfamily
+    obtain ⟨concrete, hcatalog, howner⟩ := hcoordinated
+    rw [catalog_recursor] at hcatalog
+    cases hcatalog
+    exact recursorNotFamilyOwner howner
+  · exact recursorLink.fresh hold
+
+def exactRecursorBlockAfterFamily :
+    ExactCheckBlock familyAcceptedWorld recursorBlockId recursorMembers
+      .recursor :=
+  exactRecursorBlock.rebaseWorld familyAtomicAdmission.promotion.le
+
+/-- The separately stored recursor block consumes semantic entries already
+installed by the family transition; it does not choose another future Theory
+environment. -/
+def recursorBlockCertificate :
+    ExistingSemanticBlockCertificate RawProjRel.none familyAcceptedWorld
+      recursorBlockId recursorMembers .recursor where
+  exactBlock := exactRecursorBlockAfterFamily
+  fresh := by
+    intro id hmember
+    have hid : id = recursorId := by
+      simpa [recursorMembers_eq] using hmember
+    subst id
+    exact familyAcceptedWorld_recursor_fresh
+  entry := by
+    intro id hmember
+    have hid : id = recursorId := by
+      simpa [recursorMembers_eq] using hmember
+    subst id
+    exact familyRecursorSemanticEntry
+
+/-- The Boolean family/constructor block and generated-recursor block form
+one explicit two-stage semantic transaction. -/
+def oneFamilyCertificate :
+    OneFamilyRecursorCertificate RawProjRel.none world familyBlockId
+      familyMembers recursorBlockId recursorMembers theoryAfter where
+  family := familyBlockCertificate
+  recursor := recursorBlockCertificate
+
+/-- The final world after both exact physical blocks are trusted. -/
 def recursorAcceptedWorld : VerifyWorld :=
-  world.admitOracle recursorBlockOracle
-
-def recursorBlockCertificate : OracleBlockCertificate RawProjRel.none world
-    recursorBlockId recursorMembers .recursor where
-  oracleBacked := trivial
-  exactBlock := exactRecursorBlock
-  oracle := recursorBlockOracle
-  memberIff := fun id => recursorLink.oracle_members_iff enumerationShape id
+  oneFamilyCertificate.admittedWorld
 
 theorem recursorAtomicAdmission :
-    AtomicBlockAdmission RawProjRel.none world recursorAcceptedWorld
+    AtomicBlockAdmission RawProjRel.none familyAcceptedWorld recursorAcceptedWorld
       recursorBlockId recursorMembers .recursor :=
-  recursorBlockCertificate.admit trustedCatalog
+  oneFamilyCertificate.recursorAdmission trustedCatalog
+
+theorem oneFamilyAtomicClosure : oneFamilyCertificate.AtomicClosure :=
+  oneFamilyCertificate.atomicClosure trustedCatalog
+
+theorem familyBlockAccepted :
+    recursorAcceptedWorld.AcceptedBlock familyBlockId :=
+  oneFamilyAtomicClosure.familyAccepted
 
 theorem recursorBlockAccepted :
     recursorAcceptedWorld.AcceptedBlock recursorBlockId :=
-  recursorAtomicAdmission.accepted
+  oneFamilyAtomicClosure.recursorAccepted
 
 /-! ## End-to-end executable witness -/
 
-/-- The supported E2b fragment in one proposition.  It starts with the two
+/-- The supported Boolean fragment in one proposition.  It starts with the two
 actual anonymous-ingress calls, runs the production coordinated checker and
 its concrete inductive/recursor branches, and ends in exact stable block
-acceptance derived from the same catalog links.  There is no reflection or
-arbitrary-regeneration premise in this witness. -/
+acceptance in one composed explicit semantic world.  There is no reflection,
+oracle-selected future world, or arbitrary-regeneration premise in this
+witness. -/
 structure EndToEndAcceptance : Prop where
   familyIngress : familyIngressOutcome =
     .ok familyIngressResult familyIngressAfter
@@ -615,7 +700,14 @@ structure EndToEndAcceptance : Prop where
     ExactCheckBlock world familyBlockId familyMembers .inductive'
   exactRecursor :
     ExactCheckBlock world recursorBlockId recursorMembers .recursor
-  acceptedFamily : familyAcceptedWorld.AcceptedBlock familyBlockId
+  familyAdmission :
+    AtomicBlockAdmission RawProjRel.none world familyAcceptedWorld
+      familyBlockId familyMembers .inductive'
+  recursorAdmission :
+    AtomicBlockAdmission RawProjRel.none familyAcceptedWorld
+      recursorAcceptedWorld recursorBlockId recursorMembers .recursor
+  oneFamily : oneFamilyCertificate.AtomicClosure
+  acceptedFamily : recursorAcceptedWorld.AcceptedBlock familyBlockId
   acceptedRecursor : recursorAcceptedWorld.AcceptedBlock recursorBlockId
 
 theorem endToEndAcceptance : EndToEndAcceptance where
@@ -629,6 +721,9 @@ theorem endToEndAcceptance : EndToEndAcceptance where
   recursorKernel := recursorKernelRun
   exactFamily := exactFamilyBlock
   exactRecursor := exactRecursorBlock
+  familyAdmission := familyAtomicAdmission
+  recursorAdmission := recursorAtomicAdmission
+  oneFamily := oneFamilyAtomicClosure
   acceptedFamily := familyBlockAccepted
   acceptedRecursor := recursorBlockAccepted
 
