@@ -609,8 +609,72 @@ def check := ⟦
   -- an inductive spine head must be either a peer (block member — OK
   -- direct occurrence) or a nested inductive whose non-param args don't
   -- mention block.
+  -- The i-th parameter argument of a recursive occurrence must be the
+  -- i-th parameter BINDER. Parameters are peeled first, so in a context
+  -- of `depth` binders the i-th (outermost-first) sits at
+  -- `BVar(depth - 1 - i)` — the same arithmetic
+  -- `assert_first_args_are_param_bvars` uses for the return type, where
+  -- `depth` is `n_fields + n_params`.
+  fn assert_occ_param_bvars(args: List‹KExpr›, n_params: G, depth: G,
+                                 i: G) {
+    match n_params - i {
+      0 => (),
+      _ =>
+        match load(args) {
+          ListNode.Cons(arg, rest) =>
+            match load(arg) {
+              KExprNode.BVar(j) =>
+                assert_eq!(j, (depth - 1) - i,
+                  "recursive occurrence: parameter arg is not the parameter binder");
+                assert_occ_param_bvars(rest, n_params, depth, i + 1),
+            },
+        },
+    }
+  }
+
+  -- A direct recursive occurrence must be a VALID application of the
+  -- inductive, not merely headed by it. Mirrors what
+  -- `check_ctor_return_type` already demands of the return type, and
+  -- what Lean requires of every occurrence (`is_valid_ind_app`,
+  -- explicitly `check_uniform_params` / `check_ind_app_idxs` since
+  -- #14582):
+  --
+  --   * universe args are the declaration's own `Param(i)` sequence, so
+  --     `J.{u}` cannot host a field at `J.{0}`;
+  --   * the occurrence is fully applied, `n_params + n_indices` args;
+  --   * parameter args are the parameter binders, so `I α` cannot host a
+  --     field at `I False` — the recursor built for that applies
+  --     `motive : I α → _` to a field of type `I False`;
+  --   * index args do not mention the block (lean4 #2125). The return
+  --     type's indices are checked in `check_ctor_return_type`; nothing
+  --     covered a field's until now.
+  fn check_valid_ind_app(caddr: Addr, us: List‹KLevel›,
+                              args: List‹KExpr›, block_addrs: List‹Addr›,
+                              depth: G) {
+    let ci = load(get_ci(caddr));
+    match ci {
+      KConstantInfo.Induct(occ_nlvls, _, occ_params, occ_indices,
+                            _, _, _, _) =>
+        assert_lvls_are_params(us, occ_nlvls, 0);
+        assert_eq!(list_length(args), occ_params + occ_indices,
+          "recursive occurrence is not fully applied");
+        assert_occ_param_bvars(args, occ_params, depth, 0);
+        assert_eq!(list_any_mentions_block(list_drop(args, occ_params),
+                                                block_addrs), 0,
+          "recursive occurrence: index argument mentions the block");
+        (),
+    }
+  }
+
+  -- `check_params` is 1 on the direct path, where the block's parameters
+  -- are still the outermost binders of `types` and the uniformity check
+  -- above is meaningful. The nested descent
+  -- (`check_nested_ctors_positivity`) substitutes the parameter
+  -- ARGUMENTS away and restarts from an empty context, so there are no
+  -- parameter binders left to match and the occurrence's args are
+  -- arbitrary terms; it passes 0 and keeps the old head-identity accept.
   fn check_positivity_aug(dom: KExpr, block_addrs: List‹Addr›,
-                               types: List‹KExpr›) {
+                               types: List‹KExpr›, check_params: G) {
     match expr_mentions_block(dom, block_addrs) {
       0 => (),
       _ =>
@@ -620,14 +684,20 @@ def check := ⟦
             assert_eq!(expr_mentions_block(idom, block_addrs), 0,
               "strict positivity: block occurs left of an arrow");
             let t2 = store(ListNode.Cons(idom, types));
-            check_positivity_aug(ibody, block_addrs, t2),
+            check_positivity_aug(ibody, block_addrs, t2, check_params),
           _ =>
             match collect_spine(dom_w) {
               (head, args) =>
                 match load(head) {
-                  KExprNode.Const(caddr, _) =>
+                  KExprNode.Const(caddr, us) =>
                     match caddr_is_peer(caddr, block_addrs) {
-                      1 => (),
+                      1 =>
+                        match check_params {
+                          1 =>
+                            check_valid_ind_app(caddr, us, args,
+                              block_addrs, list_length(types)),
+                          _ => (),
+                        },
                       _ =>
                         let ci = load(get_ci(caddr));
                         match ci {
@@ -700,9 +770,10 @@ def check := ⟦
                                                  store(ListNode.Nil)) {
               (body, _) =>
                 -- Parameters are substituted away, so the field walk
-                -- starts with no binders in scope.
+                -- starts with no binders in scope — and with no
+                -- parameter binders to match, hence `check_params = 0`.
                 check_positivity_fields(expr_inst_many(body, rev_params, 0),
-                  aug, store(ListNode.Nil));
+                  aug, store(ListNode.Nil), 0);
                 check_nested_ctors_positivity(block_addr, ind_idx,
                   num_ctors, aug, cidx + 1, n_params, rev_params),
             },
@@ -711,12 +782,12 @@ def check := ⟦
   }
 
   fn check_positivity_fields(ty: KExpr, block_addrs: List‹Addr›,
-                                  types: List‹KExpr›) {
+                                  types: List‹KExpr›, check_params: G) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        check_positivity_aug(dom, block_addrs, types);
+        check_positivity_aug(dom, block_addrs, types, check_params);
         let t2 = store(ListNode.Cons(dom, types));
-        check_positivity_fields(body, block_addrs, t2),
+        check_positivity_fields(body, block_addrs, t2, check_params),
       _ => (),
     }
   }
@@ -732,7 +803,7 @@ def check := ⟦
     let block_addrs = store(ListNode.Cons(block_addr, store(ListNode.Nil)));
     match peel_n_foralls_with_types(ctor_ty, n_params, types) {
       (body, types_after) =>
-        check_positivity_fields(body, block_addrs, types_after),
+        check_positivity_fields(body, block_addrs, types_after, 1),
     }
   }
 
