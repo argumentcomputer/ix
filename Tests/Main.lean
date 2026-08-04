@@ -204,6 +204,38 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
+  -- TEMPORARY: the exploit corpus in isolation, for fast iteration on
+  -- soundness work. `lake test -- --ignored exploits`.
+  --
+  -- Deliberately does NOT go through `AiurTestEnv.build`, which also
+  -- builds the `AiurSystem` (preprocessed traces + FRI/commitment
+  -- parameters). Nothing here proves or verifies — `exploitTests` only
+  -- executes `verify_claim` and reads the accept/reject verdict — so
+  -- compiling the pruned production toplevel is the entire setup cost.
+  --
+  -- Execution stays on the generic bytecode INTERPRETER. `exploitTests`
+  -- calls `compiled.bytecode.execute` (extern `rs_aiur_toplevel_execute`),
+  -- never `executeIxVM` (`rs_aiur_toplevel_execute_ixvm`), so the
+  -- codegen'd Rust kernel is not involved and no `ix codegen` regen is
+  -- needed after editing Aiur sources. Keep it that way: switching to
+  -- the native executor would silently test a stale kernel.
+  --
+  -- `ixVM` (pruned) rather than `ixVMFull` is correct here — the suite
+  -- drives `verify_claim`, which is the only entrypoint the production
+  -- toplevel carries.
+  ("exploits", do
+    match IxVM.ixVM with
+    | .error g =>
+      IO.eprintln s!"exploits: IxVM toplevel merge failed: {g}"
+      return 1
+    | .ok toplevel =>
+      match toplevel.compile with
+      | .error e =>
+        IO.eprintln s!"exploits: IxVM compile failed: {e}"
+        return 1
+      | .ok compiled =>
+        let exploitSeq ← Tests.Ix.IxVM.Exploits.exploitTests env compiled
+        LSpec.lspecIO (.ofList [("exploits", [exploitSeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
