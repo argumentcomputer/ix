@@ -578,7 +578,6 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     rowNoun :=
       if backend == "compile" then "env"
       else if backend == "ooc" then "env/constant"
-      else if backend == "aiur-recursive" then "proof"
       else "constant"
   }
   -- Per-constant attribution drill-down: rendered whenever an
@@ -1105,10 +1104,10 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut entries : Array Json := #[]
   for b in backends do
     -- The fixed-config backend (`inputs := .fixedConfigs` — aiur-recursive)
-    -- is env-independent (fixed toy statements, no `.ixe`): one run no
-    -- matter how many envs BENCH_ENVS lists. The env kept is the first
-    -- requested one, so the run's `.ixe` restore (an unconditional workflow
-    -- step) still finds a compiled artifact.
+    -- runs a fixed constant list: one run no matter how many envs
+    -- BENCH_ENVS lists. The env kept is the first requested one — its
+    -- compiled `.ixe` is where the run resolves the fixed constants (any
+    -- registry env's closure contains them).
     let runEnvs := if b.inputs == .fixedConfigs then (envsFor b).take 1
       else envsFor b
     for e in runEnvs do

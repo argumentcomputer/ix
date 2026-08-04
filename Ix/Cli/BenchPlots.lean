@@ -95,9 +95,10 @@ def plotTitle (workload measure : String) : String :=
     exactly — the decompile run tracks only its own decompile-time /
     throughput / peak-rss trends. The aiur-recursive run's plain
     prove-time / proof-size / verify-time / peak-rss measure the INNER
-    toy-statement proof — tracked for the compare table, but the
-    dashboard trend that matters is the recursion layer's own
-    `recursive-*` series, so the inner metrics aren't plotted. -/
+    IxVM typecheck proof (under recursion-tuned parameters) — tracked for
+    the compare table, but the dashboard trend that matters is the
+    recursion layer's own `recursive-*` series, so the inner metrics
+    aren't plotted. -/
 def plotSkips : List (String × String) :=
   [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
    ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),

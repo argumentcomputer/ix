@@ -59,9 +59,12 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  parameters (`recursiveFriParameters`), so recursive rows are
                  NOT comparable to the standard prove run — they land on
                  their own testbed (`ix bench run --backend aiur --mode
-                 recursive`). An IxVM-scale verifier execute needs >108 GB,
-                 so a watchdog kill landing as a `status: oom` row (dropped
-                 by bmf) is the expected shape there. With --texray, both
+                 recursive`; the fixed two-constant subset runs in CI as
+                 `--backend aiur-recursive`). At IxVM scale the recursion
+                 exceeds the CI RAM ceiling (even Nat.add_comm's outer
+                 prove peaks ~195 GiB as of 2026-08), so a watchdog kill
+                 landing as a `status: oom` row (dropped by bmf) is the
+                 expected shape there. With --texray, both
                  proves stream the same `stark/...` span names, so the summed
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.
