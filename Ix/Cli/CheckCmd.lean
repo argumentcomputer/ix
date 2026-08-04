@@ -13,12 +13,11 @@
 
   Stats print when exactly one constant is targeted. Multi-target +
   whole-env iteration both suppress stats so the log stays usable.
-  `IX_QUIET=1` is set unconditionally; the Rust-side `[compile_env]`
-  scheduler noise adds nothing at this layer.
+  The Rust-side `[compile_env]` / `[Env::put]` progress logs are off
+  unless `IX_VERBOSE=1`; they add nothing at this layer.
 -/
 module
 public import Cli
-public import Std.Internal.UV.System
 public import Ix.Address
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Interpret
@@ -604,9 +603,6 @@ def runShardCheckAll (manifestPath ixePath : String) (jobs? : Option Nat)
   pure rc
 
 def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
-  -- Always silence the Rust-side `[compile_env]` progress logs. The
-  -- per-name labels + stats are signal enough at this layer.
-  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
   let interpMode : Option String := (p.flag? "interp").map (·.as! String)
   let interpSource := interpMode == some "source"
   let useBytecode := interpMode == some "bytecode"

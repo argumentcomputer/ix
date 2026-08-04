@@ -14,7 +14,6 @@
 -/
 module
 public import Cli
-public import Std.Internal.UV.System
 public import Ix.Address
 public import Ix.Common
 public import Ix.Environment
@@ -62,9 +61,6 @@ def nameLookup (ixonEnv : Ixon.Env) (addr : Address) : IO UInt32 := do
   return 0
 
 def runNameOfCmd (p : Cli.Parsed) : IO UInt32 := do
-  -- Suppress Rust-side `[compile_env]` scheduler noise; the only
-  -- signal this command emits is the name list on stdout.
-  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
   let some addrArg := p.positionalArg? "addr"
     | p.printError "error: must specify a 64-char hex address"; return 1
   let argStr := addrArg.as! String
