@@ -760,6 +760,25 @@ def canonicalCheck := ⟦
     }
   }
 
+  -- 1 iff `members` contains a member of the requested kind:
+  -- `want_defn = 1` asks about Defn members, `want_defn = 0` about Indc.
+  -- Recr members answer neither.
+  fn canon_muts_has_kind(members: List‹MutConst›, want_defn: G) -> G {
+    match load(members) {
+      ListNode.Nil => 0,
+      ListNode.Cons(m, rest) =>
+        let hit = match m {
+          MutConst.Defn(_) => want_defn,
+          MutConst.Indc(_) => 1 - want_defn,
+          MutConst.Recr(_) => 0,
+        };
+        match hit {
+          1 => 1,
+          _ => canon_muts_has_kind(rest, want_defn),
+        },
+    }
+  }
+
   -- ==========================================================================
   -- Entry. Validate one Muts block's canonical member order (mirror
   -- validate_by_full_refinement): sort the Indc members by refinement,
@@ -774,6 +793,33 @@ def canonicalCheck := ⟦
       Constant.Mk(info, _, _, _) =>
         match info {
           ConstantInfo.Muts(members) =>
+            -- A block may not mix a definition member with inductive
+            -- members. Lean emits neither: a `Declaration` is either
+            -- `mutualDefnDecl` (all definitions) or `inductDecl`
+            -- (inductives plus their recursors), and the auxiliaries an
+            -- inductive generates are separate constants or themselves
+            -- inductives.
+            --
+            -- This is what keeps strict positivity honest.
+            -- `check_positivity_aug` skips a constructor field whose
+            -- domain does not SYNTACTICALLY mention a block inductive,
+            -- and `caddr_is_peer` counts a `Const` only when its info is
+            -- an `Induct` — so a `Const` resolving to a definition scores
+            -- zero and the domain is never reduced. The occurrence is
+            -- therefore invisible whenever a definition stands between
+            -- the field and the inductive.
+            --
+            -- Content addressing already rules that out everywhere else:
+            -- for a definition `D` to mention this block's inductive, and
+            -- for a constructor field to be `D`, each address would have
+            -- to hash the other. The one way to have both without a cycle
+            -- is for `D` to be a MEMBER, addressed off the block like the
+            -- inductive is. Banning the mixture closes the class rather
+            -- than the instance, and costs one pass per block instead of
+            -- a reduction per field.
+            assert_eq!(canon_muts_has_kind(members, 1) *
+                         canon_muts_has_kind(members, 0), 0,
+              "mutual block mixes a definition member with inductives");
             let indcs = canon_indc_positions(members, 0);
             match u32_less_than(list_length(indcs), 2) {
               1 => (),
