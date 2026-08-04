@@ -1,18 +1,18 @@
 [package]
-name = "ix-rs-dyn"
+name = "ix-ffi-dyn"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "ix_rs_dyn"
+name = "ix_ffi_dyn"
+# A cdylib exporting only Ix's own raw `@[extern]` symbols that `native_decide`
+# reaches during elaboration. Kept minimal on purpose: loading the full `ix-ffi`
+# cdylib here would drag its whole dependency graph (and GMP) into every proof.
 crate-type = ["cdylib"]
 
 [dependencies]
-# Match the audited Blake3.lean Rust backend exactly. The workspace's `1.8.4`
-# requirement is semver-compatible with newer patch releases and is not a pin.
-blake3 = "=1.8.4"
-lean-ffi.workspace = true
+lean-ffi = { workspace = true }
 
 [lints]
 workspace = true

@@ -8,7 +8,7 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d3c15b93a1dd4e7c8d5c0c3825c9555737e55c3e"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "d15f36cf76eb5834b0e623e02b97fd4d95e56cc7"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "c6db090374cb3c3c717691beb6cd18bb08936598"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.29.0"
@@ -76,6 +76,15 @@ target ix_rs_net pkg : FilePath := do
   let args ← cargoArgs (net := true)
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
   inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
+
+/-- The `ix-ffi-dyn` cdylib: Ix's own raw `@[extern]` symbols (currently the
+`toLEBytes` operations) as a small standalone shared library. Consumed by
+`ix_native_decide_dynlib`; kept separate from `ix-ffi` so proofs don't load
+that crate's full dependency graph. -/
+target ix_ffi_dyn pkg : FilePath := do
+  let args := #["build", "--release", "-p", "ix-ffi-dyn"]
+  proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
+  inputBinFile $ pkg.dir / "target" / "release" / nameToSharedLib "ix_ffi_dyn"
 
 end FFI
 
@@ -155,17 +164,39 @@ end Benchmarks
 
 section IxTcVerify
 
-/-- Build the minimal Rust dynlib that supplies raw and boxed FFI symbols to
-Lean's native evaluator while `IxTcVerify` is being elaborated. -/
-target ix_rs_dyn pkg : Dynlib := do
-  proc {
-    cmd := "cargo"
-    args := #["build", "--release", "-p", "ix-rs-dyn"]
-    cwd := pkg.dir
-  } (quiet := true)
-  let dynlib ← inputBinFile <| pkg.dir / "target" / "release" /
-    nameToSharedLib "ix_rs_dyn"
-  dynlib.mapM fun path => pure {path, name := "ix_rs_dyn"}
+/-- Loadable FFI for Lean's native evaluator while `IxTcVerify` is elaborated.
+
+`native_decide` runs compiled Lean before any executable is linked, so for each
+opaque `@[extern]` it reaches, both symbol layers must be loadable up front:
+
+* the boxed entry point Lean calls (`lp_..._boxed`), taken from Lean's own
+  generated object for the declaring module, so no ABI is mirrored by hand; and
+* the raw Rust symbol it forwards to, taken from that crate's `cdylib`, recorded
+  by absolute path so no `LD_LIBRARY_PATH` is needed.
+
+Covered externs: `Blake3.Rust` hashing (with the `Blake3` base module, which
+holds the `HasherOps.hash` orchestration `Address.blake3` calls) against
+`blake3_rs`, and `Ix.Unsigned.toLEBytes` against `ix-ffi-dyn`. -/
+target ix_native_decide_dynlib pkg : Dynlib := do
+  let some blake3Base ← findModule? `Blake3
+    | error "module `Blake3` not found; is the Blake3 dependency available?"
+  let some blake3Rust ← findModule? `Blake3.Rust
+    | error "module `Blake3.Rust` not found; is the Blake3 dependency available?"
+  let some ixUnsigned ← findModule? `Ix.Unsigned
+    | error "module `Ix.Unsigned` not found"
+  -- Raw symbols come from each crate's cdylib, recorded by path, and are built
+  -- by fetching the owning package's target (no direct cargo calls here):
+  -- Blake3 via its `blake3_rs_shared`, Ix via the minimal `ix_ffi_dyn`.
+  let blake3Cdylib := (← blake3Rust.pkg.fetchTargetJob `blake3_rs_shared).map fun _ =>
+    blake3Rust.pkg.dir / "rust" / "target" / "release" / nameToSharedLib "blake3_rs"
+  let ixCdylib ← ix_ffi_dyn.fetch
+  -- Boxed entry points are Lean's own generated objects for the declaring modules.
+  let mut boxedObjs := #[]
+  for mod in #[blake3Base, blake3Rust, ixUnsigned] do
+    boxedObjs := boxedObjs ++ (← (mod.nativeFacets true).mapM (·.fetch mod))
+  buildSharedLib "ix_native_decide"
+    (pkg.buildDir / nameToSharedLib "ix_native_decide")
+    (boxedObjs.push blake3Cdylib |>.push ixCdylib) #[]
 
 /- Formal verification of `Ix.Tc` against the lean4lean `Theory` spec.
 Non-default: `lake build ix` never
@@ -183,7 +214,7 @@ lean_lib IxTcVerify where
   -- that executable is linked, after its modules have been elaborated.
   -- These native-decide proofs need the boxed FFI symbols while the library
   -- modules are being elaborated, so they must be supplied as a dynlib.
-  dynlibs := #[ix_rs_dyn]
+  dynlibs := #[ix_native_decide_dynlib]
 
 end IxTcVerify
 

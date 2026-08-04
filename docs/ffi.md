@@ -25,14 +25,27 @@ By convention, names of external Rust functions start with `rs_`.
 
 Most Ix FFI is linked statically into final Lean executables. Proofs using
 `native_decide`, however, execute compiled Lean code while modules are still
-being elaborated. The `ix-rs-dyn` crate builds the small `ix_rs_dyn` dynamic
-library loaded by the `IxTcVerify` Lake target for that purpose.
+being elaborated, before any executable is linked. The native evaluator needs
+two symbol layers for each opaque `@[extern]` it reaches: the raw Rust symbol
+(e.g. `rs_blake3_init`, `c_u64_to_le_bytes`) and the boxed entry point Lean
+calls into it (e.g. `lp_Blake3_Blake3_Rust_hasherInit___boxed`).
 
-The dynamic library contains only the BLAKE3 and unsigned-integer operations
-needed by verification fixtures. It exports both the raw `@[extern]` entry
-points and the boxed entry points used by Lean's native evaluator. When an
-opaque external operation becomes reachable from a new elaboration-time
-computation, its boxed ABI must be added and tested there as well.
+The `ix_native_decide_dynlib` Lake target assembles both layers from artifacts
+that already exist, so no ABI is mirrored by hand:
+
+- The boxed entry points are Lean's own generated objects for the declaring
+  modules (`Blake3`, `Blake3.Rust`, `Ix.Unsigned`) — the same code linked into
+  normal executables — fetched via each module's `oExport` facet.
+- The raw symbols come from `cdylib` outputs recorded as load-time
+  dependencies by absolute path (so no `LD_LIBRARY_PATH` is needed): Blake3's
+  `blake3_rs`, and the minimal `ix-ffi-dyn` crate for Ix's own externs. That
+  crate shares its source with `ix-ffi` but is kept separate so a
+  proof only loads the handful of symbols it needs, not `ix-ffi`'s whole
+  dependency graph.
+
+When an opaque external operation becomes reachable from a new
+elaboration-time computation, add its declaring module's object to the target
+(the raw symbol is already present if it lives in a linked cdylib).
 
 ## Linear API
 
