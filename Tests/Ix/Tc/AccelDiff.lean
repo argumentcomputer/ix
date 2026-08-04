@@ -2,6 +2,7 @@ module
 
 public import LSpec
 public import Ix.Tc
+public import Tests.Ix.Tc.ParityEnv
 
 /-!
 `tc-accel-diff` (ignored runner): differential fixtures for the
@@ -10,8 +11,9 @@ CLI `IX_TC_NO_ACCEL=1`). The accelerations are shared trusted code in
 BOTH kernels (BitVec natives, Decidable natives, `reduceBool`/`reduceNat`
 markers, `Fin.val`-through-`Decidable.rec`), so cross-kernel diffing is
 structurally blind to a common bug — these fixtures check accelerated
-results against genuine pure reduction over the real env
-(`IX_PINS_IXE`; the pure path needs real definitions to delta-unfold).
+results against genuine pure reduction over the real env (compiled on
+demand — see `Tests.Tc.ParityEnv`; the pure path needs real definitions
+to delta-unfold).
 Small literals only: the pure path is exponential in literal size by
 design (see `TcState.noAccel`).
 
@@ -71,10 +73,7 @@ def ctorCase (ixonEnv : Ixon.Env) (name : String) (e : AE)
 
 public def run : IO UInt32 := do
   IO.println "tc-accel-diff"
-  let some path ← IO.getEnv "IX_PINS_IXE"
-    | IO.println "tc-accel-diff: IX_PINS_IXE unset — skipping (needs a \
-                  compileinitstd-style .ixe for the pure path's definitions)"
-      return 0
+  let path ← Tests.Tc.ParityEnv.ensure
   let bytes ← IO.FS.readBinFile path
   match Ixon.deEnvAnon bytes with
   | .error e =>

@@ -224,11 +224,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   -- lean4lean dependency smoke: accept a real closure, reject an
   -- ill-typed decl (see Tests.Ix.Lean4Lean).
   ("lean4lean", Tests.Ix.Lean4Lean.run env),
-  -- Pure-Lean kernel regression pins against a real .ixe (needs
-  -- IX_PINS_IXE; skips cleanly otherwise — see Tests.Tc.Pins).
+  -- Pure-Lean kernel regression pins against a real .ixe, compiled on
+  -- demand (see Tests.Tc.ParityEnv).
   ("tc-pins", Tests.Tc.Pins.run),
-  -- Accelerated-vs-pure reduction differentials (IX_PINS_IXE-gated;
-  -- see Tests.Tc.AccelDiff and TcState.noAccel).
+  -- Accelerated-vs-pure reduction differentials over that same real env
+  -- (see Tests.Tc.AccelDiff and TcState.noAccel).
   ("tc-accel-diff", Tests.Tc.AccelDiff.run),
 ]
 
@@ -250,7 +250,14 @@ def main (args : List String) : IO UInt32 := do
 
   let runIgnored := args.contains "--ignored"
   let includeIgnored := args.contains "--include-ignored"
-  let filterArgs := args.filter fun a => a != "--ignored" && a != "--include-ignored"
+  -- `--exclude=a,b,c` drops the named ignored suites/runners from the sweep, so
+  -- one job can run every ignored test except the suites another job owns.
+  let excludeSet : List String :=
+    match args.find? (·.startsWith "--exclude=") with
+    | some a => (a.drop ("--exclude=".length)).toString.splitOn "," |>.filter fun s => !s.isEmpty
+    | none => []
+  let filterArgs := args.filter fun a =>
+    a != "--ignored" && a != "--include-ignored" && !a.startsWith "--exclude="
 
   -- Run primary tests unless --ignored (without --include-ignored) is specified
   if !runIgnored || includeIgnored then
@@ -264,20 +271,22 @@ def main (args : List String) : IO UInt32 := do
 
   -- Run ignored tests when --ignored or --include-ignored is specified
   if runIgnored || includeIgnored then
-    let mut result ← LSpec.lspecIO ignoredSuites filterArgs
     let env ← get_env!
-    let ignored := ignoredRunners env
-    -- A filter arg matching no runner must be an ERROR, not a silent
-    -- no-op: `filterMap` would drop it, leaving nothing to run and
-    -- returning 0, so a typo'd suite name reports success having
-    -- executed nothing.
-    for arg in filterArgs do
-      if !(ignored.any fun (key, _) => key == arg)
+    let allRunners := ignoredRunners env
+    -- A named suite — selected via a filter arg or removed via `--exclude` —
+    -- that matches nothing is an ERROR, not a silent no-op: otherwise a typo
+    -- runs (or excludes) nothing and still reports success having executed
+    -- nothing.
+    for arg in filterArgs ++ excludeSet do
+      if !(allRunners.any fun (key, _) => key == arg)
           && !ignoredSuites.contains arg then
         IO.eprintln s!"error: no ignored suite or runner named '{arg}'"
         return 1
-    let filtered := if filterArgs.isEmpty then ignored
-      else filterArgs.filterMap fun arg => ignored.find? fun (key, _) => key == arg
+    let suites := excludeSet.foldl (fun m k => m.erase k) ignoredSuites
+    let runners := allRunners.filter fun (key, _) => !excludeSet.contains key
+    let mut result ← LSpec.lspecIO suites filterArgs
+    let filtered := if filterArgs.isEmpty then runners
+      else filterArgs.filterMap fun arg => runners.find? fun (key, _) => key == arg
     for (_, action) in filtered do
       let r ← action
       if r != 0 then result := r

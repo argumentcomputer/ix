@@ -32,7 +32,9 @@ jobs:
           # test: true
           # test-args: "-- --ignored"
           use-github-cache: false
-      - run: lake test -- --ignored
+      - run: >-
+          lake test -- --ignored
+          --exclude=tc-pins,tc-accel-diff,tc-anon-diff,tc-init,tc-tutorial,tc-roundtrip,lean4lean
       - run: lake exe Apps.ZKVoting.Prover
 
   valgrind-ffi:
@@ -70,13 +72,12 @@ jobs:
             --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests -- ffi
 
-  # Ix.Tc formal verification + typechecker parity suite. Lives here (push to
-  # main / dispatch only) rather than in ci.yml so its ~13-min `Ix.Tc.Verify`
-  # proof elaboration and parity run don't gate every PR. Restores the base
-  # `.lake` that ci.yml's build job saved (via the `lake-…` fallback) and keeps
-  # its own `lake-tc-…` cache so the proof elaboration persists across main
-  # commits; lean-action provides only the toolchain, and the steps build/test
-  # against the restored `.lake`.
+  # Ix.Tc formal verification + typechecker parity suite, run on push-to-main
+  # and manual dispatch only so its ~13-min `Ix.Tc.Verify` proof elaboration and
+  # parity run don't gate PRs. Restores the base `.lake` that ci.yml's build job
+  # saved (via the `lake-…` fallback) and keeps its own `lake-tc-…` cache so the
+  # proof elaboration persists across main commits; lean-action provides only the
+  # toolchain, and the steps build/test against the restored `.lake`.
   tc-test:
     name: Ix.Tc verification and parity
     runs-on: warp-ubuntu-latest-x64-16x
@@ -102,18 +103,10 @@ jobs:
         run: lake build Ix.Tc.Verify.Audit.SorryFrontier
       - name: Test Ix.Tc unit and adversarial fixtures
         run: lake test --wfail -- tc-unit
-      - name: Compile Ix.Tc parity fixture
-        run: >-
-          lake exe ix compile Ix.lean
-          --consts-file .github/fixtures/tc-parity-consts.txt
-          --out tc-parity.ixe
-      # The verification release claim includes executable adversarial and
-      # production-parity evidence. Its exact pin/accelerator seed closure is
-      # deliberately separate from the much smaller zkVM smoke fixture.
-      - name: Test Ix.Tc production parity and scale
+      # These ignored typechecker suites run only here; the ignored-test job
+      # --excludes them so nothing is duplicated. tc-pins / tc-accel-diff
+      # compile their `.ixe` env on demand (see Tests.Tc.ParityEnv).
+      - name: Test Ix.Tc ignored suites
         run: >-
           lake test --wfail -- --ignored
-          tc-pins tc-accel-diff tc-anon-diff tc-roundtrip tc-init
-          tc-tutorial lean4lean
-        env:
-          IX_PINS_IXE: tc-parity.ixe
+          tc-pins tc-accel-diff tc-anon-diff tc-init tc-tutorial tc-roundtrip lean4lean

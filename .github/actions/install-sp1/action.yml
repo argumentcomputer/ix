@@ -34,8 +34,8 @@ runs:
           if [ "$attempt" = 3 ]; then
             echo "::error::apt-get install failed after 3 attempts"; exit 1
           fi
-          echo "::warning::apt-get install attempt $attempt failed; retrying in $((attempt * 20))s"
-          sleep $((attempt * 20))
+          echo "::warning::apt-get install attempt $attempt failed; retrying in $((attempt * 10))s"
+          sleep $((attempt * 10))
         done
     # sp1up resolves `releases/latest` (and downloads the toolchain) through
     # api.github.com. Anonymous API calls share a 60/hr per-IP limit that hot

@@ -6,9 +6,9 @@ import Ix.Tc.Verify.Audit.Statements
 
 Fail the build if any declaration defined in an `Ix.Tc.Verify` source module
 directly uses `sorryAx` — the elaborated form of a `sorry` token in that
-source. The compiler answers this from the checked environment, so unlike a
-source-token grep it can never drift from Lean's syntax (comments, string/char
-literals, nested block comments). Filtering is by SOURCE MODULE via
+source. Reading it from the checked environment means `sorry` tokens in
+comments, string/char literals, or nested block comments cannot cause false
+positives. Filtering is by SOURCE MODULE via
 `getModuleIdxFor?`, not declaration name, so macro-emitted constants registered
 under unqualified names are still attributed to their host module. Upstream
 (Lean4Lean) `sorryAx` users are excluded because they live outside the

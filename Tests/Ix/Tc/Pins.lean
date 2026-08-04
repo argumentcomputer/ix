@@ -3,18 +3,18 @@ module
 public import LSpec
 public import Ix.Tc
 public import Ix.Cli.CheckLeanCmd
+public import Tests.Ix.Tc.ParityEnv
 
 /-!
 `tc-pins` (ignored runner): regression pins for the pure-Lean kernel
-against a real serialized env (`IX_PINS_IXE`, e.g. `compileinitstd.ixe`).
+against a real serialized env (compiled on demand — see `Tests.Tc.ParityEnv`).
 Each pin is a constant that previously OOMed, was falsely rejected at
 depth 2001, or blew the worker stack (see the short-circuit note in
 `Ix/Tc/DefEq.lean` and `ParCheckCfg.stackBytes`); the suite ingresses
 the env once and checks each pin subject-only under a wall-clock budget.
 Budgets are generous — the pins guard ∞/OOM regression classes, not
-micro-perf. Skips (passing) when `IX_PINS_IXE` is unset so `--ignored`
-sweeps don't require the env file; known-slow pins (open perf issues)
-run only with `IX_PINS_SLOW=1`.
+micro-perf. Known-slow pins (open perf issues) run only with
+`IX_PINS_SLOW=1`.
 -/
 
 namespace Tests.Tc.Pins
@@ -74,14 +74,8 @@ def checkPin (kenv : MetaEnv) (prims : Primitives .meta)
 
 public def run : IO UInt32 := do
   IO.println "tc-pins"
-  let some path ← IO.getEnv "IX_PINS_IXE"
-    | IO.println "tc-pins: IX_PINS_IXE unset — skipping (point it at a \
-                  compileinitstd-style .ixe to run the pins)"
-      return 0
+  let path ← Tests.Tc.ParityEnv.ensure
   let includeSlow := (← IO.getEnv "IX_PINS_SLOW").isSome
-  if !(← System.FilePath.pathExists path) then
-    IO.eprintln s!"tc-pins: IX_PINS_IXE file not found: {path}"
-    return 1
   let t0 ← IO.monoMsNow
   let bytes ← IO.FS.readBinFile path
   match Ixon.deEnv bytes with

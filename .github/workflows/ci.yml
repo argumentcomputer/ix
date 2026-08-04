@@ -14,17 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Build Ix once — with the --wfail lint gate over every lib/exe target — and
-  # let lean-action cache the full `.lake` under its per-sha key. The parallel
-  # test-core job restores that exact build instead of recompiling the base, as
-  # do ignored.yml's extended jobs (including the push-to-main-only Ix.Tc suite).
-  # `test: false` keeps this job build-only; those jobs run the tests. It also
-  # compiles and
-  # publishes the small `nataddcomm.ixe` fixture the zkVM execution gates
-  # (sp1-build/zisk-build) run their guests over: they need this exact `ix`
-  # build, so they consume it as an artifact and gate on this job succeeding.
+  # Build Ix once and cache `.lake` under lean-action's per-sha key. That cache
+  # holds the base Ix build — lean-action saves it right after building the
+  # default lib, before the all-targets lint below — and the parallel lean-test
+  # job and ignored.yml's extended jobs restore it instead of recompiling the
+  # base. `test: false` keeps this job build-only; those jobs run the tests. It
+  # also compiles and publishes the small `nataddcomm.ixe` fixture the zkVM
+  # execution gates (sp1-build/zisk-build) run their guests over: they need this
+  # exact `ix` build, so they consume it as an artifact and gate on this job
+  # succeeding.
   build:
-    name: lean-test
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
@@ -35,8 +34,7 @@ jobs:
           test: false
       # build-all lint driver compiles every lib/exe target with --wfail, so a
       # warning in any target (exes, benchmarks, Apps) — not just the default lib
-      # lean-action builds above — fails CI. Building them here also populates
-      # the cache the test-core job and ignored.yml's extended jobs restore.
+      # lean-action builds above — fails CI.
       - name: Build all targets
         run: lake lint -- --wfail -v
       - name: Check codegen'd IxVM kernel is up to date
@@ -61,8 +59,7 @@ jobs:
   # `.lake` read-only (exact per-sha key the `build` job wrote, prefix fallback
   # otherwise); lean-action just provisions the toolchain (no build/cache) and
   # the `lake test` steps run against the restored build.
-  test-core:
-    name: CLI and Aiur tests
+  lean-test:
     needs: build
     runs-on: warp-ubuntu-latest-x64-16x
     steps:

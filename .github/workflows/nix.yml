@@ -36,8 +36,9 @@ jobs:
       - run: nix build --print-build-logs --accept-flake-config .#checks.x86_64-linux.clippy
       - run: nix build --print-build-logs --accept-flake-config .#checks.x86_64-linux.nextest
       - run: nix build --print-build-logs --accept-flake-config .#checks.x86_64-linux.ix-tests
-      # Catch-all: near-free after the steps above; fails if a check is added
-      # to the flake without a step here.
+      # Catch-all: builds every flake check for this system (near-free — the
+      # heavy ones above are already in the store), so a check added without
+      # its own step is still verified here.
       - run: nix flake check --accept-flake-config
 
   # Tests Nix devShell support on Ubuntu
