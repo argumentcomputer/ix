@@ -90,6 +90,14 @@ def subst := ⟦
     }
   }
 
+  -- Memoized structural comparison used by substitution fast paths. Keeping
+  -- the u32 decomposition in this helper avoids charging its wide intrinsic
+  -- layout on every row of a hot substitution circuit; repeated `(depth,lbr)`
+  -- pairs share one constrained helper row.
+  fn memo_u32_less_than(a: G, b: G) -> G {
+    u32_less_than(a, b)
+  }
+
   -- ============================================================================
   -- has_bvar_in_range
   --
@@ -239,7 +247,7 @@ def subst := ⟦
       0 => e,
       _ =>
         let l = expr_lbr(e);
-        match u32_less_than(cutoff, l) {
+        match memo_u32_less_than(cutoff, l) {
           0 => e,
           1 => expr_lift_walk(e, shift, cutoff),
         },
@@ -312,7 +320,7 @@ def subst := ⟦
       0 => e,
       _ =>
         let l = expr_lbr(e);
-        match u32_less_than(cutoff, l) {
+        match memo_u32_less_than(cutoff, l) {
           0 => e,
           1 => expr_lower_walk(e, shift, cutoff),
         },
@@ -366,7 +374,7 @@ def subst := ⟦
     -- Fast path: when `expr_lbr(e) <= depth`, no BVar at or above depth
     -- exists in `e`, so the substitution is a no-op.
     let l = expr_lbr(e);
-    match u32_less_than(depth, l) {
+    match memo_u32_less_than(depth, l) {
       0 => e,
       1 => expr_inst1_walk(e, arg, depth),
     }
@@ -401,7 +409,7 @@ def subst := ⟦
   -- walk narrow. `store(BVar(i))` content-dedups to the same pointer the
   -- inline arm returned.
   fn expr_inst1_bvar(i: G, arg: KExpr, depth: G) -> KExpr {
-    match u32_less_than(i, depth) {
+    match memo_u32_less_than(i, depth) {
       1 => store(KExprNode.BVar(i)),
       0 =>
         match i - depth {
@@ -432,7 +440,7 @@ def subst := ⟦
   -- ============================================================================
   fn expr_inst_many(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
     let l = expr_lbr(e);
-    match u32_less_than(depth, l) {
+    match memo_u32_less_than(depth, l) {
       0 => e,
       1 => expr_inst_many_walk(e, substs, depth),
     }
@@ -450,7 +458,7 @@ def subst := ⟦
   fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
     let n = list_length(substs);
     let ofs = i - depth;
-    match u32_less_than(ofs, n) {
+    match memo_u32_less_than(ofs, n) {
       1 => expr_lift(list_lookup(substs, ofs), depth, 0),
       0 => store(KExprNode.BVar(i - n)),
     }
