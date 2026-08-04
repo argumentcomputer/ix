@@ -148,6 +148,32 @@ def whnf := ⟦
      0x23u8, 0xe8u8, 0x39u8, 0xf8u8, 0xf3u8, 0xf2u8, 0xb6u8, 0x31u8])
   }
 
+  -- The three quotient primitives reduction is allowed to fire on.
+  -- Same literals as `Kernel/Check.lean`'s; `Tests/Ix/Kernel/PrimAddrs.lean`
+  -- collects every `*_addr` function in the toplevel and asserts each
+  -- resolves to the constant its name claims, so a drifted copy fails
+  -- there rather than silently mis-reducing.
+  fn quot_ctor_addr_iota() -> Addr {
+    store([0x88u8, 0x26u8, 0x66u8, 0x77u8, 0xfeu8, 0xe7u8, 0x74u8, 0xd1u8,
+     0x09u8, 0x86u8, 0x7eu8, 0x4bu8, 0x22u8, 0x40u8, 0x28u8, 0x1au8,
+     0xa2u8, 0xeeu8, 0x12u8, 0xd9u8, 0x79u8, 0x20u8, 0xc1u8, 0x17u8,
+     0x1cu8, 0xf5u8, 0xc1u8, 0xf6u8, 0xc8u8, 0x7du8, 0xecu8, 0xf6u8])
+  }
+
+  fn quot_lift_addr_iota() -> Addr {
+    store([0x8du8, 0xc4u8, 0xa9u8, 0x75u8, 0x27u8, 0x81u8, 0x2fu8, 0x8bu8,
+     0x78u8, 0x17u8, 0xb7u8, 0x7cu8, 0xd0u8, 0x79u8, 0xacu8, 0xe6u8,
+     0x14u8, 0x50u8, 0xaau8, 0x01u8, 0x85u8, 0xacu8, 0x58u8, 0x85u8,
+     0x66u8, 0x1eu8, 0xc2u8, 0xacu8, 0xbau8, 0x8bu8, 0x7bu8, 0xd0u8])
+  }
+
+  fn quot_ind_addr_iota() -> Addr {
+    store([0x12u8, 0x49u8, 0x84u8, 0xbcu8, 0xb9u8, 0x52u8, 0x08u8, 0xa0u8,
+     0xf3u8, 0x0bu8, 0xb6u8, 0x9du8, 0x67u8, 0x36u8, 0xd3u8, 0xd5u8,
+     0x94u8, 0x04u8, 0xe1u8, 0x15u8, 0xe2u8, 0x20u8, 0x20u8, 0x43u8,
+     0xfdu8, 0xa3u8, 0xd3u8, 0x4eu8, 0x01u8, 0xb0u8, 0xadu8, 0x16u8])
+  }
+
   -- Mirror try_reduce_fin_val_decidable_rec (Primitive.lean:3141+).
   -- Rewrites `Proj Fin 0 (Decidable.rec α motive f_min t_min major post)`
   -- to  `Decidable.rec α (fun _ => Nat)
@@ -331,14 +357,31 @@ def whnf := ⟦
   }
 
   -- Quot iota: Quot.lift α r β f sound (Quot.mk α' r' a) = f a
-  -- and Quot.ind α r motive m (Quot.mk α' r' a) = m a. Fires only for
-  -- Lift/Ind kinds. Ctor/Typ stay stuck.
-  fn try_quot_iota(kind: QuotKind, spine: List‹KExpr›,
+  -- and Quot.ind α r motive m (Quot.mk α' r' a) = m a. Anything else
+  -- stays stuck.
+  --
+  -- Dispatch is on the ADDRESS alone, and the stored `QuotKind` is not
+  -- consulted. All three references decide this way — Rust
+  -- `try_quot_reduce` (`whnf.rs:3073-3120`) compares against
+  -- `self.prims.quot_lift.addr` / `quot_ind.addr`, `Ix/Tc`
+  -- `tryQuotReduce` (`Whnf.lean:1674-1698`) against `p.quotLift.addr` /
+  -- `p.quotInd.addr`, and lean4lean `quotReduceRec` (`Quot.lean:85-100`)
+  -- against the names `Quot.lift` / `Quot.ind`.
+  --
+  -- The kind field is a checked REDUNDANCY, not a dispatch input: Rust's
+  -- `check_quot` and `Ix/Tc`'s `checkQuot` both DERIVE the expected kind
+  -- from the address and assert the stored one matches. Reduction runs
+  -- before any of that — `get_ci` typechecks nothing — so keying on the
+  -- kind would trust a field no one has validated yet.
+  fn try_quot_iota(addr: Addr, spine: List‹KExpr›,
                          types: List‹KExpr›) -> (G, KExpr) {
-    match kind {
-      QuotKind.Lift => try_quot_lift(spine, types),
-      QuotKind.Ind => try_quot_ind(spine, types),
-      _ => (0, store(KExprNode.BVar(0))),
+    match address_eq(addr, quot_lift_addr_iota()) {
+      1 => try_quot_lift(spine, types),
+      _ =>
+        match address_eq(addr, quot_ind_addr_iota()) {
+          1 => try_quot_ind(spine, types),
+          _ => (0, store(KExprNode.BVar(0))),
+        },
     }
   }
 
@@ -376,21 +419,25 @@ def whnf := ⟦
 
   -- WHNF q; if q reduces to `App-spine(Const(Quot.mk), [α, r, a])`,
   -- return (1, a). Else (0, _).
+  --
+  -- The head is recognised by ADDRESS and the arity must be exactly 3,
+  -- which is all the references look at: Rust
+  -- `if *mk_addr != self.prims.quot_ctor.addr { return Ok(None) }` then
+  -- `if mk_args.len() != 3` (`whnf.rs:3108`), `Ix/Tc` the same against
+  -- `p.quotCtor.addr` (`Whnf.lean:1690-1698`), lean4lean
+  -- `if !mk.isAppOfArity ``Quot.mk 3` (`Quot.lean:88`). No `get_ci`, no
+  -- stored kind — the constant need not even be resolvable for this to
+  -- decide, and resolving it would only reintroduce the unvalidated tag.
   fn quot_extract_arg(q: KExpr, types: List‹KExpr›) -> (G, KExpr) {
     let q_w = whnf(q, types);
     match collect_spine(q_w) {
       (head, args) =>
         match load(head) {
           KExprNode.Const(caddr, _) =>
-            let ci = load(get_ci(caddr));
-            match ci {
-              KConstantInfo.Quot(_, _, kind) =>
-                match kind {
-                  QuotKind.Ctor =>
-                    match list_length(args) - 3 {
-                      0 => (1, list_lookup(args, 2)),
-                      _ => (0, store(KExprNode.BVar(0))),
-                    },
+            match address_eq(caddr, quot_ctor_addr_iota()) {
+              1 =>
+                match list_length(args) - 3 {
+                  0 => (1, list_lookup(args, 2)),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
               _ => (0, store(KExprNode.BVar(0))),
@@ -429,8 +476,8 @@ def whnf := ⟦
       -- bodies unfold only through lazy-delta's try_unfold_head, so
       -- proof_irrel / congruence get first shot at Thm-headed pairs.
       KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
-      KConstantInfo.Quot(_, _, kind) =>
-        let quot = try_quot_iota(kind, spine, types);
+      KConstantInfo.Quot(_, _, _) =>
+        let quot = try_quot_iota(addr, spine, types);
         match quot {
           (1, reduced) => whnf(reduced, types),
           _ => apply_spine(head, spine),
@@ -1116,8 +1163,8 @@ def whnf := ⟦
           (1, reduced) => whnf_nd(reduced, types),
           _ => apply_spine(head, spine),
         },
-      KConstantInfo.Quot(_, _, kind) =>
-        let quot = try_quot_iota(kind, spine, types);
+      KConstantInfo.Quot(_, _, _) =>
+        let quot = try_quot_iota(addr, spine, types);
         match quot {
           (1, reduced) => whnf_nd(reduced, types),
           _ => apply_spine(head, spine),

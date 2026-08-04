@@ -504,7 +504,13 @@ def defEq := ⟦
     }
   }
 
-  -- 1 iff ty is `Const(I, _) args` for a 1-ctor 0-field inductive.
+  -- 1 iff ty is `Const(I, _) args` for a 1-ctor 0-field NON-INDEXED
+  -- inductive.
+  --
+  -- The index count is part of the reference's test (`def_eq.rs:912`,
+  -- `if indices != 0 || ctors.len() != 1`) and of lean4lean's
+  -- (`numIndices := 0`); it was dropped here, which made `Eq α a b` and
+  -- every other 1-ctor 0-field indexed family read as unit-like.
   fn is_unit_like_type(ty: KExpr) -> G {
     match collect_spine(ty) {
       (head, _) =>
@@ -512,14 +518,21 @@ def defEq := ⟦
           KExprNode.Const(addr, _) =>
             let ci = load(get_ci(addr));
             match ci {
-              KConstantInfo.Induct(_, _, _, _, num_ctors, _, block, idx) =>
-                match num_ctors - 1 {
+              KConstantInfo.Induct(_, _, _, n_indices, num_ctors, _, block, idx) =>
+                -- Nested rather than summed: these are field elements, so
+                -- `n_indices + (num_ctors - 1)` is zero not only at (0, 1)
+                -- but also at (1, 0), where `num_ctors - 1` wraps to p-1.
+                match n_indices {
                   0 =>
-                    let cci = load(get_ci_cprj(block, idx, 0));
-                    match cci {
-                      KConstantInfo.Ctor(_, _, _, _, _, _, nfields, _) =>
-                        match nfields {
-                          0 => 1,
+                    match num_ctors - 1 {
+                      0 =>
+                        let cci = load(get_ci_cprj(block, idx, 0));
+                        match cci {
+                          KConstantInfo.Ctor(_, _, _, _, _, _, nfields, _) =>
+                            match nfields {
+                              0 => 1,
+                              _ => 0,
+                            },
                           _ => 0,
                         },
                       _ => 0,
@@ -546,19 +559,68 @@ def defEq := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src: `λty. body` vs non-Lam
-  -- `b` → compare `body` vs `App(lift(b, 1, 0), BVar 0)` under the
-  -- extended ctx.
+  -- `λ ty_a. body_a` vs non-Lam `b` → compare `body_a` against
+  -- `App(lift(b, 1, 0), BVar 0)` under the extended context.
+  --
+  -- `b`'s OWN domain decides whether this is legal, so infer it: all
+  -- three references build the wrapper lambda out of `b`'s inferred
+  -- binder type, not out of `ty_a`, and the ensuing Lam/Lam comparison
+  -- is what checks the two domains agree. Rust `try_eta_expansion`
+  -- (`def_eq.rs:1179-1211`) infers `s`, whnfs to `All`, and takes that
+  -- `ty`; `Ix/Tc` `tryEtaExpansion` (`DefEq.lean:946-951`) does the same
+  -- via `inferOnlyCall`; lean4lean `tryEtaExpansionCore`
+  -- (`TypeChecker.lean:507-511`) is `let .forallE name ty _ bi ← whnf
+  -- (← inferType s)`.
+  --
+  -- Reusing `ty_a` and never looking at `b` accepted
+  -- `(λ x : A. f x) ≡ f` for any `f`, whatever its domain. Comparing the
+  -- domains here is equivalent to the references' route through Lam/Lam,
+  -- which compares the domains and then descends under the FIRST
+  -- lambda's — hence `ty_a` for the inner context below.
+  --
+  -- `k_infer_only` to avoid the def-eq ↔ check cycle, as
+  -- `try_proof_irrel` does. A non-`Forall` inferred type means eta does
+  -- not apply and the ladder falls through to the structural compare,
+  -- matching the references' `return false`.
   fn try_eta_expand(ty_a: KExpr, body_a: KExpr, b: KExpr,
                         types: List‹KExpr›) -> G {
-    let b_lifted = expr_lift(b, 1, 0);
-    let bvar0 = store(KExprNode.BVar(0));
-    let b_app = store(KExprNode.App(b_lifted, bvar0));
-    let inner = store(ListNode.Cons(ty_a, types));
-    k_is_def_eq(body_a, b_app, inner)
+    let b_ty = k_infer_only(b, types);
+    let b_ty_w = whnf(b_ty, types);
+    match load(b_ty_w) {
+      KExprNode.Forall(dom_b, _) =>
+        match k_is_def_eq(ty_a, dom_b, types) {
+          0 => 0,
+          _ =>
+            let b_lifted = expr_lift(b, 1, 0);
+            let bvar0 = store(KExprNode.BVar(0));
+            let b_app = store(KExprNode.App(b_lifted, bvar0));
+            let inner = store(ListNode.Cons(ty_a, types));
+            k_is_def_eq(body_a, b_app, inner),
+        },
+      _ => 0,
+    }
   }
 
   -- 1 iff `whnf(infer_only(ty))` is `Sort 0`.
+  --
+  -- STRUCTURAL on purpose — do not swap this for `level_equal`. All three
+  -- references gate struct-eta and proof irrelevance on the level being
+  -- literally `Zero`: Rust `KUniv::is_zero` (`level.rs:112-114`, a
+  -- `matches!` on `UnivData::Zero`), `Ix/Tc` `KUniv.isZero`
+  -- (`Level.lean:64-66`), and lean4lean's `isProp`
+  -- (`TypeChecker.lean:192-193`), which compares against `.prop` with
+  -- structural `==`.
+  --
+  -- It is sound because levels are built by SIMPLIFYING constructors —
+  -- `level_imax` collapses `imax u 0` to `Zero` at construction, as
+  -- Rust's `KUniv::imax` and lean4lean's `mkLevelIMax'` do — and because
+  -- the test runs after `whnf`. So a Prop cannot reach here spelled any
+  -- other way.
+  --
+  -- Note this is NOT the rule everywhere: the projection-field Prop test
+  -- normalizes in Rust (`univ_eq`, `infer.rs:516`) and in `Ix/Tc`
+  -- (`Infer.lean:315`), which is why `is_inductive_prop` uses
+  -- `level_equal`. Those two tests are deliberately different.
   fn is_prop_type(ty: KExpr, types: List‹KExpr›) -> G {
     let sort = k_infer_only(ty, types);
     let sort_w = whnf(sort, types);
