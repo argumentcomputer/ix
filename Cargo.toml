@@ -5,6 +5,7 @@ members = [
   "crates/common",
   "crates/compile",
   "crates/ffi",
+  "crates/ffi-dyn",
   "crates/ixvm-codegen",
   "crates/ixon",
   "crates/kernel",
