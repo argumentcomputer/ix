@@ -9,18 +9,21 @@
 //! circuit work by a content-dependent factor cannot occur.
 //!
 //! The measurement unit is the SAME claim the prover pays for: a
-//! thin-frontier `CheckEnv` over a prefix of the schedule. Each segment
-//! grows its owned prefix adaptively — execute `CheckEnv[lo..lo+k]` against
-//! a shared `QueryRecord`, checkpoint the FFT, grow `k` while under the
-//! cut — so every constant is checked once per segment and dependencies
-//! stop at the assumed frontier. (Per-constant `Check{assumptions: None}`
-//! claims are NOT usable here: without a frontier the kernel checks the
-//! constant's whole dependency closure, which measures 100-1000× the real
-//! per-block shard cost and rederives the env spine per segment.) The
-//! grown record over-counts slightly — each growth step re-walks its
-//! claim's owned/assumption trees, and members assumed at step `i` may be
-//! checked at step `i+1` — so the checkpoint is a mild upper bound on the
-//! emitted shard's cold cost: the safe direction for packing.
+//! thin-frontier `CheckEnv`, one per BATCH of schedule blocks. Each
+//! segment grows batch by batch — execute the batch's claim against a
+//! shared `QueryRecord`, checkpoint (fft, record bytes), continue while
+//! under the cut — so every constant is checked once per segment and
+//! dependencies stop at the assumed frontier. (Per-constant
+//! `Check{assumptions: None}` claims are NOT usable here: without a
+//! frontier the kernel checks the constant's whole dependency closure,
+//! which measures 100-1000× the real per-block shard cost and rederives
+//! the env spine per segment.) The shared record over-counts slightly —
+//! each claim walks its own owned/assumption trees, and members assumed
+//! by one claim may be checked by the next — but batching divides that
+//! per-claim overhead by the batch size and removes intra-batch frontier
+//! edges entirely, so the checkpoint is a tight upper bound on the
+//! emitted shard's cold cost: the safe direction for packing, accurate
+//! enough to BE the manifest cost without a blanket re-price.
 //!
 //! Witness bytes are served LAZILY (`EnvFaultSource`): only the claim
 //! wires are seeded per attempt, and constant/hint/blob bytes materialize
@@ -250,7 +253,22 @@ struct ScanCtx<'a> {
   /// far beyond any single-shard budget. (`--workers 1` grants one worker
   /// the whole allowance when such a block must be measured anyway.)
   seg_byte_budget: usize,
+  /// Blocks per measurement claim. Batching divides the claim layer's
+  /// per-claim overhead (assumption-tree hashing, unshared `env_walk`
+  /// frames) by K and shrinks frontiers (intra-batch edges stop being
+  /// frontier members), keeping the running readout tight enough to
+  /// serve as the shard cost without a blanket re-price.
+  batch_blocks: usize,
 }
+
+/// Default blocks per measurement claim; `IX_SCAN_BATCH_BLOCKS`
+/// overrides (1 restores per-block claims). Fixed — never adaptive — so
+/// the partition stays independent of scheduling. Sized from the
+/// measured inflation curve on Init (drift vs one-cold-claim re-priced
+/// costs: K=16 +11.6%, K=64 +3.7%, K=128 +0.9%): at 128 the running
+/// readout is within the cut's ε margin, so it serves directly as the
+/// manifest cost.
+const SCAN_BATCH_BLOCKS: usize = 128;
 
 /// Smallest useful per-worker record cap, GiB. Typical segments at any
 /// realistic cut carry 3–8 GiB of record (measured 4–10% of the combined
@@ -317,11 +335,16 @@ pub fn scan_shards(
   }
   let env_bytes: u64 = blocks.iter().map(|b| b.size).sum();
   let (workers, seg_budget_gib) = fleet_plan(workers, cut_used_gib);
+  let batch_blocks = std::env::var("IX_SCAN_BATCH_BLOCKS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    .filter(|&k| k >= 1)
+    .unwrap_or(SCAN_BATCH_BLOCKS);
   let n_chunks = (workers * 2).min(blocks.len());
   eprintln!(
     "[scan] {} blocks, {workers} workers over {n_chunks} chunks, cut {:.1} \
      GiB combined (≈{:.1} BFFT fft-only), {seg_budget_gib:.1} GiB record \
-     cap per worker",
+     cap per worker, {batch_blocks} blocks per claim",
     blocks.len(),
     cut_used_gib,
     cut_fft / 1e9
@@ -389,6 +412,7 @@ pub fn scan_shards(
     failed: &failed,
     abort: &abort,
     seg_byte_budget: gib_to_bytes(seg_budget_gib),
+    batch_blocks,
   };
   type Range = (u32, u32, Vec<u32>);
   let queue: Mutex<std::collections::VecDeque<Range>> = Mutex::new(
@@ -474,15 +498,12 @@ pub fn scan_shards(
   // merges. This is what lets the chunk count scale with workers without
   // fragmenting the pack or corrupting the cost sidecar.
   let pre_merge = segments.len();
-  // EVERY segment starts dirty: the incremental scan's running readout
-  // carries per-block claim inflation (env_walk re-runs per claim), so
-  // each shard is re-priced once with the single cold thin-frontier
-  // CheckEnv a prove of it actually executes. Merging then compares true
-  // costs — without this, inflated sums block consolidation and the
-  // sidecar over-states prove RSS. (Re-measures run `workers`-wide; a
-  // shard's record is bounded by the cut, so the fleet bound holds.)
+  // Batched claims keep the running readout within a couple percent of
+  // the cold cost (per-claim overhead divided by the batch size), so
+  // only MERGED shards need a re-measure — their summed costs are the
+  // one remaining conservative estimate.
   let mut list: Vec<(Segment, bool)> =
-    segments.into_iter().map(|s| (s, true)).collect();
+    segments.into_iter().map(|s| (s, false)).collect();
   for round in 0usize.. {
     let used =
       |sg: &Segment| AIUR_RAM_GIB_PER_BFFT * sg.fft / 1e9 + sg.bytes_gib;
@@ -689,21 +710,29 @@ fn measure_shard(
 /// back on the queue for any idle worker.
 const RANGE_SEGMENTS: usize = 2;
 
-/// Scan one range: execute per-block thin-frontier `CheckEnv` claims
-/// against a shared record and lazily-faulted witness, checkpointing the
-/// running FFT after every block and cutting on the exact block boundary
-/// where it reaches the cut (the crossing block re-executes as the next
-/// segment's first block, so an emitted shard never exceeds the cut —
-/// except a single atomically-infeasible block, emitted alone with its
-/// measured cost). One claim per block costs ~1ms of plumbing (measured)
-/// plus a small per-block assumption-tree inflation that only steers cut
-/// placement — the merge + re-measure pass re-prices every shard with
-/// ONE real claim — and in exchange the scan is preemptible at BLOCK
-/// granularity: no growth attempts, no overshoot re-execution, no cold
-/// restarts, and RAM shedding or work-stealing acts between any two
-/// blocks instead of stalling behind a multi-minute claim execution.
+/// Scan one range: execute thin-frontier `CheckEnv` claims — one per
+/// BATCH of [`ScanCtx::batch_blocks`] blocks — against a shared record
+/// and lazily-faulted witness, checkpointing the running (fft, record
+/// bytes) after every claim and cutting on the batch boundary where it
+/// reaches the cut (the crossing batch re-executes as the next segment's
+/// first claim, so an emitted shard never exceeds the cut). Batching is
+/// what keeps the running readout honest: the claim layer's per-claim
+/// costs (in-circuit assumption-tree hashing, `env_walk` frames that are
+/// never memo-shared across claims, members assumed by one claim then
+/// checked by the next) shrink ~K-fold, and intra-batch edges stop being
+/// frontier members entirely, so the checkpoint stays a tight upper
+/// bound on the emitted shard's cold cost without a blanket re-price.
+///
+/// Any batch-level event that needs per-block attribution — the segment's
+/// FIRST claim crossing the cut, a kernel reject, or a record-cap trip
+/// with nothing banked — ends the segment at the last clean checkpoint
+/// (the polluted record is dropped) and re-enters that batch through a
+/// NARROW window, one block per claim, where the single-block semantics
+/// apply verbatim: a lone block over the cut is emitted alone with its
+/// measured cost, a rejected or over-cap block is named and skipped.
 /// Emits at most [`RANGE_SEGMENTS`] segments, then returns the remaining
-/// blocks for any idle worker.
+/// blocks for any idle worker; a remainder re-queued mid-window simply
+/// rediscovers the event deterministically.
 fn scan_range(
   ctx: &ScanCtx<'_>,
   chunk: &[u32],
@@ -714,6 +743,10 @@ fn scan_range(
   let n_chunks = ctx.n_chunks;
   let mut segments: Vec<Segment> = Vec::new();
   let mut lo = 0usize;
+  // Blocks below this index (and at/after `lo`) execute one per claim:
+  // a batch-level event landed in [lo, narrow_until) and needs per-block
+  // attribution. Stale values (< hi) are inert.
+  let mut narrow_until = 0usize;
   while lo < chunk.len() && segments.len() < RANGE_SEGMENTS {
     let mut record = QueryRecord::new(ctx.toplevel);
     // Arm the per-worker record cap for this fresh record. Worker threads
@@ -732,37 +765,55 @@ fn scan_range(
       if ctx.abort.load(Ordering::Acquire) {
         return Err("aborted after a failure elsewhere".to_string());
       }
-      let addr = ctx.blocks[chunk[hi] as usize].addr.clone();
-      // `Err(None)` = the record cap tripped mid-block (not a kernel
-      // verdict); `Err(Some(e))` = the kernel rejected the block.
-      let out: Result<(), Option<String>> = seed_shard_check_env_claim(
-        ctx.env,
-        std::slice::from_ref(&addr),
-        &mut io,
-      )
-      .map_err(Some)
-      .and_then(|(_claim, input)| {
-        execute_ixvm_with_record(
-          ctx.toplevel,
-          ctx.fun_idx,
-          &input,
-          &mut io,
-          &mut record,
-        )
-        .map(|_| ())
-        .map_err(|e| match e {
-          ExecError::RecordBudgetExceeded => None,
-          other => Some(other.to_string()),
-        })
-      });
-      // A cap trip on a segment that already holds blocks is an early
-      // cut, not a failure: cut at the previous block; the crossing
-      // block restarts the next segment with a fresh record and full
-      // cap, and only counts as over-cap if it then trips ALONE.
+      let k = if hi < narrow_until {
+        1
+      } else {
+        ctx.batch_blocks.min(chunk.len() - hi)
+      };
+      let addrs: Vec<Address> = chunk[hi..hi + k]
+        .iter()
+        .map(|&b| ctx.blocks[b as usize].addr.clone())
+        .collect();
+      // `Err(None)` = the record cap tripped mid-claim (not a kernel
+      // verdict); `Err(Some(e))` = the kernel rejected a block.
+      let out: Result<(), Option<String>> =
+        seed_shard_check_env_claim(ctx.env, &addrs, &mut io)
+          .map_err(Some)
+          .and_then(|(_claim, input)| {
+            execute_ixvm_with_record(
+              ctx.toplevel,
+              ctx.fun_idx,
+              &input,
+              &mut io,
+              &mut record,
+            )
+            .map(|_| ())
+            .map_err(|e| match e {
+              ExecError::RecordBudgetExceeded => None,
+              other => Some(other.to_string()),
+            })
+          });
+      // A cap trip on a segment that already holds claims is an early
+      // cut, not a failure: cut at the previous checkpoint; the crossing
+      // batch restarts the next segment with a fresh record and full
+      // cap, and only narrows if it then trips with nothing banked.
       if matches!(out, Err(None)) && hi > lo {
         break (hi, prev_fft, prev_bytes);
       }
       if let Err(err) = out {
+        if k > 1 {
+          // Per-block attribution needed: end the segment at the last
+          // clean checkpoint (dropping the polluted record) and rescan
+          // this batch one block per claim.
+          eprintln!(
+            "[scan {chunk_id}/{n_chunks}] narrowing batch at block \
+             {hi}: {}",
+            err.as_deref().unwrap_or("record cap crossed")
+          );
+          narrow_until = hi + k;
+          break (hi, prev_fft, prev_bytes);
+        }
+        let addr = &addrs[0];
         let e = err.unwrap_or_else(|| {
           format!(
             "record bytes crossed the {:.1} GiB per-worker cap alone — \
@@ -785,7 +836,7 @@ fn scan_range(
           "[scan {chunk_id}/{n_chunks}] SKIPPING block {}: {e}",
           addr.hex()
         );
-        ctx.failed.lock().unwrap().push((addr, e));
+        ctx.failed.lock().unwrap().push((addr.clone(), e));
         skip_failed = true;
         break (hi, prev_fft, prev_bytes);
       }
@@ -794,13 +845,23 @@ fn scan_range(
       let used = AIUR_RAM_GIB_PER_BFFT * fft / 1e9 + bytes_gib;
       if used >= ctx.cut_used_gib {
         if hi == lo {
+          if k > 1 {
+            // The segment's first batch crosses the whole cut: find the
+            // culprit at per-block granularity before emitting anything.
+            eprintln!(
+              "[scan {chunk_id}/{n_chunks}] narrowing batch at block \
+               {hi}: first claim crossed the cut"
+            );
+            narrow_until = hi + k;
+            break (hi, prev_fft, prev_bytes);
+          }
           // A single block alone reaches the cut: atomically infeasible
           // at this budget — emitted alone with its measured cost.
           break (hi + 1, fft, bytes_gib);
         }
         break (hi, prev_fft, prev_bytes);
       }
-      hi += 1;
+      hi += k;
       prev_fft = fft;
       prev_bytes = bytes_gib;
     };
