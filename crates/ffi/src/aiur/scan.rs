@@ -265,6 +265,32 @@ const SCAN_BATCH_BLOCKS: usize = 128;
 /// bounds the record and the cap only fires on mid-claim growth.
 const WORKER_OVERHEAD_GIB: f64 = 4.0;
 
+/// Fraction of box RAM the worker pool may plan against, with
+/// [`OS_RESERVE_GIB`] subtracted on top of the measured parent baseline.
+/// Sized so that every child brushing its cap simultaneously plus the
+/// parent plus OS/page-cache still leaves tens of GiB free (an 0.85
+/// plan measured 3 GiB free at the FLT fleet's high-water — too close).
+const POOL_RAM_FRAC: f64 = 0.72;
+const OS_RESERVE_GIB: f64 = 12.0;
+
+/// Smallest useful child cap; also bounds the auto worker count
+/// (`pool / floor`), so caps never shrink below what a segment's
+/// overhead needs.
+const WORKER_CAP_FLOOR_GIB: f64 = 6.0;
+
+/// Auto worker counts shrink until every child's even share of the pool
+/// clears the cap floor; explicit counts and thread mode pass through.
+fn bound_workers_by_pool(workers: usize, pool_gib: f64, proc: bool) -> usize {
+  if !proc {
+    return workers;
+  }
+  let by_floor: usize =
+    format!("{:.0}", (pool_gib / WORKER_CAP_FLOOR_GIB).floor())
+      .parse()
+      .unwrap_or(1);
+  workers.min(by_floor.max(1)).max(1)
+}
+
 /// The min-cut schedule order, truncated by the `IX_SCAN_LIMIT_BLOCKS`
 /// debug knob (a full-pipeline reproducer over a slice of a huge env,
 /// without extracting one; the result then does NOT cover the env).
@@ -437,8 +463,19 @@ pub fn scan_worker(
 ) -> Result<(), String> {
   use std::io::{BufRead, Write};
   let toplevel = system.toplevel();
-  let (blocks, adj) = schedule_blocks(env);
-  let order = ordered_schedule(&blocks, &adj, pieces);
+  // The parent already derived the schedule; children read it from the
+  // order file instead of re-deriving (30 children re-running the
+  // min-cut bisection concurrently was minutes of pure startup on
+  // FLT-scale envs). Fallback to self-derivation keeps the worker
+  // usable standalone.
+  let (blocks, order) = match std::env::var("IX_SCAN_ORDER_FILE") {
+    Ok(path) => read_order_file(&path)?,
+    Err(_) => {
+      let (blocks, adj) = schedule_blocks(env);
+      let order = ordered_schedule(&blocks, &adj, pieces);
+      (blocks, order)
+    },
+  };
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
   let ctx = ScanCtx {
@@ -504,6 +541,66 @@ pub fn scan_worker(
   Ok(())
 }
 
+/// Serialize the derived schedule for worker children: block addresses
+/// (in block-id order) and the min-cut order. Members and sizes are
+/// parent-side concerns (chunking, manifest assembly) — a worker needs
+/// only `id → addr` for claims and the order for range indexing.
+fn write_order_file(
+  path: &std::path::Path,
+  blocks: &[SchedBlock],
+  order: &[u32],
+) -> Result<(), String> {
+  let mut buf: Vec<u8> =
+    Vec::with_capacity(16 + blocks.len() * 32 + order.len() * 4);
+  buf.extend_from_slice(&(blocks.len() as u64).to_le_bytes());
+  for b in blocks {
+    buf.extend_from_slice(b.addr.as_bytes());
+  }
+  buf.extend_from_slice(&(order.len() as u64).to_le_bytes());
+  for &o in order {
+    buf.extend_from_slice(&o.to_le_bytes());
+  }
+  std::fs::write(path, buf).map_err(|e| format!("write {path:?}: {e}"))
+}
+
+fn read_order_file(path: &str) -> Result<(Vec<SchedBlock>, Vec<u32>), String> {
+  let buf =
+    std::fs::read(path).map_err(|e| format!("read order file {path}: {e}"))?;
+  let take_u64 = |buf: &[u8], pos: usize| -> Result<u64, String> {
+    buf
+      .get(pos..pos + 8)
+      .and_then(|b| b.try_into().ok())
+      .map(u64::from_le_bytes)
+      .ok_or_else(|| format!("order file {path}: truncated"))
+  };
+  let nblocks = usize::try_from(take_u64(&buf, 0)?)
+    .map_err(|_e| "order file: block count overflow".to_string())?;
+  let mut pos = 8;
+  let mut blocks = Vec::with_capacity(nblocks);
+  for _ in 0..nblocks {
+    let addr = buf
+      .get(pos..pos + 32)
+      .and_then(|b| Address::from_slice(b).ok())
+      .ok_or_else(|| format!("order file {path}: truncated address"))?;
+    blocks.push(SchedBlock { addr, members: Vec::new(), size: 0 });
+    pos += 32;
+  }
+  let norder = usize::try_from(take_u64(&buf, pos)?)
+    .map_err(|_e| "order file: order count overflow".to_string())?;
+  pos += 8;
+  let mut order = Vec::with_capacity(norder);
+  for _ in 0..norder {
+    let v = buf
+      .get(pos..pos + 4)
+      .and_then(|b| b.try_into().ok())
+      .map(u32::from_le_bytes)
+      .ok_or_else(|| format!("order file {path}: truncated order"))?;
+    order.push(v);
+    pos += 4;
+  }
+  Ok((blocks, order))
+}
+
 fn hex_encode(bytes: &[u8]) -> String {
   bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -517,61 +614,16 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
     .collect()
 }
 
-/// Per-run cgroup-v2 management under the user-delegated subtree. Every
-/// worker gets its own leaf with `memory.max` (the hard cap) and
-/// `memory.oom.group=1` (an over-cap worker dies whole, never
-/// half-alive). Best-effort: `None` anywhere means caps are unavailable
-/// (no delegation) and the pool runs uncapped with a warning.
-struct CgroupBase {
-  dir: std::path::PathBuf,
-}
-
-impl CgroupBase {
-  fn create() -> Option<Self> {
-    let uid = std::fs::read_to_string("/proc/self/status")
-      .ok()?
-      .lines()
-      .find_map(|l| l.strip_prefix("Uid:"))?
-      .split_whitespace()
-      .next()?
-      .to_string();
-    let dir = std::path::PathBuf::from(format!(
-      "/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service/ix-scan-{}",
-      std::process::id()
-    ));
-    std::fs::create_dir(&dir).ok()?;
-    Some(Self { dir })
-  }
-
-  fn child(&self, name: &str, cap_bytes: u64) -> Option<std::path::PathBuf> {
-    let d = self.dir.join(name);
-    // A respawned worker reuses its slot's cgroup: tolerate the existing
-    // dir and rewrite the cap, so replacements stay capped.
-    match std::fs::create_dir(&d) {
-      Ok(()) => {},
-      Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {},
-      Err(_) => return None,
-    }
-    std::fs::write(d.join("memory.max"), format!("{cap_bytes}")).ok()?;
-    // Best-effort: kill the whole worker on OOM, not one thread.
-    let _ = std::fs::write(d.join("memory.oom.group"), "1");
-    Some(d)
-  }
-
-  fn attach(dir: &std::path::Path, pid: u32) -> bool {
-    std::fs::write(dir.join("cgroup.procs"), format!("{pid}")).is_ok()
-  }
-}
-
-impl Drop for CgroupBase {
-  fn drop(&mut self) {
-    if let Ok(entries) = std::fs::read_dir(&self.dir) {
-      for e in entries.flatten() {
-        let _ = std::fs::remove_dir(e.path());
-      }
-    }
-    let _ = std::fs::remove_dir(&self.dir);
-  }
+/// Whether `systemd-run --user --scope` is available to enforce
+/// per-worker memory caps (the kernel migration a session-scoped process
+/// cannot do itself, done by the user manager over D-Bus). Probed once
+/// per pool; without it workers run uncapped with a loud warning.
+fn systemd_scope_caps_available() -> bool {
+  std::process::Command::new("systemd-run")
+    .args(["--user", "--scope", "--quiet", "--", "true"])
+    .status()
+    .map(|st| st.success())
+    .unwrap_or(false)
 }
 
 /// Everything the process pool needs to spawn and command workers.
@@ -590,7 +642,13 @@ struct ProcPool<'a> {
   /// fleet RAM only transiently and by design.
   pool_cap_bytes: u64,
   big_lane: Mutex<()>,
-  cgroups: Option<CgroupBase>,
+  /// The parent-derived schedule serialized for children (deleted when
+  /// the pool drops) — spawn startup is env-mmap + system build, not a
+  /// re-derivation.
+  order_file: std::path::PathBuf,
+  /// Caps are enforced via `systemd-run --user --scope -p MemoryMax=`;
+  /// false means the probe failed and workers run UNCAPPED.
+  capped: bool,
   order: &'a [u32],
   blocks: &'a [SchedBlock],
   fail_fast: bool,
@@ -609,21 +667,43 @@ struct ScanReply {
   next: usize,
 }
 
+impl Drop for ProcPool<'_> {
+  fn drop(&mut self) {
+    let _ = std::fs::remove_file(&self.order_file);
+  }
+}
+
 impl ProcPool<'_> {
   fn spawn(&self, slot: usize) -> Result<WorkerHandle, String> {
-    self.spawn_capped(slot, self.cap_bytes, &format!("w{slot}"))
+    self.spawn_capped(slot, self.cap_bytes)
   }
 
   fn spawn_capped(
     &self,
     slot: usize,
     cap_bytes: u64,
-    cg_name: &str,
   ) -> Result<WorkerHandle, String> {
     use std::process::{Command, Stdio};
-    let mut cmd = Command::new(&self.bin);
+    let mut cmd = if self.capped {
+      let mut c = Command::new("systemd-run");
+      c.args([
+        "--user",
+        "--scope",
+        "--quiet",
+        "-p",
+        &format!("MemoryMax={cap_bytes}"),
+        "-p",
+        "MemorySwapMax=0",
+        "--",
+        &self.bin,
+      ]);
+      c
+    } else {
+      Command::new(&self.bin)
+    };
     cmd
       .arg("shard-worker")
+      .env("IX_SCAN_ORDER_FILE", &self.order_file)
       .args(["--ixe", &self.ixe])
       .args(["--cut-gib", &format!("{}", self.cut_used_gib)])
       .args(["--batch", &format!("{}", self.batch_blocks)])
@@ -637,14 +717,6 @@ impl ProcPool<'_> {
     let mut child = cmd
       .spawn()
       .map_err(|e| format!("spawn worker {slot} ({}): {e}", self.bin))?;
-    if let Some(cg) = &self.cgroups {
-      match cg.child(cg_name, cap_bytes) {
-        Some(dir) if CgroupBase::attach(&dir, child.id()) => {},
-        _ => {
-          eprintln!("[scan] worker {slot}: cgroup attach failed; UNCAPPED");
-        },
-      }
-    }
     let stdin = child.stdin.take().expect("piped stdin");
     let stdout =
       std::io::BufReader::new(child.stdout.take().expect("piped stdout"));
@@ -914,14 +986,13 @@ fn run_pool_procs(
                         // falsely excluded by its slot's even share.
                         let big_reply = {
                           let _lane = pool.big_lane.lock().unwrap();
-                          pool
-                            .spawn_capped(slot, pool.pool_cap_bytes, "big")
-                            .ok()
-                            .map(|mut big| {
+                          pool.spawn_capped(slot, pool.pool_cap_bytes).ok().map(
+                            |mut big| {
                               let r = pool.scan(&mut big, b, b + 1);
                               big.reap();
                               r
-                            })
+                            },
+                          )
                         };
                         match big_reply {
                           Some(Ok(reply)) => {
@@ -1018,6 +1089,9 @@ pub fn execute_env(
   } else {
     workers
   };
+  // Provisional: re-bounded by pool/cap-floor once the measured
+  // baseline is known (proc mode only).
+
   let batch_blocks = std::env::var("IX_SCAN_BATCH_BLOCKS")
     .ok()
     .and_then(|v| v.parse::<usize>().ok())
@@ -1035,11 +1109,13 @@ pub fn execute_env(
   // the residency the worker fleet's record budget sits on top of.
   let baseline_gib = process_rss_gib();
   let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-  // Thread-mode record drop: each worker's even share of the measured
-  // headroom — segments cut (and drop their record) when they reach it.
-  let record_cut_gib = (ram.mul_add(0.85, -baseline_gib - 2.0)
-    / f64_from_usize(workers))
-  .clamp(4.0, 64.0);
+  let pool_gib =
+    ram.mul_add(POOL_RAM_FRAC, -(baseline_gib + OS_RESERVE_GIB)).max(8.0);
+  let workers =
+    bound_workers_by_pool(workers, pool_gib, proc_workers.is_some());
+  // Record drop: each worker's even share of the measured headroom —
+  // segments cut (and drop their record) when they reach it.
+  let record_cut_gib = (pool_gib / f64_from_usize(workers)).clamp(4.0, 64.0);
   let n_chunks = (workers * 2).min(blocks.len());
   eprintln!(
     "[exec] {} blocks, {workers} workers over {n_chunks} chunks, record \
@@ -1069,20 +1145,24 @@ pub fn execute_env(
       // on segment size, so width goes to the core count and the cap is
       // whatever the pool affords per worker — smaller segments cost
       // only a few percent of cold-boundary work.
-      let pool_gib = ram.mul_add(0.85, -baseline_gib - 2.0).max(8.0);
-      let cap_gib = (pool_gib / f64_from_usize(workers)).clamp(6.0, 64.0);
+      let cap_gib =
+        (pool_gib / f64_from_usize(workers)).clamp(WORKER_CAP_FLOOR_GIB, 64.0);
       let soft_gib = (cap_gib - WORKER_OVERHEAD_GIB).max(cap_gib / 2.0);
-      let cgroups = CgroupBase::create();
-      if cgroups.is_none() {
+      let capped = systemd_scope_caps_available();
+      if !capped {
         eprintln!(
-          "[exec] cgroup delegation unavailable — workers run UNCAPPED"
+          "[exec] systemd-run --user scopes unavailable — workers run \
+           UNCAPPED"
         );
       }
       eprintln!(
         "[exec] process pool: {workers} workers, {cap_gib:.1} GiB cap \
          each{}",
-        if cgroups.is_some() { " (cgroup memory.max)" } else { "" }
+        if capped { " (systemd MemoryMax)" } else { "" }
       );
+      let order_file = std::env::temp_dir()
+        .join(format!("ix-scan-order-{}.bin", std::process::id()));
+      write_order_file(&order_file, &blocks, &order)?;
       let pool = ProcPool {
         bin: bin.to_string(),
         ixe: ixe.to_string(),
@@ -1092,14 +1172,10 @@ pub fn execute_env(
         pieces: sched_pieces,
         exec_only: true,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        pool_cap_bytes: gib_to_bytes_u64(
-          crate::kernel::system_ram_gib()
-            .unwrap_or(64.0)
-            .mul_add(0.85, -baseline_gib - 2.0)
-            .max(8.0),
-        ),
+        pool_cap_bytes: gib_to_bytes_u64(pool_gib),
         big_lane: Mutex::new(()),
-        cgroups,
+        order_file,
+        capped,
         order: &order,
         blocks: &blocks,
         fail_fast,
@@ -1184,6 +1260,9 @@ pub fn scan_shards(
   } else {
     workers
   };
+  // Provisional: re-bounded by pool/cap-floor once the measured
+  // baseline is known (proc mode only).
+
   let batch_blocks = std::env::var("IX_SCAN_BATCH_BLOCKS")
     .ok()
     .and_then(|v| v.parse::<usize>().ok())
@@ -1206,13 +1285,18 @@ pub fn scan_shards(
   // Content denser than the cap is a per-block event: the cgroup kill
   // names it, and the big-lane retry (whole-pool cap, serialized) rescues
   // blocks that are heavy but provable.
+  let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
+  let pool_gib =
+    ram.mul_add(POOL_RAM_FRAC, -(baseline_gib + OS_RESERVE_GIB)).max(8.0);
+  let workers =
+    bound_workers_by_pool(workers, pool_gib, proc_workers.is_some());
   let proc_cap_gib = proc_workers.map(|_| {
-    let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-    let pool_gib = ram.mul_add(0.85, -baseline_gib - 2.0).max(8.0);
     std::env::var("IX_SCAN_WORKER_CAP_GIB")
       .ok()
       .and_then(|v| v.parse::<f64>().ok())
-      .unwrap_or_else(|| (pool_gib / f64_from_usize(workers)).clamp(6.0, 64.0))
+      .unwrap_or_else(|| {
+        (pool_gib / f64_from_usize(workers)).clamp(WORKER_CAP_FLOOR_GIB, 64.0)
+      })
   });
   let n_chunks = (workers * 2).min(blocks.len());
   eprintln!(
@@ -1244,16 +1328,20 @@ pub fn scan_shards(
     Some((bin, ixe)) => {
       let cap_gib = proc_cap_gib.unwrap_or(16.0);
       let soft_gib = (cap_gib - WORKER_OVERHEAD_GIB).max(cap_gib / 2.0);
-      let cgroups = CgroupBase::create();
-      if cgroups.is_none() {
+      let order_file = std::env::temp_dir()
+        .join(format!("ix-scan-order-{}.bin", std::process::id()));
+      write_order_file(&order_file, &blocks, &order)?;
+      let capped = systemd_scope_caps_available();
+      if !capped {
         eprintln!(
-          "[scan] cgroup delegation unavailable — workers run UNCAPPED"
+          "[scan] systemd-run --user scopes unavailable — workers run \
+           UNCAPPED"
         );
       }
       eprintln!(
         "[scan] process pool: {workers} workers, {cap_gib:.1} GiB cap \
          each{}, soft record cut {soft_gib:.1} GiB",
-        if cgroups.is_some() { " (cgroup memory.max)" } else { "" },
+        if capped { " (systemd MemoryMax)" } else { "" },
       );
       let pool = ProcPool {
         bin: bin.to_string(),
@@ -1264,14 +1352,10 @@ pub fn scan_shards(
         pieces: sched_pieces,
         exec_only: false,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        pool_cap_bytes: gib_to_bytes_u64(
-          crate::kernel::system_ram_gib()
-            .unwrap_or(64.0)
-            .mul_add(0.85, -baseline_gib - 2.0)
-            .max(8.0),
-        ),
+        pool_cap_bytes: gib_to_bytes_u64(pool_gib),
         big_lane: Mutex::new(()),
-        cgroups,
+        order_file,
+        capped,
         order: &order,
         blocks: &blocks,
         fail_fast,
