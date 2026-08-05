@@ -49,6 +49,7 @@ inductive CheckError
   | infiniteType : Nat → Typ → CheckError
   | unresolvedMVar : Nat → CheckError
   | u8LitOutOfRange : Nat → CheckError
+  | unconstrainedBigUintDivModType : Typ → CheckError
   | entryHasPointer : Global → CheckError
   deriving Repr
 
@@ -405,6 +406,20 @@ length. -/
 def zonkTyp (t : Typ) : CheckM Typ := do
   let s ← get
   zonkTypBound (s.nextMVar + 1) {} t
+
+/-- Fixed signature of `unconstrainedBigUintDivMod`: the inputs are lists
+of U64 limbs — a pointer to a list datatype instantiated at `[U8; 8]`
+(e.g. `KLimbs = List‹U64›`) — and each result is the SAME list datatype
+instantiated at `[G; 8]`. The result limbs are UNCONSTRAINED prover
+advice, so they must not type as range-checked bytes; consumers rebuild
+`u8` limbs via `u8_range_check` (see `glimbs_to_klimbs` in the IxVM
+kernel). The list's constructor shape is not verified here; the runtime
+BigUint::div_rem faults on a malformed chain. Takes the ZONKED input
+type. -/
+def bigUintDivModResultTyp : Typ → CheckM Typ
+  | .pointer (.app g #[.array .u8 8]) =>
+    pure (.pointer (.app g #[.array .field 8]))
+  | τ => throw $ .unconstrainedBigUintDivModType τ
 
 def instantiateParams (params : List String) : CheckM (Array Typ × (Global → Option Typ)) := do
   let mvars ← (params.toArray.mapM fun _ => freshMVar)
@@ -795,12 +810,11 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let b' ← checkNoEscape b .field
     pure (Typed.Term.u8RangeCheck (.tuple #[.u8, .u8]) false a' b')
   | .unconstrainedBigUintDivMod a b => do
-    -- Both inputs must be the same type (expected `List<U64>` at runtime,
-    -- but the type-checker is generic: any container will type-check, and
-    -- the runtime BigUint::div_rem will fault on a malformed shape).
+    -- See `bigUintDivModResultTyp` for the op's fixed signature.
     let a' ← inferNoEscape a
     let b' ← checkNoEscape b a'.typ
-    pure (Typed.Term.unconstrainedBigUintDivMod (.tuple #[a'.typ, a'.typ]) false a' b')
+    let τ ← bigUintDivModResultTyp (← zonkTyp a'.typ)
+    pure (Typed.Term.unconstrainedBigUintDivMod (.tuple #[τ, τ]) false a' b')
   | .unconstrainedGToBytes a => do
     -- The bytes are UNCONSTRAINED advice typed `u8`; the caller must
     -- range-check them (see `Source.Term.unconstrainedGToBytes`).

@@ -190,8 +190,11 @@ def klimbs := ⟦
     }
   }
 
-  -- Strip trailing zero limbs (canonicalize `[k, 0, 0]` → `[k]`).
-  -- Force every limb byte of a prover-supplied `KLimbs` into [0, 256).
+  -- Convert a prover-supplied field-typed limb list into a checked
+  -- `KLimbs`: every byte is forced into [0, 256) and the CHECKED outputs
+  -- (typed `u8`) rebuild the limbs. This is the only door from
+  -- `unconstrained_big_uint_div_mod` advice (typed `List‹[G; 8]›` by the
+  -- checker precisely so it cannot pose as bytes) back into `KLimbs`.
   --
   -- `KLimbs` is canonical in two independent ways — no trailing zero
   -- limbs, and every byte in range — and `klimbs_normalize` only
@@ -200,16 +203,17 @@ def klimbs := ⟦
   -- unequal to its canonical form, so `Nat.beq` answers `false` where
   -- Lean answers `true`. `u8_range_check` takes a pair per lookup row,
   -- so eight bytes cost four.
-  fn klimbs_range_check(n: KLimbs) {
+  fn glimbs_to_klimbs(n: List‹[G; 8]›) -> KLimbs {
     match load(n) {
-      ListNode.Nil => (),
+      ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(limb, rest) =>
         let [b0, b1, b2, b3, b4, b5, b6, b7] = limb;
-        let (_, _) = u8_range_check(to_field(b0), to_field(b1));
-        let (_, _) = u8_range_check(to_field(b2), to_field(b3));
-        let (_, _) = u8_range_check(to_field(b4), to_field(b5));
-        let (_, _) = u8_range_check(to_field(b6), to_field(b7));
-        klimbs_range_check(rest),
+        let (c0, c1) = u8_range_check(b0, b1);
+        let (c2, c3) = u8_range_check(b2, b3);
+        let (c4, c5) = u8_range_check(b4, b5);
+        let (c6, c7) = u8_range_check(b6, b7);
+        store(ListNode.Cons([c0, c1, c2, c3, c4, c5, c6, c7],
+          glimbs_to_klimbs(rest))),
     }
   }
 
@@ -506,27 +510,29 @@ def klimbs := ⟦
   -- `r < b` when `b != 0`. For `b == 0` the op returns `(0, a)`; only the
   -- `q*b + r == a` equality is required (which holds: `0*0 + a == a`).
   --
-  -- Soundness on the prover-supplied bytes: pinned by the explicit
-  -- `klimbs_range_check`es below, NOT by the arithmetic. `u64_mul` was
-  -- rewritten to raw field products plus `#split_carry`, whose u8 checks
-  -- constrain the split OUTPUTS, not the input digits — and it
-  -- re-canonicalizes while multiplying, so a digit-wrong `q` still yields
-  -- a canonical `q*b` and sails through the equality below. That left the
-  -- quotient's VALUE pinned but its representation free, which is enough:
-  -- `klimbs_eq` compares limbs rather than values, so a digit-wrong
-  -- quotient makes `Nat.beq (Nat.div 300 1) 300` answer `false`.
-  -- Trailing junk limbs are caught by the post-normalize equality.
+  -- Soundness on the prover-supplied bytes: pinned by the range checks
+  -- inside `glimbs_to_klimbs` below, NOT by the arithmetic — and the
+  -- checker enforces the discipline by typing the hint `List‹[G; 8]›`,
+  -- so the limbs cannot reach a `u8` consumer without that conversion.
+  -- `u64_mul` was rewritten to raw field products plus `#split_carry`,
+  -- whose u8 checks constrain the split OUTPUTS, not the input digits —
+  -- and it re-canonicalizes while multiplying, so a digit-wrong `q`
+  -- still yields a canonical `q*b` and sails through the equality below.
+  -- That left the quotient's VALUE pinned but its representation free,
+  -- which is enough: `klimbs_eq` compares limbs rather than values, so a
+  -- digit-wrong quotient makes `Nat.beq (Nat.div 300 1) 300` answer
+  -- `false`. Trailing junk limbs are caught by the post-normalize
+  -- equality.
   fn klimbs_div_mod(a: KLimbs, b: KLimbs) -> (KLimbs, KLimbs) {
     let (q_hint, r_hint) = unconstrained_big_uint_div_mod(a, b);
-    -- Normalize the hint before anything reads it. The op is unconstrained,
-    -- so nothing stops the prover returning limb lists with trailing zeros,
-    -- and these values are returned to callers: `klimbs_gcd` feeds the
-    -- remainder straight back as the next DIVISOR, where a trailing zero
-    -- limb made the `r < b` test pass vacuously.
-    let q = klimbs_normalize(q_hint);
-    let r = klimbs_normalize(r_hint);
-    klimbs_range_check(q);
-    klimbs_range_check(r);
+    -- Convert (range-checking every byte), then normalize. The op is
+    -- unconstrained, so nothing stops the prover returning limb lists
+    -- with trailing zeros, and these values are returned to callers:
+    -- `klimbs_gcd` feeds the remainder straight back as the next
+    -- DIVISOR, where a trailing zero limb made the `r < b` test pass
+    -- vacuously.
+    let q = klimbs_normalize(glimbs_to_klimbs(q_hint));
+    let r = klimbs_normalize(glimbs_to_klimbs(r_hint));
     let qb = klimbs_mul(q, b);
     let lhs = klimbs_normalize(klimbs_add(qb, r));
     let rhs = klimbs_normalize(a);
