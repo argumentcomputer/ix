@@ -117,8 +117,13 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
 ]
 
-/-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
-def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
+/-- Primary test runners — quick suites run by default alongside
+`primarySuites`, but kept as deferred `IO` actions (not `TestSeq`
+values) so their setup — Aiur system builds, STARK proofs — does not
+execute at module initialization for unrelated invocations. All are
+seconds-scale (measured 2026-08-05: aiur-prove ~11s, the rest 2-4s
+each). -/
+def primaryRunners : List (String × IO UInt32) := [
   ("aiur-prove", do
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
@@ -135,6 +140,20 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
+  ("rbtree-map", do
+    IO.println "rbtree-map"
+    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
+    | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
+    | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
+  -- Multi-STARK recursive verifier: `multi-stark` runs the verifier's
+  -- primitive self-tests, `recursive-verifier` the full
+  -- factorial-prove → recursive-verify → reject-tampering pipeline.
+  ("multi-stark", Tests.MultiStark.selfTestSuite),
+  ("recursive-verifier", Tests.MultiStark.endToEndSuite),
+]
+
+/-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
+def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
   ("ixvm", do
     let kernelChecks ← kernelChecks env
     -- the kernel CheckEnv smokes .
@@ -207,16 +226,6 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
-  ("rbtree-map", do
-    IO.println "rbtree-map"
-    match AiurTestEnv.build (pure IxVM.rbTreeMap) with
-    | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
-    | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
-  -- Multi-STARK recursive verifier (formerly the `recursive-verifier` executable):
-  -- `multi-stark` runs the cheap primitive self-tests, `recursive-verifier` runs the
-  -- ~1.5 min factorial-prove → recursive-verify → reject-tampering pipeline.
-  ("multi-stark", Tests.MultiStark.selfTestSuite),
-  ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
@@ -264,12 +273,26 @@ def main (args : List String) : IO UInt32 := do
   -- Run primary tests unless --ignored (without --include-ignored) is specified
   if !runIgnored || includeIgnored then
     let primaryArgs := if runIgnored || includeIgnored then [] else filterArgs
+    -- Same guard as the ignored section: a filter arg naming neither a
+    -- primary suite nor a primary runner must be an ERROR, not a silent
+    -- no-op reporting success having run nothing.
+    for arg in primaryArgs do
+      if !primarySuites.contains arg
+          && !(primaryRunners.any fun (key, _) => key == arg)
+          && arg != "getfileenv-body" then
+        IO.eprintln s!"error: no primary suite or runner named '{arg}'"
+        return 1
     let primaryResult ← LSpec.lspecIO primarySuites primaryArgs
     if primaryResult != 0 then return primaryResult
     -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
     let envBodySeq ← Tests.Ix.EnvBody.suite
     let envBodyResult ← LSpec.lspecIO (.ofList [("getfileenv-body", [envBodySeq])]) primaryArgs
     if envBodyResult != 0 then return envBodyResult
+    let runners := if primaryArgs.isEmpty then primaryRunners
+      else primaryRunners.filter fun (key, _) => primaryArgs.contains key
+    for (_, action) in runners do
+      let r ← action
+      if r != 0 then return r
 
   -- Run ignored tests when --ignored or --include-ignored is specified
   if runIgnored || includeIgnored then

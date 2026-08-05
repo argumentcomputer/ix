@@ -80,10 +80,12 @@ jobs:
           use-github-cache: false
       - name: Test Ix CLI
         run: lake test --wfail -- cli
-      - name: Aiur compiler and interpreter tests
-        run: lake test --wfail -- aiur-cross
       - name: Aiur tests
-        run: lake test --wfail -- --ignored aiur-prove aiur-hashes ixvm multi-stark recursive-verifier
+        run: >-
+          lake test --wfail -- aiur-cross aiur-prove aiur-hashes rbtree-map
+          multi-stark recursive-verifier
+      - name: IxVM kernel tests
+        run: lake test --wfail -- --ignored ixvm
 
   rust-test:
     runs-on: ubuntu-latest

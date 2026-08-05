@@ -11,7 +11,7 @@ public import Blake3.Rust
 # Tests for the Multi-STARK recursive verifier
 
 These exercise `Ix/MultiStark.lean` (the in-circuit verifier) the way the former
-standalone `RecursiveVerifier.lean` executable did, split into two ignored
+standalone `RecursiveVerifier.lean` executable did, split into two primary
 runners (registered in `Tests/Main.lean`, both wired into `ci.yml`):
 
 * **`multi-stark`** — `selfTestSuite`. Executes the verifier's primitive
@@ -22,8 +22,8 @@ runners (registered in `Tests/Main.lean`, both wired into `ci.yml`):
   bytecode execution, no proving. The in-circuit `assert_eq!`s do the checking;
   every entrypoint returns `1` on success.
 
-* **`recursive-verifier`** — `endToEndSuite`. The full pipeline (~1.5 min,
-  dominated by proving + the verifier executions):
+* **`recursive-verifier`** — `endToEndSuite`. The full pipeline (a few
+  seconds, dominated by proving + the verifier executions):
   1. prove `factorial(5) = 120` with the Multi-STARK backend,
   2. feed that proof as non-deterministic advice (IO channel 0; vk on 1, claims
      on 2) and run `verify_multi_stark_proof` over it — it must accept,
