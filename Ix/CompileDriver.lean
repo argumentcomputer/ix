@@ -260,7 +260,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
   let mut cenv := acc.cenv
   cenv := { cenv with
     totalBytes := cenv.totalBytes + result.blockBytes.size
-    constants := cenv.constants.insert result.blockAddr result.block
+    constants := cenv.constants.insert result.blockAddr result.blockBytes
     blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) cenv.blobs }
   -- Primary registrations.
   if result.projections.isEmpty then
@@ -274,13 +274,13 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       let projAddr := Address.blake3 projBytes
       cenv := { cenv with
         totalBytes := cenv.totalBytes + projBytes.size
-        constants := cenv.constants.insert projAddr proj
+        constants := cenv.constants.insert projAddr projBytes
         nameToNamed := cenv.nameToNamed.insert name { addr := projAddr, constMeta }
         nameToAddr := cenv.nameToAddr.insert name projAddr }
   -- Aux tail outputs: stored constants, Named overrides (in registration
   -- order — LAST wins per name), aux resolution map, extra names, plans.
   for (addr, c) in cache.auxConsts do
-    cenv := { cenv with constants := cenv.constants.insert addr c }
+    cenv := { cenv with constants := cenv.constants.insert addr (Ixon.ser c) }
   for (n, named) in cache.auxNamed do
     cenv := { cenv with nameToNamed := cenv.nameToNamed.insert n named }
   cenv := { cenv with
@@ -439,7 +439,7 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
     | none => m
   let ixonEnv : Ixon.Env := {
     consts := cenv.constants.fold (init := {})
-      fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
+      fun m a bytes => m.insert a { buf := bytes, len := bytes.size }
     named := namedWithHints
     blobs := allBlobs
     names := namesMap
@@ -915,6 +915,20 @@ blocks remaining but none ready"
                   return .error s!"rustRef mismatch at {name.pretty}: \
 lean={named.addr} rust={rustAddr} (block {lo.pretty})"
         compiled := compiled + 1
+        -- Memory attribution trace: which driver-retained structure is
+        -- growing. Enable with `dbg` or IX_COMPILE_DBG=1.
+        if dbg && compiled % 20000 == 0 then
+          let rssKb ← do
+            let st ← IO.FS.readFile "/proc/self/status"
+            pure <| (st.splitOn "\n").findSome? fun l =>
+              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
+          IO.println s!"  [compile-lean] {compiled}/{totalBlocks} blocks · \
+rss{(rssKb.getD "?").trimAscii} · consts {acc.cenv.constants.size} \
+({acc.cenv.totalBytes} B ser) · named {acc.cenv.nameToNamed.size} · \
+blobs {acc.cenv.blobs.size} · plans {acc.cenv.callSitePlans.size}\
+/{acc.cenv.brecOnCallSitePlans.size}/{acc.cenv.belowCallSitePlans.size} · \
+auxNames {acc.cenv.auxNameToAddr.size}"
+          (← IO.getStdout).flush
 
     for (lo, _) in ready do
       remaining := remaining.erase lo
@@ -977,6 +991,9 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     : IO (Except String LeanPipelineOut) := do
+  -- IX_COMPILE_DBG=1 forces phase timing + the driver's periodic memory
+  -- attribution trace without threading a flag through callers.
+  let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
   let tick (label : String) (t0 : Nat) : IO Nat := do
     let t1 ← IO.monoMsNow
     if dbg then

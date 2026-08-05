@@ -184,12 +184,15 @@ private def openConstantInfoDefn : Bool :=
     match env'.nameToNamed.get? ixName with
     | some named =>
       match env'.constants.get? named.addr with
-      | some constant =>
-        let info := Ix.Commit.openConstantInfo constant.info
-        -- Should be a defn variant with all fields some
-        match info with
-        | .defn (some _) (some .safe) (some _) (some _) (some _) => true
-        | _ => false
+      | some bytes =>
+        match Ixon.deConstantAt bytes 0 with
+        | .ok constant =>
+          let info := Ix.Commit.openConstantInfo constant.info
+          -- Should be a defn variant with all fields some
+          match info with
+          | .defn (some _) (some .safe) (some _) (some _) (some _) => true
+          | _ => false
+        | .error _ => false
       | none => false
     | none => false
   | .error _ => false
@@ -201,10 +204,13 @@ private def openConstantInfoRoundtrips : Bool :=
     match env'.nameToNamed.get? ixName with
     | some named =>
       match env'.constants.get? named.addr with
-      | some constant =>
-        let info := Ix.Commit.openConstantInfo constant.info
-        -- The fully-revealed RevealConstantInfo should serde roundtrip
-        claimRoundtrips (.reveal payload1 info)
+      | some bytes =>
+        match Ixon.deConstantAt bytes 0 with
+        | .ok constant =>
+          let info := Ix.Commit.openConstantInfo constant.info
+          -- The fully-revealed RevealConstantInfo should serde roundtrip
+          claimRoundtrips (.reveal payload1 info)
+        | .error _ => false
       | none => false
     | none => false
   | .error _ => false

@@ -78,7 +78,7 @@ def recC (name : String) (rules : Array RecursorRule) (typ : Expr := sort0) :
              isUnsafe := false }
 
 def mkEnv (cs : List (Name × ConstantInfo)) : Environment :=
-  ⟨Std.HashMap.ofList cs⟩
+  { consts := Std.HashMap.ofList cs }
 
 def refsMap (l : List (Name × List Name)) : Ix.Map Name (Ix.Set Name) :=
   l.foldl (init := {}) fun m (k, vs) =>

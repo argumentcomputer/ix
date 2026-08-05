@@ -47,8 +47,14 @@ structure CompileEnv where
       `stt.name_to_addr`): primary block/projection registrations plus
       `promote_aux` copies. First hop of `lookupConstAddr`. -/
   nameToAddr : Std.HashMap Name Address := {}
-  /-- Compiled constants storage -/
-  constants : Std.HashMap Address Ixon.Constant
+  /-- Compiled constants storage, SERIALIZED. Holding structured
+      `Ixon.Constant`s here retained a whole-env-scale object graph for
+      the entire compile; the serialized bytes (already computed when a
+      block merges) are the compact form — Rust's mathlib compile peaks
+      ~20 GiB largely because compiled output lives as bytes. Readers
+      needing structure parse on demand (`Ixon.deConstantAt`); assembly
+      wraps entries as byte-backed `Ixon.LazyConstant`s. -/
+  constants : Std.HashMap Address ByteArray
   /-- Blob storage for literals -/
   blobs : Std.HashMap Address ByteArray
   /-- Total bytes of serialized constants (for profiling) -/
@@ -2317,7 +2323,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
       let blockAddr := result.blockAddr
       compileEnv := { compileEnv with
         totalBytes := compileEnv.totalBytes + blockBytes.size
-        constants := compileEnv.constants.insert blockAddr result.block
+        constants := compileEnv.constants.insert blockAddr blockBytes
         blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
       }
       blockNames := cache.blockNames.fold (fun m k v => m.insert k v) blockNames
@@ -2336,7 +2342,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
           let projAddr := Address.blake3 projBytes
           compileEnv := { compileEnv with
             totalBytes := compileEnv.totalBytes + projBytes.size
-            constants := compileEnv.constants.insert projAddr proj
+            constants := compileEnv.constants.insert projAddr projBytes
             nameToNamed := compileEnv.nameToNamed.insert name { addr := projAddr, constMeta }
             nameToAddr := compileEnv.nameToAddr.insert name projAddr
           }
@@ -2398,7 +2404,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
 
   let ixonEnv : Ixon.Env := {
     consts := compileEnv.constants.fold (init := {})
-      fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
+      fun m a bytes => m.insert a { buf := bytes, len := bytes.size }
     named := namedWithHints
     blobs := allBlobs
     names := namesMap
@@ -2468,8 +2474,8 @@ structure BlockCompileResult where
 structure ParallelState where
   /-- Map from constant name to Named (address + metadata) -/
   nameToNamed : Std.HashMap Name Ixon.Named
-  /-- Compiled constants storage -/
-  constants : Std.HashMap Address Ixon.Constant
+  /-- Compiled constants storage, SERIALIZED (see `CompileEnv.constants`). -/
+  constants : Std.HashMap Address ByteArray
   /-- Blob storage -/
   blobs : Std.HashMap Address ByteArray
   /-- Total bytes compiled -/
