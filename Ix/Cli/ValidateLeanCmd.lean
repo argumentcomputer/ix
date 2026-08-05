@@ -80,12 +80,21 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- Sources: either elaborate a Lean file (full pipeline, oracle
   -- available) or read a pre-compiled `.ixe` (phases 2–3 only).
+  let fullOracle := p.hasFlag "full-oracle"
   let mut phases : Array (String × PhaseResult) := #[]
   let mut bytes : ByteArray := .empty
   let mut leanEnv? : Option Lean.Environment := none
-  -- Canonicalized source view (phase 1's canon output) — phase 5's
-  -- decompile oracle.
+  -- Phase 5's decompile oracle, in one of two forms. The default is a
+  -- per-name 64-bit DIGEST of the canonicalized source (derived
+  -- `Hashable`, same field coverage as the `BEq` used by `--full-oracle`,
+  -- O(1) at the hash-consed Name/Level/Expr leaves): the whole canon env
+  -- is released right after phase 1 instead of being held through
+  -- phase 5, which at whole-Mathlib scale is an env-sized RSS saving.
+  -- `--full-oracle` keeps the old whole-env view: full structural BEq per
+  -- constant plus the decompiler's per-recovery debug track — use it to
+  -- debug a digest mismatch on a filtered (`--ns`) closure.
   let mut canonView? : Option (Std.HashMap Ix.Name Ix.ConstantInfo) := none
+  let mut canonDigests? : Option (Std.HashMap Ix.Name UInt64) := none
 
   match ixe?, path? with
   | some ixePath, _ =>
@@ -126,7 +135,15 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
         .failed s!"pure-Lean pipeline: {e}")
     | .ok out =>
       bytes := out.bytes
-      canonView? := some out.cenv.env.consts
+      if fullOracle then
+        canonView? := some out.cenv.env.consts
+      else
+        -- Digest the canonicalized source (including compile-generated
+        -- aux originals) and let the canon env free with `out`.
+        let mut digs : Std.HashMap Ix.Name UInt64 := {}
+        for (n, ci) in out.cenv.env.consts do
+          digs := digs.insert n (hash ci)
+        canonDigests? := some digs
       let t1 ← IO.monoMsNow
       if out.cenv.ungrounded.size > 0 then
         let shown := out.cenv.ungrounded.toList.take 3
@@ -191,12 +208,19 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
             .failed (s!"{report.errorCount} comparison error(s); {counts}\n" ++
               String.intercalate "\n" msgs.toList))
 
+  -- The Lean source env's job ends with phase 4 — release it before the
+  -- decompile phase so its elaboration overlay can be reclaimed (the
+  -- compacted import region stays mapped either way).
+  leanEnv? := none
+
   -- Phase 5: decompile through the full pure-Lean driver (Pass 1
   -- aux-skip → Pass 1.5 flags → Pass 2 aux regeneration/recovery).
   -- With a Lean source (path mode) the canonicalized env is the oracle:
-  -- every reconstructed constant must be hash-identical, both
-  -- directions. In `--ixe` mode the phase runs oracle-free (decompile
-  -- errors only).
+  -- every reconstructed constant must match it, both directions — by
+  -- per-name digest (default) or full structural BEq (`--full-oracle`,
+  -- which also switches the decompiler's per-recovery debug track on by
+  -- passing the view as `origEnv?`). In `--ixe` mode the phase runs
+  -- oracle-free (decompile errors only).
   match ixonEnv? with
   | none =>
     phases := phases.push ("5 decompile", .skipped "serde gate failed")
@@ -215,8 +239,8 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
 ({decompiled.size} constants, {t1 - t0}ms)\n" ++
           String.intercalate "\n" msgs))
     else
-      match canonView? with
-      | some view =>
+      match canonView?, canonDigests? with
+      | some view, _ =>
         let mut nMatch := (0 : Nat)
         let mut mismatches : Array Ix.Name := #[]
         let mut missing := (0 : Nat)
@@ -241,7 +265,33 @@ to the canonicalized source ({t1 - t0}ms)")
             .failed (s!"{mismatches.size} mismatch(es), {missing} \
 missing; {nMatch} matched ({t1 - t0}ms)\n" ++
               String.intercalate "\n" msgs))
-      | none =>
+      | none, some digs =>
+        let mut nMatch := (0 : Nat)
+        let mut mismatches : Array Ix.Name := #[]
+        let mut missing := (0 : Nat)
+        for (name, info) in decompiled do
+          match digs.get? name with
+          | some d =>
+            if hash info == d then nMatch := nMatch + 1
+            else mismatches := mismatches.push name
+          | none => missing := missing + 1
+        for (name, _) in digs do
+          if !decompiled.contains name then
+            missing := missing + 1
+            if mismatches.size < 10 then
+              mismatches := mismatches.push name
+        if mismatches.isEmpty && missing == 0 then
+          phases := phases.push ("5 decompile",
+            .passed s!"{nMatch} constants reconstructed digest-identical \
+to the canonicalized source ({t1 - t0}ms)")
+        else
+          let msgs := mismatches.toList.take 5 |>.map (s!"    ✗ {·.pretty}")
+          phases := phases.push ("5 decompile",
+            .failed (s!"{mismatches.size} digest mismatch(es), {missing} \
+missing; {nMatch} matched ({t1 - t0}ms) — rerun with --full-oracle \
+--ns <namespace> for a structural diff\n" ++
+              String.intercalate "\n" msgs))
+      | none, none =>
         phases := phases.push ("5 decompile",
           .passed s!"oracle-free: {decompiled.size} constants decompiled, \
 0 errors ({t1 - t0}ms)")
@@ -264,7 +314,8 @@ def validateLeanCmd : Cli.Cmd := `[Cli|
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
     ixe : String; "Validate a pre-compiled .ixe instead of a Lean file (oracle-free: runs serde + anon roundtrip only)"
-    workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale — phase 1 at 32 workers peaks past 116 GiB there."
+    workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale — memory scales with workers (phase 1 at 32 peaks past 116 GiB there; 8 is a safe whole-Mathlib setting on a 128 GiB box)."
+    «full-oracle»; "Phase 5 comparison via the full canonicalized env (structural BEq per constant + the decompiler's per-recovery debug track) instead of the default per-name digests. Holds a whole extra env copy through phase 5 — use on --ns-filtered closures to debug a digest mismatch."
 
   ARGS:
     ...path : String; "Path to the Lean source file whose env should be validated (omit with --ixe)."
