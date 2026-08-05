@@ -2518,6 +2518,30 @@ mod tests {
   /// (comma-separated pretty names). Run:
   ///   IXE_A=… IXE_B=… IXE_NAMES=… \
   ///     cargo test -p ixon --release dump_named_metas -- --ignored --nocapture
+  /// Debugging aid, not a gate: print the top-K §2 constant window sizes
+  /// of an `.ixe` (`IXE_A`, optional `IXE_TOP` count) — calibrates the
+  /// whale-block threshold for size-aware validation scheduling.
+  #[test]
+  #[ignore]
+  fn dump_const_sizes() {
+    let path = std::env::var("IXE_A").expect("set IXE_A");
+    let top: usize =
+      std::env::var("IXE_TOP").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
+    let bytes = std::fs::read(&path).expect("read env file");
+    let index = Env::parse_lazy_index(&bytes).expect("lazy index");
+    let mut sizes: Vec<(usize, Address)> =
+      index.consts.iter().map(|c| (c.len, c.addr.clone())).collect();
+    sizes.sort_by(|a, b| b.0.cmp(&a.0));
+    let total: usize = sizes.iter().map(|(l, _)| *l).sum();
+    println!("consts: {} total bytes: {}", sizes.len(), total);
+    for (len, addr) in sizes.iter().take(top) {
+      println!("{:>12} B  {}", len, addr.hex());
+    }
+    let over_1m = sizes.iter().filter(|(l, _)| *l > 1_000_000).count();
+    let over_10m = sizes.iter().filter(|(l, _)| *l > 10_000_000).count();
+    println!("over 1MB: {over_1m}; over 10MB: {over_10m}");
+  }
+
   #[test]
   #[ignore]
   fn dump_named_metas() {

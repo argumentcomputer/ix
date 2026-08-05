@@ -836,12 +836,31 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let resultChan ← Std.CloseableChannel.Sync.new
     (α := Name × Set Name × AuxBlockOutcome)
 
+  -- IX_LOG_BLOCKS=1: per-block BEGIN/END trace (with duration and RSS at
+  -- END), gated to the tail of the run (snapshot > 600k constants) where
+  -- the whole-Mathlib memory spike lives — identifies which block a
+  -- worker is inside when RSS blows up.
+  let logBlocks := (← IO.getEnv "IX_LOG_BLOCKS").isSome
   let worker (_workerId : Nat) : IO Unit := do
     while true do
       match ← workChan.recv with
       | none => break
       | some item =>
+        let logThis := logBlocks && item.cenv.constants.size > 600000
+        if logThis then
+          IO.println s!"  [block] BEGIN {item.lo.pretty} ({item.all.size} members)"
+          (← IO.getStdout).flush
+        let t0 ← IO.monoMsNow
         let outcome := auxBlockOutcome item.cenv item.lo item.all
+        let t1 ← IO.monoMsNow
+        if logThis then
+          let rssKb ← do
+            let st ← IO.FS.readFile "/proc/self/status"
+            pure <| (st.splitOn "\n").findSome? fun l =>
+              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
+          IO.println s!"  [block] END {item.lo.pretty} {t1 - t0}ms \
+rss{(rssKb.getD "?").trimAscii}"
+          (← IO.getStdout).flush
         discard <| resultChan.send (item.lo, item.all, outcome)
 
   let mut workerTasks : Array (Task (Except IO.Error Unit)) := #[]

@@ -297,10 +297,10 @@ def findDiff (a b : Ix.Expr) : String := Id.run do
         return s!"{path}: const '{n1}' vs '{n2}'"
       if us1.size != us2.size then
         return s!"{path}: const '{n1}' level count {us1.size} vs {us2.size}"
-      return s!"{path}: const '{n1}' levels differ"
+      return s!"{path}: const '{n1}' levels differ: \
+{reprStr us1} vs {reprStr us2}"
     | .sort u1 _, .sort u2 _ =>
-      let _ := u1; let _ := u2
-      return s!"{path}: sort levels differ"
+      return s!"{path}: sort levels differ: {reprStr u1} vs {reprStr u2}"
     | x, y =>
       return s!"{path}: {kindOf x} vs {kindOf y}"
   return "(no structural divergence found — hash-only difference?)"

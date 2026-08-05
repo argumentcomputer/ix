@@ -171,40 +171,76 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
 {out.blockCount} blocks, {out.ungroundedCount} ungrounded ({t1 - t0}ms)")
   | none, none => unreachable!
 
-  -- Phase 2: pure serde gate.
+  -- Phase 2: pure serde gate — streaming: every unit parsed with the
+  -- pure reader, re-serialized with the pure writer, compared against
+  -- its input span (gapless coverage + order/root/trailing contracts),
+  -- one unit at a time. Constants and §5 metadata stay byte windows;
+  -- the whole-env structured materialization (a >100 GiB spike at
+  -- whole-Mathlib scale, with the Lean oracle env still pinned for
+  -- phase 4) never happens.
   let t0 ← IO.monoMsNow
-  let ixonEnv? ← match serdeGate bytes with
+  let parts? ← match serdeGateStreaming bytes with
     | .error e =>
       phases := phases.push ("2 serde", .failed e)
       pure none
-    | .ok env =>
+    | .ok parts =>
       let t1 ← IO.monoMsNow
       phases := phases.push ("2 serde",
-        .passed s!"deEnv parsed {env.consts.size} consts / {env.named.size} named; serEnv byte-identical ({t1 - t0}ms)")
-      pure (some env)
+        .passed s!"streaming gate: {parts.env.consts.size} consts / \
+{parts.namedRows.size} named rows; writer byte-identical per unit ({t1 - t0}ms)")
+      pure (some parts)
+  -- The lazy parts' backing buffer is the same array; drop the extra
+  -- reference so exactly one image stays live.
+  bytes := .empty
 
-  match ixonEnv? with
+  match parts? with
   | none =>
     -- Serde failed: nothing downstream can run.
     phases := phases.push ("3 kernel anon roundtrip", .skipped "serde gate failed")
     phases := phases.push ("4 kernel meta roundtrip", .skipped "serde gate failed")
-  | some ixonEnv =>
-    -- Phase 3: anon structural roundtrip.
-    let t0 ← IO.monoMsNow
-    let (rows, err?) := anonRoundtripEnv ixonEnv
-    let t1 ← IO.monoMsNow
-    phases := phases.push ("3 kernel anon roundtrip",
-      match err? with
-      | none => .passed s!"{rows} constants structurally preserved ({t1 - t0}ms)"
-      | some e => .failed s!"after {rows} rows: {e}")
-    -- Phase 4: meta roundtrip (needs the elaborated env as oracle).
+  | some parts =>
+    -- Phase 3: anon structural roundtrip (named-independent: works off
+    -- the lazy consts windows). Memory-diagnosis knobs:
+    -- `IX_ANON_CAP=<n>` bisects the work list; `IX_SKIP_PHASES=3,5`
+    -- skips phases outright to isolate another phase's footprint.
+    let skipPhases := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
+    if skipPhases.contains "3" then
+      phases := phases.push ("3 kernel anon roundtrip", .skipped "IX_SKIP_PHASES")
+    else
+      let anonCap := (← IO.getEnv "IX_ANON_CAP").bind (·.toNat?)
+      let anonSeq := (← IO.getEnv "IX_ANON_SEQ").isSome
+      let anonCut := ((← IO.getEnv "IX_ANON_STAGE").bind (·.toNat?)).getD 0
+      let t0 ← IO.monoMsNow
+      let (rows, err?) := anonRoundtripEnv parts.env anonCap anonSeq anonCut
+      let t1 ← IO.monoMsNow
+      phases := phases.push ("3 kernel anon roundtrip",
+        match err? with
+        | none => .passed s!"{rows} constants structurally preserved ({t1 - t0}ms)"
+        | some e => .failed s!"after {rows} rows: {e}")
+      if (← IO.getEnv "IX_ANON_HOLD").isSome then
+        IO.println "[hold] phase 3 returned; sleeping 60s (memory probe)"
+        (← IO.getStdout).flush
+        IO.sleep 60000
+        IO.println "[hold] done"
+        (← IO.getStdout).flush
+    -- Phase 4: meta roundtrip (needs the elaborated env as oracle) —
+    -- streaming: per-chunk materialize → chunk-local ingress → egress →
+    -- compare → drop; the whole-env merged MetaEnv never exists.
     match leanEnv? with
     | none =>
       phases := phases.push ("4 kernel meta roundtrip",
         .skipped "no Lean source env to compare against (--ixe mode)")
     | some leanEnv =>
       let t0 ← IO.monoMsNow
-      match metaRoundtripEnv leanEnv ixonEnv with
+      -- IX_META_EAGER=1: the pre-streaming whole-env driver (memory
+      -- diagnosis oracle; needs the full named table materialized AND
+      -- the merged whole-env MetaEnv — closure-scale only).
+      let metaResult ← if (← IO.getEnv "IX_META_EAGER").isSome then
+          pure <| parts.materializeAllNamed.bind fun fullEnv =>
+            metaRoundtripEnv leanEnv fullEnv
+        else
+          pure <| metaRoundtripEnvStreaming leanEnv parts
+      match metaResult with
       | .error e =>
         phases := phases.push ("4 kernel meta roundtrip", .failed e)
       | .ok report =>
@@ -234,10 +270,19 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
   -- which also switches the decompiler's per-recovery debug track on by
   -- passing the view as `origEnv?`). In `--ixe` mode the phase runs
   -- oracle-free (decompile errors only).
-  match ixonEnv? with
+  let skipPhases5 := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
+  let ixonEnvForDecompile? : Option (Except String Ixon.Env) :=
+    if skipPhases5.contains "5" then none
+    else parts?.map (·.materializeAll)
+  match ixonEnvForDecompile? with
   | none =>
-    phases := phases.push ("5 decompile", .skipped "serde gate failed")
-  | some ixonEnv =>
+    phases := phases.push ("5 decompile",
+      .skipped (if skipPhases5.contains "5" then "IX_SKIP_PHASES"
+                else "serde gate failed"))
+  | some (Except.error e) =>
+    phases := phases.push ("5 decompile",
+      .failed s!"named metadata materialization: {e}")
+  | some (Except.ok ixonEnv) =>
     let t0 ← IO.monoMsNow
     let decompileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 16
     let (decompiled, errs, _p2st) ←
