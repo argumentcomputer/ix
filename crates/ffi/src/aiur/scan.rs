@@ -1,12 +1,14 @@
 //! Scan-and-cut sharding: shard boundaries from Aiur's own measured cost.
 //!
 //! Instead of predicting shard cost from profile counters, the env's check
-//! schedule is EXECUTED through the codegen'd circuit kernel with a running
-//! FFT-cost readout, and a shard boundary is cut where the measured cost
-//! reaches the RAM budget's FFT equivalent. Execution is the mandatory
-//! prefix of proving, so the measurement is the prove's own cost, not a
-//! proxy — the failure mode where a recorder-side counter under-represents
-//! circuit work by a content-dependent factor cannot occur.
+//! schedule is EXECUTED through the codegen'd circuit kernel, and a shard
+//! boundary is cut where the analytic peak-prove-RSS prediction computed
+//! from the running record's circuit shapes
+//! ([`AiurSystem::peak_prove_bytes`]) reaches the margined RAM budget.
+//! Execution is the mandatory prefix of proving, so the measurement is the
+//! prove's own cost, not a proxy — the failure mode where a recorder-side
+//! counter under-represents circuit work by a content-dependent factor
+//! cannot occur.
 //!
 //! The measurement unit is the SAME claim the prover pays for: a
 //! thin-frontier `CheckEnv`, one per BATCH of schedule blocks. Each
@@ -57,12 +59,12 @@ use aiur::{
     IOBuffer, QueryRecord, dump_query_stats, f64_from_usize,
     query_stats_enabled, record_fft_cost, record_retained_bytes,
   },
+  synthesis::AiurSystem,
 };
 use ix_common::address::Address;
 use ix_kernel::profile::{OpCounts, ProfileBuilder};
 use ix_kernel::shard::{
-  AIUR_RAM_BASE_GIB, AIUR_RAM_GIB_PER_BFFT, AIUR_RAM_USABLE_FRAC, ShardCost,
-  ShardInfo, ShardManifest, aiur_prove_secs_for_fft, aiur_ram_gib_for_fft,
+  ShardCost, ShardInfo, ShardManifest, aiur_prove_secs_for_fft,
   balanced_agg_tree, cost_fft, cut_coherent_order,
 };
 use ixon::constant::ConstantInfo as IxonCI;
@@ -74,12 +76,6 @@ use ixvm_codegen::aiur_ixvm_witness::{
 
 /// Bytes per GiB.
 const GIB: f64 = 1_073_741_824.0;
-
-/// Fraction of detected system RAM the worker fleet may plan against.
-/// The fleet bound is arithmetic, not reactive: `workers × record cap`
-/// is chosen under this line at startup, and the per-worker cap is
-/// enforced inside execution, so measured RSS never depends on content.
-const RAM_CEILING_FRAC: f64 = 0.70;
 
 /// Current process resident set in GiB (`/proc/self/status` VmRSS);
 /// 0 where unreadable (non-Linux). Reported in segment logs.
@@ -207,7 +203,7 @@ fn static_order(
 struct Segment {
   blocks: Vec<u32>,
   fft: f64,
-  bytes_gib: f64,
+  ram_gib: f64,
 }
 
 /// Everything a chunk scanner needs besides its own chunk: kernel, env,
@@ -240,15 +236,19 @@ struct ScanCtx<'a> {
   /// frontier members), keeping the running readout tight enough to
   /// serve as the shard cost without a blanket re-price.
   batch_blocks: usize,
-  /// Execute-only mode: the cut charges RECORD BYTES alone against
-  /// `cut_used_gib` (a per-worker share of box RAM) — segments exist only
-  /// to drop records and keep the fleet resident — and no partition
-  /// semantics attach to the boundaries. RAM is bounded at claim
-  /// granularity only: a single claim's growth is uninstrumented by
-  /// design (Aiur execution carries no RAM tracking), so
-  /// pathologically dense content is bounded by worker count, not by
-  /// abort.
-  exec_only: bool,
+  /// The compiled system, feeding the analytic peak-prove-RAM model that
+  /// the scan's cut charges (`Some` for the scanner); `None` in
+  /// execute-only mode, where the cut is the record's retained bytes
+  /// against the per-worker share.
+  system: Option<&'a AiurSystem>,
+  /// Graceful record ceiling, GiB: a segment also cuts when its record's
+  /// retained bytes reach this, independent of the model cut. In
+  /// cgroup-capped worker processes it sits below the enforced cap
+  /// (~80%), so legitimately record-heavy segments end at a claim
+  /// boundary instead of being OOM-killed — the kill is reserved for
+  /// MID-claim growth, which no boundary check can see. `f64::INFINITY`
+  /// disables it (thread-pool mode).
+  soft_record_gib: f64,
 }
 
 /// Default blocks per measurement claim; `IX_SCAN_BATCH_BLOCKS`
@@ -260,40 +260,10 @@ struct ScanCtx<'a> {
 /// manifest cost.
 const SCAN_BATCH_BLOCKS: usize = 128;
 
-/// Smallest useful per-worker record share, GiB. Typical segments at any
-/// realistic cut carry 3–8 GiB of record (measured 4–10% of the combined
-/// cut across envs), so a share at this floor still lets normal segments
-/// reach their cut untouched.
-const MIN_WORKER_SHARE_GIB: f64 = 8.0;
-
-/// Joint worker-count / record-share arithmetic: the fleet plans against
-/// `RAM_CEILING_FRAC × box − 10` (decode cache, witness maps, claim
-/// trees), split evenly across workers. The share is a PLAN, not an
-/// enforced cap — Aiur execution carries no RAM instrumentation, so a
-/// worker's record is bounded only at claim boundaries (segments drop
-/// records); pathologically dense single claims can exceed the share,
-/// and the recourse is fewer workers (`--workers 1` plans the whole
-/// allowance). `IX_SCAN_WORKER_SHARE_GIB` overrides for tests. Returns
-/// `(workers, share_gib)`.
-fn fleet_plan(workers: usize, cut_used_gib: f64) -> (usize, f64) {
-  let cores = std::thread::available_parallelism().map_or(4, usize::from);
-  let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-  let usable = ram.mul_add(RAM_CEILING_FRAC, -10.0).max(MIN_WORKER_SHARE_GIB);
-  let workers = if workers == 0 {
-    let by_ram = format!("{:.0}", (usable / MIN_WORKER_SHARE_GIB).floor())
-      .parse::<usize>()
-      .unwrap_or(1)
-      .max(1);
-    cores.saturating_sub(2).max(1).min(by_ram)
-  } else {
-    workers
-  };
-  let share_gib = std::env::var("IX_SCAN_WORKER_SHARE_GIB")
-    .ok()
-    .and_then(|v| v.parse::<f64>().ok())
-    .unwrap_or_else(|| (usable / f64_from_usize(workers)).min(cut_used_gib));
-  (workers, share_gib)
-}
+/// A worker child's non-record residency: lazily-decoded env cache,
+/// compiled system, runtime. Reserved under the cap so the soft cut
+/// bounds the record and the cap only fires on mid-claim growth.
+const WORKER_OVERHEAD_GIB: f64 = 4.0;
 
 /// The min-cut schedule order, truncated by the `IX_SCAN_LIMIT_BLOCKS`
 /// debug knob (a full-pipeline reproducer over a slice of a huge env,
@@ -321,32 +291,32 @@ fn ordered_schedule(
 /// Equal-byte contiguous chunks over the order; edges are forced segment
 /// boundaries (the parallelism unit); the scan's merge pass repairs the
 /// resulting fragmentation, so chunk count is a pure parallelism knob.
-fn make_chunks(
+fn make_chunk_bounds(
   order: &[u32],
   blocks: &[SchedBlock],
   env_bytes: u64,
   n_chunks: usize,
-) -> Vec<Vec<u32>> {
+) -> Vec<(usize, usize)> {
   let per_chunk = (env_bytes / n_chunks as u64).max(1);
-  let mut chunks: Vec<Vec<u32>> = Vec::new();
-  let mut cur: Vec<u32> = Vec::new();
+  let mut bounds: Vec<(usize, usize)> = Vec::new();
+  let mut start = 0usize;
   let mut acc = 0u64;
-  for &b in order {
-    cur.push(b);
+  for (i, &b) in order.iter().enumerate() {
     acc += blocks[b as usize].size;
-    if acc >= per_chunk && chunks.len() + 1 < n_chunks {
-      chunks.push(std::mem::take(&mut cur));
+    if acc >= per_chunk && bounds.len() + 1 < n_chunks {
+      bounds.push((start, i + 1));
+      start = i + 1;
       acc = 0;
     }
   }
-  if !cur.is_empty() {
-    chunks.push(cur);
+  if start < order.len() {
+    bounds.push((start, order.len()));
   }
   // Baseline before any execution: the schedule pass decoded every
   // constant into the shared env's lazy cache, so this RSS is (cache +
   // static structures) — the floor the worker footprints sit on.
   eprintln!("[scan] post-schedule baseline rss {:.0}G", process_rss_gib());
-  chunks
+  bounds
 }
 
 /// Work-stealing worker pool over the chunks: workers pull `(origin
@@ -436,6 +406,589 @@ fn run_pool(
   Ok(segments)
 }
 
+/// The scan worker's stdin/stdout loop: a child process spawned by the
+/// process pool, deterministically re-deriving the same schedule as its
+/// parent and executing order-index ranges on command. Line protocol
+/// (one command per stdin line, replies on stdout):
+///
+/// - `SCAN <lo> <hi>` — scan `order[lo..hi)` exactly like a thread
+///   worker's range: up to [`RANGE_SEGMENTS`] segments, then hand the
+///   remainder back. Replies: `SEG <lo> <hi> <fft> <ram_gib>` per
+///   emitted segment (absolute order indices), `SKIP <addr-hex>
+///   <msg-hex>` per kernel-rejected block, then `END <next>` (`next ==
+///   hi` when the range is exhausted). A unit range (`hi == lo+1`)
+///   degenerates to a single-block claim — the parent narrows a dying
+///   batch by sending unit ranges, no dedicated verb needed.
+///
+/// The worker never applies fail-fast itself — it reports SKIPs and the
+/// parent enforces policy. RAM: the enclosing cgroup's `memory.max` is
+/// the hard cap (an over-cap worker is OOM-killed and the parent
+/// recovers); `soft_record_gib` cuts segments gracefully below it so
+/// only MID-claim growth ever reaches the kill.
+pub fn scan_worker(
+  system: &AiurSystem,
+  fun_idx: usize,
+  env: &Arc<IxonEnv>,
+  cut_used_gib: f64,
+  batch_blocks: usize,
+  soft_record_gib: f64,
+  pieces: usize,
+  exec_only: bool,
+) -> Result<(), String> {
+  use std::io::{BufRead, Write};
+  let toplevel = system.toplevel();
+  let (blocks, adj) = schedule_blocks(env);
+  let order = ordered_schedule(&blocks, &adj, pieces);
+  let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
+  let abort = std::sync::atomic::AtomicBool::new(false);
+  let ctx = ScanCtx {
+    toplevel,
+    fun_idx,
+    env,
+    blocks: &blocks,
+    cut_used_gib,
+    n_chunks: pieces,
+    fail_fast: false,
+    failed: &failed,
+    abort: &abort,
+    batch_blocks,
+    system: if exec_only { None } else { Some(system) },
+    soft_record_gib,
+  };
+  let stdout = std::io::stdout();
+  let mut out = stdout.lock();
+  writeln!(out, "READY {}", order.len()).map_err(|e| e.to_string())?;
+  out.flush().map_err(|e| e.to_string())?;
+  let stdin = std::io::stdin();
+  for line in stdin.lock().lines() {
+    let line = line.map_err(|e| e.to_string())?;
+    let mut it = line.split_whitespace();
+    let (verb, lo, hi) = (
+      it.next().unwrap_or(""),
+      it.next().and_then(|v| v.parse::<usize>().ok()),
+      it.next().and_then(|v| v.parse::<usize>().ok()),
+    );
+    let (Some(lo), Some(hi)) = (lo, hi) else {
+      return Err(format!("worker: malformed command {line:?}"));
+    };
+    if hi > order.len() || lo >= hi {
+      return Err(format!("worker: range {lo}..{hi} out of bounds"));
+    }
+    match verb {
+      "SCAN" => {
+        let range = &order[lo..hi];
+        let (segs, rest) =
+          scan_range(&ctx, range, u32::try_from(lo).unwrap_or(0))?;
+        // Segments consume the range in order; skipped blocks sit in the
+        // gaps. Recover absolute bounds by cursor-matching first ids.
+        let mut cursor = lo;
+        for s in &segs {
+          while order[cursor] != s.blocks[0] {
+            cursor += 1; // a skipped block
+          }
+          let end = cursor + s.blocks.len();
+          writeln!(out, "SEG {cursor} {end} {} {}", s.fft, s.ram_gib)
+            .map_err(|e| e.to_string())?;
+          cursor = end;
+        }
+        for (a, e) in failed.lock().unwrap().drain(..) {
+          writeln!(out, "SKIP {} {}", a.hex(), hex_encode(e.as_bytes()))
+            .map_err(|e| e.to_string())?;
+        }
+        writeln!(out, "END {}", hi - rest.len()).map_err(|e| e.to_string())?;
+      },
+      _ => return Err(format!("worker: unknown verb {verb:?}")),
+    }
+    out.flush().map_err(|e| e.to_string())?;
+  }
+  Ok(())
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+  bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+  if !s.len().is_multiple_of(2) {
+    return None;
+  }
+  (0..s.len() / 2)
+    .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok())
+    .collect()
+}
+
+/// Per-run cgroup-v2 management under the user-delegated subtree. Every
+/// worker gets its own leaf with `memory.max` (the hard cap) and
+/// `memory.oom.group=1` (an over-cap worker dies whole, never
+/// half-alive). Best-effort: `None` anywhere means caps are unavailable
+/// (no delegation) and the pool runs uncapped with a warning.
+struct CgroupBase {
+  dir: std::path::PathBuf,
+}
+
+impl CgroupBase {
+  fn create() -> Option<Self> {
+    let uid = std::fs::read_to_string("/proc/self/status")
+      .ok()?
+      .lines()
+      .find_map(|l| l.strip_prefix("Uid:"))?
+      .split_whitespace()
+      .next()?
+      .to_string();
+    let dir = std::path::PathBuf::from(format!(
+      "/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service/ix-scan-{}",
+      std::process::id()
+    ));
+    std::fs::create_dir(&dir).ok()?;
+    Some(Self { dir })
+  }
+
+  fn child(&self, name: &str, cap_bytes: u64) -> Option<std::path::PathBuf> {
+    let d = self.dir.join(name);
+    // A respawned worker reuses its slot's cgroup: tolerate the existing
+    // dir and rewrite the cap, so replacements stay capped.
+    match std::fs::create_dir(&d) {
+      Ok(()) => {},
+      Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {},
+      Err(_) => return None,
+    }
+    std::fs::write(d.join("memory.max"), format!("{cap_bytes}")).ok()?;
+    // Best-effort: kill the whole worker on OOM, not one thread.
+    let _ = std::fs::write(d.join("memory.oom.group"), "1");
+    Some(d)
+  }
+
+  fn attach(dir: &std::path::Path, pid: u32) -> bool {
+    std::fs::write(dir.join("cgroup.procs"), format!("{pid}")).is_ok()
+  }
+}
+
+impl Drop for CgroupBase {
+  fn drop(&mut self) {
+    if let Ok(entries) = std::fs::read_dir(&self.dir) {
+      for e in entries.flatten() {
+        let _ = std::fs::remove_dir(e.path());
+      }
+    }
+    let _ = std::fs::remove_dir(&self.dir);
+  }
+}
+
+/// Everything the process pool needs to spawn and command workers.
+struct ProcPool<'a> {
+  bin: String,
+  ixe: String,
+  cut_used_gib: f64,
+  batch_blocks: usize,
+  soft_record_gib: f64,
+  pieces: usize,
+  exec_only: bool,
+  cap_bytes: u64,
+  /// The whole pool as a cap — the BIG lane for retrying blocks that
+  /// outgrow a slot's even share. Serialized by `big_lane`: at most one
+  /// big worker exists, so `Σ slot caps + pool_cap` bounds worst-case
+  /// fleet RAM only transiently and by design.
+  pool_cap_bytes: u64,
+  big_lane: Mutex<()>,
+  cgroups: Option<CgroupBase>,
+  order: &'a [u32],
+  blocks: &'a [SchedBlock],
+  fail_fast: bool,
+}
+
+struct WorkerHandle {
+  child: std::process::Child,
+  stdin: std::process::ChildStdin,
+  stdout: std::io::BufReader<std::process::ChildStdout>,
+}
+
+/// One `SCAN` round-trip's outcome.
+struct ScanReply {
+  segs: Vec<Segment>,
+  skips: Vec<(Address, String)>,
+  next: usize,
+}
+
+impl ProcPool<'_> {
+  fn spawn(&self, slot: usize) -> Result<WorkerHandle, String> {
+    self.spawn_capped(slot, self.cap_bytes, &format!("w{slot}"))
+  }
+
+  fn spawn_capped(
+    &self,
+    slot: usize,
+    cap_bytes: u64,
+    cg_name: &str,
+  ) -> Result<WorkerHandle, String> {
+    use std::process::{Command, Stdio};
+    let mut cmd = Command::new(&self.bin);
+    cmd
+      .arg("shard-worker")
+      .args(["--ixe", &self.ixe])
+      .args(["--cut-gib", &format!("{}", self.cut_used_gib)])
+      .args(["--batch", &format!("{}", self.batch_blocks)])
+      .args(["--soft-cap-gib", &format!("{}", self.soft_record_gib)])
+      .args(["--pieces", &format!("{}", self.pieces)])
+      .stdin(Stdio::piped())
+      .stdout(Stdio::piped());
+    if self.exec_only {
+      cmd.arg("--exec-only");
+    }
+    let mut child = cmd
+      .spawn()
+      .map_err(|e| format!("spawn worker {slot} ({}): {e}", self.bin))?;
+    if let Some(cg) = &self.cgroups {
+      match cg.child(cg_name, cap_bytes) {
+        Some(dir) if CgroupBase::attach(&dir, child.id()) => {},
+        _ => {
+          eprintln!("[scan] worker {slot}: cgroup attach failed; UNCAPPED");
+        },
+      }
+    }
+    let stdin = child.stdin.take().expect("piped stdin");
+    let stdout =
+      std::io::BufReader::new(child.stdout.take().expect("piped stdout"));
+    let mut h = WorkerHandle { child, stdin, stdout };
+    // Verify the child derived the same schedule before trusting indices.
+    let ready = h.read_line()?;
+    let n: usize = ready
+      .strip_prefix("READY ")
+      .and_then(|v| v.trim().parse().ok())
+      .ok_or_else(|| format!("worker {slot}: bad handshake {ready:?}"))?;
+    if n != self.order.len() {
+      return Err(format!(
+        "worker {slot}: schedule mismatch ({n} blocks vs {})",
+        self.order.len()
+      ));
+    }
+    Ok(h)
+  }
+
+  /// Send one `SCAN` and collect its replies. `Err(committed)` = the
+  /// worker died mid-range; `committed` carries whatever segments and
+  /// skips arrived before death plus the index scanning had reached.
+  fn scan(
+    &self,
+    h: &mut WorkerHandle,
+    lo: usize,
+    hi: usize,
+  ) -> Result<ScanReply, ScanReply> {
+    use std::io::Write;
+    let mut reply = ScanReply { segs: Vec::new(), skips: Vec::new(), next: lo };
+    if writeln!(h.stdin, "SCAN {lo} {hi}").is_err() || h.stdin.flush().is_err()
+    {
+      return Err(reply);
+    }
+    loop {
+      let line = match h.read_line() {
+        Ok(l) => l,
+        Err(_) => return Err(reply),
+      };
+      let mut it = line.split_whitespace();
+      match it.next() {
+        Some("SEG") => {
+          let (Some(s), Some(e), Some(fft), Some(ram)) = (
+            it.next().and_then(|v| v.parse::<usize>().ok()),
+            it.next().and_then(|v| v.parse::<usize>().ok()),
+            it.next().and_then(|v| v.parse::<f64>().ok()),
+            it.next().and_then(|v| v.parse::<f64>().ok()),
+          ) else {
+            return Err(reply);
+          };
+          reply.segs.push(Segment {
+            blocks: self.order[s..e].to_vec(),
+            fft,
+            ram_gib: ram,
+          });
+          reply.next = e;
+        },
+        Some("SKIP") => {
+          let (Some(addr), Some(msg)) = (
+            it.next().and_then(Address::from_hex),
+            it.next().and_then(hex_decode),
+          ) else {
+            return Err(reply);
+          };
+          reply.skips.push((addr, String::from_utf8_lossy(&msg).into_owned()));
+        },
+        Some("END") => {
+          let Some(next) = it.next().and_then(|v| v.parse::<usize>().ok())
+          else {
+            return Err(reply);
+          };
+          reply.next = next;
+          return Ok(reply);
+        },
+        _ => return Err(reply),
+      }
+    }
+  }
+}
+
+impl WorkerHandle {
+  fn read_line(&mut self) -> Result<String, String> {
+    use std::io::BufRead;
+    let mut line = String::new();
+    match self.stdout.read_line(&mut line) {
+      Ok(0) => Err("worker EOF".to_string()),
+      Ok(_) => Ok(line.trim_end().to_string()),
+      Err(e) => Err(e.to_string()),
+    }
+  }
+
+  fn reap(mut self) -> String {
+    let _ = self.child.kill();
+    match self.child.wait() {
+      Ok(st) => format!("{st}"),
+      Err(e) => format!("wait failed: {e}"),
+    }
+  }
+}
+
+/// Process-pool scan: like [`run_pool`], but each worker is a separate
+/// `ix shard-worker` process under a cgroup memory cap — a worker whose
+/// record outgrows its cap mid-claim is OOM-killed ALONE, and the parent
+/// recovers: retry the remainder once (transient collisions), then
+/// narrow the dying batch with unit ranges to name the exact block as
+/// resource-infeasible-at-cap and scan on. The fleet's RAM bound is
+/// `Σ caps`, enforced by the kernel, independent of content.
+fn run_pool_procs(
+  pool: &ProcPool<'_>,
+  chunks: Vec<(usize, usize)>,
+  workers: usize,
+  failed: &Mutex<Vec<(Address, String)>>,
+) -> Result<Vec<Segment>, String> {
+  type Range = (u32, u32, usize, usize);
+  let queue: Mutex<std::collections::VecDeque<Range>> = Mutex::new(
+    chunks
+      .into_iter()
+      .enumerate()
+      .map(|(i, (lo, hi))| {
+        (u32::try_from(i).expect("chunk count fits u32"), 0u32, lo, hi)
+      })
+      .collect(),
+  );
+  let in_flight = AtomicUsize::new(0);
+  let done: Mutex<Vec<((u32, u32), Vec<Segment>)>> = Mutex::new(Vec::new());
+  let failure: Mutex<Option<String>> = Mutex::new(None);
+  let abort = std::sync::atomic::AtomicBool::new(false);
+  std::thread::scope(|s| {
+    let (queue, in_flight, done, failure, abort) =
+      (&queue, &in_flight, &done, &failure, &abort);
+    for slot in 0..workers {
+      s.spawn(move || {
+        let mut worker = match pool.spawn(slot) {
+          Ok(w) => w,
+          Err(e) => {
+            let mut f = failure.lock().unwrap();
+            if f.is_none() {
+              *f = Some(e);
+            }
+            abort.store(true, Ordering::Release);
+            return;
+          },
+        };
+        'work: loop {
+          if abort.load(Ordering::Acquire) {
+            break;
+          }
+          let next = {
+            let mut q = queue.lock().unwrap();
+            let popped = q.pop_front();
+            if popped.is_some() {
+              in_flight.fetch_add(1, Ordering::AcqRel);
+            }
+            popped
+          };
+          let Some((origin, seq, lo, hi)) = next else {
+            if in_flight.load(Ordering::Acquire) == 0 {
+              break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            continue;
+          };
+          let mut cursor = lo;
+          let mut retried_at: Option<usize> = None;
+          let commit =
+            |reply: ScanReply, origin: u32, seq: u32| -> Result<usize, ()> {
+              if !reply.segs.is_empty() {
+                done.lock().unwrap().push(((origin, seq), reply.segs));
+              }
+              if !reply.skips.is_empty() {
+                let fatal = pool.fail_fast;
+                let first = reply.skips.first().cloned();
+                failed.lock().unwrap().extend(reply.skips);
+                if fatal {
+                  if let Some((a, e)) = first {
+                    let mut f = failure.lock().unwrap();
+                    if f.is_none() {
+                      *f = Some(format!(
+                        "CheckEnv of block {} failed during scan: {e} \
+                       (--no-fail-fast records and skips such blocks)",
+                        a.hex()
+                      ));
+                    }
+                  }
+                  return Err(());
+                }
+              }
+              Ok(reply.next)
+            };
+          while cursor < hi {
+            if abort.load(Ordering::Acquire) {
+              break 'work;
+            }
+            match pool.scan(&mut worker, cursor, hi) {
+              Ok(reply) => {
+                let Ok(next) = commit(reply, origin, seq) else {
+                  abort.store(true, Ordering::Release);
+                  break 'work;
+                };
+                if next < hi {
+                  queue.lock().unwrap().push_back((origin, seq + 1, next, hi));
+                }
+                break;
+              },
+              Err(partial) => {
+                let e = match commit(partial, origin, seq) {
+                  Ok(n) => n,
+                  Err(()) => {
+                    abort.store(true, Ordering::Release);
+                    break 'work;
+                  },
+                };
+                let status = std::mem::replace(
+                  &mut worker,
+                  match pool.spawn(slot) {
+                    Ok(w) => w,
+                    Err(err) => {
+                      let mut f = failure.lock().unwrap();
+                      if f.is_none() {
+                        *f = Some(err);
+                      }
+                      abort.store(true, Ordering::Release);
+                      break 'work;
+                    },
+                  },
+                )
+                .reap();
+                eprintln!(
+                  "[scan] worker {slot} died ({status}) at index {e}; \
+                   respawned"
+                );
+                if retried_at == Some(e) {
+                  // Second death with zero progress: narrow one batch
+                  // window with unit ranges to name the culprit.
+                  let window = (e + pool.batch_blocks).min(hi);
+                  let mut b = e;
+                  while b < window {
+                    match pool.scan(&mut worker, b, b + 1) {
+                      Ok(reply) => {
+                        if commit(reply, origin, seq).is_err() {
+                          abort.store(true, Ordering::Release);
+                          break 'work;
+                        }
+                      },
+                      Err(partial) => {
+                        let _ = commit(partial, origin, seq);
+                        let addr =
+                          pool.blocks[pool.order[b] as usize].addr.clone();
+                        let status = std::mem::replace(
+                          &mut worker,
+                          match pool.spawn(slot) {
+                            Ok(w) => w,
+                            Err(err) => {
+                              let mut f = failure.lock().unwrap();
+                              if f.is_none() {
+                                *f = Some(err);
+                              }
+                              abort.store(true, Ordering::Release);
+                              break 'work;
+                            },
+                          },
+                        )
+                        .reap();
+                        // BIG-lane retry: one worker at a time gets the
+                        // whole pool as its cap, so a block that is
+                        // heavy-but-provable measures instead of being
+                        // falsely excluded by its slot's even share.
+                        let big_reply = {
+                          let _lane = pool.big_lane.lock().unwrap();
+                          pool
+                            .spawn_capped(slot, pool.pool_cap_bytes, "big")
+                            .ok()
+                            .map(|mut big| {
+                              let r = pool.scan(&mut big, b, b + 1);
+                              big.reap();
+                              r
+                            })
+                        };
+                        match big_reply {
+                          Some(Ok(reply)) => {
+                            if commit(reply, origin, seq).is_err() {
+                              abort.store(true, Ordering::Release);
+                              break 'work;
+                            }
+                            eprintln!(
+                              "[scan] block {} exceeded its slot cap \
+                               ({status}) but measured on the big lane",
+                              addr.hex()
+                            );
+                          },
+                          other => {
+                            if let Some(Err(partial2)) = other {
+                              let _ = commit(partial2, origin, seq);
+                            }
+                            eprintln!(
+                              "[scan] block {} exceeded the worker memory \
+                               cap ({status}) and the big lane — \
+                               resource-infeasible; skipped",
+                              addr.hex()
+                            );
+                            failed.lock().unwrap().push((
+                              addr,
+                              format!(
+                                "record outgrew the {:.1} GiB whole-pool \
+                                 cap mid-claim (cgroup OOM-kill)",
+                                f64_from_usize(
+                                  usize::try_from(pool.pool_cap_bytes)
+                                    .unwrap_or(usize::MAX)
+                                ) / GIB
+                              ),
+                            ));
+                          },
+                        }
+                      },
+                    }
+                    b += 1;
+                  }
+                  cursor = window;
+                  retried_at = None;
+                } else {
+                  retried_at = Some(e);
+                  cursor = e;
+                }
+              },
+            }
+          }
+          in_flight.fetch_sub(1, Ordering::AcqRel);
+        }
+        worker.reap();
+      });
+    }
+  });
+  if let Some(e) = failure.into_inner().unwrap() {
+    return Err(e);
+  }
+  let mut tagged = done.into_inner().unwrap();
+  tagged.sort_by_key(|(k, _)| *k);
+  let mut segments: Vec<Segment> = Vec::new();
+  for (_, mut segs) in tagged {
+    segments.append(&mut segs);
+  }
+  Ok(segments)
+}
+
 /// Execute-only mode: run the whole env's check schedule through the
 /// codegen'd kernel in parallel — no partition, no manifest, no prove
 /// concerns. Segments exist only to drop records (cut when a worker's
@@ -450,28 +1003,50 @@ pub fn execute_env(
   env: &Arc<IxonEnv>,
   workers: usize,
   fail_fast: bool,
+  proc_workers: Option<(&str, &str)>,
 ) -> Result<String, String> {
   let (blocks, adj) = schedule_blocks(env);
   if blocks.is_empty() {
     return Err("empty environment".to_string());
   }
   let env_bytes: u64 = blocks.iter().map(|b| b.size).sum();
-  let (workers, share_gib) = fleet_plan(workers, f64::INFINITY);
+  let workers = if workers == 0 {
+    std::thread::available_parallelism()
+      .map_or(4, usize::from)
+      .saturating_sub(2)
+      .max(1)
+  } else {
+    workers
+  };
   let batch_blocks = std::env::var("IX_SCAN_BATCH_BLOCKS")
     .ok()
     .and_then(|v| v.parse::<usize>().ok())
     .filter(|&k| k >= 1)
     .unwrap_or(SCAN_BATCH_BLOCKS);
+  // The schedule granularity is fixed by the core count so worker sizing
+  // cannot change the partition.
+  let sched_pieces =
+    (std::thread::available_parallelism().map_or(4, usize::from) * 2)
+      .min(blocks.len())
+      .max(16);
+  let order = ordered_schedule(&blocks, &adj, sched_pieces);
+  let covered = order.len();
+  // Post-schedule RSS: the parent's decode cache and static structures —
+  // the residency the worker fleet's record budget sits on top of.
+  let baseline_gib = process_rss_gib();
+  let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
+  // Thread-mode record drop: each worker's even share of the measured
+  // headroom — segments cut (and drop their record) when they reach it.
+  let record_cut_gib = (ram.mul_add(0.85, -baseline_gib - 2.0)
+    / f64_from_usize(workers))
+  .clamp(4.0, 64.0);
   let n_chunks = (workers * 2).min(blocks.len());
   eprintln!(
-    "[exec] {} blocks, {workers} workers over {n_chunks} chunks, \
-     {share_gib:.1} GiB record share per worker (planned), {batch_blocks} \
-     blocks per claim",
+    "[exec] {} blocks, {workers} workers over {n_chunks} chunks, record \
+     drop at {record_cut_gib:.1} GiB, {batch_blocks} blocks per claim",
     blocks.len()
   );
-  let order = ordered_schedule(&blocks, &adj, n_chunks);
-  let covered = order.len();
-  let chunks = make_chunks(&order, &blocks, env_bytes, n_chunks);
+  let bounds = make_chunk_bounds(&order, &blocks, env_bytes, n_chunks);
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
   let ctx = ScanCtx {
@@ -479,15 +1054,64 @@ pub fn execute_env(
     fun_idx,
     env,
     blocks: &blocks,
-    cut_used_gib: share_gib,
-    n_chunks: chunks.len(),
+    cut_used_gib: record_cut_gib,
+    n_chunks: bounds.len(),
     fail_fast,
     failed: &failed,
     abort: &abort,
     batch_blocks,
-    exec_only: true,
+    system: None,
+    soft_record_gib: f64::INFINITY,
   };
-  let segments = run_pool(&ctx, chunks, workers)?;
+  let segments = match proc_workers {
+    Some((bin, ixe)) => {
+      // Fastest wall without OOM: execution has no prove-cut constraint
+      // on segment size, so width goes to the core count and the cap is
+      // whatever the pool affords per worker — smaller segments cost
+      // only a few percent of cold-boundary work.
+      let pool_gib = ram.mul_add(0.85, -baseline_gib - 2.0).max(8.0);
+      let cap_gib = (pool_gib / f64_from_usize(workers)).clamp(6.0, 64.0);
+      let soft_gib = (cap_gib - WORKER_OVERHEAD_GIB).max(cap_gib / 2.0);
+      let cgroups = CgroupBase::create();
+      if cgroups.is_none() {
+        eprintln!(
+          "[exec] cgroup delegation unavailable — workers run UNCAPPED"
+        );
+      }
+      eprintln!(
+        "[exec] process pool: {workers} workers, {cap_gib:.1} GiB cap \
+         each{}",
+        if cgroups.is_some() { " (cgroup memory.max)" } else { "" }
+      );
+      let pool = ProcPool {
+        bin: bin.to_string(),
+        ixe: ixe.to_string(),
+        cut_used_gib: soft_gib,
+        batch_blocks,
+        soft_record_gib: soft_gib,
+        pieces: sched_pieces,
+        exec_only: true,
+        cap_bytes: gib_to_bytes_u64(cap_gib),
+        pool_cap_bytes: gib_to_bytes_u64(
+          crate::kernel::system_ram_gib()
+            .unwrap_or(64.0)
+            .mul_add(0.85, -baseline_gib - 2.0)
+            .max(8.0),
+        ),
+        big_lane: Mutex::new(()),
+        cgroups,
+        order: &order,
+        blocks: &blocks,
+        fail_fast,
+      };
+      run_pool_procs(&pool, bounds, workers, &failed)?
+    },
+    None => {
+      let chunks =
+        bounds.iter().map(|&(lo, hi)| order[lo..hi].to_vec()).collect();
+      run_pool(&ctx, chunks, workers)?
+    },
+  };
   let total_fft: f64 = segments.iter().map(|s| s.fft).sum();
   let checked: usize = segments.iter().map(|s| s.blocks.len()).sum();
   let failed = failed.into_inner().unwrap();
@@ -512,8 +1136,21 @@ pub fn execute_env(
 /// Scan-and-cut over the whole env: returns the manifest report, writing
 /// the manifest and its costs sidecar to `out_path`.
 #[allow(clippy::too_many_arguments)]
+/// The predicted-vs-measured margin the cut leaves under the budget:
+/// the analytic model predicts live bytes, and measured MaxRSS runs a
+/// few percent above (allocator slack, the prove process's own env
+/// decode cache, OS overhead) — validated at +3.0% worst across a
+/// stratified Init prove sample. 0.95 covers it with room.
+const PROVE_RAM_MARGIN: f64 = 0.95;
+
+/// GiB → whole bytes via the decimal round-trip (no `as` cast); caps are
+/// small positive magnitudes.
+fn gib_to_bytes_u64(gib: f64) -> u64 {
+  format!("{:.0}", (gib * GIB).max(0.0)).parse().unwrap_or(u64::MAX)
+}
+
 pub fn scan_shards(
-  toplevel: &Toplevel,
+  system: &AiurSystem,
   fun_idx: usize,
   env: &Arc<IxonEnv>,
   budget_gib: f64,
@@ -521,43 +1158,72 @@ pub fn scan_shards(
   workers: usize,
   fail_fast: bool,
   out_path: &str,
+  proc_workers: Option<(&str, &str)>,
 ) -> Result<String, String> {
-  let cap_gib = budget_gib * AIUR_RAM_USABLE_FRAC;
-  if cap_gib <= AIUR_RAM_BASE_GIB {
+  let toplevel = system.toplevel();
+  if budget_gib < 4.0 {
     return Err(format!(
-      "budget {budget_gib} GiB leaves no headroom over the {AIUR_RAM_BASE_GIB} GiB base"
+      "budget {budget_gib} GiB is below the prover's fixed floor \
+       (preprocessed gadget tables + base structures)"
     ));
   }
-  // The ε-discounted headroom above the prove base, in GiB. The cut
-  // charges BOTH resource terms against it: slope·fft (trace/FFT RAM)
-  // plus the measured record bytes the prove's execute replays into.
-  let cut_used_gib = (cap_gib - AIUR_RAM_BASE_GIB) * (1.0 - eps);
-  // FFT-equivalent of the headroom, for the worker autoscale estimate.
-  let cut_fft = cut_used_gib / AIUR_RAM_GIB_PER_BFFT * 1e9;
+  // The ε-discounted cut: a shard ends when its predicted peak prove
+  // RSS (analytic, from circuit shapes) reaches the margined budget.
+  let cut_used_gib = budget_gib * PROVE_RAM_MARGIN * (1.0 - eps);
 
   let (blocks, adj) = schedule_blocks(env);
   if blocks.is_empty() {
     return Err("empty environment".to_string());
   }
   let env_bytes: u64 = blocks.iter().map(|b| b.size).sum();
-  let (workers, seg_budget_gib) = fleet_plan(workers, cut_used_gib);
+  let workers = if workers == 0 {
+    std::thread::available_parallelism()
+      .map_or(4, usize::from)
+      .saturating_sub(2)
+      .max(1)
+  } else {
+    workers
+  };
   let batch_blocks = std::env::var("IX_SCAN_BATCH_BLOCKS")
     .ok()
     .and_then(|v| v.parse::<usize>().ok())
     .filter(|&k| k >= 1)
     .unwrap_or(SCAN_BATCH_BLOCKS);
+  // The schedule granularity is fixed by the core count so worker sizing
+  // cannot change the partition.
+  let sched_pieces =
+    (std::thread::available_parallelism().map_or(4, usize::from) * 2)
+      .min(blocks.len())
+      .max(16);
+  let order = ordered_schedule(&blocks, &adj, sched_pieces);
+  // Post-schedule RSS: the parent's decode cache and static structures —
+  // the residency the worker pool's budget sits on top of.
+  let baseline_gib = process_rss_gib();
+  // Width-first sizing, uniform for every env and budget: full-core
+  // width, and each worker's cap is its even share of the pool. Segments
+  // cut at the additive soft ceiling below the cap, so the budget only
+  // sets the MERGE target — scan wall never depends on the prove budget.
+  // Content denser than the cap is a per-block event: the cgroup kill
+  // names it, and the big-lane retry (whole-pool cap, serialized) rescues
+  // blocks that are heavy but provable.
+  let proc_cap_gib = proc_workers.map(|_| {
+    let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
+    let pool_gib = ram.mul_add(0.85, -baseline_gib - 2.0).max(8.0);
+    std::env::var("IX_SCAN_WORKER_CAP_GIB")
+      .ok()
+      .and_then(|v| v.parse::<f64>().ok())
+      .unwrap_or_else(|| (pool_gib / f64_from_usize(workers)).clamp(6.0, 64.0))
+  });
   let n_chunks = (workers * 2).min(blocks.len());
   eprintln!(
-    "[scan] {} blocks, {workers} workers over {n_chunks} chunks, cut {:.1} \
-     GiB combined (≈{:.1} BFFT fft-only), {seg_budget_gib:.1} GiB record \
-     share per worker (planned), {batch_blocks} blocks per claim",
+    "[scan] {} blocks, {workers} workers over {n_chunks} chunks, cut at \
+     {cut_used_gib:.1} GiB predicted prove RSS (margin \
+     {:.0}%, ε pre-charged), {batch_blocks} blocks per claim",
     blocks.len(),
-    cut_used_gib,
-    cut_fft / 1e9
+    (1.0 - PROVE_RAM_MARGIN) * 100.0
   );
-  let order = ordered_schedule(&blocks, &adj, n_chunks);
-  let chunks = make_chunks(&order, &blocks, env_bytes, n_chunks);
-  let chunk_count = chunks.len();
+  let bounds = make_chunk_bounds(&order, &blocks, env_bytes, n_chunks);
+  let chunk_count = bounds.len();
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
   let ctx = ScanCtx {
@@ -571,101 +1237,84 @@ pub fn scan_shards(
     failed: &failed,
     abort: &abort,
     batch_blocks,
-    exec_only: false,
+    system: Some(system),
+    soft_record_gib: f64::INFINITY,
   };
-  let segments = run_pool(&ctx, chunks, workers)?;
+  let segments = match proc_workers {
+    Some((bin, ixe)) => {
+      let cap_gib = proc_cap_gib.unwrap_or(16.0);
+      let soft_gib = (cap_gib - WORKER_OVERHEAD_GIB).max(cap_gib / 2.0);
+      let cgroups = CgroupBase::create();
+      if cgroups.is_none() {
+        eprintln!(
+          "[scan] cgroup delegation unavailable — workers run UNCAPPED"
+        );
+      }
+      eprintln!(
+        "[scan] process pool: {workers} workers, {cap_gib:.1} GiB cap \
+         each{}, soft record cut {soft_gib:.1} GiB",
+        if cgroups.is_some() { " (cgroup memory.max)" } else { "" },
+      );
+      let pool = ProcPool {
+        bin: bin.to_string(),
+        ixe: ixe.to_string(),
+        cut_used_gib,
+        batch_blocks,
+        soft_record_gib: soft_gib,
+        pieces: sched_pieces,
+        exec_only: false,
+        cap_bytes: gib_to_bytes_u64(cap_gib),
+        pool_cap_bytes: gib_to_bytes_u64(
+          crate::kernel::system_ram_gib()
+            .unwrap_or(64.0)
+            .mul_add(0.85, -baseline_gib - 2.0)
+            .max(8.0),
+        ),
+        big_lane: Mutex::new(()),
+        cgroups,
+        order: &order,
+        blocks: &blocks,
+        fail_fast,
+      };
+      run_pool_procs(&pool, bounds, workers, &failed)?
+    },
+    None => {
+      let chunks =
+        bounds.iter().map(|&(lo, hi)| order[lo..hi].to_vec()).collect();
+      run_pool(&ctx, chunks, workers)?
+    },
+  };
 
-  // Merge + re-measure to a fixpoint. Merging by FFT sum is always safe
-  // (the union's real cost is ≤ the sum: shared deps derive once) but the
-  // sum badly overstates a shard assembled from many cold mini-segments —
-  // each paid its own frontier unfolding. So every merged shard is
-  // re-measured with ONE cold thin-frontier CheckEnv (exactly the claim
-  // proving pays), and merging reruns with true costs until nothing
-  // merges. This is what lets the chunk count scale with workers without
-  // fragmenting the pack or corrupting the cost sidecar.
+  // Assemble shards by summing adjacent segments up to the cut, to a
+  // fixpoint. Sums are conservative for every cost in play: shared
+  // dependencies derive once in the union, and padded heights are
+  // subadditive — so a summed shard can only OVER-state its prove RSS,
+  // never breach the budget. The conservatism (measured ~5-15% extra
+  // shards vs a re-measured pack) is the price of planning wall time
+  // never depending on the prove budget: segments are scanned at
+  // RAM-optimal size and packing is pure arithmetic.
   let pre_merge = segments.len();
-  // Batched claims keep the running readout within a couple percent of
-  // the cold cost (per-claim overhead divided by the batch size), so
-  // only MERGED shards need a re-measure — their summed costs are the
-  // one remaining conservative estimate.
-  let mut list: Vec<(Segment, bool)> =
-    segments.into_iter().map(|s| (s, false)).collect();
-  for round in 0usize.. {
-    let used =
-      |sg: &Segment| AIUR_RAM_GIB_PER_BFFT * sg.fft / 1e9 + sg.bytes_gib;
-    let mut merged: Vec<(Segment, bool)> = Vec::new();
-    for (seg, dirty) in list {
+  let mut list = segments;
+  loop {
+    let mut merged: Vec<Segment> = Vec::new();
+    let mut any = false;
+    for seg in list {
       match merged.last_mut() {
-        Some((prev, prev_dirty)) if used(prev) + used(&seg) < cut_used_gib => {
+        Some(prev) if prev.ram_gib + seg.ram_gib < cut_used_gib => {
           prev.blocks.extend(seg.blocks);
           prev.fft += seg.fft;
-          prev.bytes_gib += seg.bytes_gib;
-          *prev_dirty = true;
+          prev.ram_gib += seg.ram_gib;
+          any = true;
         },
-        _ => merged.push((seg, dirty)),
+        _ => merged.push(seg),
       }
     }
     list = merged;
-    let dirty_idx: Vec<usize> = list
-      .iter()
-      .enumerate()
-      .filter_map(|(i, (_, d))| d.then_some(i))
-      .collect();
-    if dirty_idx.is_empty() {
+    if !any {
       break;
-    }
-    if round >= 3 {
-      // Leftover sums are conservative (over-budget never happens); stop
-      // refining rather than loop on a pathological pack.
-      eprintln!(
-        "[scan] {} shard(s) keep conservative summed costs after {round} \
-         refine rounds",
-        dirty_idx.len()
-      );
-      break;
-    }
-    eprintln!(
-      "[scan] refine round {round}: re-measuring {} merged shard(s)",
-      dirty_idx.len()
-    );
-    let re_cursor = AtomicUsize::new(0);
-    let re_results: Mutex<Vec<Option<Result<(f64, f64), String>>>> =
-      Mutex::new((0..dirty_idx.len()).map(|_| None).collect());
-    std::thread::scope(|s| {
-      for _ in 0..workers.min(dirty_idx.len()) {
-        s.spawn(|| {
-          loop {
-            let j = re_cursor.fetch_add(1, Ordering::Relaxed);
-            if j >= dirty_idx.len() {
-              break;
-            }
-            let out = measure_shard(&ctx, &list[dirty_idx[j]].0.blocks);
-            re_results.lock().unwrap()[j] = Some(out);
-          }
-        });
-      }
-    });
-    for (j, slot) in re_results.into_inner().unwrap().into_iter().enumerate() {
-      let (seg, dirty) = &mut list[dirty_idx[j]];
-      match slot {
-        Some(Ok((fft, bytes_gib))) => {
-          seg.fft = fft;
-          seg.bytes_gib = bytes_gib;
-        },
-        Some(Err(e)) if !fail_fast => {
-          // The conservative fft SUM stands for this shard.
-          eprintln!(
-            "[scan] re-measure of shard {j} failed ({e}); keeping \
-             the summed cost"
-          );
-        },
-        Some(Err(e)) => return Err(format!("re-measure shard {j}: {e}")),
-        None => return Err(format!("re-measure shard {j}: never ran")),
-      }
-      *dirty = false;
     }
   }
-  let segments: Vec<Segment> = list.into_iter().map(|(s, _)| s).collect();
+  let segments = list;
 
   // Manifest: owned blocks per segment; frontier fields are the claim
   // layer's business (reconstructed from env + owned at check/prove time).
@@ -711,7 +1360,7 @@ pub fn scan_shards(
     // Predicted prove RSS = the fft resource line PLUS the measured
     // record bytes the prove's execute replays into — the second term is
     // what the fitted line missed on arithmetic-heavy shards.
-    let ram = aiur_ram_gib_for_fft(seg.fft) + seg.bytes_gib;
+    let ram = seg.ram_gib;
     csv.push_str(&format!(
       "{},{},0,0,0,0,0,0,{:.2},{:.2}\n",
       id,
@@ -720,8 +1369,7 @@ pub fn scan_shards(
       aiur_prove_secs_for_fft(seg.fft),
     ));
     max_ram = max_ram.max(ram);
-    let used = AIUR_RAM_GIB_PER_BFFT * seg.fft / 1e9 + seg.bytes_gib;
-    if used >= cut_used_gib / (1.0 - eps) {
+    if seg.ram_gib >= cut_used_gib / (1.0 - eps) {
       over += 1;
     }
   }
@@ -757,38 +1405,12 @@ pub fn scan_shards(
   Ok(format!(
     "scan: {} blocks in {} chunks → {num} shards ({pre_merge} pre-merge) @ \
      {budget_gib:.0} GiB (cut at {:.1} GiB combined, ε {:.0}%)\nmax \
-     predicted prove RSS {max_ram:.1} GiB (fft line + measured record \
-     bytes){note}",
+     predicted prove RSS {max_ram:.1} GiB (analytic, from circuit \
+     shapes){note}",
     blocks.len(),
     chunk_count,
     cut_used_gib,
     eps * 100.0,
-  ))
-}
-
-/// Measure one shard's true cold cost: a single thin-frontier `CheckEnv`
-/// over its blocks against a fresh record and lazily-faulted witness —
-/// the exact execution a prove of this shard performs.
-fn measure_shard(
-  ctx: &ScanCtx<'_>,
-  block_ids: &[u32],
-) -> Result<(f64, f64), String> {
-  let owned: Vec<Address> =
-    block_ids.iter().map(|&b| ctx.blocks[b as usize].addr.clone()).collect();
-  let mut record = QueryRecord::new(ctx.toplevel);
-  let mut io = IOBuffer::with_backing(EnvFaultSource::new(ctx.env.clone()));
-  let (_claim, input) = seed_shard_check_env_claim(ctx.env, &owned, &mut io)?;
-  execute_ixvm_with_record(
-    ctx.toplevel,
-    ctx.fun_idx,
-    &input,
-    &mut io,
-    &mut record,
-  )
-  .map_err(|e| format!("re-measure CheckEnv failed: {e}"))?;
-  Ok((
-    record_fft_cost(ctx.toplevel, &record),
-    f64_from_usize(record_retained_bytes(&record)) / GIB,
   ))
 }
 
@@ -837,12 +1459,12 @@ fn scan_range(
     let mut record = QueryRecord::new(ctx.toplevel);
     let mut io = IOBuffer::with_backing(EnvFaultSource::new(ctx.env.clone()));
     let mut prev_fft = 0.0f64;
-    let mut prev_bytes = 0.0f64;
+    let mut prev_ram = 0.0f64;
     let mut hi = lo;
     let mut skip_failed = false;
-    let (seg_end, seg_fft, seg_bytes) = loop {
+    let (seg_end, seg_fft, seg_ram) = loop {
       if hi >= chunk.len() {
-        break (hi, prev_fft, prev_bytes);
+        break (hi, prev_fft, prev_ram);
       }
       if ctx.abort.load(Ordering::Acquire) {
         return Err("aborted after a failure elsewhere".to_string());
@@ -856,20 +1478,20 @@ fn scan_range(
         .iter()
         .map(|&b| ctx.blocks[b as usize].addr.clone())
         .collect();
-      let out: Result<(), String> =
-        seed_shard_check_env_claim(ctx.env, &addrs, &mut io).and_then(
-          |(_claim, input)| {
-            execute_ixvm_with_record(
-              ctx.toplevel,
-              ctx.fun_idx,
-              &input,
-              &mut io,
-              &mut record,
-            )
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-          },
-        );
+      let out: Result<(), String> = seed_shard_check_env_claim(
+        ctx.env, &addrs, &mut io,
+      )
+      .and_then(|(_claim, input)| {
+        execute_ixvm_with_record(
+          ctx.toplevel,
+          ctx.fun_idx,
+          &input,
+          &mut io,
+          &mut record,
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+      });
       if let Err(e) = out {
         if k > 1 {
           // Per-block attribution needed: end the segment at the last
@@ -880,7 +1502,7 @@ fn scan_range(
              {hi}: {e}"
           );
           narrow_until = hi + k;
-          break (hi, prev_fft, prev_bytes);
+          break (hi, prev_fft, prev_ram);
         }
         let addr = &addrs[0];
         if ctx.fail_fast {
@@ -899,19 +1521,19 @@ fn scan_range(
         );
         ctx.failed.lock().unwrap().push((addr.clone(), e));
         skip_failed = true;
-        break (hi, prev_fft, prev_bytes);
+        break (hi, prev_fft, prev_ram);
       }
       let fft = record_fft_cost(ctx.toplevel, &record);
-      let bytes_gib = f64_from_usize(record_retained_bytes(&record)) / GIB;
-      // Execute-only segments exist to bound the live record, so only
-      // bytes count against the (per-worker share) cut; the scan's cut
-      // charges both prove resources against the budget headroom.
-      let used = if ctx.exec_only {
-        bytes_gib
-      } else {
-        AIUR_RAM_GIB_PER_BFFT * fft / 1e9 + bytes_gib
+      let rec_gib = f64_from_usize(record_retained_bytes(&record)) / GIB;
+      // The cut measure: for the scan, the analytic peak-prove-RSS
+      // prediction from the record's circuit shapes; for execute-only
+      // segments (which exist only to bound the live record), the
+      // record's retained bytes against the per-worker share.
+      let ram_gib = match ctx.system {
+        Some(sys) => f64_from_usize(sys.peak_prove_bytes(&record).peak) / GIB,
+        None => rec_gib,
       };
-      if used >= ctx.cut_used_gib {
+      if ram_gib >= ctx.cut_used_gib || rec_gib >= ctx.soft_record_gib {
         if hi == lo {
           if k > 1 {
             // The segment's first batch crosses the whole cut: find the
@@ -921,17 +1543,17 @@ fn scan_range(
                {hi}: first claim crossed the cut"
             );
             narrow_until = hi + k;
-            break (hi, prev_fft, prev_bytes);
+            break (hi, prev_fft, prev_ram);
           }
           // A single block alone reaches the cut: atomically infeasible
           // at this budget — emitted alone with its measured cost.
-          break (hi + 1, fft, bytes_gib);
+          break (hi + 1, fft, ram_gib);
         }
-        break (hi, prev_fft, prev_bytes);
+        break (hi, prev_fft, prev_ram);
       }
       hi += k;
       prev_fft = fft;
-      prev_bytes = bytes_gib;
+      prev_ram = ram_gib;
     };
     if query_stats_enabled() {
       dump_query_stats(&record, &format!("scan {chunk_id} seg"));
@@ -948,12 +1570,13 @@ fn scan_range(
         record.function_queries.iter().map(|m| m.len()).sum::<usize>()
           + record.memory_queries.iter().map(|(_, m)| m.len()).sum::<usize>();
       eprintln!(
-        "[scan {chunk_id}/{n_chunks}] segment: {} blocks, {:.2} BFFT + \
-         {:.1}G rec, {}/{} blocks done, {:.0}s, rss {:.0}G, arena {}M, \
+        "[scan {chunk_id}/{n_chunks}] segment: {} blocks, {:.2} BFFT, \
+         {:.1}G {}, {}/{} blocks done, {:.0}s, rss {:.0}G, arena {}M, \
          iomap {}k, rec {}M",
         seg_end - lo,
         seg_fft / 1e9,
-        seg_bytes,
+        seg_ram,
+        if ctx.system.is_some() { "pred-RSS" } else { "rec" },
         seg_end,
         chunk.len(),
         t0.elapsed().as_secs_f64(),
@@ -965,7 +1588,7 @@ fn scan_range(
       segments.push(Segment {
         blocks: chunk[lo..seg_end].to_vec(),
         fft: seg_fft,
-        bytes_gib: seg_bytes,
+        ram_gib: seg_ram,
       });
     }
     lo = seg_end + usize::from(skip_failed);
@@ -999,7 +1622,7 @@ use crate::lean::LeanAiurToplevel;
 /// calibrated resource lines.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_scan_shards_with_env(
-  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
     ixvm_codegen::env_handle::EnvHandle,
@@ -1010,8 +1633,9 @@ extern "C" fn rs_aiur_scan_shards_with_env(
   workers: LeanString<LeanBorrowed<'_>>,
   fail_fast: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  worker_bin: LeanString<LeanBorrowed<'_>>,
+  ixe_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  let toplevel = decode_toplevel(&toplevel);
   let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
   let budget = budget_gib.to_string().parse::<f64>().unwrap_or(0.0);
   if budget <= 0.0 {
@@ -1020,8 +1644,11 @@ extern "C" fn rs_aiur_scan_shards_with_env(
   let eps = eps_pct.to_string().parse::<f64>().unwrap_or(5.0) / 100.0;
   let workers = workers.to_string().parse::<usize>().unwrap_or(0);
   let fail_fast = fail_fast.to_string() != "0";
+  let (bin, ixe) = (worker_bin.to_string(), ixe_path.to_string());
+  let proc_workers = (!bin.is_empty() && !ixe.is_empty())
+    .then_some((bin.as_str(), ixe.as_str()));
   match scan_shards(
-    &toplevel,
+    system.get(),
     fun_idx,
     &env_handle.get().env,
     budget,
@@ -1029,6 +1656,7 @@ extern "C" fn rs_aiur_scan_shards_with_env(
     workers,
     fail_fast,
     &out_path.to_string(),
+    proc_workers,
   ) {
     Ok(report) => {
       eprintln!("[rs_scan]\n{report}");
@@ -1053,17 +1681,68 @@ extern "C" fn rs_aiur_execute_env_with_env(
   >,
   workers: LeanString<LeanBorrowed<'_>>,
   fail_fast: LeanString<LeanBorrowed<'_>>,
+  worker_bin: LeanString<LeanBorrowed<'_>>,
+  ixe_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
   let workers = workers.to_string().parse::<usize>().unwrap_or(0);
   let fail_fast = fail_fast.to_string() != "0";
-  match execute_env(&toplevel, fun_idx, &env_handle.get().env, workers, fail_fast)
-  {
+  let (bin, ixe) = (worker_bin.to_string(), ixe_path.to_string());
+  let proc_workers = (!bin.is_empty() && !ixe.is_empty())
+    .then_some((bin.as_str(), ixe.as_str()));
+  match execute_env(
+    &toplevel,
+    fun_idx,
+    &env_handle.get().env,
+    workers,
+    fail_fast,
+    proc_workers,
+  ) {
     Ok(report) => {
       eprintln!("[rs_exec]\n{report}");
       LeanExcept::ok(LeanOwned::box_usize(0))
     },
     Err(e) => LeanExcept::error_string(&format!("rs_aiur_execute_env: {e}")),
+  }
+}
+
+/// `Aiur.AiurSystem.scanWorker`: the child side of the process pool —
+/// runs [`scan_worker`]'s stdin/stdout loop until EOF. Numeric params are
+/// decimal strings: cut (GiB), batch blocks, soft record cut (GiB),
+/// schedule pieces (must match the parent's chunk count), exec-only
+/// ("1" = record-bytes cut, no model).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_scan_worker(
+  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  cut_gib: LeanString<LeanBorrowed<'_>>,
+  batch: LeanString<LeanBorrowed<'_>>,
+  soft_cap_gib: LeanString<LeanBorrowed<'_>>,
+  pieces: LeanString<LeanBorrowed<'_>>,
+  exec_only: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
+  let cut = cut_gib.to_string().parse::<f64>().unwrap_or(f64::INFINITY);
+  let batch = batch.to_string().parse::<usize>().unwrap_or(SCAN_BATCH_BLOCKS);
+  let soft = soft_cap_gib.to_string().parse::<f64>().unwrap_or(f64::INFINITY);
+  let pieces = pieces.to_string().parse::<usize>().unwrap_or(16);
+  let exec_only = exec_only.to_string() == "1";
+  match scan_worker(
+    system.get(),
+    fun_idx,
+    &env_handle.get().env,
+    cut,
+    batch,
+    soft,
+    pieces,
+    exec_only,
+  ) {
+    Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+    Err(e) => LeanExcept::error_string(&format!("rs_aiur_scan_worker: {e}")),
   }
 }

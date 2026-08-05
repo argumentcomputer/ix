@@ -244,8 +244,8 @@ opaque rsShardEspFFI :
     `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGb` > 0 it is
     converted via the measured prover RAM model and overrides `maxCycles`. Pass
     "0" for whichever is unused. Decimal strings (ABI-simple). `backend`
-    selects the packing cost model: "zisk" (guest-STEP cap) or "aiur" (RAM
-    model; RAM budgets only). -/
+    must be "zisk" (guest-STEP cap); "aiur" is rejected — Aiur shards via
+    the measured scan on the `.ixe`. -/
 @[extern "rs_shard_esp_cap"]
 opaque rsShardEspCapFFI :
     @& String →                          -- .ixprof path
@@ -255,21 +255,6 @@ opaque rsShardEspCapFFI :
     @& String →                          -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
     @& String →                          -- backend cost model (zisk|aiur)
-    IO Unit
-
-/-- FFI: surgically split ONE shard of an existing Aiur `.ixes` manifest at a
-    smaller per-shard RAM budget. Every other shard's block list is copied
-    verbatim (their claims and cached proofs stay valid); shard `k` is
-    replaced by its children (the first child keeps id `k`, the rest append
-    at the end). -/
-@[extern "rs_shard_rebudget"]
-opaque rsShardRebudgetFFI :
-    @& String →                          -- .ixprof path
-    @& String →                          -- input .ixes manifest path
-    @& String →                          -- shard index to split
-    @& String →                          -- per-child RAM budget GiB
-    @& String →                          -- balance percent
-    @& String →                          -- output .ixes path
     IO Unit
 
 end Ix.KernelCheck

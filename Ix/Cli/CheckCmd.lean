@@ -694,9 +694,11 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
       | .ok h => pure h
     let workers := (p.flag? "jobs").map (·.as! Nat) |>.getD 0
+    let workerBin := (← IO.appPath).toString
     let start ← IO.monoMsNow
     match Aiur.Bytecode.Toplevel.executeEnvWithEnv compiled.bytecode funIdx
-        envHandle (toString workers) (if keepGoing then "0" else "1") with
+        envHandle (toString workers) (if keepGoing then "0" else "1")
+        workerBin ixe with
     | .error e => IO.eprintln s!"execute failed: {e}"; return 1
     | .ok () =>
       IO.println s!"execute: OK in {(← IO.monoMsNow) - start} ms"

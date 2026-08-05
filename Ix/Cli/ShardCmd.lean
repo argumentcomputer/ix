@@ -14,9 +14,7 @@
   the guest-cost packer runs on it (the profile is kept: re-tuning the
   budget is pure offline graph work on the `.ixprof`).
 
-  `.ixprof` input — the profile-driven packer directly (Zisk default;
-  the Aiur model packer stays reachable via `--backend aiur` for
-  `--rebudget`):
+  `.ixprof` input — the profile-driven packer directly (Zisk):
   - default / `--max-ram G` / `--max-cycles C`: **bin-pack to a per-shard
     cycle/RAM cap** — the fewest shards that each stay under the budget, each
     packed as full as the dependency structure allows (no `--max-ram` ⇒ sized to
@@ -67,7 +65,7 @@ def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
       let base := if ixePath.endsWith ".ixe" then (ixePath.dropEnd 4).toString else ixePath
       base ++ ".ixes"
   let budget := (p.flag? "max-ram").map (·.as! Nat) |>.getD 250
-  let eps := (p.flag? "eps").map (·.as! Nat) |>.getD 5
+  let eps := (p.flag? "eps").map (·.as! Nat) |>.getD 2
   let workers := (p.flag? "workers").map (·.as! Nat) |>.getD 0
   let noFailFast := p.hasFlag "no-fail-fast"
   if noFailFast && p.hasFlag "fail-fast" then
@@ -99,9 +97,19 @@ def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
     TracingTexray.startSampler
     TracingTexray.resetPeakTreeRss
   let start ← IO.monoMsNow
-  match Aiur.Bytecode.Toplevel.scanShardsWithEnv compiled.bytecode funIdx
+  -- The compiled system feeds the scanner's analytic peak-prove-RAM
+  -- model (circuit widths, lookup shapes, quotient degrees); its one-time
+  -- build cost (preprocessed gadget commit) is seconds against a
+  -- minutes-scale scan.
+  let system := Aiur.AiurSystem.build compiled.bytecode
+    Aiur.productionCommitmentParameters Aiur.productionFriParameters
+  -- Process-pool mode: the scan spawns `<this binary> shard-worker`
+  -- children under cgroup memory caps, so an over-cap worker is
+  -- OOM-killed alone and recovered, never the box.
+  let workerBin := (← IO.appPath).toString
+  match Aiur.AiurSystem.scanShardsWithEnv system funIdx
       envHandle (toString budget) (toString eps) (toString workers)
-      (if noFailFast then "0" else "1") outPath with
+      (if noFailFast then "0" else "1") outPath workerBin ixePath with
   | .ok () =>
     if let some (out, rowName) := benchJson then
       let secs := ((← IO.monoMsNow) - start).toFloat / 1000.0
@@ -201,35 +209,16 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   if backend != "zisk" && backend != "aiur" then
     p.printError s!"error: --backend must be zisk or aiur (got {backend})"
     return 1
-
-  -- Surgical single-shard split: `--rebudget K --manifest M.ixes --max-ram G`.
-  -- Every other shard is copied verbatim (cached proofs stay valid); shard K
-  -- is replaced by children packed at the smaller budget.
-  match (p.flag? "rebudget").map (·.as! Nat) with
-  | some k =>
-    let manifestIn := (p.flag? "manifest").map (·.as! String) |>.getD ""
-    if manifestIn.isEmpty then
-      p.printError "error: --rebudget needs --manifest (the input .ixes to split)"
-      return 1
-    match maxRam with
-    | none =>
-      p.printError "error: --rebudget needs --max-ram (per-child budget, GiB)"
-      return 1
-    | some g =>
-      IO.println s!"Rebudgeting shard {k} of {manifestIn} at {g} GiB per child"
-      rsShardRebudgetFFI espPath manifestIn (toString k) (toString g)
-        (toString balancePct) outPath
-      IO.println s!"[shard] wrote {outPath}"
-      return 0
-  | none => pure ()
+  -- Reaching here with `aiur` means a `.ixprof` input (a `.ixe` dispatched
+  -- to the scan above): the model packer that served it is gone.
+  if backend == "aiur" then
+    p.printError "error: the Aiur model packer was removed; run the measured scan on the .ixe instead"
+    return 1
 
   -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
   -- (budget) > default (size to detected system RAM).
   match shardsFlag with
   | some n =>
-    if backend != "zisk" then
-      p.printError s!"error: --backend {backend} packs to a RAM budget; use --max-ram, not --shards"
-      return 1
     IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
     rsShardEspFFI espPath (toString n) (toString balancePct) (toString parallelism)
       outPath
@@ -244,6 +233,37 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"[shard] wrote {outPath}"
   return 0
 
+/-- The child side of the scan's process pool: build the same
+    toplevel/system/env as the parent, then hand off to the Rust worker
+    loop (stdin commands, stdout replies) until EOF. -/
+def runShardWorkerCmd (p : Cli.Parsed) : IO UInt32 := do
+  let some ixe := (p.flag? "ixe").map (·.as! String) | do
+    p.printError "error: shard-worker requires --ixe"
+    return 1
+  let cutGib := (p.flag? "cut-gib").map (·.as! String) |>.getD "inf"
+  let batch := (p.flag? "batch").map (·.as! Nat) |>.getD 128
+  let softCap := (p.flag? "soft-cap-gib").map (·.as! String) |>.getD "inf"
+  let pieces := (p.flag? "pieces").map (·.as! Nat) |>.getD 16
+  let toplevel ← match IxVM.ixVM with
+    | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
+    | .ok t => pure t
+  let compiled ← match toplevel.compile with
+    | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let funIdx ← match compiled.getFuncIdx `verify_claim with
+    | some i => pure i
+    | none => IO.eprintln "error: verify_claim missing"; return 1
+  let system := Aiur.AiurSystem.build compiled.bytecode
+    Aiur.productionCommitmentParameters Aiur.productionFriParameters
+  let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+    | .ok h => pure h
+  match Aiur.AiurSystem.scanWorker system funIdx envHandle cutGib
+      (toString batch) softCap (toString pieces)
+      (if p.hasFlag "exec-only" then "1" else "0") with
+  | .ok () => return 0
+  | .error e => IO.eprintln s!"shard-worker: {e}"; return 1
+
 end Ix.Cli.ShardCmd
 
 open Ix.Cli.ShardCmd in
@@ -253,9 +273,9 @@ def shardCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "max-ram" : Nat;  "Per-shard host-RAM budget, GiB (scan default 250; .ixprof default: detected system RAM)"
-    backend   : String; "Planner: aiur (default on `.ixe`: measured scan) or zisk (`.ixe`: profile pass + guest-cost pack in one command; `.ixprof`: pack directly). On a `.ixprof`, `aiur` selects the model packer (--rebudget's path)"
+    backend   : String; "Planner: aiur (default on `.ixe`: measured scan) or zisk (`.ixe`: profile pass + guest-cost pack in one command; `.ixprof`: pack directly)."
     out       : String; "Output .ixes manifest path (default: input basename + .ixes)"
-    eps       : Nat;  "Scan only: pre-charged cut headroom, percent (default 5): covers the incremental claim-walk overcount and the merge pass's fft-sum conservatism"
+    eps       : Nat;  "Scan only: pre-charged cut headroom, percent (default 2): covers the batched claim readout's measured drift (~1%) plus merge-sum conservatism"
     workers   : Nat;  "Scan only: parallel chunk scanners (default 0 = autoscale to cores and detected RAM). Each holds one segment's query record and faulted witness, so workers × segment footprint must fit the box"
     "fail-fast";      "Scan: halt on the first kernel-rejected block (the default; flag accepted for explicitness)."
     "no-fail-fast";   "Scan: skip kernel-rejected blocks (named as skipped, excluded from the partition, listed in <out>.failed.csv). The manifest then does not cover them — the downstream coverage gate reports exactly which."
@@ -265,14 +285,26 @@ def shardCmd : Cli.Cmd := `[Cli|
     "max-cycles" : Nat;    ".ixprof only: per-shard guest-cycle budget (overrides the RAM sizing)"
     balance      : Nat;    ".ixprof only: per-bisection balance tolerance, percent (default 5)"
     parallelism  : Nat;    ".ixprof only: provers assumed for the prove-time estimate (default 1 = sequential)"
-    rebudget     : Nat;    ".ixprof only: surgically split shard K of --manifest at the smaller --max-ram budget; every other shard is copied verbatim so its cached claims/proofs stay valid."
-    manifest     : String; "Input .ixes manifest to split (with --rebudget)."
 
   ARGS:
     path : String; "A serialized `.ixe` env (measured scan) or a `.ixprof` from `ix profile` (profile packer)"
 
   SUBCOMMANDS:
     shardExtractCmd
+]
+
+open Ix.Cli.ShardCmd in
+def shardWorkerCmd : Cli.Cmd := `[Cli|
+  "shard-worker" VIA runShardWorkerCmd;
+  "INTERNAL: scan-worker child for the shard scanner's process pool — spawned automatically under a cgroup memory cap; not for direct use"
+
+  FLAGS:
+    ixe            : String; "Path to the `.ixe` env (same file as the parent scan)"
+    "cut-gib"      : String; "Segment cut, GiB of predicted prove RSS (decimal string)"
+    batch          : Nat;    "Blocks per measurement claim"
+    "soft-cap-gib" : String; "Graceful record ceiling, GiB — segments cut here so only mid-claim growth reaches the cgroup kill"
+    pieces         : Nat;    "Schedule piece count (must match the parent's chunking)"
+    "exec-only";             "Execute-only mode: record-bytes cut, no prove model"
 ]
 
 end

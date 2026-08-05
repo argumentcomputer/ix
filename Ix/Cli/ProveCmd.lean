@@ -263,23 +263,75 @@ def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
         if (← Ix.Cli.VerifyCmd.verifyOneProof aiurSystem compiled proofAddr) != 0 then
           return .error s!"proof {proofAddr} failed verification"
         return .ok { shard := k, claimDigest := d, proofAddr }
+  -- RAM-aware admission — fastest wall without OOM: admit the next
+  -- (heaviest-first) shard whenever the predicted-RSS sum of in-flight
+  -- proves plus its own fits the box limit. Predictions come from the
+  -- scan sidecar's analytic per-shard `pred_ram_gib` (validated within
+  -- a few percent of measured RSS); a shard with no sidecar row is
+  -- assumed to need the whole limit, degrading to serial for exactly
+  -- those shards. `--jobs` remains as an optional concurrency ceiling.
+  let predRam : Std.HashMap Nat Nat ← do
+    let path : System.FilePath := ⟨manifestPath ++ ".costs.csv"⟩
+    let mut m : Std.HashMap Nat Nat := {}
+    if ← path.pathExists then
+      for line in ((← IO.FS.readFile path).splitOn "\n").drop 1 do
+        let cols := line.splitOn ","
+        if cols.length ≥ 10 then
+          -- pred_ram_gib is column 8; integer GiB resolution suffices
+          -- for admission (the limit already carries an 8% margin).
+          match cols[0]!.toNat?, ((cols[8]!.splitOn ".")[0]!).toNat? with
+          | some k, some gib => m := m.insert k (gib + 1)
+          | _, _ => pure ()
+    pure m
+  let boxGib : Nat ← do
+    let info ← IO.FS.readFile "/proc/meminfo"
+    match info.splitOn "\n" |>.head?.map (·.splitOn " " |>.filter (· ≠ "")) with
+    | some [_, kb, _] => pure ((kb.toNat?.getD 0) / (1024 * 1024))
+    | _ => pure 0
+  let limitGib := if boxGib == 0 then 0 else boxGib * 92 / 100
+  let ramOf (k : Nat) : Nat :=
+    (predRam.get? k).getD (if limitGib == 0 then 1 else limitGib)
+  IO.println s!"[prove] RAM-aware admission: box {boxGib} GiB, limit \
+    {limitGib} GiB, {predRam.size} sidecar predictions"
+  let maxJobs := if jobs == 0 then shards.size else jobs
   let mut failures : List (Nat × String) := []
-  for chunk in pending.toChunks (max 1 jobs) do
-    let tasks ← chunk.mapM fun k =>
-      IO.asTask (prio := .dedicated) do pure (k, ← proveOneShard k)
-    for t in tasks do
-      match t.get with
-      | .ok (k, .ok row) =>
-        recordProof row
-        done := done.insert k row.proofAddr
-        IO.println s!"[prove] shard {k}: proof {row.proofAddr} verified \
-          ({done.size}/{shards.size})"
-      | .ok (k, .error e) =>
-        IO.eprintln s!"[prove] shard {k} FAILED: {e}"
-        failures := (k, e) :: failures
+  let mut queue := pending
+  let mut running : List (Nat × Nat × Task (Except IO.Error (Nat × Except String ProofRow))) := []
+  let mut inFlightGib : Nat := 0
+  repeat
+    -- Admit while the next shard fits (always admit into an idle box).
+    while h : queue ≠ [] do
+      let k := queue.head h
+      let need := ramOf k
+      if running.isEmpty
+          || (running.length < maxJobs && inFlightGib + need ≤ limitGib) then
+        let t ← IO.asTask (prio := .dedicated) do pure (k, ← proveOneShard k)
+        running := (k, need, t) :: running
+        inFlightGib := inFlightGib + need
+        queue := queue.tail
+      else
+        break
+    -- Wait for any in-flight prove to finish, then retire it.
+    let fin ← match running.map (·.2.2) with
+      | [] => break
+      | t :: rest => IO.waitAny (t :: rest)
+    let (k, res) ← match fin with
+      | .ok kr => pure kr
       | .error e =>
         IO.eprintln s!"[prove] task crashed: {e}"
         failures := (shards.size, toString e) :: failures
+        break
+    match res with
+    | .ok row =>
+      recordProof row
+      done := done.insert k row.proofAddr
+      IO.println s!"[prove] shard {k}: proof {row.proofAddr} verified \
+        ({done.size}/{shards.size})"
+    | .error e =>
+      IO.eprintln s!"[prove] shard {k} FAILED: {e}"
+      failures := (k, e) :: failures
+    inFlightGib := inFlightGib - (running.find? (·.1 == k)).elim 0 (·.2.1)
+    running := running.filter (·.1 ≠ k)
   if !failures.isEmpty then
     IO.eprintln s!"[prove] {failures.length} shard(s) failed: \
       {failures.map (·.1)}; re-run the same command to resume"

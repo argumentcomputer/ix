@@ -74,6 +74,13 @@ pub struct PeakProveBytes {
 }
 
 impl AiurSystem {
+  /// The bytecode this system was compiled from (drivers that execute
+  /// through the system — the shard scanner — read it here instead of
+  /// re-decoding their own copy).
+  pub fn toplevel(&self) -> &Toplevel {
+    &self.toplevel
+  }
+
   pub fn build(
     toplevel: Toplevel,
     commitment_parameters: CommitmentParameters,
@@ -233,8 +240,8 @@ impl AiurSystem {
       let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
       let args: usize = self.slot_widths[i].iter().sum();
       let q = c.quotient_degree();
-      witness += S * n * c.main_width + S * n * (c.num_lookups + args)
-        + 40 * raw;
+      witness +=
+        S * n * c.main_width + S * n * (c.num_lookups + args) + 40 * raw;
       s1_lde += S * b * n * c.main_width;
       lookup_w += S * n * (c.num_lookups + args);
       msgs += 2 * S * d * n * c.num_lookups;

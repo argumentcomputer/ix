@@ -3114,9 +3114,8 @@ pub(crate) fn system_ram_gib() -> Option<f64> {
 /// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gb` > 0 it is
 /// converted via the measured prover RAM model and overrides `max_cycles`. Pass
 /// "0" for both to default the budget to detected system RAM. `backend`
-/// selects the cost model: "zisk" (default) packs to the guest-STEP cap,
-/// "aiur" packs to the Aiur RAM model (RAM budgets only — a cycle cap is a
-/// Zisk-specific unit).
+/// must be "zisk" (guest-STEP cap); "aiur" is rejected — Aiur shards via
+/// the measured scan on the `.ixe`, not a model packer.
 #[allow(clippy::cast_precision_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp_cap(
@@ -3152,26 +3151,9 @@ pub extern "C" fn rs_shard_esp_cap(
     }
   }
   if aiur {
-    if ram <= 0.0 {
-      return LeanIOResult::error_string(
-        "shard --backend aiur sizes by RAM; pass --max-ram G (a cycle cap is a Zisk unit)",
-      );
-    }
-    let out = out_path.to_string();
-    let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
-    return match ix_kernel::shard::shard_esp_aiur(
-      &esp_path.to_string(),
-      ram,
-      balance,
-      parallelism,
-      out_opt,
-    ) {
-      Ok(report) => {
-        eprintln!("[rs_shard]\n{report}");
-        LeanIOResult::ok(LeanOwned::box_usize(0))
-      },
-      Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp_cap: {e}")),
-    };
+    return LeanIOResult::error_string(
+      "the Aiur model packer was removed; run the measured scan instead: ix shard <env.ixe> --max-ram G",
+    );
   }
   let cap =
     if ram > 0.0 { ix_kernel::shard::cycle_cap_for_ram(ram) } else { mc };
@@ -3194,47 +3176,6 @@ pub extern "C" fn rs_shard_esp_cap(
       LeanIOResult::ok(LeanOwned::box_usize(0))
     },
     Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp_cap: {e}")),
-  }
-}
-
-/// FFI: surgically split ONE shard of an existing Aiur `.ixes` manifest at a
-/// smaller per-shard RAM budget. Every other shard's block list is copied
-/// verbatim (their claims and cached proofs stay valid); shard `k` is
-/// replaced by its children (first child keeps id `k`, the rest append at
-/// the end).
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_shard_rebudget(
-  esp_path: LeanString<LeanBorrowed<'_>>,
-  manifest_path: LeanString<LeanBorrowed<'_>>,
-  shard_k: LeanString<LeanBorrowed<'_>>,
-  ram_gb: LeanString<LeanBorrowed<'_>>,
-  balance_pct: LeanString<LeanBorrowed<'_>>,
-  out_path: LeanString<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  let k = match shard_k.to_string().parse::<usize>() {
-    Ok(k) => k,
-    Err(_) => return LeanIOResult::error_string("rebudget: bad shard index"),
-  };
-  let ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
-  if ram <= 0.0 {
-    return LeanIOResult::error_string(
-      "rebudget: pass a positive per-child RAM budget (GiB)",
-    );
-  }
-  let balance = balance_pct.to_string().parse::<f64>().unwrap_or(5.0) / 100.0;
-  match ix_kernel::shard::rebudget_manifest_shard(
-    &esp_path.to_string(),
-    &manifest_path.to_string(),
-    k,
-    ram,
-    balance,
-    &out_path.to_string(),
-  ) {
-    Ok(report) => {
-      eprintln!("[rs_shard_rebudget]\n{report}");
-      LeanIOResult::ok(LeanOwned::box_usize(0))
-    },
-    Err(e) => LeanIOResult::error_string(&format!("rs_shard_rebudget: {e}")),
   }
 }
 

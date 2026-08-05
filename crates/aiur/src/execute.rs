@@ -359,8 +359,9 @@ pub fn f64_from_usize(n: usize) -> f64 {
 }
 
 /// Approximate resident bytes of a [`QueryRecord`]: retained key/output
-/// field elements (8 B each) plus ~13 B of per-entry index overhead
-/// (stored hash, table slot, multiplicity). The memory-circuit stores
+/// field elements (8 B each) plus ~21 B of per-entry index overhead
+/// (stored hash 8, multiplicity element 8, hash-table slot ~5 with load
+/// factor). The memory-circuit stores
 /// dominate on arithmetic-heavy content, where entries are FFT-cheap
 /// (narrow columns) but RAM-heavy — the second resource dimension a
 /// RAM-budgeted partition has to price alongside FFT cost.
@@ -375,7 +376,7 @@ pub fn record_retained_bytes(record: &QueryRecord) -> usize {
     elems += m.retained_elems();
     entries += m.len();
   }
-  elems * 8 + entries * 13
+  elems * 8 + entries * 21
 }
 
 pub fn record_fft_cost(toplevel: &Toplevel, record: &QueryRecord) -> f64 {

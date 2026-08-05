@@ -97,8 +97,12 @@ def shardPipelineTests (env : Lean.Environment)
   let scanFunIdx ← match compiled.getFuncIdx `verify_claim with
     | some i => pure i
     | none => throw <| IO.userError "verify_claim missing"
-  match Aiur.Bytecode.Toplevel.scanShardsWithEnv compiled.bytecode scanFunIdx
-      envHandle "20" "5" "2" "1" scanIxes.toString with
+  let scanSystem := Aiur.AiurSystem.build compiled.bytecode
+    Aiur.productionCommitmentParameters Aiur.productionFriParameters
+  -- Empty worker-bin/ixe strings select the in-process thread pool: the
+  -- test binary cannot exec itself as `ix shard-worker`.
+  match Aiur.AiurSystem.scanShardsWithEnv scanSystem scanFunIdx
+      envHandle "20" "5" "2" "1" scanIxes.toString "" "" with
   | .error e => throw <| IO.userError s!"shard scan failed: {e}"
   | .ok () => pure ()
   let (_, scanShards) ←

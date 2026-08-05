@@ -48,6 +48,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     profileCmd;
     proveCmd;
     shardCmd;
+    shardWorkerCmd;
     codegenCmd;
     verifyCmd;
     addrOfCmd;
