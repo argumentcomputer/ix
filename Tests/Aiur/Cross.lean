@@ -1161,6 +1161,76 @@ def toplevel : Source.Toplevel := ⟦
     let r10 = to_field(s) + to_field(c) * 1000;   -- 1044
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
   }
+
+  -- Unconstrained big-uint div/mod: lists of [U8; 8] limbs in, the same
+  -- list datatype at [G; 8] out. The datatype must declare Cons FIRST
+  -- (runtime tag contract: 0 = Cons, 1 = Nil). Limbs are little-endian
+  -- u64s, head-first.
+  enum BNode‹T› {
+    BCons(T, &BNode‹T›),
+    BNil
+  }
+
+  fn blist0() -> &BNode‹[U8; 8]› { store(BNode.BNil) }
+  fn blist1(l: [U8; 8]) -> &BNode‹[U8; 8]› { store(BNode.BCons(l, blist0())) }
+  fn blist2(l0: [U8; 8], l1: [U8; 8]) -> &BNode‹[U8; 8]› {
+    store(BNode.BCons(l0, blist1(l1)))
+  }
+
+  -- u64 value of the first result limb (fits in G for the cases below).
+  fn glimb_val(p: &BNode‹[G; 8]›) -> G {
+    match load(p) {
+      BNode.BCons(l, _) => l[0] + 256 * l[1] + 65536 * l[2] + 16777216 * l[3]
+        + 4294967296 * l[4] + 1099511627776 * l[5] + 281474976710656 * l[6]
+        + 72057594037927936 * l[7],
+      BNode.BNil => 0,
+    }
+  }
+
+  fn glist_is_nil(p: &BNode‹[G; 8]›) -> G {
+    match load(p) {
+      BNode.BNil => 1,
+      BNode.BCons(_, _) => 0,
+    }
+  }
+
+  -- Aggregate: plain divide (300/7), unit divisor (300/1), zero divisor
+  -- (300/0 → (Nil, 300) by convention), and a two-limb dividend with a
+  -- Nil remainder (2^64 / 2 → (2^63, Nil), canonical single-limb q).
+  pub fn divmod_test() -> G {
+    let a300 = blist1([44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let b7 = blist1([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let (q1, r1) = unconstrained_big_uint_div_mod(a300, b7);
+    let s1 = glimb_val(q1) + 1000 * glimb_val(r1);          -- 42 + 6000
+    let b1 = blist1([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let (q2, _r2) = unconstrained_big_uint_div_mod(a300, b1);
+    let s2 = glimb_val(q2);                                 -- 300
+    let (q3, r3) = unconstrained_big_uint_div_mod(a300, blist0());
+    let s3 = 1000000 * glist_is_nil(q3) + glimb_val(r3);    -- 1000300
+    let a64 = blist2([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+                     [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let b2 = blist1([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let (q4, r4) = unconstrained_big_uint_div_mod(a64, b2);
+    let s4 = glimb_val(q4) + glist_is_nil(r4);              -- 2^63 + 1
+    s1 + s2 + s3 + s4
+  }
+
+  -- Unconstrained field hints: `g_to_bytes` returns the 8 LE bytes of the
+  -- CANONICAL u64 value as raw [G; 8] advice; `g_inverse` the field
+  -- inverse with 0 ↦ 0.
+  pub fn hint_test() -> G {
+    -- 300 = 0x012C → LE bytes [44, 1, 0, ...]
+    let b = unconstrained_g_to_bytes(300);
+    let s1 = b[0] + 1000 * b[1];                -- 1044
+    let s2 = b[7];                              -- 0
+    -- x * x⁻¹ = 1 for x ≠ 0; 0 ↦ 0
+    let s3 = unconstrained_g_inverse(7) * 7;    -- 1
+    let s4 = unconstrained_g_inverse(0);        -- 0
+    -- Canonicality: 0 - 1 wraps to p - 1 = 0xFFFFFFFF00000000
+    let c = unconstrained_g_to_bytes(0 - 1);
+    let s5 = c[4] + c[0];                       -- 255
+    s1 + s2 + 10 * s3 + s4 + s5                 -- 1309
+  }
 ⟧
 
 /-- Compiler outputs shared by every agreement case. Top-level closed
@@ -1482,6 +1552,10 @@ def tests : TestSeq :=
   runAgreement "non_tail_match" "non_tail_match" [] ++
   -- Inlined function calls (`@fn(args)`): all scenarios in one entry
   runAgreement "inline_test" "inline_test" [] ++
+  -- Unconstrained big-uint div/mod: all cases in one entry
+  runAgreement "divmod_test" "divmod_test" [] ++
+  -- Unconstrained g_to_bytes / g_inverse hints: all cases in one entry
+  runAgreement "hint_test" "hint_test" [] ++
   -- ----- Negative paths: every engine must reject --------------------------
   -- assert_eq! mismatch
   runFailureAgreement "assert_same(7,8) rejects" "assert_same" [7, 8] ++
