@@ -202,7 +202,7 @@ def auxMotiveSigs (recVal : RecursorVal) (recLevels : Array Level)
         if let some t := lastDom then
           let (head, tArgs) := decomposeApps t
           if let .const extName _ _ := head then
-            match env.consts.get? extName with
+            match env.get? extName with
             | some (.inductInfo ind) =>
               let extNParams := ind.numParams
               if tArgs.size >= extNParams then
@@ -231,7 +231,7 @@ def deriveHeadRewriteApp (recName : Name) (recLevels : Array Level)
     (hr : AuxHeadRewrite) (params : Array Expr) (motives : Array Expr)
     (env : Ix.Environment) :
     Except String (Array Level × Array Expr) := Id.run do
-  let some (.recInfo recVal) := env.consts.get? recName
+  let some (.recInfo recVal) := env.get? recName
     | return .error s!"'{recName.pretty}' is not a recursor"
   let sigs := auxMotiveSigs recVal recLevels params motives env
   let some sig := sigs.find? fun s => s.sourcePos == hr.targetMotivePos
@@ -271,7 +271,7 @@ plan's target is '{hr.targetRec.pretty}'"
     match head with
     | .const _ lvls _ => pure lvls
     | _ => return .error "major type head is not a constant"
-  let some (.recInfo target) := env.consts.get? hr.targetRec
+  let some (.recInfo target) := env.get? hr.targetRec
     | return .error
         s!"target recursor '{hr.targetRec.pretty}' missing from env"
   let needed := target.cnst.levelParams.size
@@ -302,12 +302,12 @@ def sourceCtorForMinor (srcMinorIdx : Nat) (recVal : RecursorVal)
     Option (Nat × ConstructorVal) := Id.run do
   let mut offset : Nat := 0
   for (indName, sourcePos) in recVal.all.zipIdx do
-    let some ci := env.consts.get? indName | return none
+    let some ci := env.get? indName | return none
     let .inductInfo ind := ci | return none
     let nCtors := ind.ctors.size
     if srcMinorIdx < offset + nCtors then
       let ctorName := ind.ctors[srcMinorIdx - offset]!
-      let some cci := env.consts.get? ctorName | return none
+      let some cci := env.get? ctorName | return none
       let .ctorInfo ctor := cci | return none
       return some (sourcePos, ctor)
     offset := offset + nCtors
@@ -315,12 +315,12 @@ def sourceCtorForMinor (srcMinorIdx : Nat) (recVal : RecursorVal)
   -- order. The ctor list is the external inductive's own (the aux is the
   -- external applied at spec args, so field counts match).
   for sig in auxSigs do
-    let some (.inductInfo ind) := env.consts.get? sig.extName
+    let some (.inductInfo ind) := env.get? sig.extName
       | return none
     let nCtors := ind.ctors.size
     if srcMinorIdx < offset + nCtors then
       let ctorName := ind.ctors[srcMinorIdx - offset]!
-      let some cci := env.consts.get? ctorName | return none
+      let some cci := env.get? ctorName | return none
       let .ctorInfo ctor := cci | return none
       return some (sig.sourcePos, ctor)
     offset := offset + nCtors
@@ -413,7 +413,7 @@ def findSourceRecTarget (dom : Expr) (originalAll : Array Name)
   let .const targetName _ _ := head | return none
   match originalAll.findIdx? (· == targetName) with
   | some sourcePos =>
-    let some ci := env.consts.get? targetName | return none
+    let some ci := env.get? targetName | return none
     let .inductInfo ind := ci | return none
     let targetNParams := ind.numParams
     if args.size < targetNParams || params.size < targetNParams then
@@ -495,7 +495,7 @@ def adaptSplitMinor (recName : Name) (recLevels : Array Level)
     (env : Ix.Environment) : Option Expr := Id.run do
   if plan.sourceInBlock.all (fun inBlock => inBlock) then
     return none
-  let some recCi := env.consts.get? recName | return none
+  let some recCi := env.get? recName | return none
   let .recInfo recVal := recCi | return none
   let originalAll := recVal.all
   -- Nested-aux motive signatures: fields targeting an aux occurrence

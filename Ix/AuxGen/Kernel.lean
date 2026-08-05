@@ -707,6 +707,10 @@ def nameForAddr (addr : Address) : KBridgeM (Option Name) := do
   for (name, named) in cenv.nameToNamed do
     if named.addr == addr then
       return some name
+  -- Streaming driver: `env.consts` is unmaterialized; the input names'
+  -- hashes live in `nameByHash` instead.
+  if let some name := cenv.nameByHash.get? addr then
+    return some name
   for (name, _) in cenv.env.consts do
     if name.getHash == addr then
       return some name

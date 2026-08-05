@@ -621,9 +621,28 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-! ## Environment -/
 
-/-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`. -/
+/-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
+
+    `fallback?` supports STREAMING consumers (the pure-Lean compile
+    driver at whole-Mathlib scale): a pure resolver consulted when
+    `consts` misses, typically canon-on-demand against the pinned
+    elaborated Lean env. A materialized environment leaves it `none`,
+    and every existing `{ consts := … }` literal behaves exactly as
+    before. Lookups that should see the fallback go through
+    `Environment.get?`; direct `consts` iteration/containment remains
+    the explicit-map view. -/
 structure Environment where
   consts : HashMap Name ConstantInfo
+  fallback? : Option (Name → Option ConstantInfo) := none
+
+/-- Constant lookup: the materialized map first, then the lazy fallback. -/
+def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
+  match env.consts.get? n with
+  | some ci => some ci
+  | none =>
+    match env.fallback? with
+    | some f => f n
+    | none => none
 
 /-- Raw environment data as arrays (returned from Rust FFI).
     Use `toEnvironment` to convert to Environment with HashMaps. -/

@@ -37,6 +37,7 @@
 module
 public import Cli
 public import Ix.Common
+public import Ix.CanonM
 public import Ix.CompileM
 public import Ix.CompileDriver
 public import Ix.DecompileM
@@ -87,9 +88,11 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Phase 5's decompile oracle, in one of two forms. The default is a
   -- per-name 64-bit DIGEST of the canonicalized source (derived
   -- `Hashable`, same field coverage as the `BEq` used by `--full-oracle`,
-  -- O(1) at the hash-consed Name/Level/Expr leaves): the whole canon env
-  -- is released right after phase 1 instead of being held through
-  -- phase 5, which at whole-Mathlib scale is an env-sized RSS saving.
+  -- O(1) at the hash-consed Name/Level/Expr leaves), collected by the
+  -- STREAMING compile driver during its transient canon pass — the
+  -- whole-env canon map is never materialized at all, which at
+  -- whole-Mathlib scale is the difference between fitting in RAM and
+  -- swapping.
   -- `--full-oracle` keeps the old whole-env view: full structural BEq per
   -- constant plus the decompiler's per-recovery debug track — use it to
   -- debug a digest mismatch on a filtered (`--ns`) closure.
@@ -136,14 +139,24 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok out =>
       bytes := out.bytes
       if fullOracle then
-        canonView? := some out.cenv.env.consts
+        -- Materialize the whole canon view post-hoc (chunk-parallel).
+        -- The streaming compile never builds it; canon is per-constant
+        -- deterministic, so this equals the view the compile read
+        -- through its on-demand fallback.
+        let constArr := constList.toArray
+        let chunkSize := max 1 ((constArr.size + 31) / 32)
+        let chunkArr := Ix.CanonM.chunks constArr chunkSize
+        let tasks := chunkArr.map fun chunk =>
+          Task.spawn fun _ => Ix.CanonM.canonChunk chunk
+        let mut view : Std.HashMap Ix.Name Ix.ConstantInfo := {}
+        for task in tasks do
+          for (n, ci) in task.get do
+            view := view.insert n ci
+        canonView? := some view
       else
-        -- Digest the canonicalized source (including compile-generated
-        -- aux originals) and let the canon env free with `out`.
-        let mut digs : Std.HashMap Ix.Name UInt64 := {}
-        for (n, ci) in out.cenv.env.consts do
-          digs := digs.insert n (hash ci)
-        canonDigests? := some digs
+        -- The streamed canon pass already digested every input
+        -- constant; the whole-env canon map never existed.
+        canonDigests? := some out.digests
       let t1 ← IO.monoMsNow
       if out.cenv.ungrounded.size > 0 then
         let shown := out.cenv.ungrounded.toList.take 3

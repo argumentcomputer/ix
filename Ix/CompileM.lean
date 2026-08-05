@@ -78,6 +78,12 @@ structure CompileEnv where
       (Rust `stt.ungrounded`): pre-compile grounding rejections plus
       per-block compile failures recorded by the scheduler. -/
   ungrounded : Std.HashMap Name String := {}
+  /-- Name-hash → name over the full INPUT constant set, for
+      `nameForAddr`'s reverse lookup when the streaming driver leaves
+      `env.consts` unmaterialized (its by-hash scan over `env.consts`
+      keys sees nothing there). Materialized-env callers leave this
+      empty and keep the scan. -/
+  nameByHash : Std.HashMap Address Name := {}
 
 /-- Initialize global state from canonicalization result. -/
 def CompileEnv.new (env: Ix.Environment) : CompileEnv :=
@@ -373,10 +379,11 @@ def lookupConstAddr (name : Name) : CompileM Address := do
       | some addr => pure addr
       | none => throw (.missingConstant s!"{name}")
 
-/-- Find a constant in the Ix environment. -/
+/-- Find a constant in the Ix environment (through the streaming
+    fallback when the driver runs canon-on-demand). -/
 def findConst (name : Name) : CompileM ConstantInfo := do
   let env ← getCompileEnv
-  match env.env.consts.get? name with
+  match env.env.get? name with
   | some const => pure const
   | none => throw (.missingConstant s!"{name}")
 
