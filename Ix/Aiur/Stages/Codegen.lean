@@ -419,9 +419,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" result.output[0]" ++
     s!" } else \{" ++
     s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained));" ++
-    s!" if record_budget_exceeded() \{ return Err(ExecError::RecordBudgetExceeded); }" ++
-    s!" __ptr } }"
+    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 /-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
@@ -804,14 +802,8 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
         #[.ref (.index (.var "inp") (.lit "..")),
           .ref (.index (.var "__ret") (.lit "..")),
           gFromBool (.lit "!unconstrained")])
-    -- The budget poll rides the memoization insert — the unit of record
-    -- growth — so a bounded execution aborts within one unique query of
-    -- its limit.
-    let budgetCheck : RustStmt :=
-      .exprStmt (.lit
-        "if record_budget_exceeded() { return Err(ExecError::RecordBudgetExceeded); }")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
-    return #[outArr, insertCall, budgetCheck,
+    return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
   | .match valIdx cases dflt? => do
     -- Each arm body executes from the SAME value-stack snapshot as
@@ -980,8 +972,7 @@ def optionalExecuteUses : Array (String × String) := #[
 /-- Build the `use aiur::execute::{...};` block, including only
     items whose search token appears in `body`. -/
 def emitConditionalImports (body : String) : String := Id.run do
-  let always : Array String :=
-    #["ExecError", "IOBuffer", "QueryRecord", "record_budget_exceeded"]
+  let always : Array String := #["ExecError", "IOBuffer", "QueryRecord"]
   let mut items : Array String := always
   for (path, token) in optionalExecuteUses do
     if (body.splitOn token).length > 1 then

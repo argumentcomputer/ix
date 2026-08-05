@@ -201,10 +201,6 @@ pub enum ExecError {
     msg: Option<String>,
   },
   MatchNoCase(u64),
-  /// The thread's record-growth budget was crossed (see
-  /// [`set_record_byte_budget`]): not a kernel verdict on the claim — the
-  /// driver that armed the budget re-runs or defers the work.
-  RecordBudgetExceeded,
   NoContinuation,
   StackNotEmpty,
   InvalidIOKey {
@@ -248,9 +244,6 @@ impl std::fmt::Display for ExecError {
         None => write!(f, "assert_eq mismatch: {lhs} != {rhs}"),
       },
       Self::MatchNoCase(v) => write!(f, "no match case for value {v}"),
-      Self::RecordBudgetExceeded => {
-        write!(f, "record byte budget exceeded")
-      },
       Self::NoContinuation => write!(f, "yield without continuation"),
       Self::StackNotEmpty => {
         write!(f, "exec entries stack not empty at return")
@@ -363,45 +356,6 @@ pub fn f64_from_usize(n: usize) -> f64 {
   let hi = u32::try_from(n >> 32).expect("usize is at most 64 bits");
   let lo = u32::try_from(n & 0xFFFF_FFFF).expect("masked to u32 range");
   f64::from(hi) * 4_294_967_296.0 + f64::from(lo)
-}
-
-std::thread_local! {
-  /// Per-thread record-growth budget: `(bytes charged, byte limit)`.
-  /// Every [`QueryMap::insert`](crate::querymap::QueryMap::insert) charges
-  /// its entry's retained bytes; execution paths poll
-  /// [`record_budget_exceeded`] and abort with
-  /// [`ExecError::RecordBudgetExceeded`] once the limit is crossed. The
-  /// default limit is `usize::MAX`, so nothing changes unless a driver
-  /// (the shard scanner) opts a thread in around an execution it must be
-  /// able to bound — a single dense block can otherwise grow a record by
-  /// tens of GiB with no interior boundary to act on.
-  static RECORD_BYTE_BUDGET: std::cell::Cell<(usize, usize)> =
-    const { std::cell::Cell::new((0, usize::MAX)) };
-}
-
-/// Arm the calling thread's record-growth budget and zero its counter.
-pub fn set_record_byte_budget(limit: usize) {
-  RECORD_BYTE_BUDGET.with(|c| c.set((0, limit)));
-}
-
-/// Disarm the calling thread's record-growth budget.
-pub fn clear_record_byte_budget() {
-  RECORD_BYTE_BUDGET.with(|c| c.set((0, usize::MAX)));
-}
-
-/// Whether the calling thread has charged past its record-growth limit.
-pub fn record_budget_exceeded() -> bool {
-  RECORD_BYTE_BUDGET.with(|c| {
-    let (used, limit) = c.get();
-    used > limit
-  })
-}
-
-pub(crate) fn charge_record_bytes(bytes: usize) {
-  RECORD_BYTE_BUDGET.with(|c| {
-    let (used, limit) = c.get();
-    c.set((used.saturating_add(bytes), limit));
-  });
 }
 
 /// Approximate resident bytes of a [`QueryRecord`]: retained key/output
@@ -564,9 +518,6 @@ impl Function {
               &[ptr],
               G::from_bool(!unconstrained),
             );
-            if record_budget_exceeded() {
-              return Err(ExecError::RecordBudgetExceeded);
-            }
             map.push(ptr);
           }
         },
@@ -889,9 +840,6 @@ impl Function {
             &output,
             G::from_bool(!unconstrained),
           );
-          if record_budget_exceeded() {
-            return Err(ExecError::RecordBudgetExceeded);
-          }
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,

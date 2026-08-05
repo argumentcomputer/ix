@@ -54,9 +54,8 @@ use rustc_hash::FxHashMap;
 use aiur::{
   bytecode::Toplevel,
   execute::{
-    ExecError, IOBuffer, QueryRecord, dump_query_stats, f64_from_usize,
+    IOBuffer, QueryRecord, dump_query_stats, f64_from_usize,
     query_stats_enabled, record_fft_cost, record_retained_bytes,
-    set_record_byte_budget,
   },
 };
 use ix_common::address::Address;
@@ -75,13 +74,6 @@ use ixvm_codegen::aiur_ixvm_witness::{
 
 /// Bytes per GiB.
 const GIB: f64 = 1_073_741_824.0;
-
-/// GiB → bytes for budget caps, via the same lossless decimal
-/// round-trip as [`cost_fft`] (no `as` cast): budgets are small positive
-/// magnitudes, exact to the byte at every realistic scale.
-fn gib_to_bytes(gib: f64) -> usize {
-  format!("{:.0}", (gib * GIB).max(0.0)).parse().unwrap_or(usize::MAX)
-}
 
 /// Fraction of detected system RAM the worker fleet may plan against.
 /// The fleet bound is arithmetic, not reactive: `workers × record cap`
@@ -242,23 +234,21 @@ struct ScanCtx<'a> {
   /// boundary — a failure aborts the fleet in seconds, not after the
   /// in-flight ranges drain.
   abort: &'a std::sync::atomic::AtomicBool,
-  /// Per-worker segment-record byte cap, enforced INSIDE block execution
-  /// via the aiur thread-local budget: a worker's live record can never
-  /// exceed it, so the fleet's RAM is bounded by `workers × cap` by
-  /// construction — including through dense regions where a single block
-  /// grows its record by tens of GiB with no boundary to act on. A block
-  /// that crosses the cap alone is skipped and named, like a
-  /// kernel-rejected block: its record alone out-sizes a per-worker share
-  /// of this box, which at measured byte-per-fft ratios puts its prove
-  /// far beyond any single-shard budget. (`--workers 1` grants one worker
-  /// the whole allowance when such a block must be measured anyway.)
-  seg_byte_budget: usize,
   /// Blocks per measurement claim. Batching divides the claim layer's
   /// per-claim overhead (assumption-tree hashing, unshared `env_walk`
   /// frames) by K and shrinks frontiers (intra-batch edges stop being
   /// frontier members), keeping the running readout tight enough to
   /// serve as the shard cost without a blanket re-price.
   batch_blocks: usize,
+  /// Execute-only mode: the cut charges RECORD BYTES alone against
+  /// `cut_used_gib` (a per-worker share of box RAM) — segments exist only
+  /// to drop records and keep the fleet resident — and no partition
+  /// semantics attach to the boundaries. RAM is bounded at claim
+  /// granularity only: a single claim's growth is uninstrumented by
+  /// design (Aiur execution carries no RAM tracking), so
+  /// pathologically dense content is bounded by worker count, not by
+  /// abort.
+  exec_only: bool,
 }
 
 /// Default blocks per measurement claim; `IX_SCAN_BATCH_BLOCKS`
@@ -270,25 +260,27 @@ struct ScanCtx<'a> {
 /// manifest cost.
 const SCAN_BATCH_BLOCKS: usize = 128;
 
-/// Smallest useful per-worker record cap, GiB. Typical segments at any
+/// Smallest useful per-worker record share, GiB. Typical segments at any
 /// realistic cut carry 3–8 GiB of record (measured 4–10% of the combined
-/// cut across envs), so a cap at this floor still lets normal segments
+/// cut across envs), so a share at this floor still lets normal segments
 /// reach their cut untouched.
-const MIN_WORKER_CAP_GIB: f64 = 8.0;
+const MIN_WORKER_SHARE_GIB: f64 = 8.0;
 
-/// Joint worker-count / record-cap arithmetic: the fleet plans against
+/// Joint worker-count / record-share arithmetic: the fleet plans against
 /// `RAM_CEILING_FRAC × box − 10` (decode cache, witness maps, claim
-/// trees), workers split it evenly, and each worker's share IS its
-/// enforced record cap — the fleet bound is `workers × cap` by
-/// construction, no reactive control. Fewer workers means a bigger cap
-/// (`--workers 1` grants the whole allowance). Returns `(workers,
-/// cap_gib)`; `IX_SCAN_SEG_BYTE_BUDGET_GIB` overrides the cap for tests.
+/// trees), split evenly across workers. The share is a PLAN, not an
+/// enforced cap — Aiur execution carries no RAM instrumentation, so a
+/// worker's record is bounded only at claim boundaries (segments drop
+/// records); pathologically dense single claims can exceed the share,
+/// and the recourse is fewer workers (`--workers 1` plans the whole
+/// allowance). `IX_SCAN_WORKER_SHARE_GIB` overrides for tests. Returns
+/// `(workers, share_gib)`.
 fn fleet_plan(workers: usize, cut_used_gib: f64) -> (usize, f64) {
   let cores = std::thread::available_parallelism().map_or(4, usize::from);
   let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-  let usable = ram.mul_add(RAM_CEILING_FRAC, -10.0).max(MIN_WORKER_CAP_GIB);
+  let usable = ram.mul_add(RAM_CEILING_FRAC, -10.0).max(MIN_WORKER_SHARE_GIB);
   let workers = if workers == 0 {
-    let by_ram = format!("{:.0}", (usable / MIN_WORKER_CAP_GIB).floor())
+    let by_ram = format!("{:.0}", (usable / MIN_WORKER_SHARE_GIB).floor())
       .parse::<usize>()
       .unwrap_or(1)
       .max(1);
@@ -296,11 +288,225 @@ fn fleet_plan(workers: usize, cut_used_gib: f64) -> (usize, f64) {
   } else {
     workers
   };
-  let cap_gib = std::env::var("IX_SCAN_SEG_BYTE_BUDGET_GIB")
+  let share_gib = std::env::var("IX_SCAN_WORKER_SHARE_GIB")
     .ok()
     .and_then(|v| v.parse::<f64>().ok())
     .unwrap_or_else(|| (usable / f64_from_usize(workers)).min(cut_used_gib));
-  (workers, cap_gib)
+  (workers, share_gib)
+}
+
+/// The min-cut schedule order, truncated by the `IX_SCAN_LIMIT_BLOCKS`
+/// debug knob (a full-pipeline reproducer over a slice of a huge env,
+/// without extracting one; the result then does NOT cover the env).
+fn ordered_schedule(
+  blocks: &[SchedBlock],
+  adj: &[Vec<u32>],
+  n_chunks: usize,
+) -> Vec<u32> {
+  let mut order = static_order(blocks, adj, n_chunks.max(16));
+  if let Some(limit) = std::env::var("IX_SCAN_LIMIT_BLOCKS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    && limit < order.len()
+  {
+    eprintln!(
+      "[scan] IX_SCAN_LIMIT_BLOCKS={limit}: executing a schedule PREFIX — \
+       the result will not cover the env"
+    );
+    order.truncate(limit);
+  }
+  order
+}
+
+/// Equal-byte contiguous chunks over the order; edges are forced segment
+/// boundaries (the parallelism unit); the scan's merge pass repairs the
+/// resulting fragmentation, so chunk count is a pure parallelism knob.
+fn make_chunks(
+  order: &[u32],
+  blocks: &[SchedBlock],
+  env_bytes: u64,
+  n_chunks: usize,
+) -> Vec<Vec<u32>> {
+  let per_chunk = (env_bytes / n_chunks as u64).max(1);
+  let mut chunks: Vec<Vec<u32>> = Vec::new();
+  let mut cur: Vec<u32> = Vec::new();
+  let mut acc = 0u64;
+  for &b in order {
+    cur.push(b);
+    acc += blocks[b as usize].size;
+    if acc >= per_chunk && chunks.len() + 1 < n_chunks {
+      chunks.push(std::mem::take(&mut cur));
+      acc = 0;
+    }
+  }
+  if !cur.is_empty() {
+    chunks.push(cur);
+  }
+  // Baseline before any execution: the schedule pass decoded every
+  // constant into the shared env's lazy cache, so this RSS is (cache +
+  // static structures) — the floor the worker footprints sit on.
+  eprintln!("[scan] post-schedule baseline rss {:.0}G", process_rss_gib());
+  chunks
+}
+
+/// Work-stealing worker pool over the chunks: workers pull `(origin
+/// chunk, seq, blocks)` ranges off a shared deque; a range yields at
+/// most [`RANGE_SEGMENTS`] segments, then re-queues its remainder for
+/// any idle worker, so dense regions self-parallelize. The split policy
+/// is count-based, not time- or RAM-based, so the resulting segments do
+/// not depend on scheduling; they are tagged `(origin, seq)` and sorted
+/// at the end, so the returned order is the schedule order.
+fn run_pool(
+  ctx: &ScanCtx<'_>,
+  chunks: Vec<Vec<u32>>,
+  workers: usize,
+) -> Result<Vec<Segment>, String> {
+  type Range = (u32, u32, Vec<u32>);
+  let queue: Mutex<std::collections::VecDeque<Range>> = Mutex::new(
+    chunks
+      .into_iter()
+      .enumerate()
+      .map(|(i, c)| (u32::try_from(i).expect("chunk count fits u32"), 0u32, c))
+      .collect(),
+  );
+  let in_flight = AtomicUsize::new(0);
+  let done: Mutex<Vec<((u32, u32), Vec<Segment>)>> = Mutex::new(Vec::new());
+  let failure: Mutex<Option<String>> = Mutex::new(None);
+  std::thread::scope(|s| {
+    for _ in 0..workers {
+      s.spawn(|| {
+        loop {
+          if failure.lock().unwrap().is_some() {
+            break;
+          }
+          // Pop and the in-flight increment are ATOMIC under the queue
+          // lock: a worker that sees the queue empty is then guaranteed a
+          // consistent in-flight read — the last popper has already
+          // registered. (Split, the window between pop and increment let
+          // idle workers read `empty && in_flight == 0` and exit while
+          // work remained; the fleet silently drained.)
+          let next = {
+            let mut q = queue.lock().unwrap();
+            let popped = q.pop_front();
+            if popped.is_some() {
+              in_flight.fetch_add(1, Ordering::AcqRel);
+            }
+            popped
+          };
+          let Some((origin, seq, range)) = next else {
+            // Empty queue but ranges in flight may still re-queue
+            // remainders; only quit when nothing can produce more work.
+            if in_flight.load(Ordering::Acquire) == 0 {
+              break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            continue;
+          };
+          match scan_range(ctx, &range, origin) {
+            Ok((segs, rest)) => {
+              done.lock().unwrap().push(((origin, seq), segs));
+              // Remainder goes back BEFORE the in-flight decrement, so
+              // `empty && in_flight == 0` still implies no future work.
+              if !rest.is_empty() {
+                queue.lock().unwrap().push_back((origin, seq + 1, rest));
+              }
+            },
+            Err(e) => {
+              ctx.abort.store(true, Ordering::Release);
+              let mut f = failure.lock().unwrap();
+              if f.is_none() {
+                *f = Some(e);
+              }
+            },
+          }
+          in_flight.fetch_sub(1, Ordering::AcqRel);
+        }
+      });
+    }
+  });
+  if let Some(e) = failure.into_inner().unwrap() {
+    return Err(e);
+  }
+  let mut tagged = done.into_inner().unwrap();
+  tagged.sort_by_key(|(k, _)| *k);
+  let mut segments: Vec<Segment> = Vec::new();
+  for (_, mut segs) in tagged {
+    segments.append(&mut segs);
+  }
+  Ok(segments)
+}
+
+/// Execute-only mode: run the whole env's check schedule through the
+/// codegen'd kernel in parallel — no partition, no manifest, no prove
+/// concerns. Segments exist only to drop records (cut when a worker's
+/// record bytes reach its planned share of box RAM), and the report is
+/// the check verdict: blocks checked, kernel rejects named, total
+/// measured FFT cost. This is the Aiur-kernel counterpart of the Rust
+/// kernel's whole-env check, for wall-clock comparison and for finding
+/// divergences (constants one kernel accepts and the other rejects).
+pub fn execute_env(
+  toplevel: &Toplevel,
+  fun_idx: usize,
+  env: &Arc<IxonEnv>,
+  workers: usize,
+  fail_fast: bool,
+) -> Result<String, String> {
+  let (blocks, adj) = schedule_blocks(env);
+  if blocks.is_empty() {
+    return Err("empty environment".to_string());
+  }
+  let env_bytes: u64 = blocks.iter().map(|b| b.size).sum();
+  let (workers, share_gib) = fleet_plan(workers, f64::INFINITY);
+  let batch_blocks = std::env::var("IX_SCAN_BATCH_BLOCKS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    .filter(|&k| k >= 1)
+    .unwrap_or(SCAN_BATCH_BLOCKS);
+  let n_chunks = (workers * 2).min(blocks.len());
+  eprintln!(
+    "[exec] {} blocks, {workers} workers over {n_chunks} chunks, \
+     {share_gib:.1} GiB record share per worker (planned), {batch_blocks} \
+     blocks per claim",
+    blocks.len()
+  );
+  let order = ordered_schedule(&blocks, &adj, n_chunks);
+  let covered = order.len();
+  let chunks = make_chunks(&order, &blocks, env_bytes, n_chunks);
+  let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
+  let abort = std::sync::atomic::AtomicBool::new(false);
+  let ctx = ScanCtx {
+    toplevel,
+    fun_idx,
+    env,
+    blocks: &blocks,
+    cut_used_gib: share_gib,
+    n_chunks: chunks.len(),
+    fail_fast,
+    failed: &failed,
+    abort: &abort,
+    batch_blocks,
+    exec_only: true,
+  };
+  let segments = run_pool(&ctx, chunks, workers)?;
+  let total_fft: f64 = segments.iter().map(|s| s.fft).sum();
+  let checked: usize = segments.iter().map(|s| s.blocks.len()).sum();
+  let failed = failed.into_inner().unwrap();
+  let mut report = format!(
+    "execute: {checked}/{covered} blocks checked in {} segment(s), total \
+     measured {:.1} BFFT",
+    segments.len(),
+    total_fft / 1e9,
+  );
+  if !failed.is_empty() {
+    report.push_str(&format!(
+      "\n  [{} kernel-rejected block(s) SKIPPED:]",
+      failed.len()
+    ));
+    for (a, e) in &failed {
+      report.push_str(&format!("\n    {} — {e}", a.hex()));
+    }
+  }
+  Ok(report)
 }
 
 /// Scan-and-cut over the whole env: returns the manifest report, writing
@@ -344,61 +550,14 @@ pub fn scan_shards(
   eprintln!(
     "[scan] {} blocks, {workers} workers over {n_chunks} chunks, cut {:.1} \
      GiB combined (≈{:.1} BFFT fft-only), {seg_budget_gib:.1} GiB record \
-     cap per worker, {batch_blocks} blocks per claim",
+     share per worker (planned), {batch_blocks} blocks per claim",
     blocks.len(),
     cut_used_gib,
     cut_fft / 1e9
   );
-  let mut order = static_order(&blocks, &adj, n_chunks.max(16));
-  // Debug knob: truncate the schedule to its first N blocks — a
-  // full-pipeline reproducer over a slice of a huge env, without
-  // extracting one. The manifest then does NOT cover the env.
-  if let Some(limit) = std::env::var("IX_SCAN_LIMIT_BLOCKS")
-    .ok()
-    .and_then(|v| v.parse::<usize>().ok())
-    && limit < order.len()
-  {
-    eprintln!(
-      "[scan] IX_SCAN_LIMIT_BLOCKS={limit}: scanning a schedule PREFIX — \
-       the manifest will not cover the env"
-    );
-    order.truncate(limit);
-  }
-
-  // Equal-byte contiguous chunks over the order; edges are forced shard
-  // boundaries (the parallelism unit); the merge pass below repairs the
-  // resulting fragmentation, so chunk count is a pure parallelism knob.
-  let per_chunk = (env_bytes / n_chunks as u64).max(1);
-  let mut chunks: Vec<Vec<u32>> = Vec::new();
-  let mut cur: Vec<u32> = Vec::new();
-  let mut acc = 0u64;
-  for &b in &order {
-    cur.push(b);
-    acc += blocks[b as usize].size;
-    if acc >= per_chunk && chunks.len() + 1 < n_chunks {
-      chunks.push(std::mem::take(&mut cur));
-      acc = 0;
-    }
-  }
-  if !cur.is_empty() {
-    chunks.push(cur);
-  }
-  // Baseline before any execution: the schedule pass decoded every
-  // constant into the shared env's lazy cache, so this RSS is (cache +
-  // static structures) — the floor the worker footprints sit on.
-  eprintln!("[scan] post-schedule baseline rss {:.0}G", process_rss_gib());
-
-  // Work-stealing ranges: workers pull `(origin chunk, seq, hint, blocks)`
-  // ranges off a shared deque; a range yields at most `RANGE_SEGMENTS`
-  // segments, then re-queues its remainder for any idle worker. Dense
-  // regions — where one equal-byte chunk can hold hours of sequential
-  // measurement — therefore self-parallelize; the extra forced boundaries
-  // this creates are repaired by the merge + re-measure pass like any
-  // others. The split policy is count-based, not time- or RAM-based, so
-  // the resulting partition does not depend on scheduling (governor sheds
-  // under RAM pressure excepted — there, safety wins). Segments are
-  // tagged `(origin, seq)` and sorted at the end, so the final order is
-  // the schedule order.
+  let order = ordered_schedule(&blocks, &adj, n_chunks);
+  let chunks = make_chunks(&order, &blocks, env_bytes, n_chunks);
+  let chunk_count = chunks.len();
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
   let ctx = ScanCtx {
@@ -407,87 +566,14 @@ pub fn scan_shards(
     env,
     blocks: &blocks,
     cut_used_gib,
-    n_chunks: chunks.len(),
+    n_chunks: chunk_count,
     fail_fast,
     failed: &failed,
     abort: &abort,
-    seg_byte_budget: gib_to_bytes(seg_budget_gib),
     batch_blocks,
+    exec_only: false,
   };
-  type Range = (u32, u32, Vec<u32>);
-  let queue: Mutex<std::collections::VecDeque<Range>> = Mutex::new(
-    chunks
-      .iter()
-      .enumerate()
-      .map(|(i, c)| {
-        (u32::try_from(i).expect("chunk count fits u32"), 0u32, c.clone())
-      })
-      .collect(),
-  );
-  let in_flight = AtomicUsize::new(0);
-  let done: Mutex<Vec<((u32, u32), Vec<Segment>)>> = Mutex::new(Vec::new());
-  let failure: Mutex<Option<String>> = Mutex::new(None);
-  std::thread::scope(|s| {
-    for _ in 0..workers {
-      s.spawn(|| {
-        loop {
-          if failure.lock().unwrap().is_some() {
-            break;
-          }
-          // Pop and the in-flight increment are ATOMIC under the queue
-          // lock: a worker that sees the queue empty is then guaranteed a
-          // consistent in-flight read — the last popper has already
-          // registered. (Split, the window between pop and increment let
-          // idle workers read `empty && in_flight == 0` and exit while
-          // work remained; the fleet silently drained.)
-          let next = {
-            let mut q = queue.lock().unwrap();
-            let popped = q.pop_front();
-            if popped.is_some() {
-              in_flight.fetch_add(1, Ordering::AcqRel);
-            }
-            popped
-          };
-          let Some((origin, seq, range)) = next else {
-            // Empty queue but ranges in flight may still re-queue
-            // remainders; only quit when nothing can produce more work.
-            if in_flight.load(Ordering::Acquire) == 0 {
-              break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            continue;
-          };
-          match scan_range(&ctx, &range, origin) {
-            Ok((segs, rest)) => {
-              done.lock().unwrap().push(((origin, seq), segs));
-              // Remainder goes back BEFORE the in-flight decrement, so
-              // `empty && in_flight == 0` still implies no future work.
-              if !rest.is_empty() {
-                queue.lock().unwrap().push_back((origin, seq + 1, rest));
-              }
-            },
-            Err(e) => {
-              ctx.abort.store(true, Ordering::Release);
-              let mut f = failure.lock().unwrap();
-              if f.is_none() {
-                *f = Some(e);
-              }
-            },
-          }
-          in_flight.fetch_sub(1, Ordering::AcqRel);
-        }
-      });
-    }
-  });
-  if let Some(e) = failure.into_inner().unwrap() {
-    return Err(e);
-  }
-  let mut tagged = done.into_inner().unwrap();
-  tagged.sort_by_key(|(k, _)| *k);
-  let mut segments: Vec<Segment> = Vec::new();
-  for (_, mut segs) in tagged {
-    segments.append(&mut segs);
-  }
+  let segments = run_pool(&ctx, chunks, workers)?;
 
   // Merge + re-measure to a fixpoint. Merging by FFT sum is always safe
   // (the union's real cost is ≤ the sum: shared deps derive once) but the
@@ -674,7 +760,7 @@ pub fn scan_shards(
      predicted prove RSS {max_ram:.1} GiB (fft line + measured record \
      bytes){note}",
     blocks.len(),
-    chunks.len(),
+    chunk_count,
     cut_used_gib,
     eps * 100.0,
   ))
@@ -749,10 +835,6 @@ fn scan_range(
   let mut narrow_until = 0usize;
   while lo < chunk.len() && segments.len() < RANGE_SEGMENTS {
     let mut record = QueryRecord::new(ctx.toplevel);
-    // Arm the per-worker record cap for this fresh record. Worker threads
-    // run nothing but scan ranges, and arming resets the charge counter,
-    // so per-segment arming with no disarm is sufficient.
-    set_record_byte_budget(ctx.seg_byte_budget);
     let mut io = IOBuffer::with_backing(EnvFaultSource::new(ctx.env.clone()));
     let mut prev_fft = 0.0f64;
     let mut prev_bytes = 0.0f64;
@@ -774,12 +856,9 @@ fn scan_range(
         .iter()
         .map(|&b| ctx.blocks[b as usize].addr.clone())
         .collect();
-      // `Err(None)` = the record cap tripped mid-claim (not a kernel
-      // verdict); `Err(Some(e))` = the kernel rejected a block.
-      let out: Result<(), Option<String>> =
-        seed_shard_check_env_claim(ctx.env, &addrs, &mut io)
-          .map_err(Some)
-          .and_then(|(_claim, input)| {
+      let out: Result<(), String> =
+        seed_shard_check_env_claim(ctx.env, &addrs, &mut io).and_then(
+          |(_claim, input)| {
             execute_ixvm_with_record(
               ctx.toplevel,
               ctx.fun_idx,
@@ -788,40 +867,22 @@ fn scan_range(
               &mut record,
             )
             .map(|_| ())
-            .map_err(|e| match e {
-              ExecError::RecordBudgetExceeded => None,
-              other => Some(other.to_string()),
-            })
-          });
-      // A cap trip on a segment that already holds claims is an early
-      // cut, not a failure: cut at the previous checkpoint; the crossing
-      // batch restarts the next segment with a fresh record and full
-      // cap, and only narrows if it then trips with nothing banked.
-      if matches!(out, Err(None)) && hi > lo {
-        break (hi, prev_fft, prev_bytes);
-      }
-      if let Err(err) = out {
+            .map_err(|e| e.to_string())
+          },
+        );
+      if let Err(e) = out {
         if k > 1 {
           // Per-block attribution needed: end the segment at the last
           // clean checkpoint (dropping the polluted record) and rescan
           // this batch one block per claim.
           eprintln!(
             "[scan {chunk_id}/{n_chunks}] narrowing batch at block \
-             {hi}: {}",
-            err.as_deref().unwrap_or("record cap crossed")
+             {hi}: {e}"
           );
           narrow_until = hi + k;
           break (hi, prev_fft, prev_bytes);
         }
         let addr = &addrs[0];
-        let e = err.unwrap_or_else(|| {
-          format!(
-            "record bytes crossed the {:.1} GiB per-worker cap alone — \
-             resource-infeasible at this box share (--workers 1 grants \
-             the whole allowance)",
-            f64_from_usize(ctx.seg_byte_budget) / GIB
-          )
-        });
         if ctx.fail_fast {
           return Err(format!(
             "CheckEnv of block {} failed during scan: {e} \
@@ -842,7 +903,14 @@ fn scan_range(
       }
       let fft = record_fft_cost(ctx.toplevel, &record);
       let bytes_gib = f64_from_usize(record_retained_bytes(&record)) / GIB;
-      let used = AIUR_RAM_GIB_PER_BFFT * fft / 1e9 + bytes_gib;
+      // Execute-only segments exist to bound the live record, so only
+      // bytes count against the (per-worker share) cut; the scan's cut
+      // charges both prove resources against the budget headroom.
+      let used = if ctx.exec_only {
+        bytes_gib
+      } else {
+        AIUR_RAM_GIB_PER_BFFT * fft / 1e9 + bytes_gib
+      };
       if used >= ctx.cut_used_gib {
         if hi == lo {
           if k > 1 {
@@ -967,5 +1035,35 @@ extern "C" fn rs_aiur_scan_shards_with_env(
       LeanExcept::ok(LeanOwned::box_usize(0))
     },
     Err(e) => LeanExcept::error_string(&format!("rs_aiur_scan_shards: {e}")),
+  }
+}
+
+/// `Bytecode.Toplevel.executeEnvWithEnv`: execute-only whole-env check
+/// through the codegen'd Aiur kernel — no partition, no manifest (see
+/// [`execute_env`]). Numeric params are decimal strings (ABI-simple):
+/// `workers` (`0` autoscales), `fail_fast` (`0` records and skips
+/// kernel-rejected blocks instead of aborting).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_execute_env_with_env(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  workers: LeanString<LeanBorrowed<'_>>,
+  fail_fast: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
+  let workers = workers.to_string().parse::<usize>().unwrap_or(0);
+  let fail_fast = fail_fast.to_string() != "0";
+  match execute_env(&toplevel, fun_idx, &env_handle.get().env, workers, fail_fast)
+  {
+    Ok(report) => {
+      eprintln!("[rs_exec]\n{report}");
+      LeanExcept::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanExcept::error_string(&format!("rs_aiur_execute_env: {e}")),
   }
 }

@@ -674,6 +674,33 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
     (p.flag? "stats-out").map (·.as! String)
   let ixePath : Option String :=
     (p.flag? "ixe").map (·.as! String)
+  if p.hasFlag "execute" then
+    -- Execute-only whole-env check: the Aiur-kernel counterpart of the
+    -- Rust kernel's whole-env check — parallel execution of every
+    -- block's claim, no partition, no manifest, no prove concerns.
+    let some ixe := ixePath | do
+      p.printError "error: --execute requires --ixe"
+      return 1
+    let toplevel ← match IxVM.ixVM with
+      | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
+      | .ok t => pure t
+    let compiled ← match toplevel.compile with
+      | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+      | .ok c => pure c
+    let funIdx ← match compiled.getFuncIdx `verify_claim with
+      | some i => pure i
+      | none => IO.eprintln "error: verify_claim missing"; return 1
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+      | .ok h => pure h
+    let workers := (p.flag? "jobs").map (·.as! Nat) |>.getD 0
+    let start ← IO.monoMsNow
+    match Aiur.Bytecode.Toplevel.executeEnvWithEnv compiled.bytecode funIdx
+        envHandle (toString workers) (if keepGoing then "0" else "1") with
+    | .error e => IO.eprintln s!"execute failed: {e}"; return 1
+    | .ok () =>
+      IO.println s!"execute: OK in {(← IO.monoMsNow) - start} ms"
+      return 0
   let claimHex : Option String :=
     (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
@@ -754,6 +781,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "fail-fast";            "Halt on the first failure (the default; flag accepted for explicitness)."
     "no-fail-fast";         "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "execute";              "Execute-only whole-env check (requires --ixe): run every block's check claim through the codegen'd Aiur kernel in parallel — no partition, no manifest, no proving. Reports blocks checked, kernel rejects (named), and total measured FFT cost. --jobs bounds the worker count (default: autoscale); combine with --no-fail-fast to inventory every reject."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
