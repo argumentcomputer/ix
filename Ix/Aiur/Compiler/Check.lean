@@ -816,10 +816,12 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let τ ← bigUintDivModResultTyp (← zonkTyp a'.typ)
     pure (Typed.Term.unconstrainedBigUintDivMod (.tuple #[τ, τ]) false a' b')
   | .unconstrainedGToBytes a => do
-    -- The bytes are UNCONSTRAINED advice typed `u8`; the caller must
-    -- range-check them (see `Source.Term.unconstrainedGToBytes`).
+    -- The bytes are UNCONSTRAINED advice, so they come back as raw
+    -- `field`s — they must not type as range-checked bytes. Consumers
+    -- mint `u8`s from the `u8_range_check` outputs (see `gl_to_bytes`
+    -- and `idx_to_u64`).
     let a' ← checkNoEscape a .field
-    pure (Typed.Term.unconstrainedGToBytes (.array .u8 8) false a')
+    pure (Typed.Term.unconstrainedGToBytes (.array .field 8) false a')
   | .unconstrainedGInverse a => do
     let a' ← checkNoEscape a .field
     pure (Typed.Term.unconstrainedGInverse .field false a')

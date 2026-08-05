@@ -76,10 +76,10 @@ def goldilocks := ⟦
   -- decomposition (two distinct byte strings < p have distinct field values).
   fn gl_to_bytes(v: G) -> [U8; 8] {
     let b = unconstrained_g_to_bytes(v);
-    let (c0, c1) = u8_range_check(to_field(b[0]), to_field(b[1]));
-    let (c2, c3) = u8_range_check(to_field(b[2]), to_field(b[3]));
-    let (c4, c5) = u8_range_check(to_field(b[4]), to_field(b[5]));
-    let (c6, c7) = u8_range_check(to_field(b[6]), to_field(b[7]));
+    let (c0, c1) = u8_range_check(b[0], b[1]);
+    let (c2, c3) = u8_range_check(b[2], b[3]);
+    let (c4, c5) = u8_range_check(b[4], b[5]);
+    let (c6, c7) = u8_range_check(b[6], b[7]);
     let r = [c0, c1, c2, c3, c4, c5, c6, c7];
     assert_eq!(gl_val(r), v);
     assert_eq!(gl_lt_p(r), 1);
