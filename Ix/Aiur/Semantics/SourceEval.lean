@@ -29,7 +29,31 @@ namespace Source.Eval
 
 open Source
 
-/-- Tagged errors — small enum, no messages, for use in proof statements. -/
+abbrev Bindings := List (Local × Value)
+/-- Memory store, width-bucketed to match Rust `src/aiur/execute.rs`
+`memory_queries: HashMap<size, IndexMap<Vec<G>, QueryResult>>`. Each width
+has its own `IndexMap`; `ptrVal` returns the local index within its width's
+bucket. Distinct-width pointers may share the same local index. -/
+abbrev Store    := Std.HashMap Nat (IndexMap (Array Value) Unit)
+
+structure EvalState where
+  store    : Store := {}
+  ioBuffer : IOBuffer
+  deriving Inhabited
+
+/-- Opaque `Repr` so `SourceError` (whose `earlyReturn` sentinel carries the
+state) can keep its derived instance; the state itself is not printable. -/
+instance : Repr EvalState := ⟨fun _ _ => .text "<EvalState>"⟩
+
+/-- Tagged errors — small enum, no messages, for use in proof statements.
+
+The `earlyReturn` case is NOT an error: it is the escape channel for an
+explicit `return` inside a function body (e.g. in a non-tail match arm).
+It rides the `Except` error track so that every intermediate combinator
+propagates it for free, and is unwrapped back into a normal result at the
+function-call boundary (`applyGlobal`) — mirroring the Rust executor,
+where `Ctrl::Return` unwinds the continuation stack and exits the
+function. It never escapes `runFunction`. -/
 inductive SourceError
   | outOfFuel
   | unboundVar (l : Local)
@@ -46,19 +70,8 @@ inductive SourceError
   | invalidPointer (n : Nat)
   | notCallable (g : Global)
   | notAFunctionValue
+  | earlyReturn (v : Value) (st : EvalState)
   deriving Repr, Inhabited
-
-abbrev Bindings := List (Local × Value)
-/-- Memory store, width-bucketed to match Rust `src/aiur/execute.rs`
-`memory_queries: HashMap<size, IndexMap<Vec<G>, QueryResult>>`. Each width
-has its own `IndexMap`; `ptrVal` returns the local index within its width's
-bucket. Distinct-width pointers may share the same local index. -/
-abbrev Store    := Std.HashMap Nat (IndexMap (Array Value) Unit)
-
-structure EvalState where
-  store    : Store := {}
-  ioBuffer : IOBuffer
-  deriving Inhabited
 
 /-- Result of evaluation: either a successful value+state pair, or an error. -/
 abbrev EvalResult := Except SourceError (Value × EvalState)
@@ -160,6 +173,7 @@ def applyGlobal (decls : Decls) (fuel : Nat) (g : Global) (args : List Value)
         else
           let bindings := f.inputs.map (·.1) |>.zip args
           match interp decls fuel bindings f.body st with
+          | .error (.earlyReturn v st') => .ok (v, st')
           | .error e => .error e
           | .ok (v, st') => .ok (v, st')
     | some (.constructor _ _) => .ok (.ctor g args.toArray, st)
@@ -205,10 +219,13 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       | .ok (vs, st') => .ok (.array vs, st')
   | .ann _ t => interp decls fuel bindings t st
   | .ret sub =>
-      -- Explicit returns only appear inside function bodies; the body recursion
-      -- here returns normally (the surrounding caller treats the full body value
-      -- as the return value).
-      interp decls fuel bindings sub st
+      -- Escape to the enclosing function boundary via the `earlyReturn`
+      -- sentinel: a `return` inside a non-tail match arm (or any other
+      -- nested position) must NOT feed the surrounding continuation.
+      -- `applyGlobal`/`runFunction` unwrap it into a normal result.
+      match interp decls fuel bindings sub st with
+      | .error e => .error e
+      | .ok (v, st') => .error (.earlyReturn v st')
   | .let p t1 t2 =>
       match interp decls fuel bindings t1 st with
       | .error e => .error e

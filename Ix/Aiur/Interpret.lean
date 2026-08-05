@@ -489,7 +489,10 @@ def runFunction (decls : Decls) (funcName : Global) (inputs : List Value)
                           expected {f.inputs.length}, got {inputs.length}" []), init)
       else
         let bindings := f.inputs.map (·.1) |>.zip inputs
-        StateT.run (ExceptT.run (interp decls bindings f.body)) init
+        -- `callSite` also catches a top-level early `return` from the entry
+        -- function itself, which otherwise escapes as a `.ret` interrupt.
+        StateT.run (ExceptT.run (callSite funcName inputs
+          (interp decls bindings f.body))) init
   | _ =>
       (.error (.error s!"Function not found: {funcName}" []), init)
 

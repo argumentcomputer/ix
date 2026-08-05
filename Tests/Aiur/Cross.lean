@@ -5,14 +5,21 @@ public import Ix.Aiur
 public import Ix.Aiur.Meta
 
 /-!
-End-to-end pipeline cross-tests for `Ix/Aiur`.
+End-to-end pipeline cross-tests for `Ix/Aiur`: the compiler and
+interpreter suite.
 
 A single `toplevel` collects every Aiur surface-language program needed
 by the test corpus (datatypes, type aliases, mutually-recursive
 functions, etc.). The `runAgreement` helper evaluates one entry point
-through both the source-level reference evaluator (`Source.Eval`) and
-the lowered bytecode evaluator (`Bytecode.Eval`), asserting that the
-flat-encoded return value and the `IOBuffer` agree.
+through every execution-level engine — the source-level reference
+evaluator (`Source.Eval`), the source interpreter (`Aiur.Interpret`),
+the lowered bytecode evaluator (`Bytecode.Eval`) and the native
+bytecode executor — asserting that the flat-encoded return value and
+the `IOBuffer` agree across all of them.
+
+Proving lives elsewhere: the `aiur-prove` suite (`Tests/Aiur/Aiur.lean`)
+proves the constraint/lookup configurations, and this suite carries the
+execution-semantics coverage.
 -/
 
 public section
@@ -468,6 +475,32 @@ def toplevel : Source.Toplevel := ⟦
       0 => (id(x), load(store(x))),
       1 => (id(x), load(store(x))),
     }
+  }
+
+  -- Gadget ops under a match: same shapes the `aiur-prove` suite proves for
+  -- sel-gating; here they pin the execution semantics of gadget calls
+  -- inside branches
+  pub fn match_gadget_ops(i: U8, j: U8) -> (U8, U8, G) {
+    match 0 {
+      0 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(to_field(i), to_field(j))),
+      1 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(to_field(j), to_field(i))),
+    }
+  }
+
+  pub fn match_gadget_ops_multi(i: U8, j: U8) -> ((U8, U8), [G; 8]) {
+    match 0 {
+      0 => (u8_add(i, j), u8_bit_decomposition(i)),
+      1 => (u8_add(i, j), u8_bit_decomposition(i)),
+    }
+  }
+
+  -- Fold/iteration: compile-time unrolling with `@`-indices
+  pub fn fold_matrix_sum(m: [[G; 2]; 2]) -> G {
+    fold(0 .. 2, 0, |acc_outer, @i|
+      fold(0 .. 2, acc_outer, |acc_inner, @j|
+        acc_inner + m[@i][@j]
+      )
+    )
   }
 
   -- Nested type aliases (`U8` is now a builtin type, not an alias)
@@ -1073,13 +1106,22 @@ def toplevel : Source.Toplevel := ⟦
     + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20 + r21
   }
 
-  -- Inlined function calls (`@fn(args)`): both evaluators execute an
-  -- inlined call exactly like a normal one, so source/bytecode agreement
+  -- Inlined function calls (`@fn(args)`): the engines execute an
+  -- inlined call exactly like a normal one, so cross-engine agreement
   -- checks the splice (alpha-renaming, nesting, strict-position hoisting,
-  -- branching callees) preserved the semantics.
+  -- branching callees, multi-output and gadget callees) preserved the
+  -- semantics. Mirrors the `aiur-prove` suite's `inline_test` scenarios.
+  fn inl_double(x: G) -> G {
+    let t = x + x;
+    t
+  }
+
   fn inl_sq(x: G) -> G { x * x }
 
   fn inl_sq_plus(x: G, y: G) -> G { @inl_sq(x) + y }
+
+  -- Multi-output callee
+  fn inl_pair(x: G) -> (G, G) { (x + 1, x * 2) }
 
   fn inl_sign(x: G) -> G {
     match x {
@@ -1088,57 +1130,126 @@ def toplevel : Source.Toplevel := ⟦
     }
   }
 
+  -- Gadget lookup inside the callee
+  fn inl_add8(a: U8, b: U8) -> (U8, U8) { u8_add(a, b) }
+
   -- Single aggregate entry: every scenario in one agreement run.
   pub fn inline_test() -> G {
     -- Basic splice
-    let r1 = @inl_sq(5) + 1;                      -- 26
+    let r1 = @inl_double(21);                     -- 42
     -- Nested splice (callee @-inlines another helper)
     let r2 = @inl_sq_plus(3, 4);                  -- 13
-    -- Capture safety: caller local named like a callee binding, argument
-    -- mentions it
+    -- Capture safety: caller binds `t` (the callee's local name) and the
+    -- argument mentions it
     let t = 5;
-    let r3 = @inl_sq(t + 1) + t;                  -- 41
-    -- Strict positions: operator operands
-    let r4 = @inl_sq(3) + @inl_sq(4) * 100;       -- 1609
+    let r3 = @inl_double(t + 1) + t;              -- 17
+    -- Strict positions: array elements, operator operands, call argument
+    let arr = [@inl_double(3), @inl_sq(3)];       -- [6, 9]
+    let r4 = arr[0] + arr[1] * 100;               -- 906
+    let r5 = @inl_double(3) + @inl_sq(3);         -- 15
+    let r6 = id(@inl_double(7));                  -- 14
+    -- Multi-output callee
+    let (p1, p2) = @inl_pair(5);                  -- (6, 10)
+    let r7 = p1 + p2 * 100;                       -- 1006
     -- Branching callee in operand position, both paths (the spliced match
     -- gets bound to a fresh local before hoisting)
-    let r5 = @inl_sign(0) + @inl_sign(7) * 100;   -- 100
+    let r8 = @inl_sign(0) + @inl_sign(5) * 100;   -- 100
     -- Same callee inlined and normally called
-    let r6 = @inl_sq(3) + inl_sq(4);              -- 25
-    r1 + r2 + r3 + r4 + r5 + r6
+    let r9 = @inl_sq(3) + inl_sq(4);              -- 25
+    -- Gadget lookup in the callee
+    let (s, c) = @inl_add8(200u8, 100u8);         -- (44, 1)
+    let r10 = to_field(s) + to_field(c) * 1000;   -- 1044
+    r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
   }
 ⟧
 
-/-- Generic helper: run both evaluators on `entryName` with `inputs` as
-the source-level argument list, asserting that the flat-encoded return
-value and the `IOBuffer` agree. An optional `io` arg seeds both evaluators
-with a pre-populated `IOBuffer`. -/
+/-- Compiler outputs shared by every agreement case. Top-level closed
+defs are computed once at module initialization, so the toplevel is
+type-checked and compiled a single time instead of once per case. -/
+private def crossDecls : Except String Source.Decls :=
+  toplevel.mkDecls.mapError toString
+
+private def crossCompiled : Except String CompiledToplevel :=
+  toplevel.compile
+
+/-- Generic helper: run one entry point through all four engines — the
+source-level reference evaluator (`Source.Eval`), the source interpreter
+(`Aiur.Interpret`), the lowered bytecode evaluator (`Bytecode.Eval`) and
+the native bytecode executor — asserting that the flat-encoded return
+value and the `IOBuffer` of each engine agree with the reference
+evaluator. An optional `io` arg seeds every engine with a pre-populated
+`IOBuffer`. -/
 def runAgreement
     (label : String) (entryName : String)
     (inputs : List Value) (io : IOBuffer := default) (fuel : Nat := 1000) :
     TestSeq := Id.run do
   let globalName : Global := .init entryName
-  match toplevel.mkDecls with
-  | .error _ => pure (test s!"{label}: mkDecls" false)
+  match crossDecls with
+  | .error e => pure (test s!"{label}: mkDecls ({e})" false)
   | .ok decls =>
     match Source.Eval.runFunction decls globalName inputs io fuel with
     | .error e => pure (test s!"{label}: Source.Eval ({repr e})" false)
     | .ok (srcVal, srcIo) =>
-      match toplevel.compile with
+      match crossCompiled with
       | .error e => pure (test s!"{label}: Compile ({e})" false)
       | .ok ct =>
         let funIdx := ct.getFuncIdx (.mkSimple entryName) |>.getD 0
         let funcIdx := fun g => ct.nameMap[g]?
+        let srcFlat := flattenValue decls funcIdx srcVal
         let flatArgs : Array Aiur.G := inputs.foldl
           (fun acc v => acc ++ flattenValue decls funcIdx v) #[]
-        match Bytecode.Eval.runFunction ct.bytecode funIdx flatArgs io fuel with
-        | .error e => pure (test s!"{label}: Bytecode.Eval ({repr e})" false)
-        | .ok (bcOut, bcIo) =>
-          let srcFlat := flattenValue decls funcIdx srcVal
-          let valTest := test s!"{label}: values agree (src={srcFlat}, bc={bcOut})"
-            (srcFlat == bcOut)
-          let ioTest  := test s!"{label}: io agree" (srcIo == bcIo)
-          pure (valTest ++ ioTest)
+        let bcTests := match Bytecode.Eval.runFunction ct.bytecode funIdx flatArgs io fuel with
+          | .error e => test s!"{label}: Bytecode.Eval ({repr e})" false
+          | .ok (bcOut, bcIo) =>
+            test s!"{label}: Bytecode.Eval values agree (src={srcFlat}, bc={bcOut})"
+              (srcFlat == bcOut)
+            ++ test s!"{label}: Bytecode.Eval io agree" (srcIo == bcIo)
+        let interpTests := match Aiur.runFunction decls globalName inputs io with
+          | (.error e, _) => test s!"{label}: Interpret ({e})" false
+          | (.ok interpVal, state) =>
+            let interpFlat := flattenValue decls funcIdx interpVal
+            test s!"{label}: Interpret values agree (src={srcFlat}, interp={interpFlat})"
+              (srcFlat == interpFlat)
+            ++ test s!"{label}: Interpret io agree" (srcIo == state.ioBuffer)
+        let execTests := match ct.bytecode.execute funIdx flatArgs io with
+          | .error e => test s!"{label}: execute ({e})" false
+          | .ok (exOut, exIo, _) =>
+            test s!"{label}: execute values agree (src={srcFlat}, exec={exOut})"
+              (srcFlat == exOut)
+            ++ test s!"{label}: execute io agree" (srcIo == exIo)
+        pure (bcTests ++ interpTests ++ execTests)
+
+/-- Negative-path agreement: every engine must REJECT the run. A single
+engine accepting (or crashing differently) where the others error is a
+semantics divergence even though no success value exists to compare —
+the `return`-handling bugs hid exactly this way. Error *messages* are
+engine-specific, so only rejection itself is asserted. -/
+def runFailureAgreement
+    (label : String) (entryName : String)
+    (inputs : List Value) (io : IOBuffer := default) (fuel : Nat := 1000) :
+    TestSeq := Id.run do
+  let globalName : Global := .init entryName
+  match crossDecls, crossCompiled with
+  | .error e, _ => pure (test s!"{label}: mkDecls ({e})" false)
+  | _, .error e => pure (test s!"{label}: Compile ({e})" false)
+  | .ok decls, .ok ct =>
+    let funIdx := ct.getFuncIdx (.mkSimple entryName) |>.getD 0
+    let funcIdx := fun g => ct.nameMap[g]?
+    let flatArgs : Array Aiur.G := inputs.foldl
+      (fun acc v => acc ++ flattenValue decls funcIdx v) #[]
+    let srcRejects := match Source.Eval.runFunction decls globalName inputs io fuel with
+      | .error _ => true | .ok _ => false
+    let bcRejects := match Bytecode.Eval.runFunction ct.bytecode funIdx flatArgs io fuel with
+      | .error _ => true | .ok _ => false
+    let interpRejects := match Aiur.runFunction decls globalName inputs io with
+      | (.error _, _) => true | (.ok _, _) => false
+    let execRejects := match ct.bytecode.execute funIdx flatArgs io with
+      | .error _ => true | .ok _ => false
+    pure <|
+      test s!"{label}: Source.Eval rejects" (srcRejects = true)
+      ++ test s!"{label}: Bytecode.Eval rejects" (bcRejects = true)
+      ++ test s!"{label}: Interpret rejects" (interpRejects = true)
+      ++ test s!"{label}: execute rejects" (execRejects = true)
 
 private def myOpt (limb : String) : Global := Global.init "MyOpt" |>.pushNamespace limb
 private def myOpt2 (limb : String) : Global := Global.init "MyOpt2" |>.pushNamespace limb
@@ -1304,6 +1415,10 @@ def tests : TestSeq :=
   runAgreement "unconstrained_fibonacci(6)" "unconstrained_fibonacci" [6] ++
   runAgreement "match_poly_ops(42)" "match_poly_ops" [42] ++
   runAgreement "match_lookup_ops(42)" "match_lookup_ops" [42] ++
+  runAgreement "match_gadget_ops(45,131)" "match_gadget_ops" [45, 131] ++
+  runAgreement "match_gadget_ops_multi(45,131)" "match_gadget_ops_multi" [45, 131] ++
+  runAgreement "fold_matrix_sum([[1,2],[3,4]])" "fold_matrix_sum"
+    [.array #[.array #[1, 2], .array #[3, 4]]] ++
   runAgreement "alias_conversion[1..8]" "alias_conversion"
     [.array #[1, 2, 3, 4, 5, 6, 7, 8]] ++
   runAgreement "is_0_even" "is_0_even" [] ++
@@ -1366,7 +1481,20 @@ def tests : TestSeq :=
   runAgreement "ntm_recursive_test" "ntm_recursive_test" [] ++
   runAgreement "non_tail_match" "non_tail_match" [] ++
   -- Inlined function calls (`@fn(args)`): all scenarios in one entry
-  runAgreement "inline_test" "inline_test" []
+  runAgreement "inline_test" "inline_test" [] ++
+  -- ----- Negative paths: every engine must reject --------------------------
+  -- assert_eq! mismatch
+  runFailureAgreement "assert_same(7,8) rejects" "assert_same" [7, 8] ++
+  -- u8_range_check out of range
+  runFailureAgreement "range_check_id(300,1) rejects" "range_check_id" [300, 1] ++
+  -- Non-exhaustive match: 8 explicit branches, no default, scrutinee 9
+  runFailureAgreement "ntm_large(9) rejects" "ntm_large" [9] ++
+  -- io_get_info on a missing key (empty IO buffer)
+  runFailureAgreement "read_write_io missing key rejects" "read_write_io" [] ++
+  -- io_read past the arena end: key registered with len 4, arena holds 2
+  runFailureAgreement "read_write_io OOB read rejects" "read_write_io" []
+    (io := { data := .ofList [(0, #[1, 2]), (1, #[5, 6, 7, 8])],
+             map := .ofList [((0, #[0]), ⟨0, 4⟩), ((1, #[0]), ⟨0, 4⟩)] })
 
 end AiurTests.Cross
 

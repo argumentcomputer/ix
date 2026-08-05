@@ -150,7 +150,7 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
   pure { functionName := `ixon_serde_test, label := "Ixon serde test"
          input := #[.ofNat n], inputIOBuffer := ioBuffer
          expectedIOBuffer := ioBuffer
-         interpret := false, executionOnly := true }
+         interpret := false, withProof := false }
 
 /-- kernel check with equivalent transitive typecheck semantic.
     Reshapes an `Ix.Claim.check target none` request as a `CheckEnv`
@@ -175,7 +175,7 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
   pure { functionName := witness.funcName, label := s!"Kernel check {name}"
          input := witness.input, inputIOBuffer := witness.inputIOBuffer
          expectedIOBuffer := witness.inputIOBuffer
-         interpret := false, executionOnly := true }
+         interpret := false, withProof := false }
 
 private def nameOfString (str : String) : Lean.Name :=
   str.splitOn "." |>.foldl (init := .anonymous) fun acc s =>
@@ -288,15 +288,6 @@ public def runParityCase (compiled : Aiur.CompiledToplevel)
           (bQC.zip cQC).all fun (b, c) =>
             b.uniqueRows == c.uniqueRows && b.totalHits == c.totalHits)
 
-/-- Codegen parity fixtures: run each check through both the Aiur
-    bytecode interpreter and the generated Rust kernel, and assert they
-    agree on output, IOBuffer, and QueryCount. This is the gate that keeps
-    `crates/ixvm-codegen` in step with the Lean kernel source — an Aiur
-    edit without a `ix codegen` regen fails here. -/
-public def parityCases (env : Lean.Environment) : IO (List AiurTestCase) := do
-  kernelCheckEntries.mapM fun (name, _) =>
-    kernelCheck (nameOfString name) env
-
 /-! ## Claim variant smoke tests
 
 Each builds an `AiurTestCase` exercising one of the non-`Check-None`
@@ -311,7 +302,7 @@ private def asTestCase (label : String) (witness : ClaimWitness) : AiurTestCase 
   { functionName := witness.funcName, label
     input := witness.input, inputIOBuffer := witness.inputIOBuffer
     expectedIOBuffer := witness.inputIOBuffer
-    interpret := false, executionOnly := true }
+    interpret := false, withProof := false }
 
 /-- Locate the first constant in `env.consts` whose `ConstantInfo`
     satisfies `pred`, or fail with `IO.userError`. -/

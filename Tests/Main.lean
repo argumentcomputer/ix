@@ -119,8 +119,8 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
 def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
-  ("aiur", do
-    IO.println "aiur"
+  ("aiur-prove", do
+    IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
     | .error e => IO.eprintln s!"Aiur setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)),
@@ -146,12 +146,6 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let revealExpr ← claimRevealDefnExpr claimEnv
     let revealCPrj ← claimRevealCPrj claimEnv
     let containsTc ← claimContains
-    -- Codegen parity gate: the generated Rust kernel is emitted from the
-    -- toplevel, so this runs the same witnesses through both engines and
-    -- asserts they agree. It is only meaningful against a CURRENT
-    -- `ix codegen` output — regenerate after any Aiur edit, or this gate
-    -- compares against a stale kernel.
-    let parityCases ← parityCases env
     -- Shared-infrastructure test entrypoints live only in the FULL
     -- toplevel (pruning drops them so test-only circuits never widen a
     -- committed kernel system).
@@ -176,7 +170,14 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
           [envFull, envFrontier, checkAsm,
            revealFields, revealExpr, revealCPrj, containsTc]).foldl
         (init := .done) fun s tc => s ++ v2Env.runTestCase tc
-      let paritySeq := parityCases.foldl (init := .done) fun s tc =>
+      -- Codegen parity gate: the generated Rust kernel is emitted from
+      -- the toplevel, so this runs the same witnesses through both
+      -- engines and asserts they agree. It is only meaningful against a
+      -- CURRENT `ix codegen` output — regenerate after any Aiur edit, or
+      -- this gate compares against a stale kernel. Reuses the
+      -- `kernelChecks` cases (`runParityCase` ignores the FFT pins), so
+      -- the per-constant witness setup runs once, not twice.
+      let paritySeq := kernelChecks.foldl (init := .done) fun s tc =>
         s ++ runParityCase v2Env.compiled tc
       let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
         fun s tc => s ++ v2FullEnv.runTestCase tc
