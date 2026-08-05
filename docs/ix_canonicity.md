@@ -231,7 +231,7 @@ Everything needed to round-trip back to a source-faithful Lean
 | Binder names, `BinderInfo`              | `ExprMetaData::Binder { name, info, … }`             |
 | Let binders                             | `ExprMetaData::LetBinder`                            |
 | `Expr.mdata` KVMaps                     | `ExprMetaData::Mdata`                                |
-| Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`                                  |
+| Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`; name choice at alias occurrences: §10.5 |
 | Projection struct name                  | `ExprMetaData::Prj`                                  |
 | Call-site source/canonical metadata     | `ExprMetaData::CallSite { entries, canon_meta }`     |
 | Level-parameter names                   | `ConstantMetaInfo::*.lvls`                           |
@@ -566,7 +566,9 @@ which is a structural sort:
   equivalent modulo renaming, they collapse into one *class* with a
   representative. Only the representative appears in each canonical
   block; aliases get deep-renamed patches that also land in the same
-  block under the alias's name mapping.
+  block under the alias's name mapping. Metadata display names at
+  *synthesized* occurrences of a collapsed address inherit the
+  spelling of the source occurrence each derives from (§10.5).
 
 Every downstream block (rec, casesOn, recOn, below, brecOn) inherits
 this user-class ordering by construction — each block enumerates the
@@ -1293,6 +1295,160 @@ decompiled inductive data alone. Do not store the derived layout
 directly; it falls out of the canonical rules, and storing it would
 just create room for skew between storage and rederivation.
 
+### 10.5 Metadata name canonicalization at alias occurrences
+
+Alpha-collapse makes a content address many-named: every member of a
+collapsed class resolves to one address (§6.1), and structurally
+identical declarations from different blocks coincide on one address
+as well (§13.5). The anonymous form is unaffected — any spelling of a
+reference compiles to the same `Rec(idx)` / `Ref(addr)` bytes — but
+the metadata sidecar records a **display name per occurrence**:
+`ExprMetaData::Ref { name }` for each `Const` occurrence,
+`CallSite.name` for surgered heads, `Prj.struct_name` for projections
+(`metadata.rs`; Lean mirror `Ix/Ixon.lean`). Wherever the referenced
+address carries more than one name, the metadata must record a name
+at each such occurrence, and that choice was previously unspecified.
+The ambiguity is invisible to
+the §1 property, but it is visible to byte comparison of the
+metadata: the two compiler implementations (`crates/compile`;
+`Ix/CompileM.lean` + `Ix/AuxGen`) could disagree while both remaining
+individually correct.
+
+**Source-derived expressions are already determined.** Both compilers
+record exactly the name spelled at the source occurrence:
+`compile_expr` (`compile.rs`) and `compileExpr` (`Ix/CompileM.lean`)
+allocate the `Ref` node from the input `Const` node's own name, alias
+or not, while the anonymous side collapses it to the shared address.
+That is normative — decompile reconstructs the source spelling from
+`Ref.name` — so source fidelity governs every expression that *has* a
+source: ordinary constants, each class member's own primary meta
+(compiled from that member's source form in the per-class loop of
+`compile_mutual` / `compileMutConsts`), the `Named.original` forms
+compiled by `compile_const_no_aux` (§9.2), and the source-order
+`entries` of surgered call sites (§8, §10.3).
+
+**Rule: synthesized occurrences inherit their source spelling.** An
+expression the compiler synthesizes rather than reads — the
+regenerated `.rec` / `.casesOn` / `.recOn` / `.below` / `.brecOn`
+(and `.go` / `.eq`) families, aux `.rec_N` / `.below_N` derivatives,
+and canonical arguments synthesized by surgery inside otherwise
+source-derived bodies (§8) — is not free-standing: it is derived from
+identified source material of its own block. Minor premises splice
+the constructor telescopes (`buildMinorType` in
+`Ix/AuxGen/Recursor.lean` and its `recursor.rs` mirror),
+`.casesOn` / `.recOn` are built from `.rec`'s type, `_nested`
+expansions are restored to the original source application
+(`RestoreCtx.restore` in `Ix/AuxGen/ExprUtils.lean`), and surgery
+peels its synthesized arguments off the source minor
+(`adaptSplitMinor`, §8). The rule: every metadata position in a
+synthesized expression that records a display name records **the
+spelling of the source occurrence it derives from** — the name is
+inherited through the derivation, never chosen at emission. Where the
+synthesis introduces a reference with no source ancestor — the family
+head applied under fresh motives, references to sibling auxiliaries
+(`.rec` inside `.brecOn`), and primitives the algorithm names
+outright (`Eq`, `PUnit`, …) — the spelling is fixed by the synthesis
+algorithm itself, identically in both implementations by
+construction.
+
+**Corollary: kernel-cache state must not outlive the block.** Kernel
+expression identity is name-erased (`ExprKey` keys on content
+addresses; `KId` carries the display name alongside), so WHNF, infer,
+and intern caches replay whichever alias spelling first populated
+them — the "display-name aliasing" hazard documented on
+`findRecTarget` / `decomposeInductiveType` in both pipelines. A
+kernel context surviving across blocks therefore makes emitted names
+depend on which blocks that context saw earlier — under a parallel
+scheduler, on the work-stealing schedule itself. Both compilers must
+run aux synthesis in kernel contexts scoped to the block, and on
+egress restore source spellings structurally
+(`restore_source_names_same_content` and the source-name hint maps in
+`expr_utils.rs`; `restoreSourceNamesSameContent` and mirrors in
+`Ix/AuxGen/Kernel.lean`). The restoration heuristics — hint candidacy
+restricted to `App`/`Proj` subterms, first-insert-wins hint slots —
+are part of the specified behavior: they must remain mirrored
+hole-for-hole, since a restoration difference is a parity break even
+with block-scoped contexts (§17.8).
+
+**Positions in scope.** The rule governs the metadata positions that
+record a *reference to another constant*:
+
+- `ExprMetaData::Ref { name }` — every `Const` occurrence,
+  block-local (`Rec`) and external (`Ref`) alike;
+- `ExprMetaData::CallSite { name, … }` — the surgered head reference
+  (doubles as the head's `Ref` metadata);
+- arena subtrees for arguments surgery synthesized rather than kept
+  (split-SCC wrapper minors and `adapt_split_minor` IHs, §6.5 / §8)
+  — reached from `CallSite.canon_meta` with no source-order `Kept`
+  entry;
+- `ExprMetaData::Prj { struct_name }` — the projected structure
+  reference.
+
+It does **not** govern positions fixed by the subject constant's own
+identity or defined as whole-set enumerations: the meta variant's
+`name` and `lvls`; `all` (Lean source order, aliases included —
+§10.1); `ctx` (the full mutual-context enumeration); `Rec.rules`,
+`Indc.ctors`, `Ctor.induct` (the subject constant's own constructors
+and parent); and `Binder` / `LetBinder` names (locals, not constant
+references).
+
+**Why provenance.** The choice must be a deterministic function of
+block content, not of traversal or discovery order, or two correct
+implementations can diverge forever. Inherited spellings are exactly
+that: a function of the block's source expressions and the fixed
+synthesis algorithm, with no new ordering, no alias-set lookup, and
+no hash impact (metadata never enters a content hash, §6.6). The
+fidelity checkers already enforce it: both decompile-side checkers
+rebuild their reference by re-running the same generator over
+decompiled source constants (`DecompileDriver` Pass 2 in Lean;
+validate-aux Phase 2's `generate_aux_patches` on fresh per-block
+contexts in Rust) and compare name-sensitively (`congruence.rs`
+const-name check; hash-`BEq` in Lean) — under this rule, emitter and
+checker agree by construction, and the comparators' name-sensitivity
+enforces the rule instead of fighting it. Any one-name-per-address
+canonicalization would instead require teaching all four
+emitter/checker sites a shared alias-visibility order that is
+ill-defined for cross-block coincidences (§13.5) under streaming
+compilation. Decompiled auxiliaries also read like the source. The
+class representative persists where it already governs — alias
+registration clones the representative's `Named`
+(`register_aux_aliases`), Lean-native originals are recovered from
+`Named.original` (§9.2), `Muts.all` and block serialization keep the
+`sort_consts` order (§11.1) — just not as an occurrence-spelling
+rule.
+
+**Motivating instance.** A whole-Mathlib parity run (736,624
+constants) of the Rust and Lean compilers produced byte-identical
+anonymous content — all 647,127 content-addressed constants, hints,
+blobs, and name tables — and diverged by 47 bytes total, entirely
+inside the `ConstantMeta.info` of `Quiver.FreeGroupoid.redStep.rec`,
+`.casesOn`, and `.recOn`. The source spells the collapsed pair as
+`Paths (Symmetrify V)` — `CategoryTheory.Paths` and
+`Quiver.Symmetrify` are a §13.5 cross-block coincidence on one
+address. The Lean output preserved each occurrence's source spelling
+(outer `Paths`, inner `Symmetrify`) — conforming to this rule — while
+the Rust output recorded `Paths` at both occurrences. The Rust
+divergence traced not to a policy but to two defects. The observed
+one is deterministic and in-block: `redStep`'s stored type is
+`HomRel (Paths (Symmetrify V))`, whose recursor regeneration must
+genuinely WHNF through `HomRel`; the kernel's intern/canonicalization
+collapses the two spellings of the shared address to the
+first-interned display name inside the reduct, and the hint-based
+source-name restoration that should have undone this restored
+*nothing*, because its keys were intern uids rather than content
+digests (§17.8) — so the regenerated telescope spelled
+`Paths (Paths V)`. Separately, the production scheduler's
+worker-lifetime kernel contexts (`compile/env.rs`) let cache entries
+recorded while compiling one block replay their spellings into later
+blocks on the same worker — a schedule-dependent channel, closed by
+giving each block compile a fresh `KernelCtx` (as the aux-dump and
+validate-aux checker paths already did). With both fixed, the
+redStep-closure and whole-Mathlib outputs are byte-identical; the
+earlier reading of the Rust output as a deliberate
+one-name-per-address canonicalization was coincidental. Both outputs
+roundtrip correctly, so §1 held and only metadata determinism failed;
+this rule closes that gap.
+
 ## 11. Sort Algorithms
 
 ### 11.1 User-class `sort_consts`
@@ -1833,6 +1989,65 @@ block-param Pis. Some failure modes may also reflect orthogonal
 issues (e.g. `String.Legacy.back ""` reduction, `_sparseCasesOn_N`
 regeneration) that surface alongside the canonical-order
 mismatches but have unrelated root causes.
+
+### 17.8 Alias-occurrence metadata audit (§10.5)
+
+§10.5 fixes display names at synthesized occurrences as inherited
+source spellings emitted from block-scoped kernel contexts. The
+production Rust scheduler has been block-scoped (`compile/env.rs`:
+fresh `KernelCtx` per block compile; the aux-dump and validate-aux
+Phase 2 paths already were). Remaining audit items:
+
+- **Restoration-heuristic mirror parity.** The kernel-egress
+  restoration passes are heuristic: hint candidacy is `App`/`Proj`
+  only (`source_name_hint_candidate` in `expr_utils.rs` — a bare
+  aliased `Const` surviving a genuinely-reducing WHNF is not
+  restored), and hint slots are first-insert-wins (two same-address
+  source subterms take the traversal-first spelling). The Lean
+  mirrors (`collectLeanSourceNameHints` /
+  `restoreLeanSourceNameHints` / `restoreSourceNamesSameContent` in
+  `Ix/AuxGen/Kernel.lean`) match arm-for-arm; what diverged — and
+  produced the Mathlib redStep instance — was the **key
+  equivalence**: the Lean side keys hints by `Ix.Tc.KExpr` content
+  addresses, while the Rust side keyed by `KExpr::hash_key()`, which
+  is an intern-assigned uid, fresh for every un-interned
+  `to_kexpr_static` construction — so no restore-time key ever
+  matched a collect-time key and the Rust hint pass restored nothing.
+  Fixed by `kexpr_content_key` (a pure name-erased structural digest
+  mirroring the `ExprKey`/`Ix.Tc` equivalence) and by making the
+  WHNF no-op test structural (`==`) rather than uid equality. Any
+  future keying change must preserve that both sides induce the
+  identical equivalence.
+- **Lean `nameForAddr` fallback.** `TcScopeSt.nameForAddr`
+  (`Ix/AuxGen/Kernel.lean`) resolves a provisional kernel address by
+  a linear scan of `cenv.nameToNamed` in `HashMap` iteration order —
+  non-deterministic when the address is multiply-named. Confirm its
+  result cannot reach emitted metadata, or make the scan canonical.
+- **Rust decompile Pass 2 shared context.** The decompiler's
+  regeneration loop (`decompile.rs`) reuses one `KernelCtx` across
+  blocks (serial and deterministic, size-triggered clears). A checker
+  cannot perturb emitted bytes, but a restoration-hole hit that
+  differs from the block-scoped compile side could produce a spurious
+  congruence failure; consider block-scoping it too.
+- **Decompile name fallback via `addrToName`.**
+  `Ixon.Env.addrToName` is single-valued (last-registered wins, i.e.
+  the greatest alias in name-hash order) and serves as the
+  decompiler's fallback when an occurrence has no arena `.ref` name
+  (`Ix/DecompileM.lean`). Confirm no §10.5-governed position reaches
+  this fallback.
+- **Evaporated auxiliaries.** Aux names without `Named.original` are
+  decompiled from the regenerated `constMeta` and compared
+  name-sensitively against the source env
+  (`Tests/Ix/Compile/DecompileDiff.lean`) — the one gate path that
+  reads regenerated metas directly. It stays green exactly when
+  emission inherits source spellings.
+
+Pin the rule with reduced fixtures — a one-block alpha class, and
+separately the cross-block coincident shape of §13.5 in **both
+orientations** (`A (B x)` and `B (A y)`; the mirrored orientation
+distinguishes spelling inheritance from any first-seen or least-name
+policy) — asserting metadata byte-equality between the two compilers,
+in the spirit of the `ZFA` family (§6.0).
 
 ## 18. Summary
 
