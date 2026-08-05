@@ -2625,7 +2625,12 @@ impl<'a> TcScope<'a> {
     // names back onto the egressed expression structurally. If WHNF really
     // reduced, preserve the reduced structure but restore any source subterms
     // that were copied into the reduct under an aliased display name.
-    if whnfed.hash_key() == kexpr.hash_key() {
+    //
+    // The no-op test is structural (`==`, name-erased content), not uid
+    // equality: a reduct rebuilt content-equal without interning carries a
+    // fresh uid, and the Lean mirror's test (`Ix/AuxGen/Kernel.lean`,
+    // `whnfLean`) compares content addresses.
+    if whnfed == kexpr {
       restore_source_names_same_content(&out, ty, self.stt)
     } else {
       let mut source_name_hints = FxHashMap::default();
@@ -2803,6 +2808,125 @@ fn source_name_hint_candidate(expr: &LeanExpr) -> bool {
   matches!(expr.as_data(), ExprData::App(..) | ExprData::Proj(..))
 }
 
+/// Name-erased structural content key for the source-name hint map.
+///
+/// Mirrors the equivalence of the Lean pipeline's `Ix.Tc.KExpr` content
+/// addresses (`toKexprStatic ... |>.addr` in `Ix/AuxGen/Kernel.lean`) and
+/// of the kernel's `ExprKey`/`structural_eq`: display names, binder
+/// names, binder infos, and mdata are excluded; `Const`/`Prj` contribute
+/// their resolved content address, universes their index structure. Two
+/// spellings of one alias pair (`Paths V` / `Symmetrify V`) therefore
+/// agree on this key — which is the whole point of the hint map.
+///
+/// `KExpr::hash_key()` is NOT usable here: it is the intern-assigned uid,
+/// fresh for every un-interned construction, and `to_kexpr_static` does
+/// not intern — so the collect-time and restore-time keys of two
+/// content-equal subterms never matched, and the hint map restored
+/// nothing (the Mathlib `Quiver.FreeGroupoid.redStep` metadata
+/// divergence, canonicity §10.5).
+fn kexpr_content_key(e: &ix_kernel::expr::KExpr<Meta>) -> u64 {
+  use std::hash::Hasher;
+  let mut h = rustc_hash::FxHasher::default();
+  kexpr_content_hash(e, &mut h);
+  h.finish()
+}
+
+fn kuniv_content_hash(
+  u: &ix_kernel::level::KUniv<Meta>,
+  h: &mut rustc_hash::FxHasher,
+) {
+  use ix_kernel::level::UnivData as UD;
+  use std::hash::Hasher;
+  match u.data() {
+    UD::Zero(_) => h.write_u8(0),
+    UD::Succ(a, _) => {
+      h.write_u8(1);
+      kuniv_content_hash(a, h);
+    },
+    UD::Max(a, b, _) => {
+      h.write_u8(2);
+      kuniv_content_hash(a, h);
+      kuniv_content_hash(b, h);
+    },
+    UD::IMax(a, b, _) => {
+      h.write_u8(3);
+      kuniv_content_hash(a, h);
+      kuniv_content_hash(b, h);
+    },
+    UD::Param(idx, _, _) => {
+      h.write_u8(4);
+      h.write_u64(*idx);
+    },
+  }
+}
+
+fn kexpr_content_hash(
+  e: &ix_kernel::expr::KExpr<Meta>,
+  h: &mut rustc_hash::FxHasher,
+) {
+  use ix_kernel::expr::ExprData as KED;
+  use std::hash::Hasher;
+  match e.data() {
+    KED::Var(i, _, _) => {
+      h.write_u8(0);
+      h.write_u64(*i);
+    },
+    KED::FVar(id, _, _) => {
+      h.write_u8(1);
+      h.write_u64(id.0);
+    },
+    KED::Sort(u, _) => {
+      h.write_u8(2);
+      kuniv_content_hash(u, h);
+    },
+    KED::Const(id, us, _) => {
+      h.write_u8(3);
+      h.write(id.addr.as_bytes());
+      h.write_u64(us.len() as u64);
+      for u in us.iter() {
+        kuniv_content_hash(u, h);
+      }
+    },
+    KED::App(f, a, _) => {
+      h.write_u8(4);
+      kexpr_content_hash(f, h);
+      kexpr_content_hash(a, h);
+    },
+    KED::Lam(_, _, t, b, _) => {
+      h.write_u8(5);
+      kexpr_content_hash(t, h);
+      kexpr_content_hash(b, h);
+    },
+    KED::All(_, _, t, b, _) => {
+      h.write_u8(6);
+      kexpr_content_hash(t, h);
+      kexpr_content_hash(b, h);
+    },
+    KED::Let(_, t, v, b, nd, _) => {
+      h.write_u8(7);
+      h.write_u8(u8::from(*nd));
+      kexpr_content_hash(t, h);
+      kexpr_content_hash(v, h);
+      kexpr_content_hash(b, h);
+    },
+    KED::Prj(id, f, v, _) => {
+      h.write_u8(8);
+      h.write(id.addr.as_bytes());
+      h.write_u64(*f);
+      kexpr_content_hash(v, h);
+    },
+    KED::Nat(_, ba, _) => {
+      h.write_u8(9);
+      h.write(ba.as_bytes());
+    },
+    KED::Str(_, ba, _) => {
+      h.write_u8(10);
+      h.write(ba.as_bytes());
+    },
+  }
+}
+
+
 /// Collect source-shaped subterms that WHNF may copy into a reduct.
 ///
 /// Keys use the kernel content hash so alpha-collapsed aliases like
@@ -2819,8 +2943,13 @@ fn collect_lean_source_name_hints(
   out: &mut FxHashMap<ix_kernel::env::Addr, LeanExpr>,
 ) {
   if source_name_hint_candidate(source) && !expr_has_bvar(source) {
-    let key =
-      to_kexpr_static(source, fvar_levels, depth, param_names, stt).hash_key();
+    let key = kexpr_content_key(&to_kexpr_static(
+      source,
+      fvar_levels,
+      depth,
+      param_names,
+      stt,
+    ));
     out.entry(key).or_insert_with(|| source.clone());
   }
 
@@ -2923,8 +3052,13 @@ fn restore_lean_source_name_hints(
   hints: &FxHashMap<ix_kernel::env::Addr, LeanExpr>,
 ) -> LeanExpr {
   if source_name_hint_candidate(generated) && !expr_has_bvar(generated) {
-    let key = to_kexpr_static(generated, fvar_levels, depth, param_names, stt)
-      .hash_key();
+    let key = kexpr_content_key(&to_kexpr_static(
+      generated,
+      fvar_levels,
+      depth,
+      param_names,
+      stt,
+    ));
     if let Some(source) = hints.get(&key) {
       return source.clone();
     }

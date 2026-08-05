@@ -15,6 +15,9 @@ name = "CompileLean"
 name = "CompileMathlib"
 
 [[lean_lib]]
+name = "CompileRedStep"
+
+[[lean_lib]]
 name = "CompileFLT"
 
 [[lean_lib]]
