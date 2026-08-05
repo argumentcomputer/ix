@@ -1389,7 +1389,7 @@ pub(super) fn beta_reduce(expr: &LeanExpr) -> LeanExpr {
 /// stale rewrites.
 pub(super) fn rewrite_nested_const_levels_cached(
   expr: &LeanExpr,
-  aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
+  aux_info: &std::collections::HashMap<Name, Vec<(usize, Vec<Level>)>>,
   block_names: &FxHashSet<Name>,
   cache: &mut FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
@@ -1405,30 +1405,52 @@ pub(super) fn rewrite_nested_const_levels_cached(
 
 fn rewrite_nested_const_levels_walk(
   expr: &LeanExpr,
-  aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
+  aux_info: &std::collections::HashMap<Name, Vec<(usize, Vec<Level>)>>,
   block_names: &FxHashSet<Name>,
   cache: &mut FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
   // Try to decompose as an application of an auxiliary Const.
   let (head, args) = decompose_apps(expr);
   if let ExprData::Const(name, levels, _) = head.as_data()
-    && let Some((n_params, new_levels)) = aux_info.get(name)
+    && let Some(entries) = aux_info.get(name)
+    && !entries.is_empty()
   {
+    // `own_params` is a property of the external family — identical
+    // across all of its aux entries.
+    let n_params = entries[0].0;
     let has_nested_ref = args
       .iter()
-      .take(*n_params)
+      .take(n_params)
       .any(|a| super::nested::expr_mentions_any_name(a, block_names));
-    if has_nested_ref && new_levels.len() == levels.len() {
-      // Rewrite head levels and recurse into args.
-      let new_head = LeanExpr::cnst(name.clone(), new_levels.clone());
-      let mut result = new_head;
-      for a in &args {
-        result = LeanExpr::app(
-          result,
-          rewrite_nested_const_levels_cached(a, aux_info, block_names, cache),
-        );
+    if has_nested_ref {
+      // Prefer the aux entry whose levels equal the occurrence's — the
+      // occurrence already carries a member's instantiation (members
+      // store raw ctor levels), so the rewrite is the identity and
+      // distinct universe specializations stay distinct. Fall back to
+      // the last name-keyed entry for the genuine recompute case
+      // (`Array.{u}` occurrence vs `Array.{max u v}` member).
+      let new_levels = entries
+        .iter()
+        .find(|(_, ls)| {
+          ls.len() == levels.len()
+            && ls
+              .iter()
+              .zip(levels.iter())
+              .all(|(a, b)| a.get_hash() == b.get_hash())
+        })
+        .map_or(&entries[entries.len() - 1].1, |(_, ls)| ls);
+      if new_levels.len() == levels.len() {
+        // Rewrite head levels and recurse into args.
+        let new_head = LeanExpr::cnst(name.clone(), new_levels.clone());
+        let mut result = new_head;
+        for a in &args {
+          result = LeanExpr::app(
+            result,
+            rewrite_nested_const_levels_cached(a, aux_info, block_names, cache),
+          );
+        }
+        return result;
       }
-      return result;
     }
   }
 

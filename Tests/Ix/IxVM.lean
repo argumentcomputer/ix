@@ -102,6 +102,20 @@ public inductive Bar2 (α β : Type) where
 public inductive DedupM where
   | mk : Bar2 DedupM Nat → Bar2 DedupM Bool → DedupM
 
+-- Universe dedup key: two nested occurrences of one external inductive
+-- with the SAME term spec_param at DISTINCT universe instantiations
+-- (the phantom universe appears only in the result sort). Lean emits
+-- distinct motives — flat must be [UnivM, PhantomBox.{0}⟨UnivM⟩,
+-- PhantomBox.{1}⟨UnivM⟩] (3 motives); a dedup keyed on (family, term
+-- spec_params) alone collapses the two PhantomBox auxes, and a
+-- compute_aux_perm source match that ignores head levels maps both
+-- source auxes onto one canonical slot.
+public inductive PhantomBox (α : Type 2) : Type (max 2 u) where
+  | mk : α → PhantomBox α
+
+public inductive UnivM : Type 2 where
+  | mk : PhantomBox.{0} UnivM → PhantomBox.{1} UnivM → UnivM
+
 -- De-lift guard: the SAME spec_param (`Bar1 (DepthM α)`) at field
 -- depths 0 and 2. In the un-opened de Bruijn view the block-param ref
 -- is BVar(0) vs BVar(2); without de-lifting to the param context a

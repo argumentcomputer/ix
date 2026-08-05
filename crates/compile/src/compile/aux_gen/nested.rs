@@ -1000,27 +1000,33 @@ pub fn source_aux_order_with_owner(
 ) -> Result<Vec<(Name, Name, Vec<LeanExpr>)>, CompileError> {
   let alias_to_rep: FxHashMap<Name, Name> = FxHashMap::default();
   let expanded = expand_nested_block(original_all, lean_env, &alias_to_rep)?;
-  Ok(source_aux_order_from_expanded(&expanded))
+  Ok(
+    source_aux_order_from_expanded(&expanded)
+      .into_iter()
+      .map(|(owner, head, _, args)| (owner, head, args))
+      .collect(),
+  )
 }
 
 fn source_aux_order_from_expanded(
   expanded: &ExpandedBlock,
-) -> Vec<(Name, Name, Vec<LeanExpr>)> {
+) -> Vec<(Name, Name, Vec<Level>, Vec<LeanExpr>)> {
   let n_originals = expanded.n_originals;
 
-  let mut out: Vec<(Name, Name, Vec<LeanExpr>)> = Vec::new();
+  let mut out: Vec<(Name, Name, Vec<Level>, Vec<LeanExpr>)> = Vec::new();
   for mem in expanded.types.iter().skip(n_originals) {
     // Each aux's `aux_to_nested` entry is `ExtInd.{lvls} spec_params`
-    // with block-param FVars — decompose into (head_name, spec_params).
+    // with block-param FVars — decompose into (head_name, head_levels,
+    // spec_params).
     let Some(nested_expr) = expanded.aux_to_nested.get(&mem.name) else {
       continue;
     };
     let (head, args) = decompose_apps(nested_expr);
-    let head_name = match head.as_data() {
-      ExprData::Const(n, _, _) => n.clone(),
+    let (head_name, head_levels) = match head.as_data() {
+      ExprData::Const(n, ls, _) => (n.clone(), ls.clone()),
       _ => continue,
     };
-    out.push((mem.source_owner.clone(), head_name, args));
+    out.push((mem.source_owner.clone(), head_name, head_levels, args));
   }
   out
 }
@@ -1093,7 +1099,8 @@ pub fn compute_aux_perm(
     }
   }
 
-  // Precompute canonical (head_name, spec_params) for each canonical aux.
+  // Precompute canonical (head_name, head_levels, spec_params) for each
+  // canonical aux.
   //
   // Do not key by LeanExpr hash here. During auxiliary alpha-collapse the
   // canonical aux may be represented with a different source inductive name
@@ -1101,18 +1108,19 @@ pub fn compute_aux_perm(
   // those names already resolve to the same content address. Raw LeanExpr
   // hashes intentionally include names, so matching must use semantic
   // comparison below.
-  let canonical_signatures: Vec<(Name, Vec<LeanExpr>)> = canonical_aux
-    .iter()
-    .filter_map(|mem| {
-      let nested_expr = expanded.aux_to_nested.get(&mem.name)?;
-      let (head, args) = decompose_apps(nested_expr);
-      let head_name = match head.as_data() {
-        ExprData::Const(n, _, _) => n.clone(),
-        _ => return None,
-      };
-      Some((head_name, args))
-    })
-    .collect();
+  let canonical_signatures: Vec<(Name, Vec<Level>, Vec<LeanExpr>)> =
+    canonical_aux
+      .iter()
+      .filter_map(|mem| {
+        let nested_expr = expanded.aux_to_nested.get(&mem.name)?;
+        let (head, args) = decompose_apps(nested_expr);
+        let (head_name, head_levels) = match head.as_data() {
+          ExprData::Const(n, ls, _) => (n.clone(), ls.clone()),
+          _ => return None,
+        };
+        Some((head_name, head_levels, args))
+      })
+      .collect();
 
   if canonical_signatures.len() != n_canon {
     return Err(CompileError::InvalidMutualBlock {
@@ -1127,7 +1135,7 @@ pub fn compute_aux_perm(
   // inductive occurrence) and `aux_spec_eq` already memoizes per-pair
   // structural comparison.
   let mut canon_by_head: FxHashMap<&Name, Vec<usize>> = FxHashMap::default();
-  for (i, (head, _)) in canonical_signatures.iter().enumerate() {
+  for (i, (head, _, _)) in canonical_signatures.iter().enumerate() {
     canon_by_head.entry(head).or_default().push(i);
   }
 
@@ -1145,7 +1153,9 @@ pub fn compute_aux_perm(
   // between source spec_params collapse to a single rewrite.
   let mut normalize_cache: FxHashMap<Hash, LeanExpr> = FxHashMap::default();
 
-  for (j, (src_owner, src_head, src_specs)) in source_order.iter().enumerate() {
+  for (j, (src_owner, src_head, src_levels, src_specs)) in
+    source_order.iter().enumerate()
+  {
     // If any spec_param references an original mutual member that's NOT
     // in orig_to_canon_names, this source aux is out-of-SCC — skip it.
     // Other constants are ordinary external parameters (e.g. `String` in
@@ -1175,11 +1185,26 @@ pub fn compute_aux_perm(
       })
       .collect();
     // Consult the head-name bucket first. If no canonical aux shares
-    // this head, there can't be a match.
-    let canon_idx = canon_by_head.get(src_head).and_then(|candidates| {
-      candidates.iter().copied().find(|&i| {
-        let (_, canon_specs) = &canonical_signatures[i];
-        canon_specs.len() == normalized.len()
+    // this head, there can't be a match. Within the bucket, prefer a
+    // candidate whose head universe instantiation matches EXACTLY:
+    // distinct universe specializations of one family are distinct
+    // canonical auxes (the flat-block dedup keys on levels), and both
+    // expansions read the same constructor types, so in-block levels
+    // are verbatim identical. Fall back to a level-insensitive match
+    // for alpha-collapse, where the representative's constructor types
+    // may name the block's universe parameters differently.
+    let mut canon_idx: Option<usize> = None;
+    if let Some(candidates) = canon_by_head.get(src_head) {
+      // Pass A: exact universe instantiation + spec equality.
+      for &i in candidates {
+        let (_, canon_levels, canon_specs) = &canonical_signatures[i];
+        let levels_eq = canon_levels.len() == src_levels.len()
+          && canon_levels
+            .iter()
+            .zip(src_levels.iter())
+            .all(|(a, b)| a.get_hash() == b.get_hash());
+        if levels_eq
+          && canon_specs.len() == normalized.len()
           && canon_specs.iter().zip(normalized.iter()).all(|(canon, src)| {
             aux_spec_eq(
               canon,
@@ -1189,8 +1214,32 @@ pub fn compute_aux_perm(
               &mut spec_eq_cache,
             )
           })
-      })
-    });
+        {
+          canon_idx = Some(i);
+          break;
+        }
+      }
+      // Pass B: level-insensitive fallback.
+      if canon_idx.is_none() {
+        for &i in candidates {
+          let (_, _, canon_specs) = &canonical_signatures[i];
+          if canon_specs.len() == normalized.len()
+            && canon_specs.iter().zip(normalized.iter()).all(|(canon, src)| {
+              aux_spec_eq(
+                canon,
+                src,
+                stt,
+                &source_to_canon_fvar,
+                &mut spec_eq_cache,
+              )
+            })
+          {
+            canon_idx = Some(i);
+            break;
+          }
+        }
+      }
+    }
 
     // If this source aux was discovered while scanning a constructor from a
     // different split SCC, it belongs to the full Lean source numbering but
@@ -1209,9 +1258,15 @@ pub fn compute_aux_perm(
         normalized.iter().map(|e| e.pretty()).collect();
       let canon_sigs: Vec<String> = canonical_signatures
         .iter()
-        .map(|(head, specs)| {
+        .map(|(head, levels, specs)| {
+          let levels: Vec<String> = levels.iter().map(|l| l.pretty()).collect();
           let specs: Vec<String> = specs.iter().map(|e| e.pretty()).collect();
-          format!("{}[{}]", head.pretty(), specs.join(", "))
+          format!(
+            "{}.{{{}}}[{}]",
+            head.pretty(),
+            levels.join(", "),
+            specs.join(", ")
+          )
         })
         .collect();
       return Err(CompileError::InvalidMutualBlock {
