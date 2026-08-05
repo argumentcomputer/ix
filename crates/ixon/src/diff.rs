@@ -2509,4 +2509,70 @@ mod tests {
     assert_eq!(via_heap.named_changed.len(), 1);
     std::fs::remove_file(&path).ok();
   }
+
+  /// Debugging aid, not a gate: dump the decoded `ConstantMetaInfo` of
+  /// selected named rows from one or two `.ixe` files, to localize a
+  /// meta-only divergence (e.g. the Quiver.FreeGroupoid.redStep arena
+  /// delta between the Rust and Lean compilers). Inputs via env vars:
+  /// `IXE_A` (required), `IXE_B` (optional), `IXE_NAMES`
+  /// (comma-separated pretty names). Run:
+  ///   IXE_A=… IXE_B=… IXE_NAMES=… \
+  ///     cargo test -p ixon --release dump_named_metas -- --ignored --nocapture
+  #[test]
+  #[ignore]
+  fn dump_named_metas() {
+    let paths: Vec<String> = [std::env::var("IXE_A").ok(), std::env::var("IXE_B").ok()]
+      .into_iter()
+      .flatten()
+      .collect();
+    assert!(!paths.is_empty(), "set IXE_A (and optionally IXE_B)");
+    let targets: Vec<String> = std::env::var("IXE_NAMES")
+      .unwrap_or_default()
+      .split(',')
+      .map(|s| s.trim().to_string())
+      .filter(|s| !s.is_empty())
+      .collect();
+    // Reverse name-hash lookup: print every named row whose NAME hash
+    // matches one of the given hex addresses (arena `Ref` nodes store
+    // name hashes, which have no forward index).
+    let name_hashes: Vec<String> = std::env::var("IXE_NAME_HASHES")
+      .unwrap_or_default()
+      .split(',')
+      .map(|s| s.trim().to_lowercase())
+      .filter(|s| !s.is_empty())
+      .collect();
+    for path in paths {
+      println!("===== {path}");
+      let bytes = std::fs::read(&path).expect("read env file");
+      let index = Env::parse_lazy_index(&bytes).expect("lazy index");
+      let mut cur =
+        NamedMetaCursor::open(&bytes, &index).expect("named cursor");
+      for row in &index.named {
+        let (_, named) = cur
+          .next_entry()
+          .expect("cursor entry")
+          .expect("cursor exhausted early");
+        let pretty = row.name.pretty();
+        if !name_hashes.is_empty() {
+          let h = format!("{}", row.name.get_hash().to_hex());
+          if name_hashes.iter().any(|t| *t == h) {
+            println!("name-hash {h} = {pretty}");
+          }
+          continue;
+        }
+        if !targets.is_empty() && !targets.iter().any(|t| *t == pretty) {
+          continue;
+        }
+        println!("--- {pretty}: addr={}", named.addr.hex());
+        println!("{:#?}", named.meta().info);
+        match named.original() {
+          None => println!("original: none"),
+          Some((oaddr, ometa)) => {
+            println!("original: addr={}", oaddr.hex());
+            println!("{:#?}", ometa.info);
+          },
+        }
+      }
+    }
+  }
 }
