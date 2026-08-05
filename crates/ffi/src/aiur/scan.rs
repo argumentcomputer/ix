@@ -1172,7 +1172,13 @@ pub fn execute_env(
         pieces: sched_pieces,
         exec_only: true,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        pool_cap_bytes: gib_to_bytes_u64(pool_gib),
+        // The BIG lane's cap is the headroom that remains when every
+        // slot is at its cap — never the pool itself, which would let a
+        // big measurement plus a full fleet overcommit the box.
+        pool_cap_bytes: gib_to_bytes_u64(
+          (ram - pool_gib - baseline_gib - OS_RESERVE_GIB)
+            .max(2.0 * WORKER_CAP_FLOOR_GIB),
+        ),
         big_lane: Mutex::new(()),
         order_file,
         capped,
@@ -1352,7 +1358,13 @@ pub fn scan_shards(
         pieces: sched_pieces,
         exec_only: false,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        pool_cap_bytes: gib_to_bytes_u64(pool_gib),
+        // The BIG lane's cap is the headroom that remains when every
+        // slot is at its cap — never the pool itself, which would let a
+        // big measurement plus a full fleet overcommit the box.
+        pool_cap_bytes: gib_to_bytes_u64(
+          (ram - pool_gib - baseline_gib - OS_RESERVE_GIB)
+            .max(2.0 * WORKER_CAP_FLOOR_GIB),
+        ),
         big_lane: Mutex::new(()),
         order_file,
         capped,
