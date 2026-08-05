@@ -50,6 +50,19 @@ enum CircuitType {
   Bytes2,
 }
 
+/// Shape of one compiled circuit, as needed by the Lean-side FFT cost model
+/// (`Ix/Aiur/Statistics.lean`). Heights of function and memory circuits are
+/// execution-dependent and are NOT part of the shape; `preprocessed_height`
+/// doubles as the fixed trace height of the byte-gadget circuits (256 and
+/// 65536), whose witness builders always emit the full table.
+pub struct CircuitShape {
+  pub main_width: usize,
+  pub stage2_width: usize,
+  pub quotient_degree: usize,
+  pub preprocessed_width: usize,
+  pub preprocessed_height: usize,
+}
+
 impl AiurSystem {
   pub fn build(
     toplevel: Toplevel,
@@ -137,6 +150,24 @@ impl AiurSystem {
   /// matches the compiled circuit.
   fn slot_arg_widths(&self, circuit_idx: usize) -> Vec<usize> {
     self.slot_widths[circuit_idx].clone()
+  }
+
+  /// Per-circuit shape data for the FFT cost model, read straight off the
+  /// compiled [`System`] circuits (same order as [`Self::circuit_types`]:
+  /// constrained functions ascending, memories, `Bytes1`, `Bytes2`).
+  pub fn circuit_shapes(&self) -> Vec<CircuitShape> {
+    self
+      .system
+      .circuits
+      .iter()
+      .map(|circuit| CircuitShape {
+        main_width: circuit.main_width,
+        stage2_width: circuit.stage_2_width,
+        quotient_degree: circuit.quotient_degree(),
+        preprocessed_width: circuit.preprocessed_width,
+        preprocessed_height: circuit.preprocessed_height,
+      })
+      .collect()
   }
 
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
@@ -491,5 +522,43 @@ mod tests {
       system.verify(&bad_claim, &proof).is_err(),
       "verification must reject a tampered claim"
     );
+  }
+
+  #[test]
+  fn circuit_shapes_match_system() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(call_and_memory_toplevel(), cp, fp);
+    let shapes = system.circuit_shapes();
+
+    // Canonical order and count: 2 constrained functions, 1 memory, Bytes1,
+    // Bytes2.
+    assert_eq!(shapes.len(), 5);
+    assert_eq!(shapes.len(), system.system.circuits.len());
+
+    for (shape, circuit) in shapes.iter().zip(&system.system.circuits) {
+      assert_eq!(shape.main_width, circuit.main_width);
+      assert_eq!(shape.stage2_width, circuit.stage_2_width);
+      assert_eq!(shape.quotient_degree, circuit.quotient_degree());
+      assert_eq!(shape.preprocessed_width, circuit.preprocessed_width);
+      assert_eq!(shape.preprocessed_height, circuit.preprocessed_height);
+    }
+
+    // Function circuits: main width = inputs + selectors + auxiliaries, no
+    // preprocessed matrix.
+    assert_eq!(shapes[0].main_width, 2 + 1 + 5);
+    assert_eq!(shapes[1].main_width, 1 + 1 + 1);
+    // Memory of size 1: multiplicity + selector + pointer + 1 value.
+    assert_eq!(shapes[2].main_width, 3 + 1);
+    for shape in &shapes[..3] {
+      assert_eq!(shape.preprocessed_width, 0);
+      assert_eq!(shape.preprocessed_height, 0);
+    }
+
+    // Byte gadgets: always-active fixed-height tables whose preprocessed
+    // height doubles as the committed trace height.
+    assert_eq!(shapes[3].preprocessed_width, 11);
+    assert_eq!(shapes[3].preprocessed_height, 256);
+    assert_eq!(shapes[4].preprocessed_width, 16);
+    assert_eq!(shapes[4].preprocessed_height, 65536);
   }
 }

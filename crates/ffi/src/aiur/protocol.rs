@@ -13,15 +13,15 @@ use lean_ffi::object::{
 use crate::{
   aiur::{lean_unbox_g, lean_unbox_nat_as_usize, toplevel::decode_toplevel},
   lean::{
-    LeanAiurCommitmentParameters, LeanAiurExecuteResult, LeanAiurFriParameters,
-    LeanAiurIOKeyInfo, LeanAiurProveEnvResult, LeanAiurProveResult,
-    LeanAiurQueryCount, LeanAiurToplevel,
+    LeanAiurCircuitShape, LeanAiurCommitmentParameters, LeanAiurExecuteResult,
+    LeanAiurFriParameters, LeanAiurIOKeyInfo, LeanAiurProveEnvResult,
+    LeanAiurProveResult, LeanAiurQueryCount, LeanAiurToplevel,
   },
 };
 use aiur::{
   G,
   execute::{IOBuffer, IOKeyInfo, QueryRecord},
-  synthesis::{AiurProof, AiurSystem},
+  synthesis::{AiurProof, AiurSystem, CircuitShape},
 };
 
 // =============================================================================
@@ -85,6 +85,48 @@ extern "C" fn rs_aiur_system_build(
     decode_fri_parameters(&fri_parameters),
   );
   LeanExternal::alloc(&AIUR_SYSTEM_CLASS, system)
+}
+
+/// Helper: encode `CircuitShape`s as a Lean `Array CircuitShape`. Field
+/// order must match `Aiur.CircuitShape` in `Ix/Aiur/Protocol.lean`.
+fn build_circuit_shapes_array(shapes: &[CircuitShape]) -> LeanArray<LeanOwned> {
+  let arr = LeanArray::alloc(shapes.len());
+  for (i, shape) in shapes.iter().enumerate() {
+    let s = LeanAiurCircuitShape::alloc(0);
+    s.set_obj(0, LeanOwned::box_usize(shape.main_width));
+    s.set_obj(1, LeanOwned::box_usize(shape.stage2_width));
+    s.set_obj(2, LeanOwned::box_usize(shape.quotient_degree));
+    s.set_obj(3, LeanOwned::box_usize(shape.preprocessed_width));
+    s.set_obj(4, LeanOwned::box_usize(shape.preprocessed_height));
+    arr.set(i, s);
+  }
+  arr
+}
+
+/// `AiurSystem.circuitShapes : @& AiurSystem → Array CircuitShape`
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_circuit_shapes(
+  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+) -> LeanArray<LeanOwned> {
+  build_circuit_shapes_array(&system.get().circuit_shapes())
+}
+
+/// `Aiur.circuitShapes : @&Bytecode.Toplevel → @&CommitmentParameters → @&FriParameters → Array CircuitShape`
+///
+/// One-shot variant for flows that never build an `AiurSystem` (`ix check`
+/// statistics): builds the system, extracts the shapes, and drops it.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_circuit_shapes(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+) -> LeanArray<LeanOwned> {
+  let system = AiurSystem::build(
+    decode_toplevel(&toplevel),
+    decode_commitment_parameters(&commitment_parameters),
+    decode_fri_parameters(&fri_parameters),
+  );
+  build_circuit_shapes_array(&system.circuit_shapes())
 }
 
 /// `AiurSystem.verify : @& AiurSystem → @& Array G → @& Proof → Except String Unit`

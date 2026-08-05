@@ -394,6 +394,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- witness is a small subject-only blob — keep Lean witness +
   -- `executeIxVM`.
   IO.println "── Phase 1: execute (witness generation) ──"
+  -- Shapes off the already-built system (cheap: reads the compiled
+  -- circuits), hoisted out of the per-constant loop.
+  let shapes := aiurSystem.circuitShapes
   let mut execed : Array (Result × Address) := #[]
   let mut execIdx := 0
   for (label, addr) in targets do
@@ -420,7 +423,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           ({ name := label, constants := 0, fftCost := 0, executeSec := 0,
              failed := true }, addr)
       | .ok (_, _, queryCounts) =>
-        let stats := Aiur.computeStats compiled queryCounts
+        let stats := Aiur.computeStats compiled queryCounts shapes
+          (logBlowup := commitParams.logBlowup)
         -- Constants CHECKED, not shipped: `check_const` is memoized per
         -- (ci, addr), so its unique query count is exactly the number of
         -- constants the kernel typechecked. The shipped byte scope
@@ -555,7 +559,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           | .error e =>
             IO.eprintln s!"  ❌ recursive verifier REJECTED {r.name}'s proof: {e}"
           | .ok (_, qc) =>
-            let rvStats := Aiur.computeStats vCompiled qc
+            let rvStats := Aiur.computeStats vCompiled qc vSystem.circuitShapes
+              (logBlowup := commitParams.logBlowup)
             IO.println s!"  {r.name}: recursive={rvSec}s \
               recursive-fft-cost={rvStats.totalFftCost}"
             -- The per-circuit breakdown names where the verifier's cost

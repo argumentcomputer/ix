@@ -204,7 +204,9 @@ def main (args : List String) : IO UInt32 := do
       return 1
     | .ok (out, qc) =>
       let t1 ← IO.monoNanosNow
-      let stats := Aiur.computeStats vCompiled qc
+      let vShapes := Aiur.circuitShapes vCompiled.bytecode commitParams fri
+      let stats := Aiur.computeStats vCompiled qc vShapes
+        (logBlowup := commitParams.logBlowup)
       IO.println s!"ACCEPTED in {secs t0 t1} s, output {out}, \
         fft-cost {stats.totalFftCost}"
       return 0
