@@ -200,13 +200,30 @@ impl ConstantMetaInfo {
   }
 }
 
+/// Per-occurrence original level-spelling patch (canonicity §10.6):
+/// keyed by the metadata-arena node index of a `sort`/`ref`/`recur`
+/// occurrence whose original level-index list differs from its
+/// canonical one, carrying the FULL original list in the VIRTUAL univ
+/// index space (idx < `univs.len()` → primary table entry, already
+/// canonical; idx ≥ `univs.len()` → `meta_univs[idx - univs.len()]`,
+/// the original spelling). `sort` occurrences carry a 1-element list.
+/// Presentation-only: read by the decompiler and by META kernel
+/// ingress (the stage-2 decoration source); anon ingress — the trust
+/// boundary — never reads patches.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnivPatch {
+  pub arena_idx: u64,
+  pub univ_idxs: Vec<u64>,
+}
+
 /// Per-constant metadata wrapper: variant payload + extension tables.
 ///
 /// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) form a
 /// virtual address space extending the primary `Constant` tables. They are
 /// used by `CallSite` nodes in the metadata arena for call-site surgery
 /// roundtrip: collapsed argument expressions reference these tables via
-/// `Share(idx)`, `Ref(idx)`, and universe indices.
+/// `Share(idx)`, `Ref(idx)`, and universe indices — and by `univ_patches`
+/// for original level spellings (canonicity §10.6).
 ///
 /// At decompile time, extension tables are appended to the block cache,
 /// creating a contiguous address space.
@@ -218,8 +235,12 @@ pub struct ConstantMeta {
   pub meta_sharing: Vec<Arc<Expr>>,
   /// Extension refs table (addresses referenced by collapsed arg expressions).
   pub meta_refs: Vec<Address>,
-  /// Extension univs table (universe terms in collapsed arg expressions).
+  /// Extension univs table (universe terms in collapsed arg expressions,
+  /// and original level spellings referenced by `univ_patches`).
   pub meta_univs: Vec<Arc<Univ>>,
+  /// Original level-spelling patches, keyed by metadata-arena index
+  /// (canonicity §10.6). Empty until the stage-2 compiler emits them.
+  pub univ_patches: Vec<UnivPatch>,
 }
 
 impl Default for ConstantMeta {
@@ -229,6 +250,7 @@ impl Default for ConstantMeta {
       meta_sharing: Vec::new(),
       meta_refs: Vec::new(),
       meta_univs: Vec::new(),
+      univ_patches: Vec::new(),
     }
   }
 }
@@ -241,14 +263,17 @@ impl ConstantMeta {
       meta_sharing: Vec::new(),
       meta_refs: Vec::new(),
       meta_univs: Vec::new(),
+      univ_patches: Vec::new(),
     }
   }
 
-  /// Whether this metadata has any surgery extension tables.
+  /// Whether this metadata has any wrapper extension payload (surgery
+  /// tables or level-spelling patches).
   pub fn has_extensions(&self) -> bool {
     !self.meta_sharing.is_empty()
       || !self.meta_refs.is_empty()
       || !self.meta_univs.is_empty()
+      || !self.univ_patches.is_empty()
   }
 
   /// Enumerate every external address this metadata references,
@@ -371,6 +396,16 @@ impl ConstantMeta {
     for univ in &self.meta_univs {
       put_univ(univ, buf);
     }
+    // Level-spelling patches (canonicity §10.6): per entry, Tag0
+    // arena_idx, Tag0 len, Tag0 virtual univ indices.
+    put_vec_len(self.univ_patches.len(), buf);
+    for patch in &self.univ_patches {
+      Tag0::new(patch.arena_idx).put(buf);
+      put_vec_len(patch.univ_idxs.len(), buf);
+      for idx in &patch.univ_idxs {
+        Tag0::new(*idx).put(buf);
+      }
+    }
     Ok(())
   }
 
@@ -407,7 +442,18 @@ impl ConstantMeta {
     for _ in 0..univs_len {
       meta_univs.push(get_univ(buf)?);
     }
-    Ok(Self { info, meta_sharing, meta_refs, meta_univs })
+    let patches_len = get_vec_len(buf)?;
+    let mut univ_patches = Vec::with_capacity(patches_len);
+    for _ in 0..patches_len {
+      let arena_idx = Tag0::get(buf)?.size;
+      let idxs_len = get_vec_len(buf)?;
+      let mut univ_idxs = Vec::with_capacity(idxs_len);
+      for _ in 0..idxs_len {
+        univ_idxs.push(Tag0::get(buf)?.size);
+      }
+      univ_patches.push(UnivPatch { arena_idx, univ_idxs });
+    }
+    Ok(Self { info, meta_sharing, meta_refs, meta_univs, univ_patches })
   }
 }
 
@@ -1350,7 +1396,7 @@ mod tests {
       children: [leaf, leaf],
     });
 
-    let meta = ConstantMeta::new(ConstantMetaInfo::Def {
+    let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
       name: addr1.clone(),
       lvls: vec![addr2.clone(), addr3.clone()],
       all: vec![addr1.clone()],
@@ -1359,6 +1405,13 @@ mod tests {
       type_root: binder,
       value_root: leaf,
     });
+    // Wrapper extension payload incl. level-spelling patches (§10.6).
+    meta.meta_univs =
+      vec![Univ::succ(Univ::var(0)), Univ::max(Univ::zero(), Univ::var(1))];
+    meta.univ_patches = vec![
+      UnivPatch { arena_idx: 1, univ_idxs: vec![0, 2] },
+      UnivPatch { arena_idx: 4, univ_idxs: vec![3] },
+    ];
 
     let mut buf = Vec::new();
     meta.put_with(NamePut::Indexed(&idx), &mut buf).unwrap();

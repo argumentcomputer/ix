@@ -769,6 +769,9 @@ fn meta_component_labels(a: &Named, b: &Named) -> Vec<String> {
   if am.meta_univs != bm.meta_univs {
     out.push("meta.univs".to_string());
   }
+  if am.univ_patches != bm.univ_patches {
+    out.push("meta.univPatches".to_string());
+  }
   match (a.original(), b.original()) {
     (None, None) => {},
     (None, Some(_)) => out.push("original.added".to_string()),

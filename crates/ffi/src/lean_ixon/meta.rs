@@ -6,6 +6,7 @@ use crate::lean::{
   LeanIxonAuxLayout, LeanIxonCallSiteEntry, LeanIxonComm, LeanIxonConstantMeta,
   LeanIxonConstantMetaInfo, LeanIxonDataValue, LeanIxonExpr,
   LeanIxonExprMetaArena, LeanIxonExprMetaData, LeanIxonNamed, LeanIxonUniv,
+  LeanIxonUnivPatch,
 };
 use ix_common::address::Address;
 use ix_common::env::{BinderInfo, ReducibilityHints};
@@ -13,7 +14,7 @@ use ixon::Comm;
 use ixon::env::{AuxLayout, Named};
 use ixon::metadata::{
   CallSiteEntry, ConstantMeta, ConstantMetaInfo, DataValue as IxonDataValue,
-  ExprMeta, ExprMetaData, KVMap,
+  ExprMeta, ExprMetaData, KVMap, UnivPatch,
 };
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanOption, LeanOwned, LeanProd, LeanRef,
@@ -746,16 +747,56 @@ impl<R: LeanRef> LeanIxonConstantMetaInfo<R> {
 // ConstantMeta (wrapper) Build/Decode
 // =============================================================================
 
+impl LeanIxonUnivPatch<LeanOwned> {
+  /// Build Ixon.UnivPatch `{ arenaIdx : UInt64, univIdxs : Array UInt64 }`
+  /// (single ctor, 1 obj field + 1 u64 scalar).
+  pub fn build(patch: &UnivPatch) -> Self {
+    let ctor = LeanIxonUnivPatch::alloc(0);
+    ctor.set_obj(0, build_u64_array(&patch.univ_idxs));
+    ctor.set_num_64(0, patch.arena_idx);
+    ctor
+  }
+
+  fn build_array(patches: &[UnivPatch]) -> LeanArray<LeanOwned> {
+    let arr = LeanArray::alloc(patches.len());
+    for (i, p) in patches.iter().enumerate() {
+      arr.set(i, LeanIxonUnivPatch::build(p));
+    }
+    arr
+  }
+}
+
+impl<R: LeanRef> LeanIxonUnivPatch<R> {
+  /// Decode Ixon.UnivPatch.
+  pub fn decode(&self) -> UnivPatch {
+    UnivPatch {
+      arena_idx: self.get_num_64(0),
+      univ_idxs: decode_u64_array(self.get_obj(0).as_array()),
+    }
+  }
+}
+
+fn decode_univ_patch_array(
+  obj: LeanArray<LeanBorrowed<'_>>,
+) -> Vec<UnivPatch> {
+  let mut out = Vec::with_capacity(obj.len());
+  for i in 0..obj.len() {
+    out.push(LeanIxonUnivPatch::new(obj.get(i).to_owned_ref()).decode());
+  }
+  out
+}
+
 impl LeanIxonConstantMeta<LeanOwned> {
   /// Build Ixon.ConstantMeta Lean object — the wrapper structure
-  /// `{ info, metaSharing, metaRefs, metaUnivs }` (single ctor, 4 obj
-  /// fields), mirroring Rust `ixon::metadata::ConstantMeta`.
+  /// `{ info, metaSharing, metaRefs, metaUnivs, univPatches }` (single
+  /// ctor, 5 obj fields), mirroring Rust `ixon::metadata::ConstantMeta`.
   pub fn build(meta: &ConstantMeta) -> Self {
     let ctor = LeanIxonConstantMeta::alloc(0);
     ctor.set_obj(0, LeanIxonConstantMetaInfo::build(&meta.info));
     ctor.set_obj(1, LeanIxonExpr::build_array(&meta.meta_sharing));
     ctor.set_obj(2, LeanIxAddress::build_array(&meta.meta_refs));
     ctor.set_obj(3, LeanIxonUniv::build_array(&meta.meta_univs));
+    ctor.set_obj(4, LeanIxonUnivPatch::build_array(&meta.univ_patches));
     ctor
   }
 }
@@ -768,7 +809,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
     let meta_sharing = LeanIxonExpr::decode_array(&self.get_obj(1).as_array());
     let meta_refs = decode_address_array(self.get_obj(2).as_array());
     let meta_univs = LeanIxonUniv::decode_array(&self.get_obj(3).as_array());
-    ConstantMeta { info, meta_sharing, meta_refs, meta_univs }
+    let univ_patches = decode_univ_patch_array(self.get_obj(4).as_array());
+    ConstantMeta { info, meta_sharing, meta_refs, meta_univs, univ_patches }
   }
 }
 

@@ -130,8 +130,11 @@ lean_ffi::lean_inductive! {
     { num_obj: 2 },                           // tag 7: muts (all, auxLayout)
   ];
 
-  // Wrapper structure: info, metaSharing, metaRefs, metaUnivs
-  LeanIxonConstantMeta    [ { num_obj: 4 } ];
+  // univIdxs (Array UInt64) + arenaIdx (UInt64 scalar)
+  LeanIxonUnivPatch       [ { num_obj: 1, num_64: 1 } ];
+
+  // Wrapper structure: info, metaSharing, metaRefs, metaUnivs, univPatches
+  LeanIxonConstantMeta    [ { num_obj: 5 } ];
 
   LeanIxonDataValue [
     { num_obj: 1 },                           // tag 0: ofString

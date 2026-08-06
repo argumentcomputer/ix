@@ -208,7 +208,8 @@ def constantMetaTests : TestSeq :=
     { info := .defn testAddr #[] #[] #[] callSiteArena 0 1,
       metaSharing := #[.app (.share 0) (.var 3), .sort 1],
       metaRefs := #[testAddr],
-      metaUnivs := #[.succ (.var 0), .zero] })
+      metaUnivs := #[.succ (.var 0), .zero],
+      univPatches := #[⟨0, #[1]⟩, ⟨7, #[2, 0, 5]⟩] })
 
 /-! ## Cross-implementation serialization comparison FFI declarations -/
 

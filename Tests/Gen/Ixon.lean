@@ -431,14 +431,22 @@ def genConstantMetaInfo (genAddr : Gen Address := genAddress) : Gen ConstantMeta
       <*> genAuxLayout?),
   ]
 
+/-- Generate a level-spelling patch (canonicity §10.6). -/
+def genUnivPatch : Gen UnivPatch := do
+  let arenaIdx ← genUInt64Small
+  let univIdxs ← genSmallArray genUInt64Small
+  return { arenaIdx, univIdxs }
+
 /-- Generate a ConstantMeta wrapper: variant payload + surgery extension
-    tables (sharing exprs / raw refs / univs — none are name-indexed). -/
+    tables (sharing exprs / raw refs / univs — none are name-indexed) +
+    level-spelling patches. -/
 def genConstantMeta (genAddr : Gen Address := genAddress) : Gen ConstantMeta := do
   let info ← genConstantMetaInfo genAddr
   let metaSharing ← frequency [(2, pure #[]), (1, genSmallArray genExpr)]
   let metaRefs ← frequency [(2, pure #[]), (1, genSmallArray genAddress)]
   let metaUnivs ← frequency [(2, pure #[]), (1, genSmallArray genUniv)]
-  return { info, metaSharing, metaRefs, metaUnivs }
+  let univPatches ← frequency [(2, pure #[]), (1, genSmallArray genUnivPatch)]
+  return { info, metaSharing, metaRefs, metaUnivs, univPatches }
 
 instance : Shrinkable CallSiteEntry where shrink _ := []
 instance : Shrinkable AuxLayout where shrink _ := []
@@ -459,7 +467,9 @@ instance : Shrinkable ConstantMetaInfo where
 instance : Shrinkable ConstantMeta where
   shrink m := match m.info with
     | .empty =>
-      if m.hasExtensions then [{ m with metaSharing := #[], metaRefs := #[], metaUnivs := #[] }]
+      if m.hasExtensions then
+        [{ m with metaSharing := #[], metaRefs := #[], metaUnivs := #[],
+                  univPatches := #[] }]
       else []
     | _ => [{ m with info := .empty }]
 

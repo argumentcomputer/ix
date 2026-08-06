@@ -541,10 +541,26 @@ inductive ConstantMetaInfo where
   | muts (all : Array (Array Address)) (auxLayout : Option AuxLayout)
   deriving Inhabited, BEq, Repr
 
+/-- Per-occurrence original level-spelling patch (canonicity §10.6):
+    keyed by the metadata-arena node index of a `sort`/`ref`/`recur`
+    occurrence whose original level-index list differs from its
+    canonical one, carrying the FULL original list in the VIRTUAL univ
+    index space (idx < `univs.size` → primary table entry, already
+    canonical; idx ≥ `univs.size` → `metaUnivs[idx - univs.size]`,
+    the original spelling). `sort` occurrences carry a 1-element list.
+    Presentation-only: read by the decompiler and by META kernel
+    ingress (the stage-2 decoration source); anon ingress — the trust
+    boundary — never reads patches. -/
+structure UnivPatch where
+  arenaIdx : UInt64
+  univIdxs : Array UInt64
+  deriving Inhabited, BEq, Repr
+
 /-- Per-constant metadata wrapper: variant payload + extension tables.
     The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) form a
     virtual address space extending the primary `Constant` tables, used by
-    `callSite` nodes in the metadata arena for call-site surgery roundtrip.
+    `callSite` nodes in the metadata arena for call-site surgery roundtrip
+    and by `univPatches` for original level spellings (canonicity §10.6).
     Mirrors Rust `ixon::metadata::ConstantMeta`. -/
 structure ConstantMeta where
   info : ConstantMetaInfo := .empty
@@ -554,8 +570,12 @@ structure ConstantMeta where
   /-- Extension refs table (addresses referenced by collapsed arg
       expressions), serialized as raw 32-byte addresses (not name-indexed). -/
   metaRefs : Array Address := #[]
-  /-- Extension univs table (universe terms in collapsed arg expressions). -/
+  /-- Extension univs table (universe terms in collapsed arg expressions,
+      and original level spellings referenced by `univPatches`). -/
   metaUnivs : Array Univ := #[]
+  /-- Original level-spelling patches, keyed by metadata-arena index
+      (canonicity §10.6). Empty until the stage-2 compiler emits them. -/
+  univPatches : Array UnivPatch := #[]
   deriving Inhabited, BEq, Repr
 
 /-- Wrap a `ConstantMetaInfo` payload (no extension tables). Mirrors Rust
@@ -566,9 +586,11 @@ def ConstantMeta.new (info : ConstantMetaInfo) : ConstantMeta := { info }
     pre-wrapper `.empty` construction idiom working. -/
 def ConstantMeta.empty : ConstantMeta := {}
 
-/-- Whether this metadata has any surgery extension tables. -/
+/-- Whether this metadata has any wrapper extension payload (surgery
+    tables or level-spelling patches). -/
 def ConstantMeta.hasExtensions (cm : ConstantMeta) : Bool :=
   !cm.metaSharing.isEmpty || !cm.metaRefs.isEmpty || !cm.metaUnivs.isEmpty
+    || !cm.univPatches.isEmpty
 
 /-- Short kind name for diagnostics (mirrors Rust `kind_name`). -/
 def ConstantMetaInfo.kindName : ConstantMetaInfo → String
@@ -1614,8 +1636,10 @@ def putConstantMetaInfoIndexed (cm : ConstantMetaInfo) (idx : NameIndex) : PutM 
 
 /-- Serialize ConstantMeta (wrapper) with indexed addresses: the variant
     payload, then the three extension tables — sharing exprs (`putExpr`),
-    refs (raw 32-byte addresses, NOT name-indexed), univs (`putUniv`).
-    Mirrors Rust `ConstantMeta::put_with`. -/
+    refs (raw 32-byte addresses, NOT name-indexed), univs (`putUniv`) —
+    then the level-spelling patches (per entry: Tag0 arenaIdx, Tag0 len,
+    Tag0 virtual univ indices; canonicity §10.6). Mirrors Rust
+    `ConstantMeta::put_with`. -/
 def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := do
   putConstantMetaInfoIndexed cm.info idx
   putTag0 ⟨cm.metaSharing.size.toUInt64⟩
@@ -1624,6 +1648,11 @@ def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := 
   for a in cm.metaRefs do Serialize.put a
   putTag0 ⟨cm.metaUnivs.size.toUInt64⟩
   for u in cm.metaUnivs do putUniv u
+  putTag0 ⟨cm.univPatches.size.toUInt64⟩
+  for p in cm.univPatches do
+    putTag0 ⟨p.arenaIdx⟩
+    putTag0 ⟨p.univIdxs.size.toUInt64⟩
+    for i in p.univIdxs do putTag0 ⟨i⟩
 
 def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo := do
   let cm ← match ← getU8 with
@@ -1701,7 +1730,10 @@ def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo 
   pure cm
 
 /-- Deserialize ConstantMeta (wrapper): variant payload + the three
-    extension tables. Mirrors Rust `ConstantMeta::get_with`. -/
+    extension tables + the level-spelling patches. Mirrors Rust
+    `ConstantMeta::get_with`. An old (pre-normal-levels) file first
+    trips here or at the §5 framing assert — both carry the recompile
+    hint. -/
 def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
   let info ← getConstantMetaInfoIndexed rev
   let sharingLen := (← getTag0).size.toNat
@@ -1716,7 +1748,16 @@ def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
   let mut metaUnivs : Array Univ := #[]
   for _ in [0:univsLen] do
     metaUnivs := metaUnivs.push (← getUniv)
-  pure { info, metaSharing, metaRefs, metaUnivs }
+  let patchesLen := (← getTag0).size.toNat
+  let mut univPatches : Array UnivPatch := #[]
+  for _ in [0:patchesLen] do
+    let arenaIdx := (← getTag0).size
+    let idxsLen := (← getTag0).size.toNat
+    let mut univIdxs : Array UInt64 := #[]
+    for _ in [0:idxsLen] do
+      univIdxs := univIdxs.push (← getTag0).size
+    univPatches := univPatches.push { arenaIdx, univIdxs }
+  pure { info, metaSharing, metaRefs, metaUnivs, univPatches }
 
 /-- Serialize Comm (simple - just two addresses). -/
 def putComm (c : Comm) : PutM Unit := do
@@ -2525,7 +2566,8 @@ def getEnv : GetM Env := do
     let stAfter ← get
     if stAfter.idx - stBefore.idx != metaLen then
       throw s!"Env.get: §5 metadata blob length mismatch (header says \
-               {metaLen}, parsed {stAfter.idx - stBefore.idx})"
+               {metaLen}, parsed {stAfter.idx - stBefore.idx}) — possibly a \
+               pre-normal-levels .ixe; recompile it"
     match namesLookup.get? nameAddr with
     | some name =>
       let namedEntry : Named := { addr := constAddr, constMeta, original, hints }
@@ -2858,7 +2900,8 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
     let stAfter ← get
     if stAfter.idx - stBefore.idx != metaLen then
       throw s!"Env.get: §5 metadata blob length mismatch (header says \
-               {metaLen}, parsed {stAfter.idx - stBefore.idx})"
+               {metaLen}, parsed {stAfter.idx - stBefore.idx}) — possibly a \
+               pre-normal-levels .ixe; recompile it"
     let name ← match namesLookup.get? nameAddr with
       | some name => pure name
       | none =>
