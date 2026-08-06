@@ -512,9 +512,12 @@ def whnf := ⟦
                 let k_skip = ((nparams + nmotives) + nminors) + nindices;
                 match se_parent_addr(rec_ty, k_skip) {
                   (_, rec_parent) =>
-                    try_k_synth_iota(lvls, spine, nparams, nmotives,
-                                        nminors, nindices, rules, stuck,
-                                        rec_parent, types),
+                    match try_k_synth_iota(lvls, spine, nparams, nmotives,
+                                              nminors, nindices, rules, stuck,
+                                              rec_parent, types) {
+                      (1, r) => whnf(r, types),
+                      _ => stuck,
+                    },
                 },
               _ =>
                 -- Struct-eta iota (mirror try_struct_eta_iota /
@@ -627,10 +630,16 @@ def whnf := ⟦
   -- the type's params, and require def_eq(major_ty, ctor_ty). Without
   -- the gate, an Eq.rec transport whose endpoints differ symbolically
   -- gets stripped, producing mistyped reducts.
+  -- Returns (1, raw reduct) on a fired K rule, (0, stuck) otherwise.
+  -- The caller renormalizes per its own layer (whnf in the full reducer,
+  -- whnf_nd in the def-eq no-delta layer) — K reduction itself is
+  -- layer-independent (reference DEF_EQ_CORE keeps cheap_rec FALSE, so
+  -- the K rule runs identically in both).
   fn try_k_synth_iota(lvls: List‹KLevel›, spine: List‹KExpr›,
                           nparams: G, nmotives: G, nminors: G, nindices: G,
                           rules: List‹KRecRule›, stuck: KExpr,
-                          rec_parent: Addr, types: List‹KExpr›) -> KExpr {
+                          rec_parent: Addr, types: List‹KExpr›)
+                          -> (G, KExpr) {
     match load(rules) {
       ListNode.Cons(r, _) =>
         match r {
@@ -638,18 +647,17 @@ def whnf := ⟦
             let major_idx = nparams + nmotives + nminors + nindices;
             let raw_major = list_lookup(spine, major_idx);
             match k_synth_gate(raw_major, cidx, nparams, rec_parent, types) {
-              0 => stuck,
+              0 => (0, stuck),
               _ =>
                 let rhs_lvled = expr_inst_levels(rrhs, lvls);
                 let pmm_end = nparams + nmotives + nminors;
                 let pmm = list_take(spine, pmm_end);
                 let post_major = list_drop(spine, major_idx + 1);
                 let r1 = apply_spine(rhs_lvled, pmm);
-                let r3 = apply_spine(r1, post_major);
-                whnf(r3, types),
+                (1, apply_spine(r1, post_major)),
             },
         },
-      _ => stuck,
+      _ => (0, stuck),
     }
   }
 
@@ -1177,10 +1185,130 @@ def whnf := ⟦
                                    nminors, nindices));
         match iota {
           (1, reduced) => whnf_nd(reduced, types),
+          (2, stuck) =>
+            -- Iota fallbacks run at FULL strength in the no-delta layer
+            -- too: the reference's DEF_EQ_CORE flags keep cheap_rec
+            -- FALSE (whnf.rs), so K-synth (Eq.rec/HEq.rec transports
+            -- over proof-typed majors — ubiquitous in mathlib) and
+            -- struct-eta iota fire during def-eq's lazy stepping.
+            -- Without this arm a cast never strips off a no-delta form
+            -- and `x ≡ Eq.rec … x …` false-rejects.
+            match k_flag {
+              1 =>
+                let k_skip = ((nparams + nmotives) + nminors) + nindices;
+                match se_parent_addr(rec_ty, k_skip) {
+                  (_, rec_parent) =>
+                    match try_k_synth_iota(lvls, spine, nparams, nmotives,
+                                              nminors, nindices, rules,
+                                              stuck, rec_parent, types) {
+                      (1, r) => whnf_nd(r, types),
+                      _ => stuck,
+                    },
+                },
+              _ =>
+                match try_struct_eta_iota(rec_ty, lvls, spine, nparams,
+                        nmotives, nminors, nindices, rules, types) {
+                  (1, r) => whnf_nd(r, types),
+                  _ => stuck,
+                },
+            },
           _ => apply_spine(head, spine),
         },
       _ => apply_spine(head, spine),
     },
+    }
+  }
+
+  -- ============================================================================
+  -- whnf_ndfp: no-delta whnf with the FULL projection policy (mirror the
+  -- reference's whnf_core under WhnfFlags::FULL, used by def-eq's Tier 4c
+  -- escape, def_eq.rs). No delta at the HEAD — Defn/Thm-headed spines stay
+  -- stuck, preserving lazy-delta discipline — but a projection's SCRUTINEE
+  -- gets full whnf ("FULL flags use full whnf on the struct value so delta
+  -- unfolding can expose a constructor", whnf.rs). This is the escape hatch
+  -- for projections that stay stuck through the cheap-proj loop forms.
+  -- ============================================================================
+  fn whnf_ndfp(e: KExpr, types: List‹KExpr›) -> KExpr {
+    match load(e) {
+      KExprNode.Srt(_) => e,
+      KExprNode.Lit(_) => e,
+      KExprNode.Lam(_, _) => e,
+      KExprNode.Forall(_, _) => e,
+      KExprNode.BVar(_) => e,
+      _ => whnf_ndfp_with_spine(e, store(ListNode.Nil),
+             ctx_trim(types, expr_lbr(e))),
+    }
+  }
+
+  fn whnf_ndfp_with_spine(head: KExpr, spine: List‹KExpr›,
+                              types: List‹KExpr›) -> KExpr {
+    match load(head) {
+      KExprNode.App(f, a) =>
+        match collect_spine(head) {
+          (inner_head, inner_spine) =>
+            whnf_ndfp_with_spine(inner_head,
+              list_concat(inner_spine, spine), types),
+        },
+      KExprNode.Lam(ty, body) => whnf_ndfp_apply_beta(spine, head, types),
+      -- Const heads share the nd dispatch: prims/quot/iota fire, Defn/Thm
+      -- stay stuck (that's the "no delta at the head" half of this mode).
+      KExprNode.Const(addr, lvls) =>
+        whnf_nd_const_head(addr, lvls, head, spine, types),
+      KExprNode.Let(_, val, body) =>
+        let next = expr_inst1(body, val, 0);
+        whnf_ndfp_with_spine(next, spine, types),
+      KExprNode.Proj(struct_addr, fidx, inner) =>
+        whnf_ndfp_proj_head(struct_addr, fidx, inner, spine, types),
+      _ => apply_spine(head, spine),
+    }
+  }
+
+  fn whnf_ndfp_apply_beta(spine: List‹KExpr›, lam: KExpr,
+                              types: List‹KExpr›) -> KExpr {
+    match peel_beta(lam, spine, store(ListNode.Nil)) {
+      (deep, consumed, rest) =>
+        match list_length(consumed) {
+          0 => apply_spine(lam, spine),
+          1 =>
+            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
+            whnf_ndfp_with_spine(body2, rest, types),
+          _ =>
+            let body2 = expr_inst_many(deep, consumed, 0);
+            whnf_ndfp_with_spine(body2, rest, types),
+        },
+    }
+  }
+
+  -- The FULL-proj arm: full whnf of the scrutinee — the whole point of
+  -- this mode. Field pull and continuation stay in ndfp (no head delta).
+  fn whnf_ndfp_proj_head(struct_addr: Addr, fidx: G, inner: KExpr,
+                             spine: List‹KExpr›,
+                             types: List‹KExpr›) -> KExpr {
+    let inner_whnf = whnf(inner, types);
+    let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types);
+    match collect_spine(inner_exp) {
+      (inner_head, inner_args) =>
+        match try_reduce_fin_val_decidable_rec(struct_addr, fidx,
+                inner_head, inner_args) {
+          (1, rewritten) => whnf_ndfp_with_spine(rewritten, spine, types),
+          _ =>
+            match load(inner_head) {
+              KExprNode.Const(_, _) =>
+                match load(whnf_get_ctor_or_none(inner_head)) {
+                  KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
+                    let field = list_lookup(inner_args, nparams + fidx);
+                    whnf_ndfp_with_spine(field, spine, types),
+                  _ =>
+                    let stuck = store(KExprNode.Proj(struct_addr, fidx,
+                      inner_whnf));
+                    apply_spine(stuck, spine),
+                },
+              _ =>
+                let stuck = store(KExprNode.Proj(struct_addr, fidx,
+                  inner_whnf));
+                apply_spine(stuck, spine),
+            },
+        },
     }
   }
 ⟧

@@ -632,7 +632,10 @@ impl<M: KernelMode> Drop for KEnv<M> {
     if super::perf::enabled() {
       let summary = self.perf.summary();
       if !summary.is_empty() {
-        log::info!("{summary}");
+        // stderr, not `log`: the FFI hosts install no `log` backend (only
+        // texray's span tracing), and this dump is already opt-in via
+        // IX_PERF_COUNTERS.
+        eprintln!("{summary}");
       }
     }
   }

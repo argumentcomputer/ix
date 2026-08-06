@@ -81,14 +81,14 @@ def defEq := ⟦
   }
 
   fn k_is_def_eq_ordered(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    -- Pre-WHNF lazy-delta app congruence.
-    -- When both sides share Const head + same lvl args + arity,
-    -- recurse on arg lists without unfolding — avoids expensive
-    -- delta on cases where args recursively def-eq.
-    match try_def_eq_app(a, b, types) {
-      1 => 1,
-      _ => k_is_def_eq_slow(a, b, types),
-    }
+    -- NO pre-whnf app congruence: the reference's quick tier handles
+    -- only Sort/Lam/Forall (quick_def_eq, def_eq.rs), and same-head
+    -- spine probing happens solely inside the lazy-delta loop's
+    -- equal-rank branch (H2). A speculative arg-wise probe here costs a
+    -- full recursive def-eq tree whenever it MISSES, and it re-runs at
+    -- every unfold height of every enclosing comparison — measured as
+    -- the residual mathlib blowup after the loop went lazy.
+    k_is_def_eq_slow(a, b, types)
   }
 
   -- App-congruence PRE-WHNF: if both sides collect_spine to
@@ -265,10 +265,47 @@ def defEq := ⟦
     }
   }
 
+  -- Tier 1b mirror (def_eq.rs, lean4 type_checker.cpp:1066): eager Bool
+  -- reduction. When one side is the literal `Bool.true` and the other is
+  -- CLOSED, full whnf of the other side is the intended semantics —
+  -- `decide P ≡ Bool.true` obligations can only discharge by actually
+  -- running the decision procedure. This is the single sanctioned use of
+  -- full whnf on a def-eq side; the closed-term gate (`expr_lbr == 0`,
+  -- the reference's `!has_fvars`) keeps it off open terms.
+  fn is_bool_true_const(e: KExpr) -> G {
+    match load(e) {
+      KExprNode.Const(caddr, _) => address_eq(caddr, bool_true_addr()),
+      _ => 0,
+    }
+  }
+
+  fn try_bool_true_eager(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    match is_bool_true_const(b) {
+      1 =>
+        match expr_lbr(a) {
+          0 => is_bool_true_const(whnf(a, types)),
+          _ => 0,
+        },
+      _ =>
+        match is_bool_true_const(a) {
+          1 =>
+            match expr_lbr(b) {
+              0 => is_bool_true_const(whnf(b, types)),
+              _ => 0,
+            },
+          _ => 0,
+        },
+    }
+  }
+
   fn k_is_def_eq_slow(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    match try_string_lit_pair(a, b, types) {
+    match try_bool_true_eager(a, b, types) {
       1 => 1,
-      _ => k_is_def_eq_slow_nd(a, b, types),
+      _ =>
+        match try_string_lit_pair(a, b, types) {
+          1 => 1,
+          _ => k_is_def_eq_slow_nd(a, b, types),
+        },
     }
   }
 
@@ -280,11 +317,11 @@ def defEq := ⟦
       _ =>
         match k_is_def_eq_struct_safe(aw_nd, bw_nd, types) {
           1 => 1,
-          _ =>
-            match try_def_eq_app(aw_nd, bw_nd, types) {
-              1 => 1,
-              _ => k_is_def_eq_slow2(a, b, types),
-            },
+          -- Hand the NO-DELTA forms down: every later tier (proof
+          -- irrelevance, lazy delta) is defined on them, and full
+          -- whnf must never run inside def-eq (see slow2). No app
+          -- congruence here either — see k_is_def_eq_ordered.
+          _ => k_is_def_eq_slow2(aw_nd, bw_nd, types),
         },
     }
   }
@@ -327,41 +364,43 @@ def defEq := ⟦
     }
   }
 
-  -- Tier order is load-bearing: proof_irrel comes BEFORE any
-  -- structural/eta machinery. With Thm heads stuck in whnf, proof-term
-  -- pairs stay high-level (Lam vs Thm-app etc.); eta-expanding a proof
-  -- fabricates over-applied proof terms whose infer_only aborts —
-  -- proof_irrel must get first shot.
-  fn k_is_def_eq_slow2(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    let aw = whnf(a, types);
-    let bw = whnf(b, types);
-    match ptr_val(aw) - ptr_val(bw) {
-      0 => 1,
+  -- Tier order is load-bearing, and mirrors the reference slow path
+  -- (crates/kernel/src/def_eq.rs): proof irrelevance runs on the
+  -- NO-DELTA whnf forms, strictly BEFORE any delta unfolding ("Tier 3:
+  -- proof irrelevance (before delta)"), and delta happens ONLY inside
+  -- the hint-ranked lazy loop — full whnf never runs on a def-eq side.
+  -- The old shape (full whnf of both sides first, proof_irrel after)
+  -- normalized entire proof/instance towers that proof irrelevance
+  -- would have discharged with two infers: on mathlib's algebra proofs
+  -- (Algebra.kerTensorProductMapIdToAlgHomEquiv._proof_1) that was a
+  -- ~10^5× blowup — 97 GiB of memo entries vs the reference's 10,344
+  -- fuel ticks — and the reason 512-shard mathlib checking stalled.
+  --
+  -- proof_irrel also comes BEFORE structural/eta machinery: with Thm
+  -- heads stuck, proof-term pairs stay high-level (Lam vs Thm-app
+  -- etc.); eta-expanding a proof fabricates over-applied proof terms
+  -- whose infer_only aborts — proof_irrel must get first shot.
+  --
+  -- Inputs are the whnf_nd forms from k_is_def_eq_slow_nd. On loop
+  -- fall-through the trailing tiers compare the loop's FINAL forms
+  -- (partially unfolded, no-delta-normalized) — the reference breaks
+  -- out of its loop the same way and falls to structural on wa/wb.
+  fn k_is_def_eq_slow2(aw: KExpr, bw: KExpr, types: List‹KExpr›) -> G {
+    match try_proof_irrel(aw, bw, types) {
+      1 => 1,
       _ =>
-        match try_proof_irrel(aw, bw, types) {
+        match try_unit_like(aw, bw, types) {
           1 => 1,
           _ =>
-            match try_unit_like(aw, bw, types) {
+            match try_eta_struct(aw, bw, types) {
               1 => 1,
               _ =>
-                match try_eta_struct(aw, bw, types) {
+                match try_eta_struct(bw, aw, types) {
                   1 => 1,
                   _ =>
-                    match try_eta_struct(bw, aw, types) {
-                      1 => 1,
-                      _ =>
-                        match try_def_eq_nat(aw, bw, types) {
-                          (1, eq) => eq,
-                          _ =>
-                        match lazy_delta_loop(aw, bw, 16, types) {
-                          1 => 1,
-                          _ =>
-                        match try_eta_swap(aw, bw, types) {
-                          1 => 1,
-                          _ => k_is_def_eq_struct(aw, bw, types),
-                        },
-                        },
-                        },
+                    match lazy_delta_loop(aw, bw, 10000, types) {
+                      (1, verdict, _, _) => verdict,
+                      (0, _, af, bf) => k_def_eq_post_loop(af, bf, types),
                     },
                 },
             },
@@ -745,34 +784,83 @@ def defEq := ⟦
     }
   }
 
-  -- Multi-step lazy-delta reduction loop (mirror Tier 4).
-  -- Both sides possibly Const-Defn/Thm-headed. Unfold one side per
-  -- iteration (prefer higher-rank/hint), whnf result, retry def_eq.
-  -- Fuel-bounded to prevent runaway on cyclic unfolds. Returns 0 on
-  -- exhaustion; caller falls through to structural compare.
+  -- Post-loop fallback on the lazy-delta FINAL forms, mirroring the
+  -- reference's tier 5 (is_def_eq_whnf, def_eq.rs:788-822): a pair can
+  -- become eta/unit-like/proof-irrelevance-decidable only after the
+  -- loop's unfolding — e.g. a Thm-headed side unfolded to a Lam meeting
+  -- a structure field. When the loop broke immediately these re-tries
+  -- are memo hits on the pre-loop attempts, so the duplication is free.
+  fn k_def_eq_post_loop(af: KExpr, bf: KExpr, types: List‹KExpr›) -> G {
+    match try_proof_irrel(af, bf, types) {
+      1 => 1,
+      _ =>
+        match try_unit_like(af, bf, types) {
+          1 => 1,
+          _ =>
+            match try_eta_struct(af, bf, types) {
+              1 => 1,
+              _ =>
+                match try_eta_struct(bf, af, types) {
+                  1 => 1,
+                  _ =>
+                    -- Tier 4c mirror (def_eq.rs): one core pass with the
+                    -- FULL projection policy — a projection stuck through
+                    -- the loop's cheap-proj forms resolves here via full
+                    -- whnf of its scrutinee. On ANY progress, restart the
+                    -- whole def-eq on the reduced forms (the reference
+                    -- `return self.is_def_eq(&wa_core, &wb_core)`), giving
+                    -- every earlier tier another shot.
+                    let af2 = whnf_ndfp(af, types);
+                    let bf2 = whnf_ndfp(bf, types);
+                    match ptr_val(af2) - ptr_val(af) {
+                      0 =>
+                        match ptr_val(bf2) - ptr_val(bf) {
+                          0 =>
+                            match try_eta_swap(af, bf, types) {
+                              1 => 1,
+                              _ => k_is_def_eq_struct(af, bf, types),
+                            },
+                          _ => k_is_def_eq(af2, bf2, types),
+                        },
+                      _ => k_is_def_eq(af2, bf2, types),
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  -- Multi-step lazy-delta reduction loop (mirror Tier 4, the reference's
+  -- iterative lazyDeltaReduction). Unfold ONE side per iteration (prefer
+  -- higher-rank/hint), renormalize with whnf_nd — NEVER full whnf: delta
+  -- inside def-eq happens only through this loop, one definition at a
+  -- time, so both sides meet at the lowest definitional height that
+  -- decides the pair instead of grinding to normal form.
+  --
+  -- Returns (decided, verdict, a_fin, b_fin): decided=1 means verdict is
+  -- the final answer; decided=0 means fall through — the caller's
+  -- structural tiers compare (a_fin, b_fin), the loop's final forms
+  -- (the reference breaks out and falls to structural on wa/wb the same
+  -- way). Fuel mirrors MAX_WHNF_FUEL (tc.rs).
   fn lazy_delta_loop(a: KExpr, b: KExpr, fuel: G,
-                          types: List‹KExpr›) -> G {
+                          types: List‹KExpr›) -> (G, G, KExpr, KExpr) {
     match fuel {
-      0 => 0,
+      0 => (0, 0, a, b),
       _ =>
         match ptr_val(a) - ptr_val(b) {
-          0 => 1,
+          0 => (1, 1, a, b),
+          _ =>
+        -- Nat-offset / literal pairs at loop top (mirror isDefEqOffset).
+        match try_def_eq_nat(a, b, types) {
+          (1, eq) => (1, eq, a, b),
           _ =>
         let (a_addr, a_is_const) = head_addr(a);
         let (b_addr, b_is_const) = head_addr(b);
         match a_is_const {
           1 =>
             match b_is_const {
-              1 =>
-                -- In-loop app-congruence (mirror lazy_delta_loop:773):
-                -- same head + def-eq levels + pairwise-def-eq args decides
-                -- WITHOUT unfolding — with Thm heads stuck, most proof-app
-                -- pairs settle here.
-                match try_def_eq_app(a, b, types) {
-                  1 => 1,
-                  _ => lazy_delta_step_const_const(a_addr, b_addr, a, b,
-                                                       fuel, types),
-                },
+              1 => lazy_delta_step_const_const(a_addr, b_addr, a, b,
+                                                   fuel, types),
               _ => lazy_delta_a_const_b_proj(a_addr, a, b, fuel, types),
             },
           _ =>
@@ -784,6 +872,7 @@ def defEq := ⟦
                 -- delta-eligible inner Const, unfold inner and rewrap.
                 lazy_delta_both_proj(a, b, fuel, types),
             },
+        },
         },
         },
     }
@@ -805,7 +894,8 @@ def defEq := ⟦
   -- definitional height; equal ranks unfold both.
   fn lazy_delta_step_const_const(a_addr: Addr, b_addr: Addr, a: KExpr,
                                        b: KExpr, fuel: G,
-                                       types: List‹KExpr›) -> G {
+                                       types: List‹KExpr›)
+                                       -> (G, G, KExpr, KExpr) {
     let a_ci = load(get_ci(a_addr));
     let b_ci = load(get_ci(b_addr));
     let ae = is_defn_or_thm(a_ci);
@@ -813,7 +903,9 @@ def defEq := ⟦
     match ae {
       0 =>
         match be {
-          0 => 0,
+          -- Neither head delta-eligible: break to the caller's
+          -- structural tiers with the current forms (reference `break`).
+          0 => (0, 0, a, b),
           _ => unfold_b_and_loop(a, b, fuel, types),
         },
       _ =>
@@ -827,72 +919,97 @@ def defEq := ⟦
               _ =>
                 match u32_less_than(ar, br) {
                   1 => unfold_b_and_loop(a, b, fuel, types),
-                  _ => unfold_both_and_loop(a, b, fuel, types),
+                  _ =>
+                    -- H2 (mirror def_eq.rs:462-481): equal ranks, and the
+                    -- ONLY place a same-head spine probe runs — gated on
+                    -- same addr + a REGULAR hint (Opaque/Abbrev heads go
+                    -- straight to unfold-both, like the reference). A miss
+                    -- feeds forward into H1 unfold-both; the miss itself
+                    -- is memoized by Aiur (the reference's def_eq_failure
+                    -- cache).
+                    match address_eq(a_addr, b_addr) *
+                          hint_is_regular(delta_rank(a_ci)) {
+                      1 =>
+                        match try_def_eq_app(a, b, types) {
+                          1 => (1, 1, a, b),
+                          _ => unfold_both_and_loop(a, b, fuel, types),
+                        },
+                      _ => unfold_both_and_loop(a, b, fuel, types),
+                    },
                 },
             },
         },
     }
   }
 
+  -- Reducibility-hint class test for the H2 gate. Ch 3 encoding
+  -- (load_constant_hint): 0 = Opaque, 1+h = Regular(h),
+  -- 0xFFFFFFFF = Abbrev. Regular is anything strictly between.
+  fn hint_is_regular(hint: G) -> G {
+    match hint {
+      0 => 0,
+      _ =>
+        match hint - 4294967295 {
+          0 => 0,
+          _ => 1,
+        },
+    }
+  }
+
+  -- One unfold step, then whnf_nd — NOT full whnf: the loop is the only
+  -- delta engine inside def-eq, and renormalizing an unfolded side with
+  -- full whnf would cascade-unfold everything the laziness exists to
+  -- avoid (the reference steps with whnf_no_delta_for_def_eq).
   fn unfold_a_and_loop(a: KExpr, b: KExpr, fuel: G,
-                           types: List‹KExpr›) -> G {
+                           types: List‹KExpr›) -> (G, G, KExpr, KExpr) {
     match delta_unfold(a) {
-      (1, a2) =>
-        let aw = whnf(a2, types);
-        lazy_delta_loop(aw, b, fuel - 1, types),
-      _ => 0,
+      (1, a2) => lazy_delta_loop(whnf_nd(a2, types), b, fuel - 1, types),
+      _ => (0, 0, a, b),
     }
   }
 
   fn unfold_b_and_loop(a: KExpr, b: KExpr, fuel: G,
-                           types: List‹KExpr›) -> G {
+                           types: List‹KExpr›) -> (G, G, KExpr, KExpr) {
     match delta_unfold(b) {
-      (1, b2) =>
-        let bw = whnf(b2, types);
-        lazy_delta_loop(a, bw, fuel - 1, types),
-      _ => 0,
+      (1, b2) => lazy_delta_loop(a, whnf_nd(b2, types), fuel - 1, types),
+      _ => (0, 0, a, b),
     }
   }
 
   fn unfold_both_and_loop(a: KExpr, b: KExpr, fuel: G,
-                              types: List‹KExpr›) -> G {
+                              types: List‹KExpr›) -> (G, G, KExpr, KExpr) {
     match delta_unfold(a) {
       (1, a2) =>
         match delta_unfold(b) {
           (1, b2) =>
-            let aw = whnf(a2, types);
-            let bw = whnf(b2, types);
-            lazy_delta_loop(aw, bw, fuel - 1, types),
-          _ => 0,
+            lazy_delta_loop(whnf_nd(a2, types), whnf_nd(b2, types),
+                                fuel - 1, types),
+          _ => (0, 0, a, b),
         },
-      _ => 0,
+      _ => (0, 0, a, b),
     }
   }
 
-  -- a is Const-headed spine; b is Proj-headed. Mirror
-  -- lazy_delta_step_a_const: try unfold_proj_app on b, else unfold a.
+  -- a is Const-headed spine; b is not. Mirror the reference's
+  -- tryUnfoldProjApp ordering: reduce a projection app on the
+  -- non-definition side first, else unfold a. Continue the LOOP after
+  -- either step (the reference `continue`s); re-entering the full
+  -- def-eq cascade mid-loop would re-run every earlier tier per unfold.
   fn lazy_delta_a_const_b_proj(a_addr: Addr, a: KExpr, b: KExpr, fuel: G,
-                                       types: List‹KExpr›) -> G {
+                                       types: List‹KExpr›)
+                                       -> (G, G, KExpr, KExpr) {
     let a_ci = load(get_ci(a_addr));
     match is_defn_or_thm(a_ci) {
-      0 => 0,
+      0 => (0, 0, a, b),
       _ =>
         match try_unfold_proj_app(b) {
           (1, b2) =>
-            let bw = whnf(b2, types);
-            match k_is_def_eq(a, bw, types) {
-              1 => 1,
-              _ => lazy_delta_loop(a, bw, fuel - 1, types),
-            },
+            lazy_delta_loop(a, whnf_nd(b2, types), fuel - 1, types),
           _ =>
-            let au = try_unfold_head(a, a_ci, types);
-            match au {
-              (1, aw) =>
-                match k_is_def_eq(aw, b, types) {
-                  1 => 1,
-                  _ => lazy_delta_loop(aw, b, fuel - 1, types),
-                },
-              _ => 0,
+            match delta_unfold(a) {
+              (1, a2) =>
+                lazy_delta_loop(whnf_nd(a2, types), b, fuel - 1, types),
+              _ => (0, 0, a, b),
             },
         },
     }
@@ -900,27 +1017,20 @@ def defEq := ⟦
 
   -- Symmetric.
   fn lazy_delta_b_const_a_proj(b_addr: Addr, a: KExpr, b: KExpr, fuel: G,
-                                       types: List‹KExpr›) -> G {
+                                       types: List‹KExpr›)
+                                       -> (G, G, KExpr, KExpr) {
     let b_ci = load(get_ci(b_addr));
     match is_defn_or_thm(b_ci) {
-      0 => 0,
+      0 => (0, 0, a, b),
       _ =>
         match try_unfold_proj_app(a) {
           (1, a2) =>
-            let aw = whnf(a2, types);
-            match k_is_def_eq(aw, b, types) {
-              1 => 1,
-              _ => lazy_delta_loop(aw, b, fuel - 1, types),
-            },
+            lazy_delta_loop(whnf_nd(a2, types), b, fuel - 1, types),
           _ =>
-            let bu = try_unfold_head(b, b_ci, types);
-            match bu {
-              (1, bw) =>
-                match k_is_def_eq(a, bw, types) {
-                  1 => 1,
-                  _ => lazy_delta_loop(a, bw, fuel - 1, types),
-                },
-              _ => 0,
+            match delta_unfold(b) {
+              (1, b2) =>
+                lazy_delta_loop(a, whnf_nd(b2, types), fuel - 1, types),
+              _ => (0, 0, a, b),
             },
         },
     }
@@ -928,34 +1038,21 @@ def defEq := ⟦
 
   -- Both are Proj-headed spines. Try unfold_proj_app on either or both.
   fn lazy_delta_both_proj(a: KExpr, b: KExpr, fuel: G,
-                               types: List‹KExpr›) -> G {
-    let ua = try_unfold_proj_app(a);
-    let ub = try_unfold_proj_app(b);
-    match ua {
+                               types: List‹KExpr›) -> (G, G, KExpr, KExpr) {
+    match try_unfold_proj_app(a) {
       (1, a2) =>
-        let aw = whnf(a2, types);
-        match ub {
+        match try_unfold_proj_app(b) {
           (1, b2) =>
-            let bw = whnf(b2, types);
-            match k_is_def_eq(aw, bw, types) {
-              1 => 1,
-              _ => lazy_delta_loop(aw, bw, fuel - 1, types),
-            },
+            lazy_delta_loop(whnf_nd(a2, types), whnf_nd(b2, types),
+                                fuel - 1, types),
           _ =>
-            match k_is_def_eq(aw, b, types) {
-              1 => 1,
-              _ => lazy_delta_loop(aw, b, fuel - 1, types),
-            },
+            lazy_delta_loop(whnf_nd(a2, types), b, fuel - 1, types),
         },
       _ =>
-        match ub {
+        match try_unfold_proj_app(b) {
           (1, b2) =>
-            let bw = whnf(b2, types);
-            match k_is_def_eq(a, bw, types) {
-              1 => 1,
-              _ => lazy_delta_loop(a, bw, fuel - 1, types),
-            },
-          _ => 0,
+            lazy_delta_loop(a, whnf_nd(b2, types), fuel - 1, types),
+          _ => (0, 0, a, b),
         },
     }
   }
@@ -1066,12 +1163,17 @@ def defEq := ⟦
       -- progress (mirror delta_unfold).
       KConstantInfo.Defn(_, _, _, _, _) =>
         match delta_unfold(e) {
-          (1, e2) => (1, whnf(e2, types)),
+          -- whnf_nd, not full whnf: this runs inside def-eq's delta
+          -- ladder, where each step must expose at most ONE definition
+          -- (full whnf here cascade-unfolds the entire tower the lazy
+          -- discipline exists to avoid; the reference steps with
+          -- whnf_no_delta_for_def_eq).
+          (1, e2) => (1, whnf_nd(e2, types)),
           _ => (0, e),
         },
       KConstantInfo.Thm(_, _, _) =>
         match delta_unfold(e) {
-          (1, e2) => (1, whnf(e2, types)),
+          (1, e2) => (1, whnf_nd(e2, types)),
           _ => (0, e),
         },
       _ => (0, e),
