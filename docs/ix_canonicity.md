@@ -220,6 +220,7 @@ Everything that depends on source choices is stripped before hashing:
 | Nested-aux discovery order         | replaced by structural aux sort; kernel enforces via `sort_kconsts` on rediscovered aux + position-by-position recursor match (§4.4) |
 | `_N` suffixes on aux names         | internal `_nested.Ext_N` uses canonical `N`          |
 | Hygiene info on `Name`             | stripped by `compile_name`                           |
+| Non-canonical universe-level spellings (staged — §10.6) | `canonUniv` at the compile univ-intern boundary (`CompileM.compileAndInternUniv` / `compile.rs compile_univ_idx`) |
 
 ### 5.2 Preserved in the metadata sidecar
 
@@ -240,6 +241,7 @@ Everything needed to round-trip back to a source-faithful Lean
 | Original pre-aux_gen form               | `Named.original = Some((addr, meta))`                |
 | Aux-name permutation (nested)           | `stt.aux_perms` in-memory → `ConstantMetaInfo::Muts.aux_layout` on disk — §10.2 |
 | Docstrings                              | planned: `ConstantMeta.doc_string: Option<Address>`  |
+| Original level spellings, per occurrence (staged — §10.6) | `ConstantMeta.univPatches` (arena-indexed) + `metaUnivs` extension entries |
 
 ### 5.3 Explicitly **not** preserved
 
@@ -756,6 +758,10 @@ nested-aux signatures (structurally sorted), two Lean mutual declarations
 that agree on those two sets produce identical block content hashes
 **and** identical projection addresses for every aux constant —
 regardless of source declaration order.
+
+Staged (§10.6): once the level-canonicalization format change lands,
+the recipe additionally presupposes canonical (`canonUniv`-fixed)
+`univs` tables — level spellings leave the hash input.
 
 ## 7. The Compile Pipeline
 
@@ -1449,6 +1455,207 @@ one-name-per-address canonicalization was coincidental. Both outputs
 roundtrip correctly, so §1 held and only metadata determinism failed;
 this rule closes that gap.
 
+### 10.6 Universe-level canonicalization (adopted, implementation staged)
+
+> **Status.** Adopted specification (2026-08-06); **not yet live**.
+> The current format stores source level spellings in content: the
+> kernel anon roundtrip compares modulo `reduceIxonUniv`
+> (`Ix/Tc/Egress.lean:18-34`) and the whole-Mathlib meta roundtrip
+> carries 111 standing `levels differ` findings. Implementation is
+> staged in §17.9; the rows marked "staged" in §5.1, §5.2, §6.6, and
+> §16.7 activate as the stages land.
+
+**The quotient.** Universe-level spellings are presentation, not
+content. Two levels are identified in canonical form exactly when the
+kernels' semantic level equality holds — `univEq`
+(`Ix/Tc/Level.lean:474-477`), the relation all three kernels decide
+during defeq. This is the endpoint quotient for levels: the content
+address coincides with kernel identity, and no stronger level
+quotient exists to migrate to later. Levels meet the criterion for
+address-baked quotients — decidable equality, a computable canonical
+representative, no environment context — where general expression
+defeq does not; the quotient is the same *kind* as the §5.1
+alpha-collapse and follows the §10.5 template: canonical content plus
+per-occurrence metadata restoring source presentation, the
+restoration a deterministic function of the source, never a choice
+made at emission.
+
+**Boundary.** Declaration-level universe-parameter **list** order
+remains structural: §12.3's `h₁.{u,v}` / `h₂.{u,v}` keep distinct
+addresses. What is quotiented is spelling *inside* level
+expressions: `max u v` and `max v u` at an occurrence become one
+content, as do `imax (imax 1 u) u` and `u` (the motivating
+WF-recursion `eq_def` shape, where Lean metaprograms store
+unnormalized substitution results).
+
+**Canonical representative.** `canonUniv : Univ → Univ` is
+`linearize ∘ subsumption ∘ normalizeAux` — the kernels' Géran
+comparison form (`normalizeLevel`, `Ix/Tc/Level.lean:227-472`;
+`crates/kernel/src/level.rs:335-696`;
+`Ix/IxVM/Kernel/Levels.lean:336-386`), transliterated to positional
+`Ixon.Univ` and then linearized back into a level term. The Géran
+form is a map from **paths** (sorted lists of param indices —
+imax-conditioning chains) to **nodes** (a constant offset plus
+`(paramIdx, offset)` contributions sorted by ascending index): an
+entry `(P, node)` contributes its max-value whenever every param in
+`P` is ≥ 1, and the level is the pointwise max over contributing
+entries. `linearize` emits a representative term from that form —
+total and deterministic, with every ordering inherited from the
+canonical structure itself (entries in lexicographic path order, vars
+in ascending index order, a fixed right-nested `max` association) and
+atoms `succ^c zero` / `succ^k (var i)`; entries at non-empty paths
+are reconstructed as `imax`-gated subterms. The exact gating
+construction for multi-param paths is the one open spec detail
+(§17.9). Required properties, pinned by tests in both languages:
+
+- **P1 (idempotence):** `canonUniv (canonUniv u) = canonUniv u`.
+- **P2 (roundtrip-fixpoint):** `geran (linearize L) = L` on canonical
+  forms — `linearize` picks a genuine representative of its class;
+  with P1, `canonUniv` is constant on Géran classes.
+- **P3 (mk\*-fixpoint):** `linearize` output triggers no rule of the
+  kernel-rebuild set below — rebuilding it through the `mk*`
+  constructors is the node-for-node identity, so kernel ingress
+  preserves stored canonical content exactly.
+- **P4 (soundness):** `univEq u (canonUniv u)`, with the kernels'
+  Géran implementation as the oracle.
+- **P5 (mirror parity):** Rust and Lean `canonUniv` agree
+  byte-for-byte on serialized output.
+- **P6 (mk\* absorption):** `canonUniv ∘ reduceIxonUniv = canonUniv`
+  (`reduceIxonUniv`, `Ix/Tc/Egress.lean:74-78`, is the retained
+  oracle for this).
+
+`canonUniv` lives next to the wire type (`crates/ixon/src/univ.rs`
+and the Lean mirror), kernel-free, so both compilers, the Tc egress,
+and probes share one implementation per language; the three kernel
+`NormLevel` implementations stay untouched as the P4 oracle. Worst
+case, canonical forms are exponential in nested `imax`-of-`max`
+depth (the Géran distribution rules duplicate the left subterm,
+`Ix/Tc/Level.lean:333-351`); real levels are a handful of nodes, and
+the blowup is paid once at compile time by whoever writes a
+pathological spelling — never by readers of stored canonical forms.
+
+**The kernel-rebuild rule set.** The `mk*` simplification rules —
+Lean `kernel/level.cpp:81-103`/`:112-120`, mirrored at
+`Ix/Tc/Level.lean:144-197`, `crates/kernel/src/level.rs:162-247`,
+`Ix/IxVM/Kernel/Levels.lean:637-680` — are normative here in three
+roles: the P3 fixpoint target (kernel ingress rebuilds through them),
+the stage-1 decoration-presence test (below), and the P6 oracle.
+They are **not** the address quotient (they miss commutative twins).
+`nMax a b`, first applicable rule wins:
+
+| # | Rule | Guard |
+| --- | --- | --- |
+| M1 | both explicit numerals → the larger (ties → `a`) | `a.isExplicit && b.isExplicit` |
+| M2 | `max a a = a` | structural `a == b` |
+| M3 | `max 0 b = b` | `a.isZero` |
+| M4 | `max a 0 = a` | `b.isZero` |
+| M5 | `max a (max x y) = max x y` if `x == a ∨ y == a` | absorption into `b` |
+| M6 | `max (max x y) b = max x y` if `x == b ∨ y == b` | absorption into `a` |
+| M7 | `max (succ^n x) (succ^m x) = succ^(max n m) x` | same offset base |
+| M8 | otherwise raw `max a b` | — |
+
+`nIMax a b`:
+
+| # | Rule | Guard |
+| --- | --- | --- |
+| I1 | `imax a b = nMax a b` | `b.isNeverZero` |
+| I2 | `imax a 0 = 0` | `b.isZero` |
+| I3 | `imax 0 b = b` | `a.isZero` |
+| I4 | `imax 1 b = b` | `a == succ zero` |
+| I5 | `imax a a = a` | structural `a == b` |
+| I6 | otherwise raw `imax a b` | — |
+
+with predicates `isZero` / `isExplicit` (`succ^n zero`) /
+`isNeverZero` / `offset` exactly as in `Ix/Tc/Level.lean:64-95` /
+`crates/kernel/src/level.rs:111-150`. Both rule sets — `mk*` and the
+Géran linearization — are **frozen** at the pinned toolchain's
+behavior; upstream drift mints new spellings, which simply
+canonicalize (or patch), and never redefines the address.
+
+**Format invariant (stage 2).** Every `univs` table entry in a valid
+artifact is `canonUniv`-fixed; tables are preseeded, sorted by
+serialized key, and deduplicated as today (`univSortKey`,
+`Ix/CompileM.lean:1115-1118`; `compile.rs:487-491`). Both compilers
+canonicalize at the single univ-intern choke point
+(`compileAndInternUniv`, `Ix/CompileM.lean:351-353`;
+`compile_univ_idx`, `compile.rs:468-484`). Declared level-parameter
+counts and the positional names channel are untouched —
+canonicalization can only make a parameter unused in content, never
+renumber it.
+
+**Restoration metadata: `univPatches`.** For each `sort` / `ref` /
+`recur` occurrence whose original level list differs from its
+canonical list, the compiler records a patch keyed by the
+occurrence's **metadata-arena node index**, with original spellings
+stored in the `metaUnivs` extension table under the documented
+virtual-index contract (index `< univs.size` → primary table; index
+`≥ univs.size` → `metaUnivs[i − univs.size]`;
+`crates/ixon/src/metadata.rs:205-213`). Encoding: a fourth
+`ConstantMeta` wrapper vector after `metaUnivs` —
+
+```
+univPatches : Array UnivPatch
+UnivPatch   ::= { arenaIdx : UInt64, univIdxs : Array UInt64 }
+```
+
+— empty (one `Tag0` zero byte) on the overwhelming majority of
+constants. The arena key is exact because occurrence identity is
+spelling-injective: `Ix.Level.mk*` hash spelling trees per node and
+`Expr.mkSort`/`mkConst` fold those hashes into expression identity
+(`Ix/Environment.lean:178-210`, `:333-345`), so occurrences sharing a
+compile-cache entry (hence an arena root, `Ix/CompileM.lean:599-628`)
+share a spelling, while spelling twins keep distinct arena subtrees.
+A table-keyed alternative (patching `anonIdx → spelling`) is
+**unsound**: canonicalization dedups distinct spellings onto one
+entry, and a constant containing both a weird spelling and its
+canonical form could restore only one of them. The patch obeys the
+§10.5 provenance principle verbatim — it records the spelling of the
+source occurrence it derives from, inherited through derivation,
+never chosen at emission — and `Named.original` metas carry their own
+patches (both meta slots are emitted; they describe different
+constants' occurrences). Decompile applies patches at the
+`.sort`/`.ref`/`.recur` arms, where the walk already pairs
+expressions with arena indices; artifacts without patches (foreign
+or pre-change) decompile to canonical spellings — semantically
+equal, presentation-lossy, accepted.
+
+**Kernel contract.** Anonymous ingress — the trust boundary feeding
+checking and content hashing — never reads patches or extension
+tables; patches influence no hash and no kernel judgment (a
+malicious patch can only skew decompiled presentation, same trust
+class as binder names, and is caught by the strict roundtrip gates).
+**Meta** ingress, whose job is syntax-faithful reconstruction, is the
+one kernel-side consumer: the original spelling rides as a
+**decoration** on meta-mode `sort`/`const` occurrence nodes — folded
+into the metadata-aware `metaAddr` (so interning and egress
+memoization never collapse spelling twins, `Ix/Tc/Expr.lean:61-72`)
+and **never** into the semantic `addr` (anon/meta address parity,
+`tc-meta-addr`, is preserved; checking never sees spellings). Meta
+egress replays the decoration at its `sort`/`const` arms
+(`Ix/Tc/EgressLean.lean:119-128`) instead of egressing the
+normalized kernel level. Decorations must not live on `KUniv` nodes
+— KUniv interning is semantic-address-keyed and would collapse
+spelling twins first-wins, the same lossiness as table-keyed
+patches. Validation comparators are **never weakened**: the kernel
+meta roundtrip (validate-lean phase 4) remains a strict syntactic
+comparison and becomes an active spelling-fidelity gate through the
+kernel's data path, complementing the decompiler gate (phase 5).
+Once stored content is canonical, the anon roundtrip comparison also
+becomes strict (the `reduceIxonUniv` modulo in `canonExpr` deletes).
+
+**Staging** (tracked in §17.9). Stage 1, no format change: the
+decoration mechanism sourced from the primary `univs` table (an
+entry that is not an `mk*` fixpoint decorates every occurrence
+referencing it — exact today because dedup gives distinct spellings
+distinct indices), plus the Lean decompiler learning to append
+`metaRefs`/`metaUnivs` per the extension contract
+(`Ix/DecompileM.lean:644-649` currently drops them; Rust
+`load_meta_extensions`, `decompile.rs:305-320`, honors them).
+Stage 2, one format break: canonical tables, `univPatches`, the
+decoration source switching from table entries to patches, and a
+"pre-normal-levels .ixe; recompile it" hint following the
+pre-compact-keys precedent (`crates/ixon/src/serialize.rs:196-201`).
+
 ## 11. Sort Algorithms
 
 ### 11.1 User-class `sort_consts`
@@ -1544,6 +1751,10 @@ These are **not** α-equivalent: the order of universe params is part
 of the structural signature. `addr(h₁) ≠ addr(h₂)`. Canonicity isn't
 "equal up to any renaming" — it's equal up to the *specific*
 equivalences in §1.
+
+The staged level quotient (§10.6) keeps this boundary: the parameter
+*list* order stays structural even as spellings *inside* level
+expressions (`max u v` vs `max v u` at an occurrence) are quotiented.
 
 ## 13. Worked Examples — Mutual Blocks
 
@@ -1908,6 +2119,31 @@ This is implemented as validate-aux Phase 7b (§16.2), which checks that
 each constant's content address is stable after serialize → deserialize →
 decompile → recompile.
 
+### 16.7 Level canonicalization (staged — §10.6)
+
+Lands with the §17.9 stages:
+
+- `canonUniv` property tests P1–P6 in both languages (Rust in
+  `crates/ixon/src/univ.rs` tests; Lean next to the existing
+  level-algebra unit tests), with the kernel `NormLevel`
+  implementations as the P4 oracle.
+- A `LevelSpellings` fixture namespace in the validate-aux closure:
+  one deliberately unnormalized spelling per `mk*` rule (M1–M7 /
+  I1–I5) in both `Sort` and `Const`-arg position; order/association
+  twins (`max u v` / `max v u`, reassociated `max`-chains) asserting
+  post-stage-2 identical anon addresses with differing metadata; a
+  constant containing both a spelling and its canonical form (the
+  table-keyed-patch killer) asserting exact decompile; a WF-recursion
+  `._unary.eq_def` reproducing the Mathlib shape.
+- Decoration roundtrip: spelling in → meta ingress decorates → meta
+  egress restores — pinned strictly by `tc-roundtrip` and
+  `tc-meta-addr` from stage 1, before any format change.
+- Extension-append fixture: a synthetic `Named` with populated
+  `metaRefs`/`metaUnivs`, decompiled identically by both pipelines
+  (FFI cross-check).
+- `univPatches`/`metaUnivs` serde vectors in the property-test
+  generators and hand-written wire fixtures.
+
 ## 17. Open Work
 
 ### 17.1 PermCtx Builder Consolidation
@@ -2048,6 +2284,43 @@ orientations** (`A (B x)` and `B (A y)`; the mirrored orientation
 distinguishes spelling inheritance from any first-seen or least-name
 policy) — asserting metadata byte-equality between the two compilers,
 in the spirit of the `ZFA` family (§6.0).
+
+### 17.9 Universe-level canonicalization staging (§10.6)
+
+**Stage 1 — no format change.** Meta-ingress spelling decorations +
+meta-egress replay in the Lean Tc and Rust kernels; the Lean
+decompiler extension-append fix; the `LevelSpellings` fixtures
+(§16.7). Expected: whole-Mathlib validate-lean phase 4 goes from 111
+`levels differ` findings to `714,235 checked / 0 findings` under the
+unchanged strict comparator.
+
+**Probe — before stage 2.** `dump_reducible_univs` over
+`compilemathlib.ixe` + `compileinitstd.ixe` with a prototype
+`canonUniv`: both censuses (mk\*-reducible entries and
+Géran-noncanonical entries — the latter is the true patch
+population), per-constant collision census, transitive-dependent
+closure of the affected set, pinned-primitive-closure impact
+(triggers the prim-address regen flow if hit), occurrence and
+patch-byte counts, canonical-form size statistics.
+
+**Stage 2 — one format break.** `canonUniv` implementations + P1–P6;
+the `univPatches` wrapper vector across both serializers, demoted
+encoders, FFI, diff labels, generators, and corpus fixtures;
+compile-side canonicalization + patch emission in both pipelines
+(against `aux-gen-diff` / `compile-lean --rust-check`); decompile
+patch replay (`decompile-diff`); the decoration source switch to
+patches; phase 3 strict (drop `reduceIxonUniv` from both `canonExpr`
+bodies); regenerate all artifacts, refresh pinned sizes, add the
+format-break hint.
+
+**Open spec detail (O1):** the multi-param `imax`-gating
+construction in `linearize` (§10.6) — must be settled at the start
+of stage 2; P2/P3 pin whatever is chosen.
+
+**Follow-ups:** kernel-side univ-table canonicity enforcement at
+ingress (§4.4-style, all three kernels, plus a foreign-`.ixe`
+policy — reject, never silently canonicalize); Tc Verify-layer
+proofs of P1/P2/P4.
 
 ## 18. Summary
 
