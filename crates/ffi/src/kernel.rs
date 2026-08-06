@@ -2497,7 +2497,9 @@ pub extern "C" fn rs_kernel_profile_anon(
 }
 
 /// FFI: partition a `.ixprof` into `num_shards` shards and write a `.ixes`
-/// manifest. Prints a what-if report to stderr.
+/// manifest. Prints a what-if report to stderr. `metric` selects the balance
+/// weight: "ingress" balances serialized bytes (Aiur prove-time driver),
+/// anything else the Zisk step-cost model.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp(
@@ -2506,6 +2508,7 @@ pub extern "C" fn rs_shard_esp(
   balance_pct: LeanString<LeanBorrowed<'_>>,
   parallelism: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  metric: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
   let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
@@ -2514,12 +2517,17 @@ pub extern "C" fn rs_shard_esp(
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let balance = (balance_pct as f64) / 100.0;
+  let metric = match metric.to_string().as_str() {
+    "ingress" => ix_kernel::shard::BalanceMetric::IngressBytes,
+    _ => ix_kernel::shard::BalanceMetric::StepCost,
+  };
   match ix_kernel::shard::shard_esp(
     &esp_path.to_string(),
     num_shards,
     balance,
     parallelism,
     out_opt,
+    metric,
   ) {
     Ok(report) => {
       eprintln!("[rs_shard]\n{report}");

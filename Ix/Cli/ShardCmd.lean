@@ -98,13 +98,23 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     | some flag => max 1 (flag.as! Nat)
     | none      => 1
 
+  -- Balance metric: `steps` (Zisk step-cost model, default) or `ingress`
+  -- (serialized bytes — the measured Aiur shard prove-time driver). Only the
+  -- fixed-count path takes it; the budget path's cap is inherently step-based.
+  let metric : String :=
+    match p.flag? "balance-metric" with
+    | some flag => flag.as! String
+    | none      => "steps"
+  if metric != "steps" && metric != "ingress" then
+    p.printError s!"error: --balance-metric expects \"steps\" or \"ingress\", got \"{metric}\""
+    return 1
   -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
   -- (budget) > default (size to detected system RAM).
   match shardsFlag with
   | some n =>
-    IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
+    IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%, metric={metric})"
     rsShardEspFFI espPath (toString n) (toString balancePct) (toString parallelism)
-      outPath
+      outPath metric
   | none =>
     if maxCycles.isNone && maxRam.isNone then
       IO.println s!"Sharding {espPath} to detected system RAM (balance ±{balancePct}%)"
@@ -125,6 +135,7 @@ def shardCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     shards       : Nat;    "Fixed number of shards N (overrides the default budget sizing)"
+    "balance-metric" : String; "Balance weight for --shards mode: `steps` (Zisk step-cost model, default) or `ingress` (serialized bytes — the measured Aiur shard prove-time driver; cross-shard frontier bytes stay priced by the min-cut objective)"
     "max-cycles" : Nat;    "Per-shard guest-cycle budget (overrides the default RAM sizing)"
     "max-ram"    : Nat;    "Per-shard host-RAM budget, GiB (default: detected system RAM)"
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"

@@ -209,7 +209,10 @@ opaque rsProfileAnonFFI :
 
 /-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
     manifest. `numShards` and `balancePct` are decimal strings (kept ABI-simple).
-    Empty `outPath` skips the manifest. Prints a what-if report to stderr. -/
+    Empty `outPath` skips the manifest. Prints a what-if report to stderr.
+    `metric` selects the balance weight: `"ingress"` balances serialized bytes
+    (the measured Aiur shard prove-time driver); anything else balances the
+    Zisk step-cost model. -/
 @[extern "rs_shard_esp"]
 opaque rsShardEspFFI :
     @& String →                          -- .ixprof path
@@ -217,6 +220,7 @@ opaque rsShardEspFFI :
     @& String →                          -- balance percent
     @& String →                          -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
+    @& String →                          -- balance metric ("steps" | "ingress")
     IO Unit
 
 /-- FFI: partition a `.ixprof` to a per-shard cycle/RAM budget, writing a

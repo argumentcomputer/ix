@@ -148,13 +148,40 @@ const MAX_FM_PASSES: u32 = 10;
 /// stays cheap.
 const PACK_PIECES_PER_CAP: u128 = 32;
 
+/// Which per-block quantity the partitioner balances across shards. The cut
+/// (minimization) objective is cross-shard ingress bytes in both modes; only
+/// the *balance* weight changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BalanceMetric {
+  /// Balance predicted Zisk guest steps ([`block_step_cost`]) — the
+  /// cycle/RAM driver of the Zisk backend.
+  StepCost,
+  /// Balance serialized bytes (each block's `serialized_size`). On the Aiur
+  /// STARK backend, measured shard prove time tracks the shard's ingress
+  /// byte load, not its op counts (a 72-shard Init sweep fit prove time at
+  /// R² 0.75 against owned bytes vs 0.02 against heartbeats), so balancing
+  /// bytes balances prove time. The frontier share of the load
+  /// ([`INGRESS_W_FRONTIER`]) is partition-dependent and cannot be a static
+  /// vertex weight; it stays priced by the cut objective, which minimizes
+  /// exactly those bytes.
+  IngressBytes,
+}
+
+/// Weighted per-shard **ingress load**: `w_own · owned_bytes + w_frontier ·
+/// frontier_bytes`. Weights are the relative prove-time impact of the two
+/// byte streams, from the same Init 72-shard Aiur prove regression that
+/// motivated [`BalanceMetric::IngressBytes`] (owned bytes explained 75% of
+/// prove-time variance; adding the frontier term contributed ~15%).
+pub const INGRESS_W_OWN: f64 = 0.75;
+pub const INGRESS_W_FRONTIER: f64 = 0.15;
+
 /// A weighted hypergraph derived from a [`BlockProfile`]. Vertex ids are block
 /// ids (identical to the profile's). Nets are stored with global pins.
 pub struct Hypergraph {
-  /// Vertex (block) weights = predicted Zisk guest STEPS ([`block_step_cost`]:
-  /// reduction `heartbeats` + own ingress bytes), so the balanced partition
-  /// equalizes predicted per-shard *cycles* (the prover-RAM driver) rather than
-  /// heartbeats alone — which underweighted ingress-heavy shards.
+  /// Vertex (block) balance weights, per the chosen [`BalanceMetric`]:
+  /// predicted Zisk guest STEPS ([`block_step_cost`]) for
+  /// [`BalanceMetric::StepCost`], serialized bytes for
+  /// [`BalanceMetric::IngressBytes`].
   vweight: Vec<u64>,
   /// Net weights = serialized_size of the unfolded block.
   net_weight: Vec<u64>,
@@ -167,9 +194,23 @@ impl Hypergraph {
   /// block that has at least one *external* consumer (i.e. is delta-unfolded by
   /// some other block); singleton nets are omitted as they can never be cut.
   pub fn from_profile(profile: &BlockProfile) -> Hypergraph {
+    Self::from_profile_metric(profile, BalanceMetric::StepCost)
+  }
+
+  /// [`Self::from_profile`] with an explicit balance metric.
+  pub fn from_profile_metric(
+    profile: &BlockProfile,
+    metric: BalanceMetric,
+  ) -> Hypergraph {
     let n = profile.num_blocks();
-    let vweight: Vec<u64> =
-      (0..n as u32).map(|i| block_step_cost(profile.block(i))).collect();
+    let vweight: Vec<u64> = (0..n as u32)
+      .map(|i| match metric {
+        BalanceMetric::StepCost => block_step_cost(profile.block(i)),
+        BalanceMetric::IngressBytes => {
+          u64::from(profile.block(i).serialized_size)
+        },
+      })
+      .collect();
     let (row, col) = profile.consumers_csr();
     let mut net_weight = Vec::new();
     let mut net_pins = Vec::new();
@@ -1555,12 +1596,13 @@ pub fn shard_esp(
   balance: f64,
   parallelism: usize,
   out_path: Option<&str>,
+  metric: BalanceMetric,
 ) -> Result<String, String> {
   let bytes =
     std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
   let profile = BlockProfile::from_bytes(&bytes)
     .map_err(|e| format!("parse {esp_path}: {e}"))?;
-  let h = Hypergraph::from_profile(&profile);
+  let h = Hypergraph::from_profile_metric(&profile, metric);
   let (shard_of, tree) = h.partition_with_tree(num_shards, balance);
   let mut manifest =
     ShardManifest::build(&profile, &shard_of, num_shards).with_tree(tree);
@@ -1589,15 +1631,45 @@ pub fn shard_esp(
     ""
   };
   Ok(format!(
-    "blocks={} delta_edges={} nets={}\n{}\n{}\nlargest_block_hb={}{}",
+    "blocks={} delta_edges={} nets={}\n{}\n{}\n{}\nlargest_block_hb={}{}",
     profile.num_blocks(),
     profile.num_edges(),
     h.num_nets(),
     manifest.summary(),
+    ingress_load_summary(&manifest),
     prove_report(&profile, &shard_of, &manifest, parallelism),
     max_block_hb,
     note,
   ))
+}
+
+/// Per-shard weighted ingress-load report line: `INGRESS_W_OWN · own_size +
+/// INGRESS_W_FRONTIER · cross_ingress` per shard — the byte-load proxy for
+/// Aiur shard prove time (see [`BalanceMetric::IngressBytes`]).
+fn ingress_load_summary(manifest: &ShardManifest) -> String {
+  let loads: Vec<f64> = manifest
+    .shards
+    .iter()
+    .map(|s| {
+      INGRESS_W_OWN * s.own_size as f64
+        + INGRESS_W_FRONTIER * s.cross_ingress as f64
+    })
+    .collect();
+  let max = loads.iter().cloned().fold(0.0f64, f64::max);
+  let min = loads
+    .iter()
+    .cloned()
+    .filter(|&l| l > 0.0)
+    .fold(f64::INFINITY, f64::min);
+  let mean = loads.iter().sum::<f64>() / loads.len().max(1) as f64;
+  format!(
+    "ingress_load[{INGRESS_W_OWN}·own + {INGRESS_W_FRONTIER}·frontier bytes]\
+     [min={:.0} mean={:.0} max={:.0}] imbalance={:.2}x",
+    if min.is_finite() { min } else { 0.0 },
+    mean,
+    max,
+    if mean > 0.0 { max / mean } else { 0.0 },
+  )
 }
 
 /// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget
@@ -2330,6 +2402,7 @@ mod tests {
       0.10,
       1,
       Some(shard.to_str().unwrap()),
+      BalanceMetric::StepCost,
     )
     .unwrap();
     assert!(report.contains("shards=2"), "report was: {report}");
