@@ -291,6 +291,23 @@ pub struct BlockCache {
   pub refs: Vec<Address>,
   /// Universe table for resolving universe indices
   pub univ_table: Vec<Arc<Univ>>,
+  /// Level-spelling patches of the current constant, keyed by metadata
+  /// arena index (canonicity §10.6). A patched `sort`/`const`/`rec`
+  /// occurrence (or surgered call-site head) resolves the patch's
+  /// virtual univ indices — through `univ_table`, which
+  /// `load_meta_extensions` extends with `meta_univs` — instead of the
+  /// node's own canonical indices. Absent patch → the canonical
+  /// spelling from the primary table (the D4 foreign-artifact
+  /// semantics). Populated by `load_meta_extensions` from
+  /// `ConstantMeta.univ_patches`.
+  pub univ_patches: FxHashMap<u64, Vec<u64>>,
+  /// Length of the PRIMARY univ table before `load_meta_extensions`
+  /// appended the constant's `meta_univs`. Virtual indices are minted
+  /// against the primary length, so nested per-constant extensions (the
+  /// constructor window inside an inductive) must reinstall at this
+  /// offset — not at the currently-extended length. `None` until
+  /// extensions are loaded (then the full table IS primary).
+  pub primary_univ_len: Option<usize>,
   /// Cache for decompiled universes
   pub univ_cache: FxHashMap<*const Univ, Level>,
   /// Cache for decompiled expressions keyed by (Ixon pointer, arena index).
@@ -308,15 +325,28 @@ impl BlockCache {
   ///   block sharing, see struct docs). Overwrites any previous
   ///   per-constant table so the cache can be reused across constants
   ///   within a projection-bearing block.
-  /// - `meta_refs` / `meta_univs` — these are never populated by the
-  ///   current compiler (grep: only pushed by serde paths in
-  ///   `src/ix/ixon/metadata.rs`), but extend the primary tables when
-  ///   present so we match the documented virtual-address contract for
-  ///   any future compiler that starts emitting them.
+  /// - `meta_refs` extends the primary refs table when present (never
+  ///   populated by the current compiler; kept for the documented
+  ///   virtual-address contract).
+  /// - `meta_univs` extends the primary univ table: the stage-2 compiler
+  ///   stores original (non-canonical) level spellings here, referenced
+  ///   by `univ_patches` in the virtual index space `univs ++
+  ///   meta_univs` (canonicity §10.6).
+  /// - `univ_patches` → per-constant arena-index → original-spelling-
+  ///   indices map (overwrite semantics, like `meta_sharing`).
+  ///
+  /// Call at most once per cache, immediately after the primary tables
+  /// are installed — `primary_univ_len` is captured here.
   pub fn load_meta_extensions(&mut self, meta: &ConstantMeta) {
     self.meta_sharing = meta.meta_sharing.clone();
     self.refs.extend(meta.meta_refs.iter().cloned());
+    self.primary_univ_len = Some(self.univ_table.len());
     self.univ_table.extend(meta.meta_univs.iter().cloned());
+    self.univ_patches = meta
+      .univ_patches
+      .iter()
+      .map(|p| (p.arena_idx, p.univ_idxs.clone()))
+      .collect();
   }
 }
 
@@ -840,11 +870,20 @@ pub fn decompile_expr(
           },
 
           (_, Expr::Sort(univ_idx)) => {
+            // Level-spelling patch replay (canonicity §10.6): a patch
+            // keyed by this occurrence's arena index restores the
+            // original spelling via its virtual univ index.
+            let eff_idx = cache
+              .univ_patches
+              .get(&current_idx)
+              .and_then(|idxs| idxs.first())
+              .copied()
+              .unwrap_or(*univ_idx);
             let univ = cache
               .univ_table
-              .get(*univ_idx as usize)
+              .get(eff_idx as usize)
               .ok_or_else(|| DecompileError::InvalidUnivIndex {
-                idx: *univ_idx,
+                idx: eff_idx,
                 univs_len: cache.univ_table.len(),
                 constant: cache.current_const.clone(),
               })?
@@ -895,8 +934,13 @@ pub fn decompile_expr(
                 ),
               }
             })?;
-            let levels =
-              decompile_univ_indices(univ_indices, lvl_names, cache)?;
+            // Level-spelling patch replay (canonicity §10.6): the patch
+            // carries the FULL level-arg list in the virtual index space.
+            let patch = cache.univ_patches.get(&current_idx).cloned();
+            let levels = match &patch {
+              Some(idxs) => decompile_univ_indices(idxs, lvl_names, cache)?,
+              None => decompile_univ_indices(univ_indices, lvl_names, cache)?,
+            };
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
@@ -949,8 +993,12 @@ pub fn decompile_expr(
                   })?
               },
             };
-            let levels =
-              decompile_univ_indices(univ_indices, lvl_names, cache)?;
+            // Level-spelling patch replay (canonicity §10.6).
+            let patch = cache.univ_patches.get(&current_idx).cloned();
+            let levels = match &patch {
+              Some(idxs) => decompile_univ_indices(idxs, lvl_names, cache)?,
+              None => decompile_univ_indices(univ_indices, lvl_names, cache)?,
+            };
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
@@ -966,8 +1014,12 @@ pub fn decompile_expr(
                 ctx_size: cache.ctx.len(),
                 constant: cache.current_const.clone(),
               })?;
-            let levels =
-              decompile_univ_indices(univ_indices, lvl_names, cache)?;
+            // Level-spelling patch replay (canonicity §10.6).
+            let patch = cache.univ_patches.get(&current_idx).cloned();
+            let levels = match &patch {
+              Some(idxs) => decompile_univ_indices(idxs, lvl_names, cache)?,
+              None => decompile_univ_indices(univ_indices, lvl_names, cache)?,
+            };
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
           },
@@ -1033,9 +1085,17 @@ pub fn decompile_expr(
                   ),
                 }
               })?;
-              // Extract univ args from head
-              let levels = match head_ixon.as_ref() {
-                Expr::Ref(_, univ_indices) | Expr::Rec(_, univ_indices) => {
+              // Extract univ args from head. Level-spelling patch replay
+              // (canonicity §10.6): the compiler re-keys the head's
+              // patch onto the CallSite root (the head's own Ref arena
+              // node is unreachable from here), so look it up by the
+              // CURRENT arena index.
+              let head_patch = cache.univ_patches.get(&current_idx).cloned();
+              let levels = match (&head_patch, head_ixon.as_ref()) {
+                (Some(idxs), Expr::Ref(..) | Expr::Rec(..)) => {
+                  decompile_univ_indices(idxs, lvl_names, cache)?
+                },
+                (None, Expr::Ref(_, univ_indices) | Expr::Rec(_, univ_indices)) => {
                   decompile_univ_indices(univ_indices, lvl_names, cache)?
                 },
                 _ => vec![],
@@ -1794,6 +1854,14 @@ fn decompile_inductive(
     // from the inductive's arena (or a previous constructor's arena) would
     // produce stale hits when arena indices coincide.
     cache.expr_cache.clear();
+    // Clear the pointer-keyed univ memo too (canonicity §10.6): the
+    // constructor window below swaps per-ctor `meta_univs` extensions in
+    // and out of `univ_table`, so `*const Univ` keys minted under one
+    // ctor's extension can be REUSED by a fresh allocation in a later
+    // iteration — a stale hit then substitutes an arbitrary earlier
+    // level for the patched spelling. (Pre-stage-2 `meta_univs` was
+    // always empty, so the memo never saw ephemeral pointers.)
+    cache.univ_cache.clear();
 
     // Look up constructor's Named entry for its ConstantMetaInfo::Ctor
     let ctor_meta = if let Some(addr) = ctor_name_addrs.get(i) {
@@ -1822,23 +1890,42 @@ fn decompile_inductive(
     // Constructor metadata is per-constructor, not inherited from the parent
     // inductive. In particular, aux-generated `.below` constructors can carry
     // CallSite metadata whose Collapsed entries point into the constructor's
-    // own `meta_sharing` table. Install those extensions only while walking
-    // this constructor so they do not leak across sibling constructor arenas.
+    // own `meta_sharing` table, and any constructor can carry its own
+    // `univ_patches` (canonicity §10.6). Install those extensions only while
+    // walking this constructor so they do not leak across sibling
+    // constructor arenas.
     let saved_meta_sharing = std::mem::replace(
       &mut cache.meta_sharing,
       ctor_meta.meta_sharing.clone(),
     );
+    let saved_univ_patches = std::mem::replace(
+      &mut cache.univ_patches,
+      ctor_meta
+        .univ_patches
+        .iter()
+        .map(|p| (p.arena_idx, p.univ_idxs.clone()))
+        .collect(),
+    );
     let refs_len = cache.refs.len();
-    let univs_len = cache.univ_table.len();
+    // Virtual univ indices are minted against the PRIMARY table length
+    // (canonicity §10.6), so the constructor's `meta_univs` must be
+    // installed at that offset — the parent inductive's own extension
+    // (appended by `load_meta_extensions`) is displaced for the
+    // duration, and the whole table is restored afterwards.
+    let primary_univ_len =
+      cache.primary_univ_len.unwrap_or(cache.univ_table.len());
+    let saved_univ_table = cache.univ_table.clone();
     cache.refs.extend(ctor_meta.meta_refs.iter().cloned());
+    cache.univ_table.truncate(primary_univ_len);
     cache.univ_table.extend(ctor_meta.meta_univs.iter().cloned());
 
     let ctor_result =
       decompile_constructor(ctor, &ctor_meta, name.clone(), cache, stt, dstt);
 
     cache.meta_sharing = saved_meta_sharing;
+    cache.univ_patches = saved_univ_patches;
     cache.refs.truncate(refs_len);
-    cache.univ_table.truncate(univs_len);
+    cache.univ_table = saved_univ_table;
 
     let ctor_val = ctor_result?;
     ctor_names.push(ctor_val.cnst.name.clone());
