@@ -2599,4 +2599,323 @@ mod tests {
       }
     }
   }
+
+  // ==========================================================================
+  // Universe-level canonicalization probe (canonicity §10.6 / §17.9, D8)
+  // ==========================================================================
+  //
+  // Prototype `canonUniv` = draft linearizer ∘ subsumption ∘ normalizeAux
+  // (the Géran machinery ported from `Ix/Tc/Level.lean:227-472` /
+  // `crates/kernel/src/level.rs`) plus the frozen kernel `mk*` reducer,
+  // both transliterated onto `ixon::univ::Univ`. Promoted to the real
+  // implementation in stage 2 (the linearizer gating construction is the
+  // O1 open detail — P2 violations are counted below as its sanity
+  // signal, not asserted).
+
+  /// Local shim for the census probe: the real machinery lives in
+  /// `crate::canon_univ` (promoted from the probe prototype).
+  mod univ_probe {
+
+    use crate::univ::Univ;
+
+    pub(super) use crate::canon_univ::{
+      NormLevel as PNorm, linearize, normalize, reduce_univ,
+    };
+
+    pub(super) fn geran(u: &Univ) -> PNorm {
+      normalize(u)
+    }
+
+    pub(super) fn univ_size(u: &Univ) -> u64 {
+      match u {
+        Univ::Zero | Univ::Var(_) => 1,
+        Univ::Succ(i) => 1 + univ_size(i),
+        Univ::Max(a, b) | Univ::IMax(a, b) => {
+          1 + univ_size(a) + univ_size(b)
+        },
+      }
+    }
+  }
+
+  /// Universe canonicalization blast-radius probe (canonicity §17.9, D8).
+  /// Per §2 constant: both censuses over the univ table (mk*-reducible
+  /// vs Géran-noncanonical), the per-constant collision census (two
+  /// spellings of one class — the Design-A killer), P2 sanity of the
+  /// draft linearizer, occurrence counts over the unshared expression
+  /// trees, refs-reverse dependent closure, pinned-primitive impact, and
+  /// canonical-size blowup stats. Run:
+  ///   IXE_A=<abs path> cargo test -p ixon --release \
+  ///     dump_reducible_univs -- --ignored --nocapture
+  #[test]
+  #[ignore]
+  fn dump_reducible_univs() {
+    use std::collections::{HashMap, HashSet, VecDeque};
+
+    use univ_probe::*;
+
+    let path = std::env::var("IXE_A").expect("set IXE_A");
+    let sample_count: u64 = std::env::var("IXE_SAMPLES")
+      .ok()
+      .and_then(|s| s.parse().ok())
+      .unwrap_or(0);
+    let bytes = std::fs::read(&path).expect("read env file");
+    let index = Env::parse_lazy_index(&bytes).expect("lazy index");
+    println!("===== {path}: {} §2 constants", index.consts.len());
+
+    let mut total_entries = 0u64;
+    let mut mk_reducible_entries = 0u64;
+    let mut geran_noncanon_entries = 0u64;
+    let mut mk_consts: HashSet<Address> = HashSet::new();
+    let mut geran_consts: HashSet<Address> = HashSet::new();
+    let mut collision_consts = 0u64;
+    let mut p2_violations = 0u64;
+    let mut max_blowup: (u64, u64) = (0, 0); // (src, canon) of worst ratio
+    let mut sum_src = 0u64;
+    let mut sum_canon = 0u64;
+    // Occurrences (unshared logical tree) referencing affected entries.
+    let mut mk_occurrences = 0u64;
+    let mut geran_occurrences = 0u64;
+    let mut geran_patch_bytes = 0u64;
+    // Forward edges: dependency addr -> dependents.
+    let mut dependents: HashMap<Address, Vec<Address>> = HashMap::new();
+
+    // Walk the share-deduped expression DAG counting sort/ref/recur
+    // occurrence nodes whose level list touches `affected`. Each share
+    // subtree contributes ONCE — repeated identical subtrees share one
+    // compile-side arena root (the compile expr cache is
+    // spelling-injective), so DAG-distinct occurrences approximate the
+    // per-arena-root patch/decoration population; the unshared logical
+    // tree would be exponentially larger and does not correspond to
+    // stored metadata.
+    fn count_occ(
+      e: &Expr,
+      sharing: &[Arc<Expr>],
+      affected: &HashSet<u64>,
+      seen_shares: &mut HashSet<u64>,
+    ) -> (u64, u64) {
+      use Expr as E;
+      match e {
+        E::Var(_) | E::Nat(_) | E::Str(_) => (0, 0),
+        E::Sort(u) => {
+          if affected.contains(u) {
+            (1, 1)
+          } else {
+            (0, 0)
+          }
+        },
+        E::Ref(_, us) | E::Rec(_, us) => {
+          if us.iter().any(|u| affected.contains(u)) {
+            (1, us.len() as u64)
+          } else {
+            (0, 0)
+          }
+        },
+        E::App(f, a) => {
+          let (o1, s1) = count_occ(f, sharing, affected, seen_shares);
+          let (o2, s2) = count_occ(a, sharing, affected, seen_shares);
+          (o1 + o2, s1 + s2)
+        },
+        E::Lam(t, b) | E::All(t, b) => {
+          let (o1, s1) = count_occ(t, sharing, affected, seen_shares);
+          let (o2, s2) = count_occ(b, sharing, affected, seen_shares);
+          (o1 + o2, s1 + s2)
+        },
+        E::Let(_, t, v, b) => {
+          let (o1, s1) = count_occ(t, sharing, affected, seen_shares);
+          let (o2, s2) = count_occ(v, sharing, affected, seen_shares);
+          let (o3, s3) = count_occ(b, sharing, affected, seen_shares);
+          (o1 + o2 + o3, s1 + s2 + s3)
+        },
+        E::Prj(_, _, v) => count_occ(v, sharing, affected, seen_shares),
+        E::Share(i) => {
+          if !seen_shares.insert(*i) {
+            return (0, 0);
+          }
+          match usize::try_from(*i).ok().and_then(|i| sharing.get(i)) {
+            Some(sub) => count_occ(sub, sharing, affected, seen_shares),
+            None => (0, 0),
+          }
+        },
+      }
+    }
+
+    for slice in &index.consts {
+      let window = &bytes[slice.offset..slice.offset + slice.len];
+      let cnst = Constant::get(&mut &window[..])
+        .unwrap_or_else(|e| panic!("parse {}: {e}", slice.addr.hex()));
+      for r in &cnst.refs {
+        dependents.entry(r.clone()).or_default().push(slice.addr.clone());
+      }
+      if cnst.univs.is_empty() {
+        continue;
+      }
+      total_entries += cnst.univs.len() as u64;
+      let mut mk_idxs: HashSet<u64> = HashSet::new();
+      let mut geran_idxs: HashSet<u64> = HashSet::new();
+      let mut classes: HashMap<String, HashSet<&Arc<Univ>>> = HashMap::new();
+      for (i, u) in cnst.univs.iter().enumerate() {
+        let reduced = reduce_univ(u);
+        if reduced != *u {
+          mk_reducible_entries += 1;
+          mk_idxs.insert(i as u64);
+        }
+        let norm = geran(u);
+        let canon = linearize(&norm);
+        sum_src += univ_size(u);
+        sum_canon += univ_size(&canon);
+        if canon != *u {
+          geran_noncanon_entries += 1;
+          geran_idxs.insert(i as u64);
+          // metaUnivs extension entry carrying the original spelling.
+          let mut spelling = Vec::new();
+          crate::univ::put_univ(u, &mut spelling);
+          geran_patch_bytes += spelling.len() as u64;
+          if geran_noncanon_entries <= sample_count {
+            println!("  sample: {u:?}  =>  {canon:?}");
+          }
+        }
+        let (s, c) = (univ_size(u), univ_size(&canon));
+        if c * max_blowup.0 > max_blowup.1 * s {
+          max_blowup = (s, c);
+        }
+        if geran(&canon) != norm {
+          p2_violations += 1;
+          if p2_violations <= 8 {
+            println!("  P2 violation: {u:?}");
+            println!("    canon:  {canon:?}");
+            println!("    norm:   {norm:?}");
+            println!("    renorm: {:?}", geran(&canon));
+          }
+        }
+        classes.entry(format!("{norm:?}")).or_default().insert(u);
+      }
+      if classes.values().any(|spellings| spellings.len() > 1) {
+        collision_consts += 1;
+      }
+      if !mk_idxs.is_empty() {
+        mk_consts.insert(slice.addr.clone());
+      }
+      if !geran_idxs.is_empty() {
+        geran_consts.insert(slice.addr.clone());
+      }
+      if mk_idxs.is_empty() && geran_idxs.is_empty() {
+        continue;
+      }
+      // Occurrence counts over the constant's expression bodies.
+      let mut exprs: Vec<&Arc<Expr>> = Vec::new();
+      {
+        use crate::constant::MutConst;
+        match &cnst.info {
+          ConstantInfo::Defn(d) => {
+            exprs.push(&d.typ);
+            exprs.push(&d.value);
+          },
+          ConstantInfo::Axio(a) => exprs.push(&a.typ),
+          ConstantInfo::Quot(q) => exprs.push(&q.typ),
+          ConstantInfo::Recr(r) => {
+            exprs.push(&r.typ);
+            for rule in &r.rules {
+              exprs.push(&rule.rhs);
+            }
+          },
+          ConstantInfo::Muts(ms) => {
+            for m in ms {
+              match m {
+                MutConst::Defn(d) => {
+                  exprs.push(&d.typ);
+                  exprs.push(&d.value);
+                },
+                MutConst::Indc(ind) => {
+                  exprs.push(&ind.typ);
+                  for c in &ind.ctors {
+                    exprs.push(&c.typ);
+                  }
+                },
+                MutConst::Recr(r) => {
+                  exprs.push(&r.typ);
+                  for rule in &r.rules {
+                    exprs.push(&rule.rhs);
+                  }
+                },
+              }
+            }
+          },
+          _ => {},
+        }
+      }
+      let mut memo_mk: HashSet<u64> = HashSet::new();
+      let mut memo_geran: HashSet<u64> = HashSet::new();
+      for e in &exprs {
+        let (o, _) = count_occ(e, &cnst.sharing, &mk_idxs, &mut memo_mk);
+        mk_occurrences += o;
+        let (o, slots) =
+          count_occ(e, &cnst.sharing, &geran_idxs, &mut memo_geran);
+        geran_occurrences += o;
+        // UnivPatch wire estimate: Tag0 arenaIdx (~3B) + Tag0 len (1B)
+        // + Tag0 per index (~2B).
+        geran_patch_bytes += o * 4 + slots * 2;
+      }
+    }
+
+    println!("univ entries: {total_entries}");
+    println!(
+      "mk*-reducible: {mk_reducible_entries} entries in {} constants",
+      mk_consts.len()
+    );
+    println!(
+      "Géran-noncanonical: {geran_noncanon_entries} entries in {} constants \
+       (Δ vs mk*: {} entries)",
+      geran_consts.len(),
+      geran_noncanon_entries - mk_reducible_entries
+    );
+    println!("collision constants (≥2 spellings of one class): {collision_consts}");
+    println!("P2 violations (draft linearizer, informational): {p2_violations}");
+    println!(
+      "occurrences — stage-1 decorations (mk*): {mk_occurrences}; \
+       stage-2 patches (Géran): {geran_occurrences} \
+       (~{geran_patch_bytes} patch+spelling bytes)"
+    );
+    println!(
+      "size: src total {sum_src}, canonical total {sum_canon}; \
+       worst blowup {}→{}",
+      max_blowup.0, max_blowup.1
+    );
+
+    // Transitive dependent closure of the Géran-affected set.
+    let mut closure: HashSet<Address> = geran_consts.clone();
+    let mut queue: VecDeque<Address> = geran_consts.iter().cloned().collect();
+    while let Some(a) = queue.pop_front() {
+      if let Some(users) = dependents.get(&a) {
+        for u in users {
+          if closure.insert(u.clone()) {
+            queue.push_back(u.clone());
+          }
+        }
+      }
+    }
+    println!(
+      "dependent closure (Géran set + transitive dependents): {} of {} \
+       constants",
+      closure.len(),
+      index.consts.len()
+    );
+
+    // Pinned-primitive impact (§9.2): closure ∩ prim addresses.
+    let prim_hits: Vec<&'static str> =
+      ix_common::prim_addrs::PrimAddrs::lean_parity_table()
+        .into_iter()
+        .filter_map(|(name, hex)| {
+          closure.iter().any(|a| a.hex() == hex).then_some(name)
+        })
+        .collect();
+    if prim_hits.is_empty() {
+      println!("pinned-primitive closure impact: NONE");
+    } else {
+      println!(
+        "pinned-primitive closure impact: {} prims — {:?}",
+        prim_hits.len(),
+        prim_hits
+      );
+    }
+  }
 }
