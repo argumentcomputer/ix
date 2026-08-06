@@ -14,6 +14,7 @@
 module
 import Std.Sync
 public import Ix.Ixon
+public import Ix.IxonUniv
 public import Ix.Environment
 public import Ix.Sharing
 public import Ix.Common
@@ -125,9 +126,29 @@ structure BlockState where
   /-- Reference table (ordered unique addresses) -/
   refs : Array Address := #[]
   refsIndex : Std.HashMap Address UInt64 := {}
-  /-- Universe table (ordered unique universes) -/
+  /-- Universe table (ordered unique universes). Canonicity §10.6: every
+      entry is `canonUniv`-fixed — `compileAndInternUnivCanon` interns
+      only canonical forms and preseeding canonicalizes before sorting. -/
   univs : Array Ixon.Univ := #[]
   univsIndex : Std.HashMap Ixon.Univ UInt64 := {}
+  /-- Set once preseeding finalizes the primary `univs` table. From then
+      on any on-the-fly intern of a canonical form must HIT a preseeded
+      entry — a miss would silently shift the `univPatches` virtual
+      indices (`univs.size + slot`), so `compileAndInternUnivCanon`
+      errors instead (canonicity §10.6 V3). -/
+  univsFinal : Bool := false
+  /-- `Ixon.canonUniv` memo (positional trees — context-free, so the
+      cache is sound across constants and univ contexts). -/
+  canonUnivCache : Std.HashMap Ixon.Univ Ixon.Univ := {}
+  /-- Extension univs of the CURRENT constant: original (non-canonical)
+      spellings referenced by `univPatches`, in first-use order.
+      Canonicity §10.6 — resets with the arena. -/
+  metaUnivs : Array Ixon.Univ := #[]
+  metaUnivsIndex : Std.HashMap Ixon.Univ UInt64 := {}
+  /-- Level-spelling patches of the CURRENT constant, keyed by the arena
+      root of each affected `sort`/`const` occurrence — resets with the
+      arena. -/
+  univPatches : Array Ixon.UnivPatch := #[]
   /-- Blob storage collected during block compilation -/
   blockBlobs : Std.HashMap Address ByteArray := {}
   /-- Name components collected during block compilation -/
@@ -303,7 +324,9 @@ def takeArena : CompileM Ixon.ExprMetaArena :=
 
 /-- Reset the arena for a new constant. -/
 def resetArena : CompileM Unit :=
-  modifyBlockState fun c => { c with arena := {} }
+  modifyBlockState fun c =>
+    { c with arena := {}, metaUnivs := #[], metaUnivsIndex := {},
+             univPatches := #[] }
 
 /-- Clear the expression cache (between constants to avoid cross-constant arena references). -/
 def clearExprCache : CompileM Unit :=
@@ -347,10 +370,63 @@ def internUniv (u : Ixon.Univ) : CompileM UInt64 :=
     let (state', idx) := state.internUniv u
     (idx, state')
 
-/-- Compile and intern an Ix.Level, returning its univs table index. -/
-def compileAndInternUniv (lvl : Level) : CompileM UInt64 := do
-  let u ← compileUniv lvl
-  internUniv u
+/-- `Ixon.canonUniv` through the block memo. -/
+def canonUnivCached (u : Ixon.Univ) : CompileM Ixon.Univ := do
+  if let some c := (← getBlockState).canonUnivCache.get? u then
+    return c
+  let c := Ixon.canonUniv u
+  modifyBlockState fun st =>
+    { st with canonUnivCache := st.canonUnivCache.insert u c }
+  return c
+
+/-- Intern an original (non-canonical) spelling into the current
+    constant's `metaUnivs` extension, returning its VIRTUAL index
+    (`univs.size + slot` — the primary table is preseed-final by the
+    time expressions compile, so the offset is stable). -/
+def internMetaUniv (raw : Ixon.Univ) : CompileM UInt64 :=
+  modifyGetBlockState fun st =>
+    match st.metaUnivsIndex.get? raw with
+    | some k => (st.univs.size.toUInt64 + k, st)
+    | none =>
+      let k := st.metaUnivs.size.toUInt64
+      (st.univs.size.toUInt64 + k,
+       { st with metaUnivs := st.metaUnivs.push raw
+                 metaUnivsIndex := st.metaUnivsIndex.insert raw k })
+
+/-- Compile a level and intern its CANONICAL form into the primary
+    table (canonicity §10.6). Returns the canonical index plus, when
+    the source spelling differs, the virtual index of the original
+    spelling in the `metaUnivs` extension (the patch payload). -/
+def compileAndInternUnivCanon (lvl : Level) : CompileM (UInt64 × Option UInt64) := do
+  let raw ← compileUniv lvl
+  let canon ← canonUnivCached raw
+  let sizeBefore := (← getBlockState).univs.size
+  let cidx ← internUniv canon
+  -- V3 tripwire (canonicity §10.6): the primary table must not grow
+  -- after preseeding — a miss here would shift every virtual patch
+  -- index minted so far. Mirrors the Rust `debug_assert` in
+  -- `compile_univ_idx`.
+  if (← getBlockState).univsFinal && (← getBlockState).univs.size != sizeBefore then
+    throw (.invalidMutualBlock
+      s!"preseed missed canonical form {repr canon} — primary univ table \
+        grew after preseeding, shifting univPatches virtual indices \
+        (canonicity 10.6 V3)")
+  if canon == raw then
+    return (cidx, none)
+  let vidx ← internMetaUniv raw
+  return (cidx, some vidx)
+
+/-- Record a level-spelling patch for the occurrence at `arenaIdx`. -/
+def pushUnivPatch (arenaIdx : UInt64) (univIdxs : Array UInt64) : CompileM Unit :=
+  modifyBlockState fun st =>
+    { st with univPatches := st.univPatches.push { arenaIdx, univIdxs } }
+
+/-- Take (and clear) the current constant's level-spelling channels:
+    the `metaUnivs` extension and the arena-keyed patches. -/
+def takeUnivPatches : CompileM (Array Ixon.Univ × Array Ixon.UnivPatch) :=
+  modifyGetBlockState fun st =>
+    ((st.metaUnivs, st.univPatches),
+     { st with metaUnivs := #[], metaUnivsIndex := {}, univPatches := #[] })
 
 /-! ## Reference Handling -/
 
@@ -608,23 +684,36 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     pure (.var idx.toUInt64, root)
 
   | .sort lvl _ => do
-    let idx ← compileAndInternUniv lvl
+    let (idx, orig?) ← compileAndInternUnivCanon lvl
     let root ← allocArenaNode .leaf
+    -- Canonicity §10.6: a spelling the canonicalization changed is
+    -- restorable from the patch keyed by this occurrence's arena root.
+    if let some vidx := orig? then
+      pushUnivPatch root #[vidx]
     pure (.sort idx, root)
 
   | .const name lvls _ => do
     let mutCtx := (← getBlockEnv).mutCtx
-    let univIndices ← lvls.mapM compileAndInternUniv
+    let compiled ← lvls.mapM compileAndInternUnivCanon
+    let univIndices := compiled.map (·.1)
     compileName name
     let nameAddr := name.getHash
+    -- Canonicity §10.6: when ANY level arg's spelling changed, the
+    -- patch carries the FULL original list in the virtual index space
+    -- (unchanged args point at their canonical primary entries).
+    let recordPatch (root : UInt64) : CompileM Unit := do
+      if compiled.any (·.2.isSome) then
+        pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
     match mutCtx.find? name with
     | some recIdx =>
       let root ← allocArenaNode (.ref nameAddr)
+      recordPatch root
       pure (.recur recIdx.toUInt64 univIndices, root)
     | none => do
       let addr ← lookupConstAddr name
       let refIdx ← internRef addr
       let root ← allocArenaNode (.ref nameAddr)
+      recordPatch root
       pure (.ref refIdx univIndices, root)
 
   | .app .. => compileAppSpine e
@@ -787,12 +876,16 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     (pre-rewrite) head expression — it has no source-order entry, so the
     sequential fill never reaches it; it is referenced by the node's
     `origHead` field instead. The head's own arena root is intentionally
-    dropped (subsumed by `CallSite.name`, compile.rs:1633). -/
+    dropped (subsumed by `CallSite.name`, compile.rs:1633) — which is
+    why any level-spelling patch keyed by it is CLONED onto the
+    `callSite` root below (canonicity §10.6): replay consumers (the
+    decompiler's head rebuild, the kernel's meta-ingress head arms) have
+    only the callSite root in hand. -/
 partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
     (sortedCanon : Array Expr) (collapsedArgs : Array Expr)
     (entries : Array Ixon.CallSiteEntry) (origHeadCollapsed : Bool) :
     CompileM (Ixon.Expr × UInt64) := do
-  let (headIxon, _headRoot) ← compileExpr headForCanon
+  let (headIxon, headRoot) ← compileExpr headForCanon
   let mut canonicalExprs : Array Ixon.Expr := #[]
   let mut canonicalRoots : Array UInt64 := #[]
   for arg in sortedCanon do
@@ -830,6 +923,12 @@ partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
     else
       none
   let root ← allocArenaNode (.callSite nameAddr filled canonicalRoots origHead)
+  -- Canonicity §10.6: clone the head's level-spelling patch (if any)
+  -- onto the callSite root (see the docstring). Clone, not move — the
+  -- head root may be a shared expr-cache root serving other occurrences.
+  if let some headPatch :=
+      (← getBlockState).univPatches.find? (·.arenaIdx == headRoot) then
+    pushUnivPatch root headPatch.univIdxs
   let mut ixon := headIxon
   for a in canonicalExprs do
     ixon := .app ixon a
@@ -1205,15 +1304,22 @@ def preseedExprTables (exprs : Array (Expr × List Name)) : CompileM Unit := do
     if prevRef != some a then
       discard <| internRef a
       prevRef := some a
-  -- Univs: sort by serialized key, dedup by key, intern in order
-  -- (`put_univ` is injective, so key equality is univ equality).
-  let keyed := univs.map fun u => (univSortKey u, u)
+  -- Univs: canonicalize (§10.6 — the primary table holds only
+  -- `canonUniv`-fixed forms; the on-the-fly `compileAndInternUnivCanon`
+  -- then always finds the preseeded canonical entry), sort by
+  -- serialized key, dedup by key, intern in order (`put_univ` is
+  -- injective, so key equality is univ equality).
+  let mut canonUnivs : Array Ixon.Univ := Array.mkEmpty univs.size
+  for u in univs do
+    canonUnivs := canonUnivs.push (← canonUnivCached u)
+  let keyed := canonUnivs.map fun u => (univSortKey u, u)
   let sortedUnivs := keyed.qsort fun (ka, _) (kb, _) => byteArrayCmp ka kb == .lt
   let mut prevKey : Option ByteArray := none
   for (k, u) in sortedUnivs do
     if prevKey != some k then
       discard <| internUniv u
       prevKey := some k
+  modifyBlockState fun st => { st with univsFinal := true }
 
 /-- The `(expr, levelParams)` list a MutConst contributes to preseeding.
     Mirrors Rust `collect_mut_const_exprs` (compile.rs:618). -/
@@ -1546,6 +1652,7 @@ def compileDefinition (d : DefinitionVal) : CompileM (Ixon.Definition × Ixon.Co
     let (valueExpr, valueRoot) ← compileExpr d.value
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name string components as blobs for deduplication
@@ -1569,7 +1676,7 @@ def compileDefinition (d : DefinitionVal) : CompileM (Ixon.Definition × Ixon.Co
     recordDefHints d.cnst.name d.hints
     let constMeta := { Ixon.ConstantMeta.new
       (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile a theorem to Ixon.Definition with metadata. -/
@@ -1580,6 +1687,7 @@ def compileTheorem (d : TheoremVal) : CompileM (Ixon.Definition × Ixon.Constant
     let (valueExpr, valueRoot) ← compileExpr d.value
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name string components as blobs for deduplication
@@ -1603,7 +1711,7 @@ def compileTheorem (d : TheoremVal) : CompileM (Ixon.Definition × Ixon.Constant
     recordDefHints d.cnst.name .opaque
     let constMeta := { Ixon.ConstantMeta.new
       (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile an opaque to Ixon.Definition with metadata. -/
@@ -1614,6 +1722,7 @@ def compileOpaque (d : OpaqueVal) : CompileM (Ixon.Definition × Ixon.ConstantMe
     let (valueExpr, valueRoot) ← compileExpr d.value
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name string components as blobs for deduplication
@@ -1637,7 +1746,7 @@ def compileOpaque (d : OpaqueVal) : CompileM (Ixon.Definition × Ixon.ConstantMe
     recordDefHints d.cnst.name .opaque
     let constMeta := { Ixon.ConstantMeta.new
       (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile an axiom to Ixon.Axiom with metadata. -/
@@ -1647,6 +1756,7 @@ def compileAxiom (a : AxiomVal) : CompileM (Ixon.Axiom × Ixon.ConstantMeta × I
     let (typeExpr, typeRoot) ← compileExpr a.cnst.type
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name string components as blobs for deduplication
@@ -1663,7 +1773,7 @@ def compileAxiom (a : AxiomVal) : CompileM (Ixon.Axiom × Ixon.ConstantMeta × I
     }
     let constMeta := { Ixon.ConstantMeta.new
       (.axio nameAddr lvlAddrs arena typeRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (axio, constMeta, typeExpr)
 
 /-- Compile a quotient to Ixon.Quotient with metadata. -/
@@ -1673,6 +1783,7 @@ def compileQuotient (q : QuotVal) : CompileM (Ixon.Quotient × Ixon.ConstantMeta
     let (typeExpr, typeRoot) ← compileExpr q.cnst.type
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name string components as blobs for deduplication
@@ -1694,7 +1805,7 @@ def compileQuotient (q : QuotVal) : CompileM (Ixon.Quotient × Ixon.ConstantMeta
     }
     let constMeta := { Ixon.ConstantMeta.new
       (.quot nameAddr lvlAddrs arena typeRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (quot, constMeta, typeExpr)
 
 /-- Compile a recursor rule to Ixon, returning the ctor address and rhs expression. -/
@@ -1720,6 +1831,7 @@ def compileRecursor (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Constant
 
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name string components as blobs for deduplication
@@ -1747,7 +1859,7 @@ def compileRecursor (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Constant
     }
     let constMeta := { Ixon.ConstantMeta.new
       (.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (recursor, constMeta, typeExpr)
 
 /-- Compile a constructor to Ixon.Constructor with metadata (ConstantMeta.ctor). -/
@@ -1756,6 +1868,7 @@ def compileConstructor (c : ConstructorVal) : CompileM (Ixon.Constructor × Ixon
   let (typeExpr, typeRoot) ← compileExpr c.cnst.type
   let arena ← takeArena
   let surgerySharing ← takeSurgerySharing
+  let (metaUnivs, univPatches) ← takeUnivPatches
   clearExprCache
 
   -- Store name string components as blobs for deduplication
@@ -1775,7 +1888,7 @@ def compileConstructor (c : ConstructorVal) : CompileM (Ixon.Constructor × Ixon
   }
   let ctorMeta := { Ixon.ConstantMeta.new
     (.ctor nameAddr lvlAddrs c.induct.getHash arena typeRoot) with
-    metaSharing := surgerySharing }
+    metaSharing := surgerySharing, metaUnivs, univPatches }
   pure (ctor, ctorMeta, typeExpr)
 
 /-- Compile an inductive to Ixon.Inductive with metadata.
@@ -1788,6 +1901,7 @@ def compileInductive (i : InductiveVal) (ctorVals : Array ConstructorVal)
     let (typeExpr, typeRoot) ← compileExpr i.cnst.type
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     let mut ctors : Array Ixon.Constructor := #[]
@@ -1822,7 +1936,7 @@ def compileInductive (i : InductiveVal) (ctorVals : Array ConstructorVal)
     }
     let constMeta := { Ixon.ConstantMeta.new
       (.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (ind, constMeta, ctorMetaPairs, ctorExprs)
 
 /-! ## Internal compilation helpers for mutual blocks -/
@@ -1835,6 +1949,7 @@ def compileDefinitionData (d : Def) : CompileM (Ixon.Definition × Ixon.Constant
     let (valueExpr, valueRoot) ← compileExpr d.value
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name components for deduplication
@@ -1862,7 +1977,7 @@ def compileDefinitionData (d : Def) : CompileM (Ixon.Definition × Ixon.Constant
     recordDefHints d.name hints
     let constMeta := { Ixon.ConstantMeta.new
       (.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile inductive data for an Ind structure (from Mutual.lean).
@@ -1874,6 +1989,7 @@ def compileInductiveData (i : Ind)
     let (typeExpr, typeRoot) ← compileExpr i.type
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     let mut ctors : Array Ixon.Constructor := #[]
@@ -1908,7 +2024,7 @@ def compileInductiveData (i : Ind)
     }
     let constMeta := { Ixon.ConstantMeta.new
       (.indc nameAddr lvlAddrs ctorNameAddrs allAddrs ctxAddrs arena typeRoot) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (ind, constMeta, ctorMetaPairs, ctorExprs)
 
 /-- Compile recursor data for a RecursorVal. -/
@@ -1928,6 +2044,7 @@ def compileRecursorData (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Cons
 
     let arena ← takeArena
     let surgerySharing ← takeSurgerySharing
+    let (metaUnivs, univPatches) ← takeUnivPatches
     clearExprCache
 
     -- Store name string components as blobs for deduplication
@@ -1955,7 +2072,7 @@ def compileRecursorData (r : RecursorVal) : CompileM (Ixon.Recursor × Ixon.Cons
     }
     let constMeta := { Ixon.ConstantMeta.new
       (.recr nameAddr lvlAddrs ruleAddrs allAddrs ctxAddrs arena typeRoot ruleRoots) with
-      metaSharing := surgerySharing }
+      metaSharing := surgerySharing, metaUnivs, univPatches }
     pure (recursor, constMeta, typeExpr)
 
 /-! ## Mutual Block Compilation -/
