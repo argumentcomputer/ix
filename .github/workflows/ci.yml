@@ -14,29 +14,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Produce the small real-program fixture consumed by both zkVM execution
-  # gates independently of the full Lean test job. A workflow artifact is the
-  # right synchronization primitive here: the file is unique to this run and
-  # must be available before either consumer starts.
-  zkvm-fixture:
-    name: zkVM execution fixture
+  # Build Ix once and cache `.lake` under lean-action's per-sha key. That cache
+  # holds the base Ix build — lean-action saves it right after building the
+  # default lib, before the all-targets lint below — and the parallel lean-test
+  # job and ignored.yml's extended jobs restore it instead of recompiling the
+  # base. `test: false` keeps this job build-only; those jobs run the tests. It
+  # also compiles and publishes the small `nataddcomm.ixe` fixture the zkVM
+  # execution gates (sp1-build/zisk-build) run their guests over: they need this
+  # exact `ix` build, so they consume it as an artifact and gate on this job
+  # succeeding.
+  build:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      # Build only the compiler executable and its dependencies. In particular,
-      # a failure in an unrelated Tests module must not prevent fixture
-      # publication. Disable the Lean cache because lean-test builds the same
-      # revision concurrently and the two jobs must not race to save one key.
       - uses: leanprover/lean-action@v1
         with:
-          auto-config: false
-          build: true
-          build-args: "ix --wfail -v"
-          use-github-cache: false
+          build-args: "--wfail -v"
+          test: false
+      # build-all lint driver compiles every lib/exe target with --wfail, so a
+      # warning in any target (exes, benchmarks, Apps) — not just the default lib
+      # lean-action builds above — fails CI.
+      - name: Build all targets
+        run: lake lint -- --wfail -v
+      - name: Check codegen'd IxVM kernel is up to date
+        run: lake exe ix codegen --check
+      - name: Check Lean versions match for Ix and compiler bench
+        run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
       # `Nat.add_comm`'s transitive-dependency closure (~40 kB, ~40 constants)
       # is a real theorem, not an empty environment. `--consts` keeps this much
-      # smaller than the complete Init+Std environment used by benchmarks.
+      # smaller than the complete Init+Std environment used by benchmarks. The
+      # zkVM execution gates download this artifact and run their guests over it.
       - name: Compile nataddcomm.ixe
         run: lake exe ix compile Ix.lean --consts Nat.add_comm --out nataddcomm.ixe
       - name: Upload nataddcomm.ixe
@@ -47,52 +55,33 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # CLI + Aiur tests over the base build the `build` job cached. Restores
+  # `.lake` read-only (exact per-sha key the `build` job wrote, prefix fallback
+  # otherwise); lean-action just provisions the toolchain (no build/cache) and
+  # the `lake test` steps run against the restored build.
   lean-test:
+    needs: build
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      # `./.lake`, not `.lake`: the cache path is hashed into the entry's
+      # version, and lean-action saves under `./.lake`, so a bare `.lake` here
+      # computes a different version and the restore misses despite the key
+      # matching.
+      - uses: actions/cache/restore@v6
+        with:
+          path: ./.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
       - uses: leanprover/lean-action@v1
         with:
-          build-args: "--wfail -v"
-      # build-all lint driver compiles every lib/exe target with --wfail, so a
-      # warning in any target (exes, benchmarks, Apps) — not just the default lib
-      # lean-action builds above — fails CI.
-      - name: Build all targets
-        run: lake lint -- --wfail -v
-      - name: Check Ix.Tc verification sorry frontier
-        run: perl .github/scripts/check_tc_verify_sorries.pl
-      - name: Check Ix.Tc exported theorem trust manifest
-        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements
-      - name: Build Ix.Tc formal verification
-        run: lake build IxTcVerify
-      # The verification release claim includes executable adversarial and
-      # production-parity evidence.  Its exact pin/accelerator seed closure is
-      # deliberately separate from the much smaller zkVM smoke fixture. Doing
-      # this after lean-action avoids another Lean build/cache consumer and
-      # keeps lean-test independent of the zkVM artifact producer.
-      - name: Test Ix.Tc unit and adversarial fixtures
-        run: lake test --wfail -- tc-unit
-      - name: Compile Ix.Tc parity fixture
-        run: >-
-          lake exe ix compile Ix.lean
-          --consts-file .github/fixtures/tc-parity-consts.txt
-          --out tc-parity.ixe
-      - name: Test Ix.Tc production parity and scale
-        run: >-
-          lake test --wfail -- --ignored
-          tc-pins tc-accel-diff tc-anon-diff tc-roundtrip tc-init
-          tc-tutorial lean4lean
-        env:
-          IX_PINS_IXE: tc-parity.ixe
-      - name: Check codegen'd IxVM kernel is up to date
-        run: lake exe ix codegen --check
+          auto-config: false
+          use-github-cache: false
       - name: Test Ix CLI
         run: lake test --wfail -- cli
       - name: Aiur tests
         run: lake test --wfail -- --ignored aiur aiur-hashes ixvm multi-stark recursive-verifier
-      - name: Check Lean versions match for Ix and compiler bench
-        run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
 
   rust-test:
     runs-on: ubuntu-latest
@@ -128,8 +117,8 @@ jobs:
   # failures by design (dropped rows, OOM sentinels), so they never turn red
   # on a breakage. These jobs are the red-X signal: each builds its host, then
   # runs the guest in the VM over `nataddcomm.ixe` (a ~40-constant closure the
-  # dedicated zkvm-fixture job publishes). They run in parallel with lean-test
-  # and with each other after that narrow producer succeeds. Both hosts exit
+  # `build` job publishes as an artifact). They run in parallel with the test
+  # jobs and with each other after `build` succeeds. Both hosts exit
   # non-zero when the kernel rejects a constant (sp1: EXIT_REJECTED; zisk:
   # `reject_failures`), so a guest that compiles but panics / faults / rejects
   # fails the job. SP1 execute is pure RISC-V emulation (no key). Zisk execute
@@ -143,7 +132,7 @@ jobs:
   # SP1's host crates need pkg-config + libssl-dev).
   sp1-build:
     name: SP1 host build
-    needs: zkvm-fixture
+    needs: build
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
@@ -182,7 +171,7 @@ jobs:
 
   zisk-build:
     name: Zisk host build
-    needs: zkvm-fixture
+    needs: build
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
