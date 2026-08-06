@@ -343,17 +343,18 @@ def findBackend (name : String) : Option BackendSpec :=
 /-- The `aiur-recursive` backend's rows: fixed IxVM statements, proved and
     recursively verified by `bench-typecheck --recursive` under the
     recursion-tuned parameters (50 queries at log-blowup 2, ~100-bit
-    soundness — this benchmarks *secure* recursion). The two constants span
-    the IxVM cost range: `Nat.add_comm` (cheap tier — the small end) and
-    `Array.extract_append` (heavy tier — kernel scale). A stage that
-    exceeds the CI RAM ceiling lands as an OOM row — the honest signal
-    that secure recursion at that scale does not yet fit. (Measured
-    2026-08: even `Nat.add_comm`'s outer prove peaks ~195 GiB, so on the
-    ~123 GiB runners expect OOM rows on both until the verifier prover
-    slims down — the rows then track exactly when recursion starts to
+    soundness — this benchmarks *secure* recursion). Currently only
+    `Nat.add_comm` (cheap tier — the small end of the IxVM cost range):
+    `Array.extract_append` (heavy tier — kernel scale) is dropped for now,
+    its recursion being significantly more expensive even at 50 queries;
+    re-add it when the verifier prover slims down. A stage that exceeds
+    the CI RAM ceiling lands as an OOM row — the honest signal that
+    secure recursion at that scale does not yet fit. (Measured 2026-08 at
+    100 queries: `Nat.add_comm`'s outer prove peaked ~195 GiB on the
+    ~123 GiB runners; the 50-query halving is what gives it a chance to
     fit.) -/
 def recursiveConstants : List String :=
-  ["Nat.add_comm", "Array.extract_append"]
+  ["Nat.add_comm"]
 
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
   (b.testbeds.find? (·.1 == mode)).map (·.2)
