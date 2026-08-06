@@ -194,6 +194,14 @@ impl SegStore {
   fn retained_elems(&self) -> usize {
     self.entries * self.stride
   }
+
+  /// Heap bytes of the arena's fill. Segments are mmap-backed and fault
+  /// as they fill, so fill IS residency up to page granularity — never
+  /// count reserved-but-untouched capacity (a fresh segment per store
+  /// across hundreds of maps adds gigabytes of phantom bytes).
+  fn heap_bytes(&self) -> usize {
+    self.entries * self.stride * size_of::<G>()
+  }
 }
 
 /// Segmented store of per-entry key hashes. Kept so hash-table growth can
@@ -223,6 +231,11 @@ impl SegHashes {
     }
     self.segs[seg].extend_from_slice(&[h]);
     self.entries += 1;
+  }
+
+  /// Heap bytes of the fill; same rule as [`SegStore::heap_bytes`].
+  fn heap_bytes(&self) -> usize {
+    self.entries * size_of::<u64>()
   }
 }
 
@@ -280,6 +293,22 @@ impl QueryMap {
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
     self.keys.retained_elems() + self.outs.retained_elems()
+  }
+
+  /// Exact heap bytes of this map's fill: arena elements, stored hashes,
+  /// and the hash-table allocation (power-of-two buckets at 7/8 load,
+  /// `u32` index + 1 control byte per bucket, fully resident).
+  pub fn heap_bytes(&self) -> usize {
+    let buckets = if self.table.capacity() == 0 {
+      0
+    } else {
+      (self.table.capacity() * 8 / 7 + 1).next_power_of_two()
+    };
+    self.keys.heap_bytes()
+      + self.outs.heap_bytes()
+      + self.mults.heap_bytes()
+      + self.hashes.heap_bytes()
+      + buckets * (size_of::<u32>() + 1)
   }
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {

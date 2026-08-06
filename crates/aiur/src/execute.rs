@@ -379,6 +379,21 @@ pub fn record_retained_bytes(record: &QueryRecord) -> usize {
   elems * 8 + entries * 21
 }
 
+/// Exact resident heap of the record's query maps (arena fill at hugepage
+/// granularity, stored hashes, hash-table allocations). This is the
+/// scanner's record threshold metric — what the process actually holds
+/// while executing. [`record_retained_bytes`] intentionally differs: it
+/// is the analytic prove-RAM model's record term, calibrated end-to-end
+/// against measured proves, and must not change with allocator details.
+pub fn record_heap_bytes(record: &QueryRecord) -> usize {
+  record.function_queries.iter().map(QueryMap::heap_bytes).sum::<usize>()
+    + record
+      .memory_queries
+      .iter()
+      .map(|(_, m)| m.heap_bytes())
+      .sum::<usize>()
+}
+
 pub fn record_fft_cost(toplevel: &Toplevel, record: &QueryRecord) -> f64 {
   const EXT_DEGREE: usize = 2;
   fn fft(w: usize, h: usize) -> f64 {

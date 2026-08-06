@@ -57,7 +57,7 @@ use aiur::{
   bytecode::Toplevel,
   execute::{
     IOBuffer, QueryRecord, dump_query_stats, f64_from_usize,
-    query_stats_enabled, record_fft_cost, record_retained_bytes,
+    query_stats_enabled, record_fft_cost, record_heap_bytes,
   },
   synthesis::AiurSystem,
 };
@@ -253,46 +253,57 @@ struct ScanCtx<'a> {
 
 /// Default blocks per measurement claim; `IX_SCAN_BATCH_BLOCKS`
 /// overrides (1 restores per-block claims). Fixed — never adaptive — so
-/// the partition stays independent of scheduling. Sized from the
-/// measured inflation curve on Init (drift vs one-cold-claim re-priced
-/// costs: K=16 +11.6%, K=64 +3.7%, K=128 +0.9%): at 128 the running
-/// readout is within the cut's ε margin, so it serves directly as the
-/// manifest cost.
-const SCAN_BATCH_BLOCKS: usize = 128;
+/// the partition stays independent of scheduling. The claim is also the
+/// granularity of the record-threshold check, so its worst-case record
+/// growth must fit inside [`CLAIM_HEADROOM_GIB`]: dense FLT content
+/// measured ~4 GiB of growth per 128-block claim, scaling roughly with
+/// K. K=32 bounds that to ~1 GiB at a conservative measurement drift
+/// between the measured +3.7% (K=64) and +11.6% (K=16) — drift only
+/// overstates costs, tightening the plan, never breaking it.
+const SCAN_BATCH_BLOCKS: usize = 32;
 
-/// A worker child's non-record residency: lazily-decoded env cache,
-/// compiled system, runtime. Reserved under the cap so the soft cut
-/// bounds the record and the cap only fires on mid-claim growth.
-const WORKER_OVERHEAD_GIB: f64 = 4.0;
+/// Target blocks per work-queue chunk. Chunks are the unit of stealing:
+/// once fewer chunks remain than workers, the excess workers idle — the
+/// serial tail is bounded by the largest chunk, so chunks must be much
+/// finer than the worker count (workers×2 on FLT left 16 of 18 workers
+/// idle for the last third of the scan). Chunk edges are forced segment
+/// boundaries; the merge pass absorbs the extra fragmentation.
+const CHUNK_TARGET_BLOCKS: usize = 2048;
 
-/// Fraction of box RAM the worker pool may plan against, with
-/// [`OS_RESERVE_GIB`] subtracted on top of the measured parent baseline.
-/// Sized so that every child brushing its cap simultaneously plus the
-/// parent plus OS/page-cache still leaves tens of GiB free (an 0.85
-/// plan measured 3 GiB free at the FLT fleet's high-water — too close).
-const POOL_RAM_FRAC: f64 = 0.72;
+/// A worker's non-record residency: env mmap, compiled AiurSystem,
+/// runtime (fresh workers measured ~1.2-1.8 GiB on FLT).
+const WORKER_BASELINE_GIB: f64 = 2.0;
+
+/// Worst single-claim record growth past the threshold check (the check
+/// runs between claims): ~4 GiB per 128-block claim measured on dense
+/// FLT content, scaling roughly with [`SCAN_BATCH_BLOCKS`] — ~1 GiB at
+/// K=32. Calibrate against the first run on new content.
+const CLAIM_HEADROOM_GIB: f64 = 1.0;
+
+/// Smallest useful per-worker slice: baseline + claim headroom + enough
+/// record threshold to make progress. Bounds the auto worker count
+/// (`pool / floor`).
+const SLICE_FLOOR_GIB: f64 = 5.0;
+
+/// Reserved for the serialized BIG worker that measures blocks unable to
+/// start under a normal slice; carved out of the pool up front so the
+/// fleet bound `Σ slices + big lane ≤ pool` holds by construction.
+const BIG_LANE_GIB: f64 = 48.0;
+
+/// Subtracted from box RAM (with the measured parent baseline) before
+/// slicing the pool: kernel, page cache churn, and everything else on
+/// the box that is not this scan.
 const OS_RESERVE_GIB: f64 = 12.0;
 
-/// Smallest useful child cap; also bounds the auto worker count
-/// (`pool / floor`), so caps never shrink below what a segment's
-/// overhead needs.
-/// Sized so a COLD first batch fits: a fresh segment's opening claim
-/// re-derives its shared dependencies in one execution, and on dense
-/// content (FLT) that working set measured ~4-7 GiB — a 6 GiB floor made
-/// the kill-and-narrow path the common case (490 deaths, ~39% of all
-/// execution spent on narrowing) instead of the rare one.
-const WORKER_CAP_FLOOR_GIB: f64 = 9.0;
-
-/// Auto worker counts shrink until every child's even share of the pool
-/// clears the cap floor; explicit counts and thread mode pass through.
+/// Auto worker counts shrink until every child's even slice of the pool
+/// clears the slice floor; explicit counts and thread mode pass through.
 fn bound_workers_by_pool(workers: usize, pool_gib: f64, proc: bool) -> usize {
   if !proc {
     return workers;
   }
-  let by_floor: usize =
-    format!("{:.0}", (pool_gib / WORKER_CAP_FLOOR_GIB).floor())
-      .parse()
-      .unwrap_or(1);
+  let by_floor: usize = format!("{:.0}", (pool_gib / SLICE_FLOOR_GIB).floor())
+    .parse()
+    .unwrap_or(1);
   workers.min(by_floor.max(1)).max(1)
 }
 
@@ -448,8 +459,8 @@ fn run_pool(
 ///   emitted segment (absolute order indices), `SKIP <addr-hex>
 ///   <msg-hex>` per kernel-rejected block, then `END <next>` (`next ==
 ///   hi` when the range is exhausted). A unit range (`hi == lo+1`)
-///   degenerates to a single-block claim — the parent narrows a dying
-///   batch by sending unit ranges, no dedicated verb needed.
+///   degenerates to a single-block claim — the parent's BIG lane
+///   measures an unstartable block this way, no dedicated verb needed.
 ///
 /// The worker never applies fail-fast itself — it reports SKIPs and the
 /// parent enforces policy. RAM: the enclosing cgroup's `memory.max` is
@@ -823,35 +834,49 @@ impl WorkerHandle {
 }
 
 /// Process-pool scan: like [`run_pool`], but each worker is a separate
-/// `ix shard-worker` process under a cgroup memory cap — a worker whose
-/// record outgrows its cap mid-claim is OOM-killed ALONE, and the parent
-/// recovers: retry the remainder once (transient collisions), then
-/// narrow the dying batch with unit ranges to name the exact block as
-/// resource-infeasible-at-cap and scan on. The fleet's RAM bound is
-/// `Σ caps`, enforced by the kernel, independent of content.
+/// `ix shard-worker` process under a cgroup memory cap. A worker's env
+/// decode cache grows monotonically with the content it executes (the
+/// record drops at segment cuts; the cache never shrinks), so on dense
+/// content every worker periodically fills its cap and is OOM-killed —
+/// death IS the cache-shedding mechanism, and it is cheap: segments
+/// stream as they close, so a kill loses only the work since the last
+/// closed segment. The parent respawns and continues from the committed
+/// index; the fresh cache carries it until the next shed. A block that
+/// yields zero progress twice in a row cannot even START under the slot
+/// cap — that one block is measured on the BIG lane (whole-pool cap) or
+/// named resource-infeasible. The fleet's RAM bound is `Σ caps`,
+/// enforced by the kernel, independent of content.
 fn run_pool_procs(
   pool: &ProcPool<'_>,
   chunks: Vec<(usize, usize)>,
   workers: usize,
   failed: &Mutex<Vec<(Address, String)>>,
 ) -> Result<Vec<Segment>, String> {
-  type Range = (u32, u32, usize, usize);
+  // (origin chunk, commit sequence, lo, hi, stalls): `stalls` counts
+  // consecutive deaths at `lo` with zero committed progress — two in a
+  // row means the block at `lo` cannot even start under the slot cap.
+  type Range = (u32, u32, usize, usize, u8);
+  let total_blocks: usize = chunks.iter().map(|(lo, hi)| hi - lo).sum();
+  let start = std::time::Instant::now();
   let queue: Mutex<std::collections::VecDeque<Range>> = Mutex::new(
     chunks
       .into_iter()
       .enumerate()
       .map(|(i, (lo, hi))| {
-        (u32::try_from(i).expect("chunk count fits u32"), 0u32, lo, hi)
+        (u32::try_from(i).expect("chunk count fits u32"), 0u32, lo, hi, 0u8)
       })
       .collect(),
   );
   let in_flight = AtomicUsize::new(0);
+  let blocks_done = AtomicUsize::new(0);
+  let last_pct = AtomicUsize::new(0);
   let done: Mutex<Vec<((u32, u32), Vec<Segment>)>> = Mutex::new(Vec::new());
   let failure: Mutex<Option<String>> = Mutex::new(None);
   let abort = std::sync::atomic::AtomicBool::new(false);
   std::thread::scope(|s| {
     let (queue, in_flight, done, failure, abort) =
       (&queue, &in_flight, &done, &failure, &abort);
+    let (blocks_done, last_pct) = (&blocks_done, &last_pct);
     for slot in 0..workers {
       s.spawn(move || {
         let mut worker = match pool.spawn(slot) {
@@ -865,7 +890,51 @@ fn run_pool_procs(
             return;
           },
         };
-        'work: loop {
+        // Monotonic committed-block count; one line per percent crossed.
+        let progress = |n: usize| {
+          if n == 0 {
+            return;
+          }
+          let d = blocks_done.fetch_add(n, Ordering::AcqRel) + n;
+          let pct = d * 100 / total_blocks.max(1);
+          if pct > last_pct.fetch_max(pct, Ordering::AcqRel) {
+            eprintln!(
+              "[scan] {d}/{total_blocks} blocks ({pct}%), {:.0}s",
+              start.elapsed().as_secs_f64()
+            );
+          }
+        };
+        let commit =
+          |reply: ScanReply, origin: u32, seq: u32| -> Result<usize, ()> {
+            if !reply.segs.is_empty() {
+              done.lock().unwrap().push(((origin, seq), reply.segs));
+            }
+            if !reply.skips.is_empty() {
+              let fatal = pool.fail_fast;
+              let first = reply.skips.first().cloned();
+              failed.lock().unwrap().extend(reply.skips);
+              if fatal {
+                if let Some((a, e)) = first {
+                  let mut f = failure.lock().unwrap();
+                  if f.is_none() {
+                    *f = Some(format!(
+                      "CheckEnv of block {} failed during scan: {e} \
+                     (--no-fail-fast records and skips such blocks)",
+                      a.hex()
+                    ));
+                  }
+                }
+                return Err(());
+              }
+            }
+            Ok(reply.next)
+          };
+        let requeue = |origin: u32, seq: u32, lo: usize, hi: usize, stalls| {
+          if lo < hi {
+            queue.lock().unwrap().push_back((origin, seq, lo, hi, stalls));
+          }
+        };
+        loop {
           if abort.load(Ordering::Acquire) {
             break;
           }
@@ -877,173 +946,117 @@ fn run_pool_procs(
             }
             popped
           };
-          let Some((origin, seq, lo, hi)) = next else {
+          let Some((origin, seq, lo, hi, stalls)) = next else {
             if in_flight.load(Ordering::Acquire) == 0 {
               break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
             continue;
           };
-          let mut cursor = lo;
-          let commit =
-            |reply: ScanReply, origin: u32, seq: u32| -> Result<usize, ()> {
-              if !reply.segs.is_empty() {
-                done.lock().unwrap().push(((origin, seq), reply.segs));
-              }
-              if !reply.skips.is_empty() {
-                let fatal = pool.fail_fast;
-                let first = reply.skips.first().cloned();
-                failed.lock().unwrap().extend(reply.skips);
-                if fatal {
-                  if let Some((a, e)) = first {
+          match pool.scan(&mut worker, lo, hi) {
+            Ok(reply) => {
+              let Ok(next) = commit(reply, origin, seq) else {
+                abort.store(true, Ordering::Release);
+                break;
+              };
+              progress(next.saturating_sub(lo));
+              requeue(origin, seq + 1, next, hi, 0);
+            },
+            Err(partial) => {
+              let e = match commit(partial, origin, seq) {
+                Ok(n) => n,
+                Err(()) => {
+                  abort.store(true, Ordering::Release);
+                  break;
+                },
+              };
+              progress(e.saturating_sub(lo));
+              let status = std::mem::replace(
+                &mut worker,
+                match pool.spawn(slot) {
+                  Ok(w) => w,
+                  Err(err) => {
                     let mut f = failure.lock().unwrap();
                     if f.is_none() {
-                      *f = Some(format!(
-                        "CheckEnv of block {} failed during scan: {e} \
-                       (--no-fail-fast records and skips such blocks)",
-                        a.hex()
-                      ));
+                      *f = Some(err);
                     }
-                  }
-                  return Err(());
-                }
-              }
-              Ok(reply.next)
-            };
-          while cursor < hi {
-            if abort.load(Ordering::Acquire) {
-              break 'work;
-            }
-            match pool.scan(&mut worker, cursor, hi) {
-              Ok(reply) => {
-                let Ok(next) = commit(reply, origin, seq) else {
-                  abort.store(true, Ordering::Release);
-                  break 'work;
-                };
-                if next < hi {
-                  queue.lock().unwrap().push_back((origin, seq + 1, next, hi));
-                }
-                break;
-              },
-              Err(partial) => {
-                let e = match commit(partial, origin, seq) {
-                  Ok(n) => n,
-                  Err(()) => {
                     abort.store(true, Ordering::Release);
-                    break 'work;
+                    break;
                   },
-                };
-                let status = std::mem::replace(
-                  &mut worker,
-                  match pool.spawn(slot) {
-                    Ok(w) => w,
-                    Err(err) => {
-                      let mut f = failure.lock().unwrap();
-                      if f.is_none() {
-                        *f = Some(err);
-                      }
-                      abort.store(true, Ordering::Release);
-                      break 'work;
-                    },
-                  },
-                )
-                .reap();
+                },
+              )
+              .reap();
+              if e >= hi {
+                eprintln!(
+                  "[scan] worker {slot} died ({status}) after completing \
+                   its range; respawned"
+                );
+              } else if e > lo || stalls < 1 {
+                // A cache-shed kill: the fresh worker continues from the
+                // committed index. `e == lo` earns one fresh-worker
+                // attempt before block `e` is treated as unstartable.
+                let stalls = if e > lo { 0 } else { stalls + 1 };
                 eprintln!(
                   "[scan] worker {slot} died ({status}) at index {e}; \
-                   respawned"
+                   respawned, continuing"
                 );
-                {
-                  // A capped worker's death is self-caused and (measured
-                  // 244/246 on FLT) deterministic — retrying the same
-                  // range re-executes exactly the batch that proved too
-                  // big. Narrow the dying batch immediately: unit ranges
-                  // name the culprit or measure it on the big lane.
-                  let window = (e + pool.batch_blocks).min(hi);
-                  let mut b = e;
-                  while b < window {
-                    match pool.scan(&mut worker, b, b + 1) {
-                      Ok(reply) => {
-                        if commit(reply, origin, seq).is_err() {
-                          abort.store(true, Ordering::Release);
-                          break 'work;
-                        }
-                      },
-                      Err(partial) => {
-                        let _ = commit(partial, origin, seq);
-                        let addr =
-                          pool.blocks[pool.order[b] as usize].addr.clone();
-                        let status = std::mem::replace(
-                          &mut worker,
-                          match pool.spawn(slot) {
-                            Ok(w) => w,
-                            Err(err) => {
-                              let mut f = failure.lock().unwrap();
-                              if f.is_none() {
-                                *f = Some(err);
-                              }
-                              abort.store(true, Ordering::Release);
-                              break 'work;
-                            },
-                          },
-                        )
-                        .reap();
-                        // BIG-lane retry: one worker at a time gets the
-                        // whole pool as its cap, so a block that is
-                        // heavy-but-provable measures instead of being
-                        // falsely excluded by its slot's even share.
-                        let big_reply = {
-                          let _lane = pool.big_lane.lock().unwrap();
-                          pool.spawn_capped(slot, pool.pool_cap_bytes).ok().map(
-                            |mut big| {
-                              let r = pool.scan(&mut big, b, b + 1);
-                              big.reap();
-                              r
-                            },
-                          )
-                        };
-                        match big_reply {
-                          Some(Ok(reply)) => {
-                            if commit(reply, origin, seq).is_err() {
-                              abort.store(true, Ordering::Release);
-                              break 'work;
-                            }
-                            eprintln!(
-                              "[scan] block {} exceeded its slot cap \
-                               ({status}) but measured on the big lane",
-                              addr.hex()
-                            );
-                          },
-                          other => {
-                            if let Some(Err(partial2)) = other {
-                              let _ = commit(partial2, origin, seq);
-                            }
-                            eprintln!(
-                              "[scan] block {} exceeded the worker memory \
-                               cap ({status}) and the big lane — \
-                               resource-infeasible; skipped",
-                              addr.hex()
-                            );
-                            failed.lock().unwrap().push((
-                              addr,
-                              format!(
-                                "record outgrew the {:.1} GiB whole-pool \
-                                 cap mid-claim (cgroup OOM-kill)",
-                                f64_from_usize(
-                                  usize::try_from(pool.pool_cap_bytes)
-                                    .unwrap_or(usize::MAX)
-                                ) / GIB
-                              ),
-                            ));
-                          },
-                        }
-                      },
+                requeue(origin, seq + 1, e, hi, stalls);
+              } else {
+                // Two consecutive zero-progress deaths: block `e` cannot
+                // even start under the slot cap. BIG-lane retry: one
+                // worker at a time gets the whole pool as its cap, so a
+                // block that is heavy-but-provable measures instead of
+                // being falsely excluded by its slot's even share.
+                let addr = pool.blocks[pool.order[e] as usize].addr.clone();
+                let big_reply = {
+                  let _lane = pool.big_lane.lock().unwrap();
+                  pool.spawn_capped(slot, pool.pool_cap_bytes).ok().map(
+                    |mut big| {
+                      let r = pool.scan(&mut big, e, e + 1);
+                      big.reap();
+                      r
+                    },
+                  )
+                };
+                match big_reply {
+                  Some(Ok(reply)) => {
+                    if commit(reply, origin, seq).is_err() {
+                      abort.store(true, Ordering::Release);
+                      break;
                     }
-                    b += 1;
-                  }
-                  cursor = window;
+                    eprintln!(
+                      "[scan] block {} exceeded its slot cap ({status}) \
+                       but measured on the big lane",
+                      addr.hex()
+                    );
+                  },
+                  other => {
+                    if let Some(Err(partial2)) = other {
+                      let _ = commit(partial2, origin, seq);
+                    }
+                    eprintln!(
+                      "[scan] block {} exceeded the worker memory cap \
+                       ({status}) and the big lane — resource-infeasible; \
+                       skipped",
+                      addr.hex()
+                    );
+                    failed.lock().unwrap().push((
+                      addr,
+                      format!(
+                        "record outgrew the {:.1} GiB whole-pool cap \
+                         mid-claim (cgroup OOM-kill)",
+                        f64_from_usize(
+                          usize::try_from(pool.pool_cap_bytes)
+                            .unwrap_or(usize::MAX)
+                        ) / GIB
+                      ),
+                    ));
+                  },
                 }
-              },
-            }
+                progress(1);
+                requeue(origin, seq + 1, e + 1, hi, 0);
+              }
+            },
           }
           in_flight.fetch_sub(1, Ordering::AcqRel);
         }
@@ -1112,14 +1125,22 @@ pub fn execute_env(
   // the residency the worker fleet's record budget sits on top of.
   let baseline_gib = process_rss_gib();
   let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-  let pool_gib =
-    ram.mul_add(POOL_RAM_FRAC, -(baseline_gib + OS_RESERVE_GIB)).max(8.0);
+  // Fleet bound by construction: Σ worker slices + big lane + parent +
+  // OS reserve = box RAM. Width goes to the core count when the pool
+  // affords a floor slice per worker.
+  let pool_gib = (ram - baseline_gib - OS_RESERVE_GIB - BIG_LANE_GIB)
+    .max(SLICE_FLOOR_GIB);
   let workers =
     bound_workers_by_pool(workers, pool_gib, proc_workers.is_some());
-  // Record drop: each worker's even share of the measured headroom —
-  // segments cut (and drop their record) when they reach it.
-  let record_cut_gib = (pool_gib / f64_from_usize(workers)).clamp(4.0, 64.0);
-  let n_chunks = (workers * 2).min(blocks.len());
+  // Record drop: each worker's even slice of the pool — segments cut
+  // (and drop their record) when the record's exact heap reaches it.
+  let record_cut_gib = (pool_gib / f64_from_usize(workers))
+    - WORKER_BASELINE_GIB
+    - CLAIM_HEADROOM_GIB;
+  let record_cut_gib = record_cut_gib.max(1.0);
+  let n_chunks = (blocks.len() / CHUNK_TARGET_BLOCKS)
+    .max(workers * 2)
+    .min(blocks.len());
   eprintln!(
     "[exec] {} blocks, {workers} workers over {n_chunks} chunks, record \
      drop at {record_cut_gib:.1} GiB, {batch_blocks} blocks per claim",
@@ -1144,13 +1165,8 @@ pub fn execute_env(
   };
   let segments = match proc_workers {
     Some((bin, ixe)) => {
-      // Fastest wall without OOM: execution has no prove-cut constraint
-      // on segment size, so width goes to the core count and the cap is
-      // whatever the pool affords per worker — smaller segments cost
-      // only a few percent of cold-boundary work.
-      let cap_gib =
-        (pool_gib / f64_from_usize(workers)).clamp(WORKER_CAP_FLOOR_GIB, 64.0);
-      let soft_gib = (cap_gib - WORKER_OVERHEAD_GIB).max(cap_gib / 2.0);
+      let cap_gib = pool_gib / f64_from_usize(workers);
+      let soft_gib = record_cut_gib;
       let capped = systemd_scope_caps_available();
       if !capped {
         eprintln!(
@@ -1175,13 +1191,9 @@ pub fn execute_env(
         pieces: sched_pieces,
         exec_only: true,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        // The BIG lane's cap is the headroom that remains when every
-        // slot is at its cap — never the pool itself, which would let a
-        // big measurement plus a full fleet overcommit the box.
-        pool_cap_bytes: gib_to_bytes_u64(
-          (ram - pool_gib - baseline_gib - OS_RESERVE_GIB)
-            .max(2.0 * WORKER_CAP_FLOOR_GIB),
-        ),
+        // The BIG lane's budget is reserved out of the pool up front, so
+        // a big measurement plus a full fleet never overcommits the box.
+        pool_cap_bytes: gib_to_bytes_u64(BIG_LANE_GIB),
         big_lane: Mutex::new(()),
         order_file,
         capped,
@@ -1288,26 +1300,28 @@ pub fn scan_shards(
   // the residency the worker pool's budget sits on top of.
   let baseline_gib = process_rss_gib();
   // Width-first sizing, uniform for every env and budget: full-core
-  // width, and each worker's cap is its even share of the pool. Segments
-  // cut at the additive soft ceiling below the cap, so the budget only
-  // sets the MERGE target — scan wall never depends on the prove budget.
-  // Content denser than the cap is a per-block event: the cgroup kill
-  // names it, and the big-lane retry (whole-pool cap, serialized) rescues
-  // blocks that are heavy but provable.
+  // width, each worker's cap its even slice of the pool, and the record
+  // threshold (exact heap bytes) set so baseline + one claim's growth
+  // still fits under the cap — the kernel kill is a backstop, not the
+  // routine mechanism. The prove budget only sets the CUT and the merge
+  // target; scan wall never depends on it. Blocks too heavy for a slice
+  // escalate to the reserved big lane (serialized) or are named.
   let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-  let pool_gib =
-    ram.mul_add(POOL_RAM_FRAC, -(baseline_gib + OS_RESERVE_GIB)).max(8.0);
+  // Fleet bound by construction: Σ worker slices + big lane + parent +
+  // OS reserve = box RAM.
+  let pool_gib = (ram - baseline_gib - OS_RESERVE_GIB - BIG_LANE_GIB)
+    .max(SLICE_FLOOR_GIB);
   let workers =
     bound_workers_by_pool(workers, pool_gib, proc_workers.is_some());
   let proc_cap_gib = proc_workers.map(|_| {
     std::env::var("IX_SCAN_WORKER_CAP_GIB")
       .ok()
       .and_then(|v| v.parse::<f64>().ok())
-      .unwrap_or_else(|| {
-        (pool_gib / f64_from_usize(workers)).clamp(WORKER_CAP_FLOOR_GIB, 64.0)
-      })
+      .unwrap_or_else(|| pool_gib / f64_from_usize(workers))
   });
-  let n_chunks = (workers * 2).min(blocks.len());
+  let n_chunks = (blocks.len() / CHUNK_TARGET_BLOCKS)
+    .max(workers * 2)
+    .min(blocks.len());
   eprintln!(
     "[scan] {} blocks, {workers} workers over {n_chunks} chunks, cut at \
      {cut_used_gib:.1} GiB predicted prove RSS (margin \
@@ -1336,7 +1350,8 @@ pub fn scan_shards(
   let segments = match proc_workers {
     Some((bin, ixe)) => {
       let cap_gib = proc_cap_gib.unwrap_or(16.0);
-      let soft_gib = (cap_gib - WORKER_OVERHEAD_GIB).max(cap_gib / 2.0);
+      let soft_gib =
+        (cap_gib - WORKER_BASELINE_GIB - CLAIM_HEADROOM_GIB).max(1.0);
       let order_file = std::env::temp_dir()
         .join(format!("ix-scan-order-{}.bin", std::process::id()));
       write_order_file(&order_file, &blocks, &order)?;
@@ -1361,13 +1376,9 @@ pub fn scan_shards(
         pieces: sched_pieces,
         exec_only: false,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        // The BIG lane's cap is the headroom that remains when every
-        // slot is at its cap — never the pool itself, which would let a
-        // big measurement plus a full fleet overcommit the box.
-        pool_cap_bytes: gib_to_bytes_u64(
-          (ram - pool_gib - baseline_gib - OS_RESERVE_GIB)
-            .max(2.0 * WORKER_CAP_FLOOR_GIB),
-        ),
+        // The BIG lane's budget is reserved out of the pool up front, so
+        // a big measurement plus a full fleet never overcommits the box.
+        pool_cap_bytes: gib_to_bytes_u64(BIG_LANE_GIB),
         big_lane: Mutex::new(()),
         order_file,
         capped,
@@ -1623,7 +1634,7 @@ fn scan_range(
         break (hi, prev_fft, prev_ram);
       }
       let fft = record_fft_cost(ctx.toplevel, &record);
-      let rec_gib = f64_from_usize(record_retained_bytes(&record)) / GIB;
+      let rec_gib = f64_from_usize(record_heap_bytes(&record)) / GIB;
       // The cut measure: for the scan, the analytic peak-prove-RSS
       // prediction from the record's circuit shapes; for execute-only
       // segments (which exist only to bound the live record), the
@@ -1671,7 +1682,7 @@ fn scan_range(
       eprintln!(
         "[scan {chunk_id}/{n_chunks}] segment: {} blocks, {:.2} BFFT, \
          {:.1}G {}, {}/{} blocks done, {:.0}s, rss {:.0}G, arena {}M, \
-         iomap {}k, rec {}M",
+         iomap {}k, rec {}M entries/{:.1}G heap",
         seg_end - lo,
         seg_fft / 1e9,
         seg_ram,
@@ -1682,7 +1693,8 @@ fn scan_range(
         process_rss_gib(),
         arena_g / 1_000_000,
         io.map.len() / 1000,
-        rec_e / 1_000_000
+        rec_e / 1_000_000,
+        f64_from_usize(record_heap_bytes(&record)) / GIB
       );
       segments.push(Segment {
         blocks: chunk[lo..seg_end].to_vec(),
