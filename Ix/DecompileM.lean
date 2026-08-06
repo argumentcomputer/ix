@@ -641,20 +641,27 @@ def decompileMetaCtx (cMeta : ConstantMeta) : DecompileM (Array Ix.Name) := do
   let env ← getEnv
   pure <| (getCtxAddrs cMeta).filterMap fun addr => env.ixonEnv.names.get? addr
 
-/-- Build a BlockCtx from a Constant. -/
+/-- Build a BlockCtx from a Constant plus its per-constant metadata
+    wrapper. `metaRefs`/`metaUnivs` extend the primary tables — the
+    documented virtual-address contract (mirrors Rust
+    `load_meta_extensions`); `metaSharing` rides its own dedicated field
+    for surgery replay. The context is rebuilt per constant, so
+    extensions never leak across sibling constants of a block. -/
 def mkBlockCtx (cnst : Constant) (mutCtx : Array Ix.Name)
     (univParams : Array Ix.Name) (arena : ExprMetaArena)
-    (metaSharing : Array Ixon.Expr := #[]) : BlockCtx :=
-  { refs := cnst.refs, univs := cnst.univs, sharing := cnst.sharing,
-    mutCtx, univParams, arena, metaSharing }
+    (cMeta : ConstantMeta := {}) : BlockCtx :=
+  { refs := cnst.refs ++ cMeta.metaRefs,
+    univs := cnst.univs ++ cMeta.metaUnivs,
+    sharing := cnst.sharing,
+    mutCtx, univParams, arena, metaSharing := cMeta.metaSharing }
 
 /-- Run with fresh block context and state. -/
 def withFreshBlock (cnst : Constant) (mutCtx : Array Ix.Name)
     (univParams : Array Ix.Name) (arena : ExprMetaArena)
-    (metaSharing : Array Ixon.Expr := #[])
+    (cMeta : ConstantMeta := {})
     (m : DecompileM α) : DecompileM α := do
   let env ← getEnv
-  match DecompileM.run env (mkBlockCtx cnst mutCtx univParams arena metaSharing) {} m with
+  match DecompileM.run env (mkBlockCtx cnst mutCtx univParams arena cMeta) {} m with
   | .ok (a, _) => pure a
   | .error e => throw e
 
@@ -682,7 +689,7 @@ def decompileDefinition (d : Ixon.Definition) (cnst : Constant) (cMeta : Constan
     | some named => named.hints.getD .opaque
     | none => .opaque
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst mutCtx univParams arena (metaSharing := cMeta.metaSharing) do
+  withFreshBlock cnst mutCtx univParams arena (cMeta := cMeta) do
     let typeExpr ← decompileExpr d.typ typeRoot
     let valueExpr ← decompileExpr d.value valueRoot
     let cv : Ix.ConstantVal := { name, levelParams := univParams, type := typeExpr }
@@ -696,7 +703,7 @@ def decompileAxiom (a : Ixon.Axiom) (cnst : Constant) (cMeta : ConstantMeta)
   let name ← decompileMetaName cMeta
   let univParams ← decompileMetaLevels cMeta
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst #[] univParams arena (metaSharing := cMeta.metaSharing) do
+  withFreshBlock cnst #[] univParams arena (cMeta := cMeta) do
     let typeExpr ← decompileExpr a.typ typeRoot
     pure (.axiomInfo { cnst := { name, levelParams := univParams, type := typeExpr }, isUnsafe := a.isUnsafe })
 
@@ -705,7 +712,7 @@ def decompileQuotient (q : Ixon.Quotient) (cnst : Constant) (cMeta : ConstantMet
   let name ← decompileMetaName cMeta
   let univParams ← decompileMetaLevels cMeta
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst #[] univParams arena (metaSharing := cMeta.metaSharing) do
+  withFreshBlock cnst #[] univParams arena (cMeta := cMeta) do
     let typeExpr ← decompileExpr q.typ typeRoot
     pure (.quotInfo { cnst := { name, levelParams := univParams, type := typeExpr }, kind := toIxQuotKind q.kind })
 
@@ -715,7 +722,7 @@ def decompileConstructor (ctor : Ixon.Constructor) (cnst : Constant)
   let name ← decompileMetaName cMeta
   let univParams ← decompileMetaLevels cMeta
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst #[] univParams arena (metaSharing := cMeta.metaSharing) do
+  withFreshBlock cnst #[] univParams arena (cMeta := cMeta) do
     let typeExpr ← decompileExpr ctor.typ typeRoot
     pure { cnst := { name, levelParams := univParams, type := typeExpr },
            induct := inductName, cidx := ctor.cidx.toNat,
@@ -732,7 +739,7 @@ def decompileRecursor (rec : Ixon.Recursor) (cnst : Constant) (cMeta : ConstantM
     | .recr _ _ rules _ _ _ _ ruleRoots => (ruleRoots, rules)
     | _ => (#[], #[])
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  withFreshBlock cnst mutCtx univParams arena (metaSharing := cMeta.metaSharing) do
+  withFreshBlock cnst mutCtx univParams arena (cMeta := cMeta) do
     let typeExpr ← decompileExpr rec.typ typeRoot
     let ruleNames ← ruleAddrs.mapM lookupNameAddr
     let mut rules : Array Ix.RecursorRule := #[]
@@ -756,7 +763,7 @@ def decompileInductive (ind : Ixon.Inductive) (cnst : Constant) (cMeta : Constan
   let ctorNameAddrs := match cMeta.info with
     | .indc _ _ ctors .. => ctors | _ => #[]
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
-  let typeExpr ← withFreshBlock cnst mutCtx univParams arena (metaSharing := cMeta.metaSharing) do
+  let typeExpr ← withFreshBlock cnst mutCtx univParams arena (cMeta := cMeta) do
     decompileExpr ind.typ typeRoot
   let env ← getEnv
   let mut ctors : Array Ix.ConstructorVal := #[]
