@@ -276,7 +276,12 @@ const OS_RESERVE_GIB: f64 = 12.0;
 /// Smallest useful child cap; also bounds the auto worker count
 /// (`pool / floor`), so caps never shrink below what a segment's
 /// overhead needs.
-const WORKER_CAP_FLOOR_GIB: f64 = 6.0;
+/// Sized so a COLD first batch fits: a fresh segment's opening claim
+/// re-derives its shared dependencies in one execution, and on dense
+/// content (FLT) that working set measured ~4-7 GiB — a 6 GiB floor made
+/// the kill-and-narrow path the common case (490 deaths, ~39% of all
+/// execution spent on narrowing) instead of the rare one.
+const WORKER_CAP_FLOOR_GIB: f64 = 9.0;
 
 /// Auto worker counts shrink until every child's even share of the pool
 /// clears the cap floor; explicit counts and thread mode pass through.
@@ -880,7 +885,6 @@ fn run_pool_procs(
             continue;
           };
           let mut cursor = lo;
-          let mut retried_at: Option<usize> = None;
           let commit =
             |reply: ScanReply, origin: u32, seq: u32| -> Result<usize, ()> {
               if !reply.segs.is_empty() {
@@ -948,9 +952,12 @@ fn run_pool_procs(
                   "[scan] worker {slot} died ({status}) at index {e}; \
                    respawned"
                 );
-                if retried_at == Some(e) {
-                  // Second death with zero progress: narrow one batch
-                  // window with unit ranges to name the culprit.
+                {
+                  // A capped worker's death is self-caused and (measured
+                  // 244/246 on FLT) deterministic — retrying the same
+                  // range re-executes exactly the batch that proved too
+                  // big. Narrow the dying batch immediately: unit ranges
+                  // name the culprit or measure it on the big lane.
                   let window = (e + pool.batch_blocks).min(hi);
                   let mut b = e;
                   while b < window {
@@ -1034,10 +1041,6 @@ fn run_pool_procs(
                     b += 1;
                   }
                   cursor = window;
-                  retried_at = None;
-                } else {
-                  retried_at = Some(e);
-                  cursor = e;
                 }
               },
             }
