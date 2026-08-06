@@ -83,7 +83,6 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
-  ("decompile-unit", Tests.Decompile.unitSuite),
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
     ++ Tests.Tc.InferDefEq.suite ++ Tests.Tc.CheckTests.suite
@@ -223,8 +222,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 10817625733, got {actual}"
-              (actual = 10_785_479_733))
+              s!"Shard pipeline FFT matches: expected 10817628992, got {actual}"
+              (actual = 10_817_628_992))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),

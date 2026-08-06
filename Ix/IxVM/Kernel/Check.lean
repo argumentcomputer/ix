@@ -1852,6 +1852,15 @@ def check := ⟦
   -- Peel n Foralls; for each binder j substitute per is_aux:
   -- non-aux: BVar(n_rec_params - 1 - j).
   -- aux: spec_params[j] when j < |spec_params|, else BVar(n_rec_params - 1 - j).
+  --
+  -- Structural first, whnf only as a fallback: a param binder can hide
+  -- behind a definitional wrapper (whnf of a Forall is itself, so
+  -- structural-first gives the same answer cheaper). Mirrors
+  -- `build_motive_type_flat` in crates/kernel/src/inductive.rs, which
+  -- whnfs before every peel and BREAKS on a non-Forall — tolerant on
+  -- purpose: a short telescope yields a reconstruction the caller's
+  -- def-eq assert rejects with an accurate message, instead of an
+  -- unmatched-case abort here.
   fn peel_motive_params_subst(ty: KExpr, n: G, n_rec_params: G,
                                     is_aux: G, spec_params: List‹KExpr›,
                                     j: G) -> KExpr {
@@ -1864,6 +1873,16 @@ def check := ⟦
             let body_substed = expr_inst1(body, p, 0);
             peel_motive_params_subst(body_substed, n - 1, n_rec_params,
               is_aux, spec_params, j + 1),
+          _ =>
+            match load(whnf(ty, store(ListNode.Nil))) {
+              KExprNode.Forall(_, body) =>
+                let p = subst_param_for(j, n_rec_params, is_aux,
+                  spec_params);
+                let body_substed = expr_inst1(body, p, 0);
+                peel_motive_params_subst(body_substed, n - 1,
+                  n_rec_params, is_aux, spec_params, j + 1),
+              _ => ty,
+            },
         },
     }
   }
@@ -1871,6 +1890,10 @@ def check := ⟦
   -- Mirror crates/kernel/src/inductive.rs — whnf before each peel.
   -- Index binders can hide under definitional wrappers (e.g. a result type
   -- `Set σ` only exposes its `σ → Prop` index binder after whnf).
+  -- Structural first (whnf of a Forall is itself); tolerant stop on a
+  -- non-Forall after reduction, mirroring the reference's `break`: the
+  -- short telescope makes the reconstruction differ and the caller's
+  -- def-eq assert rejects with an accurate message.
   fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
     match n {
       0 => store(ListNode.Nil),
@@ -1878,6 +1901,12 @@ def check := ⟦
         match load(ty) {
           KExprNode.Forall(dom, body) =>
             store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+          _ =>
+            match load(whnf(ty, store(ListNode.Nil))) {
+              KExprNode.Forall(dom, body) =>
+                store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+              _ => store(ListNode.Nil),
+            },
         },
     }
   }
@@ -2486,8 +2515,8 @@ def check := ⟦
                           flat_own_params: List‹G›,
                           is_aux: G, spec_params: List‹KExpr›) -> KExpr {
     let ctor_ty_inst = expr_inst_levels(ctor_ty, occurrence_us);
-    let after_params_raw = peel_n_foralls(ctor_ty_inst, n_own_params);
-    let n_fields = count_foralls_body(after_params_raw, 0);
+    let after_params_raw = peel_n_foralls_whnf_tol(ctor_ty_inst, n_own_params);
+    let n_fields = count_foralls_whnf(after_params_raw, 0);
     let body_depth = ((n_params + n_motives) + n_minors) + n_fields;
     -- Peel into the recursor-param frame, not the final body frame:
     -- apply_ihs_full's two lifts already carry a field domain from the
@@ -2738,11 +2767,35 @@ def check := ⟦
     }
   }
 
-  -- Count remaining leading Foralls in a type (until non-Forall).
-  fn count_foralls_body(ty: KExpr, acc: G) -> G {
+  -- Whnf-tolerant variants for the rule-rhs counting pass, mirroring
+  -- build_rule_rhs pass 1 in crates/kernel/src/inductive.rs: whnf before
+  -- every step (a binder can hide behind a definitional wrapper), stop
+  -- early on a non-Forall after reduction. Structural first — whnf of a
+  -- Forall is itself, so this is the same answer cheaper.
+  fn peel_n_foralls_whnf_tol(ty: KExpr, n: G) -> KExpr {
+    match n {
+      0 => ty,
+      _ =>
+        match load(ty) {
+          KExprNode.Forall(_, body) => peel_n_foralls_whnf_tol(body, n - 1),
+          _ =>
+            match load(whnf(ty, store(ListNode.Nil))) {
+              KExprNode.Forall(_, body) =>
+                peel_n_foralls_whnf_tol(body, n - 1),
+              _ => ty,
+            },
+        },
+    }
+  }
+
+  fn count_foralls_whnf(ty: KExpr, acc: G) -> G {
     match load(ty) {
-      KExprNode.Forall(_, body) => count_foralls_body(body, acc + 1),
-      _ => acc,
+      KExprNode.Forall(_, body) => count_foralls_whnf(body, acc + 1),
+      _ =>
+        match load(whnf(ty, store(ListNode.Nil))) {
+          KExprNode.Forall(_, body) => count_foralls_whnf(body, acc + 1),
+          _ => acc,
+        },
     }
   }
 
@@ -2776,6 +2829,11 @@ def check := ⟦
                 let body_substed = expr_inst1(body, p, 0);
                 peel_ctor_params_subst(body_substed, n - 1, depth,
                   spec_lift, is_aux, spec_params, j + 1),
+              -- Tolerant stop, mirroring the reference's `break`
+              -- (crates/kernel/src/inductive.rs build_minor_at_depth): the
+              -- short telescope makes the reconstruction differ and the
+              -- caller's def-eq assert rejects with an accurate message.
+              _ => ty,
             },
         },
     }
@@ -2840,7 +2898,18 @@ def check := ⟦
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         peel_leading_foralls_acc(body, store(ListNode.Cons(dom, acc))),
-      _ => (acc, ty),
+      _ =>
+        -- An xs binder of a recursive field can hide behind a definitional
+        -- wrapper; the reference (build_direct_ih,
+        -- crates/kernel/src/inductive.rs) whnfs before every step of this
+        -- walk and breaks on a non-Forall. Un-reduced `ty` on the stop
+        -- arm: the caller reduces the inner body itself before reading
+        -- its spine.
+        match load(whnf(ty, store(ListNode.Nil))) {
+          KExprNode.Forall(dom, body) =>
+            peel_leading_foralls_acc(body, store(ListNode.Cons(dom, acc))),
+          _ => (acc, ty),
+        },
     }
   }
 
@@ -3078,8 +3147,30 @@ def check := ⟦
             walk_fields_classify(body, flat, new_doms, rec_acc,
               rec_mem_acc, fidx + 1, spec_lift_by),
         },
-      _ => (list_reverse(doms_acc), list_reverse(rec_acc),
-              list_reverse(rec_mem_acc), ty),
+      _ =>
+        -- A field binder can hide behind a definitional wrapper. The
+        -- reference (build_minor_at_depth, crates/kernel/src/inductive.rs)
+        -- whnfs before every field step and breaks on a non-Forall; on a
+        -- reveal, continue the walk with the REDUCED binder, else stop
+        -- with the UN-reduced type as the return type (the reference's
+        -- `ty` is not overwritten by the failed whnf probe).
+        match load(whnf(ty, store(ListNode.Nil))) {
+          KExprNode.Forall(dom, body) =>
+            let r = is_rec_field(dom, flat, spec_lift_by + fidx);
+            let new_doms = store(ListNode.Cons(dom, doms_acc));
+            match r {
+              (1, mem_idx) =>
+                let new_rec = store(ListNode.Cons(fidx, rec_acc));
+                let new_mem = store(ListNode.Cons(mem_idx, rec_mem_acc));
+                walk_fields_classify(body, flat, new_doms, new_rec,
+                  new_mem, fidx + 1, spec_lift_by),
+              _ =>
+                walk_fields_classify(body, flat, new_doms, rec_acc,
+                  rec_mem_acc, fidx + 1, spec_lift_by),
+            },
+          _ => (list_reverse(doms_acc), list_reverse(rec_acc),
+                  list_reverse(rec_mem_acc), ty),
+        },
     }
   }
 
