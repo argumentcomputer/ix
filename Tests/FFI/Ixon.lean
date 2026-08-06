@@ -7,6 +7,7 @@ module
 public import LSpec
 public import Tests.Gen.Ixon
 public import Ix.Ixon
+public import Ix.IxonUniv
 
 public section
 
@@ -213,6 +214,15 @@ def constantMetaTests : TestSeq :=
 
 @[extern "rs_eq_univ_serialization"]
 opaque rsEqUnivSerialization : @& Univ → @& ByteArray → Bool
+
+/-- P5 mirror parity (canonicity §10.6): Rust `canon_univ` of arg 1
+    equals the Lean-computed canonical form (arg 2) structurally. -/
+@[extern "rs_canon_univ_matches"]
+opaque rsCanonUnivMatches : @& Univ → @& Univ → Bool
+
+/-- Twin parity for the frozen `mk*` rebuild closure. -/
+@[extern "rs_reduce_univ_matches"]
+opaque rsReduceUnivMatches : @& Univ → @& Univ → Bool
 
 @[extern "rs_eq_expr_serialization"]
 opaque rsEqExprSerialization : @& Expr → @& ByteArray → Bool
@@ -611,6 +621,18 @@ def suite : List TestSeq := [
     (∀ env : RawEnv, selfDiffEmpty true env),
   ---- Env pack
   envPackTests,
+  ---- Universe canonicalization mirror parity (canonicity §10.6, P5).
+  -- Exhaustive over all ≤6-node terms (3 params): the property-relevant
+  -- shapes — nested imax at depth ≥ 3 — sit outside `genUniv`'s
+  -- shallow-resized sampling, and the sweep is deterministic and cheap.
+  checkIO "Ixon.canonUniv mirror parity (exhaustive ≤6 nodes)"
+    ((Tests.Gen.Ixon.enumerateUniv 6).all fun u =>
+      rsCanonUnivMatches u (Ixon.canonUniv u)),
+  checkIO "Ixon.reduceUniv mirror parity (exhaustive ≤6 nodes)"
+    ((Tests.Gen.Ixon.enumerateUniv 6).all fun u =>
+      rsReduceUnivMatches u (Ixon.reduceUniv u)),
+  checkIO "Ixon.canonUniv mirror parity (sampled)"
+    (∀ x : Univ, rsCanonUnivMatches x (Ixon.canonUniv x)),
 ]
 
 end Tests.FFI.Ixon
