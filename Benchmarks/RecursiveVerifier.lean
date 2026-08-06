@@ -26,7 +26,7 @@ lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/ex
   --queries N      FRI query count (default 100 = soundness level; pass a
                    small value for a cheap local run)
   --log-blowup N   log2 blowup            (default 2)
-  --pow N          query PoW bits         (default 20)
+  --pow N          query PoW bits         (default 0)
   --json <path>    write a benchmark results row (Ix.Benchmark.Results); the
                    row lands after the verifier execute and is refined after
                    the outer prove, so a kill mid-prove keeps the execute

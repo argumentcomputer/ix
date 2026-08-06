@@ -342,8 +342,8 @@ def findBackend (name : String) : Option BackendSpec :=
 
 /-- The `aiur-recursive` backend's rows: fixed IxVM statements, proved and
     recursively verified by `bench-typecheck --recursive` under the
-    recursion-tuned parameters (the ~100-query count IS the soundness
-    level, so this benchmarks *secure* recursion). The two constants span
+    recursion-tuned parameters (50 queries at log-blowup 2, ~100-bit
+    soundness — this benchmarks *secure* recursion). The two constants span
     the IxVM cost range: `Nat.add_comm` (cheap tier — the small end) and
     `Array.extract_append` (heavy tier — kernel scale). A stage that
     exceeds the CI RAM ceiling lands as an OOM row — the honest signal
