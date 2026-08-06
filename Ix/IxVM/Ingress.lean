@@ -348,10 +348,10 @@ let block_c = load_verified_constant(block_addr);
   -- constructor count.
   fn idx_to_u64(idx: G) -> U64 {
     let [h0, h1, h2, h3, h4, h5, h6, h7] = unconstrained_g_to_bytes(idx);
-    let (b0, b1) = u8_range_check(to_field(h0), to_field(h1));
-    let (b2, b3) = u8_range_check(to_field(h2), to_field(h3));
-    let (b4, b5) = u8_range_check(to_field(h4), to_field(h5));
-    let (b6, b7) = u8_range_check(to_field(h6), to_field(h7));
+    let (b0, b1) = u8_range_check(h0, h1);
+    let (b2, b3) = u8_range_check(h2, h3);
+    let (b4, b5) = u8_range_check(h4, h5);
+    let (b6, b7) = u8_range_check(h6, h7);
     let bytes = [b0, b1, b2, b3, b4, b5, b6, b7];
     -- `flatten_u64` contributes the top-byte-is-zero assert and the sum.
     -- It does NOT range-check its input and so is not injective on its

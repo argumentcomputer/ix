@@ -29,7 +29,31 @@ namespace Source.Eval
 
 open Source
 
-/-- Tagged errors — small enum, no messages, for use in proof statements. -/
+abbrev Bindings := List (Local × Value)
+/-- Memory store, width-bucketed to match Rust `src/aiur/execute.rs`
+`memory_queries: HashMap<size, IndexMap<Vec<G>, QueryResult>>`. Each width
+has its own `IndexMap`; `ptrVal` returns the local index within its width's
+bucket. Distinct-width pointers may share the same local index. -/
+abbrev Store    := Std.HashMap Nat (IndexMap (Array Value) Unit)
+
+structure EvalState where
+  store    : Store := {}
+  ioBuffer : IOBuffer
+  deriving Inhabited
+
+/-- Opaque `Repr` so `SourceError` (whose `earlyReturn` sentinel carries the
+state) can keep its derived instance; the state itself is not printable. -/
+instance : Repr EvalState := ⟨fun _ _ => .text "<EvalState>"⟩
+
+/-- Tagged errors — small enum, no messages, for use in proof statements.
+
+The `earlyReturn` case is NOT an error: it is the escape channel for an
+explicit `return` inside a function body (e.g. in a non-tail match arm).
+It rides the `Except` error track so that every intermediate combinator
+propagates it for free, and is unwrapped back into a normal result at the
+function-call boundary (`applyGlobal`) — mirroring the Rust executor,
+where `Ctrl::Return` unwinds the continuation stack and exits the
+function. It never escapes `runFunction`. -/
 inductive SourceError
   | outOfFuel
   | unboundVar (l : Local)
@@ -46,19 +70,8 @@ inductive SourceError
   | invalidPointer (n : Nat)
   | notCallable (g : Global)
   | notAFunctionValue
+  | earlyReturn (v : Value) (st : EvalState)
   deriving Repr, Inhabited
-
-abbrev Bindings := List (Local × Value)
-/-- Memory store, width-bucketed to match Rust `src/aiur/execute.rs`
-`memory_queries: HashMap<size, IndexMap<Vec<G>, QueryResult>>`. Each width
-has its own `IndexMap`; `ptrVal` returns the local index within its width's
-bucket. Distinct-width pointers may share the same local index. -/
-abbrev Store    := Std.HashMap Nat (IndexMap (Array Value) Unit)
-
-structure EvalState where
-  store    : Store := {}
-  ioBuffer : IOBuffer
-  deriving Inhabited
 
 /-- Result of evaluation: either a successful value+state pair, or an error. -/
 abbrev EvalResult := Except SourceError (Value × EvalState)
@@ -118,6 +131,116 @@ def tryLocalLookup (g : Global) (bindings : Bindings) : Option Value :=
   | .str .anonymous name => bindings.find? (·.1 == Local.str name) |>.map (·.2)
   | _                    => none
 
+/-- Store `v` in its width bucket (width = flat size), content-deduped;
+returns the pointer value. Shared by the `.store` arm and the
+`unconstrainedBigUintDivMod` chain builder, so hint chains allocate
+identically to program stores. -/
+def storeValue (decls : Decls) (st : EvalState) (v : Value) : Value × EvalState :=
+  let w := (flattenValue decls (fun _ => none) v).size
+  let inner := st.store[w]?.getD (default : IndexMap (Array Value) Unit)
+  if let some idx := inner.getIdxOf #[v] then
+    (.pointer w idx, st)
+  else
+    let idx := inner.size
+    let inner' := inner.insert #[v] ()
+    (.pointer w idx, { st with store := st.store.insert w inner' })
+
+/-- Dereference a `(width, index)` pointer. -/
+def loadValue (st : EvalState) (w n : Nat) : Except SourceError Value :=
+  match st.store[w]? with
+  | some inner =>
+    match inner.getByIdx n with
+    | some (vs, _) =>
+      match vs[0]? with
+      | some v => .ok v
+      | none   => .error (.invalidPointer n)
+    | none => .error (.invalidPointer n)
+  | none => .error (.invalidPointer n)
+
+/-! ### `List<U64>` limb chains (`unconstrainedBigUintDivMod`)
+
+Value-level mirror of `read_klimbs_u64` / `build_klimbs_u64` in
+`crates/aiur/src/execute.rs`: nodes are two-constructor list values —
+constructor 0 = Cons(limb, rest), constructor 1 = Nil — with `[U8; 8]`
+limb bytes, little-endian within the u64 and head-first across limbs. -/
+
+/-- Datatype and declaration-index (= runtime tag) of a constructor. -/
+def ctorInfo (decls : Decls) (g : Global) :
+    Except SourceError (DataType × Nat) :=
+  match decls.getByKey g with
+  | some (.constructor dt ctor) =>
+    .ok (dt, dt.constructors.findIdx? (· == ctor) |>.getD 0)
+  | _ => .error (.unboundGlobal g)
+
+/-- Walk a limb-chain pointer value, returning the node datatype and the
+limbs head-first. `steps` bounds the walk (a chain longer than the store
+must revisit a pointer, i.e. a malformed cycle). -/
+def readLimbChain (decls : Decls) (st : EvalState) :
+    Nat → Value → Except SourceError (DataType × List (Array G))
+  | 0, _ => .error (.typeMismatch "unconstrainedBigUintDivMod: cyclic limb list")
+  | steps+1, ptrVal => do
+    match ptrVal with
+    | .pointer w n =>
+      match ← loadValue st w n with
+      | .ctor g args =>
+        let (dt, tag) ← ctorInfo decls g
+        if tag == 1 then pure (dt, [])
+        else if tag == 0 then
+          match args with
+          | #[.array byteVals, rest] =>
+            let bytes ← byteVals.mapM fun bv =>
+              match bv with
+              | .field b =>
+                if b.val < 256 then pure b
+                else throw (.typeMismatch
+                  "unconstrainedBigUintDivMod: limb byte out of range")
+              | _ => throw (.typeMismatch
+                  "unconstrainedBigUintDivMod: limb byte not a field")
+            if bytes.size == 8 then do
+              let (_, restLimbs) ← readLimbChain decls st steps rest
+              pure (dt, bytes :: restLimbs)
+            else throw (.typeMismatch
+              "unconstrainedBigUintDivMod: limb is not [U8; 8]")
+          | _ => throw (.typeMismatch
+              "unconstrainedBigUintDivMod: malformed Cons node")
+        else throw (.typeMismatch
+          "unconstrainedBigUintDivMod: unexpected constructor tag")
+      | _ => throw (.typeMismatch
+          "unconstrainedBigUintDivMod: node is not a constructor")
+    | _ => throw (.typeMismatch
+        "unconstrainedBigUintDivMod: input is not a pointer")
+
+/-- Build a limb chain from head-first `limbs` using the given Cons/Nil
+constructor names; returns the head pointer value. Same order as the Rust
+builder (Nil first, then limbs in reverse). -/
+def buildLimbChain (decls : Decls) (consG nilG : Global) (st : EvalState) :
+    List (Array G) → Value × EvalState
+  | [] => storeValue decls st (.ctor nilG #[])
+  | limb :: rest =>
+    let (restPtr, st') := buildLimbChain decls consG nilG st rest
+    storeValue decls st' (.ctor consG #[.array (limb.map .field), restPtr])
+
+/-- Semantic model of `unconstrainedBigUintDivMod` on already-evaluated
+pointer values: walk both chains, divide as `Nat` (which matches the
+runtime's `b = 0 → (0, a)` convention), and rebuild canonical result
+chains with the input's own constructors. -/
+def bigUintDivModValue (decls : Decls) (aPtr bPtr : Value)
+    (st : EvalState) : EvalResult := do
+  let bound := st.store.fold (init := 1) fun acc _ inner => acc + inner.size
+  let (dt, aLimbs) ← readLimbChain decls st bound aPtr
+  let (_, bLimbs) ← readLimbChain decls st bound bPtr
+  match dt.constructors[0]?, dt.constructors[1]? with
+  | some cons, some nil =>
+    let consG := dt.name.pushNamespace cons.nameHead
+    let nilG := dt.name.pushNamespace nil.nameHead
+    let aVal := limbsVal aLimbs
+    let bVal := limbsVal bLimbs
+    let (qPtr, st1) := buildLimbChain decls consG nilG st (natToLimbsLE (aVal / bVal))
+    let (rPtr, st2) := buildLimbChain decls consG nilG st1 (natToLimbsLE (aVal % bVal))
+    pure (.tuple #[qPtr, rPtr], st2)
+  | _, _ => throw (.typeMismatch
+      "unconstrainedBigUintDivMod: datatype has fewer than two constructors")
+
 /-- Array's `sizeOf` strictly exceeds its `toList`'s `sizeOf`. Used in
 termination proofs that go from `interp .tuple ts` to `evalList ts.toList`. -/
 private theorem sizeOf_toList_lt {α : Type} [SizeOf α] (a : Array α) :
@@ -160,6 +283,7 @@ def applyGlobal (decls : Decls) (fuel : Nat) (g : Global) (args : List Value)
         else
           let bindings := f.inputs.map (·.1) |>.zip args
           match interp decls fuel bindings f.body st with
+          | .error (.earlyReturn v st') => .ok (v, st')
           | .error e => .error e
           | .ok (v, st') => .ok (v, st')
     | some (.constructor _ _) => .ok (.ctor g args.toArray, st)
@@ -205,10 +329,13 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       | .ok (vs, st') => .ok (.array vs, st')
   | .ann _ t => interp decls fuel bindings t st
   | .ret sub =>
-      -- Explicit returns only appear inside function bodies; the body recursion
-      -- here returns normally (the surrounding caller treats the full body value
-      -- as the return value).
-      interp decls fuel bindings sub st
+      -- Escape to the enclosing function boundary via the `earlyReturn`
+      -- sentinel: a `return` inside a non-tail match arm (or any other
+      -- nested position) must NOT feed the surrounding continuation.
+      -- `applyGlobal`/`runFunction` unwrap it into a normal result.
+      match interp decls fuel bindings sub st with
+      | .error e => .error e
+      | .ok (v, st') => .error (.earlyReturn v st')
   | .let p t1 t2 =>
       match interp decls fuel bindings t1 st with
       | .error e => .error e
@@ -299,7 +426,7 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
         | .ok (arr, st2) =>
           match arr with
           | .array vs =>
-            if n < vs.size then .ok (.array (vs.set! n val), st2)
+            if h : n < vs.size then .ok (.array (vs.set n val), st2)
             else .error (.indexOoB n)
           | _ => .error (.typeMismatch "set")
   | .store t =>
@@ -308,27 +435,17 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       | .ok (v, st') =>
         -- Width-bucketed store (matches Rust `src/aiur/execute.rs:173-191`).
         -- Width = flat size of the stored value (funcIdx-irrelevant for length).
-        let w := (flattenValue decls (fun _ => none) v).size
-        let inner := st'.store[w]?.getD (default : IndexMap (Array Value) Unit)
-        if let some idx := inner.getIdxOf #[v] then
-          .ok (.pointer w idx, st')
-        else
-          let idx := inner.size
-          let inner' := inner.insert #[v] ()
-          let st'' := { st' with store := st'.store.insert w inner' }
-          .ok (.pointer w idx, st'')
+        let (ptr, st'') := storeValue decls st' v
+        .ok (ptr, st'')
   | .load t =>
       match interp decls fuel bindings t st with
       | .error e => .error e
       | .ok (v, st') =>
         match v with
         | .pointer w n =>
-          match st'.store[w]? with
-          | some inner =>
-            match inner.getByIdx n with
-            | some (vs, _) => .ok (vs[0]!, st')
-            | none         => .error (.invalidPointer n)
-          | none => .error (.invalidPointer n)
+          match loadValue st' w n with
+          | .ok v'    => .ok (v', st')
+          | .error e  => .error e
         | _ => .error (.typeMismatch "load")
   | .ptrVal t =>
       match interp decls fuel bindings t st with
@@ -448,18 +565,12 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
             else .error (.typeMismatch "u8RangeCheck")
           | _, _ => .error (.typeMismatch "u8RangeCheck")
   | .unconstrainedBigUintDivMod t1 t2 =>
-      -- TODO(unconstrainedBigUintDivMod): walk both List<U64> pointer chains via the
-      -- store to extract Vec<u8> bytes (LE), compute BigUint div_rem, build two
-      -- fresh ListNode chains, and return `.tuple #[.pointer w q_ptr, .pointer w r_ptr]`.
-      -- The Rust runtime already does this; the reference semantics doesn't yet
-      -- have klimbs/BigUint helpers. Surfacing typeMismatch keeps the source
-      -- evaluator total without committing to a half-baked semantics.
       match interp decls fuel bindings t1 st with
       | .error e => .error e
-      | .ok (_, st1) =>
+      | .ok (aPtr, st1) =>
         match interp decls fuel bindings t2 st1 with
         | .error e => .error e
-        | .ok (_, _) => .error (.typeMismatch "unconstrainedBigUintDivMod")
+        | .ok (bPtr, st2) => bigUintDivModValue decls aPtr bPtr st2
   | .unconstrainedGToBytes t =>
       match interp decls fuel bindings t st with
       | .error e => .error e

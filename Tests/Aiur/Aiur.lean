@@ -7,25 +7,15 @@ public section
 
 open LSpec
 
+-- The PROVING corpus: only functions reachable from the proving cases in
+-- `aiurTestCases` below live here — every function compiles to a circuit
+-- that every proof commits (empty or not). Execution/interpreter coverage
+-- for frontend constructs (data-structure layout, templates, aliases,
+-- single-op wrappers, …) lives in `aiur-cross` (`Tests/Aiur/Cross.lean`).
 def toplevel := ⟦
+  -- Callee for match_lookup_ops and inline_test
   pub fn id(n: G) -> G {
     n
-  }
-
-  pub fn proj1(a: G, _b: G) -> G {
-    a
-  }
-
-  pub fn sum(x: G, y: G) -> G {
-    x + y
-  }
-
-  pub fn prod(x: G, y: G) -> G {
-    x * y
-  }
-
-  pub fn sum_prod(x: G, y: G, z: G) -> G {
-    (x + y) * z
   }
 
   ---------------------------------------------------------------------------
@@ -137,26 +127,11 @@ def toplevel := ⟦
   }
 
   ---------------------------------------------------------------------------
-  -- Memory: store/load
-  ---------------------------------------------------------------------------
-  pub fn store_and_load(x: G) -> G {
-    load(store(x))
-  }
-
-  ---------------------------------------------------------------------------
   -- Enum with 2 constructors, pointer patterns, mutual recursion
   ---------------------------------------------------------------------------
   enum Nat {
     Zero,
     Succ(&Nat)
-  }
-
-  pub fn pointer_match() -> G {
-    let two = Nat.Succ(store(Nat.Succ(store(Nat.Zero))));
-    match two {
-      Nat.Succ(&Nat.Succ(&Nat.Zero)) => 1,
-      _ => 0,
-    }
   }
 
   fn even(m: Nat) -> G {
@@ -173,24 +148,8 @@ def toplevel := ⟦
     }
   }
 
-  pub fn is_0_even() -> G {
-    even(Nat.Zero)
-  }
-
-  pub fn is_1_even() -> G {
-    even(Nat.Succ(store(Nat.Zero)))
-  }
-
   pub fn is_2_even() -> G {
     even(Nat.Succ(store(Nat.Succ(store(Nat.Zero)))))
-  }
-
-  pub fn is_0_odd() -> G {
-    odd(Nat.Zero)
-  }
-
-  pub fn is_1_odd() -> G {
-    odd(Nat.Succ(store(Nat.Zero)))
   }
 
   ---------------------------------------------------------------------------
@@ -257,51 +216,6 @@ def toplevel := ⟦
   }
 
   ---------------------------------------------------------------------------
-  -- Data structure compilation: proj, get, slice, set, destructuring
-  ---------------------------------------------------------------------------
-  pub fn projections(as: (G, G, G, G, G)) -> (G, G) {
-    (proj(as, 1), proj(as, 3))
-  }
-
-  pub fn slice_and_get(as: [G; 5]) -> [G; 2] {
-    let left = as[0 .. 2];
-    let right = as[3 .. 5];
-    [left[1], right[0]]
-  }
-
-  pub fn deconstruct_tuple(as: (G, G, G, G, G)) -> (G, G) {
-    let (_, b, _, d, _) = as;
-    (b, d)
-  }
-
-  pub fn deconstruct_array(as: [G; 5]) -> [G; 2] {
-    let [_, b, _, d, _] = as;
-    [b, d]
-  }
-
-  pub fn array_set(arr: [(G, G); 3]) -> [(G, G); 3] {
-    set(arr, 1, (0, 0))
-  }
-
-  -- proj on mixed-size tuple: offset arithmetic with non-uniform element sizes
-  pub fn proj_mixed(t: (G, (G, G), G)) -> (G, G) {
-    proj(t, 1)
-  }
-
-  -- get at last index + set at first index with eltSize=2: boundary cases
-  pub fn array_get_set(arr: [(G, G); 3]) -> [(G, G); 3] {
-    let p = arr[2];
-    set(arr, 0, p)
-  }
-
-  ---------------------------------------------------------------------------
-  -- Assertion
-  ---------------------------------------------------------------------------
-  pub fn assert_eq_trivial() {
-    assert_eq!([1, 2, 3], [1, 2, 3]);
-  }
-
-  ---------------------------------------------------------------------------
   -- IO
   ---------------------------------------------------------------------------
   -- Exercises channel disambiguation: same key #[0] on channels 0 and 1
@@ -332,34 +246,6 @@ def toplevel := ⟦
     (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
   }
 
-  pub fn u8_sub_function(i: U8, j: U8) -> (U8, U8) {
-    u8_sub(i, j)
-  }
-
-  pub fn u8_mul_function(i: U8, j: U8) -> (U8, U8) {
-    u8_mul(i, j)
-  }
-
-  pub fn u8_less_than_function(i: U8, j: U8) -> G {
-    u8_less_than(i, j)
-  }
-
-  pub fn u8_and_function(i: U8, j: U8) -> U8 {
-    u8_and(i, j)
-  }
-
-  pub fn u8_or_function(i: U8, j: U8) -> U8 {
-    u8_or(i, j)
-  }
-
-  pub fn u8_chain_rotr7_function(i: U8, j: U8) -> (U8, U8, U8) {
-    u8_chain_rotr7(i, j)
-  }
-
-  pub fn u8_chain_rotr4_function(i: U8, j: U8) -> (U8, U8, U8) {
-    u8_chain_rotr4(i, j)
-  }
-
   -- Full u32 right-rotation by 7, built by chaining the partial gadget over
   -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
   pub fn u32_rotr7(b: [U8; 4]) -> [U8; 4] {
@@ -380,39 +266,11 @@ def toplevel := ⟦
   }
 
   ---------------------------------------------------------------------------
-  -- u8 range-check / to_field / literal
+  -- u8 range-check / to_field
   ---------------------------------------------------------------------------
   pub fn range_check_id(a: G, b: G) -> (G, G) {
     let (x, y) = u8_range_check(a, b);
     (to_field(x), to_field(y))
-  }
-  pub fn u8_lit_xor(a: G) -> G {
-    let (x, _) = u8_range_check(a, a);
-    to_field(u8_xor(x, 200u8))
-  }
-
-  ---------------------------------------------------------------------------
-  -- Fold/iteration
-  ---------------------------------------------------------------------------
-  pub fn fold_matrix_sum(m: [[G; 2]; 2]) -> G {
-    fold(0 .. 2, 0, |acc_outer, @i|
-      fold(0 .. 2, acc_outer, |acc_inner, @j|
-        acc_inner + m[@i][@j]
-      )
-    )
-  }
-
-  ---------------------------------------------------------------------------
-  -- Type aliases: basic, nested, in patterns
-  ---------------------------------------------------------------------------
-  -- `U8` is now a builtin type, not an alias.
-  type U16 = (U8, U8)
-  type U32 = (U16, U16)
-  type U64 = [U8; 8]
-  type Pair = (U8, U8)
-
-  pub fn alias_conversion(x: U64) -> U32 {
-    ((x[0], x[1]), (x[2], x[3]))
   }
 
   ---------------------------------------------------------------------------
@@ -429,75 +287,6 @@ def toplevel := ⟦
     let c = x * x;
     let d = c * c;
     a + b + d
-  }
-
-  ---------------------------------------------------------------------------
-  -- Templates: parametric datatypes and functions
-  ---------------------------------------------------------------------------
-  enum Wrapper‹A› {
-    Mk(A)
-  }
-
-  fn unwrap‹A›(w: Wrapper‹A›) -> A {
-    match w {
-      Wrapper.Mk(x) => x,
-    }
-  }
-
-  pub fn template_basic() -> G {
-    let w = Wrapper.Mk(42);
-    unwrap(w)
-  }
-
-  enum Option‹A› {
-    Some(A),
-    None
-  }
-
-  fn unwrap_or‹A›(opt: Option‹A›, default: A) -> A {
-    match opt {
-      Option.Some(x) => x,
-      Option.None => default,
-    }
-  }
-
-  pub fn template_unwrap_some() -> G {
-    let opt = Option.Some(42);
-    unwrap_or(opt, 0)
-  }
-
-  pub fn template_unwrap_none() -> G {
-    let opt = Option.None;
-    unwrap_or(opt, 99)
-  }
-
-  enum TPair‹A, B› {
-    Mk(A, B)
-  }
-
-  fn tpair_first‹A, B›(p: TPair‹A, B›) -> A {
-    match p {
-      TPair.Mk(a, _) => a,
-    }
-  }
-
-  fn tpair_second‹A, B›(p: TPair‹A, B›) -> B {
-    match p {
-      TPair.Mk(_, b) => b,
-    }
-  }
-
-  pub fn template_pair() -> (G, G) {
-    let p = TPair.Mk(10, 20);
-    (tpair_first(p), tpair_second(p))
-  }
-
-  -- Nested templates: Option‹TPair‹G, G››
-  pub fn template_nested() -> G {
-    let inner = TPair.Mk(3, 4);
-    let opt = Option.Some(inner);
-    let p = unwrap_or(opt, TPair.Mk(0, 0));
-    tpair_first(p) + tpair_second(p)
   }
 
   ---------------------------------------------------------------------------
@@ -855,106 +644,154 @@ def toplevel := ⟦
     let r10 = to_field(s) + to_field(c) * 1000;   -- 1044
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
   }
+
+  ---------------------------------------------------------------------------
+  -- Unconstrained big-uint div/mod: lists of [U8; 8] limbs in, the same
+  -- list datatype at [G; 8] out. The datatype must declare Cons FIRST
+  -- (runtime tag contract: 0 = Cons, 1 = Nil). Limbs are little-endian
+  -- u64s, head-first.
+  ---------------------------------------------------------------------------
+  enum BNode‹T› {
+    BCons(T, &BNode‹T›),
+    BNil
+  }
+
+  fn blist0() -> &BNode‹[U8; 8]› { store(BNode.BNil) }
+  fn blist1(l: [U8; 8]) -> &BNode‹[U8; 8]› { store(BNode.BCons(l, blist0())) }
+  fn blist2(l0: [U8; 8], l1: [U8; 8]) -> &BNode‹[U8; 8]› {
+    store(BNode.BCons(l0, blist1(l1)))
+  }
+
+  -- u64 value of the first result limb (fits in G for the cases below).
+  fn glimb_val(p: &BNode‹[G; 8]›) -> G {
+    match load(p) {
+      BNode.BCons(l, _) => l[0] + 256 * l[1] + 65536 * l[2] + 16777216 * l[3]
+        + 4294967296 * l[4] + 1099511627776 * l[5] + 281474976710656 * l[6]
+        + 72057594037927936 * l[7],
+      BNode.BNil => 0,
+    }
+  }
+
+  fn glist_is_nil(p: &BNode‹[G; 8]›) -> G {
+    match load(p) {
+      BNode.BNil => 1,
+      BNode.BCons(_, _) => 0,
+    }
+  }
+
+  -- Aggregate: plain divide (300/7), unit divisor (300/1), zero divisor
+  -- (300/0 → (Nil, 300) by convention), and a two-limb dividend with a
+  -- Nil remainder (2^64 / 2 → (2^63, Nil), canonical single-limb q).
+  pub fn divmod_test() -> G {
+    let a300 = blist1([44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let b7 = blist1([7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let (q1, r1) = unconstrained_big_uint_div_mod(a300, b7);
+    let s1 = glimb_val(q1) + 1000 * glimb_val(r1);          -- 42 + 6000
+    let b1 = blist1([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let (q2, _r2) = unconstrained_big_uint_div_mod(a300, b1);
+    let s2 = glimb_val(q2);                                 -- 300
+    let (q3, r3) = unconstrained_big_uint_div_mod(a300, blist0());
+    let s3 = 1000000 * glist_is_nil(q3) + glimb_val(r3);    -- 1000300
+    let a64 = blist2([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+                     [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let b2 = blist1([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let (q4, r4) = unconstrained_big_uint_div_mod(a64, b2);
+    let s4 = glimb_val(q4) + glist_is_nil(r4);              -- 2^63 + 1
+    s1 + s2 + s3 + s4
+  }
+
+  ---------------------------------------------------------------------------
+  -- Unconstrained field hints: `g_to_bytes` returns the 8 LE bytes of the
+  -- CANONICAL u64 value as raw [G; 8] advice; `g_inverse` the field
+  -- inverse with 0 ↦ 0.
+  ---------------------------------------------------------------------------
+  pub fn hint_test() -> G {
+    -- 300 = 0x012C → LE bytes [44, 1, 0, ...]
+    let b = unconstrained_g_to_bytes(300);
+    let s1 = b[0] + 1000 * b[1];                -- 1044
+    let s2 = b[7];                              -- 0
+    -- x * x⁻¹ = 1 for x ≠ 0; 0 ↦ 0
+    let s3 = unconstrained_g_inverse(7) * 7;    -- 1
+    let s4 = unconstrained_g_inverse(0);        -- 0
+    -- Canonicality: 0 - 1 wraps to p - 1 = 0xFFFFFFFF00000000
+    let c = unconstrained_g_to_bytes(0 - 1);
+    let s5 = c[4] + c[0];                       -- 255
+    s1 + s2 + 10 * s3 + s4 + s5                 -- 1309
+  }
 ⟧
 
+/-- The PROVING suite: every case runs the full prove+verify pipeline
+    (plus execute and interpret, which come for free in `runTestCase`).
+    A case belongs here only when it pins a distinct constraint,
+    selector-gating, or lookup-argument configuration — the things
+    execution never evaluates. Execution-semantics coverage (compiler,
+    evaluators, interpreter) lives in `aiur-cross`
+    (`Tests/Aiur/Cross.lean`). When several inputs of the same function
+    differ only in which path is active, only a minimal covering set of
+    proofs is kept — the other paths run in `aiur-cross`. -/
 def aiurTestCases : List AiurTestCase := [
-    -- Basic arithmetic
-    .noIO `id #[42] #[42],
-    .noIO `proj1 #[42, 64] #[42],
-    .noIO `sum #[3, 5] #[8],
-    .noIO `prod #[3, 5] #[15],
-    .noIO `sum_prod #[2, 3, 4] #[20],
+    -- Match: 1 explicit case + default, prove both paths (each side gates
+    -- the other's constraints)
+    .prove `match_mul #[0] #[0] (label := "match_mul(0)"),
+    .prove `match_mul #[2] #[8] (label := "match_mul(2)"),
 
-    -- Match: 1 explicit case + default, exercise both paths
-    { AiurTestCase.noIO `match_mul #[0] #[0] with label := "match_mul(0)" },
-    { AiurTestCase.noIO `match_mul #[2] #[8] with label := "match_mul(2)" },
+    -- Match: 3 explicit cases + default. Prove one explicit path and the
+    -- default path (3 inequality witnesses); the remaining explicit paths
+    -- exercise the same witness layout
+    .prove `multi_match #[0] #[100] (label := "multi_match(0)"),
+    .prove `multi_match #[5] #[25] (label := "multi_match(5)"),
 
-    -- Match: 3 explicit cases + default (3 inequality witnesses on default)
-    { AiurTestCase.noIO `multi_match #[0] #[100] with label := "multi_match(0)" },
-    { AiurTestCase.noIO `multi_match #[1] #[200] with label := "multi_match(1)" },
-    { AiurTestCase.noIO `multi_match #[2] #[300] with label := "multi_match(2)" },
-    { AiurTestCase.noIO `multi_match #[5] #[25] with label := "multi_match(5)" },
-
-    -- Nested match: 4 leaf selectors, witnesses at both nesting levels
-    { AiurTestCase.noIO `nested_match #[0, 0] #[10]
-        with label := "nested_match(0,0)" },
-    { AiurTestCase.noIO `nested_match #[0, 1] #[20]
-        with label := "nested_match(0,1)" },
-    { AiurTestCase.noIO `nested_match #[2, 0] #[30]
-        with label := "nested_match(2,0)" },
-    { AiurTestCase.noIO `nested_match #[2, 3] #[5]
-        with label := "nested_match(2,3)" },
+    -- Nested match: 4 leaf selectors. Prove one explicit-explicit and one
+    -- default-default leaf (witnesses at both nesting levels); the two
+    -- mixed leaves repeat those layouts
+    .prove `nested_match #[0, 0] #[10] (label := "nested_match(0,0)"),
+    .prove `nested_match #[2, 3] #[5] (label := "nested_match(2,3)"),
 
     -- Sel-gating: polynomial constraints (Mul, EqZero, AssertEq).
     -- Inactive branch has assert_eq!(0,1) (fails without sel=0),
     -- different Mul (aux mismatch), different EqZero (witness mismatch).
     -- x=0 chosen so inactive EqZero constraint `sel*(x+1)*x_result =
     -- sel*1*1 = sel` is nonzero without gating.
-    .noIO `match_poly_ops #[0] #[0, 1],
+    .prove `match_poly_ops #[0] #[0, 1],
 
     -- Sel-gating: function and memory lookup multiplicity
-    .noIO `match_lookup_ops #[42] #[42, 42],
+    .prove `match_lookup_ops #[42] #[42, 42],
 
     -- Sel-gating: gadget lookups (Bytes1, Bytes2) and U32LessThan polynomial
     -- constraints (swapped args on inactive path create decomposition mismatch)
-    .noIO `match_gadget_ops #[45, 131] #[22, 174, 1],
+    .prove `match_gadget_ops #[45, 131] #[22, 174, 1],
 
     -- Sel-gating: multi-output gadget lookups (Bytes2 output_size=2,
     -- Bytes1 output_size=8). Guards against partial fixes that only
     -- address output_size=1.
-    .noIO `match_gadget_ops_multi #[45, 131] #[176, 0, 1, 0, 1, 1, 0, 1, 0, 0],
+    .prove `match_gadget_ops_multi #[45, 131] #[176, 0, 1, 0, 1, 1, 0, 1, 0, 0],
 
     -- EqZero: constant path (c=0, d=101) and non-constant path (a=0, b=37)
-    .noIO `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
+    .prove `eq_zero_dummy #[0, 37] #[1, 0, 1, 0],
 
-    -- Memory
-    .noIO `store_and_load #[42] #[42],
-    .noIO `pointer_match #[] #[1],
-
-    -- Mutual recursion: depths 0–2 cover both branches of even/odd
-    .noIO `is_0_even #[] #[1],
-    .noIO `is_1_even #[] #[0],
-    .noIO `is_2_even #[] #[1],
-    .noIO `is_0_odd #[] #[0],
-    .noIO `is_1_odd #[] #[1],
+    -- Mutual recursion: prove only the deepest case (cross-circuit
+    -- lookups through both functions); shallower depths are sub-traces
+    .prove `is_2_even #[] #[1],
 
     -- 3-constructor enum: tag dispatch, field extraction at varying offsets,
     -- padding. Circle and Rect have degree-2 Mul in different branches with
     -- different operands sharing aux columns (implicit sel-gating test).
+    -- Circle and Rect are the degree-2 pair sharing aux columns (the
+    -- implicit sel-gating test): prove both. Tri (addition only) runs in
+    -- aiur-cross.
     -- Circle(5): [tag=0, r=5, pad, pad] → 5*5 = 25
-    { AiurTestCase.noIO `shape_area #[0, 5, 0, 0] #[25]
-        with label := "shape_area(Circle(5))" },
+    .prove `shape_area #[0, 5, 0, 0] #[25] (label := "shape_area(Circle(5))"),
     -- Rect(3,4): [tag=1, w=3, h=4, pad] → 3*4 = 12
-    { AiurTestCase.noIO `shape_area #[1, 3, 4, 0] #[12]
-        with label := "shape_area(Rect(3,4))" },
-    -- Tri(1,2,3): [tag=2, a=1, b=2, c=3] → 1+2+3 = 6
-    { AiurTestCase.noIO `shape_area #[2, 1, 2, 3] #[6]
-        with label := "shape_area(Tri(1,2,3))" },
+    .prove `shape_area #[1, 3, 4, 0] #[12] (label := "shape_area(Rect(3,4))"),
 
     -- Constrained recursion
-    { AiurTestCase.noIO `factorial #[5] #[120] with label := "factorial(5)" },
+    .prove `factorial #[5] #[120] (label := "factorial(5)"),
 
-    -- Fibonacci (left intact)
-    { AiurTestCase.noIO `fibonacci #[0] #[1] with label := "fibonacci(0)" },
-    { AiurTestCase.noIO `fibonacci #[1] #[1] with label := "fibonacci(1)" },
-    { AiurTestCase.noIO `fibonacci #[6] #[13] with label := "fibonacci(6)" },
+    -- Fibonacci: prove the deep case (call-lookup multiplicities > 1)
+    .prove `fibonacci #[6] #[13] (label := "fibonacci(6)"),
 
     -- Unconstrained recursion: mixed constrained/unconstrained calls
-    .noIO `unconstrained_fibonacci #[6] #[13],
-
-    -- Data structure compilation
-    .noIO `projections #[1, 2, 3, 4, 5] #[2, 4],
-    .noIO `slice_and_get #[1, 2, 3, 4, 5] #[2, 4],
-    .noIO `deconstruct_tuple #[1, 2, 3, 4, 5] #[2, 4],
-    .noIO `deconstruct_array #[1, 2, 3, 4, 5] #[2, 4],
-    .noIO `array_set #[1, 1, 2, 2, 3, 3] #[1, 1, 0, 0, 3, 3],
-    -- proj on (G, (G,G), G): tests offset arithmetic with mixed element sizes
-    .noIO `proj_mixed #[1, 2, 3, 4] #[2, 3],
-    -- get at last index + set at first index with eltSize=2: boundary cases
-    .noIO `array_get_set #[1, 1, 2, 2, 3, 3] #[3, 3, 2, 2, 3, 3],
-
-    -- Assertion
-    .noIO `assert_eq_trivial #[] #[],
+    .prove `unconstrained_fibonacci #[6] #[13],
 
     -- IO
     { functionName := `read_write_io
@@ -968,53 +805,40 @@ def aiurTestCases : List AiurTestCase := [
          .ofList [((0, #[0]), ⟨0, 4⟩), ((1, #[0]), ⟨0, 4⟩),
                   ((0, #[1]), ⟨0, 8⟩)]⟩ },
 
-    -- Byte operations
-    .noIO `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],
-    .noIO `u8_add_xor #[45, 131] #[219, 0, 49, 1],
-    .noIO `u8_sub_function #[45, 131] #[170, 1],
-    .noIO `u8_mul_function #[45, 131] #[7, 23],
-    .noIO `u8_less_than_function #[45, 131] #[1],
-    .noIO `u8_and_function #[45, 131] #[1],
-    .noIO `u8_or_function #[45, 131] #[175],
-    .noIO `u8_chain_rotr7_function #[45, 131] #[6, 1, 90],
-    .noIO `u8_chain_rotr4_function #[45, 131] #[50, 8, 208],
-    .noIO `u32_rotr7 #[45, 131, 200, 17] #[6, 145, 35, 90],
+    -- Byte operations: the gadget LOOKUP ARGUMENT (Bytes1/Bytes2
+    -- multiplicities) is what proving checks; op results are table
+    -- content, verified by execution. Prove one Bytes1 chain, one
+    -- multi-output Bytes2 case, and the chain-gadget combination; the
+    -- single-op wrappers repeat the same lookup mechanics in aiur-cross.
+    .prove `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],
+    .prove `u8_add_xor #[45, 131] #[219, 0, 49, 1],
+    .prove `u32_rotr7 #[45, 131, 200, 17] #[6, 145, 35, 90],
 
-    -- u8 range-check / to_field / literal (exercises the U8RangeCheck circuit op)
-    .noIO `range_check_id #[45, 200] #[45, 200],
-    .noIO `range_check_id #[0, 255] #[0, 255],
-    .noIO `u8_lit_xor #[45] #[229],
+    -- u8 range-check: prove the boundary case (U8RangeCheck circuit op)
+    .prove `range_check_id #[0, 255] #[0, 255],
 
-    -- u32 comparison: a < b, a > b, a = b
-    { AiurTestCase.noIO `u32_less_than_function #[300, 500] #[1]
-        with label := "u32_less_than(300,500)" },
-    { AiurTestCase.noIO `u32_less_than_function #[500, 300] #[0]
-        with label := "u32_less_than(500,300)" },
-    { AiurTestCase.noIO `u32_less_than_function #[500, 500] #[0]
-        with label := "u32_less_than(500,500)" },
-
-    -- Fold/iteration
-    .noIO `fold_matrix_sum #[1, 2, 3, 4] #[10],
-
-    -- Type aliases
-    { AiurTestCase.noIO `alias_conversion #[1, 2, 3, 4, 5, 6, 7, 8] #[1, 2, 3, 4]
-        with label := "alias_conversion (U64 = [U8; 8], U32 = (U16, U16))" },
+    -- u32 comparison: prove strict-less and the equality edge (distinct
+    -- carry-chain witnesses); a > b repeats the a = b carry layout
+    .prove `u32_less_than_function #[300, 500] #[1]
+      (label := "u32_less_than(300,500)"),
+    .prove `u32_less_than_function #[500, 500] #[0]
+      (label := "u32_less_than(500,500)"),
 
     -- EqZero degree-tracking regression (eq_zero(3)=0, 100, 3*3=9, 9*9=81, 0+100+81=181)
-    .noIO `eq_zero_degree_desync #[3] #[181],
-
-    -- Templates
-    .noIO `template_basic #[] #[42],
-    .noIO `template_unwrap_some #[] #[42],
-    .noIO `template_unwrap_none #[] #[99],
-    .noIO `template_pair #[] #[10, 20],
-    .noIO `template_nested #[] #[7],
+    .prove `eq_zero_degree_desync #[3] #[181],
 
     -- Non-tail match: all patterns in one proof (incl. function-call scrutinee)
-    .noIO `non_tail_match #[] #[2593],
+    .prove `non_tail_match #[] #[2593],
 
     -- Inlined function calls (`@fn(args)`): all scenarios in one proof
-    .noIO `inline_test #[] #[3182],
+    .prove `inline_test #[] #[3182],
+
+    -- Unconstrained big-uint div/mod: all cases in one proof
+    -- (6042 + 300 + 1000300 + 2^63 + 1)
+    .prove `divmod_test #[] #[9223372036855782451],
+
+    -- Unconstrained g_to_bytes / g_inverse hints: all cases in one proof
+    .prove `hint_test #[] #[1309],
   ]
 
 end

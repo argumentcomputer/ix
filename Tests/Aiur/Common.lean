@@ -1,7 +1,6 @@
 module
 
 public import LSpec
-public import Tests.Gen.Basic
 public import Ix.Unsigned
 public import Ix.Aiur.Goldilocks
 public import Ix.Aiur.Protocol
@@ -11,8 +10,12 @@ public import Ix.Aiur.Statistics
 
 public section
 
-open LSpec SlimCheck Gen
+open LSpec
 
+/-- Every case executes; `interpret` and `withProof` independently add the
+    interpreter agreement check and the prove/verify pipeline. All three
+    used combinations have a constructor: `prove` (execute + interpret +
+    prove), `interp` (execute + interpret), `exec` (execute only). -/
 structure AiurTestCase where
   functionName : Lean.Name
   label : String := toString functionName
@@ -21,31 +24,46 @@ structure AiurTestCase where
   inputIOBuffer : Aiur.IOBuffer := default
   expectedIOBuffer : Aiur.IOBuffer := default
   interpret : Bool := true
-  executionOnly : Bool := false
+  withProof : Bool := true
   /-- When set, asserts the total FFT cost equals this value (rounded to
       `UInt64`). Pins per-circuit cost regressions: any kernel change that
       shifts FFT cost forces a manual update to the expected value. -/
   expectedFftCost : Option Nat := none
 
-def AiurTestCase.noIO (functionName : Lean.Name)
-    (input expectedOutput : Array Aiur.G) : AiurTestCase :=
-  { functionName, input, expectedOutput }
+/-- Full pipeline: execute + interpret + prove/verify. -/
+def AiurTestCase.prove (functionName : Lean.Name)
+    (input expectedOutput : Array Aiur.G)
+    (label : String := toString functionName) : AiurTestCase :=
+  { functionName, label, input, expectedOutput }
 
+/-- Execute + interpret, no proof. -/
+def AiurTestCase.interp (functionName : Lean.Name)
+    (input expectedOutput : Array Aiur.G)
+    (label : String := toString functionName) : AiurTestCase :=
+  { functionName, label, input, expectedOutput, withProof := false }
+
+/-- Execute only. -/
 def AiurTestCase.exec (functionName : Lean.Name)
-    (input : Array Aiur.G := #[]) (expectedOutput : Array Aiur.G := #[]) : AiurTestCase :=
-  { functionName, input, expectedOutput, interpret := false, executionOnly := true }
+    (input : Array Aiur.G := #[]) (expectedOutput : Array Aiur.G := #[])
+    (label : String := toString functionName) : AiurTestCase :=
+  { functionName, label, input, expectedOutput,
+    interpret := false, withProof := false }
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 2
   capHeight := 0
 }
 
+/-- Test-only FRI parameters: soundness margin is irrelevant here, so no
+    proof-of-work grinding (it adds a fixed 2^bits hashing cost to every
+    proof and tests nothing) and the same query count the Rust-side unit
+    tests use (`crates/aiur/src/synthesis.rs`). -/
 def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
-  numQueries := 100
+  numQueries := 64
   commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 structure AiurTestEnv where
@@ -102,7 +120,7 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
     let interpTest :=
       if testCase.interpret then env.interpTest testCase execOutput execIOBuffer
       else .done
-    if testCase.executionOnly then execTest ++ interpTest
+    if !testCase.withProof then execTest ++ interpTest
     else
       let (claim, proof, ioBuffer) := env.aiurSystem.prove
         funIdx testCase.input testCase.inputIOBuffer

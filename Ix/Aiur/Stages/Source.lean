@@ -440,11 +440,12 @@ inductive Term
   caller must verify `q*b + r == a` and `r < b` in constrained code. -/
   | unconstrainedBigUintDivMod : (a : Term) → (b : Term) → Term
   /-- Unconstrained hint: the 8 little-endian bytes of a field element's
-  canonical `u64` value, as a `[U8; 8]`. Computed natively by the Aiur
-  runtime; no constraints generated — the bytes are advice. The caller must
-  range-check each byte, assert they recompose to the input
-  (`Σ bᵢ·256ⁱ == x`), and assert canonicality (`< p`) in constrained code;
-  together these pin the unique canonical decomposition. -/
+  canonical `u64` value, as a `[G; 8]` — advice must not type as
+  range-checked bytes. Computed natively by the Aiur runtime; no
+  constraints generated. The caller must range-check each byte (minting
+  the `u8`s from the check outputs), assert they recompose to the input
+  (`Σ bᵢ·256ⁱ == x`), and assert canonicality (`< p`) in constrained
+  code; together these pin the unique canonical decomposition. -/
   | unconstrainedGToBytes : Term → Term
   /-- Unconstrained hint: the field inverse of a field element (`0 ↦ 0`).
   Computed natively by the Aiur runtime; no constraints generated — the

@@ -26,7 +26,31 @@ namespace Aiur
 
 namespace Bytecode.Eval
 
-/-- Tagged errors — small enum, no messages, for proof statements. -/
+/-- Width-bucketed memory, matching Rust's `QueryRecord.memory_queries`.
+Outer key is the width; each bucket is an ordered map from flat-width arrays of
+field elements to unit (the index within the bucket is its insertion order). -/
+abbrev MemoryBuckets := IndexMap Nat (IndexMap (Array G) Unit)
+
+structure EvalState where
+  map      : Array G := #[]
+  memory   : MemoryBuckets := default
+  ioBuffer : IOBuffer
+  deriving Inhabited
+
+/-- Opaque `Repr` so `BytecodeError` (whose `earlyReturn` sentinel carries
+the state) can keep its derived instance; the state itself is not printable. -/
+instance : Repr EvalState := ⟨fun _ _ => .text "<EvalState>"⟩
+
+/-- Tagged errors — small enum, no messages, for proof statements.
+
+The `earlyReturn` case is NOT an error: it is the escape channel for
+`Ctrl.return`, which exits the enclosing FUNCTION — unwinding past any
+pending `matchContinue` continuations — while `Ctrl.yield` feeds the
+nearest continuation. It rides the `Except` error track so every
+intermediate frame propagates it for free, and is unwrapped back into a
+normal result at the function boundary (`evalOp .call` and
+`runFunction`) — mirroring the Rust executor's continuation-stack
+truncation on `Ctrl::Return`. -/
 inductive BytecodeError
   | outOfFuel
   | invalidValIdx (v : ValIdx)
@@ -40,19 +64,9 @@ inductive BytecodeError
   | callOutputSizeMismatch
   | unreachableAfterLayout
   | u8RangeCheckFailed
-  | unconstrainedBigUintDivModUnsupported
+  | unconstrainedBigUintDivModFailed
+  | earlyReturn (outs : Array G) (st : EvalState)
   deriving Repr, Inhabited
-
-/-- Width-bucketed memory, matching Rust's `QueryRecord.memory_queries`.
-Outer key is the width; each bucket is an ordered map from flat-width arrays of
-field elements to unit (the index within the bucket is its insertion order). -/
-abbrev MemoryBuckets := IndexMap Nat (IndexMap (Array G) Unit)
-
-structure EvalState where
-  map      : Array G := #[]
-  memory   : MemoryBuckets := default
-  ioBuffer : IOBuffer
-  deriving Inhabited
 
 /-! ## ValIdx access -/
 
@@ -89,6 +103,43 @@ def memLoad (st : EvalState) (size : Nat) (ptr : Nat) :
     match bucket.getByIdx ptr with
     | some (vs, _) => .ok vs
     | none         => .error (.invalidPointer size ptr)
+
+/-! ## `List<U64>` limb chains (`unconstrainedBigUintDivMod`)
+
+Mirrors `read_klimbs_u64` / `build_klimbs_u64` in `crates/aiur/src/execute.rs`:
+nodes live in the width-10 memory bucket with the standard tagged-enum
+layout `[tag, byte0..byte7, next_ptr]` — tag 0 = Cons, tag 1 = Nil, bytes
+little-endian within the u64 limb. -/
+
+/-- Walk a limb chain from `ptr`, returning the limbs head-first. `steps`
+bounds the walk: a chain longer than the width-10 bucket must revisit a
+pointer, i.e. a malformed cycle. -/
+def readLimbChain (st : EvalState) : Nat → Nat →
+    Except BytecodeError (List (Array G))
+  | 0, _ => .error .unconstrainedBigUintDivModFailed
+  | steps+1, ptr => do
+    let vs ← memLoad st 10 ptr
+    match vs[0]?, vs[9]? with
+    | some tag, some next =>
+      if tag == 1 then pure []
+      else if tag == 0 then
+        let bytes := vs.extract 1 9
+        if bytes.size == 8 && bytes.all (·.val < 256) then do
+          let rest ← readLimbChain st steps next.val.toNat
+          pure (bytes :: rest)
+        else .error .unconstrainedBigUintDivModFailed
+      else .error .unconstrainedBigUintDivModFailed
+    | _, _ => .error .unconstrainedBigUintDivModFailed
+
+/-- Build a limb chain from head-first `limbs`, returning the head pointer.
+Same insertion order as the Rust builder (Nil first, then limbs in reverse),
+so freshly-created pointer indices agree; `memStore` content-dedups like
+`QueryMap` does. -/
+def buildLimbChain (st : EvalState) : List (Array G) → EvalState × Nat
+  | [] => memStore st (#[1] ++ Array.replicate 9 0)
+  | limb :: rest =>
+    let (st', restPtr) := buildLimbChain st rest
+    memStore st' (#[0] ++ limb ++ #[.ofNat restPtr])
 
 def pushMap (st : EvalState) (g : G) : EvalState :=
   { st with map := st.map.push g }
@@ -180,14 +231,16 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
         match fuel with
         | 0 => .error .outOfFuel
         | fuel+1 =>
+          -- Function boundary: an `earlyReturn` escaping the callee's body
+          -- is its normal return value.
           match evalBlock t fuel f.body innerSt with
-          | .error e => .error e
-          | .ok (outs, innerSt') =>
+          | .error (.earlyReturn outs innerSt') | .ok (outs, innerSt') =>
             if outs.size != outputSize then
               .error .callOutputSizeMismatch
             else
               pure (appendMap (setIoBuffer { st with memory := innerSt'.memory }
                                             innerSt'.ioBuffer) outs)
+          | .error e => .error e
     else .error (.invalidFunIdx fi)
   | .store vals => do
     let argGs ← readIdxs st vals
@@ -295,14 +348,18 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     let x ← readIdx st a; let y ← readIdx st b
     if x.val < 256 && y.val < 256 then .ok st else .error .u8RangeCheckFailed
   | .unconstrainedBigUintDivMod a b => do
-    -- TODO(unconstrainedBigUintDivMod): walk the two pointer chains in `st.memory`
-    -- (List<U64> = ListNode of [U8;8]), extract LE bytes, compute BigUint
-    -- div_rem, build two fresh ListNode chains in `st.memory`, push their
-    -- pointer ValIdxs. The Rust runtime already does this end-to-end; the
-    -- reference evaluator doesn't yet have BigUint helpers, so we surface
-    -- an explicit error rather than silently producing wrong values.
-    let _ ← readIdx st a; let _ ← readIdx st b
-    .error .unconstrainedBigUintDivModUnsupported
+    let aPtr ← readIdx st a
+    let bPtr ← readIdx st b
+    -- Walk bound: the width-10 bucket size plus one (see `readLimbChain`).
+    let bound := (st.memory.getByKey 10 |>.map (·.size) |>.getD 0) + 1
+    let aLimbs ← readLimbChain st bound aPtr.val.toNat
+    let bLimbs ← readLimbChain st bound bPtr.val.toNat
+    let aVal := limbsVal aLimbs
+    let bVal := limbsVal bLimbs
+    -- `Nat` division matches the runtime's `b = 0 → (0, a)` convention.
+    let (st1, qPtr) := buildLimbChain st (natToLimbsLE (aVal / bVal))
+    let (st2, rPtr) := buildLimbChain st1 (natToLimbsLE (aVal % bVal))
+    pure (pushMap (pushMap st2 (.ofNat qPtr)) (.ofNat rPtr))
   | .unconstrainedGToBytes idx => do
     let g ← readIdx st idx
     pure (appendMap st (Array.ofFn g.toLeBytes))
@@ -342,10 +399,15 @@ def evalCtrl (t : Bytecode.Toplevel) (fuel : Nat)
     (ctrl : Ctrl) (st : EvalState) : Except BytecodeError (Array G × EvalState) :=
   match ctrl with
   | .return _ outs =>
+    -- Function-level return: escape via the `earlyReturn` sentinel so a
+    -- pending `matchContinue` continuation is skipped (Rust truncates the
+    -- continuation stack here). Unwrapped at the function boundary.
     match readIdxs st outs with
     | .error e => .error e
-    | .ok gs   => .ok (gs, st)
+    | .ok gs   => .error (.earlyReturn gs st)
   | .yield _ outs =>
+    -- Continuation-level yield: normal result, consumed by the nearest
+    -- enclosing `matchContinue`.
     match readIdxs st outs with
     | .error e => .error e
     | .ok gs   => .ok (gs, st)
@@ -426,8 +488,8 @@ def runFunction (t : Bytecode.Toplevel) (funIdx : FunIdx) (args : Array G)
     else
       let st : EvalState := { map := args, ioBuffer }
       match evalBlock t fuel f.body st with
+      | .error (.earlyReturn outs st') | .ok (outs, st') => .ok (outs, st'.ioBuffer)
       | .error e => .error e
-      | .ok (outs, st') => .ok (outs, st'.ioBuffer)
   else .error (.invalidFunIdx funIdx)
 
 end Bytecode.Eval

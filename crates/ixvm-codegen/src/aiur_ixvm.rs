@@ -13518,7 +13518,7 @@ fn aiur_fn_112(
 
 const INPUT_SIZE_113: usize = 1;
 const IN_113: usize = 1;
-const OUT_113: usize = 0;
+const OUT_113: usize = 1;
 fn aiur_fn_113(
   inp: [G; IN_113],
   record: &mut QueryRecord,
@@ -13540,7 +13540,10 @@ fn aiur_fn_113(
     let __v_10: G = __loaded[9];
     match __v_1.as_canonical_u64() {
       1u64 => {
-        let __ret: [G; OUT_113] = [];
+        let __v_11: G = G::from_u64(1);
+        let __v_12: G = G::from_u64(1);
+        let __v_13: G = { let __values: [G; 10] = [__v_11, __v_12, __v_12, __v_12, __v_12, __v_12, __v_12, __v_12, __v_12, __v_12]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(result) = __mq.get_mut(&__values[..]) { if !unconstrained { *result.multiplicity += G::ONE; } result.output[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __ret: [G; OUT_113] = [__v_13];
         record.function_queries[113].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
         return Ok(__ret);
       },
@@ -13549,8 +13552,11 @@ fn aiur_fn_113(
         if !unconstrained { let __vi = __v_4; let __vj = __v_5; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
         if !unconstrained { let __vi = __v_6; let __vj = __v_7; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
         if !unconstrained { let __vi = __v_8; let __vj = __v_9; let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64(); if __bi >= 256 { return Err(ExecError::U8RangeCheckFailed(__bi)); } if __bj >= 256 { return Err(ExecError::U8RangeCheckFailed(__bj)); } record.bytes2_queries.bump_range_check(&__vi, &__vj); };
+        let __v_11: G = G::from_u64(0);
         let __r_arr: [G; OUT_113] = { let __args: [G; IN_113] = [__v_10]; let __cu = unconstrained; if let Some(result) = record.function_queries[113].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_113] = unsafe { *(result.output.as_ptr() as *const [G; OUT_113]) }; __ret } else { aiur_fn_113(__args, record, io_buffer, __cu)? } };
-        let __ret: [G; OUT_113] = [];
+        let __v_12: G = __r_arr[0];
+        let __v_13: G = { let __values: [G; 10] = [__v_11, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8, __v_9, __v_12]; let __mq = record.memory_queries.get_mut(&10).ok_or(ExecError::InvalidMemorySize(10))?; if let Some(result) = __mq.get_mut(&__values[..]) { if !unconstrained { *result.multiplicity += G::ONE; } result.output[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+        let __ret: [G; OUT_113] = [__v_13];
         record.function_queries[113].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
         return Ok(__ret);
       },
@@ -14622,52 +14628,54 @@ fn aiur_fn_126(
     let __bu_qr: (G, G) = unconstrained_big_uint_div_mod_helper(__v_0, __v_1, record)?;
     let __v_2: G = __bu_qr.0;
     let __v_3: G = __bu_qr.1;
-    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_2]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_113] = { let __args: [G; IN_113] = [__v_2]; let __cu = unconstrained; if let Some(result) = record.function_queries[113].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_113] = unsafe { *(result.output.as_ptr() as *const [G; OUT_113]) }; __ret } else { aiur_fn_113(__args, record, io_buffer, __cu)? } };
     let __v_4: G = __r_arr[0];
-    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_3]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_4]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
     let __v_5: G = __r_arr[0];
-    let __r_arr: [G; OUT_113] = { let __args: [G; IN_113] = [__v_4]; let __cu = unconstrained; if let Some(result) = record.function_queries[113].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_113] = unsafe { *(result.output.as_ptr() as *const [G; OUT_113]) }; __ret } else { aiur_fn_113(__args, record, io_buffer, __cu)? } };
-    let __r_arr: [G; OUT_113] = { let __args: [G; IN_113] = [__v_5]; let __cu = unconstrained; if let Some(result) = record.function_queries[113].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_113] = unsafe { *(result.output.as_ptr() as *const [G; OUT_113]) }; __ret } else { aiur_fn_113(__args, record, io_buffer, __cu)? } };
-    let __r_arr: [G; OUT_121] = { let __args: [G; IN_121] = [__v_4, __v_1]; let __cu = unconstrained; if let Some(result) = record.function_queries[121].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_121] = unsafe { *(result.output.as_ptr() as *const [G; OUT_121]) }; __ret } else { aiur_fn_121(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_113] = { let __args: [G; IN_113] = [__v_3]; let __cu = unconstrained; if let Some(result) = record.function_queries[113].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_113] = unsafe { *(result.output.as_ptr() as *const [G; OUT_113]) }; __ret } else { aiur_fn_113(__args, record, io_buffer, __cu)? } };
     let __v_6: G = __r_arr[0];
-    let __r_arr: [G; OUT_110] = { let __args: [G; IN_110] = [__v_6, __v_5]; let __cu = unconstrained; if let Some(result) = record.function_queries[110].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_110] = unsafe { *(result.output.as_ptr() as *const [G; OUT_110]) }; __ret } else { aiur_fn_110(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_6]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
     let __v_7: G = __r_arr[0];
-    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_7]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_121] = { let __args: [G; IN_121] = [__v_5, __v_1]; let __cu = unconstrained; if let Some(result) = record.function_queries[121].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_121] = unsafe { *(result.output.as_ptr() as *const [G; OUT_121]) }; __ret } else { aiur_fn_121(__args, record, io_buffer, __cu)? } };
     let __v_8: G = __r_arr[0];
-    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_0]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
+    let __r_arr: [G; OUT_110] = { let __args: [G; IN_110] = [__v_8, __v_7]; let __cu = unconstrained; if let Some(result) = record.function_queries[110].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_110] = unsafe { *(result.output.as_ptr() as *const [G; OUT_110]) }; __ret } else { aiur_fn_110(__args, record, io_buffer, __cu)? } };
     let __v_9: G = __r_arr[0];
-    if (__v_8 != __v_9) {
-      return Err(ExecError::AssertEqMismatch { lhs: __v_8.as_canonical_u64(), rhs: __v_9.as_canonical_u64(), msg: Some("div/mod hint: q*b + r != a".to_string()) });
+    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_9]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
+    let __v_10: G = __r_arr[0];
+    let __r_arr: [G; OUT_114] = { let __args: [G; IN_114] = [__v_0]; let __cu = unconstrained; if let Some(result) = record.function_queries[114].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_114] = unsafe { *(result.output.as_ptr() as *const [G; OUT_114]) }; __ret } else { aiur_fn_114(__args, record, io_buffer, __cu)? } };
+    let __v_11: G = __r_arr[0];
+    if (__v_10 != __v_11) {
+      return Err(ExecError::AssertEqMismatch { lhs: __v_10.as_canonical_u64(), rhs: __v_11.as_canonical_u64(), msg: Some("div/mod hint: q*b + r != a".to_string()) });
     }
     let __r_arr: [G; OUT_125] = { let __args: [G; IN_125] = [__v_1]; let __cu = unconstrained; if let Some(result) = record.function_queries[125].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_125] = unsafe { *(result.output.as_ptr() as *const [G; OUT_125]) }; __ret } else { aiur_fn_125(__args, record, io_buffer, __cu)? } };
-    let __v_10: G = __r_arr[0];
-    match __v_10.as_canonical_u64() {
+    let __v_12: G = __r_arr[0];
+    match __v_12.as_canonical_u64() {
       1u64 => {
-        let __r_arr: [G; OUT_125] = { let __args: [G; IN_125] = [__v_4]; let __cu = unconstrained; if let Some(result) = record.function_queries[125].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_125] = unsafe { *(result.output.as_ptr() as *const [G; OUT_125]) }; __ret } else { aiur_fn_125(__args, record, io_buffer, __cu)? } };
-        let __v_11: G = __r_arr[0];
-        let __v_12: G = G::from_u64(1);
-        if (__v_11 != __v_12) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_11.as_canonical_u64(), rhs: __v_12.as_canonical_u64(), msg: Some("div/mod hint: division by zero must yield a zero quotient".to_string()) });
+        let __r_arr: [G; OUT_125] = { let __args: [G; IN_125] = [__v_5]; let __cu = unconstrained; if let Some(result) = record.function_queries[125].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_125] = unsafe { *(result.output.as_ptr() as *const [G; OUT_125]) }; __ret } else { aiur_fn_125(__args, record, io_buffer, __cu)? } };
+        let __v_13: G = __r_arr[0];
+        let __v_14: G = G::from_u64(1);
+        if (__v_13 != __v_14) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_13.as_canonical_u64(), rhs: __v_14.as_canonical_u64(), msg: Some("div/mod hint: division by zero must yield a zero quotient".to_string()) });
         }
-        let __ret: [G; OUT_126] = [__v_4, __v_5];
+        let __ret: [G; OUT_126] = [__v_5, __v_7];
         record.function_queries[126].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
         return Ok(__ret);
       },
       0u64 => {
-        let __r_arr: [G; OUT_108] = { let __args: [G; IN_108] = [__v_5]; let __cu = unconstrained; if let Some(result) = record.function_queries[108].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_108] = unsafe { *(result.output.as_ptr() as *const [G; OUT_108]) }; __ret } else { aiur_fn_108(__args, record, io_buffer, __cu)? } };
-        let __v_11: G = __r_arr[0];
-        let __r_arr: [G; OUT_116] = { let __args: [G; IN_116] = [__v_11, __v_1]; let __cu = unconstrained; if let Some(result) = record.function_queries[116].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_116] = unsafe { *(result.output.as_ptr() as *const [G; OUT_116]) }; __ret } else { aiur_fn_116(__args, record, io_buffer, __cu)? } };
-        let __v_12: G = __r_arr[0];
-        let __v_13: G = G::from_u64(1);
-        if (__v_12 != __v_13) {
-          return Err(ExecError::AssertEqMismatch { lhs: __v_12.as_canonical_u64(), rhs: __v_13.as_canonical_u64(), msg: Some("div/mod hint: remainder is not less than the divisor".to_string()) });
+        let __r_arr: [G; OUT_108] = { let __args: [G; IN_108] = [__v_7]; let __cu = unconstrained; if let Some(result) = record.function_queries[108].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_108] = unsafe { *(result.output.as_ptr() as *const [G; OUT_108]) }; __ret } else { aiur_fn_108(__args, record, io_buffer, __cu)? } };
+        let __v_13: G = __r_arr[0];
+        let __r_arr: [G; OUT_116] = { let __args: [G; IN_116] = [__v_13, __v_1]; let __cu = unconstrained; if let Some(result) = record.function_queries[116].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_116] = unsafe { *(result.output.as_ptr() as *const [G; OUT_116]) }; __ret } else { aiur_fn_116(__args, record, io_buffer, __cu)? } };
+        let __v_14: G = __r_arr[0];
+        let __v_15: G = G::from_u64(1);
+        if (__v_14 != __v_15) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_14.as_canonical_u64(), rhs: __v_15.as_canonical_u64(), msg: Some("div/mod hint: remainder is not less than the divisor".to_string()) });
         }
-        let __ret: [G; OUT_126] = [__v_4, __v_5];
+        let __ret: [G; OUT_126] = [__v_5, __v_7];
         record.function_queries[126].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
         return Ok(__ret);
       },
       _ => {
-        return Err(ExecError::MatchNoCase(__v_10.as_canonical_u64()));
+        return Err(ExecError::MatchNoCase(__v_12.as_canonical_u64()));
       },
     }
   })

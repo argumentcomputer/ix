@@ -200,6 +200,72 @@ private def callSite (g : Global) (args : List Value) (m : InterpM Value) : Inte
     | .ret v           => pure v
     | .error msg stack => throw (.error msg ((g, args) :: stack))
 
+/-! ### `List<U64>` limb chains (`unconstrainedBigUintDivMod`)
+
+Value-level mirror of `read_klimbs_u64` / `build_klimbs_u64` in
+`crates/aiur/src/execute.rs`; see `Ix/Aiur/Semantics/SourceEval.lean` for
+the reference-evaluator twin. Constructor 0 = Cons(limb, rest),
+constructor 1 = Nil; limb bytes little-endian, limbs head-first. -/
+
+/-- Store a value content-deduped, returning its pointer (the `.store`
+semantics, callable from the divmod chain builder). -/
+private def storeValueI (v : Value) : InterpM Value := do
+  let store ← getStore
+  if let some idx := store.getIdxOf #[v] then
+    return .pointer 0 idx
+  let idx := store.size
+  modify fun s => { s with store := s.store.insert #[v] () }
+  return .pointer 0 idx
+
+/-- Walk a limb-chain pointer, returning the node datatype and the limbs
+head-first. `steps` bounds the walk so a malformed cycle terminates. -/
+private def readLimbChainI (decls : Decls) :
+    Nat → Value → InterpM (DataType × List (Array G))
+  | 0, _ => throwErr "unconstrainedBigUintDivMod: cyclic limb list"
+  | steps+1, ptrVal => do
+    match ptrVal with
+    | .pointer _ n =>
+      let store ← getStore
+      match store.getByIdx n with
+      | none => throwErr s!"unconstrainedBigUintDivMod: invalid pointer {n}"
+      | some (vs, _) =>
+        match (vs[0]? : Option Value) with
+        | some (.ctor g args) =>
+          match decls.getByKey g with
+          | some (.constructor dt ctor) =>
+            let tag := dt.constructors.findIdx? (· == ctor) |>.getD 0
+            if tag == 1 then pure (dt, [])
+            else if tag == 0 then
+              match args with
+              | #[.array byteVals, rest] =>
+                let bytes ← byteVals.mapM fun bv =>
+                  match bv with
+                  | .field b =>
+                    if b.val < 256 then pure b
+                    else throwErr
+                      "unconstrainedBigUintDivMod: limb byte out of range"
+                  | _ => throwErr
+                      "unconstrainedBigUintDivMod: limb byte not a field"
+                if bytes.size == 8 then do
+                  let (_, restLimbs) ← readLimbChainI decls steps rest
+                  pure (dt, bytes :: restLimbs)
+                else throwErr "unconstrainedBigUintDivMod: limb is not [U8; 8]"
+              | _ => throwErr "unconstrainedBigUintDivMod: malformed Cons node"
+            else
+              throwErr "unconstrainedBigUintDivMod: unexpected constructor tag"
+          | _ => throwErr s!"unconstrainedBigUintDivMod: unbound ctor {g}"
+        | _ => throwErr "unconstrainedBigUintDivMod: node is not a constructor"
+    | _ => throwErr "unconstrainedBigUintDivMod: input is not a pointer"
+
+/-- Build a limb chain from head-first `limbs` (Nil first, limbs in
+reverse — same allocation order as the Rust builder). -/
+private def buildLimbChainI (consG nilG : Global) :
+    List (Array G) → InterpM Value
+  | [] => storeValueI (.ctor nilG #[])
+  | limb :: rest => do
+    let restPtr ← buildLimbChainI consG nilG rest
+    storeValueI (.ctor consG #[.array (limb.map .field), restPtr])
+
 mutual
 
 private partial def applyGlobal (decls : Decls) (g : Global) (args : List Value) :
@@ -410,16 +476,23 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           else throwErr "u8RangeCheck: value out of range [0, 256)"
       | _, _ => throwErr "u8RangeCheck: expected field values"
   | .unconstrainedBigUintDivMod t1 t2 => do
-      -- TODO(unconstrainedBigUintDivMod): walk both List<U64> pointer chains via the
-      -- store to extract Vec<u8> bytes (LE), interpret as BigUints, compute
-      -- div_rem natively, build two fresh ListNode chains for q and r, and
-      -- return `.tuple #[.pointer w q_ptr, .pointer w r_ptr]`. The Rust
-      -- runtime (execute.rs) already does this; the Lean debug interpreter
-      -- doesn't yet have BigUint or klimbs helpers, so we surface an explicit
-      -- error rather than silently returning a wrong value.
-      let _ ← interp decls bindings t1
-      let _ ← interp decls bindings t2
-      throwErr "unconstrainedBigUintDivMod: not implemented in debug interpreter"
+      let aPtr ← interp decls bindings t1
+      let bPtr ← interp decls bindings t2
+      let bound := (← getStore).size + 1
+      let (dt, aLimbs) ← readLimbChainI decls bound aPtr
+      let (_, bLimbs) ← readLimbChainI decls bound bPtr
+      match dt.constructors[0]?, dt.constructors[1]? with
+      | some cons, some nil =>
+        let consG := dt.name.pushNamespace cons.nameHead
+        let nilG := dt.name.pushNamespace nil.nameHead
+        let aVal := limbsVal aLimbs
+        let bVal := limbsVal bLimbs
+        -- `Nat` division matches the runtime's `b = 0 → (0, a)` convention.
+        let qPtr ← buildLimbChainI consG nilG (natToLimbsLE (aVal / bVal))
+        let rPtr ← buildLimbChainI consG nilG (natToLimbsLE (aVal % bVal))
+        return .tuple #[qPtr, rPtr]
+      | _, _ =>
+        throwErr "unconstrainedBigUintDivMod: datatype has fewer than two constructors"
   | .unconstrainedGToBytes t => do
       match ← interp decls bindings t with
       | .field g => return .array (Array.ofFn fun i => .field (g.toLeBytes i))
@@ -489,7 +562,10 @@ def runFunction (decls : Decls) (funcName : Global) (inputs : List Value)
                           expected {f.inputs.length}, got {inputs.length}" []), init)
       else
         let bindings := f.inputs.map (·.1) |>.zip inputs
-        StateT.run (ExceptT.run (interp decls bindings f.body)) init
+        -- `callSite` also catches a top-level early `return` from the entry
+        -- function itself, which otherwise escapes as a `.ret` interrupt.
+        StateT.run (ExceptT.run (callSite funcName inputs
+          (interp decls bindings f.body))) init
   | _ =>
       (.error (.error s!"Function not found: {funcName}" []), init)
 

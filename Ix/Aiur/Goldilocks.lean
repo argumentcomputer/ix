@@ -10,7 +10,13 @@ abbrev G := { u : UInt64 // u < gSize }
 abbrev G.extensionDegree : Nat := 2
 
 def G.ofNat (n : Nat) : G :=
-  let n := n.toUInt64
+  -- Reduce in `Nat` BEFORE narrowing: `toUInt64` wraps mod 2^64, which is
+  -- NOT reduction mod p — narrowing first silently corrupts any value
+  -- ≥ 2^64 (e.g. products in `Mul`, sums in `Add`/`Sub`, the `pow` chain
+  -- behind `G.inverse`). After `% gSize.toNat` the value fits `UInt64`
+  -- exactly, so the branch below is always true; it is kept (rather than
+  -- proved) to avoid a proof obligation on the numeral.
+  let n := (n % gSize.toNat).toUInt64
   if h : n < gSize then ⟨n, h⟩
   else ⟨n % gSize, UInt64.mod_lt n (by decide)⟩
 
@@ -89,6 +95,30 @@ def G.u32LessThan (a b : G) : G := if a.n < b.n then 1 else 0
 the `unconstrained_g_to_bytes` hint. -/
 def G.toLeBytes (a : G) : Fin 8 → G :=
   fun i => G.ofUInt8 (a.val >>> (8 * i.val).toUInt64).toUInt8
+
+/-- Canonical little-endian u64 limbs of a natural number, each limb as its
+8 LE bytes (as field elements). Semantic model of the limb lists the
+`unconstrained_big_uint_div_mod` runtime builds (`biguint_to_klimbs_u64` in
+`crates/aiur/src/execute.rs`): zero is the empty list, no trailing zero
+limbs. -/
+def natToLimbsLE (n : Nat) : List (Array G) :=
+  if h : n = 0 then []
+  else
+    let limb := n % 2^64
+    let bytes := Array.ofFn fun (i : Fin 8) => G.ofNat ((limb >>> (8 * i.val)) % 256)
+    bytes :: natToLimbsLE (n / 2^64)
+termination_by n
+decreasing_by
+  exact Nat.div_lt_self (Nat.pos_of_ne_zero h) (by decide : (1 : Nat) < 2^64)
+
+/-- Value of one 8-LE-byte limb. Inverse direction of `natToLimbsLE`'s
+per-limb encoding; bytes are assumed already validated `< 256`. -/
+def limbBytesVal (bytes : Array G) : Nat :=
+  (bytes.toList.zipIdx.map fun (b, i) => b.val.toNat <<< (8 * i)).foldl (· + ·) 0
+
+/-- Value of a head-first (little-endian) u64 limb list. -/
+def limbsVal (limbs : List (Array G)) : Nat :=
+  limbs.foldr (fun limb acc => limbBytesVal limb + acc <<< 64) 0
 
 /-- Exponentiation by squaring. Fuel-structural (64 bits covers any `n < 2⁶⁴`
 exponent, in particular `p − 2`). -/
