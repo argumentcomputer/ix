@@ -19,7 +19,7 @@ use crate::compile::aux_gen::nested::compute_lean_ind_flags;
 use dashmap::DashMap;
 use ix_kernel::constant::KConst;
 use ix_kernel::env::KEnv;
-use ix_kernel::expr::{ExprData, KExpr, MData};
+use ix_kernel::expr::{ExprData, KExpr, MData, UnivDecor};
 use ix_kernel::id::KId;
 use ix_kernel::level::{KUniv, UnivData};
 use ix_kernel::mode::Meta;
@@ -54,6 +54,32 @@ fn egress_levels(
   levels.iter().map(|l| egress_level(l, level_params)).collect()
 }
 
+/// Convert a stored Ixon universe spelling to a Lean level, structural,
+/// resolving `Var` indices positionally through the constant's level
+/// params (same resolution as `egress_level`). Used to replay
+/// level-spelling decorations (canonicity §10.6).
+fn ixon_univ_to_level(u: &IxonUniv, level_params: &[Name]) -> env::Level {
+  match u {
+    IxonUniv::Zero => env::Level::zero(),
+    IxonUniv::Succ(inner) => {
+      env::Level::succ(ixon_univ_to_level(inner, level_params))
+    },
+    IxonUniv::Max(a, b) => env::Level::max(
+      ixon_univ_to_level(a, level_params),
+      ixon_univ_to_level(b, level_params),
+    ),
+    IxonUniv::IMax(a, b) => env::Level::imax(
+      ixon_univ_to_level(a, level_params),
+      ixon_univ_to_level(b, level_params),
+    ),
+    IxonUniv::Var(idx) => {
+      let pos = usize::try_from(*idx).expect("level param index exceeds usize");
+      let name = level_params.get(pos).cloned().unwrap_or_else(Name::anon);
+      env::Level::param(name)
+    },
+  }
+}
+
 /// Expression egress cache, keyed by content hash.
 type Cache = FxHashMap<ix_kernel::env::Addr, env::Expr>;
 
@@ -81,9 +107,25 @@ fn egress_expr(
       "egress_expr: unexpected FVar({id}) — abstract back to de Bruijn \
        before exporting"
     ),
-    ExprData::Sort(u, _) => env::Expr::sort(egress_level(u, level_params)),
-    ExprData::Const(id, levels, _) => {
-      let lvls = egress_levels(levels, level_params);
+    // Decoration replay (canonicity §10.6): a present decoration is the
+    // occurrence's original spelling — emit it instead of the kernel-held
+    // (mk*-normal) level. Decorated twins intern to distinct uids
+    // (`ExprKey` includes the decoration), so the uid-keyed cache never
+    // collapses them.
+    ExprData::Sort(u, i) => match &i.univ_decor {
+      Some(UnivDecor::Sort(orig)) => {
+        env::Expr::sort(ixon_univ_to_level(orig, level_params))
+      },
+      _ => env::Expr::sort(egress_level(u, level_params)),
+    },
+    ExprData::Const(id, levels, i) => {
+      let lvls = match &i.univ_decor {
+        Some(UnivDecor::Const(origs)) => origs
+          .iter()
+          .map(|u| ixon_univ_to_level(u, level_params))
+          .collect(),
+        _ => egress_levels(levels, level_params),
+      };
       env::Expr::cnst(id.name.clone(), lvls)
     },
     ExprData::App(f, a, _) => {
@@ -505,12 +547,25 @@ fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
       "kexpr_to_ixon: unexpected FVar({id}) — abstract back to de Bruijn \
        before exporting"
     ),
-    ExprData::Sort(u, _) => {
-      let u_idx = kuniv_idx(u, ctx);
+    // Decoration replay (canonicity §10.6): a decorated occurrence
+    // interns its ORIGINAL stored spelling into the rebuilt univ table
+    // instead of the kernel-held (mk*-normal) tree, inverting the
+    // stage-1 ingress rule. Decorated twins carry distinct uids, so the
+    // uid-keyed `expr_cache` never collapses them.
+    ExprData::Sort(u, i) => {
+      let u_idx = match &i.univ_decor {
+        Some(UnivDecor::Sort(orig)) => ctx.intern_univ(orig.clone()),
+        _ => kuniv_idx(u, ctx),
+      };
       IxonExpr::sort(u_idx)
     },
-    ExprData::Const(id, univs, _) => {
-      let u_idxs = kunivs_to_idxs(univs, ctx);
+    ExprData::Const(id, univs, i) => {
+      let u_idxs = match &i.univ_decor {
+        Some(UnivDecor::Const(origs)) => {
+          origs.iter().map(|u| ctx.intern_univ(u.clone())).collect()
+        },
+        _ => kunivs_to_idxs(univs, ctx),
+      };
       // Look up in mut_ctx first — a match means this is a mutual
       // self-reference and must be emitted as `Rec`, not `Ref`.
       if let Some(&rec_idx) = ctx.mut_ctx.get(id) {

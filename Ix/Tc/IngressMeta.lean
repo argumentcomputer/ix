@@ -48,6 +48,15 @@ on 2 GB stacks). Key differences, all from `ingress.rs`:
 The extension tables (`ConstantMeta.metaSharing`/`metaRefs`/`metaUnivs`)
 are decompile-only surgery state — the kernel never reads them (parity
 with Rust ingress, which ignores them entirely).
+
+Level-spelling decorations (canonicity §10.6, stage 1): `sort`/`ref`/
+`recur` occurrences whose referenced univ-table entries are not
+`reduceIxonUniv` fixpoints carry the stored spelling as a `UnivDecor`
+on the KExpr node (`ExprInfo.univDecor`) — folded into `metaAddr` only,
+never `addr`, so `tc-meta-addr` and all semantic checking are
+untouched; meta egress replays the spelling (`Ix.Tc.egressExpr`).
+Per-index sourcing is per-occurrence-exact because the compile-side
+table is deduped: two different spellings never share an index.
 -/
 
 public section
@@ -144,6 +153,12 @@ structure MetaConvState where
   exprCache : HashMap (UInt64 × UInt64) (KExpr .«meta») := {}
   /-- Converted universe-table roots, keyed by table index. -/
   univCache : HashMap UInt64 (KUniv .«meta») := {}
+  /-- Level-spelling decoration source, keyed by table index: `some
+      stored` when the entry is not a `reduceIxonUniv` fixpoint (its
+      `mk*` rebuild changed it), `none` when already normal. Stage-1
+      rule of canonicity §10.6 — table dedup makes per-index sourcing
+      per-occurrence-exact. -/
+  spellCache : HashMap UInt64 (Option Ixon.Univ) := {}
   /-- Counter for `_s{n}` synthetic binder names (Rust `synth_counter`). -/
   synthCounter : UInt64 := 0
 
@@ -214,6 +229,38 @@ def ingressUnivArgsMeta (ctx : IngressMetaCtx) (idxs : Array UInt64) :
   for i in idxs do
     out := out.push (← ingressUnivIdxMeta ctx i)
   return out
+
+/-- The stored spelling at table index `idx` when it is not a
+    `reduceIxonUniv` fixpoint (`none` when already `mk*`-normal).
+    Memoized per constant (`MetaConvState.spellCache`). -/
+def univSpellingAt (ctx : IngressMetaCtx) (idx : UInt64) :
+    MetaConvM (Option Ixon.Univ) := do
+  if let some cached := (← get).spellCache[idx]? then
+    return cached
+  let some u := ctx.univs[idx.toNat]?
+    | throw s!"invalid universe index {idx} (len {ctx.univs.size})"
+  let spelling := if reduceIxonUniv u == u then none else some u
+  modify fun s => { s with spellCache := s.spellCache.insert idx spelling }
+  return spelling
+
+/-- Level-spelling decoration for a `const` occurrence: `some` of the
+    FULL stored level-arg spelling list when any referenced table entry
+    is non-normal (already-normal entries ride along unchanged so egress
+    replays the whole list positionally), `none` when every entry is
+    normal. -/
+def univArgsDecor (ctx : IngressMetaCtx) (idxs : Array UInt64) :
+    MetaConvM (Option UnivDecor) := do
+  let mut any := false
+  for i in idxs do
+    if (← univSpellingAt ctx i).isSome then
+      any := true
+  if !any then return none
+  let mut us : Array Ixon.Univ := Array.mkEmpty idxs.size
+  for i in idxs do
+    let some u := ctx.univs[i.toNat]?
+      | throw s!"invalid universe index {i} (len {ctx.univs.size})"
+    us := us.push u
+  return some (.const us)
 
 /-- Meta expression frames. Binder pushes/pops maintain the de-Bruijn
     name stack for `var` resolution. -/
@@ -299,8 +346,10 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
       | .share _ | .var _ => throw "unreachable: share/var handled above"
       | .sort uidx =>
         let u ← ingressUnivIdxMeta ctx uidx
+        let decor := (← univSpellingAt ctx uidx).map .sort
         values := values.push
-          (← liftM (IngressMetaM.internE (.mkSort u (Mode.field mdata))))
+          (← liftM (IngressMetaM.internE
+            (.mkSort u (Mode.field mdata) (Mode.field decor))))
       | .ref refIdx univIdxs =>
         let some addr := ctx.refs[refIdx.toNat]?
           | throw s!"invalid Ref index {refIdx}"
@@ -310,14 +359,17 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
           | _ => throw s!"Ref at index {refIdx} (addr {addr}) has no \
                           metadata name (node={reprStr node})"
         let univs ← ingressUnivArgsMeta ctx univIdxs
+        let decor ← univArgsDecor ctx univIdxs
         values := values.push (← liftM (IngressMetaM.internE
-          (.mkConst ⟨addr, name⟩ univs (Mode.field mdata))))
+          (.mkConst ⟨addr, name⟩ univs (Mode.field mdata)
+            (Mode.field decor))))
       | .recur recIdx univIdxs =>
         let some mid := ctx.mutCtx[recIdx.toNat]?
           | throw s!"invalid Rec index {recIdx}"
         let univs ← ingressUnivArgsMeta ctx univIdxs
+        let decor ← univArgsDecor ctx univIdxs
         values := values.push (← liftM (IngressMetaM.internE
-          (.mkConst mid univs (Mode.field mdata))))
+          (.mkConst mid univs (Mode.field mdata) (Mode.field decor))))
       | .nat blobIdx =>
         let some blobAddr := ctx.refs[blobIdx.toNat]?
           | throw s!"invalid Nat blob ref index {blobIdx}"
@@ -369,14 +421,17 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
                 | throw s!"CallSite head: invalid Ref index {refIdx}"
               let name := resolveName ixonEnv csName
               let univs ← ingressUnivArgsMeta ctx univIdxs
+              let decor ← univArgsDecor ctx univIdxs
               liftM (IngressMetaM.internE
-                (.mkConst ⟨addr, name⟩ univs (Mode.field #[])))
+                (.mkConst ⟨addr, name⟩ univs (Mode.field #[])
+                  (Mode.field decor)))
             | .recur recIdx univIdxs => do
               let some mid := ctx.mutCtx[recIdx.toNat]?
                 | throw s!"CallSite head: invalid Rec index {recIdx}"
               let univs ← ingressUnivArgsMeta ctx univIdxs
+              let decor ← univArgsDecor ctx univIdxs
               liftM (IngressMetaM.internE
-                (.mkConst mid univs (Mode.field #[])))
+                (.mkConst mid univs (Mode.field #[]) (Mode.field decor)))
             | _ =>
               throw s!"CallSite head is not Ref/Rec: {reprStr headIxon}"
           if nArgs == 0 then

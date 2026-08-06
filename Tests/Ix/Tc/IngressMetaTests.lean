@@ -247,9 +247,204 @@ def metaCallSiteFixture : Bool := Id.run do
       | _ => return false
     | _ => return false
 
+/-! ### Level-spelling decorations (canonicity §10.6, stage 1)
+
+A univ-table entry that is not a `reduceIxonUniv` fixpoint decorates its
+occurrences with the stored spelling (`ExprInfo.univDecor`); egress
+replays it. Decorations fold into `metaAddr` only — semantic addresses
+(and hence `tc-meta-addr` anon/meta parity) are untouched, and spelling
+twins inside one constant stay distinct through interning and egress. -/
+
+def nW : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "W"
+def nF2 : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "fpoly"
+def nG2 : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "gpoly"
+
+/-- `imax (imax 1 u) u` — the Mathlib WF eq_def shape; `mk*`-reduces to
+    `u` (I4 then I5). -/
+def weirdU : Ixon.Univ :=
+  .imax (.imax (.succ .zero) (.var 0)) (.var 0)
+
+/-- The expected `Ix.Level` replay of `weirdU` under param name `u`. -/
+def weirdULevel : Ix.Level :=
+  Ix.Level.mkIMax
+    (Ix.Level.mkIMax (Ix.Level.mkSucc Ix.Level.mkZero)
+      (Ix.Level.mkParam nU))
+    (Ix.Level.mkParam nU)
+
+open Tests.Tc.Fixtures in
+/-- Axiom `W.{u} : Sort (imax (imax 1 u) u)` — one weird table entry. -/
+def envWeirdSort : Ixon.Env × Address := Id.run do
+  let c : Ixon.Constant := ⟨.axio ⟨false, 1, .sort 0⟩, #[], #[], #[weirdU]⟩
+  let (env, wAddr) := storeConst {} c
+  let cm : Ixon.ConstantMeta := .new
+    (.axio nW.getHash #[nU.getHash] ⟨#[.leaf]⟩ 0)
+  let env := withNamed env nW wAddr cm (extraNames := [nU])
+  return (env, wAddr)
+
+/-- Weird sort: decoration present with the stored spelling; semantic
+    address parity with the anon ingress unaffected. -/
+def decorSortChecks : Bool × Bool × Bool := Id.run do
+  let (env, wAddr) := envWeirdSort
+  match ingressAllMeta env with
+  | .error _ => return (false, false, false)
+  | .ok kenv =>
+    match kenv.get? ⟨wAddr, nW⟩ with
+    | some (.axio (ty := ty) ..) =>
+      let decorOk := match ty with
+        | .sort _ info => info.univDecor == some (.sort weirdU)
+        | _ => false
+      -- Semantic addr equals the mk*-reduced form's addr (param 0).
+      let addrOk :=
+        ty.addr == (KExpr.mkSort (m := .anon) (.mkParam 0 ())).addr
+      -- Anon parity (tc-meta-addr survives the decoration).
+      let parityOk := Id.run do
+        match Tests.Tc.Fixtures.runIngress
+            (ingressAnonAddrShallow env wAddr) with
+        | .ok (_, aenv) =>
+          match aenv.get? ⟨wAddr, ()⟩ with
+          | some (.axio (ty := aty) ..) => return aty.addr == ty.addr
+          | _ => return false
+        | .error _ => return false
+      return (decorOk, addrOk, parityOk)
+    | _ => return (false, false, false)
+
+/-- Weird sort egress: the ORIGINAL spelling comes back (and NOT the
+    normalized one — comparator teeth). -/
+def decorSortEgress : Bool × Bool := Id.run do
+  let (env, wAddr) := envWeirdSort
+  match ingressAllMeta env with
+  | .error _ => return (false, false)
+  | .ok kenv =>
+    match kenv.get? ⟨wAddr, nW⟩ with
+    | some kc =>
+      match egressConstant kc with
+      | .ok (.axiomInfo v) =>
+        let expected := Ix.Expr.mkSort weirdULevel
+        let normalized := Ix.Expr.mkSort (Ix.Level.mkParam nU)
+        return (v.cnst.type.getHash == expected.getHash,
+                v.cnst.type.getHash != normalized.getHash)
+      | _ => return (false, false)
+    | _ => return (false, false)
+
+open Tests.Tc.Fixtures in
+/-- Axiom `T.{u} : Sort (imax (imax 1 u) u) → Sort u` — BOTH spellings of
+    one Géran class in one constant (the Design-A killer): the two sort
+    occurrences share a semantic address but differ in decoration. -/
+def envSortTwins : Ixon.Env × Address := Id.run do
+  let c : Ixon.Constant :=
+    ⟨.axio ⟨false, 1, .all (.sort 0) (.sort 1)⟩, #[], #[],
+     #[weirdU, .var 0]⟩
+  let (env, tAddr) := storeConst {} c
+  let arena : Ixon.ExprMetaArena := ⟨#[
+    .leaf,                            -- 0: domain sort
+    .leaf,                            -- 1: codomain sort
+    .binder nX.getHash .default 0 1   -- 2: the pi binder
+  ]⟩
+  let cm : Ixon.ConstantMeta := .new
+    (.axio nW.getHash #[nU.getHash] arena 2)
+  let env := withNamed env nW tAddr cm (extraNames := [nU, nX])
+  return (env, tAddr)
+
+/-- Twins: same semantic addr, different metaAddr (decorated vs not),
+    decoration only on the weird occurrence, egress restores BOTH
+    spellings exactly. -/
+def decorTwinChecks : Bool × Bool × Bool := Id.run do
+  let (env, tAddr) := envSortTwins
+  match ingressAllMeta env with
+  | .error _ => return (false, false, false)
+  | .ok kenv =>
+    match kenv.get? ⟨tAddr, nW⟩ with
+    | some kc =>
+      match kc with
+      | .axio (ty := .all _ _ (.sort _ i1) (.sort _ i2) _) .. =>
+        let decorOk := i1.univDecor == some (.sort weirdU)
+          && i2.univDecor == none
+        let addrsOk := i1.addr == i2.addr
+          && i1.metaAddr != i2.metaAddr
+        let egressOk := Id.run do
+          match egressConstant kc with
+          | .ok (.axiomInfo v) =>
+            let expected := Ix.Expr.mkForallE nX
+              (Ix.Expr.mkSort weirdULevel)
+              (Ix.Expr.mkSort (Ix.Level.mkParam nU)) .default
+            return v.cnst.type.getHash == expected.getHash
+          | _ => return false
+        return (decorOk, addrsOk, egressOk)
+      | _ => return (false, false, false)
+    | _ => return (false, false, false)
+
+open Tests.Tc.Fixtures in
+/-- `gpoly.{u} : @fpoly.{imax (imax 1 u) u} → @fpoly.{u}` — const-arg
+    twins: the two `const` occurrences share a semantic address but only
+    the weird one carries a decoration (full original list). -/
+def envConstTwins : Ixon.Env × Address × Address := Id.run do
+  -- fpoly.{v} : Sort v (axiom, 1 level param).
+  let f : Ixon.Constant := ⟨.axio ⟨false, 1, .sort 0⟩, #[], #[], #[.var 0]⟩
+  let (env, fAddr) := storeConst {} f
+  let g : Ixon.Constant :=
+    ⟨.axio ⟨false, 1, .all (.ref 0 #[0]) (.ref 0 #[1])⟩, #[], #[fAddr],
+     #[weirdU, .var 0]⟩
+  let (env, gAddr) := storeConst env g
+  let arena : Ixon.ExprMetaArena := ⟨#[
+    .ref nF2.getHash,                 -- 0: domain const
+    .ref nF2.getHash,                 -- 1: codomain const
+    .binder nX.getHash .default 0 1   -- 2: the pi binder
+  ]⟩
+  let cm : Ixon.ConstantMeta := .new
+    (.axio nG2.getHash #[nU.getHash] arena 2)
+  let env := withNamed env nG2 gAddr cm (extraNames := [nU, nX, nF2])
+  let env := withNamed env nF2 fAddr
+    (.new (.axio nF2.getHash #[nU.getHash] ⟨#[.leaf]⟩ 0))
+  return (env, gAddr, fAddr)
+
+def decorConstChecks : Bool × Bool × Bool := Id.run do
+  let (env, gAddr, _fAddr) := envConstTwins
+  match ingressAllMeta env with
+  | .error _ => return (false, false, false)
+  | .ok kenv =>
+    match kenv.get? ⟨gAddr, nG2⟩ with
+    | some kc =>
+      match kc with
+      | .axio (ty := .all _ _ (.const _ _ i1) (.const _ _ i2) _) .. =>
+        let decorOk := i1.univDecor == some (.const #[weirdU])
+          && i2.univDecor == none
+        let addrsOk := i1.addr == i2.addr
+          && i1.metaAddr != i2.metaAddr
+        let egressOk := Id.run do
+          match egressConstant kc with
+          | .ok (.axiomInfo v) =>
+            let expected := Ix.Expr.mkForallE nX
+              (Ix.Expr.mkConst nF2 #[weirdULevel])
+              (Ix.Expr.mkConst nF2 #[Ix.Level.mkParam nU]) .default
+            return v.cnst.type.getHash == expected.getHash
+          | _ => return false
+        return (decorOk, addrsOk, egressOk)
+      | _ => return (false, false, false)
+    | _ => return (false, false, false)
+
+open Tests.Tc.Fixtures in
+/-- Control: an already-normal spelling (`max u v`) gets NO decoration. -/
+def decorNormalControl : Bool := Id.run do
+  let c : Ixon.Constant :=
+    ⟨.axio ⟨false, 2, .sort 0⟩, #[], #[], #[.max (.var 0) (.var 1)]⟩
+  let (env, wAddr) := storeConst {} c
+  let cm : Ixon.ConstantMeta := .new
+    (.axio nW.getHash #[nU.getHash, nX.getHash] ⟨#[.leaf]⟩ 0)
+  let env := withNamed env nW wAddr cm (extraNames := [nU, nX])
+  match ingressAllMeta env with
+  | .error _ => return false
+  | .ok kenv =>
+    match kenv.get? ⟨wAddr, nW⟩ with
+    | some (.axio (ty := .sort _ info) ..) => return info.univDecor == none
+    | _ => return false
+
 def unitTests : List TestSeq :=
   let (axName, axLvls, axParity) := metaAxiomChecks
   let (dName, dVal, dTy, dAll) := metaDefnChecks
+  let (dsDecor, dsAddr, dsParity) := decorSortChecks
+  let (dsEgress, dsTeeth) := decorSortEgress
+  let (twDecor, twAddrs, twEgress) := decorTwinChecks
+  let (ctDecor, ctAddrs, ctEgress) := decorConstChecks
   [ test "meta axiom: name resolved" axName
     ++ test "meta axiom: level params resolved" axLvls
     ++ test "meta axiom: anon/meta ty address parity" axParity
@@ -262,7 +457,20 @@ def unitTests : List TestSeq :=
         metaRefMissingArenaCaught
     ++ test "meta soft fallback: lam without arena gets synth name"
         metaLamSynthFallback
-    ++ test "meta callSite: head named from call-site" metaCallSiteFixture ]
+    ++ test "meta callSite: head named from call-site" metaCallSiteFixture
+    ++ test "decor: weird sort carries stored spelling" dsDecor
+    ++ test "decor: semantic addr is the reduced form's" dsAddr
+    ++ test "decor: anon/meta addr parity survives decoration" dsParity
+    ++ test "decor: egress replays the original spelling" dsEgress
+    ++ test "decor: egress does NOT emit the normalized spelling" dsTeeth
+    ++ test "decor twins: only the weird occurrence is decorated" twDecor
+    ++ test "decor twins: same addr, distinct metaAddr" twAddrs
+    ++ test "decor twins: egress restores both spellings" twEgress
+    ++ test "decor const-args: full original list on weird occurrence"
+        ctDecor
+    ++ test "decor const-args: same addr, distinct metaAddr" ctAddrs
+    ++ test "decor const-args: egress restores both lists" ctEgress
+    ++ test "decor control: normal spelling undecorated" decorNormalControl ]
 
 /-! ### Rust-compiled closures (`tc-ingress-meta`, ignored) -/
 

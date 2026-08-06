@@ -126,6 +126,84 @@ def testDecompile : TestSeq :=
       return (false, 0, 0, some s!"{decompErrors.size} decompilation errors")
   ) .done
 
+/-! ## Extension-table append (pure unit)
+
+`mkBlockCtx` extends the primary `refs`/`univs` tables with the
+per-constant `ConstantMeta.metaRefs`/`metaUnivs` — the documented
+virtual-address contract (Rust `load_meta_extensions`). No compiler
+emits extension entries today (stage 1 of canonicity §10.6; stage 2's
+`univPatches` spellings will), so this synthetic fixture is the only
+thing pinning the Lean side of the contract. -/
+
+section ExtensionAppend
+
+open Ix.DecompileM Ixon
+
+private def nB : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "B"
+private def nU : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "u"
+private def nX : Ix.Name := Ix.Name.mkStr Ix.Name.mkAnon "x"
+
+/-- Type `∀ (x : B), Sort (max u 0)` where ref index 1 and univ index 1
+    are VIRTUAL — resolvable only through the appended extension
+    tables. -/
+private def extFixture :
+    Ixon.Constant × ConstantMeta × ExprMetaArena × Ixon.Expr := Id.run do
+  let ty : Ixon.Expr := .all (.ref 1 #[]) (.sort 1)
+  let aAddr := Address.blake3 "ext-fixture-A".toUTF8
+  let cnst : Ixon.Constant :=
+    ⟨.axio ⟨false, 1, ty⟩, #[], #[aAddr], #[.var 0]⟩
+  let bAddr := Address.blake3 "ext-fixture-B".toUTF8
+  let cm : ConstantMeta :=
+    { metaRefs := #[bAddr], metaUnivs := #[.max (.var 0) .zero] }
+  let arena : ExprMetaArena := ⟨#[
+    .ref nB.getHash,                  -- 0: domain const name
+    .leaf,                            -- 1: codomain sort
+    .binder nX.getHash .default 0 1   -- 2: the pi binder
+  ]⟩
+  return (cnst, cm, arena, ty)
+
+private def extEnv : DecompileEnv := Id.run do
+  let base : Ixon.Env := {}
+  let names := [nB, nU, nX].foldl (init := base.names)
+    Ixon.RawEnv.addNameComponents
+  return { ixonEnv := { base with names } }
+
+/-- With extensions installed, the virtual indices resolve and the
+    original expression comes back. -/
+private def extAppendResolves : Bool := Id.run do
+  let (cnst, cm, arena, ty) := extFixture
+  let ctx := mkBlockCtx cnst #[] #[nU] arena cm
+  match DecompileM.run extEnv ctx {} (decompileExpr ty 2) with
+  | .ok (e, _) =>
+    let expected := Ix.Expr.mkForallE nX
+      (Ix.Expr.mkConst nB #[])
+      (Ix.Expr.mkSort (Ix.Level.mkMax (Ix.Level.mkParam nU)
+        Ix.Level.mkZero))
+      .default
+    return e == expected
+  | .error _ => return false
+
+/-- Without the metadata wrapper, the same indices are out of bounds —
+    proving the append (not table size coincidence) made them resolve. -/
+private def extAppendTeeth : Bool := Id.run do
+  let (cnst, _, arena, ty) := extFixture
+  let ctx := mkBlockCtx cnst #[] #[nU] arena
+  match DecompileM.run extEnv ctx {} (decompileExpr ty 2) with
+  | .ok _ => return false
+  | .error e =>
+    return match e with
+      | .invalidRefIndex .. | .invalidUnivIndex .. => true
+      | _ => false
+
+public def unitSuite : List TestSeq := [
+  test "extension append: virtual ref/univ indices resolve"
+      extAppendResolves
+    ++ test "extension append: absent metadata leaves indices OOB"
+      extAppendTeeth
+]
+
+end ExtensionAppend
+
 /-! ## Test Suite -/
 
 public def decompileSuiteIO : List TestSeq := [

@@ -42,9 +42,9 @@ use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
 use super::env::{CtxAddr, InternTable, KEnv};
-use super::expr::{KExpr, MData};
+use super::expr::{KExpr, MData, UnivDecor};
 use super::id::KId;
-use super::level::KUniv;
+use super::level::{KUniv, UnivData};
 use super::mode::{KernelMode, Meta};
 use super::primitive::reserved_marker_name;
 
@@ -513,6 +513,52 @@ fn ingress_univ_args<M: KernelMode>(
   Ok(result.into_boxed_slice())
 }
 
+/// Does this stored Ixon universe tree match the (`mk*`-reduced) kernel
+/// universe node-for-node? `false` means the smart constructors changed
+/// it during ingress — the occurrence gets a level-spelling decoration
+/// (canonicity §10.6, stage-1 rule).
+fn ixon_matches_kuniv<M: KernelMode>(u: &IxonUniv, k: &KUniv<M>) -> bool {
+  match (u, k.data()) {
+    (IxonUniv::Zero, UnivData::Zero(_)) => true,
+    (IxonUniv::Succ(a), UnivData::Succ(b, _)) => ixon_matches_kuniv(a, b),
+    (IxonUniv::Max(a1, b1), UnivData::Max(a2, b2, _))
+    | (IxonUniv::IMax(a1, b1), UnivData::IMax(a2, b2, _)) => {
+      ixon_matches_kuniv(a1, a2) && ixon_matches_kuniv(b1, b2)
+    },
+    (IxonUniv::Var(i), UnivData::Param(j, _, _)) => i == j,
+    _ => false,
+  }
+}
+
+/// Level-spelling decoration for a `Const` occurrence: `Some` of the
+/// FULL stored level-arg spelling list when any referenced table entry's
+/// `mk*` rebuild differs from its stored tree (already-normal entries
+/// ride along unchanged so egress replays the whole list positionally),
+/// `None` when every entry is normal. Meta mode only — call inside
+/// `M::meta_field_with`; indices were validated by `ingress_univ_args`.
+fn univ_args_decor<M: KernelMode>(
+  univ_idxs: &[u64],
+  ctx: &Ctx<'_, M>,
+  ingressed: &[KUniv<M>],
+) -> Option<UnivDecor> {
+  let stored_at = |idx: u64| -> &Arc<IxonUniv> {
+    usize::try_from(idx)
+      .ok()
+      .and_then(|i| ctx.univs.get(i))
+      .expect("univ index validated by ingress_univ_args")
+  };
+  let changed = univ_idxs
+    .iter()
+    .zip(ingressed.iter())
+    .any(|(&idx, k)| !ixon_matches_kuniv(stored_at(idx), k));
+  if !changed {
+    return None;
+  }
+  let spellings: Box<[Arc<IxonUniv>]> =
+    univ_idxs.iter().map(|&idx| stored_at(idx).clone()).collect();
+  Some(UnivDecor::Const(spellings))
+}
+
 // ============================================================================
 // Expression ingress (iterative)
 // ============================================================================
@@ -746,11 +792,25 @@ fn ingress_expr<M: KernelMode>(
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
             let zu = ingress_univ(u, ctx, intern, univ_cache, stats);
-            let key = super::env::ExprKey::Sort(*zu.addr());
+            // Stage-1 spelling decoration (canonicity §10.6): a stored
+            // tree the mk* rebuild changed is preserved on the
+            // occurrence for egress replay. Anon mode skips the closure.
+            let decor: M::MField<Option<UnivDecor>> =
+              M::meta_field_with(|| {
+                if ixon_matches_kuniv(u, &zu) {
+                  None
+                } else {
+                  Some(UnivDecor::Sort(u.clone()))
+                }
+              });
+            let key = super::env::ExprKey::Sort(
+              *zu.addr(),
+              M::meta_get(&decor).cloned().flatten(),
+            );
             values.push(timed_intern_or_build(
               intern,
               &key,
-              || KExpr::sort_mdata(zu, mdata),
+              || KExpr::sort_full(zu, mdata, decor),
               stats,
             ));
           },
@@ -786,14 +846,17 @@ fn ingress_expr<M: KernelMode>(
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
             let id = KId::new(addr, name_field);
+            let decor: M::MField<Option<UnivDecor>> =
+              M::meta_field_with(|| univ_args_decor(univ_idxs, ctx, &univs));
             let key = super::env::ExprKey::Const(
               id.addr.clone(),
               univs.iter().map(|u| *u.addr()).collect(),
+              M::meta_get(&decor).cloned().flatten(),
             );
             values.push(timed_intern_or_build(
               intern,
               &key,
-              || KExpr::cnst_mdata(id, univs, mdata),
+              || KExpr::cnst_full(id, univs, mdata, decor),
               stats,
             ));
           },
@@ -810,14 +873,17 @@ fn ingress_expr<M: KernelMode>(
               .clone();
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
+            let decor: M::MField<Option<UnivDecor>> =
+              M::meta_field_with(|| univ_args_decor(univ_idxs, ctx, &univs));
             let key = super::env::ExprKey::Const(
               mid.addr.clone(),
               univs.iter().map(|u| *u.addr()).collect(),
+              M::meta_get(&decor).cloned().flatten(),
             );
             values.push(timed_intern_or_build(
               intern,
               &key,
-              || KExpr::cnst_mdata(mid, univs, mdata),
+              || KExpr::cnst_full(mid, univs, mdata, decor),
               stats,
             ));
           },
@@ -921,14 +987,19 @@ fn ingress_expr<M: KernelMode>(
                   let id = KId::new(addr, M::meta_field(name));
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
+                  let decor: M::MField<Option<UnivDecor>> =
+                    M::meta_field_with(|| {
+                      univ_args_decor(univ_idxs, ctx, &univs)
+                    });
                   let key = super::env::ExprKey::Const(
                     id.addr.clone(),
                     univs.iter().map(|u| *u.addr()).collect(),
+                    M::meta_get(&decor).cloned().flatten(),
                   );
                   timed_intern_or_build(
                     intern,
                     &key,
-                    || KExpr::cnst_mdata(id, univs, mdata_field),
+                    || KExpr::cnst_full(id, univs, mdata_field, decor),
                     stats,
                   )
                 },
@@ -951,14 +1022,19 @@ fn ingress_expr<M: KernelMode>(
                   )?;
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
+                  let decor: M::MField<Option<UnivDecor>> =
+                    M::meta_field_with(|| {
+                      univ_args_decor(univ_idxs, ctx, &univs)
+                    });
                   let key = super::env::ExprKey::Const(
                     mid.addr.clone(),
                     univs.iter().map(|u| *u.addr()).collect(),
+                    M::meta_get(&decor).cloned().flatten(),
                   );
                   timed_intern_or_build(
                     intern,
                     &key,
-                    || KExpr::cnst_mdata(mid, univs, mdata_field),
+                    || KExpr::cnst_full(mid, univs, mdata_field, decor),
                     stats,
                   )
                 },

@@ -15,7 +15,7 @@ use ix_common::address::Address;
 
 use super::constant::{KConst, RecRule};
 use super::error::TcError;
-use super::expr::{FVarId, KExpr};
+use super::expr::{FVarId, KExpr, UnivDecor};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
@@ -49,17 +49,24 @@ pub type Addr = u64;
 pub type CtxAddr = blake3::Hash;
 
 /// Shallow structural key of an expression node: the variant tag plus the
-/// uids of its children and its semantic payload. Mirrors EXACTLY what the
+/// uids of its children and its semantic payload. Mirrors what the
 /// historical per-node content hash covered — display names, binder info,
-/// and mdata are excluded — so interning semantics are unchanged. Children
-/// are identified by uid: within one table, equal keys ⇔ structurally
-/// equal nodes (children canonical by induction).
+/// and mdata are excluded — so interning semantics are unchanged for
+/// them. Children are identified by uid: within one table, equal keys ⇔
+/// structurally equal nodes (children canonical by induction).
+///
+/// `Sort`/`Const` additionally carry the level-spelling decoration
+/// ([`UnivDecor`], Meta mode only — always `None` in Anon mode): unlike
+/// names/mdata, the decoration feeds egress OUTPUT (the rebuilt anon univ
+/// tables), so spelling twins must intern to distinct nodes or the
+/// first-interned spelling would be replayed for both (the Lean twin gets
+/// the same distinction by folding decorations into `metaAddr`).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ExprKey {
   Var(u64),
   FVar(u64),
-  Sort(Addr),
-  Const(Address, Box<[Addr]>),
+  Sort(Addr, Option<UnivDecor>),
+  Const(Address, Box<[Addr]>, Option<UnivDecor>),
   App(Addr, Addr),
   Lam(Addr, Addr),
   All(Addr, Addr),
@@ -133,10 +140,15 @@ pub fn expr_key<M: KernelMode>(e: &KExpr<M>) -> ExprKey {
   match e.data() {
     ExprData::Var(i, _, _) => ExprKey::Var(*i),
     ExprData::FVar(id, _, _) => ExprKey::FVar(id.0),
-    ExprData::Sort(u, _) => ExprKey::Sort(*u.addr()),
-    ExprData::Const(id, us, _) => {
-      ExprKey::Const(id.addr.clone(), us.iter().map(|u| *u.addr()).collect())
-    },
+    ExprData::Sort(u, i) => ExprKey::Sort(
+      *u.addr(),
+      M::meta_get(&i.univ_decor).cloned().flatten(),
+    ),
+    ExprData::Const(id, us, i) => ExprKey::Const(
+      id.addr.clone(),
+      us.iter().map(|u| *u.addr()).collect(),
+      M::meta_get(&i.univ_decor).cloned().flatten(),
+    ),
     ExprData::App(f, a, _) => ExprKey::App(*f.addr(), *a.addr()),
     ExprData::Lam(_, _, t, b, _) => ExprKey::Lam(*t.addr(), *b.addr()),
     ExprData::All(_, _, t, b, _) => ExprKey::All(*t.addr(), *b.addr()),
@@ -250,7 +262,13 @@ impl<M: KernelMode> InternTable<M> {
     let e = match e.data() {
       ExprData::Sort(un, _) => {
         let cu = self.intern_univ(un.clone());
-        if cu.ptr_eq(un) { e } else { KExpr::sort_mdata(cu, e.mdata().clone()) }
+        if cu.ptr_eq(un) {
+          e
+        } else {
+          // Child canonicalization only — same semantic level, same
+          // occurrence: the spelling decoration rides along.
+          KExpr::sort_full(cu, e.mdata().clone(), e.univ_decor().clone())
+        }
       },
       ExprData::Const(id, us, _) => {
         let cus: Box<[KUniv<M>]> =
@@ -258,7 +276,12 @@ impl<M: KernelMode> InternTable<M> {
         if cus.iter().zip(us.iter()).all(|(a, b)| a.ptr_eq(b)) {
           e
         } else {
-          KExpr::cnst_mdata(id.clone(), cus, e.mdata().clone())
+          KExpr::cnst_full(
+            id.clone(),
+            cus,
+            e.mdata().clone(),
+            e.univ_decor().clone(),
+          )
         }
       },
       ExprData::App(f, a, _) => {

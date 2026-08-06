@@ -51,31 +51,10 @@ namespace Ix.Tc
 
 open Std (HashMap)
 
-/-! ### Universe conversion and reduction -/
+/-! ### Universe conversion and reduction
 
-/-- Ixon universe → kernel universe via the *simplifying* smart constructors
-    (the same reduction ingress applies). Pure: no interning. -/
-def ixonUnivToK : Ixon.Univ → KUniv .anon
-  | .zero => .mkZero
-  | .succ u => .mkSucc (ixonUnivToK u)
-  | .max a b => .mkMax (ixonUnivToK a) (ixonUnivToK b)
-  | .imax a b => .mkIMax (ixonUnivToK a) (ixonUnivToK b)
-  | .var idx => .mkParam idx ()
-
-/-- Kernel universe → Ixon universe, structural (kernel levels are already
-    reduced by construction). -/
-def kUnivToIxon : KUniv .anon → Ixon.Univ
-  | .zero _ => .zero
-  | .succ u _ => .succ (kUnivToIxon u)
-  | .max a b _ => .max (kUnivToIxon a) (kUnivToIxon b)
-  | .imax a b _ => .imax (kUnivToIxon a) (kUnivToIxon b)
-  | .param idx _ _ => .var idx
-
-/-- Reduce an Ixon universe tree exactly the way ingress does (round through
-    the kernel's simplifying constructors). Used by `canonConstant` so the
-    original constant's raw levels compare against the kernel's reduced ones. -/
-def reduceIxonUniv (u : Ixon.Univ) : Ixon.Univ :=
-  kUnivToIxon (ixonUnivToK u)
+`ixonUnivToK` / `kUnivToIxon` / `reduceIxonUniv` live in `Ix.Tc.Ingress`
+(shared with meta ingress's decoration-presence test). -/
 
 /-! ### Expression egress -/
 

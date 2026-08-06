@@ -5,6 +5,7 @@ public import Ix.Tc.Id
 public import Ix.Tc.Level
 public import Ix.Address
 public import Ix.Unsigned
+public import Ix.Ixon
 
 /-!
 Mirror: crates/kernel/src/expr.rs
@@ -44,6 +45,22 @@ open Blake3.Rust (Hasher)
 /-- A single mdata layer: key-value pairs from Lean's `Expr.mdata`. -/
 abbrev MData := Array (Name × Ix.DataValue)
 
+/-- Original level-spelling decoration for a meta-mode `sort`/`const`
+    occurrence (canonicity §10.6). Carried when the occurrence's stored
+    spelling differs from the kernel-held `mk*`-normal form, so meta
+    egress can replay the source syntax. Spellings are `Ixon.Univ`
+    (positional `var` indices — language-neutral vs the Rust twin).
+    Presentation-only: never folded into the semantic `addr`, never read
+    by checking; decorations live on occurrence (KExpr) nodes, NOT on
+    KUniv nodes — KUniv interning is semantic-address-keyed and would
+    collapse spelling twins first-wins. -/
+inductive UnivDecor where
+  /-- Original spelling of a `sort` occurrence's level. -/
+  | sort (u : Ixon.Univ)
+  /-- Original spellings of a `const` occurrence's full level-arg list. -/
+  | const (us : Array Ixon.Univ)
+  deriving BEq, Repr, Inhabited
+
 /-- Per-expression info: Blake3 address, substitution annotations, mdata. -/
 structure ExprInfo (m : Mode) where
   /-- Blake3 hash of semantic expression content. Metadata fields are stored
@@ -68,8 +85,14 @@ structure ExprInfo (m : Mode) where
       names/infos/mdata (the exact drift that forced Rust's roundtrip off
       the direct `lean_egress` path). Checking never reads it: every
       semantic cache keys by `addr`. Universe display names are excluded —
-      level egress resolves parameter names positionally. -/
+      level egress resolves parameter names positionally. Level-spelling
+      decorations (`univDecor`) ARE included: spelling twins must intern
+      and egress per occurrence. -/
   metaAddr : m.F Address
+  /-- Original level-spelling decoration (meta-mode `sort`/`const` only;
+      `none` everywhere else and when the stored spelling is already
+      `mk*`-normal). Folded into `metaAddr`, never into `addr`. -/
+  univDecor : m.F (Option UnivDecor) := Mode.field none
 
 /-- Expression. Each variant carries its `ExprInfo m`. -/
 inductive KExpr (m : Mode) where
@@ -112,6 +135,8 @@ def info : KExpr m → ExprInfo m
 @[inline] def count0 (e : KExpr m) : UInt64 := e.info.count0
 @[inline] def hasFVars (e : KExpr m) : Bool := e.info.hasFVars
 @[inline] def mdata (e : KExpr m) : m.F (Array MData) := e.info.mdata
+@[inline] def univDecor (e : KExpr m) : m.F (Option UnivDecor) :=
+  e.info.univDecor
 
 /-- Number of expression nodes, ignoring cached metadata. Used as a
     termination measure for stack-based production traversals; it does not
@@ -182,6 +207,26 @@ def hashFMData {m : Mode} (h : Hasher) (md : m.F (Array MData)) : Hasher :=
         h := Ix.Expr.hashDataValue h dv
     return h
 
+/-- Fold a level-spelling decoration into a hasher (meta-mode thunks
+    only). Always writes a presence byte; spellings serialize via
+    `putUniv` (injective and self-delimiting, so the stream is
+    unambiguous). -/
+def hashFUnivDecor {m : Mode} (h : Hasher) (d : m.F (Option UnivDecor)) :
+    Hasher :=
+  match (Mode.get? d).getD none with
+  | none => h.update ⟨#[0]⟩
+  | some (.sort u) =>
+    (h.update ⟨#[1]⟩).update (Ixon.runPut (Ixon.putUniv u))
+  | some (.const us) => Id.run do
+    let mut h := (h.update ⟨#[2]⟩).update us.size.toUInt64.toLEBytes
+    for u in us do
+      h := h.update (Ixon.runPut (Ixon.putUniv u))
+    return h
+
+/-- The absent decoration, mode-erased. -/
+@[inline] def noUnivDecor {m : Mode} : m.F (Option UnivDecor) :=
+  Mode.field none
+
 def mkVar (idx : UInt64) (name : m.F Name)
     (mdata : m.F (Array MData) := noMData) : KExpr m := Id.run do
   let mut h := Hasher.init ()
@@ -215,7 +260,8 @@ def mkFVar (id : FVarId) (name : m.F Name)
   return .fvar id name
     { addr, lbr := 0, count0 := 0, hasFVars := true, mdata, metaAddr }
 
-def mkSort (u : KUniv m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
+def mkSort (u : KUniv m) (mdata : m.F (Array MData) := noMData)
+    (univDecor : m.F (Option UnivDecor) := noUnivDecor) : KExpr m :=
   Id.run do
     let mut h := Hasher.init ()
     h := h.update ⟨#[Ix.TAG_ESORT]⟩
@@ -224,15 +270,18 @@ def mkSort (u : KUniv m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
     let metaAddr : m.F Address := Mode.fieldWith fun () => Id.run do
       let mut mh := Hasher.init ()
       mh := mh.update addr.hash
+      mh := hashFUnivDecor mh univDecor
       mh := hashFMData mh mdata
       return Address.mk (mh.finalizeWithLength 32).val
     return .sort u
-      { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
+      { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr,
+        univDecor }
 
 /-- `id.addr` is the constant's content address — its identity. `id.name` is
     display-only and NOT hashed. -/
 def mkConst (id : KId m) (us : Array (KUniv m))
-    (mdata : m.F (Array MData) := noMData) : KExpr m := Id.run do
+    (mdata : m.F (Array MData) := noMData)
+    (univDecor : m.F (Option UnivDecor) := noUnivDecor) : KExpr m := Id.run do
   let mut h := Hasher.init ()
   h := h.update ⟨#[Ix.TAG_EREF]⟩
   h := h.update id.addr.hash
@@ -243,10 +292,12 @@ def mkConst (id : KId m) (us : Array (KUniv m))
     let mut mh := Hasher.init ()
     mh := mh.update addr.hash
     mh := hashFName mh id.name
+    mh := hashFUnivDecor mh univDecor
     mh := hashFMData mh mdata
     return Address.mk (mh.finalizeWithLength 32).val
   return .const id us
-    { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr }
+    { addr, lbr := 0, count0 := 0, hasFVars := false, mdata, metaAddr,
+      univDecor }
 
 def mkApp (f a : KExpr m) (mdata : m.F (Array MData) := noMData) : KExpr m :=
   Id.run do

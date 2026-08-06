@@ -69,6 +69,20 @@ impl MetaHash for bool {
   }
 }
 
+impl<T: MetaHash> MetaHash for Option<T> {
+  fn meta_hash(&self, hasher: &mut blake3::Hasher) {
+    match self {
+      None => {
+        hasher.update(&[0]);
+      },
+      Some(t) => {
+        hasher.update(&[1]);
+        t.meta_hash(hasher);
+      },
+    }
+  }
+}
+
 /// Check a metadata field for duplicate level parameter names.
 /// `Vec<Name>` performs the real check; `()` (erased metadata) is a no-op.
 pub trait CheckDupLevelParams {
@@ -184,6 +198,18 @@ impl MetaDisplay for () {
   }
 }
 
+impl<T: MetaDisplay> MetaDisplay for Option<T> {
+  fn has_meta(&self) -> bool {
+    self.as_ref().is_some_and(MetaDisplay::has_meta)
+  }
+  fn meta_fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Some(t) => t.meta_fmt(f),
+      None => Ok(()),
+    }
+  }
+}
+
 /// Controls metadata behavior for all zero kernel types.
 pub trait KernelMode: 'static + Clone + Debug + Send + Sync {
   /// `true` iff this mode carries metadata. Enables compile-time
@@ -229,6 +255,14 @@ pub trait KernelMode: 'static + Clone + Debug + Send + Sync {
 
   /// Extract a name from a metadata field when running in Meta mode.
   fn meta_name(field: &Self::MField<Name>) -> Option<Name>;
+
+  /// Borrow the value inside a metadata field: `Some(&T)` in Meta mode,
+  /// `None` in Anon mode. The generic counterpart of `meta_name`.
+  fn meta_get<
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+  >(
+    field: &Self::MField<T>,
+  ) -> Option<&T>;
 }
 
 /// Const-generic kernel mode. `META` controls metadata fields.
@@ -274,6 +308,14 @@ impl KernelMode for ZMode<true> {
   fn meta_name(field: &Name) -> Option<Name> {
     Some(field.clone())
   }
+
+  fn meta_get<
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+  >(
+    field: &T,
+  ) -> Option<&T> {
+    Some(field)
+  }
 }
 
 impl KernelMode for ZMode<false> {
@@ -309,6 +351,14 @@ impl KernelMode for ZMode<false> {
   }
 
   fn meta_name(_field: &()) -> Option<Name> {
+    None
+  }
+
+  fn meta_get<
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+  >(
+    _field: &(),
+  ) -> Option<&T> {
     None
   }
 }
