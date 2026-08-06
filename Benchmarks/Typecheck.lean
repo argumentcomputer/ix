@@ -344,6 +344,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let (commitParams, friParams) :=
     if recursive then (recursiveCommitmentParameters, recursiveFriParameters)
     else (commitmentParameters, friParameters)
+  -- `--queries N` overrides the selected parameter set's FRI query count
+  -- (inner and outer proof alike in --recursive mode, which builds both
+  -- systems from `friParams`).
+  let friParams := match (p.flag? "queries").map (·.as! Nat) with
+    | some n => { friParams with numQueries := n }
+    | none => friParams
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams friParams
   -- The recursive-verifier context, compiled and built ONCE: the verifier
   -- toplevel is constant-independent, and its prover system (same recursion
@@ -608,6 +614,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
+    "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
 ]
