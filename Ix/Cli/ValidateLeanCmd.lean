@@ -72,6 +72,19 @@ def PhaseResult.isFailure : PhaseResult → Bool
   | .failed _ => true
   | _ => false
 
+/-- Append a phase result AND emit its section heading immediately, in
+    `ix validate`'s style (`[validate-aux] Phase: … / n pass, m fail`),
+    flushing stdout. Incremental + flushed output is load-bearing: the
+    stage-1 whole-Mathlib run was OOM-killed mid-phase with every
+    completed phase's result still sitting in the block-buffered stdout,
+    leaving no evidence of how far it got. -/
+def pushPhase (phases : Array (String × PhaseResult))
+    (entry : String × PhaseResult) : IO (Array (String × PhaseResult)) := do
+  IO.println s!"[validate-lean] Phase: {entry.1}"
+  IO.println s!"  {entry.2.render}"
+  (← IO.getStdout).flush
+  return phases.push entry
+
 def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   let ixe? := (p.flag? "ixe").map (·.as! String)
   let path? : Option String := (p.variableArgsAs! String)[0]?
@@ -103,7 +116,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   | some ixePath, _ =>
     IO.println s!"Running pure-Lean Ix validator on {ixePath} (no Lean source: phases 1/4/5 skipped)"
     bytes ← IO.FS.readBinFile ixePath
-    phases := phases.push ("1 compile",
+    phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
       .skipped "pre-compiled .ixe input — no Lean source to compile")
   | none, some pathStr =>
     IO.println s!"Running pure-Lean Ix validator on {pathStr}"
@@ -127,6 +140,8 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
           IO.println s!"[validate-lean] filter: {closed.length} constants after transitive-dep closure"
           pure closed
     IO.println s!"Total constants: {constList.length}"
+    IO.println "[validate-lean] phase 1: compiling (pure-Lean pipeline)..."
+    (← IO.getStdout).flush
     -- Phase 1: compile through the PURE-LEAN pipeline (canon → graph →
     -- ground → condense → aux-aware parallel compile → serialize).
     let compileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 32
@@ -134,7 +149,7 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     match ← Ix.CompileM.compileLeanConsts constList
         (numWorkers := compileWorkers) with
     | .error e =>
-      phases := phases.push ("1 compile",
+      phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
         .failed s!"pure-Lean pipeline: {e}")
     | .ok out =>
       bytes := out.bytes
@@ -161,12 +176,12 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       if out.cenv.ungrounded.size > 0 then
         let shown := out.cenv.ungrounded.toList.take 3
         let msgs := shown.map fun (n, m) => s!"    ✗ {n.pretty}: {m.take 160}"
-        phases := phases.push ("1 compile",
+        phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
           .failed (s!"{out.cenv.ungrounded.size} per-block compile \
 failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
             String.intercalate "\n" msgs))
       else
-        phases := phases.push ("1 compile",
+        phases ← pushPhase phases ("1. Compile (pure-Lean pipeline)",
           .passed s!"pure-Lean pipeline: {out.bytes.size} bytes, \
 {out.blockCount} blocks, {out.ungroundedCount} ungrounded ({t1 - t0}ms)")
   | none, none => unreachable!
@@ -178,14 +193,16 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
   -- the whole-env structured materialization (a >100 GiB spike at
   -- whole-Mathlib scale, with the Lean oracle env still pinned for
   -- phase 4) never happens.
+  IO.println "[validate-lean] phase 2: serde gate (streaming)..."
+  (← IO.getStdout).flush
   let t0 ← IO.monoMsNow
   let parts? ← match serdeGateStreaming bytes with
     | .error e =>
-      phases := phases.push ("2 serde", .failed e)
+      phases ← pushPhase phases ("2. Serde (streaming)", .failed e)
       pure none
     | .ok parts =>
       let t1 ← IO.monoMsNow
-      phases := phases.push ("2 serde",
+      phases ← pushPhase phases ("2. Serde (streaming)",
         .passed s!"streaming gate: {parts.env.consts.size} consts / \
 {parts.namedRows.size} named rows; writer byte-identical per unit ({t1 - t0}ms)")
       pure (some parts)
@@ -196,8 +213,8 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
   match parts? with
   | none =>
     -- Serde failed: nothing downstream can run.
-    phases := phases.push ("3 kernel anon roundtrip", .skipped "serde gate failed")
-    phases := phases.push ("4 kernel meta roundtrip", .skipped "serde gate failed")
+    phases ← pushPhase phases ("3. Kernel anon roundtrip", .skipped "serde gate failed")
+    phases ← pushPhase phases ("4. Kernel meta roundtrip", .skipped "serde gate failed")
   | some parts =>
     -- Phase 3: anon structural roundtrip (named-independent: works off
     -- the lazy consts windows). Memory-diagnosis knobs:
@@ -205,15 +222,17 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     -- skips phases outright to isolate another phase's footprint.
     let skipPhases := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
     if skipPhases.contains "3" then
-      phases := phases.push ("3 kernel anon roundtrip", .skipped "IX_SKIP_PHASES")
+      phases ← pushPhase phases ("3. Kernel anon roundtrip", .skipped "IX_SKIP_PHASES")
     else
+      IO.println "[validate-lean] phase 3: kernel anon roundtrip..."
+      (← IO.getStdout).flush
       let anonCap := (← IO.getEnv "IX_ANON_CAP").bind (·.toNat?)
       let anonSeq := (← IO.getEnv "IX_ANON_SEQ").isSome
       let anonCut := ((← IO.getEnv "IX_ANON_STAGE").bind (·.toNat?)).getD 0
       let t0 ← IO.monoMsNow
       let (rows, err?) := anonRoundtripEnv parts.env anonCap anonSeq anonCut
       let t1 ← IO.monoMsNow
-      phases := phases.push ("3 kernel anon roundtrip",
+      phases ← pushPhase phases ("3. Kernel anon roundtrip",
         match err? with
         | none => .passed s!"{rows} constants structurally preserved ({t1 - t0}ms)"
         | some e => .failed s!"after {rows} rows: {e}")
@@ -228,9 +247,11 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     -- compare → drop; the whole-env merged MetaEnv never exists.
     match leanEnv? with
     | none =>
-      phases := phases.push ("4 kernel meta roundtrip",
+      phases ← pushPhase phases ("4. Kernel meta roundtrip",
         .skipped "no Lean source env to compare against (--ixe mode)")
     | some leanEnv =>
+      IO.println "[validate-lean] phase 4: kernel meta roundtrip (streaming)..."
+      (← IO.getStdout).flush
       let t0 ← IO.monoMsNow
       -- IX_META_EAGER=1: the pre-streaming whole-env driver (memory
       -- diagnosis oracle; needs the full named table materialized AND
@@ -242,18 +263,18 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
           pure <| metaRoundtripEnvStreaming leanEnv parts
       match metaResult with
       | .error e =>
-        phases := phases.push ("4 kernel meta roundtrip", .failed e)
+        phases ← pushPhase phases ("4. Kernel meta roundtrip", .failed e)
       | .ok report =>
         let t1 ← IO.monoMsNow
         let counts := s!"checked {report.checked}, notFound {report.notFound}, \
                         skippedAux {report.skippedAux}, \
                         skippedSurgery {report.skippedSurgery} ({t1 - t0}ms)"
         if report.errorCount == 0 then
-          phases := phases.push ("4 kernel meta roundtrip", .passed counts)
+          phases ← pushPhase phases ("4. Kernel meta roundtrip", .passed counts)
         else
           let shown := report.errors.toSubarray 0 (min 5 report.errors.size)
           let msgs := shown.toArray.map fun (n, m) => s!"    ✗ {n}: {m}"
-          phases := phases.push ("4 kernel meta roundtrip",
+          phases ← pushPhase phases ("4. Kernel meta roundtrip",
             .failed (s!"{report.errorCount} comparison error(s); {counts}\n" ++
               String.intercalate "\n" msgs.toList))
 
@@ -276,13 +297,15 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     else parts?.map (·.materializeAll)
   match ixonEnvForDecompile? with
   | none =>
-    phases := phases.push ("5 decompile",
+    phases ← pushPhase phases ("5. Decompile",
       .skipped (if skipPhases5.contains "5" then "IX_SKIP_PHASES"
                 else "serde gate failed"))
   | some (Except.error e) =>
-    phases := phases.push ("5 decompile",
+    phases ← pushPhase phases ("5. Decompile",
       .failed s!"named metadata materialization: {e}")
   | some (Except.ok ixonEnv) =>
+    IO.println "[validate-lean] phase 5: decompiling (full driver)..."
+    (← IO.getStdout).flush
     let t0 ← IO.monoMsNow
     let decompileWorkers := ((p.flag? "workers").map (·.as! Nat)).getD 16
     let (decompiled, errs, _p2st) ←
@@ -292,7 +315,7 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     if !errs.isEmpty then
       let shown := errs.toList.take 5
       let msgs := shown.map fun (n, m) => s!"    ✗ {n.pretty}: {m.take 160}"
-      phases := phases.push ("5 decompile",
+      phases ← pushPhase phases ("5. Decompile",
         .failed (s!"{errs.size} decompile error(s) \
 ({decompiled.size} constants, {t1 - t0}ms)\n" ++
           String.intercalate "\n" msgs))
@@ -314,12 +337,12 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
             if mismatches.size < 10 then
               mismatches := mismatches.push name
         if mismatches.isEmpty && missing == 0 then
-          phases := phases.push ("5 decompile",
+          phases ← pushPhase phases ("5. Decompile",
             .passed s!"{nMatch} constants reconstructed hash-identical \
 to the canonicalized source ({t1 - t0}ms)")
         else
           let msgs := mismatches.toList.take 5 |>.map (s!"    ✗ {·.pretty}")
-          phases := phases.push ("5 decompile",
+          phases ← pushPhase phases ("5. Decompile",
             .failed (s!"{mismatches.size} mismatch(es), {missing} \
 missing; {nMatch} matched ({t1 - t0}ms)\n" ++
               String.intercalate "\n" msgs))
@@ -339,27 +362,30 @@ missing; {nMatch} matched ({t1 - t0}ms)\n" ++
             if mismatches.size < 10 then
               mismatches := mismatches.push name
         if mismatches.isEmpty && missing == 0 then
-          phases := phases.push ("5 decompile",
+          phases ← pushPhase phases ("5. Decompile",
             .passed s!"{nMatch} constants reconstructed digest-identical \
 to the canonicalized source ({t1 - t0}ms)")
         else
           let msgs := mismatches.toList.take 5 |>.map (s!"    ✗ {·.pretty}")
-          phases := phases.push ("5 decompile",
+          phases ← pushPhase phases ("5. Decompile",
             .failed (s!"{mismatches.size} digest mismatch(es), {missing} \
 missing; {nMatch} matched ({t1 - t0}ms) — rerun with --full-oracle \
 --ns <namespace> for a structural diff\n" ++
               String.intercalate "\n" msgs))
       | none, none =>
-        phases := phases.push ("5 decompile",
+        phases ← pushPhase phases ("5. Decompile",
           .passed s!"oracle-free: {decompiled.size} constants decompiled, \
 0 errors ({t1 - t0}ms)")
 
+  -- Recap (each phase already printed its section heading when it
+  -- completed), then a `RESULT:` line matching `ix validate`'s.
   IO.println ""
+  IO.println "[validate-lean] phase summary:"
   for (name, result) in phases do
-    IO.println s!"[validate-lean] phase {name}: {result.render}"
+    IO.println s!"[validate-lean]   {name}: {result.render}"
   let failures := phases.filter (·.2.isFailure)
-  IO.println ""
-  IO.println s!"[validate-lean] {failures.size} phase failure(s)"
+  IO.println s!"[validate-lean] RESULT: {failures.size} total failures"
+  (← IO.getStdout).flush
   return if failures.isEmpty then 0 else 1
 
 end Ix.Cli.ValidateLeanCmd
