@@ -241,6 +241,10 @@ struct ScanCtx<'a> {
   /// execute-only mode, where the cut is the record's retained bytes
   /// against the per-worker share.
   system: Option<&'a AiurSystem>,
+  /// Execute-only phase 1: defer a range's remainder to the fat phase
+  /// when measured record growth per block exceeds this (bytes).
+  /// `None` disables (the scan, and the fat phase itself).
+  defer_growth: Option<f64>,
   /// Graceful record ceiling, GiB: a segment also cuts when its record's
   /// retained bytes reach this, independent of the model cut. In
   /// cgroup-capped worker processes it sits below the enforced cap
@@ -271,32 +275,105 @@ const SCAN_BATCH_BLOCKS: usize = 32;
 const CHUNK_TARGET_BLOCKS: usize = 2048;
 
 /// A worker's non-record residency: env mmap, compiled AiurSystem,
-/// runtime (fresh workers measured ~1.2-1.8 GiB on FLT).
-const WORKER_BASELINE_GIB: f64 = 2.0;
+/// runtime (fresh workers measured ~1.2-1.8 GiB on FLT), PLUS working
+/// room for the env decode cache, which grows monotonically with
+/// content touched (death is its shedding mechanism — but it must not
+/// be the routine one, so the slot budgets a few GiB of cache first).
+const WORKER_BASELINE_GIB: f64 = 3.5;
 
-/// Worst single-claim record growth past the threshold check (the check
-/// runs between claims): ~4 GiB per 128-block claim measured on dense
-/// FLT content, scaling roughly with [`SCAN_BATCH_BLOCKS`] — ~1 GiB at
-/// K=32. Calibrate against the first run on new content.
+/// Target record growth per claim, GiB. Claim width K derives from it
+/// (see [`scan_range`]): K = target / measured-growth-per-block, clamped
+/// to `[1, SCAN_BATCH_BLOCKS]`. Per-claim overhead (assumption-tree
+/// hashing, unshared `env_walk` frames) is roughly constant per claim,
+/// so it is negligible against a claim carrying this much work — light
+/// content runs at full width where the overhead would bite, dense
+/// content shrinks to K=1-2 where each block dwarfs it. Bounding growth
+/// per claim is what lets the between-claims threshold check act before
+/// the cgroup kill on ANY content.
+const CLAIM_TARGET_GIB: f64 = 0.75;
+
+/// Worst mid-claim record growth past the threshold check: with claim
+/// width derived from [`CLAIM_TARGET_GIB`], overshoot beyond the target
+/// is one block's excess over its range's running estimate — bounded in
+/// practice by the single-block record distribution's body; the tail
+/// (true monster blocks) is the deferred cleanup's job, not headroom's.
 const CLAIM_HEADROOM_GIB: f64 = 1.0;
 
-/// Smallest useful per-worker slice: baseline + claim headroom + enough
-/// record threshold to make progress. Bounds the auto worker count
-/// (`pool / floor`).
-const SLICE_FLOOR_GIB: f64 = 5.0;
+/// Smallest useful per-worker slice: the soft record cut (the segment
+/// measurement quantum, ~11.5 GiB at this floor — segments are summed
+/// to the cut by the merge pass, so they never need to reach it alone)
+/// plus the cache-inclusive worker baseline and one claim's headroom.
+/// Bounds the auto worker count (`pool / floor`). Measured across the
+/// FLT sweep: 8 GiB slots (60 workers) and 12 GiB slots (33 workers)
+/// both ground down in the dense head — cache + a useful record quantum
+/// simply need this much — while ~17-18 GiB slots ran it best; thinner
+/// buys width the dense content immediately claws back in deaths.
+const SLICE_FLOOR_GIB: f64 = 16.0;
 
-/// Reserved for the serialized BIG worker that measures blocks unable to
-/// start under a normal slice; carved out of the pool up front so the
-/// fleet bound `Σ slices + big lane ≤ pool` holds by construction.
-const BIG_LANE_GIB: f64 = 48.0;
+/// Width of the deferred-block cleanup round: blocks whose own claim
+/// died under a slot cap re-run after the fleet drains, each worker
+/// capped at the freed pool split this many ways (~65-70 GiB on the
+/// deliverable boxes). Sized from the monster-record distribution:
+/// every escalated block ever measured except two fit under ~70 GiB,
+/// so a wider round would trade slots that fit the population for
+/// parallelism the survivors cannot use.
+const CLEANUP_WORKERS: usize = 12;
+
+/// Execute-only phase-1 deferral threshold: record growth per block
+/// (bytes) above which a range's remainder is handed to the fat-slot
+/// phase instead of walked thin. The measured distribution is bimodal
+/// with a decade-wide gap (light content ~1-20 MB/block, dense
+/// typeclass-web content ~300 MB-4 GiB/block), so any threshold in the
+/// gap classifies robustly, and both error directions are cheap: an
+/// over-deferred range walks warm in phase 2; an under-deferred one
+/// triggers on its next claim. Growth is measured, not predicted —
+/// record growth IS the reduction work just performed.
+const DEFER_GROWTH_BYTES_PER_BLOCK: f64 = 1.0e8;
+
+/// Merge-pass packing target as a multiple of the cut. Summed segment
+/// costs overstate a merged shard's true cold cost (shared cones count
+/// once per segment; padded heights are subadditive) — measured
+/// true/summed = 0.606-0.623 on the three heaviest 500-budget shards —
+/// so packing to the cut on sums leaves ~40% of the budget unused. The
+/// merge packs past the cut by this factor and the cold RE-PRICE round
+/// then measures every shard's true cost (one CheckEnv execution per
+/// shard, the exact claim its prove runs); the deliberate gap below the
+/// measured 1.6x slack keeps over-cut re-prices (which force a split)
+/// rare.
+const PACK_OVERSHOOT: f64 = 1.45;
+
+/// Re-price round width: one cold execution per merged shard, each
+/// holding only the shard's RECORD (~true prove RSS / 20), so slots are
+/// pool/width ≈ 30-40 GiB — enough for every shard record plus a dense
+/// opening cone.
+const REPRICE_WORKERS: usize = 12;
+
+/// Ranges a child serves before the parent proactively reaps and
+/// respawns it. The env decode cache grows monotonically with content
+/// touched — measured ~2-4 GiB per DENSE range — so recycling bounds
+/// every child's cache to about one range's growth: slot headroom
+/// belongs to the RECORD at every point in the schedule, dense strips
+/// walk inline at fleet width, and mid-strip deaths (whose resume
+/// points cannot re-open under a slot and would push whole strip
+/// remainders into the narrow cleanup round) stay rare. Spawn cost is
+/// seconds (order file + env mmap) against tens of seconds per range.
+const WORKER_RECYCLE_RANGES: usize = 2;
 
 /// Subtracted from box RAM (with the measured parent baseline) before
 /// slicing the pool: kernel, page cache churn, and everything else on
 /// the box that is not this scan.
 const OS_RESERVE_GIB: f64 = 12.0;
 
-/// Auto worker counts shrink until every child's even slice of the pool
-/// clears the slice floor; explicit counts and thread mode pass through.
+/// Fraction of the derived pool actually sliced into worker caps. The
+/// caps are a worst-case bound and dense regions reach it: on FLT's
+/// head every worker sits near its cap simultaneously, so `Σ caps =
+/// pool` runs the box to zero free (measured: 490/495 GB used, page
+/// cache evicted to zero). The unsliced remainder is the fleet's slack —
+/// all workers brushing their caps at once still leave it free.
+const POOL_SLICE_FRAC: f64 = 0.85;
+
+/// Worker counts shrink until every child's even slice of the pool
+/// clears the slice floor; thread mode passes through.
 fn bound_workers_by_pool(workers: usize, pool_gib: f64, proc: bool) -> usize {
   if !proc {
     return workers;
@@ -307,15 +384,31 @@ fn bound_workers_by_pool(workers: usize, pool_gib: f64, proc: bool) -> usize {
   workers.min(by_floor.max(1)).max(1)
 }
 
-/// The min-cut schedule order, truncated by the `IX_SCAN_LIMIT_BLOCKS`
-/// debug knob (a full-pipeline reproducer over a slice of a huge env,
-/// without extracting one; the result then does NOT cover the env).
+/// The min-cut schedule order, windowed by the `IX_SCAN_SKIP_BLOCKS` /
+/// `IX_SCAN_LIMIT_BLOCKS` debug knobs (a full-pipeline reproducer over a
+/// slice of a huge env, without extracting one; the result then does NOT
+/// cover the env). Skip drops the order's head, limit truncates what
+/// remains — composed, they select any window; skip alone replays the
+/// schedule's TAIL, where min-cut ordering concentrates the dense
+/// content that dominates scan wall.
 fn ordered_schedule(
   blocks: &[SchedBlock],
   adj: &[Vec<u32>],
   n_chunks: usize,
 ) -> Vec<u32> {
   let mut order = static_order(blocks, adj, n_chunks.max(16));
+  if let Some(skip) = std::env::var("IX_SCAN_SKIP_BLOCKS")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+    .filter(|&n| n > 0)
+  {
+    let skip = skip.min(order.len());
+    eprintln!(
+      "[scan] IX_SCAN_SKIP_BLOCKS={skip}: executing a schedule SUFFIX — \
+       the result will not cover the env"
+    );
+    order.drain(..skip);
+  }
   if let Some(limit) = std::env::var("IX_SCAN_LIMIT_BLOCKS")
     .ok()
     .and_then(|v| v.parse::<usize>().ok())
@@ -330,9 +423,19 @@ fn ordered_schedule(
   order
 }
 
-/// Equal-byte contiguous chunks over the order; edges are forced segment
-/// boundaries (the parallelism unit); the scan's merge pass repairs the
-/// resulting fragmentation, so chunk count is a pure parallelism knob.
+/// Blocks per chunk past which an edge is forced regardless of bytes.
+/// Chunks are byte-balanced, but cost per byte is wildly non-uniform:
+/// FLT's dense proof blocks are small in bytes and huge in cost, so
+/// byte-only balancing packed up to ~3,100 of them into one chunk —
+/// ~10 sequential cut-sized segments for a single owner, the measured
+/// serial tail of the scan. The count clamp splits exactly those
+/// chunks; the merge pass absorbs the extra forced boundaries.
+const CHUNK_MAX_BLOCKS: usize = 512;
+
+/// Equal-byte contiguous chunks over the order, block-count clamped
+/// (see [`CHUNK_MAX_BLOCKS`]); edges are forced segment boundaries (the
+/// parallelism unit); the scan's merge pass repairs the resulting
+/// fragmentation, so chunk granularity is a pure parallelism knob.
 fn make_chunk_bounds(
   order: &[u32],
   blocks: &[SchedBlock],
@@ -345,7 +448,7 @@ fn make_chunk_bounds(
   let mut acc = 0u64;
   for (i, &b) in order.iter().enumerate() {
     acc += blocks[b as usize].size;
-    if acc >= per_chunk && bounds.len() + 1 < n_chunks {
+    if acc >= per_chunk || i + 1 - start >= CHUNK_MAX_BLOCKS {
       bounds.push((start, i + 1));
       start = i + 1;
       acc = 0;
@@ -415,7 +518,7 @@ fn run_pool(
             continue;
           };
           match scan_range(ctx, &range, origin) {
-            Ok((segs, rest)) => {
+            Ok((segs, rest, _defer)) => {
               done.lock().unwrap().push(((origin, seq), segs));
               // Remainder goes back BEFORE the in-flight decrement, so
               // `empty && in_flight == 0` still implies no future work.
@@ -453,14 +556,18 @@ fn run_pool(
 /// parent and executing order-index ranges on command. Line protocol
 /// (one command per stdin line, replies on stdout):
 ///
-/// - `SCAN <lo> <hi>` — scan `order[lo..hi)` exactly like a thread
-///   worker's range: up to [`RANGE_SEGMENTS`] segments, then hand the
-///   remainder back. Replies: `SEG <lo> <hi> <fft> <ram_gib>` per
-///   emitted segment (absolute order indices), `SKIP <addr-hex>
-///   <msg-hex>` per kernel-rejected block, then `END <next>` (`next ==
-///   hi` when the range is exhausted). A unit range (`hi == lo+1`)
-///   degenerates to a single-block claim — the parent's BIG lane
-///   measures an unstartable block this way, no dedicated verb needed.
+/// - `SCAN <lo> <hi> [narrow]` — scan `order[lo..hi)` exactly like a
+///   thread worker's range: up to [`RANGE_SEGMENTS`] segments, then hand
+///   the remainder back. The optional `narrow` count single-steps the
+///   range's first N blocks (one per claim) — sent by the parent when a
+///   range resumes after a death so a dense stretch banks per-block
+///   progress instead of re-dying at full claim width. Replies:
+///   `SEG <lo> <hi> <fft> <ram_gib>` per emitted segment (absolute order
+///   indices), `SKIP <addr-hex> <msg-hex>` per kernel-rejected block,
+///   then `END <next>` (`next == hi` when the range is exhausted). A
+///   unit range (`hi == lo+1`) degenerates to a single-block claim —
+///   the deferred-block cleanup round measures blocks this way, no
+///   dedicated verb needed.
 ///
 /// The worker never applies fail-fast itself — it reports SKIPs and the
 /// parent enforces policy. RAM: the enclosing cgroup's `memory.max` is
@@ -476,6 +583,7 @@ pub fn scan_worker(
   soft_record_gib: f64,
   pieces: usize,
   exec_only: bool,
+  defer_growth: bool,
 ) -> Result<(), String> {
   use std::io::{BufRead, Write};
   let toplevel = system.toplevel();
@@ -494,6 +602,9 @@ pub fn scan_worker(
   };
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
+  // Shard member lists for `PRICE`, loaded lazily on first use — most
+  // children never price.
+  let mut price_table: Option<Vec<Vec<u32>>> = None;
   let ctx = ScanCtx {
     toplevel,
     fun_idx,
@@ -506,6 +617,7 @@ pub fn scan_worker(
     abort: &abort,
     batch_blocks,
     system: if exec_only { None } else { Some(system) },
+    defer_growth: defer_growth.then_some(DEFER_GROWTH_BYTES_PER_BLOCK),
     soft_record_gib,
   };
   let stdout = std::io::stdout();
@@ -521,6 +633,59 @@ pub fn scan_worker(
       it.next().and_then(|v| v.parse::<usize>().ok()),
       it.next().and_then(|v| v.parse::<usize>().ok()),
     );
+    // A third field (a since-removed narrow-prefix hint) is accepted
+    // and ignored for wire compatibility with parents of that vintage.
+    let _ = it.next();
+    if verb == "PRICE" {
+      // Cold re-price of one merged shard: execute its whole CheckEnv
+      // claim (the exact claim its prove runs) with a fresh record and
+      // report the record's measured fft plus the analytic peak prove
+      // RSS. `lo` is the shard index in the price file.
+      let Some(k) = lo else {
+        return Err(format!("worker: malformed command {line:?}"));
+      };
+      if price_table.is_none() {
+        let path = std::env::var("IX_SCAN_PRICE_FILE")
+          .map_err(|_e| "worker: PRICE without IX_SCAN_PRICE_FILE")?;
+        price_table = Some(read_price_file(&path)?);
+      }
+      let table = price_table.as_ref().unwrap();
+      let members = table
+        .get(k)
+        .ok_or_else(|| format!("worker: PRICE {k} out of range"))?;
+      let addrs: Vec<Address> = members
+        .iter()
+        .map(|&b| blocks[b as usize].addr.clone())
+        .collect();
+      let mut record = QueryRecord::new(toplevel);
+      let mut io =
+        IOBuffer::with_backing(EnvFaultSource::new(env.clone()));
+      let priced = seed_shard_check_env_claim(env, &addrs, &mut io).and_then(
+        |(_claim, input)| {
+          execute_ixvm_with_record(toplevel, fun_idx, &input, &mut io, &mut record)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+        },
+      );
+      match priced {
+        Ok(()) => {
+          let fft = record_fft_cost(toplevel, &record);
+          let ram = match ctx.system {
+            Some(sys) => {
+              f64_from_usize(sys.peak_prove_bytes(&record).peak) / GIB
+            },
+            None => f64_from_usize(record_heap_bytes(&record)) / GIB,
+          };
+          writeln!(out, "COST {fft} {ram}").map_err(|e| e.to_string())?;
+        },
+        Err(e) => {
+          writeln!(out, "PERR {}", hex_encode(e.as_bytes()))
+            .map_err(|e| e.to_string())?;
+        },
+      }
+      out.flush().map_err(|e| e.to_string())?;
+      continue;
+    }
     let (Some(lo), Some(hi)) = (lo, hi) else {
       return Err(format!("worker: malformed command {line:?}"));
     };
@@ -530,7 +695,7 @@ pub fn scan_worker(
     match verb {
       "SCAN" => {
         let range = &order[lo..hi];
-        let (segs, rest) =
+        let (segs, rest, deferred) =
           scan_range(&ctx, range, u32::try_from(lo).unwrap_or(0))?;
         // Segments consume the range in order; skipped blocks sit in the
         // gaps. Recover absolute bounds by cursor-matching first ids.
@@ -548,7 +713,9 @@ pub fn scan_worker(
           writeln!(out, "SKIP {} {}", a.hex(), hex_encode(e.as_bytes()))
             .map_err(|e| e.to_string())?;
         }
-        writeln!(out, "END {}", hi - rest.len()).map_err(|e| e.to_string())?;
+        let verb = if deferred { "DEFER" } else { "END" };
+        writeln!(out, "{verb} {}", hi - rest.len())
+          .map_err(|e| e.to_string())?;
       },
       _ => return Err(format!("worker: unknown verb {verb:?}")),
     }
@@ -617,6 +784,60 @@ fn read_order_file(path: &str) -> Result<(Vec<SchedBlock>, Vec<u32>), String> {
   Ok((blocks, order))
 }
 
+/// Serialize merged shards' member block ids for the re-price workers:
+/// `[u64 shard count][per shard: u64 len, u32 ids…]`. Members are block
+/// ids into the order file's block table, so a worker prices exactly
+/// the claim the manifest will carry (holes from skipped blocks
+/// included).
+fn write_price_file(
+  path: &std::path::Path,
+  shards: &[Vec<u32>],
+) -> Result<(), String> {
+  let total: usize = shards.iter().map(Vec::len).sum();
+  let mut buf: Vec<u8> = Vec::with_capacity(8 + shards.len() * 8 + total * 4);
+  buf.extend_from_slice(&(shards.len() as u64).to_le_bytes());
+  for m in shards {
+    buf.extend_from_slice(&(m.len() as u64).to_le_bytes());
+    for &b in m {
+      buf.extend_from_slice(&b.to_le_bytes());
+    }
+  }
+  std::fs::write(path, buf).map_err(|e| format!("write {path:?}: {e}"))
+}
+
+fn read_price_file(path: &str) -> Result<Vec<Vec<u32>>, String> {
+  let buf =
+    std::fs::read(path).map_err(|e| format!("read price file {path}: {e}"))?;
+  let take_u64 = |pos: usize| -> Result<u64, String> {
+    buf
+      .get(pos..pos + 8)
+      .and_then(|b| b.try_into().ok())
+      .map(u64::from_le_bytes)
+      .ok_or_else(|| format!("price file {path}: truncated"))
+  };
+  let count = usize::try_from(take_u64(0)?)
+    .map_err(|_e| "price file: count overflow".to_string())?;
+  let mut pos = 8;
+  let mut shards = Vec::with_capacity(count);
+  for _ in 0..count {
+    let len = usize::try_from(take_u64(pos)?)
+      .map_err(|_e| "price file: len overflow".to_string())?;
+    pos += 8;
+    let mut members = Vec::with_capacity(len);
+    for _ in 0..len {
+      let v = buf
+        .get(pos..pos + 4)
+        .and_then(|b| b.try_into().ok())
+        .map(u32::from_le_bytes)
+        .ok_or_else(|| format!("price file {path}: truncated member"))?;
+      members.push(v);
+      pos += 4;
+    }
+    shards.push(members);
+  }
+  Ok(shards)
+}
+
 fn hex_encode(bytes: &[u8]) -> String {
   bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -652,12 +873,15 @@ struct ProcPool<'a> {
   pieces: usize,
   exec_only: bool,
   cap_bytes: u64,
-  /// The whole pool as a cap — the BIG lane for retrying blocks that
-  /// outgrow a slot's even share. Serialized by `big_lane`: at most one
-  /// big worker exists, so `Σ slot caps + pool_cap` bounds worst-case
-  /// fleet RAM only transiently and by design.
-  pool_cap_bytes: u64,
-  big_lane: Mutex<()>,
+  /// Per-worker cap of the deferred-block cleanup round (the drained
+  /// pool split [`CLEANUP_WORKERS`] ways): after the fleet finishes,
+  /// blocks that could not run under a slot cap re-run through the same
+  /// pool code under these fat caps; survivors are named
+  /// resource-infeasible.
+  cleanup_cap_bytes: u64,
+  /// True in the cleanup round itself — a block failing there is named
+  /// infeasible instead of deferred again.
+  cleanup: bool,
   /// The parent-derived schedule serialized for children (deleted when
   /// the pool drops) — spawn startup is env-mmap + system build, not a
   /// re-derivation.
@@ -668,6 +892,15 @@ struct ProcPool<'a> {
   order: &'a [u32],
   blocks: &'a [SchedBlock],
   fail_fast: bool,
+  /// Name deferred ranges resource-infeasible instead of walking them
+  /// in the cleanup round (`ix shard --defer-infeasible`).
+  defer_infeasible: bool,
+  /// Execute-only phase 1: children measure growth and hand dense
+  /// remainders back (`DEFER`) for the fat phase.
+  defer_growth: bool,
+  /// Shard member lists for the re-price round (`PRICE` verb); exported
+  /// to children via `IX_SCAN_PRICE_FILE`.
+  price_file: Option<std::path::PathBuf>,
 }
 
 struct WorkerHandle {
@@ -681,6 +914,9 @@ struct ScanReply {
   segs: Vec<Segment>,
   skips: Vec<(Address, String)>,
   next: usize,
+  /// The worker stopped at `next` because measured growth crossed the
+  /// phase-1 threshold — the remainder belongs to the fat phase.
+  deferred: bool,
 }
 
 impl Drop for ProcPool<'_> {
@@ -690,16 +926,22 @@ impl Drop for ProcPool<'_> {
 }
 
 impl ProcPool<'_> {
+  /// Spawn with one retry: a fresh worker that dies before its READY
+  /// handshake is a transient environment hiccup (systemd/D-Bus under
+  /// respawn churn measured one EOF in ~100 respawns), not a scan
+  /// failure — but an unhandled one aborts the whole scan. One backoff
+  /// retry covers it; a second failure is real and propagates.
   fn spawn(&self, slot: usize) -> Result<WorkerHandle, String> {
-    self.spawn_capped(slot, self.cap_bytes)
+    self.spawn_once(slot).or_else(|e| {
+      eprintln!("[scan] worker {slot} spawn failed ({e}); retrying once");
+      std::thread::sleep(std::time::Duration::from_secs(2));
+      self.spawn_once(slot)
+    })
   }
 
-  fn spawn_capped(
-    &self,
-    slot: usize,
-    cap_bytes: u64,
-  ) -> Result<WorkerHandle, String> {
+  fn spawn_once(&self, slot: usize) -> Result<WorkerHandle, String> {
     use std::process::{Command, Stdio};
+    let cap_bytes = self.cap_bytes;
     let mut cmd = if self.capped {
       let mut c = Command::new("systemd-run");
       c.args([
@@ -719,7 +961,16 @@ impl ProcPool<'_> {
     };
     cmd
       .arg("shard-worker")
-      .env("IX_SCAN_ORDER_FILE", &self.order_file)
+      .env("IX_SCAN_ORDER_FILE", &self.order_file);
+    if let Some(pf) = &self.price_file {
+      cmd.env("IX_SCAN_PRICE_FILE", pf);
+    }
+    cmd
+      // Return freed pages to the OS immediately: the record drops at
+      // every segment cut, but mimalloc retains the pages by default, so
+      // worker RSS ratchets to its per-segment peak and the fleet sits
+      // at Σ caps regardless of live bytes.
+      .env("MIMALLOC_PURGE_DELAY", "0")
       .args(["--ixe", &self.ixe])
       .args(["--cut-gib", &format!("{}", self.cut_used_gib)])
       .args(["--batch", &format!("{}", self.batch_blocks)])
@@ -729,6 +980,9 @@ impl ProcPool<'_> {
       .stdout(Stdio::piped());
     if self.exec_only {
       cmd.arg("--exec-only");
+    }
+    if self.defer_growth {
+      cmd.arg("--defer-growth");
     }
     let mut child = cmd
       .spawn()
@@ -762,7 +1016,12 @@ impl ProcPool<'_> {
     hi: usize,
   ) -> Result<ScanReply, ScanReply> {
     use std::io::Write;
-    let mut reply = ScanReply { segs: Vec::new(), skips: Vec::new(), next: lo };
+    let mut reply = ScanReply {
+      segs: Vec::new(),
+      skips: Vec::new(),
+      next: lo,
+      deferred: false,
+    };
     if writeln!(h.stdin, "SCAN {lo} {hi}").is_err() || h.stdin.flush().is_err()
     {
       return Err(reply);
@@ -807,8 +1066,55 @@ impl ProcPool<'_> {
           reply.next = next;
           return Ok(reply);
         },
+        Some("DEFER") => {
+          let Some(next) = it.next().and_then(|v| v.parse::<usize>().ok())
+          else {
+            return Err(reply);
+          };
+          reply.next = next;
+          reply.deferred = true;
+          return Ok(reply);
+        },
         _ => return Err(reply),
       }
+    }
+  }
+}
+
+impl ProcPool<'_> {
+  /// One `PRICE` round-trip: the child executes shard `k`'s whole
+  /// CheckEnv claim cold and reports `(fft, ram_gib)` from the record —
+  /// the exact cost its prove pays. `Err` = the child died (over-cap
+  /// shard) or reported a pricing error.
+  fn price(
+    &self,
+    h: &mut WorkerHandle,
+    k: usize,
+  ) -> Result<(f64, f64), String> {
+    use std::io::Write;
+    writeln!(h.stdin, "PRICE {k}").map_err(|e| e.to_string())?;
+    h.stdin.flush().map_err(|e| e.to_string())?;
+    let line = h.read_line()?;
+    let mut it = line.split_whitespace();
+    match it.next() {
+      Some("COST") => {
+        let (Some(fft), Some(ram)) = (
+          it.next().and_then(|v| v.parse::<f64>().ok()),
+          it.next().and_then(|v| v.parse::<f64>().ok()),
+        ) else {
+          return Err(format!("bad COST reply {line:?}"));
+        };
+        Ok((fft, ram))
+      },
+      Some("PERR") => Err(
+        it.next()
+          .and_then(hex_decode)
+          .map_or_else(
+            || "pricing error".to_string(),
+            |m| String::from_utf8_lossy(&m).into_owned(),
+          ),
+      ),
+      _ => Err(format!("bad PRICE reply {line:?}")),
     }
   }
 }
@@ -840,10 +1146,13 @@ impl WorkerHandle {
 /// content every worker periodically fills its cap and is OOM-killed —
 /// death IS the cache-shedding mechanism, and it is cheap: segments
 /// stream as they close, so a kill loses only the work since the last
-/// closed segment. The parent respawns and continues from the committed
-/// index; the fresh cache carries it until the next shed. A block that
-/// yields zero progress twice in a row cannot even START under the slot
-/// cap — that one block is measured on the BIG lane (whole-pool cap) or
+/// closed segment. The parent respawns and resumes from the committed
+/// index with a narrow prefix (the resumed range's first blocks execute
+/// one per claim), so a dense stretch banks per-block progress instead
+/// of re-dying at full claim width. A block whose own single claim dies
+/// under the slot cap is DEFERRED: after the fleet drains, the deferred
+/// blocks re-run through this same function under fat caps (the freed
+/// pool split [`CLEANUP_WORKERS`] ways); a block that dies even there is
 /// named resource-infeasible. The fleet's RAM bound is `Σ caps`,
 /// enforced by the kernel, independent of content.
 fn run_pool_procs(
@@ -852,10 +1161,8 @@ fn run_pool_procs(
   workers: usize,
   failed: &Mutex<Vec<(Address, String)>>,
 ) -> Result<Vec<Segment>, String> {
-  // (origin chunk, commit sequence, lo, hi, stalls): `stalls` counts
-  // consecutive deaths at `lo` with zero committed progress — two in a
-  // row means the block at `lo` cannot even start under the slot cap.
-  type Range = (u32, u32, usize, usize, u8);
+  // (origin chunk, commit sequence, lo, hi).
+  type Range = (u32, u32, usize, usize);
   let total_blocks: usize = chunks.iter().map(|(lo, hi)| hi - lo).sum();
   let start = std::time::Instant::now();
   let queue: Mutex<std::collections::VecDeque<Range>> = Mutex::new(
@@ -863,7 +1170,7 @@ fn run_pool_procs(
       .into_iter()
       .enumerate()
       .map(|(i, (lo, hi))| {
-        (u32::try_from(i).expect("chunk count fits u32"), 0u32, lo, hi, 0u8)
+        (u32::try_from(i).expect("chunk count fits u32"), 0u32, lo, hi)
       })
       .collect(),
   );
@@ -873,12 +1180,30 @@ fn run_pool_procs(
   let done: Mutex<Vec<((u32, u32), Vec<Segment>)>> = Mutex::new(Vec::new());
   let failure: Mutex<Option<String>> = Mutex::new(None);
   let abort = std::sync::atomic::AtomicBool::new(false);
+  // (origin, lo, hi) ranges whose opening claim died on a fresh worker —
+  // walked cumulatively in the cleanup round after the fleet drains.
+  // Deep dense strips are only cheap CUMULATIVELY (a walk shares the
+  // strip's dependency cone in one record; any solo measurement pays the
+  // whole cone per block), so a range whose resume point cannot even
+  // open under a slot moves to the fat round wholesale instead of the
+  // fleet paying one doomed cone-derivation per block.
+  let deferred: Mutex<Vec<(u32, usize, usize)>> = Mutex::new(Vec::new());
   std::thread::scope(|s| {
     let (queue, in_flight, done, failure, abort) =
       (&queue, &in_flight, &done, &failure, &abort);
-    let (blocks_done, last_pct) = (&blocks_done, &last_pct);
+    let (blocks_done, last_pct, deferred) = (&blocks_done, &last_pct, &deferred);
     for slot in 0..workers {
       s.spawn(move || {
+        // Ranges served by the current child; at [`WORKER_RECYCLE_RANGES`]
+        // the parent reaps and respawns it proactively.
+        let mut served = 0usize;
+        // True until the current child completes its first scan: only a
+        // FRESH child's zero-progress death convicts a block — an aged
+        // child dying on a range's first claim indicts its own decode
+        // cache, not the block (348 false deferrals measured before this
+        // distinction; the requeued range simply waits for a fresh
+        // owner).
+        let mut fresh = true;
         let mut worker = match pool.spawn(slot) {
           Ok(w) => w,
           Err(e) => {
@@ -929,9 +1254,16 @@ fn run_pool_procs(
             }
             Ok(reply.next)
           };
-        let requeue = |origin: u32, seq: u32, lo: usize, hi: usize, stalls| {
+        // Remainders go to the queue FRONT: a healthy remainder is
+        // usually re-popped by the worker that just banked its segments
+        // (cache still warm with the region's cone), and a death's
+        // remainder retries while its neighborhood is warm — pushed to
+        // the back, dense-region remainders sank behind hundreds of
+        // chunks and resurfaced 20 minutes later on cold workers, which
+        // died again and deferred the region wholesale.
+        let requeue = |origin: u32, seq: u32, lo: usize, hi: usize| {
           if lo < hi {
-            queue.lock().unwrap().push_back((origin, seq, lo, hi, stalls));
+            queue.lock().unwrap().push_front((origin, seq, lo, hi));
           }
         };
         loop {
@@ -946,23 +1278,62 @@ fn run_pool_procs(
             }
             popped
           };
-          let Some((origin, seq, lo, hi, stalls)) = next else {
+          let Some((origin, seq, lo, hi)) = next else {
             if in_flight.load(Ordering::Acquire) == 0 {
               break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
             continue;
           };
+          // Proactive recycle between ranges: the env decode cache grows
+          // monotonically and never shrinks, so a long-lived child ages
+          // toward its cap until ANY dense block kills it — a full-scan
+          // fleet reaching the dense tail with saturated caches misread
+          // the whole zone as monsters (161 false deferrals; the same
+          // tail scanned by young workers ran in 2 minutes with zero).
+          // A fresh child costs seconds (order file + env mmap).
+          served += 1;
+          if served > WORKER_RECYCLE_RANGES {
+            served = 1;
+            match pool.spawn(slot) {
+              Ok(w) => {
+                std::mem::replace(&mut worker, w).reap();
+                fresh = true;
+              },
+              Err(err) => {
+                let mut f = failure.lock().unwrap();
+                if f.is_none() {
+                  *f = Some(err);
+                }
+                abort.store(true, Ordering::Release);
+                break;
+              },
+            }
+          }
           match pool.scan(&mut worker, lo, hi) {
             Ok(reply) => {
+              fresh = false;
+              let was_deferred = reply.deferred;
               let Ok(next) = commit(reply, origin, seq) else {
                 abort.store(true, Ordering::Release);
                 break;
               };
-              progress(next.saturating_sub(lo));
-              requeue(origin, seq + 1, next, hi, 0);
+              if was_deferred && next < hi {
+                // Growth-threshold handoff: the walked prefix is banked;
+                // the dense remainder waits for the fat phase.
+                eprintln!(
+                  "[scan] range {next}..{hi} defers to the fat phase \
+                   (growth threshold)"
+                );
+                deferred.lock().unwrap().push((origin, next, hi));
+                progress(hi.saturating_sub(lo));
+              } else {
+                progress(next.saturating_sub(lo));
+                requeue(origin, seq + 1, next, hi);
+              }
             },
             Err(partial) => {
+              let was_fresh = fresh;
               let e = match commit(partial, origin, seq) {
                 Ok(n) => n,
                 Err(()) => {
@@ -986,75 +1357,60 @@ fn run_pool_procs(
                 },
               )
               .reap();
+              fresh = true;
               if e >= hi {
                 eprintln!(
                   "[scan] worker {slot} died ({status}) after completing \
                    its range; respawned"
                 );
-              } else if e > lo || stalls < 1 {
-                // A cache-shed kill: the fresh worker continues from the
-                // committed index. `e == lo` earns one fresh-worker
-                // attempt before block `e` is treated as unstartable.
-                let stalls = if e > lo { 0 } else { stalls + 1 };
+              } else if e > lo || !was_fresh {
+                // A cache-shed kill: the respawned child (fresh record
+                // and decode cache) continues from the committed index.
+                // An AGED child dying on a range's first claim indicts
+                // its cache, not the block — the range requeues intact
+                // and waits for a fresh owner to judge it.
                 eprintln!(
                   "[scan] worker {slot} died ({status}) at index {e}; \
                    respawned, continuing"
                 );
-                requeue(origin, seq + 1, e, hi, stalls);
+                requeue(origin, seq + 1, e, hi);
               } else {
-                // Two consecutive zero-progress deaths: block `e` cannot
-                // even start under the slot cap. BIG-lane retry: one
-                // worker at a time gets the whole pool as its cap, so a
-                // block that is heavy-but-provable measures instead of
-                // being falsely excluded by its slot's even share.
+                // A fresh worker died on the range's opening claim: this
+                // resume point cannot even open under a slot. In the
+                // fleet, the WHOLE remainder defers to the cleanup round,
+                // which walks it cumulatively under a fat cap — deferring
+                // only the block would re-pay the strip's cone per block,
+                // one doomed execution each (measured: 1,086 deferrals).
+                // In the cleanup round itself the block is named
+                // resource-infeasible and the walk continues past it.
                 let addr = pool.blocks[pool.order[e] as usize].addr.clone();
-                let big_reply = {
-                  let _lane = pool.big_lane.lock().unwrap();
-                  pool.spawn_capped(slot, pool.pool_cap_bytes).ok().map(
-                    |mut big| {
-                      let r = pool.scan(&mut big, e, e + 1);
-                      big.reap();
-                      r
-                    },
-                  )
-                };
-                match big_reply {
-                  Some(Ok(reply)) => {
-                    if commit(reply, origin, seq).is_err() {
-                      abort.store(true, Ordering::Release);
-                      break;
-                    }
-                    eprintln!(
-                      "[scan] block {} exceeded its slot cap ({status}) \
-                       but measured on the big lane",
-                      addr.hex()
-                    );
-                  },
-                  other => {
-                    if let Some(Err(partial2)) = other {
-                      let _ = commit(partial2, origin, seq);
-                    }
-                    eprintln!(
-                      "[scan] block {} exceeded the worker memory cap \
-                       ({status}) and the big lane — resource-infeasible; \
-                       skipped",
-                      addr.hex()
-                    );
-                    failed.lock().unwrap().push((
-                      addr,
-                      format!(
-                        "record outgrew the {:.1} GiB whole-pool cap \
-                         mid-claim (cgroup OOM-kill)",
-                        f64_from_usize(
-                          usize::try_from(pool.pool_cap_bytes)
-                            .unwrap_or(usize::MAX)
-                        ) / GIB
-                      ),
-                    ));
-                  },
+                if pool.cleanup {
+                  eprintln!(
+                    "[scan] block {} exceeded the cleanup cap ({status}) \
+                     — resource-infeasible; skipped",
+                    addr.hex()
+                  );
+                  failed.lock().unwrap().push((
+                    addr,
+                    format!(
+                      "record outgrew the {:.1} GiB cleanup cap mid-claim \
+                       (cgroup OOM-kill)",
+                      f64_from_usize(
+                        usize::try_from(pool.cap_bytes).unwrap_or(usize::MAX)
+                      ) / GIB
+                    ),
+                  ));
+                  progress(1);
+                  requeue(origin, seq + 1, e + 1, hi);
+                } else {
+                  eprintln!(
+                    "[scan] range {e}..{hi} cannot open under its slot \
+                     cap ({status}); deferred to the cleanup round"
+                  );
+                  let _ = addr;
+                  deferred.lock().unwrap().push((origin, e, hi));
+                  progress(hi - e);
                 }
-                progress(1);
-                requeue(origin, seq + 1, e + 1, hi, 0);
               }
             },
           }
@@ -1072,6 +1428,109 @@ fn run_pool_procs(
   let mut segments: Vec<Segment> = Vec::new();
   for (_, mut segs) in tagged {
     segments.append(&mut segs);
+  }
+  let mut deferred = deferred.into_inner().unwrap();
+  // Defer-infeasible mode: name every deferred block
+  // resource-infeasible instead of walking the deferred ranges under
+  // fat caps. The deferred region's cost is cone-bound kernel
+  // execution (measured ~6-10 worker-hours on FLT's typeclass-instance
+  // core in every slot configuration), so a caller can choose a
+  // partition of the tractable content NOW plus an exact exclusion
+  // inventory, over an hours-long exhaustive walk.
+  if !deferred.is_empty() && pool.defer_infeasible {
+    deferred.sort_unstable();
+    deferred.dedup();
+    let mut f = failed.lock().unwrap();
+    let mut named = 0usize;
+    for &(_, lo, hi) in &deferred {
+      for &b in &pool.order[lo..hi] {
+        f.push((
+          pool.blocks[b as usize].addr.clone(),
+          "deferred dense-core block (IX_SCAN_DEFER_INFEASIBLE=1): \
+           opening cone exceeds a fleet slot; not measured"
+            .to_string(),
+        ));
+        named += 1;
+      }
+    }
+    eprintln!(
+      "[scan] defer-infeasible: {named} deferred block(s) in \
+       {} range(s) named infeasible without measurement",
+      deferred.len()
+    );
+    return Ok(segments);
+  }
+  if !deferred.is_empty() {
+    // Cleanup round: the deferred ranges re-run through this same
+    // function under fat caps — the drained pool split a few ways — so
+    // dense strips WALK (cone shared, segments cut gracefully at the
+    // fat soft cut) instead of being excluded by a slot's even share.
+    // Sorted for a deterministic round; `cleanup: true` names blocks
+    // that still cannot open resource-infeasible.
+    deferred.sort_unstable();
+    deferred.dedup();
+    // The fat phase's soft cut is cap-derived: dense-region cones run
+    // 12-16+ GiB, so segments must exceed the cone to amortize it — a
+    // small quantum re-pays the cone per segment (measured: no faster
+    // and many more false infeasibles).
+    let cleanup_soft_gib = (f64_from_usize(
+      usize::try_from(pool.cleanup_cap_bytes).unwrap_or(usize::MAX),
+    ) / GIB
+      - WORKER_BASELINE_GIB
+      - CLAIM_HEADROOM_GIB)
+      .max(1.0);
+    let cleanup_pool = ProcPool {
+      bin: pool.bin.clone(),
+      ixe: pool.ixe.clone(),
+      cut_used_gib: pool.cut_used_gib,
+      batch_blocks: pool.batch_blocks,
+      soft_record_gib: cleanup_soft_gib,
+      pieces: pool.pieces,
+      exec_only: pool.exec_only,
+      cap_bytes: pool.cleanup_cap_bytes,
+      cleanup_cap_bytes: pool.cleanup_cap_bytes,
+      cleanup: true,
+      order_file: pool.order_file.clone(),
+      capped: pool.capped,
+      order: pool.order,
+      blocks: pool.blocks,
+      fail_fast: pool.fail_fast,
+      defer_infeasible: false,
+      defer_growth: false,
+      price_file: None,
+    };
+    // Coalesce adjacent deferred ranges: strip remainders abut when a
+    // strip spans chunk edges, and a merged range shares its dependency
+    // cone across the walk.
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for &(_, lo, hi) in &deferred {
+      match ranges.last_mut() {
+        Some((_, top)) if *top >= lo => *top = (*top).max(hi),
+        _ => ranges.push((lo, hi)),
+      }
+    }
+    let total: usize = ranges.iter().map(|(lo, hi)| hi - lo).sum();
+    eprintln!(
+      "[scan] cleanup round: {total} deferred block(s) in {} range(s), {} \
+       workers × {:.1} GiB",
+      ranges.len(),
+      CLEANUP_WORKERS.min(ranges.len()),
+      f64_from_usize(
+        usize::try_from(pool.cleanup_cap_bytes).unwrap_or(usize::MAX)
+      ) / GIB
+    );
+    let extra = run_pool_procs(
+      &cleanup_pool,
+      ranges,
+      CLEANUP_WORKERS.min(deferred.len()),
+      failed,
+    )?;
+    segments.extend(extra);
+    // Deferred singles landed out of order; restore schedule adjacency
+    // so the merge pass sums true neighbors.
+    let pos: std::collections::HashMap<u32, usize> =
+      pool.order.iter().enumerate().map(|(i, &b)| (b, i)).collect();
+    segments.sort_by_key(|s| pos.get(&s.blocks[0]).copied().unwrap_or(0));
   }
   Ok(segments)
 }
@@ -1124,11 +1583,22 @@ pub fn execute_env(
   // Post-schedule RSS: the parent's decode cache and static structures —
   // the residency the worker fleet's record budget sits on top of.
   let baseline_gib = process_rss_gib();
-  let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-  // Fleet bound by construction: Σ worker slices + big lane + parent +
-  // OS reserve = box RAM. Width goes to the core count when the pool
-  // affords a floor slice per worker.
-  let pool_gib = (ram - baseline_gib - OS_RESERVE_GIB - BIG_LANE_GIB)
+  // `IX_SCAN_RAM_GIB` overrides detected box RAM: every derived number
+  // (pool, width, caps, fat-phase slots) then scales exactly as a box
+  // of that size would — a budget emulation knob for capacity tests.
+  let ram = std::env::var("IX_SCAN_RAM_GIB")
+    .ok()
+    .and_then(|v| v.parse::<f64>().ok())
+    .unwrap_or_else(|| crate::kernel::system_ram_gib().unwrap_or(64.0));
+  // Fleet bound by construction: Σ worker slices + parent + OS reserve +
+  // the env's page-cache residency (×2 re-read slack) = box RAM. Width
+  // goes to the core count when the pool affords a floor slice per
+  // worker.
+  let env_cache_gib = 2.0 * f64_from_usize(
+    usize::try_from(env_bytes).unwrap_or(usize::MAX),
+  ) / GIB;
+  let pool_gib = ((ram - baseline_gib - OS_RESERVE_GIB - env_cache_gib)
+    * POOL_SLICE_FRAC)
     .max(SLICE_FLOOR_GIB);
   let workers =
     bound_workers_by_pool(workers, pool_gib, proc_workers.is_some());
@@ -1141,12 +1611,13 @@ pub fn execute_env(
   let n_chunks = (blocks.len() / CHUNK_TARGET_BLOCKS)
     .max(workers * 2)
     .min(blocks.len());
-  eprintln!(
-    "[exec] {} blocks, {workers} workers over {n_chunks} chunks, record \
-     drop at {record_cut_gib:.1} GiB, {batch_blocks} blocks per claim",
-    blocks.len()
-  );
   let bounds = make_chunk_bounds(&order, &blocks, env_bytes, n_chunks);
+  eprintln!(
+    "[exec] {} blocks, {workers} workers over {} chunks, record \
+     drop at {record_cut_gib:.1} GiB, {batch_blocks} blocks per claim",
+    blocks.len(),
+    bounds.len()
+  );
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
   let ctx = ScanCtx {
@@ -1161,6 +1632,7 @@ pub fn execute_env(
     abort: &abort,
     batch_blocks,
     system: None,
+    defer_growth: Some(DEFER_GROWTH_BYTES_PER_BLOCK),
     soft_record_gib: f64::INFINITY,
   };
   let segments = match proc_workers {
@@ -1191,15 +1663,18 @@ pub fn execute_env(
         pieces: sched_pieces,
         exec_only: true,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        // The BIG lane's budget is reserved out of the pool up front, so
-        // a big measurement plus a full fleet never overcommits the box.
-        pool_cap_bytes: gib_to_bytes_u64(BIG_LANE_GIB),
-        big_lane: Mutex::new(()),
+        cleanup_cap_bytes: gib_to_bytes_u64(
+          pool_gib / f64_from_usize(CLEANUP_WORKERS),
+        ),
+        cleanup: false,
         order_file,
         capped,
         order: &order,
         blocks: &blocks,
         fail_fast,
+        defer_infeasible: false,
+        defer_growth: true,
+        price_file: None,
       };
       run_pool_procs(&pool, bounds, workers, &failed)?
     },
@@ -1254,6 +1729,8 @@ pub fn scan_shards(
   eps: f64,
   workers: usize,
   fail_fast: bool,
+  defer_infeasible: bool,
+  reprice: bool,
   out_path: &str,
   proc_workers: Option<(&str, &str)>,
 ) -> Result<String, String> {
@@ -1299,17 +1776,29 @@ pub fn scan_shards(
   // Post-schedule RSS: the parent's decode cache and static structures —
   // the residency the worker pool's budget sits on top of.
   let baseline_gib = process_rss_gib();
-  // Width-first sizing, uniform for every env and budget: full-core
-  // width, each worker's cap its even slice of the pool, and the record
-  // threshold (exact heap bytes) set so baseline + one claim's growth
-  // still fits under the cap — the kernel kill is a backstop, not the
-  // routine mechanism. The prove budget only sets the CUT and the merge
-  // target; scan wall never depends on it. Blocks too heavy for a slice
-  // escalate to the reserved big lane (serialized) or are named.
-  let ram = crate::kernel::system_ram_gib().unwrap_or(64.0);
-  // Fleet bound by construction: Σ worker slices + big lane + parent +
-  // OS reserve = box RAM.
-  let pool_gib = (ram - baseline_gib - OS_RESERVE_GIB - BIG_LANE_GIB)
+  // Width-first sizing: full core width while every worker's even slice
+  // of the pool clears the floor. Claim widths derived from measured
+  // growth bound mid-claim overshoot on any content, so slices are
+  // segment quanta, not worst-case-claim reserves — the merge pass sums
+  // segments to the cut, and the kernel kill stays a backstop. Blocks
+  // too heavy even for a slice are deferred to the fat-cap cleanup
+  // round or named infeasible.
+  // `IX_SCAN_RAM_GIB` overrides detected box RAM: every derived number
+  // (pool, width, caps, fat-phase slots) then scales exactly as a box
+  // of that size would — a budget emulation knob for capacity tests.
+  let ram = std::env::var("IX_SCAN_RAM_GIB")
+    .ok()
+    .and_then(|v| v.parse::<f64>().ok())
+    .unwrap_or_else(|| crate::kernel::system_ram_gib().unwrap_or(64.0));
+  // Fleet bound by construction: Σ worker slices + parent + OS reserve +
+  // the env's page-cache residency = box RAM. The env term keeps the
+  // shared mmap cache-resident (×2 for re-read slack): without it, a
+  // fleet at its caps evicts the very pages every worker faults from.
+  let env_cache_gib = 2.0 * f64_from_usize(
+    usize::try_from(env_bytes).unwrap_or(usize::MAX),
+  ) / GIB;
+  let pool_gib = ((ram - baseline_gib - OS_RESERVE_GIB - env_cache_gib)
+    * POOL_SLICE_FRAC)
     .max(SLICE_FLOOR_GIB);
   let workers =
     bound_workers_by_pool(workers, pool_gib, proc_workers.is_some());
@@ -1322,15 +1811,15 @@ pub fn scan_shards(
   let n_chunks = (blocks.len() / CHUNK_TARGET_BLOCKS)
     .max(workers * 2)
     .min(blocks.len());
+  let bounds = make_chunk_bounds(&order, &blocks, env_bytes, n_chunks);
+  let chunk_count = bounds.len();
   eprintln!(
-    "[scan] {} blocks, {workers} workers over {n_chunks} chunks, cut at \
+    "[scan] {} blocks, {workers} workers over {chunk_count} chunks, cut at \
      {cut_used_gib:.1} GiB predicted prove RSS (margin \
      {:.0}%, ε pre-charged), {batch_blocks} blocks per claim",
     blocks.len(),
     (1.0 - PROVE_RAM_MARGIN) * 100.0
   );
-  let bounds = make_chunk_bounds(&order, &blocks, env_bytes, n_chunks);
-  let chunk_count = bounds.len();
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
   let ctx = ScanCtx {
@@ -1345,6 +1834,7 @@ pub fn scan_shards(
     abort: &abort,
     batch_blocks,
     system: Some(system),
+    defer_growth: None,
     soft_record_gib: f64::INFINITY,
   };
   let segments = match proc_workers {
@@ -1376,15 +1866,18 @@ pub fn scan_shards(
         pieces: sched_pieces,
         exec_only: false,
         cap_bytes: gib_to_bytes_u64(cap_gib),
-        // The BIG lane's budget is reserved out of the pool up front, so
-        // a big measurement plus a full fleet never overcommits the box.
-        pool_cap_bytes: gib_to_bytes_u64(BIG_LANE_GIB),
-        big_lane: Mutex::new(()),
+        cleanup_cap_bytes: gib_to_bytes_u64(
+          pool_gib / f64_from_usize(CLEANUP_WORKERS),
+        ),
+        cleanup: false,
         order_file,
         capped,
         order: &order,
         blocks: &blocks,
         fail_fast,
+        defer_infeasible,
+        defer_growth: false,
+        price_file: None,
       };
       run_pool_procs(&pool, bounds, workers, &failed)?
     },
@@ -1395,36 +1888,209 @@ pub fn scan_shards(
     },
   };
 
-  // Assemble shards by summing adjacent segments up to the cut, to a
-  // fixpoint. Sums are conservative for every cost in play: shared
-  // dependencies derive once in the union, and padded heights are
-  // subadditive — so a summed shard can only OVER-state its prove RSS,
-  // never breach the budget. The conservatism (measured ~5-15% extra
-  // shards vs a re-measured pack) is the price of planning wall time
-  // never depending on the prove budget: segments are scanned at
-  // RAM-optimal size and packing is pure arithmetic.
+  // Assemble shards by summing adjacent segments, then COLD RE-PRICE
+  // each merged shard: one execution of its whole CheckEnv claim (the
+  // exact claim its prove runs) replaces the summed cost. Sums are
+  // conservative (shared cones derive once in the union; padded heights
+  // are subadditive) but by a measured ~1.6x, so the merge packs past
+  // the cut by [`PACK_OVERSHOOT`] and the re-price decides: an over-cut
+  // shard splits at its ram midpoint and the halves re-price, to a
+  // bounded depth. Process-pool mode only; the thread pool (tests)
+  // keeps the pure summed pack at the plain cut.
   let pre_merge = segments.len();
-  let mut list = segments;
-  loop {
-    let mut merged: Vec<Segment> = Vec::new();
-    let mut any = false;
-    for seg in list {
-      match merged.last_mut() {
-        Some(prev) if prev.ram_gib + seg.ram_gib < cut_used_gib => {
-          prev.blocks.extend(seg.blocks);
-          prev.fft += seg.fft;
-          prev.ram_gib += seg.ram_gib;
-          any = true;
+  // Opt-in (`ix shard --reprice`, fail-fast mode strings "3"/"4"): the
+  // cold re-price is prove-validated on Init (+0.77% at a shard packed
+  // to the cut) but not yet on FLT/Mathlib-class content, so summed
+  // conservative costs remain the default until each env's re-priced
+  // manifest passes its heaviest-shard prove protocol.
+  let pricing = reprice && proc_workers.is_some();
+  let pack_target =
+    if pricing { cut_used_gib * PACK_OVERSHOOT } else { cut_used_gib };
+  let mut groups: Vec<Vec<Segment>> = Vec::new();
+  {
+    let mut sums: Vec<f64> = Vec::new();
+    for seg in segments {
+      match (groups.last_mut(), sums.last_mut()) {
+        (Some(g), Some(sum)) if *sum + seg.ram_gib < pack_target => {
+          *sum += seg.ram_gib;
+          g.push(seg);
         },
-        _ => merged.push(seg),
+        _ => {
+          sums.push(seg.ram_gib);
+          groups.push(vec![seg]);
+        },
       }
     }
-    list = merged;
-    if !any {
-      break;
-    }
   }
-  let segments = list;
+  // (summed fft, summed ram, priced (fft, ram) once measured)
+  let group_sum = |g: &Vec<Segment>| -> (f64, f64) {
+    g.iter().fold((0.0, 0.0), |(f, r), s| (f + s.fft, r + s.ram_gib))
+  };
+  let mut priced: Vec<Option<(f64, f64)>> = vec![None; groups.len()];
+  if pricing {
+    let (bin, ixe) = proc_workers.expect("pricing implies proc workers");
+    let t0 = std::time::Instant::now();
+    // The scan pool (and its order file) are gone; the price pool gets
+    // fresh copies of both sidecar files.
+    let order_file = std::env::temp_dir()
+      .join(format!("ix-price-order-{}.bin", std::process::id()));
+    write_order_file(&order_file, &blocks, &order)?;
+    let price_file = std::env::temp_dir()
+      .join(format!("ix-price-shards-{}.bin", std::process::id()));
+    let width = REPRICE_WORKERS.min(groups.len()).max(1);
+    let cap_gib = (pool_gib / f64_from_usize(REPRICE_WORKERS))
+      .max(SLICE_FLOOR_GIB);
+    let price_pool = ProcPool {
+      bin: bin.to_string(),
+      ixe: ixe.to_string(),
+      cut_used_gib,
+      batch_blocks,
+      soft_record_gib: f64::INFINITY,
+      pieces: sched_pieces,
+      exec_only: false,
+      cap_bytes: gib_to_bytes_u64(cap_gib),
+      cleanup_cap_bytes: gib_to_bytes_u64(cap_gib),
+      cleanup: true,
+      order_file: order_file.clone(),
+      capped: systemd_scope_caps_available(),
+      order: &order,
+      blocks: &blocks,
+      fail_fast: false,
+      defer_infeasible: false,
+      defer_growth: false,
+      price_file: Some(price_file.clone()),
+    };
+    // Rounds: price every unpriced group; split over-cut multi-segment
+    // groups at their summed-ram midpoint and unprice the halves.
+    for _round in 0..3 {
+      let todo: Vec<usize> =
+        (0..groups.len()).filter(|&i| priced[i].is_none()).collect();
+      if todo.is_empty() {
+        break;
+      }
+      let members: Vec<Vec<u32>> = todo
+        .iter()
+        .map(|&i| {
+          groups[i].iter().flat_map(|s| s.blocks.iter().copied()).collect()
+        })
+        .collect();
+      write_price_file(&price_file, &members)?;
+      let queue: Mutex<std::collections::VecDeque<usize>> =
+        Mutex::new((0..todo.len()).collect());
+      let results: Mutex<Vec<Option<(f64, f64)>>> =
+        Mutex::new(vec![None; todo.len()]);
+      std::thread::scope(|sc| {
+        for slot in 0..width.min(todo.len()) {
+          let (queue, results, price_pool) = (&queue, &results, &price_pool);
+          sc.spawn(move || {
+            let mut worker = match price_pool.spawn(slot) {
+              Ok(w) => w,
+              Err(_e) => return,
+            };
+            loop {
+              let Some(j) = queue.lock().unwrap().pop_front() else {
+                break;
+              };
+              match price_pool.price(&mut worker, j) {
+                Ok(cost) => results.lock().unwrap()[j] = Some(cost),
+                Err(_e) => {
+                  // Death or pricing error: one fresh-worker retry,
+                  // then the group falls back to its summed cost.
+                  worker = match price_pool.spawn(slot) {
+                    Ok(w) => w,
+                    Err(_e) => break,
+                  };
+                  if let Ok(cost) = price_pool.price(&mut worker, j) {
+                    results.lock().unwrap()[j] = Some(cost);
+                  }
+                }
+              }
+            }
+            worker.reap();
+          });
+        }
+      });
+      let results = results.into_inner().unwrap();
+      for (pos, &i) in todo.iter().enumerate() {
+        priced[i] = Some(match results[pos] {
+          Some(cost) => cost,
+          None => group_sum(&groups[i]),
+        });
+      }
+      // Split over-cut multi-segment groups; their halves re-price in
+      // the next round.
+      let mut next_groups: Vec<Vec<Segment>> = Vec::new();
+      let mut next_priced: Vec<Option<(f64, f64)>> = Vec::new();
+      let mut split = 0usize;
+      for (i, g) in groups.into_iter().enumerate() {
+        let over = priced[i].is_some_and(|(_f, r)| r >= cut_used_gib);
+        if over && g.len() > 1 {
+          let total: f64 = g.iter().map(|s| s.ram_gib).sum();
+          let mut acc = 0.0;
+          let mut cutp = g.len() - 1;
+          for (k, s) in g.iter().enumerate() {
+            acc += s.ram_gib;
+            if acc >= total / 2.0 {
+              cutp = (k + 1).min(g.len() - 1);
+              break;
+            }
+          }
+          let mut a = g;
+          let b = a.split_off(cutp);
+          split += 1;
+          next_groups.push(a);
+          next_priced.push(None);
+          next_groups.push(b);
+          next_priced.push(None);
+        } else {
+          next_priced.push(priced[i]);
+          next_groups.push(g);
+        }
+      }
+      groups = next_groups;
+      priced = next_priced;
+      if split == 0 {
+        break;
+      }
+      eprintln!("[scan] re-price: {split} over-cut shard(s) split");
+    }
+    let _ = std::fs::remove_file(&order_file);
+    let _ = std::fs::remove_file(&price_file);
+    let ratios: Vec<f64> = groups
+      .iter()
+      .zip(&priced)
+      .filter_map(|(g, p)| {
+        p.map(|(_f, r)| {
+          let (_sf, sr) = group_sum(g);
+          if sr > 0.0 { r / sr } else { 1.0 }
+        })
+      })
+      .collect();
+    let (rmin, rmax) = ratios.iter().fold((f64::MAX, 0.0f64), |(lo, hi), &r| {
+      (lo.min(r), hi.max(r))
+    });
+    eprintln!(
+      "[scan] re-price: {} shard(s) cold-priced in {:.0}s \
+       (true/summed {:.2}-{:.2})",
+      groups.len(),
+      t0.elapsed().as_secs_f64(),
+      rmin,
+      rmax
+    );
+  }
+  // Flatten to the manifest's segment shape, carrying the priced (or
+  // summed-fallback) cost per shard.
+  let segments: Vec<Segment> = groups
+    .into_iter()
+    .zip(priced)
+    .map(|(g, p)| {
+      let (sf, sr) = group_sum(&g);
+      let (fft, ram_gib) = p.unwrap_or((sf, sr));
+      let blocks: Vec<u32> =
+        g.into_iter().flat_map(|s| s.blocks).collect();
+      Segment { blocks, fft, ram_gib }
+    })
+    .collect();
 
   // Manifest: owned blocks per segment; frontier fields are the claim
   // layer's business (reconstructed from env + owned at check/prove time).
@@ -1555,17 +2221,25 @@ fn scan_range(
   ctx: &ScanCtx<'_>,
   chunk: &[u32],
   origin: u32,
-) -> Result<(Vec<Segment>, Vec<u32>), String> {
+) -> Result<(Vec<Segment>, Vec<u32>, bool), String> {
   let t0 = std::time::Instant::now();
   let chunk_id = origin;
   let n_chunks = ctx.n_chunks;
   let mut segments: Vec<Segment> = Vec::new();
   let mut lo = 0usize;
+  // Set when measured growth crossed the phase-1 threshold: the range's
+  // remainder is handed back marked for the fat phase.
+  let mut defer_rest = false;
   // Blocks below this index (and at/after `lo`) execute one per claim:
   // a batch-level event landed in [lo, narrow_until) and needs per-block
   // attribution. Stale values (< hi) are inert.
   let mut narrow_until = 0usize;
-  while lo < chunk.len() && segments.len() < RANGE_SEGMENTS {
+  // Running record growth per block (bytes), from the last claim's
+  // measured growth — the range's execution history is content-fixed,
+  // so the estimate (and thus every claim width) is deterministic.
+  // `None` until the first claim measures.
+  let mut growth_per_block: Option<f64> = None;
+  while lo < chunk.len() && segments.len() < RANGE_SEGMENTS && !defer_rest {
     let mut record = QueryRecord::new(ctx.toplevel);
     let mut io = IOBuffer::with_backing(EnvFaultSource::new(ctx.env.clone()));
     let mut prev_fft = 0.0f64;
@@ -1579,15 +2253,38 @@ fn scan_range(
       if ctx.abort.load(Ordering::Acquire) {
         return Err("aborted after a failure elsewhere".to_string());
       }
+      // Claim width from measured growth: K sized so this claim's
+      // expected record growth is ~CLAIM_TARGET_GIB. Light content runs
+      // full width; dense content shrinks to K=1-2, where per-claim
+      // overhead is negligible against per-block cost — one rule bounds
+      // mid-claim growth on every content class. Before the first
+      // measurement the estimate is unknown and the claim starts small.
       let k = if hi < narrow_until {
         1
       } else {
-        ctx.batch_blocks.min(chunk.len() - hi)
+        let by_growth = match growth_per_block {
+          // No measurement yet: a single block seeds the estimator. A
+          // wider opening claim cascades in monster strips — after a
+          // deferral the follow-up range also starts unmeasured, so any
+          // multi-block seed re-dies block after block (measured: 998
+          // one-death-one-deferral blocks at a 4-block seed, where the
+          // same strips scanned clean once estimators were trained).
+          None => 1,
+          Some(g) => {
+            let target = CLAIM_TARGET_GIB * GIB;
+            format!("{:.0}", (target / g.max(1.0)).clamp(1.0, 4096.0))
+              .parse::<usize>()
+              .unwrap_or(1)
+              .min(ctx.batch_blocks)
+          },
+        };
+        by_growth.min(chunk.len() - hi)
       };
       let addrs: Vec<Address> = chunk[hi..hi + k]
         .iter()
         .map(|&b| ctx.blocks[b as usize].addr.clone())
         .collect();
+      let heap_before = record_heap_bytes(&record);
       let out: Result<(), String> = seed_shard_check_env_claim(
         ctx.env, &addrs, &mut io,
       )
@@ -1602,6 +2299,33 @@ fn scan_range(
         .map(|_| ())
         .map_err(|e| e.to_string())
       });
+      growth_per_block = Some(
+        (f64_from_usize(record_heap_bytes(&record).saturating_sub(
+          heap_before,
+        )) / f64_from_usize(k))
+        .max(1.0),
+      );
+      // Phase-1 growth deferral: the claim that just executed is banked
+      // (its checks are done), and the remainder waits for the fat
+      // phase — dense content is only cheap walked warm with room, and
+      // the threshold sits in the decade-wide gap between the light and
+      // dense growth populations.
+      if let (Some(threshold), Some(g)) = (ctx.defer_growth, growth_per_block)
+        && g > threshold
+        && hi >= narrow_until
+      {
+        defer_rest = true;
+        break (hi + k, record_fft_cost(ctx.toplevel, &record), {
+          let rec =
+            f64_from_usize(record_heap_bytes(&record)) / GIB;
+          match ctx.system {
+            Some(sys) => {
+              f64_from_usize(sys.peak_prove_bytes(&record).peak) / GIB
+            },
+            None => rec,
+          }
+        });
+      }
       if let Err(e) = out {
         if k > 1 {
           // Per-block attribution needed: end the segment at the last
@@ -1661,6 +2385,16 @@ fn scan_range(
         }
         break (hi, prev_fft, prev_ram);
       }
+      if segments.is_empty() && lo == 0 && hi == lo {
+        // Bank the range's very first claim as its own segment: the
+        // committed index then advances past it immediately, so any
+        // later death in this range preserves progress (`e > lo`) and
+        // is answered by respawn-and-continue. A zero-progress death
+        // therefore means exactly "this claim, alone, on this worker" —
+        // the conviction the deferral path assumes. One extra seed-size
+        // segment per range; the merge pass absorbs it.
+        break (hi + k, fft, ram_gib);
+      }
       hi += k;
       prev_fft = fft;
       prev_ram = ram_gib;
@@ -1713,7 +2447,7 @@ fn scan_range(
       t0.elapsed().as_secs_f64()
     );
   }
-  Ok((segments, chunk[lo..].to_vec()))
+  Ok((segments, chunk[lo..].to_vec(), defer_rest))
 }
 
 use lean_ffi::object::{
@@ -1754,7 +2488,13 @@ extern "C" fn rs_aiur_scan_shards_with_env(
   }
   let eps = eps_pct.to_string().parse::<f64>().unwrap_or(5.0) / 100.0;
   let workers = workers.to_string().parse::<usize>().unwrap_or(0);
-  let fail_fast = fail_fast.to_string() != "0";
+  // `fail_fast` mode string: "1" abort on the first kernel reject, "0"
+  // record-and-skip, "2" record-and-skip + name deferred dense ranges
+  // infeasible, "3" as "0" + cold re-price, "4" as "2" + cold re-price.
+  let mode = fail_fast.to_string();
+  let fail_fast = mode == "1";
+  let defer_infeasible = mode == "2" || mode == "4";
+  let reprice = mode == "3" || mode == "4";
   let (bin, ixe) = (worker_bin.to_string(), ixe_path.to_string());
   let proc_workers = (!bin.is_empty() && !ixe.is_empty())
     .then_some((bin.as_str(), ixe.as_str()));
@@ -1766,6 +2506,8 @@ extern "C" fn rs_aiur_scan_shards_with_env(
     eps,
     workers,
     fail_fast,
+    defer_infeasible,
+    reprice,
     &out_path.to_string(),
     proc_workers,
   ) {
@@ -1842,7 +2584,11 @@ extern "C" fn rs_aiur_scan_worker(
   let batch = batch.to_string().parse::<usize>().unwrap_or(SCAN_BATCH_BLOCKS);
   let soft = soft_cap_gib.to_string().parse::<f64>().unwrap_or(f64::INFINITY);
   let pieces = pieces.to_string().parse::<usize>().unwrap_or(16);
-  let exec_only = exec_only.to_string() == "1";
+  // Mode string: "0" scan, "1" execute-only, "2" execute-only with
+  // growth-threshold deferral (phase 1 of the two-phase execute).
+  let mode = exec_only.to_string();
+  let exec_only = mode == "1" || mode == "2";
+  let defer_growth = mode == "2";
   match scan_worker(
     system.get(),
     fun_idx,
@@ -1852,6 +2598,7 @@ extern "C" fn rs_aiur_scan_worker(
     soft,
     pieces,
     exec_only,
+    defer_growth,
   ) {
     Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
     Err(e) => LeanExcept::error_string(&format!("rs_aiur_scan_worker: {e}")),

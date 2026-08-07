@@ -45,6 +45,7 @@ public import Ix.IxVM.Toplevel
 public import Ix.KernelCheck
 public import Ix.TracingTexray
 public import Ix.Cli.ConstsFile
+public import Ix.Cli.NameOfCmd
 
 public section
 
@@ -71,6 +72,18 @@ def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
   if noFailFast && p.hasFlag "fail-fast" then
     p.printError "error: --fail-fast and --no-fail-fast are mutually exclusive"
     return 1
+  -- Deferred ranges (regions whose opening cone exceeds a fleet slot —
+  -- cone-bound kernel execution measured at hours of worker time on
+  -- FLT/Mathlib-class content) are named infeasible instead of walked
+  -- under fat caps, and the exclusion inventory is resolved to Lean
+  -- names in `<out>.failed-names.txt`. Implies --no-fail-fast; the
+  -- mode reaches the scanner as fail-fast mode string "2".
+  let deferInfeasible := p.hasFlag "defer-infeasible"
+  -- Cold re-price (opt-in): replace summed shard costs with one
+  -- measured cold execution per merged shard, packing past the cut by
+  -- the validated slack. Adopt per env only after its re-priced
+  -- manifest passes the heaviest-shard prove protocol.
+  let reprice := p.hasFlag "reprice"
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
     | .ok t => pure t
@@ -86,11 +99,14 @@ def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
   let workersDesc := if workers == 0 then "auto" else toString workers
   IO.println s!"Scanning {ixePath} @ {budget} GiB (ε {eps}%, {workersDesc} workers)"
   (← IO.getStdout).flush
-  -- `benchJson = (out, rowName)` reports the scan as a benchmark row (the
-  -- `aiur-shard` bench backend): `scan-time` windows the scan itself — the
-  -- env mmap and toplevel build are excluded, so the measure tracks the
-  -- kernel execution, not the loader — while `peak-rss` is the process
-  -- tree's absolute high-water, matching the check rows' semantics.
+  -- `benchJson = (out, rowName)` reports the scan as a benchmark row
+  -- (the `aiur` bench backend's whole-env execute row): the scan IS a
+  -- whole-env execution — the cut on top of it is an in-memory merge
+  -- over the collected block records — so the wall reports as
+  -- `execute-time`, windowing the scan itself: the env mmap and
+  -- toplevel build are excluded, so the measure tracks the kernel
+  -- execution, not the loader. `peak-rss` is the process tree's
+  -- absolute high-water, matching the check rows' semantics.
   let benchJson := (p.flag? "json").map fun f =>
     (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "scan")
   if benchJson.isSome then
@@ -109,15 +125,47 @@ def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
   let workerBin := (← IO.appPath).toString
   match Aiur.AiurSystem.scanShardsWithEnv system funIdx
       envHandle (toString budget) (toString eps) (toString workers)
-      (if noFailFast then "0" else "1") outPath workerBin ixePath with
+      (if deferInfeasible && reprice then "4"
+       else if reprice then "3"
+       else if deferInfeasible then "2"
+       else if noFailFast then "0"
+       else "1")
+      outPath workerBin ixePath with
   | .ok () =>
     if let some (out, rowName) := benchJson then
       let secs := ((← IO.monoMsNow) - start).toFloat / 1000.0
       let peakRss ← TracingTexray.peakTreeRssBytes
       Ix.Benchmark.Results.writeRow out rowName "ok"
-        [ ("scan-time", Ix.Benchmark.Results.jsonRound 3 secs)
+        [ ("execute-time", Ix.Benchmark.Results.jsonRound 3 secs)
         , ("peak-rss", Lean.toJson peakRss) ]
     IO.println s!"[shard scan] wrote {outPath} (+ .costs.csv, measured)"
+    -- Resolve the exclusion inventory to Lean names: one env decode +
+    -- batch reverse-index lookup (`ix name-of --addrs-file` semantics),
+    -- so a shard run over dense content ends with a readable list of
+    -- exactly which constants were excluded and why.
+    if deferInfeasible then
+      let failedPath := outPath ++ ".failed.csv"
+      if ← System.FilePath.pathExists failedPath then
+        let mut addrs : Array Address := #[]
+        for line in (← IO.FS.readFile failedPath).splitOn "\n" do
+          let addrStr := (line.splitOn ",").headD ""
+          if let some a := Address.fromString addrStr then
+            addrs := addrs.push a
+        if !addrs.isEmpty then
+          let bytes ← IO.FS.readBinFile ixePath
+          match Ixon.deEnvAnon bytes with
+          | .error e =>
+            IO.eprintln s!"[shard scan] failed-names resolution skipped: {e}"
+          | .ok ixonEnv =>
+            let resolved :=
+              Ix.Cli.NameOfCmd.resolveAddrs ixonEnv addrs
+            let namesPath := outPath ++ ".failed-names.txt"
+            let lines := resolved.map fun (a, disp) => s!"{a} {disp}"
+            IO.FS.writeFile namesPath
+              (String.intercalate "\n" lines.toList ++ "\n")
+            IO.println
+              s!"[shard scan] {addrs.size} excluded block(s) resolved → \
+                 {namesPath}"
     return 0
   | .error e =>
     IO.eprintln s!"error: shard scan failed: {e}"
@@ -260,7 +308,9 @@ def runShardWorkerCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok h => pure h
   match Aiur.AiurSystem.scanWorker system funIdx envHandle cutGib
       (toString batch) softCap (toString pieces)
-      (if p.hasFlag "exec-only" then "1" else "0") with
+      (if p.hasFlag "defer-growth" then "2"
+       else if p.hasFlag "exec-only" then "1"
+       else "0") with
   | .ok () => return 0
   | .error e => IO.eprintln s!"shard-worker: {e}"; return 1
 
@@ -279,7 +329,9 @@ def shardCmd : Cli.Cmd := `[Cli|
     workers   : Nat;  "Scan only: parallel chunk scanners (default 0 = autoscale to cores and detected RAM). Each holds one segment's query record and faulted witness, so workers × segment footprint must fit the box"
     "fail-fast";      "Scan: halt on the first kernel-rejected block (the default; flag accepted for explicitness)."
     "no-fail-fast";   "Scan: skip kernel-rejected blocks (named as skipped, excluded from the partition, listed in <out>.failed.csv). The manifest then does not cover them — the downstream coverage gate reports exactly which."
-    json        : String; "Scan only: benchmark results JSON accumulator — append a `scan-time`/`peak-rss` row. Used by `ix bench run --backend aiur-shard`."
+    "reprice"; "Scan: cold re-price — pack past the cut on summed costs, then measure each merged shard's true cost with one cold CheckEnv execution (splits over-cut shards). Opt-in; validate per env by proving the heaviest re-priced shard before adopting its manifest."
+    "defer-infeasible"; "Scan: name deferred dense regions (opening cone exceeds a fleet slot) resource-infeasible instead of walking them under fat caps, and resolve the whole exclusion inventory to Lean names in <out>.failed-names.txt. Implies --no-fail-fast. The partition covers only tractable content; failed.csv + failed-names.txt carry the exact boundary."
+    json        : String; "Scan only: benchmark results JSON accumulator — append an `execute-time`/`peak-rss` row (the scan wall is a whole-env execution wall). Used by `ix bench run --backend aiur` for the whole-env execute row."
     "json-name" : String; "Row name for --json (default: scan)."
     shards       : Nat;    ".ixprof only: fixed number of shards N (overrides the budget sizing)"
     "max-cycles" : Nat;    ".ixprof only: per-shard guest-cycle budget (overrides the RAM sizing)"
@@ -305,6 +357,7 @@ def shardWorkerCmd : Cli.Cmd := `[Cli|
     "soft-cap-gib" : String; "Graceful record ceiling, GiB — segments cut here so only mid-claim growth reaches the cgroup kill"
     pieces         : Nat;    "Schedule piece count (must match the parent's chunking)"
     "exec-only";             "Execute-only mode: record-bytes cut, no prove model"
+    "defer-growth";          "Execute-only phase 1: hand dense range remainders back (DEFER) when measured record growth per block crosses the phase threshold; implies --exec-only"
 ]
 
 end
