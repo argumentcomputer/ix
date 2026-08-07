@@ -1244,77 +1244,83 @@ private instance : Std.TransCmp
   isLE_trans :=
     Std.TransCmp.isLE_trans (cmp := (compare : Path → Path → Ordering))
 
-/-- `normLevelEq` on canonical forms implies equal denotations. The
-    entry-wise check gives `⟦l₁⟧ ≤ ⟦l₂⟧` directly; the size check upgrades
-    the key-set inclusion to equality (pigeonhole over nodup sorted keys),
-    giving the reverse. -/
+/-- An entry the `entryNonEmpty` filter drops evaluates to `0`. -/
+private theorem eval_of_not_entryNonEmpty {ρ : List Nat} {p : Path}
+    {n : NormNode} (h : entryNonEmpty (p, n) = false) :
+    NormNode.eval ρ n = 0 := by
+  rw [entryNonEmpty, Bool.or_eq_false_iff] at h
+  obtain ⟨hc, hv⟩ := h
+  have hc0 : n.constant = 0 := by
+    rw [bne_eq_false_iff_eq] at hc; exact hc
+  have hv0 : n.vars.isEmpty = true := by
+    rwa [Bool.not_eq_false'] at hv
+  refine Nat.le_zero.mp (NormNode.eval_le.mpr ⟨by simp [hc0], ?_⟩)
+  intro v hvmem
+  rw [Array.isEmpty_iff.mp hv0] at hvmem
+  simp at hvmem
+
+/-- Positional componentwise agreement of equal-length lists is list
+    equality — the shape `normLevelEq`'s zip-`all` check certifies
+    (stated in the `∧`-form `Bool.and_eq_true` normalizes to). -/
+private theorem eq_of_zip_all_entries :
+    ∀ {xs ys : List (Path × NormNode)}, xs.length = ys.length →
+    (∀ e ∈ xs.zip ys,
+      ((e.1.1 == e.2.1) = true
+          ∧ (e.1.2.constant == e.2.2.constant) = true)
+        ∧ (e.1.2.vars == e.2.2.vars) = true) →
+    xs = ys
+  | [], [], _, _ => rfl
+  | [], _ :: _, hlen, _ => by simp at hlen
+  | _ :: _, [], hlen, _ => by simp at hlen
+  | x :: xs, y :: ys, hlen, hall => by
+    obtain ⟨⟨hk, hc⟩, hv⟩ := hall (x, y) (by simp)
+    have hx : x = y := by
+      obtain ⟨xk, xc, xv⟩ := x
+      obtain ⟨yk, yc, yv⟩ := y
+      simp only at hk hc hv
+      rw [eq_of_beq hk, eq_of_beq hc, eq_of_beq hv]
+    rw [hx]
+    exact congrArg _ (eq_of_zip_all_entries (by simpa using hlen)
+      (fun e he => hall e (by simp [he])))
+
+/-- `normLevelEq` on canonical forms implies equal denotations: the
+    positional check makes the two nonempty-entry lists literally EQUAL,
+    and empty entries (constant 0, no vars — subsumption bookkeeping)
+    contribute nothing to `eval`, so each side's denotation is decided
+    entirely by its filtered list. -/
 theorem normLevelEq_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
     (h : normLevelEq l₁ l₂ = true) :
     NormLevel.eval ρ l₁ = NormLevel.eval ρ l₂ := by
-  rw [normLevelEq, Bool.and_eq_true, List.all_eq_true] at h
-  obtain ⟨hsize, hall⟩ := h
-  have hcorr : ∀ p n₁, (p, n₁) ∈ l₁.toList →
-      ∃ n₂, l₂.find? p = some n₂ ∧
-        NormNode.eval ρ n₂ = NormNode.eval ρ n₁ := by
-    intro p n₁ hmem
-    have h1 := hall (p, n₁) hmem
-    simp only at h1
-    split at h1
-    · rename_i n₂ hf
-      rw [Bool.and_eq_true] at h1
-      refine ⟨n₂, hf, ?_⟩
-      rw [NormNode.eval, NormNode.eval, eq_of_beq h1.1, eq_of_beq h1.2]
-    · simp at h1
-  have h12 : NormLevel.eval ρ l₁ ≤ NormLevel.eval ρ l₂ := by
+  simp only [normLevelEq, Bool.and_eq_true, List.all_eq_true] at h
+  obtain ⟨hlen, hall⟩ := h
+  have hlists : l₁.toList.filter entryNonEmpty
+      = l₂.toList.filter entryNonEmpty := by
+    refine eq_of_zip_all_entries (eq_of_beq hlen) ?_
+    intro e he
+    have := hall e he
+    obtain ⟨⟨ek₁, en₁⟩, ⟨ek₂, en₂⟩⟩ := e
+    exact this
+  have dir : ∀ la lb : NormLevel,
+      la.toList.filter entryNonEmpty = lb.toList.filter entryNonEmpty →
+      NormLevel.eval ρ la ≤ NormLevel.eval ρ lb := by
+    intro la lb hfe
     rw [NormLevel.eval_le]
-    intro p n₁ hf
-    obtain ⟨y, hymem, hycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
-    cases Std.LawfulEqCmp.eq_of_compare hycmp
-    obtain ⟨n₂, hf₂, heval⟩ := hcorr p n₁ hymem
-    rw [← heval]
-    exact NormLevel.le_eval hf₂
-  have hnodup : (l₁.toList.map Prod.fst).Nodup := by
-    refine List.Pairwise.map _ ?_ Batteries.RBMap.toList_sorted
-    intro a b hlt heq
-    have hc := Batteries.RBNode.cmpLT_iff.mp hlt
-    rw [heq] at hc
-    have hself : compare b.1 b.1 = .eq := Std.ReflCmp.compare_self
-    rw [hself] at hc
-    exact absurd hc (by decide)
-  have hsub : ∀ p ∈ l₁.toList.map Prod.fst, p ∈ l₂.toList.map Prod.fst := by
-    intro p hp
-    obtain ⟨x₁, hmem₁, rfl⟩ := List.mem_map.mp hp
-    obtain ⟨n₂, hf₂, -⟩ := hcorr x₁.1 x₁.2 hmem₁
-    obtain ⟨y, hymem, hycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf₂
-    cases Std.LawfulEqCmp.eq_of_compare hycmp
-    exact List.mem_map.mpr ⟨(x₁.1, n₂), hymem, rfl⟩
-  have hlen : (l₂.toList.map Prod.fst).length
-      ≤ (l₁.toList.map Prod.fst).length := by
-    have hs := eq_of_beq hsize
-    rw [Batteries.RBMap.size_eq, Batteries.RBMap.size_eq] at hs
-    simp only [List.length_map]
-    omega
-  have hperm : List.Perm (l₁.toList.map Prod.fst)
-      (l₂.toList.map Prod.fst) :=
-    (List.subperm_of_subset hnodup hsub).perm_of_length_le hlen
-  have h21 : NormLevel.eval ρ l₂ ≤ NormLevel.eval ρ l₁ := by
-    rw [NormLevel.eval_le]
-    intro p n₂ hf
-    obtain ⟨y, hymem, hycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
-    cases Std.LawfulEqCmp.eq_of_compare hycmp
-    have hpk : p ∈ l₁.toList.map Prod.fst :=
-      hperm.mem_iff.mpr (List.mem_map.mpr ⟨(p, n₂), hymem, rfl⟩)
-    obtain ⟨x₁, hmem₁, hpp'⟩ := List.mem_map.mp hpk
-    obtain ⟨n₂', hf₂, heval⟩ := hcorr x₁.1 x₁.2 hmem₁
-    rw [hpp'] at hf₂
-    have hn : n₂' = n₂ := Option.some.inj (hf₂.symm.trans hf)
-    subst hn
-    rw [heval]
-    refine NormLevel.le_eval
-      (Batteries.RBMap.find?_some.mpr ⟨x₁.1, hmem₁, ?_⟩)
-    rw [hpp']
-    exact Std.ReflCmp.compare_self
-  exact Nat.le_antisymm h12 h21
+    intro p n hf
+    by_cases hne : entryNonEmpty (p, n) = true
+    · have hmem : (p, n) ∈ la.toList := by
+        obtain ⟨y, hy, hcmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+        cases Std.LawfulEqCmp.eq_of_compare hcmp
+        exact hy
+      have hmem₂ : (p, n) ∈ lb.toList := by
+        have hfmem : (p, n) ∈ lb.toList.filter entryNonEmpty := by
+          rw [← hfe]
+          exact List.mem_filter.mpr ⟨hmem, hne⟩
+        exact (List.mem_filter.mp hfmem).1
+      exact NormLevel.le_eval (Batteries.RBMap.find?_some.mpr
+        ⟨p, hmem₂, Std.ReflCmp.compare_self⟩)
+    · rw [eval_of_not_entryNonEmpty (Bool.eq_false_iff.mpr hne)]
+      exact evalPath_le.mpr fun _ => Nat.zero_le _
+  exact Nat.le_antisymm (dir l₁ l₂ hlists) (dir l₂ l₁ hlists.symm)
 
 /-- Canonical-form var-placement invariant: every variable contribution
     sits on its own entry's conditioning path. `normalizeLevel` output

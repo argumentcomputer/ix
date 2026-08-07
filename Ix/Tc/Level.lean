@@ -458,22 +458,26 @@ def normLevelLe (l1 l2 : NormLevel) : Bool :=
       (n1.constant == 0 || coversConst l2 p1 n1.constant)
       && n1.vars.all (fun v => coversVar l2 p1 v.idx v.offset)
 
+/-- A normal-form entry that actually contributes to the denotation.
+    Subsumption EMPTIES a dominated entry (constant 0, no vars) rather
+    than removing it; an empty entry's node evaluates to 0 and is pure
+    bookkeeping. -/
+def entryNonEmpty (e : Path × NormNode) : Bool :=
+  e.2.constant != 0 || !e.2.vars.isEmpty
+
 /-- Entry-wise equality of two normal forms, IGNORING empty entries
-    (constant 0, no vars — pure subsumption bookkeeping). Subsumption
-    EMPTIES a dominated entry rather than removing it, so a spelling
-    like `max (u+1) (imax (u+1) v)` retains an empty entry its semantic
-    equal `max (u+1) v` never creates; counting those made `univEq`
-    strictly finer than semantic equality (3 of 3,253,373 whole-Mathlib
+    (see `entryNonEmpty`). Subsumption's empty leftovers made a spelling
+    like `max (u+1) (imax (u+1) v)` retain an entry its semantic equal
+    `max (u+1) v` never creates; counting those made `univEq` strictly
+    finer than semantic equality (3 of 3,253,373 whole-Mathlib
     entries). `normLevelLe` already skips them; mirroring here makes
     `univEq` the exact semantic quotient (canonicity §10.6 R5, option
     (b); mirrors Rust `norm_level_eq`). `toList` is key-ordered, so
     positional comparison of the filtered streams is a sound map
     comparison. -/
 def normLevelEq (l1 l2 : NormLevel) : Bool :=
-  let nonEmpty : Path × NormNode → Bool := fun (_, n) =>
-    n.constant != 0 || !n.vars.isEmpty
-  let e1 := l1.toList.filter nonEmpty
-  let e2 := l2.toList.filter nonEmpty
+  let e1 := l1.toList.filter entryNonEmpty
+  let e2 := l2.toList.filter entryNonEmpty
   e1.length == e2.length
   && (e1.zip e2).all fun ((k1, n1), (k2, n2)) =>
     k1 == k2 && n1.constant == n2.constant && n1.vars == n2.vars
