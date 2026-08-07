@@ -30,9 +30,13 @@ environments, comparing the pure-Lean implementation (`Ix.CompileM` /
 
 | Environment | Source constants | Checkable constants | Named entries | `.ixe` size |
 |---|---|---|---|---|
-| InitStd | 89,771 | 105,492 | 106,425 | 315,700,850 B |
-| Lean | 188,999 | 188,999 | 192,026 | 470,157,016 B |
-| Mathlib | 736,624 | 736,624 | 743,838 | 3,152,009,710 B |
+| InitStd | 89,771 | 105,492 | 106,425 | 315,835,120 B |
+| Lean | 188,999 | 188,999 | 192,026 | 470,416,088 B |
+| Mathlib | 736,624 | 736,624 | 743,838 | 3,155,562,665 B |
+
+Sizes and the refreshed timings below are post-§10.6 (canonical univ
+tables + `univPatches` metadata, 2026-08-07); rows not re-measured in
+that round are unchanged from the previous one.
 
 ## Compilation (env → Ixon constants)
 
@@ -45,17 +49,18 @@ parentheses.
 
 | Environment | Lean compile (full pipeline) | Rust compile+serialize+write | Byte-identical? |
 |---|---|---|---|
-| InitStd | 39.9 s (84.8 s) | 4.75 s | ALIGNED |
-| Lean | 85.0 s (161.5 s) | 8.31 s | ALIGNED |
-| Mathlib | 646.5 s (1,058.6 s) | 56.2 s | ALIGNED¹ |
+| InitStd | 39.9 s (84.8 s) | 4.70 s | ALIGNED |
+| Lean | 85.0 s (161.5 s) | 8.87 s | ALIGNED |
+| Mathlib | 723.0 s (1,048.5 s) | 63.6 s | ALIGNED¹ |
 
-Lean pipeline phase breakdown:
+Lean pipeline phase breakdown (the streaming driver now reports canon
+and graph merged; the Mathlib row is post-§10.6):
 
-| Environment | canon | graph | ground | condense | compile | serialize |
-|---|---|---|---|---|---|---|
-| InitStd | 3.4 s | 1.4 s | 14.9 s | 3.2 s | 39.9 s | 22.0 s |
-| Lean | 4.8 s | 1.7 s | 18.8 s | 4.7 s | 85.0 s | 46.6 s |
-| Mathlib | 39.0 s | 14.2 s | 138.5 s | 27.5 s | 646.5 s | 193.0 s |
+| Environment | canon(+graph) | ground | condense | compile | serialize |
+|---|---|---|---|---|---|
+| InitStd | 3.4 s + 1.4 s | 14.9 s | 3.2 s | 39.9 s | 22.0 s |
+| Lean | 4.8 s + 1.7 s | 18.8 s | 4.7 s | 85.0 s | 46.6 s |
+| Mathlib | 49.0 s | 31.7 s | 27.0 s | 723.0 s | 217.8 s |
 
 ¹ An earlier revision of this table reported a 49-byte divergence here
 (two constants — `Lists.Equiv.below.rec` / `Lists'.Subset.below.rec`,
@@ -105,11 +110,7 @@ parse + ingress setup).
 |---|---|---|
 | InitStd | 31.8 s | ~3.9 s |
 | Lean | 55.3 s | ~5.7 s |
-| Mathlib | TBD³ | ~30.3 s |
-
-³ Lean phase-2 deserialization at Mathlib scale runs inside
-`ix validate-lean`, which is deferred until the below.rec divergence
-fix lands (footnote ¹).
+| Mathlib | 232.3 s | ~30.3 s |
 
 ## Decompilation (Ixon env → source constants)
 
@@ -128,7 +129,7 @@ kept for reference.
 |---|---|---|---|
 | InitStd | 58.3 s | 305 s | 6.70 s |
 | Lean | 268.7 s | 1,317 s | 12.68 s |
-| Mathlib | TBD | — | 221.0 s |
+| Mathlib | 3,926.3 s | — | 221.0 s |
 
 ## Typechecking (`.ixe` through the kernel, meta mode)
 
@@ -139,7 +140,7 @@ full verdict parity.
 |---|---|---|---|---|
 | InitStd | 105,492 | 64.8 s (~1,630/s) | 24.1 s (~4,380/s) | 2.7× |
 | Lean | 188,999 | 78.1 s (~2,420/s) | 35.0 s (~5,400/s) | 2.2× |
-| Mathlib (meta) | 736,624 | —² | 357.7 s (~2,060/s) | — |
+| Mathlib (meta) | 736,624 | —² | 358.2 s (~2,056/s) | — |
 | Mathlib (anon)² | 640,658 | 1,014.7 s (~630/s) | 234.0 s (~2,740/s) | 4.3× |
 
 ² At Mathlib scale the meta-mode Lean run exceeds memory (default
@@ -166,12 +167,17 @@ that scale):
 
 | Phase | InitStd | Lean | Mathlib |
 |---|---|---|---|
-| 1 compile | 83.2 s | 158.9 s | TBD |
-| 2 serde (byte-identical) | 33.9 s | 59.0 s | TBD |
-| 3 kernel anon roundtrip | 462.8 s | 462.6 s | TBD |
-| 4 kernel meta roundtrip | 12.5 s | 16.6 s | TBD |
-| 5 decompile (hash-identical) | 58.3 s | 268.7 s | TBD |
-| **total** | **~10.8 min** | **~16.1 min** | TBD |
+| 1 compile | 83.2 s | 158.9 s | 999.1 s |
+| 2 serde (byte-identical) | 33.9 s | 59.0 s | 232.3 s |
+| 3 kernel anon roundtrip | 462.8 s⁴ | 462.6 s⁴ | 41.2 s |
+| 4 kernel meta roundtrip | 12.5 s | 16.6 s | 183.8 s |
+| 5 decompile (digest-identical) | 58.3 s | 268.7 s | 3,926.3 s |
+| **total** | **~10.8 min** | **~16.1 min** | **~89.7 min** |
+
+⁴ The InitStd/Lean phase-3 figures predate the pointer-memo
+canonical-compare optimization (`canonExpr`'s DAG linearization) and
+the §10.6 strict comparison; the Mathlib column is current — which is
+why the smaller environments show a slower phase 3.
 
 `ix validate` (Rust, 8-phase aux_gen validation: compile → congruence →
 leak check → alpha/cross-namespace canonicity → double decompile →
@@ -182,7 +188,7 @@ elaboration:
 |---|---|---|
 | InitStd | 43.9 s | 0 failures |
 | Lean | 100.0 s | 0 failures |
-| Mathlib | 998.1 s | 0 failures |
+| Mathlib | 982.3 s | 0 failures |
 
 Note: `ix validate` checks Rust's pipeline against itself, so it is
 self-consistent by construction and does not detect the cross-
