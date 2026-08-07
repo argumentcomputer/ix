@@ -86,6 +86,14 @@ structure BlockCtx where
       indexed by `CallSiteEntry.collapsed.sharingIdx` / `origHead` —
       distinct from the block's primary `sharing` table. -/
   metaSharing : Array Ixon.Expr := #[]
+  /-- Level-spelling patches of the constant being decompiled, keyed by
+      metadata-arena index (canonicity §10.6): a patched `sort`/`ref`/
+      `recur` occurrence (or surgered call-site head) resolves the
+      patch's univ indices — written in the VIRTUAL space
+      `univs ++ metaUnivs`, i.e. this ctx's already-extended `univs` —
+      instead of the node's own canonical indices. Absent patch → the
+      canonical spelling (the D4 foreign-artifact semantics). -/
+  univPatches : Std.HashMap UInt64 (Array UInt64) := {}
   deriving Inhabited
 
 /-- Per-block mutable state (caches). -/
@@ -439,10 +447,17 @@ but canonical telescope has only {canonicalArgs.size} args")
             "callSite origHead")
       | none =>
         let headName ← lookupNameAddr nameAddr
-        let levels ← match headIxon with
-          | .ref _ univIndices => decompileUnivIndices univIndices
-          | .recur _ univIndices => decompileUnivIndices univIndices
-          | _ => pure #[]
+        -- Level-spelling patch replay (canonicity §10.6): the compiler
+        -- clones the head's patch onto the callSite root (the head's
+        -- own arena root is unreachable from here), so look it up by
+        -- the CURRENT arena index.
+        let headPatch := ctx.univPatches.get? currentIdx
+        let levels ← match headPatch, headIxon with
+          | some idxs, .ref .. => decompileUnivIndices idxs
+          | some idxs, .recur .. => decompileUnivIndices idxs
+          | none, .ref _ univIndices => decompileUnivIndices univIndices
+          | none, .recur _ univIndices => decompileUnivIndices univIndices
+          | _, _ => pure #[]
         pure (Ix.Expr.mkConst headName levels)
     let mut spine := head
     for entry in entries do
@@ -467,7 +482,13 @@ but canonical telescope has only {canonicalArgs.size} args")
     pure (applyMdata (Ix.Expr.mkBVar idx.toNat) mdataLayers)
 
   | _, .sort univIdx => do
-    pure (applyMdata (Ix.Expr.mkSort (← getUniv univIdx)) mdataLayers)
+    -- Level-spelling patch replay (canonicity §10.6): a patch keyed by
+    -- this occurrence's arena index restores the original spelling via
+    -- its virtual univ index.
+    let effIdx := match (← getCtx).univPatches.get? currentIdx with
+      | some idxs => idxs[0]?.getD univIdx
+      | none => univIdx
+    pure (applyMdata (Ix.Expr.mkSort (← getUniv effIdx)) mdataLayers)
 
   | _, .nat refIdx => do
     let blob ← getRef refIdx >>= lookupBlob
@@ -478,32 +499,38 @@ but canonical telescope has only {canonicalArgs.size} args")
     let s ← readStringBlob blob
     pure (applyMdata (Ix.Expr.mkLit (.strVal s)) mdataLayers)
 
-  -- Ref with arena metadata
+  -- Ref with arena metadata. Level-spelling patch replay (canonicity
+  -- §10.6): the patch carries the FULL level-arg list in the virtual
+  -- index space.
   | .ref nameAddr, .ref refIdx univIndices => do
     let name ← match (← getEnv).ixonEnv.names.get? nameAddr with
       | some n => pure n
       | none => getRef refIdx >>= lookupConstName
-    let lvls ← decompileUnivIndices univIndices
+    let lvls ← decompileUnivIndices
+      (((← getCtx).univPatches.get? currentIdx).getD univIndices)
     pure (applyMdata (Ix.Expr.mkConst name lvls) mdataLayers)
 
   -- Ref without arena metadata
   | _, .ref refIdx univIndices => do
     let name ← getRef refIdx >>= lookupConstName
-    let lvls ← decompileUnivIndices univIndices
+    let lvls ← decompileUnivIndices
+      (((← getCtx).univPatches.get? currentIdx).getD univIndices)
     pure (applyMdata (Ix.Expr.mkConst name lvls) mdataLayers)
 
-  -- Rec with arena metadata
+  -- Rec with arena metadata (patch replay as in the Ref arm)
   | .ref nameAddr, .recur recIdx univIndices => do
     let name ← match (← getEnv).ixonEnv.names.get? nameAddr with
       | some n => pure n
       | none => getMutName recIdx
-    let lvls ← decompileUnivIndices univIndices
+    let lvls ← decompileUnivIndices
+      (((← getCtx).univPatches.get? currentIdx).getD univIndices)
     pure (applyMdata (Ix.Expr.mkConst name lvls) mdataLayers)
 
   -- Rec without arena metadata
   | _, .recur recIdx univIndices => do
     let name ← getMutName recIdx
-    let lvls ← decompileUnivIndices univIndices
+    let lvls ← decompileUnivIndices
+      (((← getCtx).univPatches.get? currentIdx).getD univIndices)
     pure (applyMdata (Ix.Expr.mkConst name lvls) mdataLayers)
 
   -- App with arena metadata
@@ -653,7 +680,9 @@ def mkBlockCtx (cnst : Constant) (mutCtx : Array Ix.Name)
   { refs := cnst.refs ++ cMeta.metaRefs,
     univs := cnst.univs ++ cMeta.metaUnivs,
     sharing := cnst.sharing,
-    mutCtx, univParams, arena, metaSharing := cMeta.metaSharing }
+    mutCtx, univParams, arena, metaSharing := cMeta.metaSharing,
+    univPatches := cMeta.univPatches.foldl
+      (init := {}) fun m p => m.insert p.arenaIdx p.univIdxs }
 
 /-- Run with fresh block context and state. -/
 def withFreshBlock (cnst : Constant) (mutCtx : Array Ix.Name)

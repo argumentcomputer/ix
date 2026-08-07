@@ -458,12 +458,25 @@ def normLevelLe (l1 l2 : NormLevel) : Bool :=
       (n1.constant == 0 || coversConst l2 p1 n1.constant)
       && n1.vars.all (fun v => coversVar l2 p1 v.idx v.offset)
 
+/-- Entry-wise equality of two normal forms, IGNORING empty entries
+    (constant 0, no vars — pure subsumption bookkeeping). Subsumption
+    EMPTIES a dominated entry rather than removing it, so a spelling
+    like `max (u+1) (imax (u+1) v)` retains an empty entry its semantic
+    equal `max (u+1) v` never creates; counting those made `univEq`
+    strictly finer than semantic equality (3 of 3,253,373 whole-Mathlib
+    entries). `normLevelLe` already skips them; mirroring here makes
+    `univEq` the exact semantic quotient (canonicity §10.6 R5, option
+    (b); mirrors Rust `norm_level_eq`). `toList` is key-ordered, so
+    positional comparison of the filtered streams is a sound map
+    comparison. -/
 def normLevelEq (l1 l2 : NormLevel) : Bool :=
-  l1.size == l2.size
-  && l1.toList.all fun (k, v1) =>
-    match l2.find? k with
-    | some v2 => v1.constant == v2.constant && v1.vars == v2.vars
-    | none => false
+  let nonEmpty : Path × NormNode → Bool := fun (_, n) =>
+    n.constant != 0 || !n.vars.isEmpty
+  let e1 := l1.toList.filter nonEmpty
+  let e2 := l2.toList.filter nonEmpty
+  e1.length == e2.length
+  && (e1.zip e2).all fun ((k1, n1), (k2, n2)) =>
+    k1 == k2 && n1.constant == n2.constant && n1.vars == n2.vars
 
 /-- Normalize a universe level to Géran's canonical form. -/
 def normalizeLevel (l : KUniv m) : NormLevel :=

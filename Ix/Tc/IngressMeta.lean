@@ -45,18 +45,24 @@ on 2 GB stacks). Key differences, all from `ingress.rs`:
 - All-inductive Muts blocks run `validateCanonicalBlockSinglePass`
   (kernel-side canonicity gate, matching Rust `ingress_muts_block`).
 
-The extension tables (`ConstantMeta.metaSharing`/`metaRefs`/`metaUnivs`)
-are decompile-only surgery state — the kernel never reads them (parity
-with Rust ingress, which ignores them entirely).
+`ConstantMeta.metaSharing`/`metaRefs` are decompile-only surgery state —
+the kernel never reads them (parity with Rust ingress). `metaUnivs` and
+`univPatches` are the stage-2 level-spelling channel (canonicity §10.6)
+and ARE read by META ingress only; anon ingress stays metadata-blind
+(§5.5 — its bounds checks remain primary-table-only).
 
-Level-spelling decorations (canonicity §10.6, stage 1): `sort`/`ref`/
-`recur` occurrences whose referenced univ-table entries are not
-`reduceIxonUniv` fixpoints carry the stored spelling as a `UnivDecor`
-on the KExpr node (`ExprInfo.univDecor`) — folded into `metaAddr` only,
+Level-spelling decorations (canonicity §10.6): the PRIMARY source is
+the occurrence's `univPatches` entry, keyed by its (post-mdata) arena
+index — patch univ indices live in the virtual space
+`univs ++ metaUnivs` and resolve to the ORIGINAL spellings the
+canonicalizing compiler displaced. Without a patch, the stage-1 rule
+falls back: occurrences whose referenced univ-table entries are not
+`reduceIxonUniv` fixpoints carry the stored spelling. On canonical
+tables the fallback never fires (P3: canonical forms are mk*-fixed),
+but it keeps raw-table fixtures exercised. Either way the `UnivDecor`
+on the KExpr node (`ExprInfo.univDecor`) folds into `metaAddr` only,
 never `addr`, so `tc-meta-addr` and all semantic checking are
 untouched; meta egress replays the spelling (`Ix.Tc.egressExpr`).
-Per-index sourcing is per-occurrence-exact because the compile-side
-table is deduped: two different spellings never share an index.
 -/
 
 public section
@@ -146,6 +152,19 @@ structure IngressMetaCtx where
   arena : Ixon.ExprMetaArena
   /-- Resolved level-param names (positional). -/
   lvls : Array Name
+  /-- Level-spelling patches of this constant, keyed by metadata arena
+      index — the stage-2 decoration source (canonicity §10.6). Values
+      are univ indices in the VIRTUAL space `univs ++ metaUnivs`. -/
+  univPatches : Std.HashMap UInt64 (Array UInt64) := {}
+  /-- Extension univ table: original (pre-canonicalization) spellings
+      referenced by `univPatches` (canonicity §10.6). -/
+  metaUnivs : Array Ixon.Univ := #[]
+
+/-- Arena-index → patch lookup for a constant's
+    `ConstantMeta.univPatches` (canonicity §10.6). -/
+def univPatchMap (cm : Ixon.ConstantMeta) :
+    Std.HashMap UInt64 (Array UInt64) :=
+  cm.univPatches.foldl (init := {}) fun m p => m.insert p.arenaIdx p.univIdxs
 
 /-- Per-constant conversion caches + the synthetic-name counter. -/
 structure MetaConvState where
@@ -262,6 +281,62 @@ def univArgsDecor (ctx : IngressMetaCtx) (idxs : Array UInt64) :
     us := us.push u
   return some (.const us)
 
+/-- Resolve a univ index in the VIRTUAL space `univs ++ metaUnivs` — the
+    `univPatches` index space (canonicity §10.6). -/
+def univAtVirtual (ctx : IngressMetaCtx) (idx : UInt64) :
+    MetaConvM Ixon.Univ := do
+  match ctx.univs[idx.toNat]? with
+  | some u => return u
+  | none =>
+    let some u := ctx.metaUnivs[idx.toNat - ctx.univs.size]?
+      | throw s!"virtual univ index {idx} out of bounds \
+                 (univs {ctx.univs.size} + metaUnivs {ctx.metaUnivs.size})"
+    return u
+
+/-- Stage-2 decoration source for a `sort` occurrence (canonicity
+    §10.6): the `univPatches` entry keyed by the occurrence's
+    (post-mdata) arena index carries the ORIGINAL spelling's virtual
+    index — decorate with it unless it already matches the mk*-normal
+    kernel tree (`reduceIxonUniv` of the stored entry). Without a patch,
+    fall back to the stage-1 fixpoint rule (`univSpellingAt`); on
+    canonical tables the fallback never fires (P3), but it keeps
+    raw-table fixtures exercised. -/
+def sortDecorAt (ctx : IngressMetaCtx) (arenaIdx uidx : UInt64) :
+    MetaConvM (Option UnivDecor) := do
+  match ctx.univPatches[arenaIdx]? with
+  | some idxs =>
+    let some vidx := idxs[0]?
+      | throw s!"empty univ patch at arena index {arenaIdx}"
+    let orig ← univAtVirtual ctx vidx
+    let some stored := ctx.univs[uidx.toNat]?
+      | throw s!"invalid universe index {uidx} (len {ctx.univs.size})"
+    return if orig == reduceIxonUniv stored then none else some (.sort orig)
+  | none => return (← univSpellingAt ctx uidx).map .sort
+
+/-- Stage-2 decoration source for a `const`-shaped occurrence
+    (canonicity §10.6): a `univPatches` entry carries the FULL original
+    spelling list in the virtual index space; decorate when any spelling
+    differs from its entry's mk*-normal kernel tree. Without a patch,
+    fall back to the stage-1 rule (`univArgsDecor`). -/
+def univArgsDecorAt (ctx : IngressMetaCtx) (arenaIdx : UInt64)
+    (idxs : Array UInt64) : MetaConvM (Option UnivDecor) := do
+  match ctx.univPatches[arenaIdx]? with
+  | some patchIdxs => do
+    if patchIdxs.size != idxs.size then
+      throw s!"univ patch at arena index {arenaIdx} has {patchIdxs.size} \
+               entries but the occurrence has {idxs.size} level args"
+    let mut spellings : Array Ixon.Univ := Array.mkEmpty patchIdxs.size
+    for v in patchIdxs do
+      spellings := spellings.push (← univAtVirtual ctx v)
+    let mut changed := false
+    for h : i in [0:idxs.size] do
+      let some stored := ctx.univs[(idxs[i]).toNat]?
+        | throw s!"invalid universe index {idxs[i]} (len {ctx.univs.size})"
+      if spellings[i]! != reduceIxonUniv stored then
+        changed := true
+    return if changed then some (.const spellings) else none
+  | none => univArgsDecor ctx idxs
+
 /-- Meta expression frames. Binder pushes/pops maintain the de-Bruijn
     name stack for `var` resolution. -/
 inductive MFrame where
@@ -346,7 +421,7 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
       | .share _ | .var _ => throw "unreachable: share/var handled above"
       | .sort uidx =>
         let u ← ingressUnivIdxMeta ctx uidx
-        let decor := (← univSpellingAt ctx uidx).map .sort
+        let decor ← sortDecorAt ctx currentIdx uidx
         values := values.push
           (← liftM (IngressMetaM.internE
             (.mkSort u (Mode.field mdata) (Mode.field decor))))
@@ -359,7 +434,7 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
           | _ => throw s!"Ref at index {refIdx} (addr {addr}) has no \
                           metadata name (node={reprStr node})"
         let univs ← ingressUnivArgsMeta ctx univIdxs
-        let decor ← univArgsDecor ctx univIdxs
+        let decor ← univArgsDecorAt ctx currentIdx univIdxs
         values := values.push (← liftM (IngressMetaM.internE
           (.mkConst ⟨addr, name⟩ univs (Mode.field mdata)
             (Mode.field decor))))
@@ -367,7 +442,7 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
         let some mid := ctx.mutCtx[recIdx.toNat]?
           | throw s!"invalid Rec index {recIdx}"
         let univs ← ingressUnivArgsMeta ctx univIdxs
-        let decor ← univArgsDecor ctx univIdxs
+        let decor ← univArgsDecorAt ctx currentIdx univIdxs
         values := values.push (← liftM (IngressMetaM.internE
           (.mkConst mid univs (Mode.field mdata) (Mode.field decor))))
       | .nat blobIdx =>
@@ -415,13 +490,16 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
                      canonical metadata entries but canonical telescope \
                      has {nArgs} args"
           -- Build the head KExpr inline from the call-site name.
+          -- Patch lookup key is the callSite node's arena index: the
+          -- compiler clones the head's patch onto it (the head's own
+          -- Ref root is unreachable from here).
           let headK : KExpr .«meta» ← match headIxon with
             | .ref refIdx univIdxs => do
               let some addr := ctx.refs[refIdx.toNat]?
                 | throw s!"CallSite head: invalid Ref index {refIdx}"
               let name := resolveName ixonEnv csName
               let univs ← ingressUnivArgsMeta ctx univIdxs
-              let decor ← univArgsDecor ctx univIdxs
+              let decor ← univArgsDecorAt ctx currentIdx univIdxs
               liftM (IngressMetaM.internE
                 (.mkConst ⟨addr, name⟩ univs (Mode.field #[])
                   (Mode.field decor)))
@@ -429,7 +507,7 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
               let some mid := ctx.mutCtx[recIdx.toNat]?
                 | throw s!"CallSite head: invalid Rec index {recIdx}"
               let univs ← ingressUnivArgsMeta ctx univIdxs
-              let decor ← univArgsDecor ctx univIdxs
+              let decor ← univArgsDecorAt ctx currentIdx univIdxs
               liftM (IngressMetaM.internE
                 (.mkConst mid univs (Mode.field #[]) (Mode.field decor)))
             | _ =>
@@ -596,7 +674,8 @@ def ingressDefnMeta (ixonEnv : Ixon.Env) (defn : Ixon.Definition)
     | some m => pure m
     | none => IngressMetaM.liftExcept (buildMutCtx ixonEnv cm)
   let ctx : IngressMetaCtx :=
-    { sharing, refs, univs, mutCtx, arena, lvls := levelParams }
+    { sharing, refs, univs, mutCtx, arena, lvls := levelParams,
+      univPatches := univPatchMap cm, metaUnivs := cm.metaUnivs }
   let (ty, st) ← (ingressExprMeta ixonEnv ctx defn.typ typeRoot).run {}
   let (val, _) ← (ingressExprMeta ixonEnv ctx defn.value valueRoot).run st
   let leanAll ← IngressMetaM.liftExcept (resolveAllMeta ixonEnv allAddrs)
@@ -624,7 +703,8 @@ def ingressRecursorMeta (ixonEnv : Ixon.Env) (rec : Ixon.Recursor)
     | some m => pure m
     | none => IngressMetaM.liftExcept (buildMutCtx ixonEnv cm)
   let ctx : IngressMetaCtx :=
-    { sharing, refs, univs, mutCtx, arena, lvls := levelParams }
+    { sharing, refs, univs, mutCtx, arena, lvls := levelParams,
+      univPatches := univPatchMap cm, metaUnivs := cm.metaUnivs }
   let (ty, st) ← (ingressExprMeta ixonEnv ctx rec.typ typeRoot).run {}
   let mut st := st
   let mut rules : Array (RecRule .«meta») := Array.mkEmpty rec.rules.size
@@ -667,7 +747,8 @@ def ingressMetaStandalone (ixonEnv : Ixon.Env) (constName : Name)
       | _ => (#[], emptyArena, 0)
     let ctx : IngressMetaCtx :=
       { sharing := constant.sharing, refs := constant.refs
-        univs := constant.univs, mutCtx := #[], arena, lvls := levelParams }
+        univs := constant.univs, mutCtx := #[], arena, lvls := levelParams
+        univPatches := univPatchMap cm, metaUnivs := cm.metaUnivs }
     let (ty, _) ← (ingressExprMeta ixonEnv ctx a.typ typeRoot).run {}
     let name := match cm.info with
       | .axio nameAddr .. => resolveName ixonEnv nameAddr
@@ -680,7 +761,8 @@ def ingressMetaStandalone (ixonEnv : Ixon.Env) (constName : Name)
       | _ => (#[], emptyArena, 0)
     let ctx : IngressMetaCtx :=
       { sharing := constant.sharing, refs := constant.refs
-        univs := constant.univs, mutCtx := #[], arena, lvls := levelParams }
+        univs := constant.univs, mutCtx := #[], arena, lvls := levelParams
+        univPatches := univPatchMap cm, metaUnivs := cm.metaUnivs }
     let (ty, _) ← (ingressExprMeta ixonEnv ctx q.typ typeRoot).run {}
     let name := match cm.info with
       | .quot nameAddr .. => resolveName ixonEnv nameAddr
@@ -702,7 +784,8 @@ def ingressMutsInductiveMeta (ixonEnv : Ixon.Env) (ind : Ixon.Inductive)
   let mutCtx ← IngressMetaM.liftExcept (buildMutCtx ixonEnv cm)
   let ctx : IngressMetaCtx :=
     { sharing := blockConstant.sharing, refs := blockConstant.refs
-      univs := blockConstant.univs, mutCtx, arena, lvls := levelParams }
+      univs := blockConstant.univs, mutCtx, arena, lvls := levelParams
+      univPatches := univPatchMap cm, metaUnivs := cm.metaUnivs }
   let (ty, _) ← (ingressExprMeta ixonEnv ctx ind.typ typeRoot).run {}
   let leanAll ← IngressMetaM.liftExcept (resolveAllMeta ixonEnv allAddrs)
   let ctorIds ← IngressMetaM.liftExcept (resolveAllMeta ixonEnv ctorAddrs)
@@ -732,10 +815,15 @@ def ingressMutsInductiveMeta (ixonEnv : Ixon.Env) (ind : Ixon.Inductive)
       | other =>
         throw s!"ctor '{ctorName}' has unexpected meta kind \
                  '{other.kindName}' (expected Ctor)"
+    -- Constructor patches are scoped to the ctor's own meta — its
+    -- virtual indices extend the BLOCK primary table with the ctor's
+    -- own `metaUnivs` (canonicity §10.6).
     let ctorCtx : IngressMetaCtx :=
       { sharing := blockConstant.sharing, refs := blockConstant.refs
         univs := blockConstant.univs, mutCtx, arena := ctorArena
-        lvls := ctorLvlParams }
+        lvls := ctorLvlParams
+        univPatches := univPatchMap ctorNamed.constMeta
+        metaUnivs := ctorNamed.constMeta.metaUnivs }
     -- Fresh caches per ctor: the arena (hence cache-key space) changes.
     let (ctorTy, _) ←
       (ingressExprMeta ixonEnv ctorCtx ctor.typ ctorTypeRoot).run {}

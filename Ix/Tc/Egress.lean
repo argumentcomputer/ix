@@ -21,17 +21,20 @@ insensitive to sharing choices and table order): both the original constant
 and the egressed one are passed through `canonConstant`, which
 
 - expands `share` nodes transparently (the kernel provably never sees them),
+  and
 - renumbers `refs`/`univs` by first use in a fixed per-kind expression order
-  (typ, value | typ, rules | typ, ctors | member order for Muts), and
-- reduces universe trees through the kernel's simplifying `mkMax`/`mkIMax`
-  constructors (ingress stores *reduced* levels; the reduction rules are
-  independently certified by the level-algebra unit tests, so sharing this
-  one step with ingress does not let an ingress bug mask itself
-  structurally).
+  (typ, value | typ, rules | typ, ctors | member order for Muts).
+
+Universe trees compare EXACTLY (canonicity §10.6): compiled tables hold
+only `canonUniv`-fixed forms, which are `reduceIxonUniv` fixpoints (P3),
+so the kernel's simplifying `mkMax`/`mkIMax` constructors reproduce the
+stored trees node-for-node — no reduction step in the comparison.
+Pre-normal-levels artifacts with reducible spellings fail here by
+design (D4: regenerate them).
 
 Equality of canonical forms then means: everything the serialized constant
-encoded — modulo sharing layout, table numbering, and universe reduction —
-survived the trip into the kernel and back.
+encoded — modulo sharing layout and table numbering only — survived the
+trip into the kernel and back.
 
 Projection constants (`IPrj`/`CPrj`/`RPrj`/`DPrj`) carry no expressions and
 empty tables, so they are regenerated from kernel data (`block`,
@@ -442,7 +445,7 @@ private unsafe def canonExprImpl (sharing : Array Ixon.Expr) (refs : Array Addre
   let resolveUniv (i : UInt64) : CanonM UInt64 := do
     let some u := univs[i.toNat]?
       | throw s!"canonExpr: universe index {i} out of range (len {univs.size})"
-    CanonM.internUniv (reduceIxonUniv u)
+    CanonM.internUniv u
   let resolveUnivs (idxs : Array UInt64) : CanonM (Array UInt64) := do
     let mut out : Array UInt64 := Array.mkEmpty idxs.size
     for i in idxs do
@@ -548,8 +551,10 @@ private unsafe def canonExprImpl (sharing : Array Ixon.Expr) (refs : Array Addre
 
 /-- Rewrite one expression of a constant into canonical form: `share`
     expanded against `sharing`, `ref`/`prj`/`nat`/`str` addresses re-interned
-    first-use, universe indices resolved through `univs`, reduced, and
-    re-interned. `recur` member indices are structural and kept as-is.
+    first-use, universe indices resolved through `univs` and re-interned
+    EXACTLY (canonicity §10.6 — stored tables are `reduceIxonUniv`
+    fixpoints, so no reduction step; see the module doc).
+    `recur` member indices are structural and kept as-is.
 
     The runtime implementation (`canonExprImpl`) adds a call-local
     pointer-identity memo so pointer-shared (share-node-free) inputs —
@@ -565,7 +570,7 @@ def canonExpr (sharing : Array Ixon.Expr) (refs : Array Address)
   let resolveUniv (i : UInt64) : CanonM UInt64 := do
     let some u := univs[i.toNat]?
       | throw s!"canonExpr: universe index {i} out of range (len {univs.size})"
-    CanonM.internUniv (reduceIxonUniv u)
+    CanonM.internUniv u
   let resolveUnivs (idxs : Array UInt64) : CanonM (Array UInt64) := do
     let mut out : Array UInt64 := Array.mkEmpty idxs.size
     for i in idxs do
