@@ -79,11 +79,6 @@ def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
   -- names in `<out>.failed-names.txt`. Implies --no-fail-fast; the
   -- mode reaches the scanner as fail-fast mode string "2".
   let deferInfeasible := p.hasFlag "defer-infeasible"
-  -- Cold re-price (opt-in): replace summed shard costs with one
-  -- measured cold execution per merged shard, packing past the cut by
-  -- the validated slack. Adopt per env only after its re-priced
-  -- manifest passes the heaviest-shard prove protocol.
-  let reprice := p.hasFlag "reprice"
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
     | .ok t => pure t
@@ -118,16 +113,14 @@ def runShardScan (p : Cli.Parsed) (ixePath : String) : IO UInt32 := do
   -- build cost (preprocessed gadget commit) is seconds against a
   -- minutes-scale scan.
   let system := Aiur.AiurSystem.build compiled.bytecode
-    Aiur.productionCommitmentParameters Aiur.productionFriParameters
+    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
   -- Process-pool mode: the scan spawns `<this binary> shard-worker`
   -- children under cgroup memory caps, so an over-cap worker is
   -- OOM-killed alone and recovered, never the box.
   let workerBin := (← IO.appPath).toString
   match Aiur.AiurSystem.scanShardsWithEnv system funIdx
       envHandle (toString budget) (toString eps) (toString workers)
-      (if deferInfeasible && reprice then "4"
-       else if reprice then "3"
-       else if deferInfeasible then "2"
+      (if deferInfeasible then "2"
        else if noFailFast then "0"
        else "1")
       outPath workerBin ixePath with
@@ -302,7 +295,7 @@ def runShardWorkerCmd (p : Cli.Parsed) : IO UInt32 := do
     | some i => pure i
     | none => IO.eprintln "error: verify_claim missing"; return 1
   let system := Aiur.AiurSystem.build compiled.bytecode
-    Aiur.productionCommitmentParameters Aiur.productionFriParameters
+    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
   let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
     | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
     | .ok h => pure h
@@ -329,7 +322,6 @@ def shardCmd : Cli.Cmd := `[Cli|
     workers   : Nat;  "Scan only: parallel chunk scanners (default 0 = autoscale to cores and detected RAM). Each holds one segment's query record and faulted witness, so workers × segment footprint must fit the box"
     "fail-fast";      "Scan: halt on the first kernel-rejected block (the default; flag accepted for explicitness)."
     "no-fail-fast";   "Scan: skip kernel-rejected blocks (named as skipped, excluded from the partition, listed in <out>.failed.csv). The manifest then does not cover them — the downstream coverage gate reports exactly which."
-    "reprice"; "Scan: cold re-price — pack past the cut on summed costs, then measure each merged shard's true cost with one cold CheckEnv execution (splits over-cut shards). Opt-in; validate per env by proving the heaviest re-priced shard before adopting its manifest."
     "defer-infeasible"; "Scan: name deferred dense regions (opening cone exceeds a fleet slot) resource-infeasible instead of walking them under fat caps, and resolve the whole exclusion inventory to Lean names in <out>.failed-names.txt. Implies --no-fail-fast. The partition covers only tractable content; failed.csv + failed-names.txt carry the exact boundary."
     json        : String; "Scan only: benchmark results JSON accumulator — append an `execute-time`/`peak-rss` row (the scan wall is a whole-env execution wall). Used by `ix bench run --backend aiur` for the whole-env execute row."
     "json-name" : String; "Row name for --json (default: scan)."

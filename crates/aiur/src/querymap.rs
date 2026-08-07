@@ -218,6 +218,19 @@ impl SegHashes {
     Self { segs: Vec::new(), entries: 0 }
   }
 
+  /// Visit every stored hash in insertion order. One sequential pass
+  /// over the segment arenas — no rehashing, no table walk.
+  fn for_each(&self, mut f: impl FnMut(u64)) {
+    let mut left = self.entries;
+    for seg in &self.segs {
+      let take = left.min(seg.len);
+      for &h in seg.slice(0, take) {
+        f(h);
+      }
+      left -= take;
+    }
+  }
+
   #[inline]
   fn at(&self, i: usize) -> u64 {
     self.segs[i >> SEG_BITS].slice(i & SEG_MASK, 1)[0]
@@ -293,6 +306,14 @@ impl QueryMap {
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
     self.keys.retained_elems() + self.outs.retained_elems()
+  }
+
+  /// Visit the stored 64-bit hash of every unique entry, in insertion
+  /// order. The hashes are already computed and resident (they back
+  /// table growth), so this is a pure sequential read — the scanner's
+  /// union-pricing sketches are built from these without rehashing.
+  pub fn for_each_hash(&self, f: impl FnMut(u64)) {
+    self.hashes.for_each(f);
   }
 
   /// Exact heap bytes of this map's fill: arena elements, stored hashes,

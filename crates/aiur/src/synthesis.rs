@@ -210,6 +210,38 @@ impl AiurSystem {
   /// record's unique queries — the padding the trace actually commits,
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
+    self.peak_prove_bytes_from_raws(
+      &self.circuit_raws(record),
+      crate::execute::record_retained_bytes(record),
+    )
+  }
+
+  /// Per-circuit raw (unpadded) trace heights of a record, in canonical
+  /// system order: the record's unique queries per function/memory
+  /// circuit, and the byte gadgets' fixed full-table heights.
+  pub fn circuit_raws(&self, record: &QueryRecord) -> Vec<usize> {
+    self
+      .circuit_types()
+      .iter()
+      .map(|ct| match ct {
+        CircuitType::Function { idx } => record.function_queries[*idx].len(),
+        CircuitType::Memory { width } => {
+          record.memory_queries.get(width).map_or(0, |m| m.len())
+        },
+        CircuitType::Bytes1 => 256,
+        CircuitType::Bytes2 => 65536,
+      })
+      .collect()
+  }
+
+  /// [`Self::peak_prove_bytes`] from per-circuit raw heights and a record
+  /// byte count directly — the scanner's union pricing feeds ESTIMATED
+  /// union heights of a merged shard here, where no single record exists.
+  pub fn peak_prove_bytes_from_raws(
+    &self,
+    raws: &[usize],
+    record_bytes: usize,
+  ) -> PeakProveBytes {
     const S: usize = 8; // bytes per base field element (Goldilocks)
     const DG: usize = 32; // blake3 digest bytes (Merkle nodes, arity 2)
     let b = 1usize << self.commitment_parameters.log_blowup;
@@ -222,15 +254,8 @@ impl AiurSystem {
     let mut committed = 0usize; // all committed LDE bytes
     let mut prep = 0usize;
     let mut tallest = 0usize;
-    for (i, ct) in self.circuit_types().iter().enumerate() {
-      let raw = match ct {
-        CircuitType::Function { idx } => record.function_queries[*idx].len(),
-        CircuitType::Memory { width } => {
-          record.memory_queries.get(width).map_or(0, |m| m.len())
-        },
-        CircuitType::Bytes1 => 256,
-        CircuitType::Bytes2 => 65536,
-      };
+    for (i, &raw) in raws.iter().enumerate().take(self.system.circuits.len())
+    {
       if raw == 0 {
         continue;
       }
@@ -251,7 +276,6 @@ impl AiurSystem {
         + 2 * DG * b * c.preprocessed_height;
     }
     let h = b * tallest;
-    let record_bytes = crate::execute::record_retained_bytes(record);
     let phase_witness = record_bytes + witness;
     let phase_stage2 = s1_lde + 2 * DG * h + lookup_w + msgs + s2_trace;
     // Trees (3 rounds) + retained FRI fold layers + open buffers, all ∝ H.
@@ -264,6 +288,88 @@ impl AiurSystem {
       preprocessed: prep,
       peak: phase_witness.max(phase_stage2).max(phase_open) + prep,
     }
+  }
+
+  /// Model a (possibly merged) execution from per-map unique-entry
+  /// estimates instead of a live record — the scanner's union pricing:
+  /// each element is `(is_function, id, est_raw, est_elems)` where `id`
+  /// is a function index or a memory width, `est_raw` the estimated
+  /// unique queries of the union, and `est_elems` its retained field
+  /// elements. Unconstrained-function maps carry no circuit and
+  /// contribute only record bytes, exactly as in a live record. Returns
+  /// the same `(fft, peak-prove-bytes)` pair a single cold record of the
+  /// union would produce.
+  pub fn model_from_map_estimates(
+    &self,
+    ests: &[(bool, usize, usize, usize)],
+  ) -> (f64, PeakProveBytes) {
+    let mut raws = vec![0usize; self.system.circuits.len()];
+    let mut record_bytes = 0usize;
+    let types = self.circuit_types();
+    for &(is_function, id, est_raw, est_elems) in ests {
+      record_bytes += est_elems * 8 + est_raw * 21;
+      let pos = types.iter().position(|ct| match ct {
+        CircuitType::Function { idx } => is_function && *idx == id,
+        CircuitType::Memory { width } => !is_function && *width == id,
+        _ => false,
+      });
+      if let Some(pos) = pos {
+        raws[pos] = est_raw;
+      }
+    }
+    for (i, ct) in types.iter().enumerate() {
+      match ct {
+        CircuitType::Bytes1 => raws[i] = 256,
+        CircuitType::Bytes2 => raws[i] = 65536,
+        _ => {},
+      }
+    }
+    (
+      self.fft_cost_from_raws(&raws),
+      self.peak_prove_bytes_from_raws(&raws, record_bytes),
+    )
+  }
+
+  /// [`Self::fft_cost_from_raws`] of a live record.
+  pub fn fft_cost_of_record(&self, record: &QueryRecord) -> f64 {
+    self.fft_cost_from_raws(&self.circuit_raws(record))
+  }
+
+  /// FFT cost of a proof at the given per-circuit raw heights — the Rust
+  /// mirror of the Lean model (`Ix/Aiur/Statistics.lean`, grounded in the
+  /// pinned prover's actual transforms): per circuit, `(B+1)` size-`h`
+  /// transforms per committed column (main + stage-2 + quotient chunks),
+  /// plus the two quotient-rebasing transforms. Raw heights stay unpadded
+  /// so one-row changes remain visible. The scanner's manifest costs use
+  /// this, so whole-env, per-shard, and per-constant fft figures share
+  /// one unit.
+  pub fn fft_cost_from_raws(&self, raws: &[usize]) -> f64 {
+    fn transform(x: usize) -> f64 {
+      if x == 0 {
+        0.0
+      } else {
+        let xf = crate::execute::f64_from_usize(x);
+        xf * xf.max(2.0).log2()
+      }
+    }
+    let b =
+      crate::execute::f64_from_usize(1usize << self.commitment_parameters.log_blowup);
+    let mut total = 0.0f64;
+    for (c, &raw) in self.system.circuits.iter().zip(raws) {
+      if raw == 0 {
+        continue;
+      }
+      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      let q = c.quotient_degree();
+      let q_d = q * d;
+      let commit_w = c.main_width + c.stage_2_width + q_d;
+      total += (b + 1.0)
+        * crate::execute::f64_from_usize(commit_w)
+        * transform(raw)
+        + crate::execute::f64_from_usize(d) * transform(q * raw)
+        + crate::execute::f64_from_usize(q_d) * transform(raw);
+    }
+    total
   }
 
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]

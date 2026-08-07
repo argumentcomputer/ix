@@ -24,8 +24,11 @@
 //! by one claim may be checked by the next — but batching divides that
 //! per-claim overhead by the batch size and removes intra-batch frontier
 //! edges entirely, so the checkpoint is a tight upper bound on the
-//! emitted shard's cold cost: the safe direction for packing, accurate
-//! enough to BE the manifest cost without a blanket re-price.
+//! emitted SEGMENT's cold cost. Across segments the merge does not sum:
+//! each segment ships a per-circuit membership sketch of its record, and
+//! a shard is priced as the modeled cost of the UNION of its segments'
+//! records — the same dedup the prove's single cold record performs —
+//! so the manifest cost needs no cold re-price pass.
 //!
 //! Witness bytes are served LAZILY (`EnvFaultSource`): only the claim
 //! wires are seeded per attempt, and constant/hint/blob bytes materialize
@@ -204,6 +207,11 @@ struct Segment {
   blocks: Vec<u32>,
   fft: f64,
   ram_gib: f64,
+  /// Per-circuit membership sketch of the segment's record — the union
+  /// pricing input. `None` in execute-only mode (no partition to price)
+  /// and on decode failures, where the merge falls back to summing this
+  /// segment conservatively.
+  sketch: Option<SegSketch>,
 }
 
 /// Everything a chunk scanner needs besides its own chunk: kernel, env,
@@ -330,23 +338,334 @@ const CLEANUP_WORKERS: usize = 12;
 /// record growth IS the reduction work just performed.
 const DEFER_GROWTH_BYTES_PER_BLOCK: f64 = 1.0e8;
 
-/// Merge-pass packing target as a multiple of the cut. Summed segment
-/// costs overstate a merged shard's true cold cost (shared cones count
-/// once per segment; padded heights are subadditive) — measured
-/// true/summed = 0.606-0.623 on the three heaviest 500-budget shards —
-/// so packing to the cut on sums leaves ~40% of the budget unused. The
-/// merge packs past the cut by this factor and the cold RE-PRICE round
-/// then measures every shard's true cost (one CheckEnv execution per
-/// shard, the exact claim its prove runs); the deliberate gap below the
-/// measured 1.6x slack keeps over-cut re-prices (which force a split)
-/// rare.
-const PACK_OVERSHOOT: f64 = 1.45;
+/// Union pricing: summed segment costs overstate a merged shard's true
+/// cold cost (shared cone queries count once per SEGMENT in the sum but
+/// once per SHARD in the prove's single cold record — measured
+/// true/summed = 0.56-0.75), and per-query cost is context-free, so the
+/// exact fix is set semantics: a shard's true heights are the unique-
+/// query counts of the UNION of its segments' records. Each segment
+/// ships a per-circuit membership sketch of its record (the stored
+/// 64-bit entry hashes — no rehashing): an EXACT hash list for maps up
+/// to [`SKETCH_EXACT_MAX`] uniques, a HyperLogLog register array above.
+/// The merge unions sketches instead of summing, feeds the estimated
+/// union heights to the same analytic cost/RAM model, and cuts directly
+/// at the budget — no overshoot factor, no cold re-price pass.
+///
+/// HLL precision: `2^HLL_P` registers → σ ≈ 1.04/√2^P (~1.2% at P=13).
+/// Estimates from HLL (never the exact lists) are inflated by
+/// [`SKETCH_SAFETY`] (~2σ) so sketch noise errs conservative, and every
+/// estimate is clamped to [max single-segment raw, Σ raws].
+const HLL_P: u32 = 13;
+const HLL_REGS: usize = 1 << HLL_P;
+const SKETCH_EXACT_MAX: usize = 1024;
+const SKETCH_SAFETY: f64 = 1.025;
 
-/// Re-price round width: one cold execution per merged shard, each
-/// holding only the shard's RECORD (~true prove RSS / 20), so slots are
-/// pool/width ≈ 30-40 GiB — enough for every shard record plus a dense
-/// opening cone.
-const REPRICE_WORKERS: usize = 12;
+/// `u64 → f64` without a lossy `as` cast (split into exactly-convertible
+/// `u32` halves — the sketch magnitudes sit far below the 2^52 edge).
+fn f64_from_u64(n: u64) -> f64 {
+  let hi = u32::try_from(n >> 32).expect("u64 is 64 bits");
+  let lo = u32::try_from(n & 0xFFFF_FFFF).expect("masked to u32 range");
+  f64::from(hi) * 4_294_967_296.0 + f64::from(lo)
+}
+
+/// Saturating `f64 → u64` via decimal round-trip (no lossy `as`; runs a
+/// handful of times per merge decision).
+fn u64_from_f64(x: f64) -> u64 {
+  format!("{:.0}", x.max(0.0)).parse().unwrap_or(u64::MAX)
+}
+
+/// splitmix64 finalizer: the stored map hashes are table-quality, not
+/// avalanche-quality; HLL register selection and rank both need uniform
+/// bits, so every hash is remixed on sketch insert (deterministic, so
+/// partitions stay identical across runs and machines).
+fn remix(mut x: u64) -> u64 {
+  x = (x ^ (x >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+  x = (x ^ (x >> 27)).wrapping_mul(0x94d049bb133111eb);
+  x ^ (x >> 31)
+}
+
+/// One query map's membership sketch: exact remixed hashes while small,
+/// HLL registers above [`SKETCH_EXACT_MAX`].
+enum SketchSet {
+  Exact(Vec<u64>),
+  Hll(Box<[u8]>),
+}
+
+impl SketchSet {
+  fn hll_insert(regs: &mut [u8], h: u64) {
+    let idx = usize::try_from(h >> (64 - HLL_P)).expect("HLL_P bits");
+    let rank = u8::try_from((h << HLL_P | 1 << (HLL_P - 1)).leading_zeros())
+      .expect("leading_zeros of u64 is at most 64")
+      + 1;
+    if regs[idx] < rank {
+      regs[idx] = rank;
+    }
+  }
+
+  fn hll_estimate(regs: &[u8]) -> f64 {
+    let m = f64_from_usize(HLL_REGS);
+    let mut sum = 0.0f64;
+    let mut zeros = 0usize;
+    for &r in regs {
+      sum += 1.0 / f64_from_usize(1usize << r.min(63));
+      if r == 0 {
+        zeros += 1;
+      }
+    }
+    let alpha = 0.7213 / (1.0 + 1.079 / m);
+    let e = alpha * m * m / sum;
+    if e <= 2.5 * m && zeros > 0 {
+      // Small-range correction: linear counting.
+      m * (m / f64_from_usize(zeros)).ln()
+    } else {
+      e
+    }
+  }
+}
+
+/// One map's sketch entry: circuit key, measured raw uniques and
+/// retained field elements (the record-bytes term scales with them), and
+/// the membership set.
+struct MapSketch {
+  /// 0 = function (id = function index), 1 = memory (id = width).
+  kind: u8,
+  id: u32,
+  raw: u64,
+  elems: u64,
+  set: SketchSet,
+}
+
+/// A segment record's per-circuit membership sketches (every nonzero
+/// query map, constrained or not — unconstrained maps carry no circuit
+/// but do carry record bytes).
+struct SegSketch {
+  maps: Vec<MapSketch>,
+}
+
+impl SegSketch {
+  fn of_record(record: &QueryRecord) -> Self {
+    let mut maps = Vec::new();
+    let mut push = |kind: u8, id: u32, m: &aiur::querymap::QueryMap| {
+      let raw = m.len();
+      if raw == 0 {
+        return;
+      }
+      let set = if raw <= SKETCH_EXACT_MAX {
+        let mut v = Vec::with_capacity(raw);
+        m.for_each_hash(|h| v.push(remix(h)));
+        v.sort_unstable();
+        v.dedup();
+        SketchSet::Exact(v)
+      } else {
+        let mut regs = vec![0u8; HLL_REGS].into_boxed_slice();
+        m.for_each_hash(|h| SketchSet::hll_insert(&mut regs, remix(h)));
+        SketchSet::Hll(regs)
+      };
+      maps.push(MapSketch {
+        kind,
+        id,
+        raw: u64::try_from(raw).unwrap_or(u64::MAX),
+        elems: u64::try_from(m.retained_elems()).unwrap_or(u64::MAX),
+        set,
+      });
+    };
+    for (i, m) in record.function_queries.iter().enumerate() {
+      push(0, u32::try_from(i).unwrap_or(u32::MAX), m);
+    }
+    for (&w, m) in &record.memory_queries {
+      push(1, u32::try_from(w).unwrap_or(u32::MAX), m);
+    }
+    SegSketch { maps }
+  }
+
+  fn to_bytes(&self) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(
+      &u32::try_from(self.maps.len()).unwrap_or(0).to_le_bytes(),
+    );
+    for m in &self.maps {
+      out.push(m.kind);
+      out.extend_from_slice(&m.id.to_le_bytes());
+      out.extend_from_slice(&m.raw.to_le_bytes());
+      out.extend_from_slice(&m.elems.to_le_bytes());
+      match &m.set {
+        SketchSet::Exact(v) => {
+          out.push(0);
+          out.extend_from_slice(
+            &u32::try_from(v.len()).unwrap_or(0).to_le_bytes(),
+          );
+          for h in v {
+            out.extend_from_slice(&h.to_le_bytes());
+          }
+        },
+        SketchSet::Hll(regs) => {
+          out.push(1);
+          out.extend_from_slice(regs);
+        },
+      }
+    }
+    out
+  }
+
+  fn from_bytes(b: &[u8]) -> Option<Self> {
+    let mut p = 0usize;
+    let take = |p: &mut usize, n: usize| -> Option<&[u8]> {
+      let s = b.get(*p..*p + n)?;
+      *p += n;
+      Some(s)
+    };
+    let n = u32::from_le_bytes(take(&mut p, 4)?.try_into().ok()?) as usize;
+    let mut maps = Vec::with_capacity(n);
+    for _ in 0..n {
+      let kind = take(&mut p, 1)?[0];
+      let id = u32::from_le_bytes(take(&mut p, 4)?.try_into().ok()?);
+      let raw = u64::from_le_bytes(take(&mut p, 8)?.try_into().ok()?);
+      let elems = u64::from_le_bytes(take(&mut p, 8)?.try_into().ok()?);
+      let set = match take(&mut p, 1)?[0] {
+        0 => {
+          let k =
+            u32::from_le_bytes(take(&mut p, 4)?.try_into().ok()?) as usize;
+          let mut v = Vec::with_capacity(k);
+          for _ in 0..k {
+            v.push(u64::from_le_bytes(take(&mut p, 8)?.try_into().ok()?));
+          }
+          SketchSet::Exact(v)
+        },
+        1 => SketchSet::Hll(take(&mut p, HLL_REGS)?.to_vec().into_boxed_slice()),
+        _ => return None,
+      };
+      maps.push(MapSketch { kind, id, raw, elems, set });
+    }
+    Some(SegSketch { maps })
+  }
+}
+
+/// Running union of segment sketches over one candidate shard.
+#[derive(Clone)]
+enum AccSet {
+  Exact(std::collections::HashSet<u64>),
+  Hll(Box<[u8]>),
+}
+
+#[derive(Clone)]
+struct MapAcc {
+  raw_sum: u64,
+  max_raw: u64,
+  /// Retained field elements per unique entry (fixed per map: key and
+  /// output strides are per-circuit constants).
+  elems_per_raw: f64,
+  set: AccSet,
+}
+
+impl MapAcc {
+  fn absorb(&mut self, s: &MapSketch) {
+    self.raw_sum += s.raw;
+    self.max_raw = self.max_raw.max(s.raw);
+    match (&mut self.set, &s.set) {
+      (AccSet::Exact(acc), SketchSet::Exact(v)) => acc.extend(v.iter()),
+      (AccSet::Hll(regs), SketchSet::Hll(r)) => {
+        for (a, b) in regs.iter_mut().zip(r.iter()) {
+          *a = (*a).max(*b);
+        }
+      },
+      (AccSet::Exact(acc), SketchSet::Hll(r)) => {
+        let mut regs = r.clone();
+        for &h in acc.iter() {
+          SketchSet::hll_insert(&mut regs, h);
+        }
+        self.set = AccSet::Hll(regs);
+      },
+      (AccSet::Hll(regs), SketchSet::Exact(v)) => {
+        for &h in v {
+          SketchSet::hll_insert(regs, h);
+        }
+      },
+    }
+  }
+
+  /// Estimated unique entries of the union: exact while every
+  /// contribution stayed exact; HLL (safety-inflated) once any map went
+  /// probabilistic; always within [max_raw, raw_sum].
+  fn estimate(&self) -> u64 {
+    let est = match &self.set {
+      AccSet::Exact(s) => u64::try_from(s.len()).unwrap_or(u64::MAX),
+      AccSet::Hll(regs) => {
+        u64_from_f64(SketchSet::hll_estimate(regs) * SKETCH_SAFETY)
+      },
+    };
+    est.clamp(self.max_raw, self.raw_sum)
+  }
+}
+
+#[derive(Clone, Default)]
+struct UnionAcc {
+  maps: std::collections::HashMap<(u8, u32), MapAcc>,
+  /// Segments that arrived without a sketch (worker of an older vintage,
+  /// or a decode failure): their summed (fft, ram) is added on top of
+  /// the union model — conservative, never unsound.
+  unsketched_fft: f64,
+  unsketched_ram: f64,
+  n_segments: usize,
+}
+
+impl UnionAcc {
+  fn absorb(&mut self, seg: &Segment) {
+    self.n_segments += 1;
+    match &seg.sketch {
+      Some(sk) => {
+        for m in &sk.maps {
+          let acc =
+            self.maps.entry((m.kind, m.id)).or_insert_with(|| MapAcc {
+              raw_sum: 0,
+              max_raw: 0,
+              elems_per_raw: if m.raw > 0 {
+                f64_from_u64(m.elems) / f64_from_u64(m.raw)
+              } else {
+                0.0
+              },
+              set: match &m.set {
+                SketchSet::Exact(_) => {
+                  AccSet::Exact(std::collections::HashSet::new())
+                },
+                SketchSet::Hll(_) => {
+                  AccSet::Hll(vec![0u8; HLL_REGS].into_boxed_slice())
+                },
+              },
+            });
+          acc.absorb(m);
+        }
+      },
+      None => {
+        self.unsketched_fft += seg.fft;
+        self.unsketched_ram += seg.ram_gib;
+      },
+    }
+  }
+
+  /// Model the union: estimated per-map unique heights + retained
+  /// elements → the same analytic (fft, peak-prove-RAM) pair a single
+  /// cold record of the union would produce, plus the summed
+  /// contribution of unsketched segments.
+  fn model(&self, system: &AiurSystem) -> (f64, f64) {
+    let ests: Vec<(bool, usize, usize, usize)> = self
+      .maps
+      .iter()
+      .map(|((kind, id), acc)| {
+        let est = acc.estimate();
+        let elems = usize::try_from(u64_from_f64(
+          f64_from_u64(est) * acc.elems_per_raw,
+        ))
+        .unwrap_or(usize::MAX);
+        (*kind == 0, *id as usize, usize::try_from(est).unwrap_or(usize::MAX), elems)
+      })
+      .collect();
+    let (fft, peak) = system.model_from_map_estimates(&ests);
+    (
+      fft + self.unsketched_fft,
+      f64_from_usize(peak.peak) / GIB + self.unsketched_ram,
+    )
+  }
+}
 
 /// Ranges a child serves before the parent proactively reaps and
 /// respawns it. The env decode cache grows monotonically with content
@@ -602,9 +921,6 @@ pub fn scan_worker(
   };
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let abort = std::sync::atomic::AtomicBool::new(false);
-  // Shard member lists for `PRICE`, loaded lazily on first use — most
-  // children never price.
-  let mut price_table: Option<Vec<Vec<u32>>> = None;
   let ctx = ScanCtx {
     toplevel,
     fun_idx,
@@ -636,56 +952,6 @@ pub fn scan_worker(
     // A third field (a since-removed narrow-prefix hint) is accepted
     // and ignored for wire compatibility with parents of that vintage.
     let _ = it.next();
-    if verb == "PRICE" {
-      // Cold re-price of one merged shard: execute its whole CheckEnv
-      // claim (the exact claim its prove runs) with a fresh record and
-      // report the record's measured fft plus the analytic peak prove
-      // RSS. `lo` is the shard index in the price file.
-      let Some(k) = lo else {
-        return Err(format!("worker: malformed command {line:?}"));
-      };
-      if price_table.is_none() {
-        let path = std::env::var("IX_SCAN_PRICE_FILE")
-          .map_err(|_e| "worker: PRICE without IX_SCAN_PRICE_FILE")?;
-        price_table = Some(read_price_file(&path)?);
-      }
-      let table = price_table.as_ref().unwrap();
-      let members = table
-        .get(k)
-        .ok_or_else(|| format!("worker: PRICE {k} out of range"))?;
-      let addrs: Vec<Address> = members
-        .iter()
-        .map(|&b| blocks[b as usize].addr.clone())
-        .collect();
-      let mut record = QueryRecord::new(toplevel);
-      let mut io =
-        IOBuffer::with_backing(EnvFaultSource::new(env.clone()));
-      let priced = seed_shard_check_env_claim(env, &addrs, &mut io).and_then(
-        |(_claim, input)| {
-          execute_ixvm_with_record(toplevel, fun_idx, &input, &mut io, &mut record)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-        },
-      );
-      match priced {
-        Ok(()) => {
-          let fft = record_fft_cost(toplevel, &record);
-          let ram = match ctx.system {
-            Some(sys) => {
-              f64_from_usize(sys.peak_prove_bytes(&record).peak) / GIB
-            },
-            None => f64_from_usize(record_heap_bytes(&record)) / GIB,
-          };
-          writeln!(out, "COST {fft} {ram}").map_err(|e| e.to_string())?;
-        },
-        Err(e) => {
-          writeln!(out, "PERR {}", hex_encode(e.as_bytes()))
-            .map_err(|e| e.to_string())?;
-        },
-      }
-      out.flush().map_err(|e| e.to_string())?;
-      continue;
-    }
     let (Some(lo), Some(hi)) = (lo, hi) else {
       return Err(format!("worker: malformed command {line:?}"));
     };
@@ -705,8 +971,23 @@ pub fn scan_worker(
             cursor += 1; // a skipped block
           }
           let end = cursor + s.blocks.len();
-          writeln!(out, "SEG {cursor} {end} {} {}", s.fft, s.ram_gib)
-            .map_err(|e| e.to_string())?;
+          // Fifth field: the segment's membership sketch (hex), the
+          // union-pricing input. Sized by the record's nonzero maps
+          // (small maps ship exact hash lists, big ones fixed HLL
+          // registers) — hundreds of KB against a multi-second segment.
+          match &s.sketch {
+            Some(sk) => writeln!(
+              out,
+              "SEG {cursor} {end} {} {} {}",
+              s.fft,
+              s.ram_gib,
+              hex_encode(&sk.to_bytes())
+            ),
+            None => {
+              writeln!(out, "SEG {cursor} {end} {} {}", s.fft, s.ram_gib)
+            },
+          }
+          .map_err(|e| e.to_string())?;
           cursor = end;
         }
         for (a, e) in failed.lock().unwrap().drain(..) {
@@ -784,60 +1065,6 @@ fn read_order_file(path: &str) -> Result<(Vec<SchedBlock>, Vec<u32>), String> {
   Ok((blocks, order))
 }
 
-/// Serialize merged shards' member block ids for the re-price workers:
-/// `[u64 shard count][per shard: u64 len, u32 ids…]`. Members are block
-/// ids into the order file's block table, so a worker prices exactly
-/// the claim the manifest will carry (holes from skipped blocks
-/// included).
-fn write_price_file(
-  path: &std::path::Path,
-  shards: &[Vec<u32>],
-) -> Result<(), String> {
-  let total: usize = shards.iter().map(Vec::len).sum();
-  let mut buf: Vec<u8> = Vec::with_capacity(8 + shards.len() * 8 + total * 4);
-  buf.extend_from_slice(&(shards.len() as u64).to_le_bytes());
-  for m in shards {
-    buf.extend_from_slice(&(m.len() as u64).to_le_bytes());
-    for &b in m {
-      buf.extend_from_slice(&b.to_le_bytes());
-    }
-  }
-  std::fs::write(path, buf).map_err(|e| format!("write {path:?}: {e}"))
-}
-
-fn read_price_file(path: &str) -> Result<Vec<Vec<u32>>, String> {
-  let buf =
-    std::fs::read(path).map_err(|e| format!("read price file {path}: {e}"))?;
-  let take_u64 = |pos: usize| -> Result<u64, String> {
-    buf
-      .get(pos..pos + 8)
-      .and_then(|b| b.try_into().ok())
-      .map(u64::from_le_bytes)
-      .ok_or_else(|| format!("price file {path}: truncated"))
-  };
-  let count = usize::try_from(take_u64(0)?)
-    .map_err(|_e| "price file: count overflow".to_string())?;
-  let mut pos = 8;
-  let mut shards = Vec::with_capacity(count);
-  for _ in 0..count {
-    let len = usize::try_from(take_u64(pos)?)
-      .map_err(|_e| "price file: len overflow".to_string())?;
-    pos += 8;
-    let mut members = Vec::with_capacity(len);
-    for _ in 0..len {
-      let v = buf
-        .get(pos..pos + 4)
-        .and_then(|b| b.try_into().ok())
-        .map(u32::from_le_bytes)
-        .ok_or_else(|| format!("price file {path}: truncated member"))?;
-      members.push(v);
-      pos += 4;
-    }
-    shards.push(members);
-  }
-  Ok(shards)
-}
-
 fn hex_encode(bytes: &[u8]) -> String {
   bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -898,9 +1125,6 @@ struct ProcPool<'a> {
   /// Execute-only phase 1: children measure growth and hand dense
   /// remainders back (`DEFER`) for the fat phase.
   defer_growth: bool,
-  /// Shard member lists for the re-price round (`PRICE` verb); exported
-  /// to children via `IX_SCAN_PRICE_FILE`.
-  price_file: Option<std::path::PathBuf>,
 }
 
 struct WorkerHandle {
@@ -962,9 +1186,6 @@ impl ProcPool<'_> {
     cmd
       .arg("shard-worker")
       .env("IX_SCAN_ORDER_FILE", &self.order_file);
-    if let Some(pf) = &self.price_file {
-      cmd.env("IX_SCAN_PRICE_FILE", pf);
-    }
     cmd
       // Return freed pages to the OS immediately: the record drops at
       // every segment cut, but mimalloc retains the pages by default, so
@@ -1042,10 +1263,18 @@ impl ProcPool<'_> {
           ) else {
             return Err(reply);
           };
+          // Optional fifth field: the segment's membership sketch. A
+          // missing or undecodable sketch degrades that segment to
+          // conservative summing at the merge, never to an error.
+          let sketch = it
+            .next()
+            .and_then(hex_decode)
+            .and_then(|b| SegSketch::from_bytes(&b));
           reply.segs.push(Segment {
             blocks: self.order[s..e].to_vec(),
             fft,
             ram_gib: ram,
+            sketch,
           });
           reply.next = e;
         },
@@ -1077,44 +1306,6 @@ impl ProcPool<'_> {
         },
         _ => return Err(reply),
       }
-    }
-  }
-}
-
-impl ProcPool<'_> {
-  /// One `PRICE` round-trip: the child executes shard `k`'s whole
-  /// CheckEnv claim cold and reports `(fft, ram_gib)` from the record —
-  /// the exact cost its prove pays. `Err` = the child died (over-cap
-  /// shard) or reported a pricing error.
-  fn price(
-    &self,
-    h: &mut WorkerHandle,
-    k: usize,
-  ) -> Result<(f64, f64), String> {
-    use std::io::Write;
-    writeln!(h.stdin, "PRICE {k}").map_err(|e| e.to_string())?;
-    h.stdin.flush().map_err(|e| e.to_string())?;
-    let line = h.read_line()?;
-    let mut it = line.split_whitespace();
-    match it.next() {
-      Some("COST") => {
-        let (Some(fft), Some(ram)) = (
-          it.next().and_then(|v| v.parse::<f64>().ok()),
-          it.next().and_then(|v| v.parse::<f64>().ok()),
-        ) else {
-          return Err(format!("bad COST reply {line:?}"));
-        };
-        Ok((fft, ram))
-      },
-      Some("PERR") => Err(
-        it.next()
-          .and_then(hex_decode)
-          .map_or_else(
-            || "pricing error".to_string(),
-            |m| String::from_utf8_lossy(&m).into_owned(),
-          ),
-      ),
-      _ => Err(format!("bad PRICE reply {line:?}")),
     }
   }
 }
@@ -1497,7 +1688,6 @@ fn run_pool_procs(
       fail_fast: pool.fail_fast,
       defer_infeasible: false,
       defer_growth: false,
-      price_file: None,
     };
     // Coalesce adjacent deferred ranges: strip remainders abut when a
     // strip spans chunk edges, and a merged range shares its dependency
@@ -1674,8 +1864,7 @@ pub fn execute_env(
         fail_fast,
         defer_infeasible: false,
         defer_growth: true,
-        price_file: None,
-      };
+        };
       run_pool_procs(&pool, bounds, workers, &failed)?
     },
     None => {
@@ -1730,7 +1919,6 @@ pub fn scan_shards(
   workers: usize,
   fail_fast: bool,
   defer_infeasible: bool,
-  reprice: bool,
   out_path: &str,
   proc_workers: Option<(&str, &str)>,
 ) -> Result<String, String> {
@@ -1877,8 +2065,7 @@ pub fn scan_shards(
         fail_fast,
         defer_infeasible,
         defer_growth: false,
-        price_file: None,
-      };
+        };
       run_pool_procs(&pool, bounds, workers, &failed)?
     },
     None => {
@@ -1888,207 +2075,55 @@ pub fn scan_shards(
     },
   };
 
-  // Assemble shards by summing adjacent segments, then COLD RE-PRICE
-  // each merged shard: one execution of its whole CheckEnv claim (the
-  // exact claim its prove runs) replaces the summed cost. Sums are
-  // conservative (shared cones derive once in the union; padded heights
-  // are subadditive) but by a measured ~1.6x, so the merge packs past
-  // the cut by [`PACK_OVERSHOOT`] and the re-price decides: an over-cut
-  // shard splits at its ram midpoint and the halves re-price, to a
-  // bounded depth. Process-pool mode only; the thread pool (tests)
-  // keeps the pure summed pack at the plain cut.
+  // Assemble shards by UNION pricing adjacent segments. A candidate
+  // shard's true cold cost is the cost of the UNION of its segments'
+  // records — per-query cost is context-free, so shared cone queries
+  // deduplicate exactly as they will in the prove's single cold record.
+  // The merge unions the segments' membership sketches, feeds the
+  // estimated union heights to the same analytic cost/RAM model the cut
+  // charges, and closes a shard where the modeled union RAM reaches the
+  // cut — no overshoot pack, no cold re-price pass. Summed costs
+  // overstated true cost by a measured 1.3-1.8x (cross-segment cone
+  // double-counting); the union estimate is exact where every map
+  // stayed under [`SKETCH_EXACT_MAX`] uniques and within ~±2% (erring
+  // conservative) where HLL registers took over.
   let pre_merge = segments.len();
-  // Opt-in (`ix shard --reprice`, fail-fast mode strings "3"/"4"): the
-  // cold re-price is prove-validated on Init (+0.77% at a shard packed
-  // to the cut) but not yet on FLT/Mathlib-class content, so summed
-  // conservative costs remain the default until each env's re-priced
-  // manifest passes its heaviest-shard prove protocol.
-  let pricing = reprice && proc_workers.is_some();
-  let pack_target =
-    if pricing { cut_used_gib * PACK_OVERSHOOT } else { cut_used_gib };
-  let mut groups: Vec<Vec<Segment>> = Vec::new();
+  let mut packed: Vec<(Vec<u32>, f64, f64)> = Vec::new();
   {
-    let mut sums: Vec<f64> = Vec::new();
+    let mut cur_blocks: Vec<u32> = Vec::new();
+    let mut acc = UnionAcc::default();
+    let mut cur_cost = (0.0f64, 0.0f64);
     for seg in segments {
-      match (groups.last_mut(), sums.last_mut()) {
-        (Some(g), Some(sum)) if *sum + seg.ram_gib < pack_target => {
-          *sum += seg.ram_gib;
-          g.push(seg);
-        },
-        _ => {
-          sums.push(seg.ram_gib);
-          groups.push(vec![seg]);
-        },
+      let mut trial = acc.clone();
+      trial.absorb(&seg);
+      let (tf, tr) = trial.model(system);
+      if tr >= cut_used_gib && !cur_blocks.is_empty() {
+        // Close the running shard; this segment opens the next.
+        packed.push((
+          std::mem::take(&mut cur_blocks),
+          cur_cost.0,
+          cur_cost.1,
+        ));
+        acc = UnionAcc::default();
+        acc.absorb(&seg);
+        cur_cost = acc.model(system);
+      } else {
+        acc = trial;
+        cur_cost = (tf, tr);
       }
+      cur_blocks.extend(&seg.blocks);
+    }
+    if !cur_blocks.is_empty() {
+      packed.push((cur_blocks, cur_cost.0, cur_cost.1));
     }
   }
-  // (summed fft, summed ram, priced (fft, ram) once measured)
-  let group_sum = |g: &Vec<Segment>| -> (f64, f64) {
-    g.iter().fold((0.0, 0.0), |(f, r), s| (f + s.fft, r + s.ram_gib))
-  };
-  let mut priced: Vec<Option<(f64, f64)>> = vec![None; groups.len()];
-  if pricing {
-    let (bin, ixe) = proc_workers.expect("pricing implies proc workers");
-    let t0 = std::time::Instant::now();
-    // The scan pool (and its order file) are gone; the price pool gets
-    // fresh copies of both sidecar files.
-    let order_file = std::env::temp_dir()
-      .join(format!("ix-price-order-{}.bin", std::process::id()));
-    write_order_file(&order_file, &blocks, &order)?;
-    let price_file = std::env::temp_dir()
-      .join(format!("ix-price-shards-{}.bin", std::process::id()));
-    let width = REPRICE_WORKERS.min(groups.len()).max(1);
-    let cap_gib = (pool_gib / f64_from_usize(REPRICE_WORKERS))
-      .max(SLICE_FLOOR_GIB);
-    let price_pool = ProcPool {
-      bin: bin.to_string(),
-      ixe: ixe.to_string(),
-      cut_used_gib,
-      batch_blocks,
-      soft_record_gib: f64::INFINITY,
-      pieces: sched_pieces,
-      exec_only: false,
-      cap_bytes: gib_to_bytes_u64(cap_gib),
-      cleanup_cap_bytes: gib_to_bytes_u64(cap_gib),
-      cleanup: true,
-      order_file: order_file.clone(),
-      capped: systemd_scope_caps_available(),
-      order: &order,
-      blocks: &blocks,
-      fail_fast: false,
-      defer_infeasible: false,
-      defer_growth: false,
-      price_file: Some(price_file.clone()),
-    };
-    // Rounds: price every unpriced group; split over-cut multi-segment
-    // groups at their summed-ram midpoint and unprice the halves.
-    for _round in 0..3 {
-      let todo: Vec<usize> =
-        (0..groups.len()).filter(|&i| priced[i].is_none()).collect();
-      if todo.is_empty() {
-        break;
-      }
-      let members: Vec<Vec<u32>> = todo
-        .iter()
-        .map(|&i| {
-          groups[i].iter().flat_map(|s| s.blocks.iter().copied()).collect()
-        })
-        .collect();
-      write_price_file(&price_file, &members)?;
-      let queue: Mutex<std::collections::VecDeque<usize>> =
-        Mutex::new((0..todo.len()).collect());
-      let results: Mutex<Vec<Option<(f64, f64)>>> =
-        Mutex::new(vec![None; todo.len()]);
-      std::thread::scope(|sc| {
-        for slot in 0..width.min(todo.len()) {
-          let (queue, results, price_pool) = (&queue, &results, &price_pool);
-          sc.spawn(move || {
-            let mut worker = match price_pool.spawn(slot) {
-              Ok(w) => w,
-              Err(_e) => return,
-            };
-            loop {
-              let Some(j) = queue.lock().unwrap().pop_front() else {
-                break;
-              };
-              match price_pool.price(&mut worker, j) {
-                Ok(cost) => results.lock().unwrap()[j] = Some(cost),
-                Err(_e) => {
-                  // Death or pricing error: one fresh-worker retry,
-                  // then the group falls back to its summed cost.
-                  worker = match price_pool.spawn(slot) {
-                    Ok(w) => w,
-                    Err(_e) => break,
-                  };
-                  if let Ok(cost) = price_pool.price(&mut worker, j) {
-                    results.lock().unwrap()[j] = Some(cost);
-                  }
-                }
-              }
-            }
-            worker.reap();
-          });
-        }
-      });
-      let results = results.into_inner().unwrap();
-      for (pos, &i) in todo.iter().enumerate() {
-        priced[i] = Some(match results[pos] {
-          Some(cost) => cost,
-          None => group_sum(&groups[i]),
-        });
-      }
-      // Split over-cut multi-segment groups; their halves re-price in
-      // the next round.
-      let mut next_groups: Vec<Vec<Segment>> = Vec::new();
-      let mut next_priced: Vec<Option<(f64, f64)>> = Vec::new();
-      let mut split = 0usize;
-      for (i, g) in groups.into_iter().enumerate() {
-        let over = priced[i].is_some_and(|(_f, r)| r >= cut_used_gib);
-        if over && g.len() > 1 {
-          let total: f64 = g.iter().map(|s| s.ram_gib).sum();
-          let mut acc = 0.0;
-          let mut cutp = g.len() - 1;
-          for (k, s) in g.iter().enumerate() {
-            acc += s.ram_gib;
-            if acc >= total / 2.0 {
-              cutp = (k + 1).min(g.len() - 1);
-              break;
-            }
-          }
-          let mut a = g;
-          let b = a.split_off(cutp);
-          split += 1;
-          next_groups.push(a);
-          next_priced.push(None);
-          next_groups.push(b);
-          next_priced.push(None);
-        } else {
-          next_priced.push(priced[i]);
-          next_groups.push(g);
-        }
-      }
-      groups = next_groups;
-      priced = next_priced;
-      if split == 0 {
-        break;
-      }
-      eprintln!("[scan] re-price: {split} over-cut shard(s) split");
-    }
-    let _ = std::fs::remove_file(&order_file);
-    let _ = std::fs::remove_file(&price_file);
-    let ratios: Vec<f64> = groups
-      .iter()
-      .zip(&priced)
-      .filter_map(|(g, p)| {
-        p.map(|(_f, r)| {
-          let (_sf, sr) = group_sum(g);
-          if sr > 0.0 { r / sr } else { 1.0 }
-        })
-      })
-      .collect();
-    let (rmin, rmax) = ratios.iter().fold((f64::MAX, 0.0f64), |(lo, hi), &r| {
-      (lo.min(r), hi.max(r))
-    });
-    eprintln!(
-      "[scan] re-price: {} shard(s) cold-priced in {:.0}s \
-       (true/summed {:.2}-{:.2})",
-      groups.len(),
-      t0.elapsed().as_secs_f64(),
-      rmin,
-      rmax
-    );
-  }
-  // Flatten to the manifest's segment shape, carrying the priced (or
-  // summed-fallback) cost per shard.
-  let segments: Vec<Segment> = groups
+  let segments: Vec<Segment> = packed
     .into_iter()
-    .zip(priced)
-    .map(|(g, p)| {
-      let (sf, sr) = group_sum(&g);
-      let (fft, ram_gib) = p.unwrap_or((sf, sr));
-      let blocks: Vec<u32> =
-        g.into_iter().flat_map(|s| s.blocks).collect();
-      Segment { blocks, fft, ram_gib }
+    .map(|(blocks, fft, ram_gib)| Segment {
+      blocks,
+      fft,
+      ram_gib,
+      sketch: None,
     })
     .collect();
 
@@ -2315,7 +2350,10 @@ fn scan_range(
         && hi >= narrow_until
       {
         defer_rest = true;
-        break (hi + k, record_fft_cost(ctx.toplevel, &record), {
+        break (hi + k, match ctx.system {
+          Some(sys) => sys.fft_cost_of_record(&record),
+          None => record_fft_cost(ctx.toplevel, &record),
+        }, {
           let rec =
             f64_from_usize(record_heap_bytes(&record)) / GIB;
           match ctx.system {
@@ -2357,7 +2395,13 @@ fn scan_range(
         skip_failed = true;
         break (hi, prev_fft, prev_ram);
       }
-      let fft = record_fft_cost(ctx.toplevel, &record);
+      // Scan-mode fft is the 539-grounded model over the record's raw
+      // heights — one unit across manifest, whole-env, and per-constant
+      // figures; execute-only keeps the legacy readout (display only).
+      let fft = match ctx.system {
+        Some(sys) => sys.fft_cost_of_record(&record),
+        None => record_fft_cost(ctx.toplevel, &record),
+      };
       let rec_gib = f64_from_usize(record_heap_bytes(&record)) / GIB;
       // The cut measure: for the scan, the analytic peak-prove-RSS
       // prediction from the record's circuit shapes; for execute-only
@@ -2434,6 +2478,10 @@ fn scan_range(
         blocks: chunk[lo..seg_end].to_vec(),
         fft: seg_fft,
         ram_gib: seg_ram,
+        // The record may hold a few rows past the checkpoint (a narrowed
+        // or skipped batch's partial execution) — extra members only
+        // raise the union estimate, the safe direction.
+        sketch: ctx.system.map(|_| SegSketch::of_record(&record)),
       });
     }
     lo = seg_end + usize::from(skip_failed);
@@ -2490,11 +2538,10 @@ extern "C" fn rs_aiur_scan_shards_with_env(
   let workers = workers.to_string().parse::<usize>().unwrap_or(0);
   // `fail_fast` mode string: "1" abort on the first kernel reject, "0"
   // record-and-skip, "2" record-and-skip + name deferred dense ranges
-  // infeasible, "3" as "0" + cold re-price, "4" as "2" + cold re-price.
+  // infeasible.
   let mode = fail_fast.to_string();
   let fail_fast = mode == "1";
-  let defer_infeasible = mode == "2" || mode == "4";
-  let reprice = mode == "3" || mode == "4";
+  let defer_infeasible = mode == "2";
   let (bin, ixe) = (worker_bin.to_string(), ixe_path.to_string());
   let proc_workers = (!bin.is_empty() && !ixe.is_empty())
     .then_some((bin.as_str(), ixe.as_str()));
@@ -2507,7 +2554,6 @@ extern "C" fn rs_aiur_scan_shards_with_env(
     workers,
     fail_fast,
     defer_infeasible,
-    reprice,
     &out_path.to_string(),
     proc_workers,
   ) {
