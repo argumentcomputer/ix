@@ -421,9 +421,10 @@ def ExpandM.pushType (member : ExpandedMember) : ExpandM Unit :=
     typeNameSet := st.typeNameSet.insert member.name
     types := st.types.push member }
 
-/-- Non-throwing constant lookup (Rust `lean_env.get`). -/
+/-- Non-throwing constant lookup (Rust `lean_env.get`; sees the
+    streaming fallback). -/
 def lookupConst? (name : Name) : CompileM (Option ConstantInfo) := do
-  pure ((← Ix.CompileM.getCompileEnv).env.consts.get? name)
+  pure ((← Ix.CompileM.getCompileEnv).env.get? name)
 
 /-- Check if `e` is a nested inductive application; if so, create auxiliary
     types for the external inductive's whole mutual group and return the
@@ -865,16 +866,16 @@ def sortAuxByPartitionRefinement (expanded : ExpandedBlock)
 
 /-! ## Source-walk order and the source→canonical permutation -/
 
-/-- Per-aux `(sourceOwner, extHead, specParams)` in discovery order.
-    Mirrors Rust `source_aux_order_from_expanded` (nested.rs:1006). -/
+/-- Per-aux `(sourceOwner, extHead, headLevels, specParams)` in discovery
+    order. Mirrors Rust `source_aux_order_from_expanded` (nested.rs:1006). -/
 def sourceAuxOrderFromExpanded (expanded : ExpandedBlock)
-    : Array (Name × Name × Array Expr) := Id.run do
-  let mut out : Array (Name × Name × Array Expr) := #[]
+    : Array (Name × Name × Array Level × Array Expr) := Id.run do
+  let mut out : Array (Name × Name × Array Level × Array Expr) := #[]
   for mem in expanded.types.toList.drop expanded.nOriginals do
     let some nestedExpr := expanded.auxToNested.get? mem.name | continue
     let (head, args) := decomposeApps nestedExpr
-    let .const headName _ _ := head | continue
-    out := out.push (mem.sourceOwner, headName, args)
+    let .const headName headLevels _ := head | continue
+    out := out.push (mem.sourceOwner, headName, headLevels, args)
   return out
 
 /-- Source-walk discovery order with owners: a fresh expansion of the
@@ -885,7 +886,8 @@ def sourceAuxOrderFromExpanded (expanded : ExpandedBlock)
 def sourceAuxOrderWithOwner (originalAll : Array Name)
     : CompileM (Array (Name × Name × Array Expr)) := do
   let expanded ← expandNestedBlock originalAll {}
-  return sourceAuxOrderFromExpanded expanded
+  return sourceAuxOrderFromExpanded expanded |>.map
+    fun (o, h, _, s) => (o, h, s)
 
 /-- `sourceAuxOrderWithOwner` without the owner column
     (Rust `source_aux_order`, nested.rs:983). -/
@@ -916,22 +918,22 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
     if let (.fvar srcName _, .fvar canonName _) := (src, canon) then
       sourceToCanonFvar := sourceToCanonFvar.insert srcName canonName
 
-  -- Canonical `(head, specParams)` signatures (semantic identities). Not
-  -- keyed by raw hash: alpha-collapse can express the same aux via
-  -- different source names that resolve to one address.
-  let mut canonicalSignatures : Array (Name × Array Expr) := #[]
+  -- Canonical `(head, headLevels, specParams)` signatures (semantic
+  -- identities). Not keyed by raw hash: alpha-collapse can express the
+  -- same aux via different source names that resolve to one address.
+  let mut canonicalSignatures : Array (Name × Array Level × Array Expr) := #[]
   for mem in canonicalAux do
     let some nestedExpr := expanded.auxToNested.get? mem.name | continue
     let (head, args) := decomposeApps nestedExpr
-    let .const headName _ _ := head | continue
-    canonicalSignatures := canonicalSignatures.push (headName, args)
+    let .const headName headLevels _ := head | continue
+    canonicalSignatures := canonicalSignatures.push (headName, headLevels, args)
   if canonicalSignatures.size != nCanon then
     throw (.invalidMutualBlock
       "compute_aux_perm: canonical aux missing nested_expr entries")
 
   -- Head-name buckets.
   let mut canonByHead : Std.HashMap Name (Array Nat) := {}
-  for ((head, _), i) in canonicalSignatures.zipIdx do
+  for ((head, _, _), i) in canonicalSignatures.zipIdx do
     canonByHead := canonByHead.insert head
       ((canonByHead.get? head).getD #[] |>.push i)
 
@@ -943,7 +945,7 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
   let mut outOfSccCache : Std.HashMap Expr Bool := {}
   let mut normalizeCache : ExprCache := {}
 
-  for ((srcOwner, srcHead, srcSpecs), j) in sourceOrder.zipIdx do
+  for ((srcOwner, srcHead, srcLevels, srcSpecs), j) in sourceOrder.zipIdx do
     -- Out-of-SCC filter.
     let mut inScc := true
     for sp in srcSpecs do
@@ -962,12 +964,21 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
       normalizeCache := cache'
       normalized := normalized.push sp'
 
-    -- Match against the head bucket.
+    -- Match against the head bucket: prefer a candidate whose head
+    -- universe instantiation matches EXACTLY (distinct universe
+    -- specializations of one family are distinct canonical auxes since
+    -- the flat-block dedup keys on levels, and both expansions read the
+    -- same constructor types, so in-block levels are verbatim
+    -- identical); fall back to a level-insensitive match, which
+    -- alpha-collapse needs when the representative's constructor types
+    -- name the block's universe parameters differently.
+    let candidates := (canonByHead.get? srcHead).getD #[]
     let mut canonIdx : Option Nat := none
-    for i in (canonByHead.get? srcHead).getD #[] do
+    -- Pass A: exact universe instantiation + spec equality.
+    for i in candidates do
       if canonIdx.isSome then break
-      let (_, canonSpecs) := canonicalSignatures[i]!
-      if canonSpecs.size == normalized.size then
+      let (_, canonLevels, canonSpecs) := canonicalSignatures[i]!
+      if canonLevels == srcLevels && canonSpecs.size == normalized.size then
         let mut allEq := true
         for (canonSp, srcSp) in canonSpecs.zip normalized do
           if allEq then
@@ -977,6 +988,21 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
             specEqCache := cache'
             if !eq then allEq := false
         if allEq then canonIdx := some i
+    -- Pass B: level-insensitive fallback.
+    if canonIdx.isNone then
+      for i in candidates do
+        if canonIdx.isSome then break
+        let (_, _, canonSpecs) := canonicalSignatures[i]!
+        if canonSpecs.size == normalized.size then
+          let mut allEq := true
+          for (canonSp, srcSp) in canonSpecs.zip normalized do
+            if allEq then
+              let (eq, cache') :=
+                (auxSpecEq canonSp srcSp resolveAddr sourceToCanonFvar).run
+                  specEqCache
+              specEqCache := cache'
+              if !eq then allEq := false
+          if allEq then canonIdx := some i
 
     match canonIdx with
     | some ci => perm := perm.set! j ci
@@ -988,8 +1014,8 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
       let srcSig := ", ".intercalate
         (normalized.toList.map (fun e => toString e.getHash))
       let canonSigs := " · ".intercalate (canonicalSignatures.toList.map
-        fun (head, specs) =>
-          s!"{head.pretty}[{", ".intercalate (specs.toList.map (toString ·.getHash))}]")
+        fun (head, levels, specs) =>
+          s!"{head.pretty}.\{{", ".intercalate (levels.toList.map (toString ·.getHash))}}[{", ".intercalate (specs.toList.map (toString ·.getHash))}]")
       throw (.invalidMutualBlock
         s!"compute_aux_perm: no canonical match for in-SCC source aux #{j} \
 owned by {srcOwner.pretty} (head={srcHead.pretty}); normalized source \

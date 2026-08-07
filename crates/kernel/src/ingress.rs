@@ -42,9 +42,9 @@ use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
 use super::env::{CtxAddr, InternTable, KEnv};
-use super::expr::{KExpr, MData};
+use super::expr::{KExpr, MData, UnivDecor};
 use super::id::KId;
-use super::level::KUniv;
+use super::level::{KUniv, UnivData};
 use super::mode::{KernelMode, Meta};
 use super::primitive::reserved_marker_name;
 
@@ -62,8 +62,54 @@ struct Ctx<'a, M: KernelMode> {
   arena: &'a ExprMeta,
   names: &'a FxHashMap<Address, Name>,
   lvls: Vec<Name>,
+  /// Level-spelling patches of this constant, keyed by metadata arena
+  /// index — the stage-2 decoration source (canonicity §10.6). Values
+  /// are the patch's univ indices in the VIRTUAL index space
+  /// `univs ++ meta_univs`. Empty for anon ingress and for constants
+  /// without patches.
+  univ_patches: FxHashMap<u64, &'a [u64]>,
+  /// Extension univ table: original (pre-canonicalization) spellings
+  /// referenced by `univ_patches` (canonicity §10.6).
+  meta_univs: &'a [Arc<IxonUniv>],
   /// Counter for generating synthetic unique names when metadata is missing.
   synth_counter: Cell<u64>,
+}
+
+impl<'a, M: KernelMode> Ctx<'a, M> {
+  /// The level-spelling patch covering the occurrence whose (post-mdata)
+  /// arena index is `arena_idx`, if any.
+  fn univ_patch(&self, arena_idx: u64) -> Option<&'a [u64]> {
+    self.univ_patches.get(&arena_idx).copied()
+  }
+
+  /// Resolve a univ index in the VIRTUAL space `univs ++ meta_univs` —
+  /// the index space `univ_patches` entries are written in
+  /// (canonicity §10.6).
+  fn univ_at_virtual(&self, idx: u64) -> Result<&'a Arc<IxonUniv>, String> {
+    let i = usize::try_from(idx)
+      .map_err(|_e| format!("virtual univ index {idx} exceeds usize"))?;
+    self
+      .univs
+      .get(i)
+      .or_else(|| self.meta_univs.get(i - self.univs.len()))
+      .ok_or_else(|| {
+        format!(
+          "virtual univ index {i} out of bounds (univs {} + meta_univs {})",
+          self.univs.len(),
+          self.meta_univs.len()
+        )
+      })
+  }
+}
+
+/// Build the arena-index → patch lookup for a constant's
+/// `ConstantMeta.univ_patches` (canonicity §10.6).
+fn univ_patch_map(meta: &ConstantMeta) -> FxHashMap<u64, &[u64]> {
+  meta
+    .univ_patches
+    .iter()
+    .map(|p| (p.arena_idx, p.univ_idxs.as_slice()))
+    .collect()
 }
 
 /// Expression conversion cache, keyed on (expr pointer, arena_idx).
@@ -513,6 +559,92 @@ fn ingress_univ_args<M: KernelMode>(
   Ok(result.into_boxed_slice())
 }
 
+/// Does this stored Ixon universe tree match the (`mk*`-reduced) kernel
+/// universe node-for-node? `false` means the smart constructors changed
+/// it during ingress — the occurrence gets a level-spelling decoration
+/// (canonicity §10.6, stage-1 rule).
+fn ixon_matches_kuniv<M: KernelMode>(u: &IxonUniv, k: &KUniv<M>) -> bool {
+  match (u, k.data()) {
+    (IxonUniv::Zero, UnivData::Zero(_)) => true,
+    (IxonUniv::Succ(a), UnivData::Succ(b, _)) => ixon_matches_kuniv(a, b),
+    (IxonUniv::Max(a1, b1), UnivData::Max(a2, b2, _))
+    | (IxonUniv::IMax(a1, b1), UnivData::IMax(a2, b2, _)) => {
+      ixon_matches_kuniv(a1, a2) && ixon_matches_kuniv(b1, b2)
+    },
+    (IxonUniv::Var(i), UnivData::Param(j, _, _)) => i == j,
+    _ => false,
+  }
+}
+
+/// Level-spelling decoration for a `Const` occurrence: `Some` of the
+/// FULL stored level-arg spelling list when any referenced table entry's
+/// `mk*` rebuild differs from its stored tree (already-normal entries
+/// ride along unchanged so egress replays the whole list positionally),
+/// `None` when every entry is normal. Meta mode only — call inside
+/// `M::meta_field_with`; indices were validated by `ingress_univ_args`.
+fn univ_args_decor<M: KernelMode>(
+  univ_idxs: &[u64],
+  ctx: &Ctx<'_, M>,
+  ingressed: &[KUniv<M>],
+) -> Option<UnivDecor> {
+  let stored_at = |idx: u64| -> &Arc<IxonUniv> {
+    usize::try_from(idx)
+      .ok()
+      .and_then(|i| ctx.univs.get(i))
+      .expect("univ index validated by ingress_univ_args")
+  };
+  let changed = univ_idxs
+    .iter()
+    .zip(ingressed.iter())
+    .any(|(&idx, k)| !ixon_matches_kuniv(stored_at(idx), k));
+  if !changed {
+    return None;
+  }
+  let spellings: Box<[Arc<IxonUniv>]> =
+    univ_idxs.iter().map(|&idx| stored_at(idx).clone()).collect();
+  Some(UnivDecor::Const(spellings))
+}
+
+/// Stage-2 decoration source for a `Const`-shaped occurrence
+/// (canonicity §10.6): a `univ_patches` entry keyed by the occurrence's
+/// (post-mdata) arena index carries the FULL original spelling list in
+/// the virtual index space — decorate from it. Without a patch, fall
+/// back to the stage-1 mk*-rebuild test against the stored primary
+/// entries; on canonical tables the fallback never fires (P3), but it
+/// keeps hand-built raw-table fixtures exercised. Meta mode only — call
+/// inside `M::meta_field_try`.
+fn univ_args_decor_at<M: KernelMode>(
+  arena_idx: u64,
+  univ_idxs: &[u64],
+  ctx: &Ctx<'_, M>,
+  ingressed: &[KUniv<M>],
+) -> Result<Option<UnivDecor>, String> {
+  let Some(patch_idxs) = ctx.univ_patch(arena_idx) else {
+    return Ok(univ_args_decor(univ_idxs, ctx, ingressed));
+  };
+  if patch_idxs.len() != ingressed.len() {
+    return Err(format!(
+      "univ patch at arena index {arena_idx} has {} entries but the \
+       occurrence has {} level args",
+      patch_idxs.len(),
+      ingressed.len()
+    ));
+  }
+  let mut spellings = Vec::with_capacity(patch_idxs.len());
+  for &vidx in patch_idxs {
+    spellings.push(ctx.univ_at_virtual(vidx)?.clone());
+  }
+  let changed = spellings
+    .iter()
+    .zip(ingressed.iter())
+    .any(|(s, k)| !ixon_matches_kuniv(s, k));
+  Ok(if changed {
+    Some(UnivDecor::Const(spellings.into_boxed_slice()))
+  } else {
+    None
+  })
+}
+
 // ============================================================================
 // Expression ingress (iterative)
 // ============================================================================
@@ -746,11 +878,36 @@ fn ingress_expr<M: KernelMode>(
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
             let zu = ingress_univ(u, ctx, intern, univ_cache, stats);
-            let key = super::env::ExprKey::Sort(*zu.addr());
+            // Spelling decoration (canonicity §10.6): the occurrence's
+            // `univ_patches` entry (stage 2) is the primary source of
+            // the original spelling; without one, fall back to the
+            // stage-1 rule (stored tree vs mk* rebuild — never fires on
+            // canonical tables, P3). Anon mode skips the closure.
+            let decor: M::MField<Option<UnivDecor>> =
+              M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
+                let spelling = match ctx.univ_patch(current_idx) {
+                  Some(idxs) => {
+                    let vidx = *idxs.first().ok_or_else(|| {
+                      format!("empty univ patch at arena index {current_idx}")
+                    })?;
+                    ctx.univ_at_virtual(vidx)?
+                  },
+                  None => u,
+                };
+                Ok(if ixon_matches_kuniv(spelling, &zu) {
+                  None
+                } else {
+                  Some(UnivDecor::Sort(spelling.clone()))
+                })
+              })?;
+            let key = super::env::ExprKey::Sort(
+              *zu.addr(),
+              M::meta_get(&decor).cloned().flatten(),
+            );
             values.push(timed_intern_or_build(
               intern,
               &key,
-              || KExpr::sort_mdata(zu, mdata),
+              || KExpr::sort_full(zu, mdata, decor),
               stats,
             ));
           },
@@ -786,14 +943,19 @@ fn ingress_expr<M: KernelMode>(
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
             let id = KId::new(addr, name_field);
+            let decor: M::MField<Option<UnivDecor>> =
+              M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
+                univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
+              })?;
             let key = super::env::ExprKey::Const(
               id.addr.clone(),
               univs.iter().map(|u| *u.addr()).collect(),
+              M::meta_get(&decor).cloned().flatten(),
             );
             values.push(timed_intern_or_build(
               intern,
               &key,
-              || KExpr::cnst_mdata(id, univs, mdata),
+              || KExpr::cnst_full(id, univs, mdata, decor),
               stats,
             ));
           },
@@ -810,14 +972,19 @@ fn ingress_expr<M: KernelMode>(
               .clone();
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
+            let decor: M::MField<Option<UnivDecor>> =
+              M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
+                univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
+              })?;
             let key = super::env::ExprKey::Const(
               mid.addr.clone(),
               univs.iter().map(|u| *u.addr()).collect(),
+              M::meta_get(&decor).cloned().flatten(),
             );
             values.push(timed_intern_or_build(
               intern,
               &key,
-              || KExpr::cnst_mdata(mid, univs, mdata),
+              || KExpr::cnst_full(mid, univs, mdata, decor),
               stats,
             ));
           },
@@ -921,14 +1088,22 @@ fn ingress_expr<M: KernelMode>(
                   let id = KId::new(addr, M::meta_field(name));
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
+                  // Patch lookup key is the CallSite node's arena index:
+                  // the compile side re-keys the head's patch onto it
+                  // (the head's own Ref root is unreachable from here).
+                  let decor: M::MField<Option<UnivDecor>> =
+                    M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
+                      univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
+                    })?;
                   let key = super::env::ExprKey::Const(
                     id.addr.clone(),
                     univs.iter().map(|u| *u.addr()).collect(),
+                    M::meta_get(&decor).cloned().flatten(),
                   );
                   timed_intern_or_build(
                     intern,
                     &key,
-                    || KExpr::cnst_mdata(id, univs, mdata_field),
+                    || KExpr::cnst_full(id, univs, mdata_field, decor),
                     stats,
                   )
                 },
@@ -951,14 +1126,20 @@ fn ingress_expr<M: KernelMode>(
                   )?;
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
+                  // Same CallSite-root patch key as the Ref head arm.
+                  let decor: M::MField<Option<UnivDecor>> =
+                    M::meta_field_try::<Option<UnivDecor>, _, String>(|| {
+                      univ_args_decor_at(current_idx, univ_idxs, ctx, &univs)
+                    })?;
                   let key = super::env::ExprKey::Const(
                     mid.addr.clone(),
                     univs.iter().map(|u| *u.addr()).collect(),
+                    M::meta_get(&decor).cloned().flatten(),
                   );
                   timed_intern_or_build(
                     intern,
                     &key,
-                    || KExpr::cnst_mdata(mid, univs, mdata_field),
+                    || KExpr::cnst_full(mid, univs, mdata_field, decor),
                     stats,
                   )
                 },
@@ -1429,6 +1610,8 @@ fn ingress_defn<M: KernelMode>(
     arena,
     names,
     lvls: level_params.clone(),
+    univ_patches: univ_patch_map(meta),
+    meta_univs: &meta.meta_univs,
     synth_counter: Cell::new(0),
   };
 
@@ -1532,6 +1715,8 @@ fn ingress_recursor<M: KernelMode>(
     arena,
     names,
     lvls: level_params.clone(),
+    univ_patches: univ_patch_map(meta),
+    meta_univs: &meta.meta_univs,
     synth_counter: Cell::new(0),
   };
 
@@ -1656,6 +1841,8 @@ fn ingress_standalone<M: KernelMode>(
         arena,
         names,
         lvls: level_params.clone(),
+        univ_patches: univ_patch_map(meta),
+        meta_univs: &meta.meta_univs,
         synth_counter: Cell::new(0),
       };
       let typ = ingress_expr(
@@ -1704,6 +1891,8 @@ fn ingress_standalone<M: KernelMode>(
         arena,
         names,
         lvls: level_params.clone(),
+        univ_patches: univ_patch_map(meta),
+        meta_univs: &meta.meta_univs,
         synth_counter: Cell::new(0),
       };
       let typ = ingress_expr(
@@ -1801,6 +1990,8 @@ fn ingress_muts_inductive<M: KernelMode>(
     arena,
     names,
     lvls: level_params.clone(),
+    univ_patches: univ_patch_map(meta),
+    meta_univs: &meta.meta_univs,
     synth_counter: Cell::new(0),
   };
 
@@ -1897,6 +2088,11 @@ fn ingress_muts_inductive<M: KernelMode>(
       arena: ctor_arena,
       names,
       lvls: ctor_lvl_params.clone(),
+      // Constructor patches are scoped to the ctor's own meta — its
+      // virtual indices extend the BLOCK primary table with the ctor's
+      // own `meta_univs` (canonicity §10.6).
+      univ_patches: univ_patch_map(&ctor_named_meta),
+      meta_univs: &ctor_named_meta.meta_univs,
       synth_counter: Cell::new(0),
     };
     let mut ctor_univ_cache: UnivCache<M> = FxHashMap::default();
@@ -4312,6 +4508,10 @@ fn ingress_anon_inductive(
     arena: &DEFAULT_ARENA,
     names: &empty_names,
     lvls: level_params.clone(),
+    // Anon ingress never reads decorations (§5.5: anon stays
+    // metadata-blind), so no patches are threaded here.
+    univ_patches: FxHashMap::default(),
+    meta_univs: &[],
     synth_counter: Cell::new(0),
   };
 
@@ -4358,6 +4558,8 @@ fn ingress_anon_inductive(
       arena: &DEFAULT_ARENA,
       names: &empty_names,
       lvls: Vec::new(),
+      univ_patches: FxHashMap::default(),
+      meta_univs: &[],
       synth_counter: Cell::new(0),
     };
     let mut ctor_univ_cache: UnivCache<Anon> = FxHashMap::default();
@@ -5073,6 +5275,8 @@ mod tests {
       arena: &arena,
       names: &names,
       lvls: vec![],
+      univ_patches: FxHashMap::default(),
+      meta_univs: &[],
       synth_counter: Cell::new(0),
     };
     let ixon_env = IxonEnv::new();
@@ -5104,6 +5308,194 @@ mod tests {
     assert_eq!(head_id.name, head_name);
     assert_eq!(arg_id.addr, arg_ref_addr);
     assert_eq!(arg_id.name, arg_name);
+  }
+
+  /// Canonicity §10.6 stage 2: a `univ_patches` entry keyed by the
+  /// occurrence's arena index decorates the occurrence with the
+  /// ORIGINAL spelling (resolved through the virtual index space
+  /// `univs ++ meta_univs`), while the kernel-held level stays the
+  /// canonical table entry.
+  #[test]
+  fn patch_sourced_sort_decoration() {
+    let canon = IxonUniv::max(
+      IxonUniv::succ(IxonUniv::var(0)),
+      IxonUniv::succ(IxonUniv::var(1)),
+    );
+    let orig =
+      IxonUniv::succ(IxonUniv::max(IxonUniv::var(0), IxonUniv::var(1)));
+    let univs = vec![canon.clone()];
+    let meta_univs = vec![orig.clone()];
+    let mut arena = ExprMeta::default();
+    let root = arena.alloc(ExprMetaData::Leaf);
+    // Virtual index 1 = univs.len() (1) + extension slot 0.
+    let patch_idxs: Vec<u64> = vec![1];
+    let mut univ_patches: FxHashMap<u64, &[u64]> = FxHashMap::default();
+    univ_patches.insert(root, patch_idxs.as_slice());
+    let names: FxHashMap<Address, Name> = FxHashMap::default();
+    let ctx = Ctx::<Meta> {
+      sharing: &[],
+      refs: &[],
+      univs: &univs,
+      mut_ctx: vec![],
+      arena: &arena,
+      names: &names,
+      lvls: vec![mk_name("u"), mk_name("v")],
+      univ_patches,
+      meta_univs: &meta_univs,
+      synth_counter: Cell::new(0),
+    };
+    let mut intern = InternTable::<Meta>::new();
+    let ixon_env = IxonEnv::new();
+    let mut cache = ExprCache::<Meta>::default();
+    let mut univ_cache = UnivCache::<Meta>::default();
+    let mut stats = ConvertStats::default();
+    let k = ingress_expr(
+      &IxonExpr::sort(0),
+      root,
+      &ctx,
+      &mut intern,
+      &ixon_env,
+      &mut cache,
+      &mut univ_cache,
+      &mut stats,
+    )
+    .unwrap();
+    let decor = Meta::meta_get(k.univ_decor()).cloned().flatten();
+    assert_eq!(decor, Some(UnivDecor::Sort(orig.clone())));
+    // The kernel-held level is the canonical entry, node-for-node.
+    let ExprData::Sort(zu, _) = k.data() else {
+      panic!("expected Sort, got {:?}", k.data());
+    };
+    assert!(ixon_matches_kuniv(&canon, zu));
+  }
+
+  /// P3 at the kernel boundary: `canon_univ`-fixed table entries ingress
+  /// as identity — the mk* smart constructors change nothing, so no
+  /// stage-1 fallback decoration fires without a patch.
+  #[test]
+  fn canonical_table_ingress_identity_no_decoration() {
+    use ixon::canon_univ::canon_univ;
+    let spellings = [
+      IxonUniv::zero(),
+      IxonUniv::succ(IxonUniv::max(IxonUniv::var(0), IxonUniv::var(1))),
+      IxonUniv::imax(IxonUniv::var(0), IxonUniv::succ(IxonUniv::var(1))),
+      IxonUniv::max(IxonUniv::var(1), IxonUniv::var(0)),
+      IxonUniv::imax(
+        IxonUniv::succ(IxonUniv::var(0)),
+        IxonUniv::imax(IxonUniv::var(0), IxonUniv::var(1)),
+      ),
+    ];
+    for spelling in spellings {
+      let canon = canon_univ(&spelling);
+      let univs = vec![canon.clone()];
+      let mut arena = ExprMeta::default();
+      let root = arena.alloc(ExprMetaData::Leaf);
+      let names: FxHashMap<Address, Name> = FxHashMap::default();
+      let ctx = Ctx::<Meta> {
+        sharing: &[],
+        refs: &[],
+        univs: &univs,
+        mut_ctx: vec![],
+        arena: &arena,
+        names: &names,
+        lvls: vec![mk_name("u"), mk_name("v")],
+        univ_patches: FxHashMap::default(),
+        meta_univs: &[],
+        synth_counter: Cell::new(0),
+      };
+      let mut intern = InternTable::<Meta>::new();
+      let ixon_env = IxonEnv::new();
+      let mut cache = ExprCache::<Meta>::default();
+      let mut univ_cache = UnivCache::<Meta>::default();
+      let mut stats = ConvertStats::default();
+      let k = ingress_expr(
+        &IxonExpr::sort(0),
+        root,
+        &ctx,
+        &mut intern,
+        &ixon_env,
+        &mut cache,
+        &mut univ_cache,
+        &mut stats,
+      )
+      .unwrap();
+      let decor = Meta::meta_get(k.univ_decor()).cloned().flatten();
+      assert_eq!(
+        decor, None,
+        "canonical entry {canon:?} must ingress without decoration"
+      );
+      let ExprData::Sort(zu, _) = k.data() else {
+        panic!("expected Sort");
+      };
+      assert!(
+        ixon_matches_kuniv(&canon, zu),
+        "canonical entry {canon:?} must ingress as identity"
+      );
+    }
+  }
+
+  /// Const-occurrence patches carry the FULL level-arg list: virtual
+  /// indices resolve extension spellings, primary indices ride along
+  /// for unchanged args.
+  #[test]
+  fn patch_sourced_const_decoration_full_list() {
+    let canon0 = IxonUniv::max(
+      IxonUniv::succ(IxonUniv::var(0)),
+      IxonUniv::succ(IxonUniv::var(1)),
+    );
+    let canon1 = IxonUniv::var(0);
+    let orig0 =
+      IxonUniv::succ(IxonUniv::max(IxonUniv::var(0), IxonUniv::var(1)));
+    let univs = vec![canon0, canon1.clone()];
+    let meta_univs = vec![orig0.clone()];
+    let ref_name = mk_name("Target");
+    let ref_name_addr = lean_name_to_addr(&ref_name);
+    let ref_addr = Address::hash(b"target-content");
+    let mut names = FxHashMap::default();
+    names.insert(ref_name_addr.clone(), ref_name.clone());
+    let mut arena = ExprMeta::default();
+    let root = arena.alloc(ExprMetaData::Ref { name: ref_name_addr });
+    // Arg 0 patched (virtual 2 = univs.len() 2 + slot 0), arg 1
+    // unchanged (primary 1).
+    let patch_idxs: Vec<u64> = vec![2, 1];
+    let mut univ_patches: FxHashMap<u64, &[u64]> = FxHashMap::default();
+    univ_patches.insert(root, patch_idxs.as_slice());
+    let refs = vec![ref_addr.clone()];
+    let ctx = Ctx::<Meta> {
+      sharing: &[],
+      refs: &refs,
+      univs: &univs,
+      mut_ctx: vec![],
+      arena: &arena,
+      names: &names,
+      lvls: vec![mk_name("u"), mk_name("v")],
+      univ_patches,
+      meta_univs: &meta_univs,
+      synth_counter: Cell::new(0),
+    };
+    let mut intern = InternTable::<Meta>::new();
+    let ixon_env = IxonEnv::new();
+    let mut cache = ExprCache::<Meta>::default();
+    let mut univ_cache = UnivCache::<Meta>::default();
+    let mut stats = ConvertStats::default();
+    let k = ingress_expr(
+      &IxonExpr::reference(0, vec![0, 1]),
+      root,
+      &ctx,
+      &mut intern,
+      &ixon_env,
+      &mut cache,
+      &mut univ_cache,
+      &mut stats,
+    )
+    .unwrap();
+    let decor = Meta::meta_get(k.univ_decor()).cloned().flatten();
+    let Some(UnivDecor::Const(spellings)) = decor else {
+      panic!("expected Const decoration, got {decor:?}");
+    };
+    assert_eq!(spellings.len(), 2);
+    assert_eq!(spellings[0], orig0);
+    assert_eq!(spellings[1], canon1);
   }
 
   #[test]

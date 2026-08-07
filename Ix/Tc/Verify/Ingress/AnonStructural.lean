@@ -67,7 +67,7 @@ def ExprInfo.ofKernel (info : Ix.Tc.ExprInfo .anon) : ExprInfo :=
   ⟨info.addr, info.lbr, info.count0, info.hasFVars⟩
 
 def ExprInfo.toKernel (info : ExprInfo) : Ix.Tc.ExprInfo .anon :=
-  ⟨info.addr, info.lbr, info.count0, info.hasFVars, (), ()⟩
+  ⟨info.addr, info.lbr, info.count0, info.hasFVars, (), (), ()⟩
 
 @[simp] theorem ExprInfo.roundtrip (info : Ix.Tc.ExprInfo .anon) :
     (ofKernel info).toKernel = info := by

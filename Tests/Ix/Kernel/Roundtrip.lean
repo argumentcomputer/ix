@@ -15,6 +15,10 @@
 import Ix.Common
 import Ix.Meta
 import LSpec
+-- Level-spelling fixtures (canonicity §10.6): mk*-reducible spellings
+-- must survive the kernel leg via the Rust spelling decorations —
+-- imported so `get_env!` (this file's module closure) carries them.
+import Tests.Ix.Compile.LevelSpellings
 
 open LSpec
 

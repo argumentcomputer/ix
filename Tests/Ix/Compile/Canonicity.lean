@@ -596,4 +596,53 @@ end
 
 end PropCollapseB
 
+/-!
+Cross-block alias-occurrence provenance (§10.5 / §17.8).
+
+`WrapA`/`WrapB` are alpha-identical wrapper defs in SEPARATE blocks — a
+§13.5 cross-block coincidence on one content address. Each inductive
+below references that collapsed address twice in one source expression
+with DIFFERENT spellings. §10.5: every synthesized occurrence in the
+regenerated auxiliaries must inherit its source spelling, so both
+compilers must emit byte-identical metas here.
+
+Coverage axes:
+- `StepAB`/`StepBA`: both orientations through a reducible index
+  wrapper (`RelOn`, the `HomRel (Paths (Symmetrify V))` shape of the
+  Mathlib motivating instance) — recursor regeneration must WHNF
+  `RelOn (WrapA (WrapB V))` to expose the index telescope, a genuine
+  reduction whose reduct contains the collapsed address twice. The
+  mirrored orientation distinguishes spelling inheritance from any
+  first-seen or least-name policy.
+- `DirectAB`: the same double occurrence as a plain index telescope
+  (syntactic peel, no reduction).
+- `Pair`: both spellings as sibling constructor fields — the
+  hint-collision shape (`WrapA V` and `WrapB V` are content-identical
+  subterms of one constructor type).
+-/
+
+namespace AliasProvenance
+
+universe u
+
+public def WrapA (V : Type u) : Type u := V
+public def WrapB (V : Type u) : Type u := V
+
+public abbrev RelOn (C : Type u) : Type u := C → C → Prop
+
+public inductive StepAB (V : Type u) : RelOn (WrapA (WrapB V)) where
+  | refl : (x : WrapA (WrapB V)) → StepAB V x x
+
+public inductive StepBA (V : Type u) : RelOn (WrapB (WrapA V)) where
+  | refl : (x : WrapB (WrapA V)) → StepBA V x x
+
+public inductive DirectAB (V : Type u) :
+    WrapA (WrapB V) → WrapA (WrapB V) → Prop where
+  | refl : (x : WrapA (WrapB V)) → DirectAB V x x
+
+public inductive Pair (V : Type u) : Type u where
+  | mk : WrapA V → WrapB V → Pair V
+
+end AliasProvenance
+
 end Tests.Ix.Compile.Canonicity

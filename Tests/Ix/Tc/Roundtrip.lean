@@ -37,8 +37,9 @@ Layers:
   clean; tampered kernel constants are **caught** (comparator-teeth
   negatives — proves the canonical comparison can't be satisfied vacuously).
 - `suite` (`tc-roundtrip`, ignored): Rust-compiled seed closures with full
-  coverage accounting, then the ENTIRE current Lean env (`get_env!`) —
-  anon and meta. Parallel over the task pool. Arbitrary Lean files (and
+  coverage accounting, then the ENTIRE current Lean env (`fixtureEnv` —
+  this module's closure plus the level-spelling fixtures) — anon and
+  meta. Parallel over the task pool. Arbitrary Lean files (and
   external `.ixe` images) go through `ix validate-lean` instead, which
   shares the same drivers (`Ix.Tc.Validate`).
 -/
@@ -54,6 +55,14 @@ public section
     `Ix.Tc.anonRoundtripEnv`). -/
 def roundtripAll (ixonEnv : Ixon.Env) : Nat × Option String :=
   anonRoundtripEnv ixonEnv
+
+/-- This file's module closure PLUS the level-spelling fixture module
+    (canonicity §10.6 — mk*-reducible spellings, spelling twins, Géran
+    order twins, a WF eq_def). The fixture file is non-`module` (raw
+    `addDecl` metaprogramming), so it cannot be an elab-time import
+    here; runtime olean loading has no such restriction. -/
+def fixtureEnv : IO Lean.Environment :=
+  getCompileEnv (this_file! ++ #[`Tests.Ix.Compile.LevelSpellings])
 
 /-! ### Fixture roundtrips + tamper negatives (`tc-unit`) -/
 
@@ -210,13 +219,36 @@ def seedSets : List (String × List Lean.Name) :=
   Tests.Tc.AnonDiff.seedSets ++
   [ ("inductives-recursors",
       [`Nat.rec, `List.rec, `Acc.rec, `WellFounded.fix, `Prod.rec,
-       `PSigma.rec, `Or.rec]) ]
+       `PSigma.rec, `Or.rec]),
+    ("level-spellings",
+      [`Tests.Ix.Compile.LevelSpellings.eqDefShape,
+       `Tests.Ix.Compile.LevelSpellings.designAKiller,
+       `Tests.Ix.Compile.LevelSpellings.punitTwin,
+       `Tests.Ix.Compile.LevelSpellings.constArgTwin,
+       `Tests.Ix.Compile.LevelSpellings.levelM1,
+       `Tests.Ix.Compile.LevelSpellings.levelM2,
+       `Tests.Ix.Compile.LevelSpellings.levelM3,
+       `Tests.Ix.Compile.LevelSpellings.levelM4,
+       `Tests.Ix.Compile.LevelSpellings.levelM5,
+       `Tests.Ix.Compile.LevelSpellings.levelM6,
+       `Tests.Ix.Compile.LevelSpellings.levelM7,
+       `Tests.Ix.Compile.LevelSpellings.levelI1,
+       `Tests.Ix.Compile.LevelSpellings.levelI2,
+       `Tests.Ix.Compile.LevelSpellings.levelI3,
+       `Tests.Ix.Compile.LevelSpellings.levelI4,
+       `Tests.Ix.Compile.LevelSpellings.levelI5,
+       `Tests.Ix.Compile.LevelSpellings.orderMaxUV,
+       `Tests.Ix.Compile.LevelSpellings.orderMaxVU,
+       `Tests.Ix.Compile.LevelSpellings.orderAssocL,
+       `Tests.Ix.Compile.LevelSpellings.orderAssocR,
+       `Tests.Ix.Compile.LevelSpellings.wfTwo,
+       `Tests.Ix.Compile.LevelSpellings.wfTwoEqDef]) ]
 
 def closureSuite : TestSeq := Id.run do
   let mut ts : TestSeq := .done
   for (label, seeds) in seedSets do
     ts := ts ++ .individualIO s!"roundtrip closure: {label}" none (do
-      let env ← get_env!
+      let env ← Tests.Tc.Roundtrip.fixtureEnv
       let (rows, err?) ← roundtripOnSeeds env label seeds
       return (err?.isNone, rows, 0, err?)) .done
   return ts
@@ -228,7 +260,7 @@ def closureSuite : TestSeq := Id.run do
     `ix roundtrip-tc <path>` instead. -/
 def wholeEnvSuite : TestSeq :=
   .individualIO "roundtrip whole get_env environment" none (do
-    let leanEnv ← get_env!
+    let leanEnv ← Tests.Tc.Roundtrip.fixtureEnv
     let consts := leanEnv.constants.toList
     let dir ← IO.FS.createTempDir
     let path := dir / "tc-roundtrip-whole-env.ixe"
@@ -284,7 +316,7 @@ def metaClosureSuite : TestSeq := Id.run do
   let mut ts : TestSeq := .done
   for (label, seeds) in seedSets do
     ts := ts ++ .individualIO s!"meta roundtrip closure: {label}" none (do
-      let env ← get_env!
+      let env ← Tests.Tc.Roundtrip.fixtureEnv
       let consts := Tests.Tc.AnonDiff.closureOf env seeds
       let (report, err?) ← metaRoundtripOn env label consts
       return (err?.isNone, report.checked, 0, err?)) .done
@@ -293,7 +325,7 @@ def metaClosureSuite : TestSeq := Id.run do
 /-- The centerpiece: meta roundtrip of the WHOLE current Lean env. -/
 def metaWholeEnvSuite : TestSeq :=
   .individualIO "meta roundtrip whole get_env environment" none (do
-    let leanEnv ← get_env!
+    let leanEnv ← Tests.Tc.Roundtrip.fixtureEnv
     let (report, err?) ←
       metaRoundtripOn leanEnv "whole-env" leanEnv.constants.toList
     IO.println s!"[tc-meta-roundtrip] checked {report.checked}, \

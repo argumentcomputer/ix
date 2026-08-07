@@ -204,6 +204,69 @@ def universeSpecializationTests : TestSeq :=
           && flat[2]!.occurrenceLevelArgs == #[Level.mkZero, v]
       | none => false : Bool))
 
+/-- Hand-built metadata for the `IxVMInd.DedupM` shape: a NON-universe-
+polymorphic external family nested twice with distinct term spec params.
+With empty level lists the dedup key must still compare the spec params —
+a vacuously-true level comparison must not swallow the term check and
+collapse the pair. -/
+def termSpecializedNestedEnv : Environment := Id.run do
+  let wrap := nm "Wrap"
+  let wrapMk := nm "Wrap.mk"
+  let root := nm "TermNested"
+  let one := nm "TermNested.one"
+  let rootApp := Expr.mkConst root #[]
+  let wrapApp := fun payload =>
+    Expr.mkApp (Expr.mkApp (Expr.mkConst wrap #[]) rootApp) payload
+  let mut consts : Std.HashMap Name ConstantInfo := {}
+  consts := consts.insert wrap (.inductInfo {
+    cnst := ⟨wrap, #[],
+      Expr.mkForallE (nm "alpha") prop
+        (Expr.mkForallE (nm "beta") prop prop .default) .default⟩,
+    numParams := 2, numIndices := 0, all := #[wrap], ctors := #[wrapMk],
+    numNested := 0, isRec := false, isUnsafe := false, isReflexive := false })
+  consts := consts.insert wrapMk (.ctorInfo {
+    cnst := ⟨wrapMk, #[],
+      Expr.mkForallE (nm "alpha") prop
+        (Expr.mkForallE (nm "beta") prop
+          (Expr.mkApp (Expr.mkApp (Expr.mkConst wrap #[]) (Expr.mkBVar 1))
+            (Expr.mkBVar 0)) .default) .default⟩,
+    induct := wrap, cidx := 0, numParams := 2, numFields := 0,
+    isUnsafe := false })
+  consts := consts.insert root (.inductInfo {
+    cnst := ⟨root, #[], prop⟩,
+    numParams := 0, numIndices := 0, all := #[root], ctors := #[one],
+    numNested := 2, isRec := true, isUnsafe := false, isReflexive := false })
+  consts := consts.insert one (.ctorInfo {
+    cnst := ⟨one, #[],
+      Expr.mkForallE (nm "a") (wrapApp (Expr.mkConst (nm "A") #[]))
+        (Expr.mkForallE (nm "b") (wrapApp (Expr.mkConst (nm "B") #[]))
+          rootApp .default) .default⟩,
+    induct := root, cidx := 0, numParams := 0, numFields := 2,
+    isUnsafe := false })
+  return { consts }
+
+def runTermSpecializedFlat : Option (Array CompileFlatMember) :=
+  let cenv := Ix.CompileM.CompileEnv.new termSpecializedNestedEnv
+  let blockEnv : Ix.CompileM.BlockEnv :=
+    { all := {}, current := nm "TermNested", mutCtx := default, univCtx := [] }
+  match Ix.CompileM.CompileM.run cenv blockEnv {}
+      (buildCompileFlatBlock #[nm "TermNested"]) with
+  | .ok (flat, _) => some flat
+  | .error _ => none
+
+def termSpecializationTests : TestSeq :=
+  test "flat identity retains term specializations with empty levels"
+    ((match runTermSpecializedFlat with
+      | some flat =>
+        flat.size == 3 && flat[1]!.name == nm "Wrap"
+          && flat[2]!.name == nm "Wrap"
+          && flat[1]!.occurrenceLevelArgs == #[]
+          && flat[2]!.occurrenceLevelArgs == #[]
+          && flat[1]!.specParams.size == 2 && flat[2]!.specParams.size == 2
+          && flat[1]!.specParams[1]! == Expr.mkConst (nm "A") #[]
+          && flat[2]!.specParams[1]! == Expr.mkConst (nm "B") #[]
+      | none => false : Bool))
+
 def mkFlatInfo (s : String) (isAux : Bool) (specParams : Array Expr)
     (ownParams : Nat) : FlatInfo :=
   { name := nm s
@@ -258,8 +321,8 @@ def collectConstRefsTests : TestSeq :=
 
 public def suite : List TestSeq :=
   [reorderTests, reorderErrorTests, inferImplicitTests, nameAppendAfterTests,
-   collectBindersTests, universeSpecializationTests, matchClassesTests,
-   collectConstRefsTests]
+   collectBindersTests, universeSpecializationTests, termSpecializationTests,
+   matchClassesTests, collectConstRefsTests]
 
 end Tests.AuxGen.Recursor
 

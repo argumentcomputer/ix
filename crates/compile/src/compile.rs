@@ -28,6 +28,7 @@ use ix_common::strong_ordering::SOrd;
 
 use ixon::{
   CompileError, Tag0,
+  canon_univ::canon_univ,
   constant::{
     Axiom, Constant, ConstantInfo, Constructor, Definition, Inductive,
     MutConst as IxonMutConst, Quotient, Recursor, RecursorRule,
@@ -38,6 +39,7 @@ use ixon::{
   expr::Expr,
   metadata::{
     ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap,
+    UnivPatch,
   },
   sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
   univ::Univ,
@@ -212,8 +214,29 @@ pub struct BlockCache {
   pub arena_roots: Vec<u64>,
   /// Reference table: unique addresses of constants referenced by Expr::Ref
   pub refs: indexmap::IndexSet<Address>,
-  /// Universe table: unique universes referenced by expressions
+  /// Universe table: unique universes referenced by expressions.
+  /// Canonicity §10.6: every entry is `canon_univ`-fixed —
+  /// `compile_univ_idx` interns only canonical forms and
+  /// `preseed_expr_tables` canonicalizes before sorting.
   pub univs: indexmap::IndexSet<Arc<Univ>>,
+  /// `canon_univ` memo (positional trees — context-free, so the cache is
+  /// sound across constants and univ contexts).
+  pub canon_cache: FxHashMap<Arc<Univ>, Arc<Univ>>,
+  /// Set by `preseed_expr_tables` once the primary `univs` table is
+  /// final. From then on any on-the-fly intern of a canonical form must
+  /// HIT a preseeded entry — a miss would silently shift the virtual
+  /// indices in `univ_patches` (which are `univs.len() + slot`), so
+  /// `compile_univ_idx` debug-asserts against it.
+  pub univs_final: bool,
+  /// Extension univs of the CURRENT constant: original (non-canonical)
+  /// spellings referenced by `univ_patches`, in first-use order.
+  /// Canonicity §10.6 — drained into `ConstantMeta.meta_univs` alongside
+  /// the arena.
+  pub meta_univs: indexmap::IndexSet<Arc<Univ>>,
+  /// Level-spelling patches of the CURRENT constant, keyed by the arena
+  /// root of each affected `sort`/`const` occurrence — drained into
+  /// `ConstantMeta.univ_patches` alongside the arena.
+  pub univ_patches: Vec<UnivPatch>,
   /// Name of the constant currently being compiled (for error context).
   pub compiling: Option<Name>,
   /// Accumulated compiled Ixon expressions for collapsed call-site args.
@@ -464,23 +487,52 @@ pub fn compile_univ(
   Ok(univ)
 }
 
-/// Compile a universe and add it to the univs table, returning its index.
+/// `canon_univ` through the block memo.
+fn canon_univ_cached(u: &Arc<Univ>, cache: &mut BlockCache) -> Arc<Univ> {
+  if let Some(c) = cache.canon_cache.get(u) {
+    return c.clone();
+  }
+  let c = canon_univ(u);
+  cache.canon_cache.insert(u.clone(), c.clone());
+  c
+}
+
+/// Compile a universe and intern its CANONICAL form into the primary
+/// univs table (canonicity §10.6). Returns the canonical index plus,
+/// when the source spelling differs, the VIRTUAL index of the original
+/// spelling in the per-constant `meta_univs` extension
+/// (`univs.len() + slot` — stable because the primary table is
+/// preseed-final by the time expressions compile).
 fn compile_univ_idx(
   level: &Level,
   univ_params: &[Name],
   cache: &mut BlockCache,
-) -> Result<u64, CompileError> {
+) -> Result<(u64, Option<u64>), CompileError> {
   let univ = compile_univ(level, univ_params, cache)?;
-  let (idx, _) = cache.univs.insert_full(univ);
-  Ok(idx as u64)
+  let canon = canon_univ_cached(&univ, cache);
+  let (idx, fresh) = cache.univs.insert_full(canon.clone());
+  debug_assert!(
+    !(fresh && cache.univs_final),
+    "compile_univ_idx: preseed missed canonical form {canon:?} while \
+     compiling {:?} — primary univ table grew after preseeding, which \
+     shifts univ_patches virtual indices (canonicity §10.6 V3)",
+    cache.compiling
+  );
+  if canon == univ {
+    return Ok((idx as u64, None));
+  }
+  let (slot, _) = cache.meta_univs.insert_full(univ);
+  Ok((idx as u64, Some((cache.univs.len() + slot) as u64)))
 }
 
-/// Compile a list of universes and add them to the univs table, returning indices.
+/// Compile a list of universes and add their canonical forms to the
+/// univs table, returning `(canonical_idx, Option<virtual original
+/// idx>)` pairs (see [`compile_univ_idx`]).
 fn compile_univ_indices(
   levels: &[Level],
   univ_params: &[Name],
   cache: &mut BlockCache,
-) -> Result<Vec<u64>, CompileError> {
+) -> Result<Vec<(u64, Option<u64>)>, CompileError> {
   levels.iter().map(|l| compile_univ_idx(l, univ_params, cache)).collect()
 }
 
@@ -615,13 +667,21 @@ pub fn preseed_expr_tables(
     cache.refs.insert_full(addr);
   }
 
+  // Canonicalize before sorting (canonicity §10.6): the primary table
+  // holds only `canon_univ`-fixed forms; the on-the-fly
+  // `compile_univ_idx` then always finds the preseeded canonical entry.
+  let mut canon_univs: Vec<Arc<Univ>> = Vec::with_capacity(univs.len());
+  for u in univs {
+    canon_univs.push(canon_univ_cached(&u, cache));
+  }
   let mut keyed_univs: Vec<_> =
-    univs.into_iter().map(|u| (univ_sort_key(&u), u)).collect();
+    canon_univs.into_iter().map(|u| (univ_sort_key(&u), u)).collect();
   keyed_univs.sort_by(|(ak, _), (bk, _)| ak.cmp(bk));
   keyed_univs.dedup_by(|(ak, _), (bk, _)| ak == bk);
   for (_, univ) in keyed_univs {
     cache.univs.insert_full(univ);
   }
+  cache.univs_final = true;
 
   Ok(())
 }
@@ -724,23 +784,49 @@ pub fn compile_expr(
           },
 
           ExprData::Sort(level, _) => {
-            let univ_idx = compile_univ_idx(level, univ_params, cache)?;
+            let (univ_idx, orig) = compile_univ_idx(level, univ_params, cache)?;
             results.push(Expr::sort(univ_idx));
-            cache.arena_roots.push(cache.arena.alloc(ExprMetaData::Leaf));
+            let root = cache.arena.alloc(ExprMetaData::Leaf);
+            cache.arena_roots.push(root);
+            // Canonicity §10.6: a spelling the canonicalization changed
+            // is restorable from the patch keyed by this occurrence's
+            // arena root. Cache hits on repeated subtrees reuse the same
+            // root, so the patch covers every occurrence.
+            if let Some(vidx) = orig {
+              cache
+                .univ_patches
+                .push(UnivPatch { arena_idx: root, univ_idxs: vec![vidx] });
+            }
           },
 
           ExprData::Const(name, levels, _) => {
-            let univ_indices =
-              compile_univ_indices(levels, univ_params, cache)?;
+            let compiled = compile_univ_indices(levels, univ_params, cache)?;
+            let univ_indices: Vec<u64> =
+              compiled.iter().map(|(c, _)| *c).collect();
+            // Canonicity §10.6: when ANY level arg's spelling changed,
+            // the patch carries the FULL original list in the virtual
+            // index space (unchanged args point at their canonical
+            // primary entries).
+            let patch_idxs: Option<Vec<u64>> =
+              if compiled.iter().any(|(_, o)| o.is_some()) {
+                Some(compiled.iter().map(|(c, o)| o.unwrap_or(*c)).collect())
+              } else {
+                None
+              };
             let name_addr = compile_name(name, stt);
 
             // Check if this is a mutual reference
             if let Some(idx) = mut_ctx.get(name) {
               let idx_u64 = nat_to_u64(idx, "mutual index too large")?;
               results.push(Expr::rec(idx_u64, univ_indices));
-              cache
-                .arena_roots
-                .push(cache.arena.alloc(ExprMetaData::Ref { name: name_addr }));
+              let root =
+                cache.arena.alloc(ExprMetaData::Ref { name: name_addr });
+              cache.arena_roots.push(root);
+              if let Some(univ_idxs) = patch_idxs {
+                cache
+                  .univ_patches
+                  .push(UnivPatch { arena_idx: root, univ_idxs });
+              }
             } else {
               // External reference — check both name_to_addr and
               // aux_name_to_addr (aux_gen constants compiled during
@@ -757,9 +843,14 @@ pub fn compile_expr(
               })?;
               let (ref_idx, _) = cache.refs.insert_full(const_addr.clone());
               results.push(Expr::reference(ref_idx as u64, univ_indices));
-              cache
-                .arena_roots
-                .push(cache.arena.alloc(ExprMetaData::Ref { name: name_addr }));
+              let root =
+                cache.arena.alloc(ExprMetaData::Ref { name: name_addr });
+              cache.arena_roots.push(root);
+              if let Some(univ_idxs) = patch_idxs {
+                cache
+                  .univ_patches
+                  .push(UnivPatch { arena_idx: root, univ_idxs });
+              }
             }
           },
 
@@ -1695,6 +1786,24 @@ pub fn compile_expr(
           orig_head,
         });
 
+        // Canonicity §10.6: the head's Ref arena node is not referenced
+        // by the CallSite node (its metadata is subsumed by
+        // `CallSite.name`), so a level-spelling patch keyed by
+        // `head_root` would be unreachable during replay — both the
+        // decompiler's head rebuild and the kernel's meta-ingress head
+        // path have only the CallSite root in hand. Clone the head's
+        // patch (if any) onto the CallSite root; the original entry
+        // stays because `head_root` may be a shared expr-cache root
+        // reachable from other occurrences.
+        if let Some(head_patch) =
+          cache.univ_patches.iter().find(|p| p.arena_idx == head_root)
+        {
+          let univ_idxs = head_patch.univ_idxs.clone();
+          cache
+            .univ_patches
+            .push(UnivPatch { arena_idx: call_site_root, univ_idxs });
+        }
+
         // Build canonical Ixon App spine: foldl App head canonical_args
         let mut ixon = head_expr;
         for arg in &canonical_exprs {
@@ -2236,9 +2345,13 @@ pub fn compile_definition(
   let value = compile_expr(&def.value, univ_params, mut_ctx, cache, stt)?;
   let value_root = *cache.arena_roots.last().expect("missing value arena root");
 
-  // Take arena and surgery sharing, clear for next constant
+  // Take arena, surgery sharing, and level-spelling channels (canonicity
+  // §10.6), clear for next constant
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_univs: Vec<Arc<Univ>> =
+    std::mem::take(&mut cache.meta_univs).into_iter().collect();
+  let univ_patches = std::mem::take(&mut cache.univ_patches);
   cache.arena_roots.clear();
   cache.exprs.clear();
 
@@ -2268,6 +2381,8 @@ pub fn compile_definition(
     value_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_univs = meta_univs;
+  meta.univ_patches = univ_patches;
   stt.def_hints.insert(def.name.clone(), def.hints);
 
   Ok((data, meta))
@@ -2321,9 +2436,13 @@ pub fn compile_recursor(
   // ctor C may reference another alpha-collapsed auxiliary), so any
   // collapsed args accumulated during rule compilation must be attached
   // to THIS recursor's meta — not left behind to corrupt the next
-  // constant's `sharing_idx` offsets.
+  // constant's `sharing_idx` offsets. Level-spelling channels (canonicity
+  // §10.6) drain on the same boundary for the same reason.
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_univs: Vec<Arc<Univ>> =
+    std::mem::take(&mut cache.meta_univs).into_iter().collect();
+  let univ_patches = std::mem::take(&mut cache.univ_patches);
   cache.arena_roots.clear();
   cache.exprs.clear();
 
@@ -2359,6 +2478,8 @@ pub fn compile_recursor(
     rule_roots,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_univs = meta_univs;
+  meta.univ_patches = univ_patches;
 
   Ok((data, meta))
 }
@@ -2382,8 +2503,14 @@ fn compile_constructor(
   // may contain surgered call-sites when the ctor's field types reference
   // alpha-collapsed auxiliaries, so drain here to attach to THIS ctor's
   // meta rather than leaking into whichever constant comes next.
+  // Level-spelling channels (canonicity §10.6) drain on the same
+  // boundary — the decompiler's ctor-scoped window installs them per
+  // constructor.
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_univs: Vec<Arc<Univ>> =
+    std::mem::take(&mut cache.meta_univs).into_iter().collect();
+  let univ_patches = std::mem::take(&mut cache.univ_patches);
   cache.arena_roots.clear();
   cache.exprs.clear();
 
@@ -2409,6 +2536,8 @@ fn compile_constructor(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_univs = meta_univs;
+  meta.univ_patches = univ_patches;
 
   Ok((data, meta))
 }
@@ -2435,9 +2564,13 @@ pub fn compile_inductive(
   // surgered call-sites accumulated while compiling `ind.ind.cnst.typ`
   // belong to this inductive's meta. Ctor surgery_sharing is handled
   // separately by `compile_constructor` below — each ctor attaches its
-  // own sharing to its own meta.
+  // own sharing to its own meta. Level-spelling channels (canonicity
+  // §10.6) split on the same boundary.
   let indc_arena = std::mem::take(&mut cache.arena);
   let indc_surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let indc_meta_univs: Vec<Arc<Univ>> =
+    std::mem::take(&mut cache.meta_univs).into_iter().collect();
+  let indc_univ_patches = std::mem::take(&mut cache.univ_patches);
   cache.arena_roots.clear();
   cache.exprs.clear();
 
@@ -2483,6 +2616,8 @@ pub fn compile_inductive(
     type_root,
   });
   meta.meta_sharing = indc_surgery_sharing;
+  meta.meta_univs = indc_meta_univs;
+  meta.univ_patches = indc_univ_patches;
 
   Ok((data, meta, ctor_const_metas))
 }
@@ -2503,9 +2638,13 @@ fn compile_axiom(
 
   // Drain surgery sharing onto this axiom's meta. Axioms can reference
   // alpha-collapsed auxiliaries in their type; any collapsed args must
-  // stay with this axiom rather than leak to the next constant.
+  // stay with this axiom rather than leak to the next constant. Same for
+  // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_univs: Vec<Arc<Univ>> =
+    std::mem::take(&mut cache.meta_univs).into_iter().collect();
+  let univ_patches = std::mem::take(&mut cache.univ_patches);
   cache.arena_roots.clear();
   cache.exprs.clear();
 
@@ -2523,6 +2662,8 @@ fn compile_axiom(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_univs = meta_univs;
+  meta.univ_patches = univ_patches;
 
   Ok((data, meta))
 }
@@ -2543,9 +2684,13 @@ fn compile_quotient(
 
   // Drain surgery sharing onto this quotient's meta — same reasoning as
   // in compile_axiom / compile_recursor / etc.: keep collapsed args
-  // attached to the constant whose compilation produced them.
+  // attached to the constant whose compilation produced them. Same for
+  // the level-spelling channels (canonicity §10.6).
   let arena = std::mem::take(&mut cache.arena);
   let surgery_sharing = std::mem::take(&mut cache.surgery_sharing);
+  let meta_univs: Vec<Arc<Univ>> =
+    std::mem::take(&mut cache.meta_univs).into_iter().collect();
+  let univ_patches = std::mem::take(&mut cache.univ_patches);
   cache.arena_roots.clear();
   cache.exprs.clear();
 
@@ -2562,6 +2707,8 @@ fn compile_quotient(
     type_root,
   });
   meta.meta_sharing = surgery_sharing;
+  meta.meta_univs = meta_univs;
+  meta.univ_patches = univ_patches;
 
   Ok((data, meta))
 }
@@ -5393,6 +5540,221 @@ mod tests {
         assert_eq!(ax.cnst.level_params.len(), axiom.cnst.level_params.len());
       },
       _ => panic!("Expected AxiomInfo"),
+    }
+  }
+
+  /// Canonicity §10.6 end-to-end at unit scale: compile emits
+  /// `canon_univ`-fixed primary tables plus `univ_patches`/`meta_univs`
+  /// for changed spellings, and decompile replays the patches so every
+  /// source spelling roundtrips EXACTLY (content-hash equality).
+  #[test]
+  fn test_level_canonicalization_tables_patches_and_replay() {
+    use crate::decompile::decompile_env;
+    use ix_common::env::{AxiomVal, ConstantVal, Env as LeanEnv};
+
+    let u = Name::str(Name::anon(), "u".to_string());
+    let v = Name::str(Name::anon(), "v".to_string());
+    let lu = || Level::param(u.clone());
+    let lv = || Level::param(v.clone());
+    // Succ-lifted twin: `(max u v)+1` — the Géran-canonical form
+    // distributes the succ (`max (u+1) (v+1)`), so this spelling must
+    // be patched.
+    let succ_dist = || Level::succ(Level::max(lu(), lv()));
+
+    let mk_axiom = |name: &Name, typ: LeanExpr| {
+      LeanConstantInfo::AxiomInfo(AxiomVal {
+        cnst: ConstantVal {
+          name: name.clone(),
+          level_params: vec![u.clone(), v.clone()],
+          typ,
+        },
+        is_unsafe: false,
+      })
+    };
+
+    let twin_name = Name::str(Name::anon(), "twinAx".to_string());
+    let ctrl_name = Name::str(Name::anon(), "ctrlAx".to_string());
+    let use_name = Name::str(Name::anon(), "useAx".to_string());
+
+    let mut lean_env = LeanEnv::default();
+    lean_env.insert(
+      twin_name.clone(),
+      mk_axiom(&twin_name, LeanExpr::sort(succ_dist())),
+    );
+    // Control: an already-canonical spelling must emit NO patches.
+    lean_env.insert(
+      ctrl_name.clone(),
+      mk_axiom(&ctrl_name, LeanExpr::sort(Level::max(lu(), lv()))),
+    );
+    // Const-arm coverage: a reference with a noncanonical level ARG —
+    // the patch must carry the full arg list.
+    lean_env.insert(
+      use_name.clone(),
+      mk_axiom(
+        &use_name,
+        LeanExpr::cnst(twin_name.clone(), vec![succ_dist(), lv()]),
+      ),
+    );
+    let lean_env = Arc::new(lean_env);
+
+    let stt = compile_env(&lean_env).expect("compile_env failed");
+
+    // (1) Every stored primary univ-table entry is canon_univ-fixed.
+    for entry in stt.env.consts.iter() {
+      let c = stt.env.get_const(entry.key()).expect("stored constant");
+      for uv in &c.univs {
+        assert_eq!(
+          &canon_univ(uv),
+          uv,
+          "non-canonical entry in a stored constant's univ table"
+        );
+      }
+    }
+
+    // (2) Patch emission: the twins carry patches + extension spellings,
+    // the control carries none.
+    let twin_meta = stt.env.named.get(&twin_name).expect("twin named");
+    assert_eq!(twin_meta.meta().univ_patches.len(), 1, "twin sort patch");
+    assert_eq!(twin_meta.meta().univ_patches[0].univ_idxs.len(), 1);
+    assert_eq!(twin_meta.meta().meta_univs.len(), 1, "twin extension");
+    drop(twin_meta);
+    let use_meta = stt.env.named.get(&use_name).expect("use named");
+    assert_eq!(use_meta.meta().univ_patches.len(), 1, "const-arg patch");
+    assert_eq!(
+      use_meta.meta().univ_patches[0].univ_idxs.len(),
+      2,
+      "const patch carries the FULL level-arg list"
+    );
+    drop(use_meta);
+    let ctrl_meta = stt.env.named.get(&ctrl_name).expect("ctrl named");
+    assert!(ctrl_meta.meta().univ_patches.is_empty(), "control patchless");
+    assert!(ctrl_meta.meta().meta_univs.is_empty(), "control no extension");
+    drop(ctrl_meta);
+
+    // (3) Decompile replays every spelling exactly.
+    let dstt = decompile_env(&stt).expect("decompile_env failed");
+    for (name, orig_ci) in lean_env.iter() {
+      let rec = dstt.env.get(name).expect("decompiled constant");
+      assert_eq!(
+        orig_ci.get_type().get_hash(),
+        rec.get_type().get_hash(),
+        "type spelling roundtrip for {name}"
+      );
+    }
+  }
+
+  /// Canonicity §10.6, constructor window: an inductive whose ctor TYPES
+  /// carry noncanonical spellings exercises the per-ctor
+  /// `meta_univs`/`univ_patches` swap in the decompiler (extensions
+  /// installed at the PRIMARY offset per ctor, restored between
+  /// siblings). Multiple ctors make the window cycle; the strict
+  /// roundtrip pins that no sibling's extension leaks into another's
+  /// replay.
+  #[test]
+  fn test_level_canonicalization_inductive_ctor_windows() {
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
+      ConstantVal, ConstructorVal, Env as LeanEnv, InductiveVal,
+    };
+
+    let u = Name::str(Name::anon(), "u".to_string());
+    let v = Name::str(Name::anon(), "v".to_string());
+    let lps = vec![u.clone(), v.clone()];
+    let lu = || Level::param(u.clone());
+    let lv = || Level::param(v.clone());
+
+    let ind_name = Name::str(Name::anon(), "Twine".to_string());
+    let c0_name = Name::str(ind_name.clone(), "lift".to_string());
+    let c1_name = Name::str(ind_name.clone(), "flip".to_string());
+    let c2_name = Name::str(ind_name.clone(), "plain".to_string());
+
+    // Inductive type itself carries a noncanonical sort spelling.
+    let ind_typ = LeanExpr::sort(Level::succ(Level::max(lu(), lv())));
+    let ind_ref = || LeanExpr::cnst(ind_name.clone(), vec![lu(), lv()]);
+    // Ctor 0: succ-lifted twin `(max u v)+1` (patched).
+    let c0_typ = LeanExpr::all(
+      Name::str(Name::anon(), "x".to_string()),
+      LeanExpr::sort(Level::succ(Level::max(lu(), lv()))),
+      ind_ref(),
+      ix_common::env::BinderInfo::Default,
+    );
+    // Ctor 1: commuted twin `max v u` (patched, DIFFERENT spelling).
+    let c1_typ = LeanExpr::all(
+      Name::str(Name::anon(), "y".to_string()),
+      LeanExpr::sort(Level::max(lv(), lu())),
+      ind_ref(),
+      ix_common::env::BinderInfo::Default,
+    );
+    // Ctor 2: canonical control (no patch).
+    let c2_typ = LeanExpr::all(
+      Name::str(Name::anon(), "z".to_string()),
+      LeanExpr::sort(Level::max(lu(), lv())),
+      ind_ref(),
+      ix_common::env::BinderInfo::Default,
+    );
+
+    let inductive = InductiveVal {
+      cnst: ConstantVal {
+        name: ind_name.clone(),
+        level_params: lps.clone(),
+        typ: ind_typ,
+      },
+      num_params: Nat::from(0u64),
+      num_indices: Nat::from(0u64),
+      all: vec![ind_name.clone()],
+      ctors: vec![c0_name.clone(), c1_name.clone(), c2_name.clone()],
+      num_nested: Nat::from(0u64),
+      is_rec: false,
+      is_unsafe: false,
+      is_reflexive: false,
+    };
+    let mk_ctor = |name: &Name, cidx: u64, typ: LeanExpr| ConstructorVal {
+      cnst: ConstantVal { name: name.clone(), level_params: lps.clone(), typ },
+      induct: ind_name.clone(),
+      cidx: Nat::from(cidx),
+      num_params: Nat::from(0u64),
+      num_fields: Nat::from(1u64),
+      is_unsafe: false,
+    };
+
+    let mut lean_env = LeanEnv::default();
+    lean_env.insert(ind_name.clone(), LeanConstantInfo::InductInfo(inductive));
+    lean_env.insert(
+      c0_name.clone(),
+      LeanConstantInfo::CtorInfo(mk_ctor(&c0_name, 0, c0_typ)),
+    );
+    lean_env.insert(
+      c1_name.clone(),
+      LeanConstantInfo::CtorInfo(mk_ctor(&c1_name, 1, c1_typ)),
+    );
+    lean_env.insert(
+      c2_name.clone(),
+      LeanConstantInfo::CtorInfo(mk_ctor(&c2_name, 2, c2_typ)),
+    );
+    let lean_env = Arc::new(lean_env);
+
+    let stt = compile_env(&lean_env).expect("compile_env failed");
+
+    // The two twin ctors carry their own patches; the control does not.
+    for (name, want_patch) in
+      [(&c0_name, true), (&c1_name, true), (&c2_name, false)]
+    {
+      let named = stt.env.named.get(name).expect("ctor named");
+      assert_eq!(
+        !named.meta().univ_patches.is_empty(),
+        want_patch,
+        "patch presence for {name}"
+      );
+    }
+
+    let dstt = decompile_env(&stt).expect("decompile_env failed");
+    for (name, orig_ci) in lean_env.iter() {
+      let rec = dstt.env.get(name).expect("decompiled constant");
+      assert_eq!(
+        orig_ci.get_type().get_hash(),
+        rec.get_type().get_hash(),
+        "ctor-window spelling roundtrip for {name}"
+      );
     }
   }
 

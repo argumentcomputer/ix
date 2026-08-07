@@ -257,9 +257,9 @@ def tryDetectNestedFVar (dom : Expr) (blockNames : Std.HashSet Name)
   let specHashes : Array Address := specParams.map (·.getHash)
   if auxSeen.any (fun (name, levels, hashes) =>
       name == headName && levels.size == levelHashes.size
-        && (levels.zip levelHashes).all fun (a, b) => a == b
+        && ((levels.zip levelHashes).all fun (a, b) => a == b)
         && hashes.size == specHashes.size
-        && (hashes.zip specHashes).all fun (a, b) => a == b) then
+        && ((hashes.zip specHashes).all fun (a, b) => a == b)) then
     return (flat, auxSeen)
   let auxSeen := auxSeen.push (headName, levelHashes, specHashes)
 
@@ -441,7 +441,12 @@ instance : Inhabited ConstructorVal where
     on the block's classes, so a single `walkCache` amortises the DAG walk
     across every rewrite site (`rewriteNestedConstLevelsCached`). -/
 structure NestedRewriteCtx where
-  auxInfo : Std.HashMap Name (Nat × Array Level)
+  /-- Per external family name, EVERY aux class's
+      `(ownParams, occurrenceLevelArgs)` in class order. One family can
+      appear with several distinct universe instantiations (distinct
+      flat classes since the dedup keys on levels) — a name-keyed single
+      entry would stamp one instantiation's levels onto all of them. -/
+  auxInfo : Std.HashMap Name (Array (Nat × Array Level))
   blockNames : Std.HashSet Name
   walkCache : ExprCache
 
@@ -462,7 +467,11 @@ def new (classes : Array FlatInfo) (nClasses : Nat) : Option NestedRewriteCtx :=
       { blockNames := (classes.extract 0 nClasses).foldl (init := {})
           fun s c => s.insert c.name
         auxInfo := classes.foldl (init := {}) fun m c =>
-          if c.isAux then m.insert c.name (c.ownParams, c.occurrenceLevelArgs)
+          if c.isAux then
+            m.alter c.name fun
+              | some entries =>
+                some (entries.push (c.ownParams, c.occurrenceLevelArgs))
+              | none => some #[(c.ownParams, c.occurrenceLevelArgs)]
           else m
         walkCache := {} }
 
@@ -614,22 +623,33 @@ partial def inferImplicit (ty : Expr) (numParams : Nat) : Expr :=
 def matchClassesAgainstApp (ty : Expr) (classes : Array FlatInfo)
     (paramFvars : Array Expr) (nParams : Nat) : Option Nat := Id.run do
   let (head, args) := decomposeApps ty
-  let .const name _ _ := head | return none
-  for (class_, ci) in classes.zipIdx do
-    if !class_.allNames.any (· == name) then
-      continue
-    if !class_.isAux then
-      if args.size >= nParams
-          && ((args.extract 0 nParams).zip paramFvars).all
-            (fun (a, p) => a.getHash == p.getHash) then
+  let .const name levels _ := head | return none
+  -- Two passes: aux candidates must first also match the occurrence's
+  -- universe instantiation exactly — distinct universe specializations
+  -- of one external family are distinct flat classes (the flat-block
+  -- dedup keys on levels), and same-block occurrences carry verbatim
+  -- ctor levels. The level-insensitive second pass keeps alpha-collapse
+  -- working when the representative names universe parameters
+  -- differently. Non-aux (original) classes are level-uniform and are
+  -- decided entirely in the first pass.
+  for requireLevels in [true, false] do
+    for (class_, ci) in classes.zipIdx do
+      if !class_.allNames.any (· == name) then
+        continue
+      if !class_.isAux then
+        if requireLevels && args.size >= nParams
+            && ((args.extract 0 nParams).zip paramFvars).all
+              (fun (a, p) => a.getHash == p.getHash) then
+          return some ci
+        continue
+      if requireLevels && class_.occurrenceLevelArgs != levels then
+        continue
+      let spFvars := instantiateSpecWithFVars class_.specParams paramFvars
+      let nPar := class_.ownParams
+      if args.size >= nPar && spFvars.size == nPar
+          && ((args.extract 0 nPar).zip spFvars).all
+            (fun (a, sp) => a.getHash == sp.getHash) then
         return some ci
-      continue
-    let spFvars := instantiateSpecWithFVars class_.specParams paramFvars
-    let nPar := class_.ownParams
-    if args.size >= nPar && spFvars.size == nPar
-        && ((args.extract 0 nPar).zip spFvars).all
-          (fun (a, sp) => a.getHash == sp.getHash) then
-      return some ci
   return none
 
 /-- Mirrors Rust `find_rec_target` (recursor.rs:2093).

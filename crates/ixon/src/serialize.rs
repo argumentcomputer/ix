@@ -200,6 +200,13 @@ fn read_blob_section(
 const PRE_COMPACT_KEYS: &str =
   " — possibly a pre-compact-keys .ixe; recompile it";
 
+/// Appended to §5 metadata-wrapper framing errors: an old reader on a
+/// new file (or vice versa) first desyncs at the wrapper's fourth
+/// vector (`univ_patches`, canonicity §10.6), which shifts `meta_len`
+/// on every entry.
+const PRE_NORMAL_LEVELS: &str =
+  " — possibly a pre-normal-levels .ixe; recompile it";
+
 /// Fuse a `ReducibilityHints` into a single Tag0-encodable value:
 /// 0 = Opaque, 1 = Abbrev, h + 2 = Regular(h). Keeps the common
 /// small-height Regular case in one wire byte.
@@ -1360,12 +1367,13 @@ pub fn get_named_indexed(
     x => return Err(format!("Named.original: invalid tag {x}")),
   }
   // The header's length must frame exactly the bytes the parsers
-  // consumed — a mismatch means a desynced or tampered entry.
+  // consumed — a mismatch means a desynced, old-format, or tampered
+  // entry.
   let consumed = before - buf.len();
   if consumed != meta_len {
     return Err(format!(
       "get_named_indexed: metadata blob length mismatch (header says \
-       {meta_len}, parsed {consumed}){PRE_COMPACT_KEYS}"
+       {meta_len}, parsed {consumed}){PRE_NORMAL_LEVELS}"
     ));
   }
   Ok(named)

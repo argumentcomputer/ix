@@ -790,7 +790,7 @@ mutual
     becomes `StateM ExprCache`. The cache must only be reused across calls
     whose `auxInfo` and `blockNames` are identical. -/
 partial def rewriteNestedConstLevelsCached (expr : Expr)
-    (auxInfo : Std.HashMap Name (Nat × Array Level))
+    (auxInfo : Std.HashMap Name (Array (Nat × Array Level)))
     (blockNames : Std.HashSet Name) : StateM ExprCache Expr := do
   if let some cached := (← get).get? expr then
     return cached
@@ -800,21 +800,36 @@ partial def rewriteNestedConstLevelsCached (expr : Expr)
 
 /-- Mirrors Rust `rewrite_nested_const_levels_walk` (aux_gen/expr_utils.rs:1406). -/
 partial def rewriteNestedConstLevelsWalk (expr : Expr)
-    (auxInfo : Std.HashMap Name (Nat × Array Level))
+    (auxInfo : Std.HashMap Name (Array (Nat × Array Level)))
     (blockNames : Std.HashSet Name) : StateM ExprCache Expr := do
   -- Try to decompose as an application of an auxiliary Const.
   let (head, args) := decomposeApps expr
   if let .const name levels _ := head then
-    if let some (nParams, newLevels) := auxInfo.get? name then
-      let hasNestedRef := args.any (exprMentionsAnyName · blockNames) 0 nParams
-      if hasNestedRef && newLevels.size == levels.size then
-        -- Rewrite head levels and recurse into args.
-        let newHead := Expr.mkConst name newLevels
-        let mut result := newHead
-        for a in args do
-          result := Expr.mkApp result
-            (← rewriteNestedConstLevelsCached a auxInfo blockNames)
-        return result
+    if let some entries := auxInfo.get? name then
+      if h : entries.size > 0 then
+        -- `ownParams` is a property of the external family — identical
+        -- across all of its aux entries.
+        let nParams := entries[0].1
+        let hasNestedRef := args.any (exprMentionsAnyName · blockNames) 0 nParams
+        if hasNestedRef then
+          -- Prefer the aux entry whose levels equal the occurrence's —
+          -- the occurrence already carries a member's instantiation
+          -- (members store raw ctor levels), so the rewrite is the
+          -- identity and distinct universe specializations stay
+          -- distinct. Fall back to the last name-keyed entry for the
+          -- genuine recompute case (`Array.{u}` occurrence vs
+          -- `Array.{max u v}` member).
+          let newLevels := match entries.find? (fun (_, ls) => ls == levels) with
+            | some (_, ls) => ls
+            | none => (entries[entries.size - 1]'(by omega)).2
+          if newLevels.size == levels.size then
+            -- Rewrite head levels and recurse into args.
+            let newHead := Expr.mkConst name newLevels
+            let mut result := newHead
+            for a in args do
+              result := Expr.mkApp result
+                (← rewriteNestedConstLevelsCached a auxInfo blockNames)
+            return result
   -- Not a rewritable app — recurse into sub-expressions.
   match expr with
   | .app f a _ =>

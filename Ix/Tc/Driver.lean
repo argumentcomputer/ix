@@ -309,17 +309,21 @@ structure RoundtripResult where
   deriving Repr, Inhabited
 
 /-- Roundtrip one standalone constant: fresh ingress → egress → canonical
-    structural compare. -/
+    structural compare. `stageCut` (memory diagnosis): 1 = stop after
+    parse+verify, 2 = stop after ingress, 0 = full. -/
 def roundtripStandalone (ixonEnv : Ixon.Env) (addr : Address)
-    (verify : Bool := true) : RoundtripResult :=
+    (verify : Bool := true) (stageCut : Nat := 0) : RoundtripResult :=
   let go : IngressM (Option String) := do
     let some original ← IngressM.liftExcept
         (getConstVerified ixonEnv addr verify)
       | throw s!"missing constant {addr}"
+    if stageCut == 1 then return none
     let selfId ← ingressAnonStandalone ixonEnv addr original
     let some kc := (← get).get? selfId
       | throw s!"ingressed constant {addr} absent from kernel env"
+    if stageCut == 2 then return none
     let egressed ← IngressM.liftExcept (egressStandalone kc addr)
+    if stageCut == 3 then return none
     IngressM.liftExcept (roundtripCompare original egressed)
   match go.run {} with
   | .ok diff? _ => ⟨addr, diff?⟩
@@ -370,12 +374,19 @@ def roundtripBlock (ixonEnv : Ixon.Env) (blockAddr : Address)
     return rows
 
 /-- Roundtrip one work item (see `buildAnonWork` for the enumeration; its
-    `provenTargets` per item are exactly the addresses reported here). -/
+    `provenTargets` per item are exactly the addresses reported here).
+    `stageCut` is the memory-diagnosis pipeline cut (see
+    `roundtripStandalone`); blocks degrade to parse+verify when set. -/
 def roundtripWorkItem (ixonEnv : Ixon.Env) (item : AnonWorkItem)
-    (verify : Bool := true) : Array RoundtripResult :=
+    (verify : Bool := true) (stageCut : Nat := 0) : Array RoundtripResult :=
   match item with
-  | .standalone addr => #[roundtripStandalone ixonEnv addr verify]
-  | .block blockAddr _ _ => roundtripBlock ixonEnv blockAddr verify
+  | .standalone addr => #[roundtripStandalone ixonEnv addr verify stageCut]
+  | .block blockAddr _ _ =>
+    if stageCut != 0 then
+      match getConstVerified ixonEnv blockAddr verify with
+      | .ok _ => #[⟨blockAddr, none⟩]
+      | .error e => #[⟨blockAddr, some e⟩]
+    else roundtripBlock ixonEnv blockAddr verify
 
 /-- Chunk the work list into pure tasks for parallel roundtripping. Items
     are fully independent — each runs against a fresh kernel env, and

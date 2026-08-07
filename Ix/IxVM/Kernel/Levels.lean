@@ -449,7 +449,36 @@ def levels := ⟦
     }
   }
 
-  fn nl_eq(a: List‹&NLEntry›, b: List‹&NLEntry›) -> G {
+  -- Advance past EMPTY entries (const 0, no vars -- pure subsumption
+  -- bookkeeping; subsumption empties a dominated entry rather than
+  -- removing it). Canonicity 10.6 R5 option (b): counting them made
+  -- equality strictly finer than semantic equality (3 of 3,253,373
+  -- whole-Mathlib entries). Mirrors level.rs norm_level_eq's filter.
+  fn nl_skip_empty(l: List‹&NLEntry›) -> List‹&NLEntry› {
+    match load(l) {
+      ListNode.Nil => l,
+      ListNode.Cons(e, rest) =>
+        match load(e) {
+          NLEntry.Mk(_, c, v) =>
+            match c {
+              0 =>
+                match load(v) {
+                  ListNode.Nil => nl_skip_empty(rest),
+                  ListNode.Cons(_, _) => l,
+                },
+              _ => l,
+            },
+        },
+    }
+  }
+
+  -- Entry-wise equality of two normal forms, IGNORING empty entries
+  -- (see nl_skip_empty; nl_le's coverage checks are already trivially
+  -- satisfied by empty entries, so this makes level_equal agree with
+  -- leq-antisymmetry -- the exact semantic quotient).
+  fn nl_eq(a0: List‹&NLEntry›, b0: List‹&NLEntry›) -> G {
+    let a = nl_skip_empty(a0);
+    let b = nl_skip_empty(b0);
     match load(a) {
       ListNode.Nil =>
         match load(b) {

@@ -36,7 +36,7 @@ def mkCompileEnv (phases : Ix.CompileM.CompilePhases) : Ix.CompileM.CompileEnv :
   , nameToAddr := phases.compileEnv.named.fold (init := {})
       fun m n named => m.insert n named.addr
   , constants := phases.compileEnv.consts.fold (init := {})
-      fun m a lc => m.insert a (lc.get?.getD default)
+      fun m a lc => m.insert a lc.rawBytes
   , blobs := phases.compileEnv.blobs
   , totalBytes := 0 }
 
@@ -97,7 +97,7 @@ def compileDef (compileEnv : CompileM.CompileEnv)
 
     -- 6. Update CompileEnv with new constant
     let compileEnv'' := { compileEnv' with
-      constants := compileEnv'.constants.insert addr result.block
+      constants := compileEnv'.constants.insert addr blockBytes
       nameToNamed := compileEnv'.nameToNamed.insert ixName { addr, constMeta := result.blockMeta }
       blobs := blockState.blockBlobs.fold (fun m k v => m.insert k v) compileEnv'.blobs
       totalBytes := compileEnv'.totalBytes + blockBytes.size
@@ -272,9 +272,12 @@ def openCommitment (compileEnv : CompileM.CompileEnv) (commitAddr : Address)
   let named ← match compileEnv.nameToNamed.get? ixCommitName with
     | some n => pure n
     | none => .error s!"openCommitment: unknown commitment {commitAddr}"
-  let constant ← match compileEnv.constants.get? named.addr with
-    | some c => pure c
+  let bytes ← match compileEnv.constants.get? named.addr with
+    | some b => pure b
     | none => .error s!"openCommitment: payload {named.addr} not found"
+  let constant ← match Ixon.deConstantAt bytes 0 with
+    | .ok c => pure c
+    | .error e => .error s!"openCommitment: payload parse failed: {e}"
   return openConstantInfo constant.info
 
 end Ix.Commit

@@ -524,12 +524,12 @@ structure ConstantVal where
   name : Name
   levelParams : Array Name
   type : Expr
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure AxiomVal where
   cnst : ConstantVal
   isUnsafe : Bool
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure DefinitionVal where
   cnst : ConstantVal
@@ -537,25 +537,25 @@ structure DefinitionVal where
   hints : Lean.ReducibilityHints
   safety : Lean.DefinitionSafety
   all : Array Name
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure TheoremVal where
   cnst : ConstantVal
   value : Expr
   all : Array Name
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure OpaqueVal where
   cnst : ConstantVal
   value : Expr
   isUnsafe : Bool
   all : Array Name
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure QuotVal where
   cnst : ConstantVal
   kind : Lean.QuotKind
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure InductiveVal where
   cnst : ConstantVal
@@ -567,7 +567,7 @@ structure InductiveVal where
   isRec : Bool
   isUnsafe : Bool
   isReflexive : Bool
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure ConstructorVal where
   cnst : ConstantVal
@@ -576,13 +576,13 @@ structure ConstructorVal where
   numParams : Nat
   numFields : Nat
   isUnsafe : Bool
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure RecursorRule where
   ctor : Name
   nfields : Nat
   rhs : Expr
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 structure RecursorVal where
   cnst : ConstantVal
@@ -594,7 +594,7 @@ structure RecursorVal where
   rules : Array RecursorRule
   k : Bool
   isUnsafe : Bool
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 /-- Sum type of all Lean constant declarations (axioms, definitions, theorems, inductives, etc.). -/
 inductive ConstantInfo where
@@ -606,7 +606,7 @@ inductive ConstantInfo where
   | inductInfo (v : InductiveVal)
   | ctorInfo (v : ConstructorVal)
   | recInfo (v : RecursorVal)
-  deriving Repr, BEq
+  deriving Repr, BEq, Hashable
 
 /-- Extract the `ConstantVal` common fields from any `ConstantInfo` variant. -/
 def ConstantInfo.getCnst : ConstantInfo → ConstantVal
@@ -621,9 +621,28 @@ def ConstantInfo.getCnst : ConstantInfo → ConstantVal
 
 /-! ## Environment -/
 
-/-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`. -/
+/-- A content-addressed Lean environment: a map from `Ix.Name` to `ConstantInfo`.
+
+    `fallback?` supports STREAMING consumers (the pure-Lean compile
+    driver at whole-Mathlib scale): a pure resolver consulted when
+    `consts` misses, typically canon-on-demand against the pinned
+    elaborated Lean env. A materialized environment leaves it `none`,
+    and every existing `{ consts := … }` literal behaves exactly as
+    before. Lookups that should see the fallback go through
+    `Environment.get?`; direct `consts` iteration/containment remains
+    the explicit-map view. -/
 structure Environment where
   consts : HashMap Name ConstantInfo
+  fallback? : Option (Name → Option ConstantInfo) := none
+
+/-- Constant lookup: the materialized map first, then the lazy fallback. -/
+def Environment.get? (env : Environment) (n : Name) : Option ConstantInfo :=
+  match env.consts.get? n with
+  | some ci => some ci
+  | none =>
+    match env.fallback? with
+    | some f => f n
+    | none => none
 
 /-- Raw environment data as arrays (returned from Rust FFI).
     Use `toEnvironment` to convert to Environment with HashMaps. -/

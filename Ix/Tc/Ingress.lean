@@ -180,6 +180,34 @@ def ingressUnivTree (root : Ixon.Univ) : IngressM (KUniv .anon) := do
   | some v => return v
   | none => throw "ingressUnivTree: empty result stack"
 
+/-- Ixon universe → kernel universe via the *simplifying* smart constructors
+    (the same reduction ingress applies). Pure: no interning. -/
+def ixonUnivToK : Ixon.Univ → KUniv .anon
+  | .zero => .mkZero
+  | .succ u => .mkSucc (ixonUnivToK u)
+  | .max a b => .mkMax (ixonUnivToK a) (ixonUnivToK b)
+  | .imax a b => .mkIMax (ixonUnivToK a) (ixonUnivToK b)
+  | .var idx => .mkParam idx ()
+
+/-- Kernel universe → Ixon universe, structural (kernel levels are already
+    reduced by construction). -/
+def kUnivToIxon : KUniv .anon → Ixon.Univ
+  | .zero _ => .zero
+  | .succ u _ => .succ (kUnivToIxon u)
+  | .max a b _ => .max (kUnivToIxon a) (kUnivToIxon b)
+  | .imax a b _ => .imax (kUnivToIxon a) (kUnivToIxon b)
+  | .param idx _ _ => .var idx
+
+/-- Reduce an Ixon universe tree exactly the way ingress does (round through
+    the kernel's simplifying constructors). Used by egress's `canonConstant`
+    so the original constant's raw levels compare against the kernel's
+    reduced ones, and by meta ingress as the stage-1 level-spelling
+    decoration-presence test (canonicity §10.6): a table entry that is not
+    a `reduceIxonUniv` fixpoint reaches the kernel changed, so its
+    occurrences are decorated with the stored spelling. -/
+def reduceIxonUniv (u : Ixon.Univ) : Ixon.Univ :=
+  kUnivToIxon (ixonUnivToK u)
+
 /-- Convert the universe at table index `idx`, cached per constant. -/
 def ingressUnivIdx (ctx : IngressCtx) (idx : UInt64) :
     ConvM (KUniv .anon) := do

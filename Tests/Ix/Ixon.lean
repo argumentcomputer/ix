@@ -339,7 +339,8 @@ def envSerializationUnitTests : TestSeq :=
       surgArena 0 3,
     metaSharing := #[.app (.share 1) (.var 2), .sort 0],
     metaRefs := #[bundleConstAddr],
-    metaUnivs := #[.succ (.var 0), .max .zero (.var 1)]
+    metaUnivs := #[.succ (.var 0), .max .zero (.var 1)],
+    univPatches := #[⟨1, #[0, 2]⟩, ⟨4, #[3]⟩]
   }
   let mutsMeta : ConstantMeta := .new
     (.muts #[#[surgName.getHash], #[blkName.getHash]]

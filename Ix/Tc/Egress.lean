@@ -21,17 +21,20 @@ insensitive to sharing choices and table order): both the original constant
 and the egressed one are passed through `canonConstant`, which
 
 - expands `share` nodes transparently (the kernel provably never sees them),
+  and
 - renumbers `refs`/`univs` by first use in a fixed per-kind expression order
-  (typ, value | typ, rules | typ, ctors | member order for Muts), and
-- reduces universe trees through the kernel's simplifying `mkMax`/`mkIMax`
-  constructors (ingress stores *reduced* levels; the reduction rules are
-  independently certified by the level-algebra unit tests, so sharing this
-  one step with ingress does not let an ingress bug mask itself
-  structurally).
+  (typ, value | typ, rules | typ, ctors | member order for Muts).
+
+Universe trees compare EXACTLY (canonicity §10.6): compiled tables hold
+only `canonUniv`-fixed forms, which are `reduceIxonUniv` fixpoints (P3),
+so the kernel's simplifying `mkMax`/`mkIMax` constructors reproduce the
+stored trees node-for-node — no reduction step in the comparison.
+Pre-normal-levels artifacts with reducible spellings fail here by
+design (D4: regenerate them).
 
 Equality of canonical forms then means: everything the serialized constant
-encoded — modulo sharing layout, table numbering, and universe reduction —
-survived the trip into the kernel and back.
+encoded — modulo sharing layout and table numbering only — survived the
+trip into the kernel and back.
 
 Projection constants (`IPrj`/`CPrj`/`RPrj`/`DPrj`) carry no expressions and
 empty tables, so they are regenerated from kernel data (`block`,
@@ -51,31 +54,10 @@ namespace Ix.Tc
 
 open Std (HashMap)
 
-/-! ### Universe conversion and reduction -/
+/-! ### Universe conversion and reduction
 
-/-- Ixon universe → kernel universe via the *simplifying* smart constructors
-    (the same reduction ingress applies). Pure: no interning. -/
-def ixonUnivToK : Ixon.Univ → KUniv .anon
-  | .zero => .mkZero
-  | .succ u => .mkSucc (ixonUnivToK u)
-  | .max a b => .mkMax (ixonUnivToK a) (ixonUnivToK b)
-  | .imax a b => .mkIMax (ixonUnivToK a) (ixonUnivToK b)
-  | .var idx => .mkParam idx ()
-
-/-- Kernel universe → Ixon universe, structural (kernel levels are already
-    reduced by construction). -/
-def kUnivToIxon : KUniv .anon → Ixon.Univ
-  | .zero _ => .zero
-  | .succ u _ => .succ (kUnivToIxon u)
-  | .max a b _ => .max (kUnivToIxon a) (kUnivToIxon b)
-  | .imax a b _ => .imax (kUnivToIxon a) (kUnivToIxon b)
-  | .param idx _ _ => .var idx
-
-/-- Reduce an Ixon universe tree exactly the way ingress does (round through
-    the kernel's simplifying constructors). Used by `canonConstant` so the
-    original constant's raw levels compare against the kernel's reduced ones. -/
-def reduceIxonUniv (u : Ixon.Univ) : Ixon.Univ :=
-  kUnivToIxon (ixonUnivToK u)
+`ixonUnivToK` / `kUnivToIxon` / `reduceIxonUniv` live in `Ix.Tc.Ingress`
+(shared with meta ingress's decoration-presence test). -/
 
 /-! ### Expression egress -/
 
@@ -422,10 +404,163 @@ inductive CFrame where
   | memoShare (idx : UInt64)
   deriving Inhabited
 
+/-- Runtime frame set for `canonExprImpl`: `CFrame` plus the
+    pointer-memo write-back frame. -/
+private inductive CFrameP where
+  | process (e : Ixon.Expr)
+  | appDone
+  | lamDone
+  | allDone
+  | letDone (nd : Bool)
+  | prjDone (refIdx field : UInt64)
+  | memoShare (idx : UInt64)
+  | memoPtr (key : USize)
+  deriving Inhabited
+
+/-- Runtime implementation of `canonExpr` with a call-local
+    POINTER-identity memo over composite nodes, in addition to the
+    `.share`-index memo.
+
+    The pure walk's only memo is share-INDEX-keyed, which linearizes
+    constants whose sharing is explicit `.share` nodes (the parsed
+    form). An EGRESSED constant has no `.share` nodes — its sharing is
+    in-memory pointer sharing — so the pure walk re-processes and
+    re-materializes every shared subtree per occurrence: exponential
+    tree unfolding on deeply-shared constants (the whole-Mathlib
+    validate-lean phase-3 memory explosion; multi-GiB transients from
+    2 KB constants). The pointer memo restores linearity.
+
+    Soundness of `ptrAddrUnsafe` keys: `Ixon.Expr` values are immutable,
+    Lean's RC heap never relocates live objects, and every key is the
+    address of a subtree of `root`, which the caller keeps alive for the
+    whole call — so keys cannot be recycled mid-call, and a hit always
+    denotes the structurally-same subtree. The memoized output is a pure
+    function of the subtree, so results are identical either path. -/
+private unsafe def canonExprImpl (sharing : Array Ixon.Expr) (refs : Array Address)
+    (univs : Array Ixon.Univ) (root : Ixon.Expr) : CanonM Ixon.Expr := do
+  let resolveRef (i : UInt64) : CanonM UInt64 := do
+    let some addr := refs[i.toNat]?
+      | throw s!"canonExpr: ref index {i} out of range (len {refs.size})"
+    CanonM.internRef addr
+  let resolveUniv (i : UInt64) : CanonM UInt64 := do
+    let some u := univs[i.toNat]?
+      | throw s!"canonExpr: universe index {i} out of range (len {univs.size})"
+    CanonM.internUniv u
+  let resolveUnivs (idxs : Array UInt64) : CanonM (Array UInt64) := do
+    let mut out : Array UInt64 := Array.mkEmpty idxs.size
+    for i in idxs do
+      out := out.push (← resolveUniv i)
+    return out
+  let mut ptrMemo : Std.HashMap USize Ixon.Expr := {}
+  let mut stack : Array CFrameP := #[.process root]
+  let mut values : Array Ixon.Expr := #[]
+  while !stack.isEmpty do
+    let frame := stack.back!
+    stack := stack.pop
+    match frame with
+    | .process e =>
+      match e with
+      | .share idx =>
+        if let some cached := (← get).shareMemo[idx]? then
+          values := values.push cached
+        else
+          let some expansion := sharing[idx.toNat]?
+            | throw s!"canonExpr: share index {idx} out of range (len {sharing.size})"
+          stack := stack.push (.memoShare idx) |>.push (.process expansion)
+      | .var idx =>
+        values := values.push (.var idx)
+      | .sort uidx =>
+        values := values.push (.sort (← resolveUniv uidx))
+      | .ref refIdx uidxs =>
+        let r ← resolveRef refIdx
+        values := values.push (.ref r (← resolveUnivs uidxs))
+      | .recur recIdx uidxs =>
+        values := values.push (.recur recIdx (← resolveUnivs uidxs))
+      | .nat refIdx =>
+        values := values.push (.nat (← resolveRef refIdx))
+      | .str refIdx =>
+        values := values.push (.str (← resolveRef refIdx))
+      | .app f a =>
+        let k := ptrAddrUnsafe e
+        if let some v := ptrMemo[k]? then
+          values := values.push v
+        else
+          stack := stack.push (.memoPtr k) |>.push .appDone
+            |>.push (.process a) |>.push (.process f)
+      | .lam ty body =>
+        let k := ptrAddrUnsafe e
+        if let some v := ptrMemo[k]? then
+          values := values.push v
+        else
+          stack := stack.push (.memoPtr k) |>.push .lamDone
+            |>.push (.process body) |>.push (.process ty)
+      | .all ty body =>
+        let k := ptrAddrUnsafe e
+        if let some v := ptrMemo[k]? then
+          values := values.push v
+        else
+          stack := stack.push (.memoPtr k) |>.push .allDone
+            |>.push (.process body) |>.push (.process ty)
+      | .letE nd ty val body =>
+        let k := ptrAddrUnsafe e
+        if let some v := ptrMemo[k]? then
+          values := values.push v
+        else
+          stack := stack.push (.memoPtr k) |>.push (.letDone nd)
+            |>.push (.process body) |>.push (.process val)
+            |>.push (.process ty)
+      | .prj typeRefIdx field val =>
+        let k := ptrAddrUnsafe e
+        if let some v := ptrMemo[k]? then
+          values := values.push v
+        else
+          let r ← resolveRef typeRefIdx
+          stack := stack.push (.memoPtr k) |>.push (.prjDone r field)
+            |>.push (.process val)
+    | .appDone =>
+      let a := values.back!; values := values.pop
+      let f := values.back!; values := values.pop
+      values := values.push (.app f a)
+    | .lamDone =>
+      let body := values.back!; values := values.pop
+      let ty := values.back!; values := values.pop
+      values := values.push (.lam ty body)
+    | .allDone =>
+      let body := values.back!; values := values.pop
+      let ty := values.back!; values := values.pop
+      values := values.push (.all ty body)
+    | .letDone nd =>
+      let body := values.back!; values := values.pop
+      let val := values.back!; values := values.pop
+      let ty := values.back!; values := values.pop
+      values := values.push (.letE nd ty val body)
+    | .prjDone refIdx field =>
+      let val := values.back!; values := values.pop
+      values := values.push (.prj refIdx field val)
+    | .memoShare idx =>
+      let v := values.back!
+      modify fun st => { st with shareMemo := st.shareMemo.insert idx v }
+    | .memoPtr k =>
+      ptrMemo := ptrMemo.insert k values.back!
+  match values.back? with
+  | some v =>
+    if values.size != 1 then
+      throw s!"canonExpr: unbalanced value stack ({values.size} values)"
+    return v
+  | none => throw "canonExpr: empty result stack"
+
 /-- Rewrite one expression of a constant into canonical form: `share`
     expanded against `sharing`, `ref`/`prj`/`nat`/`str` addresses re-interned
-    first-use, universe indices resolved through `univs`, reduced, and
-    re-interned. `recur` member indices are structural and kept as-is. -/
+    first-use, universe indices resolved through `univs` and re-interned
+    EXACTLY (canonicity §10.6 — stored tables are `reduceIxonUniv`
+    fixpoints, so no reduction step; see the module doc).
+    `recur` member indices are structural and kept as-is.
+
+    The runtime implementation (`canonExprImpl`) adds a call-local
+    pointer-identity memo so pointer-shared (share-node-free) inputs —
+    egressed constants — canonicalize in linear time and space; this
+    pure body is the reference semantics. -/
+@[implemented_by canonExprImpl]
 def canonExpr (sharing : Array Ixon.Expr) (refs : Array Address)
     (univs : Array Ixon.Univ) (root : Ixon.Expr) : CanonM Ixon.Expr := do
   let resolveRef (i : UInt64) : CanonM UInt64 := do
@@ -435,7 +570,7 @@ def canonExpr (sharing : Array Ixon.Expr) (refs : Array Address)
   let resolveUniv (i : UInt64) : CanonM UInt64 := do
     let some u := univs[i.toNat]?
       | throw s!"canonExpr: universe index {i} out of range (len {univs.size})"
-    CanonM.internUniv (reduceIxonUniv u)
+    CanonM.internUniv u
   let resolveUnivs (idxs : Array UInt64) : CanonM (Array UInt64) := do
     let mut out : Array UInt64 := Array.mkEmpty idxs.size
     for i in idxs do
@@ -650,13 +785,109 @@ def describeDiff (a b : Ixon.Constant) : Option String := Id.run do
   | ia, ib =>
     return some s!"constant kind differs: {truncRepr ia 60} ≠ {truncRepr ib 60}"
 
+/-- Pair-pointer-memoized structural equality on `Ixon.Expr` (runtime
+    twin of `==`). `canonExpr`'s pointer memo returns the SAME output
+    object for every occurrence of a shared input subtree, so canonical
+    forms are in-memory DAGs whose repeated substructures are
+    pointer-identical; the derived `BEq` still walks them as trees —
+    exponential time on deeply shared constants (the 5.6-hour
+    whole-Mathlib phase 3). Memoizing verdicts per (ptr, ptr) pair makes
+    the comparison linear in DAG size. Same soundness argument as
+    `canonExprImpl`: both roots are held live by the caller for the whole
+    call, so subtree addresses cannot be recycled mid-call. -/
+private unsafe def exprEqDagImpl (a b : Ixon.Expr) : Bool :=
+  (go a b).run' {}
+where
+  go (a b : Ixon.Expr) : StateM (Std.HashMap (USize × USize) Bool) Bool := do
+    if ptrAddrUnsafe a == ptrAddrUnsafe b then
+      return true
+    let key := (ptrAddrUnsafe a, ptrAddrUnsafe b)
+    if let some v := (← get)[key]? then
+      return v
+    let r ← match a, b with
+      | .var i, .var j => pure (i == j)
+      | .sort u, .sort v => pure (u == v)
+      | .ref r1 us1, .ref r2 us2 => pure (r1 == r2 && us1 == us2)
+      | .recur r1 us1, .recur r2 us2 => pure (r1 == r2 && us1 == us2)
+      | .nat r1, .nat r2 => pure (r1 == r2)
+      | .str r1, .str r2 => pure (r1 == r2)
+      | .share i, .share j => pure (i == j)
+      | .app f1 a1, .app f2 a2 => go f1 f2 <&&> go a1 a2
+      | .lam t1 b1, .lam t2 b2 => go t1 t2 <&&> go b1 b2
+      | .all t1 b1, .all t2 b2 => go t1 t2 <&&> go b1 b2
+      | .letE n1 t1 v1 b1, .letE n2 t2 v2 b2 =>
+        pure (n1 == n2) <&&> go t1 t2 <&&> go v1 v2 <&&> go b1 b2
+      | .prj r1 f1 v1, .prj r2 f2 v2 =>
+        pure (r1 == r2 && f1 == f2) <&&> go v1 v2
+      | _, _ => pure false
+    modify (·.insert key r)
+    return r
+
+/-- DAG-aware runtime equality for `Ixon.Expr`; `==` is the reference
+    semantics. -/
+@[implemented_by exprEqDagImpl]
+def exprEqDag (a b : Ixon.Expr) : Bool := a == b
+
+/-- `Ixon.Definition` equality, expressions via `exprEqDag`. -/
+def defnEqDag (d1 d2 : Ixon.Definition) : Bool :=
+  { d1 with typ := .var 0, value := .var 0 } ==
+      ({ d2 with typ := .var 0, value := .var 0 } : Ixon.Definition)
+    && exprEqDag d1.typ d2.typ && exprEqDag d1.value d2.value
+
+/-- `Ixon.Recursor` equality, expressions via `exprEqDag`. -/
+def recrEqDag (r1 r2 : Ixon.Recursor) : Bool :=
+  { r1 with typ := .var 0, rules := #[] } ==
+      ({ r2 with typ := .var 0, rules := #[] } : Ixon.Recursor)
+    && exprEqDag r1.typ r2.typ
+    && r1.rules.size == r2.rules.size
+    && (r1.rules.zip r2.rules).all (fun (x, y) =>
+      x.fields == y.fields && exprEqDag x.rhs y.rhs)
+
+/-- `Ixon.Inductive` equality, expressions via `exprEqDag`. -/
+def indcEqDag (i1 i2 : Ixon.Inductive) : Bool :=
+  { i1 with typ := .var 0, ctors := #[] } ==
+      ({ i2 with typ := .var 0, ctors := #[] } : Ixon.Inductive)
+    && exprEqDag i1.typ i2.typ
+    && i1.ctors.size == i2.ctors.size
+    && (i1.ctors.zip i2.ctors).all (fun (x, y) =>
+      { x with typ := .var 0 } == ({ y with typ := .var 0 } : Ixon.Constructor)
+        && exprEqDag x.typ y.typ)
+
+/-- `Ixon.Constant` equality with every expression field compared through
+    `exprEqDag` (linear on the canonical DAGs `canonConstant` produces);
+    non-expression fields use plain `==`. Semantics identical to `==` —
+    `exprEqDag`'s reference IS `==`. -/
+def constEqDag (a b : Ixon.Constant) : Bool :=
+  a.sharing.size == b.sharing.size
+    && (a.sharing.zip b.sharing).all (fun (x, y) => exprEqDag x y)
+    && a.refs == b.refs && a.univs == b.univs
+    && match a.info, b.info with
+      | .defn d1, .defn d2 => defnEqDag d1 d2
+      | .recr r1, .recr r2 => recrEqDag r1 r2
+      | .axio a1, .axio a2 =>
+        a1.lvls == a2.lvls && a1.isUnsafe == a2.isUnsafe
+          && exprEqDag a1.typ a2.typ
+      | .quot q1, .quot q2 =>
+        q1.lvls == q2.lvls && q1.kind == q2.kind && exprEqDag q1.typ q2.typ
+      | .muts m1, .muts m2 =>
+        m1.size == m2.size
+          && (m1.zip m2).all (fun (x, y) =>
+            match x, y with
+            | .defn d1, .defn d2 => defnEqDag d1 d2
+            | .indc i1, .indc i2 => indcEqDag i1 i2
+            | .recr r1, .recr r2 => recrEqDag r1 r2
+            | _, _ => false)
+      | ia, ib => ia == ib
+
 /-- Structural roundtrip comparison: canonicalize both sides and compare.
-    `none` = roundtrip preserved structure. -/
+    `none` = roundtrip preserved structure. The equality is DAG-aware
+    (`constEqDag`): canonical forms of pointer-shared inputs are compact
+    DAGs, and tree-walking `==` is exponential on them. -/
 def roundtripCompare (original egressed : Ixon.Constant) :
     Except IngressErr (Option String) := do
   let ca ← canonConstant original
   let cb ← canonConstant egressed
-  if ca == cb then
+  if constEqDag ca cb then
     return none
   return some ((describeDiff ca cb).getD "canonical forms differ (no diff located)")
 

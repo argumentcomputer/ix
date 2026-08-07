@@ -541,10 +541,26 @@ inductive ConstantMetaInfo where
   | muts (all : Array (Array Address)) (auxLayout : Option AuxLayout)
   deriving Inhabited, BEq, Repr
 
+/-- Per-occurrence original level-spelling patch (canonicity §10.6):
+    keyed by the metadata-arena node index of a `sort`/`ref`/`recur`
+    occurrence whose original level-index list differs from its
+    canonical one, carrying the FULL original list in the VIRTUAL univ
+    index space (idx < `univs.size` → primary table entry, already
+    canonical; idx ≥ `univs.size` → `metaUnivs[idx - univs.size]`,
+    the original spelling). `sort` occurrences carry a 1-element list.
+    Presentation-only: read by the decompiler and by META kernel
+    ingress (the stage-2 decoration source); anon ingress — the trust
+    boundary — never reads patches. -/
+structure UnivPatch where
+  arenaIdx : UInt64
+  univIdxs : Array UInt64
+  deriving Inhabited, BEq, Repr
+
 /-- Per-constant metadata wrapper: variant payload + extension tables.
     The extension tables (`metaSharing`/`metaRefs`/`metaUnivs`) form a
     virtual address space extending the primary `Constant` tables, used by
-    `callSite` nodes in the metadata arena for call-site surgery roundtrip.
+    `callSite` nodes in the metadata arena for call-site surgery roundtrip
+    and by `univPatches` for original level spellings (canonicity §10.6).
     Mirrors Rust `ixon::metadata::ConstantMeta`. -/
 structure ConstantMeta where
   info : ConstantMetaInfo := .empty
@@ -554,8 +570,12 @@ structure ConstantMeta where
   /-- Extension refs table (addresses referenced by collapsed arg
       expressions), serialized as raw 32-byte addresses (not name-indexed). -/
   metaRefs : Array Address := #[]
-  /-- Extension univs table (universe terms in collapsed arg expressions). -/
+  /-- Extension univs table (universe terms in collapsed arg expressions,
+      and original level spellings referenced by `univPatches`). -/
   metaUnivs : Array Univ := #[]
+  /-- Original level-spelling patches, keyed by metadata-arena index
+      (canonicity §10.6). Empty until the stage-2 compiler emits them. -/
+  univPatches : Array UnivPatch := #[]
   deriving Inhabited, BEq, Repr
 
 /-- Wrap a `ConstantMetaInfo` payload (no extension tables). Mirrors Rust
@@ -566,9 +586,11 @@ def ConstantMeta.new (info : ConstantMetaInfo) : ConstantMeta := { info }
     pre-wrapper `.empty` construction idiom working. -/
 def ConstantMeta.empty : ConstantMeta := {}
 
-/-- Whether this metadata has any surgery extension tables. -/
+/-- Whether this metadata has any wrapper extension payload (surgery
+    tables or level-spelling patches). -/
 def ConstantMeta.hasExtensions (cm : ConstantMeta) : Bool :=
   !cm.metaSharing.isEmpty || !cm.metaRefs.isEmpty || !cm.metaUnivs.isEmpty
+    || !cm.univPatches.isEmpty
 
 /-- Short kind name for diagnostics (mirrors Rust `kind_name`). -/
 def ConstantMetaInfo.kindName : ConstantMetaInfo → String
@@ -1614,8 +1636,10 @@ def putConstantMetaInfoIndexed (cm : ConstantMetaInfo) (idx : NameIndex) : PutM 
 
 /-- Serialize ConstantMeta (wrapper) with indexed addresses: the variant
     payload, then the three extension tables — sharing exprs (`putExpr`),
-    refs (raw 32-byte addresses, NOT name-indexed), univs (`putUniv`).
-    Mirrors Rust `ConstantMeta::put_with`. -/
+    refs (raw 32-byte addresses, NOT name-indexed), univs (`putUniv`) —
+    then the level-spelling patches (per entry: Tag0 arenaIdx, Tag0 len,
+    Tag0 virtual univ indices; canonicity §10.6). Mirrors Rust
+    `ConstantMeta::put_with`. -/
 def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := do
   putConstantMetaInfoIndexed cm.info idx
   putTag0 ⟨cm.metaSharing.size.toUInt64⟩
@@ -1624,6 +1648,11 @@ def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := 
   for a in cm.metaRefs do Serialize.put a
   putTag0 ⟨cm.metaUnivs.size.toUInt64⟩
   for u in cm.metaUnivs do putUniv u
+  putTag0 ⟨cm.univPatches.size.toUInt64⟩
+  for p in cm.univPatches do
+    putTag0 ⟨p.arenaIdx⟩
+    putTag0 ⟨p.univIdxs.size.toUInt64⟩
+    for i in p.univIdxs do putTag0 ⟨i⟩
 
 def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo := do
   let cm ← match ← getU8 with
@@ -1701,7 +1730,10 @@ def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo 
   pure cm
 
 /-- Deserialize ConstantMeta (wrapper): variant payload + the three
-    extension tables. Mirrors Rust `ConstantMeta::get_with`. -/
+    extension tables + the level-spelling patches. Mirrors Rust
+    `ConstantMeta::get_with`. An old (pre-normal-levels) file first
+    trips here or at the §5 framing assert — both carry the recompile
+    hint. -/
 def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
   let info ← getConstantMetaInfoIndexed rev
   let sharingLen := (← getTag0).size.toNat
@@ -1716,7 +1748,16 @@ def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
   let mut metaUnivs : Array Univ := #[]
   for _ in [0:univsLen] do
     metaUnivs := metaUnivs.push (← getUniv)
-  pure { info, metaSharing, metaRefs, metaUnivs }
+  let patchesLen := (← getTag0).size.toNat
+  let mut univPatches : Array UnivPatch := #[]
+  for _ in [0:patchesLen] do
+    let arenaIdx := (← getTag0).size
+    let idxsLen := (← getTag0).size.toNat
+    let mut univIdxs : Array UInt64 := #[]
+    for _ in [0:idxsLen] do
+      univIdxs := univIdxs.push (← getTag0).size
+    univPatches := univPatches.push { arenaIdx, univIdxs }
+  pure { info, metaSharing, metaRefs, metaUnivs, univPatches }
 
 /-- Serialize Comm (simple - just two addresses). -/
 def putComm (c : Comm) : PutM Unit := do
@@ -2525,7 +2566,8 @@ def getEnv : GetM Env := do
     let stAfter ← get
     if stAfter.idx - stBefore.idx != metaLen then
       throw s!"Env.get: §5 metadata blob length mismatch (header says \
-               {metaLen}, parsed {stAfter.idx - stBefore.idx})"
+               {metaLen}, parsed {stAfter.idx - stBefore.idx}) — possibly a \
+               pre-normal-levels .ixe; recompile it"
     match namesLookup.get? nameAddr with
     | some name =>
       let namedEntry : Named := { addr := constAddr, constMeta, original, hints }
@@ -2560,6 +2602,394 @@ def getEnv : GetM Env := do
   pure env
 
 end Env
+
+/-! ### Verified lazy env load (streaming serde gate)
+
+`deEnv` + `serEnv` materialize every §2 constant and every §5 metadata
+arena, then rebuild the whole 3+ GB byte image to compare — at
+whole-Mathlib scale that is a >100 GiB resident spike (measured), while
+the serialized format was explicitly designed for skipping (§2 bodies
+and §5 metadata blobs are length-prefixed). The verified lazy load
+keeps the gate's exact strength — every unit of the file is parsed with
+the pure reader, re-serialized with the pure writer, and compared
+byte-for-byte against its input span, with the spans covering the file
+gaplessly — but transiently, one unit at a time. What it retains:
+constants as zero-copy `LazyConstant.ofSlice` windows, §5 rows with
+their metadata as byte windows (`NamedRow`, materialized per name on
+demand), and the compact sections (blobs, names, hints, comms) eagerly.
+
+Writer-contract checks the whole-image compare used to catch
+structurally are asserted directly: §1/§2/§6 ascending key order, §5
+ascending name order, §4 order equal to `topologicalSortNames` of the
+parsed name set, the merkle root, and the trailing-bytes check. -/
+
+/-- One §5 entry with its metadata deferred as a byte window into the
+    backing buffer. `materialize` parses the window into a full `Named`. -/
+structure NamedRow where
+  name : Ix.Name
+  /-- §4 position of `name` (the wire key). -/
+  nameIdx : UInt64
+  /-- §2 rank of `addr` (the wire key). -/
+  constRank : UInt64
+  addr : Address
+  hints : Option Lean.ReducibilityHints := none
+  /-- Offset/length of the metadata blob (ConstantMeta + original). -/
+  metaOff : Nat
+  metaLen : Nat
+  deriving Inhabited
+
+/-- Result of `deEnvVerifiedLazy`: a lazily-backed `Env` (constants are
+    `ofSlice` windows; `named` is EMPTY — use `namedRows`), plus the §5
+    rows and the §4 reverse index needed to materialize their metadata. -/
+structure LazyEnvParts where
+  /-- `named := {}`; everything else populated (consts lazily). -/
+  env : Env
+  namedRows : Array NamedRow
+  /-- Row index by name. -/
+  rowIdx : Std.HashMap Ix.Name Nat
+  nameRev : NameReverseIndex
+  /-- The full serialized image; every window points into it. -/
+  backing : ByteArray
+
+/-- Parse a `NamedRow`'s metadata window into a full `Named`. -/
+def NamedRow.materialize (row : NamedRow) (backing : ByteArray)
+    (rev : NameReverseIndex) : Except String Named :=
+  let getm : GetM Named := do
+    let constMeta ← getConstantMetaIndexed rev
+    let origTag ← getU8
+    let original ← match origTag with
+      | 0 => pure none
+      | 1 => do
+        let origAddr : Address ← Serialize.get
+        let origMeta ← getConstantMetaIndexed rev
+        pure (some (origAddr, origMeta))
+      | x => throw s!"NamedRow.materialize: invalid original tag {x}"
+    pure { addr := row.addr, constMeta, original, hints := row.hints }
+  match getm.run { idx := row.metaOff, bytes := backing } with
+  | .ok n _ => .ok n
+  | .error e _ => .error e
+
+/-- `frag == bytes[start : start + frag.size]`, no copy. -/
+def fragMatchesAt (bytes : ByteArray) (start : Nat) (frag : ByteArray) : Bool := Id.run do
+  if start + frag.size > bytes.size then return false
+  for i in [0:frag.size] do
+    if bytes[start + i]! != frag[i]! then return false
+  return true
+
+/-- Require the pure writer's bytes for the unit parsed since `start` to
+    reproduce the input span exactly. Units are checked back-to-back from
+    offset 0, so together with the trailing-bytes check the spans cover
+    the whole image. -/
+private def reserCheck (label : String) (start : Nat) (frag : ByteArray) : GetM Unit := do
+  let st ← get
+  if start + frag.size != st.idx then
+    throw s!"serde gate ({label}): writer produced {frag.size} bytes for \
+the {st.idx - start}-byte span at offset {start}"
+  unless fragMatchesAt st.bytes start frag do
+    throw s!"serde gate ({label}): writer bytes differ from input in span \
+{start}..{st.idx}"
+
+/-- Coarse progress marker from the pure loader (immediate stderr via
+    `dbgTrace`; the CLI's stdout is block-buffered and useless for
+    locating where a long load is). -/
+@[inline] private def loadTrace (msg : String) : GetM Unit :=
+  dbgTrace s!"[deEnvVerifiedLazy] {msg}" fun _ => pure ()
+
+/-- Streaming counterpart of `deEnv` + `serEnv` roundtrip verification.
+    See the section comment above. -/
+def getEnvVerifiedLazy : GetM LazyEnvParts := do
+  -- Header (verified as one span; the root's VALUE is verified against
+  -- the recomputed merkle root after §2, exactly as `getEnv` does).
+  let hdrStart := (← get).idx
+  let tag ← getTag4
+  if tag.flag != Env.FLAG then
+    throw s!"Env.get: expected flag 0x{Env.FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
+  if tag.size != 0 then
+    throw s!"Env.get: expected Env variant 0, got {tag.size}"
+  let storedRoot : Address ← Serialize.get
+  let mainTag ← getU8
+  let main : Option Address ← match mainTag with
+    | 0 => pure none
+    | 1 => some <$> Serialize.get
+    | x => throw s!"Env.get: invalid main tag {x} in bundle header — \
+                    possibly a pre-bundle-format .ixe; recompile it"
+  let numAssumptions := (← getTag0).size
+  let mut assumptionArr : Array Address := #[]
+  for _ in [:numAssumptions.toNat] do
+    let addr : Address ← Serialize.get
+    if let some prev := assumptionArr.back? then
+      if !(compare prev addr).isLT then
+        throw "Env.get: assumptions not strictly ascending"
+    assumptionArr := assumptionArr.push addr
+  reserCheck "header" hdrStart <| runPut do
+    putTag4 ⟨Env.FLAG, 0⟩
+    Serialize.put storedRoot
+    match main with
+    | none => putU8 0
+    | some addr => do putU8 1; Serialize.put addr
+    putTag0 ⟨assumptionArr.size.toUInt64⟩
+    for addr in assumptionArr do Serialize.put addr
+
+  let mut env : Env := {
+    main
+    assumptions := assumptionArr.foldl (·.insert ·) {}
+  }
+
+  -- Section 1: Blobs (hash-verified; ascending order is the writer's
+  -- sort contract, asserted here since no whole-image compare runs).
+  let s1Start := (← get).idx
+  let numBlobs := (← getTag0).size
+  reserCheck "§1 count" s1Start <| runPut (putTag0 ⟨numBlobs⟩)
+  loadTrace s!"header ok; §1 blobs: {numBlobs}"
+  let mut prevBlobAddr : Option Address := none
+  for _ in [:numBlobs.toNat] do
+    let eStart := (← get).idx
+    let addr ← Serialize.get
+    let len := (← getTag0).size
+    let bytes ← getBytes len.toNat
+    if Address.blake3 bytes != addr then
+      throw s!"Env.get: blob bytes hash mismatch for {reprStr (toString addr)}"
+    if let some prev := prevBlobAddr then
+      if !(compare prev addr).isLT then
+        throw "Env.get: §1 blobs not in strictly ascending address order"
+    prevBlobAddr := some addr
+    env := { env with blobs := env.blobs.insert addr bytes }
+    reserCheck "§1 blob" eStart <| runPut do
+      Serialize.put addr
+      putTag0 ⟨bytes.size.toUInt64⟩
+      putBytes bytes
+
+  -- Section 2: Consts. The body is parsed with the pure reader and
+  -- re-serialized with the pure writer (the gate's core), then retained
+  -- only as a zero-copy window.
+  let s2Start := (← get).idx
+  let numConsts := (← getTag0).size
+  reserCheck "§2 count" s2Start <| runPut (putTag0 ⟨numConsts⟩)
+  loadTrace s!"§2 consts: {numConsts}"
+  let mut constOrder : Array Address := #[]
+  let backing := (← get).bytes
+  for _ in [:numConsts.toNat] do
+    let eStart := (← get).idx
+    let addr ← Serialize.get
+    let len := (← getTag0).size
+    let bodyStart := (← get).idx
+    let bytes ← getBytes len.toNat
+    if Address.blake3 bytes != addr then
+      throw s!"Env.get: const bytes hash mismatch for {reprStr (toString addr)}"
+    if let some prev := constOrder.back? then
+      if !(compare prev addr).isLT then
+        throw "Env.get: §2 constants not in strictly ascending address order"
+    constOrder := constOrder.push addr
+    if constOrder.size % 100000 == 0 then
+      loadTrace s!"§2 at {constOrder.size}/{numConsts} (byte {eStart})"
+    match deConstant bytes with
+    | .ok constant =>
+      reserCheck "§2 const" eStart <| runPut do
+        Serialize.put addr
+        putTag0 ⟨len⟩
+        putBytes (serConstant constant)
+      env := { env with
+        consts := env.consts.insert addr
+          (LazyConstant.ofSlice backing bodyStart len.toNat) }
+    | .error e =>
+      throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
+
+  if let some m := main then
+    if !env.consts.contains m then
+      throw s!"Env.get: main {reprStr (toString m)} not present in consts"
+
+  -- Section 3: anon_hints (delta-coded §2 ranks; ascending by design).
+  let s3Start := (← get).idx
+  let numHints := (← getTag0).size
+  reserCheck "§3 count" s3Start <| runPut (putTag0 ⟨numHints⟩)
+  if numHints.toNat > constOrder.size then
+    throw s!"Env.get: hint count {numHints} exceeds const count \
+             {constOrder.size} — possibly a pre-compact-keys .ixe; \
+             recompile it"
+  let mut cursor : Nat := 0
+  for _ in [:numHints.toNat] do
+    let eStart := (← get).idx
+    let delta := (← getTag0).size
+    if delta == 0 then
+      throw "Env.get: zero hint index delta (§3 must be strictly \
+             ascending) — possibly a pre-compact-keys .ixe; recompile it"
+    let idx := cursor + delta.toNat - 1
+    let addr ← match constOrder[idx]? with
+      | some a => pure a
+      | none =>
+        throw s!"Env.get: hint index {idx} out of range ({constOrder.size} \
+                 consts) — possibly a pre-compact-keys .ixe; recompile it"
+    let hints ← getFusedHint
+    env := { env with anonHints := env.anonHints.insert addr hints }
+    cursor := idx + 1
+    reserCheck "§3 hint" eStart <| runPut do
+      putTag0 ⟨delta⟩
+      putFusedHint hints
+
+  -- Section 4: Names. Order must equal the writer's topological sort of
+  -- the parsed set (the whole-image compare used to pin this).
+  let s4Start := (← get).idx
+  let numNames := (← getTag0).size
+  reserCheck "§4 count" s4Start <| runPut (putTag0 ⟨numNames⟩)
+  loadTrace s!"§3 done; §4 names: {numNames}"
+  let mut namesLookup : Std.HashMap Address Ix.Name := {}
+  let mut nameRev : NameReverseIndex := #[]
+  namesLookup := namesLookup.insert Ix.Name.mkAnon.getHash Ix.Name.mkAnon
+  for _ in [:numNames.toNat] do
+    let eStart := (← get).idx
+    let addr ← Serialize.get
+    let name ← Env.getNameComponent namesLookup
+    nameRev := nameRev.push addr
+    namesLookup := namesLookup.insert addr name
+    env := { env with names := env.names.insert addr name }
+    reserCheck "§4 name" eStart <| runPut do
+      Serialize.put addr
+      Env.putNameComponent name
+  loadTrace "§4 parsed; topological order check"
+  let sortedNames := Env.topologicalSortNames env.names
+  if sortedNames.map (·.1) != nameRev then
+    throw "serde gate (§4): name order differs from the writer's \
+           topological sort of the same name set"
+
+  -- §5 metadata re-serialization resolves name references through the
+  -- §4 positions, exactly as the writer does.
+  let fileNameIdx : NameIndex := nameRev.zipIdx.foldl
+    (fun acc (addr, i) => acc.insert addr i.toUInt64) {}
+
+  -- Section 5: Named — header fields eager, metadata parsed and
+  -- writer-checked transiently, retained as a window.
+  let s5Start := (← get).idx
+  let numNamed := (← getTag0).size
+  reserCheck "§5 count" s5Start <| runPut (putTag0 ⟨numNamed⟩)
+  loadTrace s!"§5 named: {numNamed}"
+  let mut namedRows : Array NamedRow := #[]
+  let mut rowIdx : Std.HashMap Ix.Name Nat := {}
+  let mut prevName : Option Ix.Name := none
+  for _ in [:numNamed.toNat] do
+    let eStart := (← get).idx
+    let nameIdx := (← getTag0).size
+    let nameAddr ← match nameRev[nameIdx.toNat]? with
+      | some a => pure (a : Address)
+      | none =>
+        throw s!"Env.get: §5 name index {nameIdx} out of range \
+                 ({nameRev.size} names) — possibly a pre-compact-keys .ixe; \
+                 recompile it"
+    let constRank := (← getTag0).size
+    let constAddr ← match constOrder[constRank.toNat]? with
+      | some a => pure a
+      | none =>
+        throw s!"Env.get: §5 constant index {constRank} out of range \
+                 ({constOrder.size} consts) — possibly a pre-compact-keys \
+                 .ixe; recompile it"
+    let hints ← getFusedOptHint
+    let metaLen := (← getTag0).size.toNat
+    let stBefore ← get
+    if stBefore.bytes.size - stBefore.idx < metaLen then
+      throw s!"Env.get: §5 metadata blob needs {metaLen} bytes, have \
+               {stBefore.bytes.size - stBefore.idx} — possibly a \
+               pre-compact-keys .ixe; recompile it"
+    let constMeta ← getConstantMetaIndexed nameRev
+    let origTag ← getU8
+    let original ← match origTag with
+    | 0 => pure none
+    | 1 => do
+      let origAddr : Address ← Serialize.get
+      let origMeta ← getConstantMetaIndexed nameRev
+      pure (some (origAddr, origMeta))
+    | x => throw s!"getEnv: Named.original: invalid tag {x}"
+    let stAfter ← get
+    if stAfter.idx - stBefore.idx != metaLen then
+      throw s!"Env.get: §5 metadata blob length mismatch (header says \
+               {metaLen}, parsed {stAfter.idx - stBefore.idx}) — possibly a \
+               pre-normal-levels .ixe; recompile it"
+    let name ← match namesLookup.get? nameAddr with
+      | some name => pure name
+      | none =>
+        throw s!"getEnv: named entry references unknown name address {reprStr (toString nameAddr)}"
+    if let some prev := prevName then
+      if !(compare prev name).isLT then
+        throw "serde gate (§5): named entries not in ascending name order"
+    prevName := some name
+    reserCheck "§5 named" eStart <| runPut do
+      putTag0 ⟨nameIdx⟩
+      putTag0 ⟨constRank⟩
+      putFusedOptHint hints
+      let blob := runPut do
+        putConstantMetaIndexed constMeta fileNameIdx
+        match original with
+        | none => putU8 0
+        | some (origAddr, origMeta) =>
+          putU8 1
+          Serialize.put origAddr
+          putConstantMetaIndexed origMeta fileNameIdx
+      putTag0 ⟨blob.size.toUInt64⟩
+      putBytes blob
+    rowIdx := rowIdx.insert name namedRows.size
+    namedRows := namedRows.push
+      { name, nameIdx, constRank, addr := constAddr, hints,
+        metaOff := stBefore.idx, metaLen }
+    if namedRows.size % 100000 == 0 then
+      loadTrace s!"§5 at {namedRows.size}/{numNamed} (byte {eStart})"
+    env := { env with addrToName := env.addrToName.insert constAddr name }
+
+  -- Section 6: Comms.
+  let s6Start := (← get).idx
+  let numComms := (← getTag0).size
+  reserCheck "§6 count" s6Start <| runPut (putTag0 ⟨numComms⟩)
+  let mut prevCommAddr : Option Address := none
+  for _ in [:numComms.toNat] do
+    let eStart := (← get).idx
+    let addr : Address ← Serialize.get
+    let comm ← getComm
+    if let some prev := prevCommAddr then
+      if !(compare prev addr).isLT then
+        throw "Env.get: §6 comms not in strictly ascending address order"
+    prevCommAddr := some addr
+    env := { env with comms := env.comms.insert addr comm }
+    reserCheck "§6 comm" eStart <| runPut do
+      Serialize.put addr
+      putComm comm
+
+  let computedRoot :=
+    (Ix.Merkle.merkleRootCanonical constOrder).getD Ix.Merkle.zeroAddress
+  if computedRoot != storedRoot then
+    throw "Env.get: merkle root mismatch"
+
+  let st ← get
+  if st.idx != st.bytes.size then
+    throw s!"Env.get: {st.bytes.size - st.idx} trailing bytes after final section"
+
+  loadTrace "done"
+  pure { env, namedRows, rowIdx, nameRev, backing }
+
+/-- Run the streaming verified lazy load over an image. -/
+def deEnvVerifiedLazy (bytes : ByteArray) : Except String LazyEnvParts :=
+  match getEnvVerifiedLazy.run { idx := 0, bytes } with
+  | .ok parts _ => .ok parts
+  | .error e _ => .error e
+
+/-- Materialize every §5 row into `env.named` — the eager `deEnv` view,
+    for consumers not yet converted to per-row streaming. -/
+def LazyEnvParts.materializeAllNamed (parts : LazyEnvParts) : Except String Env := do
+  let mut env := parts.env
+  for row in parts.namedRows do
+    let named ← row.materialize parts.backing parts.nameRev
+    env := { env with named := env.named.insert row.name named }
+  return env
+
+/-- Fully eager view: `materializeAllNamed` plus parsed-and-cached
+    constants. Consumers that re-read constants repeatedly (the
+    decompiler resolves its block `Muts` per projection) need the parse
+    cached, or window re-parsing turns quadratic on big blocks. -/
+def LazyEnvParts.materializeAll (parts : LazyEnvParts) : Except String Env := do
+  let mut env ← parts.materializeAllNamed
+  let mut consts : Std.HashMap Address LazyConstant := {}
+  for (addr, lc) in env.consts do
+    match lc.get with
+    | .ok c => consts := consts.insert addr (LazyConstant.ofConstant c)
+    | .error e =>
+      throw s!"materializeAll: constant {reprStr (toString addr)}: {e}"
+  return { env with consts }
 
 /-- Serialize an Env to bytes. Fails when the env is not
     self-contained: §3 hints and §5 named entries are index-keyed on

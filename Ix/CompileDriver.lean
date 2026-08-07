@@ -147,7 +147,7 @@ private inductive NoAuxPhase where
     the same property. -/
 def compileConstNoAuxPure (cenv : CompileEnv) (lo : Name) (all : Set Name)
     : Except CompileError (BlockResult × BlockState) := Id.run do
-  let getConst (n : Name) : Option ConstantInfo := cenv.env.consts.get? n
+  let getConst (n : Name) : Option ConstantInfo := cenv.env.get? n
   -- Collect the Lean `.all` names from any constant in the SCC
   -- (compile.rs:3283-3299).
   let mut leanAll : Array Name := #[]
@@ -260,7 +260,7 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
   let mut cenv := acc.cenv
   cenv := { cenv with
     totalBytes := cenv.totalBytes + result.blockBytes.size
-    constants := cenv.constants.insert result.blockAddr result.block
+    constants := cenv.constants.insert result.blockAddr result.blockBytes
     blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) cenv.blobs }
   -- Primary registrations.
   if result.projections.isEmpty then
@@ -274,13 +274,13 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       let projAddr := Address.blake3 projBytes
       cenv := { cenv with
         totalBytes := cenv.totalBytes + projBytes.size
-        constants := cenv.constants.insert projAddr proj
+        constants := cenv.constants.insert projAddr projBytes
         nameToNamed := cenv.nameToNamed.insert name { addr := projAddr, constMeta }
         nameToAddr := cenv.nameToAddr.insert name projAddr }
   -- Aux tail outputs: stored constants, Named overrides (in registration
   -- order — LAST wins per name), aux resolution map, extra names, plans.
   for (addr, c) in cache.auxConsts do
-    cenv := { cenv with constants := cenv.constants.insert addr c }
+    cenv := { cenv with constants := cenv.constants.insert addr (Ixon.ser c) }
   for (n, named) in cache.auxNamed do
     cenv := { cenv with nameToNamed := cenv.nameToNamed.insert n named }
   cenv := { cenv with
@@ -439,7 +439,7 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
     | none => m
   let ixonEnv : Ixon.Env := {
     consts := cenv.constants.fold (init := {})
-      fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
+      fun m a bytes => m.insert a { buf := bytes, len := bytes.size }
     named := namedWithHints
     blobs := allBlobs
     names := namesMap
@@ -464,8 +464,10 @@ def assembleEnv (acc : DriverAcc) : Ixon.Env × Nat × CompileEnv := Id.run do
     scheduler continues (dependents cascade into `MissingConstant`
     failures recorded the same way) — mirroring env.rs:727-737. -/
 def compileEnvAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
-    (dbg : Bool := false) : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
-  let mut acc : DriverAcc := { cenv := CompileEnv.new env }
+    (dbg : Bool := false)
+    (nameByHash : Std.HashMap Address Name := {})
+    : Except String (Ixon.Env × Nat × CompileEnv) := Id.run do
+  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
   | .ok a => acc := a
@@ -821,10 +823,11 @@ instance : Inhabited AuxBlockOutcome where
 def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
+    (nameByHash : Std.HashMap Address Name := {})
     : IO (Except String (Ixon.Env × Nat × CompileEnv)) := do
   let totalBlocks := blocks.blocks.size
 
-  let mut acc : DriverAcc := { cenv := CompileEnv.new env }
+  let mut acc : DriverAcc := { cenv := { CompileEnv.new env with nameByHash } }
   match precompileAuxGenPrereqs blocks acc with
   | .error e => return .error e
   | .ok a => acc := a
@@ -833,12 +836,31 @@ def compileEnvParallelAux (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let resultChan ← Std.CloseableChannel.Sync.new
     (α := Name × Set Name × AuxBlockOutcome)
 
+  -- IX_LOG_BLOCKS=1: per-block BEGIN/END trace (with duration and RSS at
+  -- END), gated to the tail of the run (snapshot > 600k constants) where
+  -- the whole-Mathlib memory spike lives — identifies which block a
+  -- worker is inside when RSS blows up.
+  let logBlocks := (← IO.getEnv "IX_LOG_BLOCKS").isSome
   let worker (_workerId : Nat) : IO Unit := do
     while true do
       match ← workChan.recv with
       | none => break
       | some item =>
+        let logThis := logBlocks && item.cenv.constants.size > 600000
+        if logThis then
+          IO.println s!"  [block] BEGIN {item.lo.pretty} ({item.all.size} members)"
+          (← IO.getStdout).flush
+        let t0 ← IO.monoMsNow
         let outcome := auxBlockOutcome item.cenv item.lo item.all
+        let t1 ← IO.monoMsNow
+        if logThis then
+          let rssKb ← do
+            let st ← IO.FS.readFile "/proc/self/status"
+            pure <| (st.splitOn "\n").findSome? fun l =>
+              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
+          IO.println s!"  [block] END {item.lo.pretty} {t1 - t0}ms \
+rss{(rssKb.getD "?").trimAscii}"
+          (← IO.getStdout).flush
         discard <| resultChan.send (item.lo, item.all, outcome)
 
   let mut workerTasks : Array (Task (Except IO.Error Unit)) := #[]
@@ -912,6 +934,20 @@ blocks remaining but none ready"
                   return .error s!"rustRef mismatch at {name.pretty}: \
 lean={named.addr} rust={rustAddr} (block {lo.pretty})"
         compiled := compiled + 1
+        -- Memory attribution trace: which driver-retained structure is
+        -- growing. Enable with `dbg` or IX_COMPILE_DBG=1.
+        if dbg && compiled % 20000 == 0 then
+          let rssKb ← do
+            let st ← IO.FS.readFile "/proc/self/status"
+            pure <| (st.splitOn "\n").findSome? fun l =>
+              if l.startsWith "VmRSS" then (l.splitOn ":")[1]? else none
+          IO.println s!"  [compile-lean] {compiled}/{totalBlocks} blocks · \
+rss{(rssKb.getD "?").trimAscii} · consts {acc.cenv.constants.size} \
+({acc.cenv.totalBytes} B ser) · named {acc.cenv.nameToNamed.size} · \
+blobs {acc.cenv.blobs.size} · plans {acc.cenv.callSitePlans.size}\
+/{acc.cenv.brecOnCallSitePlans.size}/{acc.cenv.belowCallSitePlans.size} · \
+auxNames {acc.cenv.auxNameToAddr.size}"
+          (← IO.getStdout).flush
 
     for (lo, _) in ready do
       remaining := remaining.erase lo
@@ -949,41 +985,112 @@ structure LeanPipelineOut where
   ungroundedCount : Nat
   /-- SCC block count. -/
   blockCount : Nat
+  /-- Per-name content digest of every INPUT constant's canonicalized
+      form (derived `Hashable`), collected during the streamed canon
+      pass. The whole-env canon map is never materialized; this is the
+      phase-5 decompile oracle for `ix validate-lean`. -/
+  digests : Std.HashMap Ix.Name UInt64 := {}
 
 /-- Run the full pure-Lean compile pipeline over a constant list.
+
+    STREAMING: the whole-env canonicalized map is never materialized.
+    The canon pass canonicalizes each constant TRANSIENTLY — extracting
+    its reference set, immediate groundedness error, and content digest
+    — then drops the canon form. The compile phase reads constants
+    through `Environment.fallback?` (canon-on-demand against the pinned
+    Lean constants), so a constant's canon form is live only while some
+    block actually reads it: theorem-sized proof bodies exist once
+    during the canon pass and once during their own block's compile,
+    never all at once. Canon is per-constant deterministic (chunking is
+    already arbitrary), so compiled output is byte-identical to the
+    materialized pipeline.
+
     See the section docstring; phase timings print when `dbg` is set. -/
 def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
     (rustRef : Option (Std.HashMap Name Address) := none)
     (numWorkers : Nat := 32) (dbg : Bool := false)
     : IO (Except String LeanPipelineOut) := do
+  -- IX_COMPILE_DBG=1 forces phase timing + the driver's periodic memory
+  -- attribution trace without threading a flag through callers.
+  let dbg := dbg || (← IO.getEnv "IX_COMPILE_DBG").isSome
   let tick (label : String) (t0 : Nat) : IO Nat := do
     let t1 ← IO.monoMsNow
     if dbg then
       IO.println s!"  [compile-lean] {label}: {t1 - t0}ms"
     pure t1
   let t0 ← IO.monoMsNow
-  -- 1. Canonicalize (Lean → Ix, content-addressed hashing) — chunked
-  --    task-parallel, mirroring `Ix.CanonM.canonEnvParallel`.
   let constArr := consts.toArray
-  let chunkSize := max 1 ((constArr.size + numWorkers - 1) / numWorkers)
-  let chunkArr := Ix.CanonM.chunks constArr chunkSize
+  -- 1a. Name pre-pass: canonical names only. Builds the lazy-lookup key
+  --     map (Ix name → pinned Lean constant), the reverse name-hash
+  --     view for `nameForAddr`, and the THIN ground-check env — ground
+  --     checks read only name-existence and is-it-a-ctor
+  --     (`groundExpr`/`groundConst`), so two shared placeholder
+  --     constants stand in for every value.
+  let placeholderCnst : Ix.ConstantVal :=
+    ⟨.mkAnon, #[], Ix.Expr.mkSort Ix.Level.mkZero⟩
+  let phAxiom : Ix.ConstantInfo :=
+    .axiomInfo { cnst := placeholderCnst, isUnsafe := false }
+  let phCtor : Ix.ConstantInfo := .ctorInfo
+    { cnst := placeholderCnst, induct := .mkAnon, cidx := 0
+      numParams := 0, numFields := 0, isUnsafe := false }
+  let mut leanByIx : Std.HashMap Ix.Name (Lean.Name × Lean.ConstantInfo) := {}
+  let mut nameByHash : Std.HashMap Address Ix.Name := {}
+  let mut thinConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
+  let mut ixArr : Array (Ix.Name × Lean.ConstantInfo) := #[]
+  for (ln, lci) in constArr do
+    let (ixn, _) := StateT.run (Ix.CanonM.canonName ln) {}
+    leanByIx := leanByIx.insert ixn (ln, lci)
+    nameByHash := nameByHash.insert ixn.getHash ixn
+    thinConsts := thinConsts.insert ixn
+      (if lci matches .ctorInfo _ then phCtor else phAxiom)
+    ixArr := ixArr.push (ixn, lci)
+  let thinEnv : Ix.Environment := { consts := thinConsts }
+  let t ← tick s!"canon names ({ixArr.size} consts)" t0
+  -- 1b/2/3a. Streamed canon (chunk-parallel): canonicalize, take refs +
+  --     immediate ground error + digest. PROOF bodies (`thmInfo` /
+  --     `opaqueInfo` — the bulk of a Mathlib-scale env, and never read
+  --     by dependents' compiles) are dropped after extraction and
+  --     re-canonicalized on demand for their own block only. CODE kinds
+  --     (definitions, inductive families, recursors — what aux-gen and
+  --     kernel ingress read from dependents, repeatedly and with
+  --     retention) are KEPT and materialized as the shared `consts`
+  --     map: one shared structure instead of a fresh unshared copy per
+  --     on-demand read.
+  let chunkSize := max 1 ((ixArr.size + numWorkers - 1) / numWorkers)
+  let chunkArr := Ix.CanonM.chunks ixArr chunkSize
   let tasks := chunkArr.map fun chunk =>
-    Task.spawn fun _ => Ix.CanonM.canonChunk chunk
-  let mut ixConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
-  for task in tasks do
-    for (name, const) in task.get do
-      ixConsts := ixConsts.insert name const
-  let ixEnv : Ix.Environment := { consts := ixConsts }
-  let t ← tick s!"canon ({ixConsts.size} consts)" t0
-  -- 2. Reference graph (out-refs).
-  let outRefs := Ix.GraphM.envParallel ixEnv
-  let t ← tick s!"graph ({outRefs.size} nodes)" t
-  -- 3. Groundedness: immediate per-constant scan, reverse-ref
-  --    proliferation, graph filter (env.rs:160-227 / setup_scan).
+    Task.spawn fun _ => Id.run do
+      let mut state : Ix.CanonM.CanonState := {}
+      let mut out : Array
+        (Ix.Name × Ix.Set Ix.Name × Option Ix.GroundError × UInt64
+          × Option Ix.ConstantInfo) := #[]
+      for (ixn, lci) in chunk do
+        let (ci, state') := StateT.run (Ix.CanonM.canonConst lci) state
+        state := state'
+        let (refs, _) :=
+          Ix.GraphM.run { consts := {} } .init (Ix.graphConst ci)
+        let groundErr? := match Ix.groundConstCheck ci thinEnv with
+          | .ok _ => none
+          | .error e => some e
+        let keep? := match ci with
+          | .thmInfo _ | .opaqueInfo _ => none
+          | _ => some ci
+        out := out.push (ixn, refs, groundErr?, hash ci, keep?)
+      out
+  let mut outRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
   let mut immediate : Ix.Map Ix.Name Ix.GroundError := {}
-  for (n, ci) in ixEnv.consts do
-    if let .error e := Ix.groundConstCheck ci ixEnv then
-      immediate := immediate.insert n e
+  let mut digests : Std.HashMap Ix.Name UInt64 := {}
+  let mut codeConsts : Ix.Map Ix.Name Ix.ConstantInfo := {}
+  for task in tasks do
+    for (n, refs, gerr?, dig, keep?) in task.get do
+      outRefs := outRefs.insert n refs
+      if let some e := gerr? then
+        immediate := immediate.insert n e
+      digests := digests.insert n dig
+      if let some ci := keep? then
+        codeConsts := codeConsts.insert n ci
+  let t ← tick s!"canon+graph+ground ({outRefs.size} nodes, \
+{codeConsts.size} code kept, {outRefs.size - codeConsts.size} proofs streamed)" t
   let mut inRefs : Ix.Map Ix.Name (Ix.Set Ix.Name) := {}
   for (n, refs) in outRefs do
     for r in refs do
@@ -1005,8 +1112,17 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
   -- 4. Condense (Tarjan SCCs over the filtered graph).
   let condensed := Ix.CondenseM.run groundedOutRefs
   let t ← tick s!"condense ({condensed.blocks.size} blocks)" t
-  -- 5. Aux-aware parallel compile.
-  match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg with
+  -- 5. Aux-aware parallel compile against the HYBRID environment: code
+  --    kinds are the materialized (shared) map; proof bodies
+  --    canonicalize on demand from the pinned Lean constants and are
+  --    dropped when their block's `CompileM.run` returns.
+  let fallback : Ix.Name → Option Ix.ConstantInfo := fun n =>
+    (leanByIx.get? n).bind fun (ln, lci) =>
+      ((Ix.CanonM.canonChunk #[(ln, lci)])[0]?).map (·.2)
+  let ixEnv : Ix.Environment :=
+    { consts := codeConsts, fallback? := some fallback }
+  match ← compileEnvParallelAux ixEnv condensed rustRef numWorkers dbg
+      nameByHash with
   | .error e => return .error e
   | .ok (ixonEnv, _, cenv) =>
     let t ← tick "compile" t
@@ -1024,6 +1140,7 @@ def compileLeanConsts (consts : List (Lean.Name × Lean.ConstantInfo))
         env := ixonEnv
         cenv
         ungroundedCount := ungrounded.size
-        blockCount := condensed.blocks.size }
+        blockCount := condensed.blocks.size
+        digests }
 
 end Ix.CompileM

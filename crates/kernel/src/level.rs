@@ -671,24 +671,34 @@ fn norm_level_le(l1: &NormLevel, l2: &NormLevel) -> bool {
   true
 }
 
+/// Entry-wise equality of two normal forms, IGNORING empty entries
+/// (constant 0, no vars — pure subsumption bookkeeping). Subsumption
+/// EMPTIES a dominated entry rather than removing it, so a spelling like
+/// `max (u+1) (imax (u+1) v)` retains an empty `[u,v]` entry that its
+/// semantic equal `max (u+1) v` never creates; counting those entries
+/// made `univ_eq` strictly finer than semantic equality (3 of 3,253,373
+/// whole-Mathlib entries). `norm_level_le` already skips them (see the
+/// `continue` guard above); mirroring that here makes `univ_eq` the
+/// exact semantic quotient (canonicity §10.6 R5, option (b)).
+///
+/// `BTreeMap` iteration is key-ordered, so comparing the filtered
+/// streams positionally is a sound map comparison.
 fn norm_level_eq(l1: &NormLevel, l2: &NormLevel) -> bool {
-  if l1.len() != l2.len() {
-    return false;
-  }
-  for (k, v1) in l1 {
-    match l2.get(k) {
-      Some(v2) => {
-        if v1.constant != v2.constant
-          || v1.var.len() != v2.var.len()
-          || v1.var.iter().zip(v2.var.iter()).any(|(a, b)| a != b)
-        {
+  let non_empty =
+    |&(_, n): &(&Vec<u64>, &Node)| n.constant != 0 || !n.var.is_empty();
+  let mut it1 = l1.iter().filter(non_empty);
+  let mut it2 = l2.iter().filter(non_empty);
+  loop {
+    match (it1.next(), it2.next()) {
+      (None, None) => return true,
+      (Some((k1, n1)), Some((k2, n2))) => {
+        if k1 != k2 || n1.constant != n2.constant || n1.var != n2.var {
           return false;
         }
       },
-      None => return false,
+      _ => return false,
     }
   }
-  true
 }
 
 /// Normalize a universe level to Géran's canonical form.
@@ -999,6 +1009,55 @@ mod tests {
     let im2 = AU::imax(p0, p2);
     let rhs = AU::max(im1, im2);
     assert!(univ_eq(&lhs, &rhs));
+  }
+
+  /// Evaluate a level under a concrete assignment of parameter indices
+  /// to naturals (`imax(a,b) = 0` when `b = 0`). Used to certify test
+  /// vectors semantically, independent of the comparator under test.
+  fn eval_level(l: &AU, assign: &[u64]) -> u64 {
+    match l.data() {
+      UnivData::Zero(_) => 0,
+      UnivData::Succ(i, _) => eval_level(i, assign) + 1,
+      UnivData::Max(a, b, _) => {
+        eval_level(a, assign).max(eval_level(b, assign))
+      },
+      UnivData::IMax(a, b, _) => {
+        let vb = eval_level(b, assign);
+        if vb == 0 { 0 } else { eval_level(a, assign).max(vb) }
+      },
+      UnivData::Param(i, _, _) => assign[usize::try_from(*i).unwrap()],
+    }
+  }
+
+  /// Canonicity §10.6 R5 (option (b)): subsumption EMPTIES a dominated
+  /// entry rather than removing it, so `max (u+1) (imax (u+1) v)` keeps
+  /// an empty entry its semantic equal `max (u+1) v` never creates —
+  /// the whole-Mathlib empty-entry class witness (3 of 3,253,373
+  /// entries). `univ_eq` must ignore such entries.
+  #[test]
+  fn univ_eq_ignores_empty_subsumption_entries() {
+    let u = AU::param(0, ());
+    let v = AU::param(1, ());
+    let su = AU::succ(u.clone());
+    let lhs = AU::max(su.clone(), AU::imax(su.clone(), v.clone()));
+    let rhs = AU::max(su.clone(), v.clone());
+    // Certify the pair is genuinely semantically equal.
+    for a in 0..4u64 {
+      for b in 0..4u64 {
+        assert_eq!(eval_level(&lhs, &[a, b]), eval_level(&rhs, &[a, b]));
+      }
+    }
+    assert!(univ_eq(&lhs, &rhs));
+    assert!(univ_eq(&rhs, &lhs));
+    // Geq agrees in both directions (norm_level_le already skipped
+    // empty entries — this is the antisymmetry pair univ_eq now matches).
+    assert!(univ_geq(&lhs, &rhs));
+    assert!(univ_geq(&rhs, &lhs));
+    // Control: the comparator did not get weaker — a semantically
+    // distinct near-miss stays distinct (at u=v=0: lhs=1, other=0).
+    let smaller = AU::max(u.clone(), v.clone());
+    assert!(!univ_eq(&lhs, &smaller));
+    assert!(!univ_eq(&smaller, &lhs));
   }
 
   #[test]

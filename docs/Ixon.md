@@ -345,6 +345,14 @@ Expressions don't store addresses or universes directly. Instead:
 
 This indirection enables sharing and smaller serializations.
 
+**Univ-table invariant (canonicity §10.6):** every `univs` entry in a
+valid artifact is `canonUniv`-fixed — the compiler canonicalizes at
+its univ-intern choke point and preseeds tables sorted by serialized
+key. Source spellings that differ from their canonical form live in
+metadata only (`ConstantMeta.metaUnivs` + `univPatches`, below);
+readers of pre-format artifacts get a "pre-normal-levels .ixe;
+recompile it" parse error.
+
 ### Serialization
 
 Constants use two Tag4 flags:
@@ -685,10 +693,35 @@ Packing BinderInfo into the Binder tag (tags 2-5) saves 1 byte per binder. Name 
 
 ### ConstantMeta
 
-Per-constant metadata. Each variant stores a name, universe parameter names, an `ExprMeta` arena, and root indices pointing into the arena:
+Per-constant metadata: a variant payload (`ConstantMetaInfo`) plus
+four extension vectors appended after it (the wrapper):
 
 ```rust
-pub enum ConstantMeta {
+pub struct ConstantMeta {
+    pub info: ConstantMetaInfo,        // variant payload (below)
+    pub meta_sharing: Vec<Arc<Expr>>,  // collapsed call-site args (surgery)
+    pub meta_refs: Vec<Address>,       // refs-table extension (virtual space)
+    pub meta_univs: Vec<Arc<Univ>>,    // univs-table extension (virtual space)
+    pub univ_patches: Vec<UnivPatch>,  // original level spellings (§10.6)
+}
+
+pub struct UnivPatch {
+    pub arena_idx: u64,      // metadata-arena node of the occurrence
+    pub univ_idxs: Vec<u64>, // virtual space: < univs.len() → primary,
+                             // else meta_univs[i - univs.len()]
+}
+```
+
+Each wrapper vector serializes as a `Tag0` count + entries and is
+empty (one zero byte) on most constants. `meta_univs`/`univ_patches`
+restore source level spellings the §10.6 canonicalization displaced
+from content; `meta_sharing` holds call-site surgery's collapsed
+arguments. Each `ConstantMetaInfo` variant stores a name, universe
+parameter names, an `ExprMeta` arena, and root indices pointing into
+the arena:
+
+```rust
+pub enum ConstantMetaInfo {
     Empty,                                              // tag 255
     Def { name, lvls, all, ctx,
           arena, type_root, value_root },               // tag 0

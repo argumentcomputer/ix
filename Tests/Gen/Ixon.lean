@@ -46,6 +46,25 @@ def genQuotKindNew : Gen QuotKind :=
 def genArray (g: Gen α) : Gen (Array α) :=
   Array.mk <$> genList g
 
+/-- Every `Ixon.Univ` term with up to `size` constructor nodes over
+    atoms `{zero, var 0, var 1, var 2}` — deterministic minimal
+    counterexamples for the canonicalization property tests (mirrors
+    `canon_univ.rs::tests::enumerate`). -/
+def enumerateUniv (size : Nat) : List Univ := Id.run do
+  let mut bySize : Array (List Univ) := .replicate (size + 1) []
+  if size ≥ 1 then
+    bySize := bySize.set! 1 [.zero, .var 0, .var 1, .var 2]
+  for n in [2:size + 1] do
+    let mut out : List Univ := []
+    for u in bySize[n - 1]! do
+      out := .succ u :: out
+    for k in [1:n - 1] do
+      for a in bySize[k]! do
+        for b in bySize[n - 1 - k]! do
+          out := .max a b :: .imax a b :: out
+    bySize := bySize.set! n out.reverse
+  return bySize.toList.flatten
+
 /-- Generate a universe level (new format) - non-recursive base cases heavily weighted -/
 partial def genUniv : Gen Univ :=
   resize (fun s => if s > 2 then 2 else s / 2) <|
@@ -412,14 +431,22 @@ def genConstantMetaInfo (genAddr : Gen Address := genAddress) : Gen ConstantMeta
       <*> genAuxLayout?),
   ]
 
+/-- Generate a level-spelling patch (canonicity §10.6). -/
+def genUnivPatch : Gen UnivPatch := do
+  let arenaIdx ← genUInt64Small
+  let univIdxs ← genSmallArray genUInt64Small
+  return { arenaIdx, univIdxs }
+
 /-- Generate a ConstantMeta wrapper: variant payload + surgery extension
-    tables (sharing exprs / raw refs / univs — none are name-indexed). -/
+    tables (sharing exprs / raw refs / univs — none are name-indexed) +
+    level-spelling patches. -/
 def genConstantMeta (genAddr : Gen Address := genAddress) : Gen ConstantMeta := do
   let info ← genConstantMetaInfo genAddr
   let metaSharing ← frequency [(2, pure #[]), (1, genSmallArray genExpr)]
   let metaRefs ← frequency [(2, pure #[]), (1, genSmallArray genAddress)]
   let metaUnivs ← frequency [(2, pure #[]), (1, genSmallArray genUniv)]
-  return { info, metaSharing, metaRefs, metaUnivs }
+  let univPatches ← frequency [(2, pure #[]), (1, genSmallArray genUnivPatch)]
+  return { info, metaSharing, metaRefs, metaUnivs, univPatches }
 
 instance : Shrinkable CallSiteEntry where shrink _ := []
 instance : Shrinkable AuxLayout where shrink _ := []
@@ -440,7 +467,9 @@ instance : Shrinkable ConstantMetaInfo where
 instance : Shrinkable ConstantMeta where
   shrink m := match m.info with
     | .empty =>
-      if m.hasExtensions then [{ m with metaSharing := #[], metaRefs := #[], metaUnivs := #[] }]
+      if m.hasExtensions then
+        [{ m with metaSharing := #[], metaRefs := #[], metaUnivs := #[],
+                  univPatches := #[] }]
       else []
     | _ => [{ m with info := .empty }]
 

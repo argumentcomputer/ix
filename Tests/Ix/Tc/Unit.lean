@@ -2,6 +2,8 @@ module
 
 public import LSpec
 public import Ix.Tc
+public import Ix.IxonUniv
+public import Tests.Gen.Ixon
 
 /-!
 Unit tests for the `Ix.Tc` foundations (Mode/Id/Level/Expr/Const):
@@ -400,9 +402,89 @@ def modeTests : TestSeq :=
       && (KId.cmp (aId "x") (aId "y")
           == (Address.blake3 "x".toUTF8).cmpBytes (Address.blake3 "y".toUTF8)))
 
+/-! ### Universe-level canonicalization (canonicity §10.6, `Ix.IxonUniv`)
+
+P1/P2/P3/P6 + class stability, swept exhaustively over every ≤6-node
+term with 3 params (the property-relevant shapes — nested imax at depth
+≥ 3 — sit outside `genUniv`'s shallow-resized sampling; every
+linearizer bug found during development lived there), plus:
+
+- P4 against the kernel's own Géran machinery (`Level.normalizeLevel`
+  on the mk*-rebuilt `KUniv`s), modulo subsumption's empty-entry
+  artifacts — see the `Ix/IxonUniv.lean` module-doc O1 note;
+- the `Ixon.reduceUniv` ≍ `Ix.Tc.reduceIxonUniv` twin pin (same
+  closure, one via transliterated rules, one via the kernel's actual
+  smart constructors — drift here would desync the stage-1 decoration
+  test from what ingress really does). -/
+
+/-- Kernel canonical form with value-free (empty) entries stripped. -/
+def strippedKernelNorm (u : AU) : List (Level.Path × Level.NormNode) :=
+  (Level.normalizeLevel u).toList.filter fun (_, n) =>
+    !(n.constant == 0 && n.vars.isEmpty)
+
+def canonUnivSweep :
+    Bool × Bool × Bool × Bool × Bool × Bool := Id.run do
+  let mut p1 := true
+  let mut p2 := true
+  let mut p3 := true
+  let mut p4 := true
+  let mut p6 := true
+  let mut agree := true
+  for u in Tests.Gen.Ixon.enumerateUniv 6 do
+    let c := Ixon.canonUniv u
+    let n := Ixon.CanonUniv.normalize u
+    p1 := p1 && (Ixon.canonUniv c == c)
+    p2 := p2 && Ixon.CanonUniv.normEqSemantic
+      (Ixon.CanonUniv.normalize (Ixon.CanonUniv.linearize n)) n
+    p3 := p3 && (Ixon.reduceUniv c == c)
+    p4 := p4 &&
+      (strippedKernelNorm (ixonUnivToK u)
+        == strippedKernelNorm (ixonUnivToK c))
+    p6 := p6 && (Ixon.canonUniv (Ixon.reduceUniv u) == c)
+    agree := agree && (Ixon.reduceUniv u == reduceIxonUniv u)
+  return (p1, p2, p3, p4, p6, agree)
+
+def canonUnivVectors : TestSeq :=
+  let v : UInt64 → Ixon.Univ := .var
+  let s : Ixon.Univ → Ixon.Univ := .succ
+  let z : Ixon.Univ := .zero
+  test "canonUniv: commutative twins converge"
+    (Ixon.canonUniv (.max (v 1) (v 0)) == .max (v 0) (v 1))
+  ++ test "canonUniv: reassociation converges"
+    (Ixon.canonUniv (.max (.max (v 0) (v 1)) (v 2))
+      == .max (v 0) (.max (v 1) (v 2)))
+  ++ test "canonUniv: succ distributes over max"
+    (Ixon.canonUniv (s (.max (v 0) (v 1))) == .max (s (v 0)) (s (v 1)))
+  ++ test "canonUniv: WF eq_def shape reduces"
+    (Ixon.canonUniv (.imax (.imax (s z) (v 0)) (v 0)) == v 0)
+  ++ test "canonUniv: common spellings are fixpoints"
+    ([z, s z, v 0, s (v 0), .max (v 0) (v 1), .imax (v 0) (v 1),
+      .imax (s (v 1)) (v 0),
+      .imax (.imax (s (v 0)) (v 1)) (v 2)].all fun u =>
+      Ixon.canonUniv u == u)
+  ++ test "reduceUniv: rule table (M1/M4/M7/I2/I4 spot checks)"
+    (Ixon.reduceUniv (.max (s z) (s (s z))) == s (s z)
+      && Ixon.reduceUniv (.max (v 0) z) == v 0
+      && Ixon.reduceUniv (.max (s (v 0)) (s (s (v 0)))) == s (s (v 0))
+      && Ixon.reduceUniv (.imax (v 0) z) == z
+      && Ixon.reduceUniv (.imax (s z) (v 0)) == v 0)
+
+def canonUnivTests : TestSeq :=
+  let (p1, p2, p3, p4, p6, agree) := canonUnivSweep
+  canonUnivVectors
+  ++ test "canonUniv P1: idempotent (exhaustive ≤6)" p1
+  ++ test "canonUniv P2: linearize∘normalize fixpoint (exhaustive ≤6)" p2
+  ++ test "canonUniv P3: canonical forms are mk* fixpoints (exhaustive ≤6)"
+    p3
+  ++ test "canonUniv P4: kernel Géran oracle, modulo empty entries \
+           (exhaustive ≤6)" p4
+  ++ test "canonUniv P6: mk* rebuild absorbed (exhaustive ≤6)" p6
+  ++ test "reduceUniv ≍ Tc.reduceIxonUniv twin agreement (exhaustive ≤6)"
+    agree
+
 public def suite : List TestSeq :=
   [rawParity, univAnonMeta, exprAnonMeta, renderTests,
     canonicalTotalizationTests, occurrenceTests, exprInfo, smartCtors,
-    levelAlgebra, props, modeTests]
+    levelAlgebra, props, modeTests, canonUnivTests]
 
 end Tests.Tc.Unit

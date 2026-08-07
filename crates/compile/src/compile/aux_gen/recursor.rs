@@ -211,7 +211,12 @@ pub fn generate_recursors_from_expanded(
 /// `!member.is_aux && classes.iter().any(|c| c.is_aux)` is false for
 /// every caller, so we skip allocating the maps entirely.
 struct NestedRewriteCtx {
-  aux_info: std::collections::HashMap<Name, (usize, Vec<Level>)>,
+  /// Per external family name, EVERY aux class's
+  /// `(own_params, occurrence_level_args)` in class order. One family
+  /// can appear with several distinct universe instantiations (distinct
+  /// flat classes since the dedup keys on levels) — a name-keyed single
+  /// entry would stamp one instantiation's levels onto all of them.
+  aux_info: std::collections::HashMap<Name, Vec<(usize, Vec<Level>)>>,
   block_names: rustc_hash::FxHashSet<Name>,
   walk_cache: rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
 }
@@ -223,18 +228,22 @@ impl NestedRewriteCtx {
     if !has_aux || !has_user {
       return None;
     }
+    let mut aux_info: std::collections::HashMap<
+      Name,
+      Vec<(usize, Vec<Level>)>,
+    > = std::collections::HashMap::new();
+    for c in classes.iter().filter(|c| c.is_aux) {
+      aux_info
+        .entry(c.name.clone())
+        .or_default()
+        .push((c.own_params, c.occurrence_level_args.clone()));
+    }
     Some(Self {
       block_names: classes[..n_classes]
         .iter()
         .map(|c| c.name.clone())
         .collect(),
-      aux_info: classes
-        .iter()
-        .filter(|c| c.is_aux)
-        .map(|c| {
-          (c.name.clone(), (c.own_params, c.occurrence_level_args.clone()))
-        })
-        .collect(),
+      aux_info,
       walk_cache: rustc_hash::FxHashMap::default(),
     })
   }
@@ -2164,34 +2173,57 @@ fn match_classes_against_app(
   n_params: usize,
 ) -> Option<usize> {
   let (head, args) = decompose_apps(ty);
-  let ExprData::Const(name, _, _) = head.as_data() else {
+  let ExprData::Const(name, levels, _) = head.as_data() else {
     return None;
   };
-  for (ci, class) in classes.iter().enumerate() {
-    if !class.all_names.iter().any(|n| n == name) {
-      continue;
-    }
-    if !class.is_aux {
-      if args.len() >= n_params
-        && args[..n_params]
+  // Two passes: aux candidates must first also match the occurrence's
+  // universe instantiation exactly — distinct universe specializations
+  // of one external family are distinct flat classes (the flat-block
+  // dedup keys on levels), and same-block occurrences carry verbatim
+  // ctor levels. The level-insensitive second pass keeps alpha-collapse
+  // working when the representative names universe parameters
+  // differently. Non-aux (original) classes are level-uniform and are
+  // decided entirely in the first pass.
+  for require_levels in [true, false] {
+    for (ci, class) in classes.iter().enumerate() {
+      if !class.all_names.iter().any(|n| n == name) {
+        continue;
+      }
+      if !class.is_aux {
+        if require_levels
+          && args.len() >= n_params
+          && args[..n_params]
+            .iter()
+            .zip(param_fvars.iter())
+            .all(|(a, p)| a.get_hash() == p.get_hash())
+        {
+          return Some(ci);
+        }
+        continue;
+      }
+      if require_levels {
+        let lvls = &class.occurrence_level_args;
+        let levels_eq = lvls.len() == levels.len()
+          && lvls
+            .iter()
+            .zip(levels.iter())
+            .all(|(a, b)| a.get_hash() == b.get_hash());
+        if !levels_eq {
+          continue;
+        }
+      }
+      let sp_fvars =
+        instantiate_spec_with_fvars(&class.spec_params, param_fvars);
+      let n_par = class.own_params;
+      if args.len() >= n_par
+        && sp_fvars.len() == n_par
+        && args[..n_par]
           .iter()
-          .zip(param_fvars.iter())
-          .all(|(a, p)| a.get_hash() == p.get_hash())
+          .zip(sp_fvars.iter())
+          .all(|(a, sp)| a.get_hash() == sp.get_hash())
       {
         return Some(ci);
       }
-      continue;
-    }
-    let sp_fvars = instantiate_spec_with_fvars(&class.spec_params, param_fvars);
-    let n_par = class.own_params;
-    if args.len() >= n_par
-      && sp_fvars.len() == n_par
-      && args[..n_par]
-        .iter()
-        .zip(sp_fvars.iter())
-        .all(|(a, sp)| a.get_hash() == sp.get_hash())
-    {
-      return Some(ci);
     }
   }
   None

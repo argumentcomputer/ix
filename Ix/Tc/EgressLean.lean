@@ -66,6 +66,22 @@ def egressLevels (levelParams : Array Name) (us : Array (KUniv .«meta»)) :
     Array Ix.Level :=
   us.map (egressLevel levelParams)
 
+/-- Convert a stored `Ixon.Univ` spelling to an `Ix.Level`, structural,
+    resolving `var` indices positionally through the constant's level
+    params (same resolution as `egressLevel` — anon fallback on OOB).
+    Used to replay level-spelling decorations (canonicity §10.6). -/
+def ixonUnivToLevel (levelParams : Array Name) : Ixon.Univ → Ix.Level
+  | .zero => Ix.Level.mkZero
+  | .succ u => Ix.Level.mkSucc (ixonUnivToLevel levelParams u)
+  | .max a b =>
+    Ix.Level.mkMax (ixonUnivToLevel levelParams a)
+      (ixonUnivToLevel levelParams b)
+  | .imax a b =>
+    Ix.Level.mkIMax (ixonUnivToLevel levelParams a)
+      (ixonUnivToLevel levelParams b)
+  | .var idx =>
+    Ix.Level.mkParam ((levelParams[idx.toNat]?).getD Ix.Name.mkAnon)
+
 /-! ### Expression egress (explicit stack machine) -/
 
 /-- Egress frames. `*Done` frames carry the metadata needed to rebuild the
@@ -117,13 +133,21 @@ def egressExpr (levelParams : Array Name)
         throw s!"egressExpr: unexpected FVar({id}) — abstract back to \
                  de Bruijn before exporting"
       | .sort u _ =>
-        let out := applyMDataLayers mdata
-          (Ix.Expr.mkSort (egressLevel levelParams u))
+        -- Decoration replay (canonicity §10.6): a present decoration is
+        -- the occurrence's original spelling — emit it instead of the
+        -- kernel-held (mk*-normal) level. The metaAddr-keyed cache folds
+        -- decorations, so spelling twins never share an entry.
+        let lvl := match e.info.univDecor with
+          | some (.sort orig) => ixonUnivToLevel levelParams orig
+          | _ => egressLevel levelParams u
+        let out := applyMDataLayers mdata (Ix.Expr.mkSort lvl)
         values := values.push out
         cache := cache.insert e.info.metaAddr out
       | .const id us _ =>
-        let out := applyMDataLayers mdata
-          (Ix.Expr.mkConst id.name (egressLevels levelParams us))
+        let lvls := match e.info.univDecor with
+          | some (.const origs) => origs.map (ixonUnivToLevel levelParams)
+          | _ => egressLevels levelParams us
+        let out := applyMDataLayers mdata (Ix.Expr.mkConst id.name lvls)
         values := values.push out
         cache := cache.insert e.info.metaAddr out
       | .app f a _ =>
@@ -297,10 +321,10 @@ def findDiff (a b : Ix.Expr) : String := Id.run do
         return s!"{path}: const '{n1}' vs '{n2}'"
       if us1.size != us2.size then
         return s!"{path}: const '{n1}' level count {us1.size} vs {us2.size}"
-      return s!"{path}: const '{n1}' levels differ"
+      return s!"{path}: const '{n1}' levels differ: \
+{reprStr us1} vs {reprStr us2}"
     | .sort u1 _, .sort u2 _ =>
-      let _ := u1; let _ := u2
-      return s!"{path}: sort levels differ"
+      return s!"{path}: sort levels differ: {reprStr u1} vs {reprStr u2}"
     | x, y =>
       return s!"{path}: {kindOf x} vs {kindOf y}"
   return "(no structural divergence found — hash-only difference?)"

@@ -76,14 +76,6 @@ static IX_PROGRESS_MS: LazyLock<u64> = LazyLock::new(|| {
     .unwrap_or(2000)
 });
 
-/// Clear each worker's kernel env every this many completed blocks
-/// (releasing allocations). The kenv is a pure cache of
-/// Lean-env-derived data (`ensure_in_kenv` re-ingresses on demand), so
-/// clearing at block boundaries is semantics-free; unbounded it grows
-/// to several GB on Mathlib-scale envs, and this cadence measures at
-/// zero wall-clock cost there.
-const KENV_CLEAR_EVERY: usize = 64;
-
 /// Recover a short string description from a panic payload.
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
   panic
@@ -524,11 +516,21 @@ pub fn compile_env_with_options(
       });
     }
 
-    // Spawn worker threads
+    // Spawn worker threads.
+    //
+    // Each compile_const/compile_const_no_aux invocation gets a fresh
+    // KernelCtx: kernel caches key on name-erased content addresses, so a
+    // context surviving across blocks can replay a display name recorded
+    // for an alias from an unrelated block into this block's synthesized
+    // expressions — schedule-dependently, since which worker compiled what
+    // first is a race (canonicity §10.5). Metadata display names must be a
+    // deterministic function of the block, so no kernel-cache state may
+    // outlive the block that populated it. The kenv is a pure cache
+    // (`ensure_in_kenv` re-ingresses on demand), so starting cold is
+    // semantics-free, and full clears at block boundaries measured at zero
+    // wall-clock cost on Mathlib-scale envs.
     for _ in 0..num_threads {
       s.spawn(move || {
-        let mut worker_kctx = crate::compile::KernelCtx::new();
-        let mut worker_blocks_done = 0usize;
         loop {
           // Try to get work from the ready queue
           let work = {
@@ -629,7 +631,7 @@ pub fn compile_env_with_options(
                             lean_env,
                             &mut cache,
                             stt_ref,
-                            &mut worker_kctx,
+                            &mut crate::compile::KernelCtx::new(),
                           )
                         },
                       );
@@ -672,7 +674,7 @@ pub fn compile_env_with_options(
                         lean_env,
                         &mut orig_cache,
                         stt_ref,
-                        &mut worker_kctx,
+                        &mut crate::compile::KernelCtx::new(),
                       )
                     },
                   );
@@ -721,7 +723,7 @@ pub fn compile_env_with_options(
                       lean_env,
                       &mut cache,
                       stt_ref,
-                      &mut worker_kctx,
+                      &mut crate::compile::KernelCtx::new(),
                     )
                   },
                 );
@@ -888,11 +890,6 @@ pub fn compile_env_with_options(
                 condvar_ref.notify_one();
               }
 
-              // Bounded per-worker kenv growth (see KENV_CLEAR_EVERY).
-              worker_blocks_done += 1;
-              if worker_blocks_done.is_multiple_of(KENV_CLEAR_EVERY) {
-                worker_kctx.kenv.clear_releasing_memory();
-              }
             },
             None => {
               // No work available - check if we're done
@@ -1092,7 +1089,6 @@ fn precompile_aux_gen_prereqs(
 
   // Compile each SCC in dep-first order, moving compiled names to
   // `aux_name_to_addr` so later SCCs can resolve their Const refs.
-  let mut prereq_kctx = crate::compile::KernelCtx::new();
   for rep in order {
     if stt.aux_name_to_addr.contains_key(&rep) {
       continue; // Already compiled (e.g., via a prior prereq run).
@@ -1102,6 +1098,7 @@ fn precompile_aux_gen_prereqs(
       None => continue,
     };
     let mut cache = BlockCache::default();
+    let mut prereq_kctx = crate::compile::KernelCtx::new();
     compile_const(&rep, &all, lean_env, &mut cache, stt, &mut prereq_kctx)
       .map_err(|e| CompileError::InvalidMutualBlock {
         reason: format!(

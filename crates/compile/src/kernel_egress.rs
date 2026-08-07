@@ -19,7 +19,7 @@ use crate::compile::aux_gen::nested::compute_lean_ind_flags;
 use dashmap::DashMap;
 use ix_kernel::constant::KConst;
 use ix_kernel::env::KEnv;
-use ix_kernel::expr::{ExprData, KExpr, MData};
+use ix_kernel::expr::{ExprData, KExpr, MData, UnivDecor};
 use ix_kernel::id::KId;
 use ix_kernel::level::{KUniv, UnivData};
 use ix_kernel::mode::Meta;
@@ -54,6 +54,32 @@ fn egress_levels(
   levels.iter().map(|l| egress_level(l, level_params)).collect()
 }
 
+/// Convert a stored Ixon universe spelling to a Lean level, structural,
+/// resolving `Var` indices positionally through the constant's level
+/// params (same resolution as `egress_level`). Used to replay
+/// level-spelling decorations (canonicity §10.6).
+fn ixon_univ_to_level(u: &IxonUniv, level_params: &[Name]) -> env::Level {
+  match u {
+    IxonUniv::Zero => env::Level::zero(),
+    IxonUniv::Succ(inner) => {
+      env::Level::succ(ixon_univ_to_level(inner, level_params))
+    },
+    IxonUniv::Max(a, b) => env::Level::max(
+      ixon_univ_to_level(a, level_params),
+      ixon_univ_to_level(b, level_params),
+    ),
+    IxonUniv::IMax(a, b) => env::Level::imax(
+      ixon_univ_to_level(a, level_params),
+      ixon_univ_to_level(b, level_params),
+    ),
+    IxonUniv::Var(idx) => {
+      let pos = usize::try_from(*idx).expect("level param index exceeds usize");
+      let name = level_params.get(pos).cloned().unwrap_or_else(Name::anon);
+      env::Level::param(name)
+    },
+  }
+}
+
 /// Expression egress cache, keyed by content hash.
 type Cache = FxHashMap<ix_kernel::env::Addr, env::Expr>;
 
@@ -81,9 +107,24 @@ fn egress_expr(
       "egress_expr: unexpected FVar({id}) — abstract back to de Bruijn \
        before exporting"
     ),
-    ExprData::Sort(u, _) => env::Expr::sort(egress_level(u, level_params)),
-    ExprData::Const(id, levels, _) => {
-      let lvls = egress_levels(levels, level_params);
+    // Decoration replay (canonicity §10.6): a present decoration is the
+    // occurrence's original spelling — emit it instead of the kernel-held
+    // (mk*-normal) level. Decorated twins intern to distinct uids
+    // (`ExprKey` includes the decoration), so the uid-keyed cache never
+    // collapses them.
+    ExprData::Sort(u, i) => match &i.univ_decor {
+      Some(UnivDecor::Sort(orig)) => {
+        env::Expr::sort(ixon_univ_to_level(orig, level_params))
+      },
+      _ => env::Expr::sort(egress_level(u, level_params)),
+    },
+    ExprData::Const(id, levels, i) => {
+      let lvls = match &i.univ_decor {
+        Some(UnivDecor::Const(origs)) => {
+          origs.iter().map(|u| ixon_univ_to_level(u, level_params)).collect()
+        },
+        _ => egress_levels(levels, level_params),
+      };
       env::Expr::cnst(id.name.clone(), lvls)
     },
     ExprData::App(f, a, _) => {
@@ -394,9 +435,20 @@ use ixon::univ::Univ as IxonUniv;
 struct EgressCtx {
   /// External constant references, in insertion order.
   refs: IndexSet<Address>,
-  /// Universe terms, in insertion order (dedup by structural equality
-  /// via `Arc<Univ>`'s derived `Eq`/`Hash`).
+  /// Universe terms. When the original constant is available these are
+  /// PRESEEDED with its univ table verbatim (canonicity §10.6): the
+  /// original `ConstantMeta.univ_patches` reference the original
+  /// table's index space (primary indices for unchanged args, virtual
+  /// `univs.len() + slot` indices into `meta_univs` otherwise), and the
+  /// roundtrip pairs the rebuilt constant with that original meta — so
+  /// the rebuilt table must reproduce the original layout exactly, not
+  /// a first-use reordering. Traversal interns then always HIT (every
+  /// kernel-held level was ingressed from this very table, and P3 makes
+  /// stored canonical entries mk*-fixed); `preseeded` arms the
+  /// debug-assert on miss.
   univs: IndexSet<Arc<IxonUniv>>,
+  /// Whether `univs` was preseeded from the original constant.
+  preseeded: bool,
   /// Mutual block sibling lookup: KId of a sibling → its position in the
   /// block. Used to decide `Rec(idx, _)` vs. `Ref(idx, _)` for Const nodes.
   /// Empty for non-Muts (standalone) constants.
@@ -414,6 +466,7 @@ impl EgressCtx {
     Self {
       refs: IndexSet::new(),
       univs: IndexSet::new(),
+      preseeded: false,
       mut_ctx: FxHashMap::default(),
       expr_cache: FxHashMap::default(),
       univ_cache: FxHashMap::default(),
@@ -428,13 +481,31 @@ impl EgressCtx {
     out
   }
 
+  /// Install the ORIGINAL constant's univ table (see `univs` docs).
+  /// Entries unused by the kernel expressions (e.g. levels appearing
+  /// only in collapsed call-site args) ride along so the rebuilt table
+  /// stays layout-identical to the original.
+  fn preseed_univs(&mut self, univs: &[Arc<IxonUniv>]) {
+    for u in univs {
+      self.univs.insert(u.clone());
+    }
+    self.preseeded = true;
+  }
+
   fn intern_ref(&mut self, addr: Address) -> u64 {
     let (idx, _) = self.refs.insert_full(addr);
     idx as u64
   }
 
   fn intern_univ(&mut self, u: Arc<IxonUniv>) -> u64 {
-    let (idx, _) = self.univs.insert_full(u);
+    let (idx, fresh) = self.univs.insert_full(u);
+    debug_assert!(
+      !(fresh && self.preseeded),
+      "kexpr_to_ixon interned a universe absent from the original \
+       constant's table ({:?}) — the rebuilt table no longer matches the \
+       original meta's univ_patches index space (canonicity §10.6 V1)",
+      self.univs.get_index(idx)
+    );
     idx as u64
   }
 
@@ -505,10 +576,14 @@ fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
       "kexpr_to_ixon: unexpected FVar({id}) — abstract back to de Bruijn \
        before exporting"
     ),
-    ExprData::Sort(u, _) => {
-      let u_idx = kuniv_idx(u, ctx);
-      IxonExpr::sort(u_idx)
-    },
+    // Canonicity §10.6: the ixon half emits the kernel-held (canonical)
+    // level in ALL cases — decorations do NOT flow into the rebuilt
+    // tables. The original spellings ride along in the untouched
+    // original `ConstantMeta` (`univ_patches` + `meta_univs`) that the
+    // roundtrip pairs with this constant; the decompiler replays them
+    // from there. (The Lean half, `egress_expr` above, still replays
+    // decorations by VALUE — no table index space involved.)
+    ExprData::Sort(u, _) => IxonExpr::sort(kuniv_idx(u, ctx)),
     ExprData::Const(id, univs, _) => {
       let u_idxs = kunivs_to_idxs(univs, ctx);
       // Look up in mut_ctx first — a match means this is a mutual
@@ -900,6 +975,11 @@ fn egress_muts_block(
 ) -> Result<(), String> {
   let mut_ctx_vec = build_block_mut_ctx(all, names, name_index)?;
   let mut ctx = EgressCtx::with_mut_ctx(mut_ctx_vec);
+  // Reproduce the ORIGINAL block's univ-table layout so member metas'
+  // `univ_patches` stay index-valid (canonicity §10.6, see EgressCtx).
+  if let Some(orig_const) = original_env.get_const(&muts_named.addr) {
+    ctx.preseed_univs(&orig_const.univs);
+  }
 
   // Determine per-class representative KConst: this is the kernel's
   // canonical member for the class.  Alpha-equivalent siblings share a
@@ -1080,6 +1160,7 @@ fn egress_muts_block(
 fn egress_standalone(
   name: &Name,
   original_named: &Named,
+  original_env: &IxonEnv,
   name_index: &FxHashMap<Name, (KId<Meta>, KConst<Meta>)>,
   out: &IxonEnv,
 ) -> Result<(), String> {
@@ -1087,6 +1168,11 @@ fn egress_standalone(
     .get(name)
     .ok_or_else(|| format!("egress_standalone: '{name}' not in kenv"))?;
   let mut ctx = EgressCtx::new();
+  // Reproduce the ORIGINAL constant's univ-table layout so its meta's
+  // `univ_patches` stay index-valid (canonicity §10.6, see EgressCtx).
+  if let Some(orig_const) = original_env.get_const(&original_named.addr) {
+    ctx.preseed_univs(&orig_const.univs);
+  }
   let (constant, addr) = match kc {
     KConst::Defn { .. } => {
       let def = kdefn_to_ixon(kc, &mut ctx)?;
@@ -1251,7 +1337,7 @@ pub fn ixon_egress(
   let t_solo = std::time::Instant::now();
   standalone_entries.par_iter().try_for_each(
     |(name, named)| -> Result<(), String> {
-      egress_standalone(name, named, &name_index, &out)
+      egress_standalone(name, named, original_env, &name_index, &out)
     },
   )?;
   eprintln!("[ixon_egress] standalone consts:   {:.2?}", t_solo.elapsed());
