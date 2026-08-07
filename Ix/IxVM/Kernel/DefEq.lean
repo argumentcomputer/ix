@@ -403,27 +403,73 @@ def defEq := ⟦
       1 => 1,
       _ =>
         -- Unit-like and struct-eta stay PRE-loop, deviating from the
-        -- reference (which runs them only in the tier-5 fallback): on
-        -- this kernel's instance-heavy fixtures, pairs those tiers
-        -- decide instantly otherwise take the loop's unfold-both path
-        -- and blow up (measured: removing them stalled the suite's
-        -- first kernel check for minutes; on the mathlib monster their
-        -- pre-loop cost is ~neutral, -0.4%).
-        match try_unit_like(aw, bw, types) {
-          1 => 1,
-          _ =>
-            match try_eta_struct(aw, bw, types) {
+        -- reference (which runs them only in the tier-5 fallback) — but
+        -- ONLY for pairs the lazy-delta loop cannot step (neither side
+        -- has a Defn/Thm head or a proj-unfoldable head). For such stuck
+        -- pairs the pre-loop tiers ARE the tier-5 fallback, just without
+        -- a no-op loop pass in between: on this kernel's instance-heavy
+        -- fixtures they decide instantly what otherwise stalled the
+        -- suite's first kernel check for minutes.
+        --
+        -- Steppable pairs MUST take the loop first, like the reference.
+        -- Firing struct-eta on a pair delta could still process descends
+        -- into FIELD pairs that pit a projection against a value, which
+        -- forces one side to grind to constructor form. On
+        -- UInt8.ofBitVec_not (its `ofBitVec` head IS the UInt8 ctor,
+        -- so eta's gate passes immediately) that descent unfolded
+        -- `BitVec.not` on a symbolic argument into
+        -- `ofFin ⟨Nat.xor …, proof⟩`, and comparing the manufactured
+        -- val/proof fields ground the decidability towers behind the
+        -- bound proofs (Nat.le.rec/Nat.le.below.rec, unbounded). The
+        -- loop instead unfolds both sides in lock-step and closes via
+        -- H2/app-congruence + proj-iota with no field pair ever formed;
+        -- post-loop eta still catches every pair that genuinely needs
+        -- eta after unfolding.
+        match lazy_can_step(aw) + lazy_can_step(bw) {
+          0 =>
+            match try_unit_like(aw, bw, types) {
               1 => 1,
               _ =>
-                match try_eta_struct(bw, aw, types) {
+                match try_eta_struct(aw, bw, types) {
                   1 => 1,
                   _ =>
-                    match lazy_delta_loop(aw, bw, 10000, types) {
-                      (1, verdict, _, _) => verdict,
-                      (0, _, af, bf) => k_def_eq_post_loop(af, bf, types),
+                    match try_eta_struct(bw, aw, types) {
+                      1 => 1,
+                      _ => k_def_eq_loop_entry(aw, bw, types),
                     },
                 },
             },
+          _ => k_def_eq_loop_entry(aw, bw, types),
+        },
+    }
+  }
+
+  fn k_def_eq_loop_entry(aw: KExpr, bw: KExpr, types: List‹KExpr›) -> G {
+    match lazy_delta_loop(aw, bw, 10000, types) {
+      (1, verdict, _, _) => verdict,
+      (0, _, af, bf) => k_def_eq_post_loop(af, bf, types),
+    }
+  }
+
+  -- 1 iff the lazy-delta loop can make progress on `e`: Defn/Thm head
+  -- (delta_unfold applies) or Proj head over a Defn/Thm-headed inner
+  -- (try_unfold_proj_app applies). Mirrors exactly the loop's own
+  -- step conditions — no unfold is built, only the class is read.
+  fn lazy_can_step(e: KExpr) -> G {
+    match collect_spine(e) {
+      (head, _) =>
+        match load(head) {
+          KExprNode.Const(addr, _) => is_defn_or_thm(load(get_ci(addr))),
+          KExprNode.Proj(_, _, inner) =>
+            match collect_spine(inner) {
+              (ih, _) =>
+                match load(ih) {
+                  KExprNode.Const(ia, _) =>
+                    is_defn_or_thm(load(get_ci(ia))),
+                  _ => 0,
+                },
+            },
+          _ => 0,
         },
     }
   }
@@ -806,53 +852,62 @@ def defEq := ⟦
   -- a structure field. When the loop broke immediately these re-tries
   -- are memo hits on the pre-loop attempts, so the duplication is free.
   fn k_def_eq_post_loop(af: KExpr, bf: KExpr, types: List‹KExpr›) -> G {
-    match try_proof_irrel(af, bf, types) {
-      1 => 1,
-      _ =>
-        match try_unit_like(af, bf, types) {
-          1 => 1,
-          _ =>
-            match try_eta_struct(af, bf, types) {
+    -- Tier order mirrors the reference's loop-break path EXACTLY
+    -- (def_eq.rs:539-590 then is_def_eq_whnf 788-822): the 4c core
+    -- escape and 4d spine comparison run BEFORE the eta/unit-like/
+    -- proof-irrel fallbacks. Running struct-eta first (the old shape)
+    -- re-created the field-pair descent the slow2 gate exists to
+    -- prevent: a Proj-vs-ctor pair the loop breaks on is resolved by
+    -- 4c's full-proj scrutinee whnf + restart; handing it to eta
+    -- instead descends into projection-vs-value field pairs (see the
+    -- UInt8.ofBitVec_not note at k_is_def_eq_slow2).
+    --
+    -- Tier 4c (def_eq.rs:544-557): one core pass with the FULL
+    -- projection policy — a projection stuck through the loop's
+    -- cheap-proj forms resolves here via full whnf of its scrutinee.
+    -- On ANY progress, restart the whole def-eq on the reduced forms
+    -- (the reference `return self.is_def_eq(&wa_core, &wb_core)`),
+    -- giving every earlier tier another shot.
+    let af2 = whnf_ndfp(af, types);
+    let bf2 = whnf_ndfp(bf, types);
+    match ptr_val(af2) - ptr_val(af) {
+      0 =>
+        match ptr_val(bf2) - ptr_val(bf) {
+          0 =>
+            -- Tier 4d (def_eq.rs:567-570): SPINE-WISE same-head
+            -- comparison before the binary structural descent. Any
+            -- same-head stuck pair (Rec / ctor / non-Regular heads
+            -- that H2's gate excludes) decides here with one pair per
+            -- ARGUMENT; without it, struct_go's binary App arm spawns
+            -- one full-cascade pair per App LAYER — measured as 2.06M
+            -- of 2.72M def-eq calls on the mathlib monster.
+            match try_def_eq_app(af, bf, types) {
               1 => 1,
               _ =>
-                match try_eta_struct(bf, af, types) {
+                -- Tier 5 tail, reference order (is_def_eq_whnf):
+                -- lam-eta (788-798), string-lit retry (800-810: a side
+                -- can become a Lit(Str) only through the loop's
+                -- Thm/Defn unfolding, AFTER the entry-tier 1c ran on
+                -- the raw forms), struct-eta both ways (813-818),
+                -- unit-like (819), proof irrelevance (822), then the
+                -- terminal structural compare.
+                match try_eta_swap(af, bf, types) {
                   1 => 1,
                   _ =>
-                    -- Tier 4c mirror (def_eq.rs): one core pass with the
-                    -- FULL projection policy — a projection stuck through
-                    -- the loop's cheap-proj forms resolves here via full
-                    -- whnf of its scrutinee. On ANY progress, restart the
-                    -- whole def-eq on the reduced forms (the reference
-                    -- `return self.is_def_eq(&wa_core, &wb_core)`), giving
-                    -- every earlier tier another shot.
-                    let af2 = whnf_ndfp(af, types);
-                    let bf2 = whnf_ndfp(bf, types);
-                    match ptr_val(af2) - ptr_val(af) {
-                      0 =>
-                        match ptr_val(bf2) - ptr_val(bf) {
-                          0 =>
-                            -- Tier 4d (def_eq.rs): SPINE-WISE same-head
-                            -- comparison before the binary structural
-                            -- descent. Any same-head stuck pair (Rec /
-                            -- ctor / non-Regular heads that H2's gate
-                            -- excludes) decides here with one pair per
-                            -- ARGUMENT; without it, struct_go's binary
-                            -- App arm spawns one full-cascade pair per
-                            -- App LAYER — measured as 2.06M of 2.72M
-                            -- def-eq calls on the mathlib monster.
-                            match try_def_eq_app(af, bf, types) {
+                    match try_string_lit_pair(af, bf, types) {
+                      1 => 1,
+                      _ =>
+                        match try_eta_struct(af, bf, types) {
+                          1 => 1,
+                          _ =>
+                            match try_eta_struct(bf, af, types) {
                               1 => 1,
                               _ =>
-                                -- Tier-5 string-lit retry (def_eq.rs:
-                                -- 800-810): a side can become a Lit(Str)
-                                -- only through the loop's Thm/Defn
-                                -- unfolding, AFTER the entry-tier 1c ran
-                                -- on the raw forms — retry the expansion
-                                -- on the final forms.
-                                match try_string_lit_pair(af, bf, types) {
+                                match try_unit_like(af, bf, types) {
                                   1 => 1,
                                   _ =>
-                                    match try_eta_swap(af, bf, types) {
+                                    match try_proof_irrel(af, bf,
+                                        types) {
                                       1 => 1,
                                       _ =>
                                         k_is_def_eq_struct_go(af, bf,
@@ -860,13 +915,13 @@ def defEq := ⟦
                                     },
                                 },
                             },
-                          _ => k_is_def_eq(af2, bf2, types),
                         },
-                      _ => k_is_def_eq(af2, bf2, types),
                     },
                 },
             },
+          _ => k_is_def_eq(af2, bf2, types),
         },
+      _ => k_is_def_eq(af2, bf2, types),
     }
   }
 

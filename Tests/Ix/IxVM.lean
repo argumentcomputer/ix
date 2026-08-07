@@ -199,6 +199,27 @@ public def thmMajorWant (n : Nat) (pf : n = 1) : Nat := n
       (⟨Nat.zero_lt_succ 0, Nat.zero_lt_succ 1⟩ : 0 < 1 ∧ 0 < 2))
     (Eq.refl 1)
 
+-- Ctor-vs-class-projection def-eq (the UInt8.ofBitVec_not failure
+-- shape, minimized): `rfl` forces `BvBox.mk (~~~b) ≟ ~~~(BvBox.mk b)`
+-- — a structure-ctor application against a Complement-projection
+-- chain over the SAME structure, with a symbolic BitVec inside. The
+-- lazy-delta loop must process this pair by lock-step unfolding
+-- (instance projection → ctor-vs-ctor → spine compare → proj-iota);
+-- firing struct-eta on it instead (pre-loop, or post-loop before the
+-- 4c projection escape) descends into field pairs that pit
+-- `Prj(BvBox, 0, ~~~x)` against a value, forcing a one-sided grind of
+-- `BitVec.not` on the symbolic argument into `ofFin ⟨Nat.xor …, _⟩`
+-- and from there into unbounded Nat.le.rec / Nat.le.below.rec towers
+-- behind the bound proofs. Pins the slow2 `lazy_can_step` gate and
+-- the post-loop tier order (4c/4d before eta).
+public structure BvBox where
+  val : BitVec 8
+
+public instance : Complement BvBox := ⟨fun b => ⟨~~~b.val⟩⟩
+
+public theorem bvBoxNot (b : BitVec 8) :
+    BvBox.mk (~~~b) = ~~~(BvBox.mk b) := rfl
+
 end IxVMInd
 
 /-! ## Test runners -/
@@ -253,62 +274,64 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("HEq.rec",                                                         179_544_162),
   ("Eq.rec",                                                          179_097_368),
   ("Nat",                                                             174_253_724),
-  ("Nat.add",                                                         225_937_565),
-  ("Nat.add_comm",                                                    417_106_604),
-  ("Nat.decEq",                                                       470_464_329),
-  ("Nat.decLe",                                                       1_006_602_916),
-  ("Nat.sub_le_of_le_add",                                            2_474_609_937),
-  ("Nat.shiftRight_succ",                                             1_823_129_460),
+  ("Nat.add",                                                         225_910_876),
+  ("Nat.add_comm",                                                    416_843_360),
+  ("Nat.decEq",                                                       470_374_719),
+  ("Nat.decLe",                                                       1_006_113_764),
+  ("Nat.sub_le_of_le_add",                                            2_472_141_630),
+  ("Nat.shiftRight_succ",                                             1_821_598_791),
   ("Trans.mk",                                                        181_341_437),
-  ("Array.append_assoc",                                              11_056_443_537),
-  ("Vector.append",                                                   11_376_522_230),
-  ("IxVMPrim.nat_add_lit",                                            289_530_690),
-  ("IxVMPrim.nat_sub_lit",                                            315_461_663),
-  ("IxVMPrim.nat_mul_lit",                                            277_306_894),
-  ("IxVMPrim.nat_mul_big",                                            274_667_040),
-  ("IxVMPrim.nat_div_lit",                                            1_791_629_095),
-  ("IxVMPrim.nat_mod_lit",                                            1_828_060_460),
-  ("IxVMPrim.nat_succ_lit",                                           198_536_963),
-  ("IxVMPrim.nat_pred_lit",                                           231_757_495),
-  ("IxVMPrim.nat_gcd_lit",                                            2_861_602_296),
-  ("IxVMPrim.nat_land_lit",                                           4_732_910_294),
-  ("IxVMPrim.nat_lor_lit",                                            4_736_434_353),
-  ("IxVMPrim.nat_xor_lit",                                            4_767_870_097),
-  ("IxVMPrim.nat_shl_lit",                                            320_387_558),
-  ("IxVMPrim.nat_shr_lit",                                            1_813_678_146),
-  ("IxVMPrim.nat_pow_big",                                            514_116_290),
-  ("IxVMPrim.nat_beq_lit",                                            273_087_876),
-  ("IxVMPrim.nat_ble_lit",                                            265_526_351),
-  ("IxVMPrim.nat_cases_big",                                          230_531_807),
-  ("IxVMPrim.nat_dec_le",                                             1_033_015_921),
-  ("IxVMPrim.nat_dec_lt",                                             1_049_631_571),
-  ("IxVMPrim.nat_dec_eq",                                             527_797_381),
-  ("IxVMPrim.str_size_lit",                                           3_303_748_755),
-  ("IxVMPrim.bv_to_nat_lit",                                          2_714_181_602),
-  ("IxVMInd.Even",                                                    281_207_753),
-  ("IxVMInd.Odd",                                                     281_209_799),
-  ("IxVMInd.Even.rec",                                                306_491_888),
-  ("IxVMInd.Odd.rec",                                                 306_496_026),
+  ("Array.append_assoc",                                              11_041_567_976),
+  ("Vector.append",                                                   11_360_532_083),
+  ("IxVMPrim.nat_add_lit",                                            289_491_870),
+  ("IxVMPrim.nat_sub_lit",                                            315_420_116),
+  ("IxVMPrim.nat_mul_lit",                                            277_277_704),
+  ("IxVMPrim.nat_mul_big",                                            274_637_855),
+  ("IxVMPrim.nat_div_lit",                                            1_790_098_687),
+  ("IxVMPrim.nat_mod_lit",                                            1_826_538_393),
+  ("IxVMPrim.nat_succ_lit",                                           198_536_235),
+  ("IxVMPrim.nat_pred_lit",                                           231_753_598),
+  ("IxVMPrim.nat_gcd_lit",                                            2_858_983_106),
+  ("IxVMPrim.nat_land_lit",                                           4_728_460_434),
+  ("IxVMPrim.nat_lor_lit",                                            4_731_984_626),
+  ("IxVMPrim.nat_xor_lit",                                            4_763_421_331),
+  ("IxVMPrim.nat_shl_lit",                                            320_347_617),
+  ("IxVMPrim.nat_shr_lit",                                            1_812_147_737),
+  ("IxVMPrim.nat_pow_big",                                            514_072_903),
+  ("IxVMPrim.nat_beq_lit",                                            273_057_183),
+  ("IxVMPrim.nat_ble_lit",                                            265_500_561),
+  ("IxVMPrim.nat_cases_big",                                          230_519_443),
+  ("IxVMPrim.nat_dec_le",                                             1_032_530_201),
+  ("IxVMPrim.nat_dec_lt",                                             1_049_147_198),
+  ("IxVMPrim.nat_dec_eq",                                             527_706_618),
+  ("IxVMPrim.str_size_lit",                                           3_301_276_878),
+  ("IxVMPrim.bv_to_nat_lit",                                          2_711_768_068),
+  ("IxVMInd.Even",                                                    281_176_563),
+  ("IxVMInd.Odd",                                                     281_178_609),
+  ("IxVMInd.Even.rec",                                                306_455_708),
+  ("IxVMInd.Odd.rec",                                                 306_459_846),
   ("IxVMInd.Tree",                                                    176_471_365),
   ("IxVMInd.Tree.rec",                                                190_411_942),
   ("IxVMInd.DedupM",                                                  182_520_941),
   ("IxVMInd.DedupM.rec",                                              200_820_907),
   ("IxVMInd.DepthM",                                                  179_451_137),
   ("IxVMInd.DepthM.rec",                                              194_706_109),
-  ("String.Internal.append",                                          3_262_908_312),
-  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",      4_818_183_860),
-  ("Lean.Syntax.rec",                                                 3_344_037_837),
-  ("IxVMInd.AuxTie",                                                  463_112_722),
-  ("IxVMInd.AuxTie.rec",                                              519_430_865),
+  ("String.Internal.append",                                          3_260_450_138),
+  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",      4_815_371_727),
+  ("Lean.Syntax.rec",                                                 3_341_566_099),
+  ("IxVMInd.AuxTie",                                                  463_071_531),
+  ("IxVMInd.AuxTie.rec",                                              519_389_593),
   ("IxVMInd.HiddenIdx",                                               175_232_867),
   ("IxVMInd.HiddenIdx.rec",                                           179_133_764),
   ("IxVMInd.FnField",                                                 177_333_614),
   ("IxVMInd.FnField.rec",                                             182_973_145),
-  ("IxVMInd.thmMajorUse",                                             670_466_835),
-  ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec",      4_530_130_720),
-  ("Lean.Widget.TaggedText.rec",                                      3_292_966_940),
-  ("Lean.Doc.Part.rec",                                               3_353_406_626),
-  ("Lean.Doc.Block.rec",                                              3_562_739_954),
+  ("IxVMInd.thmMajorUse",                                             670_099_836),
+  ("IxVMInd.bvBoxNot",                                                9_118_649_037),
+  ("UInt8.ofBitVec_not",                                              9_122_396_678),
+  ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec",      4_523_990_480),
+  ("Lean.Widget.TaggedText.rec",                                      3_290_495_345),
+  ("Lean.Doc.Part.rec",                                               3_350_933_826),
+  ("Lean.Doc.Block.rec",                                              3_560_265_914),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A", 179_394_280),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec", 184_159_919),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1", 181_536_178),
@@ -318,8 +341,8 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec", 195_249_052),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1", 195_248_197),
   ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2", 181_536_178),
-  ("strOfListFoldSize",                                               3_720_925_687),
-  ("strOfListFoldSizeAscii",                                          3_722_452_919),
+  ("strOfListFoldSize",                                               3_718_254_714),
+  ("strOfListFoldSizeAscii",                                          3_719_781_945),
 ]
 
 /-- Variant of `kernelChecks`, pinned to the baseline
