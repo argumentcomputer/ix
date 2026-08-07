@@ -133,8 +133,8 @@ structure EnvSpec where
 
 def envSpecs : List EnvSpec := [
   -- Init is the Aiur shard pipeline's deliverable env (the partition the
-  -- full-Init proof runs over), so its planner trend line matters on its
-  -- own — InitStd's does not subsume it.
+  -- full-Init proof runs over) — registered on its own even though
+  -- InitStd's closure contains it.
   { name := "Init",    module := "Benchmarks/Compile/CompileInit.lean" },
   { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
   { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
@@ -182,6 +182,13 @@ structure BackendSpec where
   defaultMode : String
   /-- The inputs (envs and row names) this backend's runs fan over. -/
   inputs : BenchInputs
+  /-- (mode, envs): the envs whose runs in this mode ALSO measure one
+      whole-env row, keyed by the env name, next to the per-constant
+      rows (aiur execute: `ix shard <env>.ixe --max-ram 500` — a
+      whole-env execution that additionally tracks the predicted fleet
+      partition). List an env only where the whole-env run fits the CI
+      host in that mode. -/
+  envRows : List (String × List String) := []
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
@@ -235,11 +242,28 @@ def backendSpecs : List BackendSpec := [
                  ("execute", "aiur-check-execute-x64-32x"),
                  ("recursive", "aiur-check-recursive-x64-32x")],
     unscheduled := ["recursive"],
+    -- The execute run also measures a whole-env row per envRows env: the
+    -- FULL check schedule through the codegen'd kernel via `ix shard`'s
+    -- measured scan — the regime the single-constant rows never enter (a
+    -- per-constant run faults a tiny closure). The scan IS a whole-env
+    -- execution; the cut on top is an in-memory merge over the collected
+    -- block records, so `execute-time` stays an execution wall while the
+    -- row also tracks the partition predicted for the prove fleet at the
+    -- pinned `aiurShardBudgetGb`: the shard count (plotted — a packer or
+    -- kernel win is the only legitimate mover) and the env's total
+    -- measured fft-cost, which joins the per-constant series on the
+    -- "Aiur FFT Cost" plot (the execute testbed carries the canonical
+    -- fft trend; the prove-side duplicate is the unplotted copy).
+    -- InitStd and Lean
+    -- only: the heaviest envs whose execute-only wall fits a CI job
+    -- (Mathlib/FLT hit the dense-core multi-hour execution floor), while
+    -- Init's execution is contained in InitStd's.
+    envRows := [("execute", ["InitStd", "Lean"])],
     metrics := [("prove", ["prove-time", "throughput", "peak-rss",
                            "execute-time", "verify-time", "proof-size",
                            "fft-cost"]),
                 ("execute", ["execute-time", "throughput", "peak-rss",
-                             "fft-cost"]),
+                             "fft-cost", "shards"]),
                 ("recursive", ["recursive-prove-time", "recursive-peak-rss",
                                "recursive-proof-size", "recursive-verify-time",
                                "recursive-execute-time", "recursive-fft-cost",
@@ -248,9 +272,15 @@ def backendSpecs : List BackendSpec := [
     -- upper-only 5% instead of a hard pin. peak-rss and throughput are
     -- phase-scoped by the CELL (execute vs prove testbed);
     -- prove/verify-time and proof-size exist only on the prove testbed.
+    -- shards exists only on the whole-env execute rows: shard count can
+    -- only legitimately drop (a packer or kernel win), so it pins upper
+    -- at 0. (The heaviest shard's own cost is NOT tracked: any repack
+    -- reshapes it, so a band on it alerts on shard shape, not
+    -- regressions.)
     thresholds := [("constants", "0", "0"), ("fft-cost", "0.05", "_"),
                    ("prove-time", "0.10", "_"), ("verify-time", "0.10", "_"),
                    ("proof-size", "0.05", "_"), ("execute-time", "0.10", "_"),
+                   ("shards", "0", "_"),
                    ("peak-rss", "0.10", "_"), ("throughput", "_", "0.10")] },
   -- The aiur-recursive run (bench-typecheck --recursive over
   -- `recursiveConstants`): IxVM recursion on real statements — prove each
@@ -278,28 +308,6 @@ def backendSpecs : List BackendSpec := [
                    ("recursive-proof-size", "0.05", "_"),
                    ("prove-time", "0.10", "_"), ("proof-size", "0.05", "_"),
                    ("verify-time", "0.10", "_"), ("peak-rss", "0.10", "_")] },
-  -- The Aiur shard pipeline: one whole-env measured scan (`ix shard
-  -- scan`) at the pinned budget (`aiurShardBudgetGb`) — the FULL check
-  -- schedule executes through the codegen'd kernel as thin-frontier
-  -- CheckEnv claims with a running FFT readout, so the row tracks the
-  -- regime the per-constant aiur rows never enter (a single-constant run
-  -- faults a tiny closure). scan-time is the whole-env execution wall,
-  -- peak-rss the scan process tree's high-water; shards and the measured
-  -- max/total per-shard cost come from the manifest the scan writes.
-  -- fft-cost is the env's TOTAL measured fft — the same raw unit and
-  -- slug as the per-constant aiur rows, so the whole-env series joins
-  -- the existing Aiur FFT cost plot. The scan is deterministic — identical partitions across runs
-  -- on Init and InitStd — so the count and cost slugs ride 0/2% upper
-  -- bands: a regression can only move them up, and a legitimate kernel or
-  -- packer win lowers them freely.
-  { name := "aiur-shard", defaultMode := "execute", inputs := .perEnv,
-    testbeds := [("execute", "aiur-shard-x64-32x")],
-    metrics := [("execute", ["scan-time", "peak-rss", "shards",
-                             "max-shard-fft", "fft-cost"])],
-    thresholds := [("shards", "0", "_"), ("max-shard-fft", "0.02", "_"),
-                   ("fft-cost", "0.02", "_"),
-                   ("scan-time", "0.10", "_"),
-                   ("peak-rss", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -383,19 +391,24 @@ def findBackend (name : String) : Option BackendSpec :=
 def recursiveConstants : List String :=
   ["Nat.add_comm"]
 
-/-- `aiur-shard`'s pinned packing budget (GiB). Machine-independent on
-    purpose: a PR row and its bencher baseline must describe the same
-    partition problem, so the budget is the deliverable 256 GB prove
-    box — NOT the runner's own RAM (`--ceiling-gb` still guards the
-    runner). Executing a shard needs a small fraction of its predicted
-    PROVE RAM, so heavy-three execution fits hosts the prove would not. -/
-def aiurShardBudgetGb : Nat := 250
+/-- The whole-env execute rows' pinned packing budget (GiB): `ix shard
+    <env>.ixe --max-ram` for the partition the row tracks. Machine-
+    independent on purpose — a PR row and its bencher baseline must
+    describe the same partition problem, so the budget is the deliverable
+    500 GB prove-fleet box, NOT the runner's own RAM. The budget is only
+    the cut threshold: the scan executes with a pool sized to the
+    runner's actual RAM (`--ceiling-gb` still guards it). -/
+def aiurShardBudgetGb : Nat := 500
 
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
   (b.testbeds.find? (·.1 == mode)).map (·.2)
 
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
+
+/-- The envs whose runs in `mode` measure a whole-env row (`envRows`). -/
+def BackendSpec.envRowEnvs (b : BackendSpec) (mode : String) : List String :=
+  ((b.envRows.find? (·.1 == mode)).map (·.2)).getD []
 
 /-- `thresholds` rendered as the bencher-track action's `--threshold-*`
     flags, one percentage-test triple per measure. `__WINDOW__` is the
@@ -421,7 +434,8 @@ def BackendSpec.scheduledModes (b : BackendSpec) : List String :=
     constant excluded from one mode (e.g. prove) still keeps its env if
     another scheduled mode (e.g. execute) runs it; the fixed-config
     backend is env-independent, pinned to the head env so CI schedules
-    exactly one entry. -/
+    exactly one entry. An env with a whole-env row (`envRows`) in a
+    scheduled mode is covered like one with selected constants. -/
 def BackendSpec.envNames (b : BackendSpec) (rows : Array VectorRow) :
     List String :=
   let names := envSpecs.map (·.name)
@@ -430,6 +444,7 @@ def BackendSpec.envNames (b : BackendSpec) (rows : Array VectorRow) :
   | .perConstant | .perConstantWithEnv =>
     names.filter fun env =>
       b.scheduledModes.any fun m =>
+        (b.envRowEnvs m).contains env ||
         !(selectNames rows env b.name m
           (full := false) (tier := "") (shardOnly := false)).isEmpty
   | .fixedConfigs => names.take 1
@@ -449,7 +464,8 @@ def BackendSpec.benchmarkNames (b : BackendSpec) (rows : Array VectorRow)
   | .perConstant | .perConstantWithEnv =>
     let mut ns : Array String := #[]
     for env in b.envNames rows do
-      if b.inputs == .perConstantWithEnv then ns := ns.push env
+      if b.inputs == .perConstantWithEnv
+          || (b.envRowEnvs mode).contains env then ns := ns.push env
       ns := ns ++ (selectNames rows env b.name mode
         (full := false) (tier := "") (shardOnly := false)).map (·.name)
     return ns
@@ -813,6 +829,49 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.eprintln s!"[bench] per-constant closures failed (exit {exit})"
   | "aiur" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    -- Whole-env row (keyed by the env name) on the mode's `envRows` envs:
+    -- the FULL check schedule through the codegen'd kernel via `ix
+    -- shard`'s measured scan, which cuts the partition predicted for the
+    -- prove fleet at `aiurShardBudgetGb` on the way (an in-memory merge
+    -- over the block records the execution already collected — no second
+    -- execution, no re-price). The tool self-reports execute-time /
+    -- peak-rss through the rows contract (env load excluded from the
+    -- timed window, RSS = process-tree high-water, covering the worker
+    -- pool); shards, max-shard-fft, and the env's total fft-cost come
+    -- from the manifest. A kill (≥128) records `oom`/`crash` — the
+    -- honest row for a box the env no longer fits; a kernel reject exits
+    -- nonzero with no row and the gate fails on the missing row.
+    -- Skipped under a `--consts` override — a targeted run stays
+    -- targeted.
+    if wanted.isEmpty && (spec.envRowEnvs mode).contains env then
+      let ix ← resolveBin repo "ix"
+      let manifest := s!"{repo}/{env}-shardbench.ixes"
+      let exit ← runGuarded watchdog ceilingGb ix
+        #["shard", ixe, "--max-ram", toString aiurShardBudgetGb,
+          "--out", manifest, "--json", out, "--json-name", info.name]
+      if exit ≥ 128 then
+        let status := killStatus exit
+        IO.eprintln s!"[bench] whole-env scan killed (exit {exit}); recording {status}"
+        markKilled out info.name status
+      else if exit != 0 then
+        IO.eprintln s!"[bench] ix shard scan failed (exit {exit})"
+      else
+        -- Partition metrics straight from the manifest's tagged costs
+        -- (measured fft): count and total — the deterministic trend
+        -- lines a kernel or packer change moves.
+        match Ix.Cli.CheckCmd.parseIxesShards (← IO.FS.readBinFile manifest) with
+        | .error e => IO.eprintln s!"[bench] manifest parse failed: {e}"
+        | .ok shardRows =>
+          if shardRows.isEmpty then
+            IO.eprintln s!"[bench] empty partition in {manifest}"
+          else
+            let totalFft := shardRows.foldl (fun s r => s + r.cost) 0
+            let rows ← readRows out
+            if let some envRow := (rows.getObjVal? info.name).toOption then
+              writeEntry out info.name <|
+                (envRow.setObjVal! "shards"
+                    (Lean.toJson shardRows.size)).setObjVal!
+                  "fft-cost" (Lean.toJson totalFft)
     let bt ← resolveBin repo "bench-typecheck"
     let modeArgs := match mode with
       | "execute" => #["--execute-only"]
@@ -838,52 +897,6 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         runGuarded watchdog ceilingGb bt
           #["--ixe", ixe, "--consts", name, "--json", out, "--texray",
             "--recursive"]
-  | "aiur-shard" =>
-    if mode != "execute" then
-      p.printError s!"error: {backend} supports only execute mode"
-      return exitUsage
-    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
-    let ix ← resolveBin repo "ix"
-    let manifest := s!"{repo}/{env}-shardbench.ixes"
-    let budget := (p.flag? "shard-budget").map (·.as! Nat)
-      |>.getD aiurShardBudgetGb
-    -- One whole-env measured scan: executes the entire check schedule as
-    -- thin-frontier CheckEnv claims and writes the manifest with MEASURED
-    -- per-shard fft. The tool self-reports scan-time/peak-rss through
-    -- the rows contract (env load excluded from the timed window, RSS =
-    -- process-tree high-water). A kill (≥128) records `oom`/`crash` — the
-    -- honest row for a box the scan no longer fits; any other nonzero
-    -- exit is a genuine kernel rejection and fails the run.
-    let exit ← runGuarded watchdog ceilingGb ix
-      #["shard", ixe, "--max-ram", toString budget,
-        "--out", manifest, "--json", out, "--json-name", info.name]
-    if exit ≥ 128 then
-      let status := killStatus exit
-      IO.eprintln s!"[bench] scan killed (exit {exit}); recording {status}"
-      markKilled out info.name status
-      return 0
-    if exit != 0 then
-      IO.eprintln s!"[bench] ix shard scan failed (exit {exit})"
-      return 1
-    -- Partition metrics straight from the manifest's tagged costs
-    -- (measured fft): count, heaviest shard, and the total — the
-    -- deterministic trend lines a kernel or packer change moves.
-    match Ix.Cli.CheckCmd.parseIxesShards (← IO.FS.readBinFile manifest) with
-    | .error e =>
-      IO.eprintln s!"[bench] manifest parse failed: {e}"
-      return 1
-    | .ok shardRows =>
-      if shardRows.isEmpty then
-        IO.eprintln s!"[bench] empty partition in {manifest}"
-        return 1
-      let maxFft := shardRows.foldl (fun m r => max m r.cost) 0
-      let totalFft := shardRows.foldl (fun s r => s + r.cost) 0
-      let rows ← readRows out
-      if let some envRow := (rows.getObjVal? info.name).toOption then
-        writeEntry out info.name <|
-          ((envRow.setObjVal! "shards" (Lean.toJson shardRows.size)).setObjVal!
-              "max-shard-fft" (Lean.toJson maxFft)).setObjVal!
-            "fft-cost" (Lean.toJson totalFft)
   | "zisk" | "sp1" =>
     if mode != "execute" then
       p.printError s!"error: {backend} supports only execute mode"
@@ -935,10 +948,13 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let expected := match backend with
     | "compile" => #[info.name]
     | "decompile" => #[info.name]
-    | "aiur-shard" => #[info.name]
     | "ooc" | "lean4lean" => #[info.name] ++ names
     | "aiur-recursive" => recursiveConstants.toArray
-    | _ => names
+    | _ =>
+      -- An `envRows` env owes its whole-env row too (unless a --consts
+      -- override targeted the run).
+      if wanted.isEmpty && (spec.envRowEnvs mode).contains env
+      then #[info.name] ++ names else names
   let code ← gate out expected
   if code == 0 || code == exitRejected then
     saveBaseline out s!"{backend}-{env}-{mode}"
@@ -980,7 +996,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | aiur-shard | zisk | sp1 | ooc | lean4lean | compile | decompile | aiur-recursive"
+    backend      : String; "aiur | aiur-recursive | zisk | sp1 | ooc | lean4lean | compile | decompile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute | recursive (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
@@ -992,7 +1008,6 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     "shard-only";          "Restrict to shard_target rows"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 15 GB)"
-    "shard-budget" : Nat;  "aiur-shard only: pinned `ix shard <env.ixe> --max-ram` budget in GiB (default 250, the deliverable prove box). Change it only knowingly — the bencher baseline is keyed to the same partition problem."
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
 

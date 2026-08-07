@@ -822,8 +822,11 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
         -- an env stays in `envNames` because some scheduled mode runs it,
         -- but a constant excluded from one mode (e.g. Lean's only primary
         -- constant is prove-excluded) leaves that (env, mode) cell empty —
-        -- scheduling it would waste a job and expect a row that never lands.
+        -- scheduling it would waste a job and expect a row that never
+        -- lands. A whole-env row (`envRows`) keeps the cell scheduled
+        -- even with no per-constant selection.
         if b.inputs == .perConstant
+          && !(b.envRowEnvs mode).contains env
           && (Ix.Cli.BenchCmd.selectNames rows env b.name mode
               (full := false) (tier := "") (shardOnly := false)).isEmpty then
           continue
@@ -868,7 +871,8 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
+      !benchmark ([aiur] [aiur-recursive] [zisk] [sp1] [ooc] [compile]
+                  [decompile] | all)
                  [execute | recursive] [fresh] [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the

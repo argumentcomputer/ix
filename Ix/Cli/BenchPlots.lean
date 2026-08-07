@@ -64,10 +64,11 @@ def plotTitle (workload measure : String) : String :=
   | "aiur-check-prove", "peak-rss"       => "Aiur Prove Peak RAM Usage"
   | "aiur-check-prove", "verify-time"    => "Aiur Verify Time"
   | "aiur-check-prove", "proof-size"     => "Aiur Proof Size"
-  | "aiur-check-prove", "fft-cost"       => "Aiur FFT Cost"
+  | "aiur-check-execute", "fft-cost"     => "Aiur FFT Cost"
   | "aiur-check-execute", "execute-time" => "Aiur Execute Time"
   | "aiur-check-execute", "throughput"   => "Aiur Execute Throughput"
   | "aiur-check-execute", "peak-rss"     => "Aiur Execute Peak RAM Usage"
+  | "aiur-check-execute", "shards"       => "Aiur Predicted Shards"
   | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
   | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
   | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
@@ -81,16 +82,15 @@ def plotTitle (workload measure : String) : String :=
   | "aiur-recursive", "recursive-peak-rss"     => "Aiur Recursive Verifier Peak RAM Usage"
   | "aiur-recursive", "recursive-proof-size"   => "Aiur Recursive Verifier Proof Size"
   | "aiur-recursive", "recursive-fft-cost"     => "Aiur Recursive Verifier FFT Cost"
-  | "aiur-shard", "shards"              => "Aiur Predicted Shards"
-  | "aiur-shard", "union-bytes"         => "Aiur Shard Ingress Bytes"
-  | "aiur-shard", "heavy-execute-time"  => "Aiur Heavy-Shard Execute Time"
-  | "aiur-shard", "heavy-peak-rss"      => "Aiur Heavy-Shard Peak RAM Usage"
   | w, m => s!"{w}: {m}"
 
 /-- Tracked but not plotted solo. The two aiur runs re-measure each
     other's deterministic Phase-1 numbers as a redundancy check — one
-    trend line each is enough ("Aiur Execute Time" from the execute run,
-    "Aiur FFT Cost" from the prove run). Zisk `shards` is charted below
+    trend line each is enough, and both live on the execute testbed
+    ("Aiur Execute Time", "Aiur FFT Cost"), where the whole-env rows
+    upload too — so the env series and the per-constant series share
+    the same plots. The prove run's duplicates (execute-time, fft-cost)
+    are the skipped copies. Zisk `shards` is charted below
     over the heavy-tier primaries alone (light constants are pinned at a
     single shard, a flat line at 1), not over the full set here; zisk
     `constants` charts on the input-constants plot below instead of alone.
@@ -102,17 +102,13 @@ def plotTitle (workload measure : String) : String :=
     IxVM typecheck proof (under recursion-tuned parameters) — tracked for
     the compare table, but the dashboard trend that matters is the
     recursion layer's own `recursive-*` series, so the inner metrics
-    aren't plotted. aiur-shard's
-    `pred-floor-ram` is a cap-overflow tripwire (thresholded), while the
-    heavy-three execution charts the real RAM — the prediction adds no
-    dashboard trend of its own. -/
+    aren't plotted. -/
 def plotSkips : List (String × String) :=
-  [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
+  [("aiur-check-prove", "execute-time"), ("aiur-check-prove", "fft-cost"),
    ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
    ("aiur-recursive", "prove-time"), ("aiur-recursive", "proof-size"),
-   ("aiur-recursive", "verify-time"), ("aiur-recursive", "peak-rss"),
-   ("aiur-shard", "pred-floor-ram")]
+   ("aiur-recursive", "verify-time"), ("aiur-recursive", "peak-rss")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -135,10 +131,6 @@ def unitsFor (slug : String) : Option String :=
    ("cycles", "cycles"),
    ("max-shard-cycles", "cycles"),
    ("shards", "shards"),
-   ("pred-floor-ram", "GiB"),
-   ("union-bytes", "bytes (B)"),
-   ("heavy-execute-time", "seconds (s)"),
-   ("heavy-peak-rss", "bytes (B)"),
    ("fft-cost", "FFTs"),
    ("recursive-execute-time", "seconds (s)"),
    ("recursive-prove-time", "seconds (s)"),
@@ -152,7 +144,7 @@ def unitsFor (slug : String) : Option String :=
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
   ["ix-compile", "ix-decompile", "aiur-check-prove", "aiur-check-execute",
-   "aiur-recursive", "aiur-shard", "zisk-check-execute", "ooc-check"]
+   "aiur-recursive", "zisk-check-execute", "ooc-check"]
 
 structure PlotSpec where
   testbed : String

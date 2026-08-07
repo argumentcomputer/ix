@@ -422,8 +422,9 @@ def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address
 
 /-- The check-schedule block address of a constant: a projection collapses
     to its SCC/Muts wrapper (`p.block`); everything else is its own block.
-    Mirrors `check_schedule_block_addr` (`src/ffi/kernel.rs`). -/
-private def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
+    Mirrors `check_schedule_block_addr` (`src/ffi/kernel.rs`). Public for
+    `ix addr-of --ixes`' owning-shard lookup. -/
+def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
   match c.info with
   | .iPrj prj => prj.block
   | .cPrj prj => prj.block
@@ -523,12 +524,12 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      -- `benchJson = (out, rowName)` reports the check as a benchmark row
-      -- (the `aiur-shard` bench backend's per-shard spawn): `execute-time`
-      -- windows the check itself — the env parse and `EnvHandle` build are
-      -- excluded, so the measure tracks the kernel, not the loader — while
-      -- `peak-rss` is the process tree's absolute high-water (the parsed
-      -- env sits in the baseline, matching the ooc rows' semantics).
+      -- `benchJson = (out, rowName)` reports the check as a benchmark
+      -- row: `execute-time` windows the check itself — the env parse and
+      -- `EnvHandle` build are excluded, so the measure tracks the
+      -- kernel, not the loader — while `peak-rss` is the process tree's
+      -- absolute high-water (the parsed env sits in the baseline,
+      -- matching the ooc rows' semantics).
       if benchJson.isSome then
         TracingTexray.startSampler
         TracingTexray.resetPeakTreeRss
@@ -695,13 +696,31 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       | .ok h => pure h
     let workers := (p.flag? "jobs").map (·.as! Nat) |>.getD 0
     let workerBin := (← IO.appPath).toString
+    -- `--json` reports the run as a benchmark row: `execute-time`
+    -- windows the parallel check itself — the kernel compile and
+    -- `EnvHandle` build are excluded, so the measure tracks the kernel,
+    -- not the loader — while `peak-rss` is the process tree's absolute
+    -- high-water (covers the worker pool).
+    let benchJson := (p.flag? "json").map fun f =>
+      (f.as! String,
+       ((p.flag? "json-name").map (·.as! String)).getD "execute")
+    if benchJson.isSome then
+      TracingTexray.startSampler
+      TracingTexray.resetPeakTreeRss
     let start ← IO.monoMsNow
     match Aiur.Bytecode.Toplevel.executeEnvWithEnv compiled.bytecode funIdx
         envHandle (toString workers) (if keepGoing then "0" else "1")
         workerBin ixe with
     | .error e => IO.eprintln s!"execute failed: {e}"; return 1
     | .ok () =>
-      IO.println s!"execute: OK in {(← IO.monoMsNow) - start} ms"
+      let ms := (← IO.monoMsNow) - start
+      IO.println s!"execute: OK in {ms} ms"
+      if let some (out, rowName) := benchJson then
+        let peakRss ← TracingTexray.peakTreeRssBytes
+        Ix.Benchmark.Results.writeRow out rowName "ok"
+          [ ("execute-time",
+             Ix.Benchmark.Results.jsonRound 3 (ms.toFloat / 1000.0))
+          , ("peak-rss", Lean.toJson peakRss) ]
       return 0
   let claimHex : Option String :=
     (p.flag? "claim").map (·.as! String)
@@ -789,8 +808,8 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Max shards to check concurrently when checking a whole partition (--ixes without --shard). Default: all at once. Lower it to bound peak RAM — each in-flight shard re-ingests its closure into its own IO buffer."
-    json        : String;   "Benchmark results JSON accumulator (single-shard mode only): append an `execute-time`/`peak-rss` row for the checked shard. Used by `ix bench run --backend aiur-shard`."
-    "json-name" : String;   "Row name for --json (default: shard-<K>)."
+    json        : String;   "Benchmark results JSON accumulator (single-shard and --execute modes): append an `execute-time`/`peak-rss` row for the checked shard or whole-env execute."
+    "json-name" : String;   "Row name for --json (default: shard-<K>, or `execute` for --execute)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
