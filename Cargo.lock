@@ -2084,7 +2084,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=d85ba290ea83cb0b1fab66eb5f6e6a0b033c12aa#d85ba290ea83cb0b1fab66eb5f6e6a0b033c12aa"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=fd03d7957fa10ff607cb027639bbb0c18bcb8745#fd03d7957fa10ff607cb027639bbb0c18bcb8745"
 dependencies = [
  "bincode",
  "p3-air",
