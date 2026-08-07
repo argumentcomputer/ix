@@ -3,6 +3,7 @@ name: Extended CI tests
 on:
   push:
     branches: main
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -14,6 +15,7 @@ permissions:
 
 jobs:
   ignored-test:
+    if: github.event_name != 'pull_request'
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v7
@@ -79,6 +81,7 @@ jobs:
   # proof elaboration persists across main commits; lean-action provides only the
   # toolchain, and the steps build/test against the restored `.lake`.
   tc-test:
+    if: github.event_name != 'pull_request'
     name: Ix.Tc verification and parity
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
