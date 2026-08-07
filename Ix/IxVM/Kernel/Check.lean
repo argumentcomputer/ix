@@ -291,18 +291,6 @@ def check := ⟦
     }
   }
 
-  -- Tolerant: peel up to n Lams, stop early on non-Lam.
-  fn peel_n_lams_tol(e: KExpr, n: G, peeled: G) -> (KExpr, G) {
-    match n {
-      0 => (e, peeled),
-      _ =>
-        match load(e) {
-          KExprNode.Lam(_, body) => peel_n_lams_tol(body, n - 1, peeled + 1),
-          _ => (e, peeled),
-        },
-    }
-  }
-
   -- Each `lvls[i]` must be `Param(expected_start + i)` for i in 0..count.
   fn assert_lvls_are_params(lvls: List‹KLevel›, count: G, idx: G) {
     match count {
@@ -383,11 +371,41 @@ def check := ⟦
     }
   }
 
+  -- Whnf-peel the ctor's full binder telescope (params + fields),
+  -- threading the accumulated binder context, so a binder hidden behind
+  -- a definitional wrapper is still found (mirror the reference's A2
+  -- return-type gate, inductive.rs, which whnfs before every binder).
+  -- INTOLERANT on a missing binder after whnf — the reference errors
+  -- with "not enough binders" there, and falling off the match aborts
+  -- here. No substitution: de Bruijn structure is preserved for the
+  -- return-spine BVar checks downstream.
+  fn peel_ctor_binders_whnf(ty: KExpr, n: G,
+                                 types: List‹KExpr›) -> KExpr {
+    match n {
+      0 => ty,
+      _ =>
+        match load(ty) {
+          KExprNode.Forall(dom, body) =>
+            peel_ctor_binders_whnf(body, n - 1,
+              store(ListNode.Cons(dom, types))),
+          _ =>
+            match load(whnf(ty, types)) {
+              KExprNode.Forall(dom, body) =>
+                peel_ctor_binders_whnf(body, n - 1,
+                  store(ListNode.Cons(dom, types))),
+            },
+        },
+    }
+  }
+
   fn check_ctor_return_type(ctor_ty: KExpr, n_params: G,
                                  n_indices: G, n_fields: G,
                                  ind_num_lvls: G, block_addr: Addr,
                                  ind_idx: G) {
-    let body = peel_n_foralls(ctor_ty, n_params + n_fields);
+    -- The RETURN TYPE itself is deliberately NOT whnf'd (the reference's
+    -- "do NOT whnf here"): it must be syntactically `I params indices`.
+    let body = peel_ctor_binders_whnf(ctor_ty, n_params + n_fields,
+      store(ListNode.Nil));
     match collect_spine(body) {
       (head, args) =>
         match load(head) {
@@ -417,9 +435,13 @@ def check := ⟦
     match n {
       0 => (),
       _ =>
-        match load(ta) {
+        -- whnf both sides per step (mirror the reference's param
+        -- agreement walk): a param binder hidden behind a definitional
+        -- wrapper on either side is still compared. Intolerant on a
+        -- missing binder after whnf — the reference errors there.
+        match load(whnf(ta, types)) {
           KExprNode.Forall(da, ba) =>
-            match load(tb) {
+            match load(whnf(tb, types)) {
               KExprNode.Forall(db, bb) =>
                 let eq = k_is_def_eq(da, db, types);
                 assert_eq!(eq, 1,
@@ -456,9 +478,13 @@ def check := ⟦
     }
   }
 
+  -- whnf per step, tolerant stop (mirror the reference's field loop,
+  -- which whnfs before every field and breaks on non-Forall): a field
+  -- binder behind a definitional wrapper still gets its universe
+  -- checked, and the walk ends at the return type.
   fn check_field_universes_inner(ty: KExpr, ind_level: KLevel,
                                       types: List‹KExpr›) {
-    match load(ty) {
+    match load(whnf(ty, types)) {
       KExprNode.Forall(dom, body) =>
         let dom_level = k_ensure_sort(dom, types);
         assert_eq!(level_leq(dom_level, ind_level), 1,
@@ -475,10 +501,14 @@ def check := ⟦
     match n_params {
       0 => check_field_universes_inner(ctor_ty, ind_level, types),
       _ =>
-        match load(ctor_ty) {
+        -- whnf per skip step; a non-Forall after whnf falls through to
+        -- the field walk on the current form (the reference's `break`
+        -- out of the param skip).
+        match load(whnf(ctor_ty, types)) {
           KExprNode.Forall(dom, body) =>
             check_field_universes_skip_params(body, n_params - 1,
               ind_level, store(ListNode.Cons(dom, types))),
+          _ => check_field_universes_inner(ctor_ty, ind_level, types),
         },
     }
   }
@@ -1857,10 +1887,22 @@ def check := ⟦
   -- behind a definitional wrapper (whnf of a Forall is itself, so
   -- structural-first gives the same answer cheaper). Mirrors
   -- `build_motive_type_flat` in crates/kernel/src/inductive.rs, which
-  -- whnfs before every peel and BREAKS on a non-Forall — tolerant on
-  -- purpose: a short telescope yields a reconstruction the caller's
-  -- def-eq assert rejects with an accurate message, instead of an
-  -- unmatched-case abort here.
+  -- whnfs before every peel and BREAKS on a non-Forall.
+  --
+  -- WHY THE TOLERANT STOP IS SOUND (canonical statement — the other
+  -- tolerant peels in this file refer here): NOT because "a short
+  -- reconstruction fails the def-eq against the declared type" — the
+  -- declared type and stored rules are adversary-supplied, so an
+  -- adversary could simply declare the short form. The real invariant:
+  -- on any ACCEPTING run the telescopes are pinned elsewhere in the
+  -- same execution — `check_ctor_return_type` pins every ctor to
+  -- exactly n_params + n_fields binders ending in a syntactic
+  -- `I params indices` spine, `get_result_sort_level` intolerantly
+  -- whnf-peels the inductive's full params+indices telescope, and
+  -- `compare_rules` asserts the per-rule field count. A run where a
+  -- tolerant stop actually truncates cannot also pass those gates, so
+  -- every such run ends in an abort/reject; the stop only chooses WHERE
+  -- the rejection surfaces.
   fn peel_motive_params_subst(ty: KExpr, n: G, n_rec_params: G,
                                     is_aux: G, spec_params: List‹KExpr›,
                                     j: G) -> KExpr {
@@ -1891,9 +1933,9 @@ def check := ⟦
   -- Index binders can hide under definitional wrappers (e.g. a result type
   -- `Set σ` only exposes its `σ → Prop` index binder after whnf).
   -- Structural first (whnf of a Forall is itself); tolerant stop on a
-  -- non-Forall after reduction, mirroring the reference's `break`: the
-  -- short telescope makes the reconstruction differ and the caller's
-  -- def-eq assert rejects with an accurate message.
+  -- non-Forall after reduction, mirroring the reference's `break` —
+  -- sound by the pinned-telescope invariant (see
+  -- `peel_motive_params_subst`'s canonical note).
   fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
     match n {
       0 => store(ListNode.Nil),
@@ -2830,9 +2872,9 @@ def check := ⟦
                 peel_ctor_params_subst(body_substed, n - 1, depth,
                   spec_lift, is_aux, spec_params, j + 1),
               -- Tolerant stop, mirroring the reference's `break`
-              -- (crates/kernel/src/inductive.rs build_minor_at_depth): the
-              -- short telescope makes the reconstruction differ and the
-              -- caller's def-eq assert rejects with an accurate message.
+              -- (crates/kernel/src/inductive.rs build_minor_at_depth) —
+              -- sound by the pinned-telescope invariant (see
+              -- `peel_motive_params_subst`'s canonical note).
               _ => ty,
             },
         },

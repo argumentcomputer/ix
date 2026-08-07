@@ -484,6 +484,13 @@ def whnf := ⟦
         },
       KConstantInfo.Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
                           rules, k_flag, _unsafe, _block, _ridx) =>
+        -- Level-arity gate covering ALL iota paths (plain, K-synth,
+        -- struct-eta) reachable from this arm: the reference checks
+        -- `rec_us.len() != recr.lvls` in each of the three before
+        -- instantiating rule RHSes; a mismatched application stays
+        -- stuck, it never reaches expr_inst_levels.
+        match list_length(lvls) - nlvls {
+          0 =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
@@ -532,6 +539,8 @@ def whnf := ⟦
                   _ => stuck,
                 },
             },
+          _ => apply_spine(head, spine),
+        },
           _ => apply_spine(head, spine),
         },
       _ => apply_spine(head, spine),
@@ -1048,12 +1057,9 @@ def whnf := ⟦
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ => whnf_core(e, ctx_trim(types, expr_lbr(e))),
+      _ => whnf_with_spine(e, store(ListNode.Nil),
+             ctx_trim(types, expr_lbr(e))),
     }
-  }
-
-  fn whnf_core(e: KExpr, types: List‹KExpr›) -> KExpr {
-    whnf_with_spine(e, store(ListNode.Nil), types)
   }
 
   -- ============================================================================
@@ -1075,12 +1081,9 @@ def whnf := ⟦
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ => whnf_nd_core(e, ctx_trim(types, expr_lbr(e))),
+      _ => whnf_nd_with_spine(e, store(ListNode.Nil),
+             ctx_trim(types, expr_lbr(e))),
     }
-  }
-
-  fn whnf_nd_core(e: KExpr, types: List‹KExpr›) -> KExpr {
-    whnf_nd_with_spine(e, store(ListNode.Nil), types)
   }
 
   fn whnf_nd_with_spine(head: KExpr, spine: List‹KExpr›,
@@ -1179,6 +1182,9 @@ def whnf := ⟦
         },
       KConstantInfo.Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
                           rules, k_flag, _unsafe, _block, _ridx) =>
+        -- Level-arity gate — same as the full reducer's Rec arm.
+        match list_length(lvls) - nlvls {
+          0 =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
@@ -1212,6 +1218,8 @@ def whnf := ⟦
                   _ => stuck,
                 },
             },
+          _ => apply_spine(head, spine),
+        },
           _ => apply_spine(head, spine),
         },
       _ => apply_spine(head, spine),
@@ -1298,6 +1306,16 @@ def whnf := ⟦
                   KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
                     let field = list_lookup(inner_args, nparams + fidx);
                     whnf_ndfp_with_spine(field, spine, types),
+                  -- Stuck: rebuild with the WHNF'D scrutinee — a measured
+                  -- deviation from the reference (whose whnf_core returns
+                  -- `cur` unchanged on a failed proj reduce). The
+                  -- materialized form makes def-eq's Tier-4c restart, but
+                  -- under Aiur memoization that is the CHEAP shape: the
+                  -- reduced scrutinee is interned once and shared by every
+                  -- downstream pair, where the raw rebuild forces each
+                  -- comparison context to re-reduce it (raw variant
+                  -- measured +9.6% FFT on the mathlib monster:
+                  -- whnf_ndfp_proj_head 3x, whnf_nd family +30%).
                   _ =>
                     let stuck = store(KExprNode.Proj(struct_addr, fidx,
                       inner_whnf));

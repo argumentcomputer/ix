@@ -20,13 +20,18 @@ cheapest first, because the expensive tiers are the ones that unfold
 definitions and can blow up:
 
 pointer equality → memo lookup on a context-trimmed, pointer-ordered key
-→ app congruence on a shared Const head (no unfolding) → string-literal
-expansion → no-delta whnf (`whnf_nd`) plus `quick_def_eq` → proof
-irrelevance → unit-like types → structure eta → Nat offset comparison →
-lazy delta, unfolding the higher-ranked side first → full structural
-compare.
+→ eager Bool (`decide P ≡ Bool.true`, the one sanctioned full whnf) →
+string-literal expansion → no-delta whnf (`whnf_nd`) + ptr/quick
+structural → proof irrelevance (BEFORE any delta) → unit-like types →
+structure eta → the lazy-delta loop (Nat offset at each iteration,
+same-head spine probe under the H2 gate, hint-ranked single-step
+unfolds with no-delta renormalization) → post-loop fallback (proof
+irrel / unit-like / eta retries, the full-projection `whnf_ndfp` escape
+with restart, spine-wise app congruence) → full structural compare.
 
-Tier order is load-bearing rather than a matter of taste; where a tier's
+Full whnf never runs on a def-eq side (Bool tier excepted); delta
+unfolding happens through the loop, one definition at a time. Tier
+order is load-bearing rather than a matter of taste; where a tier's
 position matters for correctness and not just cost, the reason is
 recorded at that tier.
 -/
@@ -69,32 +74,30 @@ def defEq := ⟦
   }
 
   -- Def-eq is symmetric (every tier treats the sides symmetrically or
-  -- tries both directions), so canonicalize the pair by pointer order
-  -- (mirror k_is_def_eq_core): (a, b) and (b, a) share one ordered
-  -- memo row, and the recursion below issues instantiation traffic
-  -- with a canonical orientation.
+  -- tries both directions), so canonicalize the pair by pointer order:
+  -- (a, b) and (b, a) share one ordered memo row, and the recursion
+  -- below issues instantiation traffic with a canonical orientation.
+  --
+  -- NO pre-whnf app congruence between here and the slow tiers: the
+  -- reference's quick tier handles only Sort/Lam/Forall (quick_def_eq,
+  -- def_eq.rs), and same-head spine probing happens solely inside the
+  -- lazy-delta loop's equal-rank branch (H2). A speculative arg-wise
+  -- probe here costs a full recursive def-eq tree whenever it MISSES,
+  -- and it re-runs at every unfold height of every enclosing
+  -- comparison — measured as the residual mathlib blowup after the
+  -- loop went lazy.
   fn k_is_def_eq_core(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match u32_less_than(ptr_val(a), ptr_val(b)) {
-      1 => k_is_def_eq_ordered(a, b, types),
-      _ => k_is_def_eq_ordered(b, a, types),
+      1 => k_is_def_eq_slow_nd(a, b, types),
+      _ => k_is_def_eq_slow_nd(b, a, types),
     }
   }
 
-  fn k_is_def_eq_ordered(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    -- NO pre-whnf app congruence: the reference's quick tier handles
-    -- only Sort/Lam/Forall (quick_def_eq, def_eq.rs), and same-head
-    -- spine probing happens solely inside the lazy-delta loop's
-    -- equal-rank branch (H2). A speculative arg-wise probe here costs a
-    -- full recursive def-eq tree whenever it MISSES, and it re-runs at
-    -- every unfold height of every enclosing comparison — measured as
-    -- the residual mathlib blowup after the loop went lazy.
-    k_is_def_eq_slow(a, b, types)
-  }
-
-  -- App-congruence PRE-WHNF: if both sides collect_spine to
+  -- App-congruence on same-head spines: if both sides collect_spine to
   -- (Const(addr), args) with same addr + same level args + same arity,
   -- recurse on args pairwise. Sound: if all args def-eq, whole exprs
-  -- def-eq without unfolding the const.
+  -- def-eq without unfolding the const. Called only on reduced forms —
+  -- the loop's H2 branch and post-loop tier 4d.
   fn try_def_eq_app(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match collect_spine(a) {
       (ah, aa) =>
@@ -231,15 +234,13 @@ def defEq := ⟦
     }
   }
 
-  -- Slow path: whnf both sides, structural compare, then proof-irrel
-  -- fallback. On both structural + proof-irrel misses, delta-unfold on
-  -- mismatched Const heads is done inside k_is_def_eq_struct via
-  -- try_lazy_delta_app.
-  -- Tier 1d (mirror DefEq.lean:85-97 / Rust quick_def_eq +
-  -- whnf_no_delta_for_def_eq): no-delta whnf both sides; many pairs
-  -- settle by ptr-eq, safe structural compare, or app-congruence on
-  -- the nd forms — without ever full-delta-unfolding large Defn
-  -- bodies. Only on fall-through do we pay Tier 2's full whnf.
+  -- Slow path (see the module doc for the full ladder): eager-Bool and
+  -- string-lit tiers on the raw forms, then Tier 1d (mirror Rust
+  -- quick_def_eq + whnf_no_delta_for_def_eq) — no-delta whnf both
+  -- sides; many pairs settle by ptr-eq or safe structural compare on
+  -- the nd forms without ever unfolding large Defn bodies. Fall-through
+  -- goes to proof irrelevance and the lazy-delta loop; full whnf is
+  -- never paid on a def-eq side.
   -- Tier 1c (mirror DefEq.lean:78-84 / Rust def_eq.rs:295-304
   -- try_string_lit_expansion): if exactly one side is Lit(Str), expand
   -- it to `String.ofList [Char.ofNat c, ...]` ctor form so both sides
@@ -274,7 +275,16 @@ def defEq := ⟦
   -- the reference's `!has_fvars`) keeps it off open terms.
   fn is_bool_true_const(e: KExpr) -> G {
     match load(e) {
-      KExprNode.Const(caddr, _) => address_eq(caddr, bool_true_addr()),
+      -- The level list must be EMPTY, mirroring the reference's
+      -- `us.is_empty()` gate: `Bool.true` takes no universe params, so
+      -- a leveled occurrence is malformed and must not enter this tier
+      -- (infer's arity assert catches it elsewhere; this keeps the
+      -- tiers independent of that).
+      KExprNode.Const(caddr, lvls) =>
+        match load(lvls) {
+          ListNode.Nil => address_eq(caddr, bool_true_addr()),
+          _ => 0,
+        },
       _ => 0,
     }
   }
@@ -298,30 +308,33 @@ def defEq := ⟦
     }
   }
 
-  fn k_is_def_eq_slow(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+  -- Tiers 1b (eager Bool) and 1c (string lits) on the RAW forms, then
+  -- the no-delta pass. Formerly split as k_is_def_eq_slow → slow_nd;
+  -- the boundary carried the same argument tuple and so bought zero
+  -- memo differentiation while paying a circuit plus a lookup per row —
+  -- merged (trivial pass-through fns are banned in this DSL).
+  fn k_is_def_eq_slow_nd(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match try_bool_true_eager(a, b, types) {
       1 => 1,
       _ =>
         match try_string_lit_pair(a, b, types) {
           1 => 1,
-          _ => k_is_def_eq_slow_nd(a, b, types),
-        },
-    }
-  }
-
-  fn k_is_def_eq_slow_nd(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    let aw_nd = whnf_nd(a, types);
-    let bw_nd = whnf_nd(b, types);
-    match ptr_val(aw_nd) - ptr_val(bw_nd) {
-      0 => 1,
-      _ =>
-        match k_is_def_eq_struct_safe(aw_nd, bw_nd, types) {
-          1 => 1,
-          -- Hand the NO-DELTA forms down: every later tier (proof
-          -- irrelevance, lazy delta) is defined on them, and full
-          -- whnf must never run inside def-eq (see slow2). No app
-          -- congruence here either — see k_is_def_eq_ordered.
-          _ => k_is_def_eq_slow2(aw_nd, bw_nd, types),
+          _ =>
+            let aw_nd = whnf_nd(a, types);
+            let bw_nd = whnf_nd(b, types);
+            match ptr_val(aw_nd) - ptr_val(bw_nd) {
+              0 => 1,
+              _ =>
+                match k_is_def_eq_struct_safe(aw_nd, bw_nd, types) {
+                  1 => 1,
+                  -- Hand the NO-DELTA forms down: every later tier
+                  -- (proof irrelevance, lazy delta) is defined on them,
+                  -- and full whnf must never run inside def-eq (see
+                  -- slow2). No app congruence here either — see
+                  -- k_is_def_eq_core.
+                  _ => k_is_def_eq_slow2(aw_nd, bw_nd, types),
+                },
+            },
         },
     }
   }
@@ -680,14 +693,9 @@ def defEq := ⟦
     }
   }
 
-  -- Structural arm-by-arm equality on WHNF'd exprs. The Lit arm
-  -- continues into `k_is_def_eq_struct_go` directly (see there);
-  -- keep the two-name split so that call can bypass nothing but the
-  -- entry itself.
-  fn k_is_def_eq_struct(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    k_is_def_eq_struct_go(a, b, types)
-  }
-
+  -- Structural arm-by-arm equality on WHNF'd exprs. (The historical
+  -- k_is_def_eq_struct entry alias was a pure pass-through — inlined
+  -- away; trivial wrapper fns waste a circuit and a lookup per row.)
   fn k_is_def_eq_struct_go(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match load(a) {
       KExprNode.BVar(i) =>
@@ -837,7 +845,7 @@ def defEq := ⟦
                               _ =>
                                 match try_eta_swap(af, bf, types) {
                                   1 => 1,
-                                  _ => k_is_def_eq_struct(af, bf, types),
+                                  _ => k_is_def_eq_struct_go(af, bf, types),
                                 },
                             },
                           _ => k_is_def_eq(af2, bf2, types),
@@ -853,9 +861,12 @@ def defEq := ⟦
   -- Multi-step lazy-delta reduction loop (mirror Tier 4, the reference's
   -- iterative lazyDeltaReduction). Unfold ONE side per iteration (prefer
   -- higher-rank/hint), renormalize with whnf_nd — NEVER full whnf: delta
-  -- inside def-eq happens only through this loop, one definition at a
+  -- inside def-eq happens through this loop, one definition at a
   -- time, so both sides meet at the lowest definitional height that
-  -- decides the pair instead of grinding to normal form.
+  -- decides the pair instead of grinding to normal form. (One residual
+  -- exception: on FUEL EXHAUSTION the structural tiers' Const/App
+  -- mismatch arms can still unfold via try_lazy_delta_app — on every
+  -- normal loop break those calls are guaranteed misses.)
   --
   -- Returns (decided, verdict, a_fin, b_fin): decided=1 means verdict is
   -- the final answer; decided=0 means fall through — the caller's
@@ -976,10 +987,10 @@ def defEq := ⟦
     }
   }
 
-  -- One unfold step, then whnf_nd — NOT full whnf: the loop is the only
-  -- delta engine inside def-eq, and renormalizing an unfolded side with
-  -- full whnf would cascade-unfold everything the laziness exists to
-  -- avoid (the reference steps with whnf_no_delta_for_def_eq).
+  -- One unfold step, then whnf_nd — NOT full whnf: renormalizing an
+  -- unfolded side with full whnf would cascade-unfold everything the
+  -- laziness exists to avoid (the reference steps with
+  -- whnf_no_delta_for_def_eq).
   fn unfold_a_and_loop(a: KExpr, b: KExpr, fuel: G,
                            types: List‹KExpr›) -> (G, G, KExpr, KExpr) {
     match delta_unfold(a) {
