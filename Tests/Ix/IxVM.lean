@@ -169,6 +169,36 @@ public inductive FnField where
 -- adversarially — where the gates' abort is the correct verdict. No
 -- honest fixture can exercise it.
 
+-- Theorem-headed iota major (the Rat.instEncodable failure shape,
+-- minimized): reducing `And.rec motive minor MAJOR` requires whnf to
+-- delta-unfold the major down to `And.intro`, and here the major is a
+-- THEOREM constant. The reference's full whnf unfolds
+-- Definition|Theorem alike (delta_unfold_one, whnf.rs); a kernel whose
+-- full whnf keeps Thm heads stuck cannot fire the iota, the recursor
+-- application stays stuck, and checking `thmMajorUse` false-rejects
+-- ("inferred type is not def-eq to the expected type"). The no-delta
+-- layer (whnf_nd, def-eq's stepping forms) keeps Thm stuck — this pins
+-- the FULL-whnf semantics only.
+--
+-- Construction: the And proof is written INLINE, so the elaborator's
+-- Meta def-eq (which treats theorems as opaque, unlike the kernel)
+-- sees `And.rec` over `And.intro` and accepts; `abstractNestedProofs`
+-- then pulls the proof out as the auto-theorem `thmMajorUse._proof_1`
+-- at declaration time — the same mechanism that created
+-- `Rat.instEncodable._proof_1`. The KERNEL therefore checks
+-- `Eq.refl 1 : 1 = 1` against the domain `(And.rec … ._proof_1) = 1`,
+-- forcing def-eq `1 ≟ And.rec … thmMajorUse._proof_1` with a
+-- Thm-headed major. And is used for its subsingleton large
+-- elimination: a Sort-valued And.rec whose only reduction path is
+-- through the major.
+public def thmMajorWant (n : Nat) (pf : n = 1) : Nat := n
+
+@[expose] public def thmMajorUse : Nat :=
+  thmMajorWant
+    (And.rec (motive := fun _ => Nat) (fun _ _ => 1)
+      (⟨Nat.zero_lt_succ 0, Nat.zero_lt_succ 1⟩ : 0 < 1 ∧ 0 < 2))
+    (Eq.refl 1)
+
 end IxVMInd
 
 /-! ## Test runners -/
@@ -274,6 +304,7 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.HiddenIdx.rec",                                           179_133_647),
   ("IxVMInd.FnField",                                                 177_333_417),
   ("IxVMInd.FnField.rec",                                             182_974_873),
+  ("IxVMInd.thmMajorUse",                                             669_685_966),
   ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec",      4_503_554_381),
   ("Lean.Widget.TaggedText.rec",                                      3_275_768_921),
   ("Lean.Doc.Part.rec",                                               3_336_283_738),

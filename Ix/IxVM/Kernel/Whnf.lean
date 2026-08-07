@@ -16,13 +16,14 @@ Two reducers live here, differing only in whether delta fires:
 
 * `whnf` — the full reducer. Beta, zeta, iota (recursors, including the
   K rule and structure eta), quotient lifting/induction, projections,
-  the Nat/BitVec/String primitive fast-paths, and delta on `Defn`.
-  `Thm` heads stay stuck: a theorem only unfolds through def-eq's
-  lazy-delta step, never by plain reduction.
+  the Nat/BitVec/String primitive fast-paths, and delta on `Defn` AND
+  `Thm` (the reference's delta phase matches Definition|Theorem alike —
+  a theorem-headed iota major must unfold for the rule to fire).
 * `whnf_nd` — the no-delta reducer (`_nd` suffix throughout). Everything
   above except delta, so `Defn` and `Thm` heads both stay stuck. Def-eq
   reduces with this first, since it is far cheaper and often enough to
-  decide a pair, and only then pays for unfolding.
+  decide a pair, and only then pays for unfolding through the
+  lazy-delta loop.
 
 `get_ci(addr)` fault-loads and memoizes, so reduction needs no ambient
 constant table — an addr is self-sufficient. The `types` argument is the
@@ -472,10 +473,20 @@ def whnf := ⟦
             let body = expr_inst_levels(value, lvls);
             whnf_with_spine(body, spine, types),
         },
-      -- Thm stays stuck in whnf (mirror Whnf.lean:250 / Rust): proof
-      -- bodies unfold only through lazy-delta's try_unfold_head, so
-      -- proof_irrel / congruence get first shot at Thm-headed pairs.
-      KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
+      -- Thm unfolds exactly like Defn in FULL whnf: the reference's
+      -- delta phase (delta_unfold_one, whnf.rs) matches
+      -- `DefKind::Definition | DefKind::Theorem`. This matters for
+      -- iota majors that are theorem constants — e.g.
+      -- `And.rec m minor Rat.instEncodable._proof_1`, where the rule
+      -- can only fire once the proof unfolds to `And.intro`
+      -- (subsingleton large elimination; pinned by
+      -- IxVMInd.thmMajorUse). Keeping Thm stuck here false-rejected
+      -- such constants. The def-eq stepping layers still never see
+      -- this: they reduce with whnf_nd, where Defn AND Thm both stay
+      -- stuck, so proof_irrel keeps first shot at Thm-headed pairs.
+      KConstantInfo.Thm(_, _, value) =>
+        let body = expr_inst_levels(value, lvls);
+        whnf_with_spine(body, spine, types),
       KConstantInfo.Quot(_, _, _) =>
         let quot = try_quot_iota(addr, spine, types);
         match quot {
