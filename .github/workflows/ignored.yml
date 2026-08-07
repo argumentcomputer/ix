@@ -70,7 +70,7 @@ jobs:
             --track-origins=yes \
             --error-exitcode=1 \
             --suppressions=.github/valgrind.supp \
-            .lake/build/bin/IxTests -- ffi
+            .lake/build/bin/IxTests ffi
 
   # Ix.Tc formal verification + typechecker parity suite, run on push-to-main
   # and manual dispatch only so its ~13-min `Ix.Tc.Verify` proof elaboration and
