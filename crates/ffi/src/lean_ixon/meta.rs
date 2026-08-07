@@ -776,9 +776,7 @@ impl<R: LeanRef> LeanIxonUnivPatch<R> {
   }
 }
 
-fn decode_univ_patch_array(
-  obj: LeanArray<LeanBorrowed<'_>>,
-) -> Vec<UnivPatch> {
+fn decode_univ_patch_array(obj: LeanArray<LeanBorrowed<'_>>) -> Vec<UnivPatch> {
   let mut out = Vec::with_capacity(obj.len());
   for i in 0..obj.len() {
     out.push(LeanIxonUnivPatch::new(obj.get(i).to_owned_ref()).decode());

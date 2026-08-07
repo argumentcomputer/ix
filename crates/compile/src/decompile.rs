@@ -1095,9 +1095,10 @@ pub fn decompile_expr(
                 (Some(idxs), Expr::Ref(..) | Expr::Rec(..)) => {
                   decompile_univ_indices(idxs, lvl_names, cache)?
                 },
-                (None, Expr::Ref(_, univ_indices) | Expr::Rec(_, univ_indices)) => {
-                  decompile_univ_indices(univ_indices, lvl_names, cache)?
-                },
+                (
+                  None,
+                  Expr::Ref(_, univ_indices) | Expr::Rec(_, univ_indices),
+                ) => decompile_univ_indices(univ_indices, lvl_names, cache)?,
                 _ => vec![],
               };
               // Push the bare head (Mdata is applied by BuildTelescope to

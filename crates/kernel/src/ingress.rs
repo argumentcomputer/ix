@@ -88,13 +88,17 @@ impl<'a, M: KernelMode> Ctx<'a, M> {
   fn univ_at_virtual(&self, idx: u64) -> Result<&'a Arc<IxonUniv>, String> {
     let i = usize::try_from(idx)
       .map_err(|_e| format!("virtual univ index {idx} exceeds usize"))?;
-    self.univs.get(i).or_else(|| self.meta_univs.get(i - self.univs.len())).ok_or_else(|| {
-      format!(
-        "virtual univ index {i} out of bounds (univs {} + meta_univs {})",
-        self.univs.len(),
-        self.meta_univs.len()
-      )
-    })
+    self
+      .univs
+      .get(i)
+      .or_else(|| self.meta_univs.get(i - self.univs.len()))
+      .ok_or_else(|| {
+        format!(
+          "virtual univ index {i} out of bounds (univs {} + meta_univs {})",
+          self.univs.len(),
+          self.meta_univs.len()
+        )
+      })
   }
 }
 

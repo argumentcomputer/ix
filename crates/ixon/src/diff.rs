@@ -2548,10 +2548,11 @@ mod tests {
   #[test]
   #[ignore]
   fn dump_named_metas() {
-    let paths: Vec<String> = [std::env::var("IXE_A").ok(), std::env::var("IXE_B").ok()]
-      .into_iter()
-      .flatten()
-      .collect();
+    let paths: Vec<String> =
+      [std::env::var("IXE_A").ok(), std::env::var("IXE_B").ok()]
+        .into_iter()
+        .flatten()
+        .collect();
     assert!(!paths.is_empty(), "set IXE_A (and optionally IXE_B)");
     let targets: Vec<String> = std::env::var("IXE_NAMES")
       .unwrap_or_default()
@@ -2633,9 +2634,7 @@ mod tests {
       match u {
         Univ::Zero | Univ::Var(_) => 1,
         Univ::Succ(i) => 1 + univ_size(i),
-        Univ::Max(a, b) | Univ::IMax(a, b) => {
-          1 + univ_size(a) + univ_size(b)
-        },
+        Univ::Max(a, b) | Univ::IMax(a, b) => 1 + univ_size(a) + univ_size(b),
       }
     }
   }
@@ -2871,8 +2870,12 @@ mod tests {
       geran_consts.len(),
       geran_noncanon_entries - mk_reducible_entries
     );
-    println!("collision constants (≥2 spellings of one class): {collision_consts}");
-    println!("P2 violations (draft linearizer, informational): {p2_violations}");
+    println!(
+      "collision constants (≥2 spellings of one class): {collision_consts}"
+    );
+    println!(
+      "P2 violations (draft linearizer, informational): {p2_violations}"
+    );
     println!(
       "occurrences — stage-1 decorations (mk*): {mk_occurrences}; \
        stage-2 patches (Géran): {geran_occurrences} \

@@ -120,10 +120,9 @@ fn egress_expr(
     },
     ExprData::Const(id, levels, i) => {
       let lvls = match &i.univ_decor {
-        Some(UnivDecor::Const(origs)) => origs
-          .iter()
-          .map(|u| ixon_univ_to_level(u, level_params))
-          .collect(),
+        Some(UnivDecor::Const(origs)) => {
+          origs.iter().map(|u| ixon_univ_to_level(u, level_params)).collect()
+        },
         _ => egress_levels(levels, level_params),
       };
       env::Expr::cnst(id.name.clone(), lvls)

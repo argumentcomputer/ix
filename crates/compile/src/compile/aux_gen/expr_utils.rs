@@ -2926,7 +2926,6 @@ fn kexpr_content_hash(
   }
 }
 
-
 /// Collect source-shaped subterms that WHNF may copy into a reduct.
 ///
 /// Keys use the kernel content hash so alpha-collapsed aliases like

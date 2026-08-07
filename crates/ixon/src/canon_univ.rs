@@ -433,8 +433,7 @@ fn succs(mut u: Arc<Univ>, n: u64) -> Arc<Univ> {
 /// constant. Everything is inherited from the map's own ordering — no
 /// fresh choices — and the result is a `mk*` fixpoint (P3).
 pub fn linearize(norm: &NormLevel) -> Arc<Univ> {
-  let const_at =
-    |p: &[u64]| -> u64 { norm.get(p).map_or(0, |n| n.constant) };
+  let const_at = |p: &[u64]| -> u64 { norm.get(p).map_or(0, |n| n.constant) };
   let c_root = const_at(&[]);
   // Is a `u_i = 0` fallout of `k` dominated under `ctx`? Some entry at a
   // subset path must guarantee ≥ k whenever `ctx` is active: a constant
@@ -447,8 +446,7 @@ pub fn linearize(norm: &NormLevel) -> Arc<Univ> {
     }
     norm.iter().any(|(q, n)| {
       q.iter().all(|x| ctx.contains(x))
-        && (n.constant >= k
-          || n.vars.iter().any(|(_, off)| off + 1 >= k))
+        && (n.constant >= k || n.vars.iter().any(|(_, off)| off + 1 >= k))
     })
   };
   // Context groups: constant + atoms (max-merged per idx).
@@ -555,10 +553,8 @@ pub fn linearize(norm: &NormLevel) -> Arc<Univ> {
     };
     // Wrap gates innermost-to-outermost following the recovered order.
     let order = gate_order(ctx);
-    let term = order
-      .iter()
-      .rev()
-      .fold(body, |acc, p| Univ::imax(acc, Univ::var(*p)));
+    let term =
+      order.iter().rev().fold(body, |acc, p| Univ::imax(acc, Univ::var(*p)));
     terms.push(term);
   }
   if c_root > 0 && !root_c_absorbed {
@@ -670,17 +666,17 @@ mod tests {
     // Commutative order twins.
     assert_eq!(canon_univ(&m(v(1), v(0))), m(v(0), v(1)));
     // Reassociation.
-    assert_eq!(
-      canon_univ(&m(m(v(0), v(1)), v(2))),
-      m(v(0), m(v(1), v(2)))
-    );
+    assert_eq!(canon_univ(&m(m(v(0), v(1)), v(2))), m(v(0), m(v(1), v(2))));
     // Succ distribution.
     assert_eq!(canon_univ(&s(m(v(0), v(1)))), m(s(v(0)), s(v(1))));
     // mk*-reducible spellings land on the reduced class.
     assert_eq!(canon_univ(&im(im(s(z()), v(0)), v(0))), v(0));
     assert_eq!(canon_univ(&m(v(0), v(0))), v(0));
     // Redundant numeral absorption.
-    assert_eq!(canon_univ(&m(m(s(v(0)), s(v(1))), s(z()))), m(s(v(0)), s(v(1))));
+    assert_eq!(
+      canon_univ(&m(m(s(v(0)), s(v(1))), s(z()))),
+      m(s(v(0)), s(v(1)))
+    );
   }
 
   // ---- properties ----
@@ -751,8 +747,8 @@ mod tests {
         failures.push(format!("P2 {u:?} → {c:?}"));
       }
       if reduce_univ(&c) != c {
-        failures.push(format!("P3 {u:?} → {c:?} (reduces to {:?})",
-          reduce_univ(&c)));
+        failures
+          .push(format!("P3 {u:?} → {c:?} (reduces to {:?})", reduce_univ(&c)));
       }
       if canon_univ(&c) != c {
         failures.push(format!("P1 {u:?} → {c:?} → {:?}", canon_univ(&c)));

@@ -326,7 +326,14 @@ fn mk_info<M: KernelMode>(
   has_fvars: bool,
   mdata: M::MField<Vec<MData>>,
 ) -> ExprInfo<M> {
-  ExprInfo { addr, lbr, count_0, has_fvars, mdata, univ_decor: no_univ_decor::<M>() }
+  ExprInfo {
+    addr,
+    lbr,
+    count_0,
+    has_fvars,
+    mdata,
+    univ_decor: no_univ_decor::<M>(),
+  }
 }
 
 /// `mk_info` with a level-spelling decoration (`Sort`/`Const` nodes only).

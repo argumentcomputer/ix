@@ -140,10 +140,9 @@ pub fn expr_key<M: KernelMode>(e: &KExpr<M>) -> ExprKey {
   match e.data() {
     ExprData::Var(i, _, _) => ExprKey::Var(*i),
     ExprData::FVar(id, _, _) => ExprKey::FVar(id.0),
-    ExprData::Sort(u, i) => ExprKey::Sort(
-      *u.addr(),
-      M::meta_get(&i.univ_decor).cloned().flatten(),
-    ),
+    ExprData::Sort(u, i) => {
+      ExprKey::Sort(*u.addr(), M::meta_get(&i.univ_decor).cloned().flatten())
+    },
     ExprData::Const(id, us, i) => ExprKey::Const(
       id.addr.clone(),
       us.iter().map(|u| *u.addr()).collect(),

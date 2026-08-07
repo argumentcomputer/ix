@@ -5590,10 +5590,10 @@ mod tests {
     // the patch must carry the full arg list.
     lean_env.insert(
       use_name.clone(),
-      mk_axiom(&use_name, LeanExpr::cnst(twin_name.clone(), vec![
-        succ_dist(),
-        lv(),
-      ])),
+      mk_axiom(
+        &use_name,
+        LeanExpr::cnst(twin_name.clone(), vec![succ_dist(), lv()]),
+      ),
     );
     let lean_env = Arc::new(lean_env);
 
@@ -5709,11 +5709,7 @@ mod tests {
       is_reflexive: false,
     };
     let mk_ctor = |name: &Name, cidx: u64, typ: LeanExpr| ConstructorVal {
-      cnst: ConstantVal {
-        name: name.clone(),
-        level_params: lps.clone(),
-        typ,
-      },
+      cnst: ConstantVal { name: name.clone(), level_params: lps.clone(), typ },
       induct: ind_name.clone(),
       cidx: Nat::from(cidx),
       num_params: Nat::from(0u64),
@@ -5722,8 +5718,7 @@ mod tests {
     };
 
     let mut lean_env = LeanEnv::default();
-    lean_env
-      .insert(ind_name.clone(), LeanConstantInfo::InductInfo(inductive));
+    lean_env.insert(ind_name.clone(), LeanConstantInfo::InductInfo(inductive));
     lean_env.insert(
       c0_name.clone(),
       LeanConstantInfo::CtorInfo(mk_ctor(&c0_name, 0, c0_typ)),
