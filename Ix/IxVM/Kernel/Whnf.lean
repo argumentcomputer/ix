@@ -40,35 +40,44 @@ def whnf := ⟦
     }
   }
 
-  -- Peel `Lam` telescope against spine, one arg per Lam.
-  fn peel_beta(lam: KExpr, spine: List‹KExpr›, acc: List‹KExpr›)
-                  -> (KExpr, List‹KExpr›, List‹KExpr›) {
-    match load(lam) {
-      KExprNode.Lam(_, body) =>
-        match load(spine) {
-          ListNode.Cons(a, rest) =>
-            peel_beta(body, rest, store(ListNode.Cons(a, acc))),
-          ListNode.Nil => (lam, acc, spine),
-        },
-      _ => (lam, acc, spine),
+  -- ============================================================================
+  -- Beta: entry into the environment machine
+  --
+  -- Reductions stay on the zero-overhead plain-spine path until a beta
+  -- actually fires; the first beta enters `mwhnf_spine`, where subsequent
+  -- betas/zetas are O(1) environment pushes and substitution materializes
+  -- only at exit points (`clo_subst` readback). Pure Const-head workloads
+  -- (literal recursor loops) never pay the closure-wrap + readback
+  -- overhead — a machine-everywhere variant measured +26% on them.
+  -- ALL THREE whnf layers enter the same machine; the layer's no-delta
+  -- semantics are preserved by the mode-selected exits
+  -- (mwhnf_exit_const / mwhnf_exit_proj), so the def-eq stepping forms
+  -- get O(1) beta/zeta too — after the def-eq lazy-delta restructure
+  -- they carry most of the kernel's substitution volume.
+  -- ============================================================================
+
+  -- Wrap a plain spine's args as closed closures (ambient args have no
+  -- machine environment).
+  fn spine_wrap(spine: List‹KExpr›) -> List‹&Clo› {
+    match load(spine) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(a, rest) =>
+        store(ListNode.Cons(
+          store(Clo.Mk(a, store(ListNode.Nil), 0)),
+          spine_wrap(rest))),
     }
   }
 
-  -- Multi-arg beta (mirror crates/kernel/src/whnf.rs): peel the whole
-  -- telescope and substitute all consumed args in ONE `expr_inst_many` walk,
-  -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
-  -- stay on the cheap `expr_inst1` path (no list overhead).
   fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›) -> KExpr {
-    match peel_beta(lam, spine, store(ListNode.Nil)) {
-      (deep, consumed, rest) =>
-        match list_length(consumed) {
-          0 => apply_spine(lam, spine),
-          1 =>
-            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
-            whnf_with_spine(body2, rest, types),
-          _ =>
-            let body2 = expr_inst_many(deep, consumed, 0);
-            whnf_with_spine(body2, rest, types),
+    match load(spine) {
+      ListNode.Nil => lam,
+      ListNode.Cons(a, rest) =>
+        match load(lam) {
+          KExprNode.Lam(_, body) =>
+            mwhnf_spine(body,
+              store(ListNode.Cons(store(Clo.Mk(a, store(ListNode.Nil), 0)),
+                                  store(ListNode.Nil))),
+              1, spine_wrap(rest), types, 0),
         },
     }
   }
@@ -100,7 +109,13 @@ def whnf := ⟦
   -- major is Decidable.isTrue/isFalse.
   fn whnf_proj_head(struct_addr: Addr, fidx: G, inner: KExpr,
                         spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
-    let inner_whnf = whnf(inner, types);
+    whnf_proj_head_w(struct_addr, fidx, whnf(inner, types), spine, types)
+  }
+
+  -- Proj reduction on an ALREADY-whnf'd scrutinee (the machine whnfs the
+  -- scrutinee lazily through its closure before calling here).
+  fn whnf_proj_head_w(struct_addr: Addr, fidx: G, inner_whnf: KExpr,
+                          spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
     -- Str-literal re-expansion (mirror whnf_proj_head): a Proj over
     -- a Lit(Str) scrutinee needs the ctor form to pull fields.
     let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types);
@@ -448,6 +463,274 @@ def whnf := ⟦
     }
   }
 
+  -- ============================================================================
+  -- WHNF environment machine
+  --
+  -- The spine walker carries closures instead of eagerly substituting:
+  -- beta and zeta are O(1) environment pushes, and App-spine collection
+  -- is O(1) per layer (no collect_spine / list_snoc churn). Plain-KExpr
+  -- substitution happens only at exit points: a Const/Proj head hands a
+  -- READBACK spine to the existing dispatch machinery (which carries the
+  -- primitive families unchanged), and value results read back via
+  -- `clo_subst`. Work is proportional to what the reduction consumes — a
+  -- beta chain that ends in another beta never materializes its
+  -- intermediate bodies.
+  --
+  -- whnf never reduces under binders, so environments never lift
+  -- (see the `Clo` declaration in KernelTypes).
+  -- ============================================================================
+  fn spine_readback(spine: List‹&Clo›) -> List‹KExpr› {
+    match load(spine) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(c, rest) =>
+        store(ListNode.Cons(clo_readback(c), spine_readback(rest))),
+    }
+  }
+
+  -- `mode` selects the exit dispatch — 0 = delta-full (whnf_const_head /
+  -- whnf_proj_head), 1 = no-delta (whnf_nd_*), 2 = no-delta full-proj
+  -- (whnf_nd_const_head / whnf_ndfp_proj_head). The beta/zeta/BVar core
+  -- is mode-independent; only the Const/Proj exits differ, so all three
+  -- whnf layers share one machine and the no-delta semantics that def-eq
+  -- depends on are preserved at the exits. Memo keys carry the mode.
+  fn mwhnf_spine(head: KExpr, env: List‹&Clo›, n: G, spine: List‹&Clo›,
+                 types: List‹KExpr›, mode: G) -> KExpr {
+    match load(head) {
+      KExprNode.App(f, a) =>
+        mwhnf_spine(f, env, n,
+          store(ListNode.Cons(store(Clo.Mk(a, env, n)), spine)),
+          types, mode),
+      KExprNode.Lam(ty, body) =>
+        match load(spine) {
+          ListNode.Nil =>
+            -- value: read the binder back under the environment
+            store(KExprNode.Lam(
+              clo_subst(ty, env, n, 0),
+              clo_subst(body, env, n, 1))),
+          ListNode.Cons(c, rest) =>
+            -- beta: O(1) environment push
+            mwhnf_spine(body, store(ListNode.Cons(c, env)), n + 1, rest,
+                        types, mode),
+        },
+      KExprNode.Let(_, val, body) =>
+        -- zeta: O(1) environment push
+        mwhnf_spine(body,
+          store(ListNode.Cons(store(Clo.Mk(val, env, n)), env)), n + 1,
+          spine, types, mode),
+      KExprNode.BVar(i) =>
+        match u32_less_than(i, n) {
+          1 =>
+            -- jump into the bound closure, spine intact
+            match load(clo_env_lookup(env, i)) {
+              Clo.Mk(e2, env2, n2) =>
+                mwhnf_spine(e2, env2, n2, spine, types, mode),
+            },
+          0 =>
+            -- ambient variable: stuck
+            apply_spine(store(KExprNode.BVar(i - n)), spine_readback(spine)),
+        },
+      KExprNode.Const(addr, lvls) =>
+        -- Rec heads take the lazy closure-iota, mode-0 Defn heads the
+        -- machine-native delta; others read back and use the mode's
+        -- plain dispatch (see mwhnf_const).
+        mwhnf_const(addr, lvls, head, spine, types, mode),
+      KExprNode.Proj(tidx, fidx, inner) =>
+        mwhnf_exit_proj(tidx, fidx, inner, env, n,
+                        spine_readback(spine), types, mode),
+      KExprNode.Forall(ty, body) =>
+        let v = store(KExprNode.Forall(
+          clo_subst(ty, env, n, 0),
+          clo_subst(body, env, n, 1)));
+        apply_spine(v, spine_readback(spine)),
+      KExprNode.Srt(_) => apply_spine(head, spine_readback(spine)),
+      KExprNode.Lit(_) => apply_spine(head, spine_readback(spine)),
+    }
+  }
+
+  fn mwhnf_exit_const(addr: Addr, lvls: List‹KLevel›, head: KExpr,
+                          rspine: List‹KExpr›, types: List‹KExpr›,
+                          mode: G) -> KExpr {
+    match mode {
+      0 => whnf_const_head(addr, lvls, head, rspine, types),
+      -- Modes 1 and 2 share the nd Const dispatch: ndfp's full-proj
+      -- policy lives entirely in its Proj arm.
+      _ => whnf_nd_const_head(addr, lvls, head, rspine, types),
+    }
+  }
+
+  -- whnf of a closure: plain fast path for empty environments.
+  fn clo_whnf(c: &Clo, types: List‹KExpr›, mode: G) -> KExpr {
+    match load(c) {
+      Clo.Mk(e, env, n) =>
+        match n {
+          0 =>
+            match mode {
+              0 => whnf(e, types),
+              1 => whnf_nd(e, types),
+              _ => whnf_ndfp(e, types),
+            },
+          _ => mwhnf_spine(e, env, n, store(ListNode.Nil), types, mode),
+        },
+    }
+  }
+
+  -- Closure-spine iota: the main ctor-rule path only, consuming the
+  -- spine LAZILY. The major is whnf'd through the machine (no readback
+  -- of its unconsumed parts); on a hit the rule head returns with the
+  -- params/motives/minors + ctor fields + post-major args as CLOSURES,
+  -- which the rule's Lam-chain betas push straight into an environment —
+  -- unselected rules and unused minors are never substituted, never
+  -- read back. Everything off the main path MISSES to the caller, which
+  -- falls back to the plain machinery on a readback spine: K recursors
+  -- (ctor synthesis), LITERAL majors (the plain path owns the linear-rec
+  -- / nat-offset / one-level chain shortcuts and the Str expansion), and
+  -- non-ctor majors (struct-eta). The ctor-parent identity gate is the
+  -- same assert as the plain try_iota: rules are selected by index, so
+  -- an unrelated inductive's ctor must reject, not fire a rule.
+  fn try_iota_c(lvls: List‹KLevel›, cspine: List‹&Clo›,
+                    nparams: G, nindices: G, nmotives: G, nminors: G,
+                    rules: List‹KRecRule›, k_flag: G, rec_ty: KExpr,
+                    types: List‹KExpr›, mode: G)
+                    -> (G, KExpr, List‹&Clo›) {
+    match k_flag {
+      1 => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+      _ =>
+        let major_idx = nparams + nmotives + nminors + nindices;
+        match u32_less_than(major_idx, list_length(cspine)) {
+          0 => (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+          1 =>
+            let major_w = clo_whnf(clo_env_lookup(cspine, major_idx),
+                                       types, mode);
+            match load(major_w) {
+              KExprNode.Lit(_) =>
+                -- Literal major: miss to the plain path's literal
+                -- machinery (linear-rec, offset, expansion).
+                (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+              _ =>
+                let major_c = cleanup_nat_offset_major(major_w);
+                match collect_spine_of_ctor(major_c) {
+                  (1, ctor_cidx, ctor_parent, ctor_args) =>
+                    assert_eq!(address_eq(ctor_parent,
+                        rec_to_parent_addr(rec_ty, nparams, nmotives,
+                                                nminors, nindices)), 1,
+                      "iota: major's constructor belongs to a different inductive");
+                    match find_rule(rules, ctor_cidx) {
+                      (0, _, _) =>
+                        (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+                      (1, rfields, rrhs) =>
+                        let pmm_c = list_take(cspine,
+                          (nparams + nmotives) + nminors);
+                        let ctor_len = list_length(ctor_args);
+                        let fields_c = spine_wrap(
+                          list_drop(ctor_args, ctor_len - rfields));
+                        let post_c = list_drop(cspine, major_idx + 1);
+                        (1, expr_inst_levels(rrhs, lvls),
+                         list_concat(pmm_c, list_concat(fields_c, post_c))),
+                    },
+                  _ =>
+                    -- Major not a ctor application: miss (struct-eta and
+                    -- the canonical stuck rebuild live on the plain path).
+                    (0, store(KExprNode.BVar(0)), store(ListNode.Nil)),
+                },
+            },
+        },
+    }
+  }
+
+  -- Machine Const-head exit. Rec heads try the lazy closure-iota first
+  -- (all modes — the reference's DEF_EQ_CORE keeps cheap_rec false, so
+  -- iota runs in the def-eq stepping layers too). Mode-0 Defn heads
+  -- outside the prim families and proj-def class take machine-native
+  -- delta: the body unfolds and re-enters the machine with the closure
+  -- spine untouched, so delta chains pay zero readback between steps.
+  -- Prim-family heads need literal args (dispatch) and proj-defs index
+  -- the spine: both take the readback path, where the plain dispatch
+  -- handles them. The nd modes NEVER delta here — their Defn heads stay
+  -- stuck at the plain nd exit, preserving no-delta semantics.
+  fn mwhnf_const(addr: Addr, lvls: List‹KLevel›, head: KExpr,
+                     cspine: List‹&Clo›, types: List‹KExpr›,
+                     mode: G) -> KExpr {
+    let ci = load(get_ci(addr));
+    match ci {
+      KConstantInfo.Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
+                          rules, k_flag, _, _, _) =>
+        -- Level-arity gate, same as the plain Rec arms: a mismatched
+        -- application stays stuck and never reaches expr_inst_levels.
+        match list_length(lvls) - nlvls {
+          0 =>
+            match try_iota_c(lvls, cspine, nparams, nindices, nmotives,
+                                 nminors, rules, k_flag, rec_ty, types,
+                                 mode) {
+              (1, h, comb) =>
+                mwhnf_spine(h, store(ListNode.Nil), 0, comb, types, mode),
+              _ =>
+                mwhnf_exit_const(addr, lvls, head, spine_readback(cspine),
+                                     types, mode),
+            },
+          _ =>
+            mwhnf_exit_const(addr, lvls, head, spine_readback(cspine),
+                                 types, mode),
+        },
+      KConstantInfo.Defn(_, _, value, _, _) =>
+        match mode {
+          0 =>
+            match prim_family(addr) {
+              0 =>
+                match projection_definition_info(value, 0) {
+                  (1, _, _, _, _) =>
+                    mwhnf_exit_const(addr, lvls, head,
+                        spine_readback(cspine), types, mode),
+                  _ =>
+                    mwhnf_spine(expr_inst_levels(value, lvls),
+                        store(ListNode.Nil), 0, cspine, types, mode),
+                },
+              _ =>
+                mwhnf_exit_const(addr, lvls, head, spine_readback(cspine),
+                                     types, mode),
+            },
+          _ =>
+            mwhnf_exit_const(addr, lvls, head, spine_readback(cspine),
+                                 types, mode),
+        },
+      -- Machine-native delta for THM heads too (mode 0): full whnf
+      -- unfolds theorems like definitions (the reference's
+      -- delta_unfold_one matches Definition|Theorem), and the unfold
+      -- must keep the closure spine intact — a readback exit here would
+      -- materialize every pending argument just to re-enter the machine
+      -- on the next beta. Theorem bodies are never proj-defs and never
+      -- prim heads, so no gates apply. The nd modes keep Thm stuck at
+      -- the plain exit.
+      KConstantInfo.Thm(_, _, value) =>
+        match mode {
+          0 =>
+            mwhnf_spine(expr_inst_levels(value, lvls),
+                store(ListNode.Nil), 0, cspine, types, mode),
+          _ =>
+            mwhnf_exit_const(addr, lvls, head, spine_readback(cspine),
+                                 types, mode),
+        },
+      _ =>
+        mwhnf_exit_const(addr, lvls, head, spine_readback(cspine), types,
+                             mode),
+    }
+  }
+
+  fn mwhnf_exit_proj(tidx: Addr, fidx: G, inner: KExpr, env: List‹&Clo›,
+                         n: G, rspine: List‹KExpr›, types: List‹KExpr›,
+                         mode: G) -> KExpr {
+    match mode {
+      -- Mode 0: whnf the scrutinee lazily through the machine, then the
+      -- plain proj machinery on the already-whnf'd head.
+      0 => whnf_proj_head_w(tidx, fidx,
+             clo_whnf(store(Clo.Mk(inner, env, n)), types, 0),
+             rspine, types),
+      1 => whnf_nd_proj_head(tidx, fidx, clo_subst(inner, env, n, 0),
+                                 rspine, types),
+      _ => whnf_ndfp_proj_head(tidx, fidx, clo_subst(inner, env, n, 0),
+                                   rspine, types),
+    }
+  }
+
   -- Const-head WHNF dispatch, split out of `whnf_with_spine` (see its Const arm).
   -- `head` is the original `Const(idx, lvls)` KExpr, passed for the stuck
   -- `apply_spine(head, spine)` fallbacks.
@@ -502,6 +785,29 @@ def whnf := ⟦
         -- stuck, it never reaches expr_inst_levels.
         match list_length(lvls) - nlvls {
           0 =>
+        -- K recursors take the synth gate PRE-WHNF of the major (mirror
+        -- synth_ctor_when_k, whnf.rs:1350: "runs pre-whnf when recr.k").
+        -- Order is load-bearing: an Eq.rec major can be a `decide
+        -- +kernel` proof whose whnf EVALUATES the whole decision
+        -- procedure (with theorems delta-unfolding, of_decide_eq_true's
+        -- body forces `decide p`); the K gate needs only the major's
+        -- inferred TYPE and an index def-eq, so firing it first skips
+        -- that evaluation entirely (the Std.Time UnitVal.cast blowup).
+        -- On a gate miss, fall through to the normal major-whnf path.
+        let k_pre = match k_flag {
+          1 =>
+            let k_skip = ((nparams + nmotives) + nminors) + nindices;
+            match se_parent_addr(rec_ty, k_skip) {
+              (_, rec_parent) =>
+                try_k_synth_iota(lvls, spine, nparams, nmotives,
+                                    nminors, nindices, rules, head,
+                                    rec_parent, types),
+            },
+          _ => (0, head),
+        };
+        match k_pre {
+          (1, kr) => whnf(kr, types),
+          _ =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
@@ -551,6 +857,7 @@ def whnf := ⟦
                 },
             },
           _ => apply_spine(head, spine),
+        },
         },
           _ => apply_spine(head, spine),
         },
@@ -1118,18 +1425,22 @@ def whnf := ⟦
     }
   }
 
+  -- Machine entry, mode 1: the no-delta semantics live at the machine's
+  -- EXITS (whnf_nd_const_head / whnf_nd_proj_head), so beta/zeta cascades
+  -- inside def-eq's lazy-delta stepping are O(1) env pushes too — after
+  -- the def-eq restructure this layer carries most of the kernel's
+  -- substitution volume.
   fn whnf_nd_apply_beta(spine: List‹KExpr›, lam: KExpr,
                             types: List‹KExpr›) -> KExpr {
-    match peel_beta(lam, spine, store(ListNode.Nil)) {
-      (deep, consumed, rest) =>
-        match list_length(consumed) {
-          0 => apply_spine(lam, spine),
-          1 =>
-            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
-            whnf_nd_with_spine(body2, rest, types),
-          _ =>
-            let body2 = expr_inst_many(deep, consumed, 0);
-            whnf_nd_with_spine(body2, rest, types),
+    match load(spine) {
+      ListNode.Nil => lam,
+      ListNode.Cons(a, rest) =>
+        match load(lam) {
+          KExprNode.Lam(_, body) =>
+            mwhnf_spine(body,
+              store(ListNode.Cons(store(Clo.Mk(a, store(ListNode.Nil), 0)),
+                                  store(ListNode.Nil))),
+              1, spine_wrap(rest), types, 1),
         },
     }
   }
@@ -1196,6 +1507,29 @@ def whnf := ⟦
         -- Level-arity gate — same as the full reducer's Rec arm.
         match list_length(lvls) - nlvls {
           0 =>
+        -- K recursors take the synth gate PRE-WHNF of the major (mirror
+        -- synth_ctor_when_k, whnf.rs:1350: "runs pre-whnf when recr.k").
+        -- Order is load-bearing: an Eq.rec major can be a `decide
+        -- +kernel` proof whose whnf EVALUATES the whole decision
+        -- procedure (with theorems delta-unfolding, of_decide_eq_true's
+        -- body forces `decide p`); the K gate needs only the major's
+        -- inferred TYPE and an index def-eq, so firing it first skips
+        -- that evaluation entirely (the Std.Time UnitVal.cast blowup).
+        -- On a gate miss, fall through to the normal major-whnf path.
+        let k_pre = match k_flag {
+          1 =>
+            let k_skip = ((nparams + nmotives) + nminors) + nindices;
+            match se_parent_addr(rec_ty, k_skip) {
+              (_, rec_parent) =>
+                try_k_synth_iota(lvls, spine, nparams, nmotives,
+                                    nminors, nindices, rules, head,
+                                    rec_parent, types),
+            },
+          _ => (0, head),
+        };
+        match k_pre {
+          (1, kr) => whnf_nd(kr, types),
+          _ =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
@@ -1230,6 +1564,7 @@ def whnf := ⟦
                 },
             },
           _ => apply_spine(head, spine),
+        },
         },
           _ => apply_spine(head, spine),
         },
@@ -1282,18 +1617,18 @@ def whnf := ⟦
     }
   }
 
+  -- Machine entry, mode 2 (no-delta, full projection policy at the exit).
   fn whnf_ndfp_apply_beta(spine: List‹KExpr›, lam: KExpr,
                               types: List‹KExpr›) -> KExpr {
-    match peel_beta(lam, spine, store(ListNode.Nil)) {
-      (deep, consumed, rest) =>
-        match list_length(consumed) {
-          0 => apply_spine(lam, spine),
-          1 =>
-            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
-            whnf_ndfp_with_spine(body2, rest, types),
-          _ =>
-            let body2 = expr_inst_many(deep, consumed, 0);
-            whnf_ndfp_with_spine(body2, rest, types),
+    match load(spine) {
+      ListNode.Nil => lam,
+      ListNode.Cons(a, rest) =>
+        match load(lam) {
+          KExprNode.Lam(_, body) =>
+            mwhnf_spine(body,
+              store(ListNode.Cons(store(Clo.Mk(a, store(ListNode.Nil), 0)),
+                                  store(ListNode.Nil))),
+              1, spine_wrap(rest), types, 2),
         },
     }
   }

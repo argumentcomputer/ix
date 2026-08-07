@@ -497,6 +497,95 @@ def subst := ⟦
       expr_inst_many(val, substs, depth),
       expr_inst_many(body, substs, depth + 1)))
   }
+
+  -- ============================================================================
+  -- Closure readback (the whnf machine's only substitution)
+  --
+  -- `clo_readback(c)` materializes `Clo.Mk(e, env, n)` into a plain KExpr:
+  -- e[BVar(i) := readback(env[i])] for i < n, BVar(i - n) above. `clo_subst`
+  -- is the simultaneous walk; at internal depth d the substituted value
+  -- lifts by d (mirroring `expr_inst_many`'s window). Called only at
+  -- machine exit points — stuck results and whnf values escaping to
+  -- plain-KExpr consumers — so work is proportional to what the reduction
+  -- actually consumed, not to every beta performed.
+  --
+  -- Same fast-path / hot-cold layout as `expr_inst_many`: the entry checks
+  -- `expr_lbr`, the walk stays narrow, BVar and Let arms live in their own
+  -- circuits.
+  -- ============================================================================
+  fn clo_env_lookup(env: List‹&Clo›, i: G) -> &Clo {
+    match load(env) {
+      ListNode.Cons(c, rest) =>
+        match i {
+          0 => c,
+          _ => clo_env_lookup(rest, i - 1),
+        },
+    }
+  }
+
+  fn clo_readback(c: &Clo) -> KExpr {
+    match load(c) {
+      Clo.Mk(e, env, n) =>
+        match n {
+          0 => e,
+          _ => clo_subst(e, env, n, 0),
+        },
+    }
+  }
+
+  fn clo_subst(e: KExpr, env: List‹&Clo›, n: G, depth: G) -> KExpr {
+    -- Fast path: when `expr_lbr(e) <= depth`, no BVar at or above depth
+    -- exists in `e`, so the substitution is a no-op.
+    let l = expr_lbr(e);
+    match u32_less_than(depth, l) {
+      0 => e,
+      1 => clo_subst_walk(e, env, n, depth),
+    }
+  }
+
+  fn clo_subst_walk(e: KExpr, env: List‹&Clo›, n: G, depth: G) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i) => clo_subst_bvar(i, env, n, depth),
+      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
+      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(
+          clo_subst(f, env, n, depth),
+          clo_subst(a, env, n, depth))),
+      KExprNode.Lam(ty, body) =>
+        store(KExprNode.Lam(
+          clo_subst(ty, env, n, depth),
+          clo_subst(body, env, n, depth + 1))),
+      KExprNode.Forall(ty, body) =>
+        store(KExprNode.Forall(
+          clo_subst(ty, env, n, depth),
+          clo_subst(body, env, n, depth + 1))),
+      KExprNode.Let(ty, val, body) => clo_subst_let(ty, val, body, env, n, depth),
+      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Proj(tidx, fidx, e1) =>
+        store(KExprNode.Proj(tidx, fidx, clo_subst(e1, env, n, depth))),
+    }
+  }
+
+  -- Cold BVar arm (mirror `expr_inst_many_bvar`): the walk invariant gives
+  -- `i >= depth`, so the window test is one comparison on the offset; the
+  -- lookup / readback / `expr_lift` machinery only charges the BVar rows.
+  fn clo_subst_bvar(i: G, env: List‹&Clo›, n: G, depth: G) -> KExpr {
+    let ofs = i - depth;
+    match u32_less_than(ofs, n) {
+      1 => expr_lift(clo_readback(clo_env_lookup(env, ofs)), depth, 0),
+      0 => store(KExprNode.BVar(i - n)),
+    }
+  }
+
+  -- Cold-extracted Let arm (same pattern as `expr_inst_many_let`).
+  fn clo_subst_let(ty: KExpr, val: KExpr, body: KExpr,
+      env: List‹&Clo›, n: G, depth: G) -> KExpr {
+    store(KExprNode.Let(
+      clo_subst(ty, env, n, depth),
+      clo_subst(val, env, n, depth),
+      clo_subst(body, env, n, depth + 1)))
+  }
 ⟧
 
 end IxVM
