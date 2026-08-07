@@ -19,11 +19,13 @@ stays sensitive to one-row changes (the real prover pads `h` to a power of
 two; structural powers of two like the blowup `B` and the quotient degree
 `q` stay exact):
 
-- each PCS commit (stage 1 width `m`, stage 2 width `s2`, quotient chunks
-  `q·D`) is one size-`h` inverse DFT plus `B` size-`h` coset DFTs per
-  column (`Radix2DitParallel::coset_lde_batch`), i.e. `(B+1)·F(h)`;
-- the quotient rebase adds an iDFT of the `(q·h) × D` flattened quotient
-  and a size-`h` DFT of the `q·D` coefficient slices,
+- each PCS trace commit (stage 1 width `m`, stage 2 width `s2`) is one
+  size-`h` inverse DFT plus `B` size-`h` coset DFTs per column
+  (`Radix2DitParallel::coset_lde_batch`), i.e. `(B+1)·F(h)`;
+- the quotient runs one forward DFT of the `(q·h) × D` flattened quotient
+  (`D·F(q·h)`) and one zero-padded size-`B·h` DFT per chunk column
+  (`q·D·F(B·h)`, `lde_from_shifted_coefficients`); committing the
+  prebuilt chunk LDE (`Pcs::commit_ldes`) runs no transform,
 
 where `F(0) = 0` and `F(x) = x·log2(max(x, 2))`. Costs are `Float`s to
 capture small changes continuously. Results are sorted by FFT cost in
@@ -61,14 +63,14 @@ def transformCost (x : Nat) : Float :=
     xf * (max xf 2.0).log2
 
 /-- FFT work of one circuit at height `h`: `(B+1)` size-`h` transforms per
-committed column (three PCS commits), plus the two quotient-rebasing
-transforms. See the module docstring. -/
+trace column (stage 1 and 2 commits), plus the quotient's forward DFT and
+its per-chunk-column size-`B·h` LDE transforms. See the module docstring. -/
 def fftCost (shape : CircuitShape) (h : Nat) (logBlowup : Nat) : Float :=
   let qD := shape.quotientDegree * G.extensionDegree
-  let commitWidth := shape.mainWidth + shape.stage2Width + qD
-  ((2 ^ logBlowup) + 1).toFloat * commitWidth.toFloat * transformCost h
+  let traceWidth := shape.mainWidth + shape.stage2Width
+  ((2 ^ logBlowup) + 1).toFloat * traceWidth.toFloat * transformCost h
     + G.extensionDegree.toFloat * transformCost (shape.quotientDegree * h)
-    + qD.toFloat * transformCost h
+    + qD.toFloat * transformCost ((2 ^ logBlowup) * h)
 
 /-- Committed width of a circuit: stage 1 + stage 2 + quotient chunks. -/
 def CircuitShape.committedWidth (shape : CircuitShape) : Nat :=
