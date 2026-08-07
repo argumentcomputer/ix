@@ -88,11 +88,17 @@ def mkWitness (addr : Address) (ixonEnv : Ixon.Env) :
 
 /-- Compute + emit per-circuit stats. With `statsOut = none` prints to
     stdout; with `some path` redirects stdout to the file for the
-    duration of `printStats` so the terminal stays clean. -/
+    duration of `printStats` so the terminal stays clean.
+
+    Circuit shapes come from the one-shot FFI (`Aiur.circuitShapes`),
+    which builds and drops an `AiurSystem` — the check flow never builds
+    one otherwise. That cost is paid only when stats are requested. -/
 def emitStats (compiled : Aiur.CompiledToplevel)
     (queryCounts : Array Aiur.QueryCount)
     (statsOut : Option String) : IO Unit := do
-  let stats := Aiur.computeStats compiled queryCounts
+  let shapes := Aiur.circuitShapes compiled.bytecode
+    Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+  let stats := Aiur.computeStats compiled queryCounts shapes
   match statsOut with
   | none => Aiur.printStats stats
   | some path => do

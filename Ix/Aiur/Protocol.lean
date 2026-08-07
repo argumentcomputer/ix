@@ -38,6 +38,34 @@ structure FriParameters where
   commitProofOfWorkBits : Nat
   queryProofOfWorkBits : Nat
 
+/-- Canonical Aiur parameters, shared by `ix prove`, `ix verify`, and the
+`ix check` statistics. Until these become flags / commit to the proof
+header, every flow MUST use the same values or proofs won't verify. -/
+def defaultCommitmentParameters : CommitmentParameters :=
+  { logBlowup := 2, capHeight := 0 }
+
+def defaultFriParameters : FriParameters := {
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 100
+  commitProofOfWorkBits := 0
+  queryProofOfWorkBits := 20
+}
+
+/-- Shape of one compiled circuit, built directly by Rust
+(`LeanAiurCircuitShape` in `crates/ffi/src/lean.rs`; field order must
+match). Heights of function and memory circuits are execution-dependent
+and are not part of the shape; `preprocessedHeight` doubles as the fixed
+trace height of the byte-gadget circuits (256 and 65536), whose witness
+builders always emit the full table. -/
+structure CircuitShape where
+  mainWidth : Nat
+  stage2Width : Nat
+  quotientDegree : Nat
+  preprocessedWidth : Nat
+  preprocessedHeight : Nat
+  deriving Inhabited
+
 private opaque AiurSystemNonempty : NonemptyType
 def AiurSystem : Type := AiurSystemNonempty.type
 instance : Nonempty AiurSystem := AiurSystemNonempty.property
@@ -70,6 +98,11 @@ opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → @&FriParameter
 /-- Serialize the verifying key (`System<AiurCircuit>`) to bytes. -/
 @[extern "rs_aiur_system_vk_bytes"]
 opaque vkBytes : @& AiurSystem → ByteArray
+
+/-- Per-circuit shapes in canonical system order: constrained functions
+(ascending index), memories, `Bytes1`, `Bytes2`. -/
+@[extern "rs_aiur_system_circuit_shapes"]
+opaque circuitShapes : @& AiurSystem → Array CircuitShape
 
 @[extern "rs_aiur_system_prove"]
 private opaque prove' : @& AiurSystem →
@@ -153,6 +186,14 @@ opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
 end AiurSystem
+
+/-- One-shot variant of `AiurSystem.circuitShapes` for flows that never
+build an `AiurSystem` (the `ix check` statistics): Rust builds the system,
+extracts the shapes, and drops it. -/
+@[extern "rs_aiur_circuit_shapes"]
+opaque circuitShapes :
+  @& Bytecode.Toplevel → @& CommitmentParameters → @& FriParameters →
+    Array CircuitShape
 
 abbrev functionChannel : G := .ofNat 0
 

@@ -34,19 +34,15 @@ private def addrOfHex! (label : String) (s : String) : IO Address := do
     throw <| IO.userError
       s!"error: {label}: expected 64-char hex (32-byte address), got {s.length}-char {s}"
 
-/-- Same parameters as `ix prove`. Mismatch makes verification fail
-    silently with no useful diagnostic, so these MUST match the
-    proving side until they migrate into the proof header. -/
+/-- Same parameters as `ix prove` (the shared canonical defaults).
+    Mismatch makes verification fail silently with no useful diagnostic,
+    so these MUST match the proving side until they migrate into the
+    proof header. -/
 private def commitmentParameters : Aiur.CommitmentParameters :=
-  { logBlowup := 2, capHeight := 0 }
+  Aiur.defaultCommitmentParameters
 
-private def friParameters : Aiur.FriParameters := {
-  logFinalPolyLen := 0
-  maxLogArity := 1
-  numQueries := 100
-  commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
-}
+private def friParameters : Aiur.FriParameters :=
+  Aiur.defaultFriParameters
 
 /-- Verify one persisted `Ixon.Proof` wrapper (by store address) against its
     bundled claim, using an already-built Aiur backend. -/

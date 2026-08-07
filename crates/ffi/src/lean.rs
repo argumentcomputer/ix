@@ -280,6 +280,9 @@ lean_ffi::lean_inductive! {
   LeanAiurIOKeyInfo      [ { num_obj: 2 } ];
   // uniqueRows, totalHits
   LeanAiurQueryCount     [ { num_obj: 2 } ];
+  // mainWidth, stage2Width, quotientDegree, preprocessedWidth,
+  // preprocessedHeight
+  LeanAiurCircuitShape   [ { num_obj: 5 } ];
   // output, ioData, ioMap, queryCounts
   LeanAiurExecuteResult  [ { num_obj: 4 } ];
   // claim, proof, ioData, ioMap

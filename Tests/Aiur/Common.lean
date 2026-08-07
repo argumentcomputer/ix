@@ -70,6 +70,7 @@ structure AiurTestEnv where
   compiled : Aiur.CompiledToplevel
   decls : Aiur.Source.Decls
   aiurSystem : Aiur.AiurSystem
+  shapes : Array Aiur.CircuitShape
 
 def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel) :
     Except String AiurTestEnv := do
@@ -77,7 +78,7 @@ def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel) :
   let compiled ← toplevel.compile
   let decls ← toplevel.mkDecls.mapError toString
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
-  return ⟨compiled, decls, aiurSystem⟩
+  return ⟨compiled, decls, aiurSystem, aiurSystem.circuitShapes⟩
 
 def AiurTestEnv.interpTest (env : AiurTestEnv) (testCase : AiurTestCase)
     (execOutput : Array Aiur.G) (execIOBuffer : Aiur.IOBuffer) : TestSeq :=
@@ -112,7 +113,7 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
     let fftTest := match testCase.expectedFftCost with
       | none => .done
       | some expected =>
-        let stats := Aiur.computeStats env.compiled queryCounts
+        let stats := Aiur.computeStats env.compiled queryCounts env.shapes
         let actual := stats.totalFftCost.round.toUInt64.toNat
         test s!"FFT cost matches for {label}: expected {expected}, got {actual}"
           (actual == expected)
@@ -139,7 +140,7 @@ def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
     withExceptOk "Compilation succeeds" toplevel.compile fun compiled =>
       withExceptOk "mkDecls succeeds" (toplevel.mkDecls.mapError toString) fun decls =>
         let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
-        let env : AiurTestEnv := ⟨compiled, decls, aiurSystem⟩
+        let env : AiurTestEnv := ⟨compiled, decls, aiurSystem, aiurSystem.circuitShapes⟩
         cases.foldl (init := .done) fun tSeq testCase =>
           tSeq ++ env.runTestCase testCase
 

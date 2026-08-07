@@ -164,7 +164,11 @@ def main (args : List String) : IO UInt32 := do
   | .error e => IO.eprintln s!"verifier execution REJECTED: {e}"; return 1
   | .ok (_, qc) =>
     let e1 ← IO.monoNanosNow
-    let stats := Aiur.computeStats vCompiled qc
+    -- One-shot shapes: `vSystem` (below) exists only when `--prove` is set,
+    -- and `--log-blowup` is configurable here — thread it into the model.
+    let vShapes := Aiur.circuitShapes vCompiled.bytecode recCommitParams innerFri
+    let stats := Aiur.computeStats vCompiled qc vShapes
+      (logBlowup := recCommitParams.logBlowup)
     IO.println s!"verifier accepted, execute {secs e0 e1} s"
     IO.println s!"\n=== recursive verifier in-circuit cost ==="
     IO.println s!"totalFftCost = {stats.totalFftCost}"

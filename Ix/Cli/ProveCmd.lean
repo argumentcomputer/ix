@@ -43,20 +43,15 @@ open IxVM.ClaimHarness
 
 namespace Ix.Cli.ProveCmd
 
-/-- Canonical aiur params shared between prove and verify. Matches
-    `Tests.Aiur.Common`. Until these become flags / commit to the
-    proof header, they MUST stay in sync between `prove` and
-    `verify`. -/
+/-- Canonical aiur params shared between prove and verify (the shared
+    defaults in `Ix.Aiur.Protocol`). Matches `Tests.Aiur.Common`. Until
+    these become flags / commit to the proof header, they MUST stay in
+    sync between `prove` and `verify`. -/
 private def commitmentParameters : Aiur.CommitmentParameters :=
-  { logBlowup := 2, capHeight := 0 }
+  Aiur.defaultCommitmentParameters
 
-private def friParameters : Aiur.FriParameters := {
-  logFinalPolyLen := 0
-  maxLogArity := 1
-  numQueries := 100
-  commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
-}
+private def friParameters : Aiur.FriParameters :=
+  Aiur.defaultFriParameters
 
 def proveOne (aiurSystem : Aiur.AiurSystem)
     (compiled : Aiur.CompiledToplevel)
