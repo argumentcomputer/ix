@@ -2527,7 +2527,12 @@ mod tests {
   #[test]
   #[ignore]
   fn dump_const_sizes() {
-    let path = std::env::var("IXE_A").expect("set IXE_A");
+    // Manual probe: skip (don't fail) when no input is configured, so
+    // CI's run-everything-ignored sweep stays green.
+    let Ok(path) = std::env::var("IXE_A") else {
+      eprintln!("[dump_const_sizes] IXE_A unset — manual probe, skipping");
+      return;
+    };
     let top: usize =
       std::env::var("IXE_TOP").ok().and_then(|s| s.parse().ok()).unwrap_or(20);
     let bytes = std::fs::read(&path).expect("read env file");
@@ -2553,7 +2558,15 @@ mod tests {
         .into_iter()
         .flatten()
         .collect();
-    assert!(!paths.is_empty(), "set IXE_A (and optionally IXE_B)");
+    // Manual probe: skip (don't fail) when no input is configured, so
+    // CI's run-everything-ignored sweep stays green.
+    if paths.is_empty() {
+      eprintln!(
+        "[dump_named_metas] IXE_A unset — manual probe, skipping \
+         (set IXE_A and optionally IXE_B)"
+      );
+      return;
+    }
     let targets: Vec<String> = std::env::var("IXE_NAMES")
       .unwrap_or_default()
       .split(',')
@@ -2655,7 +2668,12 @@ mod tests {
 
     use univ_probe::*;
 
-    let path = std::env::var("IXE_A").expect("set IXE_A");
+    // Manual probe: skip (don't fail) when no input is configured, so
+    // CI's run-everything-ignored sweep stays green.
+    let Ok(path) = std::env::var("IXE_A") else {
+      eprintln!("[dump_reducible_univs] IXE_A unset — manual probe, skipping");
+      return;
+    };
     let sample_count: u64 = std::env::var("IXE_SAMPLES")
       .ok()
       .and_then(|s| s.parse().ok())
