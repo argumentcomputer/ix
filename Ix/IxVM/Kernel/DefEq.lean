@@ -843,9 +843,21 @@ def defEq := ⟦
                             match try_def_eq_app(af, bf, types) {
                               1 => 1,
                               _ =>
-                                match try_eta_swap(af, bf, types) {
+                                -- Tier-5 string-lit retry (def_eq.rs:
+                                -- 800-810): a side can become a Lit(Str)
+                                -- only through the loop's Thm/Defn
+                                -- unfolding, AFTER the entry-tier 1c ran
+                                -- on the raw forms — retry the expansion
+                                -- on the final forms.
+                                match try_string_lit_pair(af, bf, types) {
                                   1 => 1,
-                                  _ => k_is_def_eq_struct_go(af, bf, types),
+                                  _ =>
+                                    match try_eta_swap(af, bf, types) {
+                                      1 => 1,
+                                      _ =>
+                                        k_is_def_eq_struct_go(af, bf,
+                                          types),
+                                    },
                                 },
                             },
                           _ => k_is_def_eq(af2, bf2, types),

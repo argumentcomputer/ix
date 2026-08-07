@@ -2510,7 +2510,10 @@ pub extern "C" fn rs_shard_esp(
   out_path: LeanString<LeanBorrowed<'_>>,
   metric: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
+  // `.max(1)`: zero shards would panic in ShardManifest::build (indexing
+  // an empty members vec) and unwind across the FFI boundary; the CLI
+  // clamps too, but the ABI must not trust its callers.
+  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1).max(1);
   let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
   let parallelism =
     parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
@@ -2534,6 +2537,47 @@ pub extern "C" fn rs_shard_esp(
       LeanIOResult::ok(LeanOwned::box_usize(0))
     },
     Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp: {e}")),
+  }
+}
+
+/// FFI: partition a `.ixe` env DIRECTLY into `num_shards` shards — no
+/// `.ixprof` (no kernel run): byte-weight vertices and static-reference
+/// nets via `profile_from_env_static`. Only meaningful with
+/// `metric = "ingress"`; heartbeats are all zero in the synthetic profile.
+#[allow(clippy::cast_precision_loss)]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_env(
+  ixe_path: LeanString<LeanBorrowed<'_>>,
+  num_shards: LeanString<LeanBorrowed<'_>>,
+  balance_pct: LeanString<LeanBorrowed<'_>>,
+  parallelism: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  metric: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1).max(1);
+  let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
+  let parallelism =
+    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
+  let out = out_path.to_string();
+  let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
+  let balance = (balance_pct as f64) / 100.0;
+  let metric = match metric.to_string().as_str() {
+    "ingress" => ix_kernel::shard::BalanceMetric::IngressBytes,
+    _ => ix_kernel::shard::BalanceMetric::StepCost,
+  };
+  match ix_kernel::shard::shard_env_static(
+    &ixe_path.to_string(),
+    num_shards,
+    balance,
+    parallelism,
+    out_opt,
+    metric,
+  ) {
+    Ok(report) => {
+      eprintln!("[rs_shard_env]\n{report}");
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanIOResult::error_string(&format!("rs_shard_env: {e}")),
   }
 }
 

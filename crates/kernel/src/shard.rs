@@ -30,7 +30,9 @@
 //! Both modes view the env as a **weighted hypergraph** under the
 //! connectivity-1 (km1) metric:
 //!
-//! - **Vertices** are blocks, weighted by `heartbeats` (the balance metric).
+//! - **Vertices** are blocks, weighted per the chosen [`BalanceMetric`]
+//!   (predicted guest steps by default, serialized bytes for the Aiur
+//!   ingress metric).
 //! - **Nets** are blocks `p` that get delta-unfolded by someone; the net
 //!   connects `p`'s home plus every block that unfolds `p`, and is weighted by
 //!   `serialized_size(p)` (the ingress cost paid to pull `p`'s body into a
@@ -278,12 +280,14 @@ impl Hypergraph {
     if num_shards <= 1 {
       return (vec![0u32; n], AggNode::Leaf(0)); // everything in shard 0
     }
-    // Cap each block's balance weight at the ideal per-shard heartbeats
-    // (total / num_shards). This keeps balancing heartbeat-aware while a balanced
-    // split is achievable (few shards), but stops a single oversized *atomic*
-    // block from skewing every split toward it once there are many shards. The
-    // resulting heartbeat imbalance is accepted; the goal is `num_shards`
-    // **non-empty** parallel shards with minimal cross-shard ingress.
+    // Cap each block's balance weight at the ideal per-shard share of the
+    // chosen metric (total vweight / num_shards — steps or bytes, per
+    // BalanceMetric). This keeps balancing weight-aware while a balanced
+    // split is achievable (few shards), but stops a single oversized
+    // *atomic* block from skewing every split toward it once there are
+    // many shards. The resulting imbalance is accepted; the goal is
+    // `num_shards` **non-empty** parallel shards with minimal cross-shard
+    // ingress.
     let total_hb: u128 = self.vweight.iter().map(|&w| u128::from(w)).sum();
     let cap =
       (total_hb / num_shards as u128).max(1).min(u128::from(u64::MAX)) as u64;
@@ -489,8 +493,8 @@ struct SubHyper {
   nets: Vec<(u64, Vec<u32>)>,
   /// local vertex -> incident net indices
   vnets: Vec<Vec<u32>>,
-  /// global per-shard heartbeat target used to cap `bw` (propagated unchanged
-  /// through recursion)
+  /// global per-shard balance-weight target used to cap `bw` (propagated
+  /// unchanged through recursion; in the chosen BalanceMetric's unit)
   cap: u64,
 }
 
@@ -1602,10 +1606,72 @@ pub fn shard_esp(
     std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
   let profile = BlockProfile::from_bytes(&bytes)
     .map_err(|e| format!("parse {esp_path}: {e}"))?;
-  let h = Hypergraph::from_profile_metric(&profile, metric);
+  shard_profile_core(&profile, num_shards, balance, parallelism, out_path, metric)
+}
+
+/// Build a [`BlockProfile`] from an env's STATIC structure alone — no
+/// kernel run required. Vertex weights are serialized byte lengths
+/// (`heartbeats` stay 0, so this profile is only meaningful under
+/// [`BalanceMetric::IngressBytes`]); the delta graph is approximated by
+/// the STATIC reference graph (consumer → referenced constant, blob refs
+/// excluded). For the Aiur backend the static graph is arguably the more
+/// faithful ingress model: the lazy kernel also loads type-lookup refs
+/// that never appear in the dynamic delta-unfold graph.
+pub fn profile_from_env_static(
+  env: &ixon::env::Env,
+) -> Result<BlockProfile, String> {
+  let mut builder = crate::profile::ProfileBuilder::new();
+  for entry in env.consts.iter() {
+    let addr = entry.key();
+    let lazy = entry.value();
+    let size = u32::try_from(lazy.raw_bytes().len()).unwrap_or(u32::MAX);
+    builder.block(
+      addr.clone(),
+      0,
+      size,
+      1,
+      crate::profile::OpCounts::default(),
+    );
+    let c = lazy.get().map_err(|e| format!("materialize {addr:?}: {e}"))?;
+    for r in &c.refs {
+      // refs is one index space shared by constants and blobs; only
+      // constant refs are partition edges.
+      if env.consts.contains_key(r) {
+        builder.delta_edge(addr.clone(), r.clone());
+      }
+    }
+  }
+  Ok(builder.finish())
+}
+
+/// [`shard_esp`] over a `.ixe` env directly (no `.ixprof`): static-ref
+/// nets + byte weights via [`profile_from_env_static`].
+pub fn shard_env_static(
+  ixe_path: &str,
+  num_shards: usize,
+  balance: f64,
+  parallelism: usize,
+  out_path: Option<&str>,
+  metric: BalanceMetric,
+) -> Result<String, String> {
+  let env = ixon::env::Env::get_anon_mmap(std::path::Path::new(ixe_path))
+    .map_err(|e| format!("load {ixe_path}: {e}"))?;
+  let profile = profile_from_env_static(&env)?;
+  shard_profile_core(&profile, num_shards, balance, parallelism, out_path, metric)
+}
+
+fn shard_profile_core(
+  profile: &BlockProfile,
+  num_shards: usize,
+  balance: f64,
+  parallelism: usize,
+  out_path: Option<&str>,
+  metric: BalanceMetric,
+) -> Result<String, String> {
+  let h = Hypergraph::from_profile_metric(profile, metric);
   let (shard_of, tree) = h.partition_with_tree(num_shards, balance);
   let mut manifest =
-    ShardManifest::build(&profile, &shard_of, num_shards).with_tree(tree);
+    ShardManifest::build(profile, &shard_of, num_shards).with_tree(tree);
   for shard in &mut manifest.shards {
     shard.assumption_root =
       ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
@@ -1614,17 +1680,36 @@ pub fn shard_esp(
     std::fs::write(op, manifest.to_bytes())
       .map_err(|e| format!("write {op}: {e}"))?;
   }
-  // The largest single block's heartbeats is the *floor* on achievable
-  // per-shard balance: a mutual block is atomic and cannot be split, so no
-  // partition can drive max-shard heartbeats below it. When the heaviest shard
-  // is pinned at this floor, adding more shards only worsens imbalance — a
-  // signal to stop raising the shard count or to split the block.
+  // The largest single block is the *floor* on achievable per-shard
+  // balance: a mutual block is atomic and cannot be split, so no partition
+  // can drive the max shard below it. Computed in the BALANCED metric's
+  // unit — the step-cost model for StepCost, serialized bytes for
+  // IngressBytes — so the note fires against the quantity the partitioner
+  // actually balanced. When the heaviest shard is pinned at this floor,
+  // adding more shards only worsens imbalance — a signal to stop raising
+  // the shard count or to split the block.
   let max_block_hb =
     profile.blocks().iter().map(|b| b.heartbeats).max().unwrap_or(0);
-  let max_shard_hb =
-    manifest.shards.iter().map(|s| s.heartbeats).max().unwrap_or(0);
+  let (max_block_bal, max_shard_bal) = match metric {
+    // Heartbeats on BOTH sides (the manifest's per-shard aggregate is
+    // heartbeats; comparing a step-cost block max against it would mix
+    // units), matching the pre-metric behavior for the default path.
+    BalanceMetric::StepCost => (
+      max_block_hb,
+      manifest.shards.iter().map(|s| s.heartbeats).max().unwrap_or(0),
+    ),
+    BalanceMetric::IngressBytes => (
+      profile
+        .blocks()
+        .iter()
+        .map(|b| u64::from(b.serialized_size))
+        .max()
+        .unwrap_or(0),
+      manifest.shards.iter().map(|s| s.own_size).max().unwrap_or(0),
+    ),
+  };
   let floored =
-    num_shards > 1 && max_shard_hb <= max_block_hb.saturating_mul(11) / 10;
+    num_shards > 1 && max_shard_bal <= max_block_bal.saturating_mul(11) / 10;
   let note = if floored {
     "  [balance floored by largest atomic block — more shards won't help]"
   } else {
@@ -1637,7 +1722,7 @@ pub fn shard_esp(
     h.num_nets(),
     manifest.summary(),
     ingress_load_summary(&manifest),
-    prove_report(&profile, &shard_of, &manifest, parallelism),
+    prove_report(profile, &shard_of, &manifest, parallelism),
     max_block_hb,
     note,
   ))

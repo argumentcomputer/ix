@@ -223,6 +223,21 @@ opaque rsShardEspFFI :
     @& String →                          -- balance metric ("steps" | "ingress")
     IO Unit
 
+/-- FFI: partition a `.ixe` env DIRECTLY into `numShards` shards — no
+    `.ixprof`, no kernel run. Vertices are byte-weighted constants and
+    nets come from the STATIC reference graph, so this is only
+    meaningful with the `"ingress"` metric (heartbeats are all zero in
+    the synthetic profile). Same string-ABI shape as `rsShardEspFFI`. -/
+@[extern "rs_shard_env"]
+opaque rsShardEnvFFI :
+    @& String →                          -- .ixe path
+    @& String →                          -- num_shards (N)
+    @& String →                          -- balance percent
+    @& String →                          -- parallelism (provers for prove-time est)
+    @& String →                          -- .ixes output path ("" = skip)
+    @& String →                          -- balance metric ("steps" | "ingress")
+    IO Unit
+
 /-- FFI: partition a `.ixprof` to a per-shard cycle/RAM budget, writing a
     `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGb` > 0 it is
     converted via the measured prover RAM model and overrides `maxCycles`. Pass

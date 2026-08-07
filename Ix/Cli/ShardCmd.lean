@@ -86,9 +86,15 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     -- Default manifest mirrors the profile's base name: `init.ixprof` →
     -- `init.ixes` (not `init.ixprof.ixes`).
     | none      =>
-      let base := if espPath.endsWith ".ixprof" then (espPath.dropEnd 7).toString else espPath
+      let base :=
+        if espPath.endsWith ".ixprof" then (espPath.dropEnd 7).toString
+        else if espPath.endsWith ".ixe" then (espPath.dropEnd 4).toString
+        else espPath
       base ++ ".ixes"
-  let shardsFlag : Option Nat := (p.flag? "shards").map (·.as! Nat)
+  -- Clamp to ≥1: `--shards 0` used to reach the partitioner as-is and
+  -- panic in ShardManifest::build (indexing an empty members vec)
+  -- unwinding across the FFI.
+  let shardsFlag : Option Nat := (p.flag? "shards").map (max 1 <| ·.as! Nat)
   let maxCycles  : Option Nat := (p.flag? "max-cycles").map (·.as! Nat)
   let maxRam     : Option Nat := (p.flag? "max-ram").map (·.as! Nat)
   -- Provers the prove-time estimate assumes (wall clock = max(seq/P, slowest
@@ -108,6 +114,25 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   if metric != "steps" && metric != "ingress" then
     p.printError s!"error: --balance-metric expects \"steps\" or \"ingress\", got \"{metric}\""
     return 1
+  -- A `.ixe` input takes the profile-free path: byte weights + static
+  -- reference nets straight from the env, no kernel run. Heartbeats are
+  -- all zero in the synthetic profile, so the ingress metric is the only
+  -- meaningful one — default to it and reject an explicit `steps`.
+  if espPath.endsWith ".ixe" then
+    match shardsFlag with
+    | none =>
+      p.printError "error: sharding a .ixe directly requires --shards N (the budget path is step-model-based and needs a .ixprof)"
+      return 1
+    | some n =>
+      if (p.flag? "balance-metric").isSome && metric == "steps" then
+        p.printError "error: --balance-metric steps needs a .ixprof (a .ixe carries no step counts); use ingress or profile first"
+        return 1
+      IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%, metric=ingress, static-ref nets)"
+      rsShardEnvFFI espPath (toString n) (toString balancePct)
+        (toString parallelism) outPath "ingress"
+      if !outPath.isEmpty then
+        IO.println s!"[shard] wrote {outPath}"
+      return 0
   -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
   -- (budget) > default (size to detected system RAM).
   match shardsFlag with
@@ -143,7 +168,7 @@ def shardCmd : Cli.Cmd := `[Cli|
     out          : String; "Output .ixes manifest path (default: <prof>.ixes, e.g. init.ixprof → init.ixes)"
 
   ARGS:
-    path : String; "Path to a .ixprof produced by `ix profile`"
+    path : String; "Path to a .ixprof produced by `ix profile`, or a .ixe env directly (profile-free: byte weights + static-reference nets, ingress metric only, requires --shards)"
 
   SUBCOMMANDS:
     shardExtractCmd
