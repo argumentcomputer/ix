@@ -2583,12 +2583,12 @@ mod tests {
         let pretty = row.name.pretty();
         if !name_hashes.is_empty() {
           let h = format!("{}", row.name.get_hash().to_hex());
-          if name_hashes.iter().any(|t| *t == h) {
+          if name_hashes.contains(&h) {
             println!("name-hash {h} = {pretty}");
           }
           continue;
         }
-        if !targets.is_empty() && !targets.iter().any(|t| *t == pretty) {
+        if !targets.is_empty() && !targets.contains(&pretty) {
           continue;
         }
         println!("--- {pretty}: addr={}", named.addr.hex());

@@ -680,26 +680,32 @@ mod tests {
   }
 
   // ---- properties ----
+  // `#[quickcheck]` requires by-value `Arbitrary` arguments; the
+  // needless_pass_by_value lint doesn't see through the macro.
 
   #[quickcheck]
+  #[allow(clippy::needless_pass_by_value)]
   fn p1_idempotent(u: AU) -> bool {
     let c = canon_univ(&u.0);
     canon_univ(&c) == c
   }
 
   #[quickcheck]
+  #[allow(clippy::needless_pass_by_value)]
   fn p2_roundtrip_fixpoint(u: AU) -> bool {
     let n = normalize(&u.0);
     norm_eq_semantic(&normalize(&linearize(&n)), &n)
   }
 
   #[quickcheck]
+  #[allow(clippy::needless_pass_by_value)]
   fn p3_mk_fixpoint(u: AU) -> bool {
     let c = canon_univ(&u.0);
     reduce_univ(&c) == c
   }
 
   #[quickcheck]
+  #[allow(clippy::needless_pass_by_value)]
   fn p6_mk_absorption(u: AU) -> bool {
     canon_univ(&reduce_univ(&u.0)) == canon_univ(&u.0)
   }
@@ -707,6 +713,7 @@ mod tests {
   /// The linearizer picks a representative of the SEMANTIC class: its
   /// canonical form matches the input's modulo empty entries.
   #[quickcheck]
+  #[allow(clippy::needless_pass_by_value)]
   fn canon_stays_in_class(u: AU) -> bool {
     norm_eq_semantic(&normalize(&canon_univ(&u.0)), &normalize(&u.0))
   }
