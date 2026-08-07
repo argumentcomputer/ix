@@ -389,6 +389,13 @@ def defEq := ⟦
     match try_proof_irrel(aw, bw, types) {
       1 => 1,
       _ =>
+        -- Unit-like and struct-eta stay PRE-loop, deviating from the
+        -- reference (which runs them only in the tier-5 fallback): on
+        -- this kernel's instance-heavy fixtures, pairs those tiers
+        -- decide instantly otherwise take the loop's unfold-both path
+        -- and blow up (measured: removing them stalled the suite's
+        -- first kernel check for minutes; on the mathlib monster their
+        -- pre-loop cost is ~neutral, -0.4%).
         match try_unit_like(aw, bw, types) {
           1 => 1,
           _ =>
@@ -816,9 +823,22 @@ def defEq := ⟦
                       0 =>
                         match ptr_val(bf2) - ptr_val(bf) {
                           0 =>
-                            match try_eta_swap(af, bf, types) {
+                            -- Tier 4d (def_eq.rs): SPINE-WISE same-head
+                            -- comparison before the binary structural
+                            -- descent. Any same-head stuck pair (Rec /
+                            -- ctor / non-Regular heads that H2's gate
+                            -- excludes) decides here with one pair per
+                            -- ARGUMENT; without it, struct_go's binary
+                            -- App arm spawns one full-cascade pair per
+                            -- App LAYER — measured as 2.06M of 2.72M
+                            -- def-eq calls on the mathlib monster.
+                            match try_def_eq_app(af, bf, types) {
                               1 => 1,
-                              _ => k_is_def_eq_struct(af, bf, types),
+                              _ =>
+                                match try_eta_swap(af, bf, types) {
+                                  1 => 1,
+                                  _ => k_is_def_eq_struct(af, bf, types),
+                                },
                             },
                           _ => k_is_def_eq(af2, bf2, types),
                         },
