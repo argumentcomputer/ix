@@ -245,10 +245,12 @@ jobs:
   #   - decompile: the inverse of compile. Roundtrip correctness is
   #     checked elsewhere (`ix validate` / roundtrip tests) — this only
   #     measures speed and memory.
-  #   - aiur-recursive: proves small fixed statements, runs the
-  #     in-circuit verifier over each proof, then proves THAT — the cost
-  #     of recursion. Env-independent: its `env` field only names the
-  #     (already-cached) `.ixe` the shared restore step pulls.
+  #   - aiur-recursive: proves the IxVM typecheck of two fixed constants
+  #     (Nat.add_comm, Array.extract_append), runs the in-circuit
+  #     verifier over each proof, then proves THAT — the cost of
+  #     recursion at kernel scale. A fixed subset instead of the
+  #     Vectors.csv fan-out: its `env` field names the (already-cached)
+  #     `.ixe` the shared restore step pulls and the constants resolve in.
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]

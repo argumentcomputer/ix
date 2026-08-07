@@ -26,12 +26,13 @@ lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/ex
   --queries N      FRI query count (default 100 = soundness level; pass a
                    small value for a cheap local run)
   --log-blowup N   log2 blowup            (default 2)
-  --pow N          query PoW bits         (default 20)
+  --pow N          query PoW bits         (default 0)
   --json <path>    write a benchmark results row (Ix.Benchmark.Results); the
                    row lands after the verifier execute and is refined after
                    the outer prove, so a kill mid-prove keeps the execute
-                   metrics. `ix bench run --backend aiur-recursive`
-                   drives this.
+                   metrics. (A local harness only: CI's aiur-recursive
+                   backend instead drives `bench-typecheck --recursive`
+                   over fixed IxVM statements.)
   --json-name <n>  row key (default: the inner entrypoint name)
   --texray         tracing-texray timeline + RAM; with --json, spans also land
                    at `<json>.spans` for the CI drill-down
@@ -85,7 +86,7 @@ def recCommitParams (args : List String) : Aiur.CommitmentParameters :=
 def innerFri (args : List String) : Aiur.FriParameters :=
   { logFinalPolyLen := argNat args "--final-poly" 0, maxLogArity := 1,
     numQueries := argNat args "--queries" 100,
-    commitProofOfWorkBits := 0, queryProofOfWorkBits := argNat args "--pow" 20 }
+    commitProofOfWorkBits := 0, queryProofOfWorkBits := argNat args "--pow" 0 }
 
 def secs (t0 t1 : Nat) : Float := (Float.ofNat (t1 - t0)) / 1e9
 

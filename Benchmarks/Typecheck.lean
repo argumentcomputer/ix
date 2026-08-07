@@ -59,9 +59,12 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  parameters (`recursiveFriParameters`), so recursive rows are
                  NOT comparable to the standard prove run — they land on
                  their own testbed (`ix bench run --backend aiur --mode
-                 recursive`). An IxVM-scale verifier execute needs >108 GB,
-                 so a watchdog kill landing as a `status: oom` row (dropped
-                 by bmf) is the expected shape there. With --texray, both
+                 recursive`; the fixed two-constant subset runs in CI as
+                 `--backend aiur-recursive`). At IxVM scale the recursion
+                 exceeds the CI RAM ceiling (even Nat.add_comm's outer
+                 prove peaks ~195 GiB as of 2026-08), so a watchdog kill
+                 landing as a `status: oom` row (dropped by bmf) is the
+                 expected shape there. With --texray, both
                  proves stream the same `stark/...` span names, so the summed
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.
@@ -118,7 +121,7 @@ def friParameters : Aiur.FriParameters := {
   maxLogArity := 1
   numQueries := 100
   commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 /-- Recursion-tuned commitment parameters for `--recursive`, matching
@@ -129,18 +132,21 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
 }
 
 /-- Recursion FRI parameters for `--recursive`. The query count IS the
-    soundness level, so a real (secure) recursive proof needs the full query
-    count, not a toy handful. The in-circuit verifier's cost scales with that
-    count, so at IxVM scale the run is expected to exceed even a 128 GB host —
-    an OOM row here documents the gap between secure recursion and what fits
-    today. `--recursive` runs the WHOLE system, inner prove included, under
+    soundness level, so a real (secure) recursive proof needs a full query
+    count, not a toy handful: 50 queries at log-blowup 2 target ~100 bits,
+    halving the in-circuit verifier's query-proportional work (and the
+    outer prove's footprint) relative to the previous 100-query setting —
+    sized so the run has a chance of fitting CI's weaker hosts. The
+    in-circuit verifier's cost scales with the count; an OOM row still
+    documents the gap between secure recursion and what fits today.
+    `--recursive` runs the WHOLE system, inner prove included, under
     these, so its rows are not comparable to the standard `prove` run's. -/
 def recursiveFriParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
-  numQueries := 100
+  numQueries := 50
   commitProofOfWorkBits := 0
-  queryProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
 }
 
 
@@ -338,6 +344,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let (commitParams, friParams) :=
     if recursive then (recursiveCommitmentParameters, recursiveFriParameters)
     else (commitmentParameters, friParameters)
+  -- `--queries N` overrides the selected parameter set's FRI query count
+  -- (inner and outer proof alike in --recursive mode, which builds both
+  -- systems from `friParams`).
+  let friParams := match (p.flag? "queries").map (·.as! Nat) with
+    | some n => { friParams with numQueries := n }
+    | none => friParams
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams friParams
   -- The recursive-verifier context, compiled and built ONCE: the verifier
   -- toplevel is constant-independent, and its prover system (same recursion
@@ -602,6 +614,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
+    "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
 ]

@@ -32,8 +32,12 @@
 #   - zisk / sp1 / ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
-#   - aiur-recursive: fixed toy statements; env-independent, so it always
-#     schedules exactly one run regardless of BENCH_ENVS.
+#   - aiur-recursive: a fixed IxVM statement (Nat.add_comm; the heavy-tier
+#     Array.extract_append is dropped for now — significantly more
+#     expensive even at 50 queries) proved and recursively verified via
+#     bench-typecheck --recursive; always schedules exactly one run
+#     regardless of BENCH_ENVS (the constants resolve in whichever env's
+#     .ixe the entry carries).
 # The bare `fresh` token skips the bencher fetch and re-measures the main
 # side with a local base-SHA run. Nothing in this workflow uploads to
 # bencher, so the canonical baseline is never touched.

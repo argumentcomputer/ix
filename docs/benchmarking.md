@@ -78,8 +78,9 @@ ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
 ix bench compare --backend aiur --env InitStd --mode prove \
   --main main.json --pr .lake/benches/aiur-InitStd-prove.json
 
-# The recursion cell — fixed toy statements, no env or .ixe needed:
-ix bench run --backend aiur-recursive
+# The recursion cell — fixed IxVM statements (Nat.add_comm,
+# Array.extract_append), resolved in the env's .ixe:
+ix bench run --backend aiur-recursive --env InitStd --ixe InitStd.ixe
 
 # The lean4lean reference kernel over InitStd — whole-library replay plus
 # per-primary closure rows, from oleans (no .ixe needed). Read next to the
@@ -102,8 +103,8 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | Aiur STARK check, one bench-main cell per mode on its own testbed: prove — the real-workload simulation (prove-time, proof-size, verify-time, peak-rss, plus fft-cost / execute-time from its own Phase 1) — and execute, the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss). `!benchmark aiur [execute]` picks the mode. A third mode, recursive (`bench-typecheck --recursive`), additionally executes AND proves the in-circuit multi-stark verifier over each fresh proof — the whole system runs under recursion-tuned FRI parameters, so its rows land on their own testbed (`aiur-check-recursive`) and are not comparable to the prove cell's. Unscheduled (an IxVM-scale verifier execute needs >108 GB, beyond the CI ceiling, so no CI job runs it and nothing uploads to its testbed): run it locally (`ix bench run --backend aiur --mode recursive`) or request it on demand with `!benchmark aiur recursive` — on the standard CI host the OOM renders as an empty table, so the token is meant for a bigger manual dispatch | `bench-typecheck` |
-| `aiur-recursive` | the aiur-recursive toy: prove a fixed tiny statement per config, both at the ~100-query soundness level (`square-q100-b1`, the lighter trivial-statement end; `factorial-q100-b2`, the heavier recursive one), run the in-circuit multi-stark verifier over the proof (recursive-execute-time, recursive-fft-cost — the recursion-cost proxy), then prove that execution end-to-end (recursive-prove-time, recursive-peak-rss, recursive-proof-size, recursive-verify-time). Env-independent: fixed configs instead of `Vectors.csv` constants, no `.ixe`, always exactly one cell regardless of `BENCH_ENVS` | `bench-recursive-verifier` |
+| `aiur`    | Aiur STARK check, one bench-main cell per mode on its own testbed: prove — the real-workload simulation (prove-time, proof-size, verify-time, peak-rss, plus fft-cost / execute-time from its own Phase 1) — and execute, the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss). `!benchmark aiur [execute]` picks the mode. A third mode, recursive (`bench-typecheck --recursive`), additionally executes AND proves the in-circuit multi-stark verifier over each fresh proof — the whole system runs under recursion-tuned FRI parameters, so its rows land on their own testbed (`aiur-check-recursive`) and are not comparable to the prove cell's. Unscheduled (the full selection is too heavy for per-push CI — the large closures exceed the RAM ceiling and land as OOM rows — so no CI job runs it and nothing uploads to its testbed; the `aiur-recursive` cell below tracks the same measurement over a fixed two-constant subset): run it locally (`ix bench run --backend aiur --mode recursive`) or request it on demand with `!benchmark aiur recursive` — meant for a bigger manual dispatch | `bench-typecheck` |
+| `aiur-recursive` | IxVM recursion on two fixed constants at the ~100-query soundness level (`Nat.add_comm`, the cheap-tier small end; `Array.extract_append`, the heavy-tier kernel-scale one): prove each constant's IxVM typecheck, run the in-circuit multi-stark verifier over the fresh proof (recursive-execute-time, recursive-fft-cost — the recursion-cost proxy), then prove that execution end-to-end (recursive-prove-time, recursive-peak-rss, recursive-proof-size, recursive-verify-time). The same measurement as aiur's recursive mode, but over a fixed subset instead of the `Vectors.csv` fan-out: always exactly one cell regardless of `BENCH_ENVS`, with the constants resolved in whichever env's `.ixe` the cell carries | `bench-typecheck --recursive` |
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (1 when unsharded) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
@@ -112,9 +113,10 @@ a PR tree and compare them — exactly what the PR workflow does.
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
 All tools emit the same rows, and all the constant-driven ones take the same
-`--consts`/`--consts-file` grammar (`bench-recursive-verifier` instead takes
-its config as flags — `--trivial`, `--queries`, `--log-blowup` — with the row
-name supplied via `--json-name`). The ooc and zkVM cells share per-constant
+`--consts`/`--consts-file` grammar. (`bench-recursive-verifier`, the local
+toy-statement harness for parameter sweeps, instead takes its config as
+flags — `--trivial`, `--queries`, `--log-blowup` — with the row name
+supplied via `--json-name`.) The ooc and zkVM cells share per-constant
 **full-closure** scope, so their delta isolates in-circuit vs out-of-circuit
 overhead.
 
@@ -211,8 +213,8 @@ SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe` + pre-cut zisk shards) →
 `aiur` (execute + prove cells) / `zkvm-execute` / `ooc-check` (each: restore caches, one
 `ix bench run … --ixe`, `ix bench bmf`, upload via
-`.github/actions/bencher-track`) / `aiur-recursive` (same shape, but needing only
-the staged binaries — no `.ixe`, so it waits on `build` alone). A kernel
+`.github/actions/bencher-track`) / `aiur-recursive` (same shape — it
+restores the cached `.ixe` its fixed constants resolve in). A kernel
 rejection exits 3 and reddens the
 run step while the clean rows still upload.
 
@@ -248,10 +250,10 @@ write token, running no PR code).
   re-enable it there and it returns to the matrices and the parser.
 - **Non-`main` base branches** — `fetch-main` queries `branch=main`; a PR
   against another base always pays the local base run.
-- **aiur recursive in CI** — `bench-typecheck --recursive` layers the
-  in-circuit multi-stark verifier on real constants, but an IxVM-scale
-  verifier execute needs >108 GB, beyond the CI ceiling, so the
-  `aiur-check-recursive` testbed is registered but unscheduled: no
-  bench-main job and no `!benchmark` token (the `aiur-recursive` token is
-  the toy backend). Run it locally with
-  `ix bench run --backend aiur --mode recursive`.
+- **aiur recursive over the full selection in CI** — the `aiur-recursive`
+  cell tracks IxVM recursion on its two fixed constants, but the full
+  `Vectors.csv` fan-out of `bench-typecheck --recursive` is too heavy for
+  per-push CI (the large closures exceed the RAM ceiling and land as OOM
+  rows), so the `aiur-check-recursive` testbed is registered but
+  unscheduled: no bench-main job and no `!benchmark` token. Run it
+  locally with `ix bench run --backend aiur --mode recursive`.

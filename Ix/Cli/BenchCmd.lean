@@ -10,8 +10,8 @@
   2. resolves the env's `.ixe` (an explicit `--ixe` path, else `ix
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
-  3. spawns the run's measured tool — `bench-typecheck` (aiur),
-     `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
+  3. spawns the run's measured tool — `bench-typecheck` (aiur,
+     aiur-recursive), `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
      `bench-lean4lean` (lean4lean; olean-driven, no `.ixe`),
      `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`:
      cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
@@ -151,8 +151,9 @@ def findEnv (token : String) : Option EnvSpec :=
         gaining rows, not by a registry flag. The prove/execute backends
         (aiur, zisk, sp1).
       · `perConstantWithEnv` — `perConstant` plus a whole-env row (ooc).
-      · `fixedConfigs` — env-independent fixed configs, a single matrix entry
-        (aiur-recursive: fixed toy statements, no `.ixe`). -/
+      · `fixedConfigs` — a fixed constant list, a single matrix entry no
+        matter how many envs are requested (aiur-recursive:
+        `recursiveConstants`, resolved in the one env the entry carries). -/
 inductive BenchInputs
   | perEnv
   | perConstant
@@ -217,11 +218,13 @@ def backendSpecs : List BackendSpec := [
   -- multi-stark verifier on prove: execute it over each fresh proof, then
   -- prove that execution — the recursion run. It runs under the
   -- recursion-tuned FRI parameters, so even its shared-name metrics
-  -- (prove-time, peak-rss) are not comparable to the prove run's. An
-  -- IxVM-scale verifier execute needs >108 GB, beyond the CI ceiling; the
-  -- kill lands as a `status: oom` row that bmf drops, which is why it's
-  -- marked `unscheduled`: a testbed for local `--mode recursive` runs only —
-  -- never uploaded to bencher, never plotted.
+  -- (prove-time, peak-rss) are not comparable to the prove run's. Over the
+  -- full Vectors.csv selection the run is too heavy for per-push CI (the
+  -- large closures exceed the RAM ceiling and land as `status: oom` rows
+  -- that bmf drops), which is why it's marked `unscheduled`: a testbed for
+  -- local `--mode recursive` runs only — never uploaded to bencher, never
+  -- plotted. CI tracks the same measurement over the fixed two-constant
+  -- subset via the aiur-recursive backend below.
   { name := "aiur", defaultMode := "prove", inputs := .perConstant,
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
                  ("execute", "aiur-check-execute-x64-32x"),
@@ -244,11 +247,13 @@ def backendSpecs : List BackendSpec := [
                    ("prove-time", "0.10", "_"), ("verify-time", "0.10", "_"),
                    ("proof-size", "0.05", "_"), ("execute-time", "0.10", "_"),
                    ("peak-rss", "0.10", "_"), ("throughput", "_", "0.10")] },
-  -- The aiur-recursive toy (bench-recursive-verifier): fixed tiny
-  -- statements (`recursiveConfigs`), proving the in-circuit multi-stark
-  -- verifier end-to-end. Env-independent: the run ignores --env and never
-  -- needs an .ixe. Unlike the aiur recursive mode above, the floor
-  -- config's outer prove fits a 128 GB host, so CI schedules this testbed.
+  -- The aiur-recursive run (bench-typecheck --recursive over
+  -- `recursiveConstants`): IxVM recursion on real statements — prove each
+  -- constant's typecheck, execute the in-circuit multi-stark verifier
+  -- over the fresh proof, then prove THAT execution. The same measurement
+  -- as the aiur recursive mode above, but over a fixed two-constant
+  -- subset so CI schedules exactly one entry instead of the whole
+  -- Vectors.csv fan-out.
   { name := "aiur-recursive", defaultMode := "prove", inputs := .fixedConfigs,
     testbeds := [("prove", "aiur-recursive-x64-32x")],
     metrics := [("prove", ["recursive-prove-time", "recursive-peak-rss",
@@ -335,18 +340,21 @@ def backendSpecs : List BackendSpec := [
 def findBackend (name : String) : Option BackendSpec :=
   backendSpecs.find? (·.name == name)
 
-/-- The `aiur-recursive` backend's rows: (row name, bench-recursive-verifier
-    config args). Fixed configs, not `Vectors.csv` constants. The FRI query
-    count IS the soundness level, so a benchmark of *secure* recursion uses the
-    real security requirement (~100 queries) throughout; the two rows vary the
-    inner statement and blowup (`square`, trivial + blowup 1, is the lighter
-    end; `factorial`, recursive + blowup 2, the heavier). At this query count
-    both outer proves strain a 128 GB host, so an OOM row is the honest signal
-    that secure recursion does not yet fit. -/
-def recursiveConfigs : List (String × Array String) := [
-  ("square-q100-b1", #["--trivial", "--queries", "100", "--log-blowup", "1"]),
-  ("factorial-q100-b2", #["--queries", "100"])
-]
+/-- The `aiur-recursive` backend's rows: fixed IxVM statements, proved and
+    recursively verified by `bench-typecheck --recursive` under the
+    recursion-tuned parameters (50 queries at log-blowup 2, ~100-bit
+    soundness — this benchmarks *secure* recursion). Currently only
+    `Nat.add_comm` (cheap tier — the small end of the IxVM cost range):
+    `Array.extract_append` (heavy tier — kernel scale) is dropped for now,
+    its recursion being significantly more expensive even at 50 queries;
+    re-add it when the verifier prover slims down. A stage that exceeds
+    the CI RAM ceiling lands as an OOM row — the honest signal that
+    secure recursion at that scale does not yet fit. (Measured 2026-08 at
+    100 queries: `Nat.add_comm`'s outer prove peaked ~195 GiB on the
+    ~123 GiB runners; the 50-query halving is what gives it a chance to
+    fit.) -/
+def recursiveConstants : List String :=
+  ["Nat.add_comm"]
 
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
   (b.testbeds.find? (·.1 == mode)).map (·.2)
@@ -402,7 +410,7 @@ def BackendSpec.benchmarkNames (b : BackendSpec) (rows : Array VectorRow)
     (mode : String) : Array String := Id.run do
   match b.inputs with
   | .perEnv => return (envSpecs.map (·.name)).toArray
-  | .fixedConfigs => return (recursiveConfigs.map (·.1)).toArray
+  | .fixedConfigs => return recursiveConstants.toArray
   | .perConstant | .perConstantWithEnv =>
     let mut ns : Array String := #[]
     for env in b.envNames rows do
@@ -696,7 +704,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let names := selected.map (·.name)
   match backend with
   | "aiur-recursive" =>
-    IO.eprintln s!"[bench] run {backend}-{mode}: {recursiveConfigs.length} config(s)"
+    IO.eprintln s!"[bench] run {backend}-{mode}: {recursiveConstants.length} constant(s)"
   | _ =>
     IO.eprintln s!"[bench] run {backend}-{env}-{mode}: {names.size} constant(s)"
 
@@ -784,15 +792,17 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
           ++ modeArgs)
   | "aiur-recursive" =>
-    -- Fixed-config rows; no env, no .ixe. One process per config under the
-    -- watchdog, self-reporting through the rows contract like every other
-    -- per-row backend.
-    let brv ← resolveBin repo "bench-recursive-verifier"
-    runPerConstant out (recursiveConfigs.map (·.1)).toArray "recursive-prove-time"
+    -- Fixed IxVM statements, resolved in the run's `.ixe`: the same
+    -- spawn as the aiur recursive mode, over `recursiveConstants`
+    -- instead of the Vectors.csv selection. One process per constant
+    -- under the watchdog.
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let bt ← resolveBin repo "bench-typecheck"
+    runPerConstant out recursiveConstants.toArray "recursive-prove-time"
       fun name =>
-        let cfgArgs := ((recursiveConfigs.find? (·.1 == name)).map (·.2)).getD #[]
-        runGuarded watchdog ceilingGb brv
-          (cfgArgs ++ #["--json", out, "--json-name", name, "--texray"])
+        runGuarded watchdog ceilingGb bt
+          #["--ixe", ixe, "--consts", name, "--json", out, "--texray",
+            "--recursive"]
   | "zisk" | "sp1" =>
     if mode != "execute" then
       p.printError s!"error: {backend} supports only execute mode"
@@ -845,7 +855,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     | "compile" => #[info.name]
     | "decompile" => #[info.name]
     | "ooc" | "lean4lean" => #[info.name] ++ names
-    | "aiur-recursive" => (recursiveConfigs.map (·.1)).toArray
+    | "aiur-recursive" => recursiveConstants.toArray
     | _ => names
   let code ← gate out expected
   if code == 0 || code == exitRejected then
