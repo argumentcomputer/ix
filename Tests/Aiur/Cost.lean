@@ -25,10 +25,10 @@ def fnShape : CircuitShape :=
   { mainWidth := 4, stage2Width := 2, quotientDegree := 2,
     preprocessedWidth := 0, preprocessedHeight := 0 }
 
-/-- `logBlowup = 2` (production `B = 4`): committed width
-`4 + 2 + q·D = 10`; at `h = 8`:
-`(B+1)·10·F(8) + D·F(16) + q·D·F(8) = 50·24 + 2·64 + 4·24 = 1424`. -/
-def handComputed : Float := 1424.0
+/-- `logBlowup = 2` (production `B = 4`): trace width `4 + 2 = 6`,
+quotient chunks `q·D = 4`; at `h = 8`:
+`(B+1)·6·F(8) + D·F(16) + q·D·F(32) = 30·24 + 2·64 + 4·160 = 1488`. -/
+def handComputed : Float := 1488.0
 
 def transformCostTests : TestSeq :=
   test "F(0) = 0 (empty circuit is deactivated)" (transformCost 0 == 0.0) ++
