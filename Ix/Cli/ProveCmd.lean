@@ -127,7 +127,8 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
 def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     (ixonEnv : Ixon.Env) (shards : Array (Array Address)) (shardK : Nat)
     (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (_printStats : Bool) : IO UInt32 := do
+    (_printStats : Bool)
+    (benchJson : Option (String × String) := none) : IO UInt32 := do
   match shards[shardK]? with
   | none => IO.eprintln s!"shard {shardK} out of range (0..{shards.size})"; return 1
   | some blocks => do
@@ -138,12 +139,23 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     let label := s!"shard {shardK}"
     IO.println s!"Proving {label}"
     (← IO.getStdout).flush
+    -- `benchJson = (out, rowName)` reports the prove as a benchmark row
+    -- (the `aiur` bench backend's heavy-tier closure-shard spawn):
+    -- `prove-time` windows the FFI prove itself — env parse, manifest
+    -- load, and `EnvHandle` build are excluded, matching the check rows'
+    -- loader-free semantics — while `peak-rss` is the process tree's
+    -- absolute high-water.
+    if benchJson.isSome then
+      TracingTexray.startSampler
+      TracingTexray.resetPeakTreeRss
+    let start ← IO.monoMsNow
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
     match aiurSystem.shardProveWithEnv funIdx envHandle blob with
     | .error e =>
       IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
       return 1
     | .ok (claimBytes, proof, _outIO) =>
+      let ms := (← IO.monoMsNow) - start
       -- Rust returns the canonical CheckEnv claim's wire bytes; deserialize
       -- back to `Ix.Claim` to persist alongside the proof. Avoids
       -- recomputing the closure walk + canonical AssumptionTree Lean-side.
@@ -156,6 +168,13 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
         let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
         let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
         IO.println (toString proofAddr)
+        if let some (out, rowName) := benchJson then
+          let peakRss ← TracingTexray.peakTreeRssBytes
+          Ix.Benchmark.Results.writeRow out rowName "ok"
+            [ ("prove-time",
+               Ix.Benchmark.Results.jsonRound 3 (ms.toFloat / 1000.0))
+            , ("peak-rss", Lean.toJson peakRss)
+            , ("proof-size", Lean.toJson proof.toBytes.size) ]
         let _ := manifestPath  -- kept for parity with previous signature
         return 0
 
@@ -366,7 +385,11 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
-      runShardProveNative manifest envHandle ixonEnv shards k aiurSystem compiled false
+      let benchJson := (p.flag? "json").map fun f =>
+        (f.as! String,
+         ((p.flag? "json-name").map (·.as! String)).getD s!"shard-{k}")
+      runShardProveNative manifest envHandle ixonEnv shards k aiurSystem
+        compiled false benchJson
   | some ixe, some manifest, none =>
     -- Batched, resumable all-shards prove (one env handle + one Aiur
     -- system across every shard; progress in ~/.ix/cache/shard-proofs).
@@ -396,6 +419,8 @@ def proveCmd : Cli.Cmd := `[Cli|
     "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."
     "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
     "jobs"  : Nat;      "Shards to prove concurrently in the all-shards batch (default 1). Each prove peaks at the shard's full predicted RAM, so raise this only when the box fits several shards at once."
+    json        : String; "Benchmark results JSON accumulator (single-shard mode only): append a `prove-time`/`peak-rss`/`proof-size` row for the proved shard. Used by `ix bench run --backend aiur` for heavy-tier closure shards."
+    "json-name" : String; "Row name for --json (default: shard-<K>)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

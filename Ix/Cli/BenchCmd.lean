@@ -658,6 +658,38 @@ def cutClosureShards (ix : String) (envIxe : String)
       return none
   return some (subIxe, manifest)
 
+/-- Closure-shard pipeline for aiur heavy-tier constants: extract the
+    name's dependency closure into a standalone `.ixe`, then cut it with
+    the MEASURED scan (`ix shard <sub.ixe> --max-ram`) at the given
+    budget — no profile step: the scan executes the closure's check
+    schedule and union-prices the shards. The partition's thin frontiers
+    are internal to the closure, so checking/proving every shard is an
+    unconditional verdict on the constant at per-shard RAM instead of
+    the full-spine re-derivation a standalone `Check` claim pays (473
+    GiB measured on bitblast's closure alone). Cached by slug like
+    [`cutClosureShards`]; `none` ⇒ the caller falls back to a single
+    leaf. -/
+def cutAiurClosureShards (ix : String) (envIxe : String)
+    (dir : String) (name : String) (maxRamGb : Nat) :
+    IO (Option (String × String)) := do
+  let slug := name.map fun c =>
+    if c == '/' || c == ' ' || c == '.' || c == ':' then '_' else c
+  let subIxe := s!"{dir}/{slug}.ixe"
+  let manifest := s!"{dir}/{slug}.ixes"
+  if (← FilePath.pathExists subIxe) && (← FilePath.pathExists manifest) then
+    return some (subIxe, manifest)
+  IO.FS.createDirAll dir
+  let steps : List (Array String) :=
+    [ #["shard", "extract", envIxe, "--consts", name, "--out", subIxe]
+    , #["shard", subIxe, "--max-ram", toString maxRamGb, "--out", manifest] ]
+  for args in steps do
+    let exit ← runGuarded none 0 ix args
+    if exit != 0 then
+      IO.eprintln s!"[bench] closure-shard pipeline failed for '{name}' \
+        (exit {exit}); falling back to single leaf"
+      return none
+  return some (subIxe, manifest)
+
 /-- Final run gate from the rows themselves: exit 1 when any EXPECTED name
     lacks a row (an aborted loop, a killed batch, or a dropped whole-env
     check must never look green — every selected name owes exactly one
@@ -881,10 +913,85 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       | "execute" => "execute-time"
       | "recursive" => "recursive-prove-time"
       | _ => "prove-time"
-    runPerConstant out names doneKey fun name =>
+    let leaf := fun name =>
       runGuarded watchdog ceilingGb bt
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
           ++ modeArgs)
+    -- Heavy tier runs as its closure-shard partition instead of one
+    -- full-closure leaf: a standalone `Check` claim has no frontier, so
+    -- the kernel re-derives the constant's whole dependency spine — a
+    -- record costlier than an entire env shard's (bitblast's closure:
+    -- 1098 BFFT / 473 GiB proved, vs 348 GiB for the env shard owning
+    -- it). The closure partition's thin frontiers are internal, so
+    -- checking/proving all its shards is the same unconditional verdict
+    -- at per-shard RAM. One sub-row per shard (`<name>/shard-K`); the
+    -- parent row carries the aggregate (summed time = the serial cost,
+    -- max RSS, shard count, the manifest's total measured fft).
+    let heavy := if mode == "recursive" then #[] else
+      (selected.filter (·.tier == "heavy")).map (·.name)
+    let light := names.filter (!heavy.contains ·)
+    runPerConstant out light doneKey leaf
+    let ix ← resolveBin repo "ix"
+    for name in heavy do
+      -- Resume: a complete parent row means every shard already ran.
+      let rows ← readRows out
+      if ((rows.getObjVal? name).toOption.bind
+          fun r => (r.getObjVal? doneKey).toOption).isSome then
+        continue
+      match ← cutAiurClosureShards ix ixe s!"{repo}/aiurshards-{env}" name
+          ceilingGb with
+      | none =>
+        let _ ← leaf name
+      | some (subIxe, manifest) =>
+        match Ix.Cli.CheckCmd.parseIxesShards
+            (← IO.FS.readBinFile manifest) with
+        | .error e =>
+          IO.eprintln s!"[bench] manifest parse failed for '{name}': {e}"
+        | .ok shardRows =>
+          let n := shardRows.size
+          let totalFft := shardRows.foldl (fun s r => s + r.cost) 0
+          let sub := if mode == "prove" then "prove" else "check"
+          let mut greens : Array String := #[]
+          let mut bad := false
+          for k in [0:n] do
+            let rowName := s!"{name}/shard-{k}"
+            let exit ← runGuarded watchdog ceilingGb ix
+              #[sub, "--ixe", subIxe, "--ixes", manifest,
+                "--shard", toString k, "--json", out,
+                "--json-name", rowName]
+            if exit == 0 then
+              greens := greens.push rowName
+            else if exit ≥ 128 then
+              let status := killStatus exit
+              IO.eprintln
+                s!"[bench] '{rowName}' killed (exit {exit}); recording {status}"
+              markKilled out rowName status
+              bad := true
+            else
+              IO.eprintln s!"[bench] '{rowName}' failed (exit {exit})"
+              bad := true
+          -- The parent row lands only when every shard is green — a
+          -- partial partition must never look like a complete verdict
+          -- (the gate then reports the missing parent).
+          if !bad && greens.size == n then
+            let rows ← readRows out
+            let getF (rn key : String) : Option Float :=
+              match ((rows.getObjVal? rn).toOption.bind
+                fun r => (r.getObjVal? key).toOption) with
+              | some (.num v) => some v.toFloat
+              | _ => none
+            let times := greens.filterMap (getF · doneKey)
+            let rsss := greens.filterMap (getF · "peak-rss")
+            let sizes := greens.filterMap (getF · "proof-size")
+            let mut fields : List (String × Lean.Json) :=
+              [ (doneKey, jsonRound 3 (times.foldl (· + ·) 0.0))
+              , ("peak-rss", jsonRound 0 (rsss.foldl max 0.0))
+              , ("shards", Lean.toJson n)
+              , ("fft-cost", Lean.toJson totalFft) ]
+            if mode == "prove" && sizes.size == n then
+              fields := fields ++
+                [("proof-size", jsonRound 0 (sizes.foldl (· + ·) 0.0))]
+            writeRow out name "ok" fields
   | "aiur-recursive" =>
     -- Fixed IxVM statements, resolved in the run's `.ixe`: the same
     -- spawn as the aiur recursive mode, over `recursiveConstants`
