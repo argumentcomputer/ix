@@ -38,9 +38,21 @@ impl QueryRecord {
   }
 }
 
+#[derive(Clone, Copy)]
 pub struct IOKeyInfo {
   pub idx: usize,
   pub len: usize,
+}
+
+/// On-demand witness supplier for an [`IOBuffer`]: when execution asks for
+/// a `(channel, key)` the buffer does not hold, the backing gets one chance
+/// to produce the data, which is then materialized into the buffer exactly
+/// as if the host had seeded it eagerly. Execution cannot observe the
+/// difference — same bytes, same keys, same in-circuit verification — so
+/// host witness RAM scales with the FAULTED set instead of the shipped
+/// closure. `Send + Sync` because scan/check workers share one source.
+pub trait IOFaultSource: Send + Sync {
+  fn fault(&self, channel: G, key: &[G]) -> Option<Vec<G>>;
 }
 
 pub struct IOBuffer {
@@ -49,16 +61,84 @@ pub struct IOBuffer {
   /// Channel-keyed info map; same `key` on different channels resolves
   /// to distinct `IOKeyInfo`.
   pub map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
+  /// Lazy witness backing; `None` means fully host-seeded (the eager
+  /// builders and the Lean-marshalled buffers).
+  pub backing: Option<std::sync::Arc<dyn IOFaultSource>>,
+}
+
+impl Default for IOBuffer {
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl IOBuffer {
+  pub fn new() -> Self {
+    Self {
+      data: FxHashMap::default(),
+      map: FxHashMap::default(),
+      backing: None,
+    }
+  }
+
+  pub fn with_backing(backing: std::sync::Arc<dyn IOFaultSource>) -> Self {
+    Self {
+      data: FxHashMap::default(),
+      map: FxHashMap::default(),
+      backing: Some(backing),
+    }
+  }
+
+  fn invalid_key(channel: G, key: &[G]) -> ExecError {
+    // Name the channel and key: a missing witness entry is otherwise
+    // indistinguishable from any other, and the key identifies the
+    // constant or blob whose bytes the host failed to seed.
+    let hex: String = key
+      .iter()
+      .map(|g| format!("{:02x}", g.as_canonical_u64() & 0xff))
+      .collect();
+    ExecError::InvalidIOKey { channel: channel.as_canonical_u64(), key: hex }
+  }
+
+  /// Execution-path lookup: on a miss, the `backing` (if any) may
+  /// materialize the entry into the buffer before the lookup fails.
+  /// `&mut` because a fault appends to the arena; both the interpreter
+  /// and the codegen'd kernels thread `&mut IOBuffer` already.
   #[inline]
   pub fn get_info(
+    &mut self,
+    channel: G,
+    key: &[G],
+  ) -> Result<IOKeyInfo, ExecError> {
+    if let Some(info) = self.map.get(&(channel, key.to_vec())) {
+      return Ok(*info);
+    }
+    if let Some(src) = &self.backing
+      && let Some(data) = src.fault(channel, key)
+    {
+      let arena = self.data.entry(channel).or_default();
+      let info = IOKeyInfo { idx: arena.len(), len: data.len() };
+      arena.extend(data);
+      self.map.insert((channel, key.to_vec()), info);
+      return Ok(info);
+    }
+    Err(Self::invalid_key(channel, key))
+  }
+
+  /// Read-only lookup for post-execution passes (trace generation runs
+  /// circuits in parallel over a shared buffer): never faults — by trace
+  /// time execution has materialized every entry it read.
+  #[inline]
+  pub fn get_info_frozen(
     &self,
     channel: G,
     key: &[G],
-  ) -> Result<&IOKeyInfo, ExecError> {
-    self.map.get(&(channel, key.to_vec())).ok_or(ExecError::InvalidIOKey)
+  ) -> Result<IOKeyInfo, ExecError> {
+    self
+      .map
+      .get(&(channel, key.to_vec()))
+      .copied()
+      .ok_or_else(|| Self::invalid_key(channel, key))
   }
   fn set_info(
     &mut self,
@@ -123,7 +203,10 @@ pub enum ExecError {
   MatchNoCase(u64),
   NoContinuation,
   StackNotEmpty,
-  InvalidIOKey,
+  InvalidIOKey {
+    channel: u64,
+    key: String,
+  },
   IOMappingAlreadySet,
   IOReadOutOfBounds {
     idx: usize,
@@ -165,7 +248,9 @@ impl std::fmt::Display for ExecError {
       Self::StackNotEmpty => {
         write!(f, "exec entries stack not empty at return")
       },
-      Self::InvalidIOKey => write!(f, "invalid IO key"),
+      Self::InvalidIOKey { channel, key } => {
+        write!(f, "invalid IO key: channel {channel}, key {key}")
+      },
       Self::IOMappingAlreadySet => write!(f, "IO mapping already set for key"),
       Self::IOReadOutOfBounds { idx, len } => {
         write!(f, "IO read out of bounds: idx={idx}, len={len}")
@@ -186,7 +271,13 @@ static QUERY_STATS: std::sync::LazyLock<bool> =
     std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
   });
 
-fn dump_query_stats(record: &QueryRecord, tag: &str) {
+/// Whether `IX_AIUR_QUERY_STATS=1` is set (the codegen'd execution paths
+/// share `QueryRecord`, so callers there gate their own dumps on this).
+pub fn query_stats_enabled() -> bool {
+  *QUERY_STATS
+}
+
+pub fn dump_query_stats(record: &QueryRecord, tag: &str) {
   let mut rows: Vec<(usize, usize, usize)> = record
     .function_queries
     .iter()
@@ -219,18 +310,110 @@ impl Toplevel {
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
   ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    let mut record = QueryRecord::new(self);
+    let output =
+      self.execute_with_record(fun_idx, args, io_buffer, &mut record)?;
+    Ok((record, output))
+  }
+
+  /// Like [`Self::execute`] but accumulating into a caller-owned
+  /// [`QueryRecord`]: repeated calls share the memo tables, so a query
+  /// resolved by an earlier call is a hit rather than re-executed. This is
+  /// how a sequence of independent claims is executed with the same
+  /// memoization semantics as one combined run (the scan-and-cut sharder's
+  /// segment loop).
+  pub fn execute_with_record(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    record: &mut QueryRecord,
+  ) -> Result<Vec<G>, ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
-    let mut record = QueryRecord::new(self);
     let function = &self.functions[fun_idx];
-    let output =
-      function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    let output = function.execute(fun_idx, args, self, record, io_buffer)?;
     if *QUERY_STATS {
-      dump_query_stats(&record, "final");
+      dump_query_stats(record, "final");
     }
-    Ok((record, output))
+    Ok(output)
   }
+}
+
+/// Total FFT cost of a [`QueryRecord`]: `Σ width·height·log2(max(height,2))`
+/// over every constrained function circuit plus the memory circuits, with
+/// heights = unique memoized queries. Mirrors `Ix/Aiur/Statistics.lean`'s
+/// `computeStats.totalFftCost` (function width `layout.totalWidth` =
+/// `width + extDegree·max(lookups,1)`; memory width `3 + size + extDegree`;
+/// gadget circuits excluded, as there), so a running readout here matches
+/// the number the check stats dump prints and the RAM/wall lines are
+/// calibrated against.
+/// `usize → f64` without a lossy `as` cast: split into `u32` halves, each
+/// exactly convertible. Matches `n as f64` bit-for-bit below 2^52 (query
+/// counts and widths stay far below) and rounds identically above.
+pub fn f64_from_usize(n: usize) -> f64 {
+  let hi = u32::try_from(n >> 32).expect("usize is at most 64 bits");
+  let lo = u32::try_from(n & 0xFFFF_FFFF).expect("masked to u32 range");
+  f64::from(hi) * 4_294_967_296.0 + f64::from(lo)
+}
+
+/// Approximate resident bytes of a [`QueryRecord`]: retained key/output
+/// field elements (8 B each) plus ~21 B of per-entry index overhead
+/// (stored hash 8, multiplicity element 8, hash-table slot ~5 with load
+/// factor). The memory-circuit stores
+/// dominate on arithmetic-heavy content, where entries are FFT-cheap
+/// (narrow columns) but RAM-heavy — the second resource dimension a
+/// RAM-budgeted partition has to price alongside FFT cost.
+pub fn record_retained_bytes(record: &QueryRecord) -> usize {
+  let mut elems = 0usize;
+  let mut entries = 0usize;
+  for m in &record.function_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  for (_, m) in &record.memory_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  elems * 8 + entries * 21
+}
+
+/// Exact resident heap of the record's query maps (arena fill at hugepage
+/// granularity, stored hashes, hash-table allocations). This is the
+/// scanner's record threshold metric — what the process actually holds
+/// while executing. [`record_retained_bytes`] intentionally differs: it
+/// is the analytic prove-RAM model's record term, calibrated end-to-end
+/// against measured proves, and must not change with allocator details.
+pub fn record_heap_bytes(record: &QueryRecord) -> usize {
+  record.function_queries.iter().map(QueryMap::heap_bytes).sum::<usize>()
+    + record
+      .memory_queries
+      .iter()
+      .map(|(_, m)| m.heap_bytes())
+      .sum::<usize>()
+}
+
+pub fn record_fft_cost(toplevel: &Toplevel, record: &QueryRecord) -> f64 {
+  const EXT_DEGREE: usize = 2;
+  fn fft(w: usize, h: usize) -> f64 {
+    if h == 0 {
+      0.0
+    } else {
+      f64_from_usize(w) * f64_from_usize(h) * f64_from_usize(h.max(2)).log2()
+    }
+  }
+  let mut total = 0.0;
+  for (i, f) in toplevel.functions.iter().enumerate() {
+    if f.constrained {
+      let w = f.layout.width() + EXT_DEGREE * f.layout.lookups.max(1);
+      total += fft(w, record.function_queries[i].len());
+    }
+  }
+  for (size, qm) in &record.memory_queries {
+    total += fft(3 + size + EXT_DEGREE, qm.len());
+  }
+  total
 }
 
 enum ExecEntry<'a> {
@@ -395,8 +578,8 @@ impl Function {
           let channel = map[*channel];
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let IOKeyInfo { idx, len } = io_buffer.get_info(channel, &key)?;
-          map.push(G::from_usize(*idx));
-          map.push(G::from_usize(*len));
+          map.push(G::from_usize(idx));
+          map.push(G::from_usize(len));
         },
         ExecEntry::Op(Op::IOSetInfo(channel, key, idx, len)) => {
           let channel = map[*channel];

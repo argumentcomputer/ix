@@ -194,6 +194,14 @@ impl SegStore {
   fn retained_elems(&self) -> usize {
     self.entries * self.stride
   }
+
+  /// Heap bytes of the arena's fill. Segments are mmap-backed and fault
+  /// as they fill, so fill IS residency up to page granularity — never
+  /// count reserved-but-untouched capacity (a fresh segment per store
+  /// across hundreds of maps adds gigabytes of phantom bytes).
+  fn heap_bytes(&self) -> usize {
+    self.entries * self.stride * size_of::<G>()
+  }
 }
 
 /// Segmented store of per-entry key hashes. Kept so hash-table growth can
@@ -210,6 +218,19 @@ impl SegHashes {
     Self { segs: Vec::new(), entries: 0 }
   }
 
+  /// Visit every stored hash in insertion order. One sequential pass
+  /// over the segment arenas — no rehashing, no table walk.
+  fn for_each(&self, mut f: impl FnMut(u64)) {
+    let mut left = self.entries;
+    for seg in &self.segs {
+      let take = left.min(seg.len);
+      for &h in seg.slice(0, take) {
+        f(h);
+      }
+      left -= take;
+    }
+  }
+
   #[inline]
   fn at(&self, i: usize) -> u64 {
     self.segs[i >> SEG_BITS].slice(i & SEG_MASK, 1)[0]
@@ -223,6 +244,11 @@ impl SegHashes {
     }
     self.segs[seg].extend_from_slice(&[h]);
     self.entries += 1;
+  }
+
+  /// Heap bytes of the fill; same rule as [`SegStore::heap_bytes`].
+  fn heap_bytes(&self) -> usize {
+    self.entries * size_of::<u64>()
   }
 }
 
@@ -280,6 +306,30 @@ impl QueryMap {
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
     self.keys.retained_elems() + self.outs.retained_elems()
+  }
+
+  /// Visit the stored 64-bit hash of every unique entry, in insertion
+  /// order. The hashes are already computed and resident (they back
+  /// table growth), so this is a pure sequential read — the scanner's
+  /// union-pricing sketches are built from these without rehashing.
+  pub fn for_each_hash(&self, f: impl FnMut(u64)) {
+    self.hashes.for_each(f);
+  }
+
+  /// Exact heap bytes of this map's fill: arena elements, stored hashes,
+  /// and the hash-table allocation (power-of-two buckets at 7/8 load,
+  /// `u32` index + 1 control byte per bucket, fully resident).
+  pub fn heap_bytes(&self) -> usize {
+    let buckets = if self.table.capacity() == 0 {
+      0
+    } else {
+      (self.table.capacity() * 8 / 7 + 1).next_power_of_two()
+    };
+    self.keys.heap_bytes()
+      + self.outs.heap_bytes()
+      + self.mults.heap_bytes()
+      + self.hashes.heap_bytes()
+      + buckets * (size_of::<u32>() + 1)
   }
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {

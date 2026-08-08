@@ -1258,6 +1258,79 @@ fn uncoarsen_refine(
 // Manifest
 // ============================================================================
 
+/// Planner cost of one shard, tagged by the metric it is denominated in.
+/// All shards of one manifest carry the same variant (one packer, one
+/// backend); the tag makes the unit explicit — cross-backend values can
+/// never be compared by accident — and puts the heaviest-first prove
+/// ordering in the manifest itself instead of a sidecar file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ShardCost {
+  /// No planner cost recorded.
+  #[default]
+  Unknown,
+  /// Sum of member kernel heartbeats — the balance metric of the
+  /// profile-driven min-cut partitioners.
+  ProfileHeartbeats(u64),
+  /// Zisk guest cost units (ziskemu `-X` TOTAL; see the calibrated cost
+  /// model below).
+  ZiskCostUnits(u64),
+  /// Aiur circuit FFT cost (raw `w·h·log2(h)` units, the same
+  /// denomination as the bench rows' `fft-cost` and the Lean stats
+  /// dump): MEASURED when produced by the env scan, model-predicted
+  /// when produced by the `.ixprof` packer.
+  AiurFft(u64),
+}
+
+/// An FFT cost (raw `w·h·log2(h)` units, f64) as a saturating `u64`,
+/// converted without a lossy `as` cast (decimal round-trip; cost
+/// magnitudes sit far below any precision edge, and this only runs once
+/// per shard at manifest-write time).
+pub fn cost_fft(fft: f64) -> u64 {
+  format!("{:.0}", fft.max(0.0)).parse().unwrap_or(u64::MAX)
+}
+
+impl ShardCost {
+  /// The scalar used for ordering and balance WITHIN one manifest; its
+  /// unit is whatever the variant says.
+  pub fn value(self) -> u64 {
+    match self {
+      Self::Unknown => 0,
+      Self::ProfileHeartbeats(v)
+      | Self::ZiskCostUnits(v)
+      | Self::AiurFft(v) => v,
+    }
+  }
+
+  /// Unit label for reports.
+  pub fn unit(self) -> &'static str {
+    match self {
+      Self::Unknown => "",
+      Self::ProfileHeartbeats(_) => "hb",
+      Self::ZiskCostUnits(_) => "cost-units",
+      Self::AiurFft(_) => "fft",
+    }
+  }
+
+  fn tag(self) -> u8 {
+    match self {
+      Self::Unknown => 0,
+      Self::ProfileHeartbeats(_) => 1,
+      Self::ZiskCostUnits(_) => 2,
+      Self::AiurFft(_) => 3,
+    }
+  }
+
+  fn from_tag(tag: u8, value: u64) -> Result<Self, String> {
+    match tag {
+      0 => Ok(Self::Unknown),
+      1 => Ok(Self::ProfileHeartbeats(value)),
+      2 => Ok(Self::ZiskCostUnits(value)),
+      3 => Ok(Self::AiurFft(value)),
+      t => Err(format!("unknown shard-cost tag {t}")),
+    }
+  }
+}
+
 /// Per-shard summary in a [`ShardManifest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShardInfo {
@@ -1265,8 +1338,8 @@ pub struct ShardInfo {
   pub id: u32,
   /// Member block addresses.
   pub blocks: Vec<Address>,
-  /// Sum of member heartbeats (balance metric).
-  pub heartbeats: u64,
+  /// Planner cost (packing/balance metric, unit-tagged).
+  pub cost: ShardCost,
   /// Sum of member serialized sizes (the shard's own ingress).
   pub own_size: u64,
   /// Foreign blocks delta-unfolded by members but proven in other shards.
@@ -1326,6 +1399,7 @@ impl ShardManifest {
         members[s].iter().map(|&b| profile.block(b).addr.clone()).collect();
       let heartbeats: u64 =
         members[s].iter().map(|&b| profile.block(b).heartbeats).sum();
+      let cost = ShardCost::ProfileHeartbeats(heartbeats);
       let own_size: u64 = members[s]
         .iter()
         .map(|&b| u64::from(profile.block(b).serialized_size))
@@ -1340,7 +1414,7 @@ impl ShardManifest {
       shards.push(ShardInfo {
         id: s as u32,
         blocks,
-        heartbeats,
+        cost,
         own_size,
         foreign_blocks,
         cross_ingress,
@@ -1365,16 +1439,22 @@ impl ShardManifest {
 
   /// A human-readable what-if summary line.
   pub fn summary(&self) -> String {
-    let hbs: Vec<u64> = self.shards.iter().map(|s| s.heartbeats).collect();
+    let costs: Vec<u64> = self.shards.iter().map(|s| s.cost.value()).collect();
     let nonempty: Vec<u64> = self
       .shards
       .iter()
       .filter(|s| !s.blocks.is_empty())
-      .map(|s| s.heartbeats)
+      .map(|s| s.cost.value())
       .collect();
-    let max = hbs.iter().copied().max().unwrap_or(0);
+    let unit = self
+      .shards
+      .first()
+      .map(|s| s.cost.unit())
+      .filter(|u| !u.is_empty())
+      .unwrap_or("cost");
+    let max = costs.iter().copied().max().unwrap_or(0);
     let min = nonempty.iter().copied().min().unwrap_or(0);
-    let total: u128 = hbs.iter().map(|&h| u128::from(h)).sum();
+    let total: u128 = costs.iter().map(|&h| u128::from(h)).sum();
     let mean = if self.shards.is_empty() {
       0
     } else {
@@ -1384,7 +1464,7 @@ impl ShardManifest {
     let max_cross =
       self.shards.iter().map(|s| s.cross_ingress).max().unwrap_or(0);
     format!(
-      "shards={} (empty={}) heartbeats[min={} mean={} max={}] imbalance={:.2}x \
+      "shards={} (empty={}) {unit}[min={} mean={} max={}] imbalance={:.2}x \
        cross_ingress_total={} max_shard_cross={}",
       self.shards.len(),
       empty,
@@ -1411,7 +1491,8 @@ impl ShardManifest {
     };
     for sh in &self.shards {
       out.extend_from_slice(&sh.id.to_le_bytes());
-      out.extend_from_slice(&sh.heartbeats.to_le_bytes());
+      out.push(sh.cost.tag());
+      out.extend_from_slice(&sh.cost.value().to_le_bytes());
       out.extend_from_slice(&sh.own_size.to_le_bytes());
       out.extend_from_slice(&sh.cross_ingress.to_le_bytes());
       match &sh.assumption_root {
@@ -1440,7 +1521,15 @@ impl ShardManifest {
   /// Deserialize from the `.ixes` binary format.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
     let mut c = Cur { buf: bytes, pos: 0 };
-    if c.take(8)? != SHARD_MAGIC {
+    let magic = c.take(8)?;
+    if magic != SHARD_MAGIC {
+      if magic.starts_with(b"IXES") {
+        return Err(format!(
+          "unsupported .ixes format version {} (expected {}) — regenerate \
+           the manifest with the current `ix shard`/`ix shard scan`",
+          magic[7], SHARD_MAGIC[7]
+        ));
+      }
       return Err("not an .ixes file (bad magic)".into());
     }
     let total_cross_ingress = c.u128()?;
@@ -1448,7 +1537,7 @@ impl ShardManifest {
     let mut shards = Vec::with_capacity(num_shards);
     for _ in 0..num_shards {
       let id = c.u32()?;
-      let heartbeats = c.u64()?;
+      let cost = ShardCost::from_tag(c.u8()?, c.u64()?)?;
       let own_size = c.u64()?;
       let cross_ingress = c.u64()?;
       let assumption_root = if c.u8()? == 1 { Some(c.addr()?) } else { None };
@@ -1457,7 +1546,7 @@ impl ShardManifest {
       shards.push(ShardInfo {
         id,
         blocks,
-        heartbeats,
+        cost,
         own_size,
         foreign_blocks,
         cross_ingress,
@@ -1497,8 +1586,10 @@ impl ShardManifest {
   }
 }
 
-/// Magic bytes at the head of every `.ixes` file.
-const SHARD_MAGIC: &[u8; 8] = b"IXES\0\0\0\0";
+/// Magic bytes at the head of every `.ixes` file; the final byte is the
+/// format version (bumped to 2 when per-shard tagged costs replaced the
+/// bare heartbeats field).
+const SHARD_MAGIC: &[u8; 8] = b"IXES\0\0\0\x02";
 
 /// Minimal little-endian cursor for manifest decoding.
 struct Cur<'a> {
@@ -1580,7 +1671,7 @@ pub fn shard_esp(
   let max_block_hb =
     profile.blocks().iter().map(|b| b.heartbeats).max().unwrap_or(0);
   let max_shard_hb =
-    manifest.shards.iter().map(|s| s.heartbeats).max().unwrap_or(0);
+    manifest.shards.iter().map(|s| s.cost.value()).max().unwrap_or(0);
   let floored =
     num_shards > 1 && max_shard_hb <= max_block_hb.saturating_mul(11) / 10;
   let note = if floored {
@@ -1762,6 +1853,121 @@ pub fn shard_prove_secs(steps: u64) -> f64 {
   PROVE_SETUP_SECS + PROVE_SECS_PER_BCOST * (steps as f64 / 1e9)
 }
 
+/// `x·log₂(x+2)` — the feature form of the Aiur cost model. Aiur's prover work
+/// is a sum of `width·height·log₂(height)` FFTs over its circuits, and each
+/// dominant circuit family's height tracks one kernel counter, so a counter's
+/// cost contribution is super-linear with exactly this shape. The `+2` keeps
+/// the log positive at zero.
+#[allow(clippy::cast_precision_loss)] // counters are far below 2^53
+fn nlogn(x: u64) -> f64 {
+  let x = x as f64;
+  x * (x + 2.0).log2()
+}
+
+/// LEGACY counter-model constants: advisory pricing for `ix profile`
+/// sweep/leaderboards only. Superseded for shard sizing by the measured
+/// scan + analytic peak-prove-RAM model; do not use these to size shards.
+///
+/// Calibrated two-stage Aiur cost model.
+///
+/// **Stage 1** predicts a run's total FFT cost (the prover's actual work
+/// unit: `Σ width·2^⌈log h⌉·log h` over circuits) from the profile
+/// counters of the run's owned blocks plus its faulted-set bytes. `def_eq`
+/// is a load-bearing feature: definitional-equality-dense checks drive
+/// trace volume that bytes/subst alone under-predict.
+///
+/// **Stage 2** maps FFT cost linearly to prove wall seconds and peak host
+/// RAM — physically grounded (committed LDE volume is proportional to FFT
+/// work) and measured tight (≤10% on RAM, ≤12% on wall).
+///
+/// Fit 2026-08-03 on this kernel (addr-first, lazy fault-in): stage 1
+/// against the exact per-shard FFT costs of all 34 Init shards at a 250
+/// GiB pack (execute-mode stats dumps; MAPE 5.0%, worst under −18.5%),
+/// stage 2 against 13 measured shard proves spanning 21–81 BFFT (RSS
+/// max |err| 9.9%, wall 12.2%). Composed end-to-end on the proved set:
+/// RAM within 12.4%. The prove base term includes env load + system
+/// setup, matching what the batch driver schedules.
+pub const AIUR_FFT_BASE: f64 = 2.599e9;
+pub const AIUR_FFT_PER_NLOGN_INGRESS_BYTE: f64 = 188.6;
+pub const AIUR_FFT_PER_NLOGN_SUBST: f64 = 71.27;
+pub const AIUR_FFT_PER_NLOGN_DEF_EQ: f64 = 6548.0;
+pub const AIUR_PROVE_BASE_SECS: f64 = 6.18;
+pub const AIUR_PROVE_SECS_PER_BFFT: f64 = 2.0425;
+pub const AIUR_RAM_BASE_GIB: f64 = 13.59;
+pub const AIUR_RAM_GIB_PER_BFFT: f64 = 2.3507;
+/// Usable fraction of an Aiur host-RAM budget. Covers the composed model's
+/// measured worst under-prediction (stage-1 tail −18.5% × stage-2 −8.5% ≈
+/// −25%, so predictions at cap stay under budget), with the remainder as
+/// OS/variance margin.
+pub const AIUR_RAM_USABLE_FRAC: f64 = 0.75;
+
+/// Stage 1: predicted total FFT cost for one run faulting in `bytes`,
+/// with `subst` substitution-node visits and `def_eq` definitional
+/// equality checks over its owned blocks.
+pub fn aiur_shard_fft(bytes: u64, subst: u64, def_eq: u64) -> f64 {
+  AIUR_FFT_BASE
+    + AIUR_FFT_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_FFT_PER_NLOGN_SUBST * nlogn(subst)
+    + AIUR_FFT_PER_NLOGN_DEF_EQ * nlogn(def_eq)
+}
+
+/// Stage 2: prove wall seconds for a run of `fft` total FFT cost. Feed a
+/// measured FFT cost (an execute-mode stats dump) for an exact-height
+/// prediction, or [`aiur_shard_fft`]'s estimate at plan time.
+pub fn aiur_prove_secs_for_fft(fft: f64) -> f64 {
+  AIUR_PROVE_BASE_SECS + AIUR_PROVE_SECS_PER_BFFT * (fft / 1e9)
+}
+
+/// Stage 2: peak prover host RAM (GiB) for a run of `fft` total FFT cost.
+pub fn aiur_ram_gib_for_fft(fft: f64) -> f64 {
+  AIUR_RAM_BASE_GIB + AIUR_RAM_GIB_PER_BFFT * (fft / 1e9)
+}
+
+/// Composed plan-time prediction: prove wall seconds from profile features.
+pub fn aiur_prove_secs(bytes: u64, subst: u64, def_eq: u64) -> f64 {
+  aiur_prove_secs_for_fft(aiur_shard_fft(bytes, subst, def_eq))
+}
+
+/// Composed plan-time prediction: peak prover host RAM (GiB) from profile
+/// features.
+pub fn aiur_ram_gib(bytes: u64, subst: u64, def_eq: u64) -> f64 {
+  aiur_ram_gib_for_fft(aiur_shard_fft(bytes, subst, def_eq))
+}
+
+/// A block's marginal predicted Aiur prove time (seconds), `nlogn` taken at
+/// block granularity and the per-run bases omitted. Slightly under-counts a
+/// block's share inside a large run (whose `log` factor is bigger), which is
+/// fine for its purpose: ranking blocks in the `ix profile` leaderboards.
+pub fn aiur_block_prove_secs(b: &BlockEntry) -> f64 {
+  let fft = AIUR_FFT_PER_NLOGN_INGRESS_BYTE
+    * nlogn(u64::from(b.serialized_size))
+    + AIUR_FFT_PER_NLOGN_SUBST * nlogn(b.subst)
+    + AIUR_FFT_PER_NLOGN_DEF_EQ * nlogn(b.def_eq);
+  AIUR_PROVE_SECS_PER_BFFT * (fft / 1e9)
+}
+
+/// Calibrated Aiur **execute** (witness-generation, no prove) cost model —
+/// fit on the same 34-shard Init sweep as stage 1 (wall MAPE 9.6%, RSS
+/// 3.7%). Execute wall tracks `def_eq` alone; execute RSS adds the
+/// faulted-byte term.
+pub const AIUR_EXEC_BASE_SECS: f64 = 3.72;
+pub const AIUR_EXEC_SECS_PER_NLOGN_DEF_EQ: f64 = 3.602e-6;
+pub const AIUR_EXEC_RAM_BASE_GIB: f64 = 1.34;
+pub const AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE: f64 = 3.008e-8;
+pub const AIUR_EXEC_RAM_GIB_PER_NLOGN_DEF_EQ: f64 = 6.119e-7;
+
+/// Predicted Aiur execute time (seconds) for one run.
+pub fn aiur_exec_secs(def_eq: u64) -> f64 {
+  AIUR_EXEC_BASE_SECS + AIUR_EXEC_SECS_PER_NLOGN_DEF_EQ * nlogn(def_eq)
+}
+
+/// Predicted Aiur execute peak host RAM (GiB) for one run.
+pub fn aiur_exec_ram_gib(bytes: u64, def_eq: u64) -> f64 {
+  AIUR_EXEC_RAM_BASE_GIB
+    + AIUR_EXEC_RAM_GIB_PER_NLOGN_INGRESS_BYTE * nlogn(bytes)
+    + AIUR_EXEC_RAM_GIB_PER_NLOGN_DEF_EQ * nlogn(def_eq)
+}
+
 /// Whole-workload prove-time estimate over a partition's per-shard step counts.
 pub struct ProveEstimate {
   /// Σ predicted guest STEPS over all shards (incl. per-shard floor + ingress).
@@ -1934,31 +2140,12 @@ pub fn partition_for_cycle_cap(
     };
   }
 
-  // 1. Cut-coherent block order. A fine min-cut pre-partition's bisection tree,
-  //    read in DFS order, lays tightly-coupled blocks contiguously so the packer
-  //    keeps dependency overlap within a shard. Sized to ~PACK_PIECES_PER_CAP
-  //    pieces per cap (bounded by the block count); when everything fits one cap
-  //    this collapses to a trivial order.
+  // 1. Cut-coherent block order, sized to ~PACK_PIECES_PER_CAP pieces per cap.
   let total: u128 =
     profile.blocks().iter().map(|b| u128::from(block_step_cost(b))).sum();
   let pieces = ((total.saturating_mul(PACK_PIECES_PER_CAP))
     / u128::from(step_cap)) as usize;
-  let n_fine = pieces.clamp(1, nblocks);
-  let order: Vec<u32> = if n_fine < 2 {
-    (0..nblocks as u32).collect()
-  } else {
-    let h = Hypergraph::from_profile(profile);
-    let (fine_of, fine_tree) = h.partition_with_tree(n_fine, epsilon);
-    let mut leaf_order = Vec::with_capacity(n_fine);
-    dfs_leaf_order(&fine_tree, &mut leaf_order);
-    let mut rank = vec![0u32; n_fine];
-    for (r, &sid) in leaf_order.iter().enumerate() {
-      rank[sid as usize] = r as u32;
-    }
-    let mut order: Vec<u32> = (0..nblocks as u32).collect();
-    order.sort_by_key(|&b| (rank[fine_of[b as usize] as usize], b));
-    order
-  };
+  let order = cut_coherent_order(profile, pieces, epsilon);
 
   // 2. Greedy next-fit packing to the cap, with live cross-ingress accounting.
   //    A shard accumulates members until adding the next block would push its
@@ -2055,6 +2242,35 @@ pub fn partition_for_cycle_cap(
   }
 }
 
+/// A cut-coherent block order for greedy cap-packing: a fine min-cut
+/// pre-partition's bisection tree, read in DFS order, lays tightly-coupled
+/// blocks contiguously so a next-fit packer keeps dependency overlap within a
+/// shard. `pieces` is the requested fine-partition size (~[`PACK_PIECES_PER_CAP`]
+/// per cap, in the caller's cost unit), bounded by the block count; when
+/// everything fits one cap this collapses to the trivial order.
+pub fn cut_coherent_order(
+  profile: &BlockProfile,
+  pieces: usize,
+  epsilon: f64,
+) -> Vec<u32> {
+  let nblocks = profile.num_blocks();
+  let n_fine = pieces.clamp(1, nblocks);
+  if n_fine < 2 {
+    return (0..nblocks as u32).collect();
+  }
+  let h = Hypergraph::from_profile(profile);
+  let (fine_of, fine_tree) = h.partition_with_tree(n_fine, epsilon);
+  let mut leaf_order = Vec::with_capacity(n_fine);
+  dfs_leaf_order(&fine_tree, &mut leaf_order);
+  let mut rank = vec![0u32; n_fine];
+  for (r, &sid) in leaf_order.iter().enumerate() {
+    rank[sid as usize] = r as u32;
+  }
+  let mut order: Vec<u32> = (0..nblocks as u32).collect();
+  order.sort_by_key(|&b| (rank[fine_of[b as usize] as usize], b));
+  order
+}
+
 /// Collect the leaf shard ids of an [`AggNode`] in left-to-right DFS order.
 fn dfs_leaf_order(node: &AggNode, out: &mut Vec<u32>) {
   match node {
@@ -2067,7 +2283,7 @@ fn dfs_leaf_order(node: &AggNode, out: &mut Vec<u32>) {
 }
 
 /// A balanced binary [`AggNode`] over the contiguous shard-id range `lo..hi`.
-fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
+pub fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
   debug_assert!(hi > lo);
   if hi - lo <= 1 {
     AggNode::Leaf(lo)
@@ -2156,8 +2372,8 @@ mod tests {
     let m = ShardManifest::build(&p, &shard_of, 2);
     assert_eq!(m.shards.len(), 2);
     // Each cluster has 3 blocks × 100 heartbeats = 300; perfectly balanced.
-    assert_eq!(m.shards[0].heartbeats, 300);
-    assert_eq!(m.shards[1].heartbeats, 300);
+    assert_eq!(m.shards[0].cost, ShardCost::ProfileHeartbeats(300));
+    assert_eq!(m.shards[1].cost, ShardCost::ProfileHeartbeats(300));
   }
 
   #[test]
@@ -2183,7 +2399,7 @@ mod tests {
     assert_eq!(m.total_cross_ingress, 0);
     // Each non-empty shard should hold exactly one cluster (4×100).
     for s in &m.shards {
-      assert_eq!(s.heartbeats, 400);
+      assert_eq!(s.cost, ShardCost::ProfileHeartbeats(400));
     }
   }
 
@@ -2311,6 +2527,41 @@ mod tests {
     let p = b.finish();
     let plan = partition_for_cycle_cap(&p, 1_000_000_000, 0.05);
     assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
+  }
+
+  #[test]
+  fn aiur_model_monotone() {
+    // The packer's greedy cap test is only sound if the model never decreases
+    // when a shard grows in any aggregate.
+    let base = aiur_ram_gib(1_000_000, 10_000, 10_000);
+    assert!(aiur_ram_gib(2_000_000, 10_000, 10_000) > base);
+    assert!(aiur_ram_gib(1_000_000, 20_000, 10_000) > base);
+    assert!(aiur_ram_gib(1_000_000, 10_000, 20_000) > base);
+    let p = aiur_prove_secs(1_000_000, 100_000, 10_000);
+    assert!(aiur_prove_secs(2_000_000, 100_000, 10_000) > p);
+    assert!(aiur_prove_secs(1_000_000, 200_000, 10_000) > p);
+    assert!(aiur_prove_secs(1_000_000, 100_000, 20_000) > p);
+  }
+
+  /// Attach a reference graph given per-block (sorted, deduped) ref lists.
+  fn with_refs(mut p: BlockProfile, adj: &[Vec<u32>]) -> BlockProfile {
+    p.set_ref_graph(adj);
+    p
+  }
+
+  #[test]
+  fn ref_graph_roundtrips_through_ixprof() {
+    let mut b = ProfileBuilder::new();
+    for i in 1..=3u8 {
+      b.block(addr(i), 1, 10, 1, ops(2));
+    }
+    let p = with_refs(b.finish(), &[vec![1, 2], vec![2], vec![]]);
+    let q = BlockProfile::from_bytes(&p.to_bytes()).unwrap();
+    assert!(q.has_ref_graph());
+    assert_eq!(q.refs(0), &[1, 2]);
+    assert_eq!(q.refs(1), &[2]);
+    assert_eq!(q.refs(2), &[] as &[u32]);
+    assert_eq!(p, q);
   }
 
   #[test]

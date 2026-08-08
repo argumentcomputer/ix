@@ -828,6 +828,15 @@ pub fn instantiate_rev<M: KernelMode>(
   if fvars.is_empty() || body.lbr() == 0 {
     return body.clone();
   }
+  // Profiler: the substitution-context half of the unique-work key — a
+  // fold of the fvar identities, set once per top-level call (the
+  // recursion below never re-enters subst, so the slot stays valid).
+  #[cfg(not(target_os = "zkvm"))]
+  crate::profile::set_subst_ctx(
+    fvars.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, f| {
+      (h ^ f.hash_key()).wrapping_mul(0x0000_0100_0000_01b3)
+    }),
+  );
   // Borrow the dedicated `subst_scratch` (same allocation reuse trick as
   // `subst`/`simul_subst`). `instantiate_rev_cached` does not call back
   // into subst/simul_subst/lift, so the scratch is safe to share across
@@ -847,9 +856,12 @@ fn instantiate_rev_cached<M: KernelMode>(
   cache: &mut FxHashMap<(Addr, u64), KExpr<M>>,
 ) -> KExpr<M> {
   // Profiler: count every substitution-node visit — the work-volume feature
-  // that `heartbeats` (step count) misses. Records out of circuit; the bump
-  // compiles out on the zkvm target.
+  // that `heartbeats` (step count) misses — and its memo-deduplicated
+  // counterpart keyed on (expr, depth, substitution context). Records out
+  // of circuit; both bumps compile out on the zkvm target.
   crate::profile::bump_subst_nodes();
+  #[cfg(not(target_os = "zkvm"))]
+  crate::profile::bump_subst_unique(body.hash_key(), depth);
   // No loose bvars at or below `depth` means nothing to instantiate at
   // this subtree.
   if body.lbr() <= depth {

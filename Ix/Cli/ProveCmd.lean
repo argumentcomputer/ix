@@ -30,6 +30,7 @@ public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
 public import Ix.Claim
 public import Ix.Cli.CheckCmd
+public import Ix.Cli.VerifyCmd
 public import Ix.Common
 public import Ix.IxVM
 public import Ix.IxVM.Toplevel
@@ -52,6 +53,26 @@ private def commitmentParameters : Aiur.CommitmentParameters :=
 
 private def friParameters : Aiur.FriParameters :=
   Aiur.defaultFriParameters
+
+/-- Resolve a keyed cache namespace: `<cacheRoot>/<ns>` when a root is
+    given (tests use a scratch root to stay hermetic), else the global
+    `~/.ix/cache/<ns>`. Entries are named by claim digest and hold
+    re-derivable state, so the directory is safe to wipe. -/
+def cacheSubdir (cacheRoot : Option System.FilePath) (ns : String) :
+    IO System.FilePath := do
+  match cacheRoot with
+  | some root =>
+    let d := root / ns
+    IO.FS.createDirAll d
+    pure d
+  | none => StoreIO.toIO (Store.cacheDir ns)
+
+/-- Atomic keyed-cache write: `<dir>/<key>` via temp file + rename. -/
+def writeCacheEntry (dir : System.FilePath) (key content : String) :
+    IO Unit := do
+  let tmp := dir / s!"{key}.tmp"
+  IO.FS.writeFile tmp content
+  IO.FS.rename tmp (dir / key)
 
 def proveOne (aiurSystem : Aiur.AiurSystem)
     (compiled : Aiur.CompiledToplevel)
@@ -106,7 +127,8 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
 def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     (ixonEnv : Ixon.Env) (shards : Array (Array Address)) (shardK : Nat)
     (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (_printStats : Bool) : IO UInt32 := do
+    (_printStats : Bool)
+    (benchJson : Option (String × String) := none) : IO UInt32 := do
   match shards[shardK]? with
   | none => IO.eprintln s!"shard {shardK} out of range (0..{shards.size})"; return 1
   | some blocks => do
@@ -117,12 +139,23 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     let label := s!"shard {shardK}"
     IO.println s!"Proving {label}"
     (← IO.getStdout).flush
+    -- `benchJson = (out, rowName)` reports the prove as a benchmark row
+    -- (the `aiur` bench backend's heavy-tier closure-shard spawn):
+    -- `prove-time` windows the FFI prove itself — env parse, manifest
+    -- load, and `EnvHandle` build are excluded, matching the check rows'
+    -- loader-free semantics — while `peak-rss` is the process tree's
+    -- absolute high-water.
+    if benchJson.isSome then
+      TracingTexray.startSampler
+      TracingTexray.resetPeakTreeRss
+    let start ← IO.monoMsNow
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
     match aiurSystem.shardProveWithEnv funIdx envHandle blob with
     | .error e =>
       IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
       return 1
     | .ok (claimBytes, proof, _outIO) =>
+      let ms := (← IO.monoMsNow) - start
       -- Rust returns the canonical CheckEnv claim's wire bytes; deserialize
       -- back to `Ix.Claim` to persist alongside the proof. Avoids
       -- recomputing the closure walk + canonical AssumptionTree Lean-side.
@@ -135,11 +168,202 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
         let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
         let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
         IO.println (toString proofAddr)
+        if let some (out, rowName) := benchJson then
+          let peakRss ← TracingTexray.peakTreeRssBytes
+          Ix.Benchmark.Results.writeRow out rowName "ok"
+            [ ("prove-time",
+               Ix.Benchmark.Results.jsonRound 3 (ms.toFloat / 1000.0))
+            , ("peak-rss", Lean.toJson peakRss)
+            , ("proof-size", Lean.toJson proof.toBytes.size) ]
         let _ := manifestPath  -- kept for parity with previous signature
         return 0
 
+/-- A shard proven, verified, and bound to its reconstructed claim;
+    persisted as the `shard-proofs/<claim_digest>` cache entry. -/
+structure ProofRow where
+  shard : Nat
+  claimDigest : Address
+  proofAddr : Address
+
+/-- Batched, resumable all-shards prove — the whole-partition behavior of
+    `prove --ixes` with no `--shard`.
+
+    One `EnvHandle`, one compiled toplevel, and one `AiurSystem` are shared
+    across every shard (the per-invocation setup is paid once). Progress
+    persists in the keyed cache `~/.ix/cache/shard-proofs/` (one file per
+    claim digest, holding the proof's store address): an entry is written
+    only after the shard's proof both VERIFIES and binds to the shard's
+    reconstructed `CheckEnv` claim digest, so a crash, OOM, or interrupt
+    costs only the in-flight shard and re-running the same command
+    resumes. The claim digest IS the staleness test — a repacked shard has
+    a new digest, which never matches an old entry — and it is
+    manifest-independent, so two manifests sharing a shard share its
+    proof. `cacheRoot` overrides `~/.ix/cache` (tests).
+
+    `jobs` shards prove concurrently (default 1: each prove peaks at the
+    shard's full predicted RAM, so concurrency is a big-box knob).
+
+    Ends with the composed verdict: disjoint cover + every shard bound to
+    a verified proof — the same statement `ix verify --ixe --ixes <proofs…>`
+    checks after the fact. -/
+def runShardProveAllNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
+    (ixonEnv : Ixon.Env) (shards : Array (Array Address))
+    (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
+    (jobs : Nat) (cacheRoot : Option System.FilePath := none) : IO UInt32 := do
+  if !(← Ix.Cli.CheckCmd.shardsCover ixonEnv shards) then return 1
+  -- Reconstructed claim digest per shard: the binding target for proofs
+  -- and the cache key.
+  let mut digests : Array Address := #[]
+  for blocks in shards do
+    match Ix.Cli.CheckCmd.shardClaimDigest ixonEnv blocks with
+    | .error e => IO.eprintln s!"reconstruct shard {digests.size} claim failed: {e}"; return 1
+    | .ok d => digests := digests.push d
+  let proofsDir ← cacheSubdir cacheRoot "shard-proofs"
+  -- Resume: a shard whose digest names a cache entry is done IF the
+  -- recorded proof still verifies — the digest pins the claim but not
+  -- the circuit version (any kernel change between sessions regenerates
+  -- the codegen and the verifying key), so trusting the entry alone
+  -- would count a stale-circuit proof.
+  let mut done : Std.HashMap Nat Address := {}
+  for k in [0:shards.size] do
+    let entry := proofsDir / toString digests[k]!
+    if ← entry.pathExists then
+      match Address.fromString (← IO.FS.readFile entry).trimAscii.toString with
+      | some pa =>
+        if (← Ix.Cli.VerifyCmd.verifyOneProof aiurSystem compiled pa) == 0 then
+          done := done.insert k pa
+        else
+          IO.println s!"[prove] shard {k}: cached proof {pa} no longer \
+            verifies (circuit changed?) — re-proving"
+      | none => pure ()
+  let pending := (List.range shards.size).filter (fun k => !done.contains k)
+  -- Largest-cost first, straight from the manifest's per-shard tagged
+  -- cost (measured Mfft on scan manifests, model-predicted on packer
+  -- manifests). If any shard is going to breach the watchdog it is one
+  -- of the heaviest — proving those first surfaces a failure in the
+  -- opening minutes instead of hours in, and everything after the heavy
+  -- head is strictly safer than what already passed. A manifest without
+  -- costs (all-unknown) degrades to manifest order.
+  let pending : List Nat ← do
+    match Ix.Cli.CheckCmd.parseIxesShards (← IO.FS.readBinFile manifestPath) with
+    | .error e =>
+      IO.println s!"[prove] manifest cost parse failed ({e}); proving in manifest order"
+      pure pending
+    | .ok rows =>
+      pure <| pending.mergeSort (fun a b =>
+        (rows[a]?.map (·.cost)).getD 0 ≥ (rows[b]?.map (·.cost)).getD 0)
+  IO.println s!"[prove] {shards.size} shards: {done.size} already proven \
+    (cache {proofsDir}), {pending.length} pending (heaviest first)"
+  let recordProof (r : ProofRow) : IO Unit :=
+    writeCacheEntry proofsDir (toString r.claimDigest) s!"{r.proofAddr}\n"
+  let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+  let proveOneShard (k : Nat) : IO (Except String ProofRow) := do
+    let blocks := shards[k]!
+    let blob := Id.run do
+      let mut b := ByteArray.empty
+      for a in Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks do
+        b := b ++ a.hash
+      pure b
+    IO.println s!"Proving shard {k}"
+    (← IO.getStdout).flush
+    match aiurSystem.shardProveWithEnv funIdx envHandle blob with
+    | .error e => return .error s!"shardProveWithEnv: {e}"
+    | .ok (claimBytes, proof, _outIO) =>
+      match Ixon.runGet Ix.Claim.get claimBytes with
+      | .error e => return .error s!"claim wire-decode failed: {e}"
+      | .ok claim =>
+        let d := Address.blake3 (Ix.Claim.ser claim)
+        if digests[k]? != some d then
+          return .error s!"proved claim {d} does not match reconstructed \
+            digest {digests[k]!} — witness and reconstruction disagree"
+        let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
+        let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
+        let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
+        if (← Ix.Cli.VerifyCmd.verifyOneProof aiurSystem compiled proofAddr) != 0 then
+          return .error s!"proof {proofAddr} failed verification"
+        return .ok { shard := k, claimDigest := d, proofAddr }
+  -- RAM-aware admission — fastest wall without OOM: admit the next
+  -- (heaviest-first) shard whenever the predicted-RSS sum of in-flight
+  -- proves plus its own fits the box limit. Predictions come from the
+  -- scan sidecar's analytic per-shard `pred_ram_gib` (validated within
+  -- a few percent of measured RSS); a shard with no sidecar row is
+  -- assumed to need the whole limit, degrading to serial for exactly
+  -- those shards. `--jobs` remains as an optional concurrency ceiling.
+  let predRam : Std.HashMap Nat Nat ← do
+    let path : System.FilePath := ⟨manifestPath ++ ".costs.csv"⟩
+    let mut m : Std.HashMap Nat Nat := {}
+    if ← path.pathExists then
+      for line in ((← IO.FS.readFile path).splitOn "\n").drop 1 do
+        let cols := line.splitOn ","
+        if cols.length ≥ 10 then
+          -- pred_ram_gib is column 8; integer GiB resolution suffices
+          -- for admission (the limit already carries an 8% margin).
+          match cols[0]!.toNat?, ((cols[8]!.splitOn ".")[0]!).toNat? with
+          | some k, some gib => m := m.insert k (gib + 1)
+          | _, _ => pure ()
+    pure m
+  let boxGib : Nat ← do
+    let info ← IO.FS.readFile "/proc/meminfo"
+    match info.splitOn "\n" |>.head?.map (·.splitOn " " |>.filter (· ≠ "")) with
+    | some [_, kb, _] => pure ((kb.toNat?.getD 0) / (1024 * 1024))
+    | _ => pure 0
+  let limitGib := if boxGib == 0 then 0 else boxGib * 92 / 100
+  let ramOf (k : Nat) : Nat :=
+    (predRam.get? k).getD (if limitGib == 0 then 1 else limitGib)
+  IO.println s!"[prove] RAM-aware admission: box {boxGib} GiB, limit \
+    {limitGib} GiB, {predRam.size} sidecar predictions"
+  let maxJobs := if jobs == 0 then shards.size else jobs
+  let mut failures : List (Nat × String) := []
+  let mut queue := pending
+  let mut running : List (Nat × Nat × Task (Except IO.Error (Nat × Except String ProofRow))) := []
+  let mut inFlightGib : Nat := 0
+  repeat
+    -- Admit while the next shard fits (always admit into an idle box).
+    while h : queue ≠ [] do
+      let k := queue.head h
+      let need := ramOf k
+      if running.isEmpty
+          || (running.length < maxJobs && inFlightGib + need ≤ limitGib) then
+        let t ← IO.asTask (prio := .dedicated) do pure (k, ← proveOneShard k)
+        running := (k, need, t) :: running
+        inFlightGib := inFlightGib + need
+        queue := queue.tail
+      else
+        break
+    -- Wait for any in-flight prove to finish, then retire it.
+    let fin ← match running.map (·.2.2) with
+      | [] => break
+      | t :: rest => IO.waitAny (t :: rest)
+    let (k, res) ← match fin with
+      | .ok kr => pure kr
+      | .error e =>
+        IO.eprintln s!"[prove] task crashed: {e}"
+        failures := (shards.size, toString e) :: failures
+        break
+    match res with
+    | .ok row =>
+      recordProof row
+      done := done.insert k row.proofAddr
+      IO.println s!"[prove] shard {k}: proof {row.proofAddr} verified \
+        ({done.size}/{shards.size})"
+    | .error e =>
+      IO.eprintln s!"[prove] shard {k} FAILED: {e}"
+      failures := (k, e) :: failures
+    inFlightGib := inFlightGib - (running.find? (·.1 == k)).elim 0 (·.2.1)
+    running := running.filter (·.1 ≠ k)
+  if !failures.isEmpty then
+    IO.eprintln s!"[prove] {failures.length} shard(s) failed: \
+      {failures.map (·.1)}; re-run the same command to resume"
+    return 1
+  IO.println s!"[prove] OK: composed verdict — all {shards.size} shards \
+    proven + verified + bound, disjoint cover"
+  return 0
+
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
-  let keepGoing := p.hasFlag "keep-going"
+  let keepGoing := p.hasFlag "no-fail-fast"
+  if keepGoing && p.hasFlag "fail-fast" then
+    p.printError "error: --fail-fast and --no-fail-fast are mutually exclusive"
+    return 1
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
@@ -161,22 +385,22 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
-      runShardProveNative manifest envHandle ixonEnv shards k aiurSystem compiled false
+      let benchJson := (p.flag? "json").map fun f =>
+        (f.as! String,
+         ((p.flag? "json-name").map (·.as! String)).getD s!"shard-{k}")
+      runShardProveNative manifest envHandle ixonEnv shards k aiurSystem
+        compiled false benchJson
   | some ixe, some manifest, none =>
-    -- IxVM-native all-shards prove. Same envHandle reused across
-    -- every shard.
+    -- Batched, resumable all-shards prove (one env handle + one Aiur
+    -- system across every shard; progress in ~/.ix/cache/shard-proofs).
     match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
     | .ok (ixonEnv, shards) =>
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
-      let mut rc : UInt32 := 0
-      for k in [0 : shards.size] do
-        if (← runShardProveNative manifest envHandle ixonEnv shards k
-              aiurSystem compiled false) != 0 then
-          rc := 1
-      pure rc
+      runShardProveAllNative manifest envHandle ixonEnv shards aiurSystem
+        compiled (((p.flag? "jobs").map (·.as! Nat)).getD 1)
   | _, _, _ =>
     Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
 
@@ -188,11 +412,15 @@ def proveCmd : Cli.Cmd := `[Cli|
   "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
 
   FLAGS:
-    "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
+    "fail-fast";        "Halt on the first failure (the default; flag accepted for explicitness)."
+    "no-fail-fast";     "Continue past failures and report them at the end instead of halting on the first."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
     "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."
     "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
+    "jobs"  : Nat;      "Shards to prove concurrently in the all-shards batch (default 1). Each prove peaks at the shard's full predicted RAM, so raise this only when the box fits several shards at once."
+    json        : String; "Benchmark results JSON accumulator (single-shard mode only): append a `prove-time`/`peak-rss`/`proof-size` row for the proved shard. Used by `ix bench run --backend aiur` for heavy-tier closure shards."
+    "json-name" : String; "Row name for --json (default: shard-<K>)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

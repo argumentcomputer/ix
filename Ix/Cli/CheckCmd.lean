@@ -24,6 +24,7 @@ public import Ix.Aiur.Interpret
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Statistics
 public import Ix.AssumptionTree
+public import Ix.Benchmark.Results
 public import Ix.Claim
 public import Ix.Common
 public import Ix.IxVM
@@ -32,6 +33,7 @@ public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
+public import Ix.TracingTexray
 public import Ix.Cli.NameResolve
 
 public section
@@ -363,38 +365,66 @@ private def ixesAddr : IxesP Address := do
   if p + 32 ≤ b.size then modify (fun _ => (b, p + 32)); pure ⟨b.extract p (p + 32)⟩
   else throw "ixes: truncated (expected a 32-byte address)"
 
-/-- Parse every shard's owned block addresses from a serialized `.ixes`
-    manifest (`ShardManifest::to_bytes`, `src/ix/shard.rs`):
-    magic(8) ‖ total_cross_ingress(u128) ‖ num_shards(u32) ‖ per shard
-    { id(u32) ‖ heartbeats(u64) ‖ own_size(u64) ‖ cross_ingress(u64) ‖
-      assumption_root(u8 tag + 32?) ‖ blocks(u32 len + 32·len) ‖
-      foreign_blocks(u32 len + 32·len) }.
+private def ixesU64 : IxesP Nat := do
+  let mut v : Nat := 0
+  for i in [0:8] do
+    v := v ||| ((← ixesU8).toNat <<< (8 * i))
+  pure v
+
+/-- One shard row of a parsed `.ixes` manifest: the owned block addresses
+    plus the planner cost (`ShardCost` in `crates/kernel/src/shard.rs` —
+    `costTag` 0 = unknown, 1 = profile heartbeats, 2 = Zisk cost units,
+    3 = Aiur fft; `cost` is the scalar, comparable within one manifest). -/
+structure IxesShard where
+  blocks : Array Address
+  costTag : UInt8
+  cost : Nat
+
+/-- Parse every shard of a serialized `.ixes` manifest
+    (`ShardManifest::to_bytes`, `crates/kernel/src/shard.rs`, format v2):
+    magic("IXES\0\0\0" ++ version) ‖ total_cross_ingress(u128) ‖
+    num_shards(u32) ‖ per shard
+    { id(u32) ‖ cost_tag(u8) ‖ cost(u64) ‖ own_size(u64) ‖
+      cross_ingress(u64) ‖ assumption_root(u8 tag + 32?) ‖
+      blocks(u32 len + 32·len) ‖ foreign_blocks(u32 len + 32·len) }.
     Bounds-checked: a truncated/malformed file yields `.error`, never a panic. -/
-def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address)) :=
-  let go : IxesP (Array (Array Address)) := do
+def parseIxesShards (bytes : ByteArray) : Except String (Array IxesShard) :=
+  let go : IxesP (Array IxesShard) := do
     let m0 ← ixesU8; let m1 ← ixesU8; let m2 ← ixesU8; let m3 ← ixesU8
     if !(m0 == 0x49 && m1 == 0x58 && m2 == 0x45 && m3 == 0x53) then
       throw "not an .ixes file (bad magic)"
-    ixesSkip 4    -- rest of the 8-byte magic
+    ixesSkip 3    -- reserved zero bytes of the 8-byte magic
+    let version ← ixesU8
+    if version != 2 then
+      throw s!"unsupported .ixes format version {version} (expected 2) — \
+        regenerate the manifest with the current `ix shard`"
     ixesSkip 16   -- total_cross_ingress (u128)
     let n ← ixesU32
-    let mut shards : Array (Array Address) := #[]
+    let mut shards : Array IxesShard := #[]
     for _ in [0:n.toNat] do
-      ixesSkip (4 + 8 + 8 + 8)  -- id + heartbeats + own_size + cross_ingress
+      ixesSkip 4  -- id
+      let costTag ← ixesU8
+      let cost ← ixesU64
+      ixesSkip (8 + 8)  -- own_size + cross_ingress
       if (← ixesU8) == 1 then ixesSkip 32  -- assumption_root present
       let blen ← ixesU32
       let mut blocks : Array Address := #[]
       for _ in [0:blen.toNat] do
         blocks := blocks.push (← ixesAddr)
       ixesSkip ((← ixesU32).toNat * 32)  -- skip foreign_blocks
-      shards := shards.push blocks
+      shards := shards.push { blocks, costTag, cost }
     pure shards
   go.run' (bytes, 0)
 
+/-- The owned block addresses of every shard (cost columns dropped). -/
+def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address)) :=
+  (parseIxesShards bytes).map (·.map (·.blocks))
+
 /-- The check-schedule block address of a constant: a projection collapses
     to its SCC/Muts wrapper (`p.block`); everything else is its own block.
-    Mirrors `check_schedule_block_addr` (`src/ffi/kernel.rs`). -/
-private def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
+    Mirrors `check_schedule_block_addr` (`src/ffi/kernel.rs`). Public for
+    `ix addr-of --ixes`' owning-shard lookup. -/
+def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
   match c.info with
   | .iPrj prj => prj.block
   | .cPrj prj => prj.block
@@ -484,7 +514,8 @@ def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
     once for this one call. -/
 def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
     (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
+    (statsOut : Option String) (useBytecode : Bool)
+    (benchJson : Option (String × String) := none) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) => match shards[shardK]? with
@@ -493,7 +524,26 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks shardK
+      -- `benchJson = (out, rowName)` reports the check as a benchmark
+      -- row: `execute-time` windows the check itself — the env parse and
+      -- `EnvHandle` build are excluded, so the measure tracks the
+      -- kernel, not the loader — while `peak-rss` is the process tree's
+      -- absolute high-water (the parsed env sits in the baseline,
+      -- matching the ooc rows' semantics).
+      if benchJson.isSome then
+        TracingTexray.startSampler
+        TracingTexray.resetPeakTreeRss
+      let start ← IO.monoMsNow
+      let rc ← runShardOwnedNative envHandle compiled printStats statsOut
+        useBytecode ixonEnv blocks shardK
+      if let some (out, rowName) := benchJson then
+        if rc == 0 then
+          let secs := ((← IO.monoMsNow) - start).toFloat / 1000.0
+          let peakRss ← TracingTexray.peakTreeRssBytes
+          Ix.Benchmark.Results.writeRow out rowName "ok"
+            [ ("execute-time", Ix.Benchmark.Results.jsonRound 3 secs)
+            , ("peak-rss", Lean.toJson peakRss) ]
+      return rc
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -617,11 +667,61 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   | some other =>
     IO.eprintln s!"error: --interp expects \"source\" or \"bytecode\", got \"{other}\""
     return 1
-  let keepGoing := p.hasFlag "keep-going"
+  let keepGoing := p.hasFlag "no-fail-fast"
+  if keepGoing && p.hasFlag "fail-fast" then
+    p.printError "error: --fail-fast and --no-fail-fast are mutually exclusive"
+    return 1
   let statsOut : Option String :=
     (p.flag? "stats-out").map (·.as! String)
   let ixePath : Option String :=
     (p.flag? "ixe").map (·.as! String)
+  if p.hasFlag "execute" then
+    -- Execute-only whole-env check: the Aiur-kernel counterpart of the
+    -- Rust kernel's whole-env check — parallel execution of every
+    -- block's claim, no partition, no manifest, no prove concerns.
+    let some ixe := ixePath | do
+      p.printError "error: --execute requires --ixe"
+      return 1
+    let toplevel ← match IxVM.ixVM with
+      | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
+      | .ok t => pure t
+    let compiled ← match toplevel.compile with
+      | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+      | .ok c => pure c
+    let funIdx ← match compiled.getFuncIdx `verify_claim with
+      | some i => pure i
+      | none => IO.eprintln "error: verify_claim missing"; return 1
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+      | .ok h => pure h
+    let workers := (p.flag? "jobs").map (·.as! Nat) |>.getD 0
+    let workerBin := (← IO.appPath).toString
+    -- `--json` reports the run as a benchmark row: `execute-time`
+    -- windows the parallel check itself — the kernel compile and
+    -- `EnvHandle` build are excluded, so the measure tracks the kernel,
+    -- not the loader — while `peak-rss` is the process tree's absolute
+    -- high-water (covers the worker pool).
+    let benchJson := (p.flag? "json").map fun f =>
+      (f.as! String,
+       ((p.flag? "json-name").map (·.as! String)).getD "execute")
+    if benchJson.isSome then
+      TracingTexray.startSampler
+      TracingTexray.resetPeakTreeRss
+    let start ← IO.monoMsNow
+    match Aiur.Bytecode.Toplevel.executeEnvWithEnv compiled.bytecode funIdx
+        envHandle (toString workers) (if keepGoing then "0" else "1")
+        workerBin ixe with
+    | .error e => IO.eprintln s!"execute failed: {e}"; return 1
+    | .ok () =>
+      let ms := (← IO.monoMsNow) - start
+      IO.println s!"execute: OK in {ms} ms"
+      if let some (out, rowName) := benchJson then
+        let peakRss ← TracingTexray.peakTreeRssBytes
+        Ix.Benchmark.Results.writeRow out rowName "ok"
+          [ ("execute-time",
+             Ix.Benchmark.Results.jsonRound 3 (ms.toFloat / 1000.0))
+          , ("peak-rss", Lean.toJson peakRss) ]
+      return 0
   let claimHex : Option String :=
     (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
@@ -672,7 +772,11 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut useBytecode)
+      let benchJson := (p.flag? "json").map fun f =>
+        (f.as! String,
+         ((p.flag? "json-name").map (·.as! String)).getD s!"shard-{k}")
+      return (← runShardCheckManifestNative manifest ixe k compiled printStats
+        statsOut useBytecode benchJson)
   | some ixe, some manifest, none   =>
     if interpSource then
       return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
@@ -695,13 +799,17 @@ def checkCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     interp : String;        "Use an interpreter instead of the codegen'd IxVM Rust kernel. Modes: `source` = Aiur source interpreter (richer per-execution error diagnostics, slowest); `bytecode` = generic Aiur bytecode interpreter (skips the regen + cargo rebuild cycle when iterating on `Ix/IxVM/*.lean`). Omit the flag entirely for the native codegen kernel."
-    "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
+    "fail-fast";            "Halt on the first failure (the default; flag accepted for explicitness)."
+    "no-fail-fast";         "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "execute";              "Execute-only whole-env check (requires --ixe): run every block's check claim through the codegen'd Aiur kernel in parallel — no partition, no manifest, no proving. Reports blocks checked, kernel rejects (named), and total measured FFT cost. --jobs bounds the worker count (default: autoscale); combine with --no-fail-fast to inventory every reject."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Max shards to check concurrently when checking a whole partition (--ixes without --shard). Default: all at once. Lower it to bound peak RAM — each in-flight shard re-ingests its closure into its own IO buffer."
+    json        : String;   "Benchmark results JSON accumulator (single-shard and --execute modes): append an `execute-time`/`peak-rss` row for the checked shard or whole-env execute."
+    "json-name" : String;   "Row name for --json (default: shard-<K>, or `execute` for --execute)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."

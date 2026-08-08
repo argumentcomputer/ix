@@ -64,10 +64,11 @@ def plotTitle (workload measure : String) : String :=
   | "aiur-check-prove", "peak-rss"       => "Aiur Prove Peak RAM Usage"
   | "aiur-check-prove", "verify-time"    => "Aiur Verify Time"
   | "aiur-check-prove", "proof-size"     => "Aiur Proof Size"
-  | "aiur-check-prove", "fft-cost"       => "Aiur FFT Cost"
+  | "aiur-check-execute", "fft-cost"     => "Aiur FFT Cost"
   | "aiur-check-execute", "execute-time" => "Aiur Execute Time"
   | "aiur-check-execute", "throughput"   => "Aiur Execute Throughput"
   | "aiur-check-execute", "peak-rss"     => "Aiur Execute Peak RAM Usage"
+  | "aiur-check-execute", "shards"       => "Aiur Predicted Shards"
   | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
   | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
   | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
@@ -85,8 +86,11 @@ def plotTitle (workload measure : String) : String :=
 
 /-- Tracked but not plotted solo. The two aiur runs re-measure each
     other's deterministic Phase-1 numbers as a redundancy check — one
-    trend line each is enough ("Aiur Execute Time" from the execute run,
-    "Aiur FFT Cost" from the prove run). Zisk `shards` is charted below
+    trend line each is enough, and both live on the execute testbed
+    ("Aiur Execute Time", "Aiur FFT Cost"), where the whole-env rows
+    upload too — so the env series and the per-constant series share
+    the same plots. The prove run's duplicates (execute-time, fft-cost)
+    are the skipped copies. Zisk `shards` is charted below
     over the heavy-tier primaries alone (light constants are pinned at a
     single shard, a flat line at 1), not over the full set here; zisk
     `constants` charts on the input-constants plot below instead of alone.
@@ -100,7 +104,7 @@ def plotTitle (workload measure : String) : String :=
     recursion layer's own `recursive-*` series, so the inner metrics
     aren't plotted. -/
 def plotSkips : List (String × String) :=
-  [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
+  [("aiur-check-prove", "execute-time"), ("aiur-check-prove", "fft-cost"),
    ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
    ("aiur-recursive", "prove-time"), ("aiur-recursive", "proof-size"),

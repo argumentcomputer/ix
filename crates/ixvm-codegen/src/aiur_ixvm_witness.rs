@@ -39,18 +39,69 @@
 //!   (extending channel arenas + inserting into the key→(idx,len)
 //!   map) runs serially, since the arena `idx` is monotonic.
 
-use multi_stark::p3_field::PrimeCharacteristicRing;
+use std::sync::Arc;
+
+use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 use aiur::G;
-use aiur::execute::{IOBuffer, IOKeyInfo};
+use aiur::execute::{IOBuffer, IOFaultSource, IOKeyInfo};
 use ix_common::address::Address;
 use ix_common::env::ReducibilityHints;
 use ix_common::prim_addrs::PrimAddrs;
 use ixon::Env;
 use ixon::assumption_tree::AssumptionTree;
 use ixon::proof::Claim;
+
+/// Lazy witness backing over a shared env: materializes ch 2 (constant
+/// bytes), ch 3 (Defn hint), and ch 4 (blob bytes) entries on first
+/// `io_read` miss instead of seeding the whole `bfs_closure` eagerly.
+/// Host witness RAM then scales with the FAULTED set — what the check
+/// actually touches — instead of the shipped closure, which the eager
+/// path stores 8×-expanded (one `G` per byte). Soundness-neutral: the
+/// kernel blake3-verifies faulted bytes against their content-addressed
+/// key exactly as it does eagerly-seeded ones, and no scope widens —
+/// content addressing means a key can only ever resolve to one value.
+pub struct EnvFaultSource {
+  env: Arc<Env>,
+}
+
+impl EnvFaultSource {
+  pub fn new(env: Arc<Env>) -> Arc<Self> {
+    Arc::new(Self { env })
+  }
+}
+
+/// Decode a 32-limb channel key back to the `Address` it spells; `None`
+/// if any limb is out of byte range (such a key can name no env entry).
+fn key_to_addr(key: &[G]) -> Option<Address> {
+  if key.len() != 32 {
+    return None;
+  }
+  let mut bytes = [0u8; 32];
+  for (i, g) in key.iter().enumerate() {
+    let Ok(b) = u8::try_from(g.as_canonical_u64()) else {
+      return None;
+    };
+    bytes[i] = b;
+  }
+  Address::from_slice(&bytes).ok()
+}
+
+impl IOFaultSource for EnvFaultSource {
+  fn fault(&self, channel: G, key: &[G]) -> Option<Vec<G>> {
+    let addr = key_to_addr(key)?;
+    match channel.as_canonical_u64() {
+      2 => {
+        self.env.consts.get(&addr).map(|lc| bytes_to_g(lc.raw_bytes()))
+      },
+      3 => self.env.anon_hints.get(&addr).map(|h| vec![hint_to_g(&h)]),
+      4 => self.env.blobs.get(&addr).map(|b| bytes_to_g(b.value())),
+      _ => None,
+    }
+  }
+}
 
 /// Append `data` to the per-channel arena and record `(idx, len)`
 /// in the `(channel, key)` info map.
@@ -203,10 +254,7 @@ pub fn build_claim_check_witness(
   let digest = Address::hash(&claim_bytes);
   let digest_key = addr_key(&digest);
 
-  let mut io = IOBuffer {
-    data: rustc_hash::FxHashMap::default(),
-    map: rustc_hash::FxHashMap::default(),
-  };
+  let mut io = IOBuffer::new();
   // ch 0: claim bytes
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   // ch 2/3/4: per-const/hint/blob entries — parallel byte conversion.
@@ -279,19 +327,36 @@ pub fn build_shard_check_env_witness(
   env: &Env,
   owned: &[Address],
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
-  // Claim + THIN frontier from the shared convention module — the
-  // single source of truth for shard CheckEnv digests (see
-  // ixon::shard_claim; Lean mirror:
-  // IxVM.ClaimHarness.shardCheckEnvClaimThin).
+  let mut io = IOBuffer::new();
+  let (claim, digest_key) = seed_shard_check_env_claim(env, owned, &mut io)?;
+  let byte_scope = witness_scope(env, owned);
+  add_entries_parallel(env, &byte_scope, &mut io);
+  Ok((claim, digest_key, io))
+}
+
+/// Seed ONLY the claim-side channels for a thin-frontier
+/// `CheckEnv{owned}` claim into `io`: the claim wire (ch 0) and the
+/// owned/assumption trees (ch 1). Byte channels (2/3/4) are the caller's
+/// business — eagerly via `add_entries_parallel` or lazily via an
+/// `EnvFaultSource` backing. Returns the claim and its digest key (the
+/// `verify_claim` entry input). Claim + THIN frontier come from the
+/// shared convention module — the single source of truth for shard
+/// CheckEnv digests (see `ixon::shard_claim`; Lean mirror:
+/// `IxVM.ClaimHarness.shardCheckEnvClaimThin`).
+pub fn seed_shard_check_env_claim(
+  env: &Env,
+  owned: &[Address],
+  io: &mut IOBuffer,
+) -> Result<(Claim, Vec<G>), String> {
   let (claim, frontier) = ixon::shard_claim::shard_check_env_claim(env, owned)
     .ok_or_else(|| {
-      "build_shard_check_env_witness: empty owned set".to_string()
+      "seed_shard_check_env_claim: empty owned set".to_string()
     })?;
   let mut owned_sorted: Vec<Address> = owned.to_vec();
   owned_sorted.sort();
   let owned_tree =
     AssumptionTree::canonical(&owned_sorted).ok_or_else(|| {
-      "build_shard_check_env_witness: empty owned set".to_string()
+      "seed_shard_check_env_claim: empty owned set".to_string()
     })?;
   let asm_tree = AssumptionTree::canonical(&frontier);
   debug_assert_eq!(
@@ -305,24 +370,44 @@ pub fn build_shard_check_env_witness(
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
   let digest_key = addr_key(&digest);
-
-  let mut io = IOBuffer {
-    data: rustc_hash::FxHashMap::default(),
-    map: rustc_hash::FxHashMap::default(),
-  };
-  extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
-  let byte_scope = witness_scope(env, owned);
-  add_entries_parallel(env, &byte_scope, &mut io);
+  extend(io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   extend(
-    &mut io,
+    io,
     G::ONE,
     addr_key(&owned_tree.root()),
     bytes_to_g(&owned_tree.ser()),
   );
   if let Some(at) = asm_tree {
-    extend(&mut io, G::ONE, addr_key(&at.root()), bytes_to_g(&at.ser()));
+    extend(io, G::ONE, addr_key(&at.root()), bytes_to_g(&at.ser()));
   }
+  Ok((claim, digest_key))
+}
 
+/// Lazy-witness variant of [`build_shard_check_env_witness`]: claim
+/// channels seeded eagerly, byte channels served on demand by an
+/// [`EnvFaultSource`] over the shared env. Witness RAM ∝ faulted set.
+pub fn build_shard_check_env_witness_lazy(
+  env: &Arc<Env>,
+  owned: &[Address],
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  let mut io = IOBuffer::with_backing(EnvFaultSource::new(env.clone()));
+  let (claim, digest_key) = seed_shard_check_env_claim(env, owned, &mut io)?;
+  Ok((claim, digest_key, io))
+}
+
+/// Lazy-witness variant of [`build_claim_check_witness`]: only the claim
+/// wire is seeded; constant/hint/blob bytes fault in on demand.
+pub fn build_claim_check_witness_lazy(
+  env: &Arc<Env>,
+  target: &Address,
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  let claim = Claim::Check { const_addr: target.clone(), assumptions: None };
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let digest = Address::hash(&claim_bytes);
+  let digest_key = addr_key(&digest);
+  let mut io = IOBuffer::with_backing(EnvFaultSource::new(env.clone()));
+  extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   Ok((claim, digest_key, io))
 }
 

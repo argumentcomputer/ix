@@ -377,8 +377,8 @@ impl Op {
         let channel = map[*channel].0;
         let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
         let IOKeyInfo { idx, len } =
-          io_buffer.get_info(channel, &key).expect("Invalid IO key");
-        for f in [G::from_usize(*idx), G::from_usize(*len)] {
+          io_buffer.get_info_frozen(channel, &key).expect("Invalid IO key");
+        for f in [G::from_usize(idx), G::from_usize(len)] {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }

@@ -26,6 +26,7 @@ import Tests.Ix.Kernel.Roundtrip
 import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.Kernel.Arena
+import Tests.Ix.Kernel.ShardPipeline
 import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -225,9 +226,14 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             pure (LSpec.test
               s!"Shard pipeline FFT matches: expected 10817625733, got {actual}"
               (actual = 10_785_479_733))
+      -- Full planner-to-composed-verdict E2E: profile → pack → check
+      -- every shard → batched prove with resume.
+      let shardPipeSeq ←
+        Tests.Ix.Kernel.ShardPipeline.shardPipelineTests env v2Env.compiled
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
+          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq,
+           shardPipeSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see

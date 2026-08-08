@@ -11,17 +11,22 @@
 //! `Env::anon_hints` map — both readers used here populate the map
 //! directly, so no post-decode harvest is needed.
 
+use std::sync::Arc;
+
 use ixon::Env;
 
+/// The env is held behind an `Arc` so lazy witness backings
+/// (`aiur_ixvm_witness::EnvFaultSource`) can hold a clone that outlives
+/// any particular borrow of the handle.
 pub struct EnvHandle {
-  pub env: Env,
+  pub env: Arc<Env>,
 }
 
 impl EnvHandle {
   /// Load via `Env::get_anon_mmap` (zero-copy mmap of the `.ixe` file).
   pub fn from_ixe_path(path: &std::path::Path) -> Result<Self, String> {
     let env = Env::get_anon_mmap(path)?;
-    Ok(Self { env })
+    Ok(Self { env: Arc::new(env) })
   }
 
   /// Decode a serialized env blob (`Ixon.serEnv` output) via
@@ -30,6 +35,6 @@ impl EnvHandle {
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
     let mut cursor: &[u8] = bytes;
     let env = Env::get(&mut cursor)?;
-    Ok(Self { env })
+    Ok(Self { env: Arc::new(env) })
   }
 }

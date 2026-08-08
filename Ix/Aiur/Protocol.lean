@@ -104,6 +104,27 @@ opaque vkBytes : @& AiurSystem → ByteArray
 @[extern "rs_aiur_system_circuit_shapes"]
 opaque circuitShapes : @& AiurSystem → Array CircuitShape
 
+/-- Scan-and-cut sharding against a Rust-owned `EnvHandle`, cutting on
+    the system's analytic peak-prove-RAM prediction (the system carries
+    the toplevel, so none is passed). Numeric params are decimal strings:
+    budget (GiB), eps (percent), workers (0 = autoscale), fail-fast ("0"
+    skips kernel-rejected blocks into a `.failed.csv`). Writes the `.ixes`
+    manifest and its costs sidecar to the output path. -/
+@[extern "rs_aiur_scan_shards_with_env"]
+opaque scanShardsWithEnv : @& AiurSystem →
+  @& Bytecode.FunIdx → @& EnvHandle → @& String → @& String → @& String →
+  @& String → @& String → @& String → @& String → Except String Unit
+
+/-- The child side of the scan's process pool: run the stdin/stdout
+    worker loop until EOF (see `crates/ffi/src/aiur/scan.rs`,
+    `scan_worker`). Spawned by the parent scan as `ix shard-worker`;
+    numeric params are decimal strings: cut (GiB), batch blocks, soft
+    record cut (GiB), schedule pieces, exec-only ("1"/"0"). -/
+@[extern "rs_aiur_scan_worker"]
+opaque scanWorker : @& AiurSystem →
+  @& Bytecode.FunIdx → @& EnvHandle → @& String → @& String → @& String →
+  @& String → @& String → Except String Unit
+
 @[extern "rs_aiur_system_prove"]
 private opaque prove' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Array G →

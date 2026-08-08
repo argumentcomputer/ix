@@ -211,6 +211,16 @@ def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
   (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
+/-- Execute-only whole-env check through the codegen'd Aiur kernel: no
+    partition, no manifest — the check verdict plus measured totals,
+    reported on stderr. Args: workers (0 = autoscale), fail-fast ("0"
+    records and skips kernel-rejected blocks; anything else aborts on
+    the first). -/
+@[extern "rs_aiur_execute_env_with_env"]
+opaque executeEnvWithEnv : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& String → @& String → @& String →
+  @& String → Except String Unit
+
 end Bytecode.Toplevel
 
 end Aiur
