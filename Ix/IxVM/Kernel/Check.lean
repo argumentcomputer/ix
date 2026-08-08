@@ -1868,9 +1868,28 @@ def check := ⟦
     }
   }
 
-  -- Mirror crates/kernel/src/inductive.rs — whnf before each peel.
+  -- Mirror crates/kernel/src/inductive.rs (build_motive_type_flat, the
+  -- `for _ in 0..n_indices { whnf; All => push; _ => break }` loop):
+  -- whnf before each peel, stop tolerantly when no binder remains.
   -- Index binders can hide under definitional wrappers (e.g. a result type
-  -- `Set σ` only exposes its `σ → Prop` index binder after whnf).
+  -- `Set σ` only exposes its `σ → Prop` index binder after whnf), and
+  -- without the whnf the match falls through on the `App` node — an
+  -- abort that wrongly rejected every inductive whose declared type is a
+  -- wrapper (mathlib's CategoryTheory.MorphismProperty.ofHoms and ~30
+  -- siblings; minimized as the `HiddenIdx`/`PredOver` fixture).
+  --
+  -- Structural first, whnf only on the fallback: `whnf` of a `Forall` is
+  -- that `Forall`, so the two orders agree, and the common case pays no
+  -- reduction. The empty context mirrors the reference, which performs
+  -- this walk with no ctx pushes ("No ctx push" there); the type's loose
+  -- BVars are recursor-param references that stay stuck either way, and a
+  -- context-poorer whnf can only under-reduce, never invent a reduction.
+  --
+  -- The tolerant stop cannot be exploited to accept a short index
+  -- telescope: `get_result_sort_level` already peels exactly
+  -- n_params + n_indices Foralls off the same declared type INTOLERANTLY
+  -- (and whnf'd) before any of this runs, so reaching here with fewer
+  -- binders than `n` is impossible for a block that passed validation.
   fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
     match n {
       0 => store(ListNode.Nil),
@@ -1878,6 +1897,12 @@ def check := ⟦
         match load(ty) {
           KExprNode.Forall(dom, body) =>
             store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+          _ =>
+            match load(whnf(ty, store(ListNode.Nil))) {
+              KExprNode.Forall(dom, body) =>
+                store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+              _ => store(ListNode.Nil),
+            },
         },
     }
   }

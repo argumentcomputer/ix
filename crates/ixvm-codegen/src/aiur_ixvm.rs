@@ -49605,7 +49605,37 @@ fn aiur_fn_599(
             return Ok(__ret);
           },
           _ => {
-            return Err(ExecError::MatchNoCase(__v_2.as_canonical_u64()));
+            let __v_6: G = G::from_u64(1);
+            let __v_7: G = G::from_u64(1);
+            let __v_8: G = { let __values: [G; 3] = [__v_6, __v_7, __v_7]; let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; if let Some(result) = __mq.get_mut(&__values[..]) { if !unconstrained { *result.multiplicity += G::ONE; } result.output[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+            let __r_arr: [G; OUT_384] = { let __args: [G; IN_384] = [__v_0, __v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[384].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_384] = unsafe { *(result.output.as_ptr() as *const [G; OUT_384]) }; __ret } else { aiur_fn_384(__args, record, io_buffer, __cu)? } };
+            let __v_9: G = __r_arr[0];
+            let __loaded: [G; 4] = { let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; let __ptr_u64 = __v_9.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __mq.get_index_mut(__ptr_usize).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 4 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 4] = __args[..4].try_into().unwrap(); __arr };
+            let __v_10: G = __loaded[0];
+            let __v_11: G = __loaded[1];
+            let __v_12: G = __loaded[2];
+            let __v_13: G = __loaded[3];
+            match __v_10.as_canonical_u64() {
+              5u64 => {
+                let __v_14: G = G::from_u64(0);
+                let __v_15: G = G::from_u64(1);
+                let __v_16: G = (__v_1 - __v_15);
+                let __r_arr: [G; OUT_599] = { let __args: [G; IN_599] = [__v_12, __v_16]; let __cu = unconstrained; if let Some(result) = record.function_queries[599].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_599] = unsafe { *(result.output.as_ptr() as *const [G; OUT_599]) }; __ret } else { aiur_fn_599(__args, record, io_buffer, __cu)? } };
+                let __v_17: G = __r_arr[0];
+                let __v_18: G = { let __values: [G; 3] = [__v_14, __v_11, __v_17]; let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; if let Some(result) = __mq.get_mut(&__values[..]) { if !unconstrained { *result.multiplicity += G::ONE; } result.output[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+                let __ret: [G; OUT_599] = [__v_18];
+                record.function_queries[599].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                return Ok(__ret);
+              },
+              _ => {
+                let __v_14: G = G::from_u64(1);
+                let __v_15: G = G::from_u64(1);
+                let __v_16: G = { let __values: [G; 3] = [__v_14, __v_15, __v_15]; let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; if let Some(result) = __mq.get_mut(&__values[..]) { if !unconstrained { *result.multiplicity += G::ONE; } result.output[0] } else { let __ptr = G::from_usize(__mq.len()); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
+                let __ret: [G; OUT_599] = [__v_16];
+                record.function_queries[599].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                return Ok(__ret);
+              },
+            }
           },
         }
       },
