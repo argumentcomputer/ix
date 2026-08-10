@@ -472,9 +472,17 @@ def whnf := ⟦
             let body = expr_inst_levels(value, lvls);
             whnf_with_spine(body, spine, types),
         },
-      -- Thm stays stuck in whnf (mirror Whnf.lean:250 / Rust): proof
-      -- bodies unfold only through lazy-delta's try_unfold_head, so
-      -- proof_irrel / congruence get first shot at Thm-headed pairs.
+      -- Thm stays stuck in the general reducer. The reference unfolds
+      -- `Definition | Theorem` alike here (delta_unfold_one, whnf.rs),
+      -- but doing that globally cost `Std.Time...ofDays._proof_1` 14x
+      -- (5.1s -> 69.8s) for no verdict change: every proof term the
+      -- check touches then gets driven through its body. Theorem
+      -- unfolding is only NEEDED to drive an iota major to a
+      -- constructor, so it lives at that one site (`whnf_iota_major`),
+      -- and proof_irrel / congruence still get first shot at Thm-headed
+      -- pairs everywhere else. Under-reducing relative to the reference
+      -- is the safe direction: it can only leave a term stuck, never
+      -- manufacture a reduction.
       KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
       KConstantInfo.Quot(_, _, _) =>
         let quot = try_quot_iota(addr, spine, types);
@@ -484,6 +492,43 @@ def whnf := ⟦
         },
       KConstantInfo.Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
                           rules, k_flag, _unsafe, _block, _ridx) =>
+        -- K-like recursors: try to synthesize the nullary K-ctor from the
+        -- RAW major BEFORE the major is whnf'd, mirroring the reference
+        -- (whnf.rs:1349-1356, `let major = if recr.k { synth_ctor_when_k
+        -- (major)... }` sits above the major-whnf). The gate costs one
+        -- inference plus an index def-eq; whnf'ing the major first can
+        -- cost arbitrarily more, because a K major is typically a PROOF
+        -- and whnf of a proof evaluates whatever decision procedure
+        -- produced it (`Std.Time...ofDays._proof_1` is an `Eq.rec` over a
+        -- `decide +kernel` proof — reducing that major runs the whole
+        -- Rat/Nat decision procedure over 14-digit literals).
+        --
+        -- Ordering only; the verdict is unchanged. `try_k_synth_iota`
+        -- gates on `k_infer` of the raw major read from `spine`, so it
+        -- computes the same answer before and after a major whnf — which
+        -- is why the k_flag=1 stuck-fallback below is now redundant and
+        -- simply keeps the stuck form.
+        let k_skip = ((nparams + nmotives) + nminors) + nindices;
+        let k_pre = match k_flag {
+          1 =>
+            -- The recursor's OWN inductive, read from its declared major
+            -- premise. The K gate must check the major's inferred
+            -- inductive against this — comparing the major against its
+            -- own inductive's ctor is vacuous, and would strip an `I.rec`
+            -- over a major of some other inductive `J`. (An inductive-addr
+            -- comparison, not a `block`-field one, so the solo-wrapper
+            -- mismatch noted in k_synth_gate does not apply.)
+            match se_parent_addr(rec_ty, k_skip) {
+              (_, rec_parent) =>
+                try_k_synth_iota(lvls, spine, nparams, nmotives,
+                                    nminors, nindices, rules,
+                                    rec_parent, types),
+            },
+          _ => (0, head),
+        };
+        match k_pre {
+          (1, k_reduct) => k_reduct,
+          _ =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
@@ -491,31 +536,9 @@ def whnf := ⟦
         match iota {
           (1, reduced) => whnf(reduced, types),
           (2, stuck) =>
-            -- K-recursor synth fallback (): when major stuck and
-            -- k_flag=1, fire rule[0] assuming the nullary K-ctor
-            -- (Eq.refl, HEq.refl, etc.) — GATED like Lean's
-            -- toCtorWhenK: the major's inferred type must be
-            -- this recursor's inductive with indices def-eq to the
-            -- synthesized ctor app's. Ungated firing strips Eq.rec
-            -- transports whose endpoints differ symbolically, yielding
-            -- mistyped reducts.
             match k_flag {
-              1 =>
-                -- The recursor's OWN inductive, read from its declared
-                -- major premise. The K gate must check the major's
-                -- inferred inductive against this — comparing the major
-                -- against its own inductive's ctor is vacuous, and would
-                -- strip an `I.rec` over a major of some other inductive
-                -- `J`. (This is an inductive-addr comparison, not a
-                -- `block`-field one, so the solo-wrapper mismatch noted in
-                -- k_synth_gate does not apply.)
-                let k_skip = ((nparams + nmotives) + nminors) + nindices;
-                match se_parent_addr(rec_ty, k_skip) {
-                  (_, rec_parent) =>
-                    try_k_synth_iota(lvls, spine, nparams, nmotives,
-                                        nminors, nindices, rules, stuck,
-                                        rec_parent, types),
-                },
+              -- Already attempted pre-whnf above with the same verdict.
+              1 => stuck,
               _ =>
                 -- Struct-eta iota (mirror try_struct_eta_iota /
                 -- Rust whnf.rs:1244 / Lean toCtorWhenStructure): major
@@ -530,6 +553,7 @@ def whnf := ⟦
                 },
             },
           _ => apply_spine(head, spine),
+        },
         },
       _ => apply_spine(head, spine),
     },
@@ -627,29 +651,49 @@ def whnf := ⟦
   -- the type's params, and require def_eq(major_ty, ctor_ty). Without
   -- the gate, an Eq.rec transport whose endpoints differ symbolically
   -- gets stripped, producing mistyped reducts.
+  -- Returns (1, reduct) when the K gate fires, (0, _) on a miss.
+  --
+  -- The gate reads the RAW major out of `spine` and infers ITS type, so
+  -- the outcome does not depend on whether the major has been whnf'd —
+  -- which is what lets the caller run this BEFORE the major whnf (see
+  -- the ordering note at the Rec arm of whnf_const_head).
   fn try_k_synth_iota(lvls: List‹KLevel›, spine: List‹KExpr›,
                           nparams: G, nmotives: G, nminors: G, nindices: G,
-                          rules: List‹KRecRule›, stuck: KExpr,
-                          rec_parent: Addr, types: List‹KExpr›) -> KExpr {
+                          rules: List‹KRecRule›,
+                          rec_parent: Addr, types: List‹KExpr›)
+                          -> (G, KExpr) {
     match load(rules) {
       ListNode.Cons(r, _) =>
         match r {
           KRecRule.Mk(cidx, _rfields, rrhs) =>
             let major_idx = nparams + nmotives + nminors + nindices;
-            let raw_major = list_lookup(spine, major_idx);
-            match k_synth_gate(raw_major, cidx, nparams, rec_parent, types) {
-              0 => stuck,
+            -- Same spine-length guard `try_iota` applies before reading its
+            -- major. A PARTIALLY APPLIED recursor has no major argument yet,
+            -- and `list_lookup` past the end of the spine hits `Nil` against
+            -- an irrefutable `Cons` binding and aborts. This used to be
+            -- unreachable — the only caller was `try_iota`'s stuck branch,
+            -- which had already proved the spine long enough — but the K gate
+            -- now runs BEFORE `try_iota`, so it must re-establish the
+            -- precondition itself. A recursor short of its major cannot iota
+            -- at all, so declining here is also the right verdict.
+            match memo_u32_less_than(major_idx, list_length(spine)) {
+              0 => (0, store(KExprNode.BVar(0))),
               _ =>
-                let rhs_lvled = expr_inst_levels(rrhs, lvls);
-                let pmm_end = nparams + nmotives + nminors;
-                let pmm = list_take(spine, pmm_end);
-                let post_major = list_drop(spine, major_idx + 1);
-                let r1 = apply_spine(rhs_lvled, pmm);
-                let r3 = apply_spine(r1, post_major);
-                whnf(r3, types),
+                let raw_major = list_lookup(spine, major_idx);
+                match k_synth_gate(raw_major, cidx, nparams, rec_parent, types) {
+                  0 => (0, store(KExprNode.BVar(0))),
+                  _ =>
+                    let rhs_lvled = expr_inst_levels(rrhs, lvls);
+                    let pmm_end = nparams + nmotives + nminors;
+                    let pmm = list_take(spine, pmm_end);
+                    let post_major = list_drop(spine, major_idx + 1);
+                    let r1 = apply_spine(rhs_lvled, pmm);
+                    let r3 = apply_spine(r1, post_major);
+                    (1, whnf(r3, types)),
+                },
             },
         },
-      _ => stuck,
+      _ => (0, store(KExprNode.BVar(0))),
     }
   }
 
@@ -708,6 +752,36 @@ def whnf := ⟦
     list_concat(with_major, post)
   }
 
+  -- whnf an iota MAJOR, unfolding theorem heads. `whnf` leaves a Thm
+  -- head stuck (see the Thm arm of whnf_const_head), but a recursor can
+  -- only fire once its major reaches constructor form, and a major can
+  -- legitimately BE a theorem: `abstractNestedProofs` lifts inline
+  -- proofs out into auto-theorems, so `And.rec motive minor MAJOR` gets
+  -- a `..._proof_1` there (`Rat.instEncodable`; the `thmMajorUse`
+  -- fixture). Without this the recursor stayed stuck and the constant
+  -- was rejected as "inferred type is not def-eq to the expected type".
+  --
+  -- Recursive: a theorem body can be another theorem application, and
+  -- the reference's delta loop steps those the same way. Only the major
+  -- position pays this — the reference unfolds theorems in every full
+  -- whnf, which measured 14x worse on ofDays for no verdict change.
+  fn whnf_iota_major(e: KExpr, types: List‹KExpr›) -> KExpr {
+    let w = whnf(e, types);
+    match collect_spine(w) {
+      (h, sp) =>
+        match load(h) {
+          KExprNode.Const(addr, lvls) =>
+            match load(get_ci(addr)) {
+              KConstantInfo.Thm(_, _, value) =>
+                let body = expr_inst_levels(value, lvls);
+                whnf_iota_major(whnf_with_spine(body, sp, types), types),
+              _ => w,
+            },
+          _ => w,
+        },
+    }
+  }
+
   -- Status codes returned by try_iota:
   --   1 = fired, use returned expr as reduced form (re-whnf)
   --   2 = stuck with major whnf'd, returned expr is the canonical
@@ -733,7 +807,7 @@ def whnf := ⟦
         -- `Nat.add base (Lit n)` with n>0, so iota can fire without
         -- unfolding into n unary succs.
         let major_clean1 = cleanup_nat_offset_major(raw_major);
-        let major_w = whnf(major_clean1, types);
+        let major_w = whnf_iota_major(major_clean1, types);
         let major_clean2 = cleanup_nat_offset_major(major_w);
         let major = nat_lit_to_ctor_or_self(major_clean2);
         match collect_spine_of_ctor(major) {
