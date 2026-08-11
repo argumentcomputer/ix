@@ -233,6 +233,56 @@ def subst := ⟦
   }
 
   -- ============================================================================
+  -- expr_glb / expr_lower — def-eq key rebasing support.
+  --
+  -- `expr_glb(e, c)`: MINIMUM loose-BVar index of `e` relative to cutoff
+  -- `c` (i.e. min over `{i - c : BVar i loose, i ≥ c}`), or the sentinel
+  -- `4294967295` when `e` has no loose BVar at or above `c`. The min of a
+  -- term that only references the OUTERMOST binders of a deep telescope
+  -- is large — and every context frame below that min is unreferenced.
+  --
+  -- The lowering itself is the pre-existing `expr_lower` below; the
+  -- rebase caller's `g = min glb` guarantees its no-index-in-
+  -- `[cutoff, cutoff+shift)` precondition by construction.
+  -- ============================================================================
+  fn expr_glb(e: KExpr, c: G) -> G {
+    -- Fast path: no loose BVar at or above `c` (lbr ≤ c) → sentinel,
+    -- skipping the walk of closed subtrees entirely.
+    match memo_u32_less_than(expr_lbr(e), c + 1) {
+      1 => 4294967295,
+      _ => expr_glb_walk(e, c),
+    }
+  }
+
+  fn expr_glb_walk(e: KExpr, c: G) -> G {
+    match load(e) {
+      KExprNode.BVar(i) =>
+        match memo_u32_less_than(i, c) {
+          1 => 4294967295,
+          0 => i - c,
+        },
+      KExprNode.Srt(_) => 4294967295,
+      KExprNode.Const(_, _) => 4294967295,
+      KExprNode.Lit(_) => 4294967295,
+      KExprNode.App(f, a) => lbr_min(expr_glb(f, c), expr_glb(a, c)),
+      KExprNode.Lam(ty, body) => expr_glb_binder(ty, body, c),
+      KExprNode.Forall(ty, body) => expr_glb_binder(ty, body, c),
+      KExprNode.Let(ty, val, body) => expr_glb_let(ty, val, body, c),
+      KExprNode.Proj(_, _, e1) => expr_glb(e1, c),
+    }
+  }
+
+  -- Cold binder arms (same extraction pattern as `expr_lbr_let`).
+  fn expr_glb_binder(ty: KExpr, body: KExpr, c: G) -> G {
+    lbr_min(expr_glb(ty, c), expr_glb(body, c + 1))
+  }
+
+  fn expr_glb_let(ty: KExpr, val: KExpr, body: KExpr, c: G) -> G {
+    lbr_min(lbr_min(expr_glb(ty, c), expr_glb(val, c)),
+            expr_glb(body, c + 1))
+  }
+
+  -- ============================================================================
   -- expr_lift
   --
   -- Shift `BVar(i)` → `BVar(i + shift)` when `i ≥ cutoff`. Recursion bumps

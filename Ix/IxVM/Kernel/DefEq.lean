@@ -63,8 +63,47 @@ def defEq := ⟦
   fn k_is_def_eq(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
     match ptr_val(a) - ptr_val(b) {
       0 => 1,  -- ptr-eq: same interned pointer = equal
-      _ => k_is_def_eq_core(a, b,
-             ctx_trim(types, lbr_max(expr_lbr(a), expr_lbr(b)))),
+      _ =>
+        let base = lbr_max(expr_lbr(a), expr_lbr(b));
+        match base {
+          0 => k_is_def_eq_core(a, b, store(ListNode.Nil)),
+          _ => k_def_eq_rebase(a, b, types, base),
+        },
+    }
+  }
+
+  -- Rebase an OPEN pair to its minimum loose index before keying.
+  -- The prefix trim alone cannot canonicalize a pair that references
+  -- only the OUTERMOST binders of a deep telescope: its lbr spans the
+  -- whole context, so the trim keeps every inner frame — and each
+  -- comparison site spells those (unreferenced) inner frames slightly
+  -- differently, minting a fresh memo key per site. Measured on the
+  -- mathlib monster: 2.48M distinct (a,b,types) core keys over 15,085
+  -- distinct pairs — 164x context multiplicity, the dominant cost.
+  --
+  -- Fix: `g = min(glb(a), glb(b))` frames at the inner end are loose in
+  -- NEITHER side, so lowering both sides by `g` and dropping those
+  -- frames is a bijection on derivations (context strengthening by
+  -- unreferenced frames — the same argument as the base=0 → Nil arm,
+  -- generalized). Def-eq returns a bit, so nothing needs lifting back.
+  -- Depth-shifted copies of the same tower also lower to the SAME
+  -- hash-consed pair, merging pairs across binder depths, not just
+  -- contexts. Kept frames only ever reference deeper (outward) frames,
+  -- all of which are kept.
+  fn k_def_eq_rebase(a: KExpr, b: KExpr, types: List‹KExpr›,
+                         base: G) -> G {
+    -- Unconditional: a depth threshold (only rebase past base > 8) was
+    -- measured and rejected — it recovered only a third of the overhead
+    -- on binder-heavy Init proofs (+6.4% -> +4.2% on Array.append_assoc)
+    -- for no gain on the mathlib constant (its full closure was flat,
+    -- 8.71e11 vs 8.74e11): not worth a tuning constant.
+    let g = lbr_min(lbr_min(expr_glb(a, 0), expr_glb(b, 0)),
+                    list_length(types));
+    match g {
+      0 => k_is_def_eq_core(a, b, ctx_trim(types, base)),
+      _ =>
+        k_is_def_eq_core(expr_lower(a, g, 0), expr_lower(b, g, 0),
+          ctx_trim(list_drop(types, g), base - g)),
     }
   }
 
