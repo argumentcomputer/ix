@@ -305,7 +305,7 @@ def defEq := ⟦
   }
 
   fn k_is_def_eq_slow(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    match try_string_lit_pair(a, b, types) {
+    match @try_string_lit_pair(a, b, types) {
       1 => 1,
       _ => k_is_def_eq_slow_nd(a, b, types),
     }

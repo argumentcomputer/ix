@@ -679,7 +679,7 @@ def ixonDeserialize := ⟦
   fn get_constant(stream: ByteStream) -> (Constant, ByteStream) {
     let (tag, s) = get_tag4(stream);
     let (flag, size) = tag;
-    let (info, s2) = get_constant_info(flag, size, s);
+    let (info, s2) = @get_constant_info(flag, size, s);
     let (sharing, s3) = get_sharing(s2);
     let (refs, s4) = get_refs(s3);
     let (univs, s5) = get_univs(s4);
