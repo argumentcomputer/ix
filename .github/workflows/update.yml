@@ -1,0 +1,37 @@
+name: Update Lean toolchain and pinned deps
+
+on:
+  schedule:
+    # Daily at 00:00 UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Mint a token from the GitHub App so the opened PR triggers CI; pushes
+      # made with GITHUB_TOKEN do not. Same App as the org repo-sync workflows.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+
+      # `dev` carries the fork's bump_mode/release_channel support; `main` only
+      # mirrors upstream, which silently ignores these inputs. A PR is opened
+      # on an update/lean-{release} branch whether or not the build passes, so
+      # an incompatible release shows up as a failing PR to review. Dependencies
+      # pinned to a Lean version tag move with the toolchain; a dependency
+      # pinned to a commit hash is reported and left alone.
+      - uses: argumentcomputer/lean-update@dev
+        with:
+          bump_mode: pinned-tags
+          on_update_fails: pr
+          token: ${{ steps.app-token.outputs.token }}
