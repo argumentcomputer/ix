@@ -166,7 +166,9 @@ def pcs := ⟦
   -- directly to `blake3_compress` — no byte list is materialized, walked,
   -- accumulated, or re-loaded. Same flag schedule as the byte driver; the
   -- (cold, once-per-hash) ≤63-byte tail reuses `pad_block`/`bytes_to_block`.
-  -- Used for digest-binding large advice streams (the verifying key).
+  -- Kept as a differential-tested indexed IO hashing helper. Digest-bound
+  -- inputs must not hash and deserialize through separate `io_read` calls;
+  -- the production verifying-key path materializes one shared `ByteStream`.
   -- ==========================================================================
 
   -- Reverse-ordered tail accumulator (head = last byte), the shape

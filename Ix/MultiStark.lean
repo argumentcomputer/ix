@@ -56,14 +56,14 @@ def entrypoints := ⟦
     let (idx, len) = io_get_info(0, [0]);
     let (proof, stop) = read_proof(idx);
     assert_eq!(stop, idx + len);
-    -- Verifying key (`System<AiurCircuit>`) from IO channel 1: bind the bytes
-    -- to the public Blake3 `system_digest` (hashed straight from the IO arena
-    -- — no byte list), then reconstruct the system via indexed reads and
-    -- assert full consumption.
+    -- Verifying key (`System<AiurCircuit>`) from IO channel 1: fetch the raw
+    -- bytes once as advice, then constrain both the hash and deserialization
+    -- against that exact byte stream (the same binding pattern as IxVM).
     let (sidx, slen) = io_get_info(1, [0]);
-    assert_eq!(b3_to_digest(b3_io(1, sidx, slen)), system_digest);
-    let (sys, send) = read_system(sidx);
-    assert_eq!(send, sidx + slen);
+    let sbytes = #read_byte_stream(1, sidx, slen);
+    assert_eq!(b3_to_digest(blake3(sbytes)), system_digest);
+    let (sys, srest) = read_system(sbytes);
+    assert_eq!(load(srest), ListNode.Nil);
     -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
     -- public Blake3 `claims_digest`, then deserialize. Binding them as a
     -- public input is what makes the lookup argument sound (a prover cannot
