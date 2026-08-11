@@ -3920,7 +3920,7 @@ def check := ⟦
         validate_expr_well_scoped(ty, 0, nlvls);
         k_ensure_sort(ty, store(ListNode.Nil));
         assert_safety(u, ty);
-        let ind_ci = load(ctor_parent_ind_ci(block_addr, ind_idx));
+        let ind_ci = load(@ctor_parent_ind_ci(block_addr, ind_idx));
         match ind_ci {
           KConstantInfo.Induct(ind_nlvls, ind_ty, ind_n_params,
                                 ind_n_indices, _, _, _, _) =>

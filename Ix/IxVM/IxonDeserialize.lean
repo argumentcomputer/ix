@@ -442,7 +442,7 @@ def ixonDeserialize := ⟦
     match is_zero {
       1 => (store(ListNode.Nil), stream),
       0 =>
-        let (rule, s) = get_recursor_rule(stream);
+        let (rule, s) = @get_recursor_rule(stream);
         let (rest, s2) = get_recursor_rule_list(s, relaxed_u64_pred(count));
         (store(ListNode.Cons(rule, rest)), s2),
     }
@@ -680,9 +680,9 @@ def ixonDeserialize := ⟦
     let (tag, s) = get_tag4(stream);
     let (flag, size) = tag;
     let (info, s2) = @get_constant_info(flag, size, s);
-    let (sharing, s3) = get_sharing(s2);
-    let (refs, s4) = get_refs(s3);
-    let (univs, s5) = get_univs(s4);
+    let (sharing, s3) = @get_sharing(s2);
+    let (refs, s4) = @get_refs(s3);
+    let (univs, s5) = @get_univs(s4);
     (Constant.Mk(info, sharing, refs, univs), s5)
   }
 ⟧

@@ -71,7 +71,7 @@ def infer := ⟦
 
   fn k_infer_core(e: KExpr, types: List‹KExpr›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => types_lookup(types, i),
+      KExprNode.BVar(i) => @types_lookup(types, i),
 
       KExprNode.Srt(l) =>
         store(KExprNode.Srt(level_reduce(store(KLevelNode.Succ(l))))),

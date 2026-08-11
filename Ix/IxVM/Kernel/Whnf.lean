@@ -1114,7 +1114,7 @@ def whnf := ⟦
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ => whnf_core(e, ctx_trim(types, expr_lbr(e))),
+      _ => @whnf_core(e, ctx_trim(types, expr_lbr(e))),
     }
   }
 
@@ -1141,7 +1141,7 @@ def whnf := ⟦
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ => whnf_nd_core(e, ctx_trim(types, expr_lbr(e))),
+      _ => @whnf_nd_core(e, ctx_trim(types, expr_lbr(e))),
     }
   }
 
