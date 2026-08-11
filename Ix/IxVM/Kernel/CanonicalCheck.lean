@@ -632,7 +632,7 @@ def canonicalCheck := ⟦
     match fuel {
       0 => classes,
       _ =>
-        let ctx = canon_build_ctx(classes, proj_addrs, block);
+        let ctx = @canon_build_ctx(classes, proj_addrs, block);
         let new_classes = canon_refine_classes(classes, ctx, proj_addrs);
         match canon_classes_eq(classes, new_classes) {
           1 => classes,
@@ -851,7 +851,7 @@ def canonicalCheck := ⟦
               1 => (),
               _ =>
                 let proj_addrs = build_recur_addrs(members, block_addr);
-                let classes = canon_sort_members(indcs, proj_addrs, block_addr);
+                let classes = @canon_sort_members(indcs, proj_addrs, block_addr);
                 assert_eq!(canon_all_singleton(classes), 1,
                   "canonical block: refinement left members tied, order ambiguous");
                 assert_eq!(canon_g_list_eq(canon_flatten(classes), indcs), 1,

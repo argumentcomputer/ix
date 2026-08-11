@@ -275,7 +275,7 @@ def whnf := ⟦
   fn try_nat_dispatch_prewhnf(head_addr: Addr, spine: List‹KExpr›,
                                     types: List‹KExpr›) -> (G, KExpr) {
     let spine_w = whnf_spine(spine, types);
-    try_nat_dispatch(head_addr, spine_w, types)
+    @try_nat_dispatch(head_addr, spine_w, types)
   }
 
   -- Address-keyed primitive dispatch. Runs BEFORE KConstantInfo
@@ -318,7 +318,7 @@ def whnf := ⟦
   -- try_prim_dispatch, whose key includes the spine and context —
   -- 5 wide rows per Const-head whnf, almost all guaranteed misses.
   fn prim_family(a: Addr) -> G {
-    match is_nat_prim_addr(a) {
+    match @is_nat_prim_addr(a) {
       1 => 1,
       _ =>
         match is_str_prim_addr(a) {
@@ -1114,7 +1114,7 @@ def whnf := ⟦
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ => whnf_core(e, ctx_trim(types, expr_lbr(e))),
+      _ => @whnf_core(e, ctx_trim(types, expr_lbr(e))),
     }
   }
 
@@ -1141,7 +1141,7 @@ def whnf := ⟦
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ => whnf_nd_core(e, ctx_trim(types, expr_lbr(e))),
+      _ => @whnf_nd_core(e, ctx_trim(types, expr_lbr(e))),
     }
   }
 

@@ -227,7 +227,7 @@ def subst := ⟦
       _ =>
         match u32_less_than(base, list_length(types)) {
           0 => types,
-          1 => list_take(types, ctx_reachable(types, base)),
+          1 => list_take(types, @ctx_reachable(types, base)),
         },
     }
   }

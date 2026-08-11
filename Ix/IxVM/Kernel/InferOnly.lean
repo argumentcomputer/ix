@@ -111,12 +111,12 @@ def inferOnly := ⟦
   -- path won't pay off, instead of unconditionally paying the parallel
   -- `infer_only` memo cost.
   fn k_infer_only(e: KExpr, types: List‹KExpr›) -> KExpr {
-    k_infer_only_core(e, ctx_trim(types, expr_lbr(e)))
+    @k_infer_only_core(e, ctx_trim(types, expr_lbr(e)))
   }
 
   fn k_infer_only_core(e: KExpr, types: List‹KExpr›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => io_types_lookup(types, i),
+      KExprNode.BVar(i) => @io_types_lookup(types, i),
 
       KExprNode.Srt(l) =>
         store(KExprNode.Srt(level_reduce(store(KLevelNode.Succ(l))))),

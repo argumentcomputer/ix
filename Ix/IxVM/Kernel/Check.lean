@@ -1681,9 +1681,9 @@ def check := ⟦
     -- offsets from flat order and Lean numbers the owning block's ctors
     -- first — get this wrong and the reconstructed rhs references the wrong
     -- minor premise.
-    let primary_block = primary_parent_block_of(rec_block_addr,
+    let primary_block = @primary_parent_block_of(rec_block_addr,
       parent_block_addr);
-    let originals = build_flat_originals(primary_block, univ_offset);
+    let originals = @build_flat_originals(primary_block, univ_offset);
     match is_muts_block(rec_block_addr) {
       0 => originals,
       _ =>
@@ -2051,7 +2051,7 @@ def check := ⟦
       n_rec_params, is_aux, spec_params, 0);
     let index_doms = collect_index_doms(after_params, n_indices);
     let head = store(KExprNode.Const(member_addr, occurrence_us));
-    let with_args = build_major_args_for_member(head, n_rec_params,
+    let with_args = @build_major_args_for_member(head, n_rec_params,
       n_indices, is_aux, spec_params);
     let major_ty = build_major_indices(with_args, n_indices, 0);
     let sort_e = store(KExprNode.Srt(elim_level));
@@ -2168,7 +2168,7 @@ def check := ⟦
           (self_addr, self_is_aux, self_spec_params, self_occ_us) =>
             let head = store(KExprNode.Const(self_addr, self_occ_us));
             let pre_major_depth = ((n_params + n_motives) + n_minors) + n_indices;
-            let with_args = build_major_args_for_self(head, n_params,
+            let with_args = @build_major_args_for_self(head, n_params,
               pre_major_depth - 1, (n_motives + n_minors) + n_indices,
               self_is_aux, self_spec_params);
             let major_ty = build_major_indices(with_args, n_indices, 0);
@@ -3920,7 +3920,7 @@ def check := ⟦
         validate_expr_well_scoped(ty, 0, nlvls);
         k_ensure_sort(ty, store(ListNode.Nil));
         assert_safety(u, ty);
-        let ind_ci = load(ctor_parent_ind_ci(block_addr, ind_idx));
+        let ind_ci = load(@ctor_parent_ind_ci(block_addr, ind_idx));
         match ind_ci {
           KConstantInfo.Induct(ind_nlvls, ind_ty, ind_n_params,
                                 ind_n_indices, _, _, _, _) =>

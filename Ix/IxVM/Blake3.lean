@@ -314,7 +314,7 @@ def blake3 := ⟦
 
   fn blake3_compress_inner_j(state: [[U8; 4]; 32]) -> [[U8; 4]; 32] {
     -- Round 0
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[0], state[4], state[8], state[12], state[16], state[17]
     );
     let state = set(state, 0, a);
@@ -323,7 +323,7 @@ def blake3 := ⟦
     let state = set(state, 12, d);
 
     -- Round 1
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[1], state[5], state[9], state[13], state[18], state[19]
     );
     let state = set(state, 1, a);
@@ -332,7 +332,7 @@ def blake3 := ⟦
     let state = set(state, 13, d);
 
     -- Round 2
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[2], state[6], state[10], state[14], state[20], state[21]
     );
     let state = set(state, 2, a);
@@ -341,7 +341,7 @@ def blake3 := ⟦
     let state = set(state, 14, d);
 
     -- Round 3
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[3], state[7], state[11], state[15], state[22], state[23]
     );
     let state = set(state, 3, a);
@@ -350,7 +350,7 @@ def blake3 := ⟦
     let state = set(state, 15, d);
 
     -- Round 4
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[0], state[5], state[10], state[15], state[24], state[25]
     );
     let state = set(state, 0, a);
@@ -359,7 +359,7 @@ def blake3 := ⟦
     let state = set(state, 15, d);
 
     -- Round 5
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[1], state[6], state[11], state[12], state[26], state[27]
     );
     let state = set(state, 1, a);
@@ -368,7 +368,7 @@ def blake3 := ⟦
     let state = set(state, 12, d);
 
     -- Round 6
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[2], state[7], state[8], state[13], state[28], state[29]
     );
     let state = set(state, 2, a);
@@ -377,7 +377,7 @@ def blake3 := ⟦
     let state = set(state, 13, d);
 
     -- Round 7
-    let [a, b, c, d] = blake3_g_function(
+    let [a, b, c, d] = @blake3_g_function(
       state[3], state[4], state[9], state[14], state[30], state[31]
     );
     let state = set(state, 3, a);
