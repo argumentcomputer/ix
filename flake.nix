@@ -128,6 +128,12 @@
         devShells.default = pkgs.mkShell {
           packages = [
             lean
+            # Blake3.lean's lakefile shells out to `cargo build` for its
+            # Rust static lib, so a devshell `lake build` needs a Rust
+            # toolchain (the nix build path instead injects the
+            # flake-built artifact via depOverrideDeriv).
+            pkgs.cargo
+            pkgs.rustc
           ];
         };
 
