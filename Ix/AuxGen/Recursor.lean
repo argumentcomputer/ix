@@ -1619,10 +1619,10 @@ def computeIsLargeAndK (classes : Array FlatInfo) (nClasses nParams : Nat)
 {classes[0]!.ind.cnst.name.pretty}: {e}")
 
   -- Spec-level override: non-Prop inductives always get large elimination.
-  let isLarge := if !isLarge && !resultKuniv.isZero then true else isLarge
+  let isLarge := if !isLarge && !resultKuniv.isSemanticZero then true else isLarge
 
   -- Prop determination from the WHNF-reduced kernel-derived level.
-  let isProp := resultKuniv.isZero
+  let isProp := resultKuniv.isSemanticZero
 
   -- C1 fix: Prop block with nested auxiliaries the KEnv didn't see →
   -- small elimination (Lean treats nested auxes as full mutual members).

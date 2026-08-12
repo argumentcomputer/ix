@@ -2424,7 +2424,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     ind_level: &KUniv<M>,
   ) -> Result<(), TcError<M>> {
     // Skip if inductive is Prop (Sort 0) — any universe is allowed
-    if ind_level.is_zero() {
+    if ind_level.is_semantic_zero() {
       return Ok(());
     }
 

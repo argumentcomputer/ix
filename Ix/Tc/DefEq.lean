@@ -814,7 +814,7 @@ def classifyPropTypeUncached (ty : KExpr m) : RecM m Bool := do
     | none => pure false
     | some sort =>
       match (← try? (whnf sort)) with
-      | some (.sort u _) => pure u.isZero
+      | some (.sort u _) => pure u.isSemanticZero
       | _ => pure false
 
 /-- Is `ty : Sort 0`? Memoized on `(tyAddr, ctxAddr)`; inner-chain errors
