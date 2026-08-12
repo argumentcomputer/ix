@@ -42,7 +42,7 @@ def blake3 := ⟦
 
   fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(load(blake3_compress_chunks(input, List.Nil, 0, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
   }
 
   -- Hash `bytes` and assert the digest equals `expected`. Used by every
@@ -133,12 +133,12 @@ def blake3 := ⟦
     block_digest: &[[U8; 4]; 8],
     layer: &Layer
   ) -> &Layer {
-    match load(input) {
+    match input {
       -- Input exhausted: hand off to the cold finalize circuit.
-      ListNode.Nil =>
+      List.Nil =>
         blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
-      ListNode.Cons(head, input) =>
-        let byte_acc = store(ListNode.Cons(head, byte_acc));
+      List.Cons(__cell1) => let (head, input) = load(__cell1);
+        let byte_acc = List.Cons(store((head, byte_acc)));
         match block_index {
           63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
           _ => blake3_compress_chunks(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
@@ -151,70 +151,70 @@ def blake3 := ⟦
   -- 64 unrolled `load`s, one circuit row per call — keeps the 64-wide buffer
   -- out of the hot loop and out of `inputSize`.
   fn bytes_to_block(byte_acc: ByteStream) -> [[U8; 4]; 16] {
-    let ListNode.Cons(b63, l) = load(byte_acc);
-    let ListNode.Cons(b62, l) = load(l);
-    let ListNode.Cons(b61, l) = load(l);
-    let ListNode.Cons(b60, l) = load(l);
-    let ListNode.Cons(b59, l) = load(l);
-    let ListNode.Cons(b58, l) = load(l);
-    let ListNode.Cons(b57, l) = load(l);
-    let ListNode.Cons(b56, l) = load(l);
-    let ListNode.Cons(b55, l) = load(l);
-    let ListNode.Cons(b54, l) = load(l);
-    let ListNode.Cons(b53, l) = load(l);
-    let ListNode.Cons(b52, l) = load(l);
-    let ListNode.Cons(b51, l) = load(l);
-    let ListNode.Cons(b50, l) = load(l);
-    let ListNode.Cons(b49, l) = load(l);
-    let ListNode.Cons(b48, l) = load(l);
-    let ListNode.Cons(b47, l) = load(l);
-    let ListNode.Cons(b46, l) = load(l);
-    let ListNode.Cons(b45, l) = load(l);
-    let ListNode.Cons(b44, l) = load(l);
-    let ListNode.Cons(b43, l) = load(l);
-    let ListNode.Cons(b42, l) = load(l);
-    let ListNode.Cons(b41, l) = load(l);
-    let ListNode.Cons(b40, l) = load(l);
-    let ListNode.Cons(b39, l) = load(l);
-    let ListNode.Cons(b38, l) = load(l);
-    let ListNode.Cons(b37, l) = load(l);
-    let ListNode.Cons(b36, l) = load(l);
-    let ListNode.Cons(b35, l) = load(l);
-    let ListNode.Cons(b34, l) = load(l);
-    let ListNode.Cons(b33, l) = load(l);
-    let ListNode.Cons(b32, l) = load(l);
-    let ListNode.Cons(b31, l) = load(l);
-    let ListNode.Cons(b30, l) = load(l);
-    let ListNode.Cons(b29, l) = load(l);
-    let ListNode.Cons(b28, l) = load(l);
-    let ListNode.Cons(b27, l) = load(l);
-    let ListNode.Cons(b26, l) = load(l);
-    let ListNode.Cons(b25, l) = load(l);
-    let ListNode.Cons(b24, l) = load(l);
-    let ListNode.Cons(b23, l) = load(l);
-    let ListNode.Cons(b22, l) = load(l);
-    let ListNode.Cons(b21, l) = load(l);
-    let ListNode.Cons(b20, l) = load(l);
-    let ListNode.Cons(b19, l) = load(l);
-    let ListNode.Cons(b18, l) = load(l);
-    let ListNode.Cons(b17, l) = load(l);
-    let ListNode.Cons(b16, l) = load(l);
-    let ListNode.Cons(b15, l) = load(l);
-    let ListNode.Cons(b14, l) = load(l);
-    let ListNode.Cons(b13, l) = load(l);
-    let ListNode.Cons(b12, l) = load(l);
-    let ListNode.Cons(b11, l) = load(l);
-    let ListNode.Cons(b10, l) = load(l);
-    let ListNode.Cons(b9, l) = load(l);
-    let ListNode.Cons(b8, l) = load(l);
-    let ListNode.Cons(b7, l) = load(l);
-    let ListNode.Cons(b6, l) = load(l);
-    let ListNode.Cons(b5, l) = load(l);
-    let ListNode.Cons(b4, l) = load(l);
-    let ListNode.Cons(b3, l) = load(l);
-    let ListNode.Cons(b2, l) = load(l);
-    let ListNode.Cons(b1, l) = load(l);
-    let ListNode.Cons(b0, _) = load(l);
+    let List.Cons(__lcell1001) = byte_acc; let (b63, l) = load(__lcell1001);
+    let List.Cons(__lcell1002) = l; let (b62, l) = load(__lcell1002);
+    let List.Cons(__lcell1003) = l; let (b61, l) = load(__lcell1003);
+    let List.Cons(__lcell1004) = l; let (b60, l) = load(__lcell1004);
+    let List.Cons(__lcell1005) = l; let (b59, l) = load(__lcell1005);
+    let List.Cons(__lcell1006) = l; let (b58, l) = load(__lcell1006);
+    let List.Cons(__lcell1007) = l; let (b57, l) = load(__lcell1007);
+    let List.Cons(__lcell1008) = l; let (b56, l) = load(__lcell1008);
+    let List.Cons(__lcell1009) = l; let (b55, l) = load(__lcell1009);
+    let List.Cons(__lcell1010) = l; let (b54, l) = load(__lcell1010);
+    let List.Cons(__lcell1011) = l; let (b53, l) = load(__lcell1011);
+    let List.Cons(__lcell1012) = l; let (b52, l) = load(__lcell1012);
+    let List.Cons(__lcell1013) = l; let (b51, l) = load(__lcell1013);
+    let List.Cons(__lcell1014) = l; let (b50, l) = load(__lcell1014);
+    let List.Cons(__lcell1015) = l; let (b49, l) = load(__lcell1015);
+    let List.Cons(__lcell1016) = l; let (b48, l) = load(__lcell1016);
+    let List.Cons(__lcell1017) = l; let (b47, l) = load(__lcell1017);
+    let List.Cons(__lcell1018) = l; let (b46, l) = load(__lcell1018);
+    let List.Cons(__lcell1019) = l; let (b45, l) = load(__lcell1019);
+    let List.Cons(__lcell1020) = l; let (b44, l) = load(__lcell1020);
+    let List.Cons(__lcell1021) = l; let (b43, l) = load(__lcell1021);
+    let List.Cons(__lcell1022) = l; let (b42, l) = load(__lcell1022);
+    let List.Cons(__lcell1023) = l; let (b41, l) = load(__lcell1023);
+    let List.Cons(__lcell1024) = l; let (b40, l) = load(__lcell1024);
+    let List.Cons(__lcell1025) = l; let (b39, l) = load(__lcell1025);
+    let List.Cons(__lcell1026) = l; let (b38, l) = load(__lcell1026);
+    let List.Cons(__lcell1027) = l; let (b37, l) = load(__lcell1027);
+    let List.Cons(__lcell1028) = l; let (b36, l) = load(__lcell1028);
+    let List.Cons(__lcell1029) = l; let (b35, l) = load(__lcell1029);
+    let List.Cons(__lcell1030) = l; let (b34, l) = load(__lcell1030);
+    let List.Cons(__lcell1031) = l; let (b33, l) = load(__lcell1031);
+    let List.Cons(__lcell1032) = l; let (b32, l) = load(__lcell1032);
+    let List.Cons(__lcell1033) = l; let (b31, l) = load(__lcell1033);
+    let List.Cons(__lcell1034) = l; let (b30, l) = load(__lcell1034);
+    let List.Cons(__lcell1035) = l; let (b29, l) = load(__lcell1035);
+    let List.Cons(__lcell1036) = l; let (b28, l) = load(__lcell1036);
+    let List.Cons(__lcell1037) = l; let (b27, l) = load(__lcell1037);
+    let List.Cons(__lcell1038) = l; let (b26, l) = load(__lcell1038);
+    let List.Cons(__lcell1039) = l; let (b25, l) = load(__lcell1039);
+    let List.Cons(__lcell1040) = l; let (b24, l) = load(__lcell1040);
+    let List.Cons(__lcell1041) = l; let (b23, l) = load(__lcell1041);
+    let List.Cons(__lcell1042) = l; let (b22, l) = load(__lcell1042);
+    let List.Cons(__lcell1043) = l; let (b21, l) = load(__lcell1043);
+    let List.Cons(__lcell1044) = l; let (b20, l) = load(__lcell1044);
+    let List.Cons(__lcell1045) = l; let (b19, l) = load(__lcell1045);
+    let List.Cons(__lcell1046) = l; let (b18, l) = load(__lcell1046);
+    let List.Cons(__lcell1047) = l; let (b17, l) = load(__lcell1047);
+    let List.Cons(__lcell1048) = l; let (b16, l) = load(__lcell1048);
+    let List.Cons(__lcell1049) = l; let (b15, l) = load(__lcell1049);
+    let List.Cons(__lcell1050) = l; let (b14, l) = load(__lcell1050);
+    let List.Cons(__lcell1051) = l; let (b13, l) = load(__lcell1051);
+    let List.Cons(__lcell1052) = l; let (b12, l) = load(__lcell1052);
+    let List.Cons(__lcell1053) = l; let (b11, l) = load(__lcell1053);
+    let List.Cons(__lcell1054) = l; let (b10, l) = load(__lcell1054);
+    let List.Cons(__lcell1055) = l; let (b9, l) = load(__lcell1055);
+    let List.Cons(__lcell1056) = l; let (b8, l) = load(__lcell1056);
+    let List.Cons(__lcell1057) = l; let (b7, l) = load(__lcell1057);
+    let List.Cons(__lcell1058) = l; let (b6, l) = load(__lcell1058);
+    let List.Cons(__lcell1059) = l; let (b5, l) = load(__lcell1059);
+    let List.Cons(__lcell1060) = l; let (b4, l) = load(__lcell1060);
+    let List.Cons(__lcell1061) = l; let (b3, l) = load(__lcell1061);
+    let List.Cons(__lcell1062) = l; let (b2, l) = load(__lcell1062);
+    let List.Cons(__lcell1063) = l; let (b1, l) = load(__lcell1063);
+    let List.Cons(__lcell1064) = l; let (b0, _) = load(__lcell1064);
     [
       [b0, b1, b2, b3], [b4, b5, b6, b7], [b8, b9, b10, b11], [b12, b13, b14, b15],
       [b16, b17, b18, b19], [b20, b21, b22, b23], [b24, b25, b26, b27], [b28, b29, b30, b31],
@@ -228,7 +228,7 @@ def blake3 := ⟦
   fn pad_block(acc: ByteStream, n: G) -> ByteStream {
     match n {
       0 => acc,
-      _ => pad_block(store(ListNode.Cons(0u8, acc)), n - 1),
+      _ => pad_block(List.Cons(store((0u8, acc))), n - 1),
     }
   }
 
@@ -282,14 +282,14 @@ def blake3 := ⟦
         let flags = ROOT * list_is_empty(input) * u64_is_zero(load(chunk_count)) + CHUNK_END;
         let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
         let layer = store(Layer.Push(layer, blake3_compress(load(block_digest), block, load(chunk_count), 64, flags)));
-        blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), layer),
+        blake3_compress_chunks(input, List.Nil, 0, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), layer),
       _ =>
         let chunk_end_flag = list_is_empty(input) * CHUNK_END;
         let root_flag = list_is_empty(input) * u64_is_zero(load(chunk_count)) * ROOT;
         let chunk_start_flag = eq_zero(chunk_index - 63) * CHUNK_START;
         let flags = chunk_end_flag + root_flag + chunk_start_flag;
         let block_digest = blake3_compress(load(block_digest), block, load(chunk_count), 64, flags);
-        blake3_compress_chunks(input, store(ListNode.Nil), 0, chunk_index + 1, chunk_count, store(block_digest), layer),
+        blake3_compress_chunks(input, List.Nil, 0, chunk_index + 1, chunk_count, store(block_digest), layer),
     }
   }
 

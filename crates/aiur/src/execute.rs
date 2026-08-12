@@ -920,12 +920,8 @@ fn find_klimbs_u64(
   let queries = memory.get(&9).ok_or_else(|| {
     "memory[9] channel not registered (no List<U64> in program?)".to_string()
   })?;
-  // Nil = the all-zero niche vector (pointer slot 0 is impossible).
-  let nil_key: Vec<G> = (0..9).map(|_| G::ZERO).collect();
-  let mut tail_ptr = queries
-    .get(&nil_key)
-    .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
-    .output[0];
+  // Nil is the LITERAL 0 list value: no node is stored for it.
+  let mut tail_ptr = G::ZERO;
   for limb in limbs.iter().rev() {
     let mut key: Vec<G> = Vec::with_capacity(9);
     for b in &limb.to_le_bytes() {
@@ -943,11 +939,10 @@ fn find_klimbs_u64(
 }
 
 /// Walk a `List<U64>` chain from `head_ptr` in `memory[9]`, returning the
-/// u64 limbs in head-first order. Each memory[9] entry is the
-/// null-pointer-niche layout of `ListNode<U64>`: `[byte0..byte7, next_ptr]`
-/// with NO tag slot — the all-zero vector is Nil (its pointer slot is 0,
-/// the impossible pointer) and any entry with `next_ptr != 0` is a Cons.
-/// Bytes are LE within the u64.
+/// u64 limbs in head-first order. `List<U64>` is the null-pointer-niche
+/// enum `{ Nil, Cons(&(U64, List<U64>)) }`: the list VALUE is one field
+/// element — 0 is Nil, anything else points at a `(limb, tail)` cell in
+/// memory[9] laid out `[byte0..byte7, tail]`. Bytes are LE within the u64.
 fn read_klimbs_u64(
   memory: &FxIndexMap<usize, QueryMap>,
   head_ptr: G,
@@ -959,6 +954,11 @@ fn read_klimbs_u64(
   let mut ptr = head_ptr;
   loop {
     let ptr_u64 = ptr.as_canonical_u64();
+    // The LIST VALUE is the niche discriminant: 0 IS Nil (no node exists),
+    // anything else is a pointer to the `(limb, tail)` cell.
+    if ptr_u64 == 0 {
+      return Ok(limbs);
+    }
     let ptr_idx = usize::try_from(ptr_u64)
       .map_err(|_e| format!("ptr {ptr_u64} too large for usize"))?;
     // 1-based pointers: 0 is the reserved null pointer.
@@ -966,11 +966,6 @@ fn read_klimbs_u64(
       ptr_idx.checked_sub(1).and_then(|i| queries.get_index(i)).ok_or_else(
         || format!("unbound ptr {ptr_u64} in memory[9] (walking List<U64>)"),
       )?;
-    // Niche discrimination: the next-pointer slot is 0 exactly on the Nil
-    // node (a Cons tail pointer is a real, hence nonzero, pointer).
-    if key[8].as_canonical_u64() == 0 {
-      return Ok(limbs);
-    }
     let mut limb_bytes = [0u8; 8];
     for k in 0..8 {
       let b = key[k].as_canonical_u64();
@@ -1029,16 +1024,8 @@ fn build_klimbs_u64(
   let queries = memory.get_mut(&9).ok_or_else(|| {
     "memory[9] channel not registered (no List<U64> in program?)".to_string()
   })?;
-  // Find or insert the Nil ptr: the all-zero niche vector (its pointer
-  // slot is 0, the impossible pointer).
-  let nil_key: Vec<G> = (0..9).map(|_| G::ZERO).collect();
-  let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
-    out.output[0]
-  } else {
-    let ptr = G::from_usize(queries.len() + 1);
-    queries.insert(&nil_key, &[ptr], G::ZERO);
-    ptr
-  };
+  // Nil is the LITERAL 0 list value: no node is stored for it.
+  let mut tail_ptr = G::ZERO;
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
   for limb in limbs.iter().rev() {
     let bytes = limb.to_le_bytes();

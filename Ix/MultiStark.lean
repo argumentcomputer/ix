@@ -63,7 +63,7 @@ def entrypoints := ⟦
     let sbytes = #read_byte_stream(1, sidx, slen);
     assert_eq!(b3_to_digest(blake3(sbytes)), system_digest);
     let (sys, srest) = read_system(sbytes);
-    assert_eq!(load(srest), ListNode.Nil);
+    assert_eq!(srest, List.Nil);
     -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
     -- public Blake3 `claims_digest`, then deserialize. Binding them as a
     -- public input is what makes the lookup argument sound (a prover cannot
@@ -72,7 +72,7 @@ def entrypoints := ⟦
     let cbytes = #read_byte_stream(2, cidx, clen);
     assert_eq!(b3_to_digest(blake3(cbytes)), claims_digest);
     let (claims, crest) = read_claims(cbytes);
-    assert_eq!(load(crest), ListNode.Nil);
+    assert_eq!(crest, List.Nil);
     -- Structural + accumulator + PCS checks.
     assert_eq!(verify(proof), 1);
     -- Step 3 + 5: prover-faithful Fiat-Shamir replay and the out-of-domain

@@ -6,12 +6,14 @@ public section
 namespace IxVM
 
 def core := ⟦
-  enum ListNode‹T› {
-    Cons(T, List‹T›),
-    Nil
+  -- Null-pointer-niche list: a `List` value is ONE field element — 0 is
+  -- Nil (the impossible pointer), anything else a pointer to the
+  -- `(head, tail)` cell. No tag slot, no stored Nil node, and emptiness
+  -- checks are a plain field match instead of a memory load.
+  enum List‹T› {
+    Nil,
+    Cons(&(T, List‹T›))
   }
-
-  type List‹T› = &ListNode‹T›
 
   enum Option‹T› {
     Some(T),
@@ -140,47 +142,47 @@ def core := ⟦
   }
 
   fn list_length‹T›(list: List‹T›) -> G {
-    match load(list) {
-      ListNode.Nil => 0,
-      ListNode.Cons(_, rest) => list_length(rest) + 1,
+    match list {
+      List.Nil => 0,
+      List.Cons(__cell1) => let (_, rest) = load(__cell1); list_length(rest) + 1,
     }
   }
 
   fn list_length_u64‹T›(list: List‹T›) -> U64 {
-    match load(list) {
-      ListNode.Nil => [0u8; 8],
-      ListNode.Cons(_, rest) => relaxed_u64_succ(list_length_u64(rest)),
+    match list {
+      List.Nil => [0u8; 8],
+      List.Cons(__cell2) => let (_, rest) = load(__cell2); relaxed_u64_succ(list_length_u64(rest)),
     }
   }
 
   fn list_concat‹T›(a: List‹T›, b: List‹T›) -> List‹T› {
-    match load(a) {
-      ListNode.Nil => b,
-      ListNode.Cons(v, rest) => store(ListNode.Cons(v, list_concat(rest, b))),
+    match a {
+      List.Nil => b,
+      List.Cons(__cell3) => let (v, rest) = load(__cell3); List.Cons(store((v, list_concat(rest, b)))),
     }
   }
 
   fn list_is_empty‹T›(list: List‹T›) -> G {
-    match load(list) {
-      ListNode.Nil => 1,
-      ListNode.Cons(_, _) => 0,
+    match list {
+      List.Nil => 1,
+      List.Cons(_) => 0,
     }
   }
 
   fn list_lookup‹T›(list: List‹T›, idx: G) -> T {
-    let ListNode.Cons(v, _) = load(list_drop(list, idx));
+    let List.Cons(__lcell1001) = list_drop(list, idx); let (v, _) = load(__lcell1001);
     v
   }
 
   fn list_lookup_or_default‹T›(list: List‹T›, idx: G, default: T) -> T {
-    match load(list_drop(list, idx)) {
-      ListNode.Nil => default,
-      ListNode.Cons(v, _) => v,
+    match list_drop(list, idx) {
+      List.Nil => default,
+      List.Cons(__cell4) => let (v, _) = load(__cell4); v,
     }
   }
 
   fn list_lookup_u64‹T›(list: List‹T›, idx: U64) -> T {
-    let ListNode.Cons(v, rest) = load(list);
+    let List.Cons(__lcell1002) = list; let (v, rest) = load(__lcell1002);
     let z = u64_is_zero(idx);
     match z {
       1 => v,
@@ -192,38 +194,38 @@ def core := ⟦
     match n {
       0 => list,
       _ =>
-        let ListNode.Cons(_, rest) = load(list_drop(list, n - 1));
+        let List.Cons(__lcell1003) = list_drop(list, n - 1); let (_, rest) = load(__lcell1003);
         rest,
     }
   }
 
   fn list_take‹T›(list: List‹T›, n: G) -> List‹T› {
     match n {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
-        let ListNode.Cons(v, rest) = load(list);
-        store(ListNode.Cons(v, list_take(rest, n - 1))),
+        let List.Cons(__lcell1004) = list; let (v, rest) = load(__lcell1004);
+        List.Cons(store((v, list_take(rest, n - 1)))),
     }
   }
 
   fn list_snoc‹T›(list: List‹T›, v: T) -> List‹T› {
-    match load(list) {
-      ListNode.Nil => store(ListNode.Cons(v, store(ListNode.Nil))),
-      ListNode.Cons(head, rest) => store(ListNode.Cons(head, list_snoc(rest, v))),
+    match list {
+      List.Nil => List.Cons(store((v, List.Nil))),
+      List.Cons(__cell5) => let (head, rest) = load(__cell5); List.Cons(store((head, list_snoc(rest, v)))),
     }
   }
 
   -- O(N) reverse via accumulator. Used by hot-path builders that
   -- accumulate via cons (O(1)) then reverse once instead of O(N²) snoc.
   fn list_reverse‹T›(list: List‹T›) -> List‹T› {
-    list_reverse_acc(list, store(ListNode.Nil))
+    list_reverse_acc(list, List.Nil)
   }
 
   fn list_reverse_acc‹T›(list: List‹T›, acc: List‹T›) -> List‹T› {
-    match load(list) {
-      ListNode.Nil => acc,
-      ListNode.Cons(head, rest) =>
-        list_reverse_acc(rest, store(ListNode.Cons(head, acc))),
+    match list {
+      List.Nil => acc,
+      List.Cons(__cell6) => let (head, rest) = load(__cell6);
+        list_reverse_acc(rest, List.Cons(store((head, acc)))),
     }
   }
 ⟧

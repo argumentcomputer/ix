@@ -34,9 +34,9 @@ def convert := ⟦
     match pos {
       8 => acc,
       _ =>
-        match load(bytes) {
-          ListNode.Nil => acc,
-          ListNode.Cons(byte, rest) =>
+        match bytes {
+          List.Nil => acc,
+          List.Cons(__cell1) => let (byte, rest) = load(__cell1);
             let [v0, v1, v2, v3, v4, v5, v6, v7] = acc;
             match pos {
               0 => bytes_to_u64_limb(rest, [byte, v1, v2, v3, v4, v5, v6, v7], 1),
@@ -56,9 +56,9 @@ def convert := ⟦
     match n {
       0 => bytes,
       _ =>
-        match load(bytes) {
-          ListNode.Nil => store(ListNode.Nil),
-          ListNode.Cons(_, rest) => skip_bytes(rest, n - 1),
+        match bytes {
+          List.Nil => List.Nil,
+          List.Cons(__cell2) => let (_, rest) = load(__cell2); skip_bytes(rest, n - 1),
         },
     }
   }
@@ -69,17 +69,17 @@ def convert := ⟦
   fn bytes_to_limbs(bytes: ByteStream) -> KLimbs {
     let limb = bytes_to_u64_limb(bytes, [0u8; 8], 0);
     let rest_bytes = skip_bytes(bytes, 8);
-    let rest_limbs = match load(rest_bytes) {
-      ListNode.Nil => store(ListNode.Nil),
+    let rest_limbs = match rest_bytes {
+      List.Nil => List.Nil,
       _ => bytes_to_limbs(rest_bytes),
     };
-    match load(rest_limbs) {
-      ListNode.Nil =>
+    match rest_limbs {
+      List.Nil =>
         match u64_is_zero(limb) {
-          1 => store(ListNode.Nil),
-          0 => store(ListNode.Cons(limb, store(ListNode.Nil))),
+          1 => List.Nil,
+          0 => List.Cons(store((limb, List.Nil))),
         },
-      _ => store(ListNode.Cons(limb, rest_limbs)),
+      _ => List.Cons(store((limb, rest_limbs))),
     }
   }
 
@@ -95,11 +95,11 @@ def convert := ⟦
   }
 
   fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹KLevel› {
-    match load(idxs) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(idx, rest) =>
+    match idxs {
+      List.Nil => List.Nil,
+      List.Cons(__cell3) => let (idx, rest) = load(__cell3);
         let u_ref = list_lookup(univs, flatten_u64(idx));
-        store(ListNode.Cons(convert_univ(u_ref), convert_univ_idxs(rest, univs))),
+        List.Cons(store((convert_univ(u_ref), convert_univ_idxs(rest, univs)))),
     }
   }
 
@@ -192,7 +192,7 @@ def convert := ⟦
           convert_expr(body, sharing, refs, recur_addrs, univs))),
 
       Expr.Share(idx) =>
-        let ListNode.Cons(e, _) = load(list_drop(sharing, flatten_u64(idx)));
+        let List.Cons(__lcell1001) = list_drop(sharing, flatten_u64(idx)); let (e, _) = load(__lcell1001);
         convert_expr(e, sharing, refs, recur_addrs, univs),
     }
   }
@@ -245,16 +245,16 @@ def convert := ⟦
 
   -- Count ctors in Inductive.ctors list.
   fn count_ctors(cs: List‹Constructor›) -> G {
-    match load(cs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(_, rest) => count_ctors(rest) + 1,
+    match cs {
+      List.Nil => 0,
+      List.Cons(__cell4) => let (_, rest) = load(__cell4); count_ctors(rest) + 1,
     }
   }
 
   -- Look up Constructor at cidx in Inductive.ctors.
   fn ctor_at(cs: List‹Constructor›, cidx: G) -> Constructor {
-    match load(cs) {
-      ListNode.Cons(c, rest) =>
+    match cs {
+      List.Cons(__cell5) => let (c, rest) = load(__cell5);
         match cidx {
           0 => c,
           _ => ctor_at(rest, cidx - 1),
@@ -294,16 +294,16 @@ def convert := ⟦
   fn convert_rec_rules(rs: List‹RecursorRule›, sharing: List‹&Expr›,
                            refs: List‹Addr›, recur_addrs: List‹Addr›,
                            univs: List‹&Univ›, cidx: G) -> List‹KRecRule› {
-    match load(rs) {
-      ListNode.Nil =>
-        store(ListNode.Nil),
-      ListNode.Cons(r, rest) =>
+    match rs {
+      List.Nil =>
+        List.Nil,
+      List.Cons(__cell6) => let (r, rest) = load(__cell6);
         match r {
           RecursorRule.Mk(fields, rhs) =>
             let krhs = convert_expr(rhs, sharing, refs, recur_addrs, univs);
-            store(ListNode.Cons(
+            List.Cons(store((
               KRecRule.Mk(cidx, flatten_u64(fields), krhs),
-              convert_rec_rules(rest, sharing, refs, recur_addrs, univs, cidx + 1))),
+              convert_rec_rules(rest, sharing, refs, recur_addrs, univs, cidx + 1)))),
         },
     }
   }

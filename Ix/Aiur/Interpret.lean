@@ -204,8 +204,10 @@ private def callSite (g : Global) (args : List Value) (m : InterpM Value) : Inte
 
 Value-level mirror of `read_klimbs_u64` / `build_klimbs_u64` in
 `crates/aiur/src/execute.rs`; see `Ix/Aiur/Semantics/SourceEval.lean` for
-the reference-evaluator twin. Constructor 0 = Cons(limb, rest),
-constructor 1 = Nil; limb bytes little-endian, limbs head-first. -/
+the reference-evaluator twin. The list is the niche enum
+`{ Nil, Cons(&(limb, tail)) }`: Nil is a bare value (nothing stored), Cons
+carries a pointer to the `(limb, tail)` cell. Limb bytes little-endian,
+limbs head-first. -/
 
 /-- Store a value content-deduped, returning its pointer (the `.store`
 semantics, callable from the divmod chain builder). -/
@@ -222,22 +224,21 @@ head-first. `steps` bounds the walk so a malformed cycle terminates. -/
 private def readLimbChainI (decls : Decls) :
     Nat → Value → InterpM (DataType × List (Array G))
   | 0, _ => throwErr "unconstrainedBigUintDivMod: cyclic limb list"
-  | steps+1, ptrVal => do
-    match ptrVal with
-    | .pointer _ n =>
-      let store ← getStore
-      match (if n == 0 then none else store.getByIdx (n - 1)) with
-      | none => throwErr s!"unconstrainedBigUintDivMod: invalid pointer {n}"
-      | some (vs, _) =>
-        match (vs[0]? : Option Value) with
-        | some (.ctor g args) =>
-          match decls.getByKey g with
-          | some (.constructor dt ctor) =>
-            let tag := dt.constructors.findIdx? (· == ctor) |>.getD 0
-            if tag == 1 then pure (dt, [])
-            else if tag == 0 then
-              match args with
-              | #[.array byteVals, rest] =>
+  | steps+1, listVal => do
+    match listVal with
+    | .ctor g args =>
+      match decls.getByKey g with
+      | some (.constructor dt _) =>
+        if args.isEmpty then pure (dt, [])  -- Nil: no cell exists
+        else
+          match args with
+          | #[.pointer _ n] =>
+            let store ← getStore
+            match (if n == 0 then none else store.getByIdx (n - 1)) with
+            | none => throwErr s!"unconstrainedBigUintDivMod: invalid pointer {n}"
+            | some (vs, _) =>
+              match (vs[0]? : Option Value) with
+              | some (.tuple #[.array byteVals, rest]) =>
                 let bytes ← byteVals.mapM fun bv =>
                   match bv with
                   | .field b =>
@@ -250,21 +251,20 @@ private def readLimbChainI (decls : Decls) :
                   let (_, restLimbs) ← readLimbChainI decls steps rest
                   pure (dt, bytes :: restLimbs)
                 else throwErr "unconstrainedBigUintDivMod: limb is not [U8; 8]"
-              | _ => throwErr "unconstrainedBigUintDivMod: malformed Cons node"
-            else
-              throwErr "unconstrainedBigUintDivMod: unexpected constructor tag"
-          | _ => throwErr s!"unconstrainedBigUintDivMod: unbound ctor {g}"
-        | _ => throwErr "unconstrainedBigUintDivMod: node is not a constructor"
-    | _ => throwErr "unconstrainedBigUintDivMod: input is not a pointer"
+              | _ => throwErr "unconstrainedBigUintDivMod: malformed Cons cell"
+          | _ => throwErr "unconstrainedBigUintDivMod: malformed Cons value"
+      | _ => throwErr s!"unconstrainedBigUintDivMod: unbound ctor {g}"
+    | _ => throwErr "unconstrainedBigUintDivMod: input is not a list value"
 
 /-- Build a limb chain from head-first `limbs` (Nil first, limbs in
 reverse — same allocation order as the Rust builder). -/
 private def buildLimbChainI (consG nilG : Global) :
     List (Array G) → InterpM Value
-  | [] => storeValueI (.ctor nilG #[])
+  | [] => pure (.ctor nilG #[])  -- Nil IS the value; nothing is stored
   | limb :: rest => do
-    let restPtr ← buildLimbChainI consG nilG rest
-    storeValueI (.ctor consG #[.array (limb.map .field), restPtr])
+    let restVal ← buildLimbChainI consG nilG rest
+    let cellPtr ← storeValueI (.tuple #[.array (limb.map .field), restVal])
+    pure (.ctor consG #[cellPtr])
 
 mutual
 
@@ -481,7 +481,9 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let bound := (← getStore).size + 1
       let (dt, aLimbs) ← readLimbChainI decls bound aPtr
       let (_, bLimbs) ← readLimbChainI decls bound bPtr
-      match dt.constructors[0]?, dt.constructors[1]? with
+      -- Identify Cons/Nil by shape (nullary = Nil), not declaration order.
+      match dt.constructors.find? (!·.argTypes.isEmpty),
+            dt.constructors.find? (·.argTypes.isEmpty) with
       | some cons, some nil =>
         let consG := dt.name.pushNamespace cons.nameHead
         let nilG := dt.name.pushNamespace nil.nameHead

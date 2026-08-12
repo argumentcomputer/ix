@@ -32,9 +32,9 @@ rule and structure eta.
 
 def whnf := ⟦
   fn apply_spine(head: KExpr, spine: List‹KExpr›) -> KExpr {
-    match load(spine) {
-      ListNode.Nil => head,
-      ListNode.Cons(a, rest) =>
+    match spine {
+      List.Nil => head,
+      List.Cons(__cell1) => let (a, rest) = load(__cell1);
         apply_spine(store(KExprNode.App(head, a)), rest),
     }
   }
@@ -44,10 +44,10 @@ def whnf := ⟦
                   -> (KExpr, List‹KExpr›, List‹KExpr›) {
     match load(lam) {
       KExprNode.Lam(_, body) =>
-        match load(spine) {
-          ListNode.Cons(a, rest) =>
-            peel_beta(body, rest, store(ListNode.Cons(a, acc))),
-          ListNode.Nil => (lam, acc, spine),
+        match spine {
+          List.Cons(__cell2) => let (a, rest) = load(__cell2);
+            peel_beta(body, rest, List.Cons(store((a, acc)))),
+          List.Nil => (lam, acc, spine),
         },
       _ => (lam, acc, spine),
     }
@@ -58,7 +58,7 @@ def whnf := ⟦
   -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
   -- stay on the cheap `expr_inst1` path (no list overhead).
   fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›) -> KExpr {
-    match peel_beta(lam, spine, store(ListNode.Nil)) {
+    match peel_beta(lam, spine, List.Nil) {
       (deep, consumed, rest) =>
         match list_length(consumed) {
           0 => apply_spine(lam, spine),
@@ -217,7 +217,7 @@ def whnf := ⟦
                                     let true_minor = store(KExprNode.Lam(
                                       tdom, tproj));
                                     let nat_ty = store(KExprNode.Const(
-                                      nat_ty_addr(), store(ListNode.Nil)));
+                                      nat_ty_addr(), List.Nil));
                                     let new_motive = store(KExprNode.Lam(
                                       motive_dom, nat_ty));
                                     let head_const = store(KExprNode.Const(
@@ -261,11 +261,11 @@ def whnf := ⟦
   -- WHNF each spine arg (needed before calling nat dispatch — args
   -- must be normalized to Lit/Const-headed forms for try_extract_nat).
   fn whnf_spine(spine: List‹KExpr›, types: List‹KExpr›) -> List‹KExpr› {
-    match load(spine) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(a, rest) =>
+    match spine {
+      List.Nil => List.Nil,
+      List.Cons(__cell3) => let (a, rest) = load(__cell3);
         let aw = whnf(a, types);
-        store(ListNode.Cons(aw, whnf_spine(rest, types))),
+        List.Cons(store((aw, whnf_spine(rest, types)))),
     }
   }
 
@@ -290,19 +290,19 @@ def whnf := ⟦
   fn bitvec_prep_spine(spine: List‹KExpr›, types: List‹KExpr›)
                             -> List‹KExpr› {
     let spine_w = whnf_spine(spine, types);
-    match load(spine_w) {
-      ListNode.Nil => spine_w,
-      ListNode.Cons(width_e, rest) =>
-        match load(rest) {
-          ListNode.Nil => spine_w,
-          ListNode.Cons(val_e, tail) =>
+    match spine_w {
+      List.Nil => spine_w,
+      List.Cons(__cell4) => let (width_e, rest) = load(__cell4);
+        match rest {
+          List.Nil => spine_w,
+          List.Cons(__cell5) => let (val_e, tail) = load(__cell5);
             match collect_spine(val_e) {
               (vh, va) =>
                 let va_w = whnf_spine(va, types);
                 let val_e2 = apply_spine(vh, va_w);
                 let width_w = whnf(width_e, types);
-                store(ListNode.Cons(width_w,
-                  store(ListNode.Cons(val_e2, tail)))),
+                List.Cons(store((width_w,
+                  List.Cons(store((val_e2, tail)))))),
             },
         },
     }
@@ -630,12 +630,12 @@ def whnf := ⟦
           KLiteral.Nat(klimbs) =>
             match klimbs_is_zero(klimbs) {
               1 => store(KExprNode.Const(nat_zero_addr_iota(),
-                                          store(ListNode.Nil))),
+                                          List.Nil)),
               _ =>
                 let pred_limbs = klimbs_normalize(klimbs_dec(klimbs));
                 let pred = store(KExprNode.Lit(KLiteral.Nat(pred_limbs)));
                 let succ_const = store(KExprNode.Const(nat_succ_addr_iota(),
-                                                       store(ListNode.Nil)));
+                                                       List.Nil));
                 store(KExprNode.App(succ_const, pred)),
             },
           _ => e,
@@ -662,8 +662,8 @@ def whnf := ⟦
                           rules: List‹KRecRule›,
                           rec_parent: Addr, types: List‹KExpr›)
                           -> (G, KExpr) {
-    match load(rules) {
-      ListNode.Cons(r, _) =>
+    match rules {
+      List.Cons(__cell6) => let (r, _) = load(__cell6);
         match r {
           KRecRule.Mk(cidx, _rfields, rrhs) =>
             let major_idx = nparams + nmotives + nminors + nindices;
@@ -748,7 +748,7 @@ def whnf := ⟦
     let pre = list_take(spine, major_idx);
     let post = list_drop(spine, major_idx + 1);
     let with_major = list_concat(pre,
-      store(ListNode.Cons(major_w, store(ListNode.Nil))));
+      List.Cons(store((major_w, List.Nil))));
     list_concat(with_major, post)
   }
 
@@ -871,18 +871,18 @@ def whnf := ⟦
             match ci {
               KConstantInfo.Ctor(_, _, block_addr, ind_idx, cidx, _, _, _) =>
                 (1, cidx, compute_iprj_addr(block_addr, ind_idx), args),
-              _ => (0, 0, store([0u8; 32]), store(ListNode.Nil)),
+              _ => (0, 0, store([0u8; 32]), List.Nil),
             },
-          _ => (0, 0, store([0u8; 32]), store(ListNode.Nil)),
+          _ => (0, 0, store([0u8; 32]), List.Nil),
         },
     }
   }
 
   -- Find rule matching cidx: returns (1, nfields, rhs) or (0, 0, ...).
   fn find_rule(rules: List‹KRecRule›, cidx: G) -> (G, G, KExpr) {
-    match load(rules) {
-      ListNode.Nil => (0, 0, store(KExprNode.BVar(0))),
-      ListNode.Cons(r, rest) =>
+    match rules {
+      List.Nil => (0, 0, store(KExprNode.BVar(0))),
+      List.Cons(__cell7) => let (r, rest) = load(__cell7);
         match r {
           KRecRule.Mk(rcidx, nfields, rhs) =>
             match rcidx - cidx {
@@ -910,12 +910,12 @@ def whnf := ⟦
                                nminors: G, nindices: G,
                                rules: List‹KRecRule›,
                                types: List‹KExpr›) -> (G, KExpr) {
-    match load(rules) {
-      ListNode.Nil => (0, store(KExprNode.BVar(0))),
-      ListNode.Cons(r, rest) =>
-        match load(rest) {
-          ListNode.Cons(_, _) => (0, store(KExprNode.BVar(0))),
-          ListNode.Nil =>
+    match rules {
+      List.Nil => (0, store(KExprNode.BVar(0))),
+      List.Cons(__cell8) => let (r, rest) = load(__cell8);
+        match rest {
+          List.Cons(_) => (0, store(KExprNode.BVar(0))),
+          List.Nil =>
             match r {
               KRecRule.Mk(_, nf, rhs) =>
                 let skip = ((nparams + nmotives) + nminors) + nindices;
@@ -1016,7 +1016,7 @@ def whnf := ⟦
       Constant.Mk(info, _, _, _) =>
         match info {
           ConstantInfo.Muts(members) => build_recur_addrs(members, block),
-          _ => store(ListNode.Cons(parent, store(ListNode.Nil))),
+          _ => List.Cons(store((parent, List.Nil))),
         },
     }
   }
@@ -1095,9 +1095,9 @@ def whnf := ⟦
   }
 
   fn se_addr_in(a: Addr, xs: List‹Addr›) -> G {
-    match load(xs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(x, rest) =>
+    match xs {
+      List.Nil => 0,
+      List.Cons(__cell9) => let (x, rest) = load(__cell9);
         match address_eq(a, x) {
           1 => 1,
           _ => se_addr_in(a, rest),
@@ -1119,7 +1119,7 @@ def whnf := ⟦
   }
 
   fn whnf_core(e: KExpr, types: List‹KExpr›) -> KExpr {
-    whnf_with_spine(e, store(ListNode.Nil), types)
+    whnf_with_spine(e, List.Nil, types)
   }
 
   -- ============================================================================
@@ -1146,7 +1146,7 @@ def whnf := ⟦
   }
 
   fn whnf_nd_core(e: KExpr, types: List‹KExpr›) -> KExpr {
-    whnf_nd_with_spine(e, store(ListNode.Nil), types)
+    whnf_nd_with_spine(e, List.Nil, types)
   }
 
   fn whnf_nd_with_spine(head: KExpr, spine: List‹KExpr›,
@@ -1172,7 +1172,7 @@ def whnf := ⟦
 
   fn whnf_nd_apply_beta(spine: List‹KExpr›, lam: KExpr,
                             types: List‹KExpr›) -> KExpr {
-    match peel_beta(lam, spine, store(ListNode.Nil)) {
+    match peel_beta(lam, spine, List.Nil) {
       (deep, consumed, rest) =>
         match list_length(consumed) {
           0 => apply_spine(lam, spine),

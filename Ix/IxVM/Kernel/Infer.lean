@@ -89,18 +89,18 @@ def infer := ⟦
         match collect_spine(e) {
           (head, args) =>
             let head_ty = k_infer(head, types);
-            k_infer_app_spine_loop(head_ty, args, store(ListNode.Nil), types),
+            k_infer_app_spine_loop(head_ty, args, List.Nil, types),
         },
 
       KExprNode.Lam(ty, body) =>
         k_ensure_sort(ty, types);
-        let types2 = store(ListNode.Cons(ty, types));
+        let types2 = List.Cons(store((ty, types)));
         let body_ty = k_infer(body, types2);
         store(KExprNode.Forall(ty, body_ty)),
 
       KExprNode.Forall(ty, body) =>
         let u1 = k_ensure_sort(ty, types);
-        let types2 = store(ListNode.Cons(ty, types));
+        let types2 = List.Cons(store((ty, types)));
         let u2 = k_ensure_sort(body, types2);
         store(KExprNode.Srt(level_imax(u1, u2))),
 
@@ -130,13 +130,13 @@ def infer := ⟦
   fn k_infer_app_spine_loop(t: KExpr, args: List‹KExpr›,
                                 subs_rev: List‹KExpr›,
                                 types: List‹KExpr›) -> KExpr {
-    match load(args) {
-      ListNode.Nil =>
+    match args {
+      List.Nil =>
         match list_length(subs_rev) {
           0 => t,
           _ => expr_inst_many(t, subs_rev, 0),
         },
-      ListNode.Cons(a, rest) =>
+      List.Cons(__cell1) => let (a, rest) = load(__cell1);
         match load(t) {
           KExprNode.Forall(dom, cod) =>
             let dom_subst = match list_length(subs_rev) {
@@ -145,7 +145,7 @@ def infer := ⟦
             };
             k_check(a, dom_subst, types);
             k_infer_app_spine_loop(cod, rest,
-              store(ListNode.Cons(a, subs_rev)), types),
+              List.Cons(store((a, subs_rev))), types),
           _ =>
             let t_concrete = match list_length(subs_rev) {
               0 => t,
@@ -156,7 +156,7 @@ def infer := ⟦
               KExprNode.Forall(dom, cod) =>
                 k_check(a, dom, types);
                 k_infer_app_spine_loop(cod, rest,
-                  store(ListNode.Cons(a, store(ListNode.Nil))), types),
+                  List.Cons(store((a, List.Nil))), types),
             },
         },
     }
@@ -181,8 +181,8 @@ def infer := ⟦
 
   fn k_infer_lit(lit: KLiteral) -> KExpr {
     match lit {
-      KLiteral.Nat(_) => store(KExprNode.Const(nat_addr(), store(ListNode.Nil))),
-      KLiteral.Str(_) => store(KExprNode.Const(str_addr(), store(ListNode.Nil))),
+      KLiteral.Nat(_) => store(KExprNode.Const(nat_addr(), List.Nil)),
+      KLiteral.Str(_) => store(KExprNode.Const(str_addr(), List.Nil)),
     }
   }
 
@@ -193,8 +193,8 @@ def infer := ⟦
       _ =>
         match load(ty) {
           KExprNode.Forall(_, body) =>
-            match load(args) {
-              ListNode.Cons(arg, rest) =>
+            match args {
+              List.Cons(__cell2) => let (arg, rest) = load(__cell2);
                 let body_substed = expr_inst1(body, arg, 0);
                 peel_params_subst(body_substed, rest, n_params - 1),
             },
@@ -238,7 +238,7 @@ def infer := ⟦
         let ew = whnf(e, types);
         match load(ew) {
           KExprNode.Forall(dom, body) =>
-            let t2 = store(ListNode.Cons(dom, types));
+            let t2 = List.Cons(store((dom, types)));
             peel_n_alls_whnf(body, n - 1, t2),
           _ => ew,
         },
@@ -545,20 +545,20 @@ def infer := ⟦
             let is_ofnat = address_eq(caddr, int_of_nat_addr_dec());
             let is_negsucc = address_eq(caddr, int_neg_succ_addr_dec());
             match is_ofnat + is_negsucc {
-              0 => (0, 0, store(ListNode.Nil)),
+              0 => (0, 0, List.Nil),
               _ =>
                 match load(a) {
                   KExprNode.Lit(lit) =>
                     match lit {
                       KLiteral.Nat(limbs) => (1, is_negsucc, limbs),
-                      _ => (0, 0, store(ListNode.Nil)),
+                      _ => (0, 0, List.Nil),
                     },
-                  _ => (0, 0, store(ListNode.Nil)),
+                  _ => (0, 0, List.Nil),
                 },
             },
-          _ => (0, 0, store(ListNode.Nil)),
+          _ => (0, 0, List.Nil),
         },
-      _ => (0, 0, store(ListNode.Nil)),
+      _ => (0, 0, List.Nil),
     }
   }
 
@@ -568,7 +568,7 @@ def infer := ⟦
       0 => int_of_nat_addr_dec(),
       _ => int_neg_succ_addr_dec(),
     };
-    let head = store(KExprNode.Const(head_addr, store(ListNode.Nil)));
+    let head = store(KExprNode.Const(head_addr, List.Nil));
     let lit = store(KExprNode.Lit(KLiteral.Nat(kl)));
     store(KExprNode.App(head, lit))
   }
@@ -704,14 +704,14 @@ def infer := ⟦
       _ =>
         -- Eq.refl.{1} Bool (Bool.true|Bool.false)
         let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
-        let eq_refl_lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
+        let eq_refl_lvls = List.Cons(store((one_lvl, List.Nil)));
         let eq_refl_c = store(KExprNode.Const(eq_refl_addr_dec(), eq_refl_lvls));
-        let bool_c = store(KExprNode.Const(bool_type_addr_dec(), store(ListNode.Nil)));
+        let bool_c = store(KExprNode.Const(bool_type_addr_dec(), List.Nil));
         let bool_lit_addr = match verdict {
           1 => bool_true_addr(),
           _ => bool_false_addr(),
         };
-        let bool_lit_c = store(KExprNode.Const(bool_lit_addr, store(ListNode.Nil)));
+        let bool_lit_c = store(KExprNode.Const(bool_lit_addr, List.Nil));
         let r1 = store(KExprNode.App(eq_refl_c, bool_c));
         let refl_proof = store(KExprNode.App(r1, bool_lit_c));
         let proof_fn_addr = match is_le {
@@ -726,7 +726,7 @@ def infer := ⟦
               _ => nat_ne_of_beq_eq_false_addr_dec(),
             },
         };
-        let proof_c = store(KExprNode.Const(proof_fn_addr, store(ListNode.Nil)));
+        let proof_c = store(KExprNode.Const(proof_fn_addr, List.Nil));
         let p1 = store(KExprNode.App(proof_c, n_e));
         let p2 = store(KExprNode.App(p1, m_e));
         let proof = store(KExprNode.App(p2, refl_proof));
@@ -773,15 +773,15 @@ def infer := ⟦
   fn str_dec_eq_build(sa: ByteStream, head_addr: Addr, spine: List‹KExpr›,
                        types: List‹KExpr›) -> (G, KExpr) {
     let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
-    let eq_refl_lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
+    let eq_refl_lvls = List.Cons(store((one_lvl, List.Nil)));
     let eq_refl_c = store(KExprNode.Const(eq_refl_addr_dec(), eq_refl_lvls));
     let str_c = store(KExprNode.Const(string_type_addr(),
-                                        store(ListNode.Nil)));
+                                        List.Nil));
     let lit = store(KExprNode.Lit(KLiteral.Str(sa)));
     let r1 = store(KExprNode.App(eq_refl_c, str_c));
     let refl = store(KExprNode.App(r1, lit));
     -- Recover prop from Decidable prop = infer(head, a0, a1).
-    let head_c = store(KExprNode.Const(head_addr, store(ListNode.Nil)));
+    let head_c = store(KExprNode.Const(head_addr, List.Nil));
     let two_args = list_take(spine, 2);
     let call_expr = apply_spine(head_c, two_args);
     let call_ty = k_infer(call_expr, types);
@@ -793,7 +793,7 @@ def infer := ⟦
           _ =>
             let prop = list_lookup(dec_args, 0);
             let dec_c = store(KExprNode.Const(decidable_is_true_addr_dec(),
-                                                store(ListNode.Nil)));
+                                                List.Nil));
             let d1 = store(KExprNode.App(dec_c, prop));
             let d2 = store(KExprNode.App(d1, refl));
             let post = list_drop(spine, 2);
@@ -822,7 +822,7 @@ def infer := ⟦
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let prop = list_lookup(dec_args, 0);
-            let dec_c = store(KExprNode.Const(dec_addr, store(ListNode.Nil)));
+            let dec_c = store(KExprNode.Const(dec_addr, List.Nil));
             let d1 = store(KExprNode.App(dec_c, prop));
             let d2 = store(KExprNode.App(d1, proof));
             let post = list_drop(spine, 2);

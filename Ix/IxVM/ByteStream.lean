@@ -12,11 +12,11 @@ def byteStream := ⟦
 
   fn read_byte_stream(channel: G, idx: G, len: G) -> ByteStream {
     match len {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         let tail = read_byte_stream(channel, idx + 1, len - 1);
         let [byte] = io_read(channel, idx, 1);
-        store(ListNode.Cons(u8_from_field_unsafe(byte), tail)),
+        List.Cons(store((u8_from_field_unsafe(byte), tail))),
     }
   }
 

@@ -96,10 +96,10 @@ def tests := ⟦
   -- `0x0102030405060708` (8 LE bytes) must equal the reference `799146`
   -- (`pcs_challenger_ref` in `multi-stark/src/types.rs`).
   pub fn sample_bits_test() -> G {
-    let input = store(ListNode.Cons(8u8, store(ListNode.Cons(7u8, store(ListNode.Cons(6u8,
-      store(ListNode.Cons(5u8, store(ListNode.Cons(4u8, store(ListNode.Cons(3u8,
-      store(ListNode.Cons(2u8, store(ListNode.Cons(1u8, store(ListNode.Nil)))))))))))))))));
-    let (bits, _i, _o) = ch_sample_bits(input, store(ListNode.Nil), 20);
+    let input = List.Cons(store((8u8, List.Cons(store((7u8, List.Cons(store((6u8,
+      List.Cons(store((5u8, List.Cons(store((4u8, List.Cons(store((3u8,
+      List.Cons(store((2u8, List.Cons(store((1u8, List.Nil))))))))))))))))))))))));
+    let (bits, _i, _o) = ch_sample_bits(input, List.Nil, 20);
     assert_eq!(bits_to_num(bits), 1019203);
     1
   }
@@ -112,9 +112,9 @@ def tests := ⟦
     -- post-ζ input buffer = observe V0 then V1 (forward / observation order).
     let v0 = [8u8, 7u8, 6u8, 5u8, 4u8, 3u8, 2u8, 1u8];     -- 0x0102030405060708
     let v1 = [136u8, 119u8, 102u8, 85u8, 68u8, 51u8, 34u8, 17u8]; -- 0x1122334455667788
-    let input = snoc_b8(snoc_b8(store(ListNode.Nil), v0), v1);
+    let input = snoc_b8(snoc_b8(List.Nil, v0), v1);
     -- α_pcs (output empty ⇒ flush), then α_fri (CONSECUTIVE ⇒ thread output).
-    let (apcs, input, o1) = pcs_sample_ext(input, store(ListNode.Nil));
+    let (apcs, input, o1) = pcs_sample_ext(input, List.Nil);
     let (afri, input, o2) = pcs_sample_ext(input, o1);
     assert_eq!(apcs[0], 17795849114622667264);
     assert_eq!(apcs[1], 4116843485681689527);
@@ -123,7 +123,7 @@ def tests := ⟦
     -- observe commit (clears output), sample β.
     let v2 = [239u8, 190u8, 173u8, 222u8, 0u8, 0u8, 0u8, 0u8]; -- 0x00000000deadbeef
     let (input, _oc) = ch_observe_val(input, v2);
-    let (beta, input, _ob) = pcs_sample_ext(input, store(ListNode.Nil));
+    let (beta, input, _ob) = pcs_sample_ext(input, List.Nil);
     assert_eq!(beta[0], 12096272534537655203);
     assert_eq!(beta[1], 11431251745744402868);
     -- observe final_poly coeff + log_arity (each a Val), then sample the index.
@@ -131,7 +131,7 @@ def tests := ⟦
     let v4 = [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];     -- 0x0000000000000002
     let (input, _o3) = ch_observe_val(input, v3);
     let (input, _o4) = ch_observe_val(input, v4);
-    let (bits, _bi, _bo) = ch_sample_bits(input, store(ListNode.Nil), 20);
+    let (bits, _bi, _bo) = ch_sample_bits(input, List.Nil, 20);
     assert_eq!(bits_to_num(bits), 458922);
     1
   }
@@ -143,8 +143,8 @@ def tests := ⟦
   -- Self-test: arity-2 fold at index 5, log_height 3 vs the `fri_fold_ref`
   -- reference (computed by the real `TwoAdicFriFolding::fold_row`).
   pub fn fri_fold_test() -> G {
-    let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
-                       store(ListNode.Cons(1, store(ListNode.Nil)))))));
+    let index_bits = List.Cons(store((1, List.Cons(store((0,
+                       List.Cons(store((1, List.Nil)))))))));
     let e0 = [@gl_val([17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8]),
               @gl_val([34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8])];
     let e1 = [@gl_val([51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8]),
@@ -160,8 +160,8 @@ def tests := ⟦
   -- Self-test vs `ro_fold_ref`: x at index 5 / log_height 3, then accumulate
   -- (p_z − p_x)/(z − x) over 3 columns with alpha powers.
   pub fn ro_fold_test() -> G {
-    let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
-                       store(ListNode.Cons(1, store(ListNode.Nil)))))));
+    let index_bits = List.Cons(store((1, List.Cons(store((0,
+                       List.Cons(store((1, List.Nil)))))))));
     let x = ro_x(index_bits, 3);
     assert_eq!(x, 117440512);
     let z = [@gl_val([154u8, 120u8, 86u8, 52u8, 18u8, 0u8, 0u8, 0u8]),
@@ -171,13 +171,13 @@ def tests := ⟦
     let px0 = @gl_val([11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
     let px1 = @gl_val([22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
     let px2 = @gl_val([33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let p_x = store(ListNode.Cons(px0, store(ListNode.Cons(px1,
-                store(ListNode.Cons(px2, store(ListNode.Nil)))))));
+    let p_x = List.Cons(store((px0, List.Cons(store((px1,
+                List.Cons(store((px2, List.Nil)))))))));
     let pz0 = [@gl_val([100u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), @gl_val([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
     let pz1 = [@gl_val([200u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), @gl_val([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
     let pz2 = [@gl_val([44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), @gl_val([3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
-    let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
-                store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
+    let p_z = List.Cons(store((pz0, List.Cons(store((pz1,
+                List.Cons(store((pz2, List.Nil)))))))));
     let q = @eg_inverse(@eg_sub(z, [x, 0]));
     let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
     assert_eq!(ro[0], 7130765474285082575);
@@ -198,8 +198,8 @@ def tests := ⟦
   -- `[i+1, i+2, …, n]` as a `List‹U64›`.
   fn build_range(i: G, n: G) -> List‹U64› {
     match n - i {
-      0 => store(ListNode.Nil),
-      _ => store(ListNode.Cons(u64_of(u8_from_field_unsafe(i + 1)), build_range(i + 1, n))),
+      0 => List.Nil,
+      _ => List.Cons(store((u64_of(u8_from_field_unsafe(i + 1)), build_range(i + 1, n)))),
     }
   }
   fn assert_digest(d: Digest, e0: G, e1: G, e2: G, e3: G) -> G {
@@ -240,15 +240,15 @@ def tests := ⟦
   -- yields a different (rejected) root.
   pub fn pcs_merkle_test() -> G {
     -- opened rows (matrix order): m0 row5, m1 row2, m2 row1.
-    let row0 = store(ListNode.Cons(u64_of(11u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
-    let row1 = store(ListNode.Cons(u64_of(107u8), store(ListNode.Cons(u64_of(108u8),
-                 store(ListNode.Cons(u64_of(109u8), store(ListNode.Nil)))))));
-    let row2 = store(ListNode.Cons(u64_of(202u8), store(ListNode.Nil)));
-    let rows = store(ListNode.Cons(row0, store(ListNode.Cons(row1,
-                 store(ListNode.Cons(row2, store(ListNode.Nil)))))));
+    let row0 = List.Cons(store((u64_of(11u8), List.Cons(store((u64_of(12u8), List.Nil))))));
+    let row1 = List.Cons(store((u64_of(107u8), List.Cons(store((u64_of(108u8),
+                 List.Cons(store((u64_of(109u8), List.Nil)))))))));
+    let row2 = List.Cons(store((u64_of(202u8), List.Nil)));
+    let rows = List.Cons(store((row0, List.Cons(store((row1,
+                 List.Cons(store((row2, List.Nil)))))))));
     -- log-heights and path bits (index 5 = 0b101, LSB first).
-    let lhs = store(ListNode.Cons(3, store(ListNode.Cons(2, store(ListNode.Cons(1, store(ListNode.Nil)))))));
-    let ibits = store(ListNode.Cons(1, store(ListNode.Cons(0, store(ListNode.Cons(1, store(ListNode.Nil)))))));
+    let lhs = List.Cons(store((3, List.Cons(store((2, List.Cons(store((1, List.Nil)))))))));
+    let ibits = List.Cons(store((1, List.Cons(store((0, List.Cons(store((1, List.Nil)))))))));
     -- authentication path SIB0, SIB1, SIB2 (each a Digest = [U64; 4]).
     let sib0 = [[229u8, 114u8, 223u8, 248u8, 35u8, 4u8, 112u8, 11u8],
                 [133u8, 106u8, 85u8, 90u8, 195u8, 164u8, 85u8, 141u8],
@@ -262,21 +262,21 @@ def tests := ⟦
                 [220u8, 192u8, 39u8, 69u8, 198u8, 24u8, 123u8, 147u8],
                 [63u8, 5u8, 74u8, 98u8, 77u8, 73u8, 181u8, 252u8],
                 [134u8, 86u8, 33u8, 32u8, 240u8, 13u8, 134u8, 153u8]];
-    let proof = store(ListNode.Cons(sib0, store(ListNode.Cons(sib1,
-                  store(ListNode.Cons(sib2, store(ListNode.Nil)))))));
+    let proof = List.Cons(store((sib0, List.Cons(store((sib1,
+                  List.Cons(store((sib2, List.Nil)))))))));
     let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, 3);
     assert_eq!(capidx, 0);
     assert_eq!(assert_digest(root, 4722047561722553901, 2839201037098837684,
                                    4926058068911485563, 1219861215742277604), 1);
     -- tamper: perturb m0's first opened value → root must change.
-    let bad0 = store(ListNode.Cons(u64_of(99u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
-    let bad_rows = store(ListNode.Cons(bad0, store(ListNode.Cons(row1,
-                     store(ListNode.Cons(row2, store(ListNode.Nil)))))));
-    let cap = store(ListNode.Cons([[45u8, 230u8, 248u8, 40u8, 61u8, 21u8, 136u8, 65u8],
+    let bad0 = List.Cons(store((u64_of(99u8), List.Cons(store((u64_of(12u8), List.Nil))))));
+    let bad_rows = List.Cons(store((bad0, List.Cons(store((row1,
+                     List.Cons(store((row2, List.Nil)))))))));
+    let cap = List.Cons(store(([[45u8, 230u8, 248u8, 40u8, 61u8, 21u8, 136u8, 65u8],
                                    [180u8, 102u8, 50u8, 238u8, 76u8, 222u8, 102u8, 39u8],
                                    [123u8, 114u8, 106u8, 220u8, 182u8, 223u8, 92u8, 68u8],
                                    [228u8, 55u8, 152u8, 7u8, 80u8, 209u8, 237u8, 16u8]],
-                    store(ListNode.Nil)));
+                    List.Nil)));
     assert_eq!(mmcs_verify(cap, rows, lhs, ibits, proof, 3), 1);
     assert_eq!(mmcs_verify(cap, bad_rows, lhs, ibits, proof, 3), 0);
     1
@@ -290,18 +290,18 @@ def tests := ⟦
   -- with the index so lane- or word-order bugs change the digest.
   fn lane_test_row(n: G) -> List‹U64› {
     match n {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         -- n mod 256, valid for n ≤ 511 (largest size used below is 500).
         let lo = u8_from_field_unsafe(n - 256 * u32_less_than(255, n));
-        store(ListNode.Cons([lo, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8],
-                            lane_test_row(n - 1))),
+        List.Cons(store(([lo, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8],
+                            lane_test_row(n - 1)))),
     }
   }
   fn lane_hash_check(n: G) -> G {
     let row = lane_test_row(n);
     digest_eq(b3_to_digest(b3_lanes(row)),
-              b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil)))))
+              b3_to_digest(blake3(b3_row_onto(row, List.Nil))))
   }
   pub fn lane_hash_test() -> G {
     lane_hash_check(0) * lane_hash_check(1) * lane_hash_check(7)
@@ -317,9 +317,9 @@ def tests := ⟦
   -- multi-chunk total (layer fold). Rows reuse `lane_test_row`'s varied
   -- bytes.
   fn rows_test_rows(spec: List‹G›) -> List‹List‹U64›› {
-    match load(spec) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(n, rest) => store(ListNode.Cons(lane_test_row(n), rows_test_rows(rest))),
+    match spec {
+      List.Nil => List.Nil,
+      List.Cons(__cell1) => let (n, rest) = load(__cell1); List.Cons(store((lane_test_row(n), rows_test_rows(rest)))),
     }
   }
   fn rows_hash_check(spec: List‹G›, lhs: List‹G›, target: G) -> G {
@@ -327,9 +327,9 @@ def tests := ⟦
     digest_eq(b3_to_digest(b3_rows(select_rows(rows, lhs, target))),
               mmcs_hash_row(canon_lanes(concat_at(rows, lhs, target))))
   }
-  fn g1(a: G) -> List‹G› { store(ListNode.Cons(a, store(ListNode.Nil))) }
-  fn g2(a: G, b: G) -> List‹G› { store(ListNode.Cons(a, g1(b))) }
-  fn g3(a: G, b: G, c: G) -> List‹G› { store(ListNode.Cons(a, g2(b, c))) }
+  fn g1(a: G) -> List‹G› { List.Cons(store((a, List.Nil))) }
+  fn g2(a: G, b: G) -> List‹G› { List.Cons(store((a, g1(b)))) }
+  fn g3(a: G, b: G, c: G) -> List‹G› { List.Cons(store((a, g2(b, c)))) }
   pub fn rows_hash_test() -> G {
     rows_hash_check(g3(3, 5, 2), g3(7, 7, 7), 7)
       * rows_hash_check(g3(3, 5, 2), g3(7, 7, 7), 5)
@@ -358,10 +358,10 @@ def tests := ⟦
   }
   fn io_test_bytes(n: G, off: G) -> ByteStream {
     match n {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         let [b] = io_read(9, off, 1);
-        store(ListNode.Cons(u8_from_field_unsafe(b), io_test_bytes(n - 1, off + 1))),
+        List.Cons(store((u8_from_field_unsafe(b), io_test_bytes(n - 1, off + 1)))),
     }
   }
   fn io_hash_check(n: G, off: G) -> (G, G) {

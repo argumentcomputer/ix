@@ -105,9 +105,9 @@ def canonicalCheck := ⟦
   -- Returns 1+class if found, 0 otherwise.
   -- ==========================================================================
   fn canon_ctx_class_idx(a: Addr, ctx: List‹(Addr, G)›) -> G {
-    match load(ctx) {
-      ListNode.Nil => 0,
-      ListNode.Cons(entry, rest) =>
+    match ctx {
+      List.Nil => 0,
+      List.Cons(__cell1) => let (entry, rest) = load(__cell1);
         match entry {
           (ea, j) =>
             match address_eq(a, ea) {
@@ -185,16 +185,16 @@ def canonicalCheck := ⟦
   }
 
   fn canon_cmp_kuniv_list(xs: List‹KLevel›, ys: List‹KLevel›) -> G {
-    match load(xs) {
-      ListNode.Nil =>
-        match load(ys) {
-          ListNode.Nil => 1,
+    match xs {
+      List.Nil =>
+        match ys {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(xh, xt) =>
-        match load(ys) {
-          ListNode.Nil => 2,
-          ListNode.Cons(yh, yt) =>
+      List.Cons(__cell2) => let (xh, xt) = load(__cell2);
+        match ys {
+          List.Nil => 2,
+          List.Cons(__cell3) => let (yh, yt) = load(__cell3);
             canon_ord_then(canon_cmp_kuniv(xh, yh), canon_cmp_kuniv_list(xt, yt)),
         },
     }
@@ -229,11 +229,11 @@ def canonicalCheck := ⟦
   }
 
   fn canon_cmp_klimbs_tail(x: KLimbs, y: KLimbs) -> G {
-    match load(x) {
-      ListNode.Nil => 1,
-      ListNode.Cons(xh, xt) =>
-        match load(y) {
-          ListNode.Cons(yh, yt) =>
+    match x {
+      List.Nil => 1,
+      List.Cons(__cell4) => let (xh, xt) = load(__cell4);
+        match y {
+          List.Cons(__cell5) => let (yh, yt) = load(__cell5);
             let tail_ord = canon_cmp_klimbs_tail(xt, yt);
             canon_ord_then(tail_ord, canon_cmp_u64_lex(xh, yh)),
         },
@@ -254,16 +254,16 @@ def canonicalCheck := ⟦
   }
 
   fn canon_cmp_bytes(x: ByteStream, y: ByteStream) -> G {
-    match load(x) {
-      ListNode.Nil =>
-        match load(y) {
-          ListNode.Nil => 1,
+    match x {
+      List.Nil =>
+        match y {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(xh, xt) =>
-        match load(y) {
-          ListNode.Nil => 2,
-          ListNode.Cons(yh, yt) =>
+      List.Cons(__cell6) => let (xh, xt) = load(__cell6);
+        match y {
+          List.Nil => 2,
+          List.Cons(__cell7) => let (yh, yt) = load(__cell7);
             canon_ord_then(canon_ord_cmp_g(to_field(xh), to_field(yh)),
                          canon_cmp_bytes(xt, yt)),
         },
@@ -387,16 +387,16 @@ def canonicalCheck := ⟦
 
   fn canon_cmp_krec_rule_list_ctx(xs: List‹KRecRule›, ys: List‹KRecRule›,
                                 ctx: List‹(Addr, G)›) -> (G, G) {
-    match load(xs) {
-      ListNode.Nil =>
-        match load(ys) {
-          ListNode.Nil => canon_sord_eq_strong(),
+    match xs {
+      List.Nil =>
+        match ys {
+          List.Nil => canon_sord_eq_strong(),
           _ => canon_sord_lt_strong(),
         },
-      ListNode.Cons(xh, xt) =>
-        match load(ys) {
-          ListNode.Nil => canon_sord_gt_strong(),
-          ListNode.Cons(yh, yt) =>
+      List.Cons(__cell8) => let (xh, xt) = load(__cell8);
+        match ys {
+          List.Nil => canon_sord_gt_strong(),
+          List.Cons(__cell9) => let (yh, yt) = load(__cell9);
             canon_sord_then(canon_cmp_krec_rule_ctx(xh, yh, ctx),
                           canon_cmp_krec_rule_list_ctx(xt, yt, ctx)),
         },
@@ -543,10 +543,10 @@ def canonicalCheck := ⟦
     let info = ConstantInfo.CPrj(ConstructorProj.Mk(
       idx_to_u64(ind_idx), idx_to_u64(cidx), block));
     let proj_c = Constant.Mk(info,
-                             store(ListNode.Nil),
-                             store(ListNode.Nil),
-                             store(ListNode.Nil));
-    let bytes = put_constant(proj_c, store(ListNode.Nil));
+                             List.Nil,
+                             List.Nil,
+                             List.Nil);
+    let bytes = put_constant(proj_c, List.Nil);
     bytes_to_addr(bytes)
   }
 
@@ -576,9 +576,9 @@ def canonicalCheck := ⟦
 
   fn canon_build_ctx_classes(classes: List‹List‹G››, proj_addrs: List‹Addr›,
                            block: Addr, j: G, i: G) -> List‹(Addr, G)› {
-    match load(classes) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(cls, rest) =>
+    match classes {
+      List.Nil => List.Nil,
+      List.Cons(__cell10) => let (cls, rest) = load(__cell10);
         let (entries, max_ctors) =
           canon_build_ctx_members(cls, proj_addrs, block, j, i);
         list_concat(entries,
@@ -589,16 +589,16 @@ def canonicalCheck := ⟦
   fn canon_build_ctx_members(members: List‹G›, proj_addrs: List‹Addr›,
                            block: Addr, j: G, i: G)
                            -> (List‹(Addr, G)›, G) {
-    match load(members) {
-      ListNode.Nil => (store(ListNode.Nil), 0),
-      ListNode.Cons(pos, rest) =>
+    match members {
+      List.Nil => (List.Nil, 0),
+      List.Cons(__cell11) => let (pos, rest) = load(__cell11);
         let (rest_entries, rest_max) =
           canon_build_ctx_members(rest, proj_addrs, block, j, i);
         let n = canon_member_num_ctors(proj_addrs, pos);
         let ctor_entries = canon_ctor_ctx_entries(block, pos, n, i, 0);
-        let entries = store(ListNode.Cons(
+        let entries = List.Cons(store((
           (list_lookup(proj_addrs, pos), j),
-          list_concat(ctor_entries, rest_entries)));
+          list_concat(ctor_entries, rest_entries))));
         match u32_less_than(rest_max, n) {
           1 => (entries, n),
           _ => (entries, rest_max),
@@ -609,10 +609,10 @@ def canonicalCheck := ⟦
   fn canon_ctor_ctx_entries(block: Addr, ind_idx: G, n: G, i: G,
                           cidx: G) -> List‹(Addr, G)› {
     match n - cidx {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
-        store(ListNode.Cons((canon_cprj_addr(block, ind_idx, cidx), i + cidx),
-          canon_ctor_ctx_entries(block, ind_idx, n, i, cidx + 1))),
+        List.Cons(store(((canon_cprj_addr(block, ind_idx, cidx), i + cidx),
+          canon_ctor_ctx_entries(block, ind_idx, n, i, cidx + 1)))),
     }
   }
 
@@ -623,7 +623,7 @@ def canonicalCheck := ⟦
   -- ==========================================================================
   fn canon_sort_members(members: List‹G›, proj_addrs: List‹Addr›,
                       block: Addr) -> List‹List‹G›› {
-    let seed = store(ListNode.Cons(members, store(ListNode.Nil)));
+    let seed = List.Cons(store((members, List.Nil)));
     canon_sort_loop(seed, proj_addrs, block, 1 + list_length(members))
   }
 
@@ -643,9 +643,9 @@ def canonicalCheck := ⟦
 
   fn canon_refine_classes(classes: List‹List‹G››, ctx: List‹(Addr, G)›,
                         proj_addrs: List‹Addr›) -> List‹List‹G›› {
-    match load(classes) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(c, rest) =>
+    match classes {
+      List.Nil => List.Nil,
+      List.Cons(__cell12) => let (c, rest) = load(__cell12);
         let refined = canon_refine_one(c, ctx, proj_addrs);
         list_concat(refined, canon_refine_classes(rest, ctx, proj_addrs)),
     }
@@ -654,8 +654,8 @@ def canonicalCheck := ⟦
   fn canon_refine_one(c: List‹G›, ctx: List‹(Addr, G)›,
                     proj_addrs: List‹Addr›) -> List‹List‹G›› {
     match list_length(c) {
-      0 => store(ListNode.Nil),
-      1 => store(ListNode.Cons(c, store(ListNode.Nil))),
+      0 => List.Nil,
+      1 => List.Cons(store((c, List.Nil))),
       _ =>
         let sorted = canon_ins_sort(c, ctx, proj_addrs);
         canon_group_consec(sorted, ctx, proj_addrs),
@@ -664,9 +664,9 @@ def canonicalCheck := ⟦
 
   fn canon_ins_sort(xs: List‹G›, ctx: List‹(Addr, G)›,
                   proj_addrs: List‹Addr›) -> List‹G› {
-    match load(xs) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) =>
+    match xs {
+      List.Nil => List.Nil,
+      List.Cons(__cell13) => let (x, rest) = load(__cell13);
         canon_insert_sorted(x, canon_ins_sort(rest, ctx, proj_addrs),
                           ctx, proj_addrs),
     }
@@ -674,57 +674,57 @@ def canonicalCheck := ⟦
 
   fn canon_insert_sorted(x: G, sorted: List‹G›, ctx: List‹(Addr, G)›,
                        proj_addrs: List‹Addr›) -> List‹G› {
-    match load(sorted) {
-      ListNode.Nil => store(ListNode.Cons(x, store(ListNode.Nil))),
-      ListNode.Cons(h, rest) =>
+    match sorted {
+      List.Nil => List.Cons(store((x, List.Nil))),
+      List.Cons(__cell14) => let (h, rest) = load(__cell14);
         match canon_cmp_member_ctx(canon_member_ci(proj_addrs, x),
                                  canon_member_ci(proj_addrs, h), ctx) {
-          (0, _) => store(ListNode.Cons(x, sorted)),
-          _ => store(ListNode.Cons(h,
-                 canon_insert_sorted(x, rest, ctx, proj_addrs))),
+          (0, _) => List.Cons(store((x, sorted))),
+          _ => List.Cons(store((h,
+                 canon_insert_sorted(x, rest, ctx, proj_addrs)))),
         },
     }
   }
 
   fn canon_group_consec(sorted: List‹G›, ctx: List‹(Addr, G)›,
                       proj_addrs: List‹Addr›) -> List‹List‹G›› {
-    match load(sorted) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(h, rest) =>
+    match sorted {
+      List.Nil => List.Nil,
+      List.Cons(__cell15) => let (h, rest) = load(__cell15);
         canon_group_walk(rest, ctx, proj_addrs, h,
-                       store(ListNode.Cons(h, store(ListNode.Nil)))),
+                       List.Cons(store((h, List.Nil)))),
     }
   }
 
   fn canon_group_walk(remaining: List‹G›, ctx: List‹(Addr, G)›,
                     proj_addrs: List‹Addr›, last: G,
                     current: List‹G›) -> List‹List‹G›› {
-    match load(remaining) {
-      ListNode.Nil => store(ListNode.Cons(current, store(ListNode.Nil))),
-      ListNode.Cons(h, rest) =>
+    match remaining {
+      List.Nil => List.Cons(store((current, List.Nil))),
+      List.Cons(__cell16) => let (h, rest) = load(__cell16);
         match canon_cmp_member_ctx(canon_member_ci(proj_addrs, last),
                                  canon_member_ci(proj_addrs, h), ctx) {
           (1, _) =>
             canon_group_walk(rest, ctx, proj_addrs, h, list_snoc(current, h)),
           _ =>
-            store(ListNode.Cons(current,
+            List.Cons(store((current,
               canon_group_walk(rest, ctx, proj_addrs, h,
-                store(ListNode.Cons(h, store(ListNode.Nil)))))),
+                List.Cons(store((h, List.Nil))))))),
         },
     }
   }
 
   fn canon_classes_eq(a: List‹List‹G››, b: List‹List‹G››) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(ah, arest) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(bh, brest) =>
+      List.Cons(__cell17) => let (ah, arest) = load(__cell17);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell18) => let (bh, brest) = load(__cell18);
             match canon_g_list_eq(ah, bh) {
               0 => 0,
               _ => canon_classes_eq(arest, brest),
@@ -734,16 +734,16 @@ def canonicalCheck := ⟦
   }
 
   fn canon_g_list_eq(xs: List‹G›, ys: List‹G›) -> G {
-    match load(xs) {
-      ListNode.Nil =>
-        match load(ys) {
-          ListNode.Nil => 1,
+    match xs {
+      List.Nil =>
+        match ys {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(x, xt) =>
-        match load(ys) {
-          ListNode.Nil => 0,
-          ListNode.Cons(y, yt) =>
+      List.Cons(__cell19) => let (x, xt) = load(__cell19);
+        match ys {
+          List.Nil => 0,
+          List.Cons(__cell20) => let (y, yt) = load(__cell20);
             match x - y {
               0 => canon_g_list_eq(xt, yt),
               _ => 0,
@@ -753,17 +753,17 @@ def canonicalCheck := ⟦
   }
 
   fn canon_flatten(classes: List‹List‹G››) -> List‹G› {
-    match load(classes) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(c, rest) =>
+    match classes {
+      List.Nil => List.Nil,
+      List.Cons(__cell21) => let (c, rest) = load(__cell21);
         list_concat(c, canon_flatten(rest)),
     }
   }
 
   fn canon_all_singleton(classes: List‹List‹G››) -> G {
-    match load(classes) {
-      ListNode.Nil => 1,
-      ListNode.Cons(c, rest) =>
+    match classes {
+      List.Nil => 1,
+      List.Cons(__cell22) => let (c, rest) = load(__cell22);
         match list_length(c) {
           1 => canon_all_singleton(rest),
           _ => 0,
@@ -775,12 +775,12 @@ def canonicalCheck := ⟦
   -- filter_indc_positions / Rust ingress.rs:2025-2048 — canonical
   -- order is validated for the Indc subset only).
   fn canon_indc_positions(members: List‹MutConst›, pos: G) -> List‹G› {
-    match load(members) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(m, rest) =>
+    match members {
+      List.Nil => List.Nil,
+      List.Cons(__cell23) => let (m, rest) = load(__cell23);
         let tail = canon_indc_positions(rest, pos + 1);
         match m {
-          MutConst.Indc(_) => store(ListNode.Cons(pos, tail)),
+          MutConst.Indc(_) => List.Cons(store((pos, tail))),
           _ => tail,
         },
     }
@@ -790,9 +790,9 @@ def canonicalCheck := ⟦
   -- `want_defn = 1` asks about Defn members, `want_defn = 0` about Indc.
   -- Recr members answer neither.
   fn canon_muts_has_kind(members: List‹MutConst›, want_defn: G) -> G {
-    match load(members) {
-      ListNode.Nil => 0,
-      ListNode.Cons(m, rest) =>
+    match members {
+      List.Nil => 0,
+      List.Cons(__cell24) => let (m, rest) = load(__cell24);
         let hit = match m {
           MutConst.Defn(_) => want_defn,
           MutConst.Indc(_) => 1 - want_defn,

@@ -44,7 +44,7 @@ def ingress := ⟦
     let bytes = #read_byte_stream(2, idx, len);
     verify_bytes_against(bytes, raw);
     let (constant, rest) = get_constant(bytes);
-    assert_eq!(load(rest), ListNode.Nil,
+    assert_eq!(rest, List.Nil,
       "trailing bytes after constant on ch 2");
     constant
   }
@@ -55,8 +55,8 @@ def ingress := ⟦
     let raw = load(addr);
     let (idx, len) = io_get_info(3, raw);
     let bytes = #read_byte_stream(3, idx, len);
-    match load(bytes) {
-      ListNode.Cons(b, _) => to_field(b),
+    match bytes {
+      List.Cons(__cell1) => let (b, _) = load(__cell1); to_field(b),
     }
   }
 
@@ -126,7 +126,7 @@ def ingress := ⟦
     match d {
       Definition.Mk(kind, safety, _, _, _) =>
         match defn_is_unsafe_ci(kind, safety) {
-          0 => store(ListNode.Nil),
+          0 => List.Nil,
           _ => build_recur_addrs(members, block_addr),
         },
     }
@@ -168,8 +168,8 @@ def ingress := ⟦
             let self_recur = match defn {
               Definition.Mk(kind, safety, _, _, _) =>
                 match defn_is_unsafe_ci(kind, safety) {
-                  0 => store(ListNode.Nil),
-                  _ => store(ListNode.Cons(addr, store(ListNode.Nil))),
+                  0 => List.Nil,
+                  _ => List.Cons(store((addr, List.Nil))),
                 },
             };
             store(convert_definition(defn, sharing, refs,
@@ -177,10 +177,10 @@ def ingress := ⟦
           ConstantInfo.Axio(axio) =>
             -- Axiom bodies have no Rec refs; empty recur_addrs.
             store(convert_axiom(axio, sharing, refs,
-                                     store(ListNode.Nil), univs)),
+                                     List.Nil, univs)),
           ConstantInfo.Quot(quot) =>
             store(convert_quotient(quot, sharing, refs,
-                                        store(ListNode.Nil), univs)),
+                                        List.Nil, univs)),
           ConstantInfo.DPrj(prj) =>
             match prj {
               DefinitionProj.Mk(idx, block_addr) =>
@@ -224,7 +224,7 @@ def ingress := ⟦
           -- projection.
           ConstantInfo.Recr(recr) =>
             -- Standalone Recr: single recur slot = self.
-            let self_recur = store(ListNode.Cons(addr, store(ListNode.Nil)));
+            let self_recur = List.Cons(store((addr, List.Nil)));
             store(convert_recursor(recr, addr, 0,
                                         sharing, refs, self_recur, univs)),
         },
@@ -310,8 +310,8 @@ let block_c = load_verified_constant(block_addr);
 
   -- G-indexed Muts member lookup.
   fn muts_member_at(members: List‹MutConst›, idx: G) -> MutConst {
-    match load(members) {
-      ListNode.Cons(m, rest) =>
+    match members {
+      List.Cons(__cell2) => let (m, rest) = load(__cell2);
         match idx {
           0 => m,
           _ => muts_member_at(rest, idx - 1),
@@ -380,10 +380,10 @@ let block_c = load_verified_constant(block_addr);
         ConstantInfo.RPrj(RecursorProj.Mk(idx_u64, block_addr)),
     };
     let proj_c = Constant.Mk(info,
-                              store(ListNode.Nil),
-                              store(ListNode.Nil),
-                              store(ListNode.Nil));
-    let bytes = put_constant(proj_c, store(ListNode.Nil));
+                              List.Nil,
+                              List.Nil,
+                              List.Nil);
+    let bytes = put_constant(proj_c, List.Nil);
     bytes_to_addr(bytes)
   }
 
@@ -395,12 +395,12 @@ let block_c = load_verified_constant(block_addr);
 
   fn build_recur_addrs_walk(all_members: List‹MutConst›, block_addr: Addr,
                                  cur: List‹MutConst›, idx: G) -> List‹Addr› {
-    match load(cur) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(_, rest) =>
-        store(ListNode.Cons(
+    match cur {
+      List.Nil => List.Nil,
+      List.Cons(__cell3) => let (_, rest) = load(__cell3);
+        List.Cons(store((
           projection_addr(all_members, block_addr, idx),
-          build_recur_addrs_walk(all_members, block_addr, rest, idx + 1))),
+          build_recur_addrs_walk(all_members, block_addr, rest, idx + 1)))),
     }
   }
 ⟧

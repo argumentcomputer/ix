@@ -200,7 +200,7 @@ def subst := ⟦
 
   -- Smallest valid cut ≥ 1 of the stack headed at `types` (nonempty).
   fn ctx_next_cut(types: List‹KExpr›) -> G {
-    let ListNode.Cons(ty, rest) = load(types);
+    let List.Cons(__lcell1001) = types; let (ty, rest) = load(__lcell1001);
     1 + ctx_close_cut(rest, expr_lbr(ty))
   }
 
@@ -223,7 +223,7 @@ def subst := ⟦
   -- `base >= len` → nothing to trim. Only partially-open exprs pay the scan.
   fn ctx_trim(types: List‹KExpr›, base: G) -> List‹KExpr› {
     match base {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         match u32_less_than(base, list_length(types)) {
           0 => types,

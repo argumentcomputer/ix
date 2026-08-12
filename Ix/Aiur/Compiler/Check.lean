@@ -408,17 +408,18 @@ def zonkTyp (t : Typ) : CheckM Typ := do
   zonkTypBound (s.nextMVar + 1) {} t
 
 /-- Fixed signature of `unconstrainedBigUintDivMod`: the inputs are lists
-of U64 limbs — a pointer to a list datatype instantiated at `[U8; 8]`
-(e.g. `KLimbs = List‹U64›`) — and each result is the SAME list datatype
-instantiated at `[G; 8]`. The result limbs are UNCONSTRAINED prover
-advice, so they must not type as range-checked bytes; consumers rebuild
-`u8` limbs via `u8_range_check` (see `glimbs_to_klimbs` in the IxVM
-kernel). The list's constructor shape is not verified here; the runtime
-BigUint::div_rem faults on a malformed chain. Takes the ZONKED input
-type. -/
+of U64 limbs — a null-pointer-niche list datatype instantiated at
+`[U8; 8]` (e.g. `KLimbs = List‹U64›`, one field element wide: 0 = Nil,
+otherwise a pointer to the `(limb, tail)` cell) — and each result is the
+SAME list datatype instantiated at `[G; 8]`. The result limbs are
+UNCONSTRAINED prover advice, so they must not type as range-checked
+bytes; consumers rebuild `u8` limbs via `u8_range_check` (see
+`glimbs_to_klimbs` in the IxVM kernel). The list's constructor shape is
+not verified here; the runtime BigUint::div_rem faults on a malformed
+chain. Takes the ZONKED input type. -/
 def bigUintDivModResultTyp : Typ → CheckM Typ
-  | .pointer (.app g #[.array .u8 8]) =>
-    pure (.pointer (.app g #[.array .field 8]))
+  | .app g #[.array .u8 8] =>
+    pure (.app g #[.array .field 8])
   | τ => throw $ .unconstrainedBigUintDivModType τ
 
 def instantiateParams (params : List String) : CheckM (Array Typ × (Global → Option Typ)) := do

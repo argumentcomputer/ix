@@ -88,16 +88,16 @@ def levels := ⟦
 
   -- Lexicographic compare of sorted G-lists: 0 = eq, 1 = a < b, 2 = a > b.
   fn glist_cmp(a: List‹G›, b: List‹G›) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(_, _) => 1,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 0,
+          List.Cons(_) => 1,
         },
-      ListNode.Cons(x, ar) =>
-        match load(b) {
-          ListNode.Nil => 2,
-          ListNode.Cons(y, br) =>
+      List.Cons(__cell1) => let (x, ar) = load(__cell1);
+        match b {
+          List.Nil => 2,
+          List.Cons(__cell2) => let (y, br) = load(__cell2);
             match u32_less_than(x, y) {
               1 => 1,
               0 =>
@@ -112,12 +112,12 @@ def levels := ⟦
 
   -- Sorted-list subset test.
   fn glist_subset(xs: List‹G›, ys: List‹G›) -> G {
-    match load(xs) {
-      ListNode.Nil => 1,
-      ListNode.Cons(x, xr) =>
-        match load(ys) {
-          ListNode.Nil => 0,
-          ListNode.Cons(y, yr) =>
+    match xs {
+      List.Nil => 1,
+      List.Cons(__cell3) => let (x, xr) = load(__cell3);
+        match ys {
+          List.Nil => 0,
+          List.Cons(__cell4) => let (y, yr) = load(__cell4);
             match u32_less_than(x, y) {
               1 => 0,
               0 =>
@@ -131,16 +131,16 @@ def levels := ⟦
   }
 
   fn glist_eq_len(a: List‹G›, b: List‹G›) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
-          ListNode.Cons(_, _) => 0,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
+          List.Cons(_) => 0,
         },
-      ListNode.Cons(_, ar) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(_, br) => glist_eq_len(ar, br),
+      List.Cons(__cell5) => let (_, ar) = load(__cell5);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell6) => let (_, br) = load(__cell6); glist_eq_len(ar, br),
         },
     }
   }
@@ -148,17 +148,17 @@ def levels := ⟦
   -- Insert into a sorted G-list. Returns (1, new_list) on insert,
   -- (0, original) when already present. Mirrors level.rs ordered_insert.
   fn glist_ordered_insert(x: G, l: List‹G›) -> (G, List‹G›) {
-    match load(l) {
-      ListNode.Nil => (1, store(ListNode.Cons(x, store(ListNode.Nil)))),
-      ListNode.Cons(h, r) =>
+    match l {
+      List.Nil => (1, List.Cons(store((x, List.Nil)))),
+      List.Cons(__cell7) => let (h, r) = load(__cell7);
         match u32_less_than(x, h) {
-          1 => (1, store(ListNode.Cons(x, l))),
+          1 => (1, List.Cons(store((x, l)))),
           0 =>
             match u32_less_than(h, x) {
               0 => (0, l),
               1 =>
                 match glist_ordered_insert(x, r) {
-                  (f, r2) => (f, store(ListNode.Cons(h, r2))),
+                  (f, r2) => (f, List.Cons(store((h, r2)))),
                 },
             },
         },
@@ -168,20 +168,20 @@ def levels := ⟦
   -- Insert (idx, k) into an idx-sorted var list; on duplicate idx keep
   -- the max offset. Mirrors Node::add_var.
   fn nlvars_add(vars: List‹&NLVar›, idx: G, k: G) -> List‹&NLVar› {
-    match load(vars) {
-      ListNode.Nil =>
-        store(ListNode.Cons(store(NLVar.Mk(idx, k)), store(ListNode.Nil))),
-      ListNode.Cons(v, rest) =>
+    match vars {
+      List.Nil =>
+        List.Cons(store((store(NLVar.Mk(idx, k)), List.Nil))),
+      List.Cons(__cell8) => let (v, rest) = load(__cell8);
         match load(v) {
           NLVar.Mk(vi, vo) =>
             match u32_less_than(idx, vi) {
-              1 => store(ListNode.Cons(store(NLVar.Mk(idx, k)), vars)),
+              1 => List.Cons(store((store(NLVar.Mk(idx, k)), vars))),
               0 =>
                 match u32_less_than(vi, idx) {
-                  1 => store(ListNode.Cons(v, nlvars_add(rest, idx, k))),
+                  1 => List.Cons(store((v, nlvars_add(rest, idx, k)))),
                   0 =>
                     match u32_less_than(vo, k) {
-                      1 => store(ListNode.Cons(store(NLVar.Mk(vi, k)), rest)),
+                      1 => List.Cons(store((store(NLVar.Mk(vi, k)), rest))),
                       0 => vars,
                     },
                 },
@@ -191,16 +191,16 @@ def levels := ⟦
   }
 
   fn nlvars_eq(a: List‹&NLVar›, b: List‹&NLVar›) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
-          ListNode.Cons(_, _) => 0,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
+          List.Cons(_) => 0,
         },
-      ListNode.Cons(x, ar) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(y, br) =>
+      List.Cons(__cell9) => let (x, ar) = load(__cell9);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell10) => let (y, br) = load(__cell10);
             match load(x) {
               NLVar.Mk(xi, xo) =>
                 match load(y) {
@@ -220,9 +220,9 @@ def levels := ⟦
   }
 
   fn nlvars_max_offset(vars: List‹&NLVar›) -> G {
-    match load(vars) {
-      ListNode.Nil => 0,
-      ListNode.Cons(v, rest) =>
+    match vars {
+      List.Nil => 0,
+      List.Cons(__cell11) => let (v, rest) = load(__cell11);
         match load(v) {
           NLVar.Mk(_, vo) =>
             let m = nlvars_max_offset(rest);
@@ -237,24 +237,24 @@ def levels := ⟦
   -- Keep x in xs unless ys has the same idx with offset >= x's.
   -- Mirrors level.rs subsume_vars (sorted merge walk).
   fn nlvars_subsume(xs: List‹&NLVar›, ys: List‹&NLVar›) -> List‹&NLVar› {
-    match load(xs) {
-      ListNode.Nil => xs,
-      ListNode.Cons(x, xr) =>
-        match load(ys) {
-          ListNode.Nil => xs,
-          ListNode.Cons(y, yr) =>
+    match xs {
+      List.Nil => xs,
+      List.Cons(__cell12) => let (x, xr) = load(__cell12);
+        match ys {
+          List.Nil => xs,
+          List.Cons(__cell13) => let (y, yr) = load(__cell13);
             match load(x) {
               NLVar.Mk(xi, xo) =>
                 match load(y) {
                   NLVar.Mk(yi, yo) =>
                     match u32_less_than(xi, yi) {
-                      1 => store(ListNode.Cons(x, nlvars_subsume(xr, ys))),
+                      1 => List.Cons(store((x, nlvars_subsume(xr, ys)))),
                       0 =>
                         match u32_less_than(yi, xi) {
                           1 => nlvars_subsume(xs, yr),
                           0 =>
                             match u32_less_than(yo, xo) {
-                              1 => store(ListNode.Cons(x, nlvars_subsume(xr, yr))),
+                              1 => List.Cons(store((x, nlvars_subsume(xr, yr)))),
                               0 => nlvars_subsume(xr, yr),
                             },
                         },
@@ -273,33 +273,33 @@ def levels := ⟦
     match k {
       0 => acc,
       1 =>
-        match load(path) {
-          ListNode.Nil => nl_add_const_go(acc, path, k),
-          ListNode.Cons(_, _) => acc,
+        match path {
+          List.Nil => nl_add_const_go(acc, path, k),
+          List.Cons(_) => acc,
         },
       _ => nl_add_const_go(acc, path, k),
     }
   }
 
   fn nl_add_const_go(acc: List‹&NLEntry›, path: List‹G›, k: G) -> List‹&NLEntry› {
-    match load(acc) {
-      ListNode.Nil =>
-        store(ListNode.Cons(
-          store(NLEntry.Mk(path, k, store(ListNode.Nil))),
-          store(ListNode.Nil))),
-      ListNode.Cons(e, rest) =>
+    match acc {
+      List.Nil =>
+        List.Cons(store((
+          store(NLEntry.Mk(path, k, List.Nil)),
+          List.Nil))),
+      List.Cons(__cell14) => let (e, rest) = load(__cell14);
         match load(e) {
           NLEntry.Mk(ep, ec, ev) =>
             match glist_cmp(path, ep) {
               0 =>
                 match u32_less_than(ec, k) {
-                  1 => store(ListNode.Cons(store(NLEntry.Mk(ep, k, ev)), rest)),
+                  1 => List.Cons(store((store(NLEntry.Mk(ep, k, ev)), rest))),
                   0 => acc,
                 },
               1 =>
-                store(ListNode.Cons(
-                  store(NLEntry.Mk(path, k, store(ListNode.Nil))), acc)),
-              _ => store(ListNode.Cons(e, nl_add_const_go(rest, path, k))),
+                List.Cons(store((
+                  store(NLEntry.Mk(path, k, List.Nil)), acc))),
+              _ => List.Cons(store((e, nl_add_const_go(rest, path, k)))),
             },
         },
     }
@@ -307,25 +307,25 @@ def levels := ⟦
 
   -- Add var (idx, k) to the entry at `path` (path-sorted insert).
   fn nl_add_var(acc: List‹&NLEntry›, path: List‹G›, idx: G, k: G) -> List‹&NLEntry› {
-    match load(acc) {
-      ListNode.Nil =>
-        store(ListNode.Cons(
+    match acc {
+      List.Nil =>
+        List.Cons(store((
           store(NLEntry.Mk(path, 0,
-            store(ListNode.Cons(store(NLVar.Mk(idx, k)), store(ListNode.Nil))))),
-          store(ListNode.Nil))),
-      ListNode.Cons(e, rest) =>
+            List.Cons(store((store(NLVar.Mk(idx, k)), List.Nil))))),
+          List.Nil))),
+      List.Cons(__cell15) => let (e, rest) = load(__cell15);
         match load(e) {
           NLEntry.Mk(ep, ec, ev) =>
             match glist_cmp(path, ep) {
               0 =>
-                store(ListNode.Cons(
-                  store(NLEntry.Mk(ep, ec, nlvars_add(ev, idx, k))), rest)),
+                List.Cons(store((
+                  store(NLEntry.Mk(ep, ec, nlvars_add(ev, idx, k))), rest))),
               1 =>
-                store(ListNode.Cons(
+                List.Cons(store((
                   store(NLEntry.Mk(path, 0,
-                    store(ListNode.Cons(store(NLVar.Mk(idx, k)), store(ListNode.Nil))))),
-                  acc)),
-              _ => store(ListNode.Cons(e, nl_add_var(rest, path, idx, k))),
+                    List.Cons(store((store(NLVar.Mk(idx, k)), List.Nil))))),
+                  acc))),
+              _ => List.Cons(store((e, nl_add_var(rest, path, idx, k)))),
             },
         },
     }
@@ -395,19 +395,19 @@ def levels := ⟦
   -- they pass as `rem`.
   fn nl_subsumption_walk(rem: List‹&NLEntry›,
                          snapshot: List‹&NLEntry›) -> List‹&NLEntry› {
-    match load(rem) {
-      ListNode.Nil => rem,
-      ListNode.Cons(e, rest) =>
-        store(ListNode.Cons(
+    match rem {
+      List.Nil => rem,
+      List.Cons(__cell16) => let (e, rest) = load(__cell16);
+        List.Cons(store((
           nl_subsume_entry(e, snapshot),
-          nl_subsumption_walk(rest, snapshot))),
+          nl_subsumption_walk(rest, snapshot)))),
     }
   }
 
   fn nl_subsume_entry(e: &NLEntry, snap: List‹&NLEntry›) -> &NLEntry {
-    match load(snap) {
-      ListNode.Nil => e,
-      ListNode.Cons(s, srest) =>
+    match snap {
+      List.Nil => e,
+      List.Cons(__cell17) => let (s, srest) = load(__cell17);
         match load(e) {
           NLEntry.Mk(p1, c1, v1) =>
             match load(s) {
@@ -424,9 +424,9 @@ def levels := ⟦
                           1 => 1,
                           0 => u32_less_than(c2, c1),
                         };
-                        let or2 = match load(v2) {
-                          ListNode.Nil => 1,
-                          ListNode.Cons(_, _) =>
+                        let or2 = match v2 {
+                          List.Nil => 1,
+                          List.Cons(_) =>
                             u32_less_than(nlvars_max_offset(v1) + 1, c1),
                         };
                         match or1 * or2 {
@@ -437,9 +437,9 @@ def levels := ⟦
                     let v1n = match same {
                       1 => v1,
                       0 =>
-                        match load(v2) {
-                          ListNode.Nil => v1,
-                          ListNode.Cons(_, _) => nlvars_subsume(v1, v2),
+                        match v2 {
+                          List.Nil => v1,
+                          List.Cons(_) => nlvars_subsume(v1, v2),
                         },
                     };
                     nl_subsume_entry(store(NLEntry.Mk(p1, c1n, v1n)), srest),
@@ -455,16 +455,16 @@ def levels := ⟦
   -- equality strictly finer than semantic equality (3 of 3,253,373
   -- whole-Mathlib entries). Mirrors level.rs norm_level_eq's filter.
   fn nl_skip_empty(l: List‹&NLEntry›) -> List‹&NLEntry› {
-    match load(l) {
-      ListNode.Nil => l,
-      ListNode.Cons(e, rest) =>
+    match l {
+      List.Nil => l,
+      List.Cons(__cell18) => let (e, rest) = load(__cell18);
         match load(e) {
           NLEntry.Mk(_, c, v) =>
             match c {
               0 =>
-                match load(v) {
-                  ListNode.Nil => nl_skip_empty(rest),
-                  ListNode.Cons(_, _) => l,
+                match v {
+                  List.Nil => nl_skip_empty(rest),
+                  List.Cons(_) => l,
                 },
               _ => l,
             },
@@ -479,16 +479,16 @@ def levels := ⟦
   fn nl_eq(a0: List‹&NLEntry›, b0: List‹&NLEntry›) -> G {
     let a = nl_skip_empty(a0);
     let b = nl_skip_empty(b0);
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
-          ListNode.Cons(_, _) => 0,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
+          List.Cons(_) => 0,
         },
-      ListNode.Cons(x, ar) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(y, br) =>
+      List.Cons(__cell19) => let (x, ar) = load(__cell19);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell20) => let (y, br) = load(__cell20);
             match load(x) {
               NLEntry.Mk(xp, xc, xv) =>
                 match load(y) {
@@ -517,9 +517,9 @@ def levels := ⟦
   -- >= off + 1 because idx IN p2 implies the param is >= 1 there.
   -- Mirrors level.rs covers_const (the fixed, split-search version).
   fn nl_covers_const(l2: List‹&NLEntry›, p1: List‹G›, c: G) -> G {
-    match load(l2) {
-      ListNode.Nil => 0,
-      ListNode.Cons(e, rest) =>
+    match l2 {
+      List.Nil => 0,
+      List.Cons(__cell21) => let (e, rest) = load(__cell21);
         match load(e) {
           NLEntry.Mk(p2, c2, v2) =>
             match glist_subset(p2, p1) {
@@ -540,9 +540,9 @@ def levels := ⟦
 
   -- Any var with offset + 1 >= c?
   fn nlvars_any_offset_geq(vars: List‹&NLVar›, c: G) -> G {
-    match load(vars) {
-      ListNode.Nil => 0,
-      ListNode.Cons(v, rest) =>
+    match vars {
+      List.Nil => 0,
+      List.Cons(__cell22) => let (v, rest) = load(__cell22);
         match load(v) {
           NLVar.Mk(_, vo) =>
             match u32_less_than(vo + 1, c) {
@@ -556,9 +556,9 @@ def levels := ⟦
   -- Does some entry (p2, n2) in l2 with p2 SUBSET-OF p1 contain a var
   -- (w, off2) with off2 >= off? Mirrors level.rs covers_var.
   fn nl_covers_var(l2: List‹&NLEntry›, p1: List‹G›, w: G, off: G) -> G {
-    match load(l2) {
-      ListNode.Nil => 0,
-      ListNode.Cons(e, rest) =>
+    match l2 {
+      List.Nil => 0,
+      List.Cons(__cell23) => let (e, rest) = load(__cell23);
         match load(e) {
           NLEntry.Mk(p2, _, v2) =>
             match glist_subset(p2, p1) {
@@ -574,9 +574,9 @@ def levels := ⟦
   }
 
   fn nlvars_dominates(vars: List‹&NLVar›, w: G, off: G) -> G {
-    match load(vars) {
-      ListNode.Nil => 0,
-      ListNode.Cons(v, rest) =>
+    match vars {
+      List.Nil => 0,
+      List.Cons(__cell24) => let (v, rest) = load(__cell24);
         match load(v) {
           NLVar.Mk(vi, vo) =>
             match vi - w {
@@ -596,9 +596,9 @@ def levels := ⟦
   -- Mirrors level.rs norm_level_le (with its covers split, sound where
   -- Lean4Lean's single-entry search is incomplete).
   fn nl_le(l1: List‹&NLEntry›, l2: List‹&NLEntry›) -> G {
-    match load(l1) {
-      ListNode.Nil => 1,
-      ListNode.Cons(e, rest) =>
+    match l1 {
+      List.Nil => 1,
+      List.Cons(__cell25) => let (e, rest) = load(__cell25);
         match load(e) {
           NLEntry.Mk(p1, c1, v1) =>
             let c_ok = match c1 {
@@ -618,9 +618,9 @@ def levels := ⟦
   }
 
   fn nl_le_vars(vars: List‹&NLVar›, l2: List‹&NLEntry›, p1: List‹G›) -> G {
-    match load(vars) {
-      ListNode.Nil => 1,
-      ListNode.Cons(v, rest) =>
+    match vars {
+      List.Nil => 1,
+      List.Cons(__cell26) => let (v, rest) = load(__cell26);
         match load(v) {
           NLVar.Mk(vi, vo) =>
             match nl_covers_var(l2, p1, vi, vo) {
@@ -634,10 +634,10 @@ def levels := ⟦
   -- Keyed on the level alone: each distinct level normalizes once per run.
   -- Seeded with the empty-path entry, mirroring normalize_level.
   fn level_normalize(l: KLevel) -> List‹&NLEntry› {
-    let seed = store(ListNode.Cons(
-      store(NLEntry.Mk(store(ListNode.Nil), 0, store(ListNode.Nil))),
-      store(ListNode.Nil)));
-    let raw = normalize_aux(l, store(ListNode.Nil), 0, seed);
+    let seed = List.Cons(store((
+      store(NLEntry.Mk(List.Nil, 0, List.Nil)),
+      List.Nil)));
+    let raw = normalize_aux(l, List.Nil, 0, seed);
     nl_subsumption_walk(raw, raw)
   }
 
@@ -851,20 +851,20 @@ def levels := ⟦
   }
 
   fn level_list_inst(lvls: List‹KLevel›, params: List‹KLevel›) -> List‹KLevel› {
-    match load(lvls) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(l, rest) =>
-        store(ListNode.Cons(
+    match lvls {
+      List.Nil => List.Nil,
+      List.Cons(__cell27) => let (l, rest) = load(__cell27);
+        List.Cons(store((
           level_inst_params(l, params),
-          level_list_inst(rest, params))),
+          level_list_inst(rest, params)))),
     }
   }
 
   fn expr_inst_levels(e: KExpr, params: List‹KLevel›) -> KExpr {
     -- Fast path: empty param list = identity. Common when caller's lvls
     -- list is Nil (constants with no universe params).
-    match load(params) {
-      ListNode.Nil => e,
+    match params {
+      List.Nil => e,
       _ => expr_inst_levels_walk(e, params),
     }
   }
@@ -898,16 +898,16 @@ def levels := ⟦
   -- ============================================================================
 
   fn klimbs_eq(a: KLimbs, b: KLimbs) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(la, ra) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(lb, rb) =>
+      List.Cons(__cell28) => let (la, ra) = load(__cell28);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell29) => let (lb, rb) = load(__cell29);
             let eq = u64_eq(la, lb);
             match eq {
               1 => klimbs_eq(ra, rb),
@@ -918,16 +918,16 @@ def levels := ⟦
   }
 
   fn bytestream_eq(a: ByteStream, b: ByteStream) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(ba, ra) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(bb, rb) =>
+      List.Cons(__cell30) => let (ba, ra) = load(__cell30);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell31) => let (bb, rb) = load(__cell31);
             match to_field(ba) - to_field(bb) {
               0 => bytestream_eq(ra, rb),
               _ => 0,

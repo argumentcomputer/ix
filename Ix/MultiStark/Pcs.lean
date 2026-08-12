@@ -43,21 +43,21 @@ def pcs := ⟦
 
   -- 8 LE bytes of a `U64` lane (`SerializingHasher`: a `Val` is 8 LE bytes).
   fn b3_u64_onto(v: U64, tail: ByteStream) -> ByteStream {
-    store(ListNode.Cons(v[0], store(ListNode.Cons(v[1], store(ListNode.Cons(v[2],
-    store(ListNode.Cons(v[3], store(ListNode.Cons(v[4], store(ListNode.Cons(v[5],
-    store(ListNode.Cons(v[6], store(ListNode.Cons(v[7], tail))))))))))))))))
+    List.Cons(store((v[0], List.Cons(store((v[1], List.Cons(store((v[2],
+    List.Cons(store((v[3], List.Cons(store((v[4], List.Cons(store((v[5],
+    List.Cons(store((v[6], List.Cons(store((v[7], tail))))))))))))))))))))))))
   }
   -- All lanes of a row, in order.
   fn b3_row_onto(row: List‹U64›, tail: ByteStream) -> ByteStream {
-    match load(row) {
-      ListNode.Nil => tail,
-      ListNode.Cons(v, rest) => b3_u64_onto(v, b3_row_onto(rest, tail)),
+    match row {
+      List.Nil => tail,
+      List.Cons(__cell1) => let (v, rest) = load(__cell1); b3_u64_onto(v, b3_row_onto(rest, tail)),
     }
   }
   -- A 4-byte blake3 output word.
   fn b3_w4_onto(w: [U8; 4], tail: ByteStream) -> ByteStream {
-    store(ListNode.Cons(w[0], store(ListNode.Cons(w[1], store(ListNode.Cons(w[2],
-    store(ListNode.Cons(w[3], tail))))))))
+    List.Cons(store((w[0], List.Cons(store((w[1], List.Cons(store((w[2],
+    List.Cons(store((w[3], tail))))))))))))
   }
   -- The 32 bytes of a blake3 digest (`[[U8;4];8]`, word order = output order).
   fn b3_flatten_onto(h: [[U8; 4]; 8], tail: ByteStream) -> ByteStream {
@@ -86,23 +86,23 @@ def pcs := ⟦
   -- lanes, its real byte length (8·k, so 64 for a full block), and the rest.
   fn b3_lane_block(lanes: List‹U64›) -> ([U64; 8], G, List‹U64›) {
     let z = [0u8; 8];
-    match load(lanes) {
-      ListNode.Nil => ([z; 8], 0, lanes),
-      ListNode.Cons(v0, r0) => match load(r0) {
-        ListNode.Nil => ([v0, z, z, z, z, z, z, z], 8, r0),
-        ListNode.Cons(v1, r1) => match load(r1) {
-          ListNode.Nil => ([v0, v1, z, z, z, z, z, z], 16, r1),
-          ListNode.Cons(v2, r2) => match load(r2) {
-            ListNode.Nil => ([v0, v1, v2, z, z, z, z, z], 24, r2),
-            ListNode.Cons(v3, r3) => match load(r3) {
-              ListNode.Nil => ([v0, v1, v2, v3, z, z, z, z], 32, r3),
-              ListNode.Cons(v4, r4) => match load(r4) {
-                ListNode.Nil => ([v0, v1, v2, v3, v4, z, z, z], 40, r4),
-                ListNode.Cons(v5, r5) => match load(r5) {
-                  ListNode.Nil => ([v0, v1, v2, v3, v4, v5, z, z], 48, r5),
-                  ListNode.Cons(v6, r6) => match load(r6) {
-                    ListNode.Nil => ([v0, v1, v2, v3, v4, v5, v6, z], 56, r6),
-                    ListNode.Cons(v7, r7) =>
+    match lanes {
+      List.Nil => ([z; 8], 0, lanes),
+      List.Cons(__cell2) => let (v0, r0) = load(__cell2); match r0 {
+        List.Nil => ([v0, z, z, z, z, z, z, z], 8, r0),
+        List.Cons(__cell3) => let (v1, r1) = load(__cell3); match r1 {
+          List.Nil => ([v0, v1, z, z, z, z, z, z], 16, r1),
+          List.Cons(__cell4) => let (v2, r2) = load(__cell4); match r2 {
+            List.Nil => ([v0, v1, v2, z, z, z, z, z], 24, r2),
+            List.Cons(__cell5) => let (v3, r3) = load(__cell5); match r3 {
+              List.Nil => ([v0, v1, v2, v3, z, z, z, z], 32, r3),
+              List.Cons(__cell6) => let (v4, r4) = load(__cell6); match r4 {
+                List.Nil => ([v0, v1, v2, v3, v4, z, z, z], 40, r4),
+                List.Cons(__cell7) => let (v5, r5) = load(__cell7); match r5 {
+                  List.Nil => ([v0, v1, v2, v3, v4, v5, z, z], 48, r5),
+                  List.Cons(__cell8) => let (v6, r6) = load(__cell8); match r6 {
+                    List.Nil => ([v0, v1, v2, v3, v4, v5, v6, z], 56, r6),
+                    List.Cons(__cell9) => let (v7, r7) = load(__cell9);
                       ([v0, v1, v2, v3, v4, v5, v6, v7], 64, r7),
                   },
                 },
@@ -119,11 +119,11 @@ def pcs := ⟦
   -- chunk digests are pushed onto `layer` in order, exactly like the byte
   -- driver, and folded by `blake3_compress_layer` at the end.
   fn b3_lane_chunks(lanes: List‹U64›, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
-    match load(lanes) {
+    match lanes {
       -- Exhausted with no block to compress: only reachable for an empty
       -- input (every other path detects exhaustion after compressing).
       -- Mirror of `blake3_finish`'s (0, 0) arm.
-      ListNode.Nil =>
+      List.Nil =>
         match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
             store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
@@ -140,7 +140,7 @@ def pcs := ⟦
           [v[5][0], v[5][1], v[5][2], v[5][3]], [v[5][4], v[5][5], v[5][6], v[5][7]],
           [v[6][0], v[6][1], v[6][2], v[6][3]], [v[6][4], v[6][5], v[6][6], v[6][7]],
           [v[7][0], v[7][1], v[7][2], v[7][3]], [v[7][4], v[7][5], v[7][6], v[7][7]]];
-        let empty = match load(rest) { ListNode.Nil => 1, _ => 0, };
+        let empty = match rest { List.Nil => 1, _ => 0, };
         let at15 = eq_zero(block_no - 15);
         -- CHUNK_START on the chunk's first block; CHUNK_END iff this is the
         -- chunk's 16th block OR the input ends here; ROOT only for the last
@@ -180,7 +180,7 @@ def pcs := ⟦
       _ =>
         let [b] = io_read(ch, i, 1);
         b3_io_tail_acc(ch, i + 1, n - 1,
-          store(ListNode.Cons(u8_from_field_unsafe(b), acc))),
+          List.Cons(store((u8_from_field_unsafe(b), acc)))),
     }
   }
 
@@ -237,7 +237,7 @@ def pcs := ⟦
             },
           _ =>
             let block = bytes_to_block(pad_block(
-              b3_io_tail_acc(ch, i, remaining, store(ListNode.Nil)), 64 - remaining));
+              b3_io_tail_acc(ch, i, remaining, List.Nil), 64 - remaining));
             let start_flag = eq_zero(block_no);
             let flags = start_flag + 2 + 8 * u64_is_zero(load(chunk_count));
             store(Layer.Push(layer, blake3_compress(load(cv), block, load(chunk_count), remaining, flags))),
@@ -320,9 +320,9 @@ def pcs := ⟦
 
   -- 1 iff some matrix has log-height `target`.
   fn has_height(lhs: List‹G›, target: G) -> G {
-    match load(lhs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(h, rest) =>
+    match lhs {
+      List.Nil => 0,
+      List.Cons(__cell10) => let (h, rest) = load(__cell10);
         match eq_zero(h - target) {
           1 => 1,
           _ => has_height(rest, target),
@@ -334,10 +334,10 @@ def pcs := ⟦
   -- (in matrix order — the stable height-sort preserves it), for the joint leaf
   -- hash `hash_iter_slices`.
   fn concat_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> List‹U64› {
-    match load(rows) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(r, rrest) =>
-        let &ListNode.Cons(lh, lrest) = lhs;
+    match rows {
+      List.Nil => List.Nil,
+      List.Cons(__cell11) => let (r, rrest) = load(__cell11);
+        let List.Cons(__cell33) = lhs; let (lh, lrest) = load(__cell33);
         concat_at_step(eq_zero(lh - target), r, rrest, lrest, target),
     }
   }
@@ -354,9 +354,9 @@ def pcs := ⟦
   -- internal Goldilocks repr — e.g. field zero ships as `p`. `gl_reduce` maps
   -- them to `< p` before hashing (idempotent on already-canonical lanes).
   fn canon_lanes(l: List‹U64›) -> List‹U64› {
-    match load(l) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(@gl_to_bytes(@gl_val(x)), canon_lanes(rest))),
+    match l {
+      List.Nil => List.Nil,
+      List.Cons(__cell12) => let (x, rest) = load(__cell12); List.Cons(store((@gl_to_bytes(@gl_val(x)), canon_lanes(rest)))),
     }
   }
   -- ==========================================================================
@@ -371,15 +371,15 @@ def pcs := ⟦
   -- contributes no bytes, and dropping it lets exhaustion be detected by
   -- plain Nil checks in the block walker).
   fn select_rows(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> List‹List‹U64›› {
-    match load(rows) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(r, rrest) =>
-        let &ListNode.Cons(lh, lrest) = lhs;
+    match rows {
+      List.Nil => List.Nil,
+      List.Cons(__cell13) => let (r, rrest) = load(__cell13);
+        let List.Cons(__cell34) = lhs; let (lh, lrest) = load(__cell34);
         match eq_zero(lh - target) {
           0 => select_rows(rrest, lrest, target),
-          _ => match load(r) {
-            ListNode.Nil => select_rows(rrest, lrest, target),
-            _ => store(ListNode.Cons(r, select_rows(rrest, lrest, target))),
+          _ => match r {
+            List.Nil => select_rows(rrest, lrest, target),
+            _ => List.Cons(store((r, select_rows(rrest, lrest, target)))),
           },
         },
     }
@@ -389,11 +389,11 @@ def pcs := ⟦
   -- current row and the remaining rows are exhausted (selected rows are
   -- non-empty, so advancing to the next row always yields a lane).
   fn rows_pop(cur: List‹U64›, rows: List‹List‹U64››) -> (U64, List‹U64›, List‹List‹U64››, G) {
-    match load(cur) {
-      ListNode.Cons(x, rest) => (@gl_to_bytes(@gl_val(x)), rest, rows, 1),
-      ListNode.Nil => match load(rows) {
-        ListNode.Nil => ([0u8; 8], cur, rows, 0),
-        ListNode.Cons(r, rrest) => rows_pop(r, rrest),
+    match cur {
+      List.Cons(__cell14) => let (x, rest) = load(__cell14); (@gl_to_bytes(@gl_val(x)), rest, rows, 1),
+      List.Nil => match rows {
+        List.Nil => ([0u8; 8], cur, rows, 0),
+        List.Cons(__cell15) => let (r, rrest) = load(__cell15); rows_pop(r, rrest),
       },
     }
   }
@@ -430,8 +430,8 @@ def pcs := ⟦
           [l5[0], l5[1], l5[2], l5[3]], [l5[4], l5[5], l5[6], l5[7]],
           [l6[0], l6[1], l6[2], l6[3]], [l6[4], l6[5], l6[6], l6[7]],
           [l7[0], l7[1], l7[2], l7[3]], [l7[4], l7[5], l7[6], l7[7]]];
-        let empty = match load(c8) {
-          ListNode.Nil => match load(r8) { ListNode.Nil => 1, _ => 0, },
+        let empty = match c8 {
+          List.Nil => match r8 { List.Nil => 1, _ => 0, },
           _ => 0,
         };
         let at15 = eq_zero(block_no - 15);
@@ -452,7 +452,7 @@ def pcs := ⟦
 
   fn b3_rows(rows: List‹List‹U64››) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(b3_rows_chunks(store(ListNode.Nil), rows, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(load(b3_rows_chunks(List.Nil, rows, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
   }
 
   -- The joint Blake3 leaf hash of all matrices at log-height `target`.
@@ -471,9 +471,9 @@ def pcs := ⟦
 
   -- Recompose remaining path bits (LSB first) into the cap index.
   fn bits_to_num(bits: List‹G›) -> G {
-    match load(bits) {
-      ListNode.Nil => 0,
-      ListNode.Cons(b, rest) => b + 2 * bits_to_num(rest),
+    match bits {
+      List.Nil => 0,
+      List.Cons(__cell16) => let (b, rest) = load(__cell16); b + 2 * bits_to_num(rest),
     }
   }
 
@@ -482,10 +482,10 @@ def pcs := ⟦
   -- root and the leftover cap index.
   fn mmcs_fold(d: Digest, rows: List‹List‹U64››, lhs: List‹G›,
       proof: List‹Digest›, ibits: List‹G›, lh: G) -> (Digest, G) {
-    match load(proof) {
-      ListNode.Nil => (d, bits_to_num(ibits)),
-      ListNode.Cons(s, prest) =>
-        let &ListNode.Cons(bit, brest) = ibits;
+    match proof {
+      List.Nil => (d, bits_to_num(ibits)),
+      List.Cons(__cell17) => let (s, prest) = load(__cell17);
+        let List.Cons(__cell35) = ibits; let (bit, brest) = load(__cell35);
         let d1 = compress_ordered(bit, d, s);
         let d2 = inject_maybe(rows, lhs, lh, d1);
         mmcs_fold(d2, rows, lhs, prest, brest, lh - 1),
@@ -521,18 +521,18 @@ def pcs := ⟦
 
   -- Reverse a `G` (bit) list onto `acc`.
   fn glist_rev(l: List‹G›, acc: List‹G›) -> List‹G› {
-    match load(l) {
-      ListNode.Nil => acc,
-      ListNode.Cons(b, rest) => glist_rev(rest, store(ListNode.Cons(b, acc))),
+    match l {
+      List.Nil => acc,
+      List.Cons(__cell18) => let (b, rest) = load(__cell18); glist_rev(rest, List.Cons(store((b, acc)))),
     }
   }
 
   -- base^(Σ bits_i · 2^i), bits LSB-first (square-and-multiply over the bits).
   -- `base` is a native Goldilocks element; `bits` is a native bit list.
   fn exp_by_bits(base: Goldilocks, bits: List‹G›) -> Goldilocks {
-    match load(bits) {
-      ListNode.Nil => 1,
-      ListNode.Cons(b, rest) =>
+    match bits {
+      List.Nil => 1,
+      List.Cons(__cell19) => let (b, rest) = load(__cell19);
         let half = exp_by_bits(base * base, rest);
         match b {
           0 => half,
@@ -545,7 +545,7 @@ def pcs := ⟦
   -- first (so `reverse_bits_len` = reversing the list).
   fn fri_fold2(index_bits: List‹G›, log_height: G, beta: Ext, e0: Ext, e1: Ext) -> Ext {
     let g = two_adic_gen(log_height + 1);
-    let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
+    let s = exp_by_bits(g, glist_rev(index_bits, List.Nil));
     let two_s = s + s;
     let t1 = @eg_div(@eg_add(e0, e1), [2, 0]);
     let t2 = @eg_mul(beta, @eg_div(@eg_sub(e0, e1), [two_s, 0]));
@@ -568,25 +568,25 @@ def pcs := ⟦
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
   fn ro_x(index_bits: List‹G›, log_height: G) -> Goldilocks {
-    7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil)))
+    7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, List.Nil))
   }
 
   -- Raw wire rows (`U64` lanes, possibly non-canonical) to native Goldilocks
   -- values for the reduced-opening arithmetic (`limb_to_field` reduces mod p).
   fn lanes_to_gl(l: List‹U64›) -> List‹Goldilocks› {
-    match load(l) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(@limb_to_field(x), lanes_to_gl(rest))),
+    match l {
+      List.Nil => List.Nil,
+      List.Cons(__cell20) => let (x, rest) = load(__cell20); List.Cons(store((@limb_to_field(x), lanes_to_gl(rest)))),
     }
   }
 
   -- Accumulate one matrix-point's column contributions. `q = 1/(z − x)`.
   fn ro_fold(p_x: List‹Goldilocks›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
       -> (Ext, Ext) {
-    match load(p_x) {
-      ListNode.Nil => (ro, ap),
-      ListNode.Cons(px, pxr) =>
-        let &ListNode.Cons(pz, pzr) = p_z;
+    match p_x {
+      List.Nil => (ro, ap),
+      List.Cons(__cell21) => let (px, pxr) = load(__cell21);
+        let List.Cons(__cell36) = p_z; let (pz, pzr) = load(__cell36);
         let term = @eg_mul(@eg_mul(ap, @eg_sub(pz, [px, 0])), q);
         ro_fold(pxr, pzr, q, alpha, @eg_add(ro, term), @eg_mul(ap, alpha)),
     }
@@ -617,21 +617,21 @@ def pcs := ⟦
   -- billions of memory records.
   -- One ext element = its two base coordinates, each 8 LE bytes.
   fn ext_row_onto(row: List‹Ext›, tail: ByteStream) -> ByteStream {
-    match load(row) {
-      ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(@gl_to_bytes(e[0]), b8_onto(@gl_to_bytes(e[1]), ext_row_onto(rest, tail))),
+    match row {
+      List.Nil => tail,
+      List.Cons(__cell22) => let (e, rest) = load(__cell22); b8_onto(@gl_to_bytes(e[0]), b8_onto(@gl_to_bytes(e[1]), ext_row_onto(rest, tail))),
     }
   }
   fn points_onto(pts: List‹List‹Ext››, tail: ByteStream) -> ByteStream {
-    match load(pts) {
-      ListNode.Nil => tail,
-      ListNode.Cons(row, rest) => ext_row_onto(row, points_onto(rest, tail)),
+    match pts {
+      List.Nil => tail,
+      List.Cons(__cell23) => let (row, rest) = load(__cell23); ext_row_onto(row, points_onto(rest, tail)),
     }
   }
   fn round_onto(round: OpenedRound, tail: ByteStream) -> ByteStream {
-    match load(round) {
-      ListNode.Nil => tail,
-      ListNode.Cons(mat, rest) => points_onto(mat, round_onto(rest, tail)),
+    match round {
+      List.Nil => tail,
+      List.Cons(__cell24) => let (mat, rest) = load(__cell24); points_onto(mat, round_onto(rest, tail)),
     }
   }
   fn prep_onto(prep_opt: PreprocessedOpt, tail: ByteStream) -> ByteStream {
@@ -642,9 +642,9 @@ def pcs := ⟦
   }
   -- Observe one Val (= 1) per FRI round, the variable-arity schedule.
   fn obs_log_arities(input: ByteStream, comms: List‹MerkleCap›) -> ByteStream {
-    match load(comms) {
-      ListNode.Nil => input,
-      ListNode.Cons(_c, rest) =>
+    match comms {
+      List.Nil => input,
+      List.Cons(__cell25) => let (_c, rest) = load(__cell25);
         obs_log_arities(snoc_b8(input, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), rest),
     }
   }
@@ -657,9 +657,9 @@ def pcs := ⟦
   -- observe, no sample.
   fn pcs_check_witness(input: ByteStream, witness: U64, bits: G) -> (ByteStream, ByteStream) {
     match bits {
-      0 => (input, store(ListNode.Nil)),
+      0 => (input, List.Nil),
       _ =>
-        let (pbits, i1, o1) = ch_sample_bits(snoc_b8(input, witness), store(ListNode.Nil), bits);
+        let (pbits, i1, o1) = ch_sample_bits(snoc_b8(input, witness), List.Nil, bits);
         assert_eq!(bits_to_num(pbits), 0);
         (i1, o1),
     }
@@ -668,14 +668,14 @@ def pcs := ⟦
   -- sample the folding challenge β (continuing the challenger past the PoW).
   fn pcs_betas(input: ByteStream, comms: List‹MerkleCap›, witnesses: List‹U64›, bits: G)
       -> (List‹Ext›, ByteStream) {
-    match load(comms) {
-      ListNode.Nil => (store(ListNode.Nil), input),
-      ListNode.Cons(c, rest) =>
-        let &ListNode.Cons(w, wrest) = witnesses;
+    match comms {
+      List.Nil => (List.Nil, input),
+      List.Cons(__cell26) => let (c, rest) = load(__cell26);
+        let List.Cons(__cell37) = witnesses; let (w, wrest) = load(__cell37);
         let (i1, o1) = pcs_check_witness(snoc_cap(input, c), w, bits);
         let (b0, b1, i2, _o) = ch_sample_ext(i1, o1);
         let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
-        (store(ListNode.Cons([@gl_val(b0), @gl_val(b1)], bs)), i3),
+        (List.Cons(store(([@gl_val(b0), @gl_val(b1)], bs))), i3),
     }
   }
 
@@ -694,12 +694,12 @@ def pcs := ⟦
   -- from `log_global_max`. Each starts (alpha_pow = 1, reduced_opening = 0).
   fn build_buckets(log_degrees: List‹U8›, log_blowup: G, num_circuits: G, h: G) -> List‹Bucket› {
     match h {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ => match circ_has_height(log_degrees, log_blowup, num_circuits, 0, h) {
         0 => build_buckets(log_degrees, log_blowup, num_circuits, h - 1),
-        _ => store(ListNode.Cons(
+        _ => List.Cons(store((
                Bucket.Mk(h, [1, 0], [0, 0]),
-               build_buckets(log_degrees, log_blowup, num_circuits, h - 1))),
+               build_buckets(log_degrees, log_blowup, num_circuits, h - 1)))),
       },
     }
   }
@@ -707,15 +707,15 @@ def pcs := ⟦
   -- (`ro_fold` threads its `alpha_pow`), and write it back.
   fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹Goldilocks›, p_z: List‹Ext›,
       q: Ext, alpha: Ext) -> List‹Bucket› {
-    match load(buckets) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(b, rest) =>
+    match buckets {
+      List.Nil => List.Nil,
+      List.Cons(__cell27) => let (b, rest) = load(__cell27);
         let Bucket.Mk(h, ap, ro) = b;
         match eq_zero(h - lh) {
           1 =>
             let (ro2, ap2) = ro_fold(p_x, p_z, q, alpha, ro, ap);
-            store(ListNode.Cons(Bucket.Mk(h, ap2, ro2), rest)),
-          _ => store(ListNode.Cons(b, bucket_update(rest, lh, p_x, p_z, q, alpha))),
+            List.Cons(store((Bucket.Mk(h, ap2, ro2), rest))),
+          _ => List.Cons(store((b, bucket_update(rest, lh, p_x, p_z, q, alpha)))),
         },
     }
   }
@@ -723,9 +723,9 @@ def pcs := ⟦
   -- 1 (a constant polynomial); then `(f(ζ) − f(x))/(ζ − x)` must be 0. Assert it
   -- (`open_input`'s `FinalPolyMismatch` guard). No-op if no such bucket exists.
   fn assert_blowup_zero(buckets: List‹Bucket›, log_blowup: G) -> G {
-    match load(buckets) {
-      ListNode.Nil => 1,
-      ListNode.Cons(b, rest) =>
+    match buckets {
+      List.Nil => 1,
+      List.Cons(__cell28) => let (b, rest) = load(__cell28);
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_blowup) {
           1 => assert_eq!(@eg_eq(ro, [0, 0]), 1); 1,
@@ -839,17 +839,17 @@ def pcs := ⟦
   -- ── per-batch input-MMCS matrix log-heights (`log_degree + log_blowup`) ────
   fn heights_all(log_degrees: List‹U8›, log_blowup: G, rem: G, i: G) -> List‹G› {
     match rem {
-      0 => store(ListNode.Nil),
-      _ => store(ListNode.Cons(to_field(list_lookup(log_degrees, i)) + log_blowup,
-                               heights_all(log_degrees, log_blowup, rem - 1, i + 1))),
+      0 => List.Nil,
+      _ => List.Cons(store((to_field(list_lookup(log_degrees, i)) + log_blowup,
+                               heights_all(log_degrees, log_blowup, rem - 1, i + 1)))),
     }
   }
   -- Max of a height list (0 when empty): Plonky3's
   -- `batch_heights.iter().max().unwrap_or(0)` for the per-batch index reduction.
   fn heights_max(hs: List‹G›) -> G {
-    match load(hs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(h, rest) =>
+    match hs {
+      List.Nil => 0,
+      List.Cons(__cell29) => let (h, rest) = load(__cell29);
         let m = heights_max(rest);
         match u32_less_than(m, h) {
           0 => m,
@@ -859,12 +859,12 @@ def pcs := ⟦
   }
   fn heights_prep(log_degrees: List‹U8›, log_blowup: G, prep_indices: List‹OptIdx›, rem: G, i: G) -> List‹G› {
     match rem {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ => match list_lookup(prep_indices, i) {
         OptIdx.NoIdx => heights_prep(log_degrees, log_blowup, prep_indices, rem - 1, i + 1),
         OptIdx.SomeIdx(_j) =>
-          store(ListNode.Cons(to_field(list_lookup(log_degrees, i)) + log_blowup,
-                              heights_prep(log_degrees, log_blowup, prep_indices, rem - 1, i + 1))),
+          List.Cons(store((to_field(list_lookup(log_degrees, i)) + log_blowup,
+                              heights_prep(log_degrees, log_blowup, prep_indices, rem - 1, i + 1)))),
       },
     }
   }
@@ -879,15 +879,15 @@ def pcs := ⟦
   }
   -- Flatten two ext evals to the 4 base coords of the ExtensionMmcs leaf row.
   fn flatten2(e0: Ext, e1: Ext) -> List‹U64› {
-    store(ListNode.Cons(@gl_to_bytes(e0[0]), store(ListNode.Cons(@gl_to_bytes(e0[1]),
-      store(ListNode.Cons(@gl_to_bytes(e1[0]), store(ListNode.Cons(@gl_to_bytes(e1[1]), store(ListNode.Nil)))))))))
+    List.Cons(store((@gl_to_bytes(e0[0]), List.Cons(store((@gl_to_bytes(e0[1]),
+      List.Cons(store((@gl_to_bytes(e1[0]), List.Cons(store((@gl_to_bytes(e1[1]), List.Nil))))))))))))
   }
   -- Roll the next reduced opening into the folded eval when its height matches
   -- the new folded height: `folded += beta^(2^log_arity) · ro`  (log_arity = 1).
   fn rollin(folded: Ext, log_folded: G, beta: Ext, ro_rest: List‹Bucket›) -> (Ext, List‹Bucket›) {
-    match load(ro_rest) {
-      ListNode.Nil => (folded, ro_rest),
-      ListNode.Cons(b, rest) =>
+    match ro_rest {
+      List.Nil => (folded, ro_rest),
+      List.Cons(__cell30) => let (b, rest) = load(__cell30);
         let Bucket.Mk(h, _ap, ro) = b;
         match eq_zero(h - log_folded) {
           1 => (@eg_add(folded, @eg_mul(ext_exp_pow2(beta, 1), ro)), rest),
@@ -898,26 +898,26 @@ def pcs := ⟦
   fn verify_query(folded: Ext, betas: List‹Ext›, comms: List‹MerkleCap›,
       openings: List‹CommitPhaseProofStep›, domidx: List‹G›, log_cur: G,
       ro_rest: List‹Bucket›, log_final: G) -> Ext {
-    match load(openings) {
-      ListNode.Nil =>
+    match openings {
+      List.Nil =>
         -- must have folded down to exactly the final domain size, and every
         -- reduced opening must have been rolled in (FinalFoldHeightMismatch /
         -- UnconsumedReducedOpenings).
         assert_eq!(eq_zero(log_cur - log_final), 1);
         assert_eq!(list_length(ro_rest), 0);
         folded,
-      ListNode.Cons(op, op_rest) =>
-        let &ListNode.Cons(beta, beta_rest) = betas;
-        let &ListNode.Cons(comm, comm_rest) = comms;
+      List.Cons(__cell31) => let (op, op_rest) = load(__cell31);
+        let List.Cons(__cell38) = betas; let (beta, beta_rest) = load(__cell38);
+        let List.Cons(__cell39) = comms; let (comm, comm_rest) = load(__cell39);
         let CommitPhaseProofStep.Mk(_la, sibs, oproof) = op;
         -- arity 2 ⇒ exactly arity-1 = 1 sibling (SiblingValuesLengthMismatch).
         assert_eq!(list_length(sibs), 1);
-        let &ListNode.Cons(ibit, idrest) = domidx;     -- index_in_group = LSB
+        let List.Cons(__cell40) = domidx; let (ibit, idrest) = load(__cell40);     -- index_in_group = LSB
         let log_folded = log_cur - 1;
         let (e0, e1) = recon_evals(ibit, folded, list_lookup(sibs, 0));
         -- authenticate the sibling pair against this round's commitment
-        assert_eq!(mmcs_verify(comm, store(ListNode.Cons(flatten2(e0, e1), store(ListNode.Nil))),
-          store(ListNode.Cons(log_folded, store(ListNode.Nil))), idrest, oproof, log_folded), 1);
+        assert_eq!(mmcs_verify(comm, List.Cons(store((flatten2(e0, e1), List.Nil))),
+          List.Cons(store((log_folded, List.Nil))), idrest, oproof, log_folded), 1);
         let folded1 = fri_fold2(idrest, log_folded, beta, e0, e1);
         let (folded2, ro_rest2) = rollin(folded1, log_folded, beta, ro_rest);
         verify_query(folded2, beta_rest, comm_rest, op_rest, idrest, log_folded, ro_rest2, log_final),
@@ -960,7 +960,7 @@ def pcs := ⟦
     let _cz = assert_blowup_zero(buckets, log_blowup);
     -- the first reduced opening must sit at log_global_max_height
     -- (InitialReducedOpeningHeightMismatch).
-    let &ListNode.Cons(b0, ro_rest) = buckets;
+    let List.Cons(__cell41) = buckets; let (b0, ro_rest) = load(__cell41);
     let Bucket.Mk(h0, _ap0, folded_start) = b0;
     assert_eq!(eq_zero(h0 - log_gmax), 1);
     let folded = verify_query(folded_start, betas, commit_phase_commits, commit_phase_openings, idxbits, log_gmax, ro_rest, log_blowup);
@@ -978,9 +978,9 @@ def pcs := ⟦
       log_degrees: List‹U8›, zeta: Ext, num_circuits: G, log_blowup: G, log_gmax: G,
       betas: List‹Ext›, commit_phase_commits: List‹MerkleCap›, final_poly: List‹Ext›,
       num_rounds: G) -> G {
-    match load(query_proofs) {
-      ListNode.Nil => 1,
-      ListNode.Cons(qp, rest) =>
+    match query_proofs {
+      List.Nil => 1,
+      List.Cons(__cell32) => let (qp, rest) = load(__cell32);
         let (idxbits, input2, output2) = ch_sample_bits(input, output, log_gmax);
         let _q = verify_one_query(idxbits, qp, alpha, stage1, stage2, q_opened, prep_opt,
           s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta, num_circuits,
@@ -1011,15 +1011,15 @@ def pcs := ⟦
     -- order), built as one front-to-back suffix + a single concat (the input
     -- is only ~32 bytes here — it collapses to the digest on every flush).
     let obs = round_onto(stage1, round_onto(stage2, round_onto(q_opened,
-      prep_onto(prep_opt, store(ListNode.Nil)))));
+      prep_onto(prep_opt, List.Nil))));
     let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
-    let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
+    let (a0, a1, input, _oa) = ch_sample_ext(input, List.Nil);
     let alpha = [@gl_val(a0), @gl_val(a1)];
     -- per-round FRI fold challenges β (with commit-phase PoW), then observe
     -- final_poly + the log-arity schedule.
     let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);
-    let input = list_concat(input, ext_row_onto(final_poly, store(ListNode.Nil)));
+    let input = list_concat(input, ext_row_onto(final_poly, List.Nil));
     let input = obs_log_arities(input, commit_phase_commits);
     -- query-phase grinding: check_witness over the query PoW witness, sampled
     -- AFTER the log-arity schedule and BEFORE the query indices (the query

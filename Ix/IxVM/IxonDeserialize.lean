@@ -19,9 +19,9 @@ def ixonDeserialize := ⟦
   -- never over-reads). Cold once-per-constant parsers keep the call for the
   -- padding semantics and narrower circuits.
   fn read_byte(stream: ByteStream) -> (U8, ByteStream) {
-    match load(stream) {
-      ListNode.Cons(byte, rest) => (byte, rest),
-      ListNode.Nil => (0u8, store(ListNode.Nil)),
+    match stream {
+      List.Cons(__cell1) => let (byte, rest) = load(__cell1); (byte, rest),
+      List.Nil => (0u8, List.Nil),
     }
   }
 
@@ -30,7 +30,7 @@ def ixonDeserialize := ⟦
     match num_bytes {
       0 => ([0u8; 8], stream),
       _ =>
-        let ListNode.Cons(byte, s) = load(stream);
+        let List.Cons(__lcell1001) = stream; let (byte, s) = load(__lcell1001);
         let (rest_bytes, s2) = get_u64_le(s, num_bytes - 1);
         let [r0, r1, r2, r3, r4, r5, r6, _] = rest_bytes;
         ([byte, r0, r1, r2, r3, r4, r5, r6], s2),
@@ -43,7 +43,7 @@ def ixonDeserialize := ⟦
 
   -- Tag0: [large:1][size:7]
   fn get_tag0(stream: ByteStream) -> (U64, ByteStream) {
-    let ListNode.Cons(byte, s) = load(stream);
+    let List.Cons(__lcell1002) = stream; let (byte, s) = load(__lcell1002);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     let small_size = b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6;
@@ -67,7 +67,7 @@ def ixonDeserialize := ⟦
 
   -- Tag2: [flag:2][large:1][size:5]
   fn get_tag2(stream: ByteStream) -> ((G, U64), ByteStream) {
-    let ListNode.Cons(byte, s) = load(stream);
+    let List.Cons(__lcell1003) = stream; let (byte, s) = load(__lcell1003);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     let flag = b6 + 2 * b7;
@@ -88,7 +88,7 @@ def ixonDeserialize := ⟦
 
   -- Tag4: [flag:4][large:1][size:3]
   fn get_tag4(stream: ByteStream) -> ((G, U64), ByteStream) {
-    let ListNode.Cons(byte, s) = load(stream);
+    let List.Cons(__lcell1004) = stream; let (byte, s) = load(__lcell1004);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     let flag = b4 + 2 * b5 + 4 * b6 + 8 * b7;
@@ -110,11 +110,11 @@ def ixonDeserialize := ⟦
   fn get_u64_list(stream: ByteStream, count: U64) -> (List‹U64›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       0 =>
         let (val, s) = get_tag0(stream);
         let (rest, s2) = get_u64_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(val, rest)), s2),
+        (List.Cons(store((val, rest))), s2),
     }
   }
 
@@ -297,38 +297,38 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   fn get_address(stream: ByteStream) -> (Addr, ByteStream) {
-    let ListNode.Cons(b0, s) = load(stream);
-    let ListNode.Cons(b1, s) = load(s);
-    let ListNode.Cons(b2, s) = load(s);
-    let ListNode.Cons(b3, s) = load(s);
-    let ListNode.Cons(b4, s) = load(s);
-    let ListNode.Cons(b5, s) = load(s);
-    let ListNode.Cons(b6, s) = load(s);
-    let ListNode.Cons(b7, s) = load(s);
-    let ListNode.Cons(b8, s) = load(s);
-    let ListNode.Cons(b9, s) = load(s);
-    let ListNode.Cons(b10, s) = load(s);
-    let ListNode.Cons(b11, s) = load(s);
-    let ListNode.Cons(b12, s) = load(s);
-    let ListNode.Cons(b13, s) = load(s);
-    let ListNode.Cons(b14, s) = load(s);
-    let ListNode.Cons(b15, s) = load(s);
-    let ListNode.Cons(b16, s) = load(s);
-    let ListNode.Cons(b17, s) = load(s);
-    let ListNode.Cons(b18, s) = load(s);
-    let ListNode.Cons(b19, s) = load(s);
-    let ListNode.Cons(b20, s) = load(s);
-    let ListNode.Cons(b21, s) = load(s);
-    let ListNode.Cons(b22, s) = load(s);
-    let ListNode.Cons(b23, s) = load(s);
-    let ListNode.Cons(b24, s) = load(s);
-    let ListNode.Cons(b25, s) = load(s);
-    let ListNode.Cons(b26, s) = load(s);
-    let ListNode.Cons(b27, s) = load(s);
-    let ListNode.Cons(b28, s) = load(s);
-    let ListNode.Cons(b29, s) = load(s);
-    let ListNode.Cons(b30, s) = load(s);
-    let ListNode.Cons(b31, s) = load(s);
+    let List.Cons(__lcell1005) = stream; let (b0, s) = load(__lcell1005);
+    let List.Cons(__lcell1006) = s; let (b1, s) = load(__lcell1006);
+    let List.Cons(__lcell1007) = s; let (b2, s) = load(__lcell1007);
+    let List.Cons(__lcell1008) = s; let (b3, s) = load(__lcell1008);
+    let List.Cons(__lcell1009) = s; let (b4, s) = load(__lcell1009);
+    let List.Cons(__lcell1010) = s; let (b5, s) = load(__lcell1010);
+    let List.Cons(__lcell1011) = s; let (b6, s) = load(__lcell1011);
+    let List.Cons(__lcell1012) = s; let (b7, s) = load(__lcell1012);
+    let List.Cons(__lcell1013) = s; let (b8, s) = load(__lcell1013);
+    let List.Cons(__lcell1014) = s; let (b9, s) = load(__lcell1014);
+    let List.Cons(__lcell1015) = s; let (b10, s) = load(__lcell1015);
+    let List.Cons(__lcell1016) = s; let (b11, s) = load(__lcell1016);
+    let List.Cons(__lcell1017) = s; let (b12, s) = load(__lcell1017);
+    let List.Cons(__lcell1018) = s; let (b13, s) = load(__lcell1018);
+    let List.Cons(__lcell1019) = s; let (b14, s) = load(__lcell1019);
+    let List.Cons(__lcell1020) = s; let (b15, s) = load(__lcell1020);
+    let List.Cons(__lcell1021) = s; let (b16, s) = load(__lcell1021);
+    let List.Cons(__lcell1022) = s; let (b17, s) = load(__lcell1022);
+    let List.Cons(__lcell1023) = s; let (b18, s) = load(__lcell1023);
+    let List.Cons(__lcell1024) = s; let (b19, s) = load(__lcell1024);
+    let List.Cons(__lcell1025) = s; let (b20, s) = load(__lcell1025);
+    let List.Cons(__lcell1026) = s; let (b21, s) = load(__lcell1026);
+    let List.Cons(__lcell1027) = s; let (b22, s) = load(__lcell1027);
+    let List.Cons(__lcell1028) = s; let (b23, s) = load(__lcell1028);
+    let List.Cons(__lcell1029) = s; let (b24, s) = load(__lcell1029);
+    let List.Cons(__lcell1030) = s; let (b25, s) = load(__lcell1030);
+    let List.Cons(__lcell1031) = s; let (b26, s) = load(__lcell1031);
+    let List.Cons(__lcell1032) = s; let (b27, s) = load(__lcell1032);
+    let List.Cons(__lcell1033) = s; let (b28, s) = load(__lcell1033);
+    let List.Cons(__lcell1034) = s; let (b29, s) = load(__lcell1034);
+    let List.Cons(__lcell1035) = s; let (b30, s) = load(__lcell1035);
+    let List.Cons(__lcell1036) = s; let (b31, s) = load(__lcell1036);
     (store([b0, b1, b2,
       b3, b4, b5,
       b6, b7, b8,
@@ -349,33 +349,33 @@ def ixonDeserialize := ⟦
   fn get_expr_list(stream: ByteStream, count: U64) -> (List‹&Expr›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       0 =>
         let (expr, s) = get_expr(stream);
         let (rest, s2) = get_expr_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(expr, rest)), s2),
+        (List.Cons(store((expr, rest))), s2),
     }
   }
 
   fn get_univ_list(stream: ByteStream, count: U64) -> (List‹&Univ›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       0 =>
         let (u, s) = get_univ(stream);
         let (rest, s2) = get_univ_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(store(u), rest)), s2),
+        (List.Cons(store((store(u), rest))), s2),
     }
   }
 
   fn get_address_list(stream: ByteStream, count: U64) -> (List‹Addr›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       0 =>
         let (addr, s) = get_address(stream);
         let (rest, s2) = get_address_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(addr, rest)), s2),
+        (List.Cons(store((addr, rest))), s2),
     }
   }
 
@@ -440,11 +440,11 @@ def ixonDeserialize := ⟦
   fn get_recursor_rule_list(stream: ByteStream, count: U64) -> (List‹RecursorRule›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       0 =>
         let (rule, s) = @get_recursor_rule(stream);
         let (rest, s2) = get_recursor_rule_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(rule, rest)), s2),
+        (List.Cons(store((rule, rest))), s2),
     }
   }
 
@@ -524,11 +524,11 @@ def ixonDeserialize := ⟦
   fn get_constructor_list(stream: ByteStream, count: U64) -> (List‹Constructor›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       0 =>
         let (ctor, s) = get_constructor(stream);
         let (rest, s2) = get_constructor_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(ctor, rest)), s2),
+        (List.Cons(store((ctor, rest))), s2),
     }
   }
 
@@ -603,11 +603,11 @@ def ixonDeserialize := ⟦
   fn get_mut_const_list(stream: ByteStream, count: U64) -> (List‹MutConst›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       0 =>
         let (mc, s) = get_mut_const(stream);
         let (rest, s2) = get_mut_const_list(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(mc, rest)), s2),
+        (List.Cons(store((mc, rest))), s2),
     }
   }
 

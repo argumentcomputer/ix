@@ -180,16 +180,17 @@ must revisit a pointer, i.e. a malformed cycle). -/
 def readLimbChain (decls : Decls) (st : EvalState) :
     Nat → Value → Except SourceError (DataType × List (Array G))
   | 0, _ => .error (.typeMismatch "unconstrainedBigUintDivMod: cyclic limb list")
-  | steps+1, ptrVal => do
-    match ptrVal with
-    | .pointer w n =>
-      match ← loadValue st w n with
-      | .ctor g args =>
-        let (dt, tag) ← ctorInfo decls g
-        if tag == 1 then pure (dt, [])
-        else if tag == 0 then
-          match args with
-          | #[.array byteVals, rest] =>
+  | steps+1, listVal => do
+    match listVal with
+    | .ctor g args =>
+      let (dt, _) ← ctorInfo decls g
+      if args.isEmpty then pure (dt, [])  -- Nil: no cell exists
+      else
+        match args with
+        | #[.pointer w n] =>
+          -- Cons carries a pointer to the `(limb, tail)` cell.
+          match ← loadValue st w n with
+          | .tuple #[.array byteVals, rest] =>
             let bytes ← byteVals.mapM fun bv =>
               match bv with
               | .field b =>
@@ -204,23 +205,23 @@ def readLimbChain (decls : Decls) (st : EvalState) :
             else throw (.typeMismatch
               "unconstrainedBigUintDivMod: limb is not [U8; 8]")
           | _ => throw (.typeMismatch
-              "unconstrainedBigUintDivMod: malformed Cons node")
-        else throw (.typeMismatch
-          "unconstrainedBigUintDivMod: unexpected constructor tag")
-      | _ => throw (.typeMismatch
-          "unconstrainedBigUintDivMod: node is not a constructor")
+              "unconstrainedBigUintDivMod: malformed Cons cell")
+        | _ => throw (.typeMismatch
+            "unconstrainedBigUintDivMod: malformed Cons value")
     | _ => throw (.typeMismatch
-        "unconstrainedBigUintDivMod: input is not a pointer")
+        "unconstrainedBigUintDivMod: input is not a list value")
 
 /-- Build a limb chain from head-first `limbs` using the given Cons/Nil
 constructor names; returns the head pointer value. Same order as the Rust
 builder (Nil first, then limbs in reverse). -/
 def buildLimbChain (decls : Decls) (consG nilG : Global) (st : EvalState) :
     List (Array G) → Value × EvalState
-  | [] => storeValue decls st (.ctor nilG #[])
+  | [] => (.ctor nilG #[], st)  -- Nil IS the value; nothing is stored
   | limb :: rest =>
-    let (restPtr, st') := buildLimbChain decls consG nilG st rest
-    storeValue decls st' (.ctor consG #[.array (limb.map .field), restPtr])
+    let (restVal, st') := buildLimbChain decls consG nilG st rest
+    let (cellPtr, st'') := storeValue decls st'
+      (.tuple #[.array (limb.map .field), restVal])
+    (.ctor consG #[cellPtr], st'')
 
 /-- Semantic model of `unconstrainedBigUintDivMod` on already-evaluated
 pointer values: walk both chains, divide as `Nat` (which matches the
@@ -231,7 +232,9 @@ def bigUintDivModValue (decls : Decls) (aPtr bPtr : Value)
   let bound := st.store.fold (init := 1) fun acc _ inner => acc + inner.size
   let (dt, aLimbs) ← readLimbChain decls st bound aPtr
   let (_, bLimbs) ← readLimbChain decls st bound bPtr
-  match dt.constructors[0]?, dt.constructors[1]? with
+  -- Identify Cons/Nil by shape (nullary = Nil), not by declaration order.
+  match dt.constructors.find? (!·.argTypes.isEmpty),
+        dt.constructors.find? (·.argTypes.isEmpty) with
   | some cons, some nil =>
     let consG := dt.name.pushNamespace cons.nameHead
     let nilG := dt.name.pushNamespace nil.nameHead

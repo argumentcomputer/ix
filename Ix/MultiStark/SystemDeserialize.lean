@@ -108,8 +108,8 @@ def systemDeserialize := ⟦
   -- ==========================================================================
 
   fn read_vk_u8(s: ByteStream) -> (U8, ByteStream) {
-    match load(s) {
-      ListNode.Cons(byte, rest) => (byte, rest),
+    match s {
+      List.Cons(__cell1) => let (byte, rest) = load(__cell1); (byte, rest),
     }
   }
 
@@ -174,11 +174,11 @@ def systemDeserialize := ⟦
   }
   fn read_vk_cap_n(i: ByteStream, n: G) -> (MerkleCap, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_vk_digest(i);
         let (rest, j2) = read_vk_cap_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -225,22 +225,22 @@ def systemDeserialize := ⟦
 
   fn read_nodes_n(i: ByteStream, n: G) -> (List‹SysNode›, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (nd, i1) = read_node(i);
         let (rest, i2) = read_nodes_n(i1, n - 1);
-        (store(ListNode.Cons(nd, rest)), i2),
+        (List.Cons(store((nd, rest))), i2),
     }
   }
 
   -- A run of u16 NodeIds (constraint roots / lookup argument ids).
   fn read_node_ids_n(i: ByteStream, n: G) -> (List‹G›, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (id, i1) = read_vk_u16(i);
         let (rest, i2) = read_node_ids_n(i1, n - 1);
-        (store(ListNode.Cons(id, rest)), i2),
+        (List.Cons(store((id, rest))), i2),
     }
   }
 
@@ -252,11 +252,11 @@ def systemDeserialize := ⟦
   }
   fn read_sys_lookups_n(i: ByteStream, n: G) -> (List‹SysLookup›, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_sys_lookup(i);
         let (rest, j2) = read_sys_lookups_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -309,19 +309,19 @@ def systemDeserialize := ⟦
      [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }
   fn cons_shape7(l: [U64; 7], tail: List‹U64›) -> List‹U64› {
-    store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],
-    store(ListNode.Cons(l[3], store(ListNode.Cons(l[4], store(ListNode.Cons(l[5],
-    store(ListNode.Cons(l[6], tail))))))))))))))
+    List.Cons(store((l[0], List.Cons(store((l[1], List.Cons(store((l[2],
+    List.Cons(store((l[3], List.Cons(store((l[4], List.Cons(store((l[5],
+    List.Cons(store((l[6], tail)))))))))))))))))))))
   }
   -- Returns the circuits plus their shape limbs (`observe_shape` order: each
   -- circuit's 7 metadata words; the count limb is consed by `read_system`).
   fn read_sys_circuits_n(i: ByteStream, n: G) -> (List‹SysCircuit›, List‹U64›, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), store(ListNode.Nil), i),
+      0 => (List.Nil, List.Nil, i),
       _ =>
         let (x, xl, j) = read_sys_circuit(i);
         let (rest, lrest, j2) = read_sys_circuits_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), cons_shape7(xl, lrest), j2),
+        (List.Cons(store((x, rest))), cons_shape7(xl, lrest), j2),
     }
   }
 
@@ -342,13 +342,13 @@ def systemDeserialize := ⟦
   -- One u16 per circuit; 0xFFFF is the None sentinel.
   fn read_opt_idx_n(i: ByteStream, n: G) -> (List‹OptIdx›, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (v, j) = read_vk_u16(i);
         let (rest, j2) = read_opt_idx_n(j, n - 1);
         match v {
-          65535 => (store(ListNode.Cons(OptIdx.NoIdx, rest)), j2),
-          _ => (store(ListNode.Cons(OptIdx.SomeIdx(v), rest)), j2),
+          65535 => (List.Cons(store((OptIdx.NoIdx, rest))), j2),
+          _ => (List.Cons(store((OptIdx.SomeIdx(v), rest))), j2),
         },
     }
   }
@@ -364,9 +364,9 @@ def systemDeserialize := ⟦
     let (p5, l5, j5) = read_vk_u16_limb(j4);
     let (p6, l6, j6) = read_vk_u16_limb(j5);
     (SysParams.Mk(p0, p1, p2, p3, p4, p5, p6),
-     store(ListNode.Cons(l0, store(ListNode.Cons(l1, store(ListNode.Cons(l2,
-     store(ListNode.Cons(l3, store(ListNode.Cons(l4, store(ListNode.Cons(l5,
-     store(ListNode.Cons(l6, store(ListNode.Nil))))))))))))))),
+     List.Cons(store((l0, List.Cons(store((l1, List.Cons(store((l2,
+     List.Cons(store((l3, List.Cons(store((l4, List.Cons(store((l5,
+     List.Cons(store((l6, List.Nil))))))))))))))))))))),
      j6)
   }
 
@@ -379,7 +379,7 @@ def systemDeserialize := ⟦
     let (commit, j3) = read_opt_commit(j2);
     let (indices, j4) = read_opt_idx_n(j3, n);
     (Sys.Mk(params,
-            list_concat(plimbs, store(ListNode.Cons(nlimb, climbs))),
+            list_concat(plimbs, List.Cons(store((nlimb, climbs)))),
             circuits, commit, indices),
      j4)
   }

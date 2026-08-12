@@ -74,9 +74,9 @@ def claim := ⟦
       -- projection's block comes from the ConstantInfo payload, both
       -- walked separately.
       Expr.Ref(i, _) =>
-        store(ListNode.Cons(flatten_u64(i), store(ListNode.Nil))),
+        List.Cons(store((flatten_u64(i), List.Nil))),
       Expr.Prj(i, _, inner) =>
-        store(ListNode.Cons(flatten_u64(i), const_idxs_expr(inner))),
+        List.Cons(store((flatten_u64(i), const_idxs_expr(inner)))),
       Expr.App(f, a) => list_concat(const_idxs_expr(f), const_idxs_expr(a)),
       Expr.Lam(t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
       Expr.All(t, b) => list_concat(const_idxs_expr(t), const_idxs_expr(b)),
@@ -87,22 +87,22 @@ def claim := ⟦
       -- following share edges expands it exponentially. Every shared
       -- subexpression is itself an entry in `sharing`, which is walked
       -- once below, so coverage is complete and the traversal stays linear.
-      _ => store(ListNode.Nil),
+      _ => List.Nil,
     }
   }
 
   fn const_idxs_exprs(es: List‹&Expr›) -> List‹G› {
-    match load(es) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(e, rest) =>
+    match es {
+      List.Nil => List.Nil,
+      List.Cons(__cell1) => let (e, rest) = load(__cell1);
         list_concat(const_idxs_expr(e), const_idxs_exprs(rest)),
     }
   }
 
   fn const_idxs_rules(rs: List‹RecursorRule›) -> List‹G› {
-    match load(rs) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(r, rest) =>
+    match rs {
+      List.Nil => List.Nil,
+      List.Cons(__cell2) => let (r, rest) = load(__cell2);
         match r {
           RecursorRule.Mk(_, rhs) =>
             list_concat(const_idxs_expr(rhs), const_idxs_rules(rest)),
@@ -111,9 +111,9 @@ def claim := ⟦
   }
 
   fn const_idxs_ctors(cs: List‹Constructor›) -> List‹G› {
-    match load(cs) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(c, rest) =>
+    match cs {
+      List.Nil => List.Nil,
+      List.Cons(__cell3) => let (c, rest) = load(__cell3);
         match c {
           Constructor.Mk(_, _, _, _, _, typ) =>
             list_concat(const_idxs_expr(typ), const_idxs_ctors(rest)),
@@ -122,9 +122,9 @@ def claim := ⟦
   }
 
   fn const_idxs_muts(ms: List‹MutConst›) -> List‹G› {
-    match load(ms) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(m, rest) =>
+    match ms {
+      List.Nil => List.Nil,
+      List.Cons(__cell4) => let (m, rest) = load(__cell4);
         match m {
           MutConst.Defn(d) =>
             match d {
@@ -187,9 +187,9 @@ def claim := ⟦
   }
 
   fn g_list_has(xs: List‹G›, x: G) -> G {
-    match load(xs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(y, rest) =>
+    match xs {
+      List.Nil => 0,
+      List.Cons(__cell5) => let (y, rest) = load(__cell5);
         match y - x {
           0 => 1,
           _ => g_list_has(rest, x),
@@ -254,9 +254,9 @@ def claim := ⟦
   -- decision comes from `const_idxs_of`, i.e. from bytes already bound by
   -- blake3 — not from an IO probe the prover answers.
   fn walk_refs_transitive(refs: List‹Addr›, consts: List‹G›, i: G) {
-    match load(refs) {
-      ListNode.Nil => (),
-      ListNode.Cons(a, rest) =>
+    match refs {
+      List.Nil => (),
+      List.Cons(__cell6) => let (a, rest) = load(__cell6);
         match g_list_has(consts, i) {
           1 => run_check_transitive(a),
           _ => (),
@@ -270,9 +270,9 @@ def claim := ⟦
   -- members get their full soundness gauntlet.
   fn check_muts_all(block_addr: Addr, all_members: List‹MutConst›,
                           cur: List‹MutConst›, pos: G) {
-    match load(cur) {
-      ListNode.Nil => (),
-      ListNode.Cons(m, rest) =>
+    match cur {
+      List.Nil => (),
+      List.Cons(__cell7) => let (m, rest) = load(__cell7);
         check_muts_member_at(block_addr, all_members, m, pos);
         check_muts_all(block_addr, all_members, rest, pos + 1),
     }
@@ -294,14 +294,14 @@ def claim := ⟦
   -- the channel table in Ix/IxVM/ClaimHarness.lean.
   -- ============================================================================
   fn leaf_hash(addr: Addr) -> Addr {
-    let tail = put_address(addr, store(ListNode.Nil));
-    let bytes = store(ListNode.Cons(0u8, tail));
+    let tail = put_address(addr, List.Nil);
+    let bytes = List.Cons(store((0u8, tail)));
     bytes_to_addr(bytes)
   }
 
   fn node_hash(l: Addr, r: Addr) -> Addr {
-    let tail = put_address(l, put_address(r, store(ListNode.Nil)));
-    let bytes = store(ListNode.Cons(1u8, tail));
+    let tail = put_address(l, put_address(r, List.Nil));
+    let bytes = List.Cons(store((1u8, tail)));
     bytes_to_addr(bytes)
   }
 
@@ -313,9 +313,9 @@ def claim := ⟦
       0 =>
         let (addr, s2) = get_address(s);
         let h = leaf_hash(addr);
-        (h, store(ListNode.Cons(addr, store(ListNode.Nil))), s2),
+        (h, List.Cons(store((addr, List.Nil))), s2),
       1 =>
-        (store([0u8; 32]), store(ListNode.Nil), s),
+        (store([0u8; 32]), List.Nil, s),
       2 =>
         let (lh, ll, s2) = parse_atree_body(s);
         let (rh, rl, s3) = parse_atree_body(s2);
@@ -333,7 +333,7 @@ def claim := ⟦
     assert_eq!(flag, 0xE, "assumption tree: wrong tag4 flag");
     assert_eq!(to_field(size[0]), 2, "assumption tree: wrong tag4 variant");
     let (computed_root, leaves, rest) = parse_atree_body(s);
-    assert_eq!(load(rest), ListNode.Nil,
+    assert_eq!(rest, List.Nil,
       "assumption tree: trailing bytes after tree body");
     let computed_arr = load(computed_root);
     -- Binds ch 1 to its key: the recomputed merkle root must equal the
@@ -372,9 +372,9 @@ def claim := ⟦
   -- query vs the O(n) list scan — the frontier list is the biggest
   -- per-visit cost on fat-frontier shards (e.g. 1977 asm leaves).
   fn addr_set_build(leaves: List‹Addr›, acc: RBTreeMap‹G›) -> RBTreeMap‹G› {
-    match load(leaves) {
-      ListNode.Nil => acc,
-      ListNode.Cons(a, rest) =>
+    match leaves {
+      List.Nil => acc,
+      List.Cons(__cell8) => let (a, rest) = load(__cell8);
         addr_set_build(rest, rbtree_map_insert(ptr_val(a), 1, acc)),
     }
   }
@@ -443,9 +443,9 @@ def claim := ⟦
   fn env_walk_refs(refs: List‹Addr›, consts: List‹G›, i: G,
                        owned: RBTreeMap‹G›,
                        asm: RBTreeMap‹G›, strict: G) {
-    match load(refs) {
-      ListNode.Nil => (),
-      ListNode.Cons(a, rest) =>
+    match refs {
+      List.Nil => (),
+      List.Cons(__cell9) => let (a, rest) = load(__cell9);
         match g_list_has(consts, i) {
           1 => env_walk(a, owned, asm, strict),
           _ => (),
@@ -456,9 +456,9 @@ def claim := ⟦
 
   fn env_walk_leaves(leaves: List‹Addr›, owned: RBTreeMap‹G›,
                          asm: RBTreeMap‹G›) {
-    match load(leaves) {
-      ListNode.Nil => (),
-      ListNode.Cons(a, rest) =>
+    match leaves {
+      List.Nil => (),
+      List.Cons(__cell10) => let (a, rest) = load(__cell10);
         env_walk(a, owned, asm, 1);
         env_walk_leaves(rest, owned, asm),
     }
@@ -473,7 +473,7 @@ def claim := ⟦
   fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
     let owned = load_assumption_tree(env_root);
     let asm_leaves = match asm {
-      Option.None => store(ListNode.Nil),
+      Option.None => List.Nil,
       Option.Some(r) => load_assumption_tree(r),
     };
     let owned_set = addr_set_build(owned, RBTreeMap.Nil);
@@ -623,11 +623,11 @@ def claim := ⟦
   fn get_reveal_rule_list_inner(stream: ByteStream, count: U64)
       -> (List‹RevealRecursorRule›, ByteStream) {
     match u64_is_zero(count) {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       _ =>
         let (rule, s) = get_reveal_rule(stream);
         let (rest, s2) = get_reveal_rule_list_inner(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(rule, rest)), s2),
+        (List.Cons(store((rule, rest))), s2),
     }
   }
 
@@ -667,11 +667,11 @@ def claim := ⟦
   fn get_ctor_entry_list_inner(stream: ByteStream, count: U64)
       -> (List‹(U64, RevealConstructorInfo)›, ByteStream) {
     match u64_is_zero(count) {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       _ =>
         let (entry, s) = get_ctor_entry(stream);
         let (rest, s2) = get_ctor_entry_list_inner(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(entry, rest)), s2),
+        (List.Cons(store((entry, rest))), s2),
     }
   }
 
@@ -737,11 +737,11 @@ def claim := ⟦
   fn get_mut_entry_list_inner(stream: ByteStream, count: U64)
       -> (List‹(U64, RevealMutConstInfo)›, ByteStream) {
     match u64_is_zero(count) {
-      1 => (store(ListNode.Nil), stream),
+      1 => (List.Nil, stream),
       _ =>
         let (entry, s) = get_mut_entry(stream);
         let (rest, s2) = get_mut_entry_list_inner(s, relaxed_u64_pred(count));
-        (store(ListNode.Cons(entry, rest)), s2),
+        (List.Cons(store((entry, rest))), s2),
     }
   }
 
@@ -802,7 +802,7 @@ def claim := ⟦
         (RevealConstantInfo.DPrj(idx, block), s),
       8 =>
         let (components, s) = match b0 {
-          0 => (store(ListNode.Nil), s),
+          0 => (List.Nil, s),
           1 =>
             let (count, s2) = get_tag0(s);
             get_mut_entry_list_inner(s2, count),
@@ -813,7 +813,7 @@ def claim := ⟦
 
   -- Content hash of an `Expr`: `blake3(put_expr expr)`.
   fn expr_addr(e_ref: &Expr) -> Addr {
-    let bytes = put_expr(load(e_ref), store(ListNode.Nil));
+    let bytes = put_expr(load(e_ref), List.Nil);
     bytes_to_addr(bytes)
   }
 
@@ -926,14 +926,14 @@ def claim := ⟦
   fn check_recr_rules(real: List‹RecursorRule›,
                       claimed: List‹RevealRecursorRule›,
                       pos: U64) {
-    match load(claimed) {
-      ListNode.Nil =>
-        match load(real) {
-          ListNode.Nil => (),
+    match claimed {
+      List.Nil =>
+        match real {
+          List.Nil => (),
         },
-      ListNode.Cons(cr, rest_claimed) =>
-        match load(real) {
-          ListNode.Cons(rr, rest_real) =>
+      List.Cons(__cell11) => let (cr, rest_claimed) = load(__cell11);
+        match real {
+          List.Cons(__cell12) => let (rr, rest_real) = load(__cell12);
             match cr {
               RevealRecursorRule.Mk(c_idx, c_fields, c_rhs) =>
                 match rr {
@@ -984,9 +984,9 @@ def claim := ⟦
 
   fn check_ctor_entries(real_list: List‹Constructor›,
                         claimed: List‹(U64, RevealConstructorInfo)›) {
-    match load(claimed) {
-      ListNode.Nil => (),
-      ListNode.Cons(entry, rest) =>
+    match claimed {
+      List.Nil => (),
+      List.Cons(__cell13) => let (entry, rest) = load(__cell13);
         match entry {
           (idx, info) =>
             check_ctor_entry(real_list, idx, info);
@@ -1060,9 +1060,9 @@ def claim := ⟦
 
   fn check_muts_components(real: List‹MutConst›,
                            claimed: List‹(U64, RevealMutConstInfo)›) {
-    match load(claimed) {
-      ListNode.Nil => (),
-      ListNode.Cons(entry, rest_claimed) =>
+    match claimed {
+      List.Nil => (),
+      List.Cons(__cell14) => let (entry, rest_claimed) = load(__cell14);
         match entry {
           (idx, info) =>
             let real_mc = list_lookup_u64(real, idx);

@@ -34,16 +34,16 @@ recorded at that tier.
 def defEq := ⟦
   -- Level list equality (semantic, uses level normalization).
   fn level_list_eq(a: List‹KLevel›, b: List‹KLevel›) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(x, xs) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(y, ys) =>
+      List.Cons(__cell1) => let (x, xs) = load(__cell1);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell2) => let (y, ys) = load(__cell2);
             match level_equal(x, y) {
               0 => 0,
               _ => level_list_eq(xs, ys),
@@ -66,7 +66,7 @@ def defEq := ⟦
       _ =>
         let base = lbr_max(expr_lbr(a), expr_lbr(b));
         match base {
-          0 => k_is_def_eq_core(a, b, store(ListNode.Nil)),
+          0 => k_is_def_eq_core(a, b, List.Nil),
           _ => k_def_eq_rebase(a, b, types, base),
         },
     }
@@ -164,16 +164,16 @@ def defEq := ⟦
   }
 
   fn de_args(aa: List‹KExpr›, bb: List‹KExpr›, types: List‹KExpr›) -> G {
-    match load(aa) {
-      ListNode.Nil =>
-        match load(bb) {
-          ListNode.Nil => 1,
+    match aa {
+      List.Nil =>
+        match bb {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(a, ar) =>
-        match load(bb) {
-          ListNode.Nil => 0,
-          ListNode.Cons(b, br) =>
+      List.Cons(__cell3) => let (a, ar) = load(__cell3);
+        match bb {
+          List.Nil => 0,
+          List.Cons(__cell4) => let (b, br) = load(__cell4);
             match k_is_def_eq(a, b, types) {
               0 => 0,
               _ => de_args(ar, br, types),
@@ -204,8 +204,8 @@ def defEq := ⟦
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
-          KLiteral.Nat(n) => (1, mk_nat_lit(store(ListNode.Nil)), n),
-          _ => (0, e, store(ListNode.Nil)),
+          KLiteral.Nat(n) => (1, mk_nat_lit(List.Nil), n),
+          _ => (0, e, List.Nil),
         },
       KExprNode.App(f, a) =>
         match load(f) {
@@ -215,7 +215,7 @@ def defEq := ⟦
                 match nat_offset_of(a) {
                   (_, base, o) => (1, base, klimbs_succ(o)),
                 },
-              _ => (0, e, store(ListNode.Nil)),
+              _ => (0, e, List.Nil),
             },
           KExprNode.App(g, x) =>
             match load(g) {
@@ -230,17 +230,17 @@ def defEq := ⟦
                               (1, base, o) => (1, base, klimbs_add(o, m)),
                               _ => (1, x, m),
                             },
-                          _ => (0, e, store(ListNode.Nil)),
+                          _ => (0, e, List.Nil),
                         },
-                      _ => (0, e, store(ListNode.Nil)),
+                      _ => (0, e, List.Nil),
                     },
-                  _ => (0, e, store(ListNode.Nil)),
+                  _ => (0, e, List.Nil),
                 },
-              _ => (0, e, store(ListNode.Nil)),
+              _ => (0, e, List.Nil),
             },
-          _ => (0, e, store(ListNode.Nil)),
+          _ => (0, e, List.Nil),
         },
-      _ => (0, e, store(ListNode.Nil)),
+      _ => (0, e, List.Nil),
     }
   }
 
@@ -345,7 +345,7 @@ def defEq := ⟦
           KExprNode.Lam(ty_b, body_b) =>
             match k_is_def_eq(ty_a, ty_b, types) {
               1 =>
-                let inner = store(ListNode.Cons(ty_a, types));
+                let inner = List.Cons(store((ty_a, types)));
                 k_is_def_eq(body_a, body_b, inner),
               _ => 0,
             },
@@ -356,7 +356,7 @@ def defEq := ⟦
           KExprNode.Forall(ty_b, body_b) =>
             match k_is_def_eq(ty_a, ty_b, types) {
               1 =>
-                let inner = store(ListNode.Cons(ty_a, types));
+                let inner = List.Cons(store((ty_a, types)));
                 k_is_def_eq(body_a, body_b, inner),
               _ => 0,
             },
@@ -503,10 +503,10 @@ def defEq := ⟦
     let idx_u64 = idx_to_u64(idx);
     let info = ConstantInfo.IPrj(InductiveProj.Mk(idx_u64, block_addr));
     let proj_c = Constant.Mk(info,
-                              store(ListNode.Nil),
-                              store(ListNode.Nil),
-                              store(ListNode.Nil));
-    let bytes = put_constant(proj_c, store(ListNode.Nil));
+                              List.Nil,
+                              List.Nil,
+                              List.Nil);
+    let bytes = put_constant(proj_c, List.Nil);
     bytes_to_addr(bytes)
   }
 
@@ -633,7 +633,7 @@ def defEq := ⟦
             let b_lifted = expr_lift(b, 1, 0);
             let bvar0 = store(KExprNode.BVar(0));
             let b_app = store(KExprNode.App(b_lifted, bvar0));
-            let inner = store(ListNode.Cons(ty_a, types));
+            let inner = List.Cons(store((ty_a, types)));
             k_is_def_eq(body_a, b_app, inner),
         },
       _ => 0,
@@ -723,7 +723,7 @@ def defEq := ⟦
             match k_is_def_eq(ta, tb, types) {
               0 => 0,
               _ =>
-                let types2 = store(ListNode.Cons(ta, types));
+                let types2 = List.Cons(store((ta, types)));
                 k_is_def_eq(ba, bb, types2),
             },
           _ => try_eta_expand(ta, ba, b, types),
@@ -734,7 +734,7 @@ def defEq := ⟦
             match k_is_def_eq(ta, tb, types) {
               0 => 0,
               _ =>
-                let types2 = store(ListNode.Cons(ta, types));
+                let types2 = List.Cons(store((ta, types)));
                 k_is_def_eq(ba, bb, types2),
             },
           _ => 0,

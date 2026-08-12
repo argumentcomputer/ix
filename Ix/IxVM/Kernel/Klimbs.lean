@@ -39,16 +39,16 @@ def klimbs := ⟦
 
   -- Mirror: BigUint::succ. Increment a KLimbs by 1; ripple carry.
   fn klimbs_succ(n: KLimbs) -> KLimbs {
-    match load(n) {
-      ListNode.Nil =>
-        store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil))),
-      ListNode.Cons(limb, rest) =>
+    match n {
+      List.Nil =>
+        List.Cons(store(([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil))),
+      List.Cons(__cell1) => let (limb, rest) = load(__cell1);
         let pair = u64_add(limb, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
         match pair {
           (sum, carry) =>
             match carry {
-              0 => store(ListNode.Cons(sum, rest)),
-              _ => store(ListNode.Cons(sum, klimbs_succ(rest))),
+              0 => List.Cons(store((sum, rest))),
+              _ => List.Cons(store((sum, klimbs_succ(rest)))),
             },
         },
     }
@@ -59,20 +59,20 @@ def klimbs := ⟦
   -- Asymmetric lengths handled by terminating on shorter list and
   -- propagating carry into the longer.
   fn klimbs_add_carry(a: KLimbs, b: KLimbs, carry: G) -> KLimbs {
-    match load(a) {
-      ListNode.Nil =>
+    match a {
+      List.Nil =>
         match carry {
           0 => b,
           _ => klimbs_succ(b),
         },
-      ListNode.Cons(la, ra) =>
-        match load(b) {
-          ListNode.Nil =>
+      List.Cons(__cell2) => let (la, ra) = load(__cell2);
+        match b {
+          List.Nil =>
             match carry {
               0 => a,
               _ => klimbs_succ(a),
             },
-          ListNode.Cons(lb, rb) =>
+          List.Cons(__cell3) => let (lb, rb) = load(__cell3);
             let pair1 = u64_add(la, lb);
             match pair1 {
               (sum1, carry1) =>
@@ -82,7 +82,7 @@ def klimbs := ⟦
                     -- carry1, carry2 mutually exclusive: carry1=1 ⇒ sum1 ≤
                     -- 2^64-2 ⇒ sum1 + carry_in ≤ 2^64-1 ⇒ carry2=0.
                     let total_carry = to_field(carry1) + to_field(carry2);
-                    store(ListNode.Cons(sum2, klimbs_add_carry(ra, rb, total_carry))),
+                    List.Cons(store((sum2, klimbs_add_carry(ra, rb, total_carry)))),
                 },
             },
         },
@@ -134,13 +134,13 @@ def klimbs := ⟦
   -- final borrow is 1 OR `b` has more limbs than `a`, return 0 (Nil).
   -- Otherwise normalize trailing zero limbs.
   fn klimbs_sub_borrow(a: KLimbs, b: KLimbs, borrow: G) -> (KLimbs, G) {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil =>
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil =>
             -- 0 - 0 - borrow: borrow=1 → underflow.
-            (store(ListNode.Nil), borrow),
-          ListNode.Cons(_, _) =>
+            (List.Nil, borrow),
+          List.Cons(_) =>
             -- 0 - non-empty. A non-empty limb list is not necessarily a
             -- non-zero number: trailing zero limbs are a valid encoding, and
             -- `klimbs_div`/`klimbs_mod` hand back the raw prover-supplied
@@ -148,13 +148,13 @@ def klimbs := ⟦
             -- non-empty `b` as an underflow made `klimbs_le([3], [2,0])`
             -- certify "3 <= 2".
             match klimbs_is_zero(b) {
-              1 => (store(ListNode.Nil), borrow),
-              _ => (store(ListNode.Nil), 1),
+              1 => (List.Nil, borrow),
+              _ => (List.Nil, 1),
             },
         },
-      ListNode.Cons(la, ra) =>
-        match load(b) {
-          ListNode.Nil =>
+      List.Cons(__cell4) => let (la, ra) = load(__cell4);
+        match b {
+          List.Nil =>
             -- a - 0 - borrow: subtract borrow from la, propagate.
             match borrow {
               0 => (a, 0),
@@ -162,14 +162,14 @@ def klimbs := ⟦
                 let pair = u64_sub_with_borrow(la, [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
                 match pair {
                   (diff, br) =>
-                    let pair2 = klimbs_sub_borrow(ra, store(ListNode.Nil), br);
+                    let pair2 = klimbs_sub_borrow(ra, List.Nil, br);
                     match pair2 {
                       (rest_res, br2) =>
-                        (store(ListNode.Cons(diff, rest_res)), br2),
+                        (List.Cons(store((diff, rest_res))), br2),
                     },
                 },
             },
-          ListNode.Cons(lb, rb) =>
+          List.Cons(__cell5) => let (lb, rb) = load(__cell5);
             let pair1 = u64_sub_with_borrow(la, lb);
             match pair1 {
               (sum1, br1) =>
@@ -182,7 +182,7 @@ def klimbs := ⟦
                     let rec_pair = klimbs_sub_borrow(ra, rb, total);
                     match rec_pair {
                       (rest_res, br_final) =>
-                        (store(ListNode.Cons(sum2, rest_res)), br_final),
+                        (List.Cons(store((sum2, rest_res))), br_final),
                     },
                 },
             },
@@ -204,31 +204,31 @@ def klimbs := ⟦
   -- Lean answers `true`. `u8_range_check` takes a pair per lookup row,
   -- so eight bytes cost four.
   fn glimbs_to_klimbs(n: List‹[G; 8]›) -> KLimbs {
-    match load(n) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(limb, rest) =>
+    match n {
+      List.Nil => List.Nil,
+      List.Cons(__cell6) => let (limb, rest) = load(__cell6);
         let [b0, b1, b2, b3, b4, b5, b6, b7] = limb;
         let (c0, c1) = u8_range_check(b0, b1);
         let (c2, c3) = u8_range_check(b2, b3);
         let (c4, c5) = u8_range_check(b4, b5);
         let (c6, c7) = u8_range_check(b6, b7);
-        store(ListNode.Cons([c0, c1, c2, c3, c4, c5, c6, c7],
-          glimbs_to_klimbs(rest))),
+        List.Cons(store(([c0, c1, c2, c3, c4, c5, c6, c7],
+          glimbs_to_klimbs(rest)))),
     }
   }
 
   fn klimbs_normalize(n: KLimbs) -> KLimbs {
-    match load(n) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(limb, rest) =>
+    match n {
+      List.Nil => List.Nil,
+      List.Cons(__cell7) => let (limb, rest) = load(__cell7);
         let normalized_rest = klimbs_normalize(rest);
-        match load(normalized_rest) {
-          ListNode.Nil =>
+        match normalized_rest {
+          List.Nil =>
             match u64_is_zero(limb) {
-              1 => store(ListNode.Nil),
-              0 => store(ListNode.Cons(limb, store(ListNode.Nil))),
+              1 => List.Nil,
+              0 => List.Cons(store((limb, List.Nil))),
             },
-          _ => store(ListNode.Cons(limb, normalized_rest)),
+          _ => List.Cons(store((limb, normalized_rest))),
         },
     }
   }
@@ -238,7 +238,7 @@ def klimbs := ⟦
     match pair {
       (result, borrow) =>
         match borrow {
-          1 => store(ListNode.Nil),
+          1 => List.Nil,
           0 => klimbs_normalize(result),
         },
     }
@@ -248,15 +248,15 @@ def klimbs := ⟦
   -- Uses saturating sub: a ≤ b iff (a - b) saturates to 0.
   fn klimbs_le(a: KLimbs, b: KLimbs) -> G {
     let diff = klimbs_sub(a, b);
-    match load(diff) {
-      ListNode.Nil => 1,
+    match diff {
+      List.Nil => 1,
       _ => 0,
     }
   }
 
   -- Mirror: Nat.pred. Saturating decrement; pred(0) = 0.
   fn klimbs_dec(a: KLimbs) -> KLimbs {
-    let one = store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+    let one = List.Cons(store(([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil)));
     klimbs_sub(a, one)
   }
 
@@ -452,14 +452,14 @@ def klimbs := ⟦
 
   -- Mirror: BigUint::mul. Limb-wise schoolbook multiply.
   fn klimbs_mul(a: KLimbs, b: KLimbs) -> KLimbs {
-    klimbs_mul_outer(a, b, store(ListNode.Nil), 0)
+    klimbs_mul_outer(a, b, List.Nil, 0)
   }
 
   fn klimbs_mul_outer(a: KLimbs, b: KLimbs, acc: KLimbs, shift: G) -> KLimbs {
-    match load(a) {
-      ListNode.Nil => acc,
-      ListNode.Cons(a_limb, rest) =>
-        let prod = klimbs_mul_single(a_limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil));
+    match a {
+      List.Nil => acc,
+      List.Cons(__cell8) => let (a_limb, rest) = load(__cell8);
+        let prod = klimbs_mul_single(a_limb, b, [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil);
         let shifted = klimbs_shl_limbs(prod, shift);
         let new_acc = klimbs_add(acc, shifted);
         klimbs_mul_outer(rest, b, new_acc, shift + 1),
@@ -467,13 +467,13 @@ def klimbs := ⟦
   }
 
   fn klimbs_mul_single(a_limb: U64, b: KLimbs, carry: U64, acc: KLimbs) -> KLimbs {
-    match load(b) {
-      ListNode.Nil =>
+    match b {
+      List.Nil =>
         match u64_is_zero(carry) {
           1 => acc,
           0 => list_snoc(acc, carry),
         },
-      ListNode.Cons(b_limb, rest) =>
+      List.Cons(__cell9) => let (b_limb, rest) = load(__cell9);
         match u64_mul(a_limb, b_limb) {
           (lo, hi) =>
             match u64_add(lo, carry) {
@@ -492,14 +492,14 @@ def klimbs := ⟦
     match shift {
       0 => x,
       _ =>
-        let prepended = store(ListNode.Cons([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], x));
+        let prepended = List.Cons(store(([0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], x)));
         klimbs_shl_limbs(prepended, shift - 1),
     }
   }
 
   fn klimbs_is_zero(x: KLimbs) -> G {
-    match load(klimbs_normalize(x)) {
-      ListNode.Nil => 1,
+    match klimbs_normalize(x) {
+      List.Nil => 1,
       _ => 0,
     }
   }
@@ -583,9 +583,9 @@ def klimbs := ⟦
   -- division per step is O(1) work.
   fn klimbs_pow(base: KLimbs, exp: KLimbs) -> KLimbs {
     match klimbs_is_zero(exp) {
-      1 => store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil))),
+      1 => List.Cons(store(([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil))),
       0 =>
-        let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+        let two = List.Cons(store(([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil)));
         let (half, r) = klimbs_div_mod(exp, two);
         let sq = klimbs_pow(klimbs_normalize(klimbs_mul(base, base)), klimbs_normalize(half));
         match klimbs_is_zero(r) {
@@ -619,52 +619,52 @@ def klimbs := ⟦
 
   -- Mirror: BigUint::bitand. Walks parallel limbs; result length = min(len(a), len(b)).
   fn klimbs_land(a: KLimbs, b: KLimbs) -> KLimbs {
-    match load(a) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(la, ra) =>
-        match load(b) {
-          ListNode.Nil => store(ListNode.Nil),
-          ListNode.Cons(lb, rb) =>
-            store(ListNode.Cons(u64_and(la, lb), klimbs_land(ra, rb))),
+    match a {
+      List.Nil => List.Nil,
+      List.Cons(__cell10) => let (la, ra) = load(__cell10);
+        match b {
+          List.Nil => List.Nil,
+          List.Cons(__cell11) => let (lb, rb) = load(__cell11);
+            List.Cons(store((u64_and(la, lb), klimbs_land(ra, rb)))),
         },
     }
   }
 
   -- Mirror: BigUint::bitor. Result length = max(len(a), len(b)); shorter is zero-padded.
   fn klimbs_lor(a: KLimbs, b: KLimbs) -> KLimbs {
-    match load(a) {
-      ListNode.Nil => b,
-      ListNode.Cons(la, ra) =>
-        match load(b) {
-          ListNode.Nil => a,
-          ListNode.Cons(lb, rb) =>
-            store(ListNode.Cons(u64_or(la, lb), klimbs_lor(ra, rb))),
+    match a {
+      List.Nil => b,
+      List.Cons(__cell12) => let (la, ra) = load(__cell12);
+        match b {
+          List.Nil => a,
+          List.Cons(__cell13) => let (lb, rb) = load(__cell13);
+            List.Cons(store((u64_or(la, lb), klimbs_lor(ra, rb)))),
         },
     }
   }
 
   -- Mirror: BigUint::bitxor. Result length = max(len(a), len(b)); zero-padded shorter.
   fn klimbs_xor_op(a: KLimbs, b: KLimbs) -> KLimbs {
-    match load(a) {
-      ListNode.Nil => b,
-      ListNode.Cons(la, ra) =>
-        match load(b) {
-          ListNode.Nil => a,
-          ListNode.Cons(lb, rb) =>
-            store(ListNode.Cons(u64_xor_kbits(la, lb), klimbs_xor_op(ra, rb))),
+    match a {
+      List.Nil => b,
+      List.Cons(__cell14) => let (la, ra) = load(__cell14);
+        match b {
+          List.Nil => a,
+          List.Cons(__cell15) => let (lb, rb) = load(__cell15);
+            List.Cons(store((u64_xor_kbits(la, lb), klimbs_xor_op(ra, rb)))),
         },
     }
   }
 
   -- Shift left by n bits via repeated multiplication by 2.
   fn klimbs_shl(a: KLimbs, n: KLimbs) -> KLimbs {
-    let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+    let two = List.Cons(store(([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil)));
     klimbs_mul(a, klimbs_pow(two, n))
   }
 
   -- Shift right by n bits via integer division by 2^n.
   fn klimbs_shr(a: KLimbs, n: KLimbs) -> KLimbs {
-    let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+    let two = List.Cons(store(([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil)));
     klimbs_div(a, klimbs_pow(two, n))
   }
 ⟧

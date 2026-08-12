@@ -114,9 +114,9 @@ def check := ⟦
   }
 
   fn validate_univ_params_list(lvls: List‹KLevel›, bound: G) {
-    match load(lvls) {
-      ListNode.Nil => (),
-      ListNode.Cons(u, rest) =>
+    match lvls {
+      List.Nil => (),
+      List.Cons(__cell1) => let (u, rest) = load(__cell1);
         validate_univ_params_seen(u, bound);
         validate_univ_params_list(rest, bound),
     }
@@ -311,8 +311,8 @@ def check := ⟦
           "more universe levels than the inductive declares");
         (),
       _ =>
-        match load(lvls) {
-          ListNode.Cons(l, rest) =>
+        match lvls {
+          List.Cons(__cell2) => let (l, rest) = load(__cell2);
             match load(l) {
               KLevelNode.Param(i) =>
                 assert_eq!(i, idx,
@@ -334,8 +334,8 @@ def check := ⟦
     match n_params - i {
       0 => (),
       _ =>
-        match load(args) {
-          ListNode.Cons(arg, rest) =>
+        match args {
+          List.Cons(__cell3) => let (arg, rest) = load(__cell3);
             match load(arg) {
               KExprNode.BVar(j) =>
                 assert_eq!(j, ((n_fields + n_params) - 1) - i,
@@ -403,8 +403,8 @@ def check := ⟦
             -- with zero fields has none, so this is the only gate that
             -- sees it. Mirror Inductive.lean:52-56.
             let idx_args = list_drop(args, n_params);
-            let block_addrs = store(ListNode.Cons(block_addr,
-                                                   store(ListNode.Nil)));
+            let block_addrs = List.Cons(store((block_addr,
+                                                   List.Nil)));
             assert_eq!(list_any_mentions_block(idx_args, block_addrs), 0,
               "ctor return type: reflexive occurrence in an index argument");
             (),
@@ -424,7 +424,7 @@ def check := ⟦
                 let eq = k_is_def_eq(da, db, types);
                 assert_eq!(eq, 1,
                   "ctor parameter type disagrees with the inductive's");
-                let inner = store(ListNode.Cons(da, types));
+                let inner = List.Cons(store((da, types)));
                 check_param_agreement_go(ba, bb, n - 1, inner),
             },
         },
@@ -434,7 +434,7 @@ def check := ⟦
   -- Walk first n Foralls of both types asserting domain def-eq under the
   -- accumulated param-binder context.
   fn check_param_agreement(ta: KExpr, tb: KExpr, n: G) {
-    check_param_agreement_go(ta, tb, n, store(ListNode.Nil))
+    check_param_agreement_go(ta, tb, n, List.Nil)
   }
 
   -- Peel n (params + indices) Foralls; body must be Srt(l). Returns l.
@@ -451,7 +451,7 @@ def check := ⟦
         match load(w) {
           KExprNode.Forall(dom, body) =>
             get_result_sort_level(body, n - 1,
-              store(ListNode.Cons(dom, types))),
+              List.Cons(store((dom, types)))),
         },
     }
   }
@@ -464,7 +464,7 @@ def check := ⟦
         assert_eq!(level_leq(dom_level, ind_level), 1,
           "ctor field lives in a universe above the inductive's");
         check_field_universes_inner(body, ind_level,
-          store(ListNode.Cons(dom, types))),
+          List.Cons(store((dom, types)))),
       _ => (),
     }
   }
@@ -478,7 +478,7 @@ def check := ⟦
         match load(ctor_ty) {
           KExprNode.Forall(dom, body) =>
             check_field_universes_skip_params(body, n_params - 1,
-              ind_level, store(ListNode.Cons(dom, types))),
+              ind_level, List.Cons(store((dom, types)))),
         },
     }
   }
@@ -489,7 +489,7 @@ def check := ⟦
     match load(ind_level) {
       KLevelNode.Zero => (),
       _ => check_field_universes_skip_params(ctor_ty, n_params,
-                                                  ind_level, store(ListNode.Nil)),
+                                                  ind_level, List.Nil),
     }
   }
 
@@ -518,9 +518,9 @@ def check := ⟦
   -- ============================================================================
 
   fn addr_list_contains(xs: List‹Addr›, target: Addr) -> G {
-    match load(xs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(a, rest) =>
+    match xs {
+      List.Nil => 0,
+      List.Cons(__cell4) => let (a, rest) = load(__cell4);
         match address_eq(a, target) {
           1 => 1,
           _ => addr_list_contains(rest, target),
@@ -576,9 +576,9 @@ def check := ⟦
 
   fn list_any_mentions_block(es: List‹KExpr›,
                                   block_addrs: List‹Addr›) -> G {
-    match load(es) {
-      ListNode.Nil => 0,
-      ListNode.Cons(e, rest) =>
+    match es {
+      List.Nil => 0,
+      List.Cons(__cell5) => let (e, rest) = load(__cell5);
         match expr_mentions_block(e, block_addrs) {
           1 => 1,
           _ => list_any_mentions_block(rest, block_addrs),
@@ -595,7 +595,7 @@ def check := ⟦
       _ =>
         match load(e) {
           KExprNode.Forall(dom, body) =>
-            let t2 = store(ListNode.Cons(dom, types));
+            let t2 = List.Cons(store((dom, types)));
             peel_n_foralls_with_types(body, n - 1, t2),
           _ => (e, types),
         },
@@ -620,8 +620,8 @@ def check := ⟦
     match n_params - i {
       0 => (),
       _ =>
-        match load(args) {
-          ListNode.Cons(arg, rest) =>
+        match args {
+          List.Cons(__cell6) => let (arg, rest) = load(__cell6);
             match load(arg) {
               KExprNode.BVar(j) =>
                 assert_eq!(j, (depth - 1) - i,
@@ -683,7 +683,7 @@ def check := ⟦
           KExprNode.Forall(idom, ibody) =>
             assert_eq!(expr_mentions_block(idom, block_addrs), 0,
               "strict positivity: block occurs left of an arrow");
-            let t2 = store(ListNode.Cons(idom, types));
+            let t2 = List.Cons(store((idom, types)));
             check_positivity_aug(ibody, block_addrs, t2, check_params),
           _ =>
             match collect_spine(dom_w) {
@@ -720,8 +720,8 @@ def check := ⟦
                             -- mentioning an already-tracked block hits the
                             -- `caddr_is_peer` arm above and stops, and the
                             -- number of distinct reachable blocks is finite.
-                            let aug = store(ListNode.Cons(ext_block_addr,
-                                                              block_addrs));
+                            let aug = List.Cons(store((ext_block_addr,
+                                                              block_addrs)));
                             let rev_params = list_reverse(
                               list_take(args, n_ctor_params));
                             check_nested_ctors_positivity(ext_block_addr,
@@ -767,13 +767,13 @@ def check := ⟦
         match ctor_ci {
           KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _, _) =>
             match peel_n_foralls_with_types(ctor_ty, n_params,
-                                                 store(ListNode.Nil)) {
+                                                 List.Nil) {
               (body, _) =>
                 -- Parameters are substituted away, so the field walk
                 -- starts with no binders in scope — and with no
                 -- parameter binders to match, hence `check_params = 0`.
                 check_positivity_fields(expr_inst_many(body, rev_params, 0),
-                  aug, store(ListNode.Nil), 0);
+                  aug, List.Nil, 0);
                 check_nested_ctors_positivity(block_addr, ind_idx,
                   num_ctors, aug, cidx + 1, n_params, rev_params),
             },
@@ -786,7 +786,7 @@ def check := ⟦
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         check_positivity_aug(dom, block_addrs, types, check_params);
-        let t2 = store(ListNode.Cons(dom, types));
+        let t2 = List.Cons(store((dom, types)));
         check_positivity_fields(body, block_addrs, t2, check_params),
       _ => (),
     }
@@ -800,7 +800,7 @@ def check := ⟦
   -- handled by augment_block_idxs walking ctor bodies recursively.
   fn check_positivity(ctor_ty: KExpr, n_params: G,
                           block_addr: Addr, types: List‹KExpr›) {
-    let block_addrs = store(ListNode.Cons(block_addr, store(ListNode.Nil)));
+    let block_addrs = List.Cons(store((block_addr, List.Nil)));
     match peel_n_foralls_with_types(ctor_ty, n_params, types) {
       (body, types_after) =>
         check_positivity_fields(body, block_addrs, types_after, 1),
@@ -825,7 +825,7 @@ def check := ⟦
                                 num_ctors: G, num_lvls: G,
                                 block_addr: Addr, ind_idx: G) {
     let ind_level = get_result_sort_level(ty, n_params + n_indices,
-                                               store(ListNode.Nil));
+                                               List.Nil);
     check_inductive_shape_ctors(ty, n_params, n_indices, num_ctors,
                                      num_lvls, block_addr, ind_idx,
                                      ind_level, 0)
@@ -857,7 +857,7 @@ def check := ⟦
             check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                         block_addr, ind_idx);
             check_field_universes(cty, c_np, ind_level);
-            check_positivity(cty, c_np, block_addr, store(ListNode.Nil));
+            check_positivity(cty, c_np, block_addr, List.Nil);
             check_inductive_shape_ctors(ind_ty, n_params, n_indices,
                                              num_ctors, num_lvls,
                                              block_addr, ind_idx,
@@ -912,9 +912,9 @@ def check := ⟦
   fn peer_agree_walk(members: List‹MutConst›, self_ty: KExpr,
                           self_np: G, self_ni: G,
                           self_ind_idx: G, pos: G, block_addr: Addr) {
-    match load(members) {
-      ListNode.Nil => (),
-      ListNode.Cons(m, rest) =>
+    match members {
+      List.Nil => (),
+      List.Cons(__cell7) => let (m, rest) = load(__cell7);
         match m {
           MutConst.Indc(_) =>
             let is_self = eq_zero(pos - self_ind_idx);
@@ -931,9 +931,9 @@ def check := ⟦
                       "mutual block peers disagree on parameter count");
                     check_param_agreement(self_ty, peer_ty, self_np);
                     let self_lvl = get_result_sort_level(self_ty,
-                      self_np + self_ni, store(ListNode.Nil));
+                      self_np + self_ni, List.Nil);
                     let peer_lvl = get_result_sort_level(peer_ty,
-                      peer_np + peer_ni, store(ListNode.Nil));
+                      peer_np + peer_ni, List.Nil);
                     assert_eq!(level_equal(self_lvl, peer_lvl), 1,
                       "mutual block peers land in different universes");
                     peer_agree_walk(rest, self_ty, self_np, self_ni,
@@ -976,7 +976,7 @@ def check := ⟦
                           0 => 1,
                           _ => check_large_prop_ctor(ctor_ty, n_params,
                                                           n_fields,
-                                                          store(ListNode.Nil)),
+                                                          List.Nil),
                         },
                       _ => 0,
                     },
@@ -998,11 +998,11 @@ def check := ⟦
     match n_params {
       0 =>
         check_large_walk_fields(ty, n_fields, 0, types,
-                                     store(ListNode.Nil)),
+                                     List.Nil),
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            let inner = store(ListNode.Cons(dom, types));
+            let inner = List.Cons(store((dom, types)));
             check_large_prop_ctor(body, n_params - 1, n_fields, inner),
           _ => 0,
         },
@@ -1035,9 +1035,9 @@ def check := ⟦
             let bvar_idx = (n_fields - 1) - field_idx;
             let new_bvars = match is_data {
               0 => data_bvars,
-              _ => store(ListNode.Cons(bvar_idx, data_bvars)),
+              _ => List.Cons(store((bvar_idx, data_bvars))),
             };
-            let inner = store(ListNode.Cons(dom, types));
+            let inner = List.Cons(store((dom, types)));
             check_large_walk_fields(body, n_fields, field_idx + 1,
                                           inner, new_bvars),
           _ => 0,
@@ -1048,9 +1048,9 @@ def check := ⟦
   -- Returns 1 iff every BVar idx in `bvars` appears in `args` (as a syntactic
   -- BVar at the ret-binder depth).
   fn all_bvars_in_args(bvars: List‹G›, args: List‹KExpr›) -> G {
-    match load(bvars) {
-      ListNode.Nil => 1,
-      ListNode.Cons(b, rest) =>
+    match bvars {
+      List.Nil => 1,
+      List.Cons(__cell8) => let (b, rest) = load(__cell8);
         match args_contain_bvar(args, b) {
           0 => 0,
           _ => all_bvars_in_args(rest, args),
@@ -1060,9 +1060,9 @@ def check := ⟦
 
   -- Returns 1 if any element of `args` is syntactically `BVar(target)`.
   fn args_contain_bvar(args: List‹KExpr›, target: G) -> G {
-    match load(args) {
-      ListNode.Nil => 0,
-      ListNode.Cons(a, rest) =>
+    match args {
+      List.Nil => 0,
+      List.Cons(__cell9) => let (a, rest) = load(__cell9);
         match load(a) {
           KExprNode.BVar(i) =>
             match i - target {
@@ -1090,7 +1090,7 @@ def check := ⟦
           0 => 0,
           _ =>
             let result_level = get_result_sort_level(ind_ty,
-              n_params + n_indices, store(ListNode.Nil));
+              n_params + n_indices, List.Nil);
             match level_equal(result_level, store(KLevelNode.Zero)) {
               0 => 0,
               _ =>
@@ -1140,13 +1140,13 @@ def check := ⟦
   }
 
   fn muts_indc_count_is_one(members: List‹MutConst›, count: G) -> G {
-    match load(members) {
-      ListNode.Nil =>
+    match members {
+      List.Nil =>
         match count {
           1 => 1,
           _ => 0,
         },
-      ListNode.Cons(m, rest) =>
+      List.Cons(__cell10) => let (m, rest) = load(__cell10);
         match m {
           MutConst.Indc(_) => muts_indc_count_is_one(rest, count + 1),
           _ => muts_indc_count_is_one(rest, count),
@@ -1210,12 +1210,12 @@ def check := ⟦
               (head, _) =>
                 match load(head) {
                   KExprNode.Const(_, us) => us,
-                  _ => store(ListNode.Nil),
+                  _ => List.Nil,
                 },
             },
-          _ => store(ListNode.Nil),
+          _ => List.Nil,
         },
-      _ => store(ListNode.Nil),
+      _ => List.Nil,
     }
   }
 
@@ -1223,9 +1223,9 @@ def check := ⟦
   -- assumes that shape; a concrete occurrence may legitimately carry Succ or
   -- Max levels, and those must not be fed into it.
   fn lvls_all_params(us: List‹KLevel›) -> G {
-    match load(us) {
-      ListNode.Nil => 1,
-      ListNode.Cons(u, rest) =>
+    match us {
+      List.Nil => 1,
+      List.Cons(__cell11) => let (u, rest) = load(__cell11);
         match load(u) {
           KLevelNode.Param(_) => lvls_all_params(rest),
           _ => 0,
@@ -1261,13 +1261,13 @@ def check := ⟦
   -- arg that references a motive, minor, or index binder has no image in
   -- the param frame, and expr_lower would silently capture it.
   fn spec_params_lower(sps: List‹KExpr›, d: G) -> List‹KExpr› {
-    match load(sps) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(sp, rest) =>
+    match sps {
+      List.Nil => List.Nil,
+      List.Cons(__cell12) => let (sp, rest) = load(__cell12);
         assert_eq!(has_bvar_in_range(sp, 0, d), 0,
           "nested occurrence's parameter references a motive, minor, or index binder");
-        store(ListNode.Cons(expr_lower(sp, d, 0),
-                            spec_params_lower(rest, d))),
+        List.Cons(store((expr_lower(sp, d, 0),
+                            spec_params_lower(rest, d)))),
     }
   }
 
@@ -1299,11 +1299,11 @@ def check := ⟦
   -- Build param-lvls range: [Param(start), Param(start+1), ..., Param(start+count-1)].
   fn build_param_lvls_range(start: G, count: G, i: G) -> List‹KLevel› {
     match count - i {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
-        store(ListNode.Cons(
+        List.Cons(store((
           store(KLevelNode.Param(start + i)),
-          build_param_lvls_range(start, count, i + 1))),
+          build_param_lvls_range(start, count, i + 1)))),
     }
   }
 
@@ -1325,10 +1325,10 @@ def check := ⟦
             match ci {
               KConstantInfo.Induct(nlvls, _, _, _, _, _, _, _) =>
                 let occ = build_param_lvls_range(univ_offset, nlvls, 0);
-                store(ListNode.Cons(
-                  (block_addr, 0, store(ListNode.Nil), occ),
-                  store(ListNode.Nil))),
-              _ => store(ListNode.Nil),
+                List.Cons(store((
+                  (block_addr, 0, List.Nil, occ),
+                  List.Nil))),
+              _ => List.Nil,
             },
         },
     }
@@ -1338,9 +1338,9 @@ def check := ⟦
                               cur: List‹MutConst›, block_addr: Addr,
                               univ_offset: G, pos: G)
                               -> List‹(Addr, G, List‹KExpr›, List‹KLevel›)› {
-    match load(cur) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(m, rest) =>
+    match cur {
+      List.Nil => List.Nil,
+      List.Cons(__cell13) => let (m, rest) = load(__cell13);
         match m {
           MutConst.Indc(_) =>
             let member_addr = projection_addr(all_members, block_addr, pos);
@@ -1350,10 +1350,10 @@ def check := ⟦
               _ => 0,
             };
             let occ = build_param_lvls_range(univ_offset, nlvls, 0);
-            store(ListNode.Cons(
-              (member_addr, 0, store(ListNode.Nil), occ),
+            List.Cons(store((
+              (member_addr, 0, List.Nil, occ),
               flat_originals_walk(all_members, rest, block_addr,
-                univ_offset, pos + 1))),
+                univ_offset, pos + 1)))),
           _ =>
             flat_originals_walk(all_members, rest, block_addr,
               univ_offset, pos + 1),
@@ -1376,7 +1376,7 @@ def check := ⟦
           ConstantInfo.Muts(members) =>
             aux_from_recrs_walk(members, members, block_addr,
               univ_offset, originals, 0),
-          _ => store(ListNode.Nil),
+          _ => List.Nil,
         },
     }
   }
@@ -1385,9 +1385,9 @@ def check := ⟦
   fn aux_already_in(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                           target_addr: Addr,
                           target_sp: List‹KExpr›) -> G {
-    match load(flat) {
-      ListNode.Nil => 0,
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => 0,
+      List.Cons(__cell14) => let (m, rest) = load(__cell14);
         match m {
           (addr, is_aux, sp, _ou) =>
             match is_aux {
@@ -1502,16 +1502,16 @@ def check := ⟦
   }
 
   fn level_list_struct_eq(a: List‹KLevel›, b: List‹KLevel›) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(x, xr) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(y, yr) =>
+      List.Cons(__cell15) => let (x, xr) = load(__cell15);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell16) => let (y, yr) = load(__cell16);
             match level_struct_eq(x, y) {
               1 => level_list_struct_eq(xr, yr),
               _ => 0,
@@ -1524,16 +1524,16 @@ def check := ⟦
   -- a flat position fail to match, changing the reconstruction. Structural
   -- compare, not raw pointer equality.
   fn spec_params_ptr_eq(a: List‹KExpr›, b: List‹KExpr›) -> G {
-    match load(a) {
-      ListNode.Nil =>
-        match load(b) {
-          ListNode.Nil => 1,
+    match a {
+      List.Nil =>
+        match b {
+          List.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(x, xr) =>
-        match load(b) {
-          ListNode.Nil => 0,
-          ListNode.Cons(y, yr) =>
+      List.Cons(__cell17) => let (x, xr) = load(__cell17);
+        match b {
+          List.Nil => 0,
+          List.Cons(__cell18) => let (y, yr) = load(__cell18);
             match kexpr_struct_eq(x, y) {
               1 => spec_params_ptr_eq(xr, yr),
               _ => 0,
@@ -1548,9 +1548,9 @@ def check := ⟦
                               acc: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                               pos: G)
                               -> List‹(Addr, G, List‹KExpr›, List‹KLevel›)› {
-    match load(cur) {
-      ListNode.Nil => acc,
-      ListNode.Cons(m, rest) =>
+    match cur {
+      List.Nil => acc,
+      List.Cons(__cell19) => let (m, rest) = load(__cell19);
         match m {
           MutConst.Recr(_) =>
             let rec_wrapper = projection_addr(all_members, block_addr, pos);
@@ -1600,7 +1600,7 @@ def check := ⟦
     match rec_ci {
       KConstantInfo.Rec(_, ty, np, ni, nmot, nmin, _, _, _, _, _) =>
         extract_aux_spec_params(ty, np, nmot, nmin, ni, ext_np),
-      _ => store(ListNode.Nil),
+      _ => List.Nil,
     }
   }
 
@@ -1640,9 +1640,9 @@ def check := ⟦
   fn first_recr_parent_block(all_members: List‹MutConst›,
                                   cur: List‹MutConst›, block_addr: Addr,
                                   pos: G, fallback: Addr) -> Addr {
-    match load(cur) {
-      ListNode.Nil => fallback,
-      ListNode.Cons(m, rest) =>
+    match cur {
+      List.Nil => fallback,
+      List.Cons(__cell20) => let (m, rest) = load(__cell20);
         match m {
           MutConst.Recr(_) =>
             let wrapper = projection_addr(all_members, block_addr, pos);
@@ -1720,9 +1720,9 @@ def check := ⟦
                                   acc: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                                   pos: G)
                                  -> List‹(Addr, G, List‹KExpr›, List‹KLevel›)› {
-    match load(cur) {
-      ListNode.Nil => acc,
-      ListNode.Cons(m, rest) =>
+    match cur {
+      List.Nil => acc,
+      List.Cons(__cell21) => let (m, rest) = load(__cell21);
         match m {
           MutConst.Recr(_) =>
             let rec_wrapper = projection_addr(all_members, rec_block_addr, pos);
@@ -1772,9 +1772,9 @@ def check := ⟦
   -- For aux target: matches aux's target ext addr.
   fn flat_find_pos(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                         target_addr: Addr, pos: G) -> (G, G) {
-    match load(flat) {
-      ListNode.Nil => (0, 0),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => (0, 0),
+      List.Cons(__cell22) => let (m, rest) = load(__cell22);
         match m {
           (member_addr, _is_aux, _sp, _ou) =>
             match address_eq(member_addr, target_addr) {
@@ -1792,9 +1792,9 @@ def check := ⟦
                              want_aux: G,
                              want_sp: List‹KExpr›,
                              pos: G) -> (G, G) {
-    match load(flat) {
-      ListNode.Nil => (0, 0),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => (0, 0),
+      List.Cons(__cell23) => let (m, rest) = load(__cell23);
         match m {
           (member_addr, is_aux, sp, _ou) =>
             let addr_match = address_eq(member_addr, target_addr);
@@ -1818,10 +1818,10 @@ def check := ⟦
   -- Get member at position (returns (addr, is_aux, spec_params, occ_us)).
   fn flat_member_at(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                          pos: G) -> (Addr, G, List‹KExpr›, List‹KLevel›) {
-    match load(flat) {
-      ListNode.Nil => (store([0u8; 32]), 0, store(ListNode.Nil),
-                       store(ListNode.Nil)),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => (store([0u8; 32]), 0, List.Nil,
+                       List.Nil),
+      List.Cons(__cell24) => let (m, rest) = load(__cell24);
         match pos {
           0 => m,
           _ => flat_member_at(rest, pos - 1),
@@ -1892,16 +1892,16 @@ def check := ⟦
   -- binders than `n` is impossible for a block that passed validation.
   fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
     match n {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+            List.Cons(store((dom, collect_index_doms(body, n - 1)))),
           _ =>
-            match load(whnf(ty, store(ListNode.Nil))) {
+            match load(whnf(ty, List.Nil)) {
               KExprNode.Forall(dom, body) =>
-                store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
-              _ => store(ListNode.Nil),
+                List.Cons(store((dom, collect_index_doms(body, n - 1)))),
+              _ => List.Nil,
             },
         },
     }
@@ -1923,9 +1923,9 @@ def check := ⟦
 
   fn apply_spec_params_lifted(head: KExpr, spec_params: List‹KExpr›,
                                     depth: G) -> KExpr {
-    match load(spec_params) {
-      ListNode.Nil => head,
-      ListNode.Cons(sp, rest) =>
+    match spec_params {
+      List.Nil => head,
+      List.Cons(__cell25) => let (sp, rest) = load(__cell25);
         let lifted = expr_lift(sp, depth, 0);
         apply_spec_params_lifted(store(KExprNode.App(head, lifted)),
           rest, depth),
@@ -1958,9 +1958,9 @@ def check := ⟦
   -- Wrap body in foralls outside-in: doms = [d0, d1, ..., dM] →
   -- `forall (_ : d0), forall (_ : d1), ..., forall (_ : dM), body`.
   fn wrap_foralls(body: KExpr, doms: List‹KExpr›) -> KExpr {
-    match load(doms) {
-      ListNode.Nil => body,
-      ListNode.Cons(dom, rest) =>
+    match doms {
+      List.Nil => body,
+      List.Cons(__cell26) => let (dom, rest) = load(__cell26);
         store(KExprNode.Forall(dom, wrap_foralls(body, rest))),
     }
   }
@@ -1972,7 +1972,7 @@ def check := ⟦
   -- telescope for the reconstruction to be compared against.
   fn collect_n_doms_whnf(ty: KExpr, n: G) -> (List‹KExpr›, KExpr) {
     match n {
-      0 => (store(ListNode.Nil), ty),
+      0 => (List.Nil, ty),
       _ =>
         -- Structural first, reduce only if that fails. These bodies carry
         -- loose BVars (the walk substitutes nothing and the context is
@@ -1982,19 +1982,19 @@ def check := ⟦
         match load(ty) {
           KExprNode.Forall(dom, body) =>
             match collect_n_doms_whnf(body, n - 1) {
-              (rest, after) => (store(ListNode.Cons(dom, rest)), after),
+              (rest, after) => (List.Cons(store((dom, rest))), after),
             },
           _ =>
-            match load(whnf(ty, store(ListNode.Nil))) {
+            match load(whnf(ty, List.Nil)) {
               KExprNode.Forall(dom, body) =>
                 match collect_n_doms_whnf(body, n - 1) {
-                  (rest, after) => (store(ListNode.Cons(dom, rest)), after),
+                  (rest, after) => (List.Cons(store((dom, rest))), after),
                 },
               -- Tolerant, matching both reference kernels: stop early rather
               -- than reject here. A short telescope yields a reconstruction
               -- that differs from the declared type, so the def-eq assert
               -- still rejects — with an accurate message instead of this one.
-              _ => (store(ListNode.Nil), ty),
+              _ => (List.Nil, ty),
             },
         },
     }
@@ -2004,11 +2004,11 @@ def check := ⟦
   -- telescope, so each must be lifted past them. Position `i` is already
   -- under the `i` index binders that precede it, hence the `i` cutoff.
   fn list_lift_indices(doms: List‹KExpr›, shift: G, i: G) -> List‹KExpr› {
-    match load(doms) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(d, rest) =>
-        store(ListNode.Cons(expr_lift(d, shift, i),
-                            list_lift_indices(rest, shift, i + 1))),
+    match doms {
+      List.Nil => List.Nil,
+      List.Cons(__cell27) => let (d, rest) = load(__cell27);
+        List.Cons(store((expr_lift(d, shift, i),
+                            list_lift_indices(rest, shift, i + 1)))),
     }
   }
 
@@ -2094,9 +2094,9 @@ def check := ⟦
   -- Wrap body in Lams outside-in: doms = [d0, d1, ..., dM] →
   -- `Lam d0. Lam d1. ... Lam dM. body`.
   fn wrap_lams(body: KExpr, doms: List‹KExpr›) -> KExpr {
-    match load(doms) {
-      ListNode.Nil => body,
-      ListNode.Cons(dom, rest) =>
+    match doms {
+      List.Nil => body,
+      List.Cons(__cell28) => let (dom, rest) = load(__cell28);
         store(KExprNode.Lam(dom, wrap_lams(body, rest))),
     }
   }
@@ -2209,7 +2209,7 @@ def check := ⟦
                   store(KLevelNode.Zero))), 0)),
             };
             let result_level = get_result_sort_level(pty, pnp + pni,
-              store(ListNode.Nil));
+              List.Nil);
             let univ_offset = is_large_eliminator(result_level,
               num_ctors, single_ctor_pair);
             let elim_level = match univ_offset {
@@ -2226,7 +2226,7 @@ def check := ⟦
               (1 - address_eq(rec_block_addr, parent_block_addr));
             let rec_spec_params = match rec_is_aux {
               1 => extract_aux_spec_params_from_rec(rec_ci, pnp),
-              _ => store(ListNode.Nil),
+              _ => List.Nil,
             };
             -- Locate this recursor's parent in the flat block.
             --
@@ -2295,7 +2295,7 @@ def check := ⟦
         -- fallback route through here, so neither can skip this.
         let canonical_ty = build_rec_type(pty, pnlvls, n_p, pni, elim_level,
           univ_offset, flat, flat_own_params, self_pos);
-        assert_eq!(k_is_def_eq(ty, canonical_ty, store(ListNode.Nil)), 1,
+        assert_eq!(k_is_def_eq(ty, canonical_ty, List.Nil), 1,
           "recursor's declared type is not def-eq to the canonical reconstruction");
         let self_ctors_offset = ctors_before_pos(flat, self_pos, 0);
         let canonical = populate_rules(num_ctors, self_ctors_offset,
@@ -2313,9 +2313,9 @@ def check := ⟦
     match cur_pos - target_pos {
       0 => 0,
       _ =>
-        match load(flat) {
-          ListNode.Nil => 0,
-          ListNode.Cons(m, rest) =>
+        match flat {
+          List.Nil => 0,
+          List.Cons(__cell29) => let (m, rest) = load(__cell29);
             match m {
               (addr, _, _, _) =>
                 let ci = load(get_ci(addr));
@@ -2342,7 +2342,7 @@ def check := ⟦
                           is_aux: G, spec_params: List‹KExpr›,
                           cidx: G) -> List‹KExpr› {
     match num_ctors - cidx {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         let ctor_ci = load(get_ci_cprj(block_addr, ind_idx, cidx));
         match ctor_ci {
@@ -2352,12 +2352,12 @@ def check := ⟦
               n_params, n_motives, n_minors, np, occurrence_us,
               rec_lvls_list, flat, peer_recs, flat_own_params,
               is_aux, spec_params);
-            store(ListNode.Cons(rhs,
+            List.Cons(store((rhs,
               populate_rules(num_ctors, self_ctors_offset, block_addr,
                 ind_idx, n_params, n_motives, n_minors, occurrence_us,
                 rec_lvls_list, flat, peer_recs, flat_own_params, is_aux,
-                spec_params, cidx + 1))),
-          _ => store(ListNode.Nil),
+                spec_params, cidx + 1)))),
+          _ => List.Nil,
         },
     }
   }
@@ -2368,9 +2368,9 @@ def check := ⟦
   fn compare_rules(stored: List‹KRecRule›, canonical: List‹KExpr›,
                         n_p: G, n_mot: G, n_min: G,
                         block_addr: Addr, ind_idx: G, num_ctors: G, pos: G) {
-    match load(stored) {
-      ListNode.Nil => (),
-      ListNode.Cons(r, rest) =>
+    match stored {
+      List.Nil => (),
+      List.Cons(__cell30) => let (r, rest) = load(__cell30);
         match r {
           KRecRule.Mk(cidx, nf, rhs) =>
             -- Pin the rule's own labels against the constructor it claims.
@@ -2398,12 +2398,12 @@ def check := ⟦
                   "recursor rule field count differs from the ctor's");
                 (),
             };
-            match load(canonical) {
-              ListNode.Nil => (),
-              ListNode.Cons(cbody, crest) =>
+            match canonical {
+              List.Nil => (),
+              List.Cons(__cell31) => let (cbody, crest) = load(__cell31);
                 let total = ((n_p + n_mot) + n_min) + nf;
                 match peel_n_lams_collect(rhs, total, 0,
-                        store(ListNode.Nil)) {
+                        List.Nil) {
                   (stored_body, peeled, _) =>
                     assert_eq!(peeled, total,
                       "recursor rule rhs has too few binders to peel");
@@ -2428,7 +2428,7 @@ def check := ⟦
                     -- needs to INFER a bound variable's type now runs out
                     -- of context and aborts, which is the safe direction.
                     assert_eq!(k_is_def_eq(stored_body, cbody,
-                        store(ListNode.Nil)), 1,
+                        List.Nil), 1,
                       "recursor rule rhs differs from canonical reconstruction");
                     (),
                 };
@@ -2449,9 +2449,9 @@ def check := ⟦
                           n_params: G, n_motives: G, n_minors: G,
                           n_fields: G, rec_lvls_list: List‹KLevel›,
                           k: G) -> KExpr {
-    match load(rec_indices) {
-      ListNode.Nil => head,
-      ListNode.Cons(field_idx, rest) =>
+    match rec_indices {
+      List.Nil => head,
+      List.Cons(__cell32) => let (field_idx, rest) = load(__cell32);
         let mem_idx = list_lookup_or_default(rec_member_idxs, k, 0);
         let target_rec = list_lookup_or_default(peer_recs, mem_idx,
           store([0u8; 32]));
@@ -2480,7 +2480,7 @@ def check := ⟦
             -- wrapper's arguments (`drop 1 [A, B] = [B]`) instead of the
             -- inductive's (`drop 1 [a] = []`), so the IH was applied to one
             -- argument too many.
-            match collect_spine(whnf(inner_body, store(ListNode.Nil))) {
+            match collect_spine(whnf(inner_body, List.Nil)) {
               (_dh, dargs) =>
                 let idx_args = list_drop(dargs, target_n_params);
                 let with_idx = apply_spine_expr(with_minors, idx_args);
@@ -2525,8 +2525,8 @@ def check := ⟦
       n_own_params, 0, is_aux, spec_params, 0);
     -- spec_lift_by must name the same frame the spec_params are stored
     -- in; walk_fields_classify adds the walk depth itself.
-    match walk_fields_classify(after_params, flat, store(ListNode.Nil),
-            store(ListNode.Nil), store(ListNode.Nil), 0, 0) {
+    match walk_fields_classify(after_params, flat, List.Nil,
+            List.Nil, List.Nil, 0, 0) {
       (field_doms, rec_indices, rec_member_idxs, _ret_ty) =>
         let minor_var = (body_depth - 1) - ((n_params + n_motives) +
                                               ctor_minor_index);
@@ -2546,15 +2546,15 @@ def check := ⟦
   fn build_peer_recs(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                           rec_block_addr: Addr,
                           rec_self_addr: Addr) -> List‹Addr› {
-    match load(flat) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => List.Nil,
+      List.Cons(__cell33) => let (m, rest) = load(__cell33);
         match m {
           (member_addr, is_aux, sp, _ou) =>
             let peer = find_peer_recursor_with_spec(rec_block_addr,
               member_addr, sp, is_aux, rec_self_addr);
-            store(ListNode.Cons(peer,
-              build_peer_recs(rest, rec_block_addr, rec_self_addr))),
+            List.Cons(store((peer,
+              build_peer_recs(rest, rec_block_addr, rec_self_addr)))),
         },
     }
   }
@@ -2582,9 +2582,9 @@ def check := ⟦
                                    target_sp: List‹KExpr›,
                                    target_is_aux: G,
                                    rec_self_addr: Addr, pos: G) -> Addr {
-    match load(cur) {
-      ListNode.Nil => rec_self_addr,
-      ListNode.Cons(m, rest) =>
+    match cur {
+      List.Nil => rec_self_addr,
+      List.Cons(__cell34) => let (m, rest) = load(__cell34);
         match m {
           MutConst.Recr(_) =>
             let rec_wrapper = projection_addr(all_members, block_addr, pos);
@@ -2630,9 +2630,9 @@ def check := ⟦
   -- KCI). Used by build_ih_doms for target_n_params lookup.
   fn build_flat_own_params(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›)
                                   -> List‹G› {
-    match load(flat) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => List.Nil,
+      List.Cons(__cell35) => let (m, rest) = load(__cell35);
         match m {
           (member_addr, _is_aux, _sp, _ou) =>
             let ci = load(get_ci(member_addr));
@@ -2640,8 +2640,8 @@ def check := ⟦
               KConstantInfo.Induct(_, _, n, _, _, _, _, _) => n,
               _ => 0,
             };
-            store(ListNode.Cons(np,
-              build_flat_own_params(rest))),
+            List.Cons(store((np,
+              build_flat_own_params(rest)))),
         },
     }
   }
@@ -2655,8 +2655,8 @@ def check := ⟦
     let info = ConstantInfo.CPrj(ConstructorProj.Mk(idx_u64, cidx_u64,
       block_addr));
     let proj_c = Constant.Mk(info,
-      store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
-    let bytes = put_constant(proj_c, store(ListNode.Nil));
+      List.Nil, List.Nil, List.Nil);
+    let bytes = put_constant(proj_c, List.Nil);
     bytes_to_addr(bytes)
   }
 
@@ -2673,7 +2673,7 @@ def check := ⟦
                             num_ctors: G, prev_minors: G,
                             cidx: G) -> List‹KExpr› {
     match num_ctors - cidx {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         let ctor_ci = load(get_ci_cprj(block_addr, ind_idx, cidx));
         match ctor_ci {
@@ -2683,11 +2683,11 @@ def check := ⟦
               is_aux, spec_params, occurrence_us, flat, flat_own_params,
               n_rec_params, n_motives, prev_minors, motive_base,
               self_mem_idx);
-            store(ListNode.Cons(minor,
+            List.Cons(store((minor,
               build_minor_doms(member_addr, is_aux, spec_params,
                 occurrence_us, flat, flat_own_params, n_rec_params,
                 n_motives, motive_base, self_mem_idx, block_addr, ind_idx,
-                num_ctors, prev_minors + 1, cidx + 1))),
+                num_ctors, prev_minors + 1, cidx + 1)))),
           -- No tolerant arm on purpose. Returning Nil for a non-Ctor would
           -- yield a canonical type with FEWER minor premises than the
           -- inductive has constructors, and the declared type is
@@ -2719,9 +2719,9 @@ def check := ⟦
                                  n_rec_params: G, n_motives: G,
                                  motive_base: G, prev_minors: G,
                                  mem_pos: G) -> List‹KExpr› {
-    match load(flat) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => List.Nil,
+      List.Cons(__cell36) => let (m, rest) = load(__cell36);
         match m {
           (member_addr, is_aux, spec_params, occ_us) =>
             let ci = load(get_ci(member_addr));
@@ -2794,7 +2794,7 @@ def check := ⟦
             peel_ctor_params_subst(body_substed, n - 1, depth,
               spec_lift, is_aux, spec_params, j + 1),
           _ =>
-            match load(whnf(ty, store(ListNode.Nil))) {
+            match load(whnf(ty, List.Nil)) {
               KExprNode.Forall(_, body) =>
                 let p = ctor_subst_param_for(j, depth, spec_lift, is_aux,
                   spec_params);
@@ -2822,8 +2822,8 @@ def check := ⟦
     let below_params = n_motives + prev_minors;
     let after_params = peel_ctor_params_subst(ctor_ty_inst, n_own_params,
       minor_saved, below_params, is_aux, spec_params, 0);
-    match walk_fields_classify(after_params, flat, store(ListNode.Nil),
-            store(ListNode.Nil), store(ListNode.Nil), 0, below_params) {
+    match walk_fields_classify(after_params, flat, List.Nil,
+            List.Nil, List.Nil, 0, below_params) {
       (field_doms, rec_indices, rec_member_idxs, ret_ty) =>
         let n_fields = list_length(field_doms);
         let n_ihs = list_length(rec_indices);
@@ -2854,7 +2854,7 @@ def check := ⟦
 
   -- Peel leading Foralls off `ty`, return (forall_doms, body).
   fn peel_leading_foralls(ty: KExpr) -> (List‹KExpr›, KExpr) {
-    let pair = peel_leading_foralls_acc(ty, store(ListNode.Nil));
+    let pair = peel_leading_foralls_acc(ty, List.Nil);
     match pair {
       (rev_acc, body) => (list_reverse(rev_acc), body),
     }
@@ -2864,7 +2864,7 @@ def check := ⟦
                                     -> (List‹KExpr›, KExpr) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        peel_leading_foralls_acc(body, store(ListNode.Cons(dom, acc))),
+        peel_leading_foralls_acc(body, List.Cons(store((dom, acc)))),
       _ => (acc, ty),
     }
   }
@@ -2886,9 +2886,9 @@ def check := ⟦
                         flat_own_params: List‹G›,
                         motive_base: G, n_fields: G, minor_saved: G,
                         k: G) -> List‹KExpr› {
-    match load(rec_indices) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(field_idx, rest) =>
+    match rec_indices {
+      List.Nil => List.Nil,
+      List.Cons(__cell37) => let (field_idx, rest) = load(__cell37);
         let mem_idx = list_lookup_or_default(rec_member_idxs, k, 0);
         let target_n_params = list_lookup_or_default(flat_own_params,
           mem_idx, 0);
@@ -2906,7 +2906,7 @@ def check := ⟦
             -- head, so its argument would be taken for an index and the
             -- induction hypothesis would apply the motive to one argument
             -- too many.
-            match collect_spine(whnf(inner_body, store(ListNode.Nil))) {
+            match collect_spine(whnf(inner_body, List.Nil)) {
               (_h, dom_args) =>
                 let idx_args = list_drop(dom_args, target_n_params);
                 let motive_ref = store(KExprNode.BVar(motive_bvar));
@@ -2915,10 +2915,10 @@ def check := ⟦
                 let field_app = build_apply_xs(field_ref, n_xs, 0);
                 let ih_body = store(KExprNode.App(with_indices, field_app));
                 let ih_dom = wrap_foralls(ih_body, forall_doms);
-                store(ListNode.Cons(ih_dom,
+                List.Cons(store((ih_dom,
                   build_ih_doms(rest, rec_member_idxs, field_doms,
                     flat_own_params, motive_base, n_fields, minor_saved,
-                    k + 1))),
+                    k + 1)))),
             },
         },
     }
@@ -2927,11 +2927,11 @@ def check := ⟦
   -- Lift each expr in a list by (shift, cutoff).
   fn list_lift_each(es: List‹KExpr›, shift: G, cutoff: G)
                           -> List‹KExpr› {
-    match load(es) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(e, rest) =>
-        store(ListNode.Cons(expr_lift(e, shift, cutoff),
-          list_lift_each(rest, shift, cutoff))),
+    match es {
+      List.Nil => List.Nil,
+      List.Cons(__cell38) => let (e, rest) = load(__cell38);
+        List.Cons(store((expr_lift(e, shift, cutoff),
+          list_lift_each(rest, shift, cutoff)))),
     }
   }
 
@@ -3002,7 +3002,7 @@ def check := ⟦
   -- below it, running the context cut off the end of the list.
   fn is_rec_field_peel(ty: KExpr, flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                             spec_lift_by: G) -> (G, G) {
-    let w = whnf(ty, store(ListNode.Nil));
+    let w = whnf(ty, List.Nil);
     match load(w) {
       KExprNode.Forall(_, body) =>
         is_rec_field_peel(body, flat, spec_lift_by),
@@ -3030,9 +3030,9 @@ def check := ⟦
   fn flat_find_matching(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                               caddr: Addr, dom_args: List‹KExpr›,
                               spec_lift_by: G, pos: G) -> (G, G) {
-    match load(flat) {
-      ListNode.Nil => (0, 0),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => (0, 0),
+      List.Cons(__cell39) => let (m, rest) = load(__cell39);
         match m {
           (member_addr, is_aux, sp, _) =>
             let addr_match = address_eq(member_addr, caddr);
@@ -3058,12 +3058,12 @@ def check := ⟦
   fn spec_params_dom_prefix_match(sp: List‹KExpr›,
                                         args: List‹KExpr›,
                                         lift_by: G) -> G {
-    match load(sp) {
-      ListNode.Nil => 1,
-      ListNode.Cons(s, sr) =>
-        match load(args) {
-          ListNode.Nil => 0,
-          ListNode.Cons(a, ar) =>
+    match sp {
+      List.Nil => 1,
+      List.Cons(__cell40) => let (s, sr) = load(__cell40);
+        match args {
+          List.Nil => 0,
+          List.Cons(__cell41) => let (a, ar) = load(__cell41);
             let s_lifted = expr_lift(s, lift_by, 0);
             match kexpr_struct_eq(s_lifted, a) {
               1 => spec_params_dom_prefix_match(sr, ar, lift_by),
@@ -3092,11 +3092,11 @@ def check := ⟦
         -- field after the first fails to match its aux flat member and
         -- silently loses its induction hypothesis.
         let r = is_rec_field(dom, flat, spec_lift_by + fidx);
-        let new_doms = store(ListNode.Cons(dom, doms_acc));
+        let new_doms = List.Cons(store((dom, doms_acc)));
         match r {
           (1, mem_idx) =>
-            let new_rec = store(ListNode.Cons(fidx, rec_acc));
-            let new_mem = store(ListNode.Cons(mem_idx, rec_mem_acc));
+            let new_rec = List.Cons(store((fidx, rec_acc)));
+            let new_mem = List.Cons(store((mem_idx, rec_mem_acc)));
             walk_fields_classify(body, flat, new_doms, new_rec,
               new_mem, fidx + 1, spec_lift_by),
           _ =>
@@ -3111,9 +3111,9 @@ def check := ⟦
   fn build_all_motives_walk(flat: List‹(Addr, G, List‹KExpr›, List‹KLevel›)›,
                                   elim_level: KLevel, n_rec_params: G,
                                   j: G) -> List‹KExpr› {
-    match load(flat) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(m, rest) =>
+    match flat {
+      List.Nil => List.Nil,
+      List.Cons(__cell42) => let (m, rest) = load(__cell42);
         match m {
           (member_addr, is_aux, spec_params, occ_us) =>
             let ci = load(get_ci(member_addr));
@@ -3124,9 +3124,9 @@ def check := ⟦
                   m_own_params, m_n_indices, occ_us, elim_level,
                   n_rec_params, is_aux, spec_params);
                 let mt_lifted = expr_lift(mt, j, 0);
-                store(ListNode.Cons(mt_lifted,
+                List.Cons(store((mt_lifted,
                   build_all_motives_walk(rest, elim_level, n_rec_params,
-                    j + 1))),
+                    j + 1)))),
               _ =>
                 build_all_motives_walk(rest, elim_level, n_rec_params, j),
             },
@@ -3162,8 +3162,8 @@ def check := ⟦
                               rec_self_addr: Addr, rec_nlvls: G) -> KExpr {
     let base = canonical_norec_body(cidx, num_ctors, rec_np, nf);
     let body_depth = (rec_np + 1 + num_ctors) + nf;
-    let block_addrs = store(ListNode.Cons(rec_block_addr,
-      store(ListNode.Cons(parent_block_addr, store(ListNode.Nil)))));
+    let block_addrs = List.Cons(store((rec_block_addr,
+      List.Cons(store((parent_block_addr, List.Nil))))));
     let rec_infos = walk_fields_multi(ctor_body, block_addrs, 0);
     apply_ihs(base, rec_infos, rec_np, rec_ni, nf, body_depth,
       num_ctors, rec_block_addr, rec_self_addr, rec_nlvls)
@@ -3180,10 +3180,10 @@ def check := ⟦
         };
         let rest = walk_fields_multi(body, block_addrs, field_pos + 1);
         match is_direct_rec {
-          1 => store(ListNode.Cons((field_pos, dom), rest)),
+          1 => List.Cons(store(((field_pos, dom), rest))),
           _ => rest,
         },
-      _ => store(ListNode.Nil),
+      _ => List.Nil,
     }
   }
 
@@ -3285,7 +3285,7 @@ def check := ⟦
   fn ctor_has_rec_fields_solo(ctor_ty: KExpr, n_params: G,
                                     parent_addr: Addr) -> G {
     let after_params = peel_n_foralls_tolerant(ctor_ty, n_params);
-    let block_addrs = store(ListNode.Cons(parent_addr, store(ListNode.Nil)));
+    let block_addrs = List.Cons(store((parent_addr, List.Nil)));
     scan_fields_for_block_ref(after_params, block_addrs)
   }
 
@@ -3358,8 +3358,8 @@ def check := ⟦
                                         field_pos: G) -> List‹(G, KExpr)› {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let block_addrs = store(ListNode.Cons(block_addr,
-          store(ListNode.Nil)));
+        let block_addrs = List.Cons(store((block_addr,
+          List.Nil)));
         let mentions = expr_mentions_block(dom, block_addrs);
         let is_direct_rec = match mentions {
           0 => 0,
@@ -3368,10 +3368,10 @@ def check := ⟦
         let rest_infos = walk_fields_collect_rec_infos(body, block_addr,
           field_pos + 1);
         match is_direct_rec {
-          1 => store(ListNode.Cons((field_pos, dom), rest_infos)),
+          1 => List.Cons(store(((field_pos, dom), rest_infos))),
           _ => rest_infos,
         },
-      _ => store(ListNode.Nil),
+      _ => List.Nil,
     }
   }
 
@@ -3387,9 +3387,9 @@ def check := ⟦
                     n_p: G, n_i: G, nf: G, body_depth: G,
                     num_ctors: G, block_addr: Addr,
                     rec_self_addr: Addr, rec_nlvls: G) -> KExpr {
-    match load(rec_infos) {
-      ListNode.Nil => body,
-      ListNode.Cons(info, rest) =>
+    match rec_infos {
+      List.Nil => body,
+      List.Cons(__cell43) => let (info, rest) = load(__cell43);
         match info {
           (pos, dom) =>
             let ih = build_ih(pos, dom, n_p, n_i, nf, body_depth,
@@ -3456,9 +3456,9 @@ def check := ⟦
                              cur: List‹MutConst›, block_addr: Addr,
                              target_ind_addr: Addr, rec_self_addr: Addr,
                              pos: G) -> Addr {
-    match load(cur) {
-      ListNode.Nil => rec_self_addr,
-      ListNode.Cons(m, rest) =>
+    match cur {
+      List.Nil => rec_self_addr,
+      List.Cons(__cell44) => let (m, rest) = load(__cell44);
         match m {
           MutConst.Recr(_) =>
             -- Get this recursor's wrapper addr + KCI, parse ty for
@@ -3484,9 +3484,9 @@ def check := ⟦
   }
 
   fn apply_spine_expr(head: KExpr, args: List‹KExpr›) -> KExpr {
-    match load(args) {
-      ListNode.Nil => head,
-      ListNode.Cons(a, rest) =>
+    match args {
+      List.Nil => head,
+      List.Cons(__cell45) => let (a, rest) = load(__cell45);
         apply_spine_expr(store(KExprNode.App(head, a)), rest),
     }
   }
@@ -3505,8 +3505,8 @@ def check := ⟦
                                   field_pos: G) -> List‹G› {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let block_addrs = store(ListNode.Cons(block_addr,
-          store(ListNode.Nil)));
+        let block_addrs = List.Cons(store((block_addr,
+          List.Nil)));
         let mentions = expr_mentions_block(dom, block_addrs);
         let is_direct_rec = match mentions {
           0 => 0,
@@ -3515,10 +3515,10 @@ def check := ⟦
         let rest_positions = walk_fields_collect_rec(body, block_addr,
           field_pos + 1);
         match is_direct_rec {
-          1 => store(ListNode.Cons(field_pos, rest_positions)),
+          1 => List.Cons(store((field_pos, rest_positions))),
           _ => rest_positions,
         },
-      _ => store(ListNode.Nil),
+      _ => List.Nil,
     }
   }
 
@@ -3542,9 +3542,9 @@ def check := ⟦
                         n_p: G, n_i: G, nf: G, body_depth: G,
                         num_ctors: G, rec_self_addr: Addr,
                         rec_nlvls: G) -> KExpr {
-    match load(rec_positions) {
-      ListNode.Nil => body,
-      ListNode.Cons(pos, rest) =>
+    match rec_positions {
+      List.Nil => body,
+      List.Cons(__cell46) => let (pos, rest) = load(__cell46);
         let ih = build_ih_solo(pos, n_p, n_i, nf, body_depth,
           num_ctors, rec_self_addr, rec_nlvls);
         apply_ihs_solo(store(KExprNode.App(body, ih)), rest,
@@ -3588,11 +3588,11 @@ def check := ⟦
 
   fn build_rec_lvls_list(total: G, i: G) -> List‹KLevel› {
     match total - i {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
-        store(ListNode.Cons(
+        List.Cons(store((
           store(KLevelNode.Param(i)),
-          build_rec_lvls_list(total, i + 1))),
+          build_rec_lvls_list(total, i + 1)))),
     }
   }
 
@@ -3618,9 +3618,9 @@ def check := ⟦
   -- outer_depth + rule.num_args (nf) and universe-bound nlvls.
   fn check_rec_rules_wellscoped(rules: List‹KRecRule›,
                                      outer_depth: G, nlvls: G) {
-    match load(rules) {
-      ListNode.Nil => (),
-      ListNode.Cons(r, rest) =>
+    match rules {
+      List.Nil => (),
+      List.Cons(__cell47) => let (r, rest) = load(__cell47);
         match r {
           KRecRule.Mk(_, nf, rhs) =>
             validate_expr_well_scoped(rhs, outer_depth + nf, nlvls);
@@ -3640,9 +3640,9 @@ def check := ⟦
                                 rec_np: G, rec_self_addr: Addr,
                                 rec_nlvls: G,
                                 rec_block_addr: Addr) {
-    match load(rules) {
-      ListNode.Nil => (),
-      ListNode.Cons(r, rest) =>
+    match rules {
+      List.Nil => (),
+      List.Cons(__cell48) => let (r, rest) = load(__cell48);
         match r {
           KRecRule.Mk(cidx, num_args, rhs) =>
             assert_eq!(cidx, expected_cidx,
@@ -3664,7 +3664,7 @@ def check := ⟦
                   rec_np, parent_ni, nf, aux_ctor_body, rec_block_addr,
                   parent_block_addr, rec_self_addr, rec_nlvls);
                 let types = build_dummy_types(total_lams,
-                  store(ListNode.Nil));
+                  List.Nil);
                 assert_eq!(k_is_def_eq(rhs_body, canonical, types), 1,
                   "aux recursor rule rhs differs from canonical reconstruction");
                 check_aux_rules_walk(rest, parent_block_addr,
@@ -3682,9 +3682,9 @@ def check := ⟦
                                ni: G, rec_self_addr: Addr,
                                rec_nlvls: G, is_aux: G,
                                rec_block_addr: Addr) {
-    match load(rules) {
-      ListNode.Nil => (),
-      ListNode.Cons(r, rest) =>
+    match rules {
+      List.Nil => (),
+      List.Cons(__cell49) => let (r, rest) = load(__cell49);
         match r {
           KRecRule.Mk(cidx, num_args, rhs) =>
             assert_eq!(cidx, expected_cidx,
@@ -3735,7 +3735,7 @@ def check := ⟦
         let canonical = canonical_body(cidx, num_ctors, np, ni, nf,
           ctor_ty, block_addr, rec_self_addr, rec_nlvls, rec_block_addr);
         let types = build_ctor_rule_types(ctor_ty, np, nf,
-          num_ctors, store(ListNode.Nil));
+          num_ctors, List.Nil);
         assert_eq!(k_is_def_eq(rhs_body, canonical, types), 1,
           "non-recursive ctor rule rhs differs from canonical reconstruction");
         (),
@@ -3752,8 +3752,8 @@ def check := ⟦
   fn scan_fields_for_complex(ty: KExpr, block_addr: Addr) -> G {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let block_addrs = store(ListNode.Cons(block_addr,
-          store(ListNode.Nil)));
+        let block_addrs = List.Cons(store((block_addr,
+          List.Nil)));
         let mentions = expr_mentions_block(dom, block_addrs);
         let is_complex = match mentions {
           0 => 0,
@@ -3841,7 +3841,7 @@ def check := ⟦
         match load(e) {
           KExprNode.Lam(dom, body) =>
             peel_n_lams_collect(body, n - 1, peeled + 1,
-              store(ListNode.Cons(dom, acc))),
+              List.Cons(store((dom, acc)))),
           _ => (e, peeled, acc),
         },
     }
@@ -3859,7 +3859,7 @@ def check := ⟦
       0 => acc,
       _ =>
         let dummy = store(KExprNode.Srt(store(KLevelNode.Zero)));
-        build_dummy_types(n - 1, store(ListNode.Cons(dummy, acc))),
+        build_dummy_types(n - 1, List.Cons(store((dummy, acc)))),
     }
   }
 
@@ -3869,40 +3869,40 @@ def check := ⟦
     match ci {
       KConstantInfo.Axiom(nlvls, ty, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(ty, List.Nil);
         assert_safety(u, ty),
       KConstantInfo.Defn(nlvls, ty, val, _, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         validate_expr_well_scoped(val, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(ty, List.Nil);
         assert_safety(u, ty);
         assert_safety(u, val);
-        k_check(val, ty, store(ListNode.Nil)),
+        k_check(val, ty, List.Nil),
       KConstantInfo.Thm(nlvls, ty, val) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         validate_expr_well_scoped(val, 0, nlvls);
-        let lvl = k_ensure_sort(ty, store(ListNode.Nil));
+        let lvl = k_ensure_sort(ty, List.Nil);
         assert_eq!(level_equal(lvl, store(KLevelNode.Zero)), 1,
           "theorem's type is not a Prop");
         assert_safety(u, ty);
         assert_safety(u, val);
-        k_check(val, ty, store(ListNode.Nil)),
+        k_check(val, ty, List.Nil),
       KConstantInfo.Opaque(nlvls, ty, val, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         validate_expr_well_scoped(val, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(ty, List.Nil);
         assert_safety(u, ty);
         assert_safety(u, val);
-        k_check(val, ty, store(ListNode.Nil)),
+        k_check(val, ty, List.Nil),
       KConstantInfo.Quot(nlvls, ty, kind) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(ty, List.Nil);
         assert_safety(u, ty);
         check_quot(addr, kind, nlvls, ty),
       KConstantInfo.Induct(nlvls, ty, n_params, n_indices, num_ctors,
                             _, ind_block, ind_idx) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(ty, List.Nil);
         assert_safety(u, ty);
         -- Canonical block member ordering (adversarial threat model:
         -- reordered/alpha-colliding Muts members must be rejected).
@@ -3918,7 +3918,7 @@ def check := ⟦
       KConstantInfo.Ctor(nlvls, ty, block_addr, ind_idx, _cidx,
                          num_params, num_fields, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(ty, List.Nil);
         assert_safety(u, ty);
         let ind_ci = load(@ctor_parent_ind_ci(block_addr, ind_idx));
         match ind_ci {
@@ -3931,14 +3931,14 @@ def check := ⟦
                                         num_fields, ind_nlvls, block_addr,
                                         ind_idx);
             let ind_level = get_result_sort_level(ind_ty,
-              ind_n_params + ind_n_indices, store(ListNode.Nil));
+              ind_n_params + ind_n_indices, List.Nil);
             check_field_universes(ty, num_params, ind_level);
             check_positivity(ty, num_params, block_addr,
-                                  store(ListNode.Nil)),
+                                  List.Nil),
         },
       KConstantInfo.Rec(nlvls, ty, _, _, _, _, _, _, _, rec_block, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);
-        k_ensure_sort(ty, store(ListNode.Nil));
+        k_ensure_sort(ty, List.Nil);
         assert_safety(u, ty);
         check_canonical_block(rec_block);
         check_recursor_member(ci, addr),

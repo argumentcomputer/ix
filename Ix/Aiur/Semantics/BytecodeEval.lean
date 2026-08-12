@@ -111,10 +111,10 @@ def memLoad (st : EvalState) (size : Nat) (ptr : Nat) :
 /-! ## `List<U64>` limb chains (`unconstrainedBigUintDivMod`)
 
 Mirrors `read_klimbs_u64` / `build_klimbs_u64` in `crates/aiur/src/execute.rs`:
-nodes live in the width-9 memory bucket with the null-pointer-niche layout
-`[byte0..byte7, next_ptr]` — no tag; the all-zero vector is Nil (pointer
-slot 0 is the impossible pointer), anything else is a Cons. Bytes are
-little-endian within the u64 limb. -/
+`List<U64>` is the niche enum `{ Nil, Cons(&(U64, List<U64>)) }` — the list
+value is one field element, 0 = Nil (no node stored), otherwise a pointer
+to the `(limb, tail)` cell in the width-9 bucket, `[byte0..byte7, tail]`.
+Bytes are little-endian within the u64 limb. -/
 
 /-- Walk a limb chain from `ptr`, returning the limbs head-first. `steps`
 bounds the walk: a chain longer than the width-9 bucket must revisit a
@@ -123,24 +123,24 @@ def readLimbChain (st : EvalState) : Nat → Nat →
     Except BytecodeError (List (Array G))
   | 0, _ => .error .unconstrainedBigUintDivModFailed
   | steps+1, ptr => do
-    let vs ← memLoad st 9 ptr
-    match vs[8]? with
-    | some next =>
-      if next == 0 then pure []  -- Nil: the all-zero niche vector
-      else
+    if ptr == 0 then pure []  -- Nil IS the zero list value; no node exists
+    else
+      let vs ← memLoad st 9 ptr
+      match vs[8]? with
+      | some next =>
         let bytes := vs.extract 0 8
         if bytes.size == 8 && bytes.all (·.val < 256) then do
           let rest ← readLimbChain st steps next.val.toNat
           pure (bytes :: rest)
         else .error .unconstrainedBigUintDivModFailed
-    | _ => .error .unconstrainedBigUintDivModFailed
+      | _ => .error .unconstrainedBigUintDivModFailed
 
 /-- Build a limb chain from head-first `limbs`, returning the head pointer.
 Same insertion order as the Rust builder (Nil first, then limbs in reverse),
 so freshly-created pointer indices agree; `memStore` content-dedups like
 `QueryMap` does. -/
 def buildLimbChain (st : EvalState) : List (Array G) → EvalState × Nat
-  | [] => memStore st (Array.replicate 9 0)
+  | [] => (st, 0)  -- Nil IS the zero list value; nothing is stored
   | limb :: rest =>
     let (st', restPtr) := buildLimbChain st rest
     memStore st' (limb ++ #[.ofNat restPtr])

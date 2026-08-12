@@ -59,9 +59,9 @@ def entrypoints := ⟦
         let (idx, len) = io_get_info(0, [n_minus_1]);
         let bytes = #read_byte_stream(0, idx, len);
         let (const, rest) = get_constant(bytes);
-        assert_eq!(load(rest), ListNode.Nil,
+        assert_eq!(rest, List.Nil,
           "ixon deserialization left trailing bytes");
-        let bytes2 = put_constant(const, store(ListNode.Nil));
+        let bytes2 = put_constant(const, List.Nil);
         assert_eq!(bytes, bytes2,
           "ixon round-trip: re-serialized bytes differ from the input");
         ixon_serde_test(n_minus_1),

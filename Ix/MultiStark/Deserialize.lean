@@ -132,9 +132,9 @@ def deserialize := ⟦
   -- ==========================================================================
 
   fn read_u8(stream: ByteStream) -> (U8, ByteStream) {
-    match load(stream) {
-      ListNode.Cons(byte, rest) => (byte, rest),
-      ListNode.Nil => (0u8, store(ListNode.Nil)),
+    match stream {
+      List.Cons(__cell1) => let (byte, rest) = load(__cell1); (byte, rest),
+      List.Nil => (0u8, List.Nil),
     }
   }
 
@@ -228,11 +228,11 @@ def deserialize := ⟦
   }
   fn read_u8_vec_n(i: G, n: G) -> (List‹U8›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = #read_u8_at(i);
         let (rest, j2) = read_u8_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -242,11 +242,11 @@ def deserialize := ⟦
   }
   fn read_u64_vec_n(i: G, n: G) -> (List‹U64›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = #read_u64_at(i);
         let (rest, j2) = read_u64_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -256,11 +256,11 @@ def deserialize := ⟦
   }
   fn read_ext_vec_n(i: G, n: G) -> (List‹Ext›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_ext_at(i);
         let (rest, j2) = read_ext_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -270,11 +270,11 @@ def deserialize := ⟦
   }
   fn read_digest_vec_at_n(i: G, n: G) -> (List‹Digest›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_digest_at(i);
         let (rest, j2) = read_digest_vec_at_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -285,11 +285,11 @@ def deserialize := ⟦
   }
   fn read_u64_vec_vec_n(i: G, n: G) -> (List‹List‹U64››, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_u64_vec(i);
         let (rest, j2) = read_u64_vec_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -300,11 +300,11 @@ def deserialize := ⟦
   }
   fn read_ext_vec_vec_n(i: G, n: G) -> (List‹List‹Ext››, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_ext_vec(i);
         let (rest, j2) = read_ext_vec_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -314,11 +314,11 @@ def deserialize := ⟦
   }
   fn read_opened_round_n(i: G, n: G) -> (OpenedRound, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_ext_vec_vec(i);
         let (rest, j2) = read_opened_round_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -335,11 +335,11 @@ def deserialize := ⟦
   }
   fn read_merkle_cap_vec_n(i: G, n: G) -> (List‹MerkleCap›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_merkle_cap_at(i);
         let (rest, j2) = read_merkle_cap_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -361,11 +361,11 @@ def deserialize := ⟦
   }
   fn read_batch_opening_vec_n(i: G, n: G) -> (List‹BatchOpening›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_batch_opening(i);
         let (rest, j2) = read_batch_opening_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -381,11 +381,11 @@ def deserialize := ⟦
   }
   fn read_commit_phase_step_vec_n(i: G, n: G) -> (List‹CommitPhaseProofStep›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_commit_phase_step(i);
         let (rest, j2) = read_commit_phase_step_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -400,11 +400,11 @@ def deserialize := ⟦
   }
   fn read_query_proof_vec_n(i: G, n: G) -> (List‹QueryProof›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (x, j) = read_query_proof(i);
         let (rest, j2) = read_query_proof_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (List.Cons(store((x, rest))), j2),
     }
   }
 
@@ -426,11 +426,11 @@ def deserialize := ⟦
   }
   fn read_active_n(i: G, n: G) -> (List‹G›, G) {
     match n {
-      0 => (store(ListNode.Nil), i),
+      0 => (List.Nil, i),
       _ =>
         let (b, j) = #read_u8_at(i);
         let (rest, j2) = read_active_n(j, n - 1);
-        (store(ListNode.Cons(to_field(b), rest)), j2),
+        (List.Cons(store((to_field(b), rest))), j2),
     }
   }
 

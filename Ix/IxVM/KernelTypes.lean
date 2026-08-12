@@ -68,7 +68,7 @@ def kernelTypes := ⟦
       KExprNode.App(f, a) =>
         let (head, args) = collect_spine(f);
         (head, list_snoc(args, a)),
-      _ => (e, store(ListNode.Nil)),
+      _ => (e, List.Nil),
     }
   }
 

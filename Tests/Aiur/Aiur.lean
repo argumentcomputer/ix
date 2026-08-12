@@ -647,35 +647,37 @@ def toplevel := ⟦
 
   ---------------------------------------------------------------------------
   -- Unconstrained big-uint div/mod: lists of [U8; 8] limbs in, the same
-  -- list datatype at [G; 8] out. The datatype must declare Cons FIRST
-  -- (runtime tag contract: 0 = Cons, 1 = Nil). Limbs are little-endian
-  -- u64s, head-first.
+  -- list datatype at [G; 8] out. The list must be the null-pointer-niche
+  -- shape { Nil, Cons(&(limb, tail)) } — one field element wide, 0 = Nil.
+  -- Limbs are little-endian u64s, head-first.
   ---------------------------------------------------------------------------
   enum BNode‹T› {
-    BCons(T, &BNode‹T›),
-    BNil
+    BNil,
+    BCons(&(T, BNode‹T›))
   }
 
-  fn blist0() -> &BNode‹[U8; 8]› { store(BNode.BNil) }
-  fn blist1(l: [U8; 8]) -> &BNode‹[U8; 8]› { store(BNode.BCons(l, blist0())) }
-  fn blist2(l0: [U8; 8], l1: [U8; 8]) -> &BNode‹[U8; 8]› {
-    store(BNode.BCons(l0, blist1(l1)))
+  fn blist0() -> BNode‹[U8; 8]› { BNode.BNil }
+  fn blist1(l: [U8; 8]) -> BNode‹[U8; 8]› { BNode.BCons(store((l, blist0()))) }
+  fn blist2(l0: [U8; 8], l1: [U8; 8]) -> BNode‹[U8; 8]› {
+    BNode.BCons(store((l0, blist1(l1))))
   }
 
   -- u64 value of the first result limb (fits in G for the cases below).
-  fn glimb_val(p: &BNode‹[G; 8]›) -> G {
-    match load(p) {
-      BNode.BCons(l, _) => l[0] + 256 * l[1] + 65536 * l[2] + 16777216 * l[3]
+  fn glimb_val(p: BNode‹[G; 8]›) -> G {
+    match p {
+      BNode.BCons(c) =>
+        let (l, _) = load(c);
+        l[0] + 256 * l[1] + 65536 * l[2] + 16777216 * l[3]
         + 4294967296 * l[4] + 1099511627776 * l[5] + 281474976710656 * l[6]
         + 72057594037927936 * l[7],
       BNode.BNil => 0,
     }
   }
 
-  fn glist_is_nil(p: &BNode‹[G; 8]›) -> G {
-    match load(p) {
+  fn glist_is_nil(p: BNode‹[G; 8]›) -> G {
+    match p {
       BNode.BNil => 1,
-      BNode.BCons(_, _) => 0,
+      BNode.BCons(_) => 0,
     }
   }
 

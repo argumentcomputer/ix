@@ -69,9 +69,9 @@ def keccak := ⟦
 
   -- Prepend the 8 bits of a byte decomposition (LSB first) onto `tail`.
   fn cons8(d: [G; 8], tail: List‹G›) -> List‹G› {
-    store(ListNode.Cons(d[0], store(ListNode.Cons(d[1], store(ListNode.Cons(d[2],
-    store(ListNode.Cons(d[3], store(ListNode.Cons(d[4], store(ListNode.Cons(d[5],
-    store(ListNode.Cons(d[6], store(ListNode.Cons(d[7], tail))))))))))))))))
+    List.Cons(store((d[0], List.Cons(store((d[1], List.Cons(store((d[2],
+    List.Cons(store((d[3], List.Cons(store((d[4], List.Cons(store((d[5],
+    List.Cons(store((d[6], List.Cons(store((d[7], tail))))))))))))))))))))))))
   }
 
   -- Lane → 64 bits, index z = 8*byte + bit, LSB first.
@@ -84,7 +84,7 @@ def keccak := ⟦
     cons8(u8_bit_decomposition(v[4]),
     cons8(u8_bit_decomposition(v[5]),
     cons8(u8_bit_decomposition(v[6]),
-    cons8(u8_bit_decomposition(v[7]), store(ListNode.Nil)))))))))
+    cons8(u8_bit_decomposition(v[7]), List.Nil))))))))
   }
 
   -- x mod 64 for x in [0, 127]: drop the 64-bit (bit 6).
@@ -100,14 +100,14 @@ def keccak := ⟦
   fn byte_from_bits(bs: List‹G›, off: G) -> U8 {
     -- One `list_drop` to the byte's first bit; the remaining 7 bits are the
     -- successive tails (a deref each), so no further drops are needed.
-    let &ListNode.Cons(b0, r0) = list_drop(bs, off);
-    let &ListNode.Cons(b1, r1) = r0;
-    let &ListNode.Cons(b2, r2) = r1;
-    let &ListNode.Cons(b3, r3) = r2;
-    let &ListNode.Cons(b4, r4) = r3;
-    let &ListNode.Cons(b5, r5) = r4;
-    let &ListNode.Cons(b6, r6) = r5;
-    let &ListNode.Cons(b7, _) = r6;
+    let List.Cons(__cell2) = list_drop(bs, off); let (b0, r0) = load(__cell2);
+    let List.Cons(__cell3) = r0; let (b1, r1) = load(__cell3);
+    let List.Cons(__cell4) = r1; let (b2, r2) = load(__cell4);
+    let List.Cons(__cell5) = r2; let (b3, r3) = load(__cell5);
+    let List.Cons(__cell6) = r3; let (b4, r4) = load(__cell6);
+    let List.Cons(__cell7) = r4; let (b5, r5) = load(__cell7);
+    let List.Cons(__cell8) = r5; let (b6, r6) = load(__cell8);
+    let List.Cons(__cell9) = r6; let (b7, _) = load(__cell9);
     u8_from_field_unsafe(
       b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7)
   }
@@ -121,11 +121,11 @@ def keccak := ⟦
   -- bit (p - n) mod 64 = mod64(p + 64 - n).
   fn build_rot(bs: List‹G›, n: G, p: G) -> List‹G› {
     match 64 - p {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
         let src = mod64(p + 64 - n);
-        let &ListNode.Cons(head, _) = list_drop(bs, src);
-        store(ListNode.Cons(head, build_rot(bs, n, p + 1))),
+        let List.Cons(__cell10) = list_drop(bs, src); let (head, _) = load(__cell10);
+        List.Cons(store((head, build_rot(bs, n, p + 1)))),
     }
   }
 
@@ -271,10 +271,10 @@ def keccak := ⟦
   -- `eq_zero` (an op) instead of a match so it stays tail-position-compilable.
   fn build_pad(i: G, first: G) -> ByteStream {
     match 136 - i {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
-        store(ListNode.Cons(u8_from_field_unsafe(first + 128 * eq_zero(135 - i)),
-                            build_pad(i + 1, 0))),
+        List.Cons(store((u8_from_field_unsafe(first + 128 * eq_zero(135 - i)),
+                            build_pad(i + 1, 0)))),
     }
   }
 
@@ -286,26 +286,26 @@ def keccak := ⟦
   -- block keccak appends when the message length is a multiple of 136.
   fn read_block(stream: ByteStream, i: G) -> (ByteStream, ByteStream, G) {
     match 136 - i {
-      0 => (store(ListNode.Nil), stream, 1),
-      _ => match load(stream) {
-        ListNode.Cons(b, rest) =>
+      0 => (List.Nil, stream, 1),
+      _ => match stream {
+        List.Cons(__cell1) => let (b, rest) = load(__cell1);
           let (blk, r, f) = read_block(rest, i + 1);
-          (store(ListNode.Cons(b, blk)), r, f),
-        ListNode.Nil => (build_pad(i, 1), store(ListNode.Nil), 0),
+          (List.Cons(store((b, blk))), r, f),
+        List.Nil => (build_pad(i, 1), List.Nil, 0),
       },
     }
   }
 
   fn rate_lane(rate: ByteStream, b: G) -> Lane {
     -- One `list_drop` to the lane's first byte; the next 7 are successive tails.
-    let &ListNode.Cons(r0, t0) = list_drop(rate, b);
-    let &ListNode.Cons(r1, t1) = t0;
-    let &ListNode.Cons(r2, t2) = t1;
-    let &ListNode.Cons(r3, t3) = t2;
-    let &ListNode.Cons(r4, t4) = t3;
-    let &ListNode.Cons(r5, t5) = t4;
-    let &ListNode.Cons(r6, t6) = t5;
-    let &ListNode.Cons(r7, _) = t6;
+    let List.Cons(__cell11) = list_drop(rate, b); let (r0, t0) = load(__cell11);
+    let List.Cons(__cell12) = t0; let (r1, t1) = load(__cell12);
+    let List.Cons(__cell13) = t1; let (r2, t2) = load(__cell13);
+    let List.Cons(__cell14) = t2; let (r3, t3) = load(__cell14);
+    let List.Cons(__cell15) = t3; let (r4, t4) = load(__cell15);
+    let List.Cons(__cell16) = t4; let (r5, t5) = load(__cell16);
+    let List.Cons(__cell17) = t5; let (r6, t6) = load(__cell17);
+    let List.Cons(__cell18) = t6; let (r7, _) = load(__cell18);
     store([r0, r1, r2, r3, r4, r5, r6, r7])
   }
 

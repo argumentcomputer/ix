@@ -75,11 +75,11 @@ def verifier := ⟦
   -- element (Rust: `intermediate_accumulators.last() == Some(ExtVal::ZERO)`).
   -- The empty list returns 0 (there is no last element to balance).
   fn last_acc_is_zero(accs: List‹Ext›) -> G {
-    match load(accs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(e, rest) =>
-        match load(rest) {
-          ListNode.Nil => ext_is_zero(e),
+    match accs {
+      List.Nil => 0,
+      List.Cons(__cell1) => let (e, rest) = load(__cell1);
+        match rest {
+          List.Nil => ext_is_zero(e),
           _ => last_acc_is_zero(rest),
         },
     }
@@ -99,9 +99,9 @@ def verifier := ⟦
 
   -- Cons 8 bytes (LSB-first) of `b` onto `tail` (one byte list segment).
   fn b8_onto(b: [U8; 8], tail: ByteStream) -> ByteStream {
-    store(ListNode.Cons(b[0], store(ListNode.Cons(b[1], store(ListNode.Cons(b[2],
-    store(ListNode.Cons(b[3], store(ListNode.Cons(b[4], store(ListNode.Cons(b[5],
-    store(ListNode.Cons(b[6], store(ListNode.Cons(b[7], tail))))))))))))))))
+    List.Cons(store((b[0], List.Cons(store((b[1], List.Cons(store((b[2],
+    List.Cons(store((b[3], List.Cons(store((b[4], List.Cons(store((b[5],
+    List.Cons(store((b[6], List.Cons(store((b[7], tail))))))))))))))))))))))))
   }
 
   -- A digest = `[u64; 4]` = 32 bytes (each limb little-endian) onto `tail`.
@@ -111,42 +111,42 @@ def verifier := ⟦
 
   -- A commitment (`MerkleCap` = `Vec<Digest>`): all digest bytes, onto `tail`.
   fn cap_onto(cap: MerkleCap, tail: ByteStream) -> ByteStream {
-    match load(cap) {
-      ListNode.Nil => tail,
-      ListNode.Cons(d, rest) => digest_onto(d, cap_onto(rest, tail)),
+    match cap {
+      List.Nil => tail,
+      List.Cons(__cell2) => let (d, rest) = load(__cell2); digest_onto(d, cap_onto(rest, tail)),
     }
   }
 
   -- Observe `log_degrees`: each is a `Val::from_u8`, i.e. 8 LE bytes `[ld,0,…]`.
   fn log_degrees_onto(lds: List‹U8›, tail: ByteStream) -> ByteStream {
-    match load(lds) {
-      ListNode.Nil => tail,
-      ListNode.Cons(ld, rest) =>
+    match lds {
+      List.Nil => tail,
+      List.Cons(__cell3) => let (ld, rest) = load(__cell3);
         b8_onto([ld, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], log_degrees_onto(rest, tail)),
     }
   }
 
   -- Reverse `l` onto `acc` (used to put a hash output into pop order).
   fn rev_onto(l: ByteStream, acc: ByteStream) -> ByteStream {
-    match load(l) {
-      ListNode.Nil => acc,
-      ListNode.Cons(b, rest) => rev_onto(rest, store(ListNode.Cons(b, acc))),
+    match l {
+      List.Nil => acc,
+      List.Cons(__cell4) => let (b, rest) = load(__cell4); rev_onto(rest, List.Cons(store((b, acc)))),
     }
   }
 
   -- Sample one byte. If `output` is empty, flush: hash the `input` buffer, set
   -- the new input to the 32 hash bytes, and refill `output` (in pop order).
   fn ch_sample_byte(input: ByteStream, output: ByteStream) -> (U8, ByteStream, ByteStream) {
-    match load(output) {
-      ListNode.Cons(b, rest) => (b, input, rest),
-      ListNode.Nil =>
+    match output {
+      List.Cons(__cell5) => let (b, rest) = load(__cell5); (b, input, rest),
+      List.Nil =>
         -- `HashChallenger<u8, Blake3, 32>` flush: hash the `input` buffer with
         -- blake3; `b3_flatten_onto` (Pcs.lean) gives the 32 output bytes, popped
         -- from the END (rev), with the `input := output := hash` update.
         let h = blake3(input);
-        let fwd = b3_flatten_onto(h, store(ListNode.Nil));
-        let rev = rev_onto(fwd, store(ListNode.Nil));
-        let &ListNode.Cons(b, rest) = rev;
+        let fwd = b3_flatten_onto(h, List.Nil);
+        let rev = rev_onto(fwd, List.Nil);
+        let List.Cons(__cell23) = rev; let (b, rest) = load(__cell23);
         (b, fwd, rest),
     }
   }
@@ -190,9 +190,9 @@ def verifier := ⟦
 
   -- Prepend the 8 elements of `d` onto `tail` (generic list helper).
   fn cons8(d: [G; 8], tail: List‹G›) -> List‹G› {
-    store(ListNode.Cons(d[0], store(ListNode.Cons(d[1], store(ListNode.Cons(d[2],
-    store(ListNode.Cons(d[3], store(ListNode.Cons(d[4], store(ListNode.Cons(d[5],
-    store(ListNode.Cons(d[6], store(ListNode.Cons(d[7], tail))))))))))))))))
+    List.Cons(store((d[0], List.Cons(store((d[1], List.Cons(store((d[2],
+    List.Cons(store((d[3], List.Cons(store((d[4], List.Cons(store((d[5],
+    List.Cons(store((d[6], List.Cons(store((d[7], tail))))))))))))))))))))))))
   }
 
   -- `sample_bits(n)` (FRI query index). `SerializingChallenger64::sample_bits`
@@ -208,14 +208,14 @@ def verifier := ⟦
     cons8(u8_bit_decomposition(bytes[4]),
     cons8(u8_bit_decomposition(bytes[5]),
     cons8(u8_bit_decomposition(bytes[6]),
-    cons8(u8_bit_decomposition(bytes[7]), store(ListNode.Nil)))))))))
+    cons8(u8_bit_decomposition(bytes[7]), List.Nil))))))))
   }
   fn take_bits(bits: List‹G›, n: G) -> List‹G› {
     match n {
-      0 => store(ListNode.Nil),
+      0 => List.Nil,
       _ =>
-        let &ListNode.Cons(b, rest) = bits;
-        store(ListNode.Cons(b, take_bits(rest, n - 1))),
+        let List.Cons(__cell24) = bits; let (b, rest) = load(__cell24);
+        List.Cons(store((b, take_bits(rest, n - 1)))),
     }
   }
   fn ch_sample_bits(input: ByteStream, output: ByteStream, n: G)
@@ -229,11 +229,11 @@ def verifier := ⟦
   -- first hashed, matching `blake3`'s absorption order), so an observation
   -- appends — `b8_onto` PREPENDS, hence the `list_concat`.
   fn snoc_b8(input: ByteStream, b: [U8; 8]) -> ByteStream {
-    list_concat(input, b8_onto(b, store(ListNode.Nil)))
+    list_concat(input, b8_onto(b, List.Nil))
   }
   -- Append (observe) a commitment (`MerkleCap`) at the end of the buffer.
   fn snoc_cap(input: ByteStream, cap: MerkleCap) -> ByteStream {
-    list_concat(input, cap_onto(cap, store(ListNode.Nil)))
+    list_concat(input, cap_onto(cap, List.Nil))
   }
   -- The intermediate accumulators as a prepend-built stream, in order — each
   -- an `observe_algebra_element`: two canonical 8-LE-byte limbs. (`read_ext`
@@ -241,9 +241,9 @@ def verifier := ⟦
   -- Prepend-composed so observing all of them is one `list_concat`, not a
   -- per-element re-walk of the input buffer.
   fn accs_onto(accs: List‹Ext›, tail: ByteStream) -> ByteStream {
-    match load(accs) {
-      ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(@gl_to_bytes(e[0]), b8_onto(@gl_to_bytes(e[1]), accs_onto(rest, tail))),
+    match accs {
+      List.Nil => tail,
+      List.Cons(__cell6) => let (e, rest) = load(__cell6); b8_onto(@gl_to_bytes(e[0]), b8_onto(@gl_to_bytes(e[1]), accs_onto(rest, tail))),
     }
   }
 
@@ -260,7 +260,7 @@ def verifier := ⟦
   -- Observe one `Val` (8 LE bytes): append to `input`, CLEAR `output` (any
   -- leftover sampled bytes are discarded), per `HashChallenger::observe`.
   fn ch_observe_val(input: ByteStream, v: U64) -> (ByteStream, ByteStream) {
-    (snoc_b8(input, v), store(ListNode.Nil))
+    (snoc_b8(input, v), List.Nil)
   }
 
   -- Sample a degree-2 extension element, threading BOTH challenger buffers so a
@@ -275,17 +275,17 @@ def verifier := ⟦
 
   -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.
   fn claim_vals_onto(vals: List‹U64›, tail: ByteStream) -> ByteStream {
-    match load(vals) {
-      ListNode.Nil => tail,
-      ListNode.Cons(v, rest) => b8_onto(v, claim_vals_onto(rest, tail)),
+    match vals {
+      List.Nil => tail,
+      List.Cons(__cell7) => let (v, rest) = load(__cell7); b8_onto(v, claim_vals_onto(rest, tail)),
     }
   }
   -- Each claim, length-prefixed: `observe(Val::from_usize(claim.len()))` then
   -- `observe_slice(claim)`.
   fn claims_each_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
-    match load(claims) {
-      ListNode.Nil => tail,
-      ListNode.Cons(c, rest) =>
+    match claims {
+      List.Nil => tail,
+      List.Cons(__cell8) => let (c, rest) = load(__cell8);
         b8_onto(list_length_u64(c), claim_vals_onto(c, claims_each_onto(rest, tail))),
     }
   }
@@ -298,19 +298,19 @@ def verifier := ⟦
   -- `b"multi-stark/v0"` — the domain-separation tag the challenger seed
   -- starts with (`GoldilocksBlake3Config::new`).
   fn seed_tag_onto(tail: ByteStream) -> ByteStream {
-    store(ListNode.Cons(109u8, store(ListNode.Cons(117u8, store(ListNode.Cons(108u8,
-    store(ListNode.Cons(116u8, store(ListNode.Cons(105u8, store(ListNode.Cons(45u8,
-    store(ListNode.Cons(115u8, store(ListNode.Cons(116u8, store(ListNode.Cons(97u8,
-    store(ListNode.Cons(114u8, store(ListNode.Cons(107u8, store(ListNode.Cons(47u8,
-    store(ListNode.Cons(118u8, store(ListNode.Cons(48u8,
-    tail))))))))))))))))))))))))))))
+    List.Cons(store((109u8, List.Cons(store((117u8, List.Cons(store((108u8,
+    List.Cons(store((116u8, List.Cons(store((105u8, List.Cons(store((45u8,
+    List.Cons(store((115u8, List.Cons(store((116u8, List.Cons(store((97u8,
+    List.Cons(store((114u8, List.Cons(store((107u8, List.Cons(store((47u8,
+    List.Cons(store((118u8, List.Cons(store((48u8,
+    tail))))))))))))))))))))))))))))))))))))))))))
   }
   -- Raw u64 wire words (protocol parameters + system shape), each as its 8 LE
   -- bytes, in order.
   fn limbs_onto(ls: List‹U64›, tail: ByteStream) -> ByteStream {
-    match load(ls) {
-      ListNode.Nil => tail,
-      ListNode.Cons(l, rest) => b8_onto(l, limbs_onto(rest, tail)),
+    match ls {
+      List.Nil => tail,
+      List.Cons(__cell9) => let (l, rest) = load(__cell9); b8_onto(l, limbs_onto(rest, tail)),
     }
   }
 
@@ -318,7 +318,7 @@ def verifier := ⟦
   -- (observes nothing) when there is none.
   fn opt_commit_cap(commit: OptCommit) -> MerkleCap {
     match commit {
-      OptCommit.NoCommit => store(ListNode.Nil),
+      OptCommit.NoCommit => List.Nil,
       OptCommit.SomeCommit(c) => c,
     }
   }
@@ -334,7 +334,7 @@ def verifier := ⟦
   --   observe quotient; sample ζ.
   -- `observe` clears the challenger's output buffer, and every sample here is
   -- preceded by an observe, so each `ch_sample_ext` re-flushes from an empty
-  -- output (hence the `store(ListNode.Nil)` output argument each time).
+  -- output (hence the `List.Nil` output argument each time).
   -- Every sample is rejection-sampled (`ch_sample_field` inside
   -- `ch_sample_ext`), so a limb in the band `[p, 2⁶⁴)` is redrawn exactly as in
   -- the reference challenger, and the limbs observed back are canonical.
@@ -344,9 +344,9 @@ def verifier := ⟦
   -- values), which clears `output` anyway.
   -- Each activation bit as an observed `Val` (8 LE bytes, 0 or 1).
   fn active_onto(active: List‹G›, tail: ByteStream) -> ByteStream {
-    match load(active) {
-      ListNode.Nil => tail,
-      ListNode.Cons(b, rest) =>
+    match active {
+      List.Nil => tail,
+      List.Cons(__cell10) => let (b, rest) = load(__cell10);
         b8_onto([u8_from_field_unsafe(b), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
                 active_onto(rest, tail)),
     }
@@ -359,7 +359,7 @@ def verifier := ⟦
     -- (`tlimbs`, from the verifying key), the activation bitmap, prep,
     -- stage_1, log_degrees, claims. Built inner-to-outer with the prepend
     -- helpers so the result is in forward (observation) order.
-    let input = claims_onto(claims, store(ListNode.Nil));
+    let input = claims_onto(claims, List.Nil);
     let input = log_degrees_onto(lds, input);
     let input = cap_onto(s1, input);
     let input = cap_onto(prep, input);
@@ -367,22 +367,22 @@ def verifier := ⟦
     let input = limbs_onto(tlimbs, input);
     let input = seed_tag_onto(input);
     -- sample lookup challenge, then observe it back (append)
-    let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
+    let (l0, l1, input, _ol) = ch_sample_ext(input, List.Nil);
     let input = snoc_b8(snoc_b8(input, l0), l1);
     -- sample fingerprint challenge, then observe it back
-    let (f0, f1, input, _of) = ch_sample_ext(input, store(ListNode.Nil));
+    let (f0, f1, input, _of) = ch_sample_ext(input, List.Nil);
     let input = snoc_b8(snoc_b8(input, f0), f1);
     -- observe stage_2 commitment
     let input = snoc_cap(input, s2);
     -- observe the intermediate accumulators (public values entering the
     -- constraints; α and ζ must depend on them directly)
-    let input = list_concat(input, accs_onto(accs, store(ListNode.Nil)));
+    let input = list_concat(input, accs_onto(accs, List.Nil));
     -- sample constraint challenge α (not observed)
-    let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
+    let (a0, a1, input, _oa) = ch_sample_ext(input, List.Nil);
     -- observe quotient commitment
     let input = snoc_cap(input, q);
     -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
-    let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
+    let (z0, z1, zinput, _oz) = ch_sample_ext(input, List.Nil);
     ([@gl_val(l0), @gl_val(l1)],
      [@gl_val(f0), @gl_val(f1)],
      [@gl_val(a0), @gl_val(a1)],
@@ -535,11 +535,11 @@ def verifier := ⟦
   -- coordinates; fold consecutive pairs back into `stage_2_width` extension
   -- elements (Rust: `chunks_exact(2).map(from_ext_basis)`).
   fn reconstruct_ext_row(raw: List‹Ext›) -> List‹Ext› {
-    match load(raw) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(c0, t1) =>
-        let ListNode.Cons(c1, t2) = load(t1);
-        store(ListNode.Cons(from_ext_basis(c0, c1), reconstruct_ext_row(t2))),
+    match raw {
+      List.Nil => List.Nil,
+      List.Cons(__cell11) => let (c0, t1) = load(__cell11);
+        let List.Cons(__lcell1001) = t1; let (c1, t2) = load(__lcell1001);
+        List.Cons(store((from_ext_basis(c0, c1), reconstruct_ext_row(t2)))),
     }
   }
 
@@ -608,9 +608,9 @@ def verifier := ⟦
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext) -> Ext {
-    match load(zeros) {
-      ListNode.Nil => acc,
-      ListNode.Cons(z, rest) =>
+    match zeros {
+      List.Nil => acc,
+      List.Cons(__cell12) => let (z, rest) = load(__cell12);
         let v = eval_at(nodes, z, main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
         fold_roots(ood_fold(acc, alpha, v), alpha, rest, nodes,
                    main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist),
@@ -642,9 +642,9 @@ def verifier := ⟦
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext) -> (Ext, Ext) {
-    match load(args) {
-      ListNode.Nil => ([0, 0], [0, 0]),
-      ListNode.Cons(a, rest) =>
+    match args {
+      List.Nil => ([0, 0], [0, 0]),
+      List.Cons(__cell13) => let (a, rest) = load(__cell13);
         let (f0, f1) = logup_fingerprint(rest, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
         let (m0, m1) = pair_mul(f0, f1, g0, g1);
@@ -674,9 +674,9 @@ def verifier := ⟦
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       isf: Ext, isl: Ext, ist: Ext) -> Ext {
-    match load(lks) {
-      ListNode.Nil => acc,
-      ListNode.Cons(lk, rest) =>
+    match lks {
+      List.Nil => acc,
+      List.Cons(__cell14) => let (lk, rest) = load(__cell14);
         let SysLookup.Mk(mid, args) = lk;
         let (f0, f1) = logup_fingerprint(args, g0, g1, nodes,
           main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
@@ -746,14 +746,14 @@ def verifier := ⟦
     -- across the domain, mirroring the Rust prover/verifier).
     let inj0 = @eg_mul(isl, @eg_mul(@eg_sub(na0, a0), [inorm, 0]));
     let inj1 = @eg_mul(isl, @eg_mul(@eg_sub(na1, a1), [inorm, 0]));
-    match load(lks) {
+    match lks {
       -- No lookups: single pass-through column, acc′ − acc + inj = 0.
-      ListNode.Nil =>
+      List.Nil =>
         let acc = ood_fold(base, alpha,
           @eg_add(@eg_sub(list_lookup(s2next, 0), list_lookup(s2, 0)), inj0));
         ood_fold(acc, alpha,
           @eg_add(@eg_sub(list_lookup(s2next, 1), list_lookup(s2, 1)), inj1)),
-      ListNode.Cons(_h, _t) =>
+      List.Cons(__cell15) => let (_h, _t) = load(__cell15);
         logup_steps_fold(base, alpha, lks, 0, list_length(lks),
           0, k, k, [1, 0], [0, 0], [0, 0], [0, 0], inj0, inj1,
           b0, b1, g0, g1, nodes,
@@ -766,11 +766,11 @@ def verifier := ⟦
   -- (`EF::from(coord)`). Indexed by the compiled `Public` node index
   -- (`num_publics = 4·D`, `D = 2`).
   fn build_publics(lch: Ext, fch: Ext, accp: Ext, naccp: Ext) -> List‹Ext› {
-    store(ListNode.Cons([lch[0], 0], store(ListNode.Cons([lch[1], 0],
-    store(ListNode.Cons([fch[0], 0], store(ListNode.Cons([fch[1], 0],
-    store(ListNode.Cons([accp[0], 0], store(ListNode.Cons([accp[1], 0],
-    store(ListNode.Cons([naccp[0], 0], store(ListNode.Cons([naccp[1], 0],
-    store(ListNode.Nil)))))))))))))))))
+    List.Cons(store(([lch[0], 0], List.Cons(store(([lch[1], 0],
+    List.Cons(store(([fch[0], 0], List.Cons(store(([fch[1], 0],
+    List.Cons(store(([accp[0], 0], List.Cons(store(([accp[1], 0],
+    List.Cons(store(([naccp[0], 0], List.Cons(store(([naccp[1], 0],
+    List.Nil))))))))))))))))))))))))
   }
 
   -- ==========================================================================
@@ -788,9 +788,9 @@ def verifier := ⟦
   -- `Σᵢ powᵢ·sliceᵢ` with `powᵢ = zeta_pow_n^i` (`pow` threads the running
   -- power, starting at 1).
   fn quotient_eval(slices: List‹Ext›, zeta_pow_n: Ext, pow: Ext) -> Ext {
-    match load(slices) {
-      ListNode.Nil => [0, 0],
-      ListNode.Cons(c, rest) =>
+    match slices {
+      List.Nil => [0, 0],
+      List.Cons(__cell16) => let (c, rest) = load(__cell16);
         @eg_add(@eg_mul(pow, c), quotient_eval(rest, zeta_pow_n, @eg_mul(pow, zeta_pow_n))),
     }
   }
@@ -813,10 +813,10 @@ def verifier := ⟦
   -- `(Nil, Nil)` if the circuit has no preprocessed trace.
   fn ood_prep_rows(prep_opt: PreprocessedOpt, oi: OptIdx) -> (List‹Ext›, List‹Ext›) {
     match oi {
-      OptIdx.NoIdx => (store(ListNode.Nil), store(ListNode.Nil)),
+      OptIdx.NoIdx => (List.Nil, List.Nil),
       OptIdx.SomeIdx(j) =>
         match prep_opt {
-          PreprocessedOpt.NoPreprocessed => (store(ListNode.Nil), store(ListNode.Nil)),
+          PreprocessedOpt.NoPreprocessed => (List.Nil, List.Nil),
           PreprocessedOpt.SomePreprocessed(round) =>
             let pr = list_lookup(round, j);
             (list_lookup(pr, 0), list_lookup(pr, 1)),
@@ -832,9 +832,9 @@ def verifier := ⟦
       stage1: OpenedRound, stage2: OpenedRound, prep_opt: PreprocessedOpt,
       q_opened: OpenedRound, i: G, accp: Ext,
       lch: Ext, fch: Ext, alpha: Ext, zeta: Ext) -> G {
-    match load(circuits) {
-      ListNode.Nil => 1,
-      ListNode.Cons(circ, rest) =>
+    match circuits {
+      List.Nil => 1,
+      List.Cons(__cell17) => let (circ, rest) = load(__cell17);
         let SysCircuit.Mk(nodes, _node_count, zeros, md, lks, k) = circ;
         let l = to_field(list_lookup(log_degrees, i));
         let qd = quotient_degree_of(md);
@@ -867,9 +867,9 @@ def verifier := ⟦
   -- The fingerprint of one claim's values: `Σ vᵢ · fch^i` (each `vᵢ` lifted from
   -- its raw u64 limb to an extension element). Mirrors `lookup::fingerprint`.
   fn fingerprint_vals(fch: Ext, vals: List‹U64›) -> Ext {
-    match load(vals) {
-      ListNode.Nil => [0, 0],
-      ListNode.Cons(v, rest) =>
+    match vals {
+      List.Nil => [0, 0],
+      List.Cons(__cell18) => let (v, rest) = load(__cell18);
         @eg_add([@gl_val(v), 0], @eg_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
@@ -878,9 +878,9 @@ def verifier := ⟦
   -- `acc = Σ_claims 1 / (lookup_challenge + fingerprint(fingerprint_challenge, claim))`
   -- (Rust `verify_multiple_claims`, lines 227-232). Empty claim list → zero.
   fn claims_acc(acc: Ext, claims: List‹List‹U64››, lch: Ext, fch: Ext) -> Ext {
-    match load(claims) {
-      ListNode.Nil => acc,
-      ListNode.Cons(c, rest) =>
+    match claims {
+      List.Nil => acc,
+      List.Cons(__cell19) => let (c, rest) = load(__cell19);
         let msg = @eg_add(lch, fingerprint_vals(fch, c));
         claims_acc(@eg_add(acc, @eg_inverse(msg)), rest, lch, fch),
     }
@@ -932,34 +932,34 @@ def verifier := ⟦
 
   -- 1 iff every element of `l` is boolean (0 or 1).
   fn assert_bits(l: List‹G›) -> G {
-    match load(l) {
-      ListNode.Nil => 1,
-      ListNode.Cons(b, rest) =>
+    match l {
+      List.Nil => 1,
+      List.Cons(__cell20) => let (b, rest) = load(__cell20);
         assert_eq!(b * (b - 1), 0);
         assert_bits(rest),
     }
   }
   -- The verifying key's circuits at active positions, in order.
   fn select_active_circuits(circuits: List‹SysCircuit›, active: List‹G›) -> List‹SysCircuit› {
-    match load(circuits) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(c, crest) =>
-        let &ListNode.Cons(b, arest) = active;
+    match circuits {
+      List.Nil => List.Nil,
+      List.Cons(__cell21) => let (c, crest) = load(__cell21);
+        let List.Cons(__cell25) = active; let (b, arest) = load(__cell25);
         match b {
           0 => select_active_circuits(crest, arest),
-          _ => store(ListNode.Cons(c, select_active_circuits(crest, arest))),
+          _ => List.Cons(store((c, select_active_circuits(crest, arest)))),
         },
     }
   }
   -- The preprocessed-index entries at active positions, in order.
   fn select_active_prep(prep_indices: List‹OptIdx›, active: List‹G›) -> List‹OptIdx› {
-    match load(prep_indices) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(p, prest) =>
-        let &ListNode.Cons(b, arest) = active;
+    match prep_indices {
+      List.Nil => List.Nil,
+      List.Cons(__cell22) => let (p, prest) = load(__cell22);
+        let List.Cons(__cell26) = active; let (b, arest) = load(__cell26);
         match b {
           0 => select_active_prep(prest, arest),
-          _ => store(ListNode.Cons(p, select_active_prep(prest, arest))),
+          _ => List.Cons(store((p, select_active_prep(prest, arest)))),
         },
     }
   }
@@ -973,11 +973,11 @@ def verifier := ⟦
   }
   fn read_claims_n(stream: ByteStream, n: G) -> (List‹List‹U64››, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (List.Nil, stream),
       _ =>
         let (c, s) = read_one_claim(stream);
         let (rest, s2) = read_claims_n(s, n - 1);
-        (store(ListNode.Cons(c, rest)), s2),
+        (List.Cons(store((c, rest))), s2),
     }
   }
   fn read_one_claim(stream: ByteStream) -> (List‹U64›, ByteStream) {
@@ -986,11 +986,11 @@ def verifier := ⟦
   }
   fn read_claim_vals_n(stream: ByteStream, n: G) -> (List‹U64›, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (List.Nil, stream),
       _ =>
         let (x, s) = read_u64(stream);
         let (rest, s2) = read_claim_vals_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        (List.Cons(store((x, rest))), s2),
     }
   }
 ⟧

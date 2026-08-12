@@ -264,14 +264,14 @@ def natPrim := ⟦
   }
 
   fn mk_nat_literal_64() -> KExpr {
-    let limbs = store(ListNode.Cons(
-      [64u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+    let limbs = List.Cons(store((
+      [64u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil)));
     store(KExprNode.Lit(KLiteral.Nat(limbs)))
   }
 
   fn mk_nat_one() -> KExpr {
-    let limbs = store(ListNode.Cons(
-      [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+    let limbs = List.Cons(store((
+      [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], List.Nil)));
     store(KExprNode.Lit(KLiteral.Nat(limbs)))
   }
 
@@ -444,8 +444,8 @@ def natPrim := ⟦
   -- Bool value (0/1) → Const(Bool.false/Bool.true).
   fn mk_bool(g: G) -> KExpr {
     match g {
-      0 => store(KExprNode.Const(bool_false_addr(), store(ListNode.Nil))),
-      _ => store(KExprNode.Const(bool_true_addr(), store(ListNode.Nil))),
+      0 => store(KExprNode.Const(bool_false_addr(), List.Nil)),
+      _ => store(KExprNode.Const(bool_true_addr(), List.Nil)),
     }
   }
 
@@ -453,17 +453,17 @@ def natPrim := ⟦
   -- (1, N mod 2^W) as KLimbs. (0, _) on miss.
   fn bv_to_nat_via(width_e: KExpr, val_e: KExpr) -> (G, KLimbs) {
     match bitvec_of_nat_args_direct(val_e) {
-      (0, _, _) => (0, store(ListNode.Nil)),
+      (0, _, _) => (0, List.Nil),
       (1, val_width, n_e) =>
         match try_extract_nat(n_e) {
-          (0, _) => (0, store(ListNode.Nil)),
+          (0, _) => (0, List.Nil),
           (1, n_kl) =>
             match try_extract_nat(val_width) {
-              (0, _) => (0, store(ListNode.Nil)),
+              (0, _) => (0, List.Nil),
               (1, w_kl) =>
-                let two = store(ListNode.Cons(
+                let two = List.Cons(store((
                   [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-                  store(ListNode.Nil)));
+                  List.Nil)));
                 let modulus = klimbs_pow(two, w_kl);
                 (1, klimbs_normalize(klimbs_mod(n_kl, modulus))),
             },
@@ -523,10 +523,10 @@ def natPrim := ⟦
                                         let width = list_lookup(ty_args, 0);
                                         let lhs = list_lookup(lt_args, 2);
                                         let rhs = list_lookup(lt_args, 3);
-                                        let inner = store(ListNode.Cons(width,
-                                          store(ListNode.Cons(lhs,
-                                            store(ListNode.Cons(rhs,
-                                              store(ListNode.Nil)))))));
+                                        let inner = List.Cons(store((width,
+                                          List.Cons(store((lhs,
+                                            List.Cons(store((rhs,
+                                              List.Nil)))))))));
                                         try_reduce_bit_vec_ult(inner),
                                     },
                                 },
@@ -601,20 +601,20 @@ def natPrim := ⟦
   fn bitvec_prep_spine_ult(spine: List‹KExpr›, types: List‹KExpr›)
                                 -> List‹KExpr› {
     let sw = whnf_spine(spine, types);
-    match load(sw) {
-      ListNode.Nil => sw,
-      ListNode.Cons(width_e, r1) =>
-        match load(r1) {
-          ListNode.Nil => sw,
-          ListNode.Cons(lhs_e, r2) =>
-            match load(r2) {
-              ListNode.Nil => sw,
-              ListNode.Cons(rhs_e, tail) =>
+    match sw {
+      List.Nil => sw,
+      List.Cons(__cell1) => let (width_e, r1) = load(__cell1);
+        match r1 {
+          List.Nil => sw,
+          List.Cons(__cell2) => let (lhs_e, r2) = load(__cell2);
+            match r2 {
+              List.Nil => sw,
+              List.Cons(__cell3) => let (rhs_e, tail) = load(__cell3);
                 let lhs_p = np_whnf_inner_bv(lhs_e, types);
                 let rhs_p = np_whnf_inner_bv(rhs_e, types);
-                store(ListNode.Cons(width_e,
-                  store(ListNode.Cons(lhs_p,
-                    store(ListNode.Cons(rhs_p, tail)))))),
+                List.Cons(store((width_e,
+                  List.Cons(store((lhs_p,
+                    List.Cons(store((rhs_p, tail))))))))),
             },
         },
     }
@@ -866,7 +866,7 @@ def natPrim := ⟦
                 let cp_limbs = klimbs_from_g(cp);
                 let cp_lit = store(KExprNode.Lit(KLiteral.Nat(cp_limbs)));
                 let con = store(KExprNode.Const(char_of_nat_addr(),
-                                                 store(ListNode.Nil)));
+                                                 List.Nil));
                 (1, store(KExprNode.App(con, cp_lit))),
               _ => (0, store(KExprNode.BVar(0))),
             },
@@ -885,10 +885,10 @@ def natPrim := ⟦
           KExprNode.Lit(lit) =>
             match lit {
               KLiteral.Str(bs) =>
-                match load(bs) {
-                  ListNode.Nil =>
+                match bs {
+                  List.Nil =>
                     (1, store(KExprNode.Const(byte_array_empty_addr(),
-                                                store(ListNode.Nil)))),
+                                                List.Nil))),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
               _ => (0, store(KExprNode.BVar(0))),
@@ -911,9 +911,9 @@ def natPrim := ⟦
   -- the bytes, so a literal that is never decoded would otherwise
   -- typecheck as a `String` that no Lean `String` corresponds to.
   fn utf8_validate(bs: ByteStream) {
-    match load(bs) {
-      ListNode.Nil => (),
-      ListNode.Cons(b0, rest) =>
+    match bs {
+      List.Nil => (),
+      List.Cons(__cell4) => let (b0, rest) = load(__cell4);
         match utf8_decode_one(b0, rest) {
           (_, remaining) => utf8_validate(remaining),
         },
@@ -925,9 +925,9 @@ def natPrim := ⟦
   }
 
   fn utf8_last_go(bs: ByteStream, prev: G) -> G {
-    match load(bs) {
-      ListNode.Nil => prev,
-      ListNode.Cons(b0, rest) =>
+    match bs {
+      List.Nil => prev,
+      List.Cons(__cell5) => let (b0, rest) = load(__cell5);
         match utf8_decode_one(b0, rest) {
           (cp, remaining) => utf8_last_go(remaining, cp),
         },
@@ -977,8 +977,8 @@ def natPrim := ⟦
           0 =>
             match u8_less_than(b0, 224u8) {
               1 =>
-                match load(rest) {
-                  ListNode.Cons(b1, r1) =>
+                match rest {
+                  List.Cons(__cell6) => let (b1, r1) = load(__cell6);
                     -- Two-byte cp is >= 0x80 for every leader >= 0xC2, so
                     -- no overlong is reachable once the leader is gated.
                     let cp = (to_field(b0) - 192) * 64 + utf8_cont(b1);
@@ -987,10 +987,10 @@ def natPrim := ⟦
               _ =>
                 match u8_less_than(b0, 240u8) {
                   1 =>
-                    match load(rest) {
-                      ListNode.Cons(b1, r1) =>
-                        match load(r1) {
-                          ListNode.Cons(b2, r2) =>
+                    match rest {
+                      List.Cons(__cell7) => let (b1, r1) = load(__cell7);
+                        match r1 {
+                          List.Cons(__cell8) => let (b2, r2) = load(__cell8);
                             let cp = (to_field(b0) - 224) * 4096
                                    + utf8_cont(b1) * 64
                                    + utf8_cont(b2);
@@ -1004,12 +1004,12 @@ def natPrim := ⟦
                         },
                     },
                   _ =>
-                    match load(rest) {
-                      ListNode.Cons(b1, r1) =>
-                        match load(r1) {
-                          ListNode.Cons(b2, r2) =>
-                            match load(r2) {
-                              ListNode.Cons(b3, r3) =>
+                    match rest {
+                      List.Cons(__cell9) => let (b1, r1) = load(__cell9);
+                        match r1 {
+                          List.Cons(__cell10) => let (b2, r2) = load(__cell10);
+                            match r2 {
+                              List.Cons(__cell11) => let (b3, r3) = load(__cell11);
                                 let cp = (to_field(b0) - 240) * 262144
                                        + utf8_cont(b1) * 4096
                                        + utf8_cont(b2) * 64
@@ -1036,12 +1036,12 @@ def natPrim := ⟦
   -- harness always seeds their bytes.
   fn str_lit_to_ctor(bs: ByteStream) -> KExpr {
     let zero_lvl = store(KLevelNode.Zero);
-    let ulvls = store(ListNode.Cons(zero_lvl, store(ListNode.Nil)));
+    let ulvls = List.Cons(store((zero_lvl, List.Nil)));
     let nil_const = store(KExprNode.Const(list_nil_addr(), ulvls));
     let cons_const = store(KExprNode.Const(list_cons_addr(), ulvls));
-    let char_const = store(KExprNode.Const(char_type_addr(), store(ListNode.Nil)));
-    let con_const = store(KExprNode.Const(char_of_nat_addr(), store(ListNode.Nil)));
-    let str_const = store(KExprNode.Const(string_of_list_addr(), store(ListNode.Nil)));
+    let char_const = store(KExprNode.Const(char_type_addr(), List.Nil));
+    let con_const = store(KExprNode.Const(char_of_nat_addr(), List.Nil));
+    let str_const = store(KExprNode.Const(string_of_list_addr(), List.Nil));
     let nil_app = store(KExprNode.App(nil_const, char_const));
     let cons_partial = store(KExprNode.App(cons_const, char_const));
     let list_expr = build_char_list(bs, nil_app, cons_partial, con_const);
@@ -1050,9 +1050,9 @@ def natPrim := ⟦
 
   fn build_char_list(bs: ByteStream, nil_app: KExpr,
                          cons_partial: KExpr, con_const: KExpr) -> KExpr {
-    match load(bs) {
-      ListNode.Nil => nil_app,
-      ListNode.Cons(b0, rest) =>
+    match bs {
+      List.Nil => nil_app,
+      List.Cons(__cell12) => let (b0, rest) = load(__cell12);
         match utf8_decode_one(b0, rest) {
           (cp, remaining) =>
             let cp_limbs = klimbs_from_g(cp);
@@ -1077,7 +1077,7 @@ def natPrim := ⟦
             let ci = load(get_ci(caddr));
             match ci {
               KConstantInfo.Defn(_, _, value, _, _) =>
-                let body = expr_inst_levels(value, store(ListNode.Nil));
+                let body = expr_inst_levels(value, List.Nil);
                 match load(body) {
                   KExprNode.Lam(_, lam_body) =>
                     whnf_nd(expr_inst1(lam_body, list_arg, 0), types),
@@ -1139,8 +1139,8 @@ def natPrim := ⟦
         assert_eq!(x, to_field(b0) + 256 * to_field(b1)
                    + 65536 * to_field(b2) + 16777216 * to_field(b3),
           "u32 byte split does not recompose to the original value");
-        store(ListNode.Cons([b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8],
-                            store(ListNode.Nil))),
+        List.Cons(store(([b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8],
+                            List.Nil))),
     }
   }
 
@@ -1158,28 +1158,28 @@ def natPrim := ⟦
             match address_eq(caddr, list_nil_addr()) {
               1 =>
                 match list_length(args) {
-                  1 => (1, store(ListNode.Nil)),
-                  _ => (0, store(ListNode.Nil)),
+                  1 => (1, List.Nil),
+                  _ => (0, List.Nil),
                 },
               _ =>
                 match address_eq(caddr, list_cons_addr()) {
-                  0 => (0, store(ListNode.Nil)),
+                  0 => (0, List.Nil),
                   _ =>
                     match list_length(args) {
                       3 =>
                         match char_lit_codepoint(list_lookup(args, 1), types) {
-                          (0, _) => (0, store(ListNode.Nil)),
+                          (0, _) => (0, List.Nil),
                           (1, cp) =>
                             match walk_char_list_bytes(list_lookup(args, 2), types) {
                               (0, t) => (0, t),
                               (1, t) => (1, utf8_encode_prepend(cp, t)),
                             },
                         },
-                      _ => (0, store(ListNode.Nil)),
+                      _ => (0, List.Nil),
                     },
                 },
             },
-          _ => (0, store(ListNode.Nil)),
+          _ => (0, List.Nil),
         },
     }
   }
@@ -1223,10 +1223,10 @@ def natPrim := ⟦
   -- to valid Unicode scalars (rejects surrogates 0xD800-0xDFFF and
   -- codepoints ≥ 0x110000).
   fn klimbs_scalar_value(limbs: KLimbs) -> (G, G) {
-    match load(limbs) {
-      ListNode.Cons(limb, rest) =>
-        match load(rest) {
-          ListNode.Nil =>
+    match limbs {
+      List.Cons(__cell13) => let (limb, rest) = load(__cell13);
+        match rest {
+          List.Nil =>
             let [b0, b1, b2, b3, b4, b5, b6, b7] = limb;
             let hi = to_field(b3) + to_field(b4) + to_field(b5) + to_field(b6) + to_field(b7);
             match eq_zero(hi) {
@@ -1301,26 +1301,26 @@ def natPrim := ⟦
         assert_eq!(cp, f0 + f1 * 64 + f2 * 4096 + f3 * 262144,
           "utf8 groups do not recompose to the codepoint");
         match u32_less_than(cp, 128) {
-          1 => store(ListNode.Cons(u8_from_field_unsafe(cp), tail)),
+          1 => List.Cons(store((u8_from_field_unsafe(cp), tail))),
           _ =>
             match u32_less_than(cp, 2048) {
               1 =>
                 let t1 = u8_from_field_unsafe(f0 + 128);
                 let l1 = u8_from_field_unsafe(f1 + 192);
-                store(ListNode.Cons(l1, store(ListNode.Cons(t1, tail)))),
+                List.Cons(store((l1, List.Cons(store((t1, tail)))))),
               _ =>
                 match u32_less_than(cp, 65536) {
                   1 =>
                     let t2 = u8_from_field_unsafe(f0 + 128);
                     let t1 = u8_from_field_unsafe(f1 + 128);
                     let l2 = u8_from_field_unsafe(f2 + 224);
-                    store(ListNode.Cons(l2, store(ListNode.Cons(t1, store(ListNode.Cons(t2, tail)))))),
+                    List.Cons(store((l2, List.Cons(store((t1, List.Cons(store((t2, tail))))))))),
                   _ =>
                     let t3 = u8_from_field_unsafe(f0 + 128);
                     let t2 = u8_from_field_unsafe(f1 + 128);
                     let t1 = u8_from_field_unsafe(f2 + 128);
                     let l3 = u8_from_field_unsafe(f3 + 240);
-                    store(ListNode.Cons(l3, store(ListNode.Cons(t1, store(ListNode.Cons(t2, store(ListNode.Cons(t3, tail)))))))),
+                    List.Cons(store((l3, List.Cons(store((t1, List.Cons(store((t2, List.Cons(store((t3, tail)))))))))))),
                 },
             },
         },
@@ -1405,15 +1405,15 @@ def natPrim := ⟦
       KExprNode.Lit(lit) =>
         match lit {
           KLiteral.Nat(limbs) => (1, limbs),
-          _ => (0, store(ListNode.Nil)),
+          _ => (0, List.Nil),
         },
       KExprNode.Const(caddr, _) =>
         match address_eq(caddr, nat_zero_addr()) {
-          1 => (1, store(ListNode.Nil)),
-          _ => (0, store(ListNode.Nil)),
+          1 => (1, List.Nil),
+          _ => (0, List.Nil),
         },
       KExprNode.App(f, a) => try_extract_nat_app(f, a),
-      _ => (0, store(ListNode.Nil)),
+      _ => (0, List.Nil),
     }
   }
 
@@ -1427,11 +1427,11 @@ def natPrim := ⟦
           1 =>
             match try_extract_nat(a) {
               (1, pred_limbs) => (1, klimbs_succ(pred_limbs)),
-              _ => (0, store(ListNode.Nil)),
+              _ => (0, List.Nil),
             },
-          _ => (0, store(ListNode.Nil)),
+          _ => (0, List.Nil),
         },
-      _ => (0, store(ListNode.Nil)),
+      _ => (0, List.Nil),
     }
   }
 
@@ -1443,9 +1443,9 @@ def natPrim := ⟦
   -- Apply spine (rebuild App chain).
   -- ============================================================================
   fn np_apply_spine(head: KExpr, spine: List‹KExpr›) -> KExpr {
-    match load(spine) {
-      ListNode.Nil => head,
-      ListNode.Cons(a, rest) =>
+    match spine {
+      List.Nil => head,
+      List.Cons(__cell14) => let (a, rest) = load(__cell14);
         np_apply_spine(store(KExprNode.App(head, a)), rest),
     }
   }
@@ -1522,7 +1522,7 @@ def natPrim := ⟦
     match load(head) {
       KExprNode.Const(caddr, _) =>
         match address_eq(caddr, nat_add_addr()) {
-          0 => (0, head, store(ListNode.Nil)),
+          0 => (0, head, List.Nil),
           _ =>
             match list_length(args) - 2 {
               0 =>
@@ -1532,28 +1532,28 @@ def natPrim := ⟦
                   KExprNode.Lit(lit) =>
                     match lit {
                       KLiteral.Nat(limbs) => (1, lhs, limbs),
-                      _ => (0, head, store(ListNode.Nil)),
+                      _ => (0, head, List.Nil),
                     },
-                  _ => (0, head, store(ListNode.Nil)),
+                  _ => (0, head, List.Nil),
                 },
-              _ => (0, head, store(ListNode.Nil)),
+              _ => (0, head, List.Nil),
             },
         },
-      _ => (0, head, store(ListNode.Nil)),
+      _ => (0, head, List.Nil),
     }
   }
 
   -- Build `Nat.succ pred` where pred = base if lit==1,
   -- else `Nat.add base (Lit lit-1)`.
   fn build_succ_offset(base: KExpr, lit: KLimbs) -> KExpr {
-    let one = store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
-                                  store(ListNode.Nil)));
+    let one = List.Cons(store(([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+                                  List.Nil)));
     let pred_lit_norm = klimbs_normalize(klimbs_sub(lit, one));
-    let succ_const = store(KExprNode.Const(nat_succ_addr(), store(ListNode.Nil)));
+    let succ_const = store(KExprNode.Const(nat_succ_addr(), List.Nil));
     match klimbs_is_zero(pred_lit_norm) {
       1 => store(KExprNode.App(succ_const, base)),
       _ =>
-        let add_const = store(KExprNode.Const(nat_add_addr(), store(ListNode.Nil)));
+        let add_const = store(KExprNode.Const(nat_add_addr(), List.Nil));
         let pred_lit_expr = store(KExprNode.Lit(KLiteral.Nat(pred_lit_norm)));
         let pred = store(KExprNode.App(
           store(KExprNode.App(add_const, base)),
@@ -1598,7 +1598,7 @@ def natPrim := ⟦
     match klimbs_is_zero(n) {
       1 => (1, np_apply_spine(base_w, post)),
       _ =>
-        let add_const = store(KExprNode.Const(nat_add_addr(), store(ListNode.Nil)));
+        let add_const = store(KExprNode.Const(nat_add_addr(), List.Nil));
         let off = store(KExprNode.App(
           store(KExprNode.App(add_const, base_w)),
           mk_nat_lit(n)));
@@ -1784,7 +1784,7 @@ def natPrim := ⟦
   -- Mirror mk_nat_binop_stuck (Primitive.lean:1750), addr-first.
   fn mk_nat_binop_stuck(op_addr: Addr, base_w: KExpr, n: KLimbs,
                              post: List‹KExpr›) -> KExpr {
-    let op_const = store(KExprNode.Const(op_addr, store(ListNode.Nil)));
+    let op_const = store(KExprNode.Const(op_addr, List.Nil));
     let stuck = store(KExprNode.App(
       store(KExprNode.App(op_const, base_w)),
       mk_nat_lit(n)));

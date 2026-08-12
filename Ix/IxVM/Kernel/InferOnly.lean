@@ -141,13 +141,13 @@ def inferOnly := ⟦
         },
 
       KExprNode.Lam(ty, body) =>
-        let types2 = store(ListNode.Cons(ty, types));
+        let types2 = List.Cons(store((ty, types)));
         let body_ty = k_infer_only(body, types2);
         store(KExprNode.Forall(ty, body_ty)),
 
       KExprNode.Forall(ty, body) =>
         let u1 = ensure_sort_only(ty, types);
-        let types2 = store(ListNode.Cons(ty, types));
+        let types2 = List.Cons(store((ty, types)));
         let u2 = ensure_sort_only(body, types2);
         store(KExprNode.Srt(level_imax(u1, u2))),
 
@@ -158,9 +158,9 @@ def inferOnly := ⟦
       KExprNode.Lit(lit) =>
         match lit {
           KLiteral.Nat(_) =>
-            store(KExprNode.Const(nat_addr_io(), store(ListNode.Nil))),
+            store(KExprNode.Const(nat_addr_io(), List.Nil)),
           KLiteral.Str(_) =>
-            store(KExprNode.Const(str_addr_io(), store(ListNode.Nil))),
+            store(KExprNode.Const(str_addr_io(), List.Nil)),
         },
 
       -- Proj arm: minimal, mirrors k_infer_proj without prop checks.
@@ -213,8 +213,8 @@ def inferOnly := ⟦
       _ =>
         match load(ty) {
           KExprNode.Forall(_, body) =>
-            match load(args) {
-              ListNode.Cons(arg, rest) =>
+            match args {
+              List.Cons(__cell1) => let (arg, rest) = load(__cell1);
                 let body_substed = expr_inst1(body, arg, 0);
                 io_peel_params_subst(body_substed, rest, n_params - 1),
             },
