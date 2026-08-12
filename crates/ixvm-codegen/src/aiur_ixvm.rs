@@ -3320,6 +3320,16 @@ fn aiur_fn_20(
     let __v_31: G = inp[31];
     let __v_32: G = inp[32];
     match __v_0.as_canonical_u64() {
+      0u64 => {
+        let __v_33: G = G::from_u64(0);
+        let __v_34: G = G::from_u64(1);
+        if (__v_33 != __v_34) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_33.as_canonical_u64(), rhs: __v_34.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_20] = [__v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33];
+        record.function_queries[20].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __loaded: [G; 33] = { let __mq = record.memory_queries.get_mut(&33).ok_or(ExecError::InvalidMemorySize(33))?; let __ptr_u64 = __v_0.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 33 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 33] = __args[..33].try_into().unwrap(); __arr };
         let __v_33: G = __loaded[0];
@@ -3623,321 +3633,961 @@ fn aiur_fn_22(
     let __v_1: G = __loaded[0];
     let __v_2: G = __loaded[1];
     match __v_2.as_canonical_u64() {
+      0u64 => {
+        let __v_3: G = G::from_u64(0);
+        let __v_4: G = G::from_u64(1);
+        if (__v_3 != __v_4) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_3.as_canonical_u64(), rhs: __v_4.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_22] = [__v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3];
+        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_2.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
         let __v_3: G = __loaded[0];
         let __v_4: G = __loaded[1];
         match __v_4.as_canonical_u64() {
+          0u64 => {
+            let __v_5: G = G::from_u64(0);
+            let __v_6: G = G::from_u64(1);
+            if (__v_5 != __v_6) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_5.as_canonical_u64(), rhs: __v_6.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_22] = [__v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5, __v_5];
+            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_4.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
             let __v_5: G = __loaded[0];
             let __v_6: G = __loaded[1];
             match __v_6.as_canonical_u64() {
+              0u64 => {
+                let __v_7: G = G::from_u64(0);
+                let __v_8: G = G::from_u64(1);
+                if (__v_7 != __v_8) {
+                  return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                }
+                let __ret: [G; OUT_22] = [__v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7, __v_7];
+                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                return Ok(__ret);
+              },
               _ => {
                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_6.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                 let __v_7: G = __loaded[0];
                 let __v_8: G = __loaded[1];
                 match __v_8.as_canonical_u64() {
+                  0u64 => {
+                    let __v_9: G = G::from_u64(0);
+                    let __v_10: G = G::from_u64(1);
+                    if (__v_9 != __v_10) {
+                      return Err(ExecError::AssertEqMismatch { lhs: __v_9.as_canonical_u64(), rhs: __v_10.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                    }
+                    let __ret: [G; OUT_22] = [__v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9, __v_9];
+                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                    return Ok(__ret);
+                  },
                   _ => {
                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_8.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                     let __v_9: G = __loaded[0];
                     let __v_10: G = __loaded[1];
                     match __v_10.as_canonical_u64() {
+                      0u64 => {
+                        let __v_11: G = G::from_u64(0);
+                        let __v_12: G = G::from_u64(1);
+                        if (__v_11 != __v_12) {
+                          return Err(ExecError::AssertEqMismatch { lhs: __v_11.as_canonical_u64(), rhs: __v_12.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                        }
+                        let __ret: [G; OUT_22] = [__v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11, __v_11];
+                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                        return Ok(__ret);
+                      },
                       _ => {
                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_10.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                         let __v_11: G = __loaded[0];
                         let __v_12: G = __loaded[1];
                         match __v_12.as_canonical_u64() {
+                          0u64 => {
+                            let __v_13: G = G::from_u64(0);
+                            let __v_14: G = G::from_u64(1);
+                            if (__v_13 != __v_14) {
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_13.as_canonical_u64(), rhs: __v_14.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                            }
+                            let __ret: [G; OUT_22] = [__v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13, __v_13];
+                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                            return Ok(__ret);
+                          },
                           _ => {
                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_12.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                             let __v_13: G = __loaded[0];
                             let __v_14: G = __loaded[1];
                             match __v_14.as_canonical_u64() {
+                              0u64 => {
+                                let __v_15: G = G::from_u64(0);
+                                let __v_16: G = G::from_u64(1);
+                                if (__v_15 != __v_16) {
+                                  return Err(ExecError::AssertEqMismatch { lhs: __v_15.as_canonical_u64(), rhs: __v_16.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                }
+                                let __ret: [G; OUT_22] = [__v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15, __v_15];
+                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                return Ok(__ret);
+                              },
                               _ => {
                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_14.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                 let __v_15: G = __loaded[0];
                                 let __v_16: G = __loaded[1];
                                 match __v_16.as_canonical_u64() {
+                                  0u64 => {
+                                    let __v_17: G = G::from_u64(0);
+                                    let __v_18: G = G::from_u64(1);
+                                    if (__v_17 != __v_18) {
+                                      return Err(ExecError::AssertEqMismatch { lhs: __v_17.as_canonical_u64(), rhs: __v_18.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                    }
+                                    let __ret: [G; OUT_22] = [__v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17, __v_17];
+                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                    return Ok(__ret);
+                                  },
                                   _ => {
                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_16.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                     let __v_17: G = __loaded[0];
                                     let __v_18: G = __loaded[1];
                                     match __v_18.as_canonical_u64() {
+                                      0u64 => {
+                                        let __v_19: G = G::from_u64(0);
+                                        let __v_20: G = G::from_u64(1);
+                                        if (__v_19 != __v_20) {
+                                          return Err(ExecError::AssertEqMismatch { lhs: __v_19.as_canonical_u64(), rhs: __v_20.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                        }
+                                        let __ret: [G; OUT_22] = [__v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19, __v_19];
+                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                        return Ok(__ret);
+                                      },
                                       _ => {
                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_18.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                         let __v_19: G = __loaded[0];
                                         let __v_20: G = __loaded[1];
                                         match __v_20.as_canonical_u64() {
+                                          0u64 => {
+                                            let __v_21: G = G::from_u64(0);
+                                            let __v_22: G = G::from_u64(1);
+                                            if (__v_21 != __v_22) {
+                                              return Err(ExecError::AssertEqMismatch { lhs: __v_21.as_canonical_u64(), rhs: __v_22.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                            }
+                                            let __ret: [G; OUT_22] = [__v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21, __v_21];
+                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                            return Ok(__ret);
+                                          },
                                           _ => {
                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_20.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                             let __v_21: G = __loaded[0];
                                             let __v_22: G = __loaded[1];
                                             match __v_22.as_canonical_u64() {
+                                              0u64 => {
+                                                let __v_23: G = G::from_u64(0);
+                                                let __v_24: G = G::from_u64(1);
+                                                if (__v_23 != __v_24) {
+                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_23.as_canonical_u64(), rhs: __v_24.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                }
+                                                let __ret: [G; OUT_22] = [__v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23, __v_23];
+                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                return Ok(__ret);
+                                              },
                                               _ => {
                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_22.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                 let __v_23: G = __loaded[0];
                                                 let __v_24: G = __loaded[1];
                                                 match __v_24.as_canonical_u64() {
+                                                  0u64 => {
+                                                    let __v_25: G = G::from_u64(0);
+                                                    let __v_26: G = G::from_u64(1);
+                                                    if (__v_25 != __v_26) {
+                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_25.as_canonical_u64(), rhs: __v_26.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                    }
+                                                    let __ret: [G; OUT_22] = [__v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25, __v_25];
+                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                    return Ok(__ret);
+                                                  },
                                                   _ => {
                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_24.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                     let __v_25: G = __loaded[0];
                                                     let __v_26: G = __loaded[1];
                                                     match __v_26.as_canonical_u64() {
+                                                      0u64 => {
+                                                        let __v_27: G = G::from_u64(0);
+                                                        let __v_28: G = G::from_u64(1);
+                                                        if (__v_27 != __v_28) {
+                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_27.as_canonical_u64(), rhs: __v_28.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                        }
+                                                        let __ret: [G; OUT_22] = [__v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27, __v_27];
+                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                        return Ok(__ret);
+                                                      },
                                                       _ => {
                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_26.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                         let __v_27: G = __loaded[0];
                                                         let __v_28: G = __loaded[1];
                                                         match __v_28.as_canonical_u64() {
+                                                          0u64 => {
+                                                            let __v_29: G = G::from_u64(0);
+                                                            let __v_30: G = G::from_u64(1);
+                                                            if (__v_29 != __v_30) {
+                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_29.as_canonical_u64(), rhs: __v_30.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                            }
+                                                            let __ret: [G; OUT_22] = [__v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29, __v_29];
+                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                            return Ok(__ret);
+                                                          },
                                                           _ => {
                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_28.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                             let __v_29: G = __loaded[0];
                                                             let __v_30: G = __loaded[1];
                                                             match __v_30.as_canonical_u64() {
+                                                              0u64 => {
+                                                                let __v_31: G = G::from_u64(0);
+                                                                let __v_32: G = G::from_u64(1);
+                                                                if (__v_31 != __v_32) {
+                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_31.as_canonical_u64(), rhs: __v_32.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                }
+                                                                let __ret: [G; OUT_22] = [__v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31, __v_31];
+                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                return Ok(__ret);
+                                                              },
                                                               _ => {
                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_30.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                 let __v_31: G = __loaded[0];
                                                                 let __v_32: G = __loaded[1];
                                                                 match __v_32.as_canonical_u64() {
+                                                                  0u64 => {
+                                                                    let __v_33: G = G::from_u64(0);
+                                                                    let __v_34: G = G::from_u64(1);
+                                                                    if (__v_33 != __v_34) {
+                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_33.as_canonical_u64(), rhs: __v_34.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                    }
+                                                                    let __ret: [G; OUT_22] = [__v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33, __v_33];
+                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                    return Ok(__ret);
+                                                                  },
                                                                   _ => {
                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_32.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                     let __v_33: G = __loaded[0];
                                                                     let __v_34: G = __loaded[1];
                                                                     match __v_34.as_canonical_u64() {
+                                                                      0u64 => {
+                                                                        let __v_35: G = G::from_u64(0);
+                                                                        let __v_36: G = G::from_u64(1);
+                                                                        if (__v_35 != __v_36) {
+                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_35.as_canonical_u64(), rhs: __v_36.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                        }
+                                                                        let __ret: [G; OUT_22] = [__v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35, __v_35];
+                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                        return Ok(__ret);
+                                                                      },
                                                                       _ => {
                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_34.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                         let __v_35: G = __loaded[0];
                                                                         let __v_36: G = __loaded[1];
                                                                         match __v_36.as_canonical_u64() {
+                                                                          0u64 => {
+                                                                            let __v_37: G = G::from_u64(0);
+                                                                            let __v_38: G = G::from_u64(1);
+                                                                            if (__v_37 != __v_38) {
+                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_37.as_canonical_u64(), rhs: __v_38.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                            }
+                                                                            let __ret: [G; OUT_22] = [__v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37];
+                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                            return Ok(__ret);
+                                                                          },
                                                                           _ => {
                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_36.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                             let __v_37: G = __loaded[0];
                                                                             let __v_38: G = __loaded[1];
                                                                             match __v_38.as_canonical_u64() {
+                                                                              0u64 => {
+                                                                                let __v_39: G = G::from_u64(0);
+                                                                                let __v_40: G = G::from_u64(1);
+                                                                                if (__v_39 != __v_40) {
+                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_39.as_canonical_u64(), rhs: __v_40.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                }
+                                                                                let __ret: [G; OUT_22] = [__v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39, __v_39];
+                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                return Ok(__ret);
+                                                                              },
                                                                               _ => {
                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_38.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                 let __v_39: G = __loaded[0];
                                                                                 let __v_40: G = __loaded[1];
                                                                                 match __v_40.as_canonical_u64() {
+                                                                                  0u64 => {
+                                                                                    let __v_41: G = G::from_u64(0);
+                                                                                    let __v_42: G = G::from_u64(1);
+                                                                                    if (__v_41 != __v_42) {
+                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_41.as_canonical_u64(), rhs: __v_42.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                    }
+                                                                                    let __ret: [G; OUT_22] = [__v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41, __v_41];
+                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                    return Ok(__ret);
+                                                                                  },
                                                                                   _ => {
                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_40.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                     let __v_41: G = __loaded[0];
                                                                                     let __v_42: G = __loaded[1];
                                                                                     match __v_42.as_canonical_u64() {
+                                                                                      0u64 => {
+                                                                                        let __v_43: G = G::from_u64(0);
+                                                                                        let __v_44: G = G::from_u64(1);
+                                                                                        if (__v_43 != __v_44) {
+                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_43.as_canonical_u64(), rhs: __v_44.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                        }
+                                                                                        let __ret: [G; OUT_22] = [__v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43, __v_43];
+                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                        return Ok(__ret);
+                                                                                      },
                                                                                       _ => {
                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_42.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                         let __v_43: G = __loaded[0];
                                                                                         let __v_44: G = __loaded[1];
                                                                                         match __v_44.as_canonical_u64() {
+                                                                                          0u64 => {
+                                                                                            let __v_45: G = G::from_u64(0);
+                                                                                            let __v_46: G = G::from_u64(1);
+                                                                                            if (__v_45 != __v_46) {
+                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_45.as_canonical_u64(), rhs: __v_46.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                            }
+                                                                                            let __ret: [G; OUT_22] = [__v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45, __v_45];
+                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                            return Ok(__ret);
+                                                                                          },
                                                                                           _ => {
                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_44.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                             let __v_45: G = __loaded[0];
                                                                                             let __v_46: G = __loaded[1];
                                                                                             match __v_46.as_canonical_u64() {
+                                                                                              0u64 => {
+                                                                                                let __v_47: G = G::from_u64(0);
+                                                                                                let __v_48: G = G::from_u64(1);
+                                                                                                if (__v_47 != __v_48) {
+                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_47.as_canonical_u64(), rhs: __v_48.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                }
+                                                                                                let __ret: [G; OUT_22] = [__v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47, __v_47];
+                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                return Ok(__ret);
+                                                                                              },
                                                                                               _ => {
                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_46.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                 let __v_47: G = __loaded[0];
                                                                                                 let __v_48: G = __loaded[1];
                                                                                                 match __v_48.as_canonical_u64() {
+                                                                                                  0u64 => {
+                                                                                                    let __v_49: G = G::from_u64(0);
+                                                                                                    let __v_50: G = G::from_u64(1);
+                                                                                                    if (__v_49 != __v_50) {
+                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_49.as_canonical_u64(), rhs: __v_50.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                    }
+                                                                                                    let __ret: [G; OUT_22] = [__v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49, __v_49];
+                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                    return Ok(__ret);
+                                                                                                  },
                                                                                                   _ => {
                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_48.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                     let __v_49: G = __loaded[0];
                                                                                                     let __v_50: G = __loaded[1];
                                                                                                     match __v_50.as_canonical_u64() {
+                                                                                                      0u64 => {
+                                                                                                        let __v_51: G = G::from_u64(0);
+                                                                                                        let __v_52: G = G::from_u64(1);
+                                                                                                        if (__v_51 != __v_52) {
+                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_51.as_canonical_u64(), rhs: __v_52.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                        }
+                                                                                                        let __ret: [G; OUT_22] = [__v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51, __v_51];
+                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                        return Ok(__ret);
+                                                                                                      },
                                                                                                       _ => {
                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_50.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                         let __v_51: G = __loaded[0];
                                                                                                         let __v_52: G = __loaded[1];
                                                                                                         match __v_52.as_canonical_u64() {
+                                                                                                          0u64 => {
+                                                                                                            let __v_53: G = G::from_u64(0);
+                                                                                                            let __v_54: G = G::from_u64(1);
+                                                                                                            if (__v_53 != __v_54) {
+                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_53.as_canonical_u64(), rhs: __v_54.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                            }
+                                                                                                            let __ret: [G; OUT_22] = [__v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53, __v_53];
+                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                            return Ok(__ret);
+                                                                                                          },
                                                                                                           _ => {
                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_52.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                             let __v_53: G = __loaded[0];
                                                                                                             let __v_54: G = __loaded[1];
                                                                                                             match __v_54.as_canonical_u64() {
+                                                                                                              0u64 => {
+                                                                                                                let __v_55: G = G::from_u64(0);
+                                                                                                                let __v_56: G = G::from_u64(1);
+                                                                                                                if (__v_55 != __v_56) {
+                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_55.as_canonical_u64(), rhs: __v_56.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                }
+                                                                                                                let __ret: [G; OUT_22] = [__v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55];
+                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                return Ok(__ret);
+                                                                                                              },
                                                                                                               _ => {
                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_54.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                 let __v_55: G = __loaded[0];
                                                                                                                 let __v_56: G = __loaded[1];
                                                                                                                 match __v_56.as_canonical_u64() {
+                                                                                                                  0u64 => {
+                                                                                                                    let __v_57: G = G::from_u64(0);
+                                                                                                                    let __v_58: G = G::from_u64(1);
+                                                                                                                    if (__v_57 != __v_58) {
+                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_57.as_canonical_u64(), rhs: __v_58.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                    }
+                                                                                                                    let __ret: [G; OUT_22] = [__v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57, __v_57];
+                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                    return Ok(__ret);
+                                                                                                                  },
                                                                                                                   _ => {
                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_56.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                     let __v_57: G = __loaded[0];
                                                                                                                     let __v_58: G = __loaded[1];
                                                                                                                     match __v_58.as_canonical_u64() {
+                                                                                                                      0u64 => {
+                                                                                                                        let __v_59: G = G::from_u64(0);
+                                                                                                                        let __v_60: G = G::from_u64(1);
+                                                                                                                        if (__v_59 != __v_60) {
+                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_59.as_canonical_u64(), rhs: __v_60.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                        }
+                                                                                                                        let __ret: [G; OUT_22] = [__v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59, __v_59];
+                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                        return Ok(__ret);
+                                                                                                                      },
                                                                                                                       _ => {
                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_58.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                         let __v_59: G = __loaded[0];
                                                                                                                         let __v_60: G = __loaded[1];
                                                                                                                         match __v_60.as_canonical_u64() {
+                                                                                                                          0u64 => {
+                                                                                                                            let __v_61: G = G::from_u64(0);
+                                                                                                                            let __v_62: G = G::from_u64(1);
+                                                                                                                            if (__v_61 != __v_62) {
+                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_61.as_canonical_u64(), rhs: __v_62.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                            }
+                                                                                                                            let __ret: [G; OUT_22] = [__v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61, __v_61];
+                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                            return Ok(__ret);
+                                                                                                                          },
                                                                                                                           _ => {
                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_60.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                             let __v_61: G = __loaded[0];
                                                                                                                             let __v_62: G = __loaded[1];
                                                                                                                             match __v_62.as_canonical_u64() {
+                                                                                                                              0u64 => {
+                                                                                                                                let __v_63: G = G::from_u64(0);
+                                                                                                                                let __v_64: G = G::from_u64(1);
+                                                                                                                                if (__v_63 != __v_64) {
+                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_63.as_canonical_u64(), rhs: __v_64.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                }
+                                                                                                                                let __ret: [G; OUT_22] = [__v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63, __v_63];
+                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                return Ok(__ret);
+                                                                                                                              },
                                                                                                                               _ => {
                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_62.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                 let __v_63: G = __loaded[0];
                                                                                                                                 let __v_64: G = __loaded[1];
                                                                                                                                 match __v_64.as_canonical_u64() {
+                                                                                                                                  0u64 => {
+                                                                                                                                    let __v_65: G = G::from_u64(0);
+                                                                                                                                    let __v_66: G = G::from_u64(1);
+                                                                                                                                    if (__v_65 != __v_66) {
+                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_65.as_canonical_u64(), rhs: __v_66.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                    }
+                                                                                                                                    let __ret: [G; OUT_22] = [__v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65, __v_65];
+                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                    return Ok(__ret);
+                                                                                                                                  },
                                                                                                                                   _ => {
                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_64.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                     let __v_65: G = __loaded[0];
                                                                                                                                     let __v_66: G = __loaded[1];
                                                                                                                                     match __v_66.as_canonical_u64() {
+                                                                                                                                      0u64 => {
+                                                                                                                                        let __v_67: G = G::from_u64(0);
+                                                                                                                                        let __v_68: G = G::from_u64(1);
+                                                                                                                                        if (__v_67 != __v_68) {
+                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_67.as_canonical_u64(), rhs: __v_68.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                        }
+                                                                                                                                        let __ret: [G; OUT_22] = [__v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67, __v_67];
+                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                        return Ok(__ret);
+                                                                                                                                      },
                                                                                                                                       _ => {
                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_66.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                         let __v_67: G = __loaded[0];
                                                                                                                                         let __v_68: G = __loaded[1];
                                                                                                                                         match __v_68.as_canonical_u64() {
+                                                                                                                                          0u64 => {
+                                                                                                                                            let __v_69: G = G::from_u64(0);
+                                                                                                                                            let __v_70: G = G::from_u64(1);
+                                                                                                                                            if (__v_69 != __v_70) {
+                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_69.as_canonical_u64(), rhs: __v_70.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                            }
+                                                                                                                                            let __ret: [G; OUT_22] = [__v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69, __v_69];
+                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                            return Ok(__ret);
+                                                                                                                                          },
                                                                                                                                           _ => {
                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_68.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                             let __v_69: G = __loaded[0];
                                                                                                                                             let __v_70: G = __loaded[1];
                                                                                                                                             match __v_70.as_canonical_u64() {
+                                                                                                                                              0u64 => {
+                                                                                                                                                let __v_71: G = G::from_u64(0);
+                                                                                                                                                let __v_72: G = G::from_u64(1);
+                                                                                                                                                if (__v_71 != __v_72) {
+                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_71.as_canonical_u64(), rhs: __v_72.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                }
+                                                                                                                                                let __ret: [G; OUT_22] = [__v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71, __v_71];
+                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                return Ok(__ret);
+                                                                                                                                              },
                                                                                                                                               _ => {
                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_70.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                 let __v_71: G = __loaded[0];
                                                                                                                                                 let __v_72: G = __loaded[1];
                                                                                                                                                 match __v_72.as_canonical_u64() {
+                                                                                                                                                  0u64 => {
+                                                                                                                                                    let __v_73: G = G::from_u64(0);
+                                                                                                                                                    let __v_74: G = G::from_u64(1);
+                                                                                                                                                    if (__v_73 != __v_74) {
+                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_73.as_canonical_u64(), rhs: __v_74.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                    }
+                                                                                                                                                    let __ret: [G; OUT_22] = [__v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73, __v_73];
+                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                  },
                                                                                                                                                   _ => {
                                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_72.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                     let __v_73: G = __loaded[0];
                                                                                                                                                     let __v_74: G = __loaded[1];
                                                                                                                                                     match __v_74.as_canonical_u64() {
+                                                                                                                                                      0u64 => {
+                                                                                                                                                        let __v_75: G = G::from_u64(0);
+                                                                                                                                                        let __v_76: G = G::from_u64(1);
+                                                                                                                                                        if (__v_75 != __v_76) {
+                                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_75.as_canonical_u64(), rhs: __v_76.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                        }
+                                                                                                                                                        let __ret: [G; OUT_22] = [__v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75, __v_75];
+                                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                        return Ok(__ret);
+                                                                                                                                                      },
                                                                                                                                                       _ => {
                                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_74.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                         let __v_75: G = __loaded[0];
                                                                                                                                                         let __v_76: G = __loaded[1];
                                                                                                                                                         match __v_76.as_canonical_u64() {
+                                                                                                                                                          0u64 => {
+                                                                                                                                                            let __v_77: G = G::from_u64(0);
+                                                                                                                                                            let __v_78: G = G::from_u64(1);
+                                                                                                                                                            if (__v_77 != __v_78) {
+                                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_77.as_canonical_u64(), rhs: __v_78.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                            }
+                                                                                                                                                            let __ret: [G; OUT_22] = [__v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77, __v_77];
+                                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                            return Ok(__ret);
+                                                                                                                                                          },
                                                                                                                                                           _ => {
                                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_76.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                             let __v_77: G = __loaded[0];
                                                                                                                                                             let __v_78: G = __loaded[1];
                                                                                                                                                             match __v_78.as_canonical_u64() {
+                                                                                                                                                              0u64 => {
+                                                                                                                                                                let __v_79: G = G::from_u64(0);
+                                                                                                                                                                let __v_80: G = G::from_u64(1);
+                                                                                                                                                                if (__v_79 != __v_80) {
+                                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_79.as_canonical_u64(), rhs: __v_80.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                }
+                                                                                                                                                                let __ret: [G; OUT_22] = [__v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79, __v_79];
+                                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                return Ok(__ret);
+                                                                                                                                                              },
                                                                                                                                                               _ => {
                                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_78.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                 let __v_79: G = __loaded[0];
                                                                                                                                                                 let __v_80: G = __loaded[1];
                                                                                                                                                                 match __v_80.as_canonical_u64() {
+                                                                                                                                                                  0u64 => {
+                                                                                                                                                                    let __v_81: G = G::from_u64(0);
+                                                                                                                                                                    let __v_82: G = G::from_u64(1);
+                                                                                                                                                                    if (__v_81 != __v_82) {
+                                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_81.as_canonical_u64(), rhs: __v_82.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                    }
+                                                                                                                                                                    let __ret: [G; OUT_22] = [__v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81, __v_81];
+                                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                                  },
                                                                                                                                                                   _ => {
                                                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_80.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                     let __v_81: G = __loaded[0];
                                                                                                                                                                     let __v_82: G = __loaded[1];
                                                                                                                                                                     match __v_82.as_canonical_u64() {
+                                                                                                                                                                      0u64 => {
+                                                                                                                                                                        let __v_83: G = G::from_u64(0);
+                                                                                                                                                                        let __v_84: G = G::from_u64(1);
+                                                                                                                                                                        if (__v_83 != __v_84) {
+                                                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_83.as_canonical_u64(), rhs: __v_84.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                        }
+                                                                                                                                                                        let __ret: [G; OUT_22] = [__v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83, __v_83];
+                                                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                        return Ok(__ret);
+                                                                                                                                                                      },
                                                                                                                                                                       _ => {
                                                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_82.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                         let __v_83: G = __loaded[0];
                                                                                                                                                                         let __v_84: G = __loaded[1];
                                                                                                                                                                         match __v_84.as_canonical_u64() {
+                                                                                                                                                                          0u64 => {
+                                                                                                                                                                            let __v_85: G = G::from_u64(0);
+                                                                                                                                                                            let __v_86: G = G::from_u64(1);
+                                                                                                                                                                            if (__v_85 != __v_86) {
+                                                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_85.as_canonical_u64(), rhs: __v_86.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                            }
+                                                                                                                                                                            let __ret: [G; OUT_22] = [__v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85, __v_85];
+                                                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                            return Ok(__ret);
+                                                                                                                                                                          },
                                                                                                                                                                           _ => {
                                                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_84.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                             let __v_85: G = __loaded[0];
                                                                                                                                                                             let __v_86: G = __loaded[1];
                                                                                                                                                                             match __v_86.as_canonical_u64() {
+                                                                                                                                                                              0u64 => {
+                                                                                                                                                                                let __v_87: G = G::from_u64(0);
+                                                                                                                                                                                let __v_88: G = G::from_u64(1);
+                                                                                                                                                                                if (__v_87 != __v_88) {
+                                                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_87.as_canonical_u64(), rhs: __v_88.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                }
+                                                                                                                                                                                let __ret: [G; OUT_22] = [__v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87, __v_87];
+                                                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                return Ok(__ret);
+                                                                                                                                                                              },
                                                                                                                                                                               _ => {
                                                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_86.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                 let __v_87: G = __loaded[0];
                                                                                                                                                                                 let __v_88: G = __loaded[1];
                                                                                                                                                                                 match __v_88.as_canonical_u64() {
+                                                                                                                                                                                  0u64 => {
+                                                                                                                                                                                    let __v_89: G = G::from_u64(0);
+                                                                                                                                                                                    let __v_90: G = G::from_u64(1);
+                                                                                                                                                                                    if (__v_89 != __v_90) {
+                                                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_89.as_canonical_u64(), rhs: __v_90.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                    }
+                                                                                                                                                                                    let __ret: [G; OUT_22] = [__v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89, __v_89];
+                                                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                                                  },
                                                                                                                                                                                   _ => {
                                                                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_88.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                     let __v_89: G = __loaded[0];
                                                                                                                                                                                     let __v_90: G = __loaded[1];
                                                                                                                                                                                     match __v_90.as_canonical_u64() {
+                                                                                                                                                                                      0u64 => {
+                                                                                                                                                                                        let __v_91: G = G::from_u64(0);
+                                                                                                                                                                                        let __v_92: G = G::from_u64(1);
+                                                                                                                                                                                        if (__v_91 != __v_92) {
+                                                                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_91.as_canonical_u64(), rhs: __v_92.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                        }
+                                                                                                                                                                                        let __ret: [G; OUT_22] = [__v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91, __v_91];
+                                                                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                        return Ok(__ret);
+                                                                                                                                                                                      },
                                                                                                                                                                                       _ => {
                                                                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_90.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                         let __v_91: G = __loaded[0];
                                                                                                                                                                                         let __v_92: G = __loaded[1];
                                                                                                                                                                                         match __v_92.as_canonical_u64() {
+                                                                                                                                                                                          0u64 => {
+                                                                                                                                                                                            let __v_93: G = G::from_u64(0);
+                                                                                                                                                                                            let __v_94: G = G::from_u64(1);
+                                                                                                                                                                                            if (__v_93 != __v_94) {
+                                                                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_93.as_canonical_u64(), rhs: __v_94.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                            }
+                                                                                                                                                                                            let __ret: [G; OUT_22] = [__v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93, __v_93];
+                                                                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                            return Ok(__ret);
+                                                                                                                                                                                          },
                                                                                                                                                                                           _ => {
                                                                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_92.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                             let __v_93: G = __loaded[0];
                                                                                                                                                                                             let __v_94: G = __loaded[1];
                                                                                                                                                                                             match __v_94.as_canonical_u64() {
+                                                                                                                                                                                              0u64 => {
+                                                                                                                                                                                                let __v_95: G = G::from_u64(0);
+                                                                                                                                                                                                let __v_96: G = G::from_u64(1);
+                                                                                                                                                                                                if (__v_95 != __v_96) {
+                                                                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_95.as_canonical_u64(), rhs: __v_96.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                }
+                                                                                                                                                                                                let __ret: [G; OUT_22] = [__v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95, __v_95];
+                                                                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                return Ok(__ret);
+                                                                                                                                                                                              },
                                                                                                                                                                                               _ => {
                                                                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_94.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                 let __v_95: G = __loaded[0];
                                                                                                                                                                                                 let __v_96: G = __loaded[1];
                                                                                                                                                                                                 match __v_96.as_canonical_u64() {
+                                                                                                                                                                                                  0u64 => {
+                                                                                                                                                                                                    let __v_97: G = G::from_u64(0);
+                                                                                                                                                                                                    let __v_98: G = G::from_u64(1);
+                                                                                                                                                                                                    if (__v_97 != __v_98) {
+                                                                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_97.as_canonical_u64(), rhs: __v_98.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                    }
+                                                                                                                                                                                                    let __ret: [G; OUT_22] = [__v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97, __v_97];
+                                                                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                                                                  },
                                                                                                                                                                                                   _ => {
                                                                                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_96.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                     let __v_97: G = __loaded[0];
                                                                                                                                                                                                     let __v_98: G = __loaded[1];
                                                                                                                                                                                                     match __v_98.as_canonical_u64() {
+                                                                                                                                                                                                      0u64 => {
+                                                                                                                                                                                                        let __v_99: G = G::from_u64(0);
+                                                                                                                                                                                                        let __v_100: G = G::from_u64(1);
+                                                                                                                                                                                                        if (__v_99 != __v_100) {
+                                                                                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_99.as_canonical_u64(), rhs: __v_100.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                        }
+                                                                                                                                                                                                        let __ret: [G; OUT_22] = [__v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99, __v_99];
+                                                                                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                        return Ok(__ret);
+                                                                                                                                                                                                      },
                                                                                                                                                                                                       _ => {
                                                                                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_98.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                         let __v_99: G = __loaded[0];
                                                                                                                                                                                                         let __v_100: G = __loaded[1];
                                                                                                                                                                                                         match __v_100.as_canonical_u64() {
+                                                                                                                                                                                                          0u64 => {
+                                                                                                                                                                                                            let __v_101: G = G::from_u64(0);
+                                                                                                                                                                                                            let __v_102: G = G::from_u64(1);
+                                                                                                                                                                                                            if (__v_101 != __v_102) {
+                                                                                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_101.as_canonical_u64(), rhs: __v_102.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                            }
+                                                                                                                                                                                                            let __ret: [G; OUT_22] = [__v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101, __v_101];
+                                                                                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                            return Ok(__ret);
+                                                                                                                                                                                                          },
                                                                                                                                                                                                           _ => {
                                                                                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_100.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                             let __v_101: G = __loaded[0];
                                                                                                                                                                                                             let __v_102: G = __loaded[1];
                                                                                                                                                                                                             match __v_102.as_canonical_u64() {
+                                                                                                                                                                                                              0u64 => {
+                                                                                                                                                                                                                let __v_103: G = G::from_u64(0);
+                                                                                                                                                                                                                let __v_104: G = G::from_u64(1);
+                                                                                                                                                                                                                if (__v_103 != __v_104) {
+                                                                                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_103.as_canonical_u64(), rhs: __v_104.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                }
+                                                                                                                                                                                                                let __ret: [G; OUT_22] = [__v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103, __v_103];
+                                                                                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                return Ok(__ret);
+                                                                                                                                                                                                              },
                                                                                                                                                                                                               _ => {
                                                                                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_102.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                 let __v_103: G = __loaded[0];
                                                                                                                                                                                                                 let __v_104: G = __loaded[1];
                                                                                                                                                                                                                 match __v_104.as_canonical_u64() {
+                                                                                                                                                                                                                  0u64 => {
+                                                                                                                                                                                                                    let __v_105: G = G::from_u64(0);
+                                                                                                                                                                                                                    let __v_106: G = G::from_u64(1);
+                                                                                                                                                                                                                    if (__v_105 != __v_106) {
+                                                                                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_105.as_canonical_u64(), rhs: __v_106.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                    let __ret: [G; OUT_22] = [__v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105, __v_105];
+                                                                                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                                                                                  },
                                                                                                                                                                                                                   _ => {
                                                                                                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_104.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                     let __v_105: G = __loaded[0];
                                                                                                                                                                                                                     let __v_106: G = __loaded[1];
                                                                                                                                                                                                                     match __v_106.as_canonical_u64() {
+                                                                                                                                                                                                                      0u64 => {
+                                                                                                                                                                                                                        let __v_107: G = G::from_u64(0);
+                                                                                                                                                                                                                        let __v_108: G = G::from_u64(1);
+                                                                                                                                                                                                                        if (__v_107 != __v_108) {
+                                                                                                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_107.as_canonical_u64(), rhs: __v_108.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                        let __ret: [G; OUT_22] = [__v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107, __v_107];
+                                                                                                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                        return Ok(__ret);
+                                                                                                                                                                                                                      },
                                                                                                                                                                                                                       _ => {
                                                                                                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_106.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                         let __v_107: G = __loaded[0];
                                                                                                                                                                                                                         let __v_108: G = __loaded[1];
                                                                                                                                                                                                                         match __v_108.as_canonical_u64() {
+                                                                                                                                                                                                                          0u64 => {
+                                                                                                                                                                                                                            let __v_109: G = G::from_u64(0);
+                                                                                                                                                                                                                            let __v_110: G = G::from_u64(1);
+                                                                                                                                                                                                                            if (__v_109 != __v_110) {
+                                                                                                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_109.as_canonical_u64(), rhs: __v_110.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                            let __ret: [G; OUT_22] = [__v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109, __v_109];
+                                                                                                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                            return Ok(__ret);
+                                                                                                                                                                                                                          },
                                                                                                                                                                                                                           _ => {
                                                                                                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_108.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                             let __v_109: G = __loaded[0];
                                                                                                                                                                                                                             let __v_110: G = __loaded[1];
                                                                                                                                                                                                                             match __v_110.as_canonical_u64() {
+                                                                                                                                                                                                                              0u64 => {
+                                                                                                                                                                                                                                let __v_111: G = G::from_u64(0);
+                                                                                                                                                                                                                                let __v_112: G = G::from_u64(1);
+                                                                                                                                                                                                                                if (__v_111 != __v_112) {
+                                                                                                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_111.as_canonical_u64(), rhs: __v_112.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                let __ret: [G; OUT_22] = [__v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111, __v_111];
+                                                                                                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                return Ok(__ret);
+                                                                                                                                                                                                                              },
                                                                                                                                                                                                                               _ => {
                                                                                                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_110.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                 let __v_111: G = __loaded[0];
                                                                                                                                                                                                                                 let __v_112: G = __loaded[1];
                                                                                                                                                                                                                                 match __v_112.as_canonical_u64() {
+                                                                                                                                                                                                                                  0u64 => {
+                                                                                                                                                                                                                                    let __v_113: G = G::from_u64(0);
+                                                                                                                                                                                                                                    let __v_114: G = G::from_u64(1);
+                                                                                                                                                                                                                                    if (__v_113 != __v_114) {
+                                                                                                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_113.as_canonical_u64(), rhs: __v_114.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                    let __ret: [G; OUT_22] = [__v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113, __v_113];
+                                                                                                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                                                                                                  },
                                                                                                                                                                                                                                   _ => {
                                                                                                                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_112.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                     let __v_113: G = __loaded[0];
                                                                                                                                                                                                                                     let __v_114: G = __loaded[1];
                                                                                                                                                                                                                                     match __v_114.as_canonical_u64() {
+                                                                                                                                                                                                                                      0u64 => {
+                                                                                                                                                                                                                                        let __v_115: G = G::from_u64(0);
+                                                                                                                                                                                                                                        let __v_116: G = G::from_u64(1);
+                                                                                                                                                                                                                                        if (__v_115 != __v_116) {
+                                                                                                                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_115.as_canonical_u64(), rhs: __v_116.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                        let __ret: [G; OUT_22] = [__v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115, __v_115];
+                                                                                                                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                        return Ok(__ret);
+                                                                                                                                                                                                                                      },
                                                                                                                                                                                                                                       _ => {
                                                                                                                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_114.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                         let __v_115: G = __loaded[0];
                                                                                                                                                                                                                                         let __v_116: G = __loaded[1];
                                                                                                                                                                                                                                         match __v_116.as_canonical_u64() {
+                                                                                                                                                                                                                                          0u64 => {
+                                                                                                                                                                                                                                            let __v_117: G = G::from_u64(0);
+                                                                                                                                                                                                                                            let __v_118: G = G::from_u64(1);
+                                                                                                                                                                                                                                            if (__v_117 != __v_118) {
+                                                                                                                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_117.as_canonical_u64(), rhs: __v_118.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                            let __ret: [G; OUT_22] = [__v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117, __v_117];
+                                                                                                                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                            return Ok(__ret);
+                                                                                                                                                                                                                                          },
                                                                                                                                                                                                                                           _ => {
                                                                                                                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_116.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                             let __v_117: G = __loaded[0];
                                                                                                                                                                                                                                             let __v_118: G = __loaded[1];
                                                                                                                                                                                                                                             match __v_118.as_canonical_u64() {
+                                                                                                                                                                                                                                              0u64 => {
+                                                                                                                                                                                                                                                let __v_119: G = G::from_u64(0);
+                                                                                                                                                                                                                                                let __v_120: G = G::from_u64(1);
+                                                                                                                                                                                                                                                if (__v_119 != __v_120) {
+                                                                                                                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_119.as_canonical_u64(), rhs: __v_120.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                let __ret: [G; OUT_22] = [__v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119, __v_119];
+                                                                                                                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                                return Ok(__ret);
+                                                                                                                                                                                                                                              },
                                                                                                                                                                                                                                               _ => {
                                                                                                                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_118.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                                 let __v_119: G = __loaded[0];
                                                                                                                                                                                                                                                 let __v_120: G = __loaded[1];
                                                                                                                                                                                                                                                 match __v_120.as_canonical_u64() {
+                                                                                                                                                                                                                                                  0u64 => {
+                                                                                                                                                                                                                                                    let __v_121: G = G::from_u64(0);
+                                                                                                                                                                                                                                                    let __v_122: G = G::from_u64(1);
+                                                                                                                                                                                                                                                    if (__v_121 != __v_122) {
+                                                                                                                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_121.as_canonical_u64(), rhs: __v_122.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                    let __ret: [G; OUT_22] = [__v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121, __v_121];
+                                                                                                                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                                                                                                                  },
                                                                                                                                                                                                                                                   _ => {
                                                                                                                                                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_120.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                                     let __v_121: G = __loaded[0];
                                                                                                                                                                                                                                                     let __v_122: G = __loaded[1];
                                                                                                                                                                                                                                                     match __v_122.as_canonical_u64() {
+                                                                                                                                                                                                                                                      0u64 => {
+                                                                                                                                                                                                                                                        let __v_123: G = G::from_u64(0);
+                                                                                                                                                                                                                                                        let __v_124: G = G::from_u64(1);
+                                                                                                                                                                                                                                                        if (__v_123 != __v_124) {
+                                                                                                                                                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_123.as_canonical_u64(), rhs: __v_124.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                        let __ret: [G; OUT_22] = [__v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123, __v_123];
+                                                                                                                                                                                                                                                        record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                                        return Ok(__ret);
+                                                                                                                                                                                                                                                      },
                                                                                                                                                                                                                                                       _ => {
                                                                                                                                                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_122.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                                         let __v_123: G = __loaded[0];
                                                                                                                                                                                                                                                         let __v_124: G = __loaded[1];
                                                                                                                                                                                                                                                         match __v_124.as_canonical_u64() {
+                                                                                                                                                                                                                                                          0u64 => {
+                                                                                                                                                                                                                                                            let __v_125: G = G::from_u64(0);
+                                                                                                                                                                                                                                                            let __v_126: G = G::from_u64(1);
+                                                                                                                                                                                                                                                            if (__v_125 != __v_126) {
+                                                                                                                                                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_125.as_canonical_u64(), rhs: __v_126.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                            let __ret: [G; OUT_22] = [__v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125, __v_125];
+                                                                                                                                                                                                                                                            record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                                            return Ok(__ret);
+                                                                                                                                                                                                                                                          },
                                                                                                                                                                                                                                                           _ => {
                                                                                                                                                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_124.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                                             let __v_125: G = __loaded[0];
                                                                                                                                                                                                                                                             let __v_126: G = __loaded[1];
                                                                                                                                                                                                                                                             match __v_126.as_canonical_u64() {
+                                                                                                                                                                                                                                                              0u64 => {
+                                                                                                                                                                                                                                                                let __v_127: G = G::from_u64(0);
+                                                                                                                                                                                                                                                                let __v_128: G = G::from_u64(1);
+                                                                                                                                                                                                                                                                if (__v_127 != __v_128) {
+                                                                                                                                                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_127.as_canonical_u64(), rhs: __v_128.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                                let __ret: [G; OUT_22] = [__v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127, __v_127];
+                                                                                                                                                                                                                                                                record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                                                return Ok(__ret);
+                                                                                                                                                                                                                                                              },
                                                                                                                                                                                                                                                               _ => {
                                                                                                                                                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_126.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                                                                                                                                                 let __v_127: G = __loaded[0];
                                                                                                                                                                                                                                                                 let __v_128: G = __loaded[1];
                                                                                                                                                                                                                                                                 match __v_128.as_canonical_u64() {
+                                                                                                                                                                                                                                                                  0u64 => {
+                                                                                                                                                                                                                                                                    let __v_129: G = G::from_u64(0);
+                                                                                                                                                                                                                                                                    let __v_130: G = G::from_u64(1);
+                                                                                                                                                                                                                                                                    if (__v_129 != __v_130) {
+                                                                                                                                                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_129.as_canonical_u64(), rhs: __v_130.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                                    let __ret: [G; OUT_22] = [__v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129, __v_129];
+                                                                                                                                                                                                                                                                    record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                                                                                                                                                    return Ok(__ret);
+                                                                                                                                                                                                                                                                  },
                                                                                                                                                                                                                                                                   _ => {
                                                                                                                                                                                                                                                                     let __ret: [G; OUT_22] = [__v_127, __v_125, __v_123, __v_121, __v_119, __v_117, __v_115, __v_113, __v_111, __v_109, __v_107, __v_105, __v_103, __v_101, __v_99, __v_97, __v_95, __v_93, __v_91, __v_89, __v_87, __v_85, __v_83, __v_81, __v_79, __v_77, __v_75, __v_73, __v_71, __v_69, __v_67, __v_65, __v_63, __v_61, __v_59, __v_57, __v_55, __v_53, __v_51, __v_49, __v_47, __v_45, __v_43, __v_41, __v_39, __v_37, __v_35, __v_33, __v_31, __v_29, __v_27, __v_25, __v_23, __v_21, __v_19, __v_17, __v_15, __v_13, __v_11, __v_9, __v_7, __v_5, __v_3, __v_1];
                                                                                                                                                                                                                                                                     record.function_queries[22].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -10886,6 +11536,16 @@ fn aiur_fn_69(
         let __v_2: G = __loaded[0];
         let __v_3: G = __loaded[1];
         match __v_3.as_canonical_u64() {
+          0u64 => {
+            let __v_4: G = G::from_u64(0);
+            let __v_5: G = G::from_u64(1);
+            if (__v_4 != __v_5) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_4.as_canonical_u64(), rhs: __v_5.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_69] = [__v_4, __v_4, __v_4, __v_4, __v_4, __v_4, __v_4, __v_4, __v_4];
+            record.function_queries[69].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __v_4: G = G::from_u64(1);
             let __v_5: G = (__v_1 - __v_4);
@@ -10924,6 +11584,16 @@ fn aiur_fn_70(
     let __v_1: G = __loaded[0];
     let __v_2: G = __loaded[1];
     match __v_2.as_canonical_u64() {
+      0u64 => {
+        let __v_3: G = G::from_u64(0);
+        let __v_4: G = G::from_u64(1);
+        if (__v_3 != __v_4) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_3.as_canonical_u64(), rhs: __v_4.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_70] = [__v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3];
+        record.function_queries[70].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __b1_out: [G; 8] = if unconstrained { let __v: Vec<G> = Bytes1::bit_decompose(&__v_1); let __a: [G; 8] = __v.try_into().unwrap(); __a } else { bytes1_bit_decompose_value(__v_1, record) };
         let __v_3: G = __b1_out[0];
@@ -11009,6 +11679,16 @@ fn aiur_fn_71(
     let __v_1: G = __loaded[0];
     let __v_2: G = __loaded[1];
     match __v_2.as_canonical_u64() {
+      0u64 => {
+        let __v_3: G = G::from_u64(0);
+        let __v_4: G = G::from_u64(1);
+        if (__v_3 != __v_4) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_3.as_canonical_u64(), rhs: __v_4.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_71] = [__v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3];
+        record.function_queries[71].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __b1_out: [G; 8] = if unconstrained { let __v: Vec<G> = Bytes1::bit_decompose(&__v_1); let __a: [G; 8] = __v.try_into().unwrap(); __a } else { bytes1_bit_decompose_value(__v_1, record) };
         let __v_3: G = __b1_out[0];
@@ -11091,6 +11771,16 @@ fn aiur_fn_72(
     let __v_1: G = __loaded[0];
     let __v_2: G = __loaded[1];
     match __v_2.as_canonical_u64() {
+      0u64 => {
+        let __v_3: G = G::from_u64(0);
+        let __v_4: G = G::from_u64(1);
+        if (__v_3 != __v_4) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_3.as_canonical_u64(), rhs: __v_4.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_72] = [__v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3, __v_3];
+        record.function_queries[72].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __b1_out: [G; 8] = if unconstrained { let __v: Vec<G> = Bytes1::bit_decompose(&__v_1); let __a: [G; 8] = __v.try_into().unwrap(); __a } else { bytes1_bit_decompose_value(__v_1, record) };
         let __v_3: G = __b1_out[0];
@@ -11840,161 +12530,481 @@ fn aiur_fn_81(
     let __v_1: G = __loaded[0];
     let __v_2: G = __loaded[1];
     match __v_2.as_canonical_u64() {
+      0u64 => {
+        let __v_3: G = G::from_u64(0);
+        let __v_4: G = G::from_u64(1);
+        if (__v_3 != __v_4) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_3.as_canonical_u64(), rhs: __v_4.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_81] = [__v_3, __v_3];
+        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_2.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
         let __v_3: G = __loaded[0];
         let __v_4: G = __loaded[1];
         match __v_4.as_canonical_u64() {
+          0u64 => {
+            let __v_5: G = G::from_u64(0);
+            let __v_6: G = G::from_u64(1);
+            if (__v_5 != __v_6) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_5.as_canonical_u64(), rhs: __v_6.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_81] = [__v_5, __v_5];
+            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_4.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
             let __v_5: G = __loaded[0];
             let __v_6: G = __loaded[1];
             match __v_6.as_canonical_u64() {
+              0u64 => {
+                let __v_7: G = G::from_u64(0);
+                let __v_8: G = G::from_u64(1);
+                if (__v_7 != __v_8) {
+                  return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                }
+                let __ret: [G; OUT_81] = [__v_7, __v_7];
+                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                return Ok(__ret);
+              },
               _ => {
                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_6.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                 let __v_7: G = __loaded[0];
                 let __v_8: G = __loaded[1];
                 match __v_8.as_canonical_u64() {
+                  0u64 => {
+                    let __v_9: G = G::from_u64(0);
+                    let __v_10: G = G::from_u64(1);
+                    if (__v_9 != __v_10) {
+                      return Err(ExecError::AssertEqMismatch { lhs: __v_9.as_canonical_u64(), rhs: __v_10.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                    }
+                    let __ret: [G; OUT_81] = [__v_9, __v_9];
+                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                    return Ok(__ret);
+                  },
                   _ => {
                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_8.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                     let __v_9: G = __loaded[0];
                     let __v_10: G = __loaded[1];
                     match __v_10.as_canonical_u64() {
+                      0u64 => {
+                        let __v_11: G = G::from_u64(0);
+                        let __v_12: G = G::from_u64(1);
+                        if (__v_11 != __v_12) {
+                          return Err(ExecError::AssertEqMismatch { lhs: __v_11.as_canonical_u64(), rhs: __v_12.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                        }
+                        let __ret: [G; OUT_81] = [__v_11, __v_11];
+                        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                        return Ok(__ret);
+                      },
                       _ => {
                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_10.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                         let __v_11: G = __loaded[0];
                         let __v_12: G = __loaded[1];
                         match __v_12.as_canonical_u64() {
+                          0u64 => {
+                            let __v_13: G = G::from_u64(0);
+                            let __v_14: G = G::from_u64(1);
+                            if (__v_13 != __v_14) {
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_13.as_canonical_u64(), rhs: __v_14.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                            }
+                            let __ret: [G; OUT_81] = [__v_13, __v_13];
+                            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                            return Ok(__ret);
+                          },
                           _ => {
                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_12.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                             let __v_13: G = __loaded[0];
                             let __v_14: G = __loaded[1];
                             match __v_14.as_canonical_u64() {
+                              0u64 => {
+                                let __v_15: G = G::from_u64(0);
+                                let __v_16: G = G::from_u64(1);
+                                if (__v_15 != __v_16) {
+                                  return Err(ExecError::AssertEqMismatch { lhs: __v_15.as_canonical_u64(), rhs: __v_16.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                }
+                                let __ret: [G; OUT_81] = [__v_15, __v_15];
+                                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                return Ok(__ret);
+                              },
                               _ => {
                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_14.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                 let __v_15: G = __loaded[0];
                                 let __v_16: G = __loaded[1];
                                 match __v_16.as_canonical_u64() {
+                                  0u64 => {
+                                    let __v_17: G = G::from_u64(0);
+                                    let __v_18: G = G::from_u64(1);
+                                    if (__v_17 != __v_18) {
+                                      return Err(ExecError::AssertEqMismatch { lhs: __v_17.as_canonical_u64(), rhs: __v_18.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                    }
+                                    let __ret: [G; OUT_81] = [__v_17, __v_17];
+                                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                    return Ok(__ret);
+                                  },
                                   _ => {
                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_16.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                     let __v_17: G = __loaded[0];
                                     let __v_18: G = __loaded[1];
                                     match __v_18.as_canonical_u64() {
+                                      0u64 => {
+                                        let __v_19: G = G::from_u64(0);
+                                        let __v_20: G = G::from_u64(1);
+                                        if (__v_19 != __v_20) {
+                                          return Err(ExecError::AssertEqMismatch { lhs: __v_19.as_canonical_u64(), rhs: __v_20.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                        }
+                                        let __ret: [G; OUT_81] = [__v_19, __v_19];
+                                        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                        return Ok(__ret);
+                                      },
                                       _ => {
                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_18.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                         let __v_19: G = __loaded[0];
                                         let __v_20: G = __loaded[1];
                                         match __v_20.as_canonical_u64() {
+                                          0u64 => {
+                                            let __v_21: G = G::from_u64(0);
+                                            let __v_22: G = G::from_u64(1);
+                                            if (__v_21 != __v_22) {
+                                              return Err(ExecError::AssertEqMismatch { lhs: __v_21.as_canonical_u64(), rhs: __v_22.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                            }
+                                            let __ret: [G; OUT_81] = [__v_21, __v_21];
+                                            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                            return Ok(__ret);
+                                          },
                                           _ => {
                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_20.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                             let __v_21: G = __loaded[0];
                                             let __v_22: G = __loaded[1];
                                             match __v_22.as_canonical_u64() {
+                                              0u64 => {
+                                                let __v_23: G = G::from_u64(0);
+                                                let __v_24: G = G::from_u64(1);
+                                                if (__v_23 != __v_24) {
+                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_23.as_canonical_u64(), rhs: __v_24.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                }
+                                                let __ret: [G; OUT_81] = [__v_23, __v_23];
+                                                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                return Ok(__ret);
+                                              },
                                               _ => {
                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_22.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                 let __v_23: G = __loaded[0];
                                                 let __v_24: G = __loaded[1];
                                                 match __v_24.as_canonical_u64() {
+                                                  0u64 => {
+                                                    let __v_25: G = G::from_u64(0);
+                                                    let __v_26: G = G::from_u64(1);
+                                                    if (__v_25 != __v_26) {
+                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_25.as_canonical_u64(), rhs: __v_26.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                    }
+                                                    let __ret: [G; OUT_81] = [__v_25, __v_25];
+                                                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                    return Ok(__ret);
+                                                  },
                                                   _ => {
                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_24.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                     let __v_25: G = __loaded[0];
                                                     let __v_26: G = __loaded[1];
                                                     match __v_26.as_canonical_u64() {
+                                                      0u64 => {
+                                                        let __v_27: G = G::from_u64(0);
+                                                        let __v_28: G = G::from_u64(1);
+                                                        if (__v_27 != __v_28) {
+                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_27.as_canonical_u64(), rhs: __v_28.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                        }
+                                                        let __ret: [G; OUT_81] = [__v_27, __v_27];
+                                                        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                        return Ok(__ret);
+                                                      },
                                                       _ => {
                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_26.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                         let __v_27: G = __loaded[0];
                                                         let __v_28: G = __loaded[1];
                                                         match __v_28.as_canonical_u64() {
+                                                          0u64 => {
+                                                            let __v_29: G = G::from_u64(0);
+                                                            let __v_30: G = G::from_u64(1);
+                                                            if (__v_29 != __v_30) {
+                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_29.as_canonical_u64(), rhs: __v_30.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                            }
+                                                            let __ret: [G; OUT_81] = [__v_29, __v_29];
+                                                            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                            return Ok(__ret);
+                                                          },
                                                           _ => {
                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_28.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                             let __v_29: G = __loaded[0];
                                                             let __v_30: G = __loaded[1];
                                                             match __v_30.as_canonical_u64() {
+                                                              0u64 => {
+                                                                let __v_31: G = G::from_u64(0);
+                                                                let __v_32: G = G::from_u64(1);
+                                                                if (__v_31 != __v_32) {
+                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_31.as_canonical_u64(), rhs: __v_32.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                }
+                                                                let __ret: [G; OUT_81] = [__v_31, __v_31];
+                                                                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                return Ok(__ret);
+                                                              },
                                                               _ => {
                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_30.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                 let __v_31: G = __loaded[0];
                                                                 let __v_32: G = __loaded[1];
                                                                 match __v_32.as_canonical_u64() {
+                                                                  0u64 => {
+                                                                    let __v_33: G = G::from_u64(0);
+                                                                    let __v_34: G = G::from_u64(1);
+                                                                    if (__v_33 != __v_34) {
+                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_33.as_canonical_u64(), rhs: __v_34.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                    }
+                                                                    let __ret: [G; OUT_81] = [__v_33, __v_33];
+                                                                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                    return Ok(__ret);
+                                                                  },
                                                                   _ => {
                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_32.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                     let __v_33: G = __loaded[0];
                                                                     let __v_34: G = __loaded[1];
                                                                     match __v_34.as_canonical_u64() {
+                                                                      0u64 => {
+                                                                        let __v_35: G = G::from_u64(0);
+                                                                        let __v_36: G = G::from_u64(1);
+                                                                        if (__v_35 != __v_36) {
+                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_35.as_canonical_u64(), rhs: __v_36.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                        }
+                                                                        let __ret: [G; OUT_81] = [__v_35, __v_35];
+                                                                        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                        return Ok(__ret);
+                                                                      },
                                                                       _ => {
                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_34.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                         let __v_35: G = __loaded[0];
                                                                         let __v_36: G = __loaded[1];
                                                                         match __v_36.as_canonical_u64() {
+                                                                          0u64 => {
+                                                                            let __v_37: G = G::from_u64(0);
+                                                                            let __v_38: G = G::from_u64(1);
+                                                                            if (__v_37 != __v_38) {
+                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_37.as_canonical_u64(), rhs: __v_38.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                            }
+                                                                            let __ret: [G; OUT_81] = [__v_37, __v_37];
+                                                                            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                            return Ok(__ret);
+                                                                          },
                                                                           _ => {
                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_36.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                             let __v_37: G = __loaded[0];
                                                                             let __v_38: G = __loaded[1];
                                                                             match __v_38.as_canonical_u64() {
+                                                                              0u64 => {
+                                                                                let __v_39: G = G::from_u64(0);
+                                                                                let __v_40: G = G::from_u64(1);
+                                                                                if (__v_39 != __v_40) {
+                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_39.as_canonical_u64(), rhs: __v_40.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                }
+                                                                                let __ret: [G; OUT_81] = [__v_39, __v_39];
+                                                                                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                return Ok(__ret);
+                                                                              },
                                                                               _ => {
                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_38.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                 let __v_39: G = __loaded[0];
                                                                                 let __v_40: G = __loaded[1];
                                                                                 match __v_40.as_canonical_u64() {
+                                                                                  0u64 => {
+                                                                                    let __v_41: G = G::from_u64(0);
+                                                                                    let __v_42: G = G::from_u64(1);
+                                                                                    if (__v_41 != __v_42) {
+                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_41.as_canonical_u64(), rhs: __v_42.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                    }
+                                                                                    let __ret: [G; OUT_81] = [__v_41, __v_41];
+                                                                                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                    return Ok(__ret);
+                                                                                  },
                                                                                   _ => {
                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_40.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                     let __v_41: G = __loaded[0];
                                                                                     let __v_42: G = __loaded[1];
                                                                                     match __v_42.as_canonical_u64() {
+                                                                                      0u64 => {
+                                                                                        let __v_43: G = G::from_u64(0);
+                                                                                        let __v_44: G = G::from_u64(1);
+                                                                                        if (__v_43 != __v_44) {
+                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_43.as_canonical_u64(), rhs: __v_44.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                        }
+                                                                                        let __ret: [G; OUT_81] = [__v_43, __v_43];
+                                                                                        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                        return Ok(__ret);
+                                                                                      },
                                                                                       _ => {
                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_42.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                         let __v_43: G = __loaded[0];
                                                                                         let __v_44: G = __loaded[1];
                                                                                         match __v_44.as_canonical_u64() {
+                                                                                          0u64 => {
+                                                                                            let __v_45: G = G::from_u64(0);
+                                                                                            let __v_46: G = G::from_u64(1);
+                                                                                            if (__v_45 != __v_46) {
+                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_45.as_canonical_u64(), rhs: __v_46.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                            }
+                                                                                            let __ret: [G; OUT_81] = [__v_45, __v_45];
+                                                                                            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                            return Ok(__ret);
+                                                                                          },
                                                                                           _ => {
                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_44.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                             let __v_45: G = __loaded[0];
                                                                                             let __v_46: G = __loaded[1];
                                                                                             match __v_46.as_canonical_u64() {
+                                                                                              0u64 => {
+                                                                                                let __v_47: G = G::from_u64(0);
+                                                                                                let __v_48: G = G::from_u64(1);
+                                                                                                if (__v_47 != __v_48) {
+                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_47.as_canonical_u64(), rhs: __v_48.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                }
+                                                                                                let __ret: [G; OUT_81] = [__v_47, __v_47];
+                                                                                                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                return Ok(__ret);
+                                                                                              },
                                                                                               _ => {
                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_46.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                 let __v_47: G = __loaded[0];
                                                                                                 let __v_48: G = __loaded[1];
                                                                                                 match __v_48.as_canonical_u64() {
+                                                                                                  0u64 => {
+                                                                                                    let __v_49: G = G::from_u64(0);
+                                                                                                    let __v_50: G = G::from_u64(1);
+                                                                                                    if (__v_49 != __v_50) {
+                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_49.as_canonical_u64(), rhs: __v_50.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                    }
+                                                                                                    let __ret: [G; OUT_81] = [__v_49, __v_49];
+                                                                                                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                    return Ok(__ret);
+                                                                                                  },
                                                                                                   _ => {
                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_48.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                     let __v_49: G = __loaded[0];
                                                                                                     let __v_50: G = __loaded[1];
                                                                                                     match __v_50.as_canonical_u64() {
+                                                                                                      0u64 => {
+                                                                                                        let __v_51: G = G::from_u64(0);
+                                                                                                        let __v_52: G = G::from_u64(1);
+                                                                                                        if (__v_51 != __v_52) {
+                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_51.as_canonical_u64(), rhs: __v_52.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                        }
+                                                                                                        let __ret: [G; OUT_81] = [__v_51, __v_51];
+                                                                                                        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                        return Ok(__ret);
+                                                                                                      },
                                                                                                       _ => {
                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_50.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                         let __v_51: G = __loaded[0];
                                                                                                         let __v_52: G = __loaded[1];
                                                                                                         match __v_52.as_canonical_u64() {
+                                                                                                          0u64 => {
+                                                                                                            let __v_53: G = G::from_u64(0);
+                                                                                                            let __v_54: G = G::from_u64(1);
+                                                                                                            if (__v_53 != __v_54) {
+                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_53.as_canonical_u64(), rhs: __v_54.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                            }
+                                                                                                            let __ret: [G; OUT_81] = [__v_53, __v_53];
+                                                                                                            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                            return Ok(__ret);
+                                                                                                          },
                                                                                                           _ => {
                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_52.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                             let __v_53: G = __loaded[0];
                                                                                                             let __v_54: G = __loaded[1];
                                                                                                             match __v_54.as_canonical_u64() {
+                                                                                                              0u64 => {
+                                                                                                                let __v_55: G = G::from_u64(0);
+                                                                                                                let __v_56: G = G::from_u64(1);
+                                                                                                                if (__v_55 != __v_56) {
+                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_55.as_canonical_u64(), rhs: __v_56.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                }
+                                                                                                                let __ret: [G; OUT_81] = [__v_55, __v_55];
+                                                                                                                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                return Ok(__ret);
+                                                                                                              },
                                                                                                               _ => {
                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_54.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                 let __v_55: G = __loaded[0];
                                                                                                                 let __v_56: G = __loaded[1];
                                                                                                                 match __v_56.as_canonical_u64() {
+                                                                                                                  0u64 => {
+                                                                                                                    let __v_57: G = G::from_u64(0);
+                                                                                                                    let __v_58: G = G::from_u64(1);
+                                                                                                                    if (__v_57 != __v_58) {
+                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_57.as_canonical_u64(), rhs: __v_58.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                    }
+                                                                                                                    let __ret: [G; OUT_81] = [__v_57, __v_57];
+                                                                                                                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                    return Ok(__ret);
+                                                                                                                  },
                                                                                                                   _ => {
                                                                                                                     let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_56.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                     let __v_57: G = __loaded[0];
                                                                                                                     let __v_58: G = __loaded[1];
                                                                                                                     match __v_58.as_canonical_u64() {
+                                                                                                                      0u64 => {
+                                                                                                                        let __v_59: G = G::from_u64(0);
+                                                                                                                        let __v_60: G = G::from_u64(1);
+                                                                                                                        if (__v_59 != __v_60) {
+                                                                                                                          return Err(ExecError::AssertEqMismatch { lhs: __v_59.as_canonical_u64(), rhs: __v_60.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                        }
+                                                                                                                        let __ret: [G; OUT_81] = [__v_59, __v_59];
+                                                                                                                        record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                        return Ok(__ret);
+                                                                                                                      },
                                                                                                                       _ => {
                                                                                                                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_58.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                         let __v_59: G = __loaded[0];
                                                                                                                         let __v_60: G = __loaded[1];
                                                                                                                         match __v_60.as_canonical_u64() {
+                                                                                                                          0u64 => {
+                                                                                                                            let __v_61: G = G::from_u64(0);
+                                                                                                                            let __v_62: G = G::from_u64(1);
+                                                                                                                            if (__v_61 != __v_62) {
+                                                                                                                              return Err(ExecError::AssertEqMismatch { lhs: __v_61.as_canonical_u64(), rhs: __v_62.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                            }
+                                                                                                                            let __ret: [G; OUT_81] = [__v_61, __v_61];
+                                                                                                                            record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                            return Ok(__ret);
+                                                                                                                          },
                                                                                                                           _ => {
                                                                                                                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_60.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                             let __v_61: G = __loaded[0];
                                                                                                                             let __v_62: G = __loaded[1];
                                                                                                                             match __v_62.as_canonical_u64() {
+                                                                                                                              0u64 => {
+                                                                                                                                let __v_63: G = G::from_u64(0);
+                                                                                                                                let __v_64: G = G::from_u64(1);
+                                                                                                                                if (__v_63 != __v_64) {
+                                                                                                                                  return Err(ExecError::AssertEqMismatch { lhs: __v_63.as_canonical_u64(), rhs: __v_64.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                }
+                                                                                                                                let __ret: [G; OUT_81] = [__v_63, __v_63];
+                                                                                                                                record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                return Ok(__ret);
+                                                                                                                              },
                                                                                                                               _ => {
                                                                                                                                 let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_62.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                                                                                                                                 let __v_63: G = __loaded[0];
                                                                                                                                 let __v_64: G = __loaded[1];
                                                                                                                                 match __v_64.as_canonical_u64() {
+                                                                                                                                  0u64 => {
+                                                                                                                                    let __v_65: G = G::from_u64(0);
+                                                                                                                                    let __v_66: G = G::from_u64(1);
+                                                                                                                                    if (__v_65 != __v_66) {
+                                                                                                                                      return Err(ExecError::AssertEqMismatch { lhs: __v_65.as_canonical_u64(), rhs: __v_66.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                                                                                                                    }
+                                                                                                                                    let __ret: [G; OUT_81] = [__v_65, __v_65];
+                                                                                                                                    record.function_queries[81].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                                                                                                                    return Ok(__ret);
+                                                                                                                                  },
                                                                                                                                   _ => {
                                                                                                                                     let __v_65: G = { let __values: [G; 32] = [__v_1, __v_3, __v_5, __v_7, __v_9, __v_11, __v_13, __v_15, __v_17, __v_19, __v_21, __v_23, __v_25, __v_27, __v_29, __v_31, __v_33, __v_35, __v_37, __v_39, __v_41, __v_43, __v_45, __v_47, __v_49, __v_51, __v_53, __v_55, __v_57, __v_59, __v_61, __v_63]; let __mq = record.memory_queries.get_mut(&32).ok_or(ExecError::InvalidMemorySize(32))?; if let Some(result) = __mq.get_mut(&__values[..]) { if !unconstrained { *result.multiplicity += G::ONE; } result.output[0] } else { let __ptr = G::from_usize(__mq.len() + 1); __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } };
                                                                                                                                     let __ret: [G; OUT_81] = [__v_65, __v_64];
@@ -20438,6 +21448,16 @@ fn aiur_fn_211(
                 let __v_8: G = __loaded[0];
                 let __v_9: G = __loaded[1];
                 match __v_9.as_canonical_u64() {
+                  0u64 => {
+                    let __v_10: G = G::from_u64(0);
+                    let __v_11: G = G::from_u64(1);
+                    if (__v_10 != __v_11) {
+                      return Err(ExecError::AssertEqMismatch { lhs: __v_10.as_canonical_u64(), rhs: __v_11.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                    }
+                    let __ret: [G; OUT_211] = [__v_10, __v_10];
+                    record.function_queries[211].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                    return Ok(__ret);
+                  },
                   _ => {
                     let __v_10: G = G::from_u64(192);
                     let __v_11: G = (__v_0 - __v_10);
@@ -20461,11 +21481,31 @@ fn aiur_fn_211(
                     let __v_10: G = __loaded[0];
                     let __v_11: G = __loaded[1];
                     match __v_11.as_canonical_u64() {
+                      0u64 => {
+                        let __v_12: G = G::from_u64(0);
+                        let __v_13: G = G::from_u64(1);
+                        if (__v_12 != __v_13) {
+                          return Err(ExecError::AssertEqMismatch { lhs: __v_12.as_canonical_u64(), rhs: __v_13.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                        }
+                        let __ret: [G; OUT_211] = [__v_12, __v_12];
+                        record.function_queries[211].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                        return Ok(__ret);
+                      },
                       _ => {
                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_11.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                         let __v_12: G = __loaded[0];
                         let __v_13: G = __loaded[1];
                         match __v_13.as_canonical_u64() {
+                          0u64 => {
+                            let __v_14: G = G::from_u64(0);
+                            let __v_15: G = G::from_u64(1);
+                            if (__v_14 != __v_15) {
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_14.as_canonical_u64(), rhs: __v_15.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                            }
+                            let __ret: [G; OUT_211] = [__v_14, __v_14];
+                            record.function_queries[211].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                            return Ok(__ret);
+                          },
                           _ => {
                             let __v_14: G = G::from_u64(224);
                             let __v_15: G = (__v_0 - __v_14);
@@ -20501,16 +21541,46 @@ fn aiur_fn_211(
                     let __v_10: G = __loaded[0];
                     let __v_11: G = __loaded[1];
                     match __v_11.as_canonical_u64() {
+                      0u64 => {
+                        let __v_12: G = G::from_u64(0);
+                        let __v_13: G = G::from_u64(1);
+                        if (__v_12 != __v_13) {
+                          return Err(ExecError::AssertEqMismatch { lhs: __v_12.as_canonical_u64(), rhs: __v_13.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                        }
+                        let __ret: [G; OUT_211] = [__v_12, __v_12];
+                        record.function_queries[211].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                        return Ok(__ret);
+                      },
                       _ => {
                         let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_11.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                         let __v_12: G = __loaded[0];
                         let __v_13: G = __loaded[1];
                         match __v_13.as_canonical_u64() {
+                          0u64 => {
+                            let __v_14: G = G::from_u64(0);
+                            let __v_15: G = G::from_u64(1);
+                            if (__v_14 != __v_15) {
+                              return Err(ExecError::AssertEqMismatch { lhs: __v_14.as_canonical_u64(), rhs: __v_15.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                            }
+                            let __ret: [G; OUT_211] = [__v_14, __v_14];
+                            record.function_queries[211].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                            return Ok(__ret);
+                          },
                           _ => {
                             let __loaded: [G; 2] = { let __mq = record.memory_queries.get_mut(&2).ok_or(ExecError::InvalidMemorySize(2))?; let __ptr_u64 = __v_13.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 2 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 2] = __args[..2].try_into().unwrap(); __arr };
                             let __v_14: G = __loaded[0];
                             let __v_15: G = __loaded[1];
                             match __v_15.as_canonical_u64() {
+                              0u64 => {
+                                let __v_16: G = G::from_u64(0);
+                                let __v_17: G = G::from_u64(1);
+                                if (__v_16 != __v_17) {
+                                  return Err(ExecError::AssertEqMismatch { lhs: __v_16.as_canonical_u64(), rhs: __v_17.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                                }
+                                let __ret: [G; OUT_211] = [__v_16, __v_16];
+                                record.function_queries[211].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                                return Ok(__ret);
+                              },
                               _ => {
                                 let __v_16: G = G::from_u64(240);
                                 let __v_17: G = (__v_0 - __v_16);
@@ -23771,6 +24841,16 @@ fn aiur_fn_246(
         let __v_25: G = __loaded[0];
         let __v_26: G = __loaded[1];
         match __v_25.as_canonical_u64() {
+          0u64 => {
+            let __v_27: G = G::from_u64(0);
+            let __v_28: G = G::from_u64(1);
+            if (__v_27 != __v_28) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_27.as_canonical_u64(), rhs: __v_28.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_246] = [__v_27];
+            record.function_queries[246].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __r_arr: [G; OUT_246] = { let __args: [G; IN_246] = [__v_25, __v_1, __v_2, __v_3, __v_4]; let __cu = unconstrained; if let Some(result) = record.function_queries[246].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_246] = unsafe { *(result.output.as_ptr() as *const [G; OUT_246]) }; __ret } else { aiur_fn_246(__args, record, io_buffer, __cu)? } };
             let __v_27: G = __r_arr[0];
@@ -24061,6 +25141,16 @@ fn aiur_fn_251(
     let __v_35: G = __loaded[33];
     let __v_36: G = __loaded[34];
     match __v_36.as_canonical_u64() {
+      0u64 => {
+        let __v_37: G = G::from_u64(0);
+        let __v_38: G = G::from_u64(1);
+        if (__v_37 != __v_38) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_37.as_canonical_u64(), rhs: __v_38.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_251] = [__v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37, __v_37];
+        record.function_queries[251].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         match __v_1.as_canonical_u64() {
           0u64 => {
@@ -24569,6 +25659,16 @@ fn aiur_fn_257(
     let __v_38: G = __loaded[0];
     let __v_39: G = __loaded[1];
     match __v_39.as_canonical_u64() {
+      0u64 => {
+        let __v_40: G = G::from_u64(0);
+        let __v_41: G = G::from_u64(1);
+        if (__v_40 != __v_41) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_40.as_canonical_u64(), rhs: __v_41.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_257] = [__v_40];
+        record.function_queries[257].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __ret: [G; OUT_257] = [__v_38];
         record.function_queries[257].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -25672,6 +26772,16 @@ fn aiur_fn_266(
     let __v_46: G = __loaded[44];
     let __v_47: G = __loaded[45];
     match __v_47.as_canonical_u64() {
+      0u64 => {
+        let __v_48: G = G::from_u64(0);
+        let __v_49: G = G::from_u64(1);
+        if (__v_48 != __v_49) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_48.as_canonical_u64(), rhs: __v_49.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_266] = [__v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48, __v_48];
+        record.function_queries[266].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         match __v_1.as_canonical_u64() {
           0u64 => {
@@ -29841,6 +30951,16 @@ fn aiur_fn_326(
     let __v_1: G = __loaded[0];
     let __v_2: G = __loaded[1];
     match __v_1.as_canonical_u64() {
+      0u64 => {
+        let __v_3: G = G::from_u64(0);
+        let __v_4: G = G::from_u64(1);
+        if (__v_3 != __v_4) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_3.as_canonical_u64(), rhs: __v_4.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_326] = [__v_3];
+        record.function_queries[326].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __v_3: G = G::from_u64(1);
         let __r_arr: [G; OUT_315] = { let __args: [G; IN_315] = [__v_1]; let __cu = unconstrained; if let Some(result) = record.function_queries[315].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_315] = unsafe { *(result.output.as_ptr() as *const [G; OUT_315]) }; __ret } else { aiur_fn_315(__args, record, io_buffer, __cu)? } };
@@ -36034,6 +37154,16 @@ fn aiur_fn_403(
             let __v_7: G = __loaded[0];
             let __v_8: G = __loaded[1];
             match __v_7.as_canonical_u64() {
+              0u64 => {
+                let __v_9: G = G::from_u64(0);
+                let __v_10: G = G::from_u64(1);
+                if (__v_9 != __v_10) {
+                  return Err(ExecError::AssertEqMismatch { lhs: __v_9.as_canonical_u64(), rhs: __v_10.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+                }
+                let __ret: [G; OUT_403] = [__v_9];
+                record.function_queries[403].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+                return Ok(__ret);
+              },
               _ => {
                 let __v_9: G = G::from_u64(0);
                 let __r_arr: [G; OUT_339] = { let __args: [G; IN_339] = [__v_5, __v_7, __v_9]; let __cu = unconstrained; if let Some(result) = record.function_queries[339].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_339] = unsafe { *(result.output.as_ptr() as *const [G; OUT_339]) }; __ret } else { aiur_fn_339(__args, record, io_buffer, __cu)? } };
@@ -42890,6 +44020,16 @@ fn aiur_fn_503(
         let __v_18: G = __loaded[7];
         let __v_19: G = __loaded[8];
         match __v_19.as_canonical_u64() {
+          0u64 => {
+            let __v_20: G = G::from_u64(0);
+            let __v_21: G = G::from_u64(1);
+            if (__v_20 != __v_21) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_20.as_canonical_u64(), rhs: __v_21.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_503] = [__v_20];
+            record.function_queries[503].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __r_arr: [G; OUT_503] = { let __args: [G; IN_503] = [__v_10, __v_19]; let __cu = unconstrained; if let Some(result) = record.function_queries[503].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_503] = unsafe { *(result.output.as_ptr() as *const [G; OUT_503]) }; __ret } else { aiur_fn_503(__args, record, io_buffer, __cu)? } };
             let __v_20: G = __r_arr[0];
@@ -46155,6 +47295,16 @@ fn aiur_fn_547(
         let __v_3: G = __loaded[0];
         let __v_4: G = __loaded[1];
         match __v_3.as_canonical_u64() {
+          0u64 => {
+            let __v_5: G = G::from_u64(0);
+            let __v_6: G = G::from_u64(1);
+            if (__v_5 != __v_6) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_5.as_canonical_u64(), rhs: __v_6.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_547] = [];
+            record.function_queries[547].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __loaded: [G; 3] = { let __mq = record.memory_queries.get_mut(&3).ok_or(ExecError::InvalidMemorySize(3))?; let __ptr_u64 = __v_3.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 3 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 3] = __args[..3].try_into().unwrap(); __arr };
             let __v_5: G = __loaded[0];
@@ -46211,6 +47361,16 @@ fn aiur_fn_548(
         let __v_5: G = __loaded[0];
         let __v_6: G = __loaded[1];
         match __v_5.as_canonical_u64() {
+          0u64 => {
+            let __v_7: G = G::from_u64(0);
+            let __v_8: G = G::from_u64(1);
+            if (__v_7 != __v_8) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_548] = [];
+            record.function_queries[548].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __loaded: [G; 4] = { let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; let __ptr_u64 = __v_5.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 4 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 4] = __args[..4].try_into().unwrap(); __arr };
             let __v_7: G = __loaded[0];
@@ -46999,6 +48159,16 @@ fn aiur_fn_563(
         let __v_5: G = __loaded[0];
         let __v_6: G = __loaded[1];
         match __v_5.as_canonical_u64() {
+          0u64 => {
+            let __v_7: G = G::from_u64(0);
+            let __v_8: G = G::from_u64(1);
+            if (__v_7 != __v_8) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_563] = [];
+            record.function_queries[563].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __loaded: [G; 4] = { let __mq = record.memory_queries.get_mut(&4).ok_or(ExecError::InvalidMemorySize(4))?; let __ptr_u64 = __v_5.as_canonical_u64(); let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?; let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer { ptr: __ptr_u64, size: 4 })?; if !unconstrained { *__mult += G::ONE; } let __arr: [G; 4] = __args[..4].try_into().unwrap(); __arr };
             let __v_7: G = __loaded[0];
@@ -58025,6 +59195,16 @@ fn aiur_fn_705(
         let __v_36: G = __loaded[8];
         let __v_37: G = __loaded[9];
         match __v_37.as_canonical_u64() {
+          0u64 => {
+            let __v_38: G = G::from_u64(0);
+            let __v_39: G = G::from_u64(1);
+            if (__v_38 != __v_39) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_38.as_canonical_u64(), rhs: __v_39.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_705] = [];
+            record.function_queries[705].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             match __v_10.as_canonical_u64() {
               _ => {
@@ -59768,6 +60948,16 @@ fn aiur_fn_727(
     let __v_3: G = __loaded[0];
     let __v_4: G = __loaded[1];
     match __v_3.as_canonical_u64() {
+      0u64 => {
+        let __v_5: G = G::from_u64(0);
+        let __v_6: G = G::from_u64(1);
+        if (__v_5 != __v_6) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_5.as_canonical_u64(), rhs: __v_6.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_727] = [__v_5];
+        record.function_queries[727].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __ret: [G; OUT_727] = [__v_3];
         record.function_queries[727].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -59906,6 +61096,16 @@ fn aiur_fn_730(
     let __v_53: G = __loaded[44];
     let __v_54: G = __loaded[45];
     match __v_54.as_canonical_u64() {
+      0u64 => {
+        let __v_55: G = G::from_u64(0);
+        let __v_56: G = G::from_u64(1);
+        if (__v_55 != __v_56) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_55.as_canonical_u64(), rhs: __v_56.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_730] = [__v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55, __v_55];
+        record.function_queries[730].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __r_arr: [G; OUT_4] = { let __args: [G; IN_4] = [__v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[4].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_4] = unsafe { *(result.output.as_ptr() as *const [G; OUT_4]) }; __ret } else { aiur_fn_4(__args, record, io_buffer, __cu)? } };
         let __v_55: G = __r_arr[0];
@@ -60202,6 +61402,16 @@ fn aiur_fn_733(
     let __v_42: G = __loaded[33];
     let __v_43: G = __loaded[34];
     match __v_43.as_canonical_u64() {
+      0u64 => {
+        let __v_44: G = G::from_u64(0);
+        let __v_45: G = G::from_u64(1);
+        if (__v_44 != __v_45) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_44.as_canonical_u64(), rhs: __v_45.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_733] = [__v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44, __v_44];
+        record.function_queries[733].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __r_arr: [G; OUT_4] = { let __args: [G; IN_4] = [__v_1, __v_2, __v_3, __v_4, __v_5, __v_6, __v_7, __v_8]; let __cu = unconstrained; if let Some(result) = record.function_queries[4].get_mut(&__args[..]) { if !unconstrained { *result.multiplicity += G::ONE; } let __ret: [G; OUT_4] = unsafe { *(result.output.as_ptr() as *const [G; OUT_4]) }; __ret } else { aiur_fn_4(__args, record, io_buffer, __cu)? } };
         let __v_44: G = __r_arr[0];
@@ -60434,6 +61644,16 @@ fn aiur_fn_738(
         let __v_2: G = __loaded[0];
         let __v_3: G = __loaded[1];
         match __v_2.as_canonical_u64() {
+          0u64 => {
+            let __v_4: G = G::from_u64(0);
+            let __v_5: G = G::from_u64(1);
+            if (__v_4 != __v_5) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_4.as_canonical_u64(), rhs: __v_5.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_738] = [__v_4];
+            record.function_queries[738].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __v_4: G = G::from_u64(1);
             let __v_5: G = (__v_1 - __v_4);
@@ -60477,6 +61697,16 @@ fn aiur_fn_739(
         let __v_5: G = __loaded[0];
         let __v_6: G = __loaded[1];
         match __v_5.as_canonical_u64() {
+          0u64 => {
+            let __v_7: G = G::from_u64(0);
+            let __v_8: G = G::from_u64(1);
+            if (__v_7 != __v_8) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_739] = [__v_7];
+            record.function_queries[739].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __ret: [G; OUT_739] = [__v_6];
             record.function_queries[739].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
@@ -60548,6 +61778,16 @@ fn aiur_fn_741(
     let __v_10: G = __r_arr[3];
     let __v_11: G = __r_arr[4];
     match __v_10.as_canonical_u64() {
+      0u64 => {
+        let __v_12: G = G::from_u64(0);
+        let __v_13: G = G::from_u64(1);
+        if (__v_12 != __v_13) {
+          return Err(ExecError::AssertEqMismatch { lhs: __v_12.as_canonical_u64(), rhs: __v_13.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+        }
+        let __ret: [G; OUT_741] = [__v_12, __v_12, __v_12, __v_12, __v_12];
+        record.function_queries[741].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+        return Ok(__ret);
+      },
       _ => {
         let __v_12: G = G::from_u64(1);
         let __ret: [G; OUT_741] = [__v_12, __v_8, __v_9, __v_10, __v_11];
@@ -60771,6 +62011,16 @@ fn aiur_fn_747(
         let __v_5: G = __loaded[0];
         let __v_6: G = __loaded[1];
         match __v_6.as_canonical_u64() {
+          0u64 => {
+            let __v_7: G = G::from_u64(0);
+            let __v_8: G = G::from_u64(1);
+            if (__v_7 != __v_8) {
+              return Err(ExecError::AssertEqMismatch { lhs: __v_7.as_canonical_u64(), rhs: __v_8.as_canonical_u64(), msg: Some("niche match: nullary constructor not covered".to_string()) });
+            }
+            let __ret: [G; OUT_747] = [__v_7];
+            record.function_queries[747].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));
+            return Ok(__ret);
+          },
           _ => {
             let __ret: [G; OUT_747] = [__v_6];
             record.function_queries[747].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));

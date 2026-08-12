@@ -189,6 +189,27 @@ def Concrete.matchDispatchSlot (layoutMap : LayoutMap)
   | some ctx => ctx.slot
   | none => 0
 
+/-- Synthetic arm for a PARTIAL niche match that lists the payload
+constructor but covers neither the nullary constructor nor a default:
+without it, the nullary value (niche slot 0) would fall through to the
+payload default arm and execute it with garbage bindings. The arm asserts
+`0 = 1` (runtime error, mirroring `MatchNoCase`; in-circuit the arm is
+unsatisfiable). -/
+def Concrete.nicheFailArm (outputSize : Nat) (yieldCtrl : Bool) :
+    CompileM Bytecode.Block := do
+  let initState ← get
+  let z ← pushOp (.const 0)
+  let o ← pushOp (.const 1)
+  let msg := some "niche match: nullary constructor not covered"
+  modify fun s => { s with ops := s.ops.push (.assertEq z o msg) }
+  let ops ← extractOps
+  let selIdx := (← get).selIdx + 1
+  set { initState with selIdx := selIdx }
+  let outs := Array.replicate outputSize (z[0]!)
+  let ctrl := if yieldCtrl then Bytecode.Ctrl.yield (selIdx - 1) outs
+    else Bytecode.Ctrl.return (selIdx - 1) outs
+  pure ({ ops, ctrl } : Bytecode.Block)
+
 open Concrete in
 mutual
 
@@ -502,6 +523,13 @@ def Concrete.Term.compile
       let outputSize ← match typSize layoutMap matchTyp with
         | .error e => throw e
         | .ok n => pure n
+      let matchCases ← match Concrete.nicheMatchCtx layoutMap cases with
+        | some ctx =>
+          if ctx.hasPayload && matchCases.isEmpty && defaultBlock.isSome then do
+            let fail ← Concrete.nicheFailArm outputSize (yieldCtrl := true)
+            pure (matchCases.push ((0 : G), fail))
+          else pure matchCases
+        | none => pure matchCases
       let (sharedAux, sharedLookups) ← Concrete.computeSharedLayout matchCases defaultBlock
       let mergedStart := (← get).valIdx
       modify fun s => { s with
@@ -545,6 +573,13 @@ def Concrete.Term.compile
       let outputSize ← match typSize layoutMap matchTyp with
         | .error e => throw e
         | .ok n => pure n
+      let matchCases ← match Concrete.nicheMatchCtx layoutMap cases with
+        | some ctx =>
+          if ctx.hasPayload && matchCases.isEmpty && defaultBlock.isSome then do
+            let fail ← Concrete.nicheFailArm outputSize (yieldCtrl := true)
+            pure (matchCases.push ((0 : G), fail))
+          else pure matchCases
+        | none => pure matchCases
       let (sharedAux, sharedLookups) ← Concrete.computeSharedLayout matchCases defaultBlock
       modify fun s => { s with
         valIdx := s.valIdx + outputSize,
@@ -609,6 +644,16 @@ def Concrete.Term.compile
           let blk ← t.compile returnTyp layoutMap bindings yieldCtrl
           pure (bcCases, some blk))
       | none => pure (bcCases, defaultBlock)
+    let bcCases ← match Concrete.nicheMatchCtx layoutMap cases with
+      | some ctx =>
+        if ctx.hasPayload && bcCases.isEmpty && defaultBlock.isSome then do
+          let outputSize ← match typSize layoutMap returnTyp with
+            | .error e => throw e
+            | .ok n => pure n
+          let fail ← Concrete.nicheFailArm outputSize (yieldCtrl := false)
+          pure (bcCases.push ((0 : G), fail))
+        else pure bcCases
+      | none => pure bcCases
     let ctrl : Bytecode.Ctrl := .match idxs[Concrete.matchDispatchSlot layoutMap cases]! bcCases defaultBlock
     pure ({ ops, ctrl } : Bytecode.Block)
   | .ret _ _ term => do
