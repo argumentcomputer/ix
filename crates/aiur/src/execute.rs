@@ -571,19 +571,19 @@ impl Function {
         },
         ExecEntry::Op(Op::UnconstrainedBigUintDivMod(a_idx, b_idx)) => {
           // Unconstrained hint for klimbs-style LE byte division. Inputs are
-          // pointers to `List<U64>` (in memory[10]) values storing `a` and
-          // `b` as little-endian u64 limbs (each limb's 8 bytes are stored
-          // tag-then-bytes within memory[10] per the standard Aiur enum
-          // layout: `[tag, b0..b7, next_ptr]`). The op walks both lists,
-          // computes `q = a / b` and `r = a % b` via `num_bigint::BigUint`,
-          // and rebuilds the result lists in memory[10] with multiplicity 0
-          // (unconstrained). Returns the two new head pointers. The caller
-          // is responsible for verifying `q * b + r == a` and `r < b` in
-          // constrained code.
+          // pointers to `List<U64>` (in memory[9]) values storing `a` and
+          // `b` as little-endian u64 limbs. `List<U64>` is null-pointer-
+          // niche optimized: no tag slot, layout `[b0..b7, next_ptr]`,
+          // Nil = the all-zero vector (pointer slot 0 is impossible).
+          // The op walks both lists, computes `q = a / b` and `r = a % b`
+          // via `num_bigint::BigUint`, and rebuilds the result lists in
+          // memory[9] with multiplicity 0 (unconstrained). Returns the two
+          // new head pointers. The caller is responsible for verifying
+          // `q * b + r == a` and `r < b` in constrained code.
           //
-          // The `memory[10]` channel is chosen because the standard Aiur
-          // layout for a tagged enum with a `(U64, &Self)` constructor is
-          // `tag(1) + U64(8) + ptr(1) = 10` G values.
+          // The `memory[9]` channel is chosen because the niche layout of
+          // an enum with a `(U64, &Self)` constructor is
+          // `U64(8) + ptr(1) = 9` G values.
           let a_ptr = map[*a_idx];
           let b_ptr = map[*b_idx];
           let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
@@ -890,7 +890,7 @@ pub fn unconstrained_big_uint_div_mod_helper(
 
 /// Read-only twin of `unconstrained_big_uint_div_mod_helper` for trace
 /// population: recompute `(q, r)` and resolve the list-head pointers the
-/// execution already recorded in `memory[10]` — every node was built there
+/// execution already recorded in `memory[9]` — every node was built there
 /// during execution, so each key must be present.
 pub fn find_unconstrained_big_uint_div_mod(
   a_ptr: G,
@@ -917,22 +917,21 @@ fn find_klimbs_u64(
   memory: &FxIndexMap<usize, QueryMap>,
   limbs: &[u64],
 ) -> Result<G, String> {
-  let queries = memory.get(&10).ok_or_else(|| {
-    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  let queries = memory.get(&9).ok_or_else(|| {
+    "memory[9] channel not registered (no List<U64> in program?)".to_string()
   })?;
-  let nil_key: Vec<G> =
-    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  // Nil = the all-zero niche vector (pointer slot 0 is impossible).
+  let nil_key: Vec<G> = (0..9).map(|_| G::ZERO).collect();
   let mut tail_ptr = queries
     .get(&nil_key)
     .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
     .output[0];
   for limb in limbs.iter().rev() {
-    let mut key: Vec<G> = Vec::with_capacity(10);
-    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    let mut key: Vec<G> = Vec::with_capacity(9);
     for b in &limb.to_le_bytes() {
       key.push(G::from_u8(*b));
     }
-    key.push(tail_ptr);
+    key.push(tail_ptr); // niche slot: a real pointer, never 0
     tail_ptr = queries
       .get(&key)
       .ok_or_else(|| {
@@ -943,16 +942,18 @@ fn find_klimbs_u64(
   Ok(tail_ptr)
 }
 
-/// Walk a `List<U64>` chain from `head_ptr` in `memory[10]`, returning the
-/// u64 limbs in head-first order. Each memory[10] entry is the standard Aiur
-/// tagged-enum layout: `[tag, byte0..byte7, next_ptr]`. `tag == 0` = Nil
-/// (terminator), `tag == 1` = Cons. Bytes are LE within the u64.
+/// Walk a `List<U64>` chain from `head_ptr` in `memory[9]`, returning the
+/// u64 limbs in head-first order. Each memory[9] entry is the
+/// null-pointer-niche layout of `ListNode<U64>`: `[byte0..byte7, next_ptr]`
+/// with NO tag slot — the all-zero vector is Nil (its pointer slot is 0,
+/// the impossible pointer) and any entry with `next_ptr != 0` is a Cons.
+/// Bytes are LE within the u64.
 fn read_klimbs_u64(
   memory: &FxIndexMap<usize, QueryMap>,
   head_ptr: G,
 ) -> Result<Vec<u64>, String> {
-  let queries = memory.get(&10).ok_or_else(|| {
-    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  let queries = memory.get(&9).ok_or_else(|| {
+    "memory[9] channel not registered (no List<U64> in program?)".to_string()
   })?;
   let mut limbs: Vec<u64> = Vec::new();
   let mut ptr = head_ptr;
@@ -963,29 +964,23 @@ fn read_klimbs_u64(
     // 1-based pointers: 0 is the reserved null pointer.
     let (key, _) =
       ptr_idx.checked_sub(1).and_then(|i| queries.get_index(i)).ok_or_else(
-        || format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)"),
+        || format!("unbound ptr {ptr_u64} in memory[9] (walking List<U64>)"),
       )?;
-    let tag = key[0].as_canonical_u64();
-    // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
-    // first variant (tag 0), Nil the second (tag 1).
-    if tag == 1 {
+    // Niche discrimination: the next-pointer slot is 0 exactly on the Nil
+    // node (a Cons tail pointer is a real, hence nonzero, pointer).
+    if key[8].as_canonical_u64() == 0 {
       return Ok(limbs);
-    }
-    if tag != 0 {
-      return Err(format!(
-        "List<U64> walk: unexpected tag {tag} (expected 0=Cons, 1=Nil)"
-      ));
     }
     let mut limb_bytes = [0u8; 8];
     for k in 0..8 {
-      let b = key[1 + k].as_canonical_u64();
+      let b = key[k].as_canonical_u64();
       if b >= 256 {
         return Err(format!("limb byte {b} out of u8 range"));
       }
       limb_bytes[k] = u8::try_from(b).expect("range-checked above");
     }
     limbs.push(u64::from_le_bytes(limb_bytes));
-    ptr = key[9];
+    ptr = key[8];
   }
 }
 
@@ -1022,7 +1017,7 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
     .collect()
 }
 
-/// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)
+/// Build a `List<U64>` chain in `memory[9]` from `limbs` (head-first order)
 /// and return the head pointer. Each entry is inserted with multiplicity 0
 /// (unconstrained); subsequent constrained `Load`s by the kernel will bump
 /// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
@@ -1031,12 +1026,12 @@ fn build_klimbs_u64(
   memory: &mut FxIndexMap<usize, QueryMap>,
   limbs: &[u64],
 ) -> Result<G, String> {
-  let queries = memory.get_mut(&10).ok_or_else(|| {
-    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  let queries = memory.get_mut(&9).ok_or_else(|| {
+    "memory[9] channel not registered (no List<U64> in program?)".to_string()
   })?;
-  // Find or insert the Nil ptr (tag = 1, padded payload all zero).
-  let nil_key: Vec<G> =
-    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  // Find or insert the Nil ptr: the all-zero niche vector (its pointer
+  // slot is 0, the impossible pointer).
+  let nil_key: Vec<G> = (0..9).map(|_| G::ZERO).collect();
   let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
     out.output[0]
   } else {
@@ -1047,12 +1042,11 @@ fn build_klimbs_u64(
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
   for limb in limbs.iter().rev() {
     let bytes = limb.to_le_bytes();
-    let mut key: Vec<G> = Vec::with_capacity(10);
-    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    let mut key: Vec<G> = Vec::with_capacity(9);
     for b in &bytes {
       key.push(G::from_u8(*b));
     }
-    key.push(tail_ptr);
+    key.push(tail_ptr); // niche slot: a real pointer, never 0
     tail_ptr = if let Some(out) = queries.get_mut(&key) {
       out.output[0]
     } else {

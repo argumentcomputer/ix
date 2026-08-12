@@ -34,6 +34,13 @@ structure ConstructorLayout where
   -- True when the parent datatype has a single constructor: no tag slot, so
   -- construction omits the tag const and matches need no discrimination.
   tagless : Bool
+  -- `some slot` when the parent datatype is null-pointer-niche optimized
+  -- (`Concrete.DataType.hasPointerNiche`): no tag slot; `slot` is the
+  -- offset of the discriminating pointer field within the payload
+  -- constructor. The nullary constructor is the all-zero vector (its
+  -- pointer slot is 0, impossible for a real pointer); matches dispatch
+  -- on `slot` with case 0 = nullary and default = payload.
+  niche : Option Nat := none
   deriving Inhabited
 
 inductive Layout
@@ -51,11 +58,25 @@ def Concrete.Decls.layoutMap (decls : Decls) : Except String LayoutMap := do
       let dataTypeSize ← dataType.size decls
       let layoutMap := layoutMap.insert dataType.name (.dataType dataTypeSize)
       let tagless := dataType.constructors.length == 1
+      -- Null-pointer niche: the discriminating slot is the offset of the
+      -- payload constructor's first top-level pointer field.
+      let niche : Option Nat ←
+        if dataType.hasPointerNiche then do
+          let some payload := dataType.constructors.find? (!·.argTypes.isEmpty)
+            | throw s!"hasPointerNiche without payload ctor at `{dataType.name}`"
+          let (slot?, _) ← payload.argTypes.foldlM (init := (none, 0))
+            fun (slot?, off) typ => do
+              let typSyze ← typ.size decls
+              match slot?, typ with
+              | none, .pointer _ => pure (some off, off + typSyze)
+              | _, _ => pure (slot?, off + typSyze)
+          pure slot?
+        else pure none
       let pass := fun (acc, index) constructor => do
         let offsets ← constructor.argTypes.foldlM (init := #[0]) fun offsets typ => do
           let typSyze ← typ.size decls
           pure $ offsets.push ((offsets[offsets.size - 1]?.getD 0) + typSyze)
-        let decl := .constructor { size := dataTypeSize, offsets, index, tagless }
+        let decl := .constructor { size := dataTypeSize, offsets, index, tagless, niche }
         let name := dataType.name.pushNamespace constructor.nameHead
         pure (acc.insert name decl, index + 1)
       let (layoutMap, _) ← dataType.constructors.foldlM pass (layoutMap, 0)
@@ -126,6 +147,48 @@ def pushOp (op : Bytecode.Op) (size : Nat := 1) : CompileM (Array Bytecode.ValId
 def extractOps : CompileM (Array Bytecode.Op) :=
   modifyGet fun s => (s.ops, {s with ops := #[]})
 
+/-- Match-level context for a null-pointer-niche match: the dispatch slot
+(the niche pointer offset) plus which constructor arms the source lists.
+`none` for tagged/tagless matches. The compilation scheme:
+
+- the NULLARY arm becomes case `0` (the impossible-pointer value);
+- the PAYLOAD arm becomes the default arm (its inequality witness against
+  0 exists precisely because real pointers are nonzero);
+- a wildcard (or explicit default) covers whichever constructor is not
+  listed: with a payload arm present it becomes case `0`; with no payload
+  arm it becomes the default; with both constructors listed it is dead
+  and is NOT compiled (a compiled-but-discarded arm would still consume a
+  selector index, desynchronizing the stored selector ids from the
+  layout's selector count). -/
+structure NicheMatchCtx where
+  slot : Nat
+  hasPayload : Bool
+  hasNullary : Bool
+
+def Concrete.nicheMatchCtx (layoutMap : LayoutMap)
+    (cases : Array (Concrete.Pattern × Concrete.Term)) :
+    Option NicheMatchCtx := Id.run do
+  let mut slot? := none
+  let mut hasPayload := false
+  let mut hasNullary := false
+  for (pat, _) in cases do
+    if let .ref g pats := pat then
+      if let some (.constructor layout) := layoutMap[g]? then
+        if let some slot := layout.niche then
+          slot? := some slot
+          if pats.isEmpty then hasNullary := true else hasPayload := true
+  match slot? with
+  | some slot => return some { slot, hasPayload, hasNullary }
+  | none => return none
+
+/-- The value slot a datatype match dispatches on: 0 (the tag slot) for
+tagged layouts, the niche pointer slot for niche layouts. -/
+def Concrete.matchDispatchSlot (layoutMap : LayoutMap)
+    (cases : Array (Concrete.Pattern × Concrete.Term)) : Nat :=
+  match Concrete.nicheMatchCtx layoutMap cases with
+  | some ctx => ctx.slot
+  | none => 0
+
 open Concrete in
 mutual
 
@@ -156,7 +219,9 @@ def toIndex
       let size := layout.size
       -- Tagless single-variant: no tag slot. A nullary ctor is then a width-0
       -- (unit-like) value; with fields it pads up to `size` from empty.
-      if layout.tagless then
+      -- Niche layouts also carry no tag: the nullary constructor is the
+      -- all-zero vector (pointer slot 0 = impossible pointer).
+      if layout.tagless || layout.niche.isSome then
         if size == 0 then pure #[]
         else
           let padding := (← pushOp (.const (.ofNat 0)))[0]!
@@ -199,9 +264,10 @@ def toIndex
     | some (.constructor layout) => do
       let size := layout.size
       -- Tagless single-variant: omit the tag const; args fill the layout from
-      -- offset 0, exactly like a tuple.
+      -- offset 0, exactly like a tuple. Niche payload constructors likewise:
+      -- no tag, and the pointer field (never 0) is the discriminant.
       let index ←
-        if layout.tagless then pure #[]
+        if layout.tagless || layout.niche.isSome then pure #[]
         else pushOp (.const (.ofNat layout.index))
       let index ← buildArgs layoutMap bindings args index
       if index.size < size then
@@ -413,12 +479,26 @@ def Concrete.Term.compile
       let idxs := bindings[scrut]?.getD #[0]
       let ops ← extractOps
       let (matchCases, defaultBlock) ← cases.foldlM (init := (#[], .none))
-        (Concrete.addCase layoutMap bindings returnTyp idxs (yieldCtrl := true))
-      let defaultBlock ← match defaultOpt with
-        | some t => do
-          let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
-          pure (some blk)
-        | none => pure defaultBlock
+        (Concrete.addCase layoutMap bindings returnTyp idxs cases (yieldCtrl := true))
+      let (matchCases, defaultBlock) ← match defaultOpt with
+        | some t =>
+          -- Niche matches route an explicit default like a wildcard arm:
+          -- with a payload arm it covers only the nullary constructor
+          -- (case 0; dead and uncompiled if the nullary arm is listed).
+          (match Concrete.nicheMatchCtx layoutMap cases with
+          | some ctx =>
+            if ctx.hasPayload then
+              if ctx.hasNullary then pure (matchCases, defaultBlock)
+              else do
+                let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
+                pure (matchCases.push ((0 : G), blk), defaultBlock)
+            else do
+              let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
+              pure (matchCases, some blk)
+          | none => do
+            let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
+            pure (matchCases, some blk))
+        | none => pure (matchCases, defaultBlock)
       let outputSize ← match typSize layoutMap matchTyp with
         | .error e => throw e
         | .ok n => pure n
@@ -431,7 +511,7 @@ def Concrete.Term.compile
       let continuation ← bod.compile returnTyp layoutMap
         (bindings.insert var mergedIdxs) yieldCtrl
       let ctrl : Bytecode.Ctrl :=
-        .matchContinue idxs[0]! matchCases defaultBlock outputSize
+        .matchContinue idxs[Concrete.matchDispatchSlot layoutMap cases]! matchCases defaultBlock outputSize
           sharedAux sharedLookups continuation
       pure ({ ops, ctrl } : Bytecode.Block)
   | .letWild _ _ (.match matchTyp valEscapes scrut cases defaultOpt) bod => do
@@ -442,12 +522,26 @@ def Concrete.Term.compile
       let idxs := bindings[scrut]?.getD #[0]
       let ops ← extractOps
       let (matchCases, defaultBlock) ← cases.foldlM (init := (#[], .none))
-        (Concrete.addCase layoutMap bindings returnTyp idxs (yieldCtrl := true))
-      let defaultBlock ← match defaultOpt with
-        | some t => do
-          let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
-          pure (some blk)
-        | none => pure defaultBlock
+        (Concrete.addCase layoutMap bindings returnTyp idxs cases (yieldCtrl := true))
+      let (matchCases, defaultBlock) ← match defaultOpt with
+        | some t =>
+          -- Niche matches route an explicit default like a wildcard arm:
+          -- with a payload arm it covers only the nullary constructor
+          -- (case 0; dead and uncompiled if the nullary arm is listed).
+          (match Concrete.nicheMatchCtx layoutMap cases with
+          | some ctx =>
+            if ctx.hasPayload then
+              if ctx.hasNullary then pure (matchCases, defaultBlock)
+              else do
+                let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
+                pure (matchCases.push ((0 : G), blk), defaultBlock)
+            else do
+              let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
+              pure (matchCases, some blk)
+          | none => do
+            let blk ← t.compile returnTyp layoutMap bindings (yieldCtrl := true)
+            pure (matchCases, some blk))
+        | none => pure (matchCases, defaultBlock)
       let outputSize ← match typSize layoutMap matchTyp with
         | .error e => throw e
         | .ok n => pure n
@@ -457,7 +551,7 @@ def Concrete.Term.compile
         degrees := (Array.replicate outputSize 1).foldl (init := s.degrees) (·.push ·) }
       let continuation ← bod.compile returnTyp layoutMap bindings yieldCtrl
       let ctrl : Bytecode.Ctrl :=
-        .matchContinue idxs[0]! matchCases defaultBlock outputSize
+        .matchContinue idxs[Concrete.matchDispatchSlot layoutMap cases]! matchCases defaultBlock outputSize
           sharedAux sharedLookups continuation
       pure ({ ops, ctrl } : Bytecode.Block)
   | .letVar _ _ var val bod => do
@@ -498,13 +592,24 @@ def Concrete.Term.compile
     let idxs := bindings[scrut]?.getD #[0]
     let ops ← extractOps
     let (bcCases, defaultBlock) ← cases.foldlM (init := (#[], .none))
-      (Concrete.addCase layoutMap bindings returnTyp idxs yieldCtrl)
-    let defaultBlock ← match defaultOpt with
-      | some t => do
-        let blk ← t.compile returnTyp layoutMap bindings yieldCtrl
-        pure (some blk)
-      | none => pure defaultBlock
-    let ctrl : Bytecode.Ctrl := .match idxs[0]! bcCases defaultBlock
+      (Concrete.addCase layoutMap bindings returnTyp idxs cases yieldCtrl)
+    let (bcCases, defaultBlock) ← match defaultOpt with
+      | some t =>
+        (match Concrete.nicheMatchCtx layoutMap cases with
+        | some ctx =>
+          if ctx.hasPayload then
+            if ctx.hasNullary then pure (bcCases, defaultBlock)
+            else do
+              let blk ← t.compile returnTyp layoutMap bindings yieldCtrl
+              pure (bcCases.push ((0 : G), blk), defaultBlock)
+          else do
+            let blk ← t.compile returnTyp layoutMap bindings yieldCtrl
+            pure (bcCases, some blk)
+        | none => do
+          let blk ← t.compile returnTyp layoutMap bindings yieldCtrl
+          pure (bcCases, some blk))
+      | none => pure (bcCases, defaultBlock)
+    let ctrl : Bytecode.Ctrl := .match idxs[Concrete.matchDispatchSlot layoutMap cases]! bcCases defaultBlock
     pure ({ ops, ctrl } : Bytecode.Block)
   | .ret _ _ term => do
     let idxs ← toIndex layoutMap bindings term
@@ -536,6 +641,7 @@ def Concrete.addCase
     (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
     (returnTyp : Concrete.Typ)
     (idxs : Array Bytecode.ValIdx)
+    (allCases : Array (Concrete.Pattern × Concrete.Term))
     (yieldCtrl : Bool := false) :
     (Array (G × Bytecode.Block) × Option Bytecode.Block) →
     (Concrete.Pattern × Concrete.Term) →
@@ -548,15 +654,16 @@ def Concrete.addCase
       set { initState with selIdx := (← get).selIdx }
       pure (cases.push (g, term), defaultBlock)
     | .ref global pats => do
-      let (index, offsets, tagless) ← match layoutMap[global]? with
-        | some (.function layout) => pure (layout.index, layout.offsets, false)
-        | some (.constructor layout) => pure (layout.index, layout.offsets, layout.tagless)
+      let (index, offsets, tagless, niche) ← match layoutMap[global]? with
+        | some (.function layout) => pure (layout.index, layout.offsets, false, none)
+        | some (.constructor layout) =>
+          pure (layout.index, layout.offsets, layout.tagless, layout.niche)
         | _ => throw s!"addCase: layout missing for `{global}`"
       -- Bind each sub-pattern `Local` to the corresponding slice of `idxs`.
       -- A tagged layout reserves `idxs[0]` for the tag, so argument `i` occupies
       -- `idxs[1 + offsets[i] .. 1 + offsets[i+1]]`. A tagless (single-variant)
       -- layout has no tag slot, so the base is `0` — a tuple-identical layout.
-      let base := if tagless then 0 else 1
+      let base := if tagless || niche.isSome then 0 else 1
       let ptrBindings : Std.HashMap Local (Array Bytecode.ValIdx) :=
         (Array.range pats.size).foldl (init := bindings) fun acc i =>
           let startOff := base + (offsets[i]?.getD 0)
@@ -570,13 +677,40 @@ def Concrete.addCase
       -- Single-variant: emit the arm as the unconditional default. With no other
       -- cases the `.match`/`.matchContinue` always falls through to it, so no tag
       -- discrimination occurs (`idxs[0]` is a field, never a tag).
+      -- Niche: the match dispatches on the pointer slot — the nullary
+      -- constructor is case 0 (the impossible-pointer value), the payload
+      -- constructor is the default arm (its pointer is provably nonzero,
+      -- so the default arm's inequality witness against 0 always exists).
       if tagless then pure (cases, .some term)
-      else pure (cases.push (.ofNat index, term), defaultBlock)
+      else match niche with
+        | some _ =>
+          if pats.isEmpty then pure (cases.push (0, term), defaultBlock)
+          else pure (cases, .some term)
+        | none => pure (cases.push (.ofNat index, term), defaultBlock)
     | .wildcard => do
-      let initState ← get
-      let term ← term.compile returnTyp layoutMap bindings yieldCtrl
-      set { initState with selIdx := (← get).selIdx }
-      pure (cases, .some term)
+      -- In a niche match with a payload arm, the wildcard covers only the
+      -- nullary constructor: it becomes case 0 (or is dead if the nullary
+      -- arm is also listed, and is then NOT compiled — a discarded compile
+      -- would still consume a selector index). Otherwise it is the default.
+      match Concrete.nicheMatchCtx layoutMap allCases with
+      | some ctx =>
+        if ctx.hasPayload then
+          if ctx.hasNullary then pure (cases, defaultBlock)
+          else do
+            let initState ← get
+            let term ← term.compile returnTyp layoutMap bindings yieldCtrl
+            set { initState with selIdx := (← get).selIdx }
+            pure (cases.push (0, term), defaultBlock)
+        else do
+          let initState ← get
+          let term ← term.compile returnTyp layoutMap bindings yieldCtrl
+          set { initState with selIdx := (← get).selIdx }
+          pure (cases, .some term)
+      | none => do
+        let initState ← get
+        let term ← term.compile returnTyp layoutMap bindings yieldCtrl
+        set { initState with selIdx := (← get).selIdx }
+        pure (cases, .some term)
     | _ => throw "addCase: unsupported pattern in concrete lower"
 termination_by _ pair => (sizeOf pair.snd, 1)
 decreasing_by all_goals first | decreasing_tactic | grind

@@ -149,16 +149,32 @@ def typFlatSizeBound (decls : Source.Decls) : Nat → HashSet Global → Typ →
         | _ => 0
   | _+1, _, .mvar _ => 0
 
+/-- Null-pointer niche at the `Source` level (mirror of
+`Concrete.DataType.hasPointerNiche`): exactly two constructors, one
+nullary, the other with a top-level pointer field. Pointers are 1-based,
+so the pointer slot doubles as the discriminant (0 = the nullary variant)
+and the tag slot is dropped. -/
+def dataTypeHasPointerNiche (dt : DataType) : Bool :=
+  let isPtr : Typ → Bool := fun | .pointer _ => true | _ => false
+  match dt.constructors with
+  | [a, b] =>
+    (a.argTypes.isEmpty && b.argTypes.any isPtr) ||
+    (b.argTypes.isEmpty && a.argTypes.any isPtr)
+  | _ => false
+
 /-- Flat size of a datatype (max constructor size + 1 for the tag; the `+ 1`
-is dropped for single-variant enums, which carry no tag). -/
+is dropped for single-variant enums, which carry no tag, and for
+null-pointer-niche enums, whose pointer field doubles as the tag). -/
 def dataTypeFlatSizeBound (decls : Source.Decls) : Nat → HashSet Global → DataType → Nat
   | 0, _, _ => 1
   | bound+1, visited, dt =>
       let ctorSizes := dt.constructors.map fun ctor =>
         ctor.argTypes.foldl (init := 0)
           (fun acc t => acc + typFlatSizeBound decls bound visited t)
-      -- Single-variant enums carry no tag slot (tuple-identical layout).
-      if dt.constructors.length == 1 then ctorSizes.foldl max 0
+      -- Single-variant enums carry no tag slot (tuple-identical layout);
+      -- neither do null-pointer-niche enums.
+      if dt.constructors.length == 1 || dataTypeHasPointerNiche dt then
+        ctorSizes.foldl max 0
       else ctorSizes.foldl max 0 + 1
 
 end
@@ -200,8 +216,13 @@ def flattenValue (decls : Decls) (funcIdx : Global → Option Nat) :
           let dtSize := dataTypeFlatSize decls {} dt
           let argsFlat := args.attach.flatMap (fun ⟨v, _⟩ => flattenValue decls funcIdx v)
           -- Single-variant enums carry no tag slot (tuple-identical layout).
+          -- Null-pointer-niche enums drop the tag too: the nullary
+          -- constructor flattens to all zeros (its args are empty, so
+          -- `argsFlat` is empty and padding fills the width), the payload
+          -- constructor to its bare fields.
           let flat :=
-            if dt.constructors.length == 1 then argsFlat
+            if dt.constructors.length == 1 || dataTypeHasPointerNiche dt then
+              argsFlat
             else
               let ctorIndex := dt.constructors.findIdx? (· == ctor) |>.getD 0
               #[.ofNat ctorIndex] ++ argsFlat
@@ -311,16 +332,41 @@ def unflattenValueBound (decls : Source.Decls) (gs : Array G) :
       match decls.getByKey g with
       | some (.dataType dt) =>
           let dtSize := dataTypeFlatSize decls {} dt
-          let tag := (gs.getD offset 0).val.toNat
           let ctors := dt.constructors.toArray
-          if h : tag < ctors.size then
-            let ctor := ctors[tag]
+          -- Untagged layouts: single-variant enums parse the sole
+          -- constructor's fields from offset 0; null-pointer-niche enums
+          -- dispatch on the niche pointer slot (0 = the nullary variant).
+          let parseCtor (ctor : Constructor) (fieldsBase : Nat) : Value :=
             let ctorName := dt.name.pushNamespace ctor.nameHead
-            let (args, _) := ctor.argTypes.foldl (init := (#[], 1)) fun (acc, off) t =>
-              let (v, n) := unflattenValueBound decls gs bound (offset + off) t
-              (acc.push v, off + n)
-            (.ctor ctorName args, dtSize)
-          else (.field (gs.getD offset 0), dtSize)
+            let (args, _) := ctor.argTypes.foldl (init := (#[], fieldsBase))
+              fun (acc, off) t =>
+                let (v, n) := unflattenValueBound decls gs bound (offset + off) t
+                (acc.push v, off + n)
+            .ctor ctorName args
+          if h : ctors.size = 1 then
+            (parseCtor ctors[0] 0, dtSize)
+          else if dataTypeHasPointerNiche dt then
+            let nullary := ctors.find? (·.argTypes.isEmpty)
+            let payload := ctors.find? (!·.argTypes.isEmpty)
+            match nullary, payload with
+            | some nullary, some payload =>
+              -- The niche slot is the payload's first pointer field; its
+              -- offset is the size of the preceding fields.
+              let slot := (payload.argTypes.foldl (init := (0, false))
+                fun (off, found) t =>
+                  if found then (off, found)
+                  else match t with
+                    | .pointer _ => (off, true)
+                    | _ => (off + typFlatSize decls {} t, false)).1
+              if (gs.getD (offset + slot) 0) == 0 then
+                (.ctor (dt.name.pushNamespace nullary.nameHead) #[], dtSize)
+              else (parseCtor payload 0, dtSize)
+            | _, _ => (.field (gs.getD offset 0), dtSize)
+          else
+            let tag := (gs.getD offset 0).val.toNat
+            if h : tag < ctors.size then
+              (parseCtor ctors[tag] 1, dtSize)
+            else (.field (gs.getD offset 0), dtSize)
       | _ => (.field (gs.getD offset 0), 1)
   | _+1, _, .mvar _ => (.unit, 0)
 termination_by bound _ _ => bound

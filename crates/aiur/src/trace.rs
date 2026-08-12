@@ -587,7 +587,7 @@ impl Op {
       Op::UnconstrainedBigUintDivMod(a, b) => {
         // Mirrors the execute arm and the two auxiliary columns the
         // constraints allocate: recompute `(q, r)` and resolve the head
-        // pointers execution recorded in memory[10]. Skipping the two map
+        // pointers execution recorded in memory[9]. Skipping the two map
         // pushes would shift every later `ValIdx` (and witness column) in
         // the block.
         let (q_ptr, r_ptr) = find_unconstrained_big_uint_div_mod(

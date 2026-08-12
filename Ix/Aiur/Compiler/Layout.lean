@@ -29,6 +29,21 @@ the remaining recursion depth. The outer interfaces use `decls.size + 1`
 as bound — the monotonic visited set makes this bound unreachable on
 well-formed inputs. -/
 
+/-- Null-pointer niche (the Aiur analogue of Rust's niche optimization):
+a two-constructor datatype where one constructor is nullary and the other
+carries at least one top-level pointer field. Memory pointers are 1-based
+(0 is the impossible pointer, pinned by the memory circuit), so the
+pointer field doubles as the discriminant — 0 IS the nullary variant —
+and the tag slot is dropped. The nullary variant is represented as the
+all-zero vector; matches dispatch on the pointer slot against 0. -/
+def DataType.hasPointerNiche (dt : DataType) : Bool :=
+  let isPtr : Typ → Bool := fun | .pointer _ => true | _ => false
+  match dt.constructors with
+  | [a, b] =>
+    (a.argTypes.isEmpty && b.argTypes.any isPtr) ||
+    (b.argTypes.isEmpty && a.argTypes.any isPtr)
+  | _ => false
+
 mutual
 
 /-- See `Typ.size` for the outer interface. -/
@@ -70,8 +85,10 @@ def DataType.sizeBound (decls : Decls) : Nat → Std.HashSet Global → DataType
         (Concrete.Constructor.sizeBound decls bound visited)
       let maxFields := ctorSizes.foldl max 0
       -- Single-variant enums need no tag slot: the layout matches a plain
-      -- tuple of the sole constructor's fields.
-      if dt.constructors.length == 1 then pure maxFields
+      -- tuple of the sole constructor's fields. Null-pointer-niche enums
+      -- (see `DataType.hasPointerNiche`) drop the tag as well: the pointer
+      -- field doubles as the discriminant.
+      if dt.constructors.length == 1 || dt.hasPointerNiche then pure maxFields
       else pure (maxFields + 1)
 end
 

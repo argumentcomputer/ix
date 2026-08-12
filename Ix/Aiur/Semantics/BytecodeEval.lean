@@ -111,39 +111,39 @@ def memLoad (st : EvalState) (size : Nat) (ptr : Nat) :
 /-! ## `List<U64>` limb chains (`unconstrainedBigUintDivMod`)
 
 Mirrors `read_klimbs_u64` / `build_klimbs_u64` in `crates/aiur/src/execute.rs`:
-nodes live in the width-10 memory bucket with the standard tagged-enum
-layout `[tag, byte0..byte7, next_ptr]` — tag 0 = Cons, tag 1 = Nil, bytes
+nodes live in the width-9 memory bucket with the null-pointer-niche layout
+`[byte0..byte7, next_ptr]` — no tag; the all-zero vector is Nil (pointer
+slot 0 is the impossible pointer), anything else is a Cons. Bytes are
 little-endian within the u64 limb. -/
 
 /-- Walk a limb chain from `ptr`, returning the limbs head-first. `steps`
-bounds the walk: a chain longer than the width-10 bucket must revisit a
+bounds the walk: a chain longer than the width-9 bucket must revisit a
 pointer, i.e. a malformed cycle. -/
 def readLimbChain (st : EvalState) : Nat → Nat →
     Except BytecodeError (List (Array G))
   | 0, _ => .error .unconstrainedBigUintDivModFailed
   | steps+1, ptr => do
-    let vs ← memLoad st 10 ptr
-    match vs[0]?, vs[9]? with
-    | some tag, some next =>
-      if tag == 1 then pure []
-      else if tag == 0 then
-        let bytes := vs.extract 1 9
+    let vs ← memLoad st 9 ptr
+    match vs[8]? with
+    | some next =>
+      if next == 0 then pure []  -- Nil: the all-zero niche vector
+      else
+        let bytes := vs.extract 0 8
         if bytes.size == 8 && bytes.all (·.val < 256) then do
           let rest ← readLimbChain st steps next.val.toNat
           pure (bytes :: rest)
         else .error .unconstrainedBigUintDivModFailed
-      else .error .unconstrainedBigUintDivModFailed
-    | _, _ => .error .unconstrainedBigUintDivModFailed
+    | _ => .error .unconstrainedBigUintDivModFailed
 
 /-- Build a limb chain from head-first `limbs`, returning the head pointer.
 Same insertion order as the Rust builder (Nil first, then limbs in reverse),
 so freshly-created pointer indices agree; `memStore` content-dedups like
 `QueryMap` does. -/
 def buildLimbChain (st : EvalState) : List (Array G) → EvalState × Nat
-  | [] => memStore st (#[1] ++ Array.replicate 9 0)
+  | [] => memStore st (Array.replicate 9 0)
   | limb :: rest =>
     let (st', restPtr) := buildLimbChain st rest
-    memStore st' (#[0] ++ limb ++ #[.ofNat restPtr])
+    memStore st' (limb ++ #[.ofNat restPtr])
 
 def pushMap (st : EvalState) (g : G) : EvalState :=
   { st with map := st.map.push g }
@@ -354,7 +354,7 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
   | .unconstrainedBigUintDivMod a b => do
     let aPtr ← readIdx st a
     let bPtr ← readIdx st b
-    -- Walk bound: the width-10 bucket size plus one (see `readLimbChain`).
+    -- Walk bound: the width-9 bucket size plus one (see `readLimbChain`).
     let bound := (st.memory.getByKey 10 |>.map (·.size) |>.getD 0) + 1
     let aLimbs ← readLimbChain st bound aPtr.val.toNat
     let bLimbs ← readLimbChain st bound bPtr.val.toNat
