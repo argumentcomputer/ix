@@ -79,11 +79,17 @@ def fixtureTests : TestSeq := Id.run do
       ("shared subterms", envShare.1),
       ("mutual defs block", envMutualDefs.1),
       ("inductive block", envInductive.1) ]
+  /- Defer a pure computation until the returned IO action is executed.
+    A plain `pure (f ())` is strict enough for Lean to run `f` while the
+    surrounding `TestSeq` is constructed. -/
+  let deferIO := fun f s => .ok (f ()) s
   let mut ts : TestSeq := .done
   for (label, env) in cases do
-    let (rows, err?) := roundtripAll env
-    let msg := match err? with | some e => s!" — {e}" | none => ""
-    ts := ts ++ test s!"roundtrip fixture: {label} ({rows} rows){msg}" err?.isNone
+    let testIO := deferIO fun () =>
+      let (rows, err?) := roundtripAll env
+      let msg := err?.map fun e => s!"{rows} rows — {e}"
+      (err?.isNone, 0, 1, msg)
+    ts := ts ++ .individualIO s!"roundtrip fixture: {label}" none testIO .done
   return ts
 
 open Tests.Tc.Fixtures in
