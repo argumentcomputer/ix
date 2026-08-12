@@ -100,6 +100,43 @@ def byteStream := ⟦
     [z0, z1, z2, z3]
   }
 
+  -- Witness a wrapping three-word sum. Both nested additions execute under
+  -- the caller's unconstrained mode, so their byte operations are advice
+  -- only. The two binary overflow bits add to the total carry in {0,1,2}.
+  fn u32_add3_hint(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> ([G; 4], G) {
+    let (ab, carry1) = u32_add_hint(a, b);
+    let ab = [u8_from_field_unsafe(ab[0]), u8_from_field_unsafe(ab[1]),
+              u8_from_field_unsafe(ab[2]), u8_from_field_unsafe(ab[3])];
+    let (z, carry2) = u32_add_hint(ab, c);
+    (z, carry1 + carry2)
+  }
+
+  -- Wrapping sum of three little-endian u32s, pinned directly rather than as
+  -- two binary additions. The output costs two paired range-check lookups;
+  -- the cubic carry constraint admits exactly 0, 1, or 2. The packed integer
+  -- identity cannot wrap in Goldilocks because its values are below 2^34.
+  fn u32_add3(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
+    let (raw, carry) = #u32_add3_hint(a, b, c);
+    let (z0, z1) = u8_range_check(raw[0], raw[1]);
+    let (z2, z3) = u8_range_check(raw[2], raw[3]);
+
+    assert_eq!(carry * (carry - 1) * (carry - 2), 0,
+      "u32_add3: carry is not in {0, 1, 2}");
+
+    let av = to_field(a[0]) + 0x100 * to_field(a[1])
+      + 0x10000 * to_field(a[2]) + 0x1000000 * to_field(a[3]);
+    let bv = to_field(b[0]) + 0x100 * to_field(b[1])
+      + 0x10000 * to_field(b[2]) + 0x1000000 * to_field(b[3]);
+    let cv = to_field(c[0]) + 0x100 * to_field(c[1])
+      + 0x10000 * to_field(c[2]) + 0x1000000 * to_field(c[3]);
+    let zv = to_field(z0) + 0x100 * to_field(z1)
+      + 0x10000 * to_field(z2) + 0x1000000 * to_field(z3);
+    assert_eq!(av + bv + cv, zv + 0x100000000 * carry,
+      "u32_add3: witnessed sum does not match its inputs");
+
+    [z0, z1, z2, z3]
+  }
+
   fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let c0 = u8_xor(a[0], b[0]);
     let c1 = u8_xor(a[1], b[1]);
