@@ -1,5 +1,5 @@
 import Ix.Tc.Level
-import Batteries.Data.RBMap.Lemmas
+import Batteries.Recycling.RBTree.Lemmas
 import Lean4Lean.Theory.VLevel
 
 /-!
@@ -307,16 +307,16 @@ theorem evalPath_max {ρ : List Nat} {path : Path} {a b : Nat} :
 theorem NormLevel.eval_le {ρ : List Nat} {l : NormLevel} {x : Nat} :
     l.eval ρ ≤ x ↔
       ∀ p n, l.find? p = some n → evalPath ρ p (n.eval ρ) ≤ x := by
-  rw [NormLevel.eval, Batteries.RBMap.foldl_eq_foldl_toList, foldl_max_le]
+  rw [NormLevel.eval, RBTree.RBMap.foldl_eq_foldl_toList, foldl_max_le]
   simp only [Nat.zero_le, true_and]
   constructor
   · intro H p n hf
-    obtain ⟨y, hy, hcmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+    obtain ⟨y, hy, hcmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
     cases Std.LawfulEqCmp.eq_of_compare hcmp
     exact H (p, n) hy
   · intro H pn hpn
     exact H pn.1 pn.2
-      (Batteries.RBMap.find?_some.mpr ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩)
+      (RBTree.RBMap.find?_some.mpr ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩)
 
 theorem NormLevel.le_eval {ρ : List Nat} {l : NormLevel} {p : Path}
     {n : NormNode} (h : l.find? p = some n) :
@@ -574,7 +574,7 @@ theorem NormNode.addVar_eval {ρ : List Nat} {n : NormNode} {idx k : UInt64} :
     denotation. -/
 private theorem findD_evalPath_le {ρ : List Nat} {l : NormLevel} {path : Path} :
     evalPath ρ path ((l.findD path {}).eval ρ) ≤ l.eval ρ := by
-  rw [Batteries.RBMap.findD]
+  rw [RBTree.RBMap.findD]
   cases hf : l.find? path with
   | some n => simpa using NormLevel.le_eval hf
   | none =>
@@ -594,7 +594,7 @@ private theorem insert_findD_eval {ρ : List Nat} {l : NormLevel} {path : Path}
       = max (l.eval ρ) (evalPath ρ path c) := by
   have hfind : ∀ p, (l.insert path v').find? p
       = if compare p path = .eq then some v' else l.find? p := fun p => by
-    rw [Batteries.RBMap.find?_insert]
+    rw [RBTree.RBMap.find?_insert]
   have ext : ∀ x, (NormLevel.eval ρ (l.insert path v') ≤ x ↔
       max (l.eval ρ) (evalPath ρ path c) ≤ x) := by
     intro x
@@ -608,7 +608,7 @@ private theorem insert_findD_eval {ρ : List Nat} {l : NormLevel} {path : Path}
       by_cases hcmp : compare p path = .eq
       · cases Std.LawfulEqCmp.eq_of_compare hcmp
         have hD : l.findD path {} = n := by
-          rw [Batteries.RBMap.findD, hf, Option.getD_some]
+          rw [RBTree.RBMap.findD, hf, Option.getD_some]
         rw [← hD]
         exact hpath.1
       · exact H p n (by rw [hfind, if_neg hcmp]; exact hf)
@@ -1212,13 +1212,13 @@ theorem subsumption_eq_model (acc : NormLevel) :
 theorem seed_eval {ρ : List Nat} :
     NormLevel.eval ρ ((∅ : NormLevel).insert [] {}) = 0 := by
   refine Nat.le_antisymm (NormLevel.eval_le.mpr fun p n hf => ?_) (Nat.zero_le _)
-  rw [Batteries.RBMap.find?_insert] at hf
+  rw [RBTree.RBMap.find?_insert] at hf
   split at hf
   · rename_i hcmp
     cases Std.LawfulEqCmp.eq_of_compare hcmp
     cases hf
     simp [evalPath, allNZ, NormNode.eval]
-  · obtain ⟨y, hy, -⟩ := Batteries.RBMap.find?_some_mem_toList hf
+  · obtain ⟨y, hy, -⟩ := RBTree.RBMap.find?_some_mem_toList hf
     simp at hy
 /-! #### Canonical-form comparison soundness -/
 
@@ -1308,7 +1308,7 @@ theorem normLevelEq_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
     intro p n hf
     by_cases hne : entryNonEmpty (p, n) = true
     · have hmem : (p, n) ∈ la.toList := by
-        obtain ⟨y, hy, hcmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+        obtain ⟨y, hy, hcmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
         cases Std.LawfulEqCmp.eq_of_compare hcmp
         exact hy
       have hmem₂ : (p, n) ∈ lb.toList := by
@@ -1316,7 +1316,7 @@ theorem normLevelEq_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
           rw [← hfe]
           exact List.mem_filter.mpr ⟨hmem, hne⟩
         exact (List.mem_filter.mp hfmem).1
-      exact NormLevel.le_eval (Batteries.RBMap.find?_some.mpr
+      exact NormLevel.le_eval (RBTree.RBMap.find?_some.mpr
         ⟨p, hmem₂, Std.ReflCmp.compare_self⟩)
     · rw [eval_of_not_entryNonEmpty (Bool.eq_false_iff.mpr hne)]
       exact evalPath_le.mpr fun _ => Nat.zero_le _
@@ -1340,7 +1340,7 @@ private theorem covering_entry_le {ρ : List Nat} {l₂ : NormLevel}
     (hnz₂ : allNZ ρ p₂ = true) :
     NormNode.eval ρ n₂ ≤ NormLevel.eval ρ l₂ := by
   have hfind : l₂.find? p₂ = some n₂ :=
-    Batteries.RBMap.find?_some.mpr ⟨p₂, hmem, Std.ReflCmp.compare_self⟩
+    RBTree.RBMap.find?_some.mpr ⟨p₂, hmem, Std.ReflCmp.compare_self⟩
   simpa [evalPath, hnz₂] using NormLevel.le_eval (ρ := ρ) hfind
 
 /-- The coverage argument (level.rs:634-643, no upstream counterpart):
@@ -1352,7 +1352,7 @@ theorem normLevelLe_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
   rw [normLevelLe, List.all_eq_true] at h
   rw [NormLevel.eval_le]
   intro p₁ n₁ hf
-  obtain ⟨y, hymem, hycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+  obtain ⟨y, hymem, hycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
   cases Std.LawfulEqCmp.eq_of_compare hycmp
   have h1 := h (p₁, n₁) hymem
   simp only at h1
@@ -1393,7 +1393,7 @@ theorem normLevelLe_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
           have hvmem : n₂.vars[i] ∈ n₂.vars := Array.getElem_mem hi
           have hidx : n₂.vars[i].idx ∈ p₂ := by
             have hfind₂ : l₂.find? p₂ = some n₂ :=
-              Batteries.RBMap.find?_some.mpr
+              RBTree.RBMap.find?_some.mpr
                 ⟨p₂, hmem₂, Std.ReflCmp.compare_self⟩
             exact hwf p₂ n₂ hfind₂ _ hvmem
           have h1ev : 1 ≤ evalParam ρ n₂.vars[i].idx := by
@@ -1483,7 +1483,7 @@ theorem VarsOnPath.addVar {l : NormLevel} {idx k : UInt64} {path : Path}
     (hl : VarsOnPath l) (hidx : idx ∈ path) :
     VarsOnPath (l.addVar idx k path) := by
   intro p n hf v hv
-  rw [NormLevel.addVar, Batteries.RBMap.find?_insert] at hf
+  rw [NormLevel.addVar, RBTree.RBMap.find?_insert] at hf
   split at hf
   · rename_i hcmp
     cases Std.LawfulEqCmp.eq_of_compare hcmp
@@ -1491,7 +1491,7 @@ theorem VarsOnPath.addVar {l : NormLevel} {idx k : UInt64} {path : Path}
     rcases NormNode.addVar_idx_mem v hv with rfl | ⟨v', hv', heq⟩
     · exact hidx
     · rw [heq]
-      rw [Batteries.RBMap.findD] at hv'
+      rw [RBTree.RBMap.findD] at hv'
       cases hff : l.find? path with
       | some n₀ =>
         rw [hff, Option.getD_some] at hv'
@@ -1508,12 +1508,12 @@ theorem VarsOnPath.addConst {l : NormLevel} {k : UInt64} {path : Path}
   simp only [NormLevel.addConst] at hf
   split at hf
   · exact hl p n hf v hv
-  · rw [Batteries.RBMap.find?_insert] at hf
+  · rw [RBTree.RBMap.find?_insert] at hf
     split at hf
     · rename_i hcmp
       cases Std.LawfulEqCmp.eq_of_compare hcmp
       cases hf
-      rw [Batteries.RBMap.findD] at hv
+      rw [RBTree.RBMap.findD] at hv
       cases hff : l.find? path with
       | some n₀ =>
         rw [hff, Option.getD_some] at hv
@@ -1642,11 +1642,11 @@ end
 private theorem varsOnPath_seed :
     VarsOnPath ((∅ : NormLevel).insert [] ({} : NormNode)) := by
   intro p n hf v hv
-  rw [Batteries.RBMap.find?_insert] at hf
+  rw [RBTree.RBMap.find?_insert] at hf
   split at hf
   · cases hf
     simp at hv
-  · obtain ⟨y, hy, -⟩ := Batteries.RBMap.find?_some_mem_toList hf
+  · obtain ⟨y, hy, -⟩ := RBTree.RBMap.find?_some_mem_toList hf
     simp at hy
 
 /-- `subsumeVars` only filters: every survivor comes from the first
@@ -1766,7 +1766,7 @@ private theorem VarsOnPath.insert_of_subset {res : NormLevel} {p1 : Path}
     (h0 : ∀ v ∈ n0.vars, v.idx ∈ p1) :
     VarsOnPath (res.insert p1 nf) := by
   intro p n hf v hv
-  rw [Batteries.RBMap.find?_insert] at hf
+  rw [RBTree.RBMap.find?_insert] at hf
   split at hf
   · rename_i hcmp
     cases Std.LawfulEqCmp.eq_of_compare hcmp
@@ -1804,7 +1804,7 @@ theorem varsOnPath_subsumption {l : NormLevel} (hl : VarsOnPath l) :
     · exact hcur v hv
   · intro v hv
     have hf1 : l.find? p1 = some n1₀ :=
-      Batteries.RBMap.find?_some.mpr ⟨p1, hmem, Std.ReflCmp.compare_self⟩
+      RBTree.RBMap.find?_some.mpr ⟨p1, hmem, Std.ReflCmp.compare_self⟩
     exact hl p1 n1₀ hf1 v hv
 
 /-! #### Subsumption: the `≤` half and the per-key characterization -/
@@ -1871,7 +1871,7 @@ private theorem processEntry_eval_le {ρ : List Nat} {p1 : Path} :
 /-- Keys of an `RBMap`'s `toList` are nodup (strict sortedness). -/
 private theorem toList_keys_nodup (l : NormLevel) :
     (l.toList.map Prod.fst).Nodup := by
-  refine List.Pairwise.map _ ?_ Batteries.RBMap.toList_sorted
+  refine List.Pairwise.map _ ?_ RBTree.RBMap.toList_sorted
   intro a b hlt heq
   have hc := Batteries.RBNode.cmpLT_iff.mp hlt
   rw [heq] at hc
@@ -1890,7 +1890,7 @@ private theorem foldl_insert_find?_of_not_mem
   | pn :: rest, res, p, h => by
     rw [List.foldl_cons, foldl_insert_find?_of_not_mem f rest _ p
       fun q hq => h q (List.mem_cons_of_mem _ hq)]
-    refine Batteries.RBMap.find?_insert_of_ne _ fun hcmp => ?_
+    refine RBTree.RBMap.find?_insert_of_ne _ fun hcmp => ?_
     exact h pn (List.mem_cons_self ..) (Std.LawfulEqCmp.eq_of_compare hcmp)
 
 /-- With nodup keys, the fold writes each entry exactly once. -/
@@ -1907,7 +1907,7 @@ private theorem foldl_insert_find?_self
     rcases List.mem_cons.mp hmem with rfl | hmem'
     · rw [foldl_insert_find?_of_not_mem f rest _ p fun q hq heq => hnd.1
         (heq ▸ List.mem_map.mpr ⟨q, hq, rfl⟩)]
-      exact Batteries.RBMap.find?_insert_of_eq _ Std.ReflCmp.compare_self
+      exact RBTree.RBMap.find?_insert_of_eq _ Std.ReflCmp.compare_self
     · exact foldl_insert_find?_self f rest _ p n hmem' hnd.2
 
 /-- Forward characterization: every entry of the model comes from an
@@ -1917,7 +1917,7 @@ private theorem subsumptionModel_find?_some {l : NormLevel} {p : Path}
     ∃ n₀, l.find? p = some n₀ ∧ n = processEntry l.toList p n₀ := by
   cases hf₀ : l.find? p with
   | some n₀ =>
-    obtain ⟨y, hy, hycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf₀
+    obtain ⟨y, hy, hycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf₀
     cases Std.LawfulEqCmp.eq_of_compare hycmp
     refine ⟨n₀, rfl, ?_⟩
     rw [subsumptionModel,
@@ -1927,7 +1927,7 @@ private theorem subsumptionModel_find?_some {l : NormLevel} {p : Path}
   | none =>
     rw [subsumptionModel, foldl_insert_find?_of_not_mem _ l.toList l p
       (fun pn hpn heq => by
-        rw [heq, Batteries.RBMap.find?_some.mpr
+        rw [heq, RBTree.RBMap.find?_some.mpr
           ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩] at hf₀
         simp at hf₀),
       hf₀] at hf
@@ -2215,14 +2215,14 @@ private theorem le_subsumptionModel_eval {ρ : List Nat} {l : NormLevel}
       intro p1 n1₀ hf hlen hnz v hv
       rcases processEntry_var_cases l.toList n1₀ v hv
         with hsurv | ⟨pn, hpn, hsub, hsame, y, hy, hidx, hoff⟩
-      · obtain ⟨yy, hyy, hyycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+      · obtain ⟨yy, hyy, hyycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
         cases Std.LawfulEqCmp.eq_of_compare hyycmp
         have hfm := subsumptionModel_find?_of_mem hyy
         refine Nat.le_trans
           (((NormNode.eval_le (ρ := ρ)).mp (Nat.le_refl _)).2 v hsurv) ?_
         simpa [evalPath, hnz] using NormLevel.le_eval (ρ := ρ) hfm
       · have hf₂ : l.find? pn.1 = some pn.2 :=
-          Batteries.RBMap.find?_some.mpr
+          RBTree.RBMap.find?_some.mpr
             ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩
         have hnz₂ : allNZ ρ pn.1 = true := allNZ_of_isSubset hsub hnz
         have hlt : pn.1.length < p1.length := by
@@ -2248,7 +2248,7 @@ private theorem le_subsumptionModel_eval {ρ : List Nat} {l : NormLevel}
       intro p1 n1₀ hf hlen hnz
       rcases processEntry_const_cases l.toList n1₀
         with hkeep | ⟨pn, hpn, hsub, m, hmc, hmv, hexp⟩
-      · obtain ⟨yy, hyy, hyycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+      · obtain ⟨yy, hyy, hyycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
         cases Std.LawfulEqCmp.eq_of_compare hyycmp
         have hfm := subsumptionModel_find?_of_mem hyy
         have hb : NormNode.eval ρ (processEntry l.toList p1 n1₀)
@@ -2258,7 +2258,7 @@ private theorem le_subsumptionModel_eval {ρ : List Nat} {l : NormLevel}
         rw [← hkeep]
         exact ((NormNode.eval_le (ρ := ρ)).mp (Nat.le_refl _)).1
       · have hf₂ : l.find? pn.1 = some pn.2 :=
-          Batteries.RBMap.find?_some.mpr
+          RBTree.RBMap.find?_some.mpr
             ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩
         have hnz₂ : allNZ ρ pn.1 = true := allNZ_of_isSubset hsub hnz
         rw [Bool.and_eq_false_iff] at hexp
