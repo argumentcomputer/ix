@@ -1,6 +1,16 @@
 {"version": "1.2.0",
  "packagesDir": ".lake/packages",
- "packages": [],
+ "packages":
+ [{"url": "https://github.com/argumentcomputer/Blake3.lean",
+   "type": "git",
+   "subDir": null,
+   "scope": "",
+   "rev": "aaf530784082a2c00b0a93648741429d274102ca",
+   "name": "Blake3",
+   "manifestFile": "lake-manifest.json",
+   "inputRev": "aaf530784082a2c00b0a93648741429d274102ca",
+   "inherited": false,
+   "configFile": "lakefile.lean"}],
  "name": "navigatrix",
  "lakeDir": ".lake",
  "fixedToolchain": false}

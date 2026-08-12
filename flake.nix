@@ -20,12 +20,25 @@
 
     # flake-parts via the copy lean4-nix already locks (single node)
     flake-parts.follows = "lean4-nix/flake-parts";
+
+    # Blake3 FFI: the flake-built package (prebuilt Rust static lib)
+    # overrides the Lake dep, whose lakefile shells out to cargo — the
+    # sandbox forbids that. Keep the rev in lockstep with
+    # lakefile.toml/lake-manifest.json. Nested inputs (crane, fenix,
+    # blake3 source, flake-parts) are pinned at lock time to ix's
+    # flake.lock revs — the combination proven on this machine.
+    # NB: no lean4-nix follows — blake3-lean uses the lenianiva
+    # lean4-nix API (readToolchainFile), incompatible with our
+    # argumentcomputer fork; its lean4-nix is pinned at lock time to
+    # ix's rev instead.
+    blake3-lean.url = "github:argumentcomputer/Blake3.lean/aaf530784082a2c00b0a93648741429d274102ca";
   };
 
   outputs = inputs @ {
     nixpkgs,
     flake-parts,
     lean4-nix,
+    blake3-lean,
     ...
   }:
     flake-parts.lib.mkFlake {inherit inputs;} {
@@ -54,12 +67,15 @@
             ./lake-manifest.json
             ./lean-toolchain
             ./Navigatrix.lean
+            ./Tests.lean
             (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Navigatrix)
           ];
         };
-        # No Lake requires yet; buildDeps reads the (empty) manifest.
         lakeDeps = lake2nix.buildDeps {
           src = leanSrc;
+          depOverrideDeriv = {
+            Blake3 = blake3-lean.packages.${system}.rust;
+          };
         };
         leanBuildInputs = [
           pkgs.gmp
@@ -79,6 +95,21 @@
             description = "Navigatrix library artifact (oleans, exports, static/shared)";
           };
         };
+
+        # Runtime tests: build the `tests` exe (linking the Blake3 static
+        # lib) and run it — FFI execution can't happen in elaboration-time
+        # #guards, so the run is the test.
+        testsCheck = lake2nix.mkPackage {
+          inherit lakeDeps;
+          src = leanSrc;
+          buildInputs = leanBuildInputs;
+          name = "tests";
+          installArtifacts = false;
+          postBuild = ''
+            ./.lake/build/bin/tests | tee tests.out
+            grep -q tests-ok tests.out
+          '';
+        };
       in {
         _module.args.pkgs = import nixpkgs {
           inherit system;
@@ -91,6 +122,7 @@
 
         checks = {
           build = navigatrixLib;
+          tests = testsCheck;
         };
 
         devShells.default = pkgs.mkShell {

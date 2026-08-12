@@ -4,3 +4,4 @@ import Navigatrix.Ixon.Address
 import Navigatrix.Ixon.Univ
 import Navigatrix.Ixon.Expr
 import Navigatrix.Ixon.Const
+import Navigatrix.Ixon.Hash

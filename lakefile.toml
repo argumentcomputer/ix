@@ -1,5 +1,18 @@
 name = "navigatrix"
 defaultTargets = ["Navigatrix"]
 
+# Blake3 FFI. Keep this rev in lockstep with the flake's `blake3-lean`
+# input — the nix build overrides this dep with the flake-built package
+# (its lakefile shells out to cargo, which the nix sandbox forbids).
+[[require]]
+name = "Blake3"
+git = "https://github.com/argumentcomputer/Blake3.lean"
+rev = "aaf530784082a2c00b0a93648741429d274102ca"
+
 [[lean_lib]]
 name = "Navigatrix"
+
+# Runtime tests (FFI execution — can't run in elaboration-time #guards)
+[[lean_exe]]
+name = "tests"
+root = "Tests"
