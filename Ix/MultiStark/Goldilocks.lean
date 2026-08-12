@@ -123,7 +123,7 @@ def goldilocks := ⟦
     [a[0] * ninv, (0 - a[1]) * ninv]
   }
   fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-    eg_mul(a, eg_inverse(b))
+    @eg_mul(a, @eg_inverse(b))
   }
   -- 1 iff two extension elements are equal.
   fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> G {

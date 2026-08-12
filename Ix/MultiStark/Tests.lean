@@ -71,20 +71,20 @@ def tests := ⟦
               @gl_val([239u8, 205u8, 171u8, 137u8, 103u8, 69u8, 35u8, 1u8])];
     let e1 = [@gl_val([34u8, 34u8, 34u8, 34u8, 17u8, 17u8, 17u8, 17u8]),
               @gl_val([68u8, 68u8, 68u8, 68u8, 51u8, 51u8, 51u8, 51u8])];
-    assert_eq!(assert_eg(eg_add(e0, e1),
+    assert_eq!(assert_eg(@eg_add(e0, e1),
       @gl_val([49u8, 84u8, 118u8, 152u8, 170u8, 203u8, 237u8, 15u8]),
       @gl_val([51u8, 18u8, 240u8, 205u8, 154u8, 120u8, 86u8, 52u8])), 1);
-    assert_eq!(assert_eg(eg_mul(e0, e1),
+    assert_eq!(assert_eg(@eg_mul(e0, e1),
       @gl_val([10u8, 238u8, 162u8, 36u8, 224u8, 127u8, 182u8, 134u8]),
       @gl_val([215u8, 234u8, 152u8, 224u8, 219u8, 254u8, 32u8, 67u8])), 1);
-    assert_eq!(assert_eg(eg_inverse(e0),
+    assert_eq!(assert_eg(@eg_inverse(e0),
       @gl_val([221u8, 238u8, 29u8, 131u8, 179u8, 89u8, 214u8, 216u8]),
       @gl_val([114u8, 99u8, 206u8, 108u8, 15u8, 88u8, 161u8, 246u8])), 1);
-    assert_eq!(assert_eg(eg_div(e0, e1),
+    assert_eq!(assert_eg(@eg_div(e0, e1),
       @gl_val([42u8, 59u8, 64u8, 77u8, 226u8, 214u8, 95u8, 63u8]),
       @gl_val([200u8, 46u8, 148u8, 147u8, 124u8, 180u8, 248u8, 140u8])), 1);
     -- e0 · e0⁻¹ = 1
-    assert_eq!(assert_eg(eg_mul(e0, eg_inverse(e0)), 1, 0), 1);
+    assert_eq!(assert_eg(@eg_mul(e0, @eg_inverse(e0)), 1, 0), 1);
     1
   }
 
@@ -178,7 +178,7 @@ def tests := ⟦
     let pz2 = [@gl_val([44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), @gl_val([3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
     let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
                 store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
-    let q = eg_inverse(eg_sub(z, [x, 0]));
+    let q = @eg_inverse(@eg_sub(z, [x, 0]));
     let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
     assert_eq!(ro[0], 7130765474285082575);
     assert_eq!(ro[1], 12254464995725315436);
