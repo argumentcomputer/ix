@@ -40,11 +40,6 @@ def goldilocks := ⟦
   type Goldilocks = G
   type ExtGoldilocks = [G; 2]
 
-  fn gl_zero() -> Goldilocks { 0 }
-  fn gl_one() -> Goldilocks { 1 }
-  fn gl_two() -> Goldilocks { 2 }
-  fn gl_seven() -> Goldilocks { 7 }
-
   -- The native field value of 8 LE bytes: `Σ xᵢ·256ⁱ` (mod p). For an
   -- arbitrary 8-byte value (< 2⁶⁴ < 2p) the field sum wraps at most once,
   -- yielding exactly the reduced representative — so this is both the
@@ -85,17 +80,6 @@ def goldilocks := ⟦
     assert_eq!(gl_lt_p(r), 1);
     r
   }
-
-  -- ==========================================================================
-  -- Base field ops: native.
-  -- ==========================================================================
-  fn gl_add(a: Goldilocks, b: Goldilocks) -> Goldilocks { a + b }
-  fn gl_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks { a - b }
-  fn gl_neg(a: Goldilocks) -> Goldilocks { 0 - a }
-  fn gl_mul(a: Goldilocks, b: Goldilocks) -> Goldilocks { a * b }
-  fn gl_sq(a: Goldilocks) -> Goldilocks { a * a }
-  fn gl_is_zero(x: Goldilocks) -> G { eq_zero(x) }
-  fn gl_eq(a: Goldilocks, b: Goldilocks) -> G { eq_zero(a - b) }
 
   -- ==========================================================================
   -- Base field inverse / divide: hinted, verified with one multiplication.

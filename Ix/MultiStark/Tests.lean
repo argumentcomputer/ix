@@ -12,7 +12,7 @@ circuit to the compiled system, so keeping the tests out of
 `MultiStark.multiStark` keeps the production verifier's width free of
 test-only circuits.
 
-Cross-fragment references (e.g. `gl_add`, `mmcs_hash_row`, `fri_fold2`,
+Cross-fragment references (e.g. `gl_val`, `mmcs_hash_row`, `fri_fold2`,
 `ch_sample_bits`) resolve after the merge — the merged toplevel has a flat
 namespace.
 -/
@@ -34,14 +34,14 @@ def tests := ⟦
   pub fn gl_addsub_test() -> G {
     let a = gl_val([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]); -- 0xFEDCBA9876543210
     let b = gl_val([240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]); -- 0x123456789ABCDEF0
-    assert_eq!(assert_g8(gl_add(a, b), gl_val([255u8, 16u8, 17u8, 17u8, 18u8, 17u8, 17u8, 17u8])), 1);
-    assert_eq!(assert_g8(gl_sub(a, b), gl_val([32u8, 83u8, 151u8, 219u8, 31u8, 100u8, 168u8, 236u8])), 1);
-    assert_eq!(assert_g8(gl_sub(b, a), gl_val([225u8, 172u8, 104u8, 36u8, 223u8, 155u8, 87u8, 19u8])), 1);
+    assert_eq!(assert_g8(a + b, gl_val([255u8, 16u8, 17u8, 17u8, 18u8, 17u8, 17u8, 17u8])), 1);
+    assert_eq!(assert_g8(a - b, gl_val([32u8, 83u8, 151u8, 219u8, 31u8, 100u8, 168u8, 236u8])), 1);
+    assert_eq!(assert_g8(b - a, gl_val([225u8, 172u8, 104u8, 36u8, 223u8, 155u8, 87u8, 19u8])), 1);
     -- edge: (p-1) + 5 ≡ 4 ; 5 - (p-1) ≡ 6
     let pm1 = gl_val([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]); -- 0xFFFFFFFF00000000
     let five = gl_val([5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    assert_eq!(assert_g8(gl_add(pm1, five), gl_val([4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])), 1);
-    assert_eq!(assert_g8(gl_sub(five, pm1), gl_val([6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])), 1);
+    assert_eq!(assert_g8(pm1 + five, gl_val([4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])), 1);
+    assert_eq!(assert_g8(five - pm1, gl_val([6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])), 1);
     1
   }
 
@@ -53,16 +53,16 @@ def tests := ⟦
   pub fn gl_muldiv_test() -> G {
     let a = gl_val([16u8, 50u8, 84u8, 118u8, 152u8, 186u8, 220u8, 254u8]); -- 0xFEDCBA9876543210
     let b = gl_val([240u8, 222u8, 188u8, 154u8, 120u8, 86u8, 52u8, 18u8]); -- 0x123456789ABCDEF0
-    assert_eq!(assert_g8(gl_mul(a, b), gl_val([212u8, 186u8, 123u8, 108u8, 31u8, 253u8, 234u8, 250u8])), 1);
+    assert_eq!(assert_g8(a * b, gl_val([212u8, 186u8, 123u8, 108u8, 31u8, 253u8, 234u8, 250u8])), 1);
     assert_eq!(assert_g8(gl_inverse(a), gl_val([97u8, 29u8, 109u8, 46u8, 183u8, 100u8, 8u8, 102u8])), 1);
     assert_eq!(assert_g8(gl_div(a, b), gl_val([63u8, 59u8, 61u8, 54u8, 46u8, 255u8, 29u8, 186u8])), 1);
     -- edge: (p-1)·5 ≡ p-5
     let pm1 = gl_val([0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8]);
     let five = gl_val([5u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    assert_eq!(assert_g8(gl_mul(pm1, five), gl_val([252u8, 255u8, 255u8, 255u8, 254u8, 255u8, 255u8, 255u8])), 1);
+    assert_eq!(assert_g8(pm1 * five, gl_val([252u8, 255u8, 255u8, 255u8, 254u8, 255u8, 255u8, 255u8])), 1);
     -- a·a⁻¹ = 1 and b·b⁻¹ = 1
-    assert_eq!(assert_g8(gl_mul(a, gl_inverse(a)), gl_one()), 1);
-    assert_eq!(assert_g8(gl_mul(b, gl_inverse(b)), gl_one()), 1);
+    assert_eq!(assert_g8(a * gl_inverse(a), 1), 1);
+    assert_eq!(assert_g8(b * gl_inverse(b), 1), 1);
     1
   }
   pub fn eg_ops_test() -> G {
@@ -84,7 +84,7 @@ def tests := ⟦
       gl_val([42u8, 59u8, 64u8, 77u8, 226u8, 214u8, 95u8, 63u8]),
       gl_val([200u8, 46u8, 148u8, 147u8, 124u8, 180u8, 248u8, 140u8])), 1);
     -- e0 · e0⁻¹ = 1
-    assert_eq!(assert_eg(eg_mul(e0, eg_inverse(e0)), gl_one(), gl_zero()), 1);
+    assert_eq!(assert_eg(eg_mul(e0, eg_inverse(e0)), 1, 0), 1);
     1
   }
 
@@ -178,8 +178,8 @@ def tests := ⟦
     let pz2 = [gl_val([44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), gl_val([3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
     let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
                 store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
-    let q = eg_inverse(eg_sub(z, [x, gl_zero()]));
-    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [gl_zero(), gl_zero()], [gl_one(), gl_zero()]);
+    let q = eg_inverse(eg_sub(z, [x, 0]));
+    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
     assert_eq!(ro[0], 7130765474285082575);
     assert_eq!(ro[1], 12254464995725315436);
     1

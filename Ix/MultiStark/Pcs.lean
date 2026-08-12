@@ -533,10 +533,10 @@ def pcs := ⟦
     match load(bits) {
       ListNode.Nil => 1,
       ListNode.Cons(b, rest) =>
-        let half = exp_by_bits(gl_sq(base), rest);
+        let half = exp_by_bits(base * base, rest);
         match b {
           0 => half,
-          _ => gl_mul(base, half),
+          _ => base * half,
         },
     }
   }
@@ -546,7 +546,7 @@ def pcs := ⟦
   fn fri_fold2(index_bits: List‹G›, log_height: G, beta: Ext, e0: Ext, e1: Ext) -> Ext {
     let g = two_adic_gen(log_height + 1);
     let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
-    let two_s = gl_add(s, s);
+    let two_s = s + s;
     let t1 = eg_div(eg_add(e0, e1), [2, 0]);
     let t2 = eg_mul(beta, eg_div(eg_sub(e0, e1), [two_s, 0]));
     eg_add(t1, t2)
@@ -568,7 +568,7 @@ def pcs := ⟦
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
   fn ro_x(index_bits: List‹G›, log_height: G) -> Goldilocks {
-    gl_mul(7, exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
+    7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil)))
   }
 
   -- Raw wire rows (`U64` lanes, possibly non-canonical) to native Goldilocks
