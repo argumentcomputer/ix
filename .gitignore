@@ -1,0 +1,15 @@
+# Lean
+**/.lake
+
+# Rust
+**/target
+
+# Nix
+result*
+.direnv/
+
+# Local design notes (untracked by design)
+plans
+
+# Scratch space: reference clones, experiments (untracked by design)
+scratchpad

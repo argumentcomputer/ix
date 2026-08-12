@@ -1,0 +1,5 @@
+name = "navigatrix"
+defaultTargets = ["Navigatrix"]
+
+[[lean_lib]]
+name = "Navigatrix"
