@@ -2235,6 +2235,189 @@ fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
     .map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
 }
 
+/// Build the STATIC block profile of an env — the profile-free analog of
+/// [`build_block_profile`]: same [`BlockProfile`] shape, but derived from
+/// the serialized constants alone, no kernel run.
+///
+/// - Vertices: ingress units (a Muts block or a standalone constant),
+///   `serialized_size` real, `const_count` = member constants,
+///   `heartbeats` := size (report-only).
+/// - Balance weight: the partitioner's vertex weight is `block_step_cost`
+///   (a linear model over the op counters), so the byte weight is carried
+///   in `subst` — `vweight ∝ size` exactly, matching the measured-best
+///   bisection weight (`ix_kernel::shard::STATIC_OWNED_PER_BYTE` docs).
+/// - Edges: the claim-walk relation (`ixon::shard_claim::walk_edges` —
+///   positively-used refs + projection block pointers) at block
+///   granularity, deduped, self-edges dropped. These are exactly the
+///   edges that generate a shard's thin frontier, i.e. its ingress.
+#[allow(clippy::cast_possible_truncation)] // block sizes clamped to u32::MAX
+fn static_block_profile(env: &IxonEnv) -> BlockProfile {
+  use rayon::prelude::*;
+  let addrs: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  // Phase 1 (parallel): parse each constant exactly ONCE. Lazy mmap
+  // entries re-parse on every `get()` (see `LazyConstant`'s cache
+  // policy), so the home block is derived from the constant we already
+  // hold instead of `profile_block_of` (which would parse again), and
+  // edge targets are kept as raw addresses to be resolved in phase 2
+  // through the addr→home table this pass produces.
+  struct ConstRow {
+    addr: Address,
+    home: Address,
+    targets: Vec<Address>,
+  }
+  let rows: Vec<ConstRow> = addrs
+    .par_iter()
+    .filter_map(|addr| {
+      let c = env.get_const(addr)?;
+      let home = match &c.info {
+        IxonCI::IPrj(p) => p.block.clone(),
+        IxonCI::CPrj(p) => p.block.clone(),
+        IxonCI::RPrj(p) => p.block.clone(),
+        IxonCI::DPrj(p) => p.block.clone(),
+        _ => addr.clone(),
+      };
+      let mut targets = Vec::new();
+      ixon::shard_claim::walk_edges(&c, &mut targets);
+      Some(ConstRow { addr: addr.clone(), home, targets })
+    })
+    .collect();
+  // Phase 2 (serial, no parsing): addr→home table, per-block member
+  // counts, and block-level edges. A target absent from the table is a
+  // blob payload (or an unparseable constant) — skipped, matching the
+  // claim walk's blob sentinel.
+  let home_of: FxHashMap<&Address, &Address> =
+    rows.iter().map(|r| (&r.addr, &r.home)).collect();
+  let mut counts: FxHashMap<&Address, u32> = FxHashMap::default();
+  for r in &rows {
+    *counts.entry(&r.home).or_insert(0) += 1;
+  }
+  let mut builder = ProfileBuilder::new();
+  for r in &rows {
+    for t in &r.targets {
+      if let Some(&pb) = home_of.get(t)
+        && *pb != r.home
+      {
+        builder.delta_edge(r.home.clone(), pb.clone());
+      }
+    }
+  }
+  for (home, cnt) in counts {
+    // Size without materializing: `raw_bytes().len()` on the lazy entry
+    // (`profile_block_size` would copy the bytes into a fresh Arc).
+    let size = env
+      .consts
+      .get(home)
+      .map_or(0, |e| e.value().raw_bytes().len().min(u32::MAX as usize))
+      as u32;
+    let ops = OpCounts { subst_nodes: u64::from(size), ..OpCounts::default() };
+    builder.block(home.clone(), u64::from(size), size, cnt, ops);
+  }
+  builder.finish()
+}
+
+/// FFI: partition a `.ixe` into `num_shards` shards with the STATIC
+/// strategy — no out-of-circuit profiling run. Builds the static block
+/// profile ([`static_block_profile`]), byte-balanced min-cut over the
+/// walk-edge nets, then the predicted-cost rebalance post-pass
+/// (`ix_kernel::shard::shard_static`). Writes a `.ixes` manifest.
+#[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_env_static(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  num_shards: LeanString<LeanBorrowed<'_>>,
+  balance_pct: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let path = env_path.to_string();
+  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
+  let balance =
+    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  let out = out_path.to_string();
+  let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
+  let t0 = Instant::now();
+  let env = match IxonEnv::get_anon_mmap(std::path::Path::new(&path)) {
+    Ok(e) => e,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_shard_env_static: failed to load {path}: {e}"
+      ));
+    },
+  };
+  let t_load = t0.elapsed();
+  let t1 = Instant::now();
+  let profile = static_block_profile(&env);
+  eprintln!(
+    "[rs_shard_static] env load {:.1?}, static graph {:.1?} ({} blocks, {} edges)",
+    t_load,
+    t1.elapsed(),
+    profile.num_blocks(),
+    profile.num_edges()
+  );
+  match ix_kernel::shard::shard_static(&profile, num_shards, balance, out_opt) {
+    Ok(report) => {
+      eprintln!("[rs_shard_static]\n{report}");
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanIOResult::error_string(&format!("rs_shard_env_static: {e}")),
+  }
+}
+
+/// FFI: dump the static block-level reference graph of a `.ixe` as text —
+/// `block <hex> <bytes> <consts>` per ingress unit (a Muts block or a
+/// standalone constant) and `edge <consumer> <producer>` per deduped
+/// claim-walk edge (`ixon::shard_claim::walk_edges`, mapped to block
+/// granularity, self-edges dropped). The graph is the input for offline
+/// partitioner prototypes in the sharding campaign: the walk-edge
+/// relation is exactly what generates a shard's thin frontier, so a
+/// partition's ingress cost is computable from this file alone. Same
+/// data as [`static_block_profile`], serialized for offline use.
+#[allow(clippy::cast_possible_truncation)] // block ids are u32 by construction
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_static_graph(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let path = env_path.to_string();
+  let out = out_path.to_string();
+  let env = match IxonEnv::get_anon_mmap(std::path::Path::new(&path)) {
+    Ok(e) => e,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_shard_static_graph: failed to load {path}: {e}"
+      ));
+    },
+  };
+  let profile = static_block_profile(&env);
+  let mut buf = String::new();
+  for b in profile.blocks() {
+    buf.push_str(&format!(
+      "block {} {} {}\n",
+      b.addr.hex(),
+      b.serialized_size,
+      b.const_count
+    ));
+  }
+  for c in 0..profile.num_blocks() as u32 {
+    let ca = profile.block(c).addr.hex();
+    for &p in profile.producers(c) {
+      buf.push_str(&format!("edge {} {}\n", ca, profile.block(p).addr.hex()));
+    }
+  }
+  if let Err(e) = std::fs::write(&out, buf) {
+    return LeanIOResult::error_string(&format!(
+      "rs_shard_static_graph: failed to write {out}: {e}"
+    ));
+  }
+  eprintln!(
+    "[rs_shard_static_graph] {} blocks, {} edges → {}",
+    profile.num_blocks(),
+    profile.num_edges(),
+    out
+  );
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
 /// Print the general-purpose cost breakdown for `ix profile` — the kernel-work
 /// metrics plus the predicted Zisk leaf cost/RAM (à la `cargo-zisk … -p summary`).
 // `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss

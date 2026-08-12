@@ -1541,6 +1541,291 @@ impl<'a> Cur<'a> {
   }
 }
 
+// ============================================================================
+// Static (profile-free) sharding — the `ix shard <env.ixe>` path
+// ============================================================================
+
+/// Fitted per-shard Aiur FFT cost model driving the static strategy:
+///
+/// ```text
+///   cost(S) ≈ STATIC_OWNED_PER_BYTE      · owned_bytes(S)
+///           + STATIC_OWNED_SUPERLINEAR   · Σ_{b∈S} size(b)^1.5
+///           + STATIC_FRONTIER_PER_BYTE   · frontier_bytes(S)
+/// ```
+///
+/// where `size(b)` is a block's serialized byte length and
+/// `frontier_bytes(S)` sums the sizes of foreign producer blocks referenced
+/// by S's members (the thin frontier the kernel ingresses). A frontier byte
+/// pays ingress only (blake3 + parse); an owned byte additionally pays
+/// typechecking, which concentrates superlinearly in large proof bodies —
+/// hence the per-block `^1.5` term (NOT `(Σ size)^1.5`: how bytes are
+/// packaged into constants is exactly what it measures).
+///
+/// Fit: least squares over 56 measured shards from 7 different 8-shard
+/// partitions of Init (native IxVM, real blake3, `Total FFT cost` from
+/// `ix check --stats-out`), mean |err| 4.7% on shards ≥ 3e11. Validated
+/// without refit on Std at 24 shards (4.5% aggregate bias) — the constants
+/// are Aiur-kernel physics, not env-specific. The fit's intercept
+/// (−2.3e10) cancels in balance comparisons and is omitted.
+pub const STATIC_OWNED_PER_BYTE: f64 = 28_201.0;
+/// See [`STATIC_OWNED_PER_BYTE`].
+pub const STATIC_OWNED_SUPERLINEAR: f64 = 681.08;
+/// See [`STATIC_OWNED_PER_BYTE`].
+pub const STATIC_FRONTIER_PER_BYTE: f64 = 38_000.0;
+
+/// Predicted owned-side cost of one block under the static model.
+fn static_owned_weight(size: u32) -> f64 {
+  let s = f64::from(size);
+  STATIC_OWNED_PER_BYTE * s + STATIC_OWNED_SUPERLINEAR * s * s.sqrt()
+}
+
+/// Greedy global rebalance toward equal predicted per-shard cost under the
+/// static model. Repeatedly moves the best block from the most expensive
+/// shard to the cheapest until the hot/cold gap is within 1% of the mean
+/// or no single move lowers the pair's max. Returns the move count.
+///
+/// Why a post-pass at all: recursive bisection enforces balance only per
+/// cut (±ε), which compounds to ~1.6–1.9× max/min over log₂(N) levels of
+/// proportional integer budget splits; and no vertex-weight balance can
+/// see the frontier term, which depends on the cut itself. Measured on the
+/// 8-shard Init harness this pass took realized FFT stddev 14.7% → 7.1%
+/// and the max shard down 6% on top of the byte-balanced min-cut.
+///
+/// Move evaluation is exact under the model: moving `b` from `src` to
+/// `dst` shifts its owned weight and updates both shards' frontiers —
+/// producers of `b` may enter `dst`'s frontier or leave `src`'s (when `b`
+/// was their only consumer there), and `b` itself may enter `src`'s
+/// frontier (if consumers remain) or leave `dst`'s. Other shards are
+/// unaffected: their view of `b` depends only on `b` being outside them.
+pub fn rebalance_static(
+  profile: &BlockProfile,
+  shard_of: &mut [u32],
+  num_shards: usize,
+) -> usize {
+  use rustc_hash::FxHashMap;
+  let n = profile.num_blocks();
+  if num_shards <= 1 || n == 0 {
+    return 0;
+  }
+  let size = |b: u32| profile.block(b).serialized_size;
+  let (crow, ccol) = profile.consumers_csr();
+  let consumers = |b: u32| &ccol[crow[b as usize]..crow[b as usize + 1]];
+
+  let mut owned = vec![0.0f64; num_shards];
+  for b in 0..n {
+    owned[shard_of[b] as usize] += static_owned_weight(size(b as u32));
+  }
+  // fcnt[k][p] = number of k-owned consumers of foreign producer p;
+  // fbytes[k] = Σ size(p) over k's frontier (fcnt keys).
+  let mut fcnt: Vec<FxHashMap<u32, u32>> =
+    vec![FxHashMap::default(); num_shards];
+  let mut fbytes = vec![0.0f64; num_shards];
+  for c in 0..n as u32 {
+    let kc = shard_of[c as usize];
+    for &p in profile.producers(c) {
+      if shard_of[p as usize] != kc {
+        let e = fcnt[kc as usize].entry(p).or_insert(0);
+        if *e == 0 {
+          fbytes[kc as usize] += f64::from(size(p));
+        }
+        *e += 1;
+      }
+    }
+  }
+
+  let mut moves = 0usize;
+  loop {
+    let costs: Vec<f64> = (0..num_shards)
+      .map(|k| owned[k] + STATIC_FRONTIER_PER_BYTE * fbytes[k])
+      .collect();
+    let hot =
+      (0..num_shards).max_by(|&a, &b| costs[a].total_cmp(&costs[b])).unwrap();
+    let cold =
+      (0..num_shards).min_by(|&a, &b| costs[a].total_cmp(&costs[b])).unwrap();
+    let gap = costs[hot] - costs[cold];
+    let mean = costs.iter().sum::<f64>() / num_shards as f64;
+    if gap <= 0.01 * mean {
+      break;
+    }
+    // Best move: lexicographically minimize (new max(hot', cold'), total
+    // cost increase). Deterministic: blocks scanned in id order, strict <.
+    let mut best: Option<(u32, f64, f64)> = None;
+    for b in 0..n as u32 {
+      if shard_of[b as usize] != hot as u32 {
+        continue;
+      }
+      let w = static_owned_weight(size(b));
+      if w > gap {
+        continue; // moving it would overshoot the gap
+      }
+      // Δcost(src): lose w(b); b's producers leave the frontier when b was
+      // their only src consumer; b enters it if src still consumes it.
+      let mut df_src = 0.0f64;
+      for &p in profile.producers(b) {
+        if shard_of[p as usize] != hot as u32 && fcnt[hot].get(&p) == Some(&1) {
+          df_src -= f64::from(size(p));
+        }
+      }
+      if consumers(b)
+        .iter()
+        .any(|&c| c != b && shard_of[c as usize] == hot as u32)
+      {
+        df_src += f64::from(size(b));
+      }
+      // Δcost(dst): gain w(b); b leaves dst's frontier if present; b's
+      // foreign producers enter it if not already there.
+      let mut df_dst = 0.0f64;
+      if fcnt[cold].contains_key(&b) {
+        df_dst -= f64::from(size(b));
+      }
+      for &p in profile.producers(b) {
+        if shard_of[p as usize] != cold as u32 && !fcnt[cold].contains_key(&p) {
+          df_dst += f64::from(size(p));
+        }
+      }
+      let ds = -w + STATIC_FRONTIER_PER_BYTE * df_src;
+      let dd = w + STATIC_FRONTIER_PER_BYTE * df_dst;
+      let key = ((costs[hot] + ds).max(costs[cold] + dd), ds + dd);
+      if best
+        .is_none_or(|(_, k0, k1)| key.0 < k0 || (key.0 == k0 && key.1 < k1))
+      {
+        best = Some((b, key.0, key.1));
+      }
+    }
+    let Some((b, new_max, _)) = best else { break };
+    if new_max >= costs[hot] {
+      break; // no move improves the pair
+    }
+    // Apply: owned weights, then frontier bookkeeping for src and dst.
+    let (src, dst) = (hot, cold);
+    shard_of[b as usize] = dst as u32;
+    let wb = static_owned_weight(size(b));
+    owned[src] -= wb;
+    owned[dst] += wb;
+    for &p in profile.producers(b) {
+      if shard_of[p as usize] != src as u32
+        && let Some(e) = fcnt[src].get_mut(&p)
+      {
+        *e -= 1;
+        if *e == 0 {
+          fcnt[src].remove(&p);
+          fbytes[src] -= f64::from(size(p));
+        }
+      }
+      if shard_of[p as usize] != dst as u32 {
+        let e = fcnt[dst].entry(p).or_insert(0);
+        if *e == 0 {
+          fbytes[dst] += f64::from(size(p));
+        }
+        *e += 1;
+      }
+    }
+    let src_consumers = consumers(b)
+      .iter()
+      .filter(|&&c| c != b && shard_of[c as usize] == src as u32)
+      .count() as u32;
+    if src_consumers > 0 {
+      let e = fcnt[src].entry(b).or_insert(0);
+      if *e == 0 {
+        fbytes[src] += f64::from(size(b));
+      }
+      *e = src_consumers;
+    }
+    if fcnt[dst].remove(&b).is_some() {
+      fbytes[dst] -= f64::from(size(b));
+    }
+    moves += 1;
+  }
+  moves
+}
+
+/// Predicted per-shard costs under the static model for a given assignment
+/// (fresh recomputation — used for reports and tests).
+pub fn static_predicted_costs(
+  profile: &BlockProfile,
+  shard_of: &[u32],
+  num_shards: usize,
+) -> Vec<f64> {
+  use rustc_hash::FxHashMap;
+  let mut owned = vec![0.0f64; num_shards];
+  let mut fr: Vec<FxHashMap<u32, ()>> = vec![FxHashMap::default(); num_shards];
+  for b in 0..profile.num_blocks() as u32 {
+    let k = shard_of[b as usize] as usize;
+    owned[k] += static_owned_weight(profile.block(b).serialized_size);
+    for &p in profile.producers(b) {
+      if shard_of[p as usize] != k as u32 {
+        fr[k].insert(p, ());
+      }
+    }
+  }
+  (0..num_shards)
+    .map(|k| {
+      let fb: f64 = fr[k]
+        .keys()
+        .map(|&p| f64::from(profile.block(p).serialized_size))
+        .sum();
+      owned[k] + STATIC_FRONTIER_PER_BYTE * fb
+    })
+    .collect()
+}
+
+/// Partition a STATIC block profile (reference graph + sizes, no kernel
+/// run — see `ix shard graph` / the FFI static-profile builder) into
+/// `num_shards` shards: byte-balanced min-cut over the walk-edge nets,
+/// then the [`rebalance_static`] post-pass toward equal predicted cost.
+/// Writes the same `.ixes` manifest as [`shard_esp`]. This is the
+/// `ix shard <env.ixe>` (no `--profile`) strategy; measured against the
+/// profiled strategy it cut mean shard FFT ~30% and the max shard
+/// 44–51% on the Init(8)/Std(24) harnesses.
+pub fn shard_static(
+  profile: &BlockProfile,
+  num_shards: usize,
+  balance: f64,
+  out_path: Option<&str>,
+) -> Result<String, String> {
+  let t0 = Instant::now();
+  let h = Hypergraph::from_profile(profile);
+  let t_graph = t0.elapsed();
+  let t1 = Instant::now();
+  let (mut shard_of, tree) = h.partition_with_tree(num_shards, balance);
+  let t_part = t1.elapsed();
+  let t2 = Instant::now();
+  let moves = rebalance_static(profile, &mut shard_of, num_shards);
+  eprintln!(
+    "[shard_static] hypergraph {t_graph:.1?}, partition {t_part:.1?}, rebalance {:.1?} ({moves} moves)",
+    t2.elapsed()
+  );
+  let mut manifest =
+    ShardManifest::build(profile, &shard_of, num_shards).with_tree(tree);
+  for shard in &mut manifest.shards {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+  }
+  if let Some(op) = out_path {
+    std::fs::write(op, manifest.to_bytes())
+      .map_err(|e| format!("write {op}: {e}"))?;
+  }
+  let costs = static_predicted_costs(profile, &shard_of, num_shards);
+  let (mut lo, mut hi, mut sum) = (f64::INFINITY, 0.0f64, 0.0f64);
+  for &c in &costs {
+    lo = lo.min(c);
+    hi = hi.max(c);
+    sum += c;
+  }
+  Ok(format!(
+    "blocks={} static_edges={} nets={}\n{}\nrebalance moves={}  predicted FFT/shard mean={:.3e} min={:.3e} max={:.3e} spread={:.2}x",
+    profile.num_blocks(),
+    profile.num_edges(),
+    h.num_nets(),
+    manifest.summary(),
+    moves,
+    sum / num_shards as f64,
+    lo,
+    hi,
+    hi / lo.max(1.0),
+  ))
+}
+
 /// Read a `.ixprof`, partition into `num_shards` shards, and emit a manifest with
 /// per-shard cost metrics, foreign-block sets, and (delta-based) assumption
 /// roots. Optionally writes the manifest (`.ixes`). Returns a what-if report.
@@ -2136,6 +2421,52 @@ mod tests {
     assert_ne!(shard_of[0], shard_of[3]);
     // Objective: only the cross net (addr 4, size 1000) is cut, λ=2 → 1000.
     assert_eq!(h.connectivity_objective(&shard_of), 1000);
+  }
+
+  /// `rebalance_static` must (a) keep its incremental owned/frontier
+  /// bookkeeping consistent with a from-scratch recomputation (the greedy
+  /// loop trusts those numbers for every move decision) and (b) actually
+  /// close the hot/cold gap on a skewed assignment.
+  #[test]
+  fn rebalance_static_balances_and_bookkeeping_is_exact() {
+    // 12 blocks, sizes 1000..12000, a producer chain i -> i+1, all
+    // initially dumped into shard 0 of 3.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=12u8 {
+      b.block(addr(i), 0, 1000 * u32::from(i), 1, OpCounts::default());
+    }
+    for i in 1..12u8 {
+      b.delta_edge(addr(i), addr(i + 1));
+    }
+    let p = b.finish();
+    let mut shard_of = vec![0u32; 12];
+    let moves = rebalance_static(&p, &mut shard_of, 3);
+    assert!(moves > 0, "skewed assignment must produce moves");
+    let costs = static_predicted_costs(&p, &shard_of, 3);
+    let mean = costs.iter().sum::<f64>() / 3.0;
+    let gap = costs.iter().fold(0.0f64, |m, &c| m.max(c))
+      - costs.iter().fold(f64::INFINITY, |m, &c| m.min(c));
+    // The loop exits either within 1% of the mean or when no single move
+    // helps; on this fixture the largest block (12000 bytes) bounds the
+    // achievable gap — assert we got under that, not stuck near the start.
+    assert!(
+      gap <= static_owned_weight(12000) + STATIC_FRONTIER_PER_BYTE * 12000.0,
+      "gap {gap} vs mean {mean}: rebalance made no progress"
+    );
+    // Every shard non-empty (nothing collapsed to zero).
+    for k in 0..3u32 {
+      assert!(shard_of.contains(&k), "shard {k} emptied");
+    }
+    // Bookkeeping exactness via idempotence: a second pass rebuilds its
+    // owned/frontier state from scratch, so if the first pass's incremental
+    // accounting was truthful, its stopping condition also holds on fresh
+    // state and the second pass has nothing to do. Drifted bookkeeping
+    // would leave the second pass a real gap to close.
+    let again = rebalance_static(&p, &mut shard_of, 3);
+    assert_eq!(
+      again, 0,
+      "second pass moved {again} blocks — bookkeeping drift"
+    );
   }
 
   #[test]
