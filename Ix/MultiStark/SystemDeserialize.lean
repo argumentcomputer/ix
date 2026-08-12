@@ -162,7 +162,7 @@ def systemDeserialize := ⟦
   -- can feed the composition arithmetic directly.
   fn read_field(i: ByteStream) -> (G, ByteStream) {
     let (u, j) = read_vk_u64(i);
-    (gl_val(u), j)
+    (@gl_val(u), j)
   }
 
   fn read_vk_digest(i: ByteStream) -> (Digest, ByteStream) {
@@ -302,9 +302,9 @@ def systemDeserialize := ⟦
       0 => 1,
       _ => lookup_groups_count(lcount, 0, k),
     };
-    let ccl = gl_to_bytes(zcount + gslots + gslots);
-    let s2wl = gl_to_bytes(gslots + gslots);
-    let kl = gl_to_bytes(k);
+    let ccl = @gl_to_bytes(zcount + gslots + gslots);
+    let s2wl = @gl_to_bytes(gslots + gslots);
+    let kl = @gl_to_bytes(k);
     (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k),
      [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }

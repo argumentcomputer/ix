@@ -40,11 +40,6 @@ def goldilocks := ⟦
   type Goldilocks = G
   type ExtGoldilocks = [G; 2]
 
-  fn gl_zero() -> Goldilocks { 0 }
-  fn gl_one() -> Goldilocks { 1 }
-  fn gl_two() -> Goldilocks { 2 }
-  fn gl_seven() -> Goldilocks { 7 }
-
   -- The native field value of 8 LE bytes: `Σ xᵢ·256ⁱ` (mod p). For an
   -- arbitrary 8-byte value (< 2⁶⁴ < 2p) the field sum wraps at most once,
   -- yielding exactly the reduced representative — so this is both the
@@ -81,27 +76,17 @@ def goldilocks := ⟦
     let (c4, c5) = u8_range_check(b[4], b[5]);
     let (c6, c7) = u8_range_check(b[6], b[7]);
     let r = [c0, c1, c2, c3, c4, c5, c6, c7];
-    assert_eq!(gl_val(r), v);
-    assert_eq!(gl_lt_p(r), 1);
+    assert_eq!(@gl_val(r), v);
+    assert_eq!(@gl_lt_p(r), 1);
     r
   }
 
   -- ==========================================================================
-  -- Base field ops: native.
-  -- ==========================================================================
-  fn gl_add(a: Goldilocks, b: Goldilocks) -> Goldilocks { a + b }
-  fn gl_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks { a - b }
-  fn gl_neg(a: Goldilocks) -> Goldilocks { 0 - a }
-  fn gl_mul(a: Goldilocks, b: Goldilocks) -> Goldilocks { a * b }
-  fn gl_sq(a: Goldilocks) -> Goldilocks { a * a }
-  fn gl_is_zero(x: Goldilocks) -> G { eq_zero(x) }
-  fn gl_eq(a: Goldilocks, b: Goldilocks) -> G { eq_zero(a - b) }
-
-  -- ==========================================================================
-  -- Base field inverse / divide: hinted, verified with one multiplication.
+  -- Base field inverse: hinted, verified with one multiplication.
   -- `t = x·i − 1; x·t == 0 ∧ i·t == 0` forces `i = x⁻¹` when `x ≠ 0` (first
   -- assert gives x·i = 1) and `i = 0` when `x = 0` (t = −1, second assert).
   -- Matches the reference semantics `0⁻¹ = 0` (Fermat: 0^(p−2) = 0).
+  -- Always called inlined (`@gl_inverse`), so it compiles to no circuit.
   -- ==========================================================================
   fn gl_inverse(x: Goldilocks) -> Goldilocks {
     let iv = unconstrained_g_inverse(x);
@@ -110,7 +95,6 @@ def goldilocks := ⟦
     assert_eq!(iv * t, 0);
     iv
   }
-  fn gl_div(a: Goldilocks, b: Goldilocks) -> Goldilocks { a * gl_inverse(b) }
 
   -- ==========================================================================
   -- Extension field ExtGoldilocks = 𝔽_p[X]/(X² − 7), native end-to-end.
@@ -139,7 +123,7 @@ def goldilocks := ⟦
     [a[0] * ninv, (0 - a[1]) * ninv]
   }
   fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-    eg_mul(a, eg_inverse(b))
+    @eg_mul(a, @eg_inverse(b))
   }
   -- 1 iff two extension elements are equal.
   fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> G {

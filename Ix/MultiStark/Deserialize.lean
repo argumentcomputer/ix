@@ -205,7 +205,7 @@ def deserialize := ⟦
   fn read_ext_at(i: G) -> (Ext, G) {
     let (a, j0) = #read_u64_at(i);
     let (b, j1) = #read_u64_at(j0);
-    ([gl_val(a), gl_val(b)], j1)
+    ([@gl_val(a), @gl_val(b)], j1)
   }
 
   fn read_digest_at(i: G) -> (Digest, G) {
