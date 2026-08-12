@@ -92,12 +92,12 @@ def matchPattern (store : Store) :
   | .or p1 p2,    v           =>
       matchPattern store p1 v <|> matchPattern store p2 v
   | .pointer p,   .pointer w n =>
-      match store[w]? with
-      | some inner =>
-        match inner.getByIdx n with
+      match store[w]?, n with
+      | some inner, idx + 1 =>
+        match inner.getByIdx idx with
         | some (vs, _) => vs[0]?.bind (matchPattern store p ·)
         | none         => none
-      | none => none
+      | _, _ => none
   | _,            _           => none
 
 def matchPatsList (store : Store) :
@@ -139,23 +139,25 @@ def storeValue (decls : Decls) (st : EvalState) (v : Value) : Value × EvalState
   let w := (flattenValue decls (fun _ => none) v).size
   let inner := st.store[w]?.getD (default : IndexMap (Array Value) Unit)
   if let some idx := inner.getIdxOf #[v] then
-    (.pointer w idx, st)
+    (.pointer w (idx + 1), st)
   else
     let idx := inner.size
     let inner' := inner.insert #[v] ()
-    (.pointer w idx, { st with store := st.store.insert w inner' })
+    (.pointer w (idx + 1), { st with store := st.store.insert w inner' })
 
-/-- Dereference a `(width, index)` pointer. -/
+/-- Dereference a `(width, 1-based index)` pointer; 0 is the reserved null
+pointer and never binds (mirrors the executor and the memory circuit's
+first-row pin). -/
 def loadValue (st : EvalState) (w n : Nat) : Except SourceError Value :=
-  match st.store[w]? with
-  | some inner =>
-    match inner.getByIdx n with
+  match st.store[w]?, n with
+  | none, _ | _, 0 => .error (.invalidPointer n)
+  | some inner, idx + 1 =>
+    match inner.getByIdx idx with
     | some (vs, _) =>
       match vs[0]? with
       | some v => .ok v
       | none   => .error (.invalidPointer n)
     | none => .error (.invalidPointer n)
-  | none => .error (.invalidPointer n)
 
 /-! ### `List<U64>` limb chains (`unconstrainedBigUintDivMod`)
 

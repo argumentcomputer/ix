@@ -345,7 +345,10 @@ impl Function {
             }
             map.extend_from_slice(result.output);
           } else {
-            let ptr = G::from_usize(memory_queries.len());
+            // Pointers are 1-based: 0 is reserved as the impossible (null)
+            // pointer, which the memory circuit enforces by pinning the
+            // first row's pointer to 1 (see `memory.rs`).
+            let ptr = G::from_usize(memory_queries.len() + 1);
             memory_queries.insert(
               &values,
               &[ptr],
@@ -364,8 +367,10 @@ impl Function {
           let ptr_usize = usize::try_from(ptr_u64)
             .ok()
             .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
-          let (args, multiplicity) = memory_queries
-            .get_index_mut(ptr_usize)
+          // 1-based pointers: 0 is the reserved null pointer and never binds.
+          let (args, multiplicity) = ptr_usize
+            .checked_sub(1)
+            .and_then(|i| memory_queries.get_index_mut(i))
             .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
           if !unconstrained {
             *multiplicity += G::ONE;
@@ -955,9 +960,11 @@ fn read_klimbs_u64(
     let ptr_u64 = ptr.as_canonical_u64();
     let ptr_idx = usize::try_from(ptr_u64)
       .map_err(|_e| format!("ptr {ptr_u64} too large for usize"))?;
-    let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
-      format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
-    })?;
+    // 1-based pointers: 0 is the reserved null pointer.
+    let (key, _) =
+      ptr_idx.checked_sub(1).and_then(|i| queries.get_index(i)).ok_or_else(
+        || format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)"),
+      )?;
     let tag = key[0].as_canonical_u64();
     // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
     // first variant (tag 0), Nil the second (tag 1).
@@ -1033,7 +1040,7 @@ fn build_klimbs_u64(
   let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
     out.output[0]
   } else {
-    let ptr = G::from_usize(queries.len());
+    let ptr = G::from_usize(queries.len() + 1);
     queries.insert(&nil_key, &[ptr], G::ZERO);
     ptr
   };
@@ -1049,7 +1056,7 @@ fn build_klimbs_u64(
     tail_ptr = if let Some(out) = queries.get_mut(&key) {
       out.output[0]
     } else {
-      let ptr = G::from_usize(queries.len());
+      let ptr = G::from_usize(queries.len() + 1);
       queries.insert(&key, &[ptr], G::ZERO);
       ptr
     };

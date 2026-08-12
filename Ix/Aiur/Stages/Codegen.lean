@@ -33,7 +33,8 @@
     `!unconstrained && !op_unconstrained` for `Op::Call`, and
     `!unconstrained` for `Op::Store` / `Op::Load`.
   - `memory_queries[size]` insertion order: each unique store gets a
-    pointer = `memory_queries.len()` at that moment.
+    pointer = `memory_queries.len() + 1` at that moment (1-based;
+    0 is the reserved null pointer).
   - `bytes1_queries` / `bytes2_queries` updates from `U8*` ops in
     constrained mode, suppressed when `unconstrained == true`.
   - `io_buffer` ops preserve order.
@@ -418,7 +419,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
     s!" if !unconstrained \{ *result.multiplicity += G::ONE; }" ++
     s!" result.output[0]" ++
     s!" } else \{" ++
-    s!" let __ptr = G::from_usize(__mq.len());" ++
+    s!" let __ptr = G::from_usize(__mq.len() + 1);" ++
     s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
@@ -429,7 +430,7 @@ private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt :=
     s!"\{ let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
     s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
-    s!" let (__args, __mult) = __mq.get_index_mut(__ptr_usize).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
+    s!" let (__args, __mult) = __ptr_usize.checked_sub(1).and_then(|__i| __mq.get_index_mut(__i)).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
     s!" if !unconstrained \{ *__mult += G::ONE; }" ++
     s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
   let mut stmts : Array RustStmt := #[

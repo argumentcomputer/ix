@@ -347,8 +347,9 @@ impl Op {
           .get(&size)
           .expect("Invalid memory size");
         let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+        // 1-based pointers (0 is the reserved null pointer).
         let ptr = G::from_usize(
-          memory_queries.get_index_of(&values).expect("Unbound pointer"),
+          memory_queries.get_index_of(&values).expect("Unbound pointer") + 1,
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
@@ -364,8 +365,11 @@ impl Op {
         let (ptr, _) = map[*ptr];
         let ptr_u64 = ptr.as_canonical_u64();
         let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
-        let (values, _) =
-          memory_queries.get_index(ptr_usize).expect("Unbound pointer");
+        // 1-based pointers (0 is the reserved null pointer).
+        let (values, _) = ptr_usize
+          .checked_sub(1)
+          .and_then(|i| memory_queries.get_index(i))
+          .expect("Unbound pointer");
         for f in values.iter() {
           map.push((*f, 1));
           slice.push_auxiliary(index, *f);

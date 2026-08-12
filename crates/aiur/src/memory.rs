@@ -49,8 +49,13 @@ impl Memory {
     let lookups = vec![Lookup { multiplicity: -multiplicity, args }];
 
     // Transition constraints (formerly the `Air::eval` body): the selector is
-    // boolean; a real next row implies a real current row; and the pointer
-    // increments by one across a real transition.
+    // boolean; a real next row implies a real current row; the pointer
+    // increments by one across a real transition; and the FIRST row's
+    // pointer is pinned to 1. Pointers are therefore exactly 1..height on
+    // real rows, which reserves 0 as the impossible (null) pointer — the
+    // niche the compiler's null-pointer optimization relies on. (Real rows
+    // are a prefix, so when the trace is nonempty row 0 is real; an
+    // unqueried table has an empty trace and is deactivated.)
     let is_real = Expr::main(1);
     let is_real_next = Expr::main_next(1);
     let ptr = Expr::main(2);
@@ -59,8 +64,9 @@ impl Memory {
     let is_real_transition = is_real_next * Expr::IsTransition;
     let constraints = vec![
       is_real.clone() * (is_real.clone() - one()),
-      is_real_transition.clone() * (is_real - one()),
-      is_real_transition * (ptr + one() - ptr_next),
+      is_real_transition.clone() * (is_real.clone() - one()),
+      is_real_transition * (ptr.clone() + one() - ptr_next),
+      Expr::IsFirstRow * is_real * (ptr - one()),
     ];
 
     (Self { width }, constraints, lookups)
@@ -98,7 +104,7 @@ impl Memory {
         let (values, result) = queries.get_index(i).expect("index in range");
         row[0] = result.multiplicity;
         row[1] = G::ONE;
-        row[2] = G::from_usize(i);
+        row[2] = G::from_usize(i + 1);
         row[3..].copy_from_slice(values);
 
         let args = Self::lookup_args(G::from_usize(size), row[2], &row[3..]);

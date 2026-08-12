@@ -82,25 +82,29 @@ def readIdxs (st : EvalState) (vs : Array ValIdx) : Except BytecodeError (Array 
 
 /-! ## Memory ops -/
 
-/-- Insert/retrieve at a specific width bucket; returns the insertion index. -/
+/-- Insert/retrieve at a specific width bucket; returns the 1-BASED pointer
+(insertion index + 1). Pointer 0 is reserved as the impossible (null)
+pointer — the memory circuit pins the first row's pointer to 1, so no
+valid store ever answers to 0 (mirrors `execute.rs`). -/
 def memStore (st : EvalState) (vals : Array G) : EvalState × Nat :=
   let width := vals.size
   let bucket := st.memory.getByKey width |>.getD default
   if let some idx := bucket.getIdxOf vals then
-    (st, idx)
+    (st, idx + 1)
   else
     let idx := bucket.size
     let newBucket := bucket.insert vals ()
     let newMem := st.memory.insert width newBucket
-    ({ st with memory := newMem }, idx)
+    ({ st with memory := newMem }, idx + 1)
 
-/-- Load from the width-`size` bucket at index `ptr`. -/
+/-- Load from the width-`size` bucket at 1-based pointer `ptr`; 0 is the
+reserved null pointer and never binds. -/
 def memLoad (st : EvalState) (size : Nat) (ptr : Nat) :
     Except BytecodeError (Array G) :=
-  match st.memory.getByKey size with
-  | none        => .error (.invalidPointer size ptr)
-  | some bucket =>
-    match bucket.getByIdx ptr with
+  match st.memory.getByKey size, ptr with
+  | none, _ | _, 0 => .error (.invalidPointer size ptr)
+  | some bucket, idx + 1 =>
+    match bucket.getByIdx idx with
     | some (vs, _) => .ok vs
     | none         => .error (.invalidPointer size ptr)
 

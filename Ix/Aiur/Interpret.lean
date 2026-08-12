@@ -65,7 +65,7 @@ partial def Value.ppDeref (store : Store) (depth : Nat) : Value → String
   | .pointer _ n =>
       if depth == 0 then "..."
       else
-        match store.getByIdx n with
+        match (if n == 0 then none else store.getByIdx (n - 1)) with
         | some (vs, _) =>
             -- Stored value is `Array Value`; for tagged enums it's
             -- typically `[ctor]` or `[tag, fields...]`. Recurse on each.
@@ -92,7 +92,7 @@ private def matchPattern (store : Store) :
   | .or p1 p2,    v           =>
       matchPattern store p1 v <|> matchPattern store p2 v
   | .pointer p,   .pointer _ n =>
-      match store.getByIdx n with
+      match (if n == 0 then none else store.getByIdx (n - 1)) with
       | some (vs, _) => vs[0]?.bind (matchPattern store p ·)
       | none         => none
   | _,            _           => none
@@ -212,10 +212,10 @@ semantics, callable from the divmod chain builder). -/
 private def storeValueI (v : Value) : InterpM Value := do
   let store ← getStore
   if let some idx := store.getIdxOf #[v] then
-    return .pointer 0 idx
+    return .pointer 0 (idx + 1)
   let idx := store.size
   modify fun s => { s with store := s.store.insert #[v] () }
-  return .pointer 0 idx
+  return .pointer 0 (idx + 1)
 
 /-- Walk a limb-chain pointer, returning the node datatype and the limbs
 head-first. `steps` bounds the walk so a malformed cycle terminates. -/
@@ -226,7 +226,7 @@ private def readLimbChainI (decls : Decls) :
     match ptrVal with
     | .pointer _ n =>
       let store ← getStore
-      match store.getByIdx n with
+      match (if n == 0 then none else store.getByIdx (n - 1)) with
       | none => throwErr s!"unconstrainedBigUintDivMod: invalid pointer {n}"
       | some (vs, _) =>
         match (vs[0]? : Option Value) with
@@ -368,15 +368,15 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let v ← interp decls bindings t
       let store ← getStore
       if let some idx := store.getIdxOf #[v] then
-        return .pointer 0 idx
+        return .pointer 0 (idx + 1)
       let idx := store.size
       modify fun s => { s with store := s.store.insert #[v] () }
-      return .pointer 0 idx
+      return .pointer 0 (idx + 1)
   | .load t => do
       match ← interp decls bindings t with
       | .pointer _ n =>
           let store ← getStore
-          match store.getByIdx n with
+          match (if n == 0 then none else store.getByIdx (n - 1)) with
           | some (vs, _) => return vs[0]!
           | none         => throwErr s!"load: invalid pointer {n}"
       | _ => throwErr "load: expected pointer"
