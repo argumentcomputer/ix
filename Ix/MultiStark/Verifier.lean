@@ -173,7 +173,7 @@ def verifier := ⟦
   -- limb is canonical (< p) by construction.
   fn ch_sample_field(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
     let (raw, i1, o1) = ch_sample8(input, output);
-    match gl_lt_p(raw) {
+    match @gl_lt_p(raw) {
       1 => (raw, i1, o1),
       _ => ch_sample_field(i1, o1),
     }
@@ -243,7 +243,7 @@ def verifier := ⟦
   fn accs_onto(accs: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(accs) {
       ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(gl_to_bytes(e[0]), b8_onto(gl_to_bytes(e[1]), accs_onto(rest, tail))),
+      ListNode.Cons(e, rest) => b8_onto(@gl_to_bytes(e[0]), b8_onto(@gl_to_bytes(e[1]), accs_onto(rest, tail))),
     }
   }
 
@@ -270,7 +270,7 @@ def verifier := ⟦
   fn pcs_sample_ext(input: ByteStream, output: ByteStream)
       -> (Ext, ByteStream, ByteStream) {
     let (c0, c1, i1, o1) = ch_sample_ext(input, output);
-    ([gl_val(c0), gl_val(c1)], i1, o1)
+    ([@gl_val(c0), @gl_val(c1)], i1, o1)
   }
 
   -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.
@@ -383,10 +383,10 @@ def verifier := ⟦
     let input = snoc_cap(input, q);
     -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
     let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
-    ([gl_val(l0), gl_val(l1)],
-     [gl_val(f0), gl_val(f1)],
-     [gl_val(a0), gl_val(a1)],
-     [gl_val(z0), gl_val(z1)],
+    ([@gl_val(l0), @gl_val(l1)],
+     [@gl_val(f0), @gl_val(f1)],
+     [@gl_val(a0), @gl_val(a1)],
+     [@gl_val(z0), @gl_val(z1)],
      zinput)
   }
 
@@ -467,7 +467,7 @@ def verifier := ⟦
 
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = trace_vanishing(zeta, l);
-    let ginv = gl_inverse(two_adic_gen(l));
+    let ginv = @gl_inverse(two_adic_gen(l));
     let is_first = eg_div(zh, eg_sub(zeta, [1, 0]));
     let is_last = eg_div(zh, eg_sub(zeta, [ginv, 0]));
     let is_trans = eg_sub(zeta, [ginv, 0]);
@@ -849,7 +849,7 @@ def verifier := ⟦
         let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
         let (isf, isl, ist, invv) = trace_selectors(zeta, l);
         let publics = build_publics(lch, fch, accp, naccp);
-        let inorm = gl_inverse(pow2(l) * two_adic_gen(l));
+        let inorm = @gl_inverse(pow2(l) * two_adic_gen(l));
         let comp = ood_composition(nodes, zeros, lks, k,
                                    main, main_next, prep, prep_next, s2row, s2next,
                                    publics, isf, isl, ist, alpha, inorm);
@@ -870,7 +870,7 @@ def verifier := ⟦
     match load(vals) {
       ListNode.Nil => [0, 0],
       ListNode.Cons(v, rest) =>
-        eg_add([gl_val(v), 0], eg_mul(fch, fingerprint_vals(fch, rest))),
+        eg_add([@gl_val(v), 0], eg_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 

@@ -356,7 +356,7 @@ def pcs := ⟦
   fn canon_lanes(l: List‹U64›) -> List‹U64› {
     match load(l) {
       ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(gl_to_bytes(gl_val(x)), canon_lanes(rest))),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(@gl_to_bytes(gl_val(x)), canon_lanes(rest))),
     }
   }
   -- ==========================================================================
@@ -390,7 +390,7 @@ def pcs := ⟦
   -- non-empty, so advancing to the next row always yields a lane).
   fn rows_pop(cur: List‹U64›, rows: List‹List‹U64››) -> (U64, List‹U64›, List‹List‹U64››, G) {
     match load(cur) {
-      ListNode.Cons(x, rest) => (gl_to_bytes(gl_val(x)), rest, rows, 1),
+      ListNode.Cons(x, rest) => (@gl_to_bytes(gl_val(x)), rest, rows, 1),
       ListNode.Nil => match load(rows) {
         ListNode.Nil => ([0u8; 8], cur, rows, 0),
         ListNode.Cons(r, rrest) => rows_pop(r, rrest),
@@ -619,7 +619,7 @@ def pcs := ⟦
   fn ext_row_onto(row: List‹Ext›, tail: ByteStream) -> ByteStream {
     match load(row) {
       ListNode.Nil => tail,
-      ListNode.Cons(e, rest) => b8_onto(gl_to_bytes(e[0]), b8_onto(gl_to_bytes(e[1]), ext_row_onto(rest, tail))),
+      ListNode.Cons(e, rest) => b8_onto(@gl_to_bytes(e[0]), b8_onto(@gl_to_bytes(e[1]), ext_row_onto(rest, tail))),
     }
   }
   fn points_onto(pts: List‹List‹Ext››, tail: ByteStream) -> ByteStream {
@@ -675,7 +675,7 @@ def pcs := ⟦
         let (i1, o1) = pcs_check_witness(snoc_cap(input, c), w, bits);
         let (b0, b1, i2, _o) = ch_sample_ext(i1, o1);
         let (bs, i3) = pcs_betas(i2, rest, wrest, bits);
-        (store(ListNode.Cons([gl_val(b0), gl_val(b1)], bs)), i3),
+        (store(ListNode.Cons([@gl_val(b0), @gl_val(b1)], bs)), i3),
     }
   }
 
@@ -879,8 +879,8 @@ def pcs := ⟦
   }
   -- Flatten two ext evals to the 4 base coords of the ExtensionMmcs leaf row.
   fn flatten2(e0: Ext, e1: Ext) -> List‹U64› {
-    store(ListNode.Cons(gl_to_bytes(e0[0]), store(ListNode.Cons(gl_to_bytes(e0[1]),
-      store(ListNode.Cons(gl_to_bytes(e1[0]), store(ListNode.Cons(gl_to_bytes(e1[1]), store(ListNode.Nil)))))))))
+    store(ListNode.Cons(@gl_to_bytes(e0[0]), store(ListNode.Cons(@gl_to_bytes(e0[1]),
+      store(ListNode.Cons(@gl_to_bytes(e1[0]), store(ListNode.Cons(@gl_to_bytes(e1[1]), store(ListNode.Nil)))))))))
   }
   -- Roll the next reduced opening into the folded eval when its height matches
   -- the new folded height: `folded += beta^(2^log_arity) · ro`  (log_arity = 1).
@@ -1015,7 +1015,7 @@ def pcs := ⟦
     let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
-    let alpha = [gl_val(a0), gl_val(a1)];
+    let alpha = [@gl_val(a0), @gl_val(a1)];
     -- per-round FRI fold challenges β (with commit-phase PoW), then observe
     -- final_poly + the log-arity schedule.
     let (betas, input) = pcs_betas(input, commit_phase_commits, pw, commit_pow_bits);
