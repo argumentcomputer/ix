@@ -43,7 +43,10 @@ def byteStream := ⟦
     }
   }
 
-  fn u32_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+  -- Witness the wrapping sum and its carry. This function is called only as
+  -- an unconstrained hint by `u32_add`; none of these byte operations enter
+  -- the proof. The caller range-checks and pins every returned value.
+  fn u32_add_hint(a: [U8; 4], b: [U8; 4]) -> ([G; 4], G) {
     let [a0, a1, a2, a3] = a;
     let [b0, b1, b2, b3] = b;
 
@@ -64,10 +67,37 @@ def byteStream := ⟦
     let carry3 = u8_from_field_unsafe(to_field(overflow2) + to_field(carry2a));
 
     -- Byte 3
-    let (sum3, _x) = u8_add(a3, b3);
-    let (sum3_with_carry, _x) = u8_add(sum3, carry3);
+    let (sum3, overflow3) = u8_add(a3, b3);
+    let (sum3_with_carry, carry3a) = u8_add(sum3, carry3);
+    let carry4 = to_field(overflow3) + to_field(carry3a);
 
-    [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
+    ([to_field(sum0), to_field(sum1_with_carry),
+      to_field(sum2_with_carry), to_field(sum3_with_carry)], carry4)
+  }
+
+  -- Wrapping little-endian u32 addition. The expensive bytewise addition is
+  -- advice only; this circuit verifies its five witnesses directly:
+  -- four range-checked result bytes, a boolean carry, and the packed integer
+  -- identity `a + b = result + carry * 2^32`. Since both sides are < 2^33,
+  -- the Goldilocks field equality is the intended integer equality (no field
+  -- wrap), and the checked decomposition is unique.
+  fn u32_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    let (raw, carry) = #u32_add_hint(a, b);
+    let (z0, z1) = u8_range_check(raw[0], raw[1]);
+    let (z2, z3) = u8_range_check(raw[2], raw[3]);
+
+    assert_eq!(carry * carry, carry, "u32_add: carry is not boolean");
+
+    let av = to_field(a[0]) + 0x100 * to_field(a[1])
+      + 0x10000 * to_field(a[2]) + 0x1000000 * to_field(a[3]);
+    let bv = to_field(b[0]) + 0x100 * to_field(b[1])
+      + 0x10000 * to_field(b[2]) + 0x1000000 * to_field(b[3]);
+    let zv = to_field(z0) + 0x100 * to_field(z1)
+      + 0x10000 * to_field(z2) + 0x1000000 * to_field(z3);
+    assert_eq!(av + bv, zv + 0x100000000 * carry,
+      "u32_add: witnessed sum does not match its inputs");
+
+    [z0, z1, z2, z3]
   }
 
   fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
