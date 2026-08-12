@@ -4,6 +4,7 @@ import Navigatrix.Ixon.Address
 import Navigatrix.Ixon.Univ
 import Navigatrix.Ixon.Expr
 import Navigatrix.Ixon.Const
+import Navigatrix.Ixon.UsageCheck
 import Navigatrix.Ixon.Hash
 import Navigatrix.IxIR0.Basic
 import Navigatrix.IxIR0.Eval
