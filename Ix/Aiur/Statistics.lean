@@ -45,6 +45,13 @@ structure CircuitStats where
   /-- FFT cost at the uncached height `height + cacheHits` (fixed-height
   gadget circuits keep their normal cost). Feeds `totalUncachedFftCost`. -/
   uncachedFftCost : Float
+  -- TEMP (grouping instrumentation, revert with this commit): the circuit
+  -- layout shape, for picking group members — merging is cheapest between
+  -- circuits whose auxiliaries and lookups are CLOSE (both merge by max;
+  -- selectors sum). Zero for memory/gadget circuits (no function layout).
+  selectors : Nat := 0
+  auxiliaries : Nat := 0
+  lookups : Nat := 0
 
 structure ExecutionStats where
   circuits : Array CircuitStats
@@ -102,7 +109,9 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount)
     let (h, hits) := c.members.foldl (init := (0, 0)) fun (h, hits) i =>
       let qc := queryCounts[i]!
       (h + qc.uniqueRows, hits + (qc.totalHits - qc.uniqueRows))
-    mkStats c.name shape h hits
+    { mkStats c.name shape h hits with
+      selectors := c.layout.selectors, auxiliaries := c.layout.auxiliaries,
+      lookups := c.layout.lookups }
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
     let shape := shapes[t.circuits.size + i]!
     let qc := queryCounts[nAllFuns + i]!
@@ -162,9 +171,14 @@ def printStats (stats : ExecutionStats) : IO Unit := do
     let n := f.round.toUInt64.toNat
     toString n
   let wFftCost := stats.circuits.foldl (fun m cs => Nat.max m (formatSci cs.fftCost).length) 8
+  -- TEMP (grouping instrumentation, revert with this commit)
+  let wSel := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.selectors).length) 3
+  let wAux := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.auxiliaries).length) 3
+  let wLkp := stats.circuits.foldl (fun m cs => Nat.max m (toString cs.lookups).length) 3
   let wPct := 7
   let wCum := 7
-  let totalW := wName + 1 + wWidth + 1 + wHeight + 1 + wHits + 1 + wFftCost + 1 + wPct + 1 + wCum
+  let totalW := wName + 1 + wWidth + 1 + wSel + 1 + wAux + 1 + wLkp + 1
+    + wHeight + 1 + wHits + 1 + wFftCost + 1 + wPct + 1 + wCum
   let totalWidth := stats.circuits.foldl (· + ·.width) 0
   let savedPct :=
     if stats.totalUncachedFftCost == 0.0 then "0.00%"
@@ -177,14 +191,14 @@ def printStats (stats : ExecutionStats) : IO Unit := do
   IO.println s!"Total cache hits: {stats.totalCacheHits}"
   IO.println s!"Total saved cost: {savedPct}"
   IO.println sep
-  IO.println s!"{padRight "Name" wName} {padLeft "Width" wWidth} {padLeft "Height" wHeight} {padLeft "Hits" wHits} {padLeft "FFT cost" wFftCost} {padLeft "%" wPct} {padLeft "%++" wCum}"
+  IO.println s!"{padRight "Name" wName} {padLeft "Width" wWidth} {padLeft "Sel" wSel} {padLeft "Aux" wAux} {padLeft "Lkp" wLkp} {padLeft "Height" wHeight} {padLeft "Hits" wHits} {padLeft "FFT cost" wFftCost} {padLeft "%" wPct} {padLeft "%++" wCum}"
   IO.println sep
   let mut cumFftCost : Float := 0.0
   for cs in stats.circuits do
     cumFftCost := cumFftCost + cs.fftCost
     let pct := formatPercent cs.fftCost stats.totalFftCost
     let cum := formatPercent cumFftCost stats.totalFftCost
-    IO.println s!"{padRight cs.name wName} {padLeft (toString cs.width) wWidth} {padLeft (toString cs.height) wHeight} {padLeft (toString cs.cacheHits) wHits} {padLeft (formatSci cs.fftCost) wFftCost} {padLeft pct wPct} {padLeft cum wCum}"
+    IO.println s!"{padRight cs.name wName} {padLeft (toString cs.width) wWidth} {padLeft (toString cs.selectors) wSel} {padLeft (toString cs.auxiliaries) wAux} {padLeft (toString cs.lookups) wLkp} {padLeft (toString cs.height) wHeight} {padLeft (toString cs.cacheHits) wHits} {padLeft (formatSci cs.fftCost) wFftCost} {padLeft pct wPct} {padLeft cum wCum}"
 
 end Aiur
 
