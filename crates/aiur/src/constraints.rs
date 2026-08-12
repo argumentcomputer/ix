@@ -47,6 +47,9 @@ pub struct Constraints {
 
 struct ConstraintState {
   function_index: G,
+  /// Exactly one selector: the function has a single leaf block (no
+  /// matches), so every lookup slot is written by exactly one branch.
+  branchless: bool,
   layout: FunctionLayout,
   column: usize,
   lookup: usize,
@@ -67,6 +70,19 @@ struct SharedState {
 impl ConstraintState {
   fn selector_index(&self, sel: usize) -> usize {
     sel + self.layout.input_size
+  }
+
+  /// Selector-gate a lookup argument. Lookup slots shared across branches
+  /// superpose their arguments (`Σ_b sel_b·arg_b`, sound because the
+  /// selectors are mutually exclusive), which needs the weighting — but it
+  /// costs a degree: the argument becomes degree 2. A branchless function
+  /// has a single branch, so its arguments are sent RAW (degree ≤ 1): the
+  /// multiplicity (still selector-gated) alone decides whether the lookup
+  /// counts, and on inactive (padding) rows a zero multiplicity makes the
+  /// message value irrelevant. Degree-1 messages leave the degree headroom
+  /// to group two lookups per chained-accumulator step.
+  fn gate(&self, sel: &Expr, arg: Expr) -> Expr {
+    if self.branchless { arg } else { sel.clone() * arg }
   }
 
   fn next_lookup(&mut self) -> &mut Lookup<Expr> {
@@ -108,6 +124,7 @@ impl Toplevel {
     };
     let mut state = ConstraintState {
       function_index: G::from_usize(function_index),
+      branchless: function.layout.selectors == 1,
       layout: function.layout,
       column: 0,
       lookup: 0,
@@ -236,17 +253,17 @@ impl Ctrl {
       Ctrl::Return(_, values) => {
         // channel and function index
         let mut args = vec![
-          sel.clone() * konst(function_channel()),
-          sel.clone() * konst(state.function_index),
+          state.gate(&sel, konst(function_channel())),
+          state.gate(&sel, konst(state.function_index)),
         ];
         // input
         args.extend(
           (0..state.layout.input_size)
-            .map(|arg| sel.clone() * state.map[arg].0.clone()),
+            .map(|arg| state.gate(&sel, state.map[arg].0.clone())),
         );
         // output
         args.extend(
-          values.iter().map(|arg| sel.clone() * state.map[*arg].0.clone()),
+          values.iter().map(|arg| state.gate(&sel, state.map[*arg].0.clone())),
         );
         let lookup = &mut state.lookups[0];
         combine_lookup_args(lookup, args);
@@ -380,20 +397,23 @@ impl Op {
         } else {
           // channel and function index
           let mut lookup_args = vec![
-            sel.clone() * konst(function_channel()),
-            sel.clone() * konst(G::from_usize(*function_index)),
+            state.gate(sel, konst(function_channel())),
+            state.gate(sel, konst(G::from_usize(*function_index))),
           ];
           // input
           lookup_args.extend(
-            inputs.iter().map(|arg| sel.clone() * state.map[*arg].0.clone()),
+            inputs.iter().map(|arg| state.gate(sel, state.map[*arg].0.clone())),
           );
           // output
-          let output = (0..*output_size).map(|_| {
-            let col = state.next_auxiliary();
-            state.map.push((col.clone(), 1));
-            sel.clone() * col
-          });
-          lookup_args.extend(output);
+          let output: Vec<Expr> = (0..*output_size)
+            .map(|_| {
+              let col = state.next_auxiliary();
+              state.map.push((col.clone(), 1));
+              col
+            })
+            .collect();
+          lookup_args
+            .extend(output.into_iter().map(|col| state.gate(sel, col)));
 
           let lookup = state.next_lookup();
           combine_lookup_args(lookup, lookup_args);
@@ -406,13 +426,15 @@ impl Op {
         let ptr = state.next_auxiliary();
         state.map.push((ptr.clone(), 1));
         let mut lookup_args = vec![
-          sel.clone() * konst(memory_channel()),
-          sel.clone() * konst(G::from_usize(size)),
-          sel.clone() * ptr,
+          state.gate(sel, konst(memory_channel())),
+          state.gate(sel, konst(G::from_usize(size))),
+          state.gate(sel, ptr),
         ];
         // stored values
         lookup_args.extend(
-          values.iter().map(|value| sel.clone() * state.map[*value].0.clone()),
+          values
+            .iter()
+            .map(|value| state.gate(sel, state.map[*value].0.clone())),
         );
 
         let lookup = state.next_lookup();
@@ -422,17 +444,19 @@ impl Op {
       Op::Load(size, ptr) => {
         // channel, size and pointer
         let mut lookup_args = vec![
-          sel.clone() * konst(memory_channel()),
-          sel.clone() * konst(G::from_usize(*size)),
-          sel.clone() * state.map[*ptr].0.clone(),
+          state.gate(sel, konst(memory_channel())),
+          state.gate(sel, konst(G::from_usize(*size))),
+          state.gate(sel, state.map[*ptr].0.clone()),
         ];
         // loaded values
-        let values = (0..*size).map(|_| {
-          let col = state.next_auxiliary();
-          state.map.push((col.clone(), 1));
-          sel.clone() * col
-        });
-        lookup_args.extend(values);
+        let values: Vec<Expr> = (0..*size)
+          .map(|_| {
+            let col = state.next_auxiliary();
+            state.map.push((col.clone(), 1));
+            col
+          })
+          .collect();
+        lookup_args.extend(values.into_iter().map(|col| state.gate(sel, col)));
 
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
@@ -493,16 +517,14 @@ impl Op {
         let (x, x_deg) = state.map[*i].clone();
         let (y, y_deg) = state.map[*j].clone();
         let z = state.next_auxiliary();
+        let lookup_args = vec![
+          state.gate(sel, konst(u8_add_channel())),
+          state.gate(sel, x.clone()),
+          state.gate(sel, y.clone()),
+          state.gate(sel, z.clone()),
+        ];
         let lookup = state.next_lookup();
-        combine_lookup_args(
-          lookup,
-          vec![
-            sel.clone() * konst(u8_add_channel()),
-            sel.clone() * x.clone(),
-            sel.clone() * y.clone(),
-            sel.clone() * z.clone(),
-          ],
-        );
+        combine_lookup_args(lookup, lookup_args);
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
         let carry = (x + y - z.clone()) * konst(*INV_256);
         state.map.push((z, 1));
@@ -523,16 +545,14 @@ impl Op {
         let (x, x_deg) = state.map[*i].clone();
         let (y, y_deg) = state.map[*j].clone();
         let z = state.next_auxiliary();
+        let lookup_args = vec![
+          state.gate(sel, konst(u8_sub_channel())),
+          state.gate(sel, x.clone()),
+          state.gate(sel, y.clone()),
+          state.gate(sel, z.clone()),
+        ];
         let lookup = state.next_lookup();
-        combine_lookup_args(
-          lookup,
-          vec![
-            sel.clone() * konst(u8_sub_channel()),
-            sel.clone() * x.clone(),
-            sel.clone() * y.clone(),
-            sel.clone() * z.clone(),
-          ],
-        );
+        combine_lookup_args(lookup, lookup_args);
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
         let borrow = (z.clone() + y - x) * konst(*INV_256);
         state.map.push((z, 1));
@@ -583,15 +603,13 @@ impl Op {
         // the inputs), just require `(i, j)` from the byte chip.
         let x = state.map[*i].0.clone();
         let y = state.map[*j].0.clone();
+        let lookup_args = vec![
+          state.gate(sel, konst(u8_range_check_channel())),
+          state.gate(sel, x),
+          state.gate(sel, y),
+        ];
         let lookup = state.next_lookup();
-        combine_lookup_args(
-          lookup,
-          vec![
-            sel.clone() * konst(u8_range_check_channel()),
-            sel.clone() * x,
-            sel.clone() * y,
-          ],
-        );
+        combine_lookup_args(lookup, lookup_args);
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
       },
       Op::U32LessThan(x_idx, y_idx) => {
@@ -654,15 +672,13 @@ impl Op {
           (&z_bytes[0], &z_bytes[1]),
           (&z_bytes[2], &z_bytes[3]),
         ] {
+          let lookup_args = vec![
+            state.gate(sel, konst(rc_channel)),
+            state.gate(sel, pair.0.clone()),
+            state.gate(sel, pair.1.clone()),
+          ];
           let lookup = state.next_lookup();
-          combine_lookup_args(
-            lookup,
-            vec![
-              sel.clone() * konst(rc_channel),
-              sel.clone() * pair.0.clone(),
-              sel.clone() * pair.1.clone(),
-            ],
-          );
+          combine_lookup_args(lookup, lookup_args);
           lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
         }
 
@@ -710,15 +726,19 @@ fn bytes1_constraints(
 ) {
   let size = Bytes1.output_size(op);
 
-  let mut lookup_args =
-    vec![sel.clone() * konst(channel), sel.clone() * state.map[byte].0.clone()];
+  let mut lookup_args = vec![
+    state.gate(&sel, konst(channel)),
+    state.gate(&sel, state.map[byte].0.clone()),
+  ];
 
-  let output = (0..size).map(|_| {
-    let col = state.next_auxiliary();
-    state.map.push((col.clone(), 1));
-    sel.clone() * col
-  });
-  lookup_args.extend(output);
+  let output: Vec<Expr> = (0..size)
+    .map(|_| {
+      let col = state.next_auxiliary();
+      state.map.push((col.clone(), 1));
+      col
+    })
+    .collect();
+  lookup_args.extend(output.into_iter().map(|col| state.gate(&sel, col)));
 
   let lookup = state.next_lookup();
   combine_lookup_args(lookup, lookup_args);
@@ -736,17 +756,19 @@ fn bytes2_constraints(
   let size = Bytes2.output_size(op);
 
   let mut lookup_args = vec![
-    sel.clone() * konst(channel),
-    sel.clone() * state.map[i].0.clone(),
-    sel.clone() * state.map[j].0.clone(),
+    state.gate(&sel, konst(channel)),
+    state.gate(&sel, state.map[i].0.clone()),
+    state.gate(&sel, state.map[j].0.clone()),
   ];
 
-  let output = (0..size).map(|_| {
-    let col = state.next_auxiliary();
-    state.map.push((col.clone(), 1));
-    sel.clone() * col
-  });
-  lookup_args.extend(output);
+  let output: Vec<Expr> = (0..size)
+    .map(|_| {
+      let col = state.next_auxiliary();
+      state.map.push((col.clone(), 1));
+      col
+    })
+    .collect();
+  lookup_args.extend(output.into_iter().map(|col| state.gate(&sel, col)));
 
   let lookup = state.next_lookup();
   combine_lookup_args(lookup, lookup_args);
