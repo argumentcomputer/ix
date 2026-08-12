@@ -1133,7 +1133,7 @@ def finishStructEtaResult (indId : KId m) (major rhs : KExpr m)
 this test pure makes the semantic boundary independently inspectable without
 moving any checker effects across it. -/
 def structEtaSortRejected : KExpr m → Bool
-  | .sort u _ => u.isZero
+  | .sort u _ => u.isSemanticZero
   | _ => false
 
 /-- Apply the H3 Prop guard and, for an admissible major sort, instantiate
