@@ -105,6 +105,24 @@ protected theorem mul_add (a b c : Uses) :
 protected theorem covers_refl (a : Uses) : a.covers a = true := by
   cases a <;> rfl
 
+/-! ## Bit representation (Ixon mode bytes) -/
+
+def toBits : Uses → UInt8
+  | .erased => 0
+  | .linear => 1
+  | .affine => 2
+  | .many => 3
+
+def ofBits? : UInt8 → Option Uses
+  | 0 => some .erased
+  | 1 => some .linear
+  | 2 => some .affine
+  | 3 => some .many
+  | _ => none
+
+protected theorem ofBits?_toBits (u : Uses) : ofBits? u.toBits = some u := by
+  cases u <;> rfl
+
 end Uses
 
 /-- Result ownership of an arrow: may the caller treat the returned
@@ -115,6 +133,22 @@ inductive Owned where
   | unique
   | shared
   deriving BEq, DecidableEq, Repr, Inhabited, Hashable
+
+namespace Owned
+
+def toBits : Owned → UInt8
+  | .unique => 0
+  | .shared => 1
+
+def ofBits? : UInt8 → Option Owned
+  | 0 => some .unique
+  | 1 => some .shared
+  | _ => none
+
+protected theorem ofBits?_toBits (o : Owned) : ofBits? o.toBits = some o := by
+  cases o <;> rfl
+
+end Owned
 
 /-! Elaboration-time sanity checks. -/
 
