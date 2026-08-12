@@ -144,8 +144,7 @@
             // {
               inherit cargoArtifacts;
               cargoExtraArgs =
-                "--locked --features parallel"
-                + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
+                "--locked --features parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
               doCheck = false;
             }
           );
@@ -352,7 +351,9 @@
           #   ];
           # };
 
-          formatter = pkgs.alejandra;
+          # The treefmt wrapper around `nixfmt`, so `nix fmt .` can take a
+          # directory; bare `nixfmt` only accepts individual files.
+          formatter = pkgs.nixfmt-tree;
         };
     };
 }
