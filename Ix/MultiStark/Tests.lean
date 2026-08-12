@@ -203,10 +203,10 @@ def tests := ⟦
     }
   }
   fn assert_digest(d: Digest, e0: G, e1: G, e2: G, e3: G) -> G {
-    assert_eq!(limb_to_field(d[0]), e0);
-    assert_eq!(limb_to_field(d[1]), e1);
-    assert_eq!(limb_to_field(d[2]), e2);
-    assert_eq!(limb_to_field(d[3]), e3);
+    assert_eq!(@limb_to_field(d[0]), e0);
+    assert_eq!(@limb_to_field(d[1]), e1);
+    assert_eq!(@limb_to_field(d[2]), e2);
+    assert_eq!(@limb_to_field(d[3]), e3);
     1
   }
   pub fn pcs_hash_test() -> G {

@@ -303,10 +303,10 @@ def pcs := ⟦
   -- 1 iff two digests are equal (compared as field elements; hash outputs are
   -- canonical so this is exact).
   fn digest_eq(a: Digest, b: Digest) -> G {
-    eq_zero(limb_to_field(a[0]) - limb_to_field(b[0])) *
-    eq_zero(limb_to_field(a[1]) - limb_to_field(b[1])) *
-    eq_zero(limb_to_field(a[2]) - limb_to_field(b[2])) *
-    eq_zero(limb_to_field(a[3]) - limb_to_field(b[3]))
+    eq_zero(@limb_to_field(a[0]) - @limb_to_field(b[0])) *
+    eq_zero(@limb_to_field(a[1]) - @limb_to_field(b[1])) *
+    eq_zero(@limb_to_field(a[2]) - @limb_to_field(b[2])) *
+    eq_zero(@limb_to_field(a[3]) - @limb_to_field(b[3]))
   }
 
   -- Compress (current, sibling) in path order: path bit 0 ⇒ current is the left
@@ -356,7 +356,7 @@ def pcs := ⟦
   fn canon_lanes(l: List‹U64›) -> List‹U64› {
     match load(l) {
       ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(@gl_to_bytes(gl_val(x)), canon_lanes(rest))),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(@gl_to_bytes(@gl_val(x)), canon_lanes(rest))),
     }
   }
   -- ==========================================================================
@@ -390,7 +390,7 @@ def pcs := ⟦
   -- non-empty, so advancing to the next row always yields a lane).
   fn rows_pop(cur: List‹U64›, rows: List‹List‹U64››) -> (U64, List‹U64›, List‹List‹U64››, G) {
     match load(cur) {
-      ListNode.Cons(x, rest) => (@gl_to_bytes(gl_val(x)), rest, rows, 1),
+      ListNode.Cons(x, rest) => (@gl_to_bytes(@gl_val(x)), rest, rows, 1),
       ListNode.Nil => match load(rows) {
         ListNode.Nil => ([0u8; 8], cur, rows, 0),
         ListNode.Cons(r, rrest) => rows_pop(r, rrest),
@@ -576,7 +576,7 @@ def pcs := ⟦
   fn lanes_to_gl(l: List‹U64›) -> List‹Goldilocks› {
     match load(l) {
       ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(limb_to_field(x), lanes_to_gl(rest))),
+      ListNode.Cons(x, rest) => store(ListNode.Cons(@limb_to_field(x), lanes_to_gl(rest))),
     }
   }
 
