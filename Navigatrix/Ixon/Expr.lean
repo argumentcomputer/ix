@@ -10,8 +10,10 @@ binder nodes: `lam` carries its binder `Uses`; `all` carries binder
 `shared` results (`Expr.leanFragment`).
 
 Because the constructors are unified (no separate annotated variants),
-v2 consumes **no new tags**: flags stay `0x0`–`0xB` and `0xC`–`0xF`
-remain free (borrow node, region node, modal-inductive block). The
+v2 consumes **no new tags**: `Expr` flags stay `0x0`–`0xB`. (The tag
+namespace is shared object-wide: `Const` uses `0xC` for mutual blocks
+and `0xD` for constants, so `0xE`/`0xF` are the truly free flags —
+candidates: borrow node, region node, modal-inductive block.) The
 telescope encodings are ix's, with one mode byte per telescope binder:
 
 - `lam`: `Tag4(LAM, n)`, then per binder `[uses:u8][type]`, then base —

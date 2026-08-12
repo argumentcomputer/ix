@@ -84,6 +84,25 @@ def getU64TrimmedLE (n : Nat) : GetM UInt64 := do
     x := x ||| (b.toUInt64 <<< (i.toUInt64 * 8))
   return x
 
+def putBytes (x : ByteArray) : PutM Unit :=
+  modify fun s => s.append x
+
+def getBytes (len : Nat) : GetM ByteArray := do
+  let st ← get
+  if st.idx + len ≤ st.bytes.size then
+    let chunk := st.bytes.extract st.idx (st.idx + len)
+    set { st with idx := st.idx + len }
+    return chunk
+  else
+    throw s!"EOF: need {len} bytes at index {st.idx}, size {st.bytes.size}"
+
+/-- Read a byte that must be exactly 0 or 1 (canonical Bool). -/
+def getBool01 : GetM Bool := do
+  match ← getU8 with
+  | 0 => return false
+  | 1 => return true
+  | b => throw s!"expected Bool byte (0 or 1), got {b}"
+
 /-! ## Tag headers
 
 `TagN`: an N-bit flag plus a size. Header byte layout (high to low):
