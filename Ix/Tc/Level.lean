@@ -3,7 +3,7 @@ module
 public import Ix.Tc.Mode
 public import Ix.Address
 public import Ix.Unsigned
-public import Batteries.Data.RBMap
+public import Batteries.Recycling.RBTree.Basic
 
 /-!
 Mirror: crates/kernel/src/level.rs
@@ -265,7 +265,7 @@ abbrev Path := List UInt64
 
 /-- Canonical form: map from imax-paths to nodes. Rust `BTreeMap<Vec<u64>,
     Node>`; `Ord Path` is lexicographic in both. -/
-abbrev NormLevel := Batteries.RBMap Path NormNode compare
+abbrev NormLevel := RBTree.RBMap Path NormNode compare
 
 instance : Inhabited NormLevel := ⟨.empty⟩
 

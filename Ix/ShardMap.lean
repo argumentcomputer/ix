@@ -80,7 +80,9 @@ private def mkShardArrayWithCapacity (n : Nat) (capacity : Nat)
     : BaseIO { arr : Array (PaddedShard α β) // arr.size = n } := do
   let rec go (remaining : Nat) (acc : Array (PaddedShard α β)) (hacc : acc.size + remaining = n) :
       BaseIO { arr : Array (PaddedShard α β) // arr.size = n } := do
-    match remaining with
+    -- `dependent := true`: the proof arms need `hacc` refined by the
+    -- scrutinee, which `do match` stopped doing by default in v4.32.
+    match (dependent := true) remaining with
     | 0 => pure ⟨acc, by omega⟩
     | r + 1 =>
       let mutex ← Std.SharedMutex.new (Std.HashMap.emptyWithCapacity capacity)
