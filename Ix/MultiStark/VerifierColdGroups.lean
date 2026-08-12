@@ -17,7 +17,8 @@ namespace MultiStark
 -- (see the cold-band PR discussion): the 12 tall (height >= ~300k rows),
 -- narrow (width 12..48) circuits get their own band so the 10M-row bulk
 -- never pays the cold band's merged width; everything else non-blake3
--- shares one band; the blake3 compression pair stays its own
+-- next tier (~150k-300k rows, width 11..55) gets a second narrow band;
+-- the remaining functions share one band; the blake3 pair stays its own
 -- all-branchless k = 2 group (folding it in drops lookups to k = 1 and
 -- explodes stage 2). Measured widths: tall 73, cold 635, blake3 1566
 -- (total 2,501 vs 10,946 ungrouped). Real-workload model (calibrated to
@@ -37,11 +38,19 @@ def verifierColdGroups : Array (String × Array String) := #[
     "select_rows",
     "read_vk_u16",
   ]),
+  ("verifier_mid", #[
+    "bucket_update",
+    "eval_at",
+    "read_node",
+    "read_nodes_n",
+    "list_drop.SysNode",
+    "list_lookup.SysNode",
+    "read_vk_tag",
+  ]),
   ("verifier_cold", #[
     "from_ext_basis",
     "prep_count",
     "read_merkle_cap_at",
-    "read_vk_tag",
     "gl_inverse",
     "trace_vanishing",
     "flatten_u64",
@@ -84,7 +93,6 @@ def verifierColdGroups : Array (String × Array String) := #[
     "ro_x",
     "assert_bits",
     "list_length.BatchOpening",
-    "list_lookup.SysNode",
     "list_concat.U8",
     "list_drop.G",
     "list_length.CommitPhaseProofStep",
@@ -120,13 +128,11 @@ def verifierColdGroups : Array (String × Array String) := #[
     "build_buckets",
     "exp_by_bits",
     "has_height",
-    "list_drop.SysNode",
     "list_length.SysCircuit",
     "read_commit_phase_step_vec_n",
     "read_opt_idx_n",
     "relaxed_u64_succ",
     "u64_is_zero",
-    "read_nodes_n",
     "ch_sample_bits",
     "circ_has_height",
     "last_acc_is_zero",
@@ -159,7 +165,6 @@ def verifierColdGroups : Array (String × Array String) := #[
     "trace_selectors",
     "rollin",
     "b3_to_digest",
-    "bucket_update",
     "ch_sample_field",
     "open_batch_2pt",
     "heights_max",
@@ -177,7 +182,6 @@ def verifierColdGroups : Array (String × Array String) := #[
     "open_prep_batch",
     "list_lookup.U8_8_4",
     "logup_fingerprint",
-    "read_node",
     "read_proof",
     "digest_onto",
     "query_loop",
@@ -186,7 +190,6 @@ def verifierColdGroups : Array (String × Array String) := #[
     "list_drop.U8_8_4",
     "read_digest_vec_at_n",
     "read_vk_cap_n",
-    "eval_at",
     "b3_flatten_onto",
     "flatten2",
     "ch_sample_byte",
