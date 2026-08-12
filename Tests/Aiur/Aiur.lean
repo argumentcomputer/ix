@@ -718,6 +718,54 @@ def toplevel := ⟦
     let s5 = c[4] + c[0];                       -- 255
     s1 + s2 + 10 * s3 + s4 + s5                 -- 1309
   }
+
+  ---------------------------------------------------------------------------
+  -- Null-pointer niche optimization: a two-constructor enum with one
+  -- nullary ctor and a pointer field in the other drops its tag slot
+  -- (pointers are 1-based, so 0 is the impossible pointer and doubles as
+  -- the nullary variant). These pin construction, both match directions,
+  -- the wildcard-covers-nullary form, non-tail (matchContinue) dispatch,
+  -- and Nil-crossing recursion on the width-1 extreme (PNat = bare ptr).
+  ---------------------------------------------------------------------------
+  enum NichePair { NEmpty, NPair(G, &(G, G)) }   -- niche slot at offset 1
+
+  fn niche_sum(p: NichePair) -> G {
+    match p {
+      NichePair.NEmpty => 100,
+      NichePair.NPair(x, q) =>
+        let (a, b) = load(q);
+        x + a + b,
+    }
+  }
+
+  pub fn niche_test(x: G) -> G {
+    let e = NichePair.NEmpty;
+    let p = NichePair.NPair(x, store((x + 1, x + 2)));
+    -- Wildcard covers the nullary ctor (compiles to case 0).
+    let w = match p {
+      NichePair.NPair(y, _) => y,
+      _ => 0,
+    };
+    -- Non-tail match: dispatches through matchContinue.
+    let v = match e {
+      NichePair.NEmpty => 3,
+      NichePair.NPair(_, _) => 4,
+    };
+    niche_sum(e) + niche_sum(p) + w + v
+  }
+
+  enum PNat { PZero, PSucc(&PNat) }   -- niche size 1: the bare pointer
+
+  fn pnat_to_g(n: PNat) -> G {
+    match n {
+      PNat.PZero => 0,
+      PNat.PSucc(m) => 1 + pnat_to_g(load(m)),
+    }
+  }
+
+  pub fn niche_nat_test() -> G {
+    pnat_to_g(PNat.PSucc(store(PNat.PSucc(store(PNat.PZero)))))
+  }
 ⟧
 
 /-- The PROVING suite: every case runs the full prove+verify pipeline
@@ -839,6 +887,10 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Unconstrained g_to_bytes / g_inverse hints: all cases in one proof
     .prove `hint_test #[] #[1309],
+
+    -- Null-pointer niche: 100 + (5+6+7) + 5 + 3 = 126; PNat depth 2
+    .prove `niche_test #[5] #[126],
+    .prove `niche_nat_test #[] #[2],
   ]
 
 end
