@@ -387,10 +387,11 @@ mod tests {
   ///   fresh auxiliary column pinned by `sel * (col - a*b)`.
   /// - `lookups = 1`: the function-provide (return) lookup in slot 0, which
   ///   pulls the claim `[function_channel, fun_idx, a, b, a*b]`.
+  ///
   /// Test-side singleton partition (production circuits come pre-built from
   /// the Lean compiler).
   fn with_singleton_circuits(
-    functions: Vec<crate::bytecode::Function>,
+    functions: Vec<Function>,
     memory_sizes: Vec<usize>,
   ) -> Toplevel {
     let circuits = functions
