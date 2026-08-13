@@ -38,8 +38,9 @@ a new owner — the successor pap or the callee) and then drops the
 applied pap itself, so under/over-fill chains reclaim intermediate
 paps without caller-side bookkeeping. The borrowing exceptions are
 `fetch` (project without consuming — dup the field to own it) and
-`case` scrutiny; `dup`/`drop` are the explicit ownership
-adjustments.
+`case` scrutiny; `dup`/`drop` are the explicit ownership adjustments
+in the shared world, `free` (shallow) and `dropU` (deep, the affine
+death compilation) the reclamations in the unique one.
 -/
 
 namespace Navigatrix.IxIR1
@@ -242,6 +243,12 @@ def runOp (ctx : Ctx) (fuel : Nat) (cur : FnDef) (store : Store)
         let store' ← dropVal ctx fuel store v
         .ok (store', .erased)
       | _ => .ok (store, .erased)
+    | .dropU target => do
+      match ← resolveAtom env target with
+      | v@(.loc _) => do
+        let store' ← dropUVal ctx fuel store v
+        .ok (store', .erased)
+      | _ => .ok (store, .erased)
     | .fetch target i => do
       match ← resolveAtom env target with
       | .loc l =>
@@ -376,6 +383,43 @@ def dropMany (ctx : Ctx) (fuel : Nat) (store : Store) (vs : List RVal) :
     | v :: rest => do
       let store' ← dropVal ctx fuel store v
       dropMany ctx fuel store' rest
+  termination_by fuel
+
+/-- Deep-free of a unique tree: kill the node, recurse into fields.
+Whole-value modes are enforced (a shared child under a unique node is
+a memory error, symmetric to deep drop's unique-under-shared); no
+refcounts are touched. Pap nodes are always shared, so a unique pap
+is corrupt by construction and faults. -/
+def dropUVal (ctx : Ctx) (fuel : Nat) (store : Store) (v : RVal) :
+    Except Err Store :=
+  match fuel with
+  | 0 => .error .fuel
+  | fuel + 1 =>
+    match v with
+    | .lit _ => .ok store
+    | .erased => .ok store
+    | .loc l =>
+      match store.get? l with
+      | none => .error (.mem s!"dropU of a dead location {l}")
+      | some box =>
+        match box.world with
+        | .shared => .error (.mem "dropU of a shared node")
+        | .unique =>
+          match box.node with
+          | .ctorN _ fields => dropManyU ctx fuel (store.kill l) fields.toList
+          | .papN .. => .error (.mem "dropU of a pap node")
+  termination_by fuel
+
+def dropManyU (ctx : Ctx) (fuel : Nat) (store : Store) (vs : List RVal) :
+    Except Err Store :=
+  match fuel with
+  | 0 => .error .fuel
+  | fuel + 1 =>
+    match vs with
+    | [] => .ok store
+    | v :: rest => do
+      let store' ← dropUVal ctx fuel store v
+      dropManyU ctx fuel store' rest
   termination_by fuel
 
 end

@@ -275,6 +275,29 @@ private def papOverfill : Code := lets
   (.ret (.var 0)))) fun _ v => v == .lit (.nat 0)
 #guard errStuck (run (.case (.lit (.nat 3)) false #[]))
 
+/-! ## `dropU`: deep free of a unique tree -/
+
+-- Three unique nodes reclaimed with zero refcount traffic.
+#guard checkRun (run (lets
+  [ .alloc .unique nilId #[],
+    .alloc .unique consId #[.lit (.nat 2), .var 0],
+    .alloc .unique consId #[.lit (.nat 1), .var 0],
+    .dropU (.var 0) ]
+  (.ret .erased))) fun s _ =>
+  s.live == 0 && s.frees == 3 && s.rcops == 0
+
+-- dropU demands the unique world…
+#guard errMem (run (lets
+  [.alloc .shared nilId #[], .dropU (.var 0)] (.ret .erased)))
+
+-- …and whole-value modes: a shared child under a unique node faults
+-- (symmetric to deep drop's unique-under-shared check).
+#guard errMem (run (lets
+  [ .alloc .shared nilId #[],
+    .alloc .unique consId #[.lit (.nat 1), .var 0],
+    .dropU (.var 0) ]
+  (.ret .erased)))
+
 /-! ## The dynamic memory discipline -/
 
 #guard errMem (run (lets

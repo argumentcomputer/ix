@@ -82,6 +82,11 @@ inductive Op where
   /-- Decrement a **shared** node's refcount; at zero, free and
   recursively drop the fields (Perceus-style deep drop). -/
   | drop (target : Atom)
+  /-- Deep-free a **live, unique** tree: kill the node and recurse
+  into its fields (which must be unique — whole-value modes, gate B).
+  The unique dual of `drop`'s rc-zero path, and the compilation of
+  affine death; no refcounts are touched. No-op on scalars. -/
+  | dropU (target : Atom)
   /-- Project field `i` of a constructor node (non-consuming). -/
   | fetch (target : Atom) (field : Nat)
   /-- Saturated call of a known function (exact arity). -/
