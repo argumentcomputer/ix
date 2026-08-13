@@ -13,3 +13,6 @@ import Navigatrix.IxIR0.Examples
 import Navigatrix.IxIR0.Mono
 import Navigatrix.Erase
 import Navigatrix.Sim
+import Navigatrix.IxIR1.Basic
+import Navigatrix.IxIR1.Eval
+import Navigatrix.IxIR1.Examples

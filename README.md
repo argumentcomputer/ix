@@ -1,9 +1,5 @@
 # Navigatr.ix
 
-> Navigation machines, built by Ix to replace the Guild's Navigators.
-> *Navigatrix* is the feminine agent noun of *navigator* — computers are
-> feminine. Styled **Navigatr.ix**; code namespace `Navigatrix`.
-
 An exploration of a certified toolchain for
 [ix](https://github.com/argumentcomputer/ix), aiming to eventually replace
 the entire Lean 4 reference implementation with a self-hosting, certified
