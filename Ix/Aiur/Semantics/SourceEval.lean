@@ -551,7 +551,7 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       combineFieldsResult (fun a b => .field (if a.val.toUInt32 < b.val.toUInt32 then 1 else 0))
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
-  | .u32AddHint t1 t2 =>
+  | .unconstrainedU32Add t1 t2 =>
       match interp decls fuel bindings t1 st with
       | .error e => .error e
       | .ok (v1, st1) => match interp decls fuel bindings t2 st1 with
@@ -563,8 +563,8 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
             let sum := pack a + pack b
             .ok (.tuple #[.array (#[0, 1, 2, 3].map fun i => .field (.ofNat ((sum / 256 ^ i) % 256))),
               .field (.ofNat (sum / 0x100000000))], st2)
-          | _, _ => .error (.typeMismatch "u32AddHint")
-  | .u32Add3Hint t1 t2 t3 =>
+          | _, _ => .error (.typeMismatch "unconstrainedU32Add")
+  | .unconstrainedU32Add3 t1 t2 t3 =>
       match interp decls fuel bindings t1 st with
       | .error e => .error e
       | .ok (v1, st1) => match interp decls fuel bindings t2 st1 with
@@ -578,7 +578,7 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
               let sum := pack a + pack b + pack c
               .ok (.tuple #[.array (#[0, 1, 2, 3].map fun i => .field (.ofNat ((sum / 256 ^ i) % 256))),
                 .field (.ofNat (sum / 0x100000000))], st3)
-            | _, _, _ => .error (.typeMismatch "u32Add3Hint")
+            | _, _, _ => .error (.typeMismatch "unconstrainedU32Add3")
   | .u32ToField t =>
       match interp decls fuel bindings t st with
       | .error e => .error e

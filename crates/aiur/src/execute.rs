@@ -22,12 +22,10 @@ fn u32_value(map: &[G], bytes: &[usize]) -> u64 {
 }
 
 fn u32_sum(values: &[u64]) -> ([G; 4], G) {
-  let sum: u128 = values.iter().map(|x| *x as u128).sum();
-  let word = sum as u32;
-  (
-    word.to_le_bytes().map(|b| G::from_u64(b.into())),
-    G::from_u64((sum >> 32) as u64),
-  )
+  let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
+  let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
+  let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
+  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
 }
 
 pub struct QueryRecord {
@@ -481,13 +479,13 @@ impl Function {
           }
           map.push(o);
         },
-        ExecEntry::Op(Op::U32AddHint(a, b)) => {
+        ExecEntry::Op(Op::UnconstrainedU32Add(a, b)) => {
           let (bytes, carry) =
             u32_sum(&[u32_value(&map, a), u32_value(&map, b)]);
           map.extend(bytes);
           map.push(carry);
         },
-        ExecEntry::Op(Op::U32Add3Hint(a, b, c)) => {
+        ExecEntry::Op(Op::UnconstrainedU32Add3(a, b, c)) => {
           let (bytes, carry) = u32_sum(&[
             u32_value(&map, a),
             u32_value(&map, b),

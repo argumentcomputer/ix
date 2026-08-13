@@ -201,12 +201,12 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u8ChainRotr7 .. | .u8ChainRotr4 .. => do pushDegrees #[1, 1, 1]; bumpAuxiliaries 3; bumpLookups
   | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
   | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
-  | .u32AddHint a b => do
+  | .unconstrainedU32Add a b => do
     let degrees ← (a ++ b).mapM getDegree
     pushDegrees $ .replicate 4 1
     pushDegree (degrees.foldl Nat.max 1)
     bumpAuxiliaries 4
-  | .u32Add3Hint a b c => do
+  | .unconstrainedU32Add3 a b c => do
     let degrees ← (a ++ b ++ c).mapM getDegree
     pushDegrees $ .replicate 4 1
     pushDegree (degrees.foldl Nat.max 1)

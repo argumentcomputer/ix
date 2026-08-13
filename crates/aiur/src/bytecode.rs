@@ -82,8 +82,8 @@ pub enum Op {
   /// auxiliary value, no constraints; the caller must pin it via
   /// multiply-and-assert.
   UnconstrainedGInverse(ValIdx),
-  U32AddHint(Vec<ValIdx>, Vec<ValIdx>),
-  U32Add3Hint(Vec<ValIdx>, Vec<ValIdx>, Vec<ValIdx>),
+  UnconstrainedU32Add(Vec<ValIdx>, Vec<ValIdx>),
+  UnconstrainedU32Add3(Vec<ValIdx>, Vec<ValIdx>, Vec<ValIdx>),
   U32ToField(Vec<ValIdx>),
 }
 

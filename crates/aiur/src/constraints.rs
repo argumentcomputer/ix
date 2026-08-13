@@ -549,7 +549,7 @@ impl Op {
         state.map.push((z, 1));
         state.map.push((carry, x_deg.max(y_deg).max(1)));
       },
-      Op::U32AddHint(a, b) => {
+      Op::UnconstrainedU32Add(a, b) => {
         let (x, x_deg) =
           pack_u32_expr(a.iter().map(|idx| state.map[*idx].clone()));
         let (y, y_deg) =
@@ -565,7 +565,7 @@ impl Op {
           x_deg.max(y_deg).max(z_deg),
         ));
       },
-      Op::U32Add3Hint(a, b, c) => {
+      Op::UnconstrainedU32Add3(a, b, c) => {
         let (x, x_deg) =
           pack_u32_expr(a.iter().map(|idx| state.map[*idx].clone()));
         let (y, y_deg) =

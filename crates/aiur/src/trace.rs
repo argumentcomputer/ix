@@ -48,12 +48,10 @@ fn u32_value(map: &[(G, Degree)], bytes: &[usize]) -> u64 {
 }
 
 fn u32_sum(values: &[u64]) -> ([G; 4], G) {
-  let sum: u128 = values.iter().map(|x| *x as u128).sum();
-  let word = sum as u32;
-  (
-    word.to_le_bytes().map(|b| G::from_u64(b.into())),
-    G::from_u64((sum >> 32) as u64),
-  )
+  let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
+  let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
+  let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
+  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
 }
 
 impl<'a, 'b> ColumnMutSlice<'a, 'b> {
@@ -468,20 +466,17 @@ impl Op {
         slice.push_auxiliary(index, r);
         slice.push_lookup(index, G::ONE, &[u8_add_channel(), i, j, r]);
       },
-      Op::U32AddHint(a, b) => {
-        let (bytes, carry) = u32_sum(&[u32_value(&map, a), u32_value(&map, b)]);
+      Op::UnconstrainedU32Add(a, b) => {
+        let (bytes, carry) = u32_sum(&[u32_value(map, a), u32_value(map, b)]);
         for byte in bytes {
           map.push((byte, 1));
           slice.push_auxiliary(index, byte);
         }
         map.push((carry, 1));
       },
-      Op::U32Add3Hint(a, b, c) => {
-        let (bytes, carry) = u32_sum(&[
-          u32_value(&map, a),
-          u32_value(&map, b),
-          u32_value(&map, c),
-        ]);
+      Op::UnconstrainedU32Add3(a, b, c) => {
+        let (bytes, carry) =
+          u32_sum(&[u32_value(map, a), u32_value(map, b), u32_value(map, c)]);
         for byte in bytes {
           map.push((byte, 1));
           slice.push_auxiliary(index, byte);
@@ -489,7 +484,7 @@ impl Op {
         map.push((carry, 1));
       },
       Op::U32ToField(bytes) => {
-        let word = u32_value(&map, bytes);
+        let word = u32_value(map, bytes);
         let degree = bytes.iter().map(|idx| map[*idx].1).max().unwrap_or(0);
         map.push((G::from_u64(word), degree));
       },

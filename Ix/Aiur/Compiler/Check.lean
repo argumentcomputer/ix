@@ -802,17 +802,17 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let a' ← checkNoEscape a .field
     let b' ← checkNoEscape b .field
     pure (Typed.Term.u32LessThan .field false a' b')
-  | .u32AddHint a b => do
+  | .unconstrainedU32Add a b => do
     let word : Typ := .array .u8 4
     let a' ← checkNoEscape a word
     let b' ← checkNoEscape b word
-    pure (Typed.Term.u32AddHint (.tuple #[.array .field 4, .field]) false a' b')
-  | .u32Add3Hint a b c => do
+    pure (Typed.Term.unconstrainedU32Add (.tuple #[.array .field 4, .field]) false a' b')
+  | .unconstrainedU32Add3 a b c => do
     let word : Typ := .array .u8 4
     let a' ← checkNoEscape a word
     let b' ← checkNoEscape b word
     let c' ← checkNoEscape c word
-    pure (Typed.Term.u32Add3Hint (.tuple #[.array .field 4, .field]) false a' b' c')
+    pure (Typed.Term.unconstrainedU32Add3 (.tuple #[.array .field 4, .field]) false a' b' c')
   | .u32ToField a => do
     let a' ← checkNoEscape a (.array .u8 4)
     pure (Typed.Term.u32ToField .field false a')
@@ -1024,10 +1024,10 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
       pure (.unconstrainedGToBytes (← zonkTyp τ) e (← zonkTypedTerm a))
   | .unconstrainedGInverse τ e a => do
       pure (.unconstrainedGInverse (← zonkTyp τ) e (← zonkTypedTerm a))
-  | .u32AddHint τ e a b => do
-      pure (.u32AddHint (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
-  | .u32Add3Hint τ e a b c => do
-      pure (.u32Add3Hint (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b)
+  | .unconstrainedU32Add τ e a b => do
+      pure (.unconstrainedU32Add (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .unconstrainedU32Add3 τ e a b c => do
+      pure (.unconstrainedU32Add3 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b)
         (← zonkTypedTerm c))
   | .u32ToField τ e a => do
       pure (.u32ToField (← zonkTyp τ) e (← zonkTypedTerm a))

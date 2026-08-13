@@ -469,7 +469,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       | .field a, .field b =>
           return .field (if a.val.toUInt32 < b.val.toUInt32 then 1 else 0)
       | _, _ => throwErr "u32LessThan: expected field values"
-  | .u32AddHint t1 t2 => do
+  | .unconstrainedU32Add t1 t2 => do
       match (← interp decls bindings t1), (← interp decls bindings t2) with
       | .array a, .array b =>
         let pack (xs : Array Value) := xs.toList.zipIdx.foldl
@@ -477,8 +477,8 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
         let sum := pack a + pack b
         return .tuple #[.array (#[0, 1, 2, 3].map fun i => .field (.ofNat ((sum / 256 ^ i) % 256))),
           .field (.ofNat (sum / 0x100000000))]
-      | _, _ => throwErr "u32AddHint: expected byte arrays"
-  | .u32Add3Hint t1 t2 t3 => do
+      | _, _ => throwErr "unconstrainedU32Add: expected byte arrays"
+  | .unconstrainedU32Add3 t1 t2 t3 => do
       match (← interp decls bindings t1), (← interp decls bindings t2),
           (← interp decls bindings t3) with
       | .array a, .array b, .array c =>
@@ -487,7 +487,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
         let sum := pack a + pack b + pack c
         return .tuple #[.array (#[0, 1, 2, 3].map fun i => .field (.ofNat ((sum / 256 ^ i) % 256))),
           .field (.ofNat (sum / 0x100000000))]
-      | _, _, _ => throwErr "u32Add3Hint: expected byte arrays"
+      | _, _, _ => throwErr "unconstrainedU32Add3: expected byte arrays"
   | .u32ToField t => do
       match ← interp decls bindings t with
       | .array a => return .field (.ofNat (a.toList.zipIdx.foldl

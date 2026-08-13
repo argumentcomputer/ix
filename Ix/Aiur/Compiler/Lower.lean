@@ -319,15 +319,15 @@ def toIndex
   | .u8Or _ _ i j => do let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j; pushOp (.u8Or i j)
   | .u8LessThan _ _ i j => do let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j; pushOp (.u8LessThan i j)
   | .u32LessThan _ _ i j => do let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j; pushOp (.u32LessThan i j)
-  | .u32AddHint _ _ a b => do
+  | .unconstrainedU32Add _ _ a b => do
     let a ← toIndex layoutMap bindings a
     let b ← toIndex layoutMap bindings b
-    pushOp (.u32AddHint a b) 5
-  | .u32Add3Hint _ _ a b c => do
+    pushOp (.unconstrainedU32Add a b) 5
+  | .unconstrainedU32Add3 _ _ a b c => do
     let a ← toIndex layoutMap bindings a
     let b ← toIndex layoutMap bindings b
     let c ← toIndex layoutMap bindings c
-    pushOp (.u32Add3Hint a b c) 5
+    pushOp (.unconstrainedU32Add3 a b c) 5
   | .u32ToField _ _ a => do
     let a ← toIndex layoutMap bindings a
     pushOp (.u32ToField a)

@@ -175,11 +175,11 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
     },
     31 => {
       let [a, b] = ctor.objs::<2>();
-      Op::U32AddHint(decode_vec_val_idx(a), decode_vec_val_idx(b))
+      Op::UnconstrainedU32Add(decode_vec_val_idx(a), decode_vec_val_idx(b))
     },
     32 => {
       let [a, b, c] = ctor.objs::<3>();
-      Op::U32Add3Hint(
+      Op::UnconstrainedU32Add3(
         decode_vec_val_idx(a),
         decode_vec_val_idx(b),
         decode_vec_val_idx(c),

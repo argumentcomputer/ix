@@ -361,11 +361,11 @@ def termToConcrete
   | .u32LessThan τ e a b => do
       pure (.u32LessThan (← typToConcrete mono τ) e
                          (← termToConcrete mono a) (← termToConcrete mono b))
-  | .u32AddHint τ e a b => do
-      pure (.u32AddHint (← typToConcrete mono τ) e
+  | .unconstrainedU32Add τ e a b => do
+      pure (.unconstrainedU32Add (← typToConcrete mono τ) e
         (← termToConcrete mono a) (← termToConcrete mono b))
-  | .u32Add3Hint τ e a b c => do
-      pure (.u32Add3Hint (← typToConcrete mono τ) e
+  | .unconstrainedU32Add3 τ e a b c => do
+      pure (.unconstrainedU32Add3 (← typToConcrete mono τ) e
         (← termToConcrete mono a) (← termToConcrete mono b) (← termToConcrete mono c))
   | .u32ToField τ e a => do
       pure (.u32ToField (← typToConcrete mono τ) e (← termToConcrete mono a))
@@ -584,9 +584,9 @@ def rewriteTypedTerm (decls : Typed.Decls)
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u32LessThan τ e a b => .u32LessThan (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
-  | .u32AddHint τ e a b => .u32AddHint (rewriteTyp subst mono τ) e
+  | .unconstrainedU32Add τ e a b => .unconstrainedU32Add (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
-  | .u32Add3Hint τ e a b c => .u32Add3Hint (rewriteTyp subst mono τ) e
+  | .unconstrainedU32Add3 τ e a b c => .unconstrainedU32Add3 (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
       (rewriteTypedTerm decls subst mono c)
   | .u32ToField τ e a => .u32ToField (rewriteTyp subst mono τ) e
@@ -673,9 +673,9 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
   | .u8ChainRotr7 τ _ a b | .u8ChainRotr4 τ _ a b | .u8RangeCheck τ _ a b
   | .unconstrainedBigUintDivMod τ _ a b
   | .u8And τ _ a b | .u8Or τ _ a b
-  | .u8LessThan τ _ a b | .u32LessThan τ _ a b | .u32AddHint τ _ a b =>
+  | .u8LessThan τ _ a b | .u32LessThan τ _ a b | .unconstrainedU32Add τ _ a b =>
     collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b
-  | .u32Add3Hint τ _ a b c =>
+  | .unconstrainedU32Add3 τ _ a b c =>
     collectInTypedTerm (collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b) c
   | .eqZero τ _ a | .store τ _ a | .load τ _ a | .ptrVal τ _ a | .toField τ _ a
   | .u8FromFieldUnsafe τ _ a
@@ -748,9 +748,9 @@ def collectCalls (decls : Typed.Decls)
   | .u8ChainRotr7 _ _ a b | .u8ChainRotr4 _ _ a b | .u8RangeCheck _ _ a b
   | .unconstrainedBigUintDivMod _ _ a b
   | .u8And _ _ a b | .u8Or _ _ a b
-  | .u8LessThan _ _ a b | .u32LessThan _ _ a b | .u32AddHint _ _ a b =>
+  | .u8LessThan _ _ a b | .u32LessThan _ _ a b | .unconstrainedU32Add _ _ a b =>
     collectCalls decls (collectCalls decls seen a) b
-  | .u32Add3Hint _ _ a b c =>
+  | .unconstrainedU32Add3 _ _ a b c =>
     collectCalls decls (collectCalls decls (collectCalls decls seen a) b) c
   | .eqZero _ _ a | .store _ _ a | .load _ _ a | .ptrVal _ _ a | .toField _ _ a
   | .u8FromFieldUnsafe _ _ a
@@ -867,9 +867,9 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u32LessThan τ e a b => .u32LessThan (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
-  | .u32AddHint τ e a b => .u32AddHint (Typ.instantiate subst τ) e
+  | .unconstrainedU32Add τ e a b => .unconstrainedU32Add (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
-  | .u32Add3Hint τ e a b c => .u32Add3Hint (Typ.instantiate subst τ) e
+  | .unconstrainedU32Add3 τ e a b c => .unconstrainedU32Add3 (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b) (substInTypedTerm subst c)
   | .u32ToField τ e a => .u32ToField (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .u8RangeCheck τ e a b => .u8RangeCheck (Typ.instantiate subst τ) e

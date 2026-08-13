@@ -50,7 +50,7 @@ def byteStream := ⟦
   -- the Goldilocks field equality is the intended integer equality (no field
   -- wrap), and the checked decomposition is unique.
   fn u32_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
-    let (raw, carry) = u32_add_hint(a, b);
+    let (raw, carry) = unconstrained_u32_add(a, b);
     let (z0, z1) = u8_range_check(raw[0], raw[1]);
     let (z2, z3) = u8_range_check(raw[2], raw[3]);
 
@@ -70,7 +70,7 @@ def byteStream := ⟦
   -- the cubic carry constraint admits exactly 0, 1, or 2. The packed integer
   -- identity cannot wrap in Goldilocks because its values are below 2^34.
   fn u32_add3(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
-    let (raw, carry) = u32_add3_hint(a, b, c);
+    let (raw, carry) = unconstrained_u32_add3(a, b, c);
     let (z0, z1) = u8_range_check(raw[0], raw[1]);
     let (z2, z3) = u8_range_check(raw[2], raw[3]);
 

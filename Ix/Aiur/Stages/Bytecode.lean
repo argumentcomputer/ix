@@ -67,9 +67,9 @@ inductive Op
   | unconstrainedGInverse : ValIdx → Op
   /-- Native wrapping u32 addition. Four result bytes are advice columns; the
   carry is a fifth logical output represented by a compound expression. -/
-  | u32AddHint : Array ValIdx → Array ValIdx → Op
+  | unconstrainedU32Add : Array ValIdx → Array ValIdx → Op
   /-- Native wrapping three-input u32 addition, with virtual carry output. -/
-  | u32Add3Hint : Array ValIdx → Array ValIdx → Array ValIdx → Op
+  | unconstrainedU32Add3 : Array ValIdx → Array ValIdx → Array ValIdx → Op
   /-- Virtual LE-byte packing expression; allocates no auxiliary column. -/
   | u32ToField : Array ValIdx → Op
   deriving Repr, BEq, Hashable

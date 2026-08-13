@@ -203,8 +203,8 @@ syntax "u8_and" "(" aiur_trm ", " aiur_trm ")"                              : ai
 syntax "u8_or" "(" aiur_trm ", " aiur_trm ")"                               : aiur_trm
 syntax "u8_less_than" "(" aiur_trm ", " aiur_trm ")"                        : aiur_trm
 syntax "u32_less_than" "(" aiur_trm ", " aiur_trm ")"                       : aiur_trm
-syntax "u32_add_hint" "(" aiur_trm ", " aiur_trm ")"                       : aiur_trm
-syntax "u32_add3_hint" "(" aiur_trm ", " aiur_trm ", " aiur_trm ")"       : aiur_trm
+syntax "unconstrained_u32_add" "(" aiur_trm ", " aiur_trm ")"               : aiur_trm
+syntax "unconstrained_u32_add3" "(" aiur_trm ", " aiur_trm ", " aiur_trm ")" : aiur_trm
 syntax "u32_to_field" "(" aiur_trm ")"                                      : aiur_trm
 syntax "u8_range_check" "(" aiur_trm ", " aiur_trm ")"                      : aiur_trm
 syntax "unconstrained_big_uint_div_mod" "(" aiur_trm ", " aiur_trm ")"           : aiur_trm
@@ -355,10 +355,10 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.u8LessThan #[← elabTrm i, ← elabTrm j]
   | `(aiur_trm| u32_less_than($i:aiur_trm, $j:aiur_trm)) => do
     mkAppM ``Source.Term.u32LessThan #[← elabTrm i, ← elabTrm j]
-  | `(aiur_trm| u32_add_hint($i:aiur_trm, $j:aiur_trm)) => do
-    mkAppM ``Source.Term.u32AddHint #[← elabTrm i, ← elabTrm j]
-  | `(aiur_trm| u32_add3_hint($i:aiur_trm, $j:aiur_trm, $k:aiur_trm)) => do
-    mkAppM ``Source.Term.u32Add3Hint #[← elabTrm i, ← elabTrm j, ← elabTrm k]
+  | `(aiur_trm| unconstrained_u32_add($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.unconstrainedU32Add #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| unconstrained_u32_add3($i:aiur_trm, $j:aiur_trm, $k:aiur_trm)) => do
+    mkAppM ``Source.Term.unconstrainedU32Add3 #[← elabTrm i, ← elabTrm j, ← elabTrm k]
   | `(aiur_trm| u32_to_field($a:aiur_trm)) => do
     mkAppM ``Source.Term.u32ToField #[← elabTrm a]
   | `(aiur_trm| u8_range_check($i:aiur_trm, $j:aiur_trm)) => do
@@ -589,15 +589,15 @@ where
       let i ← replaceToken old new i
       let j ← replaceToken old new j
       `(aiur_trm| u32_less_than($i, $j))
-    | `(aiur_trm| u32_add_hint($i:aiur_trm, $j:aiur_trm)) => do
+    | `(aiur_trm| unconstrained_u32_add($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
-      `(aiur_trm| u32_add_hint($i, $j))
-    | `(aiur_trm| u32_add3_hint($i:aiur_trm, $j:aiur_trm, $k:aiur_trm)) => do
+      `(aiur_trm| unconstrained_u32_add($i, $j))
+    | `(aiur_trm| unconstrained_u32_add3($i:aiur_trm, $j:aiur_trm, $k:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j
       let k ← replaceToken old new k
-      `(aiur_trm| u32_add3_hint($i, $j, $k))
+      `(aiur_trm| unconstrained_u32_add3($i, $j, $k))
     | `(aiur_trm| u32_to_field($a:aiur_trm)) => do
       let a ← replaceToken old new a
       `(aiur_trm| u32_to_field($a))
