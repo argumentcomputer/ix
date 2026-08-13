@@ -430,6 +430,14 @@ inductive Term
   | u8Or : Term → Term → Term
   | u8LessThan : Term → Term → Term
   | u32LessThan : Term → Term → Term
+  /-- Native unconstrained u32 addition hint. The four result bytes are fresh
+  advice; the carry is a virtual value derived from the packed operands. -/
+  | u32AddHint : Term → Term → Term
+  /-- Native unconstrained three-input u32 addition hint. -/
+  | u32Add3Hint : Term → Term → Term → Term
+  /-- Pack four little-endian bytes into a field value. This is a virtual
+  linear expression and does not allocate an auxiliary column. -/
+  | u32ToField : Term → Term
   | u8ChainRotr7 : Term → Term → Term
   | u8ChainRotr4 : Term → Term → Term
   /-- Unconstrained LE byte-list division-modulo hint. Inputs are two
@@ -683,6 +691,9 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .u8Or a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Or a' b')
   | .u8LessThan a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8LessThan a' b')
   | .u32LessThan a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u32LessThan a' b')
+  | .u32AddHint a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u32AddHint a' b')
+  | .u32Add3Hint a b c => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; let (cnt, c') := Term.freshen cnt subst c; (cnt, .u32Add3Hint a' b' c')
+  | .u32ToField a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u32ToField a')
   | .u8ChainRotr7 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr7 a' b')
   | .u8ChainRotr4 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr4 a' b')
   | .unconstrainedBigUintDivMod a b =>
@@ -732,7 +743,7 @@ def Term.inlineCallSites : Term → List (Global × Nat)
   | .let _ v b => v.inlineCallSites ++ b.inlineCallSites
   | .add a b | .sub a b | .mul a b | .set a _ b
   | .u8Xor a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
-  | .u8LessThan a b | .u32LessThan a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
+  | .u8LessThan a b | .u32LessThan a b | .u32AddHint a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
   | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b | .ioGetInfo a b =>
     a.inlineCallSites ++ b.inlineCallSites
   | .assertEq a b _ c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
@@ -744,6 +755,8 @@ def Term.inlineCallSites : Term → List (Global × Nat)
   | .ptrVal a | .ann _ a | .u8BitDecomposition a | .u8ShiftLeft a | .u8ShiftRight a
   | .toField a | .u8FromFieldUnsafe a
   | .unconstrainedGToBytes a | .unconstrainedGInverse a => a.inlineCallSites
+  | .u32ToField a => a.inlineCallSites
+  | .u32Add3Hint a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
   | .debug _ o a => (match o with | none => [] | some x => x.inlineCallSites) ++ a.inlineCallSites
 termination_by t => sizeOf t
 decreasing_by
@@ -852,6 +865,9 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
   | .u8Or a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Or a' b')
   | .u8LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8LessThan a' b')
   | .u32LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u32LessThan a' b')
+  | .u32AddHint a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u32AddHint a' b')
+  | .u32Add3Hint a b c => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; let (cnt, c') := Term.expandOnce done cnt c; (cnt, .u32Add3Hint a' b' c')
+  | .u32ToField a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u32ToField a')
   | .u8ChainRotr7 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr7 a' b')
   | .u8ChainRotr4 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr4 a' b')
   | .unconstrainedBigUintDivMod a b =>
@@ -976,6 +992,11 @@ def Term.hoistLets : Term → Term :=
                        match cs with | [a, b] => Term.wrapLets fs (.u8LessThan a b) | _ => t
   | .u32LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                         match cs with | [a, b] => Term.wrapLets fs (.u32LessThan a b) | _ => t
+  | .u32AddHint a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                       match cs with | [a, b] => Term.wrapLets fs (.u32AddHint a b) | _ => t
+  | .u32Add3Hint a b c => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
+                          match cs with | [a, b, c] => Term.wrapLets fs (.u32Add3Hint a b c) | _ => t
+  | .u32ToField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u32ToField c)
   | .u8ChainRotr7 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                          match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr7 a b) | _ => t
   | .u8ChainRotr4 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
@@ -1068,6 +1089,7 @@ partial def Term.collectGlobals (acc : Std.HashSet Global) : Term → Std.HashSe
   | .ret t | .eqZero t | .proj t _ | .get t _ | .slice t _ _ | .store t
   | .load t | .ptrVal t | .ann _ t | .u8BitDecomposition t | .u8ShiftLeft t
   | .u8ShiftRight t | .unconstrainedGToBytes t | .unconstrainedGInverse t
+  | .u32ToField t
   | .toField t | .u8FromFieldUnsafe t => t.collectGlobals acc
   | .let p v b => b.collectGlobals (v.collectGlobals (patternGlobals acc p))
   | .match s bs =>
@@ -1076,9 +1098,10 @@ partial def Term.collectGlobals (acc : Std.HashSet Global) : Term → Std.HashSe
   | .app g args _ => args.foldl (fun a t => t.collectGlobals a) (acc.insert g)
   | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8Add a b
   | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b | .u8LessThan a b
-  | .u32LessThan a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
+  | .u32LessThan a b | .u32AddHint a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
   | .u8RangeCheck a b | .unconstrainedBigUintDivMod a b | .ioGetInfo a b =>
     b.collectGlobals (a.collectGlobals acc)
+  | .u32Add3Hint a b c => c.collectGlobals (b.collectGlobals (a.collectGlobals acc))
   | .set a _ v => v.collectGlobals (a.collectGlobals acc)
   | .assertEq a b _ r =>
     r.collectGlobals (b.collectGlobals (a.collectGlobals acc))

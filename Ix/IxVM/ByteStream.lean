@@ -43,38 +43,6 @@ def byteStream := ⟦
     }
   }
 
-  -- Witness the wrapping sum and its carry. This function is called only as
-  -- an unconstrained hint by `u32_add`; none of these byte operations enter
-  -- the proof. The caller range-checks and pins every returned value.
-  fn u32_add_hint(a: [U8; 4], b: [U8; 4]) -> ([G; 4], G) {
-    let [a0, a1, a2, a3] = a;
-    let [b0, b1, b2, b3] = b;
-
-    -- Byte 0, no initial carry
-    let (sum0, carry1) = u8_add(a0, b0);
-
-    -- Byte 1
-    let (sum1, overflow1) = u8_add(a1, b1);
-    let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    -- `overflow1` and `carry1a` cannot both be 1: a carry out of `a1 + b1`
-    -- forces `sum1 <= 254`, so `sum1 + carry1` cannot carry. Combining them is
-    -- a cheap field add (no lookup); the sum is 0/1, reinterpreted as `u8`.
-    let carry2 = u8_from_field_unsafe(to_field(overflow1) + to_field(carry1a));
-
-    -- Byte 2
-    let (sum2, overflow2) = u8_add(a2, b2);
-    let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = u8_from_field_unsafe(to_field(overflow2) + to_field(carry2a));
-
-    -- Byte 3
-    let (sum3, overflow3) = u8_add(a3, b3);
-    let (sum3_with_carry, carry3a) = u8_add(sum3, carry3);
-    let carry4 = to_field(overflow3) + to_field(carry3a);
-
-    ([to_field(sum0), to_field(sum1_with_carry),
-      to_field(sum2_with_carry), to_field(sum3_with_carry)], carry4)
-  }
-
   -- Wrapping little-endian u32 addition. The expensive bytewise addition is
   -- advice only; this circuit verifies its five witnesses directly:
   -- four range-checked result bytes, a boolean carry, and the packed integer
@@ -82,33 +50,19 @@ def byteStream := ⟦
   -- the Goldilocks field equality is the intended integer equality (no field
   -- wrap), and the checked decomposition is unique.
   fn u32_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
-    let (raw, carry) = #u32_add_hint(a, b);
+    let (raw, carry) = u32_add_hint(a, b);
     let (z0, z1) = u8_range_check(raw[0], raw[1]);
     let (z2, z3) = u8_range_check(raw[2], raw[3]);
 
     assert_eq!(carry * carry, carry, "u32_add: carry is not boolean");
 
-    let av = to_field(a[0]) + 0x100 * to_field(a[1])
-      + 0x10000 * to_field(a[2]) + 0x1000000 * to_field(a[3]);
-    let bv = to_field(b[0]) + 0x100 * to_field(b[1])
-      + 0x10000 * to_field(b[2]) + 0x1000000 * to_field(b[3]);
-    let zv = to_field(z0) + 0x100 * to_field(z1)
-      + 0x10000 * to_field(z2) + 0x1000000 * to_field(z3);
+    let av = u32_to_field(a);
+    let bv = u32_to_field(b);
+    let zv = u32_to_field([z0, z1, z2, z3]);
     assert_eq!(av + bv, zv + 0x100000000 * carry,
       "u32_add: witnessed sum does not match its inputs");
 
     [z0, z1, z2, z3]
-  }
-
-  -- Witness a wrapping three-word sum. Both nested additions execute under
-  -- the caller's unconstrained mode, so their byte operations are advice
-  -- only. The two binary overflow bits add to the total carry in {0,1,2}.
-  fn u32_add3_hint(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> ([G; 4], G) {
-    let (ab, carry1) = u32_add_hint(a, b);
-    let ab = [u8_from_field_unsafe(ab[0]), u8_from_field_unsafe(ab[1]),
-              u8_from_field_unsafe(ab[2]), u8_from_field_unsafe(ab[3])];
-    let (z, carry2) = u32_add_hint(ab, c);
-    (z, carry1 + carry2)
   }
 
   -- Wrapping sum of three little-endian u32s, pinned directly rather than as
@@ -116,21 +70,17 @@ def byteStream := ⟦
   -- the cubic carry constraint admits exactly 0, 1, or 2. The packed integer
   -- identity cannot wrap in Goldilocks because its values are below 2^34.
   fn u32_add3(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
-    let (raw, carry) = #u32_add3_hint(a, b, c);
+    let (raw, carry) = u32_add3_hint(a, b, c);
     let (z0, z1) = u8_range_check(raw[0], raw[1]);
     let (z2, z3) = u8_range_check(raw[2], raw[3]);
 
     assert_eq!(carry * (carry - 1) * (carry - 2), 0,
       "u32_add3: carry is not in {0, 1, 2}");
 
-    let av = to_field(a[0]) + 0x100 * to_field(a[1])
-      + 0x10000 * to_field(a[2]) + 0x1000000 * to_field(a[3]);
-    let bv = to_field(b[0]) + 0x100 * to_field(b[1])
-      + 0x10000 * to_field(b[2]) + 0x1000000 * to_field(b[3]);
-    let cv = to_field(c[0]) + 0x100 * to_field(c[1])
-      + 0x10000 * to_field(c[2]) + 0x1000000 * to_field(c[3]);
-    let zv = to_field(z0) + 0x100 * to_field(z1)
-      + 0x10000 * to_field(z2) + 0x1000000 * to_field(z3);
+    let av = u32_to_field(a);
+    let bv = u32_to_field(b);
+    let cv = u32_to_field(c);
+    let zv = u32_to_field([z0, z1, z2, z3]);
     assert_eq!(av + bv + cv, zv + 0x100000000 * carry,
       "u32_add3: witnessed sum does not match its inputs");
 

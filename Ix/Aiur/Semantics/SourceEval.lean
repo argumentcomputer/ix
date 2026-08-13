@@ -551,6 +551,40 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       combineFieldsResult (fun a b => .field (if a.val.toUInt32 < b.val.toUInt32 then 1 else 0))
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
+  | .u32AddHint t1 t2 =>
+      match interp decls fuel bindings t1 st with
+      | .error e => .error e
+      | .ok (v1, st1) => match interp decls fuel bindings t2 st1 with
+        | .error e => .error e
+        | .ok (v2, st2) => match v1, v2 with
+          | .array a, .array b =>
+            let pack (xs : Array Value) := xs.toList.zipIdx.foldl
+              (fun n (v, i) => match v with | .field g => n + g.val.toNat * 256 ^ i | _ => n) 0
+            let sum := pack a + pack b
+            .ok (.tuple #[.array (#[0, 1, 2, 3].map fun i => .field (.ofNat ((sum / 256 ^ i) % 256))),
+              .field (.ofNat (sum / 0x100000000))], st2)
+          | _, _ => .error (.typeMismatch "u32AddHint")
+  | .u32Add3Hint t1 t2 t3 =>
+      match interp decls fuel bindings t1 st with
+      | .error e => .error e
+      | .ok (v1, st1) => match interp decls fuel bindings t2 st1 with
+        | .error e => .error e
+        | .ok (v2, st2) => match interp decls fuel bindings t3 st2 with
+          | .error e => .error e
+          | .ok (v3, st3) => match v1, v2, v3 with
+            | .array a, .array b, .array c =>
+              let pack (xs : Array Value) := xs.toList.zipIdx.foldl
+                (fun n (v, i) => match v with | .field g => n + g.val.toNat * 256 ^ i | _ => n) 0
+              let sum := pack a + pack b + pack c
+              .ok (.tuple #[.array (#[0, 1, 2, 3].map fun i => .field (.ofNat ((sum / 256 ^ i) % 256))),
+                .field (.ofNat (sum / 0x100000000))], st3)
+            | _, _, _ => .error (.typeMismatch "u32Add3Hint")
+  | .u32ToField t =>
+      match interp decls fuel bindings t st with
+      | .error e => .error e
+      | .ok (.array a, st') => .ok (.field (.ofNat (a.toList.zipIdx.foldl
+          (fun n (v, i) => match v with | .field g => n + g.val.toNat * 256 ^ i | _ => n) 0)), st')
+      | .ok _ => .error (.typeMismatch "u32ToField")
   | .u8RangeCheck t1 t2 =>
       match interp decls fuel bindings t1 st with
       | .error e => .error e

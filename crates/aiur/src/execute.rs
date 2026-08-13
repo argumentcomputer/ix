@@ -13,6 +13,23 @@ use crate::{
   querymap::QueryMap,
 };
 
+fn u32_value(map: &[G], bytes: &[usize]) -> u64 {
+  assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
+  bytes
+    .iter()
+    .enumerate()
+    .fold(0, |word, (i, idx)| word | (map[*idx].as_canonical_u64() << (8 * i)))
+}
+
+fn u32_sum(values: &[u64]) -> ([G; 4], G) {
+  let sum: u128 = values.iter().map(|x| *x as u128).sum();
+  let word = sum as u32;
+  (
+    word.to_le_bytes().map(|b| G::from_u64(b.into())),
+    G::from_u64((sum >> 32) as u64),
+  )
+}
+
 pub struct QueryRecord {
   pub function_queries: Vec<QueryMap>,
   pub memory_queries: FxIndexMap<usize, QueryMap>,
@@ -463,6 +480,24 @@ impl Function {
             bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
           }
           map.push(o);
+        },
+        ExecEntry::Op(Op::U32AddHint(a, b)) => {
+          let (bytes, carry) =
+            u32_sum(&[u32_value(&map, a), u32_value(&map, b)]);
+          map.extend(bytes);
+          map.push(carry);
+        },
+        ExecEntry::Op(Op::U32Add3Hint(a, b, c)) => {
+          let (bytes, carry) = u32_sum(&[
+            u32_value(&map, a),
+            u32_value(&map, b),
+            u32_value(&map, c),
+          ]);
+          map.extend(bytes);
+          map.push(carry);
+        },
+        ExecEntry::Op(Op::U32ToField(bytes)) => {
+          map.push(G::from_u64(u32_value(&map, bytes)));
         },
         ExecEntry::Op(Op::U8Mul(i, j)) => {
           if unconstrained {

@@ -342,6 +342,22 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
   | .u32LessThan a b => do
     let x ← readIdx st a; let y ← readIdx st b
     pure (pushMap st (if x.val.toUInt32 < y.val.toUInt32 then 1 else 0))
+  | .u32AddHint a b => do
+    let pack (idxs : Array Nat) := idxs.toList.zipIdx.foldl
+      (fun n (idx, i) => n + (st.map[idx]!).val.toNat * 256 ^ i) 0
+    let sum := pack a + pack b
+    let bytes := #[0, 1, 2, 3].map fun i => G.ofNat ((sum / 256 ^ i) % 256)
+    pure (pushMap (appendMap st bytes) (.ofNat (sum / 0x100000000)))
+  | .u32Add3Hint a b c => do
+    let pack (idxs : Array Nat) := idxs.toList.zipIdx.foldl
+      (fun n (idx, i) => n + (st.map[idx]!).val.toNat * 256 ^ i) 0
+    let sum := pack a + pack b + pack c
+    let bytes := #[0, 1, 2, 3].map fun i => G.ofNat ((sum / 256 ^ i) % 256)
+    pure (pushMap (appendMap st bytes) (.ofNat (sum / 0x100000000)))
+  | .u32ToField bytes => do
+    let word := bytes.toList.zipIdx.foldl
+      (fun n (idx, i) => n + (st.map[idx]!).val.toNat * 256 ^ i) 0
+    pure (pushMap st (.ofNat word))
   | .u8RangeCheck a b => do
     -- No value pushed: the `u8` results alias the inputs. Fails if either is
     -- outside `[0, 256)` (exactly what the byte-chip lookup enforces).

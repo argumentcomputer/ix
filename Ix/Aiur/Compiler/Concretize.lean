@@ -361,6 +361,14 @@ def termToConcrete
   | .u32LessThan τ e a b => do
       pure (.u32LessThan (← typToConcrete mono τ) e
                          (← termToConcrete mono a) (← termToConcrete mono b))
+  | .u32AddHint τ e a b => do
+      pure (.u32AddHint (← typToConcrete mono τ) e
+        (← termToConcrete mono a) (← termToConcrete mono b))
+  | .u32Add3Hint τ e a b c => do
+      pure (.u32Add3Hint (← typToConcrete mono τ) e
+        (← termToConcrete mono a) (← termToConcrete mono b) (← termToConcrete mono c))
+  | .u32ToField τ e a => do
+      pure (.u32ToField (← typToConcrete mono τ) e (← termToConcrete mono a))
   | .u8RangeCheck τ e a b => do
       pure (.u8RangeCheck (← typToConcrete mono τ) e
                           (← termToConcrete mono a) (← termToConcrete mono b))
@@ -576,6 +584,13 @@ def rewriteTypedTerm (decls : Typed.Decls)
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u32LessThan τ e a b => .u32LessThan (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u32AddHint τ e a b => .u32AddHint (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u32Add3Hint τ e a b c => .u32Add3Hint (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+      (rewriteTypedTerm decls subst mono c)
+  | .u32ToField τ e a => .u32ToField (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a)
   | .u8RangeCheck τ e a b => .u8RangeCheck (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .unconstrainedBigUintDivMod τ e a b => .unconstrainedBigUintDivMod (rewriteTyp subst mono τ) e
@@ -658,11 +673,14 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
   | .u8ChainRotr7 τ _ a b | .u8ChainRotr4 τ _ a b | .u8RangeCheck τ _ a b
   | .unconstrainedBigUintDivMod τ _ a b
   | .u8And τ _ a b | .u8Or τ _ a b
-  | .u8LessThan τ _ a b | .u32LessThan τ _ a b =>
+  | .u8LessThan τ _ a b | .u32LessThan τ _ a b | .u32AddHint τ _ a b =>
     collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b
+  | .u32Add3Hint τ _ a b c =>
+    collectInTypedTerm (collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b) c
   | .eqZero τ _ a | .store τ _ a | .load τ _ a | .ptrVal τ _ a | .toField τ _ a
   | .u8FromFieldUnsafe τ _ a
   | .unconstrainedGToBytes τ _ a | .unconstrainedGInverse τ _ a
+  | .u32ToField τ _ a
   | .u8BitDecomposition τ _ a | .u8ShiftLeft τ _ a | .u8ShiftRight τ _ a =>
     collectInTypedTerm (collectInTyp seen τ) a
   | .ioGetInfo τ _ c k =>
@@ -730,11 +748,14 @@ def collectCalls (decls : Typed.Decls)
   | .u8ChainRotr7 _ _ a b | .u8ChainRotr4 _ _ a b | .u8RangeCheck _ _ a b
   | .unconstrainedBigUintDivMod _ _ a b
   | .u8And _ _ a b | .u8Or _ _ a b
-  | .u8LessThan _ _ a b | .u32LessThan _ _ a b =>
+  | .u8LessThan _ _ a b | .u32LessThan _ _ a b | .u32AddHint _ _ a b =>
     collectCalls decls (collectCalls decls seen a) b
+  | .u32Add3Hint _ _ a b c =>
+    collectCalls decls (collectCalls decls (collectCalls decls seen a) b) c
   | .eqZero _ _ a | .store _ _ a | .load _ _ a | .ptrVal _ _ a | .toField _ _ a
   | .u8FromFieldUnsafe _ _ a
   | .unconstrainedGToBytes _ _ a | .unconstrainedGInverse _ _ a
+  | .u32ToField _ _ a
   | .u8BitDecomposition _ _ a | .u8ShiftLeft _ _ a | .u8ShiftRight _ _ a =>
     collectCalls decls seen a
   | .ioGetInfo _ _ c k =>
@@ -846,6 +867,11 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u32LessThan τ e a b => .u32LessThan (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u32AddHint τ e a b => .u32AddHint (Typ.instantiate subst τ) e
+      (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u32Add3Hint τ e a b c => .u32Add3Hint (Typ.instantiate subst τ) e
+      (substInTypedTerm subst a) (substInTypedTerm subst b) (substInTypedTerm subst c)
+  | .u32ToField τ e a => .u32ToField (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .u8RangeCheck τ e a b => .u8RangeCheck (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .unconstrainedBigUintDivMod τ e a b => .unconstrainedBigUintDivMod (Typ.instantiate subst τ) e

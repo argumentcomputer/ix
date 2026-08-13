@@ -354,6 +354,8 @@ def Op.outputCount : Op → Nat
   | .unconstrainedBigUintDivMod _ _ => 2
   | .unconstrainedGToBytes _ => 8
   | .unconstrainedGInverse _ => 1
+  | .u32AddHint _ _ | .u32Add3Hint _ _ _ => 5
+  | .u32ToField _ => 1
   | .debug _ _ => 0
 
 private def emitConst (out : Nat) (c : Aiur.G) : Array RustStmt :=
@@ -622,6 +624,22 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" } __result }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
+private def u32PackExpr (xs : Array ValIdx) : String :=
+  let terms := xs.toList.zipIdx.map fun (idx, i) =>
+    s!"(__v_{idx}.as_canonical_u64() << {8 * i})"
+  "(" ++ String.intercalate " | " terms ++ ")"
+
+private def emitU32AddHint (out : Nat) (inputs : List (Array ValIdx)) : Array RustStmt := Id.run do
+  let sum := String.intercalate " + " (inputs.map fun xs => s!"({u32PackExpr xs} as u128)")
+  let mut stmts := #[.letStmt false "__u32_sum" (some "u128") (.lit sum),
+    .letStmt false "__u32_bytes" none (.lit "(__u32_sum as u32).to_le_bytes()")]
+  for i in [0 : 4] do
+    stmts := stmts.push (declVal (out + i) (.lit s!"G::from_u8(__u32_bytes[{i}])"))
+  stmts.push (declVal (out + 4) (.lit "G::from_u64((__u32_sum >> 32) as u64)"))
+
+private def emitU32ToField (out : Nat) (bytes : Array ValIdx) : Array RustStmt :=
+  #[declVal out (.lit s!"G::from_u64({u32PackExpr bytes})")]
+
 /-- `Op::U8RangeCheck`: 0 outputs; pure range-check side effect. -/
 private def emitU8RangeCheck (i j : ValIdx) : Array RustStmt :=
   let stmt : String :=
@@ -712,6 +730,9 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .unconstrainedBigUintDivMod a b => emitUncBigUintDivMod out a b
   | .unconstrainedGToBytes a => emitUncGToBytes out a
   | .unconstrainedGInverse a => emitUncGInverse out a
+  | .u32AddHint a b => emitU32AddHint out [a, b]
+  | .u32Add3Hint a b c => emitU32AddHint out [a, b, c]
+  | .u32ToField a => emitU32ToField out a
   | .debug label args => emitDebug label args
 
 /-! ## Ctrl emission -/
