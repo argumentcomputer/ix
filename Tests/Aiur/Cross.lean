@@ -392,19 +392,20 @@ def toplevel : Source.Toplevel := ⟦
   pub fn u8_less_than_function(i: U8, j: U8) -> G { u8_less_than(i, j) }
   pub fn u8_and_function(i: U8, j: U8) -> U8 { u8_and(i, j) }
   pub fn u8_or_function(i: U8, j: U8) -> U8 { u8_or(i, j) }
-  pub fn u8_chain_rotr7_function(i: U8, j: U8) -> (U8, U8, U8) { u8_chain_rotr7(i, j) }
-  pub fn u8_chain_rotr4_function(i: U8, j: U8) -> (U8, U8, U8) { u8_chain_rotr4(i, j) }
+  pub fn u8_xor_split7_function(i: U8, j: U8) -> (U8, U8) { u8_xor_split7(i, j) }
+  pub fn u8_xor_split4_function(i: U8, j: U8) -> (U8, U8) { u8_xor_split4(i, j) }
 
-  -- Full u32 right-rotation by 7, built by chaining the partial gadget over
-  -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
-  pub fn u32_rotr7(b: [U8; 4]) -> [U8; 4] {
-    let [b0, b1, b2, b3] = b;
-    let (a0, a1, a2) = u8_chain_rotr7(b0, b1);
-    let (c0, c1, c2) = u8_chain_rotr7(b2, b3);
-    -- The two combined parts occupy disjoint bit positions, so their sum never
-    -- overflows a byte: add cheaply as `G`, then reinterpret as `U8`.
-    [a0, u8_from_field_unsafe(to_field(a1) + to_field(c2)), c0,
-     u8_from_field_unsafe(to_field(c1) + to_field(a2))]
+  -- Full u32 xor + right-rotation by 7, built from the fused per-byte
+  -- xor-split gadget (4 lookups + 4 free field adds).
+  pub fn u32_xor_rotr7(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    let (h0, l0) = u8_xor_split7(a[0], b[0]);
+    let (h1, l1) = u8_xor_split7(a[1], b[1]);
+    let (h2, l2) = u8_xor_split7(a[2], b[2]);
+    let (h3, l3) = u8_xor_split7(a[3], b[3]);
+    [u8_from_field_unsafe(to_field(h0) + to_field(l1)),
+     u8_from_field_unsafe(to_field(h1) + to_field(l2)),
+     u8_from_field_unsafe(to_field(h2) + to_field(l3)),
+     u8_from_field_unsafe(to_field(h3) + to_field(l0))]
   }
 
   -- u32 less-than wrapper (named to match Aiur)
@@ -1463,12 +1464,12 @@ def tests : TestSeq :=
   runAgreement "u8_less_than_function(131,45)" "u8_less_than_function" [131, 45] ++
   runAgreement "u8_and_function(45,131)" "u8_and_function" [45, 131] ++
   runAgreement "u8_or_function(45,131)" "u8_or_function" [45, 131] ++
-  runAgreement "u8_chain_rotr7_function(45,131)" "u8_chain_rotr7_function" [45, 131] ++
-  runAgreement "u8_chain_rotr7_function(0,255)" "u8_chain_rotr7_function" [0, 255] ++
-  runAgreement "u8_chain_rotr4_function(45,131)" "u8_chain_rotr4_function" [45, 131] ++
-  runAgreement "u8_chain_rotr4_function(255,255)" "u8_chain_rotr4_function" [255, 255] ++
-  runAgreement "u32_rotr7(45,131,200,17)" "u32_rotr7"
-    [.array #[45, 131, 200, 17]] ++
+  runAgreement "u8_xor_split7_function(45,131)" "u8_xor_split7_function" [45, 131] ++
+  runAgreement "u8_xor_split7_function(0,255)" "u8_xor_split7_function" [0, 255] ++
+  runAgreement "u8_xor_split4_function(45,131)" "u8_xor_split4_function" [45, 131] ++
+  runAgreement "u8_xor_split4_function(255,255)" "u8_xor_split4_function" [255, 255] ++
+  runAgreement "u32_xor_rotr7(a,b)" "u32_xor_rotr7"
+    [.array #[45, 131, 200, 17], .array #[200, 17, 45, 131]] ++
   runAgreement "range_check_id(45,200)" "range_check_id" [45, 200] ++
   runAgreement "range_check_id(0,255)" "range_check_id" [0, 255] ++
   runAgreement "u8_lit_xor(45)" "u8_lit_xor" [45] ++

@@ -401,25 +401,18 @@ mod tests {
     Toplevel { functions: vec![function], memory_sizes: vec![] }
   }
 
-  fn rotation_chains_toplevel() -> Toplevel {
+  fn xor_splits_toplevel() -> Toplevel {
     let body = Block {
-      ops: vec![
-        Op::U8ChainRotr7(0, 1),
-        Op::U8ChainRotr4(0, 1),
-        Op::U8XorSplit7(0, 1),
-        Op::U8XorSplit4(0, 1),
-      ],
-      ctrl: Ctrl::Return(0, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
+      ops: vec![Op::U8XorSplit7(0, 1), Op::U8XorSplit4(0, 1)],
+      ctrl: Ctrl::Return(0, vec![2, 3, 4, 5]),
     };
     let function = Function {
       body,
       layout: FunctionLayout {
         input_size: 2,
         selectors: 1,
-        // Multiplicity plus two columns for each rotation-chain operation.
-        auxiliaries: 9,
-        // Return plus one byte-table lookup per operation.
-        lookups: 5,
+        auxiliaries: 5,
+        lookups: 3,
       },
       entry: true,
       constrained: true,
@@ -428,15 +421,13 @@ mod tests {
   }
 
   #[test]
-  fn prove_verify_virtual_rotation_chain_outputs() {
+  fn prove_verify_xor_splits() {
     let (cp, fp) = test_parameters();
-    let system = AiurSystem::build(rotation_chains_toplevel(), cp, fp);
+    let system = AiurSystem::build(xor_splits_toplevel(), cp, fp);
     let input = [G::from_u8(0xd3), G::from_u8(0x69)];
     let mut io_buffer = empty_io_buffer();
 
     let (claim, proof) = system.prove(0, &input, &mut io_buffer);
-    let (r7_0, r7_1, r7_2) = Bytes2::chain_rotr7(&input[0], &input[1]);
-    let (r4_0, r4_1, r4_2) = Bytes2::chain_rotr4(&input[0], &input[1]);
     let (s7_hi, s7_lo) = Bytes2::xor_split7(&input[0], &input[1]);
     let (s4_hi, s4_lo) = Bytes2::xor_split4(&input[0], &input[1]);
     assert_eq!(
@@ -446,21 +437,13 @@ mod tests {
         G::ZERO,
         input[0],
         input[1],
-        r7_0,
-        r7_1,
-        r7_2,
-        r4_0,
-        r4_1,
-        r4_2,
         s7_hi,
         s7_lo,
         s4_hi,
         s4_lo,
       ]
     );
-    system
-      .verify(&claim, &proof)
-      .expect("virtual rotation outputs must verify");
+    system.verify(&claim, &proof).expect("xor split outputs must verify");
   }
 
   /// Hand-build a toplevel exercising the two migrated integration paths that
@@ -645,7 +628,7 @@ mod tests {
     // height doubles as the committed trace height.
     assert_eq!(shapes[3].preprocessed_width, 11);
     assert_eq!(shapes[3].preprocessed_height, 256);
-    assert_eq!(shapes[4].preprocessed_width, 20);
+    assert_eq!(shapes[4].preprocessed_width, 14);
     assert_eq!(shapes[4].preprocessed_height, 65536);
   }
 }

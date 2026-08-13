@@ -198,8 +198,6 @@ syntax "u8_xor_split7" "(" aiur_trm ", " aiur_trm ")"                       : ai
 syntax "u8_xor_split4" "(" aiur_trm ", " aiur_trm ")"                       : aiur_trm
 syntax "u8_add" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
 syntax "u8_mul" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
-syntax "u8_chain_rotr7" "(" aiur_trm ", " aiur_trm ")"                      : aiur_trm
-syntax "u8_chain_rotr4" "(" aiur_trm ", " aiur_trm ")"                      : aiur_trm
 syntax "u8_sub" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
 syntax "u8_and" "(" aiur_trm ", " aiur_trm ")"                              : aiur_trm
 syntax "u8_or" "(" aiur_trm ", " aiur_trm ")"                               : aiur_trm
@@ -347,10 +345,6 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.u8Add #[← elabTrm i, ← elabTrm j]
   | `(aiur_trm| u8_mul($i:aiur_trm, $j:aiur_trm)) => do
     mkAppM ``Source.Term.u8Mul #[← elabTrm i, ← elabTrm j]
-  | `(aiur_trm| u8_chain_rotr7($i:aiur_trm, $j:aiur_trm)) => do
-    mkAppM ``Source.Term.u8ChainRotr7 #[← elabTrm i, ← elabTrm j]
-  | `(aiur_trm| u8_chain_rotr4($i:aiur_trm, $j:aiur_trm)) => do
-    mkAppM ``Source.Term.u8ChainRotr4 #[← elabTrm i, ← elabTrm j]
   | `(aiur_trm| u8_sub($i:aiur_trm, $j:aiur_trm)) => do
     mkAppM ``Source.Term.u8Sub #[← elabTrm i, ← elabTrm j]
   | `(aiur_trm| u8_and($i:aiur_trm, $j:aiur_trm)) => do
@@ -573,14 +567,6 @@ where
       let i ← replaceToken old new i
       let j ← replaceToken old new j
       `(aiur_trm| u8_mul($i, $j))
-    | `(aiur_trm| u8_chain_rotr7($i:aiur_trm, $j:aiur_trm)) => do
-      let i ← replaceToken old new i
-      let j ← replaceToken old new j
-      `(aiur_trm| u8_chain_rotr7($i, $j))
-    | `(aiur_trm| u8_chain_rotr4($i:aiur_trm, $j:aiur_trm)) => do
-      let i ← replaceToken old new i
-      let j ← replaceToken old new j
-      `(aiur_trm| u8_chain_rotr4($i, $j))
     | `(aiur_trm| u8_sub($i:aiur_trm, $j:aiur_trm)) => do
       let i ← replaceToken old new i
       let j ← replaceToken old new j

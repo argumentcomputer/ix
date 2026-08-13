@@ -199,15 +199,6 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpAuxiliaries; bumpLookups
   | .u8Mul .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
   | .u8XorSplit7 .. | .u8XorSplit4 .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
-  | .u8ChainRotr7 a b | .u8ChainRotr4 a b => do
-    let aDegree ← getDegree a
-    let bDegree ← getDegree b
-    -- The lookup witnesses the rotated byte and the high part of `b`. The
-    -- shifted-low part of `a` is a linear expression of those values and the
-    -- inputs, so the third logical output needs no column.
-    pushDegrees #[1, 1, (aDegree.max bDegree).max 1]
-    bumpAuxiliaries 2
-    bumpLookups
   | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
   | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
   | .unconstrainedU32Add a b => do

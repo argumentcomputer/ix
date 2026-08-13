@@ -440,8 +440,6 @@ inductive Term
   /-- Pack four little-endian bytes into a field value. This is a virtual
   linear expression and does not allocate an auxiliary column. -/
   | u32ToField : Term → Term
-  | u8ChainRotr7 : Term → Term → Term
-  | u8ChainRotr4 : Term → Term → Term
   /-- Unconstrained LE byte-list division-modulo hint. Inputs are two
   `List<U64>` (klimbs) values (LE limb order). Output is a tuple of two
   fresh `List<U64>` values `(q, r)` with `q*b + r = a` and `0 ≤ r < b`
@@ -698,8 +696,6 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .unconstrainedU32Add a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .unconstrainedU32Add a' b')
   | .unconstrainedU32Add3 a b c => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; let (cnt, c') := Term.freshen cnt subst c; (cnt, .unconstrainedU32Add3 a' b' c')
   | .u32ToField a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u32ToField a')
-  | .u8ChainRotr7 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr7 a' b')
-  | .u8ChainRotr4 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr4 a' b')
   | .unconstrainedBigUintDivMod a b =>
     let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .unconstrainedBigUintDivMod a' b')
   | .u8RangeCheck a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8RangeCheck a' b')
@@ -747,7 +743,7 @@ def Term.inlineCallSites : Term → List (Global × Nat)
   | .let _ v b => v.inlineCallSites ++ b.inlineCallSites
   | .add a b | .sub a b | .mul a b | .set a _ b
   | .u8Xor a b | .u8XorSplit7 a b | .u8XorSplit4 a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
-  | .u8LessThan a b | .u32LessThan a b | .unconstrainedU32Add a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
+  | .u8LessThan a b | .u32LessThan a b | .unconstrainedU32Add a b
   | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b | .ioGetInfo a b =>
     a.inlineCallSites ++ b.inlineCallSites
   | .assertEq a b _ c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
@@ -874,8 +870,6 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
   | .unconstrainedU32Add a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .unconstrainedU32Add a' b')
   | .unconstrainedU32Add3 a b c => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; let (cnt, c') := Term.expandOnce done cnt c; (cnt, .unconstrainedU32Add3 a' b' c')
   | .u32ToField a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u32ToField a')
-  | .u8ChainRotr7 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr7 a' b')
-  | .u8ChainRotr4 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr4 a' b')
   | .unconstrainedBigUintDivMod a b =>
     let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .unconstrainedBigUintDivMod a' b')
   | .u8RangeCheck a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8RangeCheck a' b')
@@ -1007,10 +1001,6 @@ def Term.hoistLets : Term → Term :=
   | .unconstrainedU32Add3 a b c => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b, Term.hoistLets c]
                           match cs with | [a, b, c] => Term.wrapLets fs (.unconstrainedU32Add3 a b c) | _ => t
   | .u32ToField a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u32ToField c)
-  | .u8ChainRotr7 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                         match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr7 a b) | _ => t
-  | .u8ChainRotr4 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                         match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr4 a b) | _ => t
   | .unconstrainedBigUintDivMod a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                                        match cs with | [a, b] => Term.wrapLets fs (.unconstrainedBigUintDivMod a b) | _ => t
   | .u8RangeCheck a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
@@ -1108,7 +1098,7 @@ partial def Term.collectGlobals (acc : Std.HashSet Global) : Term → Std.HashSe
   | .app g args _ => args.foldl (fun a t => t.collectGlobals a) (acc.insert g)
   | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8XorSplit7 a b | .u8XorSplit4 a b | .u8Add a b
   | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b | .u8LessThan a b
-  | .u32LessThan a b | .unconstrainedU32Add a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
+  | .u32LessThan a b | .unconstrainedU32Add a b
   | .u8RangeCheck a b | .unconstrainedBigUintDivMod a b | .ioGetInfo a b =>
     b.collectGlobals (a.collectGlobals acc)
   | .unconstrainedU32Add3 a b c => c.collectGlobals (b.collectGlobals (a.collectGlobals acc))

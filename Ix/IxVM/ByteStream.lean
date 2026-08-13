@@ -101,22 +101,6 @@ def byteStream := ⟦
     [w1, w2, w3, w0]
   }
 
-  fn u32_rotr12(w: [U8; 4]) -> [U8; 4] {
-    let [w0, w1, w2, w3] = w;
-    let (e0, e1, e2) = u8_chain_rotr4(w1, w2);
-    let (f0, f1, f2) = u8_chain_rotr4(w3, w0);
-    [e0, u8_from_field_unsafe(to_field(e1) + to_field(f2)), f0,
-     u8_from_field_unsafe(to_field(f1) + to_field(e2))]
-  }
-
-  fn u32_rotr7(w: [U8; 4]) -> [U8; 4] {
-    let [w0, w1, w2, w3] = w;
-    let (g0, g1, g2) = u8_chain_rotr7(w0, w1);
-    let (h0, h1, h2) = u8_chain_rotr7(w2, w3);
-    [g0, u8_from_field_unsafe(to_field(g1) + to_field(h2)), h0,
-     u8_from_field_unsafe(to_field(h1) + to_field(g2))]
-  }
-
   fn u32_xor_rotr7(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let (h0, l0) = u8_xor_split7(a[0], b[0]);
     let (h1, l1) = u8_xor_split7(a[1], b[1]);

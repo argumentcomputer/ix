@@ -580,22 +580,6 @@ impl Function {
             }
           }
         },
-        ExecEntry::Op(Op::U8ChainRotr7(i, j)) => {
-          if unconstrained {
-            let (o0, o1, o2) = Bytes2::chain_rotr7(&map[*i], &map[*j]);
-            map.extend([o0, o1, o2]);
-          } else {
-            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr7, &mut map, record);
-          }
-        },
-        ExecEntry::Op(Op::U8ChainRotr4(i, j)) => {
-          if unconstrained {
-            let (o0, o1, o2) = Bytes2::chain_rotr4(&map[*i], &map[*j]);
-            map.extend([o0, o1, o2]);
-          } else {
-            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr4, &mut map, record);
-          }
-        },
         ExecEntry::Op(Op::U8RangeCheck(i, j)) => {
           // No `map.push`: the two `u8` outputs alias the inputs `i`, `j`.
           // Records a range-check query so the byte-chip lookup is satisfied.
@@ -849,24 +833,6 @@ pub fn bytes2_mul_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
 }
 
 #[inline]
-pub fn bytes2_chain_rotr7_value(
-  a: G,
-  b: G,
-  record: &mut QueryRecord,
-) -> (G, G, G) {
-  record.bytes2_queries.bump_chain_rotr7(&a, &b);
-  Bytes2::chain_rotr7(&a, &b)
-}
-
-#[inline]
-pub fn bytes2_chain_rotr4_value(
-  a: G,
-  b: G,
-  record: &mut QueryRecord,
-) -> (G, G, G) {
-  record.bytes2_queries.bump_chain_rotr4(&a, &b);
-  Bytes2::chain_rotr4(&a, &b)
-}
 pub fn bytes2_xor_split7_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
   record.bytes2_queries.bump_xor_split7(&a, &b);
   Bytes2::xor_split7(&a, &b)
