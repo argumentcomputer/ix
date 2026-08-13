@@ -512,7 +512,7 @@ build the guest) per the
    # Shard (instant): init.ixprof → init.ixes manifest. With no budget flags
    # it bin-packs to the fewest shards that each fit this box's RAM (peak
    # prover RAM ≈ `50 + 33 × cycles_billions` GB, targeting ~85 % of total).
-   lake exe ix shard init.ixprof
+   lake exe ix shard init.ixe --profile init.ixprof
    # Or pick a per-shard budget / a fixed count instead:
    #   --max-ram 256   --max-cycles 4500000000   --shards 16
    ```
