@@ -245,8 +245,8 @@ jobs:
   #   - decompile: the inverse of compile. Roundtrip correctness is
   #     checked elsewhere (`ix validate` / roundtrip tests) — this only
   #     measures speed and memory.
-  #   - aiur-recursive: proves the IxVM typecheck of two fixed constants
-  #     (Nat.add_comm, Array.extract_append), runs the in-circuit
+  #   - aiur-recursive: proves the IxVM typecheck of three fixed constants
+  #     (Nat.add_comm, Vector.append, String.split), runs the in-circuit
   #     verifier over each proof, then proves THAT — the cost of
   #     recursion at kernel scale. A fixed subset instead of the
   #     Vectors.csv fan-out: its `env` field names the (already-cached)
