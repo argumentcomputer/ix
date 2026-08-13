@@ -304,11 +304,11 @@ def blake3 := ⟦
     let a = @u32_add3(a, b, x);
     let d = @u32_rotr16(@u32_xor(d, a));
     let c = @u32_add(c, d);
-    let b = @u32_rotr12(@u32_xor(b, c));
+    let b = @u32_xor_rotr12(b, c);
     let a = @u32_add3(a, b, y);
     let d = @u32_rotr8(@u32_xor(d, a));
     let c = @u32_add(c, d);
-    let b = @u32_rotr7(@u32_xor(b, c));
+    let b = @u32_xor_rotr7(b, c);
     [a, b, c, d]
   }
 

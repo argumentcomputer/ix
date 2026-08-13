@@ -468,6 +468,20 @@ impl Function {
             bytes2_execute(*i, *j, &Bytes2Op::Xor, &mut map, record);
           }
         },
+        ExecEntry::Op(Op::U8XorSplit7(i, j)) => {
+          let (a, b) = Bytes2::xor_split7(&map[*i], &map[*j]);
+          if !unconstrained {
+            record.bytes2_queries.bump_xor_split7(&map[*i], &map[*j]);
+          }
+          map.extend([a, b]);
+        },
+        ExecEntry::Op(Op::U8XorSplit4(i, j)) => {
+          let (a, b) = Bytes2::xor_split4(&map[*i], &map[*j]);
+          if !unconstrained {
+            record.bytes2_queries.bump_xor_split4(&map[*i], &map[*j]);
+          }
+          map.extend([a, b]);
+        },
         ExecEntry::Op(Op::U8Add(i, j)) => {
           // The add gadget yields only the low byte; the carry is derived
           // and pushed separately so the op still produces `(low, carry)`.
@@ -852,6 +866,14 @@ pub fn bytes2_chain_rotr4_value(
 ) -> (G, G, G) {
   record.bytes2_queries.bump_chain_rotr4(&a, &b);
   Bytes2::chain_rotr4(&a, &b)
+}
+pub fn bytes2_xor_split7_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_xor_split7(&a, &b);
+  Bytes2::xor_split7(&a, &b)
+}
+pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_xor_split4(&a, &b);
+  Bytes2::xor_split4(&a, &b)
 }
 
 /// Bumps `bytes2_queries.add` and returns the full `(low, carry)`

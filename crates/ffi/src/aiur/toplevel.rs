@@ -189,6 +189,14 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       let [a] = ctor.objs::<1>();
       Op::U32ToField(decode_vec_val_idx(a))
     },
+    34 => {
+      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::U8XorSplit7(i, j)
+    },
+    35 => {
+      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::U8XorSplit4(i, j)
+    },
     _ => unreachable!(),
   }
 }

@@ -24,6 +24,7 @@ use crate::{
   u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
   u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
   u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
+  u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 struct ColumnIndex {
@@ -453,6 +454,32 @@ impl Op {
         map.push((xor, 1));
         slice.push_auxiliary(index, xor);
         slice.push_lookup(index, G::ONE, &[u8_xor_channel(), i, j, xor]);
+      },
+      Op::U8XorSplit7(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (hi, lo) = Bytes2::xor_split7(&i, &j);
+        map.extend([(hi, 1), (lo, 1)]);
+        slice.push_auxiliary(index, hi);
+        slice.push_auxiliary(index, lo);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_split7_channel(), i, j, hi, lo],
+        );
+      },
+      Op::U8XorSplit4(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (hi, lo) = Bytes2::xor_split4(&i, &j);
+        map.extend([(hi, 1), (lo, 1)]);
+        slice.push_auxiliary(index, hi);
+        slice.push_auxiliary(index, lo);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_split4_channel(), i, j, hi, lo],
+        );
       },
       Op::U8Add(i, j) => {
         let (i, _) = map[*i];

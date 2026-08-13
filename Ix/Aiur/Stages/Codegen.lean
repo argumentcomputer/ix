@@ -347,6 +347,7 @@ def Op.outputCount : Op → Nat
   | .u8ShiftLeft _ | .u8ShiftRight _ => 1
   | .u8Xor _ _ | .u8And _ _ | .u8Or _ _ | .u8LessThan _ _ => 1
   | .u8Mul _ _ => 2
+  | .u8XorSplit7 _ _ | .u8XorSplit4 _ _ => 2
   | .u8Add _ _ | .u8Sub _ _ => 2
   | .u8ChainRotr7 _ _ | .u8ChainRotr4 _ _ => 3
   | .u32LessThan _ _ => 1
@@ -719,6 +720,8 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .u8ShiftLeft b => emitU8Bytes1 out "bytes1_shift_left_value" "Bytes1::shift_left" b 1
   | .u8ShiftRight b => emitU8Bytes1 out "bytes1_shift_right_value" "Bytes1::shift_right" b 1
   | .u8Xor i j => emitU8Bytes2 out "bytes2_xor_value" "xor" i j 1
+  | .u8XorSplit7 i j => emitU8Bytes2 out "bytes2_xor_split7_value" "xor_split7" i j 2
+  | .u8XorSplit4 i j => emitU8Bytes2 out "bytes2_xor_split4_value" "xor_split4" i j 2
   | .u8Mul i j => emitU8Bytes2 out "bytes2_mul_value" "mul" i j 2
   | .u8And i j => emitU8Bytes2 out "bytes2_and_value" "and" i j 1
   | .u8Or i j => emitU8Bytes2 out "bytes2_or_value" "or" i j 1
@@ -986,6 +989,8 @@ def optionalExecuteUses : Array (String × String) := #[
   ("bytes2_sub_value", "bytes2_sub_value"),
   ("bytes2_chain_rotr7_value", "bytes2_chain_rotr7_value"),
   ("bytes2_chain_rotr4_value", "bytes2_chain_rotr4_value"),
+  ("bytes2_xor_split7_value", "bytes2_xor_split7_value"),
+  ("bytes2_xor_split4_value", "bytes2_xor_split4_value"),
   ("unconstrained_big_uint_div_mod_helper", "unconstrained_big_uint_div_mod_helper"),
   ("g_inverse_value", "g_inverse_value"),
   ("CodegenBytes1 as Bytes1", "Bytes1::"),

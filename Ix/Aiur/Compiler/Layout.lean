@@ -198,6 +198,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegree ((aDegree.max bDegree).max 1)
     bumpAuxiliaries; bumpLookups
   | .u8Mul .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
+  | .u8XorSplit7 .. | .u8XorSplit4 .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
   | .u8ChainRotr7 a b | .u8ChainRotr4 a b => do
     let aDegree ← getDegree a
     let bDegree ← getDegree b

@@ -423,6 +423,8 @@ inductive Term
   | u8ShiftLeft : Term → Term
   | u8ShiftRight : Term → Term
   | u8Xor : Term → Term → Term
+  | u8XorSplit7 : Term → Term → Term
+  | u8XorSplit4 : Term → Term → Term
   | u8Add : Term → Term → Term
   | u8Mul : Term → Term → Term
   | u8Sub : Term → Term → Term
@@ -684,6 +686,8 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .u8ShiftLeft a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8ShiftLeft a')
   | .u8ShiftRight a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8ShiftRight a')
   | .u8Xor a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Xor a' b')
+  | .u8XorSplit7 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8XorSplit7 a' b')
+  | .u8XorSplit4 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8XorSplit4 a' b')
   | .u8Add a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Add a' b')
   | .u8Mul a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Mul a' b')
   | .u8Sub a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Sub a' b')
@@ -742,7 +746,7 @@ def Term.inlineCallSites : Term → List (Global × Nat)
     arms.attach.foldl (fun acc ⟨(_, a), _⟩ => acc ++ a.inlineCallSites) s.inlineCallSites
   | .let _ v b => v.inlineCallSites ++ b.inlineCallSites
   | .add a b | .sub a b | .mul a b | .set a _ b
-  | .u8Xor a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
+  | .u8Xor a b | .u8XorSplit7 a b | .u8XorSplit4 a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
   | .u8LessThan a b | .u32LessThan a b | .unconstrainedU32Add a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
   | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b | .ioGetInfo a b =>
     a.inlineCallSites ++ b.inlineCallSites
@@ -858,6 +862,8 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
   | .u8ShiftLeft a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8ShiftLeft a')
   | .u8ShiftRight a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8ShiftRight a')
   | .u8Xor a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Xor a' b')
+  | .u8XorSplit7 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8XorSplit7 a' b')
+  | .u8XorSplit4 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8XorSplit4 a' b')
   | .u8Add a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Add a' b')
   | .u8Mul a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Mul a' b')
   | .u8Sub a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Sub a' b')
@@ -978,6 +984,10 @@ def Term.hoistLets : Term → Term :=
   | .unconstrainedGInverse a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGInverse c)
   | .u8Xor a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                   match cs with | [a, b] => Term.wrapLets fs (.u8Xor a b) | _ => t
+  | .u8XorSplit7 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                  match cs with | [a, b] => Term.wrapLets fs (.u8XorSplit7 a b) | _ => t
+  | .u8XorSplit4 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                  match cs with | [a, b] => Term.wrapLets fs (.u8XorSplit4 a b) | _ => t
   | .u8Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                   match cs with | [a, b] => Term.wrapLets fs (.u8Add a b) | _ => t
   | .u8Mul a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
@@ -1096,7 +1106,7 @@ partial def Term.collectGlobals (acc : Std.HashSet Global) : Term → Std.HashSe
     bs.foldl (fun a (p, b) => b.collectGlobals (patternGlobals a p))
       (s.collectGlobals acc)
   | .app g args _ => args.foldl (fun a t => t.collectGlobals a) (acc.insert g)
-  | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8Add a b
+  | .add a b | .sub a b | .mul a b | .u8Xor a b | .u8XorSplit7 a b | .u8XorSplit4 a b | .u8Add a b
   | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b | .u8LessThan a b
   | .u32LessThan a b | .unconstrainedU32Add a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
   | .u8RangeCheck a b | .unconstrainedBigUintDivMod a b | .ioGetInfo a b =>

@@ -17,6 +17,7 @@ use crate::{
   u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
   u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
   u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
+  u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 type Expr = multi_stark::expr::Expr<G>;
@@ -526,6 +527,22 @@ impl Op {
         *j,
         &Bytes2Op::Xor,
         u8_xor_channel(),
+        sel.clone(),
+        state,
+      ),
+      Op::U8XorSplit7(i, j) => bytes2_constraints(
+        *i,
+        *j,
+        &Bytes2Op::XorSplit7,
+        u8_xor_split7_channel(),
+        sel.clone(),
+        state,
+      ),
+      Op::U8XorSplit4(i, j) => bytes2_constraints(
+        *i,
+        *j,
+        &Bytes2Op::XorSplit4,
+        u8_xor_split4_channel(),
         sel.clone(),
         state,
       ),

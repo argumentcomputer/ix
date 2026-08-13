@@ -124,6 +124,8 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
       let a' ← simplifyTypedTerm decls a
       let b' ← simplifyTypedTerm decls b
       pure (.u8LessThan τ e a' b')
+  | .u8XorSplit7 τ e a b => do pure (.u8XorSplit7 τ e (← simplifyTypedTerm decls a) (← simplifyTypedTerm decls b))
+  | .u8XorSplit4 τ e a b => do pure (.u8XorSplit4 τ e (← simplifyTypedTerm decls a) (← simplifyTypedTerm decls b))
   | .u32LessThan τ e a b => do
       let a' ← simplifyTypedTerm decls a
       let b' ← simplifyTypedTerm decls b

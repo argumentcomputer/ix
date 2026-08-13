@@ -334,6 +334,8 @@ def termToConcrete
   | .u8Xor τ e a b => do
       pure (.u8Xor (← typToConcrete mono τ) e
                    (← termToConcrete mono a) (← termToConcrete mono b))
+  | .u8XorSplit7 τ e a b => do pure (.u8XorSplit7 (← typToConcrete mono τ) e (← termToConcrete mono a) (← termToConcrete mono b))
+  | .u8XorSplit4 τ e a b => do pure (.u8XorSplit4 (← typToConcrete mono τ) e (← termToConcrete mono a) (← termToConcrete mono b))
   | .u8Add τ e a b => do
       pure (.u8Add (← typToConcrete mono τ) e
                    (← termToConcrete mono a) (← termToConcrete mono b))
@@ -566,6 +568,8 @@ def rewriteTypedTerm (decls : Typed.Decls)
     .u8ShiftRight (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono a)
   | .u8Xor τ e a b => .u8Xor (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8XorSplit7 τ e a b => .u8XorSplit7 (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8XorSplit4 τ e a b => .u8XorSplit4 (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u8Add τ e a b => .u8Add (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u8Mul τ e a b => .u8Mul (rewriteTyp subst mono τ) e
@@ -669,7 +673,7 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
     let seen := tArgs.foldl collectInTyp seen
     args.attach.foldl (fun s ⟨a, _⟩ => collectInTypedTerm s a) seen
   | .add τ _ a b | .sub τ _ a b | .mul τ _ a b
-  | .u8Xor τ _ a b | .u8Add τ _ a b | .u8Mul τ _ a b | .u8Sub τ _ a b
+  | .u8Xor τ _ a b | .u8XorSplit7 τ _ a b | .u8XorSplit4 τ _ a b | .u8Add τ _ a b | .u8Mul τ _ a b | .u8Sub τ _ a b
   | .u8ChainRotr7 τ _ a b | .u8ChainRotr4 τ _ a b | .u8RangeCheck τ _ a b
   | .unconstrainedBigUintDivMod τ _ a b
   | .u8And τ _ a b | .u8Or τ _ a b
@@ -744,7 +748,7 @@ def collectCalls (decls : Typed.Decls)
     let seen := collectCalls decls seen scrut
     bs.attach.foldl (fun s ⟨(_, b), _⟩ => collectCalls decls s b) seen
   | .add _ _ a b | .sub _ _ a b | .mul _ _ a b
-  | .u8Xor _ _ a b | .u8Add _ _ a b | .u8Mul _ _ a b | .u8Sub _ _ a b
+  | .u8Xor _ _ a b | .u8XorSplit7 _ _ a b | .u8XorSplit4 _ _ a b | .u8Add _ _ a b | .u8Mul _ _ a b | .u8Sub _ _ a b
   | .u8ChainRotr7 _ _ a b | .u8ChainRotr4 _ _ a b | .u8RangeCheck _ _ a b
   | .unconstrainedBigUintDivMod _ _ a b
   | .u8And _ _ a b | .u8Or _ _ a b
@@ -849,6 +853,8 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
     .u8ShiftRight (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .u8Xor τ e a b => .u8Xor (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8XorSplit7 τ e a b => .u8XorSplit7 (Typ.instantiate subst τ) e (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8XorSplit4 τ e a b => .u8XorSplit4 (Typ.instantiate subst τ) e (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u8Add τ e a b => .u8Add (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u8Mul τ e a b => .u8Mul (Typ.instantiate subst τ) e

@@ -72,6 +72,8 @@ inductive Op
   | unconstrainedU32Add3 : Array ValIdx → Array ValIdx → Array ValIdx → Op
   /-- Virtual LE-byte packing expression; allocates no auxiliary column. -/
   | u32ToField : Array ValIdx → Op
+  | u8XorSplit7 : ValIdx → ValIdx → Op
+  | u8XorSplit4 : ValIdx → ValIdx → Op
   deriving Repr, BEq, Hashable
 
 mutual

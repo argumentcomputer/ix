@@ -403,8 +403,13 @@ mod tests {
 
   fn rotation_chains_toplevel() -> Toplevel {
     let body = Block {
-      ops: vec![Op::U8ChainRotr7(0, 1), Op::U8ChainRotr4(0, 1)],
-      ctrl: Ctrl::Return(0, vec![2, 3, 4, 5, 6, 7]),
+      ops: vec![
+        Op::U8ChainRotr7(0, 1),
+        Op::U8ChainRotr4(0, 1),
+        Op::U8XorSplit7(0, 1),
+        Op::U8XorSplit4(0, 1),
+      ],
+      ctrl: Ctrl::Return(0, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11]),
     };
     let function = Function {
       body,
@@ -412,9 +417,9 @@ mod tests {
         input_size: 2,
         selectors: 1,
         // Multiplicity plus two columns for each rotation-chain operation.
-        auxiliaries: 5,
+        auxiliaries: 9,
         // Return plus one byte-table lookup per operation.
-        lookups: 3,
+        lookups: 5,
       },
       entry: true,
       constrained: true,
@@ -432,6 +437,8 @@ mod tests {
     let (claim, proof) = system.prove(0, &input, &mut io_buffer);
     let (r7_0, r7_1, r7_2) = Bytes2::chain_rotr7(&input[0], &input[1]);
     let (r4_0, r4_1, r4_2) = Bytes2::chain_rotr4(&input[0], &input[1]);
+    let (s7_hi, s7_lo) = Bytes2::xor_split7(&input[0], &input[1]);
+    let (s4_hi, s4_lo) = Bytes2::xor_split4(&input[0], &input[1]);
     assert_eq!(
       claim,
       vec![
@@ -445,6 +452,10 @@ mod tests {
         r4_0,
         r4_1,
         r4_2,
+        s7_hi,
+        s7_lo,
+        s4_hi,
+        s4_lo,
       ]
     );
     system
@@ -634,7 +645,7 @@ mod tests {
     // height doubles as the committed trace height.
     assert_eq!(shapes[3].preprocessed_width, 11);
     assert_eq!(shapes[3].preprocessed_height, 256);
-    assert_eq!(shapes[4].preprocessed_width, 16);
+    assert_eq!(shapes[4].preprocessed_width, 20);
     assert_eq!(shapes[4].preprocessed_height, 65536);
   }
 }

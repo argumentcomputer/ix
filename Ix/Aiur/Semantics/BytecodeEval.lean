@@ -303,6 +303,12 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
   | .u8Xor a b => do
     let x ← readIdx st a; let y ← readIdx st b
     pure (pushMap st (G.ofUInt8 (x.val.toUInt8 ^^^ y.val.toUInt8)))
+  | .u8XorSplit7 a b => do
+    let x ← readIdx st a; let y ← readIdx st b; let z := x.val.toUInt8 ^^^ y.val.toUInt8
+    pure (pushMap (pushMap st (G.ofUInt8 (z >>> 7))) (G.ofUInt8 (z <<< 1)))
+  | .u8XorSplit4 a b => do
+    let x ← readIdx st a; let y ← readIdx st b; let z := x.val.toUInt8 ^^^ y.val.toUInt8
+    pure (pushMap (pushMap st (G.ofUInt8 (z >>> 4))) (G.ofUInt8 (z <<< 4)))
   | .u8Add a b => do
     let x ← readIdx st a; let y ← readIdx st b
     let sum := x.val.toUInt8.toNat + y.val.toUInt8.toNat

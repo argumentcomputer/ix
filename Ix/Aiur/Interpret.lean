@@ -411,6 +411,14 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match (← interp decls bindings t1), (← interp decls bindings t2) with
       | .field a, .field b => return .field (G.ofUInt8 (a.val.toUInt8 ^^^ b.val.toUInt8))
       | _, _ => throwErr "u8Xor: expected field values"
+  | .u8XorSplit7 t1 t2 => do
+      match (← interp decls bindings t1), (← interp decls bindings t2) with
+      | .field a, .field b => let x := a.val.toUInt8 ^^^ b.val.toUInt8; return .tuple #[.field (G.ofUInt8 (x >>> 7)), .field (G.ofUInt8 (x <<< 1))]
+      | _, _ => throwErr "u8XorSplit7: expected field values"
+  | .u8XorSplit4 t1 t2 => do
+      match (← interp decls bindings t1), (← interp decls bindings t2) with
+      | .field a, .field b => let x := a.val.toUInt8 ^^^ b.val.toUInt8; return .tuple #[.field (G.ofUInt8 (x >>> 4)), .field (G.ofUInt8 (x <<< 4))]
+      | _, _ => throwErr "u8XorSplit4: expected field values"
   | .u8Add t1 t2 => do
       match (← interp decls bindings t1), (← interp decls bindings t2) with
       | .field a, .field b =>
