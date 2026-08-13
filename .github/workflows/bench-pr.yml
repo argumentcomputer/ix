@@ -32,9 +32,9 @@
 #   - zisk / sp1 / ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
-#   - aiur-recursive: a fixed IxVM statement (Nat.add_comm; the heavy-tier
-#     Array.extract_append is dropped for now — significantly more
-#     expensive even at 50 queries) proved and recursively verified via
+#   - aiur-recursive: fixed IxVM statements (Nat.add_comm plus the
+#     heavy-tier Vector.append, String.split, and Array.extract_append)
+#     proved and recursively verified via
 #     bench-typecheck --recursive; always schedules exactly one run
 #     regardless of BENCH_ENVS (the constants resolve in whichever env's
 #     .ixe the entry carries).
