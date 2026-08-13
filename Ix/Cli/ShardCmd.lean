@@ -1,19 +1,25 @@
 /-
-  `ix shard <path.ixprof>`: partition a profiled environment into shards,
-  minimizing cross-shard delta-unfold ingress (see `plans/sharding.md`).
+  `ix shard <path.ixe> [--profile <path.ixprof>]`: partition an environment
+  into shards for the Aiur (IxVM) checking pipeline.
 
-  Two modes (precedence in `runShardCmd`):
-  - default / `--max-ram G` / `--max-cycles C`: **bin-pack to a per-shard
-    cycle/RAM cap** — the fewest shards that each stay under the budget, each
-    packed as full as the dependency structure allows (no `--max-ram` ⇒ sized to
-    detected system RAM). Not balanced: packing yields the minimal shard count.
-  - `--shards N`: force exactly `N` **balanced** min-cut shards (manual override).
+  Two strategies:
+  - **Static (default, no `--profile`)**: computed from the `.ixe` alone —
+    no out-of-circuit kernel run. Byte-balanced min-cut over the env's
+    static walk-edge nets (the relation that generates each shard's thin
+    frontier, i.e. its real ingress), then a global rebalance post-pass
+    toward equal predicted Aiur FFT cost (fitted model — constants and
+    provenance in `ix_kernel::shard::STATIC_OWNED_PER_BYTE`). Requires
+    `--shards N`. Measured against the profiled strategy on the 8-shard
+    Init / 24-shard Std harnesses: mean shard FFT −30%, max shard −44/−51%,
+    stddev 17.7%→7.1% / 30.6%→8.9%.
+  - **Profiled (`--profile <path.ixprof>`)**: the original pipeline over an
+    `ix profile` run, unchanged. Modes (precedence in `runShardCmd`):
+    default / `--max-ram G` / `--max-cycles C` **bin-pack to a per-shard
+    cycle/RAM cap** (no `--max-ram` ⇒ sized to detected system RAM);
+    `--shards N` forces exactly `N` balanced min-cut shards.
 
-  Reads the `.ixprof` produced by `ix profile` (pure offline graph work, so the
-  budget/`N` is cheap to re-tune without re-running the kernel). Writes a `.ixes`
-  manifest and prints a what-if report (per-shard cost + total cross-shard
-  ingress). The partitioner is self-contained — no external graph-library
-  dependency.
+  Both write the same `.ixes` manifest and print a what-if report. The
+  partitioner is self-contained — no external graph-library dependency.
 
   `ix shard extract <path.ixe> --consts <n1,n2,…>`: the pipeline's scoping
   step — extract the named constants' dependency closure from a serialized
@@ -71,11 +77,46 @@ def shardExtractCmd : Cli.Cmd := `[Cli|
     path : String; "Path to the source `.ixe` (e.g. from `ix compile`)."
 ]
 
+def runShardGraphCmd (p : Cli.Parsed) : IO UInt32 := do
+  let some pathArg := p.positionalArg? "path"
+    | p.printError "error: must specify <path> to a .ixe file"
+      return 1
+  let envPath := pathArg.as! String
+  let outPath : String :=
+    match p.flag? "out" with
+    | some flag => flag.as! String
+    -- `init.ixe` → `init.graph`, mirroring the `.ixprof` default naming.
+    | none =>
+      let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
+      base ++ ".graph"
+  rsShardStaticGraphFFI envPath outPath
+  IO.println s!"[graph] wrote {outPath}"
+  return 0
+
+def shardGraphCmd : Cli.Cmd := `[Cli|
+  "graph" VIA runShardGraphCmd;
+  "Dump a `.ixe`'s static block-level reference graph (`block`/`edge` text lines) for offline partitioner prototyping"
+
+  FLAGS:
+    out : String; "Output text path. Defaults to the env's base name with `.graph` (e.g. `init.ixe` → `init.graph`)."
+
+  ARGS:
+    path : String; "Path to the source `.ixe`."
+]
+
 def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
-    | p.printError "error: must specify <path> to a .ixprof file"
+    | p.printError "error: must specify <path> to a .ixe file"
       return 1
-  let espPath := pathArg.as! String
+  let envPath := pathArg.as! String
+  let profileFlag : Option String := (p.flag? "profile").map (·.as! String)
+  -- Old CLI shape took the `.ixprof` positionally; catch it so scripts
+  -- fail loudly instead of parsing a profile as an env.
+  if profileFlag.isNone && envPath.endsWith ".ixprof" then
+    p.printError "error: the positional argument is now the `.ixe` env; \
+      pass the profile via --profile <path.ixprof> (or drop it for the \
+      static strategy)"
+    return 1
   let balancePct : Nat :=
     match p.flag? "balance" with
     | some flag => flag.as! Nat
@@ -83,10 +124,10 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let outPath : String :=
     match p.flag? "out" with
     | some flag => flag.as! String
-    -- Default manifest mirrors the profile's base name: `init.ixprof` →
-    -- `init.ixes` (not `init.ixprof.ixes`).
+    -- Default manifest mirrors the env's base name: `init.ixe` →
+    -- `init.ixes` (not `init.ixe.ixes`).
     | none      =>
-      let base := if espPath.endsWith ".ixprof" then (espPath.dropEnd 7).toString else espPath
+      let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
       base ++ ".ixes"
   let shardsFlag : Option Nat := (p.flag? "shards").map (·.as! Nat)
   let maxCycles  : Option Nat := (p.flag? "max-cycles").map (·.as! Nat)
@@ -98,20 +139,39 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     | some flag => max 1 (flag.as! Nat)
     | none      => 1
 
-  -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
-  -- (budget) > default (size to detected system RAM).
-  match shardsFlag with
-  | some n =>
-    IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
-    rsShardEspFFI espPath (toString n) (toString balancePct) (toString parallelism)
-      outPath
+  match profileFlag with
   | none =>
-    if maxCycles.isNone && maxRam.isNone then
-      IO.println s!"Sharding {espPath} to detected system RAM (balance ±{balancePct}%)"
-    else
-      IO.println s!"Sharding {espPath} to budget (max-cycles={maxCycles.getD 0}, max-ram={maxRam.getD 0} GiB, balance ±{balancePct}%)"
-    rsShardEspCapFFI espPath (toString (maxCycles.getD 0)) (toString (maxRam.getD 0))
-      (toString balancePct) (toString parallelism) outPath
+    -- STATIC strategy (no out-of-circuit profiling): byte-balanced min-cut
+    -- over the env's walk-edge nets + predicted-FFT rebalance post-pass.
+    -- Fixed shard count only for now — the cap modes' cycle/RAM budgeting
+    -- is calibrated against the profiled op counters, which the static
+    -- profile does not carry.
+    let some n := shardsFlag
+      | p.printError "error: the static strategy (no --profile) requires \
+          --shards N; --max-cycles/--max-ram budgeting needs --profile"
+        return 1
+    if maxCycles.isSome || maxRam.isSome then
+      p.printError "error: --max-cycles/--max-ram require --profile (their \
+        budget model is calibrated on profiled op counters)"
+      return 1
+    IO.println s!"Sharding {envPath} into {n} shards (static strategy, balance ±{balancePct}%)"
+    rsShardEnvStaticFFI envPath (toString n) (toString balancePct) outPath
+  | some espPath =>
+    -- Profiled strategy, unchanged: partition the `.ixprof`.
+    -- Precedence: explicit --shards (fixed count) > explicit --max-cycles/--max-ram
+    -- (budget) > default (size to detected system RAM).
+    match shardsFlag with
+    | some n =>
+      IO.println s!"Sharding {espPath} into {n} shards (balance ±{balancePct}%)"
+      rsShardEspFFI espPath (toString n) (toString balancePct) (toString parallelism)
+        outPath
+    | none =>
+      if maxCycles.isNone && maxRam.isNone then
+        IO.println s!"Sharding {espPath} to detected system RAM (balance ±{balancePct}%)"
+      else
+        IO.println s!"Sharding {espPath} to budget (max-cycles={maxCycles.getD 0}, max-ram={maxRam.getD 0} GiB, balance ±{balancePct}%)"
+      rsShardEspCapFFI espPath (toString (maxCycles.getD 0)) (toString (maxRam.getD 0))
+        (toString balancePct) (toString parallelism) outPath
   if !outPath.isEmpty then
     IO.println s!"[shard] wrote {outPath}"
   return 0
@@ -121,21 +181,23 @@ end Ix.Cli.ShardCmd
 open Ix.Cli.ShardCmd in
 def shardCmd : Cli.Cmd := `[Cli|
   "shard" VIA runShardCmd;
-  "Partition a `.ixprof` into shards: pack to a RAM/cycle cap (default) or N balanced shards"
+  "Partition a `.ixe` env into shards: static strategy by default (`--shards N`, no kernel run), or the profiled pipeline via `--profile <path.ixprof>`"
 
   FLAGS:
-    shards       : Nat;    "Fixed number of shards N (overrides the default budget sizing)"
-    "max-cycles" : Nat;    "Per-shard guest-cycle budget (overrides the default RAM sizing)"
-    "max-ram"    : Nat;    "Per-shard host-RAM budget, GiB (default: detected system RAM)"
+    profile      : String; "Path to a `.ixprof` from `ix profile`. When given, use the profiled strategy (cap budgeting / balanced min-cut over measured costs); when absent, the static strategy partitions the `.ixe` directly."
+    shards       : Nat;    "Fixed number of shards N (required for the static strategy; overrides the profiled default budget sizing)"
+    "max-cycles" : Nat;    "Per-shard guest-cycle budget (profiled strategy only)"
+    "max-ram"    : Nat;    "Per-shard host-RAM budget, GiB (profiled strategy only; default: detected system RAM)"
     balance      : Nat;    "Per-bisection balance tolerance, percent (default 5)"
-    parallelism  : Nat;    "Provers assumed for the prove-time estimate (default 1 = sequential)"
-    out          : String; "Output .ixes manifest path (default: <prof>.ixes, e.g. init.ixprof → init.ixes)"
+    parallelism  : Nat;    "Provers assumed for the prove-time estimate (profiled strategy only; default 1 = sequential)"
+    out          : String; "Output .ixes manifest path (default: env base name + `.ixes`, e.g. init.ixe → init.ixes)"
 
   ARGS:
-    path : String; "Path to a .ixprof produced by `ix profile`"
+    path : String; "Path to a serialized `.ixe` environment"
 
   SUBCOMMANDS:
-    shardExtractCmd
+    shardExtractCmd;
+    shardGraphCmd
 ]
 
 end

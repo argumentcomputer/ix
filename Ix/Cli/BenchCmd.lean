@@ -599,7 +599,8 @@ def cutClosureShards (ix : String) (envIxe : String)
   let steps : List (Array String) :=
     [ #["shard", "extract", envIxe, "--consts", name, "--out", subIxe]
     , #["profile", subIxe, "--out", prof]
-    , #["shard", prof, "--max-ram", toString maxRamGb, "--out", manifest] ]
+    , #["shard", subIxe, "--profile", prof, "--max-ram", toString maxRamGb,
+        "--out", manifest] ]
   for args in steps do
     let exit ← runGuarded none 0 ix args
     if exit != 0 then
@@ -925,4 +926,3 @@ def benchShardCmd : Cli.Cmd := `[Cli|
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh)"
     "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: machine RAM minus 15 GB)"
 ]
-

@@ -194,6 +194,31 @@ opaque rsEnvExtractFFI :
     @& Bool →                            -- quiet
     IO Unit
 
+/-- FFI: partition a `.ixe` into `numShards` shards with the STATIC
+    strategy (no out-of-circuit profiling): byte-balanced min-cut over the
+    static walk-edge nets + a predicted-FFT-cost rebalance post-pass
+    (`ix_kernel::shard::shard_static`; model constants documented there).
+    Writes a `.ixes` manifest; prints the report to stderr. -/
+@[extern "rs_shard_env_static"]
+opaque rsShardEnvStaticFFI :
+    @& String →                          -- .ixe path
+    @& String →                          -- num_shards (N)
+    @& String →                          -- balance percent
+    @& String →                          -- .ixes output path ("" = skip)
+    IO Unit
+
+/-- FFI: dump the static block-level reference graph of a `.ixe` as text:
+    `block <hex> <bytes> <consts>` per ingress unit and
+    `edge <consumer> <producer>` per deduped claim-walk edge at block
+    granularity. The walk-edge relation is what generates a shard's thin
+    frontier, so a partition's ingress cost is computable offline from
+    this file alone (partitioner-prototype input; no kernel run). -/
+@[extern "rs_shard_static_graph"]
+opaque rsShardStaticGraphFFI :
+    @& String →                          -- .ixe path
+    @& String →                          -- output text path
+    IO Unit
+
 /-- FFI: profile a `.ixe` out of circuit, writing a `.ixprof` sidecar with
     per-block heartbeats + the delta-unfold graph (the sharding cost model,
     see `plans/sharding.md`). Runs the anon kernel over every checkable target.

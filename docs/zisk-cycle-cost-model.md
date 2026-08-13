@@ -295,7 +295,7 @@ All ran with zero failures.
 lake exe ix profile env.ixe
 
 # pack the .ixprof into shards under a RAM/cycle cap (offline, no kernel re-run)
-lake exe ix shard env.ixprof --max-ram 256        # or --max-cycles C / --shards N
+lake exe ix shard env.ixe --profile env.ixprof --max-ram 256  # or --max-cycles C / --shards N
 
 # measure guest cycles: a shard/env, or one named constant
 cargo run --release --bin zisk-host -- --execute --ixe <env.ixe> \
