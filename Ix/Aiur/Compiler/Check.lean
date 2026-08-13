@@ -802,6 +802,20 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let a' ← checkNoEscape a .field
     let b' ← checkNoEscape b .field
     pure (Typed.Term.u32LessThan .field false a' b')
+  | .unconstrainedU32Add a b => do
+    let word : Typ := .array .u8 4
+    let a' ← checkNoEscape a word
+    let b' ← checkNoEscape b word
+    pure (Typed.Term.unconstrainedU32Add (.tuple #[.array .field 4, .field]) false a' b')
+  | .unconstrainedU32Add3 a b c => do
+    let word : Typ := .array .u8 4
+    let a' ← checkNoEscape a word
+    let b' ← checkNoEscape b word
+    let c' ← checkNoEscape c word
+    pure (Typed.Term.unconstrainedU32Add3 (.tuple #[.array .field 4, .field]) false a' b' c')
+  | .u32ToField a => do
+    let a' ← checkNoEscape a (.array .u8 4)
+    pure (Typed.Term.u32ToField .field false a')
   | .u8Lit n => do
     if n ≥ 256 then throw (.u8LitOutOfRange n)
     pure (Typed.Term.field .u8 false (G.ofNat n))
@@ -1010,6 +1024,13 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
       pure (.unconstrainedGToBytes (← zonkTyp τ) e (← zonkTypedTerm a))
   | .unconstrainedGInverse τ e a => do
       pure (.unconstrainedGInverse (← zonkTyp τ) e (← zonkTypedTerm a))
+  | .unconstrainedU32Add τ e a b => do
+      pure (.unconstrainedU32Add (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .unconstrainedU32Add3 τ e a b c => do
+      pure (.unconstrainedU32Add3 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b)
+        (← zonkTypedTerm c))
+  | .u32ToField τ e a => do
+      pure (.u32ToField (← zonkTyp τ) e (← zonkTypedTerm a))
   | .toField τ e a => do pure (.toField (← zonkTyp τ) e (← zonkTypedTerm a))
   | .u8FromFieldUnsafe τ e a => do
       pure (.u8FromFieldUnsafe (← zonkTyp τ) e (← zonkTypedTerm a))

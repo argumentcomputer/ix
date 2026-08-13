@@ -201,6 +201,19 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u8ChainRotr7 .. | .u8ChainRotr4 .. => do pushDegrees #[1, 1, 1]; bumpAuxiliaries 3; bumpLookups
   | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
   | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
+  | .unconstrainedU32Add a b => do
+    let degrees ← (a ++ b).mapM getDegree
+    pushDegrees $ .replicate 4 1
+    pushDegree (degrees.foldl Nat.max 1)
+    bumpAuxiliaries 4
+  | .unconstrainedU32Add3 a b c => do
+    let degrees ← (a ++ b ++ c).mapM getDegree
+    pushDegrees $ .replicate 4 1
+    pushDegree (degrees.foldl Nat.max 1)
+    bumpAuxiliaries 4
+  | .u32ToField a => do
+    let degrees ← a.mapM getDegree
+    pushDegree (degrees.foldl Nat.max 0)
   -- Pure range-check lookup: no output columns/degrees, just one lookup.
   | .u8RangeCheck .. => bumpLookups
   -- Unconstrained hint: two fresh auxiliary witness columns (q_ptr, r_ptr).

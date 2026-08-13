@@ -37,6 +37,25 @@ fn konst(value: G) -> Expr {
 /// `256⁻¹` in the Goldilocks field. The field inversion is expensive, so it is
 /// computed once and reused by the byte carry-chain constraints.
 static INV_256: LazyLock<G> = LazyLock::new(|| G::from_u64(256).inverse());
+/// Constant expression for `(2^32)⁻¹`, built once from its Goldilocks
+/// value and cloned into every virtual u32 carry.
+static INV_2_POW_32_EXPR: LazyLock<Expr> =
+  LazyLock::new(|| konst(G::from_u64(0xffff_fffe_0000_0002)));
+
+fn pack_u32_expr(
+  bytes: impl ExactSizeIterator<Item = (Expr, Degree)>,
+) -> (Expr, Degree) {
+  assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
+  bytes.enumerate().fold(
+    (konst(G::ZERO), 0),
+    |(expr, degree), (i, (byte, byte_degree))| {
+      (
+        expr + byte * konst(G::from_u64(1_u64 << (8 * i))),
+        degree.max(byte_degree),
+      )
+    },
+  )
+}
 
 /// Holds data for a function circuit.
 pub struct Constraints {
@@ -529,6 +548,45 @@ impl Op {
         let carry = (x + y - z.clone()) * konst(*INV_256);
         state.map.push((z, 1));
         state.map.push((carry, x_deg.max(y_deg).max(1)));
+      },
+      Op::UnconstrainedU32Add(a, b) => {
+        let (x, x_deg) =
+          pack_u32_expr(a.iter().map(|idx| state.map[*idx].clone()));
+        let (y, y_deg) =
+          pack_u32_expr(b.iter().map(|idx| state.map[*idx].clone()));
+        let z_bytes: Vec<_> = (0..4).map(|_| state.next_auxiliary()).collect();
+        let (z, z_deg) =
+          pack_u32_expr(z_bytes.iter().cloned().map(|byte| (byte, 1)));
+        for byte in z_bytes {
+          state.map.push((byte, 1));
+        }
+        state.map.push((
+          (x + y - z) * (*INV_2_POW_32_EXPR).clone(),
+          x_deg.max(y_deg).max(z_deg),
+        ));
+      },
+      Op::UnconstrainedU32Add3(a, b, c) => {
+        let (x, x_deg) =
+          pack_u32_expr(a.iter().map(|idx| state.map[*idx].clone()));
+        let (y, y_deg) =
+          pack_u32_expr(b.iter().map(|idx| state.map[*idx].clone()));
+        let (w, w_deg) =
+          pack_u32_expr(c.iter().map(|idx| state.map[*idx].clone()));
+        let z_bytes: Vec<_> = (0..4).map(|_| state.next_auxiliary()).collect();
+        let (z, z_deg) =
+          pack_u32_expr(z_bytes.iter().cloned().map(|byte| (byte, 1)));
+        for byte in z_bytes {
+          state.map.push((byte, 1));
+        }
+        state.map.push((
+          (x + y + w - z) * (*INV_2_POW_32_EXPR).clone(),
+          x_deg.max(y_deg).max(w_deg).max(z_deg),
+        ));
+      },
+      Op::U32ToField(bytes) => {
+        state
+          .map
+          .push(pack_u32_expr(bytes.iter().map(|idx| state.map[*idx].clone())));
       },
       Op::U8Mul(i, j) => bytes2_constraints(
         *i,

@@ -173,6 +173,22 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       let [a] = ctor.objs::<1>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::UnconstrainedGInverse(a)
     },
+    31 => {
+      let [a, b] = ctor.objs::<2>();
+      Op::UnconstrainedU32Add(decode_vec_val_idx(a), decode_vec_val_idx(b))
+    },
+    32 => {
+      let [a, b, c] = ctor.objs::<3>();
+      Op::UnconstrainedU32Add3(
+        decode_vec_val_idx(a),
+        decode_vec_val_idx(b),
+        decode_vec_val_idx(c),
+      )
+    },
+    33 => {
+      let [a] = ctor.objs::<1>();
+      Op::U32ToField(decode_vec_val_idx(a))
+    },
     _ => unreachable!(),
   }
 }

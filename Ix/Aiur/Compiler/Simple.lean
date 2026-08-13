@@ -139,6 +139,13 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
   | .unconstrainedGToBytes τ e a => do
       let a' ← simplifyTypedTerm decls a
       pure (.unconstrainedGToBytes τ e a')
+  | .unconstrainedU32Add τ e a b => do
+      pure (.unconstrainedU32Add τ e (← simplifyTypedTerm decls a) (← simplifyTypedTerm decls b))
+  | .unconstrainedU32Add3 τ e a b c => do
+      pure (.unconstrainedU32Add3 τ e (← simplifyTypedTerm decls a) (← simplifyTypedTerm decls b)
+        (← simplifyTypedTerm decls c))
+  | .u32ToField τ e a => do
+      pure (.u32ToField τ e (← simplifyTypedTerm decls a))
   | .unconstrainedGInverse τ e a => do
       let a' ← simplifyTypedTerm decls a
       pure (.unconstrainedGInverse τ e a')

@@ -40,6 +40,20 @@ struct ColumnMutSlice<'a, 'b> {
 
 type Degree = u8;
 
+fn u32_value(map: &[(G, Degree)], bytes: &[usize]) -> u64 {
+  assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
+  bytes.iter().enumerate().fold(0, |word, (i, idx)| {
+    word | (map[*idx].0.as_canonical_u64() << (8 * i))
+  })
+}
+
+fn u32_sum(values: &[u64]) -> ([G; 4], G) {
+  let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
+  let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
+  let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
+  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
+}
+
 impl<'a, 'b> ColumnMutSlice<'a, 'b> {
   fn from_slice(
     function: &Function,
@@ -451,6 +465,28 @@ impl Op {
         map.push((o, 1));
         slice.push_auxiliary(index, r);
         slice.push_lookup(index, G::ONE, &[u8_add_channel(), i, j, r]);
+      },
+      Op::UnconstrainedU32Add(a, b) => {
+        let (bytes, carry) = u32_sum(&[u32_value(map, a), u32_value(map, b)]);
+        for byte in bytes {
+          map.push((byte, 1));
+          slice.push_auxiliary(index, byte);
+        }
+        map.push((carry, 1));
+      },
+      Op::UnconstrainedU32Add3(a, b, c) => {
+        let (bytes, carry) =
+          u32_sum(&[u32_value(map, a), u32_value(map, b), u32_value(map, c)]);
+        for byte in bytes {
+          map.push((byte, 1));
+          slice.push_auxiliary(index, byte);
+        }
+        map.push((carry, 1));
+      },
+      Op::U32ToField(bytes) => {
+        let word = u32_value(map, bytes);
+        let degree = bytes.iter().map(|idx| map[*idx].1).max().unwrap_or(0);
+        map.push((G::from_u64(word), degree));
       },
       Op::U8Mul(i, j) => {
         let (i, _) = map[*i];
