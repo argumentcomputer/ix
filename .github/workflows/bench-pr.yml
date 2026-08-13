@@ -33,8 +33,8 @@
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
 #   - aiur-recursive: fixed IxVM statements (Nat.add_comm plus the
-#     heavy-tier Vector.append, String.split, and Array.extract_append)
-#     proved and recursively verified via
+#     heavy-tier Vector.append and String.split; Array.extract_append
+#     is dropped for now — it OOMs on CI) proved and recursively verified via
 #     bench-typecheck --recursive; always schedules exactly one run
 #     regardless of BENCH_ENVS (the constants resolve in whichever env's
 #     .ixe the entry carries).

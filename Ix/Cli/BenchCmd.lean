@@ -223,7 +223,7 @@ def backendSpecs : List BackendSpec := [
   -- large closures exceed the RAM ceiling and land as `status: oom` rows
   -- that bmf drops), which is why it's marked `unscheduled`: a testbed for
   -- local `--mode recursive` runs only — never uploaded to bencher, never
-  -- plotted. CI tracks the same measurement over the fixed two-constant
+  -- plotted. CI tracks the same measurement over the fixed three-constant
   -- subset via the aiur-recursive backend below.
   { name := "aiur", defaultMode := "prove", inputs := .perConstant,
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
@@ -251,7 +251,7 @@ def backendSpecs : List BackendSpec := [
   -- `recursiveConstants`): IxVM recursion on real statements — prove each
   -- constant's typecheck, execute the in-circuit multi-stark verifier
   -- over the fresh proof, then prove THAT execution. The same measurement
-  -- as the aiur recursive mode above, but over a fixed four-constant
+  -- as the aiur recursive mode above, but over a fixed three-constant
   -- subset so CI schedules exactly one entry instead of the whole
   -- Vectors.csv fan-out.
   { name := "aiur-recursive", defaultMode := "prove", inputs := .fixedConfigs,
@@ -345,15 +345,16 @@ def findBackend (name : String) : Option BackendSpec :=
     recursion-tuned parameters (50 queries at log-blowup 2, ~100-bit
     soundness — this benchmarks *secure* recursion). `Nat.add_comm`
     (cheap tier) is the small end of the IxVM cost range;
-    `Vector.append`, `String.split`, and `Array.extract_append` (heavy
-    tier — kernel scale) are the expensive end. A stage that exceeds
-    the CI RAM ceiling lands as an OOM row — the honest signal that
-    secure recursion at that scale does not yet fit. (Measured 2026-08 at
-    100 queries: `Nat.add_comm`'s outer prove peaked ~195 GiB on the
-    ~123 GiB runners; the 50-query halving is what gives it a chance to
-    fit.) -/
+    `Vector.append` and `String.split` (heavy tier — kernel scale) are
+    the expensive end. `Array.extract_append` is dropped for now — it
+    OOMs on CI even at 50 queries; re-add it when the verifier prover
+    slims down. A stage that exceeds the CI RAM ceiling lands as an OOM
+    row — the honest signal that secure recursion at that scale does not
+    yet fit. (Measured 2026-08 at 100 queries: `Nat.add_comm`'s outer
+    prove peaked ~195 GiB on the ~123 GiB runners; the 50-query halving
+    is what gives it a chance to fit.) -/
 def recursiveConstants : List String :=
-  ["Nat.add_comm", "Vector.append", "String.split", "Array.extract_append"]
+  ["Nat.add_comm", "Vector.append", "String.split"]
 
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
   (b.testbeds.find? (·.1 == mode)).map (·.2)
