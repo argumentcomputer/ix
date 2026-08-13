@@ -10,3 +10,6 @@ import Navigatrix.Ixon.Hash
 import Navigatrix.IxIR0.Basic
 import Navigatrix.IxIR0.Eval
 import Navigatrix.IxIR0.Examples
+import Navigatrix.IxIR0.Mono
+import Navigatrix.Erase
+import Navigatrix.Sim
