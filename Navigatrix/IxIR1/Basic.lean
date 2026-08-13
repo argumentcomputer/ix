@@ -93,7 +93,9 @@ inductive Op where
   | papp (f : Address) (args : Array Atom)
   /-- Apply an unknown function value (a `pap` node) to further
   arguments; may saturate (call), under-fill (new `pap`), or
-  over-fill (call, then apply the rest to the result). -/
+  over-fill (call, then apply the rest to the result). Consumes the
+  function value: the pap's stored arguments are dup'd for their new
+  owner and the pap itself is dropped. -/
   | apply (f : Atom) (args : Array Atom)
   /-- Trusted extern (scalar oracle). -/
   | extern (f : Address) (args : Array Atom)

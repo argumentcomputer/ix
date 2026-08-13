@@ -247,6 +247,26 @@ private def papOverfill : Code := lets
 
 #guard checkRun (run papOverfill) fun _ v => v == .lit (.nat 42)
 
+-- `apply` consumes its pap: the chain's intermediates are reclaimed
+-- without caller-side drops…
+#guard checkRun (run papChain) fun s _ => s.frees == 2 && s.live == 0
+
+-- …so re-applying a consumed pap is a memory fault…
+#guard errMem (run (lets
+  [ .papp aAddLit #[.lit (.nat 1)],
+    .apply (.var 0) #[.lit (.nat 2)],
+    .apply (.var 1) #[.lit (.nat 3)] ]
+  (.ret (.var 0))))
+
+-- …and `dup` is how a pap survives one application: rc 2 → 1 at the
+-- first apply, consumed for real at the second, leak-free overall.
+#guard checkRun (run (lets
+  [ .papp aAddLit #[.lit (.nat 1)],
+    .dup (.var 0),
+    .apply (.var 0) #[.lit (.nat 2)],
+    .apply (.var 2) #[.lit (.nat 3)] ]
+  (.ret (.var 0)))) fun s v => v == .lit (.nat 4) && s.live == 0
+
 /-! ## Nat-literal peeling -/
 
 #guard checkRun (run (lets [.call aIsZero #[.lit (.nat 0)]]

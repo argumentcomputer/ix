@@ -27,6 +27,19 @@ freely copyable; `dup`/`drop` manage them, `reuse`/`free` reject
 them). Deep drop expects shared children under shared nodes
 (whole-value modes — gate B); a unique child under a shared node is a
 memory error. Scalars (`lit`, `◻`) are inert everywhere.
+
+Ownership calling convention (what the lowering's RC insertion is
+built against): every argument position **consumes** one ownership of
+its value — `alloc`/`reuse` fields, `call`/`callSelf`/`papp`/
+`extern` arguments, `ret`, and `pure` all take their operands'
+references with them. `apply` consumes its function value *and* its
+arguments: `applyGo` first dups the pap's stored arguments (they gain
+a new owner — the successor pap or the callee) and then drops the
+applied pap itself, so under/over-fill chains reclaim intermediate
+paps without caller-side bookkeeping. The borrowing exceptions are
+`fetch` (project without consuming — dup the field to own it) and
+`case` scrutiny; `dup`/`drop` are the explicit ownership
+adjustments.
 -/
 
 namespace Navigatrix.IxIR1
@@ -106,6 +119,23 @@ def resolveAtoms (env : List RVal) (as' : Array Atom) :
 
 def Alt.cidx : Alt → Nat
   | .mk c _ _ => c
+
+/-- Add one owner to each value: the internal half of `applyGo`'s
+convention (the pap's stored arguments gain the successor pap or the
+callee as a new owner). Mirrors `Op.dup`: shared and live demanded,
+scalars inert. -/
+def dupVals (store : Store) (vs : List RVal) : Except Err Store :=
+  vs.foldlM (init := store) fun store v =>
+    match v with
+    | .loc l =>
+      match store.get? l with
+      | none => .error (.mem s!"dup of a dead location {l}")
+      | some box =>
+        match box.world with
+        | .unique => .error (.mem "dup of a unique node")
+        | .shared =>
+          .ok ((store.setBox l { box with rc := box.rc + 1 }).rcTick)
+    | _ => .ok store
 
 def declArity : Decl → Nat
   | .fn d => d.arity
@@ -277,7 +307,10 @@ def invoke (ctx : Ctx) (fuel : Nat) (f : Address) (args : List RVal)
   termination_by fuel
 
 /-- The apply chain: under-fill builds a new pap, saturation calls,
-over-fill calls then applies the rest to the result. -/
+over-fill calls then applies the rest to the result. Consuming: the
+stored arguments are dup'd (their new owner is the successor pap or
+the callee) and the applied pap itself is dropped, so chains reclaim
+their intermediates. -/
 def applyGo (ctx : Ctx) (fuel : Nat) (store : Store) (fv : RVal)
     (args : List RVal) : Except Err (Store × RVal) :=
   match fuel with
@@ -289,7 +322,9 @@ def applyGo (ctx : Ctx) (fuel : Nat) (store : Store) (fv : RVal)
       | none => .error (.mem s!"apply of a dead location {l}")
       | some box =>
         match box.node with
-        | .papN f ar got =>
+        | .papN f ar got => do
+          let store ← dupVals store got.toList
+          let store ← dropVal ctx fuel store (.loc l)
           let total := got.toList ++ args
           if total.length < ar then
             let (store', l') :=

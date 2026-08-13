@@ -94,7 +94,9 @@ private def lengthBody : Expr :=
 
 /-! ## The environment and oracle -/
 
-def env : Env := Env.ofList [
+/-- The declarations as a list — the IxIR₀ → IxIR₁ lowering consumes
+this form (an `Env` function can't be enumerated). -/
+def declList : List (Address × Decl) := [
   (natZero, .ctor 0 0),
   (natSucc, .ctor 1 1),
   (natRec, .recursor 2 true #[natRecZero, natRecSucc]),
@@ -107,6 +109,8 @@ def env : Env := Env.ofList [
   (pairMk, .ctor 0 2),
   (natAddExt, .extern 2)
 ]
+
+def env : Env := Env.ofList declList
 
 /-- Demo ledger entry: `natAddExt` is `Nat.add` on literals (the
 GMP-shaped extern), refusing anything else. -/

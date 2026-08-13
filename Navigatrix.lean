@@ -16,3 +16,4 @@ import Navigatrix.Sim
 import Navigatrix.IxIR1.Basic
 import Navigatrix.IxIR1.Eval
 import Navigatrix.IxIR1.Examples
+import Navigatrix.IxIR1.Lower
