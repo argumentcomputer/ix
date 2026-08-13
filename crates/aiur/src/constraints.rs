@@ -640,22 +640,54 @@ impl Op {
         sel.clone(),
         state,
       ),
-      Op::U8ChainRotr7(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::ChainRotr7,
-        u8_chain_rotr7_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8ChainRotr4(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::ChainRotr4,
-        u8_chain_rotr4_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8ChainRotr7(i, j) => {
+        let (a, a_deg) = state.map[*i].clone();
+        let (b, b_deg) = state.map[*j].clone();
+        let rotated = state.next_auxiliary();
+        let b_high = state.next_auxiliary();
+        let a_high = rotated.clone() - konst(G::from_u64(2)) * b.clone()
+          + konst(G::from_u64(256)) * b_high.clone();
+        let a_shifted =
+          konst(G::from_u64(2)) * a.clone() - konst(G::from_u64(256)) * a_high;
+        let lookup_args = vec![
+          state.gate(sel, konst(u8_chain_rotr7_channel())),
+          state.gate(sel, a),
+          state.gate(sel, b),
+          state.gate(sel, rotated.clone()),
+          state.gate(sel, b_high.clone()),
+          state.gate(sel, a_shifted.clone()),
+        ];
+        let lookup = state.next_lookup();
+        combine_lookup_args(lookup, lookup_args);
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        state.map.push((rotated, 1));
+        state.map.push((b_high, 1));
+        state.map.push((a_shifted, a_deg.max(b_deg).max(1)));
+      },
+      Op::U8ChainRotr4(i, j) => {
+        let (a, a_deg) = state.map[*i].clone();
+        let (b, b_deg) = state.map[*j].clone();
+        let rotated = state.next_auxiliary();
+        let b_high = state.next_auxiliary();
+        let b_low = b.clone() - konst(G::from_u64(16)) * b_high.clone();
+        let a_high = rotated.clone() - konst(G::from_u64(16)) * b_low;
+        let a_shifted =
+          konst(G::from_u64(16)) * a.clone() - konst(G::from_u64(256)) * a_high;
+        let lookup_args = vec![
+          state.gate(sel, konst(u8_chain_rotr4_channel())),
+          state.gate(sel, a),
+          state.gate(sel, b),
+          state.gate(sel, rotated.clone()),
+          state.gate(sel, b_high.clone()),
+          state.gate(sel, a_shifted.clone()),
+        ];
+        let lookup = state.next_lookup();
+        combine_lookup_args(lookup, lookup_args);
+        lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
+        state.map.push((rotated, 1));
+        state.map.push((b_high, 1));
+        state.map.push((a_shifted, a_deg.max(b_deg).max(1)));
+      },
       Op::U8RangeCheck(i, j) => {
         // Pure range-check lookup: no output columns (the `u8` results alias
         // the inputs), just require `(i, j)` from the byte chip.

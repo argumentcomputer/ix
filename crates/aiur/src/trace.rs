@@ -539,15 +539,14 @@ impl Op {
         );
       },
       Op::U8ChainRotr7(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
+        let (i, i_degree) = map[*i];
+        let (j, j_degree) = map[*j];
         let (o0, o1, o2) = Bytes2::chain_rotr7(&i, &j);
         map.push((o0, 1));
         map.push((o1, 1));
-        map.push((o2, 1));
+        map.push((o2, i_degree.max(j_degree).max(1)));
         slice.push_auxiliary(index, o0);
         slice.push_auxiliary(index, o1);
-        slice.push_auxiliary(index, o2);
         slice.push_lookup(
           index,
           G::ONE,
@@ -555,15 +554,14 @@ impl Op {
         );
       },
       Op::U8ChainRotr4(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
+        let (i, i_degree) = map[*i];
+        let (j, j_degree) = map[*j];
         let (o0, o1, o2) = Bytes2::chain_rotr4(&i, &j);
         map.push((o0, 1));
         map.push((o1, 1));
-        map.push((o2, 1));
+        map.push((o2, i_degree.max(j_degree).max(1)));
         slice.push_auxiliary(index, o0);
         slice.push_auxiliary(index, o1);
-        slice.push_auxiliary(index, o2);
         slice.push_lookup(
           index,
           G::ONE,

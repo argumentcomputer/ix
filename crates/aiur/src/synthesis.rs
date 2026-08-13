@@ -401,6 +401,57 @@ mod tests {
     Toplevel { functions: vec![function], memory_sizes: vec![] }
   }
 
+  fn rotation_chains_toplevel() -> Toplevel {
+    let body = Block {
+      ops: vec![Op::U8ChainRotr7(0, 1), Op::U8ChainRotr4(0, 1)],
+      ctrl: Ctrl::Return(0, vec![2, 3, 4, 5, 6, 7]),
+    };
+    let function = Function {
+      body,
+      layout: FunctionLayout {
+        input_size: 2,
+        selectors: 1,
+        // Multiplicity plus two columns for each rotation-chain operation.
+        auxiliaries: 5,
+        // Return plus one byte-table lookup per operation.
+        lookups: 3,
+      },
+      entry: true,
+      constrained: true,
+    };
+    Toplevel { functions: vec![function], memory_sizes: vec![] }
+  }
+
+  #[test]
+  fn prove_verify_virtual_rotation_chain_outputs() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(rotation_chains_toplevel(), cp, fp);
+    let input = [G::from_u8(0xd3), G::from_u8(0x69)];
+    let mut io_buffer = empty_io_buffer();
+
+    let (claim, proof) = system.prove(0, &input, &mut io_buffer);
+    let (r7_0, r7_1, r7_2) = Bytes2::chain_rotr7(&input[0], &input[1]);
+    let (r4_0, r4_1, r4_2) = Bytes2::chain_rotr4(&input[0], &input[1]);
+    assert_eq!(
+      claim,
+      vec![
+        function_channel(),
+        G::ZERO,
+        input[0],
+        input[1],
+        r7_0,
+        r7_1,
+        r7_2,
+        r4_0,
+        r4_1,
+        r4_2,
+      ]
+    );
+    system
+      .verify(&claim, &proof)
+      .expect("virtual rotation outputs must verify");
+  }
+
   /// Hand-build a toplevel exercising the two migrated integration paths that
   /// the `Mul` test does not: the cross-circuit **function-channel** lookup (a
   /// function calling another) and the **memory circuit** (a `Store` followed
