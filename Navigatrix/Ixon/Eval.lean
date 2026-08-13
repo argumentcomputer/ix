@@ -76,23 +76,29 @@ def evalUniv (uinst : List Nat) : Univ → Nat
 
 /-! ## Frames, literals, errors -/
 
-private def selfMutsOf : ConstantInfo → Array MutConst
+def selfMutsOf : ConstantInfo → Array MutConst
   | .muts ms => ms
   | _ => #[]
 
 /-- The tables an expression is read against, plus the universe
 instantiation of the constant it came from. Closures capture their
-frame; entering a reference builds the callee's. -/
+frame; entering a reference builds the callee's. `selfAddr` is the
+address of the mutual block `selfMuts` belongs to (set when the frame
+is built through a block projection) — it gives `recur`-built
+recursor heads their block identity, which literal ι-peeling keys
+on. -/
 structure Frame where
   sharing : Array Expr := #[]
   refs : Array Address := #[]
   univs : Array Univ := #[]
   selfMuts : Array MutConst := #[]
   uinst : List Nat := []
+  selfAddr : Option Address := none
 
-def Frame.ofConst (c : Constant) (uinst : List Nat := []) : Frame :=
+def Frame.ofConst (c : Constant) (uinst : List Nat := [])
+    (selfAddr : Option Address := none) : Frame :=
   { sharing := c.sharing, refs := c.refs, univs := c.univs
-    selfMuts := selfMutsOf c.info, uinst }
+    selfMuts := selfMutsOf c.info, uinst, selfAddr }
 
 inductive Lit where
   | natL (n : Nat)
@@ -134,12 +140,16 @@ def recArity (r : Recursor) : Nat :=
 
 inductive Head where
   | ctorH (block : Address) (indIdx cidx arity : Nat)
-  | recH (recr : Recursor) (F : Frame)
+  /-- `block` is the recursor's mutual-block address when known —
+  literal ι-peeling fires only when it equals the configured
+  `natBlock` (the erased `natLit` flag is set by exactly the same
+  comparison, so the two semantics peel in lockstep). -/
+  | recH (block : Option Address) (recr : Recursor) (F : Frame)
   | neuH (id : NeutralId)
 
 def Head.arity? : Head → Option Nat
   | .ctorH _ _ _ a => some a
-  | .recH r _ => some (recArity r)
+  | .recH _ r _ => some (recArity r)
   | .neuH _ => none
 
 inductive Value where
@@ -183,16 +193,18 @@ def evalUnivArgs (F : Frame) (idxs : Array UInt64) :
   return out
 
 /-- View a recursor's major premise as a constructor application,
-peeling Nat literals when the context declares a Nat block. -/
-def majorCtor (ctx : EvalCtx) : Value → Except Err (Nat × List Value)
+peeling Nat literals when `peel` is set — the firing recursor's block
+must be the configured Nat block (mirroring the erased `natLit`
+flag; peeling at an arbitrary recursor would diverge from the erased
+semantics). -/
+def majorCtor (peel : Bool) : Value → Except Err (Nat × List Value)
   | .ctorV _ _ cidx cargs => .ok (cidx, cargs)
   | .litV (.natL n) =>
-    match ctx.natBlock with
-    | some _ =>
+    if peel then
       match n with
       | 0 => .ok (0, [])
       | n + 1 => .ok (1, [.litV (.natL n)])
-    | none => .error (.stuck "literal major premise (no Nat block configured)")
+    else .error (.stuck "literal major premise (not the Nat recursor)")
   | _ => .error (.stuck "recursor major premise is not a constructor")
 
 /-! ## The interpreter -/
@@ -272,7 +284,7 @@ def eval (ctx : EvalCtx) (fuel : Nat) (F : Frame) (env : List Value)
           .ok (.papV (.neuH (.member recIdx.toNat)) [])
       | some (.recr r) => do
         guardLvls r.lvls uinst'
-        .ok (.papV (.recH r { F with uinst := uinst' }) [])
+        .ok (.papV (.recH F.selfAddr r { F with uinst := uinst' }) [])
       | some (.indc ind) => do
         guardLvls ind.lvls uinst'
         .ok (.papV (.neuH (.member recIdx.toNat)) [])
@@ -303,7 +315,7 @@ def evalRef (ctx : EvalCtx) (fuel : Nat) (a : Address) (uinst : List Nat) :
         .ok (.papV (.neuH (.const a)) [])
       | .recr r => do
         guardLvls r.lvls uinst
-        .ok (.papV (.recH r (Frame.ofConst c uinst)) [])
+        .ok (.papV (.recH (some a) r (Frame.ofConst c uinst (some a))) [])
       | .iPrj p =>
         match resolveMut ctx p.block p.idx.toNat with
         | .ok (_, .indc ind) => do
@@ -327,7 +339,9 @@ def evalRef (ctx : EvalCtx) (fuel : Nat) (a : Address) (uinst : List Nat) :
         match resolveMut ctx p.block p.idx.toNat with
         | .ok (bc, .recr r) => do
           guardLvls r.lvls uinst
-          .ok (.papV (.recH r (Frame.ofConst bc uinst)) [])
+          .ok (.papV
+            (.recH (some p.block) r (Frame.ofConst bc uinst (some p.block)))
+            [])
         | .ok _ => .error (.stuck "recursor projection targets a non-recursor")
         | .error err => .error err
       | .dPrj p =>
@@ -335,7 +349,7 @@ def evalRef (ctx : EvalCtx) (fuel : Nat) (a : Address) (uinst : List Nat) :
         | .ok (bc, .defn d) => do
           guardLvls d.lvls uinst
           if unfoldable d then
-            eval ctx fuel (Frame.ofConst bc uinst) [] d.value
+            eval ctx fuel (Frame.ofConst bc uinst (some p.block)) [] d.value
           else
             .ok (.papV (.neuH (.const a)) [])
         | .ok _ => .error (.stuck "definition projection targets a non-definition")
@@ -385,11 +399,11 @@ def fire (ctx : EvalCtx) (fuel : Nat) (h : Head) (args : List Value) :
     match h with
     | .ctorH block indIdx cidx _ => .ok (.ctorV block indIdx cidx args)
     | .neuH _ => .ok (.papV h args)
-    | .recH r F =>
+    | .recH blk r F =>
       match args.getLast? with
       | none => .error (.stuck "recursor fired with no arguments")
       | some major => do
-        let (cidx, cargs) ← majorCtor ctx major
+        let (cidx, cargs) ← majorCtor (blk.isSome && ctx.natBlock == blk) major
         match r.rules[cidx]? with
         | none => .error (.stuck s!"no recursor rule for constructor {cidx}")
         | some rule =>
