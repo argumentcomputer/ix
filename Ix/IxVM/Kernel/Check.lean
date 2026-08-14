@@ -823,19 +823,20 @@ def check := ⟦
   -- shape check costs one pass regardless of how many members ask.
   fn check_inductive_shape(ty: KExpr, n_params: G, n_indices: G,
                                 num_ctors: G, num_lvls: G,
-                                block_addr: Addr, ind_idx: G) {
+                                block_addr: Addr, ind_idx: G,
+                                is_unsafe: G) {
     let ind_level = get_result_sort_level(ty, n_params + n_indices,
                                                store(ListNode.Nil));
     check_inductive_shape_ctors(ty, n_params, n_indices, num_ctors,
                                      num_lvls, block_addr, ind_idx,
-                                     ind_level, 0)
+                                     ind_level, is_unsafe, 0)
   }
 
   fn check_inductive_shape_ctors(ind_ty: KExpr, n_params: G,
                                       n_indices: G, num_ctors: G,
                                       num_lvls: G, block_addr: Addr,
                                       ind_idx: G, ind_level: KLevel,
-                                      cidx: G) {
+                                      is_unsafe: G, cidx: G) {
     match num_ctors - cidx {
       0 => (),
       _ =>
@@ -857,11 +858,22 @@ def check := ⟦
             check_ctor_return_type(cty, c_np, n_indices, c_nf, num_lvls,
                                         block_addr, ind_idx);
             check_field_universes(cty, c_np, ind_level);
-            check_positivity(cty, c_np, block_addr, store(ListNode.Nil));
+            -- Strict positivity is SKIPPED for unsafe inductives (mirror
+            -- inductive.rs:441 "Lean skips positivity for unsafe
+            -- inductives"). Running it anyway aborted on Batteries'
+            -- `MLList.MLListImpl`, whose (legal-because-unsafe) ctor arg
+            -- has a recursive occurrence under a BVar-headed application
+            -- the positivity walker has no case for.
+            match is_unsafe {
+              0 => check_positivity(cty, c_np, block_addr,
+                                         store(ListNode.Nil)),
+              _ => (),
+            };
             check_inductive_shape_ctors(ind_ty, n_params, n_indices,
                                              num_ctors, num_lvls,
                                              block_addr, ind_idx,
-                                             ind_level, cidx + 1),
+                                             ind_level, is_unsafe,
+                                             cidx + 1),
         },
     }
   }
@@ -872,9 +884,9 @@ def check := ⟦
   fn check_parent_inductive_shape(ind_ci: KConstantInfo) {
     match ind_ci {
       KConstantInfo.Induct(nlvls, ty, n_params, n_indices, num_ctors,
-                            _, block_addr, ind_idx) =>
+                            is_unsafe, block_addr, ind_idx) =>
         check_inductive_shape(ty, n_params, n_indices, num_ctors,
-                                   nlvls, block_addr, ind_idx),
+                                   nlvls, block_addr, ind_idx, is_unsafe),
       _ => (),
     }
   }
@@ -956,33 +968,46 @@ def check := ⟦
   -- Takes the single ctor's KCI directly rather than looking it up — the
   -- caller already resolved it via get_ci_cprj.
   fn is_large_eliminator(result_level: KLevel, num_ctors: G,
-                              single_ctor_opt: (G, KConstantInfo))
-                              -> G {
+                              single_ctor_opt: (G, KConstantInfo),
+                              is_solo: G) -> G {
     match level_is_not_zero(result_level) {
       1 => 1,
       _ =>
-        match num_ctors {
-          0 => 1,
-          1 =>
-            match single_ctor_opt {
-              (present, ctor_ci) =>
-                match present {
-                  0 => 0,
-                  _ =>
-                    match ctor_ci {
-                      KConstantInfo.Ctor(_, ctor_ty, _, _, _, n_params,
-                                            n_fields, _) =>
-                        match n_fields {
-                          0 => 1,
-                          _ => check_large_prop_ctor(ctor_ty, n_params,
-                                                          n_fields,
-                                                          store(ListNode.Nil)),
+        -- Large elimination FROM Prop requires a single inductive in the
+        -- block (mirror inductive.rs is_large_eliminator: "Must be a
+        -- single inductive for large elimination from Prop"). Without
+        -- this gate a mutual block of single-ctor Props (e.g. a mutual
+        -- pair where each member's only ctor mentions the other) is
+        -- misclassified as large-eliminating and the reconstructed
+        -- motives land in Sort u against the declared Prop, rejecting
+        -- the recursor. Non-Prop stays large above regardless of
+        -- mutuality, matching the reference's ordering.
+        match is_solo {
+          0 => 0,
+          _ =>
+            match num_ctors {
+              0 => 1,
+              1 =>
+                match single_ctor_opt {
+                  (present, ctor_ci) =>
+                    match present {
+                      0 => 0,
+                      _ =>
+                        match ctor_ci {
+                          KConstantInfo.Ctor(_, ctor_ty, _, _, _, n_params,
+                                                n_fields, _) =>
+                            match n_fields {
+                              0 => 1,
+                              _ => check_large_prop_ctor(ctor_ty, n_params,
+                                                              n_fields,
+                                                              store(ListNode.Nil)),
+                            },
+                          _ => 0,
                         },
-                      _ => 0,
                     },
                 },
+              _ => 0,
             },
-          _ => 0,
         },
     }
   }
@@ -2161,32 +2186,48 @@ def check := ⟦
         let minor_doms = build_all_minors(flat, flat_own_params, n_params,
           n_motives, motive_base);
         let n_minors = list_length(minor_doms);
-        let index_doms_raw = collect_index_doms(after_params, n_indices);
+        let (self_addr, self_is_aux, self_spec_params, self_occ_us) =
+          flat_member_at(flat, self_pos);
+        -- The index binders come from the SELF member's inductive
+        -- type, NOT the primary's `after_params`: mutual members may
+        -- carry distinct index telescopes (mathlib's
+        -- `Lists.Equiv : Lists α → Lists α → Prop`, mutual with
+        -- `Lists'.Subset : Lists' α true → Lists' α true → Prop`),
+        -- and reading member 0's indices for every member rejected
+        -- the block's second recursor. Same peel/subst conventions
+        -- as the motives (`build_motive_type_flat`), same
+        -- occurrence-universe instantiation as the reference
+        -- (`inductive.rs build_rec_type`, "Indices for THIS
+        -- inductive").
+        let KConstantInfo.Induct(_, self_ind_ty, self_own_params,
+          _, _, _, _, _) = load(get_ci(self_addr));
+        let self_ty_inst = expr_inst_levels(self_ind_ty, self_occ_us);
+        let self_after_params = peel_motive_params_subst(self_ty_inst,
+          self_own_params, n_params, self_is_aux, self_spec_params, 0);
+        let index_doms_raw = collect_index_doms(self_after_params,
+          n_indices);
         let index_doms = list_lift_indices(index_doms_raw,
           n_motives + n_minors, 0);
-        match flat_member_at(flat, self_pos) {
-          (self_addr, self_is_aux, self_spec_params, self_occ_us) =>
-            let head = store(KExprNode.Const(self_addr, self_occ_us));
-            let pre_major_depth = ((n_params + n_motives) + n_minors) + n_indices;
-            let with_args = @build_major_args_for_self(head, n_params,
-              pre_major_depth - 1, (n_motives + n_minors) + n_indices,
-              self_is_aux, self_spec_params);
-            let major_ty = build_major_indices(with_args, n_indices, 0);
-            -- Conclusion is built with the major binder in scope, hence the
-            -- +1: motive_self applied to the index binders, then the major.
-            let depth_after_major = pre_major_depth + 1;
-            let motive_var = (depth_after_major - 1) - (motive_base + self_pos);
-            let motive_ref = store(KExprNode.BVar(motive_var));
-            let with_indices = apply_indices_in_conclusion(motive_ref,
-              n_indices, 0);
-            let conclusion = store(KExprNode.App(with_indices,
-              store(KExprNode.BVar(0))));
-            let with_major = store(KExprNode.Forall(major_ty, conclusion));
-            let with_idx_foralls = wrap_foralls(with_major, index_doms);
-            let with_minors = wrap_foralls(with_idx_foralls, minor_doms);
-            let with_motives = wrap_foralls(with_minors, motive_doms);
-            wrap_foralls(with_motives, param_doms),
-        },
+        let head = store(KExprNode.Const(self_addr, self_occ_us));
+        let pre_major_depth = ((n_params + n_motives) + n_minors) + n_indices;
+        let with_args = @build_major_args_for_self(head, n_params,
+          pre_major_depth - 1, (n_motives + n_minors) + n_indices,
+          self_is_aux, self_spec_params);
+        let major_ty = build_major_indices(with_args, n_indices, 0);
+        -- Conclusion is built with the major binder in scope, hence the
+        -- +1: motive_self applied to the index binders, then the major.
+        let depth_after_major = pre_major_depth + 1;
+        let motive_var = (depth_after_major - 1) - (motive_base + self_pos);
+        let motive_ref = store(KExprNode.BVar(motive_var));
+        let with_indices = apply_indices_in_conclusion(motive_ref,
+          n_indices, 0);
+        let conclusion = store(KExprNode.App(with_indices,
+          store(KExprNode.BVar(0))));
+        let with_major = store(KExprNode.Forall(major_ty, conclusion));
+        let with_idx_foralls = wrap_foralls(with_major, index_doms);
+        let with_minors = wrap_foralls(with_idx_foralls, minor_doms);
+        let with_motives = wrap_foralls(with_minors, motive_doms);
+        wrap_foralls(with_motives, param_doms),
     }
   }
 
@@ -2211,7 +2252,8 @@ def check := ⟦
             let result_level = get_result_sort_level(pty, pnp + pni,
               store(ListNode.Nil));
             let univ_offset = is_large_eliminator(result_level,
-              num_ctors, single_ctor_pair);
+              num_ctors, single_ctor_pair,
+              ind_is_solo(parent_block_addr, parent_addr));
             let elim_level = match univ_offset {
               1 => store(KLevelNode.Param(0)),
               _ => store(KLevelNode.Zero),
@@ -3900,7 +3942,7 @@ def check := ⟦
         assert_safety(u, ty);
         check_quot(addr, kind, nlvls, ty),
       KConstantInfo.Induct(nlvls, ty, n_params, n_indices, num_ctors,
-                            _, ind_block, ind_idx) =>
+                            ind_is_unsafe, ind_block, ind_idx) =>
         validate_expr_well_scoped(ty, 0, nlvls);
         k_ensure_sort(ty, store(ListNode.Nil));
         assert_safety(u, ty);
@@ -3913,7 +3955,8 @@ def check := ⟦
         -- per-ctor gauntlet. Without it, subject-only checking accepts
         -- an inductive whose badness lives in a ctor const.
         check_inductive_shape(ty, n_params, n_indices, num_ctors,
-                                   nlvls, ind_block, ind_idx);
+                                   nlvls, ind_block, ind_idx,
+                                   ind_is_unsafe);
         check_block_peer_param_agreement(ci, addr),
       KConstantInfo.Ctor(nlvls, ty, block_addr, ind_idx, _cidx,
                          num_params, num_fields, _) =>
@@ -3923,7 +3966,7 @@ def check := ⟦
         let ind_ci = load(@ctor_parent_ind_ci(block_addr, ind_idx));
         match ind_ci {
           KConstantInfo.Induct(ind_nlvls, ind_ty, ind_n_params,
-                                ind_n_indices, _, _, _, _) =>
+                                ind_n_indices, _, ind_is_unsafe, _, _) =>
             assert_eq!(num_params, ind_n_params,
               "ctor parameter count differs from its inductive's");
             check_param_agreement(ind_ty, ty, ind_n_params);
@@ -3933,8 +3976,13 @@ def check := ⟦
             let ind_level = get_result_sort_level(ind_ty,
               ind_n_params + ind_n_indices, store(ListNode.Nil));
             check_field_universes(ty, num_params, ind_level);
-            check_positivity(ty, num_params, block_addr,
-                                  store(ListNode.Nil)),
+            -- Positivity skipped for unsafe inductives — see
+            -- check_inductive_shape_ctors.
+            match ind_is_unsafe {
+              0 => check_positivity(ty, num_params, block_addr,
+                                         store(ListNode.Nil)),
+              _ => (),
+            },
         },
       KConstantInfo.Rec(nlvls, ty, _, _, _, _, _, _, _, rec_block, _) =>
         validate_expr_well_scoped(ty, 0, nlvls);

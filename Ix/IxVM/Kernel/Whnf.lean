@@ -1245,13 +1245,44 @@ def whnf := ⟦
         },
       KConstantInfo.Rec(nlvls, rec_ty, nparams, nindices, nmotives, nminors,
                           rules, k_flag, _unsafe, _block, _ridx) =>
+        -- Mirror whnf_const_head's Rec arm, including the pre-whnf
+        -- K-ctor synthesis and the struct-eta fallback. Without the K
+        -- step, `Eq.rec` over an open proof (`cast (h : α = α) x`)
+        -- cannot reduce in no-delta mode — and the lazy def-eq tiers
+        -- normalize exclusively with whnf_nd, so K-closable pairs
+        -- (cast_eq shapes) would falsely reject.
+        let k_skip = ((nparams + nmotives) + nminors) + nindices;
+        let k_pre = match k_flag {
+          1 =>
+            match se_parent_addr(rec_ty, k_skip) {
+              (_, rec_parent) =>
+                try_k_synth_iota(lvls, spine, nparams, nmotives,
+                                    nminors, nindices, rules,
+                                    rec_parent, types),
+            },
+          _ => (0, head),
+        };
+        match k_pre {
+          (1, k_reduct) => k_reduct,
+          _ =>
         let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
                                    nminors, nindices));
         match iota {
           (1, reduced) => whnf_nd(reduced, types),
+          (2, stuck) =>
+            match k_flag {
+              1 => stuck,
+              _ =>
+                match try_struct_eta_iota(rec_ty, lvls, spine, nparams,
+                        nmotives, nminors, nindices, rules, types) {
+                  (1, r) => whnf_nd(r, types),
+                  _ => stuck,
+                },
+            },
           _ => apply_spine(head, spine),
+        },
         },
       _ => apply_spine(head, spine),
     },
