@@ -438,19 +438,19 @@ def blake3 := ⟦
     ];
 
     -- Round 0
-    let state = blake3_compress_inner_j(state);
+    let state = @blake3_compress_inner_j(state);
     -- Round 1
-    let state = blake3_compress_inner_j(state);
+    let state = @blake3_compress_inner_j(state);
     -- Round 2
-    let state = blake3_compress_inner_j(state);
+    let state = @blake3_compress_inner_j(state);
     -- Round 3
-    let state = blake3_compress_inner_j(state);
+    let state = @blake3_compress_inner_j(state);
     -- Round 4
-    let state = blake3_compress_inner_j(state);
+    let state = @blake3_compress_inner_j(state);
     -- Round 5
-    let state = blake3_compress_inner_j(state);
+    let state = @blake3_compress_inner_j(state);
     -- Round 6
-    let state = blake3_compress_inner_j(state);
+    let state = @blake3_compress_inner_j(state);
 
     let output0 = @u32_xor(state[0], state[8]);
     let output1 = @u32_xor(state[1], state[9]);
