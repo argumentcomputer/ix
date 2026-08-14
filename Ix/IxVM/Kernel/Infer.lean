@@ -66,7 +66,38 @@ def infer := ⟦
   -- the suffix of `types` reachable from `e`'s loose-bvar range, so a closed
   -- subterm (`lbr == 0`) shares its inferred type across every binder depth.
   fn k_infer(e: KExpr, types: List‹KExpr›) -> KExpr {
-    k_infer_core(e, ctx_trim(types, expr_lbr(e)))
+    let base = expr_lbr(e);
+    match base {
+      0 => k_infer_core(e, store(ListNode.Nil)),
+      _ => k_infer_rebase(e, types, base),
+    }
+  }
+
+  -- Rebase an OPEN subject to its minimum loose index before keying
+  -- (the infer twin of k_def_eq_rebase; see that comment for the full
+  -- argument). The suffix trim alone cannot canonicalize a subject
+  -- that references only the OUTERMOST binders of a deep telescope:
+  -- its lbr spans the whole context, the trim keeps every inner frame,
+  -- and each inference site spells those (unreferenced) inner frames
+  -- slightly differently — minting a fresh k_infer_core key per site.
+  -- On `Simps.addProjections._unsafe_rec` (mathlib shard 211) this
+  -- multiplicity produced 15.7M distinct k_check calls in 150s with no
+  -- convergence. Frames below `g = min loose index` are loose in
+  -- neither the subject nor the kept frames (which only ever reference
+  -- deeper frames), so lowering by g and dropping those frames is a
+  -- bijection on typing derivations (context strengthening by
+  -- unreferenced frames). Unlike def-eq, which returns a bit,
+  -- inference returns a TYPE valid in the context it ran in — so the
+  -- result is lifted back by g.
+  fn k_infer_rebase(e: KExpr, types: List‹KExpr›, base: G) -> KExpr {
+    let g = lbr_min(expr_glb(e, 0), list_length(types));
+    match g {
+      0 => k_infer_core(e, ctx_trim(types, base)),
+      _ =>
+        let t = k_infer_core(expr_lower(e, g, 0),
+                    ctx_trim(list_drop(types, g), base - g));
+        expr_lift(t, g, 0),
+    }
   }
 
   fn k_infer_core(e: KExpr, types: List‹KExpr›) -> KExpr {
