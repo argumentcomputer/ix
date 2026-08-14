@@ -14,9 +14,9 @@ use crate::{
     bytes2::{Bytes2, Bytes2Op},
   },
   memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
-  u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
-  u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
+  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
+  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
+  u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 type Expr = multi_stark::expr::Expr<G>;
@@ -640,19 +640,19 @@ impl Op {
         sel.clone(),
         state,
       ),
-      Op::U8ChainRotr7(i, j) => bytes2_constraints(
+      Op::U8XorSplit7(i, j) => bytes2_constraints(
         *i,
         *j,
-        &Bytes2Op::ChainRotr7,
-        u8_chain_rotr7_channel(),
+        &Bytes2Op::XorSplit7,
+        u8_xor_split7_channel(),
         sel.clone(),
         state,
       ),
-      Op::U8ChainRotr4(i, j) => bytes2_constraints(
+      Op::U8XorSplit4(i, j) => bytes2_constraints(
         *i,
         *j,
-        &Bytes2Op::ChainRotr4,
-        u8_chain_rotr4_channel(),
+        &Bytes2Op::XorSplit4,
+        u8_xor_split4_channel(),
         sel.clone(),
         state,
       ),

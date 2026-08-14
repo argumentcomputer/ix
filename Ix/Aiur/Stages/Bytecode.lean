@@ -43,8 +43,8 @@ inductive Op
   | u8Or : ValIdx → ValIdx → Op
   | u8LessThan : ValIdx → ValIdx → Op
   | u32LessThan : ValIdx → ValIdx → Op
-  | u8ChainRotr7 : ValIdx → ValIdx → Op
-  | u8ChainRotr4 : ValIdx → ValIdx → Op
+  | u8XorSplit7 : ValIdx → ValIdx → Op
+  | u8XorSplit4 : ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
   /-- Range-check the two values into `[0, 256)` via the byte chip. Produces no
   new values: it is a pure side-effect (lookup), and its `u8` results alias the

@@ -348,7 +348,7 @@ def Op.outputCount : Op → Nat
   | .u8Xor _ _ | .u8And _ _ | .u8Or _ _ | .u8LessThan _ _ => 1
   | .u8Mul _ _ => 2
   | .u8Add _ _ | .u8Sub _ _ => 2
-  | .u8ChainRotr7 _ _ | .u8ChainRotr4 _ _ => 3
+  | .u8XorSplit7 _ _ | .u8XorSplit4 _ _ => 2
   | .u32LessThan _ _ => 1
   | .u8RangeCheck _ _ => 0
   | .unconstrainedBigUintDivMod _ _ => 2
@@ -562,7 +562,7 @@ private def emitU8Bytes2 (out : Nat) (valueHelper : String)
       s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
     return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
   else
-    -- 2-tuple outputs (Mul) or 3-tuple (ChainRotr7/4).
+    -- Multi-output byte operations.
     let blockExpr : String :=
       s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
       s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
@@ -723,8 +723,8 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .u8And i j => emitU8Bytes2 out "bytes2_and_value" "and" i j 1
   | .u8Or i j => emitU8Bytes2 out "bytes2_or_value" "or" i j 1
   | .u8LessThan i j => emitU8Bytes2 out "bytes2_less_than_value" "less_than" i j 1
-  | .u8ChainRotr7 i j => emitU8Bytes2 out "bytes2_chain_rotr7_value" "chain_rotr7" i j 3
-  | .u8ChainRotr4 i j => emitU8Bytes2 out "bytes2_chain_rotr4_value" "chain_rotr4" i j 3
+  | .u8XorSplit7 i j => emitU8Bytes2 out "bytes2_xor_split7_value" "xor_split7" i j 2
+  | .u8XorSplit4 i j => emitU8Bytes2 out "bytes2_xor_split4_value" "xor_split4" i j 2
   | .u8Add i j => emitU8Add out i j
   | .u8Sub i j => emitU8Sub out i j
   | .u32LessThan a b => emitU32LessThan out a b
@@ -984,8 +984,8 @@ def optionalExecuteUses : Array (String × String) := #[
   ("bytes2_mul_value", "bytes2_mul_value"),
   ("bytes2_add_value", "bytes2_add_value"),
   ("bytes2_sub_value", "bytes2_sub_value"),
-  ("bytes2_chain_rotr7_value", "bytes2_chain_rotr7_value"),
-  ("bytes2_chain_rotr4_value", "bytes2_chain_rotr4_value"),
+  ("bytes2_xor_split7_value", "bytes2_xor_split7_value"),
+  ("bytes2_xor_split4_value", "bytes2_xor_split4_value"),
   ("unconstrained_big_uint_div_mod_helper", "unconstrained_big_uint_div_mod_helper"),
   ("g_inverse_value", "g_inverse_value"),
   ("CodegenBytes1 as Bytes1", "Bytes1::"),

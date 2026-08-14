@@ -246,16 +246,17 @@ def toplevel := ⟦
     (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
   }
 
-  -- Full u32 right-rotation by 7, built by chaining the partial gadget over
-  -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
-  pub fn u32_rotr7(b: [U8; 4]) -> [U8; 4] {
-    let [b0, b1, b2, b3] = b;
-    let (a0, a1, a2) = u8_chain_rotr7(b0, b1);
-    let (c0, c1, c2) = u8_chain_rotr7(b2, b3);
-    -- The two combined parts occupy disjoint bit positions, so their sum never
-    -- overflows a byte: add cheaply as `G`, then reinterpret as `U8`.
-    [a0, u8_from_field_unsafe(to_field(a1) + to_field(c2)), c0,
-     u8_from_field_unsafe(to_field(c1) + to_field(a2))]
+  -- Full u32 xor + right-rotation by 7, built from the fused per-byte
+  -- xor-split gadget (4 lookups + 4 free field adds).
+  pub fn u32_xor_rotr7(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    let (h0, l0) = u8_xor_split7(a[0], b[0]);
+    let (h1, l1) = u8_xor_split7(a[1], b[1]);
+    let (h2, l2) = u8_xor_split7(a[2], b[2]);
+    let (h3, l3) = u8_xor_split7(a[3], b[3]);
+    [u8_from_field_unsafe(to_field(h0) + to_field(l1)),
+     u8_from_field_unsafe(to_field(h1) + to_field(l2)),
+     u8_from_field_unsafe(to_field(h2) + to_field(l3)),
+     u8_from_field_unsafe(to_field(h3) + to_field(l0))]
   }
 
   ---------------------------------------------------------------------------
@@ -812,7 +813,10 @@ def aiurTestCases : List AiurTestCase := [
     -- single-op wrappers repeat the same lookup mechanics in aiur-cross.
     .prove `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],
     .prove `u8_add_xor #[45, 131] #[219, 0, 49, 1],
-    .prove `u32_rotr7 #[45, 131, 200, 17] #[6, 145, 35, 90],
+    .prove `u32_xor_rotr7 #[45, 131, 200, 17, 0, 0, 0, 0] #[6, 145, 35, 90]
+      (label := "u32_xor_rotr7(x, 0) = rotr7(x)"),
+    .prove `u32_xor_rotr7 #[45, 131, 200, 17, 200, 17, 45, 131] #[37, 203, 37, 203]
+      (label := "u32_xor_rotr7(a, b)"),
 
     -- u8 range-check: prove the boundary case (U8RangeCheck circuit op)
     .prove `range_check_id #[0, 255] #[0, 255],

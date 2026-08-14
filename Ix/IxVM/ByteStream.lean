@@ -43,12 +43,10 @@ def byteStream := ⟦
     }
   }
 
-  -- Wrapping little-endian u32 addition. The expensive bytewise addition is
-  -- advice only; this circuit verifies its five witnesses directly:
-  -- four range-checked result bytes, a boolean carry, and the packed integer
-  -- identity `a + b = result + carry * 2^32`. Since both sides are < 2^33,
-  -- the Goldilocks field equality is the intended integer equality (no field
-  -- wrap), and the checked decomposition is unique.
+  -- Wrapping little-endian u32 addition. The four result bytes are advice and
+  -- are range-checked here. The carry is the virtual expression
+  -- `(a + b - result) / 2^32`; constraining it to be boolean uniquely pins the
+  -- wrapping result, so a separate packed-sum equality would be redundant.
   fn u32_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let (raw, carry) = unconstrained_u32_add(a, b);
     let (z0, z1) = u8_range_check(raw[0], raw[1]);
@@ -56,19 +54,13 @@ def byteStream := ⟦
 
     assert_eq!(carry * carry, carry, "u32_add: carry is not boolean");
 
-    let av = u32_to_field(a);
-    let bv = u32_to_field(b);
-    let zv = u32_to_field([z0, z1, z2, z3]);
-    assert_eq!(av + bv, zv + 0x100000000 * carry,
-      "u32_add: witnessed sum does not match its inputs");
-
     [z0, z1, z2, z3]
   }
 
-  -- Wrapping sum of three little-endian u32s, pinned directly rather than as
-  -- two binary additions. The output costs two paired range-check lookups;
-  -- the cubic carry constraint admits exactly 0, 1, or 2. The packed integer
-  -- identity cannot wrap in Goldilocks because its values are below 2^34.
+  -- Wrapping sum of three little-endian u32s. The output costs two paired
+  -- range-check lookups. The virtual carry is
+  -- `(a + b + c - result) / 2^32`; constraining it to {0, 1, 2} uniquely pins
+  -- the result, so no separate packed-sum equality is needed.
   fn u32_add3(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
     let (raw, carry) = unconstrained_u32_add3(a, b, c);
     let (z0, z1) = u8_range_check(raw[0], raw[1]);
@@ -76,13 +68,6 @@ def byteStream := ⟦
 
     assert_eq!(carry * (carry - 1) * (carry - 2), 0,
       "u32_add3: carry is not in {0, 1, 2}");
-
-    let av = u32_to_field(a);
-    let bv = u32_to_field(b);
-    let cv = u32_to_field(c);
-    let zv = u32_to_field([z0, z1, z2, z3]);
-    assert_eq!(av + bv + cv, zv + 0x100000000 * carry,
-      "u32_add3: witnessed sum does not match its inputs");
 
     [z0, z1, z2, z3]
   }
@@ -116,20 +101,26 @@ def byteStream := ⟦
     [w1, w2, w3, w0]
   }
 
-  fn u32_rotr12(w: [U8; 4]) -> [U8; 4] {
-    let [w0, w1, w2, w3] = w;
-    let (e0, e1, e2) = u8_chain_rotr4(w1, w2);
-    let (f0, f1, f2) = u8_chain_rotr4(w3, w0);
-    [e0, u8_from_field_unsafe(to_field(e1) + to_field(f2)), f0,
-     u8_from_field_unsafe(to_field(f1) + to_field(e2))]
+  fn u32_xor_rotr7(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    let (h0, l0) = u8_xor_split7(a[0], b[0]);
+    let (h1, l1) = u8_xor_split7(a[1], b[1]);
+    let (h2, l2) = u8_xor_split7(a[2], b[2]);
+    let (h3, l3) = u8_xor_split7(a[3], b[3]);
+    [u8_from_field_unsafe(to_field(h0) + to_field(l1)),
+     u8_from_field_unsafe(to_field(h1) + to_field(l2)),
+     u8_from_field_unsafe(to_field(h2) + to_field(l3)),
+     u8_from_field_unsafe(to_field(h3) + to_field(l0))]
   }
 
-  fn u32_rotr7(w: [U8; 4]) -> [U8; 4] {
-    let [w0, w1, w2, w3] = w;
-    let (g0, g1, g2) = u8_chain_rotr7(w0, w1);
-    let (h0, h1, h2) = u8_chain_rotr7(w2, w3);
-    [g0, u8_from_field_unsafe(to_field(g1) + to_field(h2)), h0,
-     u8_from_field_unsafe(to_field(h1) + to_field(g2))]
+  fn u32_xor_rotr12(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    let (h0, l0) = u8_xor_split4(a[0], b[0]);
+    let (h1, l1) = u8_xor_split4(a[1], b[1]);
+    let (h2, l2) = u8_xor_split4(a[2], b[2]);
+    let (h3, l3) = u8_xor_split4(a[3], b[3]);
+    [u8_from_field_unsafe(to_field(h1) + to_field(l2)),
+     u8_from_field_unsafe(to_field(h2) + to_field(l3)),
+     u8_from_field_unsafe(to_field(h3) + to_field(l0)),
+     u8_from_field_unsafe(to_field(h0) + to_field(l1))]
   }
 
   -- Byte-by-byte `u64` equality

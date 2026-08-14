@@ -7,9 +7,8 @@ use multi_stark::{
 
 use crate::{
   G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_and_channel,
-  u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
-  u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_sub_channel,
-  u8_xor_channel,
+  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
+  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
@@ -21,8 +20,8 @@ use crate::{
 /// - less_than
 /// - range_check
 /// - mul
-/// - chain_rotr7
-/// - chain_rotr4
+/// - xor_split7
+/// - xor_split4
 const TRACE_WIDTH: usize = 10;
 
 /// Number of columns in the preprocessed trace:
@@ -38,13 +37,9 @@ const TRACE_WIDTH: usize = 10;
 /// - less_than result
 /// - mul low byte
 /// - mul high byte
-/// - chain_rotr7 output 0 (`i >> 7 + j << 1`)
-/// - chain_rotr7 output 1 (`j >> 7`)
-/// - chain_rotr7 output 2 (`i << 1`)
-/// - chain_rotr4 output 0 (`i >> 4 + j << 4`)
-/// - chain_rotr4 output 1 (`j >> 4`)
-/// - chain_rotr4 output 2 (`i << 4`)
-const PREPROCESSED_TRACE_WIDTH: usize = 16;
+/// - xor_split7 high and shifted-low outputs
+/// - xor_split4 high and shifted-low outputs
+const PREPROCESSED_TRACE_WIDTH: usize = 14;
 
 /// AIR implementer for arity 2 byte-related lookups.
 pub struct Bytes2;
@@ -57,8 +52,8 @@ pub enum Bytes2Op {
   And,
   Or,
   LessThan,
-  ChainRotr7,
-  ChainRotr4,
+  XorSplit7,
+  XorSplit4,
 }
 
 impl AiurGadget for Bytes2 {
@@ -72,8 +67,7 @@ impl AiurGadget for Bytes2 {
       | Bytes2Op::LessThan
       | Bytes2Op::Add
       | Bytes2Op::Sub => 1,
-      Bytes2Op::Mul => 2,
-      Bytes2Op::ChainRotr7 | Bytes2Op::ChainRotr4 => 3,
+      Bytes2Op::Mul | Bytes2Op::XorSplit7 | Bytes2Op::XorSplit4 => 2,
     }
   }
 
@@ -114,17 +108,10 @@ impl AiurGadget for Bytes2 {
         trace_values.push(G::from_u8((p & 0xff) as u8));
         trace_values.push(G::from_u8((p >> 8) as u8));
 
-        // Chain rotr7 (combined byte, j high bit, i low part)
-        let (o0, o1, o2) = Self::chain_rotr7_u8(i, j);
-        trace_values.push(G::from_u8(o0));
-        trace_values.push(G::from_u8(o1));
-        trace_values.push(G::from_u8(o2));
-
-        // Chain rotr4 (combined byte, j high nibble, i low nibble)
-        let (o0, o1, o2) = Self::chain_rotr4_u8(i, j);
-        trace_values.push(G::from_u8(o0));
-        trace_values.push(G::from_u8(o1));
-        trace_values.push(G::from_u8(o2));
+        let (hi, lo) = Self::xor_split7_u8(i, j);
+        trace_values.extend([G::from_u8(hi), G::from_u8(lo)]);
+        let (hi, lo) = Self::xor_split4_u8(i, j);
+        trace_values.extend([G::from_u8(hi), G::from_u8(lo)]);
       }
     }
     Some(RowMajorMatrix::new(trace_values, PREPROCESSED_TRACE_WIDTH))
@@ -170,15 +157,15 @@ impl AiurGadget for Bytes2 {
         record.bytes2_queries.bump_less_than(i, j);
         vec![Self::less_than(i, j)]
       },
-      Bytes2Op::ChainRotr7 => {
-        record.bytes2_queries.bump_chain_rotr7(i, j);
-        let (o0, o1, o2) = Self::chain_rotr7(i, j);
-        vec![o0, o1, o2]
+      Bytes2Op::XorSplit7 => {
+        record.bytes2_queries.bump_xor_split7(i, j);
+        let (hi, lo) = Self::xor_split7(i, j);
+        vec![hi, lo]
       },
-      Bytes2Op::ChainRotr4 => {
-        record.bytes2_queries.bump_chain_rotr4(i, j);
-        let (o0, o1, o2) = Self::chain_rotr4(i, j);
-        vec![o0, o1, o2]
+      Bytes2Op::XorSplit4 => {
+        record.bytes2_queries.bump_xor_split4(i, j);
+        let (hi, lo) = Self::xor_split4(i, j);
+        vec![hi, lo]
       },
     }
   }
@@ -193,8 +180,8 @@ impl AiurGadget for Bytes2 {
     let less_than_channel = Expr::constant(u8_less_than_channel());
     let range_check_channel = Expr::constant(u8_range_check_channel());
     let mul_channel = Expr::constant(u8_mul_channel());
-    let chain_rotr7_channel = Expr::constant(u8_chain_rotr7_channel());
-    let chain_rotr4_channel = Expr::constant(u8_chain_rotr4_channel());
+    let xor_split7_channel = Expr::constant(u8_xor_split7_channel());
+    let xor_split4_channel = Expr::constant(u8_xor_split4_channel());
 
     // Multiplicity columns
     let xor_multiplicity = Expr::main(0);
@@ -205,8 +192,8 @@ impl AiurGadget for Bytes2 {
     let less_than_multiplicity = Expr::main(5);
     let range_check_multiplicity = Expr::main(6);
     let mul_multiplicity = Expr::main(7);
-    let chain_rotr7_multiplicity = Expr::main(8);
-    let chain_rotr4_multiplicity = Expr::main(9);
+    let xor_split7_multiplicity = Expr::main(8);
+    let xor_split4_multiplicity = Expr::main(9);
 
     // Preprocessed columns
     let i = Expr::preprocessed(0);
@@ -219,12 +206,10 @@ impl AiurGadget for Bytes2 {
     let less_than = Expr::preprocessed(7);
     let mul_lo = Expr::preprocessed(8);
     let mul_hi = Expr::preprocessed(9);
-    let chain_rotr7_o0 = Expr::preprocessed(10);
-    let chain_rotr7_o1 = Expr::preprocessed(11);
-    let chain_rotr7_o2 = Expr::preprocessed(12);
-    let chain_rotr4_o0 = Expr::preprocessed(13);
-    let chain_rotr4_o1 = Expr::preprocessed(14);
-    let chain_rotr4_o2 = Expr::preprocessed(15);
+    let xor_split7_hi = Expr::preprocessed(10);
+    let xor_split7_lo = Expr::preprocessed(11);
+    let xor_split4_hi = Expr::preprocessed(12);
+    let xor_split4_lo = Expr::preprocessed(13);
 
     // pull = negated multiplicity.
     let pull_xor = Lookup {
@@ -267,28 +252,19 @@ impl AiurGadget for Bytes2 {
       args: vec![range_check_channel, i.clone(), j.clone()],
     };
 
-    let pull_chain_rotr7 = Lookup {
-      multiplicity: -chain_rotr7_multiplicity,
+    let pull_xor_split7 = Lookup {
+      multiplicity: -xor_split7_multiplicity,
       args: vec![
-        chain_rotr7_channel,
+        xor_split7_channel,
         i.clone(),
         j.clone(),
-        chain_rotr7_o0,
-        chain_rotr7_o1,
-        chain_rotr7_o2,
+        xor_split7_hi,
+        xor_split7_lo,
       ],
     };
-
-    let pull_chain_rotr4 = Lookup {
-      multiplicity: -chain_rotr4_multiplicity,
-      args: vec![
-        chain_rotr4_channel,
-        i,
-        j,
-        chain_rotr4_o0,
-        chain_rotr4_o1,
-        chain_rotr4_o2,
-      ],
+    let pull_xor_split4 = Lookup {
+      multiplicity: -xor_split4_multiplicity,
+      args: vec![xor_split4_channel, i, j, xor_split4_hi, xor_split4_lo],
     };
 
     vec![
@@ -300,8 +276,8 @@ impl AiurGadget for Bytes2 {
       pull_less_than,
       pull_range_check,
       pull_mul,
-      pull_chain_rotr7,
-      pull_chain_rotr4,
+      pull_xor_split7,
+      pull_xor_split4,
     ]
   }
 
@@ -324,8 +300,8 @@ impl AiurGadget for Bytes2 {
     let less_than_channel = u8_less_than_channel();
     let range_check_channel = u8_range_check_channel();
     let mul_channel = u8_mul_channel();
-    let chain_rotr7_channel = u8_chain_rotr7_channel();
-    let chain_rotr4_channel = u8_chain_rotr4_channel();
+    let xor_split7_channel = u8_xor_split7_channel();
+    let xor_split4_channel = u8_xor_split4_channel();
 
     rows
       .chunks_exact_mut(TRACE_WIDTH)
@@ -345,8 +321,8 @@ impl AiurGadget for Bytes2 {
               less_than,
               range_check,
               mul,
-              chain_rotr7,
-              chain_rotr4,
+              xor_split7,
+              xor_split4,
             ],
           ),
           row_lookups,
@@ -362,8 +338,8 @@ impl AiurGadget for Bytes2 {
           row[5] = less_than;
           row[6] = range_check;
           row[7] = mul;
-          row[8] = chain_rotr7;
-          row[9] = chain_rotr4;
+          row[8] = xor_split7;
+          row[9] = xor_split4;
 
           // Pull xor.
           row_lookups.pull(0, xor, &[xor_channel, i, j, Self::xor(&i, &j)]);
@@ -388,7 +364,6 @@ impl AiurGadget for Bytes2 {
             less_than,
             &[less_than_channel, i, j, Self::less_than(&i, &j)],
           );
-
           // Pull range_check.
           row_lookups.pull(6, range_check, &[range_check_channel, i, j]);
 
@@ -396,21 +371,13 @@ impl AiurGadget for Bytes2 {
           let (lo, hi) = Self::mul(&i, &j);
           row_lookups.pull(7, mul, &[mul_channel, i, j, lo, hi]);
 
-          // Pull chain_rotr7.
-          let (o0, o1, o2) = Self::chain_rotr7(&i, &j);
-          row_lookups.pull(
-            8,
-            chain_rotr7,
-            &[chain_rotr7_channel, i, j, o0, o1, o2],
-          );
+          // Pull xor_split7.
+          let (hi, lo) = Self::xor_split7(&i, &j);
+          row_lookups.pull(8, xor_split7, &[xor_split7_channel, i, j, hi, lo]);
 
-          // Pull chain_rotr4.
-          let (o0, o1, o2) = Self::chain_rotr4(&i, &j);
-          row_lookups.pull(
-            9,
-            chain_rotr4,
-            &[chain_rotr4_channel, i, j, o0, o1, o2],
-          );
+          // Pull xor_split4.
+          let (hi, lo) = Self::xor_split4(&i, &j);
+          row_lookups.pull(9, xor_split4, &[xor_split4_channel, i, j, hi, lo]);
         },
       );
     drop(row_writers);
@@ -459,11 +426,11 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, 7)
   }
 
-  pub(crate) fn bump_chain_rotr7(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split7(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 8)
   }
 
-  pub(crate) fn bump_chain_rotr4(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split4(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 9)
   }
 
@@ -529,39 +496,37 @@ impl Bytes2 {
     (G::from_u8((p & 0xff) as u8), G::from_u8((p >> 8) as u8))
   }
 
-  /// Chainable building block for a right-rotation by 7 bits over a sequence
-  /// of little-endian bytes. Given adjacent bytes `i`, `j`, returns
-  /// `(i>>7 + j<<1, j>>7, i<<1)` where shifts are taken mod 256. Chaining the
-  /// outputs across all adjacent byte pairs yields a `rotr7` of any width
-  /// (u16, u32, u64, ...): e.g. the u32 `rotr7` of `[b0,b1,b2,b3]` is
-  /// `[A0, A1+B2, B0, B1+A2]` for `A = chain_rotr7(b0,b1)`,
-  /// `B = chain_rotr7(b2,b3)`.
+  /// Building block for a right-rotation by 7 bits over little-endian bytes:
+  /// the xor `x = i ^ j` split as `(x >> 7, x << 1)` (shift mod 256).
   #[inline]
-  pub fn chain_rotr7_u8(i: u8, j: u8) -> (u8, u8, u8) {
-    ((i >> 7) + (j << 1), j >> 7, i << 1)
+  pub fn xor_split7_u8(i: u8, j: u8) -> (u8, u8) {
+    let x = i ^ j;
+    (x >> 7, x << 1)
   }
 
-  /// Chainable building block for a right-rotation by 4 bits over a sequence
-  /// of little-endian bytes. Given adjacent bytes `i`, `j`, returns
-  /// `(i>>4 + j<<4, j>>4, i<<4)` where shifts are taken mod 256.
+  /// Building block for a right-rotation by 4 bits over little-endian bytes:
+  /// the xor `x = i ^ j` split as `(x >> 4, x << 4)` (shifts mod 256).
   #[inline]
-  pub fn chain_rotr4_u8(i: u8, j: u8) -> (u8, u8, u8) {
-    ((i >> 4) + (j << 4), j >> 4, i << 4)
+  pub fn xor_split4_u8(i: u8, j: u8) -> (u8, u8) {
+    let x = i ^ j;
+    (x >> 4, x << 4)
   }
 
   #[inline]
-  pub fn chain_rotr7(i: &G, j: &G) -> (G, G, G) {
-    let i: u8 = i.as_canonical_u64().try_into().unwrap();
-    let j: u8 = j.as_canonical_u64().try_into().unwrap();
-    let (o0, o1, o2) = Self::chain_rotr7_u8(i, j);
-    (G::from_u8(o0), G::from_u8(o1), G::from_u8(o2))
+  pub fn xor_split7(i: &G, j: &G) -> (G, G) {
+    let (hi, lo) = Self::xor_split7_u8(
+      u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
+      u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
+    );
+    (G::from_u8(hi), G::from_u8(lo))
   }
 
   #[inline]
-  pub fn chain_rotr4(i: &G, j: &G) -> (G, G, G) {
-    let i: u8 = i.as_canonical_u64().try_into().unwrap();
-    let j: u8 = j.as_canonical_u64().try_into().unwrap();
-    let (o0, o1, o2) = Self::chain_rotr4_u8(i, j);
-    (G::from_u8(o0), G::from_u8(o1), G::from_u8(o2))
+  pub fn xor_split4(i: &G, j: &G) -> (G, G) {
+    let (hi, lo) = Self::xor_split4_u8(
+      u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
+      u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
+    );
+    (G::from_u8(hi), G::from_u8(lo))
   }
 }

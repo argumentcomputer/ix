@@ -401,6 +401,51 @@ mod tests {
     Toplevel { functions: vec![function], memory_sizes: vec![] }
   }
 
+  fn xor_splits_toplevel() -> Toplevel {
+    let body = Block {
+      ops: vec![Op::U8XorSplit7(0, 1), Op::U8XorSplit4(0, 1)],
+      ctrl: Ctrl::Return(0, vec![2, 3, 4, 5]),
+    };
+    let function = Function {
+      body,
+      layout: FunctionLayout {
+        input_size: 2,
+        selectors: 1,
+        auxiliaries: 5,
+        lookups: 3,
+      },
+      entry: true,
+      constrained: true,
+    };
+    Toplevel { functions: vec![function], memory_sizes: vec![] }
+  }
+
+  #[test]
+  fn prove_verify_xor_splits() {
+    let (cp, fp) = test_parameters();
+    let system = AiurSystem::build(xor_splits_toplevel(), cp, fp);
+    let input = [G::from_u8(0xd3), G::from_u8(0x69)];
+    let mut io_buffer = empty_io_buffer();
+
+    let (claim, proof) = system.prove(0, &input, &mut io_buffer);
+    let (s7_hi, s7_lo) = Bytes2::xor_split7(&input[0], &input[1]);
+    let (s4_hi, s4_lo) = Bytes2::xor_split4(&input[0], &input[1]);
+    assert_eq!(
+      claim,
+      vec![
+        function_channel(),
+        G::ZERO,
+        input[0],
+        input[1],
+        s7_hi,
+        s7_lo,
+        s4_hi,
+        s4_lo,
+      ]
+    );
+    system.verify(&claim, &proof).expect("xor split outputs must verify");
+  }
+
   /// Hand-build a toplevel exercising the two migrated integration paths that
   /// the `Mul` test does not: the cross-circuit **function-channel** lookup (a
   /// function calling another) and the **memory circuit** (a `Store` followed
@@ -583,7 +628,7 @@ mod tests {
     // height doubles as the committed trace height.
     assert_eq!(shapes[3].preprocessed_width, 11);
     assert_eq!(shapes[3].preprocessed_height, 256);
-    assert_eq!(shapes[4].preprocessed_width, 16);
+    assert_eq!(shapes[4].preprocessed_width, 14);
     assert_eq!(shapes[4].preprocessed_height, 65536);
   }
 }

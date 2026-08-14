@@ -81,11 +81,11 @@ pub fn u8_mul_channel() -> G {
 }
 
 #[inline]
-pub fn u8_chain_rotr7_channel() -> G {
+pub fn u8_xor_split7_channel() -> G {
   G::from_u8(13)
 }
 
 #[inline]
-pub fn u8_chain_rotr4_channel() -> G {
+pub fn u8_xor_split4_channel() -> G {
   G::from_u8(14)
 }
