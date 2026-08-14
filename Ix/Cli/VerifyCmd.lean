@@ -73,7 +73,7 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
 def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel)) := do
   match IxVM.ixVM with
   | .error e => return .error s!"toplevel merging failed: {e}"
-  | .ok toplevel => match toplevel.compile with
+  | .ok toplevel => match toplevel.compileWithGroups IxVM.coldGroups with
     | .error e => return .error s!"compilation failed: {e}"
     | .ok compiled =>
       return .ok (Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters, compiled)

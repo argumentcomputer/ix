@@ -130,7 +130,17 @@ def primaryRunners : List (String × IO UInt32) := [
     IO.println "aiur-prove"
     match AiurTestEnv.build (pure toplevel) with
     | .error e => IO.eprintln s!"Aiur setup failed: {e}"; return 1
-    | .ok env => LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)),
+    | .ok env => do
+      let r1 ← LSpec.lspecEachIO aiurTestCases fun tc => pure (env.runTestCase tc)
+      -- The same toplevel with `testGroups` applied: the members share one
+      -- circuit, and the whole suite of grouped cases proves through it.
+      match AiurTestEnv.build (pure toplevel) testGroups with
+      | .error e => IO.eprintln s!"Aiur grouped setup failed: {e}"; return 1
+      | .ok genv => do
+        let r2 ← LSpec.lspecEachIO groupedTestCases fun tc => pure (genv.runTestCase tc)
+        let r3 ← LSpec.lspecIO
+          (.ofList [("aiur-grouping", [groupingStructureChecks genv.compiled])]) []
+        return if r1 == 0 && r2 == 0 && r3 == 0 then 0 else 1),
   ("aiur-hashes", do
     IO.println "aiur-hashes"
     let .ok blake3Env := AiurTestEnv.build (do
@@ -172,7 +182,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     -- committed kernel system).
     let kernelUnitTests := .exec `kernel_unit_tests
     let serdeTest ← serdeNatAddComm env
-    match AiurTestEnv.build IxVM.ixVM, AiurTestEnv.build IxVM.ixVMFull with
+    match AiurTestEnv.build IxVM.ixVM IxVM.coldGroups, AiurTestEnv.build IxVM.ixVMFull with
     | .error e, _ | _, .error e =>
       IO.eprintln s!"IxVM env build failed: {e}"; return 1
     | .ok v2Env, .ok v2FullEnv =>

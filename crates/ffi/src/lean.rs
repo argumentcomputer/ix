@@ -270,8 +270,9 @@ lean_ffi::lean_inductive! {
 
   // --- Aiur types ---
 
-  LeanAiurToplevel [ { num_obj: 2 } ];
+  LeanAiurToplevel [ { num_obj: 3 } ];
   LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
+  LeanAiurCircuit  [ { num_obj: 3 } ];
 
   // Aiur FFI result structures (`Ix/Aiur/Semantics/BytecodeFfi.lean`,
   // `Ix/Aiur/Protocol.lean`). `IOBuffer` hashmaps cross the boundary as

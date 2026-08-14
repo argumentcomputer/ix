@@ -42,6 +42,73 @@ def CompiledToplevel.getFuncIdx (ct : CompiledToplevel) (name : Lean.Name) :
     Option Bytecode.FunIdx :=
   ct.nameMap[Global.mk name]?
 
+/-- Regroup the circuit partition: each `(name, members)` in `groups` becomes
+ONE circuit proving all the listed functions (branching on the member; see
+`Bytecode.Circuit`), positioned where its first member's singleton circuit
+was; every other constrained function keeps its singleton circuit. Grouping
+is a circuit-level choice — the function "library", its bytecode, execution,
+and the query record are untouched, and callers still target function
+indices on the function channel.
+
+Grouping is favorable for RARELY-CALLED functions of similar shape: the
+merged circuit sums the members' selector columns but takes the max of their
+auxiliary columns, so each (rare) row pays the group's selector count, while
+the system sheds one circuit (vk entry, commitment matrix, verifier work)
+per absorbed member.
+
+Errors if a name is unknown, unconstrained (it has no circuit to group), an
+entry function, listed twice, or if a group is empty. -/
+def CompiledToplevel.groupFunctions (ct : CompiledToplevel)
+    (groups : Array (String × Array String)) :
+    Except String CompiledToplevel := do
+  let t := ct.bytecode
+  -- Function names as printed (`toString` of the `Global`), the exact
+  -- inverse of what statistics reports — so measured groupings can be fed
+  -- back verbatim.
+  let byName : Std.HashMap String Bytecode.FunIdx :=
+    ct.nameMap.fold (init := {}) fun acc g i => acc.insert (toString g) i
+  -- Resolve and validate the groups into member-index arrays.
+  let mut grouped : Std.HashMap Bytecode.FunIdx Nat := {}
+  let mut resolved : Array (String × Array Bytecode.FunIdx) := #[]
+  for (gname, names) in groups do
+    if names.isEmpty then
+      throw s!"group {gname} is empty"
+    let mut members := #[]
+    for name in names do
+      let some i := byName[name]?
+        | throw s!"group {gname}: unknown function {name}"
+      let f := t.functions[i]!
+      unless f.constrained do
+        throw s!"group {gname}: {name} is unconstrained (it has no circuit)"
+      if f.entry then
+        throw s!"group {gname}: {name} is an entry function"
+      if grouped.contains i then
+        throw s!"group {gname}: {name} is already grouped"
+      grouped := grouped.insert i resolved.size
+      members := members.push i
+    resolved := resolved.push (gname, members)
+  -- Rebuild the partition in first-occurrence order over the existing
+  -- (singleton-ordered) circuits.
+  let mut circuits : Array Bytecode.Circuit := #[]
+  let mut placed : Array Bool := .replicate resolved.size false
+  for c in t.circuits do
+    let members := c.members
+    if h : members.size = 1 then
+      let i := members[0]
+      match grouped[i]? with
+      | none => circuits := circuits.push c
+      | some g =>
+        unless placed[g]! do
+          placed := placed.set! g true
+          let (gname, ms) := resolved[g]!
+          let layout := ms.foldl (init := t.functions[ms[0]!]!.layout)
+            fun acc m => if m == ms[0]! then acc
+              else acc.merge t.functions[m]!.layout
+          circuits := circuits.push { name := gname, members := ms, layout }
+    else
+      throw "groupFunctions: partition already grouped; group from a freshly compiled toplevel"
+  pure { ct with bytecode := { t with circuits } }
+
 /-- Termination helper for the `Block`/`Ctrl` traversal below. -/
 private theorem Bytecode.Block.sizeOf_ctrl_lt'' (b : Bytecode.Block) :
     sizeOf b.ctrl < sizeOf b := by
@@ -90,6 +157,18 @@ decreasing_by
     | (apply Prod.Lex.left; exact Bytecode.Block.sizeOf_ctrl_lt'' _)
 end
 
+/-- The default circuit partition: one singleton circuit per constrained
+function, in function-index order, named by `nameOf`. -/
+def Bytecode.Toplevel.singletonCircuits (t : Bytecode.Toplevel)
+    (nameOf : Bytecode.FunIdx → String) : Array Bytecode.Circuit := Id.run do
+  let mut circuits : Array Bytecode.Circuit := #[]
+  for h : i in [:t.functions.size] do
+    let f := t.functions[i]
+    if f.constrained then
+      circuits := circuits.push
+        { name := nameOf i, members := #[i], layout := f.layout }
+  pure circuits
+
 /-- Compute which functions need a circuit. A function needs a circuit iff it is
 reachable from an entry point through a chain of constrained call edges. -/
 def Bytecode.Toplevel.needsCircuit (t : Bytecode.Toplevel) : Array Bool := Id.run do
@@ -118,12 +197,23 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
   let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
   let (bytecodeDedup, remap) := bytecodeRaw.deduplicate
   let needs := bytecodeDedup.needsCircuit
-  let bytecode := { bytecodeDedup with
+  let bytecode : Bytecode.Toplevel := { bytecodeDedup with
     functions := bytecodeDedup.functions.mapIdx fun i f =>
       { f with constrained := needs[i]! } }
   let nameMap := preNameMap.fold (init := (∅ : Std.HashMap Global Bytecode.FunIdx))
     fun acc name idx => acc.insert name (remap idx)
+  -- Singleton circuits are labeled with (one of) the function's source names.
+  let reverseMap := nameMap.fold (init := (∅ : Std.HashMap Bytecode.FunIdx String))
+    fun acc global idx => if acc.contains idx then acc else acc.insert idx (toString global)
+  let bytecode := { bytecode with
+    circuits := bytecode.singletonCircuits fun i => reverseMap[i]?.getD s!"<fn {i}>" }
   pure (CompiledToplevel.mk t bytecode nameMap)
+
+/-- `compile`, then apply a function grouping (see
+`CompiledToplevel.groupFunctions`). -/
+def Source.Toplevel.compileWithGroups (t : Source.Toplevel)
+    (groups : Array (String × Array String)) : Except String CompiledToplevel := do
+  (← t.compile).groupFunctions groups
 
 /-- Progress helper: given success of the three `Except`-returning stages,
 `compile` as a whole returns `.ok` (the remaining stages — `deduplicate`,

@@ -147,7 +147,7 @@ def main (args : List String) : IO UInt32 := do
   let vTop ← match MultiStark.multiStark with
     | .ok t => pure t
     | .error e => IO.eprintln s!"verifier merge failed: {e}"; return 1
-  let vCompiled ← match vTop.compile with
+  let vCompiled ← match vTop.compileWithGroups MultiStark.verifierColdGroups with
     | .ok c => pure c
     | .error e => IO.eprintln s!"verifier compile failed: {e}"; return 1
   let vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof |>.get!
