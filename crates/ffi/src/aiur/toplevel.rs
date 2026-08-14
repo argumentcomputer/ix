@@ -139,6 +139,14 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       Op::U32LessThan(i, j)
     },
     24 => {
+      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::U8XorSplit7(i, j)
+    },
+    25 => {
+      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::U8XorSplit4(i, j)
+    },
+    26 => {
       let [label_obj, idxs_obj] = ctor.objs::<2>();
       let label = label_obj.as_string().to_string();
       let idxs = if idxs_obj.is_scalar() {
@@ -149,27 +157,27 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       };
       Op::Debug(label, idxs)
     },
-    25 => {
+    27 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8RangeCheck(i, j)
     },
-    26 => {
+    28 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::UnconstrainedBigUintDivMod(i, j)
     },
-    27 => {
+    29 => {
       let [a] = ctor.objs::<1>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::UnconstrainedGToBytes(a)
     },
-    28 => {
+    30 => {
       let [a] = ctor.objs::<1>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::UnconstrainedGInverse(a)
     },
-    29 => {
+    31 => {
       let [a, b] = ctor.objs::<2>();
       Op::UnconstrainedU32Add(decode_vec_val_idx(a), decode_vec_val_idx(b))
     },
-    30 => {
+    32 => {
       let [a, b, c] = ctor.objs::<3>();
       Op::UnconstrainedU32Add3(
         decode_vec_val_idx(a),
@@ -177,17 +185,9 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
         decode_vec_val_idx(c),
       )
     },
-    31 => {
+    33 => {
       let [a] = ctor.objs::<1>();
       Op::U32ToField(decode_vec_val_idx(a))
-    },
-    32 => {
-      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
-      Op::U8XorSplit7(i, j)
-    },
-    33 => {
-      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
-      Op::U8XorSplit4(i, j)
     },
     _ => unreachable!(),
   }

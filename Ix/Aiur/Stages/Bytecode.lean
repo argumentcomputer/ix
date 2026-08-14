@@ -43,6 +43,8 @@ inductive Op
   | u8Or : ValIdx → ValIdx → Op
   | u8LessThan : ValIdx → ValIdx → Op
   | u32LessThan : ValIdx → ValIdx → Op
+  | u8XorSplit7 : ValIdx → ValIdx → Op
+  | u8XorSplit4 : ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
   /-- Range-check the two values into `[0, 256)` via the byte chip. Produces no
   new values: it is a pure side-effect (lookup), and its `u8` results alias the
@@ -70,8 +72,6 @@ inductive Op
   | unconstrainedU32Add3 : Array ValIdx → Array ValIdx → Array ValIdx → Op
   /-- Virtual LE-byte packing expression; allocates no auxiliary column. -/
   | u32ToField : Array ValIdx → Op
-  | u8XorSplit7 : ValIdx → ValIdx → Op
-  | u8XorSplit4 : ValIdx → ValIdx → Op
   deriving Repr, BEq, Hashable
 
 mutual

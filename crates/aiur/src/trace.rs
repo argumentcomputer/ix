@@ -454,32 +454,6 @@ impl Op {
         slice.push_auxiliary(index, xor);
         slice.push_lookup(index, G::ONE, &[u8_xor_channel(), i, j, xor]);
       },
-      Op::U8XorSplit7(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let (hi, lo) = Bytes2::xor_split7(&i, &j);
-        map.extend([(hi, 1), (lo, 1)]);
-        slice.push_auxiliary(index, hi);
-        slice.push_auxiliary(index, lo);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_xor_split7_channel(), i, j, hi, lo],
-        );
-      },
-      Op::U8XorSplit4(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let (hi, lo) = Bytes2::xor_split4(&i, &j);
-        map.extend([(hi, 1), (lo, 1)]);
-        slice.push_auxiliary(index, hi);
-        slice.push_auxiliary(index, lo);
-        slice.push_lookup(
-          index,
-          G::ONE,
-          &[u8_xor_split4_channel(), i, j, hi, lo],
-        );
-      },
       Op::U8Add(i, j) => {
         let (i, _) = map[*i];
         let (j, _) = map[*j];
@@ -562,6 +536,32 @@ impl Op {
           index,
           G::ONE,
           &[u8_less_than_channel(), i, j, less_than],
+        );
+      },
+      Op::U8XorSplit7(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (hi, lo) = Bytes2::xor_split7(&i, &j);
+        map.extend([(hi, 1), (lo, 1)]);
+        slice.push_auxiliary(index, hi);
+        slice.push_auxiliary(index, lo);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_split7_channel(), i, j, hi, lo],
+        );
+      },
+      Op::U8XorSplit4(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (hi, lo) = Bytes2::xor_split4(&i, &j);
+        map.extend([(hi, 1), (lo, 1)]);
+        slice.push_auxiliary(index, hi);
+        slice.push_auxiliary(index, lo);
+        slice.push_lookup(
+          index,
+          G::ONE,
+          &[u8_xor_split4_channel(), i, j, hi, lo],
         );
       },
       Op::U32LessThan(x_idx, y_idx) => {

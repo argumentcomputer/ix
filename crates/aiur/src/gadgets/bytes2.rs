@@ -364,17 +364,20 @@ impl AiurGadget for Bytes2 {
             less_than,
             &[less_than_channel, i, j, Self::less_than(&i, &j)],
           );
-          let (hi, lo) = Self::xor_split7(&i, &j);
-          row_lookups.pull(8, xor_split7, &[xor_split7_channel, i, j, hi, lo]);
-          let (hi, lo) = Self::xor_split4(&i, &j);
-          row_lookups.pull(9, xor_split4, &[xor_split4_channel, i, j, hi, lo]);
-
           // Pull range_check.
           row_lookups.pull(6, range_check, &[range_check_channel, i, j]);
 
           // Pull mul.
           let (lo, hi) = Self::mul(&i, &j);
           row_lookups.pull(7, mul, &[mul_channel, i, j, lo, hi]);
+
+          // Pull xor_split7.
+          let (hi, lo) = Self::xor_split7(&i, &j);
+          row_lookups.pull(8, xor_split7, &[xor_split7_channel, i, j, hi, lo]);
+
+          // Pull xor_split4.
+          let (hi, lo) = Self::xor_split4(&i, &j);
+          row_lookups.pull(9, xor_split4, &[xor_split4_channel, i, j, hi, lo]);
         },
       );
     drop(row_writers);
@@ -426,6 +429,7 @@ impl Bytes2Queries {
   pub(crate) fn bump_xor_split7(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 8)
   }
+
   pub(crate) fn bump_xor_split4(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 9)
   }
@@ -439,28 +443,6 @@ impl Bytes2Queries {
 }
 
 impl Bytes2 {
-  pub fn xor_split7_u8(i: u8, j: u8) -> (u8, u8) {
-    let x = i ^ j;
-    (x >> 7, x << 1)
-  }
-  pub fn xor_split4_u8(i: u8, j: u8) -> (u8, u8) {
-    let x = i ^ j;
-    (x >> 4, x << 4)
-  }
-  pub fn xor_split7(i: &G, j: &G) -> (G, G) {
-    let (a, b) = Self::xor_split7_u8(
-      u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
-      u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
-    );
-    (G::from_u8(a), G::from_u8(b))
-  }
-  pub fn xor_split4(i: &G, j: &G) -> (G, G) {
-    let (a, b) = Self::xor_split4_u8(
-      u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
-      u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
-    );
-    (G::from_u8(a), G::from_u8(b))
-  }
   #[inline]
   pub fn xor(i: &G, j: &G) -> G {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
@@ -512,5 +494,39 @@ impl Bytes2 {
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let p = u16::from(i) * u16::from(j);
     (G::from_u8((p & 0xff) as u8), G::from_u8((p >> 8) as u8))
+  }
+
+  /// Building block for a right-rotation by 7 bits over little-endian bytes:
+  /// the xor `x = i ^ j` split as `(x >> 7, x << 1)` (shift mod 256).
+  #[inline]
+  pub fn xor_split7_u8(i: u8, j: u8) -> (u8, u8) {
+    let x = i ^ j;
+    (x >> 7, x << 1)
+  }
+
+  /// Building block for a right-rotation by 4 bits over little-endian bytes:
+  /// the xor `x = i ^ j` split as `(x >> 4, x << 4)` (shifts mod 256).
+  #[inline]
+  pub fn xor_split4_u8(i: u8, j: u8) -> (u8, u8) {
+    let x = i ^ j;
+    (x >> 4, x << 4)
+  }
+
+  #[inline]
+  pub fn xor_split7(i: &G, j: &G) -> (G, G) {
+    let (hi, lo) = Self::xor_split7_u8(
+      u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
+      u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
+    );
+    (G::from_u8(hi), G::from_u8(lo))
+  }
+
+  #[inline]
+  pub fn xor_split4(i: &G, j: &G) -> (G, G) {
+    let (hi, lo) = Self::xor_split4_u8(
+      u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
+      u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
+    );
+    (G::from_u8(hi), G::from_u8(lo))
   }
 }

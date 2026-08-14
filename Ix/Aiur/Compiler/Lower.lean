@@ -300,14 +300,18 @@ def toIndex
   | .u8Xor _ _ i j => do
     let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
     pushOp (.u8Xor i j)
-  | .u8XorSplit7 _ _ i j => do let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j; pushOp (.u8XorSplit7 i j) 2
-  | .u8XorSplit4 _ _ i j => do let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j; pushOp (.u8XorSplit4 i j) 2
   | .u8Add _ _ i j => do
     let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
     pushOp (.u8Add i j) 2
   | .u8Mul _ _ i j => do
     let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
     pushOp (.u8Mul i j) 2
+  | .u8XorSplit7 _ _ i j => do
+    let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
+    pushOp (.u8XorSplit7 i j) 2
+  | .u8XorSplit4 _ _ i j => do
+    let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
+    pushOp (.u8XorSplit4 i j) 2
   | .u8Sub _ _ i j => do
     let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
     pushOp (.u8Sub i j) 2

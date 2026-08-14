@@ -761,12 +761,6 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let a' ← checkNoEscape a .u8
     let b' ← checkNoEscape b .u8
     pure (Typed.Term.u8Xor .u8 false a' b')
-  | .u8XorSplit7 a b => do
-    let a' ← checkNoEscape a .u8; let b' ← checkNoEscape b .u8
-    pure (Typed.Term.u8XorSplit7 (.tuple #[.u8, .u8]) false a' b')
-  | .u8XorSplit4 a b => do
-    let a' ← checkNoEscape a .u8; let b' ← checkNoEscape b .u8
-    pure (Typed.Term.u8XorSplit4 (.tuple #[.u8, .u8]) false a' b')
   | .u8And a b => do
     let a' ← checkNoEscape a .u8
     let b' ← checkNoEscape b .u8
@@ -786,6 +780,14 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let a' ← checkNoEscape a .u8
     let b' ← checkNoEscape b .u8
     pure (Typed.Term.u8Mul (.tuple #[.u8, .u8]) false a' b')
+  | .u8XorSplit7 a b => do
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8XorSplit7 (.tuple #[.u8, .u8]) false a' b')
+  | .u8XorSplit4 a b => do
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8XorSplit4 (.tuple #[.u8, .u8]) false a' b')
   | .u8Sub a b => do
     -- Low byte and the 0/1 borrow are both `u8` (same range argument as add).
     let a' ← checkNoEscape a .u8
@@ -1003,10 +1005,10 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
   | .u8ShiftLeft τ e a => do pure (.u8ShiftLeft (← zonkTyp τ) e (← zonkTypedTerm a))
   | .u8ShiftRight τ e a => do pure (.u8ShiftRight (← zonkTyp τ) e (← zonkTypedTerm a))
   | .u8Xor τ e a b => do pure (.u8Xor (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
-  | .u8XorSplit7 τ e a b => do pure (.u8XorSplit7 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
-  | .u8XorSplit4 τ e a b => do pure (.u8XorSplit4 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Add τ e a b => do pure (.u8Add (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Mul τ e a b => do pure (.u8Mul (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .u8XorSplit7 τ e a b => do pure (.u8XorSplit7 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .u8XorSplit4 τ e a b => do pure (.u8XorSplit4 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Sub τ e a b => do pure (.u8Sub (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8And τ e a b => do pure (.u8And (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Or τ e a b => do pure (.u8Or (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))

@@ -529,22 +529,6 @@ impl Op {
         sel.clone(),
         state,
       ),
-      Op::U8XorSplit7(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::XorSplit7,
-        u8_xor_split7_channel(),
-        sel.clone(),
-        state,
-      ),
-      Op::U8XorSplit4(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::XorSplit4,
-        u8_xor_split4_channel(),
-        sel.clone(),
-        state,
-      ),
       Op::U8Add(i, j) => {
         // The add lookup pins only the low byte `z = (x + y) mod 256`. The
         // carry is then `c = (x + y - z) / 256`, a compound expression that
@@ -653,6 +637,22 @@ impl Op {
         *j,
         &Bytes2Op::LessThan,
         u8_less_than_channel(),
+        sel.clone(),
+        state,
+      ),
+      Op::U8XorSplit7(i, j) => bytes2_constraints(
+        *i,
+        *j,
+        &Bytes2Op::XorSplit7,
+        u8_xor_split7_channel(),
+        sel.clone(),
+        state,
+      ),
+      Op::U8XorSplit4(i, j) => bytes2_constraints(
+        *i,
+        *j,
+        &Bytes2Op::XorSplit4,
+        u8_xor_split4_channel(),
         sel.clone(),
         state,
       ),

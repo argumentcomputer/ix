@@ -51,8 +51,6 @@ pub enum Op {
   U8ShiftLeft(ValIdx),
   U8ShiftRight(ValIdx),
   U8Xor(ValIdx, ValIdx),
-  U8XorSplit7(ValIdx, ValIdx),
-  U8XorSplit4(ValIdx, ValIdx),
   U8Add(ValIdx, ValIdx),
   U8Mul(ValIdx, ValIdx),
   U8Sub(ValIdx, ValIdx),
@@ -60,6 +58,8 @@ pub enum Op {
   U8Or(ValIdx, ValIdx),
   U8LessThan(ValIdx, ValIdx),
   U32LessThan(ValIdx, ValIdx),
+  U8XorSplit7(ValIdx, ValIdx),
+  U8XorSplit4(ValIdx, ValIdx),
   Debug(String, Option<Vec<ValIdx>>),
   /// Range-check two values into `[0, 256)` via the byte chip. Produces no new
   /// values: its `u8` results alias the two inputs (cf. `AssertEq`).

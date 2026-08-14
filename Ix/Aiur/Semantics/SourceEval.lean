@@ -510,6 +510,20 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
                    .field (G.ofUInt8 (x / 256).toUInt8)])
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
+  | .u8XorSplit7 t1 t2 =>
+      combineFieldsResult
+        (fun a b =>
+          let x := a.val.toUInt8 ^^^ b.val.toUInt8
+          .tuple #[.field (G.ofUInt8 (x >>> 7)), .field (G.ofUInt8 (x <<< 1))])
+        (interp decls fuel bindings t1 st)
+        (fun st1 => interp decls fuel bindings t2 st1)
+  | .u8XorSplit4 t1 t2 =>
+      combineFieldsResult
+        (fun a b =>
+          let x := a.val.toUInt8 ^^^ b.val.toUInt8
+          .tuple #[.field (G.ofUInt8 (x >>> 4)), .field (G.ofUInt8 (x <<< 4))])
+        (interp decls fuel bindings t1 st)
+        (fun st1 => interp decls fuel bindings t2 st1)
   | .u8Sub t1 t2 =>
       combineFieldsResult
         (fun a b =>
@@ -517,12 +531,6 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
           .tuple #[.field (G.ofUInt8 (i - j)), .field (if j > i then 1 else 0)])
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
-  | .u8XorSplit7 t1 t2 =>
-      combineFieldsResult (fun a b => let x := a.val.toUInt8 ^^^ b.val.toUInt8; .tuple #[.field (G.ofUInt8 (x >>> 7)), .field (G.ofUInt8 (x <<< 1))])
-        (interp decls fuel bindings t1 st) (fun st1 => interp decls fuel bindings t2 st1)
-  | .u8XorSplit4 t1 t2 =>
-      combineFieldsResult (fun a b => let x := a.val.toUInt8 ^^^ b.val.toUInt8; .tuple #[.field (G.ofUInt8 (x >>> 4)), .field (G.ofUInt8 (x <<< 4))])
-        (interp decls fuel bindings t1 st) (fun st1 => interp decls fuel bindings t2 st1)
   | .u8And t1 t2 =>
       combineFieldsResult (fun a b => .field (G.ofUInt8 (a.val.toUInt8 &&& b.val.toUInt8)))
         (interp decls fuel bindings t1 st)

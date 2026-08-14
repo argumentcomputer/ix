@@ -72,9 +72,6 @@ def G.u8Mul (a b : G) : G × G :=
 def G.u8Sub (a b : G) : G × G :=
   (G.ofNat ((a.n + 256 - b.n) % 256), if a.n < b.n then 1 else 0)
 
-/-- Chainable partial for a right-rotation by 7 bits over little-endian bytes.
-Returns `(a>>7 + b<<1, b>>7, a<<1)` (shifts mod 256). -/
-
 def G.u8ShiftLeft  (a : G) : G := G.ofNat ((a.n * 2) % 256)
 def G.u8ShiftRight (a : G) : G := G.ofNat (a.n / 2)
 

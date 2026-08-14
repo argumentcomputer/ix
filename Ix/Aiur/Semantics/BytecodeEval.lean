@@ -303,12 +303,6 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
   | .u8Xor a b => do
     let x ← readIdx st a; let y ← readIdx st b
     pure (pushMap st (G.ofUInt8 (x.val.toUInt8 ^^^ y.val.toUInt8)))
-  | .u8XorSplit7 a b => do
-    let x ← readIdx st a; let y ← readIdx st b; let z := x.val.toUInt8 ^^^ y.val.toUInt8
-    pure (pushMap (pushMap st (G.ofUInt8 (z >>> 7))) (G.ofUInt8 (z <<< 1)))
-  | .u8XorSplit4 a b => do
-    let x ← readIdx st a; let y ← readIdx st b; let z := x.val.toUInt8 ^^^ y.val.toUInt8
-    pure (pushMap (pushMap st (G.ofUInt8 (z >>> 4))) (G.ofUInt8 (z <<< 4)))
   | .u8Add a b => do
     let x ← readIdx st a; let y ← readIdx st b
     let sum := x.val.toUInt8.toNat + y.val.toUInt8.toNat
@@ -319,6 +313,12 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     let prod := x.val.toUInt8.toNat * y.val.toUInt8.toNat
     let st1 := pushMap st (G.ofUInt8 prod.toUInt8)
     pure (pushMap st1 (G.ofUInt8 (prod / 256).toUInt8))
+  | .u8XorSplit7 a b => do
+    let x ← readIdx st a; let y ← readIdx st b; let z := x.val.toUInt8 ^^^ y.val.toUInt8
+    pure (pushMap (pushMap st (G.ofUInt8 (z >>> 7))) (G.ofUInt8 (z <<< 1)))
+  | .u8XorSplit4 a b => do
+    let x ← readIdx st a; let y ← readIdx st b; let z := x.val.toUInt8 ^^^ y.val.toUInt8
+    pure (pushMap (pushMap st (G.ofUInt8 (z >>> 4))) (G.ofUInt8 (z <<< 4)))
   | .u8Sub a b => do
     let x ← readIdx st a; let y ← readIdx st b
     let i := x.val.toUInt8; let j := y.val.toUInt8
