@@ -385,7 +385,25 @@ def blake3 := ⟦
     let state = set(state, 9, c);
     let state = set(state, 14, d);
 
-    state
+    -- Apply the message schedule permutation for the next round. The final
+    -- round also executes this permutation, but only state[0..15] is consumed
+    -- afterward, so that last permutation is unobservable.
+    let new_state = set(state, 16, state[18]);
+    let new_state = set(new_state, 17, state[22]);
+    let new_state = set(new_state, 18, state[19]);
+    let new_state = set(new_state, 19, state[26]);
+    let new_state = set(new_state, 20, state[23]);
+    let new_state = set(new_state, 21, state[16]);
+    let new_state = set(new_state, 22, state[20]);
+    let new_state = set(new_state, 23, state[29]);
+    let new_state = set(new_state, 24, state[17]);
+    let new_state = set(new_state, 25, state[27]);
+    let new_state = set(new_state, 26, state[28]);
+    let new_state = set(new_state, 27, state[21]);
+    let new_state = set(new_state, 28, state[25]);
+    let new_state = set(new_state, 29, state[30]);
+    let new_state = set(new_state, 30, state[31]);
+    set(new_state, 31, state[24])
   }
 
   -- TODO:
@@ -421,137 +439,28 @@ def blake3 := ⟦
 
     -- Round 0
     let state = blake3_compress_inner_j(state);
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    let new_state = set(new_state, 31, state[24]);
-    let state = new_state;
-
     -- Round 1
     let state = blake3_compress_inner_j(state);
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    let new_state = set(new_state, 31, state[24]);
-    let state = new_state;
-
     -- Round 2
     let state = blake3_compress_inner_j(state);
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    let new_state = set(new_state, 31, state[24]);
-    let state = new_state;
-
     -- Round 3
     let state = blake3_compress_inner_j(state);
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    let new_state = set(new_state, 31, state[24]);
-    let state = new_state;
-
     -- Round 4
     let state = blake3_compress_inner_j(state);
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    let new_state = set(new_state, 31, state[24]);
-    let state = new_state;
-
     -- Round 5
     let state = blake3_compress_inner_j(state);
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    let new_state = set(new_state, 31, state[24]);
-    let state = new_state;
-
     -- Round 6
     let state = blake3_compress_inner_j(state);
 
-    [
-      [u8_xor(state[0][0], state[8][0]), u8_xor(state[0][1], state[8][1]), u8_xor(state[0][2], state[8][2]), u8_xor(state[0][3], state[8][3])],
-      [u8_xor(state[1][0], state[9][0]), u8_xor(state[1][1], state[9][1]), u8_xor(state[1][2], state[9][2]), u8_xor(state[1][3], state[9][3])],
-      [u8_xor(state[2][0], state[10][0]), u8_xor(state[2][1], state[10][1]), u8_xor(state[2][2], state[10][2]), u8_xor(state[2][3], state[10][3])],
-      [u8_xor(state[3][0], state[11][0]), u8_xor(state[3][1], state[11][1]), u8_xor(state[3][2], state[11][2]), u8_xor(state[3][3], state[11][3])],
-      [u8_xor(state[4][0], state[12][0]), u8_xor(state[4][1], state[12][1]), u8_xor(state[4][2], state[12][2]), u8_xor(state[4][3], state[12][3])],
-      [u8_xor(state[5][0], state[13][0]), u8_xor(state[5][1], state[13][1]), u8_xor(state[5][2], state[13][2]), u8_xor(state[5][3], state[13][3])],
-      [u8_xor(state[6][0], state[14][0]), u8_xor(state[6][1], state[14][1]), u8_xor(state[6][2], state[14][2]), u8_xor(state[6][3], state[14][3])],
-      [u8_xor(state[7][0], state[15][0]), u8_xor(state[7][1], state[15][1]), u8_xor(state[7][2], state[15][2]), u8_xor(state[7][3], state[15][3])]
-    ]
+    let output0 = @u32_xor(state[0], state[8]);
+    let output1 = @u32_xor(state[1], state[9]);
+    let output2 = @u32_xor(state[2], state[10]);
+    let output3 = @u32_xor(state[3], state[11]);
+    let output4 = @u32_xor(state[4], state[12]);
+    let output5 = @u32_xor(state[5], state[13]);
+    let output6 = @u32_xor(state[6], state[14]);
+    let output7 = @u32_xor(state[7], state[15]);
+    [output0, output1, output2, output3, output4, output5, output6, output7]
   }
 ⟧
 
