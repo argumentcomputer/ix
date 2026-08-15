@@ -298,10 +298,12 @@ def systemDeserialize := ⟦
     -- the canonical decomposition IS the little-endian u64 limb).
     -- Grouped chained logUp: one accumulator slot and one constraint per
     -- lookup GROUP (`k` consecutive lookups; the last group may be smaller).
-    let gslots = match lcount {
-      0 => 1,
-      _ => lookup_groups_count(lcount, 0, k),
-    };
+    -- ⌈L/k⌉ groups, +1 iff L = 0 (single pass-through slot). Branch-free so
+    -- the record reader stays a single-path body: its lookups group 2 per
+    -- stage-2 slot, and — with no internal match — it can @-inline into
+    -- `read_sys_circuits_n` (a let-bound match here tripped the inliner).
+    let groups = lookup_groups_count(lcount, 0, k);
+    let gslots = groups + eq_zero(groups);
     let ccl = @gl_to_bytes(zcount + gslots + gslots);
     let s2wl = @gl_to_bytes(gslots + gslots);
     let kl = @gl_to_bytes(k);
@@ -319,7 +321,7 @@ def systemDeserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), store(ListNode.Nil), i),
       _ =>
-        let (x, xl, j) = read_sys_circuit(i);
+        let (x, xl, j) = @read_sys_circuit(i);
         let (rest, lrest, j2) = read_sys_circuits_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), @cons_shape7(xl, lrest), j2),
     }

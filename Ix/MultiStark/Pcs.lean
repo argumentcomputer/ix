@@ -941,19 +941,22 @@ def pcs := ⟦
     assert_eq!(eq_zero(list_length(commit_phase_openings) - num_rounds), 1);
     assert_eq!(eq_zero(list_length(input_proof) - (3 + prep_count(prep_opt))), 1);
     let buckets = build_buckets(log_degrees, log_blowup, num_circuits, log_gmax);
+    -- one heights list for all three stage batches (memoized anyway; this
+    -- also drops two call-output columns per proof)
+    let hall = heights_all(log_degrees, log_blowup, num_circuits, 0);
     let BatchOpening.Mk(rows_s1, proof_s1) = list_lookup(input_proof, 0);
     assert_eq!(eq_zero(list_length(rows_s1) - num_circuits), 1);
-    assert_eq!(mmcs_verify(s1c, rows_s1, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_s1, log_gmax), 1);
+    assert_eq!(mmcs_verify(s1c, rows_s1, hall, idxbits, proof_s1, log_gmax), 1);
     let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s1, stage1, alpha);
     let BatchOpening.Mk(rows_s2, proof_s2) = list_lookup(input_proof, 1);
     assert_eq!(eq_zero(list_length(rows_s2) - num_circuits), 1);
-    assert_eq!(mmcs_verify(s2c, rows_s2, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_s2, log_gmax), 1);
+    assert_eq!(mmcs_verify(s2c, rows_s2, hall, idxbits, proof_s2, log_gmax), 1);
     let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s2, stage2, alpha);
     let BatchOpening.Mk(rows_q, proof_q) = list_lookup(input_proof, 2);
     -- one wide quotient matrix per circuit, on the trace domain, so the
     -- quotient batch's heights are the same per-circuit heights as the stages
     assert_eq!(eq_zero(list_length(rows_q) - num_circuits), 1);
-    assert_eq!(mmcs_verify(qc, rows_q, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_q, log_gmax), 1);
+    assert_eq!(mmcs_verify(qc, rows_q, hall, idxbits, proof_q, log_gmax), 1);
     let buckets = open_quotient(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_q, q_opened, alpha);
     let buckets = open_prep_batch(buckets, input_proof, prep_commit, prep_opt, prep_indices, log_degrees, num_circuits, idxbits, log_gmax, log_blowup, zeta, alpha);
     -- a height-`log_blowup` (constant-poly) reduced opening must be zero
@@ -1027,6 +1030,10 @@ def pcs := ⟦
     let (input, output) = pcs_check_witness(input, qpw, query_pow_bits);
     -- query indices + per-query verification (log_global_max_height = #rounds + log_blowup)
     let log_gmax = num_rounds + log_blowup;
+    -- num_rounds is proof advice (commit-phase commitment count); bound the
+    -- max height so `two_adic_gen`'s squaring chain (bits ≤ 32) and the
+    -- 32-bit query-index decomposition stay within range.
+    assert_eq!(u32_less_than(log_gmax, 33), 1);
     query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
       prep_opt, s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta,
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)

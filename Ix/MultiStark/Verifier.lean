@@ -134,11 +134,14 @@ def verifier := ⟦
     }
   }
 
-  -- Sample one byte. If `output` is empty, flush: hash the `input` buffer, set
-  -- the new input to the 32 hash bytes, and refill `output` (in pop order).
-  fn ch_sample_byte(input: ByteStream, output: ByteStream) -> (U8, ByteStream, ByteStream) {
+  -- Sample 8 bytes = `sample_array()` (for one base-field element, LE).
+  -- The output buffer always holds a multiple of 8 bytes at a draw boundary
+  -- (a flush refills 32, every draw takes 8, an observe clears to Nil), so
+  -- the empty check happens at most once per draw: flush, then pop 8. The
+  -- two arms' pops share columns (branch aux/lookups combine by max), which
+  -- is what makes this strictly narrower than a per-byte sampler circuit.
+  fn ch_sample8(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
     match load(output) {
-      ListNode.Cons(b, rest) => (b, input, rest),
       ListNode.Nil =>
         -- `HashChallenger<u8, Blake3, 32>` flush: hash the `input` buffer with
         -- blake3; `b3_flatten_onto` (Pcs.lean) gives the 32 output bytes, popped
@@ -146,22 +149,25 @@ def verifier := ⟦
         let h = @blake3(input);
         let fwd = b3_flatten_onto(h, store(ListNode.Nil));
         let rev = rev_onto(fwd, store(ListNode.Nil));
-        let &ListNode.Cons(b, rest) = rev;
-        (b, fwd, rest),
+        let &ListNode.Cons(b0, r1) = rev;
+        let &ListNode.Cons(b1, r2) = r1;
+        let &ListNode.Cons(b2, r3) = r2;
+        let &ListNode.Cons(b3, r4) = r3;
+        let &ListNode.Cons(b4, r5) = r4;
+        let &ListNode.Cons(b5, r6) = r5;
+        let &ListNode.Cons(b6, r7) = r6;
+        let &ListNode.Cons(b7, r8) = r7;
+        ([b0, b1, b2, b3, b4, b5, b6, b7], fwd, r8),
+      ListNode.Cons(b0, r1) =>
+        let &ListNode.Cons(b1, r2) = r1;
+        let &ListNode.Cons(b2, r3) = r2;
+        let &ListNode.Cons(b3, r4) = r3;
+        let &ListNode.Cons(b4, r5) = r4;
+        let &ListNode.Cons(b5, r6) = r5;
+        let &ListNode.Cons(b6, r7) = r6;
+        let &ListNode.Cons(b7, r8) = r7;
+        ([b0, b1, b2, b3, b4, b5, b6, b7], input, r8),
     }
-  }
-
-  -- Sample 8 bytes = `sample_array()` (for one base-field element, LE).
-  fn ch_sample8(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
-    let (b0, i0, o0) = ch_sample_byte(input, output);
-    let (b1, i1, o1) = ch_sample_byte(i0, o0);
-    let (b2, i2, o2) = ch_sample_byte(i1, o1);
-    let (b3, i3, o3) = ch_sample_byte(i2, o2);
-    let (b4, i4, o4) = ch_sample_byte(i3, o3);
-    let (b5, i5, o5) = ch_sample_byte(i4, o4);
-    let (b6, i6, o6) = ch_sample_byte(i5, o5);
-    let (b7, i7, o7) = ch_sample_byte(i6, o6);
-    ([b0, b1, b2, b3, b4, b5, b6, b7], i7, o7)
   }
 
   -- Sample one base-field element with REJECTION SAMPLING, mirroring
@@ -198,18 +204,11 @@ def verifier := ⟦
   -- `sample_bits(n)` (FRI query index). `SerializingChallenger64::sample_bits`
   -- reads one 8-byte sample as a little-endian u64 and masks the low `n` bits.
   -- We return the low `n` bits as a list (LSB first = the leaf→root Merkle/FRI
-  -- path), built from the 8 sampled bytes' bit decompositions (via `cons8`),
-  -- truncated to `n`.
-  fn sample8_bits(bytes: [U8; 8]) -> List‹G› {
-    cons8(u8_bit_decomposition(bytes[0]),
-    cons8(u8_bit_decomposition(bytes[1]),
-    cons8(u8_bit_decomposition(bytes[2]),
-    cons8(u8_bit_decomposition(bytes[3]),
-    cons8(u8_bit_decomposition(bytes[4]),
-    cons8(u8_bit_decomposition(bytes[5]),
-    cons8(u8_bit_decomposition(bytes[6]),
-    cons8(u8_bit_decomposition(bytes[7]), store(ListNode.Nil)))))))))
-  }
+  -- path). Only the low 4 bytes are decomposed: 32 bits bound every
+  -- log-height (Goldilocks two-adicity is 32), and `take_bits` aborts on the
+  -- Nil match if `n` ever exceeded 32 — exactly as it did at 64 with the old
+  -- full decomposition. The full 8 bytes are still drawn (Fiat-Shamir
+  -- alignment with the reference challenger).
   fn take_bits(bits: List‹G›, n: G) -> List‹G› {
     match n {
       0 => store(ListNode.Nil),
@@ -221,7 +220,12 @@ def verifier := ⟦
   fn ch_sample_bits(input: ByteStream, output: ByteStream, n: G)
       -> (List‹G›, ByteStream, ByteStream) {
     let (bytes, i1, o1) = ch_sample8(input, output);
-    (take_bits(sample8_bits(bytes), n), i1, o1)
+    let bits =
+      cons8(u8_bit_decomposition(bytes[0]),
+      cons8(u8_bit_decomposition(bytes[1]),
+      cons8(u8_bit_decomposition(bytes[2]),
+      cons8(u8_bit_decomposition(bytes[3]), store(ListNode.Nil)))));
+    (take_bits(bits, n), i1, o1)
   }
 
   -- Append (observe) 8 little-endian bytes of `b` at the END of the challenger
@@ -404,43 +408,22 @@ def verifier := ⟦
     }
   }
 
-  -- `two_adic_generator(bits)` — a primitive 2^bits root of unity in Goldilocks
-  -- (`Plonky3/goldilocks/src/goldilocks.rs::TWO_ADIC_GENERATORS`).
+  -- `two_adic_generator(bits)` — a primitive 2^bits root of unity in
+  -- Goldilocks, derived by repeated squaring from the maximal (2^32)
+  -- generator: `g_k = g_{k+1}^2` (matches Plonky3's TWO_ADIC_GENERATORS
+  -- table, checked value-by-value). The 33-arm table cost 32 default-arm
+  -- aux + 33 selectors; the chain is one short memoized circuit — the
+  -- first call materialises ≤ 32 rows, every later call is a cache hit.
+  -- Callers must keep `bits ≤ 32` (guarded where `bits` comes from proof
+  -- advice: log_degrees in `ood_loop`, log_gmax in `pcs_fri_verify`);
+  -- an unguarded larger value would recurse without a base case.
   fn two_adic_gen(bits: G) -> Goldilocks {
     match bits {
       0  => 1,
-      1  => 18446744069414584320,
-      2  => 281474976710656,
-      3  => 18446744069397807105,
-      4  => 17293822564807737345,
-      5  => 70368744161280,
-      6  => 549755813888,
-      7  => 17870292113338400769,
-      8  => 13797081185216407910,
-      9  => 1803076106186727246,
-      10 => 11353340290879379826,
-      11 => 455906449640507599,
-      12 => 17492915097719143606,
-      13 => 1532612707718625687,
-      14 => 16207902636198568418,
-      15 => 17776499369601055404,
-      16 => 6115771955107415310,
-      17 => 12380578893860276750,
-      18 => 9306717745644682924,
-      19 => 18146160046829613826,
-      20 => 3511170319078647661,
-      21 => 17654865857378133588,
-      22 => 5416168637041100469,
-      23 => 16905767614792059275,
-      24 => 9713644485405565297,
-      25 => 5456943929260765144,
-      26 => 17096174751763063430,
-      27 => 1213594585890690845,
-      28 => 6414415596519834757,
-      29 => 16116352524544190054,
-      30 => 9123114210336311365,
-      31 => 4614640910117430873,
-      _  => 1753635133440165772,
+      32 => 1753635133440165772,
+      _  =>
+        let g = two_adic_gen(bits + 1);
+        g * g,
     }
   }
 
@@ -836,7 +819,11 @@ def verifier := ⟦
       ListNode.Nil => 1,
       ListNode.Cons(circ, rest) =>
         let SysCircuit.Mk(nodes, _node_count, zeros, md, lks, k) = circ;
-        let l = to_field(list_lookup(log_degrees, i));
+        -- log_degrees is proof advice; bound it so `two_adic_gen`'s squaring
+        -- chain (bits ≤ 32) is never entered above its base case.
+        let ld8 = list_lookup(log_degrees, i);
+        assert_eq!(u8_less_than(ld8, 32u8), 1);
+        let l = to_field(ld8);
         let qd = quotient_degree_of(md);
         let naccp = list_lookup(accs, i);
         let s1 = list_lookup(stage1, i);
