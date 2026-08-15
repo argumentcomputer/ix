@@ -160,14 +160,14 @@ def endToEndSuite : IO UInt32 := do
   -- ── serialize proof (advice) + vk + claims, with public Blake3 digests ──
   let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
   let vkBytes := facSystem.vkBytes
-  let sysDigestInput : Array Aiur.G := (Blake3.Rust.hash vkBytes).val.data.map .ofUInt8
   let vkGs : Array Aiur.G := vkBytes.data.map .ofUInt8
   let claimBytes := serializeClaims #[claim]
-  let claimsDigestInput : Array Aiur.G := (Blake3.Rust.hash claimBytes).val.data.map .ofUInt8
   let claimGs : Array Aiur.G := claimBytes.data.map .ofUInt8
-  -- Public input = vk digest ++ claims digest (the FRI parameters are read
-  -- in-circuit from the digest-bound vk, not passed publicly).
-  let pubInput : Array Aiur.G := sysDigestInput ++ claimsDigestInput
+  -- Public input = vk digest ++ claims digest as packed-4-byte field
+  -- elements (the FRI parameters are read in-circuit from the digest-bound
+  -- vk, not passed publicly). `verifierPubInput` is the single home of the
+  -- packing recipe.
+  let pubInput : Array Aiur.G := MultiStark.verifierPubInput vkBytes claimBytes
   -- IO advice buffer: proof on channel 0, vk on 1, claims on 2 (each keyed `[0]`).
   let mkIO := fun (pGs cGs : Array Aiur.G) =>
     (((default : IOBuffer).extend 0 #[Aiur.G.ofNat 0] pGs).extend 1 #[Aiur.G.ofNat 0] vkGs).extend
@@ -195,7 +195,7 @@ def endToEndSuite : IO UInt32 := do
   let badClaim : Array Aiur.G := claim.set! (claim.size - 1) (Aiur.G.ofNat 121)
   let badClaimBytes := serializeClaims #[badClaim]
   let badClaimInput : Array Aiur.G :=
-    sysDigestInput ++ ((Blake3.Rust.hash badClaimBytes).val.data.map .ofUInt8)
+    MultiStark.verifierPubInput vkBytes badClaimBytes
 
   -- ── run the (expensive) checks, then assert ─────────────────────────────────
   IO.println "recursive-verifier (proving + recursive verification, ~1.5 min)…"

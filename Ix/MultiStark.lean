@@ -42,12 +42,24 @@ public section
 namespace MultiStark
 
 def entrypoints := ⟦
-  -- Public inputs: the Blake3 digests of the verifying key and the claims
-  -- (32 bytes = 4 little-endian u64 lanes each). The proof is pure
+  -- Public inputs: the Blake3 digests of the verifying key and the claims,
+  -- each as 8 field elements of 4 packed LE bytes (32 bytes; 4-byte packing
+  -- is injective in Goldilocks where 8-byte limbs are not, and costs 16
+  -- input columns instead of 64). The proof is pure
   -- non-deterministic advice on IO channel 0 — see the module docstring. One
   -- stream per channel (0 = proof, 1 = vk, 2 = claims), each registered under
   -- key `[0]` on its channel.
-  pub fn verify_multi_stark_proof(system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4]) {
+  -- Blake3 output words packed 4 LE bytes -> 1 field element (injective:
+  -- 2^32 < p, unlike full 8-byte limbs). Pure wiring when @-inlined.
+  fn b3_pack_w(w: [U8; 4]) -> G {
+    to_field(w[0]) + 256 * to_field(w[1]) + 65536 * to_field(w[2])
+      + 16777216 * to_field(w[3])
+  }
+  fn b3_pack(h: [[U8; 4]; 8]) -> [G; 8] {
+    [@b3_pack_w(h[0]), @b3_pack_w(h[1]), @b3_pack_w(h[2]), @b3_pack_w(h[3]),
+     @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
+  }
+  pub fn verify_multi_stark_proof(system_digest: [G; 8], claims_digest: [G; 8]) {
     -- Proof advice from IO channel 0: deserialize directly from the IO arena
     -- by byte offset (no materialized byte stream), assert fully consumed.
     -- The byte FETCHES inside the readers are unconstrained (the proof is
@@ -61,7 +73,7 @@ def entrypoints := ⟦
     -- against that exact byte stream (the same binding pattern as IxVM).
     let (sidx, slen) = io_get_info(1, [0]);
     let sbytes = #read_byte_stream(1, sidx, slen);
-    assert_eq!(@b3_to_digest(@blake3(sbytes)), system_digest);
+    assert_eq!(@b3_pack(@blake3(sbytes)), system_digest);
     let (sys, srest) = @read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
     -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
@@ -70,7 +82,7 @@ def entrypoints := ⟦
     -- choose claims adaptively).
     let (cidx, clen) = io_get_info(2, [0]);
     let cbytes = #read_byte_stream(2, cidx, clen);
-    assert_eq!(@b3_to_digest(@blake3(cbytes)), claims_digest);
+    assert_eq!(@b3_pack(@blake3(cbytes)), claims_digest);
     let (claims, crest) = @read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
     -- Structural + accumulator + PCS checks.
@@ -131,14 +143,17 @@ def serializeClaims (claims : Array (Array Aiur.G)) : ByteArray := Id.run do
 
 /-- Assemble `verify_multi_stark_proof`'s public input from the serialized vk
 (`AiurSystem.vkBytes`) and claims (`serializeClaims`): vk digest ++ claims
-digest. The FRI parameters are read in-circuit from the digest-bound vk, not
+digest, each as 8 packed-4-byte field elements (the entrypoint's format). The FRI parameters are read in-circuit from the digest-bound vk, not
 passed publicly. The proof/vk/claims advice itself goes through the
 natively-built IO buffer (`executeMultiStark` / `proveMultiStark`, which take
 the raw byte blobs directly: channel 0 = proof, 1 = vk, 2 = claims, each
 under key `[0]`). -/
 def verifierPubInput (vkBytes claimBytes : ByteArray) : Array Aiur.G :=
-  let digestGs : ByteArray → Array Aiur.G :=
-    fun b => (Blake3.Rust.hash b).val.data.map .ofUInt8
+  let digestGs : ByteArray → Array Aiur.G := fun b =>
+    let h := (Blake3.Rust.hash b).val.data
+    (Array.range 8).map fun i =>
+      .ofNat (h[4*i]!.toNat + 256 * h[4*i+1]!.toNat
+        + 65536 * h[4*i+2]!.toNat + 16777216 * h[4*i+3]!.toNat)
   digestGs vkBytes ++ digestGs claimBytes
 
 /-- The verifier toplevel PLUS its self-test entrypoints
