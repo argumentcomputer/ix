@@ -113,7 +113,7 @@ def verifier := ⟦
   fn cap_onto(cap: MerkleCap, tail: ByteStream) -> ByteStream {
     match load(cap) {
       ListNode.Nil => tail,
-      ListNode.Cons(d, rest) => digest_onto(load(d), cap_onto(rest, tail)),
+      ListNode.Cons(d, rest) => @digest_onto(load(d), cap_onto(rest, tail)),
     }
   }
 
@@ -147,7 +147,7 @@ def verifier := ⟦
         -- blake3; `b3_flatten_onto` (Pcs.lean) gives the 32 output bytes, popped
         -- from the END (rev), with the `input := output := hash` update.
         let h = @blake3(input);
-        let fwd = b3_flatten_onto(h, store(ListNode.Nil));
+        let fwd = @b3_flatten_onto(h, store(ListNode.Nil));
         let rev = rev_onto(fwd, store(ListNode.Nil));
         let &ListNode.Cons(b0, r1) = rev;
         let &ListNode.Cons(b1, r2) = r1;
@@ -465,25 +465,26 @@ def verifier := ⟦
   -- Returns 1 on success; `assert_eq!` aborts the (proof) execution on any
   -- failed check, exactly as the Rust verifier returns `Err`.
   fn verify(proof: Proof) -> G {
-    match proof {
-      Proof.Mk(_active, _commitments, accs, _log_degrees, _opening,
-               quotient, _preprocessed, stage_1, stage_2) =>
-        -- Step 1 (shape, system-independent): the per-round opened-value lists
-        -- and the accumulator list all have the same length = the circuit count.
-        let num_circuits = list_length(accs);
-        -- there must be at least one circuit (Rust: InvalidSystem)
-        assert_eq!(eq_zero(num_circuits), 0);
-        assert_eq!(list_length(stage_1), num_circuits);
-        assert_eq!(list_length(stage_2), num_circuits);
-        -- one wide quotient matrix per active circuit
-        assert_eq!(list_length(quotient), num_circuits);
+    -- Single-constructor destructure (not a match): keeps the body — and the
+    -- entrypoint it splices into — single-path, so its lookups group 2 per
+    -- stage-2 slot.
+    let Proof.Mk(_active, _commitments, accs, _log_degrees, _opening,
+                 quotient, _preprocessed, stage_1, stage_2) = proof;
+    -- Step 1 (shape, system-independent): the per-round opened-value lists
+    -- and the accumulator list all have the same length = the circuit count.
+    let num_circuits = list_length(accs);
+    -- there must be at least one circuit (Rust: InvalidSystem)
+    assert_eq!(eq_zero(num_circuits), 0);
+    assert_eq!(list_length(stage_1), num_circuits);
+    assert_eq!(list_length(stage_2), num_circuits);
+    -- one wide quotient matrix per active circuit
+    assert_eq!(list_length(quotient), num_circuits);
 
-        -- Step 2: accumulator balance — the last accumulator must be zero.
-        assert_eq!(last_acc_is_zero(accs), 1);
-        -- Step 4 (PCS/FRI) now runs inside `ood_verify`, which has the verifying
-        -- key, the challenger continuation, and the opened values it needs.
-        1,
-    }
+    -- Step 2: accumulator balance — the last accumulator must be zero.
+    assert_eq!(last_acc_is_zero(accs), 1);
+    -- Step 4 (PCS/FRI) now runs inside `ood_verify`, which has the verifying
+    -- key, the challenger continuation, and the opened values it needs.
+    1
   }
 
   -- ==========================================================================
@@ -891,35 +892,36 @@ def verifier := ⟦
     let SysParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
                      _max_log_arity, num_queries, commit_pow_bits,
                      query_pow_bits) = params;
-    match proof {
-      Proof.Mk(active, commitments, accs, log_degrees, opening,
-               q_opened, prep_opt, stage1, stage2) =>
-        -- Sparse activation: the bitmap covers the canonical circuit set;
-        -- each bit must be boolean; every per-circuit proof sequence is
-        -- indexed by ACTIVE position, so the verifying key's circuit and
-        -- preprocessed-index lists are filtered to the active subset once
-        -- and everything downstream runs on the filtered lists. Soundness
-        -- of deactivation rests on the lookup accumulator: an inactive
-        -- circuit contributes no sends or receives, and dishonestly
-        -- deactivating a needed circuit leaves the final accumulator
-        -- nonzero (checked in `verify`).
-        assert_eq!(assert_bits(active), 1);
-        assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
-        let acirc = select_active_circuits(circuits, active);
-        let aprep = select_active_prep(prep_indices, active);
-        assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
-        let Commitments.Mk(s1c, s2c, qc) = commitments;
-        let prep_cap = @opt_commit_cap(commit);
-        let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
-        let acc0 = claims_acc([0, 0], claims, lch, fch);
-        -- Step 5: OOD composition/quotient identity for every active circuit.
-        let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
-                 prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
-        @pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
-          s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
-          list_length(acirc), log_blowup, num_queries, commit_pow_bits,
-          query_pow_bits),
-    }
+    let Proof.Mk(active, commitments, accs, log_degrees, opening,
+                 q_opened, prep_opt, stage1, stage2) = proof;
+    -- Sparse activation: the bitmap covers the canonical circuit set;
+    -- each bit must be boolean; every per-circuit proof sequence is
+    -- indexed by ACTIVE position, so the verifying key's circuit and
+    -- preprocessed-index lists are filtered to the active subset once
+    -- and everything downstream runs on the filtered lists. Soundness
+    -- of deactivation rests on the lookup accumulator: an inactive
+    -- circuit contributes no sends or receives, and dishonestly
+    -- deactivating a needed circuit leaves the final accumulator
+    -- nonzero (checked in `verify`).
+    assert_eq!(assert_bits(active), 1);
+    assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
+    let acirc = select_active_circuits(circuits, active);
+    let aprep = select_active_prep(prep_indices, active);
+    assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
+    let Commitments.Mk(s1c, s2c, qc) = commitments;
+    -- opt_commit_cap stays a cross-circuit call: its two-arm match would
+    -- make the (spliced) entrypoint branchy, doubling every lookup's
+    -- stage-2 cost there — the one small circuit is cheaper.
+    let prep_cap = @opt_commit_cap(commit);
+    let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
+    let acc0 = claims_acc([0, 0], claims, lch, fch);
+    -- Step 5: OOD composition/quotient identity for every active circuit.
+    let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
+             prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
+    @pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
+      s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
+      list_length(acirc), log_blowup, num_queries, commit_pow_bits,
+      query_pow_bits)
   }
 
   -- 1 iff every element of `l` is boolean (0 or 1).
