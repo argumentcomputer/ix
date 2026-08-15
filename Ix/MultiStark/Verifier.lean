@@ -277,28 +277,6 @@ def verifier := ⟦
     ([@gl_val(c0), @gl_val(c1)], i1, o1)
   }
 
-  -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.
-  fn claim_vals_onto(vals: List‹U64›, tail: ByteStream) -> ByteStream {
-    match load(vals) {
-      ListNode.Nil => tail,
-      ListNode.Cons(v, rest) => b8_onto(v, claim_vals_onto(rest, tail)),
-    }
-  }
-  -- Each claim, length-prefixed: `observe(Val::from_usize(claim.len()))` then
-  -- `observe_slice(claim)`.
-  fn claims_each_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
-    match load(claims) {
-      ListNode.Nil => tail,
-      ListNode.Cons(c, rest) =>
-        b8_onto(list_length_u64(c), claim_vals_onto(c, claims_each_onto(rest, tail))),
-    }
-  }
-  -- Append every claim: the claim count, then each claim length-prefixed
-  -- (`verify_multiple_claims`' claim observation, byte-for-byte).
-  fn claims_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
-    b8_onto(list_length_u64(claims), claims_each_onto(claims, tail))
-  }
-
   -- `b"multi-stark/v0"` — the domain-separation tag the challenger seed
   -- starts with (`GoldilocksBlake3Config::new`).
   fn seed_tag_onto(tail: ByteStream) -> ByteStream {
@@ -357,25 +335,29 @@ def verifier := ⟦
   }
 
   fn fiat_shamir(tlimbs: List‹U64›, active: List‹G›, prep: MerkleCap, s1: MerkleCap, s2: MerkleCap,
-      q: MerkleCap, lds: List‹U8›, claims: List‹List‹U64››, accs: List‹Ext›)
+      q: MerkleCap, lds: List‹U8›, cbytes: ByteStream, accs: List‹Ext›)
       -> (Ext, Ext, Ext, Ext, ByteStream) {
     -- Initial transcript, front-to-back: seed tag, parameter + shape words
     -- (`tlimbs`, from the verifying key), the activation bitmap, prep,
     -- stage_1, log_degrees, claims. Built inner-to-outer with the prepend
-    -- helpers so the result is in forward (observation) order.
-    let input = @claims_onto(claims, store(ListNode.Nil));
-    let input = log_degrees_onto(lds, input);
+    -- helpers so the result is in forward (observation) order. The claims
+    -- segment is `cbytes` VERBATIM: the wire format (u64 count, per-claim
+    -- u64 len + raw u64 vals, all 8 LE bytes) is exactly the transcript
+    -- encoding `verify_multiple_claims` observes, and the entrypoint
+    -- asserts the stream fully consumed — so no re-serialization walk.
+    let input = log_degrees_onto(lds, cbytes);
     let input = cap_onto(s1, input);
     let input = cap_onto(prep, input);
     let input = active_onto(active, input);
     let input = limbs_onto(tlimbs, input);
     let input = @seed_tag_onto(input);
-    -- sample lookup challenge, then observe it back (append)
+    -- sample lookup challenge, then observe it back (append; one concat of
+    -- the 16-byte segment instead of two full-buffer snoc walks)
     let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = snoc_b8(snoc_b8(input, l0), l1);
+    let input = list_concat(input, b8_onto(l0, b8_onto(l1, store(ListNode.Nil))));
     -- sample fingerprint challenge, then observe it back
     let (f0, f1, input, _of) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = snoc_b8(snoc_b8(input, f0), f1);
+    let input = list_concat(input, b8_onto(f0, b8_onto(f1, store(ListNode.Nil))));
     -- observe stage_2 commitment
     let input = snoc_cap(input, s2);
     -- observe the intermediate accumulators (public values entering the
@@ -884,7 +866,7 @@ def verifier := ⟦
   -- commitments + log_degrees + claims, seed the lookup accumulator from the
   -- claims, then run the OOD composition/quotient check for every circuit.
   -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
-  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››) -> G {
+  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››, cbytes: ByteStream) -> G {
     -- The FRI parameters (`log_blowup`, `num_queries`, `commit_pow_bits`,
     -- `query_pow_bits`) all come from the verifying key, which the public
     -- statement binds through `system_digest` — no separate public inputs.
@@ -913,7 +895,7 @@ def verifier := ⟦
     -- make the (spliced) entrypoint branchy, doubling every lookup's
     -- stage-2 cost there — the one small circuit is cheaper.
     let prep_cap = @opt_commit_cap(commit);
-    let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
+    let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, cbytes, accs);
     let acc0 = claims_acc([0, 0], claims, lch, fch);
     -- Step 5: OOD composition/quotient identity for every active circuit.
     let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,

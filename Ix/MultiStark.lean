@@ -90,7 +90,7 @@ def entrypoints := ⟦
     assert_eq!(vres, 1);
     -- Step 3 + 5: prover-faithful Fiat-Shamir replay and the out-of-domain
     -- composition/quotient check, `composition(ζ)·inv_vanishing(ζ) == quotient(ζ)`.
-    let oodres = @ood_verify(sys, proof, claims);
+    let oodres = @ood_verify(sys, proof, claims, cbytes);
     assert_eq!(oodres, 1);
     ()
   }
