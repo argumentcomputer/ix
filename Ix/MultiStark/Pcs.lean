@@ -1023,7 +1023,7 @@ def pcs := ⟦
     -- order), built as one front-to-back suffix + a single concat (the input
     -- is only ~32 bytes here — it collapses to the digest on every flush).
     let obs = round_onto(stage1, round_onto(stage2, round_onto(q_opened,
-      prep_onto(prep_opt, store(ListNode.Nil)))));
+      @prep_onto(prep_opt, store(ListNode.Nil)))));
     let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));

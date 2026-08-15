@@ -223,13 +223,83 @@ def systemDeserialize := ⟦
     }
   }
 
+  -- `read_node` is folded in as a TAIL match, with the cons + recursion
+  -- continuation duplicated into every arm: exclusive arms share aux/lookup
+  -- columns (max, not sum), so the duplication is free and the separate
+  -- `read_node` circuit (49 wide) disappears. (An `@read_node` splice is not
+  -- possible: its lets + tail match building the multi-variant SysNode trips
+  -- the inliner — scratchpad InlineRepro case G3.)
   fn read_nodes_n(i: ByteStream, n: G) -> (List‹SysNode›, ByteStream) {
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (nd, i1) = read_node(i);
-        let (rest, i2) = read_nodes_n(i1, n - 1);
-        (store(ListNode.Cons(nd, rest)), i2),
+        let (tag, i1) = read_vk_tag(i);
+        match tag {
+          0 =>
+            let (c, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Const(c), rest)), i3),
+          1 =>
+            let (c, i2) = read_field(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Const(c), rest)), i3),
+          2 =>
+            let (idx, i2) = read_vk_tag(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Public(idx), rest)), i3),
+          3 =>
+            let (rest, i3) = read_nodes_n(i1, n - 1);
+            (store(ListNode.Cons(SysNode.IsFirstRow, rest)), i3),
+          4 =>
+            let (rest, i3) = read_nodes_n(i1, n - 1);
+            (store(ListNode.Cons(SysNode.IsLastRow, rest)), i3),
+          5 =>
+            let (rest, i3) = read_nodes_n(i1, n - 1);
+            (store(ListNode.Cons(SysNode.IsTransition, rest)), i3),
+          6 =>
+            let (a, i2) = read_vk_u16(i1);
+            let (b, i3) = read_vk_u16(i2);
+            let (rest, i4) = read_nodes_n(i3, n - 1);
+            (store(ListNode.Cons(SysNode.Add(a, b), rest)), i4),
+          7 =>
+            let (a, i2) = read_vk_u16(i1);
+            let (b, i3) = read_vk_u16(i2);
+            let (rest, i4) = read_nodes_n(i3, n - 1);
+            (store(ListNode.Cons(SysNode.Sub(a, b), rest)), i4),
+          8 =>
+            let (a, i2) = read_vk_u16(i1);
+            let (b, i3) = read_vk_u16(i2);
+            let (rest, i4) = read_nodes_n(i3, n - 1);
+            (store(ListNode.Cons(SysNode.Mul(a, b), rest)), i4),
+          9 =>
+            let (a, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Neg(a), rest)), i3),
+          10 =>
+            let (idx, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Var(0, 0, idx), rest)), i3),
+          11 =>
+            let (idx, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Var(0, 1, idx), rest)), i3),
+          12 =>
+            let (idx, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Var(1, 0, idx), rest)), i3),
+          13 =>
+            let (idx, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Var(1, 1, idx), rest)), i3),
+          14 =>
+            let (idx, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Var(2, 0, idx), rest)), i3),
+          _ =>
+            let (idx, i2) = read_vk_u16(i1);
+            let (rest, i3) = read_nodes_n(i2, n - 1);
+            (store(ListNode.Cons(SysNode.Var(2, 1, idx), rest)), i3),
+        },
     }
   }
 
