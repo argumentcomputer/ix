@@ -715,14 +715,18 @@ def verifier := ⟦
       k: G,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
+      lch: Ext, fch: Ext, accp: Ext, naccp: Ext,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: G) -> Ext {
     let base = fold_roots([0, 0], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-    -- publics layout: β=(0,1), γ=(2,3), acc_initial=(4,5), acc_final=(6,7).
-    let b0 = list_lookup(publics, 0); let b1 = list_lookup(publics, 1);
-    let g0 = list_lookup(publics, 2); let g1 = list_lookup(publics, 3);
-    let a0 = list_lookup(publics, 4); let a1 = list_lookup(publics, 5);
-    let na0 = list_lookup(publics, 6); let na1 = list_lookup(publics, 7);
+    -- The lookup-argument coordinates come straight from the challenge /
+    -- accumulator values (pure wiring) — `publics` is only for the node
+    -- graph's Public(idx) leaves; looking these 8 back out of the list cost
+    -- 8 calls for values already in hand.
+    let b0 = [lch[0], 0]; let b1 = [lch[1], 0];
+    let g0 = [fch[0], 0]; let g1 = [fch[1], 0];
+    let a0 = [accp[0], 0]; let a1 = [accp[1], 0];
+    let na0 = [naccp[0], 0]; let na1 = [naccp[1], 0];
     -- Boundary injection: is_last_row·(acc_final − acc_initial) with the
     -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
     -- p3's raw selector has value n·g at the last row, and Δ is constant
@@ -839,7 +843,8 @@ def verifier := ⟦
         let inorm = @gl_inverse(pow2(l) * two_adic_gen(l));
         let comp = @ood_composition(nodes, zeros, lks, k,
                                    main, main_next, prep, prep_next, s2row, s2next,
-                                   publics, isf, isl, ist, alpha, inorm);
+                                   publics, lch, fch, accp, naccp,
+                                   isf, isl, ist, alpha, inorm);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
