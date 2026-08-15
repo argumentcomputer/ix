@@ -78,7 +78,10 @@ fn packed_digest_key(addr: &Address) -> Vec<G> {
     .chunks_exact(4)
     .map(|w| {
       G::from_u32(
-        w[0] as u32 | (w[1] as u32) << 8 | (w[2] as u32) << 16 | (w[3] as u32) << 24,
+        u32::from(w[0])
+          | u32::from(w[1]) << 8
+          | u32::from(w[2]) << 16
+          | u32::from(w[3]) << 24,
       )
     })
     .collect()
