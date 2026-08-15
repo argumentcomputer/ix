@@ -557,6 +557,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
     LeanBorrowed<'_>,
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let addr = match decode_addr(&addr_bytes) {
@@ -574,12 +575,26 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
       },
     };
 
-  let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
-    fun_idx,
-    &input,
-    &mut io_buffer,
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
-  );
+  // `use_bytecode` selects the generic Aiur bytecode interpreter over the
+  // codegen'd IxVM kernel (same toggle as
+  // `rs_aiur_toplevel_check_addr_with_env`).
+  let (_aiur_claim_arr, proof) = if use_bytecode {
+    aiur_system_obj.get().prove_ixvm(
+      fun_idx,
+      &input,
+      &mut io_buffer,
+      |toplevel, fun_idx, input, io_buffer| {
+        toplevel.execute(fun_idx, input, io_buffer)
+      },
+    )
+  } else {
+    aiur_system_obj.get().prove_ixvm(
+      fun_idx,
+      &input,
+      &mut io_buffer,
+      ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+    )
+  };
 
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
 }
