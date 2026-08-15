@@ -60,8 +60,16 @@ def deserialize := ⟦
   -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
   type Digest = [U64; 4]
 
+  -- Digests thread the Merkle machinery BY POINTER: a digest is 32 columns,
+  -- so every value crossing a circuit boundary (input, call output, list
+  -- node) paid 32; a pointer pays 1. `store` is content-addressed (same
+  -- digest -> same pointer), so pointer identity preserves the cross-query
+  -- compress memoization. Bytes are loaded only where actually consumed
+  -- (block assembly in mmcs_compress, cap observation, the root equality).
+  type DigestP = &Digest
+
   -- `Commitment = MerkleCap<..>`: only the `cap: Vec<Digest>` is on the wire.
-  type MerkleCap = List‹Digest›
+  type MerkleCap = List‹DigestP›
 
   -- `OpenedValuesForRound<ExtVal> = Vec<Vec<Vec<ExtVal>>>`.
   type OpenedRound = List‹List‹List‹Ext›››
@@ -75,7 +83,7 @@ def deserialize := ⟦
   --   opened_values : Vec<Vec<Val>>   (one row of base-field values per matrix)
   --   opening_proof : Vec<Digest>     (Merkle authentication path)
   enum BatchOpening {
-    Mk(List‹List‹U64››, List‹Digest›)
+    Mk(List‹List‹U64››, List‹DigestP›)
   }
 
   -- `CommitPhaseProofStep<ExtVal, ExtMmcs>`: one folding step of a FRI query.
@@ -83,7 +91,7 @@ def deserialize := ⟦
   --   sibling_values : Vec<Ext>  (arity - 1 siblings)
   --   opening_proof  : Vec<Digest>
   enum CommitPhaseProofStep {
-    Mk(U8, List‹Ext›, List‹Digest›)
+    Mk(U8, List‹Ext›, List‹DigestP›)
   }
 
   -- `QueryProof<ExtVal, ExtMmcs, Vec<BatchOpening<Val, Mmcs>>>`.
@@ -264,17 +272,17 @@ def deserialize := ⟦
     }
   }
 
-  fn read_digest_vec_at(i: G) -> (List‹Digest›, G) {
+  fn read_digest_vec_at(i: G) -> (List‹DigestP›, G) {
     let (n, j) = read_count_at(i);
     read_digest_vec_at_n(j, n)
   }
-  fn read_digest_vec_at_n(i: G, n: G) -> (List‹Digest›, G) {
+  fn read_digest_vec_at_n(i: G, n: G) -> (List‹DigestP›, G) {
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
         let (x, j) = @read_digest_at(i);
         let (rest, j2) = read_digest_vec_at_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (store(ListNode.Cons(store(x), rest)), j2),
     }
   }
 

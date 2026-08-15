@@ -178,7 +178,7 @@ def systemDeserialize := ⟦
       _ =>
         let (x, j) = @read_vk_digest(i);
         let (rest, j2) = read_vk_cap_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (store(ListNode.Cons(store(x), rest)), j2),
     }
   }
 

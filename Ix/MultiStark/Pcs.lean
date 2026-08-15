@@ -270,8 +270,12 @@ def pcs := ⟦
   -- flags = CHUNK_START + CHUNK_END + ROOT (1 + 2 + 8). The block words are
   -- assembled straight from the digest lanes (each `U64` lane = two LE 4-byte
   -- words) — no byte list is built, walked, re-accumulated, or re-loaded.
-  fn mmcs_compress(a: Digest, b: Digest) -> Digest {
+  -- In and out by pointer (see `DigestP`); the 64 block bytes are loaded
+  -- here, the only place they are consumed.
+  fn mmcs_compress(ap: DigestP, bp: DigestP) -> DigestP {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    let a = load(ap);
+    let b = load(bp);
     let block = [
       [a[0][0], a[0][1], a[0][2], a[0][3]], [a[0][4], a[0][5], a[0][6], a[0][7]],
       [a[1][0], a[1][1], a[1][2], a[1][3]], [a[1][4], a[1][5], a[1][6], a[1][7]],
@@ -281,7 +285,7 @@ def pcs := ⟦
       [b[1][0], b[1][1], b[1][2], b[1][3]], [b[1][4], b[1][5], b[1][6], b[1][7]],
       [b[2][0], b[2][1], b[2][2], b[2][3]], [b[2][4], b[2][5], b[2][6], b[2][7]],
       [b[3][0], b[3][1], b[3][2], b[3][3]], [b[3][4], b[3][5], b[3][6], b[3][7]]];
-    @b3_to_digest(@blake3_compress_init(IV, block, [0u8; 8], 64, 11))
+    store(@b3_to_digest(@blake3_compress_init(IV, block, [0u8; 8], 64, 11)))
   }
 
   -- ==========================================================================
@@ -311,7 +315,7 @@ def pcs := ⟦
 
   -- Compress (current, sibling) in path order: path bit 0 ⇒ current is the left
   -- child, bit 1 ⇒ current is the right child.
-  fn compress_ordered(bit: G, d: Digest, s: Digest) -> Digest {
+  fn compress_ordered(bit: G, d: DigestP, s: DigestP) -> DigestP {
     match bit {
       0 => mmcs_compress(d, s),
       _ => mmcs_compress(s, d),
@@ -456,13 +460,13 @@ def pcs := ⟦
   }
 
   -- The joint Blake3 leaf hash of all matrices at log-height `target`.
-  fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> Digest {
-    @b3_to_digest(@b3_rows(select_rows(rows, lhs, target)))
+  fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> DigestP {
+    store(@b3_to_digest(@b3_rows(select_rows(rows, lhs, target))))
   }
 
   -- Inject the leaf hash of any matrices at log-height `lh` (if present) via a
   -- second compression onto `d`.
-  fn inject_maybe(rows: List‹List‹U64››, lhs: List‹G›, lh: G, d: Digest) -> Digest {
+  fn inject_maybe(rows: List‹List‹U64››, lhs: List‹G›, lh: G, d: DigestP) -> DigestP {
     match has_height(lhs, lh) {
       0 => d,
       _ => mmcs_compress(d, leaf_hash_at(rows, lhs, lh)),
@@ -480,8 +484,8 @@ def pcs := ⟦
   -- Walk the authentication path: one proof sibling per level (fold), with a
   -- possible leaf injection at the new log-height `lh`. Returns the recomputed
   -- root and the leftover cap index.
-  fn mmcs_fold(d: Digest, rows: List‹List‹U64››, lhs: List‹G›,
-      proof: List‹Digest›, ibits: List‹G›, lh: G) -> (Digest, G) {
+  fn mmcs_fold(d: DigestP, rows: List‹List‹U64››, lhs: List‹G›,
+      proof: List‹DigestP›, ibits: List‹G›, lh: G) -> (DigestP, G) {
     match load(proof) {
       ListNode.Nil => (d, bits_to_num(ibits)),
       ListNode.Cons(s, prest) =>
@@ -494,16 +498,16 @@ def pcs := ⟦
 
   -- Recompute the Merkle root from the opened rows + authentication path.
   fn mmcs_root(rows: List‹List‹U64››, lhs: List‹G›, ibits: List‹G›,
-      proof: List‹Digest›, log_max: G) -> (Digest, G) {
+      proof: List‹DigestP›, log_max: G) -> (DigestP, G) {
     let leaf = leaf_hash_at(rows, lhs, log_max);
     mmcs_fold(leaf, rows, lhs, proof, ibits, log_max - 1)
   }
 
   -- 1 iff the recomputed root matches the commitment cap at the cap index.
   fn mmcs_verify(cap: MerkleCap, rows: List‹List‹U64››, lhs: List‹G›,
-      ibits: List‹G›, proof: List‹Digest›, log_max: G) -> G {
+      ibits: List‹G›, proof: List‹DigestP›, log_max: G) -> G {
     let (root, capidx) = @mmcs_root(rows, lhs, ibits, proof, log_max);
-    @digest_eq(list_lookup(cap, capidx), root)
+    @digest_eq(load(list_lookup(cap, capidx)), load(root))
   }
 
   -- ==========================================================================

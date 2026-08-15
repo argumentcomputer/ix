@@ -226,9 +226,9 @@ def tests := ⟦
     assert_eq!(assert_digest(d20, 8822819174011220231, 9835070768970864367,
                                   9646176123001837413, 1210344881395534089), 1);
     -- Compression: `blake3(a_bytes || b_bytes)` of two 32-byte child digests.
-    let c = mmcs_compress([u64_of(1u8), u64_of(2u8), u64_of(3u8), u64_of(4u8)],
-                          [u64_of(5u8), u64_of(6u8), u64_of(7u8), u64_of(8u8)]);
-    assert_eq!(assert_digest(c, 16432952784711837466, 12565756115161032165,
+    let c = mmcs_compress(store([u64_of(1u8), u64_of(2u8), u64_of(3u8), u64_of(4u8)]),
+                          store([u64_of(5u8), u64_of(6u8), u64_of(7u8), u64_of(8u8)]));
+    assert_eq!(assert_digest(load(c), 16432952784711837466, 12565756115161032165,
                                 6915939387221618258, 11123773279136987111), 1);
     1
   }
@@ -262,20 +262,20 @@ def tests := ⟦
                 [220u8, 192u8, 39u8, 69u8, 198u8, 24u8, 123u8, 147u8],
                 [63u8, 5u8, 74u8, 98u8, 77u8, 73u8, 181u8, 252u8],
                 [134u8, 86u8, 33u8, 32u8, 240u8, 13u8, 134u8, 153u8]];
-    let proof = store(ListNode.Cons(sib0, store(ListNode.Cons(sib1,
-                  store(ListNode.Cons(sib2, store(ListNode.Nil)))))));
+    let proof = store(ListNode.Cons(store(sib0), store(ListNode.Cons(store(sib1),
+                  store(ListNode.Cons(store(sib2), store(ListNode.Nil)))))));
     let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, 3);
     assert_eq!(capidx, 0);
-    assert_eq!(assert_digest(root, 4722047561722553901, 2839201037098837684,
+    assert_eq!(assert_digest(load(root), 4722047561722553901, 2839201037098837684,
                                    4926058068911485563, 1219861215742277604), 1);
     -- tamper: perturb m0's first opened value → root must change.
     let bad0 = store(ListNode.Cons(u64_of(99u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
     let bad_rows = store(ListNode.Cons(bad0, store(ListNode.Cons(row1,
                      store(ListNode.Cons(row2, store(ListNode.Nil)))))));
-    let cap = store(ListNode.Cons([[45u8, 230u8, 248u8, 40u8, 61u8, 21u8, 136u8, 65u8],
+    let cap = store(ListNode.Cons(store([[45u8, 230u8, 248u8, 40u8, 61u8, 21u8, 136u8, 65u8],
                                    [180u8, 102u8, 50u8, 238u8, 76u8, 222u8, 102u8, 39u8],
                                    [123u8, 114u8, 106u8, 220u8, 182u8, 223u8, 92u8, 68u8],
-                                   [228u8, 55u8, 152u8, 7u8, 80u8, 209u8, 237u8, 16u8]],
+                                   [228u8, 55u8, 152u8, 7u8, 80u8, 209u8, 237u8, 16u8]]),
                     store(ListNode.Nil)));
     assert_eq!(mmcs_verify(cap, rows, lhs, ibits, proof, 3), 1);
     assert_eq!(mmcs_verify(cap, bad_rows, lhs, ibits, proof, 3), 0);

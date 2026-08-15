@@ -113,7 +113,7 @@ def verifier := ⟦
   fn cap_onto(cap: MerkleCap, tail: ByteStream) -> ByteStream {
     match load(cap) {
       ListNode.Nil => tail,
-      ListNode.Cons(d, rest) => digest_onto(d, cap_onto(rest, tail)),
+      ListNode.Cons(d, rest) => digest_onto(load(d), cap_onto(rest, tail)),
     }
   }
 
