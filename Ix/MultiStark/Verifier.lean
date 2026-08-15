@@ -143,7 +143,7 @@ def verifier := ⟦
         -- `HashChallenger<u8, Blake3, 32>` flush: hash the `input` buffer with
         -- blake3; `b3_flatten_onto` (Pcs.lean) gives the 32 output bytes, popped
         -- from the END (rev), with the `input := output := hash` update.
-        let h = blake3(input);
+        let h = @blake3(input);
         let fwd = b3_flatten_onto(h, store(ListNode.Nil));
         let rev = rev_onto(fwd, store(ListNode.Nil));
         let &ListNode.Cons(b, rest) = rev;

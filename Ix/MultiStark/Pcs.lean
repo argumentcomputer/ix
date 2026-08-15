@@ -118,7 +118,7 @@ def pcs := ⟦
   -- current chunk (0..15); `cv` is the chaining value (IV at each chunk start);
   -- chunk digests are pushed onto `layer` in order, exactly like the byte
   -- driver, and folded by `blake3_compress_layer` at the end.
-  fn b3_lane_chunks(lanes: List‹U64›, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+  fn b3_lane_chunks(lanes: List‹U64›, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: Layer) -> Layer {
     match load(lanes) {
       -- Exhausted with no block to compress: only reachable for an empty
       -- input (every other path detects exhaustion after compressing).
@@ -126,7 +126,7 @@ def pcs := ⟦
       ListNode.Nil =>
         match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
-            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+            store(LayerNode.Push(layer, @blake3_compress_init(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
           _ => layer,
         },
       _ =>
@@ -150,12 +150,12 @@ def pcs := ⟦
         let end_flag = empty + at15 - (empty * at15);
         let root_flag = empty * u64_is_zero(load(chunk_count));
         let flags = start_flag + 2 * end_flag + 8 * root_flag;
-        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        let digest = @blake3_compress_init(load(cv), block, load(chunk_count), nbytes, flags);
         match (empty, at15) {
-          (1, _) => store(Layer.Push(layer, digest)),
+          (1, _) => store(LayerNode.Push(layer, digest)),
           (_, 1) =>
             let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-            b3_lane_chunks(rest, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+            b3_lane_chunks(rest, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(LayerNode.Push(layer, digest))),
           (_, _) => b3_lane_chunks(rest, block_no + 1, chunk_count, store(digest), layer),
         },
     }
@@ -184,7 +184,7 @@ def pcs := ⟦
     }
   }
 
-  fn b3_io_chunks(ch: G, i: G, remaining: G, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+  fn b3_io_chunks(ch: G, i: G, remaining: G, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: Layer) -> Layer {
     match u32_less_than(remaining, 64) {
       0 =>
         -- A full 64-byte block is available.
@@ -216,12 +216,12 @@ def pcs := ⟦
         let end_flag = is_last + at15 - (is_last * at15);
         let root_flag = is_last * u64_is_zero(load(chunk_count));
         let flags = start_flag + 2 * end_flag + 8 * root_flag;
-        let digest = blake3_compress(load(cv), block, load(chunk_count), 64, flags);
+        let digest = @blake3_compress_init(load(cv), block, load(chunk_count), 64, flags);
         match (is_last, at15) {
-          (1, _) => store(Layer.Push(layer, digest)),
+          (1, _) => store(LayerNode.Push(layer, digest)),
           (_, 1) =>
             let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-            b3_io_chunks(ch, i + 64, remaining - 64, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+            b3_io_chunks(ch, i + 64, remaining - 64, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(LayerNode.Push(layer, digest))),
           (_, _) => b3_io_chunks(ch, i + 64, remaining - 64, block_no + 1, chunk_count, store(digest), layer),
         },
       _ =>
@@ -232,7 +232,7 @@ def pcs := ⟦
             -- (0, 0) arm (any other path compresses before exhausting).
             match load(chunk_count) {
               [0, 0, 0, 0, 0, 0, 0, 0] =>
-                store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+                store(LayerNode.Push(layer, @blake3_compress_init(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
               _ => layer,
             },
           _ =>
@@ -240,7 +240,7 @@ def pcs := ⟦
               b3_io_tail_acc(ch, i, remaining, store(ListNode.Nil)), 64 - remaining));
             let start_flag = eq_zero(block_no);
             let flags = start_flag + 2 + 8 * u64_is_zero(load(chunk_count));
-            store(Layer.Push(layer, blake3_compress(load(cv), block, load(chunk_count), remaining, flags))),
+            store(LayerNode.Push(layer, @blake3_compress_init(load(cv), block, load(chunk_count), remaining, flags))),
         },
     }
   }
@@ -249,14 +249,14 @@ def pcs := ⟦
   -- output to `blake3` over those bytes — pinned by `io_hash_test`).
   fn b3_io(ch: G, idx: G, len: G) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(b3_io_chunks(ch, idx, len, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(b3_io_chunks(ch, idx, len, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- blake3 of a lane list (identical output to `blake3` over the lanes' LE
   -- bytes — pinned by the `lane_hash_test` differential self-test).
   fn b3_lanes(lanes: List‹U64›) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(b3_lane_chunks(lanes, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(b3_lane_chunks(lanes, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- The MMCS leaf hash of a row (`SerializingHasher<Blake3>`).
@@ -281,7 +281,7 @@ def pcs := ⟦
       [b[1][0], b[1][1], b[1][2], b[1][3]], [b[1][4], b[1][5], b[1][6], b[1][7]],
       [b[2][0], b[2][1], b[2][2], b[2][3]], [b[2][4], b[2][5], b[2][6], b[2][7]],
       [b[3][0], b[3][1], b[3][2], b[3][3]], [b[3][4], b[3][5], b[3][6], b[3][7]]];
-    b3_to_digest(blake3_compress(IV, block, [0u8; 8], 64, 11))
+    b3_to_digest(@blake3_compress_init(IV, block, [0u8; 8], 64, 11))
   }
 
   -- ==========================================================================
@@ -401,7 +401,7 @@ def pcs := ⟦
   -- Block-granular chunk walk over rows-of-lanes; mirrors `b3_lane_chunks`
   -- (same flag schedule, same `Layer` fold), gathering each 64-byte block
   -- with eight cross-row pops.
-  fn b3_rows_chunks(cur: List‹U64›, rows: List‹List‹U64››, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+  fn b3_rows_chunks(cur: List‹U64›, rows: List‹List‹U64››, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: Layer) -> Layer {
     let (l0, c1, r1, g0) = rows_pop(cur, rows);
     match g0 {
       -- Exhausted with no block to compress: only reachable for an empty
@@ -409,7 +409,7 @@ def pcs := ⟦
       0 =>
         match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
-            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+            store(LayerNode.Push(layer, @blake3_compress_init(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
           _ => layer,
         },
       _ =>
@@ -439,12 +439,12 @@ def pcs := ⟦
         let end_flag = empty + at15 - (empty * at15);
         let root_flag = empty * u64_is_zero(load(chunk_count));
         let flags = start_flag + 2 * end_flag + 8 * root_flag;
-        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        let digest = @blake3_compress_init(load(cv), block, load(chunk_count), nbytes, flags);
         match (empty, at15) {
-          (1, _) => store(Layer.Push(layer, digest)),
+          (1, _) => store(LayerNode.Push(layer, digest)),
           (_, 1) =>
             let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-            b3_rows_chunks(c8, r8, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+            b3_rows_chunks(c8, r8, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(LayerNode.Push(layer, digest))),
           (_, _) => b3_rows_chunks(c8, r8, block_no + 1, chunk_count, store(digest), layer),
         },
     }
@@ -452,7 +452,7 @@ def pcs := ⟦
 
   fn b3_rows(rows: List‹List‹U64››) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(b3_rows_chunks(store(ListNode.Nil), rows, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(b3_rows_chunks(store(ListNode.Nil), rows, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- The joint Blake3 leaf hash of all matrices at log-height `target`.

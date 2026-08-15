@@ -301,7 +301,7 @@ def tests := ⟦
   fn lane_hash_check(n: G) -> G {
     let row = lane_test_row(n);
     digest_eq(b3_to_digest(b3_lanes(row)),
-              b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil)))))
+              b3_to_digest(@blake3(b3_row_onto(row, store(ListNode.Nil)))))
   }
   pub fn lane_hash_test() -> G {
     lane_hash_check(0) * lane_hash_check(1) * lane_hash_check(7)
@@ -367,7 +367,7 @@ def tests := ⟦
   fn io_hash_check(n: G, off: G) -> (G, G) {
     let stop = io_test_fill(n, off, 173);
     let a = b3_io(9, off, n);
-    let b = blake3(io_test_bytes(n, off));
+    let b = @blake3(io_test_bytes(n, off));
     (digest_eq(b3_to_digest(a), b3_to_digest(b)), stop)
   }
   pub fn io_hash_test() -> G {

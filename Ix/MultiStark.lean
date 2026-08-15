@@ -61,7 +61,7 @@ def entrypoints := ⟦
     -- against that exact byte stream (the same binding pattern as IxVM).
     let (sidx, slen) = io_get_info(1, [0]);
     let sbytes = #read_byte_stream(1, sidx, slen);
-    assert_eq!(b3_to_digest(blake3(sbytes)), system_digest);
+    assert_eq!(b3_to_digest(@blake3(sbytes)), system_digest);
     let (sys, srest) = read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
     -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
@@ -70,7 +70,7 @@ def entrypoints := ⟦
     -- choose claims adaptively).
     let (cidx, clen) = io_get_info(2, [0]);
     let cbytes = #read_byte_stream(2, cidx, clen);
-    assert_eq!(b3_to_digest(blake3(cbytes)), claims_digest);
+    assert_eq!(b3_to_digest(@blake3(cbytes)), claims_digest);
     let (claims, crest) = read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
     -- Structural + accumulator + PCS checks.
