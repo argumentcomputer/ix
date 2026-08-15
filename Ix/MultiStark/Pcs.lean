@@ -580,24 +580,21 @@ def pcs := ⟦
     7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil)))
   }
 
-  -- Raw wire rows (`U64` lanes, possibly non-canonical) to native Goldilocks
-  -- values for the reduced-opening arithmetic (`limb_to_field` reduces mod p).
-  fn lanes_to_gl(l: List‹U64›) -> List‹Goldilocks› {
-    match load(l) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(@limb_to_field(x), lanes_to_gl(rest))),
-    }
-  }
-
-  -- Accumulate one matrix-point's column contributions. `q = 1/(z − x)`.
-  fn ro_fold(p_x: List‹Goldilocks›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
+  -- Accumulate one matrix-point's column contributions WITHOUT the quotient
+  -- factor: `s = Σᵢ apᵢ·(p_zᵢ − p_xᵢ)`. The caller multiplies by
+  -- `q = 1/(z − x)` once per matrix-point (it is constant across the
+  -- point's columns), saving an ext mul per column. `p_x` is the RAW wire
+  -- lane list — `limb_to_field` reduces mod p as pure wiring, so no
+  -- intermediate `List‹Goldilocks›` is ever materialized (the former
+  -- `lanes_to_gl` pass and its per-lane stores/loads).
+  fn ro_fold(p_x: List‹U64›, p_z: List‹Ext›, alpha: Ext, s: Ext, ap: Ext)
       -> (Ext, Ext) {
     match load(p_x) {
-      ListNode.Nil => (ro, ap),
-      ListNode.Cons(px, pxr) =>
+      ListNode.Nil => (s, ap),
+      ListNode.Cons(lane, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = @eg_mul(@eg_mul(ap, @eg_sub(pz, [px, 0])), q);
-        ro_fold(pxr, pzr, q, alpha, @eg_add(ro, term), @eg_mul(ap, alpha)),
+        let term = @eg_mul(ap, @eg_sub(pz, [@limb_to_field(lane), 0]));
+        ro_fold(pxr, pzr, alpha, @eg_add(s, term), @eg_mul(ap, alpha)),
     }
   }
 
@@ -714,7 +711,7 @@ def pcs := ⟦
   }
   -- Find the bucket at log-height `lh`, fold one matrix-point's columns into it
   -- (`ro_fold` threads its `alpha_pow`), and write it back.
-  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹Goldilocks›, p_z: List‹Ext›,
+  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹U64›, p_z: List‹Ext›,
       q: Ext, alpha: Ext) -> List‹Bucket› {
     match load(buckets) {
       ListNode.Nil => store(ListNode.Nil),
@@ -722,7 +719,8 @@ def pcs := ⟦
         let Bucket.Mk(h, ap, ro) = b;
         match eq_zero(h - lh) {
           1 =>
-            let (ro2, ap2) = ro_fold(p_x, p_z, q, alpha, ro, ap);
+            let (s, ap2) = ro_fold(p_x, p_z, alpha, [0, 0], ap);
+            let ro2 = @eg_add(ro, @eg_mul(q, s));
             store(ListNode.Cons(Bucket.Mk(h, ap2, ro2), rest)),
           _ => store(ListNode.Cons(b, bucket_update(rest, lh, p_x, p_z, q, alpha))),
         },
@@ -752,7 +750,7 @@ def pcs := ⟦
   }
   -- Compute x = GENERATOR·g^{revbits} for this height and fold the contribution.
   fn ri_apply(buckets: List‹Bucket›, lh: G, idxbits: List‹G›, log_gmax: G,
-      z: Ext, p_x: List‹Goldilocks›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
+      z: Ext, p_x: List‹U64›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
     -- the base opening and the ext opening at this point must have equal width
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
@@ -764,7 +762,7 @@ def pcs := ⟦
   -- A stage_1/stage_2/preprocessed-style matrix: two opening points
   -- (ζ, ζ·g) with the same base row `p_x`. `g` = trace subgroup generator.
   fn open_2pt_mat(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, lh: G,
-      ldeg: G, zeta: Ext, p_x: List‹Goldilocks›, mat: List‹List‹Ext››, alpha: Ext)
+      ldeg: G, zeta: Ext, p_x: List‹U64›, mat: List‹List‹Ext››, alpha: Ext)
       -> List‹Bucket› {
     let pz0 = list_lookup(mat, 0);
     let pz1 = list_lookup(mat, 1);
@@ -780,7 +778,7 @@ def pcs := ⟦
       _ =>
         let ldeg = to_field(list_lookup(log_degrees, ci));
         let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(opened, ci), alpha);
+                  list_lookup(base_rows, ci), list_lookup(opened, ci), alpha);
         open_batch_2pt(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta,
                        base_rows, opened, alpha),
     }
@@ -796,7 +794,7 @@ def pcs := ⟦
       _ =>
         let lh = to_field(list_lookup(log_degrees, ci)) + log_blowup;
         let b = ri_apply(buckets, lh, idxbits, log_gmax, zeta,
-                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(list_lookup(q_opened, ci), 0), alpha);
+                  list_lookup(base_rows, ci), list_lookup(list_lookup(q_opened, ci), 0), alpha);
         open_quotient(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta, base_rows, q_opened, alpha),
     }
   }
@@ -815,7 +813,7 @@ def pcs := ⟦
         OptIdx.SomeIdx(_j) =>
           let ldeg = to_field(list_lookup(log_degrees, ci));
           let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                    lanes_to_gl(list_lookup(base_rows, k)), list_lookup(prep_round, k), alpha);
+                    list_lookup(base_rows, k), list_lookup(prep_round, k), alpha);
           open_prep(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, k + 1, log_degrees,
                     prep_indices, zeta, base_rows, prep_round, alpha),
       },

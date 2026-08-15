@@ -168,9 +168,9 @@ def tests := ⟦
              @gl_val([1u8, 239u8, 205u8, 171u8, 0u8, 0u8, 0u8, 0u8])];
     let alpha = [@gl_val([17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8]),
                  @gl_val([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
-    let px0 = @gl_val([11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let px1 = @gl_val([22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let px2 = @gl_val([33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let px0 = [11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let px1 = [22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let px2 = [33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
     let p_x = store(ListNode.Cons(px0, store(ListNode.Cons(px1,
                 store(ListNode.Cons(px2, store(ListNode.Nil)))))));
     let pz0 = [@gl_val([100u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), @gl_val([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
@@ -179,7 +179,8 @@ def tests := ⟦
     let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
                 store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
     let q = @eg_inverse(@eg_sub(z, [x, 0]));
-    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
+    let (s, _ap) = ro_fold(p_x, p_z, alpha, [0, 0], [1, 0]);
+    let ro = @eg_mul(q, s);
     assert_eq!(ro[0], 7130765474285082575);
     assert_eq!(ro[1], 12254464995725315436);
     1
