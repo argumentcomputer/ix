@@ -176,7 +176,7 @@ def systemDeserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_vk_digest(i);
+        let (x, j) = @read_vk_digest(i);
         let (rest, j2) = read_vk_cap_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), j2),
     }
@@ -254,7 +254,7 @@ def systemDeserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_sys_lookup(i);
+        let (x, j) = @read_sys_lookup(i);
         let (rest, j2) = read_sys_lookups_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), j2),
     }
@@ -321,7 +321,7 @@ def systemDeserialize := ⟦
       _ =>
         let (x, xl, j) = read_sys_circuit(i);
         let (rest, lrest, j2) = read_sys_circuits_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), cons_shape7(xl, lrest), j2),
+        (store(ListNode.Cons(x, rest)), @cons_shape7(xl, lrest), j2),
     }
   }
 
@@ -373,7 +373,7 @@ def systemDeserialize := ⟦
   -- Full `System<AiurConfig>` parsed from the digest-bound byte stream.
   -- Returns the unconsumed suffix; the entrypoint asserts it is empty.
   fn read_system(i: ByteStream) -> (Sys, ByteStream) {
-    let (params, plimbs, j) = read_sys_params(i);
+    let (params, plimbs, j) = @read_sys_params(i);
     let (n, nlimb, j1) = read_vk_u16_limb(j);
     let (circuits, climbs, j2) = read_sys_circuits_n(j1, n);
     let (commit, j3) = read_opt_commit(j2);

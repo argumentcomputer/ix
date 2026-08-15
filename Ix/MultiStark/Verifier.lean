@@ -79,7 +79,7 @@ def verifier := ⟦
       ListNode.Nil => 0,
       ListNode.Cons(e, rest) =>
         match load(rest) {
-          ListNode.Nil => ext_is_zero(e),
+          ListNode.Nil => @ext_is_zero(e),
           _ => last_acc_is_zero(rest),
         },
     }
@@ -359,13 +359,13 @@ def verifier := ⟦
     -- (`tlimbs`, from the verifying key), the activation bitmap, prep,
     -- stage_1, log_degrees, claims. Built inner-to-outer with the prepend
     -- helpers so the result is in forward (observation) order.
-    let input = claims_onto(claims, store(ListNode.Nil));
+    let input = @claims_onto(claims, store(ListNode.Nil));
     let input = log_degrees_onto(lds, input);
     let input = cap_onto(s1, input);
     let input = cap_onto(prep, input);
     let input = active_onto(active, input);
     let input = limbs_onto(tlimbs, input);
-    let input = seed_tag_onto(input);
+    let input = @seed_tag_onto(input);
     -- sample lookup challenge, then observe it back (append)
     let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
     let input = snoc_b8(snoc_b8(input, l0), l1);
@@ -466,7 +466,7 @@ def verifier := ⟦
   }
 
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
-    let zh = trace_vanishing(zeta, l);
+    let zh = @trace_vanishing(zeta, l);
     let ginv = @gl_inverse(two_adic_gen(l));
     let is_first = @eg_div(zh, @eg_sub(zeta, [1, 0]));
     let is_last = @eg_div(zh, @eg_sub(zeta, [ginv, 0]));
@@ -846,11 +846,11 @@ def verifier := ⟦
         -- Stage-2 opened rows are base columns; used directly (no pairing).
         let s2row = list_lookup(s2, 0);
         let s2next = list_lookup(s2, 1);
-        let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
-        let (isf, isl, ist, invv) = trace_selectors(zeta, l);
-        let publics = build_publics(lch, fch, accp, naccp);
+        let (prep, prep_next) = @ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
+        let (isf, isl, ist, invv) = @trace_selectors(zeta, l);
+        let publics = @build_publics(lch, fch, accp, naccp);
         let inorm = @gl_inverse(pow2(l) * two_adic_gen(l));
-        let comp = ood_composition(nodes, zeros, lks, k,
+        let comp = @ood_composition(nodes, zeros, lks, k,
                                    main, main_next, prep, prep_next, s2row, s2next,
                                    publics, isf, isl, ist, alpha, inorm);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back
@@ -917,13 +917,13 @@ def verifier := ⟦
         let aprep = select_active_prep(prep_indices, active);
         assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
         let Commitments.Mk(s1c, s2c, qc) = commitments;
-        let prep_cap = opt_commit_cap(commit);
-        let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
+        let prep_cap = @opt_commit_cap(commit);
+        let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
         let acc0 = claims_acc([0, 0], claims, lch, fch);
         -- Step 5: OOD composition/quotient identity for every active circuit.
         let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
-        pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
+        @pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
           s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
           list_length(acirc), log_blowup, num_queries, commit_pow_bits,
           query_pow_bits),
@@ -975,7 +975,7 @@ def verifier := ⟦
     match n {
       0 => (store(ListNode.Nil), stream),
       _ =>
-        let (c, s) = read_one_claim(stream);
+        let (c, s) = @read_one_claim(stream);
         let (rest, s2) = read_claims_n(s, n - 1);
         (store(ListNode.Cons(c, rest)), s2),
     }

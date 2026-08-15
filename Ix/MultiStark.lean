@@ -54,15 +54,15 @@ def entrypoints := ⟦
     -- advice — same trust model as the former `#read_byte_stream`); the
     -- parse structure itself stays constrained.
     let (idx, len) = io_get_info(0, [0]);
-    let (proof, stop) = read_proof(idx);
+    let (proof, stop) = @read_proof(idx);
     assert_eq!(stop, idx + len);
     -- Verifying key (`System<AiurCircuit>`) from IO channel 1: fetch the raw
     -- bytes once as advice, then constrain both the hash and deserialization
     -- against that exact byte stream (the same binding pattern as IxVM).
     let (sidx, slen) = io_get_info(1, [0]);
     let sbytes = #read_byte_stream(1, sidx, slen);
-    assert_eq!(b3_to_digest(@blake3(sbytes)), system_digest);
-    let (sys, srest) = read_system(sbytes);
+    assert_eq!(@b3_to_digest(@blake3(sbytes)), system_digest);
+    let (sys, srest) = @read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
     -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
     -- public Blake3 `claims_digest`, then deserialize. Binding them as a
@@ -70,14 +70,16 @@ def entrypoints := ⟦
     -- choose claims adaptively).
     let (cidx, clen) = io_get_info(2, [0]);
     let cbytes = #read_byte_stream(2, cidx, clen);
-    assert_eq!(b3_to_digest(@blake3(cbytes)), claims_digest);
-    let (claims, crest) = read_claims(cbytes);
+    assert_eq!(@b3_to_digest(@blake3(cbytes)), claims_digest);
+    let (claims, crest) = @read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
     -- Structural + accumulator + PCS checks.
-    assert_eq!(verify(proof), 1);
+    let vres = @verify(proof);
+    assert_eq!(vres, 1);
     -- Step 3 + 5: prover-faithful Fiat-Shamir replay and the out-of-domain
     -- composition/quotient check, `composition(ζ)·inv_vanishing(ζ) == quotient(ζ)`.
-    assert_eq!(ood_verify(sys, proof, claims), 1);
+    let oodres = @ood_verify(sys, proof, claims);
+    assert_eq!(oodres, 1);
     ()
   }
 ⟧

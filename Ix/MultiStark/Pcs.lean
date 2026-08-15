@@ -261,7 +261,7 @@ def pcs := ⟦
 
   -- The MMCS leaf hash of a row (`SerializingHasher<Blake3>`).
   fn mmcs_hash_row(row: List‹U64›) -> Digest {
-    b3_to_digest(b3_lanes(row))
+    @b3_to_digest(b3_lanes(row))
   }
   -- The MMCS 2-to-1 compression (`CompressionFunctionFromHasher<Blake3, 2, 32>`).
   -- `a || b` is exactly 64 bytes = one blake3 block of a single chunk, so this
@@ -281,7 +281,7 @@ def pcs := ⟦
       [b[1][0], b[1][1], b[1][2], b[1][3]], [b[1][4], b[1][5], b[1][6], b[1][7]],
       [b[2][0], b[2][1], b[2][2], b[2][3]], [b[2][4], b[2][5], b[2][6], b[2][7]],
       [b[3][0], b[3][1], b[3][2], b[3][3]], [b[3][4], b[3][5], b[3][6], b[3][7]]];
-    b3_to_digest(@blake3_compress_init(IV, block, [0u8; 8], 64, 11))
+    @b3_to_digest(@blake3_compress_init(IV, block, [0u8; 8], 64, 11))
   }
 
   -- ==========================================================================
@@ -457,7 +457,7 @@ def pcs := ⟦
 
   -- The joint Blake3 leaf hash of all matrices at log-height `target`.
   fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> Digest {
-    b3_to_digest(b3_rows(select_rows(rows, lhs, target)))
+    @b3_to_digest(@b3_rows(select_rows(rows, lhs, target)))
   }
 
   -- Inject the leaf hash of any matrices at log-height `lh` (if present) via a
@@ -486,8 +486,8 @@ def pcs := ⟦
       ListNode.Nil => (d, bits_to_num(ibits)),
       ListNode.Cons(s, prest) =>
         let &ListNode.Cons(bit, brest) = ibits;
-        let d1 = compress_ordered(bit, d, s);
-        let d2 = inject_maybe(rows, lhs, lh, d1);
+        let d1 = @compress_ordered(bit, d, s);
+        let d2 = @inject_maybe(rows, lhs, lh, d1);
         mmcs_fold(d2, rows, lhs, prest, brest, lh - 1),
     }
   }
@@ -502,8 +502,8 @@ def pcs := ⟦
   -- 1 iff the recomputed root matches the commitment cap at the cap index.
   fn mmcs_verify(cap: MerkleCap, rows: List‹List‹U64››, lhs: List‹G›,
       ibits: List‹G›, proof: List‹Digest›, log_max: G) -> G {
-    let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, log_max);
-    digest_eq(list_lookup(cap, capidx), root)
+    let (root, capidx) = @mmcs_root(rows, lhs, ibits, proof, log_max);
+    @digest_eq(list_lookup(cap, capidx), root)
   }
 
   -- ==========================================================================
@@ -747,7 +747,7 @@ def pcs := ⟦
     -- the base opening and the ext opening at this point must have equal width
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
-    let x = ro_x(list_drop(idxbits, log_gmax - lh), lh);
+    let x = @ro_x(list_drop(idxbits, log_gmax - lh), lh);
     let q = @eg_inverse(@eg_sub(z, [x, 0]));
     bucket_update(buckets, lh, p_x, p_z, q, alpha)
   }
@@ -914,9 +914,9 @@ def pcs := ⟦
         assert_eq!(list_length(sibs), 1);
         let &ListNode.Cons(ibit, idrest) = domidx;     -- index_in_group = LSB
         let log_folded = log_cur - 1;
-        let (e0, e1) = recon_evals(ibit, folded, list_lookup(sibs, 0));
+        let (e0, e1) = @recon_evals(ibit, folded, list_lookup(sibs, 0));
         -- authenticate the sibling pair against this round's commitment
-        assert_eq!(mmcs_verify(comm, store(ListNode.Cons(flatten2(e0, e1), store(ListNode.Nil))),
+        assert_eq!(mmcs_verify(comm, store(ListNode.Cons(@flatten2(e0, e1), store(ListNode.Nil))),
           store(ListNode.Cons(log_folded, store(ListNode.Nil))), idrest, oproof, log_folded), 1);
         let folded1 = fri_fold2(idrest, log_folded, beta, e0, e1);
         let (folded2, ro_rest2) = rollin(folded1, log_folded, beta, ro_rest);
