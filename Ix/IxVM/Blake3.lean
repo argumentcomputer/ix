@@ -42,6 +42,19 @@ def blake3 := ⟦
     Some([[U8; 4]; 8])
   }
 
+  -- Blake3 output words packed 4 LE bytes -> 1 field element (injective:
+  -- 2^32 < p, unlike full 8-byte limbs). Pure wiring when @-inlined; the
+  -- packed form is the public-input digest representation shared by the
+  -- kernel's `verify_claim` and the recursive verifier's entrypoint.
+  fn b3_pack_w(w: [U8; 4]) -> G {
+    to_field(w[0]) + 256 * to_field(w[1]) + 65536 * to_field(w[2])
+      + 16777216 * to_field(w[3])
+  }
+  fn b3_pack(h: [[U8; 4]; 8]) -> [G; 8] {
+    [@b3_pack_w(h[0]), @b3_pack_w(h[1]), @b3_pack_w(h[2]), @b3_pack_w(h[3]),
+     @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
+  }
+
   fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
     blake3_compress_layer(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))

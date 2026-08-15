@@ -39,7 +39,7 @@ The harness handles every step the Aiur side cannot:
    right closure per variant, and threads any caller-supplied
    `AssumptionTree`s under their merkle roots. The resulting
    `ClaimWitness` packs (a) the entrypoint name (`verify_claim`),
-   (b) the 32-G public input (`claim_digest`), and (c) the populated
+   (b) the packed 8-G public input (`claim_digest`), and (c) the populated
    IOBuffer.
 
 The serde primitive `buildSerdeIOBuffer` survives here because the
@@ -225,7 +225,7 @@ value shape and each key is the content address of the value it maps to
 
 | Channel | Purpose                | Key (32 G)            | Value shape  |
 |---------|------------------------|-----------------------|--------------|
-| 0       | claim wire bytes       | `blake3(claim_bytes)` | claim bytes  |
+| 0       | claim wire bytes       | packed `blake3(claim_bytes)` (8 G) | claim bytes  |
 | 1       | assumption tree bytes  | `tree.root`           | tree bytes   |
 | 2       | constant wire bytes    | const addr            | const bytes  |
 | 3       | Defn reducibility hint | Defn addr             | single G     |
@@ -318,6 +318,14 @@ structure ClaimWitness where
 @[inline] private def addrKey (a : Address) : Array Aiur.G :=
   a.hash.data.map .ofUInt8
 
+/-- An `Address` as 8 packed-4-LE-byte field elements: the `verify_claim`
+    public-input (and ch-0 key) form. Must match the in-circuit `b3_pack`. -/
+@[inline] def packedDigestKey (a : Address) : Array Aiur.G :=
+  let h := a.hash.data
+  (Array.range 8).map fun i =>
+    .ofNat (h[4*i]!.toNat + 256 * h[4*i+1]!.toNat
+      + 65536 * h[4*i+2]!.toNat + 16777216 * h[4*i+3]!.toNat)
+
 /-- Look up the `AssumptionTree` at `root` in the caller-supplied
     `trees` map and seed its serialized bytes at key=`root` in
     `ioBuffer`. Aiur's `load_assumption_tree` reads bytes by key and
@@ -358,7 +366,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     (trees : Std.HashMap Address Ix.AssumptionTree := {}) :
     Except String ClaimWitness := do
   let claimBytes := Ix.Claim.ser claim
-  let digestKey := addrKey (Address.blake3 claimBytes)
+  let digestKey := packedDigestKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
   let seedAsm asm buf := match asm with
@@ -452,7 +460,7 @@ def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × ClaimWitness) := do
   let (claim, closure, trees) ← shardCheckEnvClaim env owned
   let claimBytes := Ix.Claim.ser claim
-  let digestKey := addrKey (Address.blake3 claimBytes)
+  let digestKey := packedDigestKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
   ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
   ioBuffer := addEntries env closure.contains ioBuffer

@@ -49,16 +49,6 @@ def entrypoints := ⟦
   -- non-deterministic advice on IO channel 0 — see the module docstring. One
   -- stream per channel (0 = proof, 1 = vk, 2 = claims), each registered under
   -- key `[0]` on its channel.
-  -- Blake3 output words packed 4 LE bytes -> 1 field element (injective:
-  -- 2^32 < p, unlike full 8-byte limbs). Pure wiring when @-inlined.
-  fn b3_pack_w(w: [U8; 4]) -> G {
-    to_field(w[0]) + 256 * to_field(w[1]) + 65536 * to_field(w[2])
-      + 16777216 * to_field(w[3])
-  }
-  fn b3_pack(h: [[U8; 4]; 8]) -> [G; 8] {
-    [@b3_pack_w(h[0]), @b3_pack_w(h[1]), @b3_pack_w(h[2]), @b3_pack_w(h[3]),
-     @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
-  }
   pub fn verify_multi_stark_proof(system_digest: [G; 8], claims_digest: [G; 8]) {
     -- Proof advice from IO channel 0: deserialize directly from the IO arena
     -- by byte offset (no materialized byte stream), assert fully consumed.

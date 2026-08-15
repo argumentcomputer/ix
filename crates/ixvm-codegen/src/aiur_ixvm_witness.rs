@@ -68,6 +68,22 @@ fn addr_key(addr: &Address) -> Vec<G> {
   addr.as_bytes().iter().map(|b| G::from_u8(*b)).collect()
 }
 
+/// An address as 8 packed-4-LE-byte field elements: the `verify_claim`
+/// public-input (and ch-0 key) form. Mirrors the in-circuit `b3_pack`
+/// and Lean `IxVM.ClaimHarness.packedDigestKey`.
+#[inline]
+fn packed_digest_key(addr: &Address) -> Vec<G> {
+  addr
+    .as_bytes()
+    .chunks_exact(4)
+    .map(|w| {
+      G::from_u32(
+        w[0] as u32 | (w[1] as u32) << 8 | (w[2] as u32) << 16 | (w[3] as u32) << 24,
+      )
+    })
+    .collect()
+}
+
 #[inline]
 fn bytes_to_g(bytes: &[u8]) -> Vec<G> {
   bytes.iter().map(|b| G::from_u8(*b)).collect()
@@ -201,7 +217,7 @@ pub fn build_claim_check_witness(
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
-  let digest_key = addr_key(&digest);
+  let digest_key = packed_digest_key(&digest);
 
   let mut io = IOBuffer {
     data: rustc_hash::FxHashMap::default(),
@@ -304,7 +320,7 @@ pub fn build_shard_check_env_witness(
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
-  let digest_key = addr_key(&digest);
+  let digest_key = packed_digest_key(&digest);
 
   let mut io = IOBuffer {
     data: rustc_hash::FxHashMap::default(),

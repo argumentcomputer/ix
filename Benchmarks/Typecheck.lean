@@ -516,7 +516,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             -- `ix verify`).
             let digest := Address.blake3 claimBytes
             let claim :=
-              Aiur.buildClaim funIdx (digest.hash.data.map .ofUInt8) #[]
+              Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
             .ok (claim, proof, ioBuf)
       match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
