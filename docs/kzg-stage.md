@@ -50,7 +50,16 @@ them:
 
 **Lean (`Ix/Aiur/Goldilocks.lean`)**: `G = {u : UInt64 // u < gSize}`,
 `G.extensionDegree = 2`. Used by the DSL elaborator, the bytecode
-interpreter, and witness helpers.
+interpreter, and witness helpers. This is a REAL structural dependence,
+not just hosting: source constants are capped at p_goldilocks (and
+`G.ofNat` silently wraps larger literals), and the interpreter's
+arithmetic wraps at p. It is invisible to the stage-3 plan only because
+the foreign toplevel confines itself to the field-agnostic subset
+(small constants, byte-level arithmetic), where the `{u < p}` subtype
+injects faithfully into Fr and both interpreters agree. Writing
+Fr-NATIVE source (constants ≥ 2^64, Fr interpreter semantics) would
+require generalizing the Lean-side `G` — a real project, deliberately
+out of scope.
 
 **The keystone observation**: the foreign toplevel's semantics are
 OUTER-FIELD-INDEPENDENT. Every `GoldilocksForeign` operation is
