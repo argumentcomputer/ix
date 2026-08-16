@@ -53,13 +53,9 @@ them:
 interpreter, and witness helpers. This is a REAL structural dependence,
 not just hosting: source constants are capped at p_goldilocks (and
 `G.ofNat` silently wraps larger literals), and the interpreter's
-arithmetic wraps at p. It is invisible to the stage-3 plan only because
-the foreign toplevel confines itself to the field-agnostic subset
-(small constants, byte-level arithmetic), where the `{u < p}` subtype
-injects faithfully into Fr and both interpreters agree. Writing
-Fr-NATIVE source (constants ≥ 2^64, Fr interpreter semantics) would
-require generalizing the Lean-side `G` — a real project, deliberately
-out of scope.
+arithmetic wraps at p. DECIDED: this is the wrong factoring — fixed by
+Phase A′ below (constants over ℚ, field chosen at execution), which
+supersedes the earlier "out of scope" position.
 
 **The keystone observation**: the foreign toplevel's semantics are
 OUTER-FIELD-INDEPENDENT. Every `GoldilocksForeign` operation is
@@ -93,6 +89,36 @@ field-specific spots:
 **Gate**: kernel FFT pins + shard pin byte-identical; `ix codegen
 --check` clean. Same discipline as multi-stark's Phase 0 — the
 refactor is provably a no-op before anything builds on it.
+
+### Phase A′ — Lean constants over ℚ; interpreter parametrized by field
+
+Constants belong to the program, fields to the instantiation:
+
+- **Elaborator**: numeric literals become exact rationals in canonical
+  form (reduced fraction, positive denominator; signed integers for
+  free — `-1` instead of `0 - x`). Zero denominator is a TYPE ERROR at
+  elaboration. `G.ofNat`'s silent mod-p wrap is gone.
+- **Bytecode**: `Const ℚ`; match keys ℚ.
+- **Interpreter**: generic over a Lean field class
+  (`add/mul/inverse/eq/ofRat`), converting constants ON THE FLY
+  (memoized per occurrence). Goldilocks is the instance today; an Fr
+  instance (Nat-based) is a drop-in later if interpreter-level parity
+  checks are ever wanted.
+- **Per-field specialization checks**, eager at toplevel load: match
+  keys must remain DISTINCT after reduction (two rationals can meet in
+  a given field — hard error); denominators must be invertible in the
+  target field (`p | b` is fine in ℚ, an error in that field); plain
+  integers ≥ p reduce with a WARNING.
+- **Rust boundary**: FFI ingestion and codegen run the same
+  specialization and emit `Toplevel<F>` / baked `F` constants — the
+  Phase-A Rust side is already exactly the post-specialization
+  artifact, so nothing downstream of the boundary changes.
+- Runtime VALUES in the Lean interpreter are still per-instance field
+  elements; "bytecode is field-free" does not mean "execution is".
+
+**Gate**: on all existing programs every constant is a small integer,
+so specialization is the identity — codegen byte-identical, full pin
+battery, all suites.
 
 ### Phase B — the foreign verifier toplevel, validated over Goldilocks
 
