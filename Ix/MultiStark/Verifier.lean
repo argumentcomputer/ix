@@ -1,11 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
-public import Ix.MultiStark.Deserialize
-public import Ix.MultiStark.Keccak
-public import Ix.MultiStark.Pcs
-public import Ix.MultiStark.SystemDeserialize
 
 /-!
 # Multi-STARK verifier (Aiur)

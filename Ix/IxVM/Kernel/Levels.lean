@@ -1,6 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.KernelTypes
 
 public section
 
