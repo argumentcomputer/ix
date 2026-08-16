@@ -1,8 +1,10 @@
 # The KZG stage: wrapping the recursive verifier over BLS12-381
 
-Status: PLAN. Phases A–E below; nothing implemented yet beyond the
-prerequisites (multi-stark `pcs-traits` branch; the `g_*`/`eg_*`
-inner-field interface and `GoldilocksForeign.lean` on this branch).
+Status: PHASE A COMPLETE (crates/aiur generic over `AiurField`,
+Goldilocks the only instantiation, all pins byte-identical). Phases B–E
+pending. Prerequisites landed earlier: multi-stark `pcs-traits` branch;
+the `g_*`/`eg_*` inner-field interface and `GoldilocksForeign.lean` on
+this branch.
 
 ## 1. Goal and architecture
 

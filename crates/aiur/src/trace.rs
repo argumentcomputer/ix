@@ -1,6 +1,5 @@
 use multi_stark::{
   lookup::{LookupRowMut, LookupValues},
-  p3_field::{Field, PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
 };
 use rayon::{
@@ -11,7 +10,7 @@ use rayon::{
 };
 
 use crate::{
-  FxIndexMap, G,
+  AiurField, FxIndexMap,
   bytecode::{Block, Ctrl, Function, Op, Toplevel},
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
@@ -31,34 +30,34 @@ struct ColumnIndex {
   lookup: usize,
 }
 
-struct ColumnMutSlice<'a, 'b> {
-  inputs: &'a mut [G],
-  selectors: &'a mut [G],
-  auxiliaries: &'a mut [G],
-  lookups: &'a mut LookupRowMut<'b, G>,
+struct ColumnMutSlice<'a, 'b, F> {
+  inputs: &'a mut [F],
+  selectors: &'a mut [F],
+  auxiliaries: &'a mut [F],
+  lookups: &'a mut LookupRowMut<'b, F>,
 }
 
 type Degree = u8;
 
-fn u32_value(map: &[(G, Degree)], bytes: &[usize]) -> u64 {
+fn u32_value<F: AiurField>(map: &[(F, Degree)], bytes: &[usize]) -> u64 {
   assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
   bytes.iter().enumerate().fold(0, |word, (i, idx)| {
     word | (map[*idx].0.as_canonical_u64() << (8 * i))
   })
 }
 
-fn u32_sum(values: &[u64]) -> ([G; 4], G) {
+fn u32_sum<F: AiurField>(values: &[u64]) -> ([F; 4], F) {
   let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
   let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
   let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
-  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
+  (word.to_le_bytes().map(|b| F::from_u64(b.into())), F::from_u64(carry))
 }
 
-impl<'a, 'b> ColumnMutSlice<'a, 'b> {
+impl<'a, 'b, F: AiurField> ColumnMutSlice<'a, 'b, F> {
   fn from_slice(
-    function: &Function,
-    slice: &'a mut [G],
-    lookups: &'a mut LookupRowMut<'b, G>,
+    function: &Function<F>,
+    slice: &'a mut [F],
+    lookups: &'a mut LookupRowMut<'b, F>,
   ) -> Self {
     let (inputs, slice) = slice.split_at_mut(function.layout.input_size);
     let (selectors, slice) = slice.split_at_mut(function.layout.selectors);
@@ -67,7 +66,7 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
     Self { inputs, selectors, auxiliaries, lookups }
   }
 
-  fn push_auxiliary(&mut self, index: &mut ColumnIndex, t: G) {
+  fn push_auxiliary(&mut self, index: &mut ColumnIndex, t: F) {
     self.auxiliaries[index.auxiliary] = t;
     index.auxiliary += 1;
   }
@@ -75,8 +74,8 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
   fn push_lookup(
     &mut self,
     index: &mut ColumnIndex,
-    multiplicity: G,
-    args: &[G],
+    multiplicity: F,
+    args: &[F],
   ) {
     self.lookups.push(index.lookup, multiplicity, args);
     index.lookup += 1;
@@ -84,22 +83,22 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
 }
 
 #[derive(Clone, Copy)]
-struct TraceContext<'a> {
-  function_index: G,
-  multiplicity: G,
-  inputs: &'a [G],
-  output: &'a [G],
-  query_record: &'a QueryRecord,
+struct TraceContext<'a, F: Copy> {
+  function_index: F,
+  multiplicity: F,
+  inputs: &'a [F],
+  output: &'a [F],
+  query_record: &'a QueryRecord<F>,
 }
 
-impl Toplevel {
+impl<F: AiurField> Toplevel<F> {
   pub fn witness_data(
     &self,
     function_index: usize,
-    query_record: &QueryRecord,
-    io_buffer: &IOBuffer,
+    query_record: &QueryRecord<F>,
+    io_buffer: &IOBuffer<F>,
     slot_arg_widths: &[usize],
-  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
+  ) -> (RowMajorMatrix<F>, LookupValues<F>) {
     let func = &self.functions[function_index];
     let width = func.width();
     let unfiltered_queries = &query_record.function_queries[function_index];
@@ -115,7 +114,7 @@ impl Toplevel {
     } else {
       height_no_padding.next_power_of_two()
     };
-    let mut rows = vec![G::ZERO; height * width];
+    let mut rows = vec![F::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];
     // Builder rows start zeroed (`Lookup::empty()` in every slot), so padding
     // rows need no writes at all.
@@ -134,7 +133,7 @@ impl Toplevel {
         };
         let slice = &mut ColumnMutSlice::from_slice(func, row, lookups);
         let context = TraceContext {
-          function_index: G::from_usize(function_index),
+          function_index: F::from_usize(function_index),
           inputs,
           multiplicity: result.multiplicity,
           output: result.output,
@@ -148,7 +147,7 @@ impl Toplevel {
   }
 }
 
-impl Function {
+impl<F: AiurField> Function<F> {
   pub fn width(&self) -> usize {
     self.layout.input_size + self.layout.auxiliaries + self.layout.selectors
   }
@@ -156,9 +155,9 @@ impl Function {
   fn populate_row(
     &self,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
+    slice: &mut ColumnMutSlice<'_, '_, F>,
+    context: TraceContext<'_, F>,
+    io_buffer: &IOBuffer<F>,
   ) {
     debug_assert_eq!(
       self.layout.input_size,
@@ -181,17 +180,17 @@ impl Function {
 
 /// `Some(values)` means the block ended with `Yield` (values for the merge).
 /// `None` means the block ended with `Return` (function exited).
-type PopulateResult = Option<Vec<G>>;
+type PopulateResult<F> = Option<Vec<F>>;
 
-impl Block {
+impl<F: AiurField> Block<F> {
   fn populate_row(
     &self,
-    map: &mut Vec<(G, Degree)>,
+    map: &mut Vec<(F, Degree)>,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
-  ) -> PopulateResult {
+    slice: &mut ColumnMutSlice<'_, '_, F>,
+    context: TraceContext<'_, F>,
+    io_buffer: &IOBuffer<F>,
+  ) -> PopulateResult<F> {
     self
       .ops
       .iter()
@@ -202,13 +201,13 @@ impl Block {
 
 /// Dispatch a match: look up the value in the cases map, or fall through to the
 /// default (pushing inverse witnesses for each case to prove inequality).
-fn dispatch_branch<'a>(
-  val: G,
-  cases: &'a FxIndexMap<G, Block>,
-  def: &'a Option<Box<Block>>,
+fn dispatch_branch<'a, F: AiurField>(
+  val: F,
+  cases: &'a FxIndexMap<F, Block<F>>,
+  def: &'a Option<Box<Block<F>>>,
   index: &mut ColumnIndex,
-  slice: &mut ColumnMutSlice<'_, '_>,
-) -> &'a Block {
+  slice: &mut ColumnMutSlice<'_, '_, F>,
+) -> &'a Block<F> {
   cases
     .get(&val)
     .or_else(|| {
@@ -221,18 +220,18 @@ fn dispatch_branch<'a>(
     .expect("No match")
 }
 
-impl Ctrl {
+impl<F: AiurField> Ctrl<F> {
   fn populate_row(
     &self,
-    map: &mut Vec<(G, Degree)>,
+    map: &mut Vec<(F, Degree)>,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
-  ) -> PopulateResult {
+    slice: &mut ColumnMutSlice<'_, '_, F>,
+    context: TraceContext<'_, F>,
+    io_buffer: &IOBuffer<F>,
+  ) -> PopulateResult<F> {
     match self {
       Ctrl::Return(sel, _) => {
-        slice.selectors[*sel] = G::ONE;
+        slice.selectors[*sel] = F::ONE;
         let args = function_lookup_args(
           context.function_index,
           context.inputs,
@@ -244,7 +243,7 @@ impl Ctrl {
         None
       },
       Ctrl::Yield(sel, vals) => {
-        slice.selectors[*sel] = G::ONE;
+        slice.selectors[*sel] = F::ONE;
         Some(vals.iter().map(|&v| map[v].0).collect())
       },
       Ctrl::Match(var, cases, def) => {
@@ -287,14 +286,14 @@ impl Ctrl {
   }
 }
 
-impl Op {
+impl<F: AiurField> Op<F> {
   fn populate_row(
     &self,
-    map: &mut Vec<(G, Degree)>,
+    map: &mut Vec<(F, Degree)>,
     index: &mut ColumnIndex,
-    slice: &mut ColumnMutSlice<'_, '_>,
-    context: TraceContext<'_>,
-    io_buffer: &IOBuffer,
+    slice: &mut ColumnMutSlice<'_, '_, F>,
+    context: TraceContext<'_, F>,
+    io_buffer: &IOBuffer<F>,
   ) {
     match self {
       Op::Const(f) => map.push((*f, 0)),
@@ -324,13 +323,13 @@ impl Op {
       },
       Op::EqZero(a) => {
         let (a, deg) = map[*a];
-        let is_zero = a == G::ZERO;
-        let is_zero_g = G::from_bool(is_zero);
+        let is_zero = a == F::ZERO;
+        let is_zero_g = F::from_bool(is_zero);
         if deg == 0 {
           map.push((is_zero_g, 0));
         } else {
           let (d, x) =
-            if is_zero { (G::ZERO, G::ONE) } else { (a.inverse(), G::ZERO) };
+            if is_zero { (F::ZERO, F::ONE) } else { (a.inverse(), F::ZERO) };
           slice.push_auxiliary(index, d);
           slice.push_auxiliary(index, x);
           map.push((is_zero_g, 1));
@@ -346,11 +345,11 @@ impl Op {
         }
         if !op_unconstrained {
           let args = function_lookup_args(
-            G::from_usize(*function_index),
+            F::from_usize(*function_index),
             &inputs,
             result.output,
           );
-          slice.push_lookup(index, G::ONE, &args);
+          slice.push_lookup(index, F::ONE, &args);
         }
       },
       Op::Store(values) => {
@@ -361,13 +360,13 @@ impl Op {
           .get(&size)
           .expect("Invalid memory size");
         let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
-        let ptr = G::from_usize(
+        let ptr = F::from_usize(
           memory_queries.get_index_of(&values).expect("Unbound pointer"),
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
-        let args = Memory::lookup_args(G::from_usize(size), ptr, &values);
-        slice.push_lookup(index, G::ONE, &args);
+        let args = Memory::lookup_args(F::from_usize(size), ptr, &values);
+        slice.push_lookup(index, F::ONE, &args);
       },
       Op::Load(size, ptr) => {
         let memory_queries = context
@@ -384,15 +383,15 @@ impl Op {
           map.push((*f, 1));
           slice.push_auxiliary(index, *f);
         }
-        let args = Memory::lookup_args(G::from_usize(*size), ptr, values);
-        slice.push_lookup(index, G::ONE, &args);
+        let args = Memory::lookup_args(F::from_usize(*size), ptr, values);
+        slice.push_lookup(index, F::ONE, &args);
       },
       Op::IOGetInfo(channel, key) => {
         let channel = map[*channel].0;
         let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
         let IOKeyInfo { idx, len } =
           io_buffer.get_info(channel, &key).expect("Invalid IO key");
-        for f in [G::from_usize(*idx), G::from_usize(*len)] {
+        for f in [F::from_usize(*idx), F::from_usize(*len)] {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }
@@ -422,7 +421,7 @@ impl Op {
         }
         let mut lookup_args = vec![u8_bit_decomposition_channel(), byte];
         lookup_args.extend(bits);
-        slice.push_lookup(index, G::ONE, &lookup_args);
+        slice.push_lookup(index, F::ONE, &lookup_args);
       },
       Op::U8ShiftLeft(byte) => {
         let (byte, _) = map[*byte];
@@ -431,7 +430,7 @@ impl Op {
         slice.push_auxiliary(index, byte_shifted);
         slice.push_lookup(
           index,
-          G::ONE,
+          F::ONE,
           &[u8_shift_left_channel(), byte, byte_shifted],
         );
       },
@@ -442,7 +441,7 @@ impl Op {
         slice.push_auxiliary(index, byte_shifted);
         slice.push_lookup(
           index,
-          G::ONE,
+          F::ONE,
           &[u8_shift_right_channel(), byte, byte_shifted],
         );
       },
@@ -452,7 +451,7 @@ impl Op {
         let xor = Bytes2::xor(&i, &j);
         map.push((xor, 1));
         slice.push_auxiliary(index, xor);
-        slice.push_lookup(index, G::ONE, &[u8_xor_channel(), i, j, xor]);
+        slice.push_lookup(index, F::ONE, &[u8_xor_channel(), i, j, xor]);
       },
       Op::U8Add(i, j) => {
         let (i, _) = map[*i];
@@ -464,7 +463,7 @@ impl Op {
         map.push((r, 1));
         map.push((o, 1));
         slice.push_auxiliary(index, r);
-        slice.push_lookup(index, G::ONE, &[u8_add_channel(), i, j, r]);
+        slice.push_lookup(index, F::ONE, &[u8_add_channel(), i, j, r]);
       },
       Op::UnconstrainedU32Add(a, b) => {
         let (bytes, carry) = u32_sum(&[u32_value(map, a), u32_value(map, b)]);
@@ -486,7 +485,7 @@ impl Op {
       Op::U32ToField(bytes) => {
         let word = u32_value(map, bytes);
         let degree = bytes.iter().map(|idx| map[*idx].1).max().unwrap_or(0);
-        map.push((G::from_u64(word), degree));
+        map.push((F::from_u64(word), degree));
       },
       Op::U8Mul(i, j) => {
         let (i, _) = map[*i];
@@ -496,7 +495,7 @@ impl Op {
         map.push((hi, 1));
         slice.push_auxiliary(index, lo);
         slice.push_auxiliary(index, hi);
-        slice.push_lookup(index, G::ONE, &[u8_mul_channel(), i, j, lo, hi]);
+        slice.push_lookup(index, F::ONE, &[u8_mul_channel(), i, j, lo, hi]);
       },
       Op::U8Sub(i, j) => {
         let (i, _) = map[*i];
@@ -508,7 +507,7 @@ impl Op {
         map.push((r, 1));
         map.push((u, 1));
         slice.push_auxiliary(index, r);
-        slice.push_lookup(index, G::ONE, &[u8_sub_channel(), i, j, r]);
+        slice.push_lookup(index, F::ONE, &[u8_sub_channel(), i, j, r]);
       },
       Op::U8And(i, j) => {
         let (i, _) = map[*i];
@@ -516,7 +515,7 @@ impl Op {
         let and = Bytes2::and(&i, &j);
         map.push((and, 1));
         slice.push_auxiliary(index, and);
-        slice.push_lookup(index, G::ONE, &[u8_and_channel(), i, j, and]);
+        slice.push_lookup(index, F::ONE, &[u8_and_channel(), i, j, and]);
       },
       Op::U8Or(i, j) => {
         let (i, _) = map[*i];
@@ -524,7 +523,7 @@ impl Op {
         let or = Bytes2::or(&i, &j);
         map.push((or, 1));
         slice.push_auxiliary(index, or);
-        slice.push_lookup(index, G::ONE, &[u8_or_channel(), i, j, or]);
+        slice.push_lookup(index, F::ONE, &[u8_or_channel(), i, j, or]);
       },
       Op::U8LessThan(i, j) => {
         let (i, _) = map[*i];
@@ -534,7 +533,7 @@ impl Op {
         slice.push_auxiliary(index, less_than);
         slice.push_lookup(
           index,
-          G::ONE,
+          F::ONE,
           &[u8_less_than_channel(), i, j, less_than],
         );
       },
@@ -547,7 +546,7 @@ impl Op {
         slice.push_auxiliary(index, lo);
         slice.push_lookup(
           index,
-          G::ONE,
+          F::ONE,
           &[u8_xor_split7_channel(), i, j, hi, lo],
         );
       },
@@ -560,7 +559,7 @@ impl Op {
         slice.push_auxiliary(index, lo);
         slice.push_lookup(
           index,
-          G::ONE,
+          F::ONE,
           &[u8_xor_split4_channel(), i, j, hi, lo],
         );
       },
@@ -578,7 +577,7 @@ impl Op {
         // Push 12 byte auxiliaries: x (a bytes), y (c bytes), z (b bytes)
         for &byte in x_bytes.iter().chain(y_bytes.iter()).chain(z_bytes.iter())
         {
-          slice.push_auxiliary(index, G::from_u8(byte));
+          slice.push_auxiliary(index, F::from_u8(byte));
         }
 
         // Range-check byte pairs via Bytes2 lookups
@@ -593,12 +592,12 @@ impl Op {
         ] {
           slice.push_lookup(
             index,
-            G::ONE,
-            &[rc_channel, G::from_u8(i), G::from_u8(j)],
+            F::ONE,
+            &[rc_channel, F::from_u8(i), F::from_u8(j)],
           );
         }
 
-        let result = G::from_bool(a_u32 < b_u32);
+        let result = F::from_bool(a_u32 < b_u32);
         map.push((result, 1));
       },
       Op::U8RangeCheck(i, j) => {
@@ -606,7 +605,7 @@ impl Op {
         // `(i, j)` pair from the byte-chip range-check table.
         slice.push_lookup(
           index,
-          G::ONE,
+          F::ONE,
           &[u8_range_check_channel(), map[*i].0, map[*j].0],
         );
       },
@@ -632,7 +631,7 @@ impl Op {
         // the 8 auxiliary columns the constraints allocate.
         let bytes = map[*a].0.as_canonical_u64().to_le_bytes();
         for b in bytes {
-          let f = G::from_u8(b);
+          let f = F::from_u8(b);
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }
@@ -650,11 +649,11 @@ impl Op {
   }
 }
 
-fn function_lookup_args(
-  function_index: G,
-  inputs: &[G],
-  output: &[G],
-) -> Vec<G> {
+fn function_lookup_args<F: AiurField>(
+  function_index: F,
+  inputs: &[F],
+  output: &[F],
+) -> Vec<F> {
   let mut args = vec![function_channel(), function_index];
   args.extend(inputs);
   args.extend(output);

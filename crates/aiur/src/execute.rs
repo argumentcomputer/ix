@@ -1,9 +1,8 @@
-use multi_stark::p3_field::{Field, PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
 use crate::{
-  FxIndexMap, G,
+  AiurField, FxIndexMap, G,
   bytecode::{Block, Ctrl, FunIdx, Function, Op, Toplevel},
   gadgets::{
     AiurGadget,
@@ -13,7 +12,7 @@ use crate::{
   querymap::QueryMap,
 };
 
-fn u32_value(map: &[G], bytes: &[usize]) -> u64 {
+fn u32_value<F: AiurField>(map: &[F], bytes: &[usize]) -> u64 {
   assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
   bytes
     .iter()
@@ -21,22 +20,22 @@ fn u32_value(map: &[G], bytes: &[usize]) -> u64 {
     .fold(0, |word, (i, idx)| word | (map[*idx].as_canonical_u64() << (8 * i)))
 }
 
-fn u32_sum(values: &[u64]) -> ([G; 4], G) {
+fn u32_sum<F: AiurField>(values: &[u64]) -> ([F; 4], F) {
   let sum: u128 = values.iter().map(|x| u128::from(*x)).sum();
   let word = u32::try_from(sum & 0xFFFF_FFFF).expect("masked to 32 bits");
   let carry = u64::try_from(sum >> 32).expect("sum of u32 words fits in u64");
-  (word.to_le_bytes().map(|b| G::from_u64(b.into())), G::from_u64(carry))
+  (word.to_le_bytes().map(|b| F::from_u64(b.into())), F::from_u64(carry))
 }
 
-pub struct QueryRecord {
-  pub function_queries: Vec<QueryMap>,
-  pub memory_queries: FxIndexMap<usize, QueryMap>,
-  pub bytes1_queries: Bytes1Queries,
-  pub bytes2_queries: Bytes2Queries,
+pub struct QueryRecord<F: Copy = G> {
+  pub function_queries: Vec<QueryMap<F>>,
+  pub memory_queries: FxIndexMap<usize, QueryMap<F>>,
+  pub bytes1_queries: Bytes1Queries<F>,
+  pub bytes2_queries: Bytes2Queries<F>,
 }
 
-impl QueryRecord {
-  pub fn new(toplevel: &Toplevel) -> Self {
+impl<F: AiurField> QueryRecord<F> {
+  pub fn new(toplevel: &Toplevel<F>) -> Self {
     let function_queries = toplevel
       .functions
       .iter()
@@ -58,27 +57,27 @@ pub struct IOKeyInfo {
   pub len: usize,
 }
 
-pub struct IOBuffer {
+pub struct IOBuffer<F = G> {
   /// Per-channel data arenas. `idx` slots into `data[&channel]`.
-  pub data: FxHashMap<G, Vec<G>>,
+  pub data: FxHashMap<F, Vec<F>>,
   /// Channel-keyed info map; same `key` on different channels resolves
   /// to distinct `IOKeyInfo`.
-  pub map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
+  pub map: FxHashMap<(F, Vec<F>), IOKeyInfo>,
 }
 
-impl IOBuffer {
+impl<F: AiurField> IOBuffer<F> {
   #[inline]
   pub fn get_info(
     &self,
-    channel: G,
-    key: &[G],
+    channel: F,
+    key: &[F],
   ) -> Result<&IOKeyInfo, ExecError> {
     self.map.get(&(channel, key.to_vec())).ok_or(ExecError::InvalidIOKey)
   }
   fn set_info(
     &mut self,
-    channel: G,
-    key: Vec<G>,
+    channel: F,
+    key: Vec<F>,
     idx: usize,
     len: usize,
   ) -> Result<(), ExecError> {
@@ -91,17 +90,17 @@ impl IOBuffer {
   #[inline]
   pub fn read(
     &self,
-    channel: G,
+    channel: F,
     idx: usize,
     len: usize,
-  ) -> Result<&[G], ExecError> {
-    let empty: &[G] = &[];
+  ) -> Result<&[F], ExecError> {
+    let empty: &[F] = &[];
     let arena = self.data.get(&channel).map_or(empty, |v| v.as_slice());
     arena
       .get(idx..idx.saturating_add(len))
       .ok_or(ExecError::IOReadOutOfBounds { idx, len })
   }
-  fn write(&mut self, channel: G, data: impl Iterator<Item = G>) {
+  fn write(&mut self, channel: F, data: impl Iterator<Item = F>) {
     self.data.entry(channel).or_default().extend(data)
   }
 }
@@ -195,13 +194,13 @@ impl std::error::Error for ExecError {}
 /// Gated by `IX_AIUR_QUERY_STATS=1`: dump per-function query-map sizes
 /// during/after execution so RAM blowups can be attributed to specific
 /// Aiur functions (indices resolve to names via the Lean
-/// `CompiledToplevel`). Heaviest maps first, by retained G elements.
+/// `CompiledToplevel`). Heaviest maps first, by retained F elements.
 static QUERY_STATS: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| {
     std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
   });
 
-fn dump_query_stats(record: &QueryRecord, tag: &str) {
+fn dump_query_stats<F: AiurField>(record: &QueryRecord<F>, tag: &str) {
   let mut rows: Vec<(usize, usize, usize)> = record
     .function_queries
     .iter()
@@ -214,7 +213,7 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
   let total_elems: usize = rows.iter().map(|r| r.2).sum();
   eprintln!(
     "[aiur-stats {tag}] function_queries: {total_entries} entries, \
-     {total_elems} G-elems; top maps:"
+     {total_elems} F-elems; top maps:"
   );
   for (i, n, e) in rows.iter().take(30) {
     eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
@@ -227,13 +226,13 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
   eprintln!("[aiur-stats {tag}] memory entries: {}", mem.join(" "));
 }
 
-impl Toplevel {
+impl<F: AiurField> Toplevel<F> {
   pub fn execute(
     &self,
     fun_idx: FunIdx,
-    args: Vec<G>,
-    io_buffer: &mut IOBuffer,
-  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    args: Vec<F>,
+    io_buffer: &mut IOBuffer<F>,
+  ) -> Result<(QueryRecord<F>, Vec<F>), ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
@@ -248,35 +247,35 @@ impl Toplevel {
   }
 }
 
-enum ExecEntry<'a> {
-  Op(&'a Op),
-  Ctrl(&'a Ctrl),
+enum ExecEntry<'a, F> {
+  Op(&'a Op<F>),
+  Ctrl(&'a Ctrl<F>),
 }
 
-struct CallerState {
+struct CallerState<F> {
   fun_idx: FunIdx,
-  map: Vec<G>,
+  map: Vec<F>,
   unconstrained: bool,
   continuation_depth: usize,
 }
 
-struct ContinuationState<'a> {
-  block: &'a Block,
+struct ContinuationState<'a, F> {
+  block: &'a Block<F>,
   map_len: usize,
 }
 
-impl Function {
+impl<F: AiurField> Function<F> {
   fn execute(
     &self,
     mut fun_idx: FunIdx,
-    mut map: Vec<G>,
-    toplevel: &Toplevel,
-    record: &mut QueryRecord,
-    io_buffer: &mut IOBuffer,
-  ) -> Result<Vec<G>, ExecError> {
+    mut map: Vec<F>,
+    toplevel: &Toplevel<F>,
+    record: &mut QueryRecord<F>,
+    io_buffer: &mut IOBuffer<F>,
+  ) -> Result<Vec<F>, ExecError> {
     let mut exec_entries_stack = vec![];
-    let mut callers_states_stack: Vec<CallerState> = vec![];
-    let mut continuation_stack: Vec<ContinuationState<'_>> = vec![];
+    let mut callers_states_stack: Vec<CallerState<F>> = vec![];
+    let mut continuation_stack: Vec<ContinuationState<'_, F>> = vec![];
     macro_rules! push_block_exec_entries {
       ($block:expr) => {
         exec_entries_stack.push(ExecEntry::Ctrl(&$block.ctrl));
@@ -323,10 +322,10 @@ impl Function {
         },
         ExecEntry::Op(Op::EqZero(a)) => {
           let a = map[*a];
-          map.push(G::from_bool(a == G::ZERO));
+          map.push(F::from_bool(a == F::ZERO));
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
-          let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
+          let args: Vec<F> = args.iter().map(|i| map[*i]).collect();
           let callee_unconstrained = unconstrained || *op_unconstrained;
           let cached_output = record.function_queries[*callee_idx]
             .get_mut(&args)
@@ -340,7 +339,7 @@ impl Function {
                 None
               } else {
                 if !callee_unconstrained {
-                  *result.multiplicity += G::ONE;
+                  *result.multiplicity += F::ONE;
                 }
                 Some(result.output.to_vec())
               }
@@ -369,15 +368,15 @@ impl Function {
             .ok_or(ExecError::InvalidMemorySize(size))?;
           if let Some(result) = memory_queries.get_mut(&values) {
             if !unconstrained {
-              *result.multiplicity += G::ONE;
+              *result.multiplicity += F::ONE;
             }
             map.extend_from_slice(result.output);
           } else {
-            let ptr = G::from_usize(memory_queries.len());
+            let ptr = F::from_usize(memory_queries.len());
             memory_queries.insert(
               &values,
               &[ptr],
-              G::from_bool(!unconstrained),
+              F::from_bool(!unconstrained),
             );
             map.push(ptr);
           }
@@ -396,7 +395,7 @@ impl Function {
             .get_index_mut(ptr_usize)
             .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
           if !unconstrained {
-            *multiplicity += G::ONE;
+            *multiplicity += F::ONE;
           }
           map.extend_from_slice(args);
         },
@@ -423,8 +422,8 @@ impl Function {
           let channel = map[*channel];
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let IOKeyInfo { idx, len } = io_buffer.get_info(channel, &key)?;
-          map.push(G::from_usize(*idx));
-          map.push(G::from_usize(*len));
+          map.push(F::from_usize(*idx));
+          map.push(F::from_usize(*len));
         },
         ExecEntry::Op(Op::IOSetInfo(channel, key, idx, len)) => {
           let channel = map[*channel];
@@ -508,7 +507,7 @@ impl Function {
           map.push(carry);
         },
         ExecEntry::Op(Op::U32ToField(bytes)) => {
-          map.push(G::from_u64(u32_value(&map, bytes)));
+          map.push(F::from_u64(u32_value(&map, bytes)));
         },
         ExecEntry::Op(Op::U8Mul(i, j)) => {
           if unconstrained {
@@ -557,7 +556,7 @@ impl Function {
             u32::try_from(a_val).ok().ok_or(ExecError::U32OutOfRange(a_val))?;
           let b_u32 =
             u32::try_from(b_val).ok().ok_or(ExecError::U32OutOfRange(b_val))?;
-          let result = G::from_bool(a_u32 < b_u32);
+          let result = F::from_bool(a_u32 < b_u32);
           map.push(result);
           if !unconstrained {
             let x_bytes = a_u32.to_le_bytes();
@@ -575,7 +574,7 @@ impl Function {
             ] {
               record
                 .bytes2_queries
-                .bump_range_check(&G::from_u8(i), &G::from_u8(j));
+                .bump_range_check(&F::from_u8(i), &F::from_u8(j));
             }
           }
         },
@@ -622,7 +621,7 @@ impl Function {
           //
           // The `memory[10]` channel is chosen because the standard Aiur
           // layout for a tagged enum with a `(U64, &Self)` constructor is
-          // `tag(1) + U64(8) + ptr(1) = 10` G values.
+          // `tag(1) + U64(8) + ptr(1) = 10` F values.
           let a_ptr = map[*a_idx];
           let b_ptr = map[*b_idx];
           let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
@@ -650,7 +649,7 @@ impl Function {
           // No record side effects — the caller pins the bytes with range
           // checks + a recomposition assert + a canonicality assert.
           let bytes = map[*a_idx].as_canonical_u64().to_le_bytes();
-          map.extend(bytes.iter().map(|b| G::from_u8(*b)));
+          map.extend(bytes.iter().map(|b| F::from_u8(*b)));
         },
         ExecEntry::Op(Op::UnconstrainedGInverse(a_idx)) => {
           // Unconstrained hint: the field inverse (`0 ↦ 0`). No record side
@@ -703,7 +702,7 @@ impl Function {
         ExecEntry::Ctrl(Ctrl::Yield(_, output)) => {
           let cont =
             continuation_stack.pop().ok_or(ExecError::NoContinuation)?;
-          let yielded: Vec<G> = output.iter().map(|&v| map[v]).collect();
+          let yielded: Vec<F> = output.iter().map(|&v| map[v]).collect();
           map.truncate(cont.map_len);
           map.extend(yielded);
           push_block_exec_entries!(cont.block);
@@ -719,13 +718,13 @@ impl Function {
             // is constrained promotion of an unconstrained hint entry.
             debug_assert_eq!(result.output, output);
             if !unconstrained {
-              *result.multiplicity += G::ONE;
+              *result.multiplicity += F::ONE;
             }
           } else {
             record.function_queries[fun_idx].insert(
               &map[..input_size],
               &output,
-              G::from_bool(!unconstrained),
+              F::from_bool(!unconstrained),
             );
           }
           if let Some(CallerState {
@@ -755,21 +754,21 @@ impl Function {
   }
 }
 
-pub fn bytes1_execute(
+pub fn bytes1_execute<F: AiurField>(
   byte: usize,
   op: &Bytes1Op,
-  map: &mut Vec<G>,
-  record: &mut QueryRecord,
+  map: &mut Vec<F>,
+  record: &mut QueryRecord<F>,
 ) {
   map.extend(Bytes1.execute(op, &[map[byte]], record));
 }
 
-pub fn bytes2_execute(
+pub fn bytes2_execute<F: AiurField>(
   i: usize,
   j: usize,
   op: &Bytes2Op,
-  map: &mut Vec<G>,
-  record: &mut QueryRecord,
+  map: &mut Vec<F>,
+  record: &mut QueryRecord<F>,
 ) {
   map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
 }
@@ -778,11 +777,11 @@ pub fn bytes2_execute(
 // Per-op value-returning helpers for the codegen'd kernel.
 //
 // The interpreter routes byte ops through `bytes{1,2}_execute(idx, op,
-// &mut Vec<G>, record)` which `extends` the Vec with the gadget's
-// output. The codegen'd kernel doesn't keep a `Vec<G>` value stack
+// &mut Vec<F>, record)` which `extends` the Vec with the gadget's
+// output. The codegen'd kernel doesn't keep a `Vec<F>` value stack
 // (every Aiur ValIdx is a real Rust local), so the wrappers below let
 // it consume gadget outputs as fixed-size arrays / tuples / single Gs
-// without an allocating Vec<G> per op.
+// without an allocating Vec<F> per op.
 //
 // Each helper bumps the same `bytes{1,2}_queries` channel as the
 // interpreter's `Bytes{1,2}::execute` arm, so QueryRecord parity is
@@ -790,18 +789,21 @@ pub fn bytes2_execute(
 // ============================================================================
 
 #[inline]
-pub fn bytes1_bit_decompose_value(byte: G, record: &mut QueryRecord) -> [G; 8] {
+pub fn bytes1_bit_decompose_value<F: AiurField>(
+  byte: F,
+  record: &mut QueryRecord<F>,
+) -> [F; 8] {
   record.bytes1_queries.bump_bit_decomposition(&byte);
   let byte_u64 = byte.as_canonical_u64();
   [
-    G::from_bool(byte_u64 & 1 == 1),
-    G::from_bool(byte_u64 >> 1 & 1 == 1),
-    G::from_bool(byte_u64 >> 2 & 1 == 1),
-    G::from_bool(byte_u64 >> 3 & 1 == 1),
-    G::from_bool(byte_u64 >> 4 & 1 == 1),
-    G::from_bool(byte_u64 >> 5 & 1 == 1),
-    G::from_bool(byte_u64 >> 6 & 1 == 1),
-    G::from_bool(byte_u64 >> 7 & 1 == 1),
+    F::from_bool(byte_u64 & 1 == 1),
+    F::from_bool(byte_u64 >> 1 & 1 == 1),
+    F::from_bool(byte_u64 >> 2 & 1 == 1),
+    F::from_bool(byte_u64 >> 3 & 1 == 1),
+    F::from_bool(byte_u64 >> 4 & 1 == 1),
+    F::from_bool(byte_u64 >> 5 & 1 == 1),
+    F::from_bool(byte_u64 >> 6 & 1 == 1),
+    F::from_bool(byte_u64 >> 7 & 1 == 1),
   ]
 }
 
@@ -809,7 +811,10 @@ pub fn bytes1_bit_decompose_value(byte: G, record: &mut QueryRecord) -> [G; 8] {
 /// of other toplevels that might.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_left_value(byte: G, record: &mut QueryRecord) -> G {
+pub fn bytes1_shift_left_value<F: AiurField>(
+  byte: F,
+  record: &mut QueryRecord<F>,
+) -> F {
   record.bytes1_queries.bump_shift_left(&byte);
   Bytes1::shift_left(&byte)
 }
@@ -818,31 +823,50 @@ pub fn bytes1_shift_left_value(byte: G, record: &mut QueryRecord) -> G {
 /// codegen of other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_right_value(byte: G, record: &mut QueryRecord) -> G {
+pub fn bytes1_shift_right_value<F: AiurField>(
+  byte: F,
+  record: &mut QueryRecord<F>,
+) -> F {
   record.bytes1_queries.bump_shift_right(&byte);
   Bytes1::shift_right(&byte)
 }
 
 #[inline]
-pub fn bytes2_xor_value(a: G, b: G, record: &mut QueryRecord) -> G {
+pub fn bytes2_xor_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> F {
   record.bytes2_queries.bump_xor(&a, &b);
   Bytes2::xor(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_and_value(a: G, b: G, record: &mut QueryRecord) -> G {
+pub fn bytes2_and_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> F {
   record.bytes2_queries.bump_and(&a, &b);
   Bytes2::and(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_or_value(a: G, b: G, record: &mut QueryRecord) -> G {
+pub fn bytes2_or_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> F {
   record.bytes2_queries.bump_or(&a, &b);
   Bytes2::or(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_less_than_value(a: G, b: G, record: &mut QueryRecord) -> G {
+pub fn bytes2_less_than_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> F {
   record.bytes2_queries.bump_less_than(&a, &b);
   Bytes2::less_than(&a, &b)
 }
@@ -851,19 +875,31 @@ pub fn bytes2_less_than_value(a: G, b: G, record: &mut QueryRecord) -> G {
 /// other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes2_mul_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+pub fn bytes2_mul_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> (F, F) {
   record.bytes2_queries.bump_mul(&a, &b);
   Bytes2::mul(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_xor_split7_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+pub fn bytes2_xor_split7_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> (F, F) {
   record.bytes2_queries.bump_xor_split7(&a, &b);
   Bytes2::xor_split7(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+pub fn bytes2_xor_split4_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> (F, F) {
   record.bytes2_queries.bump_xor_split4(&a, &b);
   Bytes2::xor_split4(&a, &b)
 }
@@ -873,13 +909,21 @@ pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
 /// chip; carry is derived natively. The codegen path uses this
 /// helper so the add gadget runs exactly once.
 #[inline]
-pub fn bytes2_add_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+pub fn bytes2_add_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> (F, F) {
   record.bytes2_queries.bump_add(&a, &b);
   Bytes2::add(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_sub_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
+pub fn bytes2_sub_value<F: AiurField>(
+  a: F,
+  b: F,
+  record: &mut QueryRecord<F>,
+) -> (F, F) {
   record.bytes2_queries.bump_sub(&a, &b);
   Bytes2::sub(&a, &b)
 }
@@ -897,19 +941,21 @@ pub use crate::gadgets::bytes2::Bytes2 as CodegenBytes2;
 /// `0 ↦ 0`. Shared by the interpreter, the codegen'd kernels, and trace
 /// population so all three produce identical witness values.
 #[inline]
-pub fn g_inverse_value(x: G) -> G {
-  x.try_inverse().unwrap_or(G::ZERO)
+pub fn g_inverse_value<F: AiurField>(x: F) -> F {
+  // Total: the hint's contract is `0 ↦ 0` (the crate trait leaves
+  // `inverse(0)` implementation-defined, and the p3-backed fields panic).
+  if x.is_zero() { F::ZERO } else { x.inverse() }
 }
 
 /// Helper extracted for the codegen'd kernel: compute the unconstrained
 /// BigUint div-mod and return `(q_ptr, r_ptr)`. Same side effects on
 /// `record.memory_queries` as the inlined `Op::UnconstrainedBigUintDivMod`
 /// arm in the interpreter.
-pub fn unconstrained_big_uint_div_mod_helper(
-  a_ptr: G,
-  b_ptr: G,
-  record: &mut QueryRecord,
-) -> Result<(G, G), ExecError> {
+pub fn unconstrained_big_uint_div_mod_helper<F: AiurField>(
+  a_ptr: F,
+  b_ptr: F,
+  record: &mut QueryRecord<F>,
+) -> Result<(F, F), ExecError> {
   let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
   let b_limbs = read_klimbs_u64(&record.memory_queries, b_ptr)
@@ -934,11 +980,11 @@ pub fn unconstrained_big_uint_div_mod_helper(
 /// population: recompute `(q, r)` and resolve the list-head pointers the
 /// execution already recorded in `memory[10]` — every node was built there
 /// during execution, so each key must be present.
-pub fn find_unconstrained_big_uint_div_mod(
-  a_ptr: G,
-  b_ptr: G,
-  memory: &FxIndexMap<usize, QueryMap>,
-) -> Result<(G, G), String> {
+pub fn find_unconstrained_big_uint_div_mod<F: AiurField>(
+  a_ptr: F,
+  b_ptr: F,
+  memory: &FxIndexMap<usize, QueryMap<F>>,
+) -> Result<(F, F), String> {
   let a_limbs = read_klimbs_u64(memory, a_ptr)?;
   let b_limbs = read_klimbs_u64(memory, b_ptr)?;
   let a_big = klimbs_u64_to_biguint(&a_limbs);
@@ -955,24 +1001,24 @@ pub fn find_unconstrained_big_uint_div_mod(
 
 /// Read-only twin of `build_klimbs_u64`: resolve the pointer of each
 /// (already-recorded) list node without inserting.
-fn find_klimbs_u64(
-  memory: &FxIndexMap<usize, QueryMap>,
+fn find_klimbs_u64<F: AiurField>(
+  memory: &FxIndexMap<usize, QueryMap<F>>,
   limbs: &[u64],
-) -> Result<G, String> {
+) -> Result<F, String> {
   let queries = memory.get(&10).ok_or_else(|| {
     "memory[10] channel not registered (no List<U64> in program?)".to_string()
   })?;
-  let nil_key: Vec<G> =
-    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  let nil_key: Vec<F> =
+    std::iter::once(F::ONE).chain((0..9).map(|_| F::ZERO)).collect();
   let mut tail_ptr = queries
     .get(&nil_key)
     .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
     .output[0];
   for limb in limbs.iter().rev() {
-    let mut key: Vec<G> = Vec::with_capacity(10);
-    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    let mut key: Vec<F> = Vec::with_capacity(10);
+    key.push(F::ZERO); // Cons tag (first variant of ListNode‹U64›)
     for b in &limb.to_le_bytes() {
-      key.push(G::from_u8(*b));
+      key.push(F::from_u8(*b));
     }
     key.push(tail_ptr);
     tail_ptr = queries
@@ -989,9 +1035,9 @@ fn find_klimbs_u64(
 /// u64 limbs in head-first order. Each memory[10] entry is the standard Aiur
 /// tagged-enum layout: `[tag, byte0..byte7, next_ptr]`. `tag == 0` = Nil
 /// (terminator), `tag == 1` = Cons. Bytes are LE within the u64.
-fn read_klimbs_u64(
-  memory: &FxIndexMap<usize, QueryMap>,
-  head_ptr: G,
+fn read_klimbs_u64<F: AiurField>(
+  memory: &FxIndexMap<usize, QueryMap<F>>,
+  head_ptr: F,
 ) -> Result<Vec<u64>, String> {
   let queries = memory.get(&10).ok_or_else(|| {
     "memory[10] channel not registered (no List<U64> in program?)".to_string()
@@ -1067,37 +1113,37 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
 /// (unconstrained); subsequent constrained `Load`s by the kernel will bump
 /// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
 /// identical sub-tails share storage.
-fn build_klimbs_u64(
-  memory: &mut FxIndexMap<usize, QueryMap>,
+fn build_klimbs_u64<F: AiurField>(
+  memory: &mut FxIndexMap<usize, QueryMap<F>>,
   limbs: &[u64],
-) -> Result<G, String> {
+) -> Result<F, String> {
   let queries = memory.get_mut(&10).ok_or_else(|| {
     "memory[10] channel not registered (no List<U64> in program?)".to_string()
   })?;
   // Find or insert the Nil ptr (tag = 1, padded payload all zero).
-  let nil_key: Vec<G> =
-    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  let nil_key: Vec<F> =
+    std::iter::once(F::ONE).chain((0..9).map(|_| F::ZERO)).collect();
   let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
     out.output[0]
   } else {
-    let ptr = G::from_usize(queries.len());
-    queries.insert(&nil_key, &[ptr], G::ZERO);
+    let ptr = F::from_usize(queries.len());
+    queries.insert(&nil_key, &[ptr], F::ZERO);
     ptr
   };
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
   for limb in limbs.iter().rev() {
     let bytes = limb.to_le_bytes();
-    let mut key: Vec<G> = Vec::with_capacity(10);
-    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    let mut key: Vec<F> = Vec::with_capacity(10);
+    key.push(F::ZERO); // Cons tag (first variant of ListNode‹U64›)
     for b in &bytes {
-      key.push(G::from_u8(*b));
+      key.push(F::from_u8(*b));
     }
     key.push(tail_ptr);
     tail_ptr = if let Some(out) = queries.get_mut(&key) {
       out.output[0]
     } else {
-      let ptr = G::from_usize(queries.len());
-      queries.insert(&key, &[ptr], G::ZERO);
+      let ptr = F::from_usize(queries.len());
+      queries.insert(&key, &[ptr], F::ZERO);
       ptr
     };
   }

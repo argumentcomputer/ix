@@ -1,14 +1,14 @@
 use multi_stark::{
   expr::Expr,
   lookup::{Lookup, LookupValues},
-  p3_field::{PrimeCharacteristicRing, PrimeField64},
   p3_matrix::dense::RowMajorMatrix,
 };
 
 use crate::{
-  G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_and_channel,
-  u8_less_than_channel, u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_sub_channel, u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
+  AiurField, G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel,
+  u8_and_channel, u8_less_than_channel, u8_mul_channel, u8_or_channel,
+  u8_range_check_channel, u8_sub_channel, u8_xor_channel,
+  u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
 /// Number of columns in the trace with multiplicities for
@@ -56,7 +56,7 @@ pub enum Bytes2Op {
   XorSplit4,
 }
 
-impl AiurGadget for Bytes2 {
+impl<F: AiurField> AiurGadget<F> for Bytes2 {
   type Op = Bytes2Op;
 
   fn output_size(&self, op: &Bytes2Op) -> usize {
@@ -76,42 +76,42 @@ impl AiurGadget for Bytes2 {
   }
 
   /// Builds the preprocessed trace over all 256 byte values.
-  fn preprocessed(&self) -> Option<RowMajorMatrix<G>> {
+  fn preprocessed(&self) -> Option<RowMajorMatrix<F>> {
     let mut trace_values =
       Vec::with_capacity(256 * 256 * PREPROCESSED_TRACE_WIDTH);
     for i in 0..=u8::MAX {
       for j in 0..=u8::MAX {
         // Raw bytes
-        trace_values.push(G::from_u8(i));
-        trace_values.push(G::from_u8(j));
+        trace_values.push(F::from_u8(i));
+        trace_values.push(F::from_u8(j));
 
         // Xor
-        trace_values.push(G::from_u8(i ^ j));
+        trace_values.push(F::from_u8(i ^ j));
 
         // Add low byte (carry derived in-circuit, no column)
-        trace_values.push(G::from_u8(i.wrapping_add(j)));
+        trace_values.push(F::from_u8(i.wrapping_add(j)));
 
         // Sub low byte (borrow derived in-circuit, no column)
-        trace_values.push(G::from_u8(i.wrapping_sub(j)));
+        trace_values.push(F::from_u8(i.wrapping_sub(j)));
 
         // And
-        trace_values.push(G::from_u8(i & j));
+        trace_values.push(F::from_u8(i & j));
 
         // Or
-        trace_values.push(G::from_u8(i | j));
+        trace_values.push(F::from_u8(i | j));
 
         // Less than
-        trace_values.push(G::from_bool(i < j));
+        trace_values.push(F::from_bool(i < j));
 
         // Mul (low byte, high byte)
         let p = u16::from(i) * u16::from(j);
-        trace_values.push(G::from_u8((p & 0xff) as u8));
-        trace_values.push(G::from_u8((p >> 8) as u8));
+        trace_values.push(F::from_u8((p & 0xff) as u8));
+        trace_values.push(F::from_u8((p >> 8) as u8));
 
         let (hi, lo) = Self::xor_split7_u8(i, j);
-        trace_values.extend([G::from_u8(hi), G::from_u8(lo)]);
+        trace_values.extend([F::from_u8(hi), F::from_u8(lo)]);
         let (hi, lo) = Self::xor_split4_u8(i, j);
-        trace_values.extend([G::from_u8(hi), G::from_u8(lo)]);
+        trace_values.extend([F::from_u8(hi), F::from_u8(lo)]);
       }
     }
     Some(RowMajorMatrix::new(trace_values, PREPROCESSED_TRACE_WIDTH))
@@ -120,9 +120,9 @@ impl AiurGadget for Bytes2 {
   fn execute(
     &self,
     op: &Bytes2Op,
-    input: &[G],
-    record: &mut QueryRecord,
-  ) -> Vec<G> {
+    input: &[F],
+    record: &mut QueryRecord<F>,
+  ) -> Vec<F> {
     let i = &input[0];
     let j = &input[1];
     match op {
@@ -170,7 +170,7 @@ impl AiurGadget for Bytes2 {
     }
   }
 
-  fn lookups(&self) -> Vec<Lookup<Expr<G>>> {
+  fn lookups(&self) -> Vec<Lookup<Expr<F>>> {
     // Channels
     let xor_channel = Expr::constant(u8_xor_channel());
     let add_channel = Expr::constant(u8_add_channel());
@@ -283,10 +283,10 @@ impl AiurGadget for Bytes2 {
 
   fn witness_data(
     &self,
-    record: &QueryRecord,
+    record: &QueryRecord<F>,
     slot_arg_widths: &[usize],
-  ) -> (RowMajorMatrix<G>, LookupValues<G>) {
-    let mut rows = vec![G::ZERO; 256 * 256 * TRACE_WIDTH];
+  ) -> (RowMajorMatrix<F>, LookupValues<F>) {
+    let mut rows = vec![F::ZERO; 256 * 256 * TRACE_WIDTH];
 
     // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
     let mut builder = LookupValues::builder(256 * 256, slot_arg_widths);
@@ -327,8 +327,8 @@ impl AiurGadget for Bytes2 {
           ),
           row_lookups,
         )| {
-          let i = G::from_usize(row_idx / 256);
-          let j = G::from_usize(row_idx % 256);
+          let i = F::from_usize(row_idx / 256);
+          let j = F::from_usize(row_idx % 256);
 
           row[0] = xor;
           row[1] = add;
@@ -386,114 +386,114 @@ impl AiurGadget for Bytes2 {
 }
 
 /// Accumulator of queries performed against `Bytes2`.
-pub struct Bytes2Queries(Box<[[G; TRACE_WIDTH]]>);
+pub struct Bytes2Queries<F = G>(Box<[[F; TRACE_WIDTH]]>);
 
-impl Bytes2Queries {
+impl<F: AiurField> Bytes2Queries<F> {
   #[inline]
   pub(crate) fn new() -> Self {
-    Self(vec![[G::ZERO; TRACE_WIDTH]; 256 * 256].into_boxed_slice())
+    Self(vec![[F::ZERO; TRACE_WIDTH]; 256 * 256].into_boxed_slice())
   }
 
-  pub(crate) fn bump_xor(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 0)
   }
 
-  pub(crate) fn bump_add(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_add(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 1)
   }
 
-  pub(crate) fn bump_sub(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_sub(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 2)
   }
 
-  pub(crate) fn bump_and(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_and(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 3)
   }
 
-  pub(crate) fn bump_or(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_or(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 4)
   }
 
-  pub(crate) fn bump_less_than(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_less_than(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 5)
   }
 
-  pub fn bump_range_check(&mut self, i: &G, j: &G) {
+  pub fn bump_range_check(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 6)
   }
 
-  pub(crate) fn bump_mul(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_mul(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 7)
   }
 
-  pub(crate) fn bump_xor_split7(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split7(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 8)
   }
 
-  pub(crate) fn bump_xor_split4(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split4(&mut self, i: &F, j: &F) {
     self.bump_multiplicity_for(i, j, 9)
   }
 
-  pub(crate) fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
+  pub(crate) fn bump_multiplicity_for(&mut self, i: &F, j: &F, col: usize) {
     let i = usize::try_from(i.as_canonical_u64()).unwrap();
     let j = usize::try_from(j.as_canonical_u64()).unwrap();
     let row = 256 * i + j;
-    self.0[row][col] += G::ONE;
+    self.0[row][col] += F::ONE;
   }
 }
 
 impl Bytes2 {
   #[inline]
-  pub fn xor(i: &G, j: &G) -> G {
+  pub fn xor<F: AiurField>(i: &F, j: &F) -> F {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
-    G::from_u8(i ^ j)
+    F::from_u8(i ^ j)
   }
 
   #[inline]
-  pub fn add(i: &G, j: &G) -> (G, G) {
+  pub fn add<F: AiurField>(i: &F, j: &F) -> (F, F) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let (r, o) = i.overflowing_add(j);
-    (G::from_u8(r), G::from_bool(o))
+    (F::from_u8(r), F::from_bool(o))
   }
 
   #[inline]
-  pub fn and(i: &G, j: &G) -> G {
+  pub fn and<F: AiurField>(i: &F, j: &F) -> F {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
-    G::from_u8(i & j)
+    F::from_u8(i & j)
   }
 
   #[inline]
-  pub fn or(i: &G, j: &G) -> G {
+  pub fn or<F: AiurField>(i: &F, j: &F) -> F {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
-    G::from_u8(i | j)
+    F::from_u8(i | j)
   }
 
   #[inline]
-  pub fn sub(i: &G, j: &G) -> (G, G) {
+  pub fn sub<F: AiurField>(i: &F, j: &F) -> (F, F) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let (r, u) = i.overflowing_sub(j);
-    (G::from_u8(r), G::from_bool(u))
+    (F::from_u8(r), F::from_bool(u))
   }
 
   #[inline]
-  pub fn less_than(i: &G, j: &G) -> G {
+  pub fn less_than<F: AiurField>(i: &F, j: &F) -> F {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
-    G::from_bool(i < j)
+    F::from_bool(i < j)
   }
 
   /// `u8 * u8 -> (low byte, high byte)`. The product fits in 16 bits.
   #[inline]
-  pub fn mul(i: &G, j: &G) -> (G, G) {
+  pub fn mul<F: AiurField>(i: &F, j: &F) -> (F, F) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let p = u16::from(i) * u16::from(j);
-    (G::from_u8((p & 0xff) as u8), G::from_u8((p >> 8) as u8))
+    (F::from_u8((p & 0xff) as u8), F::from_u8((p >> 8) as u8))
   }
 
   /// Building block for a right-rotation by 7 bits over little-endian bytes:
@@ -513,20 +513,20 @@ impl Bytes2 {
   }
 
   #[inline]
-  pub fn xor_split7(i: &G, j: &G) -> (G, G) {
+  pub fn xor_split7<F: AiurField>(i: &F, j: &F) -> (F, F) {
     let (hi, lo) = Self::xor_split7_u8(
       u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
       u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
     );
-    (G::from_u8(hi), G::from_u8(lo))
+    (F::from_u8(hi), F::from_u8(lo))
   }
 
   #[inline]
-  pub fn xor_split4(i: &G, j: &G) -> (G, G) {
+  pub fn xor_split4<F: AiurField>(i: &F, j: &F) -> (F, F) {
     let (hi, lo) = Self::xor_split4_u8(
       u8::try_from(i.as_canonical_u64()).expect("byte-table input"),
       u8::try_from(j.as_canonical_u64()).expect("byte-table input"),
     );
-    (G::from_u8(hi), G::from_u8(lo))
+    (F::from_u8(hi), F::from_u8(lo))
   }
 }
