@@ -5,6 +5,7 @@ public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.MultiStark
+public import Ix.MultiStark.GoldilocksForeign
 public import Blake3.Rust
 
 /-!
@@ -74,8 +75,22 @@ def selfTests : List (Lean.Name × String) := [
   (`eg_ops_test, "non-native ExtGoldilocks add/mul/inverse/div match reference"),
 ]
 
-/-- Compile the verifier-plus-tests toplevel once, then execute each `*_test`
-entrypoint and assert it returns `1`. -/
+/-- Self-test entrypoints of the FOREIGN (byte-limb) Goldilocks module
+(`Ix/MultiStark/GoldilocksForeign.lean`). Same reference vectors as the
+native form's suite — the interface contract is identical semantics. The
+module compiles as its own toplevel: it is the ALTERNATIVE to
+`goldilocksNative` (same names by design), so it can never merge into the
+verifier toplevel alongside it. -/
+def foreignSelfTests : List (Lean.Name × String) := [
+  (`fg_addsub_test, "foreign (byte-limb) Goldilocks add/sub match reference"),
+  (`fg_muldiv_test, "foreign (byte-limb) Goldilocks mul/inverse match reference"),
+  (`fg_ext_ops_test, "foreign (byte-limb) ExtGoldilocks ops match reference"),
+  (`fg_boundary_test, "foreign (byte-limb) gl_val/gl_to_bytes/gl_lt_p/two-adic root"),
+]
+
+/-- Compile the verifier-plus-tests toplevel (and the standalone foreign
+Goldilocks module) once, then execute each `*_test` entrypoint and assert it
+returns `1`. -/
 def selfTestSuite : IO UInt32 := do
   IO.println "multi-stark"
   let top ← match MultiStark.multiStarkTests with
@@ -84,11 +99,15 @@ def selfTestSuite : IO UInt32 := do
   let compiled ← match top.compile with
     | .error e => IO.eprintln s!"verifier-tests compilation failed: {e}"; return 1
     | .ok c => pure c
-  lspecEachIO selfTests fun (name, desc) => pure <|
-    match compiled.getFuncIdx name with
+  let foreignCompiled ← match MultiStark.goldilocksForeign.compile with
+    | .error e => IO.eprintln s!"goldilocks-foreign compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let cases := selfTests.map (compiled, ·) ++ foreignSelfTests.map (foreignCompiled, ·)
+  lspecEachIO cases fun (unit, (name, desc)) => pure <|
+    match unit.getFuncIdx name with
     | none => test s!"{name}: {desc} — entrypoint not found" false
     | some idx =>
-      match compiled.bytecode.execute idx #[] default with
+      match unit.bytecode.execute idx #[] default with
       | .error e => test s!"{name}: {desc} — execution failed: {e}" false
       | .ok (output, _, _) => test s!"{name}: {desc}" (output == #[Aiur.G.ofNat 1])
 
