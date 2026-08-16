@@ -312,6 +312,25 @@ def defEq := ⟦
   }
 
   fn k_is_def_eq_slow_nd(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    let a_core = whnf_struct_core(a, types);
+    let b_core = whnf_struct_core(b, types);
+    match ptr_val(a_core) - ptr_val(b_core) {
+      0 => 1,
+      _ =>
+        match k_is_def_eq_struct_safe(a_core, b_core, types) {
+          1 => 1,
+          _ =>
+            match try_def_eq_app(a_core, b_core, types) {
+              1 => 1,
+              _ => k_is_def_eq_slow_nd_after_core(a, b, a_core, b_core, types),
+            },
+        },
+    }
+  }
+
+  fn k_is_def_eq_slow_nd_after_core(orig_a: KExpr, orig_b: KExpr,
+                                         a: KExpr, b: KExpr,
+                                         types: List‹KExpr›) -> G {
     let aw_nd = whnf_nd(a, types);
     let bw_nd = whnf_nd(b, types);
     match ptr_val(aw_nd) - ptr_val(bw_nd) {
@@ -322,7 +341,7 @@ def defEq := ⟦
           _ =>
             match try_def_eq_app(aw_nd, bw_nd, types) {
               1 => 1,
-              _ => k_is_def_eq_slow2(aw_nd, bw_nd, types),
+              _ => k_is_def_eq_slow2(orig_a, orig_b, aw_nd, bw_nd, types),
             },
         },
     }
@@ -379,7 +398,9 @@ def defEq := ⟦
   -- inside lazy_delta_loop, one definitional step at a time, with the
   -- cheap tiers re-consulted between steps; the loop hands back its
   -- final forms for the structural fallback tiers.
-  fn k_is_def_eq_slow2(aw: KExpr, bw: KExpr, types: List‹KExpr›) -> G {
+  fn k_is_def_eq_slow2(orig_a: KExpr, orig_b: KExpr,
+                            aw: KExpr, bw: KExpr,
+                            types: List‹KExpr›) -> G {
     match ptr_val(aw) - ptr_val(bw) {
       0 => 1,
       _ =>
@@ -398,10 +419,10 @@ def defEq := ⟦
                         match try_def_eq_nat(aw, bw, types) {
                           (1, eq) => eq,
                           _ =>
-                        match lazy_delta_loop(aw, bw, 1024, types) {
+                        match lazy_delta_loop(aw, bw, 16, types) {
                           (1, _, _) => 1,
-                          (_, fa, fb) => slow2_after_delta(aw, bw, fa, fb,
-                                                               types),
+                          (_, fa, fb) => slow2_after_delta(orig_a, orig_b,
+                                                   fa, fb, types),
                         },
                         },
                     },
@@ -411,50 +432,164 @@ def defEq := ⟦
     }
   }
 
-  -- Undecided lazy-delta exit. If the loop made progress (either final
-  -- form differs from its input), re-offer the whole tier stack on the
-  -- final forms — proof-irrel/eta/nat may now apply where they missed
-  -- on the folded spellings. Terminates: delta chains are finite and a
-  -- no-progress loop exit falls through to the structural tiers here.
-  fn slow2_after_delta(aw: KExpr, bw: KExpr, fa: KExpr, fb: KExpr,
+  -- Undecided lazy-delta exit. Re-offer the cheap terminal tiers once on
+  -- the final forms, but do not restart k_is_def_eq_slow2: doing so refreshes
+  -- the lazy budget whenever WHNF rebuilds a term at a fresh pointer and can
+  -- turn a bounded projection/constant alternation into an unbounded cycle.
+  -- If the accelerator cannot prove equality, restore the historical eager
+  -- path on its original inputs.
+  fn slow2_after_delta(orig_a: KExpr, orig_b: KExpr,
+                            fa: KExpr, fb: KExpr,
                             types: List‹KExpr›) -> G {
-    match ptr_val(fa) - ptr_val(aw) {
-      0 =>
-        match ptr_val(fb) - ptr_val(bw) {
-          0 =>
-            match try_eta_swap(fa, fb, types) {
-              1 => 1,
-              _ =>
-                match k_is_def_eq_struct(fa, fb, types) {
-                  1 => 1,
-                  _ => slow2_full_whnf_last_resort(fa, fb, types),
-                },
-            },
-          _ => k_is_def_eq_slow2(fa, fb, types),
-        },
-      _ => k_is_def_eq_slow2(fa, fb, types),
+    match k_is_def_eq_struct_bounded(fa, fb, 8, types) {
+      (1, _) => 1,
+      _ => slow2_eager_fallback(orig_a, orig_b, types),
     }
   }
 
-  -- Last-resort tier: every lazy tier failed on delta-exhausted forms.
-  -- Fall back to one round of FULL whnf (the pre-lazy behavior) and
-  -- re-enter if it moved either side. This closes spelling pairs the
-  -- nd discipline cannot converge (mixed folded/inlined brecOn tower
-  -- spellings of bitwise/arith functions in stored proof terms) while
-  -- staying off the hot path: open-primitive pairs that would detonate
-  -- under full whnf close earlier via ptr-eq/congruence/nat tiers and
-  -- never reach this tier.
-  fn slow2_full_whnf_last_resort(fa: KExpr, fb: KExpr,
-                                      types: List‹KExpr›) -> G {
-    let fw_a = whnf(fa, types);
-    let fw_b = whnf(fb, types);
-    match ptr_val(fw_a) - ptr_val(fa) {
-      0 =>
-        match ptr_val(fw_b) - ptr_val(fb) {
-          0 => 0,
-          _ => k_is_def_eq_slow2(fw_a, fw_b, types),
+  -- Structural comparison with one credit shared by the entire tree. The
+  -- credit permits a single bounded lazy reduction at the first mismatching
+  -- subtree; recursive function/argument comparisons thread the remainder,
+  -- so work cannot multiply with application depth or sibling count.
+  fn k_is_def_eq_struct_bounded(a: KExpr, b: KExpr, credit: G,
+                                     types: List‹KExpr›) -> (G, G) {
+    match ptr_val(a) - ptr_val(b) {
+      0 => (1, credit),
+      _ =>
+        match load(a) {
+          KExprNode.BVar(i) =>
+            match load(b) {
+              KExprNode.BVar(j) =>
+                match i - j { 0 => (1, credit), _ => (0, credit), },
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          KExprNode.Srt(la) =>
+            match load(b) {
+              KExprNode.Srt(lb) => (level_equal(la, lb), credit),
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          KExprNode.Const(addr_a, lvls_a) =>
+            match load(b) {
+              KExprNode.Const(addr_b, lvls_b) =>
+                match address_eq(addr_a, addr_b) {
+                  1 => (level_list_eq(lvls_a, lvls_b), credit),
+                  _ => k_is_def_eq_struct_spend(a, b, credit, types),
+                },
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          KExprNode.App(fa, xa) =>
+            match load(b) {
+              KExprNode.App(fb, xb) =>
+                match k_is_def_eq_struct_bounded(fa, fb, credit, types) {
+                  (1, rest) =>
+                    k_is_def_eq_struct_bounded(xa, xb, rest, types),
+                  (_, rest) => (0, rest),
+                },
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          KExprNode.Lam(ta, ba) =>
+            match load(b) {
+              KExprNode.Lam(tb, bb) =>
+                match k_is_def_eq_struct_bounded(ta, tb, credit, types) {
+                  (1, rest) =>
+                    let types2 = store(ListNode.Cons(ta, types));
+                    k_is_def_eq_struct_bounded(ba, bb, rest, types2),
+                  (_, rest) => (0, rest),
+                },
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          KExprNode.Forall(ta, ba) =>
+            match load(b) {
+              KExprNode.Forall(tb, bb) =>
+                match k_is_def_eq_struct_bounded(ta, tb, credit, types) {
+                  (1, rest) =>
+                    let types2 = store(ListNode.Cons(ta, types));
+                    k_is_def_eq_struct_bounded(ba, bb, rest, types2),
+                  (_, rest) => (0, rest),
+                },
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          KExprNode.Lit(la) =>
+            match load(b) {
+              KExprNode.Lit(lb) => (literal_eq(la, lb), credit),
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          KExprNode.Proj(struct_a, fidx_a, ea) =>
+            match load(b) {
+              KExprNode.Proj(struct_b, fidx_b, eb) =>
+                match address_eq(struct_a, struct_b) {
+                  1 =>
+                    match fidx_a - fidx_b {
+                      0 => k_is_def_eq_struct_bounded(ea, eb, credit, types),
+                      _ => (0, credit),
+                    },
+                  _ => k_is_def_eq_struct_spend(a, b, credit, types),
+                },
+              _ => k_is_def_eq_struct_spend(a, b, credit, types),
+            },
+          _ => k_is_def_eq_struct_spend(a, b, credit, types),
         },
-      _ => k_is_def_eq_slow2(fw_a, fw_b, types),
+    }
+  }
+
+  fn k_is_def_eq_struct_spend(a: KExpr, b: KExpr, credit: G,
+                                   types: List‹KExpr›) -> (G, G) {
+    match credit {
+      0 => (0, 0),
+      _ =>
+        let rest = credit - 1;
+        let aw = whnf_nd(a, types);
+        let bw = whnf_nd(b, types);
+        match ptr_val(aw) - ptr_val(bw) {
+          0 => (1, rest),
+          _ =>
+            match try_def_eq_nat(aw, bw, types) {
+              (1, eq) => (eq, rest),
+              _ =>
+                match lazy_delta_loop(aw, bw, 8, types) {
+                  (1, _, _) => (1, rest),
+                  (_, fa, fb) =>
+                    k_is_def_eq_struct_bounded(fa, fb, rest, types),
+                },
+            },
+        },
+    }
+  }
+
+  -- Compatibility fallback for pairs the bounded lazy accelerator leaves
+  -- undecided. Full WHNF is deliberately applied to the original forms, not
+  -- the partially unfolded lazy state, so existing successful reduction
+  -- routes remain intact.
+  fn slow2_eager_fallback(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
+    let aw = whnf(a, types);
+    let bw = whnf(b, types);
+    match ptr_val(aw) - ptr_val(bw) {
+      0 => 1,
+      _ =>
+        match try_proof_irrel(aw, bw, types) {
+          1 => 1,
+          _ =>
+            match try_unit_like(aw, bw, types) {
+              1 => 1,
+              _ =>
+                match try_eta_struct(aw, bw, types) {
+                  1 => 1,
+                  _ =>
+                    match try_eta_struct(bw, aw, types) {
+                      1 => 1,
+                      _ =>
+                        match try_def_eq_nat(aw, bw, types) {
+                          (1, eq) => eq,
+                          _ =>
+                            match try_eta_swap(aw, bw, types) {
+                              1 => 1,
+                              _ => k_is_def_eq_struct(aw, bw, types),
+                            },
+                        },
+                    },
+                },
+            },
+        },
     }
   }
 
@@ -974,13 +1109,9 @@ def defEq := ⟦
     -- Proj-headed side (e.g. `instLEUInt32.1`) can face a plain
     -- non-Defn head (a ctor-built function constant) and still be one
     -- proj-unfold away from it.
-    match try_unfold_proj_app(b) {
+    match try_unfold_proj_app(b, types) {
       (1, b2) =>
-        let bw = whnf_nd(b2, types);
-        match k_is_def_eq(a, bw, types) {
-          1 => (1, a, bw),
-          _ => lazy_delta_loop(a, bw, fuel - 1, types),
-        },
+        lazy_delta_loop(a, b2, fuel - 1, types),
       _ =>
         let a_ci = load(get_ci(a_addr));
         match is_defn_or_thm(a_ci) {
@@ -989,10 +1120,7 @@ def defEq := ⟦
             let au = try_unfold_head(a, a_ci, types);
             match au {
               (1, aw) =>
-                match k_is_def_eq(aw, b, types) {
-                  1 => (1, aw, b),
-                  _ => lazy_delta_loop(aw, b, fuel - 1, types),
-                },
+                lazy_delta_loop(aw, b, fuel - 1, types),
               _ => (0, a, b),
             },
         },
@@ -1002,13 +1130,9 @@ def defEq := ⟦
   -- Symmetric.
   fn lazy_delta_b_const_a_proj(b_addr: Addr, a: KExpr, b: KExpr, fuel: G,
                                        types: List‹KExpr›) -> (G, KExpr, KExpr) {
-    match try_unfold_proj_app(a) {
+    match try_unfold_proj_app(a, types) {
       (1, a2) =>
-        let aw = whnf_nd(a2, types);
-        match k_is_def_eq(aw, b, types) {
-          1 => (1, aw, b),
-          _ => lazy_delta_loop(aw, b, fuel - 1, types),
-        },
+        lazy_delta_loop(a2, b, fuel - 1, types),
       _ =>
         let b_ci = load(get_ci(b_addr));
         match is_defn_or_thm(b_ci) {
@@ -1017,10 +1141,7 @@ def defEq := ⟦
             let bu = try_unfold_head(b, b_ci, types);
             match bu {
               (1, bw) =>
-                match k_is_def_eq(a, bw, types) {
-                  1 => (1, a, bw),
-                  _ => lazy_delta_loop(a, bw, fuel - 1, types),
-                },
+                lazy_delta_loop(a, bw, fuel - 1, types),
               _ => (0, a, b),
             },
         },
@@ -1028,34 +1149,28 @@ def defEq := ⟦
   }
 
   -- Both are Proj-headed spines. Try unfold_proj_app on either or both.
+  -- Projection/head reductions continue this bounded loop directly.
+  -- Re-entering `k_is_def_eq` here would reset the lazy budget on every
+  -- step; alternating projection and constant spellings can then recurse
+  -- forever (Batteries' Char.toUpper proof cycles around Decidable.casesOn).
+  -- The loop itself rechecks ptr/Nat equality, and its caller applies the
+  -- remaining structural/eta/full-WHNF tiers to the final forms.
   fn lazy_delta_both_proj(a: KExpr, b: KExpr, fuel: G,
                                types: List‹KExpr›) -> (G, KExpr, KExpr) {
-    let ua = try_unfold_proj_app(a);
-    let ub = try_unfold_proj_app(b);
+    let ua = try_unfold_proj_app(a, types);
+    let ub = try_unfold_proj_app(b, types);
     match ua {
       (1, a2) =>
-        let aw = whnf_nd(a2, types);
         match ub {
           (1, b2) =>
-            let bw = whnf_nd(b2, types);
-            match k_is_def_eq(aw, bw, types) {
-              1 => (1, aw, bw),
-              _ => lazy_delta_loop(aw, bw, fuel - 1, types),
-            },
+            lazy_delta_loop(a2, b2, fuel - 1, types),
           _ =>
-            match k_is_def_eq(aw, b, types) {
-              1 => (1, aw, b),
-              _ => lazy_delta_loop(aw, b, fuel - 1, types),
-            },
+            lazy_delta_loop(a2, b, fuel - 1, types),
         },
       _ =>
         match ub {
           (1, b2) =>
-            let bw = whnf_nd(b2, types);
-            match k_is_def_eq(a, bw, types) {
-              1 => (1, a, bw),
-              _ => lazy_delta_loop(a, bw, fuel - 1, types),
-            },
+            lazy_delta_loop(a, b2, fuel - 1, types),
           _ => (0, a, b),
         },
     }
@@ -1069,19 +1184,32 @@ def defEq := ⟦
     }
   }
 
-  -- Mirror try_unfold_proj_app (Kernel/DefEq.lean:732). If e collects
-  -- to Proj(_, _, inner) spine and inner is delta-eligible Const-headed,
-  -- unfold inner and rewrap Proj + reapply spine.
-  fn try_unfold_proj_app(e: KExpr) -> (G, KExpr) {
+  -- First reduce the whole projection-headed spine without delta, so cheap
+  -- projection/iota and primitive rules fire before we expose dictionary
+  -- implementations. Aiur WHNF may rebuild an unchanged stuck expression at
+  -- a fresh pointer (unlike Rust's hash-consed expressions), so real progress
+  -- means that the projection head disappeared. If it remains stuck, retain
+  -- the old single delta step on its scrutinee: signed-integer proofs need to
+  -- expose a ctor-built instance before the projection can fire. Continuing
+  -- the caller's bounded lazy loop prevents either path from resetting fuel.
+  fn try_unfold_proj_app(e: KExpr, types: List‹KExpr›) -> (G, KExpr) {
     match collect_spine(e) {
       (head, spine) =>
         match load(head) {
           KExprNode.Proj(struct_addr, fidx, inner) =>
-            match delta_unfold(inner) {
-              (1, inner2) =>
-                let new_head = store(KExprNode.Proj(struct_addr, fidx, inner2));
-                (1, apply_spine(new_head, spine)),
-              _ => (0, e),
+            let reduced = whnf_nd(e, types);
+            match collect_spine(reduced) {
+              (reduced_head, _) =>
+                match load(reduced_head) {
+                  KExprNode.Proj(_, _, _) =>
+                    match delta_unfold(inner) {
+                      (1, inner2) =>
+                        let new_head = store(KExprNode.Proj(struct_addr, fidx, inner2));
+                        (1, apply_spine(new_head, spine)),
+                      _ => (0, e),
+                    },
+                  _ => (1, reduced),
+                },
             },
           _ => (0, e),
         },
