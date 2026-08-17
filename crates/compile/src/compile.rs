@@ -66,6 +66,16 @@ pub static ANALYZE_SHARING: std::sync::atomic::AtomicBool =
 pub static IX_TIMING: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_TIMING").is_ok());
 
+/// Log every aux-name claim: alias insertions, canonical patch name
+/// registrations, evaporation decisions, and call-site-plan
+/// registrations — with full addresses and block context. The
+/// cross-SCC ownership of `all[0].rec_N`-style names is invisible in
+/// normal logs; this flag exists to attribute both claimants when a
+/// name is contested (see plans/aux-recursor-alias-collision.md).
+/// Set via IX_LOG_AUX_NAMES=1.
+pub static IX_LOG_AUX_NAMES: std::sync::LazyLock<bool> =
+  std::sync::LazyLock::new(|| std::env::var("IX_LOG_AUX_NAMES").is_ok());
+
 /// Options controlling whole-environment compilation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CompileOptions {
@@ -4259,10 +4269,17 @@ fn compile_mutual(
             .zip(original_all.iter())
             .any(|(class, orig)| class[0] != *orig)));
     let aux_layout_changed = aux_layout_stored.as_ref().is_some_and(|layout| {
-      layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
-        canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
-          && canonical_i != source_j
-      })
+      // Evaporated positions need their head-rewrite plans even when no
+      // canonical slot moved (all-OUT perms). `user_layout_changed`
+      // happens to cover today's shapes (evaporation requires an SCC
+      // split), but plan computation must not depend on that
+      // coincidence. Keep this predicate identical to the decompile dual
+      // in `install_decompile_call_site_plans`.
+      layout.evaporated.iter().any(|&b| b)
+        || layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
+          canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
+            && canonical_i != source_j
+        })
     });
 
     if user_layout_changed || aux_layout_changed {
@@ -4273,28 +4290,87 @@ fn compile_mutual(
         aux_layout_stored.as_ref(),
       )?;
       for (name, plan) in plans {
+        if *IX_LOG_AUX_NAMES {
+          eprintln!(
+            "[aux-names] plan scc={} all0={} {} head_rewrite={} overwrote={}",
+            plan_class_names
+              .first()
+              .and_then(|c| c.first())
+              .map_or_else(String::new, |n| n.pretty()),
+            original_all.first().map_or_else(String::new, |n| n.pretty()),
+            name.pretty(),
+            plan
+              .head_rewrite
+              .as_ref()
+              .map_or_else(|| "none".to_string(), |h| h.target_rec.pretty()),
+            stt.call_site_plans.contains_key(&name),
+          );
+        }
         // Head-rewritten (evaporated-aux) recursors get NO derived
         // brecOn/below plans: their `.brecOn_N`/`.below_N` siblings have no
         // canonical regeneration — they compile as surgered originals that
         // KEEP the source telescope — so their callers must not be
         // rewritten.
+        //
+        // Plan keys (`X.rec`, `all0.rec_N`, …) are shared across every
+        // SCC split from one original mutual, and `DashMap::insert` is
+        // last-writer-wins. With per-position ownership resolved in
+        // aux_gen exactly one block computes each name's plan, so a
+        // differing pre-existing entry is a claim collision — fail
+        // loudly instead of shipping schedule-dependent rewrites
+        // (plans/aux-recursor-alias-collision.md §2.4).
         if plan.head_rewrite.is_none() {
           if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
             && lean_env.get(&brecon_name).is_some()
           {
-            stt.brec_on_call_site_plans.insert(
-              brecon_name,
-              surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-            );
+            let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+            if stt
+              .brec_on_call_site_plans
+              .get(&brecon_name)
+              .is_some_and(|existing| *existing != new_plan)
+            {
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "conflicting brecOn call-site plans for '{}' — two blocks \
+                   claim one source-indexed aux name",
+                  brecon_name.pretty(),
+                ),
+              });
+            }
+            stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
           }
           if let Some(below_name) = surgery::rec_name_to_below_name(&name)
             && lean_env.get(&below_name).is_some()
           {
-            stt.below_call_site_plans.insert(
-              below_name,
-              surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-            );
+            let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+            if stt
+              .below_call_site_plans
+              .get(&below_name)
+              .is_some_and(|existing| *existing != new_plan)
+            {
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "conflicting below call-site plans for '{}' — two blocks \
+                   claim one source-indexed aux name",
+                  below_name.pretty(),
+                ),
+              });
+            }
+            stt.below_call_site_plans.insert(below_name, new_plan);
           }
+        }
+        if stt
+          .call_site_plans
+          .get(&name)
+          .is_some_and(|existing| *existing != plan)
+        {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "conflicting call-site plans for '{}' — two blocks claim one \
+               source-indexed aux name",
+              name.pretty(),
+            ),
+          });
         }
         stt.call_site_plans.insert(name, plan);
       }

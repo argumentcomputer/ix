@@ -513,6 +513,15 @@ def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
 structure AuxLayout where
   perm : Array UInt64 := #[]
   sourceCtorCounts : Array UInt64 := #[]
+  /-- `evaporated[sourceJ] ≠ 0`: this block owns the evaporation of source
+      position `sourceJ` (alias to the external head's generic recursor +
+      head-rewrite call-site plan). Positions canonical in another SCC of
+      the same original mutual stay `PERM_OUT_OF_SCC` in `perm` with a `0`
+      here. Same length as `perm` once populated; legacy tag-1 serialized
+      layouts (and pre-field construction sites via this default) decode
+      as all-`0`. Mirrors Rust `ixon::env::AuxLayout.evaporated`
+      (`Vec<bool>`, carried as 0/1 u64s across the FFI). -/
+  evaporated : Array UInt64 := #[]
   deriving BEq, Repr, Inhabited
 
 /-- Per-constant metadata variant payload with arena-based expression
@@ -1624,15 +1633,23 @@ def putConstantMetaInfoIndexed (cm : ConstantMetaInfo) (idx : NameIndex) : PutM 
     for cls in all do
       putIdxVec cls idx
     -- Option AuxLayout: 0 tag = none, 1 tag = some(perm vec, ctor-count
-    -- vec), both as Tag0 u64s (mirrors Rust `ConstantMetaInfo::Muts`).
+    -- vec), 2 tag = some(perm vec, ctor-count vec, evaporated flags).
+    -- Vecs are Tag0 u64s; evaporated flags are one u8 (0/1) per entry.
+    -- Tag 1 is still written when no position evaporated so blocks
+    -- without evaporation stay byte-identical to the pre-`evaporated`
+    -- format (mirrors Rust `ConstantMetaInfo::Muts`).
     match auxLayout with
     | none => putU8 0
     | some layout =>
-      putU8 1
+      let anyEvaporated := layout.evaporated.any (· != 0)
+      putU8 (if anyEvaporated then 2 else 1)
       putTag0 ⟨layout.perm.size.toUInt64⟩
       for p in layout.perm do putTag0 ⟨p⟩
       putTag0 ⟨layout.sourceCtorCounts.size.toUInt64⟩
       for c in layout.sourceCtorCounts do putTag0 ⟨c⟩
+      if anyEvaporated then
+        putTag0 ⟨layout.evaporated.size.toUInt64⟩
+        for b in layout.evaporated do putU8 (if b != 0 then 1 else 0)
 
 /-- Serialize ConstantMeta (wrapper) with indexed addresses: the variant
     payload, then the three extension tables — sharing exprs (`putExpr`),
@@ -1712,9 +1729,10 @@ def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo 
       let mut all : Array (Array Address) := #[]
       for _ in [0:n] do
         all := all.push (← getIdxVec rev)
-      let auxLayout ← match ← getU8 with
+      let auxLayoutTag ← getU8
+      let auxLayout ← match auxLayoutTag with
         | 0 => pure none
-        | 1 =>
+        | 1 | 2 => do
           let nPerm := (← getTag0).size.toNat
           let mut perm : Array UInt64 := #[]
           for _ in [0:nPerm] do
@@ -1723,7 +1741,19 @@ def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo 
           let mut sourceCtorCounts : Array UInt64 := #[]
           for _ in [0:nCounts] do
             sourceCtorCounts := sourceCtorCounts.push (← getTag0).size
-          pure (some { perm, sourceCtorCounts : AuxLayout })
+          -- Tag 1: pre-`evaporated` layout — all positions default to 0.
+          -- Tag 2: explicit per-position 0/1 flags.
+          let mut evaporated : Array UInt64 := #[]
+          if auxLayoutTag == 2 then
+            let nEvap := (← getTag0).size.toNat
+            for _ in [0:nEvap] do
+              match ← getU8 with
+              | 0 => evaporated := evaporated.push 0
+              | 1 => evaporated := evaporated.push 1
+              | x => throw s!"invalid ConstantMeta muts evaporated flag {x}"
+          else
+            evaporated := .replicate nPerm 0
+          pure (some { perm, sourceCtorCounts, evaporated : AuxLayout })
         | x => throw s!"invalid ConstantMeta muts aux_layout tag {x}"
       pure (.muts all auxLayout)
     | x => throw s!"invalid ConstantMeta tag {x}"

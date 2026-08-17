@@ -150,6 +150,12 @@ pub struct AuxPatchesOutput {
   /// `None` when the block has no nested auxiliaries (or the aux_gen
   /// pipeline didn't reach the hash-sort step, e.g. empty `original_all`).
   pub perm: Option<Vec<usize>>,
+  /// `evaporated[source_j]`: this block registered the evaporation alias
+  /// `all0.rec_{source_j+1} → <ext>.rec` for the position (and surgery
+  /// must register the matching head-rewrite plan). `Some` exactly when
+  /// `perm` is; positions that are canonical here or owned by another
+  /// SCC are `false`. Travels into `AuxLayout.evaporated`.
+  pub evaporated: Option<Vec<bool>>,
   /// Number of equivalence classes — i.e. primary (non-aux) members in the
   /// canonical block. Reserved for callers that need to build
   /// [`congruence::perm::PermCtx`] (see the `validate-aux` Phase 2 path in
@@ -200,6 +206,7 @@ pub fn generate_aux_patches(
       patches,
       aliases,
       perm: None,
+      evaporated: None,
       n_classes: sorted_classes.len(),
       n_canonical_aux: 0,
       n_source_aux: 0,
@@ -910,6 +917,18 @@ pub fn generate_aux_patches(
           });
         };
         if target_name != source_name {
+          if *crate::compile::IX_LOG_AUX_NAMES {
+            eprintln!(
+              "[aux-names] orig-order-alias scc={} all0={} src_j={source_j} canon_i={canonical_i} {} -> {}",
+              sorted_classes
+                .first()
+                .and_then(|c| c.first())
+                .map_or_else(String::new, |n| n.pretty()),
+              first_orig_name.pretty(),
+              source_name.pretty(),
+              target_name.pretty(),
+            );
+          }
           aliases.insert(source_name, target_name);
         }
       }
@@ -938,6 +957,18 @@ pub fn generate_aux_patches(
           });
         };
         if target_name != source_name {
+          if *crate::compile::IX_LOG_AUX_NAMES {
+            eprintln!(
+              "[aux-names] orig-order-alias scc={} all0={} src_j={source_j} canon_i={canonical_i} {} -> {}",
+              sorted_classes
+                .first()
+                .and_then(|c| c.first())
+                .map_or_else(String::new, |n| n.pretty()),
+              first_orig_name.pretty(),
+              source_name.pretty(),
+              target_name.pretty(),
+            );
+          }
           aliases.insert(source_name, target_name);
         }
       }
@@ -945,63 +976,149 @@ pub fn generate_aux_patches(
   }
 
   // Evaporated aux recursor aliases. A source aux whose OWNER is in this
-  // SCC but whose spec-param inductives are not has no home in ANY split
-  // SCC (SCCs partition the block): the ctor walk that discovers it lives
-  // here, but the spec inductives that would make it a canonical aux
-  // member split away. The aux evaporates — the canonical block has no
-  // member for it, and dropping the irrelevant motives/minors from Lean's
-  // `<all0>.rec_{j+1}` leaves exactly the external inductive's own generic
-  // recursor (the isomorphic minimal declaration proves the same family
-  // without them). Alias the Lean-visible name to `<ext>.rec` so the claim
-  // resolves to the canonical constant instead of falling back to an
-  // original-form compile — the kernel rejects a standalone specialized
-  // recursor block, since it regenerates the generic signature from the
-  // external inductive's block. Call sites are rewritten onto the external
-  // telescope by the out-of-SCC surgery plan (`compute_call_site_plans`).
+  // SCC but whose spec-param inductives are not may have no home in ANY
+  // split SCC: the ctor walk that discovers it lives here, but the spec
+  // inductives that would make it a canonical aux member split away. The
+  // aux evaporates — the canonical block has no member for it, and
+  // dropping the irrelevant motives/minors from Lean's `<all0>.rec_{j+1}`
+  // leaves exactly the external inductive's own generic recursor (the
+  // isomorphic minimal declaration proves the same family without them).
+  // Alias the Lean-visible name to `<ext>.rec` so the claim resolves to
+  // the canonical constant instead of falling back to an original-form
+  // compile — the kernel rejects a standalone specialized recursor block,
+  // since it regenerates the generic signature from the external
+  // inductive's block. Call sites are rewritten onto the external
+  // telescope by the surgery head-rewrite plan, keyed off the SAME
+  // per-position `evaporated` flags recorded here (alias and rewrite fire
+  // together or not at all).
   //
-  // The owner gate matters: an out-of-SCC entry whose owner is ALSO
-  // out-of-SCC is simply another SCC's aux (e.g. `List A` seen from C's
-  // block in an over-merged [A, B, C]) — that SCC compiles it as a normal
-  // canonical aux and registers the `_N` name; aliasing it here would
-  // conflict.
+  // Two gates make the decision global and deterministic
+  // (plans/aux-recursor-alias-collision.md §2, §13):
+  //
+  //  * Owner gate: an out-of-SCC entry whose owner is ALSO out-of-SCC is
+  //    another SCC's business — only the owner's SCC may decide
+  //    evaporation for a position nobody discovers.
+  //  * Claim probe: when the SCC owning the position's spec members
+  //    canonically discovers the same occurrence from its OWN
+  //    constructors, the `all0.rec_{j+1}` name belongs to that SCC's
+  //    canonical patch (registered before this block ran — the
+  //    discovering reference forces the scheduler edge). Evaporating
+  //    here would claim the same name with different content — the
+  //    TruthMines `Binds.rec_2` collision.
+  let mut evaporated: Option<Vec<bool>> =
+    captured_perm.as_ref().map(|p| vec![false; p.len()]);
   if let Some(perm) = captured_perm.as_ref()
     && perm.contains(&nested::PERM_OUT_OF_SCC)
     && let Some(first_orig_name) = original_all.first()
   {
     let in_scc: FxHashSet<&Name> = sorted_classes.iter().flatten().collect();
-    let src_order =
-      nested::source_aux_order_with_owner(original_all, lean_env)?;
+    let empty_alias_to_rep: FxHashMap<Name, Name> = FxHashMap::default();
+    let source_expanded =
+      nested::expand_nested_block(original_all, lean_env, &empty_alias_to_rep)?;
+    let src_order = nested::source_aux_order_from_expanded(&source_expanded);
+    let mut scc_ctx_cache: FxHashMap<Name, nested::SccClaimCtx> =
+      FxHashMap::default();
+    let evaporated_flags =
+      evaporated.as_mut().expect("perm is Some, so flags are Some");
     for (source_j, &canonical_i) in perm.iter().enumerate() {
       if canonical_i != nested::PERM_OUT_OF_SCC {
         continue;
       }
-      let Some((owner, ext_head, _)) = src_order.get(source_j) else {
+      let Some((owner, ext_head, src_levels, src_specs)) =
+        src_order.get(source_j)
+      else {
         continue;
       };
-      if !in_scc.contains(owner) {
+      let owner_in_scc = in_scc.contains(owner);
+      if *crate::compile::IX_LOG_AUX_NAMES {
+        eprintln!(
+          "[aux-names] evap-consider scc={} all0={} src_j={source_j} owner={} owner_in_scc={owner_in_scc} ext={}",
+          sorted_classes
+            .first()
+            .and_then(|c| c.first())
+            .map_or_else(String::new, |n| n.pretty()),
+          first_orig_name.pretty(),
+          owner.pretty(),
+          ext_head.pretty(),
+        );
+      }
+      if !owner_in_scc {
         continue;
       }
       let source_name =
         Name::str(first_orig_name.clone(), format!("rec_{}", source_j + 1));
       let target_name = Name::str(ext_head.clone(), "rec".to_string());
+      // No Lean-exported name — nothing to claim or alias.
+      if lean_env.get(&source_name).is_none() {
+        continue;
+      }
+      // Global ownership: canonical in the spec members' SCC?
+      let claimed_elsewhere = nested::position_claimed_by_spec_scc(
+        &source_expanded,
+        ext_head,
+        src_levels,
+        src_specs,
+        original_all,
+        lean_env,
+        stt,
+        &mut scc_ctx_cache,
+      )?;
+      if claimed_elsewhere {
+        // The spec SCC compiled first (scheduler dependency) and
+        // registered the name as its canonical patch/alias. Nothing to
+        // do here — but the registration must actually exist, or the
+        // probe and the compiled state disagree.
+        if stt.resolve_addr(&source_name).is_none() {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "aux position {source_j} ('{}') is canonically owned by its \
+               spec members' SCC, but that SCC registered no address for \
+               the name",
+              source_name.pretty(),
+            ),
+          });
+        }
+        if *crate::compile::IX_LOG_AUX_NAMES {
+          eprintln!(
+            "[aux-names] evap-decision scc={} src_j={source_j} {} canonical-elsewhere (no alias, no plan)",
+            sorted_classes
+              .first()
+              .and_then(|c| c.first())
+              .map_or_else(String::new, |n| n.pretty()),
+            source_name.pretty(),
+          );
+        }
+        continue;
+      }
       // Target guard mirrors the head-rewrite plan registration in
-      // `surgery::compute_call_site_plans` — alias and call-site rewrite
-      // must fire together or not at all, or callers and claim disagree.
-      // Multi-motive external targets (mutual/nested external families)
-      // are outside the supported rewrite domain; skipping leaves the
-      // original compile, which kernel-check reports per constant.
+      // `surgery::compute_call_site_plans` (now driven by the same
+      // `evaporated` flags). Multi-motive external targets
+      // (mutual/nested external families) are outside the supported
+      // rewrite domain; skipping leaves the original compile, which
+      // kernel-check reports per constant.
       let target_ok = matches!(
         lean_env.get(&target_name).as_deref(),
         Some(ix_common::env::ConstantInfo::RecInfo(r))
           if crate::compile::nat_conv::nat_to_usize(&r.num_motives) == 1
       );
-      if patches.contains_key(&source_name)
-        || lean_env.get(&source_name).is_none()
-        || !target_ok
-      {
+      let patch_present = patches.contains_key(&source_name);
+      if *crate::compile::IX_LOG_AUX_NAMES {
+        eprintln!(
+          "[aux-names] evap-decision scc={} src_j={source_j} {} -> {} target_1motive={target_ok} patch_present={patch_present} fired={}",
+          sorted_classes
+            .first()
+            .and_then(|c| c.first())
+            .map_or_else(String::new, |n| n.pretty()),
+          source_name.pretty(),
+          target_name.pretty(),
+          !patch_present && target_ok,
+        );
+      }
+      if patch_present || !target_ok {
         continue;
       }
       aliases.insert(source_name, target_name);
+      evaporated_flags[source_j] = true;
     }
   }
 
@@ -1009,6 +1126,7 @@ pub fn generate_aux_patches(
     patches,
     aliases,
     perm: captured_perm,
+    evaporated,
     n_classes,
     n_canonical_aux: captured_n_canonical_aux,
     n_source_aux: captured_n_source_aux,

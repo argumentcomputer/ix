@@ -162,15 +162,19 @@ fn decode_opt_u64_pair(obj: LeanBorrowed<'_>) -> Option<(u64, u64)> {
 // =============================================================================
 
 impl LeanIxonAuxLayout<LeanOwned> {
-  /// Build Ixon.AuxLayout { perm, sourceCtorCounts : Array UInt64 }.
-  /// Rust stores `Vec<usize>`; the FFI (like the wire format) carries u64.
+  /// Build Ixon.AuxLayout { perm, sourceCtorCounts, evaporated : Array
+  /// UInt64 }. Rust stores `Vec<usize>` / `Vec<bool>`; the FFI (like the
+  /// wire format) carries u64, with `evaporated` as 0/1 flags.
   pub fn build(layout: &AuxLayout) -> Self {
     let perm: Vec<u64> = layout.perm.iter().map(|&p| p as u64).collect();
     let counts: Vec<u64> =
       layout.source_ctor_counts.iter().map(|&c| c as u64).collect();
+    let evaporated: Vec<u64> =
+      layout.evaporated.iter().map(|&b| u64::from(b)).collect();
     let ctor = LeanIxonAuxLayout::alloc(0);
     ctor.set_obj(0, build_u64_array(&perm));
     ctor.set_obj(1, build_u64_array(&counts));
+    ctor.set_obj(2, build_u64_array(&evaporated));
     ctor
   }
 }
@@ -180,7 +184,7 @@ impl<R: LeanRef> LeanIxonAuxLayout<R> {
   /// (same contract as `ixon::serialize::get_aux_layout`).
   #[allow(clippy::cast_possible_truncation)]
   pub fn decode(&self) -> AuxLayout {
-    let perm = decode_u64_array(self.get_obj(0).as_array())
+    let perm: Vec<usize> = decode_u64_array(self.get_obj(0).as_array())
       .into_iter()
       .map(|p| p as usize)
       .collect();
@@ -188,7 +192,18 @@ impl<R: LeanRef> LeanIxonAuxLayout<R> {
       .into_iter()
       .map(|c| c as usize)
       .collect();
-    AuxLayout { perm, source_ctor_counts }
+    let evaporated: Vec<bool> = decode_u64_array(self.get_obj(2).as_array())
+      .into_iter()
+      .map(|b| b != 0)
+      .collect();
+    // Lean sites that predate the field construct `{ perm, … }` with the
+    // `:= #[]` default — normalize to per-position flags.
+    let evaporated = if evaporated.is_empty() && !perm.is_empty() {
+      vec![false; perm.len()]
+    } else {
+      evaporated
+    };
+    AuxLayout { perm, source_ctor_counts, evaporated }
   }
 }
 

@@ -200,8 +200,13 @@ def constantMetaTests : TestSeq :=
     (.recr testAddr #[] #[] #[] #[] smallArena 0 #[1, 2]))) ++
   checkIO "ConstantMeta.muts auxLayout none" (rt (.new
     (.muts #[#[testAddr]] none))) ++
+  -- `evaporated` normalizes to one flag per perm entry on decode (tag-1
+  -- reads and Rust FFI decode both expand the `#[]` construction
+  -- default), so roundtrip fixtures spell the normalized form.
   checkIO "ConstantMeta.muts auxLayout some" (rt (.new
-    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3]⟩)))) ++
+    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 0]⟩)))) ++
+  checkIO "ConstantMeta.muts auxLayout evaporated" (rt (.new
+    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 1]⟩)))) ++
   checkIO "ConstantMeta callSite arena" (rt (.new
     (.defn testAddr #[] #[] #[] callSiteArena 0 1))) ++
   checkIO "ConstantMeta extension tables" (rt

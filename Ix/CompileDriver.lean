@@ -101,6 +101,12 @@ def compileBlockWithAux (lo : Name) (all : Set Name)
     let projAddr := Address.blake3 (Ixon.ser proj)
     modifyBlockState fun st =>
       { st with blockNameToAddr := st.blockNameToAddr.insert name projAddr }
+  -- Class ordering for `CompileEnv.blocks` (Rust `stt.blocks`,
+  -- compile.rs:4048-4057 — registered after the standalone early
+  -- return above, so only genuine mutual blocks record it).
+  let blockResult := { blockResult with
+    classNames := sortedClasses.toArray.map fun cls =>
+      cls.toArray.map (·.name) }
   let cenv ← getCompileEnv
   let bstate ← getBlockState
   let maps := Ix.AuxGen.AddrMaps.ofCompileEnv cenv
@@ -293,6 +299,12 @@ def mergeCompiledBlock (acc : DriverAcc) (lo : Name)
       cenv.brecOnCallSitePlans
     belowCallSitePlans := belowPlans.fold (fun m k v => m.insert k v)
       cenv.belowCallSitePlans }
+  -- Class-ordering registry (Rust `stt.blocks`, compile.rs:4048-4057):
+  -- one entry per member, all pointing at the block's full ordering.
+  if !result.classNames.isEmpty then
+    for cls in result.classNames do
+      for n in cls do
+        cenv := { cenv with blocks := cenv.blocks.insert n result.classNames }
   let mut pending := acc.pending
   for (n, _) in cache.auxNameToAddr do
     pending := pending.push n

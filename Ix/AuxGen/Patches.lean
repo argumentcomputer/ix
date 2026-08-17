@@ -533,13 +533,29 @@ exists")
                 if targetName != sourceName then
                   aliases := aliases.insert sourceName targetName
 
-  -- Evaporated aux recursor aliases (aux_gen.rs:920-979). A source aux
+  -- Evaporated aux recursor aliases (aux_gen.rs:947-1006). A source aux
   -- whose OWNER is in this SCC but whose spec-param inductives are not
-  -- has no home in ANY split SCC: dropping the irrelevant motives/minors
-  -- from Lean's `<all0>.rec_{j+1}` leaves exactly the external
-  -- inductive's own generic recursor. Alias the Lean-visible name to
-  -- `<ext>.rec`. The owner gate matters: an out-of-SCC entry whose owner
-  -- is ALSO out-of-SCC is simply another SCC's aux.
+  -- MAY have no home in ANY split SCC: dropping the irrelevant
+  -- motives/minors from Lean's `<all0>.rec_{j+1}` leaves exactly the
+  -- external inductive's own generic recursor, and the Lean-visible name
+  -- aliases to `<ext>.rec`. Two gates make the decision global and
+  -- deterministic (plans/aux-recursor-alias-collision.md §2, §13):
+  --
+  --  * Owner gate: an out-of-SCC entry whose owner is ALSO out-of-SCC is
+  --    another SCC's business — only the owner's SCC may decide
+  --    evaporation for a position nobody discovers.
+  --  * Claim probe: when the SCC owning the position's spec members
+  --    canonically discovers the same occurrence from its OWN
+  --    constructors, the `all0.rec_{j+1}` name belongs to that SCC's
+  --    canonical patch (registered before this block ran — the
+  --    discovering reference forces the scheduler edge). Evaporating
+  --    here would claim the same name with different content.
+  --
+  -- Fired decisions are recorded per position in `evaporated`; surgery's
+  -- head-rewrite plans key off the SAME flags (alias and rewrite fire
+  -- together or not at all).
+  let mut evaporated : Option (Array Bool) :=
+    capturedPerm.map fun p => Array.replicate p.size false
   if let some perm := capturedPerm then
     if perm.contains PERM_OUT_OF_SCC then
       if let some firstOrigName := originalAll[0]? then
@@ -547,37 +563,69 @@ exists")
         for cls in sortedClasses do
           for n in cls do
             inScc := inScc.insert n
-        let srcOrder ← liftM
-          (Ix.AuxGen.sourceAuxOrderWithOwner originalAll : CompileM _)
+        let sourceExpanded ← liftM
+          (Ix.AuxGen.expandNestedBlock originalAll {} : CompileM _)
+        let srcOrder := Ix.AuxGen.sourceAuxOrderFromExpanded sourceExpanded
+        let mut sccCtxCache : Std.HashMap Name SccClaimCtx := {}
+        let mut evaporatedFlags := (evaporated.getD #[])
         for (canonicalI, sourceJ) in perm.zipIdx do
           if canonicalI != PERM_OUT_OF_SCC then
             continue
-          let some (owner, extHead, _) := srcOrder[sourceJ]?
+          let some (owner, extHead, srcLevels, srcSpecs) := srcOrder[sourceJ]?
             | continue
           if !inScc.contains owner then
             continue
           let sourceName :=
             Name.mkStr firstOrigName s!"rec_{sourceJ + 1}"
           let targetName := Name.mkStr extHead "rec"
+          -- No Lean-exported name — nothing to claim or alias.
+          if (← liftM (lookupConst? sourceName : CompileM _)).isNone then
+            continue
+          -- Global ownership: canonical in the spec members' SCC?
+          let (claimedElsewhere, cache') ← liftM
+            (positionClaimedBySpecScc sourceExpanded extHead srcLevels
+              srcSpecs originalAll (fun n => some (maps.resolve n))
+              sccCtxCache : CompileM _)
+          sccCtxCache := cache'
+          if claimedElsewhere then
+            -- The spec SCC compiled first (scheduler dependency) and
+            -- registered the name as its canonical patch/alias. Nothing
+            -- to do here — but the registration must actually exist, or
+            -- the probe and the compiled state disagree. Full optional
+            -- resolve chain (CompileAux.resolveAddr? is downstream of
+            -- this module): primary overlay, global names, block-local
+            -- aux, merged prior-block aux. `AddrMaps.resolve`'s
+            -- name-hash fallback would make this check vacuous.
+            let cenvGlobal ← liftM (Ix.CompileM.getCompileEnv : CompileM _)
+            let bst ← liftM (Ix.CompileM.getBlockState : CompileM _)
+            let registered :=
+              bst.blockNameToAddr.contains sourceName
+                || cenvGlobal.nameToAddr.contains sourceName
+                || bst.auxNameToAddr.contains sourceName
+                || cenvGlobal.auxNameToAddr.contains sourceName
+            if !registered then
+              throw (.invalidMutualBlock
+                s!"aux position {sourceJ} ('{sourceName.pretty}') is \
+canonically owned by its spec members' SCC, but that SCC registered no \
+address for the name")
+            continue
           -- Target guard mirrors the head-rewrite plan registration in
-          -- `surgery::compute_call_site_plans` — multi-motive external
-          -- targets are outside the supported rewrite domain.
+          -- surgery (driven by the same `evaporated` flags) —
+          -- multi-motive external targets are outside the supported
+          -- rewrite domain; skipping leaves the original compile.
           let targetOk ←
             match ← liftM (lookupConst? targetName : CompileM _) with
             | some (.recInfo r) => pure (r.numMotives == 1)
             | _ => pure false
-          -- Rust: `patches.contains_key(&source_name) ||
-          -- lean_env.get(&source_name).is_none() || !target_ok` →
-          -- continue.
           if patches.contains sourceName then
-            continue
-          if (← liftM (lookupConst? sourceName : CompileM _)).isNone then
             continue
           if !targetOk then
             continue
           aliases := aliases.insert sourceName targetName
+          evaporatedFlags := evaporatedFlags.set! sourceJ true
+        evaporated := some evaporatedFlags
 
-  return { patches, aliases, perm := capturedPerm,
+  return { patches, aliases, perm := capturedPerm, evaporated,
            nClasses, nCanonicalAux := capturedNCanonicalAux,
            nSourceAux := capturedNSourceAux }
 

@@ -116,8 +116,8 @@ lean_ffi::lean_inductive! {
     { num_64: 2 },                            // tag 1: collapsed
   ];
 
-  // perm, sourceCtorCounts (both Array UInt64)
-  LeanIxonAuxLayout       [ { num_obj: 2 } ];
+  // perm, sourceCtorCounts, evaporated (all Array UInt64; evaporated is 0/1)
+  LeanIxonAuxLayout       [ { num_obj: 3 } ];
 
   LeanIxonConstantMetaInfo [
     { },                                      // tag 0: empty (scalar)

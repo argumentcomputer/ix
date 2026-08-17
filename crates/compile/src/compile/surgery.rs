@@ -52,7 +52,7 @@ use super::{
 /// Computed per original recursor name (not per equivalence class), because
 /// the choice of which collapsed motive to keep depends on which member of
 /// the equivalence class the recursor "belongs to".
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CallSitePlan {
   /// Number of parameters (unchanged between source and canonical).
   pub n_params: usize,
@@ -97,7 +97,7 @@ pub struct CallSitePlan {
 }
 
 /// Head-rewrite directive carried by [`CallSitePlan::head_rewrite`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuxHeadRewrite {
   /// The external inductive's recursor (the alias target, e.g. `List.rec`).
   pub target_rec: Name,
@@ -144,7 +144,7 @@ impl CallSitePlan {
 /// `params, motives, indices, major, handlers`, with one handler per motive.
 /// The motive permutation/drop decision is the same as the corresponding
 /// recursor plan, and the handlers mirror that motive layout.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BRecOnCallSitePlan {
   pub n_params: usize,
   pub n_source_motives: usize,
@@ -709,16 +709,23 @@ pub fn compute_call_site_plans(
   if n_source_motives > n_user_motives
     && let Some(head_name) = original_all.first()
   {
-    // (owner, external head) per source aux — only needed when some source
-    // aux is out-of-SCC, i.e. potentially evaporated.
-    let any_out = aux_perm.is_some_and(|p| p.contains(&PERM_OUT_OF_SCC));
-    let src_owner_heads: Vec<(Name, Name)> = if any_out {
+    // External head per source aux — only needed for positions this
+    // block EVAPORATED. The decision itself was made once, globally, by
+    // `aux_gen`'s disposition pass and travels in
+    // `AuxLayout.evaporated`; re-deriving owner/target gates here risked
+    // disagreeing with the registered alias (the pre-`evaporated` code
+    // did exactly that across SCC splits — see
+    // plans/aux-recursor-alias-collision.md). Alias and head-rewrite
+    // plan must fire together or not at all.
+    let any_evaporated =
+      aux_layout.is_some_and(|l| l.evaporated.iter().any(|&b| b));
+    let src_heads: Vec<Name> = if any_evaporated {
       crate::compile::aux_gen::nested::source_aux_order_with_owner(
         original_all,
         lean_env,
       )?
       .into_iter()
-      .map(|(owner, head, _)| (owner, head))
+      .map(|(_, head, _)| head)
       .collect()
     } else {
       Vec::new()
@@ -731,31 +738,22 @@ pub fn compute_call_site_plans(
       if lean_env.get(&rec_name).is_none() {
         continue;
       }
-      let out_of_scc = aux_perm
-        .and_then(|p| p.get(aux_idx).copied())
-        .is_some_and(|canon_i| canon_i == PERM_OUT_OF_SCC);
-      if out_of_scc {
-        // Evaporated-aux head rewrite. Owner gate mirrors the alias pass
-        // in `aux_gen.rs`: an out-of-SCC aux whose OWNER is also
-        // out-of-SCC is another SCC's canonical aux (that SCC registers
-        // its plan); only the owner's SCC decides evaporation. The target
-        // guard also mirrors the alias pass — no alias means no rewrite,
-        // and vice versa, or callers and claim disagree.
-        let Some((owner, ext_head)) = src_owner_heads.get(aux_idx) else {
-          continue;
+      let evaporated_here = aux_layout
+        .is_some_and(|l| l.evaporated.get(aux_idx).copied().unwrap_or(false));
+      if evaporated_here {
+        let Some(ext_head) = src_heads.get(aux_idx) else {
+          // The alias for this position was registered from the same
+          // source-order walk — a missing entry here would ship a claim
+          // without its call-site rewrite.
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "evaporated aux position {aux_idx} ('{}') has no \
+               source-order entry for its head-rewrite target",
+              rec_name.pretty(),
+            ),
+          });
         };
-        if !name_to_class.contains_key(owner) {
-          continue;
-        }
         let target_rec = Name::str(ext_head.clone(), "rec".to_string());
-        let target_ok = matches!(
-          lean_env.get(&target_rec).as_deref(),
-          Some(LeanConstantInfo::RecInfo(r))
-            if nat_to_usize(&r.num_motives) == 1
-        );
-        if !target_ok {
-          continue;
-        }
         // Index count comes from the aux recursor itself (the external
         // inductive's indices), not the block-wide default.
         let rec_n_indices = match lean_env.get(&rec_name).as_deref() {
@@ -766,6 +764,17 @@ pub fn compute_call_site_plans(
           rec_name,
           build_out_of_scc_plan(x_pos, aux_idx, target_rec, rec_n_indices),
         );
+        continue;
+      }
+      let out_of_scc = aux_perm
+        .and_then(|p| p.get(aux_idx).copied())
+        .is_some_and(|canon_i| canon_i == PERM_OUT_OF_SCC);
+      if out_of_scc {
+        // Not evaporated and not canonical here: either the position is
+        // canonical in another SCC of the same original mutual (THAT
+        // block registers its plan alongside its patch) or it fell back
+        // to an original-form compile (no rewrite by design). Either
+        // way this block contributes nothing for the name.
         continue;
       }
       let plan = build_plan(x_pos);
@@ -2053,7 +2062,11 @@ mod tests {
 
     let sorted_classes = vec![vec![n("A")], vec![n("B")]];
     let original_all = vec![n("A"), n("B")];
-    let layout = AuxLayout { perm: vec![1, 0], source_ctor_counts: vec![1, 1] };
+    let layout = AuxLayout {
+      perm: vec![1, 0],
+      source_ctor_counts: vec![1, 1],
+      evaporated: vec![false, false],
+    };
     let plans = compute_call_site_plans(
       &sorted_classes,
       &original_all,
@@ -2125,6 +2138,7 @@ mod tests {
       // owns [List B, List A]. List C belongs to a different SCC.
       perm: vec![1, 0, PERM_OUT_OF_SCC],
       source_ctor_counts: vec![2, 2, 2],
+      evaporated: vec![false, false, false],
     };
     let plans = compute_call_site_plans(
       &sorted_classes,

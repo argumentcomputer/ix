@@ -1246,6 +1246,10 @@ pub fn put_aux_layout(layout: &AuxLayout, buf: &mut Vec<u8>) {
   for &c in &layout.source_ctor_counts {
     put_u64(c as u64, buf);
   }
+  put_u64(layout.evaporated.len() as u64, buf);
+  for &b in &layout.evaporated {
+    put_u8(u8::from(b), buf);
+  }
 }
 
 /// Deserialize an `AuxLayout` side-table entry.
@@ -1260,7 +1264,16 @@ pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
   for _ in 0..n_counts {
     source_ctor_counts.push(get_u64(buf)? as usize);
   }
-  Ok(AuxLayout { perm, source_ctor_counts })
+  let n_evap = get_u64(buf)? as usize;
+  let mut evaporated = Vec::with_capacity(n_evap);
+  for _ in 0..n_evap {
+    evaporated.push(match get_u8(buf)? {
+      0 => false,
+      1 => true,
+      x => return Err(format!("get_aux_layout: invalid evaporated flag {x}")),
+    });
+  }
+  Ok(AuxLayout { perm, source_ctor_counts, evaporated })
 }
 
 /// Serialize a Named entry with indexed metadata.

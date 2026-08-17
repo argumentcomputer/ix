@@ -4110,10 +4110,14 @@ fn install_decompile_call_site_plans(
           .zip(original_all.iter())
           .any(|(class, orig)| class[0] != *orig));
     let aux_layout_changed = block.aux_layout.as_ref().is_some_and(|layout| {
-      layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
-        canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
-          && canonical_i != source_j
-      })
+      // Keep identical to the compile-side predicate in `compile_mutual`
+      // — evaporated positions need their head-rewrite plans even when
+      // no canonical slot moved.
+      layout.evaporated.iter().any(|&b| b)
+        || layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
+          canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
+            && canonical_i != source_j
+        })
     });
 
     if !user_layout_changed && !aux_layout_changed {
@@ -4131,28 +4135,72 @@ fn install_decompile_call_site_plans(
     })?;
 
     for (name, plan) in plans {
+      // First-wins per name, but a DIFFERING later plan means two stored
+      // blocks claim one source-indexed aux name — the same collision
+      // class the compile side now rejects; surface it rather than
+      // decompiling with whichever block's plan happened to install
+      // first (plans/aux-recursor-alias-collision.md §2.4).
       if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
         && (aux_member_names.contains(&brecon_name)
           || env.contains_key(&brecon_name))
-        && !stt.brec_on_call_site_plans.contains_key(&brecon_name)
       {
-        stt.brec_on_call_site_plans.insert(
-          brecon_name,
-          surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-        );
+        let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+        // Probe-then-act: the DashMap read guard must drop before insert.
+        let existing_differs =
+          stt.brec_on_call_site_plans.get(&brecon_name).map(|e| *e != new_plan);
+        match existing_differs {
+          Some(true) => {
+            return Err(DecompileError::BadConstantFormat {
+              msg: format!(
+                "conflicting brecOn call-site plans for '{}' across stored \
+                 blocks",
+                brecon_name.pretty(),
+              ),
+            });
+          },
+          Some(false) => {},
+          None => {
+            stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
+          },
+        }
       }
       if let Some(below_name) = surgery::rec_name_to_below_name(&name)
         && (aux_member_names.contains(&below_name)
           || env.contains_key(&below_name))
-        && !stt.below_call_site_plans.contains_key(&below_name)
       {
-        stt.below_call_site_plans.insert(
-          below_name,
-          surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-        );
+        let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+        let existing_differs =
+          stt.below_call_site_plans.get(&below_name).map(|e| *e != new_plan);
+        match existing_differs {
+          Some(true) => {
+            return Err(DecompileError::BadConstantFormat {
+              msg: format!(
+                "conflicting below call-site plans for '{}' across stored \
+                 blocks",
+                below_name.pretty(),
+              ),
+            });
+          },
+          Some(false) => {},
+          None => {
+            stt.below_call_site_plans.insert(below_name, new_plan);
+          },
+        }
       }
-      if !stt.call_site_plans.contains_key(&name) {
-        stt.call_site_plans.insert(name, plan);
+      let existing_differs = stt.call_site_plans.get(&name).map(|e| *e != plan);
+      match existing_differs {
+        Some(true) => {
+          return Err(DecompileError::BadConstantFormat {
+            msg: format!(
+              "conflicting call-site plans for '{}' across stored blocks",
+              name.pretty(),
+            ),
+          });
+        },
+        Some(false) => {},
+        None => {
+          stt.call_site_plans.insert(name, plan);
+        },
       }
     }
   }

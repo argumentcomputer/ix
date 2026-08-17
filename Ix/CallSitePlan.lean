@@ -29,7 +29,7 @@ structure AuxHeadRewrite where
   targetRec : Name
   /-- Source motive position of the evaporated aux (`nUserMotives + j`). -/
   targetMotivePos : Nat
-  deriving Repr, Nonempty, Inhabited
+  deriving Repr, Nonempty, Inhabited, BEq
 
 /-- Per-auxiliary surgery plan for call-site argument reordering.
 
@@ -80,7 +80,7 @@ structure CallSitePlan where
       from the source recursor's type instantiated with the call-site args
       (`deriveHeadRewriteApp`). -/
   headRewrite : Option AuxHeadRewrite
-  deriving Repr, Nonempty, Inhabited
+  deriving Repr, Nonempty, Inhabited, BEq
 
 namespace CallSitePlan
 
@@ -131,7 +131,7 @@ structure BRecOnCallSitePlan where
   nIndices : Nat
   motiveKeep : Array Bool
   sourceToCanonMotive : Array Nat
-  deriving Repr, Nonempty, Inhabited
+  deriving Repr, Nonempty, Inhabited, BEq
 
 namespace BRecOnCallSitePlan
 
