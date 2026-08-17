@@ -1122,6 +1122,86 @@ def whnf := ⟦
     whnf_with_spine(e, store(ListNode.Nil), types)
   }
 
+  -- Structural WHNF for def-eq Tier 4c.  Unlike the historical Aiur
+  -- `whnf_core` name above, this performs no delta and no primitive
+  -- dispatch.  Projections use full reduction of their scrutinee, matching
+  -- the reference Tier 4c policy after bounded lazy delta has had its turn.
+  fn whnf_struct_core(e: KExpr, types: List‹KExpr›) -> KExpr {
+    match load(e) {
+      KExprNode.Srt(_) => e,
+      KExprNode.Lit(_) => e,
+      KExprNode.Lam(_, _) => e,
+      KExprNode.Forall(_, _) => e,
+      KExprNode.BVar(_) => e,
+      _ => whnf_struct_core_spine(e, store(ListNode.Nil),
+             ctx_trim(types, expr_lbr(e))),
+    }
+  }
+
+  fn whnf_struct_core_spine(head: KExpr, spine: List‹KExpr›,
+                                 types: List‹KExpr›) -> KExpr {
+    match load(head) {
+      KExprNode.App(_, _) =>
+        match collect_spine(head) {
+          (h, s) => whnf_struct_core_spine(h, list_concat(s, spine), types),
+        },
+      KExprNode.Lam(_, _) =>
+        match peel_beta(head, spine, store(ListNode.Nil)) {
+          (deep, consumed, rest) =>
+            match list_length(consumed) {
+              0 => apply_spine(head, spine),
+              1 => whnf_struct_core_spine(
+                     expr_inst1(deep, list_lookup(consumed, 0), 0), rest, types),
+              _ => whnf_struct_core_spine(
+                     expr_inst_many(deep, consumed, 0), rest, types),
+            },
+        },
+      KExprNode.Let(_, val, body) =>
+        whnf_struct_core_spine(expr_inst1(body, val, 0), spine, types),
+      KExprNode.Proj(struct_addr, fidx, inner) =>
+        whnf_struct_core_proj(struct_addr, fidx, inner, spine, types, head),
+      KExprNode.Const(addr, lvls) =>
+        whnf_struct_core_const(addr, lvls, head, spine, types),
+      _ => apply_spine(head, spine),
+    }
+  }
+
+  fn whnf_struct_core_proj(struct_addr: Addr, fidx: G, inner: KExpr,
+                                spine: List‹KExpr›, types: List‹KExpr›,
+                                original: KExpr) -> KExpr {
+    let inner_w = whnf_struct_core(inner, types);
+    match collect_spine(inner_w) {
+      (ih, ia) =>
+        match load(ih) {
+          KExprNode.Const(_, _) =>
+            match load(whnf_get_ctor_or_none(ih)) {
+              KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
+                whnf_struct_core_spine(list_lookup(ia, nparams + fidx),
+                                        spine, types),
+              _ => apply_spine(original, spine),
+            },
+          _ => apply_spine(original, spine),
+        },
+    }
+  }
+
+  fn whnf_struct_core_const(addr: Addr, lvls: List‹KLevel›, head: KExpr,
+                                 spine: List‹KExpr›,
+                                 types: List‹KExpr›) -> KExpr {
+    match load(get_ci(addr)) {
+      KConstantInfo.Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
+                          rules, _k, _unsafe, _block, _ridx) =>
+        match try_iota(lvls, spine, nparams, nmotives, nminors, nindices,
+                rules, types, head,
+                rec_to_parent_addr(rec_ty, nparams, nmotives, nminors,
+                  nindices)) {
+          (1, reduced) => whnf_struct_core(reduced, types),
+          _ => apply_spine(head, spine),
+        },
+      _ => apply_spine(head, spine),
+    }
+  }
+
   -- ============================================================================
   -- whnf_nd: WHNF without delta-unfolding. Mirror whnf_nd
   -- crates/kernel/src / Rust whnf.rs::whnf_no_delta.
@@ -1223,7 +1303,21 @@ def whnf := ⟦
   -- value shape but never expands the body into the term).
   fn whnf_nd_const_head(addr: Addr, lvls: List‹KLevel›, head: KExpr,
                             spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
-    let prim = try_prim_dispatch(addr, lvls, spine, types);
+    -- Def-eq's no-delta reducer must not evaluate an open Nat primitive.
+    -- Its dispatcher prepares arguments with full WHNF, which can expose the
+    -- recursive logical body of Nat.ble and walk enormous symbolic offsets.
+    -- This mirrors the reference kernel's `has_fvars` gate: closed primitive
+    -- computations still reduce normally; open ones remain compact for lazy
+    -- delta / offset comparison.
+    let prim = match prim_family(addr) {
+      1 =>
+        let whole = apply_spine(head, spine);
+        match expr_lbr(whole) {
+          0 => try_prim_dispatch(addr, lvls, spine, types),
+          _ => (0, store(KExprNode.BVar(0))),
+        },
+      _ => try_prim_dispatch(addr, lvls, spine, types),
+    };
     match prim {
       (1, reduced) => whnf_nd(reduced, types),
       -- verdict 2: already-stuck compact form; do not re-whnf.
