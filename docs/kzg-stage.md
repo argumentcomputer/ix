@@ -1,8 +1,8 @@
 # The KZG stage: wrapping the recursive verifier over BLS12-381
 
-Status: PHASE A COMPLETE (crates/aiur generic over `AiurField`,
-Goldilocks the only instantiation, all pins byte-identical). Phases B–E
-pending. Prerequisites landed earlier: multi-stark `pcs-traits` branch;
+Status: PHASES A AND A′ COMPLETE (crates/aiur generic over
+`AiurField`; Lean constants exact naturals with checked per-field
+specialization — all pins byte-identical). Phases B–E pending. Prerequisites landed earlier: multi-stark `pcs-traits` branch;
 the `g_*`/`eg_*` inner-field interface and `GoldilocksForeign.lean` on
 this branch.
 
@@ -90,35 +90,35 @@ field-specific spots:
 --check` clean. Same discipline as multi-stark's Phase 0 — the
 refactor is provably a no-op before anything builds on it.
 
-### Phase A′ — Lean constants over ℚ; interpreter parametrized by field
+### Phase A′ — Lean constants as exact naturals [COMPLETE]
 
-Constants belong to the program, fields to the instantiation:
+Constants belong to the program, fields to the instantiation. Scoped to
+`Nat` (rationals deferred: any other constant kind requires compound
+operations anyway, and naturals keep specialization a single checked
+embedding):
 
-- **Elaborator**: numeric literals become exact rationals in canonical
-  form (reduced fraction, positive denominator; signed integers for
-  free — `-1` instead of `0 - x`). Zero denominator is a TYPE ERROR at
-  elaboration. `G.ofNat`'s silent mod-p wrap is gone.
-- **Bytecode**: `Const ℚ`; match keys ℚ.
-- **Interpreter**: generic over a Lean field class
-  (`add/mul/inverse/eq/ofRat`), converting constants ON THE FLY
-  (memoized per occurrence). Goldilocks is the instance today; an Fr
-  instance (Nat-based) is a drop-in later if interpreter-level parity
-  checks are ever wanted.
-- **Per-field specialization checks**, eager at toplevel load: match
-  keys must remain DISTINCT after reduction (two rationals can meet in
-  a given field — hard error); denominators must be invertible in the
-  target field (`p | b` is fine in ℚ, an error in that field); plain
-  integers ≥ p reduce with a WARNING.
-- **Rust boundary**: FFI ingestion and codegen run the same
-  specialization and emit `Toplevel<F>` / baked `F` constants — the
-  Phase-A Rust side is already exactly the post-specialization
-  artifact, so nothing downstream of the boundary changes.
-- Runtime VALUES in the Lean interpreter are still per-instance field
-  elements; "bytecode is field-free" does not mean "execution is".
+- **Elaborator**: numeric literals are exact `Nat`s — `G.ofNat`'s
+  silent mod-p wrap is gone from the source path.
+- **Source → bytecode**: `Term.field`/`Pattern.field`/`Op.const`/match
+  keys carry `Nat` through every stage.
+- **Specialization = checked embedding**, per consumer: a constant `≥ p`
+  is a hard ERROR — "the field cannot represent this circuit" — never a
+  wrap. Bonus: with the error in force, distinct keys stay distinct in
+  every accepted field, so no match-collision check is needed.
+  - Lean interpreters (`BytecodeEval`, `SourceEval`, `Interpret`):
+    on-the-fly `G.ofNat?` per use; overflow raises `constantOverflow`
+    (pattern keys: an unrepresentable constant matches no value).
+  - FFI (`lean_nat_as_field`): decodes scalar AND GMP-boxed Nats
+    (values in `[2^63, p)` are boxed), panics with the overflow message.
+  - Codegen: `checkConstants gSize` guard at emission
+    (`Bytecode.Toplevel.checkConstants`, off `Block.maxConstant`).
+- Runtime VALUES in the Lean interpreters are still per-field elements
+  (G today); "bytecode is field-free" does not mean "execution is". A
+  field-class-parametrized interpreter lands with the second Lean field
+  instance, if ever needed.
 
-**Gate**: on all existing programs every constant is a small integer,
-so specialization is the identity — codegen byte-identical, full pin
-battery, all suites.
+**Gate held**: codegen byte-identical, kernel FFT + shard pins exact,
+all suites + Rust workspace tests green.
 
 ### Phase B — the foreign verifier toplevel, validated over Goldilocks
 

@@ -1,5 +1,3 @@
-use multi_stark::p3_field::PrimeCharacteristicRing;
-
 use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
 
 use crate::lean::LeanAiurFunction;
@@ -10,7 +8,7 @@ use aiur::{
   bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
 };
 
-use crate::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
+use crate::aiur::{lean_nat_as_field, lean_unbox_nat_as_usize};
 
 fn decode_vec_val_idx(obj: LeanBorrowed<'_>) -> Vec<ValIdx> {
   obj.as_array().map(|x| lean_unbox_nat_as_usize(&x))
@@ -20,7 +18,7 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
   match ctor.tag() {
     0 => {
       let [const_val] = ctor.objs::<1>();
-      Op::Const(G::from_u64(const_val.as_enum_tag() as u64))
+      Op::Const(lean_nat_as_field(&const_val))
     },
     1 => {
       let [a, b] = ctor.objs::<2>();
@@ -195,7 +193,7 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
 
 fn decode_g_block_pair(ctor: LeanCtor<LeanBorrowed<'_>>) -> (G, Block) {
   let [g_obj, block_obj] = ctor.objs::<2>();
-  let g = lean_unbox_g(&g_obj);
+  let g = lean_nat_as_field(&g_obj);
   let block = decode_block(block_obj.as_ctor());
   (g, block)
 }

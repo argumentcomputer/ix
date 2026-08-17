@@ -9,6 +9,16 @@ abbrev G := { u : UInt64 // u < gSize }
 
 abbrev G.extensionDegree : Nat := 2
 
+/-- Checked embedding: `none` iff the constant does not fit the field
+(constants are exact naturals; overflow means the field is not good for
+the circuit and must be an error at the consumer, never a wrap). -/
+def G.ofNat? (n : Nat) : Option G :=
+  if h : n < gSize.toNat then
+    some ⟨n.toUInt64, by
+      have : n.toUInt64.toNat = n := Nat.mod_eq_of_lt (Nat.lt_trans h (by decide))
+      simp [UInt64.lt_iff_toNat_lt, this, h]⟩
+  else none
+
 def G.ofNat (n : Nat) : G :=
   -- Reduce in `Nat` BEFORE narrowing: `toUInt64` wraps mod 2^64, which is
   -- NOT reduction mod p — narrowing first silently corrupts any value
