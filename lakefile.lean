@@ -20,11 +20,13 @@ require batteries from git
 Theory/Verify specification surface, while `bench-lean4lean` and the ignored
 `lean4lean` test runner exercise the implementation. The default `ix` target
 still does not build this dependency. Pin the audited Argument fork exactly:
-this revision replaces the inductive specification placeholders with the
-staged checked/generation/certificate development integrated by Pin A in
-`plans/tc-verify-execution-plan.md`. -/
+this revision (fork dev, PR #4 `jcb/formalization2`) carries the
+formalization rebased onto upstream's v4.32/v4.33 kernel hardening
+(#14498 opaque value check, #14577 nested phantom params, #14608/#14616
+mutual-block checks) plus certified inductive environments and
+projections. -/
 require lean4lean from git
-  "https://github.com/argumentcomputer/lean4lean" @ "5e5bb767b3491d21a71908d4c58bcbaa007283bb"
+  "https://github.com/argumentcomputer/lean4lean" @ "3d1390ae1f90d65416b94e6e9478e39d897550c7"
 
 /-! ## FFI
 
