@@ -1,85 +1,123 @@
 # Handoff: Lean v4.33.0 bump — remaining integration work
 
-Status of this branch (`update/lean-v4.33.0`): ix is adapted to Lean v4.33.0
-and verified as far as is possible without lean4lean. `lake build Ix` is
-green, `cargo check --workspace` is clean, the Rust kernel's 674 tests pass,
-and every ix-side test target compiles. The one dependency blocker is the
-`lean4lean` pin (v4.31-era, does not compile under v4.33); the test suite and
-lint gate execute lean4lean-linked binaries and are queued behind it.
+Status (updated 2026-08-17, WIP push): the branch is rebased onto main
+`6e10865` and lean4lean is integrated. The pin now points at the fork's dev
+tip `3d1390ae` (`argumentcomputer/lean4lean#4`, merged 2026-08-16, stable
+toolchain v4.33.0), which unblocked the test suite and lint gate that §2 of
+the previous handoff was queued on. Verified locally on this rev:
 
-This file records everything still open from the v4.29 → v4.33 release-notes
-audit: the lean4lean integration steps, kernel-semantics divergences between
-ix's checkers and the upstream Lean kernel (open and cleared), and
-non-blocking follow-ups. Ingest fully before starting integration.
+- `lake build --wfail -v` — green.
+- `lake lint -- --wfail -v` — green across all 19 targets, but ONLY with
+  `patches/lean4lean-v4.33-lint-clean.patch` applied to the lean4lean
+  checkout (blocker 1 below).
+- `lake exe ix codegen --check` — green (both codegen'd kernels up to date).
+- `diff lean-toolchain Benchmarks/Compile/lean-toolchain` — green.
+- `lake exe ix compile Ix.lean --consts Nat.add_comm` — green (47 consts,
+  38.4 kB, matching the expected ~40/40 shape).
+- `lake test --wfail -- cli` and
+  `lake test --wfail -- aiur-cross aiur-prove aiur-hashes rbtree-map
+  multi-stark recursive-verifier` — green.
+- Rust side: `cargo fmt --check`, `clippy --workspace --all-targets
+  --all-features -D warnings`, `cargo check` (same flags), `cargo deny
+  check`, `cargo test --release --workspace -- --include-ignored` — all
+  green (675 kernel tests among them).
+- `nix flake` evaluates and instantiates (4 drvs to build); full
+  `nix build` not yet run.
 
-## 1. lean4lean: why the bump matters
+Fixes that rode along with the rebase (already on this branch):
 
-The pinned lean4lean (`5e5bb767`, in `lakefile.lean`) reproduces the kernel
-soundness bug fixed upstream in Lean v4.32.1 (leanprover/lean4#14498): its
-`addOpaque` (`Lean4Lean/Environment.lean:64-72` at the pinned rev) never
-calls `checkNoMVarNoFVar` on the opaque's *value*, so it accepts the
-axiom-free `False` construction from leanprover/lean4#14484. Reachable from
-ix via `Benchmarks/Lean4Lean.lean:209` (`.opaqueInfo → addDeclAt`).
+- Main's #558 introduced a `Lean.RBTree`-backed `MemSizes` in
+  `Ix/Aiur/Compiler/Layout.lean`; v4.33 deprecates `Lean.Data.RBTree` and
+  the CI build runs `--wfail`. Migrated to `Std.TreeSet` (drop-in;
+  `foldl` for `fold`).
+- Two lints new since v4.29: `linter.defProp` on the deliberately
+  prop-valued `wfTwoEqDef` fixture (`Tests/Ix/Compile/LevelSpellings.lean`,
+  silenced locally — the def-ness is the point of the fixture) and a dead
+  final `popLocals` rebind in `Ix/AuxGen/BRecOn.lean` (effect kept, binding
+  dropped).
+- clippy 1.92 `cast_sign_loss` in the `Lean.Int` scalar decode
+  (`crates/ffi/src/lean_env.rs`); rewritten with `u64::try_from` /
+  `unsigned_abs`, squashed into the original FFI commit.
 
-Upstream `digama0/lean4lean` master has the complete v4.32/v4.33 hardening:
-`779c51fde` (the #14498 value check + `Tests/DeclFVar.lean`), `d7e70a5f0`
-(nested-inductive phantom params, #14577), `5518bf838` (mutual `levelParams`
-uniformity #14608, reserved `_nested` prefix #14616, `checkNoMVarNoFVar` on
-inductive/ctor types #14607, + `Tests/KernelHardening.lean`), and the
-verified level-normalization algorithm enabled in the typechecker.
+## Blocker 1: lean4lean warnings fail the `--wfail` lint gate
 
-The fork update is being done as `argumentcomputer/lean4lean` PR #4
-(`jcb/formalization2`) — formalization on top of latest upstream. Do not
-integrate an intermediate state; wait for it to land on the fork's dev.
+The new pin compiles, but `Lean4Lean/Inductive/Add.lean` emits 6 warnings
+under v4.33 (3 unused simp args, 3 `linter.defProp` prop-valued defs), and
+ix's lint driver builds that module (via `Lean4Lean.Environment` ←
+`Benchmarks.Lean4Lean` ← Tests), so ci.yml's `build` job fails on them.
+There is no ix-side workaround: the import chain is load-bearing and Lake
+has no per-dependency warning suppression.
 
-## 2. Integration steps once lean4lean lands
+The fix is prepared and verified: `patches/lean4lean-v4.33-lint-clean.patch`
+(5 line edits; the three prop defs have zero downstream uses, so
+`theorem`-ification is safe). With it applied to the `.lake` checkout, the
+full lint gate is green locally.
 
-1. **Bump the pin.** In `lakefile.lean`, set the `lean4lean` rev to the new
-   dev tip; `lake update lean4lean`. Confirm its `lean-toolchain` is stable
-   `leanprover/lean4:v4.33.0` (upstream tracks rc toolchains).
+Steps to clear:
+1. Apply the patch to `argumentcomputer/lean4lean` on top of dev
+   `3d1390ae` (`git apply patches/lean4lean-v4.33-lint-clean.patch`),
+   push (dev or a branch — pushing that repo needs human credentials,
+   which is why this is a handoff item).
+2. Re-pin `lakefile.lean` to the resulting rev; `lake update lean4lean`.
+3. Delete `patches/lean4lean-v4.33-lint-clean.patch` and this blocker
+   section.
 
-2. **Run the suite**: `lake test`. First actual execution on v4.33.
-   Watch-points from the audit:
-   - `Tests/FFI/Refcount.lean` — v4.30's borrow-inference overhaul
-     (leanprover/lean4#12830, #13136 RC coalescing) may shift caller-side
-     inc/dec counts. Diagnose with `trace.Compiler.inferBorrow` before
-     adjusting expectations.
-   - `Tests/Ix/Kernel/CheckEnv.lean:191-192` pins private `Std.Time` names
-     (`Std.Time.PlainTime.format._sparseCasesOn_1`); `Std.Time` was
-     refactored in v4.32 and the fixtures may not resolve.
-   - Decompile roundtrip — v4.30 #12987 introduced `foo._f` helper
-     constants for structural recursion. `classifyAuxGen`
-     (`Ix/CallSiteSurgery.lean`) deliberately routes unknown suffixes to the
-     plain-definition path and ix's own v4.33 oleans contain no `._f`, but
-     dependency environments may carry them; the roundtrip suite confirms.
-   - `Ix/Tc/Primitive.lean:221-222` hard-codes canonical addresses for
-     `PUnit._sizeOf_1` and `SizeOf.sizeOf`; v4.31 #13320 un-exposed
-     auto-generated `sizeOf` definitions, which can invalidate those hashes.
-   - Expect broad content-address churn vs v4.29-era artifacts and
-     re-baseline rather than debug: derived Prop instances flipped
-     `def`→`theorem` (v4.31 #13304), imported `partial` defs regain their
-     marking across module boundaries (v4.33 #14609), `Float`/`Float32`
-     were redefined around `Float.Model`, derived `BEq`/`Inhabited` bodies
-     changed, and several core decls changed exposure/reducibility. All
-     `.ixe` fixtures and pinned address tables from v4.29 will differ.
+Until then, ci.yml `build` (and everything `needs: build` — lean-test,
+sp1-build, zisk-build) is red on the PR. nix.yml is NOT affected (its lake
+builds don't use `--wfail`).
 
-3. **Run the lint gate**: `lake lint -- --wfail -v`. Not yet run on v4.33;
-   v4.31 enabled `linter.redundantVisibility` (ix: ~174 files with `public
-   section` + explicit `public`, ~800 `private` decls),
-   `linter.redundantExpose` (`Ix/Lib.lean:11`), and
-   `warning.simp.varHead`/`otherHead` (~257 `@[simp]`s). Escape hatch:
-   `leanOptions := #[⟨`linter.redundantVisibility, false⟩]`; prefer fixing
-   genuinely redundant modifiers.
+## Blocker 2: ixvm kernel-FFT pin suite (`lake test -- --ignored ixvm`)
 
-4. **Limits, only if they fire.** v4.31 #13030 made heartbeats accumulate
-   faster (upstream raised limits 20–50% in places); v4.33 #13956 bounded
-   kernel recursion by `maxRecDepth` instead of the physical stack. If
-   `IxTcVerify` or deep replays hit deterministic timeouts or
-   `(kernel) deep recursion`, raise the seven
-   `set_option maxHeartbeats 800000` sites under `Ix/Tc/Verify/` and add
-   `maxRecDepth` options before chasing phantom regressions.
+This suite is PR-gating (ci.yml lean-test) and is the one local run that
+did not complete.
 
-## 3. Kernel-semantics divergences vs upstream v4.33 — OPEN
+- Name fix already applied: v4.29's
+  `String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec` does not
+  exist in the v4.33 runtime env (module-system visibility + rename);
+  the entry now points at `...Model.NoPrefixPatternModel.rec`. A runtime
+  probe (importModules over Tests.Main's import list) confirms all other
+  78 pinned names resolve.
+- All 79 FFT-cost pins are v4.29 measurements over v4.29 constant bodies.
+  Expect a broad re-pin (previous handoff §2: re-baseline, don't debug).
+- The first execution was killed after 38 min: single hot thread, RSS
+  grew to ~79 GB with no per-case output yet. Unconfirmed suspect: the
+  `_private.Init.Data.SInt.Lemmas.0.Int8.toInt64_ne_minValue._proof_1_2`
+  entry (pin 15.5B, ~5× any other) whose v4.33 body may have grown
+  pathologically; a v4.33-shaped IxVM lazy-defeq pathology (the class
+  #560/#562 fixed for v4.29 shapes) is the other candidate.
+  Suggested attack: a small driver over the `public def kernelCheck`
+  API running entries one-by-one under `ulimit -v` (~30 GB), harvesting
+  per-entry costs; drop or replace entries that blow the cap, re-pin the
+  rest, and if a mid-size entry blows up, treat it as a kernel bug lead,
+  not a pin chore.
+- Observed during the partial run (verify when the suite is green):
+  the `r6Host` bad fixture (`Tests/Ix/Kernel/TutorialDefs.lean`) is now
+  rejected at `compile_aux_block @ preseed(Const)` with
+  "missing constant: r6Host.rec_1" instead of via the positivity walk.
+  Expected-reject either way, but confirm the case still passes; if the
+  suite asserts the rejection PATH, the fixture may need its aux `rec_1`
+  stubbed.
+
+## Remaining verification queue
+
+In dependency order once the blockers clear:
+1. Full `lake test --wfail` (no args — the primary suites: ffi, ixon,
+   compile/decompile roundtrips, tc-unit...). This is what nix.yml's
+   devshell job runs; it covers the previous handoff's watch-points
+   (`Tests/FFI/Refcount.lean` borrow counts, `CheckEnv.lean` `Std.Time`
+   private-name fixtures, `._f` helpers in the decompile roundtrip,
+   `Ix/Tc/Primitive.lean` sizeOf address pins).
+2. The extended sweep ignored.yml runs on main:
+   `lake test -- --ignored
+   --exclude=tc-pins,tc-accel-diff,tc-anon-diff,tc-init,tc-tutorial,tc-roundtrip,lean4lean`
+   plus `lake exe Apps.ZKVoting.Prover`. Not PR-gating, but reds main
+   post-merge if broken. Budget memory (see blocker 2).
+3. `nix build` + `nix flake check` + the devshell `lake build && lake
+   test` (the flake evaluates and instantiates already; 4 drvs pending).
+4. sp1/zisk host builds + guest execution — CI-only here (toolchains not
+   installed locally).
+
+## Kernel-semantics divergences vs upstream v4.33 — OPEN
 
 These are places where ix's checkers (Ix/Tc reference kernel, Rust
 `crates/kernel`, IxVM model) knowingly differ from the upstream C++ kernel
@@ -133,7 +171,7 @@ unsoundness.
   end-to-end (the Rust unit tests cover `univ_eq`; an integration-level
   fixture does not exist yet).
 
-## 4. Kernel-semantics divergences — CONSIDERED AND CLEARED
+## Kernel-semantics divergences — CONSIDERED AND CLEARED
 
 Verified during this branch's audit; recorded so they are not re-derived.
 
@@ -170,10 +208,9 @@ Verified during this branch's audit; recorded so they are not re-derived.
   the real Lean kernel objects `lean_env.rs` decodes. The one real bug
   found (pre-existing): `Lean.Int` decoded as a ctor when it is a
   `Nat`-representation builtin — fixed on this branch (`fix(ffi): decode
-  Lean.Int by value`). `lean-ffi` needs no changes (bindings regenerate per
-  build; none of the removed/changed `lean.h` symbols are used).
+  Lean.Int by value`), with the clippy-clean cast rewrite folded in.
 
-## 5. Non-blocking follow-ups
+## Non-blocking follow-ups
 
 - **FFI pointer-liveness hardening.** `crates/ffi/src/lean_env.rs:594,615`
   key caches by raw `lean_object*` across a decode session; soundness rests

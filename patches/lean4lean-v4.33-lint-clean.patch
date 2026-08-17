@@ -1,0 +1,60 @@
+From: ix v4.33 bump integration
+Subject: fix: Clean v4.33 lint warnings in Inductive/Add
+
+Downstream ix runs its lint gate with --wfail and builds this library,
+so dependency warnings fail its CI. Three unused simp arguments
+(ReaderT.pure x2, Pure.pure) are dropped, and the three prop-valued
+trace-validity defs (allValid, allChecksValid, allIsDefEqValid) become
+theorems per linter.defProp -- they have no downstream uses that unfold
+them, so opacity is safe.
+
+Apply to argumentcomputer/lean4lean dev @ 3d1390ae:
+  git apply lean4lean-v4.33-lint-clean.patch
+
+--- a/Lean4Lean/Inductive/Add.lean
++++ b/Lean4Lean/Inductive/Add.lean
+@@ -267,7 +267,7 @@
+     simp [checkInductiveTypes, checkInductiveTypes.loopInd,
+       checkInductiveTypes.loopInd.loop, singletonInductiveStats,
+       readThe, MonadReader.read, MonadReaderOf.read, ReaderT.read,
+-      ReaderT.bind, Bind.bind, Pure.pure, ReaderT.pure,
++      ReaderT.bind, Bind.bind, Pure.pure,
+       Except.bind, Except.pure, liftTypeChecker_apply,
+       hclosed, hcheck, hwhnf, hensure, hfuel_eq,
+       InductiveStats.initial, Expr.sortLevel!]
+@@ -1241,7 +1241,7 @@
+       (List.map Level.param context.lparams)).indConsts).isEmpty = true from
+     rfl)]
+   simp only [Expr.sortLevel!, InductiveStats.initial, Nat.zero_add]
+-  simp only [ReaderT.bind, Bind.bind, ReaderT.pure, Pure.pure, Except.pure,
++  simp only [ReaderT.bind, Bind.bind, Except.pure,
+     Except.bind]
+   rw [checkInductiveTypes.loopInd.eq_1]
+   have hdone : ¬1 < #[indType].size := by simp
+@@ -1320,7 +1320,7 @@
+       domainCandidate.isDefEqSteps ++ bodyCandidate.isDefEqSteps
+
+ /-- Every retained WHNF observation is an exact checker execution. -/
+-def allValid : (candidate : CandidateExprTrace context source) →
++theorem allValid : (candidate : CandidateExprTrace context source) →
+     ∀ step ∈ candidate.steps, step.Valid
+   | .terminal context source _ result _ valid, step, h => by
+     simp only [steps, List.mem_singleton] at h
+@@ -1334,7 +1334,7 @@
+     · exact body.allValid step h
+
+ /-- Every retained full-check observation is an exact checker execution. -/
+-def allChecksValid : (candidate : CandidateExprTrace context source) →
++theorem allChecksValid : (candidate : CandidateExprTrace context source) →
+     ∀ step ∈ candidate.checkSteps, step.Valid
+   | .terminal context source inferred _ checked _, step, h => by
+     simp only [checkSteps, List.mem_singleton] at h
+@@ -1349,7 +1349,7 @@
+
+ /-- Every retained binder-domain equality is an exact successful checker
+ execution. -/
+-def allIsDefEqValid : (candidate : CandidateExprTrace context source) →
++theorem allIsDefEqValid : (candidate : CandidateExprTrace context source) →
+     ∀ step ∈ candidate.isDefEqSteps, step.Valid
+   | .terminal .., step, h => by simp [isDefEqSteps] at h
+   | .forallE _ _ _ _ _ _ _ _ _ annotationsEq _ _ domain body,
