@@ -62,7 +62,7 @@
 #![allow(dead_code)]
 
 use multi_stark::{
-  config::StarkGenericConfig,
+  config::ProofConfig,
   expr::{ColRef, RowOffset, Source},
   graph::{ConstraintGraph, Node, NodeId},
   lookup::Lookup,

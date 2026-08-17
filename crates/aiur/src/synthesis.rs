@@ -1,6 +1,6 @@
 use multi_stark::{
   config::PcsError,
-  config::{StarkGenericConfig, Val},
+  config::{ProofConfig, Val},
   expr::Expr,
   lookup::Lookup,
   p3_matrix::dense::RowMajorMatrix,
@@ -28,7 +28,7 @@ pub type AiurConfig = GoldilocksBlake3Config;
 /// A proof under [`AiurConfig`].
 pub type AiurProof = Proof<AiurConfig>;
 
-pub struct AiurSystem<SC: StarkGenericConfig = AiurConfig> {
+pub struct AiurSystem<SC: ProofConfig = AiurConfig> {
   toplevel: Toplevel<Val<SC>>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<SC>,
@@ -172,7 +172,7 @@ impl AiurSystem<multi_stark::ark_adapter::KzgConfig> {
   }
 }
 
-impl<SC: StarkGenericConfig> AiurSystem<SC>
+impl<SC: ProofConfig> AiurSystem<SC>
 where
   Val<SC>: AiurField,
 {
