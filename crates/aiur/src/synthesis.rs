@@ -176,6 +176,14 @@ impl<SC: StarkGenericConfig> AiurSystem<SC>
 where
   Val<SC>: AiurField,
 {
+  /// The verification-sufficient part of the bundle: the compiled
+  /// [`System`] (config + circuits + preprocessed commitment/indices).
+  /// The rest of [`AiurSystem`] — toplevel, prover key, slot widths —
+  /// is prover-side only.
+  pub fn system(&self) -> &System<SC> {
+    &self.system
+  }
+
   /// The circuit list in system order: constrained functions (ascending
   /// index), then memories, then `Bytes1`, then `Bytes2`. This matches the
   /// order the circuits were chained in [`AiurSystem::build`], so index `i`

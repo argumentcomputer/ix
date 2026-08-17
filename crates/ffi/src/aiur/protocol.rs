@@ -67,7 +67,7 @@ extern "C" fn rs_aiur_proof_of_bytes(
 extern "C" fn rs_aiur_system_vk_bytes(
   system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
 ) -> LeanByteArray<LeanOwned> {
-  let bytes = aiur::vk_codec::aiur_system_to_bytes(system.get())
+  let bytes = aiur::vk_codec::system_to_bytes(system.get().system())
     .expect("VK serialization error");
   LeanByteArray::from_bytes(&bytes)
 }
