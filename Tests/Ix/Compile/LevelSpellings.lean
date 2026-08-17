@@ -97,9 +97,12 @@ def wfTwo : Nat → Nat → Nat
   | m + 1, n => wfTwo m n
 termination_by m _ => m
 
+set_option linter.defProp false in
 /-- Forces realization (and env persistence) of `wfTwo.eq_def`, the
     constant class where Lean's metaprograms store unnormalized level
-    spellings at Mathlib scale. -/
+    spellings at Mathlib scale. Deliberately a `def` (not `theorem`):
+    the fixture pins the prop-valued-`def` constant class metaprograms
+    emit, so the `defProp` linter is silenced rather than obeyed. -/
 def wfTwoEqDef := @wfTwo.eq_def
 
 end Tests.Ix.Compile.LevelSpellings

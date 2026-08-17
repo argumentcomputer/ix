@@ -1325,7 +1325,7 @@ TcScope::get_level on major domain returned {e}. This typically means \
     let mut out : Array Level := #[]
     for d in indexDecls do
       out := out.push (← rtc.getLevel d.domain)
-    rtc ← rtc.popLocals indexDecls
+    _ ← rtc.popLocals indexDecls
     pure out
   let eqResult ← buildTypeBreconEqFvar ci targetIndName breconName goName
     recUnivs paramFvars motiveFvars motiveDecls indexFvars indexDecls
