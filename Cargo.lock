@@ -2253,7 +2253,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=4aec5a418b8eddf3e5f8d297398219a276f27519#4aec5a418b8eddf3e5f8d297398219a276f27519"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=3cd5316a18ee83dd89d629eeddbaa032ab40598d#3cd5316a18ee83dd89d629eeddbaa032ab40598d"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",

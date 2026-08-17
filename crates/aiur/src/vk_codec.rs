@@ -62,6 +62,7 @@
 #![allow(dead_code)]
 
 use multi_stark::{
+  config::StarkGenericConfig,
   expr::{ColRef, RowOffset, Source},
   graph::{ConstraintGraph, Node, NodeId},
   lookup::Lookup,
@@ -241,7 +242,8 @@ pub(crate) fn to_bytes(
 
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
 pub fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
-  Ok(to_bytes(&sys.system, sys.commitment_parameters, sys.fri_parameters))
+  let pcs = sys.system.config.pcs();
+  Ok(to_bytes(&sys.system, pcs.commitment_parameters(), pcs.fri_parameters()))
 }
 
 // ════════════════════════════════════════════════════════════════════════════

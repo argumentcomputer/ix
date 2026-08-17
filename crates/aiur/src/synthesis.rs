@@ -32,10 +32,6 @@ pub struct AiurSystem<SC: StarkGenericConfig = AiurConfig> {
   toplevel: Toplevel<Val<SC>>,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey<SC>,
-  /// The parameters the system's config was built from, kept for the
-  /// verifying-key codec (the config itself doesn't expose them back).
-  pub(crate) commitment_parameters: CommitmentParameters,
-  pub(crate) fri_parameters: FriParameters,
   pub(crate) system: System<SC>,
   /// Per-circuit lookup-slot argument widths (in system order), retained so
   /// the witness builder can size its `LookupValues` without reading them
@@ -154,14 +150,7 @@ impl AiurSystem {
     let (circuit_inputs, slot_widths) = build_circuit_inputs(&toplevel);
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
     let (system, key) = System::new(config, circuit_inputs);
-    AiurSystem {
-      system,
-      key,
-      toplevel,
-      commitment_parameters,
-      fri_parameters,
-      slot_widths,
-    }
+    AiurSystem { system, key, toplevel, slot_widths }
   }
 }
 
@@ -170,10 +159,6 @@ impl AiurSystem<multi_stark::ark_adapter::KzgConfig> {
   /// Build over the BLS12-381 scalar field with the KZG backend (the
   /// terminal stage: constant-size proofs, natively verified). Public
   /// parameters are caller-supplied — see `Srs` in multi-stark.
-  ///
-  /// The FRI parameter fields are vestigial in this instantiation (they
-  /// feed the FRI vk codec only, which is Goldilocks-only); they are
-  /// stored zeroed.
   pub fn build_kzg(
     toplevel: Toplevel<multi_stark::ark_adapter::Scalar>,
     srs: std::sync::Arc<multi_stark::ark_adapter::Srs>,
@@ -183,23 +168,7 @@ impl AiurSystem<multi_stark::ark_adapter::KzgConfig> {
     let config =
       multi_stark::ark_adapter::KzgConfig::new(srs, max_quotient_degree);
     let (system, key) = System::new(config, circuit_inputs);
-    AiurSystem {
-      system,
-      key,
-      toplevel,
-      commitment_parameters: CommitmentParameters {
-        log_blowup: 0,
-        cap_height: 0,
-      },
-      fri_parameters: FriParameters {
-        log_final_poly_len: 0,
-        max_log_arity: 0,
-        num_queries: 0,
-        commit_proof_of_work_bits: 0,
-        query_proof_of_work_bits: 0,
-      },
-      slot_widths,
-    }
+    AiurSystem { system, key, toplevel, slot_widths }
   }
 }
 
