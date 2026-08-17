@@ -37,6 +37,18 @@ impl AiurField for G {
   }
 }
 
+/// The BLS12-381 scalar field as an Aiur field (the KZG terminal
+/// stage). `as_canonical_u64` takes the canonical value's low 64 bits —
+/// exact for the bytes/pointers/counters Aiur extracts; toplevels for
+/// this field must not use the 8-byte hint (see the trait docs).
+#[cfg(feature = "kzg")]
+impl AiurField for multi_stark::ark_adapter::Scalar {
+  #[inline]
+  fn as_canonical_u64(&self) -> u64 {
+    self.canonical_low_u64()
+  }
+}
+
 #[inline]
 pub fn function_channel<F: AiurField>() -> F {
   <F as Algebra<F>>::ZERO

@@ -18,6 +18,7 @@ tracing-texray = { workspace = true }
 [features]
 default = []
 parallel = ["multi-stark/parallel"]
+kzg = ["multi-stark/kzg"]
 
 [lints]
 workspace = true

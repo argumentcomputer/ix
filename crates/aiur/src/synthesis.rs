@@ -165,6 +165,44 @@ impl AiurSystem {
   }
 }
 
+#[cfg(feature = "kzg")]
+impl AiurSystem<multi_stark::ark_adapter::KzgConfig> {
+  /// Build over the BLS12-381 scalar field with the KZG backend (the
+  /// terminal stage: constant-size proofs, natively verified). Public
+  /// parameters are caller-supplied — see `Srs` in multi-stark.
+  ///
+  /// The FRI parameter fields are vestigial in this instantiation (they
+  /// feed the FRI vk codec only, which is Goldilocks-only); they are
+  /// stored zeroed.
+  pub fn build_kzg(
+    toplevel: Toplevel<multi_stark::ark_adapter::Scalar>,
+    srs: std::sync::Arc<multi_stark::ark_adapter::Srs>,
+    max_quotient_degree: usize,
+  ) -> Self {
+    let (circuit_inputs, slot_widths) = build_circuit_inputs(&toplevel);
+    let config =
+      multi_stark::ark_adapter::KzgConfig::new(srs, max_quotient_degree);
+    let (system, key) = System::new(config, circuit_inputs);
+    AiurSystem {
+      system,
+      key,
+      toplevel,
+      commitment_parameters: CommitmentParameters {
+        log_blowup: 0,
+        cap_height: 0,
+      },
+      fri_parameters: FriParameters {
+        log_final_poly_len: 0,
+        max_log_arity: 0,
+        num_queries: 0,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 0,
+      },
+      slot_widths,
+    }
+  }
+}
+
 impl<SC: StarkGenericConfig> AiurSystem<SC>
 where
   Val<SC>: AiurField,
@@ -392,7 +430,7 @@ mod tests {
     (cp, fp)
   }
 
-  fn empty_io_buffer() -> IOBuffer {
+  pub(super) fn empty_io_buffer<F: AiurField>() -> IOBuffer<F> {
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() }
   }
 
@@ -410,7 +448,7 @@ mod tests {
   ///   fresh auxiliary column pinned by `sel * (col - a*b)`.
   /// - `lookups = 1`: the function-provide (return) lookup in slot 0, which
   ///   pulls the claim `[function_channel, fun_idx, a, b, a*b]`.
-  fn mul_toplevel() -> Toplevel {
+  pub(super) fn mul_toplevel<F: AiurField>() -> Toplevel<F> {
     let body =
       Block { ops: vec![Op::Mul(0, 1)], ctrl: Ctrl::Return(0, vec![2]) };
     let function = Function {
@@ -427,7 +465,7 @@ mod tests {
     Toplevel { functions: vec![function], memory_sizes: vec![] }
   }
 
-  fn xor_splits_toplevel() -> Toplevel {
+  pub(super) fn xor_splits_toplevel<F: AiurField>() -> Toplevel<F> {
     let body = Block {
       ops: vec![Op::U8XorSplit7(0, 1), Op::U8XorSplit4(0, 1)],
       ctrl: Ctrl::Return(0, vec![2, 3, 4, 5]),
@@ -732,5 +770,50 @@ mod tests {
     assert_eq!(shapes[3].preprocessed_height, 256);
     assert_eq!(shapes[4].preprocessed_width, 14);
     assert_eq!(shapes[4].preprocessed_height, 65536);
+  }
+}
+
+#[cfg(all(test, feature = "kzg"))]
+mod kzg_tests {
+  use super::tests::{empty_io_buffer, mul_toplevel, xor_splits_toplevel};
+  use super::*;
+  use multi_stark::ark_adapter::{Scalar, Srs};
+  use multi_stark::traits::{Algebra, Field};
+  use std::sync::Arc;
+
+  fn dev_srs() -> Arc<Srs> {
+    // Bytes2's preprocessed table is 65536 rows, so the SRS must cover
+    // at least 2^16-length columns.
+    Arc::new(Srs::unsafe_dev_setup(1 << 17, b"aiur-kzg-test"))
+  }
+
+  /// Aiur over the BLS12-381 scalar field: build, prove, verify, and
+  /// reject tampering — the same pipeline the Goldilocks tests run,
+  /// with KZG commitments instead of FRI.
+  #[test]
+  fn kzg_prove_verify_mul() {
+    let system = AiurSystem::build_kzg(mul_toplevel::<Scalar>(), dev_srs(), 8);
+    let a = Scalar::from_u64(3);
+    let b = Scalar::from_u64(5);
+    let (claim, proof) = system.prove(0, &[a, b], &mut empty_io_buffer());
+    assert_eq!(claim.last(), Some(&(a * b)));
+    system.verify(&claim, &proof).expect("KZG Aiur proof failed to verify");
+
+    let mut bad_claim = claim.clone();
+    let last = bad_claim.len() - 1;
+    bad_claim[last] += <Scalar as Algebra<Scalar>>::ONE;
+    assert!(system.verify(&bad_claim, &proof).is_err());
+  }
+
+  /// Byte-gadget coverage over Fr: the xor-split ops route through the
+  /// Bytes2 chip (65536-row preprocessed table committed via MSM).
+  #[test]
+  fn kzg_prove_verify_xor_splits() {
+    let system =
+      AiurSystem::build_kzg(xor_splits_toplevel::<Scalar>(), dev_srs(), 8);
+    let a = Scalar::from_u64(0xd3);
+    let b = Scalar::from_u64(0x69);
+    let (claim, proof) = system.prove(0, &[a, b], &mut empty_io_buffer());
+    system.verify(&claim, &proof).expect("KZG Aiur proof failed to verify");
   }
 }

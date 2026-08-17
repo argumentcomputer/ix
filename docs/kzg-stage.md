@@ -173,9 +173,18 @@ prohibitive width.
 
 ### Phase D — KZG instantiation, end-to-end at toy scale
 
+FIRST SLICE LANDED: Aiur proves and verifies over the BLS12-381 scalar
+field. `AiurField` is implemented for `Scalar` (canonical-low-u64
+extraction), and `AiurSystem::build_kzg(toplevel, srs, max_qd)`
+instantiates the generic synthesis over `KzgConfig` — the `kzg_tests`
+in `crates/aiur/src/synthesis.rs` prove/verify a function circuit and
+the byte-gadget path (Bytes2's 65536-row preprocessed table committed
+via MSM) with tamper rejection, behind the `kzg` feature. Remaining in
+this phase:
+
 - Synthesis over `KzgConfig`: instantiate the Phase-A-generic
   `System<SC>` with Fr (D = 1: 4 publics, stage-2 width halves per
-  slot), `Blake3Transcript`, `KzgPcs` with a dev SRS.
+  slot), `Blake3Transcript`, `KzgPcs` with a dev SRS. [DONE]
 - Codegen: the foreign toplevel gets its own generated witness runner
   over Fr (`aiur_multi_stark_foreign.rs` or similar) — witness
   generation is native Rust Fr arithmetic, fast.
