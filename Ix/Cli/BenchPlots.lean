@@ -83,16 +83,21 @@ def plotTitle (workload measure : String) : String :=
     `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
     exactly — the decompile run tracks only its own decompile-time /
-    throughput / peak-rss trends. The aiur run's stage-1 detail
-    (peak-rss / proof-size / verify-time) is tracked for the compare
-    table, but the dashboard trends that matter are the per-stage wall
-    clocks, the total, and the terminal stage's own detail series — the
-    stage-1 detail isn't plotted (its cost is inside `stage1-time` and
-    the deterministic `fft-cost` trend). -/
+    throughput / peak-rss trends. The aiur run's stage detail
+    (each stage's execute / prove split, stage-1 peak-rss / proof-size /
+    verify-time, and the whole-run `pipeline-peak-rss`) is tracked for
+    the compare table, but the dashboard trends that matter are the
+    per-stage wall clocks, the total, and the terminal stage's own detail
+    series: an execute/prove split lives inside its `stageN-time`, the
+    stage-1 detail inside `stage1-time` and the deterministic `fft-cost`
+    trend, and the pipeline peak is the terminal stage's peak. -/
 def plotSkips : List (String × String) :=
   [("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
-   ("aiur", "peak-rss"), ("aiur", "proof-size"), ("aiur", "verify-time")]
+   ("aiur", "peak-rss"), ("aiur", "proof-size"), ("aiur", "verify-time"),
+   ("aiur", "execute-time"), ("aiur", "prove-time"),
+   ("aiur", "recursive-execute-time"), ("aiur", "recursive-prove-time"),
+   ("aiur", "pipeline-peak-rss")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -125,6 +130,7 @@ def unitsFor (slug : String) : Option String :=
    ("stage1-time", "seconds (s)"),
    ("stage2-time", "seconds (s)"),
    ("total-time", "seconds (s)"),
+   ("pipeline-peak-rss", "bytes (B)"),
    ("throughput", "constants / second")].lookup slug
 
 /-- Dashboard group order (compile first, then the aiur pipeline, zisk,

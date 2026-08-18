@@ -26,7 +26,13 @@
 #   - aiur: `prove` — the full proof pipeline per constant (stage 1
 #     proves the IxVM typecheck, stage 2 executes and proves the
 #     in-circuit multi-stark verifier over that fresh proof), reported
-#     as the per-stage wall clocks plus their total. The bare `execute`
+#     as one comparison table per stage — witness execute, prove, peak
+#     RAM, proof size, verify — closing with the pipeline ledger (total
+#     time and the run's RAM ceiling). Its default selection is a fixed
+#     three-constant list, not the primary subset (`fixedSelections` in
+#     Ix/Cli/BenchCmd.lean): every stage is paid per constant, so the
+#     default set is what one host can finish. BENCH_FULL=1 and
+#     BENCH_CONSTS still override. The bare `execute`
 #     token switches it to the fast Phase-1-only mode (witness
 #     generation; no bencher baseline exists for that, so the main side
 #     comes from a base-SHA run).

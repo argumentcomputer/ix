@@ -234,7 +234,9 @@ jobs:
   #   - aiur: the proof pipeline — per constant, every stage plus the
   #     total: prove the IxVM typecheck (stage 1), then execute and
   #     prove the in-circuit multi-stark verifier over that fresh proof
-  #     (stage 2); the KZG stages will fold in as they land. One
+  #     (stage 2); the KZG stages will fold in as they land. Runs the
+  #     registry's fixed pipeline selection rather than the primary
+  #     subset — every stage is paid per constant. One
   #     subprocess per constant under the RAM watchdog; a too-large
   #     prove is killed and recorded as a `status: oom` row.
   #   - zisk: executes the same constants in the zkVM (deterministic

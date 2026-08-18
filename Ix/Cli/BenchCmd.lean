@@ -93,8 +93,31 @@ def isExcluded (name backend mode : String) : Bool :=
   benchExclusions.any fun (n, b, m) =>
     n == name && (b == "*" || b == backend) && (m == "*" || m == mode)
 
+/-- `(backend, mode)` combinations whose default selection is this fixed
+    name list instead of the `Vectors.csv` primary subset. The primary
+    subset is sized for a one-prove benchmark; a run that walks the whole
+    proof pipeline pays every stage per constant, so its default set is
+    sized to what one CI host can finish. `--full`, `--shard-only`, and an
+    explicit `--consts` request all bypass it, and the names still have to
+    be `Vectors.csv` rows of the env being run — this narrows the curated
+    selection, it does not add to it. -/
+def fixedSelections : List (String × String × List String) :=
+  [ -- The aiur pipeline's cost range: `Nat.add_comm` is the cheap end,
+    -- and the two heavy-tier proofs bracket the expensive end where the
+    -- stage-2 prover meets the host's RAM ceiling.
+    ("aiur", "prove",
+      ["Nat.add_comm",
+       "Array.extract_append",
+       "ByteArray.utf8DecodeChar?_utf8EncodeChar_append"]) ]
+
+/-- The fixed default selection for this `(backend, mode)`, if any. -/
+def fixedSelectionFor (backend mode : String) : Option (List String) :=
+  (fixedSelections.find? fun (b, m, _) =>
+    b == backend && (m == "*" || m == mode)).map (·.2.2)
+
 /-- Manifest selection, mirroring the `!benchmark` config surface: the env's
-    rows, restricted to the primary subset unless `full`, to `tier` when
+    rows, restricted to the primary subset — or the `(backend, mode)`'s
+    `fixedSelections` list where it has one — unless `full`, to `tier` when
     given (prove-mode full runs default to `cheap` — the prove-feasible
     set), to shard targets under `shardOnly`, and minus the
     `(backend, mode)` exclusions in `benchExclusions`. -/
@@ -105,9 +128,13 @@ def selectNames (rows : Array VectorRow) (env : String) (backend : String)
     if tier != "" then tier
     else if mode == "prove" && full then "cheap"
     else "all"
+  let fixed := if full || shardOnly then none
+    else fixedSelectionFor backend mode
   rows.filter fun r =>
     r.env == env
-    && (full || r.primary)
+    && (match fixed with
+        | some names => names.contains r.name
+        | none => full || r.primary)
     && (effTier == "all" || r.tier == effTier)
     && (!shardOnly || r.shardTarget)
     && !isExcluded r.name backend mode
@@ -186,8 +213,18 @@ structure BackendSpec where
   /-- (mode, compare-table columns), rendered in list order; the head is
       the table's row sort key. Column convention: the mode's headline
       wall-clock time, throughput, peak-rss, then detail (secondary times,
-      sizes, deterministic counters). -/
+      sizes, deterministic counters). A mode listed in `stages` takes its
+      columns from there instead. -/
   metrics : List (String × List String)
+  /-- (mode, [(stage title, that stage's measures)]) for a mode whose run
+      walks a multi-stage pipeline: the compare table splits into one
+      table per stage, so a stage's measures keep their plain names
+      (`prove-time`, `peak-rss`) across stages instead of competing for
+      one row. List order is render order, so the closing entry is the
+      ledger over the whole run. `metricsFor` reads a staged mode's
+      columns from here — the stage lists are the mode's measure list,
+      not a second copy of it. -/
+  stages : List (String × List (String × List String)) := []
   /-- Regression bounds per tracked measure: (measure, upper, lower), each
       bound a percentage over the baseline as a decimal fraction ("0.10"),
       "0" for an exact pin, or "_" for unbounded on that side. Rendered by
@@ -213,9 +250,10 @@ def backendSpecs : List BackendSpec := [
   -- proves the constant's IxVM typecheck; stage 2 executes the
   -- in-circuit multi-stark verifier over the fresh stage-1 proof and
   -- proves THAT execution; the KZG stages will join as stages 3/4 when
-  -- they land, folding into the same ledger. The headline columns are
-  -- the per-stage wall clocks (`stageN-time` = witness execute + prove)
-  -- and `total-time`, their sum. The whole system runs under the
+  -- they land, folding into the same ledger. Each stage reports the same
+  -- five columns — witness execute, prove, peak RAM, proof size, verify
+  -- — and the closing ledger table carries `total-time` and the run's
+  -- RAM ceiling. The whole system runs under the
   -- recursion-tuned parameters — 40 FRI queries at log-blowup 2 for the
   -- stage-1 and stage-2 proofs alike (50 OOMs the CI hosts; see
   -- `recursiveFriParameters` in Benchmarks/Typecheck.lean). execute is
@@ -225,12 +263,18 @@ def backendSpecs : List BackendSpec := [
     testbeds := [("prove", "aiur-x64-32x"),
                  ("execute", "aiur-execute-x64-32x")],
     unscheduled := ["execute"],
-    metrics := [("prove", ["total-time", "stage1-time", "stage2-time",
-                           "recursive-peak-rss", "recursive-proof-size",
-                           "recursive-verify-time", "recursive-fft-cost",
-                           "peak-rss", "proof-size", "verify-time",
-                           "fft-cost"]),
-                ("execute", ["execute-time", "throughput", "peak-rss",
+    stages := [("prove",
+      [("Stage 1 — IxVM on FRI",
+         ["execute-time", "prove-time", "peak-rss", "proof-size",
+          "verify-time", "fft-cost"]),
+       ("Stage 2 — FRI recursion on FRI",
+         ["recursive-execute-time", "recursive-prove-time",
+          "recursive-peak-rss", "recursive-proof-size",
+          "recursive-verify-time", "recursive-fft-cost"]),
+       ("Pipeline total",
+         ["total-time", "stage1-time", "stage2-time",
+          "pipeline-peak-rss"])])],
+    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
     -- fft-cost is deterministic but only ever drops on a real Aiur win →
     -- upper-only 5% instead of a hard pin. recursive-fft-cost drifts
@@ -242,8 +286,12 @@ def backendSpecs : List BackendSpec := [
                    ("recursive-fft-cost", "0.25", "_"),
                    ("total-time", "0.10", "_"), ("stage1-time", "0.10", "_"),
                    ("stage2-time", "0.10", "_"),
+                   ("execute-time", "0.10", "_"), ("prove-time", "0.10", "_"),
+                   ("recursive-execute-time", "0.10", "_"),
+                   ("recursive-prove-time", "0.10", "_"),
                    ("peak-rss", "0.10", "_"),
                    ("recursive-peak-rss", "0.10", "_"),
+                   ("pipeline-peak-rss", "0.10", "_"),
                    ("proof-size", "0.05", "_"),
                    ("recursive-proof-size", "0.05", "_"),
                    ("verify-time", "0.10", "_"),
@@ -318,8 +366,19 @@ def findBackend (name : String) : Option BackendSpec :=
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
   (b.testbeds.find? (·.1 == mode)).map (·.2)
 
+/-- The pipeline stages this mode's compare table splits into, empty for
+    the single-table modes. -/
+def BackendSpec.stagesFor (b : BackendSpec) (mode : String) :
+    List (String × List String) :=
+  ((b.stages.find? (·.1 == mode)).map (·.2)).getD []
+
+/-- The mode's tracked measures — the compare-table columns and the
+    dashboard's plot set. A staged mode's list is its stages concatenated,
+    so the stage tables and the plots can't drift apart. -/
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
-  ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
+  match b.stagesFor mode with
+  | [] => ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
+  | stages => (stages.map (·.2)).flatten
 
 /-- `thresholds` rendered as the bencher-track action's `--threshold-*`
     flags, one percentage-test triple per measure. `__WINDOW__` is the
