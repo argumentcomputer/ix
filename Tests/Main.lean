@@ -54,6 +54,7 @@ import Tests.ShardMap
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
+import Tests.Ix.Catalog
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -68,6 +69,7 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
+  ("catalog", Tests.Ix.Catalog.suite),
   ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
