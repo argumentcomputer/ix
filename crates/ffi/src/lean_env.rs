@@ -835,10 +835,15 @@ fn decode_name_data_value(
         // Scalars box `v` as `(v << 1) | 1`; an arithmetic shift
         // recovers the signed value.
         let v = (iobj.as_raw() as isize) >> 1;
+        // Both magnitudes below are non-negative by construction -- the
+        // branch settles the sign, and `negSucc n = -(n + 1)` so `n` is
+        // `-(v + 1)` for `v < 0` -- and an `isize` magnitude always fits
+        // `u64` on supported targets, so neither conversion can fail.
+        let mag = |n: isize| u64::try_from(n).expect("isize magnitude fits u64");
         if v >= 0 {
-          Int::OfNat(Nat::from(v as u64))
+          Int::OfNat(Nat::from(mag(v)))
         } else {
-          Int::NegSucc(Nat::from((-(v + 1)) as u64))
+          Int::NegSucc(Nat::from(mag(-(v + 1))))
         }
       } else {
         let neg = unsafe {
