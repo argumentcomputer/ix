@@ -327,13 +327,26 @@ impl Function {
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
-          if let Some(result) =
-            record.function_queries[*callee_idx].get_mut(&args)
-          {
-            if !unconstrained && !op_unconstrained {
-              *result.multiplicity += G::ONE;
-            }
-            map.extend_from_slice(result.output);
+          let callee_unconstrained = unconstrained || *op_unconstrained;
+          let cached_output = record.function_queries[*callee_idx]
+            .get_mut(&args)
+            .and_then(|result| {
+              // A zero-multiplicity entry was computed only as an
+              // unconstrained hint.  Promoting just this row would omit all
+              // of the callee's child lookups and unbalance their channels;
+              // replay the body constrained so promotion recurses through
+              // the whole dependency tree.
+              if !callee_unconstrained && result.multiplicity.is_zero() {
+                None
+              } else {
+                if !callee_unconstrained {
+                  *result.multiplicity += G::ONE;
+                }
+                Some(result.output.to_vec())
+              }
+            });
+          if let Some(output) = cached_output {
+            map.extend(output);
           } else {
             let saved_map = std::mem::replace(&mut map, args);
             callers_states_stack.push(CallerState {
@@ -343,7 +356,7 @@ impl Function {
               continuation_depth: continuation_stack.len(),
             });
             fun_idx = *callee_idx;
-            unconstrained = unconstrained || *op_unconstrained;
+            unconstrained = callee_unconstrained;
             push_block_exec_entries!(&toplevel.functions[fun_idx].body);
           }
         },
@@ -699,11 +712,22 @@ impl Function {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          record.function_queries[fun_idx].insert(
-            &map[..input_size],
-            &output,
-            G::from_bool(!unconstrained),
-          );
+          if let Some(result) =
+            record.function_queries[fun_idx].get_mut(&map[..input_size])
+          {
+            // The only ordinary way to execute an already cached function
+            // is constrained promotion of an unconstrained hint entry.
+            debug_assert_eq!(result.output, output);
+            if !unconstrained {
+              *result.multiplicity += G::ONE;
+            }
+          } else {
+            record.function_queries[fun_idx].insert(
+              &map[..input_size],
+              &output,
+              G::from_bool(!unconstrained),
+            );
+          }
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,
