@@ -948,7 +948,8 @@ def parseError (msg : String) : IO UInt32 := do
       BENCH_SHARD=1                (only the multi-shard target constants)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
       RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
-      IX_COMPILE_WORKERS=…         (passthrough; BENCH_PHASES=1 adds the
+      IX_COMPILE_WORKERS=… / IX_DECOMPILE_KENV_CLEAR_ENTRIES=…
+                                    (passthrough; BENCH_PHASES=1 adds the
                                     per-constant phase drill-downs to the
                                     comment; the IX_COMPILE_* knobs reach
                                     the measured `ix compile` and key its
@@ -1063,14 +1064,16 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       | k =>
         if ["BENCH_PHASES", "RUST_LOG", "WITHOUT_VK_VERIFICATION",
             "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
-            "IX_COMPILE_WORKERS"].contains k then
+            "IX_COMPILE_WORKERS",
+            "IX_DECOMPILE_KENV_CLEAR_ENTRIES"].contains k then
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
             benchmark command (expected BENCH_ENVS / BENCH_CONSTS / \
             BENCH_FULL / BENCH_SHARD, or passthrough: BENCH_PHASES, \
             RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS, \
-            IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS)"
+            IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \
+            IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
     | [] => continue
 
   -- BENCH_CONSTS: bench exactly these constants on the per-constant

@@ -186,7 +186,13 @@ BENCH_SHARD=1                  # only the multi-shard target constants
 BENCH_PHASES=1                 # add the per-constant phase drill-downs
                                # to the comment (off by default)
 RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
-                               # RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS)
+                               # RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS,
+                               # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,
+                               # IX_COMPILE_WORKERS,
+                               # IX_DECOMPILE_KENV_CLEAR_ENTRIES)
+IX_DECOMPILE_KENV_CLEAR_ENTRIES=0
+                               # decompile Pass 2 cache limit; 0 disables
+                               # clearing (default: 131072)
 ```
 
 The `KEY=VALUE` config works both as lines below the command (the comment
