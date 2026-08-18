@@ -8,6 +8,7 @@ import Ix.Cli.CheckLeanCmd
 import Ix.Cli.CompileLeanCmd
 import Ix.Cli.ValidateLeanCmd
 import Ix.Cli.ClaimCmd
+import Ix.Cli.CatalogCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
@@ -33,6 +34,7 @@ def ixCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     --storeCmd;
     benchCmd;
+    catalogCmd;
     compileCmd;
     decompileCmd;
     checkCmd;
