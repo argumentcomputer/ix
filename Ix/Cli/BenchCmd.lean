@@ -213,17 +213,17 @@ structure BackendSpec where
   /-- (mode, compare-table columns), rendered in list order; the head is
       the table's row sort key. Column convention: the mode's headline
       wall-clock time, throughput, peak-rss, then detail (secondary times,
-      sizes, deterministic counters). A mode listed in `stages` takes its
-      columns from there instead. -/
+      sizes, deterministic counters). For a mode listed in `stages` the
+      columns come from there, and this list instead names measures the
+      mode TRACKS without giving them a column — uploaded, thresholded,
+      and plotted like any other, just not tabled. -/
   metrics : List (String × List String)
   /-- (mode, [(stage title, that stage's measures)]) for a mode whose run
       walks a multi-stage pipeline: the compare table splits into one
       table per stage, so a stage's measures keep their plain names
       (`prove-time`, `peak-rss`) across stages instead of competing for
       one row. List order is render order, so the closing entry is the
-      ledger over the whole run. `metricsFor` reads a staged mode's
-      columns from here — the stage lists are the mode's measure list,
-      not a second copy of it. -/
+      ledger over the whole run. -/
   stages : List (String × List (String × List String)) := []
   /-- Regression bounds per tracked measure: (measure, upper, lower), each
       bound a percentage over the baseline as a decimal fraction ("0.10"),
@@ -271,10 +271,14 @@ def backendSpecs : List BackendSpec := [
          ["recursive-execute-time", "recursive-prove-time",
           "recursive-peak-rss", "recursive-proof-size",
           "recursive-verify-time", "recursive-fft-cost"]),
-       ("Pipeline total",
-         ["total-time", "stage1-time", "stage2-time",
-          "pipeline-peak-rss"])])],
-    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
+       ("Pipeline total", ["total-time", "pipeline-peak-rss"])])],
+    -- The per-stage wall clocks get no column: each stage table already
+    -- shows the execute and prove that sum to them, so the ledger stays
+    -- the two numbers that describe the whole run. They stay tracked for
+    -- the dashboard, where a per-stage trend is what shows WHICH stage
+    -- moved the total.
+    metrics := [("prove", ["stage1-time", "stage2-time"]),
+                ("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
     -- fft-cost is deterministic but only ever drops on a real Aiur win →
     -- upper-only 5% instead of a hard pin. recursive-fft-cost drifts
@@ -372,13 +376,15 @@ def BackendSpec.stagesFor (b : BackendSpec) (mode : String) :
     List (String × List String) :=
   ((b.stages.find? (·.1 == mode)).map (·.2)).getD []
 
-/-- The mode's tracked measures — the compare-table columns and the
-    dashboard's plot set. A staged mode's list is its stages concatenated,
-    so the stage tables and the plots can't drift apart. -/
+/-- Every measure the mode tracks — what the dashboard plots. For an
+    unstaged mode that is exactly its `metrics` columns; for a staged one
+    it is the stage tables' measures plus any `metrics` entry, which is
+    how a measure gets tracked and plotted without taking a column. -/
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
+  let extra := ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
   match b.stagesFor mode with
-  | [] => ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
-  | stages => (stages.map (·.2)).flatten
+  | [] => extra
+  | stages => ((stages.map (·.2)).flatten ++ extra).eraseDups
 
 /-- `thresholds` rendered as the bencher-track action's `--threshold-*`
     flags, one percentage-test triple per measure. `__WINDOW__` is the
