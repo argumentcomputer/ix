@@ -169,7 +169,7 @@
               # lean4-nix guesses a dep's library target by capitalizing the
               # package name ("lean4lean" -> "Lean4lean"), but this package's
               # library is `Lean4Lean`. Build the stock default targets
-              # (Lean4Lean, the lean4lean exe, Theory, Verify) plus the
+              # (Lean4Lean, the lean4lean exe, Theory, Verify, Tests) plus the
               # shared/static facets so consumers linking exes find the
               # module `.o` files in the read-only store path.
               lean4lean = {
