@@ -11,7 +11,7 @@ def blake3 := ⟦
   pub fn blake3_test() -> [[U8; 4]; 8] {
     let (idx, len) = io_get_info(0, [0]);
     let byte_stream = #read_byte_stream(0, idx, len);
-    blake3(byte_stream)
+    @blake3(byte_stream)
   }
 
   /- # Benchmark entrypoints -/
@@ -21,7 +21,7 @@ def blake3 := ⟦
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(0, key);
     let byte_stream = #read_byte_stream(0, idx, len);
-    blake3(byte_stream);
+    @blake3(byte_stream);
     match num_hashes_pred {
       0 => 0,
       _ => blake3_bench(num_hashes_pred),
@@ -30,26 +30,41 @@ def blake3 := ⟦
 
   /- # Implementation -/
 
-  enum Layer {
-    Push(&Layer, [[U8; 4]; 8]),
+  enum LayerNode {
+    Push(Layer, [[U8; 4]; 8]),
     Nil
   }
+
+  type Layer = &LayerNode
 
   enum MaybeDigest {
     None,
     Some([[U8; 4]; 8])
   }
 
+  -- Blake3 output words packed 4 LE bytes -> 1 field element (injective:
+  -- 2^32 < p, unlike full 8-byte limbs). Pure wiring when @-inlined; the
+  -- packed form is the public-input digest representation shared by the
+  -- kernel's `verify_claim` and the recursive verifier's entrypoint.
+  fn b3_pack_w(w: [U8; 4]) -> G {
+    to_field(w[0]) + 256 * to_field(w[1]) + 65536 * to_field(w[2])
+      + 16777216 * to_field(w[3])
+  }
+  fn b3_pack(h: [[U8; 4]; 8]) -> [G; 8] {
+    [@b3_pack_w(h[0]), @b3_pack_w(h[1]), @b3_pack_w(h[2]), @b3_pack_w(h[3]),
+     @b3_pack_w(h[4]), @b3_pack_w(h[5]), @b3_pack_w(h[6]), @b3_pack_w(h[7])]
+  }
+
   fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- Hash `bytes` and assert the digest equals `expected`. Used by every
   -- IOBuffer-load path that verifies the pre-image of a content-addressed
   -- pointer matches the bytes the prover supplied.
   fn verify_bytes_against(bytes: ByteStream, expected: [U8; 32]) {
-    let h = blake3(bytes);
+    let h = @blake3(bytes);
     assert_eq!(
       [h[0][0], h[0][1], h[0][2], h[0][3],
        h[1][0], h[1][1], h[1][2], h[1][3],
@@ -68,7 +83,7 @@ def blake3 := ⟦
   -- site that synthesises an address from raw bytes (e.g. `expr_addr`,
   -- `leaf_hash`, `node_hash`, `cprj_content_addr`).
   fn bytes_to_addr(bytes: ByteStream) -> &[U8; 32] {
-    let h = blake3(bytes);
+    let h = @blake3(bytes);
     store([h[0][0], h[0][1], h[0][2], h[0][3],
            h[1][0], h[1][1], h[1][2], h[1][3],
            h[2][0], h[2][1], h[2][2], h[2][3],
@@ -80,10 +95,10 @@ def blake3 := ⟦
   }
 
   fn blake3_next_layer(layer: Layer, digest: [[U8; 4]; 8], root: G) -> (MaybeDigest, Layer) {
-    match layer {
-      Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
-      Layer.Push(layer, other) =>
-        let (last, new_layer) = blake3_next_layer(load(layer), other, 0);
+    match load(layer) {
+      LayerNode.Nil => (MaybeDigest.Some(digest), layer),
+      LayerNode.Push(layer, other) =>
+        let (last, new_layer) = blake3_next_layer(layer, other, 0);
         match last {
           MaybeDigest.None => (MaybeDigest.Some(digest), new_layer),
           MaybeDigest.Some(last) =>
@@ -93,29 +108,29 @@ def blake3 := ⟦
             let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
             let [x8, x9, x10, x11, x12, x13, x14, x15] = digest;
             let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
-            match new_layer {
-              Layer.Nil =>
+            match load(new_layer) {
+              LayerNode.Nil =>
                 let flags = PARENT + ROOT * root;
-                let digest = blake3_compress(IV, blocks, [0u8; 8], 64, flags);
-                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
+                let digest = @blake3_compress_init(IV, blocks, [0u8; 8], 64, flags);
+                (MaybeDigest.None, store(LayerNode.Push(new_layer, digest))),
               _ =>
                 let flags = PARENT;
-                let digest = blake3_compress(IV, blocks, [0u8; 8], 64, flags);
-                (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
+                let digest = @blake3_compress_init(IV, blocks, [0u8; 8], 64, flags);
+                (MaybeDigest.None, store(LayerNode.Push(new_layer, digest))),
             },
         },
     }
   }
 
   fn blake3_compress_layer(layer: Layer) -> [[U8; 4]; 8] {
-    let Layer.Push(rest, digest) = layer;
+    let LayerNode.Push(rest, digest) = load(layer);
     match load(rest) {
-      Layer.Nil => digest,
-      rest =>
+      LayerNode.Nil => digest,
+      _ =>
         let (last, new_merkle) = blake3_next_layer(rest, digest, 1);
         match last {
           MaybeDigest.None => blake3_compress_layer(new_merkle),
-          MaybeDigest.Some(last) => blake3_compress_layer(Layer.Push(store(new_merkle), last)),
+          MaybeDigest.Some(last) => blake3_compress_layer(store(LayerNode.Push(new_merkle, last))),
         },
     }
   }
@@ -131,8 +146,8 @@ def blake3 := ⟦
     chunk_index: G,
     chunk_count: &U64,
     block_digest: &[[U8; 4]; 8],
-    layer: &Layer
-  ) -> &Layer {
+    layer: Layer
+  ) -> Layer {
     match load(input) {
       -- Input exhausted: hand off to the cold finalize circuit.
       ListNode.Nil =>
@@ -241,8 +256,8 @@ def blake3 := ⟦
     chunk_index: G,
     chunk_count: &U64,
     block_digest: &[[U8; 4]; 8],
-    layer: &Layer
-  ) -> &Layer {
+    layer: Layer
+  ) -> Layer {
     let CHUNK_START = 1;
     let CHUNK_END = 2;
     let ROOT = 8;
@@ -251,14 +266,14 @@ def blake3 := ⟦
         match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
             let flags = ROOT + CHUNK_START + CHUNK_END;
-            store(Layer.Push(layer, blake3_compress(load(block_digest), [[0u8; 4]; 16], load(chunk_count), 0, flags))),
+            store(LayerNode.Push(layer, @blake3_compress_init(load(block_digest), [[0u8; 4]; 16], load(chunk_count), 0, flags))),
           _ => layer,
         },
-      (0, _) => store(Layer.Push(layer, load(block_digest))),
+      (0, _) => store(LayerNode.Push(layer, load(block_digest))),
       (_, _) =>
         let flags = CHUNK_END + u64_is_zero(load(chunk_count)) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
         let block = bytes_to_block(pad_block(byte_acc, 64 - block_index));
-        store(Layer.Push(layer, blake3_compress(load(block_digest), block, load(chunk_count), block_index, flags))),
+        store(LayerNode.Push(layer, @blake3_compress_init(load(block_digest), block, load(chunk_count), block_index, flags))),
     }
   }
 
@@ -271,8 +286,8 @@ def blake3 := ⟦
     chunk_index: G,
     chunk_count: &U64,
     block_digest: &[[U8; 4]; 8],
-    layer: &Layer
-  ) -> &Layer {
+    layer: Layer
+  ) -> Layer {
     let CHUNK_START = 1;
     let CHUNK_END = 2;
     let ROOT = 8;
@@ -281,14 +296,14 @@ def blake3 := ⟦
       1023 =>
         let flags = ROOT * list_is_empty(input) * u64_is_zero(load(chunk_count)) + CHUNK_END;
         let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-        let layer = store(Layer.Push(layer, blake3_compress(load(block_digest), block, load(chunk_count), 64, flags)));
+        let layer = store(LayerNode.Push(layer, @blake3_compress_init(load(block_digest), block, load(chunk_count), 64, flags)));
         blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), layer),
       _ =>
         let chunk_end_flag = list_is_empty(input) * CHUNK_END;
         let root_flag = list_is_empty(input) * u64_is_zero(load(chunk_count)) * ROOT;
         let chunk_start_flag = eq_zero(chunk_index - 63) * CHUNK_START;
         let flags = chunk_end_flag + root_flag + chunk_start_flag;
-        let block_digest = blake3_compress(load(block_digest), block, load(chunk_count), 64, flags);
+        let block_digest = @blake3_compress_init(load(block_digest), block, load(chunk_count), 64, flags);
         blake3_compress_chunks(input, store(ListNode.Nil), 0, chunk_index + 1, chunk_count, store(block_digest), layer),
     }
   }
@@ -385,30 +400,12 @@ def blake3 := ⟦
     let state = set(state, 9, c);
     let state = set(state, 14, d);
 
-    -- Apply the message schedule permutation for the next round. The final
-    -- round also executes this permutation, but only state[0..15] is consumed
-    -- afterward, so that last permutation is unobservable.
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    set(new_state, 31, state[24])
+    state
   }
 
   -- TODO:
   -- `block_words` could be two arguments of type [[U8; 4]; 8]
-  fn blake3_compress(
+  fn blake3_compress_init(
     chaining_value: [[U8; 4]; 8],
     block_words: [[U8; 4]; 16],
     counter: U64,
@@ -437,30 +434,49 @@ def blake3 := ⟦
         block_words[12],   block_words[13],   block_words[14],   block_words[15]
     ];
 
-    -- Round 0
-    let state = blake3_compress_inner_j(state);
-    -- Round 1
-    let state = blake3_compress_inner_j(state);
-    -- Round 2
-    let state = blake3_compress_inner_j(state);
-    -- Round 3
-    let state = blake3_compress_inner_j(state);
-    -- Round 4
-    let state = blake3_compress_inner_j(state);
-    -- Round 5
-    let state = blake3_compress_inner_j(state);
-    -- Round 6
-    let state = blake3_compress_inner_j(state);
+    blake3_compress(0, state)
+  }
 
-    let output0 = @u32_xor(state[0], state[8]);
-    let output1 = @u32_xor(state[1], state[9]);
-    let output2 = @u32_xor(state[2], state[10]);
-    let output3 = @u32_xor(state[3], state[11]);
-    let output4 = @u32_xor(state[4], state[12]);
-    let output5 = @u32_xor(state[5], state[13]);
-    let output6 = @u32_xor(state[6], state[14]);
-    let output7 = @u32_xor(state[7], state[15]);
-    [output0, output1, output2, output3, output4, output5, output6, output7]
+  -- One row per stage: stages 0..6 run one round each and recurse with
+  -- `stage + 1`; stage 7 folds the working halves into the digest.
+  fn blake3_compress(
+    stage: G,
+    state: [[U8; 4]; 32]
+  ) -> [[U8; 4]; 8] {
+    match stage {
+      7 =>
+        let output0 = @u32_xor(state[0], state[8]);
+        let output1 = @u32_xor(state[1], state[9]);
+        let output2 = @u32_xor(state[2], state[10]);
+        let output3 = @u32_xor(state[3], state[11]);
+        let output4 = @u32_xor(state[4], state[12]);
+        let output5 = @u32_xor(state[5], state[13]);
+        let output6 = @u32_xor(state[6], state[14]);
+        let output7 = @u32_xor(state[7], state[15]);
+        [output0, output1, output2, output3, output4, output5, output6, output7],
+      _ =>
+        let new_state = @blake3_compress_inner_j(state);
+        -- Apply the message schedule permutation for the next round. The final
+        -- round also executes this permutation, but only state[0..15] is consumed
+        -- afterward, so that last permutation is unobservable.
+        let new_state = set(new_state, 16, state[18]);
+        let new_state = set(new_state, 17, state[22]);
+        let new_state = set(new_state, 18, state[19]);
+        let new_state = set(new_state, 19, state[26]);
+        let new_state = set(new_state, 20, state[23]);
+        let new_state = set(new_state, 21, state[16]);
+        let new_state = set(new_state, 22, state[20]);
+        let new_state = set(new_state, 23, state[29]);
+        let new_state = set(new_state, 24, state[17]);
+        let new_state = set(new_state, 25, state[27]);
+        let new_state = set(new_state, 26, state[28]);
+        let new_state = set(new_state, 27, state[21]);
+        let new_state = set(new_state, 28, state[25]);
+        let new_state = set(new_state, 29, state[30]);
+        let new_state = set(new_state, 30, state[31]);
+        let new_state = set(new_state, 31, state[24]);
+        blake3_compress(stage + 1, new_state),
+    }
   }
 ⟧
 

@@ -60,8 +60,16 @@ def deserialize := ⟦
   -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
   type Digest = [U64; 4]
 
+  -- Digests thread the Merkle machinery BY POINTER: a digest is 32 columns,
+  -- so every value crossing a circuit boundary (input, call output, list
+  -- node) paid 32; a pointer pays 1. `store` is content-addressed (same
+  -- digest -> same pointer), so pointer identity preserves the cross-query
+  -- compress memoization. Bytes are loaded only where actually consumed
+  -- (block assembly in mmcs_compress, cap observation, the root equality).
+  type DigestP = &Digest
+
   -- `Commitment = MerkleCap<..>`: only the `cap: Vec<Digest>` is on the wire.
-  type MerkleCap = List‹Digest›
+  type MerkleCap = List‹DigestP›
 
   -- `OpenedValuesForRound<ExtVal> = Vec<Vec<Vec<ExtVal>>>`.
   type OpenedRound = List‹List‹List‹Ext›››
@@ -75,7 +83,7 @@ def deserialize := ⟦
   --   opened_values : Vec<Vec<Val>>   (one row of base-field values per matrix)
   --   opening_proof : Vec<Digest>     (Merkle authentication path)
   enum BatchOpening {
-    Mk(List‹List‹U64››, List‹Digest›)
+    Mk(List‹List‹U64››, List‹DigestP›)
   }
 
   -- `CommitPhaseProofStep<ExtVal, ExtMmcs>`: one folding step of a FRI query.
@@ -83,7 +91,7 @@ def deserialize := ⟦
   --   sibling_values : Vec<Ext>  (arity - 1 siblings)
   --   opening_proof  : Vec<Digest>
   enum CommitPhaseProofStep {
-    Mk(U8, List‹Ext›, List‹Digest›)
+    Mk(U8, List‹Ext›, List‹DigestP›)
   }
 
   -- `QueryProof<ExtVal, ExtMmcs, Vec<BatchOpening<Val, Mmcs>>>`.
@@ -258,23 +266,23 @@ def deserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_ext_at(i);
+        let (x, j) = @read_ext_at(i);
         let (rest, j2) = read_ext_vec_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
-  fn read_digest_vec_at(i: G) -> (List‹Digest›, G) {
+  fn read_digest_vec_at(i: G) -> (List‹DigestP›, G) {
     let (n, j) = read_count_at(i);
     read_digest_vec_at_n(j, n)
   }
-  fn read_digest_vec_at_n(i: G, n: G) -> (List‹Digest›, G) {
+  fn read_digest_vec_at_n(i: G, n: G) -> (List‹DigestP›, G) {
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_digest_at(i);
+        let (x, j) = @read_digest_at(i);
         let (rest, j2) = read_digest_vec_at_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
+        (store(ListNode.Cons(store(x), rest)), j2),
     }
   }
 
@@ -337,21 +345,21 @@ def deserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_merkle_cap_at(i);
+        let (x, j) = @read_merkle_cap_at(i);
         let (rest, j2) = read_merkle_cap_vec_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
   fn read_commitments(i: G) -> (Commitments, G) {
-    let (stage_1_trace, j0) = read_merkle_cap_at(i);
-    let (stage_2_trace, j1) = read_merkle_cap_at(j0);
-    let (quotient_chunks, j2) = read_merkle_cap_at(j1);
+    let (stage_1_trace, j0) = @read_merkle_cap_at(i);
+    let (stage_2_trace, j1) = @read_merkle_cap_at(j0);
+    let (quotient_chunks, j2) = @read_merkle_cap_at(j1);
     (Commitments.Mk(stage_1_trace, stage_2_trace, quotient_chunks), j2)
   }
 
   fn read_batch_opening(i: G) -> (BatchOpening, G) {
-    let (opened_values, j0) = read_u64_vec_vec(i);
+    let (opened_values, j0) = @read_u64_vec_vec(i);
     let (opening_proof, j1) = read_digest_vec_at(j0);
     (BatchOpening.Mk(opened_values, opening_proof), j1)
   }
@@ -363,7 +371,7 @@ def deserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_batch_opening(i);
+        let (x, j) = @read_batch_opening(i);
         let (rest, j2) = read_batch_opening_vec_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), j2),
     }
@@ -383,15 +391,15 @@ def deserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_commit_phase_step(i);
+        let (x, j) = @read_commit_phase_step(i);
         let (rest, j2) = read_commit_phase_step_vec_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
   fn read_query_proof(i: G) -> (QueryProof, G) {
-    let (input_proof, j0) = read_batch_opening_vec(i);
-    let (commit_phase_openings, j1) = read_commit_phase_step_vec(j0);
+    let (input_proof, j0) = @read_batch_opening_vec(i);
+    let (commit_phase_openings, j1) = @read_commit_phase_step_vec(j0);
     (QueryProof.Mk(input_proof, commit_phase_openings), j1)
   }
   fn read_query_proof_vec(i: G) -> (List‹QueryProof›, G) {
@@ -402,16 +410,16 @@ def deserialize := ⟦
     match n {
       0 => (store(ListNode.Nil), i),
       _ =>
-        let (x, j) = read_query_proof(i);
+        let (x, j) = @read_query_proof(i);
         let (rest, j2) = read_query_proof_vec_n(j, n - 1);
         (store(ListNode.Cons(x, rest)), j2),
     }
   }
 
   fn read_fri_proof(i: G) -> (FriProof, G) {
-    let (commit_phase_commits, j0) = read_merkle_cap_vec(i);
+    let (commit_phase_commits, j0) = @read_merkle_cap_vec(i);
     let (commit_pow_witnesses, j1) = read_u64_vec(j0);
-    let (query_proofs, j2) = read_query_proof_vec(j1);
+    let (query_proofs, j2) = @read_query_proof_vec(j1);
     let (final_poly, j3) = read_ext_vec(j2);
     let (query_pow_witness, j4) = #read_u64_at(j3);
     (FriProof.Mk(commit_phase_commits, commit_pow_witnesses, query_proofs,
@@ -449,11 +457,11 @@ def deserialize := ⟦
   -- read from the channel-0 IO arena starting at byte offset `i`. Returns the
   -- end offset; the entrypoint asserts it equals `idx + len` (fully consumed).
   fn read_proof(i: G) -> (Proof, G) {
-    let (active, ja) = read_active(i);
-    let (commitments, j0) = read_commitments(ja);
+    let (active, ja) = @read_active(i);
+    let (commitments, j0) = @read_commitments(ja);
     let (intermediate_accumulators, j1) = read_ext_vec(j0);
-    let (log_degrees, j2) = read_u8_vec(j1);
-    let (opening_proof, j3) = read_fri_proof(j2);
+    let (log_degrees, j2) = @read_u8_vec(j1);
+    let (opening_proof, j3) = @read_fri_proof(j2);
     let (quotient_opened_values, j4) = read_opened_round(j3);
     let (preprocessed_opened_values, j5) = read_preprocessed(j4);
     let (stage_1_opened_values, j6) = read_opened_round(j5);

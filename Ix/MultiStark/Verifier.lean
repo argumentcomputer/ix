@@ -79,7 +79,7 @@ def verifier := ⟦
       ListNode.Nil => 0,
       ListNode.Cons(e, rest) =>
         match load(rest) {
-          ListNode.Nil => ext_is_zero(e),
+          ListNode.Nil => @ext_is_zero(e),
           _ => last_acc_is_zero(rest),
         },
     }
@@ -113,7 +113,7 @@ def verifier := ⟦
   fn cap_onto(cap: MerkleCap, tail: ByteStream) -> ByteStream {
     match load(cap) {
       ListNode.Nil => tail,
-      ListNode.Cons(d, rest) => digest_onto(d, cap_onto(rest, tail)),
+      ListNode.Cons(d, rest) => @digest_onto(load(d), cap_onto(rest, tail)),
     }
   }
 
@@ -134,34 +134,40 @@ def verifier := ⟦
     }
   }
 
-  -- Sample one byte. If `output` is empty, flush: hash the `input` buffer, set
-  -- the new input to the 32 hash bytes, and refill `output` (in pop order).
-  fn ch_sample_byte(input: ByteStream, output: ByteStream) -> (U8, ByteStream, ByteStream) {
+  -- Sample 8 bytes = `sample_array()` (for one base-field element, LE).
+  -- The output buffer always holds a multiple of 8 bytes at a draw boundary
+  -- (a flush refills 32, every draw takes 8, an observe clears to Nil), so
+  -- the empty check happens at most once per draw: flush, then pop 8. The
+  -- two arms' pops share columns (branch aux/lookups combine by max), which
+  -- is what makes this strictly narrower than a per-byte sampler circuit.
+  fn ch_sample8(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
     match load(output) {
-      ListNode.Cons(b, rest) => (b, input, rest),
       ListNode.Nil =>
         -- `HashChallenger<u8, Blake3, 32>` flush: hash the `input` buffer with
         -- blake3; `b3_flatten_onto` (Pcs.lean) gives the 32 output bytes, popped
         -- from the END (rev), with the `input := output := hash` update.
-        let h = blake3(input);
-        let fwd = b3_flatten_onto(h, store(ListNode.Nil));
+        let h = @blake3(input);
+        let fwd = @b3_flatten_onto(h, store(ListNode.Nil));
         let rev = rev_onto(fwd, store(ListNode.Nil));
-        let &ListNode.Cons(b, rest) = rev;
-        (b, fwd, rest),
+        let &ListNode.Cons(b0, r1) = rev;
+        let &ListNode.Cons(b1, r2) = r1;
+        let &ListNode.Cons(b2, r3) = r2;
+        let &ListNode.Cons(b3, r4) = r3;
+        let &ListNode.Cons(b4, r5) = r4;
+        let &ListNode.Cons(b5, r6) = r5;
+        let &ListNode.Cons(b6, r7) = r6;
+        let &ListNode.Cons(b7, r8) = r7;
+        ([b0, b1, b2, b3, b4, b5, b6, b7], fwd, r8),
+      ListNode.Cons(b0, r1) =>
+        let &ListNode.Cons(b1, r2) = r1;
+        let &ListNode.Cons(b2, r3) = r2;
+        let &ListNode.Cons(b3, r4) = r3;
+        let &ListNode.Cons(b4, r5) = r4;
+        let &ListNode.Cons(b5, r6) = r5;
+        let &ListNode.Cons(b6, r7) = r6;
+        let &ListNode.Cons(b7, r8) = r7;
+        ([b0, b1, b2, b3, b4, b5, b6, b7], input, r8),
     }
-  }
-
-  -- Sample 8 bytes = `sample_array()` (for one base-field element, LE).
-  fn ch_sample8(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
-    let (b0, i0, o0) = ch_sample_byte(input, output);
-    let (b1, i1, o1) = ch_sample_byte(i0, o0);
-    let (b2, i2, o2) = ch_sample_byte(i1, o1);
-    let (b3, i3, o3) = ch_sample_byte(i2, o2);
-    let (b4, i4, o4) = ch_sample_byte(i3, o3);
-    let (b5, i5, o5) = ch_sample_byte(i4, o4);
-    let (b6, i6, o6) = ch_sample_byte(i5, o5);
-    let (b7, i7, o7) = ch_sample_byte(i6, o6);
-    ([b0, b1, b2, b3, b4, b5, b6, b7], i7, o7)
   }
 
   -- Sample one base-field element with REJECTION SAMPLING, mirroring
@@ -198,18 +204,11 @@ def verifier := ⟦
   -- `sample_bits(n)` (FRI query index). `SerializingChallenger64::sample_bits`
   -- reads one 8-byte sample as a little-endian u64 and masks the low `n` bits.
   -- We return the low `n` bits as a list (LSB first = the leaf→root Merkle/FRI
-  -- path), built from the 8 sampled bytes' bit decompositions (via `cons8`),
-  -- truncated to `n`.
-  fn sample8_bits(bytes: [U8; 8]) -> List‹G› {
-    cons8(u8_bit_decomposition(bytes[0]),
-    cons8(u8_bit_decomposition(bytes[1]),
-    cons8(u8_bit_decomposition(bytes[2]),
-    cons8(u8_bit_decomposition(bytes[3]),
-    cons8(u8_bit_decomposition(bytes[4]),
-    cons8(u8_bit_decomposition(bytes[5]),
-    cons8(u8_bit_decomposition(bytes[6]),
-    cons8(u8_bit_decomposition(bytes[7]), store(ListNode.Nil)))))))))
-  }
+  -- path). Only the low 4 bytes are decomposed: 32 bits bound every
+  -- log-height (Goldilocks two-adicity is 32), and `take_bits` aborts on the
+  -- Nil match if `n` ever exceeded 32 — exactly as it did at 64 with the old
+  -- full decomposition. The full 8 bytes are still drawn (Fiat-Shamir
+  -- alignment with the reference challenger).
   fn take_bits(bits: List‹G›, n: G) -> List‹G› {
     match n {
       0 => store(ListNode.Nil),
@@ -221,7 +220,12 @@ def verifier := ⟦
   fn ch_sample_bits(input: ByteStream, output: ByteStream, n: G)
       -> (List‹G›, ByteStream, ByteStream) {
     let (bytes, i1, o1) = ch_sample8(input, output);
-    (take_bits(sample8_bits(bytes), n), i1, o1)
+    let bits =
+      cons8(u8_bit_decomposition(bytes[0]),
+      cons8(u8_bit_decomposition(bytes[1]),
+      cons8(u8_bit_decomposition(bytes[2]),
+      cons8(u8_bit_decomposition(bytes[3]), store(ListNode.Nil)))));
+    (take_bits(bits, n), i1, o1)
   }
 
   -- Append (observe) 8 little-endian bytes of `b` at the END of the challenger
@@ -271,28 +275,6 @@ def verifier := ⟦
       -> (Ext, ByteStream, ByteStream) {
     let (c0, c1, i1, o1) = ch_sample_ext(input, output);
     ([@gl_val(c0), @gl_val(c1)], i1, o1)
-  }
-
-  -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.
-  fn claim_vals_onto(vals: List‹U64›, tail: ByteStream) -> ByteStream {
-    match load(vals) {
-      ListNode.Nil => tail,
-      ListNode.Cons(v, rest) => b8_onto(v, claim_vals_onto(rest, tail)),
-    }
-  }
-  -- Each claim, length-prefixed: `observe(Val::from_usize(claim.len()))` then
-  -- `observe_slice(claim)`.
-  fn claims_each_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
-    match load(claims) {
-      ListNode.Nil => tail,
-      ListNode.Cons(c, rest) =>
-        b8_onto(list_length_u64(c), claim_vals_onto(c, claims_each_onto(rest, tail))),
-    }
-  }
-  -- Append every claim: the claim count, then each claim length-prefixed
-  -- (`verify_multiple_claims`' claim observation, byte-for-byte).
-  fn claims_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
-    b8_onto(list_length_u64(claims), claims_each_onto(claims, tail))
   }
 
   -- `b"multi-stark/v0"` — the domain-separation tag the challenger seed
@@ -353,25 +335,29 @@ def verifier := ⟦
   }
 
   fn fiat_shamir(tlimbs: List‹U64›, active: List‹G›, prep: MerkleCap, s1: MerkleCap, s2: MerkleCap,
-      q: MerkleCap, lds: List‹U8›, claims: List‹List‹U64››, accs: List‹Ext›)
+      q: MerkleCap, lds: List‹U8›, cbytes: ByteStream, accs: List‹Ext›)
       -> (Ext, Ext, Ext, Ext, ByteStream) {
     -- Initial transcript, front-to-back: seed tag, parameter + shape words
     -- (`tlimbs`, from the verifying key), the activation bitmap, prep,
     -- stage_1, log_degrees, claims. Built inner-to-outer with the prepend
-    -- helpers so the result is in forward (observation) order.
-    let input = claims_onto(claims, store(ListNode.Nil));
-    let input = log_degrees_onto(lds, input);
+    -- helpers so the result is in forward (observation) order. The claims
+    -- segment is `cbytes` VERBATIM: the wire format (u64 count, per-claim
+    -- u64 len + raw u64 vals, all 8 LE bytes) is exactly the transcript
+    -- encoding `verify_multiple_claims` observes, and the entrypoint
+    -- asserts the stream fully consumed — so no re-serialization walk.
+    let input = log_degrees_onto(lds, cbytes);
     let input = cap_onto(s1, input);
     let input = cap_onto(prep, input);
     let input = active_onto(active, input);
     let input = limbs_onto(tlimbs, input);
-    let input = seed_tag_onto(input);
-    -- sample lookup challenge, then observe it back (append)
+    let input = @seed_tag_onto(input);
+    -- sample lookup challenge, then observe it back (append; one concat of
+    -- the 16-byte segment instead of two full-buffer snoc walks)
     let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = snoc_b8(snoc_b8(input, l0), l1);
+    let input = list_concat(input, b8_onto(l0, b8_onto(l1, store(ListNode.Nil))));
     -- sample fingerprint challenge, then observe it back
     let (f0, f1, input, _of) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = snoc_b8(snoc_b8(input, f0), f1);
+    let input = list_concat(input, b8_onto(f0, b8_onto(f1, store(ListNode.Nil))));
     -- observe stage_2 commitment
     let input = snoc_cap(input, s2);
     -- observe the intermediate accumulators (public values entering the
@@ -404,43 +390,22 @@ def verifier := ⟦
     }
   }
 
-  -- `two_adic_generator(bits)` — a primitive 2^bits root of unity in Goldilocks
-  -- (`Plonky3/goldilocks/src/goldilocks.rs::TWO_ADIC_GENERATORS`).
+  -- `two_adic_generator(bits)` — a primitive 2^bits root of unity in
+  -- Goldilocks, derived by repeated squaring from the maximal (2^32)
+  -- generator: `g_k = g_{k+1}^2` (matches Plonky3's TWO_ADIC_GENERATORS
+  -- table, checked value-by-value). The 33-arm table cost 32 default-arm
+  -- aux + 33 selectors; the chain is one short memoized circuit — the
+  -- first call materialises ≤ 32 rows, every later call is a cache hit.
+  -- Callers must keep `bits ≤ 32` (guarded where `bits` comes from proof
+  -- advice: log_degrees in `ood_loop`, log_gmax in `pcs_fri_verify`);
+  -- an unguarded larger value would recurse without a base case.
   fn two_adic_gen(bits: G) -> Goldilocks {
     match bits {
       0  => 1,
-      1  => 18446744069414584320,
-      2  => 281474976710656,
-      3  => 18446744069397807105,
-      4  => 17293822564807737345,
-      5  => 70368744161280,
-      6  => 549755813888,
-      7  => 17870292113338400769,
-      8  => 13797081185216407910,
-      9  => 1803076106186727246,
-      10 => 11353340290879379826,
-      11 => 455906449640507599,
-      12 => 17492915097719143606,
-      13 => 1532612707718625687,
-      14 => 16207902636198568418,
-      15 => 17776499369601055404,
-      16 => 6115771955107415310,
-      17 => 12380578893860276750,
-      18 => 9306717745644682924,
-      19 => 18146160046829613826,
-      20 => 3511170319078647661,
-      21 => 17654865857378133588,
-      22 => 5416168637041100469,
-      23 => 16905767614792059275,
-      24 => 9713644485405565297,
-      25 => 5456943929260765144,
-      26 => 17096174751763063430,
-      27 => 1213594585890690845,
-      28 => 6414415596519834757,
-      29 => 16116352524544190054,
-      30 => 9123114210336311365,
-      31 => 4614640910117430873,
-      _  => 1753635133440165772,
+      32 => 1753635133440165772,
+      _  =>
+        let g = two_adic_gen(bits + 1);
+        g * g,
     }
   }
 
@@ -466,7 +431,7 @@ def verifier := ⟦
   }
 
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
-    let zh = trace_vanishing(zeta, l);
+    let zh = @trace_vanishing(zeta, l);
     let ginv = @gl_inverse(two_adic_gen(l));
     let is_first = @eg_div(zh, @eg_sub(zeta, [1, 0]));
     let is_last = @eg_div(zh, @eg_sub(zeta, [ginv, 0]));
@@ -482,25 +447,26 @@ def verifier := ⟦
   -- Returns 1 on success; `assert_eq!` aborts the (proof) execution on any
   -- failed check, exactly as the Rust verifier returns `Err`.
   fn verify(proof: Proof) -> G {
-    match proof {
-      Proof.Mk(_active, _commitments, accs, _log_degrees, _opening,
-               quotient, _preprocessed, stage_1, stage_2) =>
-        -- Step 1 (shape, system-independent): the per-round opened-value lists
-        -- and the accumulator list all have the same length = the circuit count.
-        let num_circuits = list_length(accs);
-        -- there must be at least one circuit (Rust: InvalidSystem)
-        assert_eq!(eq_zero(num_circuits), 0);
-        assert_eq!(list_length(stage_1), num_circuits);
-        assert_eq!(list_length(stage_2), num_circuits);
-        -- one wide quotient matrix per active circuit
-        assert_eq!(list_length(quotient), num_circuits);
+    -- Single-constructor destructure (not a match): keeps the body — and the
+    -- entrypoint it splices into — single-path, so its lookups group 2 per
+    -- stage-2 slot.
+    let Proof.Mk(_active, _commitments, accs, _log_degrees, _opening,
+                 quotient, _preprocessed, stage_1, stage_2) = proof;
+    -- Step 1 (shape, system-independent): the per-round opened-value lists
+    -- and the accumulator list all have the same length = the circuit count.
+    let num_circuits = list_length(accs);
+    -- there must be at least one circuit (Rust: InvalidSystem)
+    assert_eq!(eq_zero(num_circuits), 0);
+    assert_eq!(list_length(stage_1), num_circuits);
+    assert_eq!(list_length(stage_2), num_circuits);
+    -- one wide quotient matrix per active circuit
+    assert_eq!(list_length(quotient), num_circuits);
 
-        -- Step 2: accumulator balance — the last accumulator must be zero.
-        assert_eq!(last_acc_is_zero(accs), 1);
-        -- Step 4 (PCS/FRI) now runs inside `ood_verify`, which has the verifying
-        -- key, the challenger continuation, and the opened values it needs.
-        1,
-    }
+    -- Step 2: accumulator balance — the last accumulator must be zero.
+    assert_eq!(last_acc_is_zero(accs), 1);
+    -- Step 4 (PCS/FRI) now runs inside `ood_verify`, which has the verifying
+    -- key, the challenger continuation, and the opened values it needs.
+    1
   }
 
   -- ==========================================================================
@@ -732,14 +698,18 @@ def verifier := ⟦
       k: G,
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
+      lch: Ext, fch: Ext, accp: Ext, naccp: Ext,
       isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: G) -> Ext {
     let base = fold_roots([0, 0], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
-    -- publics layout: β=(0,1), γ=(2,3), acc_initial=(4,5), acc_final=(6,7).
-    let b0 = list_lookup(publics, 0); let b1 = list_lookup(publics, 1);
-    let g0 = list_lookup(publics, 2); let g1 = list_lookup(publics, 3);
-    let a0 = list_lookup(publics, 4); let a1 = list_lookup(publics, 5);
-    let na0 = list_lookup(publics, 6); let na1 = list_lookup(publics, 7);
+    -- The lookup-argument coordinates come straight from the challenge /
+    -- accumulator values (pure wiring) — `publics` is only for the node
+    -- graph's Public(idx) leaves; looking these 8 back out of the list cost
+    -- 8 calls for values already in hand.
+    let b0 = [lch[0], 0]; let b1 = [lch[1], 0];
+    let g0 = [fch[0], 0]; let g1 = [fch[1], 0];
+    let a0 = [accp[0], 0]; let a1 = [accp[1], 0];
+    let na0 = [naccp[0], 0]; let na1 = [naccp[1], 0];
     -- Boundary injection: is_last_row·(acc_final − acc_initial) with the
     -- selector's normalization constant 1/(n·g) absorbed into Δ (`inorm`;
     -- p3's raw selector has value n·g at the last row, and Δ is constant
@@ -836,7 +806,11 @@ def verifier := ⟦
       ListNode.Nil => 1,
       ListNode.Cons(circ, rest) =>
         let SysCircuit.Mk(nodes, _node_count, zeros, md, lks, k) = circ;
-        let l = to_field(list_lookup(log_degrees, i));
+        -- log_degrees is proof advice; bound it so `two_adic_gen`'s squaring
+        -- chain (bits ≤ 32) is never entered above its base case.
+        let ld8 = list_lookup(log_degrees, i);
+        assert_eq!(u8_less_than(ld8, 32u8), 1);
+        let l = to_field(ld8);
         let qd = quotient_degree_of(md);
         let naccp = list_lookup(accs, i);
         let s1 = list_lookup(stage1, i);
@@ -846,13 +820,14 @@ def verifier := ⟦
         -- Stage-2 opened rows are base columns; used directly (no pairing).
         let s2row = list_lookup(s2, 0);
         let s2next = list_lookup(s2, 1);
-        let (prep, prep_next) = ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
-        let (isf, isl, ist, invv) = trace_selectors(zeta, l);
-        let publics = build_publics(lch, fch, accp, naccp);
+        let (prep, prep_next) = @ood_prep_rows(prep_opt, list_lookup(prep_indices, i));
+        let (isf, isl, ist, invv) = @trace_selectors(zeta, l);
+        let publics = @build_publics(lch, fch, accp, naccp);
         let inorm = @gl_inverse(pow2(l) * two_adic_gen(l));
-        let comp = ood_composition(nodes, zeros, lks, k,
+        let comp = @ood_composition(nodes, zeros, lks, k,
                                    main, main_next, prep, prep_next, s2row, s2next,
-                                   publics, isf, isl, ist, alpha, inorm);
+                                   publics, lch, fch, accp, naccp,
+                                   isf, isl, ist, alpha, inorm);
         -- circuit i's wide quotient row, its base-coordinate pairs folded back
         -- into the `qd` slice values (Rust: `quotient_row.chunks_exact(D)`)
         let slices = reconstruct_ext_row(list_lookup(list_lookup(q_opened, i), 0));
@@ -891,7 +866,7 @@ def verifier := ⟦
   -- commitments + log_degrees + claims, seed the lookup accumulator from the
   -- claims, then run the OOD composition/quotient check for every circuit.
   -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
-  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››) -> G {
+  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››, cbytes: ByteStream) -> G {
     -- The FRI parameters (`log_blowup`, `num_queries`, `commit_pow_bits`,
     -- `query_pow_bits`) all come from the verifying key, which the public
     -- statement binds through `system_digest` — no separate public inputs.
@@ -899,35 +874,36 @@ def verifier := ⟦
     let SysParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
                      _max_log_arity, num_queries, commit_pow_bits,
                      query_pow_bits) = params;
-    match proof {
-      Proof.Mk(active, commitments, accs, log_degrees, opening,
-               q_opened, prep_opt, stage1, stage2) =>
-        -- Sparse activation: the bitmap covers the canonical circuit set;
-        -- each bit must be boolean; every per-circuit proof sequence is
-        -- indexed by ACTIVE position, so the verifying key's circuit and
-        -- preprocessed-index lists are filtered to the active subset once
-        -- and everything downstream runs on the filtered lists. Soundness
-        -- of deactivation rests on the lookup accumulator: an inactive
-        -- circuit contributes no sends or receives, and dishonestly
-        -- deactivating a needed circuit leaves the final accumulator
-        -- nonzero (checked in `verify`).
-        assert_eq!(assert_bits(active), 1);
-        assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
-        let acirc = select_active_circuits(circuits, active);
-        let aprep = select_active_prep(prep_indices, active);
-        assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
-        let Commitments.Mk(s1c, s2c, qc) = commitments;
-        let prep_cap = opt_commit_cap(commit);
-        let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
-        let acc0 = claims_acc([0, 0], claims, lch, fch);
-        -- Step 5: OOD composition/quotient identity for every active circuit.
-        let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
-                 prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
-        pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
-          s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
-          list_length(acirc), log_blowup, num_queries, commit_pow_bits,
-          query_pow_bits),
-    }
+    let Proof.Mk(active, commitments, accs, log_degrees, opening,
+                 q_opened, prep_opt, stage1, stage2) = proof;
+    -- Sparse activation: the bitmap covers the canonical circuit set;
+    -- each bit must be boolean; every per-circuit proof sequence is
+    -- indexed by ACTIVE position, so the verifying key's circuit and
+    -- preprocessed-index lists are filtered to the active subset once
+    -- and everything downstream runs on the filtered lists. Soundness
+    -- of deactivation rests on the lookup accumulator: an inactive
+    -- circuit contributes no sends or receives, and dishonestly
+    -- deactivating a needed circuit leaves the final accumulator
+    -- nonzero (checked in `verify`).
+    assert_eq!(assert_bits(active), 1);
+    assert_eq!(eq_zero(list_length(active) - list_length(circuits)), 1);
+    let acirc = select_active_circuits(circuits, active);
+    let aprep = select_active_prep(prep_indices, active);
+    assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
+    let Commitments.Mk(s1c, s2c, qc) = commitments;
+    -- opt_commit_cap stays a cross-circuit call: its two-arm match would
+    -- make the (spliced) entrypoint branchy, doubling every lookup's
+    -- stage-2 cost there — the one small circuit is cheaper.
+    let prep_cap = @opt_commit_cap(commit);
+    let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, cbytes, accs);
+    let acc0 = claims_acc([0, 0], claims, lch, fch);
+    -- Step 5: OOD composition/quotient identity for every active circuit.
+    let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
+             prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
+    @pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
+      s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
+      list_length(acirc), log_blowup, num_queries, commit_pow_bits,
+      query_pow_bits)
   }
 
   -- 1 iff every element of `l` is boolean (0 or 1).
@@ -975,7 +951,7 @@ def verifier := ⟦
     match n {
       0 => (store(ListNode.Nil), stream),
       _ =>
-        let (c, s) = read_one_claim(stream);
+        let (c, s) = @read_one_claim(stream);
         let (rest, s2) = read_claims_n(s, n - 1);
         (store(ListNode.Cons(c, rest)), s2),
     }

@@ -156,17 +156,21 @@ opaque proveMultiStark (system : @& AiurSystem)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
 private opaque proveAddrWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
     Except String ProveEnvResult
 
 /-- Per-claim prove against a Rust-owned `EnvHandle`. Returns
     `(claimBytes, proof, ioBuffer)` — Rust serializes the
     reconstructed `Ix.Claim` via `ixon::Claim::put` so Lean can
-    deserialize directly without re-running the closure walk. -/
+    deserialize directly without re-running the closure walk.
+    `useBytecode` routes the witness-generating execution through the
+    generic Aiur bytecode interpreter instead of the codegen'd IxVM
+    kernel (same toggle as `checkAddrWithEnv`). -/
 def proveAddrWithEnv (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (addrBytes : ByteArray) :
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (addrBytes : ByteArray)
+  (useBytecode : Bool := false) :
     Except String (ByteArray × Proof × IOBuffer) :=
-  (proveAddrWithEnv' system funIdx envHandle addrBytes).map
+  (proveAddrWithEnv' system funIdx envHandle addrBytes useBytecode).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_shard_prove_with_env"]

@@ -118,7 +118,7 @@ def pcs := ⟦
   -- current chunk (0..15); `cv` is the chaining value (IV at each chunk start);
   -- chunk digests are pushed onto `layer` in order, exactly like the byte
   -- driver, and folded by `blake3_compress_layer` at the end.
-  fn b3_lane_chunks(lanes: List‹U64›, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+  fn b3_lane_chunks(lanes: List‹U64›, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: Layer) -> Layer {
     match load(lanes) {
       -- Exhausted with no block to compress: only reachable for an empty
       -- input (every other path detects exhaustion after compressing).
@@ -126,7 +126,7 @@ def pcs := ⟦
       ListNode.Nil =>
         match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
-            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+            store(LayerNode.Push(layer, @blake3_compress_init(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
           _ => layer,
         },
       _ =>
@@ -150,12 +150,12 @@ def pcs := ⟦
         let end_flag = empty + at15 - (empty * at15);
         let root_flag = empty * u64_is_zero(load(chunk_count));
         let flags = start_flag + 2 * end_flag + 8 * root_flag;
-        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        let digest = @blake3_compress_init(load(cv), block, load(chunk_count), nbytes, flags);
         match (empty, at15) {
-          (1, _) => store(Layer.Push(layer, digest)),
+          (1, _) => store(LayerNode.Push(layer, digest)),
           (_, 1) =>
             let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-            b3_lane_chunks(rest, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+            b3_lane_chunks(rest, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(LayerNode.Push(layer, digest))),
           (_, _) => b3_lane_chunks(rest, block_no + 1, chunk_count, store(digest), layer),
         },
     }
@@ -184,7 +184,7 @@ def pcs := ⟦
     }
   }
 
-  fn b3_io_chunks(ch: G, i: G, remaining: G, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+  fn b3_io_chunks(ch: G, i: G, remaining: G, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: Layer) -> Layer {
     match u32_less_than(remaining, 64) {
       0 =>
         -- A full 64-byte block is available.
@@ -216,12 +216,12 @@ def pcs := ⟦
         let end_flag = is_last + at15 - (is_last * at15);
         let root_flag = is_last * u64_is_zero(load(chunk_count));
         let flags = start_flag + 2 * end_flag + 8 * root_flag;
-        let digest = blake3_compress(load(cv), block, load(chunk_count), 64, flags);
+        let digest = @blake3_compress_init(load(cv), block, load(chunk_count), 64, flags);
         match (is_last, at15) {
-          (1, _) => store(Layer.Push(layer, digest)),
+          (1, _) => store(LayerNode.Push(layer, digest)),
           (_, 1) =>
             let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-            b3_io_chunks(ch, i + 64, remaining - 64, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+            b3_io_chunks(ch, i + 64, remaining - 64, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(LayerNode.Push(layer, digest))),
           (_, _) => b3_io_chunks(ch, i + 64, remaining - 64, block_no + 1, chunk_count, store(digest), layer),
         },
       _ =>
@@ -232,7 +232,7 @@ def pcs := ⟦
             -- (0, 0) arm (any other path compresses before exhausting).
             match load(chunk_count) {
               [0, 0, 0, 0, 0, 0, 0, 0] =>
-                store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+                store(LayerNode.Push(layer, @blake3_compress_init(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
               _ => layer,
             },
           _ =>
@@ -240,7 +240,7 @@ def pcs := ⟦
               b3_io_tail_acc(ch, i, remaining, store(ListNode.Nil)), 64 - remaining));
             let start_flag = eq_zero(block_no);
             let flags = start_flag + 2 + 8 * u64_is_zero(load(chunk_count));
-            store(Layer.Push(layer, blake3_compress(load(cv), block, load(chunk_count), remaining, flags))),
+            store(LayerNode.Push(layer, @blake3_compress_init(load(cv), block, load(chunk_count), remaining, flags))),
         },
     }
   }
@@ -249,19 +249,19 @@ def pcs := ⟦
   -- output to `blake3` over those bytes — pinned by `io_hash_test`).
   fn b3_io(ch: G, idx: G, len: G) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(b3_io_chunks(ch, idx, len, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(b3_io_chunks(ch, idx, len, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- blake3 of a lane list (identical output to `blake3` over the lanes' LE
   -- bytes — pinned by the `lane_hash_test` differential self-test).
   fn b3_lanes(lanes: List‹U64›) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(b3_lane_chunks(lanes, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(b3_lane_chunks(lanes, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- The MMCS leaf hash of a row (`SerializingHasher<Blake3>`).
   fn mmcs_hash_row(row: List‹U64›) -> Digest {
-    b3_to_digest(b3_lanes(row))
+    @b3_to_digest(b3_lanes(row))
   }
   -- The MMCS 2-to-1 compression (`CompressionFunctionFromHasher<Blake3, 2, 32>`).
   -- `a || b` is exactly 64 bytes = one blake3 block of a single chunk, so this
@@ -270,8 +270,12 @@ def pcs := ⟦
   -- flags = CHUNK_START + CHUNK_END + ROOT (1 + 2 + 8). The block words are
   -- assembled straight from the digest lanes (each `U64` lane = two LE 4-byte
   -- words) — no byte list is built, walked, re-accumulated, or re-loaded.
-  fn mmcs_compress(a: Digest, b: Digest) -> Digest {
+  -- In and out by pointer (see `DigestP`); the 64 block bytes are loaded
+  -- here, the only place they are consumed.
+  fn mmcs_compress(ap: DigestP, bp: DigestP) -> DigestP {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    let a = load(ap);
+    let b = load(bp);
     let block = [
       [a[0][0], a[0][1], a[0][2], a[0][3]], [a[0][4], a[0][5], a[0][6], a[0][7]],
       [a[1][0], a[1][1], a[1][2], a[1][3]], [a[1][4], a[1][5], a[1][6], a[1][7]],
@@ -281,7 +285,7 @@ def pcs := ⟦
       [b[1][0], b[1][1], b[1][2], b[1][3]], [b[1][4], b[1][5], b[1][6], b[1][7]],
       [b[2][0], b[2][1], b[2][2], b[2][3]], [b[2][4], b[2][5], b[2][6], b[2][7]],
       [b[3][0], b[3][1], b[3][2], b[3][3]], [b[3][4], b[3][5], b[3][6], b[3][7]]];
-    b3_to_digest(blake3_compress(IV, block, [0u8; 8], 64, 11))
+    store(@b3_to_digest(@blake3_compress_init(IV, block, [0u8; 8], 64, 11)))
   }
 
   -- ==========================================================================
@@ -311,7 +315,7 @@ def pcs := ⟦
 
   -- Compress (current, sibling) in path order: path bit 0 ⇒ current is the left
   -- child, bit 1 ⇒ current is the right child.
-  fn compress_ordered(bit: G, d: Digest, s: Digest) -> Digest {
+  fn compress_ordered(bit: G, d: DigestP, s: DigestP) -> DigestP {
     match bit {
       0 => mmcs_compress(d, s),
       _ => mmcs_compress(s, d),
@@ -401,7 +405,7 @@ def pcs := ⟦
   -- Block-granular chunk walk over rows-of-lanes; mirrors `b3_lane_chunks`
   -- (same flag schedule, same `Layer` fold), gathering each 64-byte block
   -- with eight cross-row pops.
-  fn b3_rows_chunks(cur: List‹U64›, rows: List‹List‹U64››, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: &Layer) -> &Layer {
+  fn b3_rows_chunks(cur: List‹U64›, rows: List‹List‹U64››, block_no: G, chunk_count: &U64, cv: &[[U8; 4]; 8], layer: Layer) -> Layer {
     let (l0, c1, r1, g0) = rows_pop(cur, rows);
     match g0 {
       -- Exhausted with no block to compress: only reachable for an empty
@@ -409,7 +413,7 @@ def pcs := ⟦
       0 =>
         match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
-            store(Layer.Push(layer, blake3_compress(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
+            store(LayerNode.Push(layer, @blake3_compress_init(load(cv), [[0u8; 4]; 16], load(chunk_count), 0, 11))),
           _ => layer,
         },
       _ =>
@@ -439,12 +443,12 @@ def pcs := ⟦
         let end_flag = empty + at15 - (empty * at15);
         let root_flag = empty * u64_is_zero(load(chunk_count));
         let flags = start_flag + 2 * end_flag + 8 * root_flag;
-        let digest = blake3_compress(load(cv), block, load(chunk_count), nbytes, flags);
+        let digest = @blake3_compress_init(load(cv), block, load(chunk_count), nbytes, flags);
         match (empty, at15) {
-          (1, _) => store(Layer.Push(layer, digest)),
+          (1, _) => store(LayerNode.Push(layer, digest)),
           (_, 1) =>
             let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-            b3_rows_chunks(c8, r8, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(Layer.Push(layer, digest))),
+            b3_rows_chunks(c8, r8, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), store(LayerNode.Push(layer, digest))),
           (_, _) => b3_rows_chunks(c8, r8, block_no + 1, chunk_count, store(digest), layer),
         },
     }
@@ -452,17 +456,17 @@ def pcs := ⟦
 
   fn b3_rows(rows: List‹List‹U64››) -> [[U8; 4]; 8] {
     let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
-    blake3_compress_layer(load(b3_rows_chunks(store(ListNode.Nil), rows, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
+    blake3_compress_layer(b3_rows_chunks(store(ListNode.Nil), rows, 0, store([0u8; 8]), store(IV), store(LayerNode.Nil)))
   }
 
   -- The joint Blake3 leaf hash of all matrices at log-height `target`.
-  fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> Digest {
-    b3_to_digest(b3_rows(select_rows(rows, lhs, target)))
+  fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> DigestP {
+    store(@b3_to_digest(@b3_rows(select_rows(rows, lhs, target))))
   }
 
   -- Inject the leaf hash of any matrices at log-height `lh` (if present) via a
   -- second compression onto `d`.
-  fn inject_maybe(rows: List‹List‹U64››, lhs: List‹G›, lh: G, d: Digest) -> Digest {
+  fn inject_maybe(rows: List‹List‹U64››, lhs: List‹G›, lh: G, d: DigestP) -> DigestP {
     match has_height(lhs, lh) {
       0 => d,
       _ => mmcs_compress(d, leaf_hash_at(rows, lhs, lh)),
@@ -480,30 +484,35 @@ def pcs := ⟦
   -- Walk the authentication path: one proof sibling per level (fold), with a
   -- possible leaf injection at the new log-height `lh`. Returns the recomputed
   -- root and the leftover cap index.
-  fn mmcs_fold(d: Digest, rows: List‹List‹U64››, lhs: List‹G›,
-      proof: List‹Digest›, ibits: List‹G›, lh: G) -> (Digest, G) {
+  fn mmcs_fold(d: DigestP, rows: List‹List‹U64››, lhs: List‹G›,
+      proof: List‹DigestP›, ibits: List‹G›, lh: G) -> (DigestP, G) {
     match load(proof) {
       ListNode.Nil => (d, bits_to_num(ibits)),
       ListNode.Cons(s, prest) =>
         let &ListNode.Cons(bit, brest) = ibits;
-        let d1 = compress_ordered(bit, d, s);
-        let d2 = inject_maybe(rows, lhs, lh, d1);
+        let d1 = @compress_ordered(bit, d, s);
+        let d2 = @inject_maybe(rows, lhs, lh, d1);
         mmcs_fold(d2, rows, lhs, prest, brest, lh - 1),
     }
   }
 
   -- Recompute the Merkle root from the opened rows + authentication path.
   fn mmcs_root(rows: List‹List‹U64››, lhs: List‹G›, ibits: List‹G›,
-      proof: List‹Digest›, log_max: G) -> (Digest, G) {
+      proof: List‹DigestP›, log_max: G) -> (DigestP, G) {
     let leaf = leaf_hash_at(rows, lhs, log_max);
     mmcs_fold(leaf, rows, lhs, proof, ibits, log_max - 1)
   }
 
   -- 1 iff the recomputed root matches the commitment cap at the cap index.
+  -- Compared BY POINTER: `store` is content-addressed (the executor keys
+  -- memory by value) so equal digests land on the same pointer, and the
+  -- memory argument binds one pointer to one value, so equal pointers imply
+  -- equal digests — no 2x32-column load. (Same pattern as the IxVM kernel's
+  -- address equality.)
   fn mmcs_verify(cap: MerkleCap, rows: List‹List‹U64››, lhs: List‹G›,
-      ibits: List‹G›, proof: List‹Digest›, log_max: G) -> G {
-    let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, log_max);
-    digest_eq(list_lookup(cap, capidx), root)
+      ibits: List‹G›, proof: List‹DigestP›, log_max: G) -> G {
+    let (root, capidx) = @mmcs_root(rows, lhs, ibits, proof, log_max);
+    eq_zero(ptr_val(list_lookup(cap, capidx)) - ptr_val(root))
   }
 
   -- ==========================================================================
@@ -571,24 +580,21 @@ def pcs := ⟦
     7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil)))
   }
 
-  -- Raw wire rows (`U64` lanes, possibly non-canonical) to native Goldilocks
-  -- values for the reduced-opening arithmetic (`limb_to_field` reduces mod p).
-  fn lanes_to_gl(l: List‹U64›) -> List‹Goldilocks› {
-    match load(l) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(x, rest) => store(ListNode.Cons(@limb_to_field(x), lanes_to_gl(rest))),
-    }
-  }
-
-  -- Accumulate one matrix-point's column contributions. `q = 1/(z − x)`.
-  fn ro_fold(p_x: List‹Goldilocks›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
+  -- Accumulate one matrix-point's column contributions WITHOUT the quotient
+  -- factor: `s = Σᵢ apᵢ·(p_zᵢ − p_xᵢ)`. The caller multiplies by
+  -- `q = 1/(z − x)` once per matrix-point (it is constant across the
+  -- point's columns), saving an ext mul per column. `p_x` is the RAW wire
+  -- lane list — `limb_to_field` reduces mod p as pure wiring, so no
+  -- intermediate `List‹Goldilocks›` is ever materialized (the former
+  -- `lanes_to_gl` pass and its per-lane stores/loads).
+  fn ro_fold(p_x: List‹U64›, p_z: List‹Ext›, alpha: Ext, s: Ext, ap: Ext)
       -> (Ext, Ext) {
     match load(p_x) {
-      ListNode.Nil => (ro, ap),
-      ListNode.Cons(px, pxr) =>
+      ListNode.Nil => (s, ap),
+      ListNode.Cons(lane, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = @eg_mul(@eg_mul(ap, @eg_sub(pz, [px, 0])), q);
-        ro_fold(pxr, pzr, q, alpha, @eg_add(ro, term), @eg_mul(ap, alpha)),
+        let term = @eg_mul(ap, @eg_sub(pz, [@limb_to_field(lane), 0]));
+        ro_fold(pxr, pzr, alpha, @eg_add(s, term), @eg_mul(ap, alpha)),
     }
   }
 
@@ -705,7 +711,7 @@ def pcs := ⟦
   }
   -- Find the bucket at log-height `lh`, fold one matrix-point's columns into it
   -- (`ro_fold` threads its `alpha_pow`), and write it back.
-  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹Goldilocks›, p_z: List‹Ext›,
+  fn bucket_update(buckets: List‹Bucket›, lh: G, p_x: List‹U64›, p_z: List‹Ext›,
       q: Ext, alpha: Ext) -> List‹Bucket› {
     match load(buckets) {
       ListNode.Nil => store(ListNode.Nil),
@@ -713,7 +719,8 @@ def pcs := ⟦
         let Bucket.Mk(h, ap, ro) = b;
         match eq_zero(h - lh) {
           1 =>
-            let (ro2, ap2) = ro_fold(p_x, p_z, q, alpha, ro, ap);
+            let (s, ap2) = ro_fold(p_x, p_z, alpha, [0, 0], ap);
+            let ro2 = @eg_add(ro, @eg_mul(q, s));
             store(ListNode.Cons(Bucket.Mk(h, ap2, ro2), rest)),
           _ => store(ListNode.Cons(b, bucket_update(rest, lh, p_x, p_z, q, alpha))),
         },
@@ -743,11 +750,11 @@ def pcs := ⟦
   }
   -- Compute x = GENERATOR·g^{revbits} for this height and fold the contribution.
   fn ri_apply(buckets: List‹Bucket›, lh: G, idxbits: List‹G›, log_gmax: G,
-      z: Ext, p_x: List‹Goldilocks›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
+      z: Ext, p_x: List‹U64›, p_z: List‹Ext›, alpha: Ext) -> List‹Bucket› {
     -- the base opening and the ext opening at this point must have equal width
     -- (PointEvaluationCountMismatch); `ro_fold` walks them in lockstep.
     assert_eq!(eq_zero(list_length(p_x) - list_length(p_z)), 1);
-    let x = ro_x(list_drop(idxbits, log_gmax - lh), lh);
+    let x = @ro_x(list_drop(idxbits, log_gmax - lh), lh);
     let q = @eg_inverse(@eg_sub(z, [x, 0]));
     bucket_update(buckets, lh, p_x, p_z, q, alpha)
   }
@@ -755,7 +762,7 @@ def pcs := ⟦
   -- A stage_1/stage_2/preprocessed-style matrix: two opening points
   -- (ζ, ζ·g) with the same base row `p_x`. `g` = trace subgroup generator.
   fn open_2pt_mat(buckets: List‹Bucket›, idxbits: List‹G›, log_gmax: G, lh: G,
-      ldeg: G, zeta: Ext, p_x: List‹Goldilocks›, mat: List‹List‹Ext››, alpha: Ext)
+      ldeg: G, zeta: Ext, p_x: List‹U64›, mat: List‹List‹Ext››, alpha: Ext)
       -> List‹Bucket› {
     let pz0 = list_lookup(mat, 0);
     let pz1 = list_lookup(mat, 1);
@@ -771,7 +778,7 @@ def pcs := ⟦
       _ =>
         let ldeg = to_field(list_lookup(log_degrees, ci));
         let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(opened, ci), alpha);
+                  list_lookup(base_rows, ci), list_lookup(opened, ci), alpha);
         open_batch_2pt(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta,
                        base_rows, opened, alpha),
     }
@@ -787,7 +794,7 @@ def pcs := ⟦
       _ =>
         let lh = to_field(list_lookup(log_degrees, ci)) + log_blowup;
         let b = ri_apply(buckets, lh, idxbits, log_gmax, zeta,
-                  lanes_to_gl(list_lookup(base_rows, ci)), list_lookup(list_lookup(q_opened, ci), 0), alpha);
+                  list_lookup(base_rows, ci), list_lookup(list_lookup(q_opened, ci), 0), alpha);
         open_quotient(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, log_degrees, zeta, base_rows, q_opened, alpha),
     }
   }
@@ -806,7 +813,7 @@ def pcs := ⟦
         OptIdx.SomeIdx(_j) =>
           let ldeg = to_field(list_lookup(log_degrees, ci));
           let b = open_2pt_mat(buckets, idxbits, log_gmax, ldeg + log_blowup, ldeg, zeta,
-                    lanes_to_gl(list_lookup(base_rows, k)), list_lookup(prep_round, k), alpha);
+                    list_lookup(base_rows, k), list_lookup(prep_round, k), alpha);
           open_prep(b, idxbits, log_gmax, log_blowup, ci + 1, rem - 1, k + 1, log_degrees,
                     prep_indices, zeta, base_rows, prep_round, alpha),
       },
@@ -914,9 +921,9 @@ def pcs := ⟦
         assert_eq!(list_length(sibs), 1);
         let &ListNode.Cons(ibit, idrest) = domidx;     -- index_in_group = LSB
         let log_folded = log_cur - 1;
-        let (e0, e1) = recon_evals(ibit, folded, list_lookup(sibs, 0));
+        let (e0, e1) = @recon_evals(ibit, folded, list_lookup(sibs, 0));
         -- authenticate the sibling pair against this round's commitment
-        assert_eq!(mmcs_verify(comm, store(ListNode.Cons(flatten2(e0, e1), store(ListNode.Nil))),
+        assert_eq!(mmcs_verify(comm, store(ListNode.Cons(@flatten2(e0, e1), store(ListNode.Nil))),
           store(ListNode.Cons(log_folded, store(ListNode.Nil))), idrest, oproof, log_folded), 1);
         let folded1 = fri_fold2(idrest, log_folded, beta, e0, e1);
         let (folded2, ro_rest2) = rollin(folded1, log_folded, beta, ro_rest);
@@ -941,19 +948,22 @@ def pcs := ⟦
     assert_eq!(eq_zero(list_length(commit_phase_openings) - num_rounds), 1);
     assert_eq!(eq_zero(list_length(input_proof) - (3 + prep_count(prep_opt))), 1);
     let buckets = build_buckets(log_degrees, log_blowup, num_circuits, log_gmax);
+    -- one heights list for all three stage batches (memoized anyway; this
+    -- also drops two call-output columns per proof)
+    let hall = heights_all(log_degrees, log_blowup, num_circuits, 0);
     let BatchOpening.Mk(rows_s1, proof_s1) = list_lookup(input_proof, 0);
     assert_eq!(eq_zero(list_length(rows_s1) - num_circuits), 1);
-    assert_eq!(mmcs_verify(s1c, rows_s1, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_s1, log_gmax), 1);
+    assert_eq!(mmcs_verify(s1c, rows_s1, hall, idxbits, proof_s1, log_gmax), 1);
     let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s1, stage1, alpha);
     let BatchOpening.Mk(rows_s2, proof_s2) = list_lookup(input_proof, 1);
     assert_eq!(eq_zero(list_length(rows_s2) - num_circuits), 1);
-    assert_eq!(mmcs_verify(s2c, rows_s2, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_s2, log_gmax), 1);
+    assert_eq!(mmcs_verify(s2c, rows_s2, hall, idxbits, proof_s2, log_gmax), 1);
     let buckets = open_batch_2pt(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_s2, stage2, alpha);
     let BatchOpening.Mk(rows_q, proof_q) = list_lookup(input_proof, 2);
     -- one wide quotient matrix per circuit, on the trace domain, so the
     -- quotient batch's heights are the same per-circuit heights as the stages
     assert_eq!(eq_zero(list_length(rows_q) - num_circuits), 1);
-    assert_eq!(mmcs_verify(qc, rows_q, heights_all(log_degrees, log_blowup, num_circuits, 0), idxbits, proof_q, log_gmax), 1);
+    assert_eq!(mmcs_verify(qc, rows_q, hall, idxbits, proof_q, log_gmax), 1);
     let buckets = open_quotient(buckets, idxbits, log_gmax, log_blowup, 0, num_circuits, log_degrees, zeta, rows_q, q_opened, alpha);
     let buckets = open_prep_batch(buckets, input_proof, prep_commit, prep_opt, prep_indices, log_degrees, num_circuits, idxbits, log_gmax, log_blowup, zeta, alpha);
     -- a height-`log_blowup` (constant-poly) reduced opening must be zero
@@ -1011,7 +1021,7 @@ def pcs := ⟦
     -- order), built as one front-to-back suffix + a single concat (the input
     -- is only ~32 bytes here — it collapses to the digest on every flush).
     let obs = round_onto(stage1, round_onto(stage2, round_onto(q_opened,
-      prep_onto(prep_opt, store(ListNode.Nil)))));
+      @prep_onto(prep_opt, store(ListNode.Nil)))));
     let input = list_concat(post_zeta_input, obs);
     -- PCS batch-combination challenge α
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
@@ -1027,6 +1037,10 @@ def pcs := ⟦
     let (input, output) = pcs_check_witness(input, qpw, query_pow_bits);
     -- query indices + per-query verification (log_global_max_height = #rounds + log_blowup)
     let log_gmax = num_rounds + log_blowup;
+    -- num_rounds is proof advice (commit-phase commitment count); bound the
+    -- max height so `two_adic_gen`'s squaring chain (bits ≤ 32) and the
+    -- 32-bit query-index decomposition stay within range.
+    assert_eq!(u32_less_than(log_gmax, 33), 1);
     query_loop(input, output, query_proofs, alpha, stage1, stage2, q_opened,
       prep_opt, s1c, s2c, qc, prep_commit, prep_indices, log_degrees, zeta,
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)

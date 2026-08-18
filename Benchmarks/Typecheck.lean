@@ -309,6 +309,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     return Ix.Benchmark.Results.exitUsage
   -- Off by default; CI passes --texray explicitly.
   let useTexray := p.hasFlag "texray"
+  let useInterp := p.hasFlag "interp"
   -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
   -- true high-water mark. With --texray, install the streaming subscriber up
   -- front: every phase span — aiur/execute_ixvm in Phase 1 included —
@@ -412,9 +413,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let (res, execSec) ← timed fun _ =>
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+          if useInterp then
+            compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
+          else
+            compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
         else
-          compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash
+          compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash useInterp
       let execPeak ← TracingTexray.peakTreeRssBytes
       match res with
       | .error e =>
@@ -496,11 +500,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let (claim, proof, ioBuf) :=
-            aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
+            if useInterp then
+              aiurSystem.prove funIdx witness.input witness.inputIOBuffer
+            else
+              aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
           (.ok (claim, proof, ioBuf) :
             Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer))
         else
-          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
+          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp with
           | .error e => .error e
           | .ok (claimBytes, proof, ioBuf) =>
             -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
@@ -509,7 +516,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             -- `ix verify`).
             let digest := Address.blake3 claimBytes
             let claim :=
-              Aiur.buildClaim funIdx (digest.hash.data.map .ofUInt8) #[]
+              Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
             .ok (claim, proof, ioBuf)
       match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
@@ -554,7 +561,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           -- byte blobs and execution routes through the codegen'd verifier.
           let (rvRes, rvSec) ← timed fun _ =>
             vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes
-              vkBytes claimBytes
+              vkBytes claimBytes useInterp
           match rvRes with
           | .error e =>
             IO.eprintln s!"  ❌ recursive verifier REJECTED {r.name}'s proof: {e}"
@@ -580,7 +587,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             TracingTexray.resetPeakTreeRss
             let ((rvClaim, rvProof), rvProveSec) ← timed fun _ =>
               vSystem.proveMultiStark vIdx pubInput proofBytes vkBytes
-                claimBytes
+                claimBytes useInterp
             let rvPeak ← TracingTexray.peakTreeRssBytes
             let rvProofBytes := Aiur.Proof.toBytes rvProof
             let (rvVerifyRes, rvVerifySec) ← timed fun _ =>
@@ -619,6 +626,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
+    "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
