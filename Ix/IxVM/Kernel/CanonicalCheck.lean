@@ -658,7 +658,7 @@ def canonicalCheck := ⟦
       1 => store(ListNode.Cons(c, store(ListNode.Nil))),
       _ =>
         let sorted = canon_ins_sort(c, ctx, proj_addrs);
-        canon_group_consec(sorted, ctx, proj_addrs),
+        @canon_group_consec(sorted, ctx, proj_addrs),
     }
   }
 

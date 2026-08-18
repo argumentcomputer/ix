@@ -146,7 +146,7 @@ def entrypoints := ⟦
   }
 
   pub fn kernel_unit_tests() {
-    level_cmp_tests()
+    @level_cmp_tests()
   }
 
   -- Subject-only typecheck. DEBUG entrypoint, NOT a claim: checks

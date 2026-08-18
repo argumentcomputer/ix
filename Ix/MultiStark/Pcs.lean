@@ -51,7 +51,7 @@ def pcs := ⟦
   fn b3_row_onto(row: List‹U64›, tail: ByteStream) -> ByteStream {
     match load(row) {
       ListNode.Nil => tail,
-      ListNode.Cons(v, rest) => b3_u64_onto(v, b3_row_onto(rest, tail)),
+      ListNode.Cons(v, rest) => @b3_u64_onto(v, b3_row_onto(rest, tail)),
     }
   }
   -- A 4-byte blake3 output word.

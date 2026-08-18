@@ -660,7 +660,7 @@ def claim := ⟦
   fn get_ctor_entry(stream: ByteStream)
       -> ((U64, RevealConstructorInfo), ByteStream) {
     let (idx, s) = get_tag0(stream);
-    let (info, s) = get_reveal_ctor_info(s);
+    let (info, s) = @get_reveal_ctor_info(s);
     ((idx, info), s)
   }
 

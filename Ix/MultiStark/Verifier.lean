@@ -505,7 +505,7 @@ def verifier := ⟦
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(c0, t1) =>
         let ListNode.Cons(c1, t2) = load(t1);
-        store(ListNode.Cons(from_ext_basis(c0, c1), reconstruct_ext_row(t2))),
+        store(ListNode.Cons(@from_ext_basis(c0, c1), reconstruct_ext_row(t2))),
     }
   }
 

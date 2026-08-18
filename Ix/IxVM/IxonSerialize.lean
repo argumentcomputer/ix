@@ -330,7 +330,7 @@ def ixonSerialize := ⟦
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(rule, rest_list) =>
-        put_recursor_rule(rule, put_recursor_rule_list(rest_list, rest)),
+        @put_recursor_rule(rule, put_recursor_rule_list(rest_list, rest)),
     }
   }
 
@@ -361,7 +361,7 @@ def ixonSerialize := ⟦
   fn put_quotient(quot: Quotient, rest: ByteStream) -> ByteStream {
     match quot {
       Quotient.Mk(kind, lvls, &typ) =>
-        put_quot_kind(kind, put_tag0(lvls, put_expr(typ, rest))),
+        @put_quot_kind(kind, put_tag0(lvls, put_expr(typ, rest))),
     }
   }
 
@@ -381,7 +381,7 @@ def ixonSerialize := ⟦
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(ctor, rest_list) =>
-        put_constructor(ctor, put_constructor_list(rest_list, rest)),
+        @put_constructor(ctor, put_constructor_list(rest_list, rest)),
     }
   }
 
@@ -442,7 +442,7 @@ def ixonSerialize := ⟦
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(mc, rest_list) =>
-        put_mut_const(mc, put_mut_const_list(rest_list, rest)),
+        @put_mut_const(mc, put_mut_const_list(rest_list, rest)),
     }
   }
 

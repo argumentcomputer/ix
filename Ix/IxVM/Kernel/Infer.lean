@@ -213,7 +213,7 @@ def infer := ⟦
   fn k_infer_lit(lit: KLiteral) -> KExpr {
     match lit {
       KLiteral.Nat(_) => store(KExprNode.Const(nat_addr(), store(ListNode.Nil))),
-      KLiteral.Str(_) => store(KExprNode.Const(str_addr(), store(ListNode.Nil))),
+      KLiteral.Str(_) => store(KExprNode.Const(@str_addr(), store(ListNode.Nil))),
     }
   }
 

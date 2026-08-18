@@ -130,7 +130,7 @@ def keccak := ⟦
   }
 
   fn rotl(l: Lane, n: G) -> Lane {
-    lane_from_bits(build_rot(lane_bits(l), n, 0))
+    @lane_from_bits(build_rot(@lane_bits(l), n, 0))
   }
 
   -- ==========================================================================
@@ -255,7 +255,7 @@ def keccak := ⟦
   fn keccak_f_fold(s: State, n: G) -> State {
     match n {
       0 => s,
-      _ => keccak_f_fold(keccak_round(s, rc_lane(24 - n)), n - 1),
+      _ => keccak_f_fold(@keccak_round(s, @rc_lane(24 - n)), n - 1),
     }
   }
 

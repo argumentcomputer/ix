@@ -325,7 +325,7 @@ def tests := ⟦
   }
   fn rows_hash_check(spec: List‹G›, lhs: List‹G›, target: G) -> G {
     let rows = rows_test_rows(spec);
-    digest_eq(b3_to_digest(b3_rows(select_rows(rows, lhs, target))),
+    digest_eq(b3_to_digest(@b3_rows(select_rows(rows, lhs, target))),
               mmcs_hash_row(canon_lanes(concat_at(rows, lhs, target))))
   }
   fn g1(a: G) -> List‹G› { store(ListNode.Cons(a, store(ListNode.Nil))) }
