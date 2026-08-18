@@ -175,7 +175,7 @@ def entrypoints := ⟦
   -- (injective in Goldilocks; 8 input columns instead of 32) — the same
   -- representation the recursive verifier's entrypoint uses.
   pub fn verify_claim(claim_digest: [G; 8]) {
-    run_claim(claim_digest);
+    @run_claim(claim_digest)
   }
 ⟧
 

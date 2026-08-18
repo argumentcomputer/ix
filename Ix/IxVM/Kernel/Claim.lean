@@ -1241,11 +1241,11 @@ def claim := ⟦
       6 =>
         let (comm, s2) = get_address(s);
         let (info, _s3) = get_reveal_info(s2);
-        run_reveal(comm, info),
+        @run_reveal(comm, info),
       7 =>
         let (tree, s2) = get_address(s);
         let (target, _s3) = get_address(s2);
-        run_contains(tree, target),
+        @run_contains(tree, target),
     }
   }
 ⟧
