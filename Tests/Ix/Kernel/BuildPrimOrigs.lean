@@ -1,10 +1,10 @@
 /-
   Dump ORIGINAL (LEON content-hash) primitive addresses for hardcoding
-  into the Rust kernel (`src/ix/kernel/primitive.rs::PrimOrigAddrs`).
+  into the Rust kernel (`crates/common/src/prim_addrs.rs::PrimAddrs::new_orig`).
 
-  Run with: `lake test -- rust-kernel-build-prim-origs`. The test prints a
+  Run with: `lake test -- --ignored rust-kernel-build-prim-origs`. The test prints a
   `(lean_name, leon_hash_hex)` line for every primitive the Rust kernel
-  expects to find in `PrimOrigAddrs::new`. Each hex is
+  expects to find in `PrimAddrs::new_orig`. Each hex is
   `ConstantInfo::get_hash()` (defined in `src/ix/env.rs`) on the
   primitive's declaration in the current Lean environment — a Blake3
   digest over the serialized original `ConstantInfo` (name + level
@@ -16,7 +16,7 @@
   so a rogue environment can't silently shadow a primitive just by
   naming its own declaration `Nat`.
 
-  Paste the output lines into `PrimOrigAddrs::new` whenever either:
+  Paste the output lines into `PrimAddrs::new_orig` whenever either:
   - a primitive's Lean-side name or content changes upstream, or
   - the `ConstantInfo::get_hash` byte layout is revised.
 
@@ -31,7 +31,7 @@
     upstream). Printed as `// MISSING:` comments so the emitted table is
     still valid as-is for partial regeneration.
   - Address change: the LEON hex for a primitive has changed — paste
-    the new hex into `PrimOrigAddrs::new`.
+    the new hex into `PrimAddrs::new_orig`.
 -/
 import Ix.Common
 import Ix.CompileM            -- rsLeonHashesFFI
@@ -106,6 +106,69 @@ def testBuildPrimOrigs : TestSeq :=
       if missing.isEmpty then none else some s!"{missing.size} primitives missing from Lean env"
     return (missing.isEmpty, found, missing.size, msg)
   ) .done
+
+@[extern "rs_prim_addrs_orig"]
+opaque rsPrimAddrsOrigFFI : IO (Array (String × String))
+
+/-- Every original/LEON primitive address stored in `PrimAddrs::new_orig()`
+    must match `ConstantInfo::get_hash()` over the live Lean environment.
+    `eagerReduce` is excluded because its original address is a synthetic
+    kernel marker rather than the hash of the Lean declaration. -/
+def testPrimOrigsParity : TestSeq :=
+  .individualIO "original primitive address parity (PrimAddrs vs live LEON hashes)" none (do
+    let leanEnv ← get_env!
+    let roots := kernelPrimitives.map parseNameToLean
+    let needed := collectDeps leanEnv roots
+    let filtered := leanEnv.constants.toList.filter fun (name, _) =>
+      needed.contains name
+    let pairs : Array (Ix.Name × Address) ← Ix.CompileM.rsLeonHashesFFI filtered
+
+    let live : Std.HashMap Ix.Name Address :=
+      pairs.foldl (init := {}) fun m (name, addr) => m.insert name addr
+    let hardcoded ← rsPrimAddrsOrigFFI
+    let lookup : Std.HashMap String String :=
+      hardcoded.foldl (init := {}) fun m (name, hex) => m.insert name hex
+
+    let mut mismatches : Array String := #[]
+    let mut missing : Array String := #[]
+    let hardcodedNames := hardcoded.map fun (name, _) => name
+    if hardcodedNames != kernelPrimitives then
+      mismatches := mismatches.push
+        s!"primitive catalog mismatch: expected {kernelPrimitives}, got {hardcodedNames}"
+
+    for primName in kernelPrimitives do
+      if primName == "eagerReduce" then continue
+      let ixName := Ix.Name.fromLeanName (parseNameToLean primName)
+      match live[ixName]? with
+      | none => missing := missing.push primName
+      | some liveAddr =>
+        match lookup[primName]? with
+        | none =>
+          mismatches := mismatches.push
+            s!"{primName}: missing from PrimAddrs::lean_orig_parity_table"
+        | some hardcodedHex =>
+          let liveHex := toString liveAddr
+          if liveHex != hardcodedHex then
+            mismatches := mismatches.push
+              s!"{primName}: live={liveHex} PrimAddrs={hardcodedHex}"
+
+    if !missing.isEmpty then
+      IO.eprintln s!"original primitive parity: {missing.size} primitive(s) missing from Lean env:"
+      for name in missing do IO.eprintln s!"  {name}"
+    if !mismatches.isEmpty then
+      IO.eprintln s!"original primitive parity: {mismatches.size} mismatch(es):"
+      for mismatch in mismatches do IO.eprintln s!"  {mismatch}"
+      IO.eprintln "Regenerate via `lake test -- --ignored rust-kernel-build-prim-origs` and paste into PrimAddrs::new_orig in crates/common/src/prim_addrs.rs."
+
+    let totalProblems := missing.size + mismatches.size
+    let passed := kernelPrimitives.size - min totalProblems kernelPrimitives.size
+    let msg : Option String :=
+      if totalProblems == 0 then none
+      else some s!"{mismatches.size} mismatch(es), {missing.size} missing"
+    return (totalProblems == 0, passed, totalProblems, msg)
+  ) .done
+
+def paritySuite : List TestSeq := [testPrimOrigsParity]
 
 def suite : List TestSeq := [testBuildPrimOrigs]
 

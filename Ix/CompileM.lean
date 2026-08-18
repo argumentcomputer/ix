@@ -2889,8 +2889,8 @@ opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.Ra
     in `src/ix/env.rs`. This is the addressing scheme under which
     `orig_kenv` stores KIds in the kernel — two constants with the same
     Lean name but different content get distinct addresses. Used by
-    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimOrigAddrs` in
-    the Rust kernel. -/
+    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimAddrs::new_orig`
+    in the Rust kernel. -/
 @[extern "rs_leon_hashes"]
 opaque rsLeonHashesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array (Ix.Name × Address))

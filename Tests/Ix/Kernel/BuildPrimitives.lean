@@ -1,8 +1,8 @@
 /-
   Dump primitive constant names and content-addresses for hardcoding into the
-  Rust kernel (`src/ix/kernel/primitive.rs`).
+  Rust kernel (`crates/common/src/prim_addrs.rs`).
 
-  Run with: `lake test -- rust-kernel-build-primitives`. The test prints a
+  Run with: `lake test -- --ignored rust-kernel-build-primitives`. The test prints a
   `(lean_name, content_address_hex)` line for every primitive the Rust
   kernel expects to find in `PrimAddrs::new`. Paste the output over the
   corresponding entries whenever Lean's stdlib changes and tests start
@@ -28,7 +28,7 @@ namespace Tests.Ix.Kernel.BuildPrimitives
 
 /-- The Lean names of every primitive the Rust kernel resolves in
     `PrimAddrs::new`. Keep this in sync with the `Primitives<M>` struct in
-    `src/ix/kernel/primitive.rs`. -/
+    `crates/kernel/src/primitive.rs`. -/
 def kernelPrimitives : Array String := #[
   "Nat", "Nat.zero", "Nat.succ",
   "Nat.add", "Nat.pred", "Nat.sub", "Nat.mul", "Nat.pow",
@@ -200,10 +200,10 @@ opaque rsPrimAddrsCanonicalFFI : IO (Array (String × String))
     content hash — Aiur and downstream kernel primitive resolution
     will silently break if `PrimAddrs::new()` isn't updated.
 
-    On failure: re-run `lake test --ignored
+    On failure: re-run `lake test -- --ignored
     rust-kernel-build-primitives` to dump the fresh table, then
-    paste over `PrimAddrs::new` in `src/ix/kernel/primitive.rs`
-    (plus update `PrimAddrs::lean_parity_table` keeps lock-step).
+    update `PrimAddrs::new` in `crates/common/src/prim_addrs.rs` and its
+    Lean/Aiur mirrors.
 
     Exception: `eagerReduce` is a synthetic kernel marker whose
     PrimAddrs value (`0xff…3`) intentionally diverges from its
@@ -226,6 +226,10 @@ def testPrimitivesParity : TestSeq :=
 
     let mut mismatches : Array String := #[]
     let mut missing : Array String := #[]
+    let hardcodedNames := hardcoded.map fun (name, _) => name
+    if hardcodedNames != kernelPrimitives then
+      mismatches := mismatches.push
+        s!"primitive catalog mismatch: expected {kernelPrimitives}, got {hardcodedNames}"
     for primName in kernelPrimitives do
       -- The synthetic eagerReduce marker is intentionally unequal to
       -- the compiled `id` hash; skip parity for it.
@@ -250,15 +254,18 @@ def testPrimitivesParity : TestSeq :=
     if !mismatches.isEmpty then
       IO.eprintln s!"primitive parity: {mismatches.size} address mismatch(es):"
       for m in mismatches do IO.eprintln s!"  {m}"
-      IO.eprintln "Regenerate via `lake test --ignored rust-kernel-build-primitives` and paste into src/ix/kernel/primitive.rs (PrimAddrs::new + lean_parity_table)."
+      IO.eprintln "Regenerate via `lake test -- --ignored rust-kernel-build-primitives` and paste into crates/common/src/prim_addrs.rs."
 
     let total_problems := missing.size + mismatches.size
+    let passed := kernelPrimitives.size - min total_problems kernelPrimitives.size
     let msg : Option String :=
       if total_problems == 0 then none
       else some s!"{mismatches.size} mismatch(es), {missing.size} missing"
-    return (total_problems == 0, kernelPrimitives.size - total_problems, total_problems, msg)
+    return (total_problems == 0, passed, total_problems, msg)
   ) .done
 
-def suite : List TestSeq := [testBuildPrimitives, testPrimitivesParity]
+def paritySuite : List TestSeq := [testPrimitivesParity]
+
+def suite : List TestSeq := [testBuildPrimitives]
 
 end Tests.Ix.Kernel.BuildPrimitives
