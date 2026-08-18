@@ -37,6 +37,7 @@ public import Ix.ImportIxe
 public import Ix.IxEval
 public import Ix.Catalog
 public import Ix.CompileM
+public import Ix.Commit
 public import Ix.Meta
 
 public section
@@ -364,12 +365,75 @@ private def elabTest : IO (Bool × Nat × Nat × Option String) := do
   finally
     IO.FS.removeDirAll dir
 
+/-- C9: the ZkVoting consumption pattern against an imported artifact —
+    `import_ixe` the fixture, commit a private value of an imported
+    type (`Ix.Commit.commitDef`), and build an evaluation claim over an
+    imported function applied to the commitment
+    (`Ix.Commit.evalClaim`) — all with a closure-scoped compile, so
+    cost tracks the claim, not the environment. (Proving the claim is
+    `ix prove`'s job; the IxVM eval arm is still landing.) -/
+private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
+  let dir ← IO.FS.createTempDir
+  let ixePath := (dir / "fixture.ixe").toString
+  let consumerPath := dir / "Consumer.lean"
+  try
+    let original ← buildFixtureConsts
+    let _ ← Ix.CompileM.rsCompileEnvBytesFFI original.toList ixePath false
+    IO.FS.writeFile consumerPath
+      s!"import Ix.ImportIxe\nimport_ixe \"{ixePath}\"\n"
+    let env ← getFileEnv consumerPath
+    -- Closure-scoped compile env over what the claim touches.
+    let mut seen : Lean.NameSet := {}
+    let mut work : Array Lean.Name := #[`TIxImp.dbl, nN, nZero, nSucc]
+    let mut closure : List (Lean.Name × Lean.ConstantInfo) := []
+    while !work.isEmpty do
+      let n := work.back!
+      work := work.pop
+      if seen.contains n then continue
+      seen := seen.insert n
+      let some ci := env.find? n
+        | return (false, 0, 0, some s!"consumer env missing {n}")
+      closure := (n, ci) :: closure
+      for r in Ix.Catalog.constantInfoReferences ci do
+        unless seen.contains r do
+          work := work.push r
+    let phases ← Ix.CompileM.rsCompilePhasesOf closure
+    let compileEnv := Ix.Commit.mkCompileEnv phases
+    -- Commit a private value of the imported type.
+    let voteType := Lean.Expr.const nN []
+    let vote := Lean.Expr.app (.const nSucc []) (.const nZero [])
+    let (commitAddr, env', compileEnv') ←
+      Ix.Commit.commitDef compileEnv env [] voteType vote
+    let commitName := Address.toUniqueName commitAddr
+    unless env'.contains commitName do
+      return (false, 0, 0,
+        some "commitDef did not register the commitment constant")
+    -- Claim: an imported function applied to the commitment evaluates
+    -- to the public result.
+    let input := Lean.mkApp (.const `TIxImp.dbl []) (.const commitName [])
+    let output := Lean.mkApp (.const nSucc [])
+      (Lean.mkApp (.const nSucc []) (.const nZero []))
+    let claim ← match Ix.Commit.evalClaim compileEnv' [] input output
+        voteType with
+      | .ok claim => pure claim
+      | .error e => return (false, 0, 0, some s!"evalClaim failed: {e}")
+    match claim with
+    | .eval i o _ =>
+      if i == o then
+        return (false, 0, 0, some "degenerate claim: input addr = output addr")
+      return (true, 0, 0, none)
+    | _ => return (false, 0, 0, some "expected an eval claim")
+  finally
+    IO.FS.removeDirAll dir
+
 def suite : List TestSeq := [
   .individualIO "materialize ∘ compile is exact and root-stable" none
     roundtripTest .done,
   .individualIO "only-scoped materialization returns the closure" none
     closureTest .done,
   .individualIO "import_ixe elaborates a consumer file (C8)" none
-    elabTest .done ]
+    elabTest .done,
+  .individualIO "commit + eval claim over imported constants (C9)" none
+    zkPatternTest .done ]
 
 end Tests.Ix.ImportIxe

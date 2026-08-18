@@ -2991,12 +2991,18 @@ def rsCompilePhasesOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
 def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases :=
   rsCompilePhasesOf leanEnv.constants.toList
 
-/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
-    Uses the direct FFI that returns structured Lean objects. -/
-def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
-  let constList := leanEnv.constants.toList
+/-- Compile an explicit constant list to Ixon.Env using the Rust
+    compiler. Use for compiles over constructed environments (e.g. the
+    catalog `--audit` per-library comparison). -/
+def rsCompileEnvOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    IO Ixon.Env := do
   let rawEnv ← rsCompileEnvFFI constList
   pure rawEnv.toEnv
+
+/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
+    Uses the direct FFI that returns structured Lean objects. -/
+def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env :=
+  rsCompileEnvOf leanEnv.constants.toList
 
 end
 end Ix.CompileM

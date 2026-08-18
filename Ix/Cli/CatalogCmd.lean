@@ -62,6 +62,24 @@ def runCatalogCmd (p : Cli.Parsed) : IO UInt32 := do
   println! "[catalog] replayed {result.replayed} declarations; \
 {result.consts.size} constants total in {buildElapsed}ms"
 
+  if p.hasFlag "audit" then
+    let auditStart ← IO.monoMsNow
+    let audit ← Ix.Catalog.auditCatalog spec result.consts
+    let auditElapsed := (← IO.monoMsNow) - auditStart
+    if audit.violations.isEmpty then
+      println! "[audit] anon-address preservation: {audit.checked} owned \
+constants verified in {auditElapsed}ms"
+    else
+      let stderr ← IO.getStderr
+      stderr.putStrLn s!"error: catalog audit found \
+{audit.violations.size} anon-address violation(s) \
+({audit.checked} checked); nothing written to {outPath}"
+      for v in audit.violations.toList.take 20 do
+        stderr.putStrLn s!"  [audit] {v}"
+      if audit.violations.size > 20 then
+        stderr.putStrLn s!"  … and {audit.violations.size - 20} more"
+      return 1
+
   let allowPartial := p.hasFlag "allow-partial"
   let start ← IO.monoMsNow
   let status ← Ix.CompileM.rsCompileEnvBytesFFI result.consts.toList outPath
@@ -133,6 +151,7 @@ def catalogCmd : Cli.Cmd := `[Cli|
     "prefix"        : String; "The catalog namespace, e.g. `MyCatalog` (required)."
     out             : String; "Output path for the serialized .ixe; defaults to the lowercased prefix with `.ixe`."
     "allow-partial" ;         "Serialize the grounded subset and exit 0 even when some catalog constants fail to compile. Default is fail-closed: any ungrounded constant means a nonzero exit and NO output file."
+    audit           ;         "Verify anon-address preservation before writing: recompile each member library standalone and require addr(<prefix>.<qualifier>.N) in the catalog to equal addr(N) standalone, for every owned constant (qualification is metadata-only). N+1 extra compiles; violations abort with no output file."
     report          : String; "Write a machine-readable JSON catalog report (versions, lib specs, counts, ungrounded list, canonical root) to this path — written on success, fail-closed abort, and partial publish alike."
 
   ARGS:

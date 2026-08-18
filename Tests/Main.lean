@@ -56,6 +56,8 @@ import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
 import Tests.Ix.ImportIxe
+import Tests.Ix.CatalogFixtures
+import Tests.Ix.CatalogQualified
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -72,6 +74,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),
   ("import-ixe", Tests.Ix.ImportIxe.suite),
+  ("catalog-qualified", Tests.Ix.CatalogQualified.suite),
   ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
@@ -99,6 +102,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
 def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("shard-map", Tests.ShardMap.suite),
+  ("catalog-fixtures", Tests.Ix.CatalogFixtures.suite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
   ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),

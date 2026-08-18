@@ -35,6 +35,8 @@ module
 
 public import Lean
 public import Ix.Meta
+public import Ix.CanonM
+public import Ix.CompileM
 
 public section
 
@@ -176,6 +178,57 @@ def relocateDeclaration (names : Lean.NameMap Lean.Name) :
           name := rename names ctor.name
           type := relocateExpr names ctor.type } }) isUnsafe
   | .quotDecl => .quotDecl
+
+def relocateConstantVal (names : Lean.NameMap Lean.Name)
+    (cv : Lean.ConstantVal) : Lean.ConstantVal :=
+  { cv with
+    name := rename names cv.name
+    type := relocateExpr names cv.type }
+
+/-- Rewrite a `ConstantInfo` in place under a rename map — every name
+    field (self, `all` lists, inductive families, recursor rules) and
+    every expression. Compile-layer relocation: use when comparing
+    qualified against unqualified compiles without kernel replay (the
+    C5 anon-invariance gate); `buildCatalog` itself replays
+    `Declaration`s instead. -/
+def relocateConstantInfo (names : Lean.NameMap Lean.Name) :
+    Lean.ConstantInfo → Lean.ConstantInfo
+  | .axiomInfo v => .axiomInfo {
+      v with toConstantVal := relocateConstantVal names v.toConstantVal }
+  | .defnInfo v => .defnInfo {
+      v with
+      toConstantVal := relocateConstantVal names v.toConstantVal
+      value := relocateExpr names v.value
+      all := v.all.map (rename names) }
+  | .thmInfo v => .thmInfo {
+      v with
+      toConstantVal := relocateConstantVal names v.toConstantVal
+      value := relocateExpr names v.value
+      all := v.all.map (rename names) }
+  | .opaqueInfo v => .opaqueInfo {
+      v with
+      toConstantVal := relocateConstantVal names v.toConstantVal
+      value := relocateExpr names v.value
+      all := v.all.map (rename names) }
+  | .quotInfo v => .quotInfo {
+      v with toConstantVal := relocateConstantVal names v.toConstantVal }
+  | .inductInfo v => .inductInfo {
+      v with
+      toConstantVal := relocateConstantVal names v.toConstantVal
+      all := v.all.map (rename names)
+      ctors := v.ctors.map (rename names) }
+  | .ctorInfo v => .ctorInfo {
+      v with
+      toConstantVal := relocateConstantVal names v.toConstantVal
+      induct := rename names v.induct }
+  | .recInfo v => .recInfo {
+      v with
+      toConstantVal := relocateConstantVal names v.toConstantVal
+      all := v.all.map (rename names)
+      rules := v.rules.map fun rule => {
+        rule with
+        ctor := rename names rule.ctor
+        rhs := relocateExpr names rule.rhs } }
 
 /-- Accept a `DefinitionVal.all` list as unsafe-mutual grouping metadata
     only when every member is an owned definition carrying the same
@@ -354,18 +407,15 @@ def planDeclarations (owned : Lean.NameMap Lean.ConstantInfo)
       pending := pending.erase item.key
   return plan
 
-/-- Replay one library's owned constants into the growing kernel env:
-    build the per-env rename map, reconstruct declarations, order by
-    owned-reference dependencies, and `Kernel.Environment.addDecl` each
-    relocated declaration. Returns the updated env, the replay count,
-    and the owned source-constant count. -/
-private def replayLib (spec : CatalogSpec) (env : Lean.Environment)
+/-- Per-module ownership sweep over one loaded library environment:
+    rename entries for every cataloged package's constants, plus the
+    owned map for this library's own packages. Fails closed on
+    uncatalogued packages. Shared by the replay driver and the audit. -/
+private def ownershipMaps (spec : CatalogSpec) (env : Lean.Environment)
     (qualOfPkg : Std.HashMap Lean.PkgId Lean.Name)
-    (libPkgs : Std.HashSet Lean.PkgId) (kenv : Lean.Kernel.Environment) :
-    Except String (Lean.Kernel.Environment × Nat × Nat) := do
-  -- Per-module sweep: rename entries for every cataloged package's
-  -- constants, owned map for this library's packages, fail-closed on
-  -- uncatalogued packages.
+    (libPkgs : Std.HashSet Lean.PkgId) :
+    Except String
+      (Lean.NameMap Lean.Name × Lean.NameMap Lean.ConstantInfo) := do
   let mut renameMap : Lean.NameMap Lean.Name := {}
   let mut owned : Lean.NameMap Lean.ConstantInfo := {}
   for moduleIdx in [0:env.header.moduleNames.size] do
@@ -379,6 +429,18 @@ private def replayLib (spec : CatalogSpec) (env : Lean.Environment)
         renameMap := renameMap.insert name (target ++ name)
         if libPkgs.contains pkg then
           owned := owned.insert name info
+  return (renameMap, owned)
+
+/-- Replay one library's owned constants into the growing kernel env:
+    build the per-env rename map, reconstruct declarations, order by
+    owned-reference dependencies, and `Kernel.Environment.addDecl` each
+    relocated declaration. Returns the updated env, the replay count,
+    and the owned source-constant count. -/
+private def replayLib (spec : CatalogSpec) (env : Lean.Environment)
+    (qualOfPkg : Std.HashMap Lean.PkgId Lean.Name)
+    (libPkgs : Std.HashSet Lean.PkgId) (kenv : Lean.Kernel.Environment) :
+    Except String (Lean.Kernel.Environment × Nat × Nat) := do
+  let (renameMap, owned) ← ownershipMaps spec env qualOfPkg libPkgs
   let plan ← planDeclarations owned env.find?
   let mut kenv := kenv
   let mut replayed := 0
@@ -392,20 +454,20 @@ private def replayLib (spec : CatalogSpec) (env : Lean.Environment)
       throw s!"kernel rejected `{rename renameMap key}` (source `{key}`): {renderKernelException e}"
   return (kenv, replayed, owned.size)
 
-/-- Build the catalog kernel environment for `spec`. Assumes the Lean
-    search path already resolves every root module (CLI callers run
-    `initLeanSearchPath` first; in-process callers inherit theirs). -/
-def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
+/-- Load every member library into its own environment (complete
+    bodies: `OLeanLevel.private` is the importModules default — so
+    colliding source names never meet at import time) and resolve the
+    package → qualifier map from each library's root modules. Shared by
+    `buildCatalog` and `auditCatalog`. -/
+def resolveLibs (spec : CatalogSpec) :
+    IO (Array Lean.Environment × Std.HashMap Lean.PkgId Lean.Name ×
+        Array (Std.HashSet Lean.PkgId)) := do
   if spec.libs.isEmpty then
     throw <| IO.userError "catalog: no member libraries"
-  -- 1. Load each member library into its own environment (complete
-  --    bodies: `OLeanLevel.private` is the importModules default), so
-  --    colliding source names never meet at import time.
   let mut libEnvs : Array Lean.Environment := #[]
   for lib in spec.libs do
     let imports : Array Lean.Import := lib.roots.map ({ module := · })
     libEnvs := libEnvs.push (← Lean.importModules imports {})
-  -- 2. Package → qualifier map from each library's root modules.
   let mut qualOfPkg : Std.HashMap Lean.PkgId Lean.Name := {}
   let mut libPkgs : Array (Std.HashSet Lean.PkgId) := #[]
   for (lib, env) in spec.libs.zip libEnvs do
@@ -422,6 +484,14 @@ def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
           throw <| IO.userError s!"catalog: package `{pkg}` claimed by qualifiers `{q}` and `{lib.qualifier}`"
       | none => qualOfPkg := qualOfPkg.insert pkg lib.qualifier
     libPkgs := libPkgs.push pkgs
+  return (libEnvs, qualOfPkg, libPkgs)
+
+/-- Build the catalog kernel environment for `spec`. Assumes the Lean
+    search path already resolves every root module (CLI callers run
+    `initLeanSearchPath` first; in-process callers inherit theirs). -/
+def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
+  -- 1./2. Load member envs and resolve package ownership.
+  let (libEnvs, qualOfPkg, libPkgs) ← resolveLibs spec
   -- 3. Toolchain base: the union of toolchain modules across member
   --    environments, imported once (single provider ⇒ no collisions).
   let mut toolchainSeen : Lean.NameSet := {}
@@ -450,5 +520,56 @@ def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
   let consts := kenv.constants.fold (init := #[]) fun acc name info =>
     acc.push (name, info)
   return { consts, replayed, perLib }
+
+/-! ## Audit: anon-address preservation (the §3.1 invariant) -/
+
+structure AuditResult where
+  /-- Owned constants whose addresses were compared. -/
+  checked : Nat
+  /-- Human-readable invariant violations; empty = pass. -/
+  violations : Array String
+
+/-- Audit a built catalog against the load-bearing §3.1 invariant:
+    qualification is metadata-only at the Ixon layer, so for every
+    owned constant `N` of member `X`, the anon address of the
+    standalone library compile at `N` equals the catalog compile's at
+    `P.X.N`. Each member library is recompiled standalone (its own env,
+    unqualified) and compared against one compile of the catalog —
+    N+1 Rust compiles, so this is an opt-in gate (`ix catalog --audit`),
+    not part of the build. -/
+def auditCatalog (spec : CatalogSpec)
+    (catalogConsts : Array (Lean.Name × Lean.ConstantInfo)) :
+    IO AuditResult := do
+  let (libEnvs, qualOfPkg, libPkgs) ← resolveLibs spec
+  let catEnv ← Ix.CompileM.rsCompileEnvOf catalogConsts.toList
+  let mut violations : Array String := #[]
+  let mut checked := 0
+  for (lib, env, pkgs) in spec.libs.zip (libEnvs.zip libPkgs) do
+    let (renameMap, owned) ←
+      match ownershipMaps spec env qualOfPkg pkgs with
+      | .ok maps => pure maps
+      | .error e =>
+        throw <| IO.userError s!"catalog audit: `{lib.qualifier}`: {e}"
+    let stdEnv ← Ix.CompileM.rsCompileEnvOf env.constants.toList
+    for (name, _) in owned do
+      let target := rename renameMap name
+      let (ixSrc, _) := (CanonM.canonName name).run {}
+      let (ixTgt, _) := (CanonM.canonName target).run {}
+      match stdEnv.named.get? ixSrc, catEnv.named.get? ixTgt with
+      | some src, some tgt =>
+        checked := checked + 1
+        if src.addr != tgt.addr then
+          violations := violations.push
+            s!"{lib.qualifier}: addr({name}) = {src.addr} standalone \
+but addr({target}) = {tgt.addr} in the catalog"
+      | none, _ =>
+        violations := violations.push
+          s!"{lib.qualifier}: standalone compile has no named entry \
+for `{name}`"
+      | _, none =>
+        violations := violations.push
+          s!"{lib.qualifier}: catalog compile has no named entry for \
+`{target}`"
+  return { checked, violations }
 
 end Ix.Catalog
