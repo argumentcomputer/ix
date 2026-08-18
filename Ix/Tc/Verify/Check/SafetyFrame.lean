@@ -33,8 +33,7 @@ theorem checkNoUnsafeRefs_go_frame :
       state => by
       rw [RecM.checkNoUnsafeRefs.go]
       split
-      · simp only [bind_pure]
-        exact checkNoUnsafeRefs_go_frame callerSafety stack seenExprs
+      · exact checkNoUnsafeRefs_go_frame callerSafety stack seenExprs
           seenConsts methods I hfault state
       · cases expr with
         | var idx name info =>
@@ -65,8 +64,7 @@ theorem checkNoUnsafeRefs_go_frame :
         | const id levels info =>
             simp only [pure_bind]
             split
-            · simp only [bind_pure]
-              exact checkNoUnsafeRefs_go_frame callerSafety stack
+            · exact checkNoUnsafeRefs_go_frame callerSafety stack
                 (seenExprs.insert (KExpr.const id levels info).addr)
                 seenConsts methods I hfault state
             · simp only [ReaderT.run_bind, ReaderT.run_monadLift]

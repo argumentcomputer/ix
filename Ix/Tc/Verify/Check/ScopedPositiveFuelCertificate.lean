@@ -148,7 +148,6 @@ theorem inference_requests :
   cases hget
   rw [initial_inferMiss]
   simp only
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
   have hinferOnly : initialState.inferOnly = false := by rfl
   rw [hinferOnly]
   simp only [Bool.false_eq_true, if_false, ReaderT.run_pure, pure_bind,

@@ -47,14 +47,17 @@ theorem Constructed.liftNoIntern_eq_liftSpec
     rw [mkFVar_shape]
     simp only [substNoIntern.liftNoIntern, KExpr.liftSpec, KExpr.lbr,
       ite_self]
+    exact ite_self _
   | @sort u md =>
     rw [mkSort_shape]
     simp only [substNoIntern.liftNoIntern, KExpr.liftSpec, KExpr.lbr,
       ite_self]
+    exact ite_self _
   | @const id us md =>
     rw [mkConst_shape]
     simp only [substNoIntern.liftNoIntern, KExpr.liftSpec, KExpr.lbr,
       ite_self]
+    exact ite_self _
   | @app f a md hf ha ihf iha =>
     rw [mkApp_shape, size] at hcut
     rw [mkApp_shape]
@@ -141,10 +144,12 @@ theorem Constructed.liftNoIntern_eq_liftSpec
     rw [mkNat_shape]
     simp only [substNoIntern.liftNoIntern, KExpr.liftSpec, KExpr.lbr,
       ite_self]
+    exact ite_self _
   | @str v blob md =>
     rw [mkStr_shape]
     simp only [substNoIntern.liftNoIntern, KExpr.liftSpec, KExpr.lbr,
       ite_self]
+    exact ite_self _
 
 /-- The complete non-interning substitution computes `substSpec`.  Its body
 bound is the memoized walker's `depth + size` premise; its argument bound is
@@ -170,12 +175,15 @@ theorem Constructed.substNoIntern_eq_substSpec
   | @fvar id name md =>
     rw [mkFVar_shape]
     simp only [substNoIntern, KExpr.substSpec, KExpr.lbr, ite_self]
+    exact ite_self _
   | @sort u md =>
     rw [mkSort_shape]
     simp only [substNoIntern, KExpr.substSpec, KExpr.lbr, ite_self]
+    exact ite_self _
   | @const id us md =>
     rw [mkConst_shape]
     simp only [substNoIntern, KExpr.substSpec, KExpr.lbr, ite_self]
+    exact ite_self _
   | @app f a md hf ha ihf iha =>
     rw [mkApp_shape, size] at hcut
     rw [mkApp_shape]
@@ -241,9 +249,11 @@ theorem Constructed.substNoIntern_eq_substSpec
   | @nat v blob md =>
     rw [mkNat_shape]
     simp only [substNoIntern, KExpr.substSpec, KExpr.lbr, ite_self]
+    exact ite_self _
   | @str v blob md =>
     rw [mkStr_shape]
     simp only [substNoIntern, KExpr.substSpec, KExpr.lbr, ite_self]
+    exact ite_self _
 
 end KExpr
 

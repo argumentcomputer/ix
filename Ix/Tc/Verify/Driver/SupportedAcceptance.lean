@@ -294,8 +294,7 @@ theorem accepts
       (⟨blockAddr, ()⟩ : KId .anon) := by
     refine ⟨resources.members, ?_, resources.exactBlock.nonempty,
       htrusted⟩
-    simpa only [admittedWorld, VerifyWorld.admitOracle] using
-      resources.exactBlock.blockLookup
+    exact resources.exactBlock.blockLookup
   refine ⟨admittedWorld, hle, haccepted, ?_⟩
   obtain ⟨workMembers, hworkBlock, _hnonempty, _hprimary, htargets⟩ :=
     resources.workCatalog.block_targets

@@ -30,21 +30,21 @@ theorem whnfRec_preservesInferOnly
     (source : KExpr .anon) :
     ((whnfRec source).run methods).PreservesInferOnly := by
   unfold whnfRec
-  simpa using hmethods.whnf source
+  exact hmethods.whnf source
 
 theorem whnfModeRec_preservesInferOnly
     {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)
     (source : KExpr .anon) (mode : NatSuccMode) :
     ((whnfModeRec source mode).run methods).PreservesInferOnly := by
   unfold whnfModeRec
-  simpa using hmethods.whnfMode source mode
+  exact hmethods.whnfMode source mode
 
 theorem whnfCoreFlagsRec_preservesInferOnly
     {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)
     (source : KExpr .anon) (flags : WhnfFlags) :
     ((whnfCoreFlagsRec source flags).run methods).PreservesInferOnly := by
   unfold whnfCoreFlagsRec
-  simpa using hmethods.whnfCoreFlags source flags
+  exact hmethods.whnfCoreFlags source flags
 
 theorem inferOnlyRec_preservesInferOnly
     {methods : Methods .anon} (_hmethods : methods.PreservesInferOnly)
@@ -59,14 +59,10 @@ private theorem tryQuestion_preservesInferOnly
     (hx : (x.run methods).PreservesInferOnly) :
     ((try? x).run methods).PreservesInferOnly := by
   unfold try?
-  simp only [ReaderT.run_bind]
-  apply TcM.PreservesInferOnly.bind
-  · exact TcM.PreservesInferOnly.tryCatch
-      (TcM.PreservesInferOnly.bind hx
-        (fun value => TcM.PreservesInferOnly.pure (some value)))
-      (fun _ => TcM.PreservesInferOnly.pure none)
-  · intro result
-    exact TcM.PreservesInferOnly.pure result
+  exact TcM.PreservesInferOnly.tryCatch
+    (TcM.PreservesInferOnly.bind hx
+      (fun value => TcM.PreservesInferOnly.pure (some value)))
+    (fun _ => TcM.PreservesInferOnly.pure none)
 
 theorem tryOptional_preservesInferOnly
     {methods : Methods .anon} {x : RecM .anon alpha}

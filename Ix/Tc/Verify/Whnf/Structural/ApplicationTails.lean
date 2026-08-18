@@ -31,7 +31,7 @@ theorem whnfCoreWithFlagsStep_appUnchangedIota
     (whnfCoreWithFlagsStep (.app f arg info) flags).run methods s =
       .ok (.next result) s2 := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind

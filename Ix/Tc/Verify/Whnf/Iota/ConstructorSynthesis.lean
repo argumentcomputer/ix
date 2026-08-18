@@ -28,14 +28,10 @@ theorem tryOptional_success
     (h : x.run methods s = .ok a sf) :
     (tryOptional x).run methods s = .ok (some a) sf := by
   unfold tryOptional try?
-  rw [ReaderT.run_bind]
-  change EStateM.bind
-    (EStateM.tryCatch
-      (EStateM.bind (x.run methods) (fun a s => .ok (some a) s)) _)
-    _ s = _
+  change EStateM.tryCatch
+    (EStateM.bind (x.run methods) (fun a s => .ok (some a) s)) _ s = _
   unfold EStateM.bind EStateM.tryCatch
   simp only [h]
-  rfl
 
 /-- A caught optional-probe error becomes absence while retaining the
 error-side state, as required by the Rust `&mut` execution model. -/
@@ -45,11 +41,8 @@ theorem tryOptional_error
     (h : x.run methods s = .error err sf) :
     (tryOptional x).run methods s = .ok none sf := by
   unfold tryOptional try?
-  rw [ReaderT.run_bind]
-  change EStateM.bind
-    (EStateM.tryCatch
-      (EStateM.bind (x.run methods) (fun a s => .ok (some a) s)) _)
-    _ s = _
+  change EStateM.tryCatch
+    (EStateM.bind (x.run methods) (fun a s => .ok (some a) s)) _ s = _
   unfold EStateM.bind EStateM.tryCatch
   simp only [h]
   rfl

@@ -240,7 +240,7 @@ theorem empty {R : EqKey → EqKey → Prop} : WF R EquivManager.empty := by
 /-- Resetting the manager restores the empty invariant. -/
 theorem clear {R : EqKey → EqKey → Prop} (em : EquivManager) :
     WF R em.clear := by
-  simpa [EquivManager.clear] using (empty (R := R))
+  simpa [EquivManager.clear, EquivManager.empty] using (empty (R := R))
 
 /-- Pointwise strengthening of the semantic relation preserves manager
 validity. -/

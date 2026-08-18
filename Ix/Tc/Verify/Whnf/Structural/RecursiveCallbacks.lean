@@ -48,7 +48,7 @@ theorem whnfCoreFlagsRec_wf
       (fun result _ => support result /\
         WhnfPost trProj world uvars Delta sourceV result) := by
   intro methods hmethods
-  simpa only [whnfCoreFlagsRec] using
+  exact
     hmethods.whnfCoreFlags hsource htr
 
 namespace TrAppSpine

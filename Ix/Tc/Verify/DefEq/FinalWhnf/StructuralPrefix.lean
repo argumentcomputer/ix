@@ -108,7 +108,7 @@ theorem tryDefEqWhnfStructural_wf
             (resources.constants.universes hrightSupport)
             hleft hright hid hlevels
   · rename_i leftFn leftArg leftInfo rightFn rightArg rightInfo
-    simpa only [bind_pure] using
+    exact
       (TryDefEqWhnfApp.ofResources resources.applications
         hleftSupport hrightSupport hleft hright)
   · apply RecM.WF.bind <| by
@@ -137,7 +137,7 @@ theorem tryDefEqWhnfStructural_wf
         exact RecM.WF.pure fun _ => hanswer
   · rename_i leftName leftTy leftVal leftBody leftNondep leftInfo
       rightName rightTy rightVal rightBody rightNondep rightInfo
-    simpa only [bind_pure] using
+    exact
       (TryDefEqWhnfLet.ofResources resources.theory resources.collision
         resources.lets hleftSupport hrightSupport hleft hright)
   · rename_i leftNat leftBlob leftInfo rightNat rightBlob rightInfo

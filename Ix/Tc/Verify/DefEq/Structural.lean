@@ -220,7 +220,7 @@ theorem quickDefEq_wf
       have hbodyTyped : world.venv.IsDefEq uvars
           (ty1V :: Delta.toCtx) body1V body2V bodyTy :=
         hbodyEq.of_l world.venvWF hDeltaBody.toCtx (by
-          simpa [KVLCtx.toCtx] using hbody1Typed)
+          simpa [KVLCtx.toCtx, Lean4Lean.VEnv.HasType] using hbody1Typed)
       exact (Lean4Lean.VEnv.IsDefEq.lamDF
         hdomainTyped hbodyTyped).toU
     · intro _ _ _

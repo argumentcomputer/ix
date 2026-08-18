@@ -473,7 +473,7 @@ theorem isRec_of_trusted {semantics : CacheSemantics}
     change idAddr = indAddr at href
     cases href
     rfl
-  simpa [hid] using htrusted
+  simpa [hid, CacheAuthority.stable] using htrusted
 
 theorem mono {semantics : CacheSemantics}
     {before after : CacheAuthority} {support : RunSupport}

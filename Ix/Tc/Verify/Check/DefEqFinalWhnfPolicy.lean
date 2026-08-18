@@ -97,12 +97,9 @@ theorem tryDefEqWhnfStructural_preservesInferOnly
   | app leftFunction leftArgument leftInfo =>
       cases right with
       | app rightFunction rightArgument rightInfo =>
-          simp only [tryDefEqWhnfStructural, ReaderT.run_bind]
-          apply TcM.PreservesInferOnly.bind
-            (tryDefEqWhnfApp_preservesInferOnly hmethods leftFunction
-              leftArgument rightFunction rightArgument)
-          intro result
-          exact TcM.PreservesInferOnly.pure result
+          simp only [tryDefEqWhnfStructural]
+          exact tryDefEqWhnfApp_preservesInferOnly hmethods leftFunction
+            leftArgument rightFunction rightArgument
       | var | fvar | sort | const | lam | all | letE | prj | nat | str =>
           simp only [tryDefEqWhnfStructural]
           exact TcM.PreservesInferOnly.pure none
@@ -134,12 +131,9 @@ theorem tryDefEqWhnfStructural_preservesInferOnly
       cases right with
       | letE rightName rightType rightValue rightBody rightNonDependent
           rightInfo =>
-          simp only [tryDefEqWhnfStructural, ReaderT.run_bind]
-          apply TcM.PreservesInferOnly.bind
-            (tryDefEqWhnfLet_preservesInferOnly hmethods name leftType leftValue
-              leftBody rightType rightValue rightBody)
-          intro result
-          exact TcM.PreservesInferOnly.pure result
+          simp only [tryDefEqWhnfStructural]
+          exact tryDefEqWhnfLet_preservesInferOnly hmethods name leftType
+            leftValue leftBody rightType rightValue rightBody
       | var | fvar | sort | const | app | lam | all | prj | nat | str =>
           simp only [tryDefEqWhnfStructural]
           exact TcM.PreservesInferOnly.pure none

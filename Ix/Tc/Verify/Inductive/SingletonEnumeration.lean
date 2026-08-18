@@ -28,6 +28,11 @@ structure IsEnumeration {source : VInductDecl}
   noUniverses : source.uvars = 0
   noParameters : source.nparams = 0
   noIndices : generation.block.rawIndices = []
+  /-- The fresh motive universe the generated recursor and equations below
+  assume. Small elimination inserts no such universe, so a `Prop`-valued
+  enumeration falls outside this fragment rather than being generated
+  incorrectly. -/
+  largeElimination : generation.elimination = .large
   nonempty : 0 < generation.block.ctorPairs.length
   constructor : ∀ {index : Nat}
       {normalized : VInductDecl.NormalizedCtor},
@@ -57,7 +62,9 @@ theorem rawParams_nil {source : VInductDecl}
     {generation : source.GenerationChecked}
     (shape : IsEnumeration generation) :
     generation.paramsTel = [] := by
-  simp [VInductDecl.GenerationChecked.paramsTel, shape.rawParams_nil]
+  simp [VInductDecl.GenerationChecked.paramsTel,
+    VInductDecl.NormalizedChecked.generationParams,
+    VInductDecl.generationParams, shape.rawParams_nil]
 
 @[simp] theorem idxTel_nil {source : VInductDecl}
     {generation : source.GenerationChecked}
@@ -116,11 +123,12 @@ theorem rule_lhs {source : VInductDecl}
               (generation.block.ctorPairs.length + 1)))
           (.const normalized.raw.name [])) := by
   unfold VInductDecl.GenerationChecked.rule
+  rw [shape.largeElimination]
   rw [shape.paramsTel_nil, shape.fields_nil hconstructor,
     shape.resultIndices_nil hconstructor]
   simp [ruleBinders, VExpr.liftTelN, VExpr.appN,
     VExpr.bvarRevRange, shape.noUniverses, shape.noParameters,
-    Lean4Lean.VLevel.params']
+    shape.largeElimination, Lean4Lean.VLevel.params']
 
 /-- Exact generated right-hand side: enum rule `index` is the corresponding
 minor variable and has no field/IH application suffix. -/
@@ -133,6 +141,7 @@ theorem rule_rhs {source : VInductDecl}
       VExpr.lamN (ruleBinders generation)
         (.bvar (generation.block.ctorPairs.length - 1 - index)) := by
   unfold VInductDecl.GenerationChecked.rule
+  rw [shape.largeElimination]
   rw [shape.paramsTel_nil, shape.fields_nil hconstructor,
     shape.recursive_nil hconstructor]
   simp [ruleBinders, VExpr.liftTelN, VExpr.appN,
@@ -184,6 +193,7 @@ theorem ruleType_instantiated {source : VInductDecl}
           (.bvar generation.block.ctorPairs.length)
           (.const normalized.raw.name [])) := by
   unfold VInductDecl.GenerationChecked.rule
+  rw [shape.largeElimination]
   rw [shape.paramsTel_nil, shape.fields_nil hconstructor,
     shape.resultIndices_nil hconstructor]
   simp [ruleBinders, VExpr.forallN, VExpr.appN, VExpr.instL,
@@ -457,6 +467,7 @@ theorem enumerationPatternSound
   intro future hfuture hfutureWF uvars Gamma matched levels captures A
     hGamma hmatches htype _hchecks
   let generation := tx.certificate.generation
+  have helim : generation.elimination = .large := shape.largeElimination
   have hcount : family.constructorIds.size =
       generation.block.ctorPairs.length := by
     rw [family.constructorCount, ← generation.rawCtors_eq]
@@ -489,7 +500,7 @@ theorem enumerationPatternSound
   subst recursorConstant
   have hlevelsLength : levels.length = 1 := by
     simpa [VInductDecl.GenerationChecked.recursor,
-      shape.noUniverses] using hlevelsArity
+      shape.noUniverses, helim] using hlevelsArity
 
   rw [hconstructorArguments] at hconstructorApplied
   simp only [VExpr.appN] at hconstructorApplied
@@ -531,7 +542,7 @@ theorem enumerationPatternSound
     hregisteredFuture
   have hlevelsRuleArity :
       levels.length = (generation.rule index normalized).uvars := by
-    simpa [VInductDecl.GenerationChecked.rule, shape.noUniverses] using
+    simpa [VInductDecl.GenerationChecked.rule, shape.noUniverses, helim] using
       hlevelsLength
   have hequation : future.IsDefEq uvars Gamma
       ((generation.rule index normalized).lhs.instL levels)
@@ -672,7 +683,9 @@ theorem enumerationPatternSound
     simpa only [VExpr.appN] using hmatched
   rw [hmatchedExact]
   simpa [SingletonRecursorCatalogLink.enumerationPattern, selected,
-    RecursorIotaPattern.recursorArgumentRhs_apply] using hresult
+    RecursorIotaPattern.recursorArgumentRhs_apply,
+    RecursorIotaPattern.recursorArgumentRhs,
+    Lean4Lean.Pattern.RHS.apply] using hresult
 
 /-- Package the finite pattern metadata and its registered-equation proof as
 the exact historical relation consumed by the production iota verifier. -/

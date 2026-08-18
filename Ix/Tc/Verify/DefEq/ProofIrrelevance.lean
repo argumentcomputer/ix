@@ -32,7 +32,7 @@ theorem tryOptionalInferOnlyCall_wf
         | some ty => support ty ∧
             InferPost trProj world uvars Delta sourceV ty
         | none => True) := by
-  simpa only [inferOnlyCall, inferOnlyRec] using
+  exact
     (tryOptionalInferOnlyRec_wf
       (layer := layer) (semantics := semantics) (s := state)
       hsourceSupport hsource)

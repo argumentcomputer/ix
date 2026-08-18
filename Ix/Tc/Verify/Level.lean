@@ -448,16 +448,16 @@ theorem EvalPaths.one_le {ρ : List Nat} {path : Path} {n : Nat}
 /-- `imax` distributes over `max` in the second argument — the semantic
     content of the `normalizeImaxMax` rewrite. -/
 private theorem imax_max (a b c : Nat) :
-    Nat.imax a (max b c) = max (Nat.imax a b) (Nat.imax a c) := by
+    Lean.Nat.imax a (max b c) = max (Lean.Nat.imax a b) (Lean.Nat.imax a c) := by
   by_cases hb : b = 0 <;> by_cases hc : c = 0 <;>
-    simp [Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
+    simp [Lean.Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
 
 /-- `imax(a, imax(b, c)) = max(imax(a, c), imax(b, c))` — the semantic
     content of the `normalizeImaxImax` rewrite. -/
 private theorem imax_imax (a b c : Nat) :
-    Nat.imax a (Nat.imax b c) = max (Nat.imax a c) (Nat.imax b c) := by
+    Lean.Nat.imax a (Lean.Nat.imax b c) = max (Lean.Nat.imax a c) (Lean.Nat.imax b c) := by
   by_cases hc : c = 0 <;> by_cases hb : b = 0 <;>
-    simp [Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
+    simp [Lean.Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
 
 /-! #### Insert-eval lemmas -/
 
@@ -738,7 +738,7 @@ private theorem normalizeAux_eval' {ρ : List Nat} :
   | .imax u (.zero b_ad) ad, path, k, acc, hk, hp => by
     simp only [normalizeAux]
     rw [NormLevel.addConst_eval hp]
-    simp [KUniv.toVLevel, VLevel.eval, Nat.imax]
+    simp [KUniv.toVLevel, VLevel.eval, Lean.Nat.imax]
   | .imax u (.succ v b_ad) ad, path, k, acc, hk, hp => by
     have hk1 : (k + 1).toNat = k.toNat + 1 :=
       toNat_add_one (by simp [KUniv.size] at hk; omega)
@@ -755,13 +755,13 @@ private theorem normalizeAux_eval' {ρ : List Nat} :
     simp only [normalizeAux]
     rw [ihV, ihU, hk1,
       show (KUniv.toVLevel (.imax u (.succ v b_ad) ad)).eval ρ
-          = Nat.imax ((KUniv.toVLevel u).eval ρ)
+          = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from rfl,
-      show Nat.imax ((KUniv.toVLevel u).eval ρ)
+      show Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
             ((KUniv.toVLevel v).eval ρ + 1)
           = max ((KUniv.toVLevel u).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from by
-        simp [Nat.imax, Nat.max_eq_max],
+        simp [Lean.Nat.imax, Nat.max_eq_max],
       show (KUniv.toVLevel v).eval ρ + (k.toNat + 1)
           = (KUniv.toVLevel v).eval ρ + 1 + k.toNat from by omega,
       ← Nat.add_max_add_right, evalPath_max]
@@ -859,15 +859,15 @@ theorem normalizeImaxMax_eval {ρ : List Nat} {u v w : KUniv m} {path : Path}
   simp only [normalizeImaxMax]
   rw [ihW, ihV,
     show (VLevel.imax u.toVLevel (VLevel.max v.toVLevel w.toVLevel)).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
             (max ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ))
       from rfl,
     imax_max, ← Nat.add_max_add_right, evalPath_max,
     show (VLevel.imax u.toVLevel v.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel v).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel v).eval ρ)
       from rfl,
     show (VLevel.imax u.toVLevel w.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
       from rfl]
   refine ext_le fun x => ?_
   simp only [Nat.max_le]
@@ -898,15 +898,15 @@ theorem normalizeImaxImax_eval {ρ : List Nat} {u v w : KUniv m} {path : Path}
   simp only [normalizeImaxImax]
   rw [ihVW, ihUW,
     show (VLevel.imax u.toVLevel (VLevel.imax v.toVLevel w.toVLevel)).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ)
-            (Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ))
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
+            (Lean.Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ))
       from rfl,
     imax_imax, ← Nat.add_max_add_right, evalPath_max,
     show (VLevel.imax u.toVLevel w.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
       from rfl,
     show (VLevel.imax v.toVLevel w.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ)
       from rfl]
   refine ext_le fun x => ?_
   simp only [Nat.max_le]
@@ -928,7 +928,7 @@ private theorem normalizeImaxDispatch_eval' {ρ : List Nat} :
   | a, .zero b_ad, path, k, acc, hk, hp => by
     simp only [normalizeImaxDispatch]
     rw [NormLevel.addConst_eval hp]
-    simp [KUniv.toVLevel, VLevel.eval, Nat.imax]
+    simp [KUniv.toVLevel, VLevel.eval, Lean.Nat.imax]
   | a, .succ v b_ad, path, k, acc, hk, hp => by
     have hsza := KUniv.size_pos a
     have hk1 : (k + 1).toNat = k.toNat + 1 :=
@@ -946,13 +946,13 @@ private theorem normalizeImaxDispatch_eval' {ρ : List Nat} :
     simp only [normalizeImaxDispatch]
     rw [ihV, ihA, hk1,
       show (VLevel.imax a.toVLevel (KUniv.toVLevel (.succ v b_ad))).eval ρ
-          = Nat.imax ((KUniv.toVLevel a).eval ρ)
+          = Lean.Nat.imax ((KUniv.toVLevel a).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from rfl,
-      show Nat.imax ((KUniv.toVLevel a).eval ρ)
+      show Lean.Nat.imax ((KUniv.toVLevel a).eval ρ)
             ((KUniv.toVLevel v).eval ρ + 1)
           = max ((KUniv.toVLevel a).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from by
-        simp [Nat.imax, Nat.max_eq_max],
+        simp [Lean.Nat.imax, Nat.max_eq_max],
       show (KUniv.toVLevel v).eval ρ + (k.toNat + 1)
           = (KUniv.toVLevel v).eval ρ + 1 + k.toNat from by omega,
       ← Nat.add_max_add_right, evalPath_max]
@@ -993,7 +993,7 @@ private theorem normalize_param_some_eval {ρ : List Nat} {u : KUniv m}
         ((acc.addConst k path).addVar idx k newPath))
       = max (NormLevel.eval ρ acc)
           (evalPath ρ path
-            (Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
+            (Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
               + k.toNat)) := by
   have hconst : NormLevel.eval ρ (acc.addConst k path)
       = max (NormLevel.eval ρ acc) (evalPath ρ path k.toNat) :=
@@ -1020,14 +1020,14 @@ private theorem normalize_param_some_eval {ρ : List Nat} {u : KUniv m}
     hvar, hconst, evalPath_orderedInsert h₁, evalPath_orderedInsert h₁]
   by_cases hnz : allNZ ρ path = true <;> by_cases hz : 0 < evalParam ρ idx
   · rw [if_pos hz, if_pos hz]
-    simp only [evalPath, if_pos hnz, Nat.imax,
+    simp only [evalPath, if_pos hnz, Lean.Nat.imax,
       if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
       ← Nat.add_max_add_right]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
   · rw [if_neg hz, if_neg hz, Nat.eq_zero_of_not_pos hz]
-    simp only [evalPath, if_pos hnz, Nat.imax, reduceIte, Nat.zero_add]
+    simp only [evalPath, if_pos hnz, Lean.Nat.imax, reduceIte, Nat.zero_add]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
@@ -1056,7 +1056,7 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
         (if k != 0 then acc.addVar idx k path else acc))
       = max (NormLevel.eval ρ acc)
           (evalPath ρ path
-            (Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
+            (Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
               + k.toNat)) := by
   have hmem : idx ∈ path := orderedInsert_none h₁
   split
@@ -1074,7 +1074,7 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
     · have hz : 0 < evalParam ρ idx := by
         simp only [allNZ, List.all_eq_true, decide_eq_true_eq] at hnz
         exact hnz idx hmem
-      simp only [evalPath, if_pos hnz, Nat.imax,
+      simp only [evalPath, if_pos hnz, Lean.Nat.imax,
         if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
         ← Nat.add_max_add_right]
       refine ext_le fun x => ?_
@@ -1095,7 +1095,7 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
         exact hnz idx hmem
       have hle : evalParam ρ idx ≤ NormLevel.eval ρ acc :=
         hp.mem_le hmem hnz
-      simp only [evalPath, if_pos hnz, Nat.imax,
+      simp only [evalPath, if_pos hnz, Lean.Nat.imax,
         if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max]
       refine ext_le fun x => ?_
       simp only [Nat.max_le]
@@ -1398,7 +1398,8 @@ theorem normLevelLe_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
             exact hwf p₂ n₂ hfind₂ _ hvmem
           have h1ev : 1 ≤ evalParam ρ n₂.vars[i].idx := by
             rw [allNZ, List.all_eq_true] at hnz₂
-            simpa using hnz₂ _ hidx
+            have h0 : 0 < evalParam ρ n₂.vars[i].idx := by simpa using hnz₂ _ hidx
+            omega
           have hoff : n₁.constant.toNat ≤ n₂.vars[i].offset.toNat + 1 := by
             refine Nat.le_trans
               (UInt64.le_iff_toNat_le.mp (of_decide_eq_true hvle)) ?_
@@ -1708,7 +1709,7 @@ private theorem forIn_id_invariant {α β : Type _} {P : β → Prop} :
         P (match f a b with | .yield b' => b' | .done b' => b')) →
       P (forIn (m := Id) l init f)
   | [], init, f, hinit, _ => by
-    simpa using hinit
+    exact hinit
   | a :: as, init, f, hinit, hstep => by
     rw [List.forIn_cons]
     have h0 := hstep a (List.mem_cons_self ..) init hinit
@@ -1873,7 +1874,7 @@ private theorem toList_keys_nodup (l : NormLevel) :
     (l.toList.map Prod.fst).Nodup := by
   refine List.Pairwise.map _ ?_ RBTree.RBMap.toList_sorted
   intro a b hlt heq
-  have hc := Batteries.RBNode.cmpLT_iff.mp hlt
+  have hc := RBTree.RBNode.cmpLT_iff.mp hlt
   rw [heq] at hc
   have hself : compare b.1 b.1 = .eq := Std.ReflCmp.compare_self
   rw [hself] at hc
@@ -2370,7 +2371,59 @@ theorem normalizeLevel_eval {ρ : List Nat} {u : KUniv m}
     subsumption_eval (varsOnPath_normalizeAux u [] 0 _ varsOnPath_seed),
     normalizeAux_eval (by simpa using hu) EvalPaths.nil, seed_eval]
   simp [evalPath, allNZ]
+
+/-- A canonical form whose entries are all empty denotes `0`: each entry
+    contributes `0`, and `eval` is their max. -/
+theorem NormLevel.eval_eq_zero_of_all_empty {ρ : List Nat} {l : NormLevel}
+    (h : ∀ e ∈ l.toList, entryNonEmpty e = false) :
+    NormLevel.eval ρ l = 0 := by
+  refine Nat.le_zero.mp (NormLevel.eval_le.mpr ?_)
+  intro p n hf
+  have hmem : (p, n) ∈ l.toList := by
+    obtain ⟨y, hy, hcmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
+    cases Std.LawfulEqCmp.eq_of_compare hcmp
+    exact hy
+  rw [eval_of_not_entryNonEmpty (h _ hmem)]
+  exact evalPath_le.mpr fun _ => Nat.zero_le _
+
 end Level
+
+/-- A universe with a nonzero denotation at some assignment is not `Prop`.
+    The semantic test cannot be evaluated by `decide`: `normalizeLevel` is
+    well-founded (its `imax` cases rebuild the level), so it has no kernel
+    normal form. This routes the fact through `normalizeLevel_eval`
+    instead, which is how any concrete `isSemanticZero = false` obligation
+    should be discharged. -/
+theorem KUniv.isSemanticZero_eq_false {m : Mode} {u : KUniv m}
+    {ρ : List Nat} (hu : u.size < UInt64.size)
+    (hpos : 0 < (KUniv.toVLevel u).eval ρ) : u.isSemanticZero = false := by
+  rw [KUniv.isSemanticZero, Bool.or_eq_false_iff]
+  refine ⟨?_, ?_⟩
+  · cases u <;> simp_all [KUniv.isZero, KUniv.toVLevel,
+      Lean4Lean.VLevel.eval]
+  · rw [Bool.eq_false_iff, ne_eq, List.all_eq_true]
+    intro hall
+    have hzero : Level.NormLevel.eval ρ (Level.normalizeLevel u) = 0 :=
+      Level.NormLevel.eval_eq_zero_of_all_empty fun e he => by
+        simpa using hall e he
+    rw [Level.normalizeLevel_eval hu] at hzero
+    omega
+
+/-- A universe the semantic `Prop` test accepts denotes `0` at every
+    assignment. `isZero` is the syntactic fast path; otherwise every
+    canonical entry is empty, and `normalizeLevel_eval` transports that
+    back to the denotation. -/
+theorem KUniv.toVLevel_equiv_zero_of_isSemanticZero {m : Mode} {u : KUniv m}
+    (hu : u.size < UInt64.size) (hzero : u.isSemanticZero = true) :
+    KUniv.toVLevel u ≈ .zero := by
+  rw [KUniv.isSemanticZero, Bool.or_eq_true] at hzero
+  refine Lean4Lean.VLevel.equiv_def.mpr fun ρ => ?_
+  show _ = 0
+  rcases hzero with h | h
+  · rw [KUniv.toVLevel_of_isZero h]; rfl
+  · rw [← Level.normalizeLevel_eval (ρ := ρ) hu]
+    exact Level.NormLevel.eval_eq_zero_of_all_empty fun e he => by
+      simpa using List.all_eq_true.mp h e he
 
 /-! ### The canonical-form frontier, assembled -/
 
@@ -2531,8 +2584,8 @@ theorem isNeverZero_eval (ρ : List Nat) : ∀ {u : KUniv m},
       split <;> omega
   | .imax a b _, h => by
     have hb := isNeverZero_eval ρ (u := b) (by simpa [isNeverZero] using h)
-    show 0 < Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
-    simp only [Nat.imax]
+    show 0 < Lean.Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+    simp only [Lean.Nat.imax]
     rw [if_neg (by omega)]
     simp only [Nat.max_eq_max, Nat.max_def]
     split <;> omega
@@ -2750,7 +2803,7 @@ theorem toVLevel_mkIMax {a b : KUniv m}
             | _ => false) then b
         else if a == b then a
         else mkIMaxRaw a b).toVLevel.eval ρ
-      = Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+      = Lean.Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
   generalize hc1 : (match a with
     | .succ inner _ => inner.isZero
     | _ => false) = aOne
@@ -2760,19 +2813,19 @@ theorem toVLevel_mkIMax {a b : KUniv m}
     have hmax := VLevel.equiv_def.mp (toVLevel_mkMax hinj ha hb) ρ
     have hpos := isNeverZero_eval ρ (u := b) hnz
     rw [hmax]
-    simp only [Nat.imax]
+    simp only [Lean.Nat.imax]
     rw [if_neg (by omega)]
     rfl
   · split
     · -- b is zero: imax _ 0 = 0
       next hz =>
       rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
-      simp [Nat.imax]
+      simp [Lean.Nat.imax]
     · split
       · -- a is zero: imax 0 x = x
         next hz =>
         rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
-        simp only [Nat.imax]
+        simp only [Lean.Nat.imax]
         split
         · next h0 => omega
         · simp only [Nat.max_eq_max, Nat.max_def]
@@ -2788,9 +2841,9 @@ theorem toVLevel_mkIMax {a b : KUniv m}
               rw [toVLevel_of_isZero (by simpa using hM)]
               rfl
             show (toVLevel b).eval ρ
-                = Nat.imax ((toVLevel inner).eval ρ + 1)
+                = Lean.Nat.imax ((toVLevel inner).eval ρ + 1)
                     ((toVLevel b).eval ρ)
-            simp only [Nat.imax]
+            simp only [Lean.Nat.imax]
             split
             · next h0 => omega
             · simp only [Nat.max_eq_max, Nat.max_def]
@@ -2807,7 +2860,7 @@ theorem toVLevel_mkIMax {a b : KUniv m}
             have heq := (hinj a b (.inl .refl) (.inr .refl)).toVLevel_eq
               hbeq
             rw [heq]
-            simp only [Nat.imax]
+            simp only [Lean.Nat.imax]
             split
             · next h0 => omega
             · simp only [Nat.max_eq_max, Nat.max_def]

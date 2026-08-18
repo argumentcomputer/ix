@@ -1068,7 +1068,6 @@ theorem lookupLetVal_eval {idx : UInt64}
   unfold TcM.lookupLetVal
   rw [get_bind_run]
   rw [if_neg (by omega)]
-  simp only [pure_bind]
   rw [hval]
   change EStateM.bind (TcM.runIntern (lift val (idx + 1) 0))
     (fun r => pure (some r)) s = _
@@ -1083,17 +1082,18 @@ theorem lookupLetVal_none_state {idx : UInt64}
     {s s' : TcState .anon}
     (h : TcM.lookupLetVal idx s = .ok none s') : s' = s := by
   unfold TcM.lookupLetVal at h
-  change EStateM.bind (get : TcM .anon (TcState .anon)) _ s = _ at h
-  unfold EStateM.bind at h
-  rw [show (get : TcM .anon (TcState .anon)) s = .ok s s from rfl] at h
-  simp only at h
+  rw [get_bind_run] at h
   split at h
   · cases h
     rfl
-  · split at h
-    · cases h
+  · simp only [letFun] at h
+    cases hval : s.letVals[s.ctx.size - 1 - idx.toNat]! with
+    | none =>
+      rw [hval] at h
+      cases h
       rfl
-    · rename_i val hval
+    | some val =>
+      rw [hval] at h
       change EStateM.bind (TcM.runIntern (lift val (idx + 1) 0))
         (fun r => pure (some r)) s = _ at h
       unfold EStateM.bind at h
@@ -1112,22 +1112,12 @@ theorem ctxAddrForLbr_wf {I : TcState .anon → Prop}
   apply TcM.WF.bind (Q₁ := fun read s' => read = s ∧ s' = s)
     (TcM.WF.get fun _ => ⟨rfl, rfl⟩)
   rintro read before ⟨rfl, rfl⟩
+  simp only [letFun]
   split
   · exact TcM.WF.pure fun _ => rfl
-  · apply TcM.WF.bind
-      (Q₁ := fun _ after => after = before)
-      (TcM.WF.pure fun _ => rfl)
-    intro _ after hafter
-    subst after
-    simp only
-    split
+  · split
     · exact TcM.WF.pure fun _ => rfl
-    · apply TcM.WF.bind
-        (Q₁ := fun _ after => after = before)
-        (TcM.WF.pure fun _ => rfl)
-      intro _ after hafter
-      subst after
-      refine TcM.WF.bind
+    · refine TcM.WF.bind
         (Q₁ := fun _ after => ContextKeyFrame before after) ?_ ?_
       · exact TcM.WF.modifyGet
           (fun hI => hframe hI
@@ -2062,7 +2052,7 @@ theorem whnfRec_wf
       (fun result _ => support result ∧
         WhnfPost trProj world uvars Δ sourceV result) := by
   intro methods hmethods
-  simpa only [whnfRec] using hmethods.whnf hsource htr
+  exact hmethods.whnf hsource htr
 
 /-- The policy-sensitive recursive WHNF callback inherits the corresponding
 method-table contract.  This is the callback used by the successor-collapse
@@ -2079,7 +2069,7 @@ theorem whnfModeRec_wf
       (fun result _ => support result ∧
         WhnfPost trProj world uvars Δ sourceV result) := by
   intro methods hmethods
-  simpa only [whnfModeRec] using hmethods.whnfMode hsource htr
+  exact hmethods.whnfMode hsource htr
 
 /-- Reading the production primitive table is state-transparent.  Naming the
 exact reader frame avoids repeatedly unfolding `get` in primitive helpers. -/
@@ -2191,22 +2181,18 @@ theorem whnfNatReducerArg_post_wf
       (RecM.WF.get fun _ => rfl)
     intro saved s₁ hsaved
     subst saved
-    apply RecM.WF.bind
-      (Q₁ := fun observed after => observed = after)
-      (RecM.WF.get fun _ => rfl)
-    intro savedState afterSaved hsavedState
-    subst afterSaved
+    simp only [letFun]
     apply RecM.WF.bind
       (Q₁ := fun _ after => after =
-        {savedState with recFuel :=
-          (min savedState.recFuel natReducerOpenArgRecFuel)})
+        {s₁ with recFuel :=
+          (min s₁.recFuel natReducerOpenArgRecFuel)})
     · exact RecM.WF.modify
         (Q := fun _ after => after =
-          {savedState with recFuel :=
-            (min savedState.recFuel natReducerOpenArgRecFuel)})
+          {s₁ with recFuel :=
+            (min s₁.recFuel natReducerOpenArgRecFuel)})
         (f := fun state =>
           {state with
-            recFuel := min savedState.recFuel natReducerOpenArgRecFuel})
+            recFuel := min s₁.recFuel natReducerOpenArgRecFuel})
         (fun hI => hI.set_recFuel _)
         (fun _ => rfl)
     · intro _ limited hlimited
@@ -2232,20 +2218,20 @@ theorem whnfNatReducerArg_post_wf
         subst observed
         apply RecM.WF.bind
           (Q₁ := fun _ restored => restored =
-            {afterRead with recFuel := savedState.recFuel -
-              (min savedState.recFuel
-                (min savedState.recFuel natReducerOpenArgRecFuel -
+            {afterRead with recFuel := s₁.recFuel -
+              (min s₁.recFuel
+                (min s₁.recFuel natReducerOpenArgRecFuel -
                   afterRead.recFuel))})
         · exact RecM.WF.modify
             (Q := fun _ restored => restored =
-              {afterRead with recFuel := savedState.recFuel -
-                (min savedState.recFuel
-                  (min savedState.recFuel natReducerOpenArgRecFuel -
+              {afterRead with recFuel := s₁.recFuel -
+                (min s₁.recFuel
+                  (min s₁.recFuel natReducerOpenArgRecFuel -
                     afterRead.recFuel))})
             (f := fun state =>
-              {state with recFuel := savedState.recFuel -
-                (min savedState.recFuel
-                  (min savedState.recFuel natReducerOpenArgRecFuel -
+              {state with recFuel := s₁.recFuel -
+                (min s₁.recFuel
+                  (min s₁.recFuel natReducerOpenArgRecFuel -
                     afterRead.recFuel))})
             (fun hI => hI.set_recFuel _)
             (fun _ => rfl)
@@ -5861,8 +5847,9 @@ theorem finishAppResult_one
     (hintern : TcM.intern (KExpr.mkApp result arg) s = .ok final s') :
     (finishAppResult result #[arg] 0).run methods s = .ok final s' := by
   rw [finishAppResult_eq_foldlM]
-  change EStateM.bind (TcM.intern _) _ s = _
-  simpa [EStateM.bind] using hintern
+  change EStateM.bind (TcM.intern (KExpr.mkApp result arg)) EStateM.Result.ok s = _
+  simp only [EStateM.bind]
+  rw [hintern]
 
 /-- Finite execution certificate for rebuilding an application suffix.
 Each node records the exact dynamically generated application passed to
@@ -6083,7 +6070,7 @@ theorem whnfCoreWithFlagsStep_betaOne
       (.app (.lam nm bi ty body lamMd) arg appMd) flags).run methods s =
       .ok (.next result) s' := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   simp only [KExpr.collectSpine, KExpr.collectSpine.go]
   change EStateM.bind
     (methods.whnfCoreFlags (.lam nm bi ty body lamMd) flags) _ s = _
@@ -6127,7 +6114,7 @@ theorem whnfCoreWithFlagsStep_betaMany
     (whnfCoreWithFlagsStep (.app f arg appInfo) flags).run methods s =
       .ok (.next result) s₃ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind
@@ -6292,7 +6279,7 @@ theorem whnfCoreWithFlagsStep_iota
     (whnfCoreWithFlagsStep (.app f arg appInfo) flags).run methods s =
       .ok (.next result) s₂ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind
     (methods.whnfCoreFlags (.const recId us headInfo) flags) _ s = _
@@ -6322,7 +6309,7 @@ theorem whnfCoreWithFlagsStep_appUnchangedDone
     (whnfCoreWithFlagsStep (.app f arg info) flags).run methods s =
       .ok (.done (.app f arg info)) s₂ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind
@@ -6349,7 +6336,7 @@ theorem whnfCoreWithFlagsStep_appHeadError
     (whnfCoreWithFlagsStep (.app f arg info) flags).run methods s =
       .error err s₁ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind
@@ -6371,7 +6358,7 @@ theorem whnfCoreWithFlagsStep_appUnchangedIotaError
     (whnfCoreWithFlagsStep (.app f arg info) flags).run methods s =
       .error err s₂ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind
@@ -6403,7 +6390,7 @@ theorem whnfCoreWithFlagsStep_appChangedIota
     (whnfCoreWithFlagsStep (.app f arg info) flags).run methods s =
       .ok (.next result) s₃ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind
@@ -6440,7 +6427,7 @@ theorem whnfCoreWithFlagsStep_appChangedDone
     (whnfCoreWithFlagsStep (.app f arg info) flags).run methods s =
       .ok (.done rebuilt) s₃ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind
@@ -6477,7 +6464,7 @@ theorem whnfCoreWithFlagsStep_appChangedIotaError
     (whnfCoreWithFlagsStep (.app f arg info) flags).run methods s =
       .error err s₃ := by
   unfold whnfCoreWithFlagsStep
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
+  rw [ReaderT.run_bind]
   rw [hspine]
   change EStateM.bind (methods.whnfCoreFlags head flags) _ s = _
   unfold EStateM.bind
@@ -8203,7 +8190,7 @@ theorem boolExprFromDecision
       obtain ⟨ci, hlookup⟩ := htable.boolFalse.contains hcatalog
       have hci := hprims.boolFalse hlookup
       subst ci
-      simpa [VExpr.boolLit, VExpr.boolFalse] using
+      exact
         (TrKExprS.const (Δ := Δ) (uvars := uvars)
           htable.boolFalse.2 hlookup (by simp) (by simp))
   | true =>
@@ -8211,7 +8198,7 @@ theorem boolExprFromDecision
       obtain ⟨ci, hlookup⟩ := htable.boolTrue.contains hcatalog
       have hci := hprims.boolTrue hlookup
       subst ci
-      simpa [VExpr.boolLit, VExpr.boolTrue] using
+      exact
         (TrKExprS.const (Δ := Δ) (uvars := uvars)
           htable.boolTrue.2 hlookup (by simp) (by simp))
 
@@ -8384,7 +8371,7 @@ theorem mkAppN
       (args.toList.foldl KExpr.mkApp source) sourceV := by
     simpa only [Array.foldl_toList] using hsource
   have hresult := foldlMkApp theory hΔ hsource' hmeaning
-  simpa only [Array.foldl_toList] using hresult
+  simpa only [Array.foldl_toList, KExpr.mkAppN] using hresult
 
 /-- Replace the concrete source of a meaning proof when both concrete
 expressions translate to the same Theory expression.  This is the metadata
@@ -12077,7 +12064,7 @@ theorem of_result_shape
       rw [KExpr.mkApp_shape, KExpr.mkApp_shape]
       exact hbaseMeaningExact
     have hnatType₀ : world.venv.HasType uvars [] (.natLit value) .nat := by
-      simpa using
+      simpa [Lean4Lean.VLCtx.toCtx] using
         (Lean4Lean.TrExprS.natLit
           (Us := List.replicate uvars Lean.Name.anonymous) (Δ := [])
           context.theoryPrimitives (htable.nat.contains hcatalog) value).2
@@ -12195,7 +12182,7 @@ theorem of_result_shape
       exact hbaseMeaningExact
     have hboolType₀ : world.venv.HasType uvars []
         (.boolLit decision) .bool := by
-      simpa using
+      simpa [Lean4Lean.VLCtx.toCtx] using
         (Lean4Lean.TrExprS.boolLit
           (Us := List.replicate uvars Lean.Name.anonymous) (Δ := [])
           context.theoryPrimitives (htable.boolType.contains hcatalog)
@@ -12795,7 +12782,7 @@ theorem tryReduceNatWithSuccMode_succ_collapse
     rw [hprims]
   rw [hprimsRun]
   simp [haddr]
-  simpa using hiter
+  simpa [show (NatSuccMode.collapse == NatSuccMode.stuck) = false from rfl] using hiter
 
 /-! ### Semantic successor-loop closure -/
 
@@ -13407,7 +13394,6 @@ theorem tryReduceNatSuccPeelAfterKey_wf
     (Q₁ := fun observed after => observed = s ∧ after = s)
     (RecM.WF.get (s := s) fun _ => ⟨rfl, rfl⟩)
   rintro observed after ⟨rfl, rfl⟩
-  simp only
   split
   · apply RecM.WF.bind (recordNatSuccStuck_wf visited hvisited)
     intro _ after _
@@ -13527,11 +13513,9 @@ theorem tryReduceNatSuccAfterWhnf_wf
             rw [hwV, natSuccIterV_peel] at hlift
             exact hlift
         rw [hcurAt]
-        simp only [bind_pure]
         exact tryReduceNatSuccPeel_wf writes hw hnext hnextTr
           hnextType hnextEq hvisited
-      · simp only [pure_bind]
-        apply RecM.WF.bind (recordNatSuccStuck_wf visited hvisited)
+      · apply RecM.WF.bind (recordNatSuccStuck_wf visited hvisited)
         intro _ committed _
         exact RecM.WF.pure fun _ => trivial
 
@@ -13720,7 +13704,6 @@ theorem natArgs_eq_binaryPrefix_append_extract
         simp [Array.getElem_extract]
       · subst i
         simp [Array.getElem_extract]
-        rfl
   calc
     args = args.extract 0 args.size := by simp
     _ = args.extract 0 2 ++ args.extract 2 args.size := by

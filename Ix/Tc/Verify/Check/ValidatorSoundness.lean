@@ -319,7 +319,6 @@ theorem validateUnivParamsSeen_go_sound :
       rw [RecM.validateUnivParamsSeen.go] at hrun
       split at hrun
       · rename_i hhit
-        simp only [bind_pure] at hrun
         have htailDomain : UnivStackInDomain domain stack := by
           intro candidate hmem
           exact hstack (List.mem_cons.mpr (.inr hmem))
@@ -348,7 +347,7 @@ theorem validateUnivParamsSeen_go_sound :
               validateUnivParamsSeen_go_sound hdomain hcollision bound stack
                 (seen.insert addr) (by simpa [KUniv.validationChildren] using
                   hchildrenDomain) hlocal'
-                (by simpa [KUniv.validationChildren] using hexpandedFrontier)
+                (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | succ child addr =>
             simp only [pure_bind] at hrun
@@ -359,7 +358,7 @@ theorem validateUnivParamsSeen_go_sound :
                 (child :: stack) (seen.insert addr)
                 (by simpa [KUniv.validationChildren] using hchildrenDomain)
                 hlocal'
-                (by simpa [KUniv.validationChildren] using hexpandedFrontier)
+                (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | max left right addr =>
             simp only [pure_bind] at hrun
@@ -370,7 +369,7 @@ theorem validateUnivParamsSeen_go_sound :
                 (right :: left :: stack) (seen.insert addr)
                 (by simpa [KUniv.validationChildren] using hchildrenDomain)
                 hlocal'
-                (by simpa [KUniv.validationChildren] using hexpandedFrontier)
+                (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | imax left right addr =>
             simp only [pure_bind] at hrun
@@ -381,7 +380,7 @@ theorem validateUnivParamsSeen_go_sound :
                 (right :: left :: stack) (seen.insert addr)
                 (by simpa [KUniv.validationChildren] using hchildrenDomain)
                 hlocal'
-                (by simpa [KUniv.validationChildren] using hexpandedFrontier)
+                (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                 methods state finalSeen after hrun
         | param idx name addr =>
             simp only [pure_bind] at hrun
@@ -396,7 +395,7 @@ theorem validateUnivParamsSeen_go_sound :
                   (seen.insert addr)
                   (by simpa [KUniv.validationChildren] using hchildrenDomain)
                   hlocal'
-                  (by simpa [KUniv.validationChildren] using hexpandedFrontier)
+                  (by simpa [KUniv.validationChildren, KUniv.addr] using hexpandedFrontier)
                   methods state finalSeen after hrun
 termination_by _ _ _ _ _ stack _ _ _ _ _ _ _ _ _ =>
   RecM.univWorkSize stack
@@ -936,7 +935,6 @@ theorem validateExprWellScoped_go_sound :
       rw [RecM.validateExprWellScoped.go] at hrun
       split at hrun
       · rename_i hhit
-        simp only [bind_pure] at hrun
         have htailReach : ExprStackInReach root stack := by
           intro item hmem
           exact hstack (List.mem_cons.mpr (.inr hmem))

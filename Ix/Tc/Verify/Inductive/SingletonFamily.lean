@@ -39,7 +39,8 @@ theorem checkedTypeUvars {decl : VInductDecl}
     (checked : decl.Checked) : checked.type.uvars = decl.uvars := by
   rcases checked with
     ⟨type, typesEq, params, paramsEq, indices, indicesEq,
-      resultLevel, resultEq, elimination, eliminationEq, names, namesEq,
+      resultLevel, resultEq, elimination, eliminationEq, kTarget, kTargetEq,
+      names, namesEq,
       constructors, constructorsEq, accepted⟩
   cases decl with
   | mk uvars nparams types =>
@@ -49,7 +50,7 @@ theorem checkedTypeUvars {decl : VInductDecl}
     simp only [VInductDecl.stage3Core, VInductDecl.stage3DirectCore,
       Bool.and_eq_true, beq_iff_eq] at accepted
     change type.uvars = uvars
-    exact accepted.1.1.1.1.1.1
+    exact accepted.1.1.1.1.1
 
 /-- Every checked constructor retains the declaration universe arity. -/
 theorem checkedConstructorUvars {decl : VInductDecl}
@@ -58,7 +59,8 @@ theorem checkedConstructorUvars {decl : VInductDecl}
     constructor.uvars = decl.uvars := by
   rcases checked with
     ⟨type, typesEq, params, paramsEq, indices, indicesEq,
-      resultLevel, resultEq, elimination, eliminationEq, names, namesEq,
+      resultLevel, resultEq, elimination, eliminationEq, kTarget, kTargetEq,
+      names, namesEq,
       constructors, constructorsEq, accepted⟩
   cases decl with
   | mk uvars nparams types =>

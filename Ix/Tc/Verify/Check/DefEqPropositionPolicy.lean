@@ -52,8 +52,7 @@ theorem isPropType_preservesInferOnly
   intro state
   split
   · exact TcM.PreservesInferOnly.pure _
-  · simp only [pure_bind]
-    apply TcM.PreservesInferOnly.bind
+  · apply TcM.PreservesInferOnly.bind
       (classifyPropTypeUncached_preservesInferOnly hmethods hwhnf type)
     intro result
     intro before

@@ -27,7 +27,6 @@ theorem lookupVar_eval {idx : UInt64} {ty result : KExpr .anon}
   rw [show (get : TcM .anon (TcState .anon)) s = .ok s s from rfl]
   simp only
   rw [if_neg (by omega)]
-  simp only [pure_bind]
   rw [hty]
   exact hlift
 

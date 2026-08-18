@@ -105,7 +105,7 @@ theorem finishStructEtaAfterSort_preservesInferOnly
           (spine.extract (recr.majorIdx + 1) spine.size)) ?_
       intro result
       exact TcM.PreservesInferOnly.pure (some result)
-    simpa only [pure_bind] using htail
+    simpa only [Bool.false_eq_true, if_false, pure_bind] using htail
 
 theorem tryStructEtaAfterInductive_preservesInferOnly
     {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)
