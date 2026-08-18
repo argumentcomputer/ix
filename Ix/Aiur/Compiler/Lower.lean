@@ -98,9 +98,30 @@ structure CompilerState where
   ops : Array Bytecode.Op
   selIdx : Bytecode.SelIdx
   degrees : Array Nat
+  /-- Store-tag table, threaded ACROSS functions by
+      `Concrete.Decls.toBytecode`: every type stored to Aiur memory
+      gets a dense sequential id, so distinct types get distinct tags
+      by construction — an id is a table index, never a hash, because
+      the tag lives in one field element and any injective encoding of
+      an unbounded type space cannot fit one. -/
+  typeIds : Std.HashMap Concrete.Typ Nat
+  nextTid : Nat
   deriving Inhabited
 
 abbrev CompileM := EStateM String CompilerState
+
+/-- The store tag of `t`: its table id, allocated on first use. Same
+    type ⇒ same id (across every function of the toplevel — the table
+    threads through), different types ⇒ different ids. -/
+def typeId (t : Concrete.Typ) : CompileM Nat :=
+  modifyGet fun s =>
+    match s.typeIds[t]? with
+    | some i => (i, s)
+    | none =>
+      (s.nextTid,
+       { s with
+         typeIds := s.typeIds.insert t s.nextTid,
+         nextTid := s.nextTid + 1 })
 
 def pushOpDegree (degrees : Array Nat) (op : Bytecode.Op) (size : Nat) : Array Nat :=
   if size > 1 then
@@ -262,11 +283,13 @@ def toIndex
     -- polymorphic containers sharing a width map can no longer merge
     -- across instantiations on numeric pointer coincidences, which is
     -- what makes the unique-query set exact under any execution
-    -- interleaving.
+    -- interleaving. The id is a dense table index (see `typeId`),
+    -- injective by construction.
     let inner ← match typ with
       | .pointer t => pure t
       | t => pure t
-    let tid ← pushOp (.const (.ofNat (hash inner).toNat))
+    let id ← typeId inner
+    let tid ← pushOp (.const (.ofNat id))
     pushOp (.store (tid ++ args))
   | .load _ _ ptr => do
     let size ← match ptr.typ with
@@ -368,7 +391,8 @@ def toIndex
           | _ => throw "unconstrainedBigUintDivMod: unexpected result type"
         | none => throw "unconstrainedBigUintDivMod: unexpected result type"
       | _ => throw "unconstrainedBigUintDivMod: unexpected result type"
-    let tag ← pushOp (.const (.ofNat (hash nodeTyp).toNat))
+    let id ← typeId nodeTyp
+    let tag ← pushOp (.const (.ofNat id))
     pushOp (.unconstrainedBigUintDivMod tag[0]! a b) 2
   | .unconstrainedGToBytes _ _ a => do
     let a ← expectIdx layoutMap bindings a
@@ -621,9 +645,14 @@ decreasing_by all_goals first | decreasing_tactic | grind
 
 end
 
-/-- Lower a full concrete function to bytecode. -/
-def Concrete.Function.compile (layoutMap : LayoutMap) (f : Concrete.Function) :
-    Except String (Bytecode.Block × Bytecode.LayoutMState) := do
+/-- Lower a full concrete function to bytecode. The store-tag table
+    (`typeIds`/`nextTid`) threads in and out so ids stay consistent —
+    and injective — across every function of the toplevel. -/
+def Concrete.Function.compile (layoutMap : LayoutMap) (f : Concrete.Function)
+    (typeIds : Std.HashMap Concrete.Typ Nat) (nextTid : Nat) :
+    Except String
+      (Bytecode.Block × Bytecode.LayoutMState
+        × Std.HashMap Concrete.Typ Nat × Nat) := do
   let (_inputSize, _outputSize) ← match layoutMap[f.name]? with
     | some (.function layout) => pure (layout.inputSize, layout.outputSize)
     | _ => throw s!"`{f.name}` should be a function"
@@ -634,28 +663,32 @@ def Concrete.Function.compile (layoutMap : LayoutMap) (f : Concrete.Function) :
         | .ok len => pure len
       let indices := Array.range' valIdx len
       pure (valIdx + len, bindings.insert arg indices)
-  let state := { valIdx, selIdx := 0, ops := #[], degrees := Array.replicate valIdx 1 }
+  let state := { valIdx, selIdx := 0, ops := #[],
+                 degrees := Array.replicate valIdx 1, typeIds, nextTid }
   match f.body.compile f.output layoutMap bindings |>.run state with
   | .error e _ => throw e
-  | .ok body _ =>
+  | .ok body s =>
     let (_, layoutMState) := Bytecode.blockLayout body |>.run (.new valIdx)
     let layoutMState := { layoutMState with functionLayout :=
       { layoutMState.functionLayout with
         lookups := layoutMState.functionLayout.lookups + 1 } }
-    pure (body, layoutMState)
+    pure (body, layoutMState, s.typeIds, s.nextTid)
 
 def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
     Except String (Bytecode.Toplevel × Std.HashMap Global Bytecode.FunIdx) := do
   let layout ← decls.layoutMap
   let initMemSizes : Bytecode.MemSizes := .empty
-  let (functions, memSizes, nameMap) ← decls.foldlM (init := (#[], initMemSizes, {}))
-    fun acc@(functions, memSizes, nameMap) (_, decl) => match decl with
+  let (functions, memSizes, nameMap, _, _) ←
+    decls.foldlM (init := (#[], initMemSizes, {}, {}, 0))
+    fun acc@(functions, memSizes, nameMap, typeIds, nextTid) (_, decl) =>
+      match decl with
       | .function function => do
-        let (body, layoutMState) ← function.compile layout
+        let (body, layoutMState, typeIds, nextTid) ←
+          function.compile layout typeIds nextTid
         let nameMap := nameMap.insert function.name functions.size
         let function := ⟨body, layoutMState.functionLayout, function.entry, false⟩
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
-        pure (functions.push function, memSizes, nameMap)
+        pure (functions.push function, memSizes, nameMap, typeIds, nextTid)
       | _ => pure acc
   pure (⟨functions, memSizes.toArray⟩, nameMap)
 

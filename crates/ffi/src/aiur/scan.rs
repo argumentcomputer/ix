@@ -139,18 +139,21 @@ struct SchedBlock {
 /// members attribute to their block), with member lists, sizes, and the
 /// block-level reference adjacency — all static structure, no execution.
 fn schedule_blocks(env: &IxonEnv) -> (Vec<SchedBlock>, Vec<Vec<u32>>) {
-  // Pass 1: home address per constant.
+  // Pass 1: home address per constant. A projection folds into its
+  // declared block ONLY when its coordinates are valid there (see
+  // `crate::kernel::canonical_prj_fold`): a projection's serialized
+  // content is exactly those coordinates, so validity makes it THE
+  // canonical wrapper the block's own check covers. Anything else
+  // keeps its own schedule block, so its `verify_block` claim runs and
+  // the kernel rejects it — folding on the declared block address
+  // alone would count a counterfeit wrapper as covered without any
+  // claim ever loading it.
   let mut home: FxHashMap<Address, Address> = FxHashMap::default();
   for entry in env.consts.iter() {
     let (addr, lazy) = (entry.key(), entry.value());
     let Ok(c) = lazy.get() else { continue };
-    let h = match &c.info {
-      IxonCI::IPrj(p) => p.block.clone(),
-      IxonCI::CPrj(p) => p.block.clone(),
-      IxonCI::RPrj(p) => p.block.clone(),
-      IxonCI::DPrj(p) => p.block.clone(),
-      _ => addr.clone(),
-    };
+    let h = crate::kernel::canonical_prj_fold(env, &c.info)
+      .unwrap_or_else(|| addr.clone());
     home.insert(addr.clone(), h);
   }
   // Pass 2: block table (sorted for determinism) + members + sizes.
@@ -465,6 +468,9 @@ pub fn execute_env(
   // Plan mode: per fine segment, the measured per-circuit raw heights,
   // retained bytes, exact peak, and cleanliness — the grouping inputs.
   let mut plan_segs: Vec<(Vec<usize>, usize, usize, bool)> = Vec::new();
+  // Prove-mode segments sealed unclean (rejects / missing claim) and
+  // therefore not proven — a failure the exit status must carry.
+  let mut unproven_segs = 0usize;
   let mut seg_start = 0usize;
   while seg_start < covered && !abort.load(Ordering::Acquire) {
     let cut_now = std::sync::atomic::AtomicBool::new(false);
@@ -556,7 +562,9 @@ pub fn execute_env(
               let m = &record.function_queries[fi];
               let mut out = String::new();
               for i in 0..m.len() {
-                if let Some((key, _)) = m.get_index(i) {
+                // Mid-run dump: workers are still inserting, so only
+                // completion-published entries are readable.
+                if let Some((key, _)) = m.get_index_complete(i) {
                   for g in key {
                     out.push_str(&format!("{:016x} ", g.as_canonical_u64()));
                   }
@@ -830,6 +838,9 @@ pub fn execute_env(
            rejected blocks — partial records are not proven",
           segs.len() - 1
         );
+        if !dry_run && plan_out.is_none() {
+          unproven_segs += 1;
+        }
         drop(std::mem::replace(&mut record, QueryRecord::new(toplevel)));
       } else if dry_run {
         // Geometry dry run: everything real — the cut, the segment
@@ -1068,6 +1079,16 @@ pub fn execute_env(
       report.push_str(&format!("\n    {} — {e}", a.hex()));
     }
   }
+  // A checker's exit status is its verdict: any kernel reject or
+  // unproven segment fails the run, keep-going or not. The report
+  // (with the full reject inventory) rides in the error.
+  if !failed.is_empty() || unproven_segs > 0 {
+    return Err(format!(
+      "{report}\nFAILED: {} kernel-rejected block(s), {unproven_segs} \
+       segment(s) not proven",
+      failed.len()
+    ));
+  }
   Ok(report)
 }
 
@@ -1090,9 +1111,14 @@ pub fn execute_env(
 ///   (sound: the model is subadditive in circuit heights — a union
 ///   record only dedups — so the sum is a conservative bound, and the
 ///   next measure round re-verifies exactly anyway).
-/// - Prove mode proves each shard whose exact peak fits, and reports
-///   (never attempts) the ones that do not.
+/// - Prove mode proves each shard whose exact peak fits; a shard that
+///   measures over budget self-heals — split in place with the same
+///   partitioner the fixup uses, halves re-measured and proven
+///   recursively. Only a single block over budget is irreducible.
 ///
+/// An all-shards run first proves exact cover (every schedule block
+/// owned exactly once) — the whole-env soundness condition — and the
+/// returned status carries any rejection or unproven unit as an error.
 /// Every decision is made on a measurement; the static planner's cost
 /// model only has to land NEAR the budget for the fix-up to converge in
 /// a round or two.
@@ -1202,6 +1228,41 @@ pub fn execute_manifest(
       .collect::<Result<_, _>>()?;
     work.push_back((si.to_string(), ids, Some(si)));
   }
+  // Whole-env soundness gate: an all-shards run claims "every env
+  // constant checked", so the manifest must own every schedule block
+  // exactly once — missing and duplicated blocks both void the claim.
+  // (Blocks foreign to the schedule already failed id resolution
+  // above.) A single-shard run is inherently partial and says so.
+  if manifest.shards.is_empty() {
+    return Err("manifest has no shards".to_string());
+  }
+  match shard_sel {
+    None => {
+      let mut owners = vec![0u32; blocks.len()];
+      for (_, ids, _) in &work {
+        for &b in ids {
+          owners[b as usize] += 1;
+        }
+      }
+      let missing = owners.iter().filter(|&&c| c == 0).count();
+      let dup = owners.iter().filter(|&&c| c > 1).count();
+      if missing != 0 || dup != 0 {
+        return Err(format!(
+          "manifest does not exactly cover the env schedule: {missing} \
+           block(s) unowned, {dup} owned more than once (of {} total)",
+          blocks.len()
+        ));
+      }
+      eprintln!(
+        "[manifest] exact cover: {} schedule blocks owned exactly once",
+        blocks.len()
+      );
+    },
+    Some(k) => {
+      eprintln!("[manifest] PARTIAL: shard {k} only — no coverage claim");
+    },
+  }
+  let mut failures = 0usize;
   while let Some((label, ids, mi)) = work.pop_front() {
     let record = QueryRecord::new(toplevel);
     let cursor = AtomicUsize::new(0);
@@ -1263,6 +1324,9 @@ pub fn execute_manifest(
       }
     }
     let clean = rejects.is_empty() && seg_claim.is_some();
+    if !clean {
+      failures += 1;
+    }
     if clean {
       let dio = IOBuffer::with_shared(shared_io.clone());
       let claim_list: Vec<(usize, Vec<G>)> =
@@ -1331,6 +1395,7 @@ pub fn execute_manifest(
         work.push_front((format!("{label}b"), hb, None));
         work.push_front((format!("{label}a"), ha, None));
       } else {
+        failures += 1;
         let l = format!(
           "[shard {label}] NOT PROVEN: single block over budget — needs          a bigger box"
         );
@@ -1454,6 +1519,14 @@ pub fn execute_manifest(
     },
     t0.elapsed().as_secs_f64()
   ));
+  // Exit status is the verdict: rejected shards and units that could
+  // not be proven fail the run (over-budget MEASUREMENTS in dry mode
+  // do not — they are the output the fixup consumes).
+  if failures > 0 {
+    return Err(format!(
+      "{report}\nFAILED: {failures} shard(s) rejected or not proven"
+    ));
+  }
   Ok(report)
 }
 

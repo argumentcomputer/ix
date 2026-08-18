@@ -1019,13 +1019,47 @@ fn check_schedule_block_addr(
   // singleton blocks. Do not use declaration-family `all` metadata here: it
   // can include names that are not checked by the same kernel block.
   match &constant.info {
-    IxonCI::IPrj(p) => Some(p.block.clone()),
-    IxonCI::CPrj(p) => Some(p.block.clone()),
-    IxonCI::RPrj(p) => Some(p.block.clone()),
-    IxonCI::DPrj(p) => Some(p.block.clone()),
     IxonCI::Muts(_) => None,
-    _ => Some(named.addr),
+    info => {
+      Some(canonical_prj_fold(ixon_env, info).unwrap_or(named.addr))
+    },
   }
+}
+
+/// The block a projection constant folds into for check scheduling —
+/// `Some(block)` ONLY when its coordinates are valid there: the block
+/// parses as a Muts, the index is in range, and the member kind matches
+/// the projection variant (plus ctor index range for `CPrj`). A
+/// projection's serialized content is exactly its coordinates, so valid
+/// coordinates make it THE canonical wrapper the block's own check
+/// covers; an invalid one must NOT fold — it gets its own schedule
+/// item, whose check the kernel then rejects. `None` for
+/// non-projections (their own address is their block).
+pub(crate) fn canonical_prj_fold(
+  env: &IxonEnv,
+  info: &IxonCI,
+) -> Option<Address> {
+  use ixon::constant::MutConst;
+  let (block, idx, cidx) = match info {
+    IxonCI::IPrj(p) => (&p.block, p.idx, None),
+    IxonCI::CPrj(p) => (&p.block, p.idx, Some(p.cidx)),
+    IxonCI::RPrj(p) => (&p.block, p.idx, None),
+    IxonCI::DPrj(p) => (&p.block, p.idx, None),
+    _ => return None,
+  };
+  let c = env.get_const(block)?;
+  let IxonCI::Muts(members) = &c.info else { return None };
+  let m = usize::try_from(idx).ok().and_then(|i| members.get(i))?;
+  let valid = match (info, m) {
+    (IxonCI::IPrj(_), MutConst::Indc(_)) => true,
+    (IxonCI::RPrj(_), MutConst::Recr(_)) => true,
+    (IxonCI::DPrj(_), MutConst::Defn(_)) => true,
+    (IxonCI::CPrj(_), MutConst::Indc(ind)) => cidx
+      .and_then(|ci| usize::try_from(ci).ok())
+      .is_some_and(|ci| ci < ind.ctors.len()),
+    _ => false,
+  };
+  valid.then(|| block.clone())
 }
 
 fn run_checks_on_large_stack<M: KernelMode>(

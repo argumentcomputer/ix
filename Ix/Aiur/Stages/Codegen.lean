@@ -796,6 +796,9 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let outArr : RustStmt :=
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
+    -- Set-only, like every other emitted insert (see the correctness
+    -- invariant in the module header): the record never carries
+    -- execution-time multiplicities — every count is derived at seal.
     let insertCall : RustStmt :=
       .exprStmt (.call
         (.field
@@ -804,7 +807,7 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
           "insert_cc")
         #[.ref (.index (.var "inp") (.lit "..")),
           .ref (.index (.var "__ret") (.lit "..")),
-          .lit "!unconstrained"])
+          .lit "false"])
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]

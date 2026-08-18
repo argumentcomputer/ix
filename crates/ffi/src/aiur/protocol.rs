@@ -292,18 +292,22 @@ fn build_query_counts_array(
   let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
     query_record.function_queries.len() + toplevel.memory_sizes.len(),
   );
+  // The record is an insert-once SET during execution: `uniqueRows` is
+  // the map's true unique count (= the circuit's raw trace height),
+  // and `totalHits` sums whatever multiplicity state the record holds —
+  // zero after plain set-only execution, the derived consumption counts
+  // after a seal. Gating rows on multiplicity would under-count.
   let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
-    let mut rows = 0usize;
     let mut hits = 0usize;
     for (_, res) in q.iter() {
-      let m = usize::try_from(res.multiplicity.as_canonical_u64())
-        .expect("multiplicity exceeds usize");
-      if m != 0 {
-        rows += 1;
-        hits += m;
-      }
+      hits = hits
+        .checked_add(
+          usize::try_from(res.multiplicity.as_canonical_u64())
+            .expect("multiplicity exceeds usize"),
+        )
+        .expect("hit total overflows usize");
     }
-    (rows, hits)
+    (q.len(), hits)
   };
   for queries in &query_record.function_queries {
     query_counts.push(summarize(queries));

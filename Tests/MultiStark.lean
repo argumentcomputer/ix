@@ -207,12 +207,32 @@ def endToEndSuite : IO UInt32 := do
   -- Interpreter over the Lean-built buffer: the parity reference for the
   -- codegen'd verifier — same output, same per-circuit query counts.
   let honestInterp := vCompiled.bytecode.execute vIdx pubInput (mkIO proofGs claimGs)
-  let parity : Bool := match honest, honestInterp with
-    | .ok (out, qc), .ok (outI, _, qcI) =>
-      out == outI && qc.size == qcI.size &&
+  -- Parity contract: the two engines must agree on the OUTPUT and on
+  -- the unique-query SET (per-circuit rows). Hits differ by design —
+  -- generated execution is set-only (the codegen invariant: every
+  -- multiplicity stays zero, derived only at a prover seal), while the
+  -- bytecode interpreter accumulates reference counts — so the native
+  -- side's hits are asserted ZERO, the positive form of the set-only
+  -- invariant, rather than compared to the interpreter's.
+  let parity : Bool ← match honest, honestInterp with
+    | .ok (out, qc), .ok (outI, _, qcI) => do
+      if out != outI then
+        IO.eprintln s!"parity: OUTPUT differs ({out.size} vs {outI.size} elems)"
+      if qc.size != qcI.size then
+        IO.eprintln s!"parity: count arrays differ in size: {qc.size} vs {qcI.size}"
+      for i in [0:min qc.size qcI.size] do
+        let a := qc[i]!
+        let b := qcI[i]!
+        if a.uniqueRows != b.uniqueRows then
+          IO.eprintln s!"parity: circuit {i}: native rows {a.uniqueRows} vs interp rows {b.uniqueRows}"
+        if a.totalHits != 0 then
+          IO.eprintln s!"parity: circuit {i}: native hits {a.totalHits} (set-only execution must not count)"
+      pure <| out == outI && qc.size == qcI.size &&
         (qc.zip qcI).all fun (a, b) =>
-          a.uniqueRows == b.uniqueRows && a.totalHits == b.totalHits
-    | _, _ => false
+          a.uniqueRows == b.uniqueRows && a.totalHits == 0
+    | .error e, _ => do IO.eprintln s!"parity: native errored: {e}"; pure false
+    | _, .error e => do IO.eprintln s!"parity: interp errored: {e}"; pure false
+  (← IO.getStderr).flush
   let tamperedProof :=
     vCompiled.bytecode.executeMultiStark vIdx pubInput badProofBytes vkBytes claimBytes
   let tamperedClaim :=
@@ -221,7 +241,7 @@ def endToEndSuite : IO UInt32 := do
     test "factorial(5) claim = #[functionChannel, facIdx, 5, 120]" (claim == expectedClaim),
     expectOk "inner factorial proof verifies" innerVerify,
     expectOk "verifier accepts honest proof (vk digest bound + OOD + FRI)" honest,
-    test "codegen'd verifier matches interpreter (output + query counts)" parity,
+    test "codegen'd verifier matches interpreter (output + unique rows; native hits zero)" parity,
     expectErr "tampered proof advice rejected (verification checks)" tamperedProof,
     expectErr "tampered claim rejected (OOD/accumulator mismatch)" tamperedClaim,
   ])]) []

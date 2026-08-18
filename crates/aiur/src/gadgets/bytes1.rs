@@ -170,9 +170,9 @@ impl AiurGadget for Bytes1 {
     rows
       .chunks_exact_mut(TRACE_WIDTH)
       .enumerate()
-      .zip(&record.bytes1_queries.0)
       .zip(row_writers.iter_mut())
-      .for_each(|(((byte, row), &[bd, shl, shr]), row_lookups)| {
+      .for_each(|((byte, row), row_lookups)| {
+        let [bd, shl, shr] = record.bytes1_queries.row_g(byte);
         let byte = G::from_usize(byte);
         row[0] = bd;
         row[1] = shl;
@@ -203,13 +203,18 @@ impl AiurGadget for Bytes1 {
   }
 }
 
-/// Accumulator of queries performed against `Bytes1`.
-pub struct Bytes1Queries([[G; TRACE_WIDTH]; 256]);
+/// Accumulator of queries performed against `Bytes1`. Cells are
+/// genuinely atomic — `AtomicU64` holding `G` bits — because the
+/// shared record's executors bump them concurrently and seal-time
+/// multiplicity application overwrites them; the previous plain-`G`
+/// array mutated through pointer casts was undefined behavior (no
+/// `UnsafeCell`, writes through a shared reference).
+pub struct Bytes1Queries([[std::sync::atomic::AtomicU64; TRACE_WIDTH]; 256]);
 
 impl Bytes1Queries {
-  #[inline]
   pub(crate) fn new() -> Self {
-    Self([[G::ZERO; TRACE_WIDTH]; 256])
+    use std::sync::atomic::AtomicU64;
+    Self(std::array::from_fn(|_| std::array::from_fn(|_| AtomicU64::new(0))))
   }
 
   pub(crate) fn bump_bit_decomposition(&self, byte: &G) {
@@ -227,31 +232,34 @@ impl Bytes1Queries {
   /// Read counter cell `[byte][col]` (relaxed; used by the derived-
   /// multiplicity differential check in `trace.rs`).
   pub(crate) fn count(&self, byte: usize, col: usize) -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    let cell: &G = &self.0[byte][col];
-    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
-      .load(Ordering::Relaxed)
+    use std::sync::atomic::Ordering;
+    self.0[byte][col].load(Ordering::Relaxed)
   }
 
   /// Overwrite counter cell (seal-time application of derived
   /// multiplicities; see `trace::apply_multiplicities`).
   pub(crate) fn set_count(&self, byte: usize, col: usize, v: u64) {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    let cell: &G = &self.0[byte][col];
-    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
-      .store(v, Ordering::Relaxed);
+    use std::sync::atomic::Ordering;
+    self.0[byte][col].store(v, Ordering::Relaxed);
   }
 
-  /// Relaxed atomic bump on the counter cell: `G` is
-  /// `repr(transparent)` over `u64` and multiplicities stay far below
-  /// the modulus, so `u64` addition is field addition — the shared
-  /// record's concurrent executors bump without locks.
+  /// Quiescent snapshot of one row as field elements (trace building,
+  /// after seal).
+  pub(crate) fn row_g(&self, byte: usize) -> [G; TRACE_WIDTH] {
+    use std::sync::atomic::Ordering;
+    std::array::from_fn(|c| {
+      crate::querymap::g_from_bits(self.0[byte][c].load(Ordering::Relaxed))
+    })
+  }
+
+  /// Relaxed atomic bump on the counter cell: multiplicities stay far
+  /// below the modulus, so `u64` addition on `G` bits is field
+  /// addition — the shared record's concurrent executors bump without
+  /// locks.
   pub(crate) fn bump_multiplicity_for(&self, byte: &G, col: usize) {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::Ordering;
     let row = usize::try_from(byte.as_canonical_u64()).unwrap();
-    let cell: &G = &self.0[row][col];
-    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
-      .fetch_add(1, Ordering::Relaxed);
+    self.0[row][col].fetch_add(1, Ordering::Relaxed);
   }
 }
 

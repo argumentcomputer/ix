@@ -145,13 +145,13 @@ const _: () = assert!(
 );
 
 #[inline]
-fn g_bits(g: G) -> u64 {
+pub(crate) fn g_bits(g: G) -> u64 {
   // SAFETY: repr(transparent) over u64, asserted above.
   unsafe { std::mem::transmute::<G, u64>(g) }
 }
 
 #[inline]
-fn g_from_bits(b: u64) -> G {
+pub(crate) fn g_from_bits(b: u64) -> G {
   // SAFETY: repr(transparent) over u64; every bit pattern the arenas
   // hold was produced by `g_bits` of a live G.
   unsafe { std::mem::transmute::<u64, G>(b) }
@@ -748,6 +748,11 @@ impl QueryMap {
     Some((self.key_at(i), self.mult_atomic(i)))
   }
 
+  /// QUIESCENT-ONLY raw read (seal-time trace building, single-thread
+  /// tools): `len` counts RESERVED indices, so while workers are
+  /// inserting, an `i < len` entry may not be published yet — reading
+  /// it races the writer. Concurrent readers must use
+  /// [`Self::get_index_complete`].
   pub fn get_index(&self, i: usize) -> Option<(&[G], QueryRef<'_>)> {
     if i >= self.len() {
       return None;
@@ -759,6 +764,20 @@ impl QueryMap {
         multiplicity: g_from_bits(self.mult_atomic(i).load(Ordering::Relaxed)),
       },
     ))
+  }
+
+  /// Completion-gated entry read, safe WHILE WORKERS ARE WRITING:
+  /// `None` until the entry's stored hash — its completion marker,
+  /// Release-stored last — is visible (Acquire), so the key/output
+  /// cells it covers are publish-frozen. The mid-run diagnostic dumps
+  /// go through this; anything quiescent can use [`Self::get_index`].
+  pub fn get_index_complete(&self, i: usize) -> Option<(&[G], QueryRef<'_>)> {
+    if i >= self.len()
+      || self.hashes.try_cell(i)?.load(Ordering::Acquire) == 0
+    {
+      return None;
+    }
+    self.get_index(i)
   }
 
   pub fn iter(&self) -> impl Iterator<Item = (&[G], QueryRef<'_>)> {

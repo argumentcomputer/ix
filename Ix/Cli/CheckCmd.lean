@@ -420,16 +420,36 @@ def parseIxesShards (bytes : ByteArray) : Except String (Array IxesShard) :=
 def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address)) :=
   (parseIxesShards bytes).map (·.map (·.blocks))
 
-/-- The check-schedule block address of a constant: a projection collapses
-    to its SCC/Muts wrapper (`p.block`); everything else is its own block.
-    Mirrors `check_schedule_block_addr` (`src/ffi/kernel.rs`). Public for
+/-- The check-schedule block address of a constant. A projection
+    collapses to its SCC/Muts wrapper ONLY when its coordinates are
+    valid there — the block parses as a Muts, the index is in range,
+    and the member kind matches the projection variant (plus ctor index
+    range for `cPrj`). A projection's serialized content is exactly its
+    coordinates, so validity makes it THE canonical wrapper the block's
+    check covers; an invalid projection is its own block, so coverage
+    demands a shard own (and check, and reject) it individually.
+    Mirrors `canonical_prj_fold` (`src/ffi/kernel.rs`). Public for
     owning-shard lookups outside this module. -/
-def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
+def blockAddrOf (ixonEnv : Ixon.Env) (addr : Address) (c : Ixon.Constant) : Address :=
+  let collapse (block : Address) (idx : UInt64)
+      (ok : Ixon.MutConst → Bool) : Address :=
+    match (ixonEnv.consts.get? block).bind (·.get?) with
+    | some bc =>
+      match bc.info with
+      | .muts members =>
+        match members[idx.toNat]? with
+        | some m => if ok m then block else addr
+        | none => addr
+      | _ => addr
+    | none => addr
   match c.info with
-  | .iPrj prj => prj.block
-  | .cPrj prj => prj.block
-  | .rPrj prj => prj.block
-  | .dPrj prj => prj.block
+  | .iPrj p => collapse p.block p.idx fun | .indc _ => true | _ => false
+  | .cPrj p =>
+    collapse p.block p.idx fun
+      | .indc i => p.cidx.toNat < i.ctors.size
+      | _ => false
+  | .rPrj p => collapse p.block p.idx fun | .recr _ => true | _ => false
+  | .dPrj p => collapse p.block p.idx fun | .defn _ => true | _ => false
   | _ => addr
 
 /-- Owned constants of a shard: every env constant whose check-schedule block
@@ -444,7 +464,7 @@ def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) : Array A
   let mut o : Array Address := #[]
   for (addr, lc) in ixonEnv.consts do
     let some c := lc.get? | continue
-    if blockSet.contains (blockAddrOf addr c) then o := o.push addr
+    if blockSet.contains (blockAddrOf ixonEnv addr c) then o := o.push addr
   return o
 
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
@@ -575,7 +595,7 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     -- shard's frontier, since that admits an edge on key presence
     -- without parsing — an assumption no shard discharges.
     let some c := lc.get? | unparsed := unparsed + 1; continue
-    match blockToShard.get? (blockAddrOf addr c) with
+    match blockToShard.get? (blockAddrOf ixonEnv addr c) with
     | some k => counts := counts.modify k (· + 1)  -- total: no-op if out of range
     | none => unowned := unowned + 1
   IO.println s!"[shards] {shards.size} shards, {ixonEnv.consts.size} consts"

@@ -306,27 +306,21 @@ impl AiurGadget for Bytes2 {
     rows
       .chunks_exact_mut(TRACE_WIDTH)
       .enumerate()
-      .zip(&record.bytes2_queries.0)
       .zip(row_writers.iter_mut())
       .for_each(
-        |(
-          (
-            (row_idx, row),
-            &[
-              xor,
-              add,
-              sub,
-              and,
-              or,
-              less_than,
-              range_check,
-              mul,
-              xor_split7,
-              xor_split4,
-            ],
-          ),
-          row_lookups,
-        )| {
+        |((row_idx, row), row_lookups)| {
+          let [
+            xor,
+            add,
+            sub,
+            and,
+            or,
+            less_than,
+            range_check,
+            mul,
+            xor_split7,
+            xor_split4,
+          ] = record.bytes2_queries.row_g(row_idx);
           let i = G::from_usize(row_idx / 256);
           let j = G::from_usize(row_idx % 256);
 
@@ -385,13 +379,23 @@ impl AiurGadget for Bytes2 {
   }
 }
 
-/// Accumulator of queries performed against `Bytes2`.
-pub struct Bytes2Queries(Box<[[G; TRACE_WIDTH]]>);
+/// Accumulator of queries performed against `Bytes2`. Cells are
+/// genuinely atomic — `AtomicU64` holding `G` bits — for the same
+/// reason as [`super::bytes1::Bytes1Queries`]: concurrent bumps plus
+/// seal-time overwrite through a shared reference need real interior
+/// mutability, not pointer casts.
+pub struct Bytes2Queries(
+  Box<[[std::sync::atomic::AtomicU64; TRACE_WIDTH]]>,
+);
 
 impl Bytes2Queries {
-  #[inline]
   pub(crate) fn new() -> Self {
-    Self(vec![[G::ZERO; TRACE_WIDTH]; 256 * 256].into_boxed_slice())
+    use std::sync::atomic::AtomicU64;
+    Self(
+      (0..256 * 256)
+        .map(|_| std::array::from_fn(|_| AtomicU64::new(0)))
+        .collect(),
+    )
   }
 
   pub(crate) fn bump_xor(&self, i: &G, j: &G) {
@@ -437,31 +441,34 @@ impl Bytes2Queries {
   /// Read counter cell `[256*i + j][col]` (relaxed; used by the
   /// derived-multiplicity differential check in `trace.rs`).
   pub(crate) fn count(&self, cell: usize, col: usize) -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    let c: &G = &self.0[cell][col];
-    unsafe { AtomicU64::from_ptr((c as *const G as *mut G).cast()) }
-      .load(Ordering::Relaxed)
+    use std::sync::atomic::Ordering;
+    self.0[cell][col].load(Ordering::Relaxed)
   }
 
   /// Overwrite counter cell (seal-time application of derived
   /// multiplicities; see `trace::apply_multiplicities`).
   pub(crate) fn set_count(&self, cell: usize, col: usize, v: u64) {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    let cell: &G = &self.0[cell][col];
-    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
-      .store(v, Ordering::Relaxed);
+    use std::sync::atomic::Ordering;
+    self.0[cell][col].store(v, Ordering::Relaxed);
+  }
+
+  /// Quiescent snapshot of one row as field elements (trace building,
+  /// after seal).
+  pub(crate) fn row_g(&self, cell: usize) -> [G; TRACE_WIDTH] {
+    use std::sync::atomic::Ordering;
+    std::array::from_fn(|c| {
+      crate::querymap::g_from_bits(self.0[cell][c].load(Ordering::Relaxed))
+    })
   }
 
   /// Relaxed atomic bump on the counter cell (see
   /// `Bytes1Queries::bump_multiplicity_for` for why `u64` addition is
   /// field addition here).
   pub(crate) fn bump_multiplicity_for(&self, i: &G, j: &G, col: usize) {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::Ordering;
     let i = usize::try_from(i.as_canonical_u64()).unwrap();
     let j = usize::try_from(j.as_canonical_u64()).unwrap();
-    let cell: &G = &self.0[256 * i + j][col];
-    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
-      .fetch_add(1, Ordering::Relaxed);
+    self.0[256 * i + j][col].fetch_add(1, Ordering::Relaxed);
   }
 }
 
