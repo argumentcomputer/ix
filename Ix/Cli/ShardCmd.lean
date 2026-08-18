@@ -171,9 +171,9 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     let compiled ← match toplevel.compile with
       | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
       | .ok c => pure c
-    let segFunIdx ← match compiled.getFuncIdx `verify_segment with
+    let segFunIdx ← match compiled.getFuncIdx `verify_claim with
       | some i => pure i
-      | none => IO.eprintln "error: verify_segment missing"; return 1
+      | none => IO.eprintln "error: verify_claim missing"; return 1
     let blockFunIdx ← match compiled.getFuncIdx `verify_block with
       | some i => pure i
       | none => IO.eprintln "error: verify_block missing"; return 1

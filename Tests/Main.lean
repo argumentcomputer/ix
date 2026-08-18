@@ -202,32 +202,28 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
         s ++ runParityCase v2Env.compiled tc
       let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
         fun s tc => s ++ v2FullEnv.runTestCase tc
-      -- Shard pipeline: witness built in Rust (thin-frontier claim,
-      -- parallel closure walk) and run on the native kernel. Pinned FFT
-      -- is the regression signal.
-      let shardSeq ← match (← shardCheckEnvCase env) with
-        -- Only reachable when the target constant is absent from this
-        -- toolchain; a fixture that no longer selects any owned
-        -- constants throws instead of skipping.
-        | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
-        | some (handle, ownedBlob) =>
+      -- Closure-scale pin: the utf8-decode theorem's full-closure
+      -- check through the Rust witness builder + native kernel
+      -- (thousands of blocks). Exact FFT pin, same convention as
+      -- `kernelCheckEntries` (`.round.toUInt64.toNat`): any cost shift
+      -- must be an explicit, reviewed bump.
+      let closureSeq ← match (← closureCheckCase env) with
+        | none => pure (LSpec.test "closure pin: SKIP (target absent)" true)
+        | some (handle, addr) =>
           let funIdx := v2Env.compiled.getFuncIdx `verify_claim |>.get!
-          match v2Env.compiled.bytecode.shardCheckWithEnv
-                  funIdx handle ownedBlob false with
+          match v2Env.compiled.bytecode.checkAddrWithEnv
+                  funIdx handle addr.hash false with
           | .error e =>
-            pure (LSpec.test s!"shard pipeline execution: {e}" false)
+            pure (LSpec.test s!"closure check execution: {e}" false)
           | .ok (_, _, qc) =>
-            -- Exact pin, same convention as `kernelCheckEntries`
-            -- (`.round.toUInt64.toNat`): any cost shift must be an
-            -- explicit, reviewed bump.
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6098300309, got {actual}"
-              (actual = 6_098_300_309))
+              s!"closure-scale FFT pin: expected 149199085212, got {actual}"
+              (actual = 149_199_085_212))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
+          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, closureSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see

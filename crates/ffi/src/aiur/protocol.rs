@@ -391,24 +391,6 @@ fn decode_addr(
   )
 }
 
-/// Helper: decode a flat 32-byte-block owned blob into `Vec<Address>`.
-fn decode_owned_blob(
-  owned_blob: &LeanByteArray<LeanBorrowed<'_>>,
-) -> Result<Vec<ix_common::address::Address>, String> {
-  let bytes = owned_blob.as_bytes();
-  if !bytes.len().is_multiple_of(32) {
-    return Err(format!(
-      "owned_blob: length {} not a multiple of 32",
-      bytes.len()
-    ));
-  }
-  Ok(
-    bytes
-      .chunks_exact(32)
-      .map(|c| ix_common::address::Address::from_slice(c).unwrap())
-      .collect(),
-  )
-}
 
 /// Run `fun_idx` with `input` + `io_buffer`, routing through either
 /// the codegen'd IxVM kernel (`use_bytecode = false`) or the
@@ -494,59 +476,6 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   ))
 }
 
-/// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
-/// Rust-owned `EnvHandle`. See `checkAddrWithEnv` for `use_bytecode`
-/// semantics.
-#[unsafe(no_mangle)]
-extern "C" fn rs_aiur_toplevel_shard_check_with_env(
-  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
-  fun_idx: LeanNat<LeanBorrowed<'_>>,
-  env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
-    LeanBorrowed<'_>,
-  >,
-  owned_blob: LeanByteArray<LeanBorrowed<'_>>,
-  use_bytecode: bool,
-) -> LeanExcept<LeanOwned> {
-  let toplevel = decode_toplevel(&toplevel);
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let owned = match decode_owned_blob(&owned_blob) {
-    Ok(v) => v,
-    Err(e) => return LeanExcept::error_string(&e),
-  };
-  let env = &env_handle.get().env;
-
-  // Migration Phase 1: the generated kernel is the kernel, so the default
-  // shard entrypoint builds the the kernel witness (thin frontier + wrapper
-  // augmentation).
-  let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_lazy(
-      env, &owned,
-    ) {
-      Ok(t) => t,
-      Err(e) => {
-        return LeanExcept::error_string(&format!("witness build: {e}"));
-      },
-    };
-
-  let (query_record, output) = match dispatch_execute(
-    &toplevel,
-    fun_idx,
-    input,
-    &mut io_buffer,
-    use_bytecode,
-  ) {
-    Ok(p) => p,
-    Err(e) => return LeanExcept::error_string(&e),
-  };
-
-  LeanExcept::ok(build_execute_result(
-    &output,
-    &io_buffer,
-    &query_record,
-    &toplevel,
-  ))
-}
 
 /// `AiurSystem.proveAddrWithEnv`: per-claim prove against a
 /// Rust-owned `EnvHandle`. Returns a `ProveEnvResult` — the claim's
@@ -590,45 +519,6 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
 }
 
-/// `AiurSystem.shardProveWithEnv`: per-shard prove against a
-/// Rust-owned `EnvHandle`. Same `ProveEnvResult` return shape as
-/// `proveAddrWithEnv`.
-#[unsafe(no_mangle)]
-extern "C" fn rs_aiur_system_shard_prove_with_env(
-  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  fun_idx: LeanNat<LeanBorrowed<'_>>,
-  env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
-    LeanBorrowed<'_>,
-  >,
-  owned_blob: LeanByteArray<LeanBorrowed<'_>>,
-) -> LeanExcept<LeanOwned> {
-  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
-  let owned = match decode_owned_blob(&owned_blob) {
-    Ok(v) => v,
-    Err(e) => return LeanExcept::error_string(&e),
-  };
-  let env = &env_handle.get().env;
-
-  let (claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_lazy(
-      env, &owned,
-    ) {
-      Ok(t) => t,
-      Err(e) => {
-        return LeanExcept::error_string(&format!("witness build: {e}"));
-      },
-    };
-
-  let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
-    fun_idx,
-    &input,
-    &mut io_buffer,
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
-  );
-
-  LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
-}
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
 /// as `rs_aiur_system_prove`, but routes execution through the

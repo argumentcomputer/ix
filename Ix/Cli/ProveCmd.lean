@@ -1,28 +1,29 @@
 /-
-  `ix prove`: generate a STARK proof against an `Ix.Claim`. Mirrors
-  the CLI shape of `ix check`:
+  `ix prove`: the proving surface. `ix check` executes and verifies;
+  everything that generates a STARK lives here.
 
-      ix prove Nat.add_comm                            # compiled-in Lean env
-      ix prove --env arena.ixe Foo.bar                 # from .ixe, named target
-      ix prove --env arena.ixe                         # iterate every named const
+      ix prove --env arena.ixe                         # whole env, cut-mode segments
+      ix prove --env arena.ixe --shards plan.ixes      # manifest: gate + self-heal
+      ix prove --env arena.ixe --shards plan.ixes --shard 3
+      ix prove Nat.add_comm                            # compiled-in Lean env, one claim
+      ix prove --env arena.ixe Foo.bar                 # named claim from .ixe
       ix prove --env arena.ixe --claim <hex>           # against a persisted claim
 
-  Each invocation runs the same `verify_claim` Aiur witness that
-  `ix check` does, then drives Aiur's `prove` over it and persists
-  the result as an `Ixon.Proof` wrapper (claim + opaque proof
-  bytes). Prints the resulting proof blake3 hex on stdout — feed
-  that to `ix verify <proof-hex>`.
+  Whole-env and manifest modes run the shared-record engine: parallel
+  warm block execution, canonical CheckEnv seal claim with derived
+  multiplicities, the EXACT measured RAM gate before every STARK, and
+  in manifest mode self-healing splits of over-budget shards. Each
+  seal is the span's canonical `Claim.checkEnv` (owned-set root +
+  thin-frontier assumption root — the digest `ix verify` binds shard
+  proofs to); engine proofs are verified in-run.
 
-  Per-claim mode (`--claim`) loads the claim from the store and
-  resolves every referenced assumption / env / contains tree
-  (build trees with `ix tree canonical` / `ix tree env`).
-
-  Per-name mode builds a default `Claim.check addr none` and
-  persists the claim alongside the proof so `ix verify` can stand
-  alone with just the proof hex.
-
-  Driven by the shared `Ix.Cli.CheckCmd.forEachClaim`: the only
-  prove-specific surface is `runOne = proveOne aiurSystem compiled`.
+  Per-name / per-claim modes prove one `verify_claim` witness and
+  persist the result as an `Ixon.Proof` wrapper (claim + opaque proof
+  bytes), printing the proof blake3 hex — feed that to
+  `ix verify <proof-hex>`. `--claim` loads the claim from the store
+  and resolves every referenced assumption / env / contains tree
+  (build trees with `ix tree canonical` / `ix tree env`). Driven by
+  the shared `Ix.Cli.CheckCmd.forEachClaim`.
 -/
 module
 public import Cli
@@ -68,10 +69,10 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
       return 1
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
   -- Native IxVM path: routes execution + STARK prove through the
-  -- codegen'd Rust kernel. `.addr` / `.shard` go through the
-  -- envHandle-based prove FFIs (witness + execute + prove all in
-  -- one Rust trip). `.leanW` consumes a pre-built `ClaimWitness`
-  -- via `proveIxVM` (used for non-`check addr none` `--claim hex`).
+  -- codegen'd Rust kernel. `.addr` goes through the envHandle-based
+  -- prove FFI (witness + execute + prove in one Rust trip); `.leanW`
+  -- consumes a pre-built `ClaimWitness` via `proveIxVM` (used for
+  -- non-`check addr none` `--claim hex`).
   let proof : Aiur.Proof ← match target, envHandle? with
     | .addr a, some envHandle =>
       match aiurSystem.proveAddrWithEnv funIdx envHandle a.hash with
@@ -79,64 +80,18 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
         IO.eprintln s!"{label}: proveAddrWithEnv error: {e}"
         return 1
       | .ok (_claimBytes, proof, _outIO) => pure proof
-    | .shard owned, some envHandle =>
-      let mut blob := ByteArray.empty
-      for x in owned do blob := blob ++ x.hash
-      match aiurSystem.shardProveWithEnv funIdx envHandle blob with
-      | .error e =>
-        IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
-        return 1
-      | .ok (_claimBytes, proof, _outIO) => pure proof
     | .leanW witness, _ =>
       let (_aiurClaim, proof, _outIO) :=
         aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
       pure proof
     | _, none =>
-      IO.eprintln s!"{label}: internal: addr/shard target with no envHandle"
+      IO.eprintln s!"{label}: internal: addr target with no envHandle"
       return 1
   let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
   let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
   IO.println (toString proofAddr)
   return 0
 
-/-- Per-shard prove via the end-to-end Rust path
-    (`shardProveIxVM`): witness build, `execute_ixvm`, and STARK
-    prove run in one FFI trip with the parallel Rust witness
-    builder. -/
-def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
-    (ixonEnv : Ixon.Env) (shards : Array (Array Address)) (shardK : Nat)
-    (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (_printStats : Bool) : IO UInt32 := do
-  match shards[shardK]? with
-  | none => IO.eprintln s!"shard {shardK} out of range (0..{shards.size})"; return 1
-  | some blocks => do
-    let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks
-    let mut blob := ByteArray.empty
-    for a in owned do
-      blob := blob ++ a.hash
-    let label := s!"shard {shardK}"
-    IO.println s!"Proving {label}"
-    (← IO.getStdout).flush
-    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-    match aiurSystem.shardProveWithEnv funIdx envHandle blob with
-    | .error e =>
-      IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
-      return 1
-    | .ok (claimBytes, proof, _outIO) =>
-      -- Rust returns the canonical CheckEnv claim's wire bytes; deserialize
-      -- back to `Ix.Claim` to persist alongside the proof. Avoids
-      -- recomputing the closure walk + canonical AssumptionTree Lean-side.
-      match Ixon.runGet Ix.Claim.get claimBytes with
-      | .error e =>
-        IO.eprintln s!"{label}: Claim wire-decode failed: {e}"
-        return 1
-      | .ok claim => do
-        let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-        let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
-        let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
-        IO.println (toString proofAddr)
-        let _ := manifestPath  -- kept for parity with previous signature
-        return 0
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let keepGoing := p.hasFlag "keep-going"
@@ -151,33 +106,51 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok c => pure c
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
   let runOne := proveOne aiurSystem compiled
+  let engineIdxs : Except String (Nat × Nat) := do
+    let some seg := compiled.getFuncIdx `verify_claim
+      | throw "verify_claim missing from compiled toplevel"
+    let some blk := compiled.getFuncIdx `verify_block
+      | throw "verify_block missing from compiled toplevel"
+    pure (seg, blk)
+  let workers := ((p.flag? "jobs").map (·.as! Nat)).getD 0
   match ixePath, (p.flag? "shards").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
-  | some ixe, some manifest, some k =>
-    -- IxVM-native shard prove. Build the envHandle once + share it
-    -- with the shard prove FFI.
-    match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
-    | .error e => IO.eprintln e; return 1
-    | .ok (ixonEnv, shards) =>
+  | some ixe, some manifest, k? =>
+    -- Manifest prove through the shared-record engine: each shard
+    -- executes warm into its own record, seals (canonical CheckEnv
+    -- claim, derived multiplicities), is gated on its measured peak,
+    -- and proves; a shard that measures over budget self-heals by
+    -- splitting. Exit status carries any rejection or unproven unit.
+    let (segIdx, blkIdx) ← match engineIdxs with
+      | .error e => IO.eprintln s!"error: {e}"; return 1
+      | .ok v => pure v
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+      | .ok h => pure h
+    match aiurSystem.executeManifestProveWithEnv segIdx blkIdx envHandle
+        (toString workers) manifest ((k?.map toString).getD "") "0" "" with
+    | .error e => IO.eprintln s!"prove failed: {e}"; return 1
+    | .ok () => IO.println "prove: OK"; return 0
+  | some ixe, none, none =>
+    if names.isEmpty && claimHex.isNone then
+      -- Whole-env prove through the engine: cut-mode segments, each
+      -- sealed record proceeding straight to a verified STARK.
+      let (segIdx, blkIdx) ← match engineIdxs with
+        | .error e => IO.eprintln s!"error: {e}"; return 1
+        | .ok v => pure v
       let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
-      runShardProveNative manifest envHandle ixonEnv shards k aiurSystem compiled false
-  | some ixe, some manifest, none =>
-    -- IxVM-native all-shards prove. Same envHandle reused across
-    -- every shard.
-    match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
-    | .error e => IO.eprintln e; return 1
-    | .ok (ixonEnv, shards) =>
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
-        | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
-        | .ok h => pure h
-      let mut rc : UInt32 := 0
-      for k in [0 : shards.size] do
-        if (← runShardProveNative manifest envHandle ixonEnv shards k
-              aiurSystem compiled false) != 0 then
-          rc := 1
-      pure rc
-  | _, _, _ =>
+      match aiurSystem.executeEnvProveWithEnv segIdx blkIdx envHandle
+          (toString workers) (if keepGoing then "0" else "1") "0" "" with
+      | .error e => IO.eprintln s!"prove failed: {e}"; return 1
+      | .ok () => IO.println "prove: OK"; return 0
+    else
+      Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
+  | some _, none, some _ =>
+    IO.eprintln "error: --shard requires --shards"; return 1
+  | none, some _, _ =>
+    IO.eprintln "error: --shards requires --env"; return 1
+  | none, none, _ =>
     Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
 
 end Ix.Cli.ProveCmd
@@ -185,17 +158,18 @@ end Ix.Cli.ProveCmd
 open Ix.Cli.ProveCmd in
 def proveCmd : Cli.Cmd := `[Cli|
   prove VIA runProveCmd;
-  "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
+  "Generate STARK proofs: whole env or `.ixes` manifest through the shared-record engine (exact RAM gate, self-healing shards), or single `Ix.Claim`s persisted to the store"
 
   FLAGS:
-    "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
-    "env"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "keep-going";       "Continue past failures and report them at the end instead of halting on the first (whole-env engine mode and per-name iteration)."
+    "env"   : String;   "Path to a serialized `.ixe` env. Alone (no names, no --claim): whole-env engine prove — every block's claim executes into a shared record, prove-sized segments are cut at the RAM model's budget line, and each sealed segment proceeds straight to a verified multi-claim STARK. With names or --claim: the env the claims prove against."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--env` env (single proof, skips per-const iteration)."
-    "shards" : String;  "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`. With --shard K: prove shard K. Without --shard: prove every shard in the partition."
-    "shard" : Nat;      "0-based shard index K (with --shards and --env): prove that one shard's CheckEnv claim."
+    "shards" : String;  "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`. Prove the manifest through the engine: each shard executes into its own record, seals, is gated on its EXACT measured peak, and proves; over-budget shards self-heal by splitting. Requires exact cover of the env schedule when run without --shard."
+    "shard" : Nat;      "0-based shard index K (with --shards): prove only shard K (stamped PARTIAL — no coverage claim)."
+    "jobs"  : Nat;      "Worker threads for the engine modes (default 0 = autoscale)."
 
   ARGS:
-    ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."
+    ...names : String; "Fully-qualified Lean.Name(s) to prove as individual `verify_claim` proofs persisted to the store. With none and no --env, iterate every named constant of the compiled-in env."
 ]
 
 end

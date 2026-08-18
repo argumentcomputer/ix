@@ -7,10 +7,10 @@
 //! per-block checking keyed by address alone, so every shared
 //! dependency cone derives once, with the entry's phantom external
 //! multiplicity debumped — and each sealed segment then runs ONE
-//! `verify_segment` claim over the digest-bound list of its block
-//! addresses, whose per-block calls memo-hit (and consume) the warm
-//! work. The record balances exactly as if `verify_segment` executed
-//! alone. The schedule is a min-cut linearization of the env's
+//! seal claim — the span's canonical `CheckEnv` claim (owned-set root +
+//! thin-frontier assumption root) — whose per-node checks memo-hit
+//! (and consume) the warm work. The record balances exactly as if the
+//! seal claim executed alone. The schedule is a min-cut linearization of the env's
 //! reference graph, which keeps closure-overlapping blocks adjacent so
 //! memoization absorbs shared work.
 //!
@@ -278,7 +278,7 @@ fn ordered_schedule(
 }
 
 /// Whole-env check schedule through the codegen'd kernel in parallel.
-/// `fun_idx` is `verify_segment` (the single per-segment claim run at
+/// `fun_idx` is `verify_claim` (the single per-span seal claim run at
 /// seal in prove mode), `block_fun_idx` is `verify_block` (the
 /// per-block entry the workers warm-execute). Execute-only runs (`None`
 /// prove system) skip the segment claims: segments exist only to drop
@@ -318,30 +318,28 @@ fn preassign_canonical_io(env: &IxonEnv, shared_io: &aiur::execute::SharedIO) {
   }
 }
 
-/// The segment claim: ONE `verify_segment` execution over the digest
-/// of the sorted block-address list, run into `record` — its per-block
-/// calls memo-hit the warm work, so the claim costs the binding hash
-/// plus one bump per block. Returns the claim input on success.
-fn run_segment_claim(
+/// The seal claim: the span's canonical `CheckEnv` claim — owned-set
+/// tree root plus thin-frontier assumption root, the same claim shape
+/// (and digest) `ix verify` binds shard proofs to — executed through
+/// `verify_claim` into the warm `record`. Its per-node checks memo-hit
+/// the `verify_block` warm-up; the env walk and assumption-tree
+/// recomputation are the claim's own in-circuit work. `owned` is the
+/// member-constant set of the span's blocks; the frontier closure walk
+/// runs host-side in parallel Rust. Returns the claim input (the claim
+/// digest key) on success.
+fn run_check_env_claim(
   toplevel: &Toplevel,
   fun_idx: usize,
   shared_io: &Arc<aiur::execute::SharedIO>,
   record: &QueryRecord,
-  mut addrs: Vec<Address>,
+  env: &Arc<IxonEnv>,
+  owned: &[Address],
 ) -> Result<Vec<G>, String> {
-  addrs.sort();
-  let mut list_bytes: Vec<u8> = Vec::with_capacity(addrs.len() * 32);
-  for a in &addrs {
-    list_bytes.extend_from_slice(a.as_bytes());
-  }
-  let digest = Address::hash(&list_bytes);
-  let input = addr_key(&digest);
   let mut io = IOBuffer::with_shared(shared_io.clone());
-  io.seed(
-    G::ZERO,
-    input.clone(),
-    list_bytes.iter().map(|b| G::from_u8(*b)).collect(),
-  );
+  let (_claim, input) =
+    ixvm_codegen::aiur_ixvm_witness::seed_shard_check_env_claim(
+      env, owned, &mut io,
+    )?;
   execute_ixvm_with_record(toplevel, fun_idx, &input, &mut io, record)
     .map(|_| input)
     .map_err(|e| e.to_string())
@@ -585,7 +583,7 @@ pub fn execute_env(
           // dependency cone derives once for the whole record, and
           // the seal claim memo-hits all of it. The record is an
           // insert-once SET during execution; a warmed entry's
-          // multiplicity (its one `verify_segment` consumer) is
+          // multiplicity (its one seal-claim consumer) is
           // DERIVED at seal, so no phantom-caller accounting exists.
           let run = |b: u32| -> Result<(), String> {
             let mut io = IOBuffer::with_shared(shared_io.clone());
@@ -664,7 +662,7 @@ pub fn execute_env(
     if abort.load(Ordering::Acquire) {
       break;
     }
-    // Segment claim (prove mode): ONE `verify_segment` over the
+    // Seal claim (prove mode): ONE `CheckEnv` claim over the
     // digest-bound, sorted address list of every block the span
     // executed, run into the same record. Its per-block calls memo-hit
     // the warm executions, so the claim's whole cost is the binding
@@ -674,15 +672,17 @@ pub fn execute_env(
       && seg_end > seg_start
       && failed.lock().unwrap().len() == seg_failed_base
     {
-      let addrs: Vec<Address> = order[seg_start..seg_end]
+      let owned: Vec<Address> = order[seg_start..seg_end]
         .iter()
-        .map(|&b| blocks[b as usize].addr.clone())
+        .flat_map(|&b| blocks[b as usize].members.iter().cloned())
         .collect();
-      match run_segment_claim(toplevel, fun_idx, &shared_io, &record, addrs) {
+      match run_check_env_claim(
+        toplevel, fun_idx, &shared_io, &record, env, &owned,
+      ) {
         Ok(input) => seg_claim = Some(input),
         Err(e) => {
           eprintln!(
-            "[prove seg {}] segment claim failed: {e} — the segment \
+            "[prove seg {}] seal claim failed: {e} — the segment \
              will not be proven",
             segs.len()
           );
@@ -716,11 +716,10 @@ pub fn execute_env(
     segs.push((seg_start, seg_end, entries, fft, retained));
     if let Some(system) = prove_system {
       // The sealed record IS the witness, and the claim list is ONE
-      // claim: `verify_segment` over the digest of the segment's
-      // block-address list. The warmed per-block entries are consumed
-      // by its in-circuit calls (debumped, never claimed), so the
-      // record balances exactly as if `verify_segment` had executed
-      // every block itself. A segment with rejected blocks or a
+      // claim: the span's canonical `CheckEnv` claim. The warmed
+      // per-node entries are consumed by its in-circuit calls
+      // (debumped, never claimed), so the record balances exactly as
+      // if the seal claim had executed every check itself. A segment with rejected blocks or a
       // failed segment claim has partial or unconsumed work in its
       // record, so it is skipped rather than mis-proven.
       let mut claims: Vec<Vec<G>> = Vec::with_capacity(1);
@@ -772,7 +771,7 @@ pub fn execute_env(
       {
         plan_segs.push((
           system.circuit_raws(&record),
-          aiur::execute::record_retained_bytes(&record),
+          record_retained_bytes(&record),
           system.peak_prove_bytes(&record).peak,
           clean,
         ));
@@ -1026,7 +1025,7 @@ pub fn execute_env(
 ///
 /// - Each selected shard executes its OWNED block list in parallel into
 ///   a fresh record (fixed list, no cutting, drain = pool completion),
-///   runs one `verify_segment` claim over the sorted list, derives
+///   runs the shard's canonical `CheckEnv` seal claim, derives
 ///   multiplicities, and evaluates `peak_prove_bytes` — the calibrated
 ///   exact model — on the sealed record.
 /// - Dry mode reports every shard's exact peak against the budget; with
@@ -1197,15 +1196,20 @@ pub fn execute_manifest(
       }
     });
     let rejects = failed.into_inner().unwrap();
-    // Seal: one verify_segment claim over the sorted owned list.
+    // Seal: the shard's canonical CheckEnv claim over its owned
+    // constants (the same claim `ix verify` binds shard proofs to).
     let mut seg_claim: Option<Vec<G>> = None;
     if rejects.is_empty() {
-      let addrs: Vec<Address> =
-        ids.iter().map(|&b| blocks[b as usize].addr.clone()).collect();
-      match run_segment_claim(toplevel, fun_idx, &shared_io, &record, addrs) {
+      let owned: Vec<Address> = ids
+        .iter()
+        .flat_map(|&b| blocks[b as usize].members.iter().cloned())
+        .collect();
+      match run_check_env_claim(
+        toplevel, fun_idx, &shared_io, &record, env, &owned,
+      ) {
         Ok(input) => seg_claim = Some(input),
         Err(e) => {
-          eprintln!("[shard {label}] segment claim failed: {e}");
+          eprintln!("[shard {label}] seal claim failed: {e}");
         },
       }
     }

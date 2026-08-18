@@ -169,17 +169,6 @@ def proveAddrWithEnv (system : @& AiurSystem)
   (proveAddrWithEnv' system funIdx envHandle addrBytes).map
     fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
-@[extern "rs_aiur_system_shard_prove_with_env"]
-private opaque shardProveWithEnv' : @& AiurSystem →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
-    Except String ProveEnvResult
-
-/-- Per-shard prove against a Rust-owned `EnvHandle`. -/
-def shardProveWithEnv (system : @& AiurSystem)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (ownedBlob : ByteArray) :
-    Except String (ByteArray × Proof × IOBuffer) :=
-  (shardProveWithEnv' system funIdx envHandle ownedBlob).map
-    fun r => (r.claimBytes, r.proof, .ofArrays r.ioData r.ioMap)
 
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem →

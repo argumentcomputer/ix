@@ -114,9 +114,6 @@ def emitStats (compiled : Aiur.CompiledToplevel)
 
     * `addr`: full-closure `Claim.check addr none` — dispatch via
       `checkAddrWithEnv` / `proveAddrWithEnv` (handle required).
-    * `shard`: `Claim.checkEnv root none` over `owned` blocks —
-      dispatch via `shardCheckWithEnv` / `shardProveWithEnv`
-      (handle required).
     * `leanW`: a pre-built `ClaimWitness` — used by `--interp`
       mode and by `--claim <hex>` over a non-`check addr none`
       persisted claim. No envHandle needed.
@@ -127,12 +124,11 @@ def emitStats (compiled : Aiur.CompiledToplevel)
     re-parse. -/
 inductive Target where
   | addr  (a : Address)
-  | shard (owned : Array Address)
   | leanW (w : IxVM.ClaimHarness.ClaimWitness)
 
 /-- Run a single check claim through the codegen'd IxVM Rust kernel.
     The `envHandle?` is `none` only for `.leanW` targets (`--interp`
-    fallback); the addr/shard arms require it. -/
+    fallback); the addr arm requires it. -/
 def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
     (statsOut : Option String) (useBytecode : Bool)
     (envHandle? : Option Aiur.EnvHandle)
@@ -140,23 +136,17 @@ def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
   IO.println s!"Typechecking {label}"
   (← IO.getStdout).flush
   let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-  let buildBlob (owned : Array Address) : ByteArray := Id.run do
-    let mut blob := ByteArray.empty
-    for x in owned do blob := blob ++ x.hash
-    pure blob
   let res :=
     match target, envHandle? with
     | .addr a, some envHandle =>
       compiled.bytecode.checkAddrWithEnv funIdx envHandle a.hash useBytecode
-    | .shard owned, some envHandle =>
-      compiled.bytecode.shardCheckWithEnv funIdx envHandle (buildBlob owned) useBytecode
     | .leanW witness, _ =>
       if useBytecode then
         compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
       else
         compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
     | _, none =>
-      .error "internal: addr/shard target with no envHandle"
+      .error "internal: addr target with no envHandle"
   match res with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native Aiur execution error: {e}"
@@ -484,87 +474,6 @@ def loadEnvAndShards (manifestPath ixePath : String) :
     | .error e => return .error s!"deserialize {ixePath} failed: {e}"
     | .ok env => return .ok (env, shards)
 
-/-- Run the shard operation for one shard, given the already-loaded env and the
-    shard's owned `blocks`: build the `CheckEnv` witness over the owned consts
-    (ingress their closure, skip the frontier) and dispatch `runOne`. -/
-def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
-  let owned := ownedConstsForBlocks ixonEnv blocks
-  IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
-    {owned.size}/{ixonEnv.consts.size} owned consts"
-  match IxVM.ClaimHarness.buildShardCheckEnvWitness ixonEnv owned with
-  | .error e => IO.eprintln s!"shard witness build failed: {e}"; return 1
-  | .ok (claim, witness) => runOne claim witness s!"shard {shardK}"
-
-/-- IxVM-native fast path: dispatch through `shardCheckWithEnv` (a
-    Rust-owned `EnvHandle` reused across calls). Caller threads in
-    the pre-built envHandle so all shards in an all-shards run share
-    one env parse. -/
-def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
-    (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
-    (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
-  let owned := ownedConstsForBlocks ixonEnv blocks
-  IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
-    {owned.size}/{ixonEnv.consts.size} owned consts"
-  let label := s!"shard {shardK}"
-  IO.println s!"Typechecking {label}"
-  (← IO.getStdout).flush
-  let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-  let mut blob := ByteArray.empty
-  for a in owned do
-    blob := blob ++ a.hash
-  match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob useBytecode with
-  | .error e =>
-    IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
-    return 1
-  | .ok (_output, _ioBuffer, queryCounts) =>
-    if printStats then emitStats compiled queryCounts statsOut
-    pure 0
-
-/-- Manifest-driven check/prove of one shard `shardK` of the partition. -/
-def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) => match shards[shardK]? with
-    | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
-    | some blocks => runShardOwned ixonEnv blocks shardK runOne
-
-/-- IxVM-native shard check, single shard. Builds an `EnvHandle`
-    once for this one call. -/
-def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
-    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool)
-    (benchJson : Option (String × String) := none) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) => match shards[shardK]? with
-    | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
-    | some blocks =>
-      let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
-        | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
-        | .ok h => pure h
-      -- `benchJson = (out, rowName)` reports the check as a benchmark
-      -- row: `execute-time` windows the check itself — the env parse and
-      -- `EnvHandle` build are excluded, so the measure tracks the
-      -- kernel, not the loader — while `peak-rss` is the process tree's
-      -- absolute high-water (the parsed env sits in the baseline,
-      -- matching the ooc rows' semantics).
-      if benchJson.isSome then
-        TracingTexray.startSampler
-        TracingTexray.resetPeakTreeRss
-      let start ← IO.monoMsNow
-      let rc ← runShardOwnedNative envHandle compiled printStats statsOut
-        useBytecode ixonEnv blocks shardK
-      if let some (out, rowName) := benchJson then
-        if rc == 0 then
-          let secs := ((← IO.monoMsNow) - start).toFloat / 1000.0
-          let peakRss ← TracingTexray.peakTreeRssBytes
-          Ix.Benchmark.Results.writeRow out rowName "ok"
-            [ ("execute-time", Ix.Benchmark.Results.jsonRound 3 secs)
-            , ("peak-rss", Lean.toJson peakRss) ]
-      return rc
-
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
     soundness condition for the check case — each constant is type-checked
@@ -613,58 +522,6 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
   pure ok
 
-/-- IxVM-native check over EVERY shard. Builds the `EnvHandle` ONCE
-    and shares it across every shard's FFI call (no per-shard
-    re-mmap). Coverage-gates the manifest before running any shard —
-    exit 0 has to mean "every env const was checked by some shard",
-    same soundness contract as `runShardCheckAll`. -/
-def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
-    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) =>
-    if !(← shardsCover ixonEnv shards) then return 1
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
-      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
-      | .ok h => pure h
-    let maxJobs := max 1 (jobs?.getD shards.size)
-    let mut rc : UInt32 := 0
-    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-      let tasks ← chunk.mapM fun (blocks, k) =>
-        IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks k)
-      for t in tasks do
-        match t.get with
-        | .ok r => if r != 0 then rc := 1
-        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
-    pure rc
-
-/-- Check EVERY shard of the partition concurrently (shards are independent
-    bytecode runs) after verifying coverage — the whole-partition behavior of
-    `check --shards` with no `--shard`. At most `jobs` shards run at once
-    (`none` ⇒ all of them); cap it to bound peak RAM, since each in-flight
-    shard's IO buffer re-ingests its whole closure. Returns 1 on a coverage gap
-    or any shard failure. -/
-def runShardCheckAll (manifestPath ixePath : String) (jobs? : Option Nat)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
-  let (ixonEnv, shards) ← match (← loadEnvAndShards manifestPath ixePath) with
-    | .error e => IO.eprintln e; return 1
-    | .ok r => pure r
-  if !(← shardsCover ixonEnv shards) then return 1
-  -- The env + compiled toplevel are read-only, so each shard runs on its own
-  -- dedicated task; chunk by `jobs` to cap the number in flight at once.
-  let maxJobs := max 1 (jobs?.getD shards.size)
-  let mut rc : UInt32 := 0
-  for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-    let tasks ← chunk.mapM fun (blocks, k) =>
-      IO.asTask (prio := .dedicated) (runShardOwned ixonEnv blocks k runOne)
-    for t in tasks do
-      match t.get with
-      | .ok r => if r != 0 then rc := 1
-      | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
-  pure rc
-
 def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let interpMode : Option String := (p.flag? "interp").map (·.as! String)
   let interpSource := interpMode == some "source"
@@ -682,22 +539,12 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
     (p.flag? "stats-out").map (·.as! String)
   let ixePath : Option String :=
     (p.flag? "env").map (·.as! String)
-  if p.hasFlag "dry-run" && !p.hasFlag "prove" then
-    p.printError "error: --dry-run requires --prove (it is the prove \
-      pipeline minus the STARKs)"
-    return 1
-  if p.hasFlag "execute" && p.hasFlag "prove" then
-    p.printError "error: --execute and --prove are mutually exclusive \
-      (--execute is execute-ONLY; --prove implies execution)"
-    return 1
-  if p.hasFlag "execute" || p.hasFlag "prove" then
-    -- Whole-env pipelines over the shared record. --execute: parallel
-    -- execution of every block's claim, no partition, no manifest, no
-    -- prove concerns. --prove: the same execution, cut into prove-sized
-    -- segments that each proceed straight to a verified STARK.
+  if p.hasFlag "execute" then
+    -- Whole-env execution over the shared record: parallel execution
+    -- of every block's claim — no partition, no manifest, no proving
+    -- (that is `ix prove`).
     let some ixe := ixePath | do
-      let flag := if p.hasFlag "prove" then "prove" else "execute"
-      p.printError s!"error: --{flag} requires --env"
+      p.printError "error: --execute requires --env"
       return 1
     let toplevel ← match IxVM.ixVM with
       | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
@@ -705,26 +552,19 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let compiled ← match toplevel.compile with
       | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
       | .ok c => pure c
-    let segFunIdx ← match compiled.getFuncIdx `verify_segment with
+    let segFunIdx ← match compiled.getFuncIdx `verify_claim with
       | some i => pure i
-      | none => IO.eprintln "error: verify_segment missing"; return 1
+      | none => IO.eprintln "error: verify_claim missing"; return 1
     let blockFunIdx ← match compiled.getFuncIdx `verify_block with
       | some i => pure i
       | none => IO.eprintln "error: verify_block missing"; return 1
     let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
       | .ok h => pure h
-    -- Closure roots: with --execute, positional names restrict the run
-    -- to their dependency closure (resolved here to hex addresses the
-    -- executor filters its schedule by). --prove stays whole-env: its
-    -- budget geometry belongs to the env, and partial proving goes
-    -- through a manifest (--shards) or an extracted env.
+    -- Closure roots: positional names restrict the run to their
+    -- dependency closure (resolved here to hex addresses the executor
+    -- filters its schedule by).
     let rootNames := (p.variableArgsAs! String).toList
-    if p.hasFlag "prove" && !rootNames.isEmpty then
-      p.printError "error: --prove takes no names (it proves the whole \
-        env or a --shards manifest); to prove a closure, extract it first \
-        (`ix shard extract`)"
-      return 1
     let mut rootsCsv := ""
     if !rootNames.isEmpty then
       let ixonEnv ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixe) with
@@ -758,29 +598,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       TracingTexray.startSampler
       TracingTexray.resetPeakTreeRss
     let start ← IO.monoMsNow
-    let run : Except String Unit ← do
-      if p.hasFlag "prove" then
-        let aiurSystem := Aiur.AiurSystem.build compiled.bytecode
-          Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-        -- With a manifest: the plan → exact-measure → fixup → prove
-        -- pipeline (shards from the static planner, every prove gated
-        -- on the exact post-execution RAM model; --dry-run measures,
-        -- optionally rewriting a split/merged manifest to --fixup-out).
-        match (p.flag? "shards").map (·.as! String) with
-        | some manifest =>
-          pure <| aiurSystem.executeManifestProveWithEnv segFunIdx
-            blockFunIdx envHandle (toString workers) manifest
-            (((p.flag? "shard").map (·.as! Nat)).map toString |>.getD "")
-            (if p.hasFlag "dry-run" then "1" else "0")
-            (((p.flag? "fixup-out").map (·.as! String)).getD "")
-        | none =>
-          pure <| aiurSystem.executeEnvProveWithEnv segFunIdx blockFunIdx
-            envHandle (toString workers) (if keepGoing then "0" else "1")
-            (if p.hasFlag "dry-run" then "1" else "0") ""
-      else
-        pure <| Aiur.Bytecode.Toplevel.executeEnvWithEnv compiled.bytecode
-          segFunIdx blockFunIdx envHandle (toString workers)
-          (if keepGoing then "0" else "1") rootsCsv
+    let run : Except String Unit :=
+      Aiur.Bytecode.Toplevel.executeEnvWithEnv compiled.bytecode
+        segFunIdx blockFunIdx envHandle (toString workers)
+        (if keepGoing then "0" else "1") rootsCsv
     match run with
     | .error e => IO.eprintln s!"execute failed: {e}"; return 1
     | .ok () =>
@@ -798,9 +619,9 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let names := (p.variableArgsAs! String).toList
   let ixesPath := (p.flag? "shards").map (·.as! String)
   let shardK := (p.flag? "shard").map (·.as! Nat)
-  -- a single targeted constant, a `--claim`, or a single shard each print
-  -- per-circuit stats; whole-env / whole-partition iteration suppresses them.
-  let printStats := names.length == 1 || claimHex.isSome || (ixesPath.isSome && shardK.isSome)
+  -- a single targeted constant or a `--claim` prints per-circuit
+  -- stats; whole-env iteration suppresses them.
+  let printStats := names.length == 1 || claimHex.isSome
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
     | .ok t => pure t
@@ -809,9 +630,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- it builds a `ClaimWitness` from the target — `.leanW` is
   -- already a witness; `.addr` would require running the Rust
   -- witness builder Lean-side, which `--interp` is meant to
-  -- bypass. So `--interp` rejects `.addr`/`.shard` targets here;
-  -- the legacy `runShardCheckManifest` path is used for `--interp`
-  -- shard mode.
+  -- bypass, so `--interp` rejects `.addr` targets here.
   let runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32 ←
     if interpSource then do
       let decls ← match toplevel.mkDecls with
@@ -823,7 +642,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | .leanW w => runInterp decls w label
         | _ => do
           IO.eprintln s!"{label}: --interp requires a Lean witness; \
-            addr/shard targets unreachable here"
+            addr targets unreachable here"
           pure 1
       pure go
     else do
@@ -835,29 +654,43 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         runCompiled compiled printStats statsOut useBytecode envHandle? target label
       pure go
   match ixePath, ixesPath, shardK with
-  | some ixe, some manifest, some k =>
+  | some ixe, some manifest, k? =>
+    -- Measured manifest verify through the shared-record engine: each
+    -- shard re-executes standalone, seals (canonical CheckEnv claim +
+    -- derived multiplicities), and measures its EXACT peak against the
+    -- budget — certifying the manifest is provable on this box before
+    -- `ix prove --shards` commits STARK time. An all-shards run first
+    -- proves exact cover of the env schedule; --fixup-out rewrites the
+    -- manifest from the measurements.
     if interpSource then
-      return (← runShardCheckManifest manifest ixe k
-        (fun c w l => runOne c none (.leanW w) l))
-    else do
-      let compiled ← match toplevel.compile with
-        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
-        | .ok c => pure c
-      let benchJson := (p.flag? "json").map fun f =>
-        (f.as! String,
-         ((p.flag? "json-name").map (·.as! String)).getD s!"shard-{k}")
-      return (← runShardCheckManifestNative manifest ixe k compiled printStats
-        statsOut useBytecode benchJson)
-  | some ixe, some manifest, none   =>
-    if interpSource then
-      return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
-        (fun c w l => runOne c none (.leanW w) l))
-    else do
-      let compiled ← match toplevel.compile with
-        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
-        | .ok c => pure c
-      return (← runShardManifestAllNative manifest ixe
-        ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut useBytecode)
+      p.printError "error: --interp does not support --shards"
+      return 1
+    let compiled ← match toplevel.compile with
+      | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+      | .ok c => pure c
+    let segFunIdx ← match compiled.getFuncIdx `verify_claim with
+      | some i => pure i
+      | none => IO.eprintln "error: verify_claim missing"; return 1
+    let blockFunIdx ← match compiled.getFuncIdx `verify_block with
+      | some i => pure i
+      | none => IO.eprintln "error: verify_block missing"; return 1
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+      | .ok h => pure h
+    let aiurSystem := Aiur.AiurSystem.build compiled.bytecode
+      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+    let workers := ((p.flag? "jobs").map (·.as! Nat)).getD 0
+    match aiurSystem.executeManifestProveWithEnv segFunIdx blockFunIdx
+        envHandle (toString workers) manifest ((k?.map toString).getD "")
+        "1" (((p.flag? "fixup-out").map (·.as! String)).getD "") with
+    | .error e => IO.eprintln s!"verify failed: {e}"; return 1
+    | .ok () => IO.println "verify: OK"; return 0
+  | none, some _, _ =>
+    p.printError "error: --shards requires --env"
+    return 1
+  | _, none, some _ =>
+    p.printError "error: --shard requires --shards"
+    return 1
   | _, _, _ =>
     forEachClaim ixePath claimHex names keepGoing "check" interpSource runOne
 
@@ -866,24 +699,22 @@ end Ix.Cli.CheckCmd
 open Ix.Cli.CheckCmd in
 def checkCmd : Cli.Cmd := `[Cli|
   check VIA runCheckCmd;
-  "Typecheck Lean / `.ixe` constants through the IxVM Aiur kernel"
+  "Execute and verify through the IxVM Aiur kernel: per-constant claims, whole-env or closure execution (--execute), and measured manifest verification (--shards). Proving lives under `ix prove`."
 
   FLAGS:
     interp : String;        "Use an interpreter instead of the codegen'd IxVM Rust kernel. Modes: `source` = Aiur source interpreter (richer per-execution error diagnostics, slowest); `bytecode` = generic Aiur bytecode interpreter (skips the regen + cargo rebuild cycle when iterating on `Ix/IxVM/*.lean`). Omit the flag entirely for the native codegen kernel."
     "fail-fast";            "Halt on the first failure (the default; flag accepted for explicitness)."
     "no-fail-fast";         "Continue past failures and report them at the end instead of halting on the first."
     "env"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
-    "prove";                "Full proving (requires --env; mutually exclusive with --execute). Without --shards: execute every block's claim into a shared record, cut prove-sized segments at the RAM model's budget line, and prove+verify each sealed segment directly (multi-claim STARK — the record IS the witness, no re-execution); single claims over the prove budget are executed, measured, and reported UNPROVEN rather than failing the run. With --shards: prove the manifest — each shard executes into its own record, seals, is gated on its EXACT measured peak, and is proven; a shard that measures over budget self-heals (split with the plan's partitioner, halves proven recursively)."
-    "dry-run";              "With --prove: the verify-only step — everything except the STARKs. Without --shards: exercise the complete prove-mode geometry (RAM-model cuts, seal acceptance, segment claims) and report every segment's claim count and predicted peak prove RSS. With --shards: re-execute each shard standalone and measure its EXACT peak against the budget — certifies a manifest is provable on this box before committing STARK time (see --fixup-out)."
-    "execute";              "Execute-only check (requires --env): run every block's check claim — the whole env, or with positional names their dependency closure — through the codegen'd Aiur kernel in parallel over one shared record; no partition, no manifest, no proving. The record is cut and dropped at a measured RAM threshold purely to bound memory; cuts never change what is checked. Reports blocks checked, kernel rejects (named), and total measured FFT cost. --jobs bounds the worker count (default: autoscale); combine with --no-fail-fast to inventory every reject."
+    "execute";              "Whole-env execution (requires --env): run every block's check claim — the whole env, or with positional names their dependency closure — through the codegen'd Aiur kernel in parallel over one shared record. The record is cut and dropped at a measured RAM threshold purely to bound memory; cuts never change what is checked. Reports blocks checked, kernel rejects (named), and total measured FFT cost; combine with --no-fail-fast to inventory every reject."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--env` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
-    "shards"    : String;   "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`. With --prove: prove the manifest's shards (see --prove). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
-    "shard"     : Nat;      "0-based shard index K (with --env + --shards): operate on shard K of the manifest's partition only."
-    "fixup-out" : String;   "With --prove --shards --dry-run (all shards): after measuring every shard's EXACT prove RAM, write a fixed-up manifest here — shards over budget split in two, consecutive underfilled shards merged while the sum of measured peaks stays under budget."
-    "jobs"      : Nat;      "Max shards to check concurrently when checking a whole partition (--shards without --shard). Default: all at once. Lower it to bound peak RAM — each in-flight shard re-ingests its closure into its own IO buffer."
-    json        : String;   "Benchmark results JSON accumulator (single-shard and --execute modes): append an `execute-time`/`peak-rss` row for the checked shard or whole-env execute."
-    "json-name" : String;   "Row name for --json (default: shard-<K>, or `execute` for --execute)."
+    "shards"    : String;   "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`: measured manifest verification — each shard re-executes standalone through the shared-record engine, seals, and measures its EXACT peak prove RAM against the budget, certifying the manifest is provable on this box before `ix prove --shards` commits STARK time. An all-shards run first proves exact cover of the env schedule."
+    "shard"     : Nat;      "0-based shard index K (with --shards): verify only shard K (stamped PARTIAL — no coverage claim)."
+    "fixup-out" : String;   "With --shards (all shards): after measuring every shard's EXACT prove RAM, write a fixed-up manifest here — shards over budget split in two, consecutive underfilled shards merged while the sum of measured peaks stays under budget."
+    "jobs"      : Nat;      "Worker threads for --execute and --shards (default 0 = autoscale)."
+    json        : String;   "Benchmark results JSON accumulator (--execute mode): append an `execute-time`/`peak-rss` row for the whole-env execute."
+    "json-name" : String;   "Row name for --json (default: `execute`)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted). With --execute: execute only the named constants' dependency closure."

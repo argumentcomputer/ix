@@ -196,20 +196,6 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
-@[extern "rs_aiur_toplevel_shard_check_with_env"]
-private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
-    Except String ExecuteResult
-
-/-- Per-shard check with the witness shape (wrapper-augmented byte
-    scope for the kernel's kernel-side blake3'd projection addrs). Claim and
-    digest are identical to `shardCheckWithEnv`'s. -/
-def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
-  (ownedBlob : ByteArray) (useBytecode : Bool := false)
-  : Except String (Array G × IOBuffer × Array QueryCount) :=
-  (shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode).map
-    fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
 /-- Execute-only check through the codegen'd Aiur kernel — the whole
     env, or the dependency closure of `roots` when non-empty: no
