@@ -24,8 +24,7 @@ import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
 import Ix
 
-def VERSION : String :=
-  s!"{Lean.versionString}|0.0.1"
+def VERSION : String := Ix.versionString
 
 def ixCmd : Cli.Cmd := `[Cli|
   ix NOOP; [VERSION]
