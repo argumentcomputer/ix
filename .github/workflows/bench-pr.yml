@@ -1,7 +1,7 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] [aiur-recursive] | all) [execute]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] | all) [execute]
 #     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
 #      with a note in the config summary)
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (case-insensitive, any registry env;
@@ -23,21 +23,16 @@
 #                                  # its own row instead of the default run's
 #
 # Each backend runs its registry default mode:
-#   - aiur: `prove` (the real workload; the report also shows the
-#     fft-cost / execute-time measured on the way). The bare `execute`
-#     token switches aiur to the fast execute-only mode; the bare
-#     `recursive` token switches it to recursive mode (no bencher
-#     baseline exists for that, and it needs more RAM than CI has — meant
-#     for a bigger manual dispatch).
+#   - aiur: `prove` — the full proof pipeline per constant (stage 1
+#     proves the IxVM typecheck, stage 2 executes and proves the
+#     in-circuit multi-stark verifier over that fresh proof), reported
+#     as the per-stage wall clocks plus their total. The bare `execute`
+#     token switches it to the fast Phase-1-only mode (witness
+#     generation; no bencher baseline exists for that, so the main side
+#     comes from a base-SHA run).
 #   - zisk / sp1 / ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
-#   - aiur-recursive: fixed IxVM statements (Nat.add_comm plus the
-#     heavy-tier Vector.append and String.split; Array.extract_append
-#     is dropped for now — it OOMs on CI) proved and recursively verified via
-#     bench-typecheck --recursive; always schedules exactly one run
-#     regardless of BENCH_ENVS (the constants resolve in whichever env's
-#     .ixe the entry carries).
 # The bare `fresh` token skips the bencher fetch and re-measures the main
 # side with a local base-SHA run. Nothing in this workflow uploads to
 # bencher, so the canonical baseline is never touched.

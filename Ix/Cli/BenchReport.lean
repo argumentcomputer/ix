@@ -827,10 +827,7 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
           && (Ix.Cli.BenchCmd.selectNames rows env b.name mode
               (full := false) (tier := "") (shardOnly := false)).isEmpty then
           continue
-        -- The fixed-config backend's env is only its `.ixe`-restore key,
-        -- not what it measures — keep it out of the label.
-        let label := if b.inputs == .fixedConfigs then s!"{b.name}-{mode}"
-          else s!"{b.name}-{env}-{mode}"
+        let label := s!"{b.name}-{env}-{mode}"
         entries := entries.push <| Json.mkObj
           [("backend", Json.str b.name), ("env", Json.str env),
            ("mode", Json.str mode), ("label", Json.str label),
@@ -868,8 +865,8 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
-                 [execute | recursive] [fresh] [KEY=VALUE …]
+      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all)
+                 [execute] [fresh] [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the
                                     env-keyed backends (compile,
@@ -902,12 +899,10 @@ def parseError (msg : String) : IO UInt32 := do
     command, like a typo'd backend.
 
     The bare `execute` token flips a backend with an execute metrics entry
-    to execute-only — a real switch only for aiur, whose modes store on
-    separate testbeds, so either kind of run finds a cached baseline.
-    `recursive` likewise flips aiur to its recursive mode; that testbed is
-    `unscheduled`, so the run has no bencher baseline (its main side comes
-    from a base-SHA run) and the verifier execute OOMs on the 128 GB CI
-    host — reserved for a bigger manual dispatch.
+    to execute-only — a real switch only for aiur, which it drops from the
+    full proof pipeline to the fast Phase-1-only signal. That testbed is
+    `unscheduled`, so the run has no bencher baseline — its main side
+    comes from a base-SHA run.
 
     The bare `fresh` token makes every run bypass its bencher baseline and
     re-measure the main side with a base-SHA run — for when the published
@@ -933,14 +928,10 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut executeFlag := false
-  let mut recursiveFlag := false
   let mut freshFlag := false
   for t in toks.map (·.toLower) do
     if t == "execute" then
       executeFlag := true
-      continue
-    if t == "recursive" then
-      recursiveFlag := true
       continue
     if t == "fresh" then
       freshFlag := true
@@ -955,7 +946,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       return ← parseError s!"unknown token `{t}` in the benchmark command \
         (expected a backend — \
         {", ".intercalate (Ix.Cli.BenchCmd.backendSpecs.map (·.name))} — \
-        or `all` / `execute` / `recursive` / `fresh`)"
+        or `all` / `execute` / `fresh`)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
@@ -1098,22 +1089,14 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     else #["InitStd"]
 
   let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
-    if recursiveFlag && !(b.metricsFor "recursive").isEmpty then "recursive"
-    else if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
+    if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
     else b.defaultMode
   let mut entries : Array Json := #[]
   for b in backends do
-    -- The fixed-config backend (`inputs := .fixedConfigs` — aiur-recursive)
-    -- runs a fixed constant list: one run no matter how many envs
-    -- BENCH_ENVS lists. The env kept is the first requested one — its
-    -- compiled `.ixe` is where the run resolves the fixed constants (any
-    -- registry env's closure contains them).
-    let runEnvs := if b.inputs == .fixedConfigs then (envsFor b).take 1
-      else envsFor b
-    for e in runEnvs do
+    for e in envsFor b do
       -- The entry's `--consts` override: the listed names this env owns,
-      -- on the per-constant backends only (env-keyed and fixed-config
-      -- backends measure regardless of constant selection).
+      -- on the per-constant backends only (env-keyed backends measure
+      -- regardless of constant selection).
       let entryConsts :=
         if b.inputs == .perConstant || b.inputs == .perConstantWithEnv then
           ",".intercalate
@@ -1133,7 +1116,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       if acc.contains e then acc else acc.push e
 
   -- Annotate the mode only where a mode CHOICE exists (aiur's
-  -- execute/prove); `ooc=execute` for a single-mode backend is noise.
+  -- prove/execute); `ooc=execute` for a single-mode backend is noise.
   let modes := " ".intercalate
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList

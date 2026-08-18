@@ -54,17 +54,17 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  execute it (`recursive-execute-time`, `recursive-fft-cost` — the
                  recursion-cost proxy), then prove that execution end-to-end
                  (`recursive-prove-time`, `recursive-peak-rss`,
-                 `recursive-proof-size`, `recursive-verify-time`). The whole
-                 system, inner prove included, switches to the recursion-tuned
-                 parameters (`recursiveFriParameters`), so recursive rows are
-                 NOT comparable to the standard prove run — they land on
-                 their own testbed (`ix bench run --backend aiur --mode
-                 recursive`; the fixed two-constant subset runs in CI as
-                 `--backend aiur-recursive`). At IxVM scale the recursion
-                 exceeds the CI RAM ceiling (even Nat.add_comm's outer
-                 prove peaks ~195 GiB as of 2026-08), so a watchdog kill
-                 landing as a `status: oom` row (dropped by bmf) is the
-                 expected shape there. With --texray, both
+                 `recursive-proof-size`, `recursive-verify-time`), and close the
+                 row with the stage ledger — `stage1-time` (witness execute +
+                 inner prove), `stage2-time` (verifier execute + outer prove),
+                 `total-time` (their sum; later pipeline stages will fold in
+                 as they land). The whole system, inner prove included,
+                 switches to the recursion-tuned parameters
+                 (`recursiveFriParameters`), so recursive rows are NOT
+                 comparable to a plain prove run's. This is the mode CI's
+                 `aiur` benchmark runs (`ix bench run --backend aiur`): the
+                 full proof pipeline, per constant, over the curated
+                 Vectors.csv selection. With --texray, both
                  proves stream the same `stark/...` span names, so the summed
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.
@@ -99,7 +99,9 @@ The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
 "throughput": …, "peak-rss": …, and with --recursive also "recursive-execute-time": …,
 "recursive-fft-cost": …, "recursive-prove-time": …, "recursive-peak-rss": …,
-"recursive-proof-size": …, "recursive-verify-time": … } }`). `peak-rss` and `throughput` are
+"recursive-proof-size": …, "recursive-verify-time": …, plus the stage ledger
+"stage1-time": …, "stage2-time": …, "total-time": … once the pipeline
+completes } }`). `peak-rss` and `throughput` are
 phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
 high-water and constants/sec over the execute; a prove row carries the
 prover's high-water and constants/sec over the prove (with `prove-time`,
@@ -131,20 +133,20 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
   capHeight := 0
 }
 
-/-- Recursion FRI parameters for `--recursive`. The query count IS the
-    soundness level, so a real (secure) recursive proof needs a full query
-    count, not a toy handful: 50 queries at log-blowup 2 target ~100 bits,
-    halving the in-circuit verifier's query-proportional work (and the
-    outer prove's footprint) relative to the previous 100-query setting —
-    sized so the run has a chance of fitting CI's weaker hosts. The
-    in-circuit verifier's cost scales with the count; an OOM row still
+/-- Recursion FRI parameters for `--recursive` — the CI `aiur` pipeline
+    benchmark's parameters, applied to the stage-1 and stage-2 proofs
+    alike. The query count IS the soundness level, so a real (secure)
+    recursive proof needs a full query count, not a toy handful — but the
+    in-circuit verifier's work (and the outer prove's footprint) scales
+    with it: 50 queries still OOMs the ~123 GiB CI hosts on the heavy end
+    of the selection, so 40 is the count sized to fit. An OOM row still
     documents the gap between secure recursion and what fits today.
     `--recursive` runs the WHOLE system, inner prove included, under
-    these, so its rows are not comparable to the standard `prove` run's. -/
+    these, so its rows are not comparable to a plain `prove` run's. -/
 def recursiveFriParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
-  numQueries := 50
+  numQueries := 40
   commitProofOfWorkBits := 0
   queryProofOfWorkBits := 0
 }
@@ -218,8 +220,8 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     `peak-rss` and `throughput` are PHASE-SCOPED BY MODE, not by name: an
     execute-only run's row carries the Phase-1 peak and constants/sec over
     the execute; a prove run's row carries the prove-phase peak and
-    constants/sec over the prove. The two modes upload to separate bencher
-    testbeds (aiur-check-execute-* / aiur-check-prove-*), so the shared names never
+    constants/sec over the prove. The two modes store on separate bencher
+    testbeds (aiur-execute-* / aiur-*), so the shared names never
     collide — run the execute run when you want execute-side numbers. -/
 def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
   if r.failed then
@@ -272,6 +274,20 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     let fields := match r.recursiveVerifySec with
       | some v => fields ++ [ ("recursive-verify-time", jsonRound 6 v) ]
       | none => fields
+    -- The stage ledger, once the whole pipeline has run: each stage's
+    -- wall clock is its witness execution plus its prove (verification
+    -- is a consumer cost, not a production one), and `total-time` is
+    -- their sum — the headline the `aiur` benchmark sorts on. Emitted
+    -- only with every component present, so it doubles as the row's
+    -- completion marker (the orchestrator's teardown-kill `doneKey`).
+    let fields := match r.proveSec, r.recursiveExecuteSec, r.recursiveProveSec with
+      | some p, some re, some rp =>
+        let stage1 := r.executeSec + p
+        let stage2 := re + rp
+        fields ++ [ ("stage1-time", jsonRound 6 stage1)
+                  , ("stage2-time", jsonRound 6 stage2)
+                  , ("total-time", jsonRound 6 (stage1 + stage2)) ]
+      | _, _, _ => fields
     (r.name, Json.mkObj fields)
 
 /-- Time a thunk, returning its value and the elapsed seconds. The result is
@@ -627,7 +643,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
-    "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
+    "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 40 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
 ]
