@@ -141,7 +141,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- through `Ixon.Env::get`, so later runs (e.g. `ix check-ixon`) can
   -- skip the Lean → IxOn compile step.
   let start ← IO.monoMsNow
-  let size ← Ix.CompileM.rsCompileEnvBytesFFI constList outPath
+  let status ← Ix.CompileM.rsCompileEnvBytesFFI constList outPath true
+  let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
   println! "Compiled and wrote {fmtBytes size} env to {outPath} in {elapsed.formatMs}"
   IO.println s!"##benchmark## {elapsed} {size} {totalConsts}"

@@ -2863,14 +2863,40 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
 /-! ## Rust Compilation FFI -/
 
+/-- Structured result of `rs_compile_env`. Field kinds/order must match
+    the `LeanIxCompileEnvStatus` FFI layout in `crates/ffi/src/lean.rs`:
+    boxed fields first (`root`, `ungrounded`), then the UInt64 scalars
+    (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
+structure CompileEnvStatus where
+  /-- 64-hex canonical consts merkle root. Equals the `.ixe` header root
+      when a file was written; still computed on a fail-closed abort. -/
+  root : String
+  /-- `(pretty name, reason)` for every requested constant whose block
+      failed to compile, sorted by name. Empty ⇔ complete environment. -/
+  ungrounded : Array (String × String)
+  /-- Bytes written to `outPath` (0 when nothing was written). -/
+  bytes : UInt64
+  /-- Named constants in the compiled env. -/
+  named : UInt64
+  /-- Unique anonymous constants (content-deduplicated). -/
+  uniqueAnon : UInt64
+  deriving Repr, Inhabited
+
 /-- FFI: Compile a Lean environment and write the serialized Ixon.Env
     bytes straight to `outPath` from Rust (streamed; no env-sized
     ByteArray crosses the FFI). Writes to `<outPath>.tmp` then renames,
-    so a crash cannot leave a truncated file. Returns the byte count
-    written. -/
+    so a crash cannot leave a truncated file.
+
+    Fail-closed semantics live behind the FFI: with
+    `allowPartial := false`, an env with any ungrounded requested
+    constant writes NOTHING (the final path is never created) and the
+    returned status carries the full ungrounded list; with
+    `allowPartial := true`, the grounded subset is serialized and the
+    status discloses what was omitted. -/
 @[extern "rs_compile_env"]
 opaque rsCompileEnvBytesFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → IO Nat
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
+  → IO CompileEnvStatus
 
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
     decompile + roundtrip + alpha-equivalence + nested-detect checks).
@@ -2885,11 +2911,21 @@ opaque rsCompileValidateAuxFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Compile a Lean environment and write the serialized Ixon.Env bytes
-    to `outPath` using the Rust compiler. Returns the byte count. -/
+    to `outPath` using the Rust compiler. Fail-closed by default: any
+    ungrounded constant throws (and nothing is written) unless
+    `allowPartial := true`. Returns the structured compile status. -/
 def rsCompileEnvBytes (leanEnv : Lean.Environment) (outPath : String)
-    : IO Nat := do
+    (allowPartial : Bool := false) : IO CompileEnvStatus := do
   let constList := leanEnv.constants.toList
-  rsCompileEnvBytesFFI constList outPath
+  let status ← rsCompileEnvBytesFFI constList outPath allowPartial
+  if !allowPartial && !status.ungrounded.isEmpty then
+    throw <| IO.userError <|
+      s!"rsCompileEnvBytes: {status.ungrounded.size} requested constant(s) " ++
+      s!"failed to compile; nothing written to {outPath}. First failure: " ++
+      match status.ungrounded[0]? with
+      | some (n, r) => s!"{n}: {r}"
+      | none => "<empty>"
+  return status
 
 -- Re-export RawEnv types from Ixon for backwards compatibility
 export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)

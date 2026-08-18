@@ -72,7 +72,7 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
       let tR ← IO.monoMsNow
       let dir ← IO.FS.createTempDir
       let rustOut := dir / "rust-check.ixe"
-      let _ ← Ix.CompileM.rsCompileEnvBytesFFI constList rustOut.toString
+      let _ ← Ix.CompileM.rsCompileEnvBytesFFI constList rustOut.toString true
       let rustBytes ← IO.FS.readBinFile rustOut
       IO.FS.removeDirAll dir
       let tRe := (← IO.monoMsNow) - tR
