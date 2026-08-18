@@ -55,6 +55,7 @@ import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
 import Tests.Ix.MetaEnv
 import Tests.Ix.Catalog
+import Tests.Ix.ImportIxe
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -70,6 +71,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ffi", Tests.FFI.suite),
   ("meta-env", Tests.Ix.MetaEnv.suite),
   ("catalog", Tests.Ix.Catalog.suite),
+  ("import-ixe", Tests.Ix.ImportIxe.suite),
   ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),

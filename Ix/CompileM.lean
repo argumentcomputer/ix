@@ -2967,10 +2967,12 @@ structure CompilePhases where
 @[extern "rs_compile_phases"]
 opaque rsCompilePhasesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO RustCompilePhases
 
-/-- Run all compilation phases using Rust and convert to Lean-friendly types.
-    This is the main entry point for getting Rust compilation results. -/
-def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
-  let constList := leanEnv.constants.toList
+/-- Run all compilation phases in Rust over an explicit constant list
+    and convert to Lean-friendly types. Use this for closure-scoped
+    compiles (e.g. `#ixeval` compiles only a term's reference closure);
+    `rsCompilePhases` covers the whole-environment case. -/
+def rsCompilePhasesOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    IO CompilePhases := do
   let raw ← rsCompilePhasesFFI constList
 
   -- Convert RawEnvironment to Environment
@@ -2983,6 +2985,11 @@ def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
   let compileEnv := raw.compileEnv.toEnv
 
   pure { rawEnv, condensed, compileEnv }
+
+/-- Run all compilation phases using Rust and convert to Lean-friendly types.
+    This is the main entry point for getting Rust compilation results. -/
+def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases :=
+  rsCompilePhasesOf leanEnv.constants.toList
 
 /-- Compile a Lean environment to Ixon.Env using the Rust compiler.
     Uses the direct FFI that returns structured Lean objects. -/

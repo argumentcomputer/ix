@@ -211,7 +211,8 @@ def canonicalWorkKey (owned : Lean.NameMap Lean.ConstantInfo)
   | some (.defnInfo val) => (definitionWorkGroup owned name val).head?.getD name
   | _ => name
 
-private def sourceInductiveDeclaration (env : Lean.Environment)
+private def sourceInductiveDeclaration
+    (find? : Lean.Name → Option Lean.ConstantInfo)
     (owned : Lean.NameMap Lean.ConstantInfo) (val : Lean.InductiveVal) :
     Except String Lean.Declaration := do
   let mut types : List Lean.InductiveType := []
@@ -220,7 +221,7 @@ private def sourceInductiveDeclaration (env : Lean.Environment)
       | throw s!"missing inductive `{typeName}` from mutual block rooted at `{val.name}`"
     let mut ctors : List Lean.Constructor := []
     for ctorName in typeVal.ctors do
-      let some (.ctorInfo ctorVal) := env.find? ctorName
+      let some (.ctorInfo ctorVal) := find? ctorName
         | throw s!"missing constructor `{ctorName}` for inductive `{typeName}`"
       ctors := ctors.concat { name := ctorName, type := ctorVal.type }
     types := types.concat { name := typeName, type := typeVal.type, ctors }
@@ -228,8 +229,11 @@ private def sourceInductiveDeclaration (env : Lean.Environment)
 
 /-- The `Declaration` that replays `info`, or `none` when the constant
     is produced by another work item (constructors, recursors, non-head
-    inductive/mutual members) or by the base env (`Quot`). -/
-private def sourceDeclaration? (env : Lean.Environment)
+    inductive/mutual members) or by the base env (`Quot`). `find?`
+    resolves constructor lookups (callers back it by the source
+    environment or the materialized constant map). -/
+private def sourceDeclaration?
+    (find? : Lean.Name → Option Lean.ConstantInfo)
     (owned : Lean.NameMap Lean.ConstantInfo) (name : Lean.Name)
     (info : Lean.ConstantInfo) : Except String (Option Lean.Declaration) := do
   match info with
@@ -250,7 +254,7 @@ private def sourceDeclaration? (env : Lean.Environment)
   | .opaqueInfo val => return some (.opaqueDecl val)
   | .inductInfo val =>
       if val.all.head? == some name then
-        return some (← sourceInductiveDeclaration env owned val)
+        return some (← sourceInductiveDeclaration find? owned val)
       else
         return none
   | .ctorInfo _ | .recInfo _ | .quotInfo _ => return none
@@ -299,6 +303,57 @@ private structure WorkItem where
   decl : Lean.Declaration
   deps : Lean.NameSet
 
+/-- Reconstruct the kernel `Declaration`s that replay `owned` and order
+    them topologically (Kahn's algorithm, name-sorted ready sets for
+    determinism). Pure planning — no kernel interaction; dependencies
+    outside `owned` are assumed satisfied by the caller's base
+    environment. `find?` resolves constructor lookups during inductive
+    reconstruction. Shared by the catalog replay driver and by
+    `import_ixe` materialization (`Ix/ImportIxe.lean`). -/
+def planDeclarations (owned : Lean.NameMap Lean.ConstantInfo)
+    (find? : Lean.Name → Option Lean.ConstantInfo) :
+    Except String (Array (Lean.Name × Lean.Declaration)) := do
+  -- Work items keyed by canonical head, with owned-only dependencies.
+  let mut producedBy : Lean.NameMap Lean.Name := {}
+  let mut membersOfKey : Lean.NameMap (Array Lean.Name) := {}
+  for (name, _) in owned do
+    let key := canonicalWorkKey owned name
+    producedBy := producedBy.insert name key
+    membersOfKey := membersOfKey.insert key
+      ((membersOfKey.find? key).getD #[] |>.push name)
+  let mut items : Lean.NameMap WorkItem := {}
+  for (name, info) in owned do
+    let some decl ← sourceDeclaration? find? owned name info | continue
+    let key := name
+    -- Dependencies: references of every constant this item produces,
+    -- mapped to their producing items.
+    let mut deps : Lean.NameSet := {}
+    for member in (membersOfKey.find? key).getD #[] do
+      let some memberInfo := owned.find? member | continue
+      for reference in constantInfoReferences memberInfo do
+        match producedBy.find? reference with
+        | some refKey => if refKey != key then deps := deps.insert refKey
+        | none => pure ()
+    items := items.insert key { key, decl, deps }
+  -- Kahn's algorithm with name-sorted ready set for determinism.
+  let mut plan : Array (Lean.Name × Lean.Declaration) := #[]
+  let mut added : Lean.NameSet := {}
+  let mut pending := items
+  while !pending.isEmpty do
+    let mut ready : Array WorkItem := #[]
+    for (_, item) in pending do
+      if item.deps.all (added.contains ·) then
+        ready := ready.push item
+    if ready.isEmpty then
+      let cycle := pending.foldl (init := #[]) fun acc k _ => acc.push k
+      throw s!"dependency cycle among replay items: {cycle[0:8].toArray}"
+    let readySorted := ready.qsort fun a b => a.key.quickCmp b.key == .lt
+    for item in readySorted do
+      plan := plan.push (item.key, item.decl)
+      added := added.insert item.key
+      pending := pending.erase item.key
+  return plan
+
 /-- Replay one library's owned constants into the growing kernel env:
     build the per-env rename map, reconstruct declarations, order by
     owned-reference dependencies, and `Kernel.Environment.addDecl` each
@@ -324,52 +379,17 @@ private def replayLib (spec : CatalogSpec) (env : Lean.Environment)
         renameMap := renameMap.insert name (target ++ name)
         if libPkgs.contains pkg then
           owned := owned.insert name info
-  -- Work items keyed by canonical head, with owned-only dependencies.
-  let mut producedBy : Lean.NameMap Lean.Name := {}
-  let mut membersOfKey : Lean.NameMap (Array Lean.Name) := {}
-  for (name, _) in owned do
-    let key := canonicalWorkKey owned name
-    producedBy := producedBy.insert name key
-    membersOfKey := membersOfKey.insert key
-      ((membersOfKey.find? key).getD #[] |>.push name)
-  let mut items : Lean.NameMap WorkItem := {}
-  for (name, info) in owned do
-    let some decl ← sourceDeclaration? env owned name info | continue
-    let key := name
-    -- Dependencies: references of every constant this item produces,
-    -- mapped to their producing items.
-    let mut deps : Lean.NameSet := {}
-    for member in (membersOfKey.find? key).getD #[] do
-      let some memberInfo := owned.find? member | continue
-      for reference in constantInfoReferences memberInfo do
-        match producedBy.find? reference with
-        | some refKey => if refKey != key then deps := deps.insert refKey
-        | none => pure ()
-    items := items.insert key { key, decl, deps }
-  -- Kahn's algorithm with name-sorted ready set for determinism.
+  let plan ← planDeclarations owned env.find?
   let mut kenv := kenv
-  let mut added : Lean.NameSet := {}
   let mut replayed := 0
-  let mut pending := items
-  while !pending.isEmpty do
-    let mut ready : Array WorkItem := #[]
-    for (_, item) in pending do
-      if item.deps.all (added.contains ·) then
-        ready := ready.push item
-    if ready.isEmpty then
-      let cycle := pending.foldl (init := #[]) fun acc k _ => acc.push k
-      throw s!"dependency cycle among replay items: {cycle[0:8].toArray}"
-    let readySorted := ready.qsort fun a b => a.key.quickCmp b.key == .lt
-    for item in readySorted do
-      let relocated := relocateDeclaration renameMap item.decl
-      match kenv.addDecl {} relocated with
-      | .ok kenv' =>
-        kenv := kenv'
-        replayed := replayed + 1
-      | .error e =>
-        throw s!"kernel rejected `{rename renameMap item.key}` (source `{item.key}`): {renderKernelException e}"
-      added := added.insert item.key
-      pending := pending.erase item.key
+  for (key, decl) in plan do
+    let relocated := relocateDeclaration renameMap decl
+    match kenv.addDecl {} relocated with
+    | .ok kenv' =>
+      kenv := kenv'
+      replayed := replayed + 1
+    | .error e =>
+      throw s!"kernel rejected `{rename renameMap key}` (source `{key}`): {renderKernelException e}"
   return (kenv, replayed, owned.size)
 
 /-- Build the catalog kernel environment for `spec`. Assumes the Lean
