@@ -102,13 +102,16 @@ def isExcluded (name backend mode : String) : Bool :=
     be `Vectors.csv` rows of the env being run — this narrows the curated
     selection, it does not add to it. -/
 def fixedSelections : List (String × String × List String) :=
-  [ -- The aiur pipeline's cost range: `Nat.add_comm` is the cheap end,
-    -- and the two heavy-tier proofs bracket the expensive end where the
-    -- stage-2 prover meets the host's RAM ceiling.
+  [ -- The aiur pipeline's cost range: two cheap-tier constants for the
+    -- small end, and four heavy-tier ones for the expensive end, where
+    -- the stage-2 prover meets the host's RAM ceiling.
     ("aiur", "prove",
       ["Nat.add_comm",
+       "String.append",
        "Array.extract_append",
-       "ByteArray.utf8DecodeChar?_utf8EncodeChar_append"]) ]
+       "ByteArray.utf8DecodeChar?_utf8EncodeChar_append",
+       "_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq",
+       "Char.ofOrdinal_le_of_le"]) ]
 
 /-- The fixed default selection for this `(backend, mode)`, if any. -/
 def fixedSelectionFor (backend mode : String) : Option (List String) :=
@@ -256,8 +259,9 @@ def backendSpecs : List BackendSpec := [
   -- proves, summed — each prove already runs its own witness execution,
   -- so the standalone execute times are instrumentation and are not
   -- added) and the run's RAM ceiling. The whole system runs under the
-  -- recursion-tuned parameters — 40 FRI queries at log-blowup 2 for the
-  -- stage-1 and stage-2 proofs alike (50 OOMs the CI hosts; see
+  -- recursion-tuned parameters — 50 FRI queries at log-blowup 2 for the
+  -- stage-1 and stage-2 proofs alike, the soundness level taking
+  -- precedence over fitting every constant in the host's RAM (see
   -- `recursiveFriParameters` in Benchmarks/Typecheck.lean). execute is
   -- the fast Phase-1-only signal (witness generation, no proving),
   -- `unscheduled`: a local / on-demand mode that never uploads.
@@ -281,10 +285,12 @@ def backendSpecs : List BackendSpec := [
     -- ~±15% run-to-run (the parallel prover emits byte-different valid
     -- proofs, so the verifier authenticates different Merkle paths) →
     -- the loose 25% bound. Proof sizes are structural (fixed query count
-    -- and path depth) → the tight 5%.
+    -- and path depth) → the tight 5%. `total-time` carries NO bound: it
+    -- is the two prove times summed, and a sum cannot breach a
+    -- percentage bound unless one of its terms already breached the same
+    -- one — so it could only ever duplicate an alert the proves fired.
     thresholds := [("constants", "0", "0"), ("fft-cost", "0.05", "_"),
                    ("recursive-fft-cost", "0.25", "_"),
-                   ("total-time", "0.10", "_"),
                    ("execute-time", "0.10", "_"), ("prove-time", "0.10", "_"),
                    ("recursive-execute-time", "0.10", "_"),
                    ("recursive-prove-time", "0.10", "_"),

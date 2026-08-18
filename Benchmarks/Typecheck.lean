@@ -141,15 +141,17 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
     alike. The query count IS the soundness level, so a real (secure)
     recursive proof needs a full query count, not a toy handful — but the
     in-circuit verifier's work (and the outer prove's footprint) scales
-    with it: 50 queries still OOMs the ~123 GiB CI hosts on the heavy end
-    of the selection, so 40 is the count sized to fit. An OOM row still
-    documents the gap between secure recursion and what fits today.
+    with it, and at the heavy end of the selection the outer prove runs
+    close enough to the CI host's RAM ceiling that a constant can cross
+    it. That is the intended trade: prefer the soundness and let a
+    constant that does not fit land as an OOM row, documenting the gap
+    between secure recursion and what fits today.
     `--recursive` runs the WHOLE system, inner prove included, under
     these, so its rows are not comparable to a plain `prove` run's. -/
 def recursiveFriParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
-  numQueries := 40
+  numQueries := 50
   commitProofOfWorkBits := 0
   queryProofOfWorkBits := 0
 }
@@ -654,7 +656,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
-    "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 40 with --recursive; applies to inner and outer proof alike)."
+    "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
 ]
