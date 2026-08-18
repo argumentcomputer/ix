@@ -1,8 +1,8 @@
 /-
-  `ix addr-of <Lean.Name> [--ixe <path>]`: resolve a Lean.Name to its
-  32-byte content address. Without `--ixe`, the lookup compiles the
+  `ix addr-of <Lean.Name> [--env <path>]`: resolve a Lean.Name to its
+  32-byte content address. Without `--env`, the lookup compiles the
   name's transitive closure from the compiled-in Lean env (via
-  `IxVM.ClaimHarness.loadIxonEnv` → `lookupAddr`). With `--ixe`, the
+  `IxVM.ClaimHarness.loadIxonEnv` → `lookupAddr`). With `--env`, the
   lookup reads the env from disk and dispatches `Ixon.Env.getAddr?`.
 
   Prints the resulting address hex on stdout (one line, no prefix), so
@@ -30,7 +30,7 @@ def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
   let argStr := nameArg.as! String
   let name := parseName argStr
   let ixePath : Option String :=
-    (p.flag? "ixe").map (·.as! String)
+    (p.flag? "env").map (·.as! String)
   match ixePath with
   | some path =>
     let bytes ← IO.FS.readBinFile path
@@ -61,7 +61,7 @@ def addrOfCmd : Cli.Cmd := `[Cli|
   "Resolve a Lean.Name to its content address (in a `.ixe` or in the compiled-in env)"
 
   FLAGS:
-    "ixe" : String; "Path to a serialized `.ixe` env to resolve the name in. Without this, the name is looked up in the compiled-in Lean env (via `loadIxonEnv` → `lookupAddr`)."
+    "env" : String; "Path to a serialized `.ixe` env to resolve the name in. Without this, the name is looked up in the compiled-in Lean env (via `loadIxonEnv` → `lookupAddr`)."
 
   ARGS:
     name : String; "Fully-qualified Lean.Name to resolve (e.g. `Nat.add_comm` or `Tests.Ix.Kernel.TutorialDefs.basicDef`)."

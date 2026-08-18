@@ -2713,7 +2713,7 @@ pub extern "C" fn rs_shard_esp(
 }
 
 /// Total system RAM in GiB from `/proc/meminfo` (Linux); `None` if unreadable.
-fn system_ram_gib() -> Option<f64> {
+pub(crate) fn system_ram_gib() -> Option<f64> {
   let s = std::fs::read_to_string("/proc/meminfo").ok()?;
   let rest = s.lines().find_map(|l| l.strip_prefix("MemTotal:"))?;
   let kib: f64 = rest.trim().trim_end_matches("kB").trim().parse().ok()?;

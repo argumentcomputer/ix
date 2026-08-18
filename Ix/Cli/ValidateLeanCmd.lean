@@ -26,7 +26,7 @@
 
   Starting from a Lean FILE (like `ix validate`) is what makes phase 4
   possible: the elaborated environment is the comparison oracle. For an
-  external `.ixe` with no Lean source (`--ixe`), only the oracle-free
+  external `.ixe` with no Lean source (`--env`), only the oracle-free
   phases 2–3 run; 1/4/5 report skipped.
 
   Separate from the `lake test` binary for the same reason as `validate`:
@@ -86,10 +86,10 @@ def pushPhase (phases : Array (String × PhaseResult))
   return phases.push entry
 
 def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
-  let ixe? := (p.flag? "ixe").map (·.as! String)
+  let ixe? := (p.flag? "env").map (·.as! String)
   let path? : Option String := (p.variableArgsAs! String)[0]?
   if ixe?.isNone && path?.isNone then
-    p.printError "error: must specify <path> to a Lean source file (or --ixe <file>)"
+    p.printError "error: must specify <path> to a Lean source file (or --env <file>)"
     return 1
 
   -- Sources: either elaborate a Lean file (full pipeline, oracle
@@ -248,7 +248,7 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
     match leanEnv? with
     | none =>
       phases ← pushPhase phases ("4. Kernel meta roundtrip",
-        .skipped "no Lean source env to compare against (--ixe mode)")
+        .skipped "no Lean source env to compare against (--env mode)")
     | some leanEnv =>
       IO.println "[validate-lean] phase 4: kernel meta roundtrip (streaming)..."
       (← IO.getStdout).flush
@@ -289,7 +289,7 @@ failure(s) ({out.bytes.size} bytes, {t1 - t0}ms)\n" ++
   -- every reconstructed constant must match it, both directions — by
   -- per-name digest (default) or full structural BEq (`--full-oracle`,
   -- which also switches the decompiler's per-recovery debug track on by
-  -- passing the view as `origEnv?`). In `--ixe` mode the phase runs
+  -- passing the view as `origEnv?`). In `--env` mode the phase runs
   -- oracle-free (decompile errors only).
   let skipPhases5 := ((← IO.getEnv "IX_SKIP_PHASES").getD "").splitOn ","
   let ixonEnvForDecompile? : Option (Except String Ixon.Env) :=
@@ -397,12 +397,12 @@ def validateLeanCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     ns  : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
-    ixe : String; "Validate a pre-compiled .ixe instead of a Lean file (oracle-free: runs serde + anon roundtrip only)"
+    env : String; "Validate a pre-compiled .ixe instead of a Lean file (oracle-free: runs serde + anon roundtrip only)"
     workers : Nat; "Worker count for the parallel phases (compile phase 1, decompile phase 5); default 32 for compile, 16 for decompile. Lower at whole-Mathlib scale — memory scales with workers (phase 1 at 32 peaks past 116 GiB there; 8 is a safe whole-Mathlib setting on a 128 GiB box)."
     «full-oracle»; "Phase 5 comparison via the full canonicalized env (structural BEq per constant + the decompiler's per-recovery debug track) instead of the default per-name digests. Holds a whole extra env copy through phase 5 — use on --ns-filtered closures to debug a digest mismatch."
 
   ARGS:
-    ...path : String; "Path to the Lean source file whose env should be validated (omit with --ixe)."
+    ...path : String; "Path to the Lean source file whose env should be validated (omit with --env)."
 ]
 
 end

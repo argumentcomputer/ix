@@ -146,8 +146,8 @@ def toIndex
       | .error e => throw e
       | .ok n => pure n
     let ptrIdxs := bindings[src]?.getD #[0]
-    let loaded ← pushOp (.load size ptrIdxs[0]!) size
-    toIndex layoutMap (bindings.insert dst loaded) bod
+    let loaded ← pushOp (.load (size + 1) ptrIdxs[0]!) (size + 1)
+    toIndex layoutMap (bindings.insert dst (loaded.extract 1 loaded.size)) bod
   | .var _ _ name => pure (bindings[name]?.getD #[])
   | .ref _ _ name => match layoutMap[name]? with
     | some (.function layout) => do
@@ -255,9 +255,19 @@ def toIndex
     let val ← toIndex layoutMap bindings val
     let right := arr.extract ((i + 1) * eltSize)
     pure $ left ++ val ++ right
-  | .store _ _ arg => do
+  | .store typ _ arg => do
     let args ← toIndex layoutMap bindings arg
-    pushOp (.store args)
+    -- Type-discriminated store: every tuple carries the stored type's
+    -- id in slot 0, so content equality implies same type and schema —
+    -- polymorphic containers sharing a width map can no longer merge
+    -- across instantiations on numeric pointer coincidences, which is
+    -- what makes the unique-query set exact under any execution
+    -- interleaving.
+    let inner ← match typ with
+      | .pointer t => pure t
+      | t => pure t
+    let tid ← pushOp (.const (.ofNat (hash inner).toNat))
+    pushOp (.store (tid ++ args))
   | .load _ _ ptr => do
     let size ← match ptr.typ with
       | .pointer typ => match typSize layoutMap typ with
@@ -265,7 +275,9 @@ def toIndex
         | .ok len => pure len
       | _ => throw "load on non-pointer"
     let ptr ← expectIdx layoutMap bindings ptr
-    pushOp (.load size ptr) size
+    -- Width +1 for the type-id slot; the tag itself is dropped.
+    let loaded ← pushOp (.load (size + 1) ptr) (size + 1)
+    pure (loaded.extract 1 loaded.size)
   | .ptrVal _ _ ptr => toIndex layoutMap bindings ptr
   | .assertEq _ _ a b msg ret => do
     let a ← toIndex layoutMap bindings a
@@ -338,13 +350,26 @@ def toIndex
     let j ← expectIdx layoutMap bindings j
     modify fun stt => { stt with ops := stt.ops.push (.u8RangeCheck i j) }
     pure #[i, j]
-  | .unconstrainedBigUintDivMod _ _ a b => do
+  | .unconstrainedBigUintDivMod typ _ a b => do
     -- Unconstrained hint: runtime computes q,r via BigUint::div_rem and writes
     -- two fresh pointers (q_ptr, r_ptr) into the witness columns. No constraint
     -- relation is emitted; caller verifies `q*b + r == a` and `r < b` separately.
     let a ← expectIdx layoutMap bindings a
     let b ← expectIdx layoutMap bindings b
-    pushOp (.unconstrainedBigUintDivMod a b) 2
+    -- The runtime builds result lists directly in memory, so it needs
+    -- the node type's id to write the same tagged layout the kernel's
+    -- own stores and loads use.
+    let nodeTyp ← match typ with
+      | .tuple ts =>
+        match ts[0]? with
+        | some t =>
+          match t with
+          | .pointer inner => pure inner
+          | _ => throw "unconstrainedBigUintDivMod: unexpected result type"
+        | none => throw "unconstrainedBigUintDivMod: unexpected result type"
+      | _ => throw "unconstrainedBigUintDivMod: unexpected result type"
+    let tag ← pushOp (.const (.ofNat (hash nodeTyp).toNat))
+    pushOp (.unconstrainedBigUintDivMod tag[0]! a b) 2
   | .unconstrainedGToBytes _ _ a => do
     let a ← expectIdx layoutMap bindings a
     pushOp (.unconstrainedGToBytes a) 8
@@ -483,8 +508,9 @@ def Concrete.Term.compile
       | .error e => throw e
       | .ok n => pure n
     let ptrIdxs := bindings[src]?.getD #[0]
-    let loaded ← pushOp (.load size ptrIdxs[0]!) size
-    bod.compile returnTyp layoutMap (bindings.insert dst loaded) yieldCtrl
+    let loaded ← pushOp (.load (size + 1) ptrIdxs[0]!) (size + 1)
+    bod.compile returnTyp layoutMap
+      (bindings.insert dst (loaded.extract 1 loaded.size)) yieldCtrl
   | .debug _ _ label term ret => do
     let term ← term.mapM (toIndex layoutMap bindings)
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }

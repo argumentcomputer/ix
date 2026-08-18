@@ -745,7 +745,7 @@ impl Op {
         state.map.push((output, 1));
       },
       Op::IOSetInfo(..) | Op::IOWrite(..) | Op::Debug(..) => (),
-      Op::UnconstrainedBigUintDivMod(_, _) => {
+      Op::UnconstrainedBigUintDivMod(_, _, _) => {
         // Unconstrained: outputs are two fresh witness columns holding the
         // quotient/remainder list-head pointers. Mirrors `IORead`'s shape —
         // no constraint relation, just two new auxiliary slots. Verification

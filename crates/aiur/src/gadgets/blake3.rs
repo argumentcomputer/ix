@@ -52,7 +52,7 @@ impl AiurGadget for Blake3 {
         }
     }
 
-    fn execute(&self, op: &Self::Op, input: &[G], record: &mut QueryRecord) -> Vec<G> {
+    fn execute(&self, op: &Self::Op, input: &[G], record: &QueryRecord) -> Vec<G> {
         match op {
             Blake3Op::GFunction => {
                 if let Some(result) = record.blake3_g_function.get_mut(input) {
@@ -60,25 +60,25 @@ impl AiurGadget for Blake3 {
                     return result.output.to_vec();
                 }
 
-                let u8_bits = |x, record: &mut QueryRecord| -> [G; 8] {
+                let u8_bits = |x, record: &QueryRecord| -> [G; 8] {
                     Bytes1
                         .execute(&Bytes1Op::BitDecomposition, &[x], record)
                         .try_into()
                         .expect("Wrong output size")
                 };
-                let u8_add = |a, b, record: &mut QueryRecord| -> [G; 2] {
+                let u8_add = |a, b, record: &QueryRecord| -> [G; 2] {
                     Bytes2
                         .execute(&Bytes2Op::Add, &[a, b], record)
                         .try_into()
                         .expect("Wrong output size")
                 };
-                let u8_xor = |a, b, record: &mut QueryRecord| {
+                let u8_xor = |a, b, record: &QueryRecord| {
                     Bytes2
                         .execute(&Bytes2Op::Xor, &[a, b], record)
                         .pop()
                         .expect("Missing output")
                 };
-                let u32_add = |a: [G; 4], b: [G; 4], record: &mut QueryRecord| {
+                let u32_add = |a: [G; 4], b: [G; 4], record: &QueryRecord| {
                     let [a0, a1, a2, a3] = a;
                     let [b0, b1, b2, b3] = b;
 
@@ -101,7 +101,7 @@ impl AiurGadget for Blake3 {
 
                     [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
                 };
-                let u32_xor = |a: [G; 4], b: [G; 4], record: &mut QueryRecord| {
+                let u32_xor = |a: [G; 4], b: [G; 4], record: &QueryRecord| {
                     let [a0, a1, a2, a3] = a;
                     let [b0, b1, b2, b3] = b;
                     let c0 = u8_xor(a0, b0, record);

@@ -24,18 +24,17 @@
 
   # Correctness invariant
 
-  Generated code MUST produce a `QueryRecord` indistinguishable from
-  `crates/aiur/src/execute.rs`'s interpreter:
+  Generated code MUST produce the same unique-query SET as
+  `crates/aiur/src/execute.rs`'s interpreter. The concurrent record is
+  insert-once: the generated code NEVER touches multiplicities or
+  gadget counters (all flags emitted `false`) — every count is derived
+  from the set at seal by `trace::derive_multiplicities`, which is what
+  makes racing duplicate executions sound. Set invariants:
 
-  - `function_queries[idx].insert(args, output, mult)` MUST happen on
-    `Ctrl::Return` of the callee, AFTER the callee's body's inserts.
-  - Cache-hit `multiplicity += G::ONE` MUST trigger iff
-    `!unconstrained && !op_unconstrained` for `Op::Call`, and
-    `!unconstrained` for `Op::Store` / `Op::Load`.
+  - `insert_cc(args, output, false)` on `Ctrl::Return` of the callee,
+    AFTER the callee's body's inserts (first publish wins on races).
   - `memory_queries[size]` insertion order: each unique store gets a
     pointer = `memory_queries.len()` at that moment.
-  - `bytes1_queries` / `bytes2_queries` updates from `U8*` ops in
-    constrained mode, suppressed when `unconstrained == true`.
   - `io_buffer` ops preserve order.
 
   # `unconstrained` propagation
@@ -351,7 +350,7 @@ def Op.outputCount : Op → Nat
   | .u8XorSplit7 _ _ | .u8XorSplit4 _ _ => 2
   | .u32LessThan _ _ => 1
   | .u8RangeCheck _ _ => 0
-  | .unconstrainedBigUintDivMod _ _ => 2
+  | .unconstrainedBigUintDivMod _ _ _ => 2
   | .unconstrainedGToBytes _ => 8
   | .unconstrainedGInverse _ => 1
   | .unconstrainedU32Add _ _ | .unconstrainedU32Add3 _ _ _ => 5
@@ -384,21 +383,20 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   -- always skipped; when opUn = false both expressions collapse to
   -- just `unconstrained`.
   let cuExpr : String := if opUn then "true" else "unconstrained"
-  let bumpCond : String := if opUn then "false" else "!unconstrained"
-  let bumpStmt : String :=
-    if opUn then ""
-    else s!" if {bumpCond} \{ *result.multiplicity += G::ONE; }"
+  -- The concurrent record is an insert-once SET: probes never bump
+  -- (multiplicities are derived from the unique-query set at seal, so
+  -- runtime accounting does not exist on this path).
+  let bumpExpr : String := "false"
   -- Skip `try_into().unwrap()` on the cache hit: we statically know
   -- the cached output has exactly `OUT_{callee}` elements (only we
   -- ever insert into this slot via the matching aiur_fn_{callee}
   -- `Ctrl::Return`). An unchecked array copy is sound.
   let retExpr : String :=
-    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(result.output.as_ptr() as *const [G; OUT_{callee}]) }; __ret"
+    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(__out.as_ptr() as *const [G; OUT_{callee}]) }; __ret"
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
     s!" let __cu = {cuExpr};" ++
-    s!" if let Some(result) = record.function_queries[{callee}].get_mut(&__args[..]) \{" ++
-    bumpStmt ++
+    s!" if let Some(__out) = record.function_queries[{callee}].probe_bump(&__args[..], {bumpExpr}) \{" ++
     retExpr ++
     s!" } else \{ aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
   let mut stmts : Array RustStmt := #[
@@ -415,24 +413,18 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
   let valsStr : String := (argsAsArray values).toStr
   let blockExpr : String :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
-    s!" let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
-    s!" if let Some(result) = __mq.get_mut(&__values[..]) \{" ++
-    s!" if !unconstrained \{ *result.multiplicity += G::ONE; }" ++
-    s!" result.output[0]" ++
-    s!" } else \{" ++
-    s!" let __ptr = G::from_usize(__mq.len());" ++
-    s!" __mq.insert(&__values[..], &[__ptr], G::from_bool(!unconstrained)); __ptr } }"
+    s!" let __mq = record.memory_queries.get(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
+    s!" __mq.store_cc(&__values[..], false) }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 /-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
     index, bump multiplicity if constrained, splat `size` outputs. -/
 private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt := Id.run do
   let blockExpr : String :=
-    s!"\{ let __mq = record.memory_queries.get_mut(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
+    s!"\{ let __mq = record.memory_queries.get(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
     s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
-    s!" let (__args, __mult) = __mq.get_index_mut(__ptr_usize).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
-    s!" if !unconstrained \{ *__mult += G::ONE; }" ++
+    s!" let __args = __mq.load_bump(__ptr_usize, false).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
     s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)
@@ -610,18 +602,7 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" let __a_u32 = u32::try_from(__a_val).ok().ok_or(ExecError::U32OutOfRange(__a_val))?;" ++
     s!" let __b_u32 = u32::try_from(__b_val).ok().ok_or(ExecError::U32OutOfRange(__b_val))?;" ++
     s!" let __result = G::from_bool(__a_u32 < __b_u32);" ++
-    s!" if !unconstrained \{" ++
-    s!" let __x_bytes = __a_u32.to_le_bytes();" ++
-    s!" let __z_bytes = __b_u32.to_le_bytes();" ++
-    s!" let __c_u32 = __b_u32.wrapping_sub(__a_u32).wrapping_sub(1);" ++
-    s!" let __y_bytes = __c_u32.to_le_bytes();" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[0]), &G::from_u8(__x_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[2]), &G::from_u8(__x_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[0]), &G::from_u8(__y_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[2]), &G::from_u8(__y_bytes[3]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[0]), &G::from_u8(__z_bytes[1]));" ++
-    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[2]), &G::from_u8(__z_bytes[3]));" ++
-    s!" } __result }"
+    s!" __result }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 private def u32PackExpr (xs : Array ValIdx) : String :=
@@ -650,16 +631,15 @@ private def emitU8RangeCheck (i j : ValIdx) : Array RustStmt :=
     s!" let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64();" ++
     s!" if __bi >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bi)); }" ++
     s!" if __bj >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bj)); }" ++
-    s!" record.bytes2_queries.bump_range_check(&__vi, &__vj);" ++
     s!" }"
   #[.exprStmt (.lit stmt)]
 
 /-- `Op::UnconstrainedBigUintDivMod`: BigUint hint, 2 outputs
     (q_ptr, r_ptr). Calls the extracted `unconstrained_big_uint_div_mod_helper`
     which returns `(G, G)` directly. -/
-private def emitUncBigUintDivMod (out : Nat) (a b : ValIdx) : Array RustStmt :=
+private def emitUncBigUintDivMod (out : Nat) (tag a b : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
-    s!"unconstrained_big_uint_div_mod_helper(__v_{a}, __v_{b}, record)?"
+    s!"unconstrained_big_uint_div_mod_helper(__v_{tag}, __v_{a}, __v_{b}, record)?"
   #[
     .letStmt false "__bu_qr" (some "(G, G)") (.lit blockExpr),
     declVal out (.field (.var "__bu_qr") "0"),
@@ -729,7 +709,7 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .u8Sub i j => emitU8Sub out i j
   | .u32LessThan a b => emitU32LessThan out a b
   | .u8RangeCheck i j => emitU8RangeCheck i j
-  | .unconstrainedBigUintDivMod a b => emitUncBigUintDivMod out a b
+  | .unconstrainedBigUintDivMod tag a b => emitUncBigUintDivMod out tag a b
   | .unconstrainedGToBytes a => emitUncGToBytes out a
   | .unconstrainedGInverse a => emitUncGInverse out a
   | .unconstrainedU32Add a b => emitUnconstrainedU32Add out [a, b]
@@ -821,10 +801,10 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
         (.field
           (.index (.field (.var "record") "function_queries")
             (.lit (toString funIdx)))
-          "insert")
+          "insert_cc")
         #[.ref (.index (.var "inp") (.lit "..")),
           .ref (.index (.var "__ret") (.lit "..")),
-          gFromBool (.lit "!unconstrained")])
+          .lit "!unconstrained"])
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
@@ -934,7 +914,7 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
   let fnText : String :=
     s!"fn aiur_fn_{funIdx}(\n" ++
     s!"  inp: [G; IN_{funIdx}],\n" ++
-    s!"  record: &mut QueryRecord,\n" ++
+    s!"  record: &QueryRecord,\n" ++
     s!"  io_buffer: &mut IOBuffer,\n" ++
     s!"  unconstrained: bool,\n" ++
     s!") -> Result<[G; OUT_{funIdx}], ExecError> {lbrace}\n" ++
@@ -1035,7 +1015,7 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
   .raw (s!"pub(crate) fn execute_generated(\n" ++
         s!"  fun_idx: usize,\n" ++
         s!"  args: &[G],\n" ++
-        s!"  record: &mut QueryRecord,\n" ++
+        s!"  record: &QueryRecord,\n" ++
         s!"  io_buffer: &mut IOBuffer,\n" ++
         s!") -> Result<Vec<G>, ExecError> {lbrace}\n" ++
         stmtsToStr 1 body ++

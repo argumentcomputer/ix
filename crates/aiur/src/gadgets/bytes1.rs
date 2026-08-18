@@ -77,7 +77,7 @@ impl AiurGadget for Bytes1 {
     &self,
     op: &Bytes1Op,
     input: &[G],
-    record: &mut QueryRecord,
+    record: &QueryRecord,
   ) -> Vec<G> {
     let byte = &input[0];
     match op {
@@ -212,21 +212,46 @@ impl Bytes1Queries {
     Self([[G::ZERO; TRACE_WIDTH]; 256])
   }
 
-  pub(crate) fn bump_bit_decomposition(&mut self, byte: &G) {
+  pub(crate) fn bump_bit_decomposition(&self, byte: &G) {
     self.bump_multiplicity_for(byte, 0)
   }
 
-  pub(crate) fn bump_shift_left(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_left(&self, byte: &G) {
     self.bump_multiplicity_for(byte, 1)
   }
 
-  pub(crate) fn bump_shift_right(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_right(&self, byte: &G) {
     self.bump_multiplicity_for(byte, 2)
   }
 
-  pub(crate) fn bump_multiplicity_for(&mut self, byte: &G, col: usize) {
+  /// Read counter cell `[byte][col]` (relaxed; used by the derived-
+  /// multiplicity differential check in `trace.rs`).
+  pub(crate) fn count(&self, byte: usize, col: usize) -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let cell: &G = &self.0[byte][col];
+    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
+      .load(Ordering::Relaxed)
+  }
+
+  /// Overwrite counter cell (seal-time application of derived
+  /// multiplicities; see `trace::apply_multiplicities`).
+  pub(crate) fn set_count(&self, byte: usize, col: usize, v: u64) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let cell: &G = &self.0[byte][col];
+    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
+      .store(v, Ordering::Relaxed);
+  }
+
+  /// Relaxed atomic bump on the counter cell: `G` is
+  /// `repr(transparent)` over `u64` and multiplicities stay far below
+  /// the modulus, so `u64` addition is field addition — the shared
+  /// record's concurrent executors bump without locks.
+  pub(crate) fn bump_multiplicity_for(&self, byte: &G, col: usize) {
+    use std::sync::atomic::{AtomicU64, Ordering};
     let row = usize::try_from(byte.as_canonical_u64()).unwrap();
-    self.0[row][col] += G::ONE;
+    let cell: &G = &self.0[row][col];
+    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
+      .fetch_add(1, Ordering::Relaxed);
   }
 }
 

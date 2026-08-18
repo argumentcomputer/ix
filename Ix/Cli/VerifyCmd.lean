@@ -147,12 +147,12 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
-  match (p.flag? "ixe").map (·.as! String), (p.flag? "ixes").map (·.as! String) with
+  match (p.flag? "env").map (·.as! String), (p.flag? "shards").map (·.as! String) with
   | some ixe, some manifest =>
     verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
   | _, _ =>
     if proofs.isEmpty then
-      p.printError "error: must specify <proof-hex>... (or --ixe + --ixes for a shard partition)"
+      p.printError "error: must specify <proof-hex>... (or --env + --shards for a shard partition)"
       return 1
     let (aiurSystem, compiled) ← match (← buildBackend) with
       | .error e => IO.eprintln e; return 1
@@ -171,12 +171,12 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify STARK proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
-    "ixe"  : String; "Path to a serialized `.ixe` env (with --ixes). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
-    "ixes" : String; "Path to a `.ixes` shard manifest (with --ixe)."
-    "shard" : Nat;   "0-based shard index K (with --ixe + --ixes). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
+    "ixe"  : String; "Path to a serialized `.ixe` env (with --shards). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
+    "shards" : String; "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`."
+    "shard" : Nat;   "0-based shard index K (with --env + --shards). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
 
   ARGS:
-    ...proofs : String; "32-byte hex address(es) of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. Omit when using --ixe + --ixes."
+    ...proofs : String; "32-byte hex address(es) of persisted `Ixon.Proof` wrappers in `~/.ix/store/`. Omit when using --env + --shards."
 ]
 
 end

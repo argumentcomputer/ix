@@ -53,6 +53,7 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "libc",
+ "memmap2",
  "multi-stark",
  "num-bigint",
  "rayon",

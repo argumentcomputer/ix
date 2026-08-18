@@ -3,9 +3,9 @@
   the CLI shape of `ix check`:
 
       ix prove Nat.add_comm                            # compiled-in Lean env
-      ix prove --ixe arena.ixe Foo.bar                 # from .ixe, named target
-      ix prove --ixe arena.ixe                         # iterate every named const
-      ix prove --ixe arena.ixe --claim <hex>           # against a persisted claim
+      ix prove --env arena.ixe Foo.bar                 # from .ixe, named target
+      ix prove --env arena.ixe                         # iterate every named const
+      ix prove --env arena.ixe --claim <hex>           # against a persisted claim
 
   Each invocation runs the same `verify_claim` Aiur witness that
   `ix check` does, then drives Aiur's `prove` over it and persists
@@ -140,7 +140,7 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let keepGoing := p.hasFlag "keep-going"
-  let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
+  let ixePath : Option String := (p.flag? "env").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
   let toplevel ← match IxVM.ixVM with
@@ -151,7 +151,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     | .ok c => pure c
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
   let runOne := proveOne aiurSystem compiled
-  match ixePath, (p.flag? "ixes").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
+  match ixePath, (p.flag? "shards").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
   | some ixe, some manifest, some k =>
     -- IxVM-native shard prove. Build the envHandle once + share it
     -- with the shard prove FFI.
@@ -189,10 +189,10 @@ def proveCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
-    "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
-    "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
-    "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."
-    "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
+    "env"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--env` env (single proof, skips per-const iteration)."
+    "shards" : String;  "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`. With --shard K: prove shard K. Without --shard: prove every shard in the partition."
+    "shard" : Nat;      "0-based shard index K (with --shards and --env): prove that one shard's CheckEnv claim."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."

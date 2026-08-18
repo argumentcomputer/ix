@@ -8,6 +8,7 @@ license.workspace = true
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }
+memmap2 = { workspace = true }
 multi-stark = { workspace = true }
 num-bigint = { workspace = true }
 rayon = { workspace = true }

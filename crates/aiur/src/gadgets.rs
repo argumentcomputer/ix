@@ -32,12 +32,8 @@ pub(crate) trait AiurGadget {
   fn preprocessed(&self) -> Option<RowMajorMatrix<G>>;
 
   /// Executes the gadget on concrete inputs, returning the resulting output values.
-  fn execute(
-    &self,
-    op: &Self::Op,
-    input: &[G],
-    record: &mut QueryRecord,
-  ) -> Vec<G>;
+  fn execute(&self, op: &Self::Op, input: &[G], record: &QueryRecord)
+  -> Vec<G>;
 
   /// Returns the lookups associated with this gadget.
   fn lookups(&self) -> Vec<Lookup<Expr<G>>>;

@@ -118,28 +118,30 @@ def readLimbChain (st : EvalState) : Nat → Nat →
     Except BytecodeError (List (Array G))
   | 0, _ => .error .unconstrainedBigUintDivModFailed
   | steps+1, ptr => do
-    let vs ← memLoad st 10 ptr
-    match vs[0]?, vs[9]? with
-    | some tag, some next =>
+    let vs ← memLoad st 11 ptr
+    -- Slot 0 is the store-site type id, skipped unverified (input and
+    -- advice lists carry different ids by design).
+    match vs[0]?, vs[1]?, vs[10]? with
+    | some _nodeTid, some tag, some next =>
       if tag == 1 then pure []
       else if tag == 0 then
-        let bytes := vs.extract 1 9
+        let bytes := vs.extract 2 10
         if bytes.size == 8 && bytes.all (·.val < 256) then do
           let rest ← readLimbChain st steps next.val.toNat
           pure (bytes :: rest)
         else .error .unconstrainedBigUintDivModFailed
       else .error .unconstrainedBigUintDivModFailed
-    | _, _ => .error .unconstrainedBigUintDivModFailed
+    | _, _, _ => .error .unconstrainedBigUintDivModFailed
 
 /-- Build a limb chain from head-first `limbs`, returning the head pointer.
 Same insertion order as the Rust builder (Nil first, then limbs in reverse),
 so freshly-created pointer indices agree; `memStore` content-dedups like
 `QueryMap` does. -/
-def buildLimbChain (st : EvalState) : List (Array G) → EvalState × Nat
-  | [] => memStore st (#[1] ++ Array.replicate 9 0)
+def buildLimbChain (st : EvalState) (tid : G) : List (Array G) → EvalState × Nat
+  | [] => memStore st (#[tid, 1] ++ Array.replicate 9 0)
   | limb :: rest =>
-    let (st', restPtr) := buildLimbChain st rest
-    memStore st' (#[0] ++ limb ++ #[.ofNat restPtr])
+    let (st', restPtr) := buildLimbChain st tid rest
+    memStore st' (#[tid, 0] ++ limb ++ #[.ofNat restPtr])
 
 def pushMap (st : EvalState) (g : G) : EvalState :=
   { st with map := st.map.push g }
@@ -357,18 +359,19 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     -- outside `[0, 256)` (exactly what the byte-chip lookup enforces).
     let x ← readIdx st a; let y ← readIdx st b
     if x.val < 256 && y.val < 256 then .ok st else .error .u8RangeCheckFailed
-  | .unconstrainedBigUintDivMod a b => do
+  | .unconstrainedBigUintDivMod tag a b => do
+    let tid ← readIdx st tag
     let aPtr ← readIdx st a
     let bPtr ← readIdx st b
-    -- Walk bound: the width-10 bucket size plus one (see `readLimbChain`).
-    let bound := (st.memory.getByKey 10 |>.map (·.size) |>.getD 0) + 1
+    -- Walk bound: the width-11 bucket size plus one (see `readLimbChain`).
+    let bound := (st.memory.getByKey 11 |>.map (·.size) |>.getD 0) + 1
     let aLimbs ← readLimbChain st bound aPtr.val.toNat
     let bLimbs ← readLimbChain st bound bPtr.val.toNat
     let aVal := limbsVal aLimbs
     let bVal := limbsVal bLimbs
     -- `Nat` division matches the runtime's `b = 0 → (0, a)` convention.
-    let (st1, qPtr) := buildLimbChain st (natToLimbsLE (aVal / bVal))
-    let (st2, rPtr) := buildLimbChain st1 (natToLimbsLE (aVal % bVal))
+    let (st1, qPtr) := buildLimbChain st tid (natToLimbsLE (aVal / bVal))
+    let (st2, rPtr) := buildLimbChain st1 tid (natToLimbsLE (aVal % bVal))
     pure (pushMap (pushMap st2 (.ofNat qPtr)) (.ofNat rPtr))
   | .unconstrainedGToBytes idx => do
     let g ← readIdx st idx

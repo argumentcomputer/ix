@@ -55,7 +55,7 @@ inductive Op
   `(q_ptr, r_ptr)` to newly-built `List<U64>` values such that `q*b + r = a`
   and `0 ≤ r < b` (when `b > 0`). No constraint relation emitted; caller
   must verify in constrained code. -/
-  | unconstrainedBigUintDivMod : ValIdx → ValIdx → Op
+  | unconstrainedBigUintDivMod : ValIdx → ValIdx → ValIdx → Op
   /-- Unconstrained hint: the 8 LE bytes of a field element's canonical `u64`
   value. 8 fresh auxiliary values, no constraint relation, no lookup; the
   caller must range-check, recompose-assert, and canonicality-assert.

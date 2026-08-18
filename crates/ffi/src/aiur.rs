@@ -1,6 +1,7 @@
 use multi_stark::p3_field::integers::QuotientMap;
 
 pub mod protocol;
+pub mod scan;
 pub mod toplevel;
 
 use aiur::G;

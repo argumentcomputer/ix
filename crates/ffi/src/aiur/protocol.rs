@@ -266,7 +266,7 @@ extern "C" fn rs_aiur_env_handle_from_ixe(
 /// `Aiur.EnvHandle.fromBytes`: decode a serialized env blob
 /// (`Ixon.serEnv` output) and harvest `anon_hints` post-decode.
 /// Used by the compiled-Lean-env path (`ix check NAME` without
-/// `--ixe`).
+/// `--env`).
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_env_handle_from_bytes(
   bytes: LeanByteArray<LeanBorrowed<'_>>,
@@ -462,8 +462,9 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   let env = &env_handle.get().env;
 
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
-    {
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_lazy(
+      env, &addr,
+    ) {
       Ok(t) => t,
       Err(e) => {
         return LeanExcept::error_string(&format!("witness build: {e}"));
@@ -515,7 +516,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   // shard entrypoint builds the the kernel witness (thin frontier + wrapper
   // augmentation).
   let (_claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_lazy(
       env, &owned,
     ) {
       Ok(t) => t,
@@ -566,8 +567,9 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   let env = &env_handle.get().env;
 
   let (claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
-    {
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_lazy(
+      env, &addr,
+    ) {
       Ok(t) => t,
       Err(e) => {
         return LeanExcept::error_string(&format!("witness build: {e}"));
@@ -605,7 +607,7 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   let env = &env_handle.get().env;
 
   let (claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness_lazy(
       env, &owned,
     ) {
       Ok(t) => t,
@@ -763,7 +765,7 @@ fn decode_io_buffer(
 ) -> IOBuffer {
   let data = decode_io_buffer_data(io_data_arr);
   let map = decode_io_buffer_map(io_map_arr);
-  IOBuffer { data, map }
+  IOBuffer { data, map, backing: None, shared: None }
 }
 
 /// Build a Lean `Array (G × Array G)` enumerating the per-channel

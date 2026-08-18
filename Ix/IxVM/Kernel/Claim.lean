@@ -365,25 +365,70 @@ def claim := ⟦
   --     recurse its block-level refs.
   -- Aiur memoizes per (addr, owned, asm, strict) — the list pointers
   -- are per-run constants, so shared subgraphs walk once.
-  -- Addr-set membership via RBTreeMap keyed on the interned store
-  -- pointer: content-addressed interning makes ptr equality ⇔ 32-byte
-  -- equality in BOTH directions (each content has exactly one store
-  -- slot), so a u32 ptr key is an exact membership test. O(log n) per
-  -- query vs the O(n) list scan — the frontier list is the biggest
-  -- per-visit cost on fat-frontier shards (e.g. 1977 asm leaves).
-  fn addr_set_build(leaves: List‹Addr›, acc: RBTreeMap‹G›) -> RBTreeMap‹G› {
-    match load(leaves) {
-      ListNode.Nil => acc,
-      ListNode.Cons(a, rest) =>
-        addr_set_build(rest, rbtree_map_insert(ptr_val(a), 1, acc)),
+  -- Addr-set membership via RBTreeMap keyed on address CONTENT (first
+  -- 4 bytes, big-endian — rbtree keys must stay u32-range for
+  -- u32_less_than), bucket value = the addrs sharing that prefix,
+  -- confirmed by ptr equality (content-addressed interning makes ptr
+  -- equality ⇔ 32-byte equality in BOTH directions, so the bucket scan
+  -- is exact; a crafted prefix collision only lengthens one bucket —
+  -- never a wrong answer). Keying on content rather than ptr_val keeps
+  -- tree SHAPE independent of store allocation order, which is
+  -- interleaving-dependent under the concurrent shared-record fill.
+  -- O(log n) per query vs the O(n) list scan — the frontier list is
+  -- the biggest per-visit cost on fat-frontier shards (e.g. 1977 asm
+  -- leaves).
+  fn addr_key(a: Addr) -> G {
+    let b = load(a);
+    to_field(b[0]) * 16777216 + to_field(b[1]) * 65536
+      + to_field(b[2]) * 256 + to_field(b[3])
+  }
+
+  fn addr_bucket_member(a: Addr, bucket: List‹Addr›) -> G {
+    match load(bucket) {
+      ListNode.Nil => 0,
+      ListNode.Cons(x, rest) =>
+        match ptr_val(x) - ptr_val(a) {
+          0 => 1,
+          _ => addr_bucket_member(a, rest),
+        },
     }
   }
 
-  fn addr_set_member(a: Addr, tree: RBTreeMap‹G›) -> G {
-    rbtree_map_lookup_or_default(ptr_val(a), tree, 0)
+  fn addr_set_build(leaves: List‹Addr›, acc: RBTreeMap‹List‹Addr››) -> RBTreeMap‹List‹Addr›› {
+    match load(leaves) {
+      ListNode.Nil => acc,
+      ListNode.Cons(a, rest) =>
+        let k = addr_key(a);
+        let bucket = rbtree_map_lookup_or_default(k, acc, store(ListNode.Nil));
+        addr_set_build(rest, rbtree_map_insert(k, store(ListNode.Cons(a, bucket)), acc)),
+    }
   }
 
-  fn env_walk(addr: Addr, owned: RBTreeMap‹G›, asm: RBTreeMap‹G›,
+  fn addr_set_member(a: Addr, tree: RBTreeMap‹List‹Addr››) -> G {
+    addr_bucket_member(a,
+      rbtree_map_lookup_or_default(addr_key(a), tree, store(ListNode.Nil)))
+  }
+
+  -- The batch-independent per-node action of the walk: check `addr`
+  -- through the gauntlet its shape demands. Keyed by `addr` ALONE —
+  -- this is the memoization boundary that lets a claim's walk hit
+  -- per-node work already executed by other claims in the same record
+  -- (the `verify_block` warmup entries in particular). The set-keyed
+  -- recursion (assumption cutoff, strict ownership, Prj→block descent)
+  -- stays in `env_walk`.
+  fn check_node(addr: Addr) {
+    let c = load_verified_constant(addr);
+    match c {
+      Constant.Mk(info, _, _, _) =>
+        match info {
+          ConstantInfo.Muts(members) =>
+            check_muts_all(addr, members, members, 0),
+          _ => run_check(addr),
+        },
+    }
+  }
+
+  fn env_walk(addr: Addr, owned: RBTreeMap‹List‹Addr››, asm: RBTreeMap‹List‹Addr››,
                   strict: G) {
     -- Every address reaching here is a constant: the caller admits only
     -- indices the referring constant's own Exprs use as constants, and a
@@ -403,37 +448,32 @@ def claim := ⟦
             (),
           _ => (),
         };
+        check_node(addr);
         let c = load_verified_constant(addr);
         match c {
           Constant.Mk(info, _, refs, _) =>
             match info {
-              ConstantInfo.Muts(members) =>
-                check_muts_all(addr, members, members, 0),
               ConstantInfo.DPrj(dprj) =>
                 match dprj {
                   DefinitionProj.Mk(_, block_addr) =>
-                    run_check(addr);
                     env_walk(block_addr, owned, asm, strict),
                 },
               ConstantInfo.IPrj(iprj) =>
                 match iprj {
                   InductiveProj.Mk(_, block_addr) =>
-                    run_check(addr);
                     env_walk(block_addr, owned, asm, strict),
                 },
               ConstantInfo.CPrj(cprj) =>
                 match cprj {
                   ConstructorProj.Mk(_, _, block_addr) =>
-                    run_check(addr);
                     env_walk(block_addr, owned, asm, strict),
                 },
               ConstantInfo.RPrj(rprj) =>
                 match rprj {
                   RecursorProj.Mk(_, block_addr) =>
-                    run_check(addr);
                     env_walk(block_addr, owned, asm, strict),
                 },
-              _ => run_check(addr),
+              _ => (),
             };
             env_walk_refs(refs, const_idxs_of(c), 0, owned, asm, strict),
         },
@@ -441,8 +481,8 @@ def claim := ⟦
   }
 
   fn env_walk_refs(refs: List‹Addr›, consts: List‹G›, i: G,
-                       owned: RBTreeMap‹G›,
-                       asm: RBTreeMap‹G›, strict: G) {
+                       owned: RBTreeMap‹List‹Addr››,
+                       asm: RBTreeMap‹List‹Addr››, strict: G) {
     match load(refs) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>
@@ -454,8 +494,8 @@ def claim := ⟦
     }
   }
 
-  fn env_walk_leaves(leaves: List‹Addr›, owned: RBTreeMap‹G›,
-                         asm: RBTreeMap‹G›) {
+  fn env_walk_leaves(leaves: List‹Addr›, owned: RBTreeMap‹List‹Addr››,
+                         asm: RBTreeMap‹List‹Addr››) {
     match load(leaves) {
       ListNode.Nil => (),
       ListNode.Cons(a, rest) =>

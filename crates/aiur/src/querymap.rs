@@ -1,11 +1,14 @@
-use multi_stark::p3_field::PrimeField64;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
+
+use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use crate::G;
 
 /// Immutable view of one query entry.
 #[derive(Clone, Copy)]
 pub struct QueryRef<'a> {
-  pub(crate) output: &'a [G],
+  pub output: &'a [G],
   pub multiplicity: G,
 }
 
@@ -13,16 +16,21 @@ pub struct QueryRef<'a> {
 /// only the multiplicity is bumped on memo hits.
 pub struct QueryRefMut<'a> {
   pub output: &'a [G],
-  pub multiplicity: &'a mut G,
+  pub multiplicity: &'a AtomicU64,
 }
 
+/// Key hash, with the LOW BIT FORCED to 1: the stored hash word doubles
+/// as the entry's COMPLETION MARKER (zero = mmap-fresh, unwritten), so
+/// no legitimate hash may be 0. Costs one bit of hash quality; every
+/// consumer (stripes, tables, probe-cache tags) sees the same marked
+/// value, so bucket selection stays consistent across table growth.
 fn hash_g_slice(key: &[G]) -> u64 {
   use std::hash::Hasher;
   let mut h = rustc_hash::FxHasher::default();
   for g in key {
     h.write_u64(g.as_canonical_u64());
   }
-  h.finish()
+  h.finish() | 1
 }
 
 /// Entries per storage segment (2^20). Segments are fixed-size, so growth
@@ -37,201 +45,281 @@ const SEG_BITS: usize = 20;
 const SEG_ENTRIES: usize = 1 << SEG_BITS;
 const SEG_MASK: usize = SEG_ENTRIES - 1;
 
-/// A fixed-capacity append-only buffer mmap'd straight from the kernel,
-/// with `MADV_HUGEPAGE` applied BEFORE any page is touched. At billions of
-/// entries the query maps are walked by random probes; with 4K pages nearly
-/// every probe pays a 4-level page walk on top of the DRAM miss, and 2M
-/// pages cut TLB reach pressure by 512x. Going through the global allocator
-/// doesn't work here: mimalloc (the process allocator) commits its segments
-/// itself, so pages are already faulted at 4K before any post-hoc madvise.
-/// Capacity is virtual reservation only — physical pages are committed on
-/// first touch, so idle circuits stay tiny. Off Linux this degrades to a
-/// plain `Vec`.
-struct HugeVec<T: Copy> {
-  #[cfg(target_os = "linux")]
-  ptr: *mut T,
-  #[cfg(target_os = "linux")]
-  cap: usize,
-  #[cfg(target_os = "linux")]
-  len: usize,
-  #[cfg(not(target_os = "linux"))]
-  inner: Vec<T>,
+/// Segment-slot count per arena: bounds entries at 2^32, matching the
+/// `u32` entry indices the hash tables store. Slots are `AtomicPtr`s so
+/// readers walk arenas lock-free while a writer publishes a new segment.
+const MAX_SEGS: usize = 1 << (32 - SEG_BITS);
+
+/// Hash-table stripes per map: probes and inserts lock only their
+/// stripe, so concurrent executors sharing one record contend only on
+/// same-stripe keys. The stripe id comes from a multiplicative scramble
+/// of the hash — hashbrown consumes the LOW bits for bucket selection
+/// and the TOP 7 for its control bytes, so a stripe keyed on any fixed
+/// bit range would leave those bits constant within its table and
+/// collapse probe filtering.
+const STRIPES: usize = 512;
+
+/// Pads a field to TWO cachelines (128 B): the map's `len` is
+/// fetch_add'd by EVERY insert; unpadded it shares cachelines with the read-hottest fields
+/// there are — the arena pointers and strides every probe on every
+/// thread dereferences — so each insert invalidated the map's own read
+/// path box-wide (and the neighboring map's in the record's Vec). 128
+/// rather than 64 because x86_64's adjacent-line prefetcher pulls line
+/// PAIRS, so 64 B padding still lets a store drag the neighboring line
+/// out of other cores' caches (crossbeam-utils does the same).
+#[repr(align(128))]
+struct CachePadded<T>(T);
+
+/// Per-thread positive probe cache: direct-mapped `tag -> entry index`,
+/// where the tag mixes the key hash with the map's address so one cache
+/// serves every map. The shared hash tables' bucket arrays are
+/// perpetually write-shared (uniform-hash inserts dirty the lines every
+/// reader traverses), so repeat hits pay coherence misses on the walk;
+/// a cache hit skips the bucket walk AND the stripe lock entirely,
+/// touching only the immutable entry arena. Correctness needs no
+/// pending check and survives map drops: the cache holds no pointers,
+/// only completed entries are inserted, completion is permanent, and
+/// every use re-validates `idx < len` plus a full key compare against
+/// the live map — within a map, dedup makes key -> index unique, so a
+/// validated index IS the entry.
+const PROBE_CACHE_BITS: u32 = 21;
+const PROBE_CACHE_SLOTS: usize = 1 << PROBE_CACHE_BITS;
+
+#[derive(Clone, Copy)]
+struct ProbeCacheSlot {
+  tag: u64,
+  idx: u32,
 }
 
-#[cfg(target_os = "linux")]
-unsafe impl<T: Copy + Send> Send for HugeVec<T> {}
-#[cfg(target_os = "linux")]
-unsafe impl<T: Copy + Sync> Sync for HugeVec<T> {}
+thread_local! {
+  static PROBE_CACHE: std::cell::RefCell<Option<Box<[ProbeCacheSlot]>>> =
+    const { std::cell::RefCell::new(None) };
+}
 
-impl<T: Copy> HugeVec<T> {
-  #[cfg(target_os = "linux")]
-  fn with_capacity(cap: usize) -> Self {
-    assert!(cap > 0, "HugeVec capacity must be positive");
-    let bytes = cap * size_of::<T>();
-    let ptr = unsafe {
-      let p = libc::mmap(
-        std::ptr::null_mut(),
-        bytes,
-        libc::PROT_READ | libc::PROT_WRITE,
-        libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
-        -1,
-        0,
-      );
-      assert!(p != libc::MAP_FAILED, "HugeVec mmap failed");
-      // Advisory only: failure (old kernel, THP disabled) is harmless.
-      libc::madvise(p, bytes, libc::MADV_HUGEPAGE);
-      p.cast::<T>()
-    };
-    Self { ptr, cap, len: 0 }
+#[inline]
+fn probe_cache_slot_of(tag: u64) -> usize {
+  usize::try_from(tag >> (64 - PROBE_CACHE_BITS)).expect("cache bits")
+}
+
+#[inline]
+fn probe_cache_get(tag: u64) -> Option<usize> {
+  PROBE_CACHE.with(|c| {
+    let c = c.borrow();
+    let cache = c.as_ref()?;
+    let slot = cache[probe_cache_slot_of(tag)];
+    (slot.tag == tag && slot.idx != u32::MAX).then_some(slot.idx as usize)
+  })
+}
+
+#[inline]
+fn probe_cache_put(tag: u64, idx: usize) {
+  let Ok(idx) = u32::try_from(idx) else {
+    return;
+  };
+  PROBE_CACHE.with(|c| {
+    let mut c = c.borrow_mut();
+    let cache = c.get_or_insert_with(|| {
+      vec![ProbeCacheSlot { tag: 0, idx: u32::MAX }; PROBE_CACHE_SLOTS]
+        .into_boxed_slice()
+    });
+    cache[probe_cache_slot_of(tag)] = ProbeCacheSlot { tag, idx };
+  });
+}
+
+#[inline]
+fn stripe_of(hash: u64) -> usize {
+  usize::try_from(
+    hash.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> (64 - STRIPES.trailing_zeros()),
+  )
+  .expect("stripe bits")
+}
+
+/// Bit-preserving G <-> u64 views. `G` is `repr(transparent)` over
+/// `u64` (compile-checked below), and the arenas store G's EXACT bits:
+/// round-tripping through these helpers is the identity, so lazily
+/// reduced field representations survive storage unchanged — the same
+/// contract the old raw-pointer memcpy provided.
+const _: () = assert!(
+  size_of::<G>() == 8 && align_of::<G>() == 8,
+  "arena cells assume 8-byte G"
+);
+
+#[inline]
+fn g_bits(g: G) -> u64 {
+  // SAFETY: repr(transparent) over u64, asserted above.
+  unsafe { std::mem::transmute::<G, u64>(g) }
+}
+
+#[inline]
+fn g_from_bits(b: u64) -> G {
+  // SAFETY: repr(transparent) over u64; every bit pattern the arenas
+  // hold was produced by `g_bits` of a live G.
+  unsafe { std::mem::transmute::<u64, G>(b) }
+}
+
+/// One anonymous mapping of u64 cells — the only mmap in the record,
+/// and deliberately PLAIN: default 4 KiB paging, no hugepage advice,
+/// no populate, no collapse. Measured (2026-08-16, same-hour A/B on
+/// init/initstd/lean): 2 MiB backing saved only ~8-9% user time at
+/// every scale — the per-thread probe cache absorbs most of the TLB
+/// pressure the original design theorized about — while every scheme
+/// for OBTAINING 2 MiB pages cost more than that: fault-time THP
+/// degrades ~1.5x as the box fragments (drift), populate+collapse at
+/// segment creation serialized workers behind the OnceLock for ~2x
+/// wall, and a reserved hugetlb pool taxes prover RAM and needs boot
+/// configuration. Plain 4 KiB paging is within ~10% of the best huge
+/// number ever recorded here, identical on every box, and immune to
+/// machine aging by having nothing to age.
+///
+/// All access goes through two views: [`Self::cells`] (atomic, for
+/// anything ever mutated or not yet published) and [`Self::frozen`]
+/// (plain `&[G]`, ONLY for publish-frozen cells — the write-before-
+/// publish discipline means a published key/output cell is never
+/// stored again, so the plain view cannot race).
+pub(crate) struct Segment {
+  map: memmap2::MmapMut,
+  cells: usize,
+}
+
+impl Segment {
+  pub(crate) fn new(cells: usize) -> Self {
+    assert!(cells > 0, "segment must be non-empty");
+    let map = memmap2::MmapOptions::new()
+      .len(cells * 8)
+      .map_anon()
+      .expect("arena mmap failed");
+    Self { map, cells }
   }
 
-  #[cfg(not(target_os = "linux"))]
-  fn with_capacity(cap: usize) -> Self {
-    Self { inner: Vec::with_capacity(cap) }
-  }
-
-  #[cfg(target_os = "linux")]
+  /// The cells as atomics — the sole mutable view. SAFETY: the mapping
+  /// is owned by `self` and lives for the borrow, is page-aligned, and
+  /// `AtomicU64` has `u64`'s size/alignment; every mutation of these
+  /// bytes goes through this view.
   #[inline]
-  fn extend_from_slice(&mut self, vals: &[T]) {
-    debug_assert!(self.len + vals.len() <= self.cap);
+  pub(crate) fn cells(&self) -> &[AtomicU64] {
     unsafe {
-      std::ptr::copy_nonoverlapping(
-        vals.as_ptr(),
-        self.ptr.add(self.len),
-        vals.len(),
-      );
+      std::slice::from_raw_parts(self.map.as_ptr().cast(), self.cells)
     }
-    self.len += vals.len();
   }
 
-  #[cfg(not(target_os = "linux"))]
+  /// Plain `&[G]` view of PUBLISH-FROZEN cells. SAFETY: sound only for
+  /// ranges the caller obtained through publication (a table hit, a
+  /// completion marker, or seal-time quiescence) — frozen cells are
+  /// never stored again, so no write can race this view, and disjoint
+  /// cells of the same mapping may be atomically written concurrently.
   #[inline]
-  fn extend_from_slice(&mut self, vals: &[T]) {
-    self.inner.extend_from_slice(vals);
-  }
-
-  #[cfg(target_os = "linux")]
-  #[inline]
-  fn slice(&self, start: usize, len: usize) -> &[T] {
-    debug_assert!(start + len <= self.len);
-    unsafe { std::slice::from_raw_parts(self.ptr.add(start), len) }
-  }
-
-  #[cfg(not(target_os = "linux"))]
-  #[inline]
-  fn slice(&self, start: usize, len: usize) -> &[T] {
-    &self.inner[start..start + len]
-  }
-
-  #[cfg(target_os = "linux")]
-  #[inline]
-  fn slice_mut(&mut self, start: usize, len: usize) -> &mut [T] {
-    debug_assert!(start + len <= self.len);
-    unsafe { std::slice::from_raw_parts_mut(self.ptr.add(start), len) }
-  }
-
-  #[cfg(not(target_os = "linux"))]
-  #[inline]
-  fn slice_mut(&mut self, start: usize, len: usize) -> &mut [T] {
-    &mut self.inner[start..start + len]
-  }
-}
-
-#[cfg(target_os = "linux")]
-impl<T: Copy> Drop for HugeVec<T> {
-  fn drop(&mut self) {
+  pub(crate) fn frozen(&self, start: usize, len: usize) -> &[G] {
+    debug_assert!(start + len <= self.cells);
     unsafe {
-      libc::munmap(self.ptr.cast(), self.cap * size_of::<T>());
+      std::slice::from_raw_parts(self.map.as_ptr().cast::<G>().add(start), len)
+    }
+  }
+
+  /// Store `vals`' bits at `start` (Relaxed: publication ordering is
+  /// the caller's marker/lock, not these stores).
+  pub(crate) fn write_g(&self, start: usize, vals: &[G]) {
+    let cells = &self.cells()[start..start + vals.len()];
+    for (c, v) in cells.iter().zip(vals) {
+      c.store(g_bits(*v), Ordering::Relaxed);
     }
   }
 }
 
-/// Append-only segmented arena of fixed-stride `G` entries. Entry `i` lives
-/// at segment `i >> SEG_BITS`, offset `(i & SEG_MASK) * stride` — no entry
-/// ever straddles a segment.
-struct SegStore {
-  stride: usize,
-  segs: Vec<HugeVec<G>>,
-  entries: usize,
+/// Append-only segmented arena of fixed-stride entries. Entry `i` lives
+/// at segment `i >> SEG_BITS`, offset `(i & SEG_MASK) * stride` — no
+/// entry ever straddles a segment. Slots are `OnceLock`s: readers reach
+/// published segments lock-free, and racing first-touch writers are
+/// serialized by `get_or_init`, so exactly one mapping is ever created
+/// per slot (the old CAS-and-free-the-loser dance is gone).
+struct SegArena {
+  segs: Box<[OnceLock<Segment>]>,
 }
 
-impl SegStore {
-  fn new(stride: usize) -> Self {
-    Self { stride, segs: Vec::new(), entries: 0 }
+impl SegArena {
+  fn new() -> Self {
+    let mut v = Vec::with_capacity(MAX_SEGS);
+    v.resize_with(MAX_SEGS, OnceLock::new);
+    Self { segs: v.into_boxed_slice() }
   }
 
   #[inline]
-  fn at(&self, i: usize) -> &[G] {
-    if self.stride == 0 {
+  fn seg(&self, s: usize) -> &Segment {
+    self.segs[s].get().expect("read of unpublished segment")
+  }
+
+  fn ensure_seg(&self, s: usize, stride: usize) -> &Segment {
+    self.segs[s].get_or_init(|| Segment::new(SEG_ENTRIES * stride))
+  }
+
+  /// Entry `i`'s publish-frozen G view (see [`Segment::frozen`]).
+  #[inline]
+  fn at(&self, i: usize, stride: usize) -> &[G] {
+    if stride == 0 {
       return &[];
     }
-    let base = (i & SEG_MASK) * self.stride;
-    self.segs[i >> SEG_BITS].slice(base, self.stride)
+    self.seg(i >> SEG_BITS).frozen((i & SEG_MASK) * stride, stride)
   }
 
-  #[inline]
-  fn at_mut(&mut self, i: usize) -> &mut [G] {
-    if self.stride == 0 {
-      return &mut [];
+  /// Write entry `i`. Caller owns the reserved slot (index reserved,
+  /// not yet published).
+  fn write(&self, i: usize, stride: usize, vals: &[G]) {
+    debug_assert_eq!(vals.len(), stride);
+    if stride == 0 {
+      return;
     }
-    let base = (i & SEG_MASK) * self.stride;
-    self.segs[i >> SEG_BITS].slice_mut(base, self.stride)
+    self
+      .ensure_seg(i >> SEG_BITS, stride)
+      .write_g((i & SEG_MASK) * stride, vals);
   }
 
-  #[inline]
-  fn push(&mut self, vals: &[G]) {
-    debug_assert_eq!(vals.len(), self.stride);
-    if self.stride != 0 {
-      let seg = self.entries >> SEG_BITS;
-      if seg == self.segs.len() {
-        self.segs.push(HugeVec::with_capacity(SEG_ENTRIES * self.stride));
-      }
-      self.segs[seg].extend_from_slice(vals);
+  /// Write a sub-range of entry `i` at `off`. Sound for the slot's
+  /// owner (reservation-then-publish, as before). The segment is
+  /// ensured even for an EMPTY write: publishing an index promises
+  /// readers a dereferenceable entry slice.
+  fn write_at(&self, i: usize, stride: usize, off: usize, vals: &[G]) {
+    debug_assert!(off + vals.len() <= stride);
+    if stride == 0 {
+      return;
     }
-    self.entries += 1;
+    self
+      .ensure_seg(i >> SEG_BITS, stride)
+      .write_g((i & SEG_MASK) * stride + off, vals);
   }
 
-  fn retained_elems(&self) -> usize {
-    self.entries * self.stride
+  /// Atomic cell `off` of entry `i` — for the mutated words
+  /// (multiplicities) and the completion marker.
+  #[inline]
+  fn cell(&self, i: usize, stride: usize, off: usize) -> &AtomicU64 {
+    &self.seg(i >> SEG_BITS).cells()[(i & SEG_MASK) * stride + off]
+  }
+
+  /// [`Self::cell`] that creates the segment first (marker stores land
+  /// before publication, possibly on a fresh segment).
+  #[inline]
+  fn cell_ensured(&self, i: usize, stride: usize) -> &AtomicU64 {
+    &self.ensure_seg(i >> SEG_BITS, stride).cells()[(i & SEG_MASK) * stride]
+  }
+
+  /// Stride-1 cell `i` if its segment exists yet; `None` means no
+  /// entry at `i` can be complete. `i` may be arbitrary attacker-ish
+  /// input (an unbound memory pointer is any field element) — bounds
+  /// are checked before indexing.
+  #[inline]
+  fn try_cell(&self, i: usize) -> Option<&AtomicU64> {
+    if i >> SEG_BITS >= MAX_SEGS {
+      return None;
+    }
+    self.segs[i >> SEG_BITS].get().map(|s| &s.cells()[i & SEG_MASK])
   }
 }
 
-/// Segmented store of per-entry key hashes. Kept so hash-table growth can
-/// re-insert from stored hashes instead of re-hashing every key from the
-/// keys arena — table doubling on a multi-GB map used to be a full
-/// sequential re-hash pass over the arena, log-many times.
-struct SegHashes {
-  segs: Vec<HugeVec<u64>>,
-  entries: usize,
-}
-
-impl SegHashes {
-  fn new() -> Self {
-    Self { segs: Vec::new(), entries: 0 }
-  }
-
-  #[inline]
-  fn at(&self, i: usize) -> u64 {
-    self.segs[i >> SEG_BITS].slice(i & SEG_MASK, 1)[0]
-  }
-
-  #[inline]
-  fn push(&mut self, h: u64) {
-    let seg = self.entries >> SEG_BITS;
-    if seg == self.segs.len() {
-      self.segs.push(HugeVec::with_capacity(SEG_ENTRIES));
-    }
-    self.segs[seg].extend_from_slice(&[h]);
-    self.entries += 1;
-  }
-}
-
-/// Append-only query store with a hash index.
+/// Append-only query store with a striped hash index, shareable across
+/// executor threads.
 ///
 /// Functionally the insertion-ordered map `args -> (output, multiplicity)`
 /// it replaces (`FxIndexMap<Vec<G>, QueryResult>`) — but every circuit has
 /// a FIXED key arity and output width, so keys and outputs live in flat
-/// segmented `G` arenas addressed by entry index, and the hash table holds
+/// segmented `G` arenas addressed by entry index, and the hash tables hold
 /// only `u32` indices. This cuts per-entry overhead from ~130 B (two heap
 /// `Vec`s + IndexMap bucket + allocator metadata) to the raw field
 /// elements plus ~21 B of index + stored hash. The record IS the proof
@@ -239,103 +327,425 @@ impl SegHashes {
 /// kernel-heavy executions it is the dominant RAM consumer (billions of
 /// entries). Segmented storage keeps growth copy-free (no doubling
 /// memmove, no transient 2x RSS), stored hashes make table growth a cheap
-/// sequential pass, and segments are hugepage-advised (see `advise_huge`).
+/// sequential pass, and segments are hugepage-advised.
 ///
 /// Entry index == insertion order; memory circuits use it as the pointer
 /// value, mirroring the old `IndexMap::get_index_of` semantics.
+///
+/// # Concurrency
+///
+/// The map is safely shareable (`&self` ops) between executor threads
+/// filling one record:
+///
+/// - Probes lock only their key's stripe; the whole miss path (probe +
+///   arena append + table publish) holds the stripe lock, so two threads
+///   racing the same key resolve into one insert and one hit.
+/// - Entry indices are reserved by a lock-free `fetch_add` on `len`;
+///   slot data is written in parallel (one owner per slot) and the
+///   entry's stored hash word — forced nonzero — is its COMPLETION
+///   MARKER, Release-stored last. `i < len` alone therefore proves
+///   only reservation; completeness is the marker, and raw-index
+///   readers (memory loads) check it. Table- and cache-mediated
+///   readers only ever see marked entries.
+/// - Multiplicity bumps are relaxed atomic adds on the `G` slots (a
+///   canonical multiplicity stays far below the field modulus, so `u64`
+///   addition IS field addition here).
+/// - Readers reach entries only through published state (a table hit
+///   under the stripe lock, or an index below the `Acquire`-loaded
+///   `len`), which orders them after the entry's arena writes.
+///
+/// The unique-entry SET a concurrent execution produces is
+/// interleaving-independent (memoization is confluent); multiplicities
+/// are exact only under exclusive (`&mut`) use — the parallel scan does
+/// not read them.
 pub struct QueryMap {
-  /// Output width; inferred on first insert (not statically available in
-  /// `FunctionLayout`).
-  out_stride_set: bool,
-  keys: SegStore,
-  outs: SegStore,
-  mults: SegStore,
-  hashes: SegHashes,
-  table: hashbrown::HashTable<u32>,
+  key_stride: usize,
+  out_stride: usize,
+  /// Per-entry `[key | outs]`, contiguous. The two reads a hit needs
+  /// (key compare, output copy) land on adjacent lines instead of two
+  /// scattered arenas — at billions of random probes the extra
+  /// dependent DRAM fetch per hit was measurable. Multiplicities stay
+  /// in their own arena ON PURPOSE: they are the only mutated word, and
+  /// isolating them keeps bump RMWs from dirtying the immutable entry
+  /// lines other threads have cached.
+  entries: SegArena,
+  mults: SegArena,
+  /// Per-entry key hashes, kept so hash-table growth re-inserts from
+  /// stored hashes instead of re-hashing keys from the arena — table
+  /// doubling on a multi-GB map used to be a full sequential re-hash
+  /// pass, log-many times.
+  hashes: SegArena,
+  /// Unique-entry count BY RESERVATION: fetch_add'd at insert, before
+  /// the slot's data lands. Entries below `len` are complete except
+  /// the few whose owners are mid-write; completeness of entry `i` is
+  /// its nonzero hash marker, never `i < len`. At quiescence (seal —
+  /// workers drained) reservation and completion coincide.
+  len: CachePadded<AtomicUsize>,
+  stripes: Box<[Mutex<hashbrown::HashTable<u32>>]>,
+  /// Never-reused construction salt for probe-cache tags (see
+  /// [`Self::cache_tag`]).
+  salt: u64,
 }
 
+/// Monotone source for per-map construction salts. Map ADDRESSES recur
+/// across record replacements (drop/new cycles land in the same
+/// allocator size classes), while the thread-local probe cache outlives
+/// records on long-lived threads — an address-keyed tag could validate a
+/// stale index against a NEW map's PENDING entry (its key is written at
+/// reserve, its output is not) and read an unwritten output. A salt that
+/// is never reused makes cross-record tag aliasing structurally
+/// impossible.
+static MAP_SALT: AtomicU64 = AtomicU64::new(1);
+
 impl QueryMap {
-  pub fn new(key_stride: usize) -> Self {
+  pub fn new(key_stride: usize, out_stride: usize) -> Self {
+    let mut stripes = Vec::with_capacity(STRIPES);
+    stripes.resize_with(STRIPES, || Mutex::new(hashbrown::HashTable::new()));
     Self {
-      out_stride_set: false,
-      keys: SegStore::new(key_stride),
-      outs: SegStore::new(0),
-      mults: SegStore::new(1),
-      hashes: SegHashes::new(),
-      table: hashbrown::HashTable::new(),
+      key_stride,
+      out_stride,
+      entries: SegArena::new(),
+      mults: SegArena::new(),
+      hashes: SegArena::new(),
+      len: CachePadded(AtomicUsize::new(0)),
+      stripes: stripes.into_boxed_slice(),
+      salt: MAP_SALT.fetch_add(1, Ordering::Relaxed),
     }
+  }
+
+  /// Overwrite entry `i`'s multiplicity — the seal-time application of
+  /// DERIVED counts (`trace::derive_multiplicities`). The concurrent
+  /// set path never writes multiplicities during execution.
+  pub(crate) fn set_mult(&self, i: usize, v: G) {
+    self.mult_atomic(i).store(v.as_canonical_u64(), Ordering::Relaxed);
   }
 
   #[inline]
   pub fn len(&self) -> usize {
-    self.mults.entries
+    self.len.0.load(Ordering::Acquire)
   }
 
   #[inline]
   pub fn is_empty(&self) -> bool {
-    self.mults.entries == 0
+    self.len() == 0
+  }
+
+  #[inline]
+  fn out_stride(&self) -> usize {
+    self.out_stride
+  }
+
+  #[inline]
+  fn entry_stride(&self) -> usize {
+    self.key_stride + self.out_stride
+  }
+
+  #[inline]
+  fn key_at(&self, i: usize) -> &[G] {
+    &self.entries.at(i, self.entry_stride())[..self.key_stride]
+  }
+
+  #[inline]
+  fn outs_at(&self, i: usize) -> &[G] {
+    &self.entries.at(i, self.entry_stride())[self.key_stride..]
+  }
+
+  /// Mix the key hash with this map's never-reused construction salt:
+  /// one thread-local cache serves every map, the mix keeps different
+  /// maps' identical hashes from aliasing, and the salt (unlike the map
+  /// ADDRESS it replaced) cannot recur across record replacements — see
+  /// [`MAP_SALT`] for why address-keyed tags were a live corruption
+  /// window.
+  #[inline]
+  fn cache_tag(&self, hash: u64) -> u64 {
+    self.salt.wrapping_mul(0x9E37_79B9_7F4A_7C15).rotate_left(32) ^ hash
+  }
+
+  /// Atomic view of entry `i`'s multiplicity slot. `G` is
+  /// `repr(transparent)` over `u64` and multiplicities are canonical,
+  /// so relaxed `u64` adds implement field addition exactly. The
+  /// pointer is derived through the arena's raw allocation pointer
+  /// (`at_ptr`), NOT through a shared reference — writes through a
+  /// `&`-derived pointer would carry read-only provenance.
+  #[inline]
+  fn mult_atomic(&self, i: usize) -> &AtomicU64 {
+    self.mults.cell(i, 1, 0)
   }
 
   /// Total retained field elements (keys + outputs); used by the
   /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
   pub fn retained_elems(&self) -> usize {
-    self.keys.retained_elems() + self.outs.retained_elems()
+    self.len() * (self.key_stride + self.out_stride())
+  }
+
+  /// Visit the stored 64-bit hash of every unique entry, in insertion
+  /// order. The hashes are already computed and resident (they back
+  /// table growth), so this is a pure sequential read — the scanner's
+  /// union-pricing sketches are built from these without rehashing.
+  pub fn for_each_hash(&self, mut f: impl FnMut(u64)) {
+    for i in 0..self.len() {
+      f(self.hash_at(i));
+    }
+  }
+
+  /// Entry `i`'s stored hash word. Relaxed: callers reach `i` through
+  /// publication (table membership or seal-time quiescence), which
+  /// already ordered the marker store.
+  #[inline]
+  fn hash_at(&self, i: usize) -> u64 {
+    self.hashes.cell(i, 1, 0).load(Ordering::Relaxed)
+  }
+
+  /// Probe under the key's stripe lock; `Some(index)` on hit.
+  fn probe_index(&self, key: &[G]) -> Option<usize> {
+    debug_assert_eq!(key.len(), self.key_stride);
+    let hash = hash_g_slice(key);
+    let table = self.stripes[stripe_of(hash)].lock().unwrap();
+    table.find(hash, |&i| self.key_at(i as usize) == key).map(|&i| i as usize)
   }
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
-    debug_assert_eq!(key.len(), self.keys.stride);
-    let hash = hash_g_slice(key);
-    self
-      .table
-      .find(hash, |&i| self.keys.at(i as usize) == key)
-      .map(|&i| i as usize)
+    self.probe_index(key)
   }
 
   pub fn get(&self, key: &[G]) -> Option<QueryRef<'_>> {
-    let i = self.get_index_of(key)?;
+    let i = self.probe_index(key)?;
     Some(QueryRef {
-      output: self.outs.at(i),
-      multiplicity: self.mults.at(i)[0],
+      output: self.outs_at(i),
+      multiplicity: g_from_bits(self.mult_atomic(i).load(Ordering::Relaxed)),
     })
   }
 
   pub fn get_mut(&mut self, key: &[G]) -> Option<QueryRefMut<'_>> {
-    let i = self.get_index_of(key)?;
+    let i = self.probe_index(key)?;
     Some(QueryRefMut {
-      output: self.outs.at(i),
-      multiplicity: &mut self.mults.at_mut(i)[0],
+      output: self.outs_at(i),
+      multiplicity: self.mult_atomic(i),
     })
   }
 
-  /// Append a new entry. The key must not already be present: call sites
-  /// only insert on a confirmed miss, and a same-key re-entrant call
-  /// would loop forever before reaching its own insert.
-  pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
-    debug_assert_eq!(key.len(), self.keys.stride);
-    debug_assert!(self.get_index_of(key).is_none());
-    if !self.out_stride_set {
-      self.outs.stride = output.len();
-      self.out_stride_set = true;
-    } else {
-      debug_assert_eq!(output.len(), self.outs.stride);
-    }
+  /// Concurrent memo probe: a hit returns the cached output (bumping
+  /// the runtime multiplicity only when `bump` — the single-threaded
+  /// reference interpreter's accounting; the concurrent set path always
+  /// passes `false`); a miss returns `None` and the caller executes the
+  /// body and inserts the result. There is NO reservation and NO
+  /// waiting: concurrent same-key racers both execute and dedup at
+  /// insert (first publish wins), which is sound because the witness's
+  /// multiplicities are DERIVED from the unique-query set at seal
+  /// (`trace::derive_multiplicities`), never accumulated from
+  /// execution — duplicate speculative execution costs wall clock only
+  /// and cannot unbalance anything.
+  pub fn probe_bump(&self, key: &[G], bump: bool) -> Option<&[G]> {
+    debug_assert_eq!(key.len(), self.key_stride);
     let hash = hash_g_slice(key);
-    let i = u32::try_from(self.mults.entries).expect("query map overflow");
-    self.keys.push(key);
-    self.outs.push(output);
-    self.mults.push(&[multiplicity]);
-    self.hashes.push(hash);
-    let hashes = &self.hashes;
-    self.table.insert_unique(hash, i, |&j| hashes.at(j as usize));
+    let tag = self.cache_tag(hash);
+    if let Some(i) = probe_cache_get(tag)
+      && i < self.len()
+      && self.key_at(i) == key
+    {
+      if bump {
+        self.mult_atomic(i).fetch_add(1, Ordering::Relaxed);
+      }
+      return Some(self.outs_at(i));
+    }
+    let i = {
+      let table = self.stripes[stripe_of(hash)].lock().unwrap();
+      match table.find(hash, |&i| self.key_at(i as usize) == key) {
+        Some(&i) => i as usize,
+        None => return None,
+      }
+    };
+    probe_cache_put(tag, i);
+    if bump {
+      self.mult_atomic(i).fetch_add(1, Ordering::Relaxed);
+    }
+    Some(self.outs_at(i))
+  }
+
+  /// Lock-free entry-index reservation: bumps `len` and returns the
+  /// slot, which the caller owns exclusively until its marker store.
+  #[inline]
+  fn reserve_index(&self) -> usize {
+    let i = self.len.0.fetch_add(1, Ordering::Relaxed);
+    assert!(
+      i < MAX_SEGS * SEG_ENTRIES,
+      "QueryMap full (2^32 entries; key_stride {}, out_stride {})",
+      self.key_stride,
+      self.out_stride,
+    );
+    i
+  }
+
+  /// Publish entry `i` complete: Release-store its (nonzero) hash word,
+  /// ordering every slot write before any reader that Acquires it.
+  #[inline]
+  fn mark_complete(&self, i: usize, hash: u64) {
+    debug_assert_ne!(hash, 0);
+    self.hashes.cell_ensured(i, 1).store(hash, Ordering::Release);
+  }
+
+  /// Entry `i`'s completion marker: its stored hash word, 0 while the
+  /// owner is still writing (or its segment does not exist yet).
+  #[inline]
+  fn complete_hash(&self, i: usize) -> u64 {
+    self.hashes.try_cell(i).map_or(0, |c| c.load(Ordering::Acquire))
+  }
+
+  /// Insert holding the stripe lock for the WHOLE path, so a same-key
+  /// race resolves into ONE published entry (first insert wins; the
+  /// loser's insert is the memo hit it raced — identical key and, by
+  /// determinism, identical output). Entries publish COMPLETE in a
+  /// single step: key, output, multiplicity, and hash are all written
+  /// before the index enters the table, so any found entry is readable.
+  /// `mult`/`on_existing_bump` carry the single-threaded reference
+  /// interpreter's runtime accounting; the concurrent set path passes
+  /// zero/false and multiplicities are derived at seal instead.
+  /// Returns the entry index.
+  fn insert_inner(
+    &self,
+    key: &[G],
+    output: &[G],
+    mult: G,
+    on_existing_bump: bool,
+  ) -> usize {
+    debug_assert_eq!(key.len(), self.key_stride);
+    let hash = hash_g_slice(key);
+    let mut table = self.stripes[stripe_of(hash)].lock().unwrap();
+    if let Some(&i) = table.find(hash, |&i| self.key_at(i as usize) == key) {
+      let i = i as usize;
+      drop(table);
+      if on_existing_bump && mult != G::ZERO {
+        self.mult_atomic(i).fetch_add(1, Ordering::Relaxed);
+      }
+      probe_cache_put(self.cache_tag(hash), i);
+      return i;
+    }
+    assert_eq!(
+      output.len(),
+      self.out_stride,
+      "insert output arity != map out stride"
+    );
+    let i = self.reserve_index();
+    self.entries.write_at(i, self.entry_stride(), 0, key);
+    self.entries.write_at(i, self.entry_stride(), self.key_stride, output);
+    self.mults.write(i, 1, &[mult]);
+    self.mark_complete(i, hash);
+    self.len_panic_check(i + 1);
+    let i32 = u32::try_from(i).expect("entry index fits u32");
+    table.insert_unique(hash, i32, |&j| self.hash_at(j as usize));
+    probe_cache_put(self.cache_tag(hash), i);
+    i
+  }
+
+  /// Debug tripwire: `IX_QM_LEN_PANIC=<n>` panics when any map's
+  /// length crosses `n` — with `RUST_BACKTRACE=1` the abort backtrace
+  /// names the generated `aiur_fn_*` call chain, i.e. the exact kernel
+  /// path minting keys. Diagnostic only; zero cost unless the env var
+  /// is set (checked once).
+  fn len_panic_check(&self, len: usize) {
+    use std::sync::OnceLock;
+    static LIMIT: OnceLock<Option<usize>> = OnceLock::new();
+    let limit = LIMIT.get_or_init(|| {
+      std::env::var("IX_QM_LEN_PANIC").ok().and_then(|v| v.parse().ok())
+    });
+    if let Some(l) = limit
+      && len == *l
+    {
+      // Forensics: IX_QM_LEN_PANIC_DUMP=<path> writes a key sample of
+      // the tripping map (first 2M entries, hex per line) before the
+      // abort — the key distribution names the blowup shape.
+      if let Ok(path) = std::env::var("IX_QM_LEN_PANIC_DUMP") {
+        let mut out = String::new();
+        for i in 0..len.min(2_000_000) {
+          for g in self.key_at(i) {
+            out.push_str(&format!("{:016x}", g.as_canonical_u64()));
+            out.push(' ');
+          }
+          out.push('\n');
+        }
+        let _ = std::fs::write(path, out);
+      }
+      panic!(
+        "IX_QM_LEN_PANIC tripped: map (key_stride {}, out_stride {}) \
+         reached {len} entries",
+        self.key_stride, self.out_stride
+      );
+    }
+  }
+
+  pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
+    self.insert_inner(key, output, multiplicity, true);
+  }
+
+  /// Concurrent function-return insert: new entries start at
+  /// multiplicity 1 (0 when unconstrained); a concurrent duplicate
+  /// becomes a bump, exactly the hit it raced with.
+  pub fn insert_cc(&self, key: &[G], output: &[G], constrained: bool) {
+    self.insert_inner(key, output, G::from_bool(constrained), true);
+  }
+
+  /// Concurrent content-addressed store (memory circuits): the pointer
+  /// is the entry index of the value's FIRST insertion — hits bump the
+  /// multiplicity and return the existing pointer.
+  pub fn store_cc(&self, values: &[G], constrained: bool) -> G {
+    debug_assert_eq!(values.len(), self.key_stride);
+    let hash = hash_g_slice(values);
+    let tag = self.cache_tag(hash);
+    if let Some(i) = probe_cache_get(tag)
+      && i < self.len()
+      && self.key_at(i) == values
+    {
+      // Memory entries complete inside their inserting store, so a
+      // validated cached index is always readable.
+      if constrained {
+        self.mult_atomic(i).fetch_add(1, Ordering::Relaxed);
+      }
+      return self.outs_at(i)[0];
+    }
+    let mut table = self.stripes[stripe_of(hash)].lock().unwrap();
+    if let Some(&i) = table.find(hash, |&i| self.key_at(i as usize) == values) {
+      probe_cache_put(tag, i as usize);
+      if constrained {
+        self.mult_atomic(i as usize).fetch_add(1, Ordering::Relaxed);
+      }
+      return self.outs_at(i as usize)[0];
+    }
+    assert_eq!(self.out_stride, 1, "memory map out stride must be 1");
+    let i = self.reserve_index();
+    let ptr = G::from_usize(i);
+    self.entries.write_at(i, self.entry_stride(), 0, values);
+    self.entries.write_at(i, self.entry_stride(), self.key_stride, &[ptr]);
+    self.mults.write(i, 1, &[G::from_bool(constrained)]);
+    self.mark_complete(i, hash);
+    let i32 = u32::try_from(i).expect("entry index fits u32");
+    table.insert_unique(hash, i32, |&j| self.hash_at(j as usize));
+    probe_cache_put(tag, i);
+    ptr
+  }
+
+  /// Concurrent memory load: entry `i`'s stored value, atomically
+  /// bumping its multiplicity when `bump`. `None` for an unpublished
+  /// index (an unbound pointer).
+  pub fn load_bump(&self, i: usize, bump: bool) -> Option<&[G]> {
+    // `i < len` proves only reservation; an unbound pointer must fail
+    // and a mid-write slot must not be read. The marker proves both
+    // absence and completeness, and Acquire-orders the slot's data.
+    if self.complete_hash(i) == 0 {
+      return None;
+    }
+    if bump {
+      self.mult_atomic(i).fetch_add(1, Ordering::Relaxed);
+    }
+    Some(self.key_at(i))
   }
 
   /// Entry at insertion index `i`: the key slice plus a mutable handle on
   /// the multiplicity (memory `Load` bumps the pointed-to row's count).
-  pub fn get_index_mut(&mut self, i: usize) -> Option<(&[G], &mut G)> {
-    if i >= self.mults.entries {
+  pub fn get_index_mut(&mut self, i: usize) -> Option<(&[G], &AtomicU64)> {
+    if i >= self.len() {
       return None;
     }
-    Some((self.keys.at(i), &mut self.mults.at_mut(i)[0]))
+    Some((self.key_at(i), self.mult_atomic(i)))
   }
 
   pub fn get_index(&self, i: usize) -> Option<(&[G], QueryRef<'_>)> {
@@ -343,16 +753,22 @@ impl QueryMap {
       return None;
     }
     Some((
-      self.keys.at(i),
-      QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+      self.key_at(i),
+      QueryRef {
+        output: self.outs_at(i),
+        multiplicity: g_from_bits(self.mult_atomic(i).load(Ordering::Relaxed)),
+      },
     ))
   }
 
   pub fn iter(&self) -> impl Iterator<Item = (&[G], QueryRef<'_>)> {
     (0..self.len()).map(|i| {
       (
-        self.keys.at(i),
-        QueryRef { output: self.outs.at(i), multiplicity: self.mults.at(i)[0] },
+        self.key_at(i),
+        QueryRef {
+          output: self.outs_at(i),
+          multiplicity: g_from_bits(self.mult_atomic(i).load(Ordering::Relaxed)),
+        },
       )
     })
   }

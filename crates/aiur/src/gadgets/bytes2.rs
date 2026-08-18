@@ -121,7 +121,7 @@ impl AiurGadget for Bytes2 {
     &self,
     op: &Bytes2Op,
     input: &[G],
-    record: &mut QueryRecord,
+    record: &QueryRecord,
   ) -> Vec<G> {
     let i = &input[0];
     let j = &input[1];
@@ -394,51 +394,74 @@ impl Bytes2Queries {
     Self(vec![[G::ZERO; TRACE_WIDTH]; 256 * 256].into_boxed_slice())
   }
 
-  pub(crate) fn bump_xor(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 0)
   }
 
-  pub(crate) fn bump_add(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_add(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 1)
   }
 
-  pub(crate) fn bump_sub(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_sub(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 2)
   }
 
-  pub(crate) fn bump_and(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_and(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 3)
   }
 
-  pub(crate) fn bump_or(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_or(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 4)
   }
 
-  pub(crate) fn bump_less_than(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_less_than(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 5)
   }
 
-  pub fn bump_range_check(&mut self, i: &G, j: &G) {
+  pub fn bump_range_check(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 6)
   }
 
-  pub(crate) fn bump_mul(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_mul(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 7)
   }
 
-  pub(crate) fn bump_xor_split7(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split7(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 8)
   }
 
-  pub(crate) fn bump_xor_split4(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor_split4(&self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 9)
   }
 
-  pub(crate) fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
+  /// Read counter cell `[256*i + j][col]` (relaxed; used by the
+  /// derived-multiplicity differential check in `trace.rs`).
+  pub(crate) fn count(&self, cell: usize, col: usize) -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let c: &G = &self.0[cell][col];
+    unsafe { AtomicU64::from_ptr((c as *const G as *mut G).cast()) }
+      .load(Ordering::Relaxed)
+  }
+
+  /// Overwrite counter cell (seal-time application of derived
+  /// multiplicities; see `trace::apply_multiplicities`).
+  pub(crate) fn set_count(&self, cell: usize, col: usize, v: u64) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    let cell: &G = &self.0[cell][col];
+    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
+      .store(v, Ordering::Relaxed);
+  }
+
+  /// Relaxed atomic bump on the counter cell (see
+  /// `Bytes1Queries::bump_multiplicity_for` for why `u64` addition is
+  /// field addition here).
+  pub(crate) fn bump_multiplicity_for(&self, i: &G, j: &G, col: usize) {
+    use std::sync::atomic::{AtomicU64, Ordering};
     let i = usize::try_from(i.as_canonical_u64()).unwrap();
     let j = usize::try_from(j.as_canonical_u64()).unwrap();
-    let row = 256 * i + j;
-    self.0[row][col] += G::ONE;
+    let cell: &G = &self.0[256 * i + j][col];
+    unsafe { AtomicU64::from_ptr((cell as *const G as *mut G).cast()) }
+      .fetch_add(1, Ordering::Relaxed);
   }
 }
 
@@ -529,4 +552,5 @@ impl Bytes2 {
     );
     (G::from_u8(hi), G::from_u8(lo))
   }
+
 }

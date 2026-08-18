@@ -1,5 +1,5 @@
 /-
-  `ix name-of <64-hex-addr> --ixe <path>`: resolve a content address
+  `ix name-of <64-hex-addr> --env <path>`: resolve a content address
   back to its Lean name(s) in an on-disk env.
 
   A single address can carry MANY names: structurally equivalent
@@ -10,7 +10,7 @@
   If the address is not directly named (e.g. an anonymized Muts
   block), scan the env for projection constants whose block field
   points at it and print those projections' names — any of them
-  fast-repros the block via `ix check --ixe <path> <name>`.
+  fast-repros the block via `ix check --env <path> <name>`.
 -/
 module
 public import Cli
@@ -67,8 +67,8 @@ def runNameOfCmd (p : Cli.Parsed) : IO UInt32 := do
   let some addr := Address.fromString argStr
     | IO.eprintln s!"error: `{argStr}` is not a 64-char hex address"
       return 1
-  let some path := (p.flag? "ixe").map (·.as! String)
-    | IO.eprintln "error: name-of requires --ixe <path>"
+  let some path := (p.flag? "env").map (·.as! String)
+    | IO.eprintln "error: name-of requires --env <path>"
       return 1
   let bytes ← IO.FS.readBinFile path
   let ixonEnv ← match Ixon.deEnvAnon bytes with
@@ -85,7 +85,7 @@ def nameOfCmd : Cli.Cmd := `[Cli|
   "Resolve a content address back to its Lean name(s) in a `.ixe` env (may print several: structurally equivalent constants share an address)"
 
   FLAGS:
-    "ixe" : String; "Path to a serialized `.ixe` env to resolve the address in (required)."
+    "env" : String; "Path to a serialized `.ixe` env to resolve the address in (required)."
 
   ARGS:
     addr : String; "64-char hex content address to resolve. Prints every Lean.Name registered for it, one per line; for unnamed Muts blocks, prints the names of projection constants into the block instead."

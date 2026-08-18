@@ -63,7 +63,33 @@ pub struct CircuitShape {
   pub preprocessed_height: usize,
 }
 
+/// Per-phase breakdown from [`AiurSystem::peak_prove_bytes`]; `peak` is
+/// the max phase plus the preprocessed residency.
+pub struct PeakProveBytes {
+  pub phase_witness: usize,
+  pub phase_stage2: usize,
+  pub phase_open: usize,
+  pub preprocessed: usize,
+  pub peak: usize,
+  /// Sound upper bound on the peak increase any SINGLE circuit's next
+  /// padding step (raw height crossing its power of two) can cause:
+  /// the stepping circuit's own height-linear bytes double, and — only
+  /// when the stepping circuit is a tallest one — the
+  /// `H`-proportional tree/FRI/open terms double with it. The
+  /// executor's staircase cut reserves exactly this much headroom
+  /// under the acceptance line, so in-flight blocks that trip a step
+  /// during drain still seal within budget.
+  pub max_step: usize,
+}
+
 impl AiurSystem {
+  /// The bytecode this system was compiled from (drivers that execute
+  /// through the system — the shard scanner — read it here instead of
+  /// re-decoding their own copy).
+  pub fn toplevel(&self) -> &Toplevel {
+    &self.toplevel
+  }
+
   pub fn build(
     toplevel: Toplevel,
     commitment_parameters: CommitmentParameters,
@@ -195,6 +221,236 @@ impl AiurSystem {
       .collect()
   }
 
+  /// Predicted peak prover resident bytes for a record, from circuit
+  /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
+  /// line. Mirrors this system's actual allocation schedule (multi-stark
+  /// rev `be1755e`; the shard-pipeline E2E asserts prediction against a
+  /// measured prove, so a schedule change upstream turns a test red
+  /// instead of silently skewing every shard-RAM prediction):
+  ///
+  /// 1. WITNESS phase: the `QueryRecord` plus every circuit's padded main
+  ///    trace and base-field lookup witness, built in parallel and all
+  ///    alive at once (`prove`/`prove_ixvm` drop the record only after).
+  /// 2. STAGE-2 transition: stage-1 LDEs and their Merkle tree, the
+  ///    still-alive lookup witness, the logUp message array plus its
+  ///    batch-inverse copy, and the new extension traces.
+  /// 3. FRI OPEN: all committed LDEs (main + stage-2 + quotient, at
+  ///    `8·2^log_blowup` bytes per trace cell) and their trees, the
+  ///    retained FRI fold layers (geometric in `max_log_arity`), and the
+  ///    open-phase buffers — all proportional to `H = blowup · tallest`.
+  ///
+  /// The peak is the max of the three plus the preprocessed-gadget
+  /// residency committed at setup. Heights are `next_power_of_two` of the
+  /// record's unique queries — the padding the trace actually commits,
+  /// which per-fft models blur.
+  pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
+    self.peak_prove_bytes_from_raws(
+      &self.circuit_raws(record),
+      crate::execute::record_retained_bytes(record),
+    )
+  }
+
+  /// Per-circuit raw (unpadded) trace heights of a record, in canonical
+  /// system order: the record's unique queries per function/memory
+  /// circuit, and the byte gadgets' fixed full-table heights.
+  pub fn circuit_raws(&self, record: &QueryRecord) -> Vec<usize> {
+    self
+      .circuit_types()
+      .iter()
+      .map(|ct| match ct {
+        CircuitType::Function { idx } => record.function_queries[*idx].len(),
+        CircuitType::Memory { width } => {
+          record.memory_queries.get(width).map_or(0, |m| m.len())
+        },
+        CircuitType::Bytes1 => 256,
+        CircuitType::Bytes2 => 65536,
+      })
+      .collect()
+  }
+
+  /// [`Self::peak_prove_bytes`] from per-circuit raw heights and a record
+  /// byte count directly — the scanner's union pricing feeds ESTIMATED
+  /// union heights of a merged shard here, where no single record exists.
+  pub fn peak_prove_bytes_from_raws(
+    &self,
+    raws: &[usize],
+    record_bytes: usize,
+  ) -> PeakProveBytes {
+    const S: usize = 8; // bytes per base field element (Goldilocks)
+    const DG: usize = 32; // blake3 digest bytes (Merkle nodes, arity 2)
+    let b = 1usize << self.commitment_parameters.log_blowup;
+    let fold = 1usize << self.fri_parameters.max_log_arity;
+    let mut witness = 0usize;
+    let mut s1_lde = 0usize; // stage-1 LDEs
+    let mut lookup_w = 0usize; // base-field lookup witness
+    let mut msgs = 0usize; // logUp messages (+ inverse copy)
+    let mut s2_trace = 0usize; // stage-2 extension traces
+    let mut committed = 0usize; // all committed LDE bytes
+    let mut prep = 0usize;
+    let mut tallest = 0usize;
+    // Largest per-circuit height-linear byte total, split by whether the
+    // circuit's padded height is a tallest one (its step also doubles
+    // the `H`-proportional terms) — feeds `max_step`.
+    let mut own_tallest = 0usize;
+    let mut own_rest = 0usize;
+    let mut circuit_ns: Vec<(usize, usize)> = Vec::new(); // (n, own bytes)
+    for (i, &raw) in raws.iter().enumerate().take(self.system.circuits.len()) {
+      if raw == 0 {
+        continue;
+      }
+      let n = raw.next_power_of_two();
+      tallest = tallest.max(n);
+      let c = &self.system.circuits[i];
+      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      let args: usize = self.slot_widths[i].iter().sum();
+      let q = c.quotient_degree();
+      witness +=
+        S * n * c.main_width + S * n * (c.num_lookups + args) + 40 * raw;
+      s1_lde += S * b * n * c.main_width;
+      lookup_w += S * n * (c.num_lookups + args);
+      msgs += 2 * S * d * n * c.num_lookups;
+      s2_trace += S * n * c.stage_2_width;
+      committed += S * b * n * (c.main_width + c.stage_2_width + q * d);
+      prep += S * (1 + b) * c.preprocessed_width * c.preprocessed_height
+        + 2 * DG * b * c.preprocessed_height;
+      // Every height-linear term this circuit contributes to any phase:
+      // its next padding step adds this much again.
+      let own = S * n * c.main_width
+        + 2 * S * n * (c.num_lookups + args)
+        + S * b * n * c.main_width
+        + 2 * S * d * n * c.num_lookups
+        + S * n * c.stage_2_width
+        + S * b * n * (c.main_width + c.stage_2_width + q * d);
+      circuit_ns.push((n, own));
+    }
+    for (n, own) in circuit_ns {
+      if n == tallest {
+        own_tallest = own_tallest.max(own);
+      } else {
+        own_rest = own_rest.max(own);
+      }
+    }
+    let h = b * tallest;
+    let phase_witness = record_bytes + witness;
+    let phase_stage2 = s1_lde + 2 * DG * h + lookup_w + msgs + s2_trace;
+    // Trees (3 rounds) + retained FRI fold layers + open buffers, all ∝ H.
+    let fri_layers = (2 * S + 2 * DG) * h * fold / (fold - 1).max(1);
+    let phase_open = committed + 3 * 2 * DG * h + fri_layers + 11 * S * h;
+    // `H`-proportional bytes that double when a TALLEST circuit steps.
+    let h_terms = 2 * DG * h + 3 * 2 * DG * h + fri_layers + 11 * S * h;
+    PeakProveBytes {
+      phase_witness,
+      phase_stage2,
+      phase_open,
+      preprocessed: prep,
+      peak: phase_witness.max(phase_stage2).max(phase_open) + prep,
+      max_step: own_rest.max(own_tallest + h_terms),
+    }
+  }
+
+  /// Model a (possibly merged) execution from per-map unique-entry
+  /// estimates instead of a live record — the scanner's union pricing:
+  /// each element is `(is_function, id, est_raw, est_elems)` where `id`
+  /// is a function index or a memory width, `est_raw` the estimated
+  /// unique queries of the union, and `est_elems` its retained field
+  /// elements. Unconstrained-function maps carry no circuit and
+  /// contribute only record bytes, exactly as in a live record. Returns
+  /// the same `(fft, peak-prove-bytes)` pair a single cold record of the
+  /// union would produce.
+  pub fn model_from_map_estimates(
+    &self,
+    ests: &[(bool, usize, usize, usize)],
+  ) -> (f64, PeakProveBytes) {
+    let mut raws = vec![0usize; self.system.circuits.len()];
+    let mut record_bytes = 0usize;
+    let types = self.circuit_types();
+    for &(is_function, id, est_raw, est_elems) in ests {
+      record_bytes += est_elems * 8 + est_raw * 21;
+      let pos = types.iter().position(|ct| match ct {
+        CircuitType::Function { idx } => is_function && *idx == id,
+        CircuitType::Memory { width } => !is_function && *width == id,
+        _ => false,
+      });
+      if let Some(pos) = pos {
+        raws[pos] = est_raw;
+      }
+    }
+    for (i, ct) in types.iter().enumerate() {
+      match ct {
+        CircuitType::Bytes1 => raws[i] = 256,
+        CircuitType::Bytes2 => raws[i] = 65536,
+        _ => {},
+      }
+    }
+    (
+      self.fft_cost_from_raws(&raws),
+      self.peak_prove_bytes_from_raws(&raws, record_bytes),
+    )
+  }
+
+  /// [`Self::fft_cost_from_raws`] of a live record.
+  pub fn fft_cost_of_record(&self, record: &QueryRecord) -> f64 {
+    self.fft_cost_from_raws(&self.circuit_raws(record))
+  }
+
+  /// [`Self::padded_fft_cost_from_raws`] of a live record.
+  pub fn padded_fft_cost_of_record(&self, record: &QueryRecord) -> f64 {
+    self.padded_fft_cost_from_raws(&self.circuit_raws(record))
+  }
+
+  /// The prover's ACTUAL transform work at the given raw heights: the
+  /// same per-circuit accounting as [`Self::fft_cost_from_raws`], on the
+  /// padded (next-power-of-two) trace heights the prover really
+  /// transforms — the padding rule of `witness_data` (empty circuits
+  /// stay empty and are deactivated, everything else pads up). The raw
+  /// variant remains the smooth diagnostic; this is the wall-work
+  /// control quantity: a controller pricing FFT headroom must see the
+  /// padding cliffs, which the raw metric renders as one-row nudges.
+  pub fn padded_fft_cost_from_raws(&self, raws: &[usize]) -> f64 {
+    let padded: Vec<usize> = raws
+      .iter()
+      .map(|&r| if r == 0 { 0 } else { r.next_power_of_two() })
+      .collect();
+    self.fft_cost_from_raws(&padded)
+  }
+
+  /// FFT cost of a proof at the given per-circuit raw heights — the Rust
+  /// mirror of the Lean model (`Ix/Aiur/Statistics.lean`, grounded in the
+  /// pinned prover's actual transforms): per circuit, `(B+1)` size-`h`
+  /// transforms per committed column (main + stage-2 + quotient chunks),
+  /// plus the two quotient-rebasing transforms. Raw heights stay unpadded
+  /// so one-row changes remain visible. The scanner's manifest costs use
+  /// this, so whole-env, per-shard, and per-constant fft figures share
+  /// one unit.
+  pub fn fft_cost_from_raws(&self, raws: &[usize]) -> f64 {
+    fn transform(x: usize) -> f64 {
+      if x == 0 {
+        0.0
+      } else {
+        let xf = crate::execute::f64_from_usize(x);
+        xf * xf.max(2.0).log2()
+      }
+    }
+    let b = crate::execute::f64_from_usize(
+      1usize << self.commitment_parameters.log_blowup,
+    );
+    let mut total = 0.0f64;
+    for (c, &raw) in self.system.circuits.iter().zip(raws) {
+      if raw == 0 {
+        continue;
+      }
+      let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
+      let q = c.quotient_degree();
+      let q_d = q * d;
+      let commit_w = c.main_width + c.stage_2_width + q_d;
+      total +=
+        (b + 1.0) * crate::execute::f64_from_usize(commit_w) * transform(raw)
+          + crate::execute::f64_from_usize(d) * transform(q * raw)
+          + crate::execute::f64_from_usize(q_d) * transform(raw);
+    }
+    total
+  }
+
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
   pub fn prove(
     &self,
@@ -288,6 +544,34 @@ impl AiurSystem {
       executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
         .expect("IxVM-native Aiur execution failed during prove_ixvm");
     drop(_g);
+    // The codegen'd executor fills the record as an insert-once SET —
+    // multiplicities are DERIVED from the unique-query set here, at the
+    // seal, not accumulated during execution (which is what makes
+    // duplicate speculative execution by concurrent fillers sound).
+    {
+      let _g = tracing::info_span!("aiur/derive_mults").entered();
+      let tally = crate::trace::derive_multiplicities(
+        &self.toplevel,
+        &query_record,
+        io_buffer,
+        &[(fun_idx, input.to_vec())],
+      );
+      crate::trace::apply_multiplicities(&query_record, &tally);
+    }
+    if std::env::var_os("IX_AIUR_PRED_RAM").is_some() {
+      const GIB: f64 = 1_073_741_824.0;
+      let p = self.peak_prove_bytes(&query_record);
+      let gib = |b: usize| crate::execute::f64_from_usize(b) / GIB;
+      eprintln!(
+        "[aiur] predicted peak prove RSS {:.2} GiB (witness {:.2} / \
+         stage2 {:.2} / open {:.2} / preprocessed {:.2})",
+        gib(p.peak),
+        gib(p.phase_witness),
+        gib(p.phase_stage2),
+        gib(p.phase_open),
+        gib(p.preprocessed),
+      );
+    }
 
     let _g = tracing::info_span!("aiur/witness").entered();
     let circuit_types = self.circuit_types();
@@ -336,6 +620,72 @@ impl AiurSystem {
   ) -> Result<(), VerificationError<PcsError>> {
     self.system.verify(claim, proof)
   }
+
+  /// Prove a SEALED record directly: the witness is built from the
+  /// record exactly as execution filled it — no re-execution — and the
+  /// proof covers every entry invocation in `claims` through the
+  /// multi-claim accumulator. This is the segment-prove path: the
+  /// executor seals a segment and it proceeds straight to the STARK.
+  /// The record's multiplicities must be exact (the concurrent
+  /// executor's reservation protocol guarantees this).
+  pub fn prove_sealed(
+    &self,
+    query_record: QueryRecord,
+    io_buffer: &IOBuffer,
+    claims: &[Vec<G>],
+  ) -> AiurProof {
+    let _g = tracing::info_span!("aiur/witness_sealed").entered();
+    let circuit_types = self.circuit_types();
+    let witness_data = circuit_types
+      .into_par_iter()
+      .enumerate()
+      .map(|(circuit_idx, circuit_type)| {
+        let slot_arg_widths = self.slot_arg_widths(circuit_idx);
+        match circuit_type {
+          CircuitType::Function { idx } => self.toplevel.witness_data(
+            idx,
+            &query_record,
+            io_buffer,
+            &slot_arg_widths,
+          ),
+          CircuitType::Memory { width } => {
+            Memory::witness_data(width, &query_record, &slot_arg_widths)
+          },
+          CircuitType::Bytes1 => {
+            Bytes1.witness_data(&query_record, &slot_arg_widths)
+          },
+          CircuitType::Bytes2 => {
+            Bytes2.witness_data(&query_record, &slot_arg_widths)
+          },
+        }
+      })
+      .collect::<Vec<_>>();
+    drop(query_record);
+    let (traces, lookups) = witness_data.into_iter().unzip();
+    let witness = SystemWitness { traces, lookups };
+    drop(_g);
+    let claim_refs: Vec<&[G]> = claims.iter().map(Vec::as_slice).collect();
+    self.system.prove_multiple_claims(&self.key, &claim_refs, witness)
+  }
+
+  pub fn verify_sealed(
+    &self,
+    claims: &[Vec<G>],
+    proof: &AiurProof,
+  ) -> Result<(), VerificationError<PcsError>> {
+    let claim_refs: Vec<&[G]> = claims.iter().map(Vec::as_slice).collect();
+    self.system.verify_multiple_claims(&claim_refs, proof)
+  }
+}
+
+/// The public claim vector of one entry invocation:
+/// `[function_channel, fun_idx, input.., output..]` — the tuple the
+/// entry circuit provides and the proof's claim layer pulls.
+pub fn function_claim(fun_idx: FunIdx, input: &[G], output: &[G]) -> Vec<G> {
+  let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
+  claim.extend_from_slice(input);
+  claim.extend_from_slice(output);
+  claim
 }
 
 #[cfg(test)]
@@ -349,7 +699,6 @@ mod tests {
     p3_field::PrimeCharacteristicRing,
     types::{CommitmentParameters, FriParameters},
   };
-  use rustc_hash::FxHashMap;
 
   /// Small FRI parameters mirroring `vk_codec`'s test config: cheap to prove
   /// while still exercising the full FRI pipeline (log_blowup 1, 64 queries,
@@ -367,7 +716,7 @@ mod tests {
   }
 
   fn empty_io_buffer() -> IOBuffer {
-    IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() }
+    IOBuffer::new()
   }
 
   /// Hand-build the toplevel for a single constrained function `f(a, b) = a*b`.
@@ -560,6 +909,31 @@ mod tests {
       system.verify(&bad_claim, &proof).is_err(),
       "verification must reject a tampered claim"
     );
+  }
+
+  /// THE GATE for derived multiplicities (design B): for any
+  /// single-threaded execution — where runtime accumulation is
+  /// trivially correct — `derive_multiplicities` must reproduce every
+  /// function, memory, and byte-gadget count bit for bit from the
+  /// unique-query set alone. Covers calls, memory Store/Load, and the
+  /// Bytes1/Bytes2 gadget channels.
+  #[test]
+  fn derived_multiplicities_match_accumulated() {
+    use crate::trace::{derive_multiplicities, diff_multiplicities};
+    let cases: Vec<(Toplevel, Vec<G>)> = vec![
+      (mul_toplevel(), vec![G::from_u64(3), G::from_u64(5)]),
+      (call_and_memory_toplevel(), vec![G::from_u64(7), G::from_u64(9)]),
+      (xor_splits_toplevel(), vec![G::from_u8(0xd3), G::from_u8(0x69)]),
+    ];
+    for (toplevel, args) in cases {
+      let mut io = empty_io_buffer();
+      let (record, _out) = toplevel
+        .execute(0, args.clone(), &mut io)
+        .expect("test execution succeeds");
+      let tally = derive_multiplicities(&toplevel, &record, &io, &[(0, args)]);
+      diff_multiplicities(&record, &tally)
+        .expect("derived multiplicities must match accumulated");
+    }
   }
 
   #[test]

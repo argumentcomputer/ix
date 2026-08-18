@@ -35,17 +35,43 @@ pub struct QueryRecord {
   pub bytes2_queries: Bytes2Queries,
 }
 
+/// A function's return arity, read off its control tree. Only `Return`
+/// registers the function query (a `Yield`'s values feed a continuation
+/// frame, and `MatchContinue`'s `output_size` is a frame quantity), so
+/// only `Return` arities count — every return path of a function agrees
+/// on arity, and returns can sit inside match cases or a continuation.
+/// Needed at record construction: the maps' entry layout packs
+/// `[key | outs]` contiguously, so the output width must be known
+/// before the first insert.
+fn fun_output_size(f: &Function) -> usize {
+  fn block_output_size(b: &Block) -> Option<usize> {
+    match &b.ctrl {
+      Ctrl::Return(_, vals) => Some(vals.len()),
+      Ctrl::Yield(..) => None,
+      Ctrl::Match(_, cases, default) => {
+        cases.values().chain(default.as_deref()).find_map(block_output_size)
+      },
+      Ctrl::MatchContinue(_, cases, default, _, _, _, continuation) => {
+        block_output_size(continuation).or_else(|| {
+          cases.values().chain(default.as_deref()).find_map(block_output_size)
+        })
+      },
+    }
+  }
+  block_output_size(&f.body).expect("function with no return path")
+}
+
 impl QueryRecord {
   pub fn new(toplevel: &Toplevel) -> Self {
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| QueryMap::new(f.layout.input_size))
+      .map(|f| QueryMap::new(f.layout.input_size, fun_output_size(f)))
       .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::new(*width)))
+      .map(|width| (*width, QueryMap::new(*width, 1)))
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
@@ -53,9 +79,206 @@ impl QueryRecord {
   }
 }
 
+#[derive(Clone, Copy)]
 pub struct IOKeyInfo {
   pub idx: usize,
   pub len: usize,
+}
+
+/// On-demand witness supplier for an [`IOBuffer`]: when execution asks for
+/// a `(channel, key)` the buffer does not hold, the backing gets one chance
+/// to produce the data, which is then materialized into the buffer exactly
+/// as if the host had seeded it eagerly. Execution cannot observe the
+/// difference — same bytes, same keys, same in-circuit verification — so
+/// host witness RAM scales with the FAULTED set instead of the shipped
+/// closure. `Send + Sync` because scan/check workers share one source.
+pub trait IOFaultSource: Send + Sync {
+  fn fault(&self, channel: G, key: &[G]) -> Option<Vec<G>>;
+}
+
+/// Shared fault layer for executors that fill ONE record across many
+/// claims (the whole-env executor). The env-ingress channels (2 =
+/// constant bytes, 3 = reducibility hints, 4 = blob bytes) are
+/// memo-coupled to the record — memoized queries embed the `(idx, len)`
+/// their reads resolved to — so every claim sharing a record MUST see
+/// one stable arena per fault channel: a record may never outlive the
+/// io state it was filled against. Claim-specific channels stay in each
+/// claim's private [`IOBuffer`]; their keys are claim-unique, so no
+/// cross-claim memo hit ever references them.
+///
+/// Concurrency mirrors [`QueryMap`]: striped info maps (the whole
+/// fault-miss path holds its stripe lock, so a same-key race resolves
+/// into one arena entry), append-only mmap arenas with an atomic
+/// published length, and lock-free reads through published indices.
+pub struct SharedIO {
+  /// Arenas indexed by channel value (all live channels are small
+  /// integers; claim seeds and ingress faults alike need globally
+  /// unique (idx, len) coordinates — memoized queries embed them).
+  arenas: [SharedIOArena; 8],
+  /// Info plus a `filled` flag: preassigned entries publish their
+  /// coordinates at startup and fault their bytes on first use.
+  stripes: Box<[std::sync::Mutex<FxHashMap<(G, Vec<G>), (IOKeyInfo, bool)>>]>,
+  backing: std::sync::Arc<dyn IOFaultSource>,
+}
+
+struct SharedIOArena {
+  /// 32 GiB of mostly-untouched VIRTUAL reservation per channel;
+  /// plain lazy-commit paging like every arena (see `Segment`).
+  buf: crate::querymap::Segment,
+  len: std::sync::atomic::AtomicUsize,
+}
+
+/// Entries per shared fault arena: 2^32 G elements (32 GiB) of virtual
+/// reservation per channel, committed on touch — the largest faulted
+/// set (an env's every constant byte, 8x-expanded) stays well under it.
+const SHARED_IO_ARENA_CAP: usize = 1 << 32;
+const SHARED_IO_STRIPES: usize = 64;
+
+impl SharedIO {
+  pub fn new(backing: std::sync::Arc<dyn IOFaultSource>) -> Self {
+    let mut stripes = Vec::with_capacity(SHARED_IO_STRIPES);
+    stripes.resize_with(SHARED_IO_STRIPES, || {
+      std::sync::Mutex::new(FxHashMap::default())
+    });
+    Self {
+      arenas: std::array::from_fn(|_| SharedIOArena {
+        buf: crate::querymap::Segment::new(SHARED_IO_ARENA_CAP),
+        len: std::sync::atomic::AtomicUsize::new(0),
+      }),
+      stripes: stripes.into_boxed_slice(),
+      backing,
+    }
+  }
+
+  /// Arena slot for a channel; every live channel is a small integer.
+  #[inline]
+  fn slot(channel: G) -> Option<usize> {
+    usize::try_from(channel.as_canonical_u64()).ok().filter(|&c| c < 8)
+  }
+
+  /// Idempotent host-side seed (claim inputs): the first seeder of a
+  /// key appends and wins; every later seeder of the same
+  /// content-addressed key reuses its coordinates.
+  pub fn seed(&self, channel: G, key: Vec<G>, data: &[G]) -> IOKeyInfo {
+    let slot = Self::slot(channel).expect("seed channel out of range");
+    let mut table = self.stripes[Self::stripe(channel, &key)].lock().unwrap();
+    if let Some((info, filled)) = table.get_mut(&(channel, key.clone())) {
+      // Preassigned slot: first seeder fills it.
+      if !*filled {
+        self.arenas[slot].buf.write_g(info.idx, data);
+        *filled = true;
+      }
+      return *info;
+    }
+    let arena = &self.arenas[slot];
+    let idx =
+      arena.len.fetch_add(data.len(), std::sync::atomic::Ordering::AcqRel);
+    assert!(
+      idx + data.len() <= SHARED_IO_ARENA_CAP,
+      "shared io arena full (channel {channel})"
+    );
+    arena.buf.write_g(idx, data);
+    let info = IOKeyInfo { idx, len: data.len() };
+    table.insert((channel, key), (info, true));
+    info
+  }
+
+  /// Publish a deterministic slot for `key` before execution starts —
+  /// single-threaded startup only. Coordinates come from the canonical
+  /// enumeration order the caller iterates in, so labels are
+  /// independent of fault interleaving; bytes arrive on first use.
+  /// Unfaulted slots stay uncommitted virtual pages.
+  pub fn preassign(&self, channel: G, key: Vec<G>, len: usize) {
+    let slot = Self::slot(channel).expect("preassign channel out of range");
+    let idx =
+      self.arenas[slot].len.fetch_add(len, std::sync::atomic::Ordering::AcqRel);
+    assert!(
+      idx + len <= SHARED_IO_ARENA_CAP,
+      "shared io arena full (channel {channel})"
+    );
+    let mut table = self.stripes[Self::stripe(channel, &key)].lock().unwrap();
+    let prev = table.insert((channel, key), (IOKeyInfo { idx, len }, false));
+    debug_assert!(prev.is_none(), "preassign of an existing key");
+  }
+
+  #[inline]
+  fn stripe(channel: G, key: &[G]) -> usize {
+    use std::hash::{Hash, Hasher};
+    let mut h = rustc_hash::FxHasher::default();
+    channel.as_canonical_u64().hash(&mut h);
+    for g in key {
+      g.as_canonical_u64().hash(&mut h);
+    }
+    usize::try_from(h.finish().wrapping_mul(0x9E37_79B9_7F4A_7C15) >> (64 - 6))
+      .expect("6 bits")
+  }
+
+  /// Read-only lookup: the entry's coordinates if its bytes are
+  /// already materialized. Never faults — the witness builder replays
+  /// io reads execution already performed, so a miss here is a
+  /// genuinely absent key.
+  fn get_info_frozen(&self, channel: G, key: &[G]) -> Option<IOKeyInfo> {
+    let table = self.stripes[Self::stripe(channel, key)].lock().unwrap();
+    match table.get(&(channel, key.to_vec())) {
+      Some((info, true)) => Some(*info),
+      _ => None,
+    }
+  }
+
+  fn get_info(
+    &self,
+    slot: usize,
+    channel: G,
+    key: &[G],
+  ) -> Result<IOKeyInfo, ExecError> {
+    let mut table = self.stripes[Self::stripe(channel, key)].lock().unwrap();
+    if let Some((info, filled)) = table.get_mut(&(channel, key.to_vec())) {
+      if !*filled {
+        // Preassigned slot, first use: fault the bytes into the FIXED
+        // offset (labels stay deterministic no matter who faults when).
+        let Some(data) = self.backing.fault(channel, key) else {
+          return Err(IOBuffer::invalid_key(channel, key));
+        };
+        debug_assert_eq!(data.len(), info.len);
+        self.arenas[slot].buf.write_g(info.idx, &data);
+        *filled = true;
+      }
+      return Ok(*info);
+    }
+    let Some(data) = self.backing.fault(channel, key) else {
+      drop(table);
+      return Err(IOBuffer::invalid_key(channel, key));
+    };
+    // Atomic reservation: appends from other stripes race this one, so
+    // the offset must be claimed before writing. Readers only learn an
+    // idx through a table hit (stripe-mutex release/acquire), which
+    // orders them after the write.
+    let arena = &self.arenas[slot];
+    let idx =
+      arena.len.fetch_add(data.len(), std::sync::atomic::Ordering::AcqRel);
+    assert!(
+      idx + data.len() <= SHARED_IO_ARENA_CAP,
+      "shared io arena full (channel {channel})"
+    );
+    arena.buf.write_g(idx, &data);
+    let info = IOKeyInfo { idx, len: data.len() };
+    table.insert((channel, key.to_vec()), (info, true));
+    Ok(info)
+  }
+
+  fn read(
+    &self,
+    slot: usize,
+    idx: usize,
+    len: usize,
+  ) -> Result<&[G], ExecError> {
+    let arena = &self.arenas[slot];
+    let published = arena.len.load(std::sync::atomic::Ordering::Acquire);
+    if idx.saturating_add(len) > published {
+      return Err(ExecError::IOReadOutOfBounds { idx, len });
+    }
+    Ok(arena.buf.frozen(idx, len))
+  }
 }
 
 pub struct IOBuffer {
@@ -64,16 +287,127 @@ pub struct IOBuffer {
   /// Channel-keyed info map; same `key` on different channels resolves
   /// to distinct `IOKeyInfo`.
   pub map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
+  /// Lazy witness backing; `None` means fully host-seeded (the eager
+  /// builders and the Lean-marshalled buffers).
+  pub backing: Option<std::sync::Arc<dyn IOFaultSource>>,
+  /// Shared fault layer (whole-env executor): the fault channels
+  /// resolve here instead of the private arenas, so every claim
+  /// sharing one record sees identical `(idx, len)` for the same
+  /// ingress entry.
+  pub shared: Option<std::sync::Arc<SharedIO>>,
+}
+
+impl Default for IOBuffer {
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl IOBuffer {
+  pub fn new() -> Self {
+    Self {
+      data: FxHashMap::default(),
+      map: FxHashMap::default(),
+      backing: None,
+      shared: None,
+    }
+  }
+
+  pub fn with_backing(backing: std::sync::Arc<dyn IOFaultSource>) -> Self {
+    Self {
+      data: FxHashMap::default(),
+      map: FxHashMap::default(),
+      backing: Some(backing),
+      shared: None,
+    }
+  }
+
+  /// Host-side seeding that stays memo-safe under record sharing: in
+  /// shared mode every seed lands in the global arenas (unique
+  /// coordinates per content-addressed key); otherwise the private
+  /// buffer keeps today's behavior.
+  pub fn seed(&mut self, channel: G, key: Vec<G>, data: Vec<G>) {
+    if let Some(sh) = &self.shared {
+      sh.seed(channel, key, &data);
+      return;
+    }
+    let arena = self.data.entry(channel).or_default();
+    let info = IOKeyInfo { idx: arena.len(), len: data.len() };
+    arena.extend(data);
+    self.map.insert((channel, key), info);
+  }
+
+  /// One io state for a whole shared-record run — every channel routes
+  /// to the global arenas, because memoized queries embed (channel,
+  /// idx) coordinates and a record never outlives its io.
+  pub fn with_shared(shared: std::sync::Arc<SharedIO>) -> Self {
+    Self {
+      data: FxHashMap::default(),
+      map: FxHashMap::default(),
+      backing: None,
+      shared: Some(shared),
+    }
+  }
+
+  fn invalid_key(channel: G, key: &[G]) -> ExecError {
+    // Name the channel and key: a missing witness entry is otherwise
+    // indistinguishable from any other, and the key identifies the
+    // constant or blob whose bytes the host failed to seed.
+    let hex: String = key
+      .iter()
+      .map(|g| format!("{:02x}", g.as_canonical_u64() & 0xff))
+      .collect();
+    ExecError::InvalidIOKey { channel: channel.as_canonical_u64(), key: hex }
+  }
+
+  /// Execution-path lookup: on a miss, the `backing` (if any) may
+  /// materialize the entry into the buffer before the lookup fails.
+  /// `&mut` because a fault appends to the arena; both the interpreter
+  /// and the codegen'd kernels thread `&mut IOBuffer` already.
   #[inline]
   pub fn get_info(
+    &mut self,
+    channel: G,
+    key: &[G],
+  ) -> Result<IOKeyInfo, ExecError> {
+    if let Some(sh) = &self.shared
+      && let Some(slot) = SharedIO::slot(channel)
+    {
+      return sh.get_info(slot, channel, key);
+    }
+    if let Some(info) = self.map.get(&(channel, key.to_vec())) {
+      return Ok(*info);
+    }
+    if let Some(src) = &self.backing
+      && let Some(data) = src.fault(channel, key)
+    {
+      let arena = self.data.entry(channel).or_default();
+      let info = IOKeyInfo { idx: arena.len(), len: data.len() };
+      arena.extend(data);
+      self.map.insert((channel, key.to_vec()), info);
+      return Ok(info);
+    }
+    Err(Self::invalid_key(channel, key))
+  }
+
+  /// Read-only lookup for post-execution passes (trace generation runs
+  /// circuits in parallel over a shared buffer): never faults — by trace
+  /// time execution has materialized every entry it read.
+  #[inline]
+  pub fn get_info_frozen(
     &self,
     channel: G,
     key: &[G],
-  ) -> Result<&IOKeyInfo, ExecError> {
-    self.map.get(&(channel, key.to_vec())).ok_or(ExecError::InvalidIOKey)
+  ) -> Result<IOKeyInfo, ExecError> {
+    if let Some(info) = self.map.get(&(channel, key.to_vec())) {
+      return Ok(*info);
+    }
+    if let Some(sh) = &self.shared
+      && let Some(info) = sh.get_info_frozen(channel, key)
+    {
+      return Ok(info);
+    }
+    Err(Self::invalid_key(channel, key))
   }
   fn set_info(
     &mut self,
@@ -95,6 +429,11 @@ impl IOBuffer {
     idx: usize,
     len: usize,
   ) -> Result<&[G], ExecError> {
+    if let Some(sh) = &self.shared
+      && let Some(slot) = SharedIO::slot(channel)
+    {
+      return sh.read(slot, idx, len);
+    }
     let empty: &[G] = &[];
     let arena = self.data.get(&channel).map_or(empty, |v| v.as_slice());
     arena
@@ -138,7 +477,10 @@ pub enum ExecError {
   MatchNoCase(u64),
   NoContinuation,
   StackNotEmpty,
-  InvalidIOKey,
+  InvalidIOKey {
+    channel: u64,
+    key: String,
+  },
   IOMappingAlreadySet,
   IOReadOutOfBounds {
     idx: usize,
@@ -180,7 +522,9 @@ impl std::fmt::Display for ExecError {
       Self::StackNotEmpty => {
         write!(f, "exec entries stack not empty at return")
       },
-      Self::InvalidIOKey => write!(f, "invalid IO key"),
+      Self::InvalidIOKey { channel, key } => {
+        write!(f, "invalid IO key: channel {channel}, key {key}")
+      },
       Self::IOMappingAlreadySet => write!(f, "IO mapping already set for key"),
       Self::IOReadOutOfBounds { idx, len } => {
         write!(f, "IO read out of bounds: idx={idx}, len={len}")
@@ -201,7 +545,13 @@ static QUERY_STATS: std::sync::LazyLock<bool> =
     std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
   });
 
-fn dump_query_stats(record: &QueryRecord, tag: &str) {
+/// Whether `IX_AIUR_QUERY_STATS=1` is set (the codegen'd execution paths
+/// share `QueryRecord`, so callers there gate their own dumps on this).
+pub fn query_stats_enabled() -> bool {
+  *QUERY_STATS
+}
+
+pub fn dump_query_stats(record: &QueryRecord, tag: &str) {
   let mut rows: Vec<(usize, usize, usize)> = record
     .function_queries
     .iter()
@@ -234,18 +584,106 @@ impl Toplevel {
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
   ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    let record = QueryRecord::new(self);
+    let output = self.execute_with_record(fun_idx, args, io_buffer, &record)?;
+    Ok((record, output))
+  }
+
+  /// Like [`Self::execute`] but accumulating into a caller-owned
+  /// [`QueryRecord`]: repeated calls share the memo tables, so a query
+  /// resolved by an earlier call is a hit rather than re-executed. This is
+  /// how a sequence of independent claims is executed with the same
+  /// memoization semantics as one combined run (the scan-and-cut sharder's
+  /// segment loop).
+  pub fn execute_with_record(
+    &self,
+    fun_idx: FunIdx,
+    args: Vec<G>,
+    io_buffer: &mut IOBuffer,
+    record: &QueryRecord,
+  ) -> Result<Vec<G>, ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
-    let mut record = QueryRecord::new(self);
     let function = &self.functions[fun_idx];
-    let output =
-      function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    // CONTRACT: this sequential interpreter path does not mark FAILED
+    // entries on error (unlike the codegen'd call sites, which fail
+    // their own reservations as errors unwind). An errored execution
+    // may leave PENDING entries behind, so the record must be treated
+    // as poisoned and discarded — fine for the only caller
+    // ([`Self::execute`], whose record is private and dropped on
+    // error), and any future shared-record caller must go through the
+    // codegen'd runner instead.
+    let output = function.execute(fun_idx, args, self, record, io_buffer)?;
     if *QUERY_STATS {
-      dump_query_stats(&record, "final");
+      dump_query_stats(record, "final");
     }
-    Ok((record, output))
+    Ok(output)
   }
+}
+
+/// Total FFT cost of a [`QueryRecord`]: `Σ width·height·log2(max(height,2))`
+/// over every constrained function circuit plus the memory circuits, with
+/// heights = unique memoized queries. Mirrors `Ix/Aiur/Statistics.lean`'s
+/// `computeStats.totalFftCost` (function width `layout.totalWidth` =
+/// `width + extDegree·max(lookups,1)`; memory width `3 + size + extDegree`;
+/// gadget circuits excluded, as there), so a running readout here matches
+/// the number the check stats dump prints and the RAM/wall lines are
+/// calibrated against.
+/// `usize → f64` without a lossy `as` cast: split into `u32` halves, each
+/// exactly convertible. Matches `n as f64` bit-for-bit below 2^52 (query
+/// counts and widths stay far below) and rounds identically above.
+pub fn f64_from_usize(n: usize) -> f64 {
+  let hi = u32::try_from(n >> 32).expect("usize is at most 64 bits");
+  let lo = u32::try_from(n & 0xFFFF_FFFF).expect("masked to u32 range");
+  f64::from(hi) * 4_294_967_296.0 + f64::from(lo)
+}
+
+/// Approximate resident bytes of a [`QueryRecord`]: retained key/output
+/// field elements (8 B each) plus ~21 B of per-entry index overhead
+/// (stored hash 8, multiplicity element 8, hash-table slot ~5 with load
+/// factor). Lock-free and O(#maps) — map lens are single atomic loads —
+/// so it doubles as the scanner's execute-mode cut metric, checked by
+/// every worker between blocks. It is also the analytic prove-RAM
+/// model's record term, calibrated end-to-end against measured proves.
+/// The memory-circuit stores dominate on arithmetic-heavy content,
+/// where entries are FFT-cheap (narrow columns) but RAM-heavy — the
+/// second resource dimension a RAM-budgeted partition has to price
+/// alongside FFT cost.
+pub fn record_retained_bytes(record: &QueryRecord) -> usize {
+  let mut elems = 0usize;
+  let mut entries = 0usize;
+  for m in &record.function_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  for (_, m) in &record.memory_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  elems * 8 + entries * 21
+}
+
+pub fn record_fft_cost(toplevel: &Toplevel, record: &QueryRecord) -> f64 {
+  const EXT_DEGREE: usize = 2;
+  fn fft(w: usize, h: usize) -> f64 {
+    if h == 0 {
+      0.0
+    } else {
+      f64_from_usize(w) * f64_from_usize(h) * f64_from_usize(h.max(2)).log2()
+    }
+  }
+  let mut total = 0.0;
+  for (i, f) in toplevel.functions.iter().enumerate() {
+    if f.constrained {
+      let w = f.layout.width() + EXT_DEGREE * f.layout.lookups.max(1);
+      total += fft(w, record.function_queries[i].len());
+    }
+  }
+  for (size, qm) in &record.memory_queries {
+    total += fft(3 + size + EXT_DEGREE, qm.len());
+  }
+  total
 }
 
 enum ExecEntry<'a> {
@@ -271,7 +709,7 @@ impl Function {
     mut fun_idx: FunIdx,
     mut map: Vec<G>,
     toplevel: &Toplevel,
-    record: &mut QueryRecord,
+    record: &QueryRecord,
     io_buffer: &mut IOBuffer,
   ) -> Result<Vec<G>, ExecError> {
     let mut exec_entries_stack = vec![];
@@ -327,13 +765,11 @@ impl Function {
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
-          if let Some(result) =
-            record.function_queries[*callee_idx].get_mut(&args)
+          let bump = !unconstrained && !op_unconstrained;
+          if let Some(output) =
+            record.function_queries[*callee_idx].probe_bump(&args, bump)
           {
-            if !unconstrained && !op_unconstrained {
-              *result.multiplicity += G::ONE;
-            }
-            map.extend_from_slice(result.output);
+            map.extend_from_slice(output);
           } else {
             let saved_map = std::mem::replace(&mut map, args);
             callers_states_stack.push(CallerState {
@@ -352,39 +788,23 @@ impl Function {
           let size = values.len();
           let memory_queries = record
             .memory_queries
-            .get_mut(&size)
+            .get(&size)
             .ok_or(ExecError::InvalidMemorySize(size))?;
-          if let Some(result) = memory_queries.get_mut(&values) {
-            if !unconstrained {
-              *result.multiplicity += G::ONE;
-            }
-            map.extend_from_slice(result.output);
-          } else {
-            let ptr = G::from_usize(memory_queries.len());
-            memory_queries.insert(
-              &values,
-              &[ptr],
-              G::from_bool(!unconstrained),
-            );
-            map.push(ptr);
-          }
+          map.push(memory_queries.store_cc(&values, !unconstrained));
         },
         ExecEntry::Op(Op::Load(size, ptr)) => {
           let memory_queries = record
             .memory_queries
-            .get_mut(size)
+            .get(size)
             .ok_or(ExecError::InvalidMemorySize(*size))?;
           let ptr = &map[*ptr];
           let ptr_u64 = ptr.as_canonical_u64();
           let ptr_usize = usize::try_from(ptr_u64)
             .ok()
             .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
-          let (args, multiplicity) = memory_queries
-            .get_index_mut(ptr_usize)
+          let args = memory_queries
+            .load_bump(ptr_usize, !unconstrained)
             .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
-          if !unconstrained {
-            *multiplicity += G::ONE;
-          }
           map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
@@ -410,8 +830,8 @@ impl Function {
           let channel = map[*channel];
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let IOKeyInfo { idx, len } = io_buffer.get_info(channel, &key)?;
-          map.push(G::from_usize(*idx));
-          map.push(G::from_usize(*len));
+          map.push(G::from_usize(idx));
+          map.push(G::from_usize(len));
         },
         ExecEntry::Op(Op::IOSetInfo(channel, key, idx, len)) => {
           let channel = map[*channel];
@@ -595,7 +1015,11 @@ impl Function {
             record.bytes2_queries.bump_range_check(&vi, &vj);
           }
         },
-        ExecEntry::Op(Op::UnconstrainedBigUintDivMod(a_idx, b_idx)) => {
+        ExecEntry::Op(Op::UnconstrainedBigUintDivMod(
+          tag_idx,
+          a_idx,
+          b_idx,
+        )) => {
           // Unconstrained hint for klimbs-style LE byte division. Inputs are
           // pointers to `List<U64>` (in memory[10]) values storing `a` and
           // `b` as little-endian u64 limbs (each limb's 8 bytes are stored
@@ -610,6 +1034,7 @@ impl Function {
           // The `memory[10]` channel is chosen because the standard Aiur
           // layout for a tagged enum with a `(U64, &Self)` constructor is
           // `tag(1) + U64(8) + ptr(1) = 10` G values.
+          let tid = map[*tag_idx];
           let a_ptr = map[*a_idx];
           let b_ptr = map[*b_idx];
           let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
@@ -625,9 +1050,9 @@ impl Function {
           };
           let q_limbs = biguint_to_klimbs_u64(&q_big);
           let r_limbs = biguint_to_klimbs_u64(&r_big);
-          let q_ptr = build_klimbs_u64(&mut record.memory_queries, &q_limbs)
+          let q_ptr = build_klimbs_u64(&record.memory_queries, tid, &q_limbs)
             .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-          let r_ptr = build_klimbs_u64(&mut record.memory_queries, &r_limbs)
+          let r_ptr = build_klimbs_u64(&record.memory_queries, tid, &r_limbs)
             .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
           map.push(q_ptr);
           map.push(r_ptr);
@@ -699,10 +1124,10 @@ impl Function {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          record.function_queries[fun_idx].insert(
+          record.function_queries[fun_idx].insert_cc(
             &map[..input_size],
             &output,
-            G::from_bool(!unconstrained),
+            !unconstrained,
           );
           if let Some(CallerState {
             fun_idx: caller_idx,
@@ -735,7 +1160,7 @@ pub fn bytes1_execute(
   byte: usize,
   op: &Bytes1Op,
   map: &mut Vec<G>,
-  record: &mut QueryRecord,
+  record: &QueryRecord,
 ) {
   map.extend(Bytes1.execute(op, &[map[byte]], record));
 }
@@ -745,7 +1170,7 @@ pub fn bytes2_execute(
   j: usize,
   op: &Bytes2Op,
   map: &mut Vec<G>,
-  record: &mut QueryRecord,
+  record: &QueryRecord,
 ) {
   map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
 }
@@ -766,8 +1191,7 @@ pub fn bytes2_execute(
 // ============================================================================
 
 #[inline]
-pub fn bytes1_bit_decompose_value(byte: G, record: &mut QueryRecord) -> [G; 8] {
-  record.bytes1_queries.bump_bit_decomposition(&byte);
+pub fn bytes1_bit_decompose_value(byte: G, _record: &QueryRecord) -> [G; 8] {
   let byte_u64 = byte.as_canonical_u64();
   [
     G::from_bool(byte_u64 & 1 == 1),
@@ -785,8 +1209,7 @@ pub fn bytes1_bit_decompose_value(byte: G, record: &mut QueryRecord) -> [G; 8] {
 /// of other toplevels that might.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_left_value(byte: G, record: &mut QueryRecord) -> G {
-  record.bytes1_queries.bump_shift_left(&byte);
+pub fn bytes1_shift_left_value(byte: G, _record: &QueryRecord) -> G {
   Bytes1::shift_left(&byte)
 }
 
@@ -794,32 +1217,27 @@ pub fn bytes1_shift_left_value(byte: G, record: &mut QueryRecord) -> G {
 /// codegen of other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_right_value(byte: G, record: &mut QueryRecord) -> G {
-  record.bytes1_queries.bump_shift_right(&byte);
+pub fn bytes1_shift_right_value(byte: G, _record: &QueryRecord) -> G {
   Bytes1::shift_right(&byte)
 }
 
 #[inline]
-pub fn bytes2_xor_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_xor(&a, &b);
+pub fn bytes2_xor_value(a: G, b: G, _record: &QueryRecord) -> G {
   Bytes2::xor(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_and_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_and(&a, &b);
+pub fn bytes2_and_value(a: G, b: G, _record: &QueryRecord) -> G {
   Bytes2::and(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_or_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_or(&a, &b);
+pub fn bytes2_or_value(a: G, b: G, _record: &QueryRecord) -> G {
   Bytes2::or(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_less_than_value(a: G, b: G, record: &mut QueryRecord) -> G {
-  record.bytes2_queries.bump_less_than(&a, &b);
+pub fn bytes2_less_than_value(a: G, b: G, _record: &QueryRecord) -> G {
   Bytes2::less_than(&a, &b)
 }
 
@@ -827,20 +1245,17 @@ pub fn bytes2_less_than_value(a: G, b: G, record: &mut QueryRecord) -> G {
 /// other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes2_mul_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_mul(&a, &b);
+pub fn bytes2_mul_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
   Bytes2::mul(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_xor_split7_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_xor_split7(&a, &b);
+pub fn bytes2_xor_split7_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
   Bytes2::xor_split7(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_xor_split4(&a, &b);
+pub fn bytes2_xor_split4_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
   Bytes2::xor_split4(&a, &b)
 }
 
@@ -849,14 +1264,12 @@ pub fn bytes2_xor_split4_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
 /// chip; carry is derived natively. The codegen path uses this
 /// helper so the add gadget runs exactly once.
 #[inline]
-pub fn bytes2_add_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_add(&a, &b);
+pub fn bytes2_add_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
   Bytes2::add(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_sub_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
-  record.bytes2_queries.bump_sub(&a, &b);
+pub fn bytes2_sub_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
   Bytes2::sub(&a, &b)
 }
 
@@ -882,9 +1295,10 @@ pub fn g_inverse_value(x: G) -> G {
 /// `record.memory_queries` as the inlined `Op::UnconstrainedBigUintDivMod`
 /// arm in the interpreter.
 pub fn unconstrained_big_uint_div_mod_helper(
+  tid: G,
   a_ptr: G,
   b_ptr: G,
-  record: &mut QueryRecord,
+  record: &QueryRecord,
 ) -> Result<(G, G), ExecError> {
   let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
@@ -899,9 +1313,9 @@ pub fn unconstrained_big_uint_div_mod_helper(
   };
   let q_limbs = biguint_to_klimbs_u64(&q_big);
   let r_limbs = biguint_to_klimbs_u64(&r_big);
-  let q_ptr = build_klimbs_u64(&mut record.memory_queries, &q_limbs)
+  let q_ptr = build_klimbs_u64(&record.memory_queries, tid, &q_limbs)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
-  let r_ptr = build_klimbs_u64(&mut record.memory_queries, &r_limbs)
+  let r_ptr = build_klimbs_u64(&record.memory_queries, tid, &r_limbs)
     .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
   Ok((q_ptr, r_ptr))
 }
@@ -911,6 +1325,7 @@ pub fn unconstrained_big_uint_div_mod_helper(
 /// execution already recorded in `memory[10]` — every node was built there
 /// during execution, so each key must be present.
 pub fn find_unconstrained_big_uint_div_mod(
+  tid: G,
   a_ptr: G,
   b_ptr: G,
   memory: &FxIndexMap<usize, QueryMap>,
@@ -924,8 +1339,8 @@ pub fn find_unconstrained_big_uint_div_mod(
   } else {
     (&a_big / &b_big, &a_big % &b_big)
   };
-  let q_ptr = find_klimbs_u64(memory, &biguint_to_klimbs_u64(&q_big))?;
-  let r_ptr = find_klimbs_u64(memory, &biguint_to_klimbs_u64(&r_big))?;
+  let q_ptr = find_klimbs_u64(memory, tid, &biguint_to_klimbs_u64(&q_big))?;
+  let r_ptr = find_klimbs_u64(memory, tid, &biguint_to_klimbs_u64(&r_big))?;
   Ok((q_ptr, r_ptr))
 }
 
@@ -933,19 +1348,23 @@ pub fn find_unconstrained_big_uint_div_mod(
 /// (already-recorded) list node without inserting.
 fn find_klimbs_u64(
   memory: &FxIndexMap<usize, QueryMap>,
+  tid: G,
   limbs: &[u64],
 ) -> Result<G, String> {
-  let queries = memory.get(&10).ok_or_else(|| {
-    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  let queries = memory.get(&11).ok_or_else(|| {
+    "memory[11] channel not registered (no List<U64> in program?)".to_string()
   })?;
-  let nil_key: Vec<G> =
-    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  let nil_key: Vec<G> = std::iter::once(tid)
+    .chain(std::iter::once(G::ONE))
+    .chain((0..9).map(|_| G::ZERO))
+    .collect();
   let mut tail_ptr = queries
     .get(&nil_key)
     .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
     .output[0];
   for limb in limbs.iter().rev() {
-    let mut key: Vec<G> = Vec::with_capacity(10);
+    let mut key: Vec<G> = Vec::with_capacity(11);
+    key.push(tid);
     key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
     for b in &limb.to_le_bytes() {
       key.push(G::from_u8(*b));
@@ -969,8 +1388,8 @@ fn read_klimbs_u64(
   memory: &FxIndexMap<usize, QueryMap>,
   head_ptr: G,
 ) -> Result<Vec<u64>, String> {
-  let queries = memory.get(&10).ok_or_else(|| {
-    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  let queries = memory.get(&11).ok_or_else(|| {
+    "memory[11] channel not registered (no List<U64> in program?)".to_string()
   })?;
   let mut limbs: Vec<u64> = Vec::new();
   let mut ptr = head_ptr;
@@ -981,7 +1400,11 @@ fn read_klimbs_u64(
     let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
       format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
     })?;
-    let tag = key[0].as_canonical_u64();
+    // Slot 0 is the store-site type id; the walk skips it unverified —
+    // the input list (List over u8 limbs) and the advice list (List
+    // over field limbs) carry DIFFERENT ids by design, and the id's
+    // whole job is making such contents distinct, never gating reads.
+    let tag = key[1].as_canonical_u64();
     // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
     // first variant (tag 0), Nil the second (tag 1).
     if tag == 1 {
@@ -994,14 +1417,14 @@ fn read_klimbs_u64(
     }
     let mut limb_bytes = [0u8; 8];
     for k in 0..8 {
-      let b = key[1 + k].as_canonical_u64();
+      let b = key[2 + k].as_canonical_u64();
       if b >= 256 {
         return Err(format!("limb byte {b} out of u8 range"));
       }
       limb_bytes[k] = u8::try_from(b).expect("range-checked above");
     }
     limbs.push(u64::from_le_bytes(limb_bytes));
-    ptr = key[9];
+    ptr = key[10];
   }
 }
 
@@ -1044,38 +1467,30 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
 /// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
 /// identical sub-tails share storage.
 fn build_klimbs_u64(
-  memory: &mut FxIndexMap<usize, QueryMap>,
+  memory: &FxIndexMap<usize, QueryMap>,
+  tid: G,
   limbs: &[u64],
 ) -> Result<G, String> {
-  let queries = memory.get_mut(&10).ok_or_else(|| {
-    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  let queries = memory.get(&11).ok_or_else(|| {
+    "memory[11] channel not registered (no List<U64> in program?)".to_string()
   })?;
   // Find or insert the Nil ptr (tag = 1, padded payload all zero).
-  let nil_key: Vec<G> =
-    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
-  let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
-    out.output[0]
-  } else {
-    let ptr = G::from_usize(queries.len());
-    queries.insert(&nil_key, &[ptr], G::ZERO);
-    ptr
-  };
+  let nil_key: Vec<G> = std::iter::once(tid)
+    .chain(std::iter::once(G::ONE))
+    .chain((0..9).map(|_| G::ZERO))
+    .collect();
+  let mut tail_ptr = queries.store_cc(&nil_key, false);
   // Walk limbs in REVERSE so each Cons points at the previously-built tail.
   for limb in limbs.iter().rev() {
     let bytes = limb.to_le_bytes();
-    let mut key: Vec<G> = Vec::with_capacity(10);
+    let mut key: Vec<G> = Vec::with_capacity(11);
+    key.push(tid);
     key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
     for b in &bytes {
       key.push(G::from_u8(*b));
     }
     key.push(tail_ptr);
-    tail_ptr = if let Some(out) = queries.get_mut(&key) {
-      out.output[0]
-    } else {
-      let ptr = G::from_usize(queries.len());
-      queries.insert(&key, &[ptr], G::ZERO);
-      ptr
-    };
+    tail_ptr = queries.store_cc(&key, false);
   }
   Ok(tail_ptr)
 }

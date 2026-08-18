@@ -185,6 +185,35 @@ def shardProveWithEnv (system : @& AiurSystem)
 opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
+/-- Cut-mode whole-env execute-and-prove: execution seals segment
+    records at the cut threshold and each proceeds straight to a
+    multi-claim STARK from its own record (no re-execution), verified
+    before the run continues. FunIdxs: `verify_segment` (the single
+    segment claim executed at seal) and `verify_block` (the per-block
+    warm execution workers run in parallel). Remaining args mirror
+    `executeEnvWithEnv`: workers ("0" = default width), fail-fast ("0"
+    records and skips rejects — segments containing rejects are not
+    proven). -/
+@[extern "rs_aiur_execute_env_prove_with_env"]
+opaque executeEnvProveWithEnv : @& AiurSystem →
+  @& Bytecode.FunIdx → @& Bytecode.FunIdx → @& EnvHandle → @& String →
+  @& String → @& String → @& String → Except String Unit
+
+/-- Manifest-driven measure/prove: execute the shards of a PR-550
+    `.ixes` manifest (one warm shared record per shard, one
+    `verify_segment` claim), gate every prove on the EXACT
+    post-execution RAM model, and — in all-shards dry mode with a
+    fixup path — rewrite the manifest by splitting shards that
+    measured over budget and merging consecutive underfilled ones
+    while the sum of measured peaks stays under budget. String args:
+    workers ("0" = default), manifest path, shard selector (decimal or
+    "" = all), dry-run ("1" measures only), fixup-out path ("" =
+    none). -/
+@[extern "rs_aiur_execute_manifest_prove_with_env"]
+opaque executeManifestProveWithEnv : @& AiurSystem →
+  @& Bytecode.FunIdx → @& Bytecode.FunIdx → @& EnvHandle → @& String →
+  @& String → @& String → @& String → @& String → Except String Unit
+
 end AiurSystem
 
 /-- One-shot variant of `AiurSystem.circuitShapes` for flows that never
