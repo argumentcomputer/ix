@@ -215,6 +215,25 @@ def toplevel := ⟦
     }
   }
 
+  -- Regression: a constrained call must recursively promote an identical
+  -- query previously cached by an unconstrained call.  `promotion_nested`
+  -- calls another function so promoting only its own multiplicity leaves
+  -- the nested function channel unbalanced.
+  fn promotion_leaf(x: G) -> G {
+    x + 1
+  }
+
+  fn promotion_nested(x: G) -> G {
+    promotion_leaf(x)
+  }
+
+  pub fn unconstrained_call_promotion(x: G) -> G {
+    let hinted = #promotion_nested(x);
+    let constrained = promotion_nested(x);
+    assert_eq!(hinted, constrained);
+    constrained
+  }
+
   ---------------------------------------------------------------------------
   -- IO
   ---------------------------------------------------------------------------
@@ -793,6 +812,10 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Unconstrained recursion: mixed constrained/unconstrained calls
     .prove `unconstrained_fibonacci #[6] #[13],
+
+    -- A constrained call reuses an identical unconstrained cached query and
+    -- must recursively promote the nested callee's lookup multiplicity.
+    .prove `unconstrained_call_promotion #[3] #[4],
 
     -- IO
     { functionName := `read_write_io

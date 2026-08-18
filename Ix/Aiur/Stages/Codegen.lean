@@ -398,8 +398,9 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
     s!" let __cu = {cuExpr};" ++
     s!" if let Some(result) = record.function_queries[{callee}].get_mut(&__args[..]) \{" ++
-    bumpStmt ++
-    retExpr ++
+    s!" if !__cu && *result.multiplicity == G::ZERO \{" ++
+    s!" aiur_fn_{callee}(__args, record, io_buffer, false)?" ++
+    s!" } else \{" ++ bumpStmt ++ retExpr ++ " }" ++
     s!" } else \{ aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
@@ -816,15 +817,13 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let outArr : RustStmt :=
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
-    let insertCall : RustStmt :=
-      .exprStmt (.call
-        (.field
-          (.index (.field (.var "record") "function_queries")
-            (.lit (toString funIdx)))
-          "insert")
-        #[.ref (.index (.var "inp") (.lit "..")),
-          .ref (.index (.var "__ret") (.lit "..")),
-          gFromBool (.lit "!unconstrained")])
+    let insertCall : RustStmt := .exprStmt (.lit <|
+      s!"if let Some(result) = record.function_queries[{funIdx}].get_mut(&inp[..]) \{" ++
+      " debug_assert_eq!(result.output, &__ret[..]);" ++
+      " if !unconstrained { *result.multiplicity += G::ONE; }" ++
+      " } else {" ++
+      s!" record.function_queries[{funIdx}].insert(&inp[..], &__ret[..], G::from_bool(!unconstrained));" ++
+      " }")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]
