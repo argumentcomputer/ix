@@ -404,7 +404,7 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("IxVMInd.thmMajorUse",                                        496_208_616),
   ("IxVMInd.partialKRec",                                        148_779_400),
   ("IxVMInd.deepRebase",                                         208_806_873),
-  ("String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec", 3_262_061_945),
+  ("String.Slice.Pattern.Model.NoPrefixPatternModel.rec",        3_262_061_945),
   ("Lean.Widget.TaggedText.rec",                               2_358_605_375),
   ("Lean.Doc.Part.rec",                                        2_397_535_586),
   ("Lean.Doc.Block.rec",                                       2_615_255_825),
