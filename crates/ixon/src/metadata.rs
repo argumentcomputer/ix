@@ -1247,17 +1247,13 @@ impl ConstantMetaInfo {
           put_idx_vec(cls, idx, buf)?;
         }
         // Option<AuxLayout>: 0 tag = None, 1 tag = Some(perm_vec,
-        // ctor_vec), 2 tag = Some(perm_vec, ctor_vec, evaporated_vec).
-        // The usize vecs are written as Vec<u64> via Tag0 so the
-        // serialized form is target-word-size independent; `evaporated`
-        // is one u8 (0/1) per entry. Tag 1 is still written whenever no
-        // position evaporated, so blocks without evaporation stay
-        // byte-identical to the pre-`evaporated` format.
+        // ctor_vec, evaporated_vec). The usize vecs are written as
+        // Vec<u64> via Tag0 so the serialized form is target-word-size
+        // independent; `evaporated` is one u8 (0/1) per entry.
         match aux_layout {
           None => put_u8(0, buf),
           Some(layout) => {
-            let any_evaporated = layout.evaporated.iter().any(|&b| b);
-            put_u8(if any_evaporated { 2 } else { 1 }, buf);
+            put_u8(1, buf);
             put_u64(layout.perm.len() as u64, buf);
             for &p in &layout.perm {
               put_u64(p as u64, buf);
@@ -1266,11 +1262,9 @@ impl ConstantMetaInfo {
             for &c in &layout.source_ctor_counts {
               put_u64(c as u64, buf);
             }
-            if any_evaporated {
-              put_u64(layout.evaporated.len() as u64, buf);
-              for &b in &layout.evaporated {
-                put_u8(u8::from(b), buf);
-              }
+            put_u64(layout.evaporated.len() as u64, buf);
+            for &b in &layout.evaporated {
+              put_u8(u8::from(b), buf);
             }
           },
         }
@@ -1337,7 +1331,7 @@ impl ConstantMetaInfo {
         }
         let aux_layout = match get_u8(buf)? {
           0 => None,
-          tag @ (1 | 2) => {
+          1 => {
             let n_perm = get_u64(buf)? as usize;
             let mut perm = Vec::with_capacity(n_perm);
             for _ in 0..n_perm {
@@ -1348,26 +1342,19 @@ impl ConstantMetaInfo {
             for _ in 0..n_counts {
               source_ctor_counts.push(get_u64(buf)? as usize);
             }
-            // Tag 1: pre-`evaporated` layout — every position defaults
-            // to not-evaporated. Tag 2: explicit per-position flags.
-            let evaporated = if tag == 2 {
-              let n_evap = get_u64(buf)? as usize;
-              let mut evaporated = Vec::with_capacity(n_evap);
-              for _ in 0..n_evap {
-                evaporated.push(match get_u8(buf)? {
-                  0 => false,
-                  1 => true,
-                  x => {
-                    return Err(format!(
-                      "Muts.aux_layout: invalid evaporated flag {x}"
-                    ));
-                  },
-                });
-              }
-              evaporated
-            } else {
-              vec![false; n_perm]
-            };
+            let n_evap = get_u64(buf)? as usize;
+            let mut evaporated = Vec::with_capacity(n_evap);
+            for _ in 0..n_evap {
+              evaporated.push(match get_u8(buf)? {
+                0 => false,
+                1 => true,
+                x => {
+                  return Err(format!(
+                    "Muts.aux_layout: invalid evaporated flag {x}"
+                  ));
+                },
+              });
+            }
             Some(AuxLayout { perm, source_ctor_counts, evaporated })
           },
           x => return Err(format!("Muts.aux_layout: invalid tag {x}")),
@@ -1461,6 +1448,36 @@ mod tests {
     let mut reindexed = Vec::new();
     from_raw.put_with(NamePut::Indexed(&idx), &mut reindexed).unwrap();
     assert_eq!(buf, reindexed);
+  }
+
+  #[test]
+  fn test_muts_aux_layout_roundtrip() {
+    let addr = Address::from_slice(&[7u8; 32]).unwrap();
+    // The unified encoding serializes `evaporated` verbatim under one
+    // Some tag (no all-false special case): all-false, mixed, and empty
+    // flag vectors each roundtrip exactly.
+    for evaporated in [vec![false, false], vec![true, false], vec![]] {
+      let meta = ConstantMeta::new(ConstantMetaInfo::Muts {
+        all: vec![vec![addr.clone()]],
+        aux_layout: Some(AuxLayout {
+          perm: vec![1, 0],
+          source_ctor_counts: vec![2, 3],
+          evaporated,
+        }),
+      });
+      let mut buf = Vec::new();
+      meta.put_raw(&mut buf).unwrap();
+      let recovered = ConstantMeta::get_raw(&mut buf.as_slice()).unwrap();
+      assert_eq!(meta, recovered);
+    }
+    let none = ConstantMeta::new(ConstantMetaInfo::Muts {
+      all: vec![vec![addr]],
+      aux_layout: None,
+    });
+    let mut buf = Vec::new();
+    none.put_raw(&mut buf).unwrap();
+    let recovered = ConstantMeta::get_raw(&mut buf.as_slice()).unwrap();
+    assert_eq!(none, recovered);
   }
 
   #[test]

@@ -488,10 +488,14 @@ mod doc_examples {
 
   #[test]
   fn env_tag() {
-    // Env -> Tag4 { flag: 0xE, size: 0 } -> 0xE0
+    // Env -> Tag4 { flag: 0xE, size: VERSION } -> e.g. 0xE1 for v1
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
-    assert_eq!(buf[0], 0xE0, "Env should start with 0xE0 (flag=E, variant=0)");
+    let header = (Env::FLAG << 4) | u8::try_from(Env::VERSION).unwrap();
+    assert_eq!(
+      buf[0], header,
+      "Env should start with {header:#04X} (flag=E, size=format version)"
+    );
   }
 }

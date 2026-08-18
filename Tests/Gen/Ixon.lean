@@ -351,10 +351,9 @@ def genCallSiteEntry (genIdx : Gen UInt64) : Gen CallSiteEntry :=
 
 /-- Generate an optional AuxLayout (nested-aux sidecar on `muts`).
     `evaporated` is canonically one 0/1 flag per perm entry — that is
-    what the compiler materializes and what the tag-1 read path
-    reconstructs, so only size-matched flag arrays are
-    serialization-roundtrip-stable (`#[]` with a nonempty perm reads
-    back as explicit zeros). -/
+    what the compiler materializes. The unified encoding serializes the
+    flags verbatim (a `#[]` evaporated roundtrips as `#[]`), so the
+    generator emits the canonical size-matched form. -/
 def genAuxLayout? : Gen (Option AuxLayout) :=
   frequency [
     (2, pure none),

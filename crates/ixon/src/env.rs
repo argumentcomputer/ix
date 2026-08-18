@@ -183,8 +183,7 @@ pub struct AuxLayout {
   /// that is canonical in ANOTHER SCC of the same original mutual stays
   /// `PERM_OUT_OF_SCC` in `perm` with `evaporated = false` here: that
   /// SCC owns the name, and this block registers neither alias nor plan
-  /// (see plans/aux-recursor-alias-collision.md). Same length as `perm`;
-  /// legacy serialized layouts (Muts aux_layout tag 1) decode all-false.
+  /// (see plans/aux-recursor-alias-collision.md). Same length as `perm`.
   pub evaporated: Vec<bool>,
 }
 

@@ -96,11 +96,12 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
   }
 }
 
-/// Read the `.ixe` header shared by every Env reader: `Tag4(0xE, 0)`,
-/// the 32-byte consts merkle root, the bundle `main` pointer, and the
-/// strictly ascending assumptions list. Centralized so the four readers
-/// (`get`, `get_anon`, `get_anon_mmap`, `parse_lazy_index`) cannot
-/// drift. `ctx` labels errors with the calling reader.
+/// Read the `.ixe` header shared by every Env reader:
+/// `Tag4(0xE, VERSION)`, the 32-byte consts merkle root, the bundle
+/// `main` pointer, and the strictly ascending assumptions list.
+/// Centralized so the four readers (`get`, `get_anon`, `get_anon_mmap`,
+/// `parse_lazy_index`) cannot drift. `ctx` labels errors with the
+/// calling reader.
 fn read_env_header(
   buf: &mut &[u8],
   ctx: &str,
@@ -113,8 +114,13 @@ fn read_env_header(
       tag.flag
     ));
   }
-  if tag.size != 0 {
-    return Err(format!("{ctx}: expected Env variant 0, got {}", tag.size));
+  if tag.size != Env::VERSION {
+    return Err(format!(
+      "{ctx}: expected .ixe format version {}, got {} — recompile the \
+       artifact",
+      Env::VERSION,
+      tag.size
+    ));
   }
   let stored_root = get_address(buf)?;
   // A pre-bundle-format `.ixe` has the §1 blob count here, so this
@@ -1471,8 +1477,16 @@ use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed};
 use super::merkle::{merkle_root_canonical, zero_address};
 
 impl Env {
-  /// Tag4 flag for Env (0xE), variant 0.
+  /// Tag4 flag for Env (0xE).
   pub const FLAG: u8 = 0xE;
+
+  /// `.ixe` format version, carried in the header's Tag4 size field
+  /// (versions < 8 cost zero extra bytes). Any change to serialized
+  /// bytes bumps this. Readers reject a mismatch; there is no
+  /// back-compat reading of old versions — `.ixe` files are
+  /// regenerated artifacts. Mirrors `Ixon.Env.VERSION` in
+  /// `Ix/Ixon.lean`.
+  pub const VERSION: u64 = 1;
 
   /// Serialize an Env to bytes.
   ///
@@ -1496,8 +1510,8 @@ impl Env {
     let verbose = std::env::var("IX_VERBOSE").is_ok();
     let overall_start = std::time::Instant::now();
 
-    // Header: Tag4 with flag=0xE, size=0 (Env variant)
-    Tag4::new(Self::FLAG, 0).put(buf);
+    // Header: Tag4 with flag=0xE, size=VERSION (format version)
+    Tag4::new(Self::FLAG, Self::VERSION).put(buf);
 
     // ─────────────────────────────────────────────────────────────────────
     // Canonical merkle root over consts.keys()
@@ -1824,8 +1838,9 @@ impl Env {
       };
     }
 
-    // Header: Tag4 + canonical merkle root over consts.keys().
-    Tag4::new(Self::FLAG, 0).put(&mut buf);
+    // Header: Tag4 (flag=0xE, size=VERSION) + canonical merkle root
+    // over consts.keys().
+    Tag4::new(Self::FLAG, Self::VERSION).put(&mut buf);
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
     const_addrs.par_sort_unstable();
@@ -2694,9 +2709,10 @@ impl Env {
   ) -> Result<(usize, usize, usize, usize, usize, usize, usize), String> {
     let mut buf = Vec::new();
 
-    // Header: tag + merkle root (32 bytes, `zero_address()` sentinel
-    // for empty const sets) + bundle fields (matches Env::put layout).
-    Tag4::new(Self::FLAG, 0).put(&mut buf);
+    // Header: tag (flag=0xE, size=VERSION) + merkle root (32 bytes,
+    // `zero_address()` sentinel for empty const sets) + bundle fields
+    // (matches Env::put layout).
+    Tag4::new(Self::FLAG, Self::VERSION).put(&mut buf);
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
     const_addrs.sort_unstable();
@@ -2952,6 +2968,32 @@ mod tests {
     assert_eq!(env.consts.len(), recovered.consts.len());
     assert_eq!(env.named.len(), recovered.named.len());
     assert_eq!(env.comms.len(), recovered.comms.len());
+  }
+
+  #[test]
+  fn test_env_header_version_mismatch() {
+    let env = Env::new();
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    // Versions < 8 encode inline in the Tag4 head byte.
+    assert_eq!(buf[0], (Env::FLAG << 4) | (Env::VERSION as u8));
+    // A pre-versioning header (size 0) and a future version must both
+    // be rejected, with an error naming the versions, on every reader
+    // path through `read_env_header`.
+    for wrong in [0u8, Env::VERSION as u8 + 1] {
+      let mut bad = buf.clone();
+      bad[0] = (Env::FLAG << 4) | wrong;
+      for err in [
+        Env::get(&mut bad.as_slice()).map(|_| ()).unwrap_err(),
+        Env::get_anon(&mut bad.as_slice()).map(|_| ()).unwrap_err(),
+        Env::parse_lazy_index(&bad).map(|_| ()).unwrap_err(),
+      ] {
+        assert!(
+          err.contains("format version"),
+          "expected a format-version error, got: {err}"
+        );
+      }
+    }
   }
 
   // ========== Arbitrary generators for Env ==========
@@ -3297,10 +3339,11 @@ mod tests {
   }
 
   /// Extract the stored merkle root from a serialized env. The Tag4
-  /// header byte (`0xE0` for env) is followed by exactly 32 bytes of
-  /// root (no opt-tag).
+  /// header byte (flag `0xE`, size = format version) is followed by
+  /// exactly 32 bytes of root (no opt-tag).
   fn parse_stored_root(buf: &[u8]) -> Vec<u8> {
-    assert_eq!(buf[0], 0xE0, "env header byte should be 0xE0");
+    let header = (Env::FLAG << 4) | (Env::VERSION as u8);
+    assert_eq!(buf[0], header, "env header byte should be {header:#04X}");
     buf[1..33].to_vec()
   }
 

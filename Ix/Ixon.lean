@@ -517,10 +517,10 @@ structure AuxLayout where
       position `sourceJ` (alias to the external head's generic recursor +
       head-rewrite call-site plan). Positions canonical in another SCC of
       the same original mutual stay `PERM_OUT_OF_SCC` in `perm` with a `0`
-      here. Same length as `perm` once populated; legacy tag-1 serialized
-      layouts (and pre-field construction sites via this default) decode
-      as all-`0`. Mirrors Rust `ixon::env::AuxLayout.evaporated`
-      (`Vec<bool>`, carried as 0/1 u64s across the FFI). -/
+      here. Same length as `perm` once populated (pre-field construction
+      sites decode as all-`0` via this default). Mirrors Rust
+      `ixon::env::AuxLayout.evaporated` (`Vec<bool>`, carried as 0/1
+      u64s across the FFI). -/
   evaporated : Array UInt64 := #[]
   deriving BEq, Repr, Inhabited
 
@@ -1633,23 +1633,24 @@ def putConstantMetaInfoIndexed (cm : ConstantMetaInfo) (idx : NameIndex) : PutM 
     for cls in all do
       putIdxVec cls idx
     -- Option AuxLayout: 0 tag = none, 1 tag = some(perm vec, ctor-count
-    -- vec), 2 tag = some(perm vec, ctor-count vec, evaporated flags).
-    -- Vecs are Tag0 u64s; evaporated flags are one u8 (0/1) per entry.
-    -- Tag 1 is still written when no position evaporated so blocks
-    -- without evaporation stay byte-identical to the pre-`evaporated`
-    -- format (mirrors Rust `ConstantMetaInfo::Muts`).
+    -- vec, evaporated flags). Vecs are Tag0 u64s; evaporated flags are
+    -- one u8 (0/1) per entry (mirrors Rust `ConstantMetaInfo::Muts`).
     match auxLayout with
     | none => putU8 0
     | some layout =>
-      let anyEvaporated := layout.evaporated.any (· != 0)
-      putU8 (if anyEvaporated then 2 else 1)
+      putU8 1
       putTag0 ⟨layout.perm.size.toUInt64⟩
       for p in layout.perm do putTag0 ⟨p⟩
       putTag0 ⟨layout.sourceCtorCounts.size.toUInt64⟩
       for c in layout.sourceCtorCounts do putTag0 ⟨c⟩
-      if anyEvaporated then
-        putTag0 ⟨layout.evaporated.size.toUInt64⟩
-        for b in layout.evaporated do putU8 (if b != 0 then 1 else 0)
+      -- Construction sites that predate the field default
+      -- `evaporated := #[]`; serialize per-position all-`0` flags for
+      -- them (the FFI decode normalizes identically), so the wire form
+      -- always carries `perm.size` flags and Lean/Rust bytes agree.
+      let evaporated := if layout.evaporated.isEmpty && !layout.perm.isEmpty
+        then Array.replicate layout.perm.size 0 else layout.evaporated
+      putTag0 ⟨evaporated.size.toUInt64⟩
+      for b in evaporated do putU8 (if b != 0 then 1 else 0)
 
 /-- Serialize ConstantMeta (wrapper) with indexed addresses: the variant
     payload, then the three extension tables — sharing exprs (`putExpr`),
@@ -1732,7 +1733,7 @@ def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo 
       let auxLayoutTag ← getU8
       let auxLayout ← match auxLayoutTag with
         | 0 => pure none
-        | 1 | 2 => do
+        | 1 => do
           let nPerm := (← getTag0).size.toNat
           let mut perm : Array UInt64 := #[]
           for _ in [0:nPerm] do
@@ -1741,18 +1742,13 @@ def getConstantMetaInfoIndexed (rev : NameReverseIndex) : GetM ConstantMetaInfo 
           let mut sourceCtorCounts : Array UInt64 := #[]
           for _ in [0:nCounts] do
             sourceCtorCounts := sourceCtorCounts.push (← getTag0).size
-          -- Tag 1: pre-`evaporated` layout — all positions default to 0.
-          -- Tag 2: explicit per-position 0/1 flags.
+          let nEvap := (← getTag0).size.toNat
           let mut evaporated : Array UInt64 := #[]
-          if auxLayoutTag == 2 then
-            let nEvap := (← getTag0).size.toNat
-            for _ in [0:nEvap] do
-              match ← getU8 with
-              | 0 => evaporated := evaporated.push 0
-              | 1 => evaporated := evaporated.push 1
-              | x => throw s!"invalid ConstantMeta muts evaporated flag {x}"
-          else
-            evaporated := .replicate nPerm 0
+          for _ in [0:nEvap] do
+            match ← getU8 with
+            | 0 => evaporated := evaporated.push 0
+            | 1 => evaporated := evaporated.push 1
+            | x => throw s!"invalid ConstantMeta muts evaporated flag {x}"
           pure (some { perm, sourceCtorCounts, evaporated : AuxLayout })
         | x => throw s!"invalid ConstantMeta muts aux_layout tag {x}"
       pure (.muts all auxLayout)
@@ -2233,8 +2229,15 @@ def toRawEnv (env : Env) : RawEnv := {
     fun a b => (compare a.1 b.1).isLT
 }
 
-/-- Tag4 flag for Env (0xE), variant 0. -/
+/-- Tag4 flag for Env (0xE). -/
 def FLAG : UInt8 := 0xE
+
+/-- `.ixe` format version, carried in the header's Tag4 size field.
+    Any change to serialized bytes bumps this; readers reject a
+    mismatch and there is no back-compat reading of old versions —
+    `.ixe` files are regenerated artifacts. Mirrors Rust
+    `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
+def VERSION : UInt64 := 1
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/
@@ -2315,8 +2318,8 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
     referencing unstored constants/names are unrepresentable and must
     fail at write time (mirrors Rust `Env::put`). -/
 def putEnv (env : Env) : ExceptT String PutM Unit := do
-  -- Header: Tag4 with flag=0xE, size=0 (Env variant)
-  putTag4 ⟨FLAG, 0⟩
+  -- Header: Tag4 with flag=0xE, size=VERSION (format version)
+  putTag4 ⟨FLAG, VERSION⟩
 
   -- Canonical merkle root over consts addresses (matches Rust Env::put).
   -- Always 32 bytes: for empty const sets, the sentinel
@@ -2451,8 +2454,8 @@ def getEnv : GetM Env := do
   let tag ← getTag4
   if tag.flag != FLAG then
     throw s!"Env.get: expected flag 0x{FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
-  if tag.size != 0 then
-    throw s!"Env.get: expected Env variant 0, got {tag.size}"
+  if tag.size != VERSION then
+    throw s!"Env.get: expected .ixe format version {VERSION}, got {tag.size} — recompile the artifact"
 
   -- Canonical merkle root (fixed 32 bytes). For empty const sets the
   -- stored value is `Ix.Merkle.zeroAddress`. Verified at end against
@@ -2734,8 +2737,8 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
   let tag ← getTag4
   if tag.flag != Env.FLAG then
     throw s!"Env.get: expected flag 0x{Env.FLAG.toNat.toDigits 16}, got 0x{tag.flag.toNat.toDigits 16}"
-  if tag.size != 0 then
-    throw s!"Env.get: expected Env variant 0, got {tag.size}"
+  if tag.size != Env.VERSION then
+    throw s!"Env.get: expected .ixe format version {Env.VERSION}, got {tag.size} — recompile the artifact"
   let storedRoot : Address ← Serialize.get
   let mainTag ← getU8
   let main : Option Address ← match mainTag with
@@ -2752,7 +2755,7 @@ def getEnvVerifiedLazy : GetM LazyEnvParts := do
         throw "Env.get: assumptions not strictly ascending"
     assumptionArr := assumptionArr.push addr
   reserCheck "header" hdrStart <| runPut do
-    putTag4 ⟨Env.FLAG, 0⟩
+    putTag4 ⟨Env.FLAG, Env.VERSION⟩
     Serialize.put storedRoot
     match main with
     | none => putU8 0
