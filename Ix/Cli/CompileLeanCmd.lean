@@ -58,12 +58,23 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
     return 1
   | .ok out =>
     let elapsed := (← IO.monoMsNow) - t0
+    -- Same exit policy as `ix compile`: fail-closed by default — any
+    -- block failure means a nonzero exit and no output file, unless
+    -- `--allow-partial` explicitly opts into the grounded subset.
+    let ungroundedCount := out.cenv.ungrounded.size
+    if !p.hasFlag "allow-partial" && ungroundedCount > 0 then
+      IO.eprintln s!"[compile-lean] error: {ungroundedCount} constant(s) \
+failed to compile; nothing written to {outPath} (use --allow-partial to \
+serialize the grounded subset)"
+      for (n, e) in out.cenv.ungrounded.toList.take 8 do
+        IO.eprintln s!"  [ungrounded] {n.pretty}: {(e.replace "\n" " ").take 200}"
+      return 1
     IO.FS.writeBinFile outPath out.bytes
     IO.println s!"[compile-lean] wrote {out.bytes.size} bytes to {outPath} \
 ({out.blockCount} blocks, {out.ungroundedCount} ungrounded, \
-{out.cenv.ungrounded.size} block failures) in {elapsed}ms"
-    if out.cenv.ungrounded.size > 0 then
-      IO.println s!"[compile-lean] WARNING: {out.cenv.ungrounded.size} constants failed to compile"
+{ungroundedCount} block failures) in {elapsed}ms"
+    if ungroundedCount > 0 then
+      IO.println s!"[compile-lean] PARTIAL: {ungroundedCount} constants failed to compile"
       for (n, e) in out.cenv.ungrounded.toList.take 8 do
         IO.println s!"  {n.pretty}: {e.take 200}"
 
@@ -100,6 +111,7 @@ def compileLeanCmd : Cli.Cmd := `[Cli|
     out          : String; "Output path for the serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe`"
     workers      : Nat;    "Worker count for the parallel phases (default 32)"
     "rust-check" ;         "Also compile via the Rust FFI compiler and byte-compare the outputs (the ALIGNED gate); exit 1 on divergence"
+    "allow-partial" ;      "Serialize the grounded subset and exit 0 even when some constants fail to compile. Default is fail-closed: any block failure means a nonzero exit and NO output file."
 
   ARGS:
     ...path : String; "Path to the Lean source file to compile."
