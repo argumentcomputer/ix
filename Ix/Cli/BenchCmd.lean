@@ -252,8 +252,10 @@ def backendSpecs : List BackendSpec := [
   -- proves THAT execution; the KZG stages will join as stages 3/4 when
   -- they land, folding into the same ledger. Each stage reports the same
   -- five columns — witness execute, prove, peak RAM, proof size, verify
-  -- — and the closing ledger table carries `total-time` and the run's
-  -- RAM ceiling. The whole system runs under the
+  -- — and the closing ledger table carries `total-time` (the stages'
+  -- proves, summed — each prove already runs its own witness execution,
+  -- so the standalone execute times are instrumentation and are not
+  -- added) and the run's RAM ceiling. The whole system runs under the
   -- recursion-tuned parameters — 40 FRI queries at log-blowup 2 for the
   -- stage-1 and stage-2 proofs alike (50 OOMs the CI hosts; see
   -- `recursiveFriParameters` in Benchmarks/Typecheck.lean). execute is
@@ -272,13 +274,7 @@ def backendSpecs : List BackendSpec := [
           "recursive-peak-rss", "recursive-proof-size",
           "recursive-verify-time", "recursive-fft-cost"]),
        ("Pipeline total", ["total-time", "pipeline-peak-rss"])])],
-    -- The per-stage wall clocks get no column: each stage table already
-    -- shows the execute and prove that sum to them, so the ledger stays
-    -- the two numbers that describe the whole run. They stay tracked for
-    -- the dashboard, where a per-stage trend is what shows WHICH stage
-    -- moved the total.
-    metrics := [("prove", ["stage1-time", "stage2-time"]),
-                ("execute", ["execute-time", "throughput", "peak-rss",
+    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
     -- fft-cost is deterministic but only ever drops on a real Aiur win →
     -- upper-only 5% instead of a hard pin. recursive-fft-cost drifts
@@ -288,8 +284,7 @@ def backendSpecs : List BackendSpec := [
     -- and path depth) → the tight 5%.
     thresholds := [("constants", "0", "0"), ("fft-cost", "0.05", "_"),
                    ("recursive-fft-cost", "0.25", "_"),
-                   ("total-time", "0.10", "_"), ("stage1-time", "0.10", "_"),
-                   ("stage2-time", "0.10", "_"),
+                   ("total-time", "0.10", "_"),
                    ("execute-time", "0.10", "_"), ("prove-time", "0.10", "_"),
                    ("recursive-execute-time", "0.10", "_"),
                    ("recursive-prove-time", "0.10", "_"),
@@ -794,7 +789,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.eprintln s!"[bench] per-constant closures failed (exit {exit})"
   | "aiur" =>
     -- prove runs the whole pipeline (`bench-typecheck --recursive`):
-    -- every stage per constant, closed by the stage ledger. One process
+    -- every stage per constant, closed by the pipeline ledger. One process
     -- per constant under the watchdog; `total-time` is the ledger's last
     -- field, so it doubles as the completion marker — a kill before the
     -- pipeline finishes records an honest oom/crash row.

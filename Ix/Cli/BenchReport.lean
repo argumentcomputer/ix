@@ -56,8 +56,8 @@ def metricKind (metric : String) : String :=
   if ["peak-rss", "file-size", "proof-size"].contains metric
   then "bytes"
   else if metric.startsWith "phase-" then "seconds"
-  -- Every wall-clock measure is named `<what>-time`, the stage ledger's
-  -- `stage1-time` / `total-time` included.
+  -- Every wall-clock measure is named `<what>-time`, the pipeline
+  -- ledger's `total-time` included.
   else if metric.endsWith "-time" then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
            "throughput"].contains metric then "count"

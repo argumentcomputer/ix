@@ -60,8 +60,8 @@ def plotTitle (workload measure : String) : String :=
   | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
   | "aiur", "total-time"             => "Aiur Total Time"
-  | "aiur", "stage1-time"            => "Aiur Stage 1 Time"
-  | "aiur", "stage2-time"            => "Aiur Stage 2 Time"
+  | "aiur", "prove-time"             => "Aiur Stage 1 Time"
+  | "aiur", "recursive-prove-time"   => "Aiur Stage 2 Time"
   | "aiur", "fft-cost"               => "Aiur Stage 1 FFT Cost"
   | "aiur", "recursive-fft-cost"     => "Aiur Stage 2 FFT Cost"
   | "aiur", "recursive-verify-time"  => "Aiur Stage 2 Verify Time"
@@ -83,20 +83,20 @@ def plotTitle (workload measure : String) : String :=
     `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
     exactly — the decompile run tracks only its own decompile-time /
-    throughput / peak-rss trends. The aiur run's stage detail
-    (each stage's execute / prove split, stage-1 peak-rss / proof-size /
+    throughput / peak-rss trends. The aiur run's per-stage headline is
+    that stage's `prove-time` — a prove runs its own witness execution,
+    so it is the whole cost of producing the stage's proof, and the
+    standalone `execute-time` beside it is a second, instrumentation-only
+    run. The rest of the stage detail (stage-1 peak-rss / proof-size /
     verify-time, and the whole-run `pipeline-peak-rss`) is tracked for
-    the compare table, but the dashboard trends that matter are the
-    per-stage wall clocks, the total, and the terminal stage's own detail
-    series: an execute/prove split lives inside its `stageN-time`, the
-    stage-1 detail inside `stage1-time` and the deterministic `fft-cost`
-    trend, and the pipeline peak is the terminal stage's peak. -/
+    the compare table but not plotted: the stage-1 detail's cost is
+    inside `prove-time` and the deterministic `fft-cost` trend, and the
+    pipeline peak is the terminal stage's peak. -/
 def plotSkips : List (String × String) :=
   [("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
    ("aiur", "peak-rss"), ("aiur", "proof-size"), ("aiur", "verify-time"),
-   ("aiur", "execute-time"), ("aiur", "prove-time"),
-   ("aiur", "recursive-execute-time"), ("aiur", "recursive-prove-time"),
+   ("aiur", "execute-time"), ("aiur", "recursive-execute-time"),
    ("aiur", "pipeline-peak-rss")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
@@ -127,8 +127,6 @@ def unitsFor (slug : String) : Option String :=
    ("recursive-peak-rss", "bytes (B)"),
    ("recursive-proof-size", "bytes (B)"),
    ("recursive-fft-cost", "FFTs"),
-   ("stage1-time", "seconds (s)"),
-   ("stage2-time", "seconds (s)"),
    ("total-time", "seconds (s)"),
    ("pipeline-peak-rss", "bytes (B)"),
    ("throughput", "constants / second")].lookup slug

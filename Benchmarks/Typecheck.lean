@@ -55,10 +55,11 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  recursion-cost proxy), then prove that execution end-to-end
                  (`recursive-prove-time`, `recursive-peak-rss`,
                  `recursive-proof-size`, `recursive-verify-time`), and close the
-                 row with the stage ledger — `stage1-time` (witness execute +
-                 inner prove), `stage2-time` (verifier execute + outer prove),
-                 `total-time` (their sum; later pipeline stages will fold in
-                 as they land), and `pipeline-peak-rss` (the maximum over
+                 row with the pipeline ledger — `total-time` (each stage's
+                 prove, summed; a prove already contains its own witness
+                 execution, so the standalone execute times are NOT added,
+                 and later pipeline stages will fold in as they land) and
+                 `pipeline-peak-rss` (the maximum over
                  every phase window — the run's true RAM ceiling, which no
                  single windowed peak reports). The whole system, inner prove included,
                  switches to the recursion-tuned parameters
@@ -101,8 +102,8 @@ The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
 "throughput": …, "peak-rss": …, and with --recursive also "recursive-execute-time": …,
 "recursive-fft-cost": …, "recursive-prove-time": …, "recursive-peak-rss": …,
-"recursive-proof-size": …, "recursive-verify-time": …, plus the stage ledger
-"stage1-time": …, "stage2-time": …, "total-time": …, "pipeline-peak-rss": …
+"recursive-proof-size": …, "recursive-verify-time": …, plus the pipeline
+ledger "total-time": …, "pipeline-peak-rss": …
 once the pipeline completes } }`). `peak-rss` and `throughput` are
 phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
 high-water and constants/sec over the execute; a prove row carries the
@@ -276,23 +277,24 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     let fields := match r.recursiveVerifySec with
       | some v => fields ++ [ ("recursive-verify-time", jsonRound 6 v) ]
       | none => fields
-    -- The stage ledger, once the whole pipeline has run: each stage's
-    -- wall clock is its witness execution plus its prove (verification
-    -- is a consumer cost, not a production one), and `total-time` is
-    -- their sum — the headline the `aiur` benchmark sorts on.
+    -- The pipeline ledger, once the whole pipeline has run.
+    -- `total-time` is each stage's prove, summed. A stage's prove is
+    -- the WHOLE cost of producing that stage's proof: `prove_ixvm` runs
+    -- the executor itself (the `aiur/execute_ixvm` span) before
+    -- generating the witness, so the Phase-1 `execute-time` beside it is
+    -- a SECOND, standalone run — instrumentation for `constants` and
+    -- `fft-cost`, not a step of proving. Adding the two would count the
+    -- execution twice. Verification is likewise excluded: a consumer
+    -- cost, not a production one.
     -- `pipeline-peak-rss` is the whole run's RAM high-water: the
     -- per-phase windows reset, so no single `peak-rss` answers "how much
     -- RAM does this pipeline need" — their maximum does. Emitted
     -- only with every component present, so it doubles as the row's
     -- completion marker (the orchestrator's teardown-kill `doneKey`).
     let fields := match r.proveSec, r.recursiveExecuteSec, r.recursiveProveSec with
-      | some p, some re, some rp =>
-        let stage1 := r.executeSec + p
-        let stage2 := re + rp
+      | some p, some _, some rp =>
         let peaks := [r.executePeakRss, r.peakRss, r.recursivePeakRss].reduceOption
-        fields ++ [ ("stage1-time", jsonRound 6 stage1)
-                  , ("stage2-time", jsonRound 6 stage2)
-                  , ("total-time", jsonRound 6 (stage1 + stage2)) ]
+        fields ++ [ ("total-time", jsonRound 6 (p + rp)) ]
           ++ (match peaks.max? with
               | some n => [("pipeline-peak-rss", Lean.toJson n)]
               | none => [])
