@@ -222,9 +222,10 @@ impl AiurSystem {
   /// Predicted peak prover resident bytes for a record, from circuit
   /// shapes alone — the analytic counterpart of an empirical GiB-per-fft
   /// line. Mirrors this system's actual allocation schedule (multi-stark
-  /// rev `be1755e`; the shard-pipeline E2E asserts prediction against a
-  /// measured prove, so a schedule change upstream turns a test red
-  /// instead of silently skewing every shard-RAM prediction):
+  /// rev `be1755e`; an upstream allocation-schedule change skews every
+  /// prediction, so re-validate against a measured prove when bumping
+  /// multi-stark — real proves at ~472 GiB measured +1.6-1.7% over
+  /// prediction, the residual the scanner's budget absorbs):
   ///
   /// 1. WITNESS phase: the `QueryRecord` plus every circuit's padded main
   ///    trace and base-field lookup witness, built in parallel and all

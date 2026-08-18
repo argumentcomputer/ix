@@ -194,6 +194,19 @@ opaque rsEnvExtractFFI :
     @& Bool →                            -- quiet
     IO Unit
 
+/-- FFI: extract one shard's owned blocks from a `.ixes` manifest, together
+    with their dependency closure, into a standalone `.ixe`. The shard index
+    has the same meaning as `ix prove --shards P --shard K`; manifest block
+    addresses are expanded to whole mutual blocks before closure extraction. -/
+@[extern "rs_env_extract_shard"]
+opaque rsEnvExtractShardFFI :
+    @& String →                          -- source .ixe path
+    @& String →                          -- source .ixes manifest path
+    @& String →                          -- zero-based shard index
+    @& String →                          -- output .ixe path
+    @& Bool →                            -- quiet
+    IO Unit
+
 /-- FFI: partition a `.ixe` into `numShards` shards with the STATIC
     strategy (no out-of-circuit profiling): byte-balanced min-cut over the
     static walk-edge nets + a predicted-FFT-cost rebalance post-pass

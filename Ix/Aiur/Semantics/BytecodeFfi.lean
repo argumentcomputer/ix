@@ -196,21 +196,6 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
-
-/-- Execute-only check through the codegen'd Aiur kernel — the whole
-    env, or the dependency closure of `roots` when non-empty: no
-    partition, no manifest — the check verdict plus measured totals,
-    reported on stderr. FunIdxs: `verify_segment` (unused in
-    execute-only runs but kept for signature parity) and
-    `verify_block` (the per-block entry workers execute). Args:
-    workers ("0" = default width), fail-fast ("0" records and skips
-    kernel-rejected blocks; anything else aborts on the first), roots
-    (comma-separated 64-char hex constant addresses; "" = whole env). -/
-@[extern "rs_aiur_execute_env_with_env"]
-opaque executeEnvWithEnv : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& Bytecode.FunIdx → @& EnvHandle → @& String →
-  @& String → @& String → Except String Unit
-
 end Bytecode.Toplevel
 
 end Aiur

@@ -2100,6 +2100,68 @@ pub extern "C" fn rs_kernel_check_anon_consts(
   build_anon_result_array(&addrs_for_return, &results)
 }
 
+fn load_extract_source(path: &str) -> Result<(IxonEnv, IxonEnv), String> {
+  let bytes =
+    std::fs::read(path).map_err(|e| format!("failed to read {path}: {e}"))?;
+  let mut slice: &[u8] = &bytes;
+  let full = IxonEnv::get(&mut slice)
+    .map_err(|e| format!("failed to deserialize {path}: {e}"))?;
+  let mut slice: &[u8] = &bytes;
+  let anon = IxonEnv::get_anon(&mut slice)
+    .map_err(|e| format!("failed to deserialize (anon) {path}: {e}"))?;
+  Ok((full, anon))
+}
+
+/// Expand ingress-block addresses to every `env.consts` root certified by
+/// their anon work items. In particular, a Muts block expands to its block
+/// address plus every member/constructor projection, matching named extract.
+fn extract_roots_for_blocks(
+  anon: &IxonEnv,
+  block_addrs: &[Address],
+) -> Result<Vec<Address>, String> {
+  use ix_kernel::anon_work::{build_anon_work, work_block_addr};
+
+  let work =
+    build_anon_work(anon).map_err(|e| format!("build_anon_work: {e}"))?;
+  let by_block: FxHashMap<Address, usize> = work
+    .iter()
+    .enumerate()
+    .map(|(i, w)| (work_block_addr(anon, w), i))
+    .collect();
+  let mut roots = Vec::new();
+  for block in block_addrs {
+    let Some(&i) = by_block.get(block) else {
+      return Err(format!("no work item covers block {}…", &block.hex()[..16]));
+    };
+    roots.extend(work[i].proven_targets());
+  }
+  Ok(roots)
+}
+
+/// Materialize one manifest work unit with its full dependency closure.
+/// Returns `(serialized sub-env, owned block count, total shard count)`.
+fn extract_manifest_shard(
+  anon: &IxonEnv,
+  full: &IxonEnv,
+  manifest: &ix_kernel::shard::ShardManifest,
+  shard_index: usize,
+) -> Result<(Vec<u8>, usize, usize), String> {
+  let shard_count = manifest.shards.len();
+  if shard_count == 0 {
+    return Err("manifest has no shards".to_string());
+  }
+  let shard = manifest.shards.get(shard_index).ok_or_else(|| {
+    format!("--shard {shard_index} out of range ({shard_count} shards)")
+  })?;
+  if shard.blocks.is_empty() {
+    return Err(format!("manifest shard {shard_index} has no owned blocks"));
+  }
+  let roots = extract_roots_for_blocks(anon, &shard.blocks)?;
+  let sub_bytes =
+    ix_kernel::anon_work::build_sub_env_named(anon, full, &roots)?;
+  Ok((sub_bytes, shard.blocks.len(), shard_count))
+}
+
 /// FFI: extract the named constants' dependency closure from a serialized
 /// env into a standalone `.ixe` — genuine constant bytes, blobs, and
 /// reducibility hints (via the anon view), plus every closure constant's
@@ -2113,9 +2175,7 @@ pub extern "C" fn rs_env_extract(
   out_path: LeanString<LeanBorrowed<'_>>,
   quiet: LeanBool<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  use ix_kernel::anon_work::{
-    block_of_addr, build_anon_work, build_sub_env_named, work_block_addr,
-  };
+  use ix_kernel::anon_work::{block_of_addr, build_sub_env_named};
 
   let quiet = quiet.to_bool();
   let path = env_path.to_string();
@@ -2179,34 +2239,14 @@ pub extern "C" fn rs_env_extract(
     },
   };
 
-  // Roots: each name's covering work item's proven targets (standalone →
-  // itself; a mutual-block member → every sibling, checked atomically).
-  let work = match build_anon_work(&anon) {
-    Ok(work) => work,
+  let blocks: Vec<Address> =
+    resolved.iter().map(|addr| block_of_addr(&anon, addr)).collect();
+  let roots = match extract_roots_for_blocks(&anon, &blocks) {
+    Ok(roots) => roots,
     Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_env_extract: build_anon_work: {e}"
-      ));
+      return LeanIOResult::error_string(&format!("rs_env_extract: {e}"));
     },
   };
-  let by_block: FxHashMap<Address, usize> = work
-    .iter()
-    .enumerate()
-    .map(|(i, w)| (work_block_addr(&anon, w), i))
-    .collect();
-  let mut roots: Vec<Address> = Vec::new();
-  for addr in &resolved {
-    let block = block_of_addr(&anon, addr);
-    match by_block.get(&block) {
-      Some(&i) => roots.extend(work[i].proven_targets()),
-      None => {
-        return LeanIOResult::error_string(&format!(
-          "rs_env_extract: no work item covers block {}…",
-          &block.hex()[..16]
-        ));
-      },
-    }
-  }
 
   let sub_bytes = match build_sub_env_named(&anon, &full, &roots) {
     Ok(b) => b,
@@ -2224,6 +2264,77 @@ pub extern "C" fn rs_env_extract(
       "[rs_env_extract] {} name(s) → {} ({} bytes) from {path}",
       names_vec.len(),
       out,
+      sub_bytes.len(),
+    );
+  }
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
+/// FFI: extract one `.ixes` shard's owned blocks and dependency closure into
+/// a standalone `.ixe`. The selector is the same zero-based manifest index
+/// consumed by `ix prove --shards P --shard K`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_env_extract_shard(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  shard_index: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let quiet = quiet.to_bool();
+  let path = env_path.to_string();
+  let manifest_path = manifest_path.to_string();
+  let shard_raw = shard_index.to_string();
+  let shard_index = match shard_raw.parse::<usize>() {
+    Ok(index) => index,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract_shard: invalid shard index {shard_raw:?}: {e}"
+      ));
+    },
+  };
+  let manifest_bytes = match std::fs::read(&manifest_path) {
+    Ok(bytes) => bytes,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract_shard: failed to read {manifest_path}: {e}"
+      ));
+    },
+  };
+  let manifest =
+    match ix_kernel::shard::ShardManifest::from_bytes(&manifest_bytes) {
+      Ok(manifest) => manifest,
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_env_extract_shard: {manifest_path}: {e}"
+        ));
+      },
+    };
+  let (full, anon) = match load_extract_source(&path) {
+    Ok(envs) => envs,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_env_extract_shard: {e}"));
+    },
+  };
+  let (sub_bytes, block_count, shard_count) =
+    match extract_manifest_shard(&anon, &full, &manifest, shard_index) {
+      Ok(result) => result,
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_env_extract_shard: {e}"
+        ));
+      },
+    };
+  let out = out_path.to_string();
+  if let Err(e) = std::fs::write(&out, &sub_bytes) {
+    return LeanIOResult::error_string(&format!(
+      "rs_env_extract_shard: failed to write {out}: {e}"
+    ));
+  }
+  if !quiet {
+    eprintln!(
+      "[rs_env_extract_shard] shard {shard_index} of {shard_count} \
+       ({block_count} owned block(s)) → {out} ({} bytes) from {path}",
       sub_bytes.len(),
     );
   }
@@ -2816,7 +2927,90 @@ pub extern "C" fn rs_shard_esp_cap(
 
 #[cfg(test)]
 mod tests {
-  use super::{compact_in_flight_label, resolve_kernel_check_workers_from};
+  use std::sync::Arc;
+
+  use ix_common::address::Address;
+  use ix_kernel::shard::{ShardInfo, ShardManifest};
+  use ixon::constant::{Axiom, Constant, ConstantInfo};
+  use ixon::env::Env as IxonEnv;
+  use ixon::expr::Expr;
+
+  use super::{
+    compact_in_flight_label, extract_manifest_shard,
+    resolve_kernel_check_workers_from,
+  };
+
+  fn axiom_const(lvls: u64, refs: Vec<Address>) -> Constant {
+    Constant::with_tables(
+      ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls,
+        typ: Arc::new(Expr::Sort(0)),
+      }),
+      Vec::new(),
+      refs,
+      Vec::new(),
+    )
+  }
+
+  fn store_canonical(env: &IxonEnv, constant: Constant) -> Address {
+    let (addr, _) = constant.commit();
+    env.store_const(addr.clone(), constant);
+    addr
+  }
+
+  fn shard_info(id: u32, blocks: Vec<Address>) -> ShardInfo {
+    ShardInfo {
+      id,
+      blocks,
+      heartbeats: 0,
+      own_size: 0,
+      foreign_blocks: Vec::new(),
+      cross_ingress: 0,
+      assumption_root: None,
+    }
+  }
+
+  #[test]
+  fn manifest_shard_extract_keeps_owned_dependency_closure_only() {
+    let env = IxonEnv::new();
+    let dependency = store_canonical(&env, axiom_const(0, Vec::new()));
+    let root = store_canonical(&env, axiom_const(1, vec![dependency.clone()]));
+    let unrelated = store_canonical(&env, axiom_const(2, Vec::new()));
+    let manifest = ShardManifest {
+      num_shards: 2,
+      shards: vec![
+        shard_info(0, vec![root.clone()]),
+        shard_info(1, vec![dependency.clone(), unrelated.clone()]),
+      ],
+      total_cross_ingress: 0,
+      tree: None,
+    };
+
+    let (bytes, owned_blocks, shard_count) =
+      extract_manifest_shard(&env, &env, &manifest, 0).unwrap();
+    assert_eq!(owned_blocks, 1);
+    assert_eq!(shard_count, 2);
+
+    let mut slice = bytes.as_slice();
+    let extracted = IxonEnv::get(&mut slice).unwrap();
+    assert!(extracted.get_const(&root).is_some());
+    assert!(extracted.get_const(&dependency).is_some());
+    assert!(extracted.get_const(&unrelated).is_none());
+  }
+
+  #[test]
+  fn manifest_shard_extract_rejects_bad_index() {
+    let env = IxonEnv::new();
+    let manifest = ShardManifest {
+      num_shards: 1,
+      shards: vec![shard_info(0, vec![Address::hash(b"unused")])],
+      total_cross_ingress: 0,
+      tree: None,
+    };
+    let error = extract_manifest_shard(&env, &env, &manifest, 1).unwrap_err();
+    assert_eq!(error, "--shard 1 out of range (1 shards)");
+  }
 
   #[test]
   fn explicit_kernel_check_workers_wins_when_positive() {

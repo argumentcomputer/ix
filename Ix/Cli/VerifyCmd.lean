@@ -85,25 +85,35 @@ def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel))
       bundled claim must equal shard K's reconstructed claim).
     - no `--shard`, no proof: off-circuit coverage verdict (disjoint cover).
     - no `--shard` + proofs: composed verdict — coverage, every proof bound to a
-      shard, and every shard covered by a valid proof. -/
+      shard, and every shard covered by a valid proof.
+
+    A shard owning no blocks has no `CheckEnv` claim and owns no constants, so
+    it needs no proof and is not counted against the composed verdict. -/
 def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat)
     (proofs : List String) : IO UInt32 := do
   let (ixonEnv, shards) ← match (← Ix.Cli.CheckCmd.loadEnvAndShards manifestPath ixePath) with
     | .error e => IO.eprintln e; return 1
     | .ok r => pure r
-  let digestOf (k : Nat) : IO (Option Address) := do
-    match shards[k]? with
-    | none => IO.eprintln s!"shard {k} out of range ({shards.size} shards)"; pure none
-    | some blocks => match Ix.Cli.CheckCmd.shardClaimDigest ixonEnv blocks with
-      | .error e => IO.eprintln s!"reconstruct shard {k} claim failed: {e}"; pure none
-      | .ok d => pure (some d)
   let claimDigestOfProof (hex : String) : IO (Address × Address) := do
     let proofAddr ← addrOfHex! "proof" hex
     let wrapper ← IO.ofExcept (Ixon.Proof.de (← StoreIO.toIO (Store.read proofAddr)))
     pure (proofAddr, Address.blake3 (Ix.Claim.ser wrapper.claim))
   match shardK? with
   | some k =>
-    let some expected ← digestOf k | return 1
+    let some blocks := shards[k]?
+      | IO.eprintln s!"shard {k} out of range ({shards.size} shards)"; return 1
+    if blocks.isEmpty then
+      -- Degenerate work unit: nothing owned, so no claim exists and no proof
+      -- can bind to it. Saying so beats reporting an empty-owned-set failure
+      -- from deep inside claim reconstruction.
+      if proofs.isEmpty then
+        IO.println s!"shard {k} owns no blocks: no CheckEnv claim, nothing to prove"
+        return 0
+      IO.eprintln s!"[verify] FAIL: shard {k} owns no blocks — no proof can bind to it"
+      return 1
+    let expected ← match Ix.Cli.CheckCmd.shardClaimDigest ixonEnv blocks with
+      | .error e => IO.eprintln s!"reconstruct shard {k} claim failed: {e}"; return 1
+      | .ok d => pure d
     if proofs.isEmpty then
       IO.println s!"shard {k} CheckEnv claim digest: {expected}"
       return 0
@@ -121,14 +131,24 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
   | none =>
     if !(← Ix.Cli.CheckCmd.shardsCover ixonEnv shards) then return 1
     if proofs.isEmpty then return 0
+    -- One env pass for every shard's digest.
+    let digests ← match Ix.Cli.CheckCmd.shardClaimDigests ixonEnv shards with
+      | .error e => IO.eprintln s!"reconstruct shard claims failed: {e}"; return 1
+      | .ok d => pure d
     let mut digestToShard : Std.HashMap Address Nat := {}
-    for k in [0:shards.size] do
-      let some d ← digestOf k | return 1
-      digestToShard := digestToShard.insert d k
+    -- An empty shard owns no constants, so the other shards' proofs still
+    -- cover the whole env: it starts out satisfied rather than missing.
+    let mut covered : Std.HashSet Nat := {}
+    let mut empties : Nat := 0
+    for (d?, k) in digests.mapIdx (fun k d? => (d?, k)) do
+      match d? with
+      | some d => digestToShard := digestToShard.insert d k
+      | none => empties := empties + 1; covered := covered.insert k
+    if empties != 0 then
+      IO.println s!"[verify] {empties} shard(s) own no blocks: no claim, no proof required"
     let (aiurSystem, compiled) ← match (← buildBackend) with
       | .error e => IO.eprintln e; return 1
       | .ok b => pure b
-    let mut covered : Std.HashSet Nat := {}
     let mut rc : UInt32 := 0
     for hex in proofs do
       let (proofAddr, d) ← claimDigestOfProof hex
@@ -147,10 +167,22 @@ def verifyShardComposition (ixePath manifestPath : String) (shardK? : Option Nat
 
 def runVerifyCmd (p : Cli.Parsed) : IO UInt32 := do
   let proofs := (p.variableArgsAs! String).toList
-  match (p.flag? "env").map (·.as! String), (p.flag? "shards").map (·.as! String) with
-  | some ixe, some manifest =>
-    verifyShardComposition ixe manifest ((p.flag? "shard").map (·.as! Nat)) proofs
-  | _, _ =>
+  let env? := (p.flag? "env").map (·.as! String)
+  let shards? := (p.flag? "shards").map (·.as! String)
+  let shard? := (p.flag? "shard").map (·.as! Nat)
+  match env?, shards?, shard? with
+  | some ixe, some manifest, shard? =>
+    verifyShardComposition ixe manifest shard? proofs
+  | some _, none, _ =>
+    p.printError "error: --env requires --shards <path.ixes>"
+    return 1
+  | none, some _, _ =>
+    p.printError "error: --shards requires --env <path.ixe>"
+    return 1
+  | none, none, some _ =>
+    p.printError "error: --shard requires --env <path.ixe> and --shards <path.ixes>"
+    return 1
+  | none, none, none =>
     if proofs.isEmpty then
       p.printError "error: must specify <proof-hex>... (or --env + --shards for a shard partition)"
       return 1
@@ -171,7 +203,7 @@ def verifyCmd : Cli.Cmd := `[Cli|
   "Verify STARK proof(s) against their bundled claims, or a `.ixes` shard partition"
 
   FLAGS:
-    "ixe"  : String; "Path to a serialized `.ixe` env (with --shards). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
+    "env"  : String; "Path to a serialized `.ixe` env (with --shards). With no proof args and no --shard: verify the partition off-circuit (every constant owned by exactly one shard)."
     "shards" : String; "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`."
     "shard" : Nat;   "0-based shard index K (with --env + --shards). No proof: print shard K's reconstructed CheckEnv claim digest. With proof(s): bind each to shard K and verify."
 

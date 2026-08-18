@@ -2,20 +2,28 @@
   `ix prove`: the proving surface. `ix check` executes and verifies;
   everything that generates a STARK lives here.
 
-      ix prove --env arena.ixe                         # whole env, cut-mode segments
-      ix prove --env arena.ixe --shards plan.ixes      # manifest: gate + self-heal
-      ix prove --env arena.ixe --shards plan.ixes --shard 3
-      ix prove Nat.add_comm                            # compiled-in Lean env, one claim
-      ix prove --env arena.ixe Foo.bar                 # named claim from .ixe
-      ix prove --env arena.ixe --claim <hex>           # against a persisted claim
+      ix prove --env arena.ixe --shards plan.ixes            # cluster shards, all
+      ix prove --env arena.ixe --shards plan.ixes --shard 3  # one work unit
+      ix prove --env arena.ixe                               # whole env, span proofs
+      ix prove --env arena.ixe --dry-run                     # stop at witness gen
+      ix prove Nat.add_comm                                  # compiled-in env, one claim
+      ix prove --env arena.ixe --claim <hex>                 # against a persisted claim
 
-  Whole-env and manifest modes run the shared-record engine: parallel
-  warm block execution, canonical CheckEnv seal claim with derived
-  multiplicities, the EXACT measured RAM gate before every STARK, and
-  in manifest mode self-healing splits of over-budget shards. Each
-  seal is the span's canonical `Claim.checkEnv` (owned-set root +
-  thin-frontier assumption root — the digest `ix verify` binds shard
-  proofs to); engine proofs are verified in-run.
+  Shard mode is the CLUSTER path: each `.ixes` shard of the static
+  min-cut plan (`ix shard`) is an immutable work unit a box runs
+  whole — execute the shard's owned blocks warm into one record, seal
+  the shard's canonical `Claim.checkEnv` (owned-set root +
+  thin-frontier assumption root), derive multiplicities, measure the
+  witness EXACTLY against this box's budget (IX_SCAN_RAM_GIB
+  overrides), and prove behind that gate. A shard measuring over
+  budget fails with the stable code AIUR_SHARD_OVER_BUDGET so a
+  scheduler can re-partition it statically — claim composition makes
+  any re-split sound — and the box never splits, probes, or heals.
+
+  Whole-env mode runs the same engine over retained-bytes execution
+  spans sized so each span is one proof, sealed and gated the same
+  way. `--dry-run` stops at witness generation in both modes: seals,
+  derivation, and each unit's exact measured peak, with no STARKs.
 
   Per-name / per-claim modes prove one `verify_claim` witness and
   persist the result as an `Ixon.Proof` wrapper (claim + opaque proof
@@ -115,25 +123,26 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let workers := ((p.flag? "jobs").map (·.as! Nat)).getD 0
   match ixePath, (p.flag? "shards").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
   | some ixe, some manifest, k? =>
-    -- Manifest prove through the shared-record engine: each shard
-    -- executes warm into its own record, seals (canonical CheckEnv
-    -- claim, derived multiplicities), is gated on its measured peak,
-    -- and proves; a shard that measures over budget self-heals by
-    -- splitting. Exit status carries any rejection or unproven unit.
+    -- Cluster-shard prove: each manifest shard is an immutable work
+    -- unit — execute owned blocks, seal, derive, measure exactly,
+    -- prove behind the gate. Over-budget shards fail with
+    -- AIUR_SHARD_OVER_BUDGET for the scheduler to re-partition.
     let (segIdx, blkIdx) ← match engineIdxs with
       | .error e => IO.eprintln s!"error: {e}"; return 1
       | .ok v => pure v
     let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
       | .ok h => pure h
-    match aiurSystem.executeManifestProveWithEnv segIdx blkIdx envHandle
-        (toString workers) manifest ((k?.map toString).getD "") "0" "" with
+    match aiurSystem.executeShardsProveWithEnv segIdx blkIdx envHandle
+        (toString workers) manifest ((k?.map toString).getD "")
+        (if p.hasFlag "dry-run" then "1" else "0") with
     | .error e => IO.eprintln s!"prove failed: {e}"; return 1
     | .ok () => IO.println "prove: OK"; return 0
   | some ixe, none, none =>
     if names.isEmpty && claimHex.isNone then
-      -- Whole-env prove through the engine: cut-mode segments, each
-      -- sealed record proceeding straight to a verified STARK.
+      -- Whole-env prove through the engine: retained-cut spans, each
+      -- one sealed claim proceeding straight to a verified STARK
+      -- (or, with --dry-run, to its exact measured peak report).
       let (segIdx, blkIdx) ← match engineIdxs with
         | .error e => IO.eprintln s!"error: {e}"; return 1
         | .ok v => pure v
@@ -141,7 +150,8 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
         | .ok h => pure h
       match aiurSystem.executeEnvProveWithEnv segIdx blkIdx envHandle
-          (toString workers) (if keepGoing then "0" else "1") "0" "" with
+          (toString workers) (if keepGoing then "0" else "1")
+          (if p.hasFlag "dry-run" then "1" else "0") with
       | .error e => IO.eprintln s!"prove failed: {e}"; return 1
       | .ok () => IO.println "prove: OK"; return 0
     else
@@ -158,14 +168,15 @@ end Ix.Cli.ProveCmd
 open Ix.Cli.ProveCmd in
 def proveCmd : Cli.Cmd := `[Cli|
   prove VIA runProveCmd;
-  "Generate STARK proofs: whole env or `.ixes` manifest through the shared-record engine (exact RAM gate, self-healing shards), or single `Ix.Claim`s persisted to the store"
+  "Generate STARK proofs: `.ixes` cluster shards as immutable work units, whole envs as one proof per span (both sealed with CheckEnv claims and gated on their EXACT measured witness peak), or single `Ix.Claim`s persisted to the store"
 
   FLAGS:
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first (whole-env engine mode and per-name iteration)."
-    "env"   : String;   "Path to a serialized `.ixe` env. Alone (no names, no --claim): whole-env engine prove — every block's claim executes into a shared record, prove-sized segments are cut at the RAM model's budget line, and each sealed segment proceeds straight to a verified multi-claim STARK. With names or --claim: the env the claims prove against."
+    "env"   : String;   "Path to a serialized `.ixe` env. Alone (no names, no --claim): whole-env engine prove — retained-bytes execution spans, one CheckEnv claim per span, each measured EXACTLY and proven behind the gate. With --shards: the env the manifest partitions. With names or --claim: the env the claims prove against."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--env` env (single proof, skips per-const iteration)."
-    "shards" : String;  "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`. Prove the manifest through the engine: each shard executes into its own record, seals, is gated on its EXACT measured peak, and proves; over-budget shards self-heal by splitting. Requires exact cover of the env schedule when run without --shard."
-    "shard" : Nat;      "0-based shard index K (with --shards): prove only shard K (stamped PARTIAL — no coverage claim)."
+    "shards" : String;  "Path to a `.ixes` manifest from `ix shard` (with --env). Each shard is an immutable work unit: execute its owned blocks, seal its CheckEnv claim, derive, measure EXACTLY, prove behind the gate. Over-budget shards fail with AIUR_SHARD_OVER_BUDGET (shard=/blocks=/peak_bytes=/budget_bytes=) for the scheduler to re-partition. All-shards runs first check exact cover of the env schedule."
+    "shard" : Nat;      "0-based shard index K (with --shards): run only shard K (stamped PARTIAL — no coverage claim)."
+    "dry-run";          "Stop at witness generation (both engine modes): warm execution, CheckEnv seal, derived multiplicities (the sealed record IS the witness), and each unit's exact measured peak-prove-RAM report. No STARKs."
     "jobs"  : Nat;      "Worker threads for the engine modes (default 0 = autoscale)."
 
   ARGS:

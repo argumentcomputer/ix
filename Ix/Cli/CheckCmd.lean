@@ -24,7 +24,6 @@ public import Ix.Aiur.Interpret
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Statistics
 public import Ix.AssumptionTree
-public import Ix.Benchmark.Results
 public import Ix.Claim
 public import Ix.Common
 public import Ix.IxVM
@@ -33,7 +32,6 @@ public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
-public import Ix.TracingTexray
 public import Ix.Cli.NameResolve
 
 public section
@@ -361,40 +359,39 @@ private def ixesU64 : IxesP Nat := do
     v := v ||| ((← ixesU8).toNat <<< (8 * i))
   pure v
 
-/-- One shard row of a parsed `.ixes` manifest: the owned block addresses
-    plus the planner cost (`ShardCost` in `crates/kernel/src/shard.rs` —
-    `costTag` 0 = unknown, 1 = profile heartbeats, 2 = Zisk cost units,
-    3 = Aiur fft; `cost` is the scalar, comparable within one manifest). -/
+/-- One shard row of a parsed `.ixes` manifest: the owned block
+    addresses plus the planner's `heartbeats` cost scalar (comparable
+    within one manifest). Mirrors `Shard` in
+    `crates/kernel/src/shard.rs`. -/
 structure IxesShard where
   blocks : Array Address
-  costTag : UInt8
-  cost : Nat
+  heartbeats : Nat
 
 /-- Parse every shard of a serialized `.ixes` manifest
-    (`ShardManifest::to_bytes`, `crates/kernel/src/shard.rs`, format v2):
-    magic("IXES\0\0\0" ++ version) ‖ total_cross_ingress(u128) ‖
+    (`ShardManifest::to_bytes`, `crates/kernel/src/shard.rs`):
+    magic("IXES\0\0\0\0", 8 bytes) ‖ total_cross_ingress(u128) ‖
     num_shards(u32) ‖ per shard
-    { id(u32) ‖ cost_tag(u8) ‖ cost(u64) ‖ own_size(u64) ‖
+    { id(u32) ‖ heartbeats(u64) ‖ own_size(u64) ‖
       cross_ingress(u64) ‖ assumption_root(u8 tag + 32?) ‖
       blocks(u32 len + 32·len) ‖ foreign_blocks(u32 len + 32·len) }.
     Bounds-checked: a truncated/malformed file yields `.error`, never a panic. -/
 def parseIxesShards (bytes : ByteArray) : Except String (Array IxesShard) :=
   let go : IxesP (Array IxesShard) := do
+    -- The whole 8-byte magic identifies the format; there is no
+    -- separate version field (`SHARD_MAGIC` in
+    -- `crates/kernel/src/shard.rs` is `b"IXES\0\0\0\0"`, and the Rust
+    -- reader compares all 8 bytes).
     let m0 ← ixesU8; let m1 ← ixesU8; let m2 ← ixesU8; let m3 ← ixesU8
-    if !(m0 == 0x49 && m1 == 0x58 && m2 == 0x45 && m3 == 0x53) then
+    let m4 ← ixesU8; let m5 ← ixesU8; let m6 ← ixesU8; let m7 ← ixesU8
+    if !(m0 == 0x49 && m1 == 0x58 && m2 == 0x45 && m3 == 0x53
+        && m4 == 0 && m5 == 0 && m6 == 0 && m7 == 0) then
       throw "not an .ixes file (bad magic)"
-    ixesSkip 3    -- reserved zero bytes of the 8-byte magic
-    let version ← ixesU8
-    if version != 2 then
-      throw s!"unsupported .ixes format version {version} (expected 2) — \
-        regenerate the manifest with the current `ix shard`"
     ixesSkip 16   -- total_cross_ingress (u128)
     let n ← ixesU32
     let mut shards : Array IxesShard := #[]
     for _ in [0:n.toNat] do
-      ixesSkip 4  -- id
-      let costTag ← ixesU8
-      let cost ← ixesU64
+      ixesSkip 4  -- id (u32)
+      let heartbeats ← ixesU64
       ixesSkip (8 + 8)  -- own_size + cross_ingress
       if (← ixesU8) == 1 then ixesSkip 32  -- assumption_root present
       let blen ← ixesU32
@@ -402,7 +399,7 @@ def parseIxesShards (bytes : ByteArray) : Except String (Array IxesShard) :=
       for _ in [0:blen.toNat] do
         blocks := blocks.push (← ixesAddr)
       ixesSkip ((← ixesU32).toNat * 32)  -- skip foreign_blocks
-      shards := shards.push { blocks, costTag, cost }
+      shards := shards.push { blocks, heartbeats }
     pure shards
   go.run' (bytes, 0)
 
@@ -442,37 +439,120 @@ def blockAddrOf (ixonEnv : Ixon.Env) (addr : Address) (c : Ixon.Constant) : Addr
   | .dPrj p => collapse p.block p.idx fun | .defn _ => true | _ => false
   | _ => addr
 
+/-- Materialize a lazy environment constant without erasing its parse error.
+    Including the address in the error is important for large `.ixe` files:
+    otherwise the failing lazy window is impractical to locate. -/
+private def materializeEnvConst (addr : Address) (lc : Ixon.LazyConstant) :
+    Except String Ixon.Constant :=
+  match lc.get with
+  | .ok c => .ok c
+  | .error e => .error s!"constant {addr} failed to decode: {e}"
+
 /-- Owned constants of a shard: every env constant whose check-schedule block
     is in `blocks`.
 
-    Constants whose bytes do not parse are skipped and therefore owned by
-    NOBODY. That is safe only because `shardsCover` fails the run when any
-    exist, so this is never reached with one present; without that gate a
-    silent skip here means a constant no shard ever checks. -/
-def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) : Array Address := Id.run do
+    This is deliberately fail-closed. Determining a constant's canonical
+    check-schedule block requires decoding it (in particular for projections),
+    so an undecodable constant cannot safely be classified as outside the
+    selected shard. Manifest blocks that do not name a canonical block in the
+    environment are rejected as well; otherwise they would silently contribute
+    no constants to the reconstructed claim. -/
+def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) :
+    Except String (Array Address) := do
   let blockSet : Std.HashSet Address := blocks.foldl (·.insert ·) {}
+  let mut envBlocks : Std.HashSet Address := {}
   let mut o : Array Address := #[]
   for (addr, lc) in ixonEnv.consts do
-    let some c := lc.get? | continue
-    if blockSet.contains (blockAddrOf ixonEnv addr c) then o := o.push addr
-  return o
+    let c ← materializeEnvConst addr lc
+    let block := blockAddrOf ixonEnv addr c
+    envBlocks := envBlocks.insert block
+    if blockSet.contains block then o := o.push addr
+  for block in blocks do
+    if !envBlocks.contains block then
+      throw s!"manifest block {block} is absent from the environment or is not a canonical check block"
+  pure o
+
+/-- Owned constants of EVERY shard, in ONE pass over the environment. Same
+    fail-closed rule as `ownedConstsForBlocks`, and the same result per shard,
+    but the env is decoded once instead of once per shard — the difference
+    between linear and `shards × consts` on a whole-env manifest. -/
+def ownedConstsPerShard (ixonEnv : Ixon.Env) (shards : Array (Array Address)) :
+    Except String (Array (Array Address)) := do
+  -- Fail-closed on a non-disjoint partition too: a block owned by two shards
+  -- would otherwise silently land in whichever shard is inserted last, and the
+  -- other shard's claim would be reconstructed over too few constants.
+  let mut blockToShard : Std.HashMap Address Nat := {}
+  for (blocks, k) in shards.mapIdx (fun k blocks => (blocks, k)) do
+    for block in blocks do
+      if let some j := blockToShard.get? block then
+        throw s!"manifest block {block} is owned by both shard {j} and shard {k}"
+      blockToShard := blockToShard.insert block k
+  let mut envBlocks : Std.HashSet Address := {}
+  let mut owned : Array (Array Address) := Array.replicate shards.size #[]
+  for (addr, lc) in ixonEnv.consts do
+    let c ← materializeEnvConst addr lc
+    let block := blockAddrOf ixonEnv addr c
+    envBlocks := envBlocks.insert block
+    if let some k := blockToShard.get? block then
+      owned := owned.modify k (·.push addr)
+  for (blocks, k) in shards.mapIdx (fun k blocks => (blocks, k)) do
+    for block in blocks do
+      if !envBlocks.contains block then
+        throw s!"shard {k}: manifest block {block} is absent from the environment or is not a canonical check block"
+  pure owned
+
+/-- The `CheckEnv` claim digest a proof over `owned` commits to. Only the
+    claim is reconstructed: the witness byte scope the prover also builds is
+    not part of the digest, so a verifier must not pay for it. -/
+def claimDigestOfOwned (ixonEnv : Ixon.Env) (owned : Array Address) :
+    Except String Address := do
+  let (claim, _) ← IxVM.ClaimHarness.shardCheckEnvClaimOnly ixonEnv owned
+  pure (Address.blake3 (Ix.Claim.ser claim))
 
 /-- The `CheckEnv` claim digest a shard's proof commits to — reconstructed
     deterministically from the env + the shard's owned blocks. Matches the
     digest `prove --shard K` produced, so a proof can be bound to its shard. -/
 def shardClaimDigest (ixonEnv : Ixon.Env) (blocks : Array Address) : Except String Address := do
-  let (claim, _, _) ← IxVM.ClaimHarness.shardCheckEnvClaim ixonEnv (ownedConstsForBlocks ixonEnv blocks)
-  pure (Address.blake3 (Ix.Claim.ser claim))
+  claimDigestOfOwned ixonEnv (← ownedConstsForBlocks ixonEnv blocks)
+
+/-- Every shard's claim digest, from one pass over the environment.
+    `none` for a shard that owns no blocks: such a shard has no `CheckEnv`
+    claim (the owned set is empty), contributes nothing to coverage, and so
+    requires no proof — the planner does emit them (`ShardManifest::summary`
+    reports an `empty=` count). -/
+def shardClaimDigests (ixonEnv : Ixon.Env) (shards : Array (Array Address)) :
+    Except String (Array (Option Address)) := do
+  let owned ← ownedConstsPerShard ixonEnv shards
+  owned.mapM fun o =>
+    if o.isEmpty then pure none else (some <$> claimDigestOfOwned ixonEnv o)
+
+/-- Check the manifest-to-environment direction without scanning the whole
+    environment: every owned block listed by the manifest must be an existing
+    canonical check block. The reverse direction (every environment constant
+    is owned exactly once) remains `shardsCover`'s responsibility. -/
+def validateManifestBlocks (ixonEnv : Ixon.Env) (shards : Array (Array Address)) :
+    Except String Unit := do
+  for (blocks, k) in shards.mapIdx (fun k blocks => (blocks, k)) do
+    for block in blocks do
+      let some lc := ixonEnv.consts.get? block
+        | throw s!"shard {k}: manifest block {block} is absent from the environment"
+      let c ← materializeEnvConst block lc
+      let canonical := blockAddrOf ixonEnv block c
+      if canonical != block then
+        throw s!"shard {k}: manifest block {block} is not a canonical check block (canonical block: {canonical})"
 
 /-- Load the `.ixe` env and the `.ixes` shard partition together (each file
-    read once). Shared by every manifest-driven shard path. -/
+    read once), rejecting a manifest that names blocks outside that env. Shared
+    by every manifest-driven shard path. -/
 def loadEnvAndShards (manifestPath ixePath : String) :
     IO (Except String (Ixon.Env × Array (Array Address))) := do
   match parseIxesAllShards (← IO.FS.readBinFile manifestPath) with
   | .error e => return .error s!"manifest parse failed: {e}"
   | .ok shards => match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
     | .error e => return .error s!"deserialize {ixePath} failed: {e}"
-    | .ok env => return .ok (env, shards)
+    | .ok env => match validateManifestBlocks env shards with
+      | .error e => return .error s!"manifest/environment mismatch: {e}"
+      | .ok () => return .ok (env, shards)
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -539,86 +619,9 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
     (p.flag? "stats-out").map (·.as! String)
   let ixePath : Option String :=
     (p.flag? "env").map (·.as! String)
-  if p.hasFlag "execute" then
-    -- Whole-env execution over the shared record: parallel execution
-    -- of every block's claim — no partition, no manifest, no proving
-    -- (that is `ix prove`).
-    let some ixe := ixePath | do
-      p.printError "error: --execute requires --env"
-      return 1
-    let toplevel ← match IxVM.ixVM with
-      | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
-      | .ok t => pure t
-    let compiled ← match toplevel.compile with
-      | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
-      | .ok c => pure c
-    let segFunIdx ← match compiled.getFuncIdx `verify_claim with
-      | some i => pure i
-      | none => IO.eprintln "error: verify_claim missing"; return 1
-    let blockFunIdx ← match compiled.getFuncIdx `verify_block with
-      | some i => pure i
-      | none => IO.eprintln "error: verify_block missing"; return 1
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
-      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
-      | .ok h => pure h
-    -- Closure roots: positional names restrict the run to their
-    -- dependency closure (resolved here to hex addresses the executor
-    -- filters its schedule by).
-    let rootNames := (p.variableArgsAs! String).toList
-    let mut rootsCsv := ""
-    if !rootNames.isEmpty then
-      let ixonEnv ← match Ixon.deEnvAnon (← IO.FS.readBinFile ixe) with
-        | .error e => IO.eprintln s!"Failed to deserialize {ixe}: {e}"; return 1
-        | .ok env => pure env
-      let mut addrs : List String := []
-      for arg in rootNames do
-        match resolveIxeAddr ixonEnv arg with
-        | none => IO.eprintln s!"{arg} not found in {ixe}"; return 1
-        | some addr => addrs := toString addr :: addrs
-      rootsCsv := String.intercalate "," addrs.reverse
-    -- Determinism debugging: map function indices (as the executor's
-    -- per-map count dump prints them) back to kernel names.
-    if (← IO.getEnv "IX_DUMP_FUN_NAMES").isSome then
-      let reverseMap := compiled.nameMap.fold
-        (init := (∅ : Std.HashMap Aiur.Bytecode.FunIdx String))
-        fun acc global idx =>
-          if !acc.contains idx then acc.insert idx (toString global) else acc
-      for i in [:compiled.bytecode.functions.size] do
-        IO.println s!"fn {i} {reverseMap[i]?.getD "<anon>"}"
-    let workers := (p.flag? "jobs").map (·.as! Nat) |>.getD 0
-    -- `--json` reports the run as a benchmark row: `execute-time`
-    -- windows the parallel check itself — the kernel compile and
-    -- `EnvHandle` build are excluded, so the measure tracks the kernel,
-    -- not the loader — while `peak-rss` is the process tree's absolute
-    -- high-water (covers the worker pool).
-    let benchJson := (p.flag? "json").map fun f =>
-      (f.as! String,
-       ((p.flag? "json-name").map (·.as! String)).getD "execute")
-    if benchJson.isSome then
-      TracingTexray.startSampler
-      TracingTexray.resetPeakTreeRss
-    let start ← IO.monoMsNow
-    let run : Except String Unit :=
-      Aiur.Bytecode.Toplevel.executeEnvWithEnv compiled.bytecode
-        segFunIdx blockFunIdx envHandle (toString workers)
-        (if keepGoing then "0" else "1") rootsCsv
-    match run with
-    | .error e => IO.eprintln s!"execute failed: {e}"; return 1
-    | .ok () =>
-      let ms := (← IO.monoMsNow) - start
-      IO.println s!"execute: OK in {ms} ms"
-      if let some (out, rowName) := benchJson then
-        let peakRss ← TracingTexray.peakTreeRssBytes
-        Ix.Benchmark.Results.writeRow out rowName "ok"
-          [ ("execute-time",
-             Ix.Benchmark.Results.jsonRound 3 (ms.toFloat / 1000.0))
-          , ("peak-rss", Lean.toJson peakRss) ]
-      return 0
   let claimHex : Option String :=
     (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
-  let ixesPath := (p.flag? "shards").map (·.as! String)
-  let shardK := (p.flag? "shard").map (·.as! Nat)
   -- a single targeted constant or a `--claim` prints per-circuit
   -- stats; whole-env iteration suppresses them.
   let printStats := names.length == 1 || claimHex.isSome
@@ -653,71 +656,25 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
           (label : String) : IO UInt32 :=
         runCompiled compiled printStats statsOut useBytecode envHandle? target label
       pure go
-  match ixePath, ixesPath, shardK with
-  | some ixe, some manifest, k? =>
-    -- Measured manifest verify through the shared-record engine: each
-    -- shard re-executes standalone, seals (canonical CheckEnv claim +
-    -- derived multiplicities), and measures its EXACT peak against the
-    -- budget — certifying the manifest is provable on this box before
-    -- `ix prove --shards` commits STARK time. An all-shards run first
-    -- proves exact cover of the env schedule; --fixup-out rewrites the
-    -- manifest from the measurements.
-    if interpSource then
-      p.printError "error: --interp does not support --shards"
-      return 1
-    let compiled ← match toplevel.compile with
-      | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
-      | .ok c => pure c
-    let segFunIdx ← match compiled.getFuncIdx `verify_claim with
-      | some i => pure i
-      | none => IO.eprintln "error: verify_claim missing"; return 1
-    let blockFunIdx ← match compiled.getFuncIdx `verify_block with
-      | some i => pure i
-      | none => IO.eprintln "error: verify_block missing"; return 1
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
-      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
-      | .ok h => pure h
-    let aiurSystem := Aiur.AiurSystem.build compiled.bytecode
-      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-    let workers := ((p.flag? "jobs").map (·.as! Nat)).getD 0
-    match aiurSystem.executeManifestProveWithEnv segFunIdx blockFunIdx
-        envHandle (toString workers) manifest ((k?.map toString).getD "")
-        "1" (((p.flag? "fixup-out").map (·.as! String)).getD "") with
-    | .error e => IO.eprintln s!"verify failed: {e}"; return 1
-    | .ok () => IO.println "verify: OK"; return 0
-  | none, some _, _ =>
-    p.printError "error: --shards requires --env"
-    return 1
-  | _, none, some _ =>
-    p.printError "error: --shard requires --shards"
-    return 1
-  | _, _, _ =>
-    forEachClaim ixePath claimHex names keepGoing "check" interpSource runOne
+  forEachClaim ixePath claimHex names keepGoing "check" interpSource runOne
 
 end Ix.Cli.CheckCmd
 
 open Ix.Cli.CheckCmd in
 def checkCmd : Cli.Cmd := `[Cli|
   check VIA runCheckCmd;
-  "Execute and verify through the IxVM Aiur kernel: per-constant claims, whole-env or closure execution (--execute), and measured manifest verification (--shards). Proving lives under `ix prove`."
+  "Execute and verify `Ix.Claim`s through the IxVM Aiur kernel: one named constant, every constant of an env, or a persisted claim. Proving lives under `ix prove`."
 
   FLAGS:
     interp : String;        "Use an interpreter instead of the codegen'd IxVM Rust kernel. Modes: `source` = Aiur source interpreter (richer per-execution error diagnostics, slowest); `bytecode` = generic Aiur bytecode interpreter (skips the regen + cargo rebuild cycle when iterating on `Ix/IxVM/*.lean`). Omit the flag entirely for the native codegen kernel."
     "fail-fast";            "Halt on the first failure (the default; flag accepted for explicitness)."
     "no-fail-fast";         "Continue past failures and report them at the end instead of halting on the first."
     "env"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
-    "execute";              "Whole-env execution (requires --env): run every block's check claim — the whole env, or with positional names their dependency closure — through the codegen'd Aiur kernel in parallel over one shared record. The record is cut and dropped at a measured RAM threshold purely to bound memory; cuts never change what is checked. Reports blocks checked, kernel rejects (named), and total measured FFT cost; combine with --no-fail-fast to inventory every reject."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--env` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
-    "shards"    : String;   "Path to a `.ixes` shard manifest (with --env), e.g. from `ix shard`: measured manifest verification — each shard re-executes standalone through the shared-record engine, seals, and measures its EXACT peak prove RAM against the budget, certifying the manifest is provable on this box before `ix prove --shards` commits STARK time. An all-shards run first proves exact cover of the env schedule."
-    "shard"     : Nat;      "0-based shard index K (with --shards): verify only shard K (stamped PARTIAL — no coverage claim)."
-    "fixup-out" : String;   "With --shards (all shards): after measuring every shard's EXACT prove RAM, write a fixed-up manifest here — shards over budget split in two, consecutive underfilled shards merged while the sum of measured peaks stays under budget."
-    "jobs"      : Nat;      "Worker threads for --execute and --shards (default 0 = autoscale)."
-    json        : String;   "Benchmark results JSON accumulator (--execute mode): append an `execute-time`/`peak-rss` row for the whole-env execute."
-    "json-name" : String;   "Row name for --json (default: `execute`)."
 
   ARGS:
-    ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted). With --execute: execute only the named constants' dependency closure."
+    ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
 ]
 
 end

@@ -174,34 +174,40 @@ def proveAddrWithEnv (system : @& AiurSystem)
 opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
-/-- Cut-mode whole-env execute-and-prove: execution seals segment
-    records at the cut threshold and each proceeds straight to a
-    multi-claim STARK from its own record (no re-execution), verified
-    before the run continues. FunIdxs: `verify_segment` (the single
-    segment claim executed at seal) and `verify_block` (the per-block
-    warm execution workers run in parallel). Remaining args mirror
-    `executeEnvWithEnv`: workers ("0" = default width), fail-fast ("0"
-    records and skips rejects — segments containing rejects are not
-    proven). -/
+/-- Whole-env execute-and-prove: execution spans are cut on the
+    record's retained bytes (sized so each span is ONE proof), and
+    every span seals its canonical CheckEnv claim, derives
+    multiplicities, is measured EXACTLY against the budget, and proves
+    behind that gate — a span measuring over is refused with the
+    stable code AIUR_SPAN_OVER_BUDGET and fails the run. FunIdxs:
+    `verify_claim` (the seal claim) and `verify_block` (the per-block
+    warm execution workers run in parallel). String args: workers
+    ("0" = default width), fail-fast ("0" records and skips rejects —
+    spans containing rejects are not proven), dry-run ("1" stops at
+    witness generation and reports each span's exact measured
+    peak). -/
 @[extern "rs_aiur_execute_env_prove_with_env"]
 opaque executeEnvProveWithEnv : @& AiurSystem →
   @& Bytecode.FunIdx → @& Bytecode.FunIdx → @& EnvHandle → @& String →
-  @& String → @& String → @& String → Except String Unit
+  @& String → @& String → Except String Unit
 
-/-- Manifest-driven measure/prove: execute the shards of a PR-550
-    `.ixes` manifest (one warm shared record per shard, one
-    `verify_segment` claim), gate every prove on the EXACT
-    post-execution RAM model, and — in all-shards dry mode with a
-    fixup path — rewrite the manifest by splitting shards that
-    measured over budget and merging consecutive underfilled ones
-    while the sum of measured peaks stays under budget. String args:
-    workers ("0" = default), manifest path, shard selector (decimal or
-    "" = all), dry-run ("1" measures only), fixup-out path ("" =
-    none). -/
-@[extern "rs_aiur_execute_manifest_prove_with_env"]
-opaque executeManifestProveWithEnv : @& AiurSystem →
+/-- Cluster-shard measure/prove: run selected shards of a `.ixes`
+    manifest (the `ix shard` static min-cut plan) as immutable work
+    units — per shard: execute its owned blocks warm into a fresh
+    record, seal the shard's canonical CheckEnv claim, derive
+    multiplicities, measure the witness EXACTLY, and prove behind the
+    measured gate. A shard measuring over this box's budget fails the
+    run with the stable code AIUR_SHARD_OVER_BUDGET (shard=/blocks=/
+    peak_bytes=/budget_bytes=) so a scheduler can re-partition it;
+    the box never splits or heals. An all-shards run first checks
+    exact cover of the env schedule. String args: workers ("0" =
+    default), manifest path, shard selector (decimal or "" = all),
+    dry-run ("1" stops at witness generation and reports each shard's
+    exact measured peak). -/
+@[extern "rs_aiur_execute_shards_prove_with_env"]
+opaque executeShardsProveWithEnv : @& AiurSystem →
   @& Bytecode.FunIdx → @& Bytecode.FunIdx → @& EnvHandle → @& String →
-  @& String → @& String → @& String → @& String → Except String Unit
+  @& String → @& String → @& String → Except String Unit
 
 end AiurSystem
 

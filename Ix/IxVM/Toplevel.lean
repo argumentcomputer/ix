@@ -196,76 +196,6 @@ def entrypoints := ⟦
     check_node(store(addr_bytes));
   }
 
-  -- The segment claim's walk: 32 bytes per address, each re-checked
-  -- through `verify_block` — a memo HIT on the executor's warm
-  -- per-block executions, so each call costs one multiplicity bump
-  -- and the claim's total cost is the digest binding plus this parse.
-  -- A trailing fragment (stream length not a multiple of 32) fails
-  -- the refutable byte destructuring: a digest cannot cover addresses
-  -- its walk never reached.
-  fn run_segment_blocks(s: ByteStream) {
-    match load(s) {
-      ListNode.Nil => (),
-      ListNode.Cons(b0, s) =>
-        let ListNode.Cons(b1, s) = load(s);
-        let ListNode.Cons(b2, s) = load(s);
-        let ListNode.Cons(b3, s) = load(s);
-        let ListNode.Cons(b4, s) = load(s);
-        let ListNode.Cons(b5, s) = load(s);
-        let ListNode.Cons(b6, s) = load(s);
-        let ListNode.Cons(b7, s) = load(s);
-        let ListNode.Cons(b8, s) = load(s);
-        let ListNode.Cons(b9, s) = load(s);
-        let ListNode.Cons(b10, s) = load(s);
-        let ListNode.Cons(b11, s) = load(s);
-        let ListNode.Cons(b12, s) = load(s);
-        let ListNode.Cons(b13, s) = load(s);
-        let ListNode.Cons(b14, s) = load(s);
-        let ListNode.Cons(b15, s) = load(s);
-        let ListNode.Cons(b16, s) = load(s);
-        let ListNode.Cons(b17, s) = load(s);
-        let ListNode.Cons(b18, s) = load(s);
-        let ListNode.Cons(b19, s) = load(s);
-        let ListNode.Cons(b20, s) = load(s);
-        let ListNode.Cons(b21, s) = load(s);
-        let ListNode.Cons(b22, s) = load(s);
-        let ListNode.Cons(b23, s) = load(s);
-        let ListNode.Cons(b24, s) = load(s);
-        let ListNode.Cons(b25, s) = load(s);
-        let ListNode.Cons(b26, s) = load(s);
-        let ListNode.Cons(b27, s) = load(s);
-        let ListNode.Cons(b28, s) = load(s);
-        let ListNode.Cons(b29, s) = load(s);
-        let ListNode.Cons(b30, s) = load(s);
-        let ListNode.Cons(b31, s) = load(s);
-        verify_block([b0, b1, b2, b3, b4, b5, b6, b7,
-                      b8, b9, b10, b11, b12, b13, b14, b15,
-                      b16, b17, b18, b19, b20, b21, b22, b23,
-                      b24, b25, b26, b27, b28, b29, b30, b31]);
-        run_segment_blocks(s),
-    }
-  }
-
-  -- Segment coverage entrypoint: ONE claim per sealed segment. The
-  -- public input is the blake3 digest of the segment's sorted block
-  -- address list; the list itself is channel-0 advice, hash-bound
-  -- here exactly like claim bytes (`verify_bytes_against`), then
-  -- re-walked block by block. The sealed record balances as if this
-  -- function had executed every block itself, sequentially — the
-  -- executor's parallel warm executions are a scheduling detail the
-  -- witness cannot distinguish.
-  --
-  -- POLICY: attests "every listed block's `check_node` gauntlet ran",
-  -- with dependency TYPES get_ci-trusted per block — coverage and
-  -- assumption discharge across segments are checked where claim
-  -- lists are validated (natively today, by the aggregation statement
-  -- once cross-proof aggregation lands).
-  pub fn verify_segment(digest: [U8; 32]) {
-    let (idx, len) = io_get_info(0, digest);
-    let bytes = #read_byte_stream(0, idx, len);
-    verify_bytes_against(bytes, digest);
-    run_segment_blocks(bytes)
-  }
 ⟧
 
 open IxVM (core byteStream blake3 rbTreeMap ixon ixonSerialize ixonDeserialize)
@@ -325,7 +255,7 @@ def ixVMFull : Except Aiur.Global Aiur.Source.Toplevel := do
     alongside them. -/
 def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← ixVMFull
-  pure (vm.prune [`verify_claim, `verify_block, `verify_segment])
+  pure (vm.prune [`verify_claim, `verify_block])
 
 end IxVM
 

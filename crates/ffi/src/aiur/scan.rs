@@ -14,19 +14,25 @@
 //! reference graph, which keeps closure-overlapping blocks adjacent so
 //! memoization absorbs shared work.
 //!
-//! Record cutting is deliberately SIMPLE: between blocks — the only
-//! place a worker can stop — each worker measures the mode's budgeted
-//! metric on the record as it stands (exec mode: retained bytes; prove
-//! mode: the calibrated peak-prove-RSS model) and flags the cut when it
-//! crosses the threshold. Nothing is predicted, projected,
-//! or trimmed — segment sizing intentionally lives with the PROVER
-//! (post-execution row sharding sizes chunks exactly from known
-//! heights; see `docs/segment-sizing-design-space.md` D3), and these
-//! coarse executor segments only bound record residency and enable
-//! exec/prove pipelining. Sealed segments ARE prover witnesses: with a
-//! prove system attached, each proceeds straight to a multi-claim
-//! STARK ([`AiurSystem::prove_sealed`]) — no re-execution, no
-//! manifest, no partition planning.
+//! Two prove entrypoints share the engine, and neither adapts in-run:
+//!
+//! - [`execute_shards`] is the CLUSTER path: each `.ixes` shard of the
+//!   static min-cut planner (`ix shard`) is an immutable work unit a
+//!   box runs whole — execute the shard's owned blocks warm, seal ONE
+//!   CheckEnv claim, derive multiplicities, measure the witness
+//!   EXACTLY, and prove behind the measured gate. A shard that
+//!   measures over the box's budget fails with the stable code
+//!   `AIUR_SHARD_OVER_BUDGET` so a scheduler can re-partition it
+//!   statically (claim composition makes any re-split sound); the box
+//!   itself never splits, probes, or heals.
+//! - Whole-env mode cuts execution spans on the record's retained
+//!   bytes — a smooth, small quantity where the racing cut's slop
+//!   costs a few harmless GiB of record — sized conservatively so
+//!   each span is ONE proof, sealed and gated exactly the same way.
+//!
+//! Nothing is predicted and nothing is stateful across spans or
+//! shards: every prove decision is a measurement of the sealed record
+//! at hand, and nothing over-budget ever reaches a STARK.
 //!
 //! Witness bytes are served lazily through the run-wide [`SharedIO`]
 //! layer (`EnvFaultSource`): claim wires are seeded up front in
@@ -53,7 +59,6 @@ use aiur::{
   synthesis::AiurSystem,
 };
 
-use crate::{aiur::toplevel::decode_toplevel, lean::LeanAiurToplevel};
 use ix_common::address::Address;
 use ix_kernel::profile::{OpCounts, ProfileBuilder};
 use ix_kernel::shard::{Hypergraph, ShardManifest};
@@ -68,21 +73,17 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 /// Bytes per GiB.
 const GIB: f64 = 1_073_741_824.0;
 
-/// Fraction of the budget that triggers a cut. The 20% below budget is
-/// the design's ONLY slack, and it covers exactly what the metric
-/// cannot see at the moment a worker decides to stop: the in-flight
-/// block every worker still finishes during the drain (cuts land only
-/// between blocks), and the record's hash-table index (a small adjunct
-/// of the retained bytes the metric counts).
-const CUT_FRAC: f64 = 0.8;
-
-/// Plan-mode cut trigger, as a fraction of the budget. Fine segments
-/// are measurement quanta, never proof units: the grouping pass packs
-/// them into budget-sized shards, so their one requirement is to be
-/// small enough to pack with — a quarter-budget quantum gives the
-/// packer 4x resolution. A segment that still seals over budget is
-/// flagged and bisected by the manifest fix-up.
-const PLAN_TRIGGER_FRAC: f64 = 0.25;
+/// Prove-mode execution-span cut, as a fraction of the budget on the
+/// record's RETAINED bytes. In whole-env prove mode every span is one
+/// proof: the span's witness must fit the budget, and
+/// witness-to-retained ratios measured 18-28x across the
+/// init/FLT/Mathlib campaigns (with the racing cut overshooting the
+/// retained line by up to ~30%), so 0.02 bounds the worst measured
+/// combination under the budget with margin. Conservative fill is the
+/// price of a stateless in-run design; sizing work to a box precisely
+/// is the cluster pipeline's job (`ix shard` + `ix prove --shards`).
+/// Efficiency-only — the exact measured gate enforces the budget.
+const EXEC_RETAINED_FRAC: f64 = 0.02;
 
 /// The RAM model's measured residual: real STARK proves at campaign
 /// scale ran +1.6% (FLT shard 12) and +1.7% (Mathlib shard 153) over
@@ -233,9 +234,9 @@ fn static_order(
   // coincide; assert the invariant the whole mapping rests on.
   assert_eq!(profile.num_blocks(), blocks.len());
   let shard_of = Hypergraph::from_profile(&profile).partition(pieces, 0.05);
-  let mut order: Vec<u32> =
-    (0..u32::try_from(blocks.len()).expect("block count exceeds u32"))
-      .collect();
+  let mut order: Vec<u32> = (0..u32::try_from(blocks.len())
+    .expect("block count exceeds u32"))
+    .collect();
   order.sort_by_key(|&i| (shard_of[i as usize], i));
   order
 }
@@ -325,8 +326,8 @@ fn preassign_canonical_io(env: &IxonEnv, shared_io: &aiur::execute::SharedIO) {
 /// the `verify_block` warm-up; the env walk and assumption-tree
 /// recomputation are the claim's own in-circuit work. `owned` is the
 /// member-constant set of the span's blocks; the frontier closure walk
-/// runs host-side in parallel Rust. Returns the claim input (the claim
-/// digest key) on success.
+/// runs host-side in parallel Rust. Returns the canonical claim and its
+/// input (the claim digest key) on success.
 fn run_check_env_claim(
   toplevel: &Toplevel,
   fun_idx: usize,
@@ -334,17 +335,36 @@ fn run_check_env_claim(
   record: &QueryRecord,
   env: &Arc<IxonEnv>,
   owned: &[Address],
-) -> Result<Vec<G>, String> {
+) -> Result<(ixon::proof::Claim, Vec<G>), String> {
   let mut io = IOBuffer::with_shared(shared_io.clone());
-  let (_claim, input) =
+  let (claim, input) =
     ixvm_codegen::aiur_ixvm_witness::seed_shard_check_env_claim(
       env, owned, &mut io,
     )?;
   execute_ixvm_with_record(toplevel, fun_idx, &input, &mut io, record)
-    .map(|_| input)
+    .map(|_| (claim, input))
     .map_err(|e| e.to_string())
 }
 
+/// Persist a proven unit as an `Ixon.Proof` wrapper (its canonical
+/// CheckEnv claim plus the opaque proof bytes) in the content-addressed
+/// store, returning the wrapper's address — the hex `ix verify` takes,
+/// and the artifact a box ships for aggregation. Takes the ALREADY-ENCODED
+/// proof: `AiurProof::to_bytes` is a full re-encode into a fresh buffer, and
+/// at multi-MiB proof sizes it runs at the peak-RSS moment of the run, so the
+/// caller encodes once and reuses those bytes for its own size reporting.
+fn store_proof(
+  claim: &ixon::proof::Claim,
+  proof_bytes: Vec<u8>,
+) -> Result<Address, String> {
+  let mut buf: Vec<u8> = Vec::with_capacity(proof_bytes.len() + 128);
+  let wrapper = ixon::proof::Proof { claim: claim.clone(), proof: proof_bytes };
+  wrapper.put(&mut buf);
+  ix_compile::store::Store::write(&buf)
+    .map_err(|e| format!("store write: {e:?}"))
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn execute_env(
   toplevel: &Toplevel,
   fun_idx: usize,
@@ -353,13 +373,8 @@ pub fn execute_env(
   workers: usize,
   fail_fast: bool,
   dry_run: bool,
-  plan_out: Option<&str>,
-  prove_system: Option<&AiurSystem>,
-  roots: &[Address],
+  system: &AiurSystem,
 ) -> Result<String, String> {
-  if plan_out.is_some() && (!dry_run || prove_system.is_none()) {
-    return Err("--plan-out requires --prove --dry-run".to_string());
-  }
   // Threads sharing ONE QueryRecord: parallelism comes from concurrent
   // claims filling the same memo table. Every shared cone derives once
   // for the whole env, worker width defaults to the machine, and the
@@ -384,50 +399,6 @@ pub fn execute_env(
       .min(blocks.len())
       .max(16);
   let order = ordered_schedule(&blocks, &adj, sched_pieces);
-  // Closure-rooted execution: restrict the schedule to the blocks
-  // reachable from the roots' home blocks over the reference adjacency.
-  // Schedule order is preserved, so warm sharing and record cutting
-  // behave exactly as a whole-env run over the smaller schedule.
-  let order = if roots.is_empty() {
-    order
-  } else {
-    let mut home: FxHashMap<&Address, u32> = FxHashMap::default();
-    for (i, b) in blocks.iter().enumerate() {
-      let i = u32::try_from(i).expect("block ids fit u32");
-      home.insert(&b.addr, i);
-      for m in &b.members {
-        home.insert(m, i);
-      }
-    }
-    let mut keep = vec![false; blocks.len()];
-    let mut stack: Vec<u32> = Vec::new();
-    for r in roots {
-      let Some(&b) = home.get(r) else {
-        return Err(format!("closure root {} not in env schedule", r.hex()));
-      };
-      if !keep[b as usize] {
-        keep[b as usize] = true;
-        stack.push(b);
-      }
-    }
-    while let Some(b) = stack.pop() {
-      for &r in &adj[b as usize] {
-        if !keep[r as usize] {
-          keep[r as usize] = true;
-          stack.push(r);
-        }
-      }
-    }
-    let filtered: Vec<u32> =
-      order.into_iter().filter(|&b| keep[b as usize]).collect();
-    eprintln!(
-      "[exec] closure of {} root(s): {}/{} blocks",
-      roots.len(),
-      filtered.len(),
-      blocks.len()
-    );
-    filtered
-  };
   let covered = order.len();
   // The budget feeds ONLY the cut thresholds and the plan/prove sizing
   // below; there is no RSS enforcement here — running under a watchdog
@@ -464,15 +435,15 @@ pub fn execute_env(
   // the same machine executes and proves, so segments only need to be
   // sized for its prover, not canonical across machines.
   //
-  // One cut threshold, from the measured budget. Workers test it
-  // between blocks (the only place a worker can stop) on the mode's own
-  // metric — the quantity being budgeted, measured on real state, with
-  // no polling gap: prove/plan use the calibrated peak-prove-RSS model,
-  // execute-only the record's retained bytes.
-  let cut_bytes: usize = usize::try_from(gib_to_bytes_u64(
-    budget_gib * if plan_out.is_some() { PLAN_TRIGGER_FRAC } else { CUT_FRAC },
-  ))
-  .unwrap_or(usize::MAX);
+  // One cut threshold on the record's retained bytes, from the
+  // measured budget: spans are RAM containers sized by
+  // [`EXEC_RETAINED_FRAC`] so each one's sealed witness fits the
+  // budget.
+  let cut_bytes: usize =
+    usize::try_from(gib_to_bytes_u64(budget_gib * EXEC_RETAINED_FRAC))
+      .unwrap_or(usize::MAX);
+  let budget_bytes: usize =
+    usize::try_from(gib_to_bytes_u64(budget_gib)).unwrap_or(usize::MAX);
   let cursor = AtomicUsize::new(0);
   let done = AtomicUsize::new(0);
   let abort = std::sync::atomic::AtomicBool::new(false);
@@ -481,12 +452,11 @@ pub fn execute_env(
   let t0 = std::time::Instant::now();
   // (seg_start, seg_end, unique entries, fft cost, retained bytes).
   let mut segs: Vec<(usize, usize, usize, f64, usize)> = Vec::new();
-  // Plan mode: per fine segment, the measured per-circuit raw heights,
-  // retained bytes, exact peak, and cleanliness — the grouping inputs.
-  let mut plan_segs: Vec<(Vec<usize>, usize, usize, bool)> = Vec::new();
   // Prove-mode segments sealed unclean (rejects / missing claim) and
   // therefore not proven — a failure the exit status must carry.
   let mut unproven_segs = 0usize;
+  // Spans sealed, measured, and proven (or DRY-measured) so far.
+  let mut spans_proven = 0usize;
   let mut seg_start = 0usize;
   while seg_start < covered && !abort.load(Ordering::Acquire) {
     let cut_now = std::sync::atomic::AtomicBool::new(false);
@@ -546,10 +516,7 @@ pub fn execute_env(
                   .filter_map(|a| {
                     let lo = a.load(Ordering::Relaxed);
                     (lo != usize::MAX).then(|| {
-                      format!(
-                        "{}@{lo}",
-                        blocks[order[lo] as usize].addr.hex()
-                      )
+                      format!("{}@{lo}", blocks[order[lo] as usize].addr.hex())
                     })
                   })
                   .collect();
@@ -572,7 +539,8 @@ pub fn execute_env(
       for w in 0..workers {
         let in_flight = &in_flight;
         let (cursor, done, abort, cut_now) = (&cursor, &done, &abort, &cut_now);
-        let (failed, fatal, active_workers) = (&failed, &fatal, &active_workers);
+        let (failed, fatal, active_workers) =
+          (&failed, &fatal, &active_workers);
         let (blocks, order, shared_io) = (&blocks, &order, &shared_io);
         let record = &record;
         sc.spawn(move || {
@@ -589,7 +557,11 @@ pub fn execute_env(
             let mut io = IOBuffer::with_shared(shared_io.clone());
             let input = addr_key(&blocks[b as usize].addr);
             execute_ixvm_with_record(
-              toplevel, block_fun_idx, &input, &mut io, &record,
+              toplevel,
+              block_fun_idx,
+              &input,
+              &mut io,
+              &record,
             )
             .map_err(|e| e.to_string())?;
             Ok(())
@@ -631,13 +603,14 @@ pub fn execute_env(
             in_flight[w].store(usize::MAX, Ordering::Relaxed);
             // Cut check, between blocks — the only place a worker can
             // stop, so checking here has zero detection gap beyond the
-            // drain itself. Lock-free O(#maps): map lens are single
-            // atomic loads.
-            let bytes = match prove_system {
-              Some(s) => s.peak_prove_bytes(record).peak,
-              None => record_retained_bytes(record),
-            };
-            if bytes >= cut_bytes {
+            // drain itself. Both modes cut on the record's RETAINED
+            // bytes — the only thing an execution span must bound.
+            // Proof sizing does NOT happen here: it happens at the
+            // derivation layer after the span seals, where measurement
+            // is exact and stopping is per-block, so the sloppiness of
+            // a racing cut (drain window, in-flight stragglers) costs
+            // a few harmless GiB of record, never a proof's RAM.
+            if record_retained_bytes(record) >= cut_bytes {
               cut_now.store(true, Ordering::Release);
             }
             let d = done.load(Ordering::Acquire);
@@ -662,33 +635,6 @@ pub fn execute_env(
     if abort.load(Ordering::Acquire) {
       break;
     }
-    // Seal claim (prove mode): ONE `CheckEnv` claim over the
-    // digest-bound, sorted address list of every block the span
-    // executed, run into the same record. Its per-block calls memo-hit
-    // the warm executions, so the claim's whole cost is the binding
-    // hash plus one bump per block — small and uniform.
-    let mut seg_claim: Option<Vec<G>> = None;
-    if prove_system.is_some()
-      && seg_end > seg_start
-      && failed.lock().unwrap().len() == seg_failed_base
-    {
-      let owned: Vec<Address> = order[seg_start..seg_end]
-        .iter()
-        .flat_map(|&b| blocks[b as usize].members.iter().cloned())
-        .collect();
-      match run_check_env_claim(
-        toplevel, fun_idx, &shared_io, &record, env, &owned,
-      ) {
-        Ok(input) => seg_claim = Some(input),
-        Err(e) => {
-          eprintln!(
-            "[prove seg {}] seal claim failed: {e} — the segment \
-             will not be proven",
-            segs.len()
-          );
-        },
-      }
-    }
     let retained = record_retained_bytes(&record);
     let entries: usize =
       record.function_queries.iter().map(|m| m.len()).sum::<usize>()
@@ -697,11 +643,10 @@ pub fn execute_env(
     // Padded transform work (prove mode): the raw BFFT is the smooth
     // cross-run diagnostic; the padded figure is what the prover's wall
     // actually tracks.
-    let padded_note = prove_system
-      .map(|s| {
-        format!(" ({:.1} padded)", s.padded_fft_cost_of_record(&record) / 1e9)
-      })
-      .unwrap_or_default();
+    let padded_note = format!(
+      " ({:.1} padded)",
+      system.padded_fft_cost_of_record(&record) / 1e9
+    );
     if seg_end < covered || !segs.is_empty() {
       eprintln!(
         "[seg {}] blocks {seg_start}..{seg_end} of {covered}: \
@@ -714,242 +659,133 @@ pub fn execute_env(
       );
     }
     segs.push((seg_start, seg_end, entries, fft, retained));
-    if let Some(system) = prove_system {
-      // The sealed record IS the witness, and the claim list is ONE
-      // claim: the span's canonical `CheckEnv` claim. The warmed
-      // per-node entries are consumed by its in-circuit calls
-      // (debumped, never claimed), so the record balances exactly as
-      // if the seal claim had executed every check itself. A segment with rejected blocks or a
-      // failed segment claim has partial or unconsumed work in its
-      // record, so it is skipped rather than mis-proven.
-      let mut claims: Vec<Vec<G>> = Vec::with_capacity(1);
-      let mut missing = 0usize;
-      match &seg_claim {
-        Some(inp) => match record.function_queries[fun_idx].get(inp) {
-          Some(q) => {
-            claims
-              .push(aiur::synthesis::function_claim(fun_idx, inp, q.output));
-          },
-          None => missing += 1,
-        },
-        None => missing += 1,
-      }
-      let clean =
-        missing == 0 && failed.lock().unwrap().len() == seg_failed_base;
-      // Seal accounting: the record was filled as an insert-once SET;
-      // every multiplicity (function, memory, byte gadgets) is DERIVED
-      // here from the unique-query set + the segment claim, then
-      // written into the record for witness generation. This is the
-      // step that makes duplicate speculative execution by racing
-      // workers sound — nothing accumulated at runtime enters the
-      // witness.
-      // Plan mode measures only — the fine segments are never proven,
-      // so multiplicity derivation (the seal's prove-side step) is
-      // skipped; the grouped shards derive at THEIR seal in the prove
-      // pass. The segment claim still ran above, so its rows are in
-      // the measured raws — summing per-segment claims over-counts the
-      // group's single claim, which is the conservative direction.
-      if clean && plan_out.is_none() {
-        let t = std::time::Instant::now();
-        let dio = IOBuffer::with_shared(shared_io.clone());
-        let claim_list: Vec<(usize, Vec<G>)> =
-          seg_claim.iter().map(|inp| (fun_idx, inp.clone())).collect();
-        aiur::trace::derive_multiplicities_into(
-          toplevel,
-          &record,
-          &dio,
-          &claim_list,
-        );
+    {
+      if failed.lock().unwrap().len() != seg_failed_base {
         eprintln!(
-          "[seg {}] multiplicities derived in {:.1}s",
-          segs.len() - 1,
-          t.elapsed().as_secs_f64()
-        );
-      }
-      if let Some(system) = prove_system
-        && plan_out.is_some()
-      {
-        plan_segs.push((
-          system.circuit_raws(&record),
-          record_retained_bytes(&record),
-          system.peak_prove_bytes(&record).peak,
-          clean,
-        ));
-      }
-      if !clean {
-        eprintln!(
-          "[prove seg {}] SKIPPED: {missing} unavailable claim(s) and/or \
-           rejected blocks — partial records are not proven",
+          "[prove span {}] SKIPPED: rejected block(s) — partial records \
+           are not proven",
           segs.len() - 1
         );
-        if !dry_run && plan_out.is_none() {
+        if !dry_run {
           unproven_segs += 1;
         }
-        drop(std::mem::replace(&mut record, QueryRecord::new(toplevel)));
-      } else if dry_run {
-        // Geometry dry run: everything real — the cut, the segment
-        // claim, claims assembly — except the STARK itself.
-        let sealed = std::mem::replace(&mut record, QueryRecord::new(toplevel));
-        let predicted = system.peak_prove_bytes(&sealed);
-        eprintln!(
-          "[prove seg {}] DRY: {} claims, predicted peak prove RSS \
-           {:.1} GiB — STARK skipped",
-          segs.len() - 1,
-          claims.len(),
-          f64_from_usize(predicted.peak) / GIB
-        );
-      } else {
-        let sealed = std::mem::replace(&mut record, QueryRecord::new(toplevel));
-        let predicted = system.peak_prove_bytes(&sealed);
-        eprintln!(
-          "[prove seg {}] predicted peak prove RSS {:.1} GiB",
-          segs.len() - 1,
-          f64_from_usize(predicted.peak) / GIB
-        );
-        let io = IOBuffer::with_shared(shared_io.clone());
-        let pt = std::time::Instant::now();
-        let proof = system.prove_sealed(sealed, &io, &claims);
-        let prove_s = pt.elapsed().as_secs_f64();
-        let vt = std::time::Instant::now();
-        system
-          .verify_sealed(&claims, &proof)
-          .map_err(|e| format!("segment proof failed verification: {e:?}"))?;
-        eprintln!(
-          "[prove seg {}] {} claims: prove {:.0}s, verify {:.1}s, proof \
-           {:.1} MiB, rss {:.0}G",
-          segs.len() - 1,
-          claims.len(),
-          prove_s,
-          vt.elapsed().as_secs_f64(),
-          f64_from_usize(proof.to_bytes().map_or(0, |b| b.len()))
-            / (1024.0 * 1024.0),
-          process_rss_gib(),
-        );
+      } else if seg_end > seg_start {
+        // ONE proof per span: seal the span's canonical CheckEnv
+        // claim into the warm record, derive multiplicities, measure
+        // the witness EXACTLY, and prove behind the measured gate.
+        // Spans are sized conservatively ([`EXEC_RETAINED_FRAC`]) so
+        // their witnesses fit the budget; a span that still measures
+        // over is refused with a stable code — nothing over-budget
+        // ever reaches a STARK, and sizing work to a box precisely is
+        // the cluster pipeline's job, not in-run splitting.
+        let gi = spans_proven + unproven_segs;
+        let dio = IOBuffer::with_shared(shared_io.clone());
+        let owned: Vec<Address> = order[seg_start..seg_end]
+          .iter()
+          .flat_map(|&b| blocks[b as usize].members.iter().cloned())
+          .collect();
+        match run_check_env_claim(
+          toplevel, fun_idx, &shared_io, &record, env, &owned,
+        ) {
+          Ok((ixon_claim, input)) => {
+            let dt = std::time::Instant::now();
+            aiur::trace::derive_multiplicities_into(
+              toplevel,
+              &record,
+              &dio,
+              &[(fun_idx, input.clone())],
+            );
+            let exact = system.peak_prove_bytes(&record).peak;
+            eprintln!(
+              "[span {gi}] multiplicities derived in {:.1}s, measured \
+               witness peak {:.1} GiB",
+              dt.elapsed().as_secs_f64(),
+              f64_from_usize(exact) / GIB,
+            );
+            match record.function_queries[fun_idx].get(&input) {
+              Some(q) => {
+                let claims = vec![aiur::synthesis::function_claim(
+                  fun_idx, &input, q.output,
+                )];
+                if dry_run {
+                  eprintln!(
+                    "[prove span {gi}] DRY: blocks \
+                     {seg_start}..{seg_end}, measured witness peak \
+                     {:.1} GiB — STARK skipped",
+                    f64_from_usize(exact) / GIB,
+                  );
+                  spans_proven += 1;
+                } else if exact > budget_bytes {
+                  // The EXACT gate: an over-budget span is not proven
+                  // (an OOM is not a verdict) — it is reported with a
+                  // stable code and fails the run.
+                  eprintln!(
+                    "[prove span {gi}] REFUSED: \
+                     AIUR_SPAN_OVER_BUDGET span={gi} blocks={} \
+                     peak_bytes={exact} budget_bytes={budget_bytes}",
+                    seg_end - seg_start,
+                  );
+                  unproven_segs += 1;
+                } else {
+                  let io = IOBuffer::with_shared(shared_io.clone());
+                  let sealed =
+                    std::mem::replace(&mut record, QueryRecord::new(toplevel));
+                  let st = std::time::Instant::now();
+                  let proof = system.prove_sealed(sealed, &io, &claims);
+                  let prove_s = st.elapsed().as_secs_f64();
+                  let vt = std::time::Instant::now();
+                  system.verify_sealed(&claims, &proof).map_err(|e| {
+                    format!("span proof failed verification: {e:?}")
+                  })?;
+                  let verify_s = vt.elapsed().as_secs_f64();
+                  let proof_bytes = proof
+                    .to_bytes()
+                    .map_err(|e| format!("proof encode: {e:?}"))?;
+                  let proof_len = proof_bytes.len();
+                  let stored = store_proof(&ixon_claim, proof_bytes)?;
+                  eprintln!(
+                    "[prove span {gi}] prove {:.0}s, verify {:.1}s, \
+                     proof {:.1} MiB, rss {:.0}G, stored {}",
+                    prove_s,
+                    verify_s,
+                    f64_from_usize(proof_len) / (1024.0 * 1024.0),
+                    process_rss_gib(),
+                    stored.hex(),
+                  );
+                  spans_proven += 1;
+                }
+              },
+              None => {
+                eprintln!(
+                  "[prove span {gi}] SKIPPED: seal claim entry missing \
+                   from record"
+                );
+                if !dry_run {
+                  unproven_segs += 1;
+                }
+              },
+            }
+          },
+          Err(e) => {
+            eprintln!("[prove span {gi}] SKIPPED: seal claim failed: {e}");
+            if !dry_run {
+              unproven_segs += 1;
+            }
+          },
+        }
       }
-    } else if seg_end < covered {
-      // Fresh record for the next segment. The SharedIO persists: its
-      // layout is env-canonical plus schedule-ordered claim seeds, so
-      // every record couples to the same io coordinates and the io
-      // outlives them all.
-      record = QueryRecord::new(toplevel);
+      // The span's record served every group; the next span starts
+      // fresh (SharedIO persists).
+      // The span's record served its proof; the next span starts
+      // fresh. The SharedIO persists: its layout is env-canonical plus
+      // schedule-ordered claim seeds, so every record couples to the
+      // same io coordinates and the io outlives them all.
+      drop(std::mem::replace(&mut record, QueryRecord::new(toplevel)));
     }
     seg_start = seg_end;
   }
   if let Some(e) = fatal.into_inner().unwrap() {
     return Err(e);
-  }
-  // MEASURED-MANIFEST planning: group consecutive fine segments into
-  // shard-sized proof units under the exact model's from-raws bound.
-  // A shard is a union of segments; union heights are at most summed
-  // heights per circuit (dedup only removes), and the model is
-  // monotone in every height — so grouping while
-  // `model(Σ measured heights) <= budget` GUARANTEES every emitted
-  // shard proves under budget. Arithmetic on measured integers: no
-  // prediction, no repair rounds, no way to emit an over-budget shard.
-  // (Byte-gadget circuits have FIXED table heights, so they pin at
-  // their constant instead of summing; per-segment claim rows over-
-  // count the group's single claim — both in the conservative
-  // direction.)
-  if let Some(out) = plan_out {
-    if covered != blocks.len() {
-      return Err(
-        "--plan-out requires the full schedule (no IX_SCAN window)".into(),
-      );
-    }
-    let system = prove_system.expect("plan mode requires --prove");
-    let budget_bytes: usize =
-      usize::try_from(gib_to_bytes_u64(budget_gib)).unwrap_or(usize::MAX);
-    assert_eq!(plan_segs.len(), segs.len(), "plan data per sealed segment");
-    let n_circ = plan_segs.first().map_or(0, |p| p.0.len());
-    // Bytes1 + Bytes2 sit last in canonical circuit order.
-    let fixed_tail = 2usize;
-    let bound = |raws: &[usize], rb: usize| -> usize {
-      system.peak_prove_bytes_from_raws(raws, rb).peak
-    };
-    let mut groups: Vec<(usize, usize, usize, bool)> = Vec::new();
-    let mut i = 0usize;
-    while i < plan_segs.len() {
-      if !plan_segs[i].3 {
-        // Rejected segment: its own flagged shard (never provable).
-        groups.push((i, i + 1, plan_segs[i].2, false));
-        i += 1;
-        continue;
-      }
-      let mut raws = plan_segs[i].0.clone();
-      let mut rb = plan_segs[i].1;
-      let mut j = i + 1;
-      while j < plan_segs.len() && plan_segs[j].3 {
-        let mut cand = raws.clone();
-        for (k, v) in cand.iter_mut().enumerate() {
-          if k + fixed_tail >= n_circ {
-            *v = (*v).max(plan_segs[j].0[k]);
-          } else {
-            *v += plan_segs[j].0[k];
-          }
-        }
-        let cand_rb = rb + plan_segs[j].1;
-        if bound(&cand, cand_rb) > budget_bytes {
-          break;
-        }
-        raws = cand;
-        rb = cand_rb;
-        j += 1;
-      }
-      groups.push((i, j, bound(&raws, rb), true));
-      i = j;
-    }
-    // Manifest: one shard per group over the groups' contiguous block
-    // ranges.
-    let profile = {
-      let mut b = ProfileBuilder::new();
-      for blk in &blocks {
-        let ops = OpCounts { intern_nodes: blk.size, ..OpCounts::default() };
-        b.block(
-          blk.addr.clone(),
-          0,
-          u32::try_from(blk.size).expect("block size exceeds u32"),
-          u32::try_from(blk.members.len()).expect("member count exceeds u32"),
-          ops,
-        );
-      }
-      for (bi, row) in adj.iter().enumerate() {
-        for &r in row {
-          b.delta_edge(
-            blocks[bi].addr.clone(),
-            blocks[r as usize].addr.clone(),
-          );
-        }
-      }
-      b.finish()
-    };
-    let mut shard_of: Vec<u32> = vec![0; blocks.len()];
-    for (gi, &(a, b, _, _)) in groups.iter().enumerate() {
-      let lo = segs[a].0;
-      let hi = segs[b - 1].1;
-      for &blk in &order[lo..hi] {
-        shard_of[blk as usize] =
-          u32::try_from(gi).expect("group count fits u32");
-      }
-    }
-    let manifest = ShardManifest::build(&profile, &shard_of, groups.len());
-    std::fs::write(out, manifest.to_bytes())
-      .map_err(|e| format!("{out}: {e}"))?;
-    for (gi, &(a, b, bnd, clean)) in groups.iter().enumerate() {
-      eprintln!(
-        "[plan] shard {gi}: segments {a}..{b}, bound {:.1} GiB ({:.0}% of          budget){}",
-        f64_from_usize(bnd) / GIB,
-        100.0 * f64_from_usize(bnd) / f64_from_usize(budget_bytes),
-        if clean { "" } else { " [REJECTED — not provable]" },
-      );
-    }
-    let over =
-      groups.iter().filter(|&&(_, _, b, c)| c && b > budget_bytes).count();
-    eprintln!(
-      "[plan] {} fine segment(s) -> {} shard(s), {} over budget, written        to {out}",
-      plan_segs.len(),
-      groups.len(),
-      over
-    );
   }
   // Differential determinism debugging: dump every map's unique count
   // so two runs can be diffed down to the exact functions whose keys
@@ -995,6 +831,8 @@ pub fn execute_env(
       t0.elapsed().as_secs_f64()
     )
   };
+  report
+    .push_str(&format!("\n  [{spans_proven} span proof(s), one claim each]"));
   if !failed.is_empty() {
     report.push_str(&format!(
       "\n  [{} kernel-rejected block(s) SKIPPED]",
@@ -1017,38 +855,27 @@ pub fn execute_env(
   Ok(report)
 }
 
-/// Manifest-driven execution: measure (dry) or prove the shards of a
-/// PR-550 `.ixes` manifest, one shared warm record per shard, with the
-/// EXACT post-execution RAM model gating every prove. This is the
-/// "plan statically -> verify exactly -> fix up -> prove" pipeline's
-/// engine:
-///
-/// - Each selected shard executes its OWNED block list in parallel into
-///   a fresh record (fixed list, no cutting, drain = pool completion),
-///   runs the shard's canonical `CheckEnv` seal claim, derives
-///   multiplicities, and evaluates `peak_prove_bytes` — the calibrated
-///   exact model — on the sealed record.
-/// - Dry mode reports every shard's exact peak against the budget; with
-///   `fixup_out`, it then rewrites the manifest: shards measuring OVER
-///   budget are split in two with the same hypergraph partitioner on
-///   their own subgraph; consecutive under-budget shards are greedily
-///   merged while the SUM of their measured peaks stays under budget
-///   (sound: the model is subadditive in circuit heights — a union
-///   record only dedups — so the sum is a conservative bound, and the
-///   next measure round re-verifies exactly anyway).
-/// - Prove mode proves each shard whose exact peak fits; a shard that
-///   measures over budget self-heals — split in place with the same
-///   partitioner the fixup uses, halves re-measured and proven
-///   recursively. Only a single block over budget is irreducible.
-///
-/// An all-shards run first proves exact cover (every schedule block
-/// owned exactly once) — the whole-env soundness condition — and the
-/// returned status carries any rejection or unproven unit as an error.
-/// Every decision is made on a measurement; the static planner's cost
-/// model only has to land NEAR the budget for the fix-up to converge in
-/// a round or two.
+/// GiB → whole bytes via the decimal round-trip (no `as` cast); caps are
+/// small positive magnitudes.
+fn gib_to_bytes_u64(gib: f64) -> u64 {
+  format!("{:.0}", (gib * GIB).max(0.0)).parse().unwrap_or(u64::MAX)
+}
+
+/// Cluster-shard execution: run selected shards of a `.ixes` manifest
+/// (the static min-cut plan) as immutable work units. Per shard: its
+/// owned blocks execute warm into a fresh record (fixed list, no
+/// cutting), the shard's canonical CheckEnv claim seals it,
+/// multiplicities derive, the witness peak is measured EXACTLY against
+/// this box's budget, and the shard proves behind that gate. Dry mode
+/// reports every measurement and skips the STARKs. A shard measuring
+/// over budget is left unchanged and fails the run with the stable
+/// code `AIUR_SHARD_OVER_BUDGET shard= blocks= peak_bytes=
+/// budget_bytes=` — re-partitioning is the scheduler's job (`ix
+/// shard` on the offending subgraph; claim composition makes any
+/// re-split sound). An all-shards run first checks exact cover of the
+/// env schedule; a single-shard run is inherently partial and says so.
 #[allow(clippy::too_many_arguments)]
-pub fn execute_manifest(
+pub fn execute_shards(
   toplevel: &Toplevel,
   fun_idx: usize,
   block_fun_idx: usize,
@@ -1057,11 +884,10 @@ pub fn execute_manifest(
   manifest_path: &str,
   shard_sel: Option<usize>,
   dry_run: bool,
-  fixup_out: Option<&str>,
   prove_system: Option<&AiurSystem>,
 ) -> Result<String, String> {
-  let system = prove_system.ok_or("manifest mode requires --prove")?;
-  let (blocks, adj) = schedule_blocks(env);
+  let system = prove_system.ok_or("shard mode requires a prove system")?;
+  let (blocks, _adj) = schedule_blocks(env);
   if blocks.is_empty() {
     return Err("empty environment".to_string());
   }
@@ -1070,9 +896,12 @@ pub fn execute_manifest(
     .enumerate()
     .map(|(i, b)| (&b.addr, u32::try_from(i).expect("block ids fit u32")))
     .collect();
-  let manifest_bytes =
-    std::fs::read(manifest_path).map_err(|e| format!("{manifest_path}: {e}"))?;
+  let manifest_bytes = std::fs::read(manifest_path)
+    .map_err(|e| format!("{manifest_path}: {e}"))?;
   let manifest = ShardManifest::from_bytes(&manifest_bytes)?;
+  if manifest.shards.is_empty() {
+    return Err("manifest has no shards".to_string());
+  }
   let workers = if workers == 0 {
     std::thread::available_parallelism()
       .map_or(4, usize::from)
@@ -1096,50 +925,33 @@ pub fn execute_manifest(
     },
     None => (0..manifest.shards.len()).collect(),
   };
+  let work: Vec<(usize, Vec<u32>)> = selected
+    .iter()
+    .map(|&si| {
+      let ids: Vec<u32> = manifest.shards[si]
+        .blocks
+        .iter()
+        .map(|a| {
+          id_of.get(a).copied().ok_or_else(|| {
+            format!("manifest block {} not in env schedule", a.hex())
+          })
+        })
+        .collect::<Result<_, _>>()?;
+      Ok((si, ids))
+    })
+    .collect::<Result<_, String>>()?;
   eprintln!(
-    "[manifest] {} shard(s) of {}, {workers} threads, budget      {budget_gib:.0} GiB",
-    selected.len(),
+    "[shards] {} of {}, {workers} threads, budget {budget_gib:.0} GiB",
+    work.len(),
     manifest.shards.len(),
   );
-  // One shared io for the whole run, exactly as in whole-env mode.
-  let shared_io =
-    Arc::new(aiur::execute::SharedIO::new(EnvFaultSource::new(env.clone())));
-  preassign_canonical_io(env, &shared_io);
-  let t0 = std::time::Instant::now();
-  // (shard index, measured exact peak, rejected?) per selected shard.
-  let mut measured: Vec<(usize, usize, bool)> = Vec::new();
-  let mut report = String::new();
-  let mut healed = 0usize;
-  // Work queue: manifest shards in order; prove-mode self-heal splits
-  // push their halves depth-first right behind the parent. Halves carry
-  // no manifest index, so `measured` (the fixup input) stays one entry
-  // per manifest shard — the parent keeps its over-budget measurement.
-  let mut work: std::collections::VecDeque<(String, Vec<u32>, Option<usize>)> =
-    std::collections::VecDeque::new();
-  for &si in &selected {
-    let ids: Vec<u32> = manifest.shards[si]
-      .blocks
-      .iter()
-      .map(|a| {
-        id_of.get(a).copied().ok_or_else(|| {
-          format!("manifest block {} not in env schedule", a.hex())
-        })
-      })
-      .collect::<Result<_, _>>()?;
-    work.push_back((si.to_string(), ids, Some(si)));
-  }
   // Whole-env soundness gate: an all-shards run claims "every env
   // constant checked", so the manifest must own every schedule block
   // exactly once — missing and duplicated blocks both void the claim.
-  // (Blocks foreign to the schedule already failed id resolution
-  // above.) A single-shard run is inherently partial and says so.
-  if manifest.shards.is_empty() {
-    return Err("manifest has no shards".to_string());
-  }
   match shard_sel {
     None => {
       let mut owners = vec![0u32; blocks.len()];
-      for (_, ids, _) in &work {
+      for (_, ids) in &work {
         for &b in ids {
           owners[b as usize] += 1;
         }
@@ -1154,16 +966,21 @@ pub fn execute_manifest(
         ));
       }
       eprintln!(
-        "[manifest] exact cover: {} schedule blocks owned exactly once",
+        "[shards] exact cover: {} schedule blocks owned exactly once",
         blocks.len()
       );
     },
     Some(k) => {
-      eprintln!("[manifest] PARTIAL: shard {k} only — no coverage claim");
+      eprintln!("[shards] PARTIAL: shard {k} only — no coverage claim");
     },
   }
+  // One shared io for the whole run, exactly as in whole-env mode.
+  let shared_io =
+    Arc::new(aiur::execute::SharedIO::new(EnvFaultSource::new(env.clone())));
+  preassign_canonical_io(env, &shared_io);
+  let mut report = String::new();
   let mut failures = 0usize;
-  while let Some((label, ids, mi)) = work.pop_front() {
+  for (si, ids) in work {
     let record = QueryRecord::new(toplevel);
     let cursor = AtomicUsize::new(0);
     let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
@@ -1180,10 +997,14 @@ pub fn execute_manifest(
             let mut io = IOBuffer::with_shared(shared_io.clone());
             let input = addr_key(&blocks[b as usize].addr);
             if let Err(e) = execute_ixvm_with_record(
-              toplevel, block_fun_idx, &input, &mut io, &record,
+              toplevel,
+              block_fun_idx,
+              &input,
+              &mut io,
+              &record,
             ) {
               eprintln!(
-                "[shard {label}] SKIPPING block {}: {e}",
+                "[shard {si}] SKIPPING block {}: {e}",
                 blocks[b as usize].addr.hex()
               );
               failed
@@ -1197,8 +1018,8 @@ pub fn execute_manifest(
     });
     let rejects = failed.into_inner().unwrap();
     // Seal: the shard's canonical CheckEnv claim over its owned
-    // constants (the same claim `ix verify` binds shard proofs to).
-    let mut seg_claim: Option<Vec<G>> = None;
+    // constants — the claim the shard's proof commits to.
+    let mut seg_claim: Option<(ixon::proof::Claim, Vec<G>)> = None;
     if rejects.is_empty() {
       let owned: Vec<Address> = ids
         .iter()
@@ -1207,28 +1028,31 @@ pub fn execute_manifest(
       match run_check_env_claim(
         toplevel, fun_idx, &shared_io, &record, env, &owned,
       ) {
-        Ok(input) => seg_claim = Some(input),
+        Ok(pair) => seg_claim = Some(pair),
         Err(e) => {
-          eprintln!("[shard {label}] seal claim failed: {e}");
+          eprintln!("[shard {si}] seal claim failed: {e}");
         },
       }
     }
     let clean = rejects.is_empty() && seg_claim.is_some();
-    if !clean {
-      failures += 1;
-    }
     if clean {
       let dio = IOBuffer::with_shared(shared_io.clone());
       let claim_list: Vec<(usize, Vec<G>)> =
-        seg_claim.iter().map(|inp| (fun_idx, inp.clone())).collect();
+        seg_claim.iter().map(|(_, inp)| (fun_idx, inp.clone())).collect();
       aiur::trace::derive_multiplicities_into(
-        toplevel, &record, &dio, &claim_list,
+        toplevel,
+        &record,
+        &dio,
+        &claim_list,
       );
+    } else {
+      failures += 1;
     }
     let peak = system.peak_prove_bytes(&record).peak;
     let fits = peak <= budget_bytes;
     let line = format!(
-      "[shard {label}] {} blocks, exact peak {:.1} GiB {} budget        {budget_gib:.0} GiB{}, {:.0}s",
+      "[shard {si}] {} blocks, exact peak {:.1} GiB {} budget \
+       {budget_gib:.0} GiB{}, {:.0}s",
       ids.len(),
       f64_from_usize(peak) / GIB,
       if fits { "<=" } else { "OVER" },
@@ -1238,12 +1062,28 @@ pub fn execute_manifest(
     eprintln!("{line}");
     report.push_str(&line);
     report.push('\n');
-    if let Some(si) = mi {
-      measured.push((si, peak, !clean));
+    if !clean {
+      continue;
     }
-    if !dry_run && clean && fits {
+    if !fits {
+      // Immutable work unit: report with the stable code and fail the
+      // run (dry mode reports only — the measurement IS its product).
+      if !dry_run {
+        failures += 1;
+        let l = format!(
+          "[shard {si}] REFUSED: AIUR_SHARD_OVER_BUDGET shard={si} \
+           blocks={} peak_bytes={peak} budget_bytes={budget_bytes}",
+          ids.len(),
+        );
+        eprintln!("{l}");
+        report.push_str(&l);
+        report.push('\n');
+      }
+      continue;
+    }
+    if !dry_run {
       let mut claims: Vec<Vec<G>> = Vec::with_capacity(1);
-      if let Some(inp) = &seg_claim
+      if let Some((_, inp)) = &seg_claim
         && let Some(q) = record.function_queries[fun_idx].get(inp)
       {
         claims.push(aiur::synthesis::function_claim(fun_idx, inp, q.output));
@@ -1253,349 +1093,45 @@ pub fn execute_manifest(
       let proof = system.prove_sealed(record, &io, &claims);
       system
         .verify_sealed(&claims, &proof)
-        .map_err(|e| format!("shard {label} proof failed verification: {e:?}"))?;
+        .map_err(|e| format!("shard {si} proof failed verification: {e:?}"))?;
+      let proof_bytes =
+        proof.to_bytes().map_err(|e| format!("proof encode: {e:?}"))?;
+      let proof_len = proof_bytes.len();
+      // Persist: the shard's proof is the artifact a box ships for
+      // aggregation, and the address is what `ix verify` consumes.
+      let stored = match &seg_claim {
+        Some((ixon_claim, _)) => store_proof(ixon_claim, proof_bytes)?,
+        None => return Err(format!("shard {si}: no claim to store")),
+      };
       let pline = format!(
-        "[shard {label}] proved+verified in {:.0}s, proof {:.1} MiB, rss {:.0}G",
+        "[shard {si}] proved+verified in {:.0}s, proof {:.1} MiB, \
+         rss {:.0}G, stored {}",
         pt.elapsed().as_secs_f64(),
-        f64_from_usize(proof.to_bytes().map_or(0, |b| b.len()))
-          / (1024.0 * 1024.0),
+        f64_from_usize(proof_len) / (1024.0 * 1024.0),
         process_rss_gib(),
+        stored.hex(),
       );
       eprintln!("{pline}");
       report.push_str(&pline);
       report.push('\n');
-    } else if !dry_run && clean && !fits {
-      if ids.len() > 1 {
-        // Self-heal: this shard was just MEASURED over budget on its
-        // real sealed record, so split it here with the same
-        // partitioner the fixup uses and prove the halves — no
-        // separate measure round, no trusting the manifest. Halves
-        // that still measure over split again; a single block that
-        // cannot fit is irreducible.
-        let (ha, hb) = bisect_shard_ids(&blocks, &adj, &ids);
-        let l = format!(
-          "[shard {label}] exact peak over budget — self-healing split          into {label}a ({} blocks) + {label}b ({} blocks)",
-          ha.len(),
-          hb.len(),
-        );
-        eprintln!("{l}");
-        report.push_str(&l);
-        report.push('\n');
-        healed += 1;
-        work.push_front((format!("{label}b"), hb, None));
-        work.push_front((format!("{label}a"), ha, None));
-      } else {
-        failures += 1;
-        let l = format!(
-          "[shard {label}] NOT PROVEN: single block over budget — needs          a bigger box"
-        );
-        eprintln!("{l}");
-        report.push_str(&l);
-        report.push('\n');
-      }
     }
   }
-  // Fix-up: split measured violators, merge consecutive underfilled
-  // shards while the sum of exact peaks stays under budget. Whole-
-  // manifest scope only (a partial measure can't safely rewrite rows it
-  // did not measure).
-  if let Some(out) = fixup_out {
-    if shard_sel.is_some() {
-      return Err("--fixup-out requires measuring ALL shards".into());
-    }
-    let profile = {
-      let mut b = ProfileBuilder::new();
-      for blk in &blocks {
-        let ops = OpCounts { intern_nodes: blk.size, ..OpCounts::default() };
-        b.block(
-          blk.addr.clone(),
-          0,
-          u32::try_from(blk.size).expect("block size exceeds u32"),
-          u32::try_from(blk.members.len()).expect("member count exceeds u32"),
-          ops,
-        );
-      }
-      for (i, row) in adj.iter().enumerate() {
-        for &r in row {
-          b.delta_edge(blocks[i].addr.clone(), blocks[r as usize].addr.clone());
-        }
-      }
-      b.finish()
-    };
-    assert_eq!(profile.num_blocks(), blocks.len());
-    let mut shard_of: Vec<u32> = vec![u32::MAX; blocks.len()];
-    let mut next_id: u32 = 0;
-    let mut splits = 0usize;
-    let mut merges = 0usize;
-    let mut i = 0usize;
-    while i < measured.len() {
-      let (si, peak, rejected) = measured[i];
-      let owned_ids = |si: usize| -> Vec<u32> {
-        manifest.shards[si].blocks.iter().map(|a| id_of[a]).collect()
-      };
-      if !rejected && peak > budget_bytes {
-        // SPLIT: bisect this shard's own subgraph with the same
-        // partitioner the plan used.
-        let (ha, hb) = bisect_shard_ids(&blocks, &adj, &owned_ids(si));
-        let (a_id, b_id) = (next_id, next_id + 1);
-        next_id += 2;
-        for &b in &ha {
-          shard_of[b as usize] = a_id;
-        }
-        for &b in &hb {
-          shard_of[b as usize] = b_id;
-        }
-        splits += 1;
-        i += 1;
-      } else {
-        // MERGE run: greedily absorb consecutive clean shards while the
-        // sum of measured peaks stays under budget (conservative by
-        // subadditivity; the next measure round re-verifies exactly).
-        let mut sum = peak;
-        let mut group = vec![si];
-        let mut j = i + 1;
-        while j < measured.len() {
-          let (sj, pj, rj) = measured[j];
-          if rejected || rj || pj > budget_bytes || sum + pj > budget_bytes {
-            break;
-          }
-          sum += pj;
-          group.push(sj);
-          j += 1;
-        }
-        if group.len() > 1 {
-          merges += group.len() - 1;
-        }
-        let gid = next_id;
-        next_id += 1;
-        for &sj in &group {
-          for b in owned_ids(sj) {
-            shard_of[b as usize] = gid;
-          }
-        }
-        i = j.max(i + 1);
-      }
-    }
-    // Blocks not owned by any manifest shard (foreign-only refs) keep a
-    // catch-all id so the profile-wide rebuild stays total.
-    let catch_all = next_id;
-    let mut orphans = false;
-    for s in shard_of.iter_mut() {
-      if *s == u32::MAX {
-        *s = catch_all;
-        orphans = true;
-      }
-    }
-    let n = usize::try_from(next_id).expect("shard count fits usize")
-      + usize::from(orphans);
-    let new_manifest = ShardManifest::build(&profile, &shard_of, n);
-    std::fs::write(out, new_manifest.to_bytes())
-      .map_err(|e| format!("{out}: {e}"))?;
-    let l = format!(
-      "[fixup] {splits} split(s), {merges} merge(s) -> {n} shard(s)        written to {out}{}",
-      if splits == 0 && merges == 0 { " (stable)" } else { "" }
-    );
-    eprintln!("{l}");
-    report.push_str(&l);
-    report.push('\n');
-  }
-  report.push_str(&format!(
-    "manifest: {} shard(s) measured{}, {:.0}s total",
-    measured.len(),
-    if healed > 0 {
-      format!(", {healed} self-healed split(s)")
-    } else {
-      String::new()
-    },
-    t0.elapsed().as_secs_f64()
-  ));
-  // Exit status is the verdict: rejected shards and units that could
-  // not be proven fail the run (over-budget MEASUREMENTS in dry mode
-  // do not — they are the output the fixup consumes).
   if failures > 0 {
     return Err(format!(
-      "{report}\nFAILED: {failures} shard(s) rejected or not proven"
+      "{report}FAILED: {failures} shard(s) rejected, unprovable, or \
+       over budget"
     ));
   }
   Ok(report)
 }
 
-/// Bisect a shard's block-id set with the plan's partitioner on its own
-/// subgraph (edges restricted to the set), returning the two halves.
-/// Sub-profile positions are address-sorted over the set, mirroring
-/// [`ShardManifest::build`]. Degenerate partitions (an empty side) fall
-/// back to an id-ordered halving so a split always makes progress.
-fn bisect_shard_ids(
-  blocks: &[SchedBlock],
-  adj: &[Vec<u32>],
-  ids: &[u32],
-) -> (Vec<u32>, Vec<u32>) {
-  let mut sb = ProfileBuilder::new();
-  let idset: FxHashMap<u32, ()> = ids.iter().map(|&b| (b, ())).collect();
-  for &b in ids {
-    let blk = &blocks[b as usize];
-    let ops = OpCounts { intern_nodes: blk.size, ..OpCounts::default() };
-    sb.block(
-      blk.addr.clone(),
-      0,
-      u32::try_from(blk.size).expect("size fits"),
-      u32::try_from(blk.members.len()).expect("members fit"),
-      ops,
-    );
-  }
-  for &b in ids {
-    for &r in &adj[b as usize] {
-      if idset.contains_key(&r) {
-        sb.delta_edge(
-          blocks[b as usize].addr.clone(),
-          blocks[r as usize].addr.clone(),
-        );
-      }
-    }
-  }
-  let sub = sb.finish();
-  let half = Hypergraph::from_profile(&sub).partition(2, 0.05);
-  // Sub-profile ids are address-sorted over the shard's blocks.
-  let mut sorted: Vec<u32> = ids.to_vec();
-  sorted
-    .sort_by(|&a, &b| blocks[a as usize].addr.cmp(&blocks[b as usize].addr));
-  let (mut ha, mut hb) = (Vec::new(), Vec::new());
-  for (pos, &b) in sorted.iter().enumerate() {
-    if half[pos] == 0 { &mut ha } else { &mut hb }.push(b);
-  }
-  if ha.is_empty() || hb.is_empty() {
-    let mut s = ids.to_vec();
-    s.sort_unstable();
-    let mid = s.len() / 2;
-    return (s[..mid].to_vec(), s[mid..].to_vec());
-  }
-  (ha, hb)
-}
-
-/// GiB → whole bytes via the decimal round-trip (no `as` cast); caps are
-/// small positive magnitudes.
-fn gib_to_bytes_u64(gib: f64) -> u64 {
-  format!("{:.0}", (gib * GIB).max(0.0)).parse().unwrap_or(u64::MAX)
-}
-
-/// `Bytecode.Toplevel.executeEnvWithEnv`: execute-only check of the
-/// whole env, or of a closure when `roots` is non-empty — no partition,
-/// no manifest (see [`execute_env`]). Params are ABI-simple strings:
-/// `workers` (`0` = default width), `fail_fast` (`0` records and skips
-/// kernel-rejected blocks instead of aborting), `roots` (comma-separated
-/// 64-char hex constant addresses; `""` = whole env).
-#[unsafe(no_mangle)]
-extern "C" fn rs_aiur_execute_env_with_env(
-  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
-  fun_idx: LeanNat<LeanBorrowed<'_>>,
-  block_fun_idx: LeanNat<LeanBorrowed<'_>>,
-  env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
-    LeanBorrowed<'_>,
-  >,
-  workers: LeanString<LeanBorrowed<'_>>,
-  fail_fast: LeanString<LeanBorrowed<'_>>,
-  roots: LeanString<LeanBorrowed<'_>>,
-) -> LeanExcept<LeanOwned> {
-  let toplevel = decode_toplevel(&toplevel);
-  let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
-  let block_fun_idx =
-    crate::aiur::lean_unbox_nat_as_usize(block_fun_idx.inner());
-  let workers = workers.to_string().parse::<usize>().unwrap_or(0);
-  let fail_fast = fail_fast.to_string() != "0";
-  let roots_s = roots.to_string();
-  let mut roots: Vec<Address> = Vec::new();
-  for h in roots_s.split(',').filter(|h| !h.is_empty()) {
-    match Address::from_hex(h) {
-      Some(a) => roots.push(a),
-      None => {
-        return LeanExcept::error_string(&format!(
-          "rs_aiur_execute_env: bad root address hex {h}"
-        ));
-      },
-    }
-  }
-  match execute_env(
-    &toplevel,
-    fun_idx,
-    block_fun_idx,
-    &env_handle.get().env,
-    workers,
-    fail_fast,
-    false,
-    None,
-    None,
-    &roots,
-  ) {
-    Ok(report) => {
-      eprintln!("[rs_exec]\n{report}");
-      LeanExcept::ok(LeanOwned::box_usize(0))
-    },
-    Err(e) => LeanExcept::error_string(&format!("rs_aiur_execute_env: {e}")),
-  }
-}
-
 /// `Aiur.AiurSystem.executeEnvProveWithEnv`: cut-mode whole-env
-/// execution where each sealed segment record proceeds straight to
-/// the STARK and is verified (see [`execute_env`]'s prove path). The
-/// record is the witness — no per-shard re-execution.
-/// `Aiur.AiurSystem.executeManifestProveWithEnv`: manifest-driven
-/// measure/prove (see [`execute_manifest`]). String params (ABI-simple):
-/// `shard_sel` — decimal index or "" for all shards; `dry_run` — "1"
-/// measures only; `fixup_out` — path to write the split/merged manifest
-/// ("" disables; requires all-shards dry measure).
-#[unsafe(no_mangle)]
-extern "C" fn rs_aiur_execute_manifest_prove_with_env(
-  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  fun_idx: LeanNat<LeanBorrowed<'_>>,
-  block_fun_idx: LeanNat<LeanBorrowed<'_>>,
-  env_handle: LeanExternal<
-    ixvm_codegen::env_handle::EnvHandle,
-    LeanBorrowed<'_>,
-  >,
-  workers: LeanString<LeanBorrowed<'_>>,
-  manifest_path: LeanString<LeanBorrowed<'_>>,
-  shard_sel: LeanString<LeanBorrowed<'_>>,
-  dry_run: LeanString<LeanBorrowed<'_>>,
-  fixup_out: LeanString<LeanBorrowed<'_>>,
-) -> LeanExcept<LeanOwned> {
-  let system = aiur_system_obj.get();
-  let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
-  let block_fun_idx =
-    crate::aiur::lean_unbox_nat_as_usize(block_fun_idx.inner());
-  let workers = workers.to_string().parse::<usize>().unwrap_or(0);
-  let manifest_path = manifest_path.to_string();
-  let shard_sel = {
-    let s = shard_sel.to_string();
-    if s.is_empty() { None } else { s.parse::<usize>().ok() }
-  };
-  let dry_run = dry_run.to_string() != "0";
-  let fixup_out = {
-    let s = fixup_out.to_string();
-    if s.is_empty() { None } else { Some(s) }
-  };
-  match execute_manifest(
-    system.toplevel(),
-    fun_idx,
-    block_fun_idx,
-    &env_handle.get().env,
-    workers,
-    &manifest_path,
-    shard_sel,
-    dry_run,
-    fixup_out.as_deref(),
-    Some(system),
-  ) {
-    Ok(report) => {
-      eprintln!("[rs_manifest]\n{report}");
-      LeanExcept::ok(LeanOwned::box_usize(0))
-    },
-    Err(e) => {
-      LeanExcept::error_string(&format!("rs_aiur_execute_manifest_prove: {e}"))
-    },
-  }
-}
-
+/// execution where each sealed span record proceeds straight to the
+/// STARK and is verified (see [`execute_env`]'s prove path). The
+/// record is the witness — no re-execution, no manifest. String
+/// params (ABI-simple): `workers` ("0" = default width), `fail_fast`
+/// ("0" records and skips rejects), `dry_run` — "1" runs everything
+/// except the STARKs and reports each span's exact measured peak.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_execute_env_prove_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
@@ -1608,7 +1144,6 @@ extern "C" fn rs_aiur_execute_env_prove_with_env(
   workers: LeanString<LeanBorrowed<'_>>,
   fail_fast: LeanString<LeanBorrowed<'_>>,
   dry_run: LeanString<LeanBorrowed<'_>>,
-  plan_out: LeanString<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
   let system = aiur_system_obj.get();
   let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
@@ -1617,10 +1152,6 @@ extern "C" fn rs_aiur_execute_env_prove_with_env(
   let workers = workers.to_string().parse::<usize>().unwrap_or(0);
   let fail_fast = fail_fast.to_string() != "0";
   let dry_run = dry_run.to_string() != "0";
-  let plan_out = {
-    let s = plan_out.to_string();
-    if s.is_empty() { None } else { Some(s) }
-  };
   match execute_env(
     system.toplevel(),
     fun_idx,
@@ -1629,9 +1160,7 @@ extern "C" fn rs_aiur_execute_env_prove_with_env(
     workers,
     fail_fast,
     dry_run,
-    plan_out.as_deref(),
-    Some(system),
-    &[],
+    system,
   ) {
     Ok(report) => {
       eprintln!("[rs_exec]\n{report}");
@@ -1639,6 +1168,56 @@ extern "C" fn rs_aiur_execute_env_prove_with_env(
     },
     Err(e) => {
       LeanExcept::error_string(&format!("rs_aiur_execute_env_prove: {e}"))
+    },
+  }
+}
+
+/// `Aiur.AiurSystem.executeShardsProveWithEnv`: cluster-shard
+/// measure/prove (see [`execute_shards`]). String params (ABI-simple):
+/// `workers` ("0" = default width), `manifest_path`, `shard_sel` — a
+/// decimal index or "" for all shards; `dry_run` — "1" measures only.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_execute_shards_prove_with_env(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  block_fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  workers: LeanString<LeanBorrowed<'_>>,
+  manifest_path: LeanString<LeanBorrowed<'_>>,
+  shard_sel: LeanString<LeanBorrowed<'_>>,
+  dry_run: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let system = aiur_system_obj.get();
+  let fun_idx = crate::aiur::lean_unbox_nat_as_usize(fun_idx.inner());
+  let block_fun_idx =
+    crate::aiur::lean_unbox_nat_as_usize(block_fun_idx.inner());
+  let workers = workers.to_string().parse::<usize>().unwrap_or(0);
+  let manifest_path = manifest_path.to_string();
+  let shard_sel = {
+    let s = shard_sel.to_string();
+    if s.is_empty() { None } else { s.parse::<usize>().ok() }
+  };
+  let dry_run = dry_run.to_string() != "0";
+  match execute_shards(
+    system.toplevel(),
+    fun_idx,
+    block_fun_idx,
+    &env_handle.get().env,
+    workers,
+    &manifest_path,
+    shard_sel,
+    dry_run,
+    Some(system),
+  ) {
+    Ok(report) => {
+      eprintln!("[rs_shards]\n{report}");
+      LeanExcept::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => {
+      LeanExcept::error_string(&format!("rs_aiur_execute_shards_prove: {e}"))
     },
   }
 }

@@ -332,9 +332,8 @@ private def seedTreeAt (root : Address)
     .ok (ioBuffer.extend 1 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
-/-- The full witness byte scope for `target`: the closure of `target`
-    together with every primitive address present in `env`, all as walk
-    ROOTS. Mirrors Rust `witness_scope`.
+/-- Every primitive address present in `env`, seeded as a walk ROOT
+    alongside a scope's real roots.
 
     Primitives are seeded because the kernel fabricates
     `Const(Std(prim_addr))` refs inline via `mk_prim_const`
@@ -346,9 +345,14 @@ private def seedTreeAt (root : Address)
     exactly this), and a body's refs are reachable from nowhere else in
     the scope. Shipping the address alone aborts those with `invalid IO
     key`. -/
+def primSeeds (env : Ixon.Env) : Array Address :=
+  Ix.Tc.primAddrSet.toArray.filter env.consts.contains
+
+/-- The full witness byte scope for `target`: the closure of `target`
+    together with every primitive address present in `env`, all as walk
+    ROOTS. Mirrors Rust `witness_scope`. -/
 def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
-  closureFromRoots env
-    (#[target] ++ Ix.Tc.primAddrSet.toArray.filter env.consts.contains)
+  closureFromRoots env (#[target] ++ primSeeds env)
 
 /-- Serializes `claim`, seeds its bytes at `key = blake3(claim)`, and
     populates the IOBuffer with the `closureFrom` byte scope of every
@@ -397,15 +401,9 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
     from `env.consts` is not something the kernel walk can reach, so
     including it would inflate the asm tree and break digest agreement
     between the Rust prover and this verifier. -/
-def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
-    Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+def shardCheckEnvClaimOnly (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
-  let closure : Std.HashSet Address := Id.run do
-    let mut s : Std.HashSet Address := {}
-    for a in owned do
-      for x in (closureFrom env a).toArray do
-        s := s.insert x
-    return s
   let frontier : Array Address := Id.run do
     let mut fs : Std.HashSet Address := {}
     for o in owned do
@@ -434,7 +432,7 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
         | none => pure ()
     return fs.toArray
   let some ownedTree := Ix.AssumptionTree.canonical owned
-    | .error "shardCheckEnvClaim: empty owned set"
+    | .error "shardCheckEnvClaimOnly: empty owned set"
   let asmTree? := Ix.AssumptionTree.canonical frontier
   let claim := Ix.Claim.checkEnv ownedTree.root (asmTree?.map (·.root))
   let mut trees : Std.HashMap Address Ix.AssumptionTree :=
@@ -442,7 +440,17 @@ def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
   match asmTree? with
   | some asmTree => trees := trees.insert asmTree.root asmTree
   | none => pure ()
-  pure (claim, closure, trees)
+  pure (claim, trees)
+
+/-- `shardCheckEnvClaimOnly` plus the witness BYTE SCOPE: the closure of the
+    owned constants and the primitives, walked ONCE from all of them as roots.
+    The union of the per-root closures is the closure of the union, so one walk
+    with one shared `visited` set gives the same set in time linear in the
+    reachable subgraph instead of re-walking it per owned constant. -/
+def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+  let (claim, trees) ← shardCheckEnvClaimOnly env owned
+  pure (claim, closureFromRoots env (owned ++ primSeeds env), trees)
 
 /-- Variant of `buildShardCheckEnvWitness`: THIN frontier asm (see
     `shardCheckEnvClaim`) with the `closureFrom` byte scope, which
