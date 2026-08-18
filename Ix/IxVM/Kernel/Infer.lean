@@ -613,20 +613,47 @@ def infer := ⟦
                                      head_lvls: List‹KLevel›,
                                      spine: List‹KExpr›,
                                      types: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match memo_u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let a0 = list_lookup(spine, 0);
         let a1 = list_lookup(spine, 1);
-        match try_extract_int(a0) {
-          (1, _, _) =>
-            match try_extract_int(a1) {
-              (1, _, _) => (0, store(KExprNode.BVar(0))),
-              _ => normalize_int_dec_rebuild(head_addr, head_lvls,
-                                              spine, a0, a1, types),
+        -- Soundness: a claimed rebuild is rerun and its success asserted;
+        -- returning failure only leaves the decidable expression unreduced.
+        let route = #normalize_int_decidable_route(head_addr, head_lvls,
+                                                    spine, a0, a1, types);
+        match route {
+          0 => (0, store(KExprNode.BVar(0))),
+          1 =>
+            let (matched, rebuilt) = normalize_int_dec_rebuild(head_addr,
+                                      head_lvls, spine, a0, a1, types);
+            assert_eq!(matched, 1);
+            (1, rebuilt),
+        },
+    }
+  }
+
+  fn normalize_int_decidable_route(head_addr: Addr,
+                                        head_lvls: List‹KLevel›,
+                                        spine: List‹KExpr›,
+                                        a0: KExpr, a1: KExpr,
+                                        types: List‹KExpr›) -> G {
+    match try_extract_int(a0) {
+      (1, _, _) =>
+        match try_extract_int(a1) {
+          (1, _, _) => 0,
+          _ =>
+            match normalize_int_dec_rebuild(head_addr, head_lvls,
+                                              spine, a0, a1, types) {
+              (1, _) => 1,
+              _ => 0,
             },
-          _ => normalize_int_dec_rebuild(head_addr, head_lvls,
-                                          spine, a0, a1, types),
+        },
+      _ =>
+        match normalize_int_dec_rebuild(head_addr, head_lvls,
+                                          spine, a0, a1, types) {
+          (1, _) => 1,
+          _ => 0,
         },
     }
   }
@@ -659,20 +686,44 @@ def infer := ⟦
   fn try_dec_dispatch(head_addr: Addr, head_lvls: List‹KLevel›,
                           spine: List‹KExpr›, types: List‹KExpr›)
                           -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match memo_u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
-        match is_int_dec_prim_addr(head_addr) {
-          1 => try_normalize_int_decidable(head_addr, head_lvls,
-                                                spine, types),
+        -- Soundness: each productive route asserts the exact primitive
+        -- address (or Int-family membership); failure only under-reduces.
+        let route = #try_dec_dispatch_route(head_addr);
+        match route {
+          0 =>
+            assert_eq!(is_int_dec_prim_addr(head_addr), 1);
+            try_normalize_int_decidable(head_addr, head_lvls, spine, types),
+          1 =>
+            assert_eq!(address_eq(head_addr, nat_dec_lt_addr_dec()), 1);
+            dec_rewrite_lt_to_le(head_lvls, spine, types),
+          2 =>
+            assert_eq!(address_eq(head_addr, nat_dec_le_addr_dec()), 1);
+            dec_dispatch_le_eq(1, 0, head_addr, head_lvls, spine, types),
+          3 =>
+            assert_eq!(address_eq(head_addr, nat_dec_eq_addr_dec()), 1);
+            dec_dispatch_le_eq(0, 1, head_addr, head_lvls, spine, types),
+          4 => (0, store(KExprNode.BVar(0))),
+        },
+    }
+  }
+
+  fn try_dec_dispatch_route(head_addr: Addr) -> G {
+    match is_int_dec_prim_addr(head_addr) {
+      1 => 0,
+      _ =>
+        match address_eq(head_addr, nat_dec_lt_addr_dec()) {
+          1 => 1,
           _ =>
-            let is_le = address_eq(head_addr, nat_dec_le_addr_dec());
-            let is_eq = address_eq(head_addr, nat_dec_eq_addr_dec());
-            let is_lt = address_eq(head_addr, nat_dec_lt_addr_dec());
-            match is_lt {
-              1 => dec_rewrite_lt_to_le(head_lvls, spine, types),
-              _ => dec_dispatch_le_eq(is_le, is_eq, head_addr,
-                                       head_lvls, spine, types),
+            match address_eq(head_addr, nat_dec_le_addr_dec()) {
+              1 => 2,
+              _ =>
+                match address_eq(head_addr, nat_dec_eq_addr_dec()) {
+                  1 => 3,
+                  _ => 4,
+                },
             },
         },
     }

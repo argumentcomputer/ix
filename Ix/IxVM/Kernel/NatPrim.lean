@@ -282,34 +282,63 @@ def natPrim := ⟦
   --   Lean.reduceNat arg     → whnf arg; accept Lit(Nat _)
   fn try_native_dispatch(head_addr: Addr, spine: List‹KExpr›,
                              types: List‹KExpr›) -> (G, KExpr) {
+    -- Soundness: every productive route asserts its exact head address;
+    -- the failure route merely leaves the primitive unreduced.
+    let route = #try_native_dispatch_route(head_addr);
+    match route {
+      0 =>
+        assert_eq!(address_eq(head_addr, system_platform_num_bits_addr()), 1);
+        (1, mk_nat_literal_64()),
+      1 =>
+        assert_eq!(address_eq(head_addr, punit_size_of_1_addr()), 1);
+        (1, mk_nat_one()),
+      2 =>
+        assert_eq!(address_eq(head_addr, subtype_val_addr()), 1);
+        try_reduce_subtype_val(spine),
+      3 =>
+        assert_eq!(address_eq(head_addr, size_of_size_of_addr()), 1);
+        try_reduce_size_of_unit(spine),
+      4 =>
+        assert_eq!(address_eq(head_addr, reduce_bool_addr()), 1);
+        match memo_u32_less_than(list_length(spine), 1) {
+          1 => (0, store(KExprNode.BVar(0))),
+          _ =>
+            let arg = list_lookup(spine, 0);
+            check_native_bool(whnf(arg, types)),
+        },
+      5 =>
+        assert_eq!(address_eq(head_addr, reduce_nat_addr()), 1);
+        match memo_u32_less_than(list_length(spine), 1) {
+          1 => (0, store(KExprNode.BVar(0))),
+          _ =>
+            let arg = list_lookup(spine, 0);
+            check_native_nat(whnf(arg, types)),
+        },
+      6 => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn try_native_dispatch_route(head_addr: Addr) -> G {
     match address_eq(head_addr, system_platform_num_bits_addr()) {
-      1 => (1, mk_nat_literal_64()),
+      1 => 0,
       _ =>
       match address_eq(head_addr, punit_size_of_1_addr()) {
-        1 => (1, mk_nat_one()),
+        1 => 1,
         _ =>
         match address_eq(head_addr, subtype_val_addr()) {
-          1 => try_reduce_subtype_val(spine),
+          1 => 2,
           _ =>
           match address_eq(head_addr, size_of_size_of_addr()) {
-            1 => try_reduce_size_of_unit(spine),
+            1 => 3,
             _ =>
-              let is_rb = address_eq(head_addr, reduce_bool_addr());
-              let is_rn = address_eq(head_addr, reduce_nat_addr());
-              match is_rb + is_rn {
-                0 => (0, store(KExprNode.BVar(0))),
-                _ =>
-                  match u32_less_than(list_length(spine), 1) {
-                    1 => (0, store(KExprNode.BVar(0))),
-                    _ =>
-                      let arg = list_lookup(spine, 0);
-                      let result = whnf(arg, types);
-                      match is_rb {
-                        1 => check_native_bool(result),
-                        _ => check_native_nat(result),
-                      },
-                  },
+            match address_eq(head_addr, reduce_bool_addr()) {
+              1 => 4,
+              _ =>
+              match address_eq(head_addr, reduce_nat_addr()) {
+                1 => 5,
+                _ => 6,
               },
+            },
           },
         },
       },
@@ -569,9 +598,13 @@ def natPrim := ⟦
   -- unfolds on arbitrary Prop args).
   fn try_bitvec_dispatch(head_addr: Addr, spine: List‹KExpr›,
                               types: List‹KExpr›) -> (G, KExpr) {
-    match address_eq(head_addr, bit_vec_to_nat_addr()) {
-      1 =>
-        match u32_less_than(list_length(spine), 2) {
+    -- Soundness: every productive route asserts its exact head address;
+    -- the failure route merely leaves the primitive unreduced.
+    let route = #try_bitvec_dispatch_route(head_addr);
+    match route {
+      0 =>
+        assert_eq!(address_eq(head_addr, bit_vec_to_nat_addr()), 1);
+        match memo_u32_less_than(list_length(spine), 2) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let spine_p = bitvec_prep_spine(spine, types);
@@ -582,15 +615,27 @@ def natPrim := ⟦
               (1, kl) => (1, mk_nat_lit(kl)),
             },
         },
+      1 =>
+        assert_eq!(address_eq(head_addr, bit_vec_ult_addr()), 1);
+        let spine_p = bitvec_prep_spine_ult(spine, types);
+        try_reduce_bit_vec_ult(spine_p),
+      2 =>
+        assert_eq!(address_eq(head_addr, decidable_decide_addr()), 1);
+        try_reduce_decide_bitvec_lt(spine),
+      3 => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn try_bitvec_dispatch_route(head_addr: Addr) -> G {
+    match address_eq(head_addr, bit_vec_to_nat_addr()) {
+      1 => 0,
       _ =>
         match address_eq(head_addr, bit_vec_ult_addr()) {
-          1 =>
-            let spine_p = bitvec_prep_spine_ult(spine, types);
-            try_reduce_bit_vec_ult(spine_p),
+          1 => 1,
           _ =>
             match address_eq(head_addr, decidable_decide_addr()) {
-              1 => try_reduce_decide_bitvec_lt(spine),
-              _ => (0, store(KExprNode.BVar(0))),
+              1 => 2,
+              _ => 3,
             },
         },
     }
@@ -765,8 +810,12 @@ def natPrim := ⟦
   fn try_str_dispatch(head_addr: Addr, spine: List‹KExpr›,
                           types: List‹KExpr›) -> (G, KExpr) {
     let spine_len = list_length(spine);
-    match address_eq(head_addr, string_of_list_addr()) {
-      1 =>
+    -- Soundness: every productive route asserts its exact head address;
+    -- the failure route merely leaves the primitive unreduced.
+    let route = #try_str_dispatch_route(head_addr);
+    match route {
+      0 =>
+        assert_eq!(address_eq(head_addr, string_of_list_addr()), 1);
         match spine_len {
           1 =>
             match walk_char_list_bytes(list_lookup(spine, 0), types) {
@@ -775,10 +824,9 @@ def natPrim := ⟦
             },
           _ => (0, store(KExprNode.BVar(0))),
         },
-      _ =>
-    match address_eq(head_addr, string_utf8_byte_size_addr()) {
       1 =>
-        match u32_less_than(spine_len, 1) {
+        assert_eq!(address_eq(head_addr, string_utf8_byte_size_addr()), 1);
+        match memo_u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let a0 = list_lookup(spine, 0);
@@ -803,52 +851,76 @@ def natPrim := ⟦
               _ => (0, store(KExprNode.BVar(0))),
             },
         },
-      _ =>
-    match address_eq(head_addr, string_back_addr()) {
-      1 => try_str_back(spine),
-      _ =>
-    match address_eq(head_addr, string_legacy_back_addr()) {
-      1 => try_str_back(spine),
-      _ =>
-    match address_eq(head_addr, string_to_byte_array_addr()) {
-      1 => try_str_to_byte_array(spine),
-      _ =>
-    match address_eq(head_addr, string_dec_eq_addr()) {
-      1 => try_str_dec_eq(head_addr, spine, types),
-      _ =>
-        match address_eq(head_addr, string_append_addr()) {
-          1 =>
-            match u32_less_than(spine_len, 2) {
-              1 => (0, store(KExprNode.BVar(0))),
-              _ =>
-                let a0 = list_lookup(spine, 0);
-                let a1 = list_lookup(spine, 1);
-                match load(a0) {
-                  KExprNode.Lit(la) =>
-                    match la {
-                      KLiteral.Str(sa) =>
-                        match load(a1) {
-                          KExprNode.Lit(lb) =>
-                            match lb {
-                              KLiteral.Str(sb) =>
-                                let joined = list_concat(sa, sb);
-                                (1, store(KExprNode.Lit(KLiteral.Str(joined)))),
-                              _ => (0, store(KExprNode.BVar(0))),
-                            },
+      2 =>
+        assert_eq!(address_eq(head_addr, string_back_addr()), 1);
+        try_str_back(spine),
+      3 =>
+        assert_eq!(address_eq(head_addr, string_legacy_back_addr()), 1);
+        try_str_back(spine),
+      4 =>
+        assert_eq!(address_eq(head_addr, string_to_byte_array_addr()), 1);
+        try_str_to_byte_array(spine),
+      5 =>
+        assert_eq!(address_eq(head_addr, string_dec_eq_addr()), 1);
+        try_str_dec_eq(head_addr, spine, types),
+      6 =>
+        assert_eq!(address_eq(head_addr, string_append_addr()), 1);
+        match memo_u32_less_than(spine_len, 2) {
+          1 => (0, store(KExprNode.BVar(0))),
+          _ =>
+            let a0 = list_lookup(spine, 0);
+            let a1 = list_lookup(spine, 1);
+            match load(a0) {
+              KExprNode.Lit(la) =>
+                match la {
+                  KLiteral.Str(sa) =>
+                    match load(a1) {
+                      KExprNode.Lit(lb) =>
+                        match lb {
+                          KLiteral.Str(sb) =>
+                            let joined = list_concat(sa, sb);
+                            (1, store(KExprNode.Lit(KLiteral.Str(joined)))),
                           _ => (0, store(KExprNode.BVar(0))),
                         },
                       _ => (0, store(KExprNode.BVar(0))),
                     },
                   _ => (0, store(KExprNode.BVar(0))),
                 },
+              _ => (0, store(KExprNode.BVar(0))),
             },
-          _ => (0, store(KExprNode.BVar(0))),
         },
-    },
-    },
-    },
-    },
-    },
+      7 => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn try_str_dispatch_route(head_addr: Addr) -> G {
+    match address_eq(head_addr, string_of_list_addr()) {
+      1 => 0,
+      _ =>
+      match address_eq(head_addr, string_utf8_byte_size_addr()) {
+        1 => 1,
+        _ =>
+        match address_eq(head_addr, string_back_addr()) {
+          1 => 2,
+          _ =>
+          match address_eq(head_addr, string_legacy_back_addr()) {
+            1 => 3,
+            _ =>
+            match address_eq(head_addr, string_to_byte_array_addr()) {
+              1 => 4,
+              _ =>
+              match address_eq(head_addr, string_dec_eq_addr()) {
+                1 => 5,
+                _ =>
+                match address_eq(head_addr, string_append_addr()) {
+                  1 => 6,
+                  _ => 7,
+                },
+              },
+            },
+          },
+        },
+      },
     }
   }
 
@@ -1454,48 +1526,99 @@ def natPrim := ⟦
   -- Binop dispatch by head address on two literal args.
   -- ============================================================================
   fn try_nat_binop_addr(head_addr: Addr, a: KLimbs, b: KLimbs) -> (G, KExpr) {
+    -- Soundness: every operation route asserts the exact primitive address;
+    -- route 14 only reports no reduction and cannot fabricate a result.
+    let route = #try_nat_binop_addr_route(head_addr);
+    match route {
+      0 =>
+        assert_eq!(address_eq(head_addr, nat_add_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_add(a, b)))),
+      1 =>
+        assert_eq!(address_eq(head_addr, nat_sub_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_sub(a, b)))),
+      2 =>
+        assert_eq!(address_eq(head_addr, nat_mul_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_mul(a, b)))),
+      3 =>
+        assert_eq!(address_eq(head_addr, nat_div_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_div(a, b)))),
+      4 =>
+        assert_eq!(address_eq(head_addr, nat_mod_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_mod(a, b)))),
+      5 =>
+        assert_eq!(address_eq(head_addr, nat_gcd_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_gcd(a, b)))),
+      6 =>
+        assert_eq!(address_eq(head_addr, nat_pow_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_pow(a, b)))),
+      7 =>
+        assert_eq!(address_eq(head_addr, nat_land_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_land(a, b)))),
+      8 =>
+        assert_eq!(address_eq(head_addr, nat_lor_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_lor(a, b)))),
+      9 =>
+        assert_eq!(address_eq(head_addr, nat_xor_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_xor_op(a, b)))),
+      10 =>
+        assert_eq!(address_eq(head_addr, nat_shift_left_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_shl(a, b)))),
+      11 =>
+        assert_eq!(address_eq(head_addr, nat_shift_right_addr()), 1);
+        (1, mk_nat_lit(klimbs_normalize(klimbs_shr(a, b)))),
+      12 =>
+        assert_eq!(address_eq(head_addr, nat_beq_addr()), 1);
+        (1, mk_bool(klimbs_eq(a, b))),
+      13 =>
+        assert_eq!(address_eq(head_addr, nat_ble_addr()), 1);
+        (1, mk_bool(klimbs_le(a, b))),
+      14 => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn try_nat_binop_addr_route(head_addr: Addr) -> G {
     match address_eq(head_addr, nat_add_addr()) {
-      1 => (1, mk_nat_lit(klimbs_normalize(klimbs_add(a, b)))),
+      1 => 0,
       _ =>
       match address_eq(head_addr, nat_sub_addr()) {
-        1 => (1, mk_nat_lit(klimbs_normalize(klimbs_sub(a, b)))),
+        1 => 1,
         _ =>
         match address_eq(head_addr, nat_mul_addr()) {
-          1 => (1, mk_nat_lit(klimbs_normalize(klimbs_mul(a, b)))),
+          1 => 2,
           _ =>
           match address_eq(head_addr, nat_div_addr()) {
-            1 => (1, mk_nat_lit(klimbs_normalize(klimbs_div(a, b)))),
+            1 => 3,
             _ =>
             match address_eq(head_addr, nat_mod_addr()) {
-              1 => (1, mk_nat_lit(klimbs_normalize(klimbs_mod(a, b)))),
+              1 => 4,
               _ =>
               match address_eq(head_addr, nat_gcd_addr()) {
-                1 => (1, mk_nat_lit(klimbs_normalize(klimbs_gcd(a, b)))),
+                1 => 5,
                 _ =>
                 match address_eq(head_addr, nat_pow_addr()) {
-                  1 => (1, mk_nat_lit(klimbs_normalize(klimbs_pow(a, b)))),
+                  1 => 6,
                   _ =>
                   match address_eq(head_addr, nat_land_addr()) {
-                    1 => (1, mk_nat_lit(klimbs_normalize(klimbs_land(a, b)))),
+                    1 => 7,
                     _ =>
                     match address_eq(head_addr, nat_lor_addr()) {
-                      1 => (1, mk_nat_lit(klimbs_normalize(klimbs_lor(a, b)))),
+                      1 => 8,
                       _ =>
                       match address_eq(head_addr, nat_xor_addr()) {
-                        1 => (1, mk_nat_lit(klimbs_normalize(klimbs_xor_op(a, b)))),
+                        1 => 9,
                         _ =>
                         match address_eq(head_addr, nat_shift_left_addr()) {
-                          1 => (1, mk_nat_lit(klimbs_normalize(klimbs_shl(a, b)))),
+                          1 => 10,
                           _ =>
                           match address_eq(head_addr, nat_shift_right_addr()) {
-                            1 => (1, mk_nat_lit(klimbs_normalize(klimbs_shr(a, b)))),
+                            1 => 11,
                             _ =>
                             match address_eq(head_addr, nat_beq_addr()) {
-                              1 => (1, mk_bool(klimbs_eq(a, b))),
+                              1 => 12,
                               _ =>
                               match address_eq(head_addr, nat_ble_addr()) {
-                                1 => (1, mk_bool(klimbs_le(a, b))),
-                                _ => (0, store(KExprNode.BVar(0))),
+                                1 => 13,
+                                _ => 14,
                               },
                             },
                           },
@@ -1569,21 +1692,38 @@ def natPrim := ⟦
     match load(e) {
       KExprNode.Lit(_) => e,
       _ =>
-        match collect_spine(e) {
-          (head, args) =>
-            match load(head) {
-              KExprNode.Const(_, _) =>
-                match try_match_nat_add(head, args) {
-                  (1, base, lit) =>
-                    let lit_norm = klimbs_normalize(lit);
-                    match klimbs_is_zero(lit_norm) {
-                      1 => e,
-                      _ => build_succ_offset(base, lit_norm),
-                    },
-                  _ => e,
-                },
-              _ => e,
+        -- Soundness: the rewrite route reruns and asserts Nat.add recognition
+        -- and a nonzero offset; failure only leaves the major unchanged.
+        let route = #cleanup_nat_offset_major_route(e);
+        match route {
+          0 =>
+            match collect_spine(e) {
+              (head, args) =>
+                let (matched, base, lit) = try_match_nat_add(head, args);
+                assert_eq!(matched, 1);
+                let lit_norm = klimbs_normalize(lit);
+                assert_eq!(klimbs_is_zero(lit_norm), 0);
+                build_succ_offset(base, lit_norm),
             },
+          1 => e,
+        },
+    }
+  }
+
+  fn cleanup_nat_offset_major_route(e: KExpr) -> G {
+    match collect_spine(e) {
+      (head, args) =>
+        match load(head) {
+          KExprNode.Const(_, _) =>
+            match try_match_nat_add(head, args) {
+              (1, _, lit) =>
+                match klimbs_is_zero(klimbs_normalize(lit)) {
+                  0 => 0,
+                  _ => 1,
+                },
+              _ => 1,
+            },
+          _ => 1,
         },
     }
   }
@@ -1643,7 +1783,7 @@ def natPrim := ⟦
   -- major (via whnf_spine).
   fn try_nat_linear_rec(spine: List‹KExpr›, nparams: G, nmotives: G,
                              nminors: G, major_idx: G) -> (G, KExpr) {
-    match u32_less_than(nminors, 2) {
+    match memo_u32_less_than(nminors, 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let raw_major = list_lookup(spine, major_idx);
@@ -1657,13 +1797,25 @@ def natPrim := ⟦
               _ =>
                 let base = list_lookup(spine, base_idx);
                 let post = list_drop(spine, major_idx + 1);
-                match try_extract_nat(base) {
-                  (1, b_klimbs) =>
+                -- Soundness: the literal route reruns extraction and asserts
+                -- success; the symbolic form is definitionally the same sum.
+                let base_route = #try_nat_linear_base_route(base);
+                match base_route {
+                  0 =>
+                    let (matched, b_klimbs) = try_extract_nat(base);
+                    assert_eq!(matched, 1);
                     (1, np_apply_spine(mk_nat_lit(klimbs_add(b_klimbs, n_klimbs)), post)),
-                  _ => mk_nat_offset_stuck(base, n_klimbs, post),
+                  1 => mk_nat_offset_stuck(base, n_klimbs, post),
                 },
             },
         },
+    }
+  }
+
+  fn try_nat_linear_base_route(base: KExpr) -> G {
+    match try_extract_nat(base) {
+      (1, _) => 0,
+      _ => 1,
     }
   }
 
@@ -1674,11 +1826,13 @@ def natPrim := ⟦
   fn try_nat_dispatch(head_addr: Addr, spine: List‹KExpr›,
                           types: List‹KExpr›) -> (G, KExpr) {
     let spine_len = list_length(spine);
-    let is_pred = address_eq(head_addr, nat_pred_addr());
-    let is_succ = address_eq(head_addr, nat_succ_addr());
-    match is_succ {
-      1 =>
-        match u32_less_than(spine_len, 1) {
+    -- Soundness: unary routes assert their exact addresses; choosing binop
+    -- for another head can only make the reducer decline to reduce.
+    let route = #try_nat_dispatch_route(head_addr);
+    match route {
+      0 =>
+        assert_eq!(address_eq(head_addr, nat_succ_addr()), 1);
+        match memo_u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let a0 = list_lookup(spine, 0);
@@ -1689,21 +1843,30 @@ def natPrim := ⟦
               _ => (0, store(KExprNode.BVar(0))),
             },
         },
-      _ =>
-        match is_pred {
-          1 =>
-            match u32_less_than(spine_len, 1) {
-              1 => (0, store(KExprNode.BVar(0))),
-              _ =>
-                let a0 = list_lookup(spine, 0);
-                match try_extract_nat(a0) {
-                  (1, na) =>
-                    let post = list_drop(spine, 1);
-                    (1, np_apply_spine(mk_nat_lit(klimbs_normalize(klimbs_dec(na))), post)),
-                  _ => (0, store(KExprNode.BVar(0))),
-                },
+      1 =>
+        assert_eq!(address_eq(head_addr, nat_pred_addr()), 1);
+        match memo_u32_less_than(spine_len, 1) {
+          1 => (0, store(KExprNode.BVar(0))),
+          _ =>
+            let a0 = list_lookup(spine, 0);
+            match try_extract_nat(a0) {
+              (1, na) =>
+                let post = list_drop(spine, 1);
+                (1, np_apply_spine(mk_nat_lit(klimbs_normalize(klimbs_dec(na))), post)),
+              _ => (0, store(KExprNode.BVar(0))),
             },
-          _ => try_nat_binop_dispatch(head_addr, spine, spine_len),
+        },
+      2 => try_nat_binop_dispatch(head_addr, spine, spine_len),
+    }
+  }
+
+  fn try_nat_dispatch_route(head_addr: Addr) -> G {
+    match address_eq(head_addr, nat_succ_addr()) {
+      1 => 0,
+      _ =>
+        match address_eq(head_addr, nat_pred_addr()) {
+          1 => 1,
+          _ => 2,
         },
     }
   }
@@ -1716,7 +1879,41 @@ def natPrim := ⟦
   -- charges rows that actually dispatch a binop.
   fn try_nat_binop_dispatch(head_addr: Addr, spine: List‹KExpr›,
                                  spine_len: G) -> (G, KExpr) {
-    match u32_less_than(spine_len, 2) {
+    -- Soundness: productive verdicts are reconstructed and asserted from
+    -- constrained operands; failure only leaves the application unreduced.
+    let route = #try_nat_binop_dispatch_route(head_addr, spine, spine_len);
+    match route {
+      1 =>
+        let (verdict, result) = try_nat_binop_dispatch_core(head_addr,
+                                                            spine, spine_len);
+        assert_eq!(verdict, 1);
+        (1, result),
+      2 =>
+        assert_eq!(memo_u32_less_than(spine_len, 2), 0);
+        let a0 = list_lookup(spine, 0);
+        let a1 = list_lookup(spine, 1);
+        let (rhs_matched, nb) = try_extract_nat(a1);
+        assert_eq!(rhs_matched, 1);
+        let (verdict, result) = try_nat_offset_dispatch(head_addr, a0, nb,
+                                                        spine);
+        assert_eq!(verdict, 2);
+        (2, result),
+      0 => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn try_nat_binop_dispatch_route(head_addr: Addr, spine: List‹KExpr›,
+                                       spine_len: G) -> G {
+    match try_nat_binop_dispatch_core(head_addr, spine, spine_len) {
+      (1, _) => 1,
+      (2, _) => 2,
+      _ => 0,
+    }
+  }
+
+  fn try_nat_binop_dispatch_core(head_addr: Addr, spine: List‹KExpr›,
+                                      spine_len: G) -> (G, KExpr) {
+    match memo_u32_less_than(spine_len, 2) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let a0 = list_lookup(spine, 0);

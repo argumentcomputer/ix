@@ -120,13 +120,24 @@ def defEq := ⟦
   }
 
   fn k_is_def_eq_ordered(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    -- Pre-WHNF lazy-delta app congruence.
-    -- When both sides share Const head + same lvl args + arity,
-    -- recurse on arg lists without unfolding — avoids expensive
-    -- delta on cases where args recursively def-eq.
+    -- Pre-WHNF lazy-delta app congruence. When both sides share a Const
+    -- head, level arguments, and arity, recurse on arguments without
+    -- unfolding; otherwise enter the slow path without paying for the
+    -- failed congruence attempt in constrained mode.
+    -- Soundness: every accepting route reruns a sound def-eq check; choosing
+    -- the slow route early can only lose an optimization, not prove equality.
+    let route = #k_is_def_eq_ordered_route(a, b, types);
+    match route {
+      0 => try_def_eq_app(a, b, types),
+      1 => k_is_def_eq_slow(a, b, types),
+    }
+  }
+
+  fn k_is_def_eq_ordered_route(a: KExpr, b: KExpr,
+                                    types: List‹KExpr›) -> G {
     match try_def_eq_app(a, b, types) {
-      1 => 1,
-      _ => k_is_def_eq_slow(a, b, types),
+      1 => 0,
+      _ => 1,
     }
   }
 
@@ -284,13 +295,6 @@ def defEq := ⟦
   -- it to `String.ofList [Char.ofNat c, ...]` ctor form so both sides
   -- reduce in lockstep through delta + iota instead of the literal
   -- staying opaque while the other side delta-cascades.
-  fn try_string_lit_pair(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    match try_string_lit_one(a, b, types) {
-      1 => 1,
-      _ => try_string_lit_one(b, a, types),
-    }
-  }
-
   fn try_string_lit_one(t: KExpr, s: KExpr, types: List‹KExpr›) -> G {
     match load(t) {
       KExprNode.Lit(lit) =>
@@ -305,9 +309,25 @@ def defEq := ⟦
   }
 
   fn k_is_def_eq_slow(a: KExpr, b: KExpr, types: List‹KExpr›) -> G {
-    match @try_string_lit_pair(a, b, types) {
-      1 => 1,
-      _ => k_is_def_eq_slow_nd(a, b, types),
+    -- Soundness: literal routes rerun their def-eq checks, while a dishonest
+    -- slow-route hint only defers to the ordinary sound def-eq procedure.
+    let route = #k_is_def_eq_slow_route(a, b, types);
+    match route {
+      0 => try_string_lit_one(a, b, types),
+      1 => try_string_lit_one(b, a, types),
+      2 => k_is_def_eq_slow_nd(a, b, types),
+    }
+  }
+
+  fn k_is_def_eq_slow_route(a: KExpr, b: KExpr,
+                                 types: List‹KExpr›) -> G {
+    match try_string_lit_one(a, b, types) {
+      1 => 0,
+      _ =>
+        match try_string_lit_one(b, a, types) {
+          1 => 1,
+          _ => 2,
+        },
     }
   }
 
@@ -317,13 +337,25 @@ def defEq := ⟦
     match ptr_val(a_core) - ptr_val(b_core) {
       0 => 1,
       _ =>
-        match k_is_def_eq_struct_safe(a_core, b_core, types) {
+        -- Soundness: the selected accepting check is rerun constrained; an
+        -- early fallback merely skips a fast path and cannot create equality.
+        let route = #k_is_def_eq_slow_nd_route(a_core, b_core, types);
+        match route {
+          0 => k_is_def_eq_struct_safe(a_core, b_core, types),
+          1 => try_def_eq_app(a_core, b_core, types),
+          2 => k_is_def_eq_slow_nd_after_core(a, b, a_core, b_core, types),
+        },
+    }
+  }
+
+  fn k_is_def_eq_slow_nd_route(a: KExpr, b: KExpr,
+                                    types: List‹KExpr›) -> G {
+    match k_is_def_eq_struct_safe(a, b, types) {
+      1 => 0,
+      _ =>
+        match try_def_eq_app(a, b, types) {
           1 => 1,
-          _ =>
-            match try_def_eq_app(a_core, b_core, types) {
-              1 => 1,
-              _ => k_is_def_eq_slow_nd_after_core(a, b, a_core, b_core, types),
-            },
+          _ => 2,
         },
     }
   }
@@ -336,13 +368,25 @@ def defEq := ⟦
     match ptr_val(aw_nd) - ptr_val(bw_nd) {
       0 => 1,
       _ =>
-        match k_is_def_eq_struct_safe(aw_nd, bw_nd, types) {
+        -- Soundness: accepting routes rerun sound checks, and selecting the
+        -- final fallback early only under-reduces the comparison.
+        let route = #k_is_def_eq_slow_nd_after_core_route(aw_nd, bw_nd, types);
+        match route {
+          0 => k_is_def_eq_struct_safe(aw_nd, bw_nd, types),
+          1 => try_def_eq_app(aw_nd, bw_nd, types),
+          2 => k_is_def_eq_slow2(orig_a, orig_b, aw_nd, bw_nd, types),
+        },
+    }
+  }
+
+  fn k_is_def_eq_slow_nd_after_core_route(a: KExpr, b: KExpr,
+                                               types: List‹KExpr›) -> G {
+    match k_is_def_eq_struct_safe(a, b, types) {
+      1 => 0,
+      _ =>
+        match try_def_eq_app(a, b, types) {
           1 => 1,
-          _ =>
-            match try_def_eq_app(aw_nd, bw_nd, types) {
-              1 => 1,
-              _ => k_is_def_eq_slow2(orig_a, orig_b, aw_nd, bw_nd, types),
-            },
+          _ => 2,
         },
     }
   }
@@ -404,26 +448,59 @@ def defEq := ⟦
     match ptr_val(aw) - ptr_val(bw) {
       0 => 1,
       _ =>
-        match try_proof_irrel(aw, bw, types) {
+        -- Soundness: each successful strategy is rerun and asserted.  The
+        -- fallback reruns lazy delta to obtain constrained continuation terms.
+        let route = #k_is_def_eq_slow2_route(aw, bw, types);
+        match route {
+          0 =>
+            assert_eq!(try_proof_irrel(aw, bw, types), 1);
+            1,
+          1 =>
+            assert_eq!(try_unit_like(aw, bw, types), 1);
+            1,
+          2 =>
+            assert_eq!(try_eta_struct(aw, bw, types), 1);
+            1,
+          3 =>
+            assert_eq!(try_eta_struct(bw, aw, types), 1);
+            1,
+          4 =>
+            let (matched, eq) = try_def_eq_nat(aw, bw, types);
+            assert_eq!(matched, 1);
+            eq,
+          5 =>
+            let (matched, _, _) = lazy_delta_loop(aw, bw, 16, types);
+            assert_eq!(matched, 1);
+            1,
+          6 =>
+            match lazy_delta_loop(aw, bw, 16, types) {
+              (_, fa, fb) => slow2_after_delta(orig_a, orig_b,
+                                                fa, fb, types),
+            },
+        },
+    }
+  }
+
+  fn k_is_def_eq_slow2_route(aw: KExpr, bw: KExpr,
+                                  types: List‹KExpr›) -> G {
+    match try_proof_irrel(aw, bw, types) {
+      1 => 0,
+      _ =>
+        match try_unit_like(aw, bw, types) {
           1 => 1,
           _ =>
-            match try_unit_like(aw, bw, types) {
-              1 => 1,
+            match try_eta_struct(aw, bw, types) {
+              1 => 2,
               _ =>
-                match try_eta_struct(aw, bw, types) {
-                  1 => 1,
+                match try_eta_struct(bw, aw, types) {
+                  1 => 3,
                   _ =>
-                    match try_eta_struct(bw, aw, types) {
-                      1 => 1,
+                    match try_def_eq_nat(aw, bw, types) {
+                      (1, _) => 4,
                       _ =>
-                        match try_def_eq_nat(aw, bw, types) {
-                          (1, eq) => eq,
-                          _ =>
                         match lazy_delta_loop(aw, bw, 16, types) {
-                          (1, _, _) => 1,
-                          (_, fa, fb) => slow2_after_delta(orig_a, orig_b,
-                                                   fa, fb, types),
-                        },
+                          (1, _, _) => 5,
+                          _ => 6,
                         },
                     },
                 },
@@ -543,9 +620,15 @@ def defEq := ⟦
         match ptr_val(aw) - ptr_val(bw) {
           0 => (1, rest),
           _ =>
-            match try_def_eq_nat(aw, bw, types) {
-              (1, eq) => (eq, rest),
-              _ =>
+            -- Soundness: the Nat route asserts its match flag; otherwise the
+            -- original lazy-delta path runs and supplies constrained state.
+            let route = #struct_spend_nat_route(aw, bw, types);
+            match route {
+              0 =>
+                let (matched, eq) = try_def_eq_nat(aw, bw, types);
+                assert_eq!(matched, 1);
+                (eq, rest),
+              1 =>
                 match lazy_delta_loop(aw, bw, 8, types) {
                   (1, _, _) => (1, rest),
                   (_, fa, fb) =>
@@ -553,6 +636,14 @@ def defEq := ⟦
                 },
             },
         },
+    }
+  }
+
+  fn struct_spend_nat_route(aw: KExpr, bw: KExpr,
+                                 types: List‹KExpr›) -> G {
+    match try_def_eq_nat(aw, bw, types) {
+      (1, _) => 0,
+      _ => 1,
     }
   }
 
@@ -566,25 +657,47 @@ def defEq := ⟦
     match ptr_val(aw) - ptr_val(bw) {
       0 => 1,
       _ =>
-        match try_proof_irrel(aw, bw, types) {
+        -- Soundness: every accepting route reruns an independently sound
+        -- equality rule; the final structural comparison remains constrained.
+        let route = #slow2_eager_fallback_route(aw, bw, types);
+        match route {
+          0 => try_proof_irrel(aw, bw, types),
+          1 => try_unit_like(aw, bw, types),
+          2 => try_eta_struct(aw, bw, types),
+          3 => try_eta_struct(bw, aw, types),
+          4 =>
+            let (matched, eq) = try_def_eq_nat(aw, bw, types);
+            assert_eq!(matched, 1);
+            eq,
+          5 => try_eta_swap(aw, bw, types),
+          6 => k_is_def_eq_struct(aw, bw, types),
+        },
+    }
+  }
+
+  -- Prover-side selection for the eager fallback's independent terminal
+  -- strategies. The constrained caller repeats exactly the selected
+  -- operation; no failed strategy is executed in constrained mode.
+  fn slow2_eager_fallback_route(aw: KExpr, bw: KExpr,
+                                     types: List‹KExpr›) -> G {
+    match try_proof_irrel(aw, bw, types) {
+      1 => 0,
+      _ =>
+        match try_unit_like(aw, bw, types) {
           1 => 1,
           _ =>
-            match try_unit_like(aw, bw, types) {
-              1 => 1,
+            match try_eta_struct(aw, bw, types) {
+              1 => 2,
               _ =>
-                match try_eta_struct(aw, bw, types) {
-                  1 => 1,
+                match try_eta_struct(bw, aw, types) {
+                  1 => 3,
                   _ =>
-                    match try_eta_struct(bw, aw, types) {
-                      1 => 1,
+                    match try_def_eq_nat(aw, bw, types) {
+                      (1, _) => 4,
                       _ =>
-                        match try_def_eq_nat(aw, bw, types) {
-                          (1, eq) => eq,
-                          _ =>
-                            match try_eta_swap(aw, bw, types) {
-                              1 => 1,
-                              _ => k_is_def_eq_struct(aw, bw, types),
-                            },
+                        match try_eta_swap(aw, bw, types) {
+                          1 => 5,
+                          _ => 6,
                         },
                     },
                 },
@@ -988,34 +1101,70 @@ def defEq := ⟦
           _ =>
         -- In-loop offset-aware Nat tier: compact `base + K` forms are
         -- decided (either way) without any unfolding.
-        match try_def_eq_nat(a, b, types) {
-          (1, eq) => (eq, a, b),
-          _ =>
-        let (a_addr, a_is_const) = head_addr(a);
-        let (b_addr, b_is_const) = head_addr(b);
-        match a_is_const {
+        -- Soundness: a claimed Nat decision is rerun and asserted.  Skipping
+        -- it only continues with sound delta reduction and may false-negative.
+        let route = #lazy_delta_nat_route(a, b, types);
+        match route {
+          0 =>
+            let (matched, eq) = try_def_eq_nat(a, b, types);
+            assert_eq!(matched, 1);
+            (eq, a, b),
           1 =>
-            match b_is_const {
-              1 =>
-                -- App congruence already ran before entering lazy delta.
-                -- Retrying it here recursively calls full k_is_def_eq for
-                -- every argument and resets the lazy budget. Continue the
-                -- current bounded reduction instead.
-                lazy_delta_step_const_const(a_addr, b_addr, a, b,
-                                             fuel, types),
-              _ => lazy_delta_a_const_b_proj(a_addr, a, b, fuel, types),
-            },
-          _ =>
-            match b_is_const {
-              1 => lazy_delta_b_const_a_proj(b_addr, a, b, fuel, types),
-              _ =>
-                -- Neither Const-headed at spine head. Try unfold_proj_app
-                -- on both — if either side is Proj-headed with a
-                -- delta-eligible inner Const, unfold inner and rewrap.
-                lazy_delta_both_proj(a, b, fuel, types),
-            },
+        -- Soundness: every claimed Const head is re-extracted and asserted;
+        -- treating a Const as non-Const can only take a sound fallback route.
+        let head_route = #lazy_delta_head_route(a, b);
+        match head_route {
+          0 =>
+            let (a_addr, a_is_const) = head_addr(a);
+            assert_eq!(a_is_const, 1);
+            let (b_addr, b_is_const) = head_addr(b);
+            assert_eq!(b_is_const, 1);
+            -- App congruence already ran before entering lazy delta.
+            -- Retrying it here recursively calls full k_is_def_eq for
+            -- every argument and resets the lazy budget. Continue the
+            -- current bounded reduction instead.
+            lazy_delta_step_const_const(a_addr, b_addr, a, b,
+                                         fuel, types),
+          1 =>
+            let (a_addr, a_is_const) = head_addr(a);
+            assert_eq!(a_is_const, 1);
+            lazy_delta_a_const_b_proj(a_addr, a, b, fuel, types),
+          2 =>
+            let (b_addr, b_is_const) = head_addr(b);
+            assert_eq!(b_is_const, 1);
+            lazy_delta_b_const_a_proj(b_addr, a, b, fuel, types),
+          3 =>
+            -- Neither Const-headed at spine head. Try unfold_proj_app
+            -- on both — if either side is Proj-headed with a
+            -- delta-eligible inner Const, unfold inner and rewrap.
+            lazy_delta_both_proj(a, b, fuel, types),
         },
         },
+        },
+    }
+  }
+
+  fn lazy_delta_nat_route(a: KExpr, b: KExpr,
+                               types: List‹KExpr›) -> G {
+    match try_def_eq_nat(a, b, types) {
+      (1, _) => 0,
+      _ => 1,
+    }
+  }
+
+  fn lazy_delta_head_route(a: KExpr, b: KExpr) -> G {
+    let (_, a_is_const) = head_addr(a);
+    let (_, b_is_const) = head_addr(b);
+    match a_is_const {
+      1 =>
+        match b_is_const {
+          1 => 0,
+          _ => 1,
+        },
+      _ =>
+        match b_is_const {
+          1 => 2,
+          _ => 3,
         },
     }
   }
@@ -1037,6 +1186,18 @@ def defEq := ⟦
   fn lazy_delta_step_const_const(a_addr: Addr, b_addr: Addr, a: KExpr,
                                        b: KExpr, fuel: G,
                                        types: List‹KExpr›) -> (G, KExpr, KExpr) {
+    -- Soundness: each selected delta unfolding is checked by delta_unfold;
+    -- a wrong side or no-unfold choice can only fail to establish equality.
+    let route = #lazy_delta_const_const_route(a_addr, b_addr);
+    match route {
+      0 => unfold_a_and_loop(a, b, fuel, types),
+      1 => unfold_b_and_loop(a, b, fuel, types),
+      2 => unfold_both_and_loop(a, b, fuel, types),
+      3 => (0, a, b),
+    }
+  }
+
+  fn lazy_delta_const_const_route(a_addr: Addr, b_addr: Addr) -> G {
     let a_ci = load(get_ci(a_addr));
     let b_ci = load(get_ci(b_addr));
     let ae = is_defn_or_thm(a_ci);
@@ -1044,21 +1205,21 @@ def defEq := ⟦
     match ae {
       0 =>
         match be {
-          0 => (0, a, b),
-          _ => unfold_b_and_loop(a, b, fuel, types),
+          0 => 3,
+          _ => 1,
         },
       _ =>
         match be {
-          0 => unfold_a_and_loop(a, b, fuel, types),
+          0 => 0,
           _ =>
             let ar = delta_rank(a_ci);
             let br = delta_rank(b_ci);
             match u32_less_than(br, ar) {
-              1 => unfold_a_and_loop(a, b, fuel, types),
+              1 => 0,
               _ =>
                 match u32_less_than(ar, br) {
-                  1 => unfold_b_and_loop(a, b, fuel, types),
-                  _ => unfold_both_and_loop(a, b, fuel, types),
+                  1 => 1,
+                  _ => 2,
                 },
             },
         },
@@ -1109,41 +1270,52 @@ def defEq := ⟦
     -- Proj-headed side (e.g. `instLEUInt32.1`) can face a plain
     -- non-Defn head (a ctor-built function constant) and still be one
     -- proj-unfold away from it.
-    match try_unfold_proj_app(b, types) {
-      (1, b2) =>
+    let a_ci = load(get_ci(a_addr));
+    -- Soundness: the consumed projection/Const unfolding is rerun and asserted;
+    -- choosing the other sound unfolding only changes reduction order.
+    let route = #lazy_delta_const_proj_route(a, a_ci, b, types);
+    match route {
+      0 =>
+        let (matched, b2) = try_unfold_proj_app(b, types);
+        assert_eq!(matched, 1);
         lazy_delta_loop(a, b2, fuel - 1, types),
-      _ =>
-        let a_ci = load(get_ci(a_addr));
-        match is_defn_or_thm(a_ci) {
-          0 => (0, a, b),
-          _ =>
-            let au = try_unfold_head(a, a_ci, types);
-            match au {
-              (1, aw) =>
-                lazy_delta_loop(aw, b, fuel - 1, types),
-              _ => (0, a, b),
-            },
-        },
+      1 =>
+        let (matched, aw) = try_unfold_head(a, a_ci, types);
+        assert_eq!(matched, 1);
+        lazy_delta_loop(aw, b, fuel - 1, types),
+      2 => (0, a, b),
     }
   }
 
   -- Symmetric.
   fn lazy_delta_b_const_a_proj(b_addr: Addr, a: KExpr, b: KExpr, fuel: G,
                                        types: List‹KExpr›) -> (G, KExpr, KExpr) {
-    match try_unfold_proj_app(a, types) {
-      (1, a2) =>
+    let b_ci = load(get_ci(b_addr));
+    -- Soundness: the consumed projection/Const unfolding is rerun and asserted;
+    -- choosing the other sound unfolding only changes reduction order.
+    let route = #lazy_delta_const_proj_route(b, b_ci, a, types);
+    match route {
+      0 =>
+        let (matched, a2) = try_unfold_proj_app(a, types);
+        assert_eq!(matched, 1);
         lazy_delta_loop(a2, b, fuel - 1, types),
+      1 =>
+        let (matched, bw) = try_unfold_head(b, b_ci, types);
+        assert_eq!(matched, 1);
+        lazy_delta_loop(a, bw, fuel - 1, types),
+      2 => (0, a, b),
+    }
+  }
+
+  fn lazy_delta_const_proj_route(const_e: KExpr, const_ci: KConstantInfo,
+                                      proj_e: KExpr,
+                                      types: List‹KExpr›) -> G {
+    match try_unfold_proj_app(proj_e, types) {
+      (1, _) => 0,
       _ =>
-        let b_ci = load(get_ci(b_addr));
-        match is_defn_or_thm(b_ci) {
-          0 => (0, a, b),
-          _ =>
-            let bu = try_unfold_head(b, b_ci, types);
-            match bu {
-              (1, bw) =>
-                lazy_delta_loop(a, bw, fuel - 1, types),
-              _ => (0, a, b),
-            },
+        match try_unfold_head(const_e, const_ci, types) {
+          (1, _) => 1,
+          _ => 2,
         },
     }
   }
@@ -1157,21 +1329,40 @@ def defEq := ⟦
   -- remaining structural/eta/full-WHNF tiers to the final forms.
   fn lazy_delta_both_proj(a: KExpr, b: KExpr, fuel: G,
                                types: List‹KExpr›) -> (G, KExpr, KExpr) {
-    let ua = try_unfold_proj_app(a, types);
-    let ub = try_unfold_proj_app(b, types);
-    match ua {
-      (1, a2) =>
-        match ub {
-          (1, b2) =>
-            lazy_delta_loop(a2, b2, fuel - 1, types),
-          _ =>
-            lazy_delta_loop(a2, b, fuel - 1, types),
+    -- Soundness: every projection result used below is rerun and asserted;
+    -- omitting an available unfolding only under-reduces the pair.
+    let route = #lazy_delta_both_proj_route(a, b, types);
+    match route {
+      0 =>
+        let (a_matched, a2) = try_unfold_proj_app(a, types);
+        assert_eq!(a_matched, 1);
+        let (b_matched, b2) = try_unfold_proj_app(b, types);
+        assert_eq!(b_matched, 1);
+        lazy_delta_loop(a2, b2, fuel - 1, types),
+      1 =>
+        let (a_matched, a2) = try_unfold_proj_app(a, types);
+        assert_eq!(a_matched, 1);
+        lazy_delta_loop(a2, b, fuel - 1, types),
+      2 =>
+        let (b_matched, b2) = try_unfold_proj_app(b, types);
+        assert_eq!(b_matched, 1);
+        lazy_delta_loop(a, b2, fuel - 1, types),
+      3 => (0, a, b),
+    }
+  }
+
+  fn lazy_delta_both_proj_route(a: KExpr, b: KExpr,
+                                     types: List‹KExpr›) -> G {
+    match try_unfold_proj_app(a, types) {
+      (1, _) =>
+        match try_unfold_proj_app(b, types) {
+          (1, _) => 0,
+          _ => 1,
         },
       _ =>
-        match ub {
-          (1, b2) =>
-            lazy_delta_loop(a, b2, fuel - 1, types),
-          _ => (0, a, b),
+        match try_unfold_proj_app(b, types) {
+          (1, _) => 2,
+          _ => 3,
         },
     }
   }
@@ -1251,20 +1442,44 @@ def defEq := ⟦
           _ =>
             let a_ci = load(get_ci(a_addr));
             let b_ci = load(get_ci(b_addr));
-            let a_unfolded = try_unfold_head(a, a_ci, types);
-            let b_unfolded = try_unfold_head(b, b_ci, types);
-            match a_unfolded {
-              (1, aw) =>
-                match b_unfolded {
-                  (1, bw) => k_is_def_eq(aw, bw, types),
-                  _ => k_is_def_eq(aw, b, types),
-                },
-              (0, _) =>
-                match b_unfolded {
-                  (1, bw) => k_is_def_eq(a, bw, types),
-                  _ => 0,
-                },
+            -- Soundness: each unfolded term consumed below is rerun and
+            -- asserted; selecting fewer unfoldings can only false-negative.
+            let route = #try_lazy_delta_app_route(a, b, a_ci, b_ci, types);
+            match route {
+              0 =>
+                let (a_matched, aw) = try_unfold_head(a, a_ci, types);
+                assert_eq!(a_matched, 1);
+                let (b_matched, bw) = try_unfold_head(b, b_ci, types);
+                assert_eq!(b_matched, 1);
+                k_is_def_eq(aw, bw, types),
+              1 =>
+                let (a_matched, aw) = try_unfold_head(a, a_ci, types);
+                assert_eq!(a_matched, 1);
+                k_is_def_eq(aw, b, types),
+              2 =>
+                let (b_matched, bw) = try_unfold_head(b, b_ci, types);
+                assert_eq!(b_matched, 1);
+                k_is_def_eq(a, bw, types),
+              3 => 0,
             },
+        },
+    }
+  }
+
+  fn try_lazy_delta_app_route(a: KExpr, b: KExpr,
+                                   a_ci: KConstantInfo,
+                                   b_ci: KConstantInfo,
+                                   types: List‹KExpr›) -> G {
+    match try_unfold_head(a, a_ci, types) {
+      (1, _) =>
+        match try_unfold_head(b, b_ci, types) {
+          (1, _) => 0,
+          _ => 1,
+        },
+      _ =>
+        match try_unfold_head(b, b_ci, types) {
+          (1, _) => 2,
+          _ => 3,
         },
     }
   }

@@ -105,21 +105,28 @@ def whnf := ⟦
     let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types);
     match collect_spine(inner_exp) {
       (inner_head, inner_args) =>
-        match try_reduce_fin_val_decidable_rec(struct_addr, fidx,
-                inner_head, inner_args) {
-          (1, rewritten) => whnf_with_spine(rewritten, spine, types),
-          _ =>
-            match load(inner_head) {
-              KExprNode.Const(_, _) =>
+        -- Soundness: a claimed Fin rewrite is rerun and asserted; failure
+        -- continues with ordinary projection reduction.
+        let fin_route = #fin_val_decidable_rec_route(struct_addr, fidx,
+                                                      inner_head, inner_args);
+        match fin_route {
+          0 =>
+            let (matched, rewritten) = try_reduce_fin_val_decidable_rec(
+              struct_addr, fidx, inner_head, inner_args);
+            assert_eq!(matched, 1);
+            whnf_with_spine(rewritten, spine, types),
+          1 =>
+            -- Soundness: the constructor route re-matches constrained KCI;
+            -- the stuck route only declines a valid projection reduction.
+            let ctor_route = #proj_ctor_route(inner_head);
+            match ctor_route {
+              1 =>
                 match load(whnf_get_ctor_or_none(inner_head)) {
                   KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
                     let field = list_lookup(inner_args, nparams + fidx);
                     whnf_with_spine(field, spine, types),
-                  _ =>
-                    let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
-                    apply_spine(stuck, spine),
                 },
-              _ =>
+              0 =>
                 let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
                 apply_spine(stuck, spine),
             },
@@ -244,6 +251,16 @@ def whnf := ⟦
     }
   }
 
+  fn fin_val_decidable_rec_route(struct_addr: Addr, fidx: G,
+                                      inner_head: KExpr,
+                                      inner_args: List‹KExpr›) -> G {
+    match try_reduce_fin_val_decidable_rec(struct_addr, fidx,
+                                            inner_head, inner_args) {
+      (1, _) => 0,
+      _ => 1,
+    }
+  }
+
   -- Returns the Ctor KCI if `head` is a Const of a Ctor, else a stub axiom
   -- KCI (harmless — the caller falls through on the non-Ctor match).
   fn whnf_get_ctor_or_none(head: KExpr) -> &KConstantInfo {
@@ -251,6 +268,13 @@ def whnf := ⟦
       KExprNode.Const(addr, _) => get_ci(addr),
       _ =>
         store(KConstantInfo.Axiom(0, store(KExprNode.Srt(store(KLevelNode.Zero))), 0)),
+    }
+  }
+
+  fn proj_ctor_route(head: KExpr) -> G {
+    match load(whnf_get_ctor_or_none(head)) {
+      KConstantInfo.Ctor(_, _, _, _, _, _, _, _) => 1,
+      _ => 0,
     }
   }
 
@@ -356,6 +380,40 @@ def whnf := ⟦
     }
   }
 
+  fn prim_dispatch_route(addr: Addr, lvls: List‹KLevel›,
+                              spine: List‹KExpr›,
+                              types: List‹KExpr›) -> G {
+    match try_prim_dispatch(addr, lvls, spine, types) {
+      (1, _) => 1,
+      (2, _) => 2,
+      _ => 0,
+    }
+  }
+
+  fn try_prim_dispatch_nd(addr: Addr, lvls: List‹KLevel›,
+                               head: KExpr, spine: List‹KExpr›,
+                               types: List‹KExpr›) -> (G, KExpr) {
+    match prim_family(addr) {
+      1 =>
+        let whole = apply_spine(head, spine);
+        match expr_lbr(whole) {
+          0 => try_prim_dispatch(addr, lvls, spine, types),
+          _ => (0, store(KExprNode.BVar(0))),
+        },
+      _ => try_prim_dispatch(addr, lvls, spine, types),
+    }
+  }
+
+  fn prim_dispatch_nd_route(addr: Addr, lvls: List‹KLevel›,
+                                head: KExpr, spine: List‹KExpr›,
+                                types: List‹KExpr›) -> G {
+    match try_prim_dispatch_nd(addr, lvls, head, spine, types) {
+      (1, _) => 1,
+      (2, _) => 2,
+      _ => 0,
+    }
+  }
+
   -- Quot iota: Quot.lift α r β f sound (Quot.mk α' r' a) = f a
   -- and Quot.ind α r motive m (Quot.mk α' r' a) = m a. Anything else
   -- stays stuck.
@@ -375,19 +433,34 @@ def whnf := ⟦
   -- kind would trust a field no one has validated yet.
   fn try_quot_iota(addr: Addr, spine: List‹KExpr›,
                          types: List‹KExpr›) -> (G, KExpr) {
+    -- Soundness: productive routes assert the exact Quot primitive address;
+    -- failure only leaves the quotient application stuck.
+    let route = #try_quot_iota_route(addr);
+    match route {
+      0 =>
+        assert_eq!(address_eq(addr, quot_lift_addr_iota()), 1);
+        try_quot_lift(spine, types),
+      1 =>
+        assert_eq!(address_eq(addr, quot_ind_addr_iota()), 1);
+        try_quot_ind(spine, types),
+      2 => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn try_quot_iota_route(addr: Addr) -> G {
     match address_eq(addr, quot_lift_addr_iota()) {
-      1 => try_quot_lift(spine, types),
+      1 => 0,
       _ =>
         match address_eq(addr, quot_ind_addr_iota()) {
-          1 => try_quot_ind(spine, types),
-          _ => (0, store(KExprNode.BVar(0))),
+          1 => 1,
+          _ => 2,
         },
     }
   }
 
   fn try_quot_lift(spine: List‹KExpr›, types: List‹KExpr›) -> (G, KExpr) {
     let n = list_length(spine);
-    match u32_less_than(n, 6) {
+    match memo_u32_less_than(n, 6) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let f = list_lookup(spine, 3);
@@ -403,7 +476,7 @@ def whnf := ⟦
 
   fn try_quot_ind(spine: List‹KExpr›, types: List‹KExpr›) -> (G, KExpr) {
     let n = list_length(spine);
-    match u32_less_than(n, 5) {
+    match memo_u32_less_than(n, 5) {
       1 => (0, store(KExprNode.BVar(0))),
       _ =>
         let m = list_lookup(spine, 3);
@@ -452,23 +525,36 @@ def whnf := ⟦
   -- `apply_spine(head, spine)` fallbacks.
   fn whnf_const_head(addr: Addr, lvls: List‹KLevel›, head: KExpr,
                          spine: List‹KExpr›, types: List‹KExpr›) -> KExpr {
-    let prim = try_prim_dispatch(addr, lvls, spine, types);
-    match prim {
-      (1, reduced) => whnf(reduced, types),
+    -- Soundness: verdicts 1 and 2 are recomputed and asserted constrained;
+    -- verdict 0 only skips primitive reduction before ordinary WHNF.
+    let prim_route = #prim_dispatch_route(addr, lvls, spine, types);
+    match prim_route {
+      1 =>
+        let (verdict, reduced) = try_prim_dispatch(addr, lvls, spine, types);
+        assert_eq!(verdict, 1);
+        whnf(reduced, types),
       -- verdict 2: the reducer normalized the term to an already-stuck
       -- compact form (symbolic Nat offset); return it WITHOUT re-whnf
       -- and WITHOUT falling to the Defn arm — delta-unfolding it would
       -- expand a succ^n tower / the division algorithm. Mirror
       -- whnf_const_head:230.
-      (2, stuck) => stuck,
-      _ =>
+      2 =>
+        let (verdict, stuck) = try_prim_dispatch(addr, lvls, spine, types);
+        assert_eq!(verdict, 2);
+        stuck,
+      0 =>
     let ci = load(get_ci(addr));
     match ci {
       KConstantInfo.Defn(_, _, value, _, _) =>
-        let pd = try_reduce_projection_definition(value, spine);
-        match pd {
-          (1, reduced) => whnf(reduced, types),
-          _ =>
+        -- Soundness: a claimed projection rewrite is rerun and asserted;
+        -- failure falls back to definitionally equal delta unfolding.
+        let pd_route = #projection_definition_route(value, spine);
+        match pd_route {
+          0 =>
+            let (matched, reduced) = try_reduce_projection_definition(value, spine);
+            assert_eq!(matched, 1);
+            whnf(reduced, types),
+          1 =>
             let body = expr_inst_levels(value, lvls);
             whnf_with_spine(body, spine, types),
         },
@@ -509,8 +595,13 @@ def whnf := ⟦
         -- is why the k_flag=1 stuck-fallback below is now redundant and
         -- simply keeps the stuck form.
         let k_skip = ((nparams + nmotives) + nminors) + nindices;
-        let k_pre = match k_flag {
-          1 =>
+        -- Soundness: successful K synthesis is rerun and asserted; failure
+        -- proceeds to ordinary iota and can only under-reduce.
+        let k_route = #try_k_synth_iota_route(rec_ty, k_skip, k_flag,
+                          lvls, spine, nparams, nmotives, nminors, nindices,
+                          rules, types);
+        match k_route {
+          0 =>
             -- The recursor's OWN inductive, read from its declared major
             -- premise. The K gate must check the major's inferred
             -- inductive against this — comparing the major against its
@@ -520,16 +611,14 @@ def whnf := ⟦
             -- mismatch noted in k_synth_gate does not apply.)
             match se_parent_addr(rec_ty, k_skip) {
               (_, rec_parent) =>
-                try_k_synth_iota(lvls, spine, nparams, nmotives,
-                                    nminors, nindices, rules,
-                                    rec_parent, types),
+                let (matched, k_reduct) = try_k_synth_iota(lvls, spine,
+                  nparams, nmotives, nminors, nindices, rules,
+                  rec_parent, types);
+                assert_eq!(matched, 1);
+                k_reduct,
             },
-          _ => (0, head),
-        };
-        match k_pre {
-          (1, k_reduct) => k_reduct,
-          _ =>
-        let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
+          1 =>
+        let iota = try_iota_hinted(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
                                    nminors, nindices));
@@ -560,6 +649,26 @@ def whnf := ⟦
     }
   }
 
+  fn try_k_synth_iota_route(rec_ty: KExpr, k_skip: G, k_flag: G,
+                                 lvls: List‹KLevel›,
+                                 spine: List‹KExpr›,
+                                 nparams: G, nmotives: G, nminors: G,
+                                 nindices: G, rules: List‹KRecRule›,
+                                 types: List‹KExpr›) -> G {
+    match k_flag {
+      1 =>
+        match se_parent_addr(rec_ty, k_skip) {
+          (_, rec_parent) =>
+            match try_k_synth_iota(lvls, spine, nparams, nmotives,
+                    nminors, nindices, rules, rec_parent, types) {
+              (1, _) => 0,
+              _ => 1,
+            },
+        },
+      _ => 1,
+    }
+  }
+
   -- Recognize `λ x_1 ... x_n → Prj S i (BVar k)` and rewrite an
   -- application of the constant to a direct Prj. Mirrors the Rust
   -- implementation in crates/kernel/src. Pure perf — standard
@@ -571,7 +680,7 @@ def whnf := ⟦
                                           spine: List‹KExpr›) -> (G, KExpr) {
     match projection_definition_info(value, 0) {
       (1, arity, struct_addr, field, struct_arg_idx) =>
-        match u32_less_than(list_length(spine), arity) {
+        match memo_u32_less_than(list_length(spine), arity) {
           1 => (0, store(KExprNode.BVar(0))),
           _ =>
             let target_arg = list_lookup(spine, struct_arg_idx);
@@ -580,6 +689,13 @@ def whnf := ⟦
             (1, apply_spine(proj_expr, post)),
         },
       _ => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn projection_definition_route(value: KExpr, spine: List‹KExpr›) -> G {
+    match try_reduce_projection_definition(value, spine) {
+      (1, _) => 0,
+      _ => 1,
     }
   }
 
@@ -767,17 +883,36 @@ def whnf := ⟦
   -- whnf, which measured 14x worse on ofDays for no verdict change.
   fn whnf_iota_major(e: KExpr, types: List‹KExpr›) -> KExpr {
     let w = whnf(e, types);
-    match collect_spine(w) {
-      (h, sp) =>
-        match load(h) {
-          KExprNode.Const(addr, lvls) =>
-            match load(get_ci(addr)) {
-              KConstantInfo.Thm(_, _, value) =>
-                let body = expr_inst_levels(value, lvls);
-                whnf_iota_major(whnf_with_spine(body, sp, types), types),
-              _ => w,
+    -- Soundness: the theorem route re-matches constrained KCI before
+    -- unfolding; declining to unfold a theorem only leaves the major stuck.
+    let route = #iota_major_theorem_route(w);
+    match route {
+      1 =>
+        match collect_spine(w) {
+          (h, sp) =>
+            match load(h) {
+              KExprNode.Const(addr, lvls) =>
+                match load(get_ci(addr)) {
+                  KConstantInfo.Thm(_, _, value) =>
+                    let body = expr_inst_levels(value, lvls);
+                    whnf_iota_major(whnf_with_spine(body, sp, types), types),
+                },
             },
-          _ => w,
+        },
+      0 => w,
+    }
+  }
+
+  fn iota_major_theorem_route(w: KExpr) -> G {
+    match collect_spine(w) {
+      (h, _) =>
+        match load(h) {
+          KExprNode.Const(addr, _) =>
+            match load(get_ci(addr)) {
+              KConstantInfo.Thm(_, _, _) => 1,
+              _ => 0,
+            },
+          _ => 0,
         },
     }
   }
@@ -793,15 +928,22 @@ def whnf := ⟦
                   head: KExpr, rec_parent: Addr) -> (G, KExpr) {
     let major_idx = nparams + nmotives + nminors + nindices;
     let spine_len = list_length(spine);
-    match u32_less_than(major_idx, spine_len) {
+    match memo_u32_less_than(major_idx, spine_len) {
       0 => (0, store(KExprNode.BVar(0))),
       _ =>
         --  linear-rec fast path: `Nat.rec base (fun _ ih => succ ih) (Lit n)`
         -- collapses in O(1) to base+n / stuck offset, avoiding n iota expansions.
-        let lin = try_nat_linear_rec(spine, nparams, nmotives, nminors, major_idx);
-        match lin {
-          (1, r) => (1, r),
-          _ =>
+        -- Soundness: a claimed linear-rec reduction is rerun and asserted;
+        -- failure continues through the general sound iota reducer.
+        let lin_route = #try_iota_linear_route(spine, nparams, nmotives,
+                                               nminors, major_idx);
+        match lin_route {
+          0 =>
+            let (matched, r) = try_nat_linear_rec(spine, nparams, nmotives,
+                                                   nminors, major_idx);
+            assert_eq!(matched, 1);
+            (1, r),
+          1 =>
         let raw_major = list_lookup(spine, major_idx);
         --  cleanup: expose one Nat.succ layer if major is
         -- `Nat.add base (Lit n)` with n>0, so iota can fire without
@@ -851,6 +993,50 @@ def whnf := ⟦
             (2, apply_spine(head, new_spine)),
         },
         },
+    }
+  }
+
+  fn try_iota_hinted(lvls: List‹KLevel›, spine: List‹KExpr›,
+                          nparams: G, nmotives: G, nminors: G, nindices: G,
+                          rules: List‹KRecRule›, types: List‹KExpr›,
+                          head: KExpr, rec_parent: Addr) -> (G, KExpr) {
+    -- Soundness: productive iota verdicts are rerun and asserted; failure
+    -- only leaves the recursor application unreduced.
+    let route = #try_iota_route(lvls, spine, nparams, nmotives, nminors,
+                                 nindices, rules, types, head, rec_parent);
+    match route {
+      1 =>
+        let (verdict, result) = try_iota(lvls, spine, nparams, nmotives,
+                              nminors, nindices, rules, types, head, rec_parent);
+        assert_eq!(verdict, 1);
+        (1, result),
+      2 =>
+        let (verdict, result) = try_iota(lvls, spine, nparams, nmotives,
+                              nminors, nindices, rules, types, head, rec_parent);
+        assert_eq!(verdict, 2);
+        (2, result),
+      0 => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  fn try_iota_route(lvls: List‹KLevel›, spine: List‹KExpr›,
+                         nparams: G, nmotives: G, nminors: G, nindices: G,
+                         rules: List‹KRecRule›, types: List‹KExpr›,
+                         head: KExpr, rec_parent: Addr) -> G {
+    match try_iota(lvls, spine, nparams, nmotives, nminors, nindices,
+                    rules, types, head, rec_parent) {
+      (1, _) => 1,
+      (2, _) => 2,
+      _ => 0,
+    }
+  }
+
+  fn try_iota_linear_route(spine: List‹KExpr›, nparams: G,
+                                nmotives: G, nminors: G,
+                                major_idx: G) -> G {
+    match try_nat_linear_rec(spine, nparams, nmotives, nminors, major_idx) {
+      (1, _) => 0,
+      _ => 1,
     }
   }
 
@@ -1191,7 +1377,7 @@ def whnf := ⟦
     match load(get_ci(addr)) {
       KConstantInfo.Rec(_, rec_ty, nparams, nindices, nmotives, nminors,
                           rules, _k, _unsafe, _block, _ridx) =>
-        match try_iota(lvls, spine, nparams, nmotives, nminors, nindices,
+        match try_iota_hinted(lvls, spine, nparams, nmotives, nminors, nindices,
                 rules, types, head,
                 rec_to_parent_addr(rec_ty, nparams, nmotives, nminors,
                   nindices)) {
@@ -1275,21 +1461,28 @@ def whnf := ⟦
     let inner_exp = str_lit_to_ctor_app_or_self(inner_whnf, types);
     match collect_spine(inner_exp) {
       (inner_head, inner_args) =>
-        match try_reduce_fin_val_decidable_rec(struct_addr, fidx,
-                inner_head, inner_args) {
-          (1, rewritten) => whnf_nd_with_spine(rewritten, spine, types),
-          _ =>
-            match load(inner_head) {
-              KExprNode.Const(_, _) =>
+        -- Soundness: a claimed Fin rewrite is rerun and asserted; failure
+        -- continues with ordinary no-delta projection reduction.
+        let fin_route = #fin_val_decidable_rec_route(struct_addr, fidx,
+                                                      inner_head, inner_args);
+        match fin_route {
+          0 =>
+            let (matched, rewritten) = try_reduce_fin_val_decidable_rec(
+              struct_addr, fidx, inner_head, inner_args);
+            assert_eq!(matched, 1);
+            whnf_nd_with_spine(rewritten, spine, types),
+          1 =>
+            -- Soundness: the constructor route re-matches constrained KCI;
+            -- the stuck route only declines a valid projection reduction.
+            let ctor_route = #proj_ctor_route(inner_head);
+            match ctor_route {
+              1 =>
                 match load(whnf_get_ctor_or_none(inner_head)) {
                   KConstantInfo.Ctor(_, _, _, _, _, nparams, _, _) =>
                     let field = list_lookup(inner_args, nparams + fidx);
                     whnf_nd_with_spine(field, spine, types),
-                  _ =>
-                    let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
-                    apply_spine(stuck, spine),
                 },
-              _ =>
+              0 =>
                 let stuck = store(KExprNode.Proj(struct_addr, fidx, inner_whnf));
                 apply_spine(stuck, spine),
             },
@@ -1309,27 +1502,34 @@ def whnf := ⟦
     -- This mirrors the reference kernel's `has_fvars` gate: closed primitive
     -- computations still reduce normally; open ones remain compact for lazy
     -- delta / offset comparison.
-    let prim = match prim_family(addr) {
+    -- Soundness: verdicts 1 and 2 are recomputed and asserted constrained;
+    -- verdict 0 only skips reduction and returns to sound no-delta WHNF.
+    let prim_route = #prim_dispatch_nd_route(addr, lvls, head, spine, types);
+    match prim_route {
       1 =>
-        let whole = apply_spine(head, spine);
-        match expr_lbr(whole) {
-          0 => try_prim_dispatch(addr, lvls, spine, types),
-          _ => (0, store(KExprNode.BVar(0))),
-        },
-      _ => try_prim_dispatch(addr, lvls, spine, types),
-    };
-    match prim {
-      (1, reduced) => whnf_nd(reduced, types),
+        let (verdict, reduced) = try_prim_dispatch_nd(addr, lvls, head,
+                                                       spine, types);
+        assert_eq!(verdict, 1);
+        whnf_nd(reduced, types),
       -- verdict 2: already-stuck compact form; do not re-whnf.
-      (2, stuck) => stuck,
-      _ =>
+      2 =>
+        let (verdict, stuck) = try_prim_dispatch_nd(addr, lvls, head,
+                                                     spine, types);
+        assert_eq!(verdict, 2);
+        stuck,
+      0 =>
     let ci = load(get_ci(addr));
     match ci {
       KConstantInfo.Defn(_, _, value, _, _) =>
-        let pd = try_reduce_projection_definition(value, spine);
-        match pd {
-          (1, reduced) => whnf_nd(reduced, types),
-          _ => apply_spine(head, spine),
+        -- Soundness: a claimed projection rewrite is rerun and asserted;
+        -- failure leaves the definition stuck in no-delta mode.
+        let pd_route = #projection_definition_route(value, spine);
+        match pd_route {
+          0 =>
+            let (matched, reduced) = try_reduce_projection_definition(value, spine);
+            assert_eq!(matched, 1);
+            whnf_nd(reduced, types),
+          1 => apply_spine(head, spine),
         },
       KConstantInfo.Quot(_, _, _) =>
         let quot = try_quot_iota(addr, spine, types);
@@ -1346,20 +1546,23 @@ def whnf := ⟦
         -- normalize exclusively with whnf_nd, so K-closable pairs
         -- (cast_eq shapes) would falsely reject.
         let k_skip = ((nparams + nmotives) + nminors) + nindices;
-        let k_pre = match k_flag {
-          1 =>
+        -- Soundness: successful K synthesis is rerun and asserted; failure
+        -- proceeds to ordinary iota and can only under-reduce.
+        let k_route = #try_k_synth_iota_route(rec_ty, k_skip, k_flag,
+                          lvls, spine, nparams, nmotives, nminors, nindices,
+                          rules, types);
+        match k_route {
+          0 =>
             match se_parent_addr(rec_ty, k_skip) {
               (_, rec_parent) =>
-                try_k_synth_iota(lvls, spine, nparams, nmotives,
-                                    nminors, nindices, rules,
-                                    rec_parent, types),
+                let (matched, k_reduct) = try_k_synth_iota(lvls, spine,
+                  nparams, nmotives, nminors, nindices, rules,
+                  rec_parent, types);
+                assert_eq!(matched, 1);
+                k_reduct,
             },
-          _ => (0, head),
-        };
-        match k_pre {
-          (1, k_reduct) => k_reduct,
-          _ =>
-        let iota = try_iota(lvls, spine, nparams, nmotives, nminors,
+          1 =>
+        let iota = try_iota_hinted(lvls, spine, nparams, nmotives, nminors,
                                  nindices, rules, types, head,
                                  rec_to_parent_addr(rec_ty, nparams, nmotives,
                                    nminors, nindices));
