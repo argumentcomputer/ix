@@ -25,6 +25,19 @@ impl Memory {
     args
   }
 
+  /// [`Self::lookup_args`] into a reusable buffer — the row replay is
+  /// allocation-free.
+  pub(super) fn lookup_args_into(
+    buf: &mut Vec<G>,
+    size: G,
+    ptr: G,
+    values: &[G],
+  ) {
+    buf.clear();
+    buf.extend([memory_channel(), size, ptr]);
+    buf.extend_from_slice(values);
+  }
+
   fn width(size: usize) -> usize {
     // Multiplicity, selector, pointer and values.
     3 + size

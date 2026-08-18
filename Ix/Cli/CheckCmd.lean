@@ -640,19 +640,6 @@ def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Na
         | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
     pure rc
 
-/-- Run the shard operation over EVERY shard — the whole-partition behavior of
-    `--shards` with no `--shard` (used by `prove`). Loads the env once. Returns 1
-    if any shard fails, else 0. -/
-def runShardManifestAll (manifestPath ixePath : String)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) =>
-    let mut rc : UInt32 := 0
-    for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
-      if (← runShardOwned ixonEnv blocks k runOne) != 0 then rc := 1
-    pure rc
-
 /-- Check EVERY shard of the partition concurrently (shards are independent
     bytecode runs) after verifying coverage — the whole-partition behavior of
     `check --shards` with no `--shard`. At most `jobs` shards run at once

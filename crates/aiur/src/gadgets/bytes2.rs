@@ -383,7 +383,7 @@ impl AiurGadget for Bytes2 {
 /// genuinely atomic — `AtomicU64` holding `G` bits — for the same
 /// reason as [`super::bytes1::Bytes1Queries`]: concurrent bumps plus
 /// seal-time overwrite through a shared reference need real interior
-/// mutability, not pointer casts.
+/// mutability.
 pub struct Bytes2Queries(
   Box<[[std::sync::atomic::AtomicU64; TRACE_WIDTH]]>,
 );
@@ -445,11 +445,11 @@ impl Bytes2Queries {
     self.0[cell][col].load(Ordering::Relaxed)
   }
 
-  /// Overwrite counter cell (seal-time application of derived
-  /// multiplicities; see `trace::apply_multiplicities`).
-  pub(crate) fn set_count(&self, cell: usize, col: usize, v: u64) {
+  /// Bump counter cell by one (seal-time derivation counting directly
+  /// into the record).
+  pub(crate) fn add_count(&self, cell: usize, col: usize) {
     use std::sync::atomic::Ordering;
-    self.0[cell][col].store(v, Ordering::Relaxed);
+    self.0[cell][col].fetch_add(1, Ordering::Relaxed);
   }
 
   /// Quiescent snapshot of one row as field elements (trace building,

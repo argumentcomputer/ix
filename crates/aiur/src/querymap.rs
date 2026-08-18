@@ -137,8 +137,7 @@ fn stripe_of(hash: u64) -> usize {
 /// Bit-preserving G <-> u64 views. `G` is `repr(transparent)` over
 /// `u64` (compile-checked below), and the arenas store G's EXACT bits:
 /// round-tripping through these helpers is the identity, so lazily
-/// reduced field representations survive storage unchanged — the same
-/// contract the old raw-pointer memcpy provided.
+/// reduced field representations survive storage unchanged.
 const _: () = assert!(
   size_of::<G>() == 8 && align_of::<G>() == 8,
   "arena cells assume 8-byte G"
@@ -162,8 +161,8 @@ pub(crate) fn g_from_bits(b: u64) -> G {
 /// no populate, no collapse. Measured (2026-08-16, same-hour A/B on
 /// init/initstd/lean): 2 MiB backing saved only ~8-9% user time at
 /// every scale — the per-thread probe cache absorbs most of the TLB
-/// pressure the original design theorized about — while every scheme
-/// for OBTAINING 2 MiB pages cost more than that: fault-time THP
+/// pressure — while every scheme
+/// for OBTAINING 2 MiB pages costs more than that: fault-time THP
 /// degrades ~1.5x as the box fragments (drift), populate+collapse at
 /// segment creation serialized workers behind the OnceLock for ~2x
 /// wall, and a reserved hugetlb pool taxes prover RAM and needs boot
@@ -230,25 +229,55 @@ impl Segment {
 /// entry ever straddles a segment. Slots are `OnceLock`s: readers reach
 /// published segments lock-free, and racing first-touch writers are
 /// serialized by `get_or_init`, so exactly one mapping is ever created
-/// per slot (the old CAS-and-free-the-loser dance is gone).
+/// per slot.
+///
+/// Slot 0 is INLINE and the remaining directory is lazy: almost every
+/// map never outgrows one segment (2^20 entries), and a record holds
+/// three arenas for each of ~800 maps, so an eager 4096-slot directory
+/// per arena cost ~300 MiB of metadata on every fresh record — paid
+/// again per fine-segment cut and per shard. The 4095 tail slots
+/// materialize on the first touch of segment 1; the directory's
+/// `OnceLock` publication (Acquire on read) keeps every access
+/// lock-free after that.
 struct SegArena {
-  segs: Box<[OnceLock<Segment>]>,
+  seg0: OnceLock<Segment>,
+  rest: OnceLock<Box<[OnceLock<Segment>]>>,
 }
 
 impl SegArena {
   fn new() -> Self {
-    let mut v = Vec::with_capacity(MAX_SEGS);
-    v.resize_with(MAX_SEGS, OnceLock::new);
-    Self { segs: v.into_boxed_slice() }
+    Self { seg0: OnceLock::new(), rest: OnceLock::new() }
+  }
+
+  /// Slot `s`'s lock, if its directory exists yet.
+  #[inline]
+  fn slot(&self, s: usize) -> Option<&OnceLock<Segment>> {
+    if s == 0 {
+      Some(&self.seg0)
+    } else {
+      self.rest.get().map(|r| &r[s - 1])
+    }
   }
 
   #[inline]
   fn seg(&self, s: usize) -> &Segment {
-    self.segs[s].get().expect("read of unpublished segment")
+    self
+      .slot(s)
+      .and_then(OnceLock::get)
+      .expect("read of unpublished segment")
   }
 
   fn ensure_seg(&self, s: usize, stride: usize) -> &Segment {
-    self.segs[s].get_or_init(|| Segment::new(SEG_ENTRIES * stride))
+    let lock = if s == 0 {
+      &self.seg0
+    } else {
+      &self.rest.get_or_init(|| {
+        let mut v = Vec::with_capacity(MAX_SEGS - 1);
+        v.resize_with(MAX_SEGS - 1, OnceLock::new);
+        v.into_boxed_slice()
+      })[s - 1]
+    };
+    lock.get_or_init(|| Segment::new(SEG_ENTRIES * stride))
   }
 
   /// Entry `i`'s publish-frozen G view (see [`Segment::frozen`]).
@@ -309,7 +338,10 @@ impl SegArena {
     if i >> SEG_BITS >= MAX_SEGS {
       return None;
     }
-    self.segs[i >> SEG_BITS].get().map(|s| &s.cells()[i & SEG_MASK])
+    self
+      .slot(i >> SEG_BITS)?
+      .get()
+      .map(|s| &s.cells()[i & SEG_MASK])
   }
 }
 
@@ -327,10 +359,11 @@ impl SegArena {
 /// kernel-heavy executions it is the dominant RAM consumer (billions of
 /// entries). Segmented storage keeps growth copy-free (no doubling
 /// memmove, no transient 2x RSS), stored hashes make table growth a cheap
-/// sequential pass, and segments are hugepage-advised.
+/// sequential pass, and segments are plain 4 KiB anonymous mappings
+/// (see [`Segment`]).
 ///
 /// Entry index == insertion order; memory circuits use it as the pointer
-/// value, mirroring the old `IndexMap::get_index_of` semantics.
+/// value, so a stored tuple's pointer IS its entry index.
 ///
 /// # Concurrency
 ///
@@ -371,9 +404,9 @@ pub struct QueryMap {
   entries: SegArena,
   mults: SegArena,
   /// Per-entry key hashes, kept so hash-table growth re-inserts from
-  /// stored hashes instead of re-hashing keys from the arena — table
-  /// doubling on a multi-GB map used to be a full sequential re-hash
-  /// pass, log-many times.
+  /// stored hashes instead of re-hashing keys from the arena — without
+  /// them, each doubling of a multi-GB map is a full sequential
+  /// re-hash pass, log-many times.
   hashes: SegArena,
   /// Unique-entry count BY RESERVATION: fetch_add'd at insert, before
   /// the slot's data lands. Entries below `len` are complete except
@@ -416,8 +449,18 @@ impl QueryMap {
   /// Overwrite entry `i`'s multiplicity — the seal-time application of
   /// DERIVED counts (`trace::derive_multiplicities`). The concurrent
   /// set path never writes multiplicities during execution.
-  pub(crate) fn set_mult(&self, i: usize, v: G) {
-    self.mult_atomic(i).store(v.as_canonical_u64(), Ordering::Relaxed);
+  /// Bump entry `i`'s multiplicity by one, returning the PREVIOUS
+  /// count — the seal-time derivation walk counting directly into the
+  /// record (counts stay far below the modulus, so `u64` addition on
+  /// the cell is field addition).
+  pub(crate) fn mult_add(&self, i: usize) -> u64 {
+    self.mult_atomic(i).fetch_add(1, Ordering::Relaxed)
+  }
+
+  /// Whether entry `i`'s multiplicity is zero — the witness builder's
+  /// live-row scan, without materializing the entry.
+  pub(crate) fn mult_is_zero(&self, i: usize) -> bool {
+    self.mult_atomic(i).load(Ordering::Relaxed) == 0
   }
 
   #[inline]
@@ -630,48 +673,12 @@ impl QueryMap {
     self.entries.write_at(i, self.entry_stride(), self.key_stride, output);
     self.mults.write(i, 1, &[mult]);
     self.mark_complete(i, hash);
-    self.len_panic_check(i + 1);
     let i32 = u32::try_from(i).expect("entry index fits u32");
     table.insert_unique(hash, i32, |&j| self.hash_at(j as usize));
     probe_cache_put(self.cache_tag(hash), i);
     i
   }
 
-  /// Debug tripwire: `IX_QM_LEN_PANIC=<n>` panics when any map's
-  /// length crosses `n` — with `RUST_BACKTRACE=1` the abort backtrace
-  /// names the generated `aiur_fn_*` call chain, i.e. the exact kernel
-  /// path minting keys. Diagnostic only; zero cost unless the env var
-  /// is set (checked once).
-  fn len_panic_check(&self, len: usize) {
-    use std::sync::OnceLock;
-    static LIMIT: OnceLock<Option<usize>> = OnceLock::new();
-    let limit = LIMIT.get_or_init(|| {
-      std::env::var("IX_QM_LEN_PANIC").ok().and_then(|v| v.parse().ok())
-    });
-    if let Some(l) = limit
-      && len == *l
-    {
-      // Forensics: IX_QM_LEN_PANIC_DUMP=<path> writes a key sample of
-      // the tripping map (first 2M entries, hex per line) before the
-      // abort — the key distribution names the blowup shape.
-      if let Ok(path) = std::env::var("IX_QM_LEN_PANIC_DUMP") {
-        let mut out = String::new();
-        for i in 0..len.min(2_000_000) {
-          for g in self.key_at(i) {
-            out.push_str(&format!("{:016x}", g.as_canonical_u64()));
-            out.push(' ');
-          }
-          out.push('\n');
-        }
-        let _ = std::fs::write(path, out);
-      }
-      panic!(
-        "IX_QM_LEN_PANIC tripped: map (key_stride {}, out_stride {}) \
-         reached {len} entries",
-        self.key_stride, self.out_stride
-      );
-    }
-  }
 
   pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
     self.insert_inner(key, output, multiplicity, true);

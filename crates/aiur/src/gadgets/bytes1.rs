@@ -206,9 +206,8 @@ impl AiurGadget for Bytes1 {
 /// Accumulator of queries performed against `Bytes1`. Cells are
 /// genuinely atomic — `AtomicU64` holding `G` bits — because the
 /// shared record's executors bump them concurrently and seal-time
-/// multiplicity application overwrites them; the previous plain-`G`
-/// array mutated through pointer casts was undefined behavior (no
-/// `UnsafeCell`, writes through a shared reference).
+/// derivation overwrites them — concurrent mutation through shared
+/// references requires genuine interior mutability.
 pub struct Bytes1Queries([[std::sync::atomic::AtomicU64; TRACE_WIDTH]; 256]);
 
 impl Bytes1Queries {
@@ -236,11 +235,11 @@ impl Bytes1Queries {
     self.0[byte][col].load(Ordering::Relaxed)
   }
 
-  /// Overwrite counter cell (seal-time application of derived
-  /// multiplicities; see `trace::apply_multiplicities`).
-  pub(crate) fn set_count(&self, byte: usize, col: usize, v: u64) {
+  /// Bump counter cell by one (seal-time derivation counting directly
+  /// into the record).
+  pub(crate) fn add_count(&self, byte: usize, col: usize) {
     use std::sync::atomic::Ordering;
-    self.0[byte][col].store(v, Ordering::Relaxed);
+    self.0[byte][col].fetch_add(1, Ordering::Relaxed);
   }
 
   /// Quiescent snapshot of one row as field elements (trace building,

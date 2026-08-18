@@ -117,7 +117,15 @@ pub struct SharedIO {
   arenas: [SharedIOArena; 8],
   /// Info plus a `filled` flag: preassigned entries publish their
   /// coordinates at startup and fault their bytes on first use.
-  stripes: Box<[std::sync::Mutex<FxHashMap<(G, Vec<G>), (IOKeyInfo, bool)>>]>,
+  stripes: Box<
+    [std::sync::Mutex<
+      hashbrown::HashMap<
+        (G, Vec<G>),
+        (IOKeyInfo, bool),
+        rustc_hash::FxBuildHasher,
+      >,
+    >],
+  >,
   backing: std::sync::Arc<dyn IOFaultSource>,
 }
 
@@ -134,11 +142,25 @@ struct SharedIOArena {
 const SHARED_IO_ARENA_CAP: usize = 1 << 32;
 const SHARED_IO_STRIPES: usize = 64;
 
+/// Borrowed lookup key for the shared-io stripe tables: probes without
+/// cloning the key slice into a fresh `(G, Vec<G>)`. The derived
+/// `Hash` streams the same data as the owned tuple's (`G`, then the
+/// slice with its length prefix — `Vec` hashes via its slice), so
+/// lookups land in the same buckets.
+#[derive(Hash)]
+struct IOKeyRef<'a>(G, &'a [G]);
+
+impl hashbrown::Equivalent<(G, Vec<G>)> for IOKeyRef<'_> {
+  fn equivalent(&self, k: &(G, Vec<G>)) -> bool {
+    self.0 == k.0 && self.1 == k.1.as_slice()
+  }
+}
+
 impl SharedIO {
   pub fn new(backing: std::sync::Arc<dyn IOFaultSource>) -> Self {
     let mut stripes = Vec::with_capacity(SHARED_IO_STRIPES);
     stripes.resize_with(SHARED_IO_STRIPES, || {
-      std::sync::Mutex::new(FxHashMap::default())
+      std::sync::Mutex::new(hashbrown::HashMap::default())
     });
     Self {
       arenas: std::array::from_fn(|_| SharedIOArena {
@@ -162,7 +184,7 @@ impl SharedIO {
   pub fn seed(&self, channel: G, key: Vec<G>, data: &[G]) -> IOKeyInfo {
     let slot = Self::slot(channel).expect("seed channel out of range");
     let mut table = self.stripes[Self::stripe(channel, &key)].lock().unwrap();
-    if let Some((info, filled)) = table.get_mut(&(channel, key.clone())) {
+    if let Some((info, filled)) = table.get_mut(&IOKeyRef(channel, &key)) {
       // Preassigned slot: first seeder fills it.
       if !*filled {
         self.arenas[slot].buf.write_g(info.idx, data);
@@ -219,7 +241,7 @@ impl SharedIO {
   /// genuinely absent key.
   fn get_info_frozen(&self, channel: G, key: &[G]) -> Option<IOKeyInfo> {
     let table = self.stripes[Self::stripe(channel, key)].lock().unwrap();
-    match table.get(&(channel, key.to_vec())) {
+    match table.get(&IOKeyRef(channel, key)) {
       Some((info, true)) => Some(*info),
       _ => None,
     }
@@ -232,7 +254,7 @@ impl SharedIO {
     key: &[G],
   ) -> Result<IOKeyInfo, ExecError> {
     let mut table = self.stripes[Self::stripe(channel, key)].lock().unwrap();
-    if let Some((info, filled)) = table.get_mut(&(channel, key.to_vec())) {
+    if let Some((info, filled)) = table.get_mut(&IOKeyRef(channel, key)) {
       if !*filled {
         // Preassigned slot, first use: fault the bytes into the FIXED
         // offset (labels stay deterministic no matter who faults when).
@@ -375,7 +397,11 @@ impl IOBuffer {
     {
       return sh.get_info(slot, channel, key);
     }
-    if let Some(info) = self.map.get(&(channel, key.to_vec())) {
+    // Shared-mode buffers keep this private map empty — skip the
+    // allocating owned-tuple probe entirely then.
+    if !self.map.is_empty()
+      && let Some(info) = self.map.get(&(channel, key.to_vec()))
+    {
       return Ok(*info);
     }
     if let Some(src) = &self.backing
@@ -399,7 +425,11 @@ impl IOBuffer {
     channel: G,
     key: &[G],
   ) -> Result<IOKeyInfo, ExecError> {
-    if let Some(info) = self.map.get(&(channel, key.to_vec())) {
+    // Shared-mode buffers keep this private map empty — skip the
+    // allocating owned-tuple probe entirely then.
+    if !self.map.is_empty()
+      && let Some(info) = self.map.get(&(channel, key.to_vec()))
+    {
       return Ok(*info);
     }
     if let Some(sh) = &self.shared
@@ -1277,8 +1307,8 @@ pub fn bytes2_sub_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
 /// code names these as `aiur::execute::*`; we re-export them `pub` here
 /// so an external `ix` crate can see them. `CodegenBytes1Op` and
 /// `CodegenBytes2Op` aren't re-exported here because the generated
-/// kernel no longer references them (per-op value helpers above
-/// replaced the byte-op enum dispatch).
+/// kernel does not reference them (it calls the per-op value helpers
+/// above directly).
 pub use crate::gadgets::bytes1::Bytes1 as CodegenBytes1;
 pub use crate::gadgets::bytes2::Bytes2 as CodegenBytes2;
 

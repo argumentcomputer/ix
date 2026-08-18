@@ -57,14 +57,13 @@ use crate::{aiur::toplevel::decode_toplevel, lean::LeanAiurToplevel};
 use ix_common::address::Address;
 use ix_kernel::profile::{OpCounts, ProfileBuilder};
 use ix_kernel::shard::{Hypergraph, ShardManifest};
-use ixon::constant::ConstantInfo as IxonCI;
 use ixon::env::Env as IxonEnv;
 use ixvm_codegen::aiur_ixvm_runner::execute_ixvm_with_record;
 use ixvm_codegen::aiur_ixvm_witness::{EnvFaultSource, addr_key};
 use lean_ffi::object::{
   LeanBorrowed, LeanExcept, LeanExternal, LeanNat, LeanOwned, LeanString,
 };
-use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
+use multi_stark::p3_field::PrimeCharacteristicRing;
 
 /// Bytes per GiB.
 const GIB: f64 = 1_073_741_824.0;
@@ -288,6 +287,66 @@ fn ordered_schedule(
 /// a prove system, each sealed record proceeds straight to a verified
 /// multi-claim STARK.
 #[allow(clippy::too_many_arguments)]
+/// Publish the canonical env-derived io layout into `shared_io`:
+/// constant (ch 2), hint (ch 3), and blob (ch 4) slots preassigned in
+/// address order — labels are independent of fault interleaving, and
+/// bytes fault into their fixed slots on first use.
+fn preassign_canonical_io(env: &IxonEnv, shared_io: &aiur::execute::SharedIO) {
+  let key = |a: &Address| -> Vec<G> {
+    a.as_bytes().iter().map(|b| G::from_u8(*b)).collect()
+  };
+  let mut consts: Vec<(Address, usize)> = env
+    .consts
+    .iter()
+    .map(|e| (e.key().clone(), e.value().raw_bytes().len()))
+    .collect();
+  consts.sort_by(|a, b| a.0.cmp(&b.0));
+  for (a, len) in &consts {
+    shared_io.preassign(G::from_u8(2), key(a), *len);
+  }
+  let mut hints: Vec<Address> =
+    env.anon_hints.iter().map(|e| e.key().clone()).collect();
+  hints.sort();
+  for a in &hints {
+    shared_io.preassign(G::from_u8(3), key(a), 1);
+  }
+  let mut blobs: Vec<(Address, usize)> =
+    env.blobs.iter().map(|e| (e.key().clone(), e.value().len())).collect();
+  blobs.sort_by(|a, b| a.0.cmp(&b.0));
+  for (a, len) in &blobs {
+    shared_io.preassign(G::from_u8(4), key(a), *len);
+  }
+}
+
+/// The segment claim: ONE `verify_segment` execution over the digest
+/// of the sorted block-address list, run into `record` — its per-block
+/// calls memo-hit the warm work, so the claim costs the binding hash
+/// plus one bump per block. Returns the claim input on success.
+fn run_segment_claim(
+  toplevel: &Toplevel,
+  fun_idx: usize,
+  shared_io: &Arc<aiur::execute::SharedIO>,
+  record: &QueryRecord,
+  mut addrs: Vec<Address>,
+) -> Result<Vec<G>, String> {
+  addrs.sort();
+  let mut list_bytes: Vec<u8> = Vec::with_capacity(addrs.len() * 32);
+  for a in &addrs {
+    list_bytes.extend_from_slice(a.as_bytes());
+  }
+  let digest = Address::hash(&list_bytes);
+  let input = addr_key(&digest);
+  let mut io = IOBuffer::with_shared(shared_io.clone());
+  io.seed(
+    G::ZERO,
+    input.clone(),
+    list_bytes.iter().map(|b| G::from_u8(*b)).collect(),
+  );
+  execute_ixvm_with_record(toplevel, fun_idx, &input, &mut io, record)
+    .map(|_| input)
+    .map_err(|e| e.to_string())
+}
+
 pub fn execute_env(
   toplevel: &Toplevel,
   fun_idx: usize,
@@ -372,24 +431,6 @@ pub fn execute_env(
     filtered
   };
   let covered = order.len();
-  // Static schedule dump: position, block address, serialized bytes,
-  // member count — one line per scheduled block, then exit without
-  // executing. Feeds offline correlation of static block features
-  // against measured segment costs.
-  if let Ok(path) = std::env::var("IX_SCAN_DUMP_BLOCKS") {
-    let mut out = String::with_capacity(covered * 96);
-    for (pos, &b) in order.iter().enumerate() {
-      let blk = &blocks[b as usize];
-      out.push_str(&format!(
-        "{pos},{},{},{}\n",
-        blk.addr.hex(),
-        blk.size,
-        blk.members.len()
-      ));
-    }
-    std::fs::write(&path, out).map_err(|e| e.to_string())?;
-    return Ok(format!("dumped {covered} scheduled blocks to {path}"));
-  }
   // The budget feeds ONLY the cut thresholds and the plan/prove sizing
   // below; there is no RSS enforcement here — running under a watchdog
   // or cgroup is the caller's job.
@@ -410,30 +451,7 @@ pub fn execute_env(
     Arc::new(aiur::execute::SharedIO::new(EnvFaultSource::new(env.clone())));
   {
     let t = std::time::Instant::now();
-    let addr_key = |a: &Address| -> Vec<G> {
-      a.as_bytes().iter().map(|b| G::from_u8(*b)).collect()
-    };
-    let mut consts: Vec<(Address, usize)> = env
-      .consts
-      .iter()
-      .map(|e| (e.key().clone(), e.value().raw_bytes().len()))
-      .collect();
-    consts.sort_by(|a, b| a.0.cmp(&b.0));
-    for (a, len) in &consts {
-      shared_io.preassign(G::from_u8(2), addr_key(a), *len);
-    }
-    let mut hints: Vec<Address> =
-      env.anon_hints.iter().map(|e| e.key().clone()).collect();
-    hints.sort();
-    for a in &hints {
-      shared_io.preassign(G::from_u8(3), addr_key(a), 1);
-    }
-    let mut blobs: Vec<(Address, usize)> =
-      env.blobs.iter().map(|e| (e.key().clone(), e.value().len())).collect();
-    blobs.sort_by(|a, b| a.0.cmp(&b.0));
-    for (a, len) in &blobs {
-      shared_io.preassign(G::from_u8(4), addr_key(a), *len);
-    }
+    preassign_canonical_io(env, &shared_io);
     eprintln!(
       "[exec] canonical io layout preassigned in {:.1}s",
       t.elapsed().as_secs_f64()
@@ -546,49 +564,6 @@ pub fn execute_env(
                 );
               }
             }
-            // Forensic early dump: IX_WATCH_DUMP=<fnidx>:<len>:<dir>
-            // — when function map <fnidx> reaches <len> unique entries,
-            // dump its keys plus every memory map, then exit(3). Fires
-            // while the record is still small, so the dump is readable
-            // offline (term/addr decoding) — the runaway-diagnosis
-            // microscope for task #30-class kernel divergences.
-            if let Ok(spec) = std::env::var("IX_WATCH_DUMP")
-              && let [fi, fl, dir] =
-                spec.splitn(3, ':').collect::<Vec<_>>()[..]
-              && let (Ok(fi), Ok(fl)) =
-                (fi.parse::<usize>(), fl.parse::<usize>())
-              && record.function_queries[fi].len() >= fl
-            {
-              let m = &record.function_queries[fi];
-              let mut out = String::new();
-              for i in 0..m.len() {
-                // Mid-run dump: workers are still inserting, so only
-                // completion-published entries are readable.
-                if let Some((key, _)) = m.get_index_complete(i) {
-                  for g in key {
-                    out.push_str(&format!("{:016x} ", g.as_canonical_u64()));
-                  }
-                  out.push('\n');
-                }
-              }
-              let _ = std::fs::create_dir_all(dir);
-              let _ = std::fs::write(format!("{dir}/fn{fi}.txt"), out);
-              for (w, mm) in &record.memory_queries {
-                let mut out = String::new();
-                for i in 0..mm.len() {
-                  if let Some(v) = mm.load_bump(i, false) {
-                    out.push_str(&format!("{i:08x}:"));
-                    for g in v {
-                      out.push_str(&format!(" {:016x}", g.as_canonical_u64()));
-                    }
-                    out.push('\n');
-                  }
-                }
-                let _ = std::fs::write(format!("{dir}/mem{w}.txt"), out);
-              }
-              eprintln!("[watch] IX_WATCH_DUMP fired: fn {fi} at {fl}");
-              std::process::exit(3);
-            }
             if drained {
               break;
             }
@@ -662,7 +637,7 @@ pub fn execute_env(
             // atomic loads.
             let bytes = match prove_system {
               Some(s) => s.peak_prove_bytes(record).peak,
-              None => aiur::execute::record_retained_bytes(record),
+              None => record_retained_bytes(record),
             };
             if bytes >= cut_bytes {
               cut_now.store(true, Ordering::Release);
@@ -699,27 +674,12 @@ pub fn execute_env(
       && seg_end > seg_start
       && failed.lock().unwrap().len() == seg_failed_base
     {
-      let mut addrs: Vec<Address> = order[seg_start..seg_end]
+      let addrs: Vec<Address> = order[seg_start..seg_end]
         .iter()
         .map(|&b| blocks[b as usize].addr.clone())
         .collect();
-      addrs.sort();
-      let mut list_bytes: Vec<u8> = Vec::with_capacity(addrs.len() * 32);
-      for a in &addrs {
-        list_bytes.extend_from_slice(a.as_bytes());
-      }
-      let digest = Address::hash(&list_bytes);
-      let input = addr_key(&digest);
-      let mut io = IOBuffer::with_shared(shared_io.clone());
-      io.seed(
-        G::ZERO,
-        input.clone(),
-        list_bytes.iter().map(|b| G::from_u8(*b)).collect(),
-      );
-      match execute_ixvm_with_record(
-        toplevel, fun_idx, &input, &mut io, &record,
-      ) {
-        Ok(_) => seg_claim = Some(input),
+      match run_segment_claim(toplevel, fun_idx, &shared_io, &record, addrs) {
+        Ok(input) => seg_claim = Some(input),
         Err(e) => {
           eprintln!(
             "[prove seg {}] segment claim failed: {e} — the segment \
@@ -754,20 +714,6 @@ pub fn execute_env(
       );
     }
     segs.push((seg_start, seg_end, entries, fft, retained));
-    // Per-segment census: IX_SEG_DUMP_COUNTS=<dir> writes each sealed
-    // segment's per-fn unique counts BEFORE the record resets — the
-    // cold-cone microscope (two kernels with identical warm totals can
-    // still re-derive differently sized shared cones per segment).
-    if let Ok(dir) = std::env::var("IX_SEG_DUMP_COUNTS") {
-      let mut out = String::new();
-      for (i, m) in record.function_queries.iter().enumerate() {
-        if !m.is_empty() {
-          out.push_str(&format!("fn {i} {}\n", m.len()));
-        }
-      }
-      let _ = std::fs::create_dir_all(&dir);
-      let _ = std::fs::write(format!("{dir}/seg{}.txt", segs.len() - 1), out);
-    }
     if let Some(system) = prove_system {
       // The sealed record IS the witness, and the claim list is ONE
       // claim: `verify_segment` over the digest of the segment's
@@ -809,13 +755,12 @@ pub fn execute_env(
         let dio = IOBuffer::with_shared(shared_io.clone());
         let claim_list: Vec<(usize, Vec<G>)> =
           seg_claim.iter().map(|inp| (fun_idx, inp.clone())).collect();
-        let tally = aiur::trace::derive_multiplicities(
+        aiur::trace::derive_multiplicities_into(
           toplevel,
           &record,
           &dio,
           &claim_list,
         );
-        aiur::trace::apply_multiplicities(&record, &tally);
         eprintln!(
           "[seg {}] multiplicities derived in {:.1}s",
           segs.len() - 1,
@@ -1007,25 +952,6 @@ pub fn execute_env(
       over
     );
   }
-  // Key-level microscope: IX_EXEC_DUMP_KEYS=<fn idx>:<path> dumps the
-  // full key set of one function map, hex per line — diffing two runs
-  // yields the exact divergent queries.
-  if let Ok(spec) = std::env::var("IX_EXEC_DUMP_KEYS")
-    && let Some((idx, path)) = spec.split_once(':')
-    && let Ok(idx) = idx.parse::<usize>()
-  {
-    let m = &record.function_queries[idx];
-    let mut out = String::new();
-    for i in 0..m.len() {
-      if let Some((key, _)) = m.get_index(i) {
-        for g in key {
-          out.push_str(&format!("{:016x}", g.as_canonical_u64()));
-        }
-        out.push('\n');
-      }
-    }
-    let _ = std::fs::write(path, out);
-  }
   // Differential determinism debugging: dump every map's unique count
   // so two runs can be diffed down to the exact functions whose keys
   // are layout-sensitive.
@@ -1179,32 +1105,7 @@ pub fn execute_manifest(
   // One shared io for the whole run, exactly as in whole-env mode.
   let shared_io =
     Arc::new(aiur::execute::SharedIO::new(EnvFaultSource::new(env.clone())));
-  {
-    let addr_key = |a: &Address| -> Vec<G> {
-      a.as_bytes().iter().map(|b| G::from_u8(*b)).collect()
-    };
-    let mut consts: Vec<(Address, usize)> = env
-      .consts
-      .iter()
-      .map(|e| (e.key().clone(), e.value().raw_bytes().len()))
-      .collect();
-    consts.sort_by(|a, b| a.0.cmp(&b.0));
-    for (a, len) in &consts {
-      shared_io.preassign(G::from_u8(2), addr_key(a), *len);
-    }
-    let mut hints: Vec<Address> =
-      env.anon_hints.iter().map(|e| e.key().clone()).collect();
-    hints.sort();
-    for a in &hints {
-      shared_io.preassign(G::from_u8(3), addr_key(a), 1);
-    }
-    let mut blobs: Vec<(Address, usize)> =
-      env.blobs.iter().map(|e| (e.key().clone(), e.value().len())).collect();
-    blobs.sort_by(|a, b| a.0.cmp(&b.0));
-    for (a, len) in &blobs {
-      shared_io.preassign(G::from_u8(4), addr_key(a), *len);
-    }
-  }
+  preassign_canonical_io(env, &shared_io);
   let t0 = std::time::Instant::now();
   // (shard index, measured exact peak, rejected?) per selected shard.
   let mut measured: Vec<(usize, usize, bool)> = Vec::new();
@@ -1299,25 +1200,10 @@ pub fn execute_manifest(
     // Seal: one verify_segment claim over the sorted owned list.
     let mut seg_claim: Option<Vec<G>> = None;
     if rejects.is_empty() {
-      let mut addrs: Vec<Address> =
+      let addrs: Vec<Address> =
         ids.iter().map(|&b| blocks[b as usize].addr.clone()).collect();
-      addrs.sort();
-      let mut list_bytes: Vec<u8> = Vec::with_capacity(addrs.len() * 32);
-      for a in &addrs {
-        list_bytes.extend_from_slice(a.as_bytes());
-      }
-      let digest = Address::hash(&list_bytes);
-      let input = addr_key(&digest);
-      let mut io = IOBuffer::with_shared(shared_io.clone());
-      io.seed(
-        G::ZERO,
-        input.clone(),
-        list_bytes.iter().map(|b| G::from_u8(*b)).collect(),
-      );
-      match execute_ixvm_with_record(
-        toplevel, fun_idx, &input, &mut io, &record,
-      ) {
-        Ok(_) => seg_claim = Some(input),
+      match run_segment_claim(toplevel, fun_idx, &shared_io, &record, addrs) {
+        Ok(input) => seg_claim = Some(input),
         Err(e) => {
           eprintln!("[shard {label}] segment claim failed: {e}");
         },
@@ -1331,9 +1217,9 @@ pub fn execute_manifest(
       let dio = IOBuffer::with_shared(shared_io.clone());
       let claim_list: Vec<(usize, Vec<G>)> =
         seg_claim.iter().map(|inp| (fun_idx, inp.clone())).collect();
-      let tally =
-        aiur::trace::derive_multiplicities(toplevel, &record, &dio, &claim_list);
-      aiur::trace::apply_multiplicities(&record, &tally);
+      aiur::trace::derive_multiplicities_into(
+        toplevel, &record, &dio, &claim_list,
+      );
     }
     let peak = system.peak_prove_bytes(&record).peak;
     let fits = peak <= budget_bytes;

@@ -71,15 +71,6 @@ pub struct PeakProveBytes {
   pub phase_open: usize,
   pub preprocessed: usize,
   pub peak: usize,
-  /// Sound upper bound on the peak increase any SINGLE circuit's next
-  /// padding step (raw height crossing its power of two) can cause:
-  /// the stepping circuit's own height-linear bytes double, and — only
-  /// when the stepping circuit is a tallest one — the
-  /// `H`-proportional tree/FRI/open terms double with it. The
-  /// executor's staircase cut reserves exactly this much headroom
-  /// under the acceptance line, so in-flight blocks that trip a step
-  /// during drain still seal within budget.
-  pub max_step: usize,
 }
 
 impl AiurSystem {
@@ -182,6 +173,13 @@ impl AiurSystem {
   /// order the circuits were chained in [`AiurSystem::build`], so index `i`
   /// of the returned `Vec` corresponds to `self.system.circuits[i]`.
   fn circuit_types(&self) -> Vec<CircuitType> {
+    self.circuit_types_iter().collect()
+  }
+
+  /// [`Self::circuit_types`] without materializing the list — the RAM
+  /// model walks this once per completed block on every worker, so the
+  /// hot path must not allocate.
+  fn circuit_types_iter(&self) -> impl Iterator<Item = CircuitType> + '_ {
     let functions = (0..self.toplevel.functions.len()).filter_map(|idx| {
       self.toplevel.functions[idx]
         .constrained
@@ -193,7 +191,7 @@ impl AiurSystem {
       .iter()
       .map(|&width| CircuitType::Memory { width });
     let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2];
-    functions.chain(memories).chain(gadgets).collect()
+    functions.chain(memories).chain(gadgets)
   }
 
   /// The argument width of each lookup slot of circuit `circuit_idx`, taken
@@ -244,8 +242,18 @@ impl AiurSystem {
   /// record's unique queries — the padding the trace actually commits,
   /// which per-fft models blur.
   pub fn peak_prove_bytes(&self, record: &QueryRecord) -> PeakProveBytes {
-    self.peak_prove_bytes_from_raws(
-      &self.circuit_raws(record),
+    // Allocation-free: the worker-side cut gate calls this once per
+    // completed block, so raws are read straight off the record's map
+    // lens (single atomic loads) instead of being collected.
+    self.peak_prove_bytes_by(
+      |_, ct| match ct {
+        CircuitType::Function { idx } => record.function_queries[*idx].len(),
+        CircuitType::Memory { width } => {
+          record.memory_queries.get(width).map_or(0, |m| m.len())
+        },
+        CircuitType::Bytes1 => 256,
+        CircuitType::Bytes2 => 65536,
+      },
       crate::execute::record_retained_bytes(record),
     )
   }
@@ -276,10 +284,34 @@ impl AiurSystem {
     raws: &[usize],
     record_bytes: usize,
   ) -> PeakProveBytes {
+    self.peak_prove_bytes_by(
+      |i, _| raws.get(i).copied().unwrap_or(0),
+      record_bytes,
+    )
+  }
+
+  /// Allocation-free core of the model: two passes over the circuit
+  /// list — the tallest padded height first (the `H`-proportional
+  /// terms need it), then term accumulation. Raw heights come through
+  /// `raw_of`, so the per-block cut gate reads live map lens and the
+  /// union pricing reads its estimate slice through the same math.
+  fn peak_prove_bytes_by(
+    &self,
+    raw_of: impl Fn(usize, &CircuitType) -> usize,
+    record_bytes: usize,
+  ) -> PeakProveBytes {
     const S: usize = 8; // bytes per base field element (Goldilocks)
     const DG: usize = 32; // blake3 digest bytes (Merkle nodes, arity 2)
     let b = 1usize << self.commitment_parameters.log_blowup;
     let fold = 1usize << self.fri_parameters.max_log_arity;
+    let ncirc = self.system.circuits.len();
+    let mut tallest = 0usize;
+    for (i, ct) in self.circuit_types_iter().enumerate().take(ncirc) {
+      let raw = raw_of(i, &ct);
+      if raw != 0 {
+        tallest = tallest.max(raw.next_power_of_two());
+      }
+    }
     let mut witness = 0usize;
     let mut s1_lde = 0usize; // stage-1 LDEs
     let mut lookup_w = 0usize; // base-field lookup witness
@@ -287,19 +319,12 @@ impl AiurSystem {
     let mut s2_trace = 0usize; // stage-2 extension traces
     let mut committed = 0usize; // all committed LDE bytes
     let mut prep = 0usize;
-    let mut tallest = 0usize;
-    // Largest per-circuit height-linear byte total, split by whether the
-    // circuit's padded height is a tallest one (its step also doubles
-    // the `H`-proportional terms) — feeds `max_step`.
-    let mut own_tallest = 0usize;
-    let mut own_rest = 0usize;
-    let mut circuit_ns: Vec<(usize, usize)> = Vec::new(); // (n, own bytes)
-    for (i, &raw) in raws.iter().enumerate().take(self.system.circuits.len()) {
+    for (i, ct) in self.circuit_types_iter().enumerate().take(ncirc) {
+      let raw = raw_of(i, &ct);
       if raw == 0 {
         continue;
       }
       let n = raw.next_power_of_two();
-      tallest = tallest.max(n);
       let c = &self.system.circuits[i];
       let d = c.stage_2_width / (1 + c.num_lookups); // extension degree
       let args: usize = self.slot_widths[i].iter().sum();
@@ -313,22 +338,6 @@ impl AiurSystem {
       committed += S * b * n * (c.main_width + c.stage_2_width + q * d);
       prep += S * (1 + b) * c.preprocessed_width * c.preprocessed_height
         + 2 * DG * b * c.preprocessed_height;
-      // Every height-linear term this circuit contributes to any phase:
-      // its next padding step adds this much again.
-      let own = S * n * c.main_width
-        + 2 * S * n * (c.num_lookups + args)
-        + S * b * n * c.main_width
-        + 2 * S * d * n * c.num_lookups
-        + S * n * c.stage_2_width
-        + S * b * n * (c.main_width + c.stage_2_width + q * d);
-      circuit_ns.push((n, own));
-    }
-    for (n, own) in circuit_ns {
-      if n == tallest {
-        own_tallest = own_tallest.max(own);
-      } else {
-        own_rest = own_rest.max(own);
-      }
     }
     let h = b * tallest;
     let phase_witness = record_bytes + witness;
@@ -336,15 +345,12 @@ impl AiurSystem {
     // Trees (3 rounds) + retained FRI fold layers + open buffers, all ∝ H.
     let fri_layers = (2 * S + 2 * DG) * h * fold / (fold - 1).max(1);
     let phase_open = committed + 3 * 2 * DG * h + fri_layers + 11 * S * h;
-    // `H`-proportional bytes that double when a TALLEST circuit steps.
-    let h_terms = 2 * DG * h + 3 * 2 * DG * h + fri_layers + 11 * S * h;
     PeakProveBytes {
       phase_witness,
       phase_stage2,
       phase_open,
       preprocessed: prep,
       peak: phase_witness.max(phase_stage2).max(phase_open) + prep,
-      max_step: own_rest.max(own_tallest + h_terms),
     }
   }
 
@@ -550,13 +556,12 @@ impl AiurSystem {
     // duplicate speculative execution by concurrent fillers sound).
     {
       let _g = tracing::info_span!("aiur/derive_mults").entered();
-      let tally = crate::trace::derive_multiplicities(
+      crate::trace::derive_multiplicities_into(
         &self.toplevel,
         &query_record,
         io_buffer,
         &[(fun_idx, input.to_vec())],
       );
-      crate::trace::apply_multiplicities(&query_record, &tally);
     }
     if std::env::var_os("IX_AIUR_PRED_RAM").is_some() {
       const GIB: f64 = 1_073_741_824.0;

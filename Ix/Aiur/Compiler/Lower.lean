@@ -280,7 +280,7 @@ def toIndex
     let args ← toIndex layoutMap bindings arg
     -- Type-discriminated store: every tuple carries the stored type's
     -- id in slot 0, so content equality implies same type and schema —
-    -- polymorphic containers sharing a width map can no longer merge
+    -- polymorphic containers sharing a width map cannot merge
     -- across instantiations on numeric pointer coincidences, which is
     -- what makes the unique-query set exact under any execution
     -- interleaving. The id is a dense table index (see `typeId`),

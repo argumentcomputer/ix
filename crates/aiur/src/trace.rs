@@ -121,6 +121,18 @@ struct TraceContext<'a> {
   query_record: &'a QueryRecord,
 }
 
+/// Reusable per-worker buffers for the row replay (witness generation
+/// and multiplicity derivation both walk rows through the same code):
+/// value collections and lookup-argument tuples are built in place so
+/// the walk allocates nothing per row or per op.
+#[derive(Default)]
+struct ReplayBufs {
+  /// Value collections (call inputs, stored values, io keys).
+  key: Vec<G>,
+  /// Lookup argument tuples (function/memory/gadget channels).
+  args: Vec<G>,
+}
+
 impl Toplevel {
   pub fn witness_data(
     &self,
@@ -132,11 +144,23 @@ impl Toplevel {
     let func = &self.functions[function_index];
     let width = func.width();
     let unfiltered_queries = &query_record.function_queries[function_index];
-    let queries = unfiltered_queries
-      .iter()
-      .filter(|(_, res)| !res.multiplicity.is_zero())
-      .collect::<Vec<_>>();
-    let height_no_padding = queries.len();
+    // Live rows (multiplicity != 0) as u32 indices — 4 bytes per row
+    // instead of a 40-byte entry-reference tuple — and no vector at
+    // all in the common sealed case where every entry is live.
+    let n = unfiltered_queries.len();
+    let live_count =
+      (0..n).filter(|&i| !unfiltered_queries.mult_is_zero(i)).count();
+    let live: Option<Vec<u32>> = if live_count == n {
+      None
+    } else {
+      Some(
+        (0..n)
+          .filter(|&i| !unfiltered_queries.mult_is_zero(i))
+          .map(|i| u32::try_from(i).expect("row index fits u32"))
+          .collect(),
+      )
+    };
+    let height_no_padding = live_count;
     // An unqueried circuit yields an EMPTY trace (not a padded height-1 one):
     // the prover deactivates it, so it is neither committed nor opened.
     let height = if height_no_padding == 0 {
@@ -154,23 +178,28 @@ impl Toplevel {
       .par_chunks_mut(width)
       .zip(row_writers[..height_no_padding].par_iter_mut())
       .enumerate()
-      .for_each(|(i, (row, lookups))| {
-        let (inputs, result) = queries[i];
-        let index = &mut ColumnIndex {
-          auxiliary: 0,
-          // we skip the first lookup, which is reserved for return
-          lookup: 1,
-        };
-        let slice = &mut ColumnMutSlice::from_slice(func, row, lookups);
-        let context = TraceContext {
-          function_index: G::from_usize(function_index),
-          inputs,
-          multiplicity: result.multiplicity,
-          output: result.output,
-          query_record,
-        };
-        func.populate_row(index, slice, context, io_buffer);
-      });
+      .for_each_init(
+        || (Vec::new(), ReplayBufs::default()),
+        |(map, bufs), (i, (row, lookups))| {
+          let qi = live.as_ref().map_or(i, |v| v[i] as usize);
+          let (inputs, result) =
+            unfiltered_queries.get_index(qi).expect("live row in range");
+          let index = &mut ColumnIndex {
+            auxiliary: 0,
+            // we skip the first lookup, which is reserved for return
+            lookup: 1,
+          };
+          let slice = &mut ColumnMutSlice::from_slice(func, row, lookups);
+          let context = TraceContext {
+            function_index: G::from_usize(function_index),
+            inputs,
+            multiplicity: result.multiplicity,
+            output: result.output,
+            query_record,
+          };
+          func.populate_row(index, slice, context, io_buffer, map, bufs);
+        },
+      );
     drop(row_writers);
     let trace = RowMajorMatrix::new(rows, width);
     (trace, builder.finish())
@@ -188,14 +217,17 @@ impl Function {
     sink: &mut S,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
+    map: &mut Vec<(G, Degree)>,
+    bufs: &mut ReplayBufs,
   ) {
     debug_assert_eq!(
       self.layout.input_size,
       context.inputs.len(),
       "Argument mismatch"
     );
-    // Variable to value map
-    let map = &mut context.inputs.iter().map(|arg| (*arg, 1)).collect();
+    // Variable to value map (caller-owned scratch, reused across rows).
+    map.clear();
+    map.extend(context.inputs.iter().map(|arg| (*arg, 1)));
     // One column per input
     context
       .inputs
@@ -204,7 +236,7 @@ impl Function {
       .for_each(|(i, arg)| sink.input(i, *arg));
     // Push the multiplicity
     sink.auxiliary(index, context.multiplicity);
-    let _ = self.body.populate_row(map, index, sink, context, io_buffer);
+    let _ = self.body.populate_row(map, index, sink, context, io_buffer, bufs);
   }
 }
 
@@ -220,12 +252,12 @@ impl Block {
     sink: &mut S,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
+    bufs: &mut ReplayBufs,
   ) -> PopulateResult {
-    self
-      .ops
-      .iter()
-      .for_each(|op| op.populate_row(map, index, sink, context, io_buffer));
-    self.ctrl.populate_row(map, index, sink, context, io_buffer)
+    self.ops.iter().for_each(|op| {
+      op.populate_row(map, index, sink, context, io_buffer, bufs)
+    });
+    self.ctrl.populate_row(map, index, sink, context, io_buffer, bufs)
   }
 }
 
@@ -258,18 +290,20 @@ impl Ctrl {
     sink: &mut S,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
+    bufs: &mut ReplayBufs,
   ) -> PopulateResult {
     match self {
       Ctrl::Return(sel, _) => {
         sink.selector(*sel);
-        let args = function_lookup_args(
+        function_lookup_args_into(
+          &mut bufs.args,
           context.function_index,
           context.inputs,
           context.output,
         );
         // The first lookup slot is reserved for the function return, which
         // pulls the query claim with the query's multiplicity.
-        sink.pull(0, context.multiplicity, &args);
+        sink.pull(0, context.multiplicity, &bufs.args);
         None
       },
       Ctrl::Yield(sel, vals) => {
@@ -278,7 +312,7 @@ impl Ctrl {
       },
       Ctrl::Match(var, cases, def) => {
         let branch = dispatch_branch(map[*var].0, cases, def, index, sink);
-        branch.populate_row(map, index, sink, context, io_buffer)
+        branch.populate_row(map, index, sink, context, io_buffer, bufs)
       },
       Ctrl::MatchContinue(
         var,
@@ -294,7 +328,8 @@ impl Ctrl {
         let init_lookup = index.lookup;
 
         let branch = dispatch_branch(map[*var].0, cases, def, index, sink);
-        let result = branch.populate_row(map, index, sink, context, io_buffer);
+        let result =
+          branch.populate_row(map, index, sink, context, io_buffer, bufs);
         match result {
           Some(yielded) => {
             // Advance past the shared branch region. The taken branch may
@@ -307,7 +342,7 @@ impl Ctrl {
               sink.auxiliary(index, val);
               map.push((val, 1));
             }
-            continuation.populate_row(map, index, sink, context, io_buffer)
+            continuation.populate_row(map, index, sink, context, io_buffer, bufs)
           },
           None => None,
         }
@@ -324,6 +359,7 @@ impl Op {
     sink: &mut S,
     context: TraceContext<'_>,
     io_buffer: &IOBuffer,
+    bufs: &mut ReplayBufs,
   ) {
     match self {
       Op::Const(f) => map.push((*f, 0)),
@@ -366,20 +402,22 @@ impl Op {
         }
       },
       Op::Call(function_index, inputs, _, op_unconstrained) => {
-        let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+        bufs.key.clear();
+        bufs.key.extend(inputs.iter().map(|a| map[*a].0));
         let queries = &context.query_record.function_queries[*function_index];
-        let result = queries.get(&inputs).expect("Cannot find query result");
+        let result = queries.get(&bufs.key).expect("Cannot find query result");
         for f in result.output.iter() {
           map.push((*f, 1));
           sink.auxiliary(index, *f);
         }
         if !op_unconstrained {
-          let args = function_lookup_args(
+          function_lookup_args_into(
+            &mut bufs.args,
             G::from_usize(*function_index),
-            &inputs,
+            &bufs.key,
             result.output,
           );
-          sink.push(index, &args);
+          sink.push(index, &bufs.args);
         }
       },
       Op::Store(values) => {
@@ -389,14 +427,20 @@ impl Op {
           .memory_queries
           .get(&size)
           .expect("Invalid memory size");
-        let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
+        bufs.key.clear();
+        bufs.key.extend(values.iter().map(|a| map[*a].0));
         let ptr = G::from_usize(
-          memory_queries.get_index_of(&values).expect("Unbound pointer"),
+          memory_queries.get_index_of(&bufs.key).expect("Unbound pointer"),
         );
         map.push((ptr, 1));
         sink.auxiliary(index, ptr);
-        let args = Memory::lookup_args(G::from_usize(size), ptr, &values);
-        sink.push(index, &args);
+        Memory::lookup_args_into(
+          &mut bufs.args,
+          G::from_usize(size),
+          ptr,
+          &bufs.key,
+        );
+        sink.push(index, &bufs.args);
       },
       Op::Load(size, ptr) => {
         let memory_queries = context
@@ -413,14 +457,21 @@ impl Op {
           map.push((*f, 1));
           sink.auxiliary(index, *f);
         }
-        let args = Memory::lookup_args(G::from_usize(*size), ptr, values);
-        sink.push(index, &args);
+        Memory::lookup_args_into(
+          &mut bufs.args,
+          G::from_usize(*size),
+          ptr,
+          values,
+        );
+        sink.push(index, &bufs.args);
       },
       Op::IOGetInfo(channel, key) => {
         let channel = map[*channel].0;
-        let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
-        let IOKeyInfo { idx, len } =
-          io_buffer.get_info_frozen(channel, &key).expect("Invalid IO key");
+        bufs.key.clear();
+        bufs.key.extend(key.iter().map(|a| map[*a].0));
+        let IOKeyInfo { idx, len } = io_buffer
+          .get_info_frozen(channel, &bufs.key)
+          .expect("Invalid IO key");
         for f in [G::from_usize(idx), G::from_usize(len)] {
           map.push((f, 1));
           sink.auxiliary(index, f);
@@ -433,11 +484,11 @@ impl Op {
           .as_canonical_u64()
           .try_into()
           .expect("Index is too big for an usize");
-        let data = io_buffer
-          .read(channel, idx, *len)
-          .expect("IO read out of bounds")
-          .to_vec();
-        for f in data {
+        // Borrowed read: the returned slice lives in the io buffer,
+        // disjoint from the map/sink this loop writes.
+        let data =
+          io_buffer.read(channel, idx, *len).expect("IO read out of bounds");
+        for &f in data {
           map.push((f, 1));
           sink.auxiliary(index, f);
         }
@@ -449,9 +500,10 @@ impl Op {
           map.push((b, 1));
           sink.auxiliary(index, b);
         }
-        let mut lookup_args = vec![u8_bit_decomposition_channel(), byte];
-        lookup_args.extend(bits);
-        sink.push(index, &lookup_args);
+        bufs.args.clear();
+        bufs.args.extend([u8_bit_decomposition_channel(), byte]);
+        bufs.args.extend(bits);
+        sink.push(index, &bufs.args);
       },
       Op::U8ShiftLeft(byte) => {
         let (byte, _) = map[*byte];
@@ -659,15 +711,18 @@ impl Op {
   }
 }
 
-fn function_lookup_args(
+/// Function-channel lookup tuple into a reusable buffer — the row
+/// replay is allocation-free.
+fn function_lookup_args_into(
+  buf: &mut Vec<G>,
   function_index: G,
   inputs: &[G],
   output: &[G],
-) -> Vec<G> {
-  let mut args = vec![function_channel(), function_index];
-  args.extend(inputs);
-  args.extend(output);
-  args
+) {
+  buf.clear();
+  buf.extend([function_channel(), function_index]);
+  buf.extend_from_slice(inputs);
+  buf.extend_from_slice(output);
 }
 
 /// Derived multiplicity tallies for one record: everything the logUp
@@ -734,17 +789,91 @@ impl MultTally {
   }
 }
 
+/// Dense width -> slot table for the memory pushes of a derivation
+/// walk (widths are few and small, so a direct-indexed array replaces
+/// the per-push linear scan).
+fn width_slots(record: &QueryRecord) -> Vec<u32> {
+  let max = record.memory_queries.iter().map(|(w, _)| *w).max().unwrap_or(0);
+  let mut slots = vec![u32::MAX; max + 1];
+  for (i, (w, _)) in record.memory_queries.iter().enumerate() {
+    slots[*w] = u32::try_from(i).expect("memory slot fits u32");
+  }
+  slots
+}
+
+/// Where a derivation walk's counts land. Two stores share the walk:
+/// the standalone [`MultTally`] (differential tests against
+/// accumulated counts) and the record's own multiplicity cells
+/// (production seal — sound because generated execution is set-only,
+/// so every cell is zero until derivation writes it, and no shadow
+/// arrays or copy-back pass exist).
+trait MultStore: Sync {
+  /// Previous count of function `f` entry `idx` (0 = this bump made
+  /// the entry live).
+  fn fn_add(&self, f: usize, idx: usize) -> u64;
+  fn mem_add(&self, width: usize, ptr: usize);
+  fn bytes1_add(&self, byte: usize, col: usize);
+  fn bytes2_add(&self, cell: usize, col: usize);
+}
+
+struct TallyStore<'a> {
+  tally: &'a MultTally,
+  width_slot: Vec<u32>,
+}
+
+impl MultStore for TallyStore<'_> {
+  fn fn_add(&self, f: usize, idx: usize) -> u64 {
+    self.tally.fn_add(f, idx)
+  }
+  fn mem_add(&self, width: usize, ptr: usize) {
+    let slot = self.width_slot[width] as usize;
+    self.tally.mem_mults[slot][ptr].fetch_add(1, Ordering::Relaxed);
+  }
+  fn bytes1_add(&self, byte: usize, col: usize) {
+    self.tally.bytes1[byte * BYTES1_COLS + col]
+      .fetch_add(1, Ordering::Relaxed);
+  }
+  fn bytes2_add(&self, cell: usize, col: usize) {
+    self.tally.bytes2[cell * BYTES2_COLS + col]
+      .fetch_add(1, Ordering::Relaxed);
+  }
+}
+
+struct RecordStore<'a> {
+  record: &'a QueryRecord,
+  /// Memory maps in `width_slot` order (borrowed once, so pushes skip
+  /// the per-push map lookup entirely).
+  mems: Vec<&'a crate::querymap::QueryMap>,
+  width_slot: Vec<u32>,
+}
+
+impl MultStore for RecordStore<'_> {
+  fn fn_add(&self, f: usize, idx: usize) -> u64 {
+    self.record.function_queries[f].mult_add(idx)
+  }
+  fn mem_add(&self, width: usize, ptr: usize) {
+    let slot = self.width_slot[width] as usize;
+    self.mems[slot].mult_add(ptr);
+  }
+  fn bytes1_add(&self, byte: usize, col: usize) {
+    self.record.bytes1_queries.add_count(byte, col);
+  }
+  fn bytes2_add(&self, cell: usize, col: usize) {
+    self.record.bytes2_queries.add_count(cell, col);
+  }
+}
+
 /// Counting sink: tallies exactly the pushes the witness sink would
 /// emit for the same row, classified by lookup channel. Newly-live
 /// function entries land in `frontier` for the wave loop to walk.
-struct CountSink<'a> {
+struct CountSink<'a, S: MultStore> {
   toplevel: &'a Toplevel,
   record: &'a QueryRecord,
-  tally: &'a MultTally,
+  store: &'a S,
   frontier: &'a mut Vec<(u32, u32)>,
 }
 
-impl RowSink for CountSink<'_> {
+impl<S: MultStore> RowSink for CountSink<'_, S> {
   fn input(&mut self, _i: usize, _v: G) {}
 
   fn selector(&mut self, _s: usize) {}
@@ -763,7 +892,7 @@ impl RowSink for CountSink<'_> {
       let idx = self.record.function_queries[f]
         .get_index_of(key)
         .expect("pushed function query must exist in the record");
-      if self.tally.fn_add(f, idx) == 0 {
+      if self.store.fn_add(f, idx) == 0 {
         // Unconstrained functions have no circuit, hence no rows to
         // walk (the compiler only emits constrained pushes to
         // constrained callees; tallying is still harmless).
@@ -779,13 +908,7 @@ impl RowSink for CountSink<'_> {
         .expect("memory width fits usize");
       let ptr = usize::try_from(args[2].as_canonical_u64())
         .expect("memory pointer fits usize");
-      let pos = self
-        .tally
-        .mem_widths
-        .iter()
-        .position(|&w| w == width)
-        .expect("memory width present in record");
-      self.tally.mem_mults[pos][ptr].fetch_add(1, Ordering::Relaxed);
+      self.store.mem_add(width, ptr);
     } else {
       // Byte-gadget channels: cell + column mirror the Queries tables.
       let (table2, col) = if ch == u8_xor_channel() {
@@ -820,11 +943,9 @@ impl RowSink for CountSink<'_> {
       let i = usize::try_from(args[1].as_canonical_u64()).expect("byte");
       if table2 {
         let j = usize::try_from(args[2].as_canonical_u64()).expect("byte");
-        self.tally.bytes2[(256 * i + j) * BYTES2_COLS + col]
-          .fetch_add(1, Ordering::Relaxed);
+        self.store.bytes2_add(256 * i + j, col);
       } else {
-        self.tally.bytes1[i * BYTES1_COLS + col]
-          .fetch_add(1, Ordering::Relaxed);
+        self.store.bytes1_add(i, col);
       }
     }
   }
@@ -832,20 +953,22 @@ impl RowSink for CountSink<'_> {
 
 /// Walk one live row with the counting sink, appending newly-live
 /// entries to `out`.
-fn count_row(
+fn count_row<S: MultStore>(
   toplevel: &Toplevel,
   record: &QueryRecord,
   io_buffer: &IOBuffer,
-  tally: &MultTally,
+  store: &S,
   f: usize,
   idx: usize,
   out: &mut Vec<(u32, u32)>,
+  map: &mut Vec<(G, Degree)>,
+  bufs: &mut ReplayBufs,
 ) {
   let func = &toplevel.functions[f];
   let (inputs, res) = record.function_queries[f]
     .get_index(idx)
     .expect("live entry index in range");
-  let mut sink = CountSink { toplevel, record, tally, frontier: out };
+  let mut sink = CountSink { toplevel, record, store, frontier: out };
   let context = TraceContext {
     function_index: G::from_usize(f),
     multiplicity: G::ZERO,
@@ -854,27 +977,27 @@ fn count_row(
     query_record: record,
   };
   let index = &mut ColumnIndex { auxiliary: 0, lookup: 1 };
-  func.populate_row(index, &mut sink, context, io_buffer);
+  func.populate_row(index, &mut sink, context, io_buffer, map, bufs);
 }
 
-/// Derive every multiplicity of `record` from its unique-query set:
-/// seed each claim's entry with one consumption, then walk newly-live
-/// rows in parallel waves — each live row is walked exactly once (the
-/// 0→1 transition enqueues it), tallying every push the witness for
-/// that row would emit. Terminates because liveness only grows.
-pub fn derive_multiplicities(
+/// The shared derivation walk: seed each claim's entry with one
+/// consumption, then walk newly-live rows in parallel waves — each
+/// live row is walked exactly once (the 0→1 transition enqueues it),
+/// counting every push the witness for that row would emit into
+/// `store`. Terminates because liveness only grows.
+fn derive_into<S: MultStore>(
   toplevel: &Toplevel,
   record: &QueryRecord,
   io_buffer: &IOBuffer,
   claims: &[(usize, Vec<G>)],
-) -> MultTally {
-  let tally = MultTally::new(record);
+  store: &S,
+) {
   let mut frontier: Vec<(u32, u32)> = Vec::new();
   for (f, input) in claims {
     let idx = record.function_queries[*f]
       .get_index_of(input)
       .expect("claimed query must exist in the record");
-    if tally.fn_add(*f, idx) == 0 && toplevel.functions[*f].constrained {
+    if store.fn_add(*f, idx) == 0 && toplevel.functions[*f].constrained {
       frontier.push((
         u32::try_from(*f).expect("fn idx fits u32"),
         u32::try_from(idx).expect("entry idx fits u32"),
@@ -884,59 +1007,100 @@ pub fn derive_multiplicities(
   while !frontier.is_empty() {
     frontier = frontier
       .par_iter()
-      .fold(Vec::new, |mut acc, &(f, idx)| {
-        count_row(
-          toplevel,
-          record,
-          io_buffer,
-          &tally,
-          f as usize,
-          idx as usize,
-          &mut acc,
-        );
-        acc
-      })
+      .fold(
+        || (Vec::new(), Vec::new(), ReplayBufs::default()),
+        |(mut acc, mut map, mut bufs), &(f, idx)| {
+          count_row(
+            toplevel,
+            record,
+            io_buffer,
+            store,
+            f as usize,
+            idx as usize,
+            &mut acc,
+            &mut map,
+            &mut bufs,
+          );
+          (acc, map, bufs)
+        },
+      )
+      .map(|(acc, _, _)| acc)
       .reduce(Vec::new, |mut a, mut b| {
         a.append(&mut b);
         a
       });
   }
+}
+
+/// Derive every multiplicity of `record` into a standalone
+/// [`MultTally`]. This is the DIFFERENTIAL-TEST path (compare against
+/// accumulated counts via [`diff_multiplicities`]); the production
+/// seal uses [`derive_multiplicities_into`], which needs no shadow
+/// arrays.
+pub fn derive_multiplicities(
+  toplevel: &Toplevel,
+  record: &QueryRecord,
+  io_buffer: &IOBuffer,
+  claims: &[(usize, Vec<G>)],
+) -> MultTally {
+  let tally = MultTally::new(record);
+  let store = TallyStore { tally: &tally, width_slot: width_slots(record) };
+  derive_into(toplevel, record, io_buffer, claims, &store);
   tally
 }
 
-/// Write derived tallies INTO the record: every function and memory
-/// multiplicity plus both byte-gadget counter tables. Called once at
-/// seal, after which witness generation reads the record exactly as it
-/// always has. Overwrites wholesale, so it is idempotent and
-/// independent of anything execution left in the multiplicity slots.
-pub fn apply_multiplicities(record: &QueryRecord, tally: &MultTally) {
-  for (m, t) in record.function_queries.iter().zip(&tally.fn_mults) {
-    for (i, c) in t.iter().enumerate() {
-      m.set_mult(i, G::from_u64(c.load(Ordering::Relaxed)));
+/// Derive every multiplicity of `record` DIRECTLY into its own
+/// multiplicity cells and gadget counters — the production seal.
+/// Sound because generated execution is set-only (the codegen
+/// invariant: emitted inserts never bump): every cell is zero until
+/// this walk bumps it, so counting in place yields exactly the counts
+/// a standalone tally would, with no shadow arrays and no copy-back
+/// pass. Additive, NOT idempotent: call exactly once, on a
+/// freshly executed record (debug builds assert the zero state).
+pub fn derive_multiplicities_into(
+  toplevel: &Toplevel,
+  record: &QueryRecord,
+  io_buffer: &IOBuffer,
+  claims: &[(usize, Vec<G>)],
+) {
+  debug_assert_record_counts_zero(record);
+  let mems: Vec<&crate::querymap::QueryMap> =
+    record.memory_queries.iter().map(|(_, m)| m).collect();
+  let store = RecordStore { record, mems, width_slot: width_slots(record) };
+  derive_into(toplevel, record, io_buffer, claims, &store);
+}
+
+/// Debug-build gate for [`derive_multiplicities_into`]'s exactly-once
+/// contract: every multiplicity cell and gadget counter must still be
+/// zero (set-only execution, no prior derivation).
+fn debug_assert_record_counts_zero(record: &QueryRecord) {
+  if !cfg!(debug_assertions) {
+    return;
+  }
+  for (f, m) in record.function_queries.iter().enumerate() {
+    for i in 0..m.len() {
+      assert!(
+        m.get_index(i).expect("in range").1.multiplicity.is_zero(),
+        "derive_into on a non-zero record (fn {f} entry {i})"
+      );
     }
   }
-  for (pos, width) in tally.mem_widths.iter().enumerate() {
-    let m = record.memory_queries.get(width).expect("width present");
-    for (i, c) in tally.mem_mults[pos].iter().enumerate() {
-      m.set_mult(i, G::from_u64(c.load(Ordering::Relaxed)));
+  for (w, m) in &record.memory_queries {
+    for i in 0..m.len() {
+      assert!(
+        m.get_index(i).expect("in range").1.multiplicity.is_zero(),
+        "derive_into on a non-zero record (mem {w} entry {i})"
+      );
     }
   }
   for i in 0..256 {
     for col in 0..BYTES1_COLS {
-      record.bytes1_queries.set_count(
-        i,
-        col,
-        tally.bytes1[i * BYTES1_COLS + col].load(Ordering::Relaxed),
-      );
+      assert_eq!(record.bytes1_queries.count(i, col), 0, "bytes1 not zero");
     }
   }
   for cell in 0..256 * 256 {
     for col in 0..BYTES2_COLS {
-      record.bytes2_queries.set_count(
-        cell,
-        col,
-        tally.bytes2[cell * BYTES2_COLS + col].load(Ordering::Relaxed),
-      );
+      assert_eq!(record.bytes2_queries.count(cell, col), 0, "bytes2 not zero");
     }
   }
 }
