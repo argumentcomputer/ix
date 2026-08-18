@@ -1,45 +1,185 @@
 # Handoff: Lean v4.33.0 bump — remaining integration work
 
 Status of this branch (`update/lean-v4.33.0`): ix is adapted to Lean v4.33.0
-and verified as far as is possible without lean4lean. `lake build Ix` is
-green, `cargo check --workspace` is clean, the Rust kernel's 674 tests pass,
-and every ix-side test target compiles. The one dependency blocker is the
-`lean4lean` pin (v4.31-era, does not compile under v4.33); the test suite and
-lint gate execute lean4lean-linked binaries and are queued behind it.
+and the `lean4lean` pin now tracks the fork's v4.33 dev tip (§1). `lake
+build` is green across every target, `cargo check --workspace` is clean,
+the Rust kernel's 674 tests pass, and `IxTcVerify` builds all 438 modules
+with both trust audits (`Audit.Completed`, `Audit.Statements`) passing.
+`lake test` is green (2640 assertions) and `lake test -- cli` passes.
+
+Two gates are not satisfied. `lake lint -- --wfail` passes, but that gate
+excludes `IxTcVerify`; building that library under `--wfail` still logs
+331 warnings, now entirely ix's own (§2.4). And `lake test -- --ignored
+ixvm` OOMs inside the Aiur toplevel build (§2.3).
 
 This file records everything still open from the v4.29 → v4.33 release-notes
 audit: the lean4lean integration steps, kernel-semantics divergences between
 ix's checkers and the upstream Lean kernel (open and cleared), and
 non-blocking follow-ups. Ingest fully before starting integration.
 
-## 1. lean4lean: why the bump matters
+## 1. lean4lean: the bump — DONE
 
-The pinned lean4lean (`5e5bb767`, in `lakefile.lean`) reproduces the kernel
-soundness bug fixed upstream in Lean v4.32.1 (leanprover/lean4#14498): its
-`addOpaque` (`Lean4Lean/Environment.lean:64-72` at the pinned rev) never
-calls `checkNoMVarNoFVar` on the opaque's *value*, so it accepts the
-axiom-free `False` construction from leanprover/lean4#14484. Reachable from
-ix via `Benchmarks/Lean4Lean.lean:209` (`.opaqueInfo → addDeclAt`).
+`lakefile.lean` pins `4844eda4`, the fork's `dev` tip after PR #5. That
+revision clears every non-`sorry` warning the v4.33 linters logged (785 of
+them) and annotates the 16 frontier `sorry`s with `set_option warn.sorry
+false`, so the whole library is `--wfail` clean and its CI now gates on it
+(`build-args: --wfail`). The certified inductive-environment and projection
+development came in PR #4 (`3d1390ae`), which this builds on. Its
+`lean-toolchain` is stable `leanprover/lean4:v4.33.0` and it requires
+batteries at the same rev ix already pins, so no other dependency moved.
+`Benchmarks/Compile/lake-manifest.json` inherits the pin through the `ix`
+path require and was synced to match.
 
-Upstream `digama0/lean4lean` master has the complete v4.32/v4.33 hardening:
-`779c51fde` (the #14498 value check + `Tests/DeclFVar.lean`), `d7e70a5f0`
-(nested-inductive phantom params, #14577), `5518bf838` (mutual `levelParams`
-uniformity #14608, reserved `_nested` prefix #14616, `checkNoMVarNoFVar` on
-inductive/ctor types #14607, + `Tests/KernelHardening.lean`), and the
-verified level-normalization algorithm enabled in the typechecker.
+The previous pin (`5e5bb767`) reproduced the kernel soundness bug fixed
+upstream in Lean v4.32.1 (leanprover/lean4#14498): its `addOpaque` never
+called `checkNoMVarNoFVar` on the opaque's *value*, so it accepted the
+axiom-free `False` construction from leanprover/lean4#14484 — reachable
+from ix via `Benchmarks/Lean4Lean.lean:209` (`.opaqueInfo → addDeclAt`).
 
-The fork update is being done as `argumentcomputer/lean4lean` PR #4
-(`jcb/formalization2`) — formalization on top of latest upstream. Do not
-integrate an intermediate state; wait for it to land on the fork's dev.
+Hardening confirmed present at the new pin:
 
-## 2. Integration steps once lean4lean lands
+- `checkNoMVarNoFVar` on an opaque's value (#14498);
+- `checkNoMVarNoFVar` on inductive *and* constructor types, before nested
+  elimination (#14577/#14607);
+- rejection of the reserved `_nested` name prefix (#14616);
+- mutual-block `levelParams` uniformity (#14608) — note ix deliberately
+  does not enforce this; see §3.
 
-1. **Bump the pin.** In `lakefile.lean`, set the `lean4lean` rev to the new
-   dev tip; `lake update lean4lean`. Confirm its `lean-toolchain` is stable
-   `leanprover/lean4:v4.33.0` (upstream tracks rc toolchains).
+Green against the new pin: the `lean4lean` package itself,
+`Lean4LeanBench`, `bench-lean4lean`, and `Ix/Tc/Verify/Level.lean` (the
+lean4lean-interop spike, and the only ix module the new Theory/Verify
+surface actually broke).
 
-2. **Run the suite**: `lake test`. First actual execution on v4.33.
-   Watch-points from the audit:
+## 2. Integration steps — remaining
+
+0. **The `IxTcVerify` v4.33/lean4lean port — DONE.** Nothing downstream of
+   lean4lean could compile under the old pin, so all of this only surfaced
+   once the dependency built. All 438 modules build; the recurring causes,
+   for whoever hits them again:
+
+   *v4.33 elaborator.* A pure `let` in `do` no longer emits
+   `pure _ >>= _` — it is a term-level `have`, so `run_pure_bind` /
+   `ReaderT.run_pure` / `pure_bind` steps and the matching
+   `WF.bind (WF.pure …)` proof layers became no-ops and were dropped. A
+   `return` inside `try` now routes through the early-return transformer;
+   `RecM.try?` was respelled with `tryCatch`/`pure` to keep the plain
+   `EStateM.tryCatch` its proofs reason about. `do` loops carry their
+   state as a `Prod`, not an `MProd`. Guard `if`s survive as
+   `if false = true then …` and need explicit reduction.
+
+   *v4.33 `simp`.* Many `simpa … using h` no longer bridge a gap the
+   elaborator closes anyway; those became `exact`. `simp` also stopped
+   unfolding semireducible definitions during matching — `KVLCtx` is now
+   an `abbrev` for that reason, and assorted call sites name the
+   definition explicitly. The largest single class: `simpa [f] using h`
+   where the goal and `h` differ only by delta/iota on a plain `def`
+   (`TcM.runRec`, `StepWFAtOn`, `BlockCatalog.Contains`, `KExpr.addr` on a
+   literal). `simpa` closes with reducible transparency and now fails;
+   `exact` unfolds at default transparency and succeeds. Reach for `exact`
+   before growing the simp set. A related trap: `runRec`'s equation lemma
+   is eta-expanded (`runRec x s = …`), so naming it in a simp set does
+   nothing against an unapplied `runRec y`.
+
+   *Audit manifests.* `Audit/Completed.lean` and `Audit/Statements.lean`
+   are exact-match, so a *shrinking* trust boundary fails them too. The
+   new pin discharges `Lean4Lean.TrProj`'s `sorryAx` (15 roots), ~56 roots
+   no longer reach the `ctxAddrForLbrUncached` native axiom, and the
+   `canonicalAuxOrder` native axiom is `ax_9`, not `ax_15` — that index
+   counts `native_decide` sites in `Ix/Tc/Inductive.lean` and shifts
+   whenever one is added or removed. To re-derive a whole manifest at
+   once, make `Audit.check` `logError` instead of `throwError` for one
+   build; it otherwise stops at the first mismatch.
+
+   *Core/batteries.* `Nat.imax` → `Lean.Nat.imax` (moved into the `Lean`
+   namespace, same definition); `Batteries.RBNode.cmpLT_iff` →
+   `RBTree.RBNode.cmpLT_iff`; `Except` has no `DecidableEq`, so
+   `Ingress/LiteralBlobs.lean` defines a private one for its
+   `native_decide` obligations.
+
+   *lean4lean API.* `VEnv` gained `structEtas`; `VDecl.block` became
+   `mutualDef`; `Checked` gained `kTarget`/`kTarget_eq`;
+   `fieldsR`/`recArgsR`/`resultIndicesR` gained an `ElimMode` argument;
+   `List.Forall₂.length_eq` moved into the `Lean4Lean` namespace; ix's
+   local `instL_lamN`/`instN_lamN` are now upstream and were deleted.
+
+1. **Blake3 `blake3_rs_shared` — resolved, on an unmerged branch.**
+   `lakefile.lean:190` fetches that target to build
+   `ix_native_decide_dynlib`, which gates *every* `IxTcVerify` module. The
+   target and the `cdylib` crate-type live only on Blake3.lean's
+   `native-decide-dynlib` branch, now rebased onto v4.33 and pinned here
+   at `730f910a` (two commits ahead of Blake3 main, zero behind). Do not
+   merge this branch until that one merges to Blake3 main; then re-pin to
+   main. Nothing to do with lean4lean.
+
+2. **`DefEq/PropositionClassifier.lean` — RESOLVED, but it added an
+   assumption; review it.** Fallout from this branch's own `fix(tc):
+   classify Prop up to universe normalization`, not from v4.33 or
+   lean4lean: the classifier case-split on `u.isZero` while production
+   returns `u.isSemanticZero`. It now splits on `isSemanticZero`, whose
+   `true` branch must show `toVLevel u ≈ .zero`.
+
+   That routes through `Level.normalizeLevel_eval`, which needs
+   `u.size < UInt64.size` — a load-bearing bound (see the note at
+   `Ix/Tc/Verify/Level.lean:127`: a 2⁶⁴-succ tower really would wrap and
+   mis-normalize), and there is no `support x → x.size < UInt64.size`
+   lemma. So `PropositionClassifierContext` gained a `universes` field:
+
+       universes : ∀ {u info}, support (.sort u info) → u.size < UInt64.size
+
+   This mirrors the convention at `DefEq/StructuralCongruence.lean:24` and
+   `DefEq/SameHeadSpine.lean:28`, and the `u` it constrains is always
+   covered by the run support (direct WHNF hands back `support (.sort u
+   info)` alongside the reduced expression). But the structure is only
+   ever a hypothesis, never constructed, so this **adds an assumption the
+   eventual instantiation has to discharge** rather than proving anything.
+   Supporting lemma: `KUniv.toVLevel_equiv_zero_of_isSemanticZero`
+   (`Ix/Tc/Verify/Level.lean`), beside the existing negative direction.
+
+3. **The suite — run, with one tier unreachable locally.** `lake test` is
+   green (2640 assertions, exit 0) and `lake test -- cli` passes. None of
+   the audit watch-points below fired.
+
+   The `ixvm` runner OOMs, and the cause is now localized. It is **not**
+   the pin list, **not** any pinned constant, and **not** the shared
+   `--ignored` setup. Phase markers through the runner body show every
+   step completing — `kernelChecks`, `loadIxonEnv Nat.add_comm`, all six
+   claim builders, `claimContains`, `serdeNatAddComm` — and the kill
+   landing on the next line:
+
+       match AiurTestEnv.build IxVM.ixVM, AiurTestEnv.build IxVM.ixVMFull
+
+   i.e. `toplevel.compile` + `AiurSystem.build`/`circuitShapes` over both
+   IxVM toplevels. Peak RSS 42–44 GB locally; a larger machine reached
+   ~79 GB, so it grows rather than needing a fixed budget. Zero assertions
+   ever print.
+
+   Ruled out by measurement, so nobody repeats them:
+   - Pin-list size: trimming `kernelCheckEntries` to one tiny constant
+     (`IxVMInd.Even`) reproduces the same OOM at the same point.
+   - Any individual pinned constant, including the
+     `Int8.toInt64_ne_minValue._proof_1_2` entry suspected on
+     `jcb/lean-v4.33.0-rebase` — it is not in this branch's 72-entry
+     table at all, yet this branch OOMs identically.
+   - The shared `--ignored` setup (`get_env!` + forcing `ignoredSuites`):
+     `lake test -- --ignored shard-map` completes in 722 MB.
+   - The `MemSizes` `Lean.RBTree` → `Std.TreeSet` migration below:
+     reverting it reproduces the OOM unchanged (42.05 GB).
+
+   Consequences for review:
+
+   - `Tests/Ix/IxVM.lean` pinned
+     `String.Slice.Pattern.Model.NoPrefixForwardPatternModel.rec`, which
+     v4.33 removed. It is repinned to `NoPrefixPatternModel.rec` — the
+     surviving class of the same shape (a `Prop` class over a `∀`-typed
+     field, which is what the pin exists to drive: it is the regression
+     driver for `is_rec_field`'s per-peel whnf, added in #510).
+   - **Its FFT cost is still the old constant's number and is certainly
+     wrong.** Re-pin it, and expect the other core-derived pins to have
+     drifted too — the checked constants' bodies changed with the
+     toolchain. The failure message prints the actual value.
+
+   Watch-points from the release-notes audit, none of which fired in the
+   suites that did run:
    - `Tests/FFI/Refcount.lean` — v4.30's borrow-inference overhaul
      (leanprover/lean4#12830, #13136 RC coalescing) may shift caller-side
      inc/dec counts. Diagnose with `trace.Compiler.inferBorrow` before
@@ -63,15 +203,48 @@ integrate an intermediate state; wait for it to land on the fork's dev.
      changed, and several core decls changed exposure/reducibility. All
      `.ixe` fixtures and pinned address tables from v4.29 will differ.
 
-3. **Run the lint gate**: `lake lint -- --wfail -v`. Not yet run on v4.33;
-   v4.31 enabled `linter.redundantVisibility` (ix: ~174 files with `public
-   section` + explicit `public`, ~800 `private` decls),
-   `linter.redundantExpose` (`Ix/Lib.lean:11`), and
-   `warning.simp.varHead`/`otherHead` (~257 `@[simp]`s). Escape hatch:
-   `leanOptions := #[⟨`linter.redundantVisibility, false⟩]`; prefer fixing
-   genuinely redundant modifiers.
+4. **The lint gate — passing; `IxTcVerify` still excluded.**
+   `lake lint -- --wfail` reports nothing in ix. None of the v4.31
+   linters the audit worried about (`redundantVisibility`,
+   `redundantExpose`, `simp.varHead`) fired. What did:
 
-4. **Limits, only if they fire.** v4.31 #13030 made heartbeats accumulate
+   - `Lean.RBTree` is deprecated in favour of `Std.TreeSet`. The only
+     Lean-side use was `Bytecode.MemSizes` (`Ix/Aiur/Compiler/Layout.lean`),
+     migrated; the API is identical except `fold` → `foldl`. The remaining
+     `RBTree` hits in the tree are unrelated: `Batteries.Recycling.RBTree`
+     (`Ix/Tc/Level.lean`, `Ix/IxonUniv.lean` — a different, non-deprecated
+     type that `IxTcVerify` reasons about) and `Ix/IxVM/RBTreeMap.lean`
+     (a red-black tree written in the *guest* DSL).
+   - `linter.unusedVariables` on a dead `rtc ←` rebind in
+     `Ix/AuxGen/BRecOn.lean`, and `linter.defProp` on
+     `Tests/Ix/Compile/LevelSpellings.lean`'s `wfTwoEqDef`. The latter is
+     suppressed with a scoped `set_option`: the fixture deliberately pins
+     the prop-valued-`def` constant class metaprograms emit, so `defProp`
+     is silenced rather than obeyed.
+
+   `lake lint -- --wfail` now passes: the six `Lean4Lean/Inductive/Add.lean`
+   warnings that blocked it are gone at the new pin (§1), and ix's own
+   non-`IxTcVerify` targets are clean.
+
+   `IxTcVerify` is still excluded from the `build-all` lint driver — a
+   pre-existing decision from main (`a0537747c`, 2026-07-24, refined by
+   `7ff054b56`). Its stated reason, that the dependency's `sorry` warnings
+   would fail `--wfail`, no longer holds: lean4lean is warning-free at this
+   pin, including the 16 frontier sorries, which upstream annotated with
+   `set_option warn.sorry false`. `lake build IxTcVerify --wfail` now logs
+   331 warnings and **all of them are ix's own** — 287 `unusedSimpArgs`,
+   33 `defProp`, 7 deprecations, 3 assorted — across 93 modules, with zero
+   `sorry` warnings from anywhere. `Ix.Tc.Verify.Audit.SorryFrontier`
+   independently confirms no ix declaration uses `sorryAx`.
+
+   So the exclusion is now purely about ix's own lint debt, and clearing
+   those 331 would let `IxTcVerify` join the gate. Most are the same v4.33
+   simp change as the port (§2.0): simp sets that no longer need
+   `pure_bind`/`ReaderT.run_pure`. The linter names the exact argument to
+   drop in each case. Update the `lean_lib IxTcVerify` comment when this
+   changes — as written it blames the dependency.
+
+5. **Limits, only if they fire.** v4.31 #13030 made heartbeats accumulate
    faster (upstream raised limits 20–50% in places); v4.33 #13956 bounded
    kernel recursion by `maxRecDepth` instead of the physical stack. If
    `IxTcVerify` or deep replays hit deterministic timeouts or
@@ -120,9 +293,11 @@ unsoundness.
   arity-checked at infer; per-member `lvls` in the `muts` form) and its own
   block clustering may legitimately group members Lean never required to be
   uniform — enforcing uniformity could reject valid content. Consequence:
-  ix accepts (metaprogrammed, unsafe) blocks upstream rejects. Revisit only
-  if lean4lean-parity replays surface a real case; otherwise this stands as
-  a documented, justified divergence.
+  ix accepts (metaprogrammed, unsafe) blocks upstream rejects. The pinned
+  lean4lean now enforces it in `addMutual`, so a parity replay will report
+  this divergence by construction — treat that as expected, not as a
+  finding, unless a *non*-metaprogrammed case shows up. Otherwise this
+  stands as a documented, justified divergence.
 
 - **Regression-fixture ports.** ix has no fixtures for the v4.32/v4.33
   soundness-bug shapes. Port upstream's repros as Ix/Tc test fixtures:
