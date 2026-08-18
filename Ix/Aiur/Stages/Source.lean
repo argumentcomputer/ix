@@ -1037,6 +1037,23 @@ def inlineTopo (deps : Std.HashMap Global (List Global)) :
         inlineTopo deps rounds notReady emitted (acc ++ ready)
 termination_by rounds _ _ _ => rounds
 
+/-- Restore matches that `Term.expandOnce`'s non-tail wrapping
+(`let out = match …; out`) placed in TAIL position back to bare tail
+matches. The wrap is only needed where a splice lands in a non-tail
+context; left in tail position it turns a legal tail match into a
+`matchContinue` whose arms may themselves end in matches — which
+lowering rejects ("non-tail match in arbitrary position"). The rewrite
+is the eta step `let x = v; x → v`, applied only through tail positions
+(let bodies and match arms), so non-tail wraps are untouched. -/
+partial def Term.restoreTailMatches : Term → Term
+  | .let p v b =>
+    match p, b with
+    | .var x, .var y =>
+      if x == y then Term.restoreTailMatches v else .let p v b
+    | _, _ => .let p v (Term.restoreTailMatches b)
+  | .match s arms => .match s (arms.map fun (p, a) => (p, Term.restoreTailMatches a))
+  | t => t
+
 /-- Inline-expand every function body in the toplevel, eliminating all
 `.inlined` applications. Run before typechecking.
 
@@ -1074,7 +1091,7 @@ def Toplevel.inlineCalls (t : Toplevel) : Except String Toplevel := do
   let functions := t.functions.map fun f =>
     match done[f.name]? with
     | none => f
-    | some (_, body) => { f with body := body.hoistLets }
+    | some (_, body) => { f with body := body.restoreTailMatches.hoistLets }
   pure { t with functions }
 
 /-- Every `Global` referenced by a term: function calls and constructor
