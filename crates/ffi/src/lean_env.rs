@@ -839,7 +839,8 @@ fn decode_name_data_value(
         // branch settles the sign, and `negSucc n = -(n + 1)` so `n` is
         // `-(v + 1)` for `v < 0` -- and an `isize` magnitude always fits
         // `u64` on supported targets, so neither conversion can fail.
-        let mag = |n: isize| u64::try_from(n).expect("isize magnitude fits u64");
+        let mag =
+          |n: isize| u64::try_from(n).expect("isize magnitude fits u64");
         if v >= 0 {
           Int::OfNat(Nat::from(mag(v)))
         } else {
