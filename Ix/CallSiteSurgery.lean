@@ -79,7 +79,17 @@ def classifyAuxGen (name : Name) : Option (AuxKind × Name) :=
     else if s1 == "recOn" || s1.startsWith "recOn_" then
       some (.recOnAux, p1)
     else if s1 == "casesOn" || s1.startsWith "casesOn_" then
-      some (.casesOnAux, p1)
+      -- X.casesOn / X.casesOn_N or X.below.casesOn. The below wrapper
+      -- roots under the FAMILY (like `X.below.rec` above) so it joins
+      -- the family block's aux members and the decompiler's Phase 3b
+      -- can regenerate it against the canonical below-rec.
+      match p1 with
+      | .str gp ps _ =>
+        if ps == "below" || ps.startsWith "below_" then
+          some (.casesOnAux, gp)
+        else
+          some (.casesOnAux, p1)
+      | _ => some (.casesOnAux, p1)
     else if s1 == "below" || s1.startsWith "below_" then
       some (.below, p1)
     else if s1 == "brecOn" || s1.startsWith "brecOn_" then
