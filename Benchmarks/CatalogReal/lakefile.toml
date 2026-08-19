@@ -1,0 +1,32 @@
+name = "CatalogReal"
+version = "0.1.0"
+
+# Real-library catalog benchmark family (plan §3.5): TruthMines' most
+# aux-gen-problematic real library (haskell-spec — the nested-mutual
+# HaskellSpec shape, pinned at TruthMinesLib's rev) plus Batteries and
+# a mid-size dependent (aesop), at the toolchain-compatible revs the
+# Benchmarks/Compile workspace already pins. Consumed by manual
+# `ix catalog --audit` runs with this directory as cwd (A7 heavy-gate
+# territory — needs network for the first fetch; NOT part of
+# `lake test`).
+
+# Singleton root modules for standalone (unqualified) member compiles —
+# `ix compile CompileHS.lean` etc., the per-library repro/attribution
+# path next to the catalog runs.
+[[lean_lib]]
+name = "CompileHS"
+
+[[require]]
+name = "batteries"
+git = "https://github.com/leanprover-community/batteries"
+rev = "756e3321fd3b02a85ffda19fef789916223e578c"
+
+[[require]]
+name = "aesop"
+git = "https://github.com/leanprover-community/aesop"
+rev = "7152850e7b216a0d409701617721b6e469d34bf6"
+
+[[require]]
+name = "haskell-spec"
+git = "https://github.com/haskell-spec/haskell-spec"
+rev = "d941b26f830712cdc027e04400ad94d3095dab6b"

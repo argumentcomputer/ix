@@ -55,7 +55,7 @@ def diffOnSeeds (leanEnv : Lean.Environment) (label : String)
   -- same path and the Lean side reads the bytes back.
   let dir ← IO.FS.createTempDir
   let path := dir / s!"tc-anon-diff-{label}.ixe"
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
   let rustRows ← Ix.KernelCheck.rsCheckAnonFFI path.toString true ""
   let bytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir

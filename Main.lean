@@ -8,6 +8,7 @@ import Ix.Cli.CheckLeanCmd
 import Ix.Cli.CompileLeanCmd
 import Ix.Cli.ValidateLeanCmd
 import Ix.Cli.ClaimCmd
+import Ix.Cli.CatalogCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
@@ -24,8 +25,7 @@ import Ix.Cli.ServeCmd
 import Ix.Cli.ConnectCmd
 import Ix
 
-def VERSION : String :=
-  s!"{Lean.versionString}|0.0.1"
+def VERSION : String := Ix.versionString
 
 def ixCmd : Cli.Cmd := `[Cli|
   ix NOOP; [VERSION]
@@ -34,6 +34,7 @@ def ixCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     --storeCmd;
     benchCmd;
+    catalogCmd;
     compileCmd;
     decompileCmd;
     checkCmd;

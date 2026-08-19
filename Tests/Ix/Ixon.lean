@@ -344,7 +344,8 @@ def envSerializationUnitTests : TestSeq :=
   }
   let mutsMeta : ConstantMeta := .new
     (.muts #[#[surgName.getHash], #[blkName.getHash]]
-      (some { perm := #[1, 0], sourceCtorCounts := #[2, 3] }))
+      (some { perm := #[1, 0], sourceCtorCounts := #[2, 3],
+              evaporated := #[0, 0] }))
   let metaRaw : RawEnv := {
     consts := #[{ addr := bundleConstAddr, const := bundleConst }],
     named := #[

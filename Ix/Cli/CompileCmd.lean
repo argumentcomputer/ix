@@ -140,9 +140,67 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- The file is the canonical `Ixon.Env::put` format and round-trips
   -- through `Ixon.Env::get`, so later runs (e.g. `ix check-ixon`) can
   -- skip the Lean → IxOn compile step.
+  let allowPartial := p.hasFlag "allow-partial"
   let start ← IO.monoMsNow
-  let size ← Ix.CompileM.rsCompileEnvBytesFFI constList outPath
+  let status ← Ix.CompileM.rsCompileEnvBytesFFI constList outPath allowPartial
+  let size := status.bytes.toNat
   let elapsed := (← IO.monoMsNow) - start
+
+  let ungroundedCount := status.ungrounded.size
+  -- Fail-closed default: the FFI wrote nothing when `!allowPartial` and
+  -- anything requested is ungrounded (the final path was never created).
+  let failClosed := !allowPartial && ungroundedCount > 0
+
+  -- `--report`: machine-readable compile status, written on success,
+  -- fail-closed abort, and partial publish alike.
+  if let some flag := p.flag? "report" then
+    let flagStr (name : String) : Lean.Json :=
+      (p.flag? name).map (Lean.Json.str <| ·.as! String) |>.getD Lean.Json.null
+    let report := Lean.Json.mkObj
+      [ ("schemaVersion", Lean.toJson (1 : Nat))
+      , ("ixVersion", Lean.Json.str Ix.versionString)
+      , ("leanToolchain", Lean.Json.str Lean.versionString)
+      , ("ixeFormatVersion", Lean.toJson Ixon.Env.VERSION.toNat)
+      , ("input", Lean.Json.str pathStr)
+      , ("output", Lean.Json.str outPath)
+      , ("seeds", Lean.Json.mkObj
+          [ ("consts", flagStr "consts")
+          , ("constsFile", flagStr "consts-file")
+          , ("module", flagStr "module")
+          , ("exclude", flagStr "exclude")
+          , ("excludeFile", flagStr "exclude-file") ])
+      , ("requested", Lean.toJson totalConsts)
+      , ("named", Lean.toJson status.named.toNat)
+      , ("uniqueAnon", Lean.toJson status.uniqueAnon.toNat)
+      , ("ungroundedCount", Lean.toJson ungroundedCount)
+      , ("ungrounded", Lean.Json.arr <| status.ungrounded.map fun (n, r) =>
+          Lean.Json.mkObj
+            [("name", Lean.Json.str n), ("reason", Lean.Json.str r)])
+      , ("root", Lean.Json.str status.root)
+      , ("allowPartial", Lean.toJson allowPartial)
+      , ("written", Lean.toJson (!failClosed))
+      , ("bytes", Lean.toJson size)
+      , ("elapsedMs", Lean.toJson elapsed) ]
+    IO.FS.writeFile (flag.as! String) (report.pretty ++ "\n")
+
+  if ungroundedCount > 0 then
+    let stream ← if failClosed then IO.getStderr else IO.getStdout
+    let verdict := if failClosed then
+      s!"error: {ungroundedCount} requested constant(s) failed to compile; \
+nothing written to {outPath} (use --allow-partial to serialize the \
+grounded subset)"
+    else
+      s!"PARTIAL: {ungroundedCount} requested constant(s) failed to compile; \
+serialized the grounded subset ({status.named} named, \
+{status.uniqueAnon} unique constants)"
+    stream.putStrLn verdict
+    for (n, r) in status.ungrounded.toList.take 10 do
+      stream.putStrLn s!"  [ungrounded] {n}: {(r.replace "\n" " ").take 200}"
+    if ungroundedCount > 10 then
+      stream.putStrLn s!"  … and {ungroundedCount - 10} more (see --report for the full list)"
+    if failClosed then
+      return 1
+
   println! "Compiled and wrote {fmtBytes size} env to {outPath} in {elapsed.formatMs}"
   IO.println s!"##benchmark## {elapsed} {size} {totalConsts}"
   if let some flag := p.flag? "json" then
@@ -174,6 +232,8 @@ def compileCmd : Cli.Cmd := `[Cli|
     "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check --consts-file`."
     json           : String; "Write the compile's benchmark results row (compile-time, file-size, constants, throughput) to this path, merging into any existing rows object."
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
+    "allow-partial" ;        "Serialize the grounded subset and exit 0 even when some requested constants fail to compile. Default is fail-closed: any ungrounded constant means a nonzero exit and NO output file."
+    report         : String; "Write a machine-readable JSON compile report (versions, seed spec, requested/named/unique-anon/ungrounded counts, full ungrounded list, canonical consts merkle root, bytes, elapsed ms) to this path — written on success, fail-closed abort, and partial publish alike."
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

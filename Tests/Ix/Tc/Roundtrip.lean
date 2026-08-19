@@ -214,7 +214,7 @@ def roundtripOnSeeds (leanEnv : Lean.Environment) (label : String)
     return (0, some s!"empty closure for {seeds}")
   let dir ← IO.FS.createTempDir
   let path := dir / s!"tc-roundtrip-{label}.ixe"
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
   let bytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
   match Ixon.deEnvAnon bytes with
@@ -270,7 +270,7 @@ def wholeEnvSuite : TestSeq :=
     let consts := leanEnv.constants.toList
     let dir ← IO.FS.createTempDir
     let path := dir / "tc-roundtrip-whole-env.ixe"
-    let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString
+    let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
     let bytes ← IO.FS.readBinFile path
     IO.FS.removeDirAll dir
     match Ixon.deEnvAnon bytes with
@@ -299,7 +299,7 @@ def metaRoundtripOn (leanEnv : Lean.Environment) (label : String)
     IO (Ix.Tc.MetaRoundtripReport × Option String) := do
   let dir ← IO.FS.createTempDir
   let path := dir / s!"tc-meta-roundtrip-{label}.ixe"
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
   let bytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
   let ixonEnv ← match Ixon.deEnv bytes with

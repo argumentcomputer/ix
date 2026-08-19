@@ -420,6 +420,7 @@ pub fn compile_aux_block_with_rename(
 fn register_aux_aliases(
   aliases: &FxHashMap<Name, Name>,
   stt: &CompileState,
+  ctx: &str,
 ) -> Result<(), CompileError> {
   if aliases.is_empty() {
     return Ok(());
@@ -447,15 +448,28 @@ fn register_aux_aliases(
       }
     })?;
 
+    if *crate::compile::IX_LOG_AUX_NAMES {
+      eprintln!(
+        "[aux-names] alias ctx={ctx} {} -> {} target_addr={} existing={}",
+        source.pretty(),
+        target.pretty(),
+        target_addr.hex(),
+        stt
+          .resolve_addr(&source)
+          .map_or_else(|| "none".to_string(), |a| a.hex()),
+      );
+    }
+
     if let Some(existing_addr) = stt.resolve_addr(&source) {
       if existing_addr != target_addr {
         return Err(CompileError::InvalidMutualBlock {
           reason: format!(
-            "aux_gen alias '{}' already resolves to {:.12}, expected {:.12} via '{}'",
+            "aux_gen alias '{}' already resolves to {:.12}, expected {:.12} via '{}' (registering block/phase: {})",
             source.pretty(),
             existing_addr.hex(),
             target_addr.hex(),
             target.pretty(),
+            ctx,
           ),
         });
       }
@@ -638,8 +652,28 @@ pub fn generate_and_compile_aux_recursors(
         ),
       });
     }
-    aux_layout =
-      Some(crate::compile::surgery::AuxLayout { perm, source_ctor_counts });
+    // Fail closed if the evaporation flags don't line up with the perm —
+    // surgery keys head-rewrite plans off them, so a silent mismatch
+    // would desynchronize aliases and call-site rewrites.
+    let evaporated = match aux_out.evaporated.clone() {
+      Some(flags) if flags.len() == perm.len() => flags,
+      Some(flags) => {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "aux layout mismatch: {} evaporation flags for {} permutation \
+             entries",
+            flags.len(),
+            perm.len()
+          ),
+        });
+      },
+      None => vec![false; perm.len()],
+    };
+    aux_layout = Some(crate::compile::surgery::AuxLayout {
+      perm,
+      source_ctor_counts,
+      evaporated,
+    });
   }
 
   // NOTE: Historically, a canonical→source rename map was built here
@@ -712,6 +746,22 @@ pub fn generate_and_compile_aux_recursors(
     let class_order_key = |c: &MutConst| -> u64 {
       name_to_pos.get(&c.name()).copied().unwrap_or(u64::MAX)
     };
+    // The `all0.rec_N` name family is shared by every SCC split from one
+    // original mutual. Snapshot resolutions before compiling this SCC's
+    // rec patches: a pre-existing DIFFERENT address means two blocks
+    // claimed one name — DashMap registration is last-writer-wins, so
+    // without this check the disagreement ships silently as
+    // schedule-dependent content (plans/aux-recursor-alias-collision.md
+    // §2.4). Same-address re-registration (content-addressed idempotence)
+    // is fine.
+    let pre_claims: Vec<_> = rec_consts
+      .iter()
+      .map(|c| {
+        let name = c.name();
+        let addr = stt.resolve_addr(&name);
+        (name, addr)
+      })
+      .collect();
     compile_aux_block_with_rename(
       &rec_consts,
       lean_env,
@@ -720,6 +770,32 @@ pub fn generate_and_compile_aux_recursors(
       Some(&aux_name_rename),
       Some(&class_order_key),
     )?;
+    for (name, pre_addr) in pre_claims {
+      let post_addr = stt.resolve_addr(&name);
+      if *crate::compile::IX_LOG_AUX_NAMES {
+        eprintln!(
+          "[aux-names] patch-registered block={block_label} {} addr={} preexisting={}",
+          name.pretty(),
+          post_addr.as_ref().map_or_else(|| "none".to_string(), |a| a.hex()),
+          pre_addr.as_ref().map_or_else(|| "none".to_string(), |a| a.hex()),
+        );
+      }
+      if let (Some(pre), Some(post)) = (&pre_addr, &post_addr)
+        && pre != post
+      {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "aux patch name '{}' was already registered to {:.12} by an \
+             earlier block; this block ({}) re-registered it to {:.12} — \
+             two SCCs claim one source-indexed aux name",
+            name.pretty(),
+            pre.hex(),
+            block_label,
+            post.hex(),
+          ),
+        });
+      }
+    }
   }
   // Some later generated wrappers are named under alpha-collapsed aliases
   // and may reference the alias `.rec` name. Register every alias whose target
@@ -731,7 +807,11 @@ pub fn generate_and_compile_aux_recursors(
     .filter(|(_, target)| stt.resolve_addr(target).is_some())
     .map(|(source, target)| (source.clone(), target.clone()))
     .collect();
-  register_aux_aliases(&available_rec_aliases, stt)?;
+  register_aux_aliases(
+    &available_rec_aliases,
+    stt,
+    &format!("{block_label}/rec-phase"),
+  )?;
   let rec_elapsed = t1.elapsed();
   // Phase 2b: Compile .casesOn definitions.
   // casesOn wraps .rec and must be compiled after .rec but before .brecOn
@@ -907,7 +987,7 @@ pub fn generate_and_compile_aux_recursors(
   }
   let brecon_elapsed = t6.elapsed();
 
-  register_aux_aliases(&aux_out.aliases, stt)?;
+  register_aux_aliases(&aux_out.aliases, stt, &format!("{block_label}/final"))?;
 
   // Note: `.noConfusion`, `.noConfusionType`, `.ctor.noConfusion`, `.ctorIdx`,
   // `.ctorElim*`, `.ctor.inj*`, `._sizeOf_*`, etc. are **not** regenerated.

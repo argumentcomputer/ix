@@ -35,9 +35,13 @@ def getFileEnv (path : FilePath) : IO Environment := do
   let source ← IO.FS.readFile path
   let inputCtx := Parser.mkInputContext source path.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
+  -- Honor the header's actual `module` mode: loading a new-style module
+  -- as a classic private script re-exposes private transitive imports,
+  -- which destroys qualified-package isolation downstream (TruthMines
+  -- carried this as its `module-header-v1` patch).
   let (env, messages) ← processHeaderCore
     (HeaderSyntax.startPos header) (HeaderSyntax.imports header)
-    (isModule := false) default messages inputCtx 0
+    (isModule := HeaderSyntax.isModule header) default messages inputCtx 0
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)

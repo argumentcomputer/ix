@@ -85,6 +85,14 @@ structure CompileEnv where
       (Rust `stt.ungrounded`): pre-compile grounding rejections plus
       per-block compile failures recorded by the scheduler. -/
   ungrounded : Std.HashMap Name String := {}
+  /-- Mutual-block canonical class ordering, keyed by every member name
+      in the block (Rust `stt.blocks`, compile.rs:4048-4057; the driver
+      merges each block's `BlockResult.classNames` here on completion).
+      Read by the evaporation claim probe
+      (`Ix.AuxGen.positionClaimedBySpecScc`) to rebuild a spec-member
+      SCC's canonical expansion — scheduler dependency order guarantees
+      the entry exists before any dependent block compiles. -/
+  blocks : Std.HashMap Name (Array (Array Name)) := {}
   /-- Name-hash → name over the full INPUT constant set, for
       `nameForAddr`'s reverse lookup when the streaming driver leaves
       `env.consts` unmaterialized (its by-hash scan over `env.consts`
@@ -112,6 +120,13 @@ structure BlockResult where
       Empty for single non-inductive constants (name maps directly to block).
       For inductives/mutual blocks: contains IPrj/DPrj/RPrj/CPrj for each name. -/
   projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
+  /-- Canonical class ordering of this block's members (Rust
+      `class_ordering`, compile.rs:4049), for the driver to merge into
+      `CompileEnv.blocks`. Empty for non-mutual/early-return paths —
+      Rust's `stt.blocks` insert sits after the alpha-collapsed
+      standalone early return (compile.rs:3872) and is skipped there
+      too. -/
+  classNames : Array (Array Name) := #[]
   deriving Inhabited
 
 /-- Per-block compilation state and tables. -/
@@ -2170,7 +2185,7 @@ def compileMutualBlock (classes : List (List MutConst))
         for const in constClass do
           let n := const.name
           projections := projections.push (n, block, metaMap.get? n |>.getD .empty)
-      return ⟨block, blockBytes, blockAddr, .empty, projections⟩
+      return ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
 
     let block := buildConstantWithSharing (.muts mutConsts) allExprs cache.refs cache.univs
 
@@ -2205,7 +2220,7 @@ def compileMutualBlock (classes : List (List MutConst))
             cidx := cidx + 1
       idx := idx + 1
 
-    pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+    pure ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
 
 /-! ## Main Compilation Entry Points -/
 
@@ -2224,7 +2239,7 @@ def BlockResult.mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta := .e
     (projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) : BlockResult :=
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
-  ⟨block, blockBytes, blockAddr, blockMeta, projections⟩
+  ⟨block, blockBytes, blockAddr, blockMeta, projections, #[]⟩
 
 /-- Compile a single Ix.ConstantInfo directly (singleton, non-mutual).
     Returns BlockResult with the constant and any projections needed. -/
@@ -2317,7 +2332,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
           let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
           let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
           projections := projections.push (ctorName, ctorProj, ctorMeta)
-        pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+        pure ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
 
     | .ctorInfo c =>
       -- Constructors are compiled by compiling their parent inductive
@@ -2347,7 +2362,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
             let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
             let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
             projections := projections.push (ctorName, ctorProj, ctorMeta)
-          pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+          pure ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
       | _ => throw (.invalidMutualBlock s!"Constructor has non-inductive parent")
 
 /-- Compile a constant by name (looks it up in the environment).
@@ -2848,14 +2863,40 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
 /-! ## Rust Compilation FFI -/
 
+/-- Structured result of `rs_compile_env`. Field kinds/order must match
+    the `LeanIxCompileEnvStatus` FFI layout in `crates/ffi/src/lean.rs`:
+    boxed fields first (`root`, `ungrounded`), then the UInt64 scalars
+    (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
+structure CompileEnvStatus where
+  /-- 64-hex canonical consts merkle root. Equals the `.ixe` header root
+      when a file was written; still computed on a fail-closed abort. -/
+  root : String
+  /-- `(pretty name, reason)` for every requested constant whose block
+      failed to compile, sorted by name. Empty ⇔ complete environment. -/
+  ungrounded : Array (String × String)
+  /-- Bytes written to `outPath` (0 when nothing was written). -/
+  bytes : UInt64
+  /-- Named constants in the compiled env. -/
+  named : UInt64
+  /-- Unique anonymous constants (content-deduplicated). -/
+  uniqueAnon : UInt64
+  deriving Repr, Inhabited
+
 /-- FFI: Compile a Lean environment and write the serialized Ixon.Env
     bytes straight to `outPath` from Rust (streamed; no env-sized
     ByteArray crosses the FFI). Writes to `<outPath>.tmp` then renames,
-    so a crash cannot leave a truncated file. Returns the byte count
-    written. -/
+    so a crash cannot leave a truncated file.
+
+    Fail-closed semantics live behind the FFI: with
+    `allowPartial := false`, an env with any ungrounded requested
+    constant writes NOTHING (the final path is never created) and the
+    returned status carries the full ungrounded list; with
+    `allowPartial := true`, the grounded subset is serialized and the
+    status discloses what was omitted. -/
 @[extern "rs_compile_env"]
 opaque rsCompileEnvBytesFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → IO Nat
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
+  → IO CompileEnvStatus
 
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
     decompile + roundtrip + alpha-equivalence + nested-detect checks).
@@ -2870,11 +2911,21 @@ opaque rsCompileValidateAuxFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Compile a Lean environment and write the serialized Ixon.Env bytes
-    to `outPath` using the Rust compiler. Returns the byte count. -/
+    to `outPath` using the Rust compiler. Fail-closed by default: any
+    ungrounded constant throws (and nothing is written) unless
+    `allowPartial := true`. Returns the structured compile status. -/
 def rsCompileEnvBytes (leanEnv : Lean.Environment) (outPath : String)
-    : IO Nat := do
+    (allowPartial : Bool := false) : IO CompileEnvStatus := do
   let constList := leanEnv.constants.toList
-  rsCompileEnvBytesFFI constList outPath
+  let status ← rsCompileEnvBytesFFI constList outPath allowPartial
+  if !allowPartial && !status.ungrounded.isEmpty then
+    throw <| IO.userError <|
+      s!"rsCompileEnvBytes: {status.ungrounded.size} requested constant(s) " ++
+      s!"failed to compile; nothing written to {outPath}. First failure: " ++
+      match status.ungrounded[0]? with
+      | some (n, r) => s!"{n}: {r}"
+      | none => "<empty>"
+  return status
 
 -- Re-export RawEnv types from Ixon for backwards compatibility
 export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)
@@ -2916,10 +2967,12 @@ structure CompilePhases where
 @[extern "rs_compile_phases"]
 opaque rsCompilePhasesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO RustCompilePhases
 
-/-- Run all compilation phases using Rust and convert to Lean-friendly types.
-    This is the main entry point for getting Rust compilation results. -/
-def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
-  let constList := leanEnv.constants.toList
+/-- Run all compilation phases in Rust over an explicit constant list
+    and convert to Lean-friendly types. Use this for closure-scoped
+    compiles (e.g. `#ixeval` compiles only a term's reference closure);
+    `rsCompilePhases` covers the whole-environment case. -/
+def rsCompilePhasesOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    IO CompilePhases := do
   let raw ← rsCompilePhasesFFI constList
 
   -- Convert RawEnvironment to Environment
@@ -2933,12 +2986,23 @@ def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
 
   pure { rawEnv, condensed, compileEnv }
 
-/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
-    Uses the direct FFI that returns structured Lean objects. -/
-def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
-  let constList := leanEnv.constants.toList
+/-- Run all compilation phases using Rust and convert to Lean-friendly types.
+    This is the main entry point for getting Rust compilation results. -/
+def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases :=
+  rsCompilePhasesOf leanEnv.constants.toList
+
+/-- Compile an explicit constant list to Ixon.Env using the Rust
+    compiler. Use for compiles over constructed environments (e.g. the
+    catalog `--audit` per-library comparison). -/
+def rsCompileEnvOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    IO Ixon.Env := do
   let rawEnv ← rsCompileEnvFFI constList
   pure rawEnv.toEnv
+
+/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
+    Uses the direct FFI that returns structured Lean objects. -/
+def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env :=
+  rsCompileEnvOf leanEnv.constants.toList
 
 end
 end Ix.CompileM

@@ -10,10 +10,10 @@
 use std::sync::Arc;
 
 use crate::lean::{
-  LeanIxBlock, LeanIxCompileError, LeanIxCompilePhases, LeanIxCondensedBlocks,
-  LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment, LeanIxSerializeError,
-  LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst, LeanIxonRawEnv,
-  LeanIxonRawNameEntry, LeanIxonRawNamed,
+  LeanIxBlock, LeanIxCompileEnvStatus, LeanIxCompileError, LeanIxCompilePhases,
+  LeanIxCondensedBlocks, LeanIxDecompileError, LeanIxName,
+  LeanIxRawEnvironment, LeanIxSerializeError, LeanIxonRawBlob, LeanIxonRawComm,
+  LeanIxonRawConst, LeanIxonRawEnv, LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
 use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
@@ -287,13 +287,28 @@ pub extern "C" fn rs_compile_env_full(
 /// FFI: compile a Lean environment and stream the serialized Ixon.Env
 /// straight to `out_path` (see `Env::put_file`) — no env-sized `Vec` or
 /// Lean `ByteArray` is built. Writes `<out_path>.tmp`, then renames, so
-/// a crash cannot leave a truncated file. Returns bytes written (Nat).
-/// The file is the canonical `Env::put` encoding (see `put_file`'s
-/// equivalence test).
+/// a crash cannot leave a truncated file. The file is the canonical
+/// `Env::put` encoding (see `put_file`'s equivalence test).
+///
+/// Fail-closed semantics live here, behind the FFI: when
+/// `allow_partial == 0` and any requested constant landed in
+/// `CompileState.ungrounded`, nothing is written — the final path is
+/// never created — and the returned status carries the full ungrounded
+/// list for the caller to report. With `allow_partial != 0`, the
+/// grounded subset is serialized and the same status discloses what
+/// was omitted (see plans/aux-recursor-alias-collision.md §8).
+///
+/// Returns `Ix.CompileM.CompileEnvStatus` (layout
+/// `LeanIxCompileEnvStatus`): root (64-hex canonical consts merkle
+/// root — matches the serialized header, computed even when nothing is
+/// written), ungrounded (`Array (String × String)` of pretty-name /
+/// reason, sorted by name), bytes (0 when not written), named count,
+/// unique anon count.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  allow_partial: u8,
 ) -> LeanIOResult<LeanOwned> {
   let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
@@ -307,36 +322,74 @@ pub extern "C" fn rs_compile_env(
       },
     };
 
-  let path = std::path::PathBuf::from(out_path.as_str());
-  let tmp = {
-    let mut s = path.clone().into_os_string();
-    s.push(".tmp");
-    std::path::PathBuf::from(s)
-  };
-  let written = match compile_stt.env.put_file(&tmp) {
-    Ok(n) => n,
-    Err(e) => {
+  // Deterministically ordered (pretty name, reason) pairs — DashMap
+  // iteration order is shard-dependent.
+  let mut ungrounded: Vec<(String, String)> = compile_stt
+    .ungrounded
+    .iter()
+    .map(|e| (e.key().pretty(), e.value().clone()))
+    .collect();
+  ungrounded.sort_by(|a, b| a.0.cmp(&b.0));
+
+  // Canonical consts merkle root — equals the serialized header root
+  // when a file is written; still reported on a fail-closed abort so
+  // callers can record what the complete-subset content was.
+  let mut const_addrs: Vec<Address> =
+    compile_stt.env.consts.iter().map(|e| e.key().clone()).collect();
+  const_addrs.sort_unstable();
+  let root = ixon::merkle::merkle_root_canonical(&const_addrs)
+    .unwrap_or_else(ixon::merkle::zero_address);
+  let named_count = compile_stt.env.named.len() as u64;
+  let unique_anon = const_addrs.len() as u64;
+
+  let fail_closed = allow_partial == 0 && !ungrounded.is_empty();
+  let written: u64 = if fail_closed {
+    0
+  } else {
+    let path = std::path::PathBuf::from(out_path.as_str());
+    let tmp = {
+      let mut s = path.clone().into_os_string();
+      s.push(".tmp");
+      std::path::PathBuf::from(s)
+    };
+    let written = match compile_stt.env.put_file(&tmp) {
+      Ok(n) => n,
+      Err(e) => {
+        std::fs::remove_file(&tmp).ok();
+        let msg = format!("rs_compile_env: serialization failed: {e}");
+        return LeanIOResult::error_string(&msg);
+      },
+    };
+    if let Err(e) = std::fs::rename(&tmp, &path) {
       std::fs::remove_file(&tmp).ok();
-      let msg = format!("rs_compile_env: serialization failed: {e}");
+      let msg = format!(
+        "rs_compile_env: rename {} -> {}: {e}",
+        tmp.display(),
+        path.display()
+      );
       return LeanIOResult::error_string(&msg);
-    },
+    }
+    written
   };
-  if let Err(e) = std::fs::rename(&tmp, &path) {
-    std::fs::remove_file(&tmp).ok();
-    let msg = format!(
-      "rs_compile_env: rename {} -> {}: {e}",
-      tmp.display(),
-      path.display()
-    );
-    return LeanIOResult::error_string(&msg);
+
+  let ungrounded_arr = LeanArray::alloc(ungrounded.len());
+  for (i, (name, reason)) in ungrounded.iter().enumerate() {
+    ungrounded_arr
+      .set(i, LeanProd::new(LeanString::new(name), LeanString::new(reason)));
   }
+  let status = LeanIxCompileEnvStatus::alloc(0);
+  status.set_obj(0, LeanString::new(&root.hex()));
+  status.set_obj(1, ungrounded_arr);
+  status.set_num_64(0, written);
+  status.set_num_64(1, named_count);
+  status.set_num_64(2, unique_anon);
 
   // Skip destructors: the compile CLI is a one-shot process, the OS
   // reclaims at exit, and dropping the maps costs tens of seconds at
   // Mathlib scale.
   std::mem::forget(compile_stt);
   std::mem::forget(rust_env);
-  LeanIOResult::ok(LeanOwned::from_nat_u64(written))
+  LeanIOResult::ok(status)
 }
 
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.
@@ -1591,6 +1644,158 @@ pub extern "C" fn rs_decompile_env(
     },
   };
   LeanIOResult::ok(LeanOwned::from_nat_u64(dstt.env.len() as u64))
+}
+
+/// Decompile a serialized `.ixe` env and materialize constants as real
+/// `Lean.ConstantInfo` objects — the production import path behind
+/// `import_ixe` (`Ix/ImportIxe.lean`).
+///
+/// `names` selects roots: empty ⇒ every named constant; nonempty ⇒ the
+/// requested constants plus their full name-level reference closure over
+/// the decompiled env. An absent requested name — or a reference that
+/// resolves to nothing, which would fail kernel replay much later with a
+/// worse message — is an immediate error (fail closed).
+///
+/// Pairs return sorted by name; mutual-block grouping and topological
+/// replay order are the Lean side's concern (`Ix.Catalog` machinery).
+/// Construction of `Name`/`Level`/`Expr` goes through the toolchain's
+/// exported constructors so computed fields (hashes, bvar ranges) are
+/// Lean's own — see `crate::lean_build`.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_decompile_env_consts"]
+/// opaque rsDecompileEnvConstsFFI : @& String → @& Array Lean.Name →
+///     IO (Array (Lean.Name × Lean.ConstantInfo))
+/// ```
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_decompile_env_consts(
+  path: LeanString<LeanBorrowed<'_>>,
+  names: LeanArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  use ix_compile::graph::get_constant_info_references;
+
+  use crate::lean_build::{LeanEncodeCache, encode_constant_info, encode_name};
+
+  let path = path.as_str().to_string();
+  let requested = crate::lean_env::decode_name_array(&names);
+
+  let bytes = match std::fs::read(&path) {
+    Ok(b) => b,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env_consts: failed to read {path}: {e}"
+      ));
+    },
+  };
+  let mut slice: &[u8] = &bytes;
+  let env = match ixon::env::Env::get_demoted_named(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env_consts: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+  drop(bytes);
+
+  if !env.assumptions.is_empty() {
+    return LeanIOResult::error_string(&format!(
+      "rs_decompile_env_consts: {path} is a thin bundle ({} assumptions); \
+       materialization needs a self-contained env",
+      env.assumptions.len()
+    ));
+  }
+  if env.main.is_some()
+    && let Err(e) = env.validate_closed()
+  {
+    return LeanIOResult::error_string(&format!(
+      "rs_decompile_env_consts: {path}: {e}"
+    ));
+  }
+
+  let stt = CompileState { env, ..CompileState::default() };
+  for entry in stt.env.named.iter() {
+    stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
+  }
+
+  let dstt = match decompile_env(&stt) {
+    Ok(d) => d,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env_consts: decompile of {path} failed: {e:?}"
+      ));
+    },
+  };
+
+  // Select the output set: everything, or the requested reference closure.
+  let selected: Vec<Name> = if requested.is_empty() {
+    let mut all: Vec<Name> = dstt.env.iter().map(|e| e.key().clone()).collect();
+    all.sort_unstable();
+    all
+  } else {
+    let mut seen: ix_compile::graph::NameSet =
+      ix_compile::graph::NameSet::default();
+    let mut worklist: Vec<Name> = Vec::new();
+    for root in &requested {
+      if !dstt.env.contains_key(root) {
+        return LeanIOResult::error_string(&format!(
+          "rs_decompile_env_consts: requested constant '{}' not found \
+           in {path}",
+          root.pretty()
+        ));
+      }
+      if seen.insert(root.clone()) {
+        worklist.push(root.clone());
+      }
+    }
+    while let Some(name) = worklist.pop() {
+      let refs = {
+        let ci = dstt.env.get(&name).expect("worklist name present");
+        get_constant_info_references(ci.value())
+      };
+      for r in refs {
+        if seen.contains(&r) {
+          continue;
+        }
+        if !dstt.env.contains_key(&r) {
+          return LeanIOResult::error_string(&format!(
+            "rs_decompile_env_consts: '{}' references '{}', which is \
+             missing from {path} — broken closure",
+            name.pretty(),
+            r.pretty()
+          ));
+        }
+        seen.insert(r.clone());
+        worklist.push(r);
+      }
+    }
+    let mut v: Vec<Name> = seen.into_iter().collect();
+    v.sort_unstable();
+    v
+  };
+
+  // Marshal on the calling thread with one shared encode cache so
+  // subterms shared across constants become shared Lean objects.
+  let mut cache = LeanEncodeCache::default();
+  let arr = LeanArray::alloc(selected.len());
+  for (i, name) in selected.iter().enumerate() {
+    let ci_obj = {
+      let ci = dstt.env.get(name).expect("selected name present");
+      match encode_constant_info(&mut cache, ci.value()) {
+        Ok(o) => o,
+        Err(e) => {
+          return LeanIOResult::error_string(&format!(
+            "rs_decompile_env_consts: {}: {e}",
+            name.pretty()
+          ));
+        },
+      }
+    };
+    let name_obj = encode_name(&mut cache, name);
+    arr.set(i, LeanProd::new(name_obj, ci_obj));
+  }
+  LeanIOResult::ok(arr)
 }
 
 // =============================================================================

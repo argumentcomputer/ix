@@ -35,6 +35,7 @@ pub mod primitives;
 pub mod refcount;
 
 pub mod lean;
+pub mod lean_build;
 mod sha256;
 
 #[global_allocator]

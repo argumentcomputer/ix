@@ -84,7 +84,7 @@ public def ensure : IO System.FilePath := do
     else
       throw <| IO.userError s!"tc-parity: seed constant not found in Ix.lean env: {s}"
   let closed := depClosure leanEnv seeds
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI closed out.toString
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI closed out.toString true
   return out
 
 end Tests.Tc.ParityEnv

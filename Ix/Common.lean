@@ -7,6 +7,13 @@ public import Lean.Elab.Frontend
 
 public section
 
+/-- The `ix` tool version string, `<lean version>|<ix version>` — e.g.
+    `4.29.0|0.0.1`. Printed by `ix --version` and recorded in
+    `ix compile --report`; external consumers gate their toolchain match
+    on the Lean half, so keep the format stable. -/
+def Ix.versionString : String :=
+  s!"{Lean.versionString}|0.0.1"
+
 def compareList [Ord α] : List α -> List α -> Ordering
 | a::as, b::bs => match compare a b with
   | .eq => compareList as bs
