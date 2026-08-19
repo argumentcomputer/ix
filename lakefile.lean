@@ -7,13 +7,13 @@ package ix where
 require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "e780f4188c9649aef988270f4d126651460ca9c4"
 
-/- Pinned to the unmerged `native-decide-dynlib` branch, two commits ahead of
-Blake3's main: they build `blake3-rs` as a `cdylib` in addition to the
-staticlib and expose it as the `blake3_rs_shared` target, which
-`ix_native_decide_dynlib` fetches to supply the BLAKE3 backend to Lean's
-native evaluator. Move to main once that branch merges. -/
+/- Blake3's `blake3_rs_shared` target builds `blake3-rs` as a `cdylib`
+alongside the staticlib. `ix_native_decide_dynlib` fetches it to supply the
+BLAKE3 backend to Lean's native evaluator, and that dynlib gates every
+`IxTcVerify` module, so this pin must stay at or after the revision that
+introduced the target. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "730f910a59fe883cd71454bf186c7726a0c2d0d1"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "db25a8a21579d8211eec4347402721f5674bf2c1"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
