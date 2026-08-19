@@ -1217,12 +1217,75 @@ fn compile_below_recursors(
     stt,
     kctx,
   )?;
-  for (_, rec) in recs {
-    below_recs.push(MutConst::Recr(rec));
+  for (_, rec) in &recs {
+    below_recs.push(MutConst::Recr(rec.clone()));
   }
 
   if !below_recs.is_empty() {
-    compile_aux_block(&below_recs, lean_env, stt, kctx)?;
+    // The below-rec block's storage order must align with the below
+    // inductive block's member order (`classes`), exactly like the main
+    // recursor block above: the kernel's
+    // `populate_recursor_rules_from_block` pairs `rec_block[i]` with
+    // `flat[i]` positionally (canonicity §6.2). Without a class-order
+    // key, `sort_consts` picks its own structural permutation of the
+    // recursors, which can diverge from the inductive block's order —
+    // sibling below-recursors first differ at index/motive shape while
+    // sibling below-inductives first differ at ctor content (seen on
+    // Prop-valued mutual predicate families: HaskellSpec `dict`).
+    let mut name_to_pos: FxHashMap<Name, u64> = FxHashMap::default();
+    for (pos, class) in classes.iter().enumerate() {
+      for member_name in class {
+        let rec_name = Name::str(member_name.clone(), "rec".to_string());
+        name_to_pos.insert(rec_name, pos as u64);
+      }
+    }
+    let class_order_key = |c: &MutConst| -> u64 {
+      name_to_pos.get(&c.name()).copied().unwrap_or(u64::MAX)
+    };
+    compile_aux_block_with_rename(
+      &below_recs,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      Some(&class_order_key),
+    )?;
+  }
+
+  // Regenerate `.below.casesOn` against the canonical below-recs. Lean
+  // authors `X.below.casesOn` for every below inductive, and its value
+  // applies `X.below.rec` with motives in LEAN's member order — but the
+  // block above regenerated those recs with the canonical motive layout,
+  // so the Lean-authored wrapper is ill-typed in the compiled env
+  // (kernel: AppTypeMismatch on the motive arguments). Mirror the main
+  // family's Phase-2b: regenerate each casesOn from its canonical rec
+  // and register it here so the ordinary compile of the Lean value is
+  // skipped (aux registrations suppress it, like every other patch).
+  let mut below_cases: Vec<MutConst> = Vec::new();
+  for (rec_name, rec_val) in &recs {
+    let ind_name = match rec_name.as_data() {
+      ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
+      _ => continue,
+    };
+    let cases_on_name = Name::str(ind_name, "casesOn".to_string());
+    if lean_env.get(&cases_on_name).is_some()
+      && let Some(d) =
+        aux_gen::cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
+    {
+      below_cases.push(MutConst::Defn(Def {
+        name: d.name.clone(),
+        level_params: d.level_params.clone(),
+        typ: d.typ.clone(),
+        kind: DefKind::Definition,
+        value: d.value.clone(),
+        hints: ReducibilityHints::Abbrev,
+        safety: def_safety(d.is_unsafe),
+        all: vec![],
+      }));
+    }
+  }
+  if !below_cases.is_empty() {
+    compile_aux_block(&below_cases, lean_env, stt, kctx)?;
   }
   Ok(())
 }
