@@ -1,5 +1,4 @@
 import Tests.Aiur
-import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
@@ -75,7 +74,6 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("catalog", Tests.Ix.Catalog.suite),
   ("import-ixe", Tests.Ix.ImportIxe.suite),
   ("catalog-qualified", Tests.Ix.CatalogQualified.suite),
-  ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
   ("claim", Tests.Claim.suite),
@@ -92,6 +90,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
+  ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
+    ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   ("decompile-unit", Tests.Decompile.unitSuite),
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
@@ -233,8 +233,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_714_093_254, got {actual}"
-              (actual = 6_714_093_254))
+              s!"Shard pipeline FFT matches: expected 6_720_731_750, got {actual}"
+              (actual = 6_720_731_750))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),

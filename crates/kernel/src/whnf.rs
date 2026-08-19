@@ -1881,7 +1881,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(w) => w,
       Err(_) => return Ok(None),
     };
-    if matches!(major_sort_w.data(), ExprData::Sort(u, _) if u.is_zero()) {
+    if matches!(major_sort_w.data(), ExprData::Sort(u, _) if u.is_semantic_zero())
+    {
       return Ok(None);
     }
     let rec_us_vec: Vec<_> = rec_us.to_vec();

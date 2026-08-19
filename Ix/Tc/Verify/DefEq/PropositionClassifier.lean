@@ -26,6 +26,12 @@ structure PropositionClassifierContext
     world support model.keys.uvars
   references : forall {source : KExpr .anon} {id : KId .anon},
     support source -> source.References id -> world.trusted id
+  /-- The semantic `Prop` test normalizes the universe it is handed, and
+  normalization only computes the `VLevel` denotation below the `UInt64`
+  size bound.  The classifier applies it to sorts produced by direct WHNF,
+  which the run support already covers. -/
+  universes : forall {u : KUniv .anon} {info : ExprInfo .anon},
+    support (.sort u info) -> u.size < UInt64.size
 
 namespace PropositionClassifierContext
 
@@ -51,9 +57,11 @@ end PropositionClassifierContext
 
 namespace RecM
 
-/-- If direct WHNF exposes an inferred type as `Sort 0`, transport the
-original typing derivation through both the quotient translation and the
-reduction equality. -/
+/-- If direct WHNF exposes an inferred type as a semantically zero sort,
+transport the original typing derivation through both the quotient
+translation and the reduction equality.  The exposed universe need not be
+syntactically `zero`: `Sort (imax 1 0)` is `Prop` too, so the last step
+goes through `sortDF` rather than a rewrite. -/
 private theorem hasTypeSortZero_of_whnf
     {trProj : RawProjRel} {world : VerifyWorld} {uvars : Nat}
     {Delta : KVLCtx} (hDelta : KVLCtx.WF world.venv uvars Delta)
@@ -62,14 +70,17 @@ private theorem hasTypeSortZero_of_whnf
     (hsourceType : world.venv.HasType uvars Delta.toCtx sourceV sortV)
     (hsortEq : world.venv.IsDefEqU uvars Delta.toCtx sortCoreV sortV)
     (hwhnf : WhnfPost trProj world uvars Delta sortCoreV (.sort u info))
-    (hzero : u.isZero = true) :
+    (hsize : u.size < UInt64.size)
+    (hzero : u.isSemanticZero = true) :
     world.venv.HasType uvars Delta.toCtx sourceV (.sort .zero) := by
   obtain ⟨reducedV, hreduced, hsortReduced⟩ := hwhnf
   cases hreduced with
   | sort hlevel =>
       have htype := hsourceType.defeqU_r world.venvWF hDelta <|
         hsortEq.symm.trans world.venvWF hDelta hsortReduced
-      simpa only [KUniv.toVLevel_of_isZero hzero] using htype
+      exact htype.defeqU_r world.venvWF hDelta
+        ⟨_, .sortDF hlevel trivial
+          (KUniv.toVLevel_equiv_zero_of_isSemanticZero hsize hzero)⟩
 
 /-- The uncached classifier is conservative on every failure and non-sort
 result.  Its sole positive case proves that the original concrete query has
@@ -110,18 +121,19 @@ private theorem classifyPropTypeUncached_wf
           simp only
           exact RecM.WF.pure fun _ => IsPropMeaning.false
       | some reduced =>
-          rcases hreduced with ⟨hIWhnf, _hreducedSupport, hwhnfPost⟩
+          rcases hreduced with ⟨hIWhnf, hreducedSupport, hwhnfPost⟩
           cases reduced with
           | sort u info =>
               simp only
-              cases hzero : u.isZero with
+              cases hzero : u.isSemanticZero with
               | false =>
                   exact RecM.WF.pure fun _ => IsPropMeaning.false
               | true =>
                   exact RecM.WF.pure fun _ _ =>
                     ⟨sourceV, hsource,
                       hasTypeSortZero_of_whnf hIWhnf.2.1.wf hsourceType
-                        hsortEq hwhnfPost hzero⟩
+                        hsortEq hwhnfPost (context.universes hreducedSupport)
+                        hzero⟩
           | var | fvar | const | app | lam | all | letE | prj | nat | str =>
               simp only
               exact RecM.WF.pure fun _ => IsPropMeaning.false

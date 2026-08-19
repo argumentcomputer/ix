@@ -21,7 +21,7 @@ theorem liftTcM_preservesInferOnly
     {methods : Methods .anon} {x : TcM .anon alpha}
     (hx : x.PreservesInferOnly) :
     ((liftM x : RecM .anon alpha).run methods).PreservesInferOnly := by
-  simpa only [ReaderT.run_monadLift] using hx
+  exact hx
 
 /-- Compose two recursive-method actions without exposing the reader
 implementation at each helper proof. -/
@@ -433,7 +433,7 @@ theorem tryQuotReduce_preservesInferOnly
           · simp only [hsize, if_pos]
             exact TcM.PreservesInferOnly.pure none
           · simp only [hsize, if_false]
-            simpa only [tryQuotReduceSelected] using
+            exact
               tryQuotReduceSelected_preservesInferOnly hmethods p args 3 5
       | false =>
           simp only [Bool.false_eq_true, if_false]
@@ -444,7 +444,7 @@ theorem tryQuotReduce_preservesInferOnly
               · simp only [hsize, if_pos]
                 exact TcM.PreservesInferOnly.pure none
               · simp only [hsize, if_false]
-                simpa only [tryQuotReduceSelected] using
+                exact
                   tryQuotReduceSelected_preservesInferOnly hmethods p args 3 4
           | false =>
               simp only [Bool.false_eq_true, if_false]

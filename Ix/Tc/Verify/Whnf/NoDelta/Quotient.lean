@@ -193,7 +193,7 @@ theorem tryQuotReduce_inv_wf
           · simp only [hsize, if_false]
             have hfIdx : 3 < args.size := by omega
             have hmajorIdx : 5 < args.size := by omega
-            simpa only [tryQuotReduceSelected] using
+            exact
               tryQuotReduceSelected_inv_wf hrun census inputs
                 (semantics := semantics) (trProj := trProj) (world := world)
                 hsourceSupport hsource hspine hfIdx hmajorIdx
@@ -211,7 +211,7 @@ theorem tryQuotReduce_inv_wf
               · simp only [hsize, if_false]
                 have hfIdx : 3 < args.size := by omega
                 have hmajorIdx : 4 < args.size := by omega
-                simpa only [tryQuotReduceSelected] using
+                exact
                   tryQuotReduceSelected_inv_wf hrun census inputs
                     (semantics := semantics) (trProj := trProj)
                     (world := world) hsourceSupport hsource hspine

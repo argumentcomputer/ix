@@ -2,6 +2,11 @@
 //!
 //! This module decompiles alpha-invariant Ixon representations back to
 //! Lean constants, expanding Share references and reattaching metadata.
+//!
+//! `IX_DECOMPILE_KENV_CLEAR_ENTRIES=N` controls how many dependency names
+//! Pass 2 tracks before clearing its shared kernel environment. The default
+//! is 131072; `0` disables clearing. Raising the limit spends memory to avoid
+//! rebuilding dependency closures after a full kernel-cache clear.
 
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_precision_loss)]
@@ -46,6 +51,25 @@ use dashmap::DashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
+
+const DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES: usize = 131_072;
+
+fn decompile_kenv_clear_entries_from(raw: Option<&str>) -> Option<usize> {
+  match raw {
+    None => Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
+    Some("0") => None,
+    Some(value) => value
+      .parse::<usize>()
+      .ok()
+      .filter(|limit| *limit > 0)
+      .or(Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES)),
+  }
+}
+
+fn decompile_kenv_clear_entries() -> Option<usize> {
+  let raw = std::env::var("IX_DECOMPILE_KENV_CLEAR_ENTRIES").ok();
+  decompile_kenv_clear_entries_from(raw.as_deref())
+}
 
 #[derive(Default, Debug)]
 pub struct DecompileState {
@@ -5381,7 +5405,7 @@ pub fn decompile_env(
   // regression for little memory). It exists as a backstop against
   // unbounded growth on envs whose closure union would otherwise
   // dominate decompile RSS.
-  const KENV_CLEAR_ENTRIES: usize = 65536;
+  let kenv_clear_entries = decompile_kenv_clear_entries();
 
   // Progress tracking. Per-block progress logs (every `log_stride` blocks or
   // every 5 s) are opt-in via `IX_DECOMPILE_PROGRESS`; slow-block warnings
@@ -5392,6 +5416,10 @@ pub fn decompile_env(
   let slow_threshold = std::time::Duration::from_secs(10);
   let t_p2 = std::time::Instant::now();
   let mut t_last_log = t_p2;
+  let mut ingress_elapsed = std::time::Duration::ZERO;
+  let mut generation_elapsed = std::time::Duration::ZERO;
+  let mut peak_ingressed = 0;
+  let mut kenv_clears = 0;
 
   for (block_idx, block_key) in sorted_block_keys.iter().enumerate() {
     let Some((all_names, aux_members)) = blocks.get(block_key) else {
@@ -5425,6 +5453,8 @@ pub fn decompile_env(
       }
     }
     let t_after_ingress = std::time::Instant::now();
+    ingress_elapsed += t_after_ingress - t_block;
+    peak_ingressed = peak_ingressed.max(ingressed.len());
 
     let errors = decompile_block_aux_gen(
       all_names,
@@ -5435,18 +5465,19 @@ pub fn decompile_env(
       &dstt,
       &muts_index,
     );
+    let t_after_generation = std::time::Instant::now();
+    generation_elapsed += t_after_generation - t_after_ingress;
     aux_gen_errors.extend(errors);
 
     // Per-block slow-block warning.
     let block_elapsed = t_block.elapsed();
     if block_elapsed > slow_threshold {
       let ingress_ms = (t_after_ingress - t_block).as_millis();
-      let gen_ms =
-        (t_block.elapsed() - (t_after_ingress - t_block)).as_millis();
+      let gen_ms = (t_after_generation - t_after_ingress).as_millis();
       eprintln!(
         "[decompile] slow block [{block_idx}/{total_blocks}] {} \
          took {:.2}s (ingress={ingress_ms}ms, gen={gen_ms}ms, \
-         {} members, kenv={})",
+         {} members, ingressed={})",
         block_key.pretty(),
         block_elapsed.as_secs_f32(),
         aux_members.len(),
@@ -5477,7 +5508,8 @@ pub fn decompile_env(
         let pct = 100.0 * done as f32 / total_blocks as f32;
         eprintln!(
           "[decompile] Pass 2 progress: {done}/{total_blocks} blocks \
-           ({pct:.1}%), elapsed {elapsed:.1}s, eta {remaining}s, kenv={}{}",
+           ({pct:.1}%), elapsed {elapsed:.1}s, eta {remaining}s, \
+           ingressed={}{}",
           ingressed.len(),
           rss_log_suffix(),
         );
@@ -5496,17 +5528,26 @@ pub fn decompile_env(
     // closures. Trigger on size instead: envs whose closures stay under
     // the threshold never clear (and pay nothing); larger envs trade a
     // few re-ingress walks for a bounded working set.
-    if ingressed.len() > KENV_CLEAR_ENTRIES {
+    if kenv_clear_entries.is_some_and(|limit| ingressed.len() > limit) {
       kctx.kenv.clear_releasing_memory();
       ingressed.clear();
+      kenv_clears += 1;
       expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
     }
   }
+  let kenv_limit = kenv_clear_entries
+    .map_or_else(|| "disabled".to_string(), |limit| limit.to_string());
   eprintln!(
-    "[decompile] Pass 2 done in {:.2}s ({} aux_gen errors, kenv={}){}",
+    "[decompile] Pass 2 done in {:.2}s ({} aux_gen errors, ingressed={}, \
+     peak_ingressed={}, clears={}, limit={}, ingress={:.2}s, gen={:.2}s){}",
     t_p2.elapsed().as_secs_f32(),
     aux_gen_errors.len(),
     ingressed.len(),
+    peak_ingressed,
+    kenv_clears,
+    kenv_limit,
+    ingress_elapsed.as_secs_f32(),
+    generation_elapsed.as_secs_f32(),
     rss_log_suffix(),
   );
 
@@ -5672,6 +5713,20 @@ mod tests {
   use super::*;
   use crate::compile::compile_name;
   use ix_common::env::Level;
+
+  #[test]
+  fn decompile_kenv_clear_limit_parsing() {
+    assert_eq!(
+      decompile_kenv_clear_entries_from(None),
+      Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
+    );
+    assert_eq!(decompile_kenv_clear_entries_from(Some("0")), None);
+    assert_eq!(decompile_kenv_clear_entries_from(Some("131072")), Some(131072),);
+    assert_eq!(
+      decompile_kenv_clear_entries_from(Some("invalid")),
+      Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
+    );
+  }
 
   /// Register a Name in `stt.env.names` so `decompile_name` can resolve it.
   /// Mirrors `compile_name` (content-address the name, insert into names map).

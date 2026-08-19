@@ -91,7 +91,7 @@ theorem tryApplyIotaCtor_preservesInferOnly
         · simp only [hfields, if_pos]
           exact TcM.PreservesInferOnly.pure none
         · simp only [hfields, if_false]
-          simpa only [pure_bind] using
+          simpa only [Bool.false_eq_true, if_false, pure_bind] using
             (bind_preservesInferOnly
               (methods := methods)
               (next := fun result => pure (some result))

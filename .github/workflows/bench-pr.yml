@@ -21,6 +21,9 @@
 #                                  # IX_COMPILE_WORKERS); reaches the measured `ix
 #                                  # compile` and keys its caches, so a knob run gets
 #                                  # its own row instead of the default run's
+#   IX_DECOMPILE_KENV_CLEAR_ENTRIES=0
+#                                  # decompile Pass 2 cache limit; 0 disables clearing
+#                                  # (default: 131072)
 #
 # Each backend runs its registry default mode:
 #   - aiur: `prove` — the full proof pipeline per constant (stage 1

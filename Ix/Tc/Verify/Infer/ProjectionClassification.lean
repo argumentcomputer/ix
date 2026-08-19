@@ -117,7 +117,6 @@ private theorem ensureSortDirect_state_wf
   case sort => exact RecM.WF.pure fun _ => trivial
   all_goals
     unfold ensureSortWhnf
-    simp only [pure_bind]
     apply RecM.WF.bind (hwhnf _ s)
     intro reduced after _
     cases reduced <;> simp only

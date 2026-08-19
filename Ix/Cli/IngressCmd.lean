@@ -26,10 +26,12 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.Meta
+public import Ix.Cli.ValidateCmd
 
 public section
 
 open System (FilePath)
+open Ix.EnvScope
 
 namespace Ix.Cli.IngressCmd
 
@@ -53,14 +55,15 @@ def runIngressCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `buildFile` also runs `lake exe cache get` if the target depends on
   -- Mathlib, so a fresh checkout works without a prior `lake build`.
   buildFile pathStr
-  let leanEnv ← getFileEnv pathStr
+  let fe ← getFileEnvCore pathStr
+  let constList ← defaultConstList fe pathStr
 
-  let totalConsts := leanEnv.constants.toList.length
+  let totalConsts := constList.length
   IO.println s!"Running Ix ingress on {pathStr}"
   IO.println s!"Total constants in env: {totalConsts}"
 
   let start ← IO.monoMsNow
-  let kenvLen ← rsKernelIngressFFI leanEnv.constants.toList
+  let kenvLen ← rsKernelIngressFFI constList
   let elapsed := (← IO.monoMsNow) - start
 
   IO.println s!"[ingress] ingressed {kenvLen} kernel consts in {elapsed.formatMs}"

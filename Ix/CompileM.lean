@@ -719,7 +719,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     let recordPatch (root : UInt64) : CompileM Unit := do
       if compiled.any (·.2.isSome) then
         pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
-    match mutCtx.find? name with
+    match mutCtx.get? name with
     | some recIdx =>
       let root ← allocArenaNode (.ref nameAddr)
       recordPatch root
@@ -1268,7 +1268,7 @@ def collectExprTables (top : Expr) (ctxKey : Address)
     | .const name lvls _ =>
       for lvl in lvls do
         univs := univs.push (← compileUniv lvl)
-      if (mutCtx.find? name).isNone then
+      if (mutCtx.get? name).isNone then
         refs := refs.push (← lookupConstAddr name)
     | .app func arg _ =>
       stack := stack.push arg |>.push func
@@ -1404,7 +1404,7 @@ partial def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
     let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls.toList yls.toList
     if univs.ord != .eq then pure univs
     else if x == y then pure ⟨true, .eq⟩
-    else match ctx.find? x, ctx.find? y with
+    else match ctx.get? x, ctx.get? y with
     | some nx, some ny => pure ⟨false, compare nx ny⟩
     | some _, none => pure ⟨true, .lt⟩
     | none, some _ => pure ⟨true, .gt⟩
@@ -1438,7 +1438,7 @@ partial def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
   | .lit .., _ => pure ⟨true, .lt⟩
   | _, .lit .. => pure ⟨true, .gt⟩
   | .proj tnx ix tx _, .proj tny iy ty _ => do
-    let tn ← match ctx.find? tnx, ctx.find? tny with
+    let tn ← match ctx.get? tnx, ctx.get? tny with
       | some nx, some ny => pure ⟨false, compare nx ny⟩
       | none, some _ => pure ⟨true, .gt⟩
       | some _, none => pure ⟨true, .lt⟩
@@ -2226,7 +2226,7 @@ def compileMutualBlock (classes : List (List MutConst))
 
 /-- Build mutCtx for an inductive: includes the inductive and all its constructors. -/
 def buildInductiveMutCtx (i : InductiveVal) (ctorVals : Array ConstructorVal) : Ix.MutCtx := Id.run do
-  let mut ctx : Ix.MutCtx := Batteries.RBMap.empty
+  let mut ctx : Ix.MutCtx := Std.TreeMap.empty
   -- Inductive at index 0
   ctx := ctx.insert i.cnst.name 0
   -- Constructors at indices 1, 2, ...
@@ -2245,7 +2245,7 @@ def BlockResult.mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta := .e
     Returns BlockResult with the constant and any projections needed. -/
 def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
   let name := const.getCnst.name
-  let mutCtx : Ix.MutCtx := Batteries.RBMap.empty.insert name 0
+  let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert name 0
   withMutCtx mutCtx do
     match const with
     | .defnInfo d =>
@@ -2940,8 +2940,8 @@ opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.Ra
     in `src/ix/env.rs`. This is the addressing scheme under which
     `orig_kenv` stores KIds in the kernel — two constants with the same
     Lean name but different content get distinct addresses. Used by
-    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimOrigAddrs` in
-    the Rust kernel. -/
+    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimAddrs::new_orig`
+    in the Rust kernel. -/
 @[extern "rs_leon_hashes"]
 opaque rsLeonHashesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array (Ix.Name × Address))

@@ -1,7 +1,7 @@
 module
 
 public import Ix.Ixon
-public import Batteries.Data.RBMap
+public import Batteries.Recycling.RBTree.Basic
 
 /-!
 Universe-level canonicalization (canonicity §10.6).
@@ -152,7 +152,7 @@ def CNode.isEmpty (n : CNode) : Bool :=
   n.constant == 0 && n.vars.isEmpty
 
 /-- Canonical form: map from imax-paths to nodes (lexicographic). -/
-abbrev CNorm := Batteries.RBMap CPath CNode compare
+abbrev CNorm := RBTree.RBMap CPath CNode compare
 
 instance : Inhabited CNorm := ⟨.empty⟩
 
@@ -343,7 +343,7 @@ recovery, marker consumption, emission order). -/
 /-- Context-group accumulator. -/
 structure CGroup where
   constant : UInt64 := 0
-  atoms : Batteries.RBMap UInt64 UInt64 compare := .empty
+  atoms : RBTree.RBMap UInt64 UInt64 compare := .empty
   deriving Inhabited
 
 /-- Is a `u_i = 0` fallout of `k` dominated under `ctx`? Some entry at
@@ -382,7 +382,7 @@ def maxChain (terms : List Univ) : Univ :=
 def linearize (norm : CNorm) : Univ := Id.run do
   let cRoot := (norm.findD [] {}).constant
   -- Explode into per-atom items; self-strip under domination coverage.
-  let mut groups : Batteries.RBMap CPath CGroup compare := .empty
+  let mut groups : RBTree.RBMap CPath CGroup compare := .empty
   for (path, node) in norm.toList do
     if !path.isEmpty && node.constant > 0 then
       let g := groups.findD path {}

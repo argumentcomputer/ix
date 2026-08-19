@@ -195,7 +195,7 @@ theorem scopedPublicInference_wf (separation : AddressSeparation) :
       (fun inferred _ => support inferred ∧
         InferPost RawProjRel.none VerifyWorld.empty scopedModel.keys.uvars []
           (.sort .zero) inferred) := by
-  simpa [source, result, resultUniv] using
+  exact
     (TcM.infer.sort_scoped_wf_fuel_one
       (initial := scopedInitialState) (model := scopedModel)
       (u := sourceUniv) (info := source.info)
@@ -237,7 +237,7 @@ theorem scopedPublicInference_execution
       (RecM.inferUncached RecM.inferCall false source).run
           (Ix.Tc.methodsN (m := .anon) 1) scopedInitialState =
         .ok result afterIntern := by
-    simpa [source, result, resultUniv] using hintern
+    exact hintern
   have hshell := RecM.inferWith_fullMiss_success
     (inferRec := RecM.inferCall)
     (methods := Ix.Tc.methodsN (m := .anon) 1)

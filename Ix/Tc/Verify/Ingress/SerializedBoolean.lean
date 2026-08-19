@@ -556,16 +556,16 @@ theorem eagerConstants :
   rcases eagerKeyCases hkey with rfl | rfl | rfl | rfl
   · have hc := Option.some.inj (hget.symm.trans eagerFamilyNative)
     subst constant
-    simpa [stagedWorld] using catalog_family
+    exact catalog_family
   · have hc := Option.some.inj (hget.symm.trans eagerFalseNative)
     subst constant
-    simpa [stagedWorld] using catalog_false
+    exact catalog_false
   · have hc := Option.some.inj (hget.symm.trans eagerTrueNative)
     subst constant
-    simpa [stagedWorld] using catalog_true
+    exact catalog_true
   · have hc := Option.some.inj (hget.symm.trans eagerRecursorNative)
     subst constant
-    simpa [stagedWorld] using catalog_recursor
+    exact catalog_recursor
 
 def isCataloguedBlock (id : KId .anon) : Bool :=
   id == familyBlockId || id == recursorBlockId
@@ -687,13 +687,13 @@ theorem lazyFamilyConstants :
   rcases lazyFamilyKeyCases hkey with rfl | rfl | rfl
   · have hc := Option.some.inj (hget.symm.trans lazyFamilyLoadedNative)
     subst constant
-    simpa [stagedWorld] using catalog_family
+    exact catalog_family
   · have hc := Option.some.inj (hget.symm.trans lazyFalseLoadedNative)
     subst constant
-    simpa [stagedWorld] using catalog_false
+    exact catalog_false
   · have hc := Option.some.inj (hget.symm.trans lazyTrueLoadedNative)
     subst constant
-    simpa [stagedWorld] using catalog_true
+    exact catalog_true
 
 private theorem lazyFamilyBlockKeysNative :
     lazyFamilyAfter.blocks.keys.all (fun id => id == familyBlockId) = true := by
@@ -790,16 +790,16 @@ theorem lazyFinalConstants :
   rcases lazyRecursorKeyCases hkey with rfl | rfl | rfl | rfl
   · have hc := Option.some.inj (hget.symm.trans lazyFinalFamilyNative)
     subst constant
-    simpa [stagedWorld] using catalog_family
+    exact catalog_family
   · have hc := Option.some.inj (hget.symm.trans lazyFinalFalseNative)
     subst constant
-    simpa [stagedWorld] using catalog_false
+    exact catalog_false
   · have hc := Option.some.inj (hget.symm.trans lazyFinalTrueNative)
     subst constant
-    simpa [stagedWorld] using catalog_true
+    exact catalog_true
   · have hc := Option.some.inj (hget.symm.trans lazyFinalRecursorNative)
     subst constant
-    simpa [stagedWorld] using catalog_recursor
+    exact catalog_recursor
 
 private theorem lazyFinalBlockKeysClassifiedNative :
     lazyRecursorAfter.blocks.keys.all isCataloguedBlock = true := by

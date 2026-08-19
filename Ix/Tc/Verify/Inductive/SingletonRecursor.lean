@@ -75,14 +75,19 @@ end CertifiedSingletonGeneration
 `motives = 1` is the explicit no-mutual/no-nested boundary of this adapter.
 The exact rule count is retained, and `RecursorMajorIdxCoherent` rules out the
 wrapping-`UInt64` disagreement between production's ordinary iota path and
-its Nat descriptor path. -/
+its Nat descriptor path.
+
+The universe arity is taken from `generation.recUvars` rather than spelled as
+`source.uvars + 1`: the fresh motive universe exists only under large
+elimination, so a small-eliminating (`Prop`-valued) family's recursor carries
+exactly the source universes. -/
 def KConst.IsCertifiedSingletonRecursor
     (source : VInductDecl) (generation : source.GenerationChecked)
     (constructorIds : Array (KId .anon)) : KConst .anon → Prop
   | concrete@(.recr (lvls := levels) (params := params)
       (indices := indices) (motives := motives) (minors := minors)
       (memberIdx := memberIdx) (rules := rules) ..) =>
-    levels.toNat = source.uvars + 1 ∧
+    levels.toNat = generation.recUvars ∧
       params.toNat = source.nparams ∧
       indices.toNat = generation.block.rawIndices.length ∧
       motives.toNat = 1 ∧

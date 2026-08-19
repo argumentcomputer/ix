@@ -478,7 +478,7 @@ theorem runRec_wfAtOn
       (calls s.recFuel.toNat) Delta s action Q E) :
     TcM.WF (WhnfStateInv layer semantics trProj world scope uvars Delta) s
       (TcM.runRec action) Q E := by
-  simpa [TcM.runRec] using
+  exact
     haction (Ix.Tc.methodsN (m := .anon) s.recFuel.toNat) schedule.selected
 
 end TcM

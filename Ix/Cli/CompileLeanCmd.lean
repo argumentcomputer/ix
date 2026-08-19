@@ -24,9 +24,11 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.CompileDriver
+public import Ix.Cli.ValidateCmd
 public section
 
 open System (FilePath)
+open Ix.EnvScope
 
 namespace Ix.Cli.CompileLeanCmd
 
@@ -46,8 +48,8 @@ def runCompileLeanCmd (p : Cli.Parsed) : IO UInt32 := do
 
   IO.println s!"[compile-lean] building {pathStr}..."
   buildFile pathStr
-  let leanEnv ← getFileEnv pathStr
-  let constList := leanEnv.constants.toList
+  let fe ← getFileEnvCore pathStr
+  let constList ← defaultConstList fe pathStr
   IO.println s!"[compile-lean] {constList.length} constants, {workers} workers"
 
   let t0 ← IO.monoMsNow

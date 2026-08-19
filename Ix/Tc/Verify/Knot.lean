@@ -327,7 +327,7 @@ theorem runRec_wf {layer : WhnfLayer} {semantics : CacheSemantics}
     (hx : RecM.WF layer semantics trProj world support uvars Δ s x Q E) :
     TcM.WF (WhnfStateInv layer semantics trProj world support uvars Δ) s
       (TcM.runRec x) Q E := by
-  simpa [TcM.runRec] using
+  exact
     hx (methodsN s.recFuel.toNat)
       (Methods.WF.atUvars
         (Methods.methodsN_wf hclosed s.recFuel.toNat) uvars)
@@ -347,7 +347,7 @@ theorem runRec_wfAt
     TcM.WF
       (WhnfStateInv layer semantics trProj world support uvars Delta) s
       (TcM.runRec x) Q E := by
-  simpa [TcM.runRec] using
+  exact
     hx (methodsN s.recFuel.toNat)
       (Methods.methodsN_wfAt hclosed s.recFuel.toNat)
 

@@ -47,7 +47,7 @@ theorem inferKey_operational_matches_wf
       (fun key s' =>
         (operationalWhnfContextKeys trProj world uvars).Matches trProj world
           s Delta source key ∧ ContextKeyFrame s s') := by
-  simpa using
+  simpa [operationalWhnfContextKeys] using
     (TcM.whnfKey_matches_wf (layer := layer) (semantics := semantics)
       (trProj := trProj) (world := world) (support := support)
       (keys := operationalWhnfContextKeys trProj world uvars)

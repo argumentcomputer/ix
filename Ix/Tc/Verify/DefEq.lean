@@ -1326,19 +1326,25 @@ theorem kernelInferMeaningOfMatches {keys : WhnfContextKeys}
   cases hkind with
   | infer =>
       apply InferCacheValid.expr
-        (fallback := defEqCacheSemantics keys trProj
-          CacheSemantics.blockErrorsOnly) .infer (hsource := hsource)
+        (fallback := defEqCacheSemantics keys trProj <|
+            isPropCacheSemantics keys trProj <|
+              isRecCacheSemantics CacheSemantics.blockErrorsOnly) .infer (hsource := hsource)
         (haddr := hmatch.sourceAddr) (hctx := hmatch.2.1)
       simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
-        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
+        inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+        DefEqCacheValid] using
         h.valid
   | inferOnly =>
       apply InferCacheValid.expr
-        (fallback := defEqCacheSemantics keys trProj
-          CacheSemantics.blockErrorsOnly) .inferOnly (hsource := hsource)
+        (fallback := defEqCacheSemantics keys trProj <|
+            isPropCacheSemantics keys trProj <|
+              isRecCacheSemantics CacheSemantics.blockErrorsOnly) .inferOnly (hsource := hsource)
         (haddr := hmatch.sourceAddr) (hctx := hmatch.2.1)
       simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
-        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
+        inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+        DefEqCacheValid] using
         h.valid
 
 theorem kernelDefEqMeaning {keys : WhnfContextKeys}
@@ -1354,12 +1360,14 @@ theorem kernelDefEqMeaning {keys : WhnfContextKeys}
     (hctx : keys.Represents (max a.lbr b.lbr) key.2.2 Delta) :
     DefEqMeaning trProj authority.world keys.uvars Delta a b answer := by
   apply DefEqCacheValid.result (keys := keys) (trProj := trProj)
-    (fallback := CacheSemantics.blockErrorsOnly) (kind := kind)
+    (fallback := isPropCacheSemantics keys trProj <|
+      isRecCacheSemantics CacheSemantics.blockErrorsOnly) (kind := kind)
     (ha := ha) (haddrA := haddrA) (hb := hb) (haddrB := haddrB)
     (hctx := hctx)
   simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
     WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
-    inferCacheSemantics, InferCacheValid] using h.valid
+    inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+    DefEqCacheValid] using h.valid
 
 /-- Eliminate a physical DefEq cache entry in the caller's original order.
 The production key stores the canonical address order, so the swapped branch
@@ -1590,7 +1598,9 @@ theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
           (CacheAuthority.stable world) support
           (.expr .infer key ty) := hall
       simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
-        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
+        inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+        DefEqCacheValid] using
         hvalid
   | inferOnly =>
       have hvalid : InferCacheValid model.keys trProj
@@ -1599,7 +1609,9 @@ theorem inferProvenance {trProj : RawProjRel} {world : VerifyWorld}
           (CacheAuthority.stable world) support
           (.expr .inferOnly key ty) := hall
       simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
-        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid] using
+        WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
+        inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+        DefEqCacheValid] using
         hvalid
 
 /-- Turn one executed DefEq result into collision-robust provenance for the
@@ -1643,7 +1655,8 @@ theorem defEqProvenance {trProj : RawProjRel} {world : VerifyWorld}
       exact model.defEqTransport hctx hrepresented hmeaning
     simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
       WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
-      inferCacheSemantics, InferCacheValid] using hvalid
+      inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+      DefEqCacheValid] using hvalid
   · have hpair : canonicalPair a.addr b.addr = (b.addr, a.addr) := by
       simp [canonicalPair, horder]
     rw [hpair] at hreferences ⊢
@@ -1666,7 +1679,8 @@ theorem defEqProvenance {trProj : RawProjRel} {world : VerifyWorld}
       exact model.defEqTransport hctx' hrepresented hmeaning.symm
     simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
       WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
-      inferCacheSemantics, InferCacheValid] using hvalid
+      inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+      DefEqCacheValid] using hvalid
 
 /-- A narrow same-head failure marker is rejection-only, so it needs no
 semantic transport.  It still records finite source witnesses and explicit
@@ -1695,7 +1709,8 @@ theorem defEqFailureProvenance {trProj : RawProjRel} {world : VerifyWorld}
         (.defEqFailure (a.addr, b.addr, ctxAddr)) := trivial
     simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
       WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
-      inferCacheSemantics, InferCacheValid] using hvalid
+      inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+      DefEqCacheValid] using hvalid
   · have hpair : canonicalPair a.addr b.addr = (b.addr, a.addr) := by
       simp [canonicalPair, horder]
     rw [hpair] at hreferences ⊢
@@ -1705,7 +1720,8 @@ theorem defEqFailureProvenance {trProj : RawProjRel} {world : VerifyWorld}
         (.defEqFailure (b.addr, a.addr, ctxAddr)) := trivial
     simpa [kernelCacheSemantics, k1CacheSemantics, whnfCacheSemantics,
       WhnfCacheValid, unfoldCacheSemantics, UnfoldCacheValid,
-      inferCacheSemantics, InferCacheValid] using hvalid
+      inferCacheSemantics, InferCacheValid, defEqCacheSemantics,
+      DefEqCacheValid] using hvalid
 
 end KernelSuffixTransports
 

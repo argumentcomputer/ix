@@ -30,8 +30,7 @@ theorem validateUnivParamsSeen_go_frame :
   | bound, level :: stack, seen, methods, I, state => by
       rw [RecM.validateUnivParamsSeen.go]
       split
-      · simp only [bind_pure]
-        exact validateUnivParamsSeen_go_frame bound stack seen methods I state
+      · exact validateUnivParamsSeen_go_frame bound stack seen methods I state
       · cases level with
         | zero addr =>
             simp only [pure_bind]
@@ -181,8 +180,7 @@ theorem validateExprWellScoped_go_frame :
       hfault, state => by
       rw [RecM.validateExprWellScoped.go]
       split
-      · simp only [bind_pure]
-        exact validateExprWellScoped_go_frame bound stack seenExprs seenUnivs
+      · exact validateExprWellScoped_go_frame bound stack seenExprs seenUnivs
           methods I hfault state
       · cases expr with
         | var idx name info =>

@@ -2,11 +2,11 @@ module
 
 -- Private imports: `ensure`'s signature is just `IO FilePath`; these provide
 -- only its implementation. `Ix.Meta` re-exports `getFileEnv` and `Ix.CompileM`
--- (`rsCompileEnvBytesFFI`). The transitive dep closure is inlined below rather
--- than taken from `Ix.Cli.ValidateCmd`, whose top-level `collectDeps` collides
--- with the same-named def in `Tests.Ix.Compile.ValidateAux` once both reach
--- Main.
+-- (`rsCompileEnvBytesFFI`). The transitive dep closure comes from the shared
+-- `Ix.EnvScope.collectDeps` (namespaced, so it can meet the same-named
+-- top-level def in `Tests.Ix.Compile.ValidateAux` inside `Tests.Main`).
 import Ix.Meta
+import Ix.EnvScope
 import Ix.Cli.ConstsFile
 
 /-!
@@ -19,48 +19,6 @@ run unconditionally instead of skipping when no fixture is supplied.
 namespace Tests.Tc.ParityEnv
 
 open Lean
-
-/-- Transitive dependency closure of `seeds` in `env` — the constants a compiled
-`.ixe` must contain. Mirrors `Ix.Cli.ValidateCmd.collectDeps`. -/
-private partial def depClosure (env : Environment) (seeds : List Name)
-    : List (Name × ConstantInfo) := Id.run do
-  let mut needed : Std.HashSet Name := {}
-  let mut worklist := seeds
-  while !worklist.isEmpty do
-    match worklist with
-    | [] => break
-    | n :: rest =>
-      worklist := rest
-      if needed.contains n then continue
-      needed := needed.insert n
-      if let some ci := env.constants.find? n then
-        let mut refs : NameSet := ci.type.getUsedConstantsAsSet
-        match ci with
-        | .defnInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .thmInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .opaqueInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .inductInfo v =>
-          for ctorName in v.ctors do
-            refs := refs.insert ctorName
-            if let some ctorCi := env.constants.find? ctorName then
-              for r in ctorCi.type.getUsedConstantsAsSet do refs := refs.insert r
-          for mutName in v.all do
-            refs := refs.insert mutName
-        | .ctorInfo v =>
-          refs := refs.insert v.induct
-        | .recInfo v =>
-          for mutName in v.all do
-            refs := refs.insert mutName
-          for rule in v.rules do
-            for r in rule.rhs.getUsedConstantsAsSet do refs := refs.insert r
-        | _ => pure ()
-        for r in refs do
-          if !needed.contains r then
-            worklist := r :: worklist
-  env.constants.toList.filter fun (n, _) => needed.contains n
 
 /-- Path to the parity `.ixe`, compiling it from the seed closure if absent.
 `buildFile` first: the test suite only builds what `IxTests` needs, not the rest
@@ -83,8 +41,12 @@ public def ensure : IO System.FilePath := do
       seeds := name :: seeds
     else
       throw <| IO.userError s!"tc-parity: seed constant not found in Ix.lean env: {s}"
-  let closed := depClosure leanEnv seeds
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI closed out.toString true
+  let closed := Ix.EnvScope.collectDeps leanEnv seeds
+  -- Fail-closed (`allowPartial := false`): with `getFileEnv` always
+  -- full-content, every referenced constant — `_private.*` proof auxiliaries
+  -- included — must ground; a silent drop here is exactly how the
+  -- exported-level trim regression hid until the tc gates fired.
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI closed out.toString false
   return out
 
 end Tests.Tc.ParityEnv

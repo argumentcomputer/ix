@@ -212,7 +212,7 @@ theorem tryOptionalWhnfRec_wf
       (Q := fun reduced _ => support reduced ∧
         WhnfPost trProj world uvars Delta sourceV reduced) (by
         intro methods hmethods
-        simpa only [whnfRec_run] using
+        exact
           (hmethods.whnf (s := s) hsource htr)))
   · intro result after hresult
     cases result <;> exact hresult

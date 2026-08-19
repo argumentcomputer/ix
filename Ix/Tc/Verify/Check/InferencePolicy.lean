@@ -301,8 +301,7 @@ theorem lookupLetVal (idx : UInt64) :
   · exact pure _
   · split
     · exact pure _
-    · simp only [pure_bind]
-      apply bind (runIntern _)
+    · apply bind (runIntern _)
       intro result
       exact pure (some result)
 

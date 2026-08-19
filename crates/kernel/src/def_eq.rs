@@ -875,7 +875,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let result = match self.with_infer_only(|tc| tc.infer(ty)) {
       Ok(sort) => match self.whnf(&sort) {
         Ok(reduced) => match reduced.data() {
-          ExprData::Sort(u, _) => u.is_zero(),
+          ExprData::Sort(u, _) => u.is_semantic_zero(),
           _ => false,
         },
         Err(_) => false,

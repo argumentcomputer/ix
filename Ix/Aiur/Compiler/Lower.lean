@@ -628,7 +628,7 @@ def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
         let (body, layoutMState) ← function.compile layout
         let nameMap := nameMap.insert function.name functions.size
         let function := ⟨body, layoutMState.functionLayout, function.entry, false⟩
-        let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
+        let memSizes := layoutMState.memSizes.foldl (·.insert ·) memSizes
         pure (functions.push function, memSizes, nameMap)
       | _ => pure acc
   pure (⟨functions, memSizes.toArray⟩, nameMap)

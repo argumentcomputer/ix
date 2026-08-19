@@ -20,6 +20,10 @@ namespace Tests.Ix.Catalog
 def spec : Ix.Catalog.CatalogSpec := {
   catalogPrefix := `TestCatalog
   libs := #[
+    -- LSpec depends on plausible since the v4.33 workspace pins; every
+    -- non-toolchain package in the import closure needs an entry, and
+    -- dependencies replay before their dependents.
+    { qualifier := `Plausible, roots := #[`Plausible] },
     { qualifier := `LSpec, roots := #[`LSpec] },
     { qualifier := `Cli, roots := #[`Cli] } ] }
 

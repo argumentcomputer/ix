@@ -625,8 +625,11 @@ namespace AliasProvenance
 
 universe u
 
-public def WrapA (V : Type u) : Type u := V
-public def WrapB (V : Type u) : Type u := V
+-- `@[expose]`: the inductives below take these as (reducible) index
+-- types; without exposed bodies the compiler infers a different
+-- compilation type locally than importers would and refuses to compile.
+@[expose] public def WrapA (V : Type u) : Type u := V
+@[expose] public def WrapB (V : Type u) : Type u := V
 
 public abbrev RelOn (C : Type u) : Type u := C → C → Prop
 

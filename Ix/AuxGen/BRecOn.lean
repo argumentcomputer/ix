@@ -1325,7 +1325,9 @@ TcScope::get_level on major domain returned {e}. This typically means \
     let mut out : Array Level := #[]
     for d in indexDecls do
       out := out.push (← rtc.getLevel d.domain)
-    rtc ← rtc.popLocals indexDecls
+    -- The restored scope is dead — `rtc` is not read past this point — but
+    -- the pop still has to run to balance the TC-side local context.
+    _ ← rtc.popLocals indexDecls
     pure out
   let eqResult ← buildTypeBreconEqFvar ci targetIndName breconName goName
     recUnivs paramFvars motiveFvars motiveDecls indexFvars indexDecls

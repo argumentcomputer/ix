@@ -45,8 +45,7 @@ theorem inferCall_wf
       (fun ty _ => support ty /\
         InferPost trProj world uvars Delta sourceV ty) := by
   intro methods hmethods
-  simpa only [inferCall, ReaderT.run_bind, ReaderT.run_monadLift,
-    pure_bind] using hmethods.infer hsource htr
+  exact hmethods.infer hsource htr
 
 /-- The ordinary recursive DefEq edge is exactly the predecessor table's
 soundness contract. -/
@@ -63,9 +62,7 @@ theorem isDefEqCall_wf
       (fun answer _ => answer = true ->
         world.venv.IsDefEqU uvars Delta.toCtx va vb) := by
   intro methods hmethods
-  simpa only [isDefEqCall, ReaderT.run_bind, ReaderT.run_monadLift,
-    pure_bind] using
-      hmethods.isDefEq haSupport hbSupport ha hb
+  exact hmethods.isDefEq haSupport hbSupport ha hb
 
 end RecM
 

@@ -79,12 +79,9 @@ private theorem tryQuestion_some_eq
     (hrun : (try? x).run methods before = .ok (some value) after) :
     x.run methods before = .ok value after := by
   unfold try? at hrun
-  rw [ReaderT.run_bind] at hrun
-  change EStateM.bind
-    (EStateM.tryCatch
-      (EStateM.bind (x.run methods)
-        (fun a state => EStateM.Result.ok (some a) state)) _)
-    _ before = _ at hrun
+  change EStateM.tryCatch
+    (EStateM.bind (x.run methods)
+      (fun a state => EStateM.Result.ok (some a) state)) _ before = _ at hrun
   unfold EStateM.bind EStateM.tryCatch at hrun
   cases hx : x.run methods before with
   | ok found reached =>

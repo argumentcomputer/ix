@@ -55,10 +55,17 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # CLI + Aiur tests over the base build the `build` job cached. Restores
-  # `.lake` read-only (exact per-sha key the `build` job wrote, prefix fallback
-  # otherwise); lean-action just provisions the toolchain (no build/cache) and
-  # the `lake test` steps run against the restored build.
+  # The primary test tier, plus the two extras, over the base build the
+  # `build` job cached. Restores `.lake` read-only (exact per-sha key the
+  # `build` job wrote, prefix fallback otherwise); lean-action runs the whole
+  # primary tier as a bare `lake test` against that restored build (no
+  # build/cache of its own). No `--wfail` there: `test-args` is declared but
+  # unwired in the released `v1`, so it would be silently ignored, and the
+  # `build` job already compiles every lib and exe -- `Tests` and `IxTests`
+  # included -- under `lake lint -- --wfail -v`. The two steps after it cover
+  # what a bare run cannot reach: `cli` is special-cased ahead of the suite
+  # dispatch in `Tests/Main.lean`, and the ixvm fixtures are in the ignored
+  # tier.
   lean-test:
     needs: build
     runs-on: warp-ubuntu-latest-x64-16x
@@ -77,13 +84,10 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
+          test: true
           use-github-cache: false
       - name: Test Ix CLI
         run: lake test --wfail -- cli
-      - name: Aiur tests
-        run: >-
-          lake test --wfail -- aiur-cross aiur-prove aiur-hashes rbtree-map
-          multi-stark recursive-verifier
       - name: IxVM kernel tests
         run: lake test --wfail -- --ignored ixvm
 

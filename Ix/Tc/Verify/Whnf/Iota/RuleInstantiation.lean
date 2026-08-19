@@ -76,7 +76,7 @@ theorem instUnivSpec
       (defeq.rhs.instL (us.toList.map KUniv.toVLevel)) := by
   have hresult := TrKExprS.instL henv hlit htp hus harity
     h.rhsStructural (by trivial) hspec hfaithful hsize
-  simpa using hresult
+  simpa [KVLCtx.instL] using hresult
 
 /-- Carry the registered RHS through an observed successful production
 universe-instantiation run.  The walker Hoare theorem supplies the exact pure

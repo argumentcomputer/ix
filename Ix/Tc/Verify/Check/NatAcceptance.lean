@@ -84,18 +84,14 @@ theorem acceptanceSupport_collisionFree : acceptanceSupport.CollisionFree := by
   · intro left hleft right hright haddr
     rcases hleft with rfl | rfl <;> rcases hright with rfl | rfl
     · rfl
-    · exact False.elim (zeroAddress_ne_natAddress (by
-        simpa [natRef, natType, info] using haddr))
-    · exact False.elim (zeroAddress_ne_natAddress (by
-        simpa [natRef, natType, info] using haddr.symm))
+    · exact False.elim (zeroAddress_ne_natAddress haddr)
+    · exact False.elim (zeroAddress_ne_natAddress haddr.symm)
     · rfl
   · intro left hleft right hright haddr
     rcases hleft with rfl | rfl <;> rcases hright with rfl | rfl
     · rfl
-    · exact False.elim (zeroAddress_ne_natAddress (by
-        simpa [zeroLevel, oneLevel] using haddr.symm))
-    · exact False.elim (zeroAddress_ne_natAddress (by
-        simpa [zeroLevel, oneLevel] using haddr))
+    · exact False.elim (zeroAddress_ne_natAddress haddr.symm)
+    · exact False.elim (zeroAddress_ne_natAddress haddr)
     · rfl
 
 theorem initial_reset : TcM.reset initialState = .ok () resetState := by
@@ -133,7 +129,8 @@ theorem loadedEnv_good : loadedEnv.get? goodId = some goodConcrete := by
 
 theorem reset_loaded_good :
     resetState.env.get? goodId = some goodConcrete := by
-  simpa [resetState, initialState, acceptanceEnv] using loadedEnv_good
+  change loadedEnv.get? goodId = some goodConcrete
+  exact loadedEnv_good
 
 theorem reset_loaded_nat :
     resetState.env.get? natId = some natConcrete := by
@@ -213,7 +210,7 @@ theorem natType_translation :
 theorem natReference_type :
     worldNat.venv.HasType 0 [] (.const natName [])
       (.sort oneLevel.toVLevel) := by
-  simpa [worldNat, natConstant, oneLevel, zeroLevel] using
+  exact
     (Lean4Lean.VEnv.HasType.const (env := natEnv) (U := 0) (Γ := [])
       (ci := natConstant) (ls := []) natEnv_nat (by simp) rfl)
 
@@ -235,7 +232,7 @@ theorem goodTypeEvidence :
       goodConstant.type := by
   refine ⟨natType, .sort oneLevel.toVLevel, natType_translation, ?_,
     oneLevel, oneLevel_view⟩
-  simpa [goodConstant] using natReference_type
+  exact natReference_type
 
 theorem goodCheckEvidence :
     StandaloneCheckEvidence RawProjRel.none worldNat acceptanceSupport goodDecl := by
@@ -333,7 +330,8 @@ theorem initial_fresh_member :
 
 theorem initial_loaded_good :
     initialState.env.get? goodId = some goodConcrete := by
-  simpa [initialState, acceptanceEnv] using loadedEnv_good
+  change loadedEnv.get? goodId = some goodConcrete
+  exact loadedEnv_good
 
 theorem initial_try_get_good :
     TcM.tryGetConst goodId initialState = .ok (some goodConcrete) initialState := by
@@ -504,7 +502,7 @@ theorem reset_bad_public :
   have hbody : TcM.runRec (RecM.checkConst IllTypedPending.targetId)
       resetState =
         .error (.univParamOutOfRange 0 0) resetState := by
-    simpa [TcM.runRec, resetState] using reset_bad_body
+    exact reset_bad_body
   have hrestore :
       resetState.restoreCheckCachesOnError resetState = resetState := by
     simp [TcState.restoreCheckCachesOnError,

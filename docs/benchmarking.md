@@ -169,9 +169,12 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   matrices and `ix bench ci parse` the `!benchmark` cells, both post-build.
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
   note.) CI-only data stays out of it: the runner name lives with the `ci`
-  adapters. The watchdog ceiling defaults to the machine's RAM minus
-  15 GB — above the largest legitimate workload (Mathlib `ix compile`
-  peaks ~100 GB) wherever the run happens (`--ceiling-gb` overrides).
+  adapters. The watchdog ceiling defaults to the machine's RAM minus 15 GB
+  (`--ceiling-gb` overrides). The heaviest compile/decompile workload is
+  `ix decompile` on Mathlib and FLT, approaching 40 GB now that Pass 2
+  holds its kenv rather than clearing it (compile itself peaks around half
+  that), so the default only clears it on machines with roughly 55 GB or
+  more; cap explicitly below that.
 
 ## `!benchmark` grammar
 
@@ -186,7 +189,13 @@ BENCH_SHARD=1                  # only the multi-shard target constants
 BENCH_PHASES=1                 # add the per-constant phase drill-downs
                                # to the comment (off by default)
 RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
-                               # RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS)
+                               # RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS,
+                               # IX_COMPILE_EAGER, IX_COMPILE_DEMOTE,
+                               # IX_COMPILE_WORKERS,
+                               # IX_DECOMPILE_KENV_CLEAR_ENTRIES)
+IX_DECOMPILE_KENV_CLEAR_ENTRIES=0
+                               # decompile Pass 2 cache limit; 0 disables
+                               # clearing (default: 131072)
 ```
 
 The `KEY=VALUE` config works both as lines below the command (the comment

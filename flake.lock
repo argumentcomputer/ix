@@ -33,11 +33,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1776364162,
-        "narHash": "sha256-l3FectIPaz5Fq1q0YSG7wR7VyybZqt56Sj4kebEoZ+Q=",
+        "lastModified": 1786554796,
+        "narHash": "sha256-4BDdZZ8JNAbPGU2d2hnIfc5gTjj0ZDpaAFLcA6EgMeI=",
         "owner": "argumentcomputer",
         "repo": "Blake3.lean",
-        "rev": "aaf530784082a2c00b0a93648741429d274102ca",
+        "rev": "c9b2273fb9c2c33b94eba091dc4111163f5db2bc",
         "type": "github"
       },
       "original": {
@@ -254,15 +254,15 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1775267043,
-        "narHash": "sha256-yUCn4Wc5kLboN9JHom/SJAknn7aoSEDyerqFq3k7g0I=",
-        "owner": "lenianiva",
+        "lastModified": 1786543565,
+        "narHash": "sha256-zHMoHO85jizkIXH0OfnvabpNLTl90rR3GCc1h/e2sx4=",
+        "owner": "argumentcomputer",
         "repo": "lean4-nix",
-        "rev": "56e917e2766385d0b096ea8be9c40ae54bfe138a",
+        "rev": "4026c657eecf16beea7d266ce32933ef3d7db2e5",
         "type": "github"
       },
       "original": {
-        "owner": "lenianiva",
+        "owner": "argumentcomputer",
         "repo": "lean4-nix",
         "type": "github"
       }
