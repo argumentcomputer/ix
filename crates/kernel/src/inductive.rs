@@ -1584,7 +1584,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     });
 
     if dump_canonical {
-      log::info!(
+      eprintln!(
         "[canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
         all0_name.map(Name::pretty),
         pairs.len(),
@@ -1592,7 +1592,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       );
       for (i, (kid, kconst)) in pairs.iter().enumerate() {
         let seed = aux_seed_names.get(i).cloned().unwrap_or_else(Name::anon);
-        log::info!(
+        eprintln!(
           "  pre-sort[{}] addr={} seed={} member_id_addr={}",
           i,
           &kid.addr.hex()[..8],
@@ -1600,12 +1600,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           &aux[i].id.addr.hex()[..8]
         );
         if let KConst::Indc { ty, ctors, .. } = kconst {
-          log::info!("    indc.ty={ty}");
+          eprintln!("    indc.ty={ty}");
           for (ci, ctor_kid) in ctors.iter().enumerate() {
             if let Some(KConst::Ctor { ty, .. }) =
               all_ctor_lookup.get(&ctor_kid.addr)
             {
-              log::info!("    ctor[{ci}].ty={ty}");
+              eprintln!("    ctor[{ci}].ty={ty}");
             }
           }
         }
@@ -1624,10 +1624,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     )?;
 
     if dump_canonical {
-      log::info!("[canonical_aux_order.dump] post-sort classes:");
+      eprintln!("[canonical_aux_order.dump] post-sort classes:");
       for (ci, class) in classes.iter().enumerate() {
         for (mi, (kid, _)) in class.iter().enumerate() {
-          log::info!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
+          eprintln!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
         }
       }
     }
@@ -1686,7 +1686,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !self.recursor_dump_matches_block(block_id, flat) {
       return;
     }
-    log::info!(
+    eprintln!(
       "[recursor.dump] {label} flat aux order for {block_id}: originals={} aux={}",
       n_originals,
       flat.len().saturating_sub(n_originals)
@@ -1694,11 +1694,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for (aux_i, member) in flat.iter().skip(n_originals).enumerate() {
       let spec =
         member.spec_params.iter().map(|e| format!("{e}")).collect::<Vec<_>>();
-      log::info!(
+      eprintln!(
         "  aux[{aux_i:2}] id={} own_params={} indices={} spec={spec:?}",
-        member.id,
-        member.own_params,
-        member.n_indices
+        member.id, member.own_params, member.n_indices
       );
     }
   }
@@ -1809,18 +1807,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     failed_gen_major: Option<&KExpr<M>>,
     failed_stored_major: Option<&KExpr<M>>,
   ) {
-    log::info!(
+    eprintln!(
       "[recursor.align] FAIL ind_block={ind_block_id} rec_block={rec_block_id} \
 peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       generated_snapshot.len(),
       flat.len(),
       rec_ids.len()
     );
-    log::info!(
+    eprintln!(
       "  failed gen major: {}",
       Self::major_domain_signature_text(failed_gen_major)
     );
-    log::info!(
+    eprintln!(
       "  failed stored major: {}",
       Self::major_domain_signature_text(failed_stored_major)
     );
@@ -1860,18 +1858,18 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         _ => None,
       };
       let mark = if gi == failed_gi { "!!" } else { "  " };
-      log::info!(
+      eprintln!(
         "  {mark} peer[{gi:2}] flat.id={} target={}… aux={} ind={}…",
         flat[gi].id,
         &target_addr.hex()[..8],
         flat[gi].is_aux,
         &gen_rec.ind_addr.hex()[..8]
       );
-      log::info!(
+      eprintln!(
         "       gen   : {}",
         Self::major_domain_signature_text(gen_major.as_ref())
       );
-      log::info!(
+      eprintln!(
         "       sto   : {} (rid={})",
         Self::major_domain_signature_text(stored_major.as_ref()),
         rid
@@ -1890,9 +1888,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       return Ok(false);
     }
     if depth > 80 {
-      log::info!("[rule rhs diff] first diff {path}: recursion limit");
-      log::info!("  gen: {lhs}");
-      log::info!("  sto: {rhs}");
+      eprintln!("[rule rhs diff] first diff {path}: recursion limit");
+      eprintln!("  gen: {lhs}");
+      eprintln!("  sto: {rhs}");
       return Ok(true);
     }
 
@@ -1908,9 +1906,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         ExprData::All(_, _, rty, rbody, _),
       ) => {
         if !self.is_def_eq(lty, rty)? {
-          log::info!("[rule rhs diff] first diff {path}.dom");
-          log::info!("  gen: {lty}");
-          log::info!("  sto: {rty}");
+          eprintln!("[rule rhs diff] first diff {path}.dom");
+          eprintln!("  gen: {lty}");
+          eprintln!("  sto: {rty}");
           return Ok(true);
         }
         let saved = self.lctx.len();
@@ -1938,9 +1936,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         self.dump_rule_rhs_first_diff(la, ra, &format!("{path}.arg"), depth + 1)
       },
       _ => {
-        log::info!("[rule rhs diff] first diff {path}");
-        log::info!("  gen: {lw}");
-        log::info!("  sto: {rw}");
+        eprintln!("[rule rhs diff] first diff {path}");
+        eprintln!("  gen: {lw}");
+        eprintln!("  sto: {rw}");
         Ok(true)
       },
     }
@@ -2829,7 +2827,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         block_first_id.as_ref(),
       )?;
       if self.recursor_dump_matches_block(block_id, &flat) {
-        log::info!("[recursor.dump] canonical_order={canonical_order:?}");
+        eprintln!("[recursor.dump] canonical_order={canonical_order:?}");
       }
       // Apply the permutation produced by sort_consts: each canonical
       // class index k maps to one representative aux from the original
@@ -2942,7 +2940,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         "generated recursor params + motives + minors",
         &[n_params, n_motives, n_minors],
       )?;
-      log::info!(
+      eprintln!(
         "[recursor.dump] generated recursors for {block_id}: count={} prefix_skip={prefix_skip}",
         generated.len()
       );
@@ -2952,7 +2950,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           prefix_skip,
           &g.ind_addr,
         )?;
-        log::info!(
+        eprintln!(
           "  gen[{gi:2}] ind_addr={} {}",
           &g.ind_addr.hex()[..8],
           Self::major_domain_signature_text(major.as_ref())
@@ -4904,17 +4902,15 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       .or_else(|| generated.iter().position(|g| g.ind_addr == ind_id.addr));
 
     if self.recursor_dump_matches_id(id) {
-      log::info!(
+      eprintln!(
         "[recursor.dump] check {} rec_block={} resolved_block={} stored_pos={stored_pos:?} selected_idx={selected_idx:?}",
-        id,
-        rec_block,
-        resolved_block
+        id, rec_block, resolved_block
       );
-      log::info!(
+      eprintln!(
         "[recursor.dump] stored major: {}",
         Self::major_domain_signature_text(stored_major.as_ref())
       );
-      log::info!("[recursor.dump] signature_matches={signature_matches:?}");
+      eprintln!("[recursor.dump] signature_matches={signature_matches:?}");
       for (gi, g) in generated.iter().enumerate() {
         if g.ind_addr != ind_id.addr {
           continue;
@@ -4924,7 +4920,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
           prefix_skip,
           &g.ind_addr,
         )?;
-        log::info!(
+        eprintln!(
           "  cand[{gi:2}] {}",
           Self::major_domain_signature_text(major.as_ref())
         );
@@ -4990,11 +4986,11 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                     } else {
                       "idx/major"
                     };
-                    log::info!(
+                    eprintln!(
                       "[type diff] binder {bi} ({label}) DIFFERS (p={params} m={motives} min={minors})"
                     );
-                    log::info!("  gen: {gd}");
-                    log::info!("  sto: {sd}");
+                    eprintln!("  gen: {gd}");
+                    eprintln!("  sto: {sd}");
                     break;
                   }
                   let _ = self.push_fvar_decl_anon(gd.clone());
@@ -5003,9 +4999,9 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                   bi += 1;
                 },
                 _ => {
-                  log::info!("[type diff] return differs at {bi}");
-                  log::info!("  gen: {gc}");
-                  log::info!("  sto: {sc}");
+                  eprintln!("[type diff] return differs at {bi}");
+                  eprintln!("  gen: {gc}");
+                  eprintln!("  sto: {sc}");
                   break;
                 },
               }
@@ -5081,12 +5077,12 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                 "rhs",
                 0,
               );
-              log::info!(
+              eprintln!(
                 "[rule rhs diff] rule {ri} RHS mismatch (fields={})",
                 gen_rule.fields
               );
-              log::info!("  gen: {}", gen_rule.rhs);
-              log::info!("  sto: {}", stored_rule.rhs);
+              eprintln!("  gen: {}", gen_rule.rhs);
+              eprintln!("  sto: {}", stored_rule.rhs);
             }
             return Err(TcError::Other(format!(
               "check_recursor: rule {ri} RHS mismatch"
