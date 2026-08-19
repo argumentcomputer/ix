@@ -1,0 +1,81 @@
+name: Log CPU information
+description: >-
+  Log a benchmark host's CPU and effective cgroup allocation, optionally
+  recording the report or printing the report carried with native binaries.
+
+inputs:
+  label:
+    description: Heading and context stored in a newly recorded CPU report
+    required: false
+    default: CPU information
+  output-file:
+    description: Optional path at which to record the current host report
+    required: false
+  provenance-file:
+    description: Optional native-binary build-host report to print
+    required: false
+  log-current:
+    description: Whether to log the current host
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CPU_LABEL: ${{ inputs.label }}
+        CPU_OUTPUT_FILE: ${{ inputs.output-file }}
+        CPU_PROVENANCE_FILE: ${{ inputs.provenance-file }}
+        LOG_CURRENT_CPU: ${{ inputs.log-current }}
+      run: |
+        set -euo pipefail
+
+        resolve_path() {
+          if [[ "$1" == \~/* ]]; then
+            printf '%s/%s\n' "$HOME" "${1:2}"
+          else
+            printf '%s\n' "$1"
+          fi
+        }
+
+        cpu_report() {
+          echo "Context: $CPU_LABEL"
+          echo "Runner: ${RUNNER_NAME:-unknown} (${RUNNER_OS:-unknown}/${RUNNER_ARCH:-unknown})"
+          echo "Kernel: $(uname -srvm)"
+          echo "nproc: $(nproc)"
+          if [ -r /sys/fs/cgroup/cpu.max ]; then
+            echo "cgroup cpu.max: $(< /sys/fs/cgroup/cpu.max)"
+          fi
+          if [ -r /sys/fs/cgroup/cpuset.cpus.effective ]; then
+            echo "cgroup cpuset.cpus.effective: $(< /sys/fs/cgroup/cpuset.cpus.effective)"
+          fi
+          grep -m1 '^Cpus_allowed_list:' /proc/self/status || true
+          lscpu
+          flags=$({ grep -m1 -oE 'avx2|avx512[a-z0-9_]*' /proc/cpuinfo || true; } \
+            | sort -u | tr '\n' ' ')
+          echo "AVX flags: ${flags:-absent}"
+        }
+
+        if [ "$LOG_CURRENT_CPU" = true ]; then
+          echo "::group::$CPU_LABEL"
+          if [ -n "$CPU_OUTPUT_FILE" ]; then
+            output_file=$(resolve_path "$CPU_OUTPUT_FILE")
+            mkdir -p "$(dirname "$output_file")"
+            cpu_report | tee "$output_file"
+          else
+            cpu_report
+          fi
+          echo "::endgroup::"
+        fi
+
+        if [ -n "$CPU_PROVENANCE_FILE" ]; then
+          provenance_file=$(resolve_path "$CPU_PROVENANCE_FILE")
+          echo "::group::Native benchmark binary build CPU"
+          if [ -s "$provenance_file" ]; then
+            cat "$provenance_file"
+          else
+            echo "::warning::Binary build CPU provenance is unavailable (the cache may predate CPU reports)"
+          fi
+          echo "::endgroup::"
+        fi

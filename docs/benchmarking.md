@@ -256,6 +256,14 @@ write token, running no PR code). Normal runs may seed the run artifacts from
 persistent head/base-SHA caches. `fresh` bypasses those caches and rebuilds
 the measured products while retaining dependency caches.
 
+Every job that creates a timing row logs its CPU model, instruction set,
+effective CPU count, affinity, and cgroup allocation. Because the benchmark
+binaries use native codegen, their build jobs also record the build CPU and
+carry that report inside the binary cache or run artifact; measurement jobs
+print it next to their own host report. A cache entry created before this
+provenance was introduced remains usable and is reported as having an unknown
+build CPU.
+
 ## Not yet covered
 
 - **zkVM prove** — the hosts prove, but CI has no GPU runner; cells are

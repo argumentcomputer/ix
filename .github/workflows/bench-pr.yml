@@ -197,19 +197,30 @@ jobs:
       - if: steps.parse.outputs.fresh == '1' && steps.bins.outputs.cache-hit == 'true'
         uses: ./.github/actions/setup-rust-toolchain
       # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
-      # benchmark shift can be traced to an instruction-set change.
+      # benchmark shift can be traced to the host that selected the native
+      # instruction set. The report travels with the binaries below.
       - name: Log build CPU
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
-        run: |
-          lscpu
-          flags=$(grep -m1 -oE 'avx2|avx512[a-z0-9_]*' /proc/cpuinfo | sort -u | tr '\n' ' ')
-          echo "AVX flags: ${flags:-absent}"
+        uses: ./.github/actions/log-cpu
+        with:
+          label: Benchmark binary build CPU
+          output-file: ${{ runner.temp }}/benchmark-build-cpu.txt
       - name: Build benchmark binaries
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
         run: |
           lake build ix bench-typecheck bench-recursive-verifier
           cp .lake/build/bin/ix .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
           chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
+      # Cache entries are immutable and may lack optional provenance. Keep the
+      # run artifact's shape stable and state explicitly when its build host is
+      # unknown.
+      - name: Ensure build CPU provenance
+        run: |
+          if [ ! -s "$HOME/.local/bin/benchmark-build-cpu.txt" ]; then
+            echo "Benchmark binary build CPU unavailable: cache predates CPU provenance." \
+              > "$HOME/.local/bin/benchmark-build-cpu.txt"
+          fi
       - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
@@ -218,7 +229,7 @@ jobs:
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix bench-typecheck bench-recursive-verifier
+          ix bench-typecheck bench-recursive-verifier benchmark-build-cpu.txt
       - name: Upload run binaries
         uses: actions/upload-artifact@v7
         with:
@@ -358,6 +369,12 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Log compile CPU
+        if: steps.compile-source.outputs.rebuild == 'true'
+        uses: ./.github/actions/log-cpu
+        with:
+          label: Compile measurement CPU
+          provenance-file: ~/.local/bin/benchmark-build-cpu.txt
       # Pointed at the Benchmarks/Compile subpackage (same toolchain as
       # the root): mathlib is a dependency only there, so the mathlib
       # cache fetch has to run from that directory.
@@ -465,6 +482,11 @@ jobs:
           mkdir -p .lake/build/bin
           tar -C .lake/build/bin -xf benchmark-binaries.tar
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
+      - name: Log run CPU
+        uses: ./.github/actions/log-cpu
+        with:
+          label: Benchmark job CPU
+          provenance-file: .lake/build/bin/benchmark-build-cpu.txt
       # Toolchain only (no package build, no mathlib cache): the restored
       # binaries need the toolchain's libleanshared to run. This job never
       # compiles an env — the `.ixe` and compile row come from the compile
@@ -652,12 +674,25 @@ jobs:
             if [ "$BENV" != Mathlib ] || [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
               mkdir -p base/.lake/build/bin
               mv ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier base/.lake/build/bin/ 2>/dev/null || true
+              mv ~/.local/bin/benchmark-build-cpu.txt base/.lake/build/bin/ 2>/dev/null || true
               [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] \
                 && [ -x base/.lake/build/bin/bench-recursive-verifier ] && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
           echo "base binaries: $([ "$cached" = true ] && echo restored from cache || echo building from source)"
+      - name: Log cached base binary build CPU
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached == 'true'
+        uses: ./.github/actions/log-cpu
+        with:
+          log-current: "false"
+          provenance-file: base/.lake/build/bin/benchmark-build-cpu.txt
+      - name: Log base build CPU
+        if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
+        uses: ./.github/actions/log-cpu
+        with:
+          label: Base benchmark binary build CPU
+          output-file: base/.lake/build/bin/benchmark-build-cpu.txt
       - name: Build base (ix, bench-typecheck, bench-recursive-verifier)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
