@@ -2,7 +2,7 @@
   `ix bench` reporting subcommands — everything between the results rows
   JSON (`Ix.Benchmark.Results`) and a human or bencher.dev:
 
-    compare     two rows files → a Markdown main-vs-PR table. With no
+    compare     two rows files → a Markdown base-vs-PR table. With no
                 explicit inputs, compares the parameter combination's local baseline against
                 its previous run (`.lake/benches/<params>.json` vs `.prev.json`), so
                 a bare local rerun reports its own delta.
@@ -220,6 +220,10 @@ structure CompareArgs where
       env-keyed), `env/constant` on ooc (which mixes an env row with
       per-constant rows). -/
   rowNoun : String := "constant"
+  /-- What to call the base side in headers and notes. `!benchmark`
+      compares against the PR's own base branch, which is only `main` for
+      an unstacked PR; a manual dispatch can name any two SHAs. -/
+  baseLabel : String := "main"
 
 def renderCompare (a : CompareArgs) : String := Id.run do
   let names := (rowNames a.mainRows ++ rowNames a.prRows).foldl
@@ -244,7 +248,8 @@ def renderCompare (a : CompareArgs) : String := Id.run do
 
   let mut failures : Array (String × String) := #[]
   for n in names do
-    if rowStatus a.mainRows n == "rejected" then failures := failures.push (n, "main")
+    if rowStatus a.mainRows n == "rejected" then
+      failures := failures.push (n, a.baseLabel)
     if rowStatus a.prRows n == "rejected" then failures := failures.push (n, "PR")
 
   -- One rendered table per section, plus the names that regressed or
@@ -259,7 +264,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
       metricLabel (if drop.isEmpty then m else (m.drop drop.length).toString)
     let mut head := #[a.rowNoun]
     for m in sec.metrics do
-      head := head ++ #[s!"{label m} (main)", s!"{label m} (PR)", "Δ%"]
+      head := head ++ #[s!"{label m} ({a.baseLabel})", s!"{label m} (PR)", "Δ%"]
     let mut lines := #[
       "| " ++ " | ".intercalate head.toList ++ " |",
       "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
@@ -329,7 +334,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   -- of leaving a silent all-n/a column; the workflow logs carry the why.
   if (rowNames a.mainRows).isEmpty then
     out := out.push "" |>.push
-      "_⚠️ no main-side results (base run failed — see the workflow logs)._"
+      s!"_⚠️ no {a.baseLabel}-side results (base run failed — see the workflow logs)._"
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
@@ -347,7 +352,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   -- carry every constant's high-level row; below it, each constant with
   -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns, zkVM
   -- coarse phases) gets its own collapsed mini-table
-  -- (`phase | main | PR | Δ%`), opened as desired.
+  -- (`phase | base | PR | Δ%`), opened as desired.
   let mut detail : Array String := #[]
   if a.phases then
     for n in names do
@@ -356,7 +361,8 @@ def renderCompare (a : CompareArgs) : String := Id.run do
       if keys.isEmpty then continue
       detail := detail.push "" |>.push "<details>"
         |>.push s!"<summary><code>{n}</code></summary>" |>.push ""
-        |>.push "| phase | main | PR | Δ% |" |>.push "|---|---|---|---|"
+        |>.push s!"| phase | {a.baseLabel} | PR | Δ% |"
+        |>.push "|---|---|---|---|"
       for k in keys.qsort (· < ·) do
         let mv := rowNum a.mainRows n k
         let pv := rowNum a.prRows n k
@@ -499,7 +505,7 @@ private def moverDriver (m pr : PerConstEntry) : String :=
     Movers split into two classes with different evidence quality:
 
     - **cost movers** — the predicted cost moved: |Δcost| ≥ `costFloorRel`
-      of the constant's main-side cost, OR ≥ `costFloorAbs` outright (so a
+      of the constant's base-side cost, OR ≥ `costFloorAbs` outright (so a
       big constant moving a lot of real cost at a small percentage still
       enters). Ranked by percent change — pathologies first. The op
       counters are far more stable than wall time but NOT bit-deterministic
@@ -513,7 +519,8 @@ private def moverDriver (m pr : PerConstEntry) : String :=
       but cost did not. On an A/A run this is pure scheduling/cache noise;
       on an A/B it can also be allocator or locality effects a counter
       can't see. Reported second, clearly labeled. -/
-def renderPerConstMovers (mainCsv prCsv : String) (topN : Nat := 10)
+def renderPerConstMovers (mainCsv prCsv : String) (baseLabel : String := "main")
+    (topN : Nat := 10)
     (floorMs : Float := 10.0) (floorRel : Float := 0.03)
     (costFloorRel : Float := 0.15) (costFloorAbs : Float := 1e9) :
     IO String := do
@@ -571,7 +578,7 @@ def renderPerConstMovers (mainCsv prCsv : String) (topN : Nat := 10)
     if rows.isEmpty then ""
     else Id.run do
       let mut s := s!"**{title}**\n\n\
-        | constant | main | PR | Δtime | Δcost (Zisk) | driver |\n\
+        | constant | {baseLabel} | PR | Δtime | Δcost (Zisk) | driver |\n\
         |---|---|---|---|---|---|\n"
       for (name, m, p, _) in rows do
         let dcost := fmtDeltaCell m.cost p.cost "cycles"
@@ -599,7 +606,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Explicit paths win; otherwise the local baseline pair, so a bare
   -- `ix bench compare --backend …` after two runs reports the local delta.
   let benchDir ← Ix.Cli.BenchCmd.benchOutputDir
-  let mainPath := (p.flag? "main").map (·.as! String)
+  let mainPath := (p.flag? "base").map (·.as! String)
     |>.getD s!"{benchDir}/{params}.prev.json"
   let prPath := (p.flag? "pr").map (·.as! String)
     |>.getD s!"{benchDir}/{params}.json"
@@ -618,7 +625,8 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     return exitUsage
   let threshold := (p.flag? "threshold").map (fun f => (f.as! Nat).toFloat)
     |>.getD 3.0
-  let mainSrc := (p.flag? "main-source").map (·.as! String) |>.getD mainPath
+  let mainSrc := (p.flag? "base-source").map (·.as! String) |>.getD mainPath
+  let baseLabel := (p.flag? "base-label").map (·.as! String) |>.getD "main"
   -- Name the mode only where a mode choice exists (aiur); a single-mode
   -- backend's `· execute` is registry plumbing, not information.
   let cellName :=
@@ -626,7 +634,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     then s!"`{backend}` · `{env}` · `{mode}`"
     else s!"`{backend}` · `{env}`"
   let title := (p.flag? "title").map (·.as! String)
-    |>.getD s!"### {cellName} — main from: {mainSrc}"
+    |>.getD s!"### {cellName} — {baseLabel} from: {mainSrc}"
   -- A staged mode sorts every table on its LEDGER's headline (the
   -- closing section's first measure — `total-time`), so the stage tables
   -- rank constants by what the whole pipeline costs rather than each by
@@ -636,7 +644,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut table := renderCompare {
     mainRows := ← readRows mainPath
     prRows := ← readRows prPath
-    sections, sortMetric, threshold, title
+    sections, sortMetric, threshold, title, baseLabel
     phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
     rowNoun :=
       if backend == "compile" then "env"
@@ -651,7 +659,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   if (← System.FilePath.pathExists ⟨mainAttrib⟩)
     && (← System.FilePath.pathExists ⟨prAttrib⟩)
   then
-    table := table ++ "\n\n" ++ (← renderPerConstMovers mainAttrib prAttrib)
+    table := table ++ "\n\n" ++ (← renderPerConstMovers mainAttrib prAttrib baseLabel)
   match p.flag? "out" with
   | some f => IO.FS.writeFile (f.as! String) (table ++ "\n")
   | none => IO.println table
@@ -670,9 +678,10 @@ def runReportCmd (p : Cli.Parsed) : IO UInt32 := do
   let repoUrl := (p.flag? "repo-url").map (·.as! String) |>.getD ""
   let runId := (p.flag? "run-id").map (·.as! String) |>.getD ""
   let summary := (p.flag? "summary").map (·.as! String) |>.getD ""
+  let baseLabel := (p.flag? "base-label").map (·.as! String) |>.getD "main"
   let commit := if head.isEmpty then ""
-    else if repoUrl.isEmpty then s!" — main vs `{head.take 7}`"
-    else s!" — main vs [`{head.take 7}`]({repoUrl}/commit/{head})"
+    else if repoUrl.isEmpty then s!" — {baseLabel} vs `{head.take 7}`"
+    else s!" — {baseLabel} vs [`{head.take 7}`]({repoUrl}/commit/{head})"
   let mut parts := #[s!"## `!benchmark`{commit}", "", summary, ""]
   let entries := (← System.FilePath.readDir tablesDir).map (·.path.toString)
   let tables := (entries.filter fun p =>
@@ -952,9 +961,9 @@ def parseError (msg : String) : IO UInt32 := do
                                     (passthrough; BENCH_PHASES=1 adds the
                                     per-constant phase drill-downs to the
                                     comment; the IX_COMPILE_* knobs reach
-                                    the measured `ix compile` and key its
-                                    caches, so knob runs don't reuse a
-                                    default run's published row)
+                                    the measured `ix compile`, but emit the
+                                    same `.ixe`; caches are SHA-keyed, so add
+                                    `fresh` to remeasure a knob on one SHA)
 
     The KEY=VALUE config may sit on its own lines below the command (the
     comment form) or inline on the command line, whitespace-separated
@@ -965,7 +974,7 @@ def parseError (msg : String) : IO UInt32 := do
     The bare `execute` token flips a backend with an execute metrics entry
     to execute-only — a real switch only for aiur, which it drops from the
     full proof pipeline to the fast Phase-1-only signal. That testbed is
-    `unscheduled`, so the run has no bencher baseline — its main side
+    `unscheduled`, so the run has no bencher baseline — its base side
     comes from a base-SHA run.
 
     The bare `fresh` token makes every run bypass its bencher baseline and
@@ -1226,18 +1235,19 @@ end Ix.Cli.BenchReport
 open Ix.Cli.BenchReport in
 def benchCompareCmd : Cli.Cmd := `[Cli|
   "compare" VIA runCompareCmd;
-  "Render a Markdown main-vs-PR table from two results rows files. Defaults to the parameter combination's local baseline pair (<BENCH_OUTPUT_DIR or .lake/benches>/<params>{.prev,}.json), so a bare rerun compares against the previous local run."
+  "Render a Markdown base-vs-PR table from two results rows files. Defaults to the parameter combination's local baseline pair (<BENCH_OUTPUT_DIR or .lake/benches>/<params>{.prev,}.json), so a bare rerun compares against the previous local run."
 
   FLAGS:
     backend       : String; "Run backend (metrics come from the registry)"
     env           : String; "Run env (default: InitStd)"
     mode          : String; "Run mode (default: the backend's default_mode)"
-    main          : String; "Main-side rows JSON (default: the run baseline .prev.json)"
+    base          : String; "Base-side rows JSON (default: the run baseline .prev.json)"
     pr            : String; "PR-side rows JSON (default: the run baseline .json)"
     metric        : Array String; "Metric column(s), overriding the registry"
     threshold     : Nat;    "Flag |Δ| above this percentage (default: 3)"
     title         : String; "Table title (default: derived from the run)"
-    "main-source" : String; "Where the main side came from, for the title"
+    "base-source" : String; "Where the base side came from, for the title"
+    "base-label"  : String; "Name the base side in headers (default: main)"
     out           : String; "Write the table here instead of stdout"
 ]
 
@@ -1250,6 +1260,7 @@ def benchReportCmd : Cli.Cmd := `[Cli|
     tables     : String; "Directory of table-*.md files (default: tables)"
     summary    : String; "Summary line for the header"
     head       : String; "Commit SHA to title the report with"
+    "base-label" : String; "Name the base side in the header (default: main)"
     "repo-url" : String; "Repository URL, enabling commit/logs links"
     "run-id"   : String; "Workflow run id for the logs link"
     out        : String; "Also write the report here (always printed)"
