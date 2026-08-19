@@ -162,7 +162,7 @@ jobs:
           path: ~/.local/bin
           key: bench-bins-${{ inputs.head-sha }}
       - if: steps.bins.outputs.cache-hit != 'true'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-toolchain
       # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
       # benchmark shift can be traced to an instruction-set change.
       - name: Log build CPU
@@ -441,7 +441,7 @@ jobs:
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
         if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-toolchain
         with:
           cache-workspaces: ${{ matrix.params.backend }}
       # sp1 is disabled in the registry (execute too slow for CI);

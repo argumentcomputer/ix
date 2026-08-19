@@ -1,0 +1,17 @@
+name: Set up Rust toolchain
+description: >-
+  Install Rust and cache Cargo artifacts without exporting RUSTFLAGS, leaving
+  each workspace's .cargo/config.toml authoritative.
+
+inputs:
+  cache-workspaces:
+    description: Cargo workspaces to cache
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        rustflags: ""
+        cache-workspaces: ${{ inputs.cache-workspaces }}

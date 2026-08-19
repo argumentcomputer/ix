@@ -27,7 +27,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
@@ -71,7 +71,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
       # `./.lake`, not `.lake`: the cache path is hashed into the entry's
       # version, and lean-action saves under `./.lake`, so a bare `.lake` here
       # computes a different version and the restore misses despite the key
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
       - uses: taiki-e/install-action@nextest
       # Install Lean for rust-bindgen step
       - uses: leanprover/lean-action@v1
@@ -144,7 +144,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
         with:
           cache-workspaces: sp1
       - uses: ./.github/actions/install-sp1
@@ -183,7 +183,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
         with:
           cache-workspaces: zisk
       # Proving key ON (the default): the execute step's `client.setup()` loads

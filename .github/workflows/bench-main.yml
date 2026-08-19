@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v7
       # Rust toolchain + cargo cache, so the cargo step inside `lake build`
       # does not recompile the Plonky3/multi-stark dependencies every run.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
       # Log the build CPU so a benchmark shift can be traced to a host change.
       - name: Log build CPU
         run: |
@@ -265,7 +265,7 @@ jobs:
       # binaries only. (Restore an install-sp1 step here when sp1 is
       # re-enabled in the registry.)
       - if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-toolchain
         with:
           cache-workspaces: ${{ matrix.params.backend }}
       - name: Install Zisk
