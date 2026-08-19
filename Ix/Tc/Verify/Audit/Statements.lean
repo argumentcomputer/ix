@@ -87,7 +87,7 @@ private def checkConstNative : Array Lean.Name := #[
   nativeAxiom `Ix.Environment
     `Ix.Name.mkStr._native.native_decide.ax_1,
   nativeAxiom `Ix.Tc.Inductive
-    `Ix.Tc.RecM.canonicalAuxOrder._native.native_decide.ax_15
+    `Ix.Tc.RecM.canonicalAuxOrder._native.native_decide.ax_9
 ]
 
 private def roots : Array RootAllowance := #[

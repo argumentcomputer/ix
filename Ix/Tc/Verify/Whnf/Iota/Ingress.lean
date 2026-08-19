@@ -91,7 +91,8 @@ theorem tryIotaWithFlags_state_wf_of_contexts
       | none =>
           exact ⟨majorV, hmajorSupport, hmajorTr⟩
       | some result =>
-          simpa only [cleanedMajor, Option.getD_some] using hcleaned
+          simpa only [cleanedMajor, Option.getD_some, OptionalGeneratedInput]
+            using hcleaned
     cases hcheap : flags.cheapRec with
     | false =>
         simp only [Bool.false_eq_true, if_false]

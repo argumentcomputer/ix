@@ -85,7 +85,6 @@ theorem eval
   rw [hlevels]
   simp only [Bool.false_eq_true, ↓reduceIte]
   rw [if_neg (Nat.not_lt.mpr h.fieldBound)]
-  simp only [pure_bind]
   rw [ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run
@@ -368,14 +367,7 @@ theorem tryIotaCtorOrStructEta_regular
   unfold EStateM.bind
   rw [hctorLookup]
   simp only [hctorInfo, pure_bind]
-  rw [ReaderT.run_bind]
-  change EStateM.bind
-    (ReaderT.run
-      (tryApplyIotaCtor recr recUs spine ctorArgs cidx ctorFields transient)
-      methods) _ sCtor = _
-  unfold EStateM.bind
-  rw [hdispatch]
-  rfl
+  exact hdispatch
 
 /-- Exact regular, non-literal path through post-WHNF preprocessing. -/
 theorem tryIotaAfterMajorWhnf_regular

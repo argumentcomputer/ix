@@ -80,7 +80,7 @@ before freshness is used to install it in a new Theory environment. -/
 def StandaloneAccepted (env : VEnv) : VDecl → Prop
   | .axiom ci => ci.toVConstant.WF env
   | .def ci | .opaque ci => ci.WF env
-  | .block _ | .example _ | .quot | .induct _ => False
+  | .mutualDef _ | .example _ | .quot | .induct _ => False
 
 /-- The semantic evidence retained from the two production checker paths.
 The type-check result is recorded for definitions as well as axioms because
@@ -165,7 +165,7 @@ theorem wfOfAccepted
             else env.constants candidate }
       have hadd : env.addConst name ci = some env' := by
         simp [VEnv.addConst, hfresh hname, env', ci]
-      exact ⟨env', VDecl.WF.axiom (by simpa [ci] using haccepted) hadd⟩
+      exact ⟨env', VDecl.WF.axiom (by simpa [ci, StandaloneAccepted] using haccepted) hadd⟩
   | @defn nm lps kind safety hints lvls ty val leanAll block name tyV valV d
       hname hty hval hkind =>
       let ci : VDefVal :=

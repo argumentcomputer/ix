@@ -113,6 +113,18 @@ impl<M: KernelMode> KUniv<M> {
     matches!(self.data(), UnivData::Zero(_))
   }
 
+  /// Semantic Prop test: `u ≡ 0` under every parameter assignment. The
+  /// syntactic `is_zero` misses spellings like `imax 1 0`, which the
+  /// kernel must classify as `Prop` (leanprover/lean4#14613, #14615).
+  /// Zero normalizes to empty entries only and `norm_level_eq` ignores
+  /// empty entries, so all-empty is exactly `univ_eq(u, zero)`.
+  pub fn is_semantic_zero(&self) -> bool {
+    self.is_zero()
+      || normalize_level(self)
+        .values()
+        .all(|n| n.constant == 0 && n.var.is_empty())
+  }
+
   /// True if this level is an explicit numeral: `Succ^n(Zero)` for some n ≥ 0.
   pub fn is_explicit(&self) -> bool {
     match self.data() {

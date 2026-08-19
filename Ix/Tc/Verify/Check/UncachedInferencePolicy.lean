@@ -48,7 +48,7 @@ theorem inferUncached_preservesInferOnly
       · exact TcM.PreservesInferOnly.pure _
       · exact TcM.PreservesInferOnly.throw _
   | sort u info =>
-      simpa [inferUncached] using
+      simpa [inferUncached, TcM.intern] using
         (TcM.PreservesInferOnly.runIntern
           (internExprM (KExpr.mkSort (KUniv.mkSucc u))))
   | const id levels info =>

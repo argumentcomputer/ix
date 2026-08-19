@@ -481,7 +481,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
             = .error err s := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_liftM_ofExcept_bind, hu]
+          rw [run_liftM_ofExcept_bind, hu]
           try rfl
         rw [hrun]
         exact .refl hwf hsup
@@ -494,7 +494,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                   intern := (s.env.intern.internExpr (KExpr.mkSort v)).2 } } := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_liftM_ofExcept_bind, hu]
+          rw [run_liftM_ofExcept_bind, hu]
           try rfl
         have hspec : KExpr.instUnivSpec (KExpr.sort u info) us
             = .ok (KExpr.mkSort v) := by
@@ -520,7 +520,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
             = .error err s := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, run_substUnivLoopArray, hmus]
+          rw [run_bind, run_substUnivLoopArray, hmus]
           try rfl
         rw [hrun]
         exact .refl hwf hsup
@@ -533,7 +533,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                   intern := (s.env.intern.internExpr (KExpr.mkConst id arr)).2 } } := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, run_substUnivLoopArray, hmus]
+          rw [run_bind, run_substUnivLoopArray, hmus]
           try rfl
         have hspec : KExpr.instUnivSpec (KExpr.const id curUs info) us
             = .ok (KExpr.mkConst id arr) := by
@@ -562,7 +562,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
             = .error err sf := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, hrecf]
+          rw [run_bind, hrecf]
           try rfl
         rw [hrun]
         exact postf
@@ -579,7 +579,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
               = .error err sa := by
             rw [TcM.instUnivInner, run_get_bind, hget]
             simp (config := { proj := false }) only []
-            rw [run_pure_bind, run_bind, hrecf]
+            rw [run_bind, hrecf]
             try simp only []
             rw [run_bind, hreca]
             try rfl
@@ -597,7 +597,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                     intern := (sa.env.intern.internExpr (KExpr.mkApp rf ra)).2 } } := by
             rw [TcM.instUnivInner, run_get_bind, hget]
             simp (config := { proj := false }) only []
-            rw [run_pure_bind, run_bind, hrecf]
+            rw [run_bind, hrecf]
             try simp only []
             rw [run_bind, hreca]
             try rfl
@@ -630,7 +630,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
             = .error err st := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, hrecty]
+          rw [run_bind, hrecty]
           try rfl
         rw [hrun]
         exact postty
@@ -647,7 +647,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
               = .error err sb := by
             rw [TcM.instUnivInner, run_get_bind, hget]
             simp (config := { proj := false }) only []
-            rw [run_pure_bind, run_bind, hrecty]
+            rw [run_bind, hrecty]
             try simp only []
             rw [run_bind, hrecbody]
             try rfl
@@ -665,7 +665,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                     intern := (sb.env.intern.internExpr (KExpr.mkLam n bi rt rb)).2 } } := by
             rw [TcM.instUnivInner, run_get_bind, hget]
             simp (config := { proj := false }) only []
-            rw [run_pure_bind, run_bind, hrecty]
+            rw [run_bind, hrecty]
             try simp only []
             rw [run_bind, hrecbody]
             try rfl
@@ -698,7 +698,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
             = .error err st := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, hrecty]
+          rw [run_bind, hrecty]
           try rfl
         rw [hrun]
         exact postty
@@ -715,7 +715,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
               = .error err sb := by
             rw [TcM.instUnivInner, run_get_bind, hget]
             simp (config := { proj := false }) only []
-            rw [run_pure_bind, run_bind, hrecty]
+            rw [run_bind, hrecty]
             try simp only []
             rw [run_bind, hrecbody]
             try rfl
@@ -733,7 +733,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                     intern := (sb.env.intern.internExpr (KExpr.mkAll n bi rt rb)).2 } } := by
             rw [TcM.instUnivInner, run_get_bind, hget]
             simp (config := { proj := false }) only []
-            rw [run_pure_bind, run_bind, hrecty]
+            rw [run_bind, hrecty]
             try simp only []
             rw [run_bind, hrecbody]
             try rfl
@@ -766,7 +766,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
             = .error err st := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, hrecty]
+          rw [run_bind, hrecty]
           try rfl
         rw [hrun]
         exact postty
@@ -784,7 +784,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
               = .error err sv := by
             rw [TcM.instUnivInner, run_get_bind, hget]
             simp (config := { proj := false }) only []
-            rw [run_pure_bind, run_bind, hrecty]
+            rw [run_bind, hrecty]
             try simp only []
             rw [run_bind, hrecval]
             try rfl
@@ -804,7 +804,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                 = .error err sb := by
               rw [TcM.instUnivInner, run_get_bind, hget]
               simp (config := { proj := false }) only []
-              rw [run_pure_bind, run_bind, hrecty]
+              rw [run_bind, hrecty]
               try simp only []
               rw [run_bind, hrecval]
               try simp only []
@@ -824,7 +824,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                       intern := (sb.env.intern.internExpr (KExpr.mkLet n rt rv rb nd)).2 } } := by
               rw [TcM.instUnivInner, run_get_bind, hget]
               simp (config := { proj := false }) only []
-              rw [run_pure_bind, run_bind, hrecty]
+              rw [run_bind, hrecty]
               try simp only []
               rw [run_bind, hrecval]
               try simp only []
@@ -861,7 +861,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
             = .error err sv := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, hrecval]
+          rw [run_bind, hrecval]
           try rfl
         rw [hrun]
         exact postval
@@ -877,7 +877,7 @@ theorem TcM.instUnivInner_spec {S : KExpr .anon → Prop}
                   intern := (sv.env.intern.internExpr (KExpr.mkPrj id field rv)).2 } } := by
           rw [TcM.instUnivInner, run_get_bind, hget]
           simp (config := { proj := false }) only []
-          rw [run_pure_bind, run_bind, hrecval]
+          rw [run_bind, hrecval]
           try rfl
         have hspec : KExpr.instUnivSpec (KExpr.prj id field val info) us
             = .ok (KExpr.mkPrj id field rv) := by
@@ -1128,8 +1128,8 @@ theorem TcM.substUniv_toVLevel {m : Mode} {us : Array (KUniv m)} :
         have h2 := VLevel.equiv_def.mp ihha ρ
         have h3 := VLevel.equiv_def.mp ihhb ρ
         rw [h1]
-        show Nat.imax (ra.toVLevel.eval ρ) (rb.toVLevel.eval ρ)
-            = Nat.imax
+        show Lean.Nat.imax (ra.toVLevel.eval ρ) (rb.toVLevel.eval ρ)
+            = Lean.Nat.imax
                 (((KUniv.toVLevel a).inst
                   (us.toList.map KUniv.toVLevel)).eval ρ)
                 (((KUniv.toVLevel b).inst

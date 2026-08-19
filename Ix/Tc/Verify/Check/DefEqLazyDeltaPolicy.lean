@@ -427,10 +427,7 @@ theorem isDefEqAfterLazyDeltaStopped_preservesInferOnly
       by_cases hchanged :
           (leftCore.addr != left.addr) || (rightCore.addr != right.addr)
       · simp only [hchanged, if_true]
-        refine bind_preservesInferOnly
-          (isDefEqCall_preservesInferOnly hmethods leftCore rightCore) ?_
-        intro answer
-        exact TcM.PreservesInferOnly.pure answer
+        exact isDefEqCall_preservesInferOnly hmethods leftCore rightCore
       · simp only [hchanged, Bool.false_eq_true, if_false]
         by_cases haddress : leftCore.addr == rightCore.addr
         · simp only [haddress, if_true]

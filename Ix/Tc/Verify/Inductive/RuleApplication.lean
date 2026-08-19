@@ -17,29 +17,6 @@ the exact telescope arguments and use the lemmas below.
 
 namespace Lean4Lean.VExpr
 
-/-- Universe instantiation commutes with the lambda-telescope constructor. -/
-theorem instL_lamN (levels : List VLevel) :
-    ∀ (binders : List VExpr) (body : VExpr),
-      (VExpr.lamN binders body).instL levels =
-        VExpr.lamN (binders.map (VExpr.instL levels))
-          (body.instL levels)
-  | [], _ => rfl
-  | binder :: binders, body => by
-      simp [VExpr.lamN, VExpr.instL, instL_lamN levels binders body]
-
-/-- Instantiation commutes with the lambda-telescope constructor. -/
-theorem instN_lamN (replacement : VExpr) :
-    ∀ (binders : List VExpr) (body : VExpr) (depth : Nat),
-      (VExpr.lamN binders body).inst replacement depth =
-        VExpr.lamN (VExpr.instTelN replacement binders depth)
-          (body.inst replacement (depth + binders.length))
-  | [], _, _ => rfl
-  | binder :: binders, body, depth => by
-      simp only [VExpr.lamN, VExpr.inst, VExpr.instTelN]
-      rw [instN_lamN replacement binders body (depth + 1)]
-      congr 2
-      simp [Nat.add_comm, Nat.add_left_comm]
-
 /-- Positional lookup in the reverse de Bruijn range used by generated rule
 telescopes. -/
 theorem bvarRevRange_getElem? (off arity index : Nat)

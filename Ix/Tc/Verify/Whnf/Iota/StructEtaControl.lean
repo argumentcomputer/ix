@@ -274,7 +274,8 @@ theorem finishStructEtaAfterSort_prop
     (hzero : u.isZero = true) :
     (finishStructEtaAfterSort recUs spine recr rule indId major
       (.sort u info)).run methods s = .ok none s := by
-  simp [finishStructEtaAfterSort, structEtaSortRejected, hzero]
+  simp [finishStructEtaAfterSort, structEtaSortRejected,
+    KUniv.isSemanticZero, hzero]
 
 /-- Any admissible sort/non-sort shape forwards successful universe
 instantiation and rebuilding with their exact intermediate states. -/
@@ -1030,14 +1031,7 @@ theorem tryIotaCtorOrStructEta_constructor
   unfold EStateM.bind
   rw [hlookup]
   simp only [hinfo, pure_bind]
-  rw [ReaderT.run_bind]
-  change EStateM.bind
-    (ReaderT.run
-      (tryApplyIotaCtor recr recUs spine ctorArgs cidx ctorFields transient)
-      methods) _ sLookup = _
-  unfold EStateM.bind
   rw [hdispatch]
-  cases outcome <;> rfl
 
 end RecM
 

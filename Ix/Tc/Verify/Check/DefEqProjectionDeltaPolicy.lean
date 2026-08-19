@@ -390,8 +390,7 @@ theorem tryStructuralCongruence_preservesInferOnly
           simp only [tryStructuralCongruence]
           split
           · exact TcM.PreservesInferOnly.pure false
-          · simp only [pure_bind]
-            exact lazyDeltaProjReduction_preservesInferOnly hmethods hcore
+          · exact lazyDeltaProjReduction_preservesInferOnly hmethods hcore
               hnoDelta structureId field value rightValue
       | var | fvar | sort | const | app | lam | all | letE | nat | str =>
           exact TcM.PreservesInferOnly.pure false

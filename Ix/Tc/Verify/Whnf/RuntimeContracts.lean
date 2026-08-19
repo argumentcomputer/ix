@@ -306,7 +306,6 @@ theorem isTransientNatLiteralWork_wf {I : TcState .anon → Prop}
       cases head <;> simp only
       all_goals try exact TcM.WF.pure fun _ => trivial
       case const id us info =>
-        simp only [pure_bind]
         rw [ReaderT.run_bind]
         apply TcM.WF.bind
           (Q₁ := fun p state => p = state.prims)
@@ -384,7 +383,6 @@ theorem isTransientNatLiteralWork_noLazy {methods : Methods .anon}
       cases head <;> simp only
       all_goals try exact ⟨false, rfl⟩
       case const id us info =>
-        simp only [pure_bind]
         rw [ReaderT.run_bind]
         change ∃ answer, EStateM.bind
           ((RecM.prims : RecM .anon (Primitives .anon)).run methods) _ s =

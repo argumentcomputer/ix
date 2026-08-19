@@ -146,9 +146,7 @@ theorem instantiateUnivParams (e : KExpr .anon)
           intro memo
           split
           · exact statePure _
-          · apply stateBind (statePure PUnit.unit)
-            intro _
-            apply stateBind (stateLift (ofExcept (substUniv u us)))
+          · apply stateBind (stateLift (ofExcept (substUniv u us)))
             intro resultUniv
             apply stateBind (statePure (KExpr.mkSort resultUniv))
             intro result
@@ -160,9 +158,7 @@ theorem instantiateUnivParams (e : KExpr .anon)
           intro memo
           split
           · exact statePure _
-          · apply stateBind (statePure PUnit.unit)
-            intro _
-            apply stateBind
+          · apply stateBind
               (stateForInArray levels (Array.mkEmpty levels.size)
                 (fun level current => do
                   let instantiated ←
@@ -175,8 +171,6 @@ theorem instantiateUnivParams (e : KExpr .anon)
                   apply stateBind
                     (stateLift (ofExcept (substUniv level us)))
                   intro instantiated
-                  apply stateBind (statePure PUnit.unit)
-                  intro _
                   exact statePure
                     (ForInStep.yield (current.push instantiated))))
             intro newLevels
@@ -190,9 +184,7 @@ theorem instantiateUnivParams (e : KExpr .anon)
           intro memo
           split
           · exact statePure _
-          · apply stateBind (statePure PUnit.unit)
-            intro _
-            apply stateBind ihf
+          · apply stateBind ihf
             intro resultF
             apply stateBind iha
             intro resultA
@@ -206,9 +198,7 @@ theorem instantiateUnivParams (e : KExpr .anon)
           intro memo
           split
           · exact statePure _
-          · apply stateBind (statePure PUnit.unit)
-            intro _
-            apply stateBind ihty
+          · apply stateBind ihty
             intro resultTy
             apply stateBind ihbody
             intro resultBody
@@ -223,9 +213,7 @@ theorem instantiateUnivParams (e : KExpr .anon)
           intro memo
           split
           · exact statePure _
-          · apply stateBind (statePure PUnit.unit)
-            intro _
-            apply stateBind ihty
+          · apply stateBind ihty
             intro resultTy
             apply stateBind ihbody
             intro resultBody
@@ -240,9 +228,7 @@ theorem instantiateUnivParams (e : KExpr .anon)
           intro memo
           split
           · exact statePure _
-          · apply stateBind (statePure PUnit.unit)
-            intro _
-            apply stateBind ihty
+          · apply stateBind ihty
             intro resultTy
             apply stateBind ihvalue
             intro resultValue
@@ -261,9 +247,7 @@ theorem instantiateUnivParams (e : KExpr .anon)
           intro memo
           split
           · exact statePure _
-          · apply stateBind (statePure PUnit.unit)
-            intro _
-            apply stateBind ih
+          · apply stateBind ih
             intro resultValue
             apply stateBind
               (statePure (KExpr.mkPrj id field resultValue))

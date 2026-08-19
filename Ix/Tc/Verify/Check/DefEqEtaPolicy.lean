@@ -280,8 +280,7 @@ theorem tryEtaStructAfterConstructor_preservesInferOnly
   unfold tryEtaStructAfterConstructor
   split
   · exact TcM.PreservesInferOnly.pure false
-  · simp only [pure_bind]
-    refine bind_preservesInferOnly
+  · refine bind_preservesInferOnly
       (isStructLike_preservesInferOnly hmethods inductiveId) ?_
     intro isStructure
     cases isStructure with

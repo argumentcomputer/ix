@@ -29,7 +29,9 @@ private theorem iterSucc_size (u : KUniv .anon) (n : Nat) :
   induction n with
   | zero => rfl
   | succ n ih =>
-      simp only [iterSucc, KUniv.mkSucc, KUniv.size, ih]
+      have hstep : (KUniv.mkSucc (iterSucc u n)).size
+          = (iterSucc u n).size + 1 := rfl
+      simp only [iterSucc, hstep, ih]
       omega
 
 /-- A measure that observes precisely the universe carried by a sort. -/

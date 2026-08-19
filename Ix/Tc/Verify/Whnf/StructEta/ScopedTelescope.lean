@@ -71,7 +71,7 @@ theorem scratch_lam_back
   rw [List.map_reverse,
     List.map_snd_zip (by simpa [h.size_eq])] at hmap
   have hhead := congrArg List.head? hmap
-  simpa only [List.head?_reverse, List.head?_cons,
+  simpa only [List.head?_reverse, List.head?_cons, List.map_cons,
     Array.getLast?_toList] using hhead
 
 theorem scratch_popLocal_run

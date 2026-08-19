@@ -53,7 +53,7 @@ theorem isDefEqCall_preservesInferOnly
     (left right : KExpr .anon) :
     ((isDefEqCall left right).run methods).PreservesInferOnly := by
   unfold isDefEqCall
-  simpa using hmethods.isDefEq left right
+  exact hmethods.isDefEq left right
 
 /-- Infer-only validation restores the policy value which was in force at
 the call site, irrespective of the callback outcome. -/
@@ -72,14 +72,10 @@ theorem tryQuestion_preservesInferOnly
     (hx : (x.run methods).PreservesInferOnly) :
     ((try? x).run methods).PreservesInferOnly := by
   unfold try?
-  simp only [ReaderT.run_bind]
-  apply TcM.PreservesInferOnly.bind
-  · exact TcM.PreservesInferOnly.tryCatch
-      (TcM.PreservesInferOnly.bind hx
-        (fun value => TcM.PreservesInferOnly.pure (some value)))
-      (fun _ => TcM.PreservesInferOnly.pure none)
-  · intro result
-    exact TcM.PreservesInferOnly.pure result
+  exact TcM.PreservesInferOnly.tryCatch
+    (TcM.PreservesInferOnly.bind hx
+      (fun value => TcM.PreservesInferOnly.pure (some value)))
+    (fun _ => TcM.PreservesInferOnly.pure none)
 
 /-- Cheap-recursion depth is balanced by `finally`, including on errors. -/
 theorem withCheapRecursionDepth_preservesInferOnly
@@ -148,8 +144,7 @@ theorem natSuccOf_preservesInferOnly
       simp only
       split
       · exact TcM.PreservesInferOnly.pure none
-      · simp only [pure_bind]
-        refine bindIntern_preservesInferOnly
+      · refine bindIntern_preservesInferOnly
           (natExprFromValue (value - 1) : KExpr .anon) ?_
         intro result
         simpa using TcM.PreservesInferOnly.pure (some result)
@@ -180,7 +175,6 @@ theorem boolTrueReductionAllowed_preservesInferOnly
     {methods : Methods .anon} (source : KExpr .anon) :
     ((boolTrueReductionAllowed source).run methods).PreservesInferOnly := by
   unfold boolTrueReductionAllowed
-  simp only
   split
   · exact TcM.PreservesInferOnly.pure true
   · simp only [ReaderT.run_bind]
@@ -378,8 +372,7 @@ theorem trySameHeadSpineCached_preservesInferOnly
   intro state
   split
   · exact TcM.PreservesInferOnly.pure none
-  · simp only [pure_bind]
-    apply TcM.PreservesInferOnly.bind
+  · apply TcM.PreservesInferOnly.bind
       (trySameHeadSpine_preservesInferOnly hmethods left right)
     intro result
     cases result with

@@ -85,10 +85,11 @@ private theorem liftCached_preservesUnivs (e : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ => by
+            | none => by
+              simp only
               split
               · exact .bind (.pure _) fun result =>
                   .bind (.internExpr result) fun interned =>
@@ -99,40 +100,40 @@ private theorem liftCached_preservesUnivs (e : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | sort u info =>
       rw [liftCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | const id us info =>
       rw [liftCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | app f a info ihf iha =>
       rw [liftCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihf cutoff) fun rf =>
                 .bind (iha cutoff) fun ra =>
                   .bind (.pure _) fun result =>
@@ -143,10 +144,10 @@ private theorem liftCached_preservesUnivs (e : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty cutoff) fun rty =>
                 .bind (ihbody (cutoff + 1)) fun rbody =>
                   .bind (.pure _) fun result =>
@@ -157,10 +158,10 @@ private theorem liftCached_preservesUnivs (e : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty cutoff) fun rty =>
                 .bind (ihbody (cutoff + 1)) fun rbody =>
                   .bind (.pure _) fun result =>
@@ -171,10 +172,10 @@ private theorem liftCached_preservesUnivs (e : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty cutoff) fun rty =>
                 .bind (ihval cutoff) fun rval =>
                   .bind (ihbody (cutoff + 1)) fun rbody =>
@@ -186,10 +187,10 @@ private theorem liftCached_preservesUnivs (e : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihval cutoff) fun rval =>
                 .bind (.pure _) fun result =>
                   .bind (.internExpr result) fun interned =>
@@ -199,20 +200,20 @@ private theorem liftCached_preservesUnivs (e : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | str v blob info =>
       rw [liftCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
 
 theorem lift_preservesUnivs (e : KExpr .anon) (shift cutoff : UInt64) :
@@ -233,10 +234,11 @@ private theorem substCached_preservesUnivs (body arg : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ => by
+            | none => by
+              simp only
               split
               · exact .bind (.liftIntern (lift_preservesUnivs arg depth 0))
                   fun result =>
@@ -252,40 +254,40 @@ private theorem substCached_preservesUnivs (body arg : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | sort u info =>
       rw [substCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | const id us info =>
       rw [substCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | app f a info ihf iha =>
       rw [substCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihf depth) fun rf =>
                 .bind (iha depth) fun ra =>
                   .bind (.pure _) fun result =>
@@ -296,10 +298,10 @@ private theorem substCached_preservesUnivs (body arg : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -310,10 +312,10 @@ private theorem substCached_preservesUnivs (body arg : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -324,10 +326,10 @@ private theorem substCached_preservesUnivs (body arg : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihval depth) fun rval =>
                   .bind (ihinner (depth + 1)) fun rinner =>
@@ -339,10 +341,10 @@ private theorem substCached_preservesUnivs (body arg : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihval depth) fun rval =>
                 .bind (.pure _) fun result =>
                   .bind (.internExpr result) fun interned =>
@@ -352,20 +354,20 @@ private theorem substCached_preservesUnivs (body arg : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | str v blob info =>
       rw [substCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
 
 theorem subst_preservesUnivs (body arg : KExpr .anon) (depth : UInt64) :
@@ -386,10 +388,11 @@ private theorem simulSubstCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ => by
+            | none => by
+              simp only
               split
               · exact .bind (.liftIntern (lift_preservesUnivs _ depth 0))
                   fun result =>
@@ -404,40 +407,40 @@ private theorem simulSubstCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | sort u info =>
       rw [simulSubstCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | const id us info =>
       rw [simulSubstCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | app f a info ihf iha =>
       rw [simulSubstCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihf depth) fun rf =>
                 .bind (iha depth) fun ra =>
                   .bind (.pure _) fun result =>
@@ -448,10 +451,10 @@ private theorem simulSubstCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -462,10 +465,10 @@ private theorem simulSubstCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -476,10 +479,10 @@ private theorem simulSubstCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihval depth) fun rval =>
                   .bind (ihinner (depth + 1)) fun rinner =>
@@ -491,10 +494,10 @@ private theorem simulSubstCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihval depth) fun rval =>
                 .bind (.pure _) fun result =>
                   .bind (.internExpr result) fun interned =>
@@ -504,20 +507,20 @@ private theorem simulSubstCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | str v blob info =>
       rw [simulSubstCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
 
 theorem simulSubst_preservesUnivs (body : KExpr .anon)
@@ -539,10 +542,11 @@ private theorem instantiateRevCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ => by
+            | none => by
+              simp only
               split
               · exact .bind (.scratchInsert _ _) fun _ => .pure _
               · split
@@ -555,40 +559,40 @@ private theorem instantiateRevCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | sort u info =>
       rw [instantiateRevCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | const id us info =>
       rw [instantiateRevCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | app f a info ihf iha =>
       rw [instantiateRevCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihf depth) fun rf =>
                 .bind (iha depth) fun ra =>
                   .bind (.pure _) fun result =>
@@ -599,10 +603,10 @@ private theorem instantiateRevCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -613,10 +617,10 @@ private theorem instantiateRevCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -627,10 +631,10 @@ private theorem instantiateRevCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihval depth) fun rval =>
                   .bind (ihinner (depth + 1)) fun rinner =>
@@ -642,10 +646,10 @@ private theorem instantiateRevCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihval depth) fun rval =>
                 .bind (.pure _) fun result =>
                   .bind (.internExpr result) fun interned =>
@@ -655,20 +659,20 @@ private theorem instantiateRevCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | str v blob info =>
       rw [instantiateRevCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
 
 theorem instantiateRev_preservesUnivs (body : KExpr .anon)
@@ -690,10 +694,11 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ => by
+            | none => by
+              simp only
               split
               · exact .bind (.pure _) fun result =>
                   .bind (.internExpr result) fun interned =>
@@ -704,10 +709,11 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ => by
+            | none => by
+              simp only
               split
               · exact .bind (.internExpr _) fun interned =>
                   .bind (.scratchInsert _ interned) fun _ => .pure interned
@@ -717,30 +723,30 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | const id us info =>
       rw [abstractFVarsCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | app f a info ihf iha =>
       rw [abstractFVarsCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihf depth) fun rf =>
                 .bind (iha depth) fun ra =>
                   .bind (.pure _) fun result =>
@@ -751,10 +757,10 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -765,10 +771,10 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihinner (depth + 1)) fun rinner =>
                   .bind (.pure _) fun result =>
@@ -779,10 +785,10 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihty depth) fun rty =>
                 .bind (ihval depth) fun rval =>
                   .bind (ihinner (depth + 1)) fun rinner =>
@@ -794,10 +800,10 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (ihval depth) fun rval =>
                 .bind (.pure _) fun result =>
                   .bind (.internExpr result) fun interned =>
@@ -807,20 +813,20 @@ private theorem abstractFVarsCached_preservesUnivs (body : KExpr .anon)
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
   | str v blob info =>
       rw [abstractFVarsCached]
       simp only
       split
       · exact .pure _
-      · exact .bind (.pure _) fun _ =>
+      · exact
           .bind (.scratchGet _) fun
             | some cached => .pure cached
-            | none => .bind (.pure _) fun _ =>
+            | none =>
               .bind (.scratchInsert _ _) fun _ => .pure _
 
 theorem abstractFVars_preservesUnivs (body : KExpr .anon)

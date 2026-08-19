@@ -194,7 +194,7 @@ theorem find?_above
   | nil => simpa using hfind
   | @cons arg arguments A dk k source middle target hstep harg htail ih =>
       have habove : dk + arguments.length < index := by
-        simpa only [List.length_cons] using hindex
+        simp only [List.length_cons] at hindex; omega
       have hfirst := hstep.find?_gt habove hfind
       have hrest : dk + arguments.length ≤ index - 1 := by omega
       have hfinal := ih hrest hfirst

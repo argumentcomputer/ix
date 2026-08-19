@@ -398,8 +398,7 @@ theorem tryReduceBitvecLtProp_preservesInferOnly
       simp only []
       split
       · exact TcM.PreservesInferOnly.pure none
-      · simp only [pure_bind]
-        rcases htypeSpine : args[0]!.collectSpine with
+      · rcases htypeSpine : args[0]!.collectSpine with
           ⟨typeHead, typeArgs⟩
         cases typeHead with
         | const typeId typeLevels typeInfo =>

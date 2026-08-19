@@ -90,7 +90,7 @@ theorem collectBlockClassFlags_wf
       intro concrete after _
       cases hnote : flags.note member concrete with
       | error err =>
-          simpa only using
+          exact
             (TcM.WF.throw (I := I) (s := after) fun _ => trivial)
       | ok next =>
           simpa only using ih next after
@@ -188,8 +188,10 @@ theorem classifyBlock_exact_wf
       simpa using congrArg List.length hempty
     exact hsize this
   rw [hflags, BlockClassFlags.foldl_mark_empty_of_nonempty kind hlist]
-  simpa [BlockClassFlags.finish_only] using
-    (TcM.WF.pure (I := I) (s := after) (a := kind) fun _ => rfl)
+  simp only [BlockClassFlags.finish_only]
+  exact
+    (TcM.WF.pure (I := I) (s := after) (a := kind)
+      (Q := fun result _ => result = kind) fun _ => rfl)
 
 /-- Concrete success corollary used to refine an existential body trace to
 the exact catalog kind. -/

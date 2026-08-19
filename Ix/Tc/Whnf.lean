@@ -169,12 +169,15 @@ where
 namespace RecM
 
 /-- Swallow any `TcError`, yielding `none` (Rust `Err(_) => return Ok(None)`
-    with state mutations surviving). -/
-@[inline] def try? (x : RecM m α) : RecM m (Option α) := do
-  try
-    return some (← x)
-  catch _ =>
-    return none
+    with state mutations surviving).
+
+Spelled with `tryCatch` and `pure` rather than `try`/`catch` with `return`:
+a `return` inside a `try` block elaborates through the early-return
+transformer, burying the plain `EStateM.tryCatch` this reduces to and that
+`Ix/Tc/Verify/Whnf/Iota/ConstructorSynthesis.lean` reasons about. Both
+spellings denote the same function. -/
+@[inline] def try? (x : RecM m α) : RecM m (Option α) :=
+  tryCatch (do let a ← x; pure (some a)) (fun _ => pure none)
 
 @[inline] def prims : RecM m (Primitives m) := do
   return (← get).prims
@@ -1133,7 +1136,7 @@ def finishStructEtaResult (indId : KId m) (major rhs : KExpr m)
 this test pure makes the semantic boundary independently inspectable without
 moving any checker effects across it. -/
 def structEtaSortRejected : KExpr m → Bool
-  | .sort u _ => u.isZero
+  | .sort u _ => u.isSemanticZero
   | _ => false
 
 /-- Apply the H3 Prop guard and, for an admissible major sort, instantiate

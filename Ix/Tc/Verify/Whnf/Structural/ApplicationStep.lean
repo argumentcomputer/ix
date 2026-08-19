@@ -55,14 +55,14 @@ theorem whnfCoreWithFlagsStep_app_wf
   | .error err s1 =>
       have hcallbackRun :
           (whnfCoreFlagsRec head flags).run methods s = .error err s1 := by
-        simpa only [whnfCoreFlagsRec] using hheadRun
+        exact hheadRun
       rw [hcallbackRun] at hcallbackPost
       rw [whnfCoreWithFlagsStep_appHeadError hspine hheadRun]
       exact ⟨hcallbackPost.1, trivial⟩
   | .ok changed s1 =>
       have hcallbackRun :
           (whnfCoreFlagsRec head flags).run methods s = .ok changed s1 := by
-        simpa only [whnfCoreFlagsRec] using hheadRun
+        exact hheadRun
       rw [hcallbackRun] at hcallbackPost
       have hI1 := hcallbackPost.1
       have hchangedSupport := hcallbackPost.2.1

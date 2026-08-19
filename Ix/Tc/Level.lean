@@ -3,7 +3,7 @@ module
 public import Ix.Tc.Mode
 public import Ix.Address
 public import Ix.Unsigned
-public import Batteries.Data.RBMap
+public import Batteries.Recycling.RBTree.Basic
 
 /-!
 Mirror: crates/kernel/src/level.rs
@@ -265,7 +265,7 @@ abbrev Path := List UInt64
 
 /-- Canonical form: map from imax-paths to nodes. Rust `BTreeMap<Vec<u64>,
     Node>`; `Ord Path` is lexicographic in both. -/
-abbrev NormLevel := Batteries.RBMap Path NormNode compare
+abbrev NormLevel := RBTree.RBMap Path NormNode compare
 
 instance : Inhabited NormLevel := ⟨.empty⟩
 
@@ -496,6 +496,14 @@ def univEq (u v : KUniv m) : Bool :=
 def univGeq (u v : KUniv m) : Bool :=
   u == v || v.isZero
   || Level.normLevelLe (Level.normalizeLevel v) (Level.normalizeLevel u)
+
+/-- Semantic Prop test: `u ≡ 0` under every parameter assignment. The
+    syntactic `KUniv.isZero` misses spellings like `imax 1 0`, which the
+    kernel must classify as `Prop` (leanprover/lean4#14613, #14615). Zero
+    normalizes to empty entries only and `normLevelEq` ignores empty
+    entries, so all-empty is exactly `univEq u zero`. -/
+def KUniv.isSemanticZero (u : KUniv m) : Bool :=
+  u.isZero || (Level.normalizeLevel u).toList.all (!Level.entryNonEmpty ·)
 
 end Ix.Tc
 

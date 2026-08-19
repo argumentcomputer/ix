@@ -23,8 +23,7 @@ theorem natOffsetDecompose_preservesInferOnly
   intro primitives
   split
   · exact TcM.PreservesInferOnly.pure _
-  · simp only [pure_bind]
-    refine bind_preservesInferOnly
+  · refine bind_preservesInferOnly
       (natOffset_preservesInferOnly source 0) ?_
     intro result
     cases result with
@@ -143,8 +142,7 @@ theorem tryDefEqOffsetAfterZeroMiss_preservesInferOnly
   intro primitives
   split
   · exact TcM.PreservesInferOnly.pure none
-  · simp only [pure_bind]
-    exact tryDefEqOffsetAfterCandidates_preservesInferOnly hmethods left right
+  · exact tryDefEqOffsetAfterCandidates_preservesInferOnly hmethods left right
 
 theorem tryDefEqOffsetAfterLiteral_preservesInferOnly
     {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)

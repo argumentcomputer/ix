@@ -321,7 +321,7 @@ theorem TrKExprS.instL {env : VEnv} {uvars U' : Nat}
       have harr := array_mapM_ok hmus
       have hsize : vs.size = curUs.size := by
         rw [← Array.length_toList, ← Array.length_toList]
-        exact harr.length_eq.symm
+        exact (Lean4Lean.List.Forall₂.length_eq harr).symm
       have hwf : ∀ w ∈ vs, (KUniv.toVLevel w).WF U' := by
         intro w hw
         obtain ⟨a, _, hab⟩ := forall₂_mem_right harr w (by simpa using hw)

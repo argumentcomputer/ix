@@ -258,11 +258,8 @@ theorem tryReduceDecidable_preservesInferOnly
               id.addr == p.intDecEq.addr || id.addr == p.intDecLt.addr with
           | true =>
               simp only [if_true]
-              refine bind_preservesInferOnly
-                (tryNormalizeIntDecidable_preservesInferOnly hmethods id.addr
-                  args) ?_
-              intro result
-              exact TcM.PreservesInferOnly.pure result
+              exact tryNormalizeIntDecidable_preservesInferOnly hmethods
+                id.addr args
           | false =>
               simp only [Bool.false_eq_true, if_false]
               cases hknown : !isDecLe && !isDecEq && !isDecLt with

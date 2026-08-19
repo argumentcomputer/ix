@@ -183,6 +183,7 @@ theorem evalNatOffsetLiteral_str
     (evalNatOffsetLiteral (.str value blob info) 0).run methods s =
       .ok none s := by
   unfold evalNatOffsetLiteral evalNatOffsetLiteralFuel
+  rw [show (256 - 0 : Nat) = Nat.succ 255 from rfl]
   rw [ReaderT.run_bind]
   change EStateM.bind (ReaderT.run prims methods) _ s = _
   unfold EStateM.bind

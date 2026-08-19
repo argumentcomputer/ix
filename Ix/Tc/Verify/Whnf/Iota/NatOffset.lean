@@ -382,12 +382,8 @@ theorem tryIotaCtorOrStructEta_state_wf
           | some pair =>
               rcases pair with ⟨cidx, ctorFields⟩
               simp only [hinfo, pure_bind]
-              rw [ReaderT.run_bind]
-              apply TcM.WF.bind
-                (happly recr recUs spine ctorArgs cidx ctorFields transient
-                  afterLookup)
-              intro result afterApply _
-              exact TcM.WF.pure (fun _ => trivial)
+              exact happly recr recUs spine ctorArgs cidx ctorFields transient
+                afterLookup
   | _ => exact hstruct s
 
 /-- A StringExpansion finite String plan can be selected at the state where expansion

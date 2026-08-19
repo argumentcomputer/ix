@@ -1,5 +1,5 @@
 import Ix.Tc.Level
-import Batteries.Data.RBMap.Lemmas
+import Batteries.Recycling.RBTree.Lemmas
 import Lean4Lean.Theory.VLevel
 
 /-!
@@ -307,16 +307,16 @@ theorem evalPath_max {ρ : List Nat} {path : Path} {a b : Nat} :
 theorem NormLevel.eval_le {ρ : List Nat} {l : NormLevel} {x : Nat} :
     l.eval ρ ≤ x ↔
       ∀ p n, l.find? p = some n → evalPath ρ p (n.eval ρ) ≤ x := by
-  rw [NormLevel.eval, Batteries.RBMap.foldl_eq_foldl_toList, foldl_max_le]
+  rw [NormLevel.eval, RBTree.RBMap.foldl_eq_foldl_toList, foldl_max_le]
   simp only [Nat.zero_le, true_and]
   constructor
   · intro H p n hf
-    obtain ⟨y, hy, hcmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+    obtain ⟨y, hy, hcmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
     cases Std.LawfulEqCmp.eq_of_compare hcmp
     exact H (p, n) hy
   · intro H pn hpn
     exact H pn.1 pn.2
-      (Batteries.RBMap.find?_some.mpr ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩)
+      (RBTree.RBMap.find?_some.mpr ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩)
 
 theorem NormLevel.le_eval {ρ : List Nat} {l : NormLevel} {p : Path}
     {n : NormNode} (h : l.find? p = some n) :
@@ -448,16 +448,16 @@ theorem EvalPaths.one_le {ρ : List Nat} {path : Path} {n : Nat}
 /-- `imax` distributes over `max` in the second argument — the semantic
     content of the `normalizeImaxMax` rewrite. -/
 private theorem imax_max (a b c : Nat) :
-    Nat.imax a (max b c) = max (Nat.imax a b) (Nat.imax a c) := by
+    Lean.Nat.imax a (max b c) = max (Lean.Nat.imax a b) (Lean.Nat.imax a c) := by
   by_cases hb : b = 0 <;> by_cases hc : c = 0 <;>
-    simp [Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
+    simp [Lean.Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
 
 /-- `imax(a, imax(b, c)) = max(imax(a, c), imax(b, c))` — the semantic
     content of the `normalizeImaxImax` rewrite. -/
 private theorem imax_imax (a b c : Nat) :
-    Nat.imax a (Nat.imax b c) = max (Nat.imax a c) (Nat.imax b c) := by
+    Lean.Nat.imax a (Lean.Nat.imax b c) = max (Lean.Nat.imax a c) (Lean.Nat.imax b c) := by
   by_cases hc : c = 0 <;> by_cases hb : b = 0 <;>
-    simp [Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
+    simp [Lean.Nat.imax, hb, hc, Nat.max_eq_max, Nat.max_eq_zero_iff] <;> omega
 
 /-! #### Insert-eval lemmas -/
 
@@ -574,7 +574,7 @@ theorem NormNode.addVar_eval {ρ : List Nat} {n : NormNode} {idx k : UInt64} :
     denotation. -/
 private theorem findD_evalPath_le {ρ : List Nat} {l : NormLevel} {path : Path} :
     evalPath ρ path ((l.findD path {}).eval ρ) ≤ l.eval ρ := by
-  rw [Batteries.RBMap.findD]
+  rw [RBTree.RBMap.findD]
   cases hf : l.find? path with
   | some n => simpa using NormLevel.le_eval hf
   | none =>
@@ -594,7 +594,7 @@ private theorem insert_findD_eval {ρ : List Nat} {l : NormLevel} {path : Path}
       = max (l.eval ρ) (evalPath ρ path c) := by
   have hfind : ∀ p, (l.insert path v').find? p
       = if compare p path = .eq then some v' else l.find? p := fun p => by
-    rw [Batteries.RBMap.find?_insert]
+    rw [RBTree.RBMap.find?_insert]
   have ext : ∀ x, (NormLevel.eval ρ (l.insert path v') ≤ x ↔
       max (l.eval ρ) (evalPath ρ path c) ≤ x) := by
     intro x
@@ -608,7 +608,7 @@ private theorem insert_findD_eval {ρ : List Nat} {l : NormLevel} {path : Path}
       by_cases hcmp : compare p path = .eq
       · cases Std.LawfulEqCmp.eq_of_compare hcmp
         have hD : l.findD path {} = n := by
-          rw [Batteries.RBMap.findD, hf, Option.getD_some]
+          rw [RBTree.RBMap.findD, hf, Option.getD_some]
         rw [← hD]
         exact hpath.1
       · exact H p n (by rw [hfind, if_neg hcmp]; exact hf)
@@ -738,7 +738,7 @@ private theorem normalizeAux_eval' {ρ : List Nat} :
   | .imax u (.zero b_ad) ad, path, k, acc, hk, hp => by
     simp only [normalizeAux]
     rw [NormLevel.addConst_eval hp]
-    simp [KUniv.toVLevel, VLevel.eval, Nat.imax]
+    simp [KUniv.toVLevel, VLevel.eval, Lean.Nat.imax]
   | .imax u (.succ v b_ad) ad, path, k, acc, hk, hp => by
     have hk1 : (k + 1).toNat = k.toNat + 1 :=
       toNat_add_one (by simp [KUniv.size] at hk; omega)
@@ -755,13 +755,13 @@ private theorem normalizeAux_eval' {ρ : List Nat} :
     simp only [normalizeAux]
     rw [ihV, ihU, hk1,
       show (KUniv.toVLevel (.imax u (.succ v b_ad) ad)).eval ρ
-          = Nat.imax ((KUniv.toVLevel u).eval ρ)
+          = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from rfl,
-      show Nat.imax ((KUniv.toVLevel u).eval ρ)
+      show Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
             ((KUniv.toVLevel v).eval ρ + 1)
           = max ((KUniv.toVLevel u).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from by
-        simp [Nat.imax, Nat.max_eq_max],
+        simp [Lean.Nat.imax, Nat.max_eq_max],
       show (KUniv.toVLevel v).eval ρ + (k.toNat + 1)
           = (KUniv.toVLevel v).eval ρ + 1 + k.toNat from by omega,
       ← Nat.add_max_add_right, evalPath_max]
@@ -859,15 +859,15 @@ theorem normalizeImaxMax_eval {ρ : List Nat} {u v w : KUniv m} {path : Path}
   simp only [normalizeImaxMax]
   rw [ihW, ihV,
     show (VLevel.imax u.toVLevel (VLevel.max v.toVLevel w.toVLevel)).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
             (max ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ))
       from rfl,
     imax_max, ← Nat.add_max_add_right, evalPath_max,
     show (VLevel.imax u.toVLevel v.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel v).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel v).eval ρ)
       from rfl,
     show (VLevel.imax u.toVLevel w.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
       from rfl]
   refine ext_le fun x => ?_
   simp only [Nat.max_le]
@@ -898,15 +898,15 @@ theorem normalizeImaxImax_eval {ρ : List Nat} {u v w : KUniv m} {path : Path}
   simp only [normalizeImaxImax]
   rw [ihVW, ihUW,
     show (VLevel.imax u.toVLevel (VLevel.imax v.toVLevel w.toVLevel)).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ)
-            (Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ))
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ)
+            (Lean.Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ))
       from rfl,
     imax_imax, ← Nat.add_max_add_right, evalPath_max,
     show (VLevel.imax u.toVLevel w.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) ((KUniv.toVLevel w).eval ρ)
       from rfl,
     show (VLevel.imax v.toVLevel w.toVLevel).eval ρ
-        = Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ)
+        = Lean.Nat.imax ((KUniv.toVLevel v).eval ρ) ((KUniv.toVLevel w).eval ρ)
       from rfl]
   refine ext_le fun x => ?_
   simp only [Nat.max_le]
@@ -928,7 +928,7 @@ private theorem normalizeImaxDispatch_eval' {ρ : List Nat} :
   | a, .zero b_ad, path, k, acc, hk, hp => by
     simp only [normalizeImaxDispatch]
     rw [NormLevel.addConst_eval hp]
-    simp [KUniv.toVLevel, VLevel.eval, Nat.imax]
+    simp [KUniv.toVLevel, VLevel.eval, Lean.Nat.imax]
   | a, .succ v b_ad, path, k, acc, hk, hp => by
     have hsza := KUniv.size_pos a
     have hk1 : (k + 1).toNat = k.toNat + 1 :=
@@ -946,13 +946,13 @@ private theorem normalizeImaxDispatch_eval' {ρ : List Nat} :
     simp only [normalizeImaxDispatch]
     rw [ihV, ihA, hk1,
       show (VLevel.imax a.toVLevel (KUniv.toVLevel (.succ v b_ad))).eval ρ
-          = Nat.imax ((KUniv.toVLevel a).eval ρ)
+          = Lean.Nat.imax ((KUniv.toVLevel a).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from rfl,
-      show Nat.imax ((KUniv.toVLevel a).eval ρ)
+      show Lean.Nat.imax ((KUniv.toVLevel a).eval ρ)
             ((KUniv.toVLevel v).eval ρ + 1)
           = max ((KUniv.toVLevel a).eval ρ)
               ((KUniv.toVLevel v).eval ρ + 1) from by
-        simp [Nat.imax, Nat.max_eq_max],
+        simp [Lean.Nat.imax, Nat.max_eq_max],
       show (KUniv.toVLevel v).eval ρ + (k.toNat + 1)
           = (KUniv.toVLevel v).eval ρ + 1 + k.toNat from by omega,
       ← Nat.add_max_add_right, evalPath_max]
@@ -993,7 +993,7 @@ private theorem normalize_param_some_eval {ρ : List Nat} {u : KUniv m}
         ((acc.addConst k path).addVar idx k newPath))
       = max (NormLevel.eval ρ acc)
           (evalPath ρ path
-            (Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
+            (Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
               + k.toNat)) := by
   have hconst : NormLevel.eval ρ (acc.addConst k path)
       = max (NormLevel.eval ρ acc) (evalPath ρ path k.toNat) :=
@@ -1020,14 +1020,14 @@ private theorem normalize_param_some_eval {ρ : List Nat} {u : KUniv m}
     hvar, hconst, evalPath_orderedInsert h₁, evalPath_orderedInsert h₁]
   by_cases hnz : allNZ ρ path = true <;> by_cases hz : 0 < evalParam ρ idx
   · rw [if_pos hz, if_pos hz]
-    simp only [evalPath, if_pos hnz, Nat.imax,
+    simp only [evalPath, if_pos hnz, Lean.Nat.imax,
       if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
       ← Nat.add_max_add_right]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
   · rw [if_neg hz, if_neg hz, Nat.eq_zero_of_not_pos hz]
-    simp only [evalPath, if_pos hnz, Nat.imax, reduceIte, Nat.zero_add]
+    simp only [evalPath, if_pos hnz, Lean.Nat.imax, reduceIte, Nat.zero_add]
     refine ext_le fun x => ?_
     simp only [Nat.max_le]
     omega
@@ -1056,7 +1056,7 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
         (if k != 0 then acc.addVar idx k path else acc))
       = max (NormLevel.eval ρ acc)
           (evalPath ρ path
-            (Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
+            (Lean.Nat.imax ((KUniv.toVLevel u).eval ρ) (evalParam ρ idx)
               + k.toNat)) := by
   have hmem : idx ∈ path := orderedInsert_none h₁
   split
@@ -1074,7 +1074,7 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
     · have hz : 0 < evalParam ρ idx := by
         simp only [allNZ, List.all_eq_true, decide_eq_true_eq] at hnz
         exact hnz idx hmem
-      simp only [evalPath, if_pos hnz, Nat.imax,
+      simp only [evalPath, if_pos hnz, Lean.Nat.imax,
         if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max,
         ← Nat.add_max_add_right]
       refine ext_le fun x => ?_
@@ -1095,7 +1095,7 @@ private theorem normalize_param_none_eval {ρ : List Nat} {u : KUniv m}
         exact hnz idx hmem
       have hle : evalParam ρ idx ≤ NormLevel.eval ρ acc :=
         hp.mem_le hmem hnz
-      simp only [evalPath, if_pos hnz, Nat.imax,
+      simp only [evalPath, if_pos hnz, Lean.Nat.imax,
         if_neg (Nat.pos_iff_ne_zero.mp hz), Nat.max_eq_max]
       refine ext_le fun x => ?_
       simp only [Nat.max_le]
@@ -1212,13 +1212,13 @@ theorem subsumption_eq_model (acc : NormLevel) :
 theorem seed_eval {ρ : List Nat} :
     NormLevel.eval ρ ((∅ : NormLevel).insert [] {}) = 0 := by
   refine Nat.le_antisymm (NormLevel.eval_le.mpr fun p n hf => ?_) (Nat.zero_le _)
-  rw [Batteries.RBMap.find?_insert] at hf
+  rw [RBTree.RBMap.find?_insert] at hf
   split at hf
   · rename_i hcmp
     cases Std.LawfulEqCmp.eq_of_compare hcmp
     cases hf
     simp [evalPath, allNZ, NormNode.eval]
-  · obtain ⟨y, hy, -⟩ := Batteries.RBMap.find?_some_mem_toList hf
+  · obtain ⟨y, hy, -⟩ := RBTree.RBMap.find?_some_mem_toList hf
     simp at hy
 /-! #### Canonical-form comparison soundness -/
 
@@ -1308,7 +1308,7 @@ theorem normLevelEq_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
     intro p n hf
     by_cases hne : entryNonEmpty (p, n) = true
     · have hmem : (p, n) ∈ la.toList := by
-        obtain ⟨y, hy, hcmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+        obtain ⟨y, hy, hcmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
         cases Std.LawfulEqCmp.eq_of_compare hcmp
         exact hy
       have hmem₂ : (p, n) ∈ lb.toList := by
@@ -1316,7 +1316,7 @@ theorem normLevelEq_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
           rw [← hfe]
           exact List.mem_filter.mpr ⟨hmem, hne⟩
         exact (List.mem_filter.mp hfmem).1
-      exact NormLevel.le_eval (Batteries.RBMap.find?_some.mpr
+      exact NormLevel.le_eval (RBTree.RBMap.find?_some.mpr
         ⟨p, hmem₂, Std.ReflCmp.compare_self⟩)
     · rw [eval_of_not_entryNonEmpty (Bool.eq_false_iff.mpr hne)]
       exact evalPath_le.mpr fun _ => Nat.zero_le _
@@ -1340,7 +1340,7 @@ private theorem covering_entry_le {ρ : List Nat} {l₂ : NormLevel}
     (hnz₂ : allNZ ρ p₂ = true) :
     NormNode.eval ρ n₂ ≤ NormLevel.eval ρ l₂ := by
   have hfind : l₂.find? p₂ = some n₂ :=
-    Batteries.RBMap.find?_some.mpr ⟨p₂, hmem, Std.ReflCmp.compare_self⟩
+    RBTree.RBMap.find?_some.mpr ⟨p₂, hmem, Std.ReflCmp.compare_self⟩
   simpa [evalPath, hnz₂] using NormLevel.le_eval (ρ := ρ) hfind
 
 /-- The coverage argument (level.rs:634-643, no upstream counterpart):
@@ -1352,7 +1352,7 @@ theorem normLevelLe_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
   rw [normLevelLe, List.all_eq_true] at h
   rw [NormLevel.eval_le]
   intro p₁ n₁ hf
-  obtain ⟨y, hymem, hycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+  obtain ⟨y, hymem, hycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
   cases Std.LawfulEqCmp.eq_of_compare hycmp
   have h1 := h (p₁, n₁) hymem
   simp only at h1
@@ -1393,12 +1393,13 @@ theorem normLevelLe_eval {ρ : List Nat} {l₁ l₂ : NormLevel}
           have hvmem : n₂.vars[i] ∈ n₂.vars := Array.getElem_mem hi
           have hidx : n₂.vars[i].idx ∈ p₂ := by
             have hfind₂ : l₂.find? p₂ = some n₂ :=
-              Batteries.RBMap.find?_some.mpr
+              RBTree.RBMap.find?_some.mpr
                 ⟨p₂, hmem₂, Std.ReflCmp.compare_self⟩
             exact hwf p₂ n₂ hfind₂ _ hvmem
           have h1ev : 1 ≤ evalParam ρ n₂.vars[i].idx := by
             rw [allNZ, List.all_eq_true] at hnz₂
-            simpa using hnz₂ _ hidx
+            have h0 : 0 < evalParam ρ n₂.vars[i].idx := by simpa using hnz₂ _ hidx
+            omega
           have hoff : n₁.constant.toNat ≤ n₂.vars[i].offset.toNat + 1 := by
             refine Nat.le_trans
               (UInt64.le_iff_toNat_le.mp (of_decide_eq_true hvle)) ?_
@@ -1483,7 +1484,7 @@ theorem VarsOnPath.addVar {l : NormLevel} {idx k : UInt64} {path : Path}
     (hl : VarsOnPath l) (hidx : idx ∈ path) :
     VarsOnPath (l.addVar idx k path) := by
   intro p n hf v hv
-  rw [NormLevel.addVar, Batteries.RBMap.find?_insert] at hf
+  rw [NormLevel.addVar, RBTree.RBMap.find?_insert] at hf
   split at hf
   · rename_i hcmp
     cases Std.LawfulEqCmp.eq_of_compare hcmp
@@ -1491,7 +1492,7 @@ theorem VarsOnPath.addVar {l : NormLevel} {idx k : UInt64} {path : Path}
     rcases NormNode.addVar_idx_mem v hv with rfl | ⟨v', hv', heq⟩
     · exact hidx
     · rw [heq]
-      rw [Batteries.RBMap.findD] at hv'
+      rw [RBTree.RBMap.findD] at hv'
       cases hff : l.find? path with
       | some n₀ =>
         rw [hff, Option.getD_some] at hv'
@@ -1508,12 +1509,12 @@ theorem VarsOnPath.addConst {l : NormLevel} {k : UInt64} {path : Path}
   simp only [NormLevel.addConst] at hf
   split at hf
   · exact hl p n hf v hv
-  · rw [Batteries.RBMap.find?_insert] at hf
+  · rw [RBTree.RBMap.find?_insert] at hf
     split at hf
     · rename_i hcmp
       cases Std.LawfulEqCmp.eq_of_compare hcmp
       cases hf
-      rw [Batteries.RBMap.findD] at hv
+      rw [RBTree.RBMap.findD] at hv
       cases hff : l.find? path with
       | some n₀ =>
         rw [hff, Option.getD_some] at hv
@@ -1642,11 +1643,11 @@ end
 private theorem varsOnPath_seed :
     VarsOnPath ((∅ : NormLevel).insert [] ({} : NormNode)) := by
   intro p n hf v hv
-  rw [Batteries.RBMap.find?_insert] at hf
+  rw [RBTree.RBMap.find?_insert] at hf
   split at hf
   · cases hf
     simp at hv
-  · obtain ⟨y, hy, -⟩ := Batteries.RBMap.find?_some_mem_toList hf
+  · obtain ⟨y, hy, -⟩ := RBTree.RBMap.find?_some_mem_toList hf
     simp at hy
 
 /-- `subsumeVars` only filters: every survivor comes from the first
@@ -1708,7 +1709,7 @@ private theorem forIn_id_invariant {α β : Type _} {P : β → Prop} :
         P (match f a b with | .yield b' => b' | .done b' => b')) →
       P (forIn (m := Id) l init f)
   | [], init, f, hinit, _ => by
-    simpa using hinit
+    exact hinit
   | a :: as, init, f, hinit, hstep => by
     rw [List.forIn_cons]
     have h0 := hstep a (List.mem_cons_self ..) init hinit
@@ -1766,7 +1767,7 @@ private theorem VarsOnPath.insert_of_subset {res : NormLevel} {p1 : Path}
     (h0 : ∀ v ∈ n0.vars, v.idx ∈ p1) :
     VarsOnPath (res.insert p1 nf) := by
   intro p n hf v hv
-  rw [Batteries.RBMap.find?_insert] at hf
+  rw [RBTree.RBMap.find?_insert] at hf
   split at hf
   · rename_i hcmp
     cases Std.LawfulEqCmp.eq_of_compare hcmp
@@ -1804,7 +1805,7 @@ theorem varsOnPath_subsumption {l : NormLevel} (hl : VarsOnPath l) :
     · exact hcur v hv
   · intro v hv
     have hf1 : l.find? p1 = some n1₀ :=
-      Batteries.RBMap.find?_some.mpr ⟨p1, hmem, Std.ReflCmp.compare_self⟩
+      RBTree.RBMap.find?_some.mpr ⟨p1, hmem, Std.ReflCmp.compare_self⟩
     exact hl p1 n1₀ hf1 v hv
 
 /-! #### Subsumption: the `≤` half and the per-key characterization -/
@@ -1871,9 +1872,9 @@ private theorem processEntry_eval_le {ρ : List Nat} {p1 : Path} :
 /-- Keys of an `RBMap`'s `toList` are nodup (strict sortedness). -/
 private theorem toList_keys_nodup (l : NormLevel) :
     (l.toList.map Prod.fst).Nodup := by
-  refine List.Pairwise.map _ ?_ Batteries.RBMap.toList_sorted
+  refine List.Pairwise.map _ ?_ RBTree.RBMap.toList_sorted
   intro a b hlt heq
-  have hc := Batteries.RBNode.cmpLT_iff.mp hlt
+  have hc := RBTree.RBNode.cmpLT_iff.mp hlt
   rw [heq] at hc
   have hself : compare b.1 b.1 = .eq := Std.ReflCmp.compare_self
   rw [hself] at hc
@@ -1890,7 +1891,7 @@ private theorem foldl_insert_find?_of_not_mem
   | pn :: rest, res, p, h => by
     rw [List.foldl_cons, foldl_insert_find?_of_not_mem f rest _ p
       fun q hq => h q (List.mem_cons_of_mem _ hq)]
-    refine Batteries.RBMap.find?_insert_of_ne _ fun hcmp => ?_
+    refine RBTree.RBMap.find?_insert_of_ne _ fun hcmp => ?_
     exact h pn (List.mem_cons_self ..) (Std.LawfulEqCmp.eq_of_compare hcmp)
 
 /-- With nodup keys, the fold writes each entry exactly once. -/
@@ -1907,7 +1908,7 @@ private theorem foldl_insert_find?_self
     rcases List.mem_cons.mp hmem with rfl | hmem'
     · rw [foldl_insert_find?_of_not_mem f rest _ p fun q hq heq => hnd.1
         (heq ▸ List.mem_map.mpr ⟨q, hq, rfl⟩)]
-      exact Batteries.RBMap.find?_insert_of_eq _ Std.ReflCmp.compare_self
+      exact RBTree.RBMap.find?_insert_of_eq _ Std.ReflCmp.compare_self
     · exact foldl_insert_find?_self f rest _ p n hmem' hnd.2
 
 /-- Forward characterization: every entry of the model comes from an
@@ -1917,7 +1918,7 @@ private theorem subsumptionModel_find?_some {l : NormLevel} {p : Path}
     ∃ n₀, l.find? p = some n₀ ∧ n = processEntry l.toList p n₀ := by
   cases hf₀ : l.find? p with
   | some n₀ =>
-    obtain ⟨y, hy, hycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf₀
+    obtain ⟨y, hy, hycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf₀
     cases Std.LawfulEqCmp.eq_of_compare hycmp
     refine ⟨n₀, rfl, ?_⟩
     rw [subsumptionModel,
@@ -1927,7 +1928,7 @@ private theorem subsumptionModel_find?_some {l : NormLevel} {p : Path}
   | none =>
     rw [subsumptionModel, foldl_insert_find?_of_not_mem _ l.toList l p
       (fun pn hpn heq => by
-        rw [heq, Batteries.RBMap.find?_some.mpr
+        rw [heq, RBTree.RBMap.find?_some.mpr
           ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩] at hf₀
         simp at hf₀),
       hf₀] at hf
@@ -2215,14 +2216,14 @@ private theorem le_subsumptionModel_eval {ρ : List Nat} {l : NormLevel}
       intro p1 n1₀ hf hlen hnz v hv
       rcases processEntry_var_cases l.toList n1₀ v hv
         with hsurv | ⟨pn, hpn, hsub, hsame, y, hy, hidx, hoff⟩
-      · obtain ⟨yy, hyy, hyycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+      · obtain ⟨yy, hyy, hyycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
         cases Std.LawfulEqCmp.eq_of_compare hyycmp
         have hfm := subsumptionModel_find?_of_mem hyy
         refine Nat.le_trans
           (((NormNode.eval_le (ρ := ρ)).mp (Nat.le_refl _)).2 v hsurv) ?_
         simpa [evalPath, hnz] using NormLevel.le_eval (ρ := ρ) hfm
       · have hf₂ : l.find? pn.1 = some pn.2 :=
-          Batteries.RBMap.find?_some.mpr
+          RBTree.RBMap.find?_some.mpr
             ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩
         have hnz₂ : allNZ ρ pn.1 = true := allNZ_of_isSubset hsub hnz
         have hlt : pn.1.length < p1.length := by
@@ -2248,7 +2249,7 @@ private theorem le_subsumptionModel_eval {ρ : List Nat} {l : NormLevel}
       intro p1 n1₀ hf hlen hnz
       rcases processEntry_const_cases l.toList n1₀
         with hkeep | ⟨pn, hpn, hsub, m, hmc, hmv, hexp⟩
-      · obtain ⟨yy, hyy, hyycmp⟩ := Batteries.RBMap.find?_some_mem_toList hf
+      · obtain ⟨yy, hyy, hyycmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
         cases Std.LawfulEqCmp.eq_of_compare hyycmp
         have hfm := subsumptionModel_find?_of_mem hyy
         have hb : NormNode.eval ρ (processEntry l.toList p1 n1₀)
@@ -2258,7 +2259,7 @@ private theorem le_subsumptionModel_eval {ρ : List Nat} {l : NormLevel}
         rw [← hkeep]
         exact ((NormNode.eval_le (ρ := ρ)).mp (Nat.le_refl _)).1
       · have hf₂ : l.find? pn.1 = some pn.2 :=
-          Batteries.RBMap.find?_some.mpr
+          RBTree.RBMap.find?_some.mpr
             ⟨pn.1, hpn, Std.ReflCmp.compare_self⟩
         have hnz₂ : allNZ ρ pn.1 = true := allNZ_of_isSubset hsub hnz
         rw [Bool.and_eq_false_iff] at hexp
@@ -2370,7 +2371,59 @@ theorem normalizeLevel_eval {ρ : List Nat} {u : KUniv m}
     subsumption_eval (varsOnPath_normalizeAux u [] 0 _ varsOnPath_seed),
     normalizeAux_eval (by simpa using hu) EvalPaths.nil, seed_eval]
   simp [evalPath, allNZ]
+
+/-- A canonical form whose entries are all empty denotes `0`: each entry
+    contributes `0`, and `eval` is their max. -/
+theorem NormLevel.eval_eq_zero_of_all_empty {ρ : List Nat} {l : NormLevel}
+    (h : ∀ e ∈ l.toList, entryNonEmpty e = false) :
+    NormLevel.eval ρ l = 0 := by
+  refine Nat.le_zero.mp (NormLevel.eval_le.mpr ?_)
+  intro p n hf
+  have hmem : (p, n) ∈ l.toList := by
+    obtain ⟨y, hy, hcmp⟩ := RBTree.RBMap.find?_some_mem_toList hf
+    cases Std.LawfulEqCmp.eq_of_compare hcmp
+    exact hy
+  rw [eval_of_not_entryNonEmpty (h _ hmem)]
+  exact evalPath_le.mpr fun _ => Nat.zero_le _
+
 end Level
+
+/-- A universe with a nonzero denotation at some assignment is not `Prop`.
+    The semantic test cannot be evaluated by `decide`: `normalizeLevel` is
+    well-founded (its `imax` cases rebuild the level), so it has no kernel
+    normal form. This routes the fact through `normalizeLevel_eval`
+    instead, which is how any concrete `isSemanticZero = false` obligation
+    should be discharged. -/
+theorem KUniv.isSemanticZero_eq_false {m : Mode} {u : KUniv m}
+    {ρ : List Nat} (hu : u.size < UInt64.size)
+    (hpos : 0 < (KUniv.toVLevel u).eval ρ) : u.isSemanticZero = false := by
+  rw [KUniv.isSemanticZero, Bool.or_eq_false_iff]
+  refine ⟨?_, ?_⟩
+  · cases u <;> simp_all [KUniv.isZero, KUniv.toVLevel,
+      Lean4Lean.VLevel.eval]
+  · rw [Bool.eq_false_iff, ne_eq, List.all_eq_true]
+    intro hall
+    have hzero : Level.NormLevel.eval ρ (Level.normalizeLevel u) = 0 :=
+      Level.NormLevel.eval_eq_zero_of_all_empty fun e he => by
+        simpa using hall e he
+    rw [Level.normalizeLevel_eval hu] at hzero
+    omega
+
+/-- A universe the semantic `Prop` test accepts denotes `0` at every
+    assignment. `isZero` is the syntactic fast path; otherwise every
+    canonical entry is empty, and `normalizeLevel_eval` transports that
+    back to the denotation. -/
+theorem KUniv.toVLevel_equiv_zero_of_isSemanticZero {m : Mode} {u : KUniv m}
+    (hu : u.size < UInt64.size) (hzero : u.isSemanticZero = true) :
+    KUniv.toVLevel u ≈ .zero := by
+  rw [KUniv.isSemanticZero, Bool.or_eq_true] at hzero
+  refine Lean4Lean.VLevel.equiv_def.mpr fun ρ => ?_
+  show _ = 0
+  rcases hzero with h | h
+  · rw [KUniv.toVLevel_of_isZero h]; rfl
+  · rw [← Level.normalizeLevel_eval (ρ := ρ) hu]
+    exact Level.NormLevel.eval_eq_zero_of_all_empty fun e he => by
+      simpa using List.all_eq_true.mp h e he
 
 /-! ### The canonical-form frontier, assembled -/
 
@@ -2531,8 +2584,8 @@ theorem isNeverZero_eval (ρ : List Nat) : ∀ {u : KUniv m},
       split <;> omega
   | .imax a b _, h => by
     have hb := isNeverZero_eval ρ (u := b) (by simpa [isNeverZero] using h)
-    show 0 < Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
-    simp only [Nat.imax]
+    show 0 < Lean.Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+    simp only [Lean.Nat.imax]
     rw [if_neg (by omega)]
     simp only [Nat.max_eq_max, Nat.max_def]
     split <;> omega
@@ -2750,7 +2803,7 @@ theorem toVLevel_mkIMax {a b : KUniv m}
             | _ => false) then b
         else if a == b then a
         else mkIMaxRaw a b).toVLevel.eval ρ
-      = Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
+      = Lean.Nat.imax ((toVLevel a).eval ρ) ((toVLevel b).eval ρ)
   generalize hc1 : (match a with
     | .succ inner _ => inner.isZero
     | _ => false) = aOne
@@ -2760,19 +2813,19 @@ theorem toVLevel_mkIMax {a b : KUniv m}
     have hmax := VLevel.equiv_def.mp (toVLevel_mkMax hinj ha hb) ρ
     have hpos := isNeverZero_eval ρ (u := b) hnz
     rw [hmax]
-    simp only [Nat.imax]
+    simp only [Lean.Nat.imax]
     rw [if_neg (by omega)]
     rfl
   · split
     · -- b is zero: imax _ 0 = 0
       next hz =>
       rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
-      simp [Nat.imax]
+      simp [Lean.Nat.imax]
     · split
       · -- a is zero: imax 0 x = x
         next hz =>
         rw [toVLevel_of_isZero hz, show (VLevel.zero.eval ρ) = 0 from rfl]
-        simp only [Nat.imax]
+        simp only [Lean.Nat.imax]
         split
         · next h0 => omega
         · simp only [Nat.max_eq_max, Nat.max_def]
@@ -2788,9 +2841,9 @@ theorem toVLevel_mkIMax {a b : KUniv m}
               rw [toVLevel_of_isZero (by simpa using hM)]
               rfl
             show (toVLevel b).eval ρ
-                = Nat.imax ((toVLevel inner).eval ρ + 1)
+                = Lean.Nat.imax ((toVLevel inner).eval ρ + 1)
                     ((toVLevel b).eval ρ)
-            simp only [Nat.imax]
+            simp only [Lean.Nat.imax]
             split
             · next h0 => omega
             · simp only [Nat.max_eq_max, Nat.max_def]
@@ -2807,7 +2860,7 @@ theorem toVLevel_mkIMax {a b : KUniv m}
             have heq := (hinj a b (.inl .refl) (.inr .refl)).toVLevel_eq
               hbeq
             rw [heq]
-            simp only [Nat.imax]
+            simp only [Lean.Nat.imax]
             split
             · next h0 => omega
             · simp only [Nat.max_eq_max, Nat.max_def]

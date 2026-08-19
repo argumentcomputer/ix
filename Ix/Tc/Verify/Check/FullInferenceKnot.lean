@@ -220,7 +220,7 @@ theorem publicInfer_full_wf
       (kernelCacheSemantics proposition.model.keys trProj) trProj world support
       proposition.model.keys.uvars methods :=
     context.methodsN_fullInferenceWFAt s.recFuel.toNat
-  simpa [TcM.infer, TcM.runRec, methods] using
+  exact
     (RecM.infer_full_wf
       (context.fullInferenceContext methods hmethods hpolicy hfull)
       hsourceSupport hsource hbefore)
