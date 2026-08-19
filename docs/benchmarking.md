@@ -210,10 +210,14 @@ binary exists — the registry lives in Lean, so nothing pre-build reads it
 bare `execute` token flips `aiur` to Phase-1 only, and `recursive` to its
 recursive mode (unscheduled testbed, so no bencher baseline; OOMs the
 standard CI host — meant for a bigger manual dispatch). The bare `fresh`
-token makes every cell bypass its bencher baseline and re-measure the main
-side with a base-SHA run — for when the published baseline is suspect. PR
-runs never upload to bencher, so the comparison prints in the comment and
-the canonical baseline is untouched.
+token makes every cell bypass its bencher baseline and keeps persistent cached
+benchmark binaries, compiled `.ixe` files, and compile rows out of measured
+jobs. A cached head `ix` may bootstrap the canonical command parser, but the
+workflow replaces the full binary bundle before publishing it. Both the PR and
+base products are rebuilt; run-scoped artifacts carry them between jobs. Cargo
+and package dependency caches remain enabled. PR runs never upload to bencher,
+so the comparison prints in the comment and the canonical baseline is
+untouched.
 
 ## CI shape
 
@@ -241,15 +245,16 @@ The sync also asserts every measure's canonical units (bencher
 auto-creates measures with placeholder units on first upload).
 
 **bench-pr.yml**: `setup` (authorize the comment, resolve base/head SHAs) →
-`build` (PR binaries, cached by head SHA; ends with `ix bench ci parse` —
-the matrix can only exist once `ix` does) → `compile` (one measured
-`ix compile` per env: publishes the `.ixe` the prover cells restore AND
-the row the compile cell reuses as its PR side) → `benchmark` matrix (per cell:
-PR-side `ix bench run`; `ix bench fetch-main` for main's numbers, with a
-targeted base-checkout run covering only what bencher lacked;
+`build` (select or build the PR binaries, publish a run-scoped artifact,
+then `ix bench ci parse`) → `compile` (one measured `ix compile` per env,
+publishing a run-scoped `.ixe` + row artifact) → `benchmark` matrix (per cell:
+download only those run artifacts; run the PR side; fetch main's numbers,
+with a targeted base-checkout run covering only what bencher lacked;
 `ix bench compare` → table artifact) → `assemble` (`ix bench report` builds
 the comment body, unprivileged) → `comment` (posts it — the only job with a
-write token, running no PR code).
+write token, running no PR code). Normal runs may seed the run artifacts from
+persistent head/base-SHA caches. `fresh` bypasses those caches and rebuilds
+the measured products while retaining dependency caches.
 
 ## Not yet covered
 

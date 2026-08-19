@@ -969,10 +969,13 @@ def parseError (msg : String) : IO UInt32 := do
     comes from a base-SHA run.
 
     The bare `fresh` token makes every run bypass its bencher baseline and
-    re-measure the main side with a base-SHA run — for when the published
-    baseline is suspect (corrupted upload, stale toolchain). The comparison
-    prints in the comment only; PR runs never upload to bencher, so the
-    canonical baseline is untouched. -/
+    keeps persistent cached benchmark binaries, compiled `.ixe` files, and
+    compile rows out of measured jobs. A cached head `ix` may bootstrap this
+    canonical parser, but the workflow replaces the full binary bundle before
+    publishing it. Both measured source trees are rebuilt, and run-scoped
+    artifacts carry their products between jobs. Dependency caches remain
+    enabled. The comparison prints in the comment only; PR runs never upload
+    to bencher, so the canonical baseline is untouched. -/
 def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let body ← match p.flag? "comment" with
     | some f => pure (f.as! String)
@@ -1191,7 +1194,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   if !consts.isEmpty then
     summary := summary ++ s!" · consts: `{",".intercalate consts.toList}`"
   if freshFlag then
-    summary := summary ++ " · baseline: `fresh` (base-SHA run, bencher bypassed)"
+    summary := summary ++
+      " · baseline: `fresh` (benchmark products rebuilt, base-SHA run, bencher bypassed)"
   for b in skipped do
     summary := summary ++
       s!" · skipped `{b.name}` ({b.disabled.getD "disabled in the registry"})"

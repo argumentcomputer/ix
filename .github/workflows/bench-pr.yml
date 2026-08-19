@@ -42,9 +42,14 @@
 #   - zisk / sp1 / ooc: `execute`.
 #   - compile: `ix compile <env>.lean` → `<env>.ixe`.
 #   - decompile: `ix decompile` over the compile run's fresh `.ixe`.
-# The bare `fresh` token skips the bencher fetch and re-measures the main
-# side with a local base-SHA run. Nothing in this workflow uploads to
-# bencher, so the canonical baseline is never touched.
+# The bare `fresh` token skips the bencher fetch and prevents persistent
+# cached binaries, `.ixe` files, and compile rows from reaching measured jobs.
+# A cached head `ix` may bootstrap the canonical command parser, but the full
+# bundle is rebuilt before it is published. Both measured source trees are
+# rebuilt, while Cargo and package dependency caches remain available. Files
+# passed between jobs are run-scoped artifacts, so only products generated
+# during this workflow run reach a benchmark. Nothing in this workflow uploads
+# to bencher, so the canonical baseline is never touched.
 #
 # For each matrix entry the job runs `ix bench run` twice: once on the PR
 # checkout, once for the main side. The main side comes from bencher.dev
@@ -118,15 +123,17 @@ jobs:
             -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
             -f comment-body="$COMMENT_BODY"
 
-  # Build the PR's `ix`, `bench-typecheck`, and `bench-recursive-verifier`
-  # once, cache them by head SHA, and let every other job restore them.
-  # Re-running !benchmark on the same commit skips the build entirely.
+  # Select or build the PR's `ix`, `bench-typecheck`, and
+  # `bench-recursive-verifier` once, then publish them as a run-scoped
+  # artifact for every later job. Normal runs may select a persistent
+  # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
+  # replaces the full bundle before it is published to benchmark jobs.
   # Built on a warp runner like bench-main's binaries, so both sides share
   # the same instruction set (AVX-512) — and every job that runs these
   # binaries must be a warp host too, or a plain GitHub host crashes with
   # an illegal instruction. The job ends by parsing the !benchmark command
-  # with the freshly built `ix bench ci parse`: the registry lives in
-  # Lean, so the matrix can only be computed after the build.
+  # with the selected `ix bench ci parse`: the registry lives in Lean, so
+  # the matrix can only be computed after a binary is available.
   build:
     if: github.event_name == 'workflow_dispatch'
     runs-on: warp-ubuntu-latest-x64-32x
@@ -161,36 +168,23 @@ jobs:
         with:
           path: ~/.local/bin
           key: bench-bins-${{ inputs.head-sha }}
+      # A cache miss needs an `ix` before the command can be parsed. The
+      # remaining binaries are built after parsing, when `fresh` is known.
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-rust-toolchain
-      # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
-      # benchmark shift can be traced to an instruction-set change.
-      - name: Log build CPU
-        if: steps.bins.outputs.cache-hit != 'true'
-        run: |
-          lscpu
-          flags=$(grep -m1 -oE 'avx2|avx512[a-z0-9_]*' /proc/cpuinfo | sort -u | tr '\n' ' ')
-          echo "AVX flags: ${flags:-absent}"
-      # One lean-action for both paths: cache miss → build the binaries;
-      # cache hit → provision the toolchain only (the restored `ix` still
-      # needs libleanshared to run the parse step below).
+      # A persistent hit still needs the matching toolchain for libleanshared.
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
           build: ${{ steps.bins.outputs.cache-hit != 'true' }}
-          build-args: "ix bench-typecheck bench-recursive-verifier"
+          build-args: ix
           use-github-cache: false
       - if: steps.bins.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local/bin
-          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
-          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
-      - if: steps.bins.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ~/.local/bin
-          key: bench-bins-${{ inputs.head-sha }}
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+          cp .lake/build/bin/ix ~/.local/bin/
+          chmod +x ~/.local/bin/ix
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Parse the !benchmark command from an env var (never
       # inline-interpolated); unknown tokens fall off the allowlist.
       - name: Parse command
@@ -198,6 +192,41 @@ jobs:
         env:
           COMMENT_BODY: ${{ inputs.comment-body }}
         run: ix bench ci parse
+      # On a cache hit, `ix` above is a control-plane bootstrap only. A fresh
+      # run replaces it before the bundle can reach any measured job.
+      - if: steps.parse.outputs.fresh == '1' && steps.bins.outputs.cache-hit == 'true'
+        uses: ./.github/actions/setup-rust-toolchain
+      # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
+      # benchmark shift can be traced to an instruction-set change.
+      - name: Log build CPU
+        if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
+        run: |
+          lscpu
+          flags=$(grep -m1 -oE 'avx2|avx512[a-z0-9_]*' /proc/cpuinfo | sort -u | tr '\n' ' ')
+          echo "AVX flags: ${flags:-absent}"
+      - name: Build benchmark binaries
+        if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
+        run: |
+          lake build ix bench-typecheck bench-recursive-verifier
+          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
+      - if: steps.parse.outputs.fresh != '1' && steps.bins.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ inputs.head-sha }}
+      - name: Package run binaries
+        run: >-
+          tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
+          ix bench-typecheck bench-recursive-verifier
+      - name: Upload run binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-binaries
+          path: benchmark-binaries.tar
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
 
   # Post the initial PR comment as soon as the command is parsed: an
   # error message if the parse/build failed, otherwise a "running…"
@@ -263,9 +292,10 @@ jobs:
           body-path: comment-body.md
 
   # One measured `ix compile` per requested env, before the benchmark
-  # runs. It publishes the `.ixe` the other runs restore (so they never
-  # race to compile it themselves), and its results row doubles as the
-  # compile backend's PR side — requesting compile never compiles twice.
+  # runs. It publishes the `.ixe` and compile row as one run-scoped artifact
+  # so later jobs cannot accidentally select a persistent entry themselves.
+  # Normal runs may seed that artifact from the head-SHA caches; `fresh`
+  # always compiles it in this job.
   compile:
     name: compile-${{ matrix.env }}
     needs: build
@@ -292,29 +322,47 @@ jobs:
         env:
           PTENV: ${{ needs.build.outputs.passthrough-env }}
         run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' | tee ptenv.txt >> "$GITHUB_ENV"
-      # If !benchmark already ran on this commit with the same config, the
-      # .ixe is already published and this whole job short-circuits.
-      - name: Check for published .ixe
+      # A normal run can seed its run-scoped artifact from persistent caches.
+      # `fresh` skips both restores, so the decision below requires a compile.
+      - name: Restore published .ixe
+        if: needs.build.outputs.fresh != '1'
         id: pr-ixe
         uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.env }}.ixe
           key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
-          lookup-only: true
-      - name: Restore PR binaries
-        if: steps.pr-ixe.outputs.cache-hit != 'true'
+      - name: Restore published compile row
+        if: needs.build.outputs.fresh != '1'
+        id: pr-row
         uses: actions/cache/restore@v6
         with:
-          path: ~/.local/bin
-          key: bench-bins-${{ inputs.head-sha }}
-          fail-on-cache-miss: true
-      - if: steps.pr-ixe.outputs.cache-hit != 'true'
-        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          path: compile.json
+          key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
+      - name: Select compile source
+        id: compile-source
+        run: |
+          if [ "${{ steps.pr-ixe.outputs.cache-hit }}" = true ] \
+             && [ "${{ steps.pr-row.outputs.cache-hit }}" = true ]; then
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download run binaries
+        if: steps.compile-source.outputs.rebuild == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: benchmark-binaries
+      - name: Unpack run binaries
+        if: steps.compile-source.outputs.rebuild == 'true'
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Pointed at the Benchmarks/Compile subpackage (same toolchain as
       # the root): mathlib is a dependency only there, so the mathlib
       # cache fetch has to run from that directory.
       - name: Provision Lean toolchain
-        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        if: steps.compile-source.outputs.rebuild == 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: Benchmarks/Compile
@@ -326,14 +374,14 @@ jobs:
       # The measured compile resolves the env's imports from these oleans;
       # bench-main builds the same target before its measured compile.
       - name: Build env oleans
-        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        if: steps.compile-source.outputs.rebuild == 'true'
         working-directory: Benchmarks/Compile
         run: lake build Compile${{ matrix.env }}
       - name: Compile ${{ matrix.env }}.ixe
-        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        if: steps.compile-source.outputs.rebuild == 'true'
         run: ix bench run --backend compile --env ${{ matrix.env }} --out compile.json
       - name: Publish .ixe
-        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        if: needs.build.outputs.fresh != '1' && steps.pr-ixe.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ matrix.env }}.ixe
@@ -341,11 +389,21 @@ jobs:
       # Publish the measured row too: the compile backend's benchmark run
       # reuses it as its PR side (same runner class, binaries, command).
       - name: Publish compile row
-        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        if: needs.build.outputs.fresh != '1' && steps.pr-row.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: compile.json
           key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
+      - name: Upload run environment
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-env-${{ matrix.env }}
+          path: |
+            ${{ matrix.env }}.ixe
+            compile.json
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
 
   benchmark:
     # Explicit name — the default would append every matrix value; the
@@ -392,28 +450,25 @@ jobs:
         env:
           PTENV: ${{ needs.build.outputs.passthrough-env }}
         run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' | tee ptenv.txt >> "$GITHUB_ENV"
-      # Restore the PR binaries into the PR tree's own bin dir.
+      # Place this run's PR binaries into the PR tree's own bin dir.
       # `ix bench run` looks for the measured tools in <repo>/.lake/build/bin
       # before PATH, so keeping them in-tree separates the PR side from the
       # base side (whose binaries land in base/.lake/build/bin, and whose
       # cache restore reuses ~/.local/bin). The PR's `ix bench` drives BOTH
       # sides; `--repo` picks whose tools get measured.
-      - name: Restore PR binaries
-        uses: actions/cache/restore@v6
+      - name: Download run binaries
+        uses: actions/download-artifact@v8
         with:
-          path: ~/.local/bin
-          key: bench-bins-${{ env.HEAD_SHA }}
-          fail-on-cache-miss: true
-      - run: |
+          name: benchmark-binaries
+      - name: Place PR binaries
+        run: |
           mkdir -p .lake/build/bin
-          mv ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier .lake/build/bin/
+          tar -C .lake/build/bin -xf benchmark-binaries.tar
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       # Toolchain only (no package build, no mathlib cache): the restored
       # binaries need the toolchain's libleanshared to run. This job never
       # compiles an env — the `.ixe` and compile row come from the compile
-      # job, published moments ago in this same workflow run, so a cache
-      # miss below is an infrastructure failure, not something to
-      # recompile around.
+      # job's run-scoped artifact.
       - name: Provision Lean toolchain
         uses: leanprover/lean-action@v1
         with:
@@ -421,22 +476,10 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      # The compiled env is the same for every run of this PR commit; the
-      # compile job published it and runs pass it via `--ixe`.
-      - name: Restore PR .ixe
-        uses: actions/cache/restore@v6
+      - name: Download run environment
+        uses: actions/download-artifact@v8
         with:
-          path: ${{ matrix.params.env }}.ixe
-          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.params.env }}-${{ hashFiles('ptenv.txt') }}
-          fail-on-cache-miss: true
-      # Compile runs reuse the compile job's measured row as their PR side.
-      - name: Restore compile row
-        if: matrix.params.backend == 'compile'
-        uses: actions/cache/restore@v6
-        with:
-          path: compile.json
-          key: bench-pr-row-${{ env.HEAD_SHA }}-${{ matrix.params.env }}-${{ hashFiles('ptenv.txt') }}
-          fail-on-cache-miss: true
+          name: benchmark-env-${{ matrix.params.env }}
       # zkVM runs additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
@@ -538,7 +581,7 @@ jobs:
       # a silently absent drill-down).
       - name: Restore main-side attribution CSV (ooc)
         id: perconst
-        if: matrix.params.backend == 'ooc'
+        if: matrix.params.backend == 'ooc' && env.FRESH != '1'
         continue-on-error: true
         uses: actions/cache/restore@v6
         with:
@@ -569,21 +612,20 @@ jobs:
           ref: ${{ env.BASE_SHA }}
           path: base
           persist-credentials: false
-      # bench-main already cached the base SHA's binaries and `.ixe` when
-      # that commit was pushed to main — restore both before paying for a
-      # from-scratch base build. (The bench-bins-<sha> keys have two
-      # producers: bench-main's build job for main commits, and this
-      # workflow's build job for PR heads — a stacked-PR base hits the
-      # latter.)
+      # A normal base rerun can restore the products bench-main cached when
+      # that SHA reached main. `fresh` skips both restores. The
+      # bench-bins-<sha> keys have two producers: bench-main's build job for
+      # main commits, and this workflow's build job for PR heads (so a
+      # stacked-PR base can hit the latter).
       - name: Restore base binaries (bench-bins cache)
-        if: steps.decide.outputs.run-base == 'true'
+        if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-bins
         uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ env.BASE_SHA }}
       - name: Restore base .ixe (bench-main compile cache)
-        if: steps.decide.outputs.run-base == 'true'
+        if: steps.decide.outputs.run-base == 'true' && env.FRESH != '1'
         id: base-ixe
         uses: actions/cache/restore@v6
         with:
@@ -759,12 +801,15 @@ jobs:
         with:
           ref: ${{ inputs.head-sha }}
           persist-credentials: false
-      - uses: actions/cache/restore@v6
+      - name: Download run binaries
+        uses: actions/download-artifact@v8
         with:
-          path: ~/.local/bin
-          key: bench-bins-${{ inputs.head-sha }}
-          fail-on-cache-miss: true
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+          name: benchmark-binaries
+      - name: Unpack run binaries
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # Provision the toolchain so `ix` finds libleanshared (no package build).
       - uses: leanprover/lean-action@v1
         with:
