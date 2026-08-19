@@ -33,19 +33,32 @@ namespace Ix.Cli.BenchReport
 
 /-! ## Metric formatting -/
 
+/-- Stage qualifiers a pipeline measure carries ahead of its base name:
+    `recursive-` scopes a measure to the recursion stage, `pipeline-` to
+    the whole run. Stripped wherever a measure is interpreted by its base
+    name (formatting kind) or labelled under a heading that already says
+    the stage. -/
+def stagePrefixes : List String := ["recursive-", "pipeline-"]
+
+/-- `metric` with its stage qualifier removed, if it has one. -/
+def dropStagePrefix (metric : String) : String :=
+  match stagePrefixes.find? (fun p => metric.startsWith p) with
+  | some p => (metric.drop p.length).toString
+  | none => metric
+
 /-- Per-metric formatting kind. Metric names are the results-JSON keys the
-    tools emit (see the registry in Ix.Cli.BenchCmd). A `recursive-` metric
-    formats like its inner counterpart (`recursive-peak-rss` like
-    `peak-rss`, …). Unknown metrics fall through to a generic decimal
-    rendering. -/
+    tools emit (see the registry in Ix.Cli.BenchCmd). A stage-qualified
+    metric formats like its base counterpart (`recursive-peak-rss` and
+    `pipeline-peak-rss` like `peak-rss`, …). Unknown metrics fall through
+    to a generic decimal rendering. -/
 def metricKind (metric : String) : String :=
-  let metric := if metric.startsWith "recursive-"
-    then (metric.drop "recursive-".length).toString else metric
+  let metric := dropStagePrefix metric
   if ["peak-rss", "file-size", "proof-size"].contains metric
   then "bytes"
   else if metric.startsWith "phase-" then "seconds"
-  else if ["execute-time", "prove-time", "verify-time", "check-time",
-           "compile-time", "decompile-time"].contains metric then "seconds"
+  -- Every wall-clock measure is named `<what>-time`, the pipeline
+  -- ledger's `total-time` included.
+  else if metric.endsWith "-time" then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
            "throughput"].contains metric then "count"
   else if ["constants", "shards"].contains metric then "int"
@@ -173,10 +186,29 @@ def ratio (mainV prV : Float) (metric : String) : Option (Float × String) :=
       | _ => ("more", "fewer")
     some (factor, if grew then words.1 else words.2)
 
+/-- One table of a compare rendering. A single-table backend passes one
+    section with an empty `heading` (the cell title above already names
+    it); a pipeline backend passes one per stage. -/
+structure CompareSection where
+  heading : String := ""
+  metrics : Array String
+
+/-- The stage qualifier shared by every one of a section's measures, if
+    they share one. A stage table's heading already says which stage it
+    is, so its columns read `prove-time`, not `recursive-prove-time`. -/
+def sectionLabelDrop (metrics : Array String) : String :=
+  if metrics.isEmpty then "" else
+  (stagePrefixes.find? fun p => metrics.all (·.startsWith p)).getD ""
+
 structure CompareArgs where
   mainRows : Json
   prRows : Json
-  metrics : Array String
+  /-- The tables to render, in order. -/
+  sections : Array CompareSection
+  /-- Measure the rows sort on, shared by every section so a constant
+      keeps its position across a pipeline's stage tables. Defaults to
+      the first section's first measure. -/
+  sortMetric : String := ""
   threshold : Float
   title : String
   /-- Render the per-constant `phase-<span>` drill-downs (opt-in:
@@ -195,8 +227,12 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   if names.isEmpty then
     return a.title ++ "\n\n_No results were produced (every constant failed, \
       timed out, or was dropped). See the workflow logs._"
-  -- Sort by the primary metric, largest first (n/a rows last).
-  let primary := a.metrics[0]?.getD ""
+  -- Sort by the primary metric, largest first (n/a rows last). Every
+  -- section sorts on the same one, so a pipeline's stage tables list
+  -- their rows in one order and read down the page.
+  let primary := if a.sortMetric.isEmpty
+    then (a.sections[0]?.bind (·.metrics[0]?)).getD ""
+    else a.sortMetric
   let key := fun n => (rowNum a.prRows n primary).orElse
     fun _ => rowNum a.mainRows n primary
   let names := names.qsort fun x y =>
@@ -206,57 +242,71 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     | none, some _ => false
     | none, none => x < y
 
-  let mut head := #[a.rowNoun]
-  for m in a.metrics do
-    head := head ++ #[s!"{metricLabel m} (main)", s!"{metricLabel m} (PR)", "Δ%"]
-  let mut lines := #[
-    "| " ++ " | ".intercalate head.toList ++ " |",
-    "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
-
   let mut failures : Array (String × String) := #[]
-  let mut regressed := 0
-  let mut improved := 0
   for n in names do
-    let mainStatus := rowStatus a.mainRows n
-    let prStatus := rowStatus a.prRows n
-    if mainStatus == "rejected" then failures := failures.push (n, "main")
-    if prStatus == "rejected" then failures := failures.push (n, "PR")
-    let mut rowRegressed := false
-    let mut rowImproved := false
-    let mut cols := #[s!"`{n}`"]
-    for m in a.metrics do
-      let mv := rowNum a.mainRows n m
-      let pv := rowNum a.prRows n m
-      -- An OOM/CRASH row may still carry real partial measurements; render
-      -- those, and the status only for the metrics the kill prevented. OOM
-      -- is a capacity kill; CRASH is a fault in the tool (e.g. a segfault)
-      -- and needs a bug hunt, not a bigger box. A REJECTED row is
-      -- spelled out — the constant was rejected, not benchmarked.
-      let renderSide := fun (status : String) (v : Option Float) =>
-        if status == "rejected" then "❌ failed typecheck"
-        else if status == "oom" && v.isNone then "OOM"
-        else if status == "crash" && v.isNone then "💥 CRASH"
-        else human v m
-      let mut delta := "n/a"
-      if let (some mvv, some pvv) := (mv, pv) then
-        if mvv != 0.0 then
-          let dp := (pvv - mvv) / mvv * 100.0
-          delta := (if dp >= 0.0 then "+" else "") ++ fmtF dp 1 ++ "%"
-          -- Ratio only when it adds signal beyond the percentage.
-          if let some (f, word) := ratio mvv pvv m then
-            if f >= 1.05 then delta := delta ++ s!" ({fmtF f 2}× {word})"
-          let bad := badness dp m
-          if bad > a.threshold then
-            delta := delta ++ " ⚠️"; rowRegressed := true
-          else if bad < -a.threshold then
-            delta := delta ++ " 🟢"; rowImproved := true
-      cols := cols ++ #[renderSide mainStatus mv, renderSide prStatus pv, delta]
-    -- Independent tallies: a row can regress on one metric and improve
-    -- on another (compile-time up, peak-ram down), and the summary must
-    -- not hide either side.
-    if rowRegressed then regressed := regressed + 1
-    if rowImproved then improved := improved + 1
-    lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
+    if rowStatus a.mainRows n == "rejected" then failures := failures.push (n, "main")
+    if rowStatus a.prRows n == "rejected" then failures := failures.push (n, "PR")
+
+  -- One rendered table per section, plus the names that regressed or
+  -- improved ANYWHERE across them: the summary counts a constant once,
+  -- however many stages moved.
+  let mut blocks : Array (String × Array String) := #[]
+  let mut regressedNames : Array String := #[]
+  let mut improvedNames : Array String := #[]
+  for sec in a.sections do
+    let drop := sectionLabelDrop sec.metrics
+    let label := fun (m : String) =>
+      metricLabel (if drop.isEmpty then m else (m.drop drop.length).toString)
+    let mut head := #[a.rowNoun]
+    for m in sec.metrics do
+      head := head ++ #[s!"{label m} (main)", s!"{label m} (PR)", "Δ%"]
+    let mut lines := #[
+      "| " ++ " | ".intercalate head.toList ++ " |",
+      "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
+    for n in names do
+      let mainStatus := rowStatus a.mainRows n
+      let prStatus := rowStatus a.prRows n
+      let mut rowRegressed := false
+      let mut rowImproved := false
+      let mut cols := #[s!"`{n}`"]
+      for m in sec.metrics do
+        let mv := rowNum a.mainRows n m
+        let pv := rowNum a.prRows n m
+        -- An OOM/CRASH row may still carry real partial measurements; render
+        -- those, and the status only for the metrics the kill prevented. OOM
+        -- is a capacity kill; CRASH is a fault in the tool (e.g. a segfault)
+        -- and needs a bug hunt, not a bigger box. A REJECTED row is
+        -- spelled out — the constant was rejected, not benchmarked.
+        let renderSide := fun (status : String) (v : Option Float) =>
+          if status == "rejected" then "❌ failed typecheck"
+          else if status == "oom" && v.isNone then "OOM"
+          else if status == "crash" && v.isNone then "💥 CRASH"
+          else human v m
+        let mut delta := "n/a"
+        if let (some mvv, some pvv) := (mv, pv) then
+          if mvv != 0.0 then
+            let dp := (pvv - mvv) / mvv * 100.0
+            delta := (if dp >= 0.0 then "+" else "") ++ fmtF dp 1 ++ "%"
+            -- Ratio only when it adds signal beyond the percentage.
+            if let some (f, word) := ratio mvv pvv m then
+              if f >= 1.05 then delta := delta ++ s!" ({fmtF f 2}× {word})"
+            let bad := badness dp m
+            if bad > a.threshold then
+              delta := delta ++ " ⚠️"; rowRegressed := true
+            else if bad < -a.threshold then
+              delta := delta ++ " 🟢"; rowImproved := true
+        cols := cols ++ #[renderSide mainStatus mv, renderSide prStatus pv, delta]
+      -- Independent tallies: a row can regress on one metric and improve
+      -- on another (compile-time up, peak-ram down), and the summary must
+      -- not hide either side.
+      if rowRegressed && !regressedNames.contains n then
+        regressedNames := regressedNames.push n
+      if rowImproved && !improvedNames.contains n then
+        improvedNames := improvedNames.push n
+      lines := lines.push ("| " ++ " | ".intercalate cols.toList ++ " |")
+    blocks := blocks.push (sec.heading, lines)
+  let regressed := regressedNames.size
+  let improved := improvedNames.size
 
   -- Assembly order puts the scannable verdict FIRST and collapses long
   -- tables: a multi-cell PR comment reads as one verdict line per cell,
@@ -283,15 +333,18 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
-  if names.size > 5 then
-    out := out ++ #["",
-      s!"<details><summary>comparison table \
-        ({plural names.size a.rowNoun})</summary>", ""]
-      ++ lines ++ #["", "</details>"]
-  else
-    out := out ++ #[""] ++ lines
-  -- Per-phase drill-down (only under `a.phases`): the main table above
-  -- carries every constant's high-level row; below it, each constant with
+  for (heading, lines) in blocks do
+    let caption := if heading.isEmpty then "comparison table" else heading
+    if names.size > 5 then
+      out := out ++ #["",
+        s!"<details><summary>{caption} \
+          ({plural names.size a.rowNoun})</summary>", ""]
+        ++ lines ++ #["", "</details>"]
+    else
+      out := out ++ (if heading.isEmpty then #[""] else #["", s!"#### {heading}", ""])
+        ++ lines
+  -- Per-phase drill-down (only under `a.phases`): the tables above
+  -- carry every constant's high-level row; below it, each constant with
   -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns, zkVM
   -- coarse phases) gets its own collapsed mini-table
   -- (`phase | main | PR | Δ%`), opened as desired.
@@ -550,13 +603,17 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD s!"{benchDir}/{params}.prev.json"
   let prPath := (p.flag? "pr").map (·.as! String)
     |>.getD s!"{benchDir}/{params}.json"
-  let metrics :=
-    let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
-    if flagged.isEmpty then
-      (((Ix.Cli.BenchCmd.findBackend backend).map
-        (·.metricsFor mode)).getD []).toArray
-    else flagged
-  if metrics.isEmpty then
+  -- An explicit `--metric` list is always one flat table; otherwise the
+  -- registry decides, splitting a pipeline mode into its stage tables.
+  let spec := Ix.Cli.BenchCmd.findBackend backend
+  let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
+  let sections : Array CompareSection :=
+    if !flagged.isEmpty then #[{ metrics := flagged }]
+    else match (spec.map (·.stagesFor mode)).getD [] with
+      | [] => #[{ metrics := ((spec.map (·.metricsFor mode)).getD []).toArray }]
+      | stages => (stages.map fun (heading, ms) =>
+          ({ heading, metrics := ms.toArray } : CompareSection)).toArray
+  if sections.all (·.metrics.isEmpty) then
     p.printError s!"error: no metrics for {backend}/{mode}; pass --metric or fix backendSpecs"
     return exitUsage
   let threshold := (p.flag? "threshold").map (fun f => (f.as! Nat).toFloat)
@@ -570,10 +627,16 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     else s!"`{backend}` · `{env}`"
   let title := (p.flag? "title").map (·.as! String)
     |>.getD s!"### {cellName} — main from: {mainSrc}"
+  -- A staged mode sorts every table on its LEDGER's headline (the
+  -- closing section's first measure — `total-time`), so the stage tables
+  -- rank constants by what the whole pipeline costs rather than each by
+  -- its own stage.
+  let sortMetric := if sections.size > 1
+    then (sections.back?.bind (·.metrics[0]?)).getD "" else ""
   let mut table := renderCompare {
     mainRows := ← readRows mainPath
     prRows := ← readRows prPath
-    metrics, threshold, title
+    sections, sortMetric, threshold, title
     phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
     rowNoun :=
       if backend == "compile" then "env"
@@ -827,10 +890,7 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
           && (Ix.Cli.BenchCmd.selectNames rows env b.name mode
               (full := false) (tier := "") (shardOnly := false)).isEmpty then
           continue
-        -- The fixed-config backend's env is only its `.ixe`-restore key,
-        -- not what it measures — keep it out of the label.
-        let label := if b.inputs == .fixedConfigs then s!"{b.name}-{mode}"
-          else s!"{b.name}-{env}-{mode}"
+        let label := s!"{b.name}-{env}-{mode}"
         entries := entries.push <| Json.mkObj
           [("backend", Json.str b.name), ("env", Json.str env),
            ("mode", Json.str mode), ("label", Json.str label),
@@ -868,8 +928,8 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
-                 [execute | recursive] [fresh] [KEY=VALUE …]
+      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all)
+                 [execute] [fresh] [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive, any registry env;
                                     defaults to every env for the
                                     env-keyed backends (compile,
@@ -902,12 +962,10 @@ def parseError (msg : String) : IO UInt32 := do
     command, like a typo'd backend.
 
     The bare `execute` token flips a backend with an execute metrics entry
-    to execute-only — a real switch only for aiur, whose modes store on
-    separate testbeds, so either kind of run finds a cached baseline.
-    `recursive` likewise flips aiur to its recursive mode; that testbed is
-    `unscheduled`, so the run has no bencher baseline (its main side comes
-    from a base-SHA run) and the verifier execute OOMs on the 128 GB CI
-    host — reserved for a bigger manual dispatch.
+    to execute-only — a real switch only for aiur, which it drops from the
+    full proof pipeline to the fast Phase-1-only signal. That testbed is
+    `unscheduled`, so the run has no bencher baseline — its main side
+    comes from a base-SHA run.
 
     The bare `fresh` token makes every run bypass its bencher baseline and
     re-measure the main side with a base-SHA run — for when the published
@@ -933,14 +991,10 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut executeFlag := false
-  let mut recursiveFlag := false
   let mut freshFlag := false
   for t in toks.map (·.toLower) do
     if t == "execute" then
       executeFlag := true
-      continue
-    if t == "recursive" then
-      recursiveFlag := true
       continue
     if t == "fresh" then
       freshFlag := true
@@ -955,7 +1009,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       return ← parseError s!"unknown token `{t}` in the benchmark command \
         (expected a backend — \
         {", ".intercalate (Ix.Cli.BenchCmd.backendSpecs.map (·.name))} — \
-        or `all` / `execute` / `recursive` / `fresh`)"
+        or `all` / `execute` / `fresh`)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
@@ -1098,22 +1152,14 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     else #["InitStd"]
 
   let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
-    if recursiveFlag && !(b.metricsFor "recursive").isEmpty then "recursive"
-    else if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
+    if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
     else b.defaultMode
   let mut entries : Array Json := #[]
   for b in backends do
-    -- The fixed-config backend (`inputs := .fixedConfigs` — aiur-recursive)
-    -- runs a fixed constant list: one run no matter how many envs
-    -- BENCH_ENVS lists. The env kept is the first requested one — its
-    -- compiled `.ixe` is where the run resolves the fixed constants (any
-    -- registry env's closure contains them).
-    let runEnvs := if b.inputs == .fixedConfigs then (envsFor b).take 1
-      else envsFor b
-    for e in runEnvs do
+    for e in envsFor b do
       -- The entry's `--consts` override: the listed names this env owns,
-      -- on the per-constant backends only (env-keyed and fixed-config
-      -- backends measure regardless of constant selection).
+      -- on the per-constant backends only (env-keyed backends measure
+      -- regardless of constant selection).
       let entryConsts :=
         if b.inputs == .perConstant || b.inputs == .perConstantWithEnv then
           ",".intercalate
@@ -1133,7 +1179,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       if acc.contains e then acc else acc.push e
 
   -- Annotate the mode only where a mode CHOICE exists (aiur's
-  -- execute/prove); `ooc=execute` for a single-mode backend is noise.
+  -- prove/execute); `ooc=execute` for a single-mode backend is noise.
   let modes := " ".intercalate
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList

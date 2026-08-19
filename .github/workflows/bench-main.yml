@@ -14,7 +14,7 @@ name: Benchmark main
 #                  compile benchmark) and caches the file for stage 3.
 #   3. benchmark — one job per remaining entry: restore the `.ixe` and
 #                  run the entry's backend over it (aiur, zisk, ooc,
-#                  decompile, aiur-recursive).
+#                  decompile).
 #
 # Each entry uploads to its own bencher testbed/workload, so a threshold
 # reset for one workload never touches another. When the kernel REJECTS a
@@ -231,12 +231,14 @@ jobs:
   # restores the compile job's cached `.ixe` — nothing recompiles here.
   #
   # What each backend measures:
-  #   - aiur prove: the real workload — a full STARK prove per constant,
-  #     one subprocess per constant under the RAM watchdog; a too-large
+  #   - aiur: the proof pipeline — per constant, every stage plus the
+  #     total: prove the IxVM typecheck (stage 1), then execute and
+  #     prove the in-circuit multi-stark verifier over that fresh proof
+  #     (stage 2); the KZG stages will fold in as they land. Runs the
+  #     registry's fixed pipeline selection rather than the primary
+  #     subset — every stage is paid per constant. One
+  #     subprocess per constant under the RAM watchdog; a too-large
   #     prove is killed and recorded as a `status: oom` row.
-  #     aiur execute: the fast signal — witness generation only.
-  #     The two modes upload to separate testbeds; shared measure names
-  #     (peak-rss, throughput) mean that mode's phase.
   #   - zisk: executes the same constants in the zkVM (deterministic
   #     cycle counts; proving would need a GPU, so execute-only). Reuses
   #     the pre-cut zkshards-<env>/ dirs; builds its Rust host in-job.
@@ -245,12 +247,6 @@ jobs:
   #   - decompile: the inverse of compile. Roundtrip correctness is
   #     checked elsewhere (`ix validate` / roundtrip tests) — this only
   #     measures speed and memory.
-  #   - aiur-recursive: proves the IxVM typecheck of three fixed constants
-  #     (Nat.add_comm, Vector.append, String.split), runs the in-circuit
-  #     verifier over each proof, then proves THAT — the cost of
-  #     recursion at kernel scale. A fixed subset instead of the
-  #     Vectors.csv fan-out: its `env` field names the (already-cached)
-  #     `.ixe` the shared restore step pulls and the constants resolve in.
   benchmark:
     name: ${{ matrix.params.label }}
     needs: [compile, plan]
