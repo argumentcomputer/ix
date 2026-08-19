@@ -2267,7 +2267,23 @@ fn classify_aux_gen(name: &Name) -> Option<(AuxKind, Name)> {
     },
     s if s == "recOn" || s.starts_with("recOn_") => Some((AuxKind::RecOn, p1)),
     s if s == "casesOn" || s.starts_with("casesOn_") => {
-      Some((AuxKind::CasesOn, p1))
+      // X.casesOn / X.casesOn_N or X.below.casesOn. The below wrapper
+      // roots under the FAMILY (like `X.below.rec` above) so it joins
+      // the family block's aux_members and Phase 3b can regenerate it
+      // against the canonical below-rec; rooting it at `X.below` would
+      // group it under an aux block that never runs aux-gen phases,
+      // dropping it from the decompiled env entirely.
+      if let Some(ps) = p1.last_str()
+        && (ps == "below" || ps.starts_with("below_"))
+      {
+        let root = match p1.as_data() {
+          NameData::Str(gp, _, _) => gp.clone(),
+          _ => return None,
+        };
+        Some((AuxKind::CasesOn, root))
+      } else {
+        Some((AuxKind::CasesOn, p1))
+      }
     },
     s if s == "below" || s.starts_with("below_") => Some((AuxKind::Below, p1)),
     s if s == "brecOn" || s.starts_with("brecOn_") => {
@@ -4261,6 +4277,93 @@ fn recover_aux_from_original(
   true
 }
 
+/// Regenerate one `.casesOn` definition from its (already regenerated)
+/// canonical recursor and roundtrip it into `dstt`. Shared by Phase 1b
+/// (family casesOn — the rec is available up front) and Phase 3b
+/// (`.below.casesOn` — its rec only exists once Phase 3 has generated
+/// the below-rec block).
+#[allow(clippy::too_many_arguments)]
+fn regen_one_cases_on(
+  co_name: &Name,
+  rec_val: &RecursorVal,
+  gen_env: &LeanEnv,
+  generated_consts: &mut FxHashMap<Name, LeanConstantInfo>,
+  orig_env: Option<&LeanEnv>,
+  stt: &CompileState,
+  dstt: &DecompileState,
+  aux_gen_errors: &mut Vec<(Name, DecompileError)>,
+) {
+  use crate::compile::aux_gen::cases_on::generate_cases_on;
+  if let Some(aux_def) = generate_cases_on(co_name, rec_val, gen_env) {
+    // Lean marks `.casesOn` unsafe iff the parent `.rec` is unsafe
+    // (an unsafe recursor transitively forces every wrapper around it).
+    let safety = if rec_val.is_unsafe {
+      DefinitionSafety::Unsafe
+    } else {
+      DefinitionSafety::Safe
+    };
+    let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal {
+        name: aux_def.name.clone(),
+        level_params: aux_def.level_params.clone(),
+        typ: aux_def.typ.clone(),
+      },
+      value: aux_def.value.clone(),
+      hints: ReducibilityHints::Abbrev,
+      safety,
+      all: vec![aux_def.name.clone()],
+    });
+    generated_consts.insert(aux_def.name.clone(), as_defn);
+
+    let mc = LeanMutConst::Defn(Def {
+      name: aux_def.name.clone(),
+      level_params: aux_def.level_params.clone(),
+      typ: aux_def.typ.clone(),
+      kind: DefKind::Definition,
+      value: aux_def.value.clone(),
+      hints: ReducibilityHints::Abbrev,
+      safety,
+      // Lean emits `.casesOn` / `.recOn` as standalone `defnDecl`s
+      // (`refs/lean4/src/Lean/Elab/Inductive.lean:mkCasesOn` et al.),
+      // each with `all = [self]`. `Named.original.0` captured that
+      // exact shape; regenerating with `all = []` here makes the
+      // Phase-A block hash match but leaves the Lean-level `all`
+      // blank, so Phase B's `ConstantInfo::get_hash()` diverges
+      // (type + value match but `all` differs). See
+      // `docs/ix_canonicity.md` §9.2.
+      all: vec![aux_def.name.clone()],
+    });
+    match roundtrip_block(&[mc], generated_consts, orig_env, stt, dstt) {
+      Ok(roundtripped) if !roundtripped.is_empty() => {
+        for (n, ci) in roundtripped {
+          dstt.insert_interned(n, ci);
+        }
+      },
+      Ok(_) => {
+        // Empty roundtrip result: prefer the source-faithful original
+        // pair; fall back to the regenerated form otherwise.
+        if !recover_aux_from_original(&aux_def.name, stt, dstt)
+          && let Some(ci) = generated_consts.get(&aux_def.name)
+        {
+          dstt.insert_interned(aux_def.name.clone(), ci.clone());
+        }
+      },
+      Err(e) => {
+        // Recovery keeps the Lean-facing env populated for diagnosis,
+        // but the failure is always recorded — post-preseed, the
+        // roundtrip is byte-exact corpus-wide, so any error here is
+        // a regression.
+        if !recover_aux_from_original(&aux_def.name, stt, dstt)
+          && let Some(ci) = generated_consts.get(&aux_def.name)
+        {
+          dstt.insert_interned(aux_def.name.clone(), ci.clone());
+        }
+        aux_gen_errors.push((aux_def.name.clone(), e));
+      },
+    }
+  }
+}
+
 fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
@@ -4273,7 +4376,6 @@ fn decompile_block_aux_gen(
   use crate::compile::aux_gen::{
     below::{BelowConstant, generate_below_constants},
     brecon::generate_brecon_constants,
-    cases_on::generate_cases_on,
     expr_utils, populate_canon_kenv_with_below,
     recursor::generate_canonical_recursors_with_overlay,
   };
@@ -4487,74 +4589,16 @@ fn decompile_block_aux_gen(
           }
         },
       };
-      if let Some(aux_def) = generate_cases_on(co_name, &rec_val, env) {
-        // Lean marks `.casesOn` unsafe iff the parent `.rec` is unsafe
-        // (an unsafe recursor transitively forces every wrapper around it).
-        let safety = if rec_val.is_unsafe {
-          DefinitionSafety::Unsafe
-        } else {
-          DefinitionSafety::Safe
-        };
-        let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
-          cnst: ConstantVal {
-            name: aux_def.name.clone(),
-            level_params: aux_def.level_params.clone(),
-            typ: aux_def.typ.clone(),
-          },
-          value: aux_def.value.clone(),
-          hints: ReducibilityHints::Abbrev,
-          safety,
-          all: vec![aux_def.name.clone()],
-        });
-        generated_consts.insert(aux_def.name.clone(), as_defn);
-
-        let mc = LeanMutConst::Defn(Def {
-          name: aux_def.name.clone(),
-          level_params: aux_def.level_params.clone(),
-          typ: aux_def.typ.clone(),
-          kind: DefKind::Definition,
-          value: aux_def.value.clone(),
-          hints: ReducibilityHints::Abbrev,
-          safety,
-          // Lean emits `.casesOn` / `.recOn` as standalone `defnDecl`s
-          // (`refs/lean4/src/Lean/Elab/Inductive.lean:mkCasesOn` et al.),
-          // each with `all = [self]`. `Named.original.0` captured that
-          // exact shape; regenerating with `all = []` here makes the
-          // Phase-A block hash match but leaves the Lean-level `all`
-          // blank, so Phase B's `ConstantInfo::get_hash()` diverges
-          // (type + value match but `all` differs). See
-          // `docs/ix_canonicity.md` §9.2.
-          all: vec![aux_def.name.clone()],
-        });
-        match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
-          Ok(roundtripped) if !roundtripped.is_empty() => {
-            for (n, ci) in roundtripped {
-              dstt.insert_interned(n, ci);
-            }
-          },
-          Ok(_) => {
-            // Empty roundtrip result: prefer the source-faithful original
-            // pair; fall back to the regenerated form otherwise.
-            if !recover_aux_from_original(&aux_def.name, stt, dstt)
-              && let Some(ci) = generated_consts.get(&aux_def.name)
-            {
-              dstt.insert_interned(aux_def.name.clone(), ci.clone());
-            }
-          },
-          Err(e) => {
-            // Recovery keeps the Lean-facing env populated for diagnosis,
-            // but the failure is always recorded — post-preseed, the
-            // roundtrip is byte-exact corpus-wide, so any error here is
-            // a regression.
-            if !recover_aux_from_original(&aux_def.name, stt, dstt)
-              && let Some(ci) = generated_consts.get(&aux_def.name)
-            {
-              dstt.insert_interned(aux_def.name.clone(), ci.clone());
-            }
-            aux_gen_errors.push((aux_def.name.clone(), e));
-          },
-        }
-      }
+      regen_one_cases_on(
+        co_name,
+        &rec_val,
+        env,
+        &mut generated_consts,
+        orig_env,
+        stt,
+        dstt,
+        &mut aux_gen_errors,
+      );
     }
   }
 
@@ -4943,6 +4987,40 @@ fn decompile_block_aux_gen(
                 }
               }
             },
+          }
+
+          // Phase 3b: Regenerate `.below.casesOn` from the canonical
+          // below-recs — deferred from Phase 1b, where these members
+          // skip silently because `X.below.rec` does not exist until
+          // this phase regenerates it. Mirrors compile-side
+          // `compile_below_recursors`: the Lean-authored wrapper
+          // applies motives in Lean's member order, so it must be
+          // regenerated against the canonical rec. Runs regardless of
+          // the roundtrip outcome above (compile likewise always
+          // compiles the regenerated casesOn after the rec block).
+          for (kind, co_name) in aux_members {
+            if *kind != AuxKind::CasesOn {
+              continue;
+            }
+            let parent = match co_name.as_data() {
+              ix_common::env::NameData::Str(p, _, _) => p.clone(),
+              _ => continue,
+            };
+            let rec_name = Name::str(parent, "rec".to_string());
+            if let Some((_, rv)) =
+              below_recs.iter().find(|(n, _)| *n == rec_name)
+            {
+              regen_one_cases_on(
+                co_name,
+                rv,
+                &below_env,
+                &mut generated_consts,
+                orig_env,
+                stt,
+                dstt,
+                &mut aux_gen_errors,
+              );
+            }
           }
         },
         Err(e) => {

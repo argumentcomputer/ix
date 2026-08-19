@@ -624,4 +624,33 @@ end ThreeMember
 
 end AuxOwnership
 
+-- Prop-valued mutual inductive predicates whose `.below` auxiliaries form
+-- a generated mutual-inductive family (IndPredBelow) — the HaskellSpec
+-- `dict`/`pat`/`type` shape. The mutual theorems by structural
+-- pattern-matching force Lean to generate `EvenP.below`/`OddP.below`
+-- (plus `.below.casesOn`, defined via `.below.rec`), exercising:
+-- (a) the below-rec block's class-order key — its storage order must
+--     follow the below inductive block (canonicity §6.2), and
+-- (b) the `.below.casesOn` regeneration against the canonical below-rec
+--     (compile + decompile Phase 3b; Lean's authored wrapper applies
+--     motives in Lean's member order and would be ill-typed against the
+--     canonical rec).
+namespace BelowPredicate
+mutual
+  public inductive EvenP : Nat → Prop where
+    | zero : EvenP 0
+    | succ : {n : Nat} → OddP n → EvenP (n + 1)
+  public inductive OddP : Nat → Prop where
+    | succ : {n : Nat} → EvenP n → OddP (n + 1)
+end
+
+mutual
+  public theorem evenp_nonneg : {n : Nat} → EvenP n → 0 ≤ n
+    | _, .zero => Nat.le_refl 0
+    | _, .succ h => Nat.le_trans (oddp_nonneg h) (Nat.le_succ _)
+  public theorem oddp_nonneg : {n : Nat} → OddP n → 0 ≤ n
+    | _, .succ h => Nat.le_trans (evenp_nonneg h) (Nat.le_succ _)
+end
+end BelowPredicate
+
 end Tests.Ix.Compile.Mutual

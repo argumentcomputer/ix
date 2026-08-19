@@ -646,6 +646,16 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
       (kind : Ix.AuxGen.AuxKind)
       (gen : Pass2St → Ix.Name → Ix.RecursorVal →
         Except String (Option Ix.AuxGen.AuxDef))
+      -- Rec resolver: Phase 1b/1c resolve `<parent>.rec` from the work
+      -- env / dstt; Phase 3b resolves from the freshly GENERATED
+      -- below-recs (their roundtripped forms only land after Phase 3,
+      -- and the Rust mirror likewise feeds the generated `RecursorVal`).
+      (recOf : Pass2St → Ix.Name → Option Ix.RecursorVal :=
+        fun st recName => match st.workEnv.get? recName with
+          | some (.recInfo rv) => some rv
+          | _ => match st.dstt.get? recName with
+            | some (.recInfo rv) => some rv
+            | _ => none)
       : Pass2St × Std.HashMap Ix.Name Ix.ConstantInfo := Id.run do
     let mut st := st₀
     let mut newGen : Std.HashMap Ix.Name Ix.ConstantInfo := {}
@@ -656,12 +666,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         | _ => none
       let some indName := indName? | continue
       let recName := Ix.Name.mkStr indName "rec"
-      let recVal? : Option Ix.RecursorVal := match st.workEnv.get? recName with
-        | some (.recInfo rv) => some rv
-        | _ => match st.dstt.get? recName with
-          | some (.recInfo rv) => some rv
-          | _ => none
-      let some recVal := recVal? | continue
+      let some recVal := recOf st recName | continue
       let mut auxDefOpt : Option Ix.AuxGen.AuxDef := none
       match gen st wName recVal with
       | .ok d => auxDefOpt := d
@@ -816,6 +821,18 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
               | none =>
                 st := stPut st n (.recInfo rv)
               st := recordErr st n e
+        -- Phase 3b: regenerate `.below.casesOn` from the canonical
+        -- below-recs — deferred from Phase 1b, where these members skip
+        -- silently because `X.below.rec` does not exist until this
+        -- phase regenerates it. The resolver feeds the GENERATED rec
+        -- (not the roundtripped one), exactly like the Rust mirror.
+        -- Runs regardless of the roundtrip outcome above.
+        let (st', gen) := wrapPhase st generatedConsts .casesOnAux
+          (fun stCur n rv => runC ctx stCur n (Ix.AuxGen.generateCasesOn n rv))
+          (recOf := fun _ n =>
+            (belowRecs.find? (fun p => p.1 == n)).map (·.2))
+        st := st'
+        generatedConsts := gen.fold (fun m k v => m.insert k v) generatedConsts
       | .error e =>
         st := recordErr st lo s!"aux_gen below.rec failed for {lo.pretty}: {e}"
 

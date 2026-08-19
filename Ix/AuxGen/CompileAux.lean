@@ -557,7 +557,53 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
     belowRecs := belowRecs.push (.recr rv)
 
   if !belowRecs.isEmpty then
-    compileAuxBlock belowRecs maps
+    -- The below-rec block's storage order must align with the below
+    -- inductive block's member order (`classes`), exactly like the main
+    -- recursor block: the kernel's `populate_recursor_rules_from_block`
+    -- pairs `rec_block[i]` with `flat[i]` positionally (canonicity
+    -- §6.2). Without a class-order key, `sortConsts` picks its own
+    -- structural permutation of the recursors, which can diverge from
+    -- the inductive block's order (Prop-valued mutual predicate
+    -- families: HaskellSpec `dict`). Mirrors mutual.rs
+    -- `compile_below_recursors`.
+    let mut nameToPos : Std.HashMap Name UInt64 := {}
+    for (cls, pos) in classes.zipIdx do
+      for memberName in cls do
+        nameToPos := nameToPos.insert (Name.mkStr memberName "rec")
+          (UInt64.ofNat pos)
+    let keyMap := nameToPos
+    let classOrderKey : MutConst → UInt64 := fun c =>
+      (keyMap.get? c.name).getD u64Max
+    compileAuxBlockWithRename belowRecs maps none (some classOrderKey)
+
+  -- Regenerate `.below.casesOn` against the canonical below-recs
+  -- (mirrors mutual.rs `compile_below_recursors`). Lean authors
+  -- `X.below.casesOn` with motives in LEAN's member order; the recs
+  -- above carry the canonical motive layout, so the Lean-authored
+  -- wrapper is ill-typed in the compiled env. Regenerate from the
+  -- canonical rec and register here so the ordinary compile of the
+  -- Lean value is skipped.
+  let mut belowCases : Array MutConst := #[]
+  for (recName, recVal) in recs do
+    let indName? := match recName with
+      | .str parent "rec" _ => some parent
+      | _ => none
+    if let some indName := indName? then
+      let casesOnName := Name.mkStr indName "casesOn"
+      if (← liftM (lookupConst? casesOnName : CompileM _)).isSome then
+        if let some d ←
+            liftM (generateCasesOn casesOnName recVal : CompileM _) then
+          belowCases := belowCases.push (.defn {
+            name := d.name
+            levelParams := d.levelParams
+            type := d.typ
+            kind := .defn
+            value := d.value
+            hints := .abbrev
+            safety := defSafety d.isUnsafe
+            all := #[] })
+  if !belowCases.isEmpty then
+    compileAuxBlock belowCases maps
 
 /-! ## generateAndCompileAuxRecursors (mutual.rs:511) -/
 
