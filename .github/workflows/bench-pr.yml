@@ -363,7 +363,9 @@ jobs:
         id: pr-row
         uses: actions/cache/restore@v6
         with:
-          path: compile.json
+          path: |
+            compile.json
+            compile-cpu-warnings.md
           key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}
       - name: Select compile source
         id: compile-source
@@ -382,6 +384,7 @@ jobs:
       - name: Unpack run binaries
         if: steps.compile-source.outputs.rebuild == 'true'
         run: |
+          rm -f compile-cpu-warnings.md
           mkdir -p "$HOME/.local/bin"
           tar -C "$HOME/.local/bin" -xf benchmark-binaries.tar
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -391,6 +394,8 @@ jobs:
         with:
           label: Compile measurement CPU
           provenance-file: ~/.local/bin/benchmark-build-cpu.txt
+          provenance-label: PR benchmark binaries during compile
+          warning-file: compile-cpu-warnings.md
       # Pointed at the Benchmarks/Compile subpackage (same toolchain as
       # the root): mathlib is a dependency only there, so the mathlib
       # cache fetch has to run from that directory.
@@ -427,7 +432,9 @@ jobs:
         if: needs.build.outputs.fresh != '1' && steps.pr-row.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
-          path: compile.json
+          path: |
+            compile.json
+            compile-cpu-warnings.md
           key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}
       - name: Upload run environment
         uses: actions/upload-artifact@v7
@@ -436,6 +443,7 @@ jobs:
           path: |
             ${{ matrix.env }}.ixe
             compile.json
+            compile-cpu-warnings.md
           if-no-files-found: error
           retention-days: 1
           overwrite: true
@@ -506,6 +514,8 @@ jobs:
         with:
           label: Benchmark job CPU
           provenance-file: .lake/build/bin/benchmark-build-cpu.txt
+          provenance-label: PR benchmark binaries in this job
+          warning-file: cpu-warnings.md
       # Toolchain only (no package build, no mathlib cache): the restored
       # binaries need the toolchain's libleanshared to run. This job never
       # compiles an env — the `.ixe` and compile row come from the compile
@@ -727,6 +737,8 @@ jobs:
         with:
           log-current: "false"
           provenance-file: base/.lake/build/bin/benchmark-build-cpu.txt
+          provenance-label: Cached base benchmark binaries
+          warning-file: cpu-warnings.md
       - name: Log base build CPU
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: ./.github/actions/log-cpu
@@ -834,11 +846,15 @@ jobs:
       - name: Build comparison table
         run: |
           mkdir -p out
+          if [ "$BACKEND" = compile ] && [ -s compile-cpu-warnings.md ]; then
+            cat compile-cpu-warnings.md >> cpu-warnings.md
+          fi
           ix bench compare \
             --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --base "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
             --base-source "${{ steps.decide.outputs.source }}" \
             --base-label "${BASE_REF:-${BASE_SHA::7}}" \
+            --warning-file "$GITHUB_WORKSPACE/cpu-warnings.md" \
             --out "out/table-$LABEL.md"
           cat "out/table-$LABEL.md"
 

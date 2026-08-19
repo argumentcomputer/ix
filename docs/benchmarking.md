@@ -269,7 +269,10 @@ binaries use native codegen, their build jobs also record the build CPU and
 carry that report inside the binary cache or run artifact; measurement jobs
 print it next to their own host report. A cache entry created before this
 provenance was introduced remains usable and is reported as having an unknown
-build CPU.
+build CPU. The exact `lscpu` model name is compared; a difference (or missing
+build provenance) is rendered as a warning in that cell's PR comment table.
+This is diagnostic only: the CPU model does not participate in cache keys, and
+only an explicit `fresh` request bypasses the measured-product caches.
 
 ## Not yet covered
 

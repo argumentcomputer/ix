@@ -660,6 +660,12 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     && (← System.FilePath.pathExists ⟨prAttrib⟩)
   then
     table := table ++ "\n\n" ++ (← renderPerConstMovers mainAttrib prAttrib baseLabel)
+  if let some path := (p.flag? "warning-file").map (·.as! String) then
+    if ← System.FilePath.pathExists ⟨path⟩ then
+      let warning := (← IO.FS.readFile path).trimAscii.toString
+      if !warning.isEmpty then
+        let lines := (warning.splitOn "\n").map fun line => "> " ++ line
+        table := "> [!WARNING]\n" ++ "\n".intercalate lines ++ "\n\n" ++ table
   match p.flag? "out" with
   | some f => IO.FS.writeFile (f.as! String) (table ++ "\n")
   | none => IO.println table
@@ -1248,6 +1254,7 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
     title         : String; "Table title (default: derived from the run)"
     "base-source" : String; "Where the base side came from, for the title"
     "base-label"  : String; "Name the base side in headers (default: main)"
+    "warning-file" : String; "Markdown warning file to prepend when present"
     out           : String; "Write the table here instead of stdout"
 ]
 

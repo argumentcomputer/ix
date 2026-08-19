@@ -1,7 +1,8 @@
 name: Log CPU information
 description: >-
   Log a benchmark host's CPU and effective cgroup allocation, optionally
-  recording the report or printing the report carried with native binaries.
+  recording the report, printing native-binary build provenance, and warning
+  when the build and measurement CPUs differ.
 
 inputs:
   label:
@@ -13,6 +14,13 @@ inputs:
     required: false
   provenance-file:
     description: Optional native-binary build-host report to print
+    required: false
+  provenance-label:
+    description: Subject named in provenance mismatch warnings
+    required: false
+    default: Native benchmark binaries
+  warning-file:
+    description: Optional Markdown file to which provenance warnings are appended
     required: false
   log-current:
     description: Whether to log the current host
@@ -27,9 +35,12 @@ runs:
         CPU_LABEL: ${{ inputs.label }}
         CPU_OUTPUT_FILE: ${{ inputs.output-file }}
         CPU_PROVENANCE_FILE: ${{ inputs.provenance-file }}
+        CPU_PROVENANCE_LABEL: ${{ inputs.provenance-label }}
+        CPU_WARNING_FILE: ${{ inputs.warning-file }}
         LOG_CURRENT_CPU: ${{ inputs.log-current }}
       run: |
         set -euo pipefail
+        export LC_ALL=C
 
         resolve_path() {
           if [[ "$1" == \~/* ]]; then
@@ -38,6 +49,12 @@ runs:
             printf '%s\n' "$1"
           fi
         }
+
+        model_name() {
+          awk -F ': *' '/^Model name:/ { print $2; exit }' "$@"
+        }
+
+        current_cpu_model=$(lscpu | model_name)
 
         cpu_report() {
           echo "Context: $CPU_LABEL"
@@ -78,4 +95,20 @@ runs:
             echo "::warning::Binary build CPU provenance is unavailable (the cache may predate CPU reports)"
           fi
           echo "::endgroup::"
+
+          provenance_model=$(model_name "$provenance_file" 2>/dev/null || true)
+          warning=""
+          if [ -z "$provenance_model" ] || [ -z "$current_cpu_model" ]; then
+            warning=$(printf '**CPU provenance unavailable for %s:** one report has no CPU model, so native-code compatibility cannot be checked.' "$CPU_PROVENANCE_LABEL")
+          elif [ "$provenance_model" != "$current_cpu_model" ]; then
+            warning=$(printf "**CPU model mismatch for %s:** built on \`%s\`; measured on \`%s\`. Native Rust code uses \`-Ctarget-cpu=native\`." "$CPU_PROVENANCE_LABEL" "$provenance_model" "$current_cpu_model")
+          fi
+          if [ -n "$warning" ]; then
+            echo "::warning::$warning"
+            if [ -n "$CPU_WARNING_FILE" ]; then
+              warning_file=$(resolve_path "$CPU_WARNING_FILE")
+              mkdir -p "$(dirname "$warning_file")"
+              printf '%s\n' "- $warning" >> "$warning_file"
+            fi
+          fi
         fi
