@@ -48,7 +48,7 @@ jobs:
       - name: Compile nataddcomm.ixe
         run: lake exe ix compile Ix.lean --consts Nat.add_comm --out nataddcomm.ixe
       - name: Upload nataddcomm.ixe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nataddcomm-ixe
           path: nataddcomm.ixe
@@ -163,7 +163,7 @@ jobs:
           # ELF embed accordingly, so this lints host code only.
           cargo clippy --release --workspace --all-targets -- -D warnings
       - name: Download nataddcomm.ixe
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nataddcomm-ixe
           path: .
@@ -203,7 +203,7 @@ jobs:
           # ELFs its build scripts already produced).
           cargo clippy --release --workspace --all-targets -- -D warnings
       - name: Download nataddcomm.ixe
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nataddcomm-ixe
           path: .
