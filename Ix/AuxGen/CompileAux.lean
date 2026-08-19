@@ -1033,7 +1033,7 @@ blocks claim one source-indexed aux name")
 '{breconName.pretty}' — two blocks claim one source-indexed aux name")
             brecPlans := brecPlans.insert breconName newPlan
         if let some belowName := recNameToBelowName name then
-          if (← liftM (lookupConst? belowName : CompileM _)).isSome then
+          if let some belowCi ← liftM (lookupConst? belowName : CompileM _) then
             let newPlan := BRecOnCallSitePlan.fromRecPlan plan
             if let some existing :=
                 cenvGlobal.belowCallSitePlans.get? belowName then
@@ -1041,6 +1041,30 @@ blocks claim one source-indexed aux name")
                 throw (.invalidMutualBlock
                   s!"conflicting below call-site plans for \
 '{belowName.pretty}' — two blocks claim one source-indexed aux name")
+            -- Prop-level (IndPredBelow) `.below` is an INDUCTIVE, so user
+            -- code can also reference its constructors and its `.casesOn`
+            -- wrapper — both start with the below params (parent params +
+            -- parent motives) and need the same motive permutation.
+            -- Registered under their own names in the same map; the apply
+            -- site discriminates the telescope shape via
+            -- `belowPlanKeyIsHead` (compile.rs family registration).
+            -- `X.below.rec` is deliberately not registered (only
+            -- regenerated wrappers reference it, and those skip surgery
+            -- via the aux-regen guard).
+            let mut familyNames : Array Name := #[]
+            if let .inductInfo bv := belowCi then
+              familyNames := bv.ctors
+              let casesName := Name.mkStr belowName "casesOn"
+              if (← liftM (lookupConst? casesName : CompileM _)).isSome then
+                familyNames := familyNames.push casesName
+            for member in familyNames do
+              if let some existing :=
+                  cenvGlobal.belowCallSitePlans.get? member then
+                if existing != newPlan then
+                  throw (.invalidMutualBlock
+                    s!"conflicting below call-site plans for \
+'{member.pretty}' — two blocks claim one source-indexed aux name")
+              belowPlans := belowPlans.insert member newPlan
             belowPlans := belowPlans.insert belowName newPlan
 
   return (auxLayout, plans, brecPlans, belowPlans)

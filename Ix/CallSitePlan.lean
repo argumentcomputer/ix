@@ -154,4 +154,17 @@ def isIdentity (plan : BRecOnCallSitePlan) : Bool :=
 
 end BRecOnCallSitePlan
 
+/-- Whether a `belowCallSitePlans` key is the `.below`/`.below_N` HEAD
+    (telescope `params, motives, indices, major` — surgery requires the
+    full floor) as opposed to a Prop-below FAMILY member (a `.below`
+    constructor or `.below.casesOn`, whose telescope starts with the
+    below params — parent params then parent motives — and has no
+    major-premise floor: a field-less below ctor is fully applied at
+    exactly params+motives). Mirrors Rust `below_plan_key_is_head`
+    (surgery.rs). -/
+def belowPlanKeyIsHead (name : Name) : Bool :=
+  match name with
+  | .str _ s _ => s == "below" || s.startsWith "below_"
+  | _ => false
+
 end Ix.AuxGen
