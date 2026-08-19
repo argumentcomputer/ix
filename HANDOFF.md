@@ -1,5 +1,19 @@
 # Handoff: Lean v4.33.0 bump — remaining integration work
 
+> **Consolidated** (`jcb/module-fix-on-v4.33`): this branch is now merged
+> with post-#571 main (the upstream-from-TruthMines mega-PR #569 and the
+> Prop-mutual `.below` fix #571), and carries the module-mode
+> full-content compile fix on top: `getFileEnv` always imports at the
+> classic/private level (an `OLeanLevel.exported` import axiomizes
+> imported theorems and drops `_private.*` — the cause of main's
+> `tc-pins`/`tc-accel-diff` reds), with the `module` header honored as
+> seed scoping via `Ix.EnvScope.defaultConstList` instead. The catalog
+> smoke test gained a `Plausible` entry (new LSpec dep at these pins).
+> Post-merge: `lake test` 2,661 assertions green, `cargo test
+> --workspace --release` 1,254 passed. The §2.3 ixvm OOM and the Blake3
+> unmerged-branch pin (§2, item 1) carry over unchanged — the latter
+> still blocks merging.
+
 Status of this branch (`update/lean-v4.33.0`): ix is adapted to Lean v4.33.0
 and the `lean4lean` pin now tracks the fork's v4.33 dev tip (§1). `lake
 build` is green across every target, `cargo check --workspace` is clean,

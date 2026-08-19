@@ -11,6 +11,7 @@ public import Ix.Cli.ValidateCmd
 public section
 
 open System (FilePath)
+open Ix.EnvScope
 
 private def defaultOutPathFor (pathStr : String) : String :=
   let path := FilePath.mk pathStr
@@ -26,7 +27,8 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     (p.flag? "out").map (·.as! String) |>.getD (defaultOutPathFor pathStr)
 
   buildFile pathStr
-  let leanEnv ← getFileEnv pathStr
+  let fe ← getFileEnvCore pathStr
+  let leanEnv := fe.env
 
   println! "Running Ix compiler on {pathStr}"
 
@@ -98,11 +100,14 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
       pure closed
     else match p.flag? "module" with
     | none =>
-      if excludeSet.isEmpty then pure leanEnv.constants.toList
+      if excludeSet.isEmpty then defaultConstList fe pathStr
       else
-        let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
+        -- Exclusion applies on top of the default scope (full env for classic
+        -- files, module-visible closure for module-mode files).
+        let base ← defaultConstList fe pathStr
+        let seeds := base.filterMap fun (n, _) =>
           if excludeSet.contains n then none else some n
-        IO.println s!"[compile] exclude applied to full env: {seeds.length} seed constants"
+        IO.println s!"[compile] exclude applied: {seeds.length} seed constants"
         pure (collectDeps leanEnv seeds)
     | some flag =>
       let raw := flag.as! String

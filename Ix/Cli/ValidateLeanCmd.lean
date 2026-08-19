@@ -50,6 +50,7 @@ public import Ix.Cli.ValidateCmd
 public section
 
 open System (FilePath)
+open Ix.EnvScope
 
 namespace Ix.Cli.ValidateLeanCmd
 
@@ -121,17 +122,18 @@ def runValidateLeanCmd (p : Cli.Parsed) : IO UInt32 := do
   | none, some pathStr =>
     IO.println s!"Running pure-Lean Ix validator on {pathStr}"
     buildFile pathStr
-    let leanEnv ← getFileEnv pathStr
+    let fe ← getFileEnvCore pathStr
+    let leanEnv := fe.env
     leanEnv? := some leanEnv
     -- Optional namespace filter, same semantics as `ix validate`.
     let constList ← match p.flag? "ns" with
-      | none => pure leanEnv.constants.toList
+      | none => defaultConstList fe pathStr
       | some flag =>
         let raw := flag.as! String
         let prefixes := parsePrefixes raw
         if prefixes.isEmpty then
           IO.println s!"[validate-lean] warning: --ns '{raw}' parsed to empty list; validating full env"
-          pure leanEnv.constants.toList
+          defaultConstList fe pathStr
         else
           let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
             if prefixes.any (·.isPrefixOf n) then some n else none
