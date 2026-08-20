@@ -559,6 +559,15 @@ impl QueryMap {
     })
   }
 
+  /// A hit's entry index alongside its output. The row walk needs both
+  /// — the output to continue the row, the index to charge the push —
+  /// and resolving them separately probes the same multi-GB map twice
+  /// per call.
+  pub fn get_indexed(&self, key: &[G]) -> Option<(usize, &[G])> {
+    let i = self.probe_index(key)?;
+    Some((i, self.outs_at(i)))
+  }
+
   pub fn get_mut(&mut self, key: &[G]) -> Option<QueryRefMut<'_>> {
     let i = self.probe_index(key)?;
     Some(QueryRefMut {

@@ -5,10 +5,9 @@ use multi_stark::{
 };
 use rayon::{
   iter::{
-    IndexedParallelIterator, IntoParallelRefIterator,
-    IntoParallelRefMutIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
   },
-  slice::ParallelSliceMut,
+  slice::{ParallelSlice, ParallelSliceMut},
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -19,7 +18,7 @@ use crate::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
     g_inverse_value,
   },
-  function_channel, memory_channel,
+  function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
@@ -79,11 +78,37 @@ impl<'a, 'b> ColumnMutSlice<'a, 'b> {
 /// can never drift. `ColumnIndex` threads through both so branch-region
 /// index arithmetic (`MatchContinue`) stays identical.
 trait RowSink {
+  /// Whether this sink discards everything but pushes. The walk is
+  /// shared, so the count pass would otherwise pay for witness values
+  /// nobody reads — notably field INVERSES (`EqZero`'s hint, the
+  /// not-taken-case witnesses of a defaulted `Match`), which are the
+  /// most expensive arithmetic in the walk and feed no push. Guarded
+  /// at the few sites where the discarded value costs more than the
+  /// branch; values that flow into `map` are always computed, since
+  /// later ops read them.
+  const COUNTS_ONLY: bool = false;
+
   fn input(&mut self, i: usize, v: G);
   fn selector(&mut self, s: usize);
   fn auxiliary(&mut self, index: &mut ColumnIndex, v: G);
   fn pull(&mut self, slot: usize, mult: G, args: &[G]);
   fn push(&mut self, index: &mut ColumnIndex, args: &[G]);
+
+  /// A constrained call's push, with the callee's entry already
+  /// resolved by the walk. The witness sink wants only the argument
+  /// tuple, so it forwards; the counting sink wants only the entry, and
+  /// forwarding would make it re-probe the map for a key the walk just
+  /// looked up. `args` is only built when `!COUNTS_ONLY` — an override
+  /// that sets `COUNTS_ONLY` must read `f`/`entry`, never `args`.
+  fn call_push(
+    &mut self,
+    index: &mut ColumnIndex,
+    _f: usize,
+    _entry: usize,
+    args: &[G],
+  ) {
+    self.push(index, args);
+  }
 }
 
 impl RowSink for ColumnMutSlice<'_, '_> {
@@ -273,9 +298,11 @@ fn dispatch_branch<'a, S: RowSink>(
   cases
     .get(&val)
     .or_else(|| {
-      for &case in cases.keys() {
-        let witness = (val - case).inverse();
-        sink.auxiliary(index, witness);
+      if !S::COUNTS_ONLY {
+        for &case in cases.keys() {
+          let witness = (val - case).inverse();
+          sink.auxiliary(index, witness);
+        }
       }
       def.as_deref()
     })
@@ -295,15 +322,17 @@ impl Ctrl {
     match self {
       Ctrl::Return(sel, _) => {
         sink.selector(*sel);
-        function_lookup_args_into(
-          &mut bufs.args,
-          context.function_index,
-          context.inputs,
-          context.output,
-        );
-        // The first lookup slot is reserved for the function return, which
-        // pulls the query claim with the query's multiplicity.
-        sink.pull(0, context.multiplicity, &bufs.args);
+        if !S::COUNTS_ONLY {
+          function_lookup_args_into(
+            &mut bufs.args,
+            context.function_index,
+            context.inputs,
+            context.output,
+          );
+          // The first lookup slot is reserved for the function return,
+          // which pulls the query claim with the query's multiplicity.
+          sink.pull(0, context.multiplicity, &bufs.args);
+        }
         None
       },
       Ctrl::Yield(sel, vals) => {
@@ -394,10 +423,12 @@ impl Op {
         if deg == 0 {
           map.push((is_zero_g, 0));
         } else {
-          let (d, x) =
-            if is_zero { (G::ZERO, G::ONE) } else { (a.inverse(), G::ZERO) };
-          sink.auxiliary(index, d);
-          sink.auxiliary(index, x);
+          if !S::COUNTS_ONLY {
+            let (d, x) =
+              if is_zero { (G::ZERO, G::ONE) } else { (a.inverse(), G::ZERO) };
+            sink.auxiliary(index, d);
+            sink.auxiliary(index, x);
+          }
           map.push((is_zero_g, 1));
         }
       },
@@ -405,19 +436,22 @@ impl Op {
         bufs.key.clear();
         bufs.key.extend(inputs.iter().map(|a| map[*a].0));
         let queries = &context.query_record.function_queries[*function_index];
-        let result = queries.get(&bufs.key).expect("Cannot find query result");
-        for f in result.output.iter() {
+        let (entry, output) =
+          queries.get_indexed(&bufs.key).expect("Cannot find query result");
+        for f in output.iter() {
           map.push((*f, 1));
           sink.auxiliary(index, *f);
         }
         if !op_unconstrained {
-          function_lookup_args_into(
-            &mut bufs.args,
-            G::from_usize(*function_index),
-            &bufs.key,
-            result.output,
-          );
-          sink.push(index, &bufs.args);
+          if !S::COUNTS_ONLY {
+            function_lookup_args_into(
+              &mut bufs.args,
+              G::from_usize(*function_index),
+              &bufs.key,
+              output,
+            );
+          }
+          sink.call_push(index, *function_index, entry, &bufs.args);
         }
       },
       Op::Store(values) => {
@@ -863,6 +897,26 @@ impl MultStore for RecordStore<'_> {
   }
 }
 
+/// Lookup channels as the integers they are. `CountSink::push` is the
+/// hottest dispatch in derivation and every push carries its channel in
+/// `args[0]`; matching on the canonical value lets the compiler emit a
+/// jump table instead of a comparison chain.
+const FUNCTION_CH: u64 = 0;
+const MEMORY_CH: u64 = 1;
+const BIT_DECOMPOSITION_CH: u64 = 2;
+const SHIFT_LEFT_CH: u64 = 3;
+const SHIFT_RIGHT_CH: u64 = 4;
+const XOR_CH: u64 = 5;
+const ADD_CH: u64 = 6;
+const SUB_CH: u64 = 7;
+const AND_CH: u64 = 8;
+const OR_CH: u64 = 9;
+const LESS_THAN_CH: u64 = 10;
+const RANGE_CHECK_CH: u64 = 11;
+const MUL_CH: u64 = 12;
+const XOR_SPLIT7_CH: u64 = 13;
+const XOR_SPLIT4_CH: u64 = 14;
+
 /// Counting sink: tallies exactly the pushes the witness sink would
 /// emit for the same row, classified by lookup channel. Newly-live
 /// function entries land in `frontier` for the wave loop to walk.
@@ -873,7 +927,28 @@ struct CountSink<'a, S: MultStore> {
   frontier: &'a mut Vec<(u32, u32)>,
 }
 
+impl<S: MultStore> CountSink<'_, S> {
+  /// Charge one consumption to a callee entry, enqueueing it when this
+  /// is the consumption that made it live.
+  #[inline]
+  fn charge_call(&mut self, f: usize, idx: usize) {
+    if self.store.fn_add(f, idx) == 0 {
+      // Unconstrained functions have no circuit, hence no rows to walk
+      // (the compiler only emits constrained pushes to constrained
+      // callees; tallying is still harmless).
+      if self.toplevel.functions[f].constrained {
+        self.frontier.push((
+          u32::try_from(f).expect("fn idx fits u32"),
+          u32::try_from(idx).expect("entry idx fits u32"),
+        ));
+      }
+    }
+  }
+}
+
 impl<S: MultStore> RowSink for CountSink<'_, S> {
+  const COUNTS_ONLY: bool = true;
+
   fn input(&mut self, _i: usize, _v: G) {}
 
   fn selector(&mut self, _s: usize) {}
@@ -882,9 +957,23 @@ impl<S: MultStore> RowSink for CountSink<'_, S> {
 
   fn pull(&mut self, _slot: usize, _mult: G, _args: &[G]) {}
 
+  fn call_push(
+    &mut self,
+    _index: &mut ColumnIndex,
+    f: usize,
+    entry: usize,
+    _args: &[G],
+  ) {
+    self.charge_call(f, entry);
+  }
+
   fn push(&mut self, _index: &mut ColumnIndex, args: &[G]) {
-    let ch = args[0];
-    if ch == function_channel() {
+    // Channels are the small integers 0..=14, so one jump table
+    // replaces the linear chain of field comparisons this used to walk
+    // for every byte-gadget push — and byte pushes are the bulk of
+    // them.
+    let ch = args[0].as_canonical_u64();
+    if ch == FUNCTION_CH {
       let f = usize::try_from(args[1].as_canonical_u64())
         .expect("function index fits usize");
       let input_size = self.toplevel.functions[f].layout.input_size;
@@ -892,18 +981,8 @@ impl<S: MultStore> RowSink for CountSink<'_, S> {
       let idx = self.record.function_queries[f]
         .get_index_of(key)
         .expect("pushed function query must exist in the record");
-      if self.store.fn_add(f, idx) == 0 {
-        // Unconstrained functions have no circuit, hence no rows to
-        // walk (the compiler only emits constrained pushes to
-        // constrained callees; tallying is still harmless).
-        if self.toplevel.functions[f].constrained {
-          self.frontier.push((
-            u32::try_from(f).expect("fn idx fits u32"),
-            u32::try_from(idx).expect("entry idx fits u32"),
-          ));
-        }
-      }
-    } else if ch == memory_channel() {
+      self.charge_call(f, idx);
+    } else if ch == MEMORY_CH {
       let width = usize::try_from(args[1].as_canonical_u64())
         .expect("memory width fits usize");
       let ptr = usize::try_from(args[2].as_canonical_u64())
@@ -911,34 +990,21 @@ impl<S: MultStore> RowSink for CountSink<'_, S> {
       self.store.mem_add(width, ptr);
     } else {
       // Byte-gadget channels: cell + column mirror the Queries tables.
-      let (table2, col) = if ch == u8_xor_channel() {
-        (true, 0)
-      } else if ch == u8_add_channel() {
-        (true, 1)
-      } else if ch == u8_sub_channel() {
-        (true, 2)
-      } else if ch == u8_and_channel() {
-        (true, 3)
-      } else if ch == u8_or_channel() {
-        (true, 4)
-      } else if ch == u8_less_than_channel() {
-        (true, 5)
-      } else if ch == u8_range_check_channel() {
-        (true, 6)
-      } else if ch == u8_mul_channel() {
-        (true, 7)
-      } else if ch == u8_xor_split7_channel() {
-        (true, 8)
-      } else if ch == u8_xor_split4_channel() {
-        (true, 9)
-      } else if ch == u8_bit_decomposition_channel() {
-        (false, 0)
-      } else if ch == u8_shift_left_channel() {
-        (false, 1)
-      } else if ch == u8_shift_right_channel() {
-        (false, 2)
-      } else {
-        panic!("unknown lookup channel {}", ch.as_canonical_u64())
+      let (table2, col) = match ch {
+        XOR_CH => (true, 0),
+        ADD_CH => (true, 1),
+        SUB_CH => (true, 2),
+        AND_CH => (true, 3),
+        OR_CH => (true, 4),
+        LESS_THAN_CH => (true, 5),
+        RANGE_CHECK_CH => (true, 6),
+        MUL_CH => (true, 7),
+        XOR_SPLIT7_CH => (true, 8),
+        XOR_SPLIT4_CH => (true, 9),
+        BIT_DECOMPOSITION_CH => (false, 0),
+        SHIFT_LEFT_CH => (false, 1),
+        SHIFT_RIGHT_CH => (false, 2),
+        _ => panic!("unknown lookup channel {ch}"),
       };
       let i = usize::try_from(args[1].as_canonical_u64()).expect("byte");
       if table2 {
@@ -981,10 +1047,10 @@ fn count_row<S: MultStore>(
 }
 
 /// The shared derivation walk: seed each claim's entry with one
-/// consumption, then walk newly-live rows in parallel waves — each
-/// live row is walked exactly once (the 0→1 transition enqueues it),
-/// counting every push the witness for that row would emit into
-/// `store`. Terminates because liveness only grows.
+/// consumption, then walk the live set — each live row is walked
+/// exactly once (the 0→1 transition enqueues it), counting every push
+/// the witness for that row would emit into `store`. Terminates
+/// because liveness only grows.
 fn derive_into<S: MultStore>(
   toplevel: &Toplevel,
   record: &QueryRecord,
@@ -1004,12 +1070,26 @@ fn derive_into<S: MultStore>(
       ));
     }
   }
+  // Fixed lanes per wave rather than rayon's own splitting. Letting
+  // `par_iter` split a wave down to single rows put a fork/join between
+  // every BFS level — tens of thousands per span — and the resulting
+  // steal traffic (`crossbeam_deque::Stealer::steal` plus its epoch
+  // reclamation) measured at HALF of all cycles in the run, dwarfing
+  // the counting. Chunking to a few tasks per thread costs 12% less
+  // wall and 12% less CPU than the split-anywhere version, and the
+  // multiplier is flat between 2 and 8, so its exact value is not a
+  // tuned constant.
+  let lanes = rayon::current_num_threads() * 4;
+  let mut next: Vec<(u32, u32)> = Vec::new();
   while !frontier.is_empty() {
-    frontier = frontier
-      .par_iter()
-      .fold(
-        || (Vec::new(), Vec::new(), ReplayBufs::default()),
-        |(mut acc, mut map, mut bufs), &(f, idx)| {
+    let chunk = frontier.len().div_ceil(lanes).max(64);
+    let parts: Vec<Vec<(u32, u32)>> = frontier
+      .par_chunks(chunk)
+      .map(|items| {
+        let mut out = Vec::new();
+        let mut map = Vec::new();
+        let mut bufs = ReplayBufs::default();
+        for &(f, idx) in items {
           count_row(
             toplevel,
             record,
@@ -1017,18 +1097,57 @@ fn derive_into<S: MultStore>(
             store,
             f as usize,
             idx as usize,
-            &mut acc,
+            &mut out,
             &mut map,
             &mut bufs,
           );
-          (acc, map, bufs)
-        },
-      )
-      .map(|(acc, _, _)| acc)
-      .reduce(Vec::new, |mut a, mut b| {
-        a.append(&mut b);
-        a
-      });
+        }
+        // Keep walking rows this lane discovered instead of handing
+        // them back to a barrier. Waves are the unit of
+        // synchronization and the walk has tens of thousands of BFS
+        // levels per span, so absorbing many levels per lane cuts the
+        // fork/join count proportionally: init measured 93.8s with no
+        // local walk, 81.0s at 1x, 73.9s at 4x, 70.1s at 32x and
+        // 71.1s at 256x, with CPU falling too — this removes work, it
+        // does not merely repack it.
+        //
+        // BOUNDED, because an unbounded local walk IS a depth-first
+        // walk, and that measured 4.5x slower than the barrier it
+        // replaced: one lane inherits the whole subtree and the rest
+        // starve. The bound is what keeps the parallelism the initial
+        // chunking hands out.
+        //
+        // Sound for the same reason the wave loop is: an entry joins
+        // the frontier on its 0 -> 1 multiplicity transition and so is
+        // walked exactly once, whether that happens in this lane or a
+        // later wave. Only the ORDER changes, and counting is
+        // order-independent.
+        const LOCAL_WALK: usize = 32;
+        let budget = items.len().saturating_mul(LOCAL_WALK);
+        let mut local = 0usize;
+        while local < budget {
+          let Some((f, idx)) = out.pop() else { break };
+          count_row(
+            toplevel,
+            record,
+            io_buffer,
+            store,
+            f as usize,
+            idx as usize,
+            &mut out,
+            &mut map,
+            &mut bufs,
+          );
+          local += 1;
+        }
+        out
+      })
+      .collect();
+    next.clear();
+    for p in &parts {
+      next.extend_from_slice(p);
+    }
+    std::mem::swap(&mut frontier, &mut next);
   }
 }
 
@@ -1067,6 +1186,11 @@ pub fn derive_multiplicities_into(
   let mems: Vec<&crate::querymap::QueryMap> =
     record.memory_queries.iter().map(|(_, m)| m).collect();
   let store = RecordStore { record, mems, width_slot: width_slots(record) };
+  // The GLOBAL rayon pool, deliberately: several spans derive at once
+  // in the pipeline, and bounded per-span pools were measured worse at
+  // every size (8 threads x depth 8: 108s, 16 x 8: 98.6s, 4 x 16:
+  // 125s, against 96.5s sharing one pool) — with static pools the box
+  // goes IDLE, because no span's frontier is wide enough on its own.
   derive_into(toplevel, record, io_buffer, claims, &store);
 }
 
@@ -1168,5 +1292,36 @@ pub fn diff_multiplicities(
     let n = errs.len();
     errs.truncate(8);
     Err(format!("{n} multiplicity mismatch(es):\n{}", errs.join("\n")))
+  }
+}
+
+#[cfg(test)]
+mod channel_tags {
+  use super::*;
+
+  /// The jump-table constants in [`CountSink::push`] must stay pinned
+  /// to the channel definitions themselves; a silent drift would
+  /// misfile every push of the renumbered channel.
+  #[test]
+  fn constants_match_channel_definitions() {
+    for (tag, ch) in [
+      (FUNCTION_CH, function_channel()),
+      (MEMORY_CH, crate::memory_channel()),
+      (BIT_DECOMPOSITION_CH, u8_bit_decomposition_channel()),
+      (SHIFT_LEFT_CH, u8_shift_left_channel()),
+      (SHIFT_RIGHT_CH, u8_shift_right_channel()),
+      (XOR_CH, u8_xor_channel()),
+      (ADD_CH, u8_add_channel()),
+      (SUB_CH, u8_sub_channel()),
+      (AND_CH, u8_and_channel()),
+      (OR_CH, u8_or_channel()),
+      (LESS_THAN_CH, u8_less_than_channel()),
+      (RANGE_CHECK_CH, u8_range_check_channel()),
+      (MUL_CH, u8_mul_channel()),
+      (XOR_SPLIT7_CH, u8_xor_split7_channel()),
+      (XOR_SPLIT4_CH, u8_xor_split4_channel()),
+    ] {
+      assert_eq!(tag, ch.as_canonical_u64());
+    }
   }
 }

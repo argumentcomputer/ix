@@ -1,12 +1,12 @@
 //! Whole-env execution over one shared `QueryRecord`, with record
-//! cutting at a MEASURED threshold and direct segment proving.
+//! cutting at a MEASURED threshold and direct span proving.
 //!
 //! [`execute_env`] runs the env's whole check schedule through the
 //! codegen'd circuit kernel: worker threads WARM-execute one
 //! `verify_block` per schedule block into a single shared record —
 //! per-block checking keyed by address alone, so every shared
 //! dependency cone derives once, with the entry's phantom external
-//! multiplicity debumped — and each sealed segment then runs ONE
+//! multiplicity debumped — and each sealed span then runs ONE
 //! seal claim — the span's canonical `CheckEnv` claim (owned-set root +
 //! thin-frontier assumption root) — whose per-node checks memo-hit
 //! (and consume) the warm work. The record balances exactly as if the
@@ -39,11 +39,12 @@
 //! schedule order, constant/hint/blob bytes materialize into
 //! env-canonical preassigned slots on first fault.
 //!
-//! What crosses a segment boundary: only re-derivation of the thin
-//! long-range shared tail (the segment's claims are a contiguous
+//! What crosses a span boundary: only re-derivation of the thin
+//! long-range shared tail (the span's claims are a contiguous
 //! schedule range). Constants are order-independent obligations;
-//! cross-segment soundness is per-claim, exactly as executed.
+//! cross-span soundness is per-claim, exactly as executed.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -114,7 +115,7 @@ fn measured_budget_gib() -> Result<f64, String> {
 }
 
 /// Current process resident set in GiB (`/proc/self/status` VmRSS);
-/// 0 where unreadable (non-Linux). Reported in segment logs.
+/// 0 where unreadable (non-Linux). Reported in span logs.
 fn process_rss_gib() -> f64 {
   let Ok(s) = std::fs::read_to_string("/proc/self/status") else {
     return 0.0;
@@ -278,16 +279,6 @@ fn ordered_schedule(
   order
 }
 
-/// Whole-env check schedule through the codegen'd kernel in parallel.
-/// `fun_idx` is `verify_claim` (the single per-span seal claim run at
-/// seal in prove mode), `block_fun_idx` is `verify_block` (the
-/// per-block entry the workers warm-execute). Execute-only runs (`None`
-/// prove system) skip the segment claims: segments exist only to drop
-/// records at the cut threshold, and the report is the check verdict —
-/// blocks checked, kernel rejects named, total measured FFT cost. With
-/// a prove system, each sealed record proceeds straight to a verified
-/// multi-claim STARK.
-#[allow(clippy::too_many_arguments)]
 /// Publish the canonical env-derived io layout into `shared_io`:
 /// constant (ch 2), hint (ch 3), and blob (ch 4) slots preassigned in
 /// address order — labels are independent of fault interleaving, and
@@ -364,6 +355,97 @@ fn store_proof(
     .map_err(|e| format!("store write: {e:?}"))
 }
 
+/// Share of the RAM budget, in permille, that the execution pipeline
+/// may hold in live span records. This is a CAP, and since the local
+/// walk made derivation cheap it is no longer the binding constraint:
+/// records drain faster than the controller dispatches them, so peak
+/// RSS levels off around 80 GiB whatever the cap is. Measured on init
+/// at a 400 GiB budget, wall against peak RSS: depth 1 87.0s/47.8 GiB,
+/// 2 74.1s/58.1, 3 71.9s/67.5, 4 71.3s/79.4, 6 67.8s/79.3, 8
+/// 68.5s/83.6, 12 68.8s/84.3.
+///
+/// Depth 6 is where init's wall stops improving and it costs init
+/// nothing, but init is the env where the cap stops binding. The
+/// bigger envs still bind, and there the same step is a bad trade:
+/// initstd 120.3s/79.9 GiB at depth 4 against 119.4s/100.1 GiB at
+/// depth 6, lean 160.7s/82.3 against 154.5s/103.7. So this sits at
+/// depth 4 — 200 permille — which holds every env near 80 GiB for a
+/// wall difference at the edge of run-to-run noise.
+const PIPELINE_BUDGET_PERMILLE: usize = 200;
+
+/// How many sealed span records may have post-work (seal -> derive ->
+/// measure) in flight at once. Records are the pipeline's memory, each
+/// bounded by `cut_bytes`, and several more are live outside the post
+/// threads: the one being filled, the one queued for handoff, the one
+/// the controller is sealing, and the slack of records whose arenas
+/// have not been unmapped yet — about six beyond the depth, which is
+/// the allowance below. `IX_PIPELINE_DEPTH` overrides.
+fn pipeline_depth(budget_bytes: usize, cut_bytes: usize) -> usize {
+  if let Some(d) = std::env::var("IX_PIPELINE_DEPTH")
+    .ok()
+    .and_then(|v| v.parse::<usize>().ok())
+  {
+    return d.max(1);
+  }
+  // Records first, share second: dividing the budget by the permille
+  // before the record size truncates away the boundary (at 400 GiB the
+  // rounding alone cost a whole level of depth).
+  let live = budget_bytes / cut_bytes.max(1) * PIPELINE_BUDGET_PERMILLE / 1000;
+  live.saturating_sub(6).clamp(1, 16)
+}
+
+/// A span's record together with the flag a worker raises once that
+/// record has grown past the cut. Workers hold an `Arc<SpanRecord>` for
+/// the length of ONE block and no longer, which is what lets a span
+/// boundary be a swap rather than a barrier: once the controller has
+/// published a fresh record, no worker can reach the old one again, and
+/// the old one is quiescent exactly when its handle count falls back to
+/// one.
+struct SpanRecord {
+  record: QueryRecord,
+  cut: std::sync::atomic::AtomicBool,
+}
+
+impl SpanRecord {
+  fn new(toplevel: &Toplevel) -> Self {
+    Self {
+      record: QueryRecord::new(toplevel),
+      cut: std::sync::atomic::AtomicBool::new(false),
+    }
+  }
+}
+
+/// Default worker width when `--jobs` is unset: all logical CPUs less
+/// one (the watcher).
+///
+/// A 16-worker cap once shipped here, because the shared record was
+/// L3-capacity-bound and extra workers evicted each other's hot sets
+/// (init measured 159s at 16 vs 203s at 63). That inversion is GONE
+/// under the per-block warmup + single-CheckEnv-claim engine: measured
+/// on this box (32 physical cores, SMT, 480 MiB L3), init runs 238s at
+/// 8, 209s at 16 and 188s at 63, and initstd 408s / 358s / 327s — both
+/// monotone in width, so the cap is not reinstated. Scaling is still
+/// far from linear (init is only 3.2x over one worker); the remaining
+/// ceiling is the shared record itself, not worker count, so it wants
+/// a structural fix rather than a width limit.
+///
+/// The width is also the aggregate the per-thread probe caches are
+/// sized against, and what the executor spawns; nothing else derives
+/// from it.
+fn default_worker_width() -> usize {
+  std::thread::available_parallelism()
+    .map_or(4, usize::from)
+    .saturating_sub(1)
+    .max(1)
+}
+
+/// Whole-env check schedule through the codegen'd kernel in parallel.
+/// `fun_idx` is `verify_claim` (the single per-span seal claim run at
+/// seal), `block_fun_idx` is `verify_block` (the per-block entry the
+/// workers warm-execute). Spans are cut at the retained-bytes
+/// threshold and each sealed record proceeds straight to a verified
+/// multi-claim STARK — or, under `dry_run`, stops at witness
+/// generation and reports that span's EXACT measured peak.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_env(
   toplevel: &Toplevel,
@@ -383,15 +465,11 @@ pub fn execute_env(
   if blocks.is_empty() {
     return Err("empty environment".to_string());
   }
-  // Default: all cores less one (the watcher).
-  let workers = if workers == 0 {
-    std::thread::available_parallelism()
-      .map_or(4, usize::from)
-      .saturating_sub(1)
-      .max(1)
-  } else {
-    workers
-  };
+  // Default: the L3 knee, not the core count. The shared record is
+  // L3-capacity-bound — past the knee workers evict each other's hot
+  // sets and the wall INVERTS (measured on this env: 159s at 16 vs
+  // 203s at 63). An explicit --jobs is always honored.
+  let workers = if workers == 0 { default_worker_width() } else { workers };
   // The schedule granularity is fixed by the core count so worker sizing
   // cannot change the block ordering.
   let sched_pieces =
@@ -408,7 +486,16 @@ pub fn execute_env(
     "[exec] {covered} blocks, {workers} threads over one shared record, \
      budget {budget_gib:.0} GiB"
   );
-  let mut record = QueryRecord::new(toplevel);
+  // Records live behind an `Arc` so that cutting a span costs nothing:
+  // the controller publishes a fresh record and every worker rolls onto
+  // it at its next block, with no stop-the-world. The barrier this
+  // replaces was the largest single cost in execution — measured on
+  // init, 41.7s of a 74.5s execution was DRAIN: the cut forbids new
+  // blocks immediately, but the span cannot seal until the longest
+  // in-flight block returns, and block lengths are heavy-tailed enough
+  // that 3s spans ended with 5-10s tails running 1-2 workers.
+  let current: Mutex<Arc<SpanRecord>> =
+    Mutex::new(Arc::new(SpanRecord::new(toplevel)));
   // One shared io state for the whole run: the record memo-couples to
   // io (idx, len) coordinates, so all claims must resolve them against
   // the same arenas (a record never outlives its io). The ingress
@@ -426,14 +513,15 @@ pub fn execute_env(
       t.elapsed().as_secs_f64()
     );
   }
-  // Record cutting: workers free-run at full width while a watcher
-  // polls the record; when the measured metric crosses the target the
-  // workers drain their in-flight blocks and stop, the segment seals as
-  // a complete self-contained QueryRecord — the witness input, exactly
-  // what the prover consumes — and execution continues into a fresh
-  // one. Cut points are timing-dependent and machine-local by design:
-  // the same machine executes and proves, so segments only need to be
-  // sized for its prover, not canonical across machines.
+  // Record cutting: workers free-run at full width, and the first one
+  // to see the record cross the target ROLLS THE SPAN OVER — publishes
+  // a fresh record and hands the old one to the pipeline — so nothing
+  // stops. The rolled record is a complete self-contained QueryRecord,
+  // the witness input the prover consumes, and it seals as soon as the
+  // last worker still inside a block on it lets go. Cut points are
+  // timing-dependent and machine-local by design: the same machine
+  // executes and proves, so spans only need to be sized for its
+  // prover, not canonical across machines.
   //
   // One cut threshold on the record's retained bytes, from the
   // measured budget: spans are RAM containers sized by
@@ -450,382 +538,556 @@ pub fn execute_env(
   let failed: Mutex<Vec<(Address, String)>> = Mutex::new(Vec::new());
   let fatal: Mutex<Option<String>> = Mutex::new(None);
   let t0 = std::time::Instant::now();
-  // (seg_start, seg_end, unique entries, fft cost, retained bytes).
-  let mut segs: Vec<(usize, usize, usize, f64, usize)> = Vec::new();
-  // Prove-mode segments sealed unclean (rejects / missing claim) and
+  // (span_start, span_end, unique entries, fft cost, retained bytes).
+  let mut spans: Vec<(usize, usize, usize, f64, usize)> = Vec::new();
+  // Prove-mode spans sealed unclean (rejects / missing claim) and
   // therefore not proven — a failure the exit status must carry.
-  let mut unproven_segs = 0usize;
+  let mut unproven_spans = 0usize;
   // Spans sealed, measured, and proven (or DRY-measured) so far.
   let mut spans_proven = 0usize;
-  let mut seg_start = 0usize;
-  while seg_start < covered && !abort.load(Ordering::Acquire) {
-    let cut_now = std::sync::atomic::AtomicBool::new(false);
-    // Rejects are scoped to the span that contains them: a kernel
-    // reject makes THIS segment unprovable (its claim would fail),
-    // not the rest of the run. The global list only accumulates for
-    // the end-of-run report.
-    let seg_failed_base = failed.lock().unwrap().len();
-    // Workers still executing this span; the watcher outlives the cut
-    // and keeps polling until this hits zero.
-    let active_workers = AtomicUsize::new(workers);
-    // Per-worker in-flight block (u32::MAX = idle): lets the stall
-    // detector NAME the stuck block(s) — the identity a runaway
-    // diagnosis needs.
-    let in_flight: Vec<AtomicUsize> =
-      (0..workers).map(|_| AtomicUsize::new(usize::MAX)).collect();
-    std::thread::scope(|sc| {
-      {
-        let (record, abort) = (&record, &abort);
-        let active_workers = &active_workers;
-        let done = &done;
-        let (in_flight, blocks, order) = (&in_flight, &blocks, &order);
-        sc.spawn(move || {
-          // Stall detector: the FLT len-runaway ran 40+ minutes with
-          // `done` frozen while system time exploded; this names that
-          // state within a minute — a climbing open-reservation count
-          // alongside a frozen frontier is the runaway signature.
-          let mut stall = (usize::MAX, 0u32);
-          loop {
-            if abort.load(Ordering::Acquire) {
-              break;
-            }
-            let drained = active_workers.load(Ordering::Acquire) == 0;
-            let d = done.load(Ordering::Acquire);
-            if d != stall.0 {
-              stall = (d, 0);
-            } else {
-              stall.1 += 1;
-              if stall.1.is_multiple_of(120) && !drained {
-                // Name the top maps: a runaway execution shows up as
-                // one map's length exploding — its function index is
-                // the bug's address (IX_DUMP_FUN_NAMES resolves it).
-                let mut tops: Vec<(usize, usize)> = record
-                  .function_queries
-                  .iter()
-                  .enumerate()
-                  .map(|(i, m)| (m.len(), i))
-                  .collect();
-                tops.sort_unstable_by(|a, b| b.cmp(a));
-                let tops: Vec<String> = tops
-                  .iter()
-                  .take(14)
-                  .map(|(l, i)| format!("fn {i}: {l}"))
-                  .collect();
-                let stuck: Vec<String> = in_flight
-                  .iter()
-                  .filter_map(|a| {
-                    let lo = a.load(Ordering::Relaxed);
-                    (lo != usize::MAX).then(|| {
-                      format!("{}@{lo}", blocks[order[lo] as usize].addr.hex())
-                    })
-                  })
-                  .collect();
-                eprintln!(
-                  "[watch] STALL: no block completed in {}s; largest \
-                   function maps: {}; in-flight: {}",
-                  stall.1 / 2,
-                  tops.join(", "),
-                  stuck.join(" ")
-                );
-              }
-            }
-            if drained {
-              break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(500));
-          }
-        });
-      }
-      for w in 0..workers {
-        let in_flight = &in_flight;
-        let (cursor, done, abort, cut_now) = (&cursor, &done, &abort, &cut_now);
-        let (failed, fatal, active_workers) =
-          (&failed, &fatal, &active_workers);
-        let (blocks, order, shared_io) = (&blocks, &order, &shared_io);
-        let record = &record;
-        sc.spawn(move || {
-          // WARM execution, one `verify_block` per schedule block: the
-          // block's home constant goes through the same
-          // shape-dispatched gauntlet the segment claim applies per
-          // block, keyed by the address alone — every shared
-          // dependency cone derives once for the whole record, and
-          // the seal claim memo-hits all of it. The record is an
-          // insert-once SET during execution; a warmed entry's
-          // multiplicity (its one seal-claim consumer) is
-          // DERIVED at seal, so no phantom-caller accounting exists.
-          let run = |b: u32| -> Result<(), String> {
-            let mut io = IOBuffer::with_shared(shared_io.clone());
-            let input = addr_key(&blocks[b as usize].addr);
-            execute_ixvm_with_record(
-              toplevel,
-              block_fun_idx,
-              &input,
-              &mut io,
-              &record,
-            )
-            .map_err(|e| e.to_string())?;
-            Ok(())
-          };
-          let reject = |b: u32, e: String| {
-            if fail_fast {
-              let mut f = fatal.lock().unwrap();
-              if f.is_none() {
-                *f = Some(format!(
-                  "CheckEnv of block {} failed: {e}",
-                  blocks[b as usize].addr.hex()
-                ));
-              }
-              abort.store(true, Ordering::Release);
-            } else {
-              eprintln!(
-                "[exec] SKIPPING block {}: {e}",
-                blocks[b as usize].addr.hex()
-              );
-              failed.lock().unwrap().push((blocks[b as usize].addr.clone(), e));
-            }
-          };
-          loop {
-            if abort.load(Ordering::Acquire) || cut_now.load(Ordering::Acquire)
-            {
-              break;
-            }
-            let lo = cursor.fetch_add(1, Ordering::AcqRel);
-            if lo >= covered {
-              break;
-            }
-            in_flight[w].store(lo, Ordering::Relaxed);
-            match run(order[lo]) {
-              Ok(()) => {
-                done.fetch_add(1, Ordering::AcqRel);
-              },
-              Err(e) => reject(order[lo], e),
-            }
-            in_flight[w].store(usize::MAX, Ordering::Relaxed);
-            // Cut check, between blocks — the only place a worker can
-            // stop, so checking here has zero detection gap beyond the
-            // drain itself. Both modes cut on the record's RETAINED
-            // bytes — the only thing an execution span must bound.
-            // Proof sizing does NOT happen here: it happens at the
-            // derivation layer after the span seals, where measurement
-            // is exact and stopping is per-block, so the sloppiness of
-            // a racing cut (drain window, in-flight stragglers) costs
-            // a few harmless GiB of record, never a proof's RAM.
-            if record_retained_bytes(record) >= cut_bytes {
-              cut_now.store(true, Ordering::Release);
-            }
-            let d = done.load(Ordering::Acquire);
-            if d.is_multiple_of(8192) {
-              eprintln!(
-                "[exec] {d}/{covered} blocks, rss {:.0}G, {:.0}s",
-                process_rss_gib(),
-                t0.elapsed().as_secs_f64()
-              );
-            }
-          }
-          active_workers.fetch_sub(1, Ordering::AcqRel);
-        });
-      }
-    });
-    // Every grabbed block resolved (workers only break between
-    // blocks), so the executed prefix is exactly the cursor, capped by
-    // the schedule end; racing losers may have bumped it past without
-    // executing those grabs.
-    let seg_end = cursor.load(Ordering::Acquire).min(covered);
-    cursor.store(seg_end, Ordering::Release);
-    if abort.load(Ordering::Acquire) {
-      break;
-    }
-    let retained = record_retained_bytes(&record);
-    let entries: usize =
-      record.function_queries.iter().map(|m| m.len()).sum::<usize>()
-        + record.memory_queries.iter().map(|(_, m)| m.len()).sum::<usize>();
-    let fft = record_fft_cost(toplevel, &record);
-    // Padded transform work (prove mode): the raw BFFT is the smooth
-    // cross-run diagnostic; the padded figure is what the prover's wall
-    // actually tracks.
-    let padded_note = format!(
-      " ({:.1} padded)",
-      system.padded_fft_cost_of_record(&record) / 1e9
-    );
-    if seg_end < covered || !segs.is_empty() {
-      eprintln!(
-        "[seg {}] blocks {seg_start}..{seg_end} of {covered}: \
-         {entries} unique queries, {:.1}{padded_note} BFFT, {:.1} GiB \
-         record, {:.0}s",
-        segs.len(),
-        fft / 1e9,
-        f64_from_usize(retained) / GIB,
-        t0.elapsed().as_secs_f64()
-      );
-    }
-    segs.push((seg_start, seg_end, entries, fft, retained));
+  let mut span_start = 0usize;
+  // `IX_EXEC_DUMP_COUNTS` census, accumulated across spans.
+  let mut census = String::new();
+  // PIPELINE: a span's post-work (seal -> derive -> measure) reads only
+  // its own sealed record, so it can run while the workers fill the
+  // NEXT span's record. That is the whole gap against the process
+  // fleet: the fleet always has shards in different phases, so it keeps
+  // ~93% of the cores busy, while this loop alternates phases that each
+  // use a fraction of the machine (exec 8.4/32 cores, derive 13.8/32,
+  // seal 1/32) and so sits at ~29%. Overlapping them lets each fill the
+  // other's bubbles.
+  //
+  // Depth is > 1 because the post-work is the LONG POLE, not the
+  // executor: a span execs in ~3s and then seals+derives for ~9s, so a
+  // depth-1 pipeline just serializes post-work and the wall is its
+  // sum. Post-work for DIFFERENT spans is independent (each reads only
+  // its own sealed record), and neither phase saturates the machine on
+  // its own, so running several concurrently is what actually fills
+  // the cores. The cost is live records: depth D holds D+1 of them,
+  // each bounded by the span cut at `budget * EXEC_RETAINED_FRAC`.
+  //
+  // Prove mode stays sequential: there the STARK needs the record AND
+  // most of the RAM budget, so overlapping it would break the exact
+  // measured gate the design rests on.
+  let depth = pipeline_depth(budget_bytes, cut_bytes);
+  // What a span's STARK may measure. Workers no longer stop dead at a
+  // cut, so while a span proves, the next span's record is live and
+  // still filling — bounded by the cut, and paused for the duration of
+  // the prove, but real. The gate subtracts it, because "nothing
+  // over-budget reaches a STARK" has to stay exactly true.
+  let prove_budget_bytes =
+    if dry_run { budget_bytes } else { budget_bytes.saturating_sub(cut_bytes) };
+  // Workers that never stop, and a controller that cuts spans out from
+  // under them. Both loops run for the whole schedule.
+  let active_workers = AtomicUsize::new(workers);
+  // Workers currently inside a block. Only prove mode reads it: there
+  // the STARK needs the record AND most of the RAM budget, so the box
+  // genuinely has to stop, and `pause` plus this count is that stop.
+  let busy = AtomicUsize::new(0);
+  let pause = std::sync::atomic::AtomicBool::new(false);
+  // Per-worker in-flight block (usize::MAX = idle): lets the stall
+  // detector NAME the stuck block(s) — the identity a runaway
+  // diagnosis needs.
+  let in_flight: Vec<AtomicUsize> =
+    (0..workers).map(|_| AtomicUsize::new(usize::MAX)).collect();
+  // Sealed spans, in the order they roll over: `(record, span end)`.
+  // BOUNDED, and the rollover holds the record lock across the handoff:
+  // without both, the workers run the whole schedule ahead of the
+  // pipeline and every span's record is live at once, which is the one
+  // thing the design's RAM budget cannot allow.
+  let (sealed_tx, sealed_rx) =
+    std::sync::mpsc::sync_channel::<(Arc<SpanRecord>, usize)>(1);
+  // Held in an `Option` so the controller can DROP the receiver before
+  // the worker scope joins. On the abort path a worker can be parked
+  // inside a handoff, holding the record lock; dropping the receiver
+  // turns that send into an immediate error and lets it exit.
+  let mut sealed_rx = Some(sealed_rx);
+
+  let piped = std::thread::scope(|sc| {
     {
-      if failed.lock().unwrap().len() != seg_failed_base {
-        eprintln!(
-          "[prove span {}] SKIPPED: rejected block(s) — partial records \
-           are not proven",
-          segs.len() - 1
-        );
-        if !dry_run {
-          unproven_segs += 1;
+      let (current, abort) = (&current, &abort);
+      let active_workers = &active_workers;
+      let done = &done;
+      let (in_flight, blocks, order) = (&in_flight, &blocks, &order);
+      sc.spawn(move || {
+        // Stall detector: the FLT len-runaway ran 40+ minutes with
+        // `done` frozen while system time exploded; this names that
+        // state within a minute — a climbing open-reservation count
+        // alongside a frozen frontier is the runaway signature.
+        let mut stall = (usize::MAX, 0u32);
+        loop {
+          if abort.load(Ordering::Acquire) {
+            break;
+          }
+          let drained = active_workers.load(Ordering::Acquire) == 0;
+          let d = done.load(Ordering::Acquire);
+          if d != stall.0 {
+            stall = (d, 0);
+          } else {
+            stall.1 += 1;
+            if stall.1.is_multiple_of(120) && !drained {
+              // Name the top maps: a runaway execution shows up as one
+              // map's length exploding — its function index is the
+              // bug's address (IX_DUMP_FUN_NAMES resolves it).
+              let slot = current.lock().unwrap().clone();
+              let mut tops: Vec<(usize, usize)> = slot
+                .record
+                .function_queries
+                .iter()
+                .enumerate()
+                .map(|(i, m)| (m.len(), i))
+                .collect();
+              tops.sort_unstable_by(|a, b| b.cmp(a));
+              let tops: Vec<String> = tops
+                .iter()
+                .take(14)
+                .map(|(l, i)| format!("fn {i}: {l}"))
+                .collect();
+              let stuck: Vec<String> = in_flight
+                .iter()
+                .filter_map(|a| {
+                  let lo = a.load(Ordering::Relaxed);
+                  (lo != usize::MAX).then(|| {
+                    format!("{}@{lo}", blocks[order[lo] as usize].addr.hex())
+                  })
+                })
+                .collect();
+              eprintln!(
+                "[watch] STALL: no block completed in {}s; largest \
+                 function maps: {}; in-flight: {}",
+                stall.1 / 2,
+                tops.join(", "),
+                stuck.join(" ")
+              );
+            }
+          }
+          if drained {
+            break;
+          }
+          std::thread::sleep(std::time::Duration::from_millis(500));
         }
-      } else if seg_end > seg_start {
-        // ONE proof per span: seal the span's canonical CheckEnv
-        // claim into the warm record, derive multiplicities, measure
-        // the witness EXACTLY, and prove behind the measured gate.
-        // Spans are sized conservatively ([`EXEC_RETAINED_FRAC`]) so
-        // their witnesses fit the budget; a span that still measures
-        // over is refused with a stable code — nothing over-budget
-        // ever reaches a STARK, and sizing work to a box precisely is
-        // the cluster pipeline's job, not in-run splitting.
-        let gi = spans_proven + unproven_segs;
-        let dio = IOBuffer::with_shared(shared_io.clone());
-        let owned: Vec<Address> = order[seg_start..seg_end]
-          .iter()
-          .flat_map(|&b| blocks[b as usize].members.iter().cloned())
-          .collect();
-        match run_check_env_claim(
-          toplevel, fun_idx, &shared_io, &record, env, &owned,
-        ) {
-          Ok((ixon_claim, input)) => {
-            let dt = std::time::Instant::now();
-            aiur::trace::derive_multiplicities_into(
-              toplevel,
-              &record,
-              &dio,
-              &[(fun_idx, input.clone())],
-            );
-            let exact = system.peak_prove_bytes(&record).peak;
+      });
+    }
+    for w in 0..workers {
+      let in_flight = &in_flight;
+      let (cursor, done, abort, current) = (&cursor, &done, &abort, &current);
+      let (failed, fatal, active_workers) = (&failed, &fatal, &active_workers);
+      let (busy, pause) = (&busy, &pause);
+      let sealed_tx = sealed_tx.clone();
+      let (blocks, order, shared_io) = (&blocks, &order, &shared_io);
+      sc.spawn(move || {
+        // WARM execution, one `verify_block` per schedule block: the
+        // block's home constant goes through the same shape-dispatched
+        // gauntlet the span claim applies per block, keyed by the
+        // address alone — every shared dependency cone derives once for
+        // the whole record, and the seal claim memo-hits all of it. The
+        // record is an insert-once SET during execution; a warmed
+        // entry's multiplicity (its one seal-claim consumer) is DERIVED
+        // at seal, so no phantom-caller accounting exists.
+        let run = |b: u32, record: &QueryRecord| -> Result<(), String> {
+          let mut io = IOBuffer::with_shared(shared_io.clone());
+          let input = addr_key(&blocks[b as usize].addr);
+          execute_ixvm_with_record(
+            toplevel,
+            block_fun_idx,
+            &input,
+            &mut io,
+            record,
+          )
+          .map_err(|e| e.to_string())?;
+          Ok(())
+        };
+        let reject = |b: u32, e: String| {
+          if fail_fast {
+            let mut f = fatal.lock().unwrap();
+            if f.is_none() {
+              *f = Some(format!(
+                "CheckEnv of block {} failed: {e}",
+                blocks[b as usize].addr.hex()
+              ));
+            }
+            abort.store(true, Ordering::Release);
+          } else {
             eprintln!(
-              "[span {gi}] multiplicities derived in {:.1}s, measured \
-               witness peak {:.1} GiB",
-              dt.elapsed().as_secs_f64(),
-              f64_from_usize(exact) / GIB,
+              "[exec] SKIPPING block {}: {e}",
+              blocks[b as usize].addr.hex()
             );
-            match record.function_queries[fun_idx].get(&input) {
-              Some(q) => {
-                let claims = vec![aiur::synthesis::function_claim(
-                  fun_idx, &input, q.output,
-                )];
-                if dry_run {
-                  eprintln!(
-                    "[prove span {gi}] DRY: blocks \
-                     {seg_start}..{seg_end}, measured witness peak \
-                     {:.1} GiB — STARK skipped",
-                    f64_from_usize(exact) / GIB,
-                  );
-                  spans_proven += 1;
-                } else if exact > budget_bytes {
-                  // The EXACT gate: an over-budget span is not proven
-                  // (an OOM is not a verdict) — it is reported with a
-                  // stable code and fails the run.
-                  eprintln!(
-                    "[prove span {gi}] REFUSED: \
-                     AIUR_SPAN_OVER_BUDGET span={gi} blocks={} \
-                     peak_bytes={exact} budget_bytes={budget_bytes}",
-                    seg_end - seg_start,
-                  );
-                  unproven_segs += 1;
-                } else {
-                  let io = IOBuffer::with_shared(shared_io.clone());
-                  let sealed =
-                    std::mem::replace(&mut record, QueryRecord::new(toplevel));
-                  let st = std::time::Instant::now();
-                  let proof = system.prove_sealed(sealed, &io, &claims);
-                  let prove_s = st.elapsed().as_secs_f64();
-                  let vt = std::time::Instant::now();
-                  system.verify_sealed(&claims, &proof).map_err(|e| {
-                    format!("span proof failed verification: {e:?}")
-                  })?;
-                  let verify_s = vt.elapsed().as_secs_f64();
-                  let proof_bytes = proof
-                    .to_bytes()
-                    .map_err(|e| format!("proof encode: {e:?}"))?;
-                  let proof_len = proof_bytes.len();
-                  let stored = store_proof(&ixon_claim, proof_bytes)?;
-                  eprintln!(
-                    "[prove span {gi}] prove {:.0}s, verify {:.1}s, \
-                     proof {:.1} MiB, rss {:.0}G, stored {}",
-                    prove_s,
-                    verify_s,
-                    f64_from_usize(proof_len) / (1024.0 * 1024.0),
-                    process_rss_gib(),
-                    stored.hex(),
-                  );
-                  spans_proven += 1;
-                }
-              },
-              None => {
-                eprintln!(
-                  "[prove span {gi}] SKIPPED: seal claim entry missing \
-                   from record"
-                );
-                if !dry_run {
-                  unproven_segs += 1;
-                }
-              },
+            failed.lock().unwrap().push((blocks[b as usize].addr.clone(), e));
+          }
+        };
+        loop {
+          while pause.load(Ordering::Acquire) && !abort.load(Ordering::Acquire)
+          {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+          }
+          if abort.load(Ordering::Acquire) {
+            break;
+          }
+          // Take the live record and this worker's block under ONE
+          // lock. That is what makes a span's block range exact: every
+          // block claimed before the rollover writes into the record
+          // being rolled, every block after it into the next, and the
+          // cursor read at the rollover separates them.
+          let (slot, lo) = {
+            let mut c = current.lock().unwrap();
+            if c.cut.load(Ordering::Acquire) {
+              // The first worker to see the cut rolls the span over
+              // itself. Nobody waits on a controller poll, and — the
+              // point of checking BEFORE claiming a block — no further
+              // block starts in the record about to be sealed, so the
+              // span's size is still the cut plus whatever was already
+              // in flight.
+              let old =
+                std::mem::replace(&mut *c, Arc::new(SpanRecord::new(toplevel)));
+              let end = cursor.load(Ordering::Relaxed).min(covered);
+              // Hand off while STILL holding the lock: if the pipeline
+              // is full this blocks, and blocking here is what stops
+              // more records from being created — the other workers
+              // queue on the lock instead of rolling spans of their
+              // own.
+              let _ = sealed_tx.send((old, end));
+              drop(c);
+              continue;
             }
-          },
-          Err(e) => {
-            eprintln!("[prove span {gi}] SKIPPED: seal claim failed: {e}");
+            let lo = cursor.fetch_add(1, Ordering::Relaxed);
+            (c.clone(), lo)
+          };
+          if lo >= covered {
+            break;
+          }
+          in_flight[w].store(lo, Ordering::Relaxed);
+          busy.fetch_add(1, Ordering::AcqRel);
+          match run(order[lo], &slot.record) {
+            Ok(()) => {
+              done.fetch_add(1, Ordering::AcqRel);
+            },
+            Err(e) => reject(order[lo], e),
+          }
+          busy.fetch_sub(1, Ordering::AcqRel);
+          in_flight[w].store(usize::MAX, Ordering::Relaxed);
+          // Cut check, between blocks. Both modes cut on the record's
+          // RETAINED bytes — the only thing an execution span must
+          // bound. Proof sizing does NOT happen here: it happens at the
+          // derivation layer after the span seals, where measurement is
+          // exact, so the sloppiness of a racing cut costs a few
+          // harmless GiB of record, never a proof's RAM.
+          if record_retained_bytes(&slot.record) >= cut_bytes {
+            slot.cut.store(true, Ordering::Release);
+          }
+          let d = done.load(Ordering::Acquire);
+          if d.is_multiple_of(8192) {
+            eprintln!(
+              "[exec] {d}/{covered} blocks, rss {:.0}G, {:.0}s",
+              process_rss_gib(),
+              t0.elapsed().as_secs_f64()
+            );
+          }
+        }
+        // Last worker out hands the live record over: the tail span
+        // ends because the schedule ran out, not because it was cut.
+        if active_workers.fetch_sub(1, Ordering::AcqRel) == 1 {
+          let old = {
+            let mut c = current.lock().unwrap();
+            std::mem::replace(&mut *c, Arc::new(SpanRecord::new(toplevel)))
+          };
+          let _ = sealed_tx.send((old, covered));
+        }
+      });
+    }
+    // Every sender now lives in a worker, so the controller's receive
+    // loop ends exactly when the last worker exits.
+    drop(sealed_tx);
+    // The controller: seal each span out of the running record set.
+    let sealed_rx = sealed_rx.take().expect("receiver live");
+    let out = std::thread::scope(|post_scope| {
+      let mut pending: VecDeque<std::thread::ScopedJoinHandle<'_, usize>> =
+        VecDeque::new();
+      // Rejects are scoped to the span that contains them: a kernel reject
+      // makes THAT span unprovable (its claim would fail), not the rest of
+      // the run. The global list only accumulates for the end-of-run report.
+      let mut span_failed_base = failed.lock().unwrap().len();
+      // Spans overlap now, so there is no per-span execution time to
+      // report — only the interval between rollovers, which is the rate
+      // the box is turning schedule into sealed records.
+      let mut last_roll = std::time::Instant::now();
+      while let Ok((old, span_end)) = sealed_rx.recv() {
+        if abort.load(Ordering::Acquire) {
+          break;
+        }
+        let roll_s = last_roll.elapsed().as_secs_f64();
+        last_roll = std::time::Instant::now();
+        if !dry_run {
+          pause.store(true, Ordering::Release);
+        }
+        // Quiescence without a barrier: the last worker to drop its handle
+        // makes the record unique, and a unique record has no writer left.
+        // The workers are already filling the NEXT record while this waits.
+        let tq = std::time::Instant::now();
+        while Arc::strong_count(&old) > 1 {
+          std::thread::sleep(std::time::Duration::from_micros(200));
+        }
+        if !dry_run {
+          while busy.load(Ordering::Acquire) > 0 {
+            std::thread::sleep(std::time::Duration::from_micros(200));
+          }
+        }
+        let quiesce_s = tq.elapsed().as_secs_f64();
+        let record =
+          Arc::into_inner(old).expect("sole handle after quiescence").record;
+        let retained = record_retained_bytes(&record);
+        let entries: usize =
+          record.function_queries.iter().map(|m| m.len()).sum::<usize>()
+            + record.memory_queries.iter().map(|(_, m)| m.len()).sum::<usize>();
+        let fft = record_fft_cost(toplevel, &record);
+        // Padded transform work (prove mode): the raw BFFT is the smooth
+        // cross-run diagnostic; the padded figure is what the prover's wall
+        // actually tracks.
+        let padded_note = format!(
+          " ({:.1} padded)",
+          system.padded_fft_cost_of_record(&record) / 1e9
+        );
+        if span_end < covered || !spans.is_empty() {
+          eprintln!(
+            "[span {}] blocks {span_start}..{span_end} of {covered}: \
+             {entries} unique queries, {:.1}{padded_note} BFFT, {:.1} GiB \
+             record, {:.0}s [+{roll_s:.1}s, quiesce {quiesce_s:.1}s]",
+            spans.len(),
+            fft / 1e9,
+            f64_from_usize(retained) / GIB,
+            t0.elapsed().as_secs_f64(),
+          );
+        }
+        // Differential determinism debugging: dump every map's unique
+        // count so two runs can be diffed down to the exact functions whose
+        // keys are layout-sensitive. Per span, because a span's record is
+        // the only record there is — it is handed to post-work and dropped.
+        if let Ok(path) = std::env::var("IX_EXEC_DUMP_COUNTS") {
+          let mut out = format!("span {}\n", spans.len());
+          for (i, m) in record.function_queries.iter().enumerate() {
+            if !m.is_empty() {
+              out.push_str(&format!("fn {i} {}\n", m.len()));
+            }
+          }
+          for (w, m) in &record.memory_queries {
+            out.push_str(&format!("mem {w} {}\n", m.len()));
+          }
+          census.push_str(&out);
+          let _ = std::fs::write(&path, &census);
+        }
+        spans.push((span_start, span_end, entries, fft, retained));
+        {
+          if failed.lock().unwrap().len() != span_failed_base {
+            eprintln!(
+              "[prove span {}] SKIPPED: rejected block(s) — partial records \
+               are not proven",
+              spans.len() - 1
+            );
             if !dry_run {
-              unproven_segs += 1;
+              unproven_spans += 1;
             }
-          },
+          } else if span_end > span_start {
+            // ONE proof per span: seal the span's canonical CheckEnv claim
+            // into the warm record, derive multiplicities, measure the
+            // witness EXACTLY, and prove behind the measured gate. Spans are
+            // sized conservatively ([`EXEC_RETAINED_FRAC`]) so their
+            // witnesses fit the budget; a span that still measures over is
+            // refused with a stable code — nothing over-budget ever reaches
+            // a STARK, and sizing work to a box precisely is the cluster
+            // pipeline's job, not in-run splitting.
+            let gi = spans_proven + unproven_spans + pending.len();
+            let dio = IOBuffer::with_shared(shared_io.clone());
+            let owned: Vec<Address> = order[span_start..span_end]
+              .iter()
+              .flat_map(|&b| blocks[b as usize].members.iter().cloned())
+              .collect();
+            if dry_run {
+              // Hand this span's sealed record to a post thread and go
+              // straight back to controlling; join the OLDEST one first so
+              // at most `depth` records are ever in post-work.
+              while pending.len() >= depth {
+                let h = pending.pop_front().expect("depth >= 1");
+                spans_proven += h.join().expect("span post-work panicked");
+              }
+              let nblocks = span_end - span_start;
+              let post_io = shared_io.clone();
+              let done = record;
+              pending.push_back(post_scope.spawn(move || {
+                let dio = IOBuffer::with_shared(post_io.clone());
+                let t_seal = std::time::Instant::now();
+                let Ok((_claim, input)) = run_check_env_claim(
+                  toplevel, fun_idx, &post_io, &done, env, &owned,
+                ) else {
+                  eprintln!("[prove span {gi}] SKIPPED: seal claim failed");
+                  return 0;
+                };
+                let seal_s = t_seal.elapsed().as_secs_f64();
+                let dt = std::time::Instant::now();
+                aiur::trace::derive_multiplicities_into(
+                  toplevel,
+                  &done,
+                  &dio,
+                  &[(fun_idx, input)],
+                );
+                let derive_s = dt.elapsed().as_secs_f64();
+                let exact = system.peak_prove_bytes(&done).peak;
+                let tdrop = std::time::Instant::now();
+                drop(done);
+                let drop_s = tdrop.elapsed().as_secs_f64();
+                eprintln!(
+                  "[span {gi}] seal {seal_s:.1}s, derive {derive_s:.1}s, \
+                   drop {drop_s:.1}s, witness peak {:.1} GiB",
+                  f64_from_usize(exact) / GIB,
+                );
+                eprintln!(
+                  "[prove span {gi}] DRY: {nblocks} blocks, measured witness \
+                   peak {:.1} GiB — STARK skipped",
+                  f64_from_usize(exact) / GIB,
+                );
+                1
+              }));
+              span_start = span_end;
+              span_failed_base = failed.lock().unwrap().len();
+              continue;
+            }
+            let t_seal = std::time::Instant::now();
+            let sealed = run_check_env_claim(
+              toplevel, fun_idx, &shared_io, &record, env, &owned,
+            );
+            let seal_s = t_seal.elapsed().as_secs_f64();
+            match sealed {
+              Ok((ixon_claim, input)) => {
+                let dt = std::time::Instant::now();
+                aiur::trace::derive_multiplicities_into(
+                  toplevel,
+                  &record,
+                  &dio,
+                  &[(fun_idx, input.clone())],
+                );
+                let derive_s = dt.elapsed().as_secs_f64();
+                let exact = system.peak_prove_bytes(&record).peak;
+                eprintln!(
+                  "[span {gi}] seal {seal_s:.1}s, derive {derive_s:.1}s, \
+                   witness peak {:.1} GiB",
+                  f64_from_usize(exact) / GIB,
+                );
+                // Resolve the claim BEFORE the record is needed by
+                // value: `function_claim` copies, so the borrow ends
+                // here and the record can move straight into the prover.
+                let claims =
+                  record.function_queries[fun_idx].get(&input).map(|q| {
+                    vec![aiur::synthesis::function_claim(
+                      fun_idx, &input, q.output,
+                    )]
+                  });
+                match claims {
+                  Some(claims) => {
+                    if exact > prove_budget_bytes {
+                      // The EXACT gate: an over-budget span is not proven
+                      // (an OOM is not a verdict) — it is reported with a
+                      // stable code and fails the run.
+                      eprintln!(
+                        "[prove span {gi}] REFUSED: \
+                         AIUR_SPAN_OVER_BUDGET span={gi} blocks={} \
+                         peak_bytes={exact} budget_bytes={prove_budget_bytes}",
+                        span_end - span_start,
+                      );
+                      unproven_spans += 1;
+                    } else {
+                      let io = IOBuffer::with_shared(shared_io.clone());
+                      let st = std::time::Instant::now();
+                      let proof = system.prove_sealed(record, &io, &claims);
+                      let prove_s = st.elapsed().as_secs_f64();
+                      let vt = std::time::Instant::now();
+                      system.verify_sealed(&claims, &proof).map_err(|e| {
+                        format!("span proof failed verification: {e:?}")
+                      })?;
+                      let verify_s = vt.elapsed().as_secs_f64();
+                      let proof_bytes = proof
+                        .to_bytes()
+                        .map_err(|e| format!("proof encode: {e:?}"))?;
+                      let proof_len = proof_bytes.len();
+                      let stored = store_proof(&ixon_claim, proof_bytes)?;
+                      eprintln!(
+                        "[prove span {gi}] prove {:.0}s, verify {:.1}s, \
+                         proof {:.1} MiB, rss {:.0}G, stored {}",
+                        prove_s,
+                        verify_s,
+                        f64_from_usize(proof_len) / (1024.0 * 1024.0),
+                        process_rss_gib(),
+                        stored.hex(),
+                      );
+                      spans_proven += 1;
+                    }
+                  },
+                  None => {
+                    eprintln!(
+                      "[prove span {gi}] SKIPPED: seal claim entry missing \
+                       from record"
+                    );
+                    unproven_spans += 1;
+                  },
+                }
+              },
+              Err(e) => {
+                eprintln!("[prove span {gi}] SKIPPED: seal claim failed: {e}");
+                unproven_spans += 1;
+              },
+            }
+          }
+        }
+        // The SharedIO persists across spans: its layout is env-canonical
+        // plus schedule-ordered claim seeds, so every record couples to the
+        // same io coordinates and the io outlives them all.
+        span_start = span_end;
+        span_failed_base = failed.lock().unwrap().len();
+        if !dry_run {
+          pause.store(false, Ordering::Release);
         }
       }
-      // The span's record served every group; the next span starts
-      // fresh (SharedIO persists).
-      // The span's record served its proof; the next span starts
-      // fresh. The SharedIO persists: its layout is env-canonical plus
-      // schedule-ordered claim seeds, so every record couples to the
-      // same io coordinates and the io outlives them all.
-      drop(std::mem::replace(&mut record, QueryRecord::new(toplevel)));
-    }
-    seg_start = seg_end;
-  }
+      while let Some(h) = pending.pop_front() {
+        spans_proven += h.join().expect("span post-work panicked");
+      }
+      Ok::<(usize, usize), String>((spans_proven, unproven_spans))
+    });
+    // However the controller ended, the workers must stop so the scope
+    // can join: on the error path nothing else would release them.
+    abort.store(true, Ordering::Release);
+    pause.store(false, Ordering::Release);
+    // Before the scope joins, not after: a worker parked in a handoff
+    // is holding the record lock, and only the receiver going away
+    // releases it.
+    drop(sealed_rx);
+    out
+  })?;
+  spans_proven = piped.0;
+  unproven_spans = piped.1;
   if let Some(e) = fatal.into_inner().unwrap() {
     return Err(e);
   }
-  // Differential determinism debugging: dump every map's unique count
-  // so two runs can be diffed down to the exact functions whose keys
-  // are layout-sensitive.
-  if let Ok(path) = std::env::var("IX_EXEC_DUMP_COUNTS") {
-    let mut out = String::new();
-    for (i, m) in record.function_queries.iter().enumerate() {
-      if !m.is_empty() {
-        out.push_str(&format!("fn {i} {}\n", m.len()));
-      }
-    }
-    for (w, m) in &record.memory_queries {
-      out.push_str(&format!("mem {w} {}\n", m.len()));
-    }
-    let _ = std::fs::write(&path, out);
-  }
   let failed = failed.into_inner().unwrap();
   let checked = done.load(Ordering::Acquire);
-  let entries: usize = segs.iter().map(|s| s.2).sum();
-  let total_fft: f64 = segs.iter().map(|s| s.3).sum();
-  let mut report = if segs.len() <= 1 {
+  let entries: usize = spans.iter().map(|s| s.2).sum();
+  let total_fft: f64 = spans.iter().map(|s| s.3).sum();
+  let mut report = if spans.len() <= 1 {
     format!(
       "execute: {checked}/{covered} blocks checked into one shared record \
        ({workers} threads), total measured {:.1} BFFT\n{entries} unique \
        queries, record {:.1} GiB retained, {:.0}s",
       total_fft / 1e9,
-      f64_from_usize(segs.last().map_or(0, |s| s.4)) / GIB,
+      f64_from_usize(spans.last().map_or(0, |s| s.4)) / GIB,
       t0.elapsed().as_secs_f64()
     )
   } else {
-    // Cut mode: entries sum per-segment uniques, so cross-segment
-    // re-derivation is counted per segment — that duplication against
+    // Cut mode: entries sum per-span uniques, so cross-span
+    // re-derivation is counted per span — that duplication against
     // the whole-env count IS the price of cutting; report it honestly.
-    let max_retained = segs.iter().map(|s| s.4).max().unwrap_or(0);
+    let max_retained = spans.iter().map(|s| s.4).max().unwrap_or(0);
     format!(
       "execute: {checked}/{covered} blocks checked into {} record \
-       segments ({workers} threads), total measured {:.1} BFFT\n\
-       {entries} unique queries (per-segment sum), largest segment \
+       spans ({workers} threads), total measured {:.1} BFFT\n\
+       {entries} unique queries (per-span sum), largest span \
        {:.1} GiB, {:.0}s",
-      segs.len(),
+      spans.len(),
       total_fft / 1e9,
       f64_from_usize(max_retained) / GIB,
       t0.elapsed().as_secs_f64()
@@ -843,12 +1105,12 @@ pub fn execute_env(
     }
   }
   // A checker's exit status is its verdict: any kernel reject or
-  // unproven segment fails the run, keep-going or not. The report
+  // unproven span fails the run, keep-going or not. The report
   // (with the full reject inventory) rides in the error.
-  if !failed.is_empty() || unproven_segs > 0 {
+  if !failed.is_empty() || unproven_spans > 0 {
     return Err(format!(
-      "{report}\nFAILED: {} kernel-rejected block(s), {unproven_segs} \
-       segment(s) not proven",
+      "{report}\nFAILED: {} kernel-rejected block(s), {unproven_spans} \
+       span(s) not proven",
       failed.len()
     ));
   }
@@ -902,14 +1164,7 @@ pub fn execute_shards(
   if manifest.shards.is_empty() {
     return Err("manifest has no shards".to_string());
   }
-  let workers = if workers == 0 {
-    std::thread::available_parallelism()
-      .map_or(4, usize::from)
-      .saturating_sub(1)
-      .max(1)
-  } else {
-    workers
-  };
+  let workers = if workers == 0 { default_worker_width() } else { workers };
   let budget_gib = measured_budget_gib()?;
   let budget_bytes: usize =
     usize::try_from(gib_to_bytes_u64(budget_gib)).unwrap_or(usize::MAX);
@@ -1019,7 +1274,7 @@ pub fn execute_shards(
     let rejects = failed.into_inner().unwrap();
     // Seal: the shard's canonical CheckEnv claim over its owned
     // constants — the claim the shard's proof commits to.
-    let mut seg_claim: Option<(ixon::proof::Claim, Vec<G>)> = None;
+    let mut span_claim: Option<(ixon::proof::Claim, Vec<G>)> = None;
     if rejects.is_empty() {
       let owned: Vec<Address> = ids
         .iter()
@@ -1028,17 +1283,17 @@ pub fn execute_shards(
       match run_check_env_claim(
         toplevel, fun_idx, &shared_io, &record, env, &owned,
       ) {
-        Ok(pair) => seg_claim = Some(pair),
+        Ok(pair) => span_claim = Some(pair),
         Err(e) => {
           eprintln!("[shard {si}] seal claim failed: {e}");
         },
       }
     }
-    let clean = rejects.is_empty() && seg_claim.is_some();
+    let clean = rejects.is_empty() && span_claim.is_some();
     if clean {
       let dio = IOBuffer::with_shared(shared_io.clone());
       let claim_list: Vec<(usize, Vec<G>)> =
-        seg_claim.iter().map(|(_, inp)| (fun_idx, inp.clone())).collect();
+        span_claim.iter().map(|(_, inp)| (fun_idx, inp.clone())).collect();
       aiur::trace::derive_multiplicities_into(
         toplevel,
         &record,
@@ -1083,7 +1338,7 @@ pub fn execute_shards(
     }
     if !dry_run {
       let mut claims: Vec<Vec<G>> = Vec::with_capacity(1);
-      if let Some((_, inp)) = &seg_claim
+      if let Some((_, inp)) = &span_claim
         && let Some(q) = record.function_queries[fun_idx].get(inp)
       {
         claims.push(aiur::synthesis::function_claim(fun_idx, inp, q.output));
@@ -1099,7 +1354,7 @@ pub fn execute_shards(
       let proof_len = proof_bytes.len();
       // Persist: the shard's proof is the artifact a box ships for
       // aggregation, and the address is what `ix verify` consumes.
-      let stored = match &seg_claim {
+      let stored = match &span_claim {
         Some((ixon_claim, _)) => store_proof(ixon_claim, proof_bytes)?,
         None => return Err(format!("shard {si}: no claim to store")),
       };

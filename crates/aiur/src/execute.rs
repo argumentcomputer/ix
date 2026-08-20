@@ -140,6 +140,12 @@ struct SharedIOArena {
 /// reservation per channel, committed on touch — the largest faulted
 /// set (an env's every constant byte, 8x-expanded) stays well under it.
 const SHARED_IO_ARENA_CAP: usize = 1 << 32;
+/// Stripes over the shared-io key table. Widening this to 4096 —
+/// `get_info` holds its stripe while the backing source DECODES the
+/// faulting key out of the env, so a stripe is occupied for a decode
+/// rather than a probe — measured identical on init (98.1s vs 96.5s,
+/// inside run-to-run noise), so the narrow table is not a queueing
+/// point and stays as it is.
 const SHARED_IO_STRIPES: usize = 64;
 
 /// Borrowed lookup key for the shared-io stripe tables: probes without
@@ -231,8 +237,11 @@ impl SharedIO {
     for g in key {
       g.as_canonical_u64().hash(&mut h);
     }
-    usize::try_from(h.finish().wrapping_mul(0x9E37_79B9_7F4A_7C15) >> (64 - 6))
-      .expect("6 bits")
+    usize::try_from(
+      h.finish().wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        >> (64 - SHARED_IO_STRIPES.trailing_zeros()),
+    )
+    .expect("stripe bits")
   }
 
   /// Read-only lookup: the entry's coordinates if its bytes are
