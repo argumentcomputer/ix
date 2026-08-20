@@ -173,9 +173,9 @@ private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
     (false, 0, 0, some "member `A` never streamed")
     fun acc lib env _ _ => do
       if lib.qualifier == `A then
-        return checkMemberEnvA env
+        return (.freeRegions, checkMemberEnvA env)
       else
-        return acc
+        return (.freeRegions, acc)
 
 /-- I6: `auditCatalog` restricted to a qualifier subset checks exactly
     that subset — fewer constants than the full audit, still zero
@@ -244,6 +244,29 @@ private def orderingErrorTest : IO (Bool × Nat × Nat × Option String) := do
         some s!"error is not the ordering diagnostic: {msg.take 200}")
     return (true, 0, 0, none)
 
+/-- The copy-staged and region-shared staging paths produce identical
+    artifacts: build with the default threshold (fixture members are
+    all copy-staged) and with threshold 0 (all shared, envs kept), and
+    compare canonical roots. -/
+private def hybridStagingTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let dir ← IO.FS.createTempDir
+  try
+    let copied ← Ix.Catalog.buildCatalog spec
+    let sCopied ← Ix.CompileM.rsCompileEnvBytesFFI copied.consts.toList
+      (dir / "copied.ixe").toString false
+    let shared ← Ix.Catalog.buildCatalog spec (copyStageMaxOwned := 0)
+    let sShared ← Ix.CompileM.rsCompileEnvBytesFFI shared.consts.toList
+      (dir / "shared.ixe").toString false
+    if sCopied.root != sShared.root then
+      return (false, 0, 0, some s!"staging-path root drift: \
+{sCopied.root.take 12}… vs {sShared.root.take 12}…")
+    if sCopied.bytes != sShared.bytes then
+      return (false, 0, 0, some "staging-path byte-size drift")
+    return (true, sCopied.bytes.toNat, 0, none)
+  finally
+    IO.FS.removeDirAll dir
+
 /-- C3: two independent build+compile passes agree on the canonical
     root. -/
 private def determinismTest : IO (Bool × Nat × Nat × Option String) := do
@@ -288,6 +311,8 @@ def suite : List TestSeq := [
     none coverageErrorTest .done,
   .individualIO "catalog fixtures: audit restricted to a subset (I6)"
     none auditOnlyTest .done,
+  .individualIO "catalog fixtures: copy-staged ≡ region-shared staging"
+    none hybridStagingTest .done,
   .individualIO "catalog fixtures: misordered members fail closed (I5)"
     none orderingErrorTest .done,
   .individualIO

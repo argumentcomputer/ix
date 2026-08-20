@@ -36,12 +36,17 @@
     names coincide with the renamed references because the lossless rule
     prefixes every owned name uniformly.
   - **Construction memory is bounded** by the toolchain base, the
-    growing target env, and one member environment at a time (plan
-    DQ5): members stream through `forEachLib`, their replay content is
-    copied out of region memory (`stagePlan`), and each member env's
-    compacted olean regions are freed before the next member loads.
-    Without the copy-out, ~40 corpus members sharing a mathlib closure
-    would hold ~40 fixup-dirtied copies of it simultaneously.
+    growing target env, one member environment at a time, and the kept
+    envs of heavy-content members (plan DQ5): members stream through
+    `forEachLib`; a member owning few constants is copy-staged out of
+    region memory (`stagePlan`) and its env's compacted olean regions
+    freed before the next member loads, while a member owning
+    mathlib-scale content is staged sharing its regions, which stay
+    mapped (`defaultCopyStageMaxOwned`). Without the copy-out, ~40
+    corpus members sharing a mathlib closure would hold ~40
+    fixup-dirtied copies of it simultaneously; without the keep-side,
+    the heavy member's content materializes as heap objects ~10×
+    fatter than its compacted form.
 
   Note on qualification: bare `Expr`/`Name`/`ConstantInfo` inside the
   `Ix` namespace resolve to ix's own mirror types, so Lean's are
@@ -641,22 +646,43 @@ structure StagedDecl where
 private unsafe def stagePlanUnsafe (names : Lean.NameMap Lean.Name)
     (plan : Array (Lean.Name × Lean.Declaration)) : Array StagedDecl :=
   (plan.mapM fun (key, decl) =>
-    (return { source := (← copyName key)
-              target := (← copyName (rename names key))
-              decl := (← relocDeclarationC names decl) } : CopyM StagedDecl))
+    (do
+      -- The source-pointer caches are reset PER DECLARATION: they
+      -- otherwise grow with the member's total visited content (~10⁹
+      -- nodes ≈ 50 GiB of cache entries for a mathlib member).
+      -- Intra-declaration DAG sharing — what keeps the walk linear —
+      -- is preserved; cross-declaration repeats re-walk but collapse
+      -- at the persistent intern tables node by node.
+      modify fun (st : CopyState) => { st with
+        exprPtr := Lean.mkPtrMap
+        namePtr := Lean.mkPtrMap
+        levelPtr := Lean.mkPtrMap }
+      return { source := (← copyName key)
+               target := (← copyName (rename names key))
+               decl := (← relocDeclarationC names decl) } : CopyM StagedDecl))
     |>.run' {}
 
-/-- Stage one member's replay plan: rename + total structural copy,
-    pointer-cached across the whole plan so cross-declaration sharing
-    survives. The staged declarations share no memory with the member
-    env, which makes `freeEnvRegions` sound after staging. -/
-@[implemented_by stagePlanUnsafe]
-private opaque stagePlan (names : Lean.NameMap Lean.Name)
+/-- Stage a replay plan SHARING the member env's regions: the sparse
+    relocation rewrites only renamed spines, everything else stays a
+    pointer into the env. Cheap and compact, but the env's regions
+    must then outlive the catalog (`EnvDisposal.keepRegions`). -/
+private def stageLibShared (names : Lean.NameMap Lean.Name)
     (plan : Array (Lean.Name × Lean.Declaration)) : Array StagedDecl :=
   plan.map fun (key, decl) =>
     { source := key
       target := rename names key
       decl := relocateDeclaration names decl }
+
+/-- Stage one member's replay plan as region-independent copies:
+    rename fused with a hash-consed total copy. The staged
+    declarations share no memory with the member env, which makes
+    `freeEnvRegions` sound after staging. The reference implementation
+    is the region-sharing form — semantically identical, never used in
+    compiled code. -/
+@[implemented_by stagePlanUnsafe]
+private opaque stagePlan (names : Lean.NameMap Lean.Name)
+    (plan : Array (Lean.Name × Lean.Declaration)) : Array StagedDecl :=
+  stageLibShared names plan
 
 private unsafe def copyNameOutUnsafe (n : Lean.Name) : Lean.Name :=
   (copyName n).run' {}
@@ -916,38 +942,47 @@ owned by qualifier `{qualifier}`, but `{qualifier}`'s roots do not \
 cover that module. Add `{moduleName}` to `{qualifier}`'s roots."
   return covered
 
-/-- Stage one member library for replay: build the per-env rename map,
-    reconstruct declarations, order by owned-reference dependencies,
-    and relocate them out of region memory (`stagePlan`). Returns the
-    staged declarations and the owned source-constant count. The
-    kernel replay itself happens after every member env is gone, once
-    the toolchain base exists (`buildCatalog` step 3). -/
-private def stageLib (spec : CatalogSpec) (env : Lean.Environment)
-    (qualOfPkg : Std.HashMap Lean.PkgId Lean.Name)
-    (libPkgs : Std.HashSet Lean.PkgId) :
-    Except String (Array StagedDecl × Nat) := do
-  let (renameMap, owned) ← ownershipMaps spec env qualOfPkg libPkgs
-  let plan ← planDeclarations owned env.find?
-  return (stagePlan renameMap plan, owned.size)
+/-- Members owning at most this many constants are copy-staged
+    (region-independent, env freed); a member owning more — a
+    mathlib-scale library — is staged sharing its env's regions, which
+    then stay mapped (`EnvDisposal.keepRegions`). Keeping one heavy
+    env (~8 GiB of compacted regions for mathlib) beats materializing
+    its content as heap objects, which measures ~10× fatter than the
+    compacted form even hash-consed. The corpus shape is many
+    small-content members whose CLOSURES are heavy (copy + free wins
+    there) and a handful of heavy-content members (keep + share wins
+    there). -/
+def defaultCopyStageMaxOwned : Nat := 100000
+
+/-- The callback's verdict on a member environment's compacted
+    regions: `freeRegions` when everything the callback returned is
+    region-independent (copy-staged, or fresh strings); `keepRegions`
+    when the returned data deliberately shares the env's regions
+    (`stageLibShared`) — they then stay mapped for the life of the
+    process. -/
+inductive EnvDisposal where
+  | freeRegions
+  | keepRegions
 
 /-- Stream member libraries in declaration order: import each into its
     own environment (so colliding source names never meet at import
     time), resolve the member's packages from its root modules and
     extend the package → qualifier map — members are declared
     dependencies-first, so the map is complete for every environment by
-    the time its callback runs — invoke `f`, then free the
-    environment's compacted olean regions before the next member
-    loads. Construction memory is thereby bounded by one member env at
-    a time (plan DQ5). Imports are pinned to `OLeanLevel.private` —
-    complete bodies (D6); see the module header for why no downstream
-    gate can catch a level regression. `f` MUST NOT retain the
-    environment or anything reachable from it: copy what survives
-    (`stagePlan`, `copyNameOut`, or interpolation into fresh strings).
-    Shared by `buildCatalog` and `auditCatalog`. -/
+    the time its callback runs — invoke `f`, then dispose of the
+    environment's compacted olean regions as `f` directs. With
+    `.freeRegions` (the normal verdict) construction memory is bounded
+    by one member env at a time (plan DQ5); the callback then MUST NOT
+    retain the environment or anything reachable from it — copy what
+    survives (`stagePlan`, `copyNameOut`, or interpolation into fresh
+    strings). Imports are pinned to `OLeanLevel.private` — complete
+    bodies (D6); see the module header for why no downstream gate can
+    catch a level regression. Shared by `buildCatalog` and
+    `auditCatalog`. -/
 def forEachLib {α : Type} (spec : CatalogSpec) (init : α)
     (f : α → LibSpec → Lean.Environment →
          Std.HashMap Lean.PkgId Lean.Name → Std.HashSet Lean.PkgId →
-         IO α) : IO α := do
+         IO (EnvDisposal × α)) : IO α := do
   if spec.libs.isEmpty then
     throw <| IO.userError "catalog: no member libraries"
   let mut qualOfPkg : Std.HashMap Lean.PkgId Lean.Name := {}
@@ -969,10 +1004,13 @@ def forEachLib {α : Type} (spec : CatalogSpec) (init : α)
         unless q == lib.qualifier do
           throw <| IO.userError s!"catalog: package `{pkg}` claimed by qualifiers `{q}` and `{lib.qualifier}`"
       | none => qualOfPkg := qualOfPkg.insert pkg lib.qualifier
-    let acc' ← try
+    let (disposal, acc') ← try
         f acc lib env qualOfPkg pkgs
-      finally
+      catch e =>
         freeEnvRegions env
+        throw e
+    if disposal matches .freeRegions then
+      freeEnvRegions env
     acc := acc'
   return acc
 
@@ -987,20 +1025,35 @@ private structure BuildPass where
 
 /-- Build the catalog kernel environment for `spec`. Assumes the Lean
     search path already resolves every root module (CLI callers run
-    `initLeanSearchPath` first; in-process callers inherit theirs). -/
-def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
+    `initLeanSearchPath` first; in-process callers inherit theirs).
+    `copyStageMaxOwned` is the copy-vs-share staging threshold (see
+    `defaultCopyStageMaxOwned`). -/
+def buildCatalog (spec : CatalogSpec)
+    (copyStageMaxOwned : Nat := defaultCopyStageMaxOwned) :
+    IO BuildResult := do
   -- 1. Stream the members in dependency order: check root coverage
-  --    (I5), stage the replay (rename + region-evicting copy), and
-  --    accumulate the toolchain module union; each member env is
-  --    freed before the next one loads.
+  --    (I5), stage the replay, and accumulate the toolchain module
+  --    union. Small-content members are copy-staged and their envs
+  --    freed before the next loads; heavy-content members are staged
+  --    sharing their env's regions, which stay mapped.
   let pass ← forEachLib spec ({} : BuildPass) fun pass lib env qualOfPkg pkgs => do
     let covered ← match checkRootCoverage lib env qualOfPkg pkgs pass.covered with
       | .ok covered => pure covered
       | .error e => throw <| IO.userError s!"catalog: {e}"
-    let (decls, ownedCount) ← match stageLib spec env qualOfPkg pkgs with
-      | .ok staged => pure staged
+    let (renameMap, owned) ← match ownershipMaps spec env qualOfPkg pkgs with
+      | .ok maps => pure maps
       | .error e =>
         throw <| IO.userError s!"catalog: library `{lib.qualifier}`: {e}"
+    let plan ← match planDeclarations owned env.find? with
+      | .ok plan => pure plan
+      | .error e =>
+        throw <| IO.userError s!"catalog: library `{lib.qualifier}`: {e}"
+    let (decls, disposal) :=
+      if owned.size ≤ copyStageMaxOwned then
+        (stagePlan renameMap plan, EnvDisposal.freeRegions)
+      else
+        (stageLibShared renameMap plan, EnvDisposal.keepRegions)
+    let ownedCount := owned.size
     let mut toolchainSeen := pass.toolchainSeen
     let mut toolchainMods := pass.toolchainMods
     for moduleIdx in [0:env.header.moduleNames.size] do
@@ -1010,8 +1063,9 @@ def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
           let moduleName := copyNameOut moduleName
           toolchainSeen := toolchainSeen.insert moduleName
           toolchainMods := toolchainMods.push { module := moduleName }
-    return { staged := pass.staged.push (lib.qualifier, decls, ownedCount)
-             covered, toolchainSeen, toolchainMods }
+    return (disposal,
+      { staged := pass.staged.push (lib.qualifier, decls, ownedCount)
+        covered, toolchainSeen, toolchainMods })
   -- 2. Toolchain base: the union of toolchain modules across member
   --    environments, imported once (single provider ⇒ no collisions).
   --    Its regions are never freed — `consts` references them.
@@ -1020,9 +1074,15 @@ def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
   let mut kenv := baseEnv.toKernelEnv
   let mut replayed := 0
   let mut perLib : Array (Lean.Name × Nat) := #[]
+  -- Replayed declarations were already kernel-accepted at elaboration
+  -- time, where per-file `set_option maxHeartbeats` overrides applied;
+  -- the replay must not re-impose the default budget (mathlib's heavy
+  -- proofs exceed it and would be rejected with a deterministic
+  -- timeout).
+  let replayOpts : Lean.Options := Lean.Options.empty.set `maxHeartbeats 0
   for (qualifier, decls, ownedCount) in pass.staged do
     for staged in decls do
-      match kenv.addDecl {} staged.decl with
+      match kenv.addDecl replayOpts staged.decl with
       | .ok kenv' =>
         kenv := kenv'
         replayed := replayed + 1
@@ -1064,7 +1124,7 @@ def auditCatalog (spec : CatalogSpec)
   let catEnv ← Ix.CompileM.rsCompileEnvOf catalogConsts.toList
   forEachLib spec ({ checked := 0, violations := #[] } : AuditResult)
     fun acc lib env qualOfPkg pkgs => do
-      if only.any (!·.contains lib.qualifier) then return acc
+      if only.any (!·.contains lib.qualifier) then return (.freeRegions, acc)
       let (renameMap, owned) ←
         match ownershipMaps spec env qualOfPkg pkgs with
         | .ok maps => pure maps
@@ -1094,6 +1154,6 @@ for `{name}`"
           violations := violations.push
             s!"{lib.qualifier}: catalog compile has no named entry for \
 `{target}`"
-      return { checked, violations }
+      return (.freeRegions, { checked, violations })
 
 end Ix.Catalog
