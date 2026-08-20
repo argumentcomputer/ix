@@ -287,6 +287,8 @@ private unsafe def copyStringC (s : String) : CopyM String := do
   | some c => return c
   | none =>
     let c := String.ofList s.toList
+    if ptrAddrUnsafe c == ptrAddrUnsafe s then
+      panic! "copyStringC returned its argument"
     modify fun st => { st with strings := st.strings.insert s c }
     return c
 
@@ -301,6 +303,8 @@ private unsafe def copyName (n : Lean.Name) : CopyM Lean.Name := do
         | .anonymous => pure Lean.Name.anonymous
         | .str p s => return .str (← copyName p) (← copyStringC s)
         | .num p k => return .num (← copyName p) (copyNat k)
+      if ptrAddrUnsafe c == ptrAddrUnsafe n then
+        panic! "copyName returned its argument"
       modify fun st => { st with names := st.names.insert n c }
       return c
 
@@ -318,35 +322,63 @@ private unsafe def copyLevel (l : Lean.Level) : CopyM Lean.Level := do
         | .imax a b => return .imax (← copyLevel a) (← copyLevel b)
         | .param n => return .param (← copyName n)
         | .mvar id => return .mvar ⟨← copyName id.name⟩
+      if ptrAddrUnsafe c == ptrAddrUnsafe l then
+        panic! "copyLevel returned its argument"
       modify fun st => { st with levels := st.levels.insert l c }
       return c
 
-private unsafe def copySubstring (s : Substring.Raw) : CopyM Substring.Raw :=
-  return { s with str := (← copyStringC s.str) }
+private unsafe def copySubstring (s : Substring.Raw) : CopyM Substring.Raw := do
+  let c : Substring.Raw := { s with str := (← copyStringC s.str) }
+  if ptrAddrUnsafe c == ptrAddrUnsafe s then
+    panic! "copySubstring returned its argument"
+  return c
 
-private unsafe def copySourceInfo : Lean.SourceInfo → CopyM Lean.SourceInfo
-  | .original leading pos trailing endPos =>
-    return .original (← copySubstring leading) pos (← copySubstring trailing)
-      endPos
-  | .synthetic pos endPos canonical =>
-    return .synthetic ⟨copyNat pos.byteIdx⟩ ⟨copyNat endPos.byteIdx⟩ canonical
-  | .none => return .none
+private unsafe def copySourceInfo (info : Lean.SourceInfo) :
+    CopyM Lean.SourceInfo := do
+  let c ← match info with
+    | .original leading pos trailing endPos =>
+      pure <| Lean.SourceInfo.original (← copySubstring leading) pos
+        (← copySubstring trailing) endPos
+    | .synthetic pos endPos canonical =>
+      pure <| Lean.SourceInfo.synthetic ⟨copyNat pos.byteIdx⟩
+        ⟨copyNat endPos.byteIdx⟩ canonical
+    | .none => pure Lean.SourceInfo.none
+  if ptrAddrUnsafe c == ptrAddrUnsafe info && !(info matches .none) then
+    panic! "copySourceInfo returned its argument"
+  return c
 
-private unsafe def copyPreresolved :
-    Lean.Syntax.Preresolved → CopyM Lean.Syntax.Preresolved
-  | .namespace ns => return .namespace (← copyName ns)
-  | .decl n fields =>
-    return .decl (← copyName n) (← fields.mapM copyStringC)
+private unsafe def copyPreresolved (pre : Lean.Syntax.Preresolved) :
+    CopyM Lean.Syntax.Preresolved := do
+  let c ← match pre with
+    | .namespace ns => pure <| Lean.Syntax.Preresolved.namespace (← copyName ns)
+    | .decl n fields =>
+      pure <| Lean.Syntax.Preresolved.decl (← copyName n)
+        (← fields.mapM copyStringC)
+  if ptrAddrUnsafe c == ptrAddrUnsafe pre then
+    panic! "copyPreresolved returned its argument"
+  return c
 
-private unsafe def copySyntax : Lean.Syntax → CopyM Lean.Syntax
-  | .missing => return .missing
-  | .node info kind args =>
-    return .node (← copySourceInfo info) (← copyName kind)
-      (← args.mapM copySyntax)
-  | .atom info val => return .atom (← copySourceInfo info) (← copyStringC val)
-  | .ident info rawVal val preresolved =>
-    return .ident (← copySourceInfo info) (← copySubstring rawVal)
-      (← copyName val) (← preresolved.mapM copyPreresolved)
+private unsafe def copySyntax (stx : Lean.Syntax) : CopyM Lean.Syntax := do
+  let c ← match stx with
+    | .missing => pure Lean.Syntax.missing
+    | .node info kind args =>
+      -- NOT `args.mapM`: `Array.mapM`'s unsafe implementation returns
+      -- the INPUT array object when it is empty, and empty `args`
+      -- arrays are common — a region-resident empty array would ride
+      -- through into the staged declaration. (Lists are immune: `[]`
+      -- is a tagged scalar, not a heap object.)
+      let mut argsC : Array Lean.Syntax := Array.mkEmpty args.size
+      for arg in args do
+        argsC := argsC.push (← copySyntax arg)
+      pure <| Lean.Syntax.node (← copySourceInfo info) (← copyName kind) argsC
+    | .atom info val =>
+      pure <| Lean.Syntax.atom (← copySourceInfo info) (← copyStringC val)
+    | .ident info rawVal val preresolved =>
+      pure <| Lean.Syntax.ident (← copySourceInfo info) (← copySubstring rawVal)
+        (← copyName val) (← preresolved.mapM copyPreresolved)
+  if ptrAddrUnsafe c == ptrAddrUnsafe stx && !(stx matches .missing) then
+    panic! "copySyntax returned its argument"
+  return c
 
 private unsafe def copyDataValue (dv : Lean.DataValue) : CopyM Lean.DataValue := do
   let c ← match dv with
