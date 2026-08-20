@@ -2583,18 +2583,9 @@ fn ingress_target_type_deps(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) {
-  let mut seen = rustc_hash::FxHashSet::default();
   let mut queue = Vec::new();
   collect_const_refs(target_ty, &mut queue);
-
-  while let Some(name) = queue.pop() {
-    if !seen.insert(name.clone()) {
-      continue;
-    }
-    if let Some(ci) = lean_env.get(&name) {
-      ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
-    }
-  }
+  drain_ingress_queue(&mut queue, lean_env, stt, kctx);
 }
 
 /// Walk field domains of constructors and ingress any referenced constants
@@ -2608,22 +2599,46 @@ fn ingress_field_deps(
   stt: &crate::compile::CompileState,
   kctx: &mut crate::compile::KernelCtx,
 ) {
-  let mut seen = rustc_hash::FxHashSet::default();
   let mut queue: Vec<Name> = Vec::new();
 
   // Collect all Const references from constructor types.
   for ctor in &class.ctors {
     collect_const_refs(&ctor.cnst.typ, &mut queue);
   }
+  drain_ingress_queue(&mut queue, lean_env, stt, kctx);
+}
 
+/// Drain a worklist of names through `ingress_aux_gen_dep`, deduplicated
+/// against `kctx.aux_ingress_seen` (kenv-lifetime, resolved-id-keyed —
+/// see the field docs) instead of a per-call set: the dispatch is
+/// deterministic per constant kind, so a seen id is already at final
+/// kenv fidelity and re-expanding its closure would be pure cost.
+fn drain_ingress_queue(
+  queue: &mut Vec<Name>,
+  lean_env: &LeanEnv,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) {
+  use ix_kernel::id::KId;
+  use ix_kernel::ingress::resolve_lean_name_addr;
+  use ix_kernel::mode::Meta;
+
+  let mut seen = std::mem::take(&mut kctx.aux_ingress_seen);
   while let Some(name) = queue.pop() {
-    if !seen.insert(name.clone()) {
+    let addr = resolve_lean_name_addr(
+      &name,
+      Some(&stt.name_to_addr),
+      Some(&stt.aux_name_to_addr),
+    );
+    let zid: KId<Meta> = KId::new(addr, name.clone());
+    if !seen.insert(zid) {
       continue;
     }
-
-    let Some(ci) = lean_env.get(&name) else { continue };
-    ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
+    if let Some(ci) = lean_env.get(&name) {
+      ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, queue);
+    }
   }
+  kctx.aux_ingress_seen = seen;
 }
 
 fn ingress_aux_gen_dep(
@@ -2722,10 +2737,19 @@ fn ingress_type_stub(
 }
 
 /// Collect all constant names referenced in a LeanExpr.
-/// Uses an explicit stack to avoid stack overflow on deeply nested expressions.
+/// Uses an explicit stack to avoid stack overflow on deeply nested
+/// expressions, and a digest-keyed visited set so structurally shared
+/// subterms are walked once (DAG cost) instead of once per occurrence
+/// (unshared-tree cost — exponential on the eta-expanded structure
+/// types this pass sees constantly).
 fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
+  let mut visited: rustc_hash::FxHashSet<&LeanExpr> =
+    rustc_hash::FxHashSet::default();
   let mut stack: Vec<&LeanExpr> = vec![expr];
   while let Some(e) = stack.pop() {
+    if !visited.insert(e) {
+      continue;
+    }
     match e.as_data() {
       ExprData::Const(n, _, _) => out.push(n.clone()),
       ExprData::App(f, a, _) => {

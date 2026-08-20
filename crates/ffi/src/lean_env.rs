@@ -24,16 +24,16 @@ use std::sync::Arc;
 use lean_ffi::nat::Nat;
 use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanList, LeanRef, LeanShared,
+  LeanArray, LeanBorrowed, LeanList, LeanOwned, LeanRef, LeanShared,
 };
 
 use crate::lean::{
   LeanIxAxiomVal, LeanIxConstantInfo, LeanIxConstantVal, LeanIxConstructorVal,
   LeanIxDataValue, LeanIxDefinitionVal, LeanIxExpr, LeanIxInductiveVal,
-  LeanIxInt, LeanIxLevel, LeanIxLiteral, LeanIxName, LeanIxOpaqueVal,
-  LeanIxQuotVal, LeanIxRecursorRule, LeanIxRecursorVal,
-  LeanIxReducibilityHints, LeanIxSourceInfo, LeanIxSubstring, LeanIxSyntax,
-  LeanIxSyntaxPreresolved, LeanIxTheoremVal,
+  LeanIxLevel, LeanIxLiteral, LeanIxName, LeanIxOpaqueVal, LeanIxQuotVal,
+  LeanIxRecursorRule, LeanIxRecursorVal, LeanIxReducibilityHints,
+  LeanIxSourceInfo, LeanIxSubstring, LeanIxSyntax, LeanIxSyntaxPreresolved,
+  LeanIxTheoremVal,
 };
 
 use ix_common::env::{
@@ -824,12 +824,45 @@ fn decode_name_data_value(
     2 => DataValue::OfName(decode_name(dv.get_obj(0), cache.global)),
     3 => DataValue::OfNat(LeanNat::to_nat(&dv.get_obj(0))),
     4 => {
-      let i = LeanIxInt::from_ctor(dv.get_obj(0).as_ctor());
-      let nat = LeanNat::to_nat(&i.get_obj(0));
-      let int = match i.as_ctor().tag() {
-        0 => Int::OfNat(nat),
-        1 => Int::NegSucc(nat),
-        tag => unreachable!("Invalid Lean.Int tag: {tag}"),
+      // `Lean.Int` is a builtin runtime type sharing `Nat`'s
+      // representation — a tagged scalar or a GMP mpz object, never an
+      // `ofNat`/`negSucc` ctor cell (`Int.ofNat` compiles to the
+      // identity `lean_nat_to_int`). Decode by value and rebuild the
+      // ctor view; `LeanIxInt` describes only the `Ix.Int` mirror
+      // inductive, which really is a two-ctor object.
+      let iobj = dv.get_obj(0);
+      let int = if iobj.is_scalar() {
+        // Scalars box `v` as `(v << 1) | 1`; an arithmetic shift
+        // recovers the signed value.
+        let v = (iobj.as_raw() as isize) >> 1;
+        // Both magnitudes below are non-negative by construction -- the
+        // branch settles the sign, and `negSucc n = -(n + 1)` so `n` is
+        // `-(v + 1)` for `v < 0` -- and an `isize` magnitude always fits
+        // `u64` on supported targets, so neither conversion can fail.
+        let mag =
+          |n: isize| u64::try_from(n).expect("isize magnitude fits u64");
+        if v >= 0 {
+          Int::OfNat(Nat::from(mag(v)))
+        } else {
+          Int::NegSucc(Nat::from(mag(-(v + 1))))
+        }
+      } else {
+        let neg = unsafe {
+          lean_ffi::include::lean_int_dec_lt(
+            iobj.as_raw(),
+            lean_ffi::include::lean_box(0),
+          )
+        } != 0;
+        let abs = unsafe {
+          LeanOwned::from_raw(lean_ffi::include::lean_nat_abs(iobj.as_raw()))
+        };
+        let mag = LeanNat::to_nat(&abs);
+        if neg {
+          // negSucc n = -(n + 1), so n = |v| - 1 (|v| ≥ 1 here).
+          Int::NegSucc(Nat(mag.0 - 1u32))
+        } else {
+          Int::OfNat(mag)
+        }
       };
       DataValue::OfInt(int)
     },

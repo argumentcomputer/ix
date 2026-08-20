@@ -96,11 +96,12 @@ fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
   }
 }
 
-/// Read the `.ixe` header shared by every Env reader: `Tag4(0xE, 0)`,
-/// the 32-byte consts merkle root, the bundle `main` pointer, and the
-/// strictly ascending assumptions list. Centralized so the four readers
-/// (`get`, `get_anon`, `get_anon_mmap`, `parse_lazy_index`) cannot
-/// drift. `ctx` labels errors with the calling reader.
+/// Read the `.ixe` header shared by every Env reader:
+/// `Tag4(0xE, VERSION)`, the 32-byte consts merkle root, the bundle
+/// `main` pointer, and the strictly ascending assumptions list.
+/// Centralized so the four readers (`get`, `get_anon`, `get_anon_mmap`,
+/// `parse_lazy_index`) cannot drift. `ctx` labels errors with the
+/// calling reader.
 fn read_env_header(
   buf: &mut &[u8],
   ctx: &str,
@@ -113,8 +114,13 @@ fn read_env_header(
       tag.flag
     ));
   }
-  if tag.size != 0 {
-    return Err(format!("{ctx}: expected Env variant 0, got {}", tag.size));
+  if tag.size != Env::VERSION {
+    return Err(format!(
+      "{ctx}: expected .ixe format version {}, got {} — recompile the \
+       artifact",
+      Env::VERSION,
+      tag.size
+    ));
   }
   let stored_root = get_address(buf)?;
   // A pre-bundle-format `.ixe` has the §1 blob count here, so this
@@ -1246,6 +1252,10 @@ pub fn put_aux_layout(layout: &AuxLayout, buf: &mut Vec<u8>) {
   for &c in &layout.source_ctor_counts {
     put_u64(c as u64, buf);
   }
+  put_u64(layout.evaporated.len() as u64, buf);
+  for &b in &layout.evaporated {
+    put_u8(u8::from(b), buf);
+  }
 }
 
 /// Deserialize an `AuxLayout` side-table entry.
@@ -1260,7 +1270,16 @@ pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
   for _ in 0..n_counts {
     source_ctor_counts.push(get_u64(buf)? as usize);
   }
-  Ok(AuxLayout { perm, source_ctor_counts })
+  let n_evap = get_u64(buf)? as usize;
+  let mut evaporated = Vec::with_capacity(n_evap);
+  for _ in 0..n_evap {
+    evaporated.push(match get_u8(buf)? {
+      0 => false,
+      1 => true,
+      x => return Err(format!("get_aux_layout: invalid evaporated flag {x}")),
+    });
+  }
+  Ok(AuxLayout { perm, source_ctor_counts, evaporated })
 }
 
 /// Serialize a Named entry with indexed metadata.
@@ -1455,11 +1474,21 @@ impl<'a> NamedMetaCursor<'a> {
 
 use super::comm::Comm;
 use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed};
+#[cfg(not(target_arch = "riscv64"))]
+use super::merkle::merkle_root_canonical_sorted;
 use super::merkle::{merkle_root_canonical, zero_address};
 
 impl Env {
-  /// Tag4 flag for Env (0xE), variant 0.
+  /// Tag4 flag for Env (0xE).
   pub const FLAG: u8 = 0xE;
+
+  /// `.ixe` format version, carried in the header's Tag4 size field
+  /// (versions < 8 cost zero extra bytes). Any change to serialized
+  /// bytes bumps this. Readers reject a mismatch; there is no
+  /// back-compat reading of old versions — `.ixe` files are
+  /// regenerated artifacts. Mirrors `Ixon.Env.VERSION` in
+  /// `Ix/Ixon.lean`.
+  pub const VERSION: u64 = 1;
 
   /// Serialize an Env to bytes.
   ///
@@ -1478,13 +1507,15 @@ impl Env {
     #[cfg(not(target_arch = "riscv64"))]
     use rayon::slice::ParallelSliceMut;
 
-    // Chatty per-section logging, off unless IX_VERBOSE=1, so we can
-    // diagnose serialization stalls on huge envs (Mathlib: ~1M consts).
-    let verbose = std::env::var("IX_VERBOSE").is_ok();
+    // Chatty per-section logging, off unless IX_VERBOSE=1 (or its
+    // pipeline-wide alias IX_COMPILE_DBG), so we can diagnose
+    // serialization stalls on huge envs (Mathlib: ~1M consts).
+    let verbose = std::env::var("IX_VERBOSE").is_ok()
+      || std::env::var("IX_COMPILE_DBG").is_ok();
     let overall_start = std::time::Instant::now();
 
-    // Header: Tag4 with flag=0xE, size=0 (Env variant)
-    Tag4::new(Self::FLAG, 0).put(buf);
+    // Header: Tag4 with flag=0xE, size=VERSION (format version)
+    Tag4::new(Self::FLAG, Self::VERSION).put(buf);
 
     // ─────────────────────────────────────────────────────────────────────
     // Canonical merkle root over consts.keys()
@@ -1502,6 +1533,12 @@ impl Env {
     const_addrs.par_sort_unstable();
     #[cfg(target_arch = "riscv64")]
     const_addrs.sort_unstable();
+    // Keys are unique (map) and just sorted — the `_sorted` variant
+    // skips the internal clone+re-sort and hashes levels in parallel.
+    #[cfg(not(target_arch = "riscv64"))]
+    let root =
+      merkle_root_canonical_sorted(&const_addrs).unwrap_or_else(zero_address);
+    #[cfg(target_arch = "riscv64")]
     let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     put_address(&root, buf);
 
@@ -1792,7 +1829,39 @@ impl Env {
   #[cfg(not(target_arch = "riscv64"))]
   pub fn put_file(&self, path: &std::path::Path) -> Result<u64, String> {
     use rayon::prelude::*;
+    let mut const_addrs: Vec<Address> =
+      self.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.par_sort_unstable();
+    let root =
+      merkle_root_canonical_sorted(&const_addrs).unwrap_or_else(zero_address);
+    self.put_file_with_header(path, &const_addrs, &root)
+  }
+
+  /// [`Env::put_file`] with the sorted const-address table and its
+  /// merkle root supplied by the caller. `rs_compile_env` needs the
+  /// root even on a fail-closed abort where no file is written, so it
+  /// computes both up front and hands them in here — previously the
+  /// table was collected+sorted and the ~2·N-node tree hashed twice
+  /// per compile. `const_addrs` MUST be exactly
+  /// `self.consts` keys lex-sorted, and `root` their canonical merkle
+  /// root; debug builds assert the former.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn put_file_with_header(
+    &self,
+    path: &std::path::Path,
+    const_addrs: &[Address],
+    root: &Address,
+  ) -> Result<u64, String> {
+    use rayon::prelude::*;
     use std::io::Write;
+    debug_assert_eq!(const_addrs.len(), self.consts.len());
+    // Per-section timing, mirroring `Env::put`'s logging (same knobs).
+    // `put_file` is the production writer, so stalls here are otherwise
+    // invisible — one opaque gap between "compile done" and the row.
+    let verbose = std::env::var("IX_VERBOSE").is_ok()
+      || std::env::var("IX_COMPILE_DBG").is_ok();
+    let overall_start = std::time::Instant::now();
+    let mut sec_start = std::time::Instant::now();
     let file = std::fs::File::create(path)
       .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
     let mut w = std::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
@@ -1811,13 +1880,18 @@ impl Env {
       };
     }
 
-    // Header: Tag4 + canonical merkle root over consts.keys().
-    Tag4::new(Self::FLAG, 0).put(&mut buf);
-    let mut const_addrs: Vec<Address> =
-      self.consts.iter().map(|e| e.key().clone()).collect();
-    const_addrs.par_sort_unstable();
-    let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
-    put_address(&root, &mut buf);
+    // Header: Tag4 (flag=0xE, size=VERSION) + the caller-supplied
+    // canonical merkle root over consts.keys().
+    Tag4::new(Self::FLAG, Self::VERSION).put(&mut buf);
+    put_address(root, &mut buf);
+    if verbose {
+      eprintln!(
+        "[Env::put_file] header written ({} consts) in {:.1}s",
+        const_addrs.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
 
     // Bundle header fields: distinguished root + assumed-present list
     // (mirrors `Env::put`, including the writer-side main sanity check).
@@ -1852,11 +1926,19 @@ impl Env {
         emit!();
       }
     }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 1/6 blobs done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
 
     // Section 2: Consts — the dominant bytes; raw_bytes stream straight
     // through with no intermediate copy of the constant bodies
     put_u64(const_addrs.len() as u64, &mut buf);
-    for addr in &const_addrs {
+    for addr in const_addrs {
       if let Some(entry) = self.consts.get(addr) {
         put_address(addr, &mut buf);
         let bytes = entry.value().raw_bytes();
@@ -1866,6 +1948,14 @@ impl Env {
           .map_err(|e| format!("Env::put_file: write const: {e}"))?;
         written += bytes.len() as u64;
       }
+    }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 2/6 consts done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
     }
     // Section 3: anon_hints — the canonical hint channel, serialized
     // straight from the map as delta-coded §2 ranks + fused hints
@@ -1888,10 +1978,29 @@ impl Env {
       prev = rank + 1;
       emit!();
     }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 3/6 anon_hints done in {:.1}s ({written} \
+         bytes written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
 
     // Section 4: Names (topologically sorted; builds the name index the
-    // Named section encodes through).
+    // Named section encodes through). The topo sort is single-threaded
+    // over every name component — timed separately from the writes so
+    // its share is visible (see `topological_sort_names`).
     let sorted_names = topological_sort_names(&self.names);
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 4/6 names: topo sort of {} entries in \
+         {:.1}s",
+        sorted_names.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
     let mut name_index: NameIndex = NameIndex::new();
     put_u64(sorted_names.len() as u64, &mut buf);
     for (i, (addr, name)) in sorted_names.iter().enumerate() {
@@ -1899,6 +2008,14 @@ impl Env {
       put_address(addr, &mut buf);
       put_name_component(name, &mut buf);
       emit!();
+    }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 4/6 names done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
     }
 
     // Section 5: Named — the largest per-entry section, and the only
@@ -1932,7 +2049,7 @@ impl Env {
             put_named_indexed(
               entry.value(),
               &name_index,
-              &const_addrs,
+              const_addrs,
               &mut scratch,
               &mut b,
             )?;
@@ -1944,6 +2061,14 @@ impl Env {
         w.write_all(b).map_err(|e| format!("Env::put_file: write: {e}"))?;
         written += b.len() as u64;
       }
+    }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 5/6 named done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
     }
     // Section 6: Comms
     let mut comm_addrs: Vec<Address> =
@@ -1960,6 +2085,14 @@ impl Env {
 
     emit!();
     w.flush().map_err(|e| format!("Env::put_file: flush: {e}"))?;
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 6/6 comms done in {:.1}s · ALL DONE: \
+         {written} bytes in {:.1}s",
+        sec_start.elapsed().as_secs_f64(),
+        overall_start.elapsed().as_secs_f64(),
+      );
+    }
     Ok(written)
   }
 
@@ -2681,9 +2814,10 @@ impl Env {
   ) -> Result<(usize, usize, usize, usize, usize, usize, usize), String> {
     let mut buf = Vec::new();
 
-    // Header: tag + merkle root (32 bytes, `zero_address()` sentinel
-    // for empty const sets) + bundle fields (matches Env::put layout).
-    Tag4::new(Self::FLAG, 0).put(&mut buf);
+    // Header: tag (flag=0xE, size=VERSION) + merkle root (32 bytes,
+    // `zero_address()` sentinel for empty const sets) + bundle fields
+    // (matches Env::put layout).
+    Tag4::new(Self::FLAG, Self::VERSION).put(&mut buf);
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
     const_addrs.sort_unstable();
@@ -2939,6 +3073,32 @@ mod tests {
     assert_eq!(env.consts.len(), recovered.consts.len());
     assert_eq!(env.named.len(), recovered.named.len());
     assert_eq!(env.comms.len(), recovered.comms.len());
+  }
+
+  #[test]
+  fn test_env_header_version_mismatch() {
+    let env = Env::new();
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    // Versions < 8 encode inline in the Tag4 head byte.
+    assert_eq!(buf[0], (Env::FLAG << 4) | (Env::VERSION as u8));
+    // A pre-versioning header (size 0) and a future version must both
+    // be rejected, with an error naming the versions, on every reader
+    // path through `read_env_header`.
+    for wrong in [0u8, Env::VERSION as u8 + 1] {
+      let mut bad = buf.clone();
+      bad[0] = (Env::FLAG << 4) | wrong;
+      for err in [
+        Env::get(&mut bad.as_slice()).map(|_| ()).unwrap_err(),
+        Env::get_anon(&mut bad.as_slice()).map(|_| ()).unwrap_err(),
+        Env::parse_lazy_index(&bad).map(|_| ()).unwrap_err(),
+      ] {
+        assert!(
+          err.contains("format version"),
+          "expected a format-version error, got: {err}"
+        );
+      }
+    }
   }
 
   // ========== Arbitrary generators for Env ==========
@@ -3284,10 +3444,11 @@ mod tests {
   }
 
   /// Extract the stored merkle root from a serialized env. The Tag4
-  /// header byte (`0xE0` for env) is followed by exactly 32 bytes of
-  /// root (no opt-tag).
+  /// header byte (flag `0xE`, size = format version) is followed by
+  /// exactly 32 bytes of root (no opt-tag).
   fn parse_stored_root(buf: &[u8]) -> Vec<u8> {
-    assert_eq!(buf[0], 0xE0, "env header byte should be 0xE0");
+    let header = (Env::FLAG << 4) | (Env::VERSION as u8);
+    assert_eq!(buf[0], header, "env header byte should be {header:#04X}");
     buf[1..33].to_vec()
   }
 

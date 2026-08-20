@@ -172,7 +172,10 @@ def entrypoints := ⟦
   -- claim was proved), then dispatches on the claim variant: Check,
   -- CheckEnv, Reveal, and Contains. See `run_claim` for the
   -- per-variant discipline.
-  pub fn verify_claim(claim_digest: [U8; 32]) {
+  -- The digest is public input as 8 field elements of 4 packed LE bytes
+  -- (injective in Goldilocks; 8 input columns instead of 32) — the same
+  -- representation the recursive verifier's entrypoint uses.
+  pub fn verify_claim(claim_digest: [G; 8]) {
     run_claim(claim_digest);
   }
 

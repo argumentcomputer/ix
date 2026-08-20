@@ -29,57 +29,12 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.Meta
+public import Ix.EnvScope
 
 public section
 
 open System (FilePath)
-
-/-- Collect the transitive closure of constants referenced by a set of seed
-names. Mirrors the identically-named helper in `Tests/Ix/Compile/ValidateAux.lean`
-so the CLI and test runner share the same dep-discovery semantics.
-
-Walks each seed's type + value + recursor rules + ctor/all links until no
-new names are discovered. The returned list preserves the source environment's
-iteration order over the computed name set. -/
-partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
-    : List (Lean.Name × Lean.ConstantInfo) := Id.run do
-  let mut needed : Std.HashSet Lean.Name := {}
-  let mut worklist := seeds
-  while !worklist.isEmpty do
-    match worklist with
-    | [] => break
-    | n :: rest =>
-      worklist := rest
-      if needed.contains n then continue
-      needed := needed.insert n
-      if let some ci := env.constants.find? n then
-        let mut refs : Lean.NameSet := ci.type.getUsedConstantsAsSet
-        match ci with
-        | .defnInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .thmInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .opaqueInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .inductInfo v =>
-          for ctorName in v.ctors do
-            refs := refs.insert ctorName
-            if let some ctorCi := env.constants.find? ctorName then
-              for r in ctorCi.type.getUsedConstantsAsSet do refs := refs.insert r
-          for mutName in v.all do
-            refs := refs.insert mutName
-        | .ctorInfo v =>
-          refs := refs.insert v.induct
-        | .recInfo v =>
-          for mutName in v.all do
-            refs := refs.insert mutName
-          for rule in v.rules do
-            for r in rule.rhs.getUsedConstantsAsSet do refs := refs.insert r
-        | _ => pure ()
-        for r in refs do
-          if !needed.contains r then
-            worklist := r :: worklist
-  env.constants.toList.filter fun (n, _) => needed.contains n
+open Ix.EnvScope
 
 /-- Strip ASCII whitespace from both ends of `s`. We roll our own because
 `String.trim` was deprecated in favor of slice-returning variants, and we
@@ -105,7 +60,8 @@ def runValidateCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Mathlib, so large-env validation (`Benchmarks/Compile/CompileMathlib.lean`)
   -- works out of the box without a prior `lake build`.
   buildFile pathStr
-  let leanEnv ← getFileEnv pathStr
+  let fe ← getFileEnvCore pathStr
+  let leanEnv := fe.env
 
   -- Apply optional namespace filter — mirrors `Tests/Ix/Compile/ValidateAux.lean`.
   -- When `--prefix Aesop,Nat` is given, only constants whose name starts with
@@ -113,13 +69,13 @@ def runValidateCmd (p : Cli.Parsed) : IO UInt32 := do
   -- is still validated (so aux_gen's cross-module deps resolve correctly); the
   -- filter just narrows the "interesting" surface.
   let constList ← match p.flag? "ns" with
-    | none => pure leanEnv.constants.toList
+    | none => defaultConstList fe pathStr
     | some flag =>
       let raw := flag.as! String
       let prefixes := parsePrefixes raw
       if prefixes.isEmpty then
         IO.println s!"[validate] warning: --ns '{raw}' parsed to empty list; validating full env"
-        pure leanEnv.constants.toList
+        defaultConstList fe pathStr
       else
         let seeds := leanEnv.constants.toList.filterMap fun (n, _) =>
           if prefixes.any (·.isPrefixOf n) then some n else none

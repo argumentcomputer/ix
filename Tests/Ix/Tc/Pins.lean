@@ -37,7 +37,9 @@ def pins : List Pin := [
   -- `Nat.le` derivations.
   { label := "Std.DTreeMap.Internal.Impl.minEntry!_eq_get!_minEntry?" },
   { label := "Std.DTreeMap.Internal.Impl.Const.minEntry!_eq_get!_minEntry?" },
-  { label := "Std.DTreeMap.Internal.Impl.minKey!_eq_get!_minKey?" },
+  -- v4.33 moved this lemma out of `DTreeMap.Internal.Impl`; same statement
+  -- shape, so the OOM-class coverage is unchanged.
+  { label := "Std.Internal.List.minKey!_eq_get!_minKey?" },
   { label := "Std.Internal.List.minKey!_eq_head!_keys" },
   -- depth-2001 false-rejection class (same root cause); the first also
   -- exercises `«0»`-component label matching end to end.

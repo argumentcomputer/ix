@@ -485,8 +485,8 @@ private theorem liftPost_hit {S : KExpr .anon → Prop} {e r : KExpr .anon}
     (hsc : LiftScratchInv S shift sc) :
     LiftPost S shift cutoff e (liftCached e shift cutoff (it, sc)) := by
   have hrun : liftCached e shift cutoff (it, sc) = (r, (it, sc)) := by
-    rw [liftCached, if_neg hfast, run_pure_bind]
-    simp only []
+    rw [liftCached, if_neg hfast]
+    try simp only []
     rw [run_scratchGet_bind, hget]
     rfl
   rw [hrun]
@@ -577,7 +577,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                   sc.insert ((KExpr.var idx name
                       (KExpr.mkVar idx name md).info).addr, cutoff)
                     (it.internExpr (KExpr.mkVar (idx + shift) name)).1)) := by
-            rw [liftCached, if_neg hfast, run_pure_bind]
+            rw [liftCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -602,7 +602,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                  (it, sc.insert ((KExpr.var idx name
                      (KExpr.mkVar idx name md).info).addr, cutoff)
                    (.var idx name (KExpr.mkVar idx name md).info))) := by
-            rw [liftCached, if_neg hfast, run_pure_bind]
+            rw [liftCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -633,7 +633,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                (it, sc.insert ((KExpr.fvar id name
                    (KExpr.mkFVar id name md).info).addr, cutoff)
                  (.fvar id name (KExpr.mkFVar id name md).info))) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           rfl
@@ -659,7 +659,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                (it, sc.insert
                  ((KExpr.sort u (KExpr.mkSort u md).info).addr, cutoff)
                  (.sort u (KExpr.mkSort u md).info))) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           rfl
@@ -687,7 +687,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                  ((KExpr.const id us
                      (KExpr.mkConst id us md).info).addr, cutoff)
                  (.const id us (KExpr.mkConst id us md).info))) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           rfl
@@ -732,7 +732,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                 sc2.insert ((KExpr.app f a
                     (KExpr.mkApp f a md).info).addr, cutoff)
                   (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -798,7 +798,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                 sc2.insert ((KExpr.lam n bi ty body
                     (KExpr.mkLam n bi ty body md).info).addr, cutoff)
                   (it2.internExpr (KExpr.mkLam n bi rty rbody)).1)) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -865,7 +865,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                 sc2.insert ((KExpr.all n bi ty body
                     (KExpr.mkAll n bi ty body md).info).addr, cutoff)
                   (it2.internExpr (KExpr.mkAll n bi rty rbody)).1)) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -941,7 +941,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                 sc3.insert ((KExpr.letE n ty val body nd
                     (KExpr.mkLet n ty val body nd md).info).addr, cutoff)
                   (it3.internExpr (KExpr.mkLet n rty rval rbody nd)).1)) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -999,7 +999,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                 sc1.insert ((KExpr.prj id field val
                     (KExpr.mkPrj id field val md).info).addr, cutoff)
                   (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -1039,7 +1039,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                  ((KExpr.nat v blob
                      (KExpr.mkNat v blob md).info).addr, cutoff)
                  (.nat v blob (KExpr.mkNat v blob md).info))) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           rfl
@@ -1067,7 +1067,7 @@ theorem liftCached_spec {S : KExpr .anon → Prop} {shift : UInt64}
                  ((KExpr.str v blob
                      (KExpr.mkStr v blob md).info).addr, cutoff)
                  (.str v blob (KExpr.mkStr v blob md).info))) := by
-          rw [liftCached, if_neg hfast, run_pure_bind]
+          rw [liftCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           rfl
@@ -1392,8 +1392,8 @@ private theorem substPost_hit {S : KExpr .anon → Prop}
     WalkPost S (KExpr.substSpec · arg ·) depth body
       (substCached body arg depth (it, sc)) := by
   have hrun : substCached body arg depth (it, sc) = (r, (it, sc)) := by
-    rw [substCached, if_neg hfast, run_pure_bind]
-    simp only []
+    rw [substCached, if_neg hfast]
+    try simp only []
     rw [run_scratchGet_bind, hget]
     rfl
   rw [hrun]
@@ -1454,7 +1454,7 @@ theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
                   sc.insert ((KExpr.var idx name
                       (KExpr.mkVar idx name md).info).addr, depth)
                     (it1.internExpr rl).1)) := by
-            rw [substCached, if_neg hfast, run_pure_bind]
+            rw [substCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -1483,7 +1483,7 @@ theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
                     sc.insert ((KExpr.var idx name
                         (KExpr.mkVar idx name md).info).addr, depth)
                       (it.internExpr (KExpr.mkVar (idx - 1) name)).1)) := by
-              rw [substCached, if_neg hfast, run_pure_bind]
+              rw [substCached, if_neg hfast]
               try simp only []
               rw [run_scratchGet_bind, hget]
               try simp (config := { proj := false }) only []
@@ -1561,7 +1561,7 @@ theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
                 sc2.insert ((KExpr.app f a
                     (KExpr.mkApp f a md).info).addr, depth)
                   (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
-          rw [substCached, if_neg hfast, run_pure_bind]
+          rw [substCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -1628,7 +1628,7 @@ theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
                 sc2.insert ((KExpr.lam n bi ty body
                     (KExpr.mkLam n bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkLam n bi rty rbody)).1)) := by
-          rw [substCached, if_neg hfast, run_pure_bind]
+          rw [substCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -1696,7 +1696,7 @@ theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
                 sc2.insert ((KExpr.all n bi ty body
                     (KExpr.mkAll n bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkAll n bi rty rbody)).1)) := by
-          rw [substCached, if_neg hfast, run_pure_bind]
+          rw [substCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -1773,7 +1773,7 @@ theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
                 sc3.insert ((KExpr.letE n ty val body nd
                     (KExpr.mkLet n ty val body nd md).info).addr, depth)
                   (it3.internExpr (KExpr.mkLet n rty rval rbody nd)).1)) := by
-          rw [substCached, if_neg hfast, run_pure_bind]
+          rw [substCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -1832,7 +1832,7 @@ theorem substCached_spec {S : KExpr .anon → Prop} {arg : KExpr .anon}
                 sc1.insert ((KExpr.prj id field val
                     (KExpr.mkPrj id field val md).info).addr, depth)
                   (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
-          rw [substCached, if_neg hfast, run_pure_bind]
+          rw [substCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -2110,8 +2110,8 @@ private theorem simulPost_hit {S : KExpr .anon → Prop}
       (simulSubstCached body substs depth (it, sc)) := by
   have hrun : simulSubstCached body substs depth (it, sc)
       = (r, (it, sc)) := by
-    rw [simulSubstCached, if_neg hfast, run_pure_bind]
-    simp only []
+    rw [simulSubstCached, if_neg hfast]
+    try simp only []
     rw [run_scratchGet_bind, hget]
     rfl
   rw [hrun]
@@ -2201,7 +2201,7 @@ theorem simulSubstCached_spec {S : KExpr .anon → Prop}
               (it, sc)
               = (rl, (it1, sc.insert ((KExpr.var idx name
                   (KExpr.mkVar idx name md).info).addr, depth) rl)) := by
-            rw [simulSubstCached, if_neg hfast, run_pure_bind]
+            rw [simulSubstCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -2235,7 +2235,7 @@ theorem simulSubstCached_spec {S : KExpr .anon → Prop}
                       (it.internExpr (KExpr.mkVar
                         (idx - substs.size.toUInt64)
                         (anonName (m := .anon)))).1)) := by
-              rw [simulSubstCached, if_neg hfast, run_pure_bind]
+              rw [simulSubstCached, if_neg hfast]
               try simp only []
               rw [run_scratchGet_bind, hget]
               try simp (config := { proj := false }) only []
@@ -2319,7 +2319,7 @@ theorem simulSubstCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.app f a
                     (KExpr.mkApp f a md).info).addr, depth)
                   (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
-          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          rw [simulSubstCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -2389,7 +2389,7 @@ theorem simulSubstCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.lam n bi ty body
                     (KExpr.mkLam n bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkLam n bi rty rbody)).1)) := by
-          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          rw [simulSubstCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -2460,7 +2460,7 @@ theorem simulSubstCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.all n bi ty body
                     (KExpr.mkAll n bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkAll n bi rty rbody)).1)) := by
-          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          rw [simulSubstCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -2541,7 +2541,7 @@ theorem simulSubstCached_spec {S : KExpr .anon → Prop}
                     (KExpr.mkLet n ty val body nd md).info).addr, depth)
                   (it3.internExpr
                     (KExpr.mkLet n rty rval rbody nd)).1)) := by
-          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          rw [simulSubstCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -2603,7 +2603,7 @@ theorem simulSubstCached_spec {S : KExpr .anon → Prop}
                 sc1.insert ((KExpr.prj id field val
                     (KExpr.mkPrj id field val md).info).addr, depth)
                   (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
-          rw [simulSubstCached, if_neg hfast, run_pure_bind]
+          rw [simulSubstCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -2915,8 +2915,8 @@ private theorem instRevPost_hit {S : KExpr .anon → Prop}
       (instantiateRevCached body fvars depth (it, sc)) := by
   have hrun : instantiateRevCached body fvars depth (it, sc)
       = (r, (it, sc)) := by
-    rw [instantiateRevCached, if_neg hfast, run_pure_bind]
-    simp only []
+    rw [instantiateRevCached, if_neg hfast]
+    try simp only []
     rw [run_scratchGet_bind, hget]
     rfl
   rw [hrun]
@@ -2980,7 +2980,7 @@ theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
                      (KExpr.mkVar idx name md).info).addr, depth)
                    fvars[(fvars.size.toUInt64 - 1
                      - (idx - depth)).toNat]!)) := by
-            rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+            rw [instantiateRevCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -3013,7 +3013,7 @@ theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
                       (it.internExpr (KExpr.mkVar
                         (idx - fvars.size.toUInt64)
                         (anonName (m := .anon)))).1)) := by
-              rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+              rw [instantiateRevCached, if_neg hfast]
               try simp only []
               rw [run_scratchGet_bind, hget]
               try simp (config := { proj := false }) only []
@@ -3097,7 +3097,7 @@ theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.app f a
                     (KExpr.mkApp f a md).info).addr, depth)
                   (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
-          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          rw [instantiateRevCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -3167,7 +3167,7 @@ theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.lam n bi ty body
                     (KExpr.mkLam n bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkLam n bi rty rbody)).1)) := by
-          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          rw [instantiateRevCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -3238,7 +3238,7 @@ theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.all n bi ty body
                     (KExpr.mkAll n bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkAll n bi rty rbody)).1)) := by
-          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          rw [instantiateRevCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -3319,7 +3319,7 @@ theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
                     (KExpr.mkLet n ty val body nd md).info).addr, depth)
                   (it3.internExpr
                     (KExpr.mkLet n rty rval rbody nd)).1)) := by
-          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          rw [instantiateRevCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -3381,7 +3381,7 @@ theorem instantiateRevCached_spec {S : KExpr .anon → Prop}
                 sc1.insert ((KExpr.prj id field val
                     (KExpr.mkPrj id field val md).info).addr, depth)
                   (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
-          rw [instantiateRevCached, if_neg hfast, run_pure_bind]
+          rw [instantiateRevCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -3710,8 +3710,8 @@ private theorem absPost_hit {S : KExpr .anon → Prop} {body r : KExpr .anon}
       (abstractFVarsCached body pos n depth (it, sc)) := by
   have hrun : abstractFVarsCached body pos n depth (it, sc)
       = (r, (it, sc)) := by
-    rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
-    simp only []
+    rw [abstractFVarsCached, if_neg hfast]
+    try simp only []
     rw [run_scratchGet_bind, hget]
     rfl
   rw [hrun]
@@ -3761,7 +3761,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                   sc.insert ((KExpr.var idx name
                       (KExpr.mkVar idx name md).info).addr, depth)
                     (it.internExpr (KExpr.mkVar (idx + n) name)).1)) := by
-            rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+            rw [abstractFVarsCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -3821,7 +3821,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                       (KExpr.mkFVar id name md).info).addr, depth)
                     (it.internExpr (KExpr.mkVar (depth + p)
                       (anonName (m := .anon)))).1)) := by
-            rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+            rw [abstractFVarsCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -3849,7 +3849,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                  (it, sc.insert ((KExpr.fvar id name
                      (KExpr.mkFVar id name md).info).addr, depth)
                    (.fvar id name (KExpr.mkFVar id name md).info))) := by
-            rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+            rw [abstractFVarsCached, if_neg hfast]
             try simp only []
             rw [run_scratchGet_bind, hget]
             try simp (config := { proj := false }) only []
@@ -3918,7 +3918,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.app f a
                     (KExpr.mkApp f a md).info).addr, depth)
                   (it2.internExpr (KExpr.mkApp rf ra)).1)) := by
-          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          rw [abstractFVarsCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -3989,7 +3989,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.lam nm bi ty body
                     (KExpr.mkLam nm bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkLam nm bi rty rbody)).1)) := by
-          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          rw [abstractFVarsCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -4061,7 +4061,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                 sc2.insert ((KExpr.all nm bi ty body
                     (KExpr.mkAll nm bi ty body md).info).addr, depth)
                   (it2.internExpr (KExpr.mkAll nm bi rty rbody)).1)) := by
-          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          rw [abstractFVarsCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -4145,7 +4145,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                     (KExpr.mkLet nm ty val body nd md).info).addr, depth)
                   (it3.internExpr
                     (KExpr.mkLet nm rty rval rbody nd)).1)) := by
-          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          rw [abstractFVarsCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []
@@ -4208,7 +4208,7 @@ theorem abstractFVarsCached_spec {S : KExpr .anon → Prop}
                 sc1.insert ((KExpr.prj id field val
                     (KExpr.mkPrj id field val md).info).addr, depth)
                   (it1.internExpr (KExpr.mkPrj id field rval)).1)) := by
-          rw [abstractFVarsCached, if_neg hfast, run_pure_bind]
+          rw [abstractFVarsCached, if_neg hfast]
           try simp only []
           rw [run_scratchGet_bind, hget]
           try simp (config := { proj := false }) only []

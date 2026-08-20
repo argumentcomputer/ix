@@ -2,6 +2,14 @@
 //!
 //! This module decompiles alpha-invariant Ixon representations back to
 //! Lean constants, expanding Share references and reattaching metadata.
+//!
+//! `IX_DECOMPILE_KENV_CLEAR_ENTRIES=N` controls how many dependency names
+//! Pass 2 tracks before clearing its shared kernel environment. The default
+//! is 1048576; `0` disables clearing. The reference lists discovered by the
+//! ingress BFS are memoized for the whole run (they don't change when the
+//! kenv clears), so a post-clear re-walk re-ingresses constants but does
+//! not re-decode or re-walk their bodies — the limit is primarily a peak-RAM
+//! bound, no longer a wall-clock cliff.
 
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_precision_loss)]
@@ -40,12 +48,36 @@ use ixon::{
 use crate::{
   compile::CompileState,
   compile::aux_gen::nested::compute_lean_ind_flags,
+  diag::rss_log_suffix,
   mutual::{Def, Ind, MutConst as LeanMutConst, MutCtx, all_to_ctx},
 };
 use dashmap::DashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
+
+// Pre-warm now stubs theorem/opaque proof values (`ensure_in_kenv_of_prewarm`),
+// which were the dominant share of per-entry kenv RSS — so the same RAM
+// envelope covers ~8× the entry count and clears become a rare backstop
+// (FLT-scale closures no longer cross the limit at all).
+const DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES: usize = 1_048_576;
+
+fn decompile_kenv_clear_entries_from(raw: Option<&str>) -> Option<usize> {
+  match raw {
+    None => Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
+    Some("0") => None,
+    Some(value) => value
+      .parse::<usize>()
+      .ok()
+      .filter(|limit| *limit > 0)
+      .or(Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES)),
+  }
+}
+
+fn decompile_kenv_clear_entries() -> Option<usize> {
+  let raw = std::env::var("IX_DECOMPILE_KENV_CLEAR_ENTRIES").ok();
+  decompile_kenv_clear_entries_from(raw.as_deref())
+}
 
 #[derive(Default, Debug)]
 pub struct DecompileState {
@@ -2267,7 +2299,23 @@ fn classify_aux_gen(name: &Name) -> Option<(AuxKind, Name)> {
     },
     s if s == "recOn" || s.starts_with("recOn_") => Some((AuxKind::RecOn, p1)),
     s if s == "casesOn" || s.starts_with("casesOn_") => {
-      Some((AuxKind::CasesOn, p1))
+      // X.casesOn / X.casesOn_N or X.below.casesOn. The below wrapper
+      // roots under the FAMILY (like `X.below.rec` above) so it joins
+      // the family block's aux_members and Phase 3b can regenerate it
+      // against the canonical below-rec; rooting it at `X.below` would
+      // group it under an aux block that never runs aux-gen phases,
+      // dropping it from the decompiled env entirely.
+      if let Some(ps) = p1.last_str()
+        && (ps == "below" || ps.starts_with("below_"))
+      {
+        let root = match p1.as_data() {
+          NameData::Str(gp, _, _) => gp.clone(),
+          _ => return None,
+        };
+        Some((AuxKind::CasesOn, root))
+      } else {
+        Some((AuxKind::CasesOn, p1))
+      }
     },
     s if s == "below" || s.starts_with("below_") => Some((AuxKind::Below, p1)),
     s if s == "brecOn" || s.starts_with("brecOn_") => {
@@ -2786,7 +2834,7 @@ fn roundtrip_block(
 ) -> Result<FxHashMap<Name, LeanConstantInfo>, DecompileError> {
   use crate::compile::{
     BlockCache as CompileBlockCache, collect_mut_const_exprs,
-    compile_definition, compile_inductive, compile_mutual_block,
+    compile_definition, compile_inductive, compile_mutual_block, compile_name,
     compile_recursor, preseed_expr_tables, sort_consts,
   };
   use crate::mutual::ctx_to_all;
@@ -2837,6 +2885,8 @@ fn roundtrip_block(
   let mut name_to_class: FxHashMap<Name, usize> = FxHashMap::default();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
   let mut ixon_mutuals: Vec<MutConst> = Vec::new();
+  let ctx_addrs: Vec<Address> =
+    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
   for (class_idx, class) in sorted_classes.iter().enumerate() {
     let mut rep_pushed = false;
@@ -2844,15 +2894,14 @@ fn roundtrip_block(
       name_to_class.insert(cnst.name(), class_idx);
       match cnst {
         LeanMutConst::Recr(rec) => {
-          let (data, meta) = compile_recursor(rec, &mut_ctx, &mut cache, stt)
-            .map_err(|e| {
-            DecompileError::BadConstantFormat {
-              msg: format!(
-                "roundtrip compile_rec {}: {e}",
-                rec.cnst.name.pretty()
-              ),
-            }
-          })?;
+          let (data, meta) =
+            compile_recursor(rec, &mut_ctx, &ctx_addrs, &mut cache, stt)
+              .map_err(|e| DecompileError::BadConstantFormat {
+                msg: format!(
+                  "roundtrip compile_rec {}: {e}",
+                  rec.cnst.name.pretty()
+                ),
+              })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Recr(data));
             rep_pushed = true;
@@ -2860,10 +2909,14 @@ fn roundtrip_block(
           all_metas.insert(rec.cnst.name.clone(), meta);
         },
         LeanMutConst::Defn(def) => {
-          let (data, meta) = compile_definition(def, &mut_ctx, &mut cache, stt)
-            .map_err(|e| DecompileError::BadConstantFormat {
-              msg: format!("roundtrip compile_def {}: {e}", def.name.pretty()),
-            })?;
+          let (data, meta) =
+            compile_definition(def, &mut_ctx, &ctx_addrs, &mut cache, stt)
+              .map_err(|e| DecompileError::BadConstantFormat {
+                msg: format!(
+                  "roundtrip compile_def {}: {e}",
+                  def.name.pretty()
+                ),
+              })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Defn(data));
             rep_pushed = true;
@@ -2872,14 +2925,13 @@ fn roundtrip_block(
         },
         LeanMutConst::Indc(ind) => {
           let (data, meta, ctor_metas) =
-            compile_inductive(ind, &mut_ctx, &mut cache, stt).map_err(|e| {
-              DecompileError::BadConstantFormat {
+            compile_inductive(ind, &mut_ctx, &ctx_addrs, &mut cache, stt)
+              .map_err(|e| DecompileError::BadConstantFormat {
                 msg: format!(
                   "roundtrip compile_indc {}: {e}",
                   ind.ind.cnst.name.pretty()
                 ),
-              }
-            })?;
+              })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Indc(data));
             rep_pushed = true;
@@ -3123,11 +3175,11 @@ fn roundtrip_block(
             );
             let compiled = preseeded.and_then(|()| match &omc {
               LeanMutConst::Defn(d) => {
-                compile_definition(d, &mut_ctx, &mut pcache, stt)
+                compile_definition(d, &mut_ctx, &ctx_addrs, &mut pcache, stt)
                   .map(|(data, _)| MutConst::Defn(data))
               },
               LeanMutConst::Recr(r) => {
-                compile_recursor(r, &mut_ctx, &mut pcache, stt)
+                compile_recursor(r, &mut_ctx, &ctx_addrs, &mut pcache, stt)
                   .map(|(data, _)| MutConst::Recr(data))
               },
               LeanMutConst::Indc(_) => unreachable!("probe is Defn/Recr only"),
@@ -3869,36 +3921,6 @@ struct StoredPlanBlock {
   flat_names: Vec<Name>,
 }
 
-/// ` · rss X.X GiB (anon Y.Y, file Z.Z)` sampled from
-/// `/proc/self/status`, appended to phase logs. Anon can only leave RAM
-/// via swap; file RSS is reclaimable page cache — the split shows which
-/// memory-reduction lever applies. Empty when procfs is unavailable.
-fn rss_log_suffix() -> String {
-  let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
-    return String::new();
-  };
-  let field_kb = |name: &str| -> Option<u64> {
-    status
-      .lines()
-      .find(|l| l.starts_with(name))
-      .and_then(|l| l.split_whitespace().nth(1))
-      .and_then(|v| v.parse().ok())
-  };
-  let gib_tenths = |kb: u64| -> (u64, u64) {
-    let tenths = kb * 10 / (1024 * 1024);
-    (tenths / 10, tenths % 10)
-  };
-  match (field_kb("VmRSS:"), field_kb("RssAnon:"), field_kb("RssFile:")) {
-    (Some(rss), Some(anon), Some(file)) => {
-      let (r, rt) = gib_tenths(rss);
-      let (a, at) = gib_tenths(anon);
-      let (f, ft) = gib_tenths(file);
-      format!(" · rss {r}.{rt} GiB (anon {a}.{at}, file {f}.{ft})")
-    },
-    _ => String::new(),
-  }
-}
-
 /// One `Muts`-tagged Named entry, pre-resolved for plan lookups.
 struct MutsIndexEntry {
   class_names: Vec<Vec<Name>>,
@@ -4110,10 +4132,14 @@ fn install_decompile_call_site_plans(
           .zip(original_all.iter())
           .any(|(class, orig)| class[0] != *orig));
     let aux_layout_changed = block.aux_layout.as_ref().is_some_and(|layout| {
-      layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
-        canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
-          && canonical_i != source_j
-      })
+      // Keep identical to the compile-side predicate in `compile_mutual`
+      // — evaporated positions need their head-rewrite plans even when
+      // no canonical slot moved.
+      layout.evaporated.iter().any(|&b| b)
+        || layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
+          canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
+            && canonical_i != source_j
+        })
     });
 
     if !user_layout_changed && !aux_layout_changed {
@@ -4131,28 +4157,128 @@ fn install_decompile_call_site_plans(
     })?;
 
     for (name, plan) in plans {
+      // First-wins per name, but a DIFFERING later plan means two stored
+      // blocks claim one source-indexed aux name — the same collision
+      // class the compile side now rejects; surface it rather than
+      // decompiling with whichever block's plan happened to install
+      // first (plans/aux-recursor-alias-collision.md §2.4).
       if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
         && (aux_member_names.contains(&brecon_name)
           || env.contains_key(&brecon_name))
-        && !stt.brec_on_call_site_plans.contains_key(&brecon_name)
       {
-        stt.brec_on_call_site_plans.insert(
-          brecon_name,
-          surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-        );
+        let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+        // Probe-then-act: the DashMap read guard must drop before insert.
+        let existing_differs =
+          stt.brec_on_call_site_plans.get(&brecon_name).map(|e| *e != new_plan);
+        match existing_differs {
+          Some(true) => {
+            return Err(DecompileError::BadConstantFormat {
+              msg: format!(
+                "conflicting brecOn call-site plans for '{}' across stored \
+                 blocks",
+                brecon_name.pretty(),
+              ),
+            });
+          },
+          Some(false) => {},
+          None => {
+            stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
+          },
+        }
       }
       if let Some(below_name) = surgery::rec_name_to_below_name(&name)
         && (aux_member_names.contains(&below_name)
           || env.contains_key(&below_name))
-        && !stt.below_call_site_plans.contains_key(&below_name)
       {
-        stt.below_call_site_plans.insert(
-          below_name,
-          surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-        );
+        let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+        // Prop-level (IndPredBelow) `.below` families additionally expose
+        // constructors and a `.casesOn` wrapper to user code — mirror the
+        // compile side's family registration (same map; the apply site
+        // discriminates the telescope shape via
+        // `below_plan_key_is_head`). The below inductive itself is
+        // regenerated later (Phase 3), so at install time its ctor names
+        // are derived from the PARENT inductive's ctors via the same
+        // suffix transplant `build_below_indc_ctor` uses. Prop-ness is
+        // signalled by the presence of a `.below.rec` aux member
+        // (Type-level `.below` is a definition and has no recursor).
+        let is_prop_below = aux_members.iter().any(|(k, n)| {
+          *k == AuxKind::BelowRec
+            && matches!(n.as_data(),
+              ix_common::env::NameData::Str(p, _, _) if *p == below_name)
+        });
+        let parent_name = match below_name.as_data() {
+          ix_common::env::NameData::Str(p, _, _) => Some(p.clone()),
+          _ => None,
+        };
+        if is_prop_below
+          && let Some(parent_name) = parent_name
+          && let Some(parent_ci) = env.get(&parent_name)
+          && let LeanConstantInfo::InductInfo(pv) = &*parent_ci
+        {
+          let mut family_names: Vec<Name> = pv
+            .ctors
+            .iter()
+            .map(|ctor_name| {
+              let suffix = ctor_name
+                .strip_prefix(&parent_name)
+                .unwrap_or_else(|| ctor_name.components());
+              below_name.append_components(&suffix)
+            })
+            .collect();
+          family_names
+            .push(Name::str(below_name.clone(), "casesOn".to_string()));
+          for member in family_names {
+            let existing_differs =
+              stt.below_call_site_plans.get(&member).map(|e| *e != new_plan);
+            match existing_differs {
+              Some(true) => {
+                return Err(DecompileError::BadConstantFormat {
+                  msg: format!(
+                    "conflicting below call-site plans for '{}' across \
+                     stored blocks",
+                    member.pretty(),
+                  ),
+                });
+              },
+              Some(false) => {},
+              None => {
+                stt.below_call_site_plans.insert(member, new_plan.clone());
+              },
+            }
+          }
+        }
+        let existing_differs =
+          stt.below_call_site_plans.get(&below_name).map(|e| *e != new_plan);
+        match existing_differs {
+          Some(true) => {
+            return Err(DecompileError::BadConstantFormat {
+              msg: format!(
+                "conflicting below call-site plans for '{}' across stored \
+                 blocks",
+                below_name.pretty(),
+              ),
+            });
+          },
+          Some(false) => {},
+          None => {
+            stt.below_call_site_plans.insert(below_name, new_plan);
+          },
+        }
       }
-      if !stt.call_site_plans.contains_key(&name) {
-        stt.call_site_plans.insert(name, plan);
+      let existing_differs = stt.call_site_plans.get(&name).map(|e| *e != plan);
+      match existing_differs {
+        Some(true) => {
+          return Err(DecompileError::BadConstantFormat {
+            msg: format!(
+              "conflicting call-site plans for '{}' across stored blocks",
+              name.pretty(),
+            ),
+          });
+        },
+        Some(false) => {},
+        None => {
+          stt.call_site_plans.insert(name, plan);
+        },
       }
     }
   }
@@ -4213,6 +4339,93 @@ fn recover_aux_from_original(
   true
 }
 
+/// Regenerate one `.casesOn` definition from its (already regenerated)
+/// canonical recursor and roundtrip it into `dstt`. Shared by Phase 1b
+/// (family casesOn — the rec is available up front) and Phase 3b
+/// (`.below.casesOn` — its rec only exists once Phase 3 has generated
+/// the below-rec block).
+#[allow(clippy::too_many_arguments)]
+fn regen_one_cases_on(
+  co_name: &Name,
+  rec_val: &RecursorVal,
+  gen_env: &LeanEnv,
+  generated_consts: &mut FxHashMap<Name, LeanConstantInfo>,
+  orig_env: Option<&LeanEnv>,
+  stt: &CompileState,
+  dstt: &DecompileState,
+  aux_gen_errors: &mut Vec<(Name, DecompileError)>,
+) {
+  use crate::compile::aux_gen::cases_on::generate_cases_on;
+  if let Some(aux_def) = generate_cases_on(co_name, rec_val, gen_env) {
+    // Lean marks `.casesOn` unsafe iff the parent `.rec` is unsafe
+    // (an unsafe recursor transitively forces every wrapper around it).
+    let safety = if rec_val.is_unsafe {
+      DefinitionSafety::Unsafe
+    } else {
+      DefinitionSafety::Safe
+    };
+    let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal {
+        name: aux_def.name.clone(),
+        level_params: aux_def.level_params.clone(),
+        typ: aux_def.typ.clone(),
+      },
+      value: aux_def.value.clone(),
+      hints: ReducibilityHints::Abbrev,
+      safety,
+      all: vec![aux_def.name.clone()],
+    });
+    generated_consts.insert(aux_def.name.clone(), as_defn);
+
+    let mc = LeanMutConst::Defn(Def {
+      name: aux_def.name.clone(),
+      level_params: aux_def.level_params.clone(),
+      typ: aux_def.typ.clone(),
+      kind: DefKind::Definition,
+      value: aux_def.value.clone(),
+      hints: ReducibilityHints::Abbrev,
+      safety,
+      // Lean emits `.casesOn` / `.recOn` as standalone `defnDecl`s
+      // (`refs/lean4/src/Lean/Elab/Inductive.lean:mkCasesOn` et al.),
+      // each with `all = [self]`. `Named.original.0` captured that
+      // exact shape; regenerating with `all = []` here makes the
+      // Phase-A block hash match but leaves the Lean-level `all`
+      // blank, so Phase B's `ConstantInfo::get_hash()` diverges
+      // (type + value match but `all` differs). See
+      // `docs/ix_canonicity.md` §9.2.
+      all: vec![aux_def.name.clone()],
+    });
+    match roundtrip_block(&[mc], generated_consts, orig_env, stt, dstt) {
+      Ok(roundtripped) if !roundtripped.is_empty() => {
+        for (n, ci) in roundtripped {
+          dstt.insert_interned(n, ci);
+        }
+      },
+      Ok(_) => {
+        // Empty roundtrip result: prefer the source-faithful original
+        // pair; fall back to the regenerated form otherwise.
+        if !recover_aux_from_original(&aux_def.name, stt, dstt)
+          && let Some(ci) = generated_consts.get(&aux_def.name)
+        {
+          dstt.insert_interned(aux_def.name.clone(), ci.clone());
+        }
+      },
+      Err(e) => {
+        // Recovery keeps the Lean-facing env populated for diagnosis,
+        // but the failure is always recorded — post-preseed, the
+        // roundtrip is byte-exact corpus-wide, so any error here is
+        // a regression.
+        if !recover_aux_from_original(&aux_def.name, stt, dstt)
+          && let Some(ci) = generated_consts.get(&aux_def.name)
+        {
+          dstt.insert_interned(aux_def.name.clone(), ci.clone());
+        }
+        aux_gen_errors.push((aux_def.name.clone(), e));
+      },
+    }
+  }
+}
+
 fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
@@ -4225,7 +4438,6 @@ fn decompile_block_aux_gen(
   use crate::compile::aux_gen::{
     below::{BelowConstant, generate_below_constants},
     brecon::generate_brecon_constants,
-    cases_on::generate_cases_on,
     expr_utils, populate_canon_kenv_with_below,
     recursor::generate_canonical_recursors_with_overlay,
   };
@@ -4439,74 +4651,16 @@ fn decompile_block_aux_gen(
           }
         },
       };
-      if let Some(aux_def) = generate_cases_on(co_name, &rec_val, env) {
-        // Lean marks `.casesOn` unsafe iff the parent `.rec` is unsafe
-        // (an unsafe recursor transitively forces every wrapper around it).
-        let safety = if rec_val.is_unsafe {
-          DefinitionSafety::Unsafe
-        } else {
-          DefinitionSafety::Safe
-        };
-        let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
-          cnst: ConstantVal {
-            name: aux_def.name.clone(),
-            level_params: aux_def.level_params.clone(),
-            typ: aux_def.typ.clone(),
-          },
-          value: aux_def.value.clone(),
-          hints: ReducibilityHints::Abbrev,
-          safety,
-          all: vec![aux_def.name.clone()],
-        });
-        generated_consts.insert(aux_def.name.clone(), as_defn);
-
-        let mc = LeanMutConst::Defn(Def {
-          name: aux_def.name.clone(),
-          level_params: aux_def.level_params.clone(),
-          typ: aux_def.typ.clone(),
-          kind: DefKind::Definition,
-          value: aux_def.value.clone(),
-          hints: ReducibilityHints::Abbrev,
-          safety,
-          // Lean emits `.casesOn` / `.recOn` as standalone `defnDecl`s
-          // (`refs/lean4/src/Lean/Elab/Inductive.lean:mkCasesOn` et al.),
-          // each with `all = [self]`. `Named.original.0` captured that
-          // exact shape; regenerating with `all = []` here makes the
-          // Phase-A block hash match but leaves the Lean-level `all`
-          // blank, so Phase B's `ConstantInfo::get_hash()` diverges
-          // (type + value match but `all` differs). See
-          // `docs/ix_canonicity.md` §9.2.
-          all: vec![aux_def.name.clone()],
-        });
-        match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
-          Ok(roundtripped) if !roundtripped.is_empty() => {
-            for (n, ci) in roundtripped {
-              dstt.insert_interned(n, ci);
-            }
-          },
-          Ok(_) => {
-            // Empty roundtrip result: prefer the source-faithful original
-            // pair; fall back to the regenerated form otherwise.
-            if !recover_aux_from_original(&aux_def.name, stt, dstt)
-              && let Some(ci) = generated_consts.get(&aux_def.name)
-            {
-              dstt.insert_interned(aux_def.name.clone(), ci.clone());
-            }
-          },
-          Err(e) => {
-            // Recovery keeps the Lean-facing env populated for diagnosis,
-            // but the failure is always recorded — post-preseed, the
-            // roundtrip is byte-exact corpus-wide, so any error here is
-            // a regression.
-            if !recover_aux_from_original(&aux_def.name, stt, dstt)
-              && let Some(ci) = generated_consts.get(&aux_def.name)
-            {
-              dstt.insert_interned(aux_def.name.clone(), ci.clone());
-            }
-            aux_gen_errors.push((aux_def.name.clone(), e));
-          },
-        }
-      }
+      regen_one_cases_on(
+        co_name,
+        &rec_val,
+        env,
+        &mut generated_consts,
+        orig_env,
+        stt,
+        dstt,
+        &mut aux_gen_errors,
+      );
     }
   }
 
@@ -4896,6 +5050,40 @@ fn decompile_block_aux_gen(
               }
             },
           }
+
+          // Phase 3b: Regenerate `.below.casesOn` from the canonical
+          // below-recs — deferred from Phase 1b, where these members
+          // skip silently because `X.below.rec` does not exist until
+          // this phase regenerates it. Mirrors compile-side
+          // `compile_below_recursors`: the Lean-authored wrapper
+          // applies motives in Lean's member order, so it must be
+          // regenerated against the canonical rec. Runs regardless of
+          // the roundtrip outcome above (compile likewise always
+          // compiles the regenerated casesOn after the rec block).
+          for (kind, co_name) in aux_members {
+            if *kind != AuxKind::CasesOn {
+              continue;
+            }
+            let parent = match co_name.as_data() {
+              ix_common::env::NameData::Str(p, _, _) => p.clone(),
+              _ => continue,
+            };
+            let rec_name = Name::str(parent, "rec".to_string());
+            if let Some((_, rv)) =
+              below_recs.iter().find(|(n, _)| *n == rec_name)
+            {
+              regen_one_cases_on(
+                co_name,
+                rv,
+                &below_env,
+                &mut generated_consts,
+                orig_env,
+                stt,
+                dstt,
+                &mut aux_gen_errors,
+              );
+            }
+          }
         },
         Err(e) => {
           aux_gen_errors.push((
@@ -5111,38 +5299,46 @@ pub fn decompile_env(
     rss_log_suffix(),
   );
 
-  // Pass 1.5: Lean-faithful inductive flags
+  // Pass 1.5: Lean-faithful inductive flags. Scoped so `lean_env` — a
+  // full structured copy of the environment used only by
+  // `compute_lean_ind_flags` — drops here instead of living to the end
+  // of the function: Pass 2 already holds `dstt.env` plus its own
+  // `work_env` snapshot, and a third whole-env copy is pure peak RSS.
   let t_p1_5 = std::time::Instant::now();
-  let lean_env: ix_common::env::Env =
-    dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
-  let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
-  for entry in dstt.env.iter() {
-    if let LeanConstantInfo::InductInfo(v) = entry.value()
-      && let Some(first) = v.all.first()
-    {
-      groups.entry(first.clone()).or_insert_with(|| v.all.clone());
-    }
-  }
-  for (key, all) in &groups {
-    let flags = compute_lean_ind_flags(all, &lean_env).map_err(|e| {
-      DecompileError::BadConstantFormat {
-        msg: format!("ind-flags fixup for block '{}': {e}", key.pretty()),
-      }
-    })?;
-    for member in all {
-      if let Some(mut entry) = dstt.env.get_mut(member)
-        && let LeanConstantInfo::InductInfo(v) = entry.value_mut()
+  let n_ind_groups = {
+    let lean_env: ix_common::env::Env =
+      dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+    for entry in dstt.env.iter() {
+      if let LeanConstantInfo::InductInfo(v) = entry.value()
+        && let Some(first) = v.all.first()
       {
-        v.num_nested = Nat::from(flags.num_nested);
-        v.is_rec = flags.is_rec;
-        v.is_reflexive = flags.is_reflexive;
+        groups.entry(first.clone()).or_insert_with(|| v.all.clone());
       }
     }
-  }
+    for (key, all) in &groups {
+      let flags = compute_lean_ind_flags(all, &lean_env).map_err(|e| {
+        DecompileError::BadConstantFormat {
+          msg: format!("ind-flags fixup for block '{}': {e}", key.pretty()),
+        }
+      })?;
+      for member in all {
+        if let Some(mut entry) = dstt.env.get_mut(member)
+          && let LeanConstantInfo::InductInfo(v) = entry.value_mut()
+        {
+          v.num_nested = Nat::from(flags.num_nested);
+          v.is_rec = flags.is_rec;
+          v.is_reflexive = flags.is_reflexive;
+        }
+      }
+    }
+    groups.len()
+  };
   eprintln!(
-    "[decompile] Pass 1.5 done in {:.2}s ({} constants in dstt.env)",
+    "[decompile] Pass 1.5 done in {:.2}s ({} inductive groups){}",
     t_p1_5.elapsed().as_secs_f32(),
-    groups.len(),
+    n_ind_groups,
+    rss_log_suffix(),
   );
 
   // Pass 2: Regenerate aux_gen constants for mutual inductive blocks.
@@ -5247,6 +5443,18 @@ pub fn decompile_env(
   // for every block (still O(n) across all blocks combined).
   let mut ingressed: FxHashSet<Name> = FxHashSet::default();
 
+  // Run-scoped memo of each walked constant's reference list. `ingressed`
+  // doubles as the kenv-content tracker, so a kenv clear must wipe it —
+  // but the reference graph itself never changes, so the refs survive the
+  // clear here. Post-clear re-walks then cost hash probes instead of
+  // re-decoding and re-walking every constant in the closure (the
+  // Θ(N²/L) term that made the clear threshold a wall-clock cliff).
+  // Names absent from `work_env` at walk time are deliberately NOT
+  // memoized: aux constants enter `work_env` only when their block
+  // regenerates them, so an early miss must stay a live probe rather
+  // than a frozen empty entry.
+  let mut refs_memo: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+
   // Size trigger for the kenv clear at the bottom of the block loop.
   // A full clear makes later blocks re-walk their whole ingress
   // closures, so the threshold must sit above the kenv working set of
@@ -5255,7 +5463,7 @@ pub fn decompile_env(
   // regression for little memory). It exists as a backstop against
   // unbounded growth on envs whose closure union would otherwise
   // dominate decompile RSS.
-  const KENV_CLEAR_ENTRIES: usize = 65536;
+  let kenv_clear_entries = decompile_kenv_clear_entries();
 
   // Progress tracking. Per-block progress logs (every `log_stride` blocks or
   // every 5 s) are opt-in via `IX_DECOMPILE_PROGRESS`; slow-block warnings
@@ -5266,6 +5474,10 @@ pub fn decompile_env(
   let slow_threshold = std::time::Duration::from_secs(10);
   let t_p2 = std::time::Instant::now();
   let mut t_last_log = t_p2;
+  let mut ingress_elapsed = std::time::Duration::ZERO;
+  let mut generation_elapsed = std::time::Duration::ZERO;
+  let mut peak_ingressed = 0;
+  let mut kenv_clears = 0;
 
   for (block_idx, block_key) in sorted_block_keys.iter().enumerate() {
     let Some((all_names, aux_members)) = blocks.get(block_key) else {
@@ -5289,16 +5501,27 @@ pub fn decompile_env(
       if !ingressed.insert(name.clone()) {
         continue;
       }
-      expr_utils::ensure_in_kenv_of(&name, &work_env, stt, &mut kctx);
-      if let Some(ci) = work_env.get(&name) {
-        for ref_name in get_constant_info_references(&ci) {
-          if !ingressed.contains(&ref_name) {
-            stack.push(ref_name);
+      expr_utils::ensure_in_kenv_of_prewarm(&name, &work_env, stt, &mut kctx);
+      if let Some(refs) = refs_memo.get(&name) {
+        for ref_name in refs {
+          if !ingressed.contains(ref_name) {
+            stack.push(ref_name.clone());
           }
         }
+      } else if let Some(ci) = work_env.get(&name) {
+        let refs: Vec<Name> =
+          get_constant_info_references(&ci).into_iter().collect();
+        for ref_name in &refs {
+          if !ingressed.contains(ref_name) {
+            stack.push(ref_name.clone());
+          }
+        }
+        refs_memo.insert(name, refs);
       }
     }
     let t_after_ingress = std::time::Instant::now();
+    ingress_elapsed += t_after_ingress - t_block;
+    peak_ingressed = peak_ingressed.max(ingressed.len());
 
     let errors = decompile_block_aux_gen(
       all_names,
@@ -5309,18 +5532,19 @@ pub fn decompile_env(
       &dstt,
       &muts_index,
     );
+    let t_after_generation = std::time::Instant::now();
+    generation_elapsed += t_after_generation - t_after_ingress;
     aux_gen_errors.extend(errors);
 
     // Per-block slow-block warning.
     let block_elapsed = t_block.elapsed();
     if block_elapsed > slow_threshold {
       let ingress_ms = (t_after_ingress - t_block).as_millis();
-      let gen_ms =
-        (t_block.elapsed() - (t_after_ingress - t_block)).as_millis();
+      let gen_ms = (t_after_generation - t_after_ingress).as_millis();
       eprintln!(
         "[decompile] slow block [{block_idx}/{total_blocks}] {} \
          took {:.2}s (ingress={ingress_ms}ms, gen={gen_ms}ms, \
-         {} members, kenv={})",
+         {} members, ingressed={})",
         block_key.pretty(),
         block_elapsed.as_secs_f32(),
         aux_members.len(),
@@ -5351,7 +5575,8 @@ pub fn decompile_env(
         let pct = 100.0 * done as f32 / total_blocks as f32;
         eprintln!(
           "[decompile] Pass 2 progress: {done}/{total_blocks} blocks \
-           ({pct:.1}%), elapsed {elapsed:.1}s, eta {remaining}s, kenv={}{}",
+           ({pct:.1}%), elapsed {elapsed:.1}s, eta {remaining}s, \
+           ingressed={}{}",
           ingressed.len(),
           rss_log_suffix(),
         );
@@ -5370,17 +5595,27 @@ pub fn decompile_env(
     // closures. Trigger on size instead: envs whose closures stay under
     // the threshold never clear (and pay nothing); larger envs trade a
     // few re-ingress walks for a bounded working set.
-    if ingressed.len() > KENV_CLEAR_ENTRIES {
+    if kenv_clear_entries.is_some_and(|limit| ingressed.len() > limit) {
       kctx.kenv.clear_releasing_memory();
+      kctx.aux_ingress_seen.clear();
       ingressed.clear();
+      kenv_clears += 1;
       expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
     }
   }
+  let kenv_limit = kenv_clear_entries
+    .map_or_else(|| "disabled".to_string(), |limit| limit.to_string());
   eprintln!(
-    "[decompile] Pass 2 done in {:.2}s ({} aux_gen errors, kenv={}){}",
+    "[decompile] Pass 2 done in {:.2}s ({} aux_gen errors, ingressed={}, \
+     peak_ingressed={}, clears={}, limit={}, ingress={:.2}s, gen={:.2}s){}",
     t_p2.elapsed().as_secs_f32(),
     aux_gen_errors.len(),
     ingressed.len(),
+    peak_ingressed,
+    kenv_clears,
+    kenv_limit,
+    ingress_elapsed.as_secs_f32(),
+    generation_elapsed.as_secs_f32(),
     rss_log_suffix(),
   );
 
@@ -5546,6 +5781,20 @@ mod tests {
   use super::*;
   use crate::compile::compile_name;
   use ix_common::env::Level;
+
+  #[test]
+  fn decompile_kenv_clear_limit_parsing() {
+    assert_eq!(
+      decompile_kenv_clear_entries_from(None),
+      Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
+    );
+    assert_eq!(decompile_kenv_clear_entries_from(Some("0")), None);
+    assert_eq!(decompile_kenv_clear_entries_from(Some("131072")), Some(131072),);
+    assert_eq!(
+      decompile_kenv_clear_entries_from(Some("invalid")),
+      Some(DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES),
+    );
+  }
 
   /// Register a Name in `stt.env.names` so `decompile_name` can resolve it.
   /// Mirrors `compile_name` (content-address the name, insert into names map).

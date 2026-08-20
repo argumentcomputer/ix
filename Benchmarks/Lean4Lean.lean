@@ -81,13 +81,19 @@ namespace BenchLean4Lean
 def getUsedConstants' (e : Expr) : NameSet :=
   e.foldConsts {} fun c cs => cs.insert c
 
-/-- Return all names appearing in the type or value of a `ConstantInfo`. -/
+/-- Return all names appearing in the type or value of a `ConstantInfo`.
+
+`allowOpaque := true` is load-bearing since v4.33: `ConstantInfo.value?`
+now hides theorem proofs (and opaque bodies) by default, and a replay walk
+that misses proof references skips their auxiliaries — e.g. the
+`._f` structural-recursion helpers (`Nat.add_comm._f`), so the kernel then
+rejects the theorem with "unknown constant". Mirrors the fork's
+`Lean4Lean.Replay` fix. -/
 def getUsedConstants (c : ConstantInfo) : NameSet :=
-  getUsedConstants' c.type ++ match c.value? with
+  getUsedConstants' c.type ++ match c.value? (allowOpaque := true) with
   | some v => getUsedConstants' v
   | none => match c with
     | .inductInfo val => .ofList val.ctors
-    | .opaqueInfo val => getUsedConstants' val.value
     | .ctorInfo val => ({} : NameSet).insert val.name
     | .recInfo val => .ofList val.all
     | _ => {}
@@ -175,7 +181,9 @@ def addDecl (d : Declaration) : M Unit := do
 def hasStrLit (e : Expr) : Bool := (e.find? (·.isStringLit)).isSome
 
 def constHasStrLit (ci : ConstantInfo) : Bool :=
-  hasStrLit ci.type || ci.value?.any hasStrLit
+  -- `allowOpaque := true` for the same reason as `getUsedConstants`: a string
+  -- literal inside a theorem proof must still pre-seed `String.ofList`.
+  hasStrLit ci.type || (ci.value? (allowOpaque := true)).any hasStrLit
 
 mutual
 /--

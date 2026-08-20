@@ -568,7 +568,10 @@ impl QueryMap {
     Some((i, self.outs_at(i)))
   }
 
-  pub fn get_mut(&mut self, key: &[G]) -> Option<QueryRefMut<'_>> {
+  /// A hit's output plus its multiplicity CELL. Takes `&self`: the only
+  /// mutable thing it hands back is the atomic counter, and the record
+  /// is shared, so exclusive access was never what made this sound.
+  pub fn get_mut(&self, key: &[G]) -> Option<QueryRefMut<'_>> {
     let i = self.probe_index(key)?;
     Some(QueryRefMut {
       output: self.outs_at(i),

@@ -176,6 +176,15 @@ pub struct AuxLayout {
   /// Same count regardless of which position the aux ends up at
   /// canonically (it's a property of the external nested inductive).
   pub source_ctor_counts: Vec<usize>,
+  /// `evaporated[source_j]`: THIS block owns the evaporation of source
+  /// position j — no SCC's canonical expansion contains the aux, so the
+  /// exported `all0.rec_{j+1}` name is aliased to the external head's
+  /// generic recursor and call sites get a head-rewrite plan. A position
+  /// that is canonical in ANOTHER SCC of the same original mutual stays
+  /// `PERM_OUT_OF_SCC` in `perm` with `evaporated = false` here: that
+  /// SCC owns the name, and this block registers neither alias nor plan
+  /// (see plans/aux-recursor-alias-collision.md). Same length as `perm`.
+  pub evaporated: Vec<bool>,
 }
 
 /// One constant in a [`LazyIndex`]: its content address plus the byte window

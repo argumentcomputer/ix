@@ -103,8 +103,7 @@ theorem wf_legacy
         WhnfPost trProj world context.proposition.model.keys.uvars Delta
           sourceV result) := by
   have hnext := context.schedule.nextSelected
-  simpa [TcM.whnf, TcM.runRec, Methods.next] using
-    hnext.whnf hcall hsource
+  exact hnext.whnf hcall hsource
 
 /-- Public full-WHNF soundness over one finite suffix-state domain. -/
 theorem wf
@@ -122,8 +121,7 @@ theorem wf
         WhnfPost trProj world context.model.keys.uvars Delta sourceV
           result) := by
   have hnext := context.schedule.nextSelected
-  simpa [TcM.whnf, TcM.runRec, Methods.next] using
-    hnext.whnf hcall hsource
+  exact hnext.whnf hcall hsource
 
 end TcM.whnf
 
@@ -147,8 +145,7 @@ theorem wf_legacy
         InferPost trProj world context.proposition.model.keys.uvars Delta
           sourceV ty) := by
   have hnext := context.schedule.nextSelected
-  simpa [TcM.infer, TcM.runRec, Methods.next] using
-    hnext.infer hcall hsource
+  exact hnext.infer hcall hsource
 
 /-- Public inference soundness over one finite suffix-state domain. -/
 theorem wf
@@ -165,8 +162,7 @@ theorem wf
       (fun ty _ => support ty ∧
         InferPost trProj world context.model.keys.uvars Delta sourceV ty) := by
   have hnext := context.schedule.nextSelected
-  simpa [TcM.infer, TcM.runRec, Methods.next] using
-    hnext.infer hcall hsource
+  exact hnext.infer hcall hsource
 
 end TcM.infer
 
@@ -192,8 +188,7 @@ theorem wf_legacy
         world.venv.IsDefEqU context.proposition.model.keys.uvars Delta.toCtx
           va vb) := by
   have hnext := context.schedule.nextSelected
-  simpa [TcM.isDefEq, TcM.runRec, Methods.next] using
-    hnext.isDefEq hcall ha hb
+  exact hnext.isDefEq hcall ha hb
 
 /-- Public definitional-equality soundness over one finite suffix-state
 domain.  Scope preservation holds on both answers and on partial errors. -/
@@ -213,8 +208,7 @@ theorem wf
       (fun answer _ => answer = true →
         world.venv.IsDefEqU context.model.keys.uvars Delta.toCtx va vb) := by
   have hnext := context.schedule.nextSelected
-  simpa [TcM.isDefEq, TcM.runRec, Methods.next] using
-    hnext.isDefEq hcall ha hb
+  exact hnext.isDefEq hcall ha hb
 
 end TcM.isDefEq
 

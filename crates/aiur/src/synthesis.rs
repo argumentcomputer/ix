@@ -942,6 +942,82 @@ mod tests {
     }
   }
 
+  /// Exercise promotion of a cached unconstrained call through nested calls.
+  ///
+  /// `f` first computes `g(x)` as an unconstrained hint, then calls `g(x)`
+  /// constrained.  Since `g` calls `h`, promoting the cached `g` query must
+  /// replay its body and promote the cached `h` query as well.  Merely bumping
+  /// `g`'s multiplicity leaves the `g -> h` function channel unbalanced.
+  fn unconstrained_call_promotion_toplevel() -> Toplevel {
+    let f = Function {
+      body: Block {
+        ops: vec![
+          Op::Call(1, vec![0], 1, true),
+          Op::Call(1, vec![0], 1, false),
+        ],
+        ctrl: Ctrl::Return(0, vec![2]),
+      },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 1,
+        auxiliaries: 3,
+        lookups: 2,
+      },
+      entry: true,
+      constrained: true,
+    };
+
+    let g = Function {
+      body: Block {
+        ops: vec![Op::Call(2, vec![0], 1, false)],
+        ctrl: Ctrl::Return(0, vec![1]),
+      },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 1,
+        auxiliaries: 2,
+        lookups: 2,
+      },
+      entry: false,
+      constrained: true,
+    };
+
+    let h = Function {
+      body: Block {
+        ops: vec![Op::Const(G::ONE), Op::Add(0, 1)],
+        ctrl: Ctrl::Return(0, vec![2]),
+      },
+      layout: FunctionLayout {
+        input_size: 1,
+        selectors: 1,
+        auxiliaries: 1,
+        lookups: 1,
+      },
+      entry: false,
+      constrained: true,
+    };
+
+    Toplevel { functions: vec![f, g, h], memory_sizes: vec![] }
+  }
+
+  #[test]
+  fn prove_verify_promotes_nested_unconstrained_call() {
+    let (cp, fp) = test_parameters();
+    let system =
+      AiurSystem::build(unconstrained_call_promotion_toplevel(), cp, fp);
+    let input = [G::from_u64(3)];
+    let mut io_buffer = empty_io_buffer();
+
+    let (claim, proof) = system.prove(0, &input, &mut io_buffer);
+    assert_eq!(
+      claim,
+      vec![function_channel(), G::ZERO, input[0], input[0] + G::ONE]
+    );
+    system
+      .verify(&claim, &proof)
+      .expect("nested constrained promotion must balance function channels");
+  }
+
   #[test]
   fn prove_verify_mul_roundtrip() {
     let (cp, fp) = test_parameters();

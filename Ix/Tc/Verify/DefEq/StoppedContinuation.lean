@@ -93,17 +93,15 @@ theorem isDefEqAfterLazyDeltaStopped_wf
           (leftCore.addr != left.addr || rightCore.addr != right.addr) with
       | true =>
           simp only [if_true, pure_bind]
-          apply RecM.WF.bind (RecM.WF.withInv <|
+          refine RecM.WF.mono (RecM.WF.withInv <|
             RecM.isDefEqCall_wf hleftCoreSupport hrightCoreSupport
-              hleftCoreTr hrightCoreTr)
-          intro answer final hpost
-          rcases hpost with ⟨hI, hanswer⟩
-          exact RecM.WF.pure fun _ htrue =>
-            hleftEq.trans world.venvWF hI.2.1.wf <|
-              hleftCoreEq.trans world.venvWF hI.2.1.wf <|
-                (hanswer htrue).trans world.venvWF hI.2.1.wf <|
-                  hrightCoreEq.symm.trans world.venvWF hI.2.1.wf
-                    hrightEq.symm
+              hleftCoreTr hrightCoreTr) ?_ (fun _ _ h => h)
+          rintro answer final ⟨hI, hanswer⟩ htrue
+          exact hleftEq.trans world.venvWF hI.2.1.wf <|
+            hleftCoreEq.trans world.venvWF hI.2.1.wf <|
+              (hanswer htrue).trans world.venvWF hI.2.1.wf <|
+                hrightCoreEq.symm.trans world.venvWF hI.2.1.wf
+                  hrightEq.symm
       | false =>
           simp only [Bool.false_eq_true, if_false]
           cases haddr : leftCore.addr == rightCore.addr with

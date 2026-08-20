@@ -334,10 +334,21 @@ partial def stripMdata (e : Expr) : Expr :=
 /-- Semantic equality for nested-aux spec parameters: constants equal by
     name OR by resolved compiled address; fvars matched through the
     source→canonical block-param map; levels via `levelAlphaEq`; mdata
-    ignored. Mirrors Rust `aux_spec_eq` (nested.rs:1259). -/
+    ignored. Mirrors Rust `aux_spec_eq` (nested.rs:1259).
+
+    `strictNames` overrides the address fallback: constants in this set
+    compare by NAME only. Callers put the original mutual members that
+    are out of the matching SCC here — those act as external constants
+    inside specs, but address-equating them would let an alpha-twin
+    member of a DIFFERENT SCC match this SCC's canonical specs, making
+    two SCCs claim one source position
+    (plans/aux-recursor-alias-collision.md §2/§13.4). Genuine external
+    types (never mutual members) keep the address fallback: their
+    alpha-twins legitimately dedup many-to-one. -/
 partial def auxSpecEq (canon src : Expr)
     (resolveAddr : Name → Option Address)
     (sourceToCanonFvar : Std.HashMap Name Name)
+    (strictNames : Std.HashSet Name)
     : StateM (Std.HashMap (Expr × Expr) Bool) Bool := do
   let canon := stripMdata canon
   let src := stripMdata src
@@ -358,34 +369,74 @@ partial def auxSpecEq (canon src : Expr)
         pure false
       else if aName == bName then
         pure true
+      else if strictNames.contains aName || strictNames.contains bName then
+        pure false
       else
         pure (match resolveAddr aName, resolveAddr bName with
           | some aAddr, some bAddr => aAddr == bAddr
           | _, _ => false)
     | .app aF aArg _, .app bF bArg _ => do
-      if !(← auxSpecEq aF bF resolveAddr sourceToCanonFvar) then pure false
-      else auxSpecEq aArg bArg resolveAddr sourceToCanonFvar
+      if !(← auxSpecEq aF bF resolveAddr sourceToCanonFvar strictNames) then
+        pure false
+      else auxSpecEq aArg bArg resolveAddr sourceToCanonFvar strictNames
     | .lam _ aT aB _ _, .lam _ bT bB _ _ => do
-      if !(← auxSpecEq aT bT resolveAddr sourceToCanonFvar) then pure false
-      else auxSpecEq aB bB resolveAddr sourceToCanonFvar
+      if !(← auxSpecEq aT bT resolveAddr sourceToCanonFvar strictNames) then
+        pure false
+      else auxSpecEq aB bB resolveAddr sourceToCanonFvar strictNames
     | .forallE _ aT aB _ _, .forallE _ bT bB _ _ => do
-      if !(← auxSpecEq aT bT resolveAddr sourceToCanonFvar) then pure false
-      else auxSpecEq aB bB resolveAddr sourceToCanonFvar
+      if !(← auxSpecEq aT bT resolveAddr sourceToCanonFvar strictNames) then
+        pure false
+      else auxSpecEq aB bB resolveAddr sourceToCanonFvar strictNames
     | .letE _ aT aV aB _ _, .letE _ bT bV bB _ _ => do
-      if !(← auxSpecEq aT bT resolveAddr sourceToCanonFvar) then pure false
-      else if !(← auxSpecEq aV bV resolveAddr sourceToCanonFvar) then pure false
-      else auxSpecEq aB bB resolveAddr sourceToCanonFvar
+      if !(← auxSpecEq aT bT resolveAddr sourceToCanonFvar strictNames) then
+        pure false
+      else if !(← auxSpecEq aV bV resolveAddr sourceToCanonFvar strictNames) then
+        pure false
+      else auxSpecEq aB bB resolveAddr sourceToCanonFvar strictNames
     | .proj aName aIdx aVal _, .proj bName bIdx bVal _ => do
       let namesOk := aName == bName
-        || (match resolveAddr aName, resolveAddr bName with
-          | some aAddr, some bAddr => aAddr == bAddr
-          | _, _ => false)
+        || (!strictNames.contains aName
+          && !strictNames.contains bName
+          && (match resolveAddr aName, resolveAddr bName with
+            | some aAddr, some bAddr => aAddr == bAddr
+            | _, _ => false))
       if aIdx != bIdx || !namesOk then pure false
-      else auxSpecEq aVal bVal resolveAddr sourceToCanonFvar
+      else auxSpecEq aVal bVal resolveAddr sourceToCanonFvar strictNames
     | .lit a _, .lit b _ => pure (a == b)
     | _, _ => pure false
   modify (·.insert key result)
   return result
+
+/-- Collect every `Const` reference to an original mutual-block member
+    inside `expr` into the returned set. DAG-memoized via the visited
+    set (same rationale as `hasOutOfSccConst`). Mirrors Rust
+    `collect_member_refs` (nested.rs). -/
+partial def collectMemberRefs (expr : Expr)
+    (originalNames : Std.HashSet Name)
+    : StateM (Std.HashSet Expr × Std.HashSet Name) Unit := do
+  if (← get).1.contains expr then
+    return ()
+  modify fun (seen, out) => (seen.insert expr, out)
+  match expr with
+  | .const name _ _ =>
+    if originalNames.contains name then
+      modify fun (seen, out) => (seen, out.insert name)
+  | .app f a _ => do
+    collectMemberRefs f originalNames
+    collectMemberRefs a originalNames
+  | .lam _ t b _ _ | .forallE _ t b _ _ => do
+    collectMemberRefs t originalNames
+    collectMemberRefs b originalNames
+  | .letE _ t v b _ _ => do
+    collectMemberRefs t originalNames
+    collectMemberRefs v originalNames
+    collectMemberRefs b originalNames
+  | .proj name _ val _ => do
+    if originalNames.contains name then
+      modify fun (seen, out) => (seen, out.insert name)
+    collectMemberRefs val originalNames
+  | .mdata _ inner _ => collectMemberRefs inner originalNames
+  | _ => return ()
 
 /-! ## Expand: create auxiliary types for nested occurrences -/
 
@@ -895,6 +946,203 @@ def sourceAuxOrder (originalAll : Array Name)
     : CompileM (Array (Name × Array Expr)) := do
   return (← sourceAuxOrderWithOwner originalAll).map fun (_, h, s) => (h, s)
 
+/-- Extract `(headName, headLevels, specParams)` for each auxiliary
+    member of an expanded block (positions `[nOriginals..]`), in the
+    block's aux order. Mirrors Rust `aux_signatures_of_expanded`. -/
+def auxSignaturesOfExpanded (expanded : ExpandedBlock)
+    : Array (Name × Array Level × Array Expr) := Id.run do
+  let mut out : Array (Name × Array Level × Array Expr) := #[]
+  for mem in expanded.types.toList.drop expanded.nOriginals do
+    let some nestedExpr := expanded.auxToNested.get? mem.name | continue
+    let (head, args) := decomposeApps nestedExpr
+    let .const headName headLevels _ := head | continue
+    out := out.push (headName, headLevels, args)
+  return out
+
+/-- Head-name buckets over aux signatures (matching becomes
+    ≈O(nSource) instead of O(nSource × nCanon)). Mirrors Rust
+    `signatures_by_head`. -/
+def signaturesByHead (signatures : Array (Name × Array Level × Array Expr))
+    : Std.HashMap Name (Array Nat) := Id.run do
+  let mut byHead : Std.HashMap Name (Array Nat) := {}
+  for ((head, _, _), i) in signatures.zipIdx do
+    byHead := byHead.insert head ((byHead.get? head).getD #[] |>.push i)
+  return byHead
+
+/-- Match one source-walk aux signature against a canonical signature
+    set: pass A requires the head's universe instantiation to match
+    exactly; pass B falls back level-insensitively (alpha-collapse can
+    rename the block's universe parameters). Threads the spec-equality
+    cache explicitly. Mirrors Rust `match_aux_signature`. -/
+def matchAuxSignature (srcHead : Name) (srcLevels : Array Level)
+    (normalized : Array Expr)
+    (signatures : Array (Name × Array Level × Array Expr))
+    (byHead : Std.HashMap Name (Array Nat))
+    (resolveAddr : Name → Option Address)
+    (sourceToCanonFvar : Std.HashMap Name Name)
+    (strictNames : Std.HashSet Name)
+    (specEqCache : Std.HashMap (Expr × Expr) Bool)
+    : Option Nat × Std.HashMap (Expr × Expr) Bool := Id.run do
+  let candidates := (byHead.get? srcHead).getD #[]
+  let mut cache := specEqCache
+  -- Pass A: exact universe instantiation + spec equality.
+  for i in candidates do
+    let (_, canonLevels, canonSpecs) := signatures[i]!
+    if canonLevels == srcLevels && canonSpecs.size == normalized.size then
+      let mut allEq := true
+      for (canonSp, srcSp) in canonSpecs.zip normalized do
+        if allEq then
+          let (eq, cache') := (auxSpecEq canonSp srcSp resolveAddr
+            sourceToCanonFvar strictNames).run cache
+          cache := cache'
+          if !eq then allEq := false
+      if allEq then return (some i, cache)
+  -- Pass B: level-insensitive fallback.
+  for i in candidates do
+    let (_, _, canonSpecs) := signatures[i]!
+    if canonSpecs.size == normalized.size then
+      let mut allEq := true
+      for (canonSp, srcSp) in canonSpecs.zip normalized do
+        if allEq then
+          let (eq, cache') := (auxSpecEq canonSp srcSp resolveAddr
+            sourceToCanonFvar strictNames).run cache
+          cache := cache'
+          if !eq then allEq := false
+      if allEq then return (some i, cache)
+  return (none, cache)
+
+/-- Per-spec-SCC signature context memoized by
+    `positionClaimedBySpecScc` across the out-of-SCC positions of one
+    block. Mirrors Rust `SccClaimCtx`. -/
+structure SccClaimCtx where
+  signatures : Array (Name × Array Level × Array Expr)
+  byHead : Std.HashMap Name (Array Nat)
+  origToCanon : Std.HashMap Name Name
+  strictNames : Std.HashSet Name
+  /-- Source (full-block) param FVars → the spec SCC's expansion param
+      FVars, zipped positionally (a split mutual's members share one
+      uniform param telescope, so positions correspond). -/
+  fvarMap : Std.HashMap Name Name
+  specEqCache : Std.HashMap (Expr × Expr) Bool := {}
+  normalizeCache : ExprCache := {}
+  deriving Inhabited
+
+/-- Build the claim context for one spec-member SCC from its recorded
+    class ordering. Mirrors Rust `build_scc_claim_ctx` (incl. the
+    `aux_class_names`-style intersection with `originalAll` — a
+    scheduler SCC can contain extra members through ordinary dependency
+    cycles). -/
+def buildSccClaimCtx (memberClasses : Array (Array Name))
+    (sourceExpanded : ExpandedBlock) (originalAll : Array Name)
+    : CompileM SccClaimCtx := do
+  let originalLookup : Std.HashSet Name :=
+    originalAll.foldl (init := {}) (·.insert ·)
+  let mut filtered : Array (Array Name) := #[]
+  for cls in memberClasses do
+    let names := cls.filter originalLookup.contains
+    if !names.isEmpty then
+      filtered := filtered.push names
+  let reps : Array Name := filtered.map (·[0]!)
+  let mut aliasToRep : Std.HashMap Name Name := {}
+  for cls in filtered do
+    for aliasName in cls.toList.drop 1 do
+      aliasToRep := aliasToRep.insert aliasName cls[0]!
+  let expanded ← expandNestedBlock reps aliasToRep
+  let signatures := auxSignaturesOfExpanded expanded
+  let byHead := signaturesByHead signatures
+  let mut origToCanon : Std.HashMap Name Name := {}
+  for cls in filtered do
+    for n in cls do
+      origToCanon := origToCanon.insert n cls[0]!
+  let mut strictNames : Std.HashSet Name := {}
+  for n in originalAll do
+    if !origToCanon.contains n then
+      strictNames := strictNames.insert n
+  let mut fvarMap : Std.HashMap Name Name := {}
+  for (src, canon) in
+      sourceExpanded.blockParamFvars.zip expanded.blockParamFvars do
+    if let (.fvar srcName _, .fvar canonName _) := (src, canon) then
+      fvarMap := fvarMap.insert srcName canonName
+  return { signatures, byHead, origToCanon, strictNames, fvarMap }
+
+/-- The global half of the evaporation decision: does the SCC owning an
+    out-of-SCC position's spec members canonically discover the same
+    aux? If yes, the `all0.{rec,below,brecOn}_N` name family for that
+    position belongs to THAT SCC's canonical block (registered as its
+    patches/aliases when it compiled — always before this block, since
+    the discovering constructor's reference forces the scheduler edge),
+    and the owner's SCC must register neither an evaporation alias nor a
+    head-rewrite plan for it. Only when NO SCC discovers the position
+    may it evaporate to the external head's generic recursor
+    (plans/aux-recursor-alias-collision.md §2). Mirrors Rust
+    `position_claimed_by_spec_scc`; the per-SCC context cache (keyed by
+    the SCC's recorded representative) threads through the return. -/
+def positionClaimedBySpecScc (sourceExpanded : ExpandedBlock)
+    (srcHead : Name) (srcLevels : Array Level) (srcSpecs : Array Expr)
+    (originalAll : Array Name)
+    (resolveAddr : Name → Option Address)
+    (sccCtxCache : Std.HashMap Name SccClaimCtx)
+    : CompileM (Bool × Std.HashMap Name SccClaimCtx) := do
+  let originalNames : Std.HashSet Name :=
+    originalAll.foldl (init := {}) (·.insert ·)
+  let mut seen : Std.HashSet Expr := {}
+  let mut memberRefs : Std.HashSet Name := {}
+  for sp in srcSpecs do
+    let ((), (seen', out')) :=
+      (collectMemberRefs sp originalNames).run (seen, memberRefs)
+    seen := seen'
+    memberRefs := out'
+  if memberRefs.isEmpty then
+    return (false, sccCtxCache)
+
+  -- Dedup candidate SCCs by their recorded class representative;
+  -- deterministic probe order for deterministic error attribution.
+  let cenv ← Ix.CompileM.getCompileEnv
+  let mut sccCtxCache := sccCtxCache
+  let mut candidateReps : Array Name := #[]
+  for member in memberRefs do
+    let some classes := cenv.blocks.get? member
+      | throw (.invalidMutualBlock
+          s!"evaporation disposition: spec member '{member.pretty}' has \
+no compiled block — scheduler ordering should have compiled it before \
+its dependents")
+    let some rep := classes[0]?.bind (·[0]?)
+      | continue
+    if !candidateReps.contains rep then
+      candidateReps := candidateReps.push rep
+      if !sccCtxCache.contains rep then
+        let ctx ← buildSccClaimCtx classes sourceExpanded originalAll
+        sccCtxCache := sccCtxCache.insert rep ctx
+  candidateReps := candidateReps.qsort (·.pretty < ·.pretty)
+
+  let mut claimant : Option Name := none
+  for rep in candidateReps do
+    let some ctx := sccCtxCache.get? rep
+      | throw (.invalidMutualBlock
+          "evaporation disposition: claim context missing after insert")
+    let mut normalizeCache := ctx.normalizeCache
+    let mut normalized : Array Expr := #[]
+    for sp in srcSpecs do
+      let (sp', cache') :=
+        (replaceConstNamesCached sp ctx.origToCanon).run normalizeCache
+      normalizeCache := cache'
+      normalized := normalized.push sp'
+    let (matched, specEqCache) := matchAuxSignature srcHead srcLevels
+      normalized ctx.signatures ctx.byHead resolveAddr ctx.fvarMap
+      ctx.strictNames ctx.specEqCache
+    sccCtxCache := sccCtxCache.insert rep
+      { ctx with normalizeCache, specEqCache }
+    if matched.isSome then
+      if let some prev := claimant then
+        -- Two SCCs discovering one occurrence requires a mutual
+        -- dependency cycle between them, which contradicts them being
+        -- distinct SCCs — a modeling gap if it ever fires.
+        throw (.invalidMutualBlock
+          s!"evaporation disposition: position (head={srcHead.pretty}) \
+canonically claimed by two SCCs: '{prev.pretty}' and '{rep.pretty}'")
+      claimant := some rep
+  return (claimant.isSome, sccCtxCache)
+
 /-- Compute `perm[sourceJ] = canonicalI` mapping Lean's source aux-walk
     positions onto canonical aux positions (`PERM_OUT_OF_SCC` for source
     auxes whose spec_params reference out-of-SCC inductives; many-to-one
@@ -921,24 +1169,27 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
   -- Canonical `(head, headLevels, specParams)` signatures (semantic
   -- identities). Not keyed by raw hash: alpha-collapse can express the
   -- same aux via different source names that resolve to one address.
-  let mut canonicalSignatures : Array (Name × Array Level × Array Expr) := #[]
-  for mem in canonicalAux do
-    let some nestedExpr := expanded.auxToNested.get? mem.name | continue
-    let (head, args) := decomposeApps nestedExpr
-    let .const headName headLevels _ := head | continue
-    canonicalSignatures := canonicalSignatures.push (headName, headLevels, args)
+  let canonicalSignatures := auxSignaturesOfExpanded expanded
   if canonicalSignatures.size != nCanon then
     throw (.invalidMutualBlock
       "compute_aux_perm: canonical aux missing nested_expr entries")
 
   -- Head-name buckets.
-  let mut canonByHead : Std.HashMap Name (Array Nat) := {}
-  for ((head, _, _), i) in canonicalSignatures.zipIdx do
-    canonByHead := canonByHead.insert head
-      ((canonByHead.get? head).getD #[] |>.push i)
+  let canonByHead := signaturesByHead canonicalSignatures
 
   let originalNames : Std.HashSet Name :=
     originalAll.foldl (init := {}) (·.insert ·)
+
+  -- Original members OUTSIDE this SCC compare name-strictly during
+  -- matching (see `auxSpecEq`): they behave as external constants in
+  -- specs, but address-equating them would let an alpha-twin member of
+  -- a different SCC spuriously match, making two SCCs claim one source
+  -- position's `all0.rec_N` name family.
+  let mut strictNamesM : Std.HashSet Name := {}
+  for n in originalAll do
+    if !origToCanonNames.contains n then
+      strictNamesM := strictNamesM.insert n
+  let strictNames := strictNamesM
 
   let mut perm : Array Nat := Array.replicate nSource PERM_OUT_OF_SCC
   let mut specEqCache : Std.HashMap (Expr × Expr) Bool := {}
@@ -946,17 +1197,10 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
   let mut normalizeCache : ExprCache := {}
 
   for ((srcOwner, srcHead, srcLevels, srcSpecs), j) in sourceOrder.zipIdx do
-    -- Out-of-SCC filter.
-    let mut inScc := true
-    for sp in srcSpecs do
-      let (bad, cache') :=
-        (hasOutOfSccConst sp origToCanonNames originalNames).run outOfSccCache
-      outOfSccCache := cache'
-      if bad then inScc := false
-    if !inScc then
-      continue
-
-    -- Normalize source spec_params to the canonical walk's view.
+    -- Normalize source spec_params to the canonical walk's view. In-SCC
+    -- alpha-collapse aliases rewrite to their representatives;
+    -- everything else (genuine external types AND other-SCC original
+    -- members) stays as spelled.
     let mut normalized : Array Expr := #[]
     for sp in srcSpecs do
       let (sp', cache') :=
@@ -964,49 +1208,37 @@ def computeAuxPerm (expanded : ExpandedBlock) (originalAll : Array Name)
       normalizeCache := cache'
       normalized := normalized.push sp'
 
-    -- Match against the head bucket: prefer a candidate whose head
-    -- universe instantiation matches EXACTLY (distinct universe
-    -- specializations of one family are distinct canonical auxes since
-    -- the flat-block dedup keys on levels, and both expansions read the
-    -- same constructor types, so in-block levels are verbatim
-    -- identical); fall back to a level-insensitive match, which
-    -- alpha-collapse needs when the representative's constructor types
-    -- name the block's universe parameters differently.
-    let candidates := (canonByHead.get? srcHead).getD #[]
-    let mut canonIdx : Option Nat := none
-    -- Pass A: exact universe instantiation + spec equality.
-    for i in candidates do
-      if canonIdx.isSome then break
-      let (_, canonLevels, canonSpecs) := canonicalSignatures[i]!
-      if canonLevels == srcLevels && canonSpecs.size == normalized.size then
-        let mut allEq := true
-        for (canonSp, srcSp) in canonSpecs.zip normalized do
-          if allEq then
-            let (eq, cache') :=
-              (auxSpecEq canonSp srcSp resolveAddr sourceToCanonFvar).run
-                specEqCache
-            specEqCache := cache'
-            if !eq then allEq := false
-        if allEq then canonIdx := some i
-    -- Pass B: level-insensitive fallback.
-    if canonIdx.isNone then
-      for i in candidates do
-        if canonIdx.isSome then break
-        let (_, _, canonSpecs) := canonicalSignatures[i]!
-        if canonSpecs.size == normalized.size then
-          let mut allEq := true
-          for (canonSp, srcSp) in canonSpecs.zip normalized do
-            if allEq then
-              let (eq, cache') :=
-                (auxSpecEq canonSp srcSp resolveAddr sourceToCanonFvar).run
-                  specEqCache
-              specEqCache := cache'
-              if !eq then allEq := false
-          if allEq then canonIdx := some i
+    -- Match FIRST, then classify misses. A position whose specs mention
+    -- other-SCC members can still be canonical HERE when this SCC's own
+    -- constructors mention the same occurrence — e.g.
+    -- `S.mk : List (S × T) → S` with `T` split into its own SCC: the
+    -- canonical expansion of {S} carries the `T`-spelling verbatim, so
+    -- strict-name matching identifies exactly the discovered-here
+    -- occurrences (fixture `AuxOwnership.SplitSpecs`; the old
+    -- out-of-SCC pre-filter skipped these and then failed the
+    -- covered-check below with "canonical aux has no source mapping").
+    let (canonIdx, specEqCache') := matchAuxSignature srcHead srcLevels
+      normalized canonicalSignatures canonByHead resolveAddr
+      sourceToCanonFvar strictNames specEqCache
+    specEqCache := specEqCache'
 
     match canonIdx with
     | some ci => perm := perm.set! j ci
     | none =>
+      -- No canonical match here. A position whose specs reference
+      -- out-of-SCC original members is another block's business:
+      -- canonical in the SCC that discovers it, or evaporated by the
+      -- owner's SCC — the disposition pass in `generateAuxPatches`
+      -- decides. Other constants are ordinary external parameters.
+      let mut referencesOut := false
+      for sp in srcSpecs do
+        let (bad, cache') :=
+          (hasOutOfSccConst sp origToCanonNames originalNames).run
+            outOfSccCache
+        outOfSccCache := cache'
+        if bad then referencesOut := true
+      if referencesOut then
+        continue
       -- Discovered from a different split SCC's ctor walk → skip; an
       -- in-SCC owner with no match is a construction bug.
       if !origToCanonNames.contains srcOwner then

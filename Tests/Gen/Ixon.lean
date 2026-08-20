@@ -349,12 +349,21 @@ def genCallSiteEntry (genIdx : Gen UInt64) : Gen CallSiteEntry :=
     (1, CallSiteEntry.collapsed <$> genUInt64Small <*> genIdx),
   ]
 
-/-- Generate an optional AuxLayout (nested-aux sidecar on `muts`). -/
+/-- Generate an optional AuxLayout (nested-aux sidecar on `muts`).
+    `evaporated` is canonically one 0/1 flag per perm entry — that is
+    what the compiler materializes. The unified encoding serializes the
+    flags verbatim (a `#[]` evaporated roundtrips as `#[]`), so the
+    generator emits the canonical size-matched form. -/
 def genAuxLayout? : Gen (Option AuxLayout) :=
   frequency [
     (2, pure none),
-    (1, (fun p c => some { perm := p, sourceCtorCounts := c })
-      <$> genSmallArray genUInt64Small <*> genSmallArray genUInt64Small),
+    (1, do
+      let p ← genSmallArray genUInt64Small
+      let c ← genSmallArray genUInt64Small
+      let mut e : Array UInt64 := #[]
+      for _ in [0:p.size] do
+        e := e.push (UInt64.ofNat (← Gen.choose Nat 0 1))
+      pure (some { perm := p, sourceCtorCounts := c, evaporated := e })),
   ]
 
 /-- Generate an ExprMetaData node with arena indices bounded by arenaSize.

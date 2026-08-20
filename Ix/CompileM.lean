@@ -73,9 +73,17 @@ structure CompileEnv where
       Shares the motive permutation with `.rec`, but `.brecOn` places
       indices+major before the handler binders. -/
   brecOnCallSitePlans : Std.HashMap Name Ix.AuxGen.BRecOnCallSitePlan := {}
-  /-- Per-`.below` surgery plans (Rust `stt.below_call_site_plans`).
-      `.below` has the motive-only telescope `params, motives, indices,
-      major`. -/
+  /-- Per-`.below`-family surgery plans (Rust
+      `stt.below_call_site_plans`). A `X.below`/`X.below_N` HEAD has the
+      motive-only telescope `params, motives, indices, major`. For
+      Prop-level (IndPredBelow) families the map also carries the rest
+      of the family's user-visible surface under their own names — the
+      `.below` constructors and the `.below.casesOn` wrapper, whose
+      telescopes start with the below inductive's parameters (parent
+      params, then parent motives) and have NO major-premise floor
+      (a field-less below ctor is fully applied at exactly
+      params+motives). The apply site discriminates the two shapes via
+      `Ix.AuxGen.belowPlanKeyIsHead`. -/
   belowCallSitePlans : Std.HashMap Name Ix.AuxGen.BRecOnCallSitePlan := {}
   /-- Persistent set of names compiled by aux-gen (Rust
       `stt.aux_gen_extra_names`); merged from block tails by the driver
@@ -85,6 +93,14 @@ structure CompileEnv where
       (Rust `stt.ungrounded`): pre-compile grounding rejections plus
       per-block compile failures recorded by the scheduler. -/
   ungrounded : Std.HashMap Name String := {}
+  /-- Mutual-block canonical class ordering, keyed by every member name
+      in the block (Rust `stt.blocks`, compile.rs:4048-4057; the driver
+      merges each block's `BlockResult.classNames` here on completion).
+      Read by the evaporation claim probe
+      (`Ix.AuxGen.positionClaimedBySpecScc`) to rebuild a spec-member
+      SCC's canonical expansion — scheduler dependency order guarantees
+      the entry exists before any dependent block compiles. -/
+  blocks : Std.HashMap Name (Array (Array Name)) := {}
   /-- Name-hash → name over the full INPUT constant set, for
       `nameForAddr`'s reverse lookup when the streaming driver leaves
       `env.consts` unmaterialized (its by-hash scan over `env.consts`
@@ -112,6 +128,13 @@ structure BlockResult where
       Empty for single non-inductive constants (name maps directly to block).
       For inductives/mutual blocks: contains IPrj/DPrj/RPrj/CPrj for each name. -/
   projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]
+  /-- Canonical class ordering of this block's members (Rust
+      `class_ordering`, compile.rs:4049), for the driver to merge into
+      `CompileEnv.blocks`. Empty for non-mutual/early-return paths —
+      Rust's `stt.blocks` insert sits after the alpha-collapsed
+      standalone early return (compile.rs:3872) and is skipped there
+      too. -/
+  classNames : Array (Array Name) := #[]
   deriving Inhabited
 
 /-- Per-block compilation state and tables. -/
@@ -704,7 +727,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     let recordPatch (root : UInt64) : CompileM Unit := do
       if compiled.any (·.2.isSome) then
         pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
-    match mutCtx.find? name with
+    match mutCtx.get? name with
     | some recIdx =>
       let root ← allocArenaNode (.ref nameAddr)
       recordPatch root
@@ -838,9 +861,13 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
               return ← compileRecCallSite name lvls plan headExpr args
       if let some plan := cenv.belowCallSitePlans.get? name then
         if !plan.isIdentity then
-          let fixedTailLen := plan.nIndices + 1 -- indices + major
-          let expectedTotal :=
-            plan.nParams + plan.nSourceMotives + fixedTailLen
+          -- `.below`/`.below_N` HEADS need the indices+major floor; a
+          -- Prop-below FAMILY member (ctor / `.below.casesOn`) has no
+          -- floor — a field-less below ctor is fully applied at exactly
+          -- params+motives (compile.rs below-family branch).
+          let isHead := Ix.AuxGen.belowPlanKeyIsHead name
+          let expectedTotal := plan.nParams + plan.nSourceMotives
+            + (if isHead then plan.nIndices + 1 else 0)
           if args.size >= expectedTotal then
             return ← compileBelowCallSite name plan headExpr args
       if let some plan := cenv.brecOnCallSitePlans.get? name then
@@ -1080,20 +1107,22 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
   let headForCanon := Expr.mkConst name targetLevels
   buildCallSite nameAddr headForCanon canonicalArgs collapsedArgs entries true
 
-/-- `.below` call-site surgery (compile.rs:1163-1263): telescope is
-    `params, motives, indices, major` — motive keep/reorder mirrors the
-    recursor plan; everything after the motives is kept identically. -/
+/-- `.below`-family call-site surgery (compile.rs below-family branch).
+    HEAD telescope is `params, motives, indices, major`; a Prop-below
+    FAMILY member (ctor / `.below.casesOn`) starts with the below params
+    (parent params, then parent motives). In both shapes everything
+    after the motive segment is kept identically, so one identity tail
+    covers indices+major, ctor fields, and casesOn
+    target-motive+indices+major+minors alike — the caller enforces the
+    per-shape application floor. -/
 partial def compileBelowCallSite (name : Name)
     (plan : Ix.AuxGen.BRecOnCallSitePlan) (headExpr : Expr)
     (args : Array Expr) : CompileM (Ixon.Expr × UInt64) := do
-  let fixedTailLen := plan.nIndices + 1 -- indices + major
-  let expectedTotal := plan.nParams + plan.nSourceMotives + fixedTailLen
   compileName name
   let nameAddr := name.getHash
   let params := args.extract 0 plan.nParams
   let motives := args.extract plan.nParams (plan.nParams + plan.nSourceMotives)
-  let fixedTail := args.extract (plan.nParams + plan.nSourceMotives) expectedTotal
-  let extraTail := args.extract expectedTotal args.size
+  let tail := args.extract (plan.nParams + plan.nSourceMotives) args.size
 
   let nCanonMotives := plan.nCanonicalMotives
   let mut canonicalArgs : Array (Nat × Expr) := #[]
@@ -1114,15 +1143,10 @@ partial def compileBelowCallSite (name : Name)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push motive
 
-  let fixedTailCanonBase := plan.nParams + nCanonMotives
-  for (t, i) in fixedTail.zipIdx do
-    canonicalArgs := canonicalArgs.push (fixedTailCanonBase + i, t)
-    entries := entries.push (.kept (fixedTailCanonBase + i).toUInt64 0)
-
-  let extraTailCanonBase := fixedTailCanonBase + fixedTailLen
-  for (t, i) in extraTail.zipIdx do
-    canonicalArgs := canonicalArgs.push (extraTailCanonBase + i, t)
-    entries := entries.push (.kept (extraTailCanonBase + i).toUInt64 0)
+  let tailCanonBase := plan.nParams + nCanonMotives
+  for (t, i) in tail.zipIdx do
+    canonicalArgs := canonicalArgs.push (tailCanonBase + i, t)
+    entries := entries.push (.kept (tailCanonBase + i).toUInt64 0)
 
   let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
   buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false
@@ -1253,7 +1277,7 @@ def collectExprTables (top : Expr) (ctxKey : Address)
     | .const name lvls _ =>
       for lvl in lvls do
         univs := univs.push (← compileUniv lvl)
-      if (mutCtx.find? name).isNone then
+      if (mutCtx.get? name).isNone then
         refs := refs.push (← lookupConstAddr name)
     | .app func arg _ =>
       stack := stack.push arg |>.push func
@@ -1389,7 +1413,7 @@ partial def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
     let univs ← SOrder.zipM (compareLevel xlvls ylvls) xls.toList yls.toList
     if univs.ord != .eq then pure univs
     else if x == y then pure ⟨true, .eq⟩
-    else match ctx.find? x, ctx.find? y with
+    else match ctx.get? x, ctx.get? y with
     | some nx, some ny => pure ⟨false, compare nx ny⟩
     | some _, none => pure ⟨true, .lt⟩
     | none, some _ => pure ⟨true, .gt⟩
@@ -1423,7 +1447,7 @@ partial def compareExpr (ctx : Ix.MutCtx) (xlvls ylvls : List Name)
   | .lit .., _ => pure ⟨true, .lt⟩
   | _, .lit .. => pure ⟨true, .gt⟩
   | .proj tnx ix tx _, .proj tny iy ty _ => do
-    let tn ← match ctx.find? tnx, ctx.find? tny with
+    let tn ← match ctx.get? tnx, ctx.get? tny with
       | some nx, some ny => pure ⟨false, compare nx ny⟩
       | none, some _ => pure ⟨true, .gt⟩
       | some _, none => pure ⟨true, .lt⟩
@@ -2170,7 +2194,7 @@ def compileMutualBlock (classes : List (List MutConst))
         for const in constClass do
           let n := const.name
           projections := projections.push (n, block, metaMap.get? n |>.getD .empty)
-      return ⟨block, blockBytes, blockAddr, .empty, projections⟩
+      return ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
 
     let block := buildConstantWithSharing (.muts mutConsts) allExprs cache.refs cache.univs
 
@@ -2205,13 +2229,13 @@ def compileMutualBlock (classes : List (List MutConst))
             cidx := cidx + 1
       idx := idx + 1
 
-    pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+    pure ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
 
 /-! ## Main Compilation Entry Points -/
 
 /-- Build mutCtx for an inductive: includes the inductive and all its constructors. -/
 def buildInductiveMutCtx (i : InductiveVal) (ctorVals : Array ConstructorVal) : Ix.MutCtx := Id.run do
-  let mut ctx : Ix.MutCtx := Batteries.RBMap.empty
+  let mut ctx : Ix.MutCtx := Std.TreeMap.empty
   -- Inductive at index 0
   ctx := ctx.insert i.cnst.name 0
   -- Constructors at indices 1, 2, ...
@@ -2224,13 +2248,13 @@ def BlockResult.mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta := .e
     (projections : Array (Name × Ixon.Constant × Ixon.ConstantMeta) := #[]) : BlockResult :=
   let blockBytes := Ixon.ser block
   let blockAddr := Address.blake3 blockBytes
-  ⟨block, blockBytes, blockAddr, blockMeta, projections⟩
+  ⟨block, blockBytes, blockAddr, blockMeta, projections, #[]⟩
 
 /-- Compile a single Ix.ConstantInfo directly (singleton, non-mutual).
     Returns BlockResult with the constant and any projections needed. -/
 def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
   let name := const.getCnst.name
-  let mutCtx : Ix.MutCtx := Batteries.RBMap.empty.insert name 0
+  let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert name 0
   withMutCtx mutCtx do
     match const with
     | .defnInfo d =>
@@ -2317,7 +2341,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
           let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
           let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
           projections := projections.push (ctorName, ctorProj, ctorMeta)
-        pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+        pure ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
 
     | .ctorInfo c =>
       -- Constructors are compiled by compiling their parent inductive
@@ -2347,7 +2371,7 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
             let ctorProjInfo : Ixon.ConstantInfo := .cPrj ⟨0, cidx.toUInt64, blockAddr⟩
             let ctorProj : Ixon.Constant := ⟨ctorProjInfo, #[], #[], #[]⟩
             projections := projections.push (ctorName, ctorProj, ctorMeta)
-          pure ⟨block, blockBytes, blockAddr, .empty, projections⟩
+          pure ⟨block, blockBytes, blockAddr, .empty, projections, #[]⟩
       | _ => throw (.invalidMutualBlock s!"Constructor has non-inductive parent")
 
 /-- Compile a constant by name (looks it up in the environment).
@@ -2848,14 +2872,40 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
 /-! ## Rust Compilation FFI -/
 
+/-- Structured result of `rs_compile_env`. Field kinds/order must match
+    the `LeanIxCompileEnvStatus` FFI layout in `crates/ffi/src/lean.rs`:
+    boxed fields first (`root`, `ungrounded`), then the UInt64 scalars
+    (`bytes`, `named`, `uniqueAnon`) in declaration order. -/
+structure CompileEnvStatus where
+  /-- 64-hex canonical consts merkle root. Equals the `.ixe` header root
+      when a file was written; still computed on a fail-closed abort. -/
+  root : String
+  /-- `(pretty name, reason)` for every requested constant whose block
+      failed to compile, sorted by name. Empty ⇔ complete environment. -/
+  ungrounded : Array (String × String)
+  /-- Bytes written to `outPath` (0 when nothing was written). -/
+  bytes : UInt64
+  /-- Named constants in the compiled env. -/
+  named : UInt64
+  /-- Unique anonymous constants (content-deduplicated). -/
+  uniqueAnon : UInt64
+  deriving Repr, Inhabited
+
 /-- FFI: Compile a Lean environment and write the serialized Ixon.Env
     bytes straight to `outPath` from Rust (streamed; no env-sized
     ByteArray crosses the FFI). Writes to `<outPath>.tmp` then renames,
-    so a crash cannot leave a truncated file. Returns the byte count
-    written. -/
+    so a crash cannot leave a truncated file.
+
+    Fail-closed semantics live behind the FFI: with
+    `allowPartial := false`, an env with any ungrounded requested
+    constant writes NOTHING (the final path is never created) and the
+    returned status carries the full ungrounded list; with
+    `allowPartial := true`, the grounded subset is serialized and the
+    status discloses what was omitted. -/
 @[extern "rs_compile_env"]
 opaque rsCompileEnvBytesFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → IO Nat
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
+  → IO CompileEnvStatus
 
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
     decompile + roundtrip + alpha-equivalence + nested-detect checks).
@@ -2870,11 +2920,21 @@ opaque rsCompileValidateAuxFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
 /-- Compile a Lean environment and write the serialized Ixon.Env bytes
-    to `outPath` using the Rust compiler. Returns the byte count. -/
+    to `outPath` using the Rust compiler. Fail-closed by default: any
+    ungrounded constant throws (and nothing is written) unless
+    `allowPartial := true`. Returns the structured compile status. -/
 def rsCompileEnvBytes (leanEnv : Lean.Environment) (outPath : String)
-    : IO Nat := do
+    (allowPartial : Bool := false) : IO CompileEnvStatus := do
   let constList := leanEnv.constants.toList
-  rsCompileEnvBytesFFI constList outPath
+  let status ← rsCompileEnvBytesFFI constList outPath allowPartial
+  if !allowPartial && !status.ungrounded.isEmpty then
+    throw <| IO.userError <|
+      s!"rsCompileEnvBytes: {status.ungrounded.size} requested constant(s) " ++
+      s!"failed to compile; nothing written to {outPath}. First failure: " ++
+      match status.ungrounded[0]? with
+      | some (n, r) => s!"{n}: {r}"
+      | none => "<empty>"
+  return status
 
 -- Re-export RawEnv types from Ixon for backwards compatibility
 export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)
@@ -2889,8 +2949,8 @@ opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.Ra
     in `src/ix/env.rs`. This is the addressing scheme under which
     `orig_kenv` stores KIds in the kernel — two constants with the same
     Lean name but different content get distinct addresses. Used by
-    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimOrigAddrs` in
-    the Rust kernel. -/
+    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimAddrs::new_orig`
+    in the Rust kernel. -/
 @[extern "rs_leon_hashes"]
 opaque rsLeonHashesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array (Ix.Name × Address))
@@ -2916,10 +2976,12 @@ structure CompilePhases where
 @[extern "rs_compile_phases"]
 opaque rsCompilePhasesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO RustCompilePhases
 
-/-- Run all compilation phases using Rust and convert to Lean-friendly types.
-    This is the main entry point for getting Rust compilation results. -/
-def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
-  let constList := leanEnv.constants.toList
+/-- Run all compilation phases in Rust over an explicit constant list
+    and convert to Lean-friendly types. Use this for closure-scoped
+    compiles (e.g. `#ixeval` compiles only a term's reference closure);
+    `rsCompilePhases` covers the whole-environment case. -/
+def rsCompilePhasesOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    IO CompilePhases := do
   let raw ← rsCompilePhasesFFI constList
 
   -- Convert RawEnvironment to Environment
@@ -2933,12 +2995,23 @@ def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases := do
 
   pure { rawEnv, condensed, compileEnv }
 
-/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
-    Uses the direct FFI that returns structured Lean objects. -/
-def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env := do
-  let constList := leanEnv.constants.toList
+/-- Run all compilation phases using Rust and convert to Lean-friendly types.
+    This is the main entry point for getting Rust compilation results. -/
+def rsCompilePhases (leanEnv : Lean.Environment) : IO CompilePhases :=
+  rsCompilePhasesOf leanEnv.constants.toList
+
+/-- Compile an explicit constant list to Ixon.Env using the Rust
+    compiler. Use for compiles over constructed environments (e.g. the
+    catalog `--audit` per-library comparison). -/
+def rsCompileEnvOf (constList : List (Lean.Name × Lean.ConstantInfo)) :
+    IO Ixon.Env := do
   let rawEnv ← rsCompileEnvFFI constList
   pure rawEnv.toEnv
+
+/-- Compile a Lean environment to Ixon.Env using the Rust compiler.
+    Uses the direct FFI that returns structured Lean objects. -/
+def rsCompileEnv (leanEnv : Lean.Environment) : IO Ixon.Env :=
+  rsCompileEnvOf leanEnv.constants.toList
 
 end
 end Ix.CompileM

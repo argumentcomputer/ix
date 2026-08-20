@@ -38,7 +38,7 @@ theorem nat_tr
       (KExpr.mkConst prims.nat #[]) Lean4Lean.VExpr.nat := by
   rw [KExpr.mkConst_shape]
   obtain ⟨ci, hlookup⟩ := htable.nat.contains hcatalog
-  simpa [Lean4Lean.VExpr.nat, htable.natArity hlookup] using
+  exact
     (TrKExprS.const (Δ := Delta) (uvars := uvars)
       htable.nat.2 hlookup (by simp) (by simp [htable.natArity hlookup]))
 
@@ -52,7 +52,7 @@ theorem string_tr
       (KExpr.mkConst prims.string #[]) Lean4Lean.VExpr.string := by
   rw [KExpr.mkConst_shape]
   obtain ⟨ci, hlookup⟩ := htable.string.contains hcatalog
-  simpa [Lean4Lean.VExpr.string, htable.stringArity hlookup] using
+  exact
     (TrKExprS.const (Δ := Delta) (uvars := uvars)
       htable.string.2 hlookup (by simp)
         (by simp [htable.stringArity hlookup]))
@@ -116,7 +116,7 @@ theorem inferUncached_nat_wf
             hIfinal.2.1.wf
         · have htype0 : world.venv.HasType uvars []
               (.natLit n) Lean4Lean.VExpr.nat := by
-            simpa using
+            simpa [Lean4Lean.VLCtx.toCtx] using
               (Lean4Lean.TrExprS.natLit
                 (Us := List.replicate uvars Lean.Name.anonymous) (Δ := [])
                 context.theoryPrimitives hcontains n).2
@@ -166,7 +166,8 @@ theorem inferUncached_str_wf
             hIfinal.2.1.wf
         · have htype0 : world.venv.HasType uvars []
               (.trLiteral (.strVal value)) Lean4Lean.VExpr.string := by
-            simpa [Lean4Lean.VExpr.string] using
+            simpa [Lean4Lean.VExpr.string, Lean4Lean.VLCtx.toCtx,
+              Lean.Literal.typeName] using
               (Lean4Lean.TrExprS.trLiteral world.venvWF.ordered
                 (Us := List.replicate uvars Lean.Name.anonymous) (Δ := [])
                 context.theoryPrimitives (.strVal value) hcontains).2

@@ -16,6 +16,16 @@ collapses to its work item's root.
 
 namespace Ix.Tc
 
+/-- `Except` carries no `DecidableEq` instance, so the `get`/`peekTag`
+equations of `ExactAnonEntry` cannot otherwise build the instance the
+`native_decide` fixtures need. -/
+instance {ε α : Type} [DecidableEq ε] [DecidableEq α] :
+    DecidableEq (Except ε α)
+  | .error _, .ok _ => isFalse (by simp)
+  | .ok _, .error _ => isFalse (by simp)
+  | .error a, .error b => decidable_of_iff (a = b) (by simp)
+  | .ok a, .ok b => decidable_of_iff (a = b) (by simp)
+
 /-- Exact lazy entry used by the production classifier.  This is a
 proposition, rather than a data-bearing structure, so the lazy implementation
 witness cannot escape the structural environment contract. -/
@@ -40,7 +50,7 @@ theorem getConst {env : Ixon.Env} {addr : Address}
   cases hcache : lazy.cache with
   | none =>
       simp only [hcache] at hmaterialize ⊢
-      simpa using congrArg Except.toOption hmaterialize
+      simpa [Except.toOption] using congrArg Except.toOption hmaterialize
   | some cached =>
       simp only [hcache] at hmaterialize ⊢
       cases hmaterialize

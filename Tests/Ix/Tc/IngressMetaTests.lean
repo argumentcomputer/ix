@@ -484,7 +484,7 @@ def closureParity (leanEnv : Lean.Environment) (label : String)
     return (0, some s!"empty closure for {seeds}")
   let dir ← IO.FS.createTempDir
   let path := dir / s!"tc-ingress-meta-{label}.ixe"
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
   let bytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
   match Ixon.deEnv bytes with

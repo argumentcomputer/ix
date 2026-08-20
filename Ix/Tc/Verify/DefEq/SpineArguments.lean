@@ -187,7 +187,8 @@ theorem defEq_of_zip
               (leftPrefix ++ [leftArg]).zip
                   (rightPrefix ++ [rightArg]) =
                 leftPrefix.zip rightPrefix ++ [(leftArg, rightArg)] := by
-            simpa using List.zip_append hprefixLength
+            rw [List.zip_append hprefixLength]
+            rfl
           have hprefixArgs : ∀ pair,
               pair ∈ leftPrefix.zip rightPrefix →
                 SpineArgDefEq trProj world uvars Delta pair.1 pair.2 := by

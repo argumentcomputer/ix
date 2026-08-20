@@ -52,7 +52,7 @@ instance : LawfulHashable FVarId where
 
 /-- Translation-side local context: declarations optionally addressable
     by an `FVarId` (with its dependency list), innermost first. -/
-def KVLCtx := List (Option (FVarId × List FVarId) × VLocalDecl)
+abbrev KVLCtx := List (Option (FVarId × List FVarId) × VLocalDecl)
 
 namespace KVLCtx
 

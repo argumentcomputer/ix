@@ -115,6 +115,25 @@ pub fn addr_key(addr: &Address) -> Vec<G> {
   addr.as_bytes().iter().map(|b| G::from_u8(*b)).collect()
 }
 
+/// An address as 8 packed-4-LE-byte field elements: the `verify_claim`
+/// public-input (and ch-0 key) form. Mirrors the in-circuit `b3_pack`
+/// and Lean `IxVM.ClaimHarness.packedDigestKey`.
+#[inline]
+fn packed_digest_key(addr: &Address) -> Vec<G> {
+  addr
+    .as_bytes()
+    .chunks_exact(4)
+    .map(|w| {
+      G::from_u32(
+        u32::from(w[0])
+          | u32::from(w[1]) << 8
+          | u32::from(w[2]) << 16
+          | u32::from(w[3]) << 24,
+      )
+    })
+    .collect()
+}
+
 #[inline]
 fn bytes_to_g(bytes: &[u8]) -> Vec<G> {
   bytes.iter().map(|b| G::from_u8(*b)).collect()
@@ -248,7 +267,7 @@ pub fn build_claim_check_witness(
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
-  let digest_key = addr_key(&digest);
+  let digest_key = packed_digest_key(&digest);
 
   let mut io = IOBuffer::new();
   // ch 0: claim bytes
@@ -365,7 +384,11 @@ pub fn seed_shard_check_env_claim(
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
-  let digest_key = addr_key(&digest);
+  // `verify_claim` now takes the digest as 8 packed field elements, not
+  // 32 bytes, so the claim wire key must be packed the same way. The
+  // shared-io design seeds into the caller's buffer rather than building
+  // one here.
+  let digest_key = packed_digest_key(&digest);
   extend(io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   extend(
     io,
@@ -401,7 +424,7 @@ pub fn build_claim_check_witness_lazy(
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
-  let digest_key = addr_key(&digest);
+  let digest_key = packed_digest_key(&digest);
   let mut io = IOBuffer::with_backing(EnvFaultSource::new(env.clone()));
   extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
   Ok((claim, digest_key, io))

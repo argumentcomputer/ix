@@ -116,8 +116,8 @@ lean_ffi::lean_inductive! {
     { num_64: 2 },                            // tag 1: collapsed
   ];
 
-  // perm, sourceCtorCounts (both Array UInt64)
-  LeanIxonAuxLayout       [ { num_obj: 2 } ];
+  // perm, sourceCtorCounts, evaporated (all Array UInt64; evaporated is 0/1)
+  LeanIxonAuxLayout       [ { num_obj: 3 } ];
 
   LeanIxonConstantMetaInfo [
     { },                                      // tag 0: empty (scalar)
@@ -170,6 +170,9 @@ lean_ffi::lean_inductive! {
   LeanIxTheoremVal      [ { num_obj: 3 } ];
   LeanIxCondensedBlocks [ { num_obj: 3 } ];
   LeanIxCompilePhases   [ { num_obj: 3 } ];
+  // Ix.CompileM.CompileEnvStatus: root (String), ungrounded
+  // (Array (String × String)), then UInt64 scalars bytes/named/uniqueAnon
+  LeanIxCompileEnvStatus [ { num_obj: 2, num_64: 3 } ];
   LeanIxSubstring       [ { num_obj: 3 } ];
 
   // --- Ix multi-variant inductives ---

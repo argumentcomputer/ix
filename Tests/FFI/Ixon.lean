@@ -200,8 +200,13 @@ def constantMetaTests : TestSeq :=
     (.recr testAddr #[] #[] #[] #[] smallArena 0 #[1, 2]))) ++
   checkIO "ConstantMeta.muts auxLayout none" (rt (.new
     (.muts #[#[testAddr]] none))) ++
+  -- `evaporated` fixtures spell the canonical one-flag-per-perm-entry
+  -- form the compiler materializes (the Rust FFI decode expands the
+  -- `#[]` construction default to that shape).
   checkIO "ConstantMeta.muts auxLayout some" (rt (.new
-    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3]⟩)))) ++
+    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 0]⟩)))) ++
+  checkIO "ConstantMeta.muts auxLayout evaporated" (rt (.new
+    (.muts #[#[testAddr]] (some ⟨#[1, 0], #[2, 3], #[0, 1]⟩)))) ++
   checkIO "ConstantMeta callSite arena" (rt (.new
     (.defn testAddr #[] #[] #[] callSiteArena 0 1))) ++
   checkIO "ConstantMeta extension tables" (rt

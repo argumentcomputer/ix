@@ -373,15 +373,13 @@ def stagedExactRecursor :
 theorem familyWorkCatalog :
     familyItem.MatchesBlockCatalog stagedWorld.blocks := by
   refine ⟨familyId, #[falseId, trueId], ?_, rfl, ?_⟩
-  · simpa [stagedWorld, familyMembers_eq] using
-      stagedExactFamily.blockLookup
+  · exact stagedExactFamily.blockLookup
   · simp
 
 theorem recursorWorkCatalog :
     recursorItem.MatchesBlockCatalog stagedWorld.blocks := by
   refine ⟨recursorId, #[], ?_, rfl, ?_⟩
-  · simpa [stagedWorld, recursorMembers_eq] using
-      stagedExactRecursor.blockLookup
+  · exact stagedExactRecursor.blockLookup
   · simp
 
 /-! ## Closed dependency graph -/
@@ -489,7 +487,8 @@ def familyResidualResources
     simpa [stagedWorld] using hle.nameOf
   let reindexed := familyBlockOracle.reindex hcatalog hnameOf
   have henv : reindexed.after ≤ current.venv := by
-    simpa [reindexed, stagedWorld] using hle.venv
+    simp only [reindexed, InductiveOracle.reindex_after]
+    exact hle.venv
   let oracle := reindexed.restageMissing henv current.venvWF
     current.trusted (by
       simpa [reindexed] using hmissing)
@@ -506,9 +505,7 @@ def familyResidualResources
       dsimp only [oracle]
       rw [InductiveOracle.restageMissing_members_iff,
         InductiveOracle.reindex_members]
-      exact and_congr (by
-        simpa only [familyBlockOracle] using
-          familyLink.oracle_members_iff id) Iff.rfl
+      exact and_congr (familyLink.oracle_members_iff id) Iff.rfl
   }
 
 /-- Recursor analogue of `familyResidualResources`, including the E2 proof
@@ -532,7 +529,8 @@ def recursorResidualResources
     simpa [stagedWorld] using hle.nameOf
   let reindexed := recursorBlockOracle.reindex hcatalog hnameOf
   have henv : reindexed.after ≤ current.venv := by
-    simpa [reindexed, stagedWorld] using hle.venv
+    simp only [reindexed, InductiveOracle.reindex_after]
+    exact hle.venv
   let oracle := reindexed.restageMissing henv current.venvWF
     current.trusted (by
       simpa [reindexed] using hmissing)
@@ -549,9 +547,7 @@ def recursorResidualResources
       dsimp only [oracle]
       rw [InductiveOracle.restageMissing_members_iff,
         InductiveOracle.reindex_members]
-      exact and_congr (by
-        simpa only [recursorBlockOracle] using
-          recursorLink.oracle_members_iff enumerationShape id) Iff.rfl
+      exact and_congr (recursorLink.oracle_members_iff enumerationShape id) Iff.rfl
   }
 
 /-! ## Supported production calls -/

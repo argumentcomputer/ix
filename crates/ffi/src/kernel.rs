@@ -745,6 +745,20 @@ pub extern "C" fn rs_kernel_ixon_names(
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_prim_addrs_canonical() -> LeanIOResult<LeanOwned> {
   let table = ix_kernel::primitive::PrimAddrs::lean_parity_table();
+  build_prim_addrs_table(&table)
+}
+
+/// FFI: expose the original/LEON primitive `(lean_name, hex_address)`
+/// table from `PrimAddrs::new_orig()` to the Lean test suite.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_prim_addrs_orig() -> LeanIOResult<LeanOwned> {
+  let table = ix_kernel::primitive::PrimAddrs::lean_orig_parity_table();
+  build_prim_addrs_table(&table)
+}
+
+fn build_prim_addrs_table(
+  table: &[(&'static str, String)],
+) -> LeanIOResult<LeanOwned> {
   let arr = LeanArray::alloc(table.len());
   for (i, (name, hex)) in table.iter().enumerate() {
     let name_obj: LeanOwned = LeanString::new(name).into();

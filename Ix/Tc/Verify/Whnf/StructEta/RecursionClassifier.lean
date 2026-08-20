@@ -598,14 +598,14 @@ theorem computeIsRec_wf
     cases answer with
     | none =>
         simp only
-        simpa only [ReaderT.run] using
+        exact
           (TcM.WF.pure
             (I := WhnfStateInv layer semantics trProj world support uvars Delta)
             (s := after)
             (Q := fun _ _ => True) (fun _ => trivial))
     | some value =>
         simp only
-        simpa only [ReaderT.run] using
+        exact
           (TcM.WF.pure
             (I := WhnfStateInv layer semantics trProj world support uvars Delta)
             (s := after)

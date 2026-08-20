@@ -5,26 +5,32 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "d3c15b93a1dd4e7c8d5c0c3825c9555737e55c3e"
+  "https://github.com/argumentcomputer/LSpec" @ "e780f4188c9649aef988270f4d126651460ca9c4"
 
+/- Blake3's `blake3_rs_shared` target builds `blake3-rs` as a `cdylib`
+alongside the staticlib. `ix_native_decide_dynlib` fetches it to supply the
+BLAKE3 backend to Lean's native evaluator, and that dynlib gates every
+`IxTcVerify` module, so this pin must stay at or after the revision that
+introduced the target. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "c6db090374cb3c3c717691beb6cd18bb08936598"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "db25a8a21579d8211eec4347402721f5674bf2c1"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "v4.29.0"
+  "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "v4.29.0"
+  "https://github.com/leanprover-community/batteries" @ "v4.33.0"
 
 /- Reference Lean4-in-Lean4 theory and checker. `IxTcVerify` imports its
 Theory/Verify specification surface, while `bench-lean4lean` and the ignored
 `lean4lean` test runner exercise the implementation. The default `ix` target
 still does not build this dependency. Pin the audited Argument fork exactly:
-this revision replaces the inductive specification placeholders with the
-staged checked/generation/certificate development integrated by Pin A in
-`plans/tc-verify-execution-plan.md`. -/
+this revision carries the upstream v4.32/v4.33 kernel hardening — including
+the `checkNoMVarNoFVar` check on an opaque's value (leanprover/lean4#14498),
+which the replay path in `Benchmarks/Lean4Lean.lean` reaches — on top of the
+fork's certified inductive-environment and projection development. -/
 require lean4lean from git
-  "https://github.com/argumentcomputer/lean4lean" @ "5e5bb767b3491d21a71908d4c58bcbaa007283bb"
+  "https://github.com/argumentcomputer/lean4lean" @ "4844eda4fe376a7ab7e23a4b9755189d3c2ffe5b"
 
 /-! ## FFI
 

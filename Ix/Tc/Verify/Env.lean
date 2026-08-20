@@ -954,6 +954,7 @@ def promotedVEnv : VEnv where
   constants := fun name =>
     if targetName = name then some theoryConstant.toVConstant else none
   defeqs := fun _ => False
+  structEtas := fun _ => False
 
 theorem raw : RawDeclRel world.venv world.nameOf RawProjRel.none
     targetId concrete theoryDecl := by

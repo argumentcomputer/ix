@@ -1,5 +1,4 @@
 import Tests.Aiur
-import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.IxonCorpus
 import Tests.Ix.IxonSyntax
@@ -53,6 +52,11 @@ import Tests.Cli
 import Tests.ShardMap
 import Tests.Ix.EnvBody
 import Tests.Ix.Lean4Lean
+import Tests.Ix.MetaEnv
+import Tests.Ix.Catalog
+import Tests.Ix.ImportIxe
+import Tests.Ix.CatalogFixtures
+import Tests.Ix.CatalogQualified
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -66,7 +70,10 @@ opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 /-- Primary test suites - run by default -/
 def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("ffi", Tests.FFI.suite),
-  ("byte-array", Tests.ByteArray.suite),
+  ("meta-env", Tests.Ix.MetaEnv.suite),
+  ("catalog", Tests.Ix.Catalog.suite),
+  ("import-ixe", Tests.Ix.ImportIxe.suite),
+  ("catalog-qualified", Tests.Ix.CatalogQualified.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
   ("claim", Tests.Claim.suite),
@@ -83,6 +90,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("aiur-cost", [AiurTests.Cost.tests]),
   ("prim-addrs", Tests.Ix.Kernel.PrimAddrs.suite),
+  ("primitive-address-parity", Tests.Ix.Kernel.BuildPrimitives.paritySuite
+    ++ Tests.Ix.Kernel.BuildPrimOrigs.paritySuite),
   ("decompile-unit", Tests.Decompile.unitSuite),
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
     ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite
@@ -93,6 +102,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
 def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("shard-map", Tests.ShardMap.suite),
+  ("catalog-fixtures", Tests.Ix.CatalogFixtures.suite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
   ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),
@@ -202,28 +212,32 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
         s ++ runParityCase v2Env.compiled tc
       let fullSeq := [kernelUnitTests, serdeTest].foldl (init := .done)
         fun s tc => s ++ v2FullEnv.runTestCase tc
-      -- Closure-scale pin: the utf8-decode theorem's full-closure
-      -- check through the Rust witness builder + native kernel
-      -- (thousands of blocks). Exact FFT pin, same convention as
-      -- `kernelCheckEntries` (`.round.toUInt64.toNat`): any cost shift
-      -- must be an explicit, reviewed bump.
-      let closureSeq ← match (← closureCheckCase env) with
-        | none => pure (LSpec.test "closure pin: SKIP (target absent)" true)
-        | some (handle, addr) =>
+      -- Shard pipeline: witness built in Rust (thin-frontier claim,
+      -- parallel closure walk) and run on the native kernel. Pinned FFT
+      -- is the regression signal.
+      let shardSeq ← match (← shardCheckEnvCase env) with
+        -- Only reachable when the target constant is absent from this
+        -- toolchain; a fixture that no longer selects any owned
+        -- constants throws instead of skipping.
+        | none => pure (LSpec.test "shard pipeline: SKIP (target absent)" true)
+        | some (handle, ownedBlob) =>
           let funIdx := v2Env.compiled.getFuncIdx `verify_claim |>.get!
-          match v2Env.compiled.bytecode.checkAddrWithEnv
-                  funIdx handle addr.hash false with
+          match v2Env.compiled.bytecode.shardCheckWithEnv
+                  funIdx handle ownedBlob false with
           | .error e =>
-            pure (LSpec.test s!"closure check execution: {e}" false)
+            pure (LSpec.test s!"shard pipeline execution: {e}" false)
           | .ok (_, _, qc) =>
+            -- Exact pin, same convention as `kernelCheckEntries`
+            -- (`.round.toUInt64.toNat`): any cost shift must be an
+            -- explicit, reviewed bump.
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"closure-scale FFT pin: expected 149199085212, got {actual}"
-              (actual = 149_199_085_212))
+              s!"Shard pipeline FFT matches: expected 6_720_731_750, got {actual}"
+              (actual = 6_720_731_750))
       LSpec.lspecIO
         (.ofList [("ixvm",
-          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, closureSeq])]) []),
+          [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
   ("validate-aux", runCompileValidateAux env),
   -- Cross-compiler differential over the same fixture corpus: pure-Lean
   -- Ix.CompileM per-block vs Rust, root-cause classified (see
@@ -242,6 +256,30 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
 ]
 
 def main (args : List String) : IO UInt32 := do
+  -- Special case: namespace-filtered kernel ixon roundtrip diagnostic.
+  -- `kernel-roundtrip-ns=Nat.le` runs the same pipeline as the
+  -- `kernel-ixon-roundtrip` suite (compile → ingress → egress →
+  -- decompile → hash-compare) but only on the transitive closure of the
+  -- constants matching the given name prefixes (comma-separated), so a
+  -- single-family regression can be bisected in seconds instead of a
+  -- full-env pass.
+  if let some arg := args.find? (·.startsWith "kernel-roundtrip-ns=") then
+    let prefixes := (arg.drop "kernel-roundtrip-ns=".length).toString.splitOn ","
+      |>.filterMap fun s => if s.isEmpty then none else some s.toName
+    let env ← get_env!
+    let seeds := env.constants.toList.filterMap fun (n, _) =>
+      if prefixes.any (·.isPrefixOf n) then some n else none
+    let closed := collectDeps env seeds
+    IO.println s!"[kernel-roundtrip-ns] {seeds.length} seeds, {closed.length} constants in closure"
+    let errors ← Tests.Ix.Kernel.Roundtrip.rsKernelRoundtripFFI closed
+    if errors.isEmpty then
+      IO.println "[kernel-roundtrip-ns] OK: roundtrip clean"
+      return 0
+    IO.println s!"[kernel-roundtrip-ns] {errors.size} errors:"
+    for msg in errors[:min 50 errors.size] do
+      IO.println s!"  {msg}"
+    return 1
+
   -- Special case: rust-compile diagnostic (full env)
   if args.contains "rust-compile" then
     let env ← get_env!

@@ -309,7 +309,7 @@ theorem runRec_scoped_wfAtOn
       (calls s.recFuel.toNat) Delta s action Q E) :
     TcM.WF (ScopedWhnfStateInv model layer semantics scope Delta) s
       (TcM.runRec action) Q E := by
-  simpa [TcM.runRec] using
+  exact
     haction (Ix.Tc.methodsN (m := .anon) s.recFuel.toNat) schedule.selected
 
 end TcM

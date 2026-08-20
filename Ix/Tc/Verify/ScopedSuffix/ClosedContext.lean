@@ -106,8 +106,10 @@ theorem scope_collisionFree
     (scope (trProj := trProj) (world := world) (uvars := uvars)).CollisionFree := by
   intro left right hleft hright hdigest
   simp [ContextDigestScope.Contains, scope] at hleft hright
-  subst left
-  subst right
+  have hl : left = [] := List.eq_of_mem_singleton hleft
+  have hr : right = [] := List.eq_of_mem_singleton hright
+  subst hl
+  subst hr
   rfl
 
 /-- Every possible suffix-key request from a closed reconciled state lands in

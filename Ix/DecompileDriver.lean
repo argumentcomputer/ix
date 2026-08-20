@@ -331,9 +331,14 @@ def installDecompileCallSitePlans
         && (block.classNames.zip originalAll).any fun (cls, orig) =>
           cls[0]? != some orig)
     let auxLayoutChanged := match block.auxLayout with
-      | some layout => layout.perm.zipIdx.any fun (canonicalI, sourceJ) =>
-          canonicalI.toNat != Ix.AuxGen.PERM_OUT_OF_SCC
-            && canonicalI.toNat != sourceJ
+      | some layout =>
+        -- Keep identical to the compile-side predicate — evaporated
+        -- positions need their head-rewrite plans even when no
+        -- canonical slot moved.
+        layout.evaporated.any (· != 0)
+          || layout.perm.zipIdx.any fun (canonicalI, sourceJ) =>
+            canonicalI.toNat != Ix.AuxGen.PERM_OUT_OF_SCC
+              && canonicalI.toNat != sourceJ
       | none => false
     if !userLayoutChanged && !auxLayoutChanged then
       continue
@@ -345,24 +350,78 @@ def installDecompileCallSitePlans
           block.auxLayout) with
       | .ok (plans, _) => pure plans
       | .error e => throw s!"decompile aux plan compute_call_site_plans: {e}"
+    -- First-wins per name, but a DIFFERING later plan means two stored
+    -- blocks claim one source-indexed aux name — the same collision
+    -- class the compile side rejects; surface it rather than
+    -- decompiling with whichever block's plan happened to install first
+    -- (decompile.rs conflict-checked installs;
+    -- plans/aux-recursor-alias-collision.md §2.4).
     for (name, plan) in plans do
       if let some breconName := Ix.AuxGen.recNameToBreconName name then
-        if (auxMemberNames.contains breconName
-              || decompiledView.contains breconName)
-            && !brecOnPlans.contains breconName then
-          brecOnPlans := brecOnPlans.insert breconName
-            (Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
-          newBrec := newBrec.push
-            (breconName, Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
+        if auxMemberNames.contains breconName
+            || decompiledView.contains breconName then
+          let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
+          match brecOnPlans.get? breconName with
+          | some existing =>
+            if existing != newPlan then
+              throw s!"conflicting brecOn call-site plans for \
+'{breconName.pretty}' across stored blocks"
+          | none =>
+            brecOnPlans := brecOnPlans.insert breconName newPlan
+            newBrec := newBrec.push (breconName, newPlan)
       if let some belowName := Ix.AuxGen.recNameToBelowName name then
-        if (auxMemberNames.contains belowName
-              || decompiledView.contains belowName)
-            && !belowPlans.contains belowName then
-          belowPlans := belowPlans.insert belowName
-            (Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
-          newBelow := newBelow.push
-            (belowName, Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan)
-      if !callSitePlans.contains name then
+        if auxMemberNames.contains belowName
+            || decompiledView.contains belowName then
+          let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
+          -- Prop-level (IndPredBelow) `.below` families additionally
+          -- expose constructors and a `.casesOn` wrapper to user code —
+          -- mirror the compile side's family registration (same map;
+          -- the apply site discriminates the telescope shape via
+          -- `belowPlanKeyIsHead`). The below inductive itself is
+          -- regenerated later, so its ctor names are derived from the
+          -- PARENT inductive's ctors via the same suffix transplant
+          -- `buildBelowIndcCtor` uses. Prop-ness is signalled by the
+          -- presence of a `.below.rec` aux member (Type-level `.below`
+          -- is a definition and has no recursor).
+          let isPropBelow :=
+            auxMemberNames.contains (Ix.Name.mkStr belowName "rec")
+          let parentName? : Option Ix.Name := match belowName with
+            | .str p _ _ => some p
+            | _ => none
+          let familyNames : Array Ix.Name := Id.run do
+            let some parentName := parentName? | return #[]
+            let some (.inductInfo pv) := decompiledView.get? parentName
+              | return #[]
+            let mut out : Array Ix.Name := pv.ctors.map fun ctorName =>
+              let suffix := (Ix.AuxGen.nameStripPrefix ctorName parentName).getD
+                (Ix.AuxGen.nameComponents ctorName)
+              Ix.AuxGen.nameAppendComponents belowName suffix
+            out := out.push (Ix.Name.mkStr belowName "casesOn")
+            return out
+          if isPropBelow then
+            for member in familyNames do
+              match belowPlans.get? member with
+              | some existing =>
+                if existing != newPlan then
+                  throw s!"conflicting below call-site plans for \
+'{member.pretty}' across stored blocks"
+              | none =>
+                belowPlans := belowPlans.insert member newPlan
+                newBelow := newBelow.push (member, newPlan)
+          match belowPlans.get? belowName with
+          | some existing =>
+            if existing != newPlan then
+              throw s!"conflicting below call-site plans for \
+'{belowName.pretty}' across stored blocks"
+          | none =>
+            belowPlans := belowPlans.insert belowName newPlan
+            newBelow := newBelow.push (belowName, newPlan)
+      match callSitePlans.get? name with
+      | some existing =>
+        if existing != plan then
+          throw s!"conflicting call-site plans for '{name.pretty}' \
+across stored blocks"
+      | none =>
         callSitePlans := callSitePlans.insert name plan
         newCs := newCs.push (name, plan)
   return ((callSitePlans, brecOnPlans, belowPlans), (newCs, newBrec, newBelow))
@@ -622,6 +681,16 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
       (kind : Ix.AuxGen.AuxKind)
       (gen : Pass2St → Ix.Name → Ix.RecursorVal →
         Except String (Option Ix.AuxGen.AuxDef))
+      -- Rec resolver: Phase 1b/1c resolve `<parent>.rec` from the work
+      -- env / dstt; Phase 3b resolves from the freshly GENERATED
+      -- below-recs (their roundtripped forms only land after Phase 3,
+      -- and the Rust mirror likewise feeds the generated `RecursorVal`).
+      (recOf : Pass2St → Ix.Name → Option Ix.RecursorVal :=
+        fun st recName => match st.workEnv.get? recName with
+          | some (.recInfo rv) => some rv
+          | _ => match st.dstt.get? recName with
+            | some (.recInfo rv) => some rv
+            | _ => none)
       : Pass2St × Std.HashMap Ix.Name Ix.ConstantInfo := Id.run do
     let mut st := st₀
     let mut newGen : Std.HashMap Ix.Name Ix.ConstantInfo := {}
@@ -632,12 +701,7 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
         | _ => none
       let some indName := indName? | continue
       let recName := Ix.Name.mkStr indName "rec"
-      let recVal? : Option Ix.RecursorVal := match st.workEnv.get? recName with
-        | some (.recInfo rv) => some rv
-        | _ => match st.dstt.get? recName with
-          | some (.recInfo rv) => some rv
-          | _ => none
-      let some recVal := recVal? | continue
+      let some recVal := recOf st recName | continue
       let mut auxDefOpt : Option Ix.AuxGen.AuxDef := none
       match gen st wName recVal with
       | .ok d => auxDefOpt := d
@@ -792,6 +856,18 @@ def decompileBlockAuxGen (ctx : Pass2Ctx) (st₀ : Pass2St)
               | none =>
                 st := stPut st n (.recInfo rv)
               st := recordErr st n e
+        -- Phase 3b: regenerate `.below.casesOn` from the canonical
+        -- below-recs — deferred from Phase 1b, where these members skip
+        -- silently because `X.below.rec` does not exist until this
+        -- phase regenerates it. The resolver feeds the GENERATED rec
+        -- (not the roundtripped one), exactly like the Rust mirror.
+        -- Runs regardless of the roundtrip outcome above.
+        let (st', gen) := wrapPhase st generatedConsts .casesOnAux
+          (fun stCur n rv => runC ctx stCur n (Ix.AuxGen.generateCasesOn n rv))
+          (recOf := fun _ n =>
+            (belowRecs.find? (fun p => p.1 == n)).map (·.2))
+        st := st'
+        generatedConsts := gen.fold (fun m k v => m.insert k v) generatedConsts
       | .error e =>
         st := recordErr st lo s!"aux_gen below.rec failed for {lo.pretty}: {e}"
 
@@ -968,7 +1044,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
             stack := stack.push r
     match runK ctx st blockKey (fun maps => do
         for n in toIngress do
-          Ix.AuxGen.ensureInKenvOf n maps) with
+          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       let errs := st.errors.push (blockKey, s!"block ingress: {e}")
@@ -1077,7 +1153,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
             stack := stack.push r
     match runK ctx st blockKey (fun maps => do
         for n in toIngress do
-          Ix.AuxGen.ensureInKenvOf n maps) with
+          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       st := { st with

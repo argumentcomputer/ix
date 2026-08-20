@@ -60,7 +60,6 @@ theorem tryProjAppReduce_projectionWhnfError
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
-    rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
     rw [ReaderT.run_bind]
     change EStateM.bind _ _ s = _
     unfold EStateM.bind
@@ -85,7 +84,6 @@ theorem tryProjAppReduce_projectionReduceError
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
-    rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
     rw [ReaderT.run_bind]
     change EStateM.bind _ _ s = _
     unfold EStateM.bind
@@ -116,7 +114,6 @@ theorem tryProjAppReduce_projectionNone
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
-    rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
     rw [ReaderT.run_bind]
     change EStateM.bind _ _ s = _
     unfold EStateM.bind
@@ -150,7 +147,6 @@ theorem tryProjAppReduce_projectionSome
   cases hcheap : flags.cheapProj <;>
       simp only [hcheap, Bool.false_eq_true, ↓reduceIte] at hwhnf ⊢
   all_goals
-    rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
     rw [ReaderT.run_bind]
     change EStateM.bind _ _ s = _
     unfold EStateM.bind

@@ -682,7 +682,7 @@ def checkNestedCtorFieldsLoopFuel :
     are exempt). -/
 def checkFieldUniverses (ctorTy : KExpr m) (nParams : Nat)
     (indLevel : KUniv m) : RecM m Unit := do
-  if indLevel.isZero then
+  if indLevel.isSemanticZero then
     return ()
   let saved := (← get).lctx.size
   let mut ty := ctorTy

@@ -124,7 +124,8 @@ theorem finite
     let context := ScopedInferenceCallDomainContext.sort hcollision
       hsourceSupport hresultSupport theory references
       (calls (.sort u info) n)
-    simpa [calls] using (next_sort_scopedWFAtOn context)
+    simpa [calls, Methods.ScopedStepWFAtOn] using
+      (next_sort_scopedWFAtOn context)
 
 /-- Recursion fuel one selects a depth-one callback table and requires the
 outer sort body at depth two. -/
@@ -173,9 +174,7 @@ theorem sort_scoped_wf_bounded
     hsourceSupport hresultSupport theory references
     (initial.recFuel.toNat + 1)
   have hnext := schedule.nextSelected
-  simpa [TcM.infer, TcM.runRec, Methods.next,
-    Methods.ScopedSortSchedule.calls] using
-      hnext.infer (by rfl) hsource
+  exact hnext.infer (by rfl) hsource
 
 /-- Explicit fuel-one specialization of the scoped public sort run. -/
 theorem sort_scoped_wf_fuel_one

@@ -499,5 +499,158 @@ end
 
 end AuxDedupMixed
 
+-- Cross-SCC ownership of source-indexed auxiliary names
+-- (plans/aux-recursor-alias-collision.md, TruthMines handoff repro).
+--
+-- Lean hangs every nested-aux name off `InductiveVal.all[0]` of the
+-- ORIGINAL mutual block. When the block splits into SCCs, the spec
+-- inductive's SCC can compile a position as a canonical aux (claiming
+-- `all0.rec_N`) while the owner's SCC independently decides the same
+-- position "evaporated" and aliases the same name to the external
+-- container's generic recursor. Two claimants, one name:
+--   invalid mutual block: aux_gen alias 'O.rec_1' already resolves to
+--   <canonical patch>, expected <NE.rec> via 'NE.rec'
+namespace AuxOwnership
+
+-- External single-motive container (the HaskellSpec `NonEmpty` shape).
+-- Declared OUTSIDE the mutuals: its own generic 1-motive `NE.rec` is the
+-- evaporation target.
+public structure NE (α : Type) where
+  head : α
+  tail : List α
+
+-- A: minimal conflict. all = [O, X] so aux names hang off `O`; the walk
+-- discovers `NE X` first from O.mk (owner = O), but X's OWN ctor also
+-- mentions `NE X`, so {X}'s canonical block contains the aux and claims
+-- `O.rec_1` (and `O.rec_2` for the inner `List X`). {O} then tries to
+-- evaporate the same names to `NE.rec` / `List.rec`.
+namespace ConflictMin
+mutual
+  public inductive O where
+    | mk : NE X → O
+  public inductive X where
+    | node : NE X → X
+    | leaf : X
+end
+end ConflictMin
+
+-- B: two distinct specs in two different spec SCCs (the rec_2/rec_3
+-- analog). {Q} claims P.rec_1/P.rec_2, {R} claims P.rec_3/P.rec_4,
+-- {P} tries to evaporate all four. R differs from Q structurally so the
+-- two spec SCCs aren't cross-block alpha-twins.
+namespace TwoSpecs
+mutual
+  public inductive P where
+    | mk : NE Q → NE R → P
+  public inductive Q where
+    | node : NE Q → Q
+    | leaf : Q
+  public inductive R where
+    | node : NE R → R
+    | leaf : R
+    | stop : R
+end
+end TwoSpecs
+
+-- C: legitimate evaporation regression guard. {B} never discovers
+-- `NE B` (B.leaf mentions nothing), so nobody claims `M.rec_1`/`M.rec_2`
+-- canonically and {M}'s evaporation to `NE.rec`/`List.rec` is correct.
+-- Unlike AuxDedupMixed, {M}'s own expansion has NO nested occurrence at
+-- all (`NE B` doesn't mention M), exercising the metadata-only
+-- disagreement path (aux_gen.rs "metadata-only" branch).
+namespace Evap
+mutual
+  public inductive M where
+    | mk : NE B → M → M
+  public inductive B where
+    | leaf : B
+end
+end Evap
+
+-- D: DQ2 probe — spec params spanning two SCCs. `List (S × T)` and the
+-- inner `Prod S T` mention S (⇒ {S}'s canonical expansion contains both
+-- auxes) but also T, an original member outside {S} (⇒ compute_aux_perm's
+-- in_scc pre-filter skips every source position). Predicted to hard-error
+-- with "canonical aux #0 has no source mapping" — an adjacent latent bug
+-- in the same ownership family, scoped by plan §3 DQ2.
+namespace SplitSpecs
+mutual
+  public inductive S where
+    | mk : List (S × T) → S
+  public inductive T where
+    | leaf : T
+end
+end SplitSpecs
+
+-- F: alpha-twin claim routing. X1 ≅ X2 (alpha-identical, one content
+-- address) sit in DIFFERENT SCCs; W mentions only `NE X2`. Ownership
+-- matching must compare other-SCC original members NAME-strictly:
+-- with the address fallback, {X1} would match W's `NE X2` position
+-- against its own `NE X1` signature and both twin SCCs would claim
+-- `W.rec_1`. Expected claims: {X2} → W.rec_1/W.rec_2,
+-- {X1} → W.rec_3/W.rec_4, {W} → nothing (canonical-elsewhere).
+namespace TwinClaim
+mutual
+  public inductive W where
+    | mk : NE X2 → W
+  public inductive X1 where
+    | node : NE X1 → X1
+    | leaf : X1
+  public inductive X2 where
+    | node : NE X2 → X2
+    | leaf : X2
+end
+end TwinClaim
+
+-- E: the real block shape — a 3-member owner SCC (O1→O2→O3→O1) whose
+-- perm mixes a canonical slot (`List O2`, specs in-SCC → claims O1.rec_3)
+-- with conflicting evaporations (`NE X3` / `List X3` claimed canonically
+-- by {X3} as O1.rec_1/O1.rec_2). Mirrors the failing
+-- `HaskellSpec.Source.Binding (3 members)` block.
+namespace ThreeMember
+mutual
+  public inductive O1 where
+    | mk : NE X3 → O2 → O1
+  public inductive O2 where
+    | mk : O3 → List O2 → O2
+    | leaf : O2
+  public inductive O3 where
+    | mk : O1 → O3
+  public inductive X3 where
+    | node : NE X3 → X3
+    | leaf : X3
+end
+end ThreeMember
+
+end AuxOwnership
+
+-- Prop-valued mutual inductive predicates whose `.below` auxiliaries form
+-- a generated mutual-inductive family (IndPredBelow) — the HaskellSpec
+-- `dict`/`pat`/`type` shape. The mutual theorems by structural
+-- pattern-matching force Lean to generate `EvenP.below`/`OddP.below`
+-- (plus `.below.casesOn`, defined via `.below.rec`), exercising:
+-- (a) the below-rec block's class-order key — its storage order must
+--     follow the below inductive block (canonicity §6.2), and
+-- (b) the `.below.casesOn` regeneration against the canonical below-rec
+--     (compile + decompile Phase 3b; Lean's authored wrapper applies
+--     motives in Lean's member order and would be ill-typed against the
+--     canonical rec).
+namespace BelowPredicate
+mutual
+  public inductive EvenP : Nat → Prop where
+    | zero : EvenP 0
+    | succ : {n : Nat} → OddP n → EvenP (n + 1)
+  public inductive OddP : Nat → Prop where
+    | succ : {n : Nat} → EvenP n → OddP (n + 1)
+end
+
+mutual
+  public theorem evenp_nonneg : {n : Nat} → EvenP n → 0 ≤ n
+    | _, .zero => Nat.le_refl 0
+    | _, .succ h => Nat.le_trans (oddp_nonneg h) (Nat.le_succ _)
+  public theorem oddp_nonneg : {n : Nat} → OddP n → 0 ≤ n
+    | _, .succ h => Nat.le_trans (evenp_nonneg h) (Nat.le_succ _)
+end
+end BelowPredicate
 
 end Tests.Ix.Compile.Mutual

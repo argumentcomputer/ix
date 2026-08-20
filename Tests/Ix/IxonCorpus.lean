@@ -92,7 +92,7 @@ def envContentDiff (a b : Ixon.Env) : Option String := Id.run do
 def compileWholeEnvBytes (leanEnv : Lean.Environment) : IO ByteArray := do
   let dir ← IO.FS.createTempDir
   let path := dir / "ixon-corpus.ixe"
-  let _ ← Ix.CompileM.rsCompileEnvBytesFFI leanEnv.constants.toList path.toString
+  let _ ← Ix.CompileM.rsCompileEnvBytesFFI leanEnv.constants.toList path.toString true
   let bytes ← IO.FS.readBinFile path
   IO.FS.removeDirAll dir
   return bytes

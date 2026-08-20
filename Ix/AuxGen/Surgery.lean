@@ -433,17 +433,22 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
   -- to the canonical rec_N (AppTypeMismatch on e.g. `LCNF.Alt._sizeOf_6`).
   if nSourceMotives > nUserMotives then
     if let some headName := originalAll[0]? then
-      -- (owner, external head) per source aux — only needed when some
-      -- source aux is out-of-SCC, i.e. potentially evaporated
-      -- (surgery.rs:714).
-      let anyOut : Bool :=
-        match auxPerm with
-        | some p => p.contains PERM_OUT_OF_SCC
+      -- External head per source aux — only needed for positions this
+      -- block EVAPORATED. The decision itself was made once, globally,
+      -- by aux_gen's disposition pass and travels in
+      -- `AuxLayout.evaporated`; re-deriving owner/target gates here
+      -- risked disagreeing with the registered alias (the
+      -- pre-`evaporated` code did exactly that across SCC splits — see
+      -- plans/aux-recursor-alias-collision.md). Alias and head-rewrite
+      -- plan must fire together or not at all (surgery.rs:709-724).
+      let anyEvaporated : Bool :=
+        match auxLayout with
+        | some l => l.evaporated.any (· != 0)
         | none => false
-      let srcOwnerHeads : Array (Name × Name) ←
-        if anyOut then do
+      let srcHeads : Array Name ←
+        if anyEvaporated then do
           let order ← sourceAuxOrderWithOwner originalAll
-          pure (order.map fun (owner, head, _) => (owner, head))
+          pure (order.map fun (_, head, _) => head)
         else
           pure #[]
 
@@ -452,26 +457,21 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
         let recName := Name.mkStr headName s!"rec_{auxIdx + 1}"
         if (← lookupConst? recName).isNone then
           continue
-        let outOfScc : Bool :=
-          match auxPerm.bind fun p => p[auxIdx]? with
-          | some canonI => canonI == PERM_OUT_OF_SCC
+        let evaporatedHere : Bool :=
+          match auxLayout with
+          | some l => match l.evaporated[auxIdx]? with
+            | some b => b != 0
+            | none => false
           | none => false
-        if outOfScc then
-          -- Evaporated-aux head rewrite (surgery.rs:737). Owner gate
-          -- mirrors the alias pass in `aux_gen.rs`: an out-of-SCC aux
-          -- whose OWNER is also out-of-SCC is another SCC's canonical aux
-          -- (that SCC registers its plan). The target guard also mirrors
-          -- the alias pass — no alias means no rewrite, and vice versa.
-          let some (owner, extHead) := srcOwnerHeads[auxIdx]? | continue
-          if !(nameToClass.contains owner) then
-            continue
+        if evaporatedHere then
+          let some extHead := srcHeads[auxIdx]?
+            -- The alias for this position was registered from the same
+            -- source-order walk — a missing entry here would ship a
+            -- claim without its call-site rewrite (surgery.rs:760-770).
+            | throw (.invalidMutualBlock
+                s!"evaporated aux position {auxIdx} ('{recName.pretty}') \
+has no source-order entry for its head-rewrite target")
           let targetRec := Name.mkStr extHead "rec"
-          let targetOk : Bool :=
-            match ← lookupConst? targetRec with
-            | some (.recInfo r) => r.numMotives == 1
-            | _ => false
-          if !targetOk then
-            continue
           -- Index count comes from the aux recursor itself (the external
           -- inductive's indices), not the block-wide default.
           let recNIndices : Nat ←
@@ -480,6 +480,18 @@ def computeCallSitePlans (sortedClasses : Array (Array Name))
             | _ => pure nIndices
           plans := plans.insert recName
             (buildOutOfSccPlan xPos auxIdx targetRec recNIndices)
+          continue
+        let outOfScc : Bool :=
+          match auxPerm.bind fun p => p[auxIdx]? with
+          | some canonI => canonI == PERM_OUT_OF_SCC
+          | none => false
+        if outOfScc then
+          -- Not evaporated and not canonical here: either the position
+          -- is canonical in another SCC of the same original mutual
+          -- (THAT block registers its plan alongside its patch) or it
+          -- fell back to an original-form compile (no rewrite by
+          -- design). Either way this block contributes nothing for the
+          -- name (surgery.rs:779-786).
           continue
         let plan := buildPlan xPos
         if plan.isIdentity then

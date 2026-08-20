@@ -1008,7 +1008,7 @@ pub fn source_aux_order_with_owner(
   )
 }
 
-fn source_aux_order_from_expanded(
+pub fn source_aux_order_from_expanded(
   expanded: &ExpandedBlock,
 ) -> Vec<(Name, Name, Vec<Level>, Vec<LeanExpr>)> {
   let n_originals = expanded.n_originals;
@@ -1037,6 +1037,105 @@ fn source_aux_order_from_expanded(
 /// a different SCC block — those auxes are handled by that block's
 /// compilation, not ours.
 pub const PERM_OUT_OF_SCC: usize = usize::MAX;
+
+/// Extract `(head_name, head_levels, spec_params)` for each auxiliary
+/// member of an expanded block (positions `[n_originals..]`), in the
+/// block's aux order. Members without an `aux_to_nested` entry or with a
+/// non-`Const` head are skipped, so callers that need a 1:1
+/// correspondence with the aux section must length-check the result.
+pub fn aux_signatures_of_expanded(
+  expanded: &ExpandedBlock,
+) -> Vec<(Name, Vec<Level>, Vec<LeanExpr>)> {
+  expanded.types[expanded.n_originals..]
+    .iter()
+    .filter_map(|mem| {
+      let nested_expr = expanded.aux_to_nested.get(&mem.name)?;
+      let (head, args) = decompose_apps(nested_expr);
+      let (head_name, head_levels) = match head.as_data() {
+        ExprData::Const(n, ls, _) => (n.clone(), ls.clone()),
+        _ => return None,
+      };
+      Some((head_name, head_levels, args))
+    })
+    .collect()
+}
+
+/// Match one source-walk aux signature against a canonical signature
+/// set. Pass A requires the head's universe instantiation to match
+/// exactly (distinct universe specializations of one family are
+/// distinct canonical auxes — flat-block dedup keys on levels); pass B
+/// falls back level-insensitively for alpha-collapse, where the
+/// representative's constructor types may name the block's universe
+/// parameters differently.
+#[allow(clippy::too_many_arguments)]
+fn match_aux_signature(
+  src_head: &Name,
+  src_levels: &[Level],
+  normalized_specs: &[LeanExpr],
+  signatures: &[(Name, Vec<Level>, Vec<LeanExpr>)],
+  by_head: &FxHashMap<Name, Vec<usize>>,
+  stt: &crate::compile::CompileState,
+  source_to_canon_fvar: &FxHashMap<Name, Name>,
+  strict_names: &FxHashSet<Name>,
+  spec_eq_cache: &mut FxHashMap<(Hash, Hash), bool>,
+) -> Option<usize> {
+  let candidates = by_head.get(src_head)?;
+  // Pass A: exact universe instantiation + spec equality.
+  for &i in candidates {
+    let (_, canon_levels, canon_specs) = &signatures[i];
+    let levels_eq = canon_levels.len() == src_levels.len()
+      && canon_levels
+        .iter()
+        .zip(src_levels.iter())
+        .all(|(a, b)| a.get_hash() == b.get_hash());
+    if levels_eq
+      && canon_specs.len() == normalized_specs.len()
+      && canon_specs.iter().zip(normalized_specs.iter()).all(|(canon, src)| {
+        aux_spec_eq(
+          canon,
+          src,
+          stt,
+          source_to_canon_fvar,
+          strict_names,
+          spec_eq_cache,
+        )
+      })
+    {
+      return Some(i);
+    }
+  }
+  // Pass B: level-insensitive fallback.
+  for &i in candidates {
+    let (_, _, canon_specs) = &signatures[i];
+    if canon_specs.len() == normalized_specs.len()
+      && canon_specs.iter().zip(normalized_specs.iter()).all(|(canon, src)| {
+        aux_spec_eq(
+          canon,
+          src,
+          stt,
+          source_to_canon_fvar,
+          strict_names,
+          spec_eq_cache,
+        )
+      })
+    {
+      return Some(i);
+    }
+  }
+  None
+}
+
+/// Bucket aux signatures by head name (matching becomes ≈O(n_source)
+/// instead of O(n_source × n_canon); buckets are small in practice).
+fn signatures_by_head(
+  signatures: &[(Name, Vec<Level>, Vec<LeanExpr>)],
+) -> FxHashMap<Name, Vec<usize>> {
+  let mut by_head: FxHashMap<Name, Vec<usize>> = FxHashMap::default();
+  for (i, (head, _, _)) in signatures.iter().enumerate() {
+    by_head.entry(head.clone()).or_default().push(i);
+  }
+  by_head
+}
 
 /// Compute the permutation mapping Lean-source aux-walk positions to
 /// canonical aux positions. Returns `perm: Vec<usize>`
@@ -1108,19 +1207,7 @@ pub fn compute_aux_perm(
   // those names already resolve to the same content address. Raw LeanExpr
   // hashes intentionally include names, so matching must use semantic
   // comparison below.
-  let canonical_signatures: Vec<(Name, Vec<Level>, Vec<LeanExpr>)> =
-    canonical_aux
-      .iter()
-      .filter_map(|mem| {
-        let nested_expr = expanded.aux_to_nested.get(&mem.name)?;
-        let (head, args) = decompose_apps(nested_expr);
-        let (head_name, head_levels) = match head.as_data() {
-          ExprData::Const(n, ls, _) => (n.clone(), ls.clone()),
-          _ => return None,
-        };
-        Some((head_name, head_levels, args))
-      })
-      .collect();
+  let canonical_signatures = aux_signatures_of_expanded(expanded);
 
   if canonical_signatures.len() != n_canon {
     return Err(CompileError::InvalidMutualBlock {
@@ -1134,10 +1221,18 @@ pub fn compute_aux_perm(
   // the head-name buckets are small (one aux per distinct external
   // inductive occurrence) and `aux_spec_eq` already memoizes per-pair
   // structural comparison.
-  let mut canon_by_head: FxHashMap<&Name, Vec<usize>> = FxHashMap::default();
-  for (i, (head, _, _)) in canonical_signatures.iter().enumerate() {
-    canon_by_head.entry(head).or_default().push(i);
-  }
+  let canon_by_head = signatures_by_head(&canonical_signatures);
+
+  // Original members OUTSIDE this SCC compare name-strictly during
+  // matching (see `aux_spec_eq`): they behave as external constants in
+  // specs, but address-equating them would let an alpha-twin member of a
+  // different SCC spuriously match, making two SCCs claim one source
+  // position's `all0.rec_N` name family.
+  let strict_names: FxHashSet<Name> = original_all
+    .iter()
+    .filter(|n| !orig_to_canon_names.contains_key(*n))
+    .cloned()
+    .collect();
 
   // For each source aux, try to find a canonical match. If the source
   // references members not in the current SCC (orig_to_canon_names),
@@ -1156,24 +1251,10 @@ pub fn compute_aux_perm(
   for (j, (src_owner, src_head, src_levels, src_specs)) in
     source_order.iter().enumerate()
   {
-    // If any spec_param references an original mutual member that's NOT
-    // in orig_to_canon_names, this source aux is out-of-SCC — skip it.
-    // Other constants are ordinary external parameters (e.g. `String` in
-    // `AssocList String Json`) and must remain part of the signature.
-    let in_scc = src_specs.iter().all(|sp| {
-      !has_out_of_scc_const(
-        sp,
-        orig_to_canon_names,
-        &original_names,
-        &mut out_of_scc_cache,
-      )
-    });
-    if !in_scc {
-      continue;
-    }
-
     // Normalize source spec_params using orig_to_canon_names so they
-    // match the canonical walk's view.
+    // match the canonical walk's view. In-SCC alpha-collapse aliases
+    // rewrite to their representatives; everything else (genuine
+    // external types AND other-SCC original members) stays as spelled.
     let normalized: Vec<LeanExpr> = src_specs
       .iter()
       .map(|sp| {
@@ -1184,61 +1265,45 @@ pub fn compute_aux_perm(
         )
       })
       .collect();
-    // Consult the head-name bucket first. If no canonical aux shares
-    // this head, there can't be a match. Within the bucket, prefer a
-    // candidate whose head universe instantiation matches EXACTLY:
-    // distinct universe specializations of one family are distinct
-    // canonical auxes (the flat-block dedup keys on levels), and both
-    // expansions read the same constructor types, so in-block levels
-    // are verbatim identical. Fall back to a level-insensitive match
-    // for alpha-collapse, where the representative's constructor types
-    // may name the block's universe parameters differently.
-    let mut canon_idx: Option<usize> = None;
-    if let Some(candidates) = canon_by_head.get(src_head) {
-      // Pass A: exact universe instantiation + spec equality.
-      for &i in candidates {
-        let (_, canon_levels, canon_specs) = &canonical_signatures[i];
-        let levels_eq = canon_levels.len() == src_levels.len()
-          && canon_levels
-            .iter()
-            .zip(src_levels.iter())
-            .all(|(a, b)| a.get_hash() == b.get_hash());
-        if levels_eq
-          && canon_specs.len() == normalized.len()
-          && canon_specs.iter().zip(normalized.iter()).all(|(canon, src)| {
-            aux_spec_eq(
-              canon,
-              src,
-              stt,
-              &source_to_canon_fvar,
-              &mut spec_eq_cache,
-            )
-          })
-        {
-          canon_idx = Some(i);
-          break;
-        }
-      }
-      // Pass B: level-insensitive fallback.
-      if canon_idx.is_none() {
-        for &i in candidates {
-          let (_, _, canon_specs) = &canonical_signatures[i];
-          if canon_specs.len() == normalized.len()
-            && canon_specs.iter().zip(normalized.iter()).all(|(canon, src)| {
-              aux_spec_eq(
-                canon,
-                src,
-                stt,
-                &source_to_canon_fvar,
-                &mut spec_eq_cache,
-              )
-            })
-          {
-            canon_idx = Some(i);
-            break;
-          }
-        }
-      }
+    // Match FIRST, then classify misses. A position whose specs mention
+    // other-SCC members can still be canonical HERE when this SCC's own
+    // constructors mention the same occurrence — e.g.
+    // `S.mk : List (S × T) → S` with `T` split into its own SCC: the
+    // canonical expansion of {S} carries the `T`-spelling verbatim, so
+    // strict-name matching identifies exactly the discovered-here
+    // occurrences (fixture `AuxOwnership.SplitSpecs`; the old
+    // out-of-SCC pre-filter skipped these and then failed the
+    // covered-check below with "canonical aux has no source mapping").
+    if let Some(canon_idx) = match_aux_signature(
+      src_head,
+      src_levels,
+      &normalized,
+      &canonical_signatures,
+      &canon_by_head,
+      stt,
+      &source_to_canon_fvar,
+      &strict_names,
+      &mut spec_eq_cache,
+    ) {
+      perm[j] = canon_idx;
+      continue;
+    }
+
+    // No canonical match here. A position whose specs reference
+    // out-of-SCC original members is another block's business: canonical
+    // in the SCC that discovers it, or evaporated by the owner's SCC —
+    // `aux_gen`'s disposition pass decides. Other constants are ordinary
+    // external parameters (e.g. `String` in `AssocList String Json`).
+    let references_out = src_specs.iter().any(|sp| {
+      has_out_of_scc_const(
+        sp,
+        orig_to_canon_names,
+        &original_names,
+        &mut out_of_scc_cache,
+      )
+    });
+    if references_out {
+      continue;
     }
 
     // If this source aux was discovered while scanning a constructor from a
@@ -1250,37 +1315,32 @@ pub fn compute_aux_perm(
     // names but was discovered from `X.mk`; if {Z}'s canonical expansion
     // doesn't contain `Option Z`, skip it instead of treating it as a broken
     // in-SCC source mapping.
-    let Some(canon_idx) = canon_idx else {
-      if !orig_to_canon_names.contains_key(src_owner) {
-        continue;
-      }
-      let src_sig: Vec<String> =
-        normalized.iter().map(|e| e.pretty()).collect();
-      let canon_sigs: Vec<String> = canonical_signatures
-        .iter()
-        .map(|(head, levels, specs)| {
-          let levels: Vec<String> = levels.iter().map(|l| l.pretty()).collect();
-          let specs: Vec<String> = specs.iter().map(|e| e.pretty()).collect();
-          format!(
-            "{}.{{{}}}[{}]",
-            head.pretty(),
-            levels.join(", "),
-            specs.join(", ")
-          )
-        })
-        .collect();
-      return Err(CompileError::InvalidMutualBlock {
-        reason: format!(
-          "compute_aux_perm: no canonical match for in-SCC source aux #{j} owned by {} (head={}); normalized source specs: [{}]; canonical signatures: {}",
-          src_owner.pretty(),
-          src_head.pretty(),
-          src_sig.join(", "),
-          canon_sigs.join(" · "),
-        ),
-      });
-    };
-
-    perm[j] = canon_idx;
+    if !orig_to_canon_names.contains_key(src_owner) {
+      continue;
+    }
+    let src_sig: Vec<String> = normalized.iter().map(|e| e.pretty()).collect();
+    let canon_sigs: Vec<String> = canonical_signatures
+      .iter()
+      .map(|(head, levels, specs)| {
+        let levels: Vec<String> = levels.iter().map(|l| l.pretty()).collect();
+        let specs: Vec<String> = specs.iter().map(|e| e.pretty()).collect();
+        format!(
+          "{}.{{{}}}[{}]",
+          head.pretty(),
+          levels.join(", "),
+          specs.join(", ")
+        )
+      })
+      .collect();
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "compute_aux_perm: no canonical match for in-SCC source aux #{j} owned by {} (head={}); normalized source specs: [{}]; canonical signatures: {}",
+        src_owner.pretty(),
+        src_head.pretty(),
+        src_sig.join(", "),
+        canon_sigs.join(" · "),
+      ),
+    });
   }
 
   // Sanity: every canonical aux must have at least one source mapping
@@ -1304,6 +1364,209 @@ pub fn compute_aux_perm(
   Ok(perm)
 }
 
+/// Per-spec-SCC signature context memoized by
+/// [`position_claimed_by_spec_scc`] across the out-of-SCC positions of
+/// one block. Rebuilding the spec SCC's canonical expansion is the
+/// expensive part; everything else is bookkeeping around the shared
+/// [`match_aux_signature`] core.
+pub struct SccClaimCtx {
+  signatures: Vec<(Name, Vec<Level>, Vec<LeanExpr>)>,
+  by_head: FxHashMap<Name, Vec<usize>>,
+  orig_to_canon: std::collections::HashMap<Name, Name>,
+  strict_names: FxHashSet<Name>,
+  /// Source (full-block) param FVars → the spec SCC's expansion param
+  /// FVars, zipped positionally (a split mutual's members share one
+  /// uniform param telescope, so positions correspond).
+  fvar_map: FxHashMap<Name, Name>,
+  spec_eq_cache: FxHashMap<(Hash, Hash), bool>,
+  normalize_cache: FxHashMap<Hash, LeanExpr>,
+}
+
+fn build_scc_claim_ctx(
+  member_classes: &[Vec<Name>],
+  source_expanded: &ExpandedBlock,
+  original_all: &[Name],
+  lean_env: &LeanEnv,
+) -> Result<SccClaimCtx, CompileError> {
+  // Mirror `generate_and_compile_aux_recursors`'s `aux_class_names`
+  // filtering: the scheduler SCC can contain extra members through
+  // ordinary dependency cycles; only original-mutual members participate
+  // in that block's aux generation.
+  let original_lookup: FxHashSet<&Name> = original_all.iter().collect();
+  let filtered: Vec<Vec<Name>> = member_classes
+    .iter()
+    .filter_map(|class| {
+      let names: Vec<Name> =
+        class.iter().filter(|n| original_lookup.contains(n)).cloned().collect();
+      (!names.is_empty()).then_some(names)
+    })
+    .collect();
+  let reps: Vec<Name> = filtered.iter().map(|c| c[0].clone()).collect();
+  let alias_to_rep: FxHashMap<Name, Name> = filtered
+    .iter()
+    .flat_map(|class| {
+      class[1..].iter().map(move |alias| (alias.clone(), class[0].clone()))
+    })
+    .collect();
+  let expanded = expand_nested_block(&reps, lean_env, &alias_to_rep)?;
+  let signatures = aux_signatures_of_expanded(&expanded);
+  let by_head = signatures_by_head(&signatures);
+  let orig_to_canon: std::collections::HashMap<Name, Name> = filtered
+    .iter()
+    .flat_map(|class| {
+      let rep = class[0].clone();
+      class.iter().map(move |n| (n.clone(), rep.clone()))
+    })
+    .collect();
+  let strict_names: FxHashSet<Name> = original_all
+    .iter()
+    .filter(|n| !orig_to_canon.contains_key(*n))
+    .cloned()
+    .collect();
+  let mut fvar_map: FxHashMap<Name, Name> = FxHashMap::default();
+  for (src, canon) in source_expanded
+    .block_param_fvars
+    .iter()
+    .zip(expanded.block_param_fvars.iter())
+  {
+    if let (ExprData::Fvar(src_name, _), ExprData::Fvar(canon_name, _)) =
+      (src.as_data(), canon.as_data())
+    {
+      fvar_map.insert(src_name.clone(), canon_name.clone());
+    }
+  }
+  Ok(SccClaimCtx {
+    signatures,
+    by_head,
+    orig_to_canon,
+    strict_names,
+    fvar_map,
+    spec_eq_cache: FxHashMap::default(),
+    normalize_cache: FxHashMap::default(),
+  })
+}
+
+/// The global half of the evaporation decision: does the SCC owning an
+/// out-of-SCC position's spec members canonically discover the same
+/// aux? If yes, the `all0.{rec,below,brecOn}_N` name family for that
+/// position belongs to THAT SCC's canonical block (registered as its
+/// patches/aliases when it compiled — always before this block, since
+/// the discovering constructor's reference forces the scheduler edge),
+/// and the owner's SCC must register neither an evaporation alias nor a
+/// head-rewrite plan for it. Only when NO SCC discovers the position may
+/// it evaporate to the external head's generic recursor
+/// (plans/aux-recursor-alias-collision.md §2).
+///
+/// `scc_ctx_cache` memoizes per-spec-SCC work across the positions of
+/// one block, keyed by the spec SCC's representative (first member of
+/// its first class as recorded in `stt.blocks`).
+#[allow(clippy::too_many_arguments)]
+pub fn position_claimed_by_spec_scc(
+  source_expanded: &ExpandedBlock,
+  src_head: &Name,
+  src_levels: &[Level],
+  src_specs: &[LeanExpr],
+  original_all: &[Name],
+  lean_env: &LeanEnv,
+  stt: &crate::compile::CompileState,
+  scc_ctx_cache: &mut FxHashMap<Name, SccClaimCtx>,
+) -> Result<bool, CompileError> {
+  let original_names: FxHashSet<Name> = original_all.iter().cloned().collect();
+  let mut member_refs: FxHashSet<Name> = FxHashSet::default();
+  let mut seen: FxHashSet<Hash> = FxHashSet::default();
+  for sp in src_specs {
+    collect_member_refs(sp, &original_names, &mut member_refs, &mut seen);
+  }
+  if member_refs.is_empty() {
+    // A nested occurrence always references at least one member; specs
+    // alone may not (the member reference can sit in the head's
+    // instantiation). Without member refs there is no spec SCC to
+    // consult — nobody else can have discovered it canonically.
+    return Ok(false);
+  }
+
+  // Dedup candidate SCCs by their recorded class representative;
+  // deterministic probe order for deterministic error attribution.
+  let mut candidate_reps: Vec<Name> = Vec::new();
+  for member in &member_refs {
+    let Some(classes) = stt.blocks.get(member).map(|r| r.clone()) else {
+      return Err(CompileError::InvalidMutualBlock {
+        reason: format!(
+          "evaporation disposition: spec member '{}' has no compiled block \
+           — scheduler ordering should have compiled it before its \
+           dependents",
+          member.pretty(),
+        ),
+      });
+    };
+    let Some(rep) = classes.first().and_then(|c| c.first()).cloned() else {
+      continue;
+    };
+    if !candidate_reps.contains(&rep) {
+      candidate_reps.push(rep.clone());
+      if let std::collections::hash_map::Entry::Vacant(e) =
+        scc_ctx_cache.entry(rep)
+      {
+        let ctx = build_scc_claim_ctx(
+          &classes,
+          source_expanded,
+          original_all,
+          lean_env,
+        )?;
+        e.insert(ctx);
+      }
+    }
+  }
+  candidate_reps.sort_by_key(Name::pretty);
+
+  let mut claimant: Option<Name> = None;
+  for rep in candidate_reps {
+    let ctx = scc_ctx_cache
+      .get_mut(&rep)
+      .expect("ctx inserted in the collection loop above");
+    let normalized: Vec<LeanExpr> = src_specs
+      .iter()
+      .map(|sp| {
+        super::expr_utils::replace_const_names_cached(
+          sp,
+          &ctx.orig_to_canon,
+          &mut ctx.normalize_cache,
+        )
+      })
+      .collect();
+    if match_aux_signature(
+      src_head,
+      src_levels,
+      &normalized,
+      &ctx.signatures,
+      &ctx.by_head,
+      stt,
+      &ctx.fvar_map,
+      &ctx.strict_names,
+      &mut ctx.spec_eq_cache,
+    )
+    .is_some()
+    {
+      if let Some(prev) = &claimant {
+        // Two SCCs discovering one occurrence requires a mutual
+        // dependency cycle between them, which contradicts them being
+        // distinct SCCs — a modeling gap if it ever fires.
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "evaporation disposition: position (head={}) canonically \
+             claimed by two SCCs: '{}' and '{}'",
+            src_head.pretty(),
+            prev.pretty(),
+            rep.pretty(),
+          ),
+        });
+      }
+      claimant = Some(rep);
+    }
+  }
+  Ok(claimant.is_some())
+}
+
 /// Semantic equality for nested auxiliary spec parameters.
 ///
 /// `sort_aux_by_partition_refinement` canonicalizes aux motives by structural content,
@@ -1311,11 +1574,21 @@ pub fn compute_aux_perm(
 /// of equality: constants are equal if their names are equal or if both names
 /// already resolve to the same compiled address. Everything else is compared
 /// structurally, ignoring mdata and level parameter names.
+///
+/// `strict_names` overrides the address fallback: constants in this set
+/// compare by NAME only. Callers put the original mutual members that are
+/// out of the matching SCC here — those act as external constants inside
+/// specs, but address-equating them would let an alpha-twin member of a
+/// DIFFERENT SCC match this SCC's canonical specs, making two SCCs claim
+/// one source position (plans/aux-recursor-alias-collision.md §2/§13.4).
+/// Genuine external types (never mutual members) keep the address
+/// fallback: their alpha-twins legitimately dedup many-to-one.
 fn aux_spec_eq(
   canon: &LeanExpr,
   src: &LeanExpr,
   stt: &crate::compile::CompileState,
   source_to_canon_fvar: &FxHashMap<Name, Name>,
+  strict_names: &FxHashSet<Name>,
   cache: &mut FxHashMap<(Hash, Hash), bool>,
 ) -> bool {
   let canon = crate::congruence::strip_mdata(canon);
@@ -1349,30 +1622,40 @@ fn aux_spec_eq(
       if a_name == b_name {
         return true;
       }
+      if strict_names.contains(a_name) || strict_names.contains(b_name) {
+        return false;
+      }
       match (stt.resolve_addr(a_name), stt.resolve_addr(b_name)) {
         (Some(a_addr), Some(b_addr)) => a_addr == b_addr,
         _ => false,
       }
     },
     (ExprData::App(a_f, a_arg, _), ExprData::App(b_f, b_arg, _)) => {
-      aux_spec_eq(a_f, b_f, stt, source_to_canon_fvar, cache)
-        && aux_spec_eq(a_arg, b_arg, stt, source_to_canon_fvar, cache)
+      aux_spec_eq(a_f, b_f, stt, source_to_canon_fvar, strict_names, cache)
+        && aux_spec_eq(
+          a_arg,
+          b_arg,
+          stt,
+          source_to_canon_fvar,
+          strict_names,
+          cache,
+        )
     },
     (ExprData::Lam(_, a_t, a_b, _, _), ExprData::Lam(_, b_t, b_b, _, _))
     | (
       ExprData::ForallE(_, a_t, a_b, _, _),
       ExprData::ForallE(_, b_t, b_b, _, _),
     ) => {
-      aux_spec_eq(a_t, b_t, stt, source_to_canon_fvar, cache)
-        && aux_spec_eq(a_b, b_b, stt, source_to_canon_fvar, cache)
+      aux_spec_eq(a_t, b_t, stt, source_to_canon_fvar, strict_names, cache)
+        && aux_spec_eq(a_b, b_b, stt, source_to_canon_fvar, strict_names, cache)
     },
     (
       ExprData::LetE(_, a_t, a_v, a_b, _, _),
       ExprData::LetE(_, b_t, b_v, b_b, _, _),
     ) => {
-      aux_spec_eq(a_t, b_t, stt, source_to_canon_fvar, cache)
-        && aux_spec_eq(a_v, b_v, stt, source_to_canon_fvar, cache)
-        && aux_spec_eq(a_b, b_b, stt, source_to_canon_fvar, cache)
+      aux_spec_eq(a_t, b_t, stt, source_to_canon_fvar, strict_names, cache)
+        && aux_spec_eq(a_v, b_v, stt, source_to_canon_fvar, strict_names, cache)
+        && aux_spec_eq(a_b, b_b, stt, source_to_canon_fvar, strict_names, cache)
     },
     (
       ExprData::Proj(a_name, a_idx, a_val, _),
@@ -1380,17 +1663,70 @@ fn aux_spec_eq(
     ) => {
       a_idx == b_idx
         && (a_name == b_name
-          || matches!(
-            (stt.resolve_addr(a_name), stt.resolve_addr(b_name)),
-            (Some(a_addr), Some(b_addr)) if a_addr == b_addr
-          ))
-        && aux_spec_eq(a_val, b_val, stt, source_to_canon_fvar, cache)
+          || (!strict_names.contains(a_name)
+            && !strict_names.contains(b_name)
+            && matches!(
+              (stt.resolve_addr(a_name), stt.resolve_addr(b_name)),
+              (Some(a_addr), Some(b_addr)) if a_addr == b_addr
+            )))
+        && aux_spec_eq(
+          a_val,
+          b_val,
+          stt,
+          source_to_canon_fvar,
+          strict_names,
+          cache,
+        )
     },
     (ExprData::Lit(a, _), ExprData::Lit(b, _)) => a == b,
     _ => false,
   };
   cache.insert(key, result);
   result
+}
+
+/// Collect every `Const` reference to an original mutual-block member
+/// inside `expr` into `out`. DAG-memoized via `seen` (same rationale as
+/// [`has_out_of_scc_const`]).
+fn collect_member_refs(
+  expr: &LeanExpr,
+  original_names: &FxHashSet<Name>,
+  out: &mut FxHashSet<Name>,
+  seen: &mut FxHashSet<Hash>,
+) {
+  if !seen.insert(*expr.get_hash()) {
+    return;
+  }
+  match expr.as_data() {
+    ExprData::Const(name, _, _) => {
+      if original_names.contains(name) {
+        out.insert(name.clone());
+      }
+    },
+    ExprData::App(f, a, _) => {
+      collect_member_refs(f, original_names, out, seen);
+      collect_member_refs(a, original_names, out, seen);
+    },
+    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+      collect_member_refs(t, original_names, out, seen);
+      collect_member_refs(b, original_names, out, seen);
+    },
+    ExprData::LetE(_, t, v, b, _, _) => {
+      collect_member_refs(t, original_names, out, seen);
+      collect_member_refs(v, original_names, out, seen);
+      collect_member_refs(b, original_names, out, seen);
+    },
+    ExprData::Proj(name, _, val, _) => {
+      if original_names.contains(name) {
+        out.insert(name.clone());
+      }
+      collect_member_refs(val, original_names, out, seen);
+    },
+    ExprData::Mdata(_, inner, _) => {
+      collect_member_refs(inner, original_names, out, seen);
+    },
+    _ => {},
+  }
 }
 
 /// Check whether an expression contains any `Const(name, _)` where

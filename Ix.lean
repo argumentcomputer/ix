@@ -7,10 +7,14 @@ public import Ix.Ixon
 public import Ix.IxonSyntax
 public import Ix.Sharing
 public import Ix.Meta
+public import Ix.EnvScope
 public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.CompileM
 public import Ix.DecompileM
+public import Ix.Catalog
+public import Ix.ImportIxe
+public import Ix.IxEval
 public import Ix.KernelCheck
 public import Ix.Tc
 public import Ix.Claim

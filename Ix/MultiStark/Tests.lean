@@ -168,9 +168,9 @@ def tests := ⟦
              @gl_val([1u8, 239u8, 205u8, 171u8, 0u8, 0u8, 0u8, 0u8])];
     let alpha = [@gl_val([17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8]),
                  @gl_val([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
-    let px0 = @gl_val([11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let px1 = @gl_val([22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let px2 = @gl_val([33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let px0 = [11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let px1 = [22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let px2 = [33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
     let p_x = store(ListNode.Cons(px0, store(ListNode.Cons(px1,
                 store(ListNode.Cons(px2, store(ListNode.Nil)))))));
     let pz0 = [@gl_val([100u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), @gl_val([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8])];
@@ -179,7 +179,8 @@ def tests := ⟦
     let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
                 store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
     let q = @eg_inverse(@eg_sub(z, [x, 0]));
-    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
+    let (s, _ap) = ro_fold(p_x, p_z, alpha, [0, 0], [1, 0]);
+    let ro = @eg_mul(q, s);
     assert_eq!(ro[0], 7130765474285082575);
     assert_eq!(ro[1], 12254464995725315436);
     1
@@ -226,9 +227,9 @@ def tests := ⟦
     assert_eq!(assert_digest(d20, 8822819174011220231, 9835070768970864367,
                                   9646176123001837413, 1210344881395534089), 1);
     -- Compression: `blake3(a_bytes || b_bytes)` of two 32-byte child digests.
-    let c = mmcs_compress([u64_of(1u8), u64_of(2u8), u64_of(3u8), u64_of(4u8)],
-                          [u64_of(5u8), u64_of(6u8), u64_of(7u8), u64_of(8u8)]);
-    assert_eq!(assert_digest(c, 16432952784711837466, 12565756115161032165,
+    let c = mmcs_compress(store([u64_of(1u8), u64_of(2u8), u64_of(3u8), u64_of(4u8)]),
+                          store([u64_of(5u8), u64_of(6u8), u64_of(7u8), u64_of(8u8)]));
+    assert_eq!(assert_digest(load(c), 16432952784711837466, 12565756115161032165,
                                 6915939387221618258, 11123773279136987111), 1);
     1
   }
@@ -262,20 +263,20 @@ def tests := ⟦
                 [220u8, 192u8, 39u8, 69u8, 198u8, 24u8, 123u8, 147u8],
                 [63u8, 5u8, 74u8, 98u8, 77u8, 73u8, 181u8, 252u8],
                 [134u8, 86u8, 33u8, 32u8, 240u8, 13u8, 134u8, 153u8]];
-    let proof = store(ListNode.Cons(sib0, store(ListNode.Cons(sib1,
-                  store(ListNode.Cons(sib2, store(ListNode.Nil)))))));
+    let proof = store(ListNode.Cons(store(sib0), store(ListNode.Cons(store(sib1),
+                  store(ListNode.Cons(store(sib2), store(ListNode.Nil)))))));
     let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, 3);
     assert_eq!(capidx, 0);
-    assert_eq!(assert_digest(root, 4722047561722553901, 2839201037098837684,
+    assert_eq!(assert_digest(load(root), 4722047561722553901, 2839201037098837684,
                                    4926058068911485563, 1219861215742277604), 1);
     -- tamper: perturb m0's first opened value → root must change.
     let bad0 = store(ListNode.Cons(u64_of(99u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
     let bad_rows = store(ListNode.Cons(bad0, store(ListNode.Cons(row1,
                      store(ListNode.Cons(row2, store(ListNode.Nil)))))));
-    let cap = store(ListNode.Cons([[45u8, 230u8, 248u8, 40u8, 61u8, 21u8, 136u8, 65u8],
+    let cap = store(ListNode.Cons(store([[45u8, 230u8, 248u8, 40u8, 61u8, 21u8, 136u8, 65u8],
                                    [180u8, 102u8, 50u8, 238u8, 76u8, 222u8, 102u8, 39u8],
                                    [123u8, 114u8, 106u8, 220u8, 182u8, 223u8, 92u8, 68u8],
-                                   [228u8, 55u8, 152u8, 7u8, 80u8, 209u8, 237u8, 16u8]],
+                                   [228u8, 55u8, 152u8, 7u8, 80u8, 209u8, 237u8, 16u8]]),
                     store(ListNode.Nil)));
     assert_eq!(mmcs_verify(cap, rows, lhs, ibits, proof, 3), 1);
     assert_eq!(mmcs_verify(cap, bad_rows, lhs, ibits, proof, 3), 0);
@@ -301,7 +302,7 @@ def tests := ⟦
   fn lane_hash_check(n: G) -> G {
     let row = lane_test_row(n);
     digest_eq(b3_to_digest(b3_lanes(row)),
-              b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil)))))
+              b3_to_digest(@blake3(b3_row_onto(row, store(ListNode.Nil)))))
   }
   pub fn lane_hash_test() -> G {
     lane_hash_check(0) * lane_hash_check(1) * lane_hash_check(7)
@@ -367,7 +368,7 @@ def tests := ⟦
   fn io_hash_check(n: G, off: G) -> (G, G) {
     let stop = io_test_fill(n, off, 173);
     let a = b3_io(9, off, n);
-    let b = blake3(io_test_bytes(n, off));
+    let b = @blake3(io_test_bytes(n, off));
     (digest_eq(b3_to_digest(a), b3_to_digest(b)), stop)
   }
   pub fn io_hash_test() -> G {

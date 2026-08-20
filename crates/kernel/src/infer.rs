@@ -152,33 +152,39 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               // error — what's useful here is the post-whnf forms and
               // whether they converge under `is_def_eq`'s lazy unfold
               // strategy.
+              //
+              // stderr, not the log facade: no log backend is installed
+              // in the CLI or test binaries, so `log::info!` dumps are
+              // silently dropped (same fix as the inductive.rs
+              // canonicity dumps).
               let a_whnf = self.whnf(&a_ty);
               let d_whnf = self.whnf(&dom);
               let depth = crate::env_var("IX_APP_DIFF_DEPTH")
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(2);
-              log::info!(
-                "[app diff] AppTypeMismatch at depth={}",
-                self.ctx.len()
+              eprintln!(
+                "[app diff] AppTypeMismatch at depth={} in {}",
+                self.ctx.len(),
+                self.debug_label.as_deref().unwrap_or("<unknown>")
               );
-              log::info!("  f:          {}", compact_expr(f));
-              log::info!("  a:          {}", compact_expr(a));
-              log::info!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
-              log::info!("  dom:        {}", compact_expr_deep(&dom, depth));
-              log::info!("  a_ty data:  {:?}", a_ty.data());
-              log::info!("  dom data:   {:?}", dom.data());
+              eprintln!("  f:          {}", compact_expr(f));
+              eprintln!("  a:          {}", compact_expr(a));
+              eprintln!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
+              eprintln!("  dom:        {}", compact_expr_deep(&dom, depth));
+              eprintln!("  a_ty data:  {:?}", a_ty.data());
+              eprintln!("  dom data:   {:?}", dom.data());
               match &a_whnf {
                 Ok(w) => {
-                  log::info!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
+                  eprintln!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
                 },
-                Err(e) => log::info!("  a_ty whnf:  ERR {e}"),
+                Err(e) => eprintln!("  a_ty whnf:  ERR {e}"),
               }
               match &d_whnf {
                 Ok(w) => {
-                  log::info!("  dom  whnf:  {}", compact_expr_deep(w, depth))
+                  eprintln!("  dom  whnf:  {}", compact_expr_deep(w, depth))
                 },
-                Err(e) => log::info!("  dom  whnf:  ERR {e}"),
+                Err(e) => eprintln!("  dom  whnf:  ERR {e}"),
               }
             }
             return Err(TcError::AppTypeMismatch {

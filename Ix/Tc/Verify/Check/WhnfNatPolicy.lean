@@ -253,11 +253,8 @@ theorem tryReduceNatSuccAfterWhnf_preservesInferOnly
       cases hsucc : isSucc with
       | true =>
           simp only [if_true]
-          refine bind_preservesInferOnly
-            (tryReduceNatSuccPeel_preservesInferOnly normalized args[0]!
-              offset visited) ?_
-          intro result
-          exact TcM.PreservesInferOnly.pure result
+          exact tryReduceNatSuccPeel_preservesInferOnly normalized args[0]!
+            offset visited
       | false =>
           simp only [Bool.false_eq_true, if_false]
           refine bind_preservesInferOnly
@@ -361,10 +358,7 @@ theorem tryReduceNatWithSuccMode_preservesInferOnly
               exact TcM.PreservesInferOnly.pure none
           | false =>
               simp only [Bool.false_eq_true, if_false, pure_bind]
-              refine bind_preservesInferOnly
-                (tryReduceNatSuccIter_preservesInferOnly hmethods args[0]!) ?_
-              intro result
-              exact TcM.PreservesInferOnly.pure result
+              exact tryReduceNatSuccIter_preservesInferOnly hmethods args[0]!
       | false =>
           simp only [Bool.false_eq_true, if_false, pure_bind]
           by_cases hsmall : args.size < 2
@@ -387,11 +381,8 @@ theorem tryReduceNatWithSuccMode_preservesInferOnly
                   cases hpred : isPred with
                   | true =>
                       simp only [if_true]
-                      refine bind_preservesInferOnly
-                        (tryReduceNatPredicate_preservesInferOnly hmethods
-                          id.addr args) ?_
-                      intro result
-                      exact TcM.PreservesInferOnly.pure result
+                      exact tryReduceNatPredicate_preservesInferOnly hmethods
+                        id.addr args
                   | false =>
                       simp only [Bool.false_eq_true, if_false]
                       refine bind_preservesInferOnly

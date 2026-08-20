@@ -337,6 +337,52 @@ def leanDumpPatchesBlock (lo : Ix.Name) (all : Array Ix.Name)
     out := out ++ s!"alias {k} {v}\n"
   return out
 
+/-- Pre-seed `CompileEnv.blocks` (the class-ordering registry the
+    evaporation claim probe reads, Rust `stt.blocks`) for every mutual /
+    inductive condensed block. The production driver merges each block's
+    ordering on completion in dependency order; the dump harness runs
+    blocks in ALPHABETICAL order against one frozen Rust-seeded cenv, so
+    the registry must be complete up front or the probe fails closed
+    with "spec member has no compiled block". `sortConsts` is
+    input-order-independent, so seeding from the condensed member sets
+    reproduces the production orderings exactly. -/
+def seedBlockRegistry (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
+    : CompileEnv := Id.run do
+  let mut registry : Std.HashMap Ix.Name (Array (Array Ix.Name)) :=
+    cenv.blocks
+  for (lo, members) in condensed.blocks do
+    let hasInd := members.toArray.any fun n =>
+      match cenv.env.consts.get? n with
+      | some (.inductInfo _) => true
+      | _ => false
+    if members.size == 1 && !hasInd then
+      continue
+    let blockEnv : Ix.CompileM.BlockEnv :=
+      { all := {}, current := lo, mutCtx := default, univCtx := [] }
+    let classesE := Ix.CompileM.CompileM.run cenv blockEnv {} do
+      let mut cs : Array Ix.MutConst := #[]
+      for n in members do
+        match (← Ix.AuxGen.lookupConst? n) with
+        | none => pure ()
+        | some ci =>
+          match ci with
+          | .inductInfo val => cs := cs.push (← Ix.CompileM.MutConst.mkIndc val)
+          | .defnInfo val => cs := cs.push (Ix.MutConst.fromDefinitionVal val)
+          | .opaqueInfo val => cs := cs.push (Ix.MutConst.fromOpaqueVal val)
+          | .thmInfo val => cs := cs.push (Ix.MutConst.fromTheoremVal val)
+          | .recInfo val => cs := cs.push (.recr val)
+          | _ => pure ()
+      let sortedClasses ← Ix.CompileM.sortConsts cs.toList
+      pure ((sortedClasses.map fun c => (c.map (·.name)).toArray).toArray
+        : Array (Array Ix.Name))
+    match classesE with
+    | .ok (classNames, _) =>
+      for cls in classNames do
+        for n in cls do
+          registry := registry.insert n classNames
+    | .error _ => continue
+  return { cenv with blocks := registry }
+
 /-- Whole-env Lean patches dump (same block selection/order as Rust). -/
 def leanDumpPatches (cenv : CompileEnv) (condensed : Ix.CondensedBlocks)
     : String := Id.run do
@@ -644,8 +690,11 @@ def run (env : Lean.Environment) : IO UInt32 := do
       return 0
 
   -- CompileEnv seeded with Rust results: every block compiles in isolation
-  -- against correct surroundings.
-  let cenv : CompileEnv := Ix.Commit.mkCompileEnv phases
+  -- against correct surroundings. The block registry seeds up front —
+  -- the alphabetical dump order doesn't respect the dependency order the
+  -- production driver's incremental merge relies on.
+  let cenv : CompileEnv := seedBlockRegistry (Ix.Commit.mkCompileEnv phases)
+    condensed
 
   let mut rep : Report := {}
   -- Names covered by Lean block outputs (to compute Rust-only extras).

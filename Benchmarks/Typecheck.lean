@@ -54,17 +54,20 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  execute it (`recursive-execute-time`, `recursive-fft-cost` — the
                  recursion-cost proxy), then prove that execution end-to-end
                  (`recursive-prove-time`, `recursive-peak-rss`,
-                 `recursive-proof-size`, `recursive-verify-time`). The whole
-                 system, inner prove included, switches to the recursion-tuned
-                 parameters (`recursiveFriParameters`), so recursive rows are
-                 NOT comparable to the standard prove run — they land on
-                 their own testbed (`ix bench run --backend aiur --mode
-                 recursive`; the fixed two-constant subset runs in CI as
-                 `--backend aiur-recursive`). At IxVM scale the recursion
-                 exceeds the CI RAM ceiling (even Nat.add_comm's outer
-                 prove peaks ~195 GiB as of 2026-08), so a watchdog kill
-                 landing as a `status: oom` row (dropped by bmf) is the
-                 expected shape there. With --texray, both
+                 `recursive-proof-size`, `recursive-verify-time`), and close the
+                 row with the pipeline ledger — `total-time` (each stage's
+                 prove, summed; a prove already contains its own witness
+                 execution, so the standalone execute times are NOT added,
+                 and later pipeline stages will fold in as they land) and
+                 `pipeline-peak-rss` (the maximum over
+                 every phase window — the run's true RAM ceiling, which no
+                 single windowed peak reports). The whole system, inner prove included,
+                 switches to the recursion-tuned parameters
+                 (`recursiveFriParameters`), so recursive rows are NOT
+                 comparable to a plain prove run's. This is the mode CI's
+                 `aiur` benchmark runs (`ix bench run --backend aiur`): the
+                 full proof pipeline, per constant, over the curated
+                 Vectors.csv selection. With --texray, both
                  proves stream the same `stark/...` span names, so the summed
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.
@@ -99,7 +102,9 @@ The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
 "throughput": …, "peak-rss": …, and with --recursive also "recursive-execute-time": …,
 "recursive-fft-cost": …, "recursive-prove-time": …, "recursive-peak-rss": …,
-"recursive-proof-size": …, "recursive-verify-time": … } }`). `peak-rss` and `throughput` are
+"recursive-proof-size": …, "recursive-verify-time": …, plus the pipeline
+ledger "total-time": …, "pipeline-peak-rss": …
+once the pipeline completes } }`). `peak-rss` and `throughput` are
 phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
 high-water and constants/sec over the execute; a prove row carries the
 prover's high-water and constants/sec over the prove (with `prove-time`,
@@ -131,16 +136,18 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
   capHeight := 0
 }
 
-/-- Recursion FRI parameters for `--recursive`. The query count IS the
-    soundness level, so a real (secure) recursive proof needs a full query
-    count, not a toy handful: 50 queries at log-blowup 2 target ~100 bits,
-    halving the in-circuit verifier's query-proportional work (and the
-    outer prove's footprint) relative to the previous 100-query setting —
-    sized so the run has a chance of fitting CI's weaker hosts. The
-    in-circuit verifier's cost scales with the count; an OOM row still
-    documents the gap between secure recursion and what fits today.
+/-- Recursion FRI parameters for `--recursive` — the CI `aiur` pipeline
+    benchmark's parameters, applied to the stage-1 and stage-2 proofs
+    alike. The query count IS the soundness level, so a real (secure)
+    recursive proof needs a full query count, not a toy handful — but the
+    in-circuit verifier's work (and the outer prove's footprint) scales
+    with it, and at the heavy end of the selection the outer prove runs
+    close enough to the CI host's RAM ceiling that a constant can cross
+    it. That is the intended trade: prefer the soundness and let a
+    constant that does not fit land as an OOM row, documenting the gap
+    between secure recursion and what fits today.
     `--recursive` runs the WHOLE system, inner prove included, under
-    these, so its rows are not comparable to the standard `prove` run's. -/
+    these, so its rows are not comparable to a plain `prove` run's. -/
 def recursiveFriParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
@@ -218,8 +225,8 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     `peak-rss` and `throughput` are PHASE-SCOPED BY MODE, not by name: an
     execute-only run's row carries the Phase-1 peak and constants/sec over
     the execute; a prove run's row carries the prove-phase peak and
-    constants/sec over the prove. The two modes upload to separate bencher
-    testbeds (aiur-check-execute-* / aiur-check-prove-*), so the shared names never
+    constants/sec over the prove. The two modes store on separate bencher
+    testbeds (aiur-execute-* / aiur-*), so the shared names never
     collide — run the execute run when you want execute-side numbers. -/
 def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
   if r.failed then
@@ -272,6 +279,28 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     let fields := match r.recursiveVerifySec with
       | some v => fields ++ [ ("recursive-verify-time", jsonRound 6 v) ]
       | none => fields
+    -- The pipeline ledger, once the whole pipeline has run.
+    -- `total-time` is each stage's prove, summed. A stage's prove is
+    -- the WHOLE cost of producing that stage's proof: `prove_ixvm` runs
+    -- the executor itself (the `aiur/execute_ixvm` span) before
+    -- generating the witness, so the Phase-1 `execute-time` beside it is
+    -- a SECOND, standalone run — instrumentation for `constants` and
+    -- `fft-cost`, not a step of proving. Adding the two would count the
+    -- execution twice. Verification is likewise excluded: a consumer
+    -- cost, not a production one.
+    -- `pipeline-peak-rss` is the whole run's RAM high-water: the
+    -- per-phase windows reset, so no single `peak-rss` answers "how much
+    -- RAM does this pipeline need" — their maximum does. Emitted
+    -- only with every component present, so it doubles as the row's
+    -- completion marker (the orchestrator's teardown-kill `doneKey`).
+    let fields := match r.proveSec, r.recursiveExecuteSec, r.recursiveProveSec with
+      | some p, some _, some rp =>
+        let peaks := [r.executePeakRss, r.peakRss, r.recursivePeakRss].reduceOption
+        fields ++ [ ("total-time", jsonRound 6 (p + rp)) ]
+          ++ (match peaks.max? with
+              | some n => [("pipeline-peak-rss", Lean.toJson n)]
+              | none => [])
+      | _, _, _ => fields
     (r.name, Json.mkObj fields)
 
 /-- Time a thunk, returning its value and the elapsed seconds. The result is
@@ -309,6 +338,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     return Ix.Benchmark.Results.exitUsage
   -- Off by default; CI passes --texray explicitly.
   let useTexray := p.hasFlag "texray"
+  let useInterp := p.hasFlag "interp"
   -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
   -- true high-water mark. With --texray, install the streaming subscriber up
   -- front: every phase span — aiur/execute_ixvm in Phase 1 included —
@@ -412,9 +442,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let (res, execSec) ← timed fun _ =>
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
-          compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+          if useInterp then
+            compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
+          else
+            compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
         else
-          compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash
+          compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash useInterp
       let execPeak ← TracingTexray.peakTreeRssBytes
       match res with
       | .error e =>
@@ -496,11 +529,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let (claim, proof, ioBuf) :=
-            aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
+            if useInterp then
+              aiurSystem.prove funIdx witness.input witness.inputIOBuffer
+            else
+              aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
           (.ok (claim, proof, ioBuf) :
             Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer))
         else
-          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
+          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash useInterp with
           | .error e => .error e
           | .ok (claimBytes, proof, ioBuf) =>
             -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
@@ -509,7 +545,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             -- `ix verify`).
             let digest := Address.blake3 claimBytes
             let claim :=
-              Aiur.buildClaim funIdx (digest.hash.data.map .ofUInt8) #[]
+              Aiur.buildClaim funIdx (IxVM.ClaimHarness.packedDigestKey digest) #[]
             .ok (claim, proof, ioBuf)
       match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
@@ -554,7 +590,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           -- byte blobs and execution routes through the codegen'd verifier.
           let (rvRes, rvSec) ← timed fun _ =>
             vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes
-              vkBytes claimBytes
+              vkBytes claimBytes useInterp
           match rvRes with
           | .error e =>
             IO.eprintln s!"  ❌ recursive verifier REJECTED {r.name}'s proof: {e}"
@@ -580,7 +616,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             TracingTexray.resetPeakTreeRss
             let ((rvClaim, rvProof), rvProveSec) ← timed fun _ =>
               vSystem.proveMultiStark vIdx pubInput proofBytes vkBytes
-                claimBytes
+                claimBytes useInterp
             let rvPeak ← TracingTexray.peakTreeRssBytes
             let rvProofBytes := Aiur.Proof.toBytes rvProof
             let (rvVerifyRes, rvVerifySec) ← timed fun _ =>
@@ -619,6 +655,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
+    "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 

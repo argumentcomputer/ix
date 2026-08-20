@@ -804,11 +804,32 @@ impl Function {
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
-          let bump = !unconstrained && !op_unconstrained;
-          if let Some(output) =
-            record.function_queries[*callee_idx].probe_bump(&args, bump)
-          {
-            map.extend_from_slice(output);
+          let callee_unconstrained = unconstrained || *op_unconstrained;
+          let cached_output = record.function_queries[*callee_idx]
+            .get_mut(&args)
+            .and_then(|result| {
+              // A zero-multiplicity entry was computed only as an
+              // unconstrained hint.  Promoting just this row would omit all
+              // of the callee's child lookups and unbalance their channels;
+              // replay the body constrained so promotion recurses through
+              // the whole dependency tree.
+              // Multiplicities live in an atomic cell here (the record is
+              // shared), so the same test and bump go through it. Counts
+              // stay far below the modulus, so `u64` addition on the cell
+              // is field addition.
+              if !callee_unconstrained
+                && result.multiplicity.load(std::sync::atomic::Ordering::Relaxed) == 0
+              {
+                None
+              } else {
+                if !callee_unconstrained {
+                  result.multiplicity.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                Some(result.output.to_vec())
+              }
+            });
+          if let Some(output) = cached_output {
+            map.extend(output);
           } else {
             let saved_map = std::mem::replace(&mut map, args);
             callers_states_stack.push(CallerState {
@@ -818,7 +839,7 @@ impl Function {
               continuation_depth: continuation_stack.len(),
             });
             fun_idx = *callee_idx;
-            unconstrained = unconstrained || *op_unconstrained;
+            unconstrained = callee_unconstrained;
             push_block_exec_entries!(&toplevel.functions[fun_idx].body);
           }
         },
@@ -1163,11 +1184,24 @@ impl Function {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          record.function_queries[fun_idx].insert_cc(
-            &map[..input_size],
-            &output,
-            !unconstrained,
-          );
+          if let Some(result) =
+            record.function_queries[fun_idx].get_mut(&map[..input_size])
+          {
+            // The only ordinary way to execute an already cached function
+            // is constrained promotion of an unconstrained hint entry.
+            debug_assert_eq!(result.output, output);
+            if !unconstrained {
+              result.multiplicity.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+          } else {
+            // Concurrent insert: `get_mut` said absent, and a racing
+            // duplicate resolves to the bump it raced.
+            record.function_queries[fun_idx].insert_cc(
+              &map[..input_size],
+              &output,
+              !unconstrained,
+            );
+          }
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,

@@ -278,7 +278,8 @@ theorem TrKExprS.simulSubstBeta
           VExpr.instBetaArgs_forallE]
         exact .all (hinsts.isType henv hty)
           (by
-            simpa [tyV', VLocalDecl.instBetaArgs, VLocalDecl.depth] using
+            simpa [tyV', VLocalDecl.instBetaArgs, VLocalDecl.depth,
+              KVLCtx.toCtx] using
               hinstsBody.isType henv hbodyTy)
           (ihty hinsts hlift htyBounds hdepth)
           (by

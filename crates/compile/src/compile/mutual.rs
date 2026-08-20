@@ -26,7 +26,7 @@ use crate::compile::{
   compile_inductive, compile_mutual_block, compile_name, compile_recursor,
   preseed_expr_tables, sort_consts,
 };
-use crate::mutual::{Def, Ind, MutConst};
+use crate::mutual::{Def, Ind, MutConst, ctx_to_all};
 use ix_common::address::Address;
 use ix_common::env::{
   ConstantInfo as LeanConstantInfo, ConstantVal, ConstructorVal,
@@ -145,16 +145,20 @@ pub fn compile_aux_block_with_rename(
   }
   preseed_expr_tables(&exprs, &mut_ctx, &mut cache, stt, "compile_aux_block")?;
 
-  // Compile each representative per class.
+  // Compile each representative per class. The block-context address
+  // list is identical for every member — computed once, not per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
+  let ctx_addrs: Vec<Address> =
+    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
   for class in &sorted_classes {
     let mut rep_pushed = false;
     for cnst in class {
       match cnst {
         MutConst::Recr(rec) => {
-          let (data, meta) = compile_recursor(rec, &mut_ctx, &mut cache, stt)?;
+          let (data, meta) =
+            compile_recursor(rec, &mut_ctx, &ctx_addrs, &mut cache, stt)?;
           if !rep_pushed {
             ixon_mutuals.push(IxonMutConst::Recr(data));
             rep_pushed = true;
@@ -163,7 +167,7 @@ pub fn compile_aux_block_with_rename(
         },
         MutConst::Defn(def) => {
           let (data, meta) =
-            compile_definition(def, &mut_ctx, &mut cache, stt)?;
+            compile_definition(def, &mut_ctx, &ctx_addrs, &mut cache, stt)?;
           if !rep_pushed {
             ixon_mutuals.push(IxonMutConst::Defn(data));
             rep_pushed = true;
@@ -172,7 +176,7 @@ pub fn compile_aux_block_with_rename(
         },
         MutConst::Indc(ind) => {
           let (data, meta, ctor_metas) =
-            compile_inductive(ind, &mut_ctx, &mut cache, stt)?;
+            compile_inductive(ind, &mut_ctx, &ctx_addrs, &mut cache, stt)?;
           if !rep_pushed {
             ixon_mutuals.push(IxonMutConst::Indc(data));
             rep_pushed = true;
@@ -420,6 +424,7 @@ pub fn compile_aux_block_with_rename(
 fn register_aux_aliases(
   aliases: &FxHashMap<Name, Name>,
   stt: &CompileState,
+  ctx: &str,
 ) -> Result<(), CompileError> {
   if aliases.is_empty() {
     return Ok(());
@@ -447,15 +452,28 @@ fn register_aux_aliases(
       }
     })?;
 
+    if *crate::compile::IX_LOG_AUX_NAMES {
+      eprintln!(
+        "[aux-names] alias ctx={ctx} {} -> {} target_addr={} existing={}",
+        source.pretty(),
+        target.pretty(),
+        target_addr.hex(),
+        stt
+          .resolve_addr(&source)
+          .map_or_else(|| "none".to_string(), |a| a.hex()),
+      );
+    }
+
     if let Some(existing_addr) = stt.resolve_addr(&source) {
       if existing_addr != target_addr {
         return Err(CompileError::InvalidMutualBlock {
           reason: format!(
-            "aux_gen alias '{}' already resolves to {:.12}, expected {:.12} via '{}'",
+            "aux_gen alias '{}' already resolves to {:.12}, expected {:.12} via '{}' (registering block/phase: {})",
             source.pretty(),
             existing_addr.hex(),
             target_addr.hex(),
             target.pretty(),
+            ctx,
           ),
         });
       }
@@ -638,8 +656,28 @@ pub fn generate_and_compile_aux_recursors(
         ),
       });
     }
-    aux_layout =
-      Some(crate::compile::surgery::AuxLayout { perm, source_ctor_counts });
+    // Fail closed if the evaporation flags don't line up with the perm —
+    // surgery keys head-rewrite plans off them, so a silent mismatch
+    // would desynchronize aliases and call-site rewrites.
+    let evaporated = match aux_out.evaporated.clone() {
+      Some(flags) if flags.len() == perm.len() => flags,
+      Some(flags) => {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "aux layout mismatch: {} evaporation flags for {} permutation \
+             entries",
+            flags.len(),
+            perm.len()
+          ),
+        });
+      },
+      None => vec![false; perm.len()],
+    };
+    aux_layout = Some(crate::compile::surgery::AuxLayout {
+      perm,
+      source_ctor_counts,
+      evaporated,
+    });
   }
 
   // NOTE: Historically, a canonical→source rename map was built here
@@ -712,6 +750,22 @@ pub fn generate_and_compile_aux_recursors(
     let class_order_key = |c: &MutConst| -> u64 {
       name_to_pos.get(&c.name()).copied().unwrap_or(u64::MAX)
     };
+    // The `all0.rec_N` name family is shared by every SCC split from one
+    // original mutual. Snapshot resolutions before compiling this SCC's
+    // rec patches: a pre-existing DIFFERENT address means two blocks
+    // claimed one name — DashMap registration is last-writer-wins, so
+    // without this check the disagreement ships silently as
+    // schedule-dependent content (plans/aux-recursor-alias-collision.md
+    // §2.4). Same-address re-registration (content-addressed idempotence)
+    // is fine.
+    let pre_claims: Vec<_> = rec_consts
+      .iter()
+      .map(|c| {
+        let name = c.name();
+        let addr = stt.resolve_addr(&name);
+        (name, addr)
+      })
+      .collect();
     compile_aux_block_with_rename(
       &rec_consts,
       lean_env,
@@ -720,6 +774,32 @@ pub fn generate_and_compile_aux_recursors(
       Some(&aux_name_rename),
       Some(&class_order_key),
     )?;
+    for (name, pre_addr) in pre_claims {
+      let post_addr = stt.resolve_addr(&name);
+      if *crate::compile::IX_LOG_AUX_NAMES {
+        eprintln!(
+          "[aux-names] patch-registered block={block_label} {} addr={} preexisting={}",
+          name.pretty(),
+          post_addr.as_ref().map_or_else(|| "none".to_string(), |a| a.hex()),
+          pre_addr.as_ref().map_or_else(|| "none".to_string(), |a| a.hex()),
+        );
+      }
+      if let (Some(pre), Some(post)) = (&pre_addr, &post_addr)
+        && pre != post
+      {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "aux patch name '{}' was already registered to {:.12} by an \
+             earlier block; this block ({}) re-registered it to {:.12} — \
+             two SCCs claim one source-indexed aux name",
+            name.pretty(),
+            pre.hex(),
+            block_label,
+            post.hex(),
+          ),
+        });
+      }
+    }
   }
   // Some later generated wrappers are named under alpha-collapsed aliases
   // and may reference the alias `.rec` name. Register every alias whose target
@@ -731,7 +811,11 @@ pub fn generate_and_compile_aux_recursors(
     .filter(|(_, target)| stt.resolve_addr(target).is_some())
     .map(|(source, target)| (source.clone(), target.clone()))
     .collect();
-  register_aux_aliases(&available_rec_aliases, stt)?;
+  register_aux_aliases(
+    &available_rec_aliases,
+    stt,
+    &format!("{block_label}/rec-phase"),
+  )?;
   let rec_elapsed = t1.elapsed();
   // Phase 2b: Compile .casesOn definitions.
   // casesOn wraps .rec and must be compiled after .rec but before .brecOn
@@ -907,7 +991,7 @@ pub fn generate_and_compile_aux_recursors(
   }
   let brecon_elapsed = t6.elapsed();
 
-  register_aux_aliases(&aux_out.aliases, stt)?;
+  register_aux_aliases(&aux_out.aliases, stt, &format!("{block_label}/final"))?;
 
   // Note: `.noConfusion`, `.noConfusionType`, `.ctor.noConfusion`, `.ctorIdx`,
   // `.ctorElim*`, `.ctor.inj*`, `._sizeOf_*`, etc. are **not** regenerated.
@@ -1137,12 +1221,75 @@ fn compile_below_recursors(
     stt,
     kctx,
   )?;
-  for (_, rec) in recs {
-    below_recs.push(MutConst::Recr(rec));
+  for (_, rec) in &recs {
+    below_recs.push(MutConst::Recr(rec.clone()));
   }
 
   if !below_recs.is_empty() {
-    compile_aux_block(&below_recs, lean_env, stt, kctx)?;
+    // The below-rec block's storage order must align with the below
+    // inductive block's member order (`classes`), exactly like the main
+    // recursor block above: the kernel's
+    // `populate_recursor_rules_from_block` pairs `rec_block[i]` with
+    // `flat[i]` positionally (canonicity §6.2). Without a class-order
+    // key, `sort_consts` picks its own structural permutation of the
+    // recursors, which can diverge from the inductive block's order —
+    // sibling below-recursors first differ at index/motive shape while
+    // sibling below-inductives first differ at ctor content (seen on
+    // Prop-valued mutual predicate families: HaskellSpec `dict`).
+    let mut name_to_pos: FxHashMap<Name, u64> = FxHashMap::default();
+    for (pos, class) in classes.iter().enumerate() {
+      for member_name in class {
+        let rec_name = Name::str(member_name.clone(), "rec".to_string());
+        name_to_pos.insert(rec_name, pos as u64);
+      }
+    }
+    let class_order_key = |c: &MutConst| -> u64 {
+      name_to_pos.get(&c.name()).copied().unwrap_or(u64::MAX)
+    };
+    compile_aux_block_with_rename(
+      &below_recs,
+      lean_env,
+      stt,
+      kctx,
+      None,
+      Some(&class_order_key),
+    )?;
+  }
+
+  // Regenerate `.below.casesOn` against the canonical below-recs. Lean
+  // authors `X.below.casesOn` for every below inductive, and its value
+  // applies `X.below.rec` with motives in LEAN's member order — but the
+  // block above regenerated those recs with the canonical motive layout,
+  // so the Lean-authored wrapper is ill-typed in the compiled env
+  // (kernel: AppTypeMismatch on the motive arguments). Mirror the main
+  // family's Phase-2b: regenerate each casesOn from its canonical rec
+  // and register it here so the ordinary compile of the Lean value is
+  // skipped (aux registrations suppress it, like every other patch).
+  let mut below_cases: Vec<MutConst> = Vec::new();
+  for (rec_name, rec_val) in &recs {
+    let ind_name = match rec_name.as_data() {
+      ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
+      _ => continue,
+    };
+    let cases_on_name = Name::str(ind_name, "casesOn".to_string());
+    if lean_env.get(&cases_on_name).is_some()
+      && let Some(d) =
+        aux_gen::cases_on::generate_cases_on(&cases_on_name, rec_val, lean_env)
+    {
+      below_cases.push(MutConst::Defn(Def {
+        name: d.name.clone(),
+        level_params: d.level_params.clone(),
+        typ: d.typ.clone(),
+        kind: DefKind::Definition,
+        value: d.value.clone(),
+        hints: ReducibilityHints::Abbrev,
+        safety: def_safety(d.is_unsafe),
+        all: vec![],
+      }));
+    }
+  }
+  if !below_cases.is_empty() {
+    compile_aux_block(&below_cases, lean_env, stt, kctx)?;
   }
   Ok(())
 }

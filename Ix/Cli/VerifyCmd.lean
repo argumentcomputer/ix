@@ -67,14 +67,15 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
   let proof := Aiur.Proof.ofBytes wrapper.proof
-  -- `verify_claim` takes the 32-G blake3 digest of the serialized claim.
+  -- `verify_claim` takes the packed 8-G blake3 digest of the serialized
+  -- claim (4 LE bytes per element; see `ClaimHarness.packedDigestKey`).
   let claimDigest := Address.blake3 (Ix.Claim.ser wrapper.claim)
   let funIdx ← match compiled.getFuncIdx `verify_claim with
     | some i => pure i
     | none =>
       IO.eprintln "error: `verify_claim` entrypoint missing from compiled toplevel"
       return 1
-  let input : Array Aiur.G := claimDigest.hash.data.map .ofUInt8
+  let input : Array Aiur.G := IxVM.ClaimHarness.packedDigestKey claimDigest
   let aiurClaim := Aiur.buildClaim funIdx input #[]
   match aiurSystem.verify aiurClaim proof with
   | .ok () =>

@@ -143,7 +143,8 @@ def commitDef (compileEnv : CompileM.CompileEnv) (leanEnv : Lean.Environment)
     safety := .safe
   }
   let decl := Lean.Declaration.defnDecl defnVal
-  let leanEnv' ← match Lean.Environment.addDeclCore leanEnv 0 decl .none with
+  let leanEnv' ← match Lean.Environment.addDeclCore leanEnv 0
+      Lean.defaultMaxRecDepth.toUSize decl .none with
     | .ok env => pure env
     | .error _e => throw $ IO.userError "commitDef: addDeclCore failed"
 

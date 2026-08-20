@@ -1,7 +1,7 @@
 module
 public import Ix.Aiur.Stages.Concrete
 public import Ix.Aiur.Stages.Bytecode
-public import Lean.Data.RBTree
+public import Std.Data.TreeSet
 
 /-!
 Circuit layout computation for Aiur bytecode.
@@ -101,7 +101,7 @@ def SharedData.maximals (a b : SharedData) : SharedData := {
   lookups := a.lookups.max b.lookups
 }
 
-abbrev MemSizes := Lean.RBTree Nat compare
+abbrev MemSizes := Std.TreeSet Nat
 
 structure LayoutMState where
   functionLayout : Aiur.Bytecode.FunctionLayout

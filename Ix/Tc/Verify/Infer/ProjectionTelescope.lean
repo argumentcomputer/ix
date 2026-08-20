@@ -62,7 +62,6 @@ theorem peelProjForall_wf
         exact ⟨_, _, hdomSupport, hcodSupport, hdomType, hcodType,
           hdomTr, hcodTr, hinputEq.symm⟩
   all_goals
-    simp only [pure_bind]
     apply RecM.WF.bind (hwhnf hinputSupport hinputCore)
     intro reduced after hred
     rcases hred with

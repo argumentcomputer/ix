@@ -281,7 +281,7 @@ theorem publicInference_wf (separation : AddressSeparation) :
       (fun inferred _ => support inferred ∧
         InferPost RawProjRel.none world model.keys.uvars []
           (.sort .zero) inferred) := by
-  simpa [source, result, resultUniv] using
+  exact
     (TcM.infer.sort_scoped_wf_fuel_one
       (initial := initialState) (model := model)
       (u := sourceUniv) (info := source.info)
@@ -302,7 +302,7 @@ theorem inference_run (separation : AddressSeparation) :
   have hbody :
       (RecM.inferUncached RecM.inferCall false source).run methods
           initialState = .ok result afterIntern := by
-    simpa [methods, source, result, resultUniv] using hintern
+    exact hintern
   have hshell := RecM.inferWith_fullMiss_success
     (inferRec := RecM.inferCall) (methods := methods)
     (source := source) (ty := result) (key := inferKey)

@@ -97,9 +97,9 @@ theorem weakRight {env : VEnv} {uvars : Nat}
         Lean4Lean.VEnv.CtxWF.closed henv hinner.toCtx
       refine .app (A := A) (B := B) ?_ ?_
         (ihfun hinner outer) (iharg hinner outer)
-      · simpa only [KVLCtx.toCtx_appendOuter] using
+      · simpa only [KVLCtx.toCtx_appendOuter, Lean4Lean.VEnv.HasType] using
           hfunTy.weakR henv hclosed outer.toCtx
-      · simpa only [KVLCtx.toCtx_appendOuter] using
+      · simpa only [KVLCtx.toCtx_appendOuter, Lean4Lean.VEnv.HasType] using
           hargTy.weakR henv hclosed outer.toCtx
   | @lam inner name bi ty body info ty' body'
       hty htyTr hbodyTr ihty ihbody =>
@@ -110,7 +110,7 @@ theorem weakRight {env : VEnv} {uvars : Nat}
       have hty' :
           env.IsType uvars (KVLCtx.appendOuter inner outer).toCtx ty' := by
         refine ⟨level, ?_⟩
-        simpa only [KVLCtx.toCtx_appendOuter] using
+        simpa only [KVLCtx.toCtx_appendOuter, Lean4Lean.VEnv.HasType] using
           htyHasType.weakR henv hclosed outer.toCtx
       have hbodyInner :
           KVLCtx.WF env uvars ((none, .vlam ty') :: inner) :=
@@ -125,7 +125,7 @@ theorem weakRight {env : VEnv} {uvars : Nat}
       have hty' :
           env.IsType uvars (KVLCtx.appendOuter inner outer).toCtx ty' := by
         refine ⟨level, ?_⟩
-        simpa only [KVLCtx.toCtx_appendOuter] using
+        simpa only [KVLCtx.toCtx_appendOuter, Lean4Lean.VEnv.HasType] using
           htyHasType.weakR henv hclosed outer.toCtx
       have hbodyInner :
           KVLCtx.WF env uvars ((none, .vlam ty') :: inner) :=
@@ -141,7 +141,7 @@ theorem weakRight {env : VEnv} {uvars : Nat}
               ((none, Lean4Lean.VLocalDecl.vlam ty') :: inner) outer).toCtx
               body' := by
         refine ⟨bodyLevel, ?_⟩
-        simpa only [KVLCtx.toCtx_appendOuter] using
+        simpa only [KVLCtx.toCtx_appendOuter, Lean4Lean.VEnv.HasType] using
           hbodyHasType.weakR henv hbodyClosed outer.toCtx
       exact .all hty' hbodyTy' (ihty hinner outer)
         (ihbody hbodyInner outer)
@@ -151,7 +151,7 @@ theorem weakRight {env : VEnv} {uvars : Nat}
         Lean4Lean.VEnv.CtxWF.closed henv hinner.toCtx
       have hvalTy' :
           env.HasType uvars (KVLCtx.appendOuter inner outer).toCtx val' ty' := by
-        simpa only [KVLCtx.toCtx_appendOuter] using
+        simpa only [KVLCtx.toCtx_appendOuter, Lean4Lean.VEnv.HasType] using
           hvalTy.weakR henv hclosed outer.toCtx
       have hbodyInner :
           KVLCtx.WF env uvars ((none, .vlet ty' val') :: inner) :=
@@ -210,7 +210,7 @@ theorem weakRight {env : VEnv} {uvars : Nat}
     Lean4Lean.VEnv.CtxWF.closed henv hinner.toCtx
   refine ⟨structural, hstructural.weakRight henv hlit htp hinner outer,
     targetTy, ?_⟩
-  simpa only [KVLCtx.toCtx_appendOuter] using
+  simpa only [KVLCtx.toCtx_appendOuter, Lean4Lean.VEnv.HasType] using
     htarget.weakR henv hclosed outer.toCtx
 
 end TrKExpr

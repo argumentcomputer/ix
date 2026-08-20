@@ -1246,9 +1246,10 @@ impl ConstantMetaInfo {
         for cls in all {
           put_idx_vec(cls, idx, buf)?;
         }
-        // Option<AuxLayout>: 0 tag = None, 1 tag = Some(perm_vec, ctor_vec).
-        // Both vecs are Vec<usize> — written as Vec<u64> via Tag0 so the
-        // serialized form is target-word-size independent.
+        // Option<AuxLayout>: 0 tag = None, 1 tag = Some(perm_vec,
+        // ctor_vec, evaporated_vec). The usize vecs are written as
+        // Vec<u64> via Tag0 so the serialized form is target-word-size
+        // independent; `evaporated` is one u8 (0/1) per entry.
         match aux_layout {
           None => put_u8(0, buf),
           Some(layout) => {
@@ -1260,6 +1261,10 @@ impl ConstantMetaInfo {
             put_u64(layout.source_ctor_counts.len() as u64, buf);
             for &c in &layout.source_ctor_counts {
               put_u64(c as u64, buf);
+            }
+            put_u64(layout.evaporated.len() as u64, buf);
+            for &b in &layout.evaporated {
+              put_u8(u8::from(b), buf);
             }
           },
         }
@@ -1337,7 +1342,20 @@ impl ConstantMetaInfo {
             for _ in 0..n_counts {
               source_ctor_counts.push(get_u64(buf)? as usize);
             }
-            Some(AuxLayout { perm, source_ctor_counts })
+            let n_evap = get_u64(buf)? as usize;
+            let mut evaporated = Vec::with_capacity(n_evap);
+            for _ in 0..n_evap {
+              evaporated.push(match get_u8(buf)? {
+                0 => false,
+                1 => true,
+                x => {
+                  return Err(format!(
+                    "Muts.aux_layout: invalid evaporated flag {x}"
+                  ));
+                },
+              });
+            }
+            Some(AuxLayout { perm, source_ctor_counts, evaporated })
           },
           x => return Err(format!("Muts.aux_layout: invalid tag {x}")),
         };
@@ -1430,6 +1448,36 @@ mod tests {
     let mut reindexed = Vec::new();
     from_raw.put_with(NamePut::Indexed(&idx), &mut reindexed).unwrap();
     assert_eq!(buf, reindexed);
+  }
+
+  #[test]
+  fn test_muts_aux_layout_roundtrip() {
+    let addr = Address::from_slice(&[7u8; 32]).unwrap();
+    // The unified encoding serializes `evaporated` verbatim under one
+    // Some tag (no all-false special case): all-false, mixed, and empty
+    // flag vectors each roundtrip exactly.
+    for evaporated in [vec![false, false], vec![true, false], vec![]] {
+      let meta = ConstantMeta::new(ConstantMetaInfo::Muts {
+        all: vec![vec![addr.clone()]],
+        aux_layout: Some(AuxLayout {
+          perm: vec![1, 0],
+          source_ctor_counts: vec![2, 3],
+          evaporated,
+        }),
+      });
+      let mut buf = Vec::new();
+      meta.put_raw(&mut buf).unwrap();
+      let recovered = ConstantMeta::get_raw(&mut buf.as_slice()).unwrap();
+      assert_eq!(meta, recovered);
+    }
+    let none = ConstantMeta::new(ConstantMetaInfo::Muts {
+      all: vec![vec![addr]],
+      aux_layout: None,
+    });
+    let mut buf = Vec::new();
+    none.put_raw(&mut buf).unwrap();
+    let recovered = ConstantMeta::get_raw(&mut buf.as_slice()).unwrap();
+    assert_eq!(none, recovered);
   }
 
   #[test]

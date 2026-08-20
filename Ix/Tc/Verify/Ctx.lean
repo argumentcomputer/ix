@@ -642,7 +642,8 @@ theorem fvars_nodup (h : CtxRecon env uvars nameOf trProj s Δ) :
   have h2 : List.Pairwise (fun p q : FVarId × LocalDecl .anon =>
       p.1 ≠ q.1) s.lctx.decls.toList :=
     h.incr.imp fun hlt heq => absurd (heq ▸ hlt) (Nat.lt_irrefl _)
-  simpa using List.pairwise_map.mpr h2
+  simpa [List.Nodup, List.pairwise_reverse, ne_comm] using
+    List.pairwise_map.mpr h2
 
 /-- The payoff: a reconciled context is well-formed at the typing
     level. -/

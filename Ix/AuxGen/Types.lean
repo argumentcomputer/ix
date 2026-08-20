@@ -125,6 +125,13 @@ structure AuxPatchesOutput where
       patch instead of compiling a renamed copy (source name → patch name). -/
   aliases : Std.HashMap Name Name := {}
   perm : Option (Array Nat) := none
+  /-- `evaporated[sourceJ]`: this block registered the evaporation alias
+      `all0.rec_{sourceJ+1} → <ext>.rec` for the position (and surgery
+      must register the matching head-rewrite plan). `some` exactly when
+      `perm` is; positions that are canonical here or owned by another
+      SCC are `false`. Travels into `AuxLayout.evaporated`. Mirrors Rust
+      `AuxPatchesOutput.evaporated`. -/
+  evaporated : Option (Array Bool) := none
   /-- Number of equivalence classes (primary members) in the canonical block. -/
   nClasses : Nat := 0
   /-- Number of canonical aux members (length of the hash-sorted aux section). -/

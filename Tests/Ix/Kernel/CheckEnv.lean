@@ -138,6 +138,15 @@ def testRustCheckEnv : TestSeq :=
     check proceeds, so a hang is recognisable by a missing terminator
     after `[i/N] name ...` — look for the last printed name. -/
 def focusConsts : Array Lean.Name := #[
+  -- 2026-08-19 (v4.33 bump fallout): Prop-mutual IndPredBelow matchers.
+  -- The `match_2` matchers mention `OddP.below`/`EvenP.below` applied to
+  -- the parent family's motives, so they pin the below inductive's
+  -- parameter order against Lean's authored order (see #571).
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.BelowPredicate.oddp_nonneg.match_2,
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.BelowPredicate.evenp_nonneg.match_2,
+
   -- Current Nat-conformance follow-up residue from 2026-04-30.
   `Lean.Grind.Fin.instPowFinCoOfNatIntCast,
   `Fin.pred_one,

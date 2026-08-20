@@ -38,6 +38,8 @@ def checked : boolDecl.Checked where
   result_eq := rfl
   elimination := .large
   elimination_eq := rfl
+  kTarget := VInductDecl.isKTarget 0 (.succ .zero) boolType
+  kTarget_eq := rfl
   names := VInductDecl.generatedNames boolType
   names_eq := rfl
   constructors := boolType.ctors.map
@@ -57,7 +59,7 @@ theorem declarationWF : boolDecl.WF VEnv.empty := by
   · trivial
   · intro ctor hctor
     simp [boolType] at hctor
-    rcases hctor with rfl | rfl <;> exact ⟨trivial, rfl⟩
+    rcases hctor with rfl | rfl <;> exact ⟨trivial, .nil⟩
 
 theorem generationWF : generation.WF VEnv.empty := by
   exact (checked.wf_of_decl declarationWF).identityGeneration .empty
@@ -80,7 +82,7 @@ def transaction : CertifiedGenerationTransaction boolDecl VEnv.empty
 
 private theorem enumerationShapeNative :
     CertifiedSingletonGeneration.IsEnumeration generation := by
-  refine ⟨rfl, rfl, rfl, by decide, ?_⟩
+  refine ⟨rfl, rfl, rfl, rfl, by decide, ?_⟩
   intro index normalized hnormalized
   have hindex : index = 0 ∨ index = 1 := by
     have hlt : index < generation.block.ctorPairs.length :=
@@ -1090,11 +1092,13 @@ def familyInterpretation : SingletonFamilyIngressInterpretation
     · refine ⟨falseSource, falseConcrete, falseSourceAt, ?_, falseShape,
         ?_, falseType⟩
       · simpa [constructorIds] using falseEntry
-      · simpa [constructorIds, falseSource] using nameOf_false
+      · simpa [constructorIds, falseSource, generation, checked, boolDecl,
+          boolType] using nameOf_false
     · refine ⟨trueSource, trueConcrete, trueSourceAt, ?_, trueShape,
         ?_, trueType⟩
       · simpa [constructorIds] using trueEntry
-      · simpa [constructorIds, trueSource] using nameOf_true
+      · simpa [constructorIds, trueSource, generation, checked, boolDecl,
+          boolType] using nameOf_true
 
 /-! ## One immutable world for both physical blocks -/
 

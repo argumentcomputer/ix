@@ -91,7 +91,7 @@ Used for expressions, constants, and environment/proof structures. Header byte f
 | 0xB | Expr | Share | Share vector index |
 | 0xC | Constant | Muts | Entry count |
 | 0xD | Constant | Non-Muts | Variant (0-7) |
-| 0xE | Env/Claim | Env/Comm/AssumptionTree/Claim | Variant (0-7) |
+| 0xE | Env/Claim | Env/Comm/AssumptionTree/Claim | `.ixe` header: format version (see below); Comm/AssumptionTree/Claim: variant |
 | 0xF | Proof | ZK proofs | Variant (0-4); 5-7 reserved |
 
 ```rust
@@ -732,6 +732,7 @@ pub enum ConstantMetaInfo {
     Ctor { name, lvls, induct, arena, type_root },      // tag 4
     Rec { name, lvls, rules, all, ctx,
           arena, type_root, rule_roots },               // tag 5
+    Muts { all, aux_layout },                           // tag 6
 }
 ```
 
@@ -745,7 +746,28 @@ pub enum ConstantMetaInfo {
 | 3 | Indc | name_idx, lvl_idxs, ctor_idxs, all_idxs, ctx_idxs, arena, type_root |
 | 4 | Ctor | name_idx, lvl_idxs, induct_idx, arena, type_root |
 | 5 | Rec | name_idx, lvl_idxs, rule_idxs, all_idxs, ctx_idxs, arena, type_root, rule_roots |
+| 6 | Muts | class count (Tag0) + per-class name-idx vecs, then `Option<AuxLayout>` |
 | 255 | Empty | (none) |
+
+**`AuxLayout`** (the `Muts` sidecar — nested-auxiliary layout for
+mutual blocks that underwent nested-inductive expansion; metadata
+only, never entering any content hash):
+
+```
+0x00                                  -- None (no nested auxes)
+0x01                                  -- Some, followed by:
+  perm count (Tag0) + [Tag0]*         -- perm[sourceJ] = canonicalI
+  ctor-count count (Tag0) + [Tag0]*   -- per-source-position aux ctor counts
+  evaporated count (Tag0) + [u8]*     -- one 0/1 flag per perm entry
+```
+
+The three vectors always serialize together (one unified format), and
+`evaporated` always carries `perm.len()` flags — a flag set means the
+block owns the evaporation of that source position (its alias resolves
+to an external head's generic recursor; call-site surgery keys
+head-rewrite plans off these flags alone). Writers normalize
+legacy-constructed values with defaulted-empty `evaporated` to
+all-zero flags, so Lean and Rust serializers agree byte-for-byte.
 
 ### Indexed Serialization
 
@@ -834,12 +856,22 @@ these files; the default output name is the lowercased input file stem
 plus `.ixe`. See `src/ix/ixon/serialize.rs::Env::put` for the
 byte-level layout.
 
-The .ixe layout is a Tag4(0xE, 0) header byte followed by a 32-byte
-canonical merkle root, the bundle header fields, and then 6 sections
-(hot data first, metadata last):
+The .ixe layout is a `Tag4(0xE, VERSION)` header byte followed by a
+32-byte canonical merkle root, the bundle header fields, and then 6
+sections (hot data first, metadata last).
+
+The Tag4 size field is the **format version** (`Env::VERSION`,
+currently `1`, so the first byte of a v1 file is `0xE1`). Any change
+to serialized bytes bumps the version; every reader
+(`read_env_header` on the Rust side, `Ixon.getEnv` /
+`getEnvVerifiedLazy` on the Lean side) rejects a mismatch with an
+error naming both versions and asking for a recompile. There is no
+back-compat reading of old versions — `.ixe` files are regenerated
+artifacts. Versions 0–7 cost zero additional bytes (inline Tag4
+size); later versions cost a trimmed varint.
 
 ```
-Header:      Tag4 { flag: 0xE, size: 0 }  -- one byte (0xE0)
+Header:      Tag4 { flag: 0xE, size: VERSION }  -- 0xE1 for version 1
 Root:        32 bytes                     -- canonical merkle root over
                                             consts.keys(); for empty
                                             const sets this is the

@@ -34,7 +34,7 @@ jobs:
     steps:
       # paths-filter diffs the PR via the API on pull_request events, but
       # needs a checkout to resolve the pushed commit range on push events.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: dorny/paths-filter@v4
@@ -60,7 +60,7 @@ jobs:
       security-events: write
       packages: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: github/codeql-action/init@v4
@@ -81,7 +81,7 @@ jobs:
       security-events: write
       packages: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: github/codeql-action/init@v4

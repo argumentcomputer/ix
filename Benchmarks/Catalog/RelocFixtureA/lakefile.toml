@@ -1,0 +1,9 @@
+name = "relocFixtureA"
+version = "0.1.0"
+
+[[require]]
+name = "relocFixtureB"
+path = "../RelocFixtureB"
+
+[[lean_lib]]
+name = "FixtureA"

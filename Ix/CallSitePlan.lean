@@ -29,7 +29,7 @@ structure AuxHeadRewrite where
   targetRec : Name
   /-- Source motive position of the evaporated aux (`nUserMotives + j`). -/
   targetMotivePos : Nat
-  deriving Repr, Nonempty, Inhabited
+  deriving Repr, Nonempty, Inhabited, BEq
 
 /-- Per-auxiliary surgery plan for call-site argument reordering.
 
@@ -80,7 +80,7 @@ structure CallSitePlan where
       from the source recursor's type instantiated with the call-site args
       (`deriveHeadRewriteApp`). -/
   headRewrite : Option AuxHeadRewrite
-  deriving Repr, Nonempty, Inhabited
+  deriving Repr, Nonempty, Inhabited, BEq
 
 namespace CallSitePlan
 
@@ -131,7 +131,7 @@ structure BRecOnCallSitePlan where
   nIndices : Nat
   motiveKeep : Array Bool
   sourceToCanonMotive : Array Nat
-  deriving Repr, Nonempty, Inhabited
+  deriving Repr, Nonempty, Inhabited, BEq
 
 namespace BRecOnCallSitePlan
 
@@ -153,5 +153,18 @@ def isIdentity (plan : BRecOnCallSitePlan) : Bool :=
     && plan.sourceToCanonMotive.zipIdx.all (fun (c, i) => c == i)
 
 end BRecOnCallSitePlan
+
+/-- Whether a `belowCallSitePlans` key is the `.below`/`.below_N` HEAD
+    (telescope `params, motives, indices, major` — surgery requires the
+    full floor) as opposed to a Prop-below FAMILY member (a `.below`
+    constructor or `.below.casesOn`, whose telescope starts with the
+    below params — parent params then parent motives — and has no
+    major-premise floor: a field-less below ctor is fully applied at
+    exactly params+motives). Mirrors Rust `below_plan_key_is_head`
+    (surgery.rs). -/
+def belowPlanKeyIsHead (name : Name) : Bool :=
+  match name with
+  | .str _ s _ => s == "below" || s.startsWith "below_"
+  | _ => false
 
 end Ix.AuxGen

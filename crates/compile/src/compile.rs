@@ -66,6 +66,16 @@ pub static ANALYZE_SHARING: std::sync::atomic::AtomicBool =
 pub static IX_TIMING: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_TIMING").is_ok());
 
+/// Log every aux-name claim: alias insertions, canonical patch name
+/// registrations, evaporation decisions, and call-site-plan
+/// registrations — with full addresses and block context. The
+/// cross-SCC ownership of `all[0].rec_N`-style names is invisible in
+/// normal logs; this flag exists to attribute both claimants when a
+/// name is contested (see plans/aux-recursor-alias-collision.md).
+/// Set via IX_LOG_AUX_NAMES=1.
+pub static IX_LOG_AUX_NAMES: std::sync::LazyLock<bool> =
+  std::sync::LazyLock::new(|| std::env::var("IX_LOG_AUX_NAMES").is_ok());
+
 /// Options controlling whole-environment compilation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CompileOptions {
@@ -93,6 +103,17 @@ pub struct KernelCtx {
   /// addresses that may shift as alpha-collapse reassigns addresses over
   /// the course of compilation.
   pub kenv: ix_kernel::env::KEnv<ix_kernel::mode::Meta>,
+  /// Ids whose `ingress_aux_gen_dep` dispatch has already run against
+  /// `kenv`. The dispatch is a deterministic function of the constant's
+  /// kind, so once an id is here its kenv entry is at final fidelity and
+  /// the walkers skip re-expanding its whole reference closure (that
+  /// re-expansion was Θ(blocks × closure) when the set lived per call).
+  /// Keyed by resolved `KId` — not bare `Name` — so an address shifted
+  /// by later aux registration reads as unseen and re-ingresses under
+  /// the new id, exactly as the per-call sets healed it. Must be cleared
+  /// together with `kenv` (the entries it vouches for die with it).
+  pub aux_ingress_seen:
+    rustc_hash::FxHashSet<ix_kernel::id::KId<ix_kernel::mode::Meta>>,
 }
 
 impl Default for KernelCtx {
@@ -103,7 +124,10 @@ impl Default for KernelCtx {
 
 impl KernelCtx {
   pub fn new() -> Self {
-    KernelCtx { kenv: ix_kernel::env::KEnv::new() }
+    KernelCtx {
+      kenv: ix_kernel::env::KEnv::new(),
+      aux_ingress_seen: rustc_hash::FxHashSet::default(),
+    }
   }
 }
 
@@ -156,8 +180,23 @@ pub struct CompileState {
   /// `.rec`, but `.brecOn` places indices+major before the handler binders,
   /// so the telescope has to be rewritten by a separate layout rule.
   pub brec_on_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
-  /// Per-`.below` surgery plans. `.below` has the motive-only telescope
-  /// `params, motives, indices, major`.
+  /// Per-`.below`-family surgery plans. A `X.below`/`X.below_N` HEAD has
+  /// the motive-only telescope `params, motives, indices, major`. For
+  /// Prop-level (IndPredBelow) families the map also carries the rest of
+  /// the family's user-visible surface under their own names — the
+  /// `.below` constructors (`X.below.succ`, …) and the `.below.casesOn`
+  /// wrapper. Those telescopes start with the below inductive's
+  /// parameters (parent params, then parent motives), so the same motive
+  /// permutation applies to `[n_params, n_params + n_source_motives)`
+  /// and everything after (ctor fields / casesOn
+  /// target-motive+indices+major+minors) rides along kept-identity —
+  /// but with NO major-premise floor: a field-less below ctor
+  /// (`EvenP.below.zero`) is fully applied at exactly params+motives.
+  /// The apply site discriminates the two telescope shapes by the key's
+  /// last component (`below`/`below_N` = head, anything else = family
+  /// member); `X.below.rec` is deliberately NOT registered (nothing
+  /// user-visible references it — only regenerated wrappers, which skip
+  /// surgery via the aux-regen guard).
   pub below_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Per-block nested-auxiliary layout (permutation + source ctor
   /// counts) for each source `InductiveVal.all[0]` name. Used by:
@@ -1265,9 +1304,22 @@ pub fn compile_expr(
                 if let Some(plan) = stt.below_call_site_plans.get(name)
                   && !plan.is_identity()
                 {
-                  let fixed_tail_len = plan.n_indices + 1; // indices + major
-                  let expected_total =
-                    plan.n_params + plan.n_source_motives + fixed_tail_len;
+                  // The map covers the whole below family (see the field
+                  // docs). A `.below`/`.below_N` HEAD has the telescope
+                  // `params, motives, indices, major` and surgery needs
+                  // the full floor; a Prop-below FAMILY member (ctor /
+                  // `.below.casesOn`) starts with the below params —
+                  // parent params then parent motives — and has NO
+                  // major-premise floor (a field-less below ctor is
+                  // fully applied at exactly params+motives). In both
+                  // shapes everything after the motive segment is kept
+                  // in place, so one identity tail covers indices+major,
+                  // ctor fields, and casesOn target-motive+indices+
+                  // major+minors alike.
+                  let is_head = surgery::below_plan_key_is_head(name);
+                  let expected_total = plan.n_params
+                    + plan.n_source_motives
+                    + if is_head { plan.n_indices + 1 } else { 0 };
                   if args.len() >= expected_total {
                     let name_addr = compile_name(name, stt);
                     let args_owned: Vec<LeanExpr> =
@@ -1275,17 +1327,13 @@ pub fn compile_expr(
                     let params = &args_owned[..plan.n_params];
                     let motives = &args_owned
                       [plan.n_params..plan.n_params + plan.n_source_motives];
-                    let fixed_tail = &args_owned
-                      [plan.n_params + plan.n_source_motives..expected_total];
-                    let extra_tail = &args_owned[expected_total..];
+                    let tail =
+                      &args_owned[plan.n_params + plan.n_source_motives..];
 
                     let n_canon_motives = plan.n_canonical_motives();
                     let mut canonical_args: Vec<(usize, LeanExpr)> =
                       Vec::with_capacity(
-                        plan.n_params
-                          + n_canon_motives
-                          + fixed_tail.len()
-                          + extra_tail.len(),
+                        plan.n_params + n_canon_motives + tail.len(),
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
@@ -1318,23 +1366,11 @@ pub fn compile_expr(
                       }
                     }
 
-                    let fixed_tail_canon_base = plan.n_params + n_canon_motives;
-                    for (i, t) in fixed_tail.iter().enumerate() {
-                      canonical_args
-                        .push((fixed_tail_canon_base + i, t.clone()));
+                    let tail_canon_base = plan.n_params + n_canon_motives;
+                    for (i, t) in tail.iter().enumerate() {
+                      canonical_args.push((tail_canon_base + i, t.clone()));
                       entries.push(CallSiteEntry::Kept {
-                        canon_idx: (fixed_tail_canon_base + i) as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    let extra_tail_canon_base =
-                      fixed_tail_canon_base + fixed_tail_len;
-                    for (i, t) in extra_tail.iter().enumerate() {
-                      canonical_args
-                        .push((extra_tail_canon_base + i, t.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: (extra_tail_canon_base + i) as u64,
+                        canon_idx: (tail_canon_base + i) as u64,
                         meta: 0,
                       });
                     }
@@ -1965,7 +2001,7 @@ struct SharingResult {
 /// This is the theoretical size if each unique subterm were stored once in a content-addressed store.
 /// Each unique expression = 32-byte key + value (with 32-byte hash references for children/externals).
 fn compute_hash_consed_size(
-  info_map: &std::collections::HashMap<blake3::Hash, sharing::SubtermInfo>,
+  info_map: &FxHashMap<blake3::Hash, sharing::SubtermInfo>,
 ) -> usize {
   info_map.values().map(|info| info.hash_consed_size).sum()
 }
@@ -2331,6 +2367,7 @@ enum MutConstKind {
 pub fn compile_definition(
   def: &Def,
   mut_ctx: &MutCtx,
+  ctx_addrs: &[Address],
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Definition, ConstantMeta), CompileError> {
@@ -2360,8 +2397,7 @@ pub fn compile_definition(
     univ_params.iter().map(|n| compile_name(n, stt)).collect();
   let all_addrs: Vec<Address> =
     def.all.iter().map(|n| compile_name(n, stt)).collect();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let data = Definition {
     kind: def.kind,
@@ -2408,6 +2444,7 @@ fn compile_recursor_rule(
 pub fn compile_recursor(
   rec: &Rec,
   mut_ctx: &MutCtx,
+  ctx_addrs: &[Address],
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Recursor, ConstantMeta), CompileError> {
@@ -2464,8 +2501,7 @@ pub fn compile_recursor(
 
   let all_addrs: Vec<Address> =
     rec.all.iter().map(|n| compile_name(n, stt)).collect();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Rec {
     name: name_addr,
@@ -2549,6 +2585,7 @@ fn compile_constructor(
 pub fn compile_inductive(
   ind: &Ind,
   mut_ctx: &MutCtx,
+  ctx_addrs: &[Address],
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Inductive, ConstantMeta, Vec<ConstantMeta>), CompileError> {
@@ -2603,8 +2640,7 @@ pub fn compile_inductive(
 
   let all_addrs: Vec<Address> =
     ind.ind.all.iter().map(|n| compile_name(n, stt)).collect();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Indc {
     name: name_addr,
@@ -3657,7 +3693,10 @@ fn compile_const_inner(
       stt,
       "compile_single_def",
     )?;
-    let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
+    let ctx_addrs: Vec<Address> =
+      ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+    let (data, meta) =
+      compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
     let _t_compile = _t0.elapsed();
     let n_unique_exprs = cache.exprs.len();
     let refs: Vec<Address> = cache.refs.iter().cloned().collect();
@@ -3812,7 +3851,10 @@ fn compile_const_inner(
           exprs.push((&rule.rhs, val.cnst.level_params.as_slice()));
         }
         preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_recursor")?;
-        let (data, meta) = compile_recursor(val, &mut_ctx, cache, stt)?;
+        let ctx_addrs: Vec<Address> =
+          ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+        let (data, meta) =
+          compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
         let result = apply_sharing_to_recursor_with_stats(data, refs, univs);
@@ -3920,9 +3962,13 @@ fn compile_mutual(
   }
   preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_mutual")?;
 
-  // Compile each constant
+  // Compile each constant. The block-context address list is identical
+  // for every member (a deterministic function of `mut_ctx`), so it is
+  // computed once here instead of sorted+re-interned per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
+  let ctx_addrs: Vec<Address> =
+    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
   for class in &sorted_classes {
     // Only push one representative per equivalence class into ixon_mutuals,
@@ -3932,7 +3978,8 @@ fn compile_mutual(
     for cnst in class {
       match cnst {
         MutConst::Defn(def) => {
-          let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
+          let (data, meta) =
+            compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Defn(data));
             representative_pushed = true;
@@ -3941,7 +3988,7 @@ fn compile_mutual(
         },
         MutConst::Indc(ind) => {
           let (data, meta, ctor_metas_vec) =
-            compile_inductive(ind, &mut_ctx, cache, stt)?;
+            compile_inductive(ind, &mut_ctx, &ctx_addrs, cache, stt)?;
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Indc(data));
             representative_pushed = true;
@@ -3953,7 +4000,8 @@ fn compile_mutual(
           all_metas.insert(ind.ind.cnst.name.clone(), meta);
         },
         MutConst::Recr(rec) => {
-          let (data, meta) = compile_recursor(rec, &mut_ctx, cache, stt)?;
+          let (data, meta) =
+            compile_recursor(rec, &mut_ctx, &ctx_addrs, cache, stt)?;
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Recr(data));
             representative_pushed = true;
@@ -4012,7 +4060,9 @@ fn compile_mutual(
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
-          let meta = all_metas.get(&n).cloned().unwrap_or_default();
+          // `remove`, not `get().cloned()`: each name is consumed exactly
+          // once, and ConstantMeta is an arena-sized deep clone.
+          let meta = all_metas.remove(&n).unwrap_or_default();
           stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
           stt.name_to_addr.insert(n.clone(), addr.clone());
         }
@@ -4021,7 +4071,7 @@ fn compile_mutual(
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
-          let meta = all_metas.get(&n).cloned().unwrap_or_default();
+          let meta = all_metas.remove(&n).unwrap_or_default();
           stt.promote_aux(&n, addr.clone(), meta)?;
         }
       }
@@ -4065,7 +4115,9 @@ fn compile_mutual(
   for class in &sorted_classes {
     for cnst in class {
       let n = cnst.name();
-      let meta = all_metas.get(&n).cloned().unwrap_or_default();
+      // `remove`: consumed once per name (either the register_name arm
+      // or the promote_aux arm below), so no deep clone is needed.
+      let meta = all_metas.remove(&n).unwrap_or_default();
 
       let proj = match cnst {
         MutConst::Defn(_) => defn_proj_constant(idx, block_addr.clone()),
@@ -4077,10 +4129,9 @@ fn compile_mutual(
           let proj_addr = Address::hash(&proj_bytes);
           if aux {
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt.env.register_name(
-              n.clone(),
-              Named::new(proj_addr.clone(), meta.clone()),
-            );
+            stt
+              .env
+              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.name_to_addr.insert(n.clone(), proj_addr.clone());
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
@@ -4089,7 +4140,7 @@ fn compile_mutual(
           // Constructor projections
           for (cidx, ctor) in ind.ctors.iter().enumerate() {
             let ctor_meta =
-              all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
+              all_metas.remove(&ctor.cnst.name).unwrap_or_default();
             let ctor_proj =
               ctor_proj_constant(idx, cidx as u64, block_addr.clone());
             let mut ctor_bytes = Vec::new();
@@ -4099,7 +4150,7 @@ fn compile_mutual(
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.env.register_name(
                 ctor.cnst.name.clone(),
-                Named::new(ctor_addr.clone(), ctor_meta.clone()),
+                Named::new(ctor_addr.clone(), ctor_meta),
               );
               stt.name_to_addr.insert(ctor.cnst.name.clone(), ctor_addr);
             } else {
@@ -4117,10 +4168,7 @@ fn compile_mutual(
       let proj_addr = Address::hash(&proj_bytes);
       if aux {
         stt.env.store_const(proj_addr.clone(), proj);
-        stt.env.register_name(
-          n.clone(),
-          Named::new(proj_addr.clone(), meta.clone()),
-        );
+        stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.name_to_addr.insert(n.clone(), proj_addr);
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
@@ -4259,10 +4307,17 @@ fn compile_mutual(
             .zip(original_all.iter())
             .any(|(class, orig)| class[0] != *orig)));
     let aux_layout_changed = aux_layout_stored.as_ref().is_some_and(|layout| {
-      layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
-        canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
-          && canonical_i != source_j
-      })
+      // Evaporated positions need their head-rewrite plans even when no
+      // canonical slot moved (all-OUT perms). `user_layout_changed`
+      // happens to cover today's shapes (evaporation requires an SCC
+      // split), but plan computation must not depend on that
+      // coincidence. Keep this predicate identical to the decompile dual
+      // in `install_decompile_call_site_plans`.
+      layout.evaporated.iter().any(|&b| b)
+        || layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
+          canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
+            && canonical_i != source_j
+        })
     });
 
     if user_layout_changed || aux_layout_changed {
@@ -4273,28 +4328,121 @@ fn compile_mutual(
         aux_layout_stored.as_ref(),
       )?;
       for (name, plan) in plans {
+        if *IX_LOG_AUX_NAMES {
+          eprintln!(
+            "[aux-names] plan scc={} all0={} {} head_rewrite={} overwrote={}",
+            plan_class_names
+              .first()
+              .and_then(|c| c.first())
+              .map_or_else(String::new, |n| n.pretty()),
+            original_all.first().map_or_else(String::new, |n| n.pretty()),
+            name.pretty(),
+            plan
+              .head_rewrite
+              .as_ref()
+              .map_or_else(|| "none".to_string(), |h| h.target_rec.pretty()),
+            stt.call_site_plans.contains_key(&name),
+          );
+        }
         // Head-rewritten (evaporated-aux) recursors get NO derived
         // brecOn/below plans: their `.brecOn_N`/`.below_N` siblings have no
         // canonical regeneration — they compile as surgered originals that
         // KEEP the source telescope — so their callers must not be
         // rewritten.
+        //
+        // Plan keys (`X.rec`, `all0.rec_N`, …) are shared across every
+        // SCC split from one original mutual, and `DashMap::insert` is
+        // last-writer-wins. With per-position ownership resolved in
+        // aux_gen exactly one block computes each name's plan, so a
+        // differing pre-existing entry is a claim collision — fail
+        // loudly instead of shipping schedule-dependent rewrites
+        // (plans/aux-recursor-alias-collision.md §2.4).
         if plan.head_rewrite.is_none() {
           if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
             && lean_env.get(&brecon_name).is_some()
           {
-            stt.brec_on_call_site_plans.insert(
-              brecon_name,
-              surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-            );
+            let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+            if stt
+              .brec_on_call_site_plans
+              .get(&brecon_name)
+              .is_some_and(|existing| *existing != new_plan)
+            {
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "conflicting brecOn call-site plans for '{}' — two blocks \
+                   claim one source-indexed aux name",
+                  brecon_name.pretty(),
+                ),
+              });
+            }
+            stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
           }
           if let Some(below_name) = surgery::rec_name_to_below_name(&name)
-            && lean_env.get(&below_name).is_some()
+            && let Some(below_ci) = lean_env.get(&below_name)
           {
-            stt.below_call_site_plans.insert(
-              below_name,
-              surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-            );
+            let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+            if stt
+              .below_call_site_plans
+              .get(&below_name)
+              .is_some_and(|existing| *existing != new_plan)
+            {
+              return Err(CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "conflicting below call-site plans for '{}' — two blocks \
+                   claim one source-indexed aux name",
+                  below_name.pretty(),
+                ),
+              });
+            }
+            // Prop-level (IndPredBelow) `.below` is an INDUCTIVE, so user
+            // code can also reference its constructors and its
+            // `.casesOn` wrapper — both start with the below params
+            // (parent params + parent motives) and need the same motive
+            // permutation. Registered under their own names in the same
+            // map; the apply site discriminates the telescope shape via
+            // `below_plan_key_is_head`. `X.below.rec` is deliberately
+            // not registered (only regenerated wrappers reference it,
+            // and those skip surgery via the aux-regen guard).
+            let mut family_names: Vec<Name> = Vec::new();
+            if let LeanConstantInfo::InductInfo(bv) = &*below_ci {
+              family_names.extend(bv.ctors.iter().cloned());
+              let cases_name =
+                Name::str(below_name.clone(), "casesOn".to_string());
+              if lean_env.get(&cases_name).is_some() {
+                family_names.push(cases_name);
+              }
+            }
+            for member in family_names {
+              if stt
+                .below_call_site_plans
+                .get(&member)
+                .is_some_and(|existing| *existing != new_plan)
+              {
+                return Err(CompileError::InvalidMutualBlock {
+                  reason: format!(
+                    "conflicting below call-site plans for '{}' — two \
+                     blocks claim one source-indexed aux name",
+                    member.pretty(),
+                  ),
+                });
+              }
+              stt.below_call_site_plans.insert(member, new_plan.clone());
+            }
+            stt.below_call_site_plans.insert(below_name, new_plan);
           }
+        }
+        if stt
+          .call_site_plans
+          .get(&name)
+          .is_some_and(|existing| *existing != plan)
+        {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "conflicting call-site plans for '{}' — two blocks claim one \
+               source-indexed aux name",
+              name.pretty(),
+            ),
+          });
         }
         stt.call_site_plans.insert(name, plan);
       }

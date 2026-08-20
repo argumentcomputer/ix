@@ -504,12 +504,12 @@ theorem recursorCoordinated_iff (id : KId .anon) :
 theorem world_family_block :
     world.blocks familyBlockId = some familyMembers := by
   change recursorIngressAfter.getBlock? familyBlockId = some familyMembers
-  simpa [checkerInitial] using familyBlockLoaded
+  simpa [checkerInitial, TcState.ofEnvAnon] using familyBlockLoaded
 
 theorem world_recursor_block :
     world.blocks recursorBlockId = some recursorMembers := by
   change recursorIngressAfter.getBlock? recursorBlockId = some recursorMembers
-  simpa [checkerInitial] using recursorBlockLoaded
+  simpa [checkerInitial, TcState.ofEnvAnon] using recursorBlockLoaded
 
 def exactFamilyBlock :
     ExactCheckBlock world familyBlockId familyMembers .inductive' where

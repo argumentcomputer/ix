@@ -259,16 +259,19 @@ def natEnv₁ : VEnv where
   constants := fun name =>
     if natName = name then some natConstant else none
   defeqs := fun _ => False
+  structEtas := fun _ => False
 
 def natEnv₂ : VEnv where
   constants := fun name =>
     if zeroName = name then some zeroConstant else natEnv₁.constants name
   defeqs := fun _ => False
+  structEtas := fun _ => False
 
 def natEnv : VEnv where
   constants := fun name =>
     if succName = name then some succConstant else natEnv₂.constants name
   defeqs := fun _ => False
+  structEtas := fun _ => False
 
 theorem addNat :
     VEnv.empty.addConst natName natConstant = some natEnv₁ := by
@@ -493,6 +496,7 @@ def goodEnv : VEnv where
     if goodName = name then some goodConstant.toVConstant
     else natEnv.constants name
   defeqs := natEnv.defeqs
+  structEtas := natEnv.structEtas
 
 theorem addGood :
     natEnv.addConst goodName goodConstant.toVConstant = some goodEnv := by
@@ -912,14 +916,14 @@ theorem supportExpr_whnfMeaning :
   obtain ⟨name, ci, hresolved⟩ :=
     trustedCatalogRelNat.resolve nat_trusted catalog_nat
   have huvars : ci.uvars = 0 := by
-    simpa [natConcrete] using hresolved.uvars.symm
+    simpa [natConcrete, KConst.lvls] using hresolved.uvars.symm
   have htr0 := hresolved.trKExprS_const
     (ctx := []) (us := #[]) (info := supportExpr.info)
     (by simp) (by rfl)
   have htr :
       TrKExprS worldNat.venv 0 worldNat.nameOf RawProjRel.none []
         supportExpr (.const name []) := by
-    simpa [supportExpr, huvars] using htr0
+    simpa [supportExpr, ← KExpr.mkConst_shape, huvars] using htr0
   have hwf0 :
       VExpr.WF worldNat.venv ci.uvars [] (.const name []) := by
     refine ⟨_, VEnv.HasType.const hresolved.lookup (by simp) ?_⟩
@@ -1163,7 +1167,7 @@ theorem warmKey_matches_wf (prims : Primitives .anon) :
     rw [hexact] at hrun
     cases hrun
     simp [whnfContextKeys]
-  simpa [whnfContextKeys] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed] using
     (TcM.whnfKey_matches_wf (layer := .accelerated)
       (semantics := whnfSemantics) (trProj := RawProjRel.none)
       (world := worldGood) (support := support) (keys := whnfContextKeys)
@@ -1459,7 +1463,7 @@ theorem bvarZetaCtxRecon (prims : Primitives .anon) :
       CtxRecon' worldGood.venv 0 worldGood.nameOf RawProjRel.none
         [(supportExpr, some betaArg)] [] bvarZetaCtx :=
     .bvar_let .nil betaTy_tr betaArg_tr betaArg_type
-  simpa [bvarZetaState, noAccelState] using hrec
+  simpa [state, bvarZetaState, noAccelState] using hrec
 
 theorem bvarZetaStateInv (prims : Primitives .anon) :
     WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood support
@@ -1568,7 +1572,7 @@ theorem fvarZetaCtxRecon (prims : Primitives .anon) :
         CtxRecon' worldGood.venv 0 worldGood.nameOf RawProjRel.none
           [] [(fvarZetaId, .ldecl () supportExpr betaArg)] fvarZetaCtx :=
       .fvar .nil (.vlet betaTy_tr betaArg_tr betaArg_type) (by simp)
-    simpa [fvarZetaState, noAccelState, LocalContext.push] using hrec
+    simpa [state, fvarZetaState, noAccelState, LocalContext.push] using hrec
   · apply LocalContext.WF.push .empty
     simp [fvarZetaId]
   · intro p hp
@@ -1693,9 +1697,10 @@ theorem projectionReduceEval (prims : Primitives .anon) :
   rw [RecM.tryProjReduce_eq, RecM.tryProjPrepare_eq]
   unfold projectionValue
   rw [KExpr.mkApp_shape, KExpr.mkConst_shape]
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
-  unfold RecM.tryProjReduceTail
   rw [ReaderT.run_bind]
+  unfold RecM.tryProjReduceTail
+  simp only
+  rw [ReaderT.run_pure, pure_bind, ReaderT.run_bind]
   change EStateM.bind
     (ReaderT.run
       (RecM.tryReduceFinValDecidableRec natId 0
@@ -1705,7 +1710,6 @@ theorem projectionReduceEval (prims : Primitives .anon) :
   unfold EStateM.bind
   rw [RecM.tryReduceFinValDecidableRec_noAccel rfl]
   simp only
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
   simp only [KExpr.collectSpine, KExpr.collectSpine.go]
   rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind (TcM.tryGetConst succId) _ (noAccelState prims) = _
@@ -1788,7 +1792,7 @@ theorem iotaStateInv (prims : Primitives .anon) :
     · have hcat : worldGood.catalog iotaId = some iotaConcrete := by
         exact catalog_iota
       simpa [iotaState] using hbase.1.core.load hcat
-    · simpa [iotaState] using hbase.1.internSupport
+    · simpa [iotaState, KEnv.insert] using hbase.1.internSupport
     · intro entry hentry
       apply hbase.1.caches
       cases hentry <;> (constructor; assumption)
@@ -1830,7 +1834,7 @@ theorem iotaGetZero (prims : Primitives .anon) :
       Std.HashMap.getElem?_insert]
     split
     · next h => exact False.elim (hne (eq_of_beq h))
-    · simpa [noAccelState, state] using loadedEnv_zero_k1e
+    · simpa [KEnv.get?, noAccelState, state] using loadedEnv_zero_k1e
   rw [henv]
   rfl
 
@@ -1853,6 +1857,7 @@ theorem iotaCleanup (prims : Primitives .anon) :
       (RecM.evalNatOffsetLiteral iotaResult 0).run betaHarnessMethods
         (iotaState prims) = .ok (some 0) (iotaState prims) := by
     unfold RecM.evalNatOffsetLiteral RecM.evalNatOffsetLiteralFuel
+    rw [show (256 - 0 : Nat) = Nat.succ 255 from rfl]
     rw [ReaderT.run_bind]
     change EStateM.bind
       (ReaderT.run RecM.prims betaHarnessMethods) _ (iotaState prims) = _
@@ -1904,6 +1909,7 @@ theorem iotaCleanupOfNatValue (prims : Primitives .anon)
       (RecM.evalNatOffsetLiteral e 0).run betaHarnessMethods
         (iotaState prims) = .ok (some value) (iotaState prims) := by
     unfold RecM.evalNatOffsetLiteral RecM.evalNatOffsetLiteralFuel
+    rw [show (256 - 0 : Nat) = Nat.succ 255 from rfl]
     rw [ReaderT.run_bind]
     change EStateM.bind
       (ReaderT.run RecM.prims betaHarnessMethods) _ (iotaState prims) = _
@@ -2147,7 +2153,7 @@ theorem iotaStringGetZeroOfFrame {s' : TcState .anon}
       rw [Std.HashMap.getElem?_insert]
       split
       · next h => exact False.elim (hneIota (eq_of_beq h))
-      · simpa [noAccelState, state] using loadedEnv_zero_k1e
+      · simpa [KEnv.get?, noAccelState, state] using loadedEnv_zero_k1e
   have hget : s'.env.get? zeroId = iotaStringState.env.get? zeroId := by
     unfold KEnv.get?
     rw [hconsts]
@@ -2453,6 +2459,7 @@ theorem kIotaSynthCleanup :
       (RecM.evalNatOffsetLiteral kSynthCtor 0).run kIotaHarnessMethods
         kIotaAfterIntern = .ok (some 0) kIotaAfterIntern := by
     unfold RecM.evalNatOffsetLiteral RecM.evalNatOffsetLiteralFuel
+    rw [show (256 - 0 : Nat) = Nat.succ 255 from rfl]
     rw [ReaderT.run_bind]
     change EStateM.bind
       (ReaderT.run RecM.prims kIotaHarnessMethods) _ kIotaAfterIntern = _
@@ -3106,9 +3113,15 @@ theorem structEtaIotaSuccess :
       probes := structEtaProbeTrace
       rhs := structEtaRhs
       sInst := structEtaState
-      admissible := by rfl
+      admissible := by
+        simp only [RecM.StructEtaSortAdmissible, structEtaProbeTrace,
+          RecM.structEtaSortRejected, structEtaType]
+        exact KUniv.isSemanticZero_eq_false (ρ := []) (by decide) (by decide)
       instantiation := structEtaInstantiate
-      rebuild := by simpa using hbuild }
+      rebuild := by
+        simpa [structEtaSelectionTrace, structEtaProbeTrace, structEtaInfo,
+          structEtaRule]
+          using hbuild }
   exact ⟨result, sf, trace, trace.eval⟩
 
 /-- The final constructor dispatcher genuinely takes its non-constructor
@@ -3306,7 +3319,7 @@ theorem structuralNatLit_type (n : Nat) :
           (U := 0) (Γ := []) (ci := succConstant) (ls := [])
           (by simpa [worldGood, goodEnv, goodName, succName] using natEnv_succ)
           (by intro l hl; simp at hl) rfl
-      simpa [VExpr.natLit, VExpr.natSucc, succName] using
+      simpa [Lean4Lean.VExpr.inst, VExpr.natLit, VExpr.natSucc, succName] using
         Lean4Lean.VEnv.HasType.app hsucc ih
 
 /-- The finite Nat world supplies the uniform literal/projection facts needed
@@ -3336,7 +3349,7 @@ theorem structuralBetaSource_type :
     worldGood.venv.HasType 0 []
       (.app (.lam (.const natName []) (.bvar 0)) (.const zeroName []))
       (.const natName []) := by
-  simpa using Lean4Lean.VEnv.HasType.app
+  simpa [Lean4Lean.VExpr.inst] using Lean4Lean.VEnv.HasType.app
     (Lean4Lean.VEnv.HasType.lam betaA_type betaBody_type) betaArg_type
 
 theorem structuralBetaSource_constructed : KExpr.Constructed betaSource := by
@@ -3387,7 +3400,7 @@ theorem structuralLoopCtxRecon (prims : Primitives .anon) :
       .fvar .nil
         (.vlet betaTy_tr structuralBetaSource_tr structuralBetaSource_type)
         (by simp)
-    simpa [structuralLoopState, noAccelState, LocalContext.push] using hrec
+    simpa [state, structuralLoopState, noAccelState, LocalContext.push] using hrec
   · apply LocalContext.WF.push .empty
     simp [fvarZetaId]
   · intro p hp
@@ -3447,18 +3460,18 @@ theorem structuralLoopArg_tr :
 theorem structuralLoopA_type :
     worldGood.venv.HasType 0 structuralLoopCtx.toCtx (.const natName [])
       (.sort (.succ .zero)) := by
-  simpa [structuralLoopCtx] using betaA_type
+  simpa [KVLCtx.toCtx, structuralLoopCtx] using betaA_type
 
 theorem structuralLoopBody_type :
     worldGood.venv.HasType 0
       ((.const natName []) :: structuralLoopCtx.toCtx) (.bvar 0)
       (.const natName []) := by
-  simpa [structuralLoopCtx] using betaBody_type
+  simpa [KVLCtx.toCtx, structuralLoopCtx] using betaBody_type
 
 theorem structuralLoopArg_type :
     worldGood.venv.HasType 0 structuralLoopCtx.toCtx (.const zeroName [])
       (.const natName []) := by
-  simpa [structuralLoopCtx] using betaArg_type
+  simpa [KVLCtx.toCtx, structuralLoopCtx] using betaArg_type
 
 /-- Second local meaning: beta reduces the exposed identity application to
 `Nat.zero` in the same mixed context. -/
@@ -3777,7 +3790,7 @@ theorem fullCoreColdAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (fullCoreWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [whnfSemantics, fullCoreWarmState] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, whnfSemantics, fullCoreWarmState] using
     (RecM.whnfCoreWithFlags_fullMiss_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       structuralWhnfTheory (.direct RecM.WhnfCoreNonLeaf.app) rfl
@@ -3795,7 +3808,7 @@ theorem fullCoreWarmAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (fullCoreWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [whnfSemantics] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, whnfSemantics] using
     (RecM.whnfCoreWithFlags_fullHit_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       (.direct RecM.WhnfCoreNonLeaf.app) rfl
@@ -3815,7 +3828,7 @@ theorem cheapCorePolicyMissAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (bothCoreWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [whnfSemantics, bothCoreWarmState] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, whnfSemantics, bothCoreWarmState] using
     (RecM.whnfCoreWithFlags_cheapMiss_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       structuralWhnfTheory (.direct RecM.WhnfCoreNonLeaf.app) rfl
@@ -3833,7 +3846,7 @@ theorem cheapCoreWarmAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (bothCoreWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [whnfSemantics] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, whnfSemantics] using
     (RecM.whnfCoreWithFlags_cheapHit_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       (.direct RecM.WhnfCoreNonLeaf.app) rfl
@@ -3887,7 +3900,7 @@ theorem fullCoreWarm_getZero (prims : Primitives .anon) :
   simp only
   have henv : (fullCoreWarmState prims).env.get? zeroId =
       some zeroConcrete := by
-    simpa [fullCoreWarmState, noAccelState, state] using loadedEnv_zero_k1e
+    simpa [KEnv.get?, fullCoreWarmState, noAccelState, state] using loadedEnv_zero_k1e
   rw [henv]
   rfl
 
@@ -4437,7 +4450,7 @@ theorem fullNoDeltaColdAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (fullNoDeltaWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [RecM.whnfNoDelta, whnfSemantics, fullNoDeltaWarmState] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, RecM.whnfNoDelta, whnfSemantics, fullNoDeltaWarmState] using
     (RecM.whnfNoDeltaImpl_fullMiss_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       structuralWhnfTheory (.direct RecM.WhnfDriverNonLeaf.app) rfl
@@ -4453,7 +4466,7 @@ theorem fullNoDeltaWarmAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (fullNoDeltaWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [RecM.whnfNoDelta, whnfSemantics] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, RecM.whnfNoDelta, whnfSemantics] using
     (RecM.whnfNoDeltaImpl_fullHit_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       (.direct RecM.WhnfDriverNonLeaf.app) rfl
@@ -4564,7 +4577,7 @@ theorem betaFullChargedGetZero (prims : Primitives .anon) :
   simp only
   have henv : (fullWhnfChargedState prims).env.get? zeroId =
       some zeroConcrete := by
-    simpa [fullWhnfChargedState, fullNoDeltaWarmState, fullCoreWarmState,
+    simpa [KEnv.get?, fullWhnfChargedState, fullNoDeltaWarmState, fullCoreWarmState,
       noAccelState, state] using loadedEnv_zero_k1e
   rw [henv]
   rfl
@@ -4758,7 +4771,7 @@ theorem fullWhnfColdAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (fullWhnfWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [RecM.whnf, whnfSemantics, fullWhnfWarmState] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, RecM.whnf, whnfSemantics, fullWhnfWarmState] using
     (RecM.whnfWithNatSuccMode_miss_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       structuralWhnfTheory (.direct RecM.WhnfDriverNonLeaf.app)
@@ -4777,7 +4790,7 @@ theorem fullWhnfWarmAcceptance (prims : Primitives .anon) :
       WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
         coreCacheSupport 0 [] (fullWhnfWarmState prims) ∧
       WhnfMeaning RawProjRel.none worldGood 0 [] betaSource betaArg := by
-  simpa [RecM.whnf, whnfSemantics] using
+  simpa [whnfContextKeys, WhnfContextKeys.closed, betaSource, KExpr.mkApp, RecM.whnf, whnfSemantics] using
     (RecM.whnfWithNatSuccMode_hit_acceptance
       (keys := whnfContextKeys) (fallback := CacheSemantics.blockErrorsOnly)
       (.direct RecM.WhnfDriverNonLeaf.app) (fullWhnfPrefixWarm prims)
@@ -4861,7 +4874,7 @@ theorem bvarStuckCtxRecon (prims : Primitives .anon) :
       CtxRecon' worldGood.venv 0 worldGood.nameOf RawProjRel.none
         [(supportExpr, none)] [] bvarStuckCtx :=
     .bvar_lam .nil betaTy_tr ⟨_, betaA_type⟩
-  simpa [bvarStuckState, noAccelState] using hrec
+  simpa [state, bvarStuckState, noAccelState] using hrec
 
 theorem bvarStuckStateInv (prims : Primitives .anon) :
     WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
@@ -4938,7 +4951,7 @@ theorem fvarStuckCtxRecon (prims : Primitives .anon) :
         CtxRecon' worldGood.venv 0 worldGood.nameOf RawProjRel.none
           [] [(fvarZetaId, .cdecl () () supportExpr)] fvarStuckCtx :=
       .fvar .nil (.vlam betaTy_tr ⟨_, betaA_type⟩) (by simp)
-    simpa [fvarStuckState, noAccelState, LocalContext.push] using hrec
+    simpa [state, fvarStuckState, noAccelState, LocalContext.push] using hrec
   · apply LocalContext.WF.push .empty
     simp [fvarZetaId]
   · intro p hp
@@ -5064,7 +5077,7 @@ theorem appStuckIotaTransient (methods : Methods .anon) (s : TcState .anon) :
     (sourceInfo := (KExpr.mkApp appStuckHead betaArg).info)
     appStuckHead_iotaNonLambda methods s appStuckHead_type betaArg_type
     appStuckHead_tr betaArg_tr
-  simpa [appStuckSource] using h
+  simpa [← KExpr.mkApp_shape, appStuckSource] using h
 
 theorem appStuckSourceWitness :
     RecM.WhnfStep.Source RawProjRel.none worldGood fallbackSupport 0 []
@@ -5244,9 +5257,10 @@ theorem reduceMiss :
   rw [RecM.tryProjReduce_eq, RecM.tryProjPrepare_eq]
   unfold value
   rw [KExpr.mkSort_shape]
-  rw [ReaderT.run_bind, ReaderT.run_pure, pure_bind]
-  unfold RecM.tryProjReduceTail
   rw [ReaderT.run_bind]
+  unfold RecM.tryProjReduceTail
+  simp only
+  rw [ReaderT.run_pure, pure_bind]
   change EStateM.bind
     (ReaderT.run
       (RecM.tryReduceFinValDecidableRec AmbientNat.natId 0
@@ -5255,7 +5269,6 @@ theorem reduceMiss :
       AmbientNat.betaHarnessMethods) _ state = _
   unfold EStateM.bind
   rw [RecM.tryReduceFinValDecidableRec_noAccel rfl]
-  rfl
 
 /-- Non-vacuous projection fallback acceptance: the source translates under
 the live projection relation, the value callback succeeds, and the production
@@ -5435,13 +5448,13 @@ theorem multiBetaApp1Type :
       (.forallE (.const natName [])
         (.forallE (.const natName []) (.const natName []))) := by
   unfold multiBetaApp1V
-  simpa using Lean4Lean.VEnv.HasType.app multiBetaLamType appStuckHead_type
+  simpa [Lean4Lean.VExpr.inst] using Lean4Lean.VEnv.HasType.app multiBetaLamType appStuckHead_type
 
 theorem multiBetaApp2Type :
     worldGood.venv.HasType 0 [] multiBetaApp2V
       (.forallE (.const natName []) (.const natName [])) := by
   unfold multiBetaApp2V
-  simpa using Lean4Lean.VEnv.HasType.app multiBetaApp1Type betaArg_type
+  simpa [Lean4Lean.VExpr.inst] using Lean4Lean.VEnv.HasType.app multiBetaApp1Type betaArg_type
 
 theorem multiBetaSourceTr :
     TrKExprS worldGood.venv 0 worldGood.nameOf RawProjRel.none []
@@ -5460,7 +5473,7 @@ theorem multiBetaSourceType :
     worldGood.venv.HasType 0 [] multiBetaSourceV
       (.const natName []) := by
   unfold multiBetaSourceV
-  simpa using Lean4Lean.VEnv.HasType.app multiBetaApp2Type betaArg_type
+  simpa [Lean4Lean.VExpr.inst] using Lean4Lean.VEnv.HasType.app multiBetaApp2Type betaArg_type
 
 /-- The one dynamically generated trailing application is a real execution
 request, not an unindexed support assumption. -/
@@ -5556,7 +5569,7 @@ theorem appStuckIotaInterned (prims : Primitives .anon)
     (sourceInfo := (KExpr.mkApp appStuckHead betaArg).info)
     hcollision hsupport (multiBetaStateInv prims) methods
     appStuckHead_type betaArg_type appStuckHead_tr betaArg_tr
-  simpa [appStuckSource] using h
+  simpa [← KExpr.mkApp_shape, appStuckSource] using h
 
 /-! ### ArgumentExecution iota-argument list execution -/
 
@@ -5786,7 +5799,7 @@ theorem multiIotaFirstTrace (prims : Primitives .anon)
       (by
         rw [multiIotaFirstResult]
         exact multiIotaSupport_intermediate)
-  simpa [multiBetaApp1V, multiIotaFirstResult] using hfirst
+  simpa [multiBetaLam, ← KExpr.mkLam_shape, multiBetaApp1V, multiIotaFirstResult] using hfirst
 
 theorem multiIotaSecondTrace (prims : Primitives .anon)
     (methods : Methods .anon) :
@@ -5824,7 +5837,7 @@ theorem multiIotaThirdTrace (prims : Primitives .anon)
       RawProjRel.none worldGood multiIotaSupport 0 [] methods true
       appStuckHead multiBetaApp2V (noAccelState prims) [betaArg]
       appStuckSource multiBetaSourceV (noAccelState prims) := by
-  simpa [multiBetaSourceV] using
+  simpa [appStuckSource, multiBetaLam, KExpr.mkLam_shape, multiBetaSourceV] using
     (RecM.ApplyIotaArgsTrace.transientNonLambdaSingletonQuot
       (support := multiIotaSupport) (methods := methods)
       (expectedV := multiBetaApp2V)
@@ -5966,7 +5979,7 @@ theorem multiIotaRuleAcceptance (prims : Primitives .anon)
           structuralWhnfTheory.projections.wf (by trivial)))
   obtain ⟨hrun, hfinalI, hframe, hfinalSupport, hfinalTr, hmeaning⟩ := h
   exact ⟨hrun, hfinalI, hframe, hfinalSupport, by
-    simpa [multiIotaPrefixSlice, multiIotaFieldSlice,
+    simpa [multiIotaRuleTrace, multiBetaLam, ← KExpr.mkLam_shape, multiIotaPrefixSlice, multiIotaFieldSlice,
       multiIotaTrailingSlice, multiIotaRule, multiBetaSource] using hmeaning⟩
 
 theorem multiIotaCtorAcceptance (prims : Primitives .anon)
@@ -5990,7 +6003,7 @@ theorem multiIotaCtorAcceptance (prims : Primitives .anon)
           structuralWhnfTheory.projections.wf (by trivial)))
   obtain ⟨hrun, hfinalI, hframe, hfinalSupport, hfinalTr, hmeaning⟩ := h
   exact ⟨hrun, hfinalI, hframe, hfinalSupport, by
-    simpa [multiIotaPrefixSlice, multiIotaFieldSlice,
+    simpa [multiIotaCtorTrace, multiIotaRuleTrace, multiBetaLam, ← KExpr.mkLam_shape, multiIotaPrefixSlice, multiIotaFieldSlice,
       multiIotaTrailingSlice, multiIotaRule, multiBetaSource] using hmeaning⟩
 
 theorem multiBetaFinishRequests :
@@ -6182,7 +6195,7 @@ theorem changedHeadIotaMiss (prims : Primitives .anon)
   unfold EStateM.bind
   have hget : s'.env.get? succId = some succConcrete := by
     rw [hframe]
-    simpa [noAccelState, state] using loadedEnv_succ_k1e
+    simpa [KEnv.get?, noAccelState, state] using loadedEnv_succ_k1e
   have hlookup : TcM.tryGetConst succId s' =
       .ok (some succConcrete) s' := by
     unfold TcM.tryGetConst

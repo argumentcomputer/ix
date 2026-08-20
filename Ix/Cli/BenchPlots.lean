@@ -59,15 +59,14 @@ def plotTitle (workload measure : String) : String :=
   | "ix-decompile", "decompile-time"     => "Ix Decompile Time"
   | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
-  | "aiur-check-prove", "prove-time"     => "Aiur Prove Time"
-  | "aiur-check-prove", "throughput"     => "Aiur Prove Throughput"
-  | "aiur-check-prove", "peak-rss"       => "Aiur Prove Peak RAM Usage"
-  | "aiur-check-prove", "verify-time"    => "Aiur Verify Time"
-  | "aiur-check-prove", "proof-size"     => "Aiur Proof Size"
-  | "aiur-check-prove", "fft-cost"       => "Aiur FFT Cost"
-  | "aiur-check-execute", "execute-time" => "Aiur Execute Time"
-  | "aiur-check-execute", "throughput"   => "Aiur Execute Throughput"
-  | "aiur-check-execute", "peak-rss"     => "Aiur Execute Peak RAM Usage"
+  | "aiur", "total-time"             => "Aiur Total Time"
+  | "aiur", "prove-time"             => "Aiur Stage 1 Time"
+  | "aiur", "recursive-prove-time"   => "Aiur Stage 2 Time"
+  | "aiur", "fft-cost"               => "Aiur Stage 1 FFT Cost"
+  | "aiur", "recursive-fft-cost"     => "Aiur Stage 2 FFT Cost"
+  | "aiur", "recursive-verify-time"  => "Aiur Stage 2 Verify Time"
+  | "aiur", "recursive-peak-rss"     => "Aiur Stage 2 Peak RAM Usage"
+  | "aiur", "recursive-proof-size"   => "Aiur Stage 2 Proof Size"
   | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
   | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
   | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
@@ -75,36 +74,30 @@ def plotTitle (workload measure : String) : String :=
   | "ooc-check", "check-time"            => "OOC Check Time"
   | "ooc-check", "throughput"            => "OOC Check Throughput"
   | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
-  | "aiur-recursive", "recursive-execute-time" => "Aiur Recursive Verifier Execute Time"
-  | "aiur-recursive", "recursive-prove-time"   => "Aiur Recursive Verifier Prove Time"
-  | "aiur-recursive", "recursive-verify-time"  => "Aiur Recursive Verifier Verify Time"
-  | "aiur-recursive", "recursive-peak-rss"     => "Aiur Recursive Verifier Peak RAM Usage"
-  | "aiur-recursive", "recursive-proof-size"   => "Aiur Recursive Verifier Proof Size"
-  | "aiur-recursive", "recursive-fft-cost"     => "Aiur Recursive Verifier FFT Cost"
   | w, m => s!"{w}: {m}"
 
-/-- Tracked but not plotted solo. The two aiur runs re-measure each
-    other's deterministic Phase-1 numbers as a redundancy check — one
-    trend line each is enough ("Aiur Execute Time" from the execute run,
-    "Aiur FFT Cost" from the prove run). Zisk `shards` is charted below
+/-- Tracked but not plotted solo. Zisk `shards` is charted below
     over the heavy-tier primaries alone (light constants are pinned at a
     single shard, a flat line at 1), not over the full set here; zisk
     `constants` charts on the input-constants plot below instead of alone.
     `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
     exactly — the decompile run tracks only its own decompile-time /
-    throughput / peak-rss trends. The aiur-recursive run's plain
-    prove-time / proof-size / verify-time / peak-rss measure the INNER
-    IxVM typecheck proof (under recursion-tuned parameters) — tracked for
-    the compare table, but the dashboard trend that matters is the
-    recursion layer's own `recursive-*` series, so the inner metrics
-    aren't plotted. -/
+    throughput / peak-rss trends. The aiur run's per-stage headline is
+    that stage's `prove-time` — a prove runs its own witness execution,
+    so it is the whole cost of producing the stage's proof, and the
+    standalone `execute-time` beside it is a second, instrumentation-only
+    run. The rest of the stage detail (stage-1 peak-rss / proof-size /
+    verify-time, and the whole-run `pipeline-peak-rss`) is tracked for
+    the compare table but not plotted: the stage-1 detail's cost is
+    inside `prove-time` and the deterministic `fft-cost` trend, and the
+    pipeline peak is the terminal stage's peak. -/
 def plotSkips : List (String × String) :=
-  [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
-   ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
+  [("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
-   ("aiur-recursive", "prove-time"), ("aiur-recursive", "proof-size"),
-   ("aiur-recursive", "verify-time"), ("aiur-recursive", "peak-rss")]
+   ("aiur", "peak-rss"), ("aiur", "proof-size"), ("aiur", "verify-time"),
+   ("aiur", "execute-time"), ("aiur", "recursive-execute-time"),
+   ("aiur", "pipeline-peak-rss")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -134,13 +127,14 @@ def unitsFor (slug : String) : Option String :=
    ("recursive-peak-rss", "bytes (B)"),
    ("recursive-proof-size", "bytes (B)"),
    ("recursive-fft-cost", "FFTs"),
+   ("total-time", "seconds (s)"),
+   ("pipeline-peak-rss", "bytes (B)"),
    ("throughput", "constants / second")].lookup slug
 
-/-- Dashboard group order (compile first, then aiur prove/execute, zisk,
+/-- Dashboard group order (compile first, then the aiur pipeline, zisk,
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile", "ix-decompile", "aiur-check-prove", "aiur-check-execute",
-   "aiur-recursive", "zisk-check-execute", "ooc-check"]
+  ["ix-compile", "ix-decompile", "aiur", "zisk-check-execute", "ooc-check"]
 
 structure PlotSpec where
   testbed : String
@@ -150,8 +144,8 @@ structure PlotSpec where
 /-- One spec per bench-main testbed: its measure slugs and the benchmark row
     names uploaded there, both from the registry (`BackendSpec.benchmarkNames`,
     keyed off `inputs`) — env-keyed backends (compile, decompile) key one row
-    per compiled env, the per-constant backends one row per primary, ooc adds a
-    whole-env row, and the fixed-config backend lists its configs. Dynamic
+    per compiled env, the per-constant backends one row per primary, and ooc
+    adds a whole-env row. Dynamic
     sub-rows (`<name>/shard-N`) are left out: their multiplicity shifts with the
     shard manifest, and the parent row carries the headline trend. -/
 def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
@@ -159,7 +153,7 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
     for (mode, testbed) in b.testbeds do
-      -- On-demand modes (e.g. aiur `recursive`) upload nothing, so there's
+      -- On-demand modes (e.g. aiur `execute`) upload nothing, so there's
       -- nothing to plot — the registry marks them explicitly.
       if b.unscheduled.contains mode then continue
       specs := specs.push
@@ -324,9 +318,8 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut desired : Array DesiredPlot := #[]
   for spec in specs do
     let workload := workloadOf spec.testbed
-    -- A registry testbed bencher hasn't seen yet (its bench-main run isn't
-    -- scheduled — e.g. the aiur `recursive` mode, whose outer prove doesn't
-    -- fit the CI host, so nothing ever uploads to it) has no plots to sync:
+    -- A registry testbed bencher hasn't seen yet (first upload still
+    -- pending after a rename or a new backend) has no plots to sync:
     -- warn and skip it, like a not-yet-uploaded benchmark, instead of
     -- failing the whole run. Picked up on a later sync once data lands.
     let some testbedUuid := findUuid testbeds "slug" spec.testbed
@@ -352,12 +345,12 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   -- SAME named-constant count for each checked closure (the pre-shard input
   -- set, unaffected by anon-work dedup or shard partitioning), so the count
   -- is shared: sourcing it from both testbeds drew every constant twice.
-  -- aiur-check-prove is the single source (it always uploads `constants`),
+  -- The aiur run is the single source (it always uploads `constants`),
   -- so each primary is one line.
   let overlay : Option DesiredPlot := do
-    let aiurTb ← findUuid testbeds "slug" "aiur-check-prove-x64-32x"
+    let aiurTb ← findUuid testbeds "slug" "aiur-x64-32x"
     let consts ← findUuid measures "slug" "constants"
-    let primaries ← (specs.find? (·.testbed == "aiur-check-prove-x64-32x")).map
+    let primaries ← (specs.find? (·.testbed == "aiur-x64-32x")).map
       (·.benchmarks.filterMap (findUuid benchmarks "name" ·))
     return { title := "Aiur/Zisk Input Constants",
              testbeds := #[aiurTb], benchmarks := primaries,

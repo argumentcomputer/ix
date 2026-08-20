@@ -1239,10 +1239,16 @@ def claim := ⟦
   -- Variants without an arm here (notably 3, Eval) have no defined
   -- semantics upstream, so the match falls through and aborts rather
   -- than accepting a claim whose meaning is unspecified.
-  fn run_claim(digest: [U8; 32]) {
+  fn run_claim(digest: [G; 8]) {
+    -- `digest` is the packed-4-byte public claim digest; the ch-0 key uses
+    -- the same packed form (io keys are execution-side only — no columns).
     let (idx, len) = io_get_info(0, digest);
     let bytes = #read_byte_stream(0, idx, len);
-    verify_bytes_against(bytes, digest);
+    -- Binding: the claim bytes must hash to the PUBLIC digest. Packed
+    -- comparison (8 wiring-packed words), no byte-form digest needed.
+    let h = @blake3(bytes);
+    assert_eq!(@b3_pack(h), digest,
+      "claim: bytes do not hash to the public claim digest");
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE, "claim: wrong tag4 flag");

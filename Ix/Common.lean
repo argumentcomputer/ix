@@ -7,6 +7,13 @@ public import Lean.Elab.Frontend
 
 public section
 
+/-- The `ix` tool version string, `<lean version>|<ix version>` — e.g.
+    `4.29.0|0.0.1`. Printed by `ix --version` and recorded in
+    `ix compile --report`; external consumers gate their toolchain match
+    on the Lean half, so keep the format stable. -/
+def Ix.versionString : String :=
+  s!"{Lean.versionString}|0.0.1"
+
 def compareList [Ord α] : List α -> List α -> Ordering
 | a::as, b::bs => match compare a b with
   | .eq => compareList as bs
@@ -297,6 +304,7 @@ def runFrontend (input : String) (filePath : FilePath) : IO Environment := do
   checkToolchain
   let inputCtx := Parser.mkInputContext input filePath.toString
   let (header, parserState, messages) ← Parser.parseHeader inputCtx
+  unsafe enableInitializersExecution  -- required for `processHeader`'s `loadExts := true` import
   let (env, messages) ← processHeader header default messages inputCtx 0
   let env := env.setMainModule default
   let commandState := Command.mkState env messages default

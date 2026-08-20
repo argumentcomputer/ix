@@ -1824,7 +1824,8 @@ theorem IsDefEq.find?_uniq {env : VEnv} {U : Nat} (henv : VEnv.WF env) :
         exact ⟨⟨_, h4⟩, h3⟩
       · simp
         rintro d₁' n₁' H1' rfl rfl d₂' n₂' H2' rfl rfl
-        simpa [Lean4Lean.VLocalDecl.depth] using find?_uniq henv hΔ H1' H2'
+        simpa [Lean4Lean.VLocalDecl.depth, KVLCtx.toCtx] using
+          find?_uniq henv hΔ H1' H2'
 
 /-- Transport of `find?`-success along a context defeq (upstream
 `VLCtx.IsDefEq.find?_defeqDFC`): a variable resolvable in `Δ₁` is

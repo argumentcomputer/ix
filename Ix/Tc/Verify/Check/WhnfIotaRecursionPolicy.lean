@@ -122,7 +122,7 @@ theorem computeIsRecFieldStepAfterWhnf_preservesInferOnly
       · simp only [hmentions, if_pos]
         exact TcM.PreservesInferOnly.pure (BoundedStep.done true)
       · simp only [hmentions]
-        simpa only [pure_bind] using
+        simpa only [Bool.false_eq_true, if_false, pure_bind] using
           (bindTcM_preservesInferOnly
             (methods := methods)
             (next := fun _ => pure (BoundedStep.next body))
@@ -182,7 +182,7 @@ theorem computeIsRec_preservesInferOnly
   refine bind_preservesInferOnly
     (forInArray_preservesInferOnly (methods := methods)
       (items := ctors)
-      (initial := (⟨none, PUnit.unit⟩ : MProd (Option Bool) PUnit)) ?_) ?_
+      (initial := ((none, ()) : Option Bool × PUnit)) ?_) ?_
   · intro ctorId state
     refine bindTcM_preservesInferOnly
       (TcM.PreservesInferOnly.tryGetConst ctorId) ?_

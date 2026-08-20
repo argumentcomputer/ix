@@ -692,7 +692,6 @@ theorem RecM.checkNoUnsafeRefs_go_app
         RecM.checkNoUnsafeRefs.go callerSafety (a :: f :: stack)
           (seenExprs.insert (.app f a info : KExpr m).addr) seenConsts := by
   rw [RecM.checkNoUnsafeRefs.go]
-  split <;> simp
 
 /-! ## Tier A/B: total inductive validation and telescope scans -/
 
@@ -745,7 +744,6 @@ theorem RecM.validateExprWellScoped_go_app
           (seenExprs.insert ((.app f a info : KExpr m).addr, depth))
           seenUnivs := by
   rw [RecM.validateExprWellScoped.go]
-  split <;> simp
 
 @[simp] theorem RecM.peelRuleIhForalls_equation
     (root : KExpr m) (flat : Array (FlatBlockMember m)) :

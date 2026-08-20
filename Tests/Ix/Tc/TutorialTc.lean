@@ -93,7 +93,7 @@ def checkBatchTc (consts : List (Lean.Name × Lean.ConstantInfo))
       -- The compile FFI streams to a file; round-trip via a temp path.
       let dir ← IO.FS.createTempDir
       let path := dir / "tc-tutorial-batch.ixe"
-      let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString
+      let _ ← Ix.CompileM.rsCompileEnvBytesFFI consts path.toString true
       let b ← IO.FS.readBinFile path
       IO.FS.removeDirAll dir
       pure (Except.ok b)

@@ -106,9 +106,7 @@ theorem one
     | succ n => exact context.currentWithin
   step n hn := by
     cases n with
-    | zero =>
-        simpa [calls] using
-          (next_sort_wfAtOn context)
+    | zero => exact next_sort_wfAtOn context
     | succ n => omega
 
 /-- The selected depth-one production table satisfies the exact singleton
@@ -148,7 +146,7 @@ theorem finite
   step n hn := by
     let context := InferenceCallDomainContext.sort hcollision hsourceSupport
       hresultSupport theory references (calls (.sort u info) n)
-    simpa [calls] using (next_sort_wfAtOn context)
+    exact next_sort_wfAtOn context
 
 /-- In particular, recursion fuel one has two justified body layers: the
 public body and its one-layer callback table. -/

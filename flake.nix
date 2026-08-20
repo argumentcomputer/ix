@@ -15,7 +15,7 @@
     nixpkgs.follows = "lean4-nix/nixpkgs";
 
     # Lean 4 & Lake
-    lean4-nix.url = "github:lenianiva/lean4-nix";
+    lean4-nix.url = "github:argumentcomputer/lean4-nix";
 
     # Helper: flake-parts for easier outputs
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -48,7 +48,6 @@
 
   outputs =
     inputs@{
-      nixpkgs,
       flake-parts,
       lean4-nix,
       fenix,
@@ -74,6 +73,9 @@
           ...
         }:
         let
+          # Pins the Lean toolchain; a plain derivation, no overlay involved
+          lean = lean4-nix.lib.${system}.fromToolchainFile ./lean-toolchain;
+
           # Pins the Rust toolchain
           rustToolchain = fenix.packages.${system}.fromToolchainFile {
             file = ./rust-toolchain.toml;
@@ -90,7 +92,7 @@
             strictDeps = true;
 
             # build.rs uses LEAN_SYSROOT to locate lean/lean.h for bindgen
-            LEAN_SYSROOT = "${pkgs.lean.lean-all}";
+            LEAN_SYSROOT = "${lean}";
             # bindgen needs libclang to parse C headers
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
@@ -142,14 +144,13 @@
             // {
               inherit cargoArtifacts;
               cargoExtraArgs =
-                "--locked --features parallel"
-                + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
+                "--locked --features parallel" + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
               doCheck = false;
             }
           );
 
           # Lake package
-          lake2nix = pkgs.callPackage lean4-nix.lake { };
+          lake2nix = pkgs.callPackage lean4-nix.lake { inherit lean; };
           # Restrict the Lake build inputs to Lean-relevant files so edits to
           # unrelated files (flake.nix, CI, docs) don't invalidate the whole
           # Lean build. The Rust side gets the same via cleanCargoSource.
@@ -168,7 +169,7 @@
               # lean4-nix guesses a dep's library target by capitalizing the
               # package name ("lean4lean" -> "Lean4lean"), but this package's
               # library is `Lean4Lean`. Build the stock default targets
-              # (Lean4Lean, the lean4lean exe, Theory, Verify) plus the
+              # (Lean4Lean, the lean4lean exe, Theory, Verify, Tests) plus the
               # shared/static facets so consumers linking exes find the
               # module `.o` files in the read-only store path.
               lean4lean = {
@@ -199,7 +200,7 @@
             '';
             buildInputs = [
               pkgs.gmp
-              pkgs.lean.lean-all
+              lean
               pkgs.rsync
             ];
           };
@@ -233,7 +234,7 @@
               for f in ${drv}/bin/*; do
                 [ -x "$f" ] || continue
                 makeWrapper "$f" "$out/bin/$(basename "$f")" \
-                  --set LEAN_SYSROOT "${pkgs.lean.lean-all}" \
+                  --set LEAN_SYSROOT "${lean}" \
                   --set LEAN_PATH "${drv}/.lake/build/lib/lean:${leanPath}"
               done
             '';
@@ -270,12 +271,6 @@
           );
         in
         {
-          # Lean overlay
-          _module.args.pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ (lean4-nix.readToolchainFile ./lean-toolchain) ];
-          };
-
           packages = {
             default = ixLib;
             ix = ixCLI;
@@ -324,7 +319,7 @@
               clang
               rustToolchain
               rust-analyzer
-              lean.lean-all
+              lean
               cargo-deny
               valgrind
             ];
@@ -356,7 +351,9 @@
           #   ];
           # };
 
-          formatter = pkgs.alejandra;
+          # The treefmt wrapper around `nixfmt`, so `nix fmt .` can take a
+          # directory; bare `nixfmt` only accepts individual files.
+          formatter = pkgs.nixfmt-tree;
         };
     };
 }

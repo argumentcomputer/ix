@@ -9,7 +9,6 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::match_same_arms)]
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use indexmap::IndexSet;
@@ -222,11 +221,11 @@ pub fn analyze_block(
   exprs: &[Arc<Expr>],
   track_hash_consed_size: bool,
 ) -> (
-  HashMap<blake3::Hash, SubtermInfo>,
+  FxHashMap<blake3::Hash, SubtermInfo>,
   FxHashMap<*const Expr, blake3::Hash>,
   Vec<blake3::Hash>,
 ) {
-  let mut info_map: HashMap<blake3::Hash, SubtermInfo> = HashMap::new();
+  let mut info_map: FxHashMap<blake3::Hash, SubtermInfo> = FxHashMap::default();
   let mut ptr_to_hash: FxHashMap<*const Expr, blake3::Hash> =
     FxHashMap::default();
   let mut hash_buf: Vec<u8> = Vec::with_capacity(128);
@@ -341,7 +340,7 @@ pub fn hash_expr(expr: &Arc<Expr>) -> blake3::Hash {
 /// CRITICAL: Keys are sorted by hash bytes for deterministic output.
 /// This ensures Lean and Rust produce the same topological order.
 pub fn topological_sort(
-  info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  info_map: &FxHashMap<blake3::Hash, SubtermInfo>,
 ) -> Vec<blake3::Hash> {
   #[derive(Clone, Copy, PartialEq, Eq)]
   enum VisitState {
@@ -349,13 +348,13 @@ pub fn topological_sort(
     Done,
   }
 
-  let mut state: HashMap<blake3::Hash, VisitState> = HashMap::new();
+  let mut state: FxHashMap<blake3::Hash, VisitState> = FxHashMap::default();
   let mut result: Vec<blake3::Hash> = Vec::new();
 
   fn visit(
     hash: blake3::Hash,
-    info_map: &HashMap<blake3::Hash, SubtermInfo>,
-    state: &mut HashMap<blake3::Hash, VisitState>,
+    info_map: &FxHashMap<blake3::Hash, SubtermInfo>,
+    state: &mut FxHashMap<blake3::Hash, VisitState>,
     result: &mut Vec<blake3::Hash>,
   ) {
     match state.get(&hash) {
@@ -390,10 +389,10 @@ pub fn topological_sort(
 /// Compute effective sizes for all subterms in topological order.
 /// Returns a map from hash to effective size (total serialized bytes).
 pub fn compute_effective_sizes(
-  info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  info_map: &FxHashMap<blake3::Hash, SubtermInfo>,
   topo_order: &[blake3::Hash],
-) -> HashMap<blake3::Hash, usize> {
-  let mut sizes: HashMap<blake3::Hash, usize> = HashMap::new();
+) -> FxHashMap<blake3::Hash, usize> {
+  let mut sizes: FxHashMap<blake3::Hash, usize> = FxHashMap::default();
 
   for hash in topo_order {
     if let Some(info) = info_map.get(hash) {
@@ -412,14 +411,14 @@ pub fn compute_effective_sizes(
 /// Returns a summary of why sharing may not be effective.
 #[allow(dead_code)]
 pub fn analyze_sharing_stats(
-  info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  info_map: &FxHashMap<blake3::Hash, SubtermInfo>,
   topo_order: &[blake3::Hash],
 ) -> SharingStats {
   let effective_sizes = compute_effective_sizes(info_map, topo_order);
 
   let total_subterms = info_map.len();
-  let mut usage_distribution: HashMap<usize, usize> = HashMap::new();
-  let mut size_distribution: HashMap<usize, usize> = HashMap::new();
+  let mut usage_distribution: FxHashMap<usize, usize> = FxHashMap::default();
+  let mut size_distribution: FxHashMap<usize, usize> = FxHashMap::default();
   let mut total_usage: usize = 0;
   let mut unique_subterms = 0;
   let mut shared_subterms = 0;
@@ -514,8 +513,8 @@ pub struct SharingStats {
   pub candidates_usage_ge_2: usize,
   pub candidates_positive_potential: usize,
   pub actually_shared: usize,
-  pub usage_distribution: HashMap<usize, usize>,
-  pub size_distribution: HashMap<usize, usize>,
+  pub usage_distribution: FxHashMap<usize, usize>,
+  pub size_distribution: FxHashMap<usize, usize>,
 }
 
 impl std::fmt::Display for SharingStats {
@@ -576,7 +575,7 @@ impl std::fmt::Display for SharingStats {
 ///
 /// Optimized from O(k×n) to O(n log n) by pre-sorting candidates.
 pub fn decide_sharing(
-  info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  info_map: &FxHashMap<blake3::Hash, SubtermInfo>,
   topo_order: &[blake3::Hash],
 ) -> IndexSet<blake3::Hash> {
   let effective_sizes = compute_effective_sizes(info_map, topo_order);
@@ -633,7 +632,7 @@ pub fn build_sharing_vec(
   exprs: &[Arc<Expr>],
   shared_hashes: &IndexSet<blake3::Hash>,
   ptr_to_hash: &FxHashMap<*const Expr, blake3::Hash>,
-  info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  info_map: &FxHashMap<blake3::Hash, SubtermInfo>,
   topo_order: &[blake3::Hash],
 ) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
   // CRITICAL: Re-sort shared_hashes in topological order (leaves first).
@@ -646,7 +645,7 @@ pub fn build_sharing_vec(
   // Build sharing vector incrementally to avoid forward references.
   // When building sharing[i], only Share(j) for j < i is allowed.
   let mut sharing_vec: Vec<Arc<Expr>> = Vec::with_capacity(shared_hashes.len());
-  let mut hash_to_idx: HashMap<blake3::Hash, u64> = HashMap::new();
+  let mut hash_to_idx: FxHashMap<blake3::Hash, u64> = FxHashMap::default();
   let mut cache: FxHashMap<*const Expr, Arc<Expr>> = FxHashMap::default();
 
   for h in &shared_in_topo_order {
@@ -695,7 +694,7 @@ enum RewriteFrame<'a> {
 /// Uses iterative traversal with caching to handle deep trees and Arc sharing.
 fn rewrite_expr(
   expr: &Arc<Expr>,
-  hash_to_idx: &HashMap<blake3::Hash, u64>,
+  hash_to_idx: &FxHashMap<blake3::Hash, u64>,
   ptr_to_hash: &FxHashMap<*const Expr, blake3::Hash>,
   cache: &mut FxHashMap<*const Expr, Arc<Expr>>,
 ) -> Arc<Expr> {

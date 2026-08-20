@@ -85,7 +85,7 @@ theorem strLitToConstructor_preservesInferOnly
     strLitToConstructorWithPrimitives_preservesInferOnly
       (methods := methods) before.prims value before
   unfold prims
-  simpa only [ReaderT.run_bind, EStateM.bind, get] using htail
+  exact htail
 
 theorem projectDecidableFinValMinor_preservesInferOnly
     {methods : Methods .anon} (id : KId .anon) (field : UInt64)

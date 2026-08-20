@@ -2,7 +2,6 @@ module
 
 public import Ix.Keccak
 public import LSpec
-public import Ix.ByteArray
 
 open LSpec
 

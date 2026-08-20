@@ -367,7 +367,8 @@ def compileAuxBlock (auxConsts : Array MutConst) (maps : AddrMaps)
     canonical aux_gen patches (one compiled constant per canonical class;
     every real Lean-exported aux name still resolves). Mirrors Rust
     `register_aux_aliases` (mutual.rs:420). -/
-def registerAuxAliases (aliases : Std.HashMap Name Name) : CompileM Unit := do
+def registerAuxAliases (aliases : Std.HashMap Name Name) (ctx : String)
+    : CompileM Unit := do
   if aliases.isEmpty then
     return ()
 
@@ -394,7 +395,7 @@ has not been compiled")
         throw (.invalidMutualBlock
           s!"aux_gen alias '{source.pretty}' already resolves to \
 {(toString existingAddr).take 12}, expected {(toString targetAddr).take 12} \
-via '{target.pretty}'")
+via '{target.pretty}' (registering block/phase: {ctx})")
       -- Consistent — skip (Rust `continue`).
     | none =>
       -- Clone the target's Named, overriding the address
@@ -556,7 +557,53 @@ def compileBelowRecursors (belowIndcs : Array MutConst) (maps : AddrMaps)
     belowRecs := belowRecs.push (.recr rv)
 
   if !belowRecs.isEmpty then
-    compileAuxBlock belowRecs maps
+    -- The below-rec block's storage order must align with the below
+    -- inductive block's member order (`classes`), exactly like the main
+    -- recursor block: the kernel's `populate_recursor_rules_from_block`
+    -- pairs `rec_block[i]` with `flat[i]` positionally (canonicity
+    -- §6.2). Without a class-order key, `sortConsts` picks its own
+    -- structural permutation of the recursors, which can diverge from
+    -- the inductive block's order (Prop-valued mutual predicate
+    -- families: HaskellSpec `dict`). Mirrors mutual.rs
+    -- `compile_below_recursors`.
+    let mut nameToPos : Std.HashMap Name UInt64 := {}
+    for (cls, pos) in classes.zipIdx do
+      for memberName in cls do
+        nameToPos := nameToPos.insert (Name.mkStr memberName "rec")
+          (UInt64.ofNat pos)
+    let keyMap := nameToPos
+    let classOrderKey : MutConst → UInt64 := fun c =>
+      (keyMap.get? c.name).getD u64Max
+    compileAuxBlockWithRename belowRecs maps none (some classOrderKey)
+
+  -- Regenerate `.below.casesOn` against the canonical below-recs
+  -- (mirrors mutual.rs `compile_below_recursors`). Lean authors
+  -- `X.below.casesOn` with motives in LEAN's member order; the recs
+  -- above carry the canonical motive layout, so the Lean-authored
+  -- wrapper is ill-typed in the compiled env. Regenerate from the
+  -- canonical rec and register here so the ordinary compile of the
+  -- Lean value is skipped.
+  let mut belowCases : Array MutConst := #[]
+  for (recName, recVal) in recs do
+    let indName? := match recName with
+      | .str parent "rec" _ => some parent
+      | _ => none
+    if let some indName := indName? then
+      let casesOnName := Name.mkStr indName "casesOn"
+      if (← liftM (lookupConst? casesOnName : CompileM _)).isSome then
+        if let some d ←
+            liftM (generateCasesOn casesOnName recVal : CompileM _) then
+          belowCases := belowCases.push (.defn {
+            name := d.name
+            levelParams := d.levelParams
+            type := d.typ
+            kind := .defn
+            value := d.value
+            hints := .abbrev
+            safety := defSafety d.isUnsafe
+            all := #[] })
+  if !belowCases.isEmpty then
+    compileAuxBlock belowCases maps
 
 /-! ## generateAndCompileAuxRecursors (mutual.rs:511) -/
 
@@ -585,8 +632,10 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
   if !isInductiveBlock then
     return none
 
-  -- `block_label` (mutual.rs:527-531) feeds timing output only — not
-  -- modeled.
+  -- `block_label` (mutual.rs:527-531): timing output is not modeled,
+  -- but the label carries claim provenance in conflict errors.
+  let blockLabel : String :=
+    ((classNames[0]?.bind (·[0]?)).map (·.pretty)).getD ""
 
   -- Lean's source-walk `all` list from the first inductive
   -- (mutual.rs:537-546).
@@ -640,9 +689,23 @@ def generateAndCompileAuxRecursors (cs : Array MutConst)
           throw (.invalidMutualBlock
             s!"aux layout mismatch: {sourceCtorCounts.size} source aux \
 ctor counts for {perm.size} permutation entries")
+        -- Fail closed if the evaporation flags don't line up with the
+        -- perm — surgery keys head-rewrite plans off them, so a silent
+        -- mismatch would desynchronize aliases and call-site rewrites
+        -- (mutual.rs evaporated threading).
+        let evaporated : Array UInt64 ← match auxOut.evaporated with
+          | some flags =>
+            if flags.size == perm.size then
+              pure (flags.map fun b => if b then (1 : UInt64) else 0)
+            else
+              throw (.invalidMutualBlock
+                s!"aux layout mismatch: {flags.size} evaporation flags \
+for {perm.size} permutation entries")
+          | none => pure (Array.replicate perm.size (0 : UInt64))
         auxLayout := some {
           perm := perm.map UInt64.ofNat
-          sourceCtorCounts := sourceCtorCounts.map UInt64.ofNat }
+          sourceCtorCounts := sourceCtorCounts.map UInt64.ofNat
+          evaporated }
 
   -- Historically a canonical→source rename map was built here; aux_gen
   -- now emits source-indexed names directly, so the empty map makes
@@ -688,8 +751,29 @@ ctor counts for {perm.size} permutation entries")
     let keyMap := nameToPos
     let classOrderKey : MutConst → UInt64 := fun c =>
       (keyMap.get? c.name).getD u64Max
+    -- The `all0.rec_N` name family is shared by every SCC split from one
+    -- original mutual. Snapshot resolutions before compiling this SCC's
+    -- rec patches: a pre-existing DIFFERENT address means two blocks
+    -- claimed one name — registration is last-writer-wins, so without
+    -- this check the disagreement ships silently as schedule-dependent
+    -- content (mutual.rs pre_claims;
+    -- plans/aux-recursor-alias-collision.md §2.4). Same-address
+    -- re-registration (content-addressed idempotence) is fine.
+    let mut preClaims : Array (Name × Option Address) := #[]
+    for c in recConsts do
+      preClaims := preClaims.push
+        (c.name, ← liftM (resolveAddr? c.name : CompileM _))
     compileAuxBlockWithRename recConsts maps (some auxNameRename)
       (some classOrderKey)
+    for (name, preAddr) in preClaims do
+      let postAddr ← liftM (resolveAddr? name : CompileM _)
+      if let (some pre, some post) := (preAddr, postAddr) then
+        if pre != post then
+          throw (.invalidMutualBlock
+            s!"aux patch name '{name.pretty}' was already registered to \
+{(toString pre).take 12} by an earlier block; this block ({blockLabel}) \
+re-registered it to {(toString post).take 12} — two SCCs claim one \
+source-indexed aux name")
 
   -- Register every alias whose target was compiled by the recursor
   -- phase; the rest register after their phases (mutual.rs:724-734).
@@ -697,7 +781,8 @@ ctor counts for {perm.size} permutation entries")
   for (source, target) in auxOut.aliases do
     if (← liftM (resolveAddr? target : CompileM _)).isSome then
       availableRecAliases := availableRecAliases.insert source target
-  liftM (registerAuxAliases availableRecAliases : CompileM _)
+  liftM (registerAuxAliases availableRecAliases
+    s!"{blockLabel}/rec-phase" : CompileM _)
 
   -- Phase 2b: Compile .casesOn definitions (mutual.rs:736-759) — after
   -- .rec, before .brecOn (`.brecOn.eq` references casesOn).
@@ -828,7 +913,8 @@ ctor counts for {perm.size} permutation entries")
     if !defs.isEmpty then
       compileAuxBlockWithRename defs maps (some auxNameRename) none
 
-  liftM (registerAuxAliases auxOut.aliases : CompileM _)
+  liftM (registerAuxAliases auxOut.aliases
+    s!"{blockLabel}/final" : CompileM _)
 
   -- Note: `.noConfusion`, `.noConfusionType`, `.ctorIdx`, `.ctor.inj*`,
   -- `._sizeOf_*`, etc. are NOT regenerated: their bodies only invoke
@@ -904,8 +990,12 @@ def compileMutualAuxTail (cs : Array MutConst)
             (fun (cls, orig) => cls[0]! != orig)))
   let auxLayoutChanged : Bool := match auxLayout with
     | some layout =>
-      layout.perm.zipIdx.any fun (canonicalI, sourceJ) =>
-        canonicalI.toNat != PERM_OUT_OF_SCC && canonicalI.toNat != sourceJ
+      -- Evaporated positions need their head-rewrite plans even when no
+      -- canonical slot moved (all-OUT perms). Keep this predicate
+      -- identical to Rust `compile_mutual` and the decompile dual.
+      layout.evaporated.any (· != 0)
+        || layout.perm.zipIdx.any fun (canonicalI, sourceJ) =>
+          canonicalI.toNat != PERM_OUT_OF_SCC && canonicalI.toNat != sourceJ
     | none => false
 
   let mut plans : Std.HashMap Name CallSitePlan := {}
@@ -914,18 +1004,68 @@ def compileMutualAuxTail (cs : Array MutConst)
   if userLayoutChanged || auxLayoutChanged then
     plans ← liftM
       (computeCallSitePlans planClassNames originalAll auxLayout : CompileM _)
+    -- Plan keys (`X.rec`, `all0.rec_N`, …) are shared across every SCC
+    -- split from one original mutual, and the driver's merge is
+    -- last-writer-wins. With per-position ownership resolved in aux_gen
+    -- exactly one block computes each name's plan, so a differing plan
+    -- already merged from an earlier block is a claim collision — fail
+    -- loudly instead of shipping schedule-dependent rewrites
+    -- (compile.rs checked plan inserts;
+    -- plans/aux-recursor-alias-collision.md §2.4).
+    let cenvGlobal ← liftM (getCompileEnv : CompileM _)
     -- Head-rewritten (evaporated-aux) recursors get NO derived
     -- brecOn/below plans (compile.rs:4117-4140).
     for (name, plan) in plans do
+      if let some existing := cenvGlobal.callSitePlans.get? name then
+        if existing != plan then
+          throw (.invalidMutualBlock
+            s!"conflicting call-site plans for '{name.pretty}' — two \
+blocks claim one source-indexed aux name")
       if plan.headRewrite.isNone then
         if let some breconName := recNameToBreconName name then
           if (← liftM (lookupConst? breconName : CompileM _)).isSome then
-            brecPlans := brecPlans.insert breconName
-              (BRecOnCallSitePlan.fromRecPlan plan)
+            let newPlan := BRecOnCallSitePlan.fromRecPlan plan
+            if let some existing :=
+                cenvGlobal.brecOnCallSitePlans.get? breconName then
+              if existing != newPlan then
+                throw (.invalidMutualBlock
+                  s!"conflicting brecOn call-site plans for \
+'{breconName.pretty}' — two blocks claim one source-indexed aux name")
+            brecPlans := brecPlans.insert breconName newPlan
         if let some belowName := recNameToBelowName name then
-          if (← liftM (lookupConst? belowName : CompileM _)).isSome then
-            belowPlans := belowPlans.insert belowName
-              (BRecOnCallSitePlan.fromRecPlan plan)
+          if let some belowCi ← liftM (lookupConst? belowName : CompileM _) then
+            let newPlan := BRecOnCallSitePlan.fromRecPlan plan
+            if let some existing :=
+                cenvGlobal.belowCallSitePlans.get? belowName then
+              if existing != newPlan then
+                throw (.invalidMutualBlock
+                  s!"conflicting below call-site plans for \
+'{belowName.pretty}' — two blocks claim one source-indexed aux name")
+            -- Prop-level (IndPredBelow) `.below` is an INDUCTIVE, so user
+            -- code can also reference its constructors and its `.casesOn`
+            -- wrapper — both start with the below params (parent params +
+            -- parent motives) and need the same motive permutation.
+            -- Registered under their own names in the same map; the apply
+            -- site discriminates the telescope shape via
+            -- `belowPlanKeyIsHead` (compile.rs family registration).
+            -- `X.below.rec` is deliberately not registered (only
+            -- regenerated wrappers reference it, and those skip surgery
+            -- via the aux-regen guard).
+            let mut familyNames : Array Name := #[]
+            if let .inductInfo bv := belowCi then
+              familyNames := bv.ctors
+              let casesName := Name.mkStr belowName "casesOn"
+              if (← liftM (lookupConst? casesName : CompileM _)).isSome then
+                familyNames := familyNames.push casesName
+            for member in familyNames do
+              if let some existing :=
+                  cenvGlobal.belowCallSitePlans.get? member then
+                if existing != newPlan then
+                  throw (.invalidMutualBlock
+                    s!"conflicting below call-site plans for \
+'{member.pretty}' — two blocks claim one source-indexed aux name")
+              belowPlans := belowPlans.insert member newPlan
+            belowPlans := belowPlans.insert belowName newPlan
 
   return (auxLayout, plans, brecPlans, belowPlans)
 
