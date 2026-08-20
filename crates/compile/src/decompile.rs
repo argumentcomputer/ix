@@ -4246,10 +4246,8 @@ fn install_decompile_call_site_plans(
           family_names
             .push(Name::str(below_name.clone(), "casesOn".to_string()));
           for member in family_names {
-            let existing_differs = stt
-              .below_call_site_plans
-              .get(&member)
-              .map(|e| *e != new_plan);
+            let existing_differs =
+              stt.below_call_site_plans.get(&member).map(|e| *e != new_plan);
             match existing_differs {
               Some(true) => {
                 return Err(DecompileError::BadConstantFormat {
