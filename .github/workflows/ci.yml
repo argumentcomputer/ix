@@ -92,7 +92,7 @@ jobs:
         run: lake test --wfail -- --ignored ixvm
 
   rust-test:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
