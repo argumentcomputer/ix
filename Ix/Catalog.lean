@@ -12,10 +12,16 @@
   Contract and deliberate simplifications:
   - **Kernel-level only.** Constants are relocated and kernel-replayed;
     instances, attributes, LCNF, and native code do not transfer.
-  - **Complete bodies, unconditionally.** Libraries load at
-    `OLeanLevel.private` (importModules' default), so `@[no_expose]` /
-    module-sealed definitions enter the catalog as ordinary transparent
-    definitions — Ix punches through the Lean module system (plan D6).
+  - **Complete bodies, unconditionally.** Member libraries and the
+    toolchain base load at `OLeanLevel.private` (explicit at both
+    importModules call sites), so `@[no_expose]` / module-sealed
+    definitions enter the catalog as ordinary transparent definitions —
+    Ix punches through the Lean module system (plan D6). The level is
+    load-bearing and invisible to every downstream gate: an
+    exported-level env axiomizes imported proofs and drops `_private.*`
+    constants, kernel replay accepts the axioms vacuously, and
+    `--audit` compares two identically-axiomized legs (#572) — so
+    regressions are caught by loader-level tests, not by the build.
   - **Ownership is Lake package identity.** A constant is owned by the
     package of its source module (`Environment.getModulePackageByIdx?`);
     toolchain modules (no package identity) form the shared unqualified
@@ -454,11 +460,12 @@ private def replayLib (spec : CatalogSpec) (env : Lean.Environment)
       throw s!"kernel rejected `{rename renameMap key}` (source `{key}`): {renderKernelException e}"
   return (kenv, replayed, owned.size)
 
-/-- Load every member library into its own environment (complete
-    bodies: `OLeanLevel.private` is the importModules default — so
-    colliding source names never meet at import time) and resolve the
-    package → qualifier map from each library's root modules. Shared by
-    `buildCatalog` and `auditCatalog`. -/
+/-- Load every member library into its own environment (so colliding
+    source names never meet at import time) and resolve the package →
+    qualifier map from each library's root modules. Imports are pinned
+    to `OLeanLevel.private` — complete bodies (D6); see the module
+    header for why no downstream gate can catch a level regression.
+    Shared by `buildCatalog` and `auditCatalog`. -/
 def resolveLibs (spec : CatalogSpec) :
     IO (Array Lean.Environment × Std.HashMap Lean.PkgId Lean.Name ×
         Array (Std.HashSet Lean.PkgId)) := do
@@ -467,7 +474,8 @@ def resolveLibs (spec : CatalogSpec) :
   let mut libEnvs : Array Lean.Environment := #[]
   for lib in spec.libs do
     let imports : Array Lean.Import := lib.roots.map ({ module := · })
-    libEnvs := libEnvs.push (← Lean.importModules imports {})
+    libEnvs := libEnvs.push
+      (← Lean.importModules imports {} (level := .private))
   let mut qualOfPkg : Std.HashMap Lean.PkgId Lean.Name := {}
   let mut libPkgs : Array (Std.HashSet Lean.PkgId) := #[]
   for (lib, env) in spec.libs.zip libEnvs do
@@ -503,7 +511,7 @@ def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
           && !toolchainSeen.contains moduleName then
         toolchainSeen := toolchainSeen.insert moduleName
         toolchainMods := toolchainMods.push { module := moduleName }
-  let baseEnv ← Lean.importModules toolchainMods {}
+  let baseEnv ← Lean.importModules toolchainMods {} (level := .private)
   -- 4. Relocate + kernel-replay each library in dependency order.
   let mut kenv := baseEnv.toKernelEnv
   let mut replayed := 0

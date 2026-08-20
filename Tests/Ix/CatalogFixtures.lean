@@ -18,6 +18,9 @@
   - Owner-aware rewriting: `FixtureA.importedScore`'s relocated form
     references the qualified `FixtureB` constants (the unqualified
     source names do not exist in the catalog).
+  - I4 (loader olean level): member envs come in at private level —
+    imported theorems keep their proofs, `_private.*` constants are
+    present, `@[no_expose]` definitions load transparent.
 
   Needs the fixture workspace buildable (network-free; toolchain
   shared), so it lives behind `--ignored`.
@@ -112,6 +115,54 @@ private def fixturesTest : IO (Bool × Nat × Nat × Option String) := do
   | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
   | none => return (true, audit.checked, result.consts.size, none)
 
+/-- I4 gate: the catalog loader must import at `OLeanLevel.private`.
+    An exported-level member env (what module-mode header processing
+    yields) carries imported public theorems as body-less axioms and
+    omits `_private.*` constants — the catalog then axiomizes proofs,
+    kernel replay accepts vacuously, and `--audit` compares two
+    identically-axiomized legs (#572). Only the loaded env itself can
+    witness the regression, so assert on member `A`'s env from
+    `resolveLibs` (module-mode fixtures: `@[no_expose]`, theorems, a
+    cross-package import). Relies on `fixturesTest` having built the
+    fixture workspace. -/
+private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let (libEnvs, _, _) ← Ix.Catalog.resolveLibs spec
+  let some envA := libEnvs[1]?
+    | return (false, 0, 0, some "resolveLibs produced no env for member `A`")
+  -- Imported toolchain theorem: a real proof whose references all
+  -- resolve in the same env (at exported level it is a body-less axiom).
+  match envA.constants.find? `Nat.add_comm with
+  | some (.thmInfo v) =>
+    for r in v.value.getUsedConstants do
+      unless envA.contains r do
+        return (false, 0, 0,
+          some s!"Nat.add_comm proof ref {r} dangling — env not closed")
+  | some _ => return (false, 0, 0,
+      some "Nat.add_comm is not a theorem — exported-level trim suspected")
+  | none => return (false, 0, 0, some "Nat.add_comm missing from member env")
+  -- The member's own module-mode theorem keeps its proof.
+  match envA.constants.find? `FixtureA.importedScore_eq with
+  | some (.thmInfo _) => pure ()
+  | some _ => return (false, 0, 0,
+      some "FixtureA.importedScore_eq is not a theorem")
+  | none => return (false, 0, 0,
+      some "FixtureA.importedScore_eq missing from member env")
+  -- `@[no_expose]` loads as a transparent definition (D6 at the loader).
+  match envA.constants.find? `Collision.concealedDefinition with
+  | some (.defnInfo _) => pure ()
+  | some _ => return (false, 0, 0,
+      some "no_expose Collision.concealedDefinition did not load as a defn")
+  | none => return (false, 0, 0,
+      some "Collision.concealedDefinition missing from member env")
+  -- Non-exported `_private.*` constants from imports are present.
+  let privCount := envA.constants.toList.countP
+    fun (n, _) => (`_private).isPrefixOf n
+  if privCount == 0 then
+    return (false, 0, 0,
+      some "no `_private.*` constants — exported-level trim suspected")
+  return (true, privCount, envA.constants.toList.length, none)
+
 /-- C3: two independent build+compile passes agree on the canonical
     root. -/
 private def determinismTest : IO (Bool × Nat × Nat × Option String) := do
@@ -150,6 +201,8 @@ private def determinismTest : IO (Bool × Nat × Nat × Option String) := do
 def suite : List TestSeq := [
   .individualIO "catalog fixtures: audit + dedup matrix (C1/C2)" none
     fixturesTest .done,
+  .individualIO "catalog fixtures: loader imports at private level (I4)"
+    none loaderLevelTest .done,
   .individualIO
     "catalog fixtures: deterministic root + kernel check (C3/C4)"
     none determinismTest .done ]
