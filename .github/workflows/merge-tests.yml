@@ -42,18 +42,30 @@ jobs:
 
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          # Valgrind cannot decode AVX-512 emitted by native codegen.
+          native-codegen: ${{ matrix.kind != 'valgrind' }}
 
       - if: ${{ matrix.kind == 'cargo' }}
         uses: taiki-e/install-action@nextest
 
       # A merge group has its own SHA, so restore the nearest compatible build
       # produced by ordinary CI and let Lake rebuild anything that changed.
-      - if: ${{ matrix.kind == 'lake' || matrix.kind == 'valgrind' }}
+      - if: ${{ matrix.kind == 'lake' }}
         uses: actions/cache/restore@v6
         with:
           path: ./.lake
           key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
           restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+
+      # Valgrind cannot decode AVX-512, so its portable artifacts must not
+      # share `.lake` with native builds.
+      - if: ${{ matrix.kind == 'valgrind' }}
+        uses: actions/cache@v6
+        with:
+          path: ./.lake
+          key: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
 
       # The proof build uses its own incremental cache and falls back to the
       # base Lake cache without weakening the trust or sorry-frontier checks.
