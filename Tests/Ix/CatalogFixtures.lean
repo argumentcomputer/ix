@@ -177,6 +177,23 @@ private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
       else
         return acc
 
+/-- I6: `auditCatalog` restricted to a qualifier subset checks exactly
+    that subset — fewer constants than the full audit, still zero
+    violations. -/
+private def auditOnlyTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let result ← Ix.Catalog.buildCatalog spec
+  let full ← Ix.Catalog.auditCatalog spec result.consts
+  let onlyB ← Ix.Catalog.auditCatalog spec result.consts
+    (some (({} : Lean.NameSet).insert `B))
+  unless onlyB.violations.isEmpty do
+    return (false, 0, 0,
+      some s!"subset audit violation: {onlyB.violations[0]!}")
+  unless onlyB.checked > 0 && onlyB.checked < full.checked do
+    return (false, 0, 0,
+      some s!"subset checked {onlyB.checked}, full checked {full.checked}")
+  return (true, onlyB.checked, full.checked, none)
+
 private def containsStr (haystack needle : String) : Bool :=
   (haystack.splitOn needle).length > 1
 
@@ -269,6 +286,8 @@ def suite : List TestSeq := [
     none loaderLevelTest .done,
   .individualIO "catalog fixtures: uncovered provider module fails closed (I5)"
     none coverageErrorTest .done,
+  .individualIO "catalog fixtures: audit restricted to a subset (I6)"
+    none auditOnlyTest .done,
   .individualIO "catalog fixtures: misordered members fail closed (I5)"
     none orderingErrorTest .done,
   .individualIO

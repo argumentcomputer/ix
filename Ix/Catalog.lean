@@ -951,13 +951,20 @@ structure AuditResult where
     `P.X.N`. Each member library is recompiled standalone (its own env,
     unqualified) and compared against one compile of the catalog —
     N+1 Rust compiles, so this is an opt-in gate (`ix catalog --audit`),
-    not part of the build. -/
+    not part of the build. `only` restricts the standalone compiles and
+    comparison to the named qualifiers (`--audit-only`): at corpus
+    scale the full audit is a multi-hour session, so the invariant can
+    be gated on a rotating subset while the artifact still gets built.
+    Members outside the subset still stream through (their packages
+    extend the qualifier map) but skip the expensive legs. -/
 def auditCatalog (spec : CatalogSpec)
-    (catalogConsts : Array (Lean.Name × Lean.ConstantInfo)) :
+    (catalogConsts : Array (Lean.Name × Lean.ConstantInfo))
+    (only : Option Lean.NameSet := none) :
     IO AuditResult := do
   let catEnv ← Ix.CompileM.rsCompileEnvOf catalogConsts.toList
   forEachLib spec ({ checked := 0, violations := #[] } : AuditResult)
     fun acc lib env qualOfPkg pkgs => do
+      if only.any (!·.contains lib.qualifier) then return acc
       let (renameMap, owned) ←
         match ownershipMaps spec env qualOfPkg pkgs with
         | .ok maps => pure maps
