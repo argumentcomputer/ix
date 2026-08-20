@@ -820,7 +820,9 @@ struct ExecutionStats {
 impl HostClient {
   async fn setup(&self, program: &GuestProgram) -> Result<()> {
     match self {
-      Self::Prover(client) => client.setup(program).run()?.await?,
+      Self::Prover(client) => {
+        client.setup(program).run()?.await?;
+      },
       Self::ExecuteOnly(client) => client.setup(program, false)?,
     }
     Ok(())
