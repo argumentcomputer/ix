@@ -197,16 +197,26 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
 
   // Same execution-phase span as `dispatch_execute`/the prove pipeline.
   let _g = tracing::info_span!("aiur/execute_ixvm").entered();
+  let args = args.map(|x| lean_unbox_g(&x));
+  let claim_input = args.clone();
   let (query_record, output) =
     match ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
       &toplevel,
       fun_idx,
-      args.map(|x| lean_unbox_g(&x)),
+      args,
       &mut io_buffer,
     ) {
       Ok(pair) => pair,
       Err(err) => return LeanExcept::error_string(&err.to_string()),
     };
+  // Boundary derivation — see `dispatch_execute` for why the set-only
+  // record seals here rather than accumulating during execution.
+  aiur::trace::derive_multiplicities_into(
+    &toplevel,
+    &query_record,
+    &io_buffer,
+    &[(fun_idx, claim_input)],
+  );
 
   LeanExcept::ok(build_execute_result(
     &output,
@@ -292,22 +302,24 @@ fn build_query_counts_array(
   let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
     query_record.function_queries.len() + toplevel.memory_sizes.len(),
   );
-  // The record is an insert-once SET during execution: `uniqueRows` is
-  // the map's true unique count (= the circuit's raw trace height),
-  // and `totalHits` sums whatever multiplicity state the record holds —
-  // zero after plain set-only execution, the derived consumption counts
-  // after a seal. Gating rows on multiplicity would under-count.
+  // main's convention, and the prover's: `uniqueRows` counts LIVE rows
+  // (the witness builder filters zero-multiplicity rows, so this is the
+  // actual trace height), `totalHits` sums their multiplicities. Every
+  // caller hands this a record in its FINAL state — accumulated by the
+  // interpreter, or derived at the FFI boundary for the set-only
+  // kernel — so gating on multiplicity is exact, never an under-count.
   let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
+    let mut rows = 0usize;
     let mut hits = 0usize;
     for (_, res) in q.iter() {
-      hits = hits
-        .checked_add(
-          usize::try_from(res.multiplicity.as_canonical_u64())
-            .expect("multiplicity exceeds usize"),
-        )
-        .expect("hit total overflows usize");
+      let m = usize::try_from(res.multiplicity.as_canonical_u64())
+        .expect("multiplicity exceeds usize");
+      if m != 0 {
+        rows += 1;
+        hits += m;
+      }
     }
-    (q.len(), hits)
+    (rows, hits)
   };
   for queries in &query_record.function_queries {
     query_counts.push(summarize(queries));
@@ -391,7 +403,6 @@ fn decode_addr(
   )
 }
 
-
 /// Run `fun_idx` with `input` + `io_buffer`, routing through either
 /// the codegen'd IxVM kernel (`use_bytecode = false`) or the
 /// generic Aiur bytecode interpreter (`use_bytecode = true`).
@@ -416,10 +427,24 @@ fn dispatch_execute(
       .execute(fun_idx, input, io_buffer)
       .map_err(|e| format!("execute (bytecode): {e}"))
   } else {
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+    let claim_input = input.clone();
+    let (record, output) = ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
       toplevel, fun_idx, input, io_buffer,
     )
-    .map_err(|e| format!("execute_ixvm: {e}"))
+    .map_err(|e| format!("execute_ixvm: {e}"))?;
+    // The kernel's record is an insert-once SET (multiplicities all
+    // zero during execution; racing speculative executions are only
+    // confluent because nothing accumulates). Lean-facing callers get
+    // main's semantics — real consumption counts — so the seal-time
+    // derivation runs HERE, at the boundary, reproducing exactly the
+    // counts the accumulating interpreter arm produces.
+    aiur::trace::derive_multiplicities_into(
+      toplevel,
+      &record,
+      io_buffer,
+      &[(fun_idx, claim_input)],
+    );
+    Ok((record, output))
   }
 }
 
@@ -476,7 +501,6 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   ))
 }
 
-
 /// `AiurSystem.proveAddrWithEnv`: per-claim prove against a
 /// Rust-owned `EnvHandle`. Returns a `ProveEnvResult` — the claim's
 /// wire bytes are serialized via `ixon::Claim::put` so Lean can
@@ -501,8 +525,9 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   let env = &env_handle.get().env;
 
   let (claim, input, mut io_buffer) =
-    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_lazy(env, &addr)
-    {
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness_lazy(
+      env, &addr,
+    ) {
       Ok(t) => t,
       Err(e) => {
         return LeanExcept::error_string(&format!("witness build: {e}"));
@@ -532,7 +557,6 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
 
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
 }
-
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
 /// as `rs_aiur_system_prove`, but routes execution through the
@@ -591,19 +615,31 @@ extern "C" fn rs_aiur_multi_stark_execute(
 
   // Same execution-phase span as the prove pipeline.
   let _g = tracing::info_span!("aiur/execute_multi_stark").entered();
-  let result = if use_bytecode {
-    toplevel.execute(fun_idx, input, &mut io_buffer)
+  let (query_record, output) = if use_bytecode {
+    match toplevel.execute(fun_idx, input, &mut io_buffer) {
+      Ok(pair) => pair,
+      Err(err) => return LeanExcept::error_string(&err.to_string()),
+    }
   } else {
-    ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
+    let claim_input = input.clone();
+    let (record, output) =
+      match ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
+        &toplevel,
+        fun_idx,
+        input,
+        &mut io_buffer,
+      ) {
+        Ok(pair) => pair,
+        Err(err) => return LeanExcept::error_string(&err.to_string()),
+      };
+    // Boundary derivation — see `dispatch_execute`.
+    aiur::trace::derive_multiplicities_into(
       &toplevel,
-      fun_idx,
-      input,
-      &mut io_buffer,
-    )
-  };
-  let (query_record, output) = match result {
-    Ok(pair) => pair,
-    Err(err) => return LeanExcept::error_string(&err.to_string()),
+      &record,
+      &io_buffer,
+      &[(fun_idx, claim_input)],
+    );
+    (record, output)
   };
 
   let lean_query_counts = build_query_counts_array(&query_record, &toplevel);

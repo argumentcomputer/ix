@@ -799,6 +799,13 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     -- Set-only, like every other emitted insert (see the correctness
     -- invariant in the module header): the record never carries
     -- execution-time multiplicities — every count is derived at seal.
+    -- Deliberately NOT upstream's hint-promotion logic (dffb3f4): that
+    -- replays a callee whose cached multiplicity is zero, which is the
+    -- accumulating interpreter's way of activating a promoted hint's
+    -- dependency tree. Here every multiplicity is zero during execution,
+    -- so that test would replay every callee on every constrained hit
+    -- (memoization collapse) — and seal-time derivation already walks
+    -- each newly-live row's body, activating the same tree exactly once.
     let insertCall : RustStmt :=
       .exprStmt (.call
         (.field

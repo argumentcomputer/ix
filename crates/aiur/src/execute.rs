@@ -818,12 +818,17 @@ impl Function {
               // stay far below the modulus, so `u64` addition on the cell
               // is field addition.
               if !callee_unconstrained
-                && result.multiplicity.load(std::sync::atomic::Ordering::Relaxed) == 0
+                && result
+                  .multiplicity
+                  .load(std::sync::atomic::Ordering::Relaxed)
+                  == 0
               {
                 None
               } else {
                 if !callee_unconstrained {
-                  result.multiplicity.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                  result
+                    .multiplicity
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
                 Some(result.output.to_vec())
               }
@@ -1191,7 +1196,9 @@ impl Function {
             // is constrained promotion of an unconstrained hint entry.
             debug_assert_eq!(result.output, output);
             if !unconstrained {
-              result.multiplicity.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+              result
+                .multiplicity
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
           } else {
             // Concurrent insert: `get_mut` said absent, and a racing
