@@ -420,13 +420,56 @@ def subst := ⟦
   -- with a list of one element. For the lambda-eta case in def_eq we want
   -- `body[BVar(0) := arg]` which is `expr_inst1(body, arg, 0)`.
   -- ============================================================================
+  -- Exact occurrence of the substitution target. Unlike `expr_lbr`, this
+  -- distinguishes a subtree that mentions only variables ABOVE `depth`: such
+  -- a subtree still has to be lowered after removing the binder, but its
+  -- result is independent of `arg`. Memoizing this predicate by `(e, depth)`
+  -- lets all arguments share that lowering path.
+  fn expr_has_bvar_at(e: KExpr, depth: G) -> G {
+    match load(e) {
+      KExprNode.BVar(i) => match i - depth { 0 => 1, _ => 0, },
+      KExprNode.App(f, a) =>
+        match expr_has_bvar_at(f, depth) {
+          1 => 1,
+          _ => expr_has_bvar_at(a, depth),
+        },
+      KExprNode.Lam(ty, body) => expr_has_bvar_at_binder(ty, body, depth),
+      KExprNode.Forall(ty, body) => expr_has_bvar_at_binder(ty, body, depth),
+      KExprNode.Let(ty, val, body) => expr_has_bvar_at_let(ty, val, body, depth),
+      KExprNode.Proj(_, _, inner) => expr_has_bvar_at(inner, depth),
+      _ => 0,
+    }
+  }
+
+  fn expr_has_bvar_at_binder(ty: KExpr, body: KExpr, depth: G) -> G {
+    match expr_has_bvar_at(ty, depth) {
+      1 => 1,
+      _ => expr_has_bvar_at(body, depth + 1),
+    }
+  }
+
+  fn expr_has_bvar_at_let(ty: KExpr, val: KExpr, body: KExpr, depth: G) -> G {
+    match expr_has_bvar_at(ty, depth) {
+      1 => 1,
+      _ =>
+        match expr_has_bvar_at(val, depth) {
+          1 => 1,
+          _ => expr_has_bvar_at(body, depth + 1),
+        },
+    }
+  }
+
   fn expr_inst1(e: KExpr, arg: KExpr, depth: G) -> KExpr {
     -- Fast path: when `expr_lbr(e) <= depth`, no BVar at or above depth
     -- exists in `e`, so the substitution is a no-op.
     let l = expr_lbr(e);
     match memo_u32_less_than(depth, l) {
       0 => e,
-      1 => expr_inst1_walk(e, arg, depth),
+      1 =>
+        match expr_has_bvar_at(e, depth) {
+          1 => expr_inst1_walk(e, arg, depth),
+          _ => expr_lower(e, 1, depth + 1),
+        },
     }
   }
 
@@ -489,10 +532,19 @@ def subst := ⟦
   -- `BVar(i ≥ depth+n)` shifts down by `n`. Same fast-path as `expr_inst1`.
   -- ============================================================================
   fn expr_inst_many(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
-    let l = expr_lbr(e);
-    match memo_u32_less_than(depth, l) {
+    let n = list_length(substs);
+    match n {
       0 => e,
-      1 => expr_inst_many_walk(e, substs, depth),
+      _ =>
+        let l = expr_lbr(e);
+        match memo_u32_less_than(depth, l) {
+          0 => e,
+          1 =>
+            match has_bvar_in_range(e, depth, depth + n) {
+              1 => expr_inst_many_walk(e, substs, depth),
+              _ => expr_lower(e, n, depth + n),
+            },
+        },
     }
   }
 

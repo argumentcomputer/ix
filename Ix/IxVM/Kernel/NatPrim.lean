@@ -59,6 +59,20 @@ def natPrim := ⟦
      0xfcu8, 0x44u8, 0x77u8, 0xe0u8, 0xe9u8, 0x59u8, 0x4cu8, 0x88u8])
   }
 
+  fn int_of_nat_addr() -> Addr { store([0x09u8, 0xbcu8, 0x25u8, 0x31u8, 0x47u8, 0xc3u8, 0x6cu8, 0xe2u8, 0x2cu8, 0x8eu8, 0x0cu8, 0xcdu8, 0x43u8, 0xc7u8, 0x9bu8, 0x2cu8, 0xdau8, 0xe2u8, 0x20u8, 0x6eu8, 0x0du8, 0xddu8, 0x16u8, 0x8fu8, 0xcau8, 0x36u8, 0x09u8, 0xb2u8, 0xa5u8, 0x84u8, 0xd3u8, 0xdcu8]) }
+  fn int_neg_succ_addr() -> Addr { store([0x26u8, 0x7cu8, 0x0au8, 0x9cu8, 0x92u8, 0xe7u8, 0x56u8, 0x38u8, 0xfcu8, 0x73u8, 0xedu8, 0x52u8, 0xa9u8, 0xf9u8, 0xc8u8, 0x16u8, 0x47u8, 0xeeu8, 0xecu8, 0xeeu8, 0xffu8, 0x21u8, 0x44u8, 0xc1u8, 0xf9u8, 0x7eu8, 0x65u8, 0xe2u8, 0xafu8, 0xf1u8, 0x49u8, 0xf1u8]) }
+  fn int_add_addr() -> Addr { store([0xb6u8, 0xbbu8, 0xacu8, 0x00u8, 0xc8u8, 0xe4u8, 0x6fu8, 0x8bu8, 0x86u8, 0x40u8, 0x29u8, 0x8fu8, 0x4cu8, 0x9au8, 0xc8u8, 0x94u8, 0xcbu8, 0xcdu8, 0x01u8, 0x01u8, 0x03u8, 0x5eu8, 0xddu8, 0x54u8, 0x3fu8, 0x7cu8, 0x43u8, 0x4eu8, 0x2cu8, 0x9fu8, 0xe9u8, 0x26u8]) }
+  fn int_sub_addr() -> Addr { store([0xbcu8, 0xb0u8, 0x9bu8, 0xa4u8, 0x3fu8, 0x8bu8, 0xdau8, 0xe6u8, 0x5cu8, 0x56u8, 0xa4u8, 0x7fu8, 0xf7u8, 0x7bu8, 0x50u8, 0xb4u8, 0x2eu8, 0xdeu8, 0x12u8, 0x0fu8, 0xbcu8, 0xdbu8, 0xa8u8, 0x46u8, 0x9eu8, 0x79u8, 0x9au8, 0x21u8, 0xf1u8, 0x2fu8, 0xd3u8, 0x89u8]) }
+  fn int_mul_addr() -> Addr { store([0x74u8, 0xedu8, 0x1fu8, 0xb9u8, 0xa9u8, 0xbfu8, 0x99u8, 0xd0u8, 0xb0u8, 0x2du8, 0xbeu8, 0xfeu8, 0x04u8, 0x24u8, 0x64u8, 0xcdu8, 0x71u8, 0x53u8, 0x01u8, 0x85u8, 0x9au8, 0x70u8, 0x33u8, 0x7au8, 0x99u8, 0x34u8, 0x4bu8, 0xe7u8, 0x62u8, 0xdcu8, 0xbeu8, 0x10u8]) }
+  fn int_neg_addr() -> Addr { store([0xf6u8, 0x1cu8, 0x7du8, 0x3fu8, 0xceu8, 0x59u8, 0x54u8, 0x30u8, 0xf8u8, 0x6fu8, 0x0cu8, 0xd5u8, 0x2du8, 0xa5u8, 0xbcu8, 0xb0u8, 0x0bu8, 0xf9u8, 0x10u8, 0xedu8, 0xd8u8, 0x5eu8, 0x14u8, 0xdcu8, 0x04u8, 0x02u8, 0x13u8, 0x0fu8, 0xccu8, 0xe3u8, 0x4eu8, 0xbdu8]) }
+  fn int_emod_addr() -> Addr { store([0xacu8, 0x9cu8, 0x72u8, 0x31u8, 0x95u8, 0x51u8, 0xf5u8, 0x63u8, 0x7fu8, 0x7cu8, 0x51u8, 0xc7u8, 0x0bu8, 0xe6u8, 0xdau8, 0x8fu8, 0xd6u8, 0x6au8, 0x81u8, 0x83u8, 0x7cu8, 0x9eu8, 0xb5u8, 0x0cu8, 0x3fu8, 0xd5u8, 0x0eu8, 0xcfu8, 0x8cu8, 0xbbu8, 0xc0u8, 0x70u8]) }
+  fn int_ediv_addr() -> Addr { store([0x9fu8, 0x2cu8, 0xa4u8, 0xe3u8, 0xdeu8, 0x3au8, 0x79u8, 0x4fu8, 0x67u8, 0xdbu8, 0x64u8, 0x84u8, 0x9du8, 0xd5u8, 0x77u8, 0xc0u8, 0x66u8, 0xe5u8, 0x61u8, 0x42u8, 0x20u8, 0x6fu8, 0xa6u8, 0xbcu8, 0x72u8, 0x4eu8, 0x4bu8, 0x8du8, 0xb6u8, 0xf2u8, 0x0fu8, 0x5bu8]) }
+  fn int_bmod_addr() -> Addr { store([0x19u8, 0x7du8, 0x3cu8, 0x7eu8, 0x9cu8, 0xe0u8, 0x94u8, 0x9cu8, 0x52u8, 0xefu8, 0x98u8, 0xf5u8, 0x0bu8, 0x58u8, 0xddu8, 0xb9u8, 0x42u8, 0xdbu8, 0x6du8, 0x36u8, 0x76u8, 0x40u8, 0xd6u8, 0xfbu8, 0x6fu8, 0x49u8, 0xabu8, 0x91u8, 0xf8u8, 0x2fu8, 0x42u8, 0x71u8]) }
+  fn int_bdiv_addr() -> Addr { store([0x07u8, 0x13u8, 0x40u8, 0x5au8, 0x68u8, 0x9du8, 0x21u8, 0x55u8, 0xa8u8, 0x41u8, 0x23u8, 0xa0u8, 0xf6u8, 0x39u8, 0x5cu8, 0x31u8, 0xc6u8, 0xfau8, 0x55u8, 0xc1u8, 0xadu8, 0x90u8, 0x5fu8, 0xc5u8, 0x56u8, 0x63u8, 0xacu8, 0xf7u8, 0xd7u8, 0x57u8, 0x7fu8, 0x57u8]) }
+  fn int_nat_abs_addr() -> Addr { store([0x83u8, 0xe3u8, 0xceu8, 0x8au8, 0x74u8, 0x75u8, 0x20u8, 0xccu8, 0x24u8, 0x8au8, 0x0du8, 0xacu8, 0xf9u8, 0xbdu8, 0x13u8, 0x69u8, 0x46u8, 0x7eu8, 0x49u8, 0x07u8, 0xe8u8, 0xaau8, 0xaau8, 0x43u8, 0x3eu8, 0x1bu8, 0x43u8, 0x8eu8, 0x1cu8, 0xadu8, 0x7cu8, 0xa4u8]) }
+  fn int_pow_addr() -> Addr { store([0x87u8, 0x5bu8, 0xe8u8, 0xd8u8, 0xaeu8, 0x5fu8, 0x33u8, 0x20u8, 0x03u8, 0xecu8, 0x2bu8, 0xadu8, 0xe6u8, 0x98u8, 0xbbu8, 0x0au8, 0xa5u8, 0xf2u8, 0xf4u8, 0x6eu8, 0x71u8, 0x21u8, 0x8du8, 0xa9u8, 0xcdu8, 0xd9u8, 0xd0u8, 0x95u8, 0x06u8, 0xe8u8, 0x4cu8, 0x10u8]) }
+
+
   fn nat_add_addr() -> Addr {
     store([0xe1u8, 0xeeu8, 0x4cu8, 0x78u8, 0xa3u8, 0x90u8, 0x64u8, 0x64u8,
      0xfau8, 0x8cu8, 0x17u8, 0xecu8, 0x2eu8, 0xd0u8, 0xc0u8, 0xbfu8,
@@ -1397,6 +1411,14 @@ def natPrim := ⟦
     }
   }
 
+  fn is_int_prim_addr(a: Addr) -> G {
+    address_eq(a, int_add_addr()) + address_eq(a, int_sub_addr())
+      + address_eq(a, int_mul_addr()) + address_eq(a, int_neg_addr())
+      + address_eq(a, int_emod_addr()) + address_eq(a, int_ediv_addr())
+      + address_eq(a, int_bmod_addr()) + address_eq(a, int_bdiv_addr())
+      + address_eq(a, int_nat_abs_addr()) + address_eq(a, int_pow_addr())
+  }
+
   -- ============================================================================
   -- Extract Nat literal from KExpr
   -- ============================================================================
@@ -1437,6 +1459,183 @@ def natPrim := ⟦
 
   fn mk_nat_lit(n: KLimbs) -> KExpr {
     store(KExprNode.Lit(KLiteral.Nat(n)))
+  }
+
+  -- Canonical Int literals are `Int.ofNat n` and `Int.negSucc n`.
+  -- Internally use (sign, absolute magnitude), with sign=1 negative.
+  fn try_extract_int_prim(e: KExpr) -> (G, G, KLimbs) {
+    match load(e) {
+      KExprNode.App(f, a) => match load(f) {
+        KExprNode.Const(caddr, _) => match try_extract_nat(a) {
+          (1, n) => match address_eq(caddr, int_of_nat_addr()) {
+            1 => (1, 0, klimbs_normalize(n)),
+            _ => match address_eq(caddr, int_neg_succ_addr()) {
+              1 => (1, 1, klimbs_normalize(klimbs_succ(n))),
+              _ => (0, 0, store(ListNode.Nil)),
+            },
+          },
+          _ => (0, 0, store(ListNode.Nil)),
+        },
+        _ => (0, 0, store(ListNode.Nil)),
+      },
+      _ => (0, 0, store(ListNode.Nil)),
+    }
+  }
+
+  fn mk_int_prim(sign: G, magnitude: KLimbs) -> KExpr {
+    let mag = klimbs_normalize(magnitude);
+    let neg = sign * (1 - klimbs_is_zero(mag));
+    let caddr = match neg { 0 => int_of_nat_addr(), _ => int_neg_succ_addr(), };
+    let arg = match neg { 0 => mag, _ => klimbs_normalize(klimbs_dec(mag)), };
+    store(KExprNode.App(store(KExprNode.Const(caddr, store(ListNode.Nil))), mk_nat_lit(arg)))
+  }
+
+  fn int_add_prim(sa: G, a: KLimbs, sb: G, b: KLimbs) -> KExpr {
+    match sa - sb {
+      0 => mk_int_prim(sa, klimbs_add(a, b)),
+      _ => match klimbs_le(a, b) {
+        1 => mk_int_prim(sb, klimbs_sub(b, a)),
+        _ => mk_int_prim(sa, klimbs_sub(a, b)),
+      },
+    }
+  }
+
+  -- Euclidean quotient/remainder for signed a,b. Remainder is always
+  -- nonnegative and smaller than |b| (unless b=0, where r=a and q=0).
+  fn int_emod_prim(sa: G, a: KLimbs, b: KLimbs) -> KExpr {
+    match klimbs_is_zero(b) {
+      1 => mk_int_prim(sa, a),
+      _ =>
+        let r0 = klimbs_mod(a, b);
+        match sa * (1 - klimbs_is_zero(r0)) {
+          1 => mk_int_prim(0, klimbs_sub(b, r0)),
+          _ => mk_int_prim(0, r0),
+        },
+    }
+  }
+
+  fn int_ediv_prim(sa: G, a: KLimbs, sb: G, b: KLimbs) -> KExpr {
+    match klimbs_is_zero(b) {
+      1 => mk_int_prim(0, store(ListNode.Nil)),
+      _ =>
+        let q0 = klimbs_div(a, b);
+        let r0 = klimbs_mod(a, b);
+        let q = match sa * (1 - klimbs_is_zero(r0)) {
+          1 => klimbs_succ(q0),
+          _ => q0,
+        };
+        mk_int_prim((sa + sb - 2 * sa * sb) * (1 - klimbs_is_zero(q)), q),
+    }
+  }
+
+  fn int_bmod_prim(sa: G, a: KLimbs, m: KLimbs) -> KExpr {
+    match klimbs_is_zero(m) {
+      1 => mk_int_prim(sa, a),
+      _ =>
+        let r0 = klimbs_mod(a, m);
+        let r = match sa * (1 - klimbs_is_zero(r0)) {
+          1 => klimbs_sub(m, r0),
+          _ => r0,
+        };
+        let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+        let half = klimbs_div(klimbs_succ(m), two);
+        match klimbs_le(half, r) {
+          1 => mk_int_prim(1, klimbs_sub(m, r)),
+          _ => mk_int_prim(0, r),
+        },
+    }
+  }
+
+  fn int_bdiv_prim(sa: G, a: KLimbs, m: KLimbs) -> KExpr {
+    match klimbs_is_zero(m) {
+      1 => mk_int_prim(0, store(ListNode.Nil)),
+      _ =>
+        let r0 = klimbs_mod(a, m);
+        let r = match sa * (1 - klimbs_is_zero(r0)) {
+          1 => klimbs_sub(m, r0),
+          _ => r0,
+        };
+        let q0 = klimbs_div(a, m);
+        let qmag = match sa * (1 - klimbs_is_zero(r0)) { 1 => klimbs_succ(q0), _ => q0, };
+        let qsign = sa * (1 - klimbs_is_zero(qmag));
+        let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+        let half = klimbs_div(klimbs_succ(m), two);
+        match klimbs_le(half, r) {
+          0 => mk_int_prim(qsign, qmag),
+          _ => int_add_prim(qsign, qmag, 0,
+            store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)))),
+        },
+    }
+  }
+
+  fn try_int_prim_dispatch(head_addr: Addr, spine: List‹KExpr›,
+                                types: List‹KExpr›) -> (G, KExpr) {
+    let sw = whnf_spine(spine, types);
+    let n = list_length(sw);
+    let unary = address_eq(head_addr, int_neg_addr()) + address_eq(head_addr, int_nat_abs_addr());
+    match unary {
+      1 => match u32_less_than(n, 1) {
+        1 => (0, store(KExprNode.BVar(0))),
+        _ => match try_extract_int_prim(list_lookup(sw, 0)) {
+          (1, s, a) =>
+            let v = match address_eq(head_addr, int_nat_abs_addr()) {
+              1 => mk_nat_lit(a),
+              _ => mk_int_prim((1 - s) * (1 - klimbs_is_zero(a)), a),
+            };
+            (1, np_apply_spine(v, list_drop(sw, 1))),
+          _ => (0, store(KExprNode.BVar(0))),
+        },
+      },
+      _ => match u32_less_than(n, 2) {
+        1 => (0, store(KExprNode.BVar(0))),
+        _ => match try_extract_int_prim(list_lookup(sw, 0)) {
+          (1, sa, a) => try_int_prim_second(head_addr, sw, sa, a),
+          _ => (0, store(KExprNode.BVar(0))),
+        },
+      },
+    }
+  }
+
+  fn try_int_prim_second(head_addr: Addr, sw: List‹KExpr›,
+                              sa: G, a: KLimbs) -> (G, KExpr) {
+    let rhs_nat = address_eq(head_addr, int_bmod_addr())
+      + address_eq(head_addr, int_bdiv_addr()) + address_eq(head_addr, int_pow_addr());
+    match rhs_nat {
+      1 => match try_extract_nat(list_lookup(sw, 1)) {
+        (1, b) =>
+          let v = match address_eq(head_addr, int_bmod_addr()) {
+            1 => int_bmod_prim(sa, a, b),
+            _ => match address_eq(head_addr, int_bdiv_addr()) {
+              1 => int_bdiv_prim(sa, a, b),
+              _ =>
+                let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+                let odd = 1 - klimbs_is_zero(klimbs_mod(b, two));
+                mk_int_prim(sa * odd, klimbs_pow(a, b)),
+            },
+          };
+          (1, np_apply_spine(v, list_drop(sw, 2))),
+        _ => (0, store(KExprNode.BVar(0))),
+      },
+      _ => match try_extract_int_prim(list_lookup(sw, 1)) {
+        (1, sb, b) =>
+          let v = match address_eq(head_addr, int_add_addr()) {
+            1 => int_add_prim(sa, a, sb, b),
+            _ => match address_eq(head_addr, int_sub_addr()) {
+              1 => int_add_prim(sa, a, (1 - sb) * (1 - klimbs_is_zero(b)), b),
+              _ => match address_eq(head_addr, int_mul_addr()) {
+                1 => mk_int_prim((sa + sb - 2 * sa * sb)
+                  * (1 - klimbs_is_zero(a)) * (1 - klimbs_is_zero(b)), klimbs_mul(a, b)),
+                _ => match address_eq(head_addr, int_emod_addr()) {
+                  1 => int_emod_prim(sa, a, b),
+                  _ => int_ediv_prim(sa, a, sb, b),
+                },
+              },
+            },
+          };
+          (1, np_apply_spine(v, list_drop(sw, 2))),
+        _ => (0, store(KExprNode.BVar(0))),
+      },
+    }
   }
 
   -- ============================================================================

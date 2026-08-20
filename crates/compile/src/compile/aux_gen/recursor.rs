@@ -3978,12 +3978,10 @@ mod tests {
     }
   }
 
-  /// 3h. Full compile + decompile roundtrip for alpha-collapse.
+  /// 3h. Full compile pipeline for alpha-collapsed recursor aliases.
   ///
-  /// Builds A/B inductives (no hand-written recursors), runs the full
-  /// compile_env pipeline, then verifies the decompiled .rec matches
-  /// what aux_gen would regenerate from the decompiled inductives.
-  #[ignore]
+  /// Builds A/B inductives with stub recursors, runs `compile_env`, then
+  /// verifies their regenerated recursors share one canonical block.
   #[test]
   fn test_aux_gen_compile_roundtrip() {
     use crate::compile::env::compile_env;

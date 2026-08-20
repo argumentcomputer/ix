@@ -295,6 +295,8 @@ jobs:
       - name: Install Zisk
         if: matrix.params.backend == 'zisk'
         uses: ./.github/actions/install-zisk
+        with:
+          proving-key: false
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so the staged binaries find libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and

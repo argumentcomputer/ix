@@ -684,7 +684,9 @@ def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
       match decl with
       | .function function => do
         let (body, layoutMState, typeIds, nextTid) ←
-          function.compile layout typeIds nextTid
+          match function.compile layout typeIds nextTid with
+          | .error e => throw s!"[{function.name}] {e}"
+          | .ok r => pure r
         let nameMap := nameMap.insert function.name functions.size
         let function := ⟨body, layoutMState.functionLayout, function.entry, false⟩
         let memSizes := layoutMState.memSizes.foldl (·.insert ·) memSizes
