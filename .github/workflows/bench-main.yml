@@ -81,9 +81,9 @@ jobs:
   # job; only the benchmark job waits on it.
   plan:
     needs: build
-    # `ci matrix` only runs Lean code (the AVX-512 parts of the binary are
-    # never executed here), so a cheap non-warp host is fine.
-    runs-on: ubuntu-latest
+    # Native target features may occur anywhere in `ix`, including this
+    # registry-only subcommand, so keep it on the Warp x64 runner fleet.
+    runs-on: warp-ubuntu-latest-x64-8x
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:

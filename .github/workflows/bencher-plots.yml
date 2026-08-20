@@ -24,9 +24,9 @@ permissions:
 
 jobs:
   sync-plots:
-    # `bench plots` is a pure-Lean subcommand and the rest is bencher API
-    # calls — cheap host is fine (same rationale as bench-main's plan job).
-    runs-on: ubuntu-latest
+    # The restored `ix` uses native target features selected on the benchmark
+    # build runner, even though this subcommand itself is pure Lean.
+    runs-on: warp-ubuntu-latest-x64-8x
     steps:
       - uses: actions/checkout@v7
       # The staged binaries from bench-main's build job: this main tip's
