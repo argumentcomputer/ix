@@ -146,3 +146,15 @@ jobs:
         run: >-
           lake test --wfail -- --ignored
           tc-pins tc-accel-diff tc-anon-diff tc-init tc-tutorial tc-roundtrip lean4lean
+
+  merge-tests-result:
+    name: Merge tests
+    if: ${{ always() }}
+    needs: merge-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Propagate merge-test failure
+        if: >-
+          github.event_name == 'merge_group' &&
+          needs.merge-tests.result != 'success'
+        run: exit 1
