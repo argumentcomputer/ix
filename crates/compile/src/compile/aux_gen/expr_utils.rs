@@ -1969,6 +1969,7 @@ fn ensure_in_kenv_of_inner_env(
   stt: &crate::compile::CompileState,
   kenv: &mut ix_kernel::env::KEnv<Meta>,
   replace_axio_stub: bool,
+  stub_proof_values: bool,
 ) {
   use ix_common::env::{ConstantInfo as LCI, DefinitionSafety};
   use ix_kernel::constant::KConst;
@@ -2083,6 +2084,25 @@ fn ensure_in_kenv_of_inner_env(
     LCI::ThmInfo(d) => {
       let lp = &d.cnst.level_params;
       let ty = to_z(&d.cnst.typ, lp, kenv);
+      // Prewarm callers stub the proof: theorem values are never
+      // delta-unfolded by kernel TC (Prop defeq short-circuits on proof
+      // irrelevance), so the aux_gen phases only ever read the TYPE —
+      // the same fidelity `ingress_type_stub` gives thms it discovers
+      // itself. Full ingestion of every walked proof term was the
+      // dominant share of Pass-2 kenv RSS.
+      if stub_proof_values {
+        kenv.insert(
+          zid.clone(),
+          KConst::Axio {
+            name: name.clone(),
+            level_params: lp.clone(),
+            is_unsafe: false,
+            lvls: lp.len() as u64,
+            ty,
+          },
+        );
+        return;
+      }
       let val = to_z(&d.value, lp, kenv);
       kenv.insert(
         zid.clone(),
@@ -2103,6 +2123,21 @@ fn ensure_in_kenv_of_inner_env(
     LCI::OpaqueInfo(d) => {
       let lp = &d.cnst.level_params;
       let ty = to_z(&d.cnst.typ, lp, kenv);
+      // Same as the ThmInfo arm: opaque values are opaque to kernel
+      // defeq by definition, so prewarm callers keep the type only.
+      if stub_proof_values {
+        kenv.insert(
+          zid.clone(),
+          KConst::Axio {
+            name: name.clone(),
+            level_params: lp.clone(),
+            is_unsafe: false,
+            lvls: lp.len() as u64,
+            ty,
+          },
+        );
+        return;
+      }
       let val = to_z(&d.value, lp, kenv);
       kenv.insert(
         zid.clone(),
@@ -2156,6 +2191,7 @@ fn ensure_in_kenv_of_inner_env(
         stt,
         kenv,
         replace_axio_stub,
+        stub_proof_values,
       );
     },
     LCI::RecInfo(_) => {
@@ -2178,6 +2214,7 @@ fn ensure_in_kenv_of_inner(
     stt,
     &mut kctx.kenv,
     replace_axio_stub,
+    false,
   );
 }
 
@@ -2188,6 +2225,22 @@ pub fn ensure_in_kenv_of(
   kctx: &mut crate::compile::KernelCtx,
 ) {
   ensure_in_kenv_of_inner(name, lean_env, stt, kctx, false);
+}
+
+/// [`ensure_in_kenv_of`] for bulk pre-warm walks (decompile Pass 2's
+/// ingress BFS): theorem/opaque VALUES are replaced by type-only `Axio`
+/// stubs — the exact fidelity `ingress_type_stub` gives thms the
+/// gen-phase walkers discover themselves, and sufficient for kernel TC
+/// (proof irrelevance; opaque values are never unfolded). Everything
+/// else ingresses exactly as [`ensure_in_kenv_of`]. Cuts the dominant
+/// share of Pass-2 kenv RSS, which is what forced the periodic clears.
+pub fn ensure_in_kenv_of_prewarm(
+  name: &Name,
+  lean_env: &ix_common::env::Env,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) {
+  ensure_in_kenv_of_inner_env(name, lean_env, stt, &mut kctx.kenv, false, true);
 }
 
 /// Like [`ensure_in_kenv_of`], but upgrades an existing type-only `Axio`
@@ -2208,7 +2261,7 @@ fn ensure_full_in_tc_env(
   stt: &crate::compile::CompileState,
   kenv: &mut ix_kernel::env::KEnv<Meta>,
 ) {
-  ensure_in_kenv_of_inner_env(name, lean_env, stt, kenv, true);
+  ensure_in_kenv_of_inner_env(name, lean_env, stt, kenv, true, false);
 }
 
 /// Convenience wrapper: ingress into the **original** kenv (`stt.kctx`).

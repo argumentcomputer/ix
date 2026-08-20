@@ -199,80 +199,92 @@ pub fn build_ref_graph(env: &Env) -> RefGraph {
 }
 
 pub fn get_constant_info_references(constant_info: &ConstantInfo) -> NameSet {
-  let cache = &mut FxHashMap::default();
+  let mut acc = NameSet::default();
+  let mut visited: FxHashSet<&Expr> = FxHashSet::default();
   match constant_info {
-    ConstantInfo::AxiomInfo(val) => get_expr_references(&val.cnst.typ, cache),
-    ConstantInfo::DefnInfo(val) => merge_name_sets(
-      get_expr_references(&val.cnst.typ, cache),
-      get_expr_references(&val.value, cache),
-    ),
-    ConstantInfo::ThmInfo(val) => merge_name_sets(
-      get_expr_references(&val.cnst.typ, cache),
-      get_expr_references(&val.value, cache),
-    ),
-    ConstantInfo::OpaqueInfo(val) => merge_name_sets(
-      get_expr_references(&val.cnst.typ, cache),
-      get_expr_references(&val.value, cache),
-    ),
-    ConstantInfo::QuotInfo(val) => get_expr_references(&val.cnst.typ, cache),
+    ConstantInfo::AxiomInfo(val) => {
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+    },
+    ConstantInfo::DefnInfo(val) => {
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      collect_expr_references(&val.value, &mut visited, &mut acc);
+    },
+    ConstantInfo::ThmInfo(val) => {
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      collect_expr_references(&val.value, &mut visited, &mut acc);
+    },
+    ConstantInfo::OpaqueInfo(val) => {
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      collect_expr_references(&val.value, &mut visited, &mut acc);
+    },
+    ConstantInfo::QuotInfo(val) => {
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+    },
     ConstantInfo::InductInfo(val) => {
-      let name_set = get_expr_references(&val.cnst.typ, cache);
-      let ctors_name_set = val.ctors.iter().cloned().collect();
-      merge_name_sets(name_set, ctors_name_set)
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      acc.extend(val.ctors.iter().cloned());
     },
     ConstantInfo::CtorInfo(val) => {
-      let mut name_set = get_expr_references(&val.cnst.typ, cache);
-      name_set.insert(val.induct.clone());
-      name_set
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      acc.insert(val.induct.clone());
     },
     ConstantInfo::RecInfo(val) => {
-      let name_set = get_expr_references(&val.cnst.typ, cache);
-      val.rules.iter().fold(name_set, |mut acc, rule| {
+      collect_expr_references(&val.cnst.typ, &mut visited, &mut acc);
+      for rule in &val.rules {
         acc.insert(rule.ctor.clone());
-        merge_name_sets(acc, get_expr_references(&rule.rhs, cache))
-      })
+        collect_expr_references(&rule.rhs, &mut visited, &mut acc);
+      }
     },
   }
+  acc
 }
 
-fn get_expr_references<'a>(
+/// Iterative DAG walk pushing every `Const`/`Proj` head into one shared
+/// accumulator. `visited` keys on `Expr`'s digest-backed `Hash`/`Eq`
+/// (Arc pointer fast path), so each distinct subterm — structurally
+/// shared or not — is expanded once, exactly the dedup the old
+/// per-constant memo provided. Θ(n + r) total: the old walk returned a
+/// fresh `NameSet` per node and merged/cloned it into every parent
+/// (Θ(n·r) allocations on ref-heavy constants). This feeds both
+/// compile's `setup_scan` and decompile's Pass-2 ingress BFS. The
+/// accumulated set is value-identical to the old result; no downstream
+/// consumer reads set iteration order into output bytes (SCC members
+/// and serialized sections are canonically re-sorted).
+fn collect_expr_references<'a>(
   expr: &'a Expr,
-  cache: &mut FxHashMap<&'a Expr, NameSet>,
-) -> NameSet {
-  if let Some(cached) = cache.get(expr) {
-    return cached.clone();
+  visited: &mut FxHashSet<&'a Expr>,
+  acc: &mut NameSet,
+) {
+  let mut stack: Vec<&'a Expr> = vec![expr];
+  while let Some(e) = stack.pop() {
+    if !visited.insert(e) {
+      continue;
+    }
+    match e.as_data() {
+      ExprData::Const(name, ..) => {
+        acc.insert(name.clone());
+      },
+      ExprData::App(f, a, _) => {
+        stack.push(f);
+        stack.push(a);
+      },
+      ExprData::Lam(_, typ, body, ..) | ExprData::ForallE(_, typ, body, ..) => {
+        stack.push(typ);
+        stack.push(body);
+      },
+      ExprData::LetE(_, typ, value, body, ..) => {
+        stack.push(typ);
+        stack.push(value);
+        stack.push(body);
+      },
+      ExprData::Mdata(_, inner, _) => stack.push(inner),
+      ExprData::Proj(type_name, _, inner, _) => {
+        acc.insert(type_name.clone());
+        stack.push(inner);
+      },
+      _ => {},
+    }
   }
-  let name_set = match expr.as_data() {
-    ExprData::Const(name, ..) => NameSet::from_iter([name.clone()]),
-    ExprData::App(f, a, _) => {
-      let f_name_set = get_expr_references(f, cache);
-      let a_name_set = get_expr_references(a, cache);
-      merge_name_sets(f_name_set, a_name_set)
-    },
-    ExprData::Lam(_, typ, body, ..) | ExprData::ForallE(_, typ, body, ..) => {
-      let typ_name_set = get_expr_references(typ, cache);
-      let body_name_set = get_expr_references(body, cache);
-      merge_name_sets(typ_name_set, body_name_set)
-    },
-    ExprData::LetE(_, typ, value, body, ..) => {
-      let typ_name_set = get_expr_references(typ, cache);
-      let value_name_set = get_expr_references(value, cache);
-      let body_name_set = get_expr_references(body, cache);
-      merge_name_sets(
-        typ_name_set,
-        merge_name_sets(value_name_set, body_name_set),
-      )
-    },
-    ExprData::Mdata(_, expr, _) => get_expr_references(expr, cache),
-    ExprData::Proj(type_name, _, expr, _) => {
-      let mut name_set = get_expr_references(expr, cache);
-      name_set.insert(type_name.clone());
-      name_set
-    },
-    _ => NameSet::default(),
-  };
-  cache.insert(expr, name_set.clone());
-  name_set
 }
 
 #[cfg(test)]

@@ -1044,7 +1044,7 @@ def decompileEnvPass2 (ixonEnv : Ixon.Env)
             stack := stack.push r
     match runK ctx st blockKey (fun maps => do
         for n in toIngress do
-          Ix.AuxGen.ensureInKenvOf n maps) with
+          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       let errs := st.errors.push (blockKey, s!"block ingress: {e}")
@@ -1153,7 +1153,7 @@ def decompileEnvPass2Parallel (ixonEnv : Ixon.Env)
             stack := stack.push r
     match runK ctx st blockKey (fun maps => do
         for n in toIngress do
-          Ix.AuxGen.ensureInKenvOf n maps) with
+          Ix.AuxGen.ensureInKenvOfPrewarm n maps) with
     | .ok (_, kctx') => st := { st with kctx := kctx' }
     | .error e =>
       st := { st with

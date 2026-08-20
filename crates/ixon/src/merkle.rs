@@ -107,6 +107,39 @@ pub fn merkle_root_canonical(leaves: &[Address]) -> Option<Address> {
   Some(level.into_iter().next().unwrap())
 }
 
+/// Host-side variant of [`merkle_root_canonical`] for callers that
+/// already hold lex-sorted, deduplicated leaves (e.g. the serializers'
+/// const table — map keys are unique by construction and sorted right
+/// before this call). Skips the clone + re-sort + dedup and hashes
+/// leaves and levels in parallel; the pairing is positional, so the
+/// root is bit-identical to [`merkle_root_canonical`] on the same set.
+#[cfg(not(target_arch = "riscv64"))]
+pub fn merkle_root_canonical_sorted(
+  sorted_unique: &[Address],
+) -> Option<Address> {
+  use rayon::prelude::*;
+  debug_assert!(
+    sorted_unique.windows(2).all(|w| w[0] < w[1]),
+    "merkle_root_canonical_sorted: leaves must be sorted and unique"
+  );
+  if sorted_unique.is_empty() {
+    return None;
+  }
+  if sorted_unique.len() == 1 {
+    return Some(leaf_hash(&sorted_unique[0]));
+  }
+  let mut level: Vec<Address> =
+    sorted_unique.par_iter().map(leaf_hash).collect();
+  let zero = zero_address();
+  while level.len() > 1 {
+    level = level
+      .par_chunks(2)
+      .map(|pair| node_hash(&pair[0], pair.get(1).unwrap_or(&zero)))
+      .collect();
+  }
+  Some(level.into_iter().next().unwrap())
+}
+
 // ---------------------------------------------------------------------------
 // Free-form composition
 // ---------------------------------------------------------------------------

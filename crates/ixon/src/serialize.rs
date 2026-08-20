@@ -1474,6 +1474,8 @@ impl<'a> NamedMetaCursor<'a> {
 
 use super::comm::Comm;
 use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed};
+#[cfg(not(target_arch = "riscv64"))]
+use super::merkle::merkle_root_canonical_sorted;
 use super::merkle::{merkle_root_canonical, zero_address};
 
 impl Env {
@@ -1505,9 +1507,11 @@ impl Env {
     #[cfg(not(target_arch = "riscv64"))]
     use rayon::slice::ParallelSliceMut;
 
-    // Chatty per-section logging, off unless IX_VERBOSE=1, so we can
-    // diagnose serialization stalls on huge envs (Mathlib: ~1M consts).
-    let verbose = std::env::var("IX_VERBOSE").is_ok();
+    // Chatty per-section logging, off unless IX_VERBOSE=1 (or its
+    // pipeline-wide alias IX_COMPILE_DBG), so we can diagnose
+    // serialization stalls on huge envs (Mathlib: ~1M consts).
+    let verbose = std::env::var("IX_VERBOSE").is_ok()
+      || std::env::var("IX_COMPILE_DBG").is_ok();
     let overall_start = std::time::Instant::now();
 
     // Header: Tag4 with flag=0xE, size=VERSION (format version)
@@ -1529,6 +1533,12 @@ impl Env {
     const_addrs.par_sort_unstable();
     #[cfg(target_arch = "riscv64")]
     const_addrs.sort_unstable();
+    // Keys are unique (map) and just sorted — the `_sorted` variant
+    // skips the internal clone+re-sort and hashes levels in parallel.
+    #[cfg(not(target_arch = "riscv64"))]
+    let root =
+      merkle_root_canonical_sorted(&const_addrs).unwrap_or_else(zero_address);
+    #[cfg(target_arch = "riscv64")]
     let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     put_address(&root, buf);
 
@@ -1819,7 +1829,39 @@ impl Env {
   #[cfg(not(target_arch = "riscv64"))]
   pub fn put_file(&self, path: &std::path::Path) -> Result<u64, String> {
     use rayon::prelude::*;
+    let mut const_addrs: Vec<Address> =
+      self.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.par_sort_unstable();
+    let root =
+      merkle_root_canonical_sorted(&const_addrs).unwrap_or_else(zero_address);
+    self.put_file_with_header(path, &const_addrs, &root)
+  }
+
+  /// [`Env::put_file`] with the sorted const-address table and its
+  /// merkle root supplied by the caller. `rs_compile_env` needs the
+  /// root even on a fail-closed abort where no file is written, so it
+  /// computes both up front and hands them in here — previously the
+  /// table was collected+sorted and the ~2·N-node tree hashed twice
+  /// per compile. `const_addrs` MUST be exactly
+  /// `self.consts` keys lex-sorted, and `root` their canonical merkle
+  /// root; debug builds assert the former.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn put_file_with_header(
+    &self,
+    path: &std::path::Path,
+    const_addrs: &[Address],
+    root: &Address,
+  ) -> Result<u64, String> {
+    use rayon::prelude::*;
     use std::io::Write;
+    debug_assert_eq!(const_addrs.len(), self.consts.len());
+    // Per-section timing, mirroring `Env::put`'s logging (same knobs).
+    // `put_file` is the production writer, so stalls here are otherwise
+    // invisible — one opaque gap between "compile done" and the row.
+    let verbose = std::env::var("IX_VERBOSE").is_ok()
+      || std::env::var("IX_COMPILE_DBG").is_ok();
+    let overall_start = std::time::Instant::now();
+    let mut sec_start = std::time::Instant::now();
     let file = std::fs::File::create(path)
       .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
     let mut w = std::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
@@ -1838,14 +1880,18 @@ impl Env {
       };
     }
 
-    // Header: Tag4 (flag=0xE, size=VERSION) + canonical merkle root
-    // over consts.keys().
+    // Header: Tag4 (flag=0xE, size=VERSION) + the caller-supplied
+    // canonical merkle root over consts.keys().
     Tag4::new(Self::FLAG, Self::VERSION).put(&mut buf);
-    let mut const_addrs: Vec<Address> =
-      self.consts.iter().map(|e| e.key().clone()).collect();
-    const_addrs.par_sort_unstable();
-    let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
-    put_address(&root, &mut buf);
+    put_address(root, &mut buf);
+    if verbose {
+      eprintln!(
+        "[Env::put_file] header written ({} consts) in {:.1}s",
+        const_addrs.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
 
     // Bundle header fields: distinguished root + assumed-present list
     // (mirrors `Env::put`, including the writer-side main sanity check).
@@ -1880,11 +1926,19 @@ impl Env {
         emit!();
       }
     }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 1/6 blobs done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
 
     // Section 2: Consts — the dominant bytes; raw_bytes stream straight
     // through with no intermediate copy of the constant bodies
     put_u64(const_addrs.len() as u64, &mut buf);
-    for addr in &const_addrs {
+    for addr in const_addrs {
       if let Some(entry) = self.consts.get(addr) {
         put_address(addr, &mut buf);
         let bytes = entry.value().raw_bytes();
@@ -1894,6 +1948,14 @@ impl Env {
           .map_err(|e| format!("Env::put_file: write const: {e}"))?;
         written += bytes.len() as u64;
       }
+    }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 2/6 consts done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
     }
     // Section 3: anon_hints — the canonical hint channel, serialized
     // straight from the map as delta-coded §2 ranks + fused hints
@@ -1916,10 +1978,29 @@ impl Env {
       prev = rank + 1;
       emit!();
     }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 3/6 anon_hints done in {:.1}s ({written} \
+         bytes written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
 
     // Section 4: Names (topologically sorted; builds the name index the
-    // Named section encodes through).
+    // Named section encodes through). The topo sort is single-threaded
+    // over every name component — timed separately from the writes so
+    // its share is visible (see `topological_sort_names`).
     let sorted_names = topological_sort_names(&self.names);
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 4/6 names: topo sort of {} entries in \
+         {:.1}s",
+        sorted_names.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
     let mut name_index: NameIndex = NameIndex::new();
     put_u64(sorted_names.len() as u64, &mut buf);
     for (i, (addr, name)) in sorted_names.iter().enumerate() {
@@ -1927,6 +2008,14 @@ impl Env {
       put_address(addr, &mut buf);
       put_name_component(name, &mut buf);
       emit!();
+    }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 4/6 names done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
     }
 
     // Section 5: Named — the largest per-entry section, and the only
@@ -1960,7 +2049,7 @@ impl Env {
             put_named_indexed(
               entry.value(),
               &name_index,
-              &const_addrs,
+              const_addrs,
               &mut scratch,
               &mut b,
             )?;
@@ -1972,6 +2061,14 @@ impl Env {
         w.write_all(b).map_err(|e| format!("Env::put_file: write: {e}"))?;
         written += b.len() as u64;
       }
+    }
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 5/6 named done in {:.1}s ({written} bytes \
+         written)",
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
     }
     // Section 6: Comms
     let mut comm_addrs: Vec<Address> =
@@ -1988,6 +2085,14 @@ impl Env {
 
     emit!();
     w.flush().map_err(|e| format!("Env::put_file: flush: {e}"))?;
+    if verbose {
+      eprintln!(
+        "[Env::put_file] section 6/6 comms done in {:.1}s · ALL DONE: \
+         {written} bytes in {:.1}s",
+        sec_start.elapsed().as_secs_f64(),
+        overall_start.elapsed().as_secs_f64(),
+      );
+    }
     Ok(written)
   }
 

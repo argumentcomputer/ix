@@ -137,6 +137,15 @@ partial def kunivToLevel (u : MKUniv) (paramNames : Array Name) : Level :=
 structure AuxKernelCtx where
   tcState : Ix.Tc.TcState .meta
   ingressCache : Std.HashMap (Address × Address) MKExpr := {}
+  /-- Mirrors Rust `KernelCtx.aux_ingress_seen`: ids whose
+      `ingressAuxGenDep` dispatch already ran against this kenv. The
+      dispatch is deterministic per constant kind, so a seen id is at
+      final kenv fidelity and the ingress walkers skip re-expanding its
+      reference closure. Keyed by resolved id (not bare name) so an
+      address shifted by later aux registration reads as unseen. Lives
+      as long as the kenv (this ctx never clears — see the Pass-2
+      driver's KENV_CLEAR note). -/
+  auxIngressSeen : Std.HashSet MKId := {}
 
 /-- Fresh bridge context: empty Meta kenv, canonical prim addresses with
     no resolver (prim KIds get synthetic display names; the accelerations
@@ -343,7 +352,7 @@ def ensurePreludeInKenvOf (maps : AddrMaps) : KBridgeM Unit := do
     deps surface as `unknownConst` at TC time and are faulted in).
     Mirrors Rust `ensure_in_kenv_of_inner_env` (expr_utils.rs:1944). -/
 partial def ensureInKenvOfInner (name : Name) (maps : AddrMaps)
-    (replaceAxioStub : Bool) : KBridgeM Unit := do
+    (replaceAxioStub : Bool) (stubProofValues : Bool) : KBridgeM Unit := do
   let addr := maps.resolve name
   let zid : MKId := ⟨addr, name⟩
 
@@ -380,15 +389,26 @@ partial def ensureInKenvOfInner (name : Name) (maps : AddrMaps)
   | .thmInfo d =>
     let lp := d.cnst.levelParams
     let ty ← leanExprToKexpr d.cnst.type lp maps
-    let val ← leanExprToKexpr d.value lp maps
-    kenvInsert zid (.defn name lp .thm .safe .opaque
-      (UInt64.ofNat lp.size) ty val #[] zid)
+    -- Prewarm callers stub the proof (type-only `.axio`, the exact
+    -- fidelity `ingressTypeStub` gives thms) — kernel TC never unfolds
+    -- theorem values (proof irrelevance). Mirrors the Rust
+    -- `stub_proof_values` branch.
+    if stubProofValues then
+      kenvInsert zid (.axio name lp false (UInt64.ofNat lp.size) ty)
+    else
+      let val ← leanExprToKexpr d.value lp maps
+      kenvInsert zid (.defn name lp .thm .safe .opaque
+        (UInt64.ofNat lp.size) ty val #[] zid)
   | .opaqueInfo d =>
     let lp := d.cnst.levelParams
     let ty ← leanExprToKexpr d.cnst.type lp maps
-    let val ← leanExprToKexpr d.value lp maps
-    kenvInsert zid (.defn name lp .opaq .safe .opaque
-      (UInt64.ofNat lp.size) ty val #[] zid)
+    -- Same as the thm arm: opaque values are opaque to defeq.
+    if stubProofValues then
+      kenvInsert zid (.axio name lp false (UInt64.ofNat lp.size) ty)
+    else
+      let val ← leanExprToKexpr d.value lp maps
+      kenvInsert zid (.defn name lp .opaq .safe .opaque
+        (UInt64.ofNat lp.size) ty val #[] zid)
   | .axiomInfo a =>
     let lp := a.cnst.levelParams
     let ty ← leanExprToKexpr a.cnst.type lp maps
@@ -399,19 +419,25 @@ partial def ensureInKenvOfInner (name : Name) (maps : AddrMaps)
     kenvInsert zid (.quot name lp (quotKindOfLean q.kind) (UInt64.ofNat lp.size) ty)
   | .ctorInfo ctor =>
     -- Constructors ingress via their parent (the one downstream walk).
-    ensureInKenvOfInner ctor.induct maps replaceAxioStub
+    ensureInKenvOfInner ctor.induct maps replaceAxioStub stubProofValues
   | .recInfo _ =>
     -- Recursors are kernel-generated, never ingressed from Lean.
     pure ()
 
 /-- Mirrors Rust `ensure_in_kenv_of` (expr_utils.rs:2162). -/
 def ensureInKenvOf (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
-  ensureInKenvOfInner name maps false
+  ensureInKenvOfInner name maps false false
 
 /-- Stub-upgrading variant (Rust `ensure_full_in_kenv_of`,
     expr_utils.rs:2174). -/
 def ensureFullInKenvOf (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
-  ensureInKenvOfInner name maps true
+  ensureInKenvOfInner name maps true false
+
+/-- Bulk pre-warm variant (Rust `ensure_in_kenv_of_prewarm`): theorem /
+    opaque values ingress as type-only stubs — sufficient for kernel TC
+    and the dominant share of Pass-2 kenv memory otherwise. -/
+def ensureInKenvOfPrewarm (name : Name) (maps : AddrMaps) : KBridgeM Unit :=
+  ensureInKenvOfInner name maps false true
 
 /-! ## Open-term conversion (FVar context) -/
 

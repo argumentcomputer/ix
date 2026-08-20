@@ -103,6 +103,17 @@ pub struct KernelCtx {
   /// addresses that may shift as alpha-collapse reassigns addresses over
   /// the course of compilation.
   pub kenv: ix_kernel::env::KEnv<ix_kernel::mode::Meta>,
+  /// Ids whose `ingress_aux_gen_dep` dispatch has already run against
+  /// `kenv`. The dispatch is a deterministic function of the constant's
+  /// kind, so once an id is here its kenv entry is at final fidelity and
+  /// the walkers skip re-expanding its whole reference closure (that
+  /// re-expansion was Θ(blocks × closure) when the set lived per call).
+  /// Keyed by resolved `KId` — not bare `Name` — so an address shifted
+  /// by later aux registration reads as unseen and re-ingresses under
+  /// the new id, exactly as the per-call sets healed it. Must be cleared
+  /// together with `kenv` (the entries it vouches for die with it).
+  pub aux_ingress_seen:
+    rustc_hash::FxHashSet<ix_kernel::id::KId<ix_kernel::mode::Meta>>,
 }
 
 impl Default for KernelCtx {
@@ -113,7 +124,10 @@ impl Default for KernelCtx {
 
 impl KernelCtx {
   pub fn new() -> Self {
-    KernelCtx { kenv: ix_kernel::env::KEnv::new() }
+    KernelCtx {
+      kenv: ix_kernel::env::KEnv::new(),
+      aux_ingress_seen: rustc_hash::FxHashSet::default(),
+    }
   }
 }
 
@@ -1987,7 +2001,7 @@ struct SharingResult {
 /// This is the theoretical size if each unique subterm were stored once in a content-addressed store.
 /// Each unique expression = 32-byte key + value (with 32-byte hash references for children/externals).
 fn compute_hash_consed_size(
-  info_map: &std::collections::HashMap<blake3::Hash, sharing::SubtermInfo>,
+  info_map: &FxHashMap<blake3::Hash, sharing::SubtermInfo>,
 ) -> usize {
   info_map.values().map(|info| info.hash_consed_size).sum()
 }
@@ -2353,6 +2367,7 @@ enum MutConstKind {
 pub fn compile_definition(
   def: &Def,
   mut_ctx: &MutCtx,
+  ctx_addrs: &[Address],
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Definition, ConstantMeta), CompileError> {
@@ -2382,8 +2397,7 @@ pub fn compile_definition(
     univ_params.iter().map(|n| compile_name(n, stt)).collect();
   let all_addrs: Vec<Address> =
     def.all.iter().map(|n| compile_name(n, stt)).collect();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let data = Definition {
     kind: def.kind,
@@ -2430,6 +2444,7 @@ fn compile_recursor_rule(
 pub fn compile_recursor(
   rec: &Rec,
   mut_ctx: &MutCtx,
+  ctx_addrs: &[Address],
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Recursor, ConstantMeta), CompileError> {
@@ -2486,8 +2501,7 @@ pub fn compile_recursor(
 
   let all_addrs: Vec<Address> =
     rec.all.iter().map(|n| compile_name(n, stt)).collect();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Rec {
     name: name_addr,
@@ -2571,6 +2585,7 @@ fn compile_constructor(
 pub fn compile_inductive(
   ind: &Ind,
   mut_ctx: &MutCtx,
+  ctx_addrs: &[Address],
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<(Inductive, ConstantMeta, Vec<ConstantMeta>), CompileError> {
@@ -2625,8 +2640,7 @@ pub fn compile_inductive(
 
   let all_addrs: Vec<Address> =
     ind.ind.all.iter().map(|n| compile_name(n, stt)).collect();
-  let ctx_addrs: Vec<Address> =
-    ctx_to_all(mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+  let ctx_addrs: Vec<Address> = ctx_addrs.to_vec();
 
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Indc {
     name: name_addr,
@@ -3679,7 +3693,10 @@ fn compile_const_inner(
       stt,
       "compile_single_def",
     )?;
-    let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
+    let ctx_addrs: Vec<Address> =
+      ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+    let (data, meta) =
+      compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
     let _t_compile = _t0.elapsed();
     let n_unique_exprs = cache.exprs.len();
     let refs: Vec<Address> = cache.refs.iter().cloned().collect();
@@ -3834,7 +3851,10 @@ fn compile_const_inner(
           exprs.push((&rule.rhs, val.cnst.level_params.as_slice()));
         }
         preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_recursor")?;
-        let (data, meta) = compile_recursor(val, &mut_ctx, cache, stt)?;
+        let ctx_addrs: Vec<Address> =
+          ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
+        let (data, meta) =
+          compile_recursor(val, &mut_ctx, &ctx_addrs, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
         let result = apply_sharing_to_recursor_with_stats(data, refs, univs);
@@ -3942,9 +3962,13 @@ fn compile_mutual(
   }
   preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_mutual")?;
 
-  // Compile each constant
+  // Compile each constant. The block-context address list is identical
+  // for every member (a deterministic function of `mut_ctx`), so it is
+  // computed once here instead of sorted+re-interned per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
+  let ctx_addrs: Vec<Address> =
+    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
   for class in &sorted_classes {
     // Only push one representative per equivalence class into ixon_mutuals,
@@ -3954,7 +3978,8 @@ fn compile_mutual(
     for cnst in class {
       match cnst {
         MutConst::Defn(def) => {
-          let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
+          let (data, meta) =
+            compile_definition(def, &mut_ctx, &ctx_addrs, cache, stt)?;
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Defn(data));
             representative_pushed = true;
@@ -3963,7 +3988,7 @@ fn compile_mutual(
         },
         MutConst::Indc(ind) => {
           let (data, meta, ctor_metas_vec) =
-            compile_inductive(ind, &mut_ctx, cache, stt)?;
+            compile_inductive(ind, &mut_ctx, &ctx_addrs, cache, stt)?;
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Indc(data));
             representative_pushed = true;
@@ -3975,7 +4000,8 @@ fn compile_mutual(
           all_metas.insert(ind.ind.cnst.name.clone(), meta);
         },
         MutConst::Recr(rec) => {
-          let (data, meta) = compile_recursor(rec, &mut_ctx, cache, stt)?;
+          let (data, meta) =
+            compile_recursor(rec, &mut_ctx, &ctx_addrs, cache, stt)?;
           if !representative_pushed {
             ixon_mutuals.push(IxonMutConst::Recr(data));
             representative_pushed = true;
@@ -4034,7 +4060,9 @@ fn compile_mutual(
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
-          let meta = all_metas.get(&n).cloned().unwrap_or_default();
+          // `remove`, not `get().cloned()`: each name is consumed exactly
+          // once, and ConstantMeta is an arena-sized deep clone.
+          let meta = all_metas.remove(&n).unwrap_or_default();
           stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
           stt.name_to_addr.insert(n.clone(), addr.clone());
         }
@@ -4043,7 +4071,7 @@ fn compile_mutual(
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
-          let meta = all_metas.get(&n).cloned().unwrap_or_default();
+          let meta = all_metas.remove(&n).unwrap_or_default();
           stt.promote_aux(&n, addr.clone(), meta)?;
         }
       }
@@ -4087,7 +4115,9 @@ fn compile_mutual(
   for class in &sorted_classes {
     for cnst in class {
       let n = cnst.name();
-      let meta = all_metas.get(&n).cloned().unwrap_or_default();
+      // `remove`: consumed once per name (either the register_name arm
+      // or the promote_aux arm below), so no deep clone is needed.
+      let meta = all_metas.remove(&n).unwrap_or_default();
 
       let proj = match cnst {
         MutConst::Defn(_) => defn_proj_constant(idx, block_addr.clone()),
@@ -4099,10 +4129,9 @@ fn compile_mutual(
           let proj_addr = Address::hash(&proj_bytes);
           if aux {
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt.env.register_name(
-              n.clone(),
-              Named::new(proj_addr.clone(), meta.clone()),
-            );
+            stt
+              .env
+              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.name_to_addr.insert(n.clone(), proj_addr.clone());
           } else {
             stt.promote_aux(&n, proj_addr, meta)?;
@@ -4111,7 +4140,7 @@ fn compile_mutual(
           // Constructor projections
           for (cidx, ctor) in ind.ctors.iter().enumerate() {
             let ctor_meta =
-              all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
+              all_metas.remove(&ctor.cnst.name).unwrap_or_default();
             let ctor_proj =
               ctor_proj_constant(idx, cidx as u64, block_addr.clone());
             let mut ctor_bytes = Vec::new();
@@ -4121,7 +4150,7 @@ fn compile_mutual(
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.env.register_name(
                 ctor.cnst.name.clone(),
-                Named::new(ctor_addr.clone(), ctor_meta.clone()),
+                Named::new(ctor_addr.clone(), ctor_meta),
               );
               stt.name_to_addr.insert(ctor.cnst.name.clone(), ctor_addr);
             } else {
@@ -4139,10 +4168,7 @@ fn compile_mutual(
       let proj_addr = Address::hash(&proj_bytes);
       if aux {
         stt.env.store_const(proj_addr.clone(), proj);
-        stt.env.register_name(
-          n.clone(),
-          Named::new(proj_addr.clone(), meta.clone()),
-        );
+        stt.env.register_name(n.clone(), Named::new(proj_addr.clone(), meta));
         stt.name_to_addr.insert(n.clone(), proj_addr);
       } else {
         stt.promote_aux(&n, proj_addr, meta)?;
