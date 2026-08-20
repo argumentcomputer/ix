@@ -46,15 +46,17 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v7
+      # Native codegen fixes the available instructions at build time. Carry
+      # this report with the binaries so every later measurement records both
+      # the build host and its own run host.
+      - name: Log build CPU
+        uses: ./.github/actions/log-cpu
+        with:
+          label: Benchmark binary build CPU
+          output-file: ${{ runner.temp }}/benchmark-build-cpu.txt
       # Rust toolchain + cargo cache, so the cargo step inside `lake build`
       # does not recompile the Plonky3/multi-stark dependencies every run.
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      # Log the build CPU so a benchmark shift can be traced to a host change.
-      - name: Log build CPU
-        run: |
-          lscpu
-          flags=$(grep -m1 -oE 'avx2|avx512[a-z0-9_]*' /proc/cpuinfo | sort -u | tr '\n' ' ')
-          echo "AVX flags: ${flags:-absent}"
+      - uses: ./.github/actions/setup-rust-toolchain
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false
@@ -65,6 +67,7 @@ jobs:
           echo | lake run install            # copies ix -> ~/.local/bin/ix
           lake build bench-typecheck bench-recursive-verifier
           cp .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
           chmod +x ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
       - uses: actions/cache/save@v6
         with:
@@ -138,6 +141,11 @@ jobs:
         with:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
+      - name: Log compile CPU
+        uses: ./.github/actions/log-cpu
+        with:
+          label: Compile measurement CPU
+          provenance-file: ~/.local/bin/benchmark-build-cpu.txt
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # FC's library env lives in a sibling `${COMPILE_DIR}FC` package dir, so
       # point COMPILE_DIR there for the FC matrix job.
@@ -200,18 +208,25 @@ jobs:
       - if: steps.gates.outputs.zkvm == 'true'
         name: Cut closure shards for heavy primaries
         run: ix bench shard --env ${{ matrix.env }} --ixe ${{ matrix.env }}.ixe
-      # Cache the `.ixe` (plus the shard directory when the step above ran)
-      # for the benchmark job. For an env only decompile consumes, the
-      # `zkshards-*` directory doesn't exist and simply isn't stored.
-      # IMPORTANT: every restore of this key must list the same paths —
-      # actions/cache versions the entry by its path list.
+      # Cache the `.ixe` for the benchmark job. IMPORTANT: every restore of
+      # this key must list the same paths — actions/cache versions the
+      # entry by its path list, so a mismatched list is unreachable
+      # whatever the key. Keeping this entry to one path lets bench-pr's
+      # base-side restore fall back to that workflow's compile-job key (a
+      # stacked PR's base is a PR head, which never passes through here).
       - if: steps.gates.outputs.consumed == 'true'
         uses: actions/cache/save@v6
         with:
-          path: |
-            ${{ matrix.env }}.ixe
-            zkshards-${{ matrix.env }}
+          path: ${{ matrix.env }}.ixe
           key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
+      # Shards get their own entry rather than riding the `.ixe`: only the
+      # zkVM envs have any, so bundling them would put a directory that
+      # usually doesn't exist into every `.ixe` restore's path list.
+      - if: steps.gates.outputs.zkvm == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: zkshards-${{ matrix.env }}
+          key: bench-shards-${{ github.sha }}-${{ matrix.env }}
       # Upload the compile metrics. Testbed, workload, and threshold flags
       # all come from the registry (the reasoning behind each bound lives
       # next to `thresholds` in Ix/Cli/BenchCmd.lean).
@@ -261,20 +276,25 @@ jobs:
         params: ${{ fromJson(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/cache/restore@v6
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ github.sha }}
+      - name: Log run CPU
+        uses: ./.github/actions/log-cpu
+        with:
+          label: Benchmark measurement CPU
+          provenance-file: ~/.local/bin/benchmark-build-cpu.txt
       # The zkVM runs build their Rust host in-run; the rest run staged
       # binaries only. (Restore an install-sp1 step here when sp1 is
       # re-enabled in the registry.)
       - if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: ./.github/actions/setup-rust-toolchain
         with:
           cache-workspaces: ${{ matrix.params.backend }}
       - name: Install Zisk
         if: matrix.params.backend == 'zisk'
         uses: ./.github/actions/install-zisk
-      - uses: actions/cache/restore@v6
-        with:
-          path: ~/.local/bin
-          key: bench-bins-${{ github.sha }}
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so the staged binaries find libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and
@@ -284,16 +304,21 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      # Pull the `.ixe` (+ any pre-cut closure shards) the compile job
-      # built — do NOT recompile here. (The path list must match the
-      # compile job's save exactly.)
+      # Pull the `.ixe` the compile job built — do NOT recompile here.
+      # (The path list must match the compile job's save exactly.)
       - uses: actions/cache/restore@v6
         with:
-          path: |
-            ${{ matrix.params.env }}.ixe
-            zkshards-${{ matrix.params.env }}
+          path: ${{ matrix.params.env }}.ixe
           key: bench-ixe-${{ github.sha }}-${{ matrix.params.env }}
           fail-on-cache-miss: true
+      # The pre-cut closure shards, for the backends that have any. Not
+      # fail-on-cache-miss: cutting them in the compile job is an
+      # optimisation, and `ix bench run` still cuts lazily without them.
+      - if: matrix.params.backend == 'zisk' || matrix.params.backend == 'sp1'
+        uses: actions/cache/restore@v6
+        with:
+          path: zkshards-${{ matrix.params.env }}
+          key: bench-shards-${{ github.sha }}-${{ matrix.params.env }}
       # If the kernel rejects a constant, `ix bench run` exits 3 and this
       # step fails — that is a correctness regression, not a benchmark
       # blip. The completed rows are already on disk for the upload below.

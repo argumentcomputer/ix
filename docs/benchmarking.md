@@ -6,10 +6,10 @@ thin wrapper: the same `ix bench run` you type in a terminal is what both
 workflows execute, so every CI number is reproducible on your machine.
 
 - **`!benchmark` PR comment** (`.github/workflows/bench-pr.yml`) — on demand,
-  posts a **main-vs-PR** comparison table on the pull request. main's numbers
-  come from bencher.dev (`ix bench fetch-main`); the PR side is measured
-  fresh. When bencher can't supply the base SHA (not ingested yet, or the PR
-  adds new constants), the workflow measures the gap on a base checkout.
+  posts a **base-vs-PR** comparison table on the pull request. The base is the
+  PR's actual target branch. Its numbers come from bencher.dev (`ix bench
+  fetch-main`) when that SHA was ingested on main; otherwise the workflow
+  measures them on a checkout of the base SHA.
 - **Bencher.dev** (`.github/workflows/bench-main.yml`) — on every push to
   `main`, tracks each measure over time at <https://bencher.dev> (project
   `ix`), the canonical store the PR path reads from.
@@ -43,7 +43,7 @@ row** — an empty or quietly-partial cell can't be green.
 |---|---|
 | `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur/zkVM), fold each spawn's span window into its row, gate on the rows |
 | `shard`      | pre-cut the closure-shard artifacts for the env's heavy-tier constants (`ix shard extract` → `ix profile` → `ix shard`) |
-| `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
+| `compare`    | two rows files → Markdown base-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
 | `report`     | assemble per-cell tables into one Markdown report (CI posts it as the PR comment) |
@@ -76,7 +76,7 @@ ix bench run --backend aiur --env InitStd --mode prove \
 ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
   --backend aiur --mode prove --consts Nat.add_comm --out main.json
 ix bench compare --backend aiur --env InitStd --mode prove \
-  --main main.json --pr .lake/benches/aiur-InitStd-prove.json
+  --base main.json --pr .lake/benches/aiur-InitStd-prove.json
 
 # The recursion cell — fixed IxVM statements (Nat.add_comm,
 # Array.extract_append), resolved in the env's .ixe:
@@ -204,22 +204,32 @@ single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
 input box can't hold newlines:
 `!benchmark aiur execute BENCH_ENVS=InitStd,Mathlib BENCH_FULL=1`.
 
+The `IX_COMPILE_*` settings change compile-time RAM and speed but produce a
+bit-identical `.ixe`, so normal `.ixe` and compile-row caches are keyed only by
+commit and env. Add `fresh` when remeasuring a compile knob on an already
+benchmarked commit.
+
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
 (and no Python remains). Mode defaults per backend from the registry; the
 bare `execute` token flips `aiur` to Phase-1 only, and `recursive` to its
 recursive mode (unscheduled testbed, so no bencher baseline; OOMs the
 standard CI host — meant for a bigger manual dispatch). The bare `fresh`
-token makes every cell bypass its bencher baseline and re-measure the main
-side with a base-SHA run — for when the published baseline is suspect. PR
-runs never upload to bencher, so the comparison prints in the comment and
-the canonical baseline is untouched.
+token makes every cell bypass its bencher baseline and keeps persistent cached
+benchmark binaries, compiled `.ixe` files, and compile rows out of measured
+jobs. A cached head `ix` may bootstrap the canonical command parser, but the
+workflow replaces the full binary bundle before publishing it. Both the PR and
+base products are rebuilt; run-scoped artifacts carry them between jobs. Cargo
+and package dependency caches remain enabled. PR runs never upload to bencher,
+so the comparison prints in the comment and the canonical baseline is
+untouched.
 
 ## CI shape
 
 **bench-main.yml**: `build` (compile `ix` + `bench-typecheck` once, cache by
 SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
-`ix bench run --backend compile`, cache the `.ixe` + pre-cut zisk shards) →
+`ix bench run --backend compile`, cache the `.ixe` and pre-cut zisk shards
+separately) →
 `aiur` (execute + prove cells) / `zkvm-execute` / `ooc-check` (each: restore caches, one
 `ix bench run … --ixe`, `ix bench bmf`, upload via
 `.github/actions/bencher-track`) / `aiur-recursive` (same shape — it
@@ -241,15 +251,28 @@ The sync also asserts every measure's canonical units (bencher
 auto-creates measures with placeholder units on first upload).
 
 **bench-pr.yml**: `setup` (authorize the comment, resolve base/head SHAs) →
-`build` (PR binaries, cached by head SHA; ends with `ix bench ci parse` —
-the matrix can only exist once `ix` does) → `compile` (one measured
-`ix compile` per env: publishes the `.ixe` the prover cells restore AND
-the row the compile cell reuses as its PR side) → `benchmark` matrix (per cell:
-PR-side `ix bench run`; `ix bench fetch-main` for main's numbers, with a
-targeted base-checkout run covering only what bencher lacked;
+`build` (select or build the PR binaries, publish a run-scoped artifact,
+then `ix bench ci parse`) → `compile` (one measured `ix compile` per env,
+publishing a run-scoped `.ixe` + row artifact) → `benchmark` matrix (per cell:
+download only those run artifacts; run the PR side; fetch main's numbers,
+with a base-checkout run covering what bencher lacked (including every
+non-`main` base, whose `.ixe` can be restored from its earlier PR run);
 `ix bench compare` → table artifact) → `assemble` (`ix bench report` builds
 the comment body, unprivileged) → `comment` (posts it — the only job with a
-write token, running no PR code).
+write token, running no PR code). Normal runs may seed the run artifacts from
+persistent head/base-SHA caches. `fresh` bypasses those caches and rebuilds
+the measured products while retaining dependency caches.
+
+Every job that creates a timing row logs its CPU model, instruction set,
+effective CPU count, affinity, and cgroup allocation. Because the benchmark
+binaries use native codegen, their build jobs also record the build CPU and
+carry that report inside the binary cache or run artifact; measurement jobs
+print it next to their own host report. A cache entry created before this
+provenance was introduced remains usable and is reported as having an unknown
+build CPU. The exact `lscpu` model name is compared; a difference (or missing
+build provenance) is rendered as a warning in that cell's PR comment table.
+This is diagnostic only: the CPU model does not participate in cache keys, and
+only an explicit `fresh` request bypasses the measured-product caches.
 
 ## Not yet covered
 
@@ -257,8 +280,6 @@ write token, running no PR code).
   execute-only.
 - **sp1** — disabled in the registry (execute too slow per push);
   re-enable it there and it returns to the matrices and the parser.
-- **Non-`main` base branches** — `fetch-main` queries `branch=main`; a PR
-  against another base always pays the local base run.
 - **aiur recursive over the full selection in CI** — the `aiur-recursive`
   cell tracks IxVM recursion on its two fixed constants, but the full
   `Vectors.csv` fan-out of `bench-typecheck --recursive` is too heavy for

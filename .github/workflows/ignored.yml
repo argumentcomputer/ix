@@ -17,7 +17,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
       # Only restore the cache, since `ci.yml` will save the test binary to the cache first
       - uses: actions/cache/restore@v6
         with:
@@ -41,7 +41,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-8x
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
       # Only restore the cache, since `ci.yml` will save the test binary to the cache first
       - uses: actions/cache/restore@v6
         with:
@@ -83,7 +83,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v7
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: ./.github/actions/setup-rust-toolchain
       - uses: actions/cache@v6
         with:
           path: ./.lake
