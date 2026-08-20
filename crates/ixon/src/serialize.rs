@@ -1233,7 +1233,7 @@ fn get_name_component(
 // Named serialization
 // ============================================================================
 
-use super::env::{AuxLayout, Named};
+use super::env::{AuxLayout, LazyMetaWindow, Named};
 use super::metadata::{
   ConstantMeta, NameGet, NameIndex, NamePut, NameReverseIndex,
 };
@@ -1372,30 +1372,90 @@ pub fn get_named_indexed(
       buf.len()
     ));
   }
-  let before = buf.len();
-  let meta = ConstantMeta::get_with(buf, NameGet::Indexed(rev))?;
+  let (window, rest) = buf.split_at(meta_len);
+  *buf = rest;
+  // A parse failure inside the framed window (EOF before the grammar
+  // is done) means the header length disagrees with the content —
+  // surface it as the framing diagnostic, keeping the inner error.
+  let frame_err = |e: String| {
+    format!(
+      "get_named_indexed: metadata blob length mismatch (header says \
+       {meta_len}; parse failed inside the window: {e}){PRE_NORMAL_LEVELS}"
+    )
+  };
+  let (meta, m_len) = decode_window_meta(window, rev).map_err(frame_err)?;
   let mut named = Named::new(addr, meta);
   named.set_hints(hints);
-  match get_u8(buf)? {
-    0 => {},
-    1 => {
-      let orig_addr = get_address(buf)?;
-      let orig_meta = ConstantMeta::get_with(buf, NameGet::Indexed(rev))?;
+  let end = match decode_window_orig_header(window, m_len).map_err(frame_err)? {
+    None => m_len + 1,
+    Some((orig_addr, orig_off)) => {
+      let (orig_meta, end) =
+        decode_window_orig_meta(window, orig_off, rev).map_err(frame_err)?;
       named.set_original(orig_addr, orig_meta);
+      end
     },
-    x => return Err(format!("Named.original: invalid tag {x}")),
-  }
+  };
   // The header's length must frame exactly the bytes the parsers
   // consumed — a mismatch means a desynced, old-format, or tampered
   // entry.
-  let consumed = before - buf.len();
-  if consumed != meta_len {
+  if end != window.len() {
     return Err(format!(
       "get_named_indexed: metadata blob length mismatch (header says \
-       {meta_len}, parsed {consumed}){PRE_NORMAL_LEVELS}"
+       {meta_len}, parsed {end}){PRE_NORMAL_LEVELS}"
     ));
   }
   Ok(named)
+}
+
+/// Decode the metadata part of a §5 window (the `meta_len`-framed blob
+/// holding meta + optional aux_gen original). Returns the meta and its
+/// encoded length within the window. The window grammar lives in these
+/// three helpers — `get_named_indexed` and the lazy
+/// [`crate::env::LazyMetaWindow`] both parse through them.
+pub(crate) fn decode_window_meta(
+  window: &[u8],
+  rev: &NameReverseIndex,
+) -> Result<(ConstantMeta, usize), String> {
+  let mut slice: &[u8] = window;
+  let meta = ConstantMeta::get_with(&mut slice, NameGet::Indexed(rev))?;
+  Ok((meta, window.len() - slice.len()))
+}
+
+/// Read the original-form header right after the meta part: the
+/// presence tag and, when present, the original's address. Returns the
+/// address and the offset of the original's metadata in the window.
+pub(crate) fn decode_window_orig_header(
+  window: &[u8],
+  meta_len: usize,
+) -> Result<Option<(Address, usize)>, String> {
+  let mut slice: &[u8] = window
+    .get(meta_len..)
+    .ok_or_else(|| "Named.original: window truncated".to_string())?;
+  let before = slice.len();
+  match get_u8(&mut slice)? {
+    0 => Ok(None),
+    1 => {
+      let addr = get_address(&mut slice)?;
+      Ok(Some((addr, meta_len + (before - slice.len()))))
+    },
+    x => Err(format!("Named.original: invalid tag {x}")),
+  }
+}
+
+/// Decode the original's metadata at `off` in the window (an offset
+/// from [`decode_window_orig_header`]). Returns the meta and the
+/// offset one past its end, for framing checks.
+pub(crate) fn decode_window_orig_meta(
+  window: &[u8],
+  off: usize,
+  rev: &NameReverseIndex,
+) -> Result<(ConstantMeta, usize), String> {
+  let mut slice: &[u8] = window
+    .get(off..)
+    .ok_or_else(|| "Named.original: window truncated".to_string())?;
+  let before = slice.len();
+  let meta = ConstantMeta::get_with(&mut slice, NameGet::Indexed(rev))?;
+  Ok((meta, off + (before - slice.len())))
 }
 
 /// Streaming cursor over an env's §5 named entries: parse one `Named`
@@ -2106,17 +2166,30 @@ impl Env {
     Self::get_inner(buf, false)
   }
 
-  /// [`Self::get`], storing each `Named`'s metadata in the demoted
-  /// (serialized-bytes) repr as it is parsed. The structured metadata
-  /// for a whole env costs a large multiple of its encoding, so
+  /// [`Self::get`], keeping each `Named`'s §5 metadata window as
+  /// verbatim bytes (one shared arena) decoded on demand instead of
+  /// parsing it here — see [`LazyMetaWindow`]. The structured metadata
+  /// for a whole env costs a large multiple of its encoding (and
+  /// eagerly parsing it dominated the decompile pre-phase), so
   /// consumers that read metadata a bounded number of times per entry
-  /// (decompile) use this to keep the structured residency to one
-  /// entry at a time instead of the whole named section.
+  /// (decompile, `import_ixe`) use this to keep structured residency
+  /// to one entry at a time and pay decode cost only for entries they
+  /// touch. Trade-off: interior §5 corruption that [`Self::get`]
+  /// rejects at load surfaces here as a panic on first decode (the
+  /// window *framing* is still validated at load).
   pub fn get_demoted_named(buf: &mut &[u8]) -> Result<Self, String> {
     Self::get_inner(buf, true)
   }
 
   fn get_inner(buf: &mut &[u8], demote_named: bool) -> Result<Self, String> {
+    // Per-section read attribution behind the same knobs as the write
+    // side (`IX_VERBOSE` / `IX_COMPILE_DBG` — see `put_file`): this
+    // parse is the decompile pre-phase, whose section split is
+    // otherwise invisible.
+    let verbose = std::env::var("IX_VERBOSE").is_ok()
+      || std::env::var("IX_COMPILE_DBG").is_ok();
+    let mut sec_start = std::time::Instant::now();
+    let mut sec_bytes = buf.len();
     // Header: tag + stored merkle root (verified at the end against
     // the recomputed root; empty const sets store `zero_address()`) +
     // bundle fields.
@@ -2131,12 +2204,24 @@ impl Env {
     for (addr, bytes) in read_blob_section(buf, "Env::get")? {
       env.blobs.insert(addr, bytes);
     }
+    if verbose {
+      eprintln!(
+        "[Env::get] section 1/6 blobs: {} entries ({} bytes) in {:.2}s",
+        env.blobs.len(),
+        sec_bytes - buf.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+      sec_bytes = buf.len();
+    }
 
     // Section 2: Consts (lazy: read length prefix, slice bytes, defer parse)
     let num_consts = get_u64(buf)?;
     // §2 file order (ascending addresses, enforced below) — §3 hints
     // and §5 named entries key their constants by index into it.
     let mut consts_order: Vec<Address> =
+      Vec::with_capacity(capped_capacity(num_consts, buf));
+    let mut const_windows: Vec<(Address, &[u8])> =
       Vec::with_capacity(capped_capacity(num_consts, buf));
     for i in 0..num_consts {
       let addr = get_address(buf)?;
@@ -2150,20 +2235,6 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
-      // Per-entry integrity: hash the bytes and compare with the
-      // stored address. The env-level merkle root over `consts.keys()`
-      // catches missing/extra entries but not byte-tampering of a
-      // constant whose key is intact; without this check, corruption
-      // would slip past `Env::get` and surface much later as a
-      // misleading parse error inside `LazyConstant::get`.
-      let computed = Address::hash(bytes);
-      if computed != addr {
-        return Err(format!(
-          "Env::get: const at idx {i} bytes hash to {} but stored under {}",
-          computed.hex(),
-          addr.hex()
-        ));
-      }
       // §2 order is load-bearing for §3/§5 index resolution: writers
       // emit ascending addresses; a permuted section would silently
       // re-key every hint, so reject it outright.
@@ -2176,9 +2247,30 @@ impl Env {
         ));
       }
       consts_order.push(addr.clone());
+      const_windows.push((addr, bytes));
+    }
+    // Per-entry integrity: hash the bytes and compare with the stored
+    // address. The env-level merkle root over `consts.keys()` catches
+    // missing/extra entries but not byte-tampering of a constant whose
+    // key is intact; without this check, corruption would slip past
+    // `Env::get` and surface much later as a misleading parse error
+    // inside `LazyConstant::get`. Runs after the framing pass so the
+    // hashing goes wide (serial on the guest target).
+    verify_const_hashes(&const_windows)?;
+    for (addr, bytes) in const_windows {
       env
         .consts
         .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
+    }
+    if verbose {
+      eprintln!(
+        "[Env::get] section 2/6 consts: {num_consts} entries ({} bytes, \
+         hash-verified) in {:.2}s",
+        sec_bytes - buf.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+      sec_bytes = buf.len();
     }
 
     // `main` must reference a constant actually present in the file.
@@ -2189,18 +2281,36 @@ impl Env {
     }
 
     // Section 3: anon_hints (§2-index keyed; resolved via consts_order)
-    for (addr, hints) in read_hints_section(
+    let hints_entries = read_hints_section(
       buf,
       consts_order.len(),
       |i| consts_order[i].clone(),
       "Env::get",
-    )? {
+    )?;
+    let num_hints = hints_entries.len();
+    for (addr, hints) in hints_entries {
       env.anon_hints.insert(addr, hints);
+    }
+    if verbose {
+      eprintln!(
+        "[Env::get] section 3/6 hints: {num_hints} entries ({} bytes) in \
+         {:.2}s",
+        sec_bytes - buf.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+      sec_bytes = buf.len();
     }
 
     // Section 4: Names (build lookup table and reverse index for metadata)
     let num_names = get_u64(buf)?;
-    let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
+    // Pre-size the lookup: growth rehashes of a multi-million-entry
+    // map are a measurable slice of the parse.
+    let mut names_lookup: FxHashMap<Address, Name> =
+      FxHashMap::with_capacity_and_hasher(
+        capped_capacity(num_names, buf) + 1,
+        Default::default(),
+      );
     let mut name_reverse_index: NameReverseIndex =
       Vec::with_capacity(num_names as usize + 1);
     // Anonymous name is serialized first (index 0) — read it from the stream
@@ -2216,31 +2326,116 @@ impl Env {
       names_lookup.insert(addr.clone(), name.clone());
       env.names.insert(addr, name);
     }
+    if verbose {
+      eprintln!(
+        "[Env::get] section 4/6 names: {num_names} entries ({} bytes) in \
+         {:.2}s",
+        sec_bytes - buf.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+      sec_bytes = buf.len();
+    }
 
-    // Section 5: Named (use indexed deserialization for metadata)
+    // Section 5: Named (indexed metadata). The structured load parses
+    // each entry eagerly; the demoted load keeps every entry's
+    // `meta_len` window verbatim in one shared arena and decodes on
+    // demand (`LazyMetaWindow`) — eagerly parsing all §5 metadata just
+    // to re-demote it was the decompile pre-phase's dominant cost.
     let num_named = get_u64(buf)?;
-    for _ in 0..num_named {
-      let name_idx = get_u64(buf)? as usize;
-      let name_addr =
-        name_reverse_index.get(name_idx).cloned().ok_or_else(|| {
-          format!(
-            "Env::get: §5 name index {name_idx} out of range ({} \
-             names){PRE_COMPACT_KEYS}",
-            name_reverse_index.len()
-          )
+    let name_reverse_index: Arc<NameReverseIndex> =
+      Arc::new(name_reverse_index);
+    if demote_named {
+      let mut arena: Vec<u8> = Vec::new();
+      let mut pending: Vec<(
+        Name,
+        Address,
+        Option<ReducibilityHints>,
+        usize,
+        usize,
+      )> = Vec::with_capacity(capped_capacity(num_named, buf));
+      for _ in 0..num_named {
+        let name_idx = get_u64(buf)? as usize;
+        let name_addr =
+          name_reverse_index.get(name_idx).cloned().ok_or_else(|| {
+            format!(
+              "Env::get: §5 name index {name_idx} out of range ({} \
+               names){PRE_COMPACT_KEYS}",
+              name_reverse_index.len()
+            )
+          })?;
+        // Entry header (outside the framed window), mirroring
+        // `get_named_indexed`; the window itself is copied unparsed —
+        // interior validation happens on first decode.
+        let const_idx = get_u64(buf)? as usize;
+        let addr = ConstGet::Addrs(&consts_order)
+          .addr(const_idx, "get_named_indexed")?;
+        let hints = unfuse_opt_hint(get_u64(buf)?)
+          .map_err(|e| format!("get_named_indexed: {e}"))?;
+        let meta_len = get_u64(buf)? as usize;
+        if buf.len() < meta_len {
+          return Err(format!(
+            "get_named_indexed: metadata blob needs {meta_len} bytes, \
+             have {}{PRE_COMPACT_KEYS}",
+            buf.len()
+          ));
+        }
+        let (window, rest) = buf.split_at(meta_len);
+        *buf = rest;
+        let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
+          format!("Env::get: missing name for addr {:?}", name_addr)
         })?;
-      let mut named = get_named_indexed(
-        buf,
-        &name_reverse_index,
-        ConstGet::Addrs(&consts_order),
-      )?;
-      if demote_named {
-        named.demote();
+        let off = arena.len();
+        arena.extend_from_slice(window);
+        pending.push((name, addr, hints, off, meta_len));
       }
-      let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
-        format!("Env::get: missing name for addr {:?}", name_addr)
-      })?;
-      env.named.insert(name, named);
+      // Freeze the arena once, then hand every entry an offset into it.
+      let arena: Arc<[u8]> = arena.into();
+      for (name, addr, hints, off, len) in pending {
+        let named = Named::from_indexed_window(
+          addr,
+          hints,
+          Arc::new(LazyMetaWindow::new(
+            arena.clone(),
+            off,
+            len,
+            name_reverse_index.clone(),
+          )),
+        );
+        env.named.insert(name, named);
+      }
+    } else {
+      for _ in 0..num_named {
+        let name_idx = get_u64(buf)? as usize;
+        let name_addr =
+          name_reverse_index.get(name_idx).cloned().ok_or_else(|| {
+            format!(
+              "Env::get: §5 name index {name_idx} out of range ({} \
+               names){PRE_COMPACT_KEYS}",
+              name_reverse_index.len()
+            )
+          })?;
+        let named = get_named_indexed(
+          buf,
+          &name_reverse_index,
+          ConstGet::Addrs(&consts_order),
+        )?;
+        let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
+          format!("Env::get: missing name for addr {:?}", name_addr)
+        })?;
+        env.named.insert(name, named);
+      }
+    }
+    if verbose {
+      eprintln!(
+        "[Env::get] section 5/6 named: {num_named} entries ({} bytes) in \
+         {:.2}s{}",
+        sec_bytes - buf.len(),
+        sec_start.elapsed().as_secs_f64(),
+        if demote_named { " (demoted at parse)" } else { "" },
+      );
+      sec_start = std::time::Instant::now();
+      sec_bytes = buf.len();
     }
 
     // Section 6: Comms
@@ -2250,14 +2445,38 @@ impl Env {
       let comm = Comm::get(buf)?;
       env.comms.insert(addr, comm);
     }
+    if verbose {
+      eprintln!(
+        "[Env::get] section 6/6 comms: {num_comms} entries ({} bytes) in \
+         {:.2}s",
+        sec_bytes - buf.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+      sec_start = std::time::Instant::now();
+    }
+    let root_start = sec_start;
 
     // Verify the stored merkle root matches what we'd compute from
     // the §2 addresses (already strictly ascending — enforced above,
     // so `consts_order` is the sorted, duplicate-free key set). Empty
     // const set → expected = zero_address(). Rejects any tampering
-    // with the header.
+    // with the header. §2 enforced strictly ascending addresses, so
+    // `consts_order` is sorted and duplicate-free — the `_sorted`
+    // variant skips the internal clone+re-sort and hashes levels in
+    // parallel (mirroring the write side).
+    #[cfg(not(target_arch = "riscv64"))]
+    let computed_root =
+      merkle_root_canonical_sorted(&consts_order).unwrap_or_else(zero_address);
+    #[cfg(target_arch = "riscv64")]
     let computed_root =
       merkle_root_canonical(&consts_order).unwrap_or_else(zero_address);
+    if verbose {
+      eprintln!(
+        "[Env::get] merkle root over {} consts recomputed in {:.2}s",
+        consts_order.len(),
+        root_start.elapsed().as_secs_f64(),
+      );
+    }
     if computed_root != stored_root {
       return Err(format!(
         "Env::get: merkle root mismatch (stored={}, computed={})",
@@ -2949,6 +3168,41 @@ impl Env {
 /// up each Name via `DashMap::get` in the DFS loop). It was 22s slower on
 /// Mathlib because 4.7M shard-lock acquisitions dominate vs the one-time
 /// ~150 MB tuple-clone allocation.
+/// §2 per-entry integrity for the full readers: every constant's bytes
+/// must hash to the address they're stored under. Parallel on host —
+/// this is a pure sweep over ~GBs of blake3 input; serial on the guest
+/// target.
+#[cfg(not(target_arch = "riscv64"))]
+fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+  use rayon::prelude::*;
+  windows.par_iter().enumerate().try_for_each(|(i, (addr, bytes))| {
+    let computed = Address::hash(bytes);
+    if computed != *addr {
+      return Err(format!(
+        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        computed.hex(),
+        addr.hex()
+      ));
+    }
+    Ok(())
+  })
+}
+
+#[cfg(target_arch = "riscv64")]
+fn verify_const_hashes(windows: &[(Address, &[u8])]) -> Result<(), String> {
+  for (i, (addr, bytes)) in windows.iter().enumerate() {
+    let computed = Address::hash(bytes);
+    if computed != *addr {
+      return Err(format!(
+        "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+        computed.hex(),
+        addr.hex()
+      ));
+    }
+  }
+  Ok(())
+}
+
 fn topological_sort_names(
   names: &crate::map::IxonMap<Address, Name>,
 ) -> Vec<(Address, Name)> {
@@ -2957,35 +3211,14 @@ fn topological_sort_names(
   use rustc_hash::FxHashSet;
 
   let mut result = Vec::with_capacity(names.len() + 1);
-  let mut visited: FxHashSet<Address> = FxHashSet::default();
+  let mut visited: FxHashSet<Address> =
+    FxHashSet::with_capacity_and_hasher(names.len() + 1, Default::default());
 
   // Include anonymous name first so it gets index 0 in the name index.
   // Arena nodes frequently reference it as a binder name.
   let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
   result.push((anon_addr.clone(), Name::anon()));
   visited.insert(anon_addr);
-
-  fn visit(
-    name: &Name,
-    visited: &mut FxHashSet<Address>,
-    result: &mut Vec<(Address, Name)>,
-  ) {
-    let addr = Address::from_blake3_hash(*name.get_hash());
-    if visited.contains(&addr) {
-      return;
-    }
-
-    // Visit parent first
-    match name.as_data() {
-      NameData::Anonymous(_) => {},
-      NameData::Str(parent, _, _) | NameData::Num(parent, _, _) => {
-        visit(parent, visited, result);
-      },
-    }
-
-    visited.insert(addr.clone());
-    result.push((addr, name.clone()));
-  }
 
   // Clone-collect entries for direct iteration (avoids 4.7M DashMap lookups
   // during DFS). Parallel sort uses rayon over address bytes.
@@ -2995,8 +3228,34 @@ fn topological_sort_names(
   sorted_entries.par_sort_unstable_by(|a, b| a.0.cmp(&b.0));
   #[cfg(target_arch = "riscv64")]
   sorted_entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+
+  // Parent-first emission, iteratively: walk each entry's ancestor
+  // chain up to the first already-visited component, then emit the
+  // collected suffix root-first. The emission order is identical to
+  // the recursive DFS this replaces — §4 order is wire bytes. As
+  // before, addresses are recomputed from the name hashes (never
+  // trusted from the map key).
+  let mut chain: Vec<(Address, Name)> = Vec::new();
   for (_, name) in &sorted_entries {
-    visit(name, &mut visited, &mut result);
+    let mut cur_addr = Address::from_blake3_hash(*name.get_hash());
+    let mut cur = name;
+    loop {
+      if visited.contains(&cur_addr) {
+        break;
+      }
+      chain.push((cur_addr, cur.clone()));
+      match cur.as_data() {
+        NameData::Anonymous(_) => break,
+        NameData::Str(parent, _, _) | NameData::Num(parent, _, _) => {
+          cur_addr = Address::from_blake3_hash(*parent.get_hash());
+          cur = parent;
+        },
+      }
+    }
+    for (a, n) in chain.drain(..).rev() {
+      visited.insert(a.clone());
+      result.push((a, n));
+    }
   }
 
   result
@@ -3031,6 +3290,105 @@ mod tests {
       std::fs::remove_file(&path).ok();
       assert_eq!(written as usize, from_file.len());
       assert_eq!(buf, from_file, "put and put_file bytes diverge");
+    }
+  }
+
+  #[test]
+  fn demoted_load_matches_structured_load() {
+    use crate::metadata::ConstantMetaInfo;
+    let mut g = Gen::new(24);
+    for _ in 0..8 {
+      let env = gen_env(&mut g);
+      // Plant one entry whose metadata (and original) carry name
+      // references — the indexed encoding the lazy windows must
+      // resolve through the §4 reverse index; `gen_env`'s default
+      // metas exercise only the framing.
+      let existing: Vec<Address> =
+        env.named.iter().map(|e| e.value().addr.clone()).collect();
+      if let Some(sample_addr) = existing.first() {
+        let name_addrs: Vec<Address> =
+          env.names.iter().map(|e| e.key().clone()).collect();
+        let rich_name =
+          Name::str(Name::anon(), "lazy_window_probe".to_string());
+        env.names.insert(
+          Address::from_blake3_hash(*rich_name.get_hash()),
+          rich_name.clone(),
+        );
+        let mut rich = Named::new(
+          sample_addr.clone(),
+          ConstantMeta::new(ConstantMetaInfo::Muts {
+            all: vec![name_addrs.clone()],
+            aux_layout: None,
+          }),
+        );
+        rich.set_original(
+          sample_addr.clone(),
+          ConstantMeta::new(ConstantMetaInfo::Muts {
+            all: vec![name_addrs],
+            aux_layout: None,
+          }),
+        );
+        rich.set_hints(Some(ReducibilityHints::Abbrev));
+        env.named.insert(rich_name, rich);
+      }
+
+      let mut buf = Vec::new();
+      env.put(&mut buf).unwrap();
+      let structured = Env::get(&mut buf.as_slice()).unwrap();
+      let lazy = Env::get_demoted_named(&mut buf.as_slice()).unwrap();
+      assert_eq!(structured.named.len(), lazy.named.len());
+      for entry in structured.named.iter() {
+        let name = entry.key();
+        let s = entry.value();
+        let l = lazy
+          .named
+          .get(name)
+          .unwrap_or_else(|| panic!("lazy load dropped {name:?}"));
+        assert!(!l.is_meta_structured());
+        assert_eq!(s.addr, l.addr);
+        assert_eq!(s.hints(), l.hints());
+        assert_eq!(s.has_original(), l.has_original());
+        assert_eq!(*s.meta(), *l.meta());
+        match (s.original(), l.original()) {
+          (None, None) => {},
+          (Some((sa, sm)), Some((la, lm))) => {
+            assert_eq!(sa, la);
+            assert_eq!(*sm, *lm);
+          },
+          (s_orig, l_orig) => panic!(
+            "original mismatch: structured={:?} lazy={:?}",
+            s_orig.is_some(),
+            l_orig.is_some()
+          ),
+        }
+        // The mutating original-slot APIs materialize the window
+        // rather than losing data behind it.
+        let mut m = l.clone();
+        m.set_original(s.addr.clone(), ConstantMeta::default());
+        assert!(m.has_original());
+        assert_eq!(*m.meta(), *s.meta());
+        let mut c = l.clone();
+        c.clear_original();
+        assert!(!c.has_original());
+        assert_eq!(*c.meta(), *s.meta());
+      }
+      // The strong check: both loads must re-serialize byte-identically
+      // (every lazy window re-encodes through decode +
+      // `put_named_indexed`). Compared against the structured reload's
+      // bytes, not the pre-load `buf`: §4 emits the parent-closure of
+      // `env.names`, so a synthetic env whose multi-component names
+      // lack registered parents grows `names` on reload and permutes
+      // the §4 order — real pipeline envs register every component
+      // (whole-env byte roundtrips hold in CI), and the two *loads*
+      // must agree regardless.
+      let mut buf_s = Vec::new();
+      structured.put(&mut buf_s).unwrap();
+      let mut buf_l = Vec::new();
+      lazy.put(&mut buf_l).unwrap();
+      assert_eq!(
+        buf_s, buf_l,
+        "lazy and structured loads re-serialize differently"
+      );
     }
   }
 

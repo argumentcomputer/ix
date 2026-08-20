@@ -2,7 +2,7 @@
 
 use rustc_hash::FxHashSet;
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
@@ -14,7 +14,10 @@ use super::constant::{
 };
 use super::lazy::LazyConstant;
 use super::map::IxonMap;
-use super::metadata::{ConstantMeta, ConstantMetaInfo};
+use super::metadata::{ConstantMeta, ConstantMetaInfo, NameReverseIndex};
+use super::serialize::{
+  decode_window_meta, decode_window_orig_header, decode_window_orig_meta,
+};
 
 /// Metadata representation inside [`Named`]: structured, or demoted to
 /// its self-contained serialized form ([`ConstantMeta::put_raw`]),
@@ -25,6 +28,10 @@ use super::metadata::{ConstantMeta, ConstantMetaInfo};
 enum MetaRepr {
   Structured(Arc<ConstantMeta>),
   Bytes(Arc<[u8]>),
+  /// Lazily-decoded §5 window (see [`LazyMetaWindow`]). Covers BOTH
+  /// metadata slots: a `Window` entry keeps `Named::original == None`
+  /// and routes original reads through the window too.
+  Window(Arc<LazyMetaWindow>),
 }
 
 impl MetaRepr {
@@ -41,7 +48,8 @@ impl MetaRepr {
   }
 
   /// Materialize. Cheap `Arc` clone for `Structured`; a fresh decode per
-  /// call for `Bytes` (nothing is cached — mirroring `LazyConstant`).
+  /// call for `Bytes` and `Window` (nothing is cached — mirroring
+  /// `LazyConstant`).
   fn decode(&self) -> Arc<ConstantMeta> {
     match self {
       MetaRepr::Structured(m) => m.clone(),
@@ -52,7 +60,108 @@ impl MetaRepr {
             .expect("Named meta bytes produced by put_raw failed to decode"),
         )
       },
+      MetaRepr::Window(w) => Arc::new(w.decode_meta()),
     }
+  }
+}
+
+/// One §5 named-entry window kept verbatim from the file: the
+/// `meta_len`-framed bytes holding the entry's metadata plus optional
+/// aux_gen original, in the *indexed* name encoding, together with the
+/// file's §4 reverse index to resolve name references. Built by
+/// [`Env::get_demoted_named`]'s lazy load path; decoded on demand
+/// through the grammar helpers in `serialize` (the same ones
+/// `get_named_indexed` parses with).
+///
+/// Nothing is cached but `split` below — the structured metadata for a
+/// whole env costs a large multiple of its encoding, which is exactly
+/// what this repr exists to avoid holding.
+pub(crate) struct LazyMetaWindow {
+  /// Shared §5 arena: one contiguous copy of every entry's window.
+  arena: Arc<[u8]>,
+  off: usize,
+  len: usize,
+  rev: Arc<NameReverseIndex>,
+  /// Filled by the first meta decode: the meta part's encoded length
+  /// and the original's address if the entry carries one. Lets
+  /// `has_original`/`original` skip re-parsing the meta part — the
+  /// muts-plan `meta()` sweep warms it for every entry before the
+  /// decompile passes read originals.
+  split: OnceLock<(usize, Option<Address>)>,
+}
+
+impl std::fmt::Debug for LazyMetaWindow {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("LazyMetaWindow")
+      .field("off", &self.off)
+      .field("len", &self.len)
+      .finish_non_exhaustive()
+  }
+}
+
+impl LazyMetaWindow {
+  pub(crate) fn new(
+    arena: Arc<[u8]>,
+    off: usize,
+    len: usize,
+    rev: Arc<NameReverseIndex>,
+  ) -> Self {
+    LazyMetaWindow { arena, off, len, rev, split: OnceLock::new() }
+  }
+
+  fn window(&self) -> &[u8] {
+    &self.arena[self.off..self.off + self.len]
+  }
+
+  /// Decode the meta part, recording the split as a side effect.
+  ///
+  /// Corrupt window bytes are a panic, not an `Err`: `Named::meta` is
+  /// infallible by contract, and the lazy load validated only the
+  /// window framing — interior §5 corruption (which the eager loaders
+  /// would have rejected at load) surfaces here on first decode.
+  fn decode_meta(&self) -> ConstantMeta {
+    let window = self.window();
+    let (meta, meta_len) = decode_window_meta(window, &self.rev)
+      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
+    self.fill_split(window, meta_len);
+    meta
+  }
+
+  fn fill_split(&self, window: &[u8], meta_len: usize) {
+    let _ = self.split.get_or_init(|| {
+      let orig = decode_window_orig_header(window, meta_len)
+        .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
+      (meta_len, orig.map(|(addr, _)| addr))
+    });
+  }
+
+  fn split(&self) -> &(usize, Option<Address>) {
+    if let Some(s) = self.split.get() {
+      return s;
+    }
+    let window = self.window();
+    let (_, meta_len) = decode_window_meta(window, &self.rev)
+      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
+    self.fill_split(window, meta_len);
+    self.split.get().expect("split just filled")
+  }
+
+  fn has_original(&self) -> bool {
+    self.split().1.is_some()
+  }
+
+  fn decode_original(&self) -> Option<(Address, ConstantMeta)> {
+    let s = self.split();
+    let addr = s.1.clone()?;
+    let window = self.window();
+    // Re-derive the original's offset from its header (one tag byte +
+    // address — cheap) rather than caching a second offset.
+    let (header_addr, orig_off) = decode_window_orig_header(window, s.0)
+      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"))?;
+    debug_assert_eq!(header_addr, addr);
+    let (meta, _end) = decode_window_orig_meta(window, orig_off, &self.rev)
+      .unwrap_or_else(|e| panic!("corrupt §5 metadata window: {e}"));
+    Some((addr, meta))
   }
 }
 
@@ -117,25 +226,57 @@ impl Named {
 
   /// The aux_gen original form, if recorded (see field docs).
   pub fn original(&self) -> Option<(Address, Arc<ConstantMeta>)> {
+    if let MetaRepr::Window(w) = &self.meta {
+      debug_assert!(self.original.is_none());
+      return w.decode_original().map(|(a, m)| (a, Arc::new(m)));
+    }
     self.original.as_ref().map(|(a, m)| (a.clone(), m.decode()))
   }
 
   pub fn has_original(&self) -> bool {
-    self.original.is_some()
+    match &self.meta {
+      MetaRepr::Window(w) => w.has_original(),
+      _ => self.original.is_some(),
+    }
   }
 
   /// Record the aux_gen original form. Stored in the same repr as
   /// `self.meta`, so demoted entries stay fully demoted.
   pub fn set_original(&mut self, addr: Address, meta: ConstantMeta) {
+    self.materialize_window();
     let repr = match &self.meta {
       MetaRepr::Structured(_) => MetaRepr::structured(meta),
-      MetaRepr::Bytes(_) => MetaRepr::demoted(&meta),
+      MetaRepr::Bytes(_) | MetaRepr::Window(_) => MetaRepr::demoted(&meta),
     };
     self.original = Some((addr, repr));
   }
 
   pub fn clear_original(&mut self) {
+    self.materialize_window();
     self.original = None;
+  }
+
+  /// Collapse a lazy `Window` repr into the explicit slot form (in the
+  /// demoted repr — windows only exist on demoted loads) so the
+  /// mutating original-slot APIs above stay total. No-op otherwise.
+  fn materialize_window(&mut self) {
+    if let MetaRepr::Window(w) = &self.meta {
+      let meta = w.decode_meta();
+      let orig = w.decode_original();
+      self.meta = MetaRepr::demoted(&meta);
+      self.original = orig.map(|(a, m)| (a, MetaRepr::demoted(&m)));
+    }
+  }
+
+  /// Lazy §5 construction (see [`LazyMetaWindow`]): the metadata stays
+  /// as the file's indexed window bytes; the `original` slot is left
+  /// empty and reads route through the window.
+  pub(crate) fn from_indexed_window(
+    addr: Address,
+    hints: Option<ReducibilityHints>,
+    window: Arc<LazyMetaWindow>,
+  ) -> Self {
+    Named { addr, hints, meta: MetaRepr::Window(window), original: None }
   }
 
   /// Convert both metadata slots to the serialized-bytes repr.
@@ -250,7 +391,7 @@ pub struct LazyIndex {
   /// §4 positional index → name-component address, retained so §5
   /// entries can be re-parsed standalone (`get_named_indexed`) without
   /// re-walking §4. ~32 B per name.
-  pub name_reverse_index: crate::metadata::NameReverseIndex,
+  pub name_reverse_index: NameReverseIndex,
 }
 
 /// The Ixon environment.
