@@ -24,18 +24,34 @@
 
   # Correctness invariant
 
-  Generated code MUST produce the same unique-query SET as
-  `crates/aiur/src/execute.rs`'s interpreter. The concurrent record is
-  insert-once: the generated code NEVER touches multiplicities or
-  gadget counters (all flags emitted `false`) — every count is derived
-  from the set at seal by `trace::derive_multiplicities`, which is what
-  makes racing duplicate executions sound. Set invariants:
+  Generated code MUST produce a `QueryRecord` indistinguishable from
+  `crates/aiur/src/execute.rs`'s interpreter — INCLUDING multiplicities,
+  which accumulate inline through the record's atomic cells. Every
+  record has exactly ONE writer at a time (the span-fleet executor gives
+  each worker a private record; the seal claim runs after handoff), so
+  inline counting is exact by construction — there is no seal-time
+  derivation pass. Invariants:
 
-  - `insert_cc(args, output, false)` on `Ctrl::Return` of the callee,
-    AFTER the callee's body's inserts (first publish wins on races).
+  - Constrained hit ⇒ one consumption counted (`fetch_add` on the
+    entry's cell); constrained hit at count 0 ⇒ hint PROMOTION
+    (upstream dffb3f4): replay the callee body constrained so its
+    dependency tree activates, then the Return path reuses the entry.
+  - `Ctrl::Return`: reuse-and-count on an existing entry (asserting the
+    recomputed output agrees), else `insert_cc(args, output,
+    !unconstrained)` AFTER the body's inserts.
   - `memory_queries[size]` insertion order: each unique store gets a
-    pointer = `memory_queries.len()` at that moment.
+    pointer = `memory_queries.len()` at that moment; constrained
+    stores/loads count, unconstrained ones don't.
+  - Byte-gadget ops count through the `bytes{1,2}_queries` tables in
+    constrained mode only.
   - `io_buffer` ops preserve order.
+
+  The one deliberate divergence from inline exactness is HARNESS calls:
+  the executor's own per-block gauntlet calls are consumptions with no
+  circuit row behind them. The seal debumps each such root
+  (`QueryMap::debump`) and retracts dead roots' subgraphs
+  (`trace::cancel_dead_roots`), landing on exactly the counts
+  `trace::derive_multiplicities` would compute from scratch.
 
   # `unconstrained` propagation
 
@@ -383,21 +399,36 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   -- always skipped; when opUn = false both expressions collapse to
   -- just `unconstrained`.
   let cuExpr : String := if opUn then "true" else "unconstrained"
-  -- The concurrent record is an insert-once SET: probes never bump
-  -- (multiplicities are derived from the unique-query set at seal, so
-  -- runtime accounting does not exist on this path).
-  let bumpExpr : String := "false"
+  -- INLINE-ACCUMULATING record (single writer per record): a
+  -- constrained hit is a consumption, counted through the entry's
+  -- atomic cell right here. A constrained hit on a ZERO-count entry is
+  -- upstream dffb3f4's hint promotion: that entry was cached by an
+  -- unconstrained call, so its body's own lookup obligations were
+  -- never activated — replay the body constrained so activation
+  -- recurses through the dependency tree (the callee's Return path
+  -- finds the cached entry, asserts the recomputed output agrees, and
+  -- bumps instead of re-inserting).
+  let bumpStmt : String :=
+    if opUn then ""
+    else " if !__cu { result.multiplicity.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }"
+  let promoteArm : String :=
+    if opUn then ""
+    else
+      s!" if !__cu && result.multiplicity.load(std::sync::atomic::Ordering::Relaxed) == 0 \{" ++
+      s!" aiur_fn_{callee}(__args, record, io_buffer, false)?" ++
+      s!" } else \{"
+  let promoteClose : String := if opUn then "" else " }"
   -- Skip `try_into().unwrap()` on the cache hit: we statically know
   -- the cached output has exactly `OUT_{callee}` elements (only we
   -- ever insert into this slot via the matching aiur_fn_{callee}
   -- `Ctrl::Return`). An unchecked array copy is sound.
   let retExpr : String :=
-    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(__out.as_ptr() as *const [G; OUT_{callee}]) }; __ret"
+    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(result.output.as_ptr() as *const [G; OUT_{callee}]) }; __ret"
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
     s!" let __cu = {cuExpr};" ++
-    s!" if let Some(__out) = record.function_queries[{callee}].probe_bump(&__args[..], {bumpExpr}) \{" ++
-    retExpr ++
+    s!" if let Some(result) = record.function_queries[{callee}].get_mut(&__args[..]) \{" ++
+    promoteArm ++ bumpStmt ++ retExpr ++ promoteClose ++
     s!" } else \{ aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
@@ -414,7 +445,7 @@ private def emitStore (out : Nat) (values : Array ValIdx) : Array RustStmt :=
   let blockExpr : String :=
     s!"\{ let __values: [G; {size}] = {valsStr};" ++
     s!" let __mq = record.memory_queries.get(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
-    s!" __mq.store_cc(&__values[..], false) }"
+    s!" __mq.store_cc(&__values[..], !unconstrained) }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 /-- `Op::Load`: mirror execute.rs lines 328-345. Look up by pointer
@@ -424,7 +455,7 @@ private def emitLoad (out : Nat) (size : Nat) (ptr : ValIdx) : Array RustStmt :=
     s!"\{ let __mq = record.memory_queries.get(&{size}).ok_or(ExecError::InvalidMemorySize({size}))?;" ++
     s!" let __ptr_u64 = __v_{ptr}.as_canonical_u64();" ++
     s!" let __ptr_usize = usize::try_from(__ptr_u64).ok().ok_or(ExecError::PointerTooLarge(__ptr_u64))?;" ++
-    s!" let __args = __mq.load_bump(__ptr_usize, false).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
+    s!" let __args = __mq.load_bump(__ptr_usize, !unconstrained).ok_or(ExecError::UnboundPointer \{ ptr: __ptr_u64, size: {size} })?;" ++
     s!" let __arr: [G; {size}] = __args[..{size}].try_into().unwrap(); __arr }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__loaded" (some s!"[G; {size}]") (.lit blockExpr)
@@ -602,7 +633,18 @@ private def emitU32LessThan (out : Nat) (x y : ValIdx) : Array RustStmt :=
     s!" let __a_u32 = u32::try_from(__a_val).ok().ok_or(ExecError::U32OutOfRange(__a_val))?;" ++
     s!" let __b_u32 = u32::try_from(__b_val).ok().ok_or(ExecError::U32OutOfRange(__b_val))?;" ++
     s!" let __result = G::from_bool(__a_u32 < __b_u32);" ++
-    s!" __result }"
+    s!" if !unconstrained \{" ++
+    s!" let __x_bytes = __a_u32.to_le_bytes();" ++
+    s!" let __z_bytes = __b_u32.to_le_bytes();" ++
+    s!" let __c_u32 = __b_u32.wrapping_sub(__a_u32).wrapping_sub(1);" ++
+    s!" let __y_bytes = __c_u32.to_le_bytes();" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[0]), &G::from_u8(__x_bytes[1]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__x_bytes[2]), &G::from_u8(__x_bytes[3]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[0]), &G::from_u8(__y_bytes[1]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__y_bytes[2]), &G::from_u8(__y_bytes[3]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[0]), &G::from_u8(__z_bytes[1]));" ++
+    s!" record.bytes2_queries.bump_range_check(&G::from_u8(__z_bytes[2]), &G::from_u8(__z_bytes[3]));" ++
+    s!" } __result }"
   #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
 
 private def u32PackExpr (xs : Array ValIdx) : String :=
@@ -631,6 +673,7 @@ private def emitU8RangeCheck (i j : ValIdx) : Array RustStmt :=
     s!" let __bi = __vi.as_canonical_u64(); let __bj = __vj.as_canonical_u64();" ++
     s!" if __bi >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bi)); }" ++
     s!" if __bj >= 256 \{ return Err(ExecError::U8RangeCheckFailed(__bj)); }" ++
+    s!" record.bytes2_queries.bump_range_check(&__vi, &__vj);" ++
     s!" }"
   #[.exprStmt (.lit stmt)]
 
@@ -796,25 +839,19 @@ partial def emitCtrl (funIdx : FunIdx) (mcLabel? : Option String)
     let outArr : RustStmt :=
       .letStmt false "__ret" (some s!"[G; OUT_{funIdx}]")
         (.arrayLit (outs.map valVar))
-    -- Set-only, like every other emitted insert (see the correctness
-    -- invariant in the module header): the record never carries
-    -- execution-time multiplicities — every count is derived at seal.
-    -- Deliberately NOT upstream's hint-promotion logic (dffb3f4): that
-    -- replays a callee whose cached multiplicity is zero, which is the
-    -- accumulating interpreter's way of activating a promoted hint's
-    -- dependency tree. Here every multiplicity is zero during execution,
-    -- so that test would replay every callee on every constrained hit
-    -- (memoization collapse) — and seal-time derivation already walks
-    -- each newly-live row's body, activating the same tree exactly once.
-    let insertCall : RustStmt :=
-      .exprStmt (.call
-        (.field
-          (.index (.field (.var "record") "function_queries")
-            (.lit (toString funIdx)))
-          "insert_cc")
-        #[.ref (.index (.var "inp") (.lit "..")),
-          .ref (.index (.var "__ret") (.lit "..")),
-          .lit "false"])
+    -- INLINE-ACCUMULATING insert (upstream's semantics through the
+    -- atomic cell): the ordinary way to Return onto an already-cached
+    -- entry is constrained promotion of an unconstrained hint — reuse
+    -- the entry, assert the recomputed output agrees, and count this
+    -- caller's consumption. A fresh entry starts at 1 (constrained
+    -- caller consumed it) or 0 (unconstrained hint).
+    let insertCall : RustStmt := .exprStmt (.lit <|
+      s!"if let Some(result) = record.function_queries[{funIdx}].get_mut(&inp[..]) \{" ++
+      " debug_assert_eq!(result.output, &__ret[..]);" ++
+      " if !unconstrained { result.multiplicity.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }" ++
+      " } else {" ++
+      s!" record.function_queries[{funIdx}].insert_cc(&inp[..], &__ret[..], !unconstrained);" ++
+      " }")
     -- Wrap in Ok(...) since fn now returns Result<[G; OUT_N], ExecError>.
     return #[outArr, insertCall,
       .returnStmt (.call (.var "Ok") #[.var "__ret"])]

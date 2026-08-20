@@ -842,8 +842,15 @@ fn width_slots(record: &QueryRecord) -> Vec<u32> {
 /// so every cell is zero until derivation writes it, and no shadow
 /// arrays or copy-back pass exist).
 trait MultStore: Sync {
-  /// Previous count of function `f` entry `idx` (0 = this bump made
-  /// the entry live).
+  /// The previous count at which `fn_add` crossed a liveness boundary.
+  /// Additive stores enqueue on 0 (the bump that made the entry live);
+  /// the subtractive cancellation store enqueues on 1 (the retraction
+  /// that made it dead).
+  const BOUNDARY: u64 = 0;
+
+  /// Previous count of function `f` entry `idx` (compared against
+  /// [`Self::BOUNDARY`] to decide whether the entry's row joins the
+  /// frontier).
   fn fn_add(&self, f: usize, idx: usize) -> u64;
   fn mem_add(&self, width: usize, ptr: usize);
   fn bytes1_add(&self, byte: usize, col: usize);
@@ -897,6 +904,34 @@ impl MultStore for RecordStore<'_> {
   }
 }
 
+/// The subtractive twin of [`RecordStore`]: every "add" RETRACTS one
+/// consumption, and the frontier boundary is the 1 → 0 transition —
+/// the retraction that killed the entry, whose row must then have its
+/// own pushes retracted in turn. Drives [`cancel_dead_roots`].
+struct CancelStore<'a> {
+  record: &'a QueryRecord,
+  mems: Vec<&'a crate::querymap::QueryMap>,
+  width_slot: Vec<u32>,
+}
+
+impl MultStore for CancelStore<'_> {
+  const BOUNDARY: u64 = 1;
+
+  fn fn_add(&self, f: usize, idx: usize) -> u64 {
+    self.record.function_queries[f].mult_sub(idx)
+  }
+  fn mem_add(&self, width: usize, ptr: usize) {
+    let slot = self.width_slot[width] as usize;
+    self.mems[slot].mult_sub(ptr);
+  }
+  fn bytes1_add(&self, byte: usize, col: usize) {
+    self.record.bytes1_queries.sub_count(byte, col);
+  }
+  fn bytes2_add(&self, cell: usize, col: usize) {
+    self.record.bytes2_queries.sub_count(cell, col);
+  }
+}
+
 /// Lookup channels as the integers they are. `CountSink::push` is the
 /// hottest dispatch in derivation and every push carries its channel in
 /// `args[0]`; matching on the canonical value lets the compiler emit a
@@ -932,7 +967,7 @@ impl<S: MultStore> CountSink<'_, S> {
   /// is the consumption that made it live.
   #[inline]
   fn charge_call(&mut self, f: usize, idx: usize) {
-    if self.store.fn_add(f, idx) == 0 {
+    if self.store.fn_add(f, idx) == S::BOUNDARY {
       // Unconstrained functions have no circuit, hence no rows to walk
       // (the compiler only emits constrained pushes to constrained
       // callees; tallying is still harmless).
@@ -1063,13 +1098,30 @@ fn derive_into<S: MultStore>(
     let idx = record.function_queries[*f]
       .get_index_of(input)
       .expect("claimed query must exist in the record");
-    if store.fn_add(*f, idx) == 0 && toplevel.functions[*f].constrained {
+    if store.fn_add(*f, idx) == S::BOUNDARY
+      && toplevel.functions[*f].constrained
+    {
       frontier.push((
         u32::try_from(*f).expect("fn idx fits u32"),
         u32::try_from(idx).expect("entry idx fits u32"),
       ));
     }
   }
+  derive_into_frontier(toplevel, record, io_buffer, frontier, store);
+}
+
+/// The shared wave loop over an already-seeded frontier: each enqueued
+/// row is walked exactly once (frontier membership comes from crossing
+/// the store's [`MultStore::BOUNDARY`], which happens once per entry),
+/// with every push the row's witness would emit charged into `store` —
+/// additively for derivation, subtractively for cancellation.
+fn derive_into_frontier<S: MultStore>(
+  toplevel: &Toplevel,
+  record: &QueryRecord,
+  io_buffer: &IOBuffer,
+  mut frontier: Vec<(u32, u32)>,
+  store: &S,
+) {
   // Fixed lanes per wave rather than rayon's own splitting. Letting
   // `par_iter` split a wave down to single rows put a fork/join between
   // every BFS level — tens of thousands per span — and the resulting
@@ -1192,6 +1244,58 @@ pub fn derive_multiplicities_into(
   // 125s, against 96.5s sharing one pool) — with static pools the box
   // goes IDLE, because no span's frontier is wide enough on its own.
   derive_into(toplevel, record, io_buffer, claims, &store);
+}
+
+/// Retract the consumption subgraphs of DEAD warm roots from an
+/// inline-accumulated record.
+///
+/// Inline accumulation counts every consumption at execution time, so
+/// after the seal claim runs, the record's counts are exact — except
+/// for warm scaffolding: rows the executor drove directly (one gauntlet
+/// call per schedule block) whose entries the claim's own walk never
+/// consumes. Each such root, once its single harness consumption is
+/// debumped away (`QueryMap::debump`), sits at count 0 while its BODY's
+/// consumptions of children still stand — pulls with no live pushing
+/// row. This walk removes them: seed with the zero-count roots, replay
+/// each dead row once (the same [`CountSink`] walk derivation uses, via
+/// the subtractive [`CancelStore`]), and recurse into any child whose
+/// count hits zero. The fixpoint equals what [`derive_multiplicities`]
+/// computes from scratch — counts of exactly the claim-reachable
+/// consumptions — reached from the other side, at the cost of the dead
+/// fraction (measured 7.5-9.3% of rows) instead of the whole record.
+///
+/// `roots` must already be at count 0 (debumped); their rows are walked
+/// unconditionally. Call exactly once, at seal, after the claim has
+/// executed and every warm root has been debumped.
+pub fn cancel_dead_roots(
+  toplevel: &Toplevel,
+  record: &QueryRecord,
+  io_buffer: &IOBuffer,
+  roots: &[(usize, Vec<G>)],
+) {
+  let mut frontier: Vec<(u32, u32)> = Vec::new();
+  for (f, input) in roots {
+    let idx = record.function_queries[*f]
+      .get_index_of(input)
+      .expect("dead root must exist in the record");
+    debug_assert!(
+      record.function_queries[*f].mult_is_zero(idx),
+      "cancel root still has live consumers"
+    );
+    if toplevel.functions[*f].constrained {
+      frontier.push((
+        u32::try_from(*f).expect("fn idx fits u32"),
+        u32::try_from(idx).expect("entry idx fits u32"),
+      ));
+    }
+  }
+  if frontier.is_empty() {
+    return;
+  }
+  let mems: Vec<&crate::querymap::QueryMap> =
+    record.memory_queries.iter().map(|(_, m)| m).collect();
+  let store = CancelStore { record, mems, width_slot: width_slots(record) };
+  derive_into_frontier(toplevel, record, io_buffer, frontier, &store);
 }
 
 /// Debug-build gate for [`derive_multiplicities_into`]'s exactly-once

@@ -1271,7 +1271,8 @@ pub fn bytes2_execute(
 // ============================================================================
 
 #[inline]
-pub fn bytes1_bit_decompose_value(byte: G, _record: &QueryRecord) -> [G; 8] {
+pub fn bytes1_bit_decompose_value(byte: G, record: &QueryRecord) -> [G; 8] {
+  record.bytes1_queries.bump_bit_decomposition(&byte);
   let byte_u64 = byte.as_canonical_u64();
   [
     G::from_bool(byte_u64 & 1 == 1),
@@ -1289,7 +1290,8 @@ pub fn bytes1_bit_decompose_value(byte: G, _record: &QueryRecord) -> [G; 8] {
 /// of other toplevels that might.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_left_value(byte: G, _record: &QueryRecord) -> G {
+pub fn bytes1_shift_left_value(byte: G, record: &QueryRecord) -> G {
+  record.bytes1_queries.bump_shift_left(&byte);
   Bytes1::shift_left(&byte)
 }
 
@@ -1297,27 +1299,32 @@ pub fn bytes1_shift_left_value(byte: G, _record: &QueryRecord) -> G {
 /// codegen of other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes1_shift_right_value(byte: G, _record: &QueryRecord) -> G {
+pub fn bytes1_shift_right_value(byte: G, record: &QueryRecord) -> G {
+  record.bytes1_queries.bump_shift_right(&byte);
   Bytes1::shift_right(&byte)
 }
 
 #[inline]
-pub fn bytes2_xor_value(a: G, b: G, _record: &QueryRecord) -> G {
+pub fn bytes2_xor_value(a: G, b: G, record: &QueryRecord) -> G {
+  record.bytes2_queries.bump_xor(&a, &b);
   Bytes2::xor(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_and_value(a: G, b: G, _record: &QueryRecord) -> G {
+pub fn bytes2_and_value(a: G, b: G, record: &QueryRecord) -> G {
+  record.bytes2_queries.bump_and(&a, &b);
   Bytes2::and(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_or_value(a: G, b: G, _record: &QueryRecord) -> G {
+pub fn bytes2_or_value(a: G, b: G, record: &QueryRecord) -> G {
+  record.bytes2_queries.bump_or(&a, &b);
   Bytes2::or(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_less_than_value(a: G, b: G, _record: &QueryRecord) -> G {
+pub fn bytes2_less_than_value(a: G, b: G, record: &QueryRecord) -> G {
+  record.bytes2_queries.bump_less_than(&a, &b);
   Bytes2::less_than(&a, &b)
 }
 
@@ -1325,17 +1332,20 @@ pub fn bytes2_less_than_value(a: G, b: G, _record: &QueryRecord) -> G {
 /// other toplevels.
 #[inline]
 #[allow(dead_code)]
-pub fn bytes2_mul_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
+pub fn bytes2_mul_value(a: G, b: G, record: &QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_mul(&a, &b);
   Bytes2::mul(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_xor_split7_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
+pub fn bytes2_xor_split7_value(a: G, b: G, record: &QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_xor_split7(&a, &b);
   Bytes2::xor_split7(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_xor_split4_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
+pub fn bytes2_xor_split4_value(a: G, b: G, record: &QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_xor_split4(&a, &b);
   Bytes2::xor_split4(&a, &b)
 }
 
@@ -1344,14 +1354,17 @@ pub fn bytes2_xor_split4_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
 /// chip; carry is derived natively. The codegen path uses this
 /// helper so the add gadget runs exactly once.
 #[inline]
-pub fn bytes2_add_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
+pub fn bytes2_add_value(a: G, b: G, record: &QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_add(&a, &b);
   Bytes2::add(&a, &b)
 }
 
 #[inline]
-pub fn bytes2_sub_value(a: G, b: G, _record: &QueryRecord) -> (G, G) {
+pub fn bytes2_sub_value(a: G, b: G, record: &QueryRecord) -> (G, G) {
+  record.bytes2_queries.bump_sub(&a, &b);
   Bytes2::sub(&a, &b)
 }
+
 
 /// Re-exports for the codegen'd kernel (`ix::aiur_ixvm`). The generated
 /// code names these as `aiur::execute::*`; we re-export them `pub` here

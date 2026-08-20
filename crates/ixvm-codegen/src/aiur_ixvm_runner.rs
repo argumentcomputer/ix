@@ -55,11 +55,11 @@ pub fn execute_ixvm_with_record(
   if !toplevel.functions[fun_idx].entry {
     return Err(ExecError::NotEntryFunction(fun_idx));
   }
-  // No error handling is needed here at all: the record is an
-  // insert-once SET (nothing is ever pending or reserved), so an
-  // erroring body simply never inserts and the error propagates.
-  // Racing duplicate executions dedup at insert; multiplicities are
-  // derived from the final set at seal (`trace::derive_multiplicities`),
-  // never accumulated during execution.
+  // No error handling is needed here at all: nothing in the record is
+  // ever pending or reserved, so an erroring body simply never inserts
+  // and the error propagates. Multiplicities accumulate INLINE through
+  // the record's atomic cells as consumptions happen — exact under the
+  // record's single-writer discipline (one thread owns a record for
+  // its whole life; see `ix_ffi`'s span-fleet executor).
   execute_generated(fun_idx, args, record, io_buffer)
 }

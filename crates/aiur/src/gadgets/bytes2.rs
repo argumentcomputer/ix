@@ -452,6 +452,13 @@ impl Bytes2Queries {
     self.0[cell][col].fetch_add(1, Ordering::Relaxed);
   }
 
+  /// Remove one count (seal-time dead-path cancellation).
+  pub(crate) fn sub_count(&self, cell: usize, col: usize) {
+    use std::sync::atomic::Ordering;
+    let prev = self.0[cell][col].fetch_sub(1, Ordering::Relaxed);
+    assert!(prev > 0, "bytes2 sub_count underflow at [{cell}][{col}]");
+  }
+
   /// Quiescent snapshot of one row as field elements (trace building,
   /// after seal).
   pub(crate) fn row_g(&self, cell: usize) -> [G; TRACE_WIDTH] {

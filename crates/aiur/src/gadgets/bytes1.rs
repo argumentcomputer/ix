@@ -242,6 +242,13 @@ impl Bytes1Queries {
     self.0[byte][col].fetch_add(1, Ordering::Relaxed);
   }
 
+  /// Remove one count (seal-time dead-path cancellation).
+  pub(crate) fn sub_count(&self, byte: usize, col: usize) {
+    use std::sync::atomic::Ordering;
+    let prev = self.0[byte][col].fetch_sub(1, Ordering::Relaxed);
+    assert!(prev > 0, "bytes1 sub_count underflow at [{byte}][{col}]");
+  }
+
   /// Quiescent snapshot of one row as field elements (trace building,
   /// after seal).
   pub(crate) fn row_g(&self, byte: usize) -> [G; TRACE_WIDTH] {

@@ -457,6 +457,15 @@ impl QueryMap {
     self.mult_atomic(i).fetch_add(1, Ordering::Relaxed)
   }
 
+  /// Remove one from entry `i`'s multiplicity, returning the PREVIOUS
+  /// count — the seal-time cancellation walk retracting a dead warm
+  /// path's consumptions (`trace::cancel_dead_roots`).
+  pub(crate) fn mult_sub(&self, i: usize) -> u64 {
+    let prev = self.mult_atomic(i).fetch_sub(1, Ordering::Relaxed);
+    assert!(prev > 0, "mult_sub underflow: entry {i} already zero");
+    prev
+  }
+
   /// Whether entry `i`'s multiplicity is zero — the witness builder's
   /// live-row scan, without materializing the entry.
   pub(crate) fn mult_is_zero(&self, i: usize) -> bool {
@@ -549,6 +558,20 @@ impl QueryMap {
 
   pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
     self.probe_index(key)
+  }
+
+  /// Remove ONE consumption from `key`'s entry, returning its remaining
+  /// count. The seal-time correction for harness-driven warm roots: the
+  /// executor's own call to a block's gauntlet bumps the entry like any
+  /// caller, but the harness is not a circuit row, so that single
+  /// phantom consumption must come back off before the witness is
+  /// built. Asserts the entry exists and the count was nonzero — a
+  /// debump of an absent or zero entry is a caller bug, not a race.
+  pub fn debump(&self, key: &[G]) -> u64 {
+    let i = self.probe_index(key).expect("debump of an absent entry");
+    let prev = self.mult_atomic(i).fetch_sub(1, Ordering::Relaxed);
+    assert!(prev > 0, "debump of a zero-count entry");
+    prev - 1
   }
 
   pub fn get(&self, key: &[G]) -> Option<QueryRef<'_>> {

@@ -551,19 +551,10 @@ impl AiurSystem {
       executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
         .expect("IxVM-native Aiur execution failed during prove_ixvm");
     drop(_g);
-    // The codegen'd executor fills the record as an insert-once SET —
-    // multiplicities are DERIVED from the unique-query set here, at the
-    // seal, not accumulated during execution (which is what makes
-    // duplicate speculative execution by concurrent fillers sound).
-    {
-      let _g = tracing::info_span!("aiur/derive_mults").entered();
-      crate::trace::derive_multiplicities_into(
-        &self.toplevel,
-        &query_record,
-        io_buffer,
-        &[(fun_idx, input.to_vec())],
-      );
-    }
+    // The codegen'd executor accumulates every consumption inline
+    // through the record's atomic cells (one writer per record), so the
+    // counts are final here — identical to what the interpreter's
+    // accumulation produces, with no seal-time derivation pass.
     if std::env::var_os("IX_AIUR_PRED_RAM").is_some() {
       const GIB: f64 = 1_073_741_824.0;
       let p = self.peak_prove_bytes(&query_record);

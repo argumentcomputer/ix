@@ -197,26 +197,16 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
 
   // Same execution-phase span as `dispatch_execute`/the prove pipeline.
   let _g = tracing::info_span!("aiur/execute_ixvm").entered();
-  let args = args.map(|x| lean_unbox_g(&x));
-  let claim_input = args.clone();
   let (query_record, output) =
     match ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
       &toplevel,
       fun_idx,
-      args,
+      args.map(|x| lean_unbox_g(&x)),
       &mut io_buffer,
     ) {
       Ok(pair) => pair,
       Err(err) => return LeanExcept::error_string(&err.to_string()),
     };
-  // Boundary derivation — see `dispatch_execute` for why the set-only
-  // record seals here rather than accumulating during execution.
-  aiur::trace::derive_multiplicities_into(
-    &toplevel,
-    &query_record,
-    &io_buffer,
-    &[(fun_idx, claim_input)],
-  );
 
   LeanExcept::ok(build_execute_result(
     &output,
@@ -427,24 +417,13 @@ fn dispatch_execute(
       .execute(fun_idx, input, io_buffer)
       .map_err(|e| format!("execute (bytecode): {e}"))
   } else {
-    let claim_input = input.clone();
-    let (record, output) = ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+    // The kernel accumulates inline through the record's atomic cells
+    // (single writer per record), so its counts are final on return —
+    // identical to the interpreter arm's, no boundary seal needed.
+    ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
       toplevel, fun_idx, input, io_buffer,
     )
-    .map_err(|e| format!("execute_ixvm: {e}"))?;
-    // The kernel's record is an insert-once SET (multiplicities all
-    // zero during execution; racing speculative executions are only
-    // confluent because nothing accumulates). Lean-facing callers get
-    // main's semantics — real consumption counts — so the seal-time
-    // derivation runs HERE, at the boundary, reproducing exactly the
-    // counts the accumulating interpreter arm produces.
-    aiur::trace::derive_multiplicities_into(
-      toplevel,
-      &record,
-      io_buffer,
-      &[(fun_idx, claim_input)],
-    );
-    Ok((record, output))
+    .map_err(|e| format!("execute_ixvm: {e}"))
   }
 }
 
@@ -621,25 +600,16 @@ extern "C" fn rs_aiur_multi_stark_execute(
       Err(err) => return LeanExcept::error_string(&err.to_string()),
     }
   } else {
-    let claim_input = input.clone();
-    let (record, output) =
-      match ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
-        &toplevel,
-        fun_idx,
-        input,
-        &mut io_buffer,
-      ) {
-        Ok(pair) => pair,
-        Err(err) => return LeanExcept::error_string(&err.to_string()),
-      };
-    // Boundary derivation — see `dispatch_execute`.
-    aiur::trace::derive_multiplicities_into(
+    // Inline-accumulating kernel: counts are final on return.
+    match ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
       &toplevel,
-      &record,
-      &io_buffer,
-      &[(fun_idx, claim_input)],
-    );
-    (record, output)
+      fun_idx,
+      input,
+      &mut io_buffer,
+    ) {
+      Ok(pair) => pair,
+      Err(err) => return LeanExcept::error_string(&err.to_string()),
+    }
   };
 
   let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
