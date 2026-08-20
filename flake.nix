@@ -255,6 +255,7 @@
             lake2nix.mkPackage (
               lakeTestBuildArgs
               // {
+                lakeArtifacts = ixLib;
                 name = "IxTests";
                 installArtifacts = true;
               }

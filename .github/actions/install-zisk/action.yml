@@ -1,18 +1,16 @@
 name: Install Zisk
 description: >-
   Install the system build deps, the ZisK zkVM toolchain (ziskup, CPU build),
-  and — unless `proving-key: false` — the fork-matching proving key needed to
-  RUN the Zisk host. Execute needs the key too (zisk-host's `client.setup()`
-  loads the circuit's const-tree files before either the execute or the prove
-  branch), but BUILDING the host does not, so build-only callers skip the
-  few-GB download + const-tree regeneration. Assumes a Rust toolchain is
-  already set up.
+  and — unless `proving-key: false` — the fork-matching proving key used for
+  proof generation. Build and execute-only callers can skip the few-GB
+  download and const-tree regeneration. Assumes a Rust toolchain is already
+  set up.
 
 inputs:
   proving-key:
     description: >-
-      Install the fork-matching proving key (required to execute or prove;
-      not needed to build). Set false for build-only jobs.
+      Install the fork-matching proving key. Required to prove, but not to
+      build or use the SDK's execute-only client.
     required: false
     default: "true"
 
@@ -107,9 +105,8 @@ runs:
       shell: bash
       run: cargo build --release -p proofman-starks-lib-c
       working-directory: zisk
-    # Execute still needs a proving key present: zisk-host calls `client.setup()`
-    # (which the SDK runs before the execute branch), and that loads the circuit's
-    # const-tree files. We host the fork-matching key in a public S3 bucket
+    # Proof generation needs the fork-matching proving key. It lives in a
+    # public S3 bucket
     # WITHOUT the const-trees — exactly like Zisk's released
     # `zisk-provingkey-*.tar.gz` on `storage.googleapis.com/zisk-setup` — and
     # regenerate them here with `cargo-zisk-dev check-setup -a`, which is how

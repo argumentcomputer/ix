@@ -44,14 +44,15 @@ use ix_kernel::anon_work::{
 use ixon::env::Env as IxonEnv;
 use zisk_host::{AGG_PROGRAM, SHARD_PROGRAM};
 use zisk_sdk::{
-  EmbeddedClient, EmbeddedClientBuilder, EmbeddedOpts, ProverClient,
-  VerboseMode, VerifyConstraintsExtension, ZiskStdin,
+  EmbeddedClient, EmbeddedClientBuilder, EmbeddedExecuteOnlyClient,
+  EmbeddedOpts, GuestProgram, ProverClient, VerboseMode,
+  VerifyConstraintsExtension, ZiskStdin,
 };
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-  /// Run shards in the VM only — no proof generated.
+  /// Run shards in the VM only — no proof or proving key required.
   #[arg(long, conflicts_with = "verify_constraints")]
   execute: bool,
 
@@ -598,8 +599,7 @@ fn program_vk(proof: &[u8]) -> Vec<u8> {
 /// side of vk pinning. The allowed set the agg guest verifies children
 /// against must come from here, never from the proofs being folded: deriving
 /// it from the (untrusted) proofs would let any proof admit its own program.
-/// Requires the program's ROM setup to have run (`client.setup(...)`), which
-/// writes the verkey file this reads.
+/// Computed directly from the embedded ELF, without a proving key.
 fn guest_vk_bytes(program: &zisk_sdk::GuestProgram) -> Result<Vec<u8>> {
   let vk = program
     .vk()
@@ -806,7 +806,64 @@ fn check_input_coherence(
   Ok(failures)
 }
 
-fn build_client(gpu: bool, asm: bool) -> Result<EmbeddedClient> {
+enum HostClient {
+  Prover(EmbeddedClient),
+  ExecuteOnly(EmbeddedExecuteOnlyClient),
+}
+
+struct ExecutionStats {
+  publics: ShardPublics,
+  steps: u64,
+  time_ms: u64,
+}
+
+impl HostClient {
+  async fn setup(&self, program: &GuestProgram) -> Result<()> {
+    match self {
+      Self::Prover(client) => {
+        client.setup(program).run()?.await?;
+      },
+      Self::ExecuteOnly(client) => client.setup(program, false)?,
+    }
+    Ok(())
+  }
+
+  async fn execute(
+    &self,
+    program: &GuestProgram,
+    stdin: ZiskStdin,
+  ) -> Result<ExecutionStats> {
+    let mut buf = [0u8; SHARD_PUBLICS_LEN];
+    let (steps, time_ms) = match self {
+      Self::Prover(client) => {
+        let result = client.execute(program, stdin).run()?.await?;
+        result.get_public_values_slice(&mut buf);
+        (result.get_execution_steps(), result.get_execution_time())
+      },
+      Self::ExecuteOnly(client) => {
+        let result = client.execute(program, stdin, None)?;
+        result.get_public_values_slice(&mut buf);
+        (result.get_execution_steps(), result.get_execution_time())
+      },
+    };
+    Ok(ExecutionStats { publics: ShardPublics::decode(&buf), steps, time_ms })
+  }
+
+  fn prover(&self) -> Result<&EmbeddedClient> {
+    match self {
+      Self::Prover(client) => Ok(client),
+      Self::ExecuteOnly(_) => {
+        bail!("proof operation requested from execute-only client")
+      },
+    }
+  }
+}
+
+fn build_client(
+  gpu: bool,
+  asm: bool,
+  execute_only: bool,
+) -> Result<HostClient> {
   // Executor choice. The default is the Assembly executor (`asm = true`,
   // i.e. no `--emulator`): it is markedly faster at trace generation and is
   // the prerequisite for the hints stream. It historically broke under our
@@ -833,10 +890,15 @@ fn build_client(gpu: bool, asm: bool) -> Result<EmbeddedClient> {
   if asm {
     builder = builder.assembly();
   }
+  // The SDK's standalone executor skips proving-key, Std, SetupCtx, and
+  // ProofMan initialization while retaining the selected VM backend.
+  if execute_only {
+    return Ok(HostClient::ExecuteOnly(builder.execute_only().build()?));
+  }
   if gpu {
     builder = builder.gpu();
   }
-  Ok(builder.build()?)
+  Ok(HostClient::Prover(builder.build()?))
 }
 
 /// Check a single constant chosen by Lean NAME (one iteration of `--consts`).
@@ -847,7 +909,7 @@ fn build_client(gpu: bool, asm: bool) -> Result<EmbeddedClient> {
 /// (write stdin for ziskemu), `--execute` (cycles), and plain prove (single
 /// leaf, subject-bound + verified). No aggregation — it's one leaf.
 async fn run_constant(
-  client: &EmbeddedClient,
+  client: &HostClient,
   plan: &InputPlan,
   name: &str,
   args: &Args,
@@ -940,13 +1002,11 @@ async fn run_constant(
   // ---- Execute mode: cycles only, no proof. ----
   if args.execute {
     let t0 = Instant::now();
-    let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
+    let result = client.execute(&SHARD_PROGRAM, stdin).await?;
     let execute_secs = t0.elapsed().as_secs_f64();
     tracing_texray::json_sink::record_manual("zisk/execute", execute_secs);
-    let mut buf = [0u8; SHARD_PUBLICS_LEN];
-    result.get_public_values_slice(&mut buf);
-    let publics = ShardPublics::decode(&buf);
-    let cycles = result.get_execution_steps();
+    let publics = result.publics;
+    let cycles = result.steps;
     println!("cycles: {cycles}, failures: {}", publics.failures);
     if let Some(path) = &args.json {
       let tput = throughput(cover.len(), execute_secs);
@@ -978,6 +1038,7 @@ async fn run_constant(
   }
 
   // ---- Prove mode: single leaf, bind subject to the env, verify. ----
+  let client = client.prover()?;
   let result = client.prove(&SHARD_PROGRAM, stdin).run()?.await?;
   let mut buf = [0u8; SHARD_PUBLICS_LEN];
   result.get_public_values_slice(&mut buf);
@@ -1126,7 +1187,7 @@ fn discharge(
 /// Manifests without a bisection tree (written before it existed) are
 /// rejected when aggregation is needed — regenerate with the current planner.
 async fn run_shard_plan(
-  client: &EmbeddedClient,
+  client: &HostClient,
   plan: &InputPlan,
   manifest_path: &std::path::Path,
   args: &Args,
@@ -1368,12 +1429,10 @@ async fn run_shard_plan(
       // Windowed RAM high-water: reset before each shard so the per-shard
       // peaks are independent; the env row's peak-rss is their max.
       tracing_texray::rss_sampler::reset_peak_tree_rss();
-      let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
-      let mut buf = [0u8; SHARD_PUBLICS_LEN];
-      result.get_public_values_slice(&mut buf);
-      let publics = ShardPublics::decode(&buf);
-      let cycles = result.get_execution_steps();
-      let exec_secs = result.get_execution_time() as f64 / 1000.0;
+      let result = client.execute(&SHARD_PROGRAM, stdin).await?;
+      let publics = result.publics;
+      let cycles = result.steps;
+      let exec_secs = result.time_ms as f64 / 1000.0;
       let peak = peak_rss_bytes();
       total_steps += cycles;
       max_shard_cycles = max_shard_cycles.max(cycles);
@@ -1451,6 +1510,7 @@ async fn run_shard_plan(
   }
 
   // ---- Prove mode: one closure-injected leaf per shard. ----
+  let client = client.prover()?;
   let mut leaf_proofs: Vec<Vec<u8>> = Vec::with_capacity(selected.len());
   // Per-leaf claim preimages (sorted, deduped): the certified target set and
   // the assumption set behind the leaf's committed roots. Supplied to the agg
@@ -1990,12 +2050,12 @@ async fn run() -> Result<()> {
   let grand_target_count: usize = plans.iter().map(|p| p.target_count).sum();
   let total_leaves: usize = plans.iter().map(|p| p.shards.len()).sum();
 
-  let client = build_client(args.gpu, !args.emulator)?;
+  let client = build_client(args.gpu, !args.emulator, args.execute)?;
   // Dump mode never runs the VM; it needs ROM setup (and thus the proving
   // key) only to derive the shard vk for store filtering. Skipping setup
   // otherwise makes input dumping fast and key-free.
   if args.dump_input.is_none() || args.store_dir.is_some() {
-    client.setup(&SHARD_PROGRAM).run()?.await?;
+    client.setup(&SHARD_PROGRAM).await?;
   }
   // Skip agg-guest setup unless we'll produce more than one leaf proof.
   // The shard-plan path sets up the agg program itself, after its leaves.
@@ -2011,7 +2071,7 @@ async fn run() -> Result<()> {
     && args.shard_plan.is_none()
     && total_leaves > 1;
   if need_agg && args.emulator {
-    client.setup(&AGG_PROGRAM).run()?.await?;
+    client.setup(&AGG_PROGRAM).await?;
   }
 
   // ---- Manifest-driven sharding (the offline profiler/partitioner plan). ----
@@ -2040,13 +2100,11 @@ async fn run() -> Result<()> {
       let num_shards = plan.shards.len();
       for (i, &(start, end)) in plan.shards.iter().enumerate() {
         let stdin = leaf_stdin(start, end, &plan.env_bytes, &[]);
-        let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
-        let mut buf = [0u8; SHARD_PUBLICS_LEN];
-        result.get_public_values_slice(&mut buf);
-        let publics = ShardPublics::decode(&buf);
-        let cycles = result.get_execution_steps();
+        let result = client.execute(&SHARD_PROGRAM, stdin).await?;
+        let publics = result.publics;
+        let cycles = result.steps;
         total_steps += cycles;
-        total_exec_ms += result.get_execution_time();
+        total_exec_ms += result.time_ms;
         println!(
           "  [{} shard {}/{num_shards}] range [{start}, {end}), failures={}, cycles={cycles}",
           plan.label,
@@ -2074,6 +2132,8 @@ async fn run() -> Result<()> {
     );
     return Ok(());
   }
+
+  let client = client.prover()?;
 
   if args.verify_constraints {
     // Guaranteed single input by the guard above.

@@ -557,6 +557,8 @@ jobs:
       - name: Install Zisk
         if: matrix.params.backend == 'zisk'
         uses: ./.github/actions/install-zisk
+        with:
+          proving-key: false
 
       # ---------- PR side ----------
       # The PR side runs first: `ix bench run` selects its constants from
