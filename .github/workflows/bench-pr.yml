@@ -894,9 +894,9 @@ jobs:
     # Assemble even when benchmark runs failed — the tables carry the ❌
     # rows. Only the build job must have succeeded (it made the binaries).
     if: always() && needs.build.result == 'success'
-    # `bench report` only runs Lean code (the AVX-512 parts of the binary
-    # are never executed here), so a cheap non-warp host is fine.
-    runs-on: ubuntu-latest
+    # The report command uses the build job's native `ix`, so keep it on the
+    # Warp x64 runner fleet; report assembly does not need benchmark-scale RAM.
+    runs-on: warp-ubuntu-latest-x64-8x
     permissions:
       contents: read
     steps:
