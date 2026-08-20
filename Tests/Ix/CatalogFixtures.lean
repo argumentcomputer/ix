@@ -21,6 +21,10 @@
   - I4 (loader olean level): member envs come in at private level —
     imported theorems keep their proofs, `_private.*` constants are
     present, `@[no_expose]` definitions load transparent.
+  - I5 (root coverage): a member reaching a provider module outside
+    the provider's declared roots — or a provider listed after its
+    consumer — fails closed with a named error before the kernel
+    trips on a renamed-but-never-replayed constant.
 
   Needs the fixture workspace buildable (network-free; toolchain
   shared), so it lives behind `--ignored`.
@@ -163,6 +167,56 @@ private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
       some "no `_private.*` constants — exported-level trim suspected")
   return (true, privCount, envA.constants.toList.length, none)
 
+private def containsStr (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+/-- I5: a member reaching a provider module outside the provider's
+    declared root closure fails closed with a named, actionable error
+    identifying the module and its owner — not a bare kernel `unknown
+    constant`. `B`'s roots are narrowed to `FixtureB.Model`, so `A`
+    (whose `UsesB` imports `FixtureB.Base`) references a `B`-owned
+    module nobody would replay. -/
+private def coverageErrorTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let badSpec : Ix.Catalog.CatalogSpec := {
+    catalogPrefix := `RelocCat
+    libs := #[
+      { qualifier := `B, roots := #[`FixtureB.Model] },
+      { qualifier := `A, roots := #[`FixtureA] } ] }
+  try
+    let _ ← Ix.Catalog.buildCatalog badSpec
+    return (false, 0, 0,
+      some "narrowed-roots build succeeded; expected the I5 coverage error")
+  catch e =>
+    let msg := toString e
+    unless containsStr msg "FixtureB.Base" do
+      return (false, 0, 0,
+        some s!"error does not name the module: {msg.take 200}")
+    unless containsStr msg "roots do not cover" do
+      return (false, 0, 0,
+        some s!"error is not the coverage diagnostic: {msg.take 200}")
+    return (true, 0, 0, none)
+
+/-- I5, ordering flavor: a provider listed after its consumer is
+    reported as a spec ordering error, not a missing root. -/
+private def orderingErrorTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let badSpec : Ix.Catalog.CatalogSpec := {
+    catalogPrefix := `RelocCat
+    libs := #[
+      { qualifier := `A, roots := #[`FixtureA] },
+      { qualifier := `B, roots := #[`FixtureB] } ] }
+  try
+    let _ ← Ix.Catalog.buildCatalog badSpec
+    return (false, 0, 0,
+      some "misordered build succeeded; expected the I5 ordering error")
+  catch e =>
+    let msg := toString e
+    unless containsStr msg "listed after" do
+      return (false, 0, 0,
+        some s!"error is not the ordering diagnostic: {msg.take 200}")
+    return (true, 0, 0, none)
+
 /-- C3: two independent build+compile passes agree on the canonical
     root. -/
 private def determinismTest : IO (Bool × Nat × Nat × Option String) := do
@@ -203,6 +257,10 @@ def suite : List TestSeq := [
     fixturesTest .done,
   .individualIO "catalog fixtures: loader imports at private level (I4)"
     none loaderLevelTest .done,
+  .individualIO "catalog fixtures: uncovered provider module fails closed (I5)"
+    none coverageErrorTest .done,
+  .individualIO "catalog fixtures: misordered members fail closed (I5)"
+    none orderingErrorTest .done,
   .individualIO
     "catalog fixtures: deterministic root + kernel check (C3/C4)"
     none determinismTest .done ]

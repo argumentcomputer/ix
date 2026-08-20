@@ -26,7 +26,10 @@
     package of its source module (`Environment.getModulePackageByIdx?`);
     toolchain modules (no package identity) form the shared unqualified
     base. Every non-toolchain package in any member's import closure
-    must be cataloged — fail closed otherwise.
+    must be cataloged, and every foreign cataloged module a member
+    reaches must lie inside its owner's declared root closure — fail
+    closed on both, before the kernel trips on a renamed-but-never-
+    replayed constant.
   - **Kernel replay regenerates auxiliaries.** Constructors and
     recursors (including nested-aux `rec_N`) are skipped and reappear
     when the kernel re-accepts the renamed `inductDecl`; their renamed
@@ -437,6 +440,47 @@ private def ownershipMaps (spec : CatalogSpec) (env : Lean.Environment)
           owned := owned.insert name info
   return (renameMap, owned)
 
+/-- The I5 coverage gate: member `X`'s import closure may reach a
+    module of cataloged package `Y` that `Y`'s own declared roots do
+    not reach (a provider's umbrella need not import every module a
+    downstream member uses). `ownershipMaps` renames that module's
+    constants, but replay only ever delivers the closures of declared
+    roots — nothing replays them, and the kernel would reject `X`'s
+    first reference with a bare `unknown constant P.Y.N`. Detect it
+    before replay: fold members in declaration order, accumulating the
+    module set each member's replay delivers; every foreign cataloged
+    module in `X`'s env must already be covered. Distinguishes a
+    provider listed after its consumer (spec ordering error) from a
+    genuinely missing root. -/
+private def checkRootCoverage (lib : LibSpec) (memberIdx : Nat)
+    (env : Lean.Environment)
+    (qualOfPkg : Std.HashMap Lean.PkgId Lean.Name)
+    (ownerIdx : Std.HashMap Lean.PkgId Nat)
+    (libPkgs : Std.HashSet Lean.PkgId) (covered : Lean.NameSet) :
+    Except String Lean.NameSet := do
+  let mut covered := covered
+  for moduleIdx in [0:env.header.moduleNames.size] do
+    match modulePackage? env moduleIdx with
+    | none => pure ()  -- toolchain base: unqualified, always present
+    | some pkg =>
+      let moduleName := env.header.moduleNames[moduleIdx]!
+      if libPkgs.contains pkg then
+        covered := covered.insert moduleName
+      else
+        let some qualifier := qualOfPkg.get? pkg
+          | throw s!"uncatalogued package `{pkg}` (module `{moduleName}`) — every non-toolchain package in the import closure needs a catalog entry"
+        unless covered.contains moduleName do
+          if (ownerIdx.get? pkg).any (· > memberIdx) then
+            throw s!"member `{lib.qualifier}` references `{moduleName}`, \
+owned by qualifier `{qualifier}`, but `{qualifier}` is listed after \
+`{lib.qualifier}` — members replay dependencies first. Move \
+`{qualifier}` before `{lib.qualifier}`."
+          else
+            throw s!"member `{lib.qualifier}` references `{moduleName}`, \
+owned by qualifier `{qualifier}`, but `{qualifier}`'s roots do not \
+cover that module. Add `{moduleName}` to `{qualifier}`'s roots."
+  return covered
+
 /-- Replay one library's owned constants into the growing kernel env:
     build the per-env rename map, reconstruct declarations, order by
     owned-reference dependencies, and `Kernel.Environment.addDecl` each
@@ -512,11 +556,22 @@ def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
         toolchainSeen := toolchainSeen.insert moduleName
         toolchainMods := toolchainMods.push { module := moduleName }
   let baseEnv ← Lean.importModules toolchainMods {} (level := .private)
-  -- 4. Relocate + kernel-replay each library in dependency order.
+  -- 4. Relocate + kernel-replay each library in dependency order,
+  --    checking first (I5) that every foreign cataloged module the
+  --    member reaches is delivered by its owner's declared roots.
+  let mut ownerIdx : Std.HashMap Lean.PkgId Nat := {}
+  for idx in [0:libPkgs.size] do
+    for pkg in libPkgs[idx]! do
+      ownerIdx := ownerIdx.insert pkg idx
   let mut kenv := baseEnv.toKernelEnv
   let mut replayed := 0
   let mut perLib : Array (Lean.Name × Nat) := #[]
+  let mut covered : Lean.NameSet := {}
+  let mut idx := 0
   for (lib, env, pkgs) in spec.libs.zip (libEnvs.zip libPkgs) do
+    match checkRootCoverage lib idx env qualOfPkg ownerIdx pkgs covered with
+    | .ok covered' => covered := covered'
+    | .error e => throw <| IO.userError s!"catalog: {e}"
     match replayLib spec env qualOfPkg pkgs kenv with
     | .ok (kenv', count, ownedCount) =>
       kenv := kenv'
@@ -524,6 +579,7 @@ def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
       perLib := perLib.push (lib.qualifier, ownedCount)
     | .error e =>
       throw <| IO.userError s!"catalog: library `{lib.qualifier}`: {e}"
+    idx := idx + 1
   -- 5. Extract the full constant map (base + qualified + regenerated).
   let consts := kenv.constants.fold (init := #[]) fun acc name info =>
     acc.push (name, info)
