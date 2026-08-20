@@ -2527,8 +2527,6 @@ mod tests {
   #[test]
   #[ignore]
   fn dump_const_sizes() {
-    // Manual probe: skip (don't fail) when no input is configured, so
-    // CI's run-everything-ignored sweep stays green.
     let Ok(path) = std::env::var("IXE_A") else {
       eprintln!("[dump_const_sizes] IXE_A unset — manual probe, skipping");
       return;
@@ -2558,8 +2556,6 @@ mod tests {
         .into_iter()
         .flatten()
         .collect();
-    // Manual probe: skip (don't fail) when no input is configured, so
-    // CI's run-everything-ignored sweep stays green.
     if paths.is_empty() {
       eprintln!(
         "[dump_named_metas] IXE_A unset — manual probe, skipping \
@@ -2668,8 +2664,6 @@ mod tests {
 
     use univ_probe::*;
 
-    // Manual probe: skip (don't fail) when no input is configured, so
-    // CI's run-everything-ignored sweep stays green.
     let Ok(path) = std::env::var("IXE_A") else {
       eprintln!("[dump_reducible_univs] IXE_A unset — manual probe, skipping");
       return;

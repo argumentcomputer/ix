@@ -1,0 +1,150 @@
+name: Merge tests
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+# Each merge group must report its own result to the queue. A cancelled run
+# cannot satisfy the required check, so runs are never superseded here.
+
+jobs:
+  merge-tests:
+    name: ${{ matrix.name }}
+    if: ${{ github.event_name == 'merge_group' }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: Lake ignored tests
+            kind: lake
+            runner: warp-ubuntu-latest-x64-32x
+          - name: Valgrind FFI
+            kind: valgrind
+            runner: warp-ubuntu-latest-x64-8x
+          - name: Ix.Tc verification and parity
+            kind: tc
+            runner: warp-ubuntu-latest-x64-16x
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Validate merge-test variant
+        env:
+          TEST_KIND: ${{ matrix.kind }}
+        run: |
+          case "$TEST_KIND" in
+            lake|valgrind|tc) ;;
+            *) echo "::error::Unknown merge-test variant: $TEST_KIND"; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-rust-toolchain
+        with:
+          # Valgrind cannot decode AVX-512 emitted by native codegen.
+          native-codegen: ${{ matrix.kind != 'valgrind' }}
+
+      # A merge group has its own SHA, so restore the nearest compatible build
+      # produced by ordinary CI and let Lake rebuild anything that changed.
+      - if: ${{ matrix.kind == 'lake' }}
+        uses: actions/cache/restore@v6
+        with:
+          path: ./.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+
+      # Valgrind cannot decode AVX-512, so its portable artifacts must not
+      # share `.lake` with native builds.
+      - if: ${{ matrix.kind == 'valgrind' }}
+        uses: actions/cache@v6
+        with:
+          path: ./.lake
+          key: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: lake-valgrind-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+
+      # The proof build uses its own incremental cache and falls back to the
+      # base Lake cache without weakening the trust or sorry-frontier checks.
+      - if: ${{ matrix.kind == 'tc' }}
+        uses: actions/cache@v6
+        with:
+          path: ./.lake
+          key: lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: |
+            lake-tc-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+            lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain') }}-${{ hashFiles('lake-manifest.json') }}-
+
+      # The Rust FFI bindgen build also needs the Lean toolchain and headers.
+      - if: ${{ matrix.kind != 'valgrind' }}
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          use-github-cache: false
+      - if: ${{ matrix.kind == 'valgrind' }}
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "IxTests"
+          use-github-cache: false
+
+      - name: Run general ignored Lake tests
+        if: ${{ matrix.kind == 'lake' }}
+        run: >-
+          lake test --wfail -- --ignored
+          --exclude=tc-pins,tc-accel-diff,tc-anon-diff,tc-init,tc-tutorial,tc-roundtrip,lean4lean
+      - name: Run ZK voting prover
+        if: ${{ matrix.kind == 'lake' }}
+        run: lake exe Apps.ZKVoting.Prover
+
+      - name: Install valgrind
+        if: ${{ matrix.kind == 'valgrind' }}
+        run: |
+          # Some warpbuild images ship a mirrorlist with an unreachable
+          # azure.archive.ubuntu.com entry, causing apt-get update to stall indefinitely.
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+      - name: Run tests under valgrind
+        if: ${{ matrix.kind == 'valgrind' }}
+        run: |
+          valgrind \
+            --leak-check=full \
+            --show-leak-kinds=definite,possible \
+            --errors-for-leak-kinds=definite \
+            --track-origins=yes \
+            --error-exitcode=1 \
+            --suppressions=.github/valgrind.supp \
+            .lake/build/bin/IxTests ffi
+
+      - name: Check Ix.Tc exported theorem trust manifest
+        if: ${{ matrix.kind == 'tc' }}
+        run: lake build Ix.Tc.Verify.Audit.Completed Ix.Tc.Verify.Audit.Statements
+      - name: Build Ix.Tc formal verification
+        if: ${{ matrix.kind == 'tc' }}
+        run: lake build IxTcVerify
+      - name: Check Ix.Tc verification sorry frontier
+        if: ${{ matrix.kind == 'tc' }}
+        run: lake build Ix.Tc.Verify.Audit.SorryFrontier
+      - name: Test Ix.Tc unit and adversarial fixtures
+        if: ${{ matrix.kind == 'tc' }}
+        run: lake test --wfail -- tc-unit
+      # These suites are partitioned from the general Lake sweep so the long
+      # parity and proof-related tests run concurrently with it.
+      - name: Run Ix.Tc ignored tests
+        if: ${{ matrix.kind == 'tc' }}
+        run: >-
+          lake test --wfail -- --ignored
+          tc-pins tc-accel-diff tc-anon-diff tc-init tc-tutorial tc-roundtrip lean4lean
+
+  merge-tests-result:
+    name: Merge tests
+    if: ${{ always() }}
+    needs: merge-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Propagate merge-test failure
+        if: >-
+          github.event_name == 'merge_group' &&
+          needs.merge-tests.result != 'success'
+        run: exit 1
