@@ -73,9 +73,17 @@ structure CompileEnv where
       Shares the motive permutation with `.rec`, but `.brecOn` places
       indices+major before the handler binders. -/
   brecOnCallSitePlans : Std.HashMap Name Ix.AuxGen.BRecOnCallSitePlan := {}
-  /-- Per-`.below` surgery plans (Rust `stt.below_call_site_plans`).
-      `.below` has the motive-only telescope `params, motives, indices,
-      major`. -/
+  /-- Per-`.below`-family surgery plans (Rust
+      `stt.below_call_site_plans`). A `X.below`/`X.below_N` HEAD has the
+      motive-only telescope `params, motives, indices, major`. For
+      Prop-level (IndPredBelow) families the map also carries the rest
+      of the family's user-visible surface under their own names — the
+      `.below` constructors and the `.below.casesOn` wrapper, whose
+      telescopes start with the below inductive's parameters (parent
+      params, then parent motives) and have NO major-premise floor
+      (a field-less below ctor is fully applied at exactly
+      params+motives). The apply site discriminates the two shapes via
+      `Ix.AuxGen.belowPlanKeyIsHead`. -/
   belowCallSitePlans : Std.HashMap Name Ix.AuxGen.BRecOnCallSitePlan := {}
   /-- Persistent set of names compiled by aux-gen (Rust
       `stt.aux_gen_extra_names`); merged from block tails by the driver
@@ -853,9 +861,13 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
               return ← compileRecCallSite name lvls plan headExpr args
       if let some plan := cenv.belowCallSitePlans.get? name then
         if !plan.isIdentity then
-          let fixedTailLen := plan.nIndices + 1 -- indices + major
-          let expectedTotal :=
-            plan.nParams + plan.nSourceMotives + fixedTailLen
+          -- `.below`/`.below_N` HEADS need the indices+major floor; a
+          -- Prop-below FAMILY member (ctor / `.below.casesOn`) has no
+          -- floor — a field-less below ctor is fully applied at exactly
+          -- params+motives (compile.rs below-family branch).
+          let isHead := Ix.AuxGen.belowPlanKeyIsHead name
+          let expectedTotal := plan.nParams + plan.nSourceMotives
+            + (if isHead then plan.nIndices + 1 else 0)
           if args.size >= expectedTotal then
             return ← compileBelowCallSite name plan headExpr args
       if let some plan := cenv.brecOnCallSitePlans.get? name then
@@ -1095,20 +1107,22 @@ partial def compileHeadRewriteCallSite (name : Name) (lvls : Array Level)
   let headForCanon := Expr.mkConst name targetLevels
   buildCallSite nameAddr headForCanon canonicalArgs collapsedArgs entries true
 
-/-- `.below` call-site surgery (compile.rs:1163-1263): telescope is
-    `params, motives, indices, major` — motive keep/reorder mirrors the
-    recursor plan; everything after the motives is kept identically. -/
+/-- `.below`-family call-site surgery (compile.rs below-family branch).
+    HEAD telescope is `params, motives, indices, major`; a Prop-below
+    FAMILY member (ctor / `.below.casesOn`) starts with the below params
+    (parent params, then parent motives). In both shapes everything
+    after the motive segment is kept identically, so one identity tail
+    covers indices+major, ctor fields, and casesOn
+    target-motive+indices+major+minors alike — the caller enforces the
+    per-shape application floor. -/
 partial def compileBelowCallSite (name : Name)
     (plan : Ix.AuxGen.BRecOnCallSitePlan) (headExpr : Expr)
     (args : Array Expr) : CompileM (Ixon.Expr × UInt64) := do
-  let fixedTailLen := plan.nIndices + 1 -- indices + major
-  let expectedTotal := plan.nParams + plan.nSourceMotives + fixedTailLen
   compileName name
   let nameAddr := name.getHash
   let params := args.extract 0 plan.nParams
   let motives := args.extract plan.nParams (plan.nParams + plan.nSourceMotives)
-  let fixedTail := args.extract (plan.nParams + plan.nSourceMotives) expectedTotal
-  let extraTail := args.extract expectedTotal args.size
+  let tail := args.extract (plan.nParams + plan.nSourceMotives) args.size
 
   let nCanonMotives := plan.nCanonicalMotives
   let mut canonicalArgs : Array (Nat × Expr) := #[]
@@ -1129,15 +1143,10 @@ partial def compileBelowCallSite (name : Name)
       entries := entries.push (.collapsed collapsedArgs.size.toUInt64 0)
       collapsedArgs := collapsedArgs.push motive
 
-  let fixedTailCanonBase := plan.nParams + nCanonMotives
-  for (t, i) in fixedTail.zipIdx do
-    canonicalArgs := canonicalArgs.push (fixedTailCanonBase + i, t)
-    entries := entries.push (.kept (fixedTailCanonBase + i).toUInt64 0)
-
-  let extraTailCanonBase := fixedTailCanonBase + fixedTailLen
-  for (t, i) in extraTail.zipIdx do
-    canonicalArgs := canonicalArgs.push (extraTailCanonBase + i, t)
-    entries := entries.push (.kept (extraTailCanonBase + i).toUInt64 0)
+  let tailCanonBase := plan.nParams + nCanonMotives
+  for (t, i) in tail.zipIdx do
+    canonicalArgs := canonicalArgs.push (tailCanonBase + i, t)
+    entries := entries.push (.kept (tailCanonBase + i).toUInt64 0)
 
   let sortedCanon := (sortByCanonIdx canonicalArgs).map (·.2)
   buildCallSite nameAddr headExpr sortedCanon collapsedArgs entries false

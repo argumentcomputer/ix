@@ -4209,6 +4209,62 @@ fn install_decompile_call_site_plans(
           || env.contains_key(&below_name))
       {
         let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
+        // Prop-level (IndPredBelow) `.below` families additionally expose
+        // constructors and a `.casesOn` wrapper to user code — mirror the
+        // compile side's family registration (same map; the apply site
+        // discriminates the telescope shape via
+        // `below_plan_key_is_head`). The below inductive itself is
+        // regenerated later (Phase 3), so at install time its ctor names
+        // are derived from the PARENT inductive's ctors via the same
+        // suffix transplant `build_below_indc_ctor` uses. Prop-ness is
+        // signalled by the presence of a `.below.rec` aux member
+        // (Type-level `.below` is a definition and has no recursor).
+        let is_prop_below = aux_members.iter().any(|(k, n)| {
+          *k == AuxKind::BelowRec
+            && matches!(n.as_data(),
+              ix_common::env::NameData::Str(p, _, _) if *p == below_name)
+        });
+        let parent_name = match below_name.as_data() {
+          ix_common::env::NameData::Str(p, _, _) => Some(p.clone()),
+          _ => None,
+        };
+        if is_prop_below
+          && let Some(parent_name) = parent_name
+          && let Some(parent_ci) = env.get(&parent_name)
+          && let LeanConstantInfo::InductInfo(pv) = &*parent_ci
+        {
+          let mut family_names: Vec<Name> = pv
+            .ctors
+            .iter()
+            .map(|ctor_name| {
+              let suffix = ctor_name
+                .strip_prefix(&parent_name)
+                .unwrap_or_else(|| ctor_name.components());
+              below_name.append_components(&suffix)
+            })
+            .collect();
+          family_names
+            .push(Name::str(below_name.clone(), "casesOn".to_string()));
+          for member in family_names {
+            let existing_differs =
+              stt.below_call_site_plans.get(&member).map(|e| *e != new_plan);
+            match existing_differs {
+              Some(true) => {
+                return Err(DecompileError::BadConstantFormat {
+                  msg: format!(
+                    "conflicting below call-site plans for '{}' across \
+                     stored blocks",
+                    member.pretty(),
+                  ),
+                });
+              },
+              Some(false) => {},
+              None => {
+                stt.below_call_site_plans.insert(member, new_plan.clone());
+              },
+            }
+          }
+        }
         let existing_differs =
           stt.below_call_site_plans.get(&below_name).map(|e| *e != new_plan);
         match existing_differs {

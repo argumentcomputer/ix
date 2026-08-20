@@ -256,6 +256,30 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
 ]
 
 def main (args : List String) : IO UInt32 := do
+  -- Special case: namespace-filtered kernel ixon roundtrip diagnostic.
+  -- `kernel-roundtrip-ns=Nat.le` runs the same pipeline as the
+  -- `kernel-ixon-roundtrip` suite (compile → ingress → egress →
+  -- decompile → hash-compare) but only on the transitive closure of the
+  -- constants matching the given name prefixes (comma-separated), so a
+  -- single-family regression can be bisected in seconds instead of a
+  -- full-env pass.
+  if let some arg := args.find? (·.startsWith "kernel-roundtrip-ns=") then
+    let prefixes := (arg.drop "kernel-roundtrip-ns=".length).toString.splitOn ","
+      |>.filterMap fun s => if s.isEmpty then none else some s.toName
+    let env ← get_env!
+    let seeds := env.constants.toList.filterMap fun (n, _) =>
+      if prefixes.any (·.isPrefixOf n) then some n else none
+    let closed := collectDeps env seeds
+    IO.println s!"[kernel-roundtrip-ns] {seeds.length} seeds, {closed.length} constants in closure"
+    let errors ← Tests.Ix.Kernel.Roundtrip.rsKernelRoundtripFFI closed
+    if errors.isEmpty then
+      IO.println "[kernel-roundtrip-ns] OK: roundtrip clean"
+      return 0
+    IO.println s!"[kernel-roundtrip-ns] {errors.size} errors:"
+    for msg in errors[:min 50 errors.size] do
+      IO.println s!"  {msg}"
+    return 1
+
   -- Special case: rust-compile diagnostic (full env)
   if args.contains "rust-compile" then
     let env ← get_env!

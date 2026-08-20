@@ -166,8 +166,23 @@ pub struct CompileState {
   /// `.rec`, but `.brecOn` places indices+major before the handler binders,
   /// so the telescope has to be rewritten by a separate layout rule.
   pub brec_on_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
-  /// Per-`.below` surgery plans. `.below` has the motive-only telescope
-  /// `params, motives, indices, major`.
+  /// Per-`.below`-family surgery plans. A `X.below`/`X.below_N` HEAD has
+  /// the motive-only telescope `params, motives, indices, major`. For
+  /// Prop-level (IndPredBelow) families the map also carries the rest of
+  /// the family's user-visible surface under their own names — the
+  /// `.below` constructors (`X.below.succ`, …) and the `.below.casesOn`
+  /// wrapper. Those telescopes start with the below inductive's
+  /// parameters (parent params, then parent motives), so the same motive
+  /// permutation applies to `[n_params, n_params + n_source_motives)`
+  /// and everything after (ctor fields / casesOn
+  /// target-motive+indices+major+minors) rides along kept-identity —
+  /// but with NO major-premise floor: a field-less below ctor
+  /// (`EvenP.below.zero`) is fully applied at exactly params+motives.
+  /// The apply site discriminates the two telescope shapes by the key's
+  /// last component (`below`/`below_N` = head, anything else = family
+  /// member); `X.below.rec` is deliberately NOT registered (nothing
+  /// user-visible references it — only regenerated wrappers, which skip
+  /// surgery via the aux-regen guard).
   pub below_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Per-block nested-auxiliary layout (permutation + source ctor
   /// counts) for each source `InductiveVal.all[0]` name. Used by:
@@ -1275,9 +1290,22 @@ pub fn compile_expr(
                 if let Some(plan) = stt.below_call_site_plans.get(name)
                   && !plan.is_identity()
                 {
-                  let fixed_tail_len = plan.n_indices + 1; // indices + major
-                  let expected_total =
-                    plan.n_params + plan.n_source_motives + fixed_tail_len;
+                  // The map covers the whole below family (see the field
+                  // docs). A `.below`/`.below_N` HEAD has the telescope
+                  // `params, motives, indices, major` and surgery needs
+                  // the full floor; a Prop-below FAMILY member (ctor /
+                  // `.below.casesOn`) starts with the below params —
+                  // parent params then parent motives — and has NO
+                  // major-premise floor (a field-less below ctor is
+                  // fully applied at exactly params+motives). In both
+                  // shapes everything after the motive segment is kept
+                  // in place, so one identity tail covers indices+major,
+                  // ctor fields, and casesOn target-motive+indices+
+                  // major+minors alike.
+                  let is_head = surgery::below_plan_key_is_head(name);
+                  let expected_total = plan.n_params
+                    + plan.n_source_motives
+                    + if is_head { plan.n_indices + 1 } else { 0 };
                   if args.len() >= expected_total {
                     let name_addr = compile_name(name, stt);
                     let args_owned: Vec<LeanExpr> =
@@ -1285,17 +1313,13 @@ pub fn compile_expr(
                     let params = &args_owned[..plan.n_params];
                     let motives = &args_owned
                       [plan.n_params..plan.n_params + plan.n_source_motives];
-                    let fixed_tail = &args_owned
-                      [plan.n_params + plan.n_source_motives..expected_total];
-                    let extra_tail = &args_owned[expected_total..];
+                    let tail =
+                      &args_owned[plan.n_params + plan.n_source_motives..];
 
                     let n_canon_motives = plan.n_canonical_motives();
                     let mut canonical_args: Vec<(usize, LeanExpr)> =
                       Vec::with_capacity(
-                        plan.n_params
-                          + n_canon_motives
-                          + fixed_tail.len()
-                          + extra_tail.len(),
+                        plan.n_params + n_canon_motives + tail.len(),
                       );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
@@ -1328,23 +1352,11 @@ pub fn compile_expr(
                       }
                     }
 
-                    let fixed_tail_canon_base = plan.n_params + n_canon_motives;
-                    for (i, t) in fixed_tail.iter().enumerate() {
-                      canonical_args
-                        .push((fixed_tail_canon_base + i, t.clone()));
+                    let tail_canon_base = plan.n_params + n_canon_motives;
+                    for (i, t) in tail.iter().enumerate() {
+                      canonical_args.push((tail_canon_base + i, t.clone()));
                       entries.push(CallSiteEntry::Kept {
-                        canon_idx: (fixed_tail_canon_base + i) as u64,
-                        meta: 0,
-                      });
-                    }
-
-                    let extra_tail_canon_base =
-                      fixed_tail_canon_base + fixed_tail_len;
-                    for (i, t) in extra_tail.iter().enumerate() {
-                      canonical_args
-                        .push((extra_tail_canon_base + i, t.clone()));
-                      entries.push(CallSiteEntry::Kept {
-                        canon_idx: (extra_tail_canon_base + i) as u64,
+                        canon_idx: (tail_canon_base + i) as u64,
                         meta: 0,
                       });
                     }
@@ -4340,7 +4352,7 @@ fn compile_mutual(
             stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
           }
           if let Some(below_name) = surgery::rec_name_to_below_name(&name)
-            && lean_env.get(&below_name).is_some()
+            && let Some(below_ci) = lean_env.get(&below_name)
           {
             let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
             if stt
@@ -4355,6 +4367,40 @@ fn compile_mutual(
                   below_name.pretty(),
                 ),
               });
+            }
+            // Prop-level (IndPredBelow) `.below` is an INDUCTIVE, so user
+            // code can also reference its constructors and its
+            // `.casesOn` wrapper — both start with the below params
+            // (parent params + parent motives) and need the same motive
+            // permutation. Registered under their own names in the same
+            // map; the apply site discriminates the telescope shape via
+            // `below_plan_key_is_head`. `X.below.rec` is deliberately
+            // not registered (only regenerated wrappers reference it,
+            // and those skip surgery via the aux-regen guard).
+            let mut family_names: Vec<Name> = Vec::new();
+            if let LeanConstantInfo::InductInfo(bv) = &*below_ci {
+              family_names.extend(bv.ctors.iter().cloned());
+              let cases_name =
+                Name::str(below_name.clone(), "casesOn".to_string());
+              if lean_env.get(&cases_name).is_some() {
+                family_names.push(cases_name);
+              }
+            }
+            for member in family_names {
+              if stt
+                .below_call_site_plans
+                .get(&member)
+                .is_some_and(|existing| *existing != new_plan)
+              {
+                return Err(CompileError::InvalidMutualBlock {
+                  reason: format!(
+                    "conflicting below call-site plans for '{}' — two \
+                     blocks claim one source-indexed aux name",
+                    member.pretty(),
+                  ),
+                });
+              }
+              stt.below_call_site_plans.insert(member, new_plan.clone());
             }
             stt.below_call_site_plans.insert(below_name, new_plan);
           }

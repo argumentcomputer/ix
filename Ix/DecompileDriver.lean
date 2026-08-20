@@ -373,6 +373,41 @@ def installDecompileCallSitePlans
         if auxMemberNames.contains belowName
             || decompiledView.contains belowName then
           let newPlan := Ix.AuxGen.BRecOnCallSitePlan.fromRecPlan plan
+          -- Prop-level (IndPredBelow) `.below` families additionally
+          -- expose constructors and a `.casesOn` wrapper to user code —
+          -- mirror the compile side's family registration (same map;
+          -- the apply site discriminates the telescope shape via
+          -- `belowPlanKeyIsHead`). The below inductive itself is
+          -- regenerated later, so its ctor names are derived from the
+          -- PARENT inductive's ctors via the same suffix transplant
+          -- `buildBelowIndcCtor` uses. Prop-ness is signalled by the
+          -- presence of a `.below.rec` aux member (Type-level `.below`
+          -- is a definition and has no recursor).
+          let isPropBelow :=
+            auxMemberNames.contains (Ix.Name.mkStr belowName "rec")
+          let parentName? : Option Ix.Name := match belowName with
+            | .str p _ _ => some p
+            | _ => none
+          let familyNames : Array Ix.Name := Id.run do
+            let some parentName := parentName? | return #[]
+            let some (.inductInfo pv) := decompiledView.get? parentName
+              | return #[]
+            let mut out : Array Ix.Name := pv.ctors.map fun ctorName =>
+              let suffix := (Ix.AuxGen.nameStripPrefix ctorName parentName).getD
+                (Ix.AuxGen.nameComponents ctorName)
+              Ix.AuxGen.nameAppendComponents belowName suffix
+            out := out.push (Ix.Name.mkStr belowName "casesOn")
+            return out
+          if isPropBelow then
+            for member in familyNames do
+              match belowPlans.get? member with
+              | some existing =>
+                if existing != newPlan then
+                  throw s!"conflicting below call-site plans for \
+'{member.pretty}' across stored blocks"
+              | none =>
+                belowPlans := belowPlans.insert member newPlan
+                newBelow := newBelow.push (member, newPlan)
           match belowPlans.get? belowName with
           | some existing =>
             if existing != newPlan then

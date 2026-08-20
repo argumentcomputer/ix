@@ -198,6 +198,18 @@ pub fn rec_name_to_below_name(name: &Name) -> Option<Name> {
   }
 }
 
+/// Whether a `below_call_site_plans` key is the `.below`/`.below_N` HEAD
+/// (telescope `params, motives, indices, major` — surgery requires the
+/// full floor) as opposed to a Prop-below FAMILY member (a `.below`
+/// constructor or `.below.casesOn`, whose telescope starts with the
+/// below params — parent params then parent motives — and has no
+/// major-premise floor: a field-less below ctor is fully applied at
+/// exactly params+motives).
+pub fn below_plan_key_is_head(name: &Name) -> bool {
+  matches!(name.as_data(), NameData::Str(_, s, _)
+    if s == "below" || s.starts_with("below_"))
+}
+
 // ===========================================================================
 // Telescope utilities
 // ===========================================================================

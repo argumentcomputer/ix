@@ -862,14 +862,23 @@ fn build_mut_const(
 }
 
 /// Build a fresh `Named` entry for a reconstructed constant, preserving
-/// the original's `meta` and `original` (aux_gen regeneration hint) fields
-/// but with an updated `addr`.
+/// the original's `meta`, `hints`, and `original` (aux_gen regeneration
+/// hint) fields but with an updated `addr`.
 ///
 /// Decompile's Pass 2 relies on `named.has_original()` to decide which
 /// entries are aux_gen-regenerated — we MUST copy that field over, or
 /// otherwise every `.brecOn*` / `.below` / `.brecOn_N.eq` gets dropped.
+///
+/// The per-name `hints` channel must survive too: decompile reconstructs
+/// `DefinitionVal.hints` from `Named.hints` (absent → `Opaque`), and the
+/// aux-regen roundtrip validates the decompiled constant's Lean-level
+/// hash — which includes hints — against the source env. Dropping the
+/// channel here made every regenerated `.casesOn`/`.recOn`/`.below`/
+/// `.brecOn` fail that validation (`Opaque` vs `Abbrev`) on the kernel
+/// egress leg, discarding the metadata-restored form.
 fn rebuild_named(addr: Address, original: &Named) -> Named {
   let mut named = Named::new(addr, (*original.meta()).clone());
+  named.set_hints(original.hints());
   if let Some((orig_addr, orig_meta)) = original.original() {
     named.set_original(orig_addr, (*orig_meta).clone());
   }
