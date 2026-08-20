@@ -865,3 +865,109 @@ fn decode_io_buffer_map(
   }
   map
 }
+
+// =============================================================================
+// KZG (BLS12-381) instantiation — the stage-3 wrap
+// =============================================================================
+
+/// The stage-3 FFI surface: the foreign (byte-limb) verifier toplevel
+/// specialized to the BLS12-381 scalar field and proven under the KZG
+/// backend. Execution is the generic Aiur interpreter over `Scalar` —
+/// there is no codegen'd Fr runner yet.
+#[cfg(feature = "kzg")]
+mod kzg {
+  use super::*;
+  use crate::aiur::LeanField;
+  use multi_stark::ark_adapter::{KzgConfig, Scalar, Srs};
+  use multi_stark::prover::Proof;
+
+  type AiurKzgSystem = AiurSystem<KzgConfig>;
+
+  static AIUR_KZG_SYSTEM_CLASS: LazyLock<ExternalClass> =
+    LazyLock::new(ExternalClass::register_with_drop::<AiurKzgSystem>);
+
+  /// `AiurKzgSystem.build : @&Bytecode.Toplevel → Nat → Nat → AiurKzgSystem`
+  ///
+  /// Public parameters are DEV-GRADE (`Srs::unsafe_dev_setup`, size
+  /// `2^log_srs_size`): stage-3 parameters are bring-your-own, and the
+  /// dev setup stands in until a ceremony loader lands.
+  #[unsafe(no_mangle)]
+  extern "C" fn rs_aiur_kzg_system_build(
+    toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+    log_srs_size: LeanNat<LeanBorrowed<'_>>,
+    max_quotient_degree: LeanNat<LeanBorrowed<'_>>,
+  ) -> LeanExternal<AiurKzgSystem, LeanOwned> {
+    let toplevel = decode_toplevel::<Scalar>(&toplevel);
+    let log = lean_unbox_nat_as_usize(log_srs_size.inner());
+    let max_quotient_degree =
+      lean_unbox_nat_as_usize(max_quotient_degree.inner());
+    let srs =
+      std::sync::Arc::new(Srs::unsafe_dev_setup(1usize << log, b"ix-dev-srs"));
+    let system = AiurSystem::build_kzg(toplevel, srs, max_quotient_degree);
+    LeanExternal::alloc(&AIUR_KZG_SYSTEM_CLASS, system)
+  }
+
+  /// Claim values as a Lean `Array G` (boxed u64s). Exact: a claim's
+  /// values are channels, function indices, and 4-byte-packed digest
+  /// limbs — all far below 2^64.
+  fn build_scalar_claim_array(values: &[Scalar]) -> LeanArray<LeanOwned> {
+    let arr = LeanArray::alloc(values.len());
+    for (i, v) in values.iter().enumerate() {
+      arr.set(i, LeanOwned::box_u64(aiur::AiurField::as_canonical_u64(v)));
+    }
+    arr
+  }
+
+  /// `AiurKzgSystem.proveMultiStark`: prove the foreign verifier over
+  /// raw proof/vk/claims byte blobs (advice layout as in
+  /// `rs_aiur_multi_stark_prove`), over the scalar field. Returns
+  /// `(claim, proofBytes)` — the KZG proof travels as bytes; `verify`
+  /// deserializes.
+  #[unsafe(no_mangle)]
+  extern "C" fn rs_aiur_kzg_multi_stark_prove(
+    system: LeanExternal<AiurKzgSystem, LeanBorrowed<'_>>,
+    fun_idx: LeanNat<LeanBorrowed<'_>>,
+    pub_input: LeanArray<LeanBorrowed<'_>>,
+    proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+    vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+    claims_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  ) -> LeanOwned {
+    let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+    let mut io_buffer =
+      ixvm_codegen::aiur_multi_stark_runner::verifier_io_buffer_in::<Scalar>(
+        proof_bytes.as_bytes(),
+        vk_bytes.as_bytes(),
+        claims_bytes.as_bytes(),
+      );
+    let args = pub_input.map(|x| Scalar::from_lean_u64(&x));
+    let (claim, proof) = system.get().prove(fun_idx, &args, &mut io_buffer);
+    let bytes = proof.to_bytes().expect("Serialization error");
+    let result = LeanProd::new(
+      build_scalar_claim_array(&claim),
+      LeanByteArray::from_bytes(&bytes),
+    );
+    result.into()
+  }
+
+  /// `AiurKzgSystem.verify : @&AiurKzgSystem → @&Array G → @&ByteArray →
+  /// Except String Unit` — the NATIVE (milliseconds, two-pairing) check
+  /// of a stage-3 proof.
+  #[unsafe(no_mangle)]
+  extern "C" fn rs_aiur_kzg_system_verify(
+    system: LeanExternal<AiurKzgSystem, LeanBorrowed<'_>>,
+    claim: LeanArray<LeanBorrowed<'_>>,
+    proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  ) -> LeanExcept<LeanOwned> {
+    let claim = claim.map(|x| Scalar::from_lean_u64(&x));
+    let proof = match Proof::<KzgConfig>::from_bytes(proof_bytes.as_bytes()) {
+      Ok(p) => p,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("proof decode: {e}"));
+      },
+    };
+    match system.get().verify(&claim, &proof) {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(e) => LeanExcept::error_string(&format!("{e:?}")),
+    }
+  }
+}

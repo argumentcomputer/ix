@@ -310,6 +310,59 @@ def foreignEndToEndSuite : IO UInt32 := do
     expectErr "tampered claim rejected (foreign)" tamperedClaim,
   ])]) []
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- `kzg-verifier`: stage 3 end-to-end at toy scale — wrap a stage-2-style
+-- proof in a KZG proof over the BLS12-381 scalar field, verify natively
+-- ════════════════════════════════════════════════════════════════════════════
+
+/-- Phase-D gate of `docs/kzg-stage.md`: prove factorial under
+Goldilocks/FRI (the stage-1/2 stand-in), then prove the FOREIGN verifier's
+acceptance of that proof over the BLS12-381 scalar field under the KZG
+backend, and verify the wrap natively (two pairings). Dev-grade SRS. -/
+def kzgEndToEndSuite : IO UInt32 := do
+  -- ── inner proof (same recipe as the foreign suite) ────────────────────────
+  let facCompiled ← match factorialProgram.compile with
+    | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
+  let facIdx ← match facCompiled.getFuncIdx `fact_entry with
+    | some i => pure i
+    | none => IO.eprintln "fact_entry entrypoint not found"; return 1
+  let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
+  let proofBytes := proof.toBytes
+  let vkBytes := facSystem.vkBytes
+  let claimBytes := serializeClaims #[claim]
+  let pubInput : Array Aiur.G := MultiStark.verifierPubInput vkBytes claimBytes
+
+  -- ── the foreign toplevel, specialized to the scalar field ─────────────────
+  let vTop ← match MultiStark.multiStarkForeign with
+    | .error e => IO.eprintln s!"foreign toplevel merge failed: {e}"; return 1
+    | .ok t => pure t
+  let vCompiled ← match vTop.compile with
+    | .error e => IO.eprintln s!"foreign compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
+    | some i => pure i
+    | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
+
+  IO.println "kzg-verifier (stage-3 wrap over BLS12-381; dev SRS)…"
+  let kzgSystem := AiurKzgSystem.build vCompiled.bytecode 17 4
+  let (wrapClaim, wrapProofBytes) :=
+    kzgSystem.proveMultiStark vIdx pubInput proofBytes vkBytes claimBytes
+  let expectedClaim := buildClaim vIdx pubInput #[]
+  let honest := kzgSystem.verify wrapClaim wrapProofBytes
+  -- Tamper with the wrap proof: the native KZG verifier must reject.
+  let badWrap := wrapProofBytes.set! 0
+    (UInt8.ofNat ((wrapProofBytes.data[0]!.toNat + 1) % 256))
+  let tampered := kzgSystem.verify wrapClaim badWrap
+  IO.println s!"  wrap proof: {wrapProofBytes.size} bytes \
+    (inner stage-2-style proof: {proofBytes.size} bytes)"
+  lspecIO (.ofList [("kzg-verifier", [
+    test "wrap claim = #[functionChannel, vIdx] ++ pubInput" (wrapClaim == expectedClaim),
+    expectOk "native KZG verify accepts the wrap proof (two pairings)" honest,
+    expectErr "tampered wrap proof rejected" tampered,
+  ])]) []
+
 end Tests.MultiStark
 
 end

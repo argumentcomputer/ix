@@ -191,6 +191,42 @@ opaque verify : @& AiurSystem →
 
 end AiurSystem
 
+/-! ## Stage 3: the KZG (BLS12-381) instantiation
+
+The foreign (byte-limb) verifier toplevel specialized to the BLS12-381
+scalar field and proven under multi-stark's KZG backend — the terminal
+wrap. Execution inside the prove is the generic Aiur interpreter over
+the scalar field (no codegen'd Fr runner yet), and the proof travels as
+bytes (constant-size; `verify` is the native two-pairing check). -/
+
+private opaque AiurKzgSystemNonempty : NonemptyType
+def AiurKzgSystem : Type := AiurKzgSystemNonempty.type
+instance : Nonempty AiurKzgSystem := AiurKzgSystemNonempty.property
+
+namespace AiurKzgSystem
+
+/-- Build over the scalar field with DEV-GRADE public parameters
+(`Srs::unsafe_dev_setup`, size `2^logSrsSize`) — a placeholder until a
+ceremony loader lands. Constants specialize by exact embedding
+(everything shipped today is `< 2^64`). -/
+@[extern "rs_aiur_kzg_system_build"]
+opaque build : @& Bytecode.Toplevel → (logSrsSize : @& Nat) →
+  (maxQuotientDegree : @& Nat) → AiurKzgSystem
+
+/-- Prove the foreign verifier over raw proof/vk/claims byte blobs
+(advice layout as in `AiurSystem.proveMultiStark`). Returns the claim
+(values are exact `< 2^64` extractions) and the serialized KZG proof. -/
+@[extern "rs_aiur_kzg_multi_stark_prove"]
+opaque proveMultiStark : @& AiurKzgSystem →
+  (funIdx : @& Bytecode.FunIdx) → (pubInput : @& Array G) →
+  (proofBytes vkBytes claimBytes : @& ByteArray) → Array G × ByteArray
+
+@[extern "rs_aiur_kzg_system_verify"]
+opaque verify : @& AiurKzgSystem →
+  @& Array G → @& ByteArray → Except String Unit
+
+end AiurKzgSystem
+
 /-- One-shot variant of `AiurSystem.circuitShapes` for flows that never
 build an `AiurSystem` (the `ix check` statistics): Rust builds the system,
 extracts the shapes, and drops it. -/

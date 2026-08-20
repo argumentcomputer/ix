@@ -165,6 +165,8 @@ def primaryRunners : List (String × IO UInt32) := [
   ("multi-stark", Tests.MultiStark.selfTestSuite),
   ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("foreign-verifier", Tests.MultiStark.foreignEndToEndSuite),
+  -- Stage 3: the KZG wrap of a stage-2-style proof over BLS12-381.
+  ("kzg-verifier", Tests.MultiStark.kzgEndToEndSuite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/

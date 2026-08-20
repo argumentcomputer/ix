@@ -174,27 +174,33 @@ prohibitive width.
   3. memoization hit rates on the byte gadgets (dedup across repeated
      byte pairs is high in carry chains).
 
-### Phase D — KZG instantiation, end-to-end at toy scale
+### Phase D — KZG instantiation, end-to-end at toy scale [GATE PASSED]
 
-FIRST SLICE LANDED: Aiur proves and verifies over the BLS12-381 scalar
-field. `AiurField` is implemented for `Scalar` (canonical-low-u64
-extraction), and `AiurSystem::build_kzg(toplevel, srs, max_qd)`
-instantiates the generic synthesis over `KzgConfig` — the `kzg_tests`
-in `crates/aiur/src/synthesis.rs` prove/verify a function circuit and
-the byte-gadget path (Bytes2's 65536-row preprocessed table committed
-via MSM) with tamper rejection, behind the `kzg` feature. Remaining in
-this phase:
+LANDED: the full stage-3 path at factorial scale. `AiurField` for
+`Scalar`; `AiurSystem::build_kzg`; the FFI surface (`AiurKzgSystem`:
+build with a dev SRS / `proveMultiStark` over raw advice blobs /
+native `verify`), with the toplevel decoder and advice-buffer builder
+generic over the field (`LeanField`, `verifier_io_buffer_in`). The
+`kzg-verifier` suite proves the FOREIGN verifier's acceptance of a
+factorial stage-2-style proof (3 inner queries) over Fr under
+`KzgConfig` and verifies it natively; a tampered wrap proof rejects.
 
-- Synthesis over `KzgConfig`: instantiate the Phase-A-generic
-  `System<SC>` with Fr (D = 1: 4 publics, stage-2 width halves per
-  slot), `Blake3Transcript`, `KzgPcs` with a dev SRS. [DONE]
+Measured (dev SRS 2^17, single-threaded, interpreter execution):
+**wrap proof 43 MB, prove ~21 min** for a 30 KB inner proof. The size
+is linear in TOTAL CIRCUIT WIDTH (per-column commitments + per-point
+openings), and call-site splicing makes the foreign circuits very
+wide — exactly the Phase-C risk, now with a number attached. The
+"kilobyte-scale terminal proof" claim holds only after Phase C
+(declaration-level inlining + grouping) collapses the width.
+
+Remaining in this phase (after C):
+
 - Codegen: the foreign toplevel gets its own generated witness runner
   over Fr (`aiur_multi_stark_foreign.rs` or similar) — witness
-  generation is native Rust Fr arithmetic, fast.
-- **Gate**: prove the wrap of a small stage-2 proof (factorial),
-  verify natively; tamper-reject; record proof size and prove/verify
-  times. Target shape: proof ≈ (columns × ~48 B) + openings + a few
-  G1 witness points; verification = 2 pairings + small MSMs.
+  generation is native Rust Fr arithmetic, fast (today's interpreter
+  execution over Fr is a large share of the 21 min).
+- Parallel MSM/iFFT in the KZG prover (pulled forward from Phase E if
+  prove time stays the bottleneck).
 
 ### Phase E — scale and productionize
 
