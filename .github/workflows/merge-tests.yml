@@ -14,7 +14,7 @@ permissions:
 jobs:
   merge-tests:
     name: ${{ matrix.name }}
-    if: ${{ github.event_name == 'merge_group' }}
+    #if: ${{ github.event_name == 'merge_group' }}
     strategy:
       fail-fast: true
       matrix:
