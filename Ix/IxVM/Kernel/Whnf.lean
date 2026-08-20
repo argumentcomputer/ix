@@ -934,18 +934,31 @@ def whnf := ⟦
                                   1 => (0, store(KExprNode.BVar(0))),
                                   _ =>
                                     let major = list_lookup(spine, skip);
-                                    let major_ty = k_infer(major, types);
-                                    match is_prop_type(major_ty, types) {
+                                    -- Struct-eta is speculative. During
+                                    -- canonical recursor reconstruction, WHNF
+                                    -- can encounter a loose major under a
+                                    -- deliberately empty local context. The
+                                    -- reference declines eta when inference
+                                    -- cannot establish the major's type; do
+                                    -- the same instead of indexing past
+                                    -- `types` in `k_infer`.
+                                    match memo_u32_less_than(list_length(types),
+                                        expr_lbr(major)) {
                                       1 => (0, store(KExprNode.BVar(0))),
                                       _ =>
-                                        let rhs_inst = expr_inst_levels(rhs, lvls);
-                                        let pmm = list_take(spine,
-                                          (nparams + nmotives) + nminors);
-                                        let after_pmm = apply_spine(rhs_inst, pmm);
-                                        let with_projs = apply_n_projs(
-                                          after_pmm, parent, major, nf, 0);
-                                        let post = list_drop(spine, skip + 1);
-                                        (1, apply_spine(with_projs, post)),
+                                        let major_ty = k_infer(major, types);
+                                        match is_prop_type(major_ty, types) {
+                                          1 => (0, store(KExprNode.BVar(0))),
+                                          _ =>
+                                            let rhs_inst = expr_inst_levels(rhs, lvls);
+                                            let pmm = list_take(spine,
+                                              (nparams + nmotives) + nminors);
+                                            let after_pmm = apply_spine(rhs_inst, pmm);
+                                            let with_projs = apply_n_projs(
+                                              after_pmm, parent, major, nf, 0);
+                                            let post = list_drop(spine, skip + 1);
+                                            (1, apply_spine(with_projs, post)),
+                                        },
                                     },
                                 },
                               _ => (0, store(KExprNode.BVar(0))),
