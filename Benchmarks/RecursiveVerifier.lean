@@ -32,17 +32,17 @@ lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/ex
                    the outer prove, so a kill mid-prove keeps the execute
                    metrics. (A local harness only: CI's aiur backend
                    instead drives `bench-typecheck --recursive` over the
-                   curated Vectors.csv constants.)
+                   shared benchmark constants (Ix.BenchConstants).)
   --json-name <n>  row key (default: the inner entrypoint name)
   --texray         tracing-texray timeline + RAM; with --json, spans also land
                    at `<json>.spans` for the CI drill-down
 ```
 
-Row metrics: `prove-time`/`proof-size`/`verify-time` (the INNER statement),
-`peak-rss` (inner-prove window), `recursive-execute-time`/`recursive-fft-cost` (the
+Row metrics: `stage1-prove-time`/`stage1-proof-size`/`stage1-verify-time` (the INNER statement),
+`stage1-peak-rss` (inner-prove window), `stage2-execute-time`/`stage2-fft-cost` (the
 verifier's execution and its in-circuit cost — the recursion-cost proxy), and
-`recursive-prove-time`/`recursive-peak-rss`/`recursive-proof-size`/
-`recursive-verify-time` (the outer prove — the headline recursion metrics).
+`stage2-prove-time`/`stage2-peak-rss`/`stage2-proof-size`/
+`stage2-verify-time` (the outer prove — the headline recursion metrics).
 
 Determinism note: the multi-stark prover is **non-deterministic under `parallel`**
 (the same statement yields byte-different valid proofs run-to-run), so the
@@ -178,12 +178,12 @@ def main (args : List String) : IO UInt32 := do
     -- there still leaves these metrics on disk (the orchestrator merges
     -- `status: oom` in over them).
     let baseFields : List (String × Lean.Json) :=
-      [ ("prove-time", jsonRound 6 (secs it0 it1))
-      , ("proof-size", Lean.toJson proofBytes.size)
-      , ("verify-time", jsonRound 6 (secs it1 it2))
-      , ("peak-rss", Lean.toJson innerPeak)
-      , ("recursive-execute-time", jsonRound 6 (secs e0 e1))
-      , ("recursive-fft-cost", jsonRound 0 stats.totalFftCost) ]
+      [ ("stage1-prove-time", jsonRound 6 (secs it0 it1))
+      , ("stage1-proof-size", Lean.toJson proofBytes.size)
+      , ("stage1-verify-time", jsonRound 6 (secs it1 it2))
+      , ("stage1-peak-rss", Lean.toJson innerPeak)
+      , ("stage2-execute-time", jsonRound 6 (secs e0 e1))
+      , ("stage2-fft-cost", jsonRound 0 stats.totalFftCost) ]
     writeRow' baseFields
     if !doProve then
       return 0
@@ -206,8 +206,8 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "outer proof failed to verify"
       return 1
     writeRow' <| baseFields ++
-      [ ("recursive-prove-time", jsonRound 6 (secs t0 t1))
-      , ("recursive-peak-rss", Lean.toJson outerPeak)
-      , ("recursive-proof-size", Lean.toJson nbytes)
-      , ("recursive-verify-time", jsonRound 6 (secs t1 t2)) ]
+      [ ("stage2-prove-time", jsonRound 6 (secs t0 t1))
+      , ("stage2-peak-rss", Lean.toJson outerPeak)
+      , ("stage2-proof-size", Lean.toJson nbytes)
+      , ("stage2-verify-time", jsonRound 6 (secs t1 t2)) ]
     return 0

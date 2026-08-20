@@ -51,10 +51,10 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  proving — the fast `execute`-mode signal.
   --recursive    after each constant's prove, run the in-circuit multi-stark
                  verifier (`verify_multi_stark_proof`) over the fresh proof:
-                 execute it (`recursive-execute-time`, `recursive-fft-cost` — the
+                 execute it (`stage2-execute-time`, `stage2-fft-cost` — the
                  recursion-cost proxy), then prove that execution end-to-end
-                 (`recursive-prove-time`, `recursive-peak-rss`,
-                 `recursive-proof-size`, `recursive-verify-time`), and close the
+                 (`stage2-prove-time`, `stage2-peak-rss`,
+                 `stage2-proof-size`, `stage2-verify-time`), and close the
                  row with the pipeline ledger — `total-time` (each stage's
                  prove, summed; a prove already contains its own witness
                  execution, so the standalone execute times are NOT added,
@@ -66,8 +66,8 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  (`recursiveFriParameters`), so recursive rows are NOT
                  comparable to a plain prove run's. This is the mode CI's
                  `aiur` benchmark runs (`ix bench run --backend aiur`): the
-                 full proof pipeline, per constant, over the curated
-                 Vectors.csv selection. With --texray, both
+                 full proof pipeline, per constant, over the shared
+                 benchmark constants (Ix.BenchConstants). With --texray, both
                  proves stream the same `stark/...` span names, so the summed
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.
@@ -98,18 +98,16 @@ first). A name absent from the env or whose execution errors is skipped with a
 warning, so a single bad name never fails the run. The harness imposes no time
 limit; bound a run with an external `timeout` if needed.
 
-The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
-"execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
-"throughput": …, "peak-rss": …, and with --recursive also "recursive-execute-time": …,
-"recursive-fft-cost": …, "recursive-prove-time": …, "recursive-peak-rss": …,
-"recursive-proof-size": …, "recursive-verify-time": …, plus the pipeline
-ledger "total-time": …, "pipeline-peak-rss": …
-once the pipeline completes } }`). `peak-rss` and `throughput` are
-phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
-high-water and constants/sec over the execute; a prove row carries the
-prover's high-water and constants/sec over the prove (with `prove-time`,
-`proof-size`, `verify-time` present only once proven). The two modes are
-stored on separate bencher testbeds, so the shared names never collide. Any
+The JSON is a flat shape. An `--execute-only` row carries the plain
+Phase-1 fields (`{ "<name>": { "constants": …, "fft-cost": …,
+"execute-time": …, "throughput": …, "peak-rss": … } }`); a `--recursive`
+pipeline row stage-qualifies every stage measure (`"stage1-execute-time"`,
+`"stage1-fft-cost"`, `"stage1-prove-time"`, `"stage1-throughput"`,
+`"stage1-peak-rss"`, `"stage1-proof-size"`, `"stage1-verify-time"`, the
+same seven as `"stage2-…"`, and `stage3-`/`stage4-` when the KZG stages
+land), plus the pipeline ledger `"total-time"`, `"pipeline-throughput"`,
+`"pipeline-peak-rss"` once the pipeline completes. Each stage's peak-rss
+and throughput are scoped to that stage's own prove window. Any
 bencher-specific reshaping is the caller's job (see
 `.github/workflows/bench-main.yml`).
 -/
@@ -219,75 +217,85 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     else Int.ofNat scaled.round.toUInt64.toNat
   Json.num ⟨m, d⟩
 
-/-- Flat results object: `name → { constants, fft-cost, execute-time, … }`.
-    No bencher-specific shaping.
+/-- Flat results object: `name → { constants, … }`. No bencher-specific
+    shaping.
 
-    `peak-rss` and `throughput` are PHASE-SCOPED BY MODE, not by name: an
-    execute-only run's row carries the Phase-1 peak and constants/sec over
-    the execute; a prove run's row carries the prove-phase peak and
-    constants/sec over the prove. The two modes store on separate bencher
-    testbeds (aiur-execute-* / aiur-*), so the shared names never
-    collide — run the execute run when you want execute-side numbers. -/
+    Measure names are MODE-SCOPED: an execute-only run's row carries the
+    plain Phase-1 fields (`fft-cost`, `execute-time`, `throughput`,
+    `peak-rss`); a pipeline run stage-qualifies every stage measure
+    (`stage1-…`, `stage2-…`), each stage's peak and constants/sec scoped
+    to its own prove window. The two modes store on separate bencher
+    testbeds (aiur-execute-* / aiur-*). -/
 def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
   if r.failed then
     (r.name, Json.mkObj [("status", Json.str "rejected")]) else
   let base : List (String × Json) :=
     [ ("status", Json.str "ok")
-    , ("constants", Lean.toJson r.constants)
-    , ("fft-cost", jsonRound 0 r.fftCost)
-    , ("execute-time", jsonRound 6 r.executeSec) ]
+    , ("constants", Lean.toJson r.constants) ]
   if executeOnly then
+    let fields := base ++
+      [ ("fft-cost", jsonRound 0 r.fftCost)
+      , ("execute-time", jsonRound 6 r.executeSec) ]
     let fields := if r.executeSec > 0 then
-      base ++ [ ("throughput", jsonRound 2 (r.constants.toFloat / r.executeSec)) ]
-    else base
+      fields ++ [ ("throughput", jsonRound 2 (r.constants.toFloat / r.executeSec)) ]
+    else fields
     let fields := match r.executePeakRss with
       | some n => fields ++ [ ("peak-rss", Lean.toJson n) ]
       | none => fields
     (r.name, Json.mkObj fields)
   else
-    -- prove-time, the proving throughput, and the prove-phase peak are
-    -- present only once proven.
+    let fields := base ++
+      [ ("stage1-fft-cost", jsonRound 0 r.fftCost)
+      , ("stage1-execute-time", jsonRound 6 r.executeSec) ]
+    -- stage1-prove-time, the proving throughput, and the prove-phase
+    -- peak are present only once proven.
     let fields := match r.proveSec with
-      | some p => base ++ [ ("prove-time", jsonRound 6 p)
-                          , ("throughput", jsonRound 2 (r.constants.toFloat / p)) ]
-      | none => base
+      | some p => fields ++ [ ("stage1-prove-time", jsonRound 6 p)
+                            , ("stage1-throughput",
+                               jsonRound 2 (r.constants.toFloat / p)) ]
+      | none => fields
     let fields := match r.peakRss with
-      | some n => fields ++ [ ("peak-rss", Lean.toJson n) ]
+      | some n => fields ++ [ ("stage1-peak-rss", Lean.toJson n) ]
       | none => fields
     let fields := match r.proofSize with
-      | some n => fields ++ [ ("proof-size", Lean.toJson n) ]
+      | some n => fields ++ [ ("stage1-proof-size", Lean.toJson n) ]
       | none => fields
     let fields := match r.verifySec with
-      | some v => fields ++ [ ("verify-time", jsonRound 6 v) ]
+      | some v => fields ++ [ ("stage1-verify-time", jsonRound 6 v) ]
       | none => fields
-    -- The recursion metrics (--recursive), in measurement order; the
-    -- execute-side pair lands before the outer prove runs, so an OOM'd
-    -- outer prove still leaves them on disk.
+    -- The stage-2 metrics, in measurement order; the execute-side pair
+    -- lands before the outer prove runs, so an OOM'd outer prove still
+    -- leaves them on disk.
     let fields := match r.recursiveExecuteSec, r.recursiveFftCost with
-      | some s, some c => fields ++ [ ("recursive-execute-time", jsonRound 6 s)
-                                    , ("recursive-fft-cost", jsonRound 0 c) ]
+      | some s, some c => fields ++ [ ("stage2-execute-time", jsonRound 6 s)
+                                    , ("stage2-fft-cost", jsonRound 0 c) ]
       | _, _ => fields
     let fields := match r.recursiveProveSec with
-      | some s => fields ++ [ ("recursive-prove-time", jsonRound 6 s) ]
+      | some s => fields ++ [ ("stage2-prove-time", jsonRound 6 s)
+                            , ("stage2-throughput",
+                               jsonRound 2 (r.constants.toFloat / s)) ]
       | none => fields
     let fields := match r.recursivePeakRss with
-      | some n => fields ++ [ ("recursive-peak-rss", Lean.toJson n) ]
+      | some n => fields ++ [ ("stage2-peak-rss", Lean.toJson n) ]
       | none => fields
     let fields := match r.recursiveProofSize with
-      | some n => fields ++ [ ("recursive-proof-size", Lean.toJson n) ]
+      | some n => fields ++ [ ("stage2-proof-size", Lean.toJson n) ]
       | none => fields
     let fields := match r.recursiveVerifySec with
-      | some v => fields ++ [ ("recursive-verify-time", jsonRound 6 v) ]
+      | some v => fields ++ [ ("stage2-verify-time", jsonRound 6 v) ]
       | none => fields
     -- The pipeline ledger, once the whole pipeline has run.
     -- `total-time` is each stage's prove, summed. A stage's prove is
     -- the WHOLE cost of producing that stage's proof: `prove_ixvm` runs
     -- the executor itself (the `aiur/execute_ixvm` span) before
-    -- generating the witness, so the Phase-1 `execute-time` beside it is
+    -- generating the witness, so the `stage1-execute-time` beside it is
     -- a SECOND, standalone run — instrumentation for `constants` and
-    -- `fft-cost`, not a step of proving. Adding the two would count the
-    -- execution twice. Verification is likewise excluded: a consumer
-    -- cost, not a production one.
+    -- `stage1-fft-cost`, not a step of proving. Adding the two would
+    -- count the execution twice. Verification is likewise excluded: a
+    -- consumer cost, not a production one.
+    -- `pipeline-throughput` is `constants` over `total-time` — the
+    -- end-to-end checking rate, per-stage throughputs being scoped to
+    -- their own prove.
     -- `pipeline-peak-rss` is the whole run's RAM high-water: the
     -- per-phase windows reset, so no single `peak-rss` answers "how much
     -- RAM does this pipeline need" — their maximum does. Emitted
@@ -296,7 +304,9 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     let fields := match r.proveSec, r.recursiveExecuteSec, r.recursiveProveSec with
       | some p, some _, some rp =>
         let peaks := [r.executePeakRss, r.peakRss, r.recursivePeakRss].reduceOption
-        fields ++ [ ("total-time", jsonRound 6 (p + rp)) ]
+        fields ++ [ ("total-time", jsonRound 6 (p + rp))
+                  , ("pipeline-throughput",
+                     jsonRound 2 (r.constants.toFloat / (p + rp))) ]
           ++ (match peaks.max? with
               | some n => [("pipeline-peak-rss", Lean.toJson n)]
               | none => [])
@@ -575,9 +585,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                   , proofSize := some proofBytes.size, verifySec := verifySec? }, addr)
         writeJson (ordered.map (·.1))
         -- Phase 3 (--recursive): the in-circuit verifier over the fresh
-        -- proof — execute it (recursive-execute-time / recursive-fft-cost), then prove
-        -- that execution (recursive-prove-time / recursive-peak-rss /
-        -- recursive-proof-size / recursive-verify-time). A reject on the execute
+        -- proof — execute it (stage2-execute-time / stage2-fft-cost), then prove
+        -- that execution (stage2-prove-time / stage2-peak-rss /
+        -- stage2-proof-size / stage2-verify-time). A reject on the execute
         -- is a correctness alarm, reported loudly with the recursive fields
         -- left absent — never a benchmark datum.
         if let some (vCompiled, vIdx, vSystem) := vCtx then
@@ -598,7 +608,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             let rvStats := Aiur.computeStats vCompiled qc vSystem.circuitShapes
               (logBlowup := commitParams.logBlowup)
             IO.println s!"  {r.name}: recursive={rvSec}s \
-              recursive-fft-cost={rvStats.totalFftCost}"
+              stage2-fft-cost={rvStats.totalFftCost}"
             -- The per-circuit breakdown names where the verifier's cost
             -- lives (deserialization vs blake3 vs FRI); texray-gated like
             -- the other detailed diagnostics.
@@ -626,8 +636,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
               | .error e =>
                 IO.eprintln s!"  outer verify {r.name} FAILED: {e}"
                 pure none
-            IO.println s!"  {r.name}: recursive-prove={rvProveSec}s \
-              recursive-verify={rvVerifySec}s outer proof={rvProofBytes.size} bytes"
+            IO.println s!"  {r.name}: stage2-prove={rvProveSec}s \
+              stage2-verify={rvVerifySec}s outer proof={rvProofBytes.size} bytes"
             let (row, _) := ordered[i]!
             ordered := ordered.set! i
               ({ row with recursiveProveSec := some rvProveSec
@@ -654,7 +664,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "json"      : String; "Write per-constant results JSON to this path. Off by default; normal CLI usage prints only the human-readable summary."
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
-    "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
+    "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the stage2-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."

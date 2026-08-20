@@ -33,22 +33,11 @@ namespace Ix.Cli.BenchReport
 
 /-! ## Metric formatting -/
 
-/-- Stage qualifiers a pipeline measure carries ahead of its base name:
-    `recursive-` scopes a measure to the recursion stage, `pipeline-` to
-    the whole run. Stripped wherever a measure is interpreted by its base
-    name (formatting kind) or labelled under a heading that already says
-    the stage. -/
-def stagePrefixes : List String := ["recursive-", "pipeline-"]
-
-/-- `metric` with its stage qualifier removed, if it has one. -/
-def dropStagePrefix (metric : String) : String :=
-  match stagePrefixes.find? (fun p => metric.startsWith p) with
-  | some p => (metric.drop p.length).toString
-  | none => metric
+open Ix.Cli.BenchCmd (stagePrefixOf dropStagePrefix)
 
 /-- Per-metric formatting kind. Metric names are the results-JSON keys the
     tools emit (see the registry in Ix.Cli.BenchCmd). A stage-qualified
-    metric formats like its base counterpart (`recursive-peak-rss` and
+    metric formats like its base counterpart (`stage2-peak-rss` and
     `pipeline-peak-rss` like `peak-rss`, …). Unknown metrics fall through
     to a generic decimal rendering. -/
 def metricKind (metric : String) : String :=
@@ -68,12 +57,13 @@ def metricKind (metric : String) : String :=
     (renaming one would orphan its threshold/history); only the table
     rendering differs. `file-size` is the serialized `.ixe` env — bencher
     plots it as "Environment Size"; `peak-rss` reads better as plain RAM,
-    in every slug that embeds it (`recursive-peak-rss` → …-peak-ram);
+    in every slug that embeds it (`stage2-peak-rss` → …-peak-ram);
     `throughput` carries its unit here because the runs print bare
     magnitudes (matching `unitsFor`'s "constants / second" on bencher). -/
 def metricLabel (metric : String) : String :=
   if metric == "file-size" then "env-size"
-  else if metric == "throughput" then "throughput (const/s)"
+  else if dropStagePrefix metric == "throughput" then
+    metric.replace "throughput" "throughput (const/s)"
   else metric.replace "peak-rss" "peak-ram"
 
 /-- Group a digit string by thousands: `"105492"` → `"105,492"`. -/
@@ -138,7 +128,8 @@ def human (v : Option Float) (metric : String) : String :=
     constants checked per second on EVERY backend (`ix_bench::throughput`
     is the one calculator; a zkVM's cycle rate stays derivable from its
     cycles / execute-time fields). -/
-def higherIsBetter (metric : String) : Bool := metric == "throughput"
+def higherIsBetter (metric : String) : Bool :=
+  dropStagePrefix metric == "throughput"
 
 /-! ## Row access -/
 
@@ -195,10 +186,11 @@ structure CompareSection where
 
 /-- The stage qualifier shared by every one of a section's measures, if
     they share one. A stage table's heading already says which stage it
-    is, so its columns read `prove-time`, not `recursive-prove-time`. -/
+    is, so its columns read `prove-time`, not `stage1-prove-time`. -/
 def sectionLabelDrop (metrics : Array String) : String :=
-  if metrics.isEmpty then "" else
-  (stagePrefixes.find? fun p => metrics.all (·.startsWith p)).getD ""
+  match metrics[0]?.bind stagePrefixOf with
+  | some p => if metrics.all (·.startsWith p) then p else ""
+  | none => ""
 
 structure CompareArgs where
   mainRows : Json
@@ -797,7 +789,7 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     let names ← Ix.Cli.ConstsFile.gather p "consts" "names"
     if (p.flag? "consts").isNone && (p.flag? "names").isNone then pure none
     else
-      -- The env-keyed row (ooc whole-env, compile) isn't a Vectors.csv
+      -- The env-keyed row (ooc whole-env, compile) isn't a benchmark
       -- constant; admit it past the names filter explicitly.
       match (p.flag? "env").map (·.as! String) with
       | some env => pure (some (names.push env))
@@ -886,24 +878,20 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     job needs verbatim: the display label, the bencher testbed/workload
     pair, and the rendered `--threshold-*` flags, so the workflow
     hardcodes none of it. -/
-def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
-  let csv := (p.flag? "csv").map (·.as! String)
-    |>.getD "Benchmarks/Vectors.csv"
-  let rows := Ix.Cli.BenchCmd.parseVectorsCsv (← IO.FS.readFile csv)
+def runMatrixCmd (_ : Cli.Parsed) : IO UInt32 := do
   let mut entries : Array Json := #[]
   for b in Ix.Cli.BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
     for (mode, testbed) in b.testbeds do
       if b.unscheduled.contains mode then continue
-      for env in b.envNames rows do
+      for env in b.envNames do
         -- Skip a per-constant cell whose selection is empty in THIS mode:
         -- an env stays in `envNames` because some scheduled mode runs it,
-        -- but a constant excluded from one mode (e.g. Lean's only primary
-        -- constant is prove-excluded) leaves that (env, mode) cell empty —
-        -- scheduling it would waste a job and expect a row that never lands.
+        -- but a constant excluded from one mode leaves that (env, mode)
+        -- cell empty — scheduling it would waste a job and expect a row
+        -- that never lands.
         if b.inputs == .perConstant
-          && (Ix.Cli.BenchCmd.selectNames rows env b.name mode
-              (full := false) (tier := "") (shardOnly := false)).isEmpty then
+          && (Ix.Cli.BenchCmd.selectNames env b.name mode).isEmpty then
           continue
         let label := s!"{b.name}-{env}-{mode}"
         entries := entries.push <| Json.mkObj
@@ -951,16 +939,14 @@ def parseError (msg : String) : IO UInt32 := do
                                     decompile), InitStd for the rest)
       BENCH_CONSTS=Nat.gcd,…       (bench exactly these constants on the
                                     per-constant backends, overriding the
-                                    curated selection. Each name's env is
-                                    found automatically: its Vectors.csv
-                                    row first, else its defining module
-                                    (Init/Std → InitStd, Lean → Lean),
-                                    else Mathlib — or FLT for FLT.* names
-                                    — so BENCH_ENVS is never required. A
-                                    single-env BENCH_ENVS still forces
-                                    placement.)
-      BENCH_FULL=1                 (full curated set, not just primary)
-      BENCH_SHARD=1                (only the multi-shard target constants)
+                                    shared selection. Each name's env is
+                                    found automatically: its
+                                    `benchConstants` entry first, else its
+                                    defining module (Init/Std → InitStd,
+                                    Lean → Lean), else Mathlib — or FLT
+                                    for FLT.* names — so BENCH_ENVS is
+                                    never required. A single-env
+                                    BENCH_ENVS still forces placement.)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
       RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
       IX_COMPILE_WORKERS=… / IX_DECOMPILE_KENV_CLEAR_ENTRIES=…
@@ -1043,8 +1029,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `=`, so only recognized keys are consulted there).
   let mut envs : Array String := #[]
   let mut consts : Array String := #[]
-  let mut shard := "0"
-  let mut full := "0"
   let mut passthrough : Array String := #[]
   let mut cfgEntries : Array (String × Bool) :=
     (cfgToks.map ((·, true))).toArray
@@ -1077,8 +1061,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       | "BENCH_CONSTS" =>
         for tok in Ix.Cli.ConstsFile.parseCommaList val do
           if !consts.contains tok then consts := consts.push tok
-      | "BENCH_SHARD" => if val == "1" then shard := "1"
-      | "BENCH_FULL" => if val == "1" then full := "1"
       | k =>
         if ["BENCH_PHASES", "RUST_LOG", "WITHOUT_VK_VERIFICATION",
             "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
@@ -1087,17 +1069,17 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
-            benchmark command (expected BENCH_ENVS / BENCH_CONSTS / \
-            BENCH_FULL / BENCH_SHARD, or passthrough: BENCH_PHASES, \
+            benchmark command (expected BENCH_ENVS / BENCH_CONSTS, \
+            or passthrough: BENCH_PHASES, \
             RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS, \
             IX_COMPILE_EAGER, IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS, \
             IX_DECOMPILE_KENV_CLEAR_ENTRIES)"
     | [] => continue
 
   -- BENCH_CONSTS: bench exactly these constants on the per-constant
-  -- backends, overriding the curated selection (`ix bench run --consts`
+  -- backends, overriding the shared selection (`ix bench run --consts`
   -- downstream). Each name finds its own env — no BENCH_ENVS needed:
-  --   1. a Vectors.csv row wins (curated attribution);
+  --   1. a `benchConstants` entry wins (curated attribution);
   --   2. otherwise, locate the name by defining module: import the
   --      `Lean` environment (toolchain oleans only — its closure IS the
   --      Lean bench env, and it contains InitStd's) and map the module
@@ -1108,16 +1090,13 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   -- An explicit single-env BENCH_ENVS still overrides the attribution.
   let mut constsByEnv : Array (String × Array String) := #[]
   if !consts.isEmpty then
-    let csvPath := (p.flag? "csv").map (·.as! String)
-      |>.getD "Benchmarks/Vectors.csv"
-    let rows := Ix.Cli.BenchCmd.parseVectorsCsv
-      (← try IO.FS.readFile csvPath catch _ => pure "")
-    -- Loaded lazily, once, and only when some name has no CSV row.
+    -- Loaded lazily, once, and only when some name has no curated entry.
     let mut lookupEnv? : Option Lean.Environment := none
     for n in consts do
-      let csvOwners :=
-        ((rows.filter (·.name == n)).map (·.env)).toList.eraseDups
-      let mut owners := csvOwners
+      let curatedOwners :=
+        ((Ix.BenchConstants.benchConstants.filter (·.name == n)).map
+          (·.env)).toList.eraseDups
+      let mut owners := curatedOwners
       if owners.isEmpty then
         let env ← match lookupEnv? with
           | some e => pure e
@@ -1204,8 +1183,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let modes := " ".intercalate
     (backends.map (fun b =>
       if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
-  let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}` · \
-    set: `{if full == "1" then "full" else "primary"}` · shard: `{shard}`"
+  let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate allEnvs.toList}`"
   if !consts.isEmpty then
     summary := summary ++ s!" · consts: `{",".intercalate consts.toList}`"
   if freshFlag then
@@ -1225,7 +1203,6 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
     h.putStr <| s!"matrix={(Json.arr entries).compress}\n"
       ++ s!"envs={(Json.arr (allEnvs.map Json.str)).compress}\n"
-      ++ s!"shard={shard}\nfull={full}\n"
       ++ s!"fresh={if freshFlag then 1 else 0}\n"
       ++ s!"config-summary={summary}\n"
       ++ "passthrough-env<<PTENV\n"
@@ -1303,9 +1280,6 @@ open Ix.Cli.BenchReport in
 def benchCiMatrixCmd : Cli.Cmd := `[Cli|
   "matrix" VIA runMatrixCmd;
   "Emit the benchmark matrix from the registry: each enabled backend × its env set × scheduled modes, with per-entry testbed/workload/threshold metadata"
-
-  FLAGS:
-    csv : String; "Vectors path for the per-constant env fan-out (default: Benchmarks/Vectors.csv)"
 ]
 
 open Ix.Cli.BenchReport in
@@ -1315,7 +1289,6 @@ def benchCiParseCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     comment : String; "The command text (default: the COMMENT_BODY env var)"
-    csv     : String; "Vectors path for BENCH_CONSTS env attribution (default: Benchmarks/Vectors.csv)"
 ]
 
 def benchCiCmd : Cli.Cmd := `[Cli|

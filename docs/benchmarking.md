@@ -42,7 +42,7 @@ row** — an empty or quietly-partial cell can't be green.
 | subcommand | job |
 |---|---|
 | `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur/zkVM), fold each spawn's span window into its row, gate on the rows |
-| `shard`      | pre-cut the closure-shard artifacts for the env's heavy-tier constants (`ix shard extract` → `ix profile` → `ix shard`) |
+| `shard`      | pre-cut the closure-shard artifacts for the env's zisk constants (`ix shard extract` → `ix profile` → `ix shard`) |
 | `compare`    | two rows files → Markdown base-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
@@ -54,7 +54,7 @@ row** — an empty or quietly-partial cell can't be green.
 ### Local usage
 
 ```shell
-# Run the ooc cell over InitStd's primary constants:
+# Run the ooc cell over InitStd's benchmark constants:
 ix bench run --backend ooc --env InitStd
 
 # Change something, run again, and diff against your previous run
@@ -78,21 +78,11 @@ ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
 ix bench compare --backend aiur --env InitStd --mode prove \
   --base main.json --pr .lake/benches/aiur-InitStd-prove.json
 
-# The recursion cell — fixed IxVM statements (Nat.add_comm,
-# Array.extract_append), resolved in the env's .ixe:
-ix bench run --backend aiur-recursive --env InitStd --ixe InitStd.ixe
-
 # The lean4lean reference kernel over InitStd — whole-library replay plus
-# per-primary closure rows, from oleans (no .ixe needed). Read next to the
+# per-constant closure rows, from oleans (no .ixe needed). Read next to the
 # ooc cell's rows for the Rust-vs-reference-kernel gap on the same library:
 ix bench run --backend lean4lean --env InitStd
 ix bench compare --backend lean4lean --env InitStd
-
-# Recursion layered on a real constant (recursion-tuned FRI parameters;
-# an IxVM-scale verifier execute exceeds 100 GB, so cap the watchdog and
-# expect the honest oom row on anything big):
-ix bench run --backend aiur --env InitStd --mode recursive \
-  --consts Nat.add_comm --ixe InitStd.ixe --ceiling-gb 50
 ```
 
 `--repo <dir>` points the run at another checkout: the *measured* tools
@@ -103,12 +93,11 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | Aiur STARK check, one bench-main cell per mode on its own testbed: prove — the real-workload simulation (prove-time, proof-size, verify-time, peak-rss, plus fft-cost / execute-time from its own Phase 1) — and execute, the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss). `!benchmark aiur [execute]` picks the mode. A third mode, recursive (`bench-typecheck --recursive`), additionally executes AND proves the in-circuit multi-stark verifier over each fresh proof — the whole system runs under recursion-tuned FRI parameters, so its rows land on their own testbed (`aiur-check-recursive`) and are not comparable to the prove cell's. Unscheduled (the full selection is too heavy for per-push CI — the large closures exceed the RAM ceiling and land as OOM rows — so no CI job runs it and nothing uploads to its testbed; the `aiur-recursive` cell below tracks the same measurement over a fixed two-constant subset): run it locally (`ix bench run --backend aiur --mode recursive`) or request it on demand with `!benchmark aiur recursive` — meant for a bigger manual dispatch | `bench-typecheck` |
-| `aiur-recursive` | IxVM recursion on two fixed constants at the ~100-query soundness level (`Nat.add_comm`, the cheap-tier small end; `Array.extract_append`, the heavy-tier kernel-scale one): prove each constant's IxVM typecheck, run the in-circuit multi-stark verifier over the fresh proof (recursive-execute-time, recursive-fft-cost — the recursion-cost proxy), then prove that execution end-to-end (recursive-prove-time, recursive-peak-rss, recursive-proof-size, recursive-verify-time). The same measurement as aiur's recursive mode, but over a fixed subset instead of the `Vectors.csv` fan-out: always exactly one cell regardless of `BENCH_ENVS`, with the constants resolved in whichever env's `.ixe` the cell carries | `bench-typecheck --recursive` |
-| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (1 when unsharded) | `zisk-host` |
+| `aiur`    | the Aiur proof pipeline, per constant: stage 1 proves the IxVM typecheck, stage 2 executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`) | `bench-typecheck --recursive` |
+| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (the runtime-planned partition size; 1 when the closure fits) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
-| `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
-| `lean4lean` | the reference Lean4-in-Lean4 kernel ([digama0/lean4lean](https://github.com/digama0/lean4lean), required by the lakefile at a pinned rev) — the external yardstick for the Ix kernels on the same libraries. Olean-driven (no `.ixe`): the whole-library row replays every module in the env's import closure through lean4lean, module-parallel (check-time, constants, throughput, peak-rss; tune parallelism with `LEAN_NUM_THREADS`), plus one full-closure row per primary (the name's transitive closure into a fresh kernel env), mirroring ooc's row shape. Registry-disabled for CI (no bencher testbed yet); `ix bench run --backend lean4lean` works locally regardless | `bench-lean4lean` |
+| `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
+| `lean4lean` | the reference Lean4-in-Lean4 kernel ([digama0/lean4lean](https://github.com/digama0/lean4lean), required by the lakefile at a pinned rev) — the external yardstick for the Ix kernels on the same libraries. Olean-driven (no `.ixe`): the whole-library row replays every module in the env's import closure through lean4lean, module-parallel (check-time, constants, throughput, peak-rss; tune parallelism with `LEAN_NUM_THREADS`), plus one full-closure row per constant (the name's transitive closure into a fresh kernel env), mirroring ooc's row shape. Registry-disabled for CI (no bencher testbed yet); `ix bench run --backend lean4lean` works locally regardless | `bench-lean4lean` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
@@ -149,19 +138,23 @@ approach the ceiling, and a kill there means missing rows and a red cell.
 There are **no per-constant timeouts**; the job-level `timeout-minutes` is
 the only clock.
 
-Heavy-tier zisk constants (whose single-leaf closure would blow the runner's
-RAM) run as their closure-shard partition instead: `ix shard extract` →
-`ix profile` → `ix shard` cut a manifest, and one `--shard-plan` host run
-executes the shards sequentially, emitting the constant's row with per-shard
+Every zisk constant runs as a closure-shard partition sized at bench
+runtime: `ix shard extract` → `ix profile` → `ix shard` cut a manifest
+whose shard count comes from the planner's RAM budget (a closure that
+fits gets a one-shard plan), and one `--shard-plan` host run executes the
+shards sequentially, emitting the constant's row with per-shard
 breakdowns. bench-main's compile job pre-cuts these artifacts
-(`ix bench shard`) and ships them via cache.
+(`ix bench shard`) and ships them via cache; a zisk run cuts lazily when
+they're absent, and falls back to the whole closure if the cut fails.
 
 ## Registry and constant set
 
-- **`Benchmarks/Vectors.csv`** — the curated constants: one row per
-  `(name, env, tier[, shard_target[, primary]])`. `tier: heavy` marks
-  constants whose full prove is expected to OOM (they still run; the row
-  records it). `primary: 1` is the default `!benchmark` subset.
+- **`Ix/BenchConstants.lean`** — the shared constant set: one
+  `(name, env)` entry per benchmark constant, compiled into `ix`.
+  Every per-constant backend runs this same set (a constant whose prove
+  exceeds the host's RAM still runs; the row records the OOM), minus the
+  hard feasibility exclusions in `benchExclusions`
+  (`Ix/Cli/BenchCmd.lean`).
 - **The registry** (`envSpecs`/`backendSpecs` in `Ix/Cli/BenchCmd.lean`) —
   everything else: env modules, backends (disabled reason, default mode,
   bencher testbeds, compare columns). Typed Lean data with one owner: the
@@ -179,13 +172,14 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] [aiur-recursive] | all)
-           [execute | recursive] [fresh] [KEY=VALUE …]
+!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] | all)
+           [execute] [fresh] [KEY=VALUE …]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
                                # compile-only request may name any registry
                                # env (Lean, FLT compile fine, just unbenched)
-BENCH_FULL=1                   # full curated set, not just primary
-BENCH_SHARD=1                  # only the multi-shard target constants
+BENCH_CONSTS=Nat.gcd,…         # bench exactly these constants on the
+                               # per-constant backends (each name's env is
+                               # found automatically)
 BENCH_PHASES=1                 # add the per-constant phase drill-downs
                                # to the comment (off by default)
 RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
@@ -202,7 +196,7 @@ The `KEY=VALUE` config works both as lines below the command (the comment
 form above) and inline on the command line, whitespace-separated — the
 single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
 input box can't hold newlines:
-`!benchmark aiur execute BENCH_ENVS=InitStd,Mathlib BENCH_FULL=1`.
+`!benchmark aiur execute BENCH_ENVS=InitStd,Mathlib`.
 
 The `IX_COMPILE_*` settings change compile-time RAM and speed but produce a
 bit-identical `.ixe`, so normal `.ixe` and compile-row caches are keyed only by
@@ -212,9 +206,9 @@ benchmarked commit.
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
 (and no Python remains). Mode defaults per backend from the registry; the
-bare `execute` token flips `aiur` to Phase-1 only, and `recursive` to its
-recursive mode (unscheduled testbed, so no bencher baseline; OOMs the
-standard CI host — meant for a bigger manual dispatch). The bare `fresh`
+bare `execute` token flips `aiur` from the full proof pipeline to the fast
+Phase-1-only mode (unscheduled testbed, so no bencher baseline — its base
+side comes from a base-SHA run). The bare `fresh`
 token makes every cell bypass its bencher baseline and keeps persistent cached
 benchmark binaries, compiled `.ixe` files, and compile rows out of measured
 jobs. A cached head `ix` may bootstrap the canonical command parser, but the
@@ -230,10 +224,9 @@ untouched.
 SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe` and pre-cut zisk shards
 separately) →
-`aiur` (execute + prove cells) / `zkvm-execute` / `ooc-check` (each: restore caches, one
-`ix bench run … --ixe`, `ix bench bmf`, upload via
-`.github/actions/bencher-track`) / `aiur-recursive` (same shape — it
-restores the cached `.ixe` its fixed constants resolve in). A kernel
+one `benchmark` job per remaining cell — aiur / zisk / ooc / decompile —
+(each: restore caches, one `ix bench run … --ixe`, `ix bench bmf`,
+upload via `.github/actions/bencher-track`). A kernel
 rejection exits 3 and reddens the
 run step while the clean rows still upload.
 
@@ -242,7 +235,7 @@ to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
 lines, one per benchmark row the cell uploads, plus the cross-kernel
 input-constants overlay. Registry-derived like the job matrices (titles,
 ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
-after changing the registry or the primary constants — either locally
+after changing the registry or the constant set — either locally
 (needs the bencher CLI and a user API key in `BENCHER_API_KEY`;
 `--dry-run` previews) or via the `bencher-plots.yml` workflow_dispatch
 (run it after bench-main has built the merged registry). Idempotent:
@@ -280,10 +273,8 @@ only an explicit `fresh` request bypasses the measured-product caches.
   execute-only.
 - **sp1** — disabled in the registry (execute too slow per push);
   re-enable it there and it returns to the matrices and the parser.
-- **aiur recursive over the full selection in CI** — the `aiur-recursive`
-  cell tracks IxVM recursion on its two fixed constants, but the full
-  `Vectors.csv` fan-out of `bench-typecheck --recursive` is too heavy for
-  per-push CI (the large closures exceed the RAM ceiling and land as OOM
-  rows), so the `aiur-check-recursive` testbed is registered but
-  unscheduled: no bench-main job and no `!benchmark` token. Run it
-  locally with `ix bench run --backend aiur --mode recursive`.
+- **aiur prove numbers for the biggest closures** — every constant in the
+  shared set runs the full pipeline, but the largest ones exceed the CI
+  host's RAM ceiling and land as honest `oom` rows, which never upload
+  (`ix bench bmf` drops non-`ok` rows) — their trend lines stay empty
+  until the prover's RAM drops under the ceiling.

@@ -2,8 +2,8 @@ name: Sync bencher dashboard plots
 
 # Manual bencher op, like bencher-thresholds-reset: `ix bench plots` syncs
 # the dashboard plots to the registry (one plot per tracked (testbed,
-# measure) plus the input-constants and Zisk-heavy-shards cross-cutting
-# plots; see Ix/Cli/BenchPlots.lean for the keep/replace semantics).
+# measure) plus the cross-cutting input-constants plot; see
+# Ix/Cli/BenchPlots.lean for the keep/replace semantics).
 # Dispatch it after a registry change —
 # new primary constant, measure-list edit, plot-title change — has merged
 # to main AND bench-main has run on it: the registry is compiled into the

@@ -1,4 +1,4 @@
-# `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
+# `!benchmark` PR command: run the shared constant set (Ix/BenchConstants.lean)
 # through chosen prover backend(s) and post a base-vs-PR comparison table.
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
@@ -10,13 +10,11 @@
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
 #   BENCH_CONSTS=Nat.gcd,Y        # bench exactly these constants on the per-constant
-#                                  #  backends (overrides the curated selection). Each name's
-#                                  #  env is found automatically — Vectors.csv row first, else
-#                                  #  defining module, else Mathlib (FLT for FLT.* names) — so
-#                                  #  BENCH_ENVS is never required; a single-env BENCH_ENVS
-#                                  #  still forces placement
-#   BENCH_FULL=1                   # run the full curated set, not just primary
-#   BENCH_SHARD=1                  # restrict to the multi-shard target constants
+#                                  #  backends (overrides the shared selection). Each name's
+#                                  #  env is found automatically — benchConstants entry first,
+#                                  #  else defining module, else Mathlib (FLT for FLT.* names)
+#                                  #  — so BENCH_ENVS is never required; a single-env
+#                                  #  BENCH_ENVS still forces placement
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
@@ -38,11 +36,8 @@
 #     in-circuit multi-stark verifier over that fresh proof), reported
 #     as one comparison table per stage — witness execute, prove, peak
 #     RAM, proof size, verify — closing with the pipeline ledger (total
-#     time and the run's RAM ceiling). Its default selection is a fixed
-#     three-constant list, not the primary subset (`fixedSelections` in
-#     Ix/Cli/BenchCmd.lean): every stage is paid per constant, so the
-#     default set is what one host can finish. BENCH_FULL=1 and
-#     BENCH_CONSTS still override. The bare `execute`
+#     time and the run's RAM ceiling). BENCH_CONSTS overrides the shared
+#     selection. The bare `execute`
 #     token switches it to the fast Phase-1-only mode (witness
 #     generation; no bencher baseline exists for that, so the base side
 #     comes from a base-SHA run).
@@ -163,8 +158,6 @@ jobs:
       revision: ${{ steps.target.outputs.revision }}
       matrix: ${{ steps.parse.outputs.matrix }}
       envs: ${{ steps.parse.outputs.envs }}
-      shard: ${{ steps.parse.outputs.shard }}
-      full: ${{ steps.parse.outputs.full }}
       fresh: ${{ steps.parse.outputs.fresh }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
@@ -485,8 +478,6 @@ jobs:
       BASE_SHA: ${{ inputs.base-sha }}
       BASE_REF: ${{ inputs.base-ref }}
       HEAD_SHA: ${{ needs.build.outputs.revision }}
-      SHARD: ${{ needs.build.outputs.shard }}
-      FULL: ${{ needs.build.outputs.full }}
       FRESH: ${{ needs.build.outputs.fresh }}
     steps:
       # The PR is checked out at the workspace root (the local composite
@@ -562,9 +553,9 @@ jobs:
 
       # ---------- PR side ----------
       # The PR side runs first: `ix bench run` selects its constants from
-      # Vectors.csv, and pr.json's row names become the canonical name
-      # list this run measures — the base-side fetch below asks bencher
-      # for exactly those names.
+      # the shared set (Ix/BenchConstants.lean), and pr.json's row names
+      # become the canonical name list this run measures — the base-side
+      # fetch below asks bencher for exactly those names.
       - name: Run backend on PR → pr.json
         id: pr-run
         # Exit 3 = the kernel rejected a constant on the PR side (rows are
@@ -586,8 +577,6 @@ jobs:
             exit 0
           fi
           flags=""
-          [ "$FULL" = 1 ] && flags="$flags --full"
-          [ "$SHARD" = 1 ] && flags="$flags --shard-only"
           [ -n "$CONSTS" ] && flags="$flags --consts $CONSTS"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json" $flags
@@ -789,8 +778,9 @@ jobs:
       # produced no results" note instead of a silent all-n/a table.
       #
       # Partial bencher miss: run just the uncovered names (via --consts).
-      # They are typically constants the PR itself adds, which the base
-      # tree's Vectors.csv doesn't list — so --csv points at the PR's copy.
+      # They are typically constants the PR itself adds; the PR's `ix`
+      # carries the PR's compiled-in constant set, so the base side
+      # selects them without any extra plumbing.
       # Full miss: run the normal selection (or the BENCH_CONSTS override).
       - name: Run backend on base → merge into main.json
         if: steps.decide.outputs.run-base == 'true'
@@ -805,8 +795,6 @@ jobs:
             sudo prlimit --pid $$ --memlock=unlimited:unlimited
           fi
           flags=""
-          [ "$FULL" = 1 ] && flags="$flags --full"
-          [ "$SHARD" = 1 ] && flags="$flags --shard-only"
           if [ -n "$CONSTS" ]; then
             # BENCH_CONSTS override: the base side must measure the same
             # explicit names, not the default selection.
@@ -820,7 +808,6 @@ jobs:
           [ -f "base/$BENV.ixe" ] && flags="$flags --ixe base/$BENV.ixe"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --repo base \
-            --csv "$GITHUB_WORKSPACE/Benchmarks/Vectors.csv" \
             --out "$GITHUB_WORKSPACE/base.json" $flags
           echo "base-side ix bench run exit $?"
           set -e

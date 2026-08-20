@@ -29,6 +29,7 @@ import Tests.Ix.Kernel.PrimAddrs
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
+import Tests.Ix.BenchMeasures
 import Tests.Ix.Tc.Unit
 import Tests.Ix.Tc.Substrate
 import Tests.Ix.Tc.IxonFixtures
@@ -85,6 +86,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("sharing", Tests.Sharing.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
+  ("bench-measures", Tests.Ix.BenchMeasures.suite),
   ("aux-gen-unit", Tests.AuxGen.ExprUtils.suite ++ Tests.AuxGen.Levels.suite ++ Tests.AuxGen.Recursor.suite ++ Tests.AuxGen.Surgery.suite),
   ("ground-unit", Tests.Ground.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
