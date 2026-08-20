@@ -93,6 +93,20 @@ jobs:
 
   rust-test:
     runs-on: ubuntu-latest
+    # Portable codegen for the one job on the GitHub-hosted fleet.
+    # `.cargo/config.toml` sets `-Ctarget-cpu=native` (authoritative in CI
+    # since #575), but `ubuntu-latest` runners are heterogeneous
+    # microarchitectures sharing one cargo cache: a proc-macro dylib or test
+    # binary compiled `native` on one runner SIGILLs when a later run lands
+    # on a runner without those ISA extensions (clippy-driver died with
+    # `signal: 4, SIGILL` checking `aiur` off a cached tracing-attributes).
+    # x86-64-v3 (AVX2) is the documented baseline for GitHub-hosted x64
+    # runners, and RUSTFLAGS participates in the cache key, so this also
+    # re-keys away from any native-built cache entries. The warp jobs keep
+    # `native`: the bench flow reuses their artifacts and records CPU
+    # provenance for exactly that reason (#575).
+    env:
+      RUSTFLAGS: -Ctarget-cpu=x86-64-v3
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust-toolchain
