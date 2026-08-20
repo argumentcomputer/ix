@@ -6,7 +6,7 @@ public import Ix.IndexMap
 /-!
 Lean-native bytecode reference evaluator.
 
-Mirrors `src/aiur/execute.rs` in big-step form:
+Mirrors `crates/aiur/src/execute.rs` in big-step form:
 - No `QueryRecord` (trace-side bookkeeping).
 - No call cache.
 - No `unconstrained` branching (both branches of every `if unconstrained` produce

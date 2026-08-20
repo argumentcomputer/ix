@@ -9,7 +9,11 @@
       ix check --env arena.ixe foo bar baz             # from .ixe, named targets
       ix check --env arena.ixe                         # iterate every named const
       ix check --interp Nat.add_comm                   # Aiur interpreter (richer errors)
+      ix check --claim <hex> --env arena.ixe           # a persisted `Ix.Claim`
       ix check --stats-out STATS Nat.add_comm          # redirect per-circuit stats
+
+  Whole-env raw execution is `ix prove --env --dry-run`, which runs the
+  same schedule and additionally seals, derives, and measures.
 
   Stats print when exactly one constant is targeted. Multi-target +
   whole-env iteration both suppress stats so the log stays usable.
@@ -415,7 +419,7 @@ def parseIxesAllShards (bytes : ByteArray) : Except String (Array (Array Address
     coordinates, so validity makes it THE canonical wrapper the block's
     check covers; an invalid projection is its own block, so coverage
     demands a shard own (and check, and reject) it individually.
-    Mirrors `canonical_prj_fold` (`src/ffi/kernel.rs`). Public for
+    Mirrors `canonical_prj_fold` (`crates/ffi/src/kernel.rs`). Public for
     owning-shard lookups outside this module. -/
 def blockAddrOf (ixonEnv : Ixon.Env) (addr : Address) (c : Ixon.Constant) : Address :=
   let collapse (block : Address) (idx : UInt64)

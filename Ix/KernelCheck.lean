@@ -7,7 +7,7 @@
   - `Tests.Ix.Kernel.CheckEnv`  — the full-environment test runner.
 
   Centralising the binding means the FFI symbol (`rs_kernel_check_consts`,
-  defined in `src/ffi/kernel.rs`) has a single Lean-side `@[extern]`
+  defined in `crates/ffi/src/kernel.rs`) has a single Lean-side `@[extern]`
   declaration, and every caller agrees on the `CheckError` constructor
   layout (tag 0 = `kernelException`, tag 1 = `compileError`).
 -/
@@ -36,7 +36,7 @@ namespace Ix.KernelCheck
     `refs/lean4/src/Lean/Compiler/LCNF/MonoTypes.lean:20-28`.
 
     Tags are stable across the Rust FFI — see `KERNEL_EXCEPTION_TAG` and
-    `COMPILE_ERROR_TAG` in `src/ffi/kernel.rs`. -/
+    `COMPILE_ERROR_TAG` in `crates/ffi/src/kernel.rs`. -/
 inductive CheckError where
   | kernelException (msg : String)
   | compileError    (msg : String)
@@ -53,7 +53,7 @@ def CheckError.message : CheckError → String
 /-- FFI: type-check a batch of constants through the full pipeline
     (Lean env → Ixon compile → kernel ingress → typecheck).
 
-    Implemented in `src/ffi/kernel.rs::rs_kernel_check_consts`. Note: this
+    Implemented in `crates/ffi/src/kernel.rs::rs_kernel_check_consts`. Note: this
     used to be gated behind the `test-ffi` Cargo feature. It is now part
     of the production build so `lake exe ix check` can drive it directly.
 

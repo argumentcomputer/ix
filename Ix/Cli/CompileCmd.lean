@@ -167,11 +167,11 @@ def compileCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
-    consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
+    consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check-rs --consts`. Mutually exclusive with --module; --exclude does not apply."
     "consts-file"  : String; "Additionally read seed constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
     module         : String; "Comma-separated module-name prefixes to filter on (e.g. 'Tests.Ix.Kernel.TutorialDefs,Tests.Ix.Kernel.NatReduction'). Match is against the SOURCE MODULE a constant came from (via `Lean.Environment.getModuleIdxFor?`), not the constant's own name — so macro-emitted decls that register under unqualified names still get caught when their host module's name matches. Transitive deps are pulled in automatically."
     exclude        : String; "Comma-separated exact Lean.Name(s) to strip from the seed set. Excluded names that are still referenced by another seed will reappear via the transitive-dep closure."
-    "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check --consts-file`."
+    "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check-rs --consts-file`."
     json           : String; "Write the compile's benchmark results row (compile-time, file-size, constants, throughput) to this path, merging into any existing rows object."
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
 

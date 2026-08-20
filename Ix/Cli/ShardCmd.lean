@@ -4,10 +4,10 @@
   Chunks are computed from serialized structure alone (no kernel
   run), so already-serialized env pieces can be shipped across the
   wire to separate prover machines (`ix shard extract` cuts a
-  standalone `.ixe` closure per chunk). On a single box nothing
-  plans: `ix check --execute` runs the whole env in one process, and
-  `ix prove --env` shards at prover level by measurement, cutting
-  spans where the record reaches the RAM budget line.
+  standalone `.ixe` closure per chunk). On a single box nothing plans:
+  `ix prove --env` runs the whole env in one process and cuts spans at
+  prover level by measurement, where the record's retained bytes reach
+  the threshold derived from the RAM budget.
 
   Two strategies:
   - Static (no `--profile`): computed from the `.ixe` alone —

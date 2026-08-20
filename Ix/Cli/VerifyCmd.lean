@@ -1,12 +1,28 @@
 /-
-  `ix verify <proof-hex>`: read a persisted `Ixon.Proof` wrapper from
+  `ix verify`: check proofs, shard partitions, or both together.
+
+      ix verify <proof-hex>...                              # proofs alone
+      ix verify --env E.ixe --shards P.ixes                 # coverage verdict
+      ix verify --env E.ixe --shards P.ixes --shard K       # shard K's claim digest
+      ix verify --env E.ixe --shards P.ixes --shard K <hex> # bind to K, verify
+      ix verify --env E.ixe --shards P.ixes <hex>...        # composed verdict
+
+  With proof hexes alone: read each persisted `Ixon.Proof` wrapper from
   the content-addressed store, extract the inner claim + opaque ZK
   proof bytes, reconstruct the Aiur-level public input, and run the
-  Aiur backend's `verify`. Exits 0 on success, 1 with an error
-  message otherwise.
+  Aiur backend's `verify`. The wrapper carries the claim, so no
+  separate claim arg is needed.
 
-  The wrapper carries the claim, so this command takes only the proof
-  hex — no separate claim arg.
+  With `--env` + `--shards` the partition itself is checked: every
+  constant's check-schedule block must be owned by exactly ONE shard.
+  That is the whole soundness condition for the check case — each
+  constant is type-checked once, so every shard's frontier (closure
+  minus owned) is owned, and therefore checked, by some other shard.
+  Adding proofs binds each to the shard whose reconstructed `CheckEnv`
+  claim it commits to, and reports a composed verdict: coverage, every
+  proof bound to a shard, every shard covered by a valid proof.
+
+  Exits 0 on success, 1 with an error message otherwise.
 -/
 module
 public import Cli

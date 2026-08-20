@@ -28,7 +28,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                         (writes `foo.ixe`). Required.
   --consts <n1,n2,…>    comma-separated fully-qualified constant names to
                         benchmark (e.g. `Nat.add_comm,String.append`). Same
-                        flag/shape as `ix check --consts`, `zisk-host --consts`,
+                        flag/shape as `ix check-rs --consts`, `zisk-host --consts`,
                         and `sp1-host --consts`.
   --consts-file <path>  additionally read names from a file: one per line, blank
                         lines and `#` comments ignored. Unions with --consts.
@@ -613,7 +613,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "ixe"          : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
-    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`, `zisk-host --consts`, and `sp1-host --consts`."
+    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check-rs --consts`, `zisk-host --consts`, and `sp1-host --consts`."
     "consts-file"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
     "json"      : String; "Write per-constant results JSON to this path. Off by default; normal CLI usage prints only the human-readable summary."
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."

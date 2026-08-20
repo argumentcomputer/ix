@@ -109,7 +109,7 @@ Reserved for constants too expensive to full-closure-check that can't be sharded
 <NAME>` resolves the name, builds just its closure sub-env (deps lazily faulted
 in — no separate `.ixe`, no whole-env ingress), and checks it. Full-closure by
 default (`Ix.Claim.check addr none`); add `--skip-deps` for subject-only. Same
-`--consts` / `--skip-deps` vocabulary as `ix check`, `sp1-host`, and the Aiur
+`--consts` / `--skip-deps` vocabulary as `ix check-rs`, `sp1-host`, and the Aiur
 `bench-typecheck`.
 
 ---

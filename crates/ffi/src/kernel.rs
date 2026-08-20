@@ -3930,7 +3930,7 @@ fn format_tc_error<M: KernelMode>(
       format!("unknown constant {name} ({:.12})", addr.hex())
     },
     // Everything else has a hand-written `Display` impl in
-    // `src/ix/kernel/error.rs` — prefer it over `{:?}` which dumps raw
+    // `crates/kernel/src/error.rs` — prefer it over `{:?}` which dumps raw
     // KExpr internals.
     other => format!("{other}"),
   }

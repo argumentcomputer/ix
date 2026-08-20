@@ -138,10 +138,10 @@ feed it through `ix` (which only works over complete program graphs). Once the
 formalization is complete, however, you will be able to do
 
 ```
-> ix store FLT.lean PNat.pow_add_pow_ne_pow
-e53c3d4bad8538e152a89d8bf75be178a3876252744961b9a087fe3973545c20
-> ix prove --check e53c3d4bad8538e152a89d8bf75be178a3876252744961b9a087fe3973545c20
+> ix compile FLT.lean --consts PNat.pow_add_pow_ne_pow --out flt.ixe
+> ix prove --env flt.ixe PNat.pow_add_pow_ne_pow
 b44236ba17ad7445ae3eac48a8ba86ba00f08c069237b08451e311b688146e7e
+> ix verify b44236ba17ad7445ae3eac48a8ba86ba00f08c069237b08451e311b688146e7e
 ```
 
 to generate a [multi-STARK](https://github.com/argumentcomputer/multi-stark)
@@ -194,11 +194,11 @@ cells locally, and `!benchmark` runs them on a PR — see
 
 **Lean tests:** `lake test`
 
-- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
-- `lake test -- --ignored` runs only the expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `rust-decompile`, `commit-io`, `aiur`, `aiur-hashes`, `ixvm`
+- `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `byte-array`, `ixon`, `ixon-syntax`, `claim`, `merkle`, `assumption-tree`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`, `aux-gen-unit`, `ground-unit`, `aiur-cross`, `aiur-cost`, `prim-addrs`, `decompile-unit`, `tc-unit`; plus the primary runners `aiur-prove`, `aiur-hashes`, `rbtree-map`, `multi-stark`, `recursive-verifier`
+- `lake test -- --ignored` runs only the expensive suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `ixon-corpus`, `rust-decompile`, `commit-io`, `kernel-ixon-roundtrip`, `kernel-lean-roundtrip`, `kernel-tutorial`, `kernel-check-env`, `kernel-check-const`, `rust-kernel-build-primitives`, `rust-kernel-build-prim-origs`, `tc-anon-diff`, `tc-init`, `tc-tutorial`, `tc-roundtrip`, `tc-ingress-meta`; plus the expensive runners `ixvm`, `validate-aux`, `aux-gen-diff`, `decompile-diff`, `lean4lean`, `tc-pins`, `tc-accel-diff`
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM
-    - `aiur` and `aiur-hashes` generate ZK proofs and use significant CPU
+    - `aiur-prove`, `aiur-hashes`, and `ixvm` generate ZK proofs and use significant CPU
 - `lake test -- --ignored <ignored-suite>` runs one or multiple expensive suites by name
 - `lake test -- --include-ignored` runs both primary and expensive test suites
 - `lake test -- --include-ignored <ignored-suite>` runs all primary suites plus one or multiple expensive suites
@@ -355,7 +355,7 @@ build the guest) per the
    RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --consts Vector.extract_append --skip-deps
    ```
 
-   `--consts` / `--skip-deps` are the same flags `ix check`, `sp1-host`, and the
+   `--consts` / `--skip-deps` are the same flags `ix check-rs`, `sp1-host`, and the
    Aiur `bench-typecheck` use, so all four share one vocabulary. `--skip-deps`
    trusts
    dependencies rather than re-checking them, so it is far cheaper than the

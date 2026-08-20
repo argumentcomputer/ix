@@ -25,10 +25,11 @@
   way. `--dry-run` stops at witness generation in both modes: seals,
   derivation, and each unit's exact measured peak, with no STARKs.
 
-  Per-name / per-claim modes prove one `verify_claim` witness and
-  persist the result as an `Ixon.Proof` wrapper (claim + opaque proof
-  bytes), printing the proof blake3 hex — feed that to
-  `ix verify <proof-hex>`. `--claim` loads the claim from the store
+  Every proven unit — shard, whole-env span, or per-name / per-claim
+  witness alike — is persisted as an `Ixon.Proof` wrapper (canonical
+  claim + opaque proof bytes) in the content-addressed store, and its
+  blake3 hex reported: the artifact a box ships for aggregation, and
+  what `ix verify <proof-hex>` consumes. `--claim` loads the claim from the store
   and resolves every referenced assumption / env / contains tree
   (build trees with `ix tree canonical` / `ix tree env`). Driven by
   the shared `Ix.Cli.CheckCmd.forEachClaim`.
