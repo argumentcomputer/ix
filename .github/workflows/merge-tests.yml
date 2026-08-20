@@ -14,7 +14,7 @@ permissions:
 jobs:
   merge-tests:
     name: ${{ matrix.name }}
-    #if: ${{ github.event_name == 'merge_group' }}
+    if: ${{ github.event_name == 'merge_group' }}
     strategy:
       fail-fast: true
       matrix:
@@ -49,7 +49,7 @@ jobs:
           native-codegen: ${{ matrix.kind != 'valgrind' }}
 
       - if: ${{ matrix.kind == 'cargo' }}
-        uses: taiki-e/install-action@nextest
+        run: exit 1 # Test fail-fast & de-queue on error
 
       # A merge group has its own SHA, so restore the nearest compatible build
       # produced by ordinary CI and let Lake rebuild anything that changed.
