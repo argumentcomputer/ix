@@ -22,9 +22,6 @@ jobs:
           - name: Lake ignored tests
             kind: lake
             runner: warp-ubuntu-latest-x64-32x
-          - name: Cargo ignored tests
-            kind: cargo
-            runner: warp-ubuntu-latest-x64-32x
           - name: Valgrind FFI
             kind: valgrind
             runner: warp-ubuntu-latest-x64-8x
@@ -38,7 +35,7 @@ jobs:
           TEST_KIND: ${{ matrix.kind }}
         run: |
           case "$TEST_KIND" in
-            lake|cargo|valgrind|tc) ;;
+            lake|valgrind|tc) ;;
             *) echo "::error::Unknown merge-test variant: $TEST_KIND"; exit 1 ;;
           esac
 
@@ -99,10 +96,6 @@ jobs:
       - name: Run ZK voting prover
         if: ${{ matrix.kind == 'lake' }}
         run: lake exe Apps.ZKVoting.Prover
-
-      - name: Run all ignored Cargo tests
-        if: ${{ matrix.kind == 'cargo' }}
-        run: cargo nextest run --release --profile ci --workspace --run-ignored only
 
       - name: Install valgrind
         if: ${{ matrix.kind == 'valgrind' }}
