@@ -311,7 +311,7 @@ def whnf := ⟦
   -- Primitive-family classification (mirror prim_family,
   -- Primitive.lean:1419): map a Const-head address to the ONE reducer
   -- family that could fire on it — 0 = none, 1 = nat, 2 = str,
-  -- 3 = bitvec, 4 = native, 5 = decidable. Keyed on the ADDRESS ALONE:
+  -- 3 = bitvec, 4 = native, 5 = decidable, 6 = Int. Keyed on the ADDRESS ALONE:
   -- one memo row per distinct constant address in the run, and the
   -- inner addr-set chains collapse after each address's first
   -- occurrence. Replaces running the is_* gauntlet from
@@ -332,7 +332,7 @@ def whnf := ⟦
                   _ =>
                     match is_dec_prim_addr(a) {
                       1 => 5,
-                      _ => 0,
+                      _ => match is_int_prim_addr(a) { 1 => 6, _ => 0, },
                     },
                 },
             },
@@ -352,6 +352,7 @@ def whnf := ⟦
       3 => try_bitvec_dispatch(addr, spine, types),
       4 => try_native_dispatch(addr, spine, types),
       5 => try_dec_dispatch(addr, lvls, spine, types),
+      6 => try_int_prim_dispatch(addr, spine, types),
       _ => (0, store(KExprNode.BVar(0))),
     }
   }
