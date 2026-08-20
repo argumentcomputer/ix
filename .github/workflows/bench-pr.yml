@@ -69,8 +69,10 @@
 # access (anti-poisoning; no token permission can override it), so cache
 # saves would all fail. The issue_comment run therefore only checks the
 # commenter is an org MEMBER/OWNER and re-dispatches this same file as
-# workflow_dispatch, which is allowed to save caches. Manual dispatch
-# needs repo write access.
+# workflow_dispatch, which is allowed to save caches. The relay rejects fork
+# PRs before dispatch so only repository writers can supply code to that cache
+# scope. Manual dispatch already requires repo write access and may
+# intentionally compare loose commits.
 name: Benchmark pull requests
 
 on:
@@ -127,11 +129,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           COMMENT_BODY: ${{ github.event.comment.body }}
+          PR_NUMBER: ${{ github.event.issue.number }}
         run: |
+          head_repo=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
+          if [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::Comment-triggered benchmarks require a same-repository PR head"
+            exit 1
+          fi
           gh workflow run bench-pr.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "${{ github.event.repository.default_branch }}" \
-            -f pr="${{ github.event.issue.number }}" \
+            -f pr="$PR_NUMBER" \
             -f base-sha="${{ steps.comment-branch.outputs.base_sha }}" \
             -f base-ref="${{ steps.comment-branch.outputs.base_ref }}" \
             -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
@@ -152,6 +160,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: warp-ubuntu-latest-x64-32x
     outputs:
+      revision: ${{ steps.target.outputs.revision }}
       matrix: ${{ steps.parse.outputs.matrix }}
       envs: ${{ steps.parse.outputs.envs }}
       shard: ${{ steps.parse.outputs.shard }}
@@ -163,25 +172,27 @@ jobs:
       # rejected; the failure comment quotes it.
       parse-error: ${{ steps.parse.outputs.parse-error }}
     steps:
-      # Everything downstream needs this job, so malformed inputs die here
-      # (the checkout would take a bare "main" or a short SHA otherwise).
+      # The relay admits only same-repository heads; manual dispatch requires
+      # repo write access. Emit the validated full SHA once for every checkout.
       - name: Validate SHAs
+        id: target
         env:
           BASE: ${{ inputs.base-sha }}
           HEAD: ${{ inputs.head-sha }}
         run: |
           [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$HEAD" =~ ^[0-9a-f]{40}$ ]] \
             || { echo "base-sha/head-sha must be full 40-hex SHAs" >&2; exit 1; }
+          echo "revision=$HEAD" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.head-sha }}
+          ref: ${{ steps.target.outputs.revision }}
           # The job builds and runs PR code; never leave the token in .git.
           persist-credentials: false
       - id: bins
         uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ inputs.head-sha }}
+          key: bench-bins-${{ steps.target.outputs.revision }}
       # A cache miss needs an `ix` before the command can be parsed. The
       # remaining binaries are built after parsing, when `fresh` is known.
       - if: steps.bins.outputs.cache-hit != 'true'
@@ -239,7 +250,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ inputs.head-sha }}
+          key: bench-bins-${{ steps.target.outputs.revision }}
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
@@ -276,7 +287,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build.result }}
           PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
           SUMMARY: ${{ needs.build.outputs.config-summary }}
-          HEAD_SHA: ${{ inputs.head-sha }}
+          HEAD_SHA: ${{ needs.build.outputs.revision }}
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           if [ "$BUILD_RESULT" != success ]; then
@@ -335,7 +346,7 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.head-sha }}
+          ref: ${{ needs.build.outputs.revision }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
       # Apply the allowlisted KEY=VALUE lines from the !benchmark comment,
@@ -357,7 +368,7 @@ jobs:
           # bench-main's compile-job save, which lets a stacked PR's base
           # run reach either producer's entry from one restore.
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Restore published compile row
         if: needs.build.outputs.fresh != '1'
         id: pr-row
@@ -366,7 +377,7 @@ jobs:
           path: |
             compile.json
             compile-cpu-warnings.md
-          key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Select compile source
         id: compile-source
         run: |
@@ -425,7 +436,7 @@ jobs:
           # Path lists are version-significant — keep this identical to the
           # restore above and to bench-main's save.
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       # Publish the measured row too: the compile backend's benchmark run
       # reuses it as its PR side (same runner class, binaries, command).
       - name: Publish compile row
@@ -435,7 +446,7 @@ jobs:
           path: |
             compile.json
             compile-cpu-warnings.md
-          key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-row-${{ needs.build.outputs.revision }}-${{ matrix.env }}
       - name: Upload run environment
         uses: actions/upload-artifact@v7
         with:
@@ -473,7 +484,7 @@ jobs:
       LABEL: ${{ matrix.params.label }}
       BASE_SHA: ${{ inputs.base-sha }}
       BASE_REF: ${{ inputs.base-ref }}
-      HEAD_SHA: ${{ inputs.head-sha }}
+      HEAD_SHA: ${{ needs.build.outputs.revision }}
       SHARD: ${{ needs.build.outputs.shard }}
       FULL: ${{ needs.build.outputs.full }}
       FRESH: ${{ needs.build.outputs.fresh }}
@@ -891,7 +902,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.head-sha }}
+          ref: ${{ needs.build.outputs.revision }}
           persist-credentials: false
       - name: Download run binaries
         uses: actions/download-artifact@v8
@@ -917,7 +928,7 @@ jobs:
       - name: Build comment body
         env:
           SUMMARY: ${{ needs.build.outputs.config-summary }}
-          HEAD_SHA: ${{ inputs.head-sha }}
+          HEAD_SHA: ${{ needs.build.outputs.revision }}
           BASE_SHA: ${{ inputs.base-sha }}
           BASE_REF: ${{ inputs.base-ref }}
         run: |
