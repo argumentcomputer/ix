@@ -299,9 +299,14 @@ def relocateConstantInfo (names : Lean.NameMap Lean.Name) :
   rename + total structural copy. Every object reachable from a staged
   `Declaration` — exprs, names, levels, strings, big literals, mdata —
   is rebuilt on the ordinary heap, pointer-cached per member so the
-  source DAG's sharing is preserved in the copy. The interpreter
-  fallbacks of the safe wrappers are the sparse equivalents:
-  semantically identical, region-sharing, never used in compiled code. -/
+  source DAG's sharing is preserved, and hash-consed so structurally
+  equal content is copied ONCE per member — olean compaction dedups
+  only within a module, so without interning the copy materializes the
+  member's entire syntactic content (~100 GiB for a mathlib member;
+  measured pointer-cache hit rate over batteries is only ~16%). The
+  interpreter fallbacks of the safe wrappers are the sparse
+  equivalents: semantically identical, region-sharing, never used in
+  compiled code. -/
 
 /-- Fresh heap copies of big numerals: scalars are immediate values and
     need no copy; heap-allocated bignums are rebuilt (`+1-1` cannot
@@ -314,45 +319,124 @@ private def copyNat (n : Nat) : Nat := n + 1 - 1
 private def copyInt (i : _root_.Int) : _root_.Int := i + 1 - 1
 private def copyUInt32 (u : UInt32) : UInt32 := u + 1 - 1
 
+/-- Pointer equality (unsafe context only). -/
+private unsafe def peq {α : Type} (a b : α) : Bool :=
+  ptrAddrUnsafe a == ptrAddrUnsafe b
+
+private unsafe def peqList {α : Type} : List α → List α → Bool
+  | [], [] => true
+  | a :: as, b :: bs => peq a b && peqList as bs
+  | _, _ => false
+
+/-! Interning wrappers: olean compaction dedups PER MODULE, so
+    cross-module pointer sharing in a member env is essentially zero —
+    a purely pointer-cached copy materializes the member's full
+    syntactic content (~100 GiB for a mathlib member). The copy is
+    therefore hash-consed: children are interned before their parents,
+    so structural equality of a candidate node is SHALLOW — head
+    constructor, pointer-equal children, equal scalars — and the
+    values' cached hash fields make the intern lookup O(1). The intern
+    tables key on the fresh COPIES (never on region objects), so they
+    survive `freeEnvRegions`. -/
+
+private unsafe structure InternedName where
+  value : Lean.Name
+private unsafe instance : Hashable InternedName where
+  hash a := a.value.hash
+private unsafe instance : BEq InternedName where
+  beq a b := match a.value, b.value with
+    | .anonymous, .anonymous => true
+    | .str p s, .str p' s' => peq p p' && peq s s'
+    | .num p k, .num p' k' => peq p p' && k == k'
+    | _, _ => false
+
+private unsafe structure InternedLevel where
+  value : Lean.Level
+private unsafe instance : Hashable InternedLevel where
+  hash a := a.value.hash
+private unsafe instance : BEq InternedLevel where
+  beq a b := match a.value, b.value with
+    | .zero, .zero => true
+    | .succ x, .succ y => peq x y
+    | .max x y, .max x' y' => peq x x' && peq y y'
+    | .imax x y, .imax x' y' => peq x x' && peq y y'
+    | .param n, .param m => peq n m
+    | .mvar x, .mvar y => peq x.name y.name
+    | _, _ => false
+
+/-- Shallow equality for interning; `fvar`/`mvar`/`mdata` are never
+    interned (rare in kernel content, no cheap shallow form). -/
+private unsafe structure InternedExpr where
+  value : Lean.Expr
+private unsafe instance : Hashable InternedExpr where
+  hash a := a.value.hash
+private unsafe instance : BEq InternedExpr where
+  beq a b := match a.value, b.value with
+    | .bvar i, .bvar j => i == j
+    | .sort u, .sort v => peq u v
+    | .const n ls, .const m ms => peq n m && peqList ls ms
+    | .app f x, .app g y => peq f g && peq x y
+    | .lam n d c bi, .lam n' d' c' bi' =>
+      peq n n' && peq d d' && peq c c' && bi == bi'
+    | .forallE n d c bi, .forallE n' d' c' bi' =>
+      peq n n' && peq d d' && peq c c' && bi == bi'
+    | .letE n t v c nd, .letE n' t' v' c' nd' =>
+      peq n n' && peq t t' && peq v v' && peq c c' && nd == nd'
+    | .lit (.natVal x), .lit (.natVal y) => x == y
+    | .lit (.strVal x), .lit (.strVal y) => peq x y
+    | .proj tn i v, .proj tn' i' v' => peq tn tn' && i == i' && peq v v'
+    | _, _ => false
+
 private unsafe structure CopyState where
-  strings : Lean.PtrMap String String := Lean.mkPtrMap
-  names : Lean.PtrMap Lean.Name Lean.Name := Lean.mkPtrMap
-  levels : Lean.PtrMap Lean.Level Lean.Level := Lean.mkPtrMap
-  exprs : Lean.PtrMap Lean.Expr Lean.Expr := Lean.mkPtrMap
+  /-- Value-keyed string intern; keys are the copies themselves. -/
+  strings : Std.HashMap String String := {}
+  /-- Source-pointer → interned copy (skip re-traversal of repeats). -/
+  namePtr : Lean.PtrMap Lean.Name Lean.Name := Lean.mkPtrMap
+  nameIntern : Std.HashMap InternedName Lean.Name := {}
+  levelPtr : Lean.PtrMap Lean.Level Lean.Level := Lean.mkPtrMap
+  levelIntern : Std.HashMap InternedLevel Lean.Level := {}
+  exprPtr : Lean.PtrMap Lean.Expr Lean.Expr := Lean.mkPtrMap
+  exprIntern : Std.HashMap InternedExpr Lean.Expr := {}
 
 private unsafe abbrev CopyM := StateM CopyState
 
 private unsafe def copyStringC (s : String) : CopyM String := do
-  match (← get).strings.find? s with
+  match (← get).strings.get? s with
   | some c => return c
   | none =>
     let c := String.ofList s.toList
     if ptrAddrUnsafe c == ptrAddrUnsafe s then
       panic! "copyStringC returned its argument"
-    modify fun st => { st with strings := st.strings.insert s c }
+    modify fun st => { st with strings := st.strings.insert c c }
     return c
 
 private unsafe def copyName (n : Lean.Name) : CopyM Lean.Name := do
   match n with
   | .anonymous => return .anonymous
   | _ =>
-    match (← get).names.find? n with
+    match (← get).namePtr.find? n with
     | some c => return c
     | none =>
       let c ← match n with
         | .anonymous => pure Lean.Name.anonymous
         | .str p s => return .str (← copyName p) (← copyStringC s)
         | .num p k => return .num (← copyName p) (copyNat k)
+      let c ← match (← get).nameIntern.get? ⟨c⟩ with
+        | some interned => pure interned
+        | none =>
+          modify fun st =>
+            { st with nameIntern := st.nameIntern.insert ⟨c⟩ c }
+          pure c
       if ptrAddrUnsafe c == ptrAddrUnsafe n then
         panic! "copyName returned its argument"
-      modify fun st => { st with names := st.names.insert n c }
+      modify fun st => { st with namePtr := st.namePtr.insert n c }
       return c
 
 private unsafe def copyLevel (l : Lean.Level) : CopyM Lean.Level := do
   match l with
   | .zero => return .zero
   | _ =>
-    match (← get).levels.find? l with
+    match (← get).levelPtr.find? l with
     | some c => return c
     | none =>
       let c ← match l with
@@ -362,9 +446,15 @@ private unsafe def copyLevel (l : Lean.Level) : CopyM Lean.Level := do
         | .imax a b => return .imax (← copyLevel a) (← copyLevel b)
         | .param n => return .param (← copyName n)
         | .mvar id => return .mvar ⟨← copyName id.name⟩
+      let c ← match (← get).levelIntern.get? ⟨c⟩ with
+        | some interned => pure interned
+        | none =>
+          modify fun st =>
+            { st with levelIntern := st.levelIntern.insert ⟨c⟩ c }
+          pure c
       if ptrAddrUnsafe c == ptrAddrUnsafe l then
         panic! "copyLevel returned its argument"
-      modify fun st => { st with levels := st.levels.insert l c }
+      modify fun st => { st with levelPtr := st.levelPtr.insert l c }
       return c
 
 private unsafe def copySubstring (s : Substring.Raw) : CopyM Substring.Raw := do
@@ -451,7 +541,7 @@ private unsafe def copyMData (md : Lean.MData) : CopyM Lean.MData := do
     unchanged ones — rebuilt off region memory. -/
 private unsafe def relocExprC (names : Lean.NameMap Lean.Name)
     (expr : Lean.Expr) : CopyM Lean.Expr := do
-  match (← get).exprs.find? expr with
+  match (← get).exprPtr.find? expr with
   | some c => return c
   | none =>
     let c ← match expr with
@@ -476,12 +566,22 @@ private unsafe def relocExprC (names : Lean.NameMap Lean.Name)
       | .mdata md b => return .mdata (← copyMData md) (← relocExprC names b)
       | .proj tn i v =>
         return .proj (← copyName (rename names tn)) i (← relocExprC names v)
+    -- Intern the candidate (skip fvar/mvar/mdata — no shallow form).
+    let c ← match expr with
+      | .fvar .. | .mvar .. | .mdata .. => pure c
+      | _ =>
+        match (← get).exprIntern.get? ⟨c⟩ with
+        | some interned => pure interned
+        | none =>
+          modify fun st =>
+            { st with exprIntern := st.exprIntern.insert ⟨c⟩ c }
+          pure c
     -- Guard against code-generator eta (see `copyNat`): the `.bvar`
     -- arm regressed exactly this way — the rebuilt node was simplified
     -- to the region-resident scrutinee.
     if ptrAddrUnsafe c == ptrAddrUnsafe expr then
       panic! s!"relocExprC returned its argument ({expr.ctorName})"
-    modify fun st => { st with exprs := st.exprs.insert expr c }
+    modify fun st => { st with exprPtr := st.exprPtr.insert expr c }
     return c
 
 private unsafe def relocConstantValC (names : Lean.NameMap Lean.Name)
