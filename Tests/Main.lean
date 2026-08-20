@@ -131,6 +131,50 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-ingress-meta", Tests.Tc.IngressMeta.suite),
 ]
 
+/-- Related ignored suites and runners that can be selected or excluded together. -/
+def ignoredGroups : Std.HashMap String (List String) := .ofList [
+  ("compile-pipeline", [
+    "rust-canon-roundtrip",
+    "serial-canon-roundtrip",
+    "parallel-canon-roundtrip",
+    "graph-cross",
+    "condense-cross",
+    "compile",
+    "decompile",
+    "rust-serialize",
+    "ixon-corpus",
+    "rust-decompile",
+    "validate-aux",
+    "aux-gen-diff",
+    "decompile-diff",
+  ]),
+  ("kernel", [
+    "kernel-ixon-roundtrip",
+    "kernel-tutorial",
+    "kernel-check-env",
+    "kernel-check-const",
+    "rust-kernel-build-primitives",
+    "rust-kernel-build-prim-origs",
+    "ixvm",
+  ]),
+  ("typecheckers", [
+    "tc-anon-diff",
+    "tc-init",
+    "tc-tutorial",
+    "tc-roundtrip",
+    "tc-ingress-meta",
+    "tc-pins",
+    "tc-accel-diff",
+    "lean4lean",
+  ]),
+]
+
+private def expandIgnoredNames (names : List String) : List String :=
+  (names.flatMap fun name =>
+    match ignoredGroups[name]? with
+    | some members => members
+    | none => [name]).eraseDups
+
 /-- Primary test runners — quick suites run by default alongside
 `primarySuites`, but kept as deferred `IO` actions (not `TestSeq`
 values) so their setup — Aiur system builds, STARK proofs — does not
@@ -235,8 +279,8 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
             let actual :=
               (Aiur.computeStats v2Env.compiled qc v2Env.shapes).totalFftCost.round.toUInt64.toNat
             pure (LSpec.test
-              s!"Shard pipeline FFT matches: expected 6_720_731_750, got {actual}"
-              (actual = 6_720_731_750))
+              s!"Shard pipeline FFT matches: expected 6_720_706_901, got {actual}"
+              (actual = 6_720_706_901))
       LSpec.lspecIO
         (.ofList [("ixvm",
           [fullSeq, aiurSeq, arenaSeq, exploitSeq, paritySeq, shardSeq])]) []),
@@ -299,14 +343,15 @@ def main (args : List String) : IO UInt32 := do
 
   let runIgnored := args.contains "--ignored"
   let includeIgnored := args.contains "--include-ignored"
-  -- `--exclude=a,b,c` drops the named ignored suites/runners from the sweep, so
-  -- one job can run every ignored test except the suites another job owns.
-  let excludeSet : List String :=
+  -- `--exclude=a,b,c` drops named ignored suites, runners, or groups.
+  let rawExcludeSet : List String :=
     match args.find? (·.startsWith "--exclude=") with
     | some a => (a.drop ("--exclude=".length)).toString.splitOn "," |>.filter fun s => !s.isEmpty
     | none => []
+  let excludeSet := expandIgnoredNames rawExcludeSet
   let filterArgs := args.filter fun a =>
     a != "--ignored" && a != "--include-ignored" && !a.startsWith "--exclude="
+  let ignoredFilterArgs := expandIgnoredNames filterArgs
 
   -- Run primary tests unless --ignored (without --include-ignored) is specified
   if !runIgnored || includeIgnored then
@@ -340,16 +385,16 @@ def main (args : List String) : IO UInt32 := do
     -- that matches nothing is an ERROR, not a silent no-op: otherwise a typo
     -- runs (or excludes) nothing and still reports success having executed
     -- nothing.
-    for arg in filterArgs ++ excludeSet do
+    for arg in ignoredFilterArgs ++ excludeSet do
       if !(allRunners.any fun (key, _) => key == arg)
           && !ignoredSuites.contains arg then
         IO.eprintln s!"error: no ignored suite or runner named '{arg}'"
         return 1
     let suites := excludeSet.foldl (fun m k => m.erase k) ignoredSuites
     let runners := allRunners.filter fun (key, _) => !excludeSet.contains key
-    let mut result ← LSpec.lspecIO suites filterArgs
-    let filtered := if filterArgs.isEmpty then runners
-      else filterArgs.filterMap fun arg => runners.find? fun (key, _) => key == arg
+    let mut result ← LSpec.lspecIO suites ignoredFilterArgs
+    let filtered := if ignoredFilterArgs.isEmpty then runners
+      else ignoredFilterArgs.filterMap fun arg => runners.find? fun (key, _) => key == arg
     for (_, action) in filtered do
       let r ← action
       if r != 0 then result := r

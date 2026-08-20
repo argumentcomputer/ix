@@ -255,6 +255,7 @@
             lake2nix.mkPackage (
               lakeTestBuildArgs
               // {
+                lakeArtifacts = ixLib;
                 name = "IxTests";
                 installArtifacts = true;
               }
@@ -274,6 +275,17 @@
           packages = {
             default = ixLib;
             ix = ixCLI;
+            # `checks` are built by `nix flake check`; exposing this derivation
+            # as a package keeps the ignored suite available on demand without
+            # adding it to the default check set.
+            nextest-ignored = craneLib.cargoNextest (
+              craneArgs
+              // {
+                inherit cargoArtifacts;
+                cargoExtraArgs = "--locked --workspace";
+                cargoNextestExtraArgs = "--profile ci --run-ignored only";
+              }
+            );
             zkv-prover = ZKVotingProver // {
               meta.mainProgram = "Apps-ZKVoting-Prover";
             };
@@ -289,13 +301,13 @@
                 cargoClippyExtraArgs = "--all-targets -- -D warnings";
               }
             );
-            # Rust unit tests across the host workspace.
+            # Non-ignored Rust unit tests across the host workspace.
             nextest = craneLib.cargoNextest (
               craneArgs
               // {
                 inherit cargoArtifacts;
                 cargoExtraArgs = "--locked --workspace";
-                cargoNextestExtraArgs = "--profile ci --run-ignored all";
+                cargoNextestExtraArgs = "--profile ci";
               }
             );
             # Lean test suite. The suite reads fixtures and writes scratch

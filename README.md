@@ -195,13 +195,15 @@ cells locally, and `!benchmark` runs them on a PR — see
 **Lean tests:** `lake test`
 
 - `lake test -- <suite>` runs one or multiple primary test suites. Primary suites: `ffi`, `byte-array`, `ixon`, `claim`, `commit`, `canon`, `keccak`, `sharing`, `graph-unit`, `condense-unit`
-- `lake test -- --ignored` runs only the expensive test suites: `shard-map`, `rust-canon-roundtrip`, `serial-canon-roundtrip`, `parallel-canon-roundtrip`, `graph-cross`, `condense-cross`, `compile`, `decompile`, `rust-serialize`, `rust-decompile`, `commit-io`, `aiur`, `aiur-hashes`, `ixvm`
+- `lake test -- --ignored` runs all expensive test suites and runners
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM
-    - `aiur` and `aiur-hashes` generate ZK proofs and use significant CPU
-- `lake test -- --ignored <ignored-suite>` runs one or multiple expensive suites by name
+    - `ixvm` generates ZK proofs and uses significant CPU
+- `lake test -- --ignored <name>` runs one or more expensive suites, runners, or groups by name
+- Ignored groups: `compile-pipeline`, `kernel`, and `typecheckers`
+- `--exclude=<name,...>` excludes ignored suites, runners, or groups from a full ignored-test run
 - `lake test -- --include-ignored` runs both primary and expensive test suites
-- `lake test -- --include-ignored <ignored-suite>` runs all primary suites plus one or multiple expensive suites
+- `lake test -- --include-ignored <name>` runs all primary suites plus selected expensive suites, runners, or groups
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 

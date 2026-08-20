@@ -1,9 +1,8 @@
 name: CI Jobs
 
 on:
-  push:
-    branches: main
   pull_request:
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -17,7 +16,7 @@ jobs:
   # Build Ix once and cache `.lake` under lean-action's per-sha key. That cache
   # holds the base Ix build — lean-action saves it right after building the
   # default lib, before the all-targets lint below — and the parallel lean-test
-  # job and ignored.yml's extended jobs restore it instead of recompiling the
+  # job and merge-tests.yml's Lake jobs restore it instead of recompiling the
   # base. `test: false` keeps this job build-only; those jobs run the tests. It
   # also compiles and publishes the small `nataddcomm.ixe` fixture the zkVM
   # execution gates (sp1-build/zisk-build) run their guests over: they need this
@@ -62,10 +61,9 @@ jobs:
   # build/cache of its own). No `--wfail` there: `test-args` is declared but
   # unwired in the released `v1`, so it would be silently ignored, and the
   # `build` job already compiles every lib and exe -- `Tests` and `IxTests`
-  # included -- under `lake lint -- --wfail -v`. The two steps after it cover
-  # what a bare run cannot reach: `cli` is special-cased ahead of the suite
-  # dispatch in `Tests/Main.lean`, and the ixvm fixtures are in the ignored
-  # tier.
+  # included -- under `lake lint -- --wfail -v`. The CLI step covers the one
+  # primary runner that is special-cased ahead of suite dispatch in
+  # `Tests/Main.lean`; ignored suites run only in `merge-tests.yml`.
   lean-test:
     needs: build
     runs-on: warp-ubuntu-latest-x64-16x
@@ -88,8 +86,6 @@ jobs:
           use-github-cache: false
       - name: Test Ix CLI
         run: lake test --wfail -- cli
-      - name: IxVM kernel tests
-        run: lake test --wfail -- --ignored ixvm
 
   rust-test:
     runs-on: warp-ubuntu-latest-x64-8x
@@ -105,11 +101,11 @@ jobs:
       - name: Check Rustfmt code style
         uses: actions-rust-lang/rustfmt@v1
       - name: Check clippy warnings
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features
       - name: Check *everything* compiles
         run: cargo check --all-targets --all-features --workspace
       - name: Tests
-        run: cargo nextest run --release --profile ci --workspace --run-ignored all
+        run: cargo nextest run --release --profile ci --workspace
       - name: Get Rust version
         run: |
           echo "RUST_VERSION=$(awk -F '"' '/^channel/ {print $2}' rust-toolchain.toml)" | tee -a $GITHUB_ENV
@@ -129,15 +125,10 @@ jobs:
   # jobs and with each other after `build` succeeds. Both hosts exit
   # non-zero when the kernel rejects a constant (sp1: EXIT_REJECTED; zisk:
   # `reject_failures`), so a guest that compiles but panics / faults / rejects
-  # fails the job. SP1 execute is pure RISC-V emulation (no key). Zisk execute
-  # goes through `client.setup()`, which loads the circuit const-trees — so the
-  # Zisk job DOES install the fork-matching proving key (~3 GB + const-tree regen;
-  # verified against the Zisk source: `AsmCoreProver::new` requires the key at
-  # client-build time, before setup). SP1 and Zisk build as independent jobs so
-  # they parallelize; each installs only its own toolchain via sp1up / ziskup
-  # (prebuilt binaries). The apt list inside the install actions is the shared
-  # superset both backends need (proofman's C++ links OpenMPI/OpenMP/GMP/…;
-  # SP1's host crates need pkg-config + libssl-dev).
+  # fails the job. Both execute paths are keyless: Zisk uses its SDK's
+  # standalone execute-only client, which retains the ASM executor without
+  # initializing the prover. SP1 and Zisk build as independent jobs so they
+  # parallelize; each installs only its own toolchain via sp1up / ziskup.
   sp1-build:
     name: SP1 host build
     needs: build
@@ -161,7 +152,7 @@ jobs:
           # --release shares the build's dep artifacts. Under clippy,
           # sp1-build skips the guest compilation and the host cfg-gates its
           # ELF embed accordingly, so this lints host code only.
-          cargo clippy --release --workspace --all-targets -- -D warnings
+          cargo clippy --release --workspace --all-targets
       - name: Download nataddcomm.ixe
         uses: actions/download-artifact@v8
         with:
@@ -186,11 +177,9 @@ jobs:
       - uses: ./.github/actions/setup-rust-toolchain
         with:
           cache-workspaces: zisk
-      # Proving key ON (the default): the execute step's `client.setup()` loads
-      # the circuit const-trees, and `AsmCoreProver::new` requires the key path
-      # to exist at client-build time — so an execute run needs it even though a
-      # build does not.
       - uses: ./.github/actions/install-zisk
+        with:
+          proving-key: false
       # Unit tests: the clap surface `ix bench run` drives, plus the closure auditor
       # (closure_detects_missing_dep self-skips without an IX_TEST_IXE
       # fixture — this gate has no Lean build to produce one).
@@ -201,17 +190,16 @@ jobs:
           cargo test --release --bin zisk-host
           # --release shares the build's dep artifacts (including the guest
           # ELFs its build scripts already produced).
-          cargo clippy --release --workspace --all-targets -- -D warnings
+          cargo clippy --release --workspace --all-targets
       - name: Download nataddcomm.ixe
         uses: actions/download-artifact@v8
         with:
           name: nataddcomm-ixe
           path: .
-      # Run the guest ELF in the Zisk VM over the nataddcomm env. `zisk-host`
-      # exits 3 (EXIT_REJECTED, via `reject_failures`) if the kernel rejects any
-      # constant and non-zero on any VM fault — so the tool errors on failures,
-      # no output parsing. The ASM executor (default) mmaps with MAP_LOCKED, so
-      # raise the memlock limit in this shell for the tool it spawns.
+      # Run the guest ELF through Zisk's keyless ASM executor. `zisk-host` exits
+      # 3 (EXIT_REJECTED, via `reject_failures`) if the kernel rejects any
+      # constant and non-zero on any VM fault. The ASM executor mmaps with
+      # MAP_LOCKED, so raise the memlock limit for the tool it spawns.
       - name: Execute zisk-guest over the nataddcomm env
         working-directory: zisk
         env:

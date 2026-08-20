@@ -625,7 +625,9 @@ def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
   let (functions, memSizes, nameMap) ← decls.foldlM (init := (#[], initMemSizes, {}))
     fun acc@(functions, memSizes, nameMap) (_, decl) => match decl with
       | .function function => do
-        let (body, layoutMState) ← function.compile layout
+        let (body, layoutMState) ← match function.compile layout with
+          | .error e => throw s!"[{function.name}] {e}"
+          | .ok r => pure r
         let nameMap := nameMap.insert function.name functions.size
         let function := ⟨body, layoutMState.functionLayout, function.entry, false⟩
         let memSizes := layoutMState.memSizes.foldl (·.insert ·) memSizes

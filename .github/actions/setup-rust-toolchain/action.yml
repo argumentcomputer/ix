@@ -1,12 +1,16 @@
 name: Set up Rust toolchain
 description: >-
-  Install Rust on Warp Linux x64 and cache Cargo artifacts without exporting
-  RUSTFLAGS, leaving each workspace's .cargo/config.toml authoritative.
+  Install Rust on Warp Linux x64, configure compiler flags, and cache Cargo
+  artifacts.
 
 inputs:
   cache-workspaces:
     description: Cargo workspaces to cache
     required: false
+  native-codegen:
+    description: Enable code generation for the runner's native CPU
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -25,7 +29,7 @@ runs:
 
     - uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        rustflags: ""
+        rustflags: ${{ inputs.native-codegen == 'true' && '-Ctarget-cpu=native -Dwarnings' || '-Dwarnings' }}
         # `target/` may contain host-executed native code. Every caller runs
         # within the Warp x64 compatibility domain.
         cache-key: warp-x64
