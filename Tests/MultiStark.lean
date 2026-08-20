@@ -245,6 +245,71 @@ def endToEndSuite : IO UInt32 := do
     expectErr "tampered claim rejected (OOD/accumulator mismatch)" tamperedClaim,
   ])]) []
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- `foreign-verifier`: the SAME pipeline over `multiStarkForeign` — the
+-- byte-limb (outer-field-independent) verifier toplevel, stage 3's program
+-- ════════════════════════════════════════════════════════════════════════════
+
+/-- Phase-B gate of `docs/kzg-stage.md`: the foreign (byte-limb Goldilocks)
+verifier toplevel, executed under the existing Goldilocks interpreter against
+the same factorial stage-2 vectors the native verifier passes. The foreign
+module's semantics are outer-field-independent (byte gadgets and carry
+chains), so acceptance here validates the exact program that stage 3 proves
+over the BLS12-381 scalar field — before any Fr machinery exists. Interpreter
+only: the foreign toplevel has no codegen'd runner yet. -/
+def foreignEndToEndSuite : IO UInt32 := do
+  -- ── factorial system + proof (same recipe as `endToEndSuite`) ─────────────
+  let facCompiled ← match factorialProgram.compile with
+    | .error e => IO.eprintln s!"factorial compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
+  let facIdx ← match facCompiled.getFuncIdx `fact_entry with
+    | some i => pure i
+    | none => IO.eprintln "fact_entry entrypoint not found"; return 1
+  let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
+  let proofBytes := proof.toBytes
+  let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
+  let vkBytes := facSystem.vkBytes
+  let vkGs : Array Aiur.G := vkBytes.data.map .ofUInt8
+  let claimBytes := serializeClaims #[claim]
+  let claimGs : Array Aiur.G := claimBytes.data.map .ofUInt8
+  let pubInput : Array Aiur.G := MultiStark.verifierPubInput vkBytes claimBytes
+  let mkIO := fun (pGs cGs : Array Aiur.G) =>
+    (((default : IOBuffer).extend 0 #[Aiur.G.ofNat 0] pGs).extend 1 #[Aiur.G.ofNat 0] vkGs).extend
+      2 #[Aiur.G.ofNat 0] cGs
+
+  -- ── the FOREIGN production toplevel ───────────────────────────────────────
+  let vTop ← match MultiStark.multiStarkForeign with
+    | .error e => IO.eprintln s!"foreign toplevel merge failed: {e}"; return 1
+    | .ok t => pure t
+  let vCompiled ← match vTop.compile with
+    | .error e => IO.eprintln s!"foreign compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
+    | some i => pure i
+    | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
+
+  -- ── tampered inputs (same tampering as the native suite) ──────────────────
+  let badProofBytes :=
+    proofBytes.set! 0 (UInt8.ofNat ((proofBytes.data[0]!.toNat + 1) % 256))
+  let badProofGs : Array Aiur.G := badProofBytes.data.map .ofUInt8
+  let badClaim : Array Aiur.G := claim.set! (claim.size - 1) (Aiur.G.ofNat 121)
+  let badClaimBytes := serializeClaims #[badClaim]
+  let badClaimGs : Array Aiur.G := badClaimBytes.data.map .ofUInt8
+  let badClaimInput : Array Aiur.G :=
+    MultiStark.verifierPubInput vkBytes badClaimBytes
+
+  IO.println "foreign-verifier (byte-limb Goldilocks, interpreted; slow)…"
+  let honest := vCompiled.bytecode.execute vIdx pubInput (mkIO proofGs claimGs)
+  let tamperedProof := vCompiled.bytecode.execute vIdx pubInput (mkIO badProofGs claimGs)
+  let tamperedClaim :=
+    vCompiled.bytecode.execute vIdx badClaimInput (mkIO proofGs badClaimGs)
+  lspecIO (.ofList [("foreign-verifier", [
+    expectOk "foreign verifier accepts honest proof (byte-limb Goldilocks)" honest,
+    expectErr "tampered proof advice rejected (foreign)" tamperedProof,
+    expectErr "tampered claim rejected (foreign)" tamperedClaim,
+  ])]) []
+
 end Tests.MultiStark
 
 end

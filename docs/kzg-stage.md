@@ -1,8 +1,11 @@
 # The KZG stage: wrapping the recursive verifier over BLS12-381
 
-Status: PHASES A AND A′ COMPLETE (crates/aiur generic over
+Status: PHASES A, A′ AND B COMPLETE (crates/aiur generic over
 `AiurField`; Lean constants exact naturals with checked per-field
-specialization — all pins byte-identical). Phases B–E pending. Prerequisites landed earlier: multi-stark `pcs-traits` branch;
+specialization — all pins byte-identical; `multiStarkForeign` built and
+gated under the Goldilocks interpreter — the `foreign-verifier` suite
+accepts the factorial stage-2 proof and rejects tampering). Phases C–E
+pending. Prerequisites landed earlier: multi-stark `pcs-traits` branch;
 the `g_*`/`eg_*` inner-field interface and `GoldilocksForeign.lean` on
 this branch.
 
@@ -120,7 +123,7 @@ embedding):
 **Gate held**: codegen byte-identical, kernel FFT + shard pins exact,
 all suites + Rust workspace tests green.
 
-### Phase B — the foreign verifier toplevel, validated over Goldilocks
+### Phase B — the foreign verifier toplevel, validated over Goldilocks [COMPLETE]
 
 Swap the wire layer onto the inner-field interface and build
 `multiStarkForeign`:

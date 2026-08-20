@@ -416,8 +416,8 @@ def verifier := ⟦
   --   is_transition  = ζ - g⁻¹
   --   inv_vanishing  = 1 / Z_H(ζ)
   -- where g = two_adic_gen(L) is the subgroup generator.
-  -- 2^l as a field value (l is a small log-height).
-  fn pow2(l: G) -> G {
+  -- 2^l as an inner-field value (l is a small log-height).
+  fn pow2(l: G) -> Goldilocks {
     match l {
       0 => @g_one(),
       _ => @g_mul(@g_two(), pow2(l - 1)),
@@ -693,7 +693,7 @@ def verifier := ⟦
       main: List‹Ext›, main_next: List‹Ext›, prep: List‹Ext›, prep_next: List‹Ext›,
       s2: List‹Ext›, s2next: List‹Ext›, publics: List‹Ext›,
       lch: Ext, fch: Ext, accp: Ext, naccp: Ext,
-      isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: G) -> Ext {
+      isf: Ext, isl: Ext, ist: Ext, alpha: Ext, inorm: Goldilocks) -> Ext {
     let base = fold_roots([@g_zero(), @g_zero()], alpha, zeros, nodes,
                main, main_next, prep, prep_next, s2, s2next, publics, isf, isl, ist);
     -- The lookup-argument coordinates come straight from the challenge /
