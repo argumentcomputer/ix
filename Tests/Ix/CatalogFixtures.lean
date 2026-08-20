@@ -119,21 +119,11 @@ private def fixturesTest : IO (Bool × Nat × Nat × Option String) := do
   | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
   | none => return (true, audit.checked, result.consts.size, none)
 
-/-- I4 gate: the catalog loader must import at `OLeanLevel.private`.
-    An exported-level member env (what module-mode header processing
-    yields) carries imported public theorems as body-less axioms and
-    omits `_private.*` constants — the catalog then axiomizes proofs,
-    kernel replay accepts vacuously, and `--audit` compares two
-    identically-axiomized legs (#572). Only the loaded env itself can
-    witness the regression, so assert on member `A`'s env from
-    `resolveLibs` (module-mode fixtures: `@[no_expose]`, theorems, a
-    cross-package import). Relies on `fixturesTest` having built the
-    fixture workspace. -/
-private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
-  initLeanSearchPath (some fixtureDir)
-  let (libEnvs, _, _) ← Ix.Catalog.resolveLibs spec
-  let some envA := libEnvs[1]?
-    | return (false, 0, 0, some "resolveLibs produced no env for member `A`")
+/-- Pure checks over member `A`'s live env; only fresh strings and
+    counts escape (the env's regions are freed after the `forEachLib`
+    callback returns). -/
+private def checkMemberEnvA (envA : Lean.Environment) :
+    Bool × Nat × Nat × Option String := Id.run do
   -- Imported toolchain theorem: a real proof whose references all
   -- resolve in the same env (at exported level it is a body-less axiom).
   match envA.constants.find? `Nat.add_comm with
@@ -166,6 +156,26 @@ private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
     return (false, 0, 0,
       some "no `_private.*` constants — exported-level trim suspected")
   return (true, privCount, envA.constants.toList.length, none)
+
+/-- I4 gate: the catalog loader must import at `OLeanLevel.private`.
+    An exported-level member env (what module-mode header processing
+    yields) carries imported public theorems as body-less axioms and
+    omits `_private.*` constants — the catalog then axiomizes proofs,
+    kernel replay accepts vacuously, and `--audit` compares two
+    identically-axiomized legs (#572). Only the loaded env itself can
+    witness the regression, so assert on member `A`'s env as streamed
+    by `forEachLib` (module-mode fixtures: `@[no_expose]`, theorems, a
+    cross-package import). Relies on `fixturesTest` having built the
+    fixture workspace. -/
+private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  Ix.Catalog.forEachLib spec
+    (false, 0, 0, some "member `A` never streamed")
+    fun acc lib env _ _ => do
+      if lib.qualifier == `A then
+        return checkMemberEnvA env
+      else
+        return acc
 
 private def containsStr (haystack needle : String) : Bool :=
   (haystack.splitOn needle).length > 1

@@ -35,6 +35,13 @@
     when the kernel re-accepts the renamed `inductDecl`; their renamed
     names coincide with the renamed references because the lossless rule
     prefixes every owned name uniformly.
+  - **Construction memory is bounded** by the toolchain base, the
+    growing target env, and one member environment at a time (plan
+    DQ5): members stream through `forEachLib`, their replay content is
+    copied out of region memory (`stagePlan`), and each member env's
+    compacted olean regions are freed before the next member loads.
+    Without the copy-out, ~40 corpus members sharing a mathlib closure
+    would hold ~40 fixup-dirtied copies of it simultaneously.
 
   Note on qualification: bare `Expr`/`Name`/`ConstantInfo` inside the
   `Ix` namespace resolve to ix's own mirror types, so Lean's are
@@ -238,6 +245,264 @@ def relocateConstantInfo (names : Lean.NameMap Lean.Name) :
         rule with
         ctor := rename names rule.ctor
         rhs := relocateExpr names rule.rhs } }
+
+/-! ## Region-evicting relocation (the streaming replay path)
+
+  `buildCatalog` frees each member environment's compacted olean
+  regions after staging its replay (`Environment.freeRegions`); without
+  the free, every member's mmapped-and-fixup-dirtied olean pages stay
+  resident for the life of the process, which at corpus scale means ~40
+  members × a mathlib closure held simultaneously. Freeing is only
+  sound if nothing that survives the member references region memory,
+  and `relocateExpr` deliberately shares unchanged subterms with the
+  source env — so the replay path uses this family instead: a fused
+  rename + total structural copy. Every object reachable from a staged
+  `Declaration` — exprs, names, levels, strings, big literals, mdata —
+  is rebuilt on the ordinary heap, pointer-cached per member so the
+  source DAG's sharing is preserved in the copy. The interpreter
+  fallbacks of the safe wrappers are the sparse equivalents:
+  semantically identical, region-sharing, never used in compiled code. -/
+
+/-- Fresh heap copies of big numerals: scalars are immediate values and
+    need no copy; heap-allocated bignums are rebuilt (`+1-1` cannot
+    shortcut to its argument). Also load-bearing for the copiers below:
+    a match arm that rebuilds a constructor from unchanged scrutinee
+    fields is eta-reduced by the code generator to return the ORIGINAL
+    (region-resident!) object, so every all-scalar reconstruction
+    routes one field through this arithmetic to defeat that. -/
+private def copyNat (n : Nat) : Nat := n + 1 - 1
+private def copyInt (i : _root_.Int) : _root_.Int := i + 1 - 1
+private def copyUInt32 (u : UInt32) : UInt32 := u + 1 - 1
+
+private unsafe structure CopyState where
+  strings : Lean.PtrMap String String := Lean.mkPtrMap
+  names : Lean.PtrMap Lean.Name Lean.Name := Lean.mkPtrMap
+  levels : Lean.PtrMap Lean.Level Lean.Level := Lean.mkPtrMap
+  exprs : Lean.PtrMap Lean.Expr Lean.Expr := Lean.mkPtrMap
+
+private unsafe abbrev CopyM := StateM CopyState
+
+private unsafe def copyStringC (s : String) : CopyM String := do
+  match (← get).strings.find? s with
+  | some c => return c
+  | none =>
+    let c := String.ofList s.toList
+    modify fun st => { st with strings := st.strings.insert s c }
+    return c
+
+private unsafe def copyName (n : Lean.Name) : CopyM Lean.Name := do
+  match n with
+  | .anonymous => return .anonymous
+  | _ =>
+    match (← get).names.find? n with
+    | some c => return c
+    | none =>
+      let c ← match n with
+        | .anonymous => pure Lean.Name.anonymous
+        | .str p s => return .str (← copyName p) (← copyStringC s)
+        | .num p k => return .num (← copyName p) (copyNat k)
+      modify fun st => { st with names := st.names.insert n c }
+      return c
+
+private unsafe def copyLevel (l : Lean.Level) : CopyM Lean.Level := do
+  match l with
+  | .zero => return .zero
+  | _ =>
+    match (← get).levels.find? l with
+    | some c => return c
+    | none =>
+      let c ← match l with
+        | .zero => pure Lean.Level.zero
+        | .succ a => return .succ (← copyLevel a)
+        | .max a b => return .max (← copyLevel a) (← copyLevel b)
+        | .imax a b => return .imax (← copyLevel a) (← copyLevel b)
+        | .param n => return .param (← copyName n)
+        | .mvar id => return .mvar ⟨← copyName id.name⟩
+      modify fun st => { st with levels := st.levels.insert l c }
+      return c
+
+private unsafe def copySubstring (s : Substring.Raw) : CopyM Substring.Raw :=
+  return { s with str := (← copyStringC s.str) }
+
+private unsafe def copySourceInfo : Lean.SourceInfo → CopyM Lean.SourceInfo
+  | .original leading pos trailing endPos =>
+    return .original (← copySubstring leading) pos (← copySubstring trailing)
+      endPos
+  | .synthetic pos endPos canonical =>
+    return .synthetic ⟨copyNat pos.byteIdx⟩ ⟨copyNat endPos.byteIdx⟩ canonical
+  | .none => return .none
+
+private unsafe def copyPreresolved :
+    Lean.Syntax.Preresolved → CopyM Lean.Syntax.Preresolved
+  | .namespace ns => return .namespace (← copyName ns)
+  | .decl n fields =>
+    return .decl (← copyName n) (← fields.mapM copyStringC)
+
+private unsafe def copySyntax : Lean.Syntax → CopyM Lean.Syntax
+  | .missing => return .missing
+  | .node info kind args =>
+    return .node (← copySourceInfo info) (← copyName kind)
+      (← args.mapM copySyntax)
+  | .atom info val => return .atom (← copySourceInfo info) (← copyStringC val)
+  | .ident info rawVal val preresolved =>
+    return .ident (← copySourceInfo info) (← copySubstring rawVal)
+      (← copyName val) (← preresolved.mapM copyPreresolved)
+
+private unsafe def copyDataValue (dv : Lean.DataValue) : CopyM Lean.DataValue := do
+  let c ← match dv with
+    | .ofString s => pure <| Lean.DataValue.ofString (← copyStringC s)
+    | .ofBool b => pure (Lean.DataValue.ofBool (copyNat b.toNat == 1))
+    | .ofName n => pure <| Lean.DataValue.ofName (← copyName n)
+    | .ofNat n => pure (Lean.DataValue.ofNat (copyNat n))
+    | .ofInt i => pure (Lean.DataValue.ofInt (copyInt i))
+    | .ofSyntax s => pure <| Lean.DataValue.ofSyntax (← copySyntax s)
+  -- Guard against code-generator eta (see `copyNat`): a panic here at
+  -- staging time beats a segfault after the regions are freed.
+  if ptrAddrUnsafe c == ptrAddrUnsafe dv then
+    let arm := match dv with
+      | .ofString _ => "ofString" | .ofBool _ => "ofBool"
+      | .ofName _ => "ofName" | .ofNat _ => "ofNat"
+      | .ofInt _ => "ofInt" | .ofSyntax _ => "ofSyntax"
+    panic! s!"copyDataValue returned its argument ({arm})"
+  return c
+
+private unsafe def copyMData (md : Lean.MData) : CopyM Lean.MData := do
+  let c : Lean.MData := { entries :=
+    (← md.entries.mapM fun (k, v) =>
+      return ((← copyName k), (← copyDataValue v))) }
+  if ptrAddrUnsafe c.entries == ptrAddrUnsafe md.entries && !md.entries.isEmpty then
+    panic! "copyMData returned its argument"
+  return c
+
+/-- The fused rename + total copy over expressions: `relocateExpr`'s
+    rewrite at `const`/`proj` sites, with every node — including
+    unchanged ones — rebuilt off region memory. -/
+private unsafe def relocExprC (names : Lean.NameMap Lean.Name)
+    (expr : Lean.Expr) : CopyM Lean.Expr := do
+  match (← get).exprs.find? expr with
+  | some c => return c
+  | none =>
+    let c ← match expr with
+      | .bvar i => pure (Lean.Expr.bvar (copyNat i))
+      | .fvar id => return .fvar ⟨← copyName id.name⟩
+      | .mvar id => return .mvar ⟨← copyName id.name⟩
+      | .sort u => return .sort (← copyLevel u)
+      | .const n ls =>
+        return .const (← copyName (rename names n)) (← ls.mapM copyLevel)
+      | .app f a => return .app (← relocExprC names f) (← relocExprC names a)
+      | .lam n d b bi =>
+        return .lam (← copyName n) (← relocExprC names d)
+          (← relocExprC names b) bi
+      | .forallE n d b bi =>
+        return .forallE (← copyName n) (← relocExprC names d)
+          (← relocExprC names b) bi
+      | .letE n t v b nonDep =>
+        return .letE (← copyName n) (← relocExprC names t)
+          (← relocExprC names v) (← relocExprC names b) nonDep
+      | .lit (.natVal n) => pure (.lit (.natVal (copyNat n)))
+      | .lit (.strVal s) => return .lit (.strVal (← copyStringC s))
+      | .mdata md b => return .mdata (← copyMData md) (← relocExprC names b)
+      | .proj tn i v =>
+        return .proj (← copyName (rename names tn)) i (← relocExprC names v)
+    -- Guard against code-generator eta (see `copyNat`): the `.bvar`
+    -- arm regressed exactly this way — the rebuilt node was simplified
+    -- to the region-resident scrutinee.
+    if ptrAddrUnsafe c == ptrAddrUnsafe expr then
+      panic! s!"relocExprC returned its argument ({expr.ctorName})"
+    modify fun st => { st with exprs := st.exprs.insert expr c }
+    return c
+
+private unsafe def relocConstantValC (names : Lean.NameMap Lean.Name)
+    (cv : Lean.ConstantVal) : CopyM Lean.ConstantVal :=
+  return {
+    name := (← copyName (rename names cv.name))
+    levelParams := (← cv.levelParams.mapM copyName)
+    type := (← relocExprC names cv.type) }
+
+/-- `.regular` is a boxed constructor — a record update would share the
+    region-resident object. -/
+private def copyReducibilityHints : Lean.ReducibilityHints → Lean.ReducibilityHints
+  | .opaque => .opaque
+  | .abbrev => .abbrev
+  | .regular h => .regular (copyUInt32 h)
+
+private unsafe def relocDefinitionValC (names : Lean.NameMap Lean.Name)
+    (val : Lean.DefinitionVal) : CopyM Lean.DefinitionVal :=
+  return { val with
+    toConstantVal := (← relocConstantValC names val.toConstantVal)
+    value := (← relocExprC names val.value)
+    hints := copyReducibilityHints val.hints
+    all := (← val.all.mapM fun n => copyName (rename names n)) }
+
+private unsafe def relocDeclarationC (names : Lean.NameMap Lean.Name) :
+    Lean.Declaration → CopyM Lean.Declaration
+  | .axiomDecl val => return .axiomDecl { val with
+      toConstantVal := (← relocConstantValC names val.toConstantVal) }
+  | .defnDecl val => return .defnDecl (← relocDefinitionValC names val)
+  | .thmDecl val => return .thmDecl { val with
+      toConstantVal := (← relocConstantValC names val.toConstantVal)
+      value := (← relocExprC names val.value)
+      all := (← val.all.mapM fun n => copyName (rename names n)) }
+  | .opaqueDecl val => return .opaqueDecl { val with
+      toConstantVal := (← relocConstantValC names val.toConstantVal)
+      value := (← relocExprC names val.value)
+      all := (← val.all.mapM fun n => copyName (rename names n)) }
+  | .mutualDefnDecl vals =>
+    return .mutualDefnDecl (← vals.mapM (relocDefinitionValC names))
+  | .inductDecl levelParams numParams types isUnsafe =>
+    return .inductDecl (← levelParams.mapM copyName) numParams
+      (← types.mapM fun type => return {
+        name := (← copyName (rename names type.name))
+        type := (← relocExprC names type.type)
+        ctors := (← type.ctors.mapM fun ctor => return {
+          name := (← copyName (rename names ctor.name))
+          type := (← relocExprC names ctor.type) }) }) isUnsafe
+  | .quotDecl => return .quotDecl
+
+/-- One staged replay item: the relocated declaration plus both names
+    for diagnostics, all region-independent. -/
+structure StagedDecl where
+  source : Lean.Name
+  target : Lean.Name
+  decl : Lean.Declaration
+
+private unsafe def stagePlanUnsafe (names : Lean.NameMap Lean.Name)
+    (plan : Array (Lean.Name × Lean.Declaration)) : Array StagedDecl :=
+  (plan.mapM fun (key, decl) =>
+    (return { source := (← copyName key)
+              target := (← copyName (rename names key))
+              decl := (← relocDeclarationC names decl) } : CopyM StagedDecl))
+    |>.run' {}
+
+/-- Stage one member's replay plan: rename + total structural copy,
+    pointer-cached across the whole plan so cross-declaration sharing
+    survives. The staged declarations share no memory with the member
+    env, which makes `freeEnvRegions` sound after staging. -/
+@[implemented_by stagePlanUnsafe]
+private opaque stagePlan (names : Lean.NameMap Lean.Name)
+    (plan : Array (Lean.Name × Lean.Declaration)) : Array StagedDecl :=
+  plan.map fun (key, decl) =>
+    { source := key
+      target := rename names key
+      decl := relocateDeclaration names decl }
+
+private unsafe def copyNameOutUnsafe (n : Lean.Name) : Lean.Name :=
+  (copyName n).run' {}
+
+/-- Fresh, region-independent copy of a single name (for module names
+    and other scalars that outlive their member env). -/
+@[implemented_by copyNameOutUnsafe]
+private opaque copyNameOut (n : Lean.Name) : Lean.Name := n
+
+private unsafe def freeEnvRegionsUnsafe (env : Lean.Environment) : IO Unit :=
+  env.freeRegions
+
+/-- Free a member environment's compacted olean regions. Sound only
+    when nothing reachable from live data references the env's
+    imported objects — `forEachLib`'s callback contract. The reference
+    implementation is a no-op (leak, the pre-streaming behavior). -/
+@[implemented_by freeEnvRegionsUnsafe]
+private opaque freeEnvRegions (_env : Lean.Environment) : IO Unit := pure ()
 
 /-- Accept a `DefinitionVal.all` list as unsafe-mutual grouping metadata
     only when every member is an owned definition carrying the same
@@ -447,15 +712,15 @@ private def ownershipMaps (spec : CatalogSpec) (env : Lean.Environment)
     constants, but replay only ever delivers the closures of declared
     roots — nothing replays them, and the kernel would reject `X`'s
     first reference with a bare `unknown constant P.Y.N`. Detect it
-    before replay: fold members in declaration order, accumulating the
-    module set each member's replay delivers; every foreign cataloged
-    module in `X`'s env must already be covered. Distinguishes a
-    provider listed after its consumer (spec ordering error) from a
-    genuinely missing root. -/
-private def checkRootCoverage (lib : LibSpec) (memberIdx : Nat)
-    (env : Lean.Environment)
+    before replay: members fold through in declaration order,
+    accumulating the module set each member's replay delivers; every
+    foreign cataloged module in `X`'s env must already be covered.
+    Under streaming, the qualifier map holds only members processed so
+    far, so a provider listed after its consumer and an uncatalogued
+    package surface as one unknown-provider error. Module names are
+    copied into `covered`: the set outlives the env. -/
+private def checkRootCoverage (lib : LibSpec) (env : Lean.Environment)
     (qualOfPkg : Std.HashMap Lean.PkgId Lean.Name)
-    (ownerIdx : Std.HashMap Lean.PkgId Nat)
     (libPkgs : Std.HashSet Lean.PkgId) (covered : Lean.NameSet) :
     Except String Lean.NameSet := do
   let mut covered := covered
@@ -465,122 +730,136 @@ private def checkRootCoverage (lib : LibSpec) (memberIdx : Nat)
     | some pkg =>
       let moduleName := env.header.moduleNames[moduleIdx]!
       if libPkgs.contains pkg then
-        covered := covered.insert moduleName
+        covered := covered.insert (copyNameOut moduleName)
       else
         let some qualifier := qualOfPkg.get? pkg
-          | throw s!"uncatalogued package `{pkg}` (module `{moduleName}`) — every non-toolchain package in the import closure needs a catalog entry"
+          | throw s!"member `{lib.qualifier}` references `{moduleName}` of \
+package `{pkg}`, which no member listed so far provides — either the \
+package is uncatalogued, or its provider is listed after \
+`{lib.qualifier}`. Every non-toolchain package in the import closure \
+needs a catalog entry, and members replay dependencies first."
         unless covered.contains moduleName do
-          if (ownerIdx.get? pkg).any (· > memberIdx) then
-            throw s!"member `{lib.qualifier}` references `{moduleName}`, \
-owned by qualifier `{qualifier}`, but `{qualifier}` is listed after \
-`{lib.qualifier}` — members replay dependencies first. Move \
-`{qualifier}` before `{lib.qualifier}`."
-          else
-            throw s!"member `{lib.qualifier}` references `{moduleName}`, \
+          throw s!"member `{lib.qualifier}` references `{moduleName}`, \
 owned by qualifier `{qualifier}`, but `{qualifier}`'s roots do not \
 cover that module. Add `{moduleName}` to `{qualifier}`'s roots."
   return covered
 
-/-- Replay one library's owned constants into the growing kernel env:
-    build the per-env rename map, reconstruct declarations, order by
-    owned-reference dependencies, and `Kernel.Environment.addDecl` each
-    relocated declaration. Returns the updated env, the replay count,
-    and the owned source-constant count. -/
-private def replayLib (spec : CatalogSpec) (env : Lean.Environment)
+/-- Stage one member library for replay: build the per-env rename map,
+    reconstruct declarations, order by owned-reference dependencies,
+    and relocate them out of region memory (`stagePlan`). Returns the
+    staged declarations and the owned source-constant count. The
+    kernel replay itself happens after every member env is gone, once
+    the toolchain base exists (`buildCatalog` step 3). -/
+private def stageLib (spec : CatalogSpec) (env : Lean.Environment)
     (qualOfPkg : Std.HashMap Lean.PkgId Lean.Name)
-    (libPkgs : Std.HashSet Lean.PkgId) (kenv : Lean.Kernel.Environment) :
-    Except String (Lean.Kernel.Environment × Nat × Nat) := do
+    (libPkgs : Std.HashSet Lean.PkgId) :
+    Except String (Array StagedDecl × Nat) := do
   let (renameMap, owned) ← ownershipMaps spec env qualOfPkg libPkgs
   let plan ← planDeclarations owned env.find?
-  let mut kenv := kenv
-  let mut replayed := 0
-  for (key, decl) in plan do
-    let relocated := relocateDeclaration renameMap decl
-    match kenv.addDecl {} relocated with
-    | .ok kenv' =>
-      kenv := kenv'
-      replayed := replayed + 1
-    | .error e =>
-      throw s!"kernel rejected `{rename renameMap key}` (source `{key}`): {renderKernelException e}"
-  return (kenv, replayed, owned.size)
+  return (stagePlan renameMap plan, owned.size)
 
-/-- Load every member library into its own environment (so colliding
-    source names never meet at import time) and resolve the package →
-    qualifier map from each library's root modules. Imports are pinned
-    to `OLeanLevel.private` — complete bodies (D6); see the module
-    header for why no downstream gate can catch a level regression.
+/-- Stream member libraries in declaration order: import each into its
+    own environment (so colliding source names never meet at import
+    time), resolve the member's packages from its root modules and
+    extend the package → qualifier map — members are declared
+    dependencies-first, so the map is complete for every environment by
+    the time its callback runs — invoke `f`, then free the
+    environment's compacted olean regions before the next member
+    loads. Construction memory is thereby bounded by one member env at
+    a time (plan DQ5). Imports are pinned to `OLeanLevel.private` —
+    complete bodies (D6); see the module header for why no downstream
+    gate can catch a level regression. `f` MUST NOT retain the
+    environment or anything reachable from it: copy what survives
+    (`stagePlan`, `copyNameOut`, or interpolation into fresh strings).
     Shared by `buildCatalog` and `auditCatalog`. -/
-def resolveLibs (spec : CatalogSpec) :
-    IO (Array Lean.Environment × Std.HashMap Lean.PkgId Lean.Name ×
-        Array (Std.HashSet Lean.PkgId)) := do
+def forEachLib {α : Type} (spec : CatalogSpec) (init : α)
+    (f : α → LibSpec → Lean.Environment →
+         Std.HashMap Lean.PkgId Lean.Name → Std.HashSet Lean.PkgId →
+         IO α) : IO α := do
   if spec.libs.isEmpty then
     throw <| IO.userError "catalog: no member libraries"
-  let mut libEnvs : Array Lean.Environment := #[]
+  let mut qualOfPkg : Std.HashMap Lean.PkgId Lean.Name := {}
+  let mut acc := init
   for lib in spec.libs do
     let imports : Array Lean.Import := lib.roots.map ({ module := · })
-    libEnvs := libEnvs.push
-      (← Lean.importModules imports {} (level := .private))
-  let mut qualOfPkg : Std.HashMap Lean.PkgId Lean.Name := {}
-  let mut libPkgs : Array (Std.HashSet Lean.PkgId) := #[]
-  for (lib, env) in spec.libs.zip libEnvs do
+    let env ← Lean.importModules imports {} (level := .private)
     let mut pkgs : Std.HashSet Lean.PkgId := {}
     for root in lib.roots do
       let some moduleIdx := env.getModuleIdx? root
         | throw <| IO.userError s!"catalog: root module `{root}` is not in `{lib.qualifier}`'s environment"
       let some pkg := modulePackage? env moduleIdx.toNat
         | throw <| IO.userError s!"catalog: root module `{root}` has no Lake package identity — toolchain modules cannot be cataloged"
+      -- `PkgId` is a region-resident string; the maps outlive the env.
+      let pkg : Lean.PkgId := String.ofList pkg.toList
       pkgs := pkgs.insert pkg
       match qualOfPkg.get? pkg with
       | some q =>
         unless q == lib.qualifier do
           throw <| IO.userError s!"catalog: package `{pkg}` claimed by qualifiers `{q}` and `{lib.qualifier}`"
       | none => qualOfPkg := qualOfPkg.insert pkg lib.qualifier
-    libPkgs := libPkgs.push pkgs
-  return (libEnvs, qualOfPkg, libPkgs)
+    let acc' ← try
+        f acc lib env qualOfPkg pkgs
+      finally
+        freeEnvRegions env
+    acc := acc'
+  return acc
+
+/-- Accumulator of the streaming member pass: staged replay plans (per
+    qualifier, with owned counts), the I5 coverage set, and the
+    toolchain module union — all region-independent. -/
+private structure BuildPass where
+  staged : Array (Lean.Name × Array StagedDecl × Nat) := #[]
+  covered : Lean.NameSet := {}
+  toolchainSeen : Lean.NameSet := {}
+  toolchainMods : Array Lean.Import := #[]
 
 /-- Build the catalog kernel environment for `spec`. Assumes the Lean
     search path already resolves every root module (CLI callers run
     `initLeanSearchPath` first; in-process callers inherit theirs). -/
 def buildCatalog (spec : CatalogSpec) : IO BuildResult := do
-  -- 1./2. Load member envs and resolve package ownership.
-  let (libEnvs, qualOfPkg, libPkgs) ← resolveLibs spec
-  -- 3. Toolchain base: the union of toolchain modules across member
-  --    environments, imported once (single provider ⇒ no collisions).
-  let mut toolchainSeen : Lean.NameSet := {}
-  let mut toolchainMods : Array Lean.Import := #[]
-  for env in libEnvs do
+  -- 1. Stream the members in dependency order: check root coverage
+  --    (I5), stage the replay (rename + region-evicting copy), and
+  --    accumulate the toolchain module union; each member env is
+  --    freed before the next one loads.
+  let pass ← forEachLib spec ({} : BuildPass) fun pass lib env qualOfPkg pkgs => do
+    let covered ← match checkRootCoverage lib env qualOfPkg pkgs pass.covered with
+      | .ok covered => pure covered
+      | .error e => throw <| IO.userError s!"catalog: {e}"
+    let (decls, ownedCount) ← match stageLib spec env qualOfPkg pkgs with
+      | .ok staged => pure staged
+      | .error e =>
+        throw <| IO.userError s!"catalog: library `{lib.qualifier}`: {e}"
+    let mut toolchainSeen := pass.toolchainSeen
+    let mut toolchainMods := pass.toolchainMods
     for moduleIdx in [0:env.header.moduleNames.size] do
-      let moduleName := env.header.moduleNames[moduleIdx]!
-      if (modulePackage? env moduleIdx).isNone
-          && !toolchainSeen.contains moduleName then
-        toolchainSeen := toolchainSeen.insert moduleName
-        toolchainMods := toolchainMods.push { module := moduleName }
-  let baseEnv ← Lean.importModules toolchainMods {} (level := .private)
-  -- 4. Relocate + kernel-replay each library in dependency order,
-  --    checking first (I5) that every foreign cataloged module the
-  --    member reaches is delivered by its owner's declared roots.
-  let mut ownerIdx : Std.HashMap Lean.PkgId Nat := {}
-  for idx in [0:libPkgs.size] do
-    for pkg in libPkgs[idx]! do
-      ownerIdx := ownerIdx.insert pkg idx
+      if (modulePackage? env moduleIdx).isNone then
+        let moduleName := env.header.moduleNames[moduleIdx]!
+        if !toolchainSeen.contains moduleName then
+          let moduleName := copyNameOut moduleName
+          toolchainSeen := toolchainSeen.insert moduleName
+          toolchainMods := toolchainMods.push { module := moduleName }
+    return { staged := pass.staged.push (lib.qualifier, decls, ownedCount)
+             covered, toolchainSeen, toolchainMods }
+  -- 2. Toolchain base: the union of toolchain modules across member
+  --    environments, imported once (single provider ⇒ no collisions).
+  --    Its regions are never freed — `consts` references them.
+  let baseEnv ← Lean.importModules pass.toolchainMods {} (level := .private)
+  -- 3. Kernel-replay the staged declarations in dependency order.
   let mut kenv := baseEnv.toKernelEnv
   let mut replayed := 0
   let mut perLib : Array (Lean.Name × Nat) := #[]
-  let mut covered : Lean.NameSet := {}
-  let mut idx := 0
-  for (lib, env, pkgs) in spec.libs.zip (libEnvs.zip libPkgs) do
-    match checkRootCoverage lib idx env qualOfPkg ownerIdx pkgs covered with
-    | .ok covered' => covered := covered'
-    | .error e => throw <| IO.userError s!"catalog: {e}"
-    match replayLib spec env qualOfPkg pkgs kenv with
-    | .ok (kenv', count, ownedCount) =>
-      kenv := kenv'
-      replayed := replayed + count
-      perLib := perLib.push (lib.qualifier, ownedCount)
-    | .error e =>
-      throw <| IO.userError s!"catalog: library `{lib.qualifier}`: {e}"
-    idx := idx + 1
-  -- 5. Extract the full constant map (base + qualified + regenerated).
+  for (qualifier, decls, ownedCount) in pass.staged do
+    for staged in decls do
+      match kenv.addDecl {} staged.decl with
+      | .ok kenv' =>
+        kenv := kenv'
+        replayed := replayed + 1
+      | .error e =>
+        throw <| IO.userError s!"catalog: library `{qualifier}`: kernel \
+rejected `{staged.target}` (source `{staged.source}`): \
+{renderKernelException e}"
+    perLib := perLib.push (qualifier, ownedCount)
+  -- 4. Extract the full constant map (base + qualified + regenerated).
   let consts := kenv.constants.fold (init := #[]) fun acc name info =>
     acc.push (name, info)
   return { consts, replayed, perLib }
@@ -604,36 +883,38 @@ structure AuditResult where
 def auditCatalog (spec : CatalogSpec)
     (catalogConsts : Array (Lean.Name × Lean.ConstantInfo)) :
     IO AuditResult := do
-  let (libEnvs, qualOfPkg, libPkgs) ← resolveLibs spec
   let catEnv ← Ix.CompileM.rsCompileEnvOf catalogConsts.toList
-  let mut violations : Array String := #[]
-  let mut checked := 0
-  for (lib, env, pkgs) in spec.libs.zip (libEnvs.zip libPkgs) do
-    let (renameMap, owned) ←
-      match ownershipMaps spec env qualOfPkg pkgs with
-      | .ok maps => pure maps
-      | .error e =>
-        throw <| IO.userError s!"catalog audit: `{lib.qualifier}`: {e}"
-    let stdEnv ← Ix.CompileM.rsCompileEnvOf env.constants.toList
-    for (name, _) in owned do
-      let target := rename renameMap name
-      let (ixSrc, _) := (CanonM.canonName name).run {}
-      let (ixTgt, _) := (CanonM.canonName target).run {}
-      match stdEnv.named.get? ixSrc, catEnv.named.get? ixTgt with
-      | some src, some tgt =>
-        checked := checked + 1
-        if src.addr != tgt.addr then
-          violations := violations.push
-            s!"{lib.qualifier}: addr({name}) = {src.addr} standalone \
+  forEachLib spec ({ checked := 0, violations := #[] } : AuditResult)
+    fun acc lib env qualOfPkg pkgs => do
+      let (renameMap, owned) ←
+        match ownershipMaps spec env qualOfPkg pkgs with
+        | .ok maps => pure maps
+        | .error e =>
+          throw <| IO.userError s!"catalog audit: `{lib.qualifier}`: {e}"
+      let stdEnv ← Ix.CompileM.rsCompileEnvOf env.constants.toList
+      -- Only fresh strings and counts survive into the accumulator;
+      -- the env (and everything region-backed) dies with the callback.
+      let mut violations := acc.violations
+      let mut checked := acc.checked
+      for (name, _) in owned do
+        let target := rename renameMap name
+        let (ixSrc, _) := (CanonM.canonName name).run {}
+        let (ixTgt, _) := (CanonM.canonName target).run {}
+        match stdEnv.named.get? ixSrc, catEnv.named.get? ixTgt with
+        | some src, some tgt =>
+          checked := checked + 1
+          if src.addr != tgt.addr then
+            violations := violations.push
+              s!"{lib.qualifier}: addr({name}) = {src.addr} standalone \
 but addr({target}) = {tgt.addr} in the catalog"
-      | none, _ =>
-        violations := violations.push
-          s!"{lib.qualifier}: standalone compile has no named entry \
+        | none, _ =>
+          violations := violations.push
+            s!"{lib.qualifier}: standalone compile has no named entry \
 for `{name}`"
-      | _, none =>
-        violations := violations.push
-          s!"{lib.qualifier}: catalog compile has no named entry for \
+        | _, none =>
+          violations := violations.push
+            s!"{lib.qualifier}: catalog compile has no named entry for \
 `{target}`"
-  return { checked, violations }
+      return { checked, violations }
 
 end Ix.Catalog
