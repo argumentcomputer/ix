@@ -1391,13 +1391,19 @@ failure here surfaces as a hard error, never a silent fallback. -/
 
     Collect all constant names referenced in an expression, appended onto
     `out` (a work queue, NOT a set — dedup happens at the consumer's
-    `seen`). Explicit stack, matching the Rust traversal order. -/
+    `seen`). Explicit stack, matching the Rust traversal order, with a
+    digest-keyed visited set so structurally shared subterms are walked
+    once (DAG cost, not unshared-tree cost). -/
 def collectConstRefs (expr : Expr) (out : Array Name) : Array Name := Id.run do
   let mut out := out
+  let mut visited : Std.HashSet Address := {}
   let mut stack : Array Expr := #[expr]
   repeat
     if let some e := stack.back? then
       stack := stack.pop
+      if visited.contains e.getHash then
+        continue
+      visited := visited.insert e.getHash
       match e with
       | .const n _ _ => out := out.push n
       | .app f a _ =>
@@ -1473,24 +1479,37 @@ def ingressAuxGenDep (name : Name) (ci : ConstantInfo) (maps : AddrMaps)
     ingressTypeStub name v.cnst.type v.cnst.levelParams maps
     return collectConstRefs v.cnst.type queue
 
+/-- Mirrors Rust `drain_ingress_queue` (recursor.rs).
+
+    Drain a worklist of names through `ingressAuxGenDep`, deduplicated
+    against the kenv-lifetime `auxIngressSeen` (resolved-id-keyed — see
+    the `AuxKernelCtx` field docs) instead of a per-call set: the
+    dispatch is deterministic per constant kind, so a seen id is already
+    at final kenv fidelity and re-expanding its closure would be pure
+    cost. -/
+def drainIngressQueue (queue₀ : Array Name) (maps : AddrMaps) :
+    KBridgeM Unit := do
+  let mut queue := queue₀
+  repeat
+    let some name := queue.back? | break
+    queue := queue.pop
+    let zid : MKId := ⟨maps.resolve name, name⟩
+    if (← get).auxIngressSeen.contains zid then
+      continue
+    modify fun kctx =>
+      { kctx with auxIngressSeen := kctx.auxIngressSeen.insert zid }
+    if let some ci ← lookupConst? name then
+      queue ← ingressAuxGenDep name ci maps queue
+  return ()
+
 /-- Mirrors Rust `ingress_target_type_deps` (recursor.rs:2548).
 
     Ingress constants referenced by an inductive target type with enough
     fidelity for WHNF (target aliases like `Set α := α → Prop` must
     unfold). -/
 def ingressTargetTypeDeps (targetTy : Expr) (maps : AddrMaps) :
-    KBridgeM Unit := do
-  let mut seen : Std.HashSet Name := {}
-  let mut queue : Array Name := collectConstRefs targetTy #[]
-  repeat
-    let some name := queue.back? | break
-    queue := queue.pop
-    if seen.contains name then
-      continue
-    seen := seen.insert name
-    if let some ci ← lookupConst? name then
-      queue ← ingressAuxGenDep name ci maps queue
-  return ()
+    KBridgeM Unit :=
+  drainIngressQueue (collectConstRefs targetTy #[]) maps
 
 /-- Mirrors Rust `ingress_field_deps` (recursor.rs:2572).
 
@@ -1501,19 +1520,10 @@ def ingressTargetTypeDeps (targetTy : Expr) (maps : AddrMaps) :
     otherwise). -/
 def ingressFieldDeps (cls : FlatInfo) (_lvlParams : Array Name)
     (maps : AddrMaps) : KBridgeM Unit := do
-  let mut seen : Std.HashSet Name := {}
   let mut queue : Array Name := #[]
   for ctor in cls.ctors do
     queue := collectConstRefs ctor.cnst.type queue
-  repeat
-    let some name := queue.back? | break
-    queue := queue.pop
-    if seen.contains name then
-      continue
-    seen := seen.insert name
-    let some ci ← lookupConst? name | continue
-    queue ← ingressAuxGenDep name ci maps queue
-  return ()
+  drainIngressQueue queue maps
 
 /-- Mirrors Rust `peek_result_sort` (recursor.rs:2732).
 

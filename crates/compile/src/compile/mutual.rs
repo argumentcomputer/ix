@@ -26,7 +26,7 @@ use crate::compile::{
   compile_inductive, compile_mutual_block, compile_name, compile_recursor,
   preseed_expr_tables, sort_consts,
 };
-use crate::mutual::{Def, Ind, MutConst};
+use crate::mutual::{Def, Ind, MutConst, ctx_to_all};
 use ix_common::address::Address;
 use ix_common::env::{
   ConstantInfo as LeanConstantInfo, ConstantVal, ConstructorVal,
@@ -145,16 +145,20 @@ pub fn compile_aux_block_with_rename(
   }
   preseed_expr_tables(&exprs, &mut_ctx, &mut cache, stt, "compile_aux_block")?;
 
-  // Compile each representative per class.
+  // Compile each representative per class. The block-context address
+  // list is identical for every member — computed once, not per member.
   let mut ixon_mutuals = Vec::new();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
+  let ctx_addrs: Vec<Address> =
+    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
   for class in &sorted_classes {
     let mut rep_pushed = false;
     for cnst in class {
       match cnst {
         MutConst::Recr(rec) => {
-          let (data, meta) = compile_recursor(rec, &mut_ctx, &mut cache, stt)?;
+          let (data, meta) =
+            compile_recursor(rec, &mut_ctx, &ctx_addrs, &mut cache, stt)?;
           if !rep_pushed {
             ixon_mutuals.push(IxonMutConst::Recr(data));
             rep_pushed = true;
@@ -163,7 +167,7 @@ pub fn compile_aux_block_with_rename(
         },
         MutConst::Defn(def) => {
           let (data, meta) =
-            compile_definition(def, &mut_ctx, &mut cache, stt)?;
+            compile_definition(def, &mut_ctx, &ctx_addrs, &mut cache, stt)?;
           if !rep_pushed {
             ixon_mutuals.push(IxonMutConst::Defn(data));
             rep_pushed = true;
@@ -172,7 +176,7 @@ pub fn compile_aux_block_with_rename(
         },
         MutConst::Indc(ind) => {
           let (data, meta, ctor_metas) =
-            compile_inductive(ind, &mut_ctx, &mut cache, stt)?;
+            compile_inductive(ind, &mut_ctx, &ctx_addrs, &mut cache, stt)?;
           if !rep_pushed {
             ixon_mutuals.push(IxonMutConst::Indc(data));
             rep_pushed = true;

@@ -11,10 +11,11 @@
 //! (`decode_env_lazy` in the ffi crate) rather than as a whole-env
 //! owned copy, accumulator constants and named metadata live as their
 //! serialized bytes rather than ~20×-larger structured forms, worker
-//! kernel envs clear periodically, the setup passes share one
-//! whole-env decode, and the `.ixe` streams to disk from Rust rather
-//! than crossing the FFI as an env-sized ByteArray. All of it is
-//! always on, and every mode produces a bit-identical `.ixe`.
+//! kernel contexts are fresh per block (canonicity §10.5), the setup
+//! passes share one whole-env decode, and the `.ixe` streams to disk
+//! from Rust rather than crossing the FFI as an env-sized ByteArray.
+//! All of it is always on, and every mode produces a bit-identical
+//! `.ixe`.
 //!
 //! Three knobs:
 //! - `IX_COMPILE_WORKERS=N` — scheduler worker count (default: all
@@ -58,9 +59,12 @@ use ixon::CompileError;
 // ===========================================================================
 
 /// Enable progress output. Quiet by default; set `IX_VERBOSE=1` to see
-/// per-phase timings and scheduler progress.
-static IX_VERBOSE: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_VERBOSE").is_ok());
+/// per-phase timings and scheduler progress. `IX_COMPILE_DBG=1` (the
+/// Lean driver's phase-attribution knob) is accepted as an alias so one
+/// flag lights up both sides of the pipeline.
+static IX_VERBOSE: LazyLock<bool> = LazyLock::new(|| {
+  std::env::var("IX_VERBOSE").is_ok() || std::env::var("IX_COMPILE_DBG").is_ok()
+});
 
 /// Log every block start + finish. Set `IX_LOG_BLOCKS=1` for deep debugging.
 /// Very verbose — only useful when you need to pin a panic to a specific block.
@@ -149,8 +153,9 @@ pub fn compile_env_with_options(
   let graph = scan.graph;
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 1/7 setup_scan (graph+ground+groups): {:.2}s",
-      phase_start.elapsed().as_secs_f32()
+      "[compile_env] setup 1/7 setup_scan (graph+ground+groups): {:.2}s{}",
+      phase_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
     );
   }
 
@@ -164,8 +169,9 @@ pub fn compile_env_with_options(
     proliferate_ungrounded(scan.immediate_ungrounded, &graph.in_refs);
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 2/7 proliferate_ungrounded: {:.2}s",
-      phase_start.elapsed().as_secs_f32()
+      "[compile_env] setup 2/7 proliferate_ungrounded: {:.2}s{}",
+      phase_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
     );
   }
   // Pin the highest-in-degree constants in the lazy env: the ref
@@ -223,9 +229,10 @@ pub fn compile_env_with_options(
   let condensed = compute_sccs(&grounded_out_refs);
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s",
+      "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s{}",
       condensed.blocks.len(),
-      phase_start.elapsed().as_secs_f32()
+      phase_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
     );
   }
 
@@ -283,8 +290,9 @@ pub fn compile_env_with_options(
   precompile_aux_gen_prereqs(&condensed, lean_env, &stt)?;
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 5/7 precompile_aux_gen_prereqs: {:.2}s",
-      phase_start.elapsed().as_secs_f32()
+      "[compile_env] setup 5/7 precompile_aux_gen_prereqs: {:.2}s{}",
+      phase_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
     );
   }
 
@@ -366,9 +374,10 @@ pub fn compile_env_with_options(
   }
   if *IX_VERBOSE {
     eprintln!(
-      "[compile_env] setup 7/7 ready_queue init: {:.2}s (total pre-scheduler: {:.2}s)",
+      "[compile_env] setup 7/7 ready_queue init: {:.2}s (total pre-scheduler: {:.2}s){}",
       phase_start.elapsed().as_secs_f32(),
       setup_start.elapsed().as_secs_f32(),
+      crate::diag::rss_log_suffix(),
     );
   }
 
@@ -505,7 +514,8 @@ pub fn compile_env_with_options(
           // print "stalled" ticks less often so the log doesn't churn.
           if changed || done == 0 {
             eprintln!(
-              "[compile_env] {done}/{total} ({pct:.1}%) · {elapsed:.0}s{eta}{suffix}"
+              "[compile_env] {done}/{total} ({pct:.1}%) · {elapsed:.0}s{eta}{suffix}{}",
+              crate::diag::rss_log_suffix(),
             );
           } else {
             eprintln!(
@@ -935,9 +945,10 @@ pub fn compile_env_with_options(
   if *IX_VERBOSE {
     let scheduler_elapsed = compile_start.elapsed().as_secs_f64();
     eprintln!(
-      "[compile_env] scheduler drained: {}/{} blocks in {scheduler_elapsed:.1}s",
+      "[compile_env] scheduler drained: {}/{} blocks in {scheduler_elapsed:.1}s{}",
       completed.load(AtomicOrdering::SeqCst),
       total_blocks,
+      crate::diag::rss_log_suffix(),
     );
   }
 
@@ -977,12 +988,13 @@ pub fn compile_env_with_options(
     let total_elapsed = compile_start.elapsed().as_secs_f64();
     eprintln!(
       "[compile_env] complete in {total_elapsed:.1}s · \
-       env: {} consts, {} named, {} names, {} blobs, {} comms",
+       env: {} consts, {} named, {} names, {} blobs, {} comms{}",
       stt.env.const_count(),
       stt.env.named_count(),
       stt.env.name_count(),
       stt.env.blob_count(),
       stt.env.comm_count(),
+      crate::diag::rss_log_suffix(),
     );
   }
 

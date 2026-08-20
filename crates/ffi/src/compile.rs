@@ -333,11 +333,16 @@ pub extern "C" fn rs_compile_env(
 
   // Canonical consts merkle root — equals the serialized header root
   // when a file is written; still reported on a fail-closed abort so
-  // callers can record what the complete-subset content was.
+  // callers can record what the complete-subset content was. Computed
+  // once here (parallel sort + tree) and handed to the writer — the
+  // sort and the ~2·N-node tree used to run twice per compile.
   let mut const_addrs: Vec<Address> =
     compile_stt.env.consts.iter().map(|e| e.key().clone()).collect();
-  const_addrs.sort_unstable();
-  let root = ixon::merkle::merkle_root_canonical(&const_addrs)
+  {
+    use rayon::prelude::*;
+    const_addrs.par_sort_unstable();
+  }
+  let root = ixon::merkle::merkle_root_canonical_sorted(&const_addrs)
     .unwrap_or_else(ixon::merkle::zero_address);
   let named_count = compile_stt.env.named.len() as u64;
   let unique_anon = const_addrs.len() as u64;
@@ -352,14 +357,15 @@ pub extern "C" fn rs_compile_env(
       s.push(".tmp");
       std::path::PathBuf::from(s)
     };
-    let written = match compile_stt.env.put_file(&tmp) {
-      Ok(n) => n,
-      Err(e) => {
-        std::fs::remove_file(&tmp).ok();
-        let msg = format!("rs_compile_env: serialization failed: {e}");
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let written =
+      match compile_stt.env.put_file_with_header(&tmp, &const_addrs, &root) {
+        Ok(n) => n,
+        Err(e) => {
+          std::fs::remove_file(&tmp).ok();
+          let msg = format!("rs_compile_env: serialization failed: {e}");
+          return LeanIOResult::error_string(&msg);
+        },
+      };
     if let Err(e) = std::fs::rename(&tmp, &path) {
       std::fs::remove_file(&tmp).ok();
       let msg = format!(
@@ -1579,6 +1585,7 @@ pub extern "C" fn rs_decompile_env(
 ) -> LeanIOResult<LeanOwned> {
   let path = path.as_str().to_string();
 
+  let t_read = std::time::Instant::now();
   let bytes = match std::fs::read(&path) {
     Ok(b) => b,
     Err(e) => {
@@ -1592,6 +1599,8 @@ pub extern "C" fn rs_decompile_env(
   // form costs a large multiple of its encoding — enough to dominate
   // the decompile's peak RSS on the biggest envs. One load path at
   // every scale also keeps the bench rows comparable across envs.
+  let t_parse = std::time::Instant::now();
+  let read_secs = (t_parse - t_read).as_secs_f32();
   let mut slice: &[u8] = &bytes;
   let env = match ixon::env::Env::get_demoted_named(&mut slice) {
     Ok(env) => env,
@@ -1601,6 +1610,11 @@ pub extern "C" fn rs_decompile_env(
       ));
     },
   };
+  eprintln!(
+    "[decompile] env read in {read_secs:.2}s, parsed in {:.2}s{}",
+    t_parse.elapsed().as_secs_f32(),
+    ix_compile::diag::rss_log_suffix(),
+  );
 
   // The env owns its bytes after parsing; release the file buffer
   // before the decompile allocates next to it.
@@ -1643,7 +1657,14 @@ pub extern "C" fn rs_decompile_env(
       ));
     },
   };
-  LeanIOResult::ok(LeanOwned::from_nat_u64(dstt.env.len() as u64))
+  let n = dstt.env.len() as u64;
+  // One-shot CLI entry (`ix decompile` only — the import path uses
+  // `rs_decompile_env_consts`): skip the destructors like
+  // `rs_compile_env` does; dropping ~30 GiB of DashMaps costs seconds
+  // and the OS reclaims at exit.
+  std::mem::forget(dstt);
+  std::mem::forget(stt);
+  LeanIOResult::ok(LeanOwned::from_nat_u64(n))
 }
 
 /// Decompile a serialized `.ixe` env and materialize constants as real

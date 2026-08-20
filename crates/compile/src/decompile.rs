@@ -5,8 +5,11 @@
 //!
 //! `IX_DECOMPILE_KENV_CLEAR_ENTRIES=N` controls how many dependency names
 //! Pass 2 tracks before clearing its shared kernel environment. The default
-//! is 131072; `0` disables clearing. Raising the limit spends memory to avoid
-//! rebuilding dependency closures after a full kernel-cache clear.
+//! is 1048576; `0` disables clearing. The reference lists discovered by the
+//! ingress BFS are memoized for the whole run (they don't change when the
+//! kenv clears), so a post-clear re-walk re-ingresses constants but does
+//! not re-decode or re-walk their bodies — the limit is primarily a peak-RAM
+//! bound, no longer a wall-clock cliff.
 
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_precision_loss)]
@@ -45,6 +48,7 @@ use ixon::{
 use crate::{
   compile::CompileState,
   compile::aux_gen::nested::compute_lean_ind_flags,
+  diag::rss_log_suffix,
   mutual::{Def, Ind, MutConst as LeanMutConst, MutCtx, all_to_ctx},
 };
 use dashmap::DashMap;
@@ -52,7 +56,11 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
 
-const DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES: usize = 131_072;
+// Pre-warm now stubs theorem/opaque proof values (`ensure_in_kenv_of_prewarm`),
+// which were the dominant share of per-entry kenv RSS — so the same RAM
+// envelope covers ~8× the entry count and clears become a rare backstop
+// (FLT-scale closures no longer cross the limit at all).
+const DEFAULT_DECOMPILE_KENV_CLEAR_ENTRIES: usize = 1_048_576;
 
 fn decompile_kenv_clear_entries_from(raw: Option<&str>) -> Option<usize> {
   match raw {
@@ -2826,7 +2834,7 @@ fn roundtrip_block(
 ) -> Result<FxHashMap<Name, LeanConstantInfo>, DecompileError> {
   use crate::compile::{
     BlockCache as CompileBlockCache, collect_mut_const_exprs,
-    compile_definition, compile_inductive, compile_mutual_block,
+    compile_definition, compile_inductive, compile_mutual_block, compile_name,
     compile_recursor, preseed_expr_tables, sort_consts,
   };
   use crate::mutual::ctx_to_all;
@@ -2877,6 +2885,8 @@ fn roundtrip_block(
   let mut name_to_class: FxHashMap<Name, usize> = FxHashMap::default();
   let mut all_metas: FxHashMap<Name, ConstantMeta> = FxHashMap::default();
   let mut ixon_mutuals: Vec<MutConst> = Vec::new();
+  let ctx_addrs: Vec<Address> =
+    ctx_to_all(&mut_ctx).iter().map(|n| compile_name(n, stt)).collect();
 
   for (class_idx, class) in sorted_classes.iter().enumerate() {
     let mut rep_pushed = false;
@@ -2884,15 +2894,14 @@ fn roundtrip_block(
       name_to_class.insert(cnst.name(), class_idx);
       match cnst {
         LeanMutConst::Recr(rec) => {
-          let (data, meta) = compile_recursor(rec, &mut_ctx, &mut cache, stt)
-            .map_err(|e| {
-            DecompileError::BadConstantFormat {
-              msg: format!(
-                "roundtrip compile_rec {}: {e}",
-                rec.cnst.name.pretty()
-              ),
-            }
-          })?;
+          let (data, meta) =
+            compile_recursor(rec, &mut_ctx, &ctx_addrs, &mut cache, stt)
+              .map_err(|e| DecompileError::BadConstantFormat {
+                msg: format!(
+                  "roundtrip compile_rec {}: {e}",
+                  rec.cnst.name.pretty()
+                ),
+              })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Recr(data));
             rep_pushed = true;
@@ -2900,10 +2909,14 @@ fn roundtrip_block(
           all_metas.insert(rec.cnst.name.clone(), meta);
         },
         LeanMutConst::Defn(def) => {
-          let (data, meta) = compile_definition(def, &mut_ctx, &mut cache, stt)
-            .map_err(|e| DecompileError::BadConstantFormat {
-              msg: format!("roundtrip compile_def {}: {e}", def.name.pretty()),
-            })?;
+          let (data, meta) =
+            compile_definition(def, &mut_ctx, &ctx_addrs, &mut cache, stt)
+              .map_err(|e| DecompileError::BadConstantFormat {
+                msg: format!(
+                  "roundtrip compile_def {}: {e}",
+                  def.name.pretty()
+                ),
+              })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Defn(data));
             rep_pushed = true;
@@ -2912,14 +2925,13 @@ fn roundtrip_block(
         },
         LeanMutConst::Indc(ind) => {
           let (data, meta, ctor_metas) =
-            compile_inductive(ind, &mut_ctx, &mut cache, stt).map_err(|e| {
-              DecompileError::BadConstantFormat {
+            compile_inductive(ind, &mut_ctx, &ctx_addrs, &mut cache, stt)
+              .map_err(|e| DecompileError::BadConstantFormat {
                 msg: format!(
                   "roundtrip compile_indc {}: {e}",
                   ind.ind.cnst.name.pretty()
                 ),
-              }
-            })?;
+              })?;
           if !rep_pushed {
             ixon_mutuals.push(MutConst::Indc(data));
             rep_pushed = true;
@@ -3163,11 +3175,11 @@ fn roundtrip_block(
             );
             let compiled = preseeded.and_then(|()| match &omc {
               LeanMutConst::Defn(d) => {
-                compile_definition(d, &mut_ctx, &mut pcache, stt)
+                compile_definition(d, &mut_ctx, &ctx_addrs, &mut pcache, stt)
                   .map(|(data, _)| MutConst::Defn(data))
               },
               LeanMutConst::Recr(r) => {
-                compile_recursor(r, &mut_ctx, &mut pcache, stt)
+                compile_recursor(r, &mut_ctx, &ctx_addrs, &mut pcache, stt)
                   .map(|(data, _)| MutConst::Recr(data))
               },
               LeanMutConst::Indc(_) => unreachable!("probe is Defn/Recr only"),
@@ -3907,36 +3919,6 @@ struct StoredPlanBlock {
   class_names: Vec<Vec<Name>>,
   aux_layout: Option<ixon::env::AuxLayout>,
   flat_names: Vec<Name>,
-}
-
-/// ` · rss X.X GiB (anon Y.Y, file Z.Z)` sampled from
-/// `/proc/self/status`, appended to phase logs. Anon can only leave RAM
-/// via swap; file RSS is reclaimable page cache — the split shows which
-/// memory-reduction lever applies. Empty when procfs is unavailable.
-fn rss_log_suffix() -> String {
-  let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
-    return String::new();
-  };
-  let field_kb = |name: &str| -> Option<u64> {
-    status
-      .lines()
-      .find(|l| l.starts_with(name))
-      .and_then(|l| l.split_whitespace().nth(1))
-      .and_then(|v| v.parse().ok())
-  };
-  let gib_tenths = |kb: u64| -> (u64, u64) {
-    let tenths = kb * 10 / (1024 * 1024);
-    (tenths / 10, tenths % 10)
-  };
-  match (field_kb("VmRSS:"), field_kb("RssAnon:"), field_kb("RssFile:")) {
-    (Some(rss), Some(anon), Some(file)) => {
-      let (r, rt) = gib_tenths(rss);
-      let (a, at) = gib_tenths(anon);
-      let (f, ft) = gib_tenths(file);
-      format!(" · rss {r}.{rt} GiB (anon {a}.{at}, file {f}.{ft})")
-    },
-    _ => String::new(),
-  }
 }
 
 /// One `Muts`-tagged Named entry, pre-resolved for plan lookups.
@@ -5317,38 +5299,46 @@ pub fn decompile_env(
     rss_log_suffix(),
   );
 
-  // Pass 1.5: Lean-faithful inductive flags
+  // Pass 1.5: Lean-faithful inductive flags. Scoped so `lean_env` — a
+  // full structured copy of the environment used only by
+  // `compute_lean_ind_flags` — drops here instead of living to the end
+  // of the function: Pass 2 already holds `dstt.env` plus its own
+  // `work_env` snapshot, and a third whole-env copy is pure peak RSS.
   let t_p1_5 = std::time::Instant::now();
-  let lean_env: ix_common::env::Env =
-    dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
-  let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
-  for entry in dstt.env.iter() {
-    if let LeanConstantInfo::InductInfo(v) = entry.value()
-      && let Some(first) = v.all.first()
-    {
-      groups.entry(first.clone()).or_insert_with(|| v.all.clone());
-    }
-  }
-  for (key, all) in &groups {
-    let flags = compute_lean_ind_flags(all, &lean_env).map_err(|e| {
-      DecompileError::BadConstantFormat {
-        msg: format!("ind-flags fixup for block '{}': {e}", key.pretty()),
-      }
-    })?;
-    for member in all {
-      if let Some(mut entry) = dstt.env.get_mut(member)
-        && let LeanConstantInfo::InductInfo(v) = entry.value_mut()
+  let n_ind_groups = {
+    let lean_env: ix_common::env::Env =
+      dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+    for entry in dstt.env.iter() {
+      if let LeanConstantInfo::InductInfo(v) = entry.value()
+        && let Some(first) = v.all.first()
       {
-        v.num_nested = Nat::from(flags.num_nested);
-        v.is_rec = flags.is_rec;
-        v.is_reflexive = flags.is_reflexive;
+        groups.entry(first.clone()).or_insert_with(|| v.all.clone());
       }
     }
-  }
+    for (key, all) in &groups {
+      let flags = compute_lean_ind_flags(all, &lean_env).map_err(|e| {
+        DecompileError::BadConstantFormat {
+          msg: format!("ind-flags fixup for block '{}': {e}", key.pretty()),
+        }
+      })?;
+      for member in all {
+        if let Some(mut entry) = dstt.env.get_mut(member)
+          && let LeanConstantInfo::InductInfo(v) = entry.value_mut()
+        {
+          v.num_nested = Nat::from(flags.num_nested);
+          v.is_rec = flags.is_rec;
+          v.is_reflexive = flags.is_reflexive;
+        }
+      }
+    }
+    groups.len()
+  };
   eprintln!(
-    "[decompile] Pass 1.5 done in {:.2}s ({} constants in dstt.env)",
+    "[decompile] Pass 1.5 done in {:.2}s ({} inductive groups){}",
     t_p1_5.elapsed().as_secs_f32(),
-    groups.len(),
+    n_ind_groups,
+    rss_log_suffix(),
   );
 
   // Pass 2: Regenerate aux_gen constants for mutual inductive blocks.
@@ -5453,6 +5443,18 @@ pub fn decompile_env(
   // for every block (still O(n) across all blocks combined).
   let mut ingressed: FxHashSet<Name> = FxHashSet::default();
 
+  // Run-scoped memo of each walked constant's reference list. `ingressed`
+  // doubles as the kenv-content tracker, so a kenv clear must wipe it —
+  // but the reference graph itself never changes, so the refs survive the
+  // clear here. Post-clear re-walks then cost hash probes instead of
+  // re-decoding and re-walking every constant in the closure (the
+  // Θ(N²/L) term that made the clear threshold a wall-clock cliff).
+  // Names absent from `work_env` at walk time are deliberately NOT
+  // memoized: aux constants enter `work_env` only when their block
+  // regenerates them, so an early miss must stay a live probe rather
+  // than a frozen empty entry.
+  let mut refs_memo: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+
   // Size trigger for the kenv clear at the bottom of the block loop.
   // A full clear makes later blocks re-walk their whole ingress
   // closures, so the threshold must sit above the kenv working set of
@@ -5499,13 +5501,22 @@ pub fn decompile_env(
       if !ingressed.insert(name.clone()) {
         continue;
       }
-      expr_utils::ensure_in_kenv_of(&name, &work_env, stt, &mut kctx);
-      if let Some(ci) = work_env.get(&name) {
-        for ref_name in get_constant_info_references(&ci) {
-          if !ingressed.contains(&ref_name) {
-            stack.push(ref_name);
+      expr_utils::ensure_in_kenv_of_prewarm(&name, &work_env, stt, &mut kctx);
+      if let Some(refs) = refs_memo.get(&name) {
+        for ref_name in refs {
+          if !ingressed.contains(ref_name) {
+            stack.push(ref_name.clone());
           }
         }
+      } else if let Some(ci) = work_env.get(&name) {
+        let refs: Vec<Name> =
+          get_constant_info_references(&ci).into_iter().collect();
+        for ref_name in &refs {
+          if !ingressed.contains(ref_name) {
+            stack.push(ref_name.clone());
+          }
+        }
+        refs_memo.insert(name, refs);
       }
     }
     let t_after_ingress = std::time::Instant::now();
@@ -5586,6 +5597,7 @@ pub fn decompile_env(
     // few re-ingress walks for a bounded working set.
     if kenv_clear_entries.is_some_and(|limit| ingressed.len() > limit) {
       kctx.kenv.clear_releasing_memory();
+      kctx.aux_ingress_seen.clear();
       ingressed.clear();
       kenv_clears += 1;
       expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
