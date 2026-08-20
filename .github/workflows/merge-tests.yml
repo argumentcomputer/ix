@@ -1,8 +1,9 @@
 name: Merge tests
 
 on:
+  pull_request:
+    branches: [main]
   merge_group:
-    types: [checks_requested]
 
 permissions:
   contents: read
@@ -13,6 +14,7 @@ permissions:
 jobs:
   merge-tests:
     name: ${{ matrix.name }}
+    if: ${{ github.event_name == 'merge_group' }}
     strategy:
       fail-fast: true
       matrix:
