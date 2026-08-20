@@ -48,9 +48,6 @@ jobs:
           # Valgrind cannot decode AVX-512 emitted by native codegen.
           native-codegen: ${{ matrix.kind != 'valgrind' }}
 
-      - if: ${{ matrix.kind == 'cargo' }}
-        run: exit 1 # Test fail-fast & de-queue on error
-
       # A merge group has its own SHA, so restore the nearest compatible build
       # produced by ordinary CI and let Lake rebuild anything that changed.
       - if: ${{ matrix.kind == 'lake' }}
