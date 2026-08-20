@@ -83,6 +83,46 @@ structure BuildResult where
   /-- Per-qualifier owned-constant counts (source constants, pre-replay). -/
   perLib : Array (Lean.Name × Nat)
 
+/-- Parse a catalog spec from its JSON file form (`ix catalog --spec`):
+
+    ```json
+    { "prefix": "TruthMines",
+      "libs": [ { "qualifier": "Batteries", "roots": ["Batteries"] } ] }
+    ```
+
+    Fail-closed on structure: unknown keys are errors, and the `groups`
+    key is reserved for grouped loading (plan Item 2) so a spec written
+    for a future ix fails loudly here instead of silently flattening. -/
+def specFromJson (json : Lean.Json) : Except String CatalogSpec := do
+  let obj ← json.getObj?
+  for ⟨key, _⟩ in obj.toArray do
+    match key with
+    | "prefix" | "libs" => pure ()
+    | "groups" => throw "`groups` is reserved for grouped loading and not yet supported"
+    | _ => throw s!"unknown key `{key}` in catalog spec"
+  let prefixStr ← (← json.getObjVal? "prefix").getStr?
+  if prefixStr.isEmpty then throw "empty `prefix`"
+  let libsArr ← (← json.getObjVal? "libs").getArr?
+  if libsArr.isEmpty then throw "`libs` is empty"
+  let mut libs : Array LibSpec := #[]
+  for libJson in libsArr do
+    let libObj ← libJson.getObj?
+    for ⟨key, _⟩ in libObj.toArray do
+      match key with
+      | "qualifier" | "roots" => pure ()
+      | _ => throw s!"unknown key `{key}` in catalog spec lib entry"
+    let qualifier ← (← libJson.getObjVal? "qualifier").getStr?
+    if qualifier.isEmpty then throw "empty `qualifier` in lib entry"
+    let rootsArr ← (← libJson.getObjVal? "roots").getArr?
+    let mut roots : Array Lean.Name := #[]
+    for rootJson in rootsArr do
+      let root ← rootJson.getStr?
+      if root.isEmpty then throw s!"lib `{qualifier}`: empty root module name"
+      roots := roots.push root.toName
+    if roots.isEmpty then throw s!"lib `{qualifier}`: no root modules"
+    libs := libs.push { qualifier := qualifier.toName, roots }
+  return { catalogPrefix := prefixStr.toName, libs }
+
 /-! ## Relocation core (absorbed from TruthMines `Internal.Relocate`) -/
 
 def rename (names : Lean.NameMap Lean.Name) (name : Lean.Name) : Lean.Name :=

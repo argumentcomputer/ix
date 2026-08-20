@@ -66,6 +66,43 @@ def buildTest : TestSeq :=
     | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
     | none => return (true, 0, 0, none)) .done
 
-def suite : List TestSeq := [buildTest]
+/-- I3: the `--spec` JSON file form resolves to exactly the positional
+    spec, and malformed specs fail closed (reserved `groups` key,
+    unknown keys, empty libs). Pure parsing — the CLI is a thin shell
+    over `specFromJson`. -/
+def specJsonTest : TestSeq :=
+  .individualIO "catalog: --spec JSON resolves to the positional spec" none (do
+    let sample := "{ \"prefix\": \"TestCatalog\", \"libs\": [
+      { \"qualifier\": \"Plausible\", \"roots\": [\"Plausible\"] },
+      { \"qualifier\": \"LSpec\", \"roots\": [\"LSpec\"] },
+      { \"qualifier\": \"Cli\", \"roots\": [\"Cli\"] } ] }"
+    let parsed ← match Lean.Json.parse sample |>.bind Ix.Catalog.specFromJson with
+      | .ok parsed => pure parsed
+      | .error e => return (false, 0, 0, some s!"sample spec rejected: {e}")
+    let sameAsPositional := parsed.catalogPrefix == spec.catalogPrefix
+      && parsed.libs.size == spec.libs.size
+      && (parsed.libs.zip spec.libs).all fun (a, b) =>
+           a.qualifier == b.qualifier && a.roots == b.roots
+    let rejects (raw : String) (needle : String) : Bool :=
+      match Lean.Json.parse raw |>.bind Ix.Catalog.specFromJson with
+      | .ok _ => false
+      | .error e => (e.splitOn needle).length > 1
+    let checks : List (String × Bool) := [
+      ("spec file equals positional spec", sameAsPositional),
+      ("groups key is reserved",
+        rejects "{ \"prefix\": \"X\", \"libs\": [{ \"qualifier\": \"A\", \
+\"roots\": [\"A\"] }], \"groups\": [] }" "reserved"),
+      ("unknown key fails closed",
+        rejects "{ \"prefix\": \"X\", \"libs\": [], \"extra\": 1 }" "unknown key"),
+      ("empty libs fails closed",
+        rejects "{ \"prefix\": \"X\", \"libs\": [] }" "empty"),
+      ("unknown lib key fails closed",
+        rejects "{ \"prefix\": \"X\", \"libs\": [{ \"qualifier\": \"A\", \
+\"roots\": [\"A\"], \"deps\": [] }] }" "unknown key") ]
+    match checks.find? (!·.2) with
+    | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
+    | none => return (true, 0, 0, none)) .done
+
+def suite : List TestSeq := [buildTest, specJsonTest]
 
 end Tests.Ix.Catalog
