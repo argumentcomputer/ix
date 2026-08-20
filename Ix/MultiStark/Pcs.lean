@@ -504,15 +504,16 @@ def pcs := ⟦
   }
 
   -- 1 iff the recomputed root matches the commitment cap at the cap index.
-  -- Compared BY POINTER: `store` is content-addressed (the executor keys
-  -- memory by value) so equal digests land on the same pointer, and the
-  -- memory argument binds one pointer to one value, so equal pointers imply
-  -- equal digests — no 2x32-column load. (Same pattern as the IxVM kernel's
-  -- address equality.)
+  -- Compared BY VALUE (`digest_eq` over the loaded limbs), not by pointer:
+  -- pointer equality assumes content addressing dedups across every store
+  -- site, which holds for untagged memory but not under TYPE-TAGGED memory
+  -- (the concurrent record's store discipline), where dedup is per stored
+  -- type — the vk parser and the hasher can hold different pointers to
+  -- equal digest bytes. The value compare is correct under both models.
   fn mmcs_verify(cap: MerkleCap, rows: List‹List‹U64››, lhs: List‹G›,
       ibits: List‹G›, proof: List‹DigestP›, log_max: G) -> G {
     let (root, capidx) = @mmcs_root(rows, lhs, ibits, proof, log_max);
-    eq_zero(ptr_val(list_lookup(cap, capidx)) - ptr_val(root))
+    digest_eq(load(list_lookup(cap, capidx)), load(root))
   }
 
   -- ==========================================================================
