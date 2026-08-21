@@ -749,17 +749,12 @@ def natPrim := ⟦
               KExprNode.Lit(lit) =>
                 match lit {
                   KLiteral.Str(bs) =>
-                    -- The length must be a CANONICAL `KLimbs`, because
-                    -- `klimbs_eq` — behind `Nat.beq`/`Nat.decEq`/
-                    -- `literal_eq` — compares limbs without normalizing.
-                    -- `klimbs_from_g` range-checks and pins its byte
-                    -- decomposition (so a length >= 256 lands in the right
-                    -- limb instead of an out-of-range digit), and
-                    -- `klimbs_normalize` strips the all-zero limb so the
-                    -- empty string yields the canonical zero rather than
-                    -- `[[0;8]]`.
-                    let limbs =
-                      klimbs_normalize(klimbs_from_g(list_length(bs)));
+                    -- `klimbs_from_g` range-checks its byte decomposition
+                    -- (so a length >= 256 lands in the right limb) and
+                    -- returns a canonical `KLimbs` — required because
+                    -- `klimbs_eq` (behind `Nat.beq`/`Nat.decEq`/
+                    -- `literal_eq`) compares limbs without normalizing.
+                    let limbs = klimbs_from_g(list_length(bs));
                     (1, store(KExprNode.Lit(KLiteral.Nat(limbs)))),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
@@ -1102,8 +1097,14 @@ def natPrim := ⟦
         assert_eq!(x, to_field(b0) + 256 * to_field(b1)
                    + 65536 * to_field(b2) + 16777216 * to_field(b3),
           "u32 byte split does not recompose to the original value");
-        store(ListNode.Cons([b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8],
-                            store(ListNode.Nil))),
+        -- Normalize HERE, not at each caller: `x == 0` gives the all-zero
+        -- limb, which is the denormalized `[[0;8]]`. `klimbs_eq` (behind
+        -- `Nat.beq`/`decEq`) compares limbs without normalizing, so an
+        -- unnormalized zero disagrees with the canonical empty list and
+        -- makes a reducer's literal wrong. Callers used to normalize
+        -- individually and one (`String.back`) was missed.
+        klimbs_normalize(store(ListNode.Cons(
+          [b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)))),
     }
   }
 
