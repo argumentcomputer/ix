@@ -59,6 +59,7 @@ import Tests.Ix.ImportIxe
 import Tests.Ix.CatalogFixtures
 import Tests.Ix.CatalogQualified
 import Tests.Ix.CatalogSpine
+import Tests.Ix.TruthMinesRecords
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -76,6 +77,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("catalog", Tests.Ix.Catalog.suite),
   ("import-ixe", Tests.Ix.ImportIxe.suite),
   ("catalog-qualified", Tests.Ix.CatalogQualified.suite),
+  ("truthmines-spec", Tests.Ix.TruthMinesRecords.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
   ("claim", Tests.Claim.suite),

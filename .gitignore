@@ -12,3 +12,6 @@ result*
 *.ixe
 plans
 refs
+
+# TruthMines corpus artifacts (D2: never check in the union artifact)
+truthmines.report.json

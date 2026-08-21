@@ -162,6 +162,21 @@ lean_exe «bench-lean4lean» where
 lean_exe «bench-compile-init» where
   root := `Benchmarks.CompileInit
 
+/- Typed TruthMines corpus records: the package catalog, the frozen admission
+spec, fail-closed validation (elaboration-time `run_cmd` gate), and workspace
+projections consumed by the `truthmines` driver and the `truthmines-spec`
+suite. Pure data and pure functions; the nested corpus workspace they project
+lives in `Benchmarks/TruthMines/`. -/
+lean_lib TruthMinesSpec where
+  globs := #[.submodules `Benchmarks.TruthMinesSpec]
+
+/- The corpus driver: `gen [--check]` projects `Benchmarks/TruthMines/`
+from the typed records, `spec` prints the `ix catalog --spec` JSON, and
+`build` produces a single `truthmines.ixe` (the `compilemathlib.ixe` of the
+corpus tier). Needs `lake build ix` first for the `build` verb. -/
+lean_exe truthmines where
+  root := `Benchmarks.TruthMinesSpec.Main
+
 end Benchmarks
 
 section IxTcVerify
