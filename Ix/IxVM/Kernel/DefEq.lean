@@ -877,35 +877,28 @@ def defEq := ⟦
     }
   }
 
-  -- 1 iff `whnf(infer_only(ty))` is `Sort 0`.
+  -- 1 iff `whnf(infer_only(ty))` is a `Sort` whose level is SEMANTICALLY
+  -- zero (i.e. `Prop`).
   --
-  -- STRUCTURAL on purpose — do not swap this for `level_equal`. All three
-  -- references gate struct-eta and proof irrelevance on the level being
-  -- literally `Zero`: Rust `KUniv::is_zero` (`level.rs:112-114`, a
-  -- `matches!` on `UnivData::Zero`), `Ix/Tc` `KUniv.isZero`
-  -- (`Level.lean:64-66`), and lean4lean's `isProp`
-  -- (`TypeChecker.lean:192-193`), which compares against `.prop` with
-  -- structural `==`.
+  -- SEMANTIC on purpose — `level_equal`, matching `is_inductive_prop`
+  -- (`Infer.lean:260`) and all three references: Rust gates both struct-
+  -- eta (`whnf.rs:1884`) and proof irrelevance (`def_eq.rs:878`) on
+  -- `KUniv::is_semantic_zero`, `Ix/Tc` on `isSemanticZero`
+  -- (`Whnf.lean:1139`, `DefEq.lean:817`), and lean4lean's `isProp` on
+  -- `Level.isAlwaysZero` (`TypeChecker.lean:230`), all of which normalize.
   --
-  -- It is sound because levels are built by SIMPLIFYING constructors —
-  -- `level_imax` collapses `imax u 0` to `Zero` at construction, as
-  -- Rust's `KUniv::imax` and lean4lean's `mkLevelIMax'` do — and because
-  -- the test runs after `whnf`. So a Prop cannot reach here spelled any
-  -- other way.
-  --
-  -- Note this is NOT the rule everywhere: the projection-field Prop test
-  -- normalizes in Rust (`univ_eq`, `infer.rs:516`) and in `Ix/Tc`
-  -- (`Infer.lean:315`), which is why `is_inductive_prop` uses
-  -- `level_equal`. Those two tests are deliberately different.
+  -- A structural `KLevelNode.Zero` test is UNSOUND here: `convert_univ`
+  -- (`Convert.lean:87`) is a raw conversion, so a prover can author
+  -- `Sort (max 0 0)` / `Sort (imax 1 0)` — semantically zero, structurally
+  -- not — and `whnf` is the identity on `Srt`. Reading such a Prop as
+  -- "not Prop" fires `try_struct_eta_iota` on a proof, the reduction
+  -- lean4#14613 fixed (see `Tests/Ix/IxVM/Exploits.lean`
+  -- `struct-eta-fires-on-semantic-prop`).
   fn is_prop_type(ty: KExpr, types: List‹KExpr›) -> G {
     let sort = k_infer_only(ty, types);
     let sort_w = whnf(sort, types);
     match load(sort_w) {
-      KExprNode.Srt(l) =>
-        match load(l) {
-          KLevelNode.Zero => 1,
-          _ => 0,
-        },
+      KExprNode.Srt(l) => level_equal(l, store(KLevelNode.Zero)),
       _ => 0,
     }
   }

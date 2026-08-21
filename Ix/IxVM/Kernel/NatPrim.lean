@@ -229,26 +229,6 @@ def natPrim := ⟦
      0x11u8, 0x9bu8, 0xcau8, 0x51u8, 0xd7u8, 0xb0u8, 0xbdu8, 0xd5u8])
   }
 
-  fn size_of_size_of_addr() -> Addr {
-    store([0xa3u8, 0x43u8, 0xa6u8, 0x51u8, 0xbfu8, 0xf4u8, 0x08u8, 0xc3u8,
-     0xa2u8, 0x9fu8, 0xf2u8, 0x7bu8, 0x2bu8, 0x62u8, 0xe3u8, 0x4bu8,
-     0x54u8, 0xb2u8, 0xabu8, 0x38u8, 0x1cu8, 0xf6u8, 0xf3u8, 0xadu8,
-     0x87u8, 0xc5u8, 0x40u8, 0xc9u8, 0x77u8, 0xdcu8, 0x3cu8, 0x4au8])
-  }
-
-  fn punit_addr() -> Addr {
-    store([0x2du8, 0xfcu8, 0x16u8, 0xafu8, 0x01u8, 0xb8u8, 0x2bu8, 0x3bu8,
-     0x91u8, 0xc2u8, 0xffu8, 0x70u8, 0x44u8, 0x09u8, 0xd7u8, 0x62u8,
-     0x36u8, 0xa8u8, 0x3fu8, 0x95u8, 0x6cu8, 0x0cu8, 0x6eu8, 0x66u8,
-     0x59u8, 0xa6u8, 0x4fu8, 0xe2u8, 0x1du8, 0x76u8, 0x69u8, 0x5bu8])
-  }
-
-  fn unit_addr() -> Addr {
-    store([0x92u8, 0x32u8, 0x49u8, 0x86u8, 0x67u8, 0xf7u8, 0x65u8, 0xf4u8,
-     0x37u8, 0xdeu8, 0xdau8, 0xacu8, 0x82u8, 0x8eu8, 0x55u8, 0x5fu8,
-     0x6cu8, 0xc6u8, 0x7au8, 0x20u8, 0xe6u8, 0xdbu8, 0x28u8, 0xf6u8,
-     0x14u8, 0xfdu8, 0xf3u8, 0xc2u8, 0x62u8, 0x71u8, 0x0fu8, 0xebu8])
-  }
 
   fn is_native_prim_addr(a: Addr) -> G {
     match address_eq(a, system_platform_num_bits_addr()) {
@@ -265,11 +245,7 @@ def natPrim := ⟦
             _ =>
             match address_eq(a, subtype_val_addr()) {
               1 => 1,
-              _ =>
-              match address_eq(a, size_of_size_of_addr()) {
-                1 => 1,
-                _ => 0,
-              },
+              _ => 0,
             },
           },
         },
@@ -305,9 +281,6 @@ def natPrim := ⟦
         match address_eq(head_addr, subtype_val_addr()) {
           1 => try_reduce_subtype_val(spine),
           _ =>
-          match address_eq(head_addr, size_of_size_of_addr()) {
-            1 => try_reduce_size_of_unit(spine),
-            _ =>
               let is_rb = address_eq(head_addr, reduce_bool_addr());
               let is_rn = address_eq(head_addr, reduce_nat_addr());
               match is_rb + is_rn {
@@ -324,7 +297,6 @@ def natPrim := ⟦
                       },
                   },
               },
-          },
         },
       },
     }
@@ -343,29 +315,6 @@ def natPrim := ⟦
                 match address_eq(caddr, system_platform_get_num_bits_addr()) {
                   1 => (1, mk_nat_literal_64()),
                   _ => (0, store(KExprNode.BVar(0))),
-                },
-              _ => (0, store(KExprNode.BVar(0))),
-            },
-        },
-    }
-  }
-
-  -- SizeOf.sizeOf.{u} Unit/PUnit ... → 1. First arg = type.
-  fn try_reduce_size_of_unit(spine: List‹KExpr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 1) {
-      1 => (0, store(KExprNode.BVar(0))),
-      _ =>
-        match collect_spine(list_lookup(spine, 0)) {
-          (head, _) =>
-            match load(head) {
-              KExprNode.Const(caddr, _) =>
-                match address_eq(caddr, unit_addr()) {
-                  1 => (1, mk_nat_one()),
-                  _ =>
-                    match address_eq(caddr, punit_addr()) {
-                      1 => (1, mk_nat_one()),
-                      _ => (0, store(KExprNode.BVar(0))),
-                    },
                 },
               _ => (0, store(KExprNode.BVar(0))),
             },
@@ -800,17 +749,12 @@ def natPrim := ⟦
               KExprNode.Lit(lit) =>
                 match lit {
                   KLiteral.Str(bs) =>
-                    -- The length must be a CANONICAL `KLimbs`, because
-                    -- `klimbs_eq` — behind `Nat.beq`/`Nat.decEq`/
-                    -- `literal_eq` — compares limbs without normalizing.
-                    -- `klimbs_from_g` range-checks and pins its byte
-                    -- decomposition (so a length >= 256 lands in the right
-                    -- limb instead of an out-of-range digit), and
-                    -- `klimbs_normalize` strips the all-zero limb so the
-                    -- empty string yields the canonical zero rather than
-                    -- `[[0;8]]`.
-                    let limbs =
-                      klimbs_normalize(klimbs_from_g(list_length(bs)));
+                    -- `klimbs_from_g` range-checks its byte decomposition
+                    -- (so a length >= 256 lands in the right limb) and
+                    -- returns a canonical `KLimbs` — required because
+                    -- `klimbs_eq` (behind `Nat.beq`/`Nat.decEq`/
+                    -- `literal_eq`) compares limbs without normalizing.
+                    let limbs = klimbs_from_g(list_length(bs));
                     (1, store(KExprNode.Lit(KLiteral.Nat(limbs)))),
                   _ => (0, store(KExprNode.BVar(0))),
                 },
@@ -1153,8 +1097,14 @@ def natPrim := ⟦
         assert_eq!(x, to_field(b0) + 256 * to_field(b1)
                    + 65536 * to_field(b2) + 16777216 * to_field(b3),
           "u32 byte split does not recompose to the original value");
-        store(ListNode.Cons([b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8],
-                            store(ListNode.Nil))),
+        -- Normalize HERE, not at each caller: `x == 0` gives the all-zero
+        -- limb, which is the denormalized `[[0;8]]`. `klimbs_eq` (behind
+        -- `Nat.beq`/`decEq`) compares limbs without normalizing, so an
+        -- unnormalized zero disagrees with the canonical empty list and
+        -- makes a reducer's literal wrong. Callers used to normalize
+        -- individually and one (`String.back`) was missed.
+        klimbs_normalize(store(ListNode.Cons(
+          [b0, b1, b2, b3, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)))),
     }
   }
 
