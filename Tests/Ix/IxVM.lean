@@ -95,6 +95,15 @@ public theorem str_size_lit : "hello".utf8ByteSize = 5 := rfl
 -- BitVec primitives (try_bitvec_dispatch)
 public theorem bv_to_nat_lit : (BitVec.ofNat 16 1234).toNat = 1234 := rfl
 
+-- `SizeOf.sizeOf Unit` is no longer natively folded to 1: it must reduce
+-- honestly, delta-unfolding the CANONICAL `SizeOf Unit` instance (a
+-- `Const`, not a literal `SizeOf.mk`) to expose its field, projecting it
+-- and applying `()`. A prover-chosen instance would give a different
+-- value — that's the hole the fold left open. This pins that the honest
+-- reduction still fires: if the projection path regresses, the constant
+-- goes stuck and this check fails.
+public theorem sizeof_unit : sizeOf () = 1 := rfl
+
 end IxVMPrim
 
 /-! ## Inductive shape fixtures -/
@@ -421,6 +430,7 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("strOfListFoldSizeAscii",                                   2_744_475_760),
   ("IxVMPrim.lazy_ble_offset",                                   225_096_361),
   ("IxVMPrim.lazy_unit_cast",                                    534_588_120),
+  ("IxVMPrim.sizeof_unit",                                       158_539_438),
 ]
 
 /-- Variant of `kernelChecks`, pinned to the baseline
