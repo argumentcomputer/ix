@@ -96,6 +96,14 @@ def catalog : Array PackageSpec := #[
     "db584cd6d46c92f209a44c0f1c829460d327499d"
     #["LeanSearchClient", "Qq", "aesop", "batteries", "importGraph", "plausible", "proofwidgets"] "Apache-2.0" "2026-08-10"
     #[`Mathlib] (notes := "the spine; toolchain and every other core pin are chosen for it"),
+  gitPackage "flt" `FLT
+    "https://github.com/ImperialCollegeLondon/FLT"
+    "45eb9afc55ce36516fc98ba10618c010fdced7dc"
+    #["mathlib"] "Apache-2.0" "v4.33.0 release tag"
+    #[`FLT] (notes := "Fermat's Last Theorem project. Pinned at its v4.33.0 \
+release tag, the same rev Benchmarks/Compile benches (its mathlib pin is \
+byte-identical to the corpus spine's). Admitted to the full corpus and a \
+member of the mini infrastructure tier."),
   gitPackage "plausible" `Plausible
     "https://github.com/leanprover-community/plausible"
     "b7eb3304aeae834b12dda98993a37f6a41f6f0bb"

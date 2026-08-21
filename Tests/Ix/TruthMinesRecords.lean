@@ -116,21 +116,24 @@ private def manifestTest : IO (Bool × Nat × Nat × Option String) := do
       s!"lockfile/record drift:\n{String.intercalate "\n" errors.toList}"
 
 private def specParseTest : IO (Bool × Nat × Nat × Option String) := do
-  match Lean.Json.parse renderSpecJson with
-  | .error error => return check false s!"rendered spec is not JSON: {error}"
-  | .ok json =>
-    match _root_.Ix.Catalog.specFromJson json with
-    | .error error => return check false s!"ix rejects the rendered spec: {error}"
-    | .ok parsed =>
-      if parsed.catalogPrefix != catalogSpec.catalogPrefix then
-        return check false s!"prefix drift: {parsed.catalogPrefix}"
-      if parsed.libs.size != catalogSpec.libs.size then
-        return check false
-          s!"member count drift: {parsed.libs.size} != {catalogSpec.libs.size}"
-      for (theirs, ours) in parsed.libs.zip catalogSpec.libs do
-        unless theirs.qualifier == ours.qualifier && theirs.roots == ours.roots do
-          return check false s!"member drift at `{ours.qualifier}`"
-      return check true ""
+  for (label, spec) in [("full", catalogSpec), ("mini", catalogMiniSpec)] do
+    match Lean.Json.parse (renderSpecJson spec) with
+    | .error error =>
+      return check false s!"rendered {label} spec is not JSON: {error}"
+    | .ok json =>
+      match _root_.Ix.Catalog.specFromJson json with
+      | .error error =>
+        return check false s!"ix rejects the rendered {label} spec: {error}"
+      | .ok parsed =>
+        if parsed.catalogPrefix != spec.catalogPrefix then
+          return check false s!"{label} prefix drift: {parsed.catalogPrefix}"
+        if parsed.libs.size != spec.libs.size then
+          return check false
+            s!"{label} member count drift: {parsed.libs.size} != {spec.libs.size}"
+        for (theirs, ours) in parsed.libs.zip spec.libs do
+          unless theirs.qualifier == ours.qualifier && theirs.roots == ours.roots do
+            return check false s!"{label} member drift at `{ours.qualifier}`"
+  return check true ""
 
 def suite : List TestSeq := [
   .individualIO "truthmines records: catalog validation clean"

@@ -5,13 +5,16 @@
   because ix and the corpus live in one repo on one toolchain.
 
     gen [--check]   project the workspace files (lakefile.lean, lean-toolchain)
-    spec            print the `ix catalog --spec` JSON for the admission spec
-    build [--out truthmines.ixe] [--report truthmines.report.json]
+    spec [--mini]   print the `ix catalog --spec` JSON (full or mini tier)
+    build [--mini] [--out PATH] [--report PATH]
           [--audit-only Qual[,Qual…]] [--ceiling-gb N] [--no-watchdog]
                     gen-check, build the member root oleans (network +
                     `lake exe cache get` on first run), then run
                     `ix catalog` over the rendered spec — one command,
-                    one artifact.
+                    one artifact. `--mini` builds the small
+                    infrastructure tier (`truthmines-mini.ixe`: fixtures
+                    + spine + Mathlib + FLT, mini ⊆ full by policy);
+                    the default is the full corpus (`truthmines.ixe`).
 
   The heavy steps (workspace build, `ix catalog`) run under the typed
   RAM watchdog (`Ix.Watchdog`, shared with `ix bench`): a systemd user
@@ -31,8 +34,9 @@ import Ix.Watchdog
 open TruthMinesSpec
 
 private def usage : String :=
-  "usage: lake exe truthmines <gen [--check] | spec | build [--out PATH] \
-[--report PATH] [--audit-only Qual[,Qual…]] [--ceiling-gb N] [--no-watchdog]>"
+  "usage: lake exe truthmines <gen [--check] | spec [--mini] | build \
+[--mini] [--out PATH] [--report PATH] [--audit-only Qual[,Qual…]] \
+[--ceiling-gb N] [--no-watchdog]>"
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
 
@@ -75,16 +79,19 @@ run `lake exe truthmines gen`"
   return 0
 
 private structure BuildOptions where
-  out : String := "truthmines.ixe"
-  report : String := "truthmines.report.json"
+  out? : Option String := none
+  report? : Option String := none
   auditOnly : Option String := none
   ceilingGb : Option Nat := none
   noWatchdog : Bool := false
+  /-- Build the mini tier (`catalogMiniSpec`) instead of the full corpus. -/
+  mini : Bool := false
 
 private def parseBuild : List String → Except String BuildOptions
   | [] => .ok {}
-  | "--out" :: value :: rest => do pure { ← parseBuild rest with out := value }
-  | "--report" :: value :: rest => do pure { ← parseBuild rest with report := value }
+  | "--out" :: value :: rest => do pure { ← parseBuild rest with out? := some value }
+  | "--report" :: value :: rest => do
+    pure { ← parseBuild rest with report? := some value }
   | "--audit-only" :: value :: rest => do
     pure { ← parseBuild rest with auditOnly := some value }
   | "--ceiling-gb" :: value :: rest => do
@@ -92,6 +99,8 @@ private def parseBuild : List String → Except String BuildOptions
     pure { ← parseBuild rest with ceilingGb := some gb }
   | "--no-watchdog" :: rest => do
     pure { ← parseBuild rest with noWatchdog := true }
+  | "--mini" :: rest => do
+    pure { ← parseBuild rest with mini := true }
   | arg :: _ => .error s!"unknown build argument `{arg}`"
 
 private def inherited (cmd : String) (args : Array String)
@@ -117,6 +126,13 @@ OOM kill, whole scope). Rerun with a higher --ceiling-gb, more RAM, or a \
 smaller corpus — the box itself was protected."
 
 private def runBuild (options : BuildOptions) : IO UInt32 := do
+  let tier := if options.mini then "mini" else "corpus"
+  let spec := if options.mini then catalogMiniSpec else catalogSpec
+  let out := options.out?.getD <|
+    if options.mini then "truthmines-mini.ixe" else "truthmines.ixe"
+  let report := options.report?.getD <|
+    if options.mini then "truthmines-mini.report.json"
+    else "truthmines.report.json"
   let stale ← stalePaths
   unless stale.isEmpty do
     IO.eprintln s!"stale generated workspace files {stale} — \
@@ -139,36 +155,39 @@ cgroup memory.oom.group failed the probe) — pass --no-watchdog to run \
 unprotected"
       return 1
   if let some ceiling := ceiling? then
-    IO.println s!"truthmines build: {ceiling} GiB memory ceiling (cgroup \
-scope, swap off; --ceiling-gb / --no-watchdog to change)"
+    IO.println s!"truthmines build ({tier}): {ceiling} GiB memory ceiling \
+(cgroup scope, swap off; --ceiling-gb / --no-watchdog to change)"
   -- Member root oleans. First run needs network and pulls the mathlib olean
   -- cache; `cache get` failure is tolerated — the build below is
-  -- authoritative (`catalogOleans` is the workspace default target).
+  -- authoritative (`catalogOleans` is the workspace default target;
+  -- `catalogMiniOleans` covers just the mini tier's roots).
   let _ ← inherited "lake" #["exe", "cache", "get"] workspaceDir
-  let buildExit ← watched ceiling? "lake" #["build"] workspaceDir
+  let buildTarget := if options.mini then #["build", "catalogMiniOleans"]
+    else #["build"]
+  let buildExit ← watched ceiling? "lake" buildTarget workspaceDir
   if buildExit != 0 then
-    reportOom buildExit ceiling? "corpus workspace build"
-    IO.eprintln s!"corpus workspace build failed ({buildExit})"
+    reportOom buildExit ceiling? s!"{tier} workspace build"
+    IO.eprintln s!"{tier} workspace build failed ({buildExit})"
     return buildExit
   -- The spec is rendered at invocation time; the typed records stay the only
   -- checked-in representation.
   IO.FS.createDirAll (workspaceDir / ".lake")
-  let specPath := workspaceDir / ".lake" / "truthmines-spec.json"
-  IO.FS.writeFile specPath renderSpecJson
+  let specPath := workspaceDir / ".lake" / s!"truthmines-{tier}-spec.json"
+  IO.FS.writeFile specPath (renderSpecJson spec)
   let root ← IO.currentDir
   let exe ← IO.FS.realPath ixExe
-  -- The frozen admission spec already carries closed (augmented, terminal)
-  -- roots; `--close-roots` recomputation belongs to spec REGENERATION, not
-  -- to every build.
+  -- The frozen specs already carry closed (augmented, terminal) roots;
+  -- `--close-roots` recomputation belongs to spec REGENERATION, not to
+  -- every build.
   let mut args := #["catalog",
     "--spec", (root / specPath).toString,
-    "--out", (root / options.out).toString,
-    "--report", (root / options.report).toString]
+    "--out", (root / out).toString,
+    "--report", (root / report).toString]
   if let some qualifiers := options.auditOnly then
     args := args ++ #["--audit-only", qualifiers]
   let exit ← watched ceiling? exe.toString args workspaceDir
   if exit == 0 then
-    IO.println s!"truthmines build: wrote {options.out} (report: {options.report})"
+    IO.println s!"truthmines build ({tier}): wrote {out} (report: {report})"
   else
     reportOom exit ceiling? "ix catalog"
   return exit
@@ -180,7 +199,8 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["gen"] => runGen (check := false)
   | ["gen", "--check"] => runGen (check := true)
-  | ["spec"] => IO.println renderSpecJson; return 0
+  | ["spec"] => IO.println (renderSpecJson catalogSpec); return 0
+  | ["spec", "--mini"] => IO.println (renderSpecJson catalogMiniSpec); return 0
   | "build" :: rest =>
     match parseBuild rest with
     | .ok options => runBuild options

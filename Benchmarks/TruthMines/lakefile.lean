@@ -76,6 +76,7 @@ require «carleson» from git "https://github.com/fpvandoorn/carleson" @ "abad48
 require «cslib» from git "https://github.com/leanprover/cslib" @ "a1faa284cc5923ac11a4b8d2452749a174ef8cf1"
 require «descriptive-complexity» from git "https://github.com/PierreSenellart/descriptive-complexity" @ "5e054e156f0e1a97db28b6fe274d78834afd8ddb"
 require «domain-theory» from git "https://github.com/zilberstein/domain-theory" @ "5c667c350be8b83ab49e3f9d26d7db8fb90b5f50"
+require «flt» from git "https://github.com/ImperialCollegeLondon/FLT" @ "45eb9afc55ce36516fc98ba10618c010fdced7dc"
 require «kolmogorov_extension4» from git "https://github.com/RemyDegenne/kolmogorov_extension4" @ "7d76e184c3d2138a2741baf923b57e9a01b9cf25"
 require «lapis» from git "https://github.com/SrGaabriel/lapis" @ "2de2282ec7f5ecae75a3c338c02a930771e691df"
 require «pacioli» from git "https://github.com/ojhermann-org/pacioli" @ "9fa4ff363174f78ba19d74ceb1d7fc5c6efbfb90"
@@ -85,7 +86,7 @@ require «PolyFun» from git "https://github.com/Verified-zkEVM/PolyFun" @ "4247
 require «bignum» from git "https://github.com/arademaker/bignum" @ "4b32a232d3481f9a7b4b3c101fa0dcd946392508"
 require «fad» from git "https://github.com/arademaker/fad" @ "d9a9328f8819b2a2bb831a2b25992dcadf432878"
 
-/-- Every catalog root module, in admission-spec order. These are the
+/-- Every full-spec root module, in admission order. These are the
 modules `ix catalog` loads: it imports each member's roots with ix's own
 Lean runtime, so all Lake has to do is make the `.olean`s exist; Lake
 computes their transitive closure itself. -/
@@ -160,6 +161,7 @@ def catalogRootModules : Array Lean.Name := #[
     `Cslib,
     `DescriptiveComplexity,
     `DomainTheory,
+    `FLT,
     `KolmogorovExtension4,
     `Lapis,
     `Pacioli,
@@ -170,13 +172,37 @@ def catalogRootModules : Array Lean.Name := #[
     `Fad
 ]
 
-/-- Build every catalog root `.olean`. This is the whole Lean-side build:
-the union environment is assembled by `ix catalog`, in one process, from
-these artifacts. -/
+/-- The mini tier's root modules (fixtures + spine + Mathlib + FLT). -/
+def catalogMiniRootModules : Array Lean.Name := #[
+    `Cli,
+    `LeanSearchClient,
+    `Plausible,
+    `ProofWidgets,
+    `Qq,
+    `FixtureB,
+    `Batteries,
+    `Aesop,
+    `ImportGraph,
+    `FixtureA,
+    `Mathlib,
+    `FLT
+]
+
+/-- Build every full-spec root `.olean`. This is the whole Lean-side
+build: the union environment is assembled by `ix catalog`, in one
+process, from these artifacts. -/
 @[default_target]
 target catalogOleans : Unit := do
   let jobs ← catalogRootModules.mapM fun moduleName => do
     let some sourceModule ← findModule? moduleName
       | error s!"catalog root module `{moduleName}` is not in the workspace"
     sourceModule.olean.fetch
-  (Job.collectArray jobs "catalog root oleans").mapM fun _ => return ()
+  (Job.collectArray jobs "catalogOleans").mapM fun _ => return ()
+
+/-- The mini tier's root `.olean`s (`lake exe truthmines build --mini`). -/
+target catalogMiniOleans : Unit := do
+  let jobs ← catalogMiniRootModules.mapM fun moduleName => do
+    let some sourceModule ← findModule? moduleName
+      | error s!"catalog root module `{moduleName}` is not in the workspace"
+    sourceModule.olean.fetch
+  (Job.collectArray jobs "catalogMiniOleans").mapM fun _ => return ()
