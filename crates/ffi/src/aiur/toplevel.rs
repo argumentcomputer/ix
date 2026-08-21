@@ -1,26 +1,24 @@
-use multi_stark::p3_field::PrimeCharacteristicRing;
-
 use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
 
 use crate::lean::LeanAiurFunction;
 
 use crate::lean::LeanAiurToplevel;
 use aiur::{
-  FxIndexMap, G,
+  FxIndexMap,
   bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
 };
 
-use crate::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
+use crate::aiur::{LeanField, lean_unbox_nat_as_usize};
 
 fn decode_vec_val_idx(obj: LeanBorrowed<'_>) -> Vec<ValIdx> {
   obj.as_array().map(|x| lean_unbox_nat_as_usize(&x))
 }
 
-fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
+fn decode_op<F: LeanField>(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op<F> {
   match ctor.tag() {
     0 => {
       let [const_val] = ctor.objs::<1>();
-      Op::Const(G::from_u64(const_val.as_enum_tag() as u64))
+      Op::Const(F::from_lean_nat(&const_val))
     },
     1 => {
       let [a, b] = ctor.objs::<2>();
@@ -193,14 +191,16 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
   }
 }
 
-fn decode_g_block_pair(ctor: LeanCtor<LeanBorrowed<'_>>) -> (G, Block) {
+fn decode_g_block_pair<F: LeanField>(
+  ctor: LeanCtor<LeanBorrowed<'_>>,
+) -> (F, Block<F>) {
   let [g_obj, block_obj] = ctor.objs::<2>();
-  let g = lean_unbox_g(&g_obj);
+  let g = F::from_lean_nat(&g_obj);
   let block = decode_block(block_obj.as_ctor());
   (g, block)
 }
 
-fn decode_ctrl(ctor: LeanCtor<LeanBorrowed<'_>>) -> Ctrl {
+fn decode_ctrl<F: LeanField>(ctor: LeanCtor<LeanBorrowed<'_>>) -> Ctrl<F> {
   match ctor.tag() {
     0 => {
       let [val_idx_obj, cases_obj, default_obj] = ctor.objs::<3>();
@@ -268,7 +268,7 @@ fn decode_ctrl(ctor: LeanCtor<LeanBorrowed<'_>>) -> Ctrl {
   }
 }
 
-fn decode_block(ctor: LeanCtor<LeanBorrowed<'_>>) -> Block {
+fn decode_block<F: LeanField>(ctor: LeanCtor<LeanBorrowed<'_>>) -> Block<F> {
   let [ops_obj, ctrl_obj] = ctor.objs::<2>();
   let ops = ops_obj.as_array().map(|o| decode_op(o.as_ctor()));
   let ctrl = decode_ctrl(ctrl_obj.as_ctor());
@@ -285,7 +285,9 @@ fn decode_function_layout(ctor: LeanCtor<LeanBorrowed<'_>>) -> FunctionLayout {
   }
 }
 
-fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
+fn decode_function<F: LeanField>(
+  ctor: LeanCtor<LeanBorrowed<'_>>,
+) -> Function<F> {
   let ctor = LeanAiurFunction::from_ctor(ctor);
   let body = decode_block(ctor.get_obj(0).as_ctor());
   let layout = decode_function_layout(ctor.get_obj(1).as_ctor());
@@ -294,9 +296,9 @@ fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
   Function { body, layout, entry, constrained }
 }
 
-pub(crate) fn decode_toplevel(
+pub(crate) fn decode_toplevel<F: LeanField>(
   obj: &LeanAiurToplevel<impl LeanRef>,
-) -> Toplevel {
+) -> Toplevel<F> {
   let ctor = obj.as_ctor();
   let [functions_obj, memory_sizes_obj] = ctor.objs::<2>();
   let functions =

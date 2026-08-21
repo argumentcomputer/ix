@@ -52,7 +52,9 @@ Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
   -- IX_NO_PAR=1 disables parallel
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
-  let mut features : Array String := #[]
+  -- kzg (the BLS12-381 terminal stage) is always on: the stage-3 FFI
+  -- surface (`AiurKzgSystem`) is part of the production pipeline.
+  let mut features : Array String := #["kzg"]
   if ixNoPar != some "1" then features := features.push "parallel"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"

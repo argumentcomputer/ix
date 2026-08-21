@@ -1,13 +1,13 @@
 use multi_stark::{
+  config::PcsError,
+  config::{ProofConfig, Val},
   expr::Expr,
   lookup::Lookup,
-  p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{CircuitInputs, ProverKey, System, SystemWitness},
-  types::{
-    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
-  },
+  traits::Field,
+  types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config},
   verifier::VerificationError,
 };
 use rayon::iter::{
@@ -15,7 +15,7 @@ use rayon::iter::{
 };
 
 use crate::{
-  G,
+  AiurField,
   bytecode::{FunIdx, Toplevel},
   execute::{ExecError, IOBuffer, QueryRecord},
   function_channel,
@@ -28,15 +28,11 @@ pub type AiurConfig = GoldilocksBlake3Config;
 /// A proof under [`AiurConfig`].
 pub type AiurProof = Proof<AiurConfig>;
 
-pub struct AiurSystem {
-  toplevel: Toplevel,
+pub struct AiurSystem<SC: ProofConfig = AiurConfig> {
+  toplevel: Toplevel<Val<SC>>,
   // perhaps remove the key from the system in verifier only mode?
-  key: ProverKey<AiurConfig>,
-  /// The parameters the system's config was built from, kept for the
-  /// verifying-key codec (the config itself doesn't expose them back).
-  pub(crate) commitment_parameters: CommitmentParameters,
-  pub(crate) fri_parameters: FriParameters,
-  pub(crate) system: System<AiurConfig>,
+  key: ProverKey<SC>,
+  pub(crate) system: System<SC>,
   /// Per-circuit lookup-slot argument widths (in system order), retained so
   /// the witness builder can size its `LookupValues` without reading them
   /// back off the (now AIR-free) compiled circuits.
@@ -63,20 +59,22 @@ pub struct CircuitShape {
   pub preprocessed_height: usize,
 }
 
-impl AiurSystem {
-  pub fn build(
-    toplevel: Toplevel,
-    commitment_parameters: CommitmentParameters,
-    fri_parameters: FriParameters,
-  ) -> Self {
-    let mut circuit_inputs: Vec<CircuitInputs<G>> = Vec::new();
+/// The circuit list of a toplevel, in system order (constrained functions
+/// ascending, memories, `Bytes1`, `Bytes2`), plus the per-circuit lookup
+/// slot widths. Field-generic: the same bytecode synthesizes over any
+/// [`AiurField`].
+fn build_circuit_inputs<F: AiurField>(
+  toplevel: &Toplevel<F>,
+) -> (Vec<CircuitInputs<F>>, Vec<Vec<usize>>) {
+  {
+    let mut circuit_inputs: Vec<CircuitInputs<F>> = Vec::new();
     let mut slot_widths: Vec<Vec<usize>> = Vec::new();
 
     let mut push_circuit =
       |main_width: usize,
-       preprocessed: Option<RowMajorMatrix<G>>,
-       constraints: Vec<Expr<G>>,
-       lookups: Vec<Lookup<Expr<G>>>,
+       preprocessed: Option<RowMajorMatrix<F>>,
+       constraints: Vec<Expr<F>>,
+       lookups: Vec<Lookup<Expr<F>>>,
        lookup_group_size: usize| {
         slot_widths.push(lookups.iter().map(|l| l.args.len()).collect());
         circuit_inputs.push(CircuitInputs {
@@ -125,30 +123,65 @@ impl AiurSystem {
     // lookups also group 2 per chained step at degree 3 — halving the
     // stage-2 accumulators (Bytes2: 10 → 5 at height 65536).
     push_circuit(
-      Bytes1.main_width(),
-      Bytes1.preprocessed(),
+      AiurGadget::<F>::main_width(&Bytes1),
+      AiurGadget::<F>::preprocessed(&Bytes1),
       vec![],
-      Bytes1.lookups(),
+      AiurGadget::<F>::lookups(&Bytes1),
       2,
     );
     push_circuit(
-      Bytes2.main_width(),
-      Bytes2.preprocessed(),
+      AiurGadget::<F>::main_width(&Bytes2),
+      AiurGadget::<F>::preprocessed(&Bytes2),
       vec![],
-      Bytes2.lookups(),
+      AiurGadget::<F>::lookups(&Bytes2),
       2,
     );
 
+    (circuit_inputs, slot_widths)
+  }
+}
+
+impl AiurSystem {
+  pub fn build(
+    toplevel: Toplevel,
+    commitment_parameters: CommitmentParameters,
+    fri_parameters: FriParameters,
+  ) -> Self {
+    let (circuit_inputs, slot_widths) = build_circuit_inputs(&toplevel);
     let config = AiurConfig::new(commitment_parameters, fri_parameters);
     let (system, key) = System::new(config, circuit_inputs);
-    AiurSystem {
-      system,
-      key,
-      toplevel,
-      commitment_parameters,
-      fri_parameters,
-      slot_widths,
-    }
+    AiurSystem { system, key, toplevel, slot_widths }
+  }
+}
+
+#[cfg(feature = "kzg")]
+impl AiurSystem<multi_stark::ark_adapter::KzgConfig> {
+  /// Build over the BLS12-381 scalar field with the KZG backend (the
+  /// terminal stage: constant-size proofs, natively verified). Public
+  /// parameters are caller-supplied — see `Srs` in multi-stark.
+  pub fn build_kzg(
+    toplevel: Toplevel<multi_stark::ark_adapter::Scalar>,
+    srs: std::sync::Arc<multi_stark::ark_adapter::Srs>,
+    max_quotient_degree: usize,
+  ) -> Self {
+    let (circuit_inputs, slot_widths) = build_circuit_inputs(&toplevel);
+    let config =
+      multi_stark::ark_adapter::KzgConfig::new(srs, max_quotient_degree);
+    let (system, key) = System::new(config, circuit_inputs);
+    AiurSystem { system, key, toplevel, slot_widths }
+  }
+}
+
+impl<SC: ProofConfig> AiurSystem<SC>
+where
+  Val<SC>: AiurField,
+{
+  /// The verification-sufficient part of the bundle: the compiled
+  /// [`System`] (config + circuits + preprocessed commitment/indices).
+  /// The rest of [`AiurSystem`] — toplevel, prover key, slot widths —
+  /// is prover-side only.
+  pub fn system(&self) -> &System<SC> {
+    &self.system
   }
 
   /// The circuit list in system order: constrained functions (ascending
@@ -199,9 +232,15 @@ impl AiurSystem {
   pub fn prove(
     &self,
     fun_idx: FunIdx,
-    input: &[G],
-    io_buffer: &mut IOBuffer,
-  ) -> (Vec<G>, AiurProof) {
+    input: &[Val<SC>],
+    io_buffer: &mut IOBuffer<Val<SC>>,
+  ) -> (Vec<Val<SC>>, Proof<SC>)
+  where
+    // The witness builder fans out per circuit under rayon with `&self`
+    // captured; the bound lands here (not on the impl) so read-only
+    // paths stay unconstrained.
+    Self: Sync,
+  {
     tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
@@ -247,7 +286,7 @@ impl AiurSystem {
     drop(_g);
 
     // Construct the claim.
-    let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
+    let mut claim = vec![function_channel(), Val::<SC>::from_usize(fun_idx)];
     claim.extend(input);
     claim.extend(output);
 
@@ -267,20 +306,21 @@ impl AiurSystem {
   /// generation are all unchanged — the proof produced here is
   /// verification-compatible with one produced by `prove`.
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_ixvm")]
-  pub fn prove_ixvm<F>(
+  pub fn prove_ixvm<E>(
     &self,
     fun_idx: FunIdx,
-    input: &[G],
-    io_buffer: &mut IOBuffer,
-    executor: F,
-  ) -> (Vec<G>, AiurProof)
+    input: &[Val<SC>],
+    io_buffer: &mut IOBuffer<Val<SC>>,
+    executor: E,
+  ) -> (Vec<Val<SC>>, Proof<SC>)
   where
-    F: FnOnce(
-      &Toplevel,
+    E: FnOnce(
+      &Toplevel<Val<SC>>,
       FunIdx,
-      Vec<G>,
-      &mut IOBuffer,
-    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
+      Vec<Val<SC>>,
+      &mut IOBuffer<Val<SC>>,
+    ) -> Result<(QueryRecord<Val<SC>>, Vec<Val<SC>>), ExecError>,
+    Self: Sync,
   {
     tracing_texray::examine_current();
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
@@ -320,7 +360,7 @@ impl AiurSystem {
     let witness = SystemWitness { traces, lookups };
     drop(_g);
 
-    let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
+    let mut claim = vec![function_channel(), Val::<SC>::from_usize(fun_idx)];
     claim.extend(input);
     claim.extend(output);
 
@@ -331,9 +371,9 @@ impl AiurSystem {
   #[inline]
   pub fn verify(
     &self,
-    claim: &[G],
-    proof: &AiurProof,
-  ) -> Result<(), VerificationError<PcsError>> {
+    claim: &[Val<SC>],
+    proof: &Proof<SC>,
+  ) -> Result<(), VerificationError<PcsError<SC>>> {
     self.system.verify(claim, proof)
   }
 }
@@ -341,12 +381,13 @@ impl AiurSystem {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::G;
   use crate::{
     bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel},
     execute::IOBuffer,
   };
   use multi_stark::{
-    p3_field::PrimeCharacteristicRing,
+    traits::Algebra,
     types::{CommitmentParameters, FriParameters},
   };
   use rustc_hash::FxHashMap;
@@ -366,7 +407,7 @@ mod tests {
     (cp, fp)
   }
 
-  fn empty_io_buffer() -> IOBuffer {
+  pub(super) fn empty_io_buffer<F: AiurField>() -> IOBuffer<F> {
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() }
   }
 
@@ -384,7 +425,7 @@ mod tests {
   ///   fresh auxiliary column pinned by `sel * (col - a*b)`.
   /// - `lookups = 1`: the function-provide (return) lookup in slot 0, which
   ///   pulls the claim `[function_channel, fun_idx, a, b, a*b]`.
-  fn mul_toplevel() -> Toplevel {
+  pub(super) fn mul_toplevel<F: AiurField>() -> Toplevel<F> {
     let body =
       Block { ops: vec![Op::Mul(0, 1)], ctrl: Ctrl::Return(0, vec![2]) };
     let function = Function {
@@ -401,7 +442,7 @@ mod tests {
     Toplevel { functions: vec![function], memory_sizes: vec![] }
   }
 
-  fn xor_splits_toplevel() -> Toplevel {
+  pub(super) fn xor_splits_toplevel<F: AiurField>() -> Toplevel<F> {
     let body = Block {
       ops: vec![Op::U8XorSplit7(0, 1), Op::U8XorSplit4(0, 1)],
       ctrl: Ctrl::Return(0, vec![2, 3, 4, 5]),
@@ -706,5 +747,50 @@ mod tests {
     assert_eq!(shapes[3].preprocessed_height, 256);
     assert_eq!(shapes[4].preprocessed_width, 14);
     assert_eq!(shapes[4].preprocessed_height, 65536);
+  }
+}
+
+#[cfg(all(test, feature = "kzg"))]
+mod kzg_tests {
+  use super::tests::{empty_io_buffer, mul_toplevel, xor_splits_toplevel};
+  use super::*;
+  use multi_stark::ark_adapter::{Scalar, Srs};
+  use multi_stark::traits::{Algebra, Field};
+  use std::sync::Arc;
+
+  fn dev_srs() -> Arc<Srs> {
+    // Bytes2's preprocessed table is 65536 rows, so the SRS must cover
+    // at least 2^16-length columns.
+    Arc::new(Srs::unsafe_dev_setup(1 << 17, b"aiur-kzg-test"))
+  }
+
+  /// Aiur over the BLS12-381 scalar field: build, prove, verify, and
+  /// reject tampering — the same pipeline the Goldilocks tests run,
+  /// with KZG commitments instead of FRI.
+  #[test]
+  fn kzg_prove_verify_mul() {
+    let system = AiurSystem::build_kzg(mul_toplevel::<Scalar>(), dev_srs(), 8);
+    let a = Scalar::from_u64(3);
+    let b = Scalar::from_u64(5);
+    let (claim, proof) = system.prove(0, &[a, b], &mut empty_io_buffer());
+    assert_eq!(claim.last(), Some(&(a * b)));
+    system.verify(&claim, &proof).expect("KZG Aiur proof failed to verify");
+
+    let mut bad_claim = claim.clone();
+    let last = bad_claim.len() - 1;
+    bad_claim[last] += <Scalar as Algebra<Scalar>>::ONE;
+    assert!(system.verify(&bad_claim, &proof).is_err());
+  }
+
+  /// Byte-gadget coverage over Fr: the xor-split ops route through the
+  /// Bytes2 chip (65536-row preprocessed table committed via MSM).
+  #[test]
+  fn kzg_prove_verify_xor_splits() {
+    let system =
+      AiurSystem::build_kzg(xor_splits_toplevel::<Scalar>(), dev_srs(), 8);
+    let a = Scalar::from_u64(0xd3);
+    let b = Scalar::from_u64(0x69);
+    let (claim, proof) = system.prove(0, &[a, b], &mut empty_io_buffer());
+    system.verify(&claim, &proof).expect("KZG Aiur proof failed to verify");
   }
 }

@@ -9,83 +9,117 @@ pub mod trace;
 pub mod vk_codec;
 
 use indexmap::IndexMap;
-use multi_stark::p3_field::PrimeCharacteristicRing;
+use multi_stark::p3_field::PrimeField64;
+use multi_stark::traits::{Algebra, Field, TwoAdicField};
 use rustc_hash::FxBuildHasher;
 
+/// The default (and currently only proving-ready) Aiur field.
 pub type G = multi_stark::p3_goldilocks::Goldilocks;
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
-#[inline]
-pub const fn function_channel() -> G {
-  G::ZERO
+/// The field surface Aiur needs beyond multi-stark's crate traits:
+/// canonical integer extraction. The executor and witness builders only
+/// ever call it on values that are small by construction (bytes,
+/// pointers, counters, u32 words) or on the deliberate 8-byte hint
+/// decomposition (`UnconstrainedGToBytes`), so implementations for
+/// fields larger than 64 bits may take the canonical value's low 64
+/// bits — with the caveat that such a field's toplevels must not use
+/// the 8-byte hint (the foreign Goldilocks interface doesn't).
+pub trait AiurField: Field + TwoAdicField + Ord + std::fmt::Display {
+  /// The canonical value as a `u64`; exact for values < 2^64.
+  fn as_canonical_u64(&self) -> u64;
+}
+
+impl AiurField for G {
+  #[inline]
+  fn as_canonical_u64(&self) -> u64 {
+    <Self as PrimeField64>::as_canonical_u64(self)
+  }
+}
+
+/// The BLS12-381 scalar field as an Aiur field (the KZG terminal
+/// stage). `as_canonical_u64` takes the canonical value's low 64 bits —
+/// exact for the bytes/pointers/counters Aiur extracts; toplevels for
+/// this field must not use the 8-byte hint (see the trait docs).
+#[cfg(feature = "kzg")]
+impl AiurField for multi_stark::ark_adapter::Scalar {
+  #[inline]
+  fn as_canonical_u64(&self) -> u64 {
+    self.canonical_low_u64()
+  }
 }
 
 #[inline]
-pub const fn memory_channel() -> G {
-  G::ONE
+pub fn function_channel<F: AiurField>() -> F {
+  <F as Algebra<F>>::ZERO
 }
 
 #[inline]
-pub const fn u8_bit_decomposition_channel() -> G {
-  G::TWO
+pub fn memory_channel<F: AiurField>() -> F {
+  <F as Algebra<F>>::ONE
 }
 
 #[inline]
-pub fn u8_shift_left_channel() -> G {
-  G::from_u8(3)
+pub fn u8_bit_decomposition_channel<F: AiurField>() -> F {
+  F::from_u8(2)
 }
 
 #[inline]
-pub fn u8_shift_right_channel() -> G {
-  G::from_u8(4)
+pub fn u8_shift_left_channel<F: AiurField>() -> F {
+  F::from_u8(3)
 }
 
 #[inline]
-pub fn u8_xor_channel() -> G {
-  G::from_u8(5)
+pub fn u8_shift_right_channel<F: AiurField>() -> F {
+  F::from_u8(4)
 }
 
 #[inline]
-pub fn u8_add_channel() -> G {
-  G::from_u8(6)
+pub fn u8_xor_channel<F: AiurField>() -> F {
+  F::from_u8(5)
 }
 
 #[inline]
-pub fn u8_sub_channel() -> G {
-  G::from_u8(7)
+pub fn u8_add_channel<F: AiurField>() -> F {
+  F::from_u8(6)
 }
 
 #[inline]
-pub fn u8_and_channel() -> G {
-  G::from_u8(8)
+pub fn u8_sub_channel<F: AiurField>() -> F {
+  F::from_u8(7)
 }
 
 #[inline]
-pub fn u8_or_channel() -> G {
-  G::from_u8(9)
+pub fn u8_and_channel<F: AiurField>() -> F {
+  F::from_u8(8)
 }
 
 #[inline]
-pub fn u8_less_than_channel() -> G {
-  G::from_u8(10)
+pub fn u8_or_channel<F: AiurField>() -> F {
+  F::from_u8(9)
 }
 
 #[inline]
-pub fn u8_range_check_channel() -> G {
-  G::from_u8(11)
+pub fn u8_less_than_channel<F: AiurField>() -> F {
+  F::from_u8(10)
 }
 
 #[inline]
-pub fn u8_mul_channel() -> G {
-  G::from_u8(12)
+pub fn u8_range_check_channel<F: AiurField>() -> F {
+  F::from_u8(11)
 }
 
 #[inline]
-pub fn u8_xor_split7_channel() -> G {
-  G::from_u8(13)
+pub fn u8_mul_channel<F: AiurField>() -> F {
+  F::from_u8(12)
 }
 
 #[inline]
-pub fn u8_xor_split4_channel() -> G {
-  G::from_u8(14)
+pub fn u8_xor_split7_channel<F: AiurField>() -> F {
+  F::from_u8(13)
+}
+
+#[inline]
+pub fn u8_xor_split4_channel<F: AiurField>() -> F {
+  F::from_u8(14)
 }

@@ -62,6 +62,7 @@
 #![allow(dead_code)]
 
 use multi_stark::{
+  config::ProofConfig,
   expr::{ColRef, RowOffset, Source},
   graph::{ConstraintGraph, Node, NodeId},
   lookup::Lookup,
@@ -70,7 +71,7 @@ use multi_stark::{
   types::{Commitment, CommitmentParameters, FriParameters, Val},
 };
 
-use crate::synthesis::{AiurConfig, AiurSystem};
+use crate::synthesis::AiurConfig;
 
 /// Sentinel for `None` in the preprocessed-index trailer.
 const NO_PREP_INDEX: u16 = u16::MAX;
@@ -239,9 +240,12 @@ pub(crate) fn to_bytes(
   buf
 }
 
-/// Convenience: serialize the verifying key of a built [`AiurSystem`].
-pub fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
-  Ok(to_bytes(&sys.system, sys.commitment_parameters, sys.fri_parameters))
+/// Serialize the verifying key of a [`System`]. The codec is
+/// System-level: verification (native or recursive) never needs the
+/// prover-side [`AiurSystem`] bundle (toplevel, prover key).
+pub fn system_to_bytes(system: &System<AiurConfig>) -> Result<Vec<u8>, String> {
+  let pcs = system.config.pcs();
+  Ok(to_bytes(system, pcs.commitment_parameters(), pcs.fri_parameters()))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -438,9 +442,7 @@ fn zeros_plus_logup(
 /// Deserialize a `System<AiurConfig>` from [`to_bytes`] output, requiring that
 /// every byte is consumed. Also returns the config's construction parameters,
 /// which the `System` itself doesn't expose.
-pub(crate) fn from_bytes(
-  bytes: &[u8],
-) -> Result<(System<AiurConfig>, CommitmentParameters, FriParameters), String> {
+pub(crate) fn from_bytes(bytes: &[u8]) -> Result<System<AiurConfig>, String> {
   let mut r = Seg { buf: bytes, pos: 0 };
   let commitment_parameters = CommitmentParameters {
     log_blowup: r.u16()? as usize,
@@ -488,7 +490,7 @@ pub(crate) fn from_bytes(
     preprocessed_commit,
     preprocessed_indices,
   };
-  Ok((system, commitment_parameters, fri_parameters))
+  Ok(system)
 }
 
 #[cfg(test)]
@@ -514,19 +516,19 @@ mod tests {
     let (cp, fp) = test_parameters();
     let inputs = [
       CircuitInputs {
-        main_width: Bytes1.main_width(),
-        preprocessed: Bytes1.preprocessed(),
+        main_width: AiurGadget::<crate::G>::main_width(&Bytes1),
+        preprocessed: AiurGadget::<crate::G>::preprocessed(&Bytes1),
         constraints: vec![],
         ext_constraints: vec![],
-        lookups: Bytes1.lookups(),
+        lookups: AiurGadget::<crate::G>::lookups(&Bytes1),
         lookup_group_size: 1,
       },
       CircuitInputs {
-        main_width: Bytes2.main_width(),
-        preprocessed: Bytes2.preprocessed(),
+        main_width: AiurGadget::<crate::G>::main_width(&Bytes2),
+        preprocessed: AiurGadget::<crate::G>::preprocessed(&Bytes2),
         constraints: vec![],
         ext_constraints: vec![],
-        lookups: Bytes2.lookups(),
+        lookups: AiurGadget::<crate::G>::lookups(&Bytes2),
         // Grouped-circuit coverage: the codec must carry the group size
         // through (it changes the derived stage-2 width and count).
         lookup_group_size: 2,
@@ -542,8 +544,13 @@ mod tests {
   fn system_vk_round_trips() {
     let (system, cp, fp) = test_system();
     let bytes = to_bytes(&system, cp, fp);
-    let (back, back_cp, back_fp) = from_bytes(&bytes).expect("decode");
-    let reencoded = to_bytes(&back, back_cp, back_fp);
+    let back = from_bytes(&bytes).expect("decode");
+    let back_pcs = back.config.pcs();
+    let reencoded = to_bytes(
+      &back,
+      back_pcs.commitment_parameters(),
+      back_pcs.fri_parameters(),
+    );
     assert_eq!(bytes, reencoded, "verifying-key codec round-trip mismatch");
     assert_eq!(system.circuits.len(), back.circuits.len());
     for (a, b) in system.circuits.iter().zip(&back.circuits) {

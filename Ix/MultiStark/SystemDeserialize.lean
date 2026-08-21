@@ -1,8 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
-public import Ix.MultiStark.Deserialize
 
 /-!
 # Verifying-key deserializer (Aiur)
@@ -63,7 +60,7 @@ def systemDeserialize := ⟦
   -- not sub-trees: the graph is flat and topologically ordered (a node's
   -- children always have smaller indices).
   enum SysNode {
-    Const(G),            -- native Goldilocks constant (reduced on read)
+    Const(Goldilocks),   -- inner-field constant (reduced on read via `gl_val`)
     Var(G, G, G),        -- source (0 Preprocessed, 1 Main, 2 Stage2), offset (0 current, 1 next), column index
     Public(G),           -- public-input coordinate index
     IsFirstRow,
@@ -158,11 +155,20 @@ def systemDeserialize := ⟦
     ([b0, b1, b2, b3, b4, b5, b6, b7], s7)
   }
 
-  -- A full (u64) Goldilocks constant, reduced into a native field value so it
-  -- can feed the composition arithmetic directly.
-  fn read_field(i: ByteStream) -> (G, ByteStream) {
+  -- A full (u64) Goldilocks constant, reduced into the merged module's
+  -- inner-field representation so it can feed the composition arithmetic
+  -- directly.
+  fn read_field(i: ByteStream) -> (Goldilocks, ByteStream) {
     let (u, j) = read_vk_u64(i);
     (@gl_val(u), j)
+  }
+
+  -- A small (u16) constant, ingested from its two raw bytes into the
+  -- inner-field representation (`ConstSmall` nodes).
+  fn read_small_field(s: ByteStream) -> (Goldilocks, ByteStream) {
+    let (b0, s0) = read_vk_u8(s);
+    let (b1, s1) = read_vk_u8(s0);
+    (@gl_from_u16(b0, b1), s1)
   }
 
   fn read_vk_digest(i: ByteStream) -> (Digest, ByteStream) {
@@ -193,7 +199,7 @@ def systemDeserialize := ⟦
   fn read_node(i: ByteStream) -> (SysNode, ByteStream) {
     let (tag, i1) = read_vk_tag(i);
     match tag {
-      0 => let (c, i2) = read_vk_u16(i1); (SysNode.Const(c), i2),
+      0 => let (c, i2) = read_small_field(i1); (SysNode.Const(c), i2),
       1 => let (c, i2) = read_field(i1); (SysNode.Const(c), i2),
       2 => let (idx, i2) = read_vk_tag(i1); (SysNode.Public(idx), i2),
       3 => (SysNode.IsFirstRow, i1),
@@ -236,7 +242,7 @@ def systemDeserialize := ⟦
         let (tag, i1) = read_vk_tag(i);
         match tag {
           0 =>
-            let (c, i2) = read_vk_u16(i1);
+            let (c, i2) = read_small_field(i1);
             let (rest, i3) = read_nodes_n(i2, n - 1);
             (store(ListNode.Cons(SysNode.Const(c), rest)), i3),
           1 =>
@@ -374,9 +380,9 @@ def systemDeserialize := ⟦
     -- `read_sys_circuits_n` (a let-bound match here tripped the inliner).
     let groups = lookup_groups_count(lcount, 0, k);
     let gslots = groups + eq_zero(groups);
-    let ccl = @gl_to_bytes(zcount + gslots + gslots);
-    let s2wl = @gl_to_bytes(gslots + gslots);
-    let kl = @gl_to_bytes(k);
+    let ccl = @count_to_bytes(zcount + gslots + gslots);
+    let s2wl = @count_to_bytes(gslots + gslots);
+    let kl = @count_to_bytes(k);
     (SysCircuit.Mk(nodes, ncount, zeros, md, lks, k),
      [ccl, mdl, phl, pwl, mwl, s2wl, kl], c10)
   }

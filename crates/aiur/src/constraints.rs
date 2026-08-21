@@ -1,11 +1,8 @@
-use multi_stark::{
-  lookup::Lookup,
-  p3_field::{Field, PrimeCharacteristicRing},
-};
-use std::{array, ops::Range, sync::LazyLock};
+use multi_stark::lookup::Lookup;
+use std::{array, ops::Range};
 
 use crate::{
-  FxIndexMap, G,
+  AiurField, FxIndexMap,
   bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
   function_channel,
   gadgets::{
@@ -19,38 +16,40 @@ use crate::{
   u8_xor_channel, u8_xor_split4_channel, u8_xor_split7_channel,
 };
 
-type Expr = multi_stark::expr::Expr<G>;
+type Expr<F> = multi_stark::expr::Expr<F>;
 type Degree = u8;
 
 /// Main-trace column variable at index `i`.
 #[inline]
-fn var(i: usize) -> Expr {
+fn var<F: AiurField>(i: usize) -> Expr<F> {
   Expr::main(u32::try_from(i).expect("column index exceeds u32"))
 }
 
 /// Base-field constant expression.
 #[inline]
-fn konst(value: G) -> Expr {
+fn konst<F: AiurField>(value: F) -> Expr<F> {
   Expr::constant(value)
 }
 
-/// `256⁻¹` in the Goldilocks field. The field inversion is expensive, so it is
-/// computed once and reused by the byte carry-chain constraints.
-static INV_256: LazyLock<G> = LazyLock::new(|| G::from_u64(256).inverse());
-/// Constant expression for `(2^32)⁻¹`, built once from its Goldilocks
-/// value and cloned into every virtual u32 carry.
-static INV_2_POW_32_EXPR: LazyLock<Expr> =
-  LazyLock::new(|| konst(G::from_u64(0xffff_fffe_0000_0002)));
+/// `256⁻¹` in the field, for the byte carry-chain constraints (built per
+/// use; constraint synthesis is one-shot, so the inversions are noise).
+fn inv_256<F: AiurField>() -> F {
+  F::from_u64(256).inverse()
+}
+/// Constant expression for `(2^32)⁻¹`.
+fn inv_2_pow_32_expr<F: AiurField>() -> Expr<F> {
+  konst(F::from_u64(1u64 << 32).inverse())
+}
 
-fn pack_u32_expr(
-  bytes: impl ExactSizeIterator<Item = (Expr, Degree)>,
-) -> (Expr, Degree) {
+fn pack_u32_expr<F: AiurField>(
+  bytes: impl ExactSizeIterator<Item = (Expr<F>, Degree)>,
+) -> (Expr<F>, Degree) {
   assert_eq!(bytes.len(), 4, "u32 operation requires four bytes");
   bytes.enumerate().fold(
-    (konst(G::ZERO), 0),
+    (konst(F::ZERO), 0),
     |(expr, degree), (i, (byte, byte_degree))| {
       (
-        expr + byte * konst(G::from_u64(1_u64 << (8 * i))),
+        expr + byte * konst(F::from_u64(1_u64 << (8 * i))),
         degree.max(byte_degree),
       )
     },
@@ -58,26 +57,26 @@ fn pack_u32_expr(
 }
 
 /// Holds data for a function circuit.
-pub struct Constraints {
-  pub zeros: Vec<Expr>,
+pub struct Constraints<F> {
+  pub zeros: Vec<Expr<F>>,
   pub selectors: Range<usize>,
   pub width: usize,
 }
 
-struct ConstraintState {
-  function_index: G,
+struct ConstraintState<F> {
+  function_index: F,
   /// Exactly one selector: the function has a single leaf block (no
   /// matches), so every lookup slot is written by exactly one branch.
   branchless: bool,
   layout: FunctionLayout,
   column: usize,
   lookup: usize,
-  lookups: Vec<Lookup<Expr>>,
-  map: Vec<(Expr, Degree)>,
-  constraints: Constraints,
+  lookups: Vec<Lookup<Expr<F>>>,
+  map: Vec<(Expr<F>, Degree)>,
+  constraints: Constraints<F>,
   /// Yield info collected from branches, used by MatchContinue.
   /// NOT part of save/restore so yields persist across branch restores.
-  yield_info: Vec<(Expr, Vec<(Expr, Degree)>)>,
+  yield_info: Vec<(Expr<F>, Vec<(Expr<F>, Degree)>)>,
 }
 
 struct SharedState {
@@ -86,7 +85,7 @@ struct SharedState {
   map_len: usize,
 }
 
-impl ConstraintState {
+impl<F: AiurField> ConstraintState<F> {
   fn selector_index(&self, sel: usize) -> usize {
     sel + self.layout.input_size
   }
@@ -100,17 +99,17 @@ impl ConstraintState {
   /// counts, and on inactive (padding) rows a zero multiplicity makes the
   /// message value irrelevant. Degree-1 messages leave the degree headroom
   /// to group two lookups per chained-accumulator step.
-  fn gate(&self, sel: &Expr, arg: Expr) -> Expr {
+  fn gate(&self, sel: &Expr<F>, arg: Expr<F>) -> Expr<F> {
     if self.branchless { arg } else { sel.clone() * arg }
   }
 
-  fn next_lookup(&mut self) -> &mut Lookup<Expr> {
+  fn next_lookup(&mut self) -> &mut Lookup<Expr<F>> {
     let lookup = &mut self.lookups[self.lookup];
     self.lookup += 1;
     lookup
   }
 
-  fn next_auxiliary(&mut self) -> Expr {
+  fn next_auxiliary(&mut self) -> Expr<F> {
     self.column += 1;
     var(self.column - 1)
   }
@@ -130,11 +129,11 @@ impl ConstraintState {
   }
 }
 
-impl Toplevel {
+impl<F: AiurField> Toplevel<F> {
   pub fn build_constraints(
     &self,
     function_index: usize,
-  ) -> (Constraints, Vec<Lookup<Expr>>) {
+  ) -> (Constraints<F>, Vec<Lookup<Expr<F>>>) {
     let function = &self.functions[function_index];
     let constraints = Constraints {
       zeros: vec![],
@@ -142,7 +141,7 @@ impl Toplevel {
       width: function.layout.width(),
     };
     let mut state = ConstraintState {
-      function_index: G::from_usize(function_index),
+      function_index: F::from_usize(function_index),
       branchless: function.layout.selectors == 1,
       layout: function.layout,
       column: 0,
@@ -157,18 +156,18 @@ impl Toplevel {
     // system compiles a constraint vector, so materialize those explicitly.
     for sel in state.constraints.selectors.clone() {
       let s = var(sel);
-      state.constraints.zeros.push(s.clone() * (s - konst(G::ONE)));
+      state.constraints.zeros.push(s.clone() * (s - konst(F::ONE)));
     }
     (state.constraints, state.lookups)
   }
 }
 
-fn empty_lookup() -> Lookup<Expr> {
-  Lookup { multiplicity: konst(G::ZERO), args: vec![] }
+fn empty_lookup<F: AiurField>() -> Lookup<Expr<F>> {
+  Lookup { multiplicity: konst(F::ZERO), args: vec![] }
 }
 
-impl Function {
-  fn build_constraints(&self, state: &mut ConstraintState) {
+impl<F: AiurField> Function<F> {
+  fn build_constraints(&self, state: &mut ConstraintState<F>) {
     // the first columns are occupied by the input, which is also mapped
     state.column += self.layout.input_size;
     (0..self.layout.input_size).for_each(|i| state.map.push((var(i), 1)));
@@ -187,14 +186,14 @@ impl Function {
   }
 }
 
-impl Block {
-  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
+impl<F: AiurField> Block<F> {
+  fn collect_constraints(&self, sel: Expr<F>, state: &mut ConstraintState<F>) {
     // Boolean constraint for this block's selector
     let block_sel = self.get_block_selector(state);
     state
       .constraints
       .zeros
-      .push(block_sel.clone() * (konst(G::ONE) - block_sel));
+      .push(block_sel.clone() * (konst(F::ONE) - block_sel));
     self.ops.iter().for_each(|op| op.collect_constraints(&sel, state));
     self.ctrl.collect_constraints(sel, state);
   }
@@ -205,13 +204,13 @@ impl Block {
   /// selectors — crucially excluding the MatchContinue's continuation,
   /// whose return selector fires alongside a yield selector and must not
   /// be double-counted.
-  fn get_block_selector(&self, state: &ConstraintState) -> Expr {
+  fn get_block_selector(&self, state: &ConstraintState<F>) -> Expr<F> {
     match &self.ctrl {
       Ctrl::Return(sel, _) | Ctrl::Yield(sel, _) => {
         var(state.selector_index(*sel))
       },
       Ctrl::Match(_, cases, def) | Ctrl::MatchContinue(_, cases, def, ..) => {
-        let mut sel = konst(G::ZERO);
+        let mut sel = konst(F::ZERO);
         for branch in cases.values() {
           sel = sel + branch.get_block_selector(state);
         }
@@ -227,11 +226,11 @@ impl Block {
 /// Process match cases and optional default branch, emitting selector-gated
 /// constraints. Each branch is processed with save/restore so branches share
 /// auxiliary columns. Returns (max_column, max_lookup) across all branches.
-fn collect_branch_constraints(
+fn collect_branch_constraints<F: AiurField>(
   var_idx: ValIdx,
-  cases: &FxIndexMap<G, Block>,
-  def: &Option<Box<Block>>,
-  state: &mut ConstraintState,
+  cases: &FxIndexMap<F, Block<F>>,
+  def: &Option<Box<Block<F>>>,
+  state: &mut ConstraintState<F>,
 ) -> (usize, usize) {
   let (matched, _) = state.map[var_idx].clone();
   let init = state.save();
@@ -254,7 +253,7 @@ fn collect_branch_constraints(
       let inverse = state.next_auxiliary();
       state.constraints.zeros.push(
         branch_sel.clone()
-          * ((matched.clone() - konst(value)) * inverse - konst(G::ONE)),
+          * ((matched.clone() - konst(value)) * inverse - konst(F::ONE)),
       );
     }
     branch.collect_constraints(branch_sel, state);
@@ -265,9 +264,9 @@ fn collect_branch_constraints(
   (max_column, max_lookup)
 }
 
-impl Ctrl {
+impl<F: AiurField> Ctrl<F> {
   #[allow(clippy::needless_pass_by_value)]
-  fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
+  fn collect_constraints(&self, sel: Expr<F>, state: &mut ConstraintState<F>) {
     match self {
       Ctrl::Return(_, values) => {
         // channel and function index
@@ -290,7 +289,7 @@ impl Ctrl {
       },
       Ctrl::Yield(sel, values) => {
         let yield_sel = var(state.selector_index(*sel));
-        let yield_vals: Vec<(Expr, Degree)> =
+        let yield_vals: Vec<(Expr<F>, Degree)> =
           values.iter().map(|&v| state.map[v].clone()).collect();
         state.yield_info.push((yield_sel, yield_vals));
       },
@@ -326,7 +325,7 @@ impl Ctrl {
         let cont_sel = yields
           .iter()
           .map(|(sel, _)| sel.clone())
-          .fold(konst(G::ZERO), |a, b| a + b);
+          .fold(konst(F::ZERO), |a, b| a + b);
 
         // Merge constraints, gated by the parent selector `sel`. Gating is
         // required because a matchContinue inside a tail match branch may be
@@ -337,7 +336,7 @@ impl Ctrl {
           let sum = yields
             .iter()
             .map(|(sel_j, vals)| sel_j.clone() * vals[i].0.clone())
-            .fold(konst(G::ZERO), |a, b| a + b);
+            .fold(konst(F::ZERO), |a, b| a + b);
           state.constraints.zeros.push(sel.clone() * (merged.clone() - sum));
           state.map.push((merged, 1));
         }
@@ -353,8 +352,8 @@ impl Ctrl {
   }
 }
 
-impl Op {
-  fn collect_constraints(&self, sel: &Expr, state: &mut ConstraintState) {
+impl<F: AiurField> Op<F> {
+  fn collect_constraints(&self, sel: &Expr<F>, state: &mut ConstraintState<F>) {
     match self {
       Op::Const(f) => state.map.push(((*f).into(), 0)),
       Op::Add(a, b) => {
@@ -386,7 +385,7 @@ impl Op {
         let (a, deg) = state.map[*a].clone();
         if let Expr::Const(a) = a {
           assert_eq!(deg, 0);
-          state.map.push((konst(G::from_bool(a == G::ZERO)), 0));
+          state.map.push((konst(F::from_bool(a == F::ZERO)), 0));
         } else {
           // We have two constraints:
           // 1. ax = 0
@@ -402,7 +401,7 @@ impl Op {
           state
             .constraints
             .zeros
-            .push(sel.clone() * (a * d + x.clone() - konst(G::ONE)));
+            .push(sel.clone() * (a * d + x.clone() - konst(F::ONE)));
           state.map.push((x, 1));
         }
       },
@@ -417,14 +416,14 @@ impl Op {
           // channel and function index
           let mut lookup_args = vec![
             state.gate(sel, konst(function_channel())),
-            state.gate(sel, konst(G::from_usize(*function_index))),
+            state.gate(sel, konst(F::from_usize(*function_index))),
           ];
           // input
           lookup_args.extend(
             inputs.iter().map(|arg| state.gate(sel, state.map[*arg].0.clone())),
           );
           // output
-          let output: Vec<Expr> = (0..*output_size)
+          let output: Vec<Expr<F>> = (0..*output_size)
             .map(|_| {
               let col = state.next_auxiliary();
               state.map.push((col.clone(), 1));
@@ -446,7 +445,7 @@ impl Op {
         state.map.push((ptr.clone(), 1));
         let mut lookup_args = vec![
           state.gate(sel, konst(memory_channel())),
-          state.gate(sel, konst(G::from_usize(size))),
+          state.gate(sel, konst(F::from_usize(size))),
           state.gate(sel, ptr),
         ];
         // stored values
@@ -464,11 +463,11 @@ impl Op {
         // channel, size and pointer
         let mut lookup_args = vec![
           state.gate(sel, konst(memory_channel())),
-          state.gate(sel, konst(G::from_usize(*size))),
+          state.gate(sel, konst(F::from_usize(*size))),
           state.gate(sel, state.map[*ptr].0.clone()),
         ];
         // loaded values
-        let values: Vec<Expr> = (0..*size)
+        let values: Vec<Expr<F>> = (0..*size)
           .map(|_| {
             let col = state.next_auxiliary();
             state.map.push((col.clone(), 1));
@@ -545,7 +544,7 @@ impl Op {
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
-        let carry = (x + y - z.clone()) * konst(*INV_256);
+        let carry = (x + y - z.clone()) * konst(inv_256());
         state.map.push((z, 1));
         state.map.push((carry, x_deg.max(y_deg).max(1)));
       },
@@ -561,7 +560,7 @@ impl Op {
           state.map.push((byte, 1));
         }
         state.map.push((
-          (x + y - z) * (*INV_2_POW_32_EXPR).clone(),
+          (x + y - z) * inv_2_pow_32_expr(),
           x_deg.max(y_deg).max(z_deg),
         ));
       },
@@ -579,7 +578,7 @@ impl Op {
           state.map.push((byte, 1));
         }
         state.map.push((
-          (x + y + w - z) * (*INV_2_POW_32_EXPR).clone(),
+          (x + y + w - z) * inv_2_pow_32_expr(),
           x_deg.max(y_deg).max(w_deg).max(z_deg),
         ));
       },
@@ -612,7 +611,7 @@ impl Op {
         let lookup = state.next_lookup();
         combine_lookup_args(lookup, lookup_args);
         lookup.multiplicity = lookup.multiplicity.clone() + sel.clone();
-        let borrow = (z.clone() + y - x) * konst(*INV_256);
+        let borrow = (z.clone() + y - x) * konst(inv_256());
         state.map.push((z, 1));
         state.map.push((borrow, x_deg.max(y_deg).max(1)));
       },
@@ -695,15 +694,15 @@ impl Op {
         let b = state.map[*y_idx].0.clone();
 
         // Byte decomposition auxiliaries
-        let x_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-        let y_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
-        let z_bytes: [Expr; 4] = array::from_fn(|_| state.next_auxiliary());
+        let x_bytes: [Expr<F>; 4] = array::from_fn(|_| state.next_auxiliary());
+        let y_bytes: [Expr<F>; 4] = array::from_fn(|_| state.next_auxiliary());
+        let z_bytes: [Expr<F>; 4] = array::from_fn(|_| state.next_auxiliary());
 
         // Decomposition constraints: a = Σ x_k * 256^k, b = Σ z_k * 256^k
         let base =
-          |k: usize| G::from_u64(256u64.pow(u32::try_from(k).unwrap()));
-        let recompose = |bytes: &[Expr; 4]| {
-          bytes.iter().enumerate().fold(konst(G::ZERO), |acc, (k, b)| {
+          |k: usize| F::from_u64(256u64.pow(u32::try_from(k).unwrap()));
+        let recompose = |bytes: &[Expr<F>; 4]| {
+          bytes.iter().enumerate().fold(konst(F::ZERO), |acc, (k, b)| {
             acc + b.clone() * konst(base(k))
           })
         };
@@ -711,12 +710,12 @@ impl Op {
         state.constraints.zeros.push(sel.clone() * (b - recompose(&z_bytes)));
 
         // Carry chain: a + c + 1 = b + carry * 2^32
-        let mut carry = konst(G::ONE); // initial carry = 1 for strict less-than
+        let mut carry = konst(F::ONE); // initial carry = 1 for strict less-than
         for k in 0..4 {
           let sum = x_bytes[k].clone() + y_bytes[k].clone() + carry;
-          carry = (sum - z_bytes[k].clone()) * konst(*INV_256);
+          carry = (sum - z_bytes[k].clone()) * konst(inv_256());
           state.constraints.zeros.push(
-            sel.clone() * (carry.clone() * (carry.clone() - konst(G::ONE))),
+            sel.clone() * (carry.clone() * (carry.clone() - konst(F::ONE))),
           );
         }
 
@@ -741,7 +740,7 @@ impl Op {
         }
 
         // Output: 1 - carry
-        let output = konst(G::ONE) - carry;
+        let output = konst(F::ONE) - carry;
         state.map.push((output, 1));
       },
       Op::IOSetInfo(..) | Op::IOWrite(..) | Op::Debug(..) => (),
@@ -775,21 +774,21 @@ impl Op {
   }
 }
 
-fn bytes1_constraints(
+fn bytes1_constraints<F: AiurField>(
   byte: usize,
   op: &Bytes1Op,
-  channel: G,
-  sel: Expr,
-  state: &mut ConstraintState,
+  channel: F,
+  sel: Expr<F>,
+  state: &mut ConstraintState<F>,
 ) {
-  let size = Bytes1.output_size(op);
+  let size = AiurGadget::<F>::output_size(&Bytes1, op);
 
   let mut lookup_args = vec![
     state.gate(&sel, konst(channel)),
     state.gate(&sel, state.map[byte].0.clone()),
   ];
 
-  let output: Vec<Expr> = (0..size)
+  let output: Vec<Expr<F>> = (0..size)
     .map(|_| {
       let col = state.next_auxiliary();
       state.map.push((col.clone(), 1));
@@ -803,15 +802,15 @@ fn bytes1_constraints(
   lookup.multiplicity = lookup.multiplicity.clone() + sel;
 }
 
-fn bytes2_constraints(
+fn bytes2_constraints<F: AiurField>(
   i: usize,
   j: usize,
   op: &Bytes2Op,
-  channel: G,
-  sel: Expr,
-  state: &mut ConstraintState,
+  channel: F,
+  sel: Expr<F>,
+  state: &mut ConstraintState<F>,
 ) {
-  let size = Bytes2.output_size(op);
+  let size = AiurGadget::<F>::output_size(&Bytes2, op);
 
   let mut lookup_args = vec![
     state.gate(&sel, konst(channel)),
@@ -819,7 +818,7 @@ fn bytes2_constraints(
     state.gate(&sel, state.map[j].0.clone()),
   ];
 
-  let output: Vec<Expr> = (0..size)
+  let output: Vec<Expr<F>> = (0..size)
     .map(|_| {
       let col = state.next_auxiliary();
       state.map.push((col.clone(), 1));
@@ -833,9 +832,9 @@ fn bytes2_constraints(
   lookup.multiplicity = lookup.multiplicity.clone() + sel;
 }
 
-fn combine_lookup_args(
-  lookup: &mut Lookup<Expr>,
-  args: impl IntoIterator<Item = Expr>,
+fn combine_lookup_args<F: AiurField>(
+  lookup: &mut Lookup<Expr<F>>,
+  args: impl IntoIterator<Item = Expr<F>>,
 ) {
   let mut args_iterator = args.into_iter();
   lookup.args.iter_mut().zip(args_iterator.by_ref()).for_each(

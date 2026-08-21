@@ -2,13 +2,13 @@ use crate::FxIndexMap;
 
 use super::G;
 
-pub struct Toplevel {
-  pub functions: Vec<Function>,
+pub struct Toplevel<F = G> {
+  pub functions: Vec<Function<F>>,
   pub memory_sizes: Vec<usize>,
 }
 
-pub struct Function {
-  pub body: Block,
+pub struct Function<F = G> {
+  pub body: Block<F>,
   pub layout: FunctionLayout,
   pub entry: bool,
   pub constrained: bool,
@@ -28,13 +28,13 @@ impl FunctionLayout {
   }
 }
 
-pub struct Block {
-  pub ops: Vec<Op>,
-  pub ctrl: Ctrl,
+pub struct Block<F = G> {
+  pub ops: Vec<Op<F>>,
+  pub ctrl: Ctrl<F>,
 }
 
-pub enum Op {
-  Const(G),
+pub enum Op<F = G> {
+  Const(F),
   Add(ValIdx, ValIdx),
   Sub(ValIdx, ValIdx),
   Mul(ValIdx, ValIdx),
@@ -87,18 +87,18 @@ pub enum Op {
   U32ToField(Vec<ValIdx>),
 }
 
-pub enum Ctrl {
-  Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
+pub enum Ctrl<F = G> {
+  Match(ValIdx, FxIndexMap<F, Block<F>>, Option<Box<Block<F>>>),
   Return(SelIdx, Vec<ValIdx>),
   Yield(SelIdx, Vec<ValIdx>),
   MatchContinue(
     ValIdx,
-    FxIndexMap<G, Block>,
-    Option<Box<Block>>,
-    usize,      // output_size
-    usize,      // shared_auxiliaries
-    usize,      // shared_lookups
-    Box<Block>, // continuation
+    FxIndexMap<F, Block<F>>,
+    Option<Box<Block<F>>>,
+    usize,         // output_size
+    usize,         // shared_auxiliaries
+    usize,         // shared_lookups
+    Box<Block<F>>, // continuation
   ),
 }
 

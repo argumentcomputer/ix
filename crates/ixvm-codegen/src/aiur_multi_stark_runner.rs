@@ -16,7 +16,6 @@
 //! proof/vk/claims byte into a Lean `G` and marshalled the whole
 //! buffer across FFI.
 
-use multi_stark::p3_field::PrimeCharacteristicRing;
 use rustc_hash::FxHashMap;
 
 use crate::aiur_multi_stark::execute_generated;
@@ -50,7 +49,15 @@ pub fn execute_multi_stark(
 /// byte blobs: channel 0 = proof, 1 = vk, 2 = claims, each registered
 /// under key `[0]` on its channel (one stream per channel). Mirrors
 /// the layout of `MultiStark.verifierInput` (`Ix/MultiStark.lean`).
-pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
+/// Generic over the outer field: the foreign (byte-limb) verifier
+/// toplevel takes the same advice layout over any `AiurField` (the
+/// KZG stage feeds it BLS12-381 scalars).
+pub fn verifier_io_buffer_in<F: aiur::AiurField>(
+  proof: &[u8],
+  vk: &[u8],
+  claims: &[u8],
+) -> IOBuffer<F> {
+  use multi_stark::traits::Algebra;
   // Measurement hook: dump the raw advice blobs for offline analysis
   // (vk encoding/activation studies) when IX_DUMP_RECURSION_IO is set
   // to a directory.
@@ -62,12 +69,19 @@ pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
   let mut io =
     IOBuffer { data: FxHashMap::default(), map: FxHashMap::default() };
   for (channel, bytes) in
-    [(0u64, proof), (1, vk), (2, claims)].map(|(c, b)| (G::from_u64(c), b))
+    [(0u64, proof), (1, vk), (2, claims)].map(|(c, b)| (F::from_u64(c), b))
   {
-    let data: Vec<G> = bytes.iter().map(|b| G::from_u8(*b)).collect();
+    let data: Vec<F> = bytes.iter().map(|b| F::from_u8(*b)).collect();
     let len = data.len();
     io.data.insert(channel, data);
-    io.map.insert((channel, vec![G::ZERO]), IOKeyInfo { idx: 0, len });
+    io.map.insert(
+      (channel, vec![<F as Algebra<F>>::ZERO]),
+      IOKeyInfo { idx: 0, len },
+    );
   }
   io
+}
+
+pub fn verifier_io_buffer(proof: &[u8], vk: &[u8], claims: &[u8]) -> IOBuffer {
+  verifier_io_buffer_in::<G>(proof, vk, claims)
 }

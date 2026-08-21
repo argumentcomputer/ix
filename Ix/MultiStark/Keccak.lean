@@ -1,7 +1,5 @@
 module
 public import Ix.Aiur.Meta
-public import Ix.IxVM.Core
-public import Ix.IxVM.ByteStream
 
 /-!
 # Keccak-256 in Aiur
