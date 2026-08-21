@@ -11,16 +11,15 @@
     (`lake exe truthmines gen --check` as a test);
   * Lake's lockfile pins every admitted git record at exactly the recorded
     revision, carries the two local fixtures at their ported paths, and
-    names no direct git package outside the admitted set (inherited
+    names no direct git package outside the workspace pin set (inherited
     transitive entries are exempt);
-  * the rendered `--spec` JSON round-trips through
-    `Ix.Catalog.specFromJson` member-for-member — the driver and
-    `ix catalog` agree on the interchange format.
+  * the positional `Qualifier=Root[,Root…]` member vector — the exact
+    argv the driver hands `ix catalog`; no spec file, no JSON — is
+    well-formed entry-for-entry for both tiers.
 -/
 module
 
 public import LSpec
-public import Ix.Catalog
 public import Benchmarks.TruthMinesSpec.Projection
 
 public section
@@ -115,24 +114,30 @@ private def manifestTest : IO (Bool × Nat × Nat × Option String) := do
     return check errors.isEmpty
       s!"lockfile/record drift:\n{String.intercalate "\n" errors.toList}"
 
-private def specParseTest : IO (Bool × Nat × Nat × Option String) := do
+/-- The positional member vector is what `ix catalog` receives: one
+`Qualifier=Root[,Root…]` entry per member, parseable by the same
+splitting the CLI does (`=` once, roots comma-joined, no whitespace or
+empty components anywhere). -/
+private def specArgvTest : IO (Bool × Nat × Nat × Option String) := do
   for (label, spec) in [("full", catalogSpec), ("mini", catalogMiniSpec)] do
-    match Lean.Json.parse (renderSpecJson spec) with
-    | .error error =>
-      return check false s!"rendered {label} spec is not JSON: {error}"
-    | .ok json =>
-      match _root_.Ix.Catalog.specFromJson json with
-      | .error error =>
-        return check false s!"ix rejects the rendered {label} spec: {error}"
-      | .ok parsed =>
-        if parsed.catalogPrefix != spec.catalogPrefix then
-          return check false s!"{label} prefix drift: {parsed.catalogPrefix}"
-        if parsed.libs.size != spec.libs.size then
-          return check false
-            s!"{label} member count drift: {parsed.libs.size} != {spec.libs.size}"
-        for (theirs, ours) in parsed.libs.zip spec.libs do
-          unless theirs.qualifier == ours.qualifier && theirs.roots == ours.roots do
-            return check false s!"{label} member drift at `{ours.qualifier}`"
+    let rendered := commandArguments spec
+    if rendered.size != spec.libs.size then
+      return check false
+        s!"{label}: {rendered.size} argv entries for {spec.libs.size} members"
+    for (entry, lib) in rendered.zip spec.libs do
+      let parts := entry.splitOn "="
+      match parts with
+      | [qualifier, roots] =>
+        if qualifier.isEmpty || qualifier != lib.qualifier.toString (escape := false) then
+          return check false s!"{label}: qualifier drift in `{entry}`"
+        let rootParts := roots.splitOn ","
+        if rootParts.length != lib.roots.size ||
+            rootParts.any (·.isEmpty) then
+          return check false s!"{label}: root list drift in `{entry}`"
+        if entry.any (fun c => c == ' ' || c == '\n') then
+          return check false s!"{label}: whitespace in argv entry `{entry}`"
+      | _ =>
+        return check false s!"{label}: entry `{entry}` is not `Qualifier=Roots`"
   return check true ""
 
 def suite : List TestSeq := [
@@ -144,7 +149,7 @@ def suite : List TestSeq := [
     none projectionTest .done,
   .individualIO "truthmines records: lockfile pins match the records"
     none manifestTest .done,
-  .individualIO "truthmines records: spec JSON round-trips through ix's parser"
-    none specParseTest .done ]
+  .individualIO "truthmines records: positional spec argv is well-formed"
+    none specArgvTest .done ]
 
 end Tests.Ix.TruthMinesRecords
