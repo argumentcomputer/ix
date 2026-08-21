@@ -33,6 +33,7 @@ module
 
 public import LSpec
 public import Ix.Catalog
+public import Ix.Catalog.Lake
 public import Ix.CompileM
 public import Ix.KernelCheck
 public import Ix.Meta
@@ -224,6 +225,33 @@ private def coverageErrorTest : IO (Bool × Nat × Nat × Option String) := do
         some s!"error is not the coverage diagnostic: {msg.take 200}")
     return (true, 0, 0, none)
 
+/-- `--close-roots` closes exactly the gap the I5 diagnostic reports:
+    the same narrowed spec `coverageErrorTest` proves fail-closed builds
+    clean after `closeRoots` re-roots `B` at the terminals of its closed
+    module set — `FixtureB.Base` recovered from `A`'s cross-package
+    import edge. -/
+private def closeRootsTest : IO (Bool × Nat × Nat × Option String) := do
+  let narrowed : Ix.Catalog.CatalogSpec := {
+    catalogPrefix := `RelocCat
+    libs := #[
+      { qualifier := `B, roots := #[`FixtureB.Model] },
+      { qualifier := `A, roots := #[`FixtureA] } ] }
+  -- Workspace load first: Lake's config elaboration resets the process
+  -- search path, so the import path must be (re)initialized after it —
+  -- the CLI orders the phases the same way.
+  let workspace ← Ix.Catalog.loadCurrentWorkspace fixtureDir
+  let closed ← Ix.Catalog.closeRoots workspace narrowed
+  initLeanSearchPath (some fixtureDir)
+  let some libB := closed.libs.find? (·.qualifier == `B)
+    | return (false, 0, 0, some "member B disappeared from the closed spec")
+  unless libB.roots == #[`FixtureB.Base, `FixtureB.Model] do
+    return (false, 0, 0, some s!"expected B re-rooted at \
+[FixtureB.Base, FixtureB.Model], got {libB.roots}")
+  let result ← Ix.Catalog.buildCatalog closed
+  unless result.replayed > 0 do
+    return (false, 0, 0, some "closed-spec build replayed nothing")
+  return (true, result.replayed, 0, none)
+
 /-- I5, ordering flavor: a provider listed after its consumer is
     reported as a spec ordering error, not a missing root. -/
 private def orderingErrorTest : IO (Bool × Nat × Nat × Option String) := do
@@ -309,6 +337,8 @@ def suite : List TestSeq := [
     none loaderLevelTest .done,
   .individualIO "catalog fixtures: uncovered provider module fails closed (I5)"
     none coverageErrorTest .done,
+  .individualIO "catalog fixtures: --close-roots recovers narrowed coverage"
+    none closeRootsTest .done,
   .individualIO "catalog fixtures: audit restricted to a subset (I6)"
     none auditOnlyTest .done,
   .individualIO "catalog fixtures: copy-staged ≡ region-shared staging"

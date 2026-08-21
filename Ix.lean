@@ -13,6 +13,7 @@ public import Ix.CondenseM
 public import Ix.CompileM
 public import Ix.DecompileM
 public import Ix.Catalog
+public import Ix.Catalog.Lake
 public import Ix.ImportIxe
 public import Ix.IxEval
 public import Ix.KernelCheck

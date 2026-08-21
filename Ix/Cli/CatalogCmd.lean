@@ -12,6 +12,7 @@ public import Ix.Common
 public import Ix.Meta
 public import Ix.CompileM
 public import Ix.Catalog
+public import Ix.Catalog.Lake
 public import Ix.TracingTexray
 
 public section
@@ -67,11 +68,28 @@ is required (or use --spec)"
     return .ok { catalogPrefix, libs }
 
 def runCatalogCmd (p : Cli.Parsed) : IO UInt32 := do
-  let spec ← match ← resolveSpec p with
+  let mut spec ← match ← resolveSpec p with
     | .ok spec => pure spec
     | .error e =>
       p.printError s!"error: {e}"
       return 1
+
+  -- --close-roots: extend every member's declared roots to the global
+  -- cross-package source-import fixed point through the cwd's Lake
+  -- workspace, and re-root at terminal modules. The I5 coverage gate in
+  -- the loader stays as the fail-closed backstop.
+  if p.hasFlag "close-roots" then
+    let declaredRoots := spec.libs.map (·.roots.size) |>.foldl (·+·) 0
+    let closed ← try
+        Ix.Catalog.closeRoots (← Ix.Catalog.loadCurrentWorkspace) spec
+      catch e =>
+        p.printError s!"error: --close-roots: {e}"
+        return 1
+    let closedRoots := closed.libs.map (·.roots.size) |>.foldl (·+·) 0
+    println! "[catalog] --close-roots: {declaredRoots} declared roots → \
+{closedRoots} terminal roots across {closed.libs.size} members"
+    spec := closed
+
   let catalogPrefix := spec.catalogPrefix
   let libs := spec.libs
   let outPath := (p.flag? "out").map (·.as! String)
@@ -95,6 +113,11 @@ member of the catalog spec"
           return 1
       pure (some quals.toArray)
 
+  -- Copy-vs-share staging threshold (see `defaultCopyStageMaxOwned`);
+  -- the corpus tier is where the default gets tuned.
+  let copyStageMaxOwned := (p.flag? "copy-stage-max-owned").map (·.as! Nat)
+    |>.getD Ix.Catalog.defaultCopyStageMaxOwned
+
   -- Resolve modules through the current directory's Lake workspace.
   initLeanSearchPath (some (← IO.currentDir))
   -- Peak-RSS accounting for --report (I7): process-tree sampler,
@@ -104,7 +127,7 @@ member of the catalog spec"
 
   println! "Building catalog {catalogPrefix} from {libs.size} librar(ies)..."
   let buildStart ← IO.monoMsNow
-  let result ← Ix.Catalog.buildCatalog spec
+  let result ← Ix.Catalog.buildCatalog spec copyStageMaxOwned
   let buildElapsed := (← IO.monoMsNow) - buildStart
   for (qualifier, count) in result.perLib do
     println! "[catalog] {qualifier}: {count} owned constants"
@@ -148,7 +171,7 @@ constants verified ({scope}) in {auditElapsed}ms"
   let peakRssBytes ← TracingTexray.peakTreeRssBytes
   if let some flag := p.flag? "report" then
     let report := Lean.Json.mkObj
-      [ ("schemaVersion", Lean.toJson (1 : Nat))
+      [ ("schemaVersion", Lean.toJson (2 : Nat))
       , ("ixVersion", Lean.Json.str Ix.versionString)
       , ("leanToolchain", Lean.Json.str Lean.versionString)
       , ("ixeFormatVersion", Lean.toJson Ixon.Env.VERSION.toNat)
@@ -176,6 +199,7 @@ constants verified ({scope}) in {auditElapsed}ms"
       , ("compileMs", Lean.toJson elapsed)
       -- Process-tree high-water mark (I7); 0 on non-Linux platforms.
       , ("peakRssBytes", Lean.toJson peakRssBytes)
+      , ("copyStageMaxOwned", Lean.toJson copyStageMaxOwned)
       , ("auditedQualifiers", match auditRan, auditOnly? with
           | false, _ => Lean.Json.null
           | true, none => Lean.Json.arr <|
@@ -221,6 +245,8 @@ def catalogCmd : Cli.Cmd := `[Cli|
     audit           ;         "Verify anon-address preservation before writing: recompile each member library standalone and require addr(<prefix>.<qualifier>.N) in the catalog to equal addr(N) standalone, for every owned constant (qualification is metadata-only). N+1 extra compiles; violations abort with no output file."
     "audit-only"    : String; "Comma-separated member qualifiers: run the --audit invariant on just these members (a rotating subset keeps the gate viable at corpus scale, where the full audit is N+1 large compiles). Implies --audit; the artifact is still built and written."
     report          : String; "Write a machine-readable JSON catalog report (versions, lib specs, counts, ungrounded list, canonical root, peak RSS, audited qualifiers) to this path — written on success, fail-closed abort, and partial publish alike."
+    "copy-stage-max-owned" : Nat; "Copy-vs-share staging threshold: a member owning at most this many constants is copy-staged and its env's olean regions freed; a heavier member is staged sharing its regions, which stay mapped (default 100000). Threshold-0 and default builds are byte-identical; the knob trades resident regions against copy work."
+    "close-roots"   ;         "Close every member's roots over cross-package source imports through the cwd's Lake workspace before building: a provider module some member imports that the provider's own roots do not reach becomes additional provider coverage, and each member is re-rooted at its terminal modules. Fail-closed on imports from outside the cataloged members, ambiguous providers, and cross-member module collisions. The workspace must already be fetched (run its `lake build` first); the resolved roots are echoed into --report."
 
   ARGS:
     ...libs : String; "Member library specs `Qualifier=Root[,Root...]` in dependency order (dependencies first), e.g. `Batteries=Batteries HaskellSpec=HaskellSpec`."
