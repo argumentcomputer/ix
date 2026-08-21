@@ -113,8 +113,7 @@ def renderWorkspaceToolchain : String := expectedToolchain ++ "\n"
 /-- The positional member specs `ix catalog` takes —
 `Qualifier=Root[,Root…]` in dependency order. No spec file, no JSON:
 rendering the typed records straight to the argument vector keeps them
-the only representation (the TruthMines-original design; `ix catalog`'s
-`--spec` file form is byte-equivalent per #584's I3 gate, and at corpus
+the only representation (the TruthMines-original design; at corpus
 scale the vector is a few kilobytes, nowhere near any limit). -/
 def commandArguments (spec : CatalogSpecProjection := catalogSpec) :
     Array String :=

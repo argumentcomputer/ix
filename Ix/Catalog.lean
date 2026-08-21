@@ -71,6 +71,10 @@ structure LibSpec where
   roots : Array Lean.Name
   deriving Repr, Inhabited
 
+/-- The catalog spec. There is no file format: callers construct this
+    typed value (or the CLI's positional `Qualifier=Root[,Root…]`
+    vector, which resolves to it). Grouped loading (catalog-scale plan
+    Item 2) will extend this structure and the CLI surface directly. -/
 structure CatalogSpec where
   /-- The catalog's own namespace, e.g. `TruthMines`. -/
   catalogPrefix : Lean.Name
@@ -88,45 +92,12 @@ structure BuildResult where
   /-- Per-qualifier owned-constant counts (source constants, pre-replay). -/
   perLib : Array (Lean.Name × Nat)
 
-/-- Parse a catalog spec from its JSON file form (`ix catalog --spec`):
-
-    ```json
-    { "prefix": "TruthMines",
-      "libs": [ { "qualifier": "Batteries", "roots": ["Batteries"] } ] }
-    ```
-
-    Fail-closed on structure: unknown keys are errors, and the `groups`
-    key is reserved for grouped loading (plan Item 2) so a spec written
-    for a future ix fails loudly here instead of silently flattening. -/
-def specFromJson (json : Lean.Json) : Except String CatalogSpec := do
-  let obj ← json.getObj?
-  for ⟨key, _⟩ in obj.toArray do
-    match key with
-    | "prefix" | "libs" => pure ()
-    | "groups" => throw "`groups` is reserved for grouped loading and not yet supported"
-    | _ => throw s!"unknown key `{key}` in catalog spec"
-  let prefixStr ← (← json.getObjVal? "prefix").getStr?
-  if prefixStr.isEmpty then throw "empty `prefix`"
-  let libsArr ← (← json.getObjVal? "libs").getArr?
-  if libsArr.isEmpty then throw "`libs` is empty"
-  let mut libs : Array LibSpec := #[]
-  for libJson in libsArr do
-    let libObj ← libJson.getObj?
-    for ⟨key, _⟩ in libObj.toArray do
-      match key with
-      | "qualifier" | "roots" => pure ()
-      | _ => throw s!"unknown key `{key}` in catalog spec lib entry"
-    let qualifier ← (← libJson.getObjVal? "qualifier").getStr?
-    if qualifier.isEmpty then throw "empty `qualifier` in lib entry"
-    let rootsArr ← (← libJson.getObjVal? "roots").getArr?
-    let mut roots : Array Lean.Name := #[]
-    for rootJson in rootsArr do
-      let root ← rootJson.getStr?
-      if root.isEmpty then throw s!"lib `{qualifier}`: empty root module name"
-      roots := roots.push root.toName
-    if roots.isEmpty then throw s!"lib `{qualifier}`: no root modules"
-    libs := libs.push { qualifier := qualifier.toName, roots }
-  return { catalogPrefix := prefixStr.toName, libs }
+/-- Flushed progress line: the streaming pass runs for minutes-to-hours,
+    and Lean's stdout block-buffers under redirection — an unflushed
+    line is a line lost to a watchdog kill. -/
+private def progressLine (line : String) : IO Unit := do
+  IO.println line
+  (← IO.getStdout).flush
 
 /-! ## Relocation core (absorbed from TruthMines `Internal.Relocate`) -/
 
@@ -982,12 +953,18 @@ inductive EnvDisposal where
 def forEachLib {α : Type} (spec : CatalogSpec) (init : α)
     (f : α → LibSpec → Lean.Environment →
          Std.HashMap Lean.PkgId Lean.Name → Std.HashSet Lean.PkgId →
-         IO (EnvDisposal × α)) : IO α := do
+         IO (EnvDisposal × α))
+    (progress : Bool := false) : IO α := do
   if spec.libs.isEmpty then
     throw <| IO.userError "catalog: no member libraries"
   let mut qualOfPkg : Std.HashMap Lean.PkgId Lean.Name := {}
   let mut acc := init
+  let mut index := 0
   for lib in spec.libs do
+    index := index + 1
+    if progress then
+      progressLine s!"[catalog] ({index}/{spec.libs.size}) \
+{lib.qualifier}: importing {lib.roots.toList}…"
     let imports : Array Lean.Import := lib.roots.map ({ module := · })
     let env ← Lean.importModules imports {} (level := .private)
     let mut pkgs : Std.HashSet Lean.PkgId := {}
@@ -1029,14 +1006,16 @@ private structure BuildPass where
     `copyStageMaxOwned` is the copy-vs-share staging threshold (see
     `defaultCopyStageMaxOwned`). -/
 def buildCatalog (spec : CatalogSpec)
-    (copyStageMaxOwned : Nat := defaultCopyStageMaxOwned) :
+    (copyStageMaxOwned : Nat := defaultCopyStageMaxOwned)
+    (progress : Bool := false) :
     IO BuildResult := do
   -- 1. Stream the members in dependency order: check root coverage
   --    (I5), stage the replay, and accumulate the toolchain module
   --    union. Small-content members are copy-staged and their envs
   --    freed before the next loads; heavy-content members are staged
   --    sharing their env's regions, which stay mapped.
-  let pass ← forEachLib spec ({} : BuildPass) fun pass lib env qualOfPkg pkgs => do
+  let pass ← forEachLib (progress := progress) spec ({} : BuildPass)
+      fun pass lib env qualOfPkg pkgs => do
     let covered ← match checkRootCoverage lib env qualOfPkg pkgs pass.covered with
       | .ok covered => pure covered
       | .error e => throw <| IO.userError s!"catalog: {e}"
@@ -1054,6 +1033,11 @@ def buildCatalog (spec : CatalogSpec)
       else
         (stageLibShared renameMap plan, EnvDisposal.keepRegions)
     let ownedCount := owned.size
+    if progress then
+      let mode := if disposal matches .freeRegions then "copy-staged, env freed"
+        else "region-shared, env kept"
+      progressLine s!"[catalog] {lib.qualifier}: staged {ownedCount} owned \
+constants ({mode})"
     let mut toolchainSeen := pass.toolchainSeen
     let mut toolchainMods := pass.toolchainMods
     for moduleIdx in [0:env.header.moduleNames.size] do
@@ -1069,8 +1053,14 @@ def buildCatalog (spec : CatalogSpec)
   -- 2. Toolchain base: the union of toolchain modules across member
   --    environments, imported once (single provider ⇒ no collisions).
   --    Its regions are never freed — `consts` references them.
+  if progress then
+    progressLine s!"[catalog] importing the toolchain base \
+({pass.toolchainMods.size} modules)…"
   let baseEnv ← Lean.importModules pass.toolchainMods {} (level := .private)
   -- 3. Kernel-replay the staged declarations in dependency order.
+  if progress then
+    let total := pass.staged.foldl (init := 0) fun n (_, decls, _) => n + decls.size
+    progressLine s!"[catalog] kernel-replaying {total} staged declarations…"
   let mut kenv := baseEnv.toKernelEnv
   let mut replayed := 0
   let mut perLib : Array (Lean.Name × Nat) := #[]
@@ -1091,6 +1081,9 @@ def buildCatalog (spec : CatalogSpec)
 rejected `{staged.target}` (source `{staged.source}`): \
 {renderKernelException e}"
     perLib := perLib.push (qualifier, ownedCount)
+    if progress then
+      progressLine s!"[catalog] replayed {qualifier} \
+({replayed} declarations cumulative)"
   -- 4. Extract the full constant map (base + qualified + regenerated).
   let consts := kenv.constants.fold (init := #[]) fun acc name info =>
     acc.push (name, info)
