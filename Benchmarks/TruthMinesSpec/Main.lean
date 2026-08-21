@@ -13,20 +13,20 @@
                     `ix catalog` over the rendered spec — one command,
                     one artifact.
 
-  The heavy steps (workspace build, `ix catalog`) run under a memory
-  watchdog: a systemd user scope with cgroup MemoryMax and swap off,
-  whole-scope kill on breach (exit 137) — the same "an unenforced
-  ceiling is not a benchmark run" principle `ix bench` enforces via
-  `.github/scripts/watchdog.sh` (inlined here so a lake exe carries no
-  runtime dependency on CI scripts), learned the hard way: the first
-  corpus run without it OOM'd the whole box instead of the scope.
-  Default ceiling is total RAM − 15 GiB (the bench convention);
+  The heavy steps (workspace build, `ix catalog`) run under the typed
+  RAM watchdog (`Ix.Watchdog`, shared with `ix bench`): a systemd user
+  scope with cgroup MemoryMax and swap off, whole-scope kill on breach
+  (exit 137) — "an unenforced ceiling is not a benchmark run", learned
+  the hard way: the first corpus run without it OOM'd the whole box
+  instead of the scope. Default ceiling is total RAM − 15 GiB;
   `--ceiling-gb N` overrides, `--no-watchdog` opts out explicitly
-  (required on non-systemd platforms).
+  (required on non-systemd platforms, where the availability probe
+  refuses to run unprotected by default).
 
   Run from the repo root; `build` needs `lake build ix` first.
 -/
 import Benchmarks.TruthMinesSpec.Projection
+import Ix.Watchdog
 
 open TruthMinesSpec
 
@@ -35,15 +35,6 @@ private def usage : String :=
 [--report PATH] [--audit-only Qual[,Qual…]] [--ceiling-gb N] [--no-watchdog]>"
 
 private def ixExe : System.FilePath := ".lake" / "build" / "bin" / "ix"
-
-/-- Total physical RAM in GiB, from `/proc/meminfo` (Linux only). -/
-private def totalRamGb? : IO (Option Nat) := do
-  let content ← try IO.FS.readFile "/proc/meminfo" catch _ => return none
-  let some line := (content.splitOn "\n").find? (·.startsWith "MemTotal:")
-    | return none
-  let tokens := (line.splitOn " ").filter (!·.isEmpty)
-  let some kb := tokens[1]?.bind (·.toNat?) | return none
-  return some (kb / (1024 * 1024))
 
 private structure GenFile where
   path : System.FilePath
@@ -108,37 +99,18 @@ private def inherited (cmd : String) (args : Array String)
   let child ← IO.Process.spawn { cmd, args, cwd := some cwd }
   child.wait
 
-/-- Run a heavy step under a cgroup memory ceiling; `none` runs it bare
-    (`--no-watchdog`).
-
-    Inlined systemd-run invocation with the same kill semantics as
-    `.github/scripts/watchdog.sh` (the bench watchdog — kept as the shared
-    spec, not a runtime dependency): a user scope with `MemoryMax`, swap
-    off, and `memory.oom.group=1` so a breach kills the WHOLE scope with
-    SIGKILL (exit 137) instead of singling out the biggest process; if the
-    oom.group write fails, exit 2 rather than run with wrong kill
-    semantics. Omitted relative to the script: the CI linger bootstrap (a
-    desktop session already runs a user manager — if `systemd-run --user`
-    fails here, the error is visible and `--no-watchdog` is the escape
-    hatch) and the Open MPI signal-handler workaround (zisk-host-specific;
-    nothing on this path links MPI). -/
+/-- Run a heavy step under the typed watchdog's cgroup memory ceiling
+    (`Ix.Watchdog.run`: whole-scope kill on breach, exit 137); `none`
+    runs it bare (`--no-watchdog`). -/
 private def watched (ceiling? : Option Nat) (cmd : String)
     (args : Array String) (cwd : System.FilePath) : IO UInt32 := do
   match ceiling? with
   | none => inherited cmd args cwd
-  | some ceiling =>
-    let oomGroupThenExec :=
-      "echo 1 > \"/sys/fs/cgroup$(cut -d: -f3- /proc/self/cgroup)/memory.oom.group\" \
-|| { echo \"truthmines watchdog: cannot set memory.oom.group\" >&2; exit 2; }; \
-exec \"$@\""
-    inherited "systemd-run"
-      (#["--user", "--scope", "--quiet",
-         "-p", s!"MemoryMax={ceiling}G", "-p", "MemorySwapMax=0",
-         "bash", "-c", oomGroupThenExec, "watchdog", cmd] ++ args) cwd
+  | some ceiling => Ix.Watchdog.run ceiling cmd args (some cwd)
 
 private def reportOom (exit : UInt32) (ceiling? : Option Nat)
     (step : String) : IO Unit := do
-  if exit == 137 then
+  if exit == Ix.Watchdog.oomExitCode then
     if let some ceiling := ceiling? then
       IO.eprintln s!"{step} hit the {ceiling} GiB memory ceiling (cgroup \
 OOM kill, whole scope). Rerun with a higher --ceiling-gb, more RAM, or a \
@@ -157,17 +129,15 @@ run `lake exe truthmines gen` first"
   let ceiling? : Option Nat ←
     if options.noWatchdog then
       pure none
-    else
+    else if ← Ix.Watchdog.available then
       match options.ceilingGb with
       | some gb => pure (some gb)
-      | none =>
-        match ← totalRamGb? with
-        | some total => pure (some (if total > 20 then total - 15 else total))
-        | none => pure none
-  if ceiling?.isNone && !options.noWatchdog then
-    IO.eprintln "cannot read total RAM for the default memory ceiling — \
-pass --ceiling-gb N, or --no-watchdog to run unprotected"
-    return 1
+      | none => pure (some (← Ix.Watchdog.defaultCeilingGb))
+    else
+      IO.eprintln "RAM watchdog unavailable (systemd user scope with \
+cgroup memory.oom.group failed the probe) — pass --no-watchdog to run \
+unprotected"
+      return 1
   if let some ceiling := ceiling? then
     IO.println s!"truthmines build: {ceiling} GiB memory ceiling (cgroup \
 scope, swap off; --ceiling-gb / --no-watchdog to change)"

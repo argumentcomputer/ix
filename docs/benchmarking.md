@@ -118,9 +118,11 @@ compare`; off by default — the spans are noisy and dynamically named).
 
 ## RAM: watchdog, OOM rows, sharding
 
-`ix bench run` wraps each tool in `.github/scripts/watchdog.sh <ceiling-gb>
-<cmd>`: a thin wrapper over `systemd-run --user --scope` that runs the
-tool under a cgroup-v2 `memory.max` cap with swap disabled. The kernel
+`ix bench run` wraps each tool in the typed watchdog (`Ix.Watchdog`,
+also used by `lake exe truthmines build`): a `systemd-run --user
+--scope` invocation that runs the tool under a cgroup-v2 `memory.max`
+cap with swap disabled, probed end to end before any tool spawns (no
+watchdog, no run). The kernel
 OOM-kills at the ceiling — SIGKILL, exit 137 — with no sampler to race
 and nothing to sum: the cgroup charges the whole tree's resident memory,
 locked shared segments included, while an allocator's cached virtual
