@@ -140,8 +140,8 @@ jobs:
             -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
             -f comment-body="$COMMENT_BODY"
 
-  # Select or build the PR's `ix`, `bench-typecheck`, and
-  # `bench-recursive-verifier` once, then publish them as a run-scoped
+  # Select or build the PR's `ix` and `bench-typecheck` once, then
+  # publish them as a run-scoped
   # artifact for every later job. Normal runs may select a persistent
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
   # replaces the full bundle before it is published to benchmark jobs.
@@ -226,10 +226,10 @@ jobs:
       - name: Build benchmark binaries
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
         run: |
-          lake build ix bench-typecheck bench-recursive-verifier
-          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          lake build ix bench-typecheck
+          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
           cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
-          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
       # Cache entries are immutable and may lack optional provenance. Keep the
       # run artifact's shape stable and state explicitly when its build host is
       # unknown.
@@ -247,7 +247,7 @@ jobs:
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix bench-typecheck bench-recursive-verifier benchmark-build-cpu.txt
+          ix bench-typecheck benchmark-build-cpu.txt
       - name: Upload run binaries
         uses: actions/upload-artifact@v7
         with:
@@ -724,10 +724,10 @@ jobs:
              && cmp -s lean-toolchain base/lean-toolchain; then
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
-              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier base/.lake/build/bin/ 2>/dev/null || true
+              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
               mv ~/.local/bin/benchmark-build-cpu.txt base/.lake/build/bin/ 2>/dev/null || true
               [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] \
-                && [ -x base/.lake/build/bin/bench-recursive-verifier ] && cached=true
+                && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
@@ -747,14 +747,14 @@ jobs:
         with:
           label: Base benchmark binary build CPU
           output-file: base/.lake/build/bin/benchmark-build-cpu.txt
-      - name: Build base (ix, bench-typecheck, bench-recursive-verifier)
+      - name: Build base (ix, bench-typecheck)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: base
           auto-config: false
           build: true
-          build-args: "ix bench-typecheck bench-recursive-verifier"
+          build-args: "ix bench-typecheck"
           use-github-cache: false
       # For a mathlib-importing env (Mathlib, FLT), the base-side compile
       # resolves imports from the base tree's Benchmarks/Compile

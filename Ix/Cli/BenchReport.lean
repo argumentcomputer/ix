@@ -37,7 +37,7 @@ open Ix.Cli.BenchCmd (stagePrefixOf dropStagePrefix)
 
 /-- Per-metric formatting kind. Metric names are the results-JSON keys the
     tools emit (see the registry in Ix.Cli.BenchCmd). A stage-qualified
-    metric formats like its base counterpart (`stage2-peak-rss` and
+    metric formats like its base counterpart (`fri-verifier-peak-rss` and
     `pipeline-peak-rss` like `peak-rss`, …). Unknown metrics fall through
     to a generic decimal rendering. -/
 def metricKind (metric : String) : String :=
@@ -57,7 +57,7 @@ def metricKind (metric : String) : String :=
     (renaming one would orphan its threshold/history); only the table
     rendering differs. `file-size` is the serialized `.ixe` env — bencher
     plots it as "Environment Size"; `peak-rss` reads better as plain RAM,
-    in every slug that embeds it (`stage2-peak-rss` → …-peak-ram);
+    in every slug that embeds it (`fri-verifier-peak-rss` → …-peak-ram);
     `throughput` carries its unit here because the runs print bare
     magnitudes (matching `unitsFor`'s "constants / second" on bencher). -/
 def metricLabel (metric : String) : String :=
@@ -186,7 +186,7 @@ structure CompareSection where
 
 /-- The stage qualifier shared by every one of a section's measures, if
     they share one. A stage table's heading already says which stage it
-    is, so its columns read `prove-time`, not `stage1-prove-time`. -/
+    is, so its columns read `prove-time`, not `ixvm-prove-time`. -/
 def sectionLabelDrop (metrics : Array String) : String :=
   match metrics[0]?.bind stagePrefixOf with
   | some p => if metrics.all (·.startsWith p) then p else ""

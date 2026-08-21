@@ -62,14 +62,14 @@ def plotTitle (workload measure : String) : String :=
   | "aiur", "total-time"             => "Aiur Total Time"
   | "aiur", "pipeline-throughput"    => "Aiur Total Throughput"
   | "aiur", "pipeline-peak-rss"      => "Aiur Total Peak RAM Usage"
-  | "aiur", "stage1-prove-time"      => "Aiur Stage 1 Time"
-  | "aiur", "stage2-prove-time"      => "Aiur Stage 2 Time"
-  | "aiur", "stage1-fft-cost"        => "Aiur Stage 1 FFT Cost"
-  | "aiur", "stage2-fft-cost"        => "Aiur Stage 2 FFT Cost"
-  | "aiur", "stage2-verify-time"     => "Aiur Stage 2 Verify Time"
-  | "aiur", "stage2-peak-rss"        => "Aiur Stage 2 Peak RAM Usage"
-  | "aiur", "stage1-proof-size"      => "Aiur Stage 1 Proof Size"
-  | "aiur", "stage2-proof-size"      => "Aiur Stage 2 Proof Size"
+  | "aiur", "ixvm-prove-time"          => "Aiur IxVM Time"
+  | "aiur", "fri-verifier-prove-time"  => "Aiur FRI Verifier Time"
+  | "aiur", "ixvm-fft-cost"            => "Aiur IxVM FFT Cost"
+  | "aiur", "fri-verifier-fft-cost"    => "Aiur FRI Verifier FFT Cost"
+  | "aiur", "fri-verifier-verify-time" => "Aiur FRI Verifier Verify Time"
+  | "aiur", "fri-verifier-peak-rss"    => "Aiur FRI Verifier Peak RAM Usage"
+  | "aiur", "ixvm-proof-size"          => "Aiur IxVM Proof Size"
+  | "aiur", "fri-verifier-proof-size"  => "Aiur FRI Verifier Proof Size"
   | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
   | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
   | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
@@ -89,11 +89,11 @@ def plotTitle (workload measure : String) : String :=
     that stage's `prove-time` — a prove runs its own witness execution,
     so it is the whole cost of producing the stage's proof, and the
     standalone `execute-time` beside it is a second, instrumentation-only
-    run. Stage-1 peak-rss / verify-time are tracked for the compare
-    table but not plotted: their cost is inside `prove-time` and the
-    deterministic `fft-cost` trend, and stage 1's proof is an
-    intermediate artifact consumed by the next stage. Stage-1
-    `proof-size` IS plotted: it sizes the next stage's in-circuit
+    run. The ixvm stage's peak-rss / verify-time are tracked for the
+    compare table but not plotted: their cost is inside `ixvm-prove-time`
+    and the deterministic `ixvm-fft-cost` trend, and that stage's proof
+    is an intermediate artifact consumed by the next stage. Its
+    `ixvm-proof-size` IS plotted: it sizes the next stage's in-circuit
     verification workload. The whole-run `pipeline-peak-rss` too: which stage
     sets the run's RAM ceiling can shift as pipeline stages are added,
     so no per-stage peak plot stands in for it. The per-stage
@@ -104,15 +104,15 @@ def plotTitle (workload measure : String) : String :=
 def plotSkips : List (String × String) :=
   [("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
-   ("aiur", "stage1-peak-rss"), ("aiur", "stage1-verify-time"),
-   ("aiur", "stage1-execute-time"), ("aiur", "stage2-execute-time"),
-   ("aiur", "stage1-throughput"), ("aiur", "stage2-throughput")]
+   ("aiur", "ixvm-peak-rss"), ("aiur", "ixvm-verify-time"),
+   ("aiur", "ixvm-execute-time"), ("aiur", "fri-verifier-execute-time"),
+   ("aiur", "ixvm-throughput"), ("aiur", "fri-verifier-throughput")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
     its first upload, leaving plots unitless — and a console edit would
     drift from this list, so the sync re-asserts it. Phase spans are
-    wall-clock seconds. A stage-qualified slug (`stage1-prove-time`,
+    wall-clock seconds. A stage-qualified slug (`ixvm-prove-time`,
     `pipeline-peak-rss`) carries its base measure's units, so only base
     names are listed. -/
 def unitsFor (slug : String) : Option String :=

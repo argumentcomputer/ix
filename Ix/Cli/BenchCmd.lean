@@ -128,20 +128,18 @@ def workloadOf (testbed : String) : String :=
   if testbed.endsWith "-x64-32x" then (testbed.dropEnd 8).toString
   else testbed
 
-/-- The stage qualifier a pipeline measure carries ahead of its base name,
-    if any: `stage<N>-` scopes a measure to pipeline stage N (any number
-    of stages — the KZG stages join as `stage3-`/`stage4-` without
-    touching this), `pipeline-` to the whole run. Stripped wherever a
-    measure is interpreted by its base name (formatting kind, units) or
-    labelled under a heading that already says the stage. -/
+/-- The stage qualifiers a pipeline measure may carry ahead of its base
+    name — one per pipeline stage, named for what the stage proves
+    (`ixvm-`: the IxVM typecheck; `fri-verifier-`: the in-circuit FRI
+    verifier over the previous proof; the KZG stages add their own
+    entries as they land) — plus `pipeline-` for the whole run. Stripped
+    wherever a measure is interpreted by its base name (formatting kind,
+    units) or labelled under a heading that already says the stage. -/
+def stagePrefixes : List String := ["ixvm-", "fri-verifier-", "pipeline-"]
+
+/-- The stage qualifier `metric` carries, if any. -/
 def stagePrefixOf (metric : String) : Option String :=
-  if metric.startsWith "pipeline-" then some "pipeline-" else
-  if !metric.startsWith "stage" then none else
-  let digits :=
-    (metric.drop "stage".length).toString.toList.takeWhile (·.isDigit)
-  if digits.isEmpty then none else
-  let p := s!"stage{String.ofList digits}-"
-  if metric.startsWith p then some p else none
+  stagePrefixes.find? (metric.startsWith ·)
 
 /-- `metric` with its stage qualifier removed, if it has one. -/
 def dropStagePrefix (metric : String) : String :=
@@ -178,8 +176,8 @@ structure BackendSpec where
   metrics : List (String × List String)
   /-- (mode, [(stage title, that stage's measures)]) for a mode whose run
       walks a multi-stage pipeline: the compare table splits into one
-      table per stage. A stage's measures carry their `stage<N>-`
-      qualifier (`stage1-prove-time`) — the stage tables strip it for
+      table per stage. A stage's measures carry their stage
+      qualifier (`ixvm-prove-time`) — the stage tables strip it for
       display (`sectionLabelDrop`), so columns still read plain. List
       order is render order, so the closing entry is the ledger over the
       whole run. -/
@@ -205,18 +203,20 @@ structure BackendSpec where
 
 def backendSpecs : List BackendSpec := [
   -- aiur: the proof-pipeline benchmark (bench-typecheck --recursive) —
-  -- every stage of the pipeline, per constant, plus the total. Stage 1
-  -- proves the constant's IxVM typecheck; stage 2 executes the
-  -- in-circuit multi-stark verifier over the fresh stage-1 proof and
-  -- proves THAT execution; the KZG stages will join as stages 3/4 when
-  -- they land, folding into the same ledger. Each stage reports the same
-  -- five columns — witness execute, prove, peak RAM, proof size, verify
-  -- — and the closing ledger table carries `total-time` (the stages'
-  -- proves, summed — each prove already runs its own witness execution,
-  -- so the standalone execute times are instrumentation and are not
-  -- added) and the run's RAM ceiling. The whole system runs under the
-  -- recursion-tuned parameters — 50 FRI queries at log-blowup 2 for the
-  -- stage-1 and stage-2 proofs alike, the soundness level taking
+  -- every stage of the pipeline, per constant, plus the total. The ixvm
+  -- stage proves the constant's IxVM typecheck; the fri-verifier stage
+  -- executes the in-circuit multi-stark verifier over that fresh proof
+  -- and proves THAT execution; the KZG stages will join as stages 3/4
+  -- when they land, folding into the same ledger. Each stage reports the
+  -- same seven columns — witness execute, prove, throughput, peak RAM,
+  -- proof size, verify, FFT cost — and the closing ledger table carries
+  -- `total-time` (the stages' proves, summed — each prove already runs
+  -- its own witness execution, so the standalone execute times are
+  -- instrumentation and are not added), the end-to-end
+  -- `pipeline-throughput`, and the run's RAM ceiling. The whole system
+  -- runs under the
+  -- recursion-tuned parameters — 50 FRI queries at log-blowup 2 for
+  -- both stages' proofs alike, the soundness level taking
   -- precedence over fitting every constant in the host's RAM (see
   -- `recursiveFriParameters` in Benchmarks/Typecheck.lean). execute is
   -- the fast Phase-1-only signal (witness generation, no proving),
@@ -226,42 +226,44 @@ def backendSpecs : List BackendSpec := [
                  ("execute", "aiur-execute-x64-32x")],
     unscheduled := ["execute"],
     stages := [("prove",
-      [("Stage 1 — IxVM on FRI",
-         ["stage1-execute-time", "stage1-prove-time", "stage1-throughput",
-          "stage1-peak-rss", "stage1-proof-size", "stage1-verify-time",
-          "stage1-fft-cost"]),
-       ("Stage 2 — FRI recursion on FRI",
-         ["stage2-execute-time", "stage2-prove-time", "stage2-throughput",
-          "stage2-peak-rss", "stage2-proof-size", "stage2-verify-time",
-          "stage2-fft-cost"]),
+      [("IxVM on FRI",
+         ["ixvm-execute-time", "ixvm-prove-time", "ixvm-throughput",
+          "ixvm-peak-rss", "ixvm-proof-size", "ixvm-verify-time",
+          "ixvm-fft-cost"]),
+       ("FRI verifier on FRI",
+         ["fri-verifier-execute-time", "fri-verifier-prove-time",
+          "fri-verifier-throughput", "fri-verifier-peak-rss",
+          "fri-verifier-proof-size", "fri-verifier-verify-time",
+          "fri-verifier-fft-cost"]),
        ("Pipeline total",
          ["total-time", "pipeline-throughput", "pipeline-peak-rss"])])],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
-    -- stage1-fft-cost is deterministic but only ever drops on a real Aiur
-    -- win → upper-only 5% instead of a hard pin. stage2-fft-cost drifts
-    -- ~±15% run-to-run (the parallel prover emits byte-different valid
-    -- proofs, so the verifier authenticates different Merkle paths) →
-    -- the loose 25% bound. Proof sizes are structural (fixed query count
-    -- and path depth) → the tight 5%. `total-time` carries NO bound: it
-    -- is the two prove times summed, and a sum cannot breach a
-    -- percentage bound unless one of its terms already breached the same
-    -- one — so it could only ever duplicate an alert the proves fired.
-    -- The throughputs likewise carry no bound: `constants` is pinned
-    -- exactly, so each is the pure inverse of an already-bounded time.
-    thresholds := [("constants", "0", "0"), ("stage1-fft-cost", "0.05", "_"),
-                   ("stage2-fft-cost", "0.25", "_"),
-                   ("stage1-execute-time", "0.10", "_"),
-                   ("stage1-prove-time", "0.10", "_"),
-                   ("stage2-execute-time", "0.10", "_"),
-                   ("stage2-prove-time", "0.10", "_"),
-                   ("stage1-peak-rss", "0.10", "_"),
-                   ("stage2-peak-rss", "0.10", "_"),
+    -- ixvm-fft-cost is deterministic but only ever drops on a real Aiur
+    -- win → upper-only 5% instead of a hard pin. fri-verifier-fft-cost
+    -- drifts ~±15% run-to-run (the parallel prover emits byte-different
+    -- valid proofs, so the verifier authenticates different Merkle
+    -- paths) → the loose 25% bound. Proof sizes are structural (fixed
+    -- query count and path depth) → the tight 5%. `total-time` carries
+    -- NO bound: it is the two prove times summed, and a sum cannot
+    -- breach a percentage bound unless one of its terms already breached
+    -- the same one — so it could only ever duplicate an alert the proves
+    -- fired. The throughputs likewise carry no bound: `constants` is
+    -- pinned exactly, so each is the pure inverse of an already-bounded
+    -- time.
+    thresholds := [("constants", "0", "0"), ("ixvm-fft-cost", "0.05", "_"),
+                   ("fri-verifier-fft-cost", "0.25", "_"),
+                   ("ixvm-execute-time", "0.10", "_"),
+                   ("ixvm-prove-time", "0.10", "_"),
+                   ("fri-verifier-execute-time", "0.10", "_"),
+                   ("fri-verifier-prove-time", "0.10", "_"),
+                   ("ixvm-peak-rss", "0.10", "_"),
+                   ("fri-verifier-peak-rss", "0.10", "_"),
                    ("pipeline-peak-rss", "0.10", "_"),
-                   ("stage1-proof-size", "0.05", "_"),
-                   ("stage2-proof-size", "0.05", "_"),
-                   ("stage1-verify-time", "0.10", "_"),
-                   ("stage2-verify-time", "0.10", "_")] },
+                   ("ixvm-proof-size", "0.05", "_"),
+                   ("fri-verifier-proof-size", "0.05", "_"),
+                   ("ixvm-verify-time", "0.10", "_"),
+                   ("fri-verifier-verify-time", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",

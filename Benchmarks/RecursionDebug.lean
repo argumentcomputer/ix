@@ -30,8 +30,12 @@ lake exe bench-recursion-debug --ixe init.ixe --const Array.extract_append --mod
   --reprove        force a fresh prove even when blobs exist
   --skip-deps      subject-only check (`verify_const`) instead of the
                    full-closure `verify_claim` default
-  --queries N      FRI numQueries (default 100 — matches bench-typecheck
-                   --recursive); must match between prove and replay!
+  --queries N      FRI numQueries (default 100; the pipeline's
+                   `recursiveFriParameters` in Benchmarks/Typecheck.lean
+                   runs 50 with no query PoW, while this tool grinds 20
+                   PoW bits — pass --queries 50 when a replay should
+                   mirror the pipeline's query count); must match between
+                   prove and replay!
   --mode M         how to run the recursive verifier over the saved proof:
                      native    codegen'd Rust verifier (default; the
                                production path bench-typecheck uses)

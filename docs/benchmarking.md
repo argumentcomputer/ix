@@ -93,7 +93,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | the Aiur proof pipeline, per constant: stage 1 proves the IxVM typecheck, stage 2 executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`) | `bench-typecheck --recursive` |
+| `aiur`    | the Aiur proof pipeline, per constant: the `ixvm` stage proves the IxVM typecheck, the `fri-verifier` stage executes and proves the in-circuit multi-stark verifier over that fresh proof (the KZG stages fold in as they land, each with its own measure prefix), closed by the pipeline ledger (total-time, pipeline-throughput, pipeline-peak-rss). Each stage's measures carry its prefix (`ixvm-prove-time`, `fri-verifier-fft-cost`, …). The whole system runs under the recursion-tuned FRI parameters. A second mode, execute, is the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss) — unscheduled, local/on-demand only (`!benchmark aiur execute`) | `bench-typecheck --recursive` |
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (the runtime-planned partition size; 1 when the closure fits) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per constant (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
@@ -102,10 +102,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 | `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
 All tools emit the same rows, and all the constant-driven ones take the same
-`--consts`/`--consts-file` grammar. (`bench-recursive-verifier`, the local
-toy-statement harness for parameter sweeps, instead takes its config as
-flags — `--trivial`, `--queries`, `--log-blowup` — with the row name
-supplied via `--json-name`.) The ooc and zkVM cells share per-constant
+`--consts`/`--consts-file` grammar. The ooc and zkVM cells share per-constant
 **full-closure** scope, so their delta isolates in-circuit vs out-of-circuit
 overhead.
 

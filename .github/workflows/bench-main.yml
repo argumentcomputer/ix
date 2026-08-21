@@ -38,10 +38,10 @@ env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
-  # Build the `ix`, `bench-typecheck`, and `bench-recursive-verifier`
-  # binaries once and cache them; every later job restores them instead of
-  # rebuilding. They are built with -Ctarget-cpu=native, so every job that
-  # runs them must use the same warp runner class.
+  # Build the `ix` and `bench-typecheck` binaries once and cache them;
+  # every later job restores them instead of rebuilding. They are built
+  # with -Ctarget-cpu=native, so every job that runs them must use the
+  # same warp runner class.
   build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
@@ -65,10 +65,10 @@ jobs:
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
-          lake build bench-typecheck bench-recursive-verifier
-          cp .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          lake build bench-typecheck
+          cp .lake/build/bin/bench-typecheck ~/.local/bin/
           cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
-          chmod +x ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
+          chmod +x ~/.local/bin/bench-typecheck
       - uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
