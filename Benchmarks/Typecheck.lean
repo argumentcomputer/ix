@@ -205,6 +205,19 @@ structure Result where
   /-- Wall time of `AiurSystem.verify` over the outer proof; `none` if that
       verification failed (reported loudly). -/
   recursiveVerifySec : Option Float := none
+  /-- Stage 3 (`--kzg` only): wall time of proving the FOREIGN (byte-limb)
+      verifier's acceptance of the stage-2 proof over the BLS12-381 scalar
+      field under the KZG backend — execution (generic Fr interpreter),
+      witness, commitments, and opening in one span. -/
+  kzgProveSec : Option Float := none
+  /-- The stage-3 prove's RSS high-water (windowed like the other peaks). -/
+  kzgPeakRss : Option Nat := none
+  /-- Serialized stage-3 (KZG) proof size in bytes — Θ(circuit width),
+      constant in trace height. -/
+  kzgProofSize : Option Nat := none
+  /-- Wall time of the NATIVE stage-3 verification (two pairings);
+      `none` if it failed (reported loudly). -/
+  kzgVerifySec : Option Float := none
   deriving Inhabited
 
 /-- A `Json` number with at most `d` decimal places, rendered decimally.
@@ -228,7 +241,8 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     constants/sec over the prove. The two modes store on separate bencher
     testbeds (aiur-execute-* / aiur-*), so the shared names never
     collide — run the execute run when you want execute-side numbers. -/
-def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
+def Result.toJsonEntry (executeOnly : Bool) (kzg : Bool) (r : Result) :
+    String × Json :=
   if r.failed then
     (r.name, Json.mkObj [("status", Json.str "rejected")]) else
   let base : List (String × Json) :=
@@ -279,6 +293,19 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     let fields := match r.recursiveVerifySec with
       | some v => fields ++ [ ("recursive-verify-time", jsonRound 6 v) ]
       | none => fields
+    -- The stage-3 (KZG wrap) metrics, in measurement order.
+    let fields := match r.kzgProveSec with
+      | some s => fields ++ [ ("kzg-prove-time", jsonRound 6 s) ]
+      | none => fields
+    let fields := match r.kzgPeakRss with
+      | some n => fields ++ [ ("kzg-peak-rss", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.kzgProofSize with
+      | some n => fields ++ [ ("kzg-proof-size", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.kzgVerifySec with
+      | some v => fields ++ [ ("kzg-verify-time", jsonRound 6 v) ]
+      | none => fields
     -- The pipeline ledger, once the whole pipeline has run.
     -- `total-time` is each stage's prove, summed. A stage's prove is
     -- the WHOLE cost of producing that stage's proof: `prove_ixvm` runs
@@ -293,13 +320,19 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     -- RAM does this pipeline need" — their maximum does. Emitted
     -- only with every component present, so it doubles as the row's
     -- completion marker (the orchestrator's teardown-kill `doneKey`).
+    -- Under `--kzg` the pipeline includes stage 3, so the ledger (and the
+    -- completion marker it doubles as) additionally requires the wrap.
+    let stage3Done := !kzg || r.kzgProveSec.isSome
     let fields := match r.proveSec, r.recursiveExecuteSec, r.recursiveProveSec with
       | some p, some _, some rp =>
-        let peaks := [r.executePeakRss, r.peakRss, r.recursivePeakRss].reduceOption
-        fields ++ [ ("total-time", jsonRound 6 (p + rp)) ]
-          ++ (match peaks.max? with
-              | some n => [("pipeline-peak-rss", Lean.toJson n)]
-              | none => [])
+        if stage3Done then
+          let peaks := [r.executePeakRss, r.peakRss, r.recursivePeakRss,
+                        r.kzgPeakRss].reduceOption
+          fields ++ [ ("total-time", jsonRound 6 (p + rp + (r.kzgProveSec.getD 0))) ]
+            ++ (match peaks.max? with
+                | some n => [("pipeline-peak-rss", Lean.toJson n)]
+                | none => [])
+        else fields
       | _, _, _ => fields
     (r.name, Json.mkObj fields)
 
@@ -336,6 +369,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   if recursive && executeOnly then
     IO.eprintln "error: --recursive measures the prove path; drop --execute-only"
     return Ix.Benchmark.Results.exitUsage
+  -- KZG (stage 3): after each constant's stage-2 (outer) prove, wrap THAT
+  -- proof — prove the foreign verifier's acceptance of it over the
+  -- BLS12-381 scalar field under the KZG backend, and verify natively.
+  let kzg := p.hasFlag "kzg"
+  if kzg && !recursive then
+    IO.eprintln "error: --kzg wraps the stage-2 proof; it requires --recursive"
+    return Ix.Benchmark.Results.exitUsage
+  let kzgLogSrs := ((p.flag? "kzg-log-srs").map (·.as! Nat)).getD 20
   -- Off by default; CI passes --texray explicitly.
   let useTexray := p.hasFlag "texray"
   let useInterp := p.hasFlag "interp"
@@ -394,6 +435,25 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | throw (IO.userError "verify_multi_stark_proof entrypoint missing")
       pure (some (vCompiled, vIdx,
         Aiur.AiurSystem.build vCompiled.bytecode commitParams friParams))
+  -- The stage-3 context, also constant-independent and built ONCE: the
+  -- FOREIGN (byte-limb) verifier toplevel over the BLS12-381 scalar field
+  -- under the KZG backend. Dev-grade SRS of size 2^kzgLogSrs (see
+  -- `AiurKzgSystem.build`); the setup itself is timed and reported since
+  -- it is minutes-scale at 2^20.
+  let kzgCtx : Option (Aiur.Bytecode.FunIdx × Aiur.AiurKzgSystem) ←
+    if !kzg then pure none else do
+      let .ok fTop := MultiStark.multiStarkForeign
+        | throw (IO.userError "Merging foreign multi-stark verifier failed")
+      let .ok fCompiled := fTop.compile
+        | throw (IO.userError "Compilation of foreign multi-stark verifier failed")
+      let some fIdx := fCompiled.getFuncIdx `verify_multi_stark_proof
+        | throw (IO.userError "foreign verify_multi_stark_proof entrypoint missing")
+      IO.println s!"building KZG system (dev SRS 2^{kzgLogSrs}) …"
+      (← IO.getStdout).flush
+      let (kzgSystem, srsSec) ← timed fun _ =>
+        Aiur.AiurKzgSystem.build fCompiled.bytecode kzgLogSrs 4
+      IO.println s!"KZG system ready ({srsSec}s)"
+      pure (some (fIdx, kzgSystem))
 
   -- Load the serialized env lazily (the `ix check --ixe` path, #445): byte-window
   -- constants over the backing buffer, so only the checked closure is ever
@@ -494,7 +554,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     match jsonOut with
     | some path =>
       results.forM fun r =>
-        let (name, row) := Result.toJsonEntry executeOnly r
+        let (name, row) := Result.toJsonEntry executeOnly kzg r
         Ix.Benchmark.Results.writeEntry path name row
     | none => pure ()
 
@@ -635,6 +695,38 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                         , recursiveProofSize := some rvProofBytes.size
                         , recursiveVerifySec := rvVerifySec? }, addr)
             writeJson (ordered.map (·.1))
+            -- Stage 3 (--kzg): wrap the fresh stage-2 proof — prove the
+            -- FOREIGN verifier's acceptance of it over the BLS12-381
+            -- scalar field under the KZG backend, then verify natively
+            -- (two pairings). The stage-2 proof plays the role its
+            -- stage-1 proof played for stage 2: advice bytes, with the
+            -- stage-2 vk and claim digest-bound as the public input.
+            if let some (kIdx, kzgSystem) := kzgCtx then
+              IO.println s!"  [{i + 1}/{ordered.size}] KZG-wrapping {r.name}'s stage-2 proof …"
+              (← IO.getStdout).flush
+              TracingTexray.resetPeakTreeRss
+              let s2ClaimBytes := MultiStark.serializeClaims #[rvClaim]
+              let s2VkBytes := vSystem.vkBytes
+              let s2PubInput := MultiStark.verifierPubInput s2VkBytes s2ClaimBytes
+              let ((wClaim, wBytes), kSec) ← timed fun _ =>
+                kzgSystem.proveMultiStark kIdx s2PubInput rvProofBytes
+                  s2VkBytes s2ClaimBytes
+              let kPeak ← TracingTexray.peakTreeRssBytes
+              let (kvRes, kvSec) ← timed fun _ => kzgSystem.verify wClaim wBytes
+              let kvSec? ← match kvRes with
+                | .ok () => pure (some kvSec)
+                | .error e =>
+                  IO.eprintln s!"  KZG verify {r.name} FAILED: {e}"
+                  pure none
+              IO.println s!"  {r.name}: kzg-prove={kSec}s kzg-verify={kvSec}s \
+                kzg proof={wBytes.size} bytes"
+              let (row, _) := ordered[i]!
+              ordered := ordered.set! i
+                ({ row with kzgProveSec := some kSec
+                          , kzgPeakRss := some kPeak
+                          , kzgProofSize := some wBytes.size
+                          , kzgVerifySec := kvSec? }, addr)
+              writeJson (ordered.map (·.1))
     catch e =>
       IO.eprintln s!"  prove {r.name} threw: {e}"
 
@@ -655,6 +747,8 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
+    "kzg";                "Stage 3: after each stage-2 (outer) prove, wrap that proof — prove the FOREIGN (byte-limb) verifier's acceptance of it over the BLS12-381 scalar field under the KZG backend, verify natively (the kzg-* metrics). Requires --recursive. Dev-grade SRS."
+    "kzg-log-srs" : Nat;  "log2 of the dev SRS size for --kzg (default 20; must be at least the tallest stage-3 trace height)."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
