@@ -105,6 +105,9 @@ run `lake exe truthmines gen` first"
   IO.FS.writeFile specPath renderSpecJson
   let root ← IO.currentDir
   let exe ← IO.FS.realPath ixExe
+  -- The frozen admission spec already carries closed (augmented, terminal)
+  -- roots; `--close-roots` recomputation belongs to spec REGENERATION, not
+  -- to every build.
   let mut args := #["catalog",
     "--spec", (root / specPath).toString,
     "--out", (root / options.out).toString,
