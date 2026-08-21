@@ -2339,6 +2339,22 @@ def check := ⟦
           univ_offset, flat, flat_own_params, self_pos);
         assert_eq!(k_is_def_eq(ty, canonical_ty, store(ListNode.Nil)), 1,
           "recursor's declared type is not def-eq to the canonical reconstruction");
+        -- The type check pins the SUM of the motive and minor binders, but
+        -- not the SPLIT between them: a def-eq between two Pi telescopes
+        -- cannot tell where the motives end and the minors begin. Yet
+        -- `minor_var` (`populate_rules`) reads the declared `n_min` ALONE
+        -- to pick which binder each canonical rule body points at, so a
+        -- prover who moves mass between the two fields (sum preserved)
+        -- retargets every rule while the type stays honest. Pin both
+        -- against the reconstruction, as the reference does (`inductive.rs`
+        -- check_recursor "arity metadata mismatch").
+        let canon_n_motives = list_length(flat);
+        let canon_n_minors = list_length(build_all_minors(flat,
+          flat_own_params, n_p, canon_n_motives, n_p));
+        assert_eq!(n_mot, canon_n_motives,
+          "recursor motive count disagrees with the canonical reconstruction");
+        assert_eq!(n_min, canon_n_minors,
+          "recursor minor count disagrees with the canonical reconstruction");
         let self_ctors_offset = ctors_before_pos(flat, self_pos, 0);
         let canonical = populate_rules(num_ctors, self_ctors_offset,
           parent_block_addr, parent_ind_idx, n_p, n_mot, n_min, occ_us,
