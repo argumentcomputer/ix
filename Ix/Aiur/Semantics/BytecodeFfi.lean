@@ -196,6 +196,26 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode).map
     fun r => (r.output, .ofArrays r.ioData r.ioMap, r.queryCounts)
 
+@[extern "rs_aiur_toplevel_check_addrs_with_env"]
+private opaque checkAddrsWithEnv' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool → @& Nat →
+    Except String (Array (String × String))
+
+/-- Batch PARALLEL check of many full-closure claims: `addrsBlob` is
+    the concatenation of 32-byte addresses, and Rust checks them on a
+    rayon pool of `jobs` threads (0 = rayon default) — each claim
+    through the exact single-claim machinery over task-private data
+    (own witness io, own query record), nothing shared between tasks
+    but the read-only toplevel and env. Returns the FAILURES as
+    `(addrHex, error)` pairs; empty means all passed. Per-claim
+    outputs/records are not returned — use `checkAddrWithEnv` for a
+    single claim's full result. -/
+def checkAddrsWithEnv (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (addrsBlob : ByteArray) (useBytecode : Bool := false) (jobs : Nat := 0)
+  : Except String (Array (String × String)) :=
+  checkAddrsWithEnv' toplevel funIdx envHandle addrsBlob useBytecode jobs
+
 @[extern "rs_aiur_toplevel_shard_check_with_env"]
 private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →

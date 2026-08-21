@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef,
+  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::{
@@ -487,6 +487,91 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
     &query_record,
     &toplevel,
   ))
+}
+
+/// `Bytecode.Toplevel.checkAddrsWithEnv`: check a BATCH of full-closure
+/// claims (`Claim.check addr none`, one per address in `addrs_blob`) in
+/// PARALLEL — rayon over the list, each task running exactly the
+/// single-claim machinery above (`build_claim_check_witness` +
+/// `dispatch_execute`) over entirely task-private data: its own
+/// `IOBuffer`, its own `QueryRecord`, both dropped inside the task.
+/// Parallel, not concurrent: nothing is shared between tasks except
+/// the read-only `toplevel` and `env` (the compiler enforces this —
+/// `par_iter` closures only capture `Sync` data). Each claim's record
+/// is single-threaded and therefore bit-deterministic regardless of
+/// `jobs` or scheduling. Peak RAM is bounded by `jobs` concurrent
+/// claim cones (rayon keeps at most one in-flight task per pool
+/// thread; records free at task end).
+///
+/// Returns the FAILURES as an array of `(batch index, error)` pairs
+/// (the index as a decimal string, resolving back to the caller's
+/// label order) —
+/// empty means every claim passed. Per-claim outputs and records are
+/// deliberately not round-tripped to Lean; the single-claim entry
+/// keeps the full result shape for that. `jobs = 0` uses rayon's
+/// default pool width.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  addrs_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+  jobs: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use rayon::prelude::*;
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let jobs = lean_unbox_nat_as_usize(jobs.inner());
+  let addrs = match decode_owned_blob(&addrs_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let env = &env_handle.get().env;
+  let check_batch = || -> Vec<(String, String)> {
+    addrs
+      .par_iter()
+      .enumerate()
+      .filter_map(|(i, addr)| {
+        let err = match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
+          env, addr,
+        ) {
+          Err(e) => Some(format!("witness build: {e}")),
+          Ok((_claim, input, mut io_buffer)) => dispatch_execute(
+            &toplevel,
+            fun_idx,
+            input,
+            &mut io_buffer,
+            use_bytecode,
+          )
+          .err(),
+        };
+        err.map(|e| (i.to_string(), e))
+      })
+      .collect()
+  };
+  let failures = if jobs == 0 {
+    check_batch()
+  } else {
+    let pool = match rayon::ThreadPoolBuilder::new()
+      .num_threads(jobs)
+      .build()
+    {
+      Ok(p) => p,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("rayon pool: {e}"));
+      },
+    };
+    pool.install(check_batch)
+  };
+  let arr = LeanArray::alloc(failures.len());
+  for (i, (idx, err)) in failures.iter().enumerate() {
+    arr.set(i, LeanProd::new(LeanString::new(idx), LeanString::new(err)));
+  }
+  LeanExcept::ok(arr)
 }
 
 /// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a

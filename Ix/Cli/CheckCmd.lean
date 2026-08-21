@@ -128,6 +128,69 @@ inductive Target where
   | shard (owned : Array Address)
   | leanW (w : IxVM.ClaimHarness.ClaimWitness)
 
+/-- Batch PARALLEL check over one `.ixe`: resolve the targets (explicit
+    names, or every named constant when `names` is empty), hand the
+    address list to Rust in one call (`checkAddrsWithEnv`), and let a
+    rayon pool of `jobs` threads check them — each claim through the
+    exact single-claim machinery over task-private data (its own
+    witness io and query record), nothing shared between tasks but the
+    read-only toplevel and env. Failures come back as batch indices
+    and resolve to labels here. -/
+def runBatchCheck (ixePath : String) (names : List String) (jobs : Nat)
+    (toplevel : Aiur.Source.Toplevel) (useBytecode : Bool) : IO UInt32 := do
+  let compiled : Aiur.CompiledToplevel ← match toplevel.compile with
+    | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+    | .ok h => pure h
+  let bytes ← IO.FS.readBinFile ixePath
+  let ixonEnv ← match Ixon.deEnvAnon bytes with
+    | .error e => IO.eprintln s!"Failed to deserialize {ixePath}: {e}"; return 1
+    | .ok env => pure env
+  IO.println s!"Loaded {ixePath}: {ixonEnv.namedCount} named, \
+    {ixonEnv.constCount} consts, {ixonEnv.blobCount} blobs"
+  -- Unresolved names are recorded and reported with the check
+  -- failures rather than aborting: the batch is inherently
+  -- keep-going (every target's result comes back), so resolution
+  -- failures get the same treatment.
+  let mut targets : Array (String × Address) := #[]
+  let mut unresolved : Array String := #[]
+  if names.isEmpty then
+    let sorted := ixonEnv.named.toArray.qsort
+      (fun a b => toString a.1 < toString b.1)
+    for (ixName, named) in sorted do
+      targets := targets.push (toString (ixNameToLeanName ixName), named.addr)
+  else
+    for arg in names do
+      match resolveIxeAddr ixonEnv arg with
+      | none =>
+        IO.eprintln s!"{arg} not found in {ixePath}"
+        unresolved := unresolved.push arg
+      | some addr => targets := targets.push (arg, addr)
+  let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+  let mut blob := ByteArray.empty
+  for (_, a) in targets do blob := blob ++ a.hash
+  IO.println s!"Typechecking {targets.size} constant(s), {jobs} thread(s)"
+  (← IO.getStdout).flush
+  match compiled.bytecode.checkAddrsWithEnv funIdx envHandle blob
+      useBytecode jobs with
+  | .error e => IO.eprintln s!"batch check: {e}"; return 1
+  | .ok failures =>
+    if failures.isEmpty && unresolved.isEmpty then
+      IO.println s!"All {targets.size} constant(s) passed"
+      return 0
+    for (idxStr, err) in failures do
+      let label := match idxStr.toNat? with
+        | some i =>
+          if h : i < targets.size then targets[i].1 else s!"index {idxStr}"
+        | none => s!"index {idxStr}"
+      IO.eprintln s!"{label}: IxVM-native Aiur execution error: {err}"
+    IO.eprintln
+      s!"{failures.size} of {targets.size} checked constant(s) FAILED\
+        {if unresolved.isEmpty then "" else s!", {unresolved.size} unresolved"}"
+    return 1
+
 /-- Run a single check claim through the codegen'd IxVM Rust kernel.
     The `envHandle?` is `none` only for `.leanW` targets (`--interp`
     fallback); the addr/shard arms require it. -/
@@ -684,7 +747,20 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       return (← runShardManifestAllNative manifest ixe
         ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut useBytecode)
   | _, _, _ =>
-    forEachClaim ixePath claimHex names keepGoing "check" interpSource runOne
+    -- `--jobs N` (N ≠ 1) with an `--ixe` env and no `--claim` takes the
+    -- parallel batch path: one FFI call, rayon over the target list,
+    -- each claim checked over task-private data. `--jobs 1` (or no
+    -- flag) keeps the sequential per-claim loop unchanged.
+    match (p.flag? "jobs").map (·.as! Nat), ixePath with
+    | some jobs, some ixe =>
+      if jobs != 1 && !interpSource && claimHex.isNone then
+        runBatchCheck ixe names jobs toplevel useBytecode
+      else
+        forEachClaim ixePath claimHex names keepGoing "check" interpSource
+          runOne
+    | _, _ =>
+      forEachClaim ixePath claimHex names keepGoing "check" interpSource
+        runOne
 
 end Ix.Cli.CheckCmd
 
@@ -701,7 +777,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
-    "jobs"      : Nat;      "Max shards to check concurrently when checking a whole partition (--ixes without --shard). Default: all at once. Lower it to bound peak RAM — each in-flight shard re-ingests its closure into its own IO buffer."
+    "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
