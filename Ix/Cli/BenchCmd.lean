@@ -5,8 +5,8 @@
   A run executes one parameter combination: (backend, env, mode). The
   orchestrator:
 
-  1. selects constant names from `Benchmarks/Vectors.csv` (filters ported
-     from the `!benchmark` manifest: env, tier, primary subset, shard flag);
+  1. selects the env's constants from the shared set
+     (`Ix.BenchConstants`), minus the `(backend, mode)` exclusions;
   2. resolves the env's `.ixe` (an explicit `--ixe` path, else `ix
      compile` — except for the `compile` backend, where the compile IS
      the benchmark);
@@ -37,6 +37,7 @@
 module
 public import Cli
 public import Lean.Data.Json
+public import Ix.BenchConstants
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 
@@ -44,107 +45,40 @@ public section
 
 open System (FilePath)
 open Ix.Benchmark.Results
+open Ix.BenchConstants
 
 namespace Ix.Cli.BenchCmd
 
-/-- One `Vectors.csv` row (comments/header dropped). `shardTarget` and
-    `primary` default to false when the trailing columns are omitted. -/
-structure VectorRow where
-  name : String
-  env : String
-  tier : String
-  shardTarget : Bool
-  primary : Bool
-
-def parseVectorsCsv (contents : String) : Array VectorRow :=
-  (contents.splitOn "\n").filterMap (fun line =>
-    let s := ((line.splitOn "#").head?.getD "").trimAscii.toString
-    if s.isEmpty then none else
-    let cols := (s.splitOn ",").map (·.trimAscii.toString)
-    match cols with
-    | name :: env :: tier :: rest =>
-      if name == "name" || name.isEmpty then none
-      else some {
-        name, env, tier
-        shardTarget := rest.head?.getD "0" == "1"
-        primary := (rest.drop 1).head?.getD "0" == "1"
-      }
-    | _ => none) |>.toArray
-
 /-- Per-constant benchmark exclusions: `(name, backend, mode)` a constant
     must NOT run for, `"*"` wildcarding a dimension. Applied on top of the
-    `Vectors.csv` selection, for constants feasible in some cells but not
-    others — a closure that executes on Aiur but OOMs the Zisk/SP1 zkVM
-    executor, or one that executes but is prove-infeasible. `--consts` runs
-    bypass this: an explicit request always runs. -/
+    shared `benchConstants` set, for the constants that are hard-infeasible
+    in a cell — not merely expensive (a too-large prove records an honest
+    `oom` row instead). `--consts` runs bypass this: an explicit request
+    always runs. -/
 def benchExclusions : List (String × String × String) :=
   let bitblast :=
     "Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual"
   [ -- ~18B-step atomic mutual block: Aiur executes it, but the zkVM
-    -- executor OOMs (ASM MO crash) and no single-shard prove fits.
+    -- executor OOMs (ASM MO crash) before any measurement lands.
     (bitblast, "zisk", "*"),
-    (bitblast, "sp1", "*"),
-    (bitblast, "aiur", "prove"),
-    -- Executes on Aiur (and the zkVMs) but is Aiur-prove-infeasible.
-    ("Lean.Json", "aiur", "prove") ]
+    (bitblast, "sp1", "*") ]
 
 /-- Whether `benchExclusions` bars `name` from this `(backend, mode)`. -/
 def isExcluded (name backend mode : String) : Bool :=
   benchExclusions.any fun (n, b, m) =>
     n == name && (b == "*" || b == backend) && (m == "*" || m == mode)
 
-/-- `(backend, mode)` combinations whose default selection is this fixed
-    name list instead of the `Vectors.csv` primary subset. The primary
-    subset is sized for a one-prove benchmark; a run that walks the whole
-    proof pipeline pays every stage per constant, so its default set is
-    sized to what one CI host can finish. `--full`, `--shard-only`, and an
-    explicit `--consts` request all bypass it, and the names still have to
-    be `Vectors.csv` rows of the env being run — this narrows the curated
-    selection, it does not add to it. -/
-def fixedSelections : List (String × String × List String) :=
-  [ -- The aiur pipeline's cost range: two cheap-tier constants for the
-    -- small end, and four heavy-tier ones for the expensive end, where
-    -- the stage-2 prover meets the host's RAM ceiling.
-    ("aiur", "prove",
-      ["Nat.add_comm",
-       "String.append",
-       "Array.extract_append",
-       "ByteArray.utf8DecodeChar?_utf8EncodeChar_append",
-       "_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq",
-       "Char.ofOrdinal_le_of_le"]) ]
-
-/-- The fixed default selection for this `(backend, mode)`, if any. -/
-def fixedSelectionFor (backend mode : String) : Option (List String) :=
-  (fixedSelections.find? fun (b, m, _) =>
-    b == backend && (m == "*" || m == mode)).map (·.2.2)
-
-/-- Manifest selection, mirroring the `!benchmark` config surface: the env's
-    rows, restricted to the primary subset — or the `(backend, mode)`'s
-    `fixedSelections` list where it has one — unless `full`, to `tier` when
-    given (prove-mode full runs default to `cheap` — the prove-feasible
-    set), to shard targets under `shardOnly`, and minus the
-    `(backend, mode)` exclusions in `benchExclusions`. -/
-def selectNames (rows : Array VectorRow) (env : String) (backend : String)
-    (mode : String) (full : Bool) (tier : String) (shardOnly : Bool) :
-    Array VectorRow := Id.run do
-  let effTier :=
-    if tier != "" then tier
-    else if mode == "prove" && full then "cheap"
-    else "all"
-  let fixed := if full || shardOnly then none
-    else fixedSelectionFor backend mode
-  rows.filter fun r =>
-    r.env == env
-    && (match fixed with
-        | some names => names.contains r.name
-        | none => full || r.primary)
-    && (effTier == "all" || r.tier == effTier)
-    && (!shardOnly || r.shardTarget)
-    && !isExcluded r.name backend mode
+/-- The env's slice of the shared `benchConstants` set, minus the
+    `(backend, mode)` exclusions — the one selection every per-constant
+    backend runs. -/
+def selectNames (env : String) (backend : String) (mode : String) :
+    Array BenchConstant :=
+  benchConstants.filter fun c =>
+    c.env == env && !isExcluded c.name backend mode
 
 /-! ## The registry — single source of truth for the benchmark pipeline
 
-`Benchmarks/Vectors.csv` holds the per-constant rows; everything else lives
+`Ix.BenchConstants` holds the shared constant set; everything else lives
 here, in one language with one owner. The workflows never read it directly:
 `ix bench ci matrix` serves the job matrices and `ix bench ci parse` the
 `!benchmark` runs, both post-build. (`bencher-thresholds-reset.yml` keeps
@@ -176,10 +110,10 @@ def findEnv (token : String) : Option EnvSpec :=
       · `perEnv` — one row per compiled env, keyed by the env name itself; runs
         over EVERY compiled env. The env-keyed compile/decompile pair: a `.ixe`
         producer and its consumer, both measuring the whole env.
-      · `perConstant` — one row per selected `Vectors.csv` constant, over
-        the envs whose CSV rows select any — an env joins this fan-out by
-        gaining rows, not by a registry flag. The prove/execute backends
-        (aiur, zisk, sp1).
+      · `perConstant` — one row per selected `benchConstants` entry, over
+        the envs whose entries select any — an env joins this fan-out by
+        gaining constants, not by a registry flag. The prove/execute
+        backends (aiur, zisk, sp1).
       · `perConstantWithEnv` — `perConstant` plus a whole-env row (ooc). -/
 inductive BenchInputs
   | perEnv
@@ -194,10 +128,29 @@ def workloadOf (testbed : String) : String :=
   if testbed.endsWith "-x64-32x" then (testbed.dropEnd 8).toString
   else testbed
 
+/-- The stage qualifiers a pipeline measure may carry ahead of its base
+    name — one per pipeline stage, named for what the stage proves
+    (`ixvm-`: the IxVM typecheck; `fri-verifier-`: the in-circuit FRI
+    verifier over the previous proof; the KZG stages add their own
+    entries as they land) — plus `pipeline-` for the whole run. Stripped
+    wherever a measure is interpreted by its base name (formatting kind,
+    units) or labelled under a heading that already says the stage. -/
+def stagePrefixes : List String := ["ixvm-", "fri-verifier-", "pipeline-"]
+
+/-- The stage qualifier `metric` carries, if any. -/
+def stagePrefixOf (metric : String) : Option String :=
+  stagePrefixes.find? (metric.startsWith ·)
+
+/-- `metric` with its stage qualifier removed, if it has one. -/
+def dropStagePrefix (metric : String) : String :=
+  match stagePrefixOf metric with
+  | some p => (metric.drop p.length).toString
+  | none => metric
+
 /-- One benchmark backend. Backends with several modes schedule one bench-main
-    matrix entry per (mode, testbed) — shared measure names (`peak-rss`,
-    `throughput`) mean that mode's phase, and a `!benchmark` request of either
-    mode finds a cached bencher baseline. -/
+    matrix entry per (mode, testbed); each mode's measures live on its own
+    testbed (aiur's pipeline mode stage-qualifies its measure names, while
+    its standalone execute mode keeps the plain Phase-1 names). -/
 structure BackendSpec where
   name : String
   defaultMode : String
@@ -223,10 +176,11 @@ structure BackendSpec where
   metrics : List (String × List String)
   /-- (mode, [(stage title, that stage's measures)]) for a mode whose run
       walks a multi-stage pipeline: the compare table splits into one
-      table per stage, so a stage's measures keep their plain names
-      (`prove-time`, `peak-rss`) across stages instead of competing for
-      one row. List order is render order, so the closing entry is the
-      ledger over the whole run. -/
+      table per stage. A stage's measures carry their stage
+      qualifier (`ixvm-prove-time`) — the stage tables strip it for
+      display (`sectionLabelDrop`), so columns still read plain. List
+      order is render order, so the closing entry is the ledger over the
+      whole run. -/
   stages : List (String × List (String × List String)) := []
   /-- Regression bounds per tracked measure: (measure, upper, lower), each
       bound a percentage over the baseline as a decimal fraction ("0.10"),
@@ -249,18 +203,20 @@ structure BackendSpec where
 
 def backendSpecs : List BackendSpec := [
   -- aiur: the proof-pipeline benchmark (bench-typecheck --recursive) —
-  -- every stage of the pipeline, per constant, plus the total. Stage 1
-  -- proves the constant's IxVM typecheck; stage 2 executes the
-  -- in-circuit multi-stark verifier over the fresh stage-1 proof and
-  -- proves THAT execution; the KZG stages will join as stages 3/4 when
-  -- they land, folding into the same ledger. Each stage reports the same
-  -- five columns — witness execute, prove, peak RAM, proof size, verify
-  -- — and the closing ledger table carries `total-time` (the stages'
-  -- proves, summed — each prove already runs its own witness execution,
-  -- so the standalone execute times are instrumentation and are not
-  -- added) and the run's RAM ceiling. The whole system runs under the
-  -- recursion-tuned parameters — 50 FRI queries at log-blowup 2 for the
-  -- stage-1 and stage-2 proofs alike, the soundness level taking
+  -- every stage of the pipeline, per constant, plus the total. The ixvm
+  -- stage proves the constant's IxVM typecheck; the fri-verifier stage
+  -- executes the in-circuit multi-stark verifier over that fresh proof
+  -- and proves THAT execution; the KZG stages will join as stages 3/4
+  -- when they land, folding into the same ledger. Each stage reports the
+  -- same seven columns — witness execute, prove, throughput, peak RAM,
+  -- proof size, verify, FFT cost — and the closing ledger table carries
+  -- `total-time` (the stages' proves, summed — each prove already runs
+  -- its own witness execution, so the standalone execute times are
+  -- instrumentation and are not added), the end-to-end
+  -- `pipeline-throughput`, and the run's RAM ceiling. The whole system
+  -- runs under the
+  -- recursion-tuned parameters — 50 FRI queries at log-blowup 2 for
+  -- both stages' proofs alike, the soundness level taking
   -- precedence over fitting every constant in the host's RAM (see
   -- `recursiveFriParameters` in Benchmarks/Typecheck.lean). execute is
   -- the fast Phase-1-only signal (witness generation, no proving),
@@ -270,37 +226,44 @@ def backendSpecs : List BackendSpec := [
                  ("execute", "aiur-execute-x64-32x")],
     unscheduled := ["execute"],
     stages := [("prove",
-      [("Stage 1 — IxVM on FRI",
-         ["execute-time", "prove-time", "peak-rss", "proof-size",
-          "verify-time", "fft-cost"]),
-       ("Stage 2 — FRI recursion on FRI",
-         ["recursive-execute-time", "recursive-prove-time",
-          "recursive-peak-rss", "recursive-proof-size",
-          "recursive-verify-time", "recursive-fft-cost"]),
-       ("Pipeline total", ["total-time", "pipeline-peak-rss"])])],
+      [("IxVM on FRI",
+         ["ixvm-execute-time", "ixvm-prove-time", "ixvm-throughput",
+          "ixvm-peak-rss", "ixvm-proof-size", "ixvm-verify-time",
+          "ixvm-fft-cost"]),
+       ("FRI verifier on FRI",
+         ["fri-verifier-execute-time", "fri-verifier-prove-time",
+          "fri-verifier-throughput", "fri-verifier-peak-rss",
+          "fri-verifier-proof-size", "fri-verifier-verify-time",
+          "fri-verifier-fft-cost"]),
+       ("Pipeline total",
+         ["total-time", "pipeline-throughput", "pipeline-peak-rss"])])],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
-    -- fft-cost is deterministic but only ever drops on a real Aiur win →
-    -- upper-only 5% instead of a hard pin. recursive-fft-cost drifts
-    -- ~±15% run-to-run (the parallel prover emits byte-different valid
-    -- proofs, so the verifier authenticates different Merkle paths) →
-    -- the loose 25% bound. Proof sizes are structural (fixed query count
-    -- and path depth) → the tight 5%. `total-time` carries NO bound: it
-    -- is the two prove times summed, and a sum cannot breach a
-    -- percentage bound unless one of its terms already breached the same
-    -- one — so it could only ever duplicate an alert the proves fired.
-    thresholds := [("constants", "0", "0"), ("fft-cost", "0.05", "_"),
-                   ("recursive-fft-cost", "0.25", "_"),
-                   ("execute-time", "0.10", "_"), ("prove-time", "0.10", "_"),
-                   ("recursive-execute-time", "0.10", "_"),
-                   ("recursive-prove-time", "0.10", "_"),
-                   ("peak-rss", "0.10", "_"),
-                   ("recursive-peak-rss", "0.10", "_"),
+    -- ixvm-fft-cost is deterministic but only ever drops on a real Aiur
+    -- win → upper-only 5% instead of a hard pin. fri-verifier-fft-cost
+    -- drifts ~±15% run-to-run (the parallel prover emits byte-different
+    -- valid proofs, so the verifier authenticates different Merkle
+    -- paths) → the loose 25% bound. Proof sizes are structural (fixed
+    -- query count and path depth) → the tight 5%. `total-time` carries
+    -- NO bound: it is the two prove times summed, and a sum cannot
+    -- breach a percentage bound unless one of its terms already breached
+    -- the same one — so it could only ever duplicate an alert the proves
+    -- fired. The throughputs likewise carry no bound: `constants` is
+    -- pinned exactly, so each is the pure inverse of an already-bounded
+    -- time.
+    thresholds := [("constants", "0", "0"), ("ixvm-fft-cost", "0.05", "_"),
+                   ("fri-verifier-fft-cost", "0.25", "_"),
+                   ("ixvm-execute-time", "0.10", "_"),
+                   ("ixvm-prove-time", "0.10", "_"),
+                   ("fri-verifier-execute-time", "0.10", "_"),
+                   ("fri-verifier-prove-time", "0.10", "_"),
+                   ("ixvm-peak-rss", "0.10", "_"),
+                   ("fri-verifier-peak-rss", "0.10", "_"),
                    ("pipeline-peak-rss", "0.10", "_"),
-                   ("proof-size", "0.05", "_"),
-                   ("recursive-proof-size", "0.05", "_"),
-                   ("verify-time", "0.10", "_"),
-                   ("recursive-verify-time", "0.10", "_")] },
+                   ("ixvm-proof-size", "0.05", "_"),
+                   ("fri-verifier-proof-size", "0.05", "_"),
+                   ("ixvm-verify-time", "0.10", "_"),
+                   ("fri-verifier-verify-time", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -330,7 +293,7 @@ def backendSpecs : List BackendSpec := [
   -- yardstick for the Ix kernels (`ooc` / `ix check-lean`) on the same
   -- libraries. Checks the env's library from its oleans (no `.ixe`):
   -- whole-library row (module-parallel replay of the import closure) plus
-  -- one full-closure row per primary, mirroring ooc's row shape and
+  -- one full-closure row per constant, mirroring ooc's row shape and
   -- metric names so cross-kernel tables line up. Disabled in CI until a
   -- bencher testbed exists — `ix bench run --backend lean4lean` works
   -- locally regardless (`disabled` only gates the CI matrix and
@@ -406,37 +369,34 @@ def BackendSpec.scheduledModes (b : BackendSpec) : List String :=
 
 /-- The envs this backend's runs cover, from its `inputs`: `perEnv` covers
     every registry env; the per-constant backends cover the envs where at
-    least one primary constant is selected in ANY scheduled mode — an env
-    joins their fan-out by gaining rows, not by a registry flag, and a
-    constant excluded from one mode (e.g. prove) still keeps its env if
-    another scheduled mode (e.g. execute) runs it. -/
-def BackendSpec.envNames (b : BackendSpec) (rows : Array VectorRow) :
-    List String :=
+    least one constant is selected in ANY scheduled mode — an env joins
+    their fan-out by gaining constants, not by a registry flag, and a
+    constant excluded from one mode still keeps its env if another
+    scheduled mode runs it. -/
+def BackendSpec.envNames (b : BackendSpec) : List String :=
   let names := envSpecs.map (·.name)
   match b.inputs with
   | .perEnv => names
   | .perConstant | .perConstantWithEnv =>
     names.filter fun env =>
       b.scheduledModes.any fun m =>
-        !(selectNames rows env b.name m
-          (full := false) (tier := "") (shardOnly := false)).isEmpty
+        !(selectNames env b.name m).isEmpty
 
 /-- The benchmark row names this backend uploads — the bencher slugs the
     dashboard plots and compare table key on — from its `inputs`: env-keyed
     backends key one row per compiled env; the per-constant backends select
-    from `Vectors.csv` over their env set (`perConstantWithEnv` prepends a
-    whole-env row). Dynamic shard sub-rows (`<name>/shard-N`) are
+    from `benchConstants` over their env set (`perConstantWithEnv` prepends
+    a whole-env row). Dynamic shard sub-rows (`<name>/shard-N`) are
     excluded — the parent row carries the headline trend. -/
-def BackendSpec.benchmarkNames (b : BackendSpec) (rows : Array VectorRow)
-    (mode : String) : Array String := Id.run do
+def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
+    Array String := Id.run do
   match b.inputs with
   | .perEnv => return (envSpecs.map (·.name)).toArray
   | .perConstant | .perConstantWithEnv =>
     let mut ns : Array String := #[]
-    for env in b.envNames rows do
+    for env in b.envNames do
       if b.inputs == .perConstantWithEnv then ns := ns.push env
-      ns := ns ++ (selectNames rows env b.name mode
-        (full := false) (tier := "") (shardOnly := false)).map (·.name)
+      ns := ns ++ (selectNames env b.name mode).map (·.name)
     return ns
 
 /-- Default RAM watchdog ceiling, same rule for all backends: the
@@ -599,7 +559,7 @@ def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
     throw <| IO.userError s!"ix compile {info.module} failed (exit {exit})"
   return ixe
 
-/-- Cut the closure-shard artifacts for one heavy constant: `ix shard
+/-- Cut the closure-shard artifacts for one constant: `ix shard
     extract` (standalone closure env) → `ix profile` → `ix shard`
     (heartbeat-profiled min-cut manifest, capped by predicted RAM). Skips
     work when the artifacts already exist. Returns `(ixe, ixes)` on
@@ -690,8 +650,6 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let mode := (p.flag? "mode").map (·.as! String) |>.getD spec.defaultMode
   let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
   let out := (p.flag? "out").map (·.as! String) |>.getD "bench.json"
-  let full := p.hasFlag "full"
-  let tier := (p.flag? "tier").map (·.as! String) |>.getD ""
   let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
     | some f => pure (f.as! Nat)
     | none => defaultCeilingGb
@@ -706,23 +664,14 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     else do
       p.printError s!"error: no watchdog at {watchdogPath} (--watchdog overrides)"
       return exitUsage
-  let csv := (p.flag? "csv").map (·.as! String)
-    |>.getD s!"{repo}/Benchmarks/Vectors.csv"
-  let rows := parseVectorsCsv (← IO.FS.readFile csv)
-  -- `--consts` overrides the CSV selection — a one-off local run, or
-  -- bench-pr's targeted base run over just the constants bencher lacked;
-  -- tier metadata still comes from the CSV so heavy zisk names keep
-  -- their sharded pipeline.
+  -- `--consts` overrides the shared-set selection — a one-off local run,
+  -- or bench-pr's targeted base run over just the constants bencher
+  -- lacked.
   let wanted := ((p.flag? "consts").map
     (fun f => Ix.Cli.ConstsFile.parseCommaList (f.as! String))).getD #[]
-  let selected :=
-    if wanted.isEmpty then
-      selectNames rows env backend mode full tier (p.hasFlag "shard-only")
-    else
-      wanted.map fun n =>
-        (rows.find? (fun r => r.name == n && r.env == env)).getD
-          { name := n, env, tier := "cheap", shardTarget := false, primary := false }
-  let names := selected.map (·.name)
+  let names :=
+    if wanted.isEmpty then (selectNames env backend mode).map (·.name)
+    else wanted
   IO.eprintln s!"[bench] run {backend}-{env}-{mode}: {names.size} constant(s)"
 
   -- Fresh accumulator per run.
@@ -761,7 +710,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         "--per-const", s!"{out}.perconst.csv"]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
-    -- … plus one full-closure row per primary. ONE process for all names
+    -- … plus one full-closure row per constant. ONE process for all names
     -- (unlike the per-constant backends below): the check-rs rows mode
     -- attributes per name internally with the env loaded once — a
     -- per-constant process would re-pay the multi-minute Mathlib env parse
@@ -784,7 +733,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       #[modulePath, "--json", out, "--json-name", info.name]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-library replay failed (exit {exit})"
-    -- … plus one full-closure row per primary. ONE process for all names
+    -- … plus one full-closure row per constant. ONE process for all names
     -- (the ooc pattern): the imported env is shared across the closure
     -- replays instead of re-paying the library import per name.
     if !names.isEmpty then
@@ -825,20 +774,20 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[bench] cargo build {host} failed (exit {build})"
       return 1
     let bin := (← IO.FS.realPath s!"{work}/target/release/{host}").toString
-    -- Heavy-tier zisk constants run as their closure-shard partition (a
-    -- single full-closure leaf would blow the runner's RAM); everything
-    -- else runs as one host process per constant like the aiur runs.
-    let heavy := if backend == "zisk"
-      then (selected.filter (·.tier == "heavy")).map (·.name) else #[]
-    let light := names.filter (!heavy.contains ·)
-    runPerConstant outAbs light "execute-time" fun name =>
-      runGuarded watchdog ceilingGb bin
-        #["--execute", "--ixe", ixeAbs, "--consts", name,
-          "--json", outAbs, "--texray"] (cwd := some work)
+    -- zisk decides sharding at run time, per constant: the closure is
+    -- extracted and profiled, and the shard planner's RAM budget sizes
+    -- the partition from the closure's predicted cost — a closure that
+    -- fits gets a one-shard plan and runs as a single leaf. The artifacts
+    -- are cached under `zkshards-<env>/` (pre-cut next to the fresh
+    -- `.ixe` by `ix bench shard` when available). A failed cut falls
+    -- back to the whole closure from the env's `.ixe` — the watchdog
+    -- then records the honest OOM row if it doesn't fit. sp1 always
+    -- runs whole closures.
     let ix ← resolveBin repo "ix"
-    runPerConstant outAbs heavy "execute-time" fun name => do
-      let plan ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}"
-        name ceilingGb
+    runPerConstant outAbs names "execute-time" fun name => do
+      let plan ← if backend == "zisk"
+        then cutClosureShards ix ixe s!"{repo}/zkshards-{env}" name ceilingGb
+        else pure none
       match plan with
       | some (subIxe, manifest) =>
         runGuarded watchdog ceilingGb bin
@@ -867,7 +816,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   return code
 
 /-- `ix bench shard`: pre-cut the closure-shard artifacts for the env's
-    heavy-tier constants into `zkshards-<env>/` — `ix shard extract` →
+    zisk constants into `zkshards-<env>/` — `ix shard extract` →
     `ix profile` → `ix shard` per name, skipping names whose artifacts
     already exist. Not a benchmark run (no rows, no watchdog): bench-main's
     compile job runs it next to the fresh `.ixe` so the artifacts ride the
@@ -882,15 +831,11 @@ def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
     | some f => pure (f.as! Nat)
     | none => defaultCeilingGb
-  let csv := (p.flag? "csv").map (·.as! String)
-    |>.getD s!"{repo}/Benchmarks/Vectors.csv"
-  let rows := parseVectorsCsv (← IO.FS.readFile csv)
-  let heavy := (rows.filter fun r =>
-    r.env == env && r.primary && r.tier == "heavy").map (·.name)
-  IO.eprintln s!"[bench] shard {env}: {heavy.size} heavy constant(s)"
+  let names := (selectNames env "zisk" "execute").map (·.name)
+  IO.eprintln s!"[bench] shard {env}: {names.size} constant(s)"
   let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
   let ix ← resolveBin repo "ix"
-  for name in heavy do
+  for name in names do
     let _ ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}" name ceilingGb
   return 0
 
@@ -907,11 +852,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     mode         : String; "prove | execute (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
-    csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
-    full;                  "Run the env's full curated set instead of the primary subset"
-    consts       : String; "Run exactly these comma-separated names instead of the Vectors.csv selection (same grammar as the tools' --consts)"
-    tier         : String; "cheap | heavy | all — tier filter (default: all; prove-mode --full defaults to cheap)"
-    "shard-only";          "Restrict to shard_target rows"
+    consts       : String; "Run exactly these comma-separated names instead of the shared benchConstants selection (same grammar as the tools' --consts)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 15 GB)"
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
@@ -920,12 +861,11 @@ def benchRunCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchCmd in
 def benchShardCmd : Cli.Cmd := `[Cli|
   "shard" VIA runBenchShardCmd;
-  "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's heavy-tier constants into zkshards-<env>/; skips names already cut. The zisk runs cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
+  "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's zisk constants into zkshards-<env>/; skips names already cut. The zisk runs cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
 
   FLAGS:
     env          : String; "Benchmark env from the registry (default: InitStd)"
     repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
-    csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh)"
     "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: machine RAM minus 15 GB)"
 ]

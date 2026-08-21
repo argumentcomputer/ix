@@ -1211,9 +1211,12 @@ async fn run_shard_plan(
   // The trusted vk of the shard guest, derived from the embedded ELF (its
   // ROM setup ran in `run` before this point). Anchors the allowed set the
   // agg guest pins children against and gates which stored proofs may fold.
-  // Dump mode without a store returns before any vk use and skips ROM setup
-  // entirely, so the vk is not derivable there — leave it empty.
-  let shard_vk = if args.dump_input.is_none() || args.store_dir.is_some() {
+  // Dump and execute modes without a store return before any vk use, and
+  // may run without a proving key — where ROM setup cannot happen and the
+  // vk is not derivable — so they must not derive one; leave it empty.
+  let shard_vk = if (args.dump_input.is_none() && !args.execute)
+    || args.store_dir.is_some()
+  {
     guest_vk_bytes(&SHARD_PROGRAM)?
   } else {
     Vec::new()

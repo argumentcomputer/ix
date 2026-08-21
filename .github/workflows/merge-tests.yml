@@ -22,15 +22,27 @@ jobs:
           - name: Lake ignored tests (compile pipeline)
             kind: lake
             runner: warp-ubuntu-latest-x64-32x
-            test_args: --ignored compile-pipeline
-          - name: Lake ignored tests (kernel)
+            test_args: >-
+              --ignored
+              rust-canon-roundtrip serial-canon-roundtrip parallel-canon-roundtrip
+              graph-cross condense-cross rust-serialize ixon-corpus
+              rust-decompile validate-aux aux-gen-diff decompile-diff
+          - name: Lake ignored tests (compile)
             kind: lake
             runner: warp-ubuntu-latest-x64-32x
-            test_args: --ignored kernel
+            test_args: --ignored compile
+          - name: Lake ignored tests (decompile)
+            kind: lake
+            runner: warp-ubuntu-latest-x64-32x
+            test_args: --ignored decompile
           - name: Lake ignored tests (misc)
             kind: lake
             runner: warp-ubuntu-latest-x64-32x
-            test_args: --ignored --exclude=compile-pipeline,kernel,typecheckers
+            test_args: >-
+              --ignored
+              shard-map catalog-fixtures commit-io
+              kernel-ixon-roundtrip kernel-tutorial kernel-check-env kernel-check-const
+              rust-kernel-build-primitives rust-kernel-build-prim-origs ixvm
             zk_voting: true
           - name: Valgrind FFI
             kind: valgrind
@@ -38,6 +50,10 @@ jobs:
           - name: Ix.Tc verification and parity
             kind: tc
             runner: warp-ubuntu-latest-x64-16x
+            test_args: >-
+              --ignored
+              tc-anon-diff tc-init tc-tutorial tc-roundtrip tc-ingress-meta
+              tc-pins tc-accel-diff lean4lean
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Validate merge-test variant
@@ -137,7 +153,7 @@ jobs:
         run: lake test --wfail -- tc-unit
       - name: Run Ix.Tc ignored tests
         if: ${{ matrix.kind == 'tc' }}
-        run: lake test --wfail -- --ignored typecheckers
+        run: lake test --wfail -- ${{ matrix.test_args }}
 
   merge-tests-result:
     name: Merge tests

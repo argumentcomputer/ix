@@ -1,4 +1,4 @@
-# `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
+# `!benchmark` PR command: run the shared constant set (Ix/BenchConstants.lean)
 # through chosen prover backend(s) and post a base-vs-PR comparison table.
 # The base is the PR's own base branch — main for an unstacked PR, the
 # parent PR's head for a stacked one — and the report is labelled with it.
@@ -10,13 +10,11 @@
 #                                  #  defaults to every env for compile/decompile, InitStd
 #                                  #  for the rest)
 #   BENCH_CONSTS=Nat.gcd,Y        # bench exactly these constants on the per-constant
-#                                  #  backends (overrides the curated selection). Each name's
-#                                  #  env is found automatically — Vectors.csv row first, else
-#                                  #  defining module, else Mathlib (FLT for FLT.* names) — so
-#                                  #  BENCH_ENVS is never required; a single-env BENCH_ENVS
-#                                  #  still forces placement
-#   BENCH_FULL=1                   # run the full curated set, not just primary
-#   BENCH_SHARD=1                  # restrict to the multi-shard target constants
+#                                  #  backends (overrides the shared selection). Each name's
+#                                  #  env is found automatically — benchConstants entry first,
+#                                  #  else defining module, else Mathlib (FLT for FLT.* names)
+#                                  #  — so BENCH_ENVS is never required; a single-env
+#                                  #  BENCH_ENVS still forces placement
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
@@ -38,11 +36,8 @@
 #     in-circuit multi-stark verifier over that fresh proof), reported
 #     as one comparison table per stage — witness execute, prove, peak
 #     RAM, proof size, verify — closing with the pipeline ledger (total
-#     time and the run's RAM ceiling). Its default selection is a fixed
-#     three-constant list, not the primary subset (`fixedSelections` in
-#     Ix/Cli/BenchCmd.lean): every stage is paid per constant, so the
-#     default set is what one host can finish. BENCH_FULL=1 and
-#     BENCH_CONSTS still override. The bare `execute`
+#     time and the run's RAM ceiling). BENCH_CONSTS overrides the shared
+#     selection. The bare `execute`
 #     token switches it to the fast Phase-1-only mode (witness
 #     generation; no bencher baseline exists for that, so the base side
 #     comes from a base-SHA run).
@@ -145,8 +140,8 @@ jobs:
             -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
             -f comment-body="$COMMENT_BODY"
 
-  # Select or build the PR's `ix`, `bench-typecheck`, and
-  # `bench-recursive-verifier` once, then publish them as a run-scoped
+  # Select or build the PR's `ix` and `bench-typecheck` once, then
+  # publish them as a run-scoped
   # artifact for every later job. Normal runs may select a persistent
   # head-SHA cache. A cached `ix` may bootstrap command parsing, but `fresh`
   # replaces the full bundle before it is published to benchmark jobs.
@@ -163,8 +158,6 @@ jobs:
       revision: ${{ steps.target.outputs.revision }}
       matrix: ${{ steps.parse.outputs.matrix }}
       envs: ${{ steps.parse.outputs.envs }}
-      shard: ${{ steps.parse.outputs.shard }}
-      full: ${{ steps.parse.outputs.full }}
       fresh: ${{ steps.parse.outputs.fresh }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
@@ -233,10 +226,10 @@ jobs:
       - name: Build benchmark binaries
         if: steps.parse.outputs.fresh == '1' || steps.bins.outputs.cache-hit != 'true'
         run: |
-          lake build ix bench-typecheck bench-recursive-verifier
-          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          lake build ix bench-typecheck
+          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
           cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
-          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
       # Cache entries are immutable and may lack optional provenance. Keep the
       # run artifact's shape stable and state explicitly when its build host is
       # unknown.
@@ -254,7 +247,7 @@ jobs:
       - name: Package run binaries
         run: >-
           tar -C "$HOME/.local/bin" -cf benchmark-binaries.tar
-          ix bench-typecheck bench-recursive-verifier benchmark-build-cpu.txt
+          ix bench-typecheck benchmark-build-cpu.txt
       - name: Upload run binaries
         uses: actions/upload-artifact@v7
         with:
@@ -485,8 +478,6 @@ jobs:
       BASE_SHA: ${{ inputs.base-sha }}
       BASE_REF: ${{ inputs.base-ref }}
       HEAD_SHA: ${{ needs.build.outputs.revision }}
-      SHARD: ${{ needs.build.outputs.shard }}
-      FULL: ${{ needs.build.outputs.full }}
       FRESH: ${{ needs.build.outputs.fresh }}
     steps:
       # The PR is checked out at the workspace root (the local composite
@@ -562,9 +553,9 @@ jobs:
 
       # ---------- PR side ----------
       # The PR side runs first: `ix bench run` selects its constants from
-      # Vectors.csv, and pr.json's row names become the canonical name
-      # list this run measures — the base-side fetch below asks bencher
-      # for exactly those names.
+      # the shared set (Ix/BenchConstants.lean), and pr.json's row names
+      # become the canonical name list this run measures — the base-side
+      # fetch below asks bencher for exactly those names.
       - name: Run backend on PR → pr.json
         id: pr-run
         # Exit 3 = the kernel rejected a constant on the PR side (rows are
@@ -586,8 +577,6 @@ jobs:
             exit 0
           fi
           flags=""
-          [ "$FULL" = 1 ] && flags="$flags --full"
-          [ "$SHARD" = 1 ] && flags="$flags --shard-only"
           [ -n "$CONSTS" ] && flags="$flags --consts $CONSTS"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json" $flags
@@ -735,10 +724,10 @@ jobs:
              && cmp -s lean-toolchain base/lean-toolchain; then
             if [ "$BENV" != Mathlib ] || [ "$ixe" = true ]; then
               mkdir -p base/.lake/build/bin
-              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier base/.lake/build/bin/ 2>/dev/null || true
+              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
               mv ~/.local/bin/benchmark-build-cpu.txt base/.lake/build/bin/ 2>/dev/null || true
               [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] \
-                && [ -x base/.lake/build/bin/bench-recursive-verifier ] && cached=true
+                && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
@@ -758,14 +747,14 @@ jobs:
         with:
           label: Base benchmark binary build CPU
           output-file: base/.lake/build/bin/benchmark-build-cpu.txt
-      - name: Build base (ix, bench-typecheck, bench-recursive-verifier)
+      - name: Build base (ix, bench-typecheck)
         if: steps.decide.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: base
           auto-config: false
           build: true
-          build-args: "ix bench-typecheck bench-recursive-verifier"
+          build-args: "ix bench-typecheck"
           use-github-cache: false
       # For a mathlib-importing env (Mathlib, FLT), the base-side compile
       # resolves imports from the base tree's Benchmarks/Compile
@@ -789,8 +778,9 @@ jobs:
       # produced no results" note instead of a silent all-n/a table.
       #
       # Partial bencher miss: run just the uncovered names (via --consts).
-      # They are typically constants the PR itself adds, which the base
-      # tree's Vectors.csv doesn't list — so --csv points at the PR's copy.
+      # They are typically constants the PR itself adds; the PR's `ix`
+      # carries the PR's compiled-in constant set, so the base side
+      # selects them without any extra plumbing.
       # Full miss: run the normal selection (or the BENCH_CONSTS override).
       - name: Run backend on base → merge into main.json
         if: steps.decide.outputs.run-base == 'true'
@@ -805,8 +795,6 @@ jobs:
             sudo prlimit --pid $$ --memlock=unlimited:unlimited
           fi
           flags=""
-          [ "$FULL" = 1 ] && flags="$flags --full"
-          [ "$SHARD" = 1 ] && flags="$flags --shard-only"
           if [ -n "$CONSTS" ]; then
             # BENCH_CONSTS override: the base side must measure the same
             # explicit names, not the default selection.
@@ -820,7 +808,6 @@ jobs:
           [ -f "base/$BENV.ixe" ] && flags="$flags --ixe base/$BENV.ixe"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --repo base \
-            --csv "$GITHUB_WORKSPACE/Benchmarks/Vectors.csv" \
             --out "$GITHUB_WORKSPACE/base.json" $flags
           echo "base-side ix bench run exit $?"
           set -e

@@ -199,11 +199,10 @@ cells locally, and `!benchmark` runs them on a PR — see
     - Most tests require at least 32 GB RAM
     - The `compile` and `decompile` tests require 128 GB RAM
     - `ixvm` generates ZK proofs and uses significant CPU
-- `lake test -- --ignored <name>` runs one or more expensive suites, runners, or groups by name
-- Ignored groups: `compile-pipeline`, `kernel`, and `typecheckers`
-- `--exclude=<name,...>` excludes ignored suites, runners, or groups from a full ignored-test run
+- `lake test -- --ignored <name>` runs one or more expensive suites or runners by name
+- `--exclude=<name,...>` excludes ignored suites or runners from a full ignored-test run
 - `lake test -- --include-ignored` runs both primary and expensive test suites
-- `lake test -- --include-ignored <name>` runs all primary suites plus selected expensive suites, runners, or groups
+- `lake test -- --include-ignored <name>` runs all primary suites plus selected expensive suites or runners
 - `lake test -- cli` runs CLI integration tests
 - `lake test -- rust-compile` runs the Rust cross-compilation diagnostic
 

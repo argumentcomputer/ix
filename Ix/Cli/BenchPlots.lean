@@ -1,10 +1,10 @@
 /-
   `ix bench plots`: sync the bencher.dev dashboard plots to the benchmark
   registry — one plot per (testbed, measure) that bench-main.yml tracks,
-  with one line per benchmark row uploaded there, plus two cross-cutting
-  plots: the shared input-constants trend and the Zisk-shards-per-heavy-
-  primary trend. The spec derives from the registry
-  (`Ix.Cli.BenchCmd`) + `Vectors.csv`, so nothing is hand-listed, and
+  with one line per benchmark row uploaded there, plus the cross-cutting
+  shared input-constants trend. The spec derives from the registry
+  (`Ix.Cli.BenchCmd`) + the shared constant set (`Ix.BenchConstants`), so
+  nothing is hand-listed, and
   every join is on the bencher SLUG (the row-key identity uploads use;
   display names are console-editable and never consulted).
 
@@ -14,8 +14,8 @@
   endpoint only takes index/title/window, not dimensions). The registry
   owns the dashboard: every plot whose title is not in the desired set is
   deleted, so each sync converges to exactly the registry's plots — a
-  hand-created plot does not survive a sync. A registry benchmark
-  — or a whole testbed — bencher hasn't seen yet (first upload still
+  hand-created plot does not survive a sync. A registry benchmark,
+  measure, or whole testbed bencher hasn't seen yet (first upload still
   pending) is skipped with a warning and picked up on the next sync.
 
   The sync also asserts every measure's canonical units (`unitsFor`) —
@@ -60,25 +60,27 @@ def plotTitle (workload measure : String) : String :=
   | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
   | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
   | "aiur", "total-time"             => "Aiur Total Time"
-  | "aiur", "prove-time"             => "Aiur Stage 1 Time"
-  | "aiur", "recursive-prove-time"   => "Aiur Stage 2 Time"
-  | "aiur", "fft-cost"               => "Aiur Stage 1 FFT Cost"
-  | "aiur", "recursive-fft-cost"     => "Aiur Stage 2 FFT Cost"
-  | "aiur", "recursive-verify-time"  => "Aiur Stage 2 Verify Time"
-  | "aiur", "recursive-peak-rss"     => "Aiur Stage 2 Peak RAM Usage"
-  | "aiur", "recursive-proof-size"   => "Aiur Stage 2 Proof Size"
+  | "aiur", "pipeline-throughput"    => "Aiur Total Throughput"
+  | "aiur", "pipeline-peak-rss"      => "Aiur Total Peak RAM Usage"
+  | "aiur", "ixvm-prove-time"          => "Aiur IxVM Time"
+  | "aiur", "fri-verifier-prove-time"  => "Aiur FRI Verifier Time"
+  | "aiur", "ixvm-fft-cost"            => "Aiur IxVM FFT Cost"
+  | "aiur", "fri-verifier-fft-cost"    => "Aiur FRI Verifier FFT Cost"
+  | "aiur", "fri-verifier-verify-time" => "Aiur FRI Verifier Verify Time"
+  | "aiur", "fri-verifier-peak-rss"    => "Aiur FRI Verifier Peak RAM Usage"
+  | "aiur", "ixvm-proof-size"          => "Aiur IxVM Proof Size"
+  | "aiur", "fri-verifier-proof-size"  => "Aiur FRI Verifier Proof Size"
   | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
   | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
   | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
   | "zisk-check-execute", "cycles"       => "Zisk Cycles"
+  | "zisk-check-execute", "shards"       => "Zisk Shards"
   | "ooc-check", "check-time"            => "OOC Check Time"
   | "ooc-check", "throughput"            => "OOC Check Throughput"
   | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
   | w, m => s!"{w}: {m}"
 
-/-- Tracked but not plotted solo. Zisk `shards` is charted below
-    over the heavy-tier primaries alone (light constants are pinned at a
-    single shard, a flat line at 1), not over the full set here; zisk
+/-- Tracked but not plotted solo. Zisk
     `constants` charts on the input-constants plot below instead of alone.
     `ix-decompile` reuses the compile run's `.ixe`, so its `file-size` /
     `constants` duplicate "Ix Environment Size" / "Ix Input Constants"
@@ -87,23 +89,32 @@ def plotTitle (workload measure : String) : String :=
     that stage's `prove-time` — a prove runs its own witness execution,
     so it is the whole cost of producing the stage's proof, and the
     standalone `execute-time` beside it is a second, instrumentation-only
-    run. The rest of the stage detail (stage-1 peak-rss / proof-size /
-    verify-time, and the whole-run `pipeline-peak-rss`) is tracked for
-    the compare table but not plotted: the stage-1 detail's cost is
-    inside `prove-time` and the deterministic `fft-cost` trend, and the
-    pipeline peak is the terminal stage's peak. -/
+    run. The ixvm stage's peak-rss / verify-time are tracked for the
+    compare table but not plotted: their cost is inside `ixvm-prove-time`
+    and the deterministic `ixvm-fft-cost` trend, and that stage's proof
+    is an intermediate artifact consumed by the next stage. Its
+    `ixvm-proof-size` IS plotted: it sizes the next stage's in-circuit
+    verification workload. The whole-run `pipeline-peak-rss` too: which stage
+    sets the run's RAM ceiling can shift as pipeline stages are added,
+    so no per-stage peak plot stands in for it. The per-stage
+    throughputs are table columns only — over the exactly-pinned
+    `constants` they are the plotted stage times inverted — while the
+    end-to-end `pipeline-throughput` gets the backend's one throughput
+    plot, comparable with the other backends'. -/
 def plotSkips : List (String × String) :=
-  [("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
+  [("zisk-check-execute", "constants"),
    ("ix-decompile", "file-size"), ("ix-decompile", "constants"),
-   ("aiur", "peak-rss"), ("aiur", "proof-size"), ("aiur", "verify-time"),
-   ("aiur", "execute-time"), ("aiur", "recursive-execute-time"),
-   ("aiur", "pipeline-peak-rss")]
+   ("aiur", "ixvm-peak-rss"), ("aiur", "ixvm-verify-time"),
+   ("aiur", "ixvm-execute-time"), ("aiur", "fri-verifier-execute-time"),
+   ("aiur", "ixvm-throughput"), ("aiur", "fri-verifier-throughput")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
     its first upload, leaving plots unitless — and a console edit would
     drift from this list, so the sync re-asserts it. Phase spans are
-    wall-clock seconds. -/
+    wall-clock seconds. A stage-qualified slug (`ixvm-prove-time`,
+    `pipeline-peak-rss`) carries its base measure's units, so only base
+    names are listed. -/
 def unitsFor (slug : String) : Option String :=
   if slug.startsWith "phase-" then some "seconds (s)" else
   [("execute-peak-rss", "bytes (B)"),
@@ -113,6 +124,7 @@ def unitsFor (slug : String) : Option String :=
    ("prove-time", "seconds (s)"),
    ("verify-time", "seconds (s)"),
    ("check-time", "seconds (s)"),
+   ("total-time", "seconds (s)"),
    ("peak-rss", "bytes (B)"),
    ("file-size", "bytes (B)"),
    ("proof-size", "bytes (B)"),
@@ -121,15 +133,8 @@ def unitsFor (slug : String) : Option String :=
    ("max-shard-cycles", "cycles"),
    ("shards", "shards"),
    ("fft-cost", "FFTs"),
-   ("recursive-execute-time", "seconds (s)"),
-   ("recursive-prove-time", "seconds (s)"),
-   ("recursive-verify-time", "seconds (s)"),
-   ("recursive-peak-rss", "bytes (B)"),
-   ("recursive-proof-size", "bytes (B)"),
-   ("recursive-fft-cost", "FFTs"),
-   ("total-time", "seconds (s)"),
-   ("pipeline-peak-rss", "bytes (B)"),
-   ("throughput", "constants / second")].lookup slug
+   ("throughput", "constants / second")].lookup
+     (BenchCmd.dropStagePrefix slug)
 
 /-- Dashboard group order (compile first, then the aiur pipeline, zisk,
     ooc); unranked workloads (a future backend) sort last. -/
@@ -148,7 +153,7 @@ structure PlotSpec where
     adds a whole-env row. Dynamic
     sub-rows (`<name>/shard-N`) are left out: their multiplicity shifts with the
     shard manifest, and the parent row carries the headline trend. -/
-def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
+def plotSpecs : Array PlotSpec := Id.run do
   let mut specs : Array PlotSpec := #[]
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
@@ -158,7 +163,7 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
       if b.unscheduled.contains mode then continue
       specs := specs.push
         { testbed, measures := b.metricsFor mode,
-          benchmarks := b.benchmarkNames rows mode }
+          benchmarks := b.benchmarkNames mode }
   return specs.qsort fun a b =>
     workloadOrder.idxOf (workloadOf a.testbed)
       < workloadOrder.idxOf (workloadOf b.testbed)
@@ -282,14 +287,11 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let branch := (p.flag? "branch").map (·.as! String) |>.getD "main"
   let window := (p.flag? "window").map (·.as! Nat) |>.getD 7257600
   let xAxis := (p.flag? "x-axis").map (·.as! String) |>.getD "version"
-  let csv := (p.flag? "csv").map (·.as! String)
-    |>.getD "Benchmarks/Vectors.csv"
   let dryRun := p.hasFlag "dry-run"
   if !dryRun && (← IO.getEnv "BENCHER_API_KEY").isNone then
     p.printError "error: set BENCHER_API_KEY (or pass --dry-run)"
     return 2
-  let rows := BenchCmd.parseVectorsCsv (← IO.FS.readFile csv)
-  let specs := plotSpecs rows
+  let specs := plotSpecs
 
   let branches ← fetchAll project "branch"
   let testbeds ← fetchAll project "testbed"
@@ -334,52 +336,41 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
           s!"warn: {spec.testbed}: benchmark '{n}' not on bencher yet — skipped"
     for measure in spec.measures do
       if plotSkips.contains (workload, measure) then continue
+      -- A measure bencher hasn't seen yet (first upload after a rename or
+      -- a new tracked measure still pending) has no series to plot: warn
+      -- and skip, like a not-yet-uploaded benchmark or testbed. Its
+      -- existing plot (if any) is removed below and recreated by a later
+      -- sync once data lands.
       let some measureUuid := findUuid measures "slug" measure
-        | p.printError s!"error: no measure slug '{measure}'"; return 1
+        | IO.eprintln s!"warn: measure '{measure}' not on bencher yet — skipped"; continue
       let title := plotTitle workload measure
       desired := desired.push
         { title, testbeds := #[testbedUuid], benchmarks := benchUuids,
           measure := measureUuid, window := windowFor title window }
 
-  -- Input-constants trend over the primary set. aiur and zisk report the
-  -- SAME named-constant count for each checked closure (the pre-shard input
-  -- set, unaffected by anon-work dedup or shard partitioning), so the count
-  -- is shared: sourcing it from both testbeds drew every constant twice.
-  -- The aiur run is the single source (it always uploads `constants`),
-  -- so each primary is one line.
+  -- Input-constants trend over the shared constant set. The kernel
+  -- backends (aiur, zisk, ooc) report the SAME named-constant count for
+  -- each checked closure (the pre-shard input set, unaffected by
+  -- anon-work dedup or shard partitioning), so the count is shared:
+  -- sourcing it from more than one testbed would draw every constant
+  -- multiple times. The zisk run is the single source: its sharded
+  -- execution keeps every closure feasible, so its rows (and their
+  -- `constants`) upload even where the aiur prove OOMs and the row is
+  -- dropped; only zisk's excluded names lack a line, and those have no
+  -- completed upload from any backend.
   let overlay : Option DesiredPlot := do
-    let aiurTb ← findUuid testbeds "slug" "aiur-x64-32x"
+    let ziskTb ← findUuid testbeds "slug" "zisk-check-execute-x64-32x"
     let consts ← findUuid measures "slug" "constants"
-    let primaries ← (specs.find? (·.testbed == "aiur-x64-32x")).map
+    let names ← (specs.find? (·.testbed == "zisk-check-execute-x64-32x")).map
       (·.benchmarks.filterMap (findUuid benchmarks "name" ·))
-    return { title := "Aiur/Zisk Input Constants",
-             testbeds := #[aiurTb], benchmarks := primaries,
-             measure := consts, window := windowFor "Aiur/Zisk Input Constants" window }
+    return { title := "Kernel Input Constants",
+             testbeds := #[ziskTb], benchmarks := names,
+             measure := consts, window := windowFor "Kernel Input Constants" window }
   match overlay with
   | some d => desired := desired.push d
   | none => do
     IO.eprintln
       "warn: input-constants plot skipped (missing testbed or measure)"
-
-  -- Zisk shards over time, one line per HEAVY-tier primary — the constants
-  -- whose closure is cut into a multi-shard partition. Light constants run
-  -- as a single shard (a flat line at 1), so they're left out; the full-set
-  -- `shards` plot stays in `plotSkips`.
-  let ziskShards : Option DesiredPlot := do
-    let ziskTb ← findUuid testbeds "slug" "zisk-check-execute-x64-32x"
-    let shardsM ← findUuid measures "slug" "shards"
-    let heavy := (BenchCmd.envSpecs.map (·.name)).foldl
-      (init := (#[] : Array String)) fun acc env =>
-        acc ++ (BenchCmd.selectNames rows env "zisk" "execute"
-          (full := false) (tier := "heavy") (shardOnly := false)).map (·.name)
-    return { title := "Zisk Shards", testbeds := #[ziskTb],
-             benchmarks := heavy.filterMap (findUuid benchmarks "name" ·),
-             measure := shardsM, window := windowFor "Zisk Shards" window }
-  match ziskShards with
-  | some d => desired := desired.push d
-  | none => do
-    IO.eprintln
-      "warn: Zisk shards plot skipped (missing testbed or measure)"
 
   -- The registry owns the dashboard: delete every plot whose title isn't
   -- in the desired set, so each sync converges to exactly the registry's
@@ -411,7 +402,7 @@ end Ix.Cli.BenchPlots
 open Ix.Cli.BenchPlots in
 def benchPlotsCmd : Cli.Cmd := `[Cli|
   plots VIA runPlotsCmd;
-  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (testbed, measure) plus the shared input-constants and Zisk heavy-shards plots. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
+  "Sync the bencher.dev dashboard plots to the registry: one plot per tracked (testbed, measure) plus the shared input-constants plot. Needs the bencher CLI; writes need BENCHER_API_KEY (plot create/delete permission)."
 
   FLAGS:
     "dry-run";         "Print the create/replace/keep decisions without writing (no key needed)"
@@ -419,5 +410,4 @@ def benchPlotsCmd : Cli.Cmd := `[Cli|
     branch  : String;  "Branch whose series the plots track (default: main)"
     window  : Nat;     "Seconds of history per plot (default: 7257600 = 12 weeks)"
     "x-axis" : String; "date_time | version (default: version)"
-    csv     : String;  "Vectors path (default: Benchmarks/Vectors.csv)"
 ]

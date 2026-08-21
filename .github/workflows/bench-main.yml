@@ -38,10 +38,10 @@ env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
-  # Build the `ix`, `bench-typecheck`, and `bench-recursive-verifier`
-  # binaries once and cache them; every later job restores them instead of
-  # rebuilding. They are built with -Ctarget-cpu=native, so every job that
-  # runs them must use the same warp runner class.
+  # Build the `ix` and `bench-typecheck` binaries once and cache them;
+  # every later job restores them instead of rebuilding. They are built
+  # with -Ctarget-cpu=native, so every job that runs them must use the
+  # same warp runner class.
   build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
@@ -65,10 +65,10 @@ jobs:
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
-          lake build bench-typecheck bench-recursive-verifier
-          cp .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          lake build bench-typecheck
+          cp .lake/build/bin/bench-typecheck ~/.local/bin/
           cp "${{ runner.temp }}/benchmark-build-cpu.txt" ~/.local/bin/
-          chmod +x ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
+          chmod +x ~/.local/bin/bench-typecheck
       - uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
@@ -128,7 +128,8 @@ jobs:
         # lake target (Compile<env>), the cache-key suffix, and the
         # bencher row name. Every registry env compiles here; which envs
         # the benchmark job then proves/checks depends on which envs have
-        # constants in Vectors.csv. Add FC once it's on current Lean.
+        # constants in Ix/BenchConstants.lean. Add FC once it's on
+        # current Lean.
         include:
           - { env: InitStd }
           - { env: Lean }
@@ -200,13 +201,14 @@ jobs:
           echo "testbed=$(meta testbed)" >> "$GITHUB_OUTPUT"
           echo "workload=$(meta workload)" >> "$GITHUB_OUTPUT"
           { echo "thresholds<<EOF"; meta thresholds; echo "EOF"; } >> "$GITHUB_OUTPUT"
-      # Pre-cut the closure shards zisk needs for heavy constants
-      # (extract → profile → shard). The zisk runs can cut these lazily
+      # Pre-cut the closure-shard artifacts for this env's zisk constants
+      # (extract → profile → shard; the planner's RAM budget decides each
+      # constant's shard count). The zisk runs can cut these lazily
       # themselves, but doing it here — right next to the fresh `.ixe`,
       # with the toolchain already installed — means they just restore a
       # directory.
       - if: steps.gates.outputs.zkvm == 'true'
-        name: Cut closure shards for heavy primaries
+        name: Cut closure shards for zisk constants
         run: ix bench shard --env ${{ matrix.env }} --ixe ${{ matrix.env }}.ixe
       # Cache the `.ixe` for the benchmark job. IMPORTANT: every restore of
       # this key must list the same paths — actions/cache versions the
@@ -249,16 +251,16 @@ jobs:
   #   - aiur: the proof pipeline — per constant, every stage plus the
   #     total: prove the IxVM typecheck (stage 1), then execute and
   #     prove the in-circuit multi-stark verifier over that fresh proof
-  #     (stage 2); the KZG stages will fold in as they land. Runs the
-  #     registry's fixed pipeline selection rather than the primary
-  #     subset — every stage is paid per constant. One
+  #     (stage 2); the KZG stages will fold in as they land. One
   #     subprocess per constant under the RAM watchdog; a too-large
   #     prove is killed and recorded as a `status: oom` row.
   #   - zisk: executes the same constants in the zkVM (deterministic
-  #     cycle counts; proving would need a GPU, so execute-only). Reuses
-  #     the pre-cut zkshards-<env>/ dirs; builds its Rust host in-job.
+  #     cycle counts; proving would need a GPU, so execute-only). Each
+  #     constant runs as the shard partition the planner's RAM budget
+  #     sized for it (one shard when it fits), reusing the pre-cut
+  #     zkshards-<env>/ dirs; builds its Rust host in-job.
   #   - ooc: the same kernel run out-of-circuit and in parallel (much
-  #     faster). One whole-env row plus one row per primary constant.
+  #     faster). One whole-env row plus one row per constant.
   #   - decompile: the inverse of compile. Roundtrip correctness is
   #     checked elsewhere (`ix validate` / roundtrip tests) — this only
   #     measures speed and memory.
@@ -350,18 +352,27 @@ jobs:
           key: bench-perconst-${{ github.sha }}-${{ matrix.params.backend }}-${{ matrix.params.env }}-${{ matrix.params.mode }}
       # Convert rows for upload even when the run step failed: bmf drops
       # every non-ok row (rejected or OOM), so only clean measurements
-      # reach bencher.
+      # reach bencher. bmf exits nonzero when NO ok rows survive — the
+      # steady state for a cell whose only constant exceeds the RAM
+      # ceiling (the OOM row documents the gap) — so that skips the
+      # upload without failing the job; the run step above is the
+      # failure authority. The `cat` still fails the step when bmf died
+      # before writing a file (a real infrastructure error).
       - name: Convert to Bencher Metric Format
         id: bmf
         if: ${{ !cancelled() }}
         run: |
-          ix bench bmf --in bench.json --out bench-bmf.json
+          if ix bench bmf --in bench.json --out bench-bmf.json; then
+            echo "nonempty=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nonempty=false" >> "$GITHUB_OUTPUT"
+          fi
           cat bench-bmf.json
       # Upload under this entry's testbed and workload. The threshold
       # flags (and the reasoning behind each bound) live next to the
       # backend in Ix/Cli/BenchCmd.lean.
       - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.bmf.outputs.nonempty == 'true' }}
         with:
           testbed: ${{ matrix.params.testbed }}
           workload: ${{ matrix.params.workload }}
