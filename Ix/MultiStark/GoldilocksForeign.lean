@@ -39,19 +39,21 @@ every heavy interface fn is a THIN WRAPPER around a plain (memoized,
 non-inlined) `*_impl` call: `@g_mul(..)` splices to ONE call lookup,
 the byte-gadget width lives once in the impl's own circuit, and
 repeated invocations are rows there (deduplicated by Aiur's
-by-argument memoization). The `@`-helpers (`adc`, `mul128`, …) stay
-spliced INSIDE the impl circuits — that is the right place to pay
-their width. Value constructors and pure byte logic (`g_zero`…,
-`g_is_zero`, `gl_lt_p`, `gl_from_u16`, `gl_to_bytes`) stay genuinely
-inline: they cost a handful of columns.
+by-argument memoization). The same discipline recurses INSIDE the
+impls: the byte-vector primitives (`add8`/`sub8`/`mul1`/`add16`/
+`mul128`) are themselves plain memoized circuits, so no circuit ever
+carries another's carry chain. Only genuinely trivial pieces splice:
+per-byte steps inside their own primitive (`adc`, `sbb`), pure
+arithmetic with no lookups (`sel`/`select8`), and the value
+constructors / byte logic (`g_zero`…, `g_is_zero`, `gl_lt_p`,
+`gl_from_u16`, `gl_to_bytes`).
 
 Exactly one of `goldilocksNative`/`goldilocksForeign` merges into a
-toplevel (same names by design). This module is NOT yet merged into the
-verifier — the wire layers (`Deserialize.lean`'s `Ext`, challenger
-byte plumbing) still assume the native representation; swapping them is
-the actual field-migration step. Until then the module is validated by
-its own self-test entrypoints (byte-for-byte vectors from
-`multi-stark`'s `gl_ops_ref`, the same vectors the native form passes).
+toplevel (same names by design): `multiStarkForeign` is this module
+under the verifier (the stage-3 program), and the module is also
+validated standalone by its `fg_*` self-test entrypoints
+(byte-for-byte vectors from `multi-stark`'s `gl_ops_ref`, the same
+vectors the native form passes).
 -/
 
 public section
@@ -153,9 +155,9 @@ def goldilocksForeign := ⟦
   --   • c = 0 ⇒ reduce by one conditional subtraction of p (when s ≥ p).
   fn g_add(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_add_impl(a, b) }
   fn g_add_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
-    let (s, c) = @add8(a, b);
-    let (s_minus_p, borrow) = @sub8(s, @gl_p());  -- borrow = 1 iff s < p
-    let (s_plus_eps, _) = @add8(s, @gl_eps());
+    let (s, c) = add8(a, b);
+    let (s_minus_p, borrow) = sub8(s, @gl_p());  -- borrow = 1 iff s < p
+    let (s_plus_eps, _) = add8(s, @gl_eps());
     let c0 = @select8(1 - borrow, s_minus_p, s); -- c=0 branch: (s≥p ? s−p : s)
     @select8(c, s_plus_eps, c0)
   }
@@ -164,8 +166,8 @@ def goldilocksForeign := ⟦
   -- `(a − b mod 2⁶⁴) − EPSILON = a − b + p`.
   fn g_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_sub_impl(a, b) }
   fn g_sub_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
-    let (d, borrow) = @sub8(a, b);
-    let (d_minus_eps, _) = @sub8(d, @gl_eps());
+    let (d, borrow) = sub8(a, b);
+    let (d_minus_eps, _) = sub8(d, @gl_eps());
     @select8(borrow, d_minus_eps, d)
   }
 
@@ -231,36 +233,36 @@ def goldilocksForeign := ⟦
   -- Full 64×64 → 128-bit product as 16 little-endian bytes. Eight single-byte
   -- rows `a · b[i]`, each shifted left by `i` bytes and accumulated.
   fn mul128(a: Goldilocks, b: Goldilocks) -> [U8; 16] {
-    let m0 = @mul1(a, b[0]);
-    let m1 = @mul1(a, b[1]);
-    let m2 = @mul1(a, b[2]);
-    let m3 = @mul1(a, b[3]);
-    let m4 = @mul1(a, b[4]);
-    let m5 = @mul1(a, b[5]);
-    let m6 = @mul1(a, b[6]);
-    let m7 = @mul1(a, b[7]);
+    let m0 = mul1(a, b[0]);
+    let m1 = mul1(a, b[1]);
+    let m2 = mul1(a, b[2]);
+    let m3 = mul1(a, b[3]);
+    let m4 = mul1(a, b[4]);
+    let m5 = mul1(a, b[5]);
+    let m6 = mul1(a, b[6]);
+    let m7 = mul1(a, b[7]);
     let acc = [m0[0], m0[1], m0[2], m0[3], m0[4], m0[5], m0[6], m0[7], m0[8],
                0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
     let rb1 = [0u8, m1[0], m1[1], m1[2], m1[3], m1[4], m1[5], m1[6], m1[7], m1[8],
                0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    let acc = @add16(acc, rb1);
+    let acc = add16(acc, rb1);
     let rb2 = [0u8, 0u8, m2[0], m2[1], m2[2], m2[3], m2[4], m2[5], m2[6], m2[7], m2[8],
                0u8, 0u8, 0u8, 0u8, 0u8];
-    let acc = @add16(acc, rb2);
+    let acc = add16(acc, rb2);
     let rb3 = [0u8, 0u8, 0u8, m3[0], m3[1], m3[2], m3[3], m3[4], m3[5], m3[6], m3[7], m3[8],
                0u8, 0u8, 0u8, 0u8];
-    let acc = @add16(acc, rb3);
+    let acc = add16(acc, rb3);
     let rb4 = [0u8, 0u8, 0u8, 0u8, m4[0], m4[1], m4[2], m4[3], m4[4], m4[5], m4[6], m4[7], m4[8],
                0u8, 0u8, 0u8];
-    let acc = @add16(acc, rb4);
+    let acc = add16(acc, rb4);
     let rb5 = [0u8, 0u8, 0u8, 0u8, 0u8, m5[0], m5[1], m5[2], m5[3], m5[4], m5[5], m5[6], m5[7], m5[8],
                0u8, 0u8];
-    let acc = @add16(acc, rb5);
+    let acc = add16(acc, rb5);
     let rb6 = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, m6[0], m6[1], m6[2], m6[3], m6[4], m6[5], m6[6], m6[7], m6[8],
                0u8];
-    let acc = @add16(acc, rb6);
+    let acc = add16(acc, rb6);
     let rb7 = [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, m7[0], m7[1], m7[2], m7[3], m7[4], m7[5], m7[6], m7[7], m7[8]];
-    @add16(acc, rb7)
+    add16(acc, rb7)
   }
 
   -- Reduce a 128-bit value (16 LE bytes) mod p. Port of Plonky3 `reduce128`:
@@ -273,25 +275,27 @@ def goldilocksForeign := ⟦
     let xhl = [p[8], p[9], p[10], p[11], 0u8, 0u8, 0u8, 0u8];   -- low 32 bits of x_hi
     let xhh = [p[12], p[13], p[14], p[15], 0u8, 0u8, 0u8, 0u8]; -- high 32 bits of x_hi
     -- t0 = x_lo − x_hi_hi (subtract EPSILON on borrow; cannot underflow).
-    let (t0w, borrow) = @sub8(xlo, xhh);
-    let (t0b, _) = @sub8(t0w, @gl_eps());
+    let (t0w, borrow) = sub8(xlo, xhh);
+    let (t0b, _) = sub8(t0w, @gl_eps());
     let t0 = @select8(borrow, t0b, t0w);
-    -- t1 = x_hi_lo · EPSILON  (< 2⁶⁴, so only the low 8 product bytes matter).
-    let t1full = @mul128(xhl, @gl_eps());
-    let t1 = [t1full[0], t1full[1], t1full[2], t1full[3],
-              t1full[4], t1full[5], t1full[6], t1full[7]];
+    -- t1 = x_hi_lo · EPSILON = (x_hi_lo << 32) − x_hi_lo. Exact in 64 bits:
+    -- x_hi_lo < 2³² so the product is < 2⁶⁴, and the shifted value is ≥
+    -- x_hi_lo, so the subtraction cannot borrow — one sub8 instead of a
+    -- full 64×64 multiplication.
+    let xhl_shift = [0u8, 0u8, 0u8, 0u8, p[8], p[9], p[10], p[11]];
+    let (t1, _) = sub8(xhl_shift, xhl);
     -- t2 = t0 + t1  (add EPSILON on overflow; result stays < 2⁶⁴).
-    let (t2w, carry) = @add8(t0, t1);
-    let (t2c, _) = @add8(t2w, @gl_eps());
+    let (t2w, carry) = add8(t0, t1);
+    let (t2c, _) = add8(t2w, @gl_eps());
     let t2 = @select8(carry, t2c, t2w);
     -- canonicalize: borrow2 = 1 iff t2 < p ⇒ keep t2, else subtract p.
-    let (t2mp, borrow2) = @sub8(t2, @gl_p());
+    let (t2mp, borrow2) = sub8(t2, @gl_p());
     @select8(borrow2, t2, t2mp)
   }
 
   fn g_mul(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_mul_impl(a, b) }
   fn g_mul_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
-    @reduce128(@mul128(a, b))
+    @reduce128(mul128(a, b))
   }
 
   -- ==========================================================================
@@ -324,7 +328,7 @@ def goldilocksForeign := ⟦
   -- at most one subtraction of p.
   fn gl_val(x: [U8; 8]) -> Goldilocks { gl_val_impl(x) }
   fn gl_val_impl(x: [U8; 8]) -> Goldilocks {
-    let (x_minus_p, borrow) = @sub8(x, @gl_p());  -- borrow = 1 iff x < p
+    let (x_minus_p, borrow) = sub8(x, @gl_p());  -- borrow = 1 iff x < p
     @select8(borrow, x, x_minus_p)
   }
 
