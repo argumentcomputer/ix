@@ -109,6 +109,12 @@ private def inherited (cmd : String) (args : Array String)
   let child ← IO.Process.spawn { cmd, args, cwd := some cwd }
   child.wait
 
+/-- Flushed stage banner — long phases follow, and unflushed stdout is
+    lost to a watchdog kill under redirection. -/
+private def stageLine (line : String) : IO Unit := do
+  IO.println line
+  (← IO.getStdout).flush
+
 /-- Run a heavy step under the typed watchdog's cgroup memory ceiling
     (`Ix.Watchdog.run`: whole-scope kill on breach, exit 137); `none`
     runs it bare (`--no-watchdog`). -/
@@ -156,15 +162,18 @@ cgroup memory.oom.group failed the probe) — pass --no-watchdog to run \
 unprotected"
       return 1
   if let some ceiling := ceiling? then
-    IO.println s!"truthmines build ({tier}): {ceiling} GiB memory ceiling \
+    stageLine s!"[truthmines] {tier} build: {ceiling} GiB memory ceiling \
 (cgroup scope, swap off; --ceiling-gb / --no-watchdog to change)"
   -- Member root oleans. First run needs network and pulls the mathlib olean
   -- cache; `cache get` failure is tolerated — the build below is
   -- authoritative (`catalogOleans` is the workspace default target;
   -- `catalogMiniOleans` covers just the mini tier's roots).
-  let _ ← inherited "lake" #["exe", "cache", "get"] workspaceDir
   let buildTarget := if options.mini then #["build", "catalogMiniOleans"]
     else #["build"]
+  stageLine s!"[truthmines] stage 1/3: member root oleans \
+(lake exe cache get, then lake {" ".intercalate buildTarget.toList} in \
+{workspaceDir}) — lake output follows"
+  let _ ← inherited "lake" #["exe", "cache", "get"] workspaceDir
   let buildExit ← watched ceiling? "lake" buildTarget workspaceDir
   if buildExit != 0 then
     reportOom buildExit ceiling? s!"{tier} workspace build"
@@ -184,9 +193,11 @@ unprotected"
   if let some qualifiers := options.auditOnly then
     args := args ++ #["--audit-only", qualifiers]
   args := args ++ commandArguments spec
+  stageLine s!"[truthmines] stage 2/3: ix catalog over {spec.libs.size} \
+members (per-member progress follows; import → stage → replay → compile)"
   let exit ← watched ceiling? exe.toString args workspaceDir
   if exit == 0 then
-    IO.println s!"truthmines build ({tier}): wrote {out} (report: {report})"
+    stageLine s!"[truthmines] stage 3/3: done — wrote {out} (report: {report})"
   else
     reportOom exit ceiling? "ix catalog"
   return exit

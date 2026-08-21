@@ -7,9 +7,9 @@
   dependents (BET, GibbsMeasure, KolmogorovExtension4) whose
   environments each contain the full mathlib closure.
 
-  Two subprocess legs of `ix catalog --spec … --report …` (dogfooding
-  I3/I7): a baseline over mathlib + its dependency spine, then the
-  full spine with the three dependents. The gate asserts the spine
+  Two subprocess legs of `ix catalog … --report …` (dogfooding I7,
+  positional member vector): a baseline over mathlib + its dependency
+  spine, then the full spine with the three dependents. The gate asserts the spine
   peak (`peakRssBytes`, process-tree VmHWM) stays under 1.6× the
   baseline — pre-streaming, each extra dependent held its own mathlib
   environment and the ratio lands well above that.
@@ -47,29 +47,21 @@ private def heavyDependents : List (String × String) := [
   ("BET", "BET"), ("GibbsMeasure", "GibbsMeasure"),
   ("KolmogorovExtension4", "KolmogorovExtension4") ]
 
-private def specJson (libs : List (String × String)) : String :=
-  (Lean.Json.mkObj [
-    ("prefix", Lean.Json.str "Spine"),
-    ("libs", Lean.Json.arr <| libs.toArray.map fun (q, r) =>
-      Lean.Json.mkObj [
-        ("qualifier", Lean.Json.str q),
-        ("roots", Lean.Json.arr #[Lean.Json.str r]) ]) ]).pretty
-
 /-- Run one `ix catalog` leg in a temp dir and return its reported
-    `peakRssBytes`. -/
+    `peakRssBytes`. Members go as the positional
+    `Qualifier=Root[,Root…]` vector — there is no spec file format. -/
 private def runLeg (label : String) (libs : List (String × String)) :
     IO (Except String Nat) := do
   let dir ← IO.FS.createTempDir
   try
-    let specPath := dir / s!"{label}.json"
     let reportPath := dir / s!"{label}-report.json"
     let outPath := dir / s!"{label}.ixe"
-    IO.FS.writeFile specPath (specJson libs)
     let exe ← IO.FS.realPath ixExe
     let out ← IO.Process.output {
       cmd := exe.toString
-      args := #["catalog", "--spec", specPath.toString,
+      args := #["catalog", "--prefix", "Spine",
                 "--out", outPath.toString, "--report", reportPath.toString]
+        ++ libs.toArray.map (fun (q, r) => s!"{q}={r}")
       cwd := some spineDir }
     if out.exitCode != 0 then
       return .error s!"{label} leg failed ({out.exitCode}): \
