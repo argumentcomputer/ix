@@ -18,7 +18,6 @@ require «Paperproof» from git "https://github.com/Paper-Proof/paperproof" @ "6
 require «Qq» from git "https://github.com/leanprover-community/quote4" @ "92c15be17b7caf78c2ad767ec40f89052d908d81"
 require «Quantum4Lean» from git "https://github.com/Alektronnik/Quantum4Lean" @ "0a4ec3a76464fd36dea0150e571daa356350d0bf"
 require «Regex» from git "https://github.com/pandaman64/lean-regex" @ "30b7188eeecd7268d0f9816f97eb6304083c1bfb" / "regex"
-require «SDL» from git "https://github.com/Anderssorby/SDL.lean" @ "8d15cba565d8a8208b620e2ef954be25a9feedcb"
 require «UnicodeBasic» from git "https://github.com/fgdorais/lean4-unicode-basic" @ "f199e403002f82257a35add247ae05e00fd01c3c"
 require «VerilLean» from git "https://github.com/verilog-proof/VerilLean" @ "18acff7b33019bcbcc64154d5b6fdf566867f4d7"
 require «batteries» from git "https://github.com/leanprover-community/batteries" @ "4488d40d070b9700d4d5a6aa342f0d40c31b2a2d"
@@ -101,7 +100,6 @@ def catalogRootModules : Array Lean.Name := #[
     `Qq,
     `Quantum4Lean,
     `Regex,
-    `SDL,
     `UnicodeBasic,
     `VerilLean,
     `Batteries,

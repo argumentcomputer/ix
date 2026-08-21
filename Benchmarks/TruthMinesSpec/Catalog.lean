@@ -347,7 +347,7 @@ def catalog : Array PackageSpec := #[
     "https://github.com/Anderssorby/SDL.lean"
     "8d15cba565d8a8208b620e2ef954be25a9feedcb"
     #[] "MIT" "2025-12-27"
-    #[`SDL] (notes := "SDL2 bindings via a C shim. Needs system SDL2 + SDL2_image and invokes sdl2-config at build time, so the sdl2-config script must be on PATH. No downloads, which makes it the cleanest SDL option -- ValorZard/lean-sdl3 git-clones and cmake-builds SDL during lake build and claims the same SDL root module, so it is excluded."),
+    #[`SDL] (notes := "SDL2 bindings via a C shim. Needs system SDL2 + SDL2_image and invokes sdl2-config at build time, so the sdl2-config script must be on PATH. No downloads, which makes it the cleanest SDL option -- ValorZard/lean-sdl3 git-clones and cmake-builds SDL during lake build and claims the same SDL root module, so it is excluded. DEMOTED from the admission spec 2026-08-21: its include-flag detection produces garbage (-I/SDL2) under nix's sdl2-compat even with SDL2.dev's sdl2-config on PATH, so the shim cannot compile in the ix dev environment; re-admit by restoring its spec entry once the environment satisfies its lakefile."),
   gitPackage "exes" `LeanTea
     "https://github.com/Verilean/lean-tea"
     "3c96270b131f6cab3b7fa41e8b0cfe73655b5481"
