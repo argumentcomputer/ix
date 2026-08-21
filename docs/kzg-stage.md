@@ -157,10 +157,18 @@ and a 43 MB KZG wrap proof at factorial scale.
   foreign interface fns are thin `@`-inlined wrappers over plain
   (memoized) `*_impl` calls, so a call site costs one lookup and the
   byte-gadget width lives once in the impl circuits; repetition
-  becomes rows there, deduplicated by memoization. Call sites in
-  `Pcs.lean`/`Verifier.lean` stayed textually identical. Measured:
-  foreign width 386k → **~12k effective columns** (native is 7.7k);
-  wrap proof 43 MB → **1.38 MB**; prove 21 → 7.5 min.
+  becomes rows there, deduplicated by memoization. The discipline
+  recurses inside the impls (`add8`/`sub8`/`mul1`/`add16`/`mul128`
+  are their own circuits; reduce128's EPSILON term is a shifted
+  subtraction, not a second multiplication). Call sites in
+  `Pcs.lean`/`Verifier.lean` stayed textually identical.
+- **Pointer representation** (landed): `Goldilocks = &GBytes` — values
+  thread by content-addressed pointer, so a Goldilocks costs its
+  holder ONE column (an Ext two), exactly the native widths, at every
+  call boundary, list node, and enum field; only the impls load bytes.
+  Measured: foreign width 386k → **8,489 columns (D=2 acct)** vs
+  native 7,176 — within 18%; wrap proof 43 MB → **854 KB**; prove
+  21 → ~6.5 min.
 - A declaration-level inline attribute in the DSL remains a
   nice-to-have (it would delete the wrapper boilerplate), not a
   blocker.
@@ -186,12 +194,12 @@ factorial stage-2-style proof (3 inner queries) over Fr under
 `KzgConfig` and verifies it natively; a tampered wrap proof rejects.
 
 Measured (dev SRS 2^17, single-threaded, interpreter execution),
-after the Phase-C wrapper fix: **wrap proof 1.38 MB, prove ~7.5 min**
-for a 30 KB inner proof (~12k columns × ~112 B each — proof size is
-Θ(total width) under per-column KZG, constant in trace height; the
-pre-fix call-site splicing measured 386k columns / 43 MB / 21 min).
-Truly kilobyte-scale terminal proofs remain a stage-4 (Plonkish, O(1)
-polynomials) property.
+after the Phase-C memoization + pointer representation: **wrap proof
+854 KB, prove ~6.5 min** for a 30 KB inner proof (~7.2k effective
+columns × ~112 B each — proof size is Θ(total width) under per-column
+KZG, constant in trace height; the pre-fix call-site splicing measured
+386k columns / 43 MB / 21 min). Truly kilobyte-scale terminal proofs
+remain a stage-4 (Plonkish, O(1) polynomials) property.
 
 Remaining in this phase:
 
