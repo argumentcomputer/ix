@@ -13,7 +13,7 @@
   3. spawns the run's measured tool — `bench-typecheck` (aiur),
      `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
      `bench-lean4lean` (lean4lean; olean-driven, no `.ixe`),
-     `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`:
+     `ix compile` (compile) — wrapped in the RAM watchdog (`Ix.Watchdog`:
      cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
      at the ceiling). The per-constant backends (aiur, zkVM) spawn
      ONE PROCESS PER CONSTANT: a kill costs exactly that constant (its row
@@ -40,6 +40,7 @@ public import Lean.Data.Json
 public import Ix.BenchConstants
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
+public import Ix.Watchdog
 
 public section
 
@@ -399,22 +400,9 @@ def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
       ns := ns ++ (selectNames env b.name mode).map (·.name)
     return ns
 
-/-- Default RAM watchdog ceiling, same rule for all backends: the
-    machine's total RAM minus 15 GB (the ~123 GiB CI runner lands at
-    ~108 — above Mathlib `ix compile`'s ~100 GB peak, the largest
-    legitimate workload). Enforced as cgroup `memory.max` on a systemd
-    user scope: the kernel OOM-kills the tool at the ceiling (exit 137);
-    the 15 GB stays outside the cap for the OS, runner agent, and page
-    cache. `--ceiling-gb` overrides. -/
-def defaultCeilingGb : IO Nat := do
-  let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
-  let kb := (s.splitOn "\n").findSome? fun l =>
-    if l.startsWith "MemTotal:" then
-      ((l.splitOn " ").filter (· ≠ "") |>.drop 1).head?.bind (·.toNat?)
-    else none
-  return match kb with
-    | some kb => max 8 (kb / (1024 * 1024) - 15)
-    | none => 16
+/-- Default RAM watchdog ceiling (`--ceiling-gb` overrides): see
+    `Ix.Watchdog.defaultCeilingGb`, the one rule for every consumer. -/
+def defaultCeilingGb : IO Nat := Ix.Watchdog.defaultCeilingGb
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
     checkout measures the base's code), else PATH. -/
@@ -424,20 +412,22 @@ def resolveBin (repo : String) (name : String) : IO String := do
     return inTree
   return name
 
-/-- Spawn `cmd args` (inheriting stdio) under the RAM watchdog when one is
-    configured, and wait for its exit code. -/
-def runGuarded (watchdog : Option String) (ceilingGb : Nat)
+/-- Spawn `cmd args` (inheriting stdio) under the RAM watchdog when
+    `watchdog` is set (`Ix.Watchdog.run`: cgroup scope, whole-tree kill
+    at the ceiling), and wait for its exit code. -/
+def runGuarded (watchdog : Bool) (ceilingGb : Nat)
     (cmd : String) (args : Array String) (cwd : Option String := none) :
     IO UInt32 := do
-  let (cmd, args) := match watchdog with
-    | some wd => (wd, #[toString ceilingGb, cmd] ++ args)
-    | none => (cmd, args)
-  IO.eprintln s!"[bench] run: {cmd} {" ".intercalate args.toList}"
-  let child ← IO.Process.spawn {
-    cmd, args
-    cwd := cwd.map FilePath.mk
-  }
-  child.wait
+  let guard := if watchdog then s!" (≤{ceilingGb}G)" else ""
+  IO.eprintln s!"[bench] run{guard}: {cmd} {" ".intercalate args.toList}"
+  if watchdog then
+    Ix.Watchdog.run ceilingGb cmd args (cwd.map FilePath.mk)
+  else
+    let child ← IO.Process.spawn {
+      cmd, args
+      cwd := cwd.map FilePath.mk
+    }
+    child.wait
 
 /-- Merge a kill `status` (`oom` or `crash`) into a constant's row,
     PRESERVING metrics the tool flushed before the kill (e.g.
@@ -553,7 +543,7 @@ def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
     throw <| IO.userError s!"--ixe {path} not found"
   let ixe := s!"{repo}/{info.name}.ixe"
   let ix ← resolveBin repo "ix"
-  let exit ← runGuarded none 0 ix
+  let exit ← runGuarded false 0 ix
     #["compile", s!"{repo}/{info.module}", "--out", ixe]
   if exit != 0 then
     throw <| IO.userError s!"ix compile {info.module} failed (exit {exit})"
@@ -582,7 +572,7 @@ def cutClosureShards (ix : String) (envIxe : String)
     , #["shard", subIxe, "--profile", prof, "--max-ram", toString maxRamGb,
         "--out", manifest] ]
   for args in steps do
-    let exit ← runGuarded none 0 ix args
+    let exit ← runGuarded false 0 ix args
     if exit != 0 then
       IO.eprintln s!"[bench] shard pipeline failed for '{name}' (exit {exit}); falling back to single leaf"
       return none
@@ -653,16 +643,16 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
     | some f => pure (f.as! Nat)
     | none => defaultCeilingGb
-  let watchdogPath := (p.flag? "watchdog").map (·.as! String)
-    |>.getD s!"{repo}/.github/scripts/watchdog.sh"
-  -- Absolute: the zkVM hosts spawn with their workspace as cwd, where a
-  -- repo-relative script path would fail to exec. No watchdog, no run —
-  -- an unenforced ceiling is not a benchmark run.
-  let watchdog : Option String ←
-    if ← FilePath.pathExists watchdogPath then
-      pure (some (← IO.FS.realPath watchdogPath).toString)
+  -- No watchdog, no run — an unenforced ceiling is not a benchmark run.
+  -- `Ix.Watchdog.available` probes the whole path end to end (systemd
+  -- user scope, oom.group shim) before any tool spawns.
+  let watchdog : Bool ←
+    if ← Ix.Watchdog.available then
+      pure true
     else do
-      p.printError s!"error: no watchdog at {watchdogPath} (--watchdog overrides)"
+      p.printError "error: RAM watchdog unavailable (systemd user scope \
+with cgroup memory.oom.group failed the probe) — an unenforced ceiling \
+is not a benchmark run"
       return exitUsage
   -- `--consts` overrides the shared-set selection — a one-off local run,
   -- or bench-pr's targeted base run over just the constants bencher
@@ -768,7 +758,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       pure (← IO.FS.realPath out).toString
     let host := s!"{backend}-host"
     let work := s!"{repo}/{backend}"
-    let build ← runGuarded none 0 "cargo"
+    let build ← runGuarded false 0 "cargo"
       #["build", "--quiet", "--release", "--bin", host] (cwd := some work)
     if build != 0 then
       IO.eprintln s!"[bench] cargo build {host} failed (exit {build})"
@@ -855,7 +845,6 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     consts       : String; "Run exactly these comma-separated names instead of the shared benchConstants selection (same grammar as the tools' --consts)"
     ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 15 GB)"
-    watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
 
 open Ix.Cli.BenchCmd in
