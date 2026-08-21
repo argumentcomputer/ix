@@ -92,11 +92,31 @@ structure BuildResult where
   /-- Per-qualifier owned-constant counts (source constants, pre-replay). -/
   perLib : Array (Lean.Name × Nat)
 
-/-- Flushed progress line: the streaming pass runs for minutes-to-hours,
-    and Lean's stdout block-buffers under redirection — an unflushed
-    line is a line lost to a watchdog kill. -/
+/-- ` · rss X.Y GiB (hwm Z.W)` from `/proc/self/status`; empty where
+    that file does not exist. The catalog is single-process, so VmRSS
+    here IS the build's resident footprint — each progress line charts
+    the memory trajectory, and the last line before a watchdog kill
+    localizes the wall. -/
+private def rssSuffix : IO String := do
+  let status ← try IO.FS.readFile "/proc/self/status" catch _ => pure ""
+  if status.isEmpty then return ""
+  let field (key : String) : Option Nat :=
+    (status.splitOn "\n").findSome? fun line =>
+      if line.startsWith key then
+        ((line.splitOn " ").filter (· ≠ ""))[1]?.bind (·.toNat?)
+      else none
+  match field "VmRSS:", field "VmHWM:" with
+  | some rss, some hwm =>
+    let gib (kb : Nat) : String :=
+      s!"{kb / (1024 * 1024)}.{kb * 10 / (1024 * 1024) % 10}"
+    return s!" · rss {gib rss} GiB (hwm {gib hwm})"
+  | _, _ => return ""
+
+/-- Flushed progress line with the RSS trajectory: the streaming pass
+    runs for minutes-to-hours, and Lean's stdout block-buffers under
+    redirection — an unflushed line is a line lost to a watchdog kill. -/
 private def progressLine (line : String) : IO Unit := do
-  IO.println line
+  IO.println (line ++ (← rssSuffix))
   (← IO.getStdout).flush
 
 /-! ## Relocation core (absorbed from TruthMines `Internal.Relocate`) -/
