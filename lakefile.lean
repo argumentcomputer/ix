@@ -171,9 +171,11 @@ lean_lib TruthMinesSpec where
   globs := #[.submodules `Benchmarks.TruthMinesSpec]
 
 /- The corpus driver: `gen [--check]` projects `Benchmarks/TruthMines/`
-from the typed records, `spec` prints the `ix catalog --spec` JSON, and
-`build` produces a single `truthmines.ixe` (the `compilemathlib.ixe` of the
-corpus tier). Needs `lake build ix` first for the `build` verb. -/
+(lakefile, toolchain, per-member `Drivers/<Q>.lean`) from the typed
+records, `spec` prints the member/driver table, and `build` compiles
+per-member pieces (`pieces/<Q>.ixe`, one watchdogged `ix compile`
+process each) and assembles + verifies the `truthmines.ixc` catalog
+manifest. Needs `lake build ix` first for the `build` verb. -/
 lean_exe truthmines where
   root := `Benchmarks.TruthMinesSpec.Main
 

@@ -123,11 +123,12 @@ inductive RevealConstantInfo where
 /--
 A claim that can be proven.
 
-Five variants in three families:
+Six variants in three families:
 
-- **Typechecking claims** (`eval`, `check`, `checkEnv`): assert that a
-  constant evaluates, a constant is well-typed, or every constant in an
-  env is well-typed. Each carries `assumptions : Option Address`:
+- **Typechecking claims** (`eval`, `check`, `checkEnv`, `catalog`):
+  assert that a constant evaluates, a constant is well-typed, every
+  constant in an env is well-typed, or every constant in a catalog is
+  well-typed. Each carries `assumptions : Option Address`:
   - `none` → unconditional.
   - `some root` → conditional on every leaf in the merkle tree rooted
     at `root` being well-typed.
@@ -137,6 +138,14 @@ Five variants in three families:
   the merkle tree rooted at `tree`. Used by aggregation to discharge
   leaves from a conditional claim's assumption set. Carries no
   assumptions.
+
+`catalog` binds both `.ixc` roots. Two leaf vocabularies, never
+mixed: `members` leaves are member ENV ROOTS; `content` (and
+`assumptions`) leaves are CONSTANT ADDRESSES. Semantics: (1)
+`tree(content)` is exactly the union of the member envs' const sets,
+and (2) every constant in it typechecks modulo `assumptions`.
+Verified by composition of per-piece `checkEnv` claims with set
+discharge — there is deliberately no whole-catalog interpreter arm.
 -/
 inductive Claim where
   | eval     (input output : Address) (assumptions : Option Address)
@@ -144,6 +153,7 @@ inductive Claim where
   | checkEnv (root : Address) (assumptions : Option Address)
   | reveal   (comm : Address) (info : RevealConstantInfo)
   | contains (tree : Address) (const : Address)
+  | catalog  (members content : Address) (assumptions : Option Address)
   deriving BEq, Repr, Inhabited
 
 -- ============================================================================
@@ -451,7 +461,9 @@ end RevealConstantInfo
 namespace Claim
 
 -- Tag4 size dispatch (mirrors src/ix/ixon/proof.rs).
--- Flag 0xE holds Env, Comm, AssumptionTree, and claims (single-byte tags).
+-- Flag 0xE holds Env, Comm, AssumptionTree, and claims. Variants 0–7
+-- are single-byte tags and all taken; variant 8 (catalog) is the
+-- first multi-byte claim tag, `0xE8 0x08` on the wire.
 -- Flag 0xF holds proofs (single-byte tags).
 
 def FLAG_CLAIM : UInt8 := 0xE
@@ -465,12 +477,14 @@ def VARIANT_CHECK_CLAIM      : UInt64 := 4
 def VARIANT_CHECK_ENV_CLAIM  : UInt64 := 5
 def VARIANT_REVEAL_CLAIM     : UInt64 := 6
 def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
+def VARIANT_CATALOG_CLAIM    : UInt64 := 8
 
 def VARIANT_EVAL_PROOF       : UInt64 := 0
 def VARIANT_CHECK_PROOF      : UInt64 := 1
 def VARIANT_CHECK_ENV_PROOF  : UInt64 := 2
 def VARIANT_REVEAL_PROOF     : UInt64 := 3
 def VARIANT_CONTAINS_PROOF   : UInt64 := 4
+def VARIANT_CATALOG_PROOF    : UInt64 := 5
 
 /-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
     (some). Mirrors `put_opt_addr` in src/ix/ixon/proof.rs. -/
@@ -506,6 +520,12 @@ def put : Claim → PutM Unit
     putTag4 ⟨FLAG_CLAIM, VARIANT_CONTAINS_CLAIM⟩
     Serialize.put tree
     Serialize.put const
+  | .catalog members content assumptions => do
+    -- First multi-byte claim tag: 0xE8 0x08 on the wire.
+    putTag4 ⟨FLAG_CLAIM, VARIANT_CATALOG_CLAIM⟩
+    Serialize.put members
+    Serialize.put content
+    putOptAddr assumptions
 
 def get : GetM Claim := do
   let tag ← getTag4
@@ -528,6 +548,11 @@ def get : GetM Claim := do
     return .reveal (← Serialize.get) (← RevealConstantInfo.get)
   else if tag.size == VARIANT_CONTAINS_CLAIM then
     return .contains (← Serialize.get) (← Serialize.get)
+  else if tag.size == VARIANT_CATALOG_CLAIM then
+    let members ← Serialize.get
+    let content ← Serialize.get
+    let asm ← getOptAddr
+    return .catalog members content asm
   else
     throw s!"Claim.get: invalid claim variant {tag.size}"
 
@@ -541,6 +566,7 @@ instance : ToString Claim where
     | .checkEnv r asm => s!"CheckEnv({r}, {asm})"
     | .reveal comm info => s!"Reveal({comm}, {repr info})"
     | .contains t c => s!"Contains({t}, {c})"
+    | .catalog m c asm => s!"Catalog({m}, {c}, {asm})"
 
 end Claim
 
@@ -569,6 +595,7 @@ def variantOf : Ix.Claim → UInt64
   | .checkEnv _ _   => Ix.Claim.VARIANT_CHECK_ENV_PROOF
   | .reveal _ _     => Ix.Claim.VARIANT_REVEAL_PROOF
   | .contains _ _   => Ix.Claim.VARIANT_CONTAINS_PROOF
+  | .catalog _ _ _  => Ix.Claim.VARIANT_CATALOG_PROOF
 
 def put (p : Proof) : PutM Unit := do
   putTag4 ⟨Ix.Claim.FLAG_PROOF, variantOf p.claim⟩
@@ -589,6 +616,10 @@ def put (p : Proof) : PutM Unit := do
   | .contains tree target => do
     Serialize.put tree
     Serialize.put target
+  | .catalog members content asm => do
+    Serialize.put members
+    Serialize.put content
+    Ix.Claim.putOptAddr asm
   putTag0 ⟨p.proof.size.toUInt64⟩
   putBytes p.proof
 
@@ -618,6 +649,11 @@ def get : GetM Proof := do
       let tree ← Serialize.get
       let target ← Serialize.get
       pure (.contains tree target)
+    else if tag.size == Ix.Claim.VARIANT_CATALOG_PROOF then do
+      let members ← Serialize.get
+      let content ← Serialize.get
+      let asm ← Ix.Claim.getOptAddr
+      pure (.catalog members content asm)
     else
       throw s!"Ixon.Proof.get: invalid proof variant {tag.size}"
   let lenTag ← getTag0

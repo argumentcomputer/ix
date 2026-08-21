@@ -266,6 +266,30 @@ build provenance) is rendered as a warning in that cell's PR comment table.
 This is diagnostic only: the CPU model does not participate in cache keys, and
 only an explicit `fresh` request bypasses the measured-product caches.
 
+## TruthMines corpus baselines
+
+`lake exe truthmines build` (the `.ixc` piece pipeline: per-member
+watchdogged `ix compile` → self-contained catalog directory →
+`ix catalog assemble` + `verify`), first full run recorded 2026-08-21
+on the shared 124 GiB box:
+
+| leg | figure |
+|---|---|
+| full corpus build (77 members, cold pieces except 11 cache hits) | **19 min** wall at `--jobs 4` × 25 GiB per-member ceiling; zero member failures, zero OOM kills |
+| `truthmines.ixc/` | 50 GB (77 fat pieces; largest: FLT 3.44 GB, Fad 3.38 GB, Mathlib 3.33 GB), manifest 16,237 B |
+| union | 906,738 unique constant addresses; `members_root 483bfe87…`, `content_root 5cae665f…` recomputed by verify |
+| mini tier (12 members: fixtures + spine + Mathlib + FLT) | ~7 min cold / seconds cached; `truthmines-mini.ixc/` 8.9 GB, 690,628-const union |
+| warm rerun | all members cache-hit (pin-closure keys); assemble + verify only |
+| `ix merge` of Aesop+Mathlib+FLT pieces | 687,757-const union `.ixe` in 28 s |
+
+For context, the retired union `ix catalog` peaked 35.3 GiB at spine
+scale (N=12) and OOM'd this box on its first full-corpus attempt; the
+piece pipeline's box pressure is `jobs × member`, never a union.
+Per-member kernel checking (`lake exe truthmines check`, suite
+`truthmines-check`) and metadata fidelity (`lake exe truthmines
+validate`, suite `truthmines-validate`) are the other two rungs over
+the same artifacts.
+
 ## Not yet covered
 
 - **zkVM prove** — the hosts prove, but CI has no GPU runner; cells are

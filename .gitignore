@@ -13,6 +13,6 @@ result*
 plans
 refs
 
-# TruthMines corpus artifacts (D2: never check in the union artifact)
-truthmines.report.json
-truthmines-mini.report.json
+# TruthMines corpus artifacts: a .ixc is a self-contained directory
+# (manifest + pieces + build cache) — never checked in.
+*.ixc/

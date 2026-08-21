@@ -86,10 +86,16 @@ require «PolyFun» from git "https://github.com/Verified-zkEVM/PolyFun" @ "4247
 require «bignum» from git "https://github.com/arademaker/bignum" @ "4b32a232d3481f9a7b4b3c101fa0dcd946392508"
 require «fad» from git "https://github.com/arademaker/fad" @ "d9a9328f8819b2a2bb831a2b25992dcadf432878"
 
-/-- Every full-spec root module, in admission order. These are the
-modules `ix catalog` loads: it imports each member's roots with ix's own
-Lean runtime, so all Lake has to do is make the `.olean`s exist; Lake
-computes their transitive closure itself. -/
+/-- The generated per-member driver modules (`Drivers/<Q>.lean`):
+one import per member root. `ix compile Drivers/<Q>.lean` builds
+this target for the member it compiles. -/
+lean_lib Drivers where
+  globs := #[.submodules `Drivers]
+
+/-- Every full-spec root module, in admission order. Piece compiles
+load these through the driver modules; all Lake has to do is make
+the `.olean`s exist — Lake computes their transitive closure
+itself. -/
 def catalogRootModules : Array Lean.Name := #[
     `Cli,
     `Curl,
@@ -188,9 +194,9 @@ def catalogMiniRootModules : Array Lean.Name := #[
     `FLT
 ]
 
-/-- Build every full-spec root `.olean`. This is the whole Lean-side
-build: the union environment is assembled by `ix catalog`, in one
-process, from these artifacts. -/
+/-- Build every full-spec root `.olean`. Pieces are compiled from
+these artifacts, one short-lived `ix compile` process per member;
+environments meet only in the anonymous `.ixc` layer. -/
 @[default_target]
 target catalogOleans : Unit := do
   let jobs ← catalogRootModules.mapM fun moduleName => do

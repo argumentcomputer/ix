@@ -18,7 +18,7 @@
     the original canonical root — compile ∘ materialize ∘ compile is a
     fixed point, so every computed field (hashes, cached flags) the
     Rust side produced is byte-faithful under re-reading.
-  - Fresh kernel replay: `Ix.Catalog.planDeclarations` over the
+  - Fresh kernel replay: `Ix.Replay.planDeclarations` over the
     materialized map replays clean into an empty kernel env — the
     non-elaborator core of `import_ixe`.
   - Closure scoping: `only [TIxImp.dbl]` returns the reference closure
@@ -35,7 +35,7 @@ public import Ix.ImportIxe
 -- its olean in the test target's build closure (hermetic builds ship only
 -- that closure — a local `lake build ix` leftover masked this once).
 public import Ix.IxEval
-public import Ix.Catalog
+public import Ix.Replay
 public import Ix.CompileM
 public import Ix.Commit
 public import Ix.Meta
@@ -288,7 +288,7 @@ private def roundtripTest : IO (Bool × Nat × Nat × Option String) := do
 {status2.root.take 12}…")
     -- Fresh kernel replay via the shared planner (import_ixe core).
     let matMapFrozen := matMap
-    let plan ← match Ix.Catalog.planDeclarations matMap
+    let plan ← match Ix.Replay.planDeclarations matMap
         matMapFrozen.find? with
       | .ok plan => pure plan
       | .error e => return (false, 0, 0, some s!"planDeclarations: {e}")
@@ -394,7 +394,7 @@ private def zkPatternTest : IO (Bool × Nat × Nat × Option String) := do
       let some ci := env.find? n
         | return (false, 0, 0, some s!"consumer env missing {n}")
       closure := (n, ci) :: closure
-      for r in Ix.Catalog.constantInfoReferences ci do
+      for r in Ix.Replay.constantInfoReferences ci do
         unless seen.contains r do
           work := work.push r
     let phases ← Ix.CompileM.rsCompilePhasesOf closure

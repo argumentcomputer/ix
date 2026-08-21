@@ -1,240 +1,228 @@
 /-
-  `ix catalog`: build a qualified multi-library union environment (an
-  `Ix.Catalog` catalog) and compile it to one `.ixe` through the
-  ordinary fail-closed pipeline. Member libraries are given as
-  positional `Qualifier=Root[,Root...]` specs in dependency order;
-  every constant owned by member `X` lands as `<prefix>.<X>.<name>`.
+  `ix catalog`: assemble, verify, and inspect `.ixc` catalog manifests
+  over anonymous `.ixe` pieces — pure artifact algebra.
+
+  A catalog is semantically ONE anonymous env (the union of its
+  members' constant sets), committed by two roots: `members_root`
+  (canonical merkle root over member env roots) and `content_root`
+  (canonical root over the union's constant addresses — the env root
+  of the virtual union env). Anonymous Ixon is conflict-free, so no
+  qualification, relocation, or union import exists anywhere behind
+  these verbs: the Rust core (`crates/ixon/src/catalog.rs`, via
+  `crates/ffi/src/catalog.rs`) reads piece HEADERS and sorted §2
+  address lists, hashes files, and writes the manifest — O(pieces)
+  resident, never a materialized union, and never a Lean frontend.
+
+  Compilation orchestration deliberately does NOT live here (no
+  `ix catalog build`): drivers like `truthmines` own the per-member
+  `ix compile` loop; these verbs stay reusable by any project.
+
+  On disk a `.ixc` is a self-contained DIRECTORY — manifest and piece
+  files together, no separate pieces dir:
+
+    <name>.ixc/
+      manifest        the binary manifest
+      <label>.ixe     one piece per member (label = filename stem,
+                      validated filename-safe by the Rust core)
+
+  `assemble` ingests external pieces by hard link (copy fallback), so
+  assembling from same-filesystem pieces moves no bytes. No JSON (or
+  other) report artifacts are written anywhere in this flow: the
+  manifest IS the machine-readable record (`ix catalog info` dumps
+  it), and the FFI's JSON strings are an in-memory carrier only.
 -/
 module
-
 public import Cli
 public import Ix.Common
-public import Ix.Meta
-public import Ix.CompileM
-public import Ix.Catalog
-public import Ix.Catalog.Lake
-public import Ix.TracingTexray
 
 public section
 
-open System (FilePath)
-
 namespace Ix.Cli.CatalogCmd
 
-private def parseLibSpec (raw : String) : Except String Ix.Catalog.LibSpec := do
-  match raw.splitOn "=" with
-  | [qualifier, roots] =>
-    if qualifier.isEmpty then throw s!"empty qualifier in `{raw}`"
-    let rootNames := (roots.splitOn ",").filterMap fun r =>
-      let r := r.trimAscii.toString
-      if r.isEmpty then none else some r.toName
-    if rootNames.isEmpty then throw s!"no root modules in `{raw}`"
-    return { qualifier := qualifier.toName, roots := rootNames.toArray }
-  | _ => throw s!"expected `Qualifier=Root[,Root...]`, got `{raw}`"
+@[extern "rs_catalog_assemble"]
+opaque rsCatalogAssembleFFI : @& String → @& String → IO String
 
-/-- Resolve the catalog spec from the positional
-    `Qualifier=Root[,Root...]` members and `--prefix`. There is no spec
-    file format: typed callers (the `truthmines` driver, tests) render
-    their records straight to this argument vector. -/
-private def resolveSpec (p : Cli.Parsed) :
-    IO (Except String Ix.Catalog.CatalogSpec) := do
-  let rawLibs := (p.variableArgsAs! String).toList
-  let some prefixFlag := p.flag? "prefix"
-    | return .error "--prefix is required (the catalog namespace, e.g. \
-`MyCatalog`)"
-  let catalogPrefix := (prefixFlag.as! String).toName
-  if rawLibs.isEmpty then
-    return .error "at least one `Qualifier=Root[,Root...]` library spec \
-is required"
-  let mut libs : Array Ix.Catalog.LibSpec := #[]
-  for raw in rawLibs do
-    match parseLibSpec raw with
-    | .ok lib => libs := libs.push lib
-    | .error e => return .error e
-  return .ok { catalogPrefix, libs }
+@[extern "rs_catalog_verify"]
+opaque rsCatalogVerifyFFI : @& String → Bool → IO String
 
-def runCatalogCmd (p : Cli.Parsed) : IO UInt32 := do
-  let mut spec ← match ← resolveSpec p with
-    | .ok spec => pure spec
-    | .error e =>
-      p.printError s!"error: {e}"
+@[extern "rs_catalog_info"]
+opaque rsCatalogInfoFFI : @& String → IO String
+
+/-- Split a comma list, dropping empties. -/
+private def commaList (s : String) : List String :=
+  (s.splitOn ",").filter (!·.isEmpty)
+
+/-- Parse `--deps "1:0;2:0,1"`: per-member dependency indices, entries
+    `member:dep,dep` separated by `;`. Members not listed have no
+    deps. -/
+private def parseDeps (raw : String) (memberCount : Nat) :
+    Except String (Array (List Nat)) := do
+  let mut deps : Array (List Nat) := .replicate memberCount []
+  for entry in (raw.splitOn ";").filter (!·.isEmpty) do
+    match entry.splitOn ":" with
+    | [idxS, depsS] =>
+      let some idx := idxS.toNat?
+        | throw s!"--deps: bad member index `{idxS}`"
+      unless idx < memberCount do
+        throw s!"--deps: member index {idx} out of range ({memberCount} pieces)"
+      let mut ds : List Nat := []
+      for d in commaList depsS do
+        let some dn := d.toNat?
+          | throw s!"--deps: bad dep index `{d}`"
+        unless dn < idx do
+          throw s!"--deps: member {idx} depends on {dn}, which is not \
+strictly before it (topo order, deps first)"
+        ds := ds ++ [dn]
+      deps := deps.set! idx ds
+    | _ => throw s!"--deps: bad entry `{entry}` (want `member:dep,dep`)"
+  return deps
+
+/-- Per-piece metadata from a comma-list flag: one value for all
+    pieces, exactly one per piece, or absent (default). Empty entries
+    are MEANINGFUL here (a local member's pin is empty), so the list
+    is split verbatim, not filtered. -/
+private def perPiece (p : Cli.Parsed) (flag : String) (n : Nat)
+    (dflt : String) : Except String (Array String) :=
+  match (p.flag? flag).map (·.as! String) with
+  | none => .ok (.replicate n dflt)
+  | some raw =>
+    let xs := raw.splitOn ","
+    if xs.length == 1 then .ok (.replicate n xs[0]!)
+    else if xs.length == n then .ok xs.toArray
+    else .error s!"--{flag}: {xs.length} values for {n} pieces"
+
+def runAssemble (p : Cli.Parsed) : IO UInt32 := do
+  let some outArg := p.positionalArg? "out"
+    | p.printError "error: must specify the output .ixc path"
       return 1
-
-  -- --close-roots: extend every member's declared roots to the global
-  -- cross-package source-import fixed point through the cwd's Lake
-  -- workspace, and re-root at terminal modules. The I5 coverage gate in
-  -- the loader stays as the fail-closed backstop.
-  if p.hasFlag "close-roots" then
-    let declaredRoots := spec.libs.map (·.roots.size) |>.foldl (·+·) 0
-    let closed ← try
-        Ix.Catalog.closeRoots (← Ix.Catalog.loadCurrentWorkspace) spec
-      catch e =>
-        p.printError s!"error: --close-roots: {e}"
+  let out := outArg.as! String
+  let pieces := (p.variableArgsAs! String).toList
+  if pieces.isEmpty then
+    p.printError "error: at least one piece .ixe is required"
+    return 1
+  let n := pieces.length
+  let labels ← do
+    let dflt := pieces.map fun path =>
+      (System.FilePath.mk path).fileStem.getD path
+    match (p.flag? "labels").map (·.as! String) with
+    | none => pure dflt.toArray
+    | some raw =>
+      let xs := commaList raw
+      unless xs.length == n do
+        p.printError s!"error: --labels: {xs.length} values for {n} pieces"
         return 1
-    let closedRoots := closed.libs.map (·.roots.size) |>.foldl (·+·) 0
-    println! "[catalog] --close-roots: {declaredRoots} declared roots → \
-{closedRoots} terminal roots across {closed.libs.size} members"
-    spec := closed
+      pure xs.toArray
+  let toolchains ← match perPiece p "toolchains" n Lean.versionString with
+    | .ok xs => pure xs
+    | .error e => p.printError s!"error: {e}"; return 1
+  let pins ← match perPiece p "pins" n "" with
+    | .ok xs => pure xs
+    | .error e => p.printError s!"error: {e}"; return 1
+  let deps ← match parseDeps ((p.flag? "deps").map (·.as! String) |>.getD "") n with
+    | .ok ds => pure ds
+    | .error e => p.printError s!"error: {e}"; return 1
+  let members := Lean.Json.arr <| (pieces.zipIdx.map fun (path, i) =>
+    Lean.Json.mkObj
+      [ ("path", Lean.Json.str path)
+      , ("label", Lean.Json.str labels[i]!)
+      , ("toolchain", Lean.Json.str toolchains[i]!)
+      , ("sourcePin", Lean.Json.str pins[i]!)
+      , ("deps", Lean.Json.arr (deps[i]!.toArray.map (Lean.toJson ·))) ]).toArray
+  let summary ← rsCatalogAssembleFFI out members.compress
+  match Lean.Json.parse summary with
+  | .ok json =>
+    let field (k : String) : String :=
+      ((json.getObjVal? k).bind (·.getStr?)).toOption.getD "?"
+    let num (k : String) : String :=
+      match (json.getObjVal? k).toOption with
+      | some v => v.compress | none => "?"
+    IO.println s!"[catalog] {n} member(s) → {out} (manifest {num "bytes"} bytes)"
+    IO.println s!"[catalog] members_root {field "membersRoot"}"
+    IO.println s!"[catalog] content_root {field "contentRoot"}"
+  | .error _ => IO.println summary
+  return 0
 
-  let catalogPrefix := spec.catalogPrefix
-  let libs := spec.libs
-  let outPath := (p.flag? "out").map (·.as! String)
-    |>.getD (s!"{catalogPrefix}".toLower ++ ".ixe")
-
-  -- --audit-only: validate the subset against the spec up front.
-  let auditOnly? : Option (Array Lean.Name) ←
-    match p.flag? "audit-only" with
-    | none => pure none
-    | some flag =>
-      let quals := ((flag.as! String).splitOn ",").filterMap fun q =>
-        let q := q.trimAscii.toString
-        if q.isEmpty then none else some q.toName
-      if quals.isEmpty then
-        p.printError "error: --audit-only needs at least one qualifier"
-        return 1
-      for q in quals do
-        unless spec.libs.any (·.qualifier == q) do
-          p.printError s!"error: --audit-only qualifier `{q}` is not a \
-member of the catalog spec"
-          return 1
-      pure (some quals.toArray)
-
-  -- Copy-vs-share staging threshold (see `defaultCopyStageMaxOwned`);
-  -- the corpus tier is where the default gets tuned.
-  let copyStageMaxOwned := (p.flag? "copy-stage-max-owned").map (·.as! Nat)
-    |>.getD Ix.Catalog.defaultCopyStageMaxOwned
-
-  -- Resolve modules through the current directory's Lake workspace.
-  initLeanSearchPath (some (← IO.currentDir))
-  -- Peak-RSS accounting for --report (I7): process-tree sampler,
-  -- Linux-only (reads back 0 elsewhere).
-  TracingTexray.startSampler
-  TracingTexray.resetPeakTreeRss
-
-  println! "Building catalog {catalogPrefix} from {libs.size} librar(ies)..."
-  (← IO.getStdout).flush
-  let buildStart ← IO.monoMsNow
-  let result ← Ix.Catalog.buildCatalog spec copyStageMaxOwned
-    (progress := true)
-  let buildElapsed := (← IO.monoMsNow) - buildStart
-  for (qualifier, count) in result.perLib do
-    println! "[catalog] {qualifier}: {count} owned constants"
-  println! "[catalog] replayed {result.replayed} declarations; \
-{result.consts.size} constants total in {buildElapsed}ms"
-
-  let auditRan := p.hasFlag "audit" || auditOnly?.isSome
-  if auditRan then
-    let only := auditOnly?.map fun quals =>
-      quals.foldl (init := ({} : Lean.NameSet)) (·.insert ·)
-    let scope := match auditOnly? with
-      | some quals => s!"members {quals}"
-      | none => "all members"
-    let auditStart ← IO.monoMsNow
-    let audit ← Ix.Catalog.auditCatalog spec result.consts only
-    let auditElapsed := (← IO.monoMsNow) - auditStart
-    if audit.violations.isEmpty then
-      println! "[audit] anon-address preservation: {audit.checked} owned \
-constants verified ({scope}) in {auditElapsed}ms"
-    else
-      let stderr ← IO.getStderr
-      stderr.putStrLn s!"error: catalog audit found \
-{audit.violations.size} anon-address violation(s) \
-({audit.checked} checked); nothing written to {outPath}"
-      for v in audit.violations.toList.take 20 do
-        stderr.putStrLn s!"  [audit] {v}"
-      if audit.violations.size > 20 then
-        stderr.putStrLn s!"  … and {audit.violations.size - 20} more"
+def runVerify (p : Cli.Parsed) : IO UInt32 := do
+  let some ixcArg := p.positionalArg? "ixc"
+    | p.printError "error: must specify the .ixc directory"
       return 1
+  let ixc := ixcArg.as! String
+  let deep := p.hasFlag "deep"
+  let summary ← rsCatalogVerifyFFI ixc deep
+  match Lean.Json.parse summary with
+  | .ok json =>
+    let field (k : String) : String :=
+      ((json.getObjVal? k).bind (·.getStr?)).toOption.getD "?"
+    let num (k : String) : String :=
+      match (json.getObjVal? k).toOption with
+      | some v => v.compress | none => "?"
+    IO.println s!"[catalog] OK: {num "members"} member(s), \
+{num "unionConsts"} union constants ({field "profile"}\
+{if deep then ", deep" else ""})"
+    IO.println s!"[catalog] members_root {field "membersRoot"}"
+    IO.println s!"[catalog] content_root {field "contentRoot"}"
+  | .error _ => IO.println summary
+  return 0
 
-  let allowPartial := p.hasFlag "allow-partial"
-  println! "[catalog] compiling {result.consts.size} constants → {outPath}…"
-  (← IO.getStdout).flush
-  let start ← IO.monoMsNow
-  let status ← Ix.CompileM.rsCompileEnvBytesFFI result.consts.toList outPath
-    allowPartial
-  let size := status.bytes.toNat
-  let elapsed := (← IO.monoMsNow) - start
-
-  let ungroundedCount := status.ungrounded.size
-  let failClosed := !allowPartial && ungroundedCount > 0
-
-  let peakRssBytes ← TracingTexray.peakTreeRssBytes
-  if let some flag := p.flag? "report" then
-    let report := Lean.Json.mkObj
-      [ ("schemaVersion", Lean.toJson (2 : Nat))
-      , ("ixVersion", Lean.Json.str Ix.versionString)
-      , ("leanToolchain", Lean.Json.str Lean.versionString)
-      , ("ixeFormatVersion", Lean.toJson Ixon.Env.VERSION.toNat)
-      , ("catalogPrefix", Lean.Json.str s!"{catalogPrefix}")
-      , ("libs", Lean.Json.arr <| libs.map fun lib => Lean.Json.mkObj
-          [ ("qualifier", Lean.Json.str s!"{lib.qualifier}")
-          , ("roots", Lean.Json.arr <|
-              lib.roots.map (Lean.Json.str s!"{·}")) ])
-      , ("output", Lean.Json.str outPath)
-      , ("requested", Lean.toJson result.consts.size)
-      , ("replayed", Lean.toJson result.replayed)
-      , ("named", Lean.toJson status.named.toNat)
-      , ("uniqueAnon", Lean.toJson status.uniqueAnon.toNat)
-      , ("ungroundedCount", Lean.toJson ungroundedCount)
-      , ("ungrounded", Lean.Json.arr <| status.ungrounded.map fun (n, r) =>
-          Lean.Json.mkObj
-            [("name", Lean.Json.str n), ("reason", Lean.Json.str r)])
-      , ("root", Lean.Json.str status.root)
-      , ("allowPartial", Lean.toJson allowPartial)
-      , ("written", Lean.toJson (!failClosed))
-      , ("bytes", Lean.toJson size)
-      , ("buildMs", Lean.toJson buildElapsed)
-      , ("compileMs", Lean.toJson elapsed)
-      -- Process-tree high-water mark (I7); 0 on non-Linux platforms.
-      , ("peakRssBytes", Lean.toJson peakRssBytes)
-      , ("copyStageMaxOwned", Lean.toJson copyStageMaxOwned)
-      , ("auditedQualifiers", match auditRan, auditOnly? with
-          | false, _ => Lean.Json.null
-          | true, none => Lean.Json.arr <|
-              libs.map (Lean.Json.str s!"{·.qualifier}")
-          | true, some quals => Lean.Json.arr <|
-              quals.map (Lean.Json.str s!"{·}")) ]
-    IO.FS.writeFile (flag.as! String) (report.pretty ++ "\n")
-
-  if ungroundedCount > 0 then
-    let stream ← if failClosed then IO.getStderr else IO.getStdout
-    let verdict := if failClosed then
-      s!"error: {ungroundedCount} catalog constant(s) failed to compile; \
-nothing written to {outPath} (use --allow-partial to serialize the \
-grounded subset)"
-    else
-      s!"PARTIAL: {ungroundedCount} catalog constant(s) failed to compile; \
-serialized the grounded subset ({status.named} named, \
-{status.uniqueAnon} unique constants)"
-    stream.putStrLn verdict
-    for (n, r) in status.ungrounded.toList.take 10 do
-      stream.putStrLn s!"  [ungrounded] {n}: {(r.replace "\n" " ").take 200}"
-    if ungroundedCount > 10 then
-      stream.putStrLn s!"  … and {ungroundedCount - 10} more (see --report for the full list)"
-    if failClosed then
+def runInfo (p : Cli.Parsed) : IO UInt32 := do
+  let some ixcArg := p.positionalArg? "ixc"
+    | p.printError "error: must specify the .ixc path"
       return 1
+  let summary ← rsCatalogInfoFFI (ixcArg.as! String)
+  match Lean.Json.parse summary with
+  | .ok json => IO.println json.pretty
+  | .error _ => IO.println summary
+  return 0
 
-  println! "Compiled and wrote {size} bytes to {outPath} in {elapsed}ms \
-(root {status.root.take 12}…)"
+def catalogAssembleCmd : Cli.Cmd := `[Cli|
+  assemble VIA runAssemble;
+  "Assemble a self-contained fat-profile .ixc DIRECTORY from piece .ixe files (topo order, dependencies first): pieces are ingested as <label>.ixe (hard link or copy; paths already inside are untouched) and the manifest is written at <out>/manifest. Reads only piece headers and §2 address lists — no Lean frontend, no materialized union, no report artifacts."
+
+  FLAGS:
+    labels : String; "Comma-separated member labels, one per piece (default: file stems). The label is the piece's filename stem inside the .ixc directory."
+    toolchains : String; "Comma-separated toolchains, one per piece or a single value for all (default: this binary's Lean version)."
+    pins : String; "Comma-separated source pins, one per piece or a single value for all (e.g. `git:<url>@<rev>`; empty entries mean local)."
+    deps : String; "Member dependency indices, `member:dep,dep` entries separated by `;` (e.g. `1:0;2:0,1`). Indices must be strictly before the member (topo order)."
+
+  ARGS:
+    out : String; "Output .ixc directory (manifest written fail-closed: .tmp + atomic rename)."
+    ...pieces : String; "Piece .ixe files, topo order (dependencies first)."
+]
+
+def catalogVerifyCmd : Cli.Cmd := `[Cli|
+  verify VIA runVerify;
+  "Verify a self-contained .ixc directory: both roots recomputed (members from entries, content by the k-way sweep over the pieces inside), every piece's env root, const count, and size checked; chunked profiles enforce the no-redeclaration invariant. --deep re-hashes files and fully loads each piece (per-constant blake3)."
+
+  FLAGS:
+    deep; "Also re-hash every file against the manifest and fully verify each piece load."
+
+  ARGS:
+    ixc : String; "Path to the .ixc directory."
+]
+
+def catalogInfoCmd : Cli.Cmd := `[Cli|
+  info VIA runInfo;
+  "Print a .ixc directory's manifest (members, roots, storage). Touches no piece files; members_root is still recomputed on load."
+
+  ARGS:
+    ixc : String; "Path to the .ixc directory."
+]
+
+def runCatalog (p : Cli.Parsed) : IO UInt32 := do
+  p.printHelp
   return 0
 
 end Ix.Cli.CatalogCmd
 
 open Ix.Cli.CatalogCmd in
 def catalogCmd : Cli.Cmd := `[Cli|
-  catalog VIA runCatalogCmd;
-  "Build a qualified multi-library union environment (a catalog) and compile it to one .ixe. Member constants land under <prefix>.<qualifier>.<source name>; the toolchain base stays unqualified. Kernel-level: instances, attributes, and native code do not transfer."
+  catalog VIA runCatalog;
+  "Assemble, verify, and inspect .ixc catalog manifests over anonymous .ixe pieces"
 
-  FLAGS:
-    "prefix"        : String; "The catalog namespace, e.g. `MyCatalog` (required)."
-    out             : String; "Output path for the serialized .ixe; defaults to the lowercased prefix with `.ixe`."
-    "allow-partial" ;         "Serialize the grounded subset and exit 0 even when some catalog constants fail to compile. Default is fail-closed: any ungrounded constant means a nonzero exit and NO output file."
-    audit           ;         "Verify anon-address preservation before writing: recompile each member library standalone and require addr(<prefix>.<qualifier>.N) in the catalog to equal addr(N) standalone, for every owned constant (qualification is metadata-only). N+1 extra compiles; violations abort with no output file."
-    "audit-only"    : String; "Comma-separated member qualifiers: run the --audit invariant on just these members (a rotating subset keeps the gate viable at corpus scale, where the full audit is N+1 large compiles). Implies --audit; the artifact is still built and written."
-    report          : String; "Write a machine-readable JSON catalog report (versions, lib specs, counts, ungrounded list, canonical root, peak RSS, audited qualifiers) to this path — written on success, fail-closed abort, and partial publish alike."
-    "copy-stage-max-owned" : Nat; "Copy-vs-share staging threshold: a member owning at most this many constants is copy-staged and its env's olean regions freed; a heavier member is staged sharing its regions, which stay mapped (default 100000). Threshold-0 and default builds are byte-identical; the knob trades resident regions against copy work."
-    "close-roots"   ;         "Close every member's roots over cross-package source imports through the cwd's Lake workspace before building: a provider module some member imports that the provider's own roots do not reach becomes additional provider coverage, and each member is re-rooted at its terminal modules. Fail-closed on imports from outside the cataloged members, ambiguous providers, and cross-member module collisions. The workspace must already be fetched (run its `lake build` first); the resolved roots are echoed into --report."
-
-  ARGS:
-    ...libs : String; "Member library specs `Qualifier=Root[,Root...]` in dependency order (dependencies first), e.g. `Batteries=Batteries HaskellSpec=HaskellSpec`."
+  SUBCOMMANDS:
+    catalogAssembleCmd;
+    catalogVerifyCmd;
+    catalogInfoCmd
 ]
+
+end

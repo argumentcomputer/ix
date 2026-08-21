@@ -138,6 +138,22 @@ def testRustCheckEnv : TestSeq :=
     check proceeds, so a hang is recognisable by a missing terminator
     after `[i/N] name ...` — look for the last printed name. -/
 def focusConsts : Array Lean.Name := #[
+  -- 2026-08-22: `.eq_def` proofs of mutual structural defs over a
+  -- Type-level mutual inductive reference `X.brecOn.go` / `X.brecOn.eq`
+  -- directly; those heads need the same call-site motive permutation as
+  -- `X.brecOn` when the canonical class order differs from source order
+  -- (torchlean.ixe `NN.GraphSpec.DAG.*.eq_def` failure family). The twin
+  -- fixture blocks have opposite source orders, so pre-fix exactly one
+  -- family's eq_defs FAIL with AppTypeMismatch.
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.Ar.wk.eq_def,
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.Tm.wk.eq_def,
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.Ar2.wk.eq_def,
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.Tm2.wk.eq_def,
+
   -- 2026-08-19 (v4.33 bump fallout): Prop-mutual IndPredBelow matchers.
   -- The `match_2` matchers mention `OddP.below`/`EvenP.below` applied to
   -- the parent family's motives, so they pin the below inductive's

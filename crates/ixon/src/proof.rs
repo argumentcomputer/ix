@@ -163,6 +163,21 @@ pub enum Claim {
   Reveal { comm: Address, info: RevealConstantInfo },
   /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
   Contains { tree: Address, const_addr: Address },
+  /// The `.ixc` catalog claim. Two leaf vocabularies, never mixed:
+  /// `members` is `merkle_root_canonical` over member ENV ROOTS;
+  /// `content` (and `assumptions`) commit CONSTANT ADDRESSES. States
+  /// that (1) `tree(content)` is exactly the union of the member envs'
+  /// const sets — nothing missing, nothing unattributed — and (2)
+  /// every constant in `tree(content)` typechecks, conditional on
+  /// `assumptions` (`None` = unconditional). Verified by COMPOSITION
+  /// of per-piece/chunk `CheckEnv` claims with set discharge (the
+  /// shard protocol one level up) — there is deliberately no
+  /// whole-catalog interpreter arm.
+  Catalog {
+    members: Address,
+    content: Address,
+    assumptions: Option<Address>,
+  },
 }
 
 /// A proof of a claim.
@@ -180,8 +195,11 @@ pub struct Proof {
 
 /// Tag4 flag for envs, commitments, AssumptionTree, and claims (0xE).
 ///
-/// All variants under 0xE fit in single-byte tags (`0xE0`–`0xE7`).
-/// Matches the `Variant (0-7)` constraint documented in `docs/Ixon.md`.
+/// Variants 0–7 fit in single-byte tags (`0xE0`–`0xE7`) and are all
+/// taken. Variant 8 (Catalog) is the first — and so far only —
+/// multi-byte tag under 0xE: it encodes as `0xE8 0x08` (large bit set,
+/// one size byte). `docs/Ixon.md`'s single-byte-tag note carries the
+/// exception.
 ///
 /// - 0: Env (on-disk env serialization)
 /// - 1: Comm (commitment, handled in `comm.rs`)
@@ -191,6 +209,7 @@ pub struct Proof {
 /// - 5: CheckEnv claim
 /// - 6: Reveal claim
 /// - 7: Contains claim
+/// - 8: Catalog claim (2-byte tag `0xE8 0x08`)
 pub const FLAG_CLAIM: u8 = 0xE;
 
 pub const VARIANT_ENV: u64 = 0;
@@ -201,9 +220,10 @@ pub const VARIANT_CHECK_CLAIM: u64 = 4;
 pub const VARIANT_CHECK_ENV_CLAIM: u64 = 5;
 pub const VARIANT_REVEAL_CLAIM: u64 = 6;
 pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
+pub const VARIANT_CATALOG_CLAIM: u64 = 8;
 
 /// Tag4 flag for ZK proofs (0xF). All variants in single-byte tags
-/// (`0xF0`–`0xF4`). Slots 5-7 reserved for future proof variants.
+/// (`0xF0`–`0xF5`). Slots 6-7 reserved for future proof variants.
 ///
 /// Proof bytes are uniform opaque ZK proofs — witness data (e.g.,
 /// merkle paths for Contains) is prover-side scratch consumed by the
@@ -214,6 +234,7 @@ pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
 /// - 2: CheckEnv proof
 /// - 3: Reveal proof
 /// - 4: Contains proof
+/// - 5: Catalog proof
 pub const FLAG_PROOF: u8 = 0xF;
 
 pub const VARIANT_EVAL_PROOF: u64 = 0;
@@ -221,6 +242,7 @@ pub const VARIANT_CHECK_PROOF: u64 = 1;
 pub const VARIANT_CHECK_ENV_PROOF: u64 = 2;
 pub const VARIANT_REVEAL_PROOF: u64 = 3;
 pub const VARIANT_CONTAINS_PROOF: u64 = 4;
+pub const VARIANT_CATALOG_PROOF: u64 = 5;
 
 // Backwards-compatibility re-export: many call sites refer to FLAG.
 pub const FLAG: u8 = FLAG_CLAIM;
@@ -954,6 +976,13 @@ impl Claim {
         buf.extend_from_slice(tree.as_bytes());
         buf.extend_from_slice(const_addr.as_bytes());
       },
+      Claim::Catalog { members, content, assumptions } => {
+        // First multi-byte claim tag: 0xE8 0x08 on the wire.
+        Tag4::new(FLAG_CLAIM, VARIANT_CATALOG_CLAIM).put(buf);
+        buf.extend_from_slice(members.as_bytes());
+        buf.extend_from_slice(content.as_bytes());
+        put_opt_addr(assumptions, buf);
+      },
     }
   }
 
@@ -992,6 +1021,12 @@ impl Claim {
         let const_addr = get_address(buf)?;
         Ok(Claim::Contains { tree, const_addr })
       },
+      VARIANT_CATALOG_CLAIM => {
+        let members = get_address(buf)?;
+        let content = get_address(buf)?;
+        let assumptions = get_opt_addr(buf)?;
+        Ok(Claim::Catalog { members, content, assumptions })
+      },
       x => {
         Err(format!("Claim::get: invalid claim variant {x} under flag 0xE",))
       },
@@ -1014,6 +1049,7 @@ impl Claim {
       Claim::CheckEnv { .. } => VARIANT_CHECK_ENV_PROOF,
       Claim::Reveal { .. } => VARIANT_REVEAL_PROOF,
       Claim::Contains { .. } => VARIANT_CONTAINS_PROOF,
+      Claim::Catalog { .. } => VARIANT_CATALOG_PROOF,
     }
   }
 }
@@ -1053,6 +1089,11 @@ impl Proof {
       Claim::Contains { tree, const_addr } => {
         buf.extend_from_slice(tree.as_bytes());
         buf.extend_from_slice(const_addr.as_bytes());
+      },
+      Claim::Catalog { members, content, assumptions } => {
+        buf.extend_from_slice(members.as_bytes());
+        buf.extend_from_slice(content.as_bytes());
+        put_opt_addr(assumptions, buf);
       },
     }
     // Opaque ZK proof bytes: length prefix + data
@@ -1094,6 +1135,12 @@ impl Proof {
         let tree = get_address(buf)?;
         let const_addr = get_address(buf)?;
         Claim::Contains { tree, const_addr }
+      },
+      VARIANT_CATALOG_PROOF => {
+        let members = get_address(buf)?;
+        let content = get_address(buf)?;
+        let assumptions = get_opt_addr(buf)?;
+        Claim::Catalog { members, content, assumptions }
       },
       x => {
         return Err(format!(
@@ -1330,7 +1377,7 @@ mod tests {
 
   impl Arbitrary for Claim {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 5 {
+      match u8::arbitrary(g) % 6 {
         0 => Claim::Eval {
           input: Address::arbitrary(g),
           output: Address::arbitrary(g),
@@ -1347,6 +1394,11 @@ mod tests {
         3 => Claim::Reveal {
           comm: Address::arbitrary(g),
           info: RevealConstantInfo::arbitrary(g),
+        },
+        4 => Claim::Catalog {
+          members: Address::arbitrary(g),
+          content: Address::arbitrary(g),
+          assumptions: gen_opt_addr(g),
         },
         _ => Claim::Contains {
           tree: Address::arbitrary(g),
@@ -1388,6 +1440,54 @@ mod tests {
         false
       },
     }
+  }
+
+  /// The catalog claim's exact wire form is a cross-serializer
+  /// commitment (the Rust↔Lean digest-parity gate pins the same bytes
+  /// from the Lean side): the first multi-byte claim tag `0xE8 0x08`,
+  /// then members ‖ content ‖ opt-assumptions. A drift here changes
+  /// every catalog digest.
+  #[test]
+  fn catalog_claim_wire_bytes_pinned() {
+    let members = Address::hash(b"members");
+    let content = Address::hash(b"content");
+    let asm = Address::hash(b"assumptions");
+    let claim = Claim::Catalog {
+      members: members.clone(),
+      content: content.clone(),
+      assumptions: Some(asm.clone()),
+    };
+    let (addr, bytes) = claim.commit();
+    let mut expected = vec![0xE8, 0x08];
+    expected.extend_from_slice(members.as_bytes());
+    expected.extend_from_slice(content.as_bytes());
+    expected.push(0x01);
+    expected.extend_from_slice(asm.as_bytes());
+    assert_eq!(bytes, expected, "catalog claim wire bytes drifted");
+    assert_eq!(addr, Address::hash(&expected));
+    // Cross-language digest pin: `Tests/Ix/Claim.lean` asserts the
+    // SAME hex from the Lean serializer over the same fixture — the
+    // two serializers cannot drift on the large-tag path unnoticed.
+    assert_eq!(
+      addr.hex(),
+      "608af1f5477517d14427da664ae7a62d46cd9236b2183481c7801910683579bf",
+      "catalog claim digest drifted"
+    );
+    // Unconditional form: trailing 0x00, same 2-byte tag.
+    let claim_none =
+      Claim::Catalog { members, content, assumptions: None };
+    let mut buf = Vec::new();
+    claim_none.put(&mut buf);
+    assert_eq!(buf.len(), 2 + 32 + 32 + 1);
+    assert_eq!(&buf[0..2], &[0xE8, 0x08]);
+    assert_eq!(*buf.last().unwrap(), 0x00);
+    // The proof wrapper stays a single-byte tag: 0xF5.
+    let proof = Proof::new(claim_none, Vec::new());
+    let mut pbuf = Vec::new();
+    proof.put(&mut pbuf);
+    assert_eq!(pbuf[0], 0xF5, "catalog proof wrapper tag drifted");
+    let back = Proof::get(&mut pbuf.as_slice()).expect("proof roundtrip");
+    assert_eq!(back, proof);
   }
 
   fn reveal_info_roundtrip(info: &RevealConstantInfo) -> bool {

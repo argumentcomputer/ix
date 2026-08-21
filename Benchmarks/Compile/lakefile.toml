@@ -29,6 +29,9 @@ name = "CompileFLT"
 [[lean_lib]]
 name = "CompileMutualFixtures"
 
+[[lean_lib]]
+name = "TorchLean"
+
 [[require]]
 name = "ix"
 path = "../.."
@@ -38,6 +41,23 @@ name = "flt"
 git = "https://github.com/ImperialCollegeLondon/FLT"
 rev = "v4.33.0"
 
+[[require]]
+name = "CompPoly"
+git = "https://github.com/Verified-zkEVM/CompPoly"
+rev = "75c0681bd37567af00e8f0bd13fd59f1423e4217"
+
+[[require]]
+name = "TorchLean"
+git = "https://github.com/lean-dojo/TorchLean"
+rev = "fa6bbe3bf0d93679422be8a14978c26ee55d98ff"
+
+[[require]]
+name = "phi-confluence"
+git = "https://github.com/objectionary/proof"
+rev = "58aa7731076d02bf51b2dfbcdc06c4f764101fb4"
+
+# Keep the workspace's Lean 4.33 dependency closure authoritative over
+# PhiConfluence's older transitive Mathlib pin.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"

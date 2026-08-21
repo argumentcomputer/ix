@@ -653,4 +653,138 @@ mutual
 end
 end BelowPredicate
 
+-- Type-level mutual indexed inductives + mutual structural recursion +
+-- forced `.eq_def` equation lemmas (the TorchLean `NN.GraphSpec.DAG`
+-- `Term`/`Args` shape, torchlean.ixe check-rs failure of 2026-08-22).
+--
+-- The mutual defs compile through `X.brecOn`, and when the canonical
+-- (`sort_consts`) class order differs from Lean's source order the
+-- regenerated `.brecOn`/`.brecOn.go`/`.brecOn.eq` carry canonical motive
+-- and handler order. User references to `X.brecOn` are permuted by
+-- `brec_on_call_site_plans` — but the auto-generated `.eq_def` proofs
+-- reference `X.brecOn.go` and `X.brecOn.eq` DIRECTLY, and those heads
+-- need the same call-site permutation. The block is declared twice with
+-- opposite source orders so exactly one twin disagrees with the
+-- canonical order regardless of content-hash values.
+namespace TypeBrecOnEqDef
+
+-- Two ctors, deliberately NOT unit-like: with a 0-field single-ctor `Sh`,
+-- Lean's elaborator-level `isDefEq` (unit-like structure eta) makes the
+-- generalized major's types defeq inside `mkEqAndProof`, so Lean's
+-- `.brecOn.eq` uses a homogeneous `Eq` for the major where ix's
+-- kernel-level defeq (no unit-like rule) generates `HEq` — a separate,
+-- pre-existing `.eq` fidelity divergence. `NN.Tensor.Shape` (the shape
+-- this fixture mirrors) is not unit-like, so keep `Sh` non-unit-like.
+public inductive Sh where
+  | a : Sh
+  | b : Sh
+
+mutual
+  public inductive Tm : List Sh → Sh → Type where
+    | var {Γ : List Sh} {s : Sh} : Tm Γ s
+    | op {Γ : List Sh} {ins : List Sh} {t : Sh} : Ar Γ ins → Tm Γ t
+  public inductive Ar : List Sh → List Sh → Type where
+    | nil {Γ : List Sh} : Ar Γ []
+    | cons {Γ : List Sh} {s : Sh} {ss : List Sh} :
+        Tm Γ s → Ar Γ ss → Ar Γ (s :: ss)
+end
+
+-- The Ar-first def order mirrors TorchLean's `Args.rename`/`Term.rename`.
+mutual
+  public def Ar.wk {Γ : List Sh} {ss : List Sh} : Ar Γ ss → Ar Γ ss
+    | .nil => .nil
+    | .cons t rest => .cons t.wk rest.wk
+  public def Tm.wk {Γ : List Sh} {s : Sh} : Tm Γ s → Tm Γ s
+    | .var => .var
+    | .op args => .op args.wk
+end
+
+-- Force realization of the `.eq_def` lemmas into the env; their proofs
+-- are what reference `.brecOn.go` / `.brecOn.eq` with explicit motives.
+set_option linter.defProp false in
+def arWkEqDef := @Ar.wk.eq_def
+set_option linter.defProp false in
+def tmWkEqDef := @Tm.wk.eq_def
+
+-- Mirrored source order (Ar2 before Tm2).
+mutual
+  public inductive Ar2 : List Sh → List Sh → Type where
+    | nil {Γ : List Sh} : Ar2 Γ []
+    | cons {Γ : List Sh} {s : Sh} {ss : List Sh} :
+        Tm2 Γ s → Ar2 Γ ss → Ar2 Γ (s :: ss)
+  public inductive Tm2 : List Sh → Sh → Type where
+    | var {Γ : List Sh} {s : Sh} : Tm2 Γ s
+    | op {Γ : List Sh} {ins : List Sh} {t : Sh} : Ar2 Γ ins → Tm2 Γ t
+end
+
+mutual
+  public def Ar2.wk {Γ : List Sh} {ss : List Sh} : Ar2 Γ ss → Ar2 Γ ss
+    | .nil => .nil
+    | .cons t rest => .cons t.wk rest.wk
+  public def Tm2.wk {Γ : List Sh} {s : Sh} : Tm2 Γ s → Tm2 Γ s
+    | .var => .var
+    | .op args => .op args.wk
+end
+
+set_option linter.defProp false in
+def ar2WkEqDef := @Ar2.wk.eq_def
+set_option linter.defProp false in
+def tm2WkEqDef := @Tm2.wk.eq_def
+
+end TypeBrecOnEqDef
+
+-- Unit-like index type. `Un` has a single 0-field constructor, so Lean's
+-- elaborator-level defeq (`isDefEqUnitLike`, Meta/ExprDefEq.lean) treats
+-- any two `Un` terms as defeq. Inside the `cases`-tactic construction of
+-- `.brecOn.eq`, `mkEqAndProof` then sees the generalized major's types
+-- `Tm Γ a₁` / `Tm Γ a₂` as defeq and generalizes the major with a
+-- homogeneous `Eq` at the OUTER type (generically ill-typed inside the
+-- motive lambda, but valid under the kernel's infer-only proof checking),
+-- discharged by `Eq.refl` and consumed by `Eq.ndrec`+`Eq.symm` in the
+-- minors — where the non-unit-like shape uses `HEq`/`HEq.refl`/
+-- `eq_of_heq`. The regenerated `.brecOn.eq` must reproduce Lean's choice
+-- (validate-aux Phase 2 congruence + roundtrip). `Ar`'s major stays `HEq`
+-- (`List Un` is not unit-like), so this block exercises both kinds at
+-- once. Order-independent (no mirrored twin needed).
+namespace TypeBrecOnEqDefUnit
+
+public inductive Un where
+  | mk : Un
+
+mutual
+  -- `lit` returns at a CONCRETE unit-like index (`Un.mk`, an expression
+  -- rather than a bound fvar), so its minor exercises the Eq-major kind
+  -- combined with the expression-ret-index substCore path (index
+  -- `Eq.ndrec` abstracting the outer index, forward-dep revert of the
+  -- major, then the homogeneous major `Eq.ndrec`).
+  public inductive Tm : List Un → Un → Type where
+    | var {Γ : List Un} {s : Un} : Tm Γ s
+    | lit {Γ : List Un} : Tm Γ .mk
+    | op {Γ : List Un} {ins : List Un} {t : Un} : Ar Γ ins → Tm Γ t
+  public inductive Ar : List Un → List Un → Type where
+    | nil {Γ : List Un} : Ar Γ []
+    | cons {Γ : List Un} {s : Un} {ss : List Un} :
+        Tm Γ s → Ar Γ ss → Ar Γ (s :: ss)
+end
+
+mutual
+  public def Ar.wk {Γ : List Un} {ss : List Un} : Ar Γ ss → Ar Γ ss
+    | .nil => .nil
+    | .cons t rest => .cons t.wk rest.wk
+  public def Tm.wk {Γ : List Un} {s : Un} : Tm Γ s → Tm Γ s
+    | .var => .var
+    | .lit => .lit
+    | .op args => .op args.wk
+end
+
+set_option linter.defProp false in
+def arWkEqDef := @Ar.wk.eq_def
+-- No `Tm.wk.eq_def` forcing: `lit`'s concrete return index makes the
+-- match dependent and Lean fails to realize the equation lemma for it.
+-- The `.brecOn.eq` coverage doesn't need it — aux_gen regenerates the
+-- brecOn family for the block regardless; eq_def surgery is covered by
+-- `TypeBrecOnEqDef` and by `arWkEqDef` above.
+
+end TypeBrecOnEqDefUnit
+
 end Tests.Ix.Compile.Mutual

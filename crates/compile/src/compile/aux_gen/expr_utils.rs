@@ -2721,6 +2721,22 @@ impl<'a> TcScope<'a> {
       to_kexpr_static(b, &self.fvar_levels, depth, self.param_names, self.stt);
     self.tc.is_def_eq(&ka, &kb).unwrap_or(false)
   }
+
+  /// Infer the type of a `LeanExpr` in the current FVar context via the
+  /// Rust kernel's `infer`. Decision support only (the Eq-vs-HEq binder
+  /// choice's unit-like check): the result is never emitted into
+  /// generated terms, so — unlike `whnf_lean` — no source-name
+  /// restoration is performed on the egressed expression.
+  ///
+  /// Returns `None` on kernel errors (conservative: callers treat an
+  /// uninferrable side as "not unit-like").
+  pub(super) fn infer_lean(&mut self, e: &LeanExpr) -> Option<LeanExpr> {
+    let depth = self.base_depth + self.extra_locals;
+    let ke =
+      to_kexpr_static(e, &self.fvar_levels, depth, self.param_names, self.stt);
+    let ty = self.tc.infer(&ke).ok()?;
+    Some(kexpr_to_lean(&ty, depth, &self.fvar_levels, 0, self.param_names))
+  }
 }
 
 // No Drop impl needed — the TC is owned and discarded with the scope.

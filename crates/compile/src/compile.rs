@@ -4362,20 +4362,40 @@ fn compile_mutual(
             && lean_env.get(&brecon_name).is_some()
           {
             let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
-            if stt
-              .brec_on_call_site_plans
-              .get(&brecon_name)
-              .is_some_and(|existing| *existing != new_plan)
-            {
-              return Err(CompileError::InvalidMutualBlock {
-                reason: format!(
-                  "conflicting brecOn call-site plans for '{}' — two blocks \
-                   claim one source-indexed aux name",
-                  brecon_name.pretty(),
-                ),
-              });
+            // Type-level brecOn splits into `.go` (the PProd-packed
+            // worker) and `.eq` (its unfolding lemma). Lean's
+            // auto-generated equation-lemma proofs (`f.eq_def`) reference
+            // both DIRECTLY with explicit motive/handler arguments, and
+            // their telescopes are identical to `.brecOn`'s (params,
+            // motives, indices, major, handlers) — so they need the same
+            // call-site permutation. Without these keys, eq_def proofs
+            // ship source-order motives against the canonical-order
+            // regenerated `.go`/`.eq` (the torchlean
+            // `NN.GraphSpec.DAG.*.eq_def` AppTypeMismatch family; fixture
+            // `Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDef`).
+            let mut plan_keys = vec![brecon_name.clone()];
+            for sub in ["go", "eq"] {
+              let sub_name = Name::str(brecon_name.clone(), sub.to_string());
+              if lean_env.get(&sub_name).is_some() {
+                plan_keys.push(sub_name);
+              }
             }
-            stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
+            for key in plan_keys {
+              if stt
+                .brec_on_call_site_plans
+                .get(&key)
+                .is_some_and(|existing| *existing != new_plan)
+              {
+                return Err(CompileError::InvalidMutualBlock {
+                  reason: format!(
+                    "conflicting brecOn call-site plans for '{}' — two \
+                     blocks claim one source-indexed aux name",
+                    key.pretty(),
+                  ),
+                });
+              }
+              stt.brec_on_call_site_plans.insert(key, new_plan.clone());
+            }
           }
           if let Some(below_name) = surgery::rec_name_to_below_name(&name)
             && let Some(below_ci) = lean_env.get(&below_name)

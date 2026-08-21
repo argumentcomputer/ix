@@ -1025,13 +1025,22 @@ blocks claim one source-indexed aux name")
         if let some breconName := recNameToBreconName name then
           if (← liftM (lookupConst? breconName : CompileM _)).isSome then
             let newPlan := BRecOnCallSitePlan.fromRecPlan plan
-            if let some existing :=
-                cenvGlobal.brecOnCallSitePlans.get? breconName then
-              if existing != newPlan then
-                throw (.invalidMutualBlock
-                  s!"conflicting brecOn call-site plans for \
-'{breconName.pretty}' — two blocks claim one source-indexed aux name")
-            brecPlans := brecPlans.insert breconName newPlan
+            -- Mirror compile.rs: Type-level `.brecOn.go` / `.brecOn.eq`
+            -- share `.brecOn`'s telescope and are referenced directly by
+            -- equation-lemma proofs, so they carry the same plan keys.
+            let mut planKeys : Array Name := #[breconName]
+            for sub in ["go", "eq"] do
+              let subName := Name.mkStr breconName sub
+              if (← liftM (lookupConst? subName : CompileM _)).isSome then
+                planKeys := planKeys.push subName
+            for key in planKeys do
+              if let some existing :=
+                  cenvGlobal.brecOnCallSitePlans.get? key then
+                if existing != newPlan then
+                  throw (.invalidMutualBlock
+                    s!"conflicting brecOn call-site plans for \
+'{key.pretty}' — two blocks claim one source-indexed aux name")
+              brecPlans := brecPlans.insert key newPlan
         if let some belowName := recNameToBelowName name then
           if let some belowCi ← liftM (lookupConst? belowName : CompileM _) then
             let newPlan := BRecOnCallSitePlan.fromRecPlan plan

@@ -40,7 +40,7 @@ jobs:
             runner: warp-ubuntu-latest-x64-32x
             test_args: >-
               --ignored
-              shard-map catalog-fixtures commit-io
+              shard-map catalog-dedup commit-io fidelity-initstd
               kernel-ixon-roundtrip kernel-tutorial kernel-check-env kernel-check-const
               rust-kernel-build-primitives rust-kernel-build-prim-origs ixvm
             zk_voting: true

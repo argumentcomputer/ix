@@ -24,6 +24,7 @@ pub mod texray;
 pub mod unsigned;
 
 pub mod builder;
+pub mod catalog;
 pub mod compile;
 pub mod graph;
 pub mod ix;

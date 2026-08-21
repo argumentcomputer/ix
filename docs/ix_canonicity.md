@@ -886,6 +886,21 @@ The `CallSitePlan` per aux name records:
 At every `App(rec, args)` site, surgery decomposes the spine and
 reorders / drops arguments accordingly.
 
+Each non-head-rewritten `X.rec` plan also derives a
+`BRecOnCallSitePlan` (motive band + handler band, no minors) that is
+registered for every regenerated sibling whose public telescope embeds
+the motive order: `X.brecOn`, and — Type-level only — `X.brecOn.go`
+and `X.brecOn.eq` (identical telescopes: params, motives, indices,
+major, handlers), plus `X.below` (and, for Prop-level below
+inductives, the below ctors and `.below.casesOn`). The `.go`/`.eq`
+keys are load-bearing: Lean's auto-generated equation lemmas
+(`f.eq_def`) reference `X.brecOn.go` / `X.brecOn.eq` DIRECTLY with
+explicit motive arguments, so without those keys eq_def proofs ship
+source-order motives against the canonical-order regenerated `.go` and
+fail kernel check with `AppTypeMismatch` (the torchlean
+`NN.GraphSpec.DAG.*.eq_def` family; fixture
+`Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDef`).
+
 The IXON expression after surgery is already the canonical App spine.
 `ExprMetaData::CallSite` is the metadata wrapper for that spine, with
 two deliberately different views:

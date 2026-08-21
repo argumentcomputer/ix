@@ -10,7 +10,7 @@
   back real `Lean.ConstantInfo` object graphs (constructed through the
   toolchain's exported `lean_expr_mk_*` constructors, so hashes and
   cached flags are Lean's own); the Lean side reconstructs kernel
-  `Declaration`s with the shared `Ix.Catalog.planDeclarations` planner
+  `Declaration`s with the shared `Ix.Replay.planDeclarations` planner
   and replays them with `Lean.addDecl`.
 
   Semantics:
@@ -44,7 +44,7 @@
 module
 
 public import Lean
-public meta import Ix.Catalog
+public meta import Ix.Replay
 
 public section
 
@@ -88,7 +88,7 @@ meta def addMaterialized (consts : Array (Lean.Name × Lean.ConstantInfo)) :
       owned := owned.insert name info
   let ownedFrozen := owned
   let find? := fun n => (ownedFrozen.find? n).orElse fun _ => env.find? n
-  let plan ← match Ix.Catalog.planDeclarations owned find? with
+  let plan ← match Ix.Replay.planDeclarations owned find? with
     | .ok plan => pure plan
     | .error e => throwError "import_ixe: {e}"
   let mut replayed := 0
