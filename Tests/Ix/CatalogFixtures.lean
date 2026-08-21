@@ -18,6 +18,13 @@
   - Owner-aware rewriting: `FixtureA.importedScore`'s relocated form
     references the qualified `FixtureB` constants (the unqualified
     source names do not exist in the catalog).
+  - I4 (loader olean level): member envs come in at private level —
+    imported theorems keep their proofs, `_private.*` constants are
+    present, `@[no_expose]` definitions load transparent.
+  - I5 (root coverage): a member reaching a provider module outside
+    the provider's declared roots — or a provider listed after its
+    consumer — fails closed with a named error before the kernel
+    trips on a renamed-but-never-replayed constant.
 
   Needs the fixture workspace buildable (network-free; toolchain
   shared), so it lives behind `--ignored`.
@@ -112,6 +119,154 @@ private def fixturesTest : IO (Bool × Nat × Nat × Option String) := do
   | some (what, _) => return (false, 0, 0, some s!"failed: {what}")
   | none => return (true, audit.checked, result.consts.size, none)
 
+/-- Pure checks over member `A`'s live env; only fresh strings and
+    counts escape (the env's regions are freed after the `forEachLib`
+    callback returns). -/
+private def checkMemberEnvA (envA : Lean.Environment) :
+    Bool × Nat × Nat × Option String := Id.run do
+  -- Imported toolchain theorem: a real proof whose references all
+  -- resolve in the same env (at exported level it is a body-less axiom).
+  match envA.constants.find? `Nat.add_comm with
+  | some (.thmInfo v) =>
+    for r in v.value.getUsedConstants do
+      unless envA.contains r do
+        return (false, 0, 0,
+          some s!"Nat.add_comm proof ref {r} dangling — env not closed")
+  | some _ => return (false, 0, 0,
+      some "Nat.add_comm is not a theorem — exported-level trim suspected")
+  | none => return (false, 0, 0, some "Nat.add_comm missing from member env")
+  -- The member's own module-mode theorem keeps its proof.
+  match envA.constants.find? `FixtureA.importedScore_eq with
+  | some (.thmInfo _) => pure ()
+  | some _ => return (false, 0, 0,
+      some "FixtureA.importedScore_eq is not a theorem")
+  | none => return (false, 0, 0,
+      some "FixtureA.importedScore_eq missing from member env")
+  -- `@[no_expose]` loads as a transparent definition (D6 at the loader).
+  match envA.constants.find? `Collision.concealedDefinition with
+  | some (.defnInfo _) => pure ()
+  | some _ => return (false, 0, 0,
+      some "no_expose Collision.concealedDefinition did not load as a defn")
+  | none => return (false, 0, 0,
+      some "Collision.concealedDefinition missing from member env")
+  -- Non-exported `_private.*` constants from imports are present.
+  let privCount := envA.constants.toList.countP
+    fun (n, _) => (`_private).isPrefixOf n
+  if privCount == 0 then
+    return (false, 0, 0,
+      some "no `_private.*` constants — exported-level trim suspected")
+  return (true, privCount, envA.constants.toList.length, none)
+
+/-- I4 gate: the catalog loader must import at `OLeanLevel.private`.
+    An exported-level member env (what module-mode header processing
+    yields) carries imported public theorems as body-less axioms and
+    omits `_private.*` constants — the catalog then axiomizes proofs,
+    kernel replay accepts vacuously, and `--audit` compares two
+    identically-axiomized legs (#572). Only the loaded env itself can
+    witness the regression, so assert on member `A`'s env as streamed
+    by `forEachLib` (module-mode fixtures: `@[no_expose]`, theorems, a
+    cross-package import). Relies on `fixturesTest` having built the
+    fixture workspace. -/
+private def loaderLevelTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  Ix.Catalog.forEachLib spec
+    (false, 0, 0, some "member `A` never streamed")
+    fun acc lib env _ _ => do
+      if lib.qualifier == `A then
+        return (.freeRegions, checkMemberEnvA env)
+      else
+        return (.freeRegions, acc)
+
+/-- I6: `auditCatalog` restricted to a qualifier subset checks exactly
+    that subset — fewer constants than the full audit, still zero
+    violations. -/
+private def auditOnlyTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let result ← Ix.Catalog.buildCatalog spec
+  let full ← Ix.Catalog.auditCatalog spec result.consts
+  let onlyB ← Ix.Catalog.auditCatalog spec result.consts
+    (some (({} : Lean.NameSet).insert `B))
+  unless onlyB.violations.isEmpty do
+    return (false, 0, 0,
+      some s!"subset audit violation: {onlyB.violations[0]!}")
+  unless onlyB.checked > 0 && onlyB.checked < full.checked do
+    return (false, 0, 0,
+      some s!"subset checked {onlyB.checked}, full checked {full.checked}")
+  return (true, onlyB.checked, full.checked, none)
+
+private def containsStr (haystack needle : String) : Bool :=
+  (haystack.splitOn needle).length > 1
+
+/-- I5: a member reaching a provider module outside the provider's
+    declared root closure fails closed with a named, actionable error
+    identifying the module and its owner — not a bare kernel `unknown
+    constant`. `B`'s roots are narrowed to `FixtureB.Model`, so `A`
+    (whose `UsesB` imports `FixtureB.Base`) references a `B`-owned
+    module nobody would replay. -/
+private def coverageErrorTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let badSpec : Ix.Catalog.CatalogSpec := {
+    catalogPrefix := `RelocCat
+    libs := #[
+      { qualifier := `B, roots := #[`FixtureB.Model] },
+      { qualifier := `A, roots := #[`FixtureA] } ] }
+  try
+    let _ ← Ix.Catalog.buildCatalog badSpec
+    return (false, 0, 0,
+      some "narrowed-roots build succeeded; expected the I5 coverage error")
+  catch e =>
+    let msg := toString e
+    unless containsStr msg "FixtureB.Base" do
+      return (false, 0, 0,
+        some s!"error does not name the module: {msg.take 200}")
+    unless containsStr msg "roots do not cover" do
+      return (false, 0, 0,
+        some s!"error is not the coverage diagnostic: {msg.take 200}")
+    return (true, 0, 0, none)
+
+/-- I5, ordering flavor: a provider listed after its consumer is
+    reported as a spec ordering error, not a missing root. -/
+private def orderingErrorTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let badSpec : Ix.Catalog.CatalogSpec := {
+    catalogPrefix := `RelocCat
+    libs := #[
+      { qualifier := `A, roots := #[`FixtureA] },
+      { qualifier := `B, roots := #[`FixtureB] } ] }
+  try
+    let _ ← Ix.Catalog.buildCatalog badSpec
+    return (false, 0, 0,
+      some "misordered build succeeded; expected the I5 ordering error")
+  catch e =>
+    let msg := toString e
+    unless containsStr msg "listed after" do
+      return (false, 0, 0,
+        some s!"error is not the ordering diagnostic: {msg.take 200}")
+    return (true, 0, 0, none)
+
+/-- The copy-staged and region-shared staging paths produce identical
+    artifacts: build with the default threshold (fixture members are
+    all copy-staged) and with threshold 0 (all shared, envs kept), and
+    compare canonical roots. -/
+private def hybridStagingTest : IO (Bool × Nat × Nat × Option String) := do
+  initLeanSearchPath (some fixtureDir)
+  let dir ← IO.FS.createTempDir
+  try
+    let copied ← Ix.Catalog.buildCatalog spec
+    let sCopied ← Ix.CompileM.rsCompileEnvBytesFFI copied.consts.toList
+      (dir / "copied.ixe").toString false
+    let shared ← Ix.Catalog.buildCatalog spec (copyStageMaxOwned := 0)
+    let sShared ← Ix.CompileM.rsCompileEnvBytesFFI shared.consts.toList
+      (dir / "shared.ixe").toString false
+    if sCopied.root != sShared.root then
+      return (false, 0, 0, some s!"staging-path root drift: \
+{sCopied.root.take 12}… vs {sShared.root.take 12}…")
+    if sCopied.bytes != sShared.bytes then
+      return (false, 0, 0, some "staging-path byte-size drift")
+    return (true, sCopied.bytes.toNat, 0, none)
+  finally
+    IO.FS.removeDirAll dir
+
 /-- C3: two independent build+compile passes agree on the canonical
     root. -/
 private def determinismTest : IO (Bool × Nat × Nat × Option String) := do
@@ -150,6 +305,16 @@ private def determinismTest : IO (Bool × Nat × Nat × Option String) := do
 def suite : List TestSeq := [
   .individualIO "catalog fixtures: audit + dedup matrix (C1/C2)" none
     fixturesTest .done,
+  .individualIO "catalog fixtures: loader imports at private level (I4)"
+    none loaderLevelTest .done,
+  .individualIO "catalog fixtures: uncovered provider module fails closed (I5)"
+    none coverageErrorTest .done,
+  .individualIO "catalog fixtures: audit restricted to a subset (I6)"
+    none auditOnlyTest .done,
+  .individualIO "catalog fixtures: copy-staged ≡ region-shared staging"
+    none hybridStagingTest .done,
+  .individualIO "catalog fixtures: misordered members fail closed (I5)"
+    none orderingErrorTest .done,
   .individualIO
     "catalog fixtures: deterministic root + kernel check (C3/C4)"
     none determinismTest .done ]

@@ -58,6 +58,7 @@ import Tests.Ix.Catalog
 import Tests.Ix.ImportIxe
 import Tests.Ix.CatalogFixtures
 import Tests.Ix.CatalogQualified
+import Tests.Ix.CatalogSpine
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -105,6 +106,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
 def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("shard-map", Tests.ShardMap.suite),
   ("catalog-fixtures", Tests.Ix.CatalogFixtures.suite),
+  ("catalog-spine", Tests.Ix.CatalogSpine.suite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
   ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),
