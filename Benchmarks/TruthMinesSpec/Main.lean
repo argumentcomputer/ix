@@ -5,7 +5,8 @@
   because ix and the corpus live in one repo on one toolchain.
 
     gen [--check]   project the workspace files (lakefile.lean, lean-toolchain)
-    spec [--mini]   print the `ix catalog --spec` JSON (full or mini tier)
+    spec [--mini]   print the positional `Qualifier=Root[,Root…]` member
+                    vector `ix catalog` is invoked with (full or mini)
     build [--mini] [--out PATH] [--report PATH]
           [--audit-only Qual[,Qual…]] [--ceiling-gb N] [--no-watchdog]
                     gen-check, build the member root oleans (network +
@@ -169,22 +170,20 @@ unprotected"
     reportOom buildExit ceiling? s!"{tier} workspace build"
     IO.eprintln s!"{tier} workspace build failed ({buildExit})"
     return buildExit
-  -- The spec is rendered at invocation time; the typed records stay the only
-  -- checked-in representation.
-  IO.FS.createDirAll (workspaceDir / ".lake")
-  let specPath := workspaceDir / ".lake" / s!"truthmines-{tier}-spec.json"
-  IO.FS.writeFile specPath (renderSpecJson spec)
   let root ← IO.currentDir
   let exe ← IO.FS.realPath ixExe
-  -- The frozen specs already carry closed (augmented, terminal) roots;
+  -- The typed records render straight to `ix catalog`'s positional
+  -- argument vector — no spec file, no intermediate format. The frozen
+  -- specs already carry closed (augmented, terminal) roots;
   -- `--close-roots` recomputation belongs to spec REGENERATION, not to
   -- every build.
   let mut args := #["catalog",
-    "--spec", (root / specPath).toString,
+    "--prefix", spec.catalogPrefix.toString (escape := false),
     "--out", (root / out).toString,
     "--report", (root / report).toString]
   if let some qualifiers := options.auditOnly then
     args := args ++ #["--audit-only", qualifiers]
+  args := args ++ commandArguments spec
   let exit ← watched ceiling? exe.toString args workspaceDir
   if exit == 0 then
     IO.println s!"truthmines build ({tier}): wrote {out} (report: {report})"
@@ -199,8 +198,12 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["gen"] => runGen (check := false)
   | ["gen", "--check"] => runGen (check := true)
-  | ["spec"] => IO.println (renderSpecJson catalogSpec); return 0
-  | ["spec", "--mini"] => IO.println (renderSpecJson catalogMiniSpec); return 0
+  | ["spec"] =>
+    IO.println (String.intercalate " " (commandArguments catalogSpec).toList)
+    return 0
+  | ["spec", "--mini"] =>
+    IO.println (String.intercalate " " (commandArguments catalogMiniSpec).toList)
+    return 0
   | "build" :: rest =>
     match parseBuild rest with
     | .ok options => runBuild options

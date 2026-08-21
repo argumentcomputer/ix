@@ -8,11 +8,13 @@ namespace TruthMinesSpec
 
 /-! Deterministic projections of the typed records into the nested corpus
 workspace `Benchmarks/TruthMines/` and into `ix catalog` inputs. The rendered
-strings are the whole contract: `lake exe truthmines gen` writes them,
-`gen --check` (and the fast `truthmines-spec` suite) asserts byte-idempotence
-against the files on disk. `lake-manifest.json` is Lake's own lockfile, ported
-once and thereafter maintained by Lake — it is pin-checked against the
-records, not rendered. -/
+strings are the whole contract: `lake exe truthmines gen` writes the
+workspace files, `gen --check` (and the fast `truthmines-spec` suite) asserts
+byte-idempotence against the files on disk, and the catalog spec goes to
+`ix catalog` as its positional argument vector — nothing is serialized to an
+intermediate format anywhere. `lake-manifest.json` is Lake's own lockfile,
+ported once and thereafter maintained by Lake — it is pin-checked against
+the records, not rendered. -/
 
 def workspaceDir : System.FilePath := "Benchmarks" / "TruthMines"
 
@@ -108,17 +110,18 @@ def renderWorkspaceLakefile
 /-- The workspace toolchain is ix's own — derived, never authored. -/
 def renderWorkspaceToolchain : String := expectedToolchain ++ "\n"
 
-/-- The `ix catalog --spec` JSON for the admission spec. Rendered to a temp
-file at invocation time; the typed records stay the only checked-in
-representation. -/
-def renderSpecJson (admission : CatalogSpecProjection := catalogSpec) : String :=
-  (Lean.Json.mkObj [
-    ("prefix", Lean.Json.str (admission.catalogPrefix.toString (escape := false))),
-    ("libs", Lean.Json.arr <| admission.libs.map fun lib =>
-      Lean.Json.mkObj [
-        ("qualifier", Lean.Json.str (lib.qualifier.toString (escape := false))),
-        ("roots", Lean.Json.arr <| lib.roots.map fun root =>
-          Lean.Json.str (root.toString (escape := false))) ]) ]).pretty
+/-- The positional member specs `ix catalog` takes —
+`Qualifier=Root[,Root…]` in dependency order. No spec file, no JSON:
+rendering the typed records straight to the argument vector keeps them
+the only representation (the TruthMines-original design; `ix catalog`'s
+`--spec` file form is byte-equivalent per #584's I3 gate, and at corpus
+scale the vector is a few kilobytes, nowhere near any limit). -/
+def commandArguments (spec : CatalogSpecProjection := catalogSpec) :
+    Array String :=
+  spec.libs.map fun lib =>
+    let qualifier := lib.qualifier.toString (escape := false)
+    let roots := lib.roots.map (·.toString (escape := false))
+    qualifier ++ "=" ++ String.intercalate "," roots.toList
 
 /-- Full-hex pins recorded per package name across every checked-in spec
 (the workspace pin set), for cross-checking Lake's lockfile against the
