@@ -443,7 +443,59 @@ def defEq := ⟦
                             types: List‹KExpr›) -> G {
     match k_is_def_eq_struct_bounded(fa, fb, 8, types) {
       (1, _) => 1,
-      _ => slow2_eager_fallback(orig_a, orig_b, types),
+      _ => match k_is_def_eq_structure_tree(fa, fb, types) {
+        1 => 1,
+        _ => slow2_eager_fallback(orig_a, orig_b, types),
+      },
+    }
+  }
+
+  fn try_same_proj_head_app(a: KExpr, b: KExpr,
+                                 types: List‹KExpr›) -> G {
+    let (ah, aa) = collect_spine(a);
+    let (bh, ba) = collect_spine(b);
+    match list_length(aa) {
+      0 => 0,
+      _ => match list_length(aa) - list_length(ba) {
+        0 => match load(ah) {
+          KExprNode.Proj(sa, ia, ea) => match load(bh) {
+            KExprNode.Proj(sb, ib, eb) =>
+              match address_eq(sa, sb) * eq_zero(ia - ib)
+                  * eq_zero(ptr_val(ea) - ptr_val(eb)) {
+                1 => de_args(aa, ba, types),
+                _ => 0,
+              },
+            _ => 0,
+          },
+          _ => 0,
+        },
+        _ => 0,
+      },
+    }
+  }
+
+  fn k_is_def_eq_structure_tree(a: KExpr, b: KExpr,
+                                     types: List‹KExpr›) -> G {
+    match k_is_def_eq_struct_bounded(a, b, 8, types) {
+      (1, _) => 1,
+      _ => match try_same_proj_head_app(a, b, types) {
+        1 => 1,
+        _ => k_is_def_eq_structure_tree_app(a, b, types),
+      },
+    }
+  }
+
+  fn k_is_def_eq_structure_tree_app(a: KExpr, b: KExpr,
+                                         types: List‹KExpr›) -> G {
+    match load(a) {
+      KExprNode.App(af, ax) => match load(b) {
+        KExprNode.App(bf, bx) => match k_is_def_eq_structure_tree(af, bf, types) {
+          1 => k_is_def_eq_structure_tree(ax, bx, types),
+          _ => 0,
+        },
+        _ => 0,
+      },
+      _ => 0,
     }
   }
 
