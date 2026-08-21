@@ -29,6 +29,22 @@ Differences from the native form, same interface:
 - `g_is_zero` is a byte-sum test (canonical representation: zero has
   all-zero bytes; a sum of 8 bytes cannot wrap in any large field).
 
+INLINE-WRAPPER CONVENTION: the interface functions are `@`-called at
+every use site (`Pcs.lean`/`Verifier.lean` — the convention is set by
+the native form, whose ops splice to trivial arithmetic). Here a spliced
+body would be hundreds of byte-gadget lookups PER CALL SITE (one
+`g_mul` ≈ 930 u8 lookups; transitively, one `@eg_mul` cost ~14k caller
+columns — measured ~386k total columns, a 43 MB KZG wrap proof). So
+every heavy interface fn is a THIN WRAPPER around a plain (memoized,
+non-inlined) `*_impl` call: `@g_mul(..)` splices to ONE call lookup,
+the byte-gadget width lives once in the impl's own circuit, and
+repeated invocations are rows there (deduplicated by Aiur's
+by-argument memoization). The `@`-helpers (`adc`, `mul128`, …) stay
+spliced INSIDE the impl circuits — that is the right place to pay
+their width. Value constructors and pure byte logic (`g_zero`…,
+`g_is_zero`, `gl_lt_p`, `gl_from_u16`, `gl_to_bytes`) stay genuinely
+inline: they cost a handful of columns.
+
 Exactly one of `goldilocksNative`/`goldilocksForeign` merges into a
 toplevel (same names by design). This module is NOT yet merged into the
 verifier — the wire layers (`Deserialize.lean`'s `Ext`, challenger
@@ -135,7 +151,8 @@ def goldilocksForeign := ⟦
   --   • c = 1 ⇒ s < p (since 2⁶⁴ > p), and `2⁶⁴ + s − p = s + EPSILON`
   --     (a non-overflowing add since the true result is < p);
   --   • c = 0 ⇒ reduce by one conditional subtraction of p (when s ≥ p).
-  fn g_add(a: Goldilocks, b: Goldilocks) -> Goldilocks {
+  fn g_add(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_add_impl(a, b) }
+  fn g_add_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
     let (s, c) = @add8(a, b);
     let (s_minus_p, borrow) = @sub8(s, @gl_p());  -- borrow = 1 iff s < p
     let (s_plus_eps, _) = @add8(s, @gl_eps());
@@ -145,13 +162,14 @@ def goldilocksForeign := ⟦
 
   -- a − b mod p. `sub8` borrow = 1 iff a < b, in which case the true result is
   -- `(a − b mod 2⁶⁴) − EPSILON = a − b + p`.
-  fn g_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks {
+  fn g_sub(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_sub_impl(a, b) }
+  fn g_sub_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
     let (d, borrow) = @sub8(a, b);
     let (d_minus_eps, _) = @sub8(d, @gl_eps());
     @select8(borrow, d_minus_eps, d)
   }
 
-  fn g_neg(a: Goldilocks) -> Goldilocks { @g_sub(@g_zero(), a) }
+  fn g_neg(a: Goldilocks) -> Goldilocks { g_sub_impl(@g_zero(), a) }
 
   -- 1 iff the value is zero. Canonical representation: zero iff every byte
   -- is zero, and a sum of 8 bytes (< 2¹¹) cannot wrap in any large field.
@@ -271,7 +289,10 @@ def goldilocksForeign := ⟦
     @select8(borrow2, t2, t2mp)
   }
 
-  fn g_mul(a: Goldilocks, b: Goldilocks) -> Goldilocks { @reduce128(@mul128(a, b)) }
+  fn g_mul(a: Goldilocks, b: Goldilocks) -> Goldilocks { g_mul_impl(a, b) }
+  fn g_mul_impl(a: Goldilocks, b: Goldilocks) -> Goldilocks {
+    @reduce128(@mul128(a, b))
+  }
 
   -- ==========================================================================
   -- Base field inverse via Fermat: a⁻¹ = a^(p−2). The native form hints the
@@ -284,12 +305,13 @@ def goldilocksForeign := ⟦
   fn gl_run(acc: Goldilocks, base: Goldilocks, n: G) -> Goldilocks {
     match n {
       0 => acc,
-      _ => gl_run(@g_mul(@g_mul(acc, acc), base), base, n - 1),
+      _ => gl_run(g_mul_impl(g_mul_impl(acc, acc), base), base, n - 1),
     }
   }
-  fn gl_inverse(x: Goldilocks) -> Goldilocks {
+  fn gl_inverse(x: Goldilocks) -> Goldilocks { gl_inverse_impl(x) }
+  fn gl_inverse_impl(x: Goldilocks) -> Goldilocks {
     let acc = gl_run(x, x, 30);          -- bits 63..33: 31 ones (initial acc = x is bit 63)
-    let acc = @g_mul(acc, acc);          -- bit 32: a single 0
+    let acc = g_mul_impl(acc, acc);      -- bit 32: a single 0
     gl_run(acc, x, 32)                   -- bits 31..0: 32 ones
   }
 
@@ -300,7 +322,8 @@ def goldilocksForeign := ⟦
 
   -- Wire-limb ingest: an arbitrary 8-byte LE value (< 2⁶⁴ < 2p) reduces by
   -- at most one subtraction of p.
-  fn gl_val(x: [U8; 8]) -> Goldilocks {
+  fn gl_val(x: [U8; 8]) -> Goldilocks { gl_val_impl(x) }
+  fn gl_val_impl(x: [U8; 8]) -> Goldilocks {
     let (x_minus_p, borrow) = @sub8(x, @gl_p());  -- borrow = 1 iff x < p
     @select8(borrow, x, x_minus_p)
   }
@@ -321,12 +344,20 @@ def goldilocksForeign := ⟦
 
   -- ==========================================================================
   -- Extension algebra ExtGoldilocks = 𝔽_p[X]/(X² − 7), over the base
-  -- interface — textually identical to the native form's (the whole point).
+  -- interface. The impl bodies are textually the native form's (the whole
+  -- point); the interface fns are one-call wrappers per the module
+  -- convention, so an `@eg_mul` call site costs its caller one lookup.
   -- ==========================================================================
   fn eg_add(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
+    eg_add_impl(a, b)
+  }
+  fn eg_add_impl(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     [@g_add(a[0], b[0]), @g_add(a[1], b[1])]
   }
   fn eg_sub(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
+    eg_sub_impl(a, b)
+  }
+  fn eg_sub_impl(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     [@g_sub(a[0], b[0]), @g_sub(a[1], b[1])]
   }
   fn eg_neg(a: ExtGoldilocks) -> ExtGoldilocks {
@@ -334,17 +365,21 @@ def goldilocksForeign := ⟦
   }
   -- (a0 + a1·X)(b0 + b1·X) = (a0·b0 + 7·a1·b1) + (a0·b1 + a1·b0)·X.
   fn eg_mul(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
+    eg_mul_impl(a, b)
+  }
+  fn eg_mul_impl(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     [@g_add(@g_mul(a[0], b[0]), @g_mul(@g_w(), @g_mul(a[1], b[1]))),
      @g_add(@g_mul(a[0], b[1]), @g_mul(a[1], b[0]))]
   }
   -- conjugate ā = a0 − a1·X, norm a·ā = a0² − 7·a1² ∈ 𝔽_p, a⁻¹ = ā / norm.
-  fn eg_inverse(a: ExtGoldilocks) -> ExtGoldilocks {
+  fn eg_inverse(a: ExtGoldilocks) -> ExtGoldilocks { eg_inverse_impl(a) }
+  fn eg_inverse_impl(a: ExtGoldilocks) -> ExtGoldilocks {
     let norm = @g_sub(@g_mul(a[0], a[0]), @g_mul(@g_w(), @g_mul(a[1], a[1])));
     let ninv = @gl_inverse(norm);
     [@g_mul(a[0], ninv), @g_mul(@g_neg(a[1]), ninv)]
   }
   fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
-    @eg_mul(a, @eg_inverse(b))
+    eg_mul_impl(a, eg_inverse_impl(b))
   }
   -- 1 iff two extension elements are equal.
   fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> G {

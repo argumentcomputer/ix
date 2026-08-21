@@ -145,34 +145,34 @@ interpreter against the same vectors the native verifier passes
 (factorial stage-2 proof accepted; tampered advice and tampered claim
 rejected). Full verifier correctness before any Fr machinery exists.
 
-### Phase C — cost checkpoint + declaration-level inlining
+### Phase C — cost checkpoint + declaration-level memoization [CORE WIN LANDED]
 
-The known risk. Foreign `g_mul` ≈ 64 `u8_mul` + ~150 carry gadgets;
-an extension mul is 5 base muls. The verifier performs on the order of
-tens of thousands of extension muls (FRI folds and reduced openings
-per query per height, the OOD constraint sweep). Spliced at every
-`@`-call site (today's call-site inline semantics), that is tens of
-millions of gadget lookups in the calling circuits — likely
-prohibitive width.
+The risk, confirmed by measurement, then fixed. With call-site
+splicing, one `@g_mul` ≈ 930 u8-gadget lookups in the CALLER
+(`reduce128` contains a second `mul128`), one `@eg_mul` site ≈ 14k
+caller columns; the foreign toplevel measured ~386k effective columns
+and a 43 MB KZG wrap proof at factorial scale.
 
-- **DSL change**: make inlining a property of the DECLARATION, not the
-  call site (native marks its ops inline — they are trivial; foreign
-  leaves `g_mul`/`eg_*` as memoized circuits — callers pay one call
-  lookup each, the byte-gadget width lives once). Call sites in
-  `Pcs.lean`/`Verifier.lean` stay textually identical — the interface
-  survives.
-- **Measure**: compile `multiStarkForeign`, run the existing
-  stats/width loop (`bench-typecheck --interp`, circuit stats) at
-  factorial scale and extrapolate to kernel scale.
-- **Decide**: go/no-go numbers for stage-3 proving cost (rows ×
-  columns → per-column MSM sizes over Fr). Mitigation knobs, in order:
+- **Inline-wrapper convention** (landed — no DSL change needed): the
+  foreign interface fns are thin `@`-inlined wrappers over plain
+  (memoized) `*_impl` calls, so a call site costs one lookup and the
+  byte-gadget width lives once in the impl circuits; repetition
+  becomes rows there, deduplicated by memoization. Call sites in
+  `Pcs.lean`/`Verifier.lean` stayed textually identical. Measured:
+  foreign width 386k → **~12k effective columns** (native is 7.7k);
+  wrap proof 43 MB → **1.38 MB**; prove 21 → 7.5 min.
+- A declaration-level inline attribute in the DSL remains a
+  nice-to-have (it would delete the wrapper boilerplate), not a
+  blocker.
+- Remaining mitigation knobs for kernel scale, in order:
   1. re-tune stage 2 for the wrap: stage-3 cost is LINEAR in stage-2
      query count — fewer queries + more PoW bits + higher blowup on
-     stage 2 directly shrinks the wrap circuit;
+     stage 2 directly shrinks the wrap circuit (rows, not columns,
+     now);
   2. lookup grouping k = 4 for branchless circuits (the measured
      −582/−1844 column win, still unapplied);
-  3. memoization hit rates on the byte gadgets (dedup across repeated
-     byte pairs is high in carry chains).
+  3. parallel MSM/iFFT in the KZG prover (Phase E, likely pulled
+     forward — prove time is now height/MSM-dominated).
 
 ### Phase D — KZG instantiation, end-to-end at toy scale [GATE PASSED]
 
@@ -185,15 +185,15 @@ generic over the field (`LeanField`, `verifier_io_buffer_in`). The
 factorial stage-2-style proof (3 inner queries) over Fr under
 `KzgConfig` and verifies it natively; a tampered wrap proof rejects.
 
-Measured (dev SRS 2^17, single-threaded, interpreter execution):
-**wrap proof 43 MB, prove ~21 min** for a 30 KB inner proof. The size
-is linear in TOTAL CIRCUIT WIDTH (per-column commitments + per-point
-openings), and call-site splicing makes the foreign circuits very
-wide — exactly the Phase-C risk, now with a number attached. The
-"kilobyte-scale terminal proof" claim holds only after Phase C
-(declaration-level inlining + grouping) collapses the width.
+Measured (dev SRS 2^17, single-threaded, interpreter execution),
+after the Phase-C wrapper fix: **wrap proof 1.38 MB, prove ~7.5 min**
+for a 30 KB inner proof (~12k columns × ~112 B each — proof size is
+Θ(total width) under per-column KZG, constant in trace height; the
+pre-fix call-site splicing measured 386k columns / 43 MB / 21 min).
+Truly kilobyte-scale terminal proofs remain a stage-4 (Plonkish, O(1)
+polynomials) property.
 
-Remaining in this phase (after C):
+Remaining in this phase:
 
 - Codegen: the foreign toplevel gets its own generated witness runner
   over Fr (`aiur_multi_stark_foreign.rs` or similar) — witness
