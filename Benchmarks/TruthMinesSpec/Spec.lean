@@ -155,6 +155,8 @@ def catalogSpec : CatalogSpecProjection := {
     roots := #[`DescriptiveComplexity] },
   { qualifier := `DomainTheory
     roots := #[`DomainTheory] },
+  { qualifier := `FLT
+    roots := #[`FLT] },
   { qualifier := `KolmogorovExtension4
     roots := #[`KolmogorovExtension4] },
   { qualifier := `Lapis
@@ -171,6 +173,45 @@ def catalogSpec : CatalogSpecProjection := {
     roots := #[`Bignum] },
   { qualifier := `Fad
     roots := #[`Fad] }
+  ]
+}
+
+/-- The mini tier: a small spec for testing the catalog infrastructure
+end to end — the toolchain base (`Init`/`Std`/`Lean`, unqualified by
+contract: toolchain modules cannot be cataloged and load as the shared
+base), the RelocFixture collision pair (qualified imports must
+coexist), Batteries, mathlib's dependency spine, Mathlib, and FLT.
+Spine-shaped plus fixtures plus one heavy dependent — every non-
+toolchain package in any member's import closure has an entry.
+Policy (validated): mini ⊆ full — everything in the mini tier is also
+an admitted member of the full corpus. -/
+def catalogMiniSpec : CatalogSpecProjection := {
+  catalogPrefix := `TruthMines
+  libs := #[
+  { qualifier := `Cli
+    roots := #[`Cli] },
+  { qualifier := `LeanSearchClient
+    roots := #[`LeanSearchClient] },
+  { qualifier := `Plausible
+    roots := #[`Plausible] },
+  { qualifier := `ProofWidgets
+    roots := #[`ProofWidgets] },
+  { qualifier := `Qq
+    roots := #[`Qq] },
+  { qualifier := `B
+    roots := #[`FixtureB] },
+  { qualifier := `Batteries
+    roots := #[`Batteries] },
+  { qualifier := `Aesop
+    roots := #[`Aesop] },
+  { qualifier := `ImportGraph
+    roots := #[`ImportGraph] },
+  { qualifier := `A
+    roots := #[`FixtureA] },
+  { qualifier := `Mathlib
+    roots := #[`Mathlib] },
+  { qualifier := `FLT
+    roots := #[`FLT] }
   ]
 }
 

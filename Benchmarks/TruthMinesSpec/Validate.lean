@@ -79,6 +79,45 @@ def admittedInSpecOrder
   admission.libs.filterMap fun lib =>
     specs.find? (·.qualifier == lib.qualifier)
 
+/-- Coherence of one member spec against the records: every qualifier
+    resolves to a candidate record, roots are sane, and a member's
+    catalog dependencies are members of the same spec, listed earlier. -/
+def specCoherenceErrors (specs : Array PackageSpec)
+    (spec : CatalogSpecProjection) (label : String) : Array String := Id.run do
+  let mut errors := #[]
+  for duplicate in duplicateValues (spec.libs.map (·.qualifier)) do
+    errors := errors.push s!"{label} repeats qualifier `{duplicate}`"
+  let mut seen : Array String := #[]
+  for lib in spec.libs do
+    if lib.roots.isEmpty then
+      errors := errors.push s!"{label} member `{lib.qualifier}` has no roots"
+    for root in lib.roots do
+      unless isRepresentableName root do
+        errors := errors.push
+          s!"{label} member `{lib.qualifier}` has unrepresentable root `{root}`"
+    for duplicate in duplicateValues lib.roots do
+      errors := errors.push
+        s!"{label} member `{lib.qualifier}` repeats root `{duplicate}`"
+    match specs.find? (·.qualifier == lib.qualifier) with
+    | none =>
+      errors := errors.push
+        s!"{label} names unknown qualifier `{lib.qualifier}`"
+    | some record =>
+      unless record.isCandidate do
+        errors := errors.push
+          s!"{label} members excluded package `{record.lakeName}`"
+      for dependency in record.directDeps do
+        if let some depRecord := specs.find? (·.lakeName == dependency) then
+          if depRecord.isAdmitted spec then
+            unless seen.contains dependency do
+              errors := errors.push
+                s!"{label} lists `{record.lakeName}` before its dependency `{dependency}`"
+          else
+            errors := errors.push
+              s!"{label} member `{record.lakeName}` depends on non-member `{dependency}`"
+      seen := seen.push record.lakeName
+  return errors
+
 def catalogValidationErrors
     (specs : Array PackageSpec := catalog)
     (admission : CatalogSpecProjection := catalogSpec)
@@ -179,41 +218,17 @@ but the corpus is built on `{expectedToolchain}` (ix's toolchain)"
       if reason.isEmpty then
         errors := errors.push s!"excluded package `{spec.lakeName}` has no reason"
 
-  /- Admission-spec coherence: membership in the frozen spec is admission, so
-  the spec must resolve into the catalog, admit only candidates, and list
-  providers before consumers (`ix catalog` streams members in this order and
-  fails closed on a misordering — catch it at elaboration instead). -/
-  for duplicate in duplicateValues (admission.libs.map (·.qualifier)) do
-    errors := errors.push s!"admission spec repeats qualifier `{duplicate}`"
-  let mut seen : Array String := #[]
-  for lib in admission.libs do
-    if lib.roots.isEmpty then
-      errors := errors.push s!"admission spec member `{lib.qualifier}` has no roots"
-    for root in lib.roots do
-      unless isRepresentableName root do
-        errors := errors.push
-          s!"admission spec member `{lib.qualifier}` has unrepresentable root `{root}`"
-    for duplicate in duplicateValues lib.roots do
+  /- Spec coherence, for every checked-in member spec: it must resolve
+  into the catalog, member only candidates, and list providers before
+  consumers (`ix catalog` streams members in this order and fails closed
+  on a misordering — catch it at elaboration instead). -/
+  errors := errors ++ specCoherenceErrors specs admission "admission spec"
+  errors := errors ++ specCoherenceErrors specs catalogMiniSpec "mini spec"
+  -- Policy: mini ⊆ full — the mini tier tests the same corpus, smaller.
+  for lib in catalogMiniSpec.libs do
+    unless admission.libs.any (·.qualifier == lib.qualifier) do
       errors := errors.push
-        s!"admission spec member `{lib.qualifier}` repeats root `{duplicate}`"
-    match specs.find? (·.qualifier == lib.qualifier) with
-    | none =>
-      errors := errors.push
-        s!"admission spec names unknown qualifier `{lib.qualifier}`"
-    | some record =>
-      unless record.isCandidate do
-        errors := errors.push
-          s!"admission spec admits excluded package `{record.lakeName}`"
-      for dependency in record.directDeps do
-        if let some depRecord := specs.find? (·.lakeName == dependency) then
-          if depRecord.isAdmitted admission then
-            unless seen.contains dependency do
-              errors := errors.push
-                s!"admission spec lists `{record.lakeName}` before its dependency `{dependency}`"
-          else
-            errors := errors.push
-              s!"admitted package `{record.lakeName}` depends on non-admitted `{dependency}`"
-      seen := seen.push record.lakeName
+        s!"mini spec member `{lib.qualifier}` is not in the admission spec"
 
   return errors
 

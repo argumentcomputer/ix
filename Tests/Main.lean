@@ -112,6 +112,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("catalog-spine", Tests.Ix.CatalogSpine.suite),
   ("truthmines", Tests.Ix.TruthMines.buildSuite),
   ("truthmines-check", Tests.Ix.TruthMines.checkSuite),
+  ("truthmines-mini", Tests.Ix.TruthMines.miniSuite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
   ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),
