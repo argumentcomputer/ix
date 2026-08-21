@@ -66,12 +66,36 @@ def renderOleanTarget (targetName rootsName : String)
     s!"  (Job.collectArray jobs \"{targetName}\").mapM fun _ => return ()"
   ]
 
+/-- The member libs every projection renders drivers for: full-spec
+    members in admission order, then mini-only members appended (their
+    dependencies are all full members, so the concatenation stays
+    dependency-ordered) — the lib-level twin of `workspaceMembers`. -/
+def driverLibs : Array CatalogSpecLib :=
+  let full := catalogSpec.libs
+  let extra := catalogMiniSpec.libs.filter fun lib =>
+    !full.any (·.qualifier == lib.qualifier)
+  full ++ extra
+
+/-- Per-member driver module: `Benchmarks/TruthMines/Drivers/<Q>.lean`.
+    The one-line-per-root import file `ix compile` elaborates to
+    produce the member's piece — the `CompileMathlib.lean` shape,
+    generated. Classic (non-module) header: the piece must carry the
+    member's full private-level content. -/
+def driverModulePath (qualifier : Lean.Name) : System.FilePath :=
+  workspaceDir / "Drivers" / s!"{qualifier.toString (escape := false)}.lean"
+
+def renderDriverModule (lib : CatalogSpecLib) : String :=
+  String.intercalate "\n" ([generatedHeader]
+    ++ (lib.roots.map fun root =>
+        s!"import {root.toString (escape := false)}").toList) ++ "\n"
+
 /-- The workspace `lakefile.lean`: the union pin set in dependency order,
 root-module lists and olean-fetch targets for the full spec
 (`catalogOleans`, the default target) and the mini spec
-(`catalogMiniOleans`) — fetch root `.olean`s without ever combining the
-unqualified environments into one Lake library (colliding source names
-must never meet before `ix catalog` qualifies them). -/
+(`catalogMiniOleans`), plus the `Drivers` lib holding the generated
+per-member driver modules `ix compile` elaborates. Member environments
+are never combined by Lake — each driver imports ONE member's roots,
+and pieces meet only in the anonymous `.ixc` layer. -/
 def renderWorkspaceLakefile
     (specs : Array PackageSpec := catalog) : String :=
   let requires := workspaceMembers specs |>.map renderRequire
@@ -88,18 +112,24 @@ def renderWorkspaceLakefile
     ""
   ] ++ requires.toList ++ [
     "",
-    "/-- Every full-spec root module, in admission order. These are the",
-    "modules `ix catalog` loads: it imports each member's roots with ix's own",
-    "Lean runtime, so all Lake has to do is make the `.olean`s exist; Lake",
-    "computes their transitive closure itself. -/"
+    "/-- The generated per-member driver modules (`Drivers/<Q>.lean`):",
+    "one import per member root. `ix compile Drivers/<Q>.lean` builds",
+    "this target for the member it compiles. -/",
+    "lean_lib Drivers where",
+    "  globs := #[.submodules `Drivers]",
+    "",
+    "/-- Every full-spec root module, in admission order. Piece compiles",
+    "load these through the driver modules; all Lake has to do is make",
+    "the `.olean`s exist — Lake computes their transitive closure",
+    "itself. -/"
   ] ++ renderRootList "catalogRootModules" catalogSpec ++ [
     "",
     "/-- The mini tier's root modules (fixtures + spine + Mathlib + FLT). -/"
   ] ++ renderRootList "catalogMiniRootModules" catalogMiniSpec ++ [
     "",
-    "/-- Build every full-spec root `.olean`. This is the whole Lean-side",
-    "build: the union environment is assembled by `ix catalog`, in one",
-    "process, from these artifacts. -/"
+    "/-- Build every full-spec root `.olean`. Pieces are compiled from",
+    "these artifacts, one short-lived `ix compile` process per member;",
+    "environments meet only in the anonymous `.ixc` layer. -/"
   ] ++ renderOleanTarget "catalogOleans" "catalogRootModules" true ++ [
     "",
     "/-- The mini tier's root `.olean`s (`lake exe truthmines build --mini`). -/"

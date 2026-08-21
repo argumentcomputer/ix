@@ -2907,9 +2907,23 @@ opaque rsCompileEnvBytesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
   → IO CompileEnvStatus
 
+/-- `rsCompileEnvBytesFFI` with strict-anon output (`ix compile
+    --anon`): §4 names, §5 metadata, and §6 commitments are cleared —
+    strictly after `finalize_hints`, which derives §3 from `env.named`
+    — so the piece carries the anon layer only (§1–§3). The env root
+    is identical either way (it covers §2 keys only); the status
+    reports `named = 0`. -/
+@[extern "rs_compile_env_anon"]
+opaque rsCompileEnvBytesAnonFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → Bool
+  → IO CompileEnvStatus
+
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
     decompile + roundtrip + alpha-equivalence + nested-detect checks).
-    Returns total failure count across all phases.
+    Returns total failure count across all phases. The second argument
+    is a report path: non-empty ⇒ the Rust side writes the
+    machine-readable phase-table JSON there (on completion and on
+    abort paths alike); empty ⇒ no report.
 
     Shared between the `ix validate` CLI subcommand (`Ix.Cli.ValidateCmd`)
     and the `validate-aux` test runner (`Tests.Ix.Compile.ValidateAux`).
@@ -2917,7 +2931,7 @@ opaque rsCompileEnvBytesFFI
     `src/ffi/lean_env.rs`. -/
 @[extern "rs_compile_validate_aux"]
 opaque rsCompileValidateAuxFFI
-  : @& List (Lean.Name × Lean.ConstantInfo) → USize
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → USize
 
 /-- Compile a Lean environment and write the serialized Ixon.Env bytes
     to `outPath` using the Rust compiler. Fail-closed by default: any

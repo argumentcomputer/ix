@@ -18,6 +18,7 @@ public import Cli
 public import Ix.Common
 public import Ix.Claim
 public import Ix.Store
+public import Ix.Cli.CatalogCmd
 
 public section
 
@@ -155,6 +156,46 @@ def claimEvalCmd : Cli.Cmd := `[Cli|
     output : String; "32-byte hex address of the output constant."
 ]
 
+/-! ## `ix claim catalog` -/
+
+def runClaimCatalog (p : Cli.Parsed) : IO UInt32 := do
+  let some ixcArg := p.positionalArg? "ixc"
+    | p.printError "error: must specify <cat.ixc>"; return 1
+  let ixc := ixcArg.as! String
+  -- Both roots come from the manifest (members_root is recomputed
+  -- from the entries on load; content_root is bound to the pieces by
+  -- `ix catalog verify`).
+  let summary ← Ix.Cli.CatalogCmd.rsCatalogInfoFFI ixc
+  let json ← match Lean.Json.parse summary with
+    | .ok j => pure j
+    | .error e => throw <| IO.userError s!"error: bad catalog info JSON: {e}"
+  let rootOf (key : String) : IO Address := do
+    match (json.getObjVal? key).bind (·.getStr?) with
+    | .ok hex => addrOfHex! key hex
+    | .error e => throw <| IO.userError s!"error: {ixc}: {e}"
+  let members ← rootOf "membersRoot"
+  let content ← rootOf "contentRoot"
+  let asm ← match p.flag? "asm" with
+    | none => pure none
+    | some flag => do
+      let r ← addrOfHex! "asm" (flag.as! String)
+      pure (some r)
+  let claim := Ix.Claim.catalog members content asm
+  let digest ← persistClaim claim
+  IO.println (toString digest)
+  return 0
+
+def claimCatalogCmd : Cli.Cmd := `[Cli|
+  catalog VIA runClaimCatalog;
+  "Build and persist a `Catalog` claim from a .ixc directory's manifest: the content root is exactly the union of the member envs, and every constant in it is well-typed (optionally modulo an assumption tree). Verification is by composition of per-piece claims — run `ix catalog verify` for the artifact-level checks."
+
+  FLAGS:
+    asm : String; "32-byte hex address of an assumption-tree merkle root (the catalog's declared trust leaves). The tree must already live in `~/.ix/store/`."
+
+  ARGS:
+    ixc : String; "Path to the .ixc directory whose roots the claim binds."
+]
+
 /-! ## Top-level `ix claim` -/
 
 def runClaim (p : Cli.Parsed) : IO UInt32 := do
@@ -172,7 +213,8 @@ def claimCmd : Cli.Cmd := `[Cli|
     claimCheckCmd;
     claimCheckEnvCmd;
     claimContainsCmd;
-    claimEvalCmd
+    claimEvalCmd;
+    claimCatalogCmd
 ]
 
 end

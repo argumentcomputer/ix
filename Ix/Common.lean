@@ -452,4 +452,32 @@ def fmtBytes (n : Nat) : String :=
     let gb := n * 10 / (1024 * 1024 * 1024)
     s!"{gb / 10}.{gb % 10} GB"
 
+/-- ` · rss X.Y GiB (hwm Z.W)` from `/proc/self/status`; empty where
+    that file does not exist. For single-process passes VmRSS IS the
+    pass's resident footprint — each progress line charts the memory
+    trajectory, and the last line before a watchdog kill localizes the
+    wall. -/
+def Ix.rssSuffix : IO String := do
+  let status ← try IO.FS.readFile "/proc/self/status" catch _ => pure ""
+  if status.isEmpty then return ""
+  let field (key : String) : Option Nat :=
+    (status.splitOn "\n").findSome? fun line =>
+      if line.startsWith key then
+        ((line.splitOn " ").filter (· ≠ ""))[1]?.bind (·.toNat?)
+      else none
+  match field "VmRSS:", field "VmHWM:" with
+  | some rss, some hwm =>
+    let gib (kb : Nat) : String :=
+      s!"{kb / (1024 * 1024)}.{kb * 10 / (1024 * 1024) % 10}"
+    return s!" · rss {gib rss} GiB (hwm {gib hwm})"
+  | _, _ => return ""
+
+/-- Flushed progress line with the RSS trajectory: long streaming
+    passes run for minutes-to-hours, and Lean's stdout block-buffers
+    under redirection — an unflushed line is a line lost to a watchdog
+    kill. -/
+def Ix.progressLine (line : String) : IO Unit := do
+  IO.println (line ++ (← Ix.rssSuffix))
+  (← IO.getStdout).flush
+
 end

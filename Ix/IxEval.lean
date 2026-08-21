@@ -28,7 +28,7 @@
 module
 
 public import Lean
-public meta import Ix.Catalog
+public meta import Ix.Replay
 public meta import Ix.CompileM
 public meta import Ix.Commit
 
@@ -59,9 +59,9 @@ meta def elabIxEval : CommandElab := fun stx => do
       -- Closure-scoped compile: every constant reachable from the
       -- input, output, or type.
       let env ← getEnv
-      let roots := Ix.Catalog.expressionReferences input
-        ++ Ix.Catalog.expressionReferences output
-        ++ Ix.Catalog.expressionReferences type
+      let roots := Ix.Replay.expressionReferences input
+        ++ Ix.Replay.expressionReferences output
+        ++ Ix.Replay.expressionReferences type
       let mut seen : Lean.NameSet := {}
       let mut work : Array Lean.Name := roots.toArray
       let mut closure : List (Lean.Name × Lean.ConstantInfo) := []
@@ -73,7 +73,7 @@ meta def elabIxEval : CommandElab := fun stx => do
         let some ci := env.find? n
           | throwError "#ixeval: unknown constant {n}"
         closure := (n, ci) :: closure
-        for r in Ix.Catalog.constantInfoReferences ci do
+        for r in Ix.Replay.constantInfoReferences ci do
           unless seen.contains r do
             work := work.push r
       let phases ← Ix.CompileM.rsCompilePhasesOf closure

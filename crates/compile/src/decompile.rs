@@ -4167,23 +4167,38 @@ fn install_decompile_call_site_plans(
           || env.contains_key(&brecon_name))
       {
         let new_plan = surgery::BRecOnCallSitePlan::from_rec_plan(&plan);
-        // Probe-then-act: the DashMap read guard must drop before insert.
-        let existing_differs =
-          stt.brec_on_call_site_plans.get(&brecon_name).map(|e| *e != new_plan);
-        match existing_differs {
-          Some(true) => {
-            return Err(DecompileError::BadConstantFormat {
-              msg: format!(
-                "conflicting brecOn call-site plans for '{}' across stored \
-                 blocks",
-                brecon_name.pretty(),
-              ),
-            });
-          },
-          Some(false) => {},
-          None => {
-            stt.brec_on_call_site_plans.insert(brecon_name, new_plan);
-          },
+        // Mirror the compile side: Type-level `.brecOn.go` / `.brecOn.eq`
+        // share `.brecOn`'s telescope and are referenced directly by
+        // equation-lemma proofs, so they carry the same plan keys.
+        let mut plan_keys = vec![brecon_name.clone()];
+        for sub in ["go", "eq"] {
+          let sub_name = Name::str(brecon_name.clone(), sub.to_string());
+          if aux_member_names.contains(&sub_name)
+            || env.contains_key(&sub_name)
+          {
+            plan_keys.push(sub_name);
+          }
+        }
+        for key in plan_keys {
+          // Probe-then-act: the DashMap read guard must drop before
+          // insert.
+          let existing_differs =
+            stt.brec_on_call_site_plans.get(&key).map(|e| *e != new_plan);
+          match existing_differs {
+            Some(true) => {
+              return Err(DecompileError::BadConstantFormat {
+                msg: format!(
+                  "conflicting brecOn call-site plans for '{}' across \
+                   stored blocks",
+                  key.pretty(),
+                ),
+              });
+            },
+            Some(false) => {},
+            None => {
+              stt.brec_on_call_site_plans.insert(key, new_plan.clone());
+            },
+          }
         }
       }
       if let Some(below_name) = surgery::rec_name_to_below_name(&name)
