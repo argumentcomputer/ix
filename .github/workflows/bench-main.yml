@@ -133,6 +133,10 @@ jobs:
         include:
           - { env: InitStd }
           - { env: Lean }
+          # Init+Std+Lean+Batteries: the aiur-sharded-env (whole-env Aiur
+          # execution) benchmark's fast tier. Batteries builds from the
+          # shared Compile package; no mathlib cache needed.
+          - { env: ISLB }
           - { env: Mathlib, mathlib: true }
           - { env: FLT, cache_pkg: flt, mathlib: true }
           # - { env: FC, cache_pkg: formal_conjectures, mathlib: true }

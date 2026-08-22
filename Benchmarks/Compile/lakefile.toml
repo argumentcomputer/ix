@@ -18,6 +18,9 @@ name = "CompileMathlib"
 name = "CompileBatteries"
 
 [[lean_lib]]
+name = "CompileISLB"
+
+[[lean_lib]]
 name = "CompileRedStep"
 
 [[lean_lib]]
