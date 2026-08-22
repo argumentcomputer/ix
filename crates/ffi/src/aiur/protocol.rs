@@ -164,6 +164,24 @@ extern "C" fn rs_aiur_system_verify(
   }
 }
 
+/// `AiurSystem.proofToAdviceBytes : @& AiurSystem → @& Array G → @& Proof → Except String ByteArray`
+///
+/// The proof re-encoded in the per-query advice transport the in-circuit
+/// verifier consumes (pruned FRI multiproofs expanded to one path per
+/// query); errors if the proof does not verify natively.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_proof_to_advice_bytes(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  claim: LeanArray<LeanBorrowed<'_>>,
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let claim = claim.map(|x| lean_unbox_g(&x));
+  match aiur_system_obj.get().proof_to_advice_bytes(&claim, proof_obj.get()) {
+    Ok(bytes) => LeanExcept::ok(LeanByteArray::from_bytes(&bytes)),
+    Err(err) => LeanExcept::error_string(&format!("{err:?}")),
+  }
+}
+
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
 /// `Except String ExecuteResult` (see `Ix/Aiur/Semantics/BytecodeFfi.lean`).
 /// On execution failure (e.g. assertion mismatch from a typechecker

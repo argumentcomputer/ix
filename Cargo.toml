@@ -56,7 +56,7 @@ libc = "0.2"
 log = "0.4"
 memmap2 = "0.9"
 mimalloc = { version = "0.1", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "c72d32130eb084327b73849e39c92734a8829011" }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "249b74053c9dac775c5954af7d01fd3dae9d98ed" }
 nom = "7.1.3"
 num-bigint = "0.4.6"
 quickcheck = "1.0.3"

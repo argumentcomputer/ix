@@ -210,6 +210,13 @@ def shardProveWithEnv (system : @& AiurSystem)
 opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
+/-- The proof re-encoded in the per-query advice transport the in-circuit
+verifier consumes (pruned FRI multiproofs expanded to one authentication
+path per query); errors if the proof does not verify natively. -/
+@[extern "rs_aiur_proof_to_advice_bytes"]
+opaque proofToAdviceBytes : @& AiurSystem →
+  @& Array G → @& Proof → Except String ByteArray
+
 end AiurSystem
 
 namespace Bytecode.Toplevel
