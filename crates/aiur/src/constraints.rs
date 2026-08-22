@@ -164,7 +164,10 @@ impl Toplevel {
 }
 
 fn empty_lookup() -> Lookup<Expr> {
-  Lookup { multiplicity: konst(G::ZERO), args: vec![] }
+  // Slots accumulate mutually-exclusive branch selectors, so the per-row
+  // multiplicity is 0 or ±1; the function's return slot (a committed count
+  // column) overrides this with `COUNT_COLUMN_BUDGET`.
+  Lookup { multiplicity: konst(G::ZERO), args: vec![], max_multiplicity: 1 }
 }
 
 impl Function {
@@ -182,6 +185,7 @@ impl Function {
     state.column += 1;
     // the return lookup occupies the first lookup slot
     state.lookups[0].multiplicity = -multiplicity.clone();
+    state.lookups[0].max_multiplicity = crate::COUNT_COLUMN_BUDGET;
     state.lookup += 1;
     self.body.collect_constraints(self.body.get_block_selector(state), state);
   }
