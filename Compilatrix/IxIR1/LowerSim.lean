@@ -11945,6 +11945,348 @@ These definitions make the four independently checkable M2b claims concrete.
 They are deliberately separate: semantic value correspondence does not hide
 memory progress, reclamation, or counter obligations. -/
 
+/-! ## Semantic call and application contracts -/
+
+/-- Source-side n-ary application, fuel-free at the interface: each step is
+one `IxIR0.apply` at some fuel of its own. Currying makes this the exact
+source counterpart of the target's `applyGo` argument list. -/
+inductive SourceApplies (sourceCtx : IxIR0.Ctx) :
+    IxIR0.Value → List IxIR0.Value → IxIR0.Value → Prop where
+  | nil {value : IxIR0.Value} : SourceApplies sourceCtx value [] value
+  | cons {function argument middle result : IxIR0.Value}
+      {arguments : List IxIR0.Value} {fuel : Nat} :
+      IxIR0.apply sourceCtx fuel function argument = .ok middle →
+      SourceApplies sourceCtx middle arguments result →
+      SourceApplies sourceCtx function (argument :: arguments) result
+
+/-- Applying a prefix and then the rest is applying the concatenation. -/
+theorem SourceApplies.append {sourceCtx : IxIR0.Ctx}
+    {function middle result : IxIR0.Value}
+    {left right : List IxIR0.Value}
+    (hleft : SourceApplies sourceCtx function left middle)
+    (hright : SourceApplies sourceCtx middle right result) :
+    SourceApplies sourceCtx function (left ++ right) result := by
+  induction hleft with
+  | nil => simpa using hright
+  | cons hstep _ ih => exact .cons hstep (ih hright)
+
+/-- One more argument after a completed spine. -/
+theorem SourceApplies.snoc {sourceCtx : IxIR0.Ctx}
+    {function middle result argument : IxIR0.Value}
+    {arguments : List IxIR0.Value} {fuel : Nat}
+    (hspine : SourceApplies sourceCtx function arguments middle)
+    (hstep : IxIR0.apply sourceCtx fuel middle argument = .ok result) :
+    SourceApplies sourceCtx function (arguments ++ [argument]) result :=
+  hspine.append (.cons hstep .nil)
+
+/-- Splitting a spine at any point exposes the intermediate source value. -/
+theorem SourceApplies.split {sourceCtx : IxIR0.Ctx}
+    {function result : IxIR0.Value} :
+    ∀ {left right : List IxIR0.Value},
+      SourceApplies sourceCtx function (left ++ right) result →
+      ∃ middle, SourceApplies sourceCtx function left middle ∧
+        SourceApplies sourceCtx middle right result := by
+  intro left
+  induction left generalizing function with
+  | nil => intro right h; exact ⟨function, .nil, by simpa using h⟩
+  | cons argument rest ih =>
+    intro right h
+    cases h with
+    | cons hstep htail =>
+      obtain ⟨middle, hleft, hright⟩ := ih htail
+      exact ⟨middle, .cons hstep hleft, hright⟩
+
+/-- The source value a global reference denotes, at some source fuel. This
+is the callee's source identity: a `.defn` denotes its closure, while
+constructors, recursors, and externs denote their zero-argument paps. -/
+def SourceRefValue (sourceCtx : IxIR0.Ctx) (address : Ixon.Address)
+    (value : IxIR0.Value) : Prop :=
+  ∃ fuel, IxIR0.eval sourceCtx fuel [] (.ref address) = .ok value
+
+/-- Exact-fuel semantic preservation for one compiled declaration body.
+
+Two conclusions, not one. The result clause is the obvious half. The *frame*
+clause is the half that makes the contract usable at a call site at all: a
+caller's post-state predicate (`GraphOwnsResult` and friends) demands
+`RootsGraph` for its framed roots in the store the callee returns, and that
+does not follow from ownership. A general callee both frees and allocates,
+so neither `StoreGraphExtends` nor `StoreGraphRestricts` covers it, and the
+obligation has to be discharged by the callee rather than reconstructed by
+the caller. The argument worlds are carried in lockstep with
+`FnOwnershipContract` so the two contracts share one call-site premise. -/
+def FnValuePreservesAt (funRel : Sim.FunctionRel) (sourceCtx : IxIR0.Ctx)
+    (ctx : Ctx) (d : FnDef) (argWorlds : List Owned)
+    (sourceFunction : IxIR0.Value) (fuel : Nat) : Prop :=
+  ∀ {store store' : Store} {args : List RVal} {value : RVal}
+      {sourceArgs : List IxIR0.Value} {sourceResult : IxIR0.Value}
+      {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root},
+    args.length = argWorlds.length →
+    Sim.ValuesGraph funRel store sourceArgs args →
+    SourceApplies sourceCtx sourceFunction sourceArgs sourceResult →
+    Sim.RootsGraph funRel store sourceRest rest →
+    RootOwnership store (rootsForWorlds argWorlds args ++ rest) →
+    runCode ctx fuel d store args.reverse d.body = .ok (store', value) →
+    Sim.ValueGraph funRel store' sourceResult value ∧
+      Sim.RootsGraph funRel store' sourceRest rest
+
+/-- Semantic contract for one compiled function declaration: entered on
+arguments realizing source values, its body returns a value realizing the
+source evaluator's own result for that saturated application, without
+disturbing the caller's framed graphs. -/
+structure FnValueContract (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (ctx : Ctx) (d : FnDef)
+    (argWorlds : List Owned) (sourceFunction : IxIR0.Value) : Prop where
+  arity_eq : argWorlds.length = d.arity
+  preserves : ∀ {fuel : Nat},
+    FnValuePreservesAt funRel sourceCtx ctx d argWorlds sourceFunction fuel
+
+/-- Exact-fuel semantic preservation for higher-order application, with the
+same two-clause shape and the same frame obligation as the direct-call
+contract. `applyGo` consumes one shared function root and all supplied
+shared argument roots, matching `ApplyOwnershipContract`. -/
+def ApplyValuePreservesAt (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (ctx : Ctx) (fuel : Nat) : Prop :=
+  ∀ {store store' : Store} {function : RVal} {args : List RVal}
+      {value : RVal} {sourceFunction : IxIR0.Value}
+      {sourceArgs : List IxIR0.Value} {sourceResult : IxIR0.Value}
+      {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root},
+    Sim.ValueGraph funRel store sourceFunction function →
+    Sim.ValuesGraph funRel store sourceArgs args →
+    SourceApplies sourceCtx sourceFunction sourceArgs sourceResult →
+    Sim.RootsGraph funRel store sourceRest rest →
+    RootOwnership store
+      (⟨.shared, function⟩ :: rootsFor .shared args ++ rest) →
+    applyGo ctx fuel store function args = .ok (store', value) →
+    Sim.ValueGraph funRel store' sourceResult value ∧
+      Sim.RootsGraph funRel store' sourceRest rest
+
+/-- Whole-context semantic application contract. This is where `FunctionRel`
+stops being an assumption and becomes an obligation: an abstract relation
+that merely *claims* a pap realizes a source function must additionally make
+that pap compute the source function. -/
+structure ApplyValueContract (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (ctx : Ctx) : Prop where
+  preserves : ∀ {fuel : Nat},
+    ApplyValuePreservesAt funRel sourceCtx ctx fuel
+
+/-- Higher-order semantic application below an evaluator-fuel bound.
+Saturating and over-applied paps re-enter declarations at strictly smaller
+fuel, so this belongs in the same mutual induction as the call contract. -/
+structure ApplyValueContractBelow (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (ctx : Ctx) (limit : Nat) : Prop where
+  preserves : ∀ {fuel : Nat}, fuel < limit →
+    ApplyValuePreservesAt funRel sourceCtx ctx fuel
+
+theorem ApplyValueContract.below {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx}
+    (hcontract : ApplyValueContract funRel sourceCtx ctx) (limit : Nat) :
+    ApplyValueContractBelow funRel sourceCtx ctx limit :=
+  ⟨fun _ => hcontract.preserves⟩
+
+theorem ApplyValueContractBelow.mono {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {smaller larger : Nat}
+    (hcontract : ApplyValueContractBelow funRel sourceCtx ctx larger)
+    (hbound : smaller ≤ larger) :
+    ApplyValueContractBelow funRel sourceCtx ctx smaller :=
+  ⟨fun hfuel => hcontract.preserves (Nat.lt_of_lt_of_le hfuel hbound)⟩
+
+/-- Pointwise semantic preservation of every source-backed target function at
+one exact evaluator-fuel index. The source identity of the callee is pinned
+by `SourceRefValue` at the same address the layout relation uses, so a
+declaration cannot be related to a source function it was not compiled
+from. -/
+def SourceFnValuePreservesAt (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (src : IxIR0.Env) (ctx : Ctx)
+    (fuel : Nat) : Prop :=
+  ∀ {address : Ixon.Address} {source : IxIR0.Decl}
+      {worlds : List Owned} {result : Owned} {d : FnDef}
+      {sourceFunction : IxIR0.Value},
+    src address = some source →
+    sourceCallableSignature source = some (worlds, result) →
+    ctx.decls address = some (.fn d) →
+    SourceRefValue sourceCtx address sourceFunction →
+    FnValuePreservesAt funRel sourceCtx ctx d worlds sourceFunction fuel
+
+/-- Semantic declaration contracts below an evaluator-fuel bound: the mutual
+induction hypothesis for cross-declaration and self calls. -/
+structure SourceDeclValueContractsBelow (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (src : IxIR0.Env) (ctx : Ctx)
+    (limit : Nat) : Prop where
+  fn_preserves : ∀ {fuel : Nat}, fuel < limit →
+    SourceFnValuePreservesAt funRel sourceCtx src ctx fuel
+
+/-- Public, unbounded semantic contracts for every source-backed target
+function. -/
+structure SourceDeclValueContracts (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (src : IxIR0.Env) (ctx : Ctx) : Prop where
+  fn_preserves : ∀ {fuel : Nat},
+    SourceFnValuePreservesAt funRel sourceCtx src ctx fuel
+
+theorem SourceDeclValueContracts.below {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ctx : Ctx}
+    (hcontracts : SourceDeclValueContracts funRel sourceCtx src ctx)
+    (limit : Nat) :
+    SourceDeclValueContractsBelow funRel sourceCtx src ctx limit :=
+  ⟨fun _ => hcontracts.fn_preserves⟩
+
+theorem SourceDeclValueContractsBelow.mono {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ctx : Ctx}
+    {smaller larger : Nat}
+    (hcontracts : SourceDeclValueContractsBelow funRel sourceCtx src ctx
+      larger) (hbound : smaller ≤ larger) :
+    SourceDeclValueContractsBelow funRel sourceCtx src ctx smaller :=
+  ⟨fun hfuel => hcontracts.fn_preserves (Nat.lt_of_lt_of_le hfuel hbound)⟩
+
+/-- Semantic twin of `CompilerContracts`: direct calls and higher-order
+application both carry their source result. -/
+structure CompilerValueContracts (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (src : IxIR0.Env) (ctx : Ctx) : Prop where
+  decls : SourceDeclValueContracts funRel sourceCtx src ctx
+  apply : ApplyValueContract funRel sourceCtx ctx
+
+structure CompilerValueContractsBelow (funRel : Sim.FunctionRel)
+    (sourceCtx : IxIR0.Ctx) (src : IxIR0.Env) (ctx : Ctx)
+    (limit : Nat) : Prop where
+  decls : SourceDeclValueContractsBelow funRel sourceCtx src ctx limit
+  apply : ApplyValueContractBelow funRel sourceCtx ctx limit
+
+theorem CompilerValueContracts.below {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ctx : Ctx}
+    (hcontracts : CompilerValueContracts funRel sourceCtx src ctx)
+    (limit : Nat) :
+    CompilerValueContractsBelow funRel sourceCtx src ctx limit :=
+  ⟨hcontracts.decls.below limit, hcontracts.apply.below limit⟩
+
+theorem CompilerValueContractsBelow.mono {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {src : IxIR0.Env} {ctx : Ctx}
+    {smaller larger : Nat}
+    (hcontracts : CompilerValueContractsBelow funRel sourceCtx src ctx
+      larger) (hbound : smaller ≤ larger) :
+    CompilerValueContractsBelow funRel sourceCtx src ctx smaller :=
+  ⟨hcontracts.decls.mono hbound, hcontracts.apply.mono hbound⟩
+
+/-! ### Semantic call primitives at the operation level -/
+
+/-- Semantic transfer across a direct invocation, from a contract available
+strictly below the invocation fuel. A successful invocation at `fuel + 1`
+enters the callee body at `fuel`, which is exactly where the mutual
+declaration induction needs the strict decrease. -/
+theorem invoke_fn_value_below {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {fuel : Nat} {f : Ixon.Address}
+    {args : List RVal} {store store' : Store} {value : RVal} {d : FnDef}
+    {argWorlds : List Owned} {sourceFunction sourceResult : IxIR0.Value}
+    {sourceArgs : List IxIR0.Value}
+    {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root}
+    (hdecl : ctx.decls f = some (.fn d))
+    (harity : argWorlds.length = d.arity)
+    (hcontract : ∀ {smaller : Nat}, smaller < fuel →
+      FnValuePreservesAt funRel sourceCtx ctx d argWorlds sourceFunction
+        smaller)
+    (hargs : Sim.ValuesGraph funRel store sourceArgs args)
+    (hsource : SourceApplies sourceCtx sourceFunction sourceArgs sourceResult)
+    (hframe : Sim.RootsGraph funRel store sourceRest rest)
+    (hown : RootOwnership store (rootsForWorlds argWorlds args ++ rest))
+    (hinvoke : invoke ctx fuel f args store = .ok (store', value)) :
+    Sim.ValueGraph funRel store' sourceResult value ∧
+      Sim.RootsGraph funRel store' sourceRest rest := by
+  cases fuel with
+  | zero => simp [invoke] at hinvoke
+  | succ fuel =>
+    simp only [invoke, hdecl] at hinvoke
+    split at hinvoke
+    · contradiction
+    next hlen =>
+      have hargsLength : args.length = argWorlds.length := by
+        have hd : args.length = d.arity := by simpa using hlen
+        exact hd.trans harity.symm
+      cases hrun : runCode ctx fuel d store args.reverse d.body with
+      | error e =>
+        rw [hrun] at hinvoke
+        change (.error e : Except Err (Store × RVal)) =
+          .ok (store', value) at hinvoke
+        contradiction
+      | ok out =>
+        rw [hrun] at hinvoke
+        change checkResultWorld d.result out = .ok (store', value) at hinvoke
+        obtain ⟨hpair, _⟩ := checkResultWorld_ok hinvoke
+        subst out
+        exact hcontract (Nat.lt_succ_self fuel) hargsLength hargs hsource
+          hframe hown hrun
+
+/-- Operation-level semantic direct call. -/
+theorem runOp_call_value_below {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {fuel : Nat} {cur d : FnDef}
+    {store store' : Store} {env : List RVal} {f : Ixon.Address}
+    {atoms : Array Atom} {args : List RVal} {value : RVal}
+    {argWorlds : List Owned} {sourceFunction sourceResult : IxIR0.Value}
+    {sourceArgs : List IxIR0.Value}
+    {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root}
+    (hatoms : resolveAtoms env atoms = .ok args)
+    (hdecl : ctx.decls f = some (.fn d))
+    (harity : argWorlds.length = d.arity)
+    (hcontract : ∀ {smaller : Nat}, smaller < fuel →
+      FnValuePreservesAt funRel sourceCtx ctx d argWorlds sourceFunction
+        smaller)
+    (hargs : Sim.ValuesGraph funRel store sourceArgs args)
+    (hsource : SourceApplies sourceCtx sourceFunction sourceArgs sourceResult)
+    (hframe : Sim.RootsGraph funRel store sourceRest rest)
+    (hown : RootOwnership store (rootsForWorlds argWorlds args ++ rest))
+    (hrun : runOp ctx (fuel + 1) cur store env (.call f atoms) =
+      .ok (store', value)) :
+    Sim.ValueGraph funRel store' sourceResult value ∧
+      Sim.RootsGraph funRel store' sourceRest rest := by
+  rw [runOp.eq_def] at hrun
+  dsimp only at hrun
+  rw [hatoms, bindOk] at hrun
+  exact invoke_fn_value_below hdecl harity hcontract hargs hsource hframe
+    hown hrun
+
+/-- Operation-level semantic recursive self call. The current function's own
+contract is available at the enclosing index, since the body re-enters at
+`fuel` while the operation runs at `fuel + 1`. -/
+theorem runOp_callSelf_value_below {funRel : Sim.FunctionRel}
+    {sourceCtx : IxIR0.Ctx} {ctx : Ctx} {fuel : Nat} {cur : FnDef}
+    {store store' : Store} {env : List RVal} {atoms : Array Atom}
+    {args : List RVal} {value : RVal}
+    {argWorlds : List Owned} {sourceFunction sourceResult : IxIR0.Value}
+    {sourceArgs : List IxIR0.Value}
+    {sourceRest : List (Owned × IxIR0.Value)} {rest : List Root}
+    (hatoms : resolveAtoms env atoms = .ok args)
+    (harity : argWorlds.length = cur.arity)
+    (hcontract : ∀ {smaller : Nat}, smaller < fuel + 1 →
+      FnValuePreservesAt funRel sourceCtx ctx cur argWorlds sourceFunction
+        smaller)
+    (hargs : Sim.ValuesGraph funRel store sourceArgs args)
+    (hsource : SourceApplies sourceCtx sourceFunction sourceArgs sourceResult)
+    (hframe : Sim.RootsGraph funRel store sourceRest rest)
+    (hown : RootOwnership store (rootsForWorlds argWorlds args ++ rest))
+    (hrun : runOp ctx (fuel + 1) cur store env (.callSelf atoms) =
+      .ok (store', value)) :
+    Sim.ValueGraph funRel store' sourceResult value ∧
+      Sim.RootsGraph funRel store' sourceRest rest := by
+  rw [runOp.eq_def] at hrun
+  dsimp only at hrun
+  rw [hatoms, bindOk] at hrun
+  split at hrun
+  · contradiction
+  next hlen =>
+    have hargsLength : args.length = argWorlds.length := by
+      have hd : args.length = cur.arity := by simpa using hlen
+      exact hd.trans harity.symm
+    cases hcode : runCode ctx fuel cur store args.reverse cur.body with
+    | error e =>
+      rw [hcode] at hrun
+      change (.error e : Except Err (Store × RVal)) =
+        .ok (store', value) at hrun
+      contradiction
+    | ok out =>
+      rw [hcode] at hrun
+      change checkResultWorld cur.result out = .ok (store', value) at hrun
+      obtain ⟨hpair, _⟩ := checkResultWorld_ok hrun
+      subst out
+      exact hcontract (Nat.lt_succ_self fuel) hargsLength hargs hsource
+        hframe hown hcode
+
 /-! The semantic proof is intentionally a companion refinement over the
 ownership development above. `LowerResultSound` remains the reusable
 ownership/frame judgment; the semantic induction may consume it, but does not
