@@ -402,7 +402,9 @@ fn decode_owned_blob(
   }
   Ok(
     bytes
-      .chunks_exact(32)
+      .as_chunks::<32>()
+      .0
+      .iter()
       .map(|c| ix_common::address::Address::from_slice(c).unwrap())
       .collect(),
   )
@@ -685,7 +687,9 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
       }
       shards.push(
         bytes[off..off + n * 32]
-          .chunks_exact(32)
+          .as_chunks::<32>()
+          .0
+          .iter()
           .map(|c| ix_common::address::Address::from_slice(c).unwrap())
           .collect(),
       );

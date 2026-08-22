@@ -1209,7 +1209,7 @@ pub fn compile_expr(
                       });
                     }
                     let n_specs = specs.len();
-                    canonical_args.extend(specs.into_iter());
+                    canonical_args.extend(specs);
                     for (src_i, motive) in motives.iter().enumerate() {
                       if plan.motive_keep[src_i] {
                         canonical_args.push(motive.clone());
