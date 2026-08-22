@@ -622,6 +622,20 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
         match v with
         | .field g => .ok (.field g.inverse, st')
         | _ => .error (.typeMismatch "unconstrainedGInverse")
+  | .unconstrainedGlDivMod t =>
+      match interp decls fuel bindings t st with
+      | .error e => .error e
+      | .ok (v, st') =>
+        match v with
+        | .field g => .ok (.tuple #[.field 0, .field g], st')
+        | _ => .error (.typeMismatch "unconstrainedGlDivMod")
+  | .unconstrainedGlInverse t =>
+      match interp decls fuel bindings t st with
+      | .error e => .error e
+      | .ok (v, st') =>
+        match v with
+        | .field g => .ok (.field g.inverse, st')
+        | _ => .error (.typeMismatch "unconstrainedGlInverse")
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls fuel bindings t st
   | .u8Lit n => .ok (.field (G.ofNat n), st)

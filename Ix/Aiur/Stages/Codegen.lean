@@ -354,6 +354,8 @@ def Op.outputCount : Op → Nat
   | .unconstrainedBigUintDivMod _ _ => 2
   | .unconstrainedGToBytes _ => 8
   | .unconstrainedGInverse _ => 1
+  | .unconstrainedGlDivMod _ => 2
+  | .unconstrainedGlInverse _ => 1
   | .unconstrainedU32Add _ _ | .unconstrainedU32Add3 _ _ _ => 5
   | .u32ToField _ => 1
   | .debug _ _ => 0
@@ -683,6 +685,17 @@ private def emitUncGToBytes (out : Nat) (a : ValIdx) : Array RustStmt := Id.run 
 private def emitUncGInverse (out : Nat) (a : ValIdx) : Array RustStmt :=
   #[declVal out (.lit s!"g_inverse_value(__v_{a})")]
 
+/-- `Op::UnconstrainedGlDivMod`: 2 outputs `(q, r)` — the canonical value
+    split as `q·p_goldilocks + r`, via the shared `gl_divmod_value` helper. -/
+private def emitUncGlDivMod (out : Nat) (a : ValIdx) : Array RustStmt :=
+  #[.letStmt false "__gl_dm" none (.lit s!"gl_divmod_value(__v_{a})"),
+    declVal out (.lit "__gl_dm.0"), declVal (out + 1) (.lit "__gl_dm.1")]
+
+/-- `Op::UnconstrainedGlInverse`: 1 output — the inverse modulo p_goldilocks
+    (`0 ↦ 0`), via the shared `gl_inverse_value` helper. -/
+private def emitUncGlInverse (out : Nat) (a : ValIdx) : Array RustStmt :=
+  #[declVal out (.lit s!"gl_inverse_value(__v_{a})")]
+
 /-- `Op::Debug`: 0 outputs; println side effect, mirroring the bytecode
     interpreter's `Op::Debug` arm (crates/aiur/src/execute.rs). Production
     kernels contain no `dbg!`, so this emits nothing there; when probing
@@ -733,6 +746,8 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .unconstrainedBigUintDivMod a b => emitUncBigUintDivMod out a b
   | .unconstrainedGToBytes a => emitUncGToBytes out a
   | .unconstrainedGInverse a => emitUncGInverse out a
+  | .unconstrainedGlDivMod a => emitUncGlDivMod out a
+  | .unconstrainedGlInverse a => emitUncGlInverse out a
   | .unconstrainedU32Add a b => emitUnconstrainedU32Add out [a, b]
   | .unconstrainedU32Add3 a b c => emitUnconstrainedU32Add out [a, b, c]
   | .u32ToField a => emitU32ToField out a
@@ -987,6 +1002,8 @@ def optionalExecuteUses : Array (String × String) := #[
   ("bytes2_xor_split4_value", "bytes2_xor_split4_value"),
   ("unconstrained_big_uint_div_mod_helper", "unconstrained_big_uint_div_mod_helper"),
   ("g_inverse_value", "g_inverse_value"),
+  ("gl_divmod_value", "gl_divmod_value"),
+  ("gl_inverse_value", "gl_inverse_value"),
   ("CodegenBytes1 as Bytes1", "Bytes1::"),
   ("CodegenBytes2 as Bytes2", "Bytes2::")
 ]

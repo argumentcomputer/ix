@@ -379,6 +379,10 @@ def termToConcrete
       pure (.unconstrainedGToBytes (← typToConcrete mono τ) e (← termToConcrete mono a))
   | .unconstrainedGInverse τ e a => do
       pure (.unconstrainedGInverse (← typToConcrete mono τ) e (← termToConcrete mono a))
+  | .unconstrainedGlDivMod τ e a => do
+      pure (.unconstrainedGlDivMod (← typToConcrete mono τ) e (← termToConcrete mono a))
+  | .unconstrainedGlInverse τ e a => do
+      pure (.unconstrainedGlInverse (← typToConcrete mono τ) e (← termToConcrete mono a))
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: `u8` and `field`
   -- share a representation, so we drop the wrapper and keep the inner term.
   | .toField _ _ a | .u8FromFieldUnsafe _ _ a => termToConcrete mono a
@@ -599,6 +603,10 @@ def rewriteTypedTerm (decls : Typed.Decls)
       (rewriteTypedTerm decls subst mono a)
   | .unconstrainedGInverse τ e a => .unconstrainedGInverse (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a)
+  | .unconstrainedGlDivMod τ e a => .unconstrainedGlDivMod (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a)
+  | .unconstrainedGlInverse τ e a => .unconstrainedGlInverse (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a)
   | .toField τ e a => .toField (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a)
   | .u8FromFieldUnsafe τ e a => .u8FromFieldUnsafe (rewriteTyp subst mono τ) e
@@ -680,6 +688,7 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
   | .eqZero τ _ a | .store τ _ a | .load τ _ a | .ptrVal τ _ a | .toField τ _ a
   | .u8FromFieldUnsafe τ _ a
   | .unconstrainedGToBytes τ _ a | .unconstrainedGInverse τ _ a
+  | .unconstrainedGlDivMod τ _ a | .unconstrainedGlInverse τ _ a
   | .u32ToField τ _ a
   | .u8BitDecomposition τ _ a | .u8ShiftLeft τ _ a | .u8ShiftRight τ _ a =>
     collectInTypedTerm (collectInTyp seen τ) a
@@ -755,6 +764,7 @@ def collectCalls (decls : Typed.Decls)
   | .eqZero _ _ a | .store _ _ a | .load _ _ a | .ptrVal _ _ a | .toField _ _ a
   | .u8FromFieldUnsafe _ _ a
   | .unconstrainedGToBytes _ _ a | .unconstrainedGInverse _ _ a
+  | .unconstrainedGlDivMod _ _ a | .unconstrainedGlInverse _ _ a
   | .u32ToField _ _ a
   | .u8BitDecomposition _ _ a | .u8ShiftLeft _ _ a | .u8ShiftRight _ _ a =>
     collectCalls decls seen a
@@ -880,6 +890,10 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
     .unconstrainedGToBytes (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .unconstrainedGInverse τ e a =>
     .unconstrainedGInverse (Typ.instantiate subst τ) e (substInTypedTerm subst a)
+  | .unconstrainedGlDivMod τ e a =>
+    .unconstrainedGlDivMod (Typ.instantiate subst τ) e (substInTypedTerm subst a)
+  | .unconstrainedGlInverse τ e a =>
+    .unconstrainedGlInverse (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .toField τ e a => .toField (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .u8FromFieldUnsafe τ e a =>
     .u8FromFieldUnsafe (Typ.instantiate subst τ) e (substInTypedTerm subst a)

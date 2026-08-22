@@ -224,6 +224,8 @@ def opLayout : Bytecode.Op → LayoutM Unit
   -- no lookup — same shape as `IORead`. The caller pins the values.
   | .unconstrainedGToBytes _ => do pushDegrees $ .replicate 8 1; bumpAuxiliaries 8
   | .unconstrainedGInverse _ => do pushDegree 1; bumpAuxiliaries
+  | .unconstrainedGlDivMod _ => do pushDegrees #[1, 1]; bumpAuxiliaries 2
+  | .unconstrainedGlInverse _ => do pushDegree 1; bumpAuxiliaries
   | .debug .. => pure ()
 
 /-- Termination helper for blockLayout's Block/Ctrl traversal. -/

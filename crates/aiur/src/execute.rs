@@ -656,6 +656,14 @@ impl<F: AiurField> Function<F> {
           // effects — the caller pins it via multiply-and-assert.
           map.push(g_inverse_value(map[*a_idx]));
         },
+        ExecEntry::Op(Op::UnconstrainedGlDivMod(a_idx)) => {
+          let (q, r) = gl_divmod_value(map[*a_idx]);
+          map.push(q);
+          map.push(r);
+        },
+        ExecEntry::Op(Op::UnconstrainedGlInverse(a_idx)) => {
+          map.push(gl_inverse_value(map[*a_idx]));
+        },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
           None => println!("{label}"),
           Some(idxs) => {
@@ -945,6 +953,21 @@ pub fn g_inverse_value<F: AiurField>(x: F) -> F {
   // Total: the hint's contract is `0 ↦ 0` (the crate trait leaves
   // `inverse(0)` implementation-defined, and the p3-backed fields panic).
   if x.is_zero() { F::ZERO } else { x.inverse() }
+}
+
+/// The value of the `UnconstrainedGlDivMod` hint: the canonical integer
+/// split as `q·p_goldilocks + r`. Shared by the interpreter, the codegen'd
+/// kernels, and trace population.
+#[inline]
+pub fn gl_divmod_value<F: AiurField>(x: F) -> (F, F) {
+  x.gl_divmod()
+}
+
+/// The value of the `UnconstrainedGlInverse` hint: the inverse modulo
+/// p_goldilocks (`0 ↦ 0`). Shared like `g_inverse_value`.
+#[inline]
+pub fn gl_inverse_value<F: AiurField>(x: F) -> F {
+  x.gl_inverse()
 }
 
 /// Helper extracted for the codegen'd kernel: compute the unconstrained

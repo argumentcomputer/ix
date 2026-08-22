@@ -770,6 +770,18 @@ impl<F: AiurField> Op<F> {
         let col = state.next_auxiliary();
         state.map.push((col, 1));
       },
+      Op::UnconstrainedGlDivMod(_) => {
+        // Two fresh auxiliary columns (q, r), no relation; the caller pins
+        // them with the identity and range checks.
+        for _ in 0..2 {
+          let col = state.next_auxiliary();
+          state.map.push((col, 1));
+        }
+      },
+      Op::UnconstrainedGlInverse(_) => {
+        let col = state.next_auxiliary();
+        state.map.push((col, 1));
+      },
     }
   }
 }

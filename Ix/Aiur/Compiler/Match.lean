@@ -397,6 +397,8 @@ def typedToSimple : Term → Simple.Term
   | .unconstrainedBigUintDivMod τ e a b => .unconstrainedBigUintDivMod τ e (typedToSimple a) (typedToSimple b)
   | .unconstrainedGToBytes τ e a => .unconstrainedGToBytes τ e (typedToSimple a)
   | .unconstrainedGInverse τ e a => .unconstrainedGInverse τ e (typedToSimple a)
+  | .unconstrainedGlDivMod τ e a => .unconstrainedGlDivMod τ e (typedToSimple a)
+  | .unconstrainedGlInverse τ e a => .unconstrainedGlInverse τ e (typedToSimple a)
   | .toField τ e a => .toField τ e (typedToSimple a)
   | .u8FromFieldUnsafe τ e a => .u8FromFieldUnsafe τ e (typedToSimple a)
   | .debug τ e l t r =>

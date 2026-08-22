@@ -460,6 +460,14 @@ inductive Term
   caller must pin it, e.g. via `t = x·i − 1; assert x·t == 0;
   assert i·t == 0` (forces `i = x⁻¹` when `x ≠ 0` and `i = 0` otherwise). -/
   | unconstrainedGInverse : Term → Term
+  /-- Unconstrained hint: `(q, r)` with `v = q·p_goldilocks + r`, `r < p`, over
+  the canonical integer of the outer-field value `v` (Goldilocks: `(0, v)`).
+  Two fresh field values, no constraint relation; the caller pins them. -/
+  | unconstrainedGlDivMod : Term → Term
+  /-- Unconstrained hint: the inverse of a canonical value `< p_goldilocks`
+  MODULO p_goldilocks (`0 ↦ 0`), as an outer-field value. One fresh field
+  value, no constraint relation; the caller pins it. -/
+  | unconstrainedGlInverse : Term → Term
   /-- A `U8` literal in `[0, 256)`. Lowered to a plain field constant of type
   `u8` (no range-check lookup, since the value is statically in range). -/
   | u8Lit : Nat → Term
@@ -703,6 +711,8 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .u8FromFieldUnsafe a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .u8FromFieldUnsafe a')
   | .unconstrainedGToBytes a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .unconstrainedGToBytes a')
   | .unconstrainedGInverse a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .unconstrainedGInverse a')
+  | .unconstrainedGlDivMod a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .unconstrainedGlDivMod a')
+  | .unconstrainedGlInverse a => let (cnt, a') := Term.freshen cnt subst a; (cnt, .unconstrainedGlInverse a')
   | .debug s o a =>
     let (cnt, o') := match o with
       | none => (cnt, none)
@@ -754,7 +764,8 @@ def Term.inlineCallSites : Term → List (Global × Nat)
   | .ret a | .eqZero a | .proj a _ | .get a _ | .slice a _ _ | .store a | .load a
   | .ptrVal a | .ann _ a | .u8BitDecomposition a | .u8ShiftLeft a | .u8ShiftRight a
   | .toField a | .u8FromFieldUnsafe a
-  | .unconstrainedGToBytes a | .unconstrainedGInverse a => a.inlineCallSites
+  | .unconstrainedGToBytes a | .unconstrainedGInverse a
+  | .unconstrainedGlDivMod a | .unconstrainedGlInverse a => a.inlineCallSites
   | .u32ToField a => a.inlineCallSites
   | .unconstrainedU32Add3 a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
   | .debug _ o a => (match o with | none => [] | some x => x.inlineCallSites) ++ a.inlineCallSites
@@ -877,6 +888,8 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
   | .u8FromFieldUnsafe a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .u8FromFieldUnsafe a')
   | .unconstrainedGToBytes a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGToBytes a')
   | .unconstrainedGInverse a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGInverse a')
+  | .unconstrainedGlDivMod a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGlDivMod a')
+  | .unconstrainedGlInverse a => let (cnt, a') := Term.expandOnce done cnt a; (cnt, .unconstrainedGlInverse a')
   | .debug s o a =>
     let (cnt, o') := match o with
       | none => (cnt, none)
@@ -976,6 +989,8 @@ def Term.hoistLets : Term → Term :=
   | .u8FromFieldUnsafe a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.u8FromFieldUnsafe c)
   | .unconstrainedGToBytes a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGToBytes c)
   | .unconstrainedGInverse a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGInverse c)
+  | .unconstrainedGlDivMod a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGlDivMod c)
+  | .unconstrainedGlInverse a => let (fs, c) := Term.peelLets (Term.hoistLets a); Term.wrapLets fs (.unconstrainedGlInverse c)
   | .u8Xor a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                   match cs with | [a, b] => Term.wrapLets fs (.u8Xor a b) | _ => t
   | .u8Add a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
@@ -1089,6 +1104,7 @@ partial def Term.collectGlobals (acc : Std.HashSet Global) : Term → Std.HashSe
   | .ret t | .eqZero t | .proj t _ | .get t _ | .slice t _ _ | .store t
   | .load t | .ptrVal t | .ann _ t | .u8BitDecomposition t | .u8ShiftLeft t
   | .u8ShiftRight t | .unconstrainedGToBytes t | .unconstrainedGInverse t
+  | .unconstrainedGlDivMod t | .unconstrainedGlInverse t
   | .u32ToField t
   | .toField t | .u8FromFieldUnsafe t => t.collectGlobals acc
   | .let p v b => b.collectGlobals (v.collectGlobals (patternGlobals acc p))

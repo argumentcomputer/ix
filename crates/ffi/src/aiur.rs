@@ -40,6 +40,8 @@ pub(super) fn lean_nat_as_field(obj: &impl LeanRef) -> G {
 /// default Goldilocks and (behind `kzg`) the BLS12-381 scalar field.
 pub(super) trait LeanField: aiur::AiurField {
   fn from_lean_nat(obj: &impl LeanRef) -> Self;
+  /// Used by the `kzg`-gated externs; the Goldilocks paths unbox directly.
+  #[allow(dead_code)]
   fn from_lean_u64(obj: &impl LeanRef) -> Self;
 }
 

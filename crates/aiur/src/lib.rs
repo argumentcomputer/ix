@@ -28,12 +28,31 @@ pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 pub trait AiurField: Field + TwoAdicField + Ord + std::fmt::Display {
   /// The canonical value as a `u64`; exact for values < 2^64.
   fn as_canonical_u64(&self) -> u64;
+  /// The `UnconstrainedGlDivMod` hint: the canonical integer value split
+  /// as `q · p_goldilocks + r` with `r < p_goldilocks`, both returned as
+  /// field values. Over Goldilocks itself every value is `< p`, so this
+  /// is `(0, v)`; over a large field it is exact big-integer division.
+  fn gl_divmod(&self) -> (Self, Self);
+  /// The `UnconstrainedGlInverse` hint: the inverse MODULO p_goldilocks of
+  /// a canonical value `< p_goldilocks` (`0 ↦ 0`), as a field value.
+  fn gl_inverse(&self) -> Self;
 }
+
+/// The Goldilocks modulus, the inner field of the recursive verifier.
+pub const GOLDILOCKS_P: u64 = 0xFFFF_FFFF_0000_0001;
 
 impl AiurField for G {
   #[inline]
   fn as_canonical_u64(&self) -> u64 {
     <Self as PrimeField64>::as_canonical_u64(self)
+  }
+  #[inline]
+  fn gl_divmod(&self) -> (Self, Self) {
+    (<Self as Algebra<Self>>::ZERO, *self)
+  }
+  #[inline]
+  fn gl_inverse(&self) -> Self {
+    if self.is_zero() { <Self as Algebra<Self>>::ZERO } else { self.inverse() }
   }
 }
 
@@ -46,6 +65,31 @@ impl AiurField for multi_stark::ark_adapter::Scalar {
   #[inline]
   fn as_canonical_u64(&self) -> u64 {
     self.canonical_low_u64()
+  }
+  fn gl_divmod(&self) -> (Self, Self) {
+    use multi_stark::ark_adapter::Scalar;
+    // Long division of the canonical 256-bit value by the 64-bit modulus,
+    // most significant limb first; the quotient is < the scalar modulus
+    // (it is < v), so it embeds exactly.
+    let limbs = self.canonical_limbs_le();
+    let mut q = [0u64; 4];
+    let mut rem: u128 = 0;
+    for i in (0..4).rev() {
+      let cur = (rem << 64) | u128::from(limbs[i]);
+      q[i] = u64::try_from(cur / u128::from(GOLDILOCKS_P))
+        .expect("limb quotient fits");
+      rem = cur % u128::from(GOLDILOCKS_P);
+    }
+    (
+      Scalar::from_limbs_le(q),
+      Self::from_u64(u64::try_from(rem).expect("remainder < p")),
+    )
+  }
+  fn gl_inverse(&self) -> Self {
+    let v = <G as Field>::from_u64(self.canonical_low_u64());
+    <Self as Field>::from_u64(AiurField::as_canonical_u64(
+      &AiurField::gl_inverse(&v),
+    ))
   }
 }
 

@@ -381,6 +381,14 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
   | .unconstrainedGInverse idx => do
     let g ← readIdx st idx
     pure (pushMap st g.inverse)
+  -- Over Goldilocks every value is already < p: the quotient is 0 and the
+  -- inverse mod p IS the field inverse.
+  | .unconstrainedGlDivMod idx => do
+    let g ← readIdx st idx
+    pure (appendMap st #[0, g])
+  | .unconstrainedGlInverse idx => do
+    let g ← readIdx st idx
+    pure (pushMap st g.inverse)
   | .debug _ _ => .ok st
 termination_by (fuel, sizeOf op, 0)
 decreasing_by all_goals first | decreasing_tactic | omega

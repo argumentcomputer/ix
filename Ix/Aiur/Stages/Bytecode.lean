@@ -72,6 +72,15 @@ inductive Op
   | unconstrainedU32Add3 : Array ValIdx → Array ValIdx → Array ValIdx → Op
   /-- Virtual LE-byte packing expression; allocates no auxiliary column. -/
   | u32ToField : Array ValIdx → Op
+  /-- Unconstrained hint: `(q, r)` with `v = q·p_goldilocks + r`, `r < p`, over
+  the canonical integer of the outer-field value `v` (Goldilocks: `(0, v)`).
+  Two fresh auxiliary values, no relation; the caller pins them. Appended
+  last (tag 34). -/
+  | unconstrainedGlDivMod : ValIdx → Op
+  /-- Unconstrained hint: the inverse MODULO p_goldilocks of a canonical
+  value `< p` (`0 ↦ 0`). One fresh auxiliary value, no relation. Appended
+  last (tag 35). -/
+  | unconstrainedGlInverse : ValIdx → Op
   deriving Repr, BEq, Hashable
 
 mutual

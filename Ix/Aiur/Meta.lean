@@ -212,6 +212,8 @@ syntax "u8_range_check" "(" aiur_trm ", " aiur_trm ")"                      : ai
 syntax "unconstrained_big_uint_div_mod" "(" aiur_trm ", " aiur_trm ")"           : aiur_trm
 syntax "unconstrained_g_to_bytes" "(" aiur_trm ")"                          : aiur_trm
 syntax "unconstrained_g_inverse" "(" aiur_trm ")"                           : aiur_trm
+syntax "unconstrained_gl_divmod" "(" aiur_trm ")"                           : aiur_trm
+syntax "unconstrained_gl_inverse" "(" aiur_trm ")"                          : aiur_trm
 syntax "to_field" "(" aiur_trm ")"                                          : aiur_trm
 syntax "u8_from_field_unsafe" "(" aiur_trm ")"                              : aiur_trm
 syntax:max num "u8"                                                         : aiur_trm
@@ -371,6 +373,10 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.unconstrainedGToBytes #[← elabTrm a]
   | `(aiur_trm| unconstrained_g_inverse($a:aiur_trm)) => do
     mkAppM ``Source.Term.unconstrainedGInverse #[← elabTrm a]
+  | `(aiur_trm| unconstrained_gl_divmod($a:aiur_trm)) => do
+    mkAppM ``Source.Term.unconstrainedGlDivMod #[← elabTrm a]
+  | `(aiur_trm| unconstrained_gl_inverse($a:aiur_trm)) => do
+    mkAppM ``Source.Term.unconstrainedGlInverse #[← elabTrm a]
   | `(aiur_trm| to_field($a:aiur_trm)) => do
     mkAppM ``Source.Term.toField #[← elabTrm a]
   | `(aiur_trm| u8_from_field_unsafe($a:aiur_trm)) => do
@@ -617,6 +623,12 @@ where
     | `(aiur_trm| unconstrained_g_inverse($a:aiur_trm)) => do
       let a ← replaceToken old new a
       `(aiur_trm| unconstrained_g_inverse($a))
+    | `(aiur_trm| unconstrained_gl_divmod($a:aiur_trm)) => do
+      let a ← replaceToken old new a
+      `(aiur_trm| unconstrained_gl_divmod($a))
+    | `(aiur_trm| unconstrained_gl_inverse($a:aiur_trm)) => do
+      let a ← replaceToken old new a
+      `(aiur_trm| unconstrained_gl_inverse($a))
     | `(aiur_trm| to_field($a:aiur_trm)) => do
       let a ← replaceToken old new a
       `(aiur_trm| to_field($a))

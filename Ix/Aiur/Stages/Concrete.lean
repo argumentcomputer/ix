@@ -94,6 +94,8 @@ inductive Term : Type where
   | unconstrainedBigUintDivMod (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | unconstrainedGToBytes (typ : Typ) (escapes : Bool) (a : Term) : Term
   | unconstrainedGInverse (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | unconstrainedGlDivMod (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | unconstrainedGlInverse (typ : Typ) (escapes : Bool) (a : Term) : Term
   | debug (typ : Typ) (escapes : Bool) (label : String) (t : Option Term) (r : Term) : Term
   deriving Repr, Inhabited
 
@@ -115,6 +117,7 @@ def Term.typ : Term → Typ
   | .unconstrainedU32Add t _ _ _ | .unconstrainedU32Add3 t _ _ _ _ | .u32ToField t _ _
   | .unconstrainedBigUintDivMod t _ _ _
   | .unconstrainedGToBytes t _ _ | .unconstrainedGInverse t _ _
+  | .unconstrainedGlDivMod t _ _ | .unconstrainedGlInverse t _ _
   | .debug t _ _ _ _ => t
 
 /-- Get the escapes flag of a Concrete.Term. -/
@@ -135,6 +138,7 @@ def Term.escapes : Term → Bool
   | .unconstrainedU32Add _ e _ _ | .unconstrainedU32Add3 _ e _ _ _ | .u32ToField _ e _
   | .unconstrainedBigUintDivMod _ e _ _
   | .unconstrainedGToBytes _ e _ | .unconstrainedGInverse _ e _
+  | .unconstrainedGlDivMod _ e _ | .unconstrainedGlInverse _ e _
   | .debug _ e _ _ _ => e
 
 structure Constructor where

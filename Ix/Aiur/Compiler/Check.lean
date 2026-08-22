@@ -839,6 +839,12 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
   | .unconstrainedGInverse a => do
     let a' ← checkNoEscape a .field
     pure (Typed.Term.unconstrainedGInverse .field false a')
+  | .unconstrainedGlDivMod a => do
+    let a' ← checkNoEscape a .field
+    pure (Typed.Term.unconstrainedGlDivMod (.tuple #[.field, .field]) false a')
+  | .unconstrainedGlInverse a => do
+    let a' ← checkNoEscape a .field
+    pure (Typed.Term.unconstrainedGlInverse .field false a')
   | .toField a => do
     let a' ← checkNoEscape a .u8
     pure (Typed.Term.toField .field false a')
@@ -1024,6 +1030,10 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
       pure (.unconstrainedGToBytes (← zonkTyp τ) e (← zonkTypedTerm a))
   | .unconstrainedGInverse τ e a => do
       pure (.unconstrainedGInverse (← zonkTyp τ) e (← zonkTypedTerm a))
+  | .unconstrainedGlDivMod τ e a => do
+      pure (.unconstrainedGlDivMod (← zonkTyp τ) e (← zonkTypedTerm a))
+  | .unconstrainedGlInverse τ e a => do
+      pure (.unconstrainedGlInverse (← zonkTyp τ) e (← zonkTypedTerm a))
   | .unconstrainedU32Add τ e a b => do
       pure (.unconstrainedU32Add (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .unconstrainedU32Add3 τ e a b c => do

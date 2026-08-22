@@ -85,6 +85,13 @@ pub enum Op<F = G> {
   UnconstrainedU32Add(Vec<ValIdx>, Vec<ValIdx>),
   UnconstrainedU32Add3(Vec<ValIdx>, Vec<ValIdx>, Vec<ValIdx>),
   U32ToField(Vec<ValIdx>),
+  /// Unconstrained hint: `(q, r)` with `v = q·p_goldilocks + r`, `r < p`,
+  /// over the canonical integer of the value. Two fresh auxiliary values,
+  /// no constraints; the caller pins them.
+  UnconstrainedGlDivMod(ValIdx),
+  /// Unconstrained hint: the inverse modulo p_goldilocks of a canonical
+  /// value `< p` (`0 ↦ 0`). One fresh auxiliary value, no constraints.
+  UnconstrainedGlInverse(ValIdx),
 }
 
 pub enum Ctrl<F = G> {

@@ -14,7 +14,7 @@ use crate::{
   bytecode::{Block, Ctrl, Function, Op, Toplevel},
   execute::{
     IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
-    g_inverse_value,
+    g_inverse_value, gl_divmod_value, gl_inverse_value,
   },
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
@@ -638,6 +638,18 @@ impl<F: AiurField> Op<F> {
       },
       Op::UnconstrainedGInverse(a) => {
         let f = g_inverse_value(map[*a].0);
+        map.push((f, 1));
+        slice.push_auxiliary(index, f);
+      },
+      Op::UnconstrainedGlDivMod(a) => {
+        let (q, r) = gl_divmod_value(map[*a].0);
+        for f in [q, r] {
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
+      Op::UnconstrainedGlInverse(a) => {
+        let f = gl_inverse_value(map[*a].0);
         map.push((f, 1));
         slice.push_auxiliary(index, f);
       },

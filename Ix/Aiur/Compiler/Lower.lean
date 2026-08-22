@@ -351,6 +351,12 @@ def toIndex
   | .unconstrainedGInverse _ _ a => do
     let a ← expectIdx layoutMap bindings a
     pushOp (.unconstrainedGInverse a)
+  | .unconstrainedGlDivMod _ _ a => do
+    let a ← expectIdx layoutMap bindings a
+    pushOp (.unconstrainedGlDivMod a) 2
+  | .unconstrainedGlInverse _ _ a => do
+    let a ← expectIdx layoutMap bindings a
+    pushOp (.unconstrainedGlInverse a)
   | .debug _ _ label term ret => do
     let term ← match term with
       | none => pure none

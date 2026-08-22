@@ -133,6 +133,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "rayon",
  "zeroize",
 ]
 
@@ -153,6 +154,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "paste",
+ "rayon",
  "zeroize",
 ]
 
@@ -192,6 +194,7 @@ dependencies = [
  "educe",
  "fnv",
  "hashbrown 0.15.5",
+ "rayon",
 ]
 
 [[package]]
@@ -205,6 +208,7 @@ dependencies = [
  "arrayvec",
  "digest 0.10.7",
  "num-bigint",
+ "rayon",
 ]
 
 [[package]]
@@ -226,6 +230,7 @@ checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
 dependencies = [
  "num-traits",
  "rand 0.8.7",
+ "rayon",
 ]
 
 [[package]]
@@ -2253,7 +2258,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=d536a22989239900022fc3f60dac5fd2ccfac3ff#d536a22989239900022fc3f60dac5fd2ccfac3ff"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=3283ff4#3283ff43ea9e11a8a16d2ffe9aa530a1dec6652d"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",

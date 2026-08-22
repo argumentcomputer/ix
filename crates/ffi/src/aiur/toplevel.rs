@@ -187,6 +187,14 @@ fn decode_op<F: LeanField>(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op<F> {
       let [a] = ctor.objs::<1>();
       Op::U32ToField(decode_vec_val_idx(a))
     },
+    34 => {
+      let [a] = ctor.objs::<1>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::UnconstrainedGlDivMod(a)
+    },
+    35 => {
+      let [a] = ctor.objs::<1>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::UnconstrainedGlInverse(a)
+    },
     _ => unreachable!(),
   }
 }

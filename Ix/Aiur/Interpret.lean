@@ -522,6 +522,14 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match ← interp decls bindings t with
       | .field g => return .field g.inverse
       | _ => throwErr "unconstrainedGInverse: expected field value"
+  | .unconstrainedGlDivMod t => do
+      match ← interp decls bindings t with
+      | .field g => return .tuple #[.field 0, .field g]
+      | _ => throwErr "unconstrainedGlDivMod: expected field value"
+  | .unconstrainedGlInverse t => do
+      match ← interp decls bindings t with
+      | .field g => return .field g.inverse
+      | _ => throwErr "unconstrainedGlInverse: expected field value"
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls bindings t
   | .u8Lit n => return .field (G.ofNat n)
