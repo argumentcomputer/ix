@@ -7,6 +7,8 @@ public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.MultiStark.Field.GoldilocksNative
 public import Ix.MultiStark.Field.GoldilocksForeign
+public import Ix.MultiStark.Transcript.Blake3
+public import Ix.MultiStark.Domain
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
@@ -98,6 +100,8 @@ def multiStarkFullOver (goldilocks : Aiur.Source.Toplevel) :
     Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
   let t ← t.merge goldilocks
+  let t ← t.merge transcriptBlake3
+  let t ← t.merge twoAdicDomain
   let t ← t.merge deserialize
   let t ← t.merge IxVM.blake3
   let t ← t.merge systemDeserialize
