@@ -97,6 +97,10 @@ structure EnvSpec where
 def envSpecs : List EnvSpec := [
   { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean" },
   { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean" },
+  -- Init+Std+Lean+Batteries as ONE env: the whole-env Aiur execution
+  -- benchmark's fast tier (the union deduplicates — Lean already
+  -- carries Init and Std).
+  { name := "ISLB",    module := "Benchmarks/Compile/CompileISLB.lean" },
   { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean" },
   { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean" }
 ]
@@ -156,6 +160,11 @@ structure BackendSpec where
   defaultMode : String
   /-- The inputs (envs and row names) this backend's runs fan over. -/
   inputs : BenchInputs
+  /-- For a `perEnv` backend: restrict the fan-out to these registry env
+      names instead of every compiled env (`none` = all). Ignored for
+      the per-constant backends, whose env set comes from `Vectors.csv`
+      row selection. -/
+  envs : Option (List String) := none
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
@@ -264,6 +273,24 @@ def backendSpecs : List BackendSpec := [
                    ("fri-verifier-proof-size", "0.05", "_"),
                    ("ixvm-verify-time", "0.10", "_"),
                    ("fri-verifier-verify-time", "0.10", "_")] },
+  -- aiur-sharded-env: whole-env Aiur execution — the sharded feeder pipeline
+  -- end-to-end at env scale, one row per env. Shards the `.ixe` for the
+  -- runner's RAM (`ix shard --max-ram 100`: naive sizing → ~3.5 GB
+  -- execution RSS per shard on a 128 GB runner), then one gated
+  -- full-width rayon batch (`ix check --ixe --ixes`) over the whole
+  -- manifest — the byte-weighted RamGate, not a thread cap, bounds peak
+  -- RSS, so the same entry is correct on any runner class. Three envs,
+  -- one runner each: ISLB is the fast tier; FLT and Mathlib are the
+  -- env-scale tiers. `shards` is deterministic per (env bytes, budget)
+  -- and only drops on a real compression win → upper-only pin.
+  { name := "aiur-sharded-env", defaultMode := "execute", inputs := .perEnv,
+    envs := some ["ISLB", "FLT", "Mathlib"],
+    testbeds := [("execute", "aiur-sharded-env-check-x64-32x")],
+    metrics := [("execute", ["check-time", "throughput", "peak-rss",
+                             "constants", "shards"])],
+    thresholds := [("constants", "0", "0"), ("shards", "0", "_"),
+                   ("check-time", "0.10", "_"), ("throughput", "_", "0.10"),
+                   ("peak-rss", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -319,6 +346,10 @@ def backendSpecs : List BackendSpec := [
   -- CONSUMER — it reuses the compile run's fresh `.ixe` rather than
   -- producing one.
   { name := "decompile", defaultMode := "execute", inputs := .perEnv,
+    -- Pinned to the pre-ISLB env set: ISLB exists for the aiur-sharded-env
+    -- whole-env execution benchmark, and its content is Lean +
+    -- Batteries — a decompile row would mostly re-measure Lean's.
+    envs := some ["InitStd", "Lean", "Mathlib", "FLT"],
     testbeds := [("execute", "ix-decompile-x64-32x")],
     metrics := [("execute", ["decompile-time", "throughput", "peak-rss",
                              "file-size", "constants"])],
@@ -376,7 +407,9 @@ def BackendSpec.scheduledModes (b : BackendSpec) : List String :=
 def BackendSpec.envNames (b : BackendSpec) : List String :=
   let names := envSpecs.map (·.name)
   match b.inputs with
-  | .perEnv => names
+  | .perEnv => match b.envs with
+    | some restricted => names.filter restricted.contains
+    | none => names
   | .perConstant | .perConstantWithEnv =>
     names.filter fun env =>
       b.scheduledModes.any fun m =>
@@ -391,7 +424,7 @@ def BackendSpec.envNames (b : BackendSpec) : List String :=
 def BackendSpec.benchmarkNames (b : BackendSpec) (mode : String) :
     Array String := Id.run do
   match b.inputs with
-  | .perEnv => return (envSpecs.map (·.name)).toArray
+  | .perEnv => return b.envNames.toArray
   | .perConstant | .perConstantWithEnv =>
     let mut ns : Array String := #[]
     for env in b.envNames do
@@ -721,6 +754,27 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         #["check-rs", ixe, "--anon", "--consts-file", namesFile, "--json", out]
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
+  | "aiur-sharded-env" =>
+    -- Whole-env sharded Aiur execution: shard the env for the runner's
+    -- RAM (naive `--max-ram 100` sizing → ~3.5 GB execution RSS per
+    -- shard), then ONE gated full-width rayon batch over the manifest —
+    -- the RamGate bounds peak RSS, so no `--jobs` is passed. The check
+    -- writes the env-keyed row itself (`--json`): check-time,
+    -- throughput, peak-rss, constants, shards. The shard step is
+    -- deterministic setup, not part of the measured window.
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ix ← resolveBin repo "ix"
+    let manifest := s!"{env}-exec.ixes"
+    let exit ← runGuarded watchdog ceilingGb ix
+      #["shard", ixe, "--max-ram", "100", "--out", manifest]
+    if exit != 0 then
+      IO.eprintln s!"[bench] ix shard failed (exit {exit})"
+      return 1
+    let exit ← runGuarded watchdog ceilingGb ix
+      #["check", "--ixe", ixe, "--ixes", manifest,
+        "--json", out, "--json-name", info.name]
+    if exit != 0 && exit != exitRejected then
+      IO.eprintln s!"[bench] whole-env aiur check failed (exit {exit})"
   | "lean4lean" =>
     -- The reference Lean4-in-Lean4 kernel checks the env's library from
     -- its oleans, so no `.ixe` is resolved. The tool takes the same
@@ -847,7 +901,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Execute one benchmark run (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | zisk | sp1 | ooc | lean4lean | compile | decompile"
+    backend      : String; "aiur | aiur-sharded-env | zisk | sp1 | ooc | lean4lean | compile | decompile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"

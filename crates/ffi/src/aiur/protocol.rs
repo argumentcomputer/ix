@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef,
+  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::{
@@ -487,6 +487,291 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
     &query_record,
     &toplevel,
   ))
+}
+
+/// `Bytecode.Toplevel.checkAddrsWithEnv`: check a BATCH of full-closure
+/// claims (`Claim.check addr none`, one per address in `addrs_blob`) in
+/// PARALLEL — rayon over the list, each task running exactly the
+/// single-claim machinery above (`build_claim_check_witness` +
+/// `dispatch_execute`) over entirely task-private data: its own
+/// `IOBuffer`, its own `QueryRecord`, both dropped inside the task.
+/// Parallel, not concurrent: nothing is shared between tasks except
+/// the read-only `toplevel` and `env` (the compiler enforces this —
+/// `par_iter` closures only capture `Sync` data). Each claim's record
+/// is single-threaded and therefore bit-deterministic regardless of
+/// `jobs` or scheduling. Peak RAM is bounded by `jobs` concurrent
+/// claim cones (rayon keeps at most one in-flight task per pool
+/// thread; records free at task end).
+///
+/// Returns the FAILURES as an array of `(batch index, error)` pairs
+/// (the index as a decimal string, resolving back to the caller's
+/// label order) —
+/// empty means every claim passed. Per-claim outputs and records are
+/// deliberately not round-tripped to Lean; the single-claim entry
+/// keeps the full result shape for that. `jobs = 0` uses rayon's
+/// default pool width.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  addrs_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+  jobs: LeanNat<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use rayon::prelude::*;
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let jobs = lean_unbox_nat_as_usize(jobs.inner());
+  let addrs = match decode_owned_blob(&addrs_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let env = &env_handle.get().env;
+  let check_batch = || -> Vec<(String, String)> {
+    addrs
+      .par_iter()
+      .enumerate()
+      .filter_map(|(i, addr)| {
+        let err =
+          match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(
+            env, addr,
+          ) {
+            Err(e) => Some(format!("witness build: {e}")),
+            Ok((_claim, input, mut io_buffer)) => dispatch_execute(
+              &toplevel,
+              fun_idx,
+              input,
+              &mut io_buffer,
+              use_bytecode,
+            )
+            .err(),
+          };
+        err.map(|e| (i.to_string(), e))
+      })
+      .collect()
+  };
+  let failures = if jobs == 0 {
+    check_batch()
+  } else {
+    let pool = match rayon::ThreadPoolBuilder::new().num_threads(jobs).build() {
+      Ok(p) => p,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("rayon pool: {e}"));
+      },
+    };
+    pool.install(check_batch)
+  };
+  let arr = LeanArray::alloc(failures.len());
+  for (i, (idx, err)) in failures.iter().enumerate() {
+    arr.set(i, LeanProd::new(LeanString::new(idx), LeanString::new(err)));
+  }
+  LeanExcept::ok(arr)
+}
+
+/// Byte-weighted admission gate: a counting semaphore over estimated
+/// execution RSS, expressed with the std Mutex+Condvar construction.
+/// Bounds MEMORY in flight instead of shards in flight, so the rayon
+/// pool can run at full width: cheap shards run many-wide while a
+/// heavy one takes a proportional slice of the budget. Workers block
+/// in `acquire` until reserving their estimate fits the budget.
+struct RamGate {
+  reserved: std::sync::Mutex<usize>,
+  cv: std::sync::Condvar,
+  budget: usize,
+}
+
+impl RamGate {
+  fn acquire(&self, bytes: usize) {
+    let mut used = self.reserved.lock().unwrap();
+    // Admit-when-alone: a shard whose estimate alone exceeds the
+    // budget must still run (by itself) rather than deadlock.
+    while *used > 0 && *used + bytes > self.budget {
+      used = self.cv.wait(used).unwrap();
+    }
+    *used += bytes;
+  }
+
+  fn release(&self, bytes: usize) {
+    *self.reserved.lock().unwrap() -= bytes;
+    self.cv.notify_all();
+  }
+}
+
+/// Execution-RSS per owned CONSTANT byte, the per-shard reserve
+/// estimate for [`RamGate`]. The basis is the sum of the shard's owned
+/// constants' raw serialized bytes (`Env::get_const_bytes`) — NOT the
+/// shard's share of `.ixe` FILE bytes, which also carry blobs, names,
+/// and indices and run ~2.6x larger. Measured on the 400 GiB-budget
+/// initstd/FLT/Mathlib partitions (2026-08-22): ~12.6-14 GB in-flight
+/// RSS per ~5.5 MB owned constant bytes (~2300x — closure re-ingress
+/// dominates, same mechanism as the prover amplification), rounded up
+/// for the cross-shard spread. Miscalibrating against file bytes
+/// (1200x on this basis) over-admitted 2.6x and drove a 495 GB box to
+/// 479 GB.
+const EXEC_RSS_PER_OWNED_BYTE: usize = 2500;
+
+/// `MemAvailable` from `/proc/meminfo`, in bytes (Linux; includes
+/// reclaimable page cache). `None` if unreadable — the caller then
+/// disables the gate rather than guessing.
+fn available_ram_bytes() -> Option<usize> {
+  let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+  let rest = s.lines().find_map(|l| l.strip_prefix("MemAvailable:"))?;
+  let kib: usize = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
+  Some(kib * 1024)
+}
+
+/// `Bytecode.Toplevel.shardCheckBatchWithEnv`: check EVERY shard of a
+/// partition in one call — rayon over the shard list with true
+/// work-stealing (no chunk barriers), each shard through the exact
+/// single-shard machinery (`build_shard_check_env_witness` +
+/// `dispatch_execute`) over its own private record and witness io.
+/// Parallel, not concurrent: tasks share only the read-only toplevel,
+/// env, and the `AiurSystem` built once here for the prover RAM model.
+///
+/// `shards_blob` encodes the partition as, per shard, a 4-byte LE
+/// owned-constant count followed by that many 32-byte addresses.
+/// Returns one `(error, peak_bytes)` pair PER SHARD in shard order:
+/// an empty error string means the shard checked clean, and
+/// `peak_bytes` is the analytic prover peak
+/// ([`aiur::synthesis::AiurSystem::peak_prove_bytes`]) of its executed
+/// record — the number split/merge decisions compare against a prover
+/// budget (0 when the shard failed). `jobs = 0` uses rayon's default
+/// pool width (all cores) — safe at full width because admission is
+/// bounded by [`RamGate`], not by thread count; pass `jobs` only to
+/// narrow CPU use.
+// cast_precision_loss: the [ram-gate] line renders byte counts in GiB
+// for humans; f64's 52-bit mantissa is exact far past any real budget.
+#[allow(clippy::cast_precision_loss)]
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_shard_check_batch(
+  toplevel_obj: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  shards_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+  jobs: LeanNat<LeanBorrowed<'_>>,
+  commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use rayon::prelude::*;
+  let toplevel = decode_toplevel(&toplevel_obj);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let jobs = lean_unbox_nat_as_usize(jobs.inner());
+  let mut shards: Vec<Vec<ix_common::address::Address>> = Vec::new();
+  {
+    let bytes = shards_blob.as_bytes();
+    let mut off = 0usize;
+    while off < bytes.len() {
+      if off + 4 > bytes.len() {
+        return LeanExcept::error_string("shards_blob: truncated count");
+      }
+      let n =
+        u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
+      off += 4;
+      if off + n * 32 > bytes.len() {
+        return LeanExcept::error_string("shards_blob: truncated addresses");
+      }
+      shards.push(
+        bytes[off..off + n * 32]
+          .chunks_exact(32)
+          .map(|c| ix_common::address::Address::from_slice(c).unwrap())
+          .collect(),
+      );
+      off += n * 32;
+    }
+  }
+  let env = &env_handle.get().env;
+  // One system build for the whole batch: the RAM model reads circuit
+  // widths and lookup counts off the compiled circuits.
+  let system = AiurSystem::build(
+    decode_toplevel(&toplevel_obj),
+    decode_commitment_parameters(&commitment_parameters),
+    decode_fri_parameters(&fri_parameters),
+  );
+  // RAM-gated admission: reserve each shard's estimated execution RSS
+  // (owned serialized bytes x measured amplification) against most of
+  // the RAM available at entry. Memory in flight — not `jobs` — is
+  // what bounds peak RSS; an unreadable meminfo disables the gate.
+  let estimates: Vec<usize> = shards
+    .iter()
+    .map(|owned| {
+      owned
+        .iter()
+        .filter_map(|a| env.get_const_bytes(a).map(|b| b.len()))
+        .sum::<usize>()
+        .saturating_mul(EXEC_RSS_PER_OWNED_BYTE)
+    })
+    .collect();
+  let gate = RamGate {
+    reserved: std::sync::Mutex::new(0),
+    cv: std::sync::Condvar::new(),
+    budget: available_ram_bytes().map_or(usize::MAX, |b| b / 100 * 85),
+  };
+  {
+    let gib = 1024.0 * 1024.0 * 1024.0;
+    let min = estimates.iter().min().copied().unwrap_or(0);
+    let max = estimates.iter().max().copied().unwrap_or(0);
+    eprintln!(
+      "[ram-gate] budget {:.1} GiB, {} shard estimates: min {:.1} / max {:.1} GiB",
+      gate.budget as f64 / gib,
+      estimates.len(),
+      min as f64 / gib,
+      max as f64 / gib,
+    );
+  }
+  let check_batch = || -> Vec<(String, usize)> {
+    shards
+      .par_iter()
+      .zip(estimates.par_iter())
+      .map(|(owned, est)| {
+        gate.acquire(*est);
+        let result =
+          match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+            env, owned,
+          ) {
+            Err(e) => (format!("witness build: {e}"), 0),
+            Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
+              &toplevel,
+              fun_idx,
+              input,
+              &mut io_buffer,
+              use_bytecode,
+            ) {
+              Err(e) => (e, 0),
+              Ok((record, _output)) => {
+                (String::new(), system.peak_prove_bytes(&record).peak)
+              },
+            },
+          };
+        gate.release(*est);
+        result
+      })
+      .collect()
+  };
+  let results = if jobs == 0 {
+    check_batch()
+  } else {
+    let pool = match rayon::ThreadPoolBuilder::new().num_threads(jobs).build() {
+      Ok(p) => p,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("rayon pool: {e}"));
+      },
+    };
+    pool.install(check_batch)
+  };
+  let arr = LeanArray::alloc(results.len());
+  for (i, (err, peak)) in results.iter().enumerate() {
+    arr
+      .set(i, LeanProd::new(LeanString::new(err), LeanOwned::box_usize(*peak)));
+  }
+  LeanExcept::ok(arr)
 }
 
 /// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
