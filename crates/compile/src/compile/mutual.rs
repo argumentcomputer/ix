@@ -712,8 +712,8 @@ pub fn generate_and_compile_aux_recursors(
   // `populate_recursor_rules_from_block` comment in the kernel.
   let t1 = std::time::Instant::now();
   let rec_consts: Vec<MutConst> = patches
-    .iter()
-    .filter_map(|(_, p)| match p {
+    .values()
+    .filter_map(|p| match p {
       PatchedConstant::Rec(r) => Some(MutConst::Recr(r.clone())),
       _ => None,
     })
@@ -822,8 +822,8 @@ pub fn generate_and_compile_aux_recursors(
   // (because .brecOn.eq references casesOn).
   let t2 = std::time::Instant::now();
   let cases_on_defs: Vec<MutConst> = patches
-    .iter()
-    .filter_map(|(_, p)| match p {
+    .values()
+    .filter_map(|p| match p {
       PatchedConstant::CasesOn(d) => Some(MutConst::Defn(Def {
         name: d.name.clone(),
         level_params: d.level_params.clone(),
@@ -846,8 +846,8 @@ pub fn generate_and_compile_aux_recursors(
   // recOn wraps .rec and must be compiled after .rec.
   let t3 = std::time::Instant::now();
   let rec_on_defs: Vec<MutConst> = patches
-    .iter()
-    .filter_map(|(_, p)| match p {
+    .values()
+    .filter_map(|p| match p {
       PatchedConstant::RecOn(d) => Some(MutConst::Defn(Def {
         name: d.name.clone(),
         level_params: d.level_params.clone(),
@@ -887,8 +887,8 @@ pub fn generate_and_compile_aux_recursors(
   // order with the canonical `all`.
   let t4 = std::time::Instant::now();
   let mut below_raw: Vec<&BelowIndc> = patches
-    .iter()
-    .filter_map(|(_, p)| match p {
+    .values()
+    .filter_map(|p| match p {
       PatchedConstant::BelowIndc(bi) => Some(bi),
       _ => None,
     })
@@ -932,8 +932,8 @@ pub fn generate_and_compile_aux_recursors(
 
   // Phase 4: Compile .below definitions (Type-level).
   let below_defs: Vec<MutConst> = patches
-    .iter()
-    .filter_map(|(_, p)| match p {
+    .values()
+    .filter_map(|p| match p {
       PatchedConstant::BelowDef(d) => Some(MutConst::Defn(Def {
         name: d.name.clone(),
         level_params: d.level_params.clone(),
@@ -970,8 +970,8 @@ pub fn generate_and_compile_aux_recursors(
   let t6 = std::time::Instant::now();
   for batch in 0..3u8 {
     let defs: Vec<MutConst> = patches
-      .iter()
-      .filter_map(|(_, p)| match p {
+      .values()
+      .filter_map(|p| match p {
         PatchedConstant::BRecOn(d) if brecon_batch(&d.name) == batch => {
           Some(brecon_to_mut_const(d))
         },

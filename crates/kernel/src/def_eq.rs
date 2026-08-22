@@ -81,8 +81,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       eprintln!(
         "[deq] {} {} ~ {}",
         self.fuel_used(),
-        &a.hash_key(),
-        &b.hash_key(),
+        a.hash_key(),
+        b.hash_key(),
       );
     }
     if a.ptr_eq(b) {
