@@ -510,8 +510,7 @@ fn build_prop_below_minor_fvar(
   let mut lambda_fvars: Vec<LeanExpr> = Vec::new();
   let mut ctor_args: Vec<LeanExpr> = Vec::new();
 
-  for (fi, (decl, fvar)) in
-    field_decls.into_iter().zip(field_fvars.into_iter()).enumerate()
+  for (fi, (decl, fvar)) in field_decls.into_iter().zip(field_fvars).enumerate()
   {
     if let Some(j_prime) = find_motive_fvar(&decl.domain, motive_fvars) {
       // IH field. For a non-reflexive IH `motive args`, the new binder is
@@ -1134,8 +1133,7 @@ fn build_type_minor_premise_fvar(
   let mut lambda_fvars: Vec<LeanExpr> = Vec::new();
   let mut prod_entries: Vec<(LeanExpr, usize)> = Vec::new(); // (fvar, lambda_index) for IH fields
 
-  for (fi, (decl, fvar)) in
-    field_decls.into_iter().zip(field_fvars.into_iter()).enumerate()
+  for (fi, (decl, fvar)) in field_decls.into_iter().zip(field_fvars).enumerate()
   {
     if let Some(_j_prime) = find_motive_fvar(&decl.domain, motive_fvars) {
       // IH field: replace domain with PProd(motive, below)

@@ -342,7 +342,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Step journal (see `IX_STEP_TRACE` in def_eq.rs); placed after the
     // quick exit to mirror the Lean kernel's `[whnf+]` site.
     if *IX_STEP_TRACE {
-      eprintln!("[whnf+] {} {}", self.fuel_used(), &e.hash_key());
+      eprintln!("[whnf+] {} {}", self.fuel_used(), e.hash_key());
     }
 
     // Context-aware cache: closed exprs use ptr only; open exprs include
@@ -1983,11 +1983,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Err(_) => return Ok(None),
     };
     if *IX_KSYNTH_LOG {
-      eprintln!("[ksynth-attempt] {}", &ctor_app.hash_key());
+      eprintln!("[ksynth-attempt] {}", ctor_app.hash_key());
     }
     if !self.is_def_eq(&major_ty_w, &ctor_ty)? {
       if *IX_KSYNTH_LOG {
-        eprintln!("[ksynth-reject] {}", &ctor_app.hash_key());
+        eprintln!("[ksynth-reject] {}", ctor_app.hash_key());
       }
       return Ok(None);
     }

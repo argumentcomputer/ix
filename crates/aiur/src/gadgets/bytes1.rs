@@ -49,8 +49,12 @@ impl AiurGadget for Bytes1 {
   /// Builds the preprocessed trace over all 256 byte values.
   fn preprocessed(&self) -> Option<RowMajorMatrix<G>> {
     let mut values = vec![G::ZERO; 256 * PREPROCESSED_TRACE_WIDTH];
-    values.chunks_exact_mut(PREPROCESSED_TRACE_WIDTH).enumerate().for_each(
-      |(i, row)| {
+    values
+      .as_chunks_mut::<PREPROCESSED_TRACE_WIDTH>()
+      .0
+      .iter_mut()
+      .enumerate()
+      .for_each(|(i, row)| {
         let byte = G::from_usize(i);
 
         // Raw byte value
@@ -68,8 +72,7 @@ impl AiurGadget for Bytes1 {
 
         // Byte shifted right
         row[10] = Self::shift_right(&byte);
-      },
-    );
+      });
     Some(RowMajorMatrix::new(values, PREPROCESSED_TRACE_WIDTH))
   }
 
@@ -136,16 +139,19 @@ impl AiurGadget for Bytes1 {
         byte_bit6,
         byte_bit7,
       ],
+      max_multiplicity: crate::COUNT_COLUMN_BUDGET,
     };
 
     let pull_shift_left = Lookup {
       multiplicity: -shift_left_multiplicity,
       args: vec![shift_left_channel, byte.clone(), byte_left_shifted],
+      max_multiplicity: crate::COUNT_COLUMN_BUDGET,
     };
 
     let pull_shift_right = Lookup {
       multiplicity: -shift_right_multiplicity,
       args: vec![shift_right_channel, byte, byte_right_shifted],
+      max_multiplicity: crate::COUNT_COLUMN_BUDGET,
     };
 
     vec![pull_bit_decomposition, pull_shift_left, pull_shift_right]
@@ -168,7 +174,9 @@ impl AiurGadget for Bytes1 {
 
     // There are at most 256 rows so parallelism is not necessay.
     rows
-      .chunks_exact_mut(TRACE_WIDTH)
+      .as_chunks_mut::<TRACE_WIDTH>()
+      .0
+      .iter_mut()
       .enumerate()
       .zip(&record.bytes1_queries.0)
       .zip(row_writers.iter_mut())
