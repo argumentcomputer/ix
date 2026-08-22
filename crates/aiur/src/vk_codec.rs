@@ -45,6 +45,7 @@
 //!   u32 zero_count, then zero_count x u16 LE constraint-root node ids
 //!   u32 lookup_count, then per lookup:
 //!     u16 LE multiplicity node id
+//!     u64 LE max_multiplicity (declared per-row multiplicity bound)
 //!     u16 LE arg count, then arg_count x u16 LE arg node ids
 //! TRAILER
 //!   u8           preprocessed commit flag (0 = None / 1 = Some)
@@ -86,6 +87,10 @@ fn push_u16(buf: &mut Vec<u8>, v: usize) {
 
 fn push_u32(buf: &mut Vec<u8>, v: usize) {
   let v = u32::try_from(v).expect("vk field exceeds u32");
+  buf.extend_from_slice(&v.to_le_bytes());
+}
+
+fn push_u64(buf: &mut Vec<u8>, v: u64) {
   buf.extend_from_slice(&v.to_le_bytes());
 }
 
@@ -185,6 +190,7 @@ fn encode_circuit(buf: &mut Vec<u8>, circuit: &Circuit<Val>) {
   push_u16(buf, compiled.lookups.len());
   for lookup in &compiled.lookups {
     push_node_id(buf, lookup.multiplicity);
+    push_u64(buf, lookup.max_multiplicity);
     push_u16(buf, lookup.args.len());
     for &arg in &lookup.args {
       push_node_id(buf, arg);
@@ -361,12 +367,13 @@ fn decode_circuit(seg: &mut Seg<'_>) -> Result<Circuit<Val>, String> {
   let mut lookups = Vec::with_capacity(lookup_count);
   for _ in 0..lookup_count {
     let multiplicity = seg.node_id()?;
+    let max_multiplicity = seg.u64()?;
     let arg_count = seg.u16()? as usize;
     let mut args = Vec::with_capacity(arg_count.min(1 << 16));
     for _ in 0..arg_count {
       args.push(seg.node_id()?);
     }
-    lookups.push(Lookup { multiplicity, args });
+    lookups.push(Lookup { multiplicity, args, max_multiplicity });
   }
 
   let degrees = recompute_degrees(&nodes);

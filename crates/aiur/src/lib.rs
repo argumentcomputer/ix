@@ -15,6 +15,15 @@ use rustc_hash::FxBuildHasher;
 pub type G = multi_stark::p3_goldilocks::Goldilocks;
 pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
+/// Per-row multiplicity budget declared for committed count columns —
+/// function-call return counts, memory load counts, and gadget table
+/// counts: each entry supports up to 2^32 queries. The columns are not
+/// range-constrained; the weight-1 pushes at the query sites are what keep
+/// actual counts within the budget. Feeds the logUp height bound
+/// `Σ wᵢ·hᵢ + |claims| < p` (see `multi_stark::lookup::Lookup`'s
+/// `max_multiplicity`).
+pub const COUNT_COLUMN_BUDGET: u64 = 1 << 32;
+
 #[inline]
 pub const fn function_channel() -> G {
   G::ZERO
