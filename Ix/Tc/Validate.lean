@@ -147,6 +147,7 @@ def metaHasAlteringSurgery (cm : Ixon.ConstantMeta) : Bool :=
       (entries.zipIdx.any fun (e, i) => match e with
         | .collapsed .. => true
         | .kept canonIdx _ => canonIdx.toNat != i)
+    | .etaCallSite .. => true
     | _ => false
 
 /-- Meta roundtrip summary counts. -/

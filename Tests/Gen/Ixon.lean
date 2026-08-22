@@ -389,6 +389,9 @@ def genExprMetaData (arenaSize : Nat := 0) (genAddr : Gen Address := genAddress)
             (2, pure none),
             (1, (fun a b => some (a, b)) <$> genUInt64Small <*> genIdx),
           ]),
+    (3, ExprMetaData.etaCallSite <$> genUInt64Small <*> genAddr
+      <*> genSmallArray (genCallSiteEntry genIdx)
+      <*> genSmallArray genIdx <*> genIdx),
   ]
 where
   /-- KVMap whose keys and `ofName` payloads draw from `genAddr` (they are

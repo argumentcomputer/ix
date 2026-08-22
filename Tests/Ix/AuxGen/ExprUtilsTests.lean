@@ -88,6 +88,14 @@ def substShiftTests : TestSeq :=
   ++ test "instantiatePiParams peels and substitutes"
     ((instantiatePiParams (tripleForall sort0 sort0 sort0 (bv 2)) 3
         #[cst "x", cst "y", cst "z"] == cst "x" : Bool))
+  ++ test "instantiatePiParams lifts loose argument under residual binder"
+    ((let typ := Expr.mkForallE (nm "p") sort0
+        (Expr.mkForallE (nm "x") sort0 (bv 1) .default) .default
+      let expected := Expr.mkForallE (nm "x") sort0 (bv 3) .default
+      instantiatePiParams typ 1 #[bv 2] == expected : Bool))
+  ++ test "lowerVars inverts loose-BVar lift under binders"
+    ((let e := Expr.mkLam (nm "x") sort0 (bv 2) .default
+      lowerVars (shiftVars e 3 0) 3 0 == e : Bool))
 
 def betaTests : TestSeq :=
   test "betaReduce ((fun x => x) a) = a"

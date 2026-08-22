@@ -163,7 +163,13 @@ def exprMetaDataTests : TestSeq :=
   test "ExprMetaData.binder default" (roundtripIxonExprMetaData (.binder testAddr .default 0 1) == .binder testAddr .default 0 1) ++
   test "ExprMetaData.binder implicit" (roundtripIxonExprMetaData (.binder testAddr .implicit 2 3) == .binder testAddr .implicit 2 3) ++
   test "ExprMetaData.binder strictImplicit" (roundtripIxonExprMetaData (.binder testAddr .strictImplicit 0 0) == .binder testAddr .strictImplicit 0 0) ++
-  test "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0)
+  test "ExprMetaData.binder instImplicit" (roundtripIxonExprMetaData (.binder testAddr .instImplicit 0 0) == .binder testAddr .instImplicit 0 0) ++
+  test "ExprMetaData.callSite" (roundtripIxonExprMetaData
+    (.callSite testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] (some (8, 9))) ==
+      .callSite testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] (some (8, 9))) ++
+  test "ExprMetaData.etaCallSite" (roundtripIxonExprMetaData
+    (.etaCallSite 4 testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] 8) ==
+      .etaCallSite 4 testAddr #[.kept 2 3, .collapsed 4 5] #[6, 7] 8)
 
 def exprMetaArenaTests : TestSeq :=
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
@@ -172,7 +178,8 @@ def exprMetaArenaTests : TestSeq :=
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
   let mixedArena : ExprMetaArena := { nodes := #[
     .leaf, .ref testAddr, .app 0 0, .binder testAddr .default 0 1,
-    .letBinder testAddr 0 1 2, .prj testAddr 0, .mdata #[] 0
+    .letBinder testAddr 0 1 2, .prj testAddr 0, .mdata #[] 0,
+    .etaCallSite 2 testAddr #[.kept 0 0] #[0, 1] 3
   ] }
   checkIO "ExprMetaArena empty" (roundtripIxonExprMetaArena emptyArena == emptyArena) ++
   checkIO "ExprMetaArena single leaf" (roundtripIxonExprMetaArena singleLeaf == singleLeaf) ++
@@ -187,7 +194,8 @@ def constantMetaTests : TestSeq :=
   -- downgrade these to Leaf — this pins the faithful marshalling).
   let callSiteArena : ExprMetaArena := { nodes := #[
     .leaf,
-    .callSite testAddr #[.kept 0 0, .collapsed 1 0] #[0, 0] (some (2, 0))
+    .callSite testAddr #[.kept 0 0, .collapsed 1 0] #[0, 0] (some (2, 0)),
+    .etaCallSite 3 testAddr #[.kept 0 0, .collapsed 1 0] #[0, 1] 1
   ] }
   let rt (cm : ConstantMeta) : Bool := roundtripIxonConstantMeta cm == cm
   checkIO "ConstantMeta.empty" (rt .empty) ++

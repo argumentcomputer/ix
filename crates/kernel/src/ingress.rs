@@ -1214,6 +1214,18 @@ fn ingress_expr<M: KernelMode>(
 
           IxonExpr::Lam(ty, body) => {
             bump_convert_stat!(stats, lam_nodes);
+            if let ExprMetaData::EtaCallSite { wrapper_meta, .. } = node {
+              // The eta root is decompile-facing. Kernel ingress follows the
+              // ordinary synthesized Binder/CallSite tree so every binder
+              // type and canonical body argument keeps its normal metadata.
+              // Source mdata belongs to the discarded partial expression;
+              // it has no semantic effect on the synthesized wrapper.
+              stack.push(ExprFrame::Process {
+                expr: expr.clone(),
+                arena_idx: *wrapper_meta,
+              });
+              continue;
+            }
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
                 resolve_name(addr, ctx.names),

@@ -470,6 +470,14 @@ inductive ExprMetaData where
       `ixon::metadata::ExprMetaData::CallSite`. -/
   | callSite (name : Address) (entries : Array CallSiteEntry)
              (canonMeta : Array UInt64) (origHead : Option (UInt64 × UInt64))
+  /-- Eta adapter for a partial plan-bearing reference. The Ixon expression
+      is a synthesized lambda telescope with a canonical call-site body;
+      decompile discards `nSynth` binders and restores only `entries`, while
+      meta ingress follows `wrapperMeta` through the ordinary synthesized
+      Binder/CallSite metadata tree. -/
+  | etaCallSite (nSynth : UInt64) (name : Address)
+                (entries : Array CallSiteEntry) (canonMeta : Array UInt64)
+                (wrapperMeta : UInt64)
   deriving BEq, Repr, Inhabited
 
 /-- Arena for expression metadata within a single constant. -/
@@ -496,7 +504,7 @@ def ExprMetaArena.countByType (arena : ExprMetaArena)
     | .ref .. => (le, ap, bi, lb, rf + 1, pj, md, cs)
     | .prj .. => (le, ap, bi, lb, rf, pj + 1, md, cs)
     | .mdata .. => (le, ap, bi, lb, rf, pj, md + 1, cs)
-    | .callSite .. => (le, ap, bi, lb, rf, pj, md, cs + 1)
+    | .callSite .. | .etaCallSite .. => (le, ap, bi, lb, rf, pj, md, cs + 1)
 
 /-- Count mdata items in an arena. -/
 def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
@@ -1498,6 +1506,24 @@ def putExprMetaDataIndexed (em : ExprMetaData) (idx : NameIndex) : PutM Unit := 
       putU8 1
       putTag0 ⟨sharingIdx⟩
       putTag0 ⟨metaIdx⟩
+  | .etaCallSite nSynth name entries canonMeta wrapperMeta =>
+    putU8 11
+    putTag0 ⟨nSynth⟩
+    putIdx name idx
+    putTag0 ⟨entries.size.toUInt64⟩
+    for entry in entries do
+      match entry with
+      | .kept canonIdx metaIdx =>
+        putU8 0
+        putTag0 ⟨canonIdx⟩
+        putTag0 ⟨metaIdx⟩
+      | .collapsed sharingIdx metaIdx =>
+        putU8 1
+        putTag0 ⟨sharingIdx⟩
+        putTag0 ⟨metaIdx⟩
+    putTag0 ⟨canonMeta.size.toUInt64⟩
+    for m in canonMeta do putTag0 ⟨m⟩
+    putTag0 ⟨wrapperMeta⟩
 
 def getExprMetaDataIndexed (rev : NameReverseIndex) : GetM ExprMetaData := do
   let tag ← getU8
@@ -1560,6 +1586,29 @@ def getExprMetaDataIndexed (rev : NameReverseIndex) : GetM ExprMetaData := do
         pure (some (sharingIdx, metaIdx))
       | x => throw s!"invalid CallSite origHead tag {x}"
     pure (.callSite name entries canonMeta origHead)
+  | 11 =>
+    let nSynth := (← getTag0).size
+    let name ← getIdx rev
+    let numEntries := (← getTag0).size.toNat
+    let mut entries : Array CallSiteEntry := #[]
+    for _ in [0:numEntries] do
+      let entry ← match ← getU8 with
+        | 0 =>
+          let canonIdx := (← getTag0).size
+          let metaIdx := (← getTag0).size
+          pure (CallSiteEntry.kept canonIdx metaIdx)
+        | 1 =>
+          let sharingIdx := (← getTag0).size
+          let metaIdx := (← getTag0).size
+          pure (CallSiteEntry.collapsed sharingIdx metaIdx)
+        | x => throw s!"invalid CallSiteEntry tag {x}"
+      entries := entries.push entry
+    let numCanonMeta := (← getTag0).size.toNat
+    let mut canonMeta : Array UInt64 := #[]
+    for _ in [0:numCanonMeta] do
+      canonMeta := canonMeta.push (← getTag0).size
+    let wrapperMeta := (← getTag0).size
+    pure (.etaCallSite nSynth name entries canonMeta wrapperMeta)
   | x => throw s!"invalid ExprMetaData tag {x}"
 
 /-- Serialize ExprMetaArena (length-prefixed array of ExprMetaData nodes). -/

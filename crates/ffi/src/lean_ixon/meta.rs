@@ -315,6 +315,7 @@ impl LeanIxonExprMetaData<LeanOwned> {
   /// | prj        | 5   | 1 (structName: Address) | 8 (1× u64)             |
   /// | mdata      | 6   | 1 (mdata: Array)       | 8 (1× u64)              |
   /// | callSite   | 7   | 4 (name, entries, canonMeta, origHead) | 0       |
+  /// | etaCallSite| 8   | 3 (name, entries, canonMeta)           | 2       |
   pub fn build(node: &ExprMetaData) -> Self {
     match node {
       ExprMetaData::Leaf => Self::new(LeanOwned::box_usize(0)),
@@ -375,6 +376,26 @@ impl LeanIxonExprMetaData<LeanOwned> {
         ctor.set_obj(1, entries_arr);
         ctor.set_obj(2, build_u64_array(canon_meta));
         ctor.set_obj(3, build_opt_u64_pair(orig_head));
+        ctor
+      },
+
+      ExprMetaData::EtaCallSite {
+        n_synth,
+        name,
+        entries,
+        canon_meta,
+        wrapper_meta,
+      } => {
+        let entries_arr = LeanArray::alloc(entries.len());
+        for (i, entry) in entries.iter().enumerate() {
+          entries_arr.set(i, LeanIxonCallSiteEntry::build(entry));
+        }
+        let ctor = LeanIxonExprMetaData::alloc(8);
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, entries_arr);
+        ctor.set_obj(2, build_u64_array(canon_meta));
+        ctor.set_num_64(0, *n_synth);
+        ctor.set_num_64(1, *wrapper_meta);
         ctor
       },
     }
@@ -470,6 +491,28 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         let canon_meta = decode_u64_array(self.get_obj(2).as_array());
         let orig_head = decode_opt_u64_pair(self.get_obj(3));
         ExprMetaData::CallSite { name, entries, canon_meta, orig_head }
+      },
+
+      8 => {
+        let name =
+          LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+            .decode();
+        let entries_arr = self.get_obj(1).as_array();
+        let mut entries = Vec::with_capacity(entries_arr.len());
+        for i in 0..entries_arr.len() {
+          entries.push(
+            LeanIxonCallSiteEntry::new(entries_arr.get(i).to_owned_ref())
+              .decode(),
+          );
+        }
+        let canon_meta = decode_u64_array(self.get_obj(2).as_array());
+        ExprMetaData::EtaCallSite {
+          n_synth: self.get_num_64(0),
+          name,
+          entries,
+          canon_meta,
+          wrapper_meta: self.get_num_64(1),
+        }
       },
 
       tag => panic!("Invalid Ixon.ExprMetaData tag: {}", tag),
