@@ -56,8 +56,13 @@ name = "phi-confluence"
 git = "https://github.com/objectionary/proof"
 rev = "58aa7731076d02bf51b2dfbcdc06c4f764101fb4"
 
+[[require]]
+name = "TauCeti"
+git = "https://github.com/TauCetiProject/TauCeti"
+rev = "afb1aacb3632d3236eee756ea1683290c07270a3"
+
 # Keep the workspace's Lean 4.33 dependency closure authoritative over
-# PhiConfluence's older transitive Mathlib pin.
+# older or moving transitive Mathlib pins.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"

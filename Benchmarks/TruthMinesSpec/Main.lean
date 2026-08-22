@@ -62,6 +62,7 @@
   Run from the repo root; `build` needs `lake build ix` first.
 -/
 import Benchmarks.TruthMinesSpec.Projection
+import Benchmarks.PalomarSpec.Build
 import Ix.Common
 import Ix.Watchdog
 
@@ -85,6 +86,8 @@ private def genFiles : List GenFile :=
     ⟨workspaceToolchainPath, renderWorkspaceToolchain⟩ ]
   ++ (driverLibs.map fun lib =>
       ⟨driverModulePath lib.qualifier, renderDriverModule lib⟩).toList
+  ++ (PalomarSpec.generatedFiles.map fun file =>
+      ⟨file.path, file.content⟩).toList
 
 private def readIfExists (path : System.FilePath) : IO (Option String) := do
   if (← path.pathExists) then return some (← IO.FS.readFile path)
@@ -243,7 +246,7 @@ private def compileMember (exe : System.FilePath) (ceiling? : Option Nat)
     return { qualifier := q, cached := true, exit := 0 }
   -- A stale or absent key must not survive a failed compile.
   if ← keyPath.pathExists then IO.FS.removeFile keyPath
-  let driver := driverModulePath lib.qualifier
+  let driver := catalogDriverModulePath lib.qualifier
   let args := #["compile", driver.toString, "--out", piece.toString]
   let exit ← watched ceiling? exe.toString args (← IO.currentDir)
   if exit == 0 then
@@ -365,8 +368,24 @@ per-member ceiling (cgroup scopes, swap off; --jobs / --ceiling-gb / \
   IO.FS.createDirAll (ixcDir / ".cache")
   stageLine s!"[truthmines] stage 2/4: {spec.libs.size} member pieces → \
 {ixcDir} ({jobs} in flight; per-member `ix compile`, fail-closed)"
-  let outcomes ← compileMembers exe memberCeiling? ixcDir
-    options.noCache jobs spec.libs
+  let commonLibs := spec.libs.filter fun lib =>
+    !PalomarSpec.isEntryQualifier lib.qualifier
+  let commonOutcomes ← compileMembers exe memberCeiling? ixcDir
+    options.noCache jobs commonLibs
+  let palomarEntries := PalomarSpec.catalog.filter fun entry =>
+    spec.libs.any (·.qualifier == entry.qualifier)
+  let palomarOutcomes ← PalomarSpec.buildPieces {
+    ixExe := exe
+    ixcDir
+    ceiling? := memberCeiling?
+    jobs
+    noCache := options.noCache
+  } palomarEntries
+  let outcomes := commonOutcomes ++ palomarOutcomes.map fun outcome => {
+    qualifier := outcome.qualifier
+    cached := outcome.cached
+    exit := outcome.exit
+  }
   let failures := outcomes.filter (·.exit != 0)
   unless failures.isEmpty do
     for f in failures do
@@ -573,9 +592,15 @@ unprotected"
 flight ({tier} tier; 8-phase ix validate per driver module)"
   let runOne (lib : CatalogSpecLib) : IO MemberOutcome := do
     let q := lib.qualifier.toString (escape := false)
-    let driver := driverModulePath lib.qualifier
-    let exit ← watched ceiling? exe.toString
-      #["validate", driver.toString] root
+    let exit ←
+      match PalomarSpec.findEntry? lib.qualifier with
+      | some entry =>
+        watched ceiling? "lake"
+          #["env", exe.toString, "validate", "Driver.lean"]
+          (PalomarSpec.entryWorkspaceDir entry)
+      | none => do
+        let driver := driverModulePath lib.qualifier
+        watched ceiling? exe.toString #["validate", driver.toString] root
     return { qualifier := q, cached := false, exit }
   let mut pending := libs.toList
   let mut inFlight : Array (Task (Except IO.Error MemberOutcome)) := #[]
@@ -605,7 +630,7 @@ clean{if failures.isEmpty then "" else s!"; failed: {failures}"}"
 private def runSpec (mini : Bool) : IO UInt32 := do
   let spec := if mini then catalogMiniSpec else catalogSpec
   for lib in spec.libs do
-    let driver := driverModulePath lib.qualifier
+    let driver := catalogDriverModulePath lib.qualifier
     let roots := lib.roots.map (·.toString (escape := false))
     IO.println s!"{lib.qualifier}\t{driver}\t{String.intercalate "," roots.toList}"
   return 0
