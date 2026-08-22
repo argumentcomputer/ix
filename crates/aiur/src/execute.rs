@@ -209,7 +209,7 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
     .map(|(i, m)| (i, m.len(), m.retained_elems()))
     .filter(|(_, n, _)| *n > 0)
     .collect();
-  rows.sort_by(|a, b| b.2.cmp(&a.2));
+  rows.sort_by_key(|r| std::cmp::Reverse(r.2));
   let total_entries: usize = rows.iter().map(|r| r.1).sum();
   let total_elems: usize = rows.iter().map(|r| r.2).sum();
   eprintln!(
@@ -1052,14 +1052,7 @@ fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
   while !bytes.len().is_multiple_of(8) {
     bytes.push(0);
   }
-  bytes
-    .chunks_exact(8)
-    .map(|c| {
-      let mut a = [0u8; 8];
-      a.copy_from_slice(c);
-      u64::from_le_bytes(a)
-    })
-    .collect()
+  bytes.as_chunks::<8>().0.iter().map(|c| u64::from_le_bytes(*c)).collect()
 }
 
 /// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)

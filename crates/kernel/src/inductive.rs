@@ -3969,13 +3969,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     };
     let univ_offset = match rec_ids.first() {
       Some(rid) => match self.try_get_const(rid)? {
-        Some(KConst::Recr { lvls, .. }) => {
-          if lvls > ind_lvls {
-            1u64
-          } else {
-            0u64
-          }
-        },
+        Some(KConst::Recr { lvls, .. }) if lvls > ind_lvls => 1u64,
         _ => 0,
       },
       None => 0,
@@ -4160,8 +4154,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
           generated_with_rules.len()
         )));
       }
-      for (dst, src) in cached.iter_mut().zip(generated_with_rules.into_iter())
-      {
+      for (dst, src) in cached.iter_mut().zip(generated_with_rules) {
         dst.rules = src.rules;
       }
     }

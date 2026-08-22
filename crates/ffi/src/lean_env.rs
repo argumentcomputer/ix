@@ -4265,7 +4265,7 @@ fn analyze_const_size(stt: &ix_compile::compile::CompileState, name_str: &str) {
   }
 
   // Sort by total size descending
-  dep_breakdowns.sort_by(|a, b| b.1.total().cmp(&a.1.total()));
+  dep_breakdowns.sort_by_key(|(_, b)| std::cmp::Reverse(b.total()));
 
   let total_deps_alpha: usize =
     dep_breakdowns.iter().map(|(_, b)| b.alpha_size).sum();
@@ -4469,7 +4469,7 @@ fn analyze_block_size_stats(stt: &ix_compile::compile::CompileState) {
     .collect();
 
   // Sort by overhead descending (most bloated first)
-  overheads.sort_by(|a, b| b.1.cmp(&a.1));
+  overheads.sort_by_key(|o| std::cmp::Reverse(o.1));
 
   // Compute statistics
   let avg_ratio = if total_hash_consed > 0 {

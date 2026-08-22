@@ -400,7 +400,9 @@ fn decode_owned_blob(
   }
   Ok(
     bytes
-      .chunks_exact(32)
+      .as_chunks::<32>()
+      .0
+      .iter()
       .map(|c| ix_common::address::Address::from_slice(c).unwrap())
       .collect(),
   )
