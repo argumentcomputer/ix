@@ -33,6 +33,8 @@ public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
 public import Ix.Cli.NameResolve
+public import Ix.Benchmark.Results
+public import Ix.TracingTexray
 
 public section
 
@@ -628,7 +630,12 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     0 has to mean "every env const was checked by some shard", same
     soundness contract as `runShardCheckAll`. -/
 def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
-    (compiled : Aiur.CompiledToplevel) (useBytecode : Bool) : IO UInt32 := do
+    (compiled : Aiur.CompiledToplevel) (useBytecode : Bool)
+    (json? : Option (String × String) := none) : IO UInt32 := do
+  -- The row's peak-rss needs the process-tree RSS sampler running
+  -- (`peakTreeRssBytes` reports 0 otherwise); started before the env
+  -- load so the peak covers the whole run, like `check-rs`.
+  if json?.isSome then TracingTexray.startSampler
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
@@ -663,11 +670,14 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     IO.println s!"Typechecking {shards.size} shard(s) in one rayon \
       batch, {jobs} thread(s) (0 = all)"
     (← IO.getStdout).flush
+    let totalConsts := ownedPerShard.foldl (· + ·.size) 0
+    let start ← IO.monoMsNow
     match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle blob
         useBytecode jobs Aiur.defaultCommitmentParameters
         Aiur.defaultFriParameters with
     | .error e => IO.eprintln s!"shard batch: {e}"; return 1
     | .ok results =>
+      let elapsedMs := (← IO.monoMsNow) - start
       let mut failures : Nat := 0
       for k in [:results.size] do
         let (err, peak) := results[k]!
@@ -677,11 +687,29 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
         else
           IO.eprintln s!"[shard {k}] FAILED: {err}"
           failures := failures + 1
+      -- One env-keyed results row for `ix bench run --backend aiur-sharded-env`:
+      -- the measured window is the batch FFI call (env load and blob
+      -- setup are excluded, matching what the benchmark tracks — the
+      -- execution engine, not the loader).
+      if let some (path, key) := json? then
+        let secs := elapsedMs.toFloat / 1000.0
+        let tput := if elapsedMs > 0
+          then totalConsts.toFloat * 1000.0 / elapsedMs.toFloat else 0.0
+        let peakRss ← TracingTexray.peakTreeRssBytes
+        let status := if failures == 0 then "ok" else "rejected"
+        Ix.Benchmark.Results.writeRow path key status
+          [ ("constants", Lean.toJson totalConsts)
+          , ("shards", Lean.toJson results.size)
+          , ("check-time", Ix.Benchmark.Results.jsonRound 3 secs)
+          , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
+          , ("peak-rss", Lean.toJson peakRss) ]
       if failures == 0 then
         IO.println s!"All {results.size} shard(s) passed"
         return 0
       IO.eprintln s!"{failures} of {results.size} shard(s) FAILED"
-      return 1
+      -- Under `--json` a kernel rejection is the benchmark's `rejected`
+      -- exit (the row is already written), same contract as `check-rs`.
+      return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
 
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
@@ -794,8 +822,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
+      let json? := (p.flag? "json").map fun f =>
+        (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "env")
       return (← runShardBatchNative manifest ixe
-        ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode)
+        ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode json?)
   | _, _, _ =>
     -- `--jobs N` (N ≠ 1) with an `--ixe` env and no `--claim` takes the
     -- parallel batch path: one FFI call, rayon over the target list,
@@ -828,6 +858,8 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
+    "json"      : String;   "With --ixes (no --shard): append one env-keyed results row (see Ix.Benchmark.Results) for the batch to this file — check-time, throughput, peak-rss, constants, shards. Used by `ix bench run --backend aiur-sharded-env`."
+    "json-name" : String;   "Row key for the --json row (default: `env`)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
