@@ -145,42 +145,35 @@ interpreter against the same vectors the native verifier passes
 (factorial stage-2 proof accepted; tampered advice and tampered claim
 rejected). Full verifier correctness before any Fr machinery exists.
 
-### Phase C — cost checkpoint + declaration-level memoization [CORE WIN LANDED]
+### Phase C — cost checkpoint + the emulation design [LANDED]
 
-The risk, confirmed by measurement, then fixed. With call-site
-splicing, one `@g_mul` ≈ 930 u8-gadget lookups in the CALLER
-(`reduce128` contains a second `mul128`), one `@eg_mul` site ≈ 14k
-caller columns; the foreign toplevel measured ~386k effective columns
-and a 43 MB KZG wrap proof at factorial scale.
+The risk, measured, then removed in three steps (all on `Nat.add_comm`'s
+40-query stage-1 proof, same blobs through both verifiers):
 
-- **Inline-wrapper convention** (landed — no DSL change needed): the
-  foreign interface fns are thin `@`-inlined wrappers over plain
-  (memoized) `*_impl` calls, so a call site costs one lookup and the
-  byte-gadget width lives once in the impl circuits; repetition
-  becomes rows there, deduplicated by memoization. The discipline
-  recurses inside the impls (`add8`/`sub8`/`mul1`/`add16`/`mul128`
-  are their own circuits; reduce128's EPSILON term is a shifted
-  subtraction, not a second multiplication). Call sites in
-  `Pcs.lean`/`Verifier.lean` stayed textually identical.
-- **Pointer representation** (landed): `Goldilocks = &GBytes` — values
-  thread by content-addressed pointer, so a Goldilocks costs its
-  holder ONE column (an Ext two), exactly the native widths, at every
-  call boundary, list node, and enum field; only the impls load bytes.
-  Measured: foreign width 386k → **8,489 columns (D=2 acct)** vs
-  native 7,176 — within 18%; wrap proof 43 MB → **854 KB**; prove
-  21 → ~6.5 min.
-- A declaration-level inline attribute in the DSL remains a
-  nice-to-have (it would delete the wrapper boilerplate), not a
-  blocker.
-- Remaining mitigation knobs for kernel scale, in order:
-  1. re-tune stage 2 for the wrap: stage-3 cost is LINEAR in stage-2
-     query count — fewer queries + more PoW bits + higher blowup on
-     stage 2 directly shrinks the wrap circuit (rows, not columns,
-     now);
-  2. lookup grouping k = 4 for branchless circuits (the measured
-     −582/−1844 column win, still unapplied);
-  3. parallel MSM/iFFT in the KZG prover (Phase E, likely pulled
-     forward — prove time is now height/MSM-dominated).
+1. **Call-site splicing** of the byte-limb ops put every `g_mul` body
+   (~930 u8 lookups) into its caller: 386k columns, 43 MB wrap proof.
+   → Inline wrappers over memoized `*_impl` circuits; byte primitives as
+   their own circuits; pointer-threaded values. Width 386k → 8.5k, wrap
+   proof 854 KB. But FFT cost stayed **6.5× native** (7.1e11 vs 1.1e11):
+   the carry chains (`add16`/`add8`/`sub8`) were 54% of it, 43M rows.
+2. **The large-field design** (outer field > p²): a Goldilocks value is
+   ONE outer element `< p`; ops compute exactly in the outer field and
+   reduce by CHECK — `x·y = q·p + r` with `q, r < p` (hinted by the new
+   `unconstrained_gl_divmod`, pinned by one degree-2 identity and two
+   8-byte range checks), `x + y`/`x + p − y` with a boolean `q`, the
+   inverse hinted (`unconstrained_gl_inverse`) and pinned by one mul.
+   Width **7,594 vs native 7,176 (6%)**; FFT cost **1.44e11 — 1.32×
+   native**; interpreter execution 12 s vs 7 s native (was 65 s); toy KZG
+   wrap **33 s / 763 KB** (was 21 min / 43 MB), with arkworks' `asm` and
+   `parallel` MSM/FFT enabled in multi-stark.
+   Soundness needs |F| > 2p²; the module still runs under Goldilocks
+   (hint `(0, v)`, degenerate but correct identities) for the self-tests
+   and the interpreter gate. Beware evaluation order in the outer field:
+   `x − y + p` wraps at `x − y`; `x + p − y` does not.
+3. Remaining knobs for kernel scale: fewer stage-2 queries for the wrapped
+   pair (stage-3 area is linear in them); lazy reduction in `eg_mul`
+   (`a0·b0 + 7·a1·b1 < 8p²` is still exact — 2 reductions instead of 7,
+   needs a 67-bit range check on q); a codegen'd Fr runner.
 
 ### Phase D — KZG instantiation, end-to-end at toy scale [GATE PASSED]
 
