@@ -841,6 +841,9 @@ pub fn decompile_expr(
     BuildAll(Name, BinderInfo, LeanMdata),
     BuildLet(Name, bool, LeanMdata),
     BuildProj(Name, Nat, LeanMdata),
+    /// Undo the BVar lift applied when an existing source argument was moved
+    /// underneath a synthesized eta telescope.
+    LowerVars(usize),
     CacheResult(*const Expr, u64),
     /// Assemble a source-order App spine from head + N decompiled args.
     BuildTelescope {
@@ -1054,6 +1057,123 @@ pub fn decompile_expr(
             };
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
             results.push(expr);
+          },
+
+          // EtaCallSite: discard the synthesized lambda telescope and
+          // reconstruct only the source prefix that was actually applied.
+          (
+            ExprMetaData::EtaCallSite {
+              n_synth,
+              name,
+              entries,
+              canon_meta,
+              wrapper_meta: _,
+            },
+            _,
+          ) => {
+            let n_synth = usize::try_from(*n_synth).map_err(|_| {
+              DecompileError::BadConstantFormat {
+                msg: format!(
+                  "EtaCallSite in '{}': n_synth exceeds usize",
+                  cache.current_const
+                ),
+              }
+            })?;
+            let mut body = e.clone();
+            for _ in 0..n_synth {
+              while let Expr::Share(share_idx) = body.as_ref() {
+                body = cache
+                  .sharing
+                  .get(*share_idx as usize)
+                  .ok_or_else(|| DecompileError::InvalidShareIndex {
+                    idx: *share_idx,
+                    max: cache.sharing.len(),
+                    constant: cache.current_const.clone(),
+                  })?
+                  .clone();
+              }
+              match body.as_ref() {
+                Expr::Lam(_, b) => body = b.clone(),
+                _ => {
+                  return Err(DecompileError::BadConstantFormat {
+                    msg: format!(
+                      "EtaCallSite in '{}': expected {} synthesized lambdas",
+                      cache.current_const, n_synth
+                    ),
+                  });
+                },
+              }
+            }
+
+            let (head_ixon, canonical_args) =
+              collect_ixon_telescope_expanding_shares(&body, cache)?;
+            if canon_meta.len() != canonical_args.len() {
+              return Err(DecompileError::BadConstantFormat {
+                msg: format!(
+                  "EtaCallSite in '{}': {} canonical metadata entries but \
+                   body telescope has {} args",
+                  cache.current_const,
+                  canon_meta.len(),
+                  canonical_args.len()
+                ),
+              });
+            }
+
+            let head_name = decompile_name(name, stt).map_err(|_| {
+              DecompileError::BadConstantFormat {
+                msg: format!(
+                  "EtaCallSite in '{}': head name address does not resolve",
+                  cache.current_const
+                ),
+              }
+            })?;
+            let head_patch = cache.univ_patches.get(&current_idx).cloned();
+            let levels = match (&head_patch, head_ixon.as_ref()) {
+              (Some(idxs), Expr::Ref(..) | Expr::Rec(..)) => {
+                decompile_univ_indices(idxs, lvl_names, cache)?
+              },
+              (None, Expr::Ref(_, idxs) | Expr::Rec(_, idxs)) => {
+                decompile_univ_indices(idxs, lvl_names, cache)?
+              },
+              _ => vec![],
+            };
+            results.push(LeanExpr::cnst(head_name, levels));
+
+            stack.push(Frame::BuildTelescope {
+              n_args: entries.len(),
+              mdata: mdata_layers,
+            });
+            for entry in entries.iter().rev() {
+              stack.push(Frame::LowerVars(n_synth));
+              match entry {
+                CallSiteEntry::Kept { canon_idx, meta } => {
+                  let arg_ixon = canonical_args
+                    .get(*canon_idx as usize)
+                    .ok_or_else(|| DecompileError::BadConstantFormat {
+                      msg: format!(
+                        "EtaCallSite in '{}': Kept canon_idx {} out of bounds \
+                         (body telescope has {} args)",
+                        cache.current_const,
+                        canon_idx,
+                        canonical_args.len()
+                      ),
+                    })?;
+                  stack.push(Frame::Decompile(arg_ixon.clone(), *meta));
+                },
+                CallSiteEntry::Collapsed { sharing_idx, meta } => {
+                  let arg_ixon = cache
+                    .meta_sharing
+                    .get(*sharing_idx as usize)
+                    .ok_or_else(|| DecompileError::InvalidShareIndex {
+                      idx: *sharing_idx,
+                      max: cache.meta_sharing.len(),
+                      constant: cache.current_const.clone(),
+                    })?
+                    .clone();
+                  stack.push(Frame::Decompile(arg_ixon, *meta));
+                },
+              }
+            }
           },
 
           // CallSite: surgered call-site — reconstruct source-order telescope
@@ -1413,6 +1533,16 @@ pub fn decompile_expr(
           &cache.current_const,
         )?;
         results.push(apply_mdata(LeanExpr::proj(name, idx, s), mdata));
+      },
+
+      Frame::LowerVars(amount) => {
+        let e = pop_result(
+          &mut results,
+          "EtaCallSite missing source argument",
+          &cache.current_const,
+        )?;
+        results
+          .push(crate::compile::aux_gen::expr_utils::lower_vars(&e, amount, 0));
       },
 
       Frame::BuildTelescope { n_args, mdata } => {
@@ -4173,8 +4303,7 @@ fn install_decompile_call_site_plans(
         let mut plan_keys = vec![brecon_name.clone()];
         for sub in ["go", "eq"] {
           let sub_name = Name::str(brecon_name.clone(), sub.to_string());
-          if aux_member_names.contains(&sub_name)
-            || env.contains_key(&sub_name)
+          if aux_member_names.contains(&sub_name) || env.contains_key(&sub_name)
           {
             plan_keys.push(sub_name);
           }

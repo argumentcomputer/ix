@@ -683,6 +683,229 @@ def sortByCanonIdx (xs : Array (Nat × Expr)) : Array (Nat × Expr) := Id.run do
     out := ((out.extract 0 pos).push x) ++ out.extract pos out.size
   return out
 
+/-- Arity information for a source-visible head carrying non-identity
+    call-site surgery. -/
+structure PlanHeadArity where
+  floor : Nat
+  expected : Nat
+  headRewrite : Bool
+
+/-- Shared Tier-A/Tier-B arity classification. Mirrors Rust
+    `plan_head_arity`. -/
+def planHeadArity? (cenv : CompileEnv) (name : Name) : Option PlanHeadArity :=
+  match cenv.callSitePlans.get? name with
+  | some plan =>
+    if !plan.isIdentity then
+      some { floor := plan.minimalFullPrefix
+             expected := plan.nParams + plan.nSourceMotives
+               + plan.nSourceMinors + plan.nIndices + 1
+             headRewrite := plan.headRewrite.isSome }
+    else none
+  | none =>
+    match cenv.belowCallSitePlans.get? name with
+    | some plan =>
+      if !plan.isIdentity then
+        let floor := plan.belowMinimalFullPrefix
+        some { floor
+               expected := if Ix.AuxGen.belowPlanKeyIsHead name then
+                 floor + plan.nIndices + 1 else floor
+               headRewrite := false }
+      else none
+    | none =>
+      match cenv.brecOnCallSitePlans.get? name with
+      | some plan =>
+        if !plan.isIdentity then
+          let expected := plan.brecOnMinimalFullPrefix
+          some { floor := expected, expected, headRewrite := false }
+        else none
+      | none => none
+
+/-- Read-only walk over one ORIGINAL expression. Ordinary partial/bare plan
+    references are handled by Tier B. The audit rejects the deliberately
+    unsupported cases before they can silently become a kernel type error:
+    partial evaporated-aux head rewrites, and a short plan spine split by a
+    `mdata`/`let` wrapper in the function part of an outer application.
+    Mirrors Rust `audit_plan_head_arities`. -/
+def auditPlanHeadArities (owner : Name) (top : Expr) : CompileM Unit := do
+  let cenv ← getCompileEnv
+  if cenv.callSitePlans.isEmpty && cenv.belowCallSitePlans.isEmpty &&
+      cenv.brecOnCallSitePlans.isEmpty then
+    return
+  -- Lean expressions are DAGs. Large tactic proofs may reach one shared
+  -- subexpression through exponentially many tree paths, while the ordinary
+  -- compiler memoizes it. Keep the audit linear in unique nodes as well.
+  -- `obscured` belongs in the key: a node that is safe as an argument can be
+  -- invalid when reused in a wrapped function position.
+  let mut seen : Std.HashSet (Expr × Bool) := {}
+  let mut stack : Array (Expr × Bool) := #[(top, false)]
+  while !stack.isEmpty do
+    let (e, obscured) := stack.back!
+    stack := stack.pop
+    if seen.contains (e, obscured) then continue
+    seen := seen.insert (e, obscured)
+    match e with
+    | .app .. =>
+      let (head, args) := Ix.AuxGen.collectLeanTelescope e
+      match head with
+      | .const name _ _ =>
+        if let some arity := planHeadArity? cenv name then
+          let need := if arity.headRewrite then arity.expected else arity.floor
+          if args.size < need && (obscured || arity.headRewrite) then
+            let suffix := if obscured then
+              " (application spine obscured by mdata/let)" else ""
+            throw (.invalidMutualBlock s!"plan-head arity audit while \
+compiling '{owner.pretty}': head '{name.pretty}' has {args.size} args, \
+expected at least {need}{suffix}")
+      | .lam .. => stack := stack.push (head, false)
+      | _ => stack := stack.push (head, true)
+      for arg in args do
+        stack := stack.push (arg, false)
+    | .const name _ _ =>
+      if let some arity := planHeadArity? cenv name then
+        if obscured || arity.headRewrite then
+          let need := if arity.headRewrite then arity.expected else arity.floor
+          let suffix := if obscured then
+            " (application spine obscured by mdata/let)" else ""
+          throw (.invalidMutualBlock s!"plan-head arity audit while \
+compiling '{owner.pretty}': head '{name.pretty}' has 0 args, expected at \
+least {need}{suffix}")
+    | .lam _ ty body _ _ | .forallE _ ty body _ _ =>
+      stack := stack.push (body, obscured) |>.push (ty, false)
+    | .letE _ ty val body _ _ =>
+      stack := stack.push (body, obscured) |>.push (val, false) |>.push (ty, false)
+    | .mdata _ inner _ => stack := stack.push (inner, obscured)
+    | .proj _ _ s _ => stack := stack.push (s, false)
+    | _ => pure ()
+
+/-- Audit every original expression belonging to a singleton declaration. -/
+def auditConstantInfoPlanHeads (ci : ConstantInfo) : CompileM Unit := do
+  let owner := ci.getCnst.name
+  auditPlanHeadArities owner ci.getCnst.type
+  match ci with
+  | .defnInfo d => auditPlanHeadArities owner d.value
+  | .thmInfo d => auditPlanHeadArities owner d.value
+  | .opaqueInfo d => auditPlanHeadArities owner d.value
+  | .recInfo r =>
+    for rule in r.rules do auditPlanHeadArities owner rule.rhs
+  | _ => pure ()
+
+/-- Audit every expression embedded in one original mutual member. -/
+def auditMutConstPlanHeads (c : MutConst) : CompileM Unit := do
+  match c with
+  | .defn d =>
+    auditPlanHeadArities d.name d.type
+    auditPlanHeadArities d.name d.value
+  | .indc i =>
+    auditPlanHeadArities i.name i.type
+    for ctor in i.ctors do
+      auditPlanHeadArities ctor.cnst.name ctor.cnst.type
+  | .recr r =>
+    auditPlanHeadArities r.cnst.name r.cnst.type
+    for rule in r.rules do auditPlanHeadArities r.cnst.name rule.rhs
+
+/-- Whether the current body is one of our regenerated canonical
+    auxiliaries. Such bodies already use canonical argument order. -/
+def compilingIsAuxRegen : CompileM Bool := do
+  let compiling := (← getBlockEnv).current
+  if !Ix.AuxGen.isAuxGenSuffix compiling then return false
+  let cenv ← getCompileEnv
+  let bstate ← getBlockState
+  if bstate.auxNameToAddr.contains compiling then return true
+  if cenv.auxNameToAddr.contains compiling then return true
+  return match cenv.nameToNamed.get? compiling with
+    | some named => named.original.isSome
+    | none => false
+
+/-- Does this short source application need the Tier-B eta adapter? -/
+def etaAdapterNeeded (name : Name) (nArgs : Nat) : CompileM Bool := do
+  if ← compilingIsAuxRegen then return false
+  return match planHeadArity? (← getCompileEnv) name with
+    | some arity => !arity.headRewrite && nArgs < arity.floor
+    | none => false
+
+/-- Derive a partial call's residual source Pi telescope and build the
+    source-interface eta wrapper. Mirrors Rust `synthesize_eta_call_site`. -/
+def synthesizeEtaCallSite (name : Name) (lvls : Array Level)
+    (applied : Array Expr) : CompileM (Expr × Nat) := do
+  let ci ← findConst name
+  let cnst := ci.getCnst
+  let instantiatedType := Ix.AuxGen.substLevels cnst.type cnst.levelParams lvls
+  let residual := Ix.AuxGen.instantiatePiParams instantiatedType applied.size applied
+  let mut binders : Array (Name × Expr × Lean.BinderInfo) := #[]
+  let mut cur := residual
+  repeat
+    match cur with
+    | .forallE binderName ty body info _ =>
+      binders := binders.push (binderName, ty, info)
+      cur := body
+    | _ => break
+  if binders.isEmpty then
+    throw (.invalidMutualBlock s!"eta call-site adapter for '{name.pretty}' \
+found no residual Pi binders after {applied.size} args")
+  let nSynth := binders.size
+  let mut fullArgs := applied.map fun arg => Ix.AuxGen.shiftVars arg nSynth 0
+  for i in [0:nSynth] do
+    fullArgs := fullArgs.push (Expr.mkBVar (nSynth - 1 - i))
+  let mut body := Expr.mkConst name lvls
+  for arg in fullArgs do body := Expr.mkApp body arg
+  for (binderName, ty, info) in binders.reverse do
+    body := Expr.mkLam binderName ty body info
+  pure (body, nSynth)
+
+/-- Compile a Const as the raw canonical call-site head. This bypasses bare
+    reference eta detection and intentionally does not use the expression
+    cache; source bare occurrences check for an adapter before consulting
+    that cache. Mirrors Rust `compile_const_expr_raw`. -/
+def compileConstExprRaw (name : Name) (lvls : Array Level) :
+    CompileM (Ixon.Expr × UInt64) := do
+  let mutCtx := (← getBlockEnv).mutCtx
+  let compiled ← lvls.mapM compileAndInternUnivCanon
+  let univIndices := compiled.map (·.1)
+  compileName name
+  let nameAddr := name.getHash
+  let recordPatch (root : UInt64) : CompileM Unit := do
+    if compiled.any (·.2.isSome) then
+      pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
+  match mutCtx.get? name with
+  | some recIdx =>
+    let root ← allocArenaNode (.ref nameAddr)
+    recordPatch root
+    pure (.recur recIdx.toUInt64 univIndices, root)
+  | none =>
+    let addr ← lookupConstAddr name
+    let refIdx ← internRef addr
+    let root ← allocArenaNode (.ref nameAddr)
+    recordPatch root
+    pure (.ref refIdx univIndices, root)
+
+/-- Overlay the decompile-facing eta marker on an already-compiled ordinary
+    synthesized Binder/CallSite metadata tree. -/
+def finishEtaCallSite (wrapperIxon : Ixon.Expr) (wrapperRoot : UInt64)
+    (nSynth nApplied : Nat) : CompileM (Ixon.Expr × UInt64) := do
+  let arena := (← getBlockState).arena
+  let mut bodyRoot := wrapperRoot
+  for _ in [0:nSynth] do
+    match arena.nodes[bodyRoot.toNat]? with
+    | some (.binder _ _ _ bodyChild) => bodyRoot := bodyChild
+    | other => throw (.invalidMutualBlock s!"eta adapter metadata expected \
+{nSynth} Binder nodes, found {reprStr other}")
+  let (name, entries, canonMeta, origHead) ←
+    match arena.nodes[bodyRoot.toNat]? with
+    | some (.callSite name entries canonMeta origHead) =>
+      pure (name, entries, canonMeta, origHead)
+    | other => throw (.invalidMutualBlock s!"eta adapter body did not \
+compile to CallSite metadata: {reprStr other}")
+  if origHead.isSome || entries.size != nApplied + nSynth then
+    throw (.invalidMutualBlock s!"eta adapter body metadata mismatch: \
+{entries.size} source entries for {nApplied} applied + {nSynth} synthesized \
+args (origHead={origHead.isSome})")
+  let etaRoot ← allocArenaNode (.etaCallSite nSynth.toUInt64 name
+    (entries.extract 0 nApplied) canonMeta wrapperRoot)
+  if let some bodyPatch :=
+      (← getBlockState).univPatches.find? (·.arenaIdx == bodyRoot) then
+    pushUnivPatch etaRoot bodyPatch.univIdxs
+  pure (wrapperIxon, etaRoot)
+
 mutual
 
 /-- Compile a canonical Ix.Expr to Ixon.Expr with arena-based metadata.
@@ -696,10 +919,17 @@ mutual
     are flattened in `compileAppSpine`, so inner partial-spine nodes are
     neither checked nor cached. -/
 partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
+  -- Bare plan references must decide on eta expansion before consulting the
+  -- ordinary expression cache: canonical call-site heads deliberately cache
+  -- their raw Const form under the same source expression.
+  let isEta ← match e with
+    | .const name _ _ => etaAdapterNeeded name 0
+    | _ => pure false
   -- Check cache (O(1) lookup via embedded hash)
   let state ← getBlockState
-  if let some cached := state.exprCache.get? e then
-    return cached
+  if !isEta then
+    if let some cached := state.exprCache.get? e then
+      return cached
 
   let (result, root) ← match e with
   | .bvar idx _ => do
@@ -716,28 +946,12 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     pure (.sort idx, root)
 
   | .const name lvls _ => do
-    let mutCtx := (← getBlockEnv).mutCtx
-    let compiled ← lvls.mapM compileAndInternUnivCanon
-    let univIndices := compiled.map (·.1)
-    compileName name
-    let nameAddr := name.getHash
-    -- Canonicity §10.6: when ANY level arg's spelling changed, the
-    -- patch carries the FULL original list in the virtual index space
-    -- (unchanged args point at their canonical primary entries).
-    let recordPatch (root : UInt64) : CompileM Unit := do
-      if compiled.any (·.2.isSome) then
-        pushUnivPatch root (compiled.map fun (cidx, orig?) => orig?.getD cidx)
-    match mutCtx.get? name with
-    | some recIdx =>
-      let root ← allocArenaNode (.ref nameAddr)
-      recordPatch root
-      pure (.recur recIdx.toUInt64 univIndices, root)
-    | none => do
-      let addr ← lookupConstAddr name
-      let refIdx ← internRef addr
-      let root ← allocArenaNode (.ref nameAddr)
-      recordPatch root
-      pure (.ref refIdx univIndices, root)
+    if isEta then
+      let (wrapper, nSynth) ← synthesizeEtaCallSite name lvls #[]
+      let (wrapperIxon, wrapperRoot) ← compileExpr wrapper
+      finishEtaCallSite wrapperIxon wrapperRoot nSynth 0
+    else
+      compileConstExprRaw name lvls
 
   | .app .. => compileAppSpine e
 
@@ -855,9 +1069,7 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
           if let some hr := plan.headRewrite then
             return ← compileHeadRewriteCallSite name lvls plan hr headExpr args
           else
-            let expectedTotal := plan.nParams + plan.nSourceMotives
-              + plan.nSourceMinors + plan.nIndices + 1 -- major
-            if args.size >= expectedTotal then
+            if args.size >= plan.minimalFullPrefix then
               return ← compileRecCallSite name lvls plan headExpr args
       if let some plan := cenv.belowCallSitePlans.get? name then
         if !plan.isIdentity then
@@ -865,18 +1077,17 @@ partial def compileAppSpine (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
           -- Prop-below FAMILY member (ctor / `.below.casesOn`) has no
           -- floor — a field-less below ctor is fully applied at exactly
           -- params+motives (compile.rs below-family branch).
-          let isHead := Ix.AuxGen.belowPlanKeyIsHead name
-          let expectedTotal := plan.nParams + plan.nSourceMotives
-            + (if isHead then plan.nIndices + 1 else 0)
-          if args.size >= expectedTotal then
+          if args.size >= plan.belowMinimalFullPrefix then
             return ← compileBelowCallSite name plan headExpr args
       if let some plan := cenv.brecOnCallSitePlans.get? name then
         if !plan.isIdentity then
-          let fixedTailLen := plan.nIndices + 1 -- indices + major
-          let expectedTotal := plan.nParams + plan.nSourceMotives
-            + fixedTailLen + plan.nSourceMotives
+          let expectedTotal := plan.brecOnMinimalFullPrefix
           if args.size >= expectedTotal then
             return ← compileBRecOnCallSite name plan headExpr args
+      if ← etaAdapterNeeded name args.size then
+        let (wrapper, nSynth) ← synthesizeEtaCallSite name lvls args
+        let (wrapperIxon, wrapperRoot) ← compileExpr wrapper
+        return ← finishEtaCallSite wrapperIxon wrapperRoot nSynth args.size
   -- Normal telescope path (compile.rs:1399-1407): head, then one App
   -- node per arg. Same result as one-App-at-a-time recursion, but the
   -- inner spine nodes never touch the expression cache.
@@ -912,7 +1123,9 @@ partial def buildCallSite (nameAddr : Address) (headForCanon : Expr)
     (sortedCanon : Array Expr) (collapsedArgs : Array Expr)
     (entries : Array Ixon.CallSiteEntry) (origHeadCollapsed : Bool) :
     CompileM (Ixon.Expr × UInt64) := do
-  let (headIxon, headRoot) ← compileExpr headForCanon
+  let (headIxon, headRoot) ← match headForCanon with
+    | .const name lvls _ => compileConstExprRaw name lvls
+    | _ => throw (.invalidMutualBlock "call-site canonical head is not a Const")
   let mut canonicalExprs : Array Ixon.Expr := #[]
   let mut canonicalRoots : Array UInt64 := #[]
   for arg in sortedCanon do
@@ -2150,6 +2363,9 @@ def compileMutConsts (classes : List (List MutConst))
     Returns the Muts block constant and projections for each name with metadata. -/
 def compileMutualBlock (classes : List (List MutConst))
     : CompileM BlockResult := do
+  for cls in classes do
+    for c in cls do
+      auditMutConstPlanHeads c
   let mutCtx := MutConst.ctx classes
   withMutCtx mutCtx do
     -- Preseed mirrors Rust compile_mutual (compile.rs:3763): collect over
@@ -2253,6 +2469,7 @@ def BlockResult.mk' (block : Ixon.Constant) (blockMeta : Ixon.ConstantMeta := .e
 /-- Compile a single Ix.ConstantInfo directly (singleton, non-mutual).
     Returns BlockResult with the constant and any projections needed. -/
 def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
+  auditConstantInfoPlanHeads const
   let name := const.getCnst.name
   let mutCtx : Ix.MutCtx := Std.TreeMap.empty.insert name 0
   withMutCtx mutCtx do
@@ -2314,7 +2531,9 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
       for ctorName in i.ctors do
         let ctorConst ← findConst ctorName
         match ctorConst with
-        | .ctorInfo c => ctorVals := ctorVals.push c
+        | .ctorInfo c =>
+          auditPlanHeadArities c.cnst.name c.cnst.type
+          ctorVals := ctorVals.push c
         | _ => throw (.invalidMutualBlock s!"Expected constructor for {ctorName}")
       -- Build mutCtx with all names in the inductive family
       let indMutCtx := buildInductiveMutCtx i ctorVals
@@ -2352,7 +2571,9 @@ def compileConstantInfo (const : ConstantInfo) : CompileM BlockResult := do
         for ctorName in i.ctors do
           let ctorConst ← findConst ctorName
           match ctorConst with
-          | .ctorInfo cv => ctorVals := ctorVals.push cv
+          | .ctorInfo cv =>
+            auditPlanHeadArities cv.cnst.name cv.cnst.type
+            ctorVals := ctorVals.push cv
           | _ => throw (.invalidMutualBlock s!"Expected constructor")
         -- Build mutCtx with all names in the inductive family
         let indMutCtx := buildInductiveMutCtx i ctorVals

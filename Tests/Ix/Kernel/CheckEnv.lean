@@ -153,6 +153,53 @@ def focusConsts : Array Lean.Name := #[
     `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.Ar2.wk.eq_def,
   Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
     `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.Tm2.wk.eq_def,
+  -- Tier B `.brecOn` references: bare and applied only through the major,
+  -- leaving the canonically permuted handler band unapplied.
+  `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.arBrecAlias,
+  `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.ar2BrecAlias,
+  `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.arBrecPartial,
+  `Tests.Ix.Compile.Mutual.TypeBrecOnEqDef.ar2BrecPartial,
+
+  -- 2026-08-22: user proofs that apply a mutual `.rec` DIRECTLY with
+  -- explicit motives (`induction … using X.rec (motive_N := …)`). The
+  -- motive/minor arguments follow Lean's source order, so when the
+  -- canonical class order differs the call site needs the
+  -- `call_site_plans` permutation (phiconfluence.ixe `parB_*`/`par_*`/
+  -- `nf_*` AppTypeMismatch failure family). Twin blocks have opposite
+  -- source orders, so pre-fix exactly one twin's theorems FAIL.
+  -- PropRecMotives: mutual Prop-valued predicates (the `Par`/`ParB` shape).
+  -- NestedMutualRecMotives: Type-valued nested mutual with an aux motive
+  -- (the `Term`/`Binding` shape behind `nf_devel`/`nf_false_reducible`).
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb_length,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pa_eq,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_length,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pa2_eq,
+  -- Call-site shape coverage (plans/callsite-adapter-generalization.md):
+  -- direct full application at the Const head, inner-full redex, and
+  -- dead-binder split redex (Collapsed-entry fallback), each in both
+  -- source orders.
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb_len_direct,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb_len_lam,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb_len_dead,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_len_direct,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_len_lam,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_len_dead,
+  -- Tier A partial applications (motives+minors present; identity
+  -- indices/major suffix absent) and Tier B partial/bare references.
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pbLenFn,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb_len_let,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb_len_arg,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pbCases,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pbRecAlias,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pbRec_eq_self,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2LenFn,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_len_let,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2_len_arg,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2Cases,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2RecAlias,
+  `Tests.Ix.Compile.Mutual.PropRecMotives.pb2Rec_eq_self,
+  `Tests.Ix.Compile.Mutual.NestedMutualRecMotives.tm_eq_self,
+  `Tests.Ix.Compile.Mutual.NestedMutualRecMotives.tm2_eq_self,
 
   -- 2026-08-19 (v4.33 bump fallout): Prop-mutual IndPredBelow matchers.
   -- The `match_2` matchers mention `OddP.below`/`EvenP.below` applied to
@@ -162,6 +209,14 @@ def focusConsts : Array Lean.Name := #[
     `Tests.Ix.Compile.Mutual.BelowPredicate.oddp_nonneg.match_2,
   Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
     `Tests.Ix.Compile.Mutual.BelowPredicate.evenp_nonneg.match_2,
+  -- Tier A `.below` references with the complete motive band and an
+  -- unapplied identity major suffix, in both source orders.
+  `Tests.Ix.Compile.Mutual.BelowPredicate.evenpBelowPartial,
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.BelowPredicate2.oddp2_nonneg.match_2,
+  Lean.mkPrivateNameCore `Tests.Ix.Compile.Mutual
+    `Tests.Ix.Compile.Mutual.BelowPredicate2.evenp2_nonneg.match_2,
+  `Tests.Ix.Compile.Mutual.BelowPredicate2.evenp2BelowPartial,
 
   -- Current Nat-conformance follow-up residue from 2026-04-30.
   `Lean.Grind.Fin.instPowFinCoOfNatIntCast,

@@ -162,6 +162,29 @@ partial def shiftVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
     Expr.mkMData kvs (shiftVars e amount cutoff)
   | _ => expr
 
+/-- Inverse of `shiftVars` for an expression known to have been lifted by
+    `amount`: lower loose BVars while preserving variables bound inside the
+    expression. Mirrors Rust `lower_vars`. -/
+partial def lowerVars (expr : Expr) (amount : Nat) (cutoff : Nat) : Expr :=
+  if amount == 0 then expr
+  else match expr with
+  | .bvar i _ =>
+    if i >= cutoff + amount then Expr.mkBVar (i - amount) else expr
+  | .app f a _ =>
+    Expr.mkApp (lowerVars f amount cutoff) (lowerVars a amount cutoff)
+  | .lam n t b bi _ =>
+    Expr.mkLam n (lowerVars t amount cutoff)
+      (lowerVars b amount (cutoff + 1)) bi
+  | .forallE n t b bi _ =>
+    Expr.mkForallE n (lowerVars t amount cutoff)
+      (lowerVars b amount (cutoff + 1)) bi
+  | .letE n t v b nd _ =>
+    Expr.mkLetE n (lowerVars t amount cutoff)
+      (lowerVars v amount cutoff) (lowerVars b amount (cutoff + 1)) nd
+  | .proj n i e _ => Expr.mkProj n i (lowerVars e amount cutoff)
+  | .mdata md e _ => Expr.mkMData md (lowerVars e amount cutoff)
+  | _ => expr
+
 /-! ## Instantiation: BVar -> replacement (aux_gen/expr_utils.rs:591) -/
 
 /-- Mirrors Rust `instantiate1_at` (aux_gen/expr_utils.rs:605). -/
@@ -241,10 +264,12 @@ def instantiateRev (body : Expr) (args : Array Expr) : Expr :=
   if args.isEmpty then body
   else instantiateRevAt body args 0
 
-/-- Mirrors Rust `instantiate_pi_params` (aux_gen/expr_utils.rs:741).
+/-- Mirrors Rust `instantiate_pi_params` (aux_gen/expr_utils.rs).
 
     Peel `n` forall binders and substitute their variables with `args`.
     Matches Lean C++ `instantiate_pi_params` (`inductive.cpp:954-960`).
+    Each peeled argument is instantiated with `instantiateRev`, so loose
+    BVars in it are lifted beneath any binders left in the telescope.
     (Rust guards with `debug_assert!(args.len() >= n)` — a release no-op —
     not replicated here.) -/
 def instantiatePiParams (typ : Expr) (n : Nat) (args : Array Expr) : Expr := Id.run do
@@ -253,7 +278,7 @@ def instantiatePiParams (typ : Expr) (n : Nat) (args : Array Expr) : Expr := Id.
     let arg := args[i]!
     match cur with
     | .forallE _ _ body _ _ =>
-      cur := instantiate1 body arg
+      cur := instantiateRev body #[arg]
     | _ => break
   return cur
 
