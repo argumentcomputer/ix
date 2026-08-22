@@ -208,7 +208,11 @@ private opaque shardCheckBatchWithEnv' : @& Bytecode.Toplevel →
     empty error = clean, and `peakBytes` is the analytic prover RAM
     peak ([`AiurSystem::peak_prove_bytes`] Rust-side) of the shard's
     executed record — the split/merge input (0 on failure).
-    `jobs = 0` uses rayon's default pool width. -/
+    `jobs = 0` uses rayon's default pool width (all cores): peak RSS
+    is bounded by the Rust-side RAM gate (a byte-weighted admission
+    semaphore over estimated per-shard execution RSS vs available
+    system RAM), not by thread count — pass `jobs` only to narrow
+    CPU use. -/
 def shardCheckBatchWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
   (shardsBlob : ByteArray) (useBytecode : Bool := false) (jobs : Nat := 0)

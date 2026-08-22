@@ -616,41 +616,17 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
     IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
   pure ok
 
-/-- IxVM-native check over EVERY shard. Builds the `EnvHandle` ONCE
-    and shares it across every shard's FFI call (no per-shard
-    re-mmap). Coverage-gates the manifest before running any shard —
-    exit 0 has to mean "every env const was checked by some shard",
-    same soundness contract as `runShardCheckAll`. -/
-def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
-    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) =>
-    if !(← shardsCover ixonEnv shards) then return 1
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
-      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
-      | .ok h => pure h
-    let shapes := Aiur.circuitShapes compiled.bytecode
-      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-    let maxJobs := max 1 (jobs?.getD shards.size)
-    let mut rc : UInt32 := 0
-    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-      let tasks ← chunk.mapM fun (blocks, k) =>
-        IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode shapes ixonEnv blocks k)
-      for t in tasks do
-        match t.get with
-        | .ok r => if r != 0 then rc := 1
-        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
-    pure rc
-
-/-- Whole-partition check as ONE Rust rayon batch (work-stealing across
-    shards, no chunk barriers), against per-shard Lean tasks in
-    `runShardManifestAllNative`. Each shard runs the identical
-    single-shard machinery over its own record; per shard the analytic
-    prover RAM peak of the executed record is reported — the input to
-    split (over a prover budget) / merge (far under it) decisions. -/
+/-- Whole-partition check as ONE Rust rayon batch: work-stealing across
+    shards, no chunk barriers (measured 2.3–2.5x faster than the
+    per-shard Lean-task scheduler it replaced, whose chunk-of-N full
+    barrier idled workers on each wave's slowest shard). Each shard
+    runs the identical single-shard machinery over its own record; per
+    shard the analytic prover RAM peak of the executed record is
+    reported — the input to split (over a prover budget) / merge (far
+    under it) decisions. Builds the `EnvHandle` ONCE, shared by every
+    shard. Coverage-gates the manifest before running any shard — exit
+    0 has to mean "every env const was checked by some shard", same
+    soundness contract as `runShardCheckAll`. -/
 def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
     (compiled : Aiur.CompiledToplevel) (useBytecode : Bool) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
@@ -662,9 +638,22 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       | .ok h => pure h
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
     let jobs := jobs?.getD 0
+    -- Assign every const to its shard in ONE env pass. Calling
+    -- `ownedConstsForBlocks` per shard rescans all consts each time —
+    -- at env scale (241 shards × 688k consts) that is ~30 min of setup.
+    -- Each shard's array keeps env-iteration order, identical to what
+    -- the per-shard filter produces, so claim digests are unchanged.
+    let mut blockToShard : Std.HashMap Address Nat := {}
+    for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
+      for blk in blocks do blockToShard := blockToShard.insert blk k
+    let mut ownedPerShard : Array (Array Address) := Array.replicate shards.size #[]
+    for (addr, lc) in ixonEnv.consts do
+      let some c := lc.get? | continue
+      match blockToShard.get? (blockAddrOf addr c) with
+      | some k => ownedPerShard := ownedPerShard.modify k (·.push addr)
+      | none => pure ()
     let mut blob := ByteArray.empty
-    for blocks in shards do
-      let owned := ownedConstsForBlocks ixonEnv blocks
+    for owned in ownedPerShard do
       let n := owned.size.toUInt32
       blob := blob.push n.toUInt8
       blob := blob.push (n >>> 8).toUInt8
@@ -805,11 +794,8 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      if p.hasFlag "batch" then
-        return (← runShardBatchNative manifest ixe
-          ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode)
-      return (← runShardManifestAllNative manifest ixe
-        ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut useBytecode)
+      return (← runShardBatchNative manifest ixe
+        ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode)
   | _, _, _ =>
     -- `--jobs N` (N ≠ 1) with an `--ixe` env and no `--claim` takes the
     -- parallel batch path: one FFI call, rayon over the target list,
@@ -842,7 +828,6 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
-    "batch";                "With --ixes (no --shard): run the whole partition as ONE Rust rayon batch — work-stealing across shards, no chunk barriers — instead of per-shard Lean tasks. Each shard still executes sequentially over its own record; prints every shard's projected prover RAM peak (the analytic model) for split/merge decisions. --jobs bounds the pool (0 = all cores)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
