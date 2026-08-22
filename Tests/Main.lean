@@ -61,8 +61,6 @@ import Tests.Ix.CompileDeterminism
 import Tests.Ix.CompileFidelity
 import Tests.Ix.ImportIxe
 import Tests.Ix.TruthMinesRecords
-import Tests.Ix.PalomarRecords
-import Tests.Ix.Palomar
 import Tests.Ix.TruthMines
 import Ix.Common
 import Ix.Meta
@@ -81,7 +79,6 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("catalog", Tests.Ix.Catalog.suite),
   ("import-ixe", Tests.Ix.ImportIxe.suite),
   ("truthmines-spec", Tests.Ix.TruthMinesRecords.suite),
-  ("palomar-spec", Tests.Ix.PalomarRecords.suite),
   ("ixon", Tests.Ixon.suite),
   ("ixon-syntax", Tests.IxonSyntax.suite),
   ("claim", Tests.Claim.suite),
@@ -121,9 +118,6 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("truthmines-mini", Tests.Ix.TruthMines.miniSuite),
   ("truthmines-validate", Tests.Ix.TruthMines.validateSuite),
   ("truthmines-validate-mini", Tests.Ix.TruthMines.validateMiniSuite),
-  ("palomar", Tests.Ix.Palomar.buildSuite),
-  ("palomar-check", Tests.Ix.Palomar.checkSuite),
-  ("palomar-validate", Tests.Ix.Palomar.validateSuite),
   ("rust-canon-roundtrip", Tests.CanonM.rustSuiteIO),
   ("serial-canon-roundtrip", Tests.CanonM.serialSuiteIO),
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),

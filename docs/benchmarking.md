@@ -266,37 +266,12 @@ build provenance) is rendered as a warning in that cell's PR comment table.
 This is diagnostic only: the CPU model does not participate in cache keys, and
 only an explicit `fresh` request bypasses the measured-product caches.
 
-## Palomar catalog
+## Palomar compatibility corpus
 
-`Benchmarks.PalomarSpec` is a typed snapshot of the [Palomar Registry](https://palomar-registry.org/).
-The live [`recent.json`](https://data.palomar-registry.org/recent.json) feed had
-19 current projects when the snapshot was refreshed on 2026-08-22. Each record
-keeps Palomar's registry ID/version, exact repository commit and optional Lake
-subdirectory, upstream package/toolchain, license, dependencies, and verified
-solution root.
-
-Most submissions deliberately expose modules named `Challenge` and `Solution`,
-so the generator gives every record its own Lake workspace. They share a
-current Mathlib compatibility spine but never co-load source modules; ix
-composes their anonymous `.ixe` pieces instead. This also lets the two nested
-projects named `jc72108` coexist. The full TruthMines admission spec includes
-the same 19 typed entries at the piece layer.
-
-```console
-lake build ix palomar
-lake exe palomar gen                 # project the 19 isolated workspaces
-lake exe palomar spec                # print pins, toolchains, and roots
-lake exe palomar build               # build + assemble palomar.ixc
-lake exe palomar check               # ix check-rs --anon over every piece
-lake exe palomar validate            # metadata-fidelity sweep
-```
-
-Use `--only PalomarVertexGap22` (comma-separated for more entries) for a small
-build or validation slice. `build` also accepts `--jobs`, `--ceiling-gb`,
-`--no-watchdog`, `--no-cache`, and `--out`, following the TruthMines driver.
-The first build fetches pinned repositories and the Mathlib cache; subsequent
-runs use per-entry content keys inside the output catalog. The corresponding
-ignored test suites are `palomar`, `palomar-check`, and `palomar-validate`.
+The Palomar registry snapshot, isolated workspaces, and Lean-4.33 source ports
+live in the standalone sibling repository `Palomar.ix`. That repository uses
+ix as its compiler dependency and owns the resulting `palomar.ixc`; Palomar
+projects are no longer duplicated in TruthMines' package graph.
 
 ## TruthMines corpus baselines
 
@@ -305,8 +280,8 @@ watchdogged `ix compile` → self-contained catalog directory →
 `ix catalog assemble` + `verify`), first full run recorded 2026-08-21
 on the shared 124 GiB box:
 
-The table is the pre-Palomar historical baseline. The current full admission
-spec has 97 members (the original 78 plus the 19 Palomar projects).
+The table predates the TauCeti admission. The current full admission spec has
+78 members.
 
 | leg | figure |
 |---|---|

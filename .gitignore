@@ -16,8 +16,3 @@ refs
 # TruthMines corpus artifacts: a .ixc is a self-contained directory
 # (manifest + pieces + build cache) — never checked in.
 *.ixc/
-
-# Palomar's generated wrappers own local Lake lockfiles. Their typed records
-# pin each root commit; immutable upstream manifests pin submission-specific
-# dependencies, and the generated Core workspace pins the compatibility spine.
-Benchmarks/Palomar/**/lake-manifest.json

@@ -1,7 +1,6 @@
 module
 
 public import Benchmarks.TruthMinesSpec.TauCeti
-public import Benchmarks.PalomarSpec.Catalog
 
 @[expose] public section
 
@@ -65,7 +64,7 @@ def excludedGitPackage
 
 /-- The two local packages remain as declaration-form and collision fixtures.
 The ecosystem records below are the production-scale qualified aggregate. -/
-def baseCatalog : Array PackageSpec := #[
+def catalog : Array PackageSpec := #[
   {
     lakeName := "relocFixtureB"
     qualifier := `B
@@ -734,39 +733,6 @@ member of the mini infrastructure tier."),
     "268b3bab45ba8fbed09b45cbbdc80a3813f73b5e"
     "NOASSERTION" "2025-02-14" "Historical Lean 3 file collection with no Lake package."
 ]
-
-/-- A Palomar registry project as a TruthMines member. Its unique alias is
-also its qualifier; the original Lake package name remains in the Palomar
-record. Only the shared Mathlib spine is a separate TruthMines provider. Any
-submission-specific packages stay inside the formalization's self-contained
-piece, exactly as locked by the immutable Palomar snapshot. -/
-def palomarPackage (entry : PalomarSpec.Entry) : PackageSpec := {
-  lakeName := entry.qualifier.toString (escape := false)
-  qualifier := entry.qualifier
-  source := .git {
-    url := entry.source.url
-    rev := entry.source.rev
-    subdir? := entry.source.subdir?
-  }
-  upstreamToolchain := expectedToolchain
-  directDeps := #["mathlib"]
-  license := entry.license
-  lastCommit := entry.registryPath
-  rootModules := #[entry.solutionModule]
-  hermetic := true
-  disposition := .candidate
-  notes := s!"Palomar {entry.registryPath}; upstream package \
-`{entry.packageName}` on `{entry.upstreamToolchain}`. Built in its isolated \
-Palomar wrapper on ix's compatibility spine; verified path \
-`{entry.formalizationPath}`."
-}
-
-def palomarCatalog : Array PackageSpec :=
-  PalomarSpec.catalog.map palomarPackage
-
-/-- TruthMines' native records plus every project in the separate Palomar
-snapshot. Palomar remains the single data owner for those 19 records. -/
-def catalog : Array PackageSpec := baseCatalog ++ palomarCatalog
 
 def catalogPackage? (lakeName : String) : Option PackageSpec :=
   catalog.find? (·.lakeName == lakeName)

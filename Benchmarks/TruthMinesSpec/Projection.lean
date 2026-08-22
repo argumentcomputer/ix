@@ -1,7 +1,6 @@
 module
 
 public import Benchmarks.TruthMinesSpec.Validate
-public import Benchmarks.PalomarSpec.Projection
 
 @[expose] public section
 
@@ -35,8 +34,7 @@ do not edit. -/"
     the concatenation stays dependency-ordered). -/
 def workspaceMembers (specs : Array PackageSpec := catalog) :
     Array PackageSpec :=
-  let full := admittedInSpecOrder specs catalogSpec |>.filter fun record =>
-    !PalomarSpec.isEntryQualifier record.qualifier
+  let full := admittedInSpecOrder specs catalogSpec
   let extra := admittedInSpecOrder specs catalogMiniSpec |>.filter fun record =>
     !full.any (·.lakeName == record.lakeName)
   full ++ extra
@@ -73,8 +71,7 @@ def renderOleanTarget (targetName rootsName : String)
     dependencies are all full members, so the concatenation stays
     dependency-ordered) — the lib-level twin of `workspaceMembers`. -/
 def driverLibs : Array CatalogSpecLib :=
-  let full := catalogSpec.libs.filter fun lib =>
-    !PalomarSpec.isEntryQualifier lib.qualifier
+  let full := catalogSpec.libs
   let extra := catalogMiniSpec.libs.filter fun lib =>
     !full.any (·.qualifier == lib.qualifier)
   full ++ extra
@@ -86,13 +83,6 @@ def driverLibs : Array CatalogSpecLib :=
     member's full private-level content. -/
 def driverModulePath (qualifier : Lean.Name) : System.FilePath :=
   workspaceDir / "Drivers" / s!"{qualifier.toString (escape := false)}.lean"
-
-/-- Driver location across the common TruthMines workspace and the isolated
-Palomar workspaces. -/
-def catalogDriverModulePath (qualifier : Lean.Name) : System.FilePath :=
-  match PalomarSpec.findEntry? qualifier with
-  | some entry => PalomarSpec.entryDriverPath entry
-  | none => driverModulePath qualifier
 
 def renderDriverModule (lib : CatalogSpecLib) : String :=
   String.intercalate "\n" ([generatedHeader]
@@ -109,10 +99,6 @@ and pieces meet only in the anonymous `.ixc` layer. -/
 def renderWorkspaceLakefile
     (specs : Array PackageSpec := catalog) : String :=
   let requires := workspaceMembers specs |>.map renderRequire
-  let commonSpec := {
-    catalogSpec with libs := catalogSpec.libs.filter fun lib =>
-      !PalomarSpec.isEntryQualifier lib.qualifier
-  }
   String.intercalate "\n" ([
     generatedHeader,
     "import Lake",
@@ -136,7 +122,7 @@ def renderWorkspaceLakefile
     "load these through the driver modules; all Lake has to do is make",
     "the `.olean`s exist — Lake computes their transitive closure",
     "itself. -/"
-  ] ++ renderRootList "catalogRootModules" commonSpec ++ [
+  ] ++ renderRootList "catalogRootModules" catalogSpec ++ [
     "",
     "/-- The mini tier's root modules (fixtures + spine + Mathlib + FLT). -/"
   ] ++ renderRootList "catalogMiniRootModules" catalogMiniSpec ++ [

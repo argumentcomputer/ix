@@ -170,15 +170,6 @@ lives in `Benchmarks/TruthMines/`. -/
 lean_lib TruthMinesSpec where
   globs := #[.submodules `Benchmarks.TruthMinesSpec]
 
-/- Typed snapshot of the live Palomar registry. Each entry projects to an
-isolated wrapper workspace because the submissions intentionally reuse generic
-`Challenge`/`Solution` module names; their anonymous ix pieces compose safely. -/
-lean_lib PalomarSpec where
-  globs := #[.submodules `Benchmarks.PalomarSpec]
-
-lean_exe palomar where
-  root := `Benchmarks.PalomarSpec.Main
-
 /- The corpus driver: `gen [--check]` projects `Benchmarks/TruthMines/`
 (lakefile, toolchain, per-member `Drivers/<Q>.lean`) from the typed
 records, `spec` prints the member/driver table, and `build` compiles

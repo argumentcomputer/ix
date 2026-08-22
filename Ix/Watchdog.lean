@@ -104,20 +104,39 @@ private def scopeEnv : IO (Array (String × Option String)) := do
         env := env.push ("XDG_RUNTIME_DIR", some s!"/run/user/{uid}")
   return env
 
-/-- Spawn `cmd args` (inheriting stdio) under a `ceilingGb` cgroup cap
-    and wait: exit 137 (`oomExitCode`) means the kernel killed the whole
-    scope at the ceiling. -/
-def run (ceilingGb : Nat) (cmd : String) (args : Array String)
-    (cwd : Option System.FilePath := none) : IO UInt32 := do
+/-- Process arguments for a command inside the memory-capped scope. Keeping
+    this construction shared makes the inherited-stdio and captured-output
+    entry points enforce exactly the same cgroup and environment semantics. -/
+private def scopeArgs (ceilingGb : Nat) (cmd : String) (args : Array String)
+    (cwd : Option System.FilePath)
+    (env : Array (String × Option String)) : IO IO.Process.SpawnArgs := do
   ensureUserManager
-  let child ← IO.Process.spawn {
+  return {
     cmd := "systemd-run"
     args := #["--user", "--scope", "--quiet",
       "-p", s!"MemoryMax={ceilingGb}G", "-p", "MemorySwapMax=0",
       "bash", "-c", oomGroupThenExec, "watchdog", cmd] ++ args
     cwd
-    env := ← scopeEnv }
+    -- Process settings are applied left-to-right. The watchdog's safety
+    -- settings come last so callers cannot accidentally override them.
+    env := env ++ (← scopeEnv) }
+
+/-- Spawn `cmd args` (inheriting stdio) under a `ceilingGb` cgroup cap
+    and wait: exit 137 (`oomExitCode`) means the kernel killed the whole
+    scope at the ceiling. -/
+def run (ceilingGb : Nat) (cmd : String) (args : Array String)
+    (cwd : Option System.FilePath := none)
+    (env : Array (String × Option String) := #[]) : IO UInt32 := do
+  let child ← IO.Process.spawn (← scopeArgs ceilingGb cmd args cwd env)
   child.wait
+
+/-- Captured-output counterpart of `run`. This is intended for bounded
+    parallel orchestrators: each subprocess can retain an attribution-safe
+    log instead of interleaving several inherited stderr streams. -/
+def output (ceilingGb : Nat) (cmd : String) (args : Array String)
+    (cwd : Option System.FilePath := none)
+    (env : Array (String × Option String) := #[]) : IO IO.Process.Output := do
+  IO.Process.output (← scopeArgs ceilingGb cmd args cwd env)
 
 /-- End-to-end availability probe: a trivial command must survive a
     scope with the oom.group shim. False on non-systemd platforms,
