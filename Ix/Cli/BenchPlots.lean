@@ -67,6 +67,10 @@ def plotTitle (workload measure : String) : String :=
   | "aiur", "recursive-verify-time"  => "Aiur Stage 2 Verify Time"
   | "aiur", "recursive-peak-rss"     => "Aiur Stage 2 Peak RAM Usage"
   | "aiur", "recursive-proof-size"   => "Aiur Stage 2 Proof Size"
+  | "aiur", "kzg-prove-time"         => "Aiur Stage 3 Time"
+  | "aiur", "kzg-verify-time"        => "Aiur Stage 3 Verify Time"
+  | "aiur", "kzg-peak-rss"           => "Aiur Stage 3 Peak RAM Usage"
+  | "aiur", "kzg-proof-size"         => "Aiur Stage 3 Proof Size"
   | "zisk-check-execute", "execute-time" => "Zisk Execute Time"
   | "zisk-check-execute", "throughput"   => "Zisk Execute Throughput"
   | "zisk-check-execute", "peak-rss"     => "Zisk Execute Peak RAM Usage"
@@ -128,6 +132,10 @@ def unitsFor (slug : String) : Option String :=
    ("recursive-proof-size", "bytes (B)"),
    ("recursive-fft-cost", "FFTs"),
    ("total-time", "seconds (s)"),
+   ("kzg-prove-time", "seconds (s)"),
+   ("kzg-verify-time", "seconds (s)"),
+   ("kzg-peak-rss", "bytes (B)"),
+   ("kzg-proof-size", "bytes (B)"),
    ("pipeline-peak-rss", "bytes (B)"),
    ("throughput", "constants / second")].lookup slug
 

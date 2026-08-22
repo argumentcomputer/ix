@@ -376,7 +376,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   if kzg && !recursive then
     IO.eprintln "error: --kzg wraps the stage-2 proof; it requires --recursive"
     return Ix.Benchmark.Results.exitUsage
-  let kzgLogSrs := ((p.flag? "kzg-log-srs").map (·.as! Nat)).getD 20
+  let kzgLogSrs := ((p.flag? "kzg-log-srs").map (·.as! Nat)).getD 23
   -- Off by default; CI passes --texray explicitly.
   let useTexray := p.hasFlag "texray"
   let useInterp := p.hasFlag "interp"
@@ -748,7 +748,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
     "kzg";                "Stage 3: after each stage-2 (outer) prove, wrap that proof — prove the FOREIGN (byte-limb) verifier's acceptance of it over the BLS12-381 scalar field under the KZG backend, verify natively (the kzg-* metrics). Requires --recursive. Dev-grade SRS."
-    "kzg-log-srs" : Nat;  "log2 of the dev SRS size for --kzg (default 20; must be at least the tallest stage-3 trace height)."
+    "kzg-log-srs" : Nat;  "log2 of the dev SRS size for --kzg (default 23 — headroom over the ~2^22 tallest stage-3 trace at kernel scale; must be at least the tallest stage-3 trace height)."
     "interp";             "Route execution through the generic Aiur bytecode interpreter instead of the codegen'd IxVM kernel - no `lake exe ix codegen` + cargo rebuild needed after `Ix/IxVM/*.lean` edits. Applies to Phase 1, the prove's witness generation, and both --recursive steps. Slower; execute-time rows are not comparable to codegen-mode runs (fft-cost is)."
     "queries"   : Nat;    "Override the FRI query count of the selected parameter set (default 100, or 50 with --recursive; applies to inner and outer proof alike)."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."

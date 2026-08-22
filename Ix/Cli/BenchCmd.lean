@@ -252,8 +252,10 @@ def backendSpecs : List BackendSpec := [
   -- every stage of the pipeline, per constant, plus the total. Stage 1
   -- proves the constant's IxVM typecheck; stage 2 executes the
   -- in-circuit multi-stark verifier over the fresh stage-1 proof and
-  -- proves THAT execution; the KZG stages will join as stages 3/4 when
-  -- they land, folding into the same ledger. Each stage reports the same
+  -- proves THAT execution; stage 3 proves the FOREIGN (large-field
+  -- Goldilocks emulation) verifier's acceptance of the stage-2 proof over
+  -- the BLS12-381 scalar field under the KZG backend — the constant-
+  -- size, natively-verified wrap (dev-grade SRS). Each stage reports the same
   -- five columns — witness execute, prove, peak RAM, proof size, verify
   -- — and the closing ledger table carries `total-time` (the stages'
   -- proves, summed — each prove already runs its own witness execution,
@@ -277,6 +279,9 @@ def backendSpecs : List BackendSpec := [
          ["recursive-execute-time", "recursive-prove-time",
           "recursive-peak-rss", "recursive-proof-size",
           "recursive-verify-time", "recursive-fft-cost"]),
+       ("Stage 3 — FRI recursion on KZG (BLS12-381)",
+         ["kzg-prove-time", "kzg-peak-rss", "kzg-proof-size",
+          "kzg-verify-time"]),
        ("Pipeline total", ["total-time", "pipeline-peak-rss"])])],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
                              "fft-cost"])],
@@ -300,7 +305,11 @@ def backendSpecs : List BackendSpec := [
                    ("proof-size", "0.05", "_"),
                    ("recursive-proof-size", "0.05", "_"),
                    ("verify-time", "0.10", "_"),
-                   ("recursive-verify-time", "0.10", "_")] },
+                   ("recursive-verify-time", "0.10", "_"),
+                   ("kzg-prove-time", "0.10", "_"),
+                   ("kzg-peak-rss", "0.10", "_"),
+                   ("kzg-proof-size", "0.05", "_"),
+                   ("kzg-verify-time", "0.10", "_")] },
   { name := "zisk", defaultMode := "execute", inputs := .perConstant,
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -794,7 +803,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant closures failed (exit {exit})"
   | "aiur" =>
-    -- prove runs the whole pipeline (`bench-typecheck --recursive`):
+    -- prove runs the whole pipeline (`bench-typecheck --recursive --kzg`):
     -- every stage per constant, closed by the pipeline ledger. One process
     -- per constant under the watchdog; `total-time` is the ledger's last
     -- field, so it doubles as the completion marker — a kill before the
@@ -803,7 +812,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let bt ← resolveBin repo "bench-typecheck"
     let (modeArgs, doneKey) := match mode with
       | "execute" => (#["--execute-only"], "execute-time")
-      | _ => (#["--recursive"], "total-time")
+      | _ => (#["--recursive", "--kzg"], "total-time")
     runPerConstant out names doneKey fun name =>
       runGuarded watchdog ceilingGb bt
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]

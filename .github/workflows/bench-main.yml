@@ -268,8 +268,10 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-32x
     # `ix bench run` persists completed rows incrementally, so even a
     # job-level timeout keeps them on disk, but the bencher upload needs
-    # the job alive.
-    timeout-minutes: 60
+    # the job alive. The aiur pipeline now carries stage 3 (the KZG wrap:
+    # ~15 min and ~80 GiB per small constant at 40 queries, measured),
+    # on top of stages 1-2 — hence the wider budget.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:

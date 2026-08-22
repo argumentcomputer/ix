@@ -1,13 +1,13 @@
 # The KZG stage: wrapping the recursive verifier over BLS12-381
 
-Status: PHASES A, A′ AND B COMPLETE (crates/aiur generic over
-`AiurField`; Lean constants exact naturals with checked per-field
-specialization — all pins byte-identical; `multiStarkForeign` built and
-gated under the Goldilocks interpreter — the `foreign-verifier` suite
-accepts the factorial stage-2 proof and rejects tampering). Phases C–E
-pending. Prerequisites landed earlier: multi-stark `pcs-traits` branch;
-the `g_*`/`eg_*` inner-field interface and `GoldilocksForeign.lean` on
-this branch.
+Status: PHASES A–D COMPLETE, stage 3 in CI. The full pipeline runs on
+`Nat.add_comm` at 40 queries: stage 1 (IxVM on FRI) 2 s / 5 GiB; stage 2
+(FRI recursion on FRI) 48 s / 59 GiB, 3.4 MB proof; stage 3 (the foreign
+verifier on KZG over BLS12-381) 15 min / 81 GiB, **765 KB** proof verified
+natively in 0.13 s. The `aiur` CI benchmark carries all three stages plus
+the pipeline ledger. Remaining: Phase E (ceremony SRS loader, codegen'd Fr
+runner, per-circuit streamed witness, stage-2 tuning for the wrapped
+pair).
 
 ## 1. Goal and architecture
 
