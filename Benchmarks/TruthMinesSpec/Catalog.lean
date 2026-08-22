@@ -1,6 +1,7 @@
 module
 
-public import Benchmarks.TruthMinesSpec.Types
+public import Benchmarks.TruthMinesSpec.TauCeti
+public import Benchmarks.PalomarSpec.Catalog
 
 @[expose] public section
 
@@ -8,7 +9,7 @@ namespace TruthMinesSpec
 
 /-- Bump whenever a semantic catalog edit invalidates the frozen admission
 spec (`Benchmarks.TruthMinesSpec.Spec`). Echoed into build provenance. -/
-def catalogRevision : String := "ix-corpus-v1"
+def catalogRevision : String := "ix-corpus-v3"
 
 /-- The one toolchain every catalog record must target.
 
@@ -64,7 +65,7 @@ def excludedGitPackage
 
 /-- The two local packages remain as declaration-form and collision fixtures.
 The ecosystem records below are the production-scale qualified aggregate. -/
-def catalog : Array PackageSpec := #[
+def baseCatalog : Array PackageSpec := #[
   {
     lakeName := "relocFixtureB"
     qualifier := `B
@@ -456,6 +457,11 @@ member of the mini infrastructure tier."),
     "75c0681bd37567af00e8f0bd13fd59f1423e4217"
     #["mathlib"] "Apache-2.0" "2026-08-11"
     #[`CompPoly] (notes := "Computable multivariate polynomials. Sets preferReleaseBuild AND fixedToolchain, so as a dependency it fetches prebuilt oleans and tries to dictate the workspace toolchain."),
+  gitPackage "TauCeti" `TauCeti
+    "https://github.com/TauCetiProject/TauCeti"
+    "afb1aacb3632d3236eee756ea1683290c07270a3"
+    #["mathlib"] "Apache-2.0" "2026-08-11"
+    tauCetiRoots (notes := "Large Mathlib extension pinned to the final Lean 4.33-compatible commit before upstream's Lean 4.34 toolchain bump. Its top-level TauCeti module is intentionally empty, so the roots are the maximal modules whose import closure covers the full source tree."),
   gitPackage "TorchLean" `TorchLean
     "https://github.com/lean-dojo/TorchLean"
     "fa6bbe3bf0d93679422be8a14978c26ee55d98ff"
@@ -728,6 +734,39 @@ member of the mini infrastructure tier."),
     "268b3bab45ba8fbed09b45cbbdc80a3813f73b5e"
     "NOASSERTION" "2025-02-14" "Historical Lean 3 file collection with no Lake package."
 ]
+
+/-- A Palomar registry project as a TruthMines member. Its unique alias is
+also its qualifier; the original Lake package name remains in the Palomar
+record. Only the shared Mathlib spine is a separate TruthMines provider. Any
+submission-specific packages stay inside the formalization's self-contained
+piece, exactly as locked by the immutable Palomar snapshot. -/
+def palomarPackage (entry : PalomarSpec.Entry) : PackageSpec := {
+  lakeName := entry.qualifier.toString (escape := false)
+  qualifier := entry.qualifier
+  source := .git {
+    url := entry.source.url
+    rev := entry.source.rev
+    subdir? := entry.source.subdir?
+  }
+  upstreamToolchain := expectedToolchain
+  directDeps := #["mathlib"]
+  license := entry.license
+  lastCommit := entry.registryPath
+  rootModules := #[entry.solutionModule]
+  hermetic := true
+  disposition := .candidate
+  notes := s!"Palomar {entry.registryPath}; upstream package \
+`{entry.packageName}` on `{entry.upstreamToolchain}`. Built in its isolated \
+Palomar wrapper on ix's compatibility spine; verified path \
+`{entry.formalizationPath}`."
+}
+
+def palomarCatalog : Array PackageSpec :=
+  PalomarSpec.catalog.map palomarPackage
+
+/-- TruthMines' native records plus every project in the separate Palomar
+snapshot. Palomar remains the single data owner for those 19 records. -/
+def catalog : Array PackageSpec := baseCatalog ++ palomarCatalog
 
 def catalogPackage? (lakeName : String) : Option PackageSpec :=
   catalog.find? (·.lakeName == lakeName)
