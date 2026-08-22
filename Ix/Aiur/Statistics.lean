@@ -53,6 +53,19 @@ structure ExecutionStats where
   totalCacheHits : Nat
   deriving Inhabited
 
+/-- Coarse PROVER RAM projection for a record with these circuit
+    heights: the committed trace bytes over the LDE domain,
+    `Σ nextPowerOfTwo(height) · committedWidth · 8 · 2^logBlowup`, with empty
+    circuits contributing nothing (the prover deactivates them). A
+    surrogate for relative shard sizing — how many shards must split
+    (over a prover budget) or could merge (far under it) — not an
+    exact allocator-level peak. -/
+def ExecutionStats.projectedProverBytes (stats : ExecutionStats)
+    (logBlowup : Nat := defaultCommitmentParameters.logBlowup) : Nat :=
+  stats.circuits.foldl (init := 0) fun acc c =>
+    if c.height == 0 then acc
+    else acc + Nat.nextPowerOfTwo c.height * c.width * 8 * (2 ^ logBlowup)
+
 /-- Continuous transform-size surrogate: `0` at `0` (an empty circuit is
 deactivated by the prover), else `x·log2(max(x, 2))` — the clamp keeps a
 height-1 transform nonzero. -/

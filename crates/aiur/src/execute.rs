@@ -1103,3 +1103,22 @@ fn build_klimbs_u64(
   }
   Ok(tail_ptr)
 }
+
+/// Approximate retained bytes of a record's query maps: field elements
+/// (keys + outputs) at 8 bytes plus ~21 bytes of per-entry index
+/// overhead (hash-table slot, stored hash, multiplicity). Feeds the
+/// witness phase of the prover RAM model
+/// ([`crate::synthesis::AiurSystem::peak_prove_bytes`]).
+pub fn record_retained_bytes(record: &QueryRecord) -> usize {
+  let mut elems = 0usize;
+  let mut entries = 0usize;
+  for m in &record.function_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  for (_, m) in &record.memory_queries {
+    elems += m.retained_elems();
+    entries += m.len();
+  }
+  elems * 8 + entries * 21
+}

@@ -515,6 +515,7 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
     one env parse. -/
 def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
     (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
+    (shapes : Array Aiur.CircuitShape)
     (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
@@ -531,6 +532,13 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
     return 1
   | .ok (_output, _ioBuffer, queryCounts) =>
+    -- Prover RAM projection from this shard's executed heights: the
+    -- input to split/merge decisions against a prover budget.
+    let stats := Aiur.computeStats compiled queryCounts shapes
+    let bytes := stats.projectedProverBytes
+    let gib := Float.ofNat bytes / 1073741824.0
+    IO.println s!"[shard {shardK}] projected prover RAM: \
+      {gib} GiB (padded committed traces × blowup)"
     if printStats then emitStats compiled queryCounts statsOut
     pure 0
 
@@ -556,7 +564,9 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks shardK
+      let shapes := Aiur.circuitShapes compiled.bytecode
+        Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+      runShardOwnedNative envHandle compiled printStats statsOut useBytecode shapes ixonEnv blocks shardK
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -621,17 +631,68 @@ def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Na
     let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
       | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
       | .ok h => pure h
+    let shapes := Aiur.circuitShapes compiled.bytecode
+      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
     let maxJobs := max 1 (jobs?.getD shards.size)
     let mut rc : UInt32 := 0
     for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
       let tasks ← chunk.mapM fun (blocks, k) =>
         IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks k)
+          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode shapes ixonEnv blocks k)
       for t in tasks do
         match t.get with
         | .ok r => if r != 0 then rc := 1
         | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
     pure rc
+
+/-- Whole-partition check as ONE Rust rayon batch (work-stealing across
+    shards, no chunk barriers), against per-shard Lean tasks in
+    `runShardManifestAllNative`. Each shard runs the identical
+    single-shard machinery over its own record; per shard the analytic
+    prover RAM peak of the executed record is reported — the input to
+    split (over a prover budget) / merge (far under it) decisions. -/
+def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
+    (compiled : Aiur.CompiledToplevel) (useBytecode : Bool) : IO UInt32 := do
+  match (← loadEnvAndShards manifestPath ixePath) with
+  | .error e => IO.eprintln e; return 1
+  | .ok (ixonEnv, shards) =>
+    if !(← shardsCover ixonEnv shards) then return 1
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+      | .ok h => pure h
+    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+    let jobs := jobs?.getD 0
+    let mut blob := ByteArray.empty
+    for blocks in shards do
+      let owned := ownedConstsForBlocks ixonEnv blocks
+      let n := owned.size.toUInt32
+      blob := blob.push n.toUInt8
+      blob := blob.push (n >>> 8).toUInt8
+      blob := blob.push (n >>> 16).toUInt8
+      blob := blob.push (n >>> 24).toUInt8
+      for a in owned do blob := blob ++ a.hash
+    IO.println s!"Typechecking {shards.size} shard(s) in one rayon \
+      batch, {jobs} thread(s) (0 = all)"
+    (← IO.getStdout).flush
+    match compiled.bytecode.shardCheckBatchWithEnv funIdx envHandle blob
+        useBytecode jobs Aiur.defaultCommitmentParameters
+        Aiur.defaultFriParameters with
+    | .error e => IO.eprintln s!"shard batch: {e}"; return 1
+    | .ok results =>
+      let mut failures : Nat := 0
+      for k in [:results.size] do
+        let (err, peak) := results[k]!
+        if err.isEmpty then
+          let gib := Float.ofNat peak / 1073741824.0
+          IO.println s!"[shard {k}] ok, projected prover peak {gib} GiB"
+        else
+          IO.eprintln s!"[shard {k}] FAILED: {err}"
+          failures := failures + 1
+      if failures == 0 then
+        IO.println s!"All {results.size} shard(s) passed"
+        return 0
+      IO.eprintln s!"{failures} of {results.size} shard(s) FAILED"
+      return 1
 
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
@@ -744,6 +805,9 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
+      if p.hasFlag "batch" then
+        return (← runShardBatchNative manifest ixe
+          ((p.flag? "jobs").map (·.as! Nat)) compiled useBytecode)
       return (← runShardManifestAllNative manifest ixe
         ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut useBytecode)
   | _, _, _ =>
@@ -778,6 +842,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."
+    "batch";                "With --ixes (no --shard): run the whole partition as ONE Rust rayon batch — work-stealing across shards, no chunk barriers — instead of per-shard Lean tasks. Each shard still executes sequentially over its own record; prints every shard's projected prover RAM peak (the analytic model) for split/merge decisions. --jobs bounds the pool (0 = all cores)."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."

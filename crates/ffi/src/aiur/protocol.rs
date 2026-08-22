@@ -574,6 +574,120 @@ extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
   LeanExcept::ok(arr)
 }
 
+/// `Bytecode.Toplevel.shardCheckBatchWithEnv`: check EVERY shard of a
+/// partition in one call — rayon over the shard list with true
+/// work-stealing (no chunk barriers), each shard through the exact
+/// single-shard machinery (`build_shard_check_env_witness` +
+/// `dispatch_execute`) over its own private record and witness io.
+/// Parallel, not concurrent: tasks share only the read-only toplevel,
+/// env, and the `AiurSystem` built once here for the prover RAM model.
+///
+/// `shards_blob` encodes the partition as, per shard, a 4-byte LE
+/// owned-constant count followed by that many 32-byte addresses.
+/// Returns one `(error, peak_bytes)` pair PER SHARD in shard order:
+/// an empty error string means the shard checked clean, and
+/// `peak_bytes` is the analytic prover peak
+/// ([`aiur::synthesis::AiurSystem::peak_prove_bytes`]) of its executed
+/// record — the number split/merge decisions compare against a prover
+/// budget (0 when the shard failed). `jobs = 0` uses rayon's default
+/// pool width.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_shard_check_batch(
+  toplevel_obj: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  shards_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+  jobs: LeanNat<LeanBorrowed<'_>>,
+  commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  use rayon::prelude::*;
+  let toplevel = decode_toplevel(&toplevel_obj);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let jobs = lean_unbox_nat_as_usize(jobs.inner());
+  let mut shards: Vec<Vec<ix_common::address::Address>> = Vec::new();
+  {
+    let bytes = shards_blob.as_bytes();
+    let mut off = 0usize;
+    while off < bytes.len() {
+      if off + 4 > bytes.len() {
+        return LeanExcept::error_string("shards_blob: truncated count");
+      }
+      let n = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap())
+        as usize;
+      off += 4;
+      if off + n * 32 > bytes.len() {
+        return LeanExcept::error_string("shards_blob: truncated addresses");
+      }
+      shards.push(
+        bytes[off..off + n * 32]
+          .chunks_exact(32)
+          .map(|c| ix_common::address::Address::from_slice(c).unwrap())
+          .collect(),
+      );
+      off += n * 32;
+    }
+  }
+  let env = &env_handle.get().env;
+  // One system build for the whole batch: the RAM model reads circuit
+  // widths and lookup counts off the compiled circuits.
+  let system = AiurSystem::build(
+    decode_toplevel(&toplevel_obj),
+    decode_commitment_parameters(&commitment_parameters),
+    decode_fri_parameters(&fri_parameters),
+  );
+  let check_batch = || -> Vec<(String, usize)> {
+    shards
+      .par_iter()
+      .map(|owned| {
+        match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+          env, owned,
+        ) {
+          Err(e) => (format!("witness build: {e}"), 0),
+          Ok((_claim, input, mut io_buffer)) => match dispatch_execute(
+            &toplevel,
+            fun_idx,
+            input,
+            &mut io_buffer,
+            use_bytecode,
+          ) {
+            Err(e) => (e, 0),
+            Ok((record, _output)) => {
+              (String::new(), system.peak_prove_bytes(&record).peak)
+            },
+          },
+        }
+      })
+      .collect()
+  };
+  let results = if jobs == 0 {
+    check_batch()
+  } else {
+    let pool = match rayon::ThreadPoolBuilder::new()
+      .num_threads(jobs)
+      .build()
+    {
+      Ok(p) => p,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("rayon pool: {e}"));
+      },
+    };
+    pool.install(check_batch)
+  };
+  let arr = LeanArray::alloc(results.len());
+  for (i, (err, peak)) in results.iter().enumerate() {
+    arr.set(
+      i,
+      LeanProd::new(LeanString::new(err), LeanOwned::box_usize(*peak)),
+    );
+  }
+  LeanExcept::ok(arr)
+}
+
 /// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
 /// Rust-owned `EnvHandle`. See `checkAddrWithEnv` for `use_bytecode`
 /// semantics.
