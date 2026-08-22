@@ -11,6 +11,6 @@
    "inputRev": "aaf530784082a2c00b0a93648741429d274102ca",
    "inherited": false,
    "configFile": "lakefile.lean"}],
- "name": "navigatrix",
+ "name": "compilatrix",
  "lakeDir": ".lake",
  "fixedToolchain": false}

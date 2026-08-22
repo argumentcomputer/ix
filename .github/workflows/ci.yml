@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flake-check:
+    name: Nix flake checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        # v7.0.1; full commit pin is covered by the trusted-extern ledger.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        # v22; full commit pin is covered by the trusted-extern ledger.
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25
+
+      - name: Run the complete check surface
+        run: nix flake check --accept-flake-config --print-build-logs

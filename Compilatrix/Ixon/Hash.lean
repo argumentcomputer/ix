@@ -1,0 +1,38 @@
+import Blake3.Rust
+import Compilatrix.Ixon.Address
+import Compilatrix.Ixon.Const
+
+/-!
+# Content addressing
+
+Low-level blake3 primitives over Ixon serializations. The hash itself is FFI
+(Rust blake3 via Blake3.lean) — an active entry in the tracked
+`docs/trusted-extern-ledger.md`: assumed semantics is the BLAKE3
+function; the endgame replacement is a verified Lean implementation
+compiled by our own backend.
+
+The semantic `Constant.address?` boundary lives in `Ixon.Sharing`, after the
+layer-2 recompression check; this module intentionally exposes no unchecked
+constant-address helper.
+
+NB: no `#guard`/`#eval` here — executing the FFI at elaboration needs
+the Blake3 shared lib loaded in the interpreter (`--load-dynlib`),
+which the nix-built dependency artifact doesn't provide. Execution
+tests live in the compiled `tests` executable (`Tests.lean`), run as a
+flake check.
+-/
+
+namespace Compilatrix.Ixon
+
+/-- blake3 of arbitrary bytes as an `Address`. -/
+def Address.blake3 (x : ByteArray) : Address :=
+  let digest := Blake3.Rust.hash x
+  ⟨digest.val, digest.property⟩
+
+/-- Hash of a bare serialized expression. This is only a local cache key:
+table indices have meaning inside a `Constant.Frame`, so this is deliberately
+not named `address` and must not be used as a semantic object identity. -/
+def Expr.serializedHash (e : Expr) : Address :=
+  .blake3 (runPut (putExpr e))
+
+end Compilatrix.Ixon

@@ -1,0 +1,306 @@
+{
+  "schema_version": 1,
+  "last_reviewed": "2026-08-19",
+  "policy": {
+    "owner": "Compilatr.ix maintainers",
+    "platform_baseline": "x86_64-linux",
+    "local_import_roots": [
+      "Compilatrix",
+      "Init",
+      "Lean",
+      "Std"
+    ],
+    "rule": "Every external Lean package, every native symbol declared anywhere in its pinned source tree (imported or not, with the shipping module and reachability recorded per symbol), seed/runtime dependency, and CI action is recorded here with an owner and a retirement condition. A modeled IxIR oracle is not native code and is listed separately."
+  },
+  "native_interfaces": [
+    {
+      "id": "blake3-rust",
+      "status": "active",
+      "owner": "Compilatr.ix maintainers",
+      "lake_package": "Blake3",
+      "import_root": "Blake3",
+      "lean_module": "Blake3.Rust",
+      "project_entrypoints": [
+        "Blake3.Rust.hash"
+      ],
+      "foreign_symbols": [
+        {
+          "lean_name": "Blake3.Rust.internalVersion",
+          "symbol": "rs_blake3_version",
+          "module": "Blake3.Rust",
+          "reachability": "imported public API; not called by Compilatr.ix"
+        },
+        {
+          "lean_name": "Blake3.Rust.hasherInit",
+          "symbol": "rs_blake3_init",
+          "module": "Blake3.Rust",
+          "reachability": "imported; called by Blake3.Rust.hash"
+        },
+        {
+          "lean_name": "Blake3.Rust.hasherInitKeyed",
+          "symbol": "rs_blake3_init_keyed",
+          "module": "Blake3.Rust",
+          "reachability": "imported public API; not called by Compilatr.ix"
+        },
+        {
+          "lean_name": "Blake3.Rust.hasherInitDeriveKey",
+          "symbol": "rs_blake3_init_derive_key",
+          "module": "Blake3.Rust",
+          "reachability": "imported public API; not called by Compilatr.ix"
+        },
+        {
+          "lean_name": "Blake3.Rust.hasherUpdate",
+          "symbol": "rs_blake3_hasher_update",
+          "module": "Blake3.Rust",
+          "reachability": "imported; called by Blake3.Rust.hash"
+        },
+        {
+          "lean_name": "Blake3.Rust.hasherFinalize",
+          "symbol": "rs_blake3_hasher_finalize",
+          "module": "Blake3.Rust",
+          "reachability": "imported; called by Blake3.Rust.hash"
+        },
+        {
+          "lean_name": "Blake3.C.internalVersion",
+          "symbol": "c_blake3_version",
+          "module": "Blake3.C",
+          "reachability": "present, unimported; Compilatr.ix imports no Blake3.C module, but the pinned package tree ships this symbol one lakefile line from linkable"
+        },
+        {
+          "lean_name": "Blake3.C.hasherInit",
+          "symbol": "c_blake3_init",
+          "module": "Blake3.C",
+          "reachability": "present, unimported; Compilatr.ix imports no Blake3.C module, but the pinned package tree ships this symbol one lakefile line from linkable"
+        },
+        {
+          "lean_name": "Blake3.C.hasherInitKeyed",
+          "symbol": "c_blake3_init_keyed",
+          "module": "Blake3.C",
+          "reachability": "present, unimported; Compilatr.ix imports no Blake3.C module, but the pinned package tree ships this symbol one lakefile line from linkable"
+        },
+        {
+          "lean_name": "Blake3.C.hasherInitDeriveKey",
+          "symbol": "c_blake3_init_derive_key",
+          "module": "Blake3.C",
+          "reachability": "present, unimported; Compilatr.ix imports no Blake3.C module, but the pinned package tree ships this symbol one lakefile line from linkable"
+        },
+        {
+          "lean_name": "Blake3.C.hasherUpdate",
+          "symbol": "c_blake3_hasher_update",
+          "module": "Blake3.C",
+          "reachability": "present, unimported; Compilatr.ix imports no Blake3.C module, but the pinned package tree ships this symbol one lakefile line from linkable"
+        },
+        {
+          "lean_name": "Blake3.C.hasherFinalize",
+          "symbol": "c_blake3_hasher_finalize",
+          "module": "Blake3.C",
+          "reachability": "present, unimported; Compilatr.ix imports no Blake3.C module, but the pinned package tree ships this symbol one lakefile line from linkable"
+        }
+      ],
+      "semantics_assumed": "The active init/update/finalize path returns the standard BLAKE3 extendable-output hash of exactly the supplied bytes; a 32-byte request returns the standard 256-bit digest. The FFI respects Lean ownership, lifetime, array-size, and C-ABI contracts. Uncalled keyed, derive-key, and version exports are covered because importing Blake3.Rust makes them reachable to downstream Lean code, but Compilatr.ix does not currently rely on their results. The sibling Blake3.C module binds the vendored C implementation behind six c_blake3_* externs; Compilatr.ix does not import it, so they are inventoried as present-but-unimported and any drift in the package tree's extern set fails the check.",
+      "proof_effect": "Content addresses use this result operationally. There is no Lean theorem connecting the returned bytes to a pure BLAKE3 specification, so collision resistance and conformance are explicit assumptions rather than proved facts. The opaque FFI declarations also cross a proof-bearing subtype boundary for output length.",
+      "trust_basis": [
+        "Blake3.lean and lean-ffi are revision-pinned",
+        "every .lean file in the pinned package tree is scanned for @[extern] declarations, so sibling modules cannot add symbols silently",
+        "the Rust crate graph and checksums are locked and checked below",
+        "the compiled tests check the official empty-input vector, determinism, input sensitivity, and a complete serialized-constant address",
+        "Nix builds the Rust static library in a sandbox and records its closure"
+      ],
+      "tests": [
+        "Tests.expectedEmptyBlake3",
+        "Tests.main: 32-byte length",
+        "Tests.main: equal inputs hash equally",
+        "Tests.main: differing inputs hash differently",
+        "Tests.expectedSampleAxiomAddr"
+      ],
+      "retirement": {
+        "milestone": "post-M3 verified primitives",
+        "replacement": "A pure Lean BLAKE3 implementation with a refinement theorem to a tracked BLAKE3 specification, compiled by the Compilatr.ix backend",
+        "exit_criteria": [
+          "Compilatrix imports no Blake3 native module",
+          "the replacement passes the official BLAKE3 vector corpus and the existing address fixtures",
+          "content-address compatibility or an explicit wire/address version roll is proved and documented",
+          "the native symbols and Rust crate closure disappear from the Nix runtime closure"
+        ]
+      },
+      "pins": {
+        "lake_rev": "aaf530784082a2c00b0a93648741429d274102ca",
+        "flake_node": "blake3-lean",
+        "blake3_lean_rev": "aaf530784082a2c00b0a93648741429d274102ca",
+        "blake3_upstream_rev": "b97a24f8754819755ef78d8016c0391c65c943c5",
+        "blake3_version": "1.8.4",
+        "lean_ffi_rev": "cc98ebf67bf453ac3827cb767f78b13ea674dd6a"
+      },
+      "cargo_lock": {
+        "path": "rust/Cargo.lock",
+        "sha256": "f071e4cc112b817a0287ad5e651a65a77a98848674ce58f5a87ffa856cecd14f",
+        "packages": {
+          "aho-corasick": "1.1.4",
+          "arrayref": "0.3.9",
+          "arrayvec": "0.7.6",
+          "autocfg": "1.5.0",
+          "bindgen": "0.72.1",
+          "bitflags": "2.11.0",
+          "blake3": "1.8.4",
+          "blake3-rs": "0.1.0",
+          "cc": "1.2.56",
+          "cexpr": "0.6.0",
+          "cfg-if": "1.0.4",
+          "clang-sys": "1.8.1",
+          "constant_time_eq": "0.4.2",
+          "cpufeatures": "0.3.0",
+          "either": "1.15.0",
+          "find-msvc-tools": "0.1.9",
+          "glob": "0.3.3",
+          "itertools": "0.13.0",
+          "lean-ffi": "0.1.0",
+          "libc": "0.2.183",
+          "libloading": "0.8.9",
+          "log": "0.4.29",
+          "memchr": "2.8.0",
+          "minimal-lexical": "0.2.1",
+          "nom": "7.1.3",
+          "num-bigint": "0.4.6",
+          "num-integer": "0.1.46",
+          "num-traits": "0.2.19",
+          "prettyplease": "0.2.37",
+          "proc-macro2": "1.0.106",
+          "quote": "1.0.45",
+          "regex": "1.12.3",
+          "regex-automata": "0.4.14",
+          "regex-syntax": "0.8.10",
+          "rustc-hash": "2.1.1",
+          "shlex": "1.3.0",
+          "syn": "2.0.117",
+          "unicode-ident": "1.0.24",
+          "windows-link": "0.2.1"
+        }
+      }
+    }
+  ],
+  "seed_and_build_trust": [
+    {
+      "id": "lean-seed-runtime",
+      "status": "active-seed",
+      "owner": "Compilatr.ix maintainers",
+      "version": "4.33.0",
+      "current_role": "The upstream Lean compiler, elaborator, kernel, interpreter, code generator, and runtime build Compilatr.ix, check proof terms, execute elaboration-time guards, and host the compiled test executable.",
+      "assumption": "The pinned seed accepts and executes the checked sources according to Lean 4 semantics and its runtime ABI. Kernel checking narrows ordinary proof trust, but a compromised compiler/runtime can still falsify executable guards or binaries and is the bootstrap seed addressed by diverse double compilation.",
+      "trust_basis": "lean-toolchain pins leanprover/lean4:v4.33.0; lean4-nix and nixpkgs resolution are locked by flake.lock.",
+      "retirement": "Gen 1 self-hosting plus address-exact diverse double compilation; production proof checking then moves to the independently specified/verified ix4lean-derived checker."
+    },
+    {
+      "id": "gmp-seed",
+      "status": "active-seed-runtime",
+      "owner": "Compilatr.ix maintainers",
+      "version": "6.3.0",
+      "current_role": "A direct Nix build input and part of the Lean runtime's arbitrary-precision arithmetic implementation; it is not called through a project-defined Lean @[extern].",
+      "assumption": "GMP arithmetic and memory behavior are correct when the seed/runtime evaluates large natural and integer computations, including executable validators and guards.",
+      "trust_basis": "pkgs.gmp comes from locked nixpkgs revision 1306659b587dc277866c7b69eb97e5f07864d8c4; the x86_64-linux closure currently resolves gmp-6.3.0 and gmp-with-cxx-6.3.0.",
+      "retirement": "Post-M3 verified limb bignums: refinement proofs against Nat/Int, backend compilation in the no-runtime fragment, and no GMP path in the self-hosted runtime closure."
+    },
+    {
+      "id": "host-c-abi-runtime",
+      "status": "active-seed-runtime",
+      "owner": "Compilatr.ix maintainers",
+      "version": "glibc 2.40-66 on the x86_64-linux baseline",
+      "current_role": "The pinned Lean seed, generated test executable, and Rust BLAKE3 static library execute against the host C ABI/runtime. The baseline closure also contains libgcc 14.3.0 and compiler-rt 21.1.2.",
+      "assumption": "C ABI calls, allocation, memory copying, process startup, and the host facilities used transitively by Lean/Rust behave correctly.",
+      "trust_basis": "Linux runtime artifacts come from the locked nixpkgs closure; Darwin necessarily uses the corresponding Nix SDK/system boundary and is not claimed by the Linux version string.",
+      "retirement": "Gen 1 removes the upstream runtime; later runtime milestones replace allocator/memcpy and the libc surface with verified .ix code plus an explicitly axiomatized syscall boundary."
+    },
+    {
+      "id": "nix-build-supply-chain",
+      "status": "active-build",
+      "owner": "Compilatr.ix maintainers",
+      "version": "exact graph pinned by flake.lock",
+      "current_role": "Nix, nixpkgs, lean4-nix, flake-parts, crane, fenix/Rust, Clang/LLD, rsync, and the configured binary cache construct the Lean and Rust artifacts and run all checks.",
+      "assumption": "Nix evaluates and realizes the locked derivations faithfully; compilers, linkers, builders, and fetched sources match their content hashes. The argumentcomputer Cachix key is trusted for signed substitution, with Nix store hashes still fixing content.",
+      "trust_basis": "Every flake node has a locked revision/narHash and the complete lockfile hash is checked by the ledger validator.",
+      "retirement": "This is build/supply-chain trust rather than a target-language extern. It shrinks through reproducible bootstrap artifacts and diverse reproduction; it leaves the semantic TCB when Gen 1 artifacts are address-exactly reproduced by an independent path."
+    },
+    {
+      "id": "github-ci-runner",
+      "status": "active-ci-only",
+      "owner": "Compilatr.ix maintainers",
+      "version": "ubuntu-24.04 mutable GitHub-hosted image",
+      "current_role": "Checks out the repository, installs Nix, and invokes nix flake check. It does not replace local reproduction of the pinned Nix derivations.",
+      "assumption": "GitHub reports the workflow result honestly and supplies the pinned action revisions; the runner image itself is mutable.",
+      "trust_basis": "Third-party actions are pinned by full commit and checked against this ledger; Nix then rebuilds or hash-verifies the actual project closure.",
+      "retirement": "No semantic retirement required. For release attestation, reproduce the locked flake outside GitHub and compare store/output hashes."
+    }
+  ],
+  "modeled_oracles": [
+    {
+      "id": "ixir0-example-nat-add",
+      "address": "0x40 repeated 32 times",
+      "declaration": "Compilatrix.IxIR0.Examples.natAddExt",
+      "arity": 2,
+      "scope": "test-only model",
+      "semantics": "On exactly two Nat literals, return their Nat sum; reject constructor-shaped or other arguments.",
+      "native_code": false,
+      "production_approved": false
+    },
+    {
+      "id": "ixir1-example-nat-add",
+      "address": "0x67 repeated 32 times",
+      "declaration": "Compilatrix.IxIR1.Examples.aNatAdd",
+      "arity": 2,
+      "scope": "test-only model",
+      "semantics": "On exactly two scalar Nat literals, return their Nat sum.",
+      "native_code": false,
+      "production_approved": false
+    },
+    {
+      "id": "erase-generated-extern-frontier",
+      "address": "content address of each source opaque/partial/axiom declaration",
+      "declaration": "Compilatrix.Erase lowers these source declarations to IxIR0.Decl.extern",
+      "arity": -1,
+      "scope": "unsupported proof frontier",
+      "semantics": "No generic semantics is approved. A concrete production oracle requires a new per-address ledger entry and a simulation correspondence proof.",
+      "native_code": false,
+      "production_approved": false
+    }
+  ],
+  "ci_actions": [
+    {
+      "repository": "actions/checkout",
+      "commit": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "tag_at_review": "v7.0.1",
+      "purpose": "materialize the repository without persisted credentials"
+    },
+    {
+      "repository": "DeterminateSystems/nix-installer-action",
+      "commit": "ef8a148080ab6020fd15196c2084a2eea5ff2d25",
+      "tag_at_review": "v22",
+      "purpose": "install Nix on the GitHub-hosted Linux runner"
+    }
+  ],
+  "integrity": {
+    "tracked_files": {
+      ".envrc": "87816b617d65211b5bc9a1141332863f8e3cb05c387ef539d87f459e81eb8d06",
+      "flake.lock": "3c4a89a3d87dd10ac70c1c1a11449055f94abb1ad857b339c29f302160a6445f",
+      "flake.nix": "1f726ea8f84c829e96fe4f9dfce0a4f28f68640c70a45eff903e1221dc9e2bd8",
+      "lake-manifest.json": "96a10cee37eac24e288f45d01365c96c2333428c871593d74d9da3baaa9ea7c0",
+      "lakefile.toml": "b7704c94922e01aaa9642fa555c7a5c75bc2c754b3dfbb46ea70d05e8c0568db",
+      "lean-toolchain": "302cd63c54178885b89e669f33b38f12f4dd7ae7e5cac537b3203e3768d8fb2b"
+    },
+    "flake_nodes": {
+      "blake3": "b97a24f8754819755ef78d8016c0391c65c943c5",
+      "blake3-lean": "aaf530784082a2c00b0a93648741429d274102ca",
+      "crane": "7cf72d978629469c4bd4206b95c402514c1f6000",
+      "fenix": "a30830ebacdf957690dd8ea9ade9f12809ae0982",
+      "flake-parts": "3107b77cd68437b9a76194f0f7f9c55f2329ca5b",
+      "flake-parts_2": "a34fae9c08a15ad73f295041fec82323541400a9",
+      "flake-parts_3": "a34fae9c08a15ad73f295041fec82323541400a9",
+      "lean4-nix": "9edc9448c8fe9552ba2b66e6097abda6e14e5c6f",
+      "lean4-nix_2": "c41a770e44a990da275dad0f70da75f22197e597",
+      "nixpkgs": "1306659b587dc277866c7b69eb97e5f07864d8c4",
+      "nixpkgs-lib": "333c4e0545a6da976206c74db8773a1645b5870a",
+      "nixpkgs-lib_2": "2075416fcb47225d9b68ac469a5c4801a9c4dd85",
+      "nixpkgs-lib_3": "2075416fcb47225d9b68ac469a5c4801a9c4dd85",
+      "nixpkgs_2": "1306659b587dc277866c7b69eb97e5f07864d8c4",
+      "rust-analyzer-src": "17d028e9d7161cf6ebf21e21d3c4a1835099e039"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  description = "Navigatr.ix: a certified Lean 4 toolchain for Ix";
+  description = "Compilatr.ix: a certified Lean 4 toolchain for Ix";
 
   nixConfig = {
     extra-substituters = [
@@ -66,9 +66,32 @@
             ./lakefile.toml
             ./lake-manifest.json
             ./lean-toolchain
-            ./Navigatrix.lean
+            ./Compilatrix.lean
             ./Tests.lean
-            (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Navigatrix)
+            (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
+          ];
+        };
+        # The trust-ledger check reads build metadata, CI pins, and every
+        # Lean import, but keeping it separate preserves the library's
+        # narrow source hash/cache boundary. It must see the complete
+        # .github/workflows directory (so an unpinned action in any
+        # workflow fails, not just ci.yml) and .envrc (it injects
+        # NIX_CONFIG for direnv users, so it is ledger-tracked).
+        auditSrc = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./flake.nix
+            ./flake.lock
+            ./lakefile.toml
+            ./lake-manifest.json
+            ./lean-toolchain
+            ./.envrc
+            ./Compilatrix.lean
+            ./Tests.lean
+            (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./Compilatrix)
+            ./docs/trusted-externs.json
+            ./scripts/check_trusted_externs.py
+            ./.github/workflows
           ];
         };
         lakeDeps = lake2nix.buildDeps {
@@ -85,14 +108,14 @@
 
         # The library artifact: oleans + exports + static/shared facets,
         # consumable by downstream Lake packages (the lean4lean pattern).
-        navigatrixLib = lake2nix.mkPackage {
+        compilatrixLib = lake2nix.mkPackage {
           inherit lakeDeps;
           src = leanSrc;
           buildInputs = leanBuildInputs;
-          name = "Navigatrix";
+          name = "Compilatrix";
           buildLibrary = true;
           meta = {
-            description = "Navigatrix library artifact (oleans, exports, static/shared)";
+            description = "Compilatrix library artifact (oleans, exports, static/shared)";
           };
         };
 
@@ -110,29 +133,62 @@
             grep -q tests-ok tests.out
           '';
         };
+
+        # Fail closed when source imports, native symbols, dependency
+        # graphs, build pins, or CI actions drift from the reviewed ledger.
+        trustedExternCheck =
+          pkgs.runCommand "trusted-extern-ledger-check" {
+            nativeBuildInputs = [pkgs.python3];
+          } ''
+            python3 ${auditSrc}/scripts/check_trusted_externs.py \
+              --root ${auditSrc} \
+              --dependency-root Blake3=${blake3-lean.outPath} \
+              --gmp-version ${pkgs.gmp.version}
+            touch $out
+          '';
+
+        # Lint every workflow file; fail closed if the glob matches none.
+        ciWorkflowCheck =
+          pkgs.runCommand "ci-workflow-check" {
+            nativeBuildInputs = [pkgs.actionlint];
+          } ''
+            shopt -s nullglob
+            workflows=(${auditSrc}/.github/workflows/*.yml ${auditSrc}/.github/workflows/*.yaml)
+            [ "''${#workflows[@]}" -gt 0 ]
+            actionlint "''${workflows[@]}"
+            touch $out
+          '';
       in {
         _module.args.pkgs = import nixpkgs {
           inherit system;
         };
 
         packages = {
-          default = navigatrixLib;
-          navigatrix = navigatrixLib;
+          default = compilatrixLib;
+          compilatrix = compilatrixLib;
         };
 
         checks = {
-          build = navigatrixLib;
+          build = compilatrixLib;
+          ci-workflow = ciWorkflowCheck;
+          trusted-extern-ledger = trustedExternCheck;
           tests = testsCheck;
         };
 
         devShells.default = pkgs.mkShell {
+          # Blake3.lean's Rust binding uses bindgen through lean-ffi.
+          # Point it at the pinned nixpkgs libclang so `lake exe tests`
+          # works in the documented dev loop as well as in flake checks.
+          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
           packages = [
             lean
             # Blake3.lean's lakefile shells out to `cargo build` for its
             # Rust static lib, so a devshell `lake build` needs a Rust
             # toolchain (the nix build path instead injects the
             # flake-built artifact via depOverrideDeriv).
+            pkgs.clang
             pkgs.cargo
+            pkgs.python3
             pkgs.rustc
           ];
         };
