@@ -155,7 +155,11 @@ def endToEndSuite : IO UInt32 := do
   let input := #[Aiur.G.ofNat 5]
   let (claim, proof, _) := facSystem.prove facIdx input default
   let expectedClaim := buildClaim facIdx input #[Aiur.G.ofNat 120]
-  let proofBytes := proof.toBytes
+  -- The in-circuit verifier consumes the per-query advice transport, not
+  -- the pruned-multiproof wire format `Proof.toBytes` carries.
+  let proofBytes ← match facSystem.proofToAdviceBytes claim proof with
+    | .ok bytes => pure bytes
+    | .error e => IO.eprintln s!"advice re-encoding failed: {e}"; return 1
 
   -- ── serialize proof (advice) + vk + claims, with public Blake3 digests ──
   let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
@@ -199,7 +203,9 @@ def endToEndSuite : IO UInt32 := do
 
   -- ── run the (expensive) checks, then assert ─────────────────────────────────
   IO.println "recursive-verifier (proving + recursive verification, ~1.5 min)…"
-  let innerVerify := facSystem.verify claim (.ofBytes proofBytes)
+  -- Native wire-format roundtrip; the in-circuit paths below consume the
+  -- per-query advice encoding instead.
+  let innerVerify := facSystem.verify claim (.ofBytes proof.toBytes)
   -- Native path: Rust-built advice buffer + codegen'd verifier
   -- (`crates/ixvm-codegen/src/aiur_multi_stark.rs`).
   let honest :=
