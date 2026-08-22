@@ -7,6 +7,7 @@ public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
+import Std.Internal.UV.System
 
 public section
 
@@ -19,6 +20,12 @@ private def defaultOutPathFor (pathStr : String) : String :=
   stem.toLower ++ ".ixe"
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
+  -- Keep the environment-variable interface for scripts, while giving the
+  -- CLI an ordinary discoverable switch. The Rust compiler and serializer
+  -- both consult IX_VERBOSE, so setting it once enables the whole pipeline.
+  if p.hasFlag "verbose" then
+    Std.Internal.UV.System.osSetenv "IX_VERBOSE" "1"
+
   let some path := p.positionalArg? "path"
     | p.printError "error: must specify <path> to a Lean source file"
       return 1
@@ -233,6 +240,7 @@ def compileCmd : Cli.Cmd := `[Cli|
   "Compile Lean file to Ixon"
 
   FLAGS:
+    v, verbose;               "Print compiler phase timings, scheduler progress, and serialization progress. Equivalent to IX_VERBOSE=1."
     out            : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
     consts         : String; "Comma-separated EXACT constant names to compile (transitive deps pulled in automatically) instead of the whole import env — e.g. `Nat.add_comm`. Same flag/shape as `ix check --consts`. Mutually exclusive with --module; --exclude does not apply."
     "consts-file"  : String; "Additionally read seed constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
