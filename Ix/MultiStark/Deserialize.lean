@@ -17,7 +17,7 @@ The wire format is bincode `standard().with_little_endian().with_fixed_int_encod
 * `[T; N]` / tuple            : N elements back-to-back, no length prefix
 * `Val` (Goldilocks)          : raw `u64`, 8 bytes LE (NOT reduced mod p)
 * `ExtVal` (deg-2 ext)        : `[u64; 2]`, 16 bytes LE
-* Merkle digest               : `[u64; 4]`, 32 bytes LE
+* commitments / PCS proof     : the PCS module's wire shapes (FRI: Merkle caps, `FriProof`)
 
 The proof stream is pure non-deterministic advice on IO channel 0 (never
 hashed — see `Ix/MultiStark.lean`), so the `read_proof` family reads it
@@ -28,8 +28,8 @@ materialized, which removes one memory store + one load per proof byte.
 Variable-length content loops a fixed-size read per element, exactly like
 the old stream readers looped `read_u8`.
 
-The byte-stream primitives (`read_u8`/`read_u64`/`read_count`/`read_digest`/
-`read_merkle_cap` over `ByteStream`) remain for the vk/claims streams, whose
+The byte-stream primitives (`read_u8`/`read_u64`/`read_count` over
+`ByteStream`) remain for the vk/claims streams, whose
 bytes are digest-bound and therefore flow through blake3 as materialized
 streams anyway (`read_system`, `read_claims`).
 
@@ -45,64 +45,24 @@ namespace MultiStark
 def deserialize := ⟦
   -- ==========================================================================
   -- Wire-level type mirrors of `multi-stark/src/manual_codec.rs`.
-  -- `U64`/`ByteStream` come from `IxVM.byteStream`; raw Goldilocks `Val` is the
-  -- non-canonical `u64`, kept here as the 8 little-endian bytes (`U64`).
+  -- `U64`/`ByteStream` come from `IxVM.byteStream`; a raw inner-field `Val` on
+  -- the wire is the non-canonical `u64`, kept here as 8 little-endian bytes
+  -- (`U64`). The PCS-specific shapes — `Commitment`, `PcsProof`, and their
+  -- readers `read_commitment_at`/`read_pcs_proof` — come from the merged PCS
+  -- module; this module is generic over them.
   -- ==========================================================================
 
   -- `ExtVal` (the extension / challenge field) is the field module's `Ext`
   -- (`[Val; 2]` over its `Val` representation); byte form exists only at
   -- the ingest/observation boundaries (`val_from_bytes`/`val_to_bytes`).
 
-  -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
-  type Digest = [U64; 4]
-
-  -- Digests thread the Merkle machinery BY POINTER: a digest is 32 columns,
-  -- so every value crossing a circuit boundary (input, call output, list
-  -- node) paid 32; a pointer pays 1. `store` is content-addressed (same
-  -- digest -> same pointer), so pointer identity preserves the cross-query
-  -- compress memoization. Bytes are loaded only where actually consumed
-  -- (block assembly in mmcs_compress, cap observation, the root equality).
-  type DigestP = &Digest
-
-  -- `Commitment = MerkleCap<..>`: only the `cap: Vec<Digest>` is on the wire.
-  type MerkleCap = List‹DigestP›
-
   -- `OpenedValuesForRound<ExtVal> = Vec<Vec<Vec<ExtVal>>>`.
   type OpenedRound = List‹List‹List‹Ext›››
 
-  -- The three trace/quotient commitments at the head of a `Proof`.
+  -- The three trace/quotient commitments at the head of a `Proof`, in the
+  -- PCS module's `Commitment` representation.
   enum Commitments {
-    Mk(MerkleCap, MerkleCap, MerkleCap)
-  }
-
-  -- `BatchOpening<Val, Mmcs>`: per-round input opening of a FRI query.
-  --   opened_values : Vec<Vec<Val>>   (one row of base-field values per matrix)
-  --   opening_proof : Vec<Digest>     (Merkle authentication path)
-  enum BatchOpening {
-    Mk(List‹List‹U64››, List‹DigestP›)
-  }
-
-  -- `CommitPhaseProofStep<ExtVal, ExtMmcs>`: one folding step of a FRI query.
-  --   log_arity      : u8
-  --   sibling_values : Vec<Ext>  (arity - 1 siblings)
-  --   opening_proof  : Vec<Digest>
-  enum CommitPhaseProofStep {
-    Mk(U8, List‹Ext›, List‹DigestP›)
-  }
-
-  -- `QueryProof<ExtVal, ExtMmcs, Vec<BatchOpening<Val, Mmcs>>>`.
-  enum QueryProof {
-    Mk(List‹BatchOpening›, List‹CommitPhaseProofStep›)
-  }
-
-  -- `PcsProof = FriProof<ExtVal, ExtMmcs, Witness = Val, ..>`.
-  --   commit_phase_commits : Vec<MerkleCap>
-  --   commit_pow_witnesses : Vec<Val>
-  --   query_proofs         : Vec<QueryProof>
-  --   final_poly           : Vec<Ext>
-  --   query_pow_witness    : Val
-  enum FriProof {
-    Mk(List‹MerkleCap›, List‹U64›, List‹QueryProof›, List‹Ext›, U64)
+    Mk(Commitment, Commitment, Commitment)
   }
 
   -- `Option<OpenedRound>` for `preprocessed_opened_values`. A dedicated
@@ -122,7 +82,7 @@ def deserialize := ⟦
       Commitments,        -- commitments
       List‹Ext›,          -- intermediate_accumulators
       List‹U8›,           -- log_degrees
-      FriProof,           -- opening_proof
+      PcsProof,           -- opening_proof (the PCS module's proof type)
       OpenedRound,        -- quotient_opened_values
       PreprocessedOpt,    -- preprocessed_opened_values
       OpenedRound,        -- stage_1_opened_values
@@ -235,14 +195,6 @@ def deserialize := ⟦
     ([@val_from_bytes(a), @val_from_bytes(b)], j1)
   }
 
-  fn read_digest_at(i: G) -> (Digest, G) {
-    let (a, j0) = #read_u64_at(i);
-    let (b, j1) = #read_u64_at(j0);
-    let (c, j2) = #read_u64_at(j1);
-    let (d, j3) = #read_u64_at(j2);
-    ([a, b, c, d], j3)
-  }
-
   -- ==========================================================================
   -- Length-prefixed `Vec<T>` readers over the indexed proof stream.
   -- First-order, so one pair per element type: `read_T_vec` reads the `u64`
@@ -291,35 +243,6 @@ def deserialize := ⟦
     }
   }
 
-  fn read_digest_vec_at(i: G) -> (List‹DigestP›, G) {
-    let (n, j) = read_count_at(i);
-    read_digest_vec_at_n(j, n)
-  }
-  fn read_digest_vec_at_n(i: G, n: G) -> (List‹DigestP›, G) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = @read_digest_at(i);
-        let (rest, j2) = read_digest_vec_at_n(j, n - 1);
-        (store(ListNode.Cons(store(x), rest)), j2),
-    }
-  }
-
-  -- `Vec<Vec<Val>>` for `BatchOpening.opened_values`.
-  fn read_u64_vec_vec(i: G) -> (List‹List‹U64››, G) {
-    let (n, j) = read_count_at(i);
-    read_u64_vec_vec_n(j, n)
-  }
-  fn read_u64_vec_vec_n(i: G, n: G) -> (List‹List‹U64››, G) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = read_u64_vec(i);
-        let (rest, j2) = read_u64_vec_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
-    }
-  }
-
   -- `OpenedRound = Vec<Vec<Vec<Ext>>>`, built bottom-up from `read_ext_vec`.
   fn read_ext_vec_vec(i: G) -> (List‹List‹Ext››, G) {
     let (n, j) = read_count_at(i);
@@ -353,96 +276,11 @@ def deserialize := ⟦
   -- Struct readers (fields in declaration order, no framing).
   -- ==========================================================================
 
-  fn read_merkle_cap_at(i: G) -> (MerkleCap, G) {
-    read_digest_vec_at(i)
-  }
-  fn read_merkle_cap_vec(i: G) -> (List‹MerkleCap›, G) {
-    let (n, j) = read_count_at(i);
-    read_merkle_cap_vec_n(j, n)
-  }
-  fn read_merkle_cap_vec_n(i: G, n: G) -> (List‹MerkleCap›, G) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = @read_merkle_cap_at(i);
-        let (rest, j2) = read_merkle_cap_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
-    }
-  }
-
   fn read_commitments(i: G) -> (Commitments, G) {
-    let (stage_1_trace, j0) = @read_merkle_cap_at(i);
-    let (stage_2_trace, j1) = @read_merkle_cap_at(j0);
-    let (quotient_chunks, j2) = @read_merkle_cap_at(j1);
+    let (stage_1_trace, j0) = @read_commitment_at(i);
+    let (stage_2_trace, j1) = @read_commitment_at(j0);
+    let (quotient_chunks, j2) = @read_commitment_at(j1);
     (Commitments.Mk(stage_1_trace, stage_2_trace, quotient_chunks), j2)
-  }
-
-  fn read_batch_opening(i: G) -> (BatchOpening, G) {
-    let (opened_values, j0) = @read_u64_vec_vec(i);
-    let (opening_proof, j1) = read_digest_vec_at(j0);
-    (BatchOpening.Mk(opened_values, opening_proof), j1)
-  }
-  fn read_batch_opening_vec(i: G) -> (List‹BatchOpening›, G) {
-    let (n, j) = read_count_at(i);
-    read_batch_opening_vec_n(j, n)
-  }
-  fn read_batch_opening_vec_n(i: G, n: G) -> (List‹BatchOpening›, G) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = @read_batch_opening(i);
-        let (rest, j2) = read_batch_opening_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
-    }
-  }
-
-  fn read_commit_phase_step(i: G) -> (CommitPhaseProofStep, G) {
-    let (log_arity, j0) = #read_u8_at(i);
-    let (sibling_values, j1) = read_ext_vec(j0);
-    let (opening_proof, j2) = read_digest_vec_at(j1);
-    (CommitPhaseProofStep.Mk(log_arity, sibling_values, opening_proof), j2)
-  }
-  fn read_commit_phase_step_vec(i: G) -> (List‹CommitPhaseProofStep›, G) {
-    let (n, j) = read_count_at(i);
-    read_commit_phase_step_vec_n(j, n)
-  }
-  fn read_commit_phase_step_vec_n(i: G, n: G) -> (List‹CommitPhaseProofStep›, G) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = @read_commit_phase_step(i);
-        let (rest, j2) = read_commit_phase_step_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
-    }
-  }
-
-  fn read_query_proof(i: G) -> (QueryProof, G) {
-    let (input_proof, j0) = @read_batch_opening_vec(i);
-    let (commit_phase_openings, j1) = @read_commit_phase_step_vec(j0);
-    (QueryProof.Mk(input_proof, commit_phase_openings), j1)
-  }
-  fn read_query_proof_vec(i: G) -> (List‹QueryProof›, G) {
-    let (n, j) = read_count_at(i);
-    read_query_proof_vec_n(j, n)
-  }
-  fn read_query_proof_vec_n(i: G, n: G) -> (List‹QueryProof›, G) {
-    match n {
-      0 => (store(ListNode.Nil), i),
-      _ =>
-        let (x, j) = @read_query_proof(i);
-        let (rest, j2) = read_query_proof_vec_n(j, n - 1);
-        (store(ListNode.Cons(x, rest)), j2),
-    }
-  }
-
-  fn read_fri_proof(i: G) -> (FriProof, G) {
-    let (commit_phase_commits, j0) = @read_merkle_cap_vec(i);
-    let (commit_pow_witnesses, j1) = read_u64_vec(j0);
-    let (query_proofs, j2) = @read_query_proof_vec(j1);
-    let (final_poly, j3) = read_ext_vec(j2);
-    let (query_pow_witness, j4) = #read_u64_at(j3);
-    (FriProof.Mk(commit_phase_commits, commit_pow_witnesses, query_proofs,
-                 final_poly, query_pow_witness), j4)
   }
 
   -- The activation bitmap: `Vec<bool>` on the wire (u64 count, then one
@@ -480,7 +318,7 @@ def deserialize := ⟦
     let (commitments, j0) = @read_commitments(ja);
     let (intermediate_accumulators, j1) = read_ext_vec(j0);
     let (log_degrees, j2) = @read_u8_vec(j1);
-    let (opening_proof, j3) = @read_fri_proof(j2);
+    let (opening_proof, j3) = @read_pcs_proof(j2);
     let (quotient_opened_values, j4) = read_opened_round(j3);
     let (preprocessed_opened_values, j5) = read_preprocessed(j4);
     let (stage_1_opened_values, j6) = read_opened_round(j5);

@@ -214,6 +214,26 @@ Remaining in this phase:
   measuring.
 - Final parameter tuning across the stage-2/stage-3 boundary.
 
+## 3b. The generic verifier (mirrors `pcs-traits`)
+
+The Aiur verifier is structured like the Rust one: a core written against
+interface NAMES, plus one merged implementation per interface (exactly one,
+same names by design — the mechanism the native/foreign field pair always
+used). Interfaces and their current implementations:
+
+| interface | names the core refers to | implementations |
+|---|---|---|
+| Field (`Ix/MultiStark/Field/`) | `Val`, `Ext`; `val_zero/one/two/generator/two_adic_root`, `ext_w`; `val_add/sub/neg/mul/is_zero/inverse`, `ext_add/sub/neg/mul/inverse/div/eq`; `val_from_bytes`, `val_to_bytes`, `val_from_u16`, `bytes_lt_modulus` | `goldilocksNative` (`Val = G`), `goldilocksForeign` (Goldilocks in a large outer field) |
+| Pcs (`Ix/MultiStark/Pcs/`) | `Commitment`, `PcsProof`, `PcsParams`; `read_commitment_at`, `read_pcs_proof`, `read_vk_commitment`, `read_pcs_params`; `commitment_onto`, `snoc_commitment`, `pcs_empty_commitment`; `pcs_verify` | `pcsFri` (Blake3 Merkle MMCS + FRI) |
+| Transcript (`Ix/MultiStark/Transcript/`) | `ch_sample8/field/ext/bits`, `ch_observe_val`, `snoc_b8`, `b8_onto`, `limbs_onto`, `log_degrees_onto`, `accs_onto`, `rev_onto`, `seed_tag_onto` | `transcriptBlake3` (blake3 is fixed by design) |
+| Domain (`Ix/MultiStark/Domain.lean`) | `two_adic_gen`, `pow2`, `trace_vanishing`, `trace_selectors`, `ext_exp_pow2` | `twoAdicDomain` (shared by every PCS) |
+
+Assembly: `multiStarkFullOver field pcs` — `multiStark` = native × FRI,
+`multiStarkForeign` = foreign × FRI. The refactor was pinned as a semantic
+no-op: identical circuit widths (5072/2104, 5250/2344) and FFT costs on the
+saved 40-query proof (1.0888e11 / 1.4405e11); codegen re-emits only in
+function order; every suite green.
+
 ## 4. Decision points and open questions
 
 - **C is a real checkpoint**: if the foreign circuit is prohibitive

@@ -44,7 +44,7 @@ The Rust verifier runs these steps:
   test runner, `Tests/MultiStark.lean`): the verifier accepts the honest proof
   and rejects a tampered claim.
 
-* Step 4: the PCS/FRI opening proof (`pcs_fri_verify`, `Ix/MultiStark/Pcs.lean`)
+* Step 4: the PCS opening proof (`pcs_verify` — the merged PCS module, e.g. `Ix/MultiStark/Pcs/Fri.lean`)
   — Merkle `verify_batch`, the challenger continuation, the FRI fold chain, and
   the final-polynomial check.
 
@@ -79,11 +79,11 @@ def verifier := ⟦
     }
   }
 
-  -- The preprocessed commitment cap from the verifying key, or an empty cap
-  -- (observes nothing) when there is none.
-  fn opt_commit_cap(commit: OptCommit) -> MerkleCap {
+  -- The preprocessed commitment from the verifying key, or the PCS's empty
+  -- commitment (observes nothing) when there is none.
+  fn opt_commitment(commit: OptCommit) -> Commitment {
     match commit {
-      OptCommit.NoCommit => store(ListNode.Nil),
+      OptCommit.NoCommit => @pcs_empty_commitment(),
       OptCommit.SomeCommit(c) => c,
     }
   }
@@ -117,8 +117,8 @@ def verifier := ⟦
     }
   }
 
-  fn fiat_shamir(tlimbs: List‹U64›, active: List‹G›, prep: MerkleCap, s1: MerkleCap, s2: MerkleCap,
-      q: MerkleCap, lds: List‹U8›, cbytes: ByteStream, accs: List‹Ext›)
+  fn fiat_shamir(tlimbs: List‹U64›, active: List‹G›, prep: Commitment, s1: Commitment,
+      s2: Commitment, q: Commitment, lds: List‹U8›, cbytes: ByteStream, accs: List‹Ext›)
       -> (Ext, Ext, Ext, Ext, ByteStream) {
     -- Initial transcript, front-to-back: seed tag, parameter + shape words
     -- (`tlimbs`, from the verifying key), the activation bitmap, prep,
@@ -129,8 +129,8 @@ def verifier := ⟦
     -- encoding `verify_multiple_claims` observes, and the entrypoint
     -- asserts the stream fully consumed — so no re-serialization walk.
     let input = log_degrees_onto(lds, cbytes);
-    let input = cap_onto(s1, input);
-    let input = cap_onto(prep, input);
+    let input = commitment_onto(s1, input);
+    let input = commitment_onto(prep, input);
     let input = active_onto(active, input);
     let input = limbs_onto(tlimbs, input);
     let input = @seed_tag_onto(input);
@@ -142,14 +142,14 @@ def verifier := ⟦
     let (f0, f1, input, _of) = ch_sample_ext(input, store(ListNode.Nil));
     let input = list_concat(input, b8_onto(f0, b8_onto(f1, store(ListNode.Nil))));
     -- observe stage_2 commitment
-    let input = snoc_cap(input, s2);
+    let input = snoc_commitment(input, s2);
     -- observe the intermediate accumulators (public values entering the
     -- constraints; α and ζ must depend on them directly)
     let input = list_concat(input, accs_onto(accs, store(ListNode.Nil)));
     -- sample constraint challenge α (not observed)
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
     -- observe quotient commitment
-    let input = snoc_cap(input, q);
+    let input = snoc_commitment(input, q);
     -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
     let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
     ([@val_from_bytes(l0), @val_from_bytes(l1)],
@@ -586,13 +586,10 @@ def verifier := ⟦
   -- claims, then run the OOD composition/quotient check for every circuit.
   -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
   fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››, cbytes: ByteStream) -> G {
-    -- The FRI parameters (`log_blowup`, `num_queries`, `commit_pow_bits`,
-    -- `query_pow_bits`) all come from the verifying key, which the public
-    -- statement binds through `system_digest` — no separate public inputs.
+    -- The PCS parameters come from the verifying key, which the public
+    -- statement binds through `system_digest` — no separate public inputs;
+    -- they are opaque here and consumed by the PCS module's `pcs_verify`.
     let Sys.Mk(params, tlimbs, circuits, commit, prep_indices) = sys;
-    let SysParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
-                     _max_log_arity, num_queries, commit_pow_bits,
-                     query_pow_bits) = params;
     let Proof.Mk(active, commitments, accs, log_degrees, opening,
                  q_opened, prep_opt, stage1, stage2) = proof;
     -- Sparse activation: the bitmap covers the canonical circuit set;
@@ -610,19 +607,20 @@ def verifier := ⟦
     let aprep = select_active_prep(prep_indices, active);
     assert_eq!(eq_zero(list_length(acirc) - list_length(accs)), 1);
     let Commitments.Mk(s1c, s2c, qc) = commitments;
-    -- opt_commit_cap stays a cross-circuit call: its two-arm match would
+    -- opt_commitment stays a cross-circuit call: its two-arm match would
     -- make the (spliced) entrypoint branchy, doubling every lookup's
     -- stage-2 cost there — the one small circuit is cheaper.
-    let prep_cap = @opt_commit_cap(commit);
+    let prep_cap = @opt_commitment(commit);
     let (lch, fch, alpha, zeta, post_zeta_input) = @fiat_shamir(tlimbs, active, prep_cap, s1c, s2c, qc, log_degrees, cbytes, accs);
     let acc0 = claims_acc([@val_zero(), @val_zero()], claims, lch, fch);
     -- Step 5: OOD composition/quotient identity for every active circuit.
     let _ood = ood_loop(acirc, aprep, log_degrees, accs, stage1, stage2,
              prep_opt, q_opened, 0, acc0, lch, fch, alpha, zeta);
-    @pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
+    -- Step 4: the PCS opening proof — the PCS module's `pcs_verify`, over the
+    -- post-ζ transcript, the opened values, and its own parameters.
+    @pcs_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
       s1c, s2c, qc, prep_cap, aprep, log_degrees, zeta,
-      list_length(acirc), log_blowup, num_queries, commit_pow_bits,
-      query_pow_bits)
+      list_length(acirc), params)
   }
 
   -- 1 iff every element of `l` is boolean (0 or 1).
