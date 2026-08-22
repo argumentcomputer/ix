@@ -49,12 +49,9 @@ def deserialize := ⟦
   -- non-canonical `u64`, kept here as the 8 little-endian bytes (`U64`).
   -- ==========================================================================
 
-  -- `ExtVal = BinomialExtensionField<Goldilocks, 2> = 𝔽_p[X]/(X² - 7)`, stored
-  -- as its two inner-field coefficients `[c0, c1]` (= `c0 + c1·X`) in the
-  -- merged Goldilocks module's representation — `G` itself under
-  -- `goldilocksNative`, canonical `[U8; 8]` under `goldilocksForeign`. Byte
-  -- form exists only at ingest/observation boundaries (`gl_val`/`gl_to_bytes`).
-  type Ext = [Goldilocks; 2]
+  -- `ExtVal` (the extension / challenge field) is the field module's `Ext`
+  -- (`[Val; 2]` over its `Val` representation); byte form exists only at
+  -- the ingest/observation boundaries (`val_from_bytes`/`val_to_bytes`).
 
   -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
   type Digest = [U64; 4]
@@ -170,7 +167,7 @@ def deserialize := ⟦
   -- recomposition; reduces mod the outer modulus when the limb exceeds it).
   -- This is wire plumbing over the outer field — counts, digest-limb
   -- comparisons — NOT inner-field ingest: semantic Goldilocks values go
-  -- through `@gl_val`, which lands in the merged module's representation.
+  -- through `@val_from_bytes`, which lands in the merged module's representation.
   fn limb_to_field(b: U64) -> G {
     to_field(b[0])
       + 0x100 * to_field(b[1])
@@ -187,10 +184,10 @@ def deserialize := ⟦
   -- prover hints; range checks + recomposition + the `< p_goldilocks` check
   -- pin the unique decomposition in every field (under Goldilocks a count
   -- `c < 2³² − 1` would also admit the bytes of `c + p` — rejected by
-  -- `gl_lt_p`; over a > 2⁶⁴ field recomposition alone is injective and the
-  -- check is trivially satisfiable). This is the native `gl_to_bytes` body
+  -- `bytes_lt_modulus`; over a > 2⁶⁴ field recomposition alone is injective and the
+  -- check is trivially satisfiable). This is the native `val_to_bytes` body
   -- over outer values — needed because under `goldilocksForeign` the
-  -- interface's `gl_to_bytes` takes the byte representation, not a count.
+  -- interface's `val_to_bytes` takes the byte representation, not a count.
   fn count_to_bytes(v: G) -> [U8; 8] {
     let b = unconstrained_g_to_bytes(v);
     let (c0, c1) = u8_range_check(b[0], b[1]);
@@ -199,7 +196,7 @@ def deserialize := ⟦
     let (c6, c7) = u8_range_check(b[6], b[7]);
     let r = [c0, c1, c2, c3, c4, c5, c6, c7];
     assert_eq!(@limb_to_field(r), v);
-    assert_eq!(@gl_lt_p(r), 1);
+    assert_eq!(@bytes_lt_modulus(r), 1);
     r
   }
 
@@ -235,7 +232,7 @@ def deserialize := ⟦
   fn read_ext_at(i: G) -> (Ext, G) {
     let (a, j0) = #read_u64_at(i);
     let (b, j1) = #read_u64_at(j0);
-    ([@gl_val(a), @gl_val(b)], j1)
+    ([@val_from_bytes(a), @val_from_bytes(b)], j1)
   }
 
   fn read_digest_at(i: G) -> (Digest, G) {

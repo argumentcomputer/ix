@@ -5,7 +5,7 @@ public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.MultiStark
-public import Ix.MultiStark.GoldilocksForeign
+public import Ix.MultiStark.Field.GoldilocksForeign
 public import Blake3.Rust
 
 /-!
@@ -70,9 +70,9 @@ def selfTests : List (Lean.Name × String) := [
   (`pcs_challenger4_test, "PCS challenger continuation (α_pcs/α_fri/β/index) matches reference"),
   (`fri_fold_test, "FRI arity-2 fold_row matches reference"),
   (`ro_fold_test, "open_input reduced-opening math matches reference"),
-  (`gl_addsub_test, "non-native Goldilocks add/sub match reference"),
-  (`gl_muldiv_test, "non-native Goldilocks mul/inverse/div match reference"),
-  (`eg_ops_test, "non-native ExtGoldilocks add/mul/inverse/div match reference"),
+  (`val_addsub_test, "non-native Goldilocks add/sub match reference"),
+  (`val_muldiv_test, "non-native Goldilocks mul/inverse/div match reference"),
+  (`ext_ops_test, "non-native ExtGoldilocks add/mul/inverse/div match reference"),
 ]
 
 /-- Self-test entrypoints of the FOREIGN (byte-limb) Goldilocks module
@@ -85,7 +85,7 @@ def foreignSelfTests : List (Lean.Name × String) := [
   (`fg_addsub_test, "foreign (byte-limb) Goldilocks add/sub match reference"),
   (`fg_muldiv_test, "foreign (byte-limb) Goldilocks mul/inverse match reference"),
   (`fg_ext_ops_test, "foreign (byte-limb) ExtGoldilocks ops match reference"),
-  (`fg_boundary_test, "foreign (byte-limb) gl_val/gl_to_bytes/gl_lt_p/two-adic root"),
+  (`fg_boundary_test, "foreign (byte-limb) val_from_bytes/val_to_bytes/bytes_lt_modulus/two-adic root"),
 ]
 
 /-- Compile the verifier-plus-tests toplevel (and the standalone foreign
@@ -362,6 +362,7 @@ def kzgEndToEndSuite : IO UInt32 := do
     expectOk "native KZG verify accepts the wrap proof (two pairings)" honest,
     expectErr "tampered wrap proof rejected" tampered,
   ])]) []
+
 
 end Tests.MultiStark
 

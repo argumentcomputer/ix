@@ -5,8 +5,8 @@ public import Ix.Aiur.Protocol
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
-public import Ix.MultiStark.GoldilocksNative
-public import Ix.MultiStark.GoldilocksForeign
+public import Ix.MultiStark.Field.GoldilocksNative
+public import Ix.MultiStark.Field.GoldilocksForeign
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
