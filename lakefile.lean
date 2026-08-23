@@ -222,6 +222,17 @@ lean_lib IxTcVerify where
 
 end IxTcVerify
 
+section IxCompileVerify
+
+/- Formal verification of the Lean-to-Ixon compiler against the same
+Lean4Lean Theory endpoint as `IxTcVerify`.  Kept as a separate non-default
+library so compiler proofs cannot accidentally inherit checker acceptance
+theorems as their specification. -/
+lean_lib IxCompileVerify where
+  globs := #[.submodules `Ix.Compile.Verify]
+
+end IxCompileVerify
+
 section IxApplications
 
 lean_lib Apps
