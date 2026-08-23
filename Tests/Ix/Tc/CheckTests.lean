@@ -69,7 +69,7 @@ def acceptRejectTests : TestSeq :=
     ((let (ixon, aAddr) := envA
       let idDefn : Ixon.Constant :=
         ⟨.defn ⟨.defn, .safe, 0,
-          .all (.ref 0 #[]) (.ref 0 #[]), .lam (.ref 0 #[]) (.var 0)⟩,
+          .leanAll (.ref 0 #[]) (.ref 0 #[]), .leanLam (.ref 0 #[]) (.var 0)⟩,
          #[], #[aAddr], #[]⟩
       let (ixon, idAddr) := storeConst ixon idDefn
       passes ixon idAddr : Bool))
@@ -385,7 +385,7 @@ def lazyTests : TestSeq :=
     ((let (ixon, aAddr) := envA
       let idDefn : Ixon.Constant :=
         ⟨.defn ⟨.defn, .safe, 0,
-          .all (.ref 0 #[]) (.ref 0 #[]), .lam (.ref 0 #[]) (.var 0)⟩,
+          .leanAll (.ref 0 #[]) (.ref 0 #[]), .leanLam (.ref 0 #[]) (.var 0)⟩,
          #[], #[aAddr], #[]⟩
       let (ixon, idAddr) := storeConst ixon idDefn
       -- Kernel env starts EMPTY; the fault hook pulls idA then A.
@@ -406,7 +406,7 @@ def lazyTests : TestSeq :=
     ((let (ixon, aAddr) := envA
       let idDefn : Ixon.Constant :=
         ⟨.defn ⟨.defn, .safe, 0,
-          .all (.ref 0 #[]) (.ref 0 #[]), .lam (.ref 0 #[]) (.var 0)⟩,
+          .leanAll (.ref 0 #[]) (.ref 0 #[]), .leanLam (.ref 0 #[]) (.var 0)⟩,
          #[], #[aAddr], #[]⟩
       let (ixon, _) := storeConst ixon idDefn
       let ind : Ixon.Inductive :=
@@ -592,21 +592,22 @@ def inductiveTests : TestSeq :=
     ((let ind : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
           #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
-            ⟨false, 0, 1, 0, 1, .all (.recur 0 #[]) (.recur 0 #[])⟩]⟩
+            ⟨false, 0, 1, 0, 1, .leanAll (.recur 0 #[]) (.recur 0 #[])⟩]⟩
       indPasses ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩ : Bool))
   ++ test "parameterized inductive validates"
     -- P : Sort 1 → Sort 1, mkP : ∀ (α : Sort 1), α → P α
     ((let ind : Ixon.Inductive :=
-        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+        ⟨false, 0, 1, 0, .leanAll (.sort 0) (.sort 0),
           #[⟨false, 0, 0, 1, 1,
-            .all (.sort 0) (.all (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
+            .leanAll (.sort 0)
+              (.leanAll (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
       indPasses ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩ : Bool))
   ++ test "negative occurrence is rejected (A3)"
     -- bad : ((B → B) → B) — B in the domain of a field's Pi
     ((let ind : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
           #[⟨false, 0, 0, 0, 1,
-            .all (.all (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩
+            .leanAll (.leanAll (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩
       indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
         "strict positivity" : Bool))
   ++ test "non-uniform parameter in a recursive field is rejected (F2)"
@@ -614,10 +615,10 @@ def inductiveTests : TestSeq :=
     -- I.mk : (A : Sort 1) → I ExternalA → I A.
     ((let (extra, aAddr) := envA
       let ind : Ixon.Inductive :=
-        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+        ⟨false, 0, 1, 0, .leanAll (.sort 0) (.sort 0),
           #[⟨false, 0, 0, 1, 1,
-            .all (.sort 0)
-              (.all (.app (.recur 0 #[]) (.ref 0 #[]))
+            .leanAll (.sort 0)
+              (.leanAll (.app (.recur 0 #[]) (.ref 0 #[]))
                 (.app (.recur 0 #[]) (.var 1)))⟩]⟩
       indFailsWith
         ⟨.muts #[.indc ind], #[], #[aAddr], #[.succ .zero]⟩
@@ -627,7 +628,7 @@ def inductiveTests : TestSeq :=
     ((let ind : Ixon.Inductive :=
         ⟨false, 1, 0, 0, .sort 2,
           #[⟨false, 1, 0, 0, 1,
-            .all (.recur 0 #[1]) (.recur 0 #[0])⟩]⟩
+            .leanAll (.recur 0 #[1]) (.recur 0 #[0])⟩]⟩
       indFailsWith
         ⟨.muts #[.indc ind], #[], #[], #[.var 0, .zero, .succ .zero]⟩
         "non-uniform universe arguments" : Bool))
@@ -635,9 +636,9 @@ def inductiveTests : TestSeq :=
     -- K : Sort 1 → Sort 1, K.mk : K (K ExternalA) → K ExternalA.
     ((let (extra, aAddr) := envA
       let ind : Ixon.Inductive :=
-        ⟨false, 0, 0, 1, .all (.sort 0) (.sort 0),
+        ⟨false, 0, 0, 1, .leanAll (.sort 0) (.sort 0),
           #[⟨false, 0, 0, 0, 1,
-            .all
+            .leanAll
               (.app (.recur 0 #[])
                 (.app (.recur 0 #[]) (.ref 0 #[])))
               (.app (.recur 0 #[]) (.ref 0 #[]))⟩]⟩
@@ -649,9 +650,9 @@ def inductiveTests : TestSeq :=
       -- Phantom : Sort 1 → Sort 1; Phantom.mk : (A : Sort 1) → Phantom A.
       -- Its parameter is absent from constructor fields.
       let phantom : Ixon.Inductive :=
-        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+        ⟨false, 0, 1, 0, .leanAll (.sort 0) (.sort 0),
           #[⟨false, 0, 0, 1, 0,
-            .all (.sort 0) (.app (.recur 0 #[]) (.var 0))⟩]⟩
+            .leanAll (.sort 0) (.app (.recur 0 #[]) (.var 0))⟩]⟩
       let (extra, phantomBlockAddr) := storeMutsWithProjs extra
         ⟨.muts #[.indc phantom], #[], #[], #[.succ .zero]⟩
       let phantomAddr := indcProjAddr phantomBlockAddr 0
@@ -661,7 +662,7 @@ def inductiveTests : TestSeq :=
       let bad : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
           #[⟨false, 0, 0, 0, 1,
-            .all
+            .leanAll
               (.app (.ref 0 #[]) (.app (.ref 1 #[]) (.ref 1 #[])))
               (.recur 0 #[])⟩]⟩
       indFailsWith
@@ -671,12 +672,12 @@ def inductiveTests : TestSeq :=
     ((let (extra, aAddr) := envA
       -- Opt : Sort 1 → Sort 1.
       let opt : Ixon.Inductive :=
-        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+        ⟨false, 0, 1, 0, .leanAll (.sort 0) (.sort 0),
           #[⟨false, 0, 0, 1, 0,
-              .all (.sort 0) (.app (.recur 0 #[]) (.var 0))⟩,
+              .leanAll (.sort 0) (.app (.recur 0 #[]) (.var 0))⟩,
             ⟨false, 0, 1, 1, 1,
-              .all (.sort 0)
-                (.all (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
+              .leanAll (.sort 0)
+                (.leanAll (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
       let (extra, optBlockAddr) := storeMutsWithProjs extra
         ⟨.muts #[.indc opt], #[], #[], #[.succ .zero]⟩
       let optAddr := indcProjAddr optBlockAddr 0
@@ -684,12 +685,12 @@ def inductiveTests : TestSeq :=
       -- and a positive A field. While checking Root below, Opt is already
       -- active at the specialization `Opt (Helper Root)`.
       let helper : Ixon.Inductive :=
-        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+        ⟨false, 0, 1, 0, .leanAll (.sort 0) (.sort 0),
           #[⟨false, 0, 0, 1, 3,
-            .all (.sort 0)
-              (.all (.app (.ref 0 #[]) (.ref 1 #[]))
-                (.all (.app (.ref 0 #[]) (.var 1))
-                  (.all (.var 2)
+            .leanAll (.sort 0)
+              (.leanAll (.app (.ref 0 #[]) (.ref 1 #[]))
+                (.leanAll (.app (.ref 0 #[]) (.var 1))
+                  (.leanAll (.var 2)
                     (.app (.recur 0 #[]) (.var 3)))))⟩]⟩
       let (extra, helperBlockAddr) := storeMutsWithProjs extra
         ⟨.muts #[.indc helper], #[], #[optAddr, aAddr], #[.succ .zero]⟩
@@ -698,7 +699,7 @@ def inductiveTests : TestSeq :=
       let root : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
           #[⟨false, 0, 0, 0, 1,
-            .all
+            .leanAll
               (.app (.ref 0 #[]) (.app (.ref 1 #[]) (.recur 0 #[])))
               (.recur 0 #[])⟩]⟩
       indPasses
@@ -708,20 +709,20 @@ def inductiveTests : TestSeq :=
     ((let ind : Ixon.Inductive :=
         ⟨true, 0, 0, 0, .sort 0,
           #[⟨true, 0, 0, 0, 1,
-            .all (.all (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩
+            .leanAll (.leanAll (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩
       indPasses ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩ : Bool))
   ++ test "field universe above inductive level is rejected (A4)"
     -- B : Sort 1 with a field of type Sort 1 (level 2 > 1)
     ((let ind : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
-          #[⟨false, 0, 0, 0, 1, .all (.sort 0) (.recur 0 #[])⟩]⟩
+          #[⟨false, 0, 0, 0, 1, .leanAll (.sort 0) (.recur 0 #[])⟩]⟩
       indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
         "field universe exceeds" : Bool))
   ++ test "Prop inductive permits any field universe (A4 exemption)"
     -- B : Prop with a field of type Sort 1
     ((let ind : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
-          #[⟨false, 0, 0, 0, 1, .all (.sort 1) (.recur 0 #[])⟩]⟩
+          #[⟨false, 0, 0, 0, 1, .leanAll (.sort 1) (.recur 0 #[])⟩]⟩
       indPasses ⟨.muts #[.indc ind], #[], #[], #[.zero, .succ .zero]⟩ : Bool))
   ++ test "ctor returning the wrong type is rejected (A2)"
     -- mk : A instead of mk : B
@@ -767,7 +768,7 @@ def inductiveTests : TestSeq :=
     ((let ind : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
           #[⟨false, 0, 0, 0, 0,
-            .all (.recur 0 #[]) (.recur 0 #[])⟩]⟩
+            .leanAll (.recur 0 #[]) (.recur 0 #[])⟩]⟩
       indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
         "head is not the inductive" : Bool))
   ++ test "inductive params-plus-indices overflow is rejected"
@@ -809,9 +810,9 @@ def inductiveTests : TestSeq :=
     -- `mk : I (B → B)` — the index arg is well-typed but mentions B.
     ((let indB : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
       let indI : Ixon.Inductive :=
-        ⟨false, 0, 0, 1, .all (.sort 0) (.sort 0),
+        ⟨false, 0, 0, 1, .leanAll (.sort 0) (.sort 0),
           #[⟨false, 0, 0, 0, 0,
-            .app (.recur 1 #[]) (.all (.recur 0 #[]) (.recur 0 #[]))⟩]⟩
+            .app (.recur 1 #[]) (.leanAll (.recur 0 #[]) (.recur 0 #[]))⟩]⟩
       let (ixon, blockAddr) := storeMutsWithProjs {}
         ⟨.muts #[.indc indB, .indc indI], #[], #[], #[.succ .zero]⟩
       failsContaining ixon (indcProjAddr blockAddr 1)
@@ -834,17 +835,17 @@ def recFixtureWithMetadata (indUnsafe recUnsafe : Bool) (recLvls : UInt64)
   let bAddr := indcProjAddr bBlockAddr 0
   let mkAddr := ctorProjAddr bBlockAddr 0 0
   -- B is not Prop → large eliminator: lvls 1, Sort (param 0).
-  let motiveTy : Ixon.Expr := .all (.ref 0 #[]) (.sort 0)
+  let motiveTy : Ixon.Expr := .leanAll (.ref 0 #[]) (.sort 0)
   let recTyp : Ixon.Expr :=
-    .all motiveTy
-      (.all (.app (.var 0) (.ref 1 #[]))
-        (.all (.ref 0 #[])
+    .leanAll motiveTy
+      (.leanAll (.app (.var 0) (.ref 1 #[]))
+        (.leanAll (.ref 0 #[])
           (.app (.var 2) (.var 0))))
   let ruleRhs : Ixon.Expr :=
     if tamperRule then
-      .lam motiveTy (.lam (.app (.var 0) (.ref 1 #[])) (.var 1))
+      .leanLam motiveTy (.leanLam (.app (.var 0) (.ref 1 #[])) (.var 1))
     else
-      .lam motiveTy (.lam (.app (.var 0) (.ref 1 #[])) (.var 0))
+      .leanLam motiveTy (.leanLam (.app (.var 0) (.ref 1 #[])) (.var 0))
   let recr : Ixon.Recursor :=
     ⟨k, recUnsafe, recLvls, 0, 0, 1, 1, recTyp, #[⟨0, ruleRhs⟩]⟩
   let (env, recBlockAddr) := storeMutsWithProjs env
@@ -864,9 +865,9 @@ def badMultiMotiveRecFixture : Ixon.Env × Address := Id.run do
   let bAddr := indcProjAddr bBlockAddr 0
   -- (C : B → Prop) → (junk : B) → (b : B) → C b
   let recTyp : Ixon.Expr :=
-    .all (.all (.ref 0 #[]) (.sort 0))
-      (.all (.ref 0 #[])
-        (.all (.ref 0 #[])
+    .leanAll (.leanAll (.ref 0 #[]) (.sort 0))
+      (.leanAll (.ref 0 #[])
+        (.leanAll (.ref 0 #[])
           (.app (.var 2) (.var 0))))
   let recr : Ixon.Recursor :=
     -- Keep large-eliminator metadata canonical so the fixture tests
@@ -919,7 +920,7 @@ def parFixtureEnv : Ixon.Env := Id.run do
   let (ixon, aAddr) := envA
   let idDefn : Ixon.Constant :=
     ⟨.defn ⟨.defn, .safe, 0,
-      .all (.ref 0 #[]) (.ref 0 #[]), .lam (.ref 0 #[]) (.var 0)⟩,
+      .leanAll (.ref 0 #[]) (.ref 0 #[]), .leanLam (.ref 0 #[]) (.var 0)⟩,
      #[], #[aAddr], #[]⟩
   let (ixon, _) := storeConst ixon idDefn
   let ind : Ixon.Inductive :=

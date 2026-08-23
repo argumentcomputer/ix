@@ -81,16 +81,35 @@ def exprUnits : TestSeq :=
     .share 0,
     .app (.var 0) (.var 1),
     .app (.app (.var 0) (.var 1)) (.var 2),  -- Nested apps (telescope)
-    .lam (.sort 0) (.var 0),
-    .lam (.sort 0) (.lam (.sort 1) (.var 0)),  -- Nested lams (telescope)
-    .all (.sort 0) (.var 0),
-    .all (.sort 0) (.all (.sort 1) (.var 0)),  -- Nested alls (telescope)
+    .lam .erased (.sort 0) (.var 0),
+    .lam .affine (.sort 0) (.lam .linear (.sort 1) (.var 0)),  -- Nested lams (telescope)
+    .all .many .shared (.sort 0) (.var 0),
+    .all .linear .unique (.sort 0)
+      (.all .erased .shared (.sort 1) (.var 0)),  -- Nested alls (telescope)
     .letE true (.sort 0) (.var 0) (.var 1),
     .letE false (.sort 0) (.var 0) (.var 1),
     .prj 0 1 (.var 0),
   ]
   cases.foldl (init := .done) fun acc e =>
     acc ++ test s!"Expr roundtrip: {repr e}" (exprSerde e)
+
+def exprRejects (bytes : Array UInt8) : Bool :=
+  match deExpr (ByteArray.mk bytes) with
+  | .error _ => true
+  | .ok _ => false
+
+/-- Directed malformed vectors for the v2 maximal-telescope grammar. -/
+def strictExprUnits : TestSeq :=
+  test "rejects empty app spine" (exprRejects #[0x70]) ++
+  test "rejects nested app base"
+    (exprRejects #[0x71, 0x71, 0x10, 0x11, 0x12]) ++
+  test "rejects nested lambda body"
+    (exprRejects #[0x81, 0x03, 0x00, 0x81, 0x03, 0x00, 0x10]) ++
+  test "rejects nested forall codomain"
+    (exprRejects #[0x91, 0x07, 0x00, 0x91, 0x07, 0x00, 0x10]) ++
+  test "rejects non-Boolean let flag" (exprRejects #[0xA2]) ++
+  test "rejects invalid lambda mode" (exprRejects #[0x81, 0x04]) ++
+  test "rejects invalid forall mode" (exprRejects #[0x91, 0x08])
 
 def constantUnits : TestSeq :=
   let defn := Definition.mk .defn .safe 0 (.sort 0) (.var 0)
@@ -118,7 +137,7 @@ def sharingTest1 : Bool :=
 
 def sharingTest2 : Bool :=
   let ty := Expr.sort 0
-  let e2 := Expr.app (.lam ty (.var 0)) (.lam ty (.var 1))
+  let e2 := Expr.app (.leanLam ty (.var 0)) (.leanLam ty (.var 1))
   let (_, sharing2) := Ix.Sharing.applySharing #[e2]
   sharing2.size == 1
 
@@ -131,7 +150,7 @@ def sharingTest3 : Bool :=
   sharing3.size >= 1
 
 def sharingTest4 : Bool :=
-  let e4 := Expr.lam (.sort 0) (.app (.var 0) (.var 0))
+  let e4 := Expr.leanLam (.sort 0) (.app (.var 0) (.var 0))
   let (rewritten4, _) := Ix.Sharing.applySharing #[e4]
   let serialized := serExpr rewritten4[0]!
   match deExpr serialized with
@@ -412,6 +431,7 @@ def envMerkleRootUnitTests : TestSeq :=
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
+  strictExprUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,
   -- Env serialization comparison unit tests

@@ -162,27 +162,27 @@ def constructorIds : Array (KId .anon) := #[falseId, trueId]
 /-- `Bool → Sort u`, encoded against the recursor block's first reference
 (`Bool`) and its sole universe parameter. -/
 def motiveType : Ixon.Expr :=
-  .all (.ref 0 #[]) (.sort 0)
+  .leanAll (.ref 0 #[]) (.sort 0)
 
 /-- The canonical enumeration recursor type
 `∀ motive, motive false → motive true → ∀ value, motive value`. -/
 def recursorType : Ixon.Expr :=
-  .all motiveType
-    (.all (.app (.var 0) (.ref 1 #[]))
-      (.all (.app (.var 1) (.ref 2 #[]))
-        (.all (.ref 0 #[]) (.app (.var 3) (.var 0)))))
+  .leanAll motiveType
+    (.leanAll (.app (.var 0) (.ref 1 #[]))
+      (.leanAll (.app (.var 1) (.ref 2 #[]))
+        (.leanAll (.ref 0 #[]) (.app (.var 3) (.var 0)))))
 
 /-- The `false` equation selects the first minor. -/
 def falseRuleRhs : Ixon.Expr :=
-  .lam motiveType
-    (.lam (.app (.var 0) (.ref 1 #[]))
-      (.lam (.app (.var 1) (.ref 2 #[])) (.var 1)))
+  .leanLam motiveType
+    (.leanLam (.app (.var 0) (.ref 1 #[]))
+      (.leanLam (.app (.var 1) (.ref 2 #[])) (.var 1)))
 
 /-- The `true` equation selects the second minor. -/
 def trueRuleRhs : Ixon.Expr :=
-  .lam motiveType
-    (.lam (.app (.var 0) (.ref 1 #[]))
-      (.lam (.app (.var 1) (.ref 2 #[])) (.var 0)))
+  .leanLam motiveType
+    (.leanLam (.app (.var 0) (.ref 1 #[]))
+      (.leanLam (.app (.var 1) (.ref 2 #[])) (.var 0)))
 
 def recursorIxon : Ixon.Recursor :=
   ⟨false, false, 1, 0, 0, 1, 2, recursorType,

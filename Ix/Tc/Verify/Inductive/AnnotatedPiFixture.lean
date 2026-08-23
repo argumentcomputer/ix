@@ -38,8 +38,8 @@ local instance anonKConstDecidableEq : DecidableEq (KConst .anon) :=
 /-- Anonymous syntax for `outParam.{u} : Sort u -> Sort u`. -/
 def outParamConstant : Ixon.Constant :=
   ⟨.defn ⟨.defn, .safe, 1,
-      .all (.sort 0) (.sort 0),
-      .lam (.sort 0) (.var 0)⟩,
+      .leanAll (.sort 0) (.sort 0),
+      .leanLam (.sort 0) (.var 0)⟩,
     #[], #[], #[.var 0]⟩
 
 def outParamStored : Ixon.Env × Address :=
@@ -59,8 +59,8 @@ def outParamIxonEnv : Ixon.Env :=
 def familyType : Ixon.Expr := .sort 0
 
 def mkType : Ixon.Expr :=
-  .all
-    (.all
+  .leanAll
+    (.leanAll
       (.app (.ref 0 #[0]) (.sort 1))
       (.recur 0 #[]))
     (.recur 0 #[])

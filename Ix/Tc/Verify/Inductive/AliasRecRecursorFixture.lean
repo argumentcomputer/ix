@@ -37,26 +37,26 @@ private def familyRef : Ixon.Expr := .ref 1 #[]
 private def constructorRef : Ixon.Expr := .ref 2 #[]
 
 private def motiveType : Ixon.Expr :=
-  .all familyRef (.sort 0)
+  .leanAll familyRef (.sort 0)
 
 private def inductionHypothesisType : Ixon.Expr :=
   .app (.var 1) (.var 0)
 
 private def minorType : Ixon.Expr :=
-  .all rawFieldType
-    (.all inductionHypothesisType
+  .leanAll rawFieldType
+    (.leanAll inductionHypothesisType
       (.app (.var 2) (.app constructorRef (.var 1))))
 
 def recursorType : Ixon.Expr :=
-  .all motiveType
-    (.all minorType
-      (.all familyRef (.app (.var 2) (.var 0))))
+  .leanAll motiveType
+    (.leanAll minorType
+      (.leanAll familyRef (.app (.var 2) (.var 0))))
 
 /-- `mk a (AliasRec.rec motive mk a)`. -/
 def mkRuleRhs : Ixon.Expr :=
-  .lam motiveType
-    (.lam minorType
-      (.lam rawFieldType
+  .leanLam motiveType
+    (.leanLam minorType
+      (.leanLam rawFieldType
         (.app (.app (.var 1) (.var 0))
           (.app
             (.app

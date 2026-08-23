@@ -38,8 +38,8 @@ local instance anonKConstDecidableEq : DecidableEq (KConst .anon) :=
 /-- Anonymous syntax for `RecAlias.{u} : Sort u → Sort u := id`. -/
 def recAliasConstant : Ixon.Constant :=
   ⟨.defn ⟨.defn, .safe, 1,
-      .all (.sort 0) (.sort 0),
-      .lam (.sort 0) (.var 0)⟩,
+      .leanAll (.sort 0) (.sort 0),
+      .leanLam (.sort 0) (.var 0)⟩,
     #[], #[], #[.var 0]⟩
 
 def recAliasStored : Ixon.Env × Address :=
@@ -62,7 +62,7 @@ def rawFieldType : Ixon.Expr :=
   .app (.ref 0 #[0]) (.recur 0 #[])
 
 def mkType : Ixon.Expr :=
-  .all rawFieldType (.recur 0 #[])
+  .leanAll rawFieldType (.recur 0 #[])
 
 def familyIxon : Ixon.Inductive :=
   ⟨false, 0, 0, 0, familyType,

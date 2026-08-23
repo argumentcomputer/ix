@@ -342,11 +342,23 @@ impl<'a> ExprCmp<'a> {
           }
           stack.push((va, vb));
         },
-        (Expr::App(f1, x1), Expr::App(f2, x2))
-        | (Expr::Lam(f1, x1), Expr::Lam(f2, x2))
-        | (Expr::All(f1, x1), Expr::All(f2, x2)) => {
+        (Expr::App(f1, x1), Expr::App(f2, x2)) => {
           stack.push((f1, f2));
           stack.push((x1, x2));
+        },
+        (Expr::Lam(u1, t1, b1), Expr::Lam(u2, t2, b2)) => {
+          if u1 != u2 {
+            return Ok(false);
+          }
+          stack.push((t1, t2));
+          stack.push((b1, b2));
+        },
+        (Expr::All(u1, o1, t1, b1), Expr::All(u2, o2, t2, b2)) => {
+          if u1 != u2 || o1 != o2 {
+            return Ok(false);
+          }
+          stack.push((t1, t2));
+          stack.push((b1, b2));
         },
         (Expr::Let(n1, t1, v1, b1), Expr::Let(n2, t2, v2, b2)) => {
           if n1 != n2 {
@@ -2729,7 +2741,12 @@ mod tests {
           let (o2, s2) = count_occ(a, sharing, affected, seen_shares);
           (o1 + o2, s1 + s2)
         },
-        E::Lam(t, b) | E::All(t, b) => {
+        E::Lam(_, t, b) => {
+          let (o1, s1) = count_occ(t, sharing, affected, seen_shares);
+          let (o2, s2) = count_occ(b, sharing, affected, seen_shares);
+          (o1 + o2, s1 + s2)
+        },
+        E::All(_, _, t, b) => {
           let (o1, s1) = count_occ(t, sharing, affected, seen_shares);
           let (o2, s2) = count_occ(b, sharing, affected, seen_shares);
           (o1 + o2, s1 + s2)

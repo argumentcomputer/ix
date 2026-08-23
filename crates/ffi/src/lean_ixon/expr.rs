@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::lean::LeanIxonExpr;
-use ixon::expr::Expr as IxonExpr;
+use ixon::expr::{Expr as IxonExpr, Owned as IxonOwned, Uses as IxonUses};
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
 /// Decode Array UInt64 from Lean.
@@ -80,20 +80,23 @@ impl LeanIxonExpr<LeanOwned> {
         ctor.set_obj(1, arg_obj);
         ctor
       },
-      IxonExpr::Lam(ty, body) => {
+      IxonExpr::Lam(uses, ty, body) => {
         let ty_obj = Self::build(ty);
         let body_obj = Self::build(body);
         let ctor = LeanIxonExpr::alloc(8);
         ctor.set_obj(0, ty_obj);
         ctor.set_obj(1, body_obj);
+        ctor.set_num_8(0, uses.to_bits());
         ctor
       },
-      IxonExpr::All(ty, body) => {
+      IxonExpr::All(uses, owned, ty, body) => {
         let ty_obj = Self::build(ty);
         let body_obj = Self::build(body);
         let ctor = LeanIxonExpr::alloc(9);
         ctor.set_obj(0, ty_obj);
         ctor.set_obj(1, body_obj);
+        ctor.set_num_8(0, uses.to_bits());
+        ctor.set_num_8(1, owned.to_bits());
         ctor
       },
       IxonExpr::Let(non_dep, ty, val, body) => {
@@ -171,10 +174,16 @@ impl<R: LeanRef> LeanIxonExpr<R> {
         Arc::new(LeanIxonExpr(ctor.get(1)).decode()),
       ),
       8 => IxonExpr::Lam(
+        IxonUses::from_bits(self.get_num_8(0))
+          .expect("invalid Ixon.Uses constructor tag"),
         Arc::new(LeanIxonExpr(ctor.get(0)).decode()),
         Arc::new(LeanIxonExpr(ctor.get(1)).decode()),
       ),
       9 => IxonExpr::All(
+        IxonUses::from_bits(self.get_num_8(0))
+          .expect("invalid Ixon.Uses constructor tag"),
+        IxonOwned::from_bits(self.get_num_8(1))
+          .expect("invalid Ixon.Owned constructor tag"),
         Arc::new(LeanIxonExpr(ctor.get(0)).decode()),
         Arc::new(LeanIxonExpr(ctor.get(1)).decode()),
       ),

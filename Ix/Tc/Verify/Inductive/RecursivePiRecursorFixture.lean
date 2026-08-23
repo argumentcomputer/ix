@@ -37,37 +37,37 @@ def recursorSharing : Array Ixon.Expr :=
     .app (.var 2) (.var 1),
     .app (.share 1) (.var 0),
     .app (.app (.var 4) (.var 1)) (.share 2),
-    .all (.share 0) (.share 3),
-    .all (.var 4) (.share 4),
+    .leanAll (.share 0) (.share 3),
+    .leanAll (.var 4) (.share 4),
     .app (.app (.var 3) (.var 0)) (.var 1),
     .ref 0 #[2],
     .app (.share 7) (.var 5),
     .app (.share 8) (.var 4),
     .app (.share 9) (.var 1),
-    .all (.share 6) (.share 10),
+    .leanAll (.share 6) (.share 10),
     .app (.share 7) (.var 2),
     .app (.share 12) (.var 1),
     .app (.share 13) (.var 0),
     .app (.ref 1 #[2]) (.var 5),
     .app (.share 15) (.var 4),
     .app (.share 16) (.var 2),
-    .all (.var 0) (.all (.var 1) (.sort 0)),
-    .all (.share 14) (.sort 1),
-    .all (.var 1) (.share 19),
-    .all (.var 3) (.share 11),
+    .leanAll (.var 0) (.leanAll (.var 1) (.sort 0)),
+    .leanAll (.share 14) (.sort 1),
+    .leanAll (.var 1) (.share 19),
+    .leanAll (.var 3) (.share 11),
     .app (.share 17) (.var 1),
     .app (.app (.var 3) (.var 2)) (.share 22),
-    .all (.share 5) (.share 23),
-    .all (.share 21) (.share 24),
-    .all (.var 2) (.share 25)]
+    .leanAll (.share 5) (.share 23),
+    .leanAll (.share 21) (.share 24),
+    .leanAll (.var 2) (.share 25)]
 
 def recursorType : Ixon.Expr :=
-  .all (.sort 2)
-    (.all (.share 18)
-      (.all (.share 20)
-        (.all (.share 26)
-          (.all (.var 3)
-            (.all
+  .leanAll (.sort 2)
+    (.leanAll (.share 18)
+      (.leanAll (.share 20)
+        (.leanAll (.share 26)
+          (.leanAll (.var 3)
+            (.leanAll
               (.app
                 (.app (.app (.share 7) (.var 4)) (.var 3))
                 (.var 0))
@@ -77,21 +77,21 @@ def recursorType : Ixon.Expr :=
 arguments of the generated induction hypothesis, and the recursive call
 targets `h y hy`. -/
 def introRuleRhs : Ixon.Expr :=
-  .lam (.sort 2)
-    (.lam (.share 18)
-      (.lam (.share 20)
-        (.lam (.share 26)
-          (.lam (.var 3)
-            (.lam
-              (.all (.var 4)
-                (.all
+  .leanLam (.sort 2)
+    (.leanLam (.share 18)
+      (.leanLam (.share 20)
+        (.leanLam (.share 26)
+          (.leanLam (.var 3)
+            (.leanLam
+              (.leanAll (.var 4)
+                (.leanAll
                   (.app (.app (.var 4) (.var 0)) (.var 1))
                   (.app
                     (.app (.app (.share 7) (.var 6)) (.var 5))
                     (.var 1))))
               (.app (.share 2)
-                (.lam (.var 5)
-                  (.lam
+                (.leanLam (.var 5)
+                  (.leanLam
                     (.app (.app (.var 5) (.var 0)) (.var 2))
                     (.app
                       (.app

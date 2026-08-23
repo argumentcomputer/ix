@@ -11,11 +11,15 @@ module
 public import Ix.Address
 public import Ix.Common
 public import Ix.Environment
+public import Ix.IxonMode
 public import Ix.Merkle
 
 public section
 
 namespace Ixon
+
+/-- Stable identifier for the v2 Ixon wire grammar. -/
+def wireFormatId : String := "ixon-v2"
 
 /-! ## Serialization Monad and Typeclass -/
 
@@ -276,8 +280,8 @@ inductive Expr where
   | str : UInt64 → Expr
   | nat : UInt64 → Expr
   | app : Expr → Expr → Expr
-  | lam : Expr → Expr → Expr
-  | all : Expr → Expr → Expr
+  | lam : Uses → Expr → Expr → Expr
+  | all : Uses → Owned → Expr → Expr → Expr
   | letE : Bool → Expr → Expr → Expr → Expr
   | share : UInt64 → Expr
   deriving BEq, Repr, Inhabited, Hashable
@@ -295,6 +299,24 @@ namespace Expr
   def FLAG_ALL : UInt8 := 0x9
   def FLAG_LET : UInt8 := 0xA
   def FLAG_SHARE : UInt8 := 0xB
+
+  /-- Embed an ordinary Lean lambda in Ixon v2. -/
+  def leanLam (ty body : Expr) : Expr := .lam .many ty body
+
+  /-- Embed an ordinary Lean forall in Ixon v2. -/
+  def leanAll (ty body : Expr) : Expr := .all .many .shared ty body
+
+  /-- The mode-free Lean fragment embedded in Ixon v2. -/
+  def leanFragment : Expr → Bool
+    | .lam .many ty body => leanFragment ty && leanFragment body
+    | .lam .. => false
+    | .all .many .shared ty body => leanFragment ty && leanFragment body
+    | .all .. => false
+    | .app fn arg => leanFragment fn && leanFragment arg
+    | .prj _ _ val => leanFragment val
+    | .letE _ ty val body =>
+      leanFragment ty && leanFragment val && leanFragment body
+    | _ => true
 end Expr
 
 /-! ## Constant Types -/
@@ -747,18 +769,18 @@ instance : Serialize Univ where
 
 /-! ## Expr Serialization -/
 
-/-- Collect all types in a lambda telescope. -/
-def Expr.collectLamTypes : Expr → List Expr × Expr
-  | .lam ty body =>
-    let (tys, base) := body.collectLamTypes
-    (ty :: tys, base)
+/-- Collect all mode/type pairs in a lambda telescope. -/
+def Expr.collectLamBinders : Expr → List (Uses × Expr) × Expr
+  | .lam uses ty body =>
+    let (binders, base) := body.collectLamBinders
+    ((uses, ty) :: binders, base)
   | e => ([], e)
 
-/-- Collect all types in a forall telescope. -/
-def Expr.collectAllTypes : Expr → List Expr × Expr
-  | .all ty body =>
-    let (tys, base) := body.collectAllTypes
-    (ty :: tys, base)
+/-- Collect all mode/type triples in a forall telescope. -/
+def Expr.collectAllBinders : Expr → List (Uses × Owned × Expr) × Expr
+  | .all uses owned ty body =>
+    let (binders, base) := body.collectAllBinders
+    ((uses, owned, ty) :: binders, base)
   | e => ([], e)
 
 /-- Collect all arguments in an application telescope (in application order). -/
@@ -793,15 +815,19 @@ partial def putExpr : Expr → PutM Unit
     putTag4 ⟨Expr.FLAG_APP, args.length.toUInt64⟩
     putExpr base
     for arg in args do putExpr arg
-  | e@(.lam _ _) => do
-    let (tys, base) := e.collectLamTypes
-    putTag4 ⟨Expr.FLAG_LAM, tys.length.toUInt64⟩
-    for ty in tys do putExpr ty
+  | e@(.lam _ _ _) => do
+    let (binders, base) := e.collectLamBinders
+    putTag4 ⟨Expr.FLAG_LAM, binders.length.toUInt64⟩
+    for (uses, ty) in binders do
+      putU8 uses.toBits
+      putExpr ty
     putExpr base
-  | e@(.all _ _) => do
-    let (tys, base) := e.collectAllTypes
-    putTag4 ⟨Expr.FLAG_ALL, tys.length.toUInt64⟩
-    for ty in tys do putExpr ty
+  | e@(.all _ _ _ _) => do
+    let (binders, base) := e.collectAllBinders
+    putTag4 ⟨Expr.FLAG_ALL, binders.length.toUInt64⟩
+    for (uses, owned, ty) in binders do
+      putU8 (uses.toBits ||| (owned.toBits <<< 2))
+      putExpr ty
     putExpr base
   | .letE nonDep ty val body => do
     putTag4 ⟨Expr.FLAG_LET, if nonDep then 1 else 0⟩
@@ -834,32 +860,59 @@ partial def getExpr : GetM Expr := do
   | 0x5 => return .str tag.size
   | 0x6 => return .nat tag.size
   | 0x7 => do  -- APP (telescope)
+    if tag.size == 0 then
+      throw "getExpr: empty app spine"
     let base ← getExpr
+    match base with
+    | .app .. => throw "getExpr: non-canonical app base"
+    | _ => pure ()
     let mut result := base
     for _ in [0:tag.size.toNat] do
       let arg ← getExpr
       result := .app result arg
     return result
   | 0x8 => do  -- LAM (telescope)
-    let mut tys := #[]
+    if tag.size == 0 then
+      throw "getExpr: Lam with zero binders"
+    let mut binders := #[]
     for _ in [0:tag.size.toNat] do
-      tys := tys.push (← getExpr)
+      let mode ← getU8
+      let some uses := Uses.ofBits? mode
+        | throw s!"getExpr: invalid lambda mode {mode}"
+      binders := binders.push (uses, ← getExpr)
     let body ← getExpr
+    match body with
+    | .lam .. => throw "getExpr: non-canonical lam telescope"
+    | _ => pure ()
     let mut result := body
-    for ty in tys.reverse do
-      result := .lam ty result
+    for (uses, ty) in binders.reverse do
+      result := .lam uses ty result
     return result
   | 0x9 => do  -- ALL (telescope)
-    let mut tys := #[]
+    if tag.size == 0 then
+      throw "getExpr: All with zero binders"
+    let mut binders := #[]
     for _ in [0:tag.size.toNat] do
-      tys := tys.push (← getExpr)
+      let mode ← getU8
+      if mode > 7 then
+        throw s!"getExpr: invalid forall mode {mode}"
+      let some uses := Uses.ofBits? (mode &&& 0x03)
+        | throw s!"getExpr: invalid forall usage mode {mode}"
+      let some owned := Owned.ofBits? ((mode >>> 2) &&& 0x01)
+        | throw s!"getExpr: invalid forall ownership mode {mode}"
+      binders := binders.push (uses, owned, ← getExpr)
     let body ← getExpr
+    match body with
+    | .all .. => throw "getExpr: non-canonical all telescope"
+    | _ => pure ()
     let mut result := body
-    for ty in tys.reverse do
-      result := .all ty result
+    for (uses, owned, ty) in binders.reverse do
+      result := .all uses owned ty result
     return result
   | 0xA => do  -- LET
-    let nonDep := tag.size != 0
+    if tag.size > 1 then
+      throw s!"getExpr: invalid letE nonDep {tag.size}"
+    let nonDep := tag.size == 1
     let ty ← getExpr
     let val ← getExpr
     let body ← getExpr
@@ -2237,7 +2290,7 @@ def FLAG : UInt8 := 0xE
     mismatch and there is no back-compat reading of old versions —
     `.ixe` files are regenerated artifacts. Mirrors Rust
     `Env::VERSION` in `crates/ixon/src/serialize.rs`. -/
-def VERSION : UInt64 := 1
+def VERSION : UInt64 := 2
 
 /-- Serialize a name component (references parent by address).
     Format: tag (1 byte) + parent_addr (32 bytes) + data -/

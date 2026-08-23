@@ -1212,7 +1212,7 @@ fn ingress_expr<M: KernelMode>(
             }
           },
 
-          IxonExpr::Lam(ty, body) => {
+          IxonExpr::Lam(_, ty, body) => {
             bump_convert_stat!(stats, lam_nodes);
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
@@ -1242,7 +1242,7 @@ fn ingress_expr<M: KernelMode>(
             });
           },
 
-          IxonExpr::All(ty, body) => {
+          IxonExpr::All(_, _, ty, body) => {
             bump_convert_stat!(stats, all_nodes);
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (

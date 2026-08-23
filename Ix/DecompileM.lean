@@ -545,25 +545,25 @@ but canonical telescope has only {canonicalArgs.size} args")
     pure (applyMdata (Ix.Expr.mkApp fnExpr argExpr) mdataLayers)
 
   -- Lam with arena metadata
-  | .binder nameAddr info tyChild bodyChild, .lam ty body => do
+  | .binder nameAddr info tyChild bodyChild, .lam _ ty body => do
     let binderName ← lookupNameAddrOrAnon nameAddr
     let tyExpr ← decompileExpr ty tyChild
     let bodyExpr ← decompileExpr body bodyChild
     pure (applyMdata (Ix.Expr.mkLam binderName tyExpr bodyExpr info) mdataLayers)
 
-  | _, .lam ty body => do
+  | _, .lam _ ty body => do
     let tyExpr ← decompileExpr ty UInt64.MAX
     let bodyExpr ← decompileExpr body UInt64.MAX
     pure (applyMdata (Ix.Expr.mkLam Ix.Name.mkAnon tyExpr bodyExpr .default) mdataLayers)
 
   -- ForallE with arena metadata
-  | .binder nameAddr info tyChild bodyChild, .all ty body => do
+  | .binder nameAddr info tyChild bodyChild, .all _ _ ty body => do
     let binderName ← lookupNameAddrOrAnon nameAddr
     let tyExpr ← decompileExpr ty tyChild
     let bodyExpr ← decompileExpr body bodyChild
     pure (applyMdata (Ix.Expr.mkForallE binderName tyExpr bodyExpr info) mdataLayers)
 
-  | _, .all ty body => do
+  | _, .all _ _ ty body => do
     let tyExpr ← decompileExpr ty UInt64.MAX
     let bodyExpr ← decompileExpr body UInt64.MAX
     pure (applyMdata (Ix.Expr.mkForallE Ix.Name.mkAnon tyExpr bodyExpr .default) mdataLayers)

@@ -531,7 +531,7 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
         | _ =>
           stack := stack.push (.appDone mdata)
             |>.push (.process a currentIdx) |>.push (.process f currentIdx)
-      | .lam ty body =>
+      | .lam _ ty body =>
         let (name, bi, tyArena, bodyArena) ← match node with
           | .binder nameAddr info tyChild bodyChild =>
             pure (resolveName ixonEnv nameAddr, info, tyChild, bodyChild)
@@ -543,7 +543,7 @@ def ingressExprMeta (ixonEnv : Ixon.Env) (ctx : IngressMetaCtx)
           |>.push (.process body bodyArena)
           |>.push (.binderPush name)
           |>.push (.process ty tyArena)
-      | .all ty body =>
+      | .all _ _ ty body =>
         let (name, bi, tyArena, bodyArena) ← match node with
           | .binder nameAddr info tyChild bodyChild =>
             pure (resolveName ixonEnv nameAddr, info, tyChild, bodyChild)

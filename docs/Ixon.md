@@ -241,8 +241,8 @@ pub enum Expr {
     Str(u64),                               // String literal (refs index to blob)
     Nat(u64),                               // Natural literal (refs index to blob)
     App(Arc<Expr>, Arc<Expr>),              // Application
-    Lam(Arc<Expr>, Arc<Expr>),              // Lambda (type, body)
-    All(Arc<Expr>, Arc<Expr>),              // Forall/Pi (type, body)
+    Lam(Uses, Arc<Expr>, Arc<Expr>),        // Lambda (usage, type, body)
+    All(Uses, Owned, Arc<Expr>, Arc<Expr>), // Forall/Pi (usage, ownership, type, body)
     Let(bool, Arc<Expr>, Arc<Expr>, Arc<Expr>), // Let (non_dep, type, value, body)
     Share(u64),                             // Reference to sharing vector
 }
@@ -252,7 +252,10 @@ pub enum Expr {
 
 1. **No names**: Binders have no names—they use de Bruijn indices. Names are stored in metadata.
 
-2. **No binder info**: Implicit/explicit info is stored in metadata.
+2. **V2 binder modes**: Lambdas and foralls carry `Uses`
+   (`erased`, `linear`, `affine`, or `many`); foralls also carry `Owned`
+   (`unique` or `shared`). Implicit/explicit binder info remains metadata.
+   Ordinary Lean compilation emits `many`/`shared`.
 
 3. **Indirection tables**: `Ref`, `Str`, `Nat` store indices into the constant's `refs` table, not raw addresses. `Sort` stores an index into the `univs` table.
 
@@ -270,8 +273,8 @@ pub enum Expr {
 | 0x5 | Str | Refs index | None |
 | 0x6 | Nat | Refs index | None |
 | 0x7 | App | App count | Function + args (telescoped) |
-| 0x8 | Lam | Binder count | Types + body (telescoped) |
-| 0x9 | All | Binder count | Types + body (telescoped) |
+| 0x8 | Lam | Binder count | `(Uses byte + type)` per binder + body |
+| 0x9 | All | Binder count | `(Uses/Owned byte + type)` per binder + body |
 | 0xA | Let | 0=dep, 1=non_dep | Type + value + body |
 | 0xB | Share | Share index | None |
 
@@ -288,10 +291,14 @@ Tag4 { flag: 0x7, size: 3 }  // 3 applications
 **Lambdas**: `Lam(t1, Lam(t2, Lam(t3, body)))` becomes:
 ```
 Tag4 { flag: 0x8, size: 3 }  // 3 binders
-+ t1 + t2 + t3 + body
++ uses1 + t1 + uses2 + t2 + uses3 + t3 + body
 ```
 
-**Foralls**: Same as lambdas with flag 0x9.
+Lambda mode bytes are `Uses` in bits 0–1. Forall mode bytes use bits 0–1
+for `Uses` and bit 2 for `Owned`; other bits are invalid. Foralls otherwise
+use the same telescope layout with flag 0x9. Readers require nonempty,
+maximal telescopes and reject a nested constructor of the same kind as the
+decoded base/body.
 
 ### Expression Examples
 
@@ -311,9 +318,9 @@ Tag4 { flag: 0x2, size: 2 }
 + Tag0(1)  // second univ index
 Bytes: 0x22 0x00 0x00 0x01
 
-Expr::Lam(type_expr, Lam(type_expr2, body))  // 2-binder lambda
+Expr::Lam(Many, type_expr, Lam(Affine, type_expr2, body))
 Tag4 { flag: 0x8, size: 2 }
-+ type_expr + type_expr2 + body
++ 0x03 + type_expr + 0x02 + type_expr2 + body
 
 Expr::Share(5)  // Reference to sharing[5]
 Tag4 { flag: 0xB, size: 5 }
@@ -860,8 +867,9 @@ The .ixe layout is a `Tag4(0xE, VERSION)` header byte followed by a
 32-byte canonical merkle root, the bundle header fields, and then 6
 sections (hot data first, metadata last).
 
-The Tag4 size field is the **format version** (`Env::VERSION`,
-currently `1`, so the first byte of a v1 file is `0xE1`). Any change
+The format has the stable identifier `ixon-v2`. The Tag4 size field is the
+numeric **format version** (`Env::VERSION`, currently `2`, so the first byte
+of a v2 file is `0xE2`). Any change
 to serialized bytes bumps the version; every reader
 (`read_env_header` on the Rust side, `Ixon.getEnv` /
 `getEnvVerifiedLazy` on the Lean side) rejects a mismatch with an
@@ -871,7 +879,7 @@ artifacts. Versions 0–7 cost zero additional bytes (inline Tag4
 size); later versions cost a trimmed varint.
 
 ```
-Header:      Tag4 { flag: 0xE, size: VERSION }  -- 0xE1 for version 1
+Header:      Tag4 { flag: 0xE, size: VERSION }  -- 0xE2 for version 2
 Root:        32 bytes                     -- canonical merkle root over
                                             consts.keys(); for empty
                                             const sets this is the
@@ -1276,8 +1284,8 @@ The `compile_expr` function transforms Lean expressions:
 | `Sort(level)` | `Sort(idx)` | Level added to univs table |
 | `Const(name, levels)` | `Ref(idx, univ_idxs)` | Name resolved to address |
 | `Const(name, levels)` in mutual | `Rec(ctx_idx, univ_idxs)` | Uses mutual context |
-| `Lam(name, ty, body, info)` | `Lam(ty, body)` | Name/info to metadata |
-| `ForallE(name, ty, body, info)` | `All(ty, body)` | Name/info to metadata |
+| `Lam(name, ty, body, info)` | `Lam(many, ty, body)` | Conservative v2 mode; name/info to metadata |
+| `ForallE(name, ty, body, info)` | `All(many, shared, ty, body)` | Conservative v2 modes; name/info to metadata |
 | `LetE(name, ty, val, body, nd)` | `Let(nd, ty, val, body)` | Name to metadata |
 | `Proj(type, idx, val)` | `Prj(type_idx, idx, val)` | Type name resolved |
 | `Lit(Nat n)` | `Nat(idx)` | Bytes stored in blobs |

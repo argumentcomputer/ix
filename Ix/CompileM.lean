@@ -747,7 +747,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     let (t, tyRoot) ← compileExpr ty
     let (b, bodyRoot) ← compileExpr body
     let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
-    pure (.lam t b, root)
+    pure (.leanLam t b, root)
 
   | .forallE name ty body bi _ => do
     compileName name
@@ -755,7 +755,7 @@ partial def compileExpr (e : Expr) : CompileM (Ixon.Expr × UInt64) := do
     let (t, tyRoot) ← compileExpr ty
     let (b, bodyRoot) ← compileExpr body
     let root ← allocArenaNode (.binder nameAddr bi tyRoot bodyRoot)
-    pure (.all t b, root)
+    pure (.leanAll t b, root)
 
   | .letE name ty val body nonDep _ => do
     compileName name
@@ -1576,8 +1576,8 @@ partial def countShareRefs : Ixon.Expr → Nat
   | .share _ => 1
   | .prj _ _ val => countShareRefs val
   | .app f a => countShareRefs f + countShareRefs a
-  | .lam ty body => countShareRefs ty + countShareRefs body
-  | .all ty body => countShareRefs ty + countShareRefs body
+  | .lam _ ty body => countShareRefs ty + countShareRefs body
+  | .all _ _ ty body => countShareRefs ty + countShareRefs body
   | .letE _ ty val body => countShareRefs ty + countShareRefs val + countShareRefs body
   | _ => 0
 

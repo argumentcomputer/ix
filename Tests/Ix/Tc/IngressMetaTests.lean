@@ -81,8 +81,8 @@ def envMetaDefn : Ixon.Env × Address × Address := Id.run do
   let (env, aAddr) := envA
   -- Value `fun (x : @A) => x`; type `@A → @A` (ref 0 = aAddr).
   let c : Ixon.Constant :=
-    ⟨.defn ⟨.defn, .safe, 0, .all (.ref 0 #[]) (.ref 0 #[]),
-      .lam (.ref 0 #[]) (.var 0)⟩,
+    ⟨.defn ⟨.defn, .safe, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]),
+      .leanLam (.ref 0 #[]) (.var 0)⟩,
      #[], #[aAddr], #[]⟩
   let (env, dAddr) := storeConst env c
   -- Arena (bottom-up): [0] leaf (A ref of ty domain — refs are hard, so
@@ -184,7 +184,7 @@ open Tests.Tc.Fixtures in
 def metaLamSynthFallback : Bool := Id.run do
   let (env, aAddr) := envA
   let c : Ixon.Constant :=
-    ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], .lam (.ref 0 #[]) (.var 0)⟩,
+    ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[], .leanLam (.ref 0 #[]) (.var 0)⟩,
      #[], #[aAddr], #[]⟩
   let (env, dAddr) := storeConst env c
   -- Type root must still resolve: give the type a `.ref` node; leave the
@@ -210,13 +210,13 @@ def metaCallSiteFixture : Bool := Id.run do
   -- g : A := @f @A-axiom? Keep it minimal: value `(@f x…)` needs a bound
   -- var — use `fun (x : A) => f x` with a callSite over the `f x` spine.
   let f : Ixon.Constant :=
-    ⟨.defn ⟨.defn, .safe, 0, .all (.ref 0 #[]) (.ref 0 #[]),
-      .lam (.ref 0 #[]) (.var 0)⟩, #[], #[aAddr], #[]⟩
+    ⟨.defn ⟨.defn, .safe, 0, .leanAll (.ref 0 #[]) (.ref 0 #[]),
+      .leanLam (.ref 0 #[]) (.var 0)⟩, #[], #[aAddr], #[]⟩
   let (env, fAddr) := storeConst env f
   let nF := Ix.Name.mkStr Ix.Name.mkAnon "f"
   let g : Ixon.Constant :=
     ⟨.defn ⟨.defn, .safe, 0, .ref 0 #[],
-      .lam (.ref 0 #[]) (.app (.ref 1 #[]) (.var 0))⟩,
+      .leanLam (.ref 0 #[]) (.app (.ref 1 #[]) (.var 0))⟩,
      #[], #[aAddr, fAddr], #[]⟩
   let (env, gAddr) := storeConst env g
   let nG := Ix.Name.mkStr Ix.Name.mkAnon "g"
@@ -332,7 +332,7 @@ open Tests.Tc.Fixtures in
     occurrences share a semantic address but differ in decoration. -/
 def envSortTwins : Ixon.Env × Address := Id.run do
   let c : Ixon.Constant :=
-    ⟨.axio ⟨false, 1, .all (.sort 0) (.sort 1)⟩, #[], #[],
+    ⟨.axio ⟨false, 1, .leanAll (.sort 0) (.sort 1)⟩, #[], #[],
      #[weirdU, .var 0]⟩
   let (env, tAddr) := storeConst {} c
   let arena : Ixon.ExprMetaArena := ⟨#[
@@ -382,7 +382,7 @@ def envConstTwins : Ixon.Env × Address × Address := Id.run do
   let f : Ixon.Constant := ⟨.axio ⟨false, 1, .sort 0⟩, #[], #[], #[.var 0]⟩
   let (env, fAddr) := storeConst {} f
   let g : Ixon.Constant :=
-    ⟨.axio ⟨false, 1, .all (.ref 0 #[0]) (.ref 0 #[1])⟩, #[], #[fAddr],
+    ⟨.axio ⟨false, 1, .leanAll (.ref 0 #[0]) (.ref 0 #[1])⟩, #[], #[fAddr],
      #[weirdU, .var 0]⟩
   let (env, gAddr) := storeConst env g
   let arena : Ixon.ExprMetaArena := ⟨#[

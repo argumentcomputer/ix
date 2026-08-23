@@ -39,19 +39,19 @@ private def accApp (alpha relation index : Ixon.Expr) : Ixon.Expr :=
 
 Universe-table position zero is `u`; position one is `0` (Prop). -/
 def familyType : Ixon.Expr :=
-  .all (.sort 0)
-    (.all (.all (.var 0) (.all (.var 1) (.sort 1)))
-      (.all (.var 1) (.sort 1)))
+  .leanAll (.sort 0)
+    (.leanAll (.leanAll (.var 0) (.leanAll (.var 1) (.sort 1)))
+      (.leanAll (.var 1) (.sort 1)))
 
 /-- The raw `Acc.intro` type. The recursive field is the fourth outer binder
 and opens `b` plus the relation proof before reaching `Acc r b`. -/
 def introType : Ixon.Expr :=
-  .all (.sort 0)
-    (.all (.all (.var 0) (.all (.var 1) (.sort 1)))
-      (.all (.var 1)
-        (.all
-          (.all (.var 2)
-            (.all
+  .leanAll (.sort 0)
+    (.leanAll (.leanAll (.var 0) (.leanAll (.var 1) (.sort 1)))
+      (.leanAll (.var 1)
+        (.leanAll
+          (.leanAll (.var 2)
+            (.leanAll
               (.app (.app (.var 2) (.var 0)) (.var 1))
               (accApp (.var 4) (.var 3) (.var 1))))
           (accApp (.var 3) (.var 2) (.var 1)))))

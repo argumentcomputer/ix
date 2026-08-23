@@ -39,18 +39,20 @@ inductive DeclReference (sharing : Array Ixon.Expr)
   | appArg {fn arg : Ixon.Expr} {target : Address} :
       DeclReference sharing refs arg target →
       DeclReference sharing refs (.app fn arg) target
-  | lamType {type body : Ixon.Expr} {target : Address} :
+  | lamType {uses : Ixon.Uses} {type body : Ixon.Expr} {target : Address} :
       DeclReference sharing refs type target →
-      DeclReference sharing refs (.lam type body) target
-  | lamBody {type body : Ixon.Expr} {target : Address} :
+      DeclReference sharing refs (.lam uses type body) target
+  | lamBody {uses : Ixon.Uses} {type body : Ixon.Expr} {target : Address} :
       DeclReference sharing refs body target →
-      DeclReference sharing refs (.lam type body) target
-  | allType {type body : Ixon.Expr} {target : Address} :
+      DeclReference sharing refs (.lam uses type body) target
+  | allType {uses : Ixon.Uses} {owned : Ixon.Owned}
+      {type body : Ixon.Expr} {target : Address} :
       DeclReference sharing refs type target →
-      DeclReference sharing refs (.all type body) target
-  | allBody {type body : Ixon.Expr} {target : Address} :
+      DeclReference sharing refs (.all uses owned type body) target
+  | allBody {uses : Ixon.Uses} {owned : Ixon.Owned}
+      {type body : Ixon.Expr} {target : Address} :
       DeclReference sharing refs body target →
-      DeclReference sharing refs (.all type body) target
+      DeclReference sharing refs (.all uses owned type body) target
   | letType {nondep : Bool} {type value body : Ixon.Expr}
       {target : Address} :
       DeclReference sharing refs type target →

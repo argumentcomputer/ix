@@ -34,19 +34,19 @@ private def familyRef : Ixon.Expr := .ref 0 #[]
 private def constructorRef : Ixon.Expr := .ref 1 #[]
 
 private def motiveType : Ixon.Expr :=
-  .all familyRef (.sort 0)
+  .leanAll familyRef (.sort 0)
 
 private def minorType : Ixon.Expr :=
   .app (.var 0) constructorRef
 
 def recursorType : Ixon.Expr :=
-  .all motiveType
-    (.all minorType
-      (.all familyRef (.app (.var 2) (.var 0))))
+  .leanAll motiveType
+    (.leanAll minorType
+      (.leanAll familyRef (.app (.var 2) (.var 0))))
 
 /-- The sole equation selects the sole minor premise. -/
 def mkRuleRhs : Ixon.Expr :=
-  .lam motiveType (.lam minorType (.var 0))
+  .leanLam motiveType (.leanLam minorType (.var 0))
 
 def recursorIxon : Ixon.Recursor :=
   ⟨false, false, 1, 0, 0, 1, 1, recursorType,

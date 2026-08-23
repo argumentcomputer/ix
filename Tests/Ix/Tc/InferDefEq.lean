@@ -140,7 +140,7 @@ def baseEnv : AnonEnv × Address × Address × Address := Id.run do
   let (ixon, aAddr) := Tests.Tc.Fixtures.envA
   let idDefn : Ixon.Constant :=
     ⟨.defn ⟨.defn, .safe, 0,
-      .all (.ref 0 #[]) (.ref 0 #[]), .lam (.ref 0 #[]) (.var 0)⟩,
+      .leanAll (.ref 0 #[]) (.ref 0 #[]), .leanLam (.ref 0 #[]) (.var 0)⟩,
      #[], #[aAddr], #[]⟩
   let (ixon, idAddr) := storeConst ixon idDefn
   let cAxio : Ixon.Constant := ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[aAddr], #[]⟩
@@ -259,7 +259,7 @@ def defEqAdvanced : TestSeq :=
   ++ test "lambda eta (λ x. f x ≡ f)"
     ((let (ixon, aAddr) := Tests.Tc.Fixtures.envA
       let fAxio : Ixon.Constant :=
-        ⟨.axio ⟨false, 0, .all (.ref 0 #[]) (.ref 0 #[])⟩, #[], #[aAddr], #[]⟩
+        ⟨.axio ⟨false, 0, .leanAll (.ref 0 #[]) (.ref 0 #[])⟩, #[], #[aAddr], #[]⟩
       let (ixon, fAddr) := storeConst ixon fAxio
       let env := ingressEnvOf (ixon, aAddr)
       let lam := KExpr.mkLam () () (pAddr aAddr)
@@ -289,7 +289,7 @@ def defEqAdvanced : TestSeq :=
       let indS : Ixon.Inductive :=
         ⟨false, 0, 0, 0, .sort 0,
           #[⟨false, 0, 0, 0, 2,
-            .all (.ref 0 #[]) (.all (.ref 0 #[]) (.recur 0 #[]))⟩]⟩
+            .leanAll (.ref 0 #[]) (.leanAll (.ref 0 #[]) (.recur 0 #[]))⟩]⟩
       let blockS : Ixon.Constant :=
         ⟨.muts #[.indc indS], #[], #[bAddr], #[.succ .zero]⟩
       let (ixon, blockSAddr) := storeMutsWithProjs ixon blockS
@@ -310,8 +310,9 @@ def defEqAdvanced : TestSeq :=
       -- = 2, then the major's domain must be E).
       let recr : Ixon.Recursor :=
         ⟨true, false, 0, 0, 0, 1, 1,
-          .all (.sort 0) (.all (.sort 0) (.all (.recur 0 #[]) (.sort 0))),
-          #[⟨0, .lam (.sort 0) (.lam (.sort 0) (.var 0))⟩]⟩
+          .leanAll (.sort 0)
+            (.leanAll (.sort 0) (.leanAll (.recur 0 #[]) (.sort 0))),
+          #[⟨0, .leanLam (.sort 0) (.leanLam (.sort 0) (.var 0))⟩]⟩
       let block : Ixon.Constant :=
         ⟨.muts #[.indc ind, .recr recr], #[], #[], #[.succ .zero]⟩
       let (ixon, blockAddr) := storeMutsWithProjs {} block

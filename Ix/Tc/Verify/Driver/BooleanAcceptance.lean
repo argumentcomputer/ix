@@ -106,25 +106,25 @@ def recursorProjectionConstant : Ixon.Constant :=
 
 private theorem sourceAddressesNative :
     orderedAnonConstAddrs recursorIxonEnv =
-      #[recursorBlockAddress, trueId.addr, familyBlockAddress,
-        recursorId.addr, falseId.addr, familyId.addr] := by
+      #[recursorId.addr, recursorBlockAddress, trueId.addr,
+        familyBlockAddress, falseId.addr, familyId.addr] := by
   native_decide
 
 theorem sourceAddresses :
     orderedAnonConstAddrs recursorIxonEnv =
-      #[recursorBlockAddress, trueId.addr, familyBlockAddress,
-        recursorId.addr, falseId.addr, familyId.addr] :=
+      #[recursorId.addr, recursorBlockAddress, trueId.addr,
+        familyBlockAddress, falseId.addr, familyId.addr] :=
   sourceAddressesNative
 
 private theorem sourceKeysNative :
     recursorIxonEnv.consts.keys =
-      [recursorBlockAddress, recursorId.addr, falseId.addr,
+      [recursorBlockAddress, falseId.addr, recursorId.addr,
         trueId.addr, familyBlockAddress, familyId.addr] := by
   native_decide
 
 private theorem sourceAddressesNodupNative :
-    (#[recursorBlockAddress, trueId.addr, familyBlockAddress,
-      recursorId.addr, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
+    (#[recursorId.addr, recursorBlockAddress, trueId.addr,
+      familyBlockAddress, falseId.addr, familyId.addr] : Array Address).toList.Nodup := by
   native_decide
 
 private theorem recursorTargetsNonemptyNative :
@@ -140,7 +140,7 @@ is used to classify arbitrary successful lookups, independently of the
 ordering implementation used by `buildAnonWork`. -/
 theorem sourceKeys :
     recursorIxonEnv.consts.keys =
-      [recursorBlockAddress, recursorId.addr, falseId.addr,
+      [recursorBlockAddress, falseId.addr, recursorId.addr,
         trueId.addr, familyBlockAddress, familyId.addr] :=
   sourceKeysNative
 
@@ -201,6 +201,9 @@ private theorem sourceEntryCases {addr : Address} {constant : Ixon.Constant}
   simp at haddr
   rcases haddr with haddr | haddr | haddr | haddr | haddr | haddr
   · subst addr
+    exact .inr (.inr (.inr (.inl ⟨rfl,
+      ExactAnonEntry.constant_unique hentry recursorProjectionEntry⟩)))
+  · subst addr
     exact .inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry recursorBlockEntry⟩
   · subst addr
@@ -209,9 +212,6 @@ private theorem sourceEntryCases {addr : Address} {constant : Ixon.Constant}
   · subst addr
     exact .inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry familyBlockEntry⟩))
-  · subst addr
-    exact .inr (.inr (.inr (.inl ⟨rfl,
-      ExactAnonEntry.constant_unique hentry recursorProjectionEntry⟩)))
   · subst addr
     exact .inr (.inr (.inr (.inr (.inl ⟨rfl,
       ExactAnonEntry.constant_unique hentry falseProjectionEntry⟩))))
@@ -230,10 +230,10 @@ def sourceWF : AnonWorkEnvWF recursorIxonEnv where
     rw [sourceAddresses] at haddr
     simp at haddr
     rcases haddr with rfl | rfl | rfl | rfl | rfl | rfl
+    · exact ⟨recursorProjectionConstant, recursorProjectionEntry⟩
     · exact ⟨recursorBlockConstant, recursorBlockEntry⟩
     · exact ⟨trueProjectionConstant, trueProjectionEntry⟩
     · exact ⟨familyBlockConstant, familyBlockEntry⟩
-    · exact ⟨recursorProjectionConstant, recursorProjectionEntry⟩
     · exact ⟨falseProjectionConstant, falseProjectionEntry⟩
     · exact ⟨familyProjectionConstant, familyProjectionEntry⟩
   blocksNonempty := by
@@ -340,12 +340,12 @@ def blockOfIdempotent : IxonEnv.BlockOfIdempotent recursorIxonEnv := by
       rcases hkey with rfl | rfl | rfl | rfl | rfl | rfl
       · simp [blockOfAddr, recursorBlockEntry.getConst,
           recursorBlockConstant]
-      · simp [blockOfAddr, recursorProjectionEntry.getConst,
-          recursorBlockEntry.getConst, recursorProjectionConstant,
-          recursorBlockConstant]
       · simp [blockOfAddr, falseProjectionEntry.getConst,
           familyBlockEntry.getConst, falseProjectionConstant,
           familyBlockConstant]
+      · simp [blockOfAddr, recursorProjectionEntry.getConst,
+          recursorBlockEntry.getConst, recursorProjectionConstant,
+          recursorBlockConstant]
       · simp [blockOfAddr, trueProjectionEntry.getConst,
           familyBlockEntry.getConst, trueProjectionConstant,
           familyBlockConstant]

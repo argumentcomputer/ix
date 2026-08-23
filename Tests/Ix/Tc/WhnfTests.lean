@@ -204,7 +204,7 @@ def recEnv : Ixon.Env × Address := Id.run do
     ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩
   let recr : Ixon.Recursor :=
     ⟨false, false, 0, 0, 0, 1, 1, .sort 0,
-      #[⟨0, .lam (.sort 0) (.lam (.sort 0) (.var 0))⟩]⟩
+      #[⟨0, .leanLam (.sort 0) (.leanLam (.sort 0) (.var 0))⟩]⟩
   let block : Ixon.Constant :=
     ⟨.muts #[.indc ind, .recr recr], #[], #[], #[.succ .zero]⟩
   storeMutsWithProjs {} block
@@ -216,7 +216,7 @@ def structEnv : Ixon.Env × Address := Id.run do
   let indS : Ixon.Inductive :=
     ⟨false, 0, 0, 0, .sort 0,
       #[⟨false, 0, 0, 0, 2,
-        .all (.recur 0 #[]) (.all (.recur 0 #[]) (.recur 1 #[]))⟩]⟩
+        .leanAll (.recur 0 #[]) (.leanAll (.recur 0 #[]) (.recur 1 #[]))⟩]⟩
   let block : Ixon.Constant :=
     ⟨.muts #[.indc indB, .indc indS], #[], #[], #[.succ .zero]⟩
   storeMutsWithProjs {} block

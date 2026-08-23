@@ -180,11 +180,11 @@ def kexprToIxon (root : KExpr .anon) : EgressM Ixon.Expr := do
     | .lamDone =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
-      values := values.push (.lam ty body)
+      values := values.push (.leanLam ty body)
     | .allDone =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
-      values := values.push (.all ty body)
+      values := values.push (.leanAll ty body)
     | .letDone nd =>
       let body := values.back!; values := values.pop
       let val := values.back!; values := values.pop
@@ -397,8 +397,8 @@ end CanonM
 inductive CFrame where
   | process (e : Ixon.Expr)
   | appDone
-  | lamDone
-  | allDone
+  | lamDone (uses : Ixon.Uses)
+  | allDone (uses : Ixon.Uses) (owned : Ixon.Owned)
   | letDone (nd : Bool)
   | prjDone (refIdx field : UInt64)
   | memoShare (idx : UInt64)
@@ -409,8 +409,8 @@ inductive CFrame where
 private inductive CFrameP where
   | process (e : Ixon.Expr)
   | appDone
-  | lamDone
-  | allDone
+  | lamDone (uses : Ixon.Uses)
+  | allDone (uses : Ixon.Uses) (owned : Ixon.Owned)
   | letDone (nd : Bool)
   | prjDone (refIdx field : UInt64)
   | memoShare (idx : UInt64)
@@ -487,19 +487,19 @@ private unsafe def canonExprImpl (sharing : Array Ixon.Expr) (refs : Array Addre
         else
           stack := stack.push (.memoPtr k) |>.push .appDone
             |>.push (.process a) |>.push (.process f)
-      | .lam ty body =>
+      | .lam uses ty body =>
         let k := ptrAddrUnsafe e
         if let some v := ptrMemo[k]? then
           values := values.push v
         else
-          stack := stack.push (.memoPtr k) |>.push .lamDone
+          stack := stack.push (.memoPtr k) |>.push (.lamDone uses)
             |>.push (.process body) |>.push (.process ty)
-      | .all ty body =>
+      | .all uses owned ty body =>
         let k := ptrAddrUnsafe e
         if let some v := ptrMemo[k]? then
           values := values.push v
         else
-          stack := stack.push (.memoPtr k) |>.push .allDone
+          stack := stack.push (.memoPtr k) |>.push (.allDone uses owned)
             |>.push (.process body) |>.push (.process ty)
       | .letE nd ty val body =>
         let k := ptrAddrUnsafe e
@@ -521,14 +521,14 @@ private unsafe def canonExprImpl (sharing : Array Ixon.Expr) (refs : Array Addre
       let a := values.back!; values := values.pop
       let f := values.back!; values := values.pop
       values := values.push (.app f a)
-    | .lamDone =>
+    | .lamDone uses =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
-      values := values.push (.lam ty body)
-    | .allDone =>
+      values := values.push (.lam uses ty body)
+    | .allDone uses owned =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
-      values := values.push (.all ty body)
+      values := values.push (.all uses owned ty body)
     | .letDone nd =>
       let body := values.back!; values := values.pop
       let val := values.back!; values := values.pop
@@ -606,11 +606,11 @@ def canonExpr (sharing : Array Ixon.Expr) (refs : Array Address)
         values := values.push (.str (← resolveRef refIdx))
       | .app f a =>
         stack := stack.push .appDone |>.push (.process a) |>.push (.process f)
-      | .lam ty body =>
-        stack := stack.push .lamDone |>.push (.process body)
+      | .lam uses ty body =>
+        stack := stack.push (.lamDone uses) |>.push (.process body)
           |>.push (.process ty)
-      | .all ty body =>
-        stack := stack.push .allDone |>.push (.process body)
+      | .all uses owned ty body =>
+        stack := stack.push (.allDone uses owned) |>.push (.process body)
           |>.push (.process ty)
       | .letE nd ty val body =>
         stack := stack.push (.letDone nd) |>.push (.process body)
@@ -622,14 +622,14 @@ def canonExpr (sharing : Array Ixon.Expr) (refs : Array Address)
       let a := values.back!; values := values.pop
       let f := values.back!; values := values.pop
       values := values.push (.app f a)
-    | .lamDone =>
+    | .lamDone uses =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
-      values := values.push (.lam ty body)
-    | .allDone =>
+      values := values.push (.lam uses ty body)
+    | .allDone uses owned =>
       let body := values.back!; values := values.pop
       let ty := values.back!; values := values.pop
-      values := values.push (.all ty body)
+      values := values.push (.all uses owned ty body)
     | .letDone nd =>
       let body := values.back!; values := values.pop
       let val := values.back!; values := values.pop
@@ -813,8 +813,10 @@ where
       | .str r1, .str r2 => pure (r1 == r2)
       | .share i, .share j => pure (i == j)
       | .app f1 a1, .app f2 a2 => go f1 f2 <&&> go a1 a2
-      | .lam t1 b1, .lam t2 b2 => go t1 t2 <&&> go b1 b2
-      | .all t1 b1, .all t2 b2 => go t1 t2 <&&> go b1 b2
+      | .lam u1 t1 b1, .lam u2 t2 b2 =>
+        pure (u1 == u2) <&&> go t1 t2 <&&> go b1 b2
+      | .all u1 o1 t1 b1, .all u2 o2 t2 b2 =>
+        pure (u1 == u2 && o1 == o2) <&&> go t1 t2 <&&> go b1 b2
       | .letE n1 t1 v1 b1, .letE n2 t2 v2 b2 =>
         pure (n1 == n2) <&&> go t1 t2 <&&> go v1 v2 <&&> go b1 b2
       | .prj r1 f1 v1, .prj r2 f2 v2 =>

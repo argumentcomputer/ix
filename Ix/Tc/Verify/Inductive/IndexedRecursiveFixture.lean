@@ -31,7 +31,7 @@ local instance anonKIdDecidableEq : DecidableEq (KId .anon) := fun left right =>
 def natIxon : Ixon.Inductive :=
   ⟨false, 0, 0, 0, .sort 0,
     #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
-      ⟨false, 0, 1, 0, 1, .all (.recur 0 #[]) (.recur 0 #[])⟩]⟩
+      ⟨false, 0, 1, 0, 1, .leanAll (.recur 0 #[]) (.recur 0 #[])⟩]⟩
 
 def natBlockConstant : Ixon.Constant :=
   ⟨.muts #[.indc natIxon], #[], #[], #[.succ .zero]⟩
@@ -48,17 +48,17 @@ def succId : KId .anon := ⟨ctorProjAddr natBlockAddress 0 1, ()⟩
 /-- `IndexedVec.{u} : Sort (u+1) → Nat → Sort (u+1)`.  Universe table
 position 0 is `u+1`; position 1 is `u`. -/
 def familyType : Ixon.Expr :=
-  .all (.sort 0) (.all (.ref 0 #[]) (.sort 0))
+  .leanAll (.sort 0) (.leanAll (.ref 0 #[]) (.sort 0))
 
 def nilType : Ixon.Expr :=
-  .all (.sort 0)
+  .leanAll (.sort 0)
     (.app (.app (.recur 0 #[1]) (.var 0)) (.ref 1 #[]))
 
 def consType : Ixon.Expr :=
-  .all (.sort 0)
-    (.all (.ref 0 #[])
-      (.all (.var 1)
-        (.all
+  .leanAll (.sort 0)
+    (.leanAll (.ref 0 #[])
+      (.leanAll (.var 1)
+        (.leanAll
           (.app (.app (.recur 0 #[1]) (.var 2)) (.var 1))
           (.app
             (.app (.recur 0 #[1]) (.var 3))
@@ -100,44 +100,44 @@ private def consRef (alpha index head tail : Ixon.Expr) : Ixon.Expr :=
   .app (.app (.app (.app (.ref 2 #[1]) alpha) index) head) tail
 
 private def motiveType : Ixon.Expr :=
-  .all natRef
-    (.all (familyRef (.var 1) (.var 0)) (.sort 0))
+  .leanAll natRef
+    (.leanAll (familyRef (.var 1) (.var 0)) (.sort 0))
 
 private def nilMinorType : Ixon.Expr :=
   .app (.app (.var 0) zeroRef) (nilRef (.var 1))
 
 private def consMinorType : Ixon.Expr :=
-  .all natRef
-    (.all (.var 3)
-      (.all (familyRef (.var 4) (.var 1))
-        (.all (.app (.app (.var 4) (.var 2)) (.var 0))
+  .leanAll natRef
+    (.leanAll (.var 3)
+      (.leanAll (familyRef (.var 4) (.var 1))
+        (.leanAll (.app (.app (.var 4) (.var 2)) (.var 0))
           (.app
             (.app (.var 5) (.app succRef (.var 3)))
             (consRef (.var 6) (.var 3) (.var 2) (.var 1))))))
 
 def recursorType : Ixon.Expr :=
-  .all (.sort 2)
-    (.all motiveType
-      (.all nilMinorType
-        (.all consMinorType
-          (.all natRef
-            (.all (familyRef (.var 4) (.var 0))
+  .leanAll (.sort 2)
+    (.leanAll motiveType
+      (.leanAll nilMinorType
+        (.leanAll consMinorType
+          (.leanAll natRef
+            (.leanAll (familyRef (.var 4) (.var 0))
               (.app (.app (.var 4) (.var 1)) (.var 0)))))))
 
 def nilRuleRhs : Ixon.Expr :=
-  .lam (.sort 2)
-    (.lam motiveType
-      (.lam nilMinorType
-        (.lam consMinorType (.var 1))))
+  .leanLam (.sort 2)
+    (.leanLam motiveType
+      (.leanLam nilMinorType
+        (.leanLam consMinorType (.var 1))))
 
 def consRuleRhs : Ixon.Expr :=
-  .lam (.sort 2)
-    (.lam motiveType
-      (.lam nilMinorType
-        (.lam consMinorType
-          (.lam natRef
-            (.lam (.var 4)
-              (.lam (familyRef (.var 5) (.var 1))
+  .leanLam (.sort 2)
+    (.leanLam motiveType
+      (.leanLam nilMinorType
+        (.leanLam consMinorType
+          (.leanLam natRef
+            (.leanLam (.var 4)
+              (.leanLam (familyRef (.var 5) (.var 1))
                 (.app
                   (.app
                     (.app

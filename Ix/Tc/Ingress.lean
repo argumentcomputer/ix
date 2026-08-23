@@ -297,10 +297,10 @@ def ingressExpr (ixonEnv : Ixon.Env) (ctx : IngressCtx) (root : Ixon.Expr) :
           (← liftM (IngressM.internE (.mkStr val blobAddr)))
       | .app f a =>
         stack := stack.push .appDone |>.push (.process a) |>.push (.process f)
-      | .lam ty body =>
+      | .lam _ ty body =>
         stack := stack.push .lamDone |>.push (.process body)
           |>.push (.process ty)
-      | .all ty body =>
+      | .all _ _ ty body =>
         stack := stack.push .allDone |>.push (.process body)
           |>.push (.process ty)
       | .letE nd ty val body =>

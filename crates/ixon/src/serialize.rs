@@ -17,7 +17,7 @@ use super::constant::{
   Definition, DefinitionProj, Inductive, InductiveProj, MutConst, Quotient,
   Recursor, RecursorProj, RecursorRule,
 };
-use super::expr::Expr;
+use super::expr::{Expr, Owned, Uses};
 use super::metadata::IxonByteSerde;
 use super::tag::{Tag0, Tag4};
 use super::univ::{Univ, get_univ, put_univ};
@@ -343,9 +343,21 @@ pub fn unpack_bools(n: usize, b: u8) -> Vec<bool> {
 
 /// Serialize an expression to bytes (iterative to avoid stack overflow).
 pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
-  let mut stack: Vec<&Expr> = vec![e];
+  enum PutExprFrame<'a> {
+    Expr(&'a Expr),
+    Mode(u8),
+  }
 
-  while let Some(curr) = stack.pop() {
+  let mut stack = vec![PutExprFrame::Expr(e)];
+
+  while let Some(frame) = stack.pop() {
+    let curr = match frame {
+      PutExprFrame::Expr(curr) => curr,
+      PutExprFrame::Mode(mode) => {
+        put_u8(mode, buf);
+        continue;
+      },
+    };
     match curr {
       Expr::Sort(univ_idx) => {
         Tag4::new(Expr::FLAG_SORT, *univ_idx).put(buf);
@@ -370,7 +382,7 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
       Expr::Prj(type_ref_idx, field_idx, val) => {
         Tag4::new(Expr::FLAG_PRJ, *field_idx).put(buf);
         put_u64(*type_ref_idx, buf);
-        stack.push(val);
+        stack.push(PutExprFrame::Expr(val));
       },
       Expr::Str(ref_idx) => {
         Tag4::new(Expr::FLAG_STR, *ref_idx).put(buf);
@@ -391,9 +403,9 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
         }
         // Push in reverse order: args (reversed back to normal), then func
         for arg in &args {
-          stack.push(*arg);
+          stack.push(PutExprFrame::Expr(*arg));
         }
-        stack.push(e); // func last, processed first
+        stack.push(PutExprFrame::Expr(e)); // func last, processed first
       },
       Expr::Lam(..) => {
         // Telescope compression: count nested lambdas
@@ -401,15 +413,16 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
         Tag4::new(Expr::FLAG_LAM, count).put(buf);
         // Collect types and body
         let mut e = curr;
-        let mut types = Vec::with_capacity(count as usize);
-        while let Expr::Lam(t, b) = e {
-          types.push(t.as_ref());
+        let mut binders = Vec::with_capacity(count as usize);
+        while let Expr::Lam(uses, t, b) = e {
+          binders.push((*uses, t.as_ref()));
           e = b.as_ref();
         }
-        // Push body first (processed last), then types in reverse order
-        stack.push(e); // body
-        for ty in types.into_iter().rev() {
-          stack.push(ty);
+        // Each binder is encoded as its mode byte followed by its type.
+        stack.push(PutExprFrame::Expr(e)); // body
+        for (uses, ty) in binders.into_iter().rev() {
+          stack.push(PutExprFrame::Expr(ty));
+          stack.push(PutExprFrame::Mode(uses.to_bits()));
         }
       },
       Expr::All(..) => {
@@ -418,23 +431,25 @@ pub fn put_expr(e: &Expr, buf: &mut Vec<u8>) {
         Tag4::new(Expr::FLAG_ALL, count).put(buf);
         // Collect types and body
         let mut e = curr;
-        let mut types = Vec::with_capacity(count as usize);
-        while let Expr::All(t, b) = e {
-          types.push(t.as_ref());
+        let mut binders = Vec::with_capacity(count as usize);
+        while let Expr::All(uses, owned, t, b) = e {
+          binders.push((*uses, *owned, t.as_ref()));
           e = b.as_ref();
         }
-        // Push body first (processed last), then types in reverse order
-        stack.push(e); // body
-        for ty in types.into_iter().rev() {
-          stack.push(ty);
+        // Uses occupies bits 0-1 and Owned occupies bit 2.
+        stack.push(PutExprFrame::Expr(e)); // body
+        for (uses, owned, ty) in binders.into_iter().rev() {
+          stack.push(PutExprFrame::Expr(ty));
+          stack
+            .push(PutExprFrame::Mode(uses.to_bits() | (owned.to_bits() << 2)));
         }
       },
       Expr::Let(non_dep, ty, val, body) => {
         // size=0 for dep, size=1 for non_dep
         Tag4::new(Expr::FLAG_LET, if *non_dep { 1 } else { 0 }).put(buf);
-        stack.push(body); // Process body last
-        stack.push(val);
-        stack.push(ty); // Process ty first
+        stack.push(PutExprFrame::Expr(body)); // Process body last
+        stack.push(PutExprFrame::Expr(val));
+        stack.push(PutExprFrame::Expr(ty)); // Process ty first
       },
       Expr::Share(idx) => {
         Tag4::new(Expr::FLAG_SHARE, *idx).put(buf);
@@ -451,16 +466,27 @@ enum GetExprFrame {
   BuildPrj(u64, u64), // type_ref_idx, field_idx
   /// Build App: pop func and arg, push App(func, arg)
   BuildApp,
+  /// Reject a nested App base before collecting the flattened arguments.
+  CheckAppBase(u64),
   /// Collect n more args for App telescope, then wrap
   CollectApps(u64),
   /// Collect remaining Lam types: have `collected`, need `remaining` more
-  CollectLamType { collected: Vec<Arc<Expr>>, remaining: u64 },
+  CollectLamType {
+    collected: Vec<(Uses, Arc<Expr>)>,
+    remaining: u64,
+    uses: Uses,
+  },
   /// Build Lam telescope: wrap body in Lams using stored types
-  BuildLams(Vec<Arc<Expr>>),
+  BuildLams(Vec<(Uses, Arc<Expr>)>),
   /// Collect remaining All types: have `collected`, need `remaining` more
-  CollectAllType { collected: Vec<Arc<Expr>>, remaining: u64 },
+  CollectAllType {
+    collected: Vec<(Uses, Owned, Arc<Expr>)>,
+    remaining: u64,
+    uses: Uses,
+    owned: Owned,
+  },
   /// Build All telescope: wrap body in Alls using stored types
-  BuildAlls(Vec<Arc<Expr>>),
+  BuildAlls(Vec<(Uses, Owned, Arc<Expr>)>),
   /// Build Let with stored non_dep flag
   BuildLet(bool),
 }
@@ -513,20 +539,24 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
           },
           Expr::FLAG_APP => {
             if tag.size == 0 {
-              return Err("get_expr: App with zero args".to_string());
+              return Err("get_expr: empty app spine".to_string());
             }
             // Parse func, then collect args and wrap
-            work.push(GetExprFrame::CollectApps(tag.size));
+            work.push(GetExprFrame::CheckAppBase(tag.size));
             work.push(GetExprFrame::Parse); // func
           },
           Expr::FLAG_LAM => {
             if tag.size == 0 {
               return Err("get_expr: Lam with zero binders".to_string());
             }
+            let mode = get_u8(buf)?;
+            let uses = Uses::from_bits(mode)
+              .ok_or_else(|| format!("get_expr: invalid lambda mode {mode}"))?;
             // Start collecting types
             work.push(GetExprFrame::CollectLamType {
               collected: Vec::new(),
               remaining: tag.size,
+              uses,
             });
             work.push(GetExprFrame::Parse); // first type
           },
@@ -534,16 +564,32 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
             if tag.size == 0 {
               return Err("get_expr: All with zero binders".to_string());
             }
+            let mode = get_u8(buf)?;
+            if mode > 0b111 {
+              return Err(format!("get_expr: invalid forall mode {mode}"));
+            }
+            let uses = Uses::from_bits(mode & 0b11)
+              .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
+            let owned = Owned::from_bits((mode >> 2) & 0b1)
+              .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
             // Start collecting types
             work.push(GetExprFrame::CollectAllType {
               collected: Vec::new(),
               remaining: tag.size,
+              uses,
+              owned,
             });
             work.push(GetExprFrame::Parse); // first type
           },
           Expr::FLAG_LET => {
             // size=0 for dep, size=1 for non_dep
-            let non_dep = tag.size != 0;
+            if tag.size > 1 {
+              return Err(format!(
+                "get_expr: invalid letE nonDep {}",
+                tag.size
+              ));
+            }
+            let non_dep = tag.size == 1;
             work.push(GetExprFrame::BuildLet(non_dep));
             work.push(GetExprFrame::Parse); // body
             work.push(GetExprFrame::Parse); // val
@@ -564,6 +610,14 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
         let func = results.pop().ok_or("get_expr: missing func for App")?;
         results.push(Expr::app(func, arg));
       },
+      GetExprFrame::CheckAppBase(remaining) => {
+        let base =
+          results.last().ok_or("get_expr: missing base for App telescope")?;
+        if matches!(base.as_ref(), Expr::App(..)) {
+          return Err("get_expr: non-canonical app base".to_string());
+        }
+        work.push(GetExprFrame::CollectApps(remaining));
+      },
       GetExprFrame::CollectApps(remaining) => {
         if remaining == 0 {
           // All args collected, result is already on stack
@@ -574,16 +628,20 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
           work.push(GetExprFrame::Parse); // arg
         }
       },
-      GetExprFrame::CollectLamType { mut collected, remaining } => {
+      GetExprFrame::CollectLamType { mut collected, remaining, uses } => {
         // Pop the just-parsed type
         let ty = results.pop().ok_or("get_expr: missing type for Lam")?;
-        collected.push(ty);
+        collected.push((uses, ty));
 
         if remaining > 1 {
           // More types to collect
+          let mode = get_u8(buf)?;
+          let uses = Uses::from_bits(mode)
+            .ok_or_else(|| format!("get_expr: invalid lambda mode {mode}"))?;
           work.push(GetExprFrame::CollectLamType {
             collected,
             remaining: remaining - 1,
+            uses,
           });
           work.push(GetExprFrame::Parse); // next type
         } else {
@@ -594,21 +652,39 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
       },
       GetExprFrame::BuildLams(types) => {
         let mut body = results.pop().ok_or("get_expr: missing body for Lam")?;
-        for ty in types.into_iter().rev() {
-          body = Expr::lam(ty, body);
+        if matches!(body.as_ref(), Expr::Lam(..)) {
+          return Err("get_expr: non-canonical lam telescope".to_string());
+        }
+        for (uses, ty) in types.into_iter().rev() {
+          body = Expr::lam_mode(uses, ty, body);
         }
         results.push(body);
       },
-      GetExprFrame::CollectAllType { mut collected, remaining } => {
+      GetExprFrame::CollectAllType {
+        mut collected,
+        remaining,
+        uses,
+        owned,
+      } => {
         // Pop the just-parsed type
         let ty = results.pop().ok_or("get_expr: missing type for All")?;
-        collected.push(ty);
+        collected.push((uses, owned, ty));
 
         if remaining > 1 {
           // More types to collect
+          let mode = get_u8(buf)?;
+          if mode > 0b111 {
+            return Err(format!("get_expr: invalid forall mode {mode}"));
+          }
+          let uses = Uses::from_bits(mode & 0b11)
+            .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
+          let owned = Owned::from_bits((mode >> 2) & 0b1)
+            .ok_or_else(|| format!("get_expr: invalid forall mode {mode}"))?;
           work.push(GetExprFrame::CollectAllType {
             collected,
             remaining: remaining - 1,
+            uses,
+            owned,
           });
           work.push(GetExprFrame::Parse); // next type
         } else {
@@ -619,8 +695,11 @@ pub fn get_expr(buf: &mut &[u8]) -> Result<Arc<Expr>, String> {
       },
       GetExprFrame::BuildAlls(types) => {
         let mut body = results.pop().ok_or("get_expr: missing body for All")?;
-        for ty in types.into_iter().rev() {
-          body = Expr::all(ty, body);
+        if matches!(body.as_ref(), Expr::All(..)) {
+          return Err("get_expr: non-canonical all telescope".to_string());
+        }
+        for (uses, owned, ty) in types.into_iter().rev() {
+          body = Expr::all_mode(uses, owned, ty, body);
         }
         results.push(body);
       },
@@ -1548,7 +1627,7 @@ impl Env {
   /// back-compat reading of old versions — `.ixe` files are
   /// regenerated artifacts. Mirrors `Ixon.Env.VERSION` in
   /// `Ix/Ixon.lean`.
-  pub const VERSION: u64 = 1;
+  pub const VERSION: u64 = 2;
 
   /// Serialize an Env to bytes.
   ///
@@ -3268,6 +3347,24 @@ mod tests {
   use crate::tests::gen_range;
   use quickcheck::{Arbitrary, Gen};
   use quickcheck_macros::quickcheck;
+
+  #[test]
+  fn rejects_noncanonical_v2_exprs() {
+    let malformed: &[&[u8]] = &[
+      &[0x70],
+      &[0x71, 0x71, 0x10, 0x11, 0x12],
+      &[0x81, 0x03, 0x00, 0x81, 0x03, 0x00, 0x10],
+      &[0x91, 0x07, 0x00, 0x91, 0x07, 0x00, 0x10],
+      &[0xA2],
+      &[0x81, 0x04],
+      &[0x91, 0x08],
+    ];
+
+    for bytes in malformed {
+      let mut input = *bytes;
+      assert!(get_expr(&mut input).is_err(), "accepted {bytes:02x?}");
+    }
+  }
 
   #[quickcheck]
   fn prop_pack_bools_roundtrip(x: Vec<bool>) -> bool {

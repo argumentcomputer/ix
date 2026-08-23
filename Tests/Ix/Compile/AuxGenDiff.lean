@@ -119,8 +119,9 @@ partial def expandShares (tbl : Array Ixon.Expr) : Ixon.Expr → Ixon.Expr
     | some e => expandShares tbl e
     | none => .share i
   | .app f a => .app (expandShares tbl f) (expandShares tbl a)
-  | .lam d b => .lam (expandShares tbl d) (expandShares tbl b)
-  | .all d b => .all (expandShares tbl d) (expandShares tbl b)
+  | .lam uses d b => .lam uses (expandShares tbl d) (expandShares tbl b)
+  | .all uses owned d b =>
+    .all uses owned (expandShares tbl d) (expandShares tbl b)
   | .letE n t v b => .letE n (expandShares tbl t) (expandShares tbl v) (expandShares tbl b)
   | .prj i j e => .prj i j (expandShares tbl e)
   | e => e

@@ -88,10 +88,10 @@ local instance : DecidableEq (FlatBlockMember .anon) :=
 
 /-- `Box (α : Sort 1) : Sort 1`, with one constructor `wrap : α → Box α`. -/
 def boxIxon : Ixon.Inductive :=
-  ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+  ⟨false, 0, 1, 0, .leanAll (.sort 0) (.sort 0),
     #[⟨false, 0, 0, 1, 1,
-      .all (.sort 0)
-        (.all (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
+      .leanAll (.sort 0)
+        (.leanAll (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
 
 def boxBlockConstant : Ixon.Constant :=
   ⟨.muts #[.indc boxIxon], #[], #[], #[.succ .zero]⟩
@@ -109,7 +109,7 @@ def wrapId : KId .anon := ⟨ctorProjAddr boxBlockAddress 0 0, ()⟩
 def treeIxon : Ixon.Inductive :=
   ⟨false, 0, 0, 0, .sort 0,
     #[⟨false, 0, 0, 0, 1,
-      .all
+      .leanAll
         (.app (.ref 0 #[]) (.recur 0 #[]))
         (.recur 0 #[])⟩]⟩
 

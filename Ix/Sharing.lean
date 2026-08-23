@@ -84,12 +84,14 @@ def computeNodeHash (e : Ixon.Expr) (childHashes : Array Address) : Address :=
       buf.push Ixon.Expr.FLAG_APP
         |>.append childHashes[0]!.hash
         |>.append childHashes[1]!.hash
-    | .lam _ _ =>
+    | .lam uses _ _ =>
       buf.push Ixon.Expr.FLAG_LAM
+        |>.push uses.toBits
         |>.append childHashes[0]!.hash
         |>.append childHashes[1]!.hash
-    | .all _ _ =>
+    | .all uses owned _ _ =>
       buf.push Ixon.Expr.FLAG_ALL
+        |>.push (uses.toBits ||| (owned.toBits <<< 2))
         |>.append childHashes[0]!.hash
         |>.append childHashes[1]!.hash
     | .letE nonDep _ _ _ =>
@@ -109,7 +111,7 @@ partial def computeExprHash (e : Ixon.Expr) : Address :=
     | .sort _ | .var _ | .ref _ _ | .recur _ _ | .str _ | .nat _ | .share _ => #[]
     | .prj _ _ val => #[computeExprHash val]
     | .app fun_ arg => #[computeExprHash fun_, computeExprHash arg]
-    | .lam ty body | .all ty body => #[computeExprHash ty, computeExprHash body]
+    | .lam _ ty body | .all _ _ ty body => #[computeExprHash ty, computeExprHash body]
     | .letE _ ty val body => #[computeExprHash ty, computeExprHash val, computeExprHash body]
   computeNodeHash e childHashes
 
@@ -151,8 +153,8 @@ def computeBaseSize (e : Ixon.Expr) : Nat :=
   | .nat refIdx =>
     if refIdx < 8 then 1 else 1 + refIdx.byteCount.toNat
   | .app _ _ => 1  -- telescope count >= 1
-  | .lam _ _ => 1
-  | .all _ _ => 1
+  | .lam _ _ _ => 2
+  | .all _ _ _ _ => 2
   | .letE _ _ _ _ => 1  -- size encodes non_dep flag
   | .share idx =>
     if idx < 8 then 1 else 1 + idx.byteCount.toNat
@@ -198,7 +200,7 @@ partial def hashAndAnalyze (e : Ixon.Expr) : AnalyzeM Address := do
       let funHash ← hashAndAnalyze fun_
       let argHash ← hashAndAnalyze arg
       pure #[funHash, argHash]
-    | .lam ty body | .all ty body =>
+    | .lam _ ty body | .all _ _ ty body =>
       let tyHash ← hashAndAnalyze ty
       let bodyHash ← hashAndAnalyze body
       pure #[tyHash, bodyHash]
@@ -427,17 +429,17 @@ where
         let result := if exprPtr fun_ == exprPtr fun' && exprPtr arg == exprPtr arg'
                       then e else .app fun' arg'
         (result, cache'')
-      | .lam ty body =>
+      | .lam uses ty body =>
         let (ty', cache') := rewriteWithSharing ty hashToIdx ptrToHash cache
         let (body', cache'') := rewriteWithSharing body hashToIdx ptrToHash cache'
         let result := if exprPtr ty == exprPtr ty' && exprPtr body == exprPtr body'
-                      then e else .lam ty' body'
+                      then e else .lam uses ty' body'
         (result, cache'')
-      | .all ty body =>
+      | .all uses owned ty body =>
         let (ty', cache') := rewriteWithSharing ty hashToIdx ptrToHash cache
         let (body', cache'') := rewriteWithSharing body hashToIdx ptrToHash cache'
         let result := if exprPtr ty == exprPtr ty' && exprPtr body == exprPtr body'
-                      then e else .all ty' body'
+                      then e else .all uses owned ty' body'
         (result, cache'')
       | .letE nonDep ty val body =>
         let (ty', cache') := rewriteWithSharing ty hashToIdx ptrToHash cache

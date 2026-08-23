@@ -27,6 +27,9 @@ pub mod syntax;
 pub mod tag;
 pub mod univ;
 
+/// Stable identifier for the v2 Ixon wire grammar.
+pub const WIRE_FORMAT_ID: &str = "ixon-v2";
+
 // Re-export main types
 pub use comm::Comm;
 pub use constant::{
@@ -298,8 +301,9 @@ mod doc_examples {
   #[test]
   fn expr_lam_telescope() {
     // Lam(t1, Lam(t2, Lam(t3, body))) with all types Sort(0) and body Var(0)
-    // -> Tag4 { flag: 0x8, size: 3 } + t1 + t2 + t3 + body
-    // = 0x83 + 0x00 + 0x00 + 0x00 + 0x10
+    // -> Tag4 { flag: 0x8, size: 3 } + (many, t1) + (many, t2)
+    //    + (many, t3) + body
+    // = 0x83 + 0x03 + 0x00 + 0x03 + 0x00 + 0x03 + 0x00 + 0x10
     let ty = Expr::sort(0);
     let expr = Expr::lam(
       ty.clone(),
@@ -309,8 +313,8 @@ mod doc_examples {
     serialize::put_expr(&expr, &mut buf);
     assert_eq!(
       buf,
-      vec![0x83, 0x00, 0x00, 0x00, 0x10],
-      "Lam telescope should be [0x83, 0x00, 0x00, 0x00, 0x10]"
+      vec![0x83, 0x03, 0x00, 0x03, 0x00, 0x03, 0x00, 0x10],
+      "Lam telescope should carry one v2 mode byte per binder"
     );
   }
 
@@ -488,7 +492,7 @@ mod doc_examples {
 
   #[test]
   fn env_tag() {
-    // Env -> Tag4 { flag: 0xE, size: VERSION } -> e.g. 0xE1 for v1
+    // Env -> Tag4 { flag: 0xE, size: VERSION } -> 0xE2 for v2
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
