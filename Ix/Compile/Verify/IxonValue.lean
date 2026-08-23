@@ -27,6 +27,21 @@ structure Catalog where
   nameOf : Address → Option Lean.Name
   /-- Resolve literal content addresses to their committed bytes. -/
   blobs : Address → Option ByteArray
+  /-- Resolve canonical constant payloads.  This stored view is deliberately
+  separate from `nameOf`: content integrity and semantic naming are distinct
+  obligations. -/
+  constants : Address → Option Ixon.Constant := fun _ => none
+  /-- Resolve source-facing named registrations. -/
+  named : Ix.Name → Option Ixon.Named := fun _ => none
+  /-- Resolve content-addressed name components used by metadata. -/
+  names : Address → Option Ix.Name := fun _ => none
+  /-- Anonymous reducibility hints are operational input, not constant
+  payload. -/
+  anonHints : Address → Option Lean.ReducibilityHints := fun _ => none
+  /-- Semantic addresses of members of a mutual block.  Projection constants
+  remain ordinary entries in `constants`; this table supplies the positional
+  context used by `.recur`. -/
+  memberAddrs : Address → Option (Array Address) := fun _ => none
 
 /-- The tables against which one constant's Ixon expressions are read. -/
 structure DecodeCtx where

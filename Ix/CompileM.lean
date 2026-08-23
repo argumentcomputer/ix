@@ -232,6 +232,11 @@ def BlockState.internUniv (cache : BlockState) (u : Ixon.Univ) : BlockState × U
       univsIndex := cache.univsIndex.insert u idx
     }, idx)
 
+/-- Memoize the compiled positional form of a named universe level. -/
+def BlockState.cacheUniv (cache : BlockState) (level : Level)
+    (u : Ixon.Univ) : BlockState :=
+  { cache with univCache := cache.univCache.insert level u }
+
 /-- Per-block compilation environment. -/
 structure BlockEnv where
   /-- All constants in current mutual block -/
@@ -365,7 +370,7 @@ def takeSurgerySharing : CompileM (Array Ixon.Expr) :=
 /-! ## Universe Compilation -/
 
 /-- Compile an Ix.Level to Ixon.Univ type. -/
-partial def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
+def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
   -- Check cache first (O(1) lookup via embedded hash)
   let state ← getBlockState
   if let some u := state.univCache.get? lvl then
@@ -373,9 +378,9 @@ partial def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
 
   let u ← match lvl with
   | .zero _ => pure .zero
-  | .succ l _ => .succ <$> compileUniv l
-  | .max l r _ => .max <$> compileUniv l <*> compileUniv r
-  | .imax l r _ => .imax <$> compileUniv l <*> compileUniv r
+  | .succ l _ => pure (.succ (← compileUniv l))
+  | .max l r _ => pure (.max (← compileUniv l) (← compileUniv r))
+  | .imax l r _ => pure (.imax (← compileUniv l) (← compileUniv r))
   | .param name _ => do
     let ctx := (← getBlockEnv).univCtx
     match ctx.idxOf? name with
@@ -384,8 +389,9 @@ partial def compileUniv (lvl : Level) : CompileM Ixon.Univ := do
   | .mvar _ _ => throw (.unsupportedExpr "level metavariable")
 
   -- Cache result
-  modifyBlockState fun c => { c with univCache := c.univCache.insert lvl u }
+  modifyBlockState fun c => c.cacheUniv lvl u
   pure u
+termination_by lvl
 
 /-- Intern a universe into the block's univs table, returning its index. -/
 def internUniv (u : Ixon.Univ) : CompileM UInt64 :=
