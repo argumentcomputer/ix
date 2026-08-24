@@ -3,6 +3,7 @@ import Ix.Compile.Verify.Catalog
 import Ix.Compile.Verify.CompileState
 import Ix.Compile.Verify.CompileUniv
 import Ix.Compile.Verify.CompileMeta
+import Ix.Compile.Verify.CompileMetaStore
 import Ix.Compile.Verify.CompileExpr
 import Ix.Compile.Verify.Reference
 import Ix.Compile.Verify.SourceValue
@@ -37,7 +38,11 @@ strings, booleans, names, naturals, integers, and recursive syntax values.
 Production syntax serialization is kernel-visible and structurally total;
 production metadata compilation implements the exact recursive encoding while
 changing only name/blob presentation stores, and the complete ordinary
-expression theorem accepts arbitrary nonempty metadata maps.
+expression theorem accepts arbitrary nonempty metadata maps.  A separate
+finite run support now scopes name and blob collision faithfulness; under
+strict preseed integrity, syntax, data-value, and KV-map compilation preserve
+all old lookups and establish exact recovery for every traversed name,
+ancestor name component, and blob payload.
 `KernelSourceWitness` is the sole
 upstream source-semantics boundary; later compiler-preservation slices take it
 as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean
