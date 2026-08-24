@@ -126,26 +126,47 @@ theorem lazyDeltaReductionStepWithEqualRank_preservesInferOnly
     ((lazyDeltaReductionStepWithEqualRank left right leftId rightId).run
       methods).PreservesInferOnly := by
   unfold lazyDeltaReductionStepWithEqualRank
-  refine bind_preservesInferOnly (isRegular_preservesInferOnly leftId) ?_
-  intro regular
-  by_cases hguard : leftId.addr == rightId.addr && regular
+  by_cases hguard : leftId.addr == rightId.addr
   · simp only [hguard, if_true]
     refine bind_preservesInferOnly
-      (trySameHeadSpine_preservesInferOnly hmethods left right) ?_
-    intro result
-    cases result with
-    | none =>
-        exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
-          hmethods hcore left right
-    | some answer =>
-        cases answer with
-        | true =>
-            exact TcM.PreservesInferOnly.pure
-              (LazyDeltaStep.equal, left, right)
-        | false =>
-            exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
-              hmethods hcore left right
-  · simp only [hguard, Bool.false_eq_true, if_false, pure_bind]
+      (isRegular_preservesInferOnly leftId) ?_
+    intro regular
+    cases regular with
+    | false =>
+      simp only [Bool.false_eq_true, if_false]
+      refine bind_preservesInferOnly
+        (trySameHeadSpineSpeculative_preservesInferOnly hmethods left right) ?_
+      intro result
+      cases result with
+      | none =>
+          exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
+            hmethods hcore left right
+      | some answer =>
+          cases answer with
+          | true =>
+              exact TcM.PreservesInferOnly.pure
+                (LazyDeltaStep.equal, left, right)
+          | false =>
+              exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
+                hmethods hcore left right
+    | true =>
+      simp only [if_true]
+      refine bind_preservesInferOnly
+        (trySameHeadSpine_preservesInferOnly hmethods left right) ?_
+      intro result
+      cases result with
+      | none =>
+          exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
+            hmethods hcore left right
+      | some answer =>
+          cases answer with
+          | true =>
+              exact TcM.PreservesInferOnly.pure
+                (LazyDeltaStep.equal, left, right)
+          | false =>
+              exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly
+                hmethods hcore left right
+  · simp only [hguard, Bool.false_eq_true, if_false]
     exact lazyDeltaReductionStepAfterSameHeadMiss_preservesInferOnly hmethods
       hcore left right
 

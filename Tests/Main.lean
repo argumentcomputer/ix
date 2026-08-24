@@ -21,7 +21,10 @@ import Tests.Ix.Decompile
 import Tests.Ix.Kernel.BuildPrimitives
 import Tests.Ix.Kernel.BuildPrimOrigs
 import Tests.Ix.Kernel.CheckEnv
+import Tests.Ix.Kernel.CheckCompPoly
+import Tests.Ix.Kernel.CheckPrimeGaps
 import Tests.Ix.Kernel.CheckTauCeti
+import Tests.Ix.Kernel.CheckTauCetiReduction
 import Tests.Ix.Kernel.Roundtrip
 import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
@@ -135,7 +138,10 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-tutorial", Tests.Ix.Kernel.Tutorial.suite),
   ("kernel-check-env", Tests.Ix.Kernel.CheckEnv.suite),
   ("kernel-check-const", Tests.Ix.Kernel.CheckEnv.constSuite),
+  ("kernel-check-comppoly", Tests.Ix.Kernel.CheckCompPoly.suite),
+  ("kernel-check-primegaps", Tests.Ix.Kernel.CheckPrimeGaps.suite),
   ("kernel-check-tauceti", Tests.Ix.Kernel.CheckTauCeti.suite),
+  ("kernel-check-tauceti-reduction", Tests.Ix.Kernel.CheckTauCetiReduction.suite),
   ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
   ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
   ("tc-anon-diff", Tests.Tc.AnonDiff.suite),

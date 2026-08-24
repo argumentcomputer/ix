@@ -53,6 +53,14 @@ def defEqFailureKey (left right : KExpr m) (ctxAddr : Address) :
   ((canonicalPair left.addr right.addr).1,
     (canonicalPair left.addr right.addr).2, ctxAddr)
 
+/-- Local recursive-fuel slice for one non-Regular same-head attempt. -/
+def sameHeadSpeculationAttemptFuel : UInt64 := 4096
+
+/-- Do not begin a fresh non-Regular same-head attempt after the enclosing
+constant check has already consumed this much recursive fuel. Nested attempts
+inherit the active local slice. -/
+def sameHeadSpeculationStartFuel : UInt64 := 16384
+
 /-- Head constant of an expression or app spine. -/
 def headConstId (e : KExpr m) : Option (KId m) :=
   match e with
@@ -156,7 +164,7 @@ def classifyDeltaHead (e : KExpr m) : RecM m Bool :=
   | some id => isDelta id
   | none => pure false
 
-/-- Regular reducibility hints (guards the same-head-spine attempt). -/
+/-- Regular reducibility hints retain the unbounded same-head fast path. -/
 def isRegular (id : KId m) : RecM m Bool := do
   match (← TcM.tryGetConst id) with
   | some (.defn (hints := .regular _) ..) => return true
@@ -476,20 +484,26 @@ def defEqLazyDeltaStepAfterProjectionMiss (wa0 wb0 : KExpr m)
 /-- Run same-head spine comparison behind its narrow rejection-only cache.
 A cache hit skips the attempt; a genuine miss records exactly the canonical
 operand/context key. -/
-def trySameHeadSpineCached (left right : KExpr m) :
+def trySameHeadSpineCached (speculative : Bool) (left right : KExpr m) :
     RecM m (Option Bool) := do
   let failureKey := defEqFailureKey left right (← TcM.defEqCtxKey left right)
   if (← get).env.defEqFailure.contains failureKey then
     return none
-  match ← trySameHeadSpine left right with
+  let attempt : RecM m (Option Bool) := if speculative then
+    trySameHeadSpineSpeculative left right
+  else
+    trySameHeadSpine left right
+  let result ← attempt
+  match result with
   | some result => return some result
   | none =>
       modify fun state => { state with env := { state.env with
         defEqFailure := state.env.defEqFailure.insert failureKey } }
       return none
 
-/-- Equal-rank lazy delta: attempt the guarded same-head spine comparison,
-then unfold both operands before the common finishing checks. -/
+/-- Equal-rank lazy delta: Regular heads use the standard same-head path;
+other hints use the fuel-bounded speculative path. Both retain the narrow
+rejection cache before ordinary two-sided unfolding. -/
 def defEqLazyDeltaStepWithEqualRank (wa0 wb0 : KExpr m)
     (aHead bHead : Option (KId m)) :
     RecM m (BoundedStep (KExpr m × KExpr m) (LazyDeltaLoopResult m)) := do
@@ -497,8 +511,9 @@ def defEqLazyDeltaStepWithEqualRank (wa0 wb0 : KExpr m)
   let mut wb := wb0
   -- Same-head-spine attempt, guarded by the narrow negative cache.
   if let (some ah, some bh) := (aHead, bHead) then
-    if ah.addr == bh.addr && (← isRegular ah) then
-      if let some result ← trySameHeadSpineCached wa wb then
+    if ah.addr == bh.addr then
+      let speculative := !(← isRegular ah)
+      if let some result ← trySameHeadSpineCached speculative wa wb then
         return .done (.answer result)
   defEqLazyDeltaStepAfterSameHeadMiss wa wb
 
@@ -652,6 +667,33 @@ def trySameHeadSpine (a b : KExpr m) : RecM m (Option Bool) := do
   if !(← allDefEqSpineArgs (aArgs.zip bArgs)) then
     return none
   return some true
+
+/-- Run a non-Regular same-head comparison with bounded local recursive fuel.
+Nested speculative attempts inherit the remaining slice. Fuel/depth exhaustion
+means only that speculation missed; consumed fuel is charged to the enclosing
+constant check before ordinary delta reduction resumes. -/
+def trySameHeadSpineSpeculative (a b : KExpr m) :
+    RecM m (Option Bool) := do
+  let saved ← get
+  let savedFuel := saved.recFuel
+  let nested := savedFuel <= sameHeadSpeculationAttemptFuel
+  if !nested && saved.fuelBudget - savedFuel >= sameHeadSpeculationStartFuel then
+    return none
+  let localFuel := min savedFuel sameHeadSpeculationAttemptFuel
+  modify fun s => { s with recFuel := localFuel }
+  let result : Except (TcError m) (Option Bool) ←
+    try
+      let answer ← trySameHeadSpine a b
+      pure (.ok answer)
+    catch e =>
+      pure (.error e)
+  let consumed := localFuel - (← get).recFuel
+  modify fun s => { s with
+    recFuel := savedFuel - min savedFuel consumed }
+  match result with
+  | .ok answer => return answer
+  | .error .maxRecDepth | .error .maxRecFuel => return none
+  | .error e => throw e
 
 /-- Short-circuiting application branch of the final structural comparison. -/
 def tryDefEqWhnfApp (f1 a1 f2 a2 : KExpr m) :
@@ -1184,8 +1226,12 @@ def lazyDeltaReductionStepWithEqualRank (a0 b0 : KExpr m)
     RecM m (LazyDeltaStep × KExpr m × KExpr m) := do
   let mut a := a0
   let mut b := b0
-  if aId.addr == bId.addr && (← isRegular aId) then
-    if let some true ← trySameHeadSpine a b then
+  if aId.addr == bId.addr then
+    let result ← if (← isRegular aId) then
+        trySameHeadSpine a b
+      else
+        trySameHeadSpineSpeculative a b
+    if let some true := result then
       return (.equal, a, b)
   lazyDeltaReductionStepAfterSameHeadMiss a b
 

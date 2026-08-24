@@ -82,7 +82,7 @@ theorem eval
     (h : VerifyKSynthCandidateSuccessTrace methods majorTyW ctorId tyUs
       tyArgs params s ctorApp sf) :
     (verifyKSynthCandidate majorTyW ctorId tyUs tyArgs params).run methods s =
-      .ok (some ctorApp) sf := by
+      .ok (.synthesized ctorApp) sf := by
   unfold verifyKSynthCandidate
   rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind (TcM.intern (KExpr.mkConst ctorId tyUs)) _ s = _
@@ -121,8 +121,8 @@ theorem eval
 
 end VerifyKSynthCandidateSuccessTrace
 
-/-- The final DefEq rejection is a successful `none`, not an exception, and
-the rejection counter is sequenced after the attempt counter. -/
+/-- The final DefEq rejection records whether it ran at full strength, and the
+rejection counter is sequenced after the attempt counter. -/
 structure VerifyKSynthCandidateRejectTrace
     (methods : Methods .anon) (majorTyW : KExpr .anon)
     (ctorId : KId .anon) (tyUs : Array (KUniv .anon))
@@ -162,7 +162,8 @@ theorem eval
     (h : VerifyKSynthCandidateRejectTrace methods majorTyW ctorId tyUs
       tyArgs params s sf) :
     (verifyKSynthCandidate majorTyW ctorId tyUs tyArgs params).run methods s =
-      .ok none sf := by
+      .ok (if h.sAttempt.cheapRecursionDepth == 0 then
+        .definitiveReject else .inconclusive) sf := by
   unfold verifyKSynthCandidate
   rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind (TcM.intern (KExpr.mkConst ctorId tyUs)) _ s = _
@@ -199,7 +200,6 @@ theorem eval
   unfold EStateM.bind
   rw [h.typeDefEq]
   simp only [Bool.not_false, if_true]
-  rw [ReaderT.run_bind, ReaderT.run_monadLift]
   change EStateM.bind
     (TcM.bumpStats
       (fun st => { st with kSynthRejects := st.kSynthRejects + 1 })) _
@@ -268,7 +268,7 @@ structure SynthCtorWhenKSuccessTrace
   firstCtor : ctors[0]? = some ctorId
   candidate :
     (verifyKSynthCandidate majorTyW ctorId tyUs tyArgs recr.params).run
-      methods sIndLookup = .ok (some ctorApp) sf
+      methods sIndLookup = .ok (.synthesized ctorApp) sf
 
 namespace SynthCtorWhenKSuccessTrace
 
@@ -277,7 +277,7 @@ theorem eval
     (h : SynthCtorWhenKSuccessTrace methods major recId recr recUs s ctorApp
       sf) :
     (synthCtorWhenK major recId recr recUs).run methods s =
-      .ok (some ctorApp) sf := by
+      .ok (.synthesized ctorApp) sf := by
   unfold synthCtorWhenK
   have hlevels : (recUs.size.toUInt64 != recr.lvls) = false := by
     simp [h.levelArity]
@@ -338,7 +338,7 @@ theorem tryIotaWithFlags_kPrefix
     {headInfo : ExprInfo .anon} {spine : Array (KExpr .anon)}
     {recursor : KConst .anon} {recr : IotaInfo .anon}
     {major selected majorWhnf result : KExpr .anon}
-    {synthResult : Option (KExpr .anon)}
+    {synthResult : KSynthOutcome .anon}
     (hsource : source.collectSpine = (.const recId recUs headInfo, spine))
     (hlookup : TcM.tryGetConst recId s = .ok (some recursor) sLookup)
     (hinfo : recursor.iotaInfo? = some recr)
@@ -347,7 +347,7 @@ theorem tryIotaWithFlags_kPrefix
     (hk : recr.k = true)
     (hsynth : (synthCtorWhenK major recId recr recUs).run methods sLookup =
       .ok synthResult sSynth)
-    (hselected : synthResult.getD major = selected)
+    (hselected : synthResult.selectMajor major = some selected)
     (hcleanup : (cleanupNatOffsetMajor selected).run methods sSynth =
       .ok none sCleanup)
     (hwhnf :
@@ -415,7 +415,7 @@ theorem tryIotaWithFlags_kFallback
     (hmajor : spine[recr.majorIdx]! = major)
     (hk : recr.k = true)
     (hsynth : (synthCtorWhenK major recId recr recUs).run methods sLookup =
-      .ok none sSynth)
+      .ok .inconclusive sSynth)
     (hcleanup : (cleanupNatOffsetMajor major).run methods sSynth =
       .ok none sCleanup)
     (hwhnf :
@@ -450,7 +450,7 @@ theorem tryIotaWithFlags_kCtor
     (hmajor : spine[recr.majorIdx]! = major)
     (hk : recr.k = true)
     (hsynth : (synthCtorWhenK major recId recr recUs).run methods sLookup =
-      .ok (some synthesized) sSynth)
+      .ok (.synthesized synthesized) sSynth)
     (hcleanup : (cleanupNatOffsetMajor synthesized).run methods sSynth =
       .ok none sCleanup)
     (hwhnf :
@@ -505,7 +505,7 @@ theorem tryIotaWithFlags_kCtor_checkedAcceptance_empty
     (hmajor : spine[recr.majorIdx]! = major)
     (hk : recr.k = true)
     (hsynth : (synthCtorWhenK major recId recr recUs).run methods sLookup =
-      .ok (some synthesized) sSynth)
+      .ok (.synthesized synthesized) sSynth)
     (hcleanup : (cleanupNatOffsetMajor synthesized).run methods sSynth =
       .ok none sCleanup)
     (hwhnf :

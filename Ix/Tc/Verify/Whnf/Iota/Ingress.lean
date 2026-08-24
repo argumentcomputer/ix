@@ -171,11 +171,13 @@ theorem tryIotaWithFlags_state_wf_of_contexts
                         recId recr recUs afterLookup)
                     intro synthesized afterKSynth hsynthesized
                     cases synthesized with
-                    | none =>
+                    | definitiveReject =>
+                        exact TcM.WF.pure (fun _ => trivial)
+                    | inconclusive =>
                         exact hpost recId recr recUs spine major afterKSynth
                           hmajorSupport hmajorTr hmajorSupport hmajorTr
-                    | some synthesized =>
-                        obtain ⟨synthesizedV, hsynthesizedSupport,
+                    | synthesized synthesized =>
+                        obtain ⟨hsynthesizedSupport, synthesizedV,
                           hsynthesizedTr⟩ := hsynthesized
                         exact hpost recId recr recUs spine synthesized
                           afterKSynth hsynthesizedSupport hsynthesizedTr

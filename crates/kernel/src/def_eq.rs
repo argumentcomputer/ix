@@ -54,6 +54,12 @@ static IX_PROJ_DELTA_TRACE: crate::EnvString =
 static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
+/// Non-Regular same-head comparisons are speculative: a failed attempt must
+/// not be allowed to consume the entire constant-check budget before ordinary
+/// delta reduction gets its turn.
+const SAME_HEAD_SPECULATION_ATTEMPT_FUEL: u64 = 4_096;
+const SAME_HEAD_SPECULATION_START_FUEL: u64 = 16_384;
+
 /// Step journal (`IX_STEP_TRACE=1`): one `[deq] <fuel> <a8> ~ <b8>` line
 /// per `is_def_eq` entry (plus `[whnf+]` lines in whnf.rs), mirroring the
 /// Lean kernel's `IX_TC_STEP_TRACE` journal (`Ix.Tc` / `TcM.stepTrace`).
@@ -460,16 +466,21 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         };
 
         if wa_w == wb_w {
-          // H2: Same-head-spine optimization — only for Regular hints, same head,
-          // and only cache failure when spine args are actually compared (lean4lean:589-596)
+          // H2: Same-head congruence is sound for every hint. Keep Regular
+          // attempts unbounded; bound non-Regular speculation so a miss cannot
+          // starve the ordinary delta path. Cache only rejected attempts.
           if let (Some(ah), Some(bh)) = (&a_head, &b_head)
             && ah.addr == bh.addr
-            && self.is_regular(ah)?
           {
             let (lo, hi) = canonical_pair(wa.hash_key(), wb.hash_key());
             let failure_key = (lo, hi, self.def_eq_ctx_key(&wa, &wb));
             if !self.env.def_eq_failure.contains(&failure_key) {
-              if let Some(result) = self.try_same_head_spine(&wa, &wb)? {
+              let result = if self.is_regular(ah)? {
+                self.try_same_head_spine(&wa, &wb)?
+              } else {
+                self.try_same_head_spine_speculative(&wa, &wb)?
+              };
+              if let Some(result) = result {
                 return Ok(result);
               }
               // Spine comparison was attempted and failed — cache it
@@ -667,6 +678,31 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
     }
     Ok(Some(true))
+  }
+
+  /// Give a non-Regular same-head attempt a small local slice of recursive
+  /// fuel. Nested attempts inherit the remaining slice; an exhausted slice is
+  /// a speculative miss, after which the caller follows the ordinary delta
+  /// path with the consumed work charged to the enclosing check.
+  fn try_same_head_spine_speculative(
+    &mut self,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+  ) -> Result<Option<bool>, TcError<M>> {
+    let saved_fuel = self.rec_fuel;
+    let nested = saved_fuel <= SAME_HEAD_SPECULATION_ATTEMPT_FUEL;
+    if !nested && self.fuel_used() >= SAME_HEAD_SPECULATION_START_FUEL {
+      return Ok(None);
+    }
+    let local_fuel = saved_fuel.min(SAME_HEAD_SPECULATION_ATTEMPT_FUEL);
+    self.rec_fuel = local_fuel;
+    let result = self.try_same_head_spine(a, b);
+    let consumed = local_fuel.saturating_sub(self.rec_fuel);
+    self.rec_fuel = saved_fuel.saturating_sub(consumed);
+    match result {
+      Err(TcError::MaxRecDepth | TcError::MaxRecFuel) => Ok(None),
+      other => other,
+    }
   }
 
   /// Full structural comparison after WHNF.
@@ -1395,8 +1431,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     ))
   }
 
-  /// Check if a constant has Regular reducibility hints (not Abbrev or Opaque).
-  /// Used to guard the same-head-spine optimization (lean4lean: dt.hints.isRegular).
+  /// Check if a constant has Regular reducibility hints.
   fn is_regular(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
     use ix_common::env::ReducibilityHints;
     Ok(matches!(
@@ -1559,11 +1594,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           return Ok(LazyDeltaStep::Unknown);
         }
       } else {
-        if a_id.addr == b_id.addr
-          && self.is_regular(a_id)?
-          && let Some(true) = self.try_same_head_spine(a, b)?
-        {
-          return Ok(LazyDeltaStep::Equal);
+        if a_id.addr == b_id.addr {
+          let result = if self.is_regular(a_id)? {
+            self.try_same_head_spine(a, b)?
+          } else {
+            self.try_same_head_spine_speculative(a, b)?
+          };
+          if let Some(true) = result {
+            return Ok(LazyDeltaStep::Equal);
+          }
         }
         let a2 = self.delta_unfold_one(a)?;
         let b2 = self.delta_unfold_one(b)?;
@@ -1787,6 +1826,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return;
     }
+    // `ix check-rs` does not currently install a `log` subscriber.  Emit the
+    // compact, explicitly requested guard record directly so a local-fuel
+    // failure cannot masquerade as generic recursion depth in CLI runs.  The
+    // full expressions remain behind `log::info!` below.
+    eprintln!(
+      "[deq max] {kind} const={} depth={} peak={} used={} a={} b={} a_head={} b_head={} wa_head={} wb_head={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.def_eq_depth,
+      self.def_eq_peak,
+      self.fuel_used(),
+      a.hash_key(),
+      b.hash_key(),
+      a_head,
+      b_head,
+      wa_head,
+      wb_head
+    );
     log::info!(
       "[deq max] {kind} depth={} a_head={} b_head={} wa_head={} wb_head={}",
       self.def_eq_depth,
@@ -1888,6 +1944,131 @@ mod tests {
       },
     );
     env
+  }
+
+  /// `A : Type`, `c d : A`, and `head : A → A := fun x => x`, with the
+  /// requested reducibility hint on `head`.
+  fn env_with_same_head_hint(hints: ReducibilityHints) -> KEnv<Anon> {
+    let mut env = KEnv::new();
+    let a_id = mk_id("same_head.A");
+    let a = AE::cnst(a_id.clone(), Box::new([]));
+    env.insert(
+      a_id,
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: sort1(),
+      },
+    );
+    for name in ["same_head.c", "same_head.d"] {
+      env.insert(
+        mk_id(name),
+        KConst::Axio {
+          name: (),
+          level_params: (),
+          is_unsafe: false,
+          lvls: 0,
+          ty: a.clone(),
+        },
+      );
+    }
+    let head_id = mk_id("same_head.head");
+    env.insert(
+      head_id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints,
+        lvls: 0,
+        ty: AE::all((), (), a.clone(), a.clone()),
+        val: AE::lam((), (), a, AE::var(0, ())),
+        lean_all: (),
+        block: head_id,
+      },
+    );
+    env
+  }
+
+  fn assert_same_head_congruence_does_not_unfold(hints: ReducibilityHints) {
+    let mut env = env_with_same_head_hint(hints);
+    let a = AE::cnst(mk_id("same_head.A"), Box::new([]));
+    let c = AE::cnst(mk_id("same_head.c"), Box::new([]));
+    let head = AE::cnst(mk_id("same_head.head"), Box::new([]));
+    let head_key = head.hash_key();
+    let beta_arg = AE::app(AE::lam((), (), a, AE::var(0, ())), c.clone());
+    let left = AE::app(head.clone(), beta_arg);
+    let right = AE::app(head, c);
+
+    {
+      let mut tc = TypeChecker::new(&mut env);
+      assert!(tc.is_def_eq(&left, &right).unwrap());
+    }
+    assert!(
+      !env.unfold_cache.contains_key(&head_key),
+      "same-head congruence should decide equality before unfolding the head"
+    );
+  }
+
+  #[test]
+  fn def_eq_same_head_abbrev_uses_congruence_before_delta() {
+    assert_same_head_congruence_does_not_unfold(ReducibilityHints::Abbrev);
+  }
+
+  #[test]
+  fn def_eq_same_head_regular_still_uses_congruence_before_delta() {
+    assert_same_head_congruence_does_not_unfold(ReducibilityHints::Regular(7));
+  }
+
+  #[test]
+  fn def_eq_same_head_opaque_hint_uses_congruence_before_delta() {
+    assert_same_head_congruence_does_not_unfold(ReducibilityHints::Opaque);
+  }
+
+  #[test]
+  fn def_eq_same_head_abbrev_falls_back_after_speculation_window() {
+    let mut env = env_with_same_head_hint(ReducibilityHints::Abbrev);
+    let a = AE::cnst(mk_id("same_head.A"), Box::new([]));
+    let c = AE::cnst(mk_id("same_head.c"), Box::new([]));
+    let head = AE::cnst(mk_id("same_head.head"), Box::new([]));
+    let head_key = head.hash_key();
+    let beta_arg = AE::app(AE::lam((), (), a, AE::var(0, ())), c.clone());
+    let left = AE::app(head.clone(), beta_arg);
+    let right = AE::app(head, c);
+
+    {
+      let mut tc = TypeChecker::new(&mut env);
+      tc.rec_fuel = super::super::tc::max_rec_fuel()
+        .saturating_sub(super::SAME_HEAD_SPECULATION_START_FUEL);
+      assert!(tc.is_def_eq(&left, &right).unwrap());
+    }
+    assert!(
+      env.unfold_cache.contains_key(&head_key),
+      "late non-Regular comparisons must resume through ordinary delta"
+    );
+  }
+
+  #[test]
+  fn def_eq_same_head_argument_miss_falls_back_to_delta() {
+    let mut env = env_with_same_head_hint(ReducibilityHints::Abbrev);
+    let head = AE::cnst(mk_id("same_head.head"), Box::new([]));
+    let head_key = head.hash_key();
+    let left =
+      AE::app(head.clone(), AE::cnst(mk_id("same_head.c"), Box::new([])));
+    let right = AE::app(head, AE::cnst(mk_id("same_head.d"), Box::new([])));
+
+    {
+      let mut tc = TypeChecker::new(&mut env);
+      assert!(!tc.is_def_eq(&left, &right).unwrap());
+    }
+    assert!(!env.def_eq_failure.is_empty());
+    assert!(
+      env.unfold_cache.contains_key(&head_key),
+      "a rejected same-head comparison must continue with ordinary delta"
+    );
   }
 
   /// Insert a `Defn` with the given reducibility hints under `name`, returning

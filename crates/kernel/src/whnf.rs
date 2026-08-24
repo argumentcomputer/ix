@@ -121,6 +121,20 @@ struct NatRecLiteralParts<M: KernelMode> {
   major_idx: usize,
 }
 
+/// Outcome of probing Rule-K constructor synthesis.
+///
+/// `DefinitiveReject` is deliberately stronger than `Inconclusive`: it is
+/// returned only when a full-strength DefEq proves that the inferred major
+/// type cannot be the nullary constructor's type.  Subject reduction then
+/// rules out exposing that constructor by WHNF, so retrying on the proof term
+/// itself is both futile and potentially extremely expensive.  Cheap-mode
+/// false negatives remain inconclusive and retain the conservative fallback.
+enum KSynthOutcome<M: KernelMode> {
+  Synthesized(KExpr<M>),
+  DefinitiveReject,
+  Inconclusive,
+}
+
 /// Which primitive-reducer family a head constant belongs to. The WHNF
 /// loops used to probe every reducer per iteration — each collecting its
 /// own app spine and running its own gauntlet of 32-byte address
@@ -212,6 +226,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     let (orig_head, orig_args) = collect_app_spine(original);
     let (cur_head, cur_args) = collect_app_spine(current);
+    // This diagnostic is explicitly opt-in and guard failures are rare.  Use
+    // stderr for the one-line provenance record so `ix check-rs` remains
+    // useful even when its embedding executable has not installed a `log`
+    // subscriber (the CLI currently does not).  Keep the potentially huge
+    // full expressions on `log::info!` below.
+    eprintln!(
+      "[whnf fuel] {phase} const={} depth={} used={} original={} original_head={} original_args={} current={} current_head={} current_args={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.depth(),
+      self.fuel_used(),
+      original.hash_key(),
+      orig_head,
+      orig_args.len(),
+      current.hash_key(),
+      cur_head,
+      cur_args.len()
+    );
     log::info!(
       "[whnf fuel] {phase} const={} depth={} original_head={} original_args={} current_head={} current_args={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
@@ -592,14 +623,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     flags: WhnfFlags,
   ) -> Result<KExpr<M>, TcError<M>> {
     let mut cur = e.clone();
-    let mut fuel = MAX_WHNF_FUEL;
 
     loop {
-      if fuel == 0 {
-        self.dump_whnf_fuel("whnf_core", e, &cur);
-        return Err(TcError::MaxRecDepth);
-      }
-      fuel -= 1;
+      // Each trip either returns or performs a structural beta/zeta/iota
+      // reduction before continuing. Charge that productive work to the
+      // per-constant budget instead of imposing an unrelated 10k per-call
+      // ceiling. The closure machine below follows the same policy.
+      self.tick()?;
 
       match cur.data() {
         // Legacy let-bound variable zeta-reduction: substitute the
@@ -682,7 +712,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // beta firing — Const-headed terms (e.g. literal recursor loops)
       // never pay the closure-wrap + readback overhead.
       if matches!(f.data(), ExprData::Lam(..)) {
-        cur = self.machine_whnf(f, &args, &mut fuel, flags)?;
+        cur = self.machine_whnf(f, &args, flags)?;
         continue;
       }
 
@@ -732,8 +762,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// policy, and prim dispatch byte-identical to the eager path the
   /// machine replaces.
   ///
-  /// Fuel: beta and zeta charge the caller's budget — the same
-  /// one-substitution-event-per-tick granularity as the eager path.
+  /// Fuel: every beta, zeta, and closure-iota transition charges the shared
+  /// per-constant recursion budget. A single closed computation may perform
+  /// more than `MAX_WHNF_FUEL` productive transitions (the PrimeGaps packed
+  /// certificate folds are a concrete example), so the closure machine must
+  /// not reuse the outer WHNF loop's 10k *local* iteration guard.
   /// The transitions between charges (App peels, var jumps) are bounded
   /// by program structure reachable from the fueled pushes, so total
   /// work stays fuel-bounded.
@@ -741,7 +774,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     head: KExpr<M>,
     args: &[KExpr<M>],
-    fuel: &mut u32,
     flags: WhnfFlags,
   ) -> Result<KExpr<M>, TcError<M>> {
     let mut head = head;
@@ -761,10 +793,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         ExprData::Lam(name, bi, ty, body, _) => {
           if let Some(c) = spine.pop() {
             // Beta: O(1) environment push.
-            if *fuel == 0 {
-              return Err(TcError::MaxRecDepth);
-            }
-            *fuel -= 1;
+            self.tick()?;
             let body = body.clone();
             env = env.push(c);
             head = body;
@@ -786,10 +815,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
         ExprData::Let(_, _, val, body, _, _) => {
           // Zeta: O(1) environment push.
-          if *fuel == 0 {
-            return Err(TcError::MaxRecDepth);
-          }
-          *fuel -= 1;
+          self.tick()?;
           let c = Arc::new(Clo::new(val.clone(), env.clone()));
           let body = body.clone();
           env = env.push(c);
@@ -831,10 +857,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             if let Some((rhs, new_spine)) =
               self.try_iota_clo(&id, &us, &spine)?
             {
-              if *fuel == 0 {
-                return Err(TcError::MaxRecDepth);
-              }
-              *fuel -= 1;
+              self.tick()?;
               head = rhs;
               env = MEnv::empty();
               spine = new_spine;
@@ -1348,9 +1371,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // a constructor but its type matches the inductive — we build `Eq.refl params...`.
     let major = &spine[recr.major_idx];
     let major = if recr.k {
-      self
-        .synth_ctor_when_k(major, &rec_id, &recr, &rec_us)?
-        .unwrap_or_else(|| major.clone())
+      match self.synth_ctor_when_k(major, &rec_id, &recr, &rec_us)? {
+        KSynthOutcome::Synthesized(ctor) => ctor,
+        KSynthOutcome::DefinitiveReject => return Ok(None),
+        KSynthOutcome::Inconclusive => major.clone(),
+      }
     } else {
       major.clone()
     };
@@ -1907,7 +1932,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   // -----------------------------------------------------------------------
 
   /// For K-like recursors, try to synthesize a nullary constructor from the
-  /// major premise's type. Returns `Ok(Some(ctor_app))` if successful.
+  /// major premise's type. A full-strength failed candidate comparison is a
+  /// definitive rejection; optional probe misses and cheap-mode false results
+  /// are inconclusive and preserve the ordinary major-WHNF fallback.
   ///
   /// Algorithm (following lean4lean/nanoda):
   /// 1. Infer major's type, WHNF it
@@ -1920,57 +1947,57 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     rec_id: &KId<M>,
     recr: &IotaInfo<M>,
     rec_us: &[KUniv<M>],
-  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+  ) -> Result<KSynthOutcome<M>, TcError<M>> {
     if rec_us.len() as u64 != recr.lvls {
-      return Ok(None);
+      return Ok(KSynthOutcome::Inconclusive);
     }
     // Infer major's type (infer-only: we just need the type, not validation)
     let major_ty = match self.with_infer_only(|tc| tc.infer(major)) {
       Ok(ty) => ty,
-      Err(_) => return Ok(None),
+      Err(_) => return Ok(KSynthOutcome::Inconclusive),
     };
     let major_ty_w = match self.whnf(&major_ty) {
       Ok(w) => w,
-      Err(_) => return Ok(None),
+      Err(_) => return Ok(KSynthOutcome::Inconclusive),
     };
 
     // Extract head constant of the type
     let (ty_head, ty_args) = collect_app_spine(&major_ty_w);
     let ty_head_id = match ty_head.data() {
       ExprData::Const(id, _, _) => id.clone(),
-      _ => return Ok(None),
+      _ => return Ok(KSynthOutcome::Inconclusive),
     };
 
     // Get the recursor's target inductive from its type
     let rec_ty = match self.try_get_const(rec_id)? {
       Some(c) => c.ty().clone(),
-      None => return Ok(None),
+      None => return Ok(KSynthOutcome::Inconclusive),
     };
     let rec_ty = match self.instantiate_univ_params(&rec_ty, rec_us) {
       Ok(ty) => ty,
-      Err(_) => return Ok(None),
+      Err(_) => return Ok(KSynthOutcome::Inconclusive),
     };
     let skip = (recr.params + recr.motives + recr.minors + recr.indices) as u64;
     let ind_id = match self.get_major_inductive_id(&rec_ty, skip) {
       Ok(id) => id,
-      Err(_) => return Ok(None),
+      Err(_) => return Ok(KSynthOutcome::Inconclusive),
     };
 
     // Head of major's type must match the recursor's target inductive
     if ty_head_id.addr != ind_id.addr {
-      return Ok(None);
+      return Ok(KSynthOutcome::Inconclusive);
     }
 
     // Get the first constructor
     let ctor_id = match self.try_get_const(&ind_id)? {
       Some(KConst::Indc { ctors, .. }) if !ctors.is_empty() => ctors[0].clone(),
-      _ => return Ok(None),
+      _ => return Ok(KSynthOutcome::Inconclusive),
     };
 
     // Build nullary ctor application: Ctor.{levels} params...
     let ctor_us = match ty_head.data() {
       ExprData::Const(_, us, _) => us.clone(),
-      _ => return Ok(None),
+      _ => return Ok(KSynthOutcome::Inconclusive),
     };
     let mut ctor_app = self.intern(KExpr::cnst(ctor_id, ctor_us));
     for arg in ty_args.iter().take(recr.params) {
@@ -1980,7 +2007,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Verify: infer ctor's type and check def-eq with major's type
     let ctor_ty = match self.with_infer_only(|tc| tc.infer(&ctor_app)) {
       Ok(ty) => ty,
-      Err(_) => return Ok(None),
+      Err(_) => return Ok(KSynthOutcome::Inconclusive),
     };
     if *IX_KSYNTH_LOG {
       eprintln!("[ksynth-attempt] {}", &ctor_app.hash_key());
@@ -1989,10 +2016,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       if *IX_KSYNTH_LOG {
         eprintln!("[ksynth-reject] {}", &ctor_app.hash_key());
       }
-      return Ok(None);
+      // Cheap projection reduction can report a false negative that a later
+      // full comparison resolves.  Only a normal/full DefEq rejection can be
+      // used to skip WHNF of the major premise.
+      return Ok(if self.cheap_recursion_depth == 0 {
+        KSynthOutcome::DefinitiveReject
+      } else {
+        KSynthOutcome::Inconclusive
+      });
     }
 
-    Ok(Some(ctor_app))
+    Ok(KSynthOutcome::Synthesized(ctor_app))
   }
 
   // -----------------------------------------------------------------------
@@ -5598,16 +5632,18 @@ mod tests {
   // =========================================================================
   // Large-Nat iota runaway guard
   //
-  // WHNF fuel guards against unbounded expansion of Nat literals into
-  // Nat.succ chains when the same recursor peels consecutive predecessors
-  // for thousands of steps. Verify the guard fires by applying `Nat.rec`
-  // whose step immediately forces `ih` to a large literal.
+  // The shared per-constant budget guards against unbounded expansion of Nat
+  // literals into Nat.succ chains when the same recursor peels consecutive
+  // predecessors for thousands of steps. Give this adversarial unit a small
+  // explicit budget: production's 10M allowance is intentionally large for
+  // real certificate computations and would make the termination test slow.
   // =========================================================================
 
   #[test]
   fn whnf_large_nat_literal_iota_cap() {
     let mut env = nat_env();
     let mut tc = TypeChecker::new(&mut env);
+    tc.rec_fuel = u64::from(MAX_WHNF_FUEL);
     // A literal well above the 2^20 threshold.
     let huge = mk_nat(1u64 << 25);
     // Nat.rec : ∀ {motive} (zero) (succ) (t : Nat), motive t
@@ -5617,7 +5653,7 @@ mod tests {
     let succ_branch = lam(nat(), lam(nat(), var(0)));
     let application =
       app(app(app(app(rec_const, motive), zero_branch), succ_branch), huge);
-    assert!(matches!(tc.whnf(&application), Err(TcError::MaxRecDepth)));
+    assert!(matches!(tc.whnf(&application), Err(TcError::MaxRecFuel)));
   }
 
   // =========================================================================

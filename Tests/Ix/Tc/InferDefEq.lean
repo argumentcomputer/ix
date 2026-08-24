@@ -147,6 +147,51 @@ def baseEnv : AnonEnv × Address × Address × Address := Id.run do
   let (ixon, cAddr) := storeConst ixon cAxio
   (ingressEnvOf (ixon, aAddr), aAddr, idAddr, cAddr)
 
+/-- `baseEnv` plus a second inhabitant `d : A`, with an explicit hint on
+    `idA`. The hint channel is separate from the content-addressed constant. -/
+def sameHeadEnv (hints : Lean.ReducibilityHints) :
+    AnonEnv × Address × Address × Address × Address := Id.run do
+  let (ixon, aAddr) := Tests.Tc.Fixtures.envA
+  let idDefn : Ixon.Constant :=
+    ⟨.defn ⟨.defn, .safe, 0,
+      .all (.ref 0 #[]) (.ref 0 #[]), .lam (.ref 0 #[]) (.var 0)⟩,
+     #[], #[aAddr], #[]⟩
+  let (ixon, idAddr) := storeConst ixon idDefn
+  let ixon := { ixon with anonHints := ixon.anonHints.insert idAddr hints }
+  let cAxio : Ixon.Constant := ⟨.axio ⟨false, 0, .ref 0 #[]⟩, #[], #[aAddr], #[]⟩
+  let (ixon, cAddr) := storeConst ixon cAxio
+  let dAxio : Ixon.Constant :=
+    ⟨.axio ⟨true, 0, .ref 0 #[]⟩, #[], #[aAddr], #[]⟩
+  let (ixon, dAddr) := storeConst ixon dAxio
+  (ingressEnvOf (ixon, aAddr), aAddr, idAddr, cAddr, dAddr)
+
+def sameHeadCongruenceDoesNotUnfold (hints : Lean.ReducibilityHints) : Bool :=
+  let (env, aAddr, idAddr, cAddr, _) := sameHeadEnv hints
+  let head := pAddr idAddr
+  let c := pAddr cAddr
+  let betaArg := KExpr.mkApp
+    (KExpr.mkLam () () (pAddr aAddr) (.mkVar 0 ())) c
+  let left := KExpr.mkApp head betaArg
+  let right := KExpr.mkApp head c
+  match (TcM.isDefEq left right).run (.ofEnvAnon env) with
+  | .ok result state => result && !(state.env.unfoldCache.contains head.addr)
+  | .error _ _ => false
+
+def sameHeadCongruenceFallsBackAfterSpeculationWindow : Bool :=
+  let (env, aAddr, idAddr, cAddr, _) := sameHeadEnv .abbrev
+  let head := pAddr idAddr
+  let c := pAddr cAddr
+  let betaArg := KExpr.mkApp
+    (KExpr.mkLam () () (pAddr aAddr) (.mkVar 0 ())) c
+  let left := KExpr.mkApp head betaArg
+  let right := KExpr.mkApp head c
+  let state := { TcState.ofEnvAnon env with
+    recFuel := maxRecFuel - sameHeadSpeculationStartFuel }
+  match (TcM.isDefEq left right).run state with
+  | .ok result state =>
+      result && state.env.unfoldCache.contains head.addr
+  | .error _ _ => false
+
 /-! ### Infer (ported from infer.rs tests) -/
 
 def inferTests : TestSeq :=
@@ -328,15 +373,23 @@ def defEqAdvanced : TestSeq :=
       match runTcOn env (TcM.whnf e) with
       | .ok r => r.addr == (pAddr minorAddr).addr
       | .error _ => false : Bool))
-  ++ test "def_eq failure populates only the narrow negative cache"
-    ((let (env, _, idAddr, cAddr) := baseEnv
-      -- Two same-head Regular-hint applications with different args:
-      -- the same-head-spine attempt fails and is recorded.
-      let e1 := KExpr.mkApp (pAddr idAddr) (pAddr cAddr)
-      let e2 := KExpr.mkApp (pAddr idAddr)
-        (KExpr.mkApp (pAddr idAddr) (pAddr cAddr))
-      match (TcM.isDefEq e1 e2).run (.ofEnvAnon env) with
-      | .ok v s => v && s.env.defEqFailure.size ≥ 0
+  ++ test "same-head Abbrev congruence avoids unfolding the head"
+    (sameHeadCongruenceDoesNotUnfold .abbrev)
+  ++ test "same-head Regular congruence still avoids unfolding the head"
+    (sameHeadCongruenceDoesNotUnfold (.regular 7))
+  ++ test "same-head Opaque-hint congruence avoids unfolding the head"
+    (sameHeadCongruenceDoesNotUnfold .opaque)
+  ++ test "same-head speculation window falls back to ordinary delta"
+    sameHeadCongruenceFallsBackAfterSpeculationWindow
+  ++ test "same-head argument miss is cached and falls back to delta"
+    ((let (env, _, idAddr, cAddr, dAddr) := sameHeadEnv .abbrev
+      let head := pAddr idAddr
+      let left := KExpr.mkApp head (pAddr cAddr)
+      let right := KExpr.mkApp head (pAddr dAddr)
+      match (TcM.isDefEq left right).run (.ofEnvAnon env) with
+      | .ok result state =>
+          !result && state.env.defEqFailure.size > 0 &&
+            state.env.unfoldCache.contains head.addr
       | .error _ _ => false : Bool))
 
 def natOffsetTests : TestSeq :=

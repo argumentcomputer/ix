@@ -182,7 +182,9 @@ private theorem tryIotaSelected_preservesInferOnly
         return none
       let major := spine[recr.majorIdx]!
       let major ← if recr.k then
-          pure ((← synthCtorWhenK major recId recr recUs).getD major)
+          match (← synthCtorWhenK major recId recr recUs).selectMajor major with
+          | some selected => pure selected
+          | none => return none
         else pure major
       let major := (← cleanupNatOffsetMajor major).getD major
       let majorWhnf0 ← if flags.cheapRec then
@@ -205,8 +207,15 @@ private theorem tryIotaSelected_preservesInferOnly
         refine bind_preservesInferOnly
           (synthCtorWhenK_preservesInferOnly hmethods major recId recr recUs) ?_
         intro synthesized
-        exact tryIotaMajor_preservesInferOnly hmethods flags recId recr recUs
-          spine (synthesized.getD major)
+        cases synthesized with
+        | synthesized ctor =>
+            exact tryIotaMajor_preservesInferOnly hmethods flags recId recr recUs
+              spine ctor
+        | definitiveReject =>
+            exact TcM.PreservesInferOnly.pure none
+        | inconclusive =>
+            exact tryIotaMajor_preservesInferOnly hmethods flags recId recr recUs
+              spine major
 
 theorem tryIotaWithFlags_preservesInferOnly
     {methods : Methods .anon} (hmethods : methods.PreservesInferOnly)
@@ -229,8 +238,31 @@ theorem tryIotaWithFlags_preservesInferOnly
               exact TcM.PreservesInferOnly.pure none
           | some recr =>
               simp only []
-              exact tryIotaSelected_preservesInferOnly hmethods flags recId
-                recr recUs spine
+              by_cases hmajor : spine.size ≤ recr.majorIdx
+              · simp only [hmajor, if_pos]
+                exact TcM.PreservesInferOnly.pure none
+              · simp only [hmajor, if_false, pure_bind]
+                let major := spine[recr.majorIdx]!
+                cases hk : recr.k with
+                | false =>
+                    simp only [Bool.false_eq_true, if_false]
+                    exact tryIotaMajor_preservesInferOnly hmethods flags recId
+                      recr recUs spine major
+                | true =>
+                    simp only [if_true]
+                    refine bind_preservesInferOnly
+                      (synthCtorWhenK_preservesInferOnly hmethods major recId
+                        recr recUs) ?_
+                    intro synthesized
+                    cases synthesized with
+                    | synthesized ctor =>
+                        exact tryIotaMajor_preservesInferOnly hmethods flags
+                          recId recr recUs spine ctor
+                    | definitiveReject =>
+                        exact TcM.PreservesInferOnly.pure none
+                    | inconclusive =>
+                        exact tryIotaMajor_preservesInferOnly hmethods flags
+                          recId recr recUs spine major
   | var | fvar | sort | app | lam | all | letE | prj | nat | str =>
       exact TcM.PreservesInferOnly.pure none
 

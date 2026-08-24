@@ -45,7 +45,7 @@ open Std (HashMap HashSet)
 def emptyCtxAddr : Address :=
   Address.blake3 "ix.kernel.ctx.empty".toUTF8
 
-/-- Maximum iterations in the WHNF delta loop (local per-call). -/
+/-- Maximum iterations in auxiliary WHNF loops (local per-call). -/
 def maxWhnfFuel : UInt32 := 10_000
 
 /-- Maximum recursion depth for `isDefEq`. -/
@@ -59,6 +59,12 @@ def maxDefEqDepth : UInt32 := 2_000
     (BVDecide-scale proofs legitimately exceed a million recursive
     steps). -/
 def maxRecFuel : UInt64 := 10_000_000
+
+/-- Emergency ceiling for a single structural-WHNF reduction.  Structural
+    evaluation of closed certificates can legitimately take far more than the
+    auxiliary-loop limit above, so reuse the checker's existing global work
+    budget instead of imposing a second, smaller cutoff. -/
+def maxWhnfCoreFuel : UInt64 := maxRecFuel
 
 /-- Per-check type-checker state fused with the kernel environment. -/
 structure TcState (m : Mode) where

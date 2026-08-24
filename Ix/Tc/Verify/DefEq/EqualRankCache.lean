@@ -87,16 +87,109 @@ theorem isRegular_wf
       | recr | axio | quot | indc | ctor =>
           exact RecM.WF.pure fun _ => trivial
 
+/-- The fuel-bounded non-Regular wrapper preserves the same semantic success
+contract as `trySameHeadSpine`. Exhausting its local slice produces only
+`none`; every state mutation performed by the callback is retained, with the
+caller-visible fuel restored after charging the consumed slice. -/
+theorem trySameHeadSpineSpeculative_wf
+    {layer : WhnfLayer} {semantics : CacheSemantics}
+    {trProj : RawProjRel} {world : VerifyWorld} {support : RunSupport}
+    {uvars : Nat} {Delta : KVLCtx} {state : TcState .anon}
+    {left right : KExpr .anon} {leftV rightV : Lean4Lean.VExpr}
+    (hsame : TrySameHeadSpine.WFAt layer semantics trProj world support
+      uvars)
+    (hleftSupport : support left) (hrightSupport : support right)
+    (hleft : TrKExprS world.venv uvars world.nameOf trProj Delta left leftV)
+    (hright : TrKExprS world.venv uvars world.nameOf trProj Delta right
+      rightV) :
+    RecM.WF layer semantics trProj world support uvars Delta state
+      (trySameHeadSpineSpeculative left right)
+      (fun result _ => match result with
+        | none => True
+        | some answer => answer = true →
+            world.venv.IsDefEqU uvars Delta.toCtx leftV rightV) := by
+  unfold trySameHeadSpineSpeculative
+  apply RecM.WF.bind
+    (Q₁ := fun observed after => observed = after)
+    (RecM.WF.get fun _ => rfl)
+  intro observed saved hsaved
+  subst observed
+  simp only [letFun]
+  split
+  · exact RecM.WF.pure fun _ => trivial
+  · apply RecM.WF.bind
+      (Q₁ := fun _ limited => limited =
+        { saved with recFuel :=
+            (min saved.recFuel sameHeadSpeculationAttemptFuel) })
+    · exact RecM.WF.modify
+        (Q := fun _ limited => limited =
+          { saved with recFuel :=
+              (min saved.recFuel sameHeadSpeculationAttemptFuel) })
+        (f := fun current => { current with
+          recFuel := min saved.recFuel sameHeadSpeculationAttemptFuel })
+        (fun hI => hI.set_recFuel _)
+        (fun _ => rfl)
+    · intro _ limited hlimited
+      subst limited
+      apply RecM.WF.bind
+        (Q₁ := fun result : Except (TcError .anon) (Option Bool) =>
+          fun _ => match result with
+          | .ok result => match result with
+            | none => True
+            | some answer => answer = true →
+                world.venv.IsDefEqU uvars Delta.toCtx leftV rightV
+          | .error _ => True)
+      · apply RecM.WF.tryCatch (E₁ := fun _ _ => True)
+        · apply RecM.WF.bind <|
+            hsame hleftSupport hrightSupport hleft hright
+          intro result after hresult
+          exact RecM.WF.pure fun _ => hresult
+        · intro err after _
+          exact RecM.WF.pure fun _ => trivial
+      · intro result afterCallback hresult
+        apply RecM.WF.bind
+          (Q₁ := fun observed after => observed = after)
+          (RecM.WF.get fun _ => rfl)
+        intro observed afterRead hobserved
+        subst observed
+        apply RecM.WF.bind
+          (Q₁ := fun _ restored => restored =
+            { afterRead with recFuel := (saved.recFuel -
+              min saved.recFuel
+                (min saved.recFuel sameHeadSpeculationAttemptFuel -
+                  afterRead.recFuel)) })
+        · exact RecM.WF.modify
+            (Q := fun _ restored => restored =
+              { afterRead with recFuel := (saved.recFuel -
+                min saved.recFuel
+                  (min saved.recFuel sameHeadSpeculationAttemptFuel -
+                    afterRead.recFuel)) })
+            (f := fun current => { current with
+              recFuel := (saved.recFuel - min saved.recFuel
+                (min saved.recFuel sameHeadSpeculationAttemptFuel -
+                  afterRead.recFuel)) })
+            (fun hI => hI.set_recFuel _)
+            (fun _ => rfl)
+        · intro _ restored hrestored
+          subst restored
+          cases result with
+          | ok answer => exact RecM.WF.pure fun _ => hresult
+          | error err =>
+              cases err <;>
+                first
+                | exact RecM.WF.pure fun _ => trivial
+                | exact RecM.WF.throw fun _ => trivial
+
 /-- Semantic contract for the cached same-head helper. -/
 def TrySameHeadSpineCached.WFAt (layer : WhnfLayer)
     (semantics : CacheSemantics) (trProj : RawProjRel)
     (world : VerifyWorld) (support : RunSupport) (uvars : Nat) : Prop :=
-  ∀ {Delta state left right leftV rightV},
+  ∀ {Delta state speculative left right leftV rightV},
     support left → support right →
     TrKExprS world.venv uvars world.nameOf trProj Delta left leftV →
     TrKExprS world.venv uvars world.nameOf trProj Delta right rightV →
     RecM.WF layer semantics trProj world support uvars Delta state
-      (trySameHeadSpineCached left right)
+      (trySameHeadSpineCached speculative left right)
       (fun result _ => match result with
         | none => True
         | some answer => answer = true →
@@ -112,12 +205,13 @@ theorem trySameHeadSpineCached_wf
     (hcache : DefEqFailureCacheResources semantics world support)
     (hsame : TrySameHeadSpine.WFAt layer semantics trProj world support
       uvars)
+    (speculative : Bool)
     (hleftSupport : support left) (hrightSupport : support right)
     (hleft : TrKExprS world.venv uvars world.nameOf trProj Delta left leftV)
     (hright : TrKExprS world.venv uvars world.nameOf trProj Delta right
       rightV) :
     RecM.WF layer semantics trProj world support uvars Delta state
-      (trySameHeadSpineCached left right)
+      (trySameHeadSpineCached speculative left right)
       (fun result _ => match result with
         | none => True
         | some answer => answer = true →
@@ -138,8 +232,15 @@ theorem trySameHeadSpineCached_wf
       exact RecM.WF.pure fun _ => trivial
   | false =>
       simp only [Bool.false_eq_true, if_false]
-      apply RecM.WF.bind <|
-        hsame hleftSupport hrightSupport hleft hright
+      apply RecM.WF.bind <| by
+        cases speculative with
+        | false =>
+            simp only [Bool.false_eq_true, if_false]
+            exact hsame hleftSupport hrightSupport hleft hright
+        | true =>
+            simp only [if_true]
+            exact trySameHeadSpineSpeculative_wf hsame hleftSupport
+              hrightSupport hleft hright
       intro result afterAttempt hresult
       cases result with
       | some answer =>
@@ -165,9 +266,9 @@ theorem ofResources
       uvars) :
     TrySameHeadSpineCached.WFAt layer semantics trProj world support
       uvars := by
-  intro Delta state left right leftV rightV hleftSupport hrightSupport
-    hleft hright
-  exact trySameHeadSpineCached_wf hcache hsame hleftSupport hrightSupport
+  intro Delta state speculative left right leftV rightV hleftSupport
+    hrightSupport hleft hright
+  exact trySameHeadSpineCached_wf hcache hsame speculative hleftSupport hrightSupport
     hleft hright
 
 end TrySameHeadSpineCached

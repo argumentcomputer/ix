@@ -2393,7 +2393,7 @@ def kIotaCandidateTrace :
 theorem kIotaCandidate :
     (RecM.verifyKSynthCandidate natRef zeroId #[] #[] 0).run
       kIotaHarnessMethods kIotaState =
-        .ok (some kSynthCtor) kIotaAfterIntern :=
+        .ok (.synthesized kSynthCtor) kIotaAfterIntern :=
   kIotaCandidateTrace.eval
 
 def kIotaSynthTrace :
@@ -2439,7 +2439,7 @@ def kIotaSynthTrace :
 theorem kIotaSynth :
     (RecM.synthCtorWhenK kMajor iotaId kIotaInfo #[]).run
       kIotaHarnessMethods kIotaState =
-        .ok (some kSynthCtor) kIotaAfterIntern :=
+        .ok (.synthesized kSynthCtor) kIotaAfterIntern :=
   kIotaSynthTrace.eval
 
 theorem kIotaInternFrame :
@@ -2628,7 +2628,7 @@ theorem kMajorInferRawError :
 is observable in the final state. -/
 theorem kMajorInferCaughtMiss :
     (RecM.synthCtorWhenK kMajor iotaId kIotaInfo #[]).run
-      kInferErrorMethods kIotaState = .ok none kMajorInferErrorState :=
+      kInferErrorMethods kIotaState = .ok .inconclusive kMajorInferErrorState :=
   RecM.synthCtorWhenK_majorInferError (by decide) kMajorInferRawError
 
 theorem kCandidateInferRawError :
@@ -2642,7 +2642,7 @@ without incrementing either K-synthesis counter. -/
 theorem kCandidateInferCaughtMiss :
     (RecM.verifyKSynthCandidate natRef zeroId #[] #[] 0).run
       kInferErrorMethods kIotaState =
-        .ok none kCandidateInferErrorState := by
+        .ok .inconclusive kCandidateInferErrorState := by
   exact RecM.verifyKSynthCandidate_inferError kIotaIntern (by rfl)
     kCandidateInferRawError
 
@@ -2824,7 +2824,7 @@ fallback without changing checker state. -/
 theorem kEmptyInductiveMiss :
     (RecM.synthCtorWhenK kMajor iotaId kIotaInfo #[]).run
       kIotaHarnessMethods kEmptyInductiveState =
-        .ok none kEmptyInductiveState := by
+        .ok .inconclusive kEmptyInductiveState := by
   apply kEmptySelectionTrace.empty (by rfl)
   exact kEmptyGetNat
 
@@ -3535,10 +3535,10 @@ The trace carries the same fixed world/context invariant throughout. -/
 theorem structuralLoopTrace (prims : Primitives .anon)
     (flags : WhnfFlags) :
     RecM.WhnfCoreTrace .structuralNoAccel whnfSemantics RawProjRel.none worldGood
-      support 0 structuralLoopCtx betaHarnessMethods flags maxWhnfFuel.toNat
+      support 0 structuralLoopCtx betaHarnessMethods flags maxWhnfCoreFuel.toNat
       structuralLoopSource (structuralLoopState prims) betaArg
       (structuralLoopState prims) := by
-  rw [show maxWhnfFuel.toNat = 10000 by rfl]
+  rw [show maxWhnfCoreFuel.toNat = 10000000 by rfl]
   refine .next (structuralLoopStateInv prims)
     (structuralLoopFVarStep prims flags) (structuralLoopStateInv prims)
     (structuralLoopSourceMeaning prims) ?_
@@ -3754,9 +3754,9 @@ theorem coreCacheTrace {s : TcState .anon}
     (hI : WhnfStateInv .structuralNoAccel whnfSemantics RawProjRel.none worldGood
       coreCacheSupport 0 [] s) (flags : WhnfFlags) :
     RecM.WhnfCoreTrace .structuralNoAccel whnfSemantics RawProjRel.none worldGood
-      coreCacheSupport 0 [] betaHarnessMethods flags maxWhnfFuel.toNat
+      coreCacheSupport 0 [] betaHarnessMethods flags maxWhnfCoreFuel.toNat
       betaSource s betaArg s := by
-  rw [show maxWhnfFuel.toNat = 10000 by rfl]
+  rw [show maxWhnfCoreFuel.toNat = 10000000 by rfl]
   refine .next hI (betaStep_state s flags) hI betaResultMeaning ?_
   exact .done hI (RecM.whnfCoreWithFlagsStep_leaf .const flags) hI
     betaArgMeaning
