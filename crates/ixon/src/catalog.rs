@@ -603,11 +603,8 @@ mod host {
         ingest_piece(dir, &spec.path, &spec.label, &source.file_hash)?;
       // Re-open at the ingested path so the mmaps backing the sweep
       // (and any later use) reference the catalog's own copy.
-      let piece = if ingested == spec.path {
-        source
-      } else {
-        open_piece(&ingested)?
-      };
+      let piece =
+        if ingested == spec.path { source } else { open_piece(&ingested)? };
       members.push(CatalogMember {
         env_root: piece.env_root.clone(),
         const_count: piece.index.consts.len() as u64,
@@ -1005,15 +1002,17 @@ mod tests {
   }
 
   fn tmp_dir(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-      "ixc-test-{tag}-{}",
-      std::process::id()
-    ));
+    let dir = std::env::temp_dir()
+      .join(format!("ixc-test-{tag}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir
   }
 
-  fn write_piece(dir: &std::path::Path, name: &str, seeds: &[&[u8]]) -> PathBuf {
+  fn write_piece(
+    dir: &std::path::Path,
+    name: &str,
+    seeds: &[&[u8]],
+  ) -> PathBuf {
     let env = Env::new();
     for s in seeds {
       let (addr, bytes) = fab(s);
@@ -1042,8 +1041,9 @@ mod tests {
     let a = write_piece(&dir, "srcA", &[b"x", b"a1"]);
     let b = write_piece(&dir, "srcB", &[b"x", b"b1", b"b2"]);
     let cat_dir = dir.join("cat.ixc");
-    let cat = assemble_into(&cat_dir,
-      &[spec(&a, "A", vec![]), spec(&b, "B", vec![0])]).unwrap();
+    let cat =
+      assemble_into(&cat_dir, &[spec(&a, "A", vec![]), spec(&b, "B", vec![0])])
+        .unwrap();
     assert_eq!(cat.members.len(), 2);
     assert_eq!(cat.members[0].const_count, 2);
     assert_eq!(cat.members[1].const_count, 3);
@@ -1058,9 +1058,14 @@ mod tests {
     assert_eq!(outcome.union_consts, 4);
     // Re-assembling in place (paths now INSIDE the dir) is a no-op
     // ingest and commits identically.
-    let again = assemble_into(&cat_dir,
-      &[spec(&cat_dir.join("A.ixe"), "A", vec![]),
-        spec(&cat_dir.join("B.ixe"), "B", vec![0])]).unwrap();
+    let again = assemble_into(
+      &cat_dir,
+      &[
+        spec(&cat_dir.join("A.ixe"), "A", vec![]),
+        spec(&cat_dir.join("B.ixe"), "B", vec![0]),
+      ],
+    )
+    .unwrap();
     assert_eq!(again, cat);
     std::fs::remove_dir_all(&dir).ok();
   }
@@ -1073,8 +1078,8 @@ mod tests {
     let cat_dir = dir.join("cat.ixc");
     assemble_into(&cat_dir, &[spec(&a, "A", vec![])]).unwrap();
     // Same label, different content: never silently replaced.
-    let err = assemble_into(&cat_dir, &[spec(&other, "A", vec![])])
-      .unwrap_err();
+    let err =
+      assemble_into(&cat_dir, &[spec(&other, "A", vec![])]).unwrap_err();
     assert!(err.contains("different content"), "{err}");
     std::fs::remove_dir_all(&dir).ok();
   }
@@ -1088,10 +1093,16 @@ mod tests {
     let b1 = write_piece(&dir, "B1", &[b"z"]);
     let a2 = write_piece(&dir, "A2", &[b"x"]);
     let b2 = write_piece(&dir, "B2", &[b"y", b"z"]);
-    let cat1 = assemble_into(&dir.join("one.ixc"),
-      &[spec(&a1, "A1", vec![]), spec(&b1, "B1", vec![])]).unwrap();
-    let cat2 = assemble_into(&dir.join("two.ixc"),
-      &[spec(&a2, "A2", vec![]), spec(&b2, "B2", vec![])]).unwrap();
+    let cat1 = assemble_into(
+      &dir.join("one.ixc"),
+      &[spec(&a1, "A1", vec![]), spec(&b1, "B1", vec![])],
+    )
+    .unwrap();
+    let cat2 = assemble_into(
+      &dir.join("two.ixc"),
+      &[spec(&a2, "A2", vec![]), spec(&b2, "B2", vec![])],
+    )
+    .unwrap();
     assert_eq!(cat1.content_root, cat2.content_root);
     assert_ne!(cat1.members_root, cat2.members_root);
     std::fs::remove_dir_all(&dir).ok();
@@ -1101,8 +1112,8 @@ mod tests {
   fn from_bytes_rejects_tampering() {
     let dir = tmp_dir("tamper");
     let a = write_piece(&dir, "A", &[b"a"]);
-    let cat = assemble_into(&dir.join("cat.ixc"),
-      &[spec(&a, "A", vec![])]).unwrap();
+    let cat =
+      assemble_into(&dir.join("cat.ixc"), &[spec(&a, "A", vec![])]).unwrap();
     let good = cat.to_bytes().unwrap();
 
     // Bad magic.
@@ -1119,9 +1130,7 @@ mod tests {
     let mut bad = good.clone();
     let member_root_off = 8 + 4 + 4 + 32 + 32 + 4;
     bad[member_root_off] ^= 0xFF;
-    assert!(
-      Catalog::from_bytes(&bad).unwrap_err().contains("members_root")
-    );
+    assert!(Catalog::from_bytes(&bad).unwrap_err().contains("members_root"));
 
     // Truncation.
     assert!(Catalog::from_bytes(&good[..good.len() - 1]).is_err());
@@ -1133,8 +1142,7 @@ mod tests {
     let dir = tmp_dir("wrongroot");
     let a = write_piece(&dir, "A", &[b"a"]);
     let cat_dir = dir.join("cat.ixc");
-    let mut cat =
-      assemble_into(&cat_dir, &[spec(&a, "A", vec![])]).unwrap();
+    let mut cat = assemble_into(&cat_dir, &[spec(&a, "A", vec![])]).unwrap();
     cat.content_root = Address::hash(b"not the root");
     let err = verify(&cat, &cat_dir, false).unwrap_err();
     assert!(err.contains("content_root"), "{err}");
@@ -1224,16 +1232,18 @@ mod tests {
     let a = write_piece(&dir, "A", &[b"x", b"a1"]);
     let b = write_piece(&dir, "B", &[b"x", b"b1"]);
     let out = dir.join("union.ixe");
-    let stats =
-      merge_anon(&[a.clone(), b.clone()], &out).unwrap();
+    let stats = merge_anon(&[a.clone(), b.clone()], &out).unwrap();
     assert_eq!(stats.consts, 3, "shared dep dedups");
     // The output is an ordinary v1 anon env: readable, root-stable,
     // and re-assembling it as a single-member catalog reproduces the
     // two-member catalog's content_root (union semantics).
     let opened = open_piece(&out).unwrap();
     assert_eq!(opened.env_root, stats.root);
-    let cat2 = assemble_into(&dir.join("m.ixc"),
-      &[spec(&a, "A", vec![]), spec(&b, "B", vec![])]).unwrap();
+    let cat2 = assemble_into(
+      &dir.join("m.ixc"),
+      &[spec(&a, "A", vec![]), spec(&b, "B", vec![])],
+    )
+    .unwrap();
     assert_eq!(cat2.content_root, stats.root);
     // Idempotent: merging the merge with an input changes nothing.
     let out2 = dir.join("union2.ixe");
@@ -1270,8 +1280,9 @@ mod tests {
   fn label_path_traversal_rejected() {
     let dir = tmp_dir("label");
     let a = write_piece(&dir, "A", &[b"a"]);
-    let err = assemble_into(&dir.join("cat.ixc"),
-      &[spec(&a, "../evil", vec![])]).unwrap_err();
+    let err =
+      assemble_into(&dir.join("cat.ixc"), &[spec(&a, "../evil", vec![])])
+        .unwrap_err();
     assert!(err.contains("bare filename"), "{err}");
     std::fs::remove_dir_all(&dir).ok();
   }

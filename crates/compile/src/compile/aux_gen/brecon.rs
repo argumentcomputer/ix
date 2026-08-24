@@ -1413,7 +1413,7 @@ fn mk_eq_of_heq(
 /// check per argument. Fixture:
 /// `Tests/Ix/Compile/Mutual.lean` `TypeBrecOnEqDefUnit`.
 fn meta_defeq(
-  tc: &mut super::expr_utils::TcScope,
+  tc: &mut super::expr_utils::TcScope<'_>,
   lean_env: &LeanEnv,
   a: &LeanExpr,
   b: &LeanExpr,
@@ -1446,7 +1446,7 @@ fn meta_defeq(
 /// constructor (`matchConstNonRecStructure` + `numFields == 0`), and
 /// `b`'s type is def-eq to it.
 fn is_unit_like_pair(
-  tc: &mut super::expr_utils::TcScope,
+  tc: &mut super::expr_utils::TcScope<'_>,
   lean_env: &LeanEnv,
   a: &LeanExpr,
   b: &LeanExpr,

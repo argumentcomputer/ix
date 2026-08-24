@@ -22,10 +22,10 @@ use ix_compile::decompile::{check_decompile, decompile_env};
 use std::sync::Arc;
 
 use lean_ffi::nat::Nat;
-use lean_ffi::object::{LeanNat, LeanString};
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanList, LeanOwned, LeanRef, LeanShared,
 };
+use lean_ffi::object::{LeanNat, LeanString};
 
 use crate::lean::{
   LeanIxAxiomVal, LeanIxConstantInfo, LeanIxConstantVal, LeanIxConstructorVal,
@@ -1965,8 +1965,13 @@ extern "C" fn rs_compile_validate_aux(
           "{VALIDATE_PREFIX} RESULT: {} total failures (aborted after Phase 1)",
           p1.fail
         );
-        write_validate_phase_report(&report_path, &phase_rows, p1.fail,
-          Some("after Phase 1"), t_total.elapsed().as_secs_f32());
+        write_validate_phase_report(
+          &report_path,
+          &phase_rows,
+          p1.fail,
+          Some("after Phase 1"),
+          t_total.elapsed().as_secs_f32(),
+        );
         return p1.fail;
       },
       Err(panic) => {
@@ -1982,8 +1987,13 @@ extern "C" fn rs_compile_validate_aux(
           "{VALIDATE_PREFIX} RESULT: {} total failures (aborted after Phase 1)",
           p1.fail
         );
-        write_validate_phase_report(&report_path, &phase_rows, p1.fail,
-          Some("after Phase 1"), t_total.elapsed().as_secs_f32());
+        write_validate_phase_report(
+          &report_path,
+          &phase_rows,
+          p1.fail,
+          Some("after Phase 1"),
+          t_total.elapsed().as_secs_f32(),
+        );
         return p1.fail;
       },
     };
@@ -3919,8 +3929,13 @@ extern "C" fn rs_compile_validate_aux(
       + p6.fail
       + p7.fail;
     println!("{VALIDATE_PREFIX} RESULT: {total} total failures");
-    write_validate_phase_report(&report_path, &phase_rows, total,
-      Some("after Phase 7 serialize"), t_total.elapsed().as_secs_f32());
+    write_validate_phase_report(
+      &report_path,
+      &phase_rows,
+      total,
+      Some("after Phase 7 serialize"),
+      t_total.elapsed().as_secs_f32(),
+    );
     return total;
   }
   println!(
@@ -4241,8 +4256,13 @@ extern "C" fn rs_compile_validate_aux(
     t_total.elapsed().as_secs_f32()
   );
   println!("{VALIDATE_PREFIX} RESULT: {total} total failures");
-  write_validate_phase_report(&report_path, &phase_rows, total, None,
-    t_total.elapsed().as_secs_f32());
+  write_validate_phase_report(
+    &report_path,
+    &phase_rows,
+    total,
+    None,
+    t_total.elapsed().as_secs_f32(),
+  );
 
   // Skip destructors on the CLI path. Mirrors the `rs_compile_env`
   // treatment (`src/ffi/compile.rs`). On Mathlib the remaining live state

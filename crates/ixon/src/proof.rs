@@ -173,11 +173,7 @@ pub enum Claim {
   /// of per-piece/chunk `CheckEnv` claims with set discharge (the
   /// shard protocol one level up) — there is deliberately no
   /// whole-catalog interpreter arm.
-  Catalog {
-    members: Address,
-    content: Address,
-    assumptions: Option<Address>,
-  },
+  Catalog { members: Address, content: Address, assumptions: Option<Address> },
 }
 
 /// A proof of a claim.
@@ -1474,8 +1470,7 @@ mod tests {
       "catalog claim digest drifted"
     );
     // Unconditional form: trailing 0x00, same 2-byte tag.
-    let claim_none =
-      Claim::Catalog { members, content, assumptions: None };
+    let claim_none = Claim::Catalog { members, content, assumptions: None };
     let mut buf = Vec::new();
     claim_none.put(&mut buf);
     assert_eq!(buf.len(), 2 + 32 + 32 + 1);

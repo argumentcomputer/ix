@@ -9,9 +9,7 @@
 
 use std::path::PathBuf;
 
-use ixon::catalog::{
-  self as cat, Catalog, CatalogStorage, MemberSpec,
-};
+use ixon::catalog::{self as cat, Catalog, CatalogStorage, MemberSpec};
 use lean_ffi::object::{LeanBorrowed, LeanIOResult, LeanOwned, LeanString};
 
 fn member_json(m: &ixon::catalog::CatalogMember) -> serde_json::Value {
@@ -92,9 +90,8 @@ pub extern "C" fn rs_catalog_assemble(
   };
   let mut specs = Vec::with_capacity(rows.len());
   for row in rows {
-    let field = |k: &str| {
-      row.get(k).and_then(|v| v.as_str()).map(str::to_string)
-    };
+    let field =
+      |k: &str| row.get(k).and_then(|v| v.as_str()).map(str::to_string);
     let Some(path) = field("path") else {
       return LeanIOResult::error_string(
         "rs_catalog_assemble: member row missing \"path\"",
@@ -127,9 +124,7 @@ pub extern "C" fn rs_catalog_assemble(
   let catalog = match cat::assemble_into(&dir, &specs) {
     Ok(c) => c,
     Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_catalog_assemble: {e}"
-      ));
+      return LeanIOResult::error_string(&format!("rs_catalog_assemble: {e}"));
     },
   };
   let manifest_bytes = std::fs::metadata(dir.join(cat::MANIFEST_FILE))
