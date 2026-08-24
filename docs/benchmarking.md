@@ -271,7 +271,18 @@ only an explicit `fresh` request bypasses the measured-product caches.
 The Palomar registry snapshot, isolated workspaces, and Lean-4.33 source ports
 live in the standalone sibling repository `Palomar.ix`. That repository uses
 ix as its compiler dependency and owns the resulting `palomar.ixc`; Palomar
-projects are no longer duplicated in TruthMines' package graph.
+projects are not duplicated in TruthMines' package graph. A full artifact can
+flatten the verified Palomar members into TruthMines without reopening those
+workspaces:
+
+```console
+(cd ../Palomar.ix && nix develop --command lake exe palomar build)
+lake exe truthmines build --palomar-ixc ../Palomar.ix/palomar.ixc
+```
+
+The resulting catalog has 97 members: 78 native TruthMines members followed by
+the 19 Palomar members, with Palomar's source pins, compatibility-overlay
+identities, toolchains, and internal dependency indices preserved.
 
 ## TruthMines corpus baselines
 
@@ -280,8 +291,8 @@ watchdogged `ix compile` → self-contained catalog directory →
 `ix catalog assemble` + `verify`), first full run recorded 2026-08-21
 on the shared 124 GiB box:
 
-The table predates the TauCeti admission. The current full admission spec has
-78 members.
+The table predates the TauCeti admission and external Palomar composition. The
+native full admission spec has 78 members; `--palomar-ixc` expands it to 97.
 
 | leg | figure |
 |---|---|

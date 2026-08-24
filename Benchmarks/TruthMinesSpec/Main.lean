@@ -22,7 +22,7 @@
                     under the box-level ceiling; raise --jobs for
                     small-member sweeps or --only subsets.
     build [--mini] [--out DIR.ixc] [--jobs N] [--ceiling-gb N]
-          [--no-watchdog] [--no-cache]
+          [--no-watchdog] [--no-cache] [--palomar-ixc DIR.ixc]
                     gen-check, build the member root oleans (network +
                     `lake exe cache get` on first run), compile each
                     member's piece DIRECTLY INTO the self-contained
@@ -39,7 +39,11 @@
                     are written. Pieces are cached: a member is
                     recompiled only when its pin closure, toolchain, or
                     ix version changed (`<out>/.cache/<Q>.key`), or
-                    with `--no-cache`.
+                    with `--no-cache`. On a full build,
+                    `--palomar-ixc` flattens the already-verified
+                    standalone Palomar catalog into the final manifest;
+                    its source workspaces and compatibility patches stay
+                    owned by Palomar.ix.
     check [--mini] [--ixc DIR.ixc] [--only Q[,Q…]] [--jobs N]
                     per-piece KERNEL sweep: `ix check-rs --anon` over
                     each member's piece in the `.ixc` directory — the
@@ -62,6 +66,7 @@
   Run from the repo root; `build` needs `lake build ix` first.
 -/
 import Benchmarks.TruthMinesSpec.Projection
+import Ix.Catalog
 import Ix.Common
 import Ix.Watchdog
 
@@ -70,7 +75,8 @@ open TruthMinesSpec
 private def usage : String :=
   "usage: lake exe truthmines <gen [--check] | spec [--mini] | build \
 [--mini] [--out DIR.ixc] [--jobs N] [--ceiling-gb N] [--no-watchdog] \
-[--no-cache] | check [--mini] [--ixc DIR.ixc] [--only Q[,Q…]] [--jobs N] | \
+[--no-cache] [--palomar-ixc DIR.ixc] | check [--mini] [--ixc DIR.ixc] \
+[--only Q[,Q…]] [--jobs N] | \
 validate [--mini] [--only Q[,Q…]] [--jobs N] [--ceiling-gb N] \
 [--no-watchdog]>"
 
@@ -89,6 +95,32 @@ private def genFiles : List GenFile :=
 private def readIfExists (path : System.FilePath) : IO (Option String) := do
   if (← path.pathExists) then return some (← IO.FS.readFile path)
   return none
+
+/-- Load an existing fat catalog as an external member source. Structural
+manifest checks happen in `Ix.Catalog.de`; every referenced piece must also be
+present before the caller asks `ix catalog verify` to bind its content root. -/
+private def loadExternalCatalog (dir : System.FilePath) :
+    IO Ix.Catalog.Catalog := do
+  let manifest := dir / "manifest"
+  unless ← manifest.pathExists do
+    throw <| IO.userError s!"external catalog {dir} has no manifest"
+  let catalog ← match Ix.Catalog.de (← IO.FS.readBinFile manifest) with
+    | .ok catalog => pure catalog
+    | .error message =>
+        throw (IO.userError
+          s!"external catalog {dir} has an invalid manifest: {message}")
+  match catalog.storage with
+  | .chunked _ =>
+      throw <| IO.userError
+        s!"external catalog {dir} is chunked; composition needs fat pieces"
+  | .fat pieces =>
+      unless pieces.size == catalog.members.size do
+        throw <| IO.userError s!"external catalog {dir} has {pieces.size} storage rows for {catalog.members.size} members"
+  for member in catalog.members do
+    let piece := dir / s!"{member.label}.ixe"
+    unless ← piece.pathExists do
+      throw <| IO.userError s!"external catalog piece missing: {piece}"
+  return catalog
 
 private def stalePaths : IO (List String) := do
   let mut stale := []
@@ -126,6 +158,9 @@ private structure BuildOptions where
   noCache : Bool := false
   /-- Build the mini tier (`catalogMiniSpec`) instead of the full corpus. -/
   mini : Bool := false
+  /-- Verified standalone Palomar catalog whose members are appended to the
+      full TruthMines manifest. The Palomar sources remain external. -/
+  palomarIxc? : Option String := none
 
 /-- Per-member ceiling default: the mathlib-class piece peaks ~19–20
     GiB; 25 leaves headroom without hiding a regression class. -/
@@ -147,6 +182,8 @@ private def parseBuild : List String → Except String BuildOptions
     pure { ← parseBuild rest with noCache := true }
   | "--mini" :: rest => do
     pure { ← parseBuild rest with mini := true }
+  | "--palomar-ixc" :: value :: rest => do
+    pure { ← parseBuild rest with palomarIxc? := some value }
   | arg :: _ => .error s!"unknown build argument `{arg}`"
 
 private def inherited (cmd : String) (args : Array String)
@@ -308,6 +345,17 @@ on `{depName}` at index {j}, not strictly before {i} — spec order broken"
         s!"{i}:{String.intercalate "," (deps.map toString).toList}"
   return String.intercalate ";" entries.toList
 
+/-- Preserve an imported catalog's dependency graph after appending its
+members behind the native TruthMines members. -/
+private def shiftedDepsArgument (offset : Nat)
+    (members : Array Ix.Catalog.Member) : String := Id.run do
+  let mut entries : Array String := #[]
+  for i in [0:members.size] do
+    let deps := members[i]!.deps.map fun dep => offset + dep.toNat
+    unless deps.isEmpty do
+      entries := entries.push s!"{offset + i}:{String.intercalate "," (deps.map toString).toList}"
+  return String.intercalate ";" entries.toList
+
 private def runBuild (options : BuildOptions) : IO UInt32 := do
   let tier := if options.mini then "mini" else "corpus"
   let spec := if options.mini then catalogMiniSpec else catalogSpec
@@ -321,6 +369,33 @@ run `lake exe truthmines gen` first"
   unless (← ixExe.pathExists) do
     IO.eprintln s!"{ixExe} missing — run `lake build ix` first"
     return 1
+  if options.mini && options.palomarIxc?.isSome then
+    IO.eprintln "--palomar-ixc is only valid for the full corpus"
+    return 1
+  let root ← IO.currentDir
+  let exe ← IO.FS.realPath ixExe
+  let ixcDir := root / out
+  let palomar? : Option (System.FilePath × Ix.Catalog.Catalog) ←
+    match options.palomarIxc? with
+    | none => pure none
+    | some raw => do
+        let dir ← IO.FS.realPath (System.FilePath.mk raw)
+        stageLine s!"[truthmines] external Palomar catalog: verifying {dir}"
+        let exit ← inherited exe.toString
+          #["catalog", "verify", dir.toString] root
+        if exit != 0 then
+          throw <| IO.userError
+            s!"external Palomar catalog verification failed ({exit})"
+        let external ← loadExternalCatalog dir
+        let nativeLabels := spec.libs.map
+          (·.qualifier.toString (escape := false))
+        let mut seen := nativeLabels
+        for member in external.members do
+          if seen.contains member.label then
+            throw <| IO.userError
+              s!"external catalog label `{member.label}` collides with another member"
+          seen := seen.push member.label
+        pure (some (dir, external))
   -- Resolve ceilings: per-member for piece compiles, box-level for the
   -- workspace olean build. An unenforced ceiling is not a corpus run.
   let ceilings? : Option (Option Nat × Option Nat) ←
@@ -359,9 +434,6 @@ per-member ceiling (cgroup scopes, swap off; --jobs / --ceiling-gb / \
     return buildExit
   -- Stage 2: per-member pieces, compiled straight into the
   -- self-contained `.ixc` directory (parallel, watchdogged, cached).
-  let root ← IO.currentDir
-  let exe ← IO.FS.realPath ixExe
-  let ixcDir := root / out
   IO.FS.createDirAll (ixcDir / ".cache")
   stageLine s!"[truthmines] stage 2/4: {spec.libs.size} member pieces → \
 {ixcDir} ({jobs} in flight; per-member `ix compile`, fail-closed)"
@@ -374,17 +446,43 @@ per-member ceiling (cgroup scopes, swap off; --jobs / --ceiling-gb / \
     IO.eprintln s!"[truthmines] {failures.size} member(s) failed: \
 {failures.map (·.qualifier)}"
     return 1
-  -- Stage 3: write the manifest in place (pieces are already inside
-  -- the directory, so assemble ingests nothing).
+  -- Stage 3: write the manifest in place. Native pieces are already inside
+  -- the directory; external Palomar pieces are hard-linked in by assemble
+  -- (copy fallback), preserving the standalone catalog's labels and pins.
   stageLine s!"[truthmines] stage 3/4: ix catalog assemble → {out}"
-  let labels := spec.libs.map (·.qualifier.toString (escape := false))
-  let piecePaths := labels.map fun q => (ixcDir / s!"{q}.ixe").toString
-  let pins ← spec.libs.mapM fun lib => return pinOf (← recordOf lib)
-  let depsArg ← depsArgument spec.libs
+  let nativeLabels := spec.libs.map (·.qualifier.toString (escape := false))
+  let externalLabels := match palomar? with
+    | none => #[]
+    | some (_, external) => external.members.map (·.label)
+  let labels := nativeLabels ++ externalLabels
+  let nativePiecePaths := nativeLabels.map fun q =>
+    (ixcDir / s!"{q}.ixe").toString
+  let externalPiecePaths := match palomar? with
+    | none => #[]
+    | some (dir, external) => external.members.map fun member =>
+        (dir / s!"{member.label}.ixe").toString
+  let piecePaths := nativePiecePaths ++ externalPiecePaths
+  let nativePins ← spec.libs.mapM fun lib => return pinOf (← recordOf lib)
+  let externalPins := match palomar? with
+    | none => #[]
+    | some (_, external) => external.members.map (·.sourcePin)
+  let pins := nativePins ++ externalPins
+  let nativeToolchains := Array.replicate spec.libs.size expectedToolchain
+  let externalToolchains := match palomar? with
+    | none => #[]
+    | some (_, external) => external.members.map (·.toolchain)
+  let toolchains := nativeToolchains ++ externalToolchains
+  let nativeDepsArg ← depsArgument spec.libs
+  let externalDepsArg := match palomar? with
+    | none => ""
+    | some (_, external) => shiftedDepsArgument spec.libs.size external.members
+  let depsArg := if nativeDepsArg.isEmpty then externalDepsArg
+    else if externalDepsArg.isEmpty then nativeDepsArg
+    else nativeDepsArg ++ ";" ++ externalDepsArg
   let mut assembleArgs := #["catalog", "assemble", ixcDir.toString]
     ++ piecePaths
     ++ #["--labels", String.intercalate "," labels.toList,
-         "--toolchains", expectedToolchain]
+         "--toolchains", String.intercalate "," toolchains.toList]
   if pins.any (!·.isEmpty) then
     assembleArgs := assembleArgs
       ++ #["--pins", String.intercalate "," pins.toList]
@@ -405,8 +503,10 @@ per-member ceiling (cgroup scopes, swap off; --jobs / --ceiling-gb / \
   -- The `.ixc` directory is the whole deliverable and the machine-
   -- readable record (`ix catalog info`); no report artifact.
   let cached := (outcomes.filter (·.cached)).size
-  stageLine s!"[truthmines] done — {out}: {spec.libs.size} member(s), \
-{cached} from cache ({tier} tier, {Ix.versionString})"
+  let externalCount := palomar?.map (·.2.members.size) |>.getD 0
+  stageLine s!"[truthmines] done — {out}: {spec.libs.size + externalCount} \
+member(s) ({spec.libs.size} native + {externalCount} Palomar), {cached} native \
+from cache ({tier} tier, {Ix.versionString})"
   return 0
 
 private structure CheckOptions where
@@ -439,7 +539,6 @@ private def parseCheck : List String → Except String CheckOptions
     solo repro command for triage. -/
 private def runCheck (options : CheckOptions) : IO UInt32 := do
   let tier := if options.mini then "mini" else "corpus"
-  let spec := if options.mini then catalogMiniSpec else catalogSpec
   let ixc := System.FilePath.mk <| options.ixc?.getD <|
     if options.mini then "truthmines-mini.ixc" else "truthmines.ixc"
   unless (← ixExe.pathExists) do
@@ -449,21 +548,21 @@ private def runCheck (options : CheckOptions) : IO UInt32 := do
     IO.eprintln s!"{ixc} has no manifest — run `lake exe truthmines \
 build{if options.mini then " --mini" else ""}` first"
     return 1
-  let libs ← match options.only with
-    | none => pure spec.libs
+  let manifest ← loadExternalCatalog ixc
+  let allLabels := manifest.members.map (·.label)
+  let labels ← match options.only with
+    | none => pure allLabels
     | some wanted => do
       for w in wanted do
-        unless spec.libs.any (·.qualifier.toString (escape := false) == w) do
+        unless allLabels.contains w do
           IO.eprintln s!"--only names `{w}`, which is not a {tier} member"
           return 1
-      pure <| spec.libs.filter fun lib =>
-        wanted.contains (lib.qualifier.toString (escape := false))
+      pure <| allLabels.filter wanted.contains
   let jobs := options.jobs?.getD 4
   let exe ← IO.FS.realPath ixExe
-  stageLine s!"[truthmines] check: {libs.size} piece(s), {jobs} in flight \
+  stageLine s!"[truthmines] check: {labels.size} piece(s), {jobs} in flight \
 ({tier} tier; per-piece `ix check-rs --anon` over {ixc})"
-  let runOne (lib : CatalogSpecLib) : IO (MemberOutcome × String) := do
-    let q := lib.qualifier.toString (escape := false)
+  let runOne (q : String) : IO (MemberOutcome × String) := do
     let piece := ixc / s!"{q}.ixe"
     unless (← piece.pathExists) do
       return ({ qualifier := q, cached := false, exit := 2 },
@@ -476,16 +575,16 @@ build{if options.mini then " --mini" else ""}` first"
       s!"── {q} stderr (first 4000) ──\n{out.stderr.take 4000}\n\
 ── {q} stdout (last 1000) ──\n{(out.stdout.takeEnd 1000).toString}"
     return ({ qualifier := q, cached := false, exit := out.exitCode }, tail)
-  let mut pending := libs.toList
+  let mut pending := labels.toList
   let mut inFlight : Array (Task (Except IO.Error (MemberOutcome × String))) := #[]
   let mut failures : List String := []
   let mut passed := 0
   while !pending.isEmpty || !inFlight.isEmpty do
     while !pending.isEmpty && inFlight.size < jobs do
-      let lib := pending.head!
+      let q := pending.head!
       pending := pending.tail!
-      stageLine s!"[truthmines] checking {lib.qualifier}…"
-      inFlight := inFlight.push (← IO.asTask (runOne lib))
+      stageLine s!"[truthmines] checking {q}…"
+      inFlight := inFlight.push (← IO.asTask (runOne q))
     let some task := inFlight[0]? | break
     inFlight := inFlight.eraseIdx! 0
     let (outcome, tail) ← IO.ofExcept task.get
@@ -499,7 +598,7 @@ build{if options.mini then " --mini" else ""}` first"
 ({outcome.exit}) — rerun solo: IX_MAX_REC_FUEL=1000000000 \
 {ixExe} check-rs {piece} --anon"
       unless tail.isEmpty do IO.eprintln tail
-  stageLine s!"[truthmines] check done: {passed}/{libs.size} piece(s) \
+  stageLine s!"[truthmines] check done: {passed}/{labels.size} piece(s) \
 kernel-clean{if failures.isEmpty then "" else s!"; failed: {failures}"}"
   return if failures.isEmpty then 0 else 1
 
