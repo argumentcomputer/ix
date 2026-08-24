@@ -822,9 +822,30 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println s!"fetch-main: no reports for {backend}/{mode} @ {sha.take 8}"
     return exitRejected
 
+  -- The LIST endpoint stopped inlining each report's `results` (it now
+  -- carries only a `counts` summary), which read here as "report found,
+  -- zero rows" and sent every caller down the full base-rerun fallback.
+  -- Fetch each matched report by uuid — the single-report GET still
+  -- returns full results; the inline array is used when a future API
+  -- (or cached response) populates it again.
+  let mut detailed : Array Json := #[]
+  for r in atSha do
+    let inline := (r.getObjVal? "results").toOption.bind (·.getArr?.toOption)
+      |>.getD #[]
+    if !inline.isEmpty then
+      detailed := detailed.push r
+    else
+      let some uuid := (r.getObjVal? "uuid").toOption.bind (·.getStr?.toOption)
+        | continue
+      match ← curlJson s!"https://api.bencher.dev/v0/projects/ix/reports/{uuid}" with
+      | .error e =>
+        IO.println s!"fetch-main: bencher API error (report {uuid}): {e}"
+        return exitRejected
+      | .ok full => detailed := detailed.push full
+
   let mut rows : Array (String × Json) := #[]
   let mut seen : Array String := #[]
-  for r in atSha do
+  for r in detailed do
     let iterations := (r.getObjVal? "results").toOption.bind (·.getArr?.toOption)
       |>.getD #[]
     for iteration in iterations do
