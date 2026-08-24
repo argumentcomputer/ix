@@ -702,10 +702,18 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           let innerClaimsBytes := MultiStark.serializeClaims #[claim]
           let vkBytes := aiurSystem.vkBytes
           let pubInput := MultiStark.verifierPubInput vkBytes innerClaimsBytes
+          -- The in-circuit verifier consumes the per-query advice transport;
+          -- `proofBytes` (the pruned-multiproof wire format) stays the
+          -- reported proof size but is not parseable in-circuit.
+          let adviceBytes ← match aiurSystem.proofToAdviceBytes claim proof with
+            | .ok bytes => pure bytes
+            | .error e =>
+              IO.eprintln s!"  ❌ advice re-encoding for {r.name} FAILED: {e}"
+              continue
           -- Native path: the advice buffer is built in Rust from the raw
           -- byte blobs and execution routes through the codegen'd verifier.
           let (rvRes, rvSec) ← timed fun _ =>
-            vCompiled.bytecode.executeMultiStark vIdx pubInput proofBytes
+            vCompiled.bytecode.executeMultiStark vIdx pubInput adviceBytes
               vkBytes innerClaimsBytes useInterp
           match rvRes with
           | .error e =>
@@ -731,7 +739,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             (← IO.getStdout).flush
             TracingTexray.resetPeakTreeRss
             let ((rvClaim, rvProof), rvProveSec) ← timed fun _ =>
-              vSystem.proveMultiStark vIdx pubInput proofBytes vkBytes
+              vSystem.proveMultiStark vIdx pubInput adviceBytes vkBytes
                 innerClaimsBytes useInterp
             let rvPeak ← TracingTexray.peakTreeRssBytes
             let rvProofBytes := Aiur.Proof.toBytes rvProof
