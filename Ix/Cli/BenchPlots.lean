@@ -78,6 +78,11 @@ def plotTitle (workload measure : String) : String :=
   | "ooc-check", "check-time"            => "OOC Check Time"
   | "ooc-check", "throughput"            => "OOC Check Throughput"
   | "ooc-check", "peak-rss"              => "OOC Check Peak RAM Usage"
+  | "aiur-sharded-env-check", "check-time" => "Aiur Env Check Time"
+  | "aiur-sharded-env-check", "throughput" => "Aiur Env Check Throughput"
+  | "aiur-sharded-env-check", "peak-rss"   => "Aiur Env Check Peak RAM Usage"
+  | "aiur-sharded-env-check", "constants"  => "Aiur Env Constants"
+  | "aiur-sharded-env-check", "shards"     => "Aiur Env Shards"
   | w, m => s!"{w}: {m}"
 
 /-- Tracked but not plotted solo. Zisk
