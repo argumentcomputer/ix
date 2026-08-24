@@ -1,4 +1,4 @@
-import Ix.CompileM
+import Ix.Compile.Verify.CompileMeta
 
 /-!
 # Expression metadata arena refinement
@@ -99,10 +99,11 @@ inductive ArenaRel : Ix.Expr → UInt64 → Ixon.ExprMetaArena → Prop where
       (node : arena.nodes[root.toNat]? =
         some (.prj typeName.getHash valueRoot)) :
       ArenaRel (.proj typeName field value hash) root arena
-  | mdata {arena inner hash innerRoot root}
+  | mdata {arena data kvmap inner hash innerRoot root}
+      (dataRel : compileKVMapRef data = some kvmap)
       (innerRel : ArenaRel inner innerRoot arena)
-      (node : arena.nodes[root.toNat]? = some (.mdata #[#[]] innerRoot)) :
-      ArenaRel (.mdata #[] inner hash) root arena
+      (node : arena.nodes[root.toNat]? = some (.mdata #[kvmap] innerRoot)) :
+      ArenaRel (.mdata data inner hash) root arena
 
 theorem ArenaRel.mono {source : Ix.Expr} {root : UInt64}
     {before after : Ixon.ExprMetaArena}
@@ -124,8 +125,8 @@ theorem ArenaRel.mono {source : Ix.Expr} {root : UInt64}
   | lit node => exact .lit (hextends node)
   | proj valueRel node ihValue =>
     exact .proj (ihValue hextends) (hextends node)
-  | mdata innerRel node ihInner =>
-    exact .mdata (ihInner hextends) (hextends node)
+  | mdata dataRel innerRel node ihInner =>
+    exact .mdata dataRel (ihInner hextends) (hextends node)
 
 /-- Arena facts returned by one expression-compilation run. -/
 structure ArenaCompileRel (source : Ix.Expr) (root : UInt64)

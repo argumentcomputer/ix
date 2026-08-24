@@ -2,6 +2,7 @@ import Ix.Compile.Verify.IxonValue
 import Ix.Compile.Verify.Catalog
 import Ix.Compile.Verify.CompileState
 import Ix.Compile.Verify.CompileUniv
+import Ix.Compile.Verify.CompileMeta
 import Ix.Compile.Verify.CompileExpr
 import Ix.Compile.Verify.Reference
 import Ix.Compile.Verify.SourceValue
@@ -31,7 +32,12 @@ local and external constants, recursive projections, and their Lean4Lean
 value corollary. The strengthened theorem also exposes a structural
 `ArenaRel` for the returned metadata root, preserves every warm-cache root
 under append-only growth, and makes the `UInt64` arena-capacity boundary
-explicit.
+explicit. Scalar expression metadata now has a total KV-map reference
+compiler for strings, booleans, names, naturals, and integers; production
+metadata compilation implements that encoding while changing only name/blob
+presentation stores, and the complete ordinary expression theorem accepts
+those nonempty metadata maps. Recursive `Syntax` metadata remains separate
+because its production serializer is still partial.
 `KernelSourceWitness` is the sole
 upstream source-semantics boundary; later compiler-preservation slices take it
 as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean

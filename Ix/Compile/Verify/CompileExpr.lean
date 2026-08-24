@@ -22,10 +22,11 @@ The second layer fixes a completed preseed snapshot and relates its universe,
 reference, and name-resolution tables to a concrete `RefCompileCtx`.  It
 closes the complete ordinary-expression tree: sorts, arbitrary-universe local
 and external constants, recursive projections, literals, structural
-composition, and erased empty metadata.  The proof covers warm caches,
-universe spelling patches, blob commits, and independent Lean4Lean values.
-Its strengthened frontier also relates the returned `UInt64` root to the
-append-only presentation arena under an explicit no-wrap capacity premise.
+composition, and supported scalar metadata maps.  The proof covers warm
+caches, universe spelling patches, blob/name commits, and independent
+Lean4Lean values. Its strengthened frontier also relates the returned
+`UInt64` root, including the encoded KV map, to the append-only presentation
+arena under an explicit no-wrap capacity premise.
 -/
 
 namespace Ix.Compile.Verify
@@ -110,11 +111,9 @@ inductive StructuralExpr : Ix.Expr → Prop where
   | mdata {inner hash} : StructuralExpr inner →
       StructuralExpr (.mdata #[] inner hash)
 
-/-- The complete ordinary syntax accepted by the no-surgery compiler, apart
-from nonempty metadata maps whose serialization relation is a later layer.
-This support predicate is already broad enough for the remaining table-backed
-leaves, while individual production refinement theorems are added one leaf
-at a time. -/
+/-- The complete ordinary syntax accepted by the no-surgery compiler, with
+metadata restricted to values handled by the total scalar reference
+serializer. -/
 inductive OrdinaryExpr : Ix.Expr → Prop where
   | bvar {idx hash} : OrdinaryExpr (.bvar idx hash)
   | sort {level hash} : OrdinaryExpr (.sort level hash)
@@ -131,8 +130,8 @@ inductive OrdinaryExpr : Ix.Expr → Prop where
   | lit {literal hash} : OrdinaryExpr (.lit literal hash)
   | proj {typeName field val hash} : OrdinaryExpr val →
       OrdinaryExpr (.proj typeName field val hash)
-  | mdata {inner hash} : OrdinaryExpr inner →
-      OrdinaryExpr (.mdata #[] inner hash)
+  | mdata {data inner hash} : KVMapSupported data → OrdinaryExpr inner →
+      OrdinaryExpr (.mdata data inner hash)
 
 theorem StructuralExpr.ordinary {source : Ix.Expr} :
     StructuralExpr source → OrdinaryExpr source
@@ -142,7 +141,7 @@ theorem StructuralExpr.ordinary {source : Ix.Expr} :
   | .all hty hbody => .all hty.ordinary hbody.ordinary
   | .letE hty hval hbody =>
     .letE hty.ordinary hval.ordinary hbody.ordinary
-  | .mdata hinner => .mdata hinner.ordinary
+  | .mdata hinner => .mdata KVMapSupported.empty hinner.ordinary
 
 /-- Ordinary syntax paired with the exact finite universe support needed by
 production `compileUniv`.  This is the recursive source domain of the frozen
@@ -173,8 +172,9 @@ inductive SupportedOrdinaryExpr (levelSupport : Ix.Level → Prop) :
       SupportedOrdinaryExpr levelSupport (.lit literal hash)
   | proj {typeName field val hash} : SupportedOrdinaryExpr levelSupport val →
       SupportedOrdinaryExpr levelSupport (.proj typeName field val hash)
-  | mdata {inner hash} : SupportedOrdinaryExpr levelSupport inner →
-      SupportedOrdinaryExpr levelSupport (.mdata #[] inner hash)
+  | mdata {data inner hash} : KVMapSupported data →
+      SupportedOrdinaryExpr levelSupport inner →
+      SupportedOrdinaryExpr levelSupport (.mdata data inner hash)
 
 theorem SupportedOrdinaryExpr.ordinary {levelSupport : Ix.Level → Prop}
     {source : Ix.Expr} :
@@ -189,7 +189,7 @@ theorem SupportedOrdinaryExpr.ordinary {levelSupport : Ix.Level → Prop}
     .letE hty.ordinary hval.ordinary hbody.ordinary
   | .lit => .lit
   | .proj hval => .proj hval.ordinary
-  | .mdata hinner => .mdata hinner.ordinary
+  | .mdata hdata hinner => .mdata hdata hinner.ordinary
 
 /-- Every production expression-cache entry in this slice came from the same
 reference compiler and belongs to the supported structural fragment. -/
@@ -371,6 +371,25 @@ theorem FrozenExprStateWF.of_frame
     exprCache := hbefore.exprCache.of_cache_eq hexprCache
     univCache := hbefore.univCache.of_cache_eq hunivCache
     canonUnivCache := hbefore.canonUnivCache.of_cache_eq hcanonCache }
+
+/-- Scalar metadata compilation preserves the full frozen expression state. -/
+theorem FrozenExprStateWF.of_metaFrame
+    {compileEnv : Ix.CompileM.CompileEnv}
+    {blockEnv : Ix.CompileM.BlockEnv} {levelSupport : Ix.Level → Prop}
+    {snapshot before after : Ix.CompileM.BlockState}
+    (hbefore : FrozenExprStateWF compileEnv blockEnv levelSupport snapshot before)
+    (hframe : MetaStateFrame before after) :
+    FrozenExprStateWF compileEnv blockEnv levelSupport snapshot after :=
+  hbefore.of_frame hframe.tables hframe.exprCache hframe.univCache
+    hframe.canonUnivCache
+
+/-- Scalar metadata compilation also preserves every warm arena-cache root. -/
+theorem ArenaCacheWF.of_metaFrame {before after : Ix.CompileM.BlockState}
+    (hbefore : ArenaCacheWF before) (hframe : MetaStateFrame before after) :
+    ArenaCacheWF after :=
+  hbefore.of_frame hframe.exprCache (by
+    rw [hframe.arena]
+    exact ArenaExtends.refl before.arena)
 
 /-- The pure name transition cannot affect expression memoization. -/
 theorem BlockState.compileName_exprCache
@@ -2527,9 +2546,9 @@ private theorem compileAppNoSurgery_ordinary_refines
   | proj hval ihval =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
       hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate href
-  | mdata hinner ihinner =>
+  | mdata hdata hinner ihinner =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
-      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate href
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hdata hinner) hstate href
   | @app fn arg hash hfn harg ihfn iharg =>
     simp [compileExprRef] at href
     rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
@@ -2620,9 +2639,10 @@ private theorem compileAppNoSurgery_ordinary_arena_refines
   | proj hval ihval =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
       hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate harena hroom href
-  | mdata hinner ihinner =>
+  | mdata hdata hinner ihinner =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
-      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate harena hroom href
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hdata hinner) hstate harena
+        hroom href
   | @app fn arg hash hfn harg ihfn iharg =>
     simp [compileExprRef] at href
     rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
@@ -3021,7 +3041,7 @@ private theorem compileExprNoSurgeryStep_ordinary_refines
         simp only
         rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
         rfl
-  | @mdata inner hash hinner =>
+  | @mdata data inner hash hdata hinner =>
     have hinnerRef :
         compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
             inner = some target := by
@@ -3029,16 +3049,23 @@ private theorem compileExprNoSurgeryStep_ordinary_refines
     have hinnerDepth : Ix.CompileM.exprCompileDepth inner ≤ fuel := by
       simp only [Ix.CompileM.exprCompileDepth] at hdepth
       omega
+    obtain ⟨kvmap, hkvmapRef⟩ := hdata
+    obtain ⟨metaState, hmetaRun, hmetaFrame⟩ :=
+      compileKVMap_run_refines compileEnv blockEnv state hkvmapRef
+    have hmetaState :
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot metaState :=
+      hstate.of_metaFrame hmetaFrame
     obtain ⟨innerRoot, innerState, hinnerRun, hinnerState⟩ :=
-      hrecur hinnerDepth hinner hstate hinnerRef
+      hrecur hinnerDepth hinner hmetaState hinnerRef
     let root := innerState.arena.nodes.size.toUInt64
-    let finalState := allocState innerState (.mdata #[#[]] innerRoot)
+    let node : Ixon.ExprMetaData := .mdata #[kvmap] innerRoot
+    let finalState := allocState innerState node
     refine ⟨root, finalState, ?_,
-      hinnerState.alloc (.mdata #[#[]] innerRoot)⟩
+      hinnerState.alloc node⟩
     rw [Ix.CompileM.compileExprNoSurgeryStep,
-      run_bind compileEnv blockEnv state _ _, run_compileEmptyKVMap]
+      run_bind compileEnv blockEnv state _ _, hmetaRun]
     simp only
-    rw [run_bind compileEnv blockEnv state _ _, hinnerRun]
+    rw [run_bind compileEnv blockEnv metaState _ _, hinnerRun]
     simp only
     rw [run_bind compileEnv blockEnv innerState _ _, run_allocArenaNode]
     rfl
@@ -3908,7 +3935,7 @@ private theorem compileExprNoSurgeryStep_ordinary_arena_refines
         simp only
         rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
         rfl
-  | @mdata inner hash hinner =>
+  | @mdata data inner hash hdata hinner =>
     have hinnerRef :
         compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
             inner = some target := by
@@ -3916,19 +3943,29 @@ private theorem compileExprNoSurgeryStep_ordinary_arena_refines
     have hinnerDepth : Ix.CompileM.exprCompileDepth inner ≤ fuel := by
       simp only [Ix.CompileM.exprCompileDepth] at hdepth
       omega
+    obtain ⟨kvmap, hkvmapRef⟩ := hdata
+    obtain ⟨metaState, hmetaRun, hmetaFrame⟩ :=
+      compileKVMap_run_refines compileEnv blockEnv state hkvmapRef
+    have hmetaState :
+        FrozenExprStateWF compileEnv blockEnv levelSupport snapshot metaState :=
+      hstate.of_metaFrame hmetaFrame
+    have hmetaCache : ArenaCacheWF metaState :=
+      harena.of_metaFrame hmetaFrame
     have hinnerRoom :
-        state.arena.nodes.size + exprArenaCost inner < UInt64.size := by
+        metaState.arena.nodes.size + exprArenaCost inner < UInt64.size := by
+      rw [hmetaFrame.arena]
       simp only [exprArenaCost] at hroom
       omega
     obtain ⟨innerRoot, innerState, hinnerRun, hinnerState, hinnerCache,
         hinnerArena⟩ :=
-      hrecur hinnerDepth hinner hstate harena hinnerRoom hinnerRef
+      hrecur hinnerDepth hinner hmetaState hmetaCache hinnerRoom hinnerRef
     have hallocRoom : innerState.arena.nodes.size < UInt64.size := by
       have hinnerGrowth := hinnerArena.growth
       simp only [exprArenaCost] at hroom
+      rw [hmetaFrame.arena] at hinnerGrowth
       omega
     let root := innerState.arena.nodes.size.toUInt64
-    let node : Ixon.ExprMetaData := .mdata #[#[]] innerRoot
+    let node : Ixon.ExprMetaData := .mdata #[kvmap] innerRoot
     let finalState := allocState innerState node
     have hallocExtends : ArenaExtends innerState.arena finalState.arena := by
       dsimp [finalState]
@@ -3936,25 +3973,28 @@ private theorem compileExprNoSurgeryStep_ordinary_arena_refines
     have hrootNode : finalState.arena.nodes[root.toNat]? = some node := by
       simpa [finalState, root] using allocState_root innerState node hallocRoom
     have hrootRel :
-        ArenaRel (.mdata #[] inner hash) root finalState.arena :=
-      .mdata (hinnerArena.rootRel.mono hallocExtends) hrootNode
+        ArenaRel (.mdata data inner hash) root finalState.arena :=
+      .mdata hkvmapRef (hinnerArena.rootRel.mono hallocExtends) hrootNode
     have hfinalCache : ArenaCacheWF finalState :=
       hinnerCache.of_frame rfl hallocExtends
     have hfinalGrowth :
         finalState.arena.nodes.size ≤ state.arena.nodes.size +
-          exprArenaCost (.mdata #[] inner hash) := by
+          exprArenaCost (.mdata data inner hash) := by
       have hinnerGrowth := hinnerArena.growth
+      rw [hmetaFrame.arena] at hinnerGrowth
       simp only [exprArenaCost]
       simp [finalState, node, allocState]
       omega
     refine ⟨root, finalState, ?_, hinnerState.alloc node, hfinalCache,
       ⟨hrootRel,
-        ArenaExtends.trans hinnerArena.arenaExtends hallocExtends,
+        (by
+          rw [← hmetaFrame.arena]
+          exact ArenaExtends.trans hinnerArena.arenaExtends hallocExtends),
         hfinalGrowth⟩⟩
     rw [Ix.CompileM.compileExprNoSurgeryStep,
-      run_bind compileEnv blockEnv state _ _, run_compileEmptyKVMap]
+      run_bind compileEnv blockEnv state _ _, hmetaRun]
     simp only
-    rw [run_bind compileEnv blockEnv state _ _, hinnerRun]
+    rw [run_bind compileEnv blockEnv metaState _ _, hinnerRun]
     simp only
     rw [run_bind compileEnv blockEnv innerState _ _, run_allocArenaNode]
     rfl
