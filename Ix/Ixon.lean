@@ -42,6 +42,15 @@ def runGet (getm : GetM A) (bytes : ByteArray) : Except String A :=
   | .ok a _ => .ok a
   | .error e _ => .error e
 
+/-- Run a decoder against one complete buffer.  Unlike `runGet`, successful
+    prefix decoding is rejected when bytes remain. -/
+def runGetExact (getm : GetM A) (bytes : ByteArray) : Except String A :=
+  match getm.run { idx := 0, bytes } with
+  | .ok a state =>
+    if state.idx = bytes.size then .ok a
+    else .error s!"trailing bytes: consumed {state.idx} of {bytes.size}"
+  | .error e _ => .error e
+
 def ser [Serialize α] (a : α) : ByteArray := runPut (Serialize.put a)
 def de [Serialize α] (bytes : ByteArray) : Except String α :=
   runGet Serialize.get bytes
@@ -714,17 +723,34 @@ end Constant
 
 /-! ## Univ Serialization -/
 
-/-- Count successive .succ constructors -/
-def Univ.succCount : Univ → UInt64
-  | .succ inner => 1 + inner.succCount
+/-- Count successive `.succ` constructors without machine-word overflow. -/
+def Univ.succCountNat : Univ → Nat
+  | .succ inner => 1 + inner.succCountNat
   | _ => 0
+
+/-- Wire-sized view of `succCountNat`.  The codec well-formedness boundary
+    records when this conversion is lossless. -/
+def Univ.succCount (u : Univ) : UInt64 := u.succCountNat.toUInt64
 
 /-- Get the base of a .succ chain -/
 def Univ.succBase : Univ → Univ
   | .succ inner => inner.succBase
   | u => u
 
-partial def putUniv : Univ → PutM Unit
+/-- Removing a successor prefix never increases structural size. -/
+theorem Univ.succBase_sizeOf_le (u : Univ) :
+    sizeOf u.succBase ≤ sizeOf u := by
+  induction u with
+  | zero => simp [Univ.succBase]
+  | succ u ih => simp [Univ.succBase]; omega
+  | max a b => simp [Univ.succBase]
+  | imax a b => simp [Univ.succBase]
+  | var idx => simp [Univ.succBase]
+
+/-- Total v2 universe writer.  Successor telescopes retain the production
+    compressed representation; `succBase_sizeOf_le` supplies the non-obvious
+    structural decrease. -/
+def putUniv : Univ → PutM Unit
   | .zero => putTag2 ⟨Univ.FLAG_ZERO_SUCC, 0⟩
   | u@(.succ _) => do
     putTag2 ⟨Univ.FLAG_ZERO_SUCC, u.succCount⟩
@@ -738,30 +764,55 @@ partial def putUniv : Univ → PutM Unit
     putUniv a
     putUniv b
   | .var idx => putTag2 ⟨Univ.FLAG_VAR, idx⟩
+termination_by u => sizeOf u
+decreasing_by
+  all_goals simp_wf
+  all_goals try omega
+  rename_i inner heq
+  subst u
+  change sizeOf inner.succBase < 1 + sizeOf inner
+  have hbase := Univ.succBase_sizeOf_le inner
+  omega
 
-partial def getUniv : GetM Univ := do
-  let tag ← getTag2
+/-- Add `count` successor constructors outside a universe. -/
+def Univ.addSucc : Nat → Univ → Univ
+  | 0, base => base
+  | count + 1, base => .succ (addSucc count base)
+
+/-- Decode the payload selected by one universe tag, using `recur` for every
+    recursive child.  Naming the post-tag continuation keeps its wire grammar
+    directly available to codec proofs. -/
+def getUnivFromTag (recur : GetM Univ) (tag : Tag2) : GetM Univ := do
   match tag.flag with
   | 0 =>  -- ZERO_SUCC
     if tag.size == 0 then
       return .zero
     else
-      let base ← getUniv
-      let mut result := base
-      for _ in [0:tag.size.toNat] do
-        result := .succ result
-      return result
+      let base ← recur
+      return base.addSucc tag.size.toNat
   | 1 =>  -- MAX
-    let a ← getUniv
-    let b ← getUniv
+    let a ← recur
+    let b ← recur
     return .max a b
   | 2 =>  -- IMAX
-    let a ← getUniv
-    let b ← getUniv
+    let a ← recur
+    let b ← recur
     return .imax a b
   | 3 =>  -- VAR
     return .var tag.size
   | f => throw s!"getUniv: invalid flag {f}"
+
+/-- Total v2 universe reader.  Each recursive layer consumes a tag byte, so
+    a caller-supplied byte budget is a complete termination measure. -/
+def getUnivFuel : Nat → GetM Univ
+  | 0 => throw "getUniv: recursion budget exhausted"
+  | fuel + 1 => getTag2 >>= getUnivFromTag (getUnivFuel fuel)
+
+/-- Decode one universe from the current cursor.  Remaining bytes plus one
+    are sufficient fuel because every recursive layer consumes a tag. -/
+def getUniv : GetM Univ := do
+  let state ← get
+  getUnivFuel (state.bytes.size - state.idx + 1)
 
 instance : Serialize Univ where
   put := putUniv
@@ -1225,7 +1276,7 @@ instance : Serialize Constant where
 /-! ## Convenience functions for serialization -/
 
 def serUniv (u : Univ) : ByteArray := runPut (putUniv u)
-def deUniv (bytes : ByteArray) : Except String Univ := runGet getUniv bytes
+def deUniv (bytes : ByteArray) : Except String Univ := runGetExact getUniv bytes
 
 def serExpr (e : Expr) : ByteArray := runPut (putExpr e)
 def deExpr (bytes : ByteArray) : Except String Expr := runGet getExpr bytes

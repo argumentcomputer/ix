@@ -67,6 +67,23 @@ def univUnits : TestSeq :=
   cases.foldl (init := .done) fun acc u =>
     acc ++ test s!"Univ roundtrip: {repr u}" (univSerde u)
 
+def univPrefixAccepts (bytes : ByteArray) : Bool :=
+  match runGet getUniv bytes with
+  | .ok .zero => true
+  | _ => false
+
+def univExactRejects (bytes : ByteArray) : Bool :=
+  match deUniv bytes with
+  | .error _ => true
+  | .ok _ => false
+
+def univExactUnits : TestSeq :=
+  let bytes := serUniv Univ.zero ++ [0].toByteArray
+  test "Univ prefix runner may leave trailing bytes"
+      (univPrefixAccepts bytes) ++
+    test "Univ full-buffer decoder rejects trailing bytes"
+      (univExactRejects bytes)
+
 def exprUnits : TestSeq :=
   let cases : List Expr := [
     .sort 0,
@@ -431,6 +448,7 @@ def envMerkleRootUnitTests : TestSeq :=
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
+  univExactUnits,
   strictExprUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,

@@ -1,5 +1,6 @@
 import Ix.Compile.Verify.IxonValue
 import Ix.Compile.Verify.Catalog
+import Ix.Compile.Verify.Codec
 import Ix.Compile.Verify.CompileState
 import Ix.Compile.Verify.CompileUniv
 import Ix.Compile.Verify.CompileMeta
@@ -43,6 +44,10 @@ finite run support now scopes name and blob collision faithfulness; under
 strict preseed integrity, syntax, data-value, and KV-map compilation preserve
 all old lookups and establish exact recovery for every traversed name,
 ancestor name component, and blob payload.
+The v2 universe writer and reader are now kernel-visible total definitions;
+an exact-consumption runner rejects trailing bytes, and the one-byte `Tag2`
+domain has a proved production serializer/decoder inverse.  In particular,
+the `Sort 1` universe required by the first declaration fixture is covered.
 `KernelSourceWitness` is the sole
 upstream source-semantics boundary; later compiler-preservation slices take it
 as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean
