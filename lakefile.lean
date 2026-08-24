@@ -5,7 +5,7 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "e780f4188c9649aef988270f4d126651460ca9c4"
+  "https://github.com/argumentcomputer/LSpec" @ "ab4d5eb461941837f48eb891be755c8c73e89fdd"
 
 /- Blake3's `blake3_rs_shared` target builds `blake3-rs` as a `cdylib`
 alongside the staticlib. `ix_native_decide_dynlib` fetches it to supply the
@@ -13,7 +13,7 @@ BLAKE3 backend to Lean's native evaluator, and that dynlib gates every
 `IxTcVerify` module, so this pin must stay at or after the revision that
 introduced the target. -/
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "db25a8a21579d8211eec4347402721f5674bf2c1"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "1b0fbd2bd78b2b873e14264037af8c8b1536b9e9"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.33.0"
@@ -30,7 +30,7 @@ the `checkNoMVarNoFVar` check on an opaque's value (leanprover/lean4#14498),
 which the replay path in `Benchmarks/Lean4Lean.lean` reaches — on top of the
 fork's certified inductive-environment and projection development. -/
 require lean4lean from git
-  "https://github.com/argumentcomputer/lean4lean" @ "4844eda4fe376a7ab7e23a4b9755189d3c2ffe5b"
+  "https://github.com/argumentcomputer/lean4lean" @ "0d9a73e93a29aec110000944ae886daca36c6255"
 
 /-! ## FFI
 
