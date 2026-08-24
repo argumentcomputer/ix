@@ -45,9 +45,11 @@ strict preseed integrity, syntax, data-value, and KV-map compilation preserve
 all old lookups and establish exact recovery for every traversed name,
 ancestor name component, and blob payload.
 The v2 universe writer and reader are now kernel-visible total definitions;
-an exact-consumption runner rejects trailing bytes, and the one-byte `Tag2`
-domain has a proved production serializer/decoder inverse.  In particular,
-the `Sort 1` universe required by the first declaration fixture is covered.
+an exact-consumption runner rejects trailing bytes, trimmed little-endian
+integers and both `Tag2` forms have proved production inverses, and every
+universe whose compressed successor counts fit `UInt64` has an exact
+serializer/decoder inverse.  In particular, the `Sort 1` universe required by
+the first declaration fixture is covered.
 `KernelSourceWitness` is the sole
 upstream source-semantics boundary; later compiler-preservation slices take it
 as an explicit hypothesis until Lean4Lean can construct it for a replayed Lean

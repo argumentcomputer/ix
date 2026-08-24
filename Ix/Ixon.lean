@@ -148,11 +148,24 @@ def u64ByteCount (x : UInt64) : UInt8 :=
   else if x < 0x100000000000000 then 7
   else 8
 
+/-- Write the requested low bytes of a `UInt64`, least significant first. -/
+def putU64TrimmedLEAux (x : UInt64) : Nat → PutM Unit
+  | 0 => pure ()
+  | len + 1 => do
+    putU8 x.toUInt8
+    putU64TrimmedLEAux (x >>> 8) len
+
 /-- Write a u64 in minimal little-endian bytes. -/
-def putU64TrimmedLE (x : UInt64) : PutM Unit := do
-  let n := u64ByteCount x
-  for i in [0:n.toNat] do
-    putU8 ((x >>> (i.toUInt64 * 8)).toUInt8)
+def putU64TrimmedLE (x : UInt64) : PutM Unit :=
+  putU64TrimmedLEAux x (u64ByteCount x).toNat
+
+/-- Read exactly `len` little-endian bytes into a `UInt64`. -/
+def getU64TrimmedLEAux : Nat → GetM UInt64
+  | 0 => pure 0
+  | len + 1 => do
+    let low ← getU8
+    let high ← getU64TrimmedLEAux len
+    return low.toUInt64 ||| (high <<< 8)
 
 /-- Read a u64 from minimal little-endian bytes.
 
@@ -165,11 +178,7 @@ def putU64TrimmedLE (x : UInt64) : PutM Unit := do
 def getU64TrimmedLE (len : Nat) : GetM UInt64 := do
   if len > 8 then
     throw "getU64TrimmedLE: len > 8"
-  let mut x : UInt64 := 0
-  for i in [0:len] do
-    let b ← getU8
-    x := x ||| (b.toUInt64 <<< (i.toUInt64 * 8))
-  return x
+  getU64TrimmedLEAux len
 
 /-- Tag0: Variable-length encoding for small integers.
     Header byte: [large:1][size:7]

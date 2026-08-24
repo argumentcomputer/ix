@@ -56,16 +56,24 @@ def univUnits : TestSeq :=
   let cases : List Univ := [
     .zero,
     .var 0,
+    .var 31,
+    .var 32,
     .var 42,
+    .var 0x100,
+    .var 0xffffffffffffffff,
     .succ .zero,
     .succ (.succ .zero),
     .succ (.succ (.succ .zero)),  -- Test telescope compression
+    Univ.addSucc 31 .zero,
+    Univ.addSucc 32 .zero,         -- Cross the large-Tag2 boundary
     .max .zero (.var 0),
     .imax (.var 1) .zero,
     .max (.succ .zero) (.succ (.succ .zero)),
   ]
   cases.foldl (init := .done) fun acc u =>
-    acc ++ test s!"Univ roundtrip: {repr u}" (univSerde u)
+    acc ++ test s!"Univ roundtrip: {repr u}" (univSerde u) ++
+      test s!"Univ Lean==Rust bytes: {repr u}"
+        (rsEqUnivSerialization u (serUniv u))
 
 def univPrefixAccepts (bytes : ByteArray) : Bool :=
   match runGet getUniv bytes with
@@ -449,6 +457,7 @@ def envMerkleRootUnitTests : TestSeq :=
 
 public def Tests.Ixon.suite : List TestSeq := [
   univExactUnits,
+  univUnits,
   strictExprUnits,
   -- Env unit tests (for debugging serialization)
   envUnitTests,
