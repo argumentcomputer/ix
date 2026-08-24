@@ -32,9 +32,12 @@ jobs:
       # pinned to a commit hash is reported and left alone.
       - uses: argumentcomputer/lean-update@dev
         with:
-          # The root package and the compile benchmarks; Benchmarks/CompileFC
-          # is deliberately left on its old toolchain, so no glob here.
-          lake_package_directory: ". Benchmarks/Compile"
+          # The root package plus every package under Benchmarks/ — `/**`
+          # walks the whole tree (catching Catalog's nested fixture
+          # workspaces) and skips dotted directories, so `.lake`
+          # dependency checkouts are never swept up. This includes
+          # Benchmarks/CompileFC, previously pinned to an old toolchain.
+          lake_package_directory: ". Benchmarks/**"
           bump_mode: pinned-tags
           pr: true
           token: ${{ steps.app-token.outputs.token }}
