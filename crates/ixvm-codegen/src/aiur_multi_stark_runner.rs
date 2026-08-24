@@ -41,7 +41,8 @@ pub fn execute_multi_stark(
   if !toplevel.functions[fun_idx].entry {
     return Err(ExecError::NotEntryFunction(fun_idx));
   }
-  let mut record = QueryRecord::new(toplevel);
+  // The recursive verifier is never profiled.
+  let mut record = QueryRecord::new(toplevel, false);
   let output = execute_generated(fun_idx, &args, &mut record, io_buffer)?;
   Ok((record, output))
 }

@@ -110,6 +110,38 @@ def emitStats (compiled : Aiur.CompiledToplevel)
     try Aiur.printStats stats
     finally let _ ← IO.setStdout old
 
+/-- Append per-constant virtual-gas costs from an execution's
+    `QueryRecordHandle` to `out`: one `<addr_hex> <vspan> <mult> [name]`
+    line per constrained `check_const` query. The address is recovered by
+    dereferencing the `Addr` argument — the LAST input slot, since `ci`
+    is passed flattened by value — through `memory[32]`; `vspan` is the
+    constant's standalone check cost (memo hits replay the callee's
+    recorded span, so the numbers are order-independent shard weights).
+    Requires the execution to have run with `profile := true`, else
+    every span reads 0. -/
+def dumpProfile (compiled : Aiur.CompiledToplevel)
+    (record : Aiur.QueryRecordHandle) (out : String)
+    (nameOf : Address → Option Ix.Name) : IO Unit := do
+  let some idx := compiled.getFuncIdx `check_const
+    | IO.eprintln "--profile: no `check_const` in compiled toplevel"
+  let addrPos := compiled.bytecode.functions[idx]!.layout.inputSize - 1
+  let mut block := ""
+  for i in [0 : record.fnLen idx] do
+    let mult := record.fnMult idx i
+    if mult != 0 then
+      let key := record.fnKey idx i
+      if let some addrG := key[addrPos]? then
+        let limbs := record.memKey 32 addrG.val.toNat
+        let addr : Address := ⟨.mk <| limbs.map fun g => g.val.toUInt8⟩
+        let name := (nameOf addr).map (s!" {·}") |>.getD ""
+        block := block ++ s!"{addr} {record.fnVspan idx i} {mult}{name}\n"
+  -- One buffered write per execution: concurrent shard tasks (whole
+  -- partition mode) append to the same file, and a single O_APPEND
+  -- write keeps each shard's block from interleaving mid-line.
+  let h ← IO.FS.Handle.mk out .append
+  h.putStr block
+  h.flush
+
 /-- What a single `runOne` invocation is targeting.
 
     * `addr`: full-closure `Claim.check addr none` — dispatch via
@@ -197,7 +229,9 @@ def runBatchCheck (ixePath : String) (names : List String) (jobs : Nat)
     The `envHandle?` is `none` only for `.leanW` targets (`--interp`
     fallback); the addr/shard arms require it. -/
 def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool)
+    (statsOut : Option String)
+    (profile? : Option (String × (Address → Option Ix.Name)))
+    (useBytecode : Bool)
     (envHandle? : Option Aiur.EnvHandle)
     (target : Target) (label : String) : IO UInt32 := do
   IO.println s!"Typechecking {label}"
@@ -207,25 +241,28 @@ def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
     let mut blob := ByteArray.empty
     for x in owned do blob := blob ++ x.hash
     pure blob
+  let profile := profile?.isSome
   let res :=
     match target, envHandle? with
     | .addr a, some envHandle =>
-      compiled.bytecode.checkAddrWithEnv funIdx envHandle a.hash useBytecode
+      compiled.bytecode.checkAddrWithEnvFull funIdx envHandle a.hash useBytecode profile
     | .shard owned, some envHandle =>
-      compiled.bytecode.shardCheckWithEnv funIdx envHandle (buildBlob owned) useBytecode
+      compiled.bytecode.shardCheckWithEnvFull funIdx envHandle (buildBlob owned) useBytecode profile
     | .leanW witness, _ =>
       if useBytecode then
-        compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
+        compiled.bytecode.executeFull funIdx witness.input witness.inputIOBuffer profile
       else
-        compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+        compiled.bytecode.executeIxVMFull funIdx witness.input witness.inputIOBuffer profile
     | _, none =>
       .error "internal: addr/shard target with no envHandle"
   match res with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native Aiur execution error: {e}"
     return 1
-  | .ok (_output, _ioBuffer, queryCounts) =>
-    if printStats then emitStats compiled queryCounts statsOut
+  | .ok r =>
+    if printStats then emitStats compiled r.queryCounts statsOut
+    if let some (out, nameOf) := profile? then
+      dumpProfile compiled r.record out nameOf
     pure 0
 
 /-- Run a single witness through the Aiur interpreter (richer errors). -/
@@ -516,8 +553,8 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
     the pre-built envHandle so all shards in an all-shards run share
     one env parse. -/
 def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
-    (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
-    (shapes : Array Aiur.CircuitShape)
+    (printStats : Bool) (statsOut : Option String) (profileOut : Option String)
+    (useBytecode : Bool) (shapes : Array Aiur.CircuitShape)
     (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
@@ -529,19 +566,21 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
   let mut blob := ByteArray.empty
   for a in owned do
     blob := blob ++ a.hash
-  match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob useBytecode with
+  match compiled.bytecode.shardCheckWithEnvFull funIdx envHandle blob useBytecode profileOut.isSome with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
     return 1
-  | .ok (_output, _ioBuffer, queryCounts) =>
+  | .ok r =>
     -- Prover RAM projection from this shard's executed heights: the
     -- input to split/merge decisions against a prover budget.
-    let stats := Aiur.computeStats compiled queryCounts shapes
+    let stats := Aiur.computeStats compiled r.queryCounts shapes
     let bytes := stats.projectedProverBytes
     let gib := Float.ofNat bytes / 1073741824.0
     IO.println s!"[shard {shardK}] projected prover RAM: \
       {gib} GiB (padded committed traces × blowup)"
-    if printStats then emitStats compiled queryCounts statsOut
+    if printStats then emitStats compiled r.queryCounts statsOut
+    if let some out := profileOut then
+      dumpProfile compiled r.record out (ixonEnv.addrToName.get? ·)
     pure 0
 
 /-- Manifest-driven check/prove of one shard `shardK` of the partition. -/
@@ -557,7 +596,8 @@ def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
     once for this one call. -/
 def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
     (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
+    (statsOut : Option String) (profileOut : Option String)
+    (useBytecode : Bool) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) => match shards[shardK]? with
@@ -568,7 +608,8 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
         | .ok h => pure h
       let shapes := Aiur.circuitShapes compiled.bytecode
         Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
-      runShardOwnedNative envHandle compiled printStats statsOut useBytecode shapes ixonEnv blocks shardK
+      runShardOwnedNative envHandle compiled printStats statsOut profileOut
+        useBytecode shapes ixonEnv blocks shardK
 
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
@@ -711,6 +752,42 @@ def runShardBatchNative (manifestPath ixePath : String) (jobs? : Option Nat)
       -- exit (the row is already written), same contract as `check-rs`.
       return if json?.isSome then Ix.Benchmark.Results.exitRejected else 1
 
+/-- Per-shard IxVM-native check over EVERY shard, one Lean task per
+    shard. Slower than `runShardBatchNative` (chunk barriers idle
+    workers on each wave's slowest shard), but it keeps each shard's
+    `QueryRecord` Lean-side, which is what `--profile` needs: the
+    batch FFI returns only a per-shard verdict and prover peak, not
+    the records the virtual-gas dump reads. Builds the `EnvHandle`
+    ONCE and shares it across every shard's FFI call (no per-shard
+    re-mmap). Coverage-gates the manifest before running any shard —
+    exit 0 has to mean "every env const was checked by some shard",
+    same soundness contract as `runShardCheckAll`. -/
+def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
+    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
+    (statsOut : Option String) (profileOut : Option String)
+    (useBytecode : Bool) : IO UInt32 := do
+  match (← loadEnvAndShards manifestPath ixePath) with
+  | .error e => IO.eprintln e; return 1
+  | .ok (ixonEnv, shards) =>
+    if !(← shardsCover ixonEnv shards) then return 1
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+      | .ok h => pure h
+    let shapes := Aiur.circuitShapes compiled.bytecode
+      Aiur.defaultCommitmentParameters Aiur.defaultFriParameters
+    let maxJobs := max 1 (jobs?.getD shards.size)
+    let mut rc : UInt32 := 0
+    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
+      let tasks ← chunk.mapM fun (blocks, k) =>
+        IO.asTask (prio := .dedicated)
+          (runShardOwnedNative envHandle compiled printStats statsOut profileOut
+            useBytecode shapes ixonEnv blocks k)
+      for t in tasks do
+        match t.get with
+        | .ok r => if r != 0 then rc := 1
+        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
+    pure rc
+
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
     if any shard fails, else 0. -/
@@ -768,6 +845,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let names := (p.variableArgsAs! String).toList
   let ixesPath := (p.flag? "ixes").map (·.as! String)
   let shardK := (p.flag? "shard").map (·.as! Nat)
+  let profileOut := (p.flag? "profile").map (·.as! String)
+  if profileOut.isSome && interpSource then
+    IO.eprintln "error: --profile is not available with --interp source"
+    return 1
   -- a single targeted constant, a `--claim`, or a single shard each print
   -- per-circuit stats; whole-env / whole-partition iteration suppresses them.
   let printStats := names.length == 1 || claimHex.isSome || (ixesPath.isSome && shardK.isSome)
@@ -800,9 +881,14 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
+      -- Per-name / per-claim targets carry no addr→name index here (the
+      -- ixon env loads later, inside `forEachClaim`), so `--profile`
+      -- lines dump address-only on this path; the shard-native paths
+      -- below join names via `ixonEnv.addrToName`.
+      let profile? := profileOut.map ((·, fun _ => none))
       let go (_ : Ix.Claim) (envHandle? : Option Aiur.EnvHandle) (target : Target)
           (label : String) : IO UInt32 :=
-        runCompiled compiled printStats statsOut useBytecode envHandle? target label
+        runCompiled compiled printStats statsOut profile? useBytecode envHandle? target label
       pure go
   match ixePath, ixesPath, shardK with
   | some ixe, some manifest, some k =>
@@ -813,7 +899,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut useBytecode)
+      return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut profileOut useBytecode)
   | some ixe, some manifest, none   =>
     if interpSource then
       return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
@@ -822,6 +908,13 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
+      -- `--profile` needs each shard's `QueryRecord`, which the rayon
+      -- batch does not hand back; that run takes the per-shard Lean
+      -- task path instead.
+      if profileOut.isSome then
+        return (← runShardManifestAllNative manifest ixe
+          ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut
+          profileOut useBytecode)
       let json? := (p.flag? "json").map fun f =>
         (f.as! String, ((p.flag? "json-name").map (·.as! String)).getD "env")
       return (← runShardBatchNative manifest ixe
@@ -855,6 +948,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
+    "profile"   : String;   "Append per-constant virtual-gas costs to this file: one `<addr_hex> <vspan> <mult> [name]` line per `check_const` query, read from the execution's QueryRecordHandle (names joined on the shard paths, where the env's addr→name index is loaded). The vspan is the constant's standalone check cost — memo hits replay the callee's recorded span — so the numbers are order-independent shard weights. Not available with `--interp source`."
     "ixes"      : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: check the constants owned by shard K (ingress their closure, skip the frontier). Without --shard: check every shard of the partition concurrently, after a coverage check."
     "shard"     : Nat;      "0-based shard index K (with --ixe + --ixes): check the constants owned by shard K of the manifest's partition."
     "jobs"      : Nat;      "Parallelism. With --ixes (no --shard): max shards checked concurrently (default: all at once). With --ixe alone and N ≠ 1: check the targeted constants on N Rust threads (0 = all cores), each claim over its own private record — peak RAM is bounded by N in-flight claim closures."

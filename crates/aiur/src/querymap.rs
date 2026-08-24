@@ -1,4 +1,4 @@
-use multi_stark::p3_field::PrimeField64;
+use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 
 use crate::G;
 
@@ -196,16 +196,17 @@ impl SegStore {
   }
 }
 
-/// Segmented store of per-entry key hashes. Kept so hash-table growth can
-/// re-insert from stored hashes instead of re-hashing every key from the
-/// keys arena — table doubling on a multi-GB map used to be a full
-/// sequential re-hash pass over the arena, log-many times.
-struct SegHashes {
+/// Segmented store of per-entry `u64`s. Used for the key hashes — kept so
+/// hash-table growth can re-insert from stored hashes instead of
+/// re-hashing every key from the keys arena (table doubling on a multi-GB
+/// map used to be a full sequential re-hash pass over the arena, log-many
+/// times) — and for the profiling virtual spans.
+struct SegU64s {
   segs: Vec<HugeVec<u64>>,
   entries: usize,
 }
 
-impl SegHashes {
+impl SegU64s {
   fn new() -> Self {
     Self { segs: Vec::new(), entries: 0 }
   }
@@ -223,6 +224,11 @@ impl SegHashes {
     }
     self.segs[seg].extend_from_slice(&[h]);
     self.entries += 1;
+  }
+
+  #[inline]
+  fn set(&mut self, i: usize, v: u64) {
+    self.segs[i >> SEG_BITS].slice_mut(i & SEG_MASK, 1)[0] = v;
   }
 }
 
@@ -247,23 +253,45 @@ pub struct QueryMap {
   /// Output width; inferred on first insert (not statically available in
   /// `FunctionLayout`).
   out_stride_set: bool,
+  /// Committed-trace width of this circuit (0 for unconstrained
+  /// functions): the per-touch price charged to the virtual-gas meter
+  /// (`QueryRecord::virt`).
+  weight: u64,
+  /// Whether `finish` records per-entry virtual spans (`vspans`).
+  /// Plumbed from the execution entrypoint's `profile` flag; off by
+  /// default so the extra u64 arena costs nothing on ordinary runs.
+  profile: bool,
   keys: SegStore,
   outs: SegStore,
   mults: SegStore,
-  hashes: SegHashes,
+  hashes: SegU64s,
+  /// Per-entry virtual-gas span recorded at the entry's (first
+  /// constrained) computation — the entry's standalone cost, replayed on
+  /// memo hits so `virt` prices the execution as if nothing were
+  /// memoized. Populated only by `finish` (function maps) and only when
+  /// `profile` is set; memory maps leave it empty and replay `weight`.
+  vspans: SegU64s,
   table: hashbrown::HashTable<u32>,
 }
 
 impl QueryMap {
-  pub fn new(key_stride: usize) -> Self {
+  pub fn new(key_stride: usize, weight: u64, profile: bool) -> Self {
     Self {
       out_stride_set: false,
+      weight,
+      profile,
       keys: SegStore::new(key_stride),
       outs: SegStore::new(0),
       mults: SegStore::new(1),
-      hashes: SegHashes::new(),
+      hashes: SegU64s::new(),
+      vspans: SegU64s::new(),
       table: hashbrown::HashTable::new(),
     }
+  }
+
+  #[inline]
+  pub fn weight(&self) -> u64 {
+    self.weight
   }
 
   #[inline]
@@ -305,6 +333,61 @@ impl QueryMap {
       output: self.outs.at(i),
       multiplicity: &mut self.mults.at_mut(i)[0],
     })
+  }
+
+  /// Multiplicity of entry `i`.
+  #[inline]
+  pub fn mult_at(&self, i: usize) -> G {
+    self.mults.at(i)[0]
+  }
+
+  /// Output slice of entry `i`.
+  #[inline]
+  pub fn output_at(&self, i: usize) -> &[G] {
+    self.outs.at(i)
+  }
+
+  /// Constrained memo hit on entry `i`: bump the multiplicity and return
+  /// the replay cost to add to `QueryRecord::virt` — the entry's recorded
+  /// virtual span when one exists (function maps under `profile`), else
+  /// the map weight (memory maps, or profiling off).
+  #[inline]
+  pub fn replay_at(&mut self, i: usize) -> u64 {
+    self.mults.at_mut(i)[0] += G::ONE;
+    if i < self.vspans.entries { self.vspans.at(i) } else { self.weight }
+  }
+
+  /// Register a function query at `Ctrl::Return`: insert on first
+  /// registration, bump + re-span on constrained promotion of a cached
+  /// hint row. `span` is the virtual-gas span measured over the frame
+  /// (own-row touch included); recorded only when profiling. Function
+  /// maps must insert exclusively through here so `vspans` stays aligned
+  /// with the entry arenas.
+  pub fn finish(&mut self, key: &[G], output: &[G], constrained: bool, span: u64) {
+    if let Some(i) = self.get_index_of(key) {
+      // The only ordinary way to execute an already cached function is
+      // constrained promotion of an unconstrained hint entry.
+      debug_assert_eq!(self.outs.at(i), output);
+      if constrained {
+        self.mults.at_mut(i)[0] += G::ONE;
+        if self.profile {
+          // Overwrite the hint-time span (measured unconstrained, ~0)
+          // with the span of the constrained replay.
+          self.vspans.set(i, span);
+        }
+      }
+    } else {
+      self.insert(key, output, G::from_bool(constrained));
+      if self.profile {
+        self.vspans.push(span);
+      }
+    }
+  }
+
+  /// Recorded virtual span of entry `i` (0 when profiling is off).
+  #[inline]
+  pub fn vspan_at(&self, i: usize) -> u64 {
+    if i < self.vspans.entries { self.vspans.at(i) } else { 0 }
   }
 
   /// Append a new entry. The key must not already be present: call sites

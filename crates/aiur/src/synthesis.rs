@@ -317,7 +317,7 @@ impl AiurSystem {
     // execution error here is a programmer bug, so we unwrap.
     let (query_record, output) = self
       .toplevel
-      .execute(fun_idx, input.to_vec(), io_buffer)
+      .execute(fun_idx, input.to_vec(), io_buffer, false)
       .expect("Aiur execution failed during prove");
     drop(_g);
 

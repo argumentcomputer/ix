@@ -35,6 +35,14 @@ static AIUR_SYSTEM_CLASS: LazyLock<ExternalClass> =
 static IX_ENV_HANDLE_CLASS: LazyLock<ExternalClass> = LazyLock::new(
   ExternalClass::register_with_drop::<ixvm_codegen::env_handle::EnvHandle>,
 );
+/// Opaque handle on an execution's `QueryRecord`, returned inside every
+/// `ExecuteResult` so Lean can inspect queries (keys, multiplicities,
+/// virtual-gas spans, memory derefs) with its higher-level knowledge
+/// (fn names, layouts, addr→name maps). The record is the dominant RAM
+/// consumer of an execution — Lean callers should consume and drop it
+/// before starting the next heavy execution.
+static QUERY_RECORD_CLASS: LazyLock<ExternalClass> =
+  LazyLock::new(ExternalClass::register_with_drop::<QueryRecord>);
 
 // =============================================================================
 // Lean FFI functions
@@ -155,6 +163,7 @@ extern "C" fn rs_aiur_toplevel_execute(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
+  profile: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -164,6 +173,7 @@ extern "C" fn rs_aiur_toplevel_execute(
     fun_idx,
     args.map(|x| lean_unbox_g(&x)),
     &mut io_buffer,
+    profile,
   ) {
     Ok(pair) => pair,
     Err(err) => return LeanExcept::error_string(&err.to_string()),
@@ -172,7 +182,7 @@ extern "C" fn rs_aiur_toplevel_execute(
   LeanExcept::ok(build_execute_result(
     &output,
     &io_buffer,
-    &query_record,
+    query_record,
     &toplevel,
   ))
 }
@@ -190,6 +200,7 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
+  profile: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -203,6 +214,7 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
       fun_idx,
       args.map(|x| lean_unbox_g(&x)),
       &mut io_buffer,
+      profile,
     ) {
       Ok(pair) => pair,
       Err(err) => return LeanExcept::error_string(&err.to_string()),
@@ -211,7 +223,7 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
   LeanExcept::ok(build_execute_result(
     &output,
     &io_buffer,
-    &query_record,
+    query_record,
     &toplevel,
   ))
 }
@@ -323,19 +335,113 @@ fn build_query_counts_array(
 }
 
 /// Helper: build a Lean `ExecuteResult` (output, ioData, ioMap,
-/// queryCounts) — the return shape shared by every execute/check FFI.
+/// queryCounts, record) — the return shape shared by every execute/check
+/// FFI. Takes the `QueryRecord` by value: it moves into an opaque
+/// `QueryRecordHandle` (slot 4) that Lean can inspect via the
+/// `rs_aiur_qr_*` accessors and that frees when Lean drops the result.
 fn build_execute_result(
   output: &[G],
   io_buffer: &IOBuffer,
-  query_record: &QueryRecord,
+  query_record: QueryRecord,
   toplevel: &aiur::bytecode::Toplevel,
 ) -> LeanAiurExecuteResult<LeanOwned> {
   let result = LeanAiurExecuteResult::alloc(0);
   result.set_obj(0, build_g_array(output));
   result.set_obj(1, build_lean_io_data(io_buffer));
   result.set_obj(2, build_lean_io_map(io_buffer));
-  result.set_obj(3, build_query_counts_array(query_record, toplevel));
+  result.set_obj(3, build_query_counts_array(&query_record, toplevel));
+  result.set_obj(4, LeanExternal::alloc(&QUERY_RECORD_CLASS, query_record));
   result
+}
+
+// =============================================================================
+// QueryRecordHandle accessors. All borrow the handle; out-of-range
+// indices return 0 / an empty array (callers iterate within `fn_len`).
+// =============================================================================
+
+/// `QueryRecordHandle.fnLen : @& QueryRecordHandle → @& Nat → Nat` —
+/// number of query entries registered for function `idx`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_qr_fn_len(
+  handle: LeanExternal<QueryRecord, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+) -> LeanOwned {
+  let idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let len = handle.get().function_queries.get(idx).map_or(0, |m| m.len());
+  LeanOwned::box_usize(len)
+}
+
+/// `QueryRecordHandle.fnKey : … → Array G` — input tuple of entry `i`
+/// of function `idx`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_qr_fn_key(
+  handle: LeanExternal<QueryRecord, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  i: LeanNat<LeanBorrowed<'_>>,
+) -> LeanArray<LeanOwned> {
+  let idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let i = lean_unbox_nat_as_usize(i.inner());
+  let key = handle
+    .get()
+    .function_queries
+    .get(idx)
+    .and_then(|m| m.get_index(i).map(|(k, _)| k));
+  build_g_array(key.unwrap_or(&[]))
+}
+
+/// `QueryRecordHandle.fnMult : … → Nat` — multiplicity of entry `i`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_qr_fn_mult(
+  handle: LeanExternal<QueryRecord, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  i: LeanNat<LeanBorrowed<'_>>,
+) -> LeanOwned {
+  let idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let i = lean_unbox_nat_as_usize(i.inner());
+  let mult = handle
+    .get()
+    .function_queries
+    .get(idx)
+    .filter(|m| i < m.len())
+    .map_or(0, |m| m.mult_at(i).as_canonical_u64());
+  LeanOwned::box_usize(usize::try_from(mult).expect("multiplicity fits usize"))
+}
+
+/// `QueryRecordHandle.fnVspan : … → Nat` — recorded virtual-gas span of
+/// entry `i` (0 unless the execution ran with `profile = true`).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_qr_fn_vspan(
+  handle: LeanExternal<QueryRecord, LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  i: LeanNat<LeanBorrowed<'_>>,
+) -> LeanOwned {
+  let idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let i = lean_unbox_nat_as_usize(i.inner());
+  let span = handle
+    .get()
+    .function_queries
+    .get(idx)
+    .map_or(0, |m| m.vspan_at(i));
+  LeanOwned::box_usize(usize::try_from(span).expect("vspan fits usize"))
+}
+
+/// `QueryRecordHandle.memKey : … → Array G` — stored values of entry
+/// `ptr` in the `memory[size]` map: the deref of an Aiur `&[T; size]`
+/// pointer. Empty array when the channel or pointer is unbound.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_qr_mem_key(
+  handle: LeanExternal<QueryRecord, LeanBorrowed<'_>>,
+  size: LeanNat<LeanBorrowed<'_>>,
+  ptr: LeanNat<LeanBorrowed<'_>>,
+) -> LeanArray<LeanOwned> {
+  let size = lean_unbox_nat_as_usize(size.inner());
+  let ptr = lean_unbox_nat_as_usize(ptr.inner());
+  let key = handle
+    .get()
+    .memory_queries
+    .get(&size)
+    .and_then(|m| m.get_index(ptr).map(|(k, _)| k));
+  build_g_array(key.unwrap_or(&[]))
 }
 
 /// Helper: build a Lean `ProveResult` (claim, proof, ioData, ioMap).
@@ -419,6 +525,7 @@ fn dispatch_execute(
   input: Vec<G>,
   io_buffer: &mut IOBuffer,
   use_bytecode: bool,
+  profile: bool,
 ) -> Result<(QueryRecord, Vec<G>), String> {
   // Same span name as the prove pipeline's execution phase
   // (`synthesis.rs`), so a standalone execute renders/records through the
@@ -427,11 +534,11 @@ fn dispatch_execute(
   let _g = tracing::info_span!("aiur/execute_ixvm").entered();
   if use_bytecode {
     toplevel
-      .execute(fun_idx, input, io_buffer)
+      .execute(fun_idx, input, io_buffer, profile)
       .map_err(|e| format!("execute (bytecode): {e}"))
   } else {
     ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
-      toplevel, fun_idx, input, io_buffer,
+      toplevel, fun_idx, input, io_buffer, profile,
     )
     .map_err(|e| format!("execute_ixvm: {e}"))
   }
@@ -452,6 +559,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  profile: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -476,6 +584,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
     input,
     &mut io_buffer,
     use_bytecode,
+    profile,
   ) {
     Ok(p) => p,
     Err(e) => return LeanExcept::error_string(&e),
@@ -484,7 +593,7 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   LeanExcept::ok(build_execute_result(
     &output,
     &io_buffer,
-    &query_record,
+    query_record,
     &toplevel,
   ))
 }
@@ -547,6 +656,8 @@ extern "C" fn rs_aiur_toplevel_check_addrs_with_env(
               input,
               &mut io_buffer,
               use_bytecode,
+              // No vspan meter: the batch keeps no records to read it from.
+              false,
             )
             .err(),
           };
@@ -749,6 +860,8 @@ extern "C" fn rs_aiur_toplevel_shard_check_batch(
               input,
               &mut io_buffer,
               use_bytecode,
+              // No vspan meter: only the prover peak is read back per shard.
+              false,
             ) {
               Err(e) => (e, 0),
               Ok((record, _output)) => {
@@ -793,6 +906,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
   use_bytecode: bool,
+  profile: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -821,6 +935,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
     input,
     &mut io_buffer,
     use_bytecode,
+    profile,
   ) {
     Ok(p) => p,
     Err(e) => return LeanExcept::error_string(&e),
@@ -829,7 +944,7 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   LeanExcept::ok(build_execute_result(
     &output,
     &io_buffer,
-    &query_record,
+    query_record,
     &toplevel,
   ))
 }
@@ -875,7 +990,7 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
       &input,
       &mut io_buffer,
       |toplevel, fun_idx, input, io_buffer| {
-        toplevel.execute(fun_idx, input, io_buffer)
+        toplevel.execute(fun_idx, input, io_buffer, false)
       },
     )
   } else {
@@ -883,7 +998,12 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
       fun_idx,
       &input,
       &mut io_buffer,
-      ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+      |toplevel, fun_idx, input, io_buffer| {
+        // The prove path never profiles.
+        ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+          toplevel, fun_idx, input, io_buffer, false,
+        )
+      },
     )
   };
 
@@ -924,7 +1044,12 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     fun_idx,
     &input,
     &mut io_buffer,
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+    // The prove path never profiles.
+    |toplevel, fun_idx, input, io_buffer| {
+      ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+        toplevel, fun_idx, input, io_buffer, false,
+      )
+    },
   );
 
   LeanExcept::ok(build_prove_env_result(&claim, proof, &io_buffer))
@@ -951,7 +1076,12 @@ extern "C" fn rs_aiur_system_prove_ixvm(
     fun_idx,
     &args,
     &mut io_buffer,
-    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+    // The prove path never profiles.
+    |toplevel, fun_idx, input, io_buffer| {
+      ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+        toplevel, fun_idx, input, io_buffer, false,
+      )
+    },
   );
 
   build_prove_result(&claim, proof, &io_buffer)
@@ -988,7 +1118,7 @@ extern "C" fn rs_aiur_multi_stark_execute(
   // Same execution-phase span as the prove pipeline.
   let _g = tracing::info_span!("aiur/execute_multi_stark").entered();
   let result = if use_bytecode {
-    toplevel.execute(fun_idx, input, &mut io_buffer)
+    toplevel.execute(fun_idx, input, &mut io_buffer, false)
   } else {
     ixvm_codegen::aiur_multi_stark_runner::execute_multi_stark(
       &toplevel,

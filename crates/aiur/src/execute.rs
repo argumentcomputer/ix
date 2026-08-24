@@ -33,23 +33,49 @@ pub struct QueryRecord {
   pub memory_queries: FxIndexMap<usize, QueryMap>,
   pub bytes1_queries: Bytes1Queries,
   pub bytes2_queries: Bytes2Queries,
+  /// Virtual-gas meter: sum of circuit-width-priced constrained query
+  /// touches, with memo hits replaying the callee's recorded span — the
+  /// cost of the execution as if nothing were memoized. Never read
+  /// directly; frame deltas of it become the per-entry spans that
+  /// `QueryMap::finish` records (surfaced via `QueryRecordHandle`).
+  pub virt: u64,
 }
 
 impl QueryRecord {
-  pub fn new(toplevel: &Toplevel) -> Self {
+  /// `profile` enables per-entry virtual-span recording (readable through
+  /// the `QueryRecordHandle` FFI accessors); plumbed from the execution
+  /// entrypoint.
+  pub fn new(toplevel: &Toplevel, profile: bool) -> Self {
+    // Weight = committed main-trace width, the per-touch price of a row.
+    // Unconstrained functions have no circuit, so their rows are free.
     let function_queries = toplevel
       .functions
       .iter()
-      .map(|f| QueryMap::new(f.layout.input_size))
+      .map(|f| {
+        let weight =
+          if f.constrained { f.layout.width() as u64 } else { 0 };
+        QueryMap::new(f.layout.input_size, weight, profile)
+      })
       .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::new(*width)))
+      .map(|width| {
+        // Memory circuit width: multiplicity, selector, pointer, values.
+        // Memory maps never record spans (their replay cost is the
+        // weight itself), so the profile flag is irrelevant here.
+        (*width, QueryMap::new(*width, (3 + *width) as u64, false))
+      })
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
-    Self { function_queries, memory_queries, bytes1_queries, bytes2_queries }
+    Self {
+      function_queries,
+      memory_queries,
+      bytes1_queries,
+      bytes2_queries,
+      virt: 0,
+    }
   }
 }
 
@@ -228,16 +254,19 @@ fn dump_query_stats(record: &QueryRecord, tag: &str) {
 }
 
 impl Toplevel {
+  /// `profile` enables per-entry virtual-span recording on the returned
+  /// `QueryRecord` (see `QueryMap::finish`).
   pub fn execute(
     &self,
     fun_idx: FunIdx,
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
+    profile: bool,
   ) -> Result<(QueryRecord, Vec<G>), ExecError> {
     if !self.functions[fun_idx].entry {
       return Err(ExecError::NotEntryFunction(fun_idx));
     }
-    let mut record = QueryRecord::new(self);
+    let mut record = QueryRecord::new(self, profile);
     let function = &self.functions[fun_idx];
     let output =
       function.execute(fun_idx, args, self, &mut record, io_buffer)?;
@@ -258,6 +287,9 @@ struct CallerState {
   map: Vec<G>,
   unconstrained: bool,
   continuation_depth: usize,
+  /// `record.virt` at callee entry; the callee's `Ctrl::Return` reads it
+  /// to record the frame's virtual span on the registered entry.
+  vsnap: u64,
 }
 
 struct ContinuationState<'a> {
@@ -328,23 +360,27 @@ impl Function {
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
           let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
           let callee_unconstrained = unconstrained || *op_unconstrained;
-          let cached_output = record.function_queries[*callee_idx]
-            .get_mut(&args)
-            .and_then(|result| {
-              // A zero-multiplicity entry was computed only as an
-              // unconstrained hint.  Promoting just this row would omit all
-              // of the callee's child lookups and unbalance their channels;
-              // replay the body constrained so promotion recurses through
-              // the whole dependency tree.
-              if !callee_unconstrained && result.multiplicity.is_zero() {
-                None
-              } else {
-                if !callee_unconstrained {
-                  *result.multiplicity += G::ONE;
-                }
-                Some(result.output.to_vec())
+          let mut cached_output = None;
+          if let Some(i) =
+            record.function_queries[*callee_idx].get_index_of(&args)
+          {
+            // A zero-multiplicity entry was computed only as an
+            // unconstrained hint.  Promoting just this row would omit all
+            // of the callee's child lookups and unbalance their channels;
+            // replay the body constrained so promotion recurses through
+            // the whole dependency tree.
+            let mult = record.function_queries[*callee_idx].mult_at(i);
+            if callee_unconstrained || !mult.is_zero() {
+              if !callee_unconstrained {
+                let replay =
+                  record.function_queries[*callee_idx].replay_at(i);
+                record.virt += replay;
               }
-            });
+              cached_output = Some(
+                record.function_queries[*callee_idx].output_at(i).to_vec(),
+              );
+            }
+          }
           if let Some(output) = cached_output {
             map.extend(output);
           } else {
@@ -354,6 +390,7 @@ impl Function {
               map: saved_map,
               unconstrained,
               continuation_depth: continuation_stack.len(),
+              vsnap: record.virt,
             });
             fun_idx = *callee_idx;
             unconstrained = callee_unconstrained;
@@ -367,11 +404,11 @@ impl Function {
             .memory_queries
             .get_mut(&size)
             .ok_or(ExecError::InvalidMemorySize(size))?;
-          if let Some(result) = memory_queries.get_mut(&values) {
+          if let Some(i) = memory_queries.get_index_of(&values) {
             if !unconstrained {
-              *result.multiplicity += G::ONE;
+              record.virt += memory_queries.replay_at(i);
             }
-            map.extend_from_slice(result.output);
+            map.extend_from_slice(memory_queries.output_at(i));
           } else {
             let ptr = G::from_usize(memory_queries.len());
             memory_queries.insert(
@@ -379,6 +416,9 @@ impl Function {
               &[ptr],
               G::from_bool(!unconstrained),
             );
+            if !unconstrained {
+              record.virt += memory_queries.weight();
+            }
             map.push(ptr);
           }
         },
@@ -392,12 +432,15 @@ impl Function {
           let ptr_usize = usize::try_from(ptr_u64)
             .ok()
             .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
-          let (args, multiplicity) = memory_queries
-            .get_index_mut(ptr_usize)
-            .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
-          if !unconstrained {
-            *multiplicity += G::ONE;
+          if ptr_usize >= memory_queries.len() {
+            return Err(ExecError::UnboundPointer { ptr: ptr_u64, size: *size });
           }
+          if !unconstrained {
+            record.virt += memory_queries.replay_at(ptr_usize);
+          }
+          let (args, _) = memory_queries
+            .get_index(ptr_usize)
+            .expect("bounds checked above");
           map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys, msg)) => {
@@ -709,30 +752,28 @@ impl Function {
           push_block_exec_entries!(cont.block);
         },
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
-          // Register the query.
+          // Register the query, pricing the row's own touch and recording
+          // the frame's virtual span (own touch + child work, memo hits
+          // replayed) on the entry.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          if let Some(result) =
-            record.function_queries[fun_idx].get_mut(&map[..input_size])
-          {
-            // The only ordinary way to execute an already cached function
-            // is constrained promotion of an unconstrained hint entry.
-            debug_assert_eq!(result.output, output);
-            if !unconstrained {
-              *result.multiplicity += G::ONE;
-            }
-          } else {
-            record.function_queries[fun_idx].insert(
-              &map[..input_size],
-              &output,
-              G::from_bool(!unconstrained),
-            );
+          if !unconstrained {
+            record.virt += record.function_queries[fun_idx].weight();
           }
+          let vsnap =
+            callers_states_stack.last().map_or(0, |cs| cs.vsnap);
+          record.function_queries[fun_idx].finish(
+            &map[..input_size],
+            &output,
+            !unconstrained,
+            record.virt - vsnap,
+          );
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,
             unconstrained: caller_unconstrained,
             continuation_depth,
+            vsnap: _,
           }) = callers_states_stack.pop()
           {
             continuation_stack.truncate(continuation_depth);
