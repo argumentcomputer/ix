@@ -618,14 +618,15 @@ def serializeIxSyntaxPreresolved (sp : Ix.SyntaxPreresolved) : CompileM ByteArra
   | .decl name aliases =>
     compileName name
     let header := ByteArray.mk #[1] ++ name.getHash.hash ++ putTag0 aliases.size
-    let mut aliasesBytes := ByteArray.empty
-    for a in aliases do
-      let addr ← storeString a
-      aliasesBytes := aliasesBytes ++ addr.hash
+    let aliasAddrs ← aliases.mapM storeString
+    let aliasesBytes := aliasAddrs.foldl (fun bytes addr => bytes ++ addr.hash)
+      ByteArray.empty
     pure (header ++ aliasesBytes)
 
-/-- Serialize an Ix.Syntax to bytes, storing strings as blobs. -/
-partial def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
+/-- Serialize an `Ix.Syntax` to bytes, storing strings as blobs. Traversing
+`args.attach` exposes the structural membership proof needed to keep this
+production serializer kernel-visible and total without changing array order. -/
+def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
   match syn with
   | .missing => pure (ByteArray.mk #[0])
   | .node info kind args =>
@@ -634,9 +635,9 @@ partial def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
     let infoBytes ← serializeIxSourceInfo info
     let kindBytes := kind.getHash.hash
     let lenBytes := putTag0 args.size
-    let mut argsBytes := ByteArray.empty
-    for arg in args do
-      argsBytes := argsBytes ++ (← serializeIxSyntax arg)
+    let serializedArgs ← args.attach.mapM fun arg => serializeIxSyntax arg.1
+    let argsBytes := serializedArgs.foldl (fun bytes arg => bytes ++ arg)
+      ByteArray.empty
     pure (header ++ infoBytes ++ kindBytes ++ lenBytes ++ argsBytes)
   | .atom info val =>
     let infoBytes ← serializeIxSourceInfo info
@@ -649,10 +650,14 @@ partial def serializeIxSyntax (syn : Ix.Syntax) : CompileM ByteArray := do
     let rawBytes ← serializeIxSubstring rawVal
     let valBytes := val.getHash.hash
     let lenBytes := putTag0 preresolved.size
-    let mut presBytes := ByteArray.empty
-    for pr in preresolved do
-      presBytes := presBytes ++ (← serializeIxSyntaxPreresolved pr)
+    let serializedPres ← preresolved.mapM serializeIxSyntaxPreresolved
+    let presBytes := serializedPres.foldl (fun bytes pr => bytes ++ pr)
+      ByteArray.empty
     pure (header ++ infoBytes ++ rawBytes ++ valBytes ++ lenBytes ++ presBytes)
+termination_by sizeOf syn
+decreasing_by
+  simp_wf
+  exact Nat.lt_trans (Array.sizeOf_lt_of_mem arg.property) (by omega)
 
 /-- Compile a DataValue to Ixon.DataValue, storing blobs as needed. -/
 def compileDataValue (dv : Ix.DataValue) : CompileM Ixon.DataValue := do

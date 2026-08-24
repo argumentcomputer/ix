@@ -22,11 +22,11 @@ The second layer fixes a completed preseed snapshot and relates its universe,
 reference, and name-resolution tables to a concrete `RefCompileCtx`.  It
 closes the complete ordinary-expression tree: sorts, arbitrary-universe local
 and external constants, recursive projections, literals, structural
-composition, and supported scalar metadata maps.  The proof covers warm
-caches, universe spelling patches, blob/name commits, and independent
-Lean4Lean values. Its strengthened frontier also relates the returned
-`UInt64` root, including the encoded KV map, to the append-only presentation
-arena under an explicit no-wrap capacity premise.
+composition, and arbitrary metadata maps including recursive syntax values.
+The proof covers warm caches, universe spelling patches, blob/name commits,
+and independent Lean4Lean values. Its strengthened frontier also relates the
+returned `UInt64` root, including the encoded KV map, to the append-only
+presentation arena under an explicit no-wrap capacity premise.
 -/
 
 namespace Ix.Compile.Verify
@@ -111,9 +111,8 @@ inductive StructuralExpr : Ix.Expr → Prop where
   | mdata {inner hash} : StructuralExpr inner →
       StructuralExpr (.mdata #[] inner hash)
 
-/-- The complete ordinary syntax accepted by the no-surgery compiler, with
-metadata restricted to values handled by the total scalar reference
-serializer. -/
+/-- The complete ordinary syntax accepted by the no-surgery compiler,
+including arbitrary totalized metadata maps. -/
 inductive OrdinaryExpr : Ix.Expr → Prop where
   | bvar {idx hash} : OrdinaryExpr (.bvar idx hash)
   | sort {level hash} : OrdinaryExpr (.sort level hash)
@@ -130,7 +129,7 @@ inductive OrdinaryExpr : Ix.Expr → Prop where
   | lit {literal hash} : OrdinaryExpr (.lit literal hash)
   | proj {typeName field val hash} : OrdinaryExpr val →
       OrdinaryExpr (.proj typeName field val hash)
-  | mdata {data inner hash} : KVMapSupported data → OrdinaryExpr inner →
+  | mdata {data inner hash} : OrdinaryExpr inner →
       OrdinaryExpr (.mdata data inner hash)
 
 theorem StructuralExpr.ordinary {source : Ix.Expr} :
@@ -141,7 +140,7 @@ theorem StructuralExpr.ordinary {source : Ix.Expr} :
   | .all hty hbody => .all hty.ordinary hbody.ordinary
   | .letE hty hval hbody =>
     .letE hty.ordinary hval.ordinary hbody.ordinary
-  | .mdata hinner => .mdata KVMapSupported.empty hinner.ordinary
+  | .mdata hinner => .mdata hinner.ordinary
 
 /-- Ordinary syntax paired with the exact finite universe support needed by
 production `compileUniv`.  This is the recursive source domain of the frozen
@@ -172,8 +171,7 @@ inductive SupportedOrdinaryExpr (levelSupport : Ix.Level → Prop) :
       SupportedOrdinaryExpr levelSupport (.lit literal hash)
   | proj {typeName field val hash} : SupportedOrdinaryExpr levelSupport val →
       SupportedOrdinaryExpr levelSupport (.proj typeName field val hash)
-  | mdata {data inner hash} : KVMapSupported data →
-      SupportedOrdinaryExpr levelSupport inner →
+  | mdata {data inner hash} : SupportedOrdinaryExpr levelSupport inner →
       SupportedOrdinaryExpr levelSupport (.mdata data inner hash)
 
 theorem SupportedOrdinaryExpr.ordinary {levelSupport : Ix.Level → Prop}
@@ -189,7 +187,7 @@ theorem SupportedOrdinaryExpr.ordinary {levelSupport : Ix.Level → Prop}
     .letE hty.ordinary hval.ordinary hbody.ordinary
   | .lit => .lit
   | .proj hval => .proj hval.ordinary
-  | .mdata hdata hinner => .mdata hdata hinner.ordinary
+  | .mdata hinner => .mdata hinner.ordinary
 
 /-- Every production expression-cache entry in this slice came from the same
 reference compiler and belongs to the supported structural fragment. -/
@@ -2546,9 +2544,9 @@ private theorem compileAppNoSurgery_ordinary_refines
   | proj hval ihval =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
       hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate href
-  | mdata hdata hinner ihinner =>
+  | mdata hinner ihinner =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
-      hrecur hdepth (SupportedOrdinaryExpr.mdata hdata hinner) hstate href
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate href
   | @app fn arg hash hfn harg ihfn iharg =>
     simp [compileExprRef] at href
     rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
@@ -2639,10 +2637,10 @@ private theorem compileAppNoSurgery_ordinary_arena_refines
   | proj hval ihval =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
       hrecur hdepth (SupportedOrdinaryExpr.proj hval) hstate harena hroom href
-  | mdata hdata hinner ihinner =>
+  | mdata hinner ihinner =>
     simpa [Ix.CompileM.compileAppNoSurgery] using
-      hrecur hdepth (SupportedOrdinaryExpr.mdata hdata hinner) hstate harena
-        hroom href
+      hrecur hdepth (SupportedOrdinaryExpr.mdata hinner) hstate harena hroom
+        href
   | @app fn arg hash hfn harg ihfn iharg =>
     simp [compileExprRef] at href
     rcases href with ⟨fnTarget, hfnRef, argTarget, hargRef, rfl⟩
@@ -3041,7 +3039,7 @@ private theorem compileExprNoSurgeryStep_ordinary_refines
         simp only
         rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
         rfl
-  | @mdata data inner hash hdata hinner =>
+  | @mdata data inner hash hinner =>
     have hinnerRef :
         compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
             inner = some target := by
@@ -3049,7 +3047,7 @@ private theorem compileExprNoSurgeryStep_ordinary_refines
     have hinnerDepth : Ix.CompileM.exprCompileDepth inner ≤ fuel := by
       simp only [Ix.CompileM.exprCompileDepth] at hdepth
       omega
-    obtain ⟨kvmap, hkvmapRef⟩ := hdata
+    obtain ⟨kvmap, hkvmapRef⟩ := KVMapSupported.all data
     obtain ⟨metaState, hmetaRun, hmetaFrame⟩ :=
       compileKVMap_run_refines compileEnv blockEnv state hkvmapRef
     have hmetaState :
@@ -3935,7 +3933,7 @@ private theorem compileExprNoSurgeryStep_ordinary_arena_refines
         simp only
         rw [run_bind compileEnv blockEnv valState _ _, run_allocArenaNode]
         rfl
-  | @mdata data inner hash hdata hinner =>
+  | @mdata data inner hash hinner =>
     have hinnerRef :
         compileExprRef (frozenRefCompileCtx compileEnv blockEnv snapshot)
             inner = some target := by
@@ -3943,7 +3941,7 @@ private theorem compileExprNoSurgeryStep_ordinary_arena_refines
     have hinnerDepth : Ix.CompileM.exprCompileDepth inner ≤ fuel := by
       simp only [Ix.CompileM.exprCompileDepth] at hdepth
       omega
-    obtain ⟨kvmap, hkvmapRef⟩ := hdata
+    obtain ⟨kvmap, hkvmapRef⟩ := KVMapSupported.all data
     obtain ⟨metaState, hmetaRun, hmetaFrame⟩ :=
       compileKVMap_run_refines compileEnv blockEnv state hkvmapRef
     have hmetaState :
